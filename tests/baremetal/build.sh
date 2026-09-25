@@ -2,7 +2,7 @@
 # Builds the bare-metal EL1 tests into flat binaries (loaded at 0x4000_0000,
 # entry at the first byte): <test>.bin from start.S + <test>.c. The binaries are
 # committed so `cargo test` needs no cross compiler; rerun this after editing.
-# The ELFs (and the -DORACLE variants oracle.sh runs) go to target/baremetal/.
+# The ELFs (and the -DORACLE and -DHVF variants oracle.sh runs) go to target/baremetal/.
 set -euo pipefail
 cd "$(dirname "$0")"
 out=../../target/baremetal
@@ -16,6 +16,7 @@ for src in *.c; do
   t=${src%.c}
   cc -o "$out/$t.elf" start.S "$src"
   cc -DORACLE -o "$out/$t-oracle.elf" start.S "$src" # for oracle.sh
+  cc -DORACLE -DHVF -o "$out/$t-hvf.elf" start.S "$src" # for oracle.sh --hvf
   llvm-objcopy -O binary "$out/$t.elf" "$t.bin"
   chmod 644 "$t.bin"
 done

@@ -31,7 +31,7 @@ export async function setup(bin = 'guest.bin') {
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const { instance } = await WebAssembly.instantiate(wasm, { env: { memory } });
   const ex = instance.exports as unknown as Exports;
-  if (ex.abi_version() !== 4) throw new Error(`core ABI ${ex.abi_version()}, expected 4`);
+  if (ex.abi_version() !== 5) throw new Error(`core ABI ${ex.abi_version()}, expected 5`);
   const cpu = ex.vcpu_new();
   const base = memory.grow(RAM / 65536) * 65536;
   const guest = await load(bin);

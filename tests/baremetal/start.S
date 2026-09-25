@@ -1,9 +1,7 @@
-// Bare-metal EL1 runtime: stack, vectors, FP on, main(), then PSCI SYSTEM_OFF
-// with main's result in x1 (0 = pass; our own convention, PLAN.md §4 item 6).
-// Every exception saves a struct frame and calls on_exception(frame, vector),
-// which may edit the saved ELR/SPSR before the ERET.
+// Bare-metal EL1 runtime: stack, vectors, FP on, main(), then power_off (lib.h)
+// with main's result. Every exception saves a struct frame and calls
+// on_exception(frame, vector), which may edit the saved ELR/SPSR before the ERET.
 
-#define PSCI_SYSTEM_OFF 0x84000008
 #define FRAME 288 // x0-x30, elr, spsr, esr, far, 16-byte aligned
 
     .section .text.start, "ax"
@@ -17,13 +15,7 @@ _start:
     msr cpacr_el1, x0
     isb
     bl main
-    // fall through
-    .global power_off
-power_off:
-    mov x1, x0
-    ldr x0, =PSCI_SYSTEM_OFF
-    hvc #0
-    b .
+    b power_off
 
 // run_el0(fn, sp): runs fn() at EL0t on stack sp and returns its result. fn
 // returns into el0_tramp, whose SVC #1 on_exception turns into a return here.

@@ -150,7 +150,7 @@ int main(void) {
   __asm__ volatile("ldr x0, [%0]" : : "r"(TEST_VA + 4) : "x0", "memory");
   set_sysreg(sctlr_el1, sctlr);
   check(last_esr == DATA_ABORT_EL1(0x21, 0) && last_far == TEST_VA + 4, 40);
-#ifndef ORACLE // QEMU TCG doesn't raise SP alignment faults; we follow the architecture
+#if !defined(ORACLE) || defined(HVF) // QEMU TCG doesn't raise SP alignment faults; we follow the architecture
   // SCTLR_EL1.SA: SP as a misaligned base faults (EC 0x26). Done on SP_EL0 so
   // the handler's own stack stays aligned.
   set_sysreg(sp_el0, (u64)user_stack_top - 8);

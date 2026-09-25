@@ -41,7 +41,7 @@ static u64 user_traps(void) {
   return v;
 }
 
-static u64 user_abort(void) {
+__attribute__((unused)) static u64 user_abort(void) {
   *(volatile u64 *)(HOLE + 8) = 1;
   return 7;
 }
@@ -67,9 +67,12 @@ int main(void) {
   expect_exc("udf #0", VEC_EL1H_SYNC, 0x02000000, 20);
   expect_exc("brk #7", VEC_EL1H_SYNC, 0xf2000007, 21);
   expect_exc("svc #3", VEC_EL1H_SYNC, 0x56000003, 22);
-  u64 n0 = n_exc;
+  u64 n0;
+#ifndef HVF // QEMU under hvf makes unassigned PAs RAZ/WI rather than aborting (TCG aborts)
+  n0 = n_exc;
   (void)*(volatile u64 *)HOLE; // data abort, read
   check(n_exc == n0 + 1 && last_esr == 0x96000010 && last_far == HOLE, 23);
+#endif
   set_sysreg(cpacr_el1, 0); // then fmov d0, xzr traps
   expect_exc(".inst 0x9e6703e0", VEC_EL1H_SYNC, 0x1fe00000, 25);
   set_sysreg(cpacr_el1, 3 << 20);
@@ -90,8 +93,10 @@ int main(void) {
   n0 = n_exc;
   check(run_el0(user_traps, (u64)user_stack_top) == 0x1234, 42);
   check(n_exc == n0 + 4, 43); // mrs, wfi, svc #0x42, svc #1
+#ifndef HVF
   n0 = n_exc;
   check(run_el0(user_abort, (u64)user_stack_top) == 7, 44);
   check(n_exc == n0 + 2 && last_far == HOLE + 8, 45); // abort, then svc #1
+#endif
   return 0;
 }

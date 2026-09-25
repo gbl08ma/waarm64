@@ -12,7 +12,7 @@ mod simd_fp;
 mod simd_int;
 mod sys;
 
-pub use sys::take_exception;
+pub use sys::{platform, take_exception, take_irq, timer_fires};
 
 use crate::cpu::{Cpu, sctlr};
 use crate::decode::{Op, decode};
@@ -42,8 +42,15 @@ pub enum Exit {
     Trap(u32),
     /// Internal to the run loops: the instruction retired (the PC is past it)
     /// and changed `SCTLR_EL1.M` or `.A`, so the next one may need the other
-    /// interpreter copy. Never returned by `step`, `run` or `run_system`.
+    /// interpreter copy, or unmasked IRQs, so one may be due. Never returned by
+    /// `step`, `run` or `run_system`.
     Resync,
+    /// WFI that doesn't trap: the run loop decides when it completes (the PC is on it).
+    Wfi,
+    /// An MRS or MSR (the encoding) of a register the platform computes: the
+    /// generic timer's, and `ISR_EL1`. Access checks have passed; the VM run loop
+    /// performs it with [`platform`] and the current virtual time.
+    Platform(u32),
 }
 
 impl From<Fault> for Exit {
@@ -70,7 +77,12 @@ pub fn step(cpu: &mut Cpu, mem: &Mem) -> R {
 /// Returns how many retired before that one. Choosing the copy here rather
 /// than per instruction is worth ~3% (bench/interp/REPORT.md, M3).
 #[inline(always)]
-fn steps(cpu: &mut Cpu, mem: &Mem, tlb: Option<&mut Tlb>, n: u64) -> (u64, Option<Exit>) {
+pub(crate) fn steps(
+    cpu: &mut Cpu,
+    mem: &Mem,
+    tlb: Option<&mut Tlb>,
+    n: u64,
+) -> (u64, Option<Exit>) {
     fn go(cpu: &mut Cpu, m: &mut impl Bus, n: u64) -> (u64, Option<Exit>) {
         for done in 0..n {
             if let Err(e) = step_bus(cpu, m) {
@@ -89,7 +101,7 @@ fn steps(cpu: &mut Cpu, mem: &Mem, tlb: Option<&mut Tlb>, n: u64) -> (u64, Optio
 // Inlined into the run loops: left to V8, a call per instruction cost ~15%
 // (bench/interp/REPORT.md, M3).
 #[inline(always)]
-fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
+pub(crate) fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
     let pc = cpu.pc;
     if pc & 3 != 0 {
         return Err(Exit::Fetch(Fault {
@@ -110,7 +122,7 @@ fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
 }
 
 /// Runs up to `n` instructions; returns how many retired and why it stopped early.
-/// No TLB: meant for user-mode hosts, which run with the MMU off.
+/// No TLB: meant for user-mode hosts, which run with the MMU off. WFI completes at once.
 pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
     let mut done = 0;
     while done < n {
@@ -119,6 +131,10 @@ pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
         match e {
             None => {}
             Some(Exit::Resync) => done += 1,
+            Some(Exit::Wfi) => {
+                cpu.pc = cpu.pc.wrapping_add(4);
+                done += 1;
+            }
             Some(e) => return (done, Err(e)),
         }
     }
@@ -126,8 +142,10 @@ pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
 }
 
 /// Runs up to `n` steps at EL0/EL1, taking exceptions into EL1 (each counts as a
-/// step, so a guest stuck in an exception loop still returns). It stops early
-/// only for the host: an HVC (PC after it) or an unimplemented instruction.
+/// step, so a guest stuck in an exception loop still returns), with no devices:
+/// WFI completes at once. It stops early for an HVC (PC after it), an
+/// unimplemented instruction or a platform register access. `vm::Vm::run` is
+/// the loop with devices.
 pub fn run_system(v: &mut Vcpu, mem: &Mem, n: u64) -> (u64, R) {
     let (cpu, tlb) = (&mut v.cpu, &mut v.tlb);
     let mut done = 0;
@@ -137,11 +155,15 @@ pub fn run_system(v: &mut Vcpu, mem: &Mem, n: u64) -> (u64, R) {
         match e {
             None => {}
             Some(Exit::Resync) => done += 1,
+            Some(Exit::Wfi) => {
+                cpu.pc = cpu.pc.wrapping_add(4);
+                done += 1;
+            }
             Some(e @ Exit::Hvc(_)) => {
                 cpu.pc = cpu.pc.wrapping_add(4);
                 return (done + 1, Err(e));
             }
-            Some(e @ Exit::Unimplemented(_)) => return (done, Err(e)),
+            Some(e @ (Exit::Unimplemented(_) | Exit::Platform(_))) => return (done, Err(e)),
             Some(e) => {
                 take_exception(cpu, e);
                 done += 1;
@@ -634,8 +656,7 @@ fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
         }
 
         // Hints, barriers, exceptions. Unallocated hints and the PAC/BTI
-        // hint-space instructions are NOPs (PLAN.md §1). WFE/WFI may complete at
-        // once; M3 step 4 gives them wake-up semantics.
+        // hint-space instructions are NOPs (PLAN.md §1). WFI and WFE are in sys.
         NOP | YIELD | SEV | SEVL | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2 | AUTIB_2 | BTI
         | ESB | PSB | TSB | CSDB | DGH => {}
         CLREX => c.monitor.size = 0,

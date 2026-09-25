@@ -1,12 +1,16 @@
 //! EL1 system level: system registers (MRS/MSR), SYS (cache and TLB
-//! maintenance), WFI/WFE traps, ERET and exception entry.
+//! maintenance), WFI/WFE traps, ERET and exception entry. The generic timer
+//! and `ISR_EL1` depend on virtual time and the GIC, so their accesses exit to
+//! the VM run loop ([`Exit::Platform`]), which completes them with [`platform`].
 //!
 //! At EL0 only op1 = 3 encodings exist (the `_EL0` registers and EL0 cache
 //! maintenance); everything else there is UNDEFINED. Unknown registers are
 //! UNDEFINED at EL1 too, except the ID space, which reads as zero.
 
-use super::{Exit, R, bits};
-use crate::cpu::{Cpu, DAIF, FPCR_MASK, FPSR_MASK, M_EL0T, M_EL1H, M_EL1T, SPSR_IL, sctlr};
+use super::{Exit, R, bit, bits};
+use crate::cpu::{
+    Cpu, DAIF, FPCR_MASK, FPSR_MASK, M_EL0T, M_EL1H, M_EL1T, PSTATE_I, SPSR_IL, sctlr,
+};
 use crate::decode::Op;
 use crate::mem::{Access, Fault, FaultKind};
 use crate::mmu::{self, Bus, Use};
@@ -95,6 +99,16 @@ const OSDLR: u32 = sr(2, 0, 1, 3, 4);
 const DBGPRCR: u32 = sr(2, 0, 1, 4, 4);
 const DBGCLAIMSET: u32 = sr(2, 0, 7, 8, 6);
 const DBGCLAIMCLR: u32 = sr(2, 0, 7, 9, 6);
+const CNTKCTL: u32 = sr(3, 0, 14, 1, 0);
+const CNTFRQ: u32 = sr(3, 3, 14, 0, 0);
+const CNTPCT: u32 = sr(3, 3, 14, 0, 1);
+const CNTVCT: u32 = sr(3, 3, 14, 0, 2);
+const CNTP_TVAL: u32 = sr(3, 3, 14, 2, 0);
+const CNTP_CTL: u32 = sr(3, 3, 14, 2, 1);
+const CNTP_CVAL: u32 = sr(3, 3, 14, 2, 2);
+const CNTV_TVAL: u32 = sr(3, 3, 14, 3, 0);
+const CNTV_CTL: u32 = sr(3, 3, 14, 3, 1);
+const CNTV_CVAL: u32 = sr(3, 3, 14, 3, 2);
 
 /// Registers that read as zero and ignore writes: IMPLEMENTATION DEFINED ones
 /// with nothing to control (AMAIR, AFSR0/1), CSSELR (CLIDR reports no caches),
@@ -117,7 +131,10 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
             if el0 && c.sctlr_el1 & allowed == 0 {
                 return Err(Exit::Trap(0x01 << 26 | ISS_COND_AL | (op == WFE) as u32));
             }
-            // ponytail: completes at once; step 4 gives WFI wake-up semantics.
+            // WFE completes at once: one vCPU, so nothing to wait for (M7).
+            if op == WFI {
+                return Err(Exit::Wfi);
+            }
         }
         ERET if !el0 => eret(c),
         HVC if !el0 => return Err(Exit::Hvc(bits(i, 20, 5) as u16)),
@@ -138,12 +155,13 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
                     if el0 && c.sctlr_el1 & sctlr::UMA == 0 {
                         return Err(trap_sys(i));
                     }
-                    let d = crm << 6;
+                    let (d, before) = (crm << 6, c.pstate);
                     c.pstate = if op2 == 6 {
                         c.pstate | d
                     } else {
                         c.pstate & !d
                     };
+                    return unmasked(before, c);
                 }
                 (0, 5) => c.set_pstate(c.pstate & !1 | crm & 1), // SPSel
                 _ => return Err(Exit::Undefined), // PAN, UAO, DIT, SSBS, TCO: not implemented
@@ -226,6 +244,8 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         DCZID => DCZID_BS | ((el0 && c.sctlr_el1 & sctlr::DZE == 0) as u64) << 4,
         TPIDR_EL0 => c.tpidr_el0,
         TPIDRRO_EL0 => c.tpidrro_el0,
+        CNTFRQ | CNTPCT | CNTVCT | CNTP_TVAL | CNTP_CTL | CNTP_CVAL | CNTV_TVAL | CNTV_CTL
+        | CNTV_CVAL => return timer(c, i, key),
         // EL1 from here on: exec has rejected op1 != 3 at EL0.
         SPSR_EL1 => c.spsr_el1,
         ELR_EL1 => c.elr_el1,
@@ -242,8 +262,8 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         PAR => c.par_el1,
         MAIR => c.mair_el1,
         VBAR => c.vbar_el1,
-        // ponytail: no interrupt sources until step 4.
-        ISR => 0,
+        ISR => return Err(Exit::Platform(i)),
+        CNTKCTL => c.cntkctl_el1,
         CONTEXTIDR => c.contextidr_el1,
         TPIDR_EL1 => c.tpidr_el1,
         MDSCR => c.mdscr_el1,
@@ -269,7 +289,7 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
     let el0 = c.el() == 0;
     // The TLB holds neither ASIDs nor the MMU enable: flush when either changes.
     let regime = |c: &Cpu| (mmu::asid(c), c.sctlr_el1 & sctlr::M);
-    let (before, copy) = (regime(c), c.sctlr_el1 & (sctlr::M | sctlr::A));
+    let (before, copy, pstate) = (regime(c), c.sctlr_el1 & (sctlr::M | sctlr::A), c.pstate);
     match key {
         NZCV => c.nzcv = v & 0xf000_0000,
         DAIF_R if el0 && c.sctlr_el1 & sctlr::UMA == 0 => return Err(trap_sys(i)),
@@ -284,6 +304,13 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
         }
         TPIDR_EL0 => c.tpidr_el0 = v,
         TPIDRRO_EL0 if !el0 => c.tpidrro_el0 = v,
+        // CNTFRQ_EL0 is writable only at the highest EL, which is EL1 here; the
+        // frequency is the VM's, so the write is ignored.
+        CNTFRQ if !el0 => {}
+        CNTP_TVAL | CNTP_CTL | CNTP_CVAL | CNTV_TVAL | CNTV_CTL | CNTV_CVAL => {
+            timer(c, i, key)?;
+        }
+        CNTKCTL => c.cntkctl_el1 = v & 0x3ff,
         SPSR_EL1 => c.spsr_el1 = v,
         ELR_EL1 => c.elr_el1 = v,
         SP_EL0 if c.pstate & 1 == 1 => c.sp_other = v,
@@ -311,7 +338,76 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
     if c.sctlr_el1 & (sctlr::M | sctlr::A) != copy {
         return Err(Exit::Resync); // retired; the run loop switches interpreter copy
     }
+    unmasked(pstate, c)
+}
+
+/// After a DAIF write: if it cleared PSTATE.I, `Exit::Resync` (retired) makes
+/// the VM run loop check for a pending IRQ before the next instruction.
+fn unmasked(before: u64, c: &Cpu) -> R {
+    if before & !c.pstate & PSTATE_I != 0 {
+        return Err(Exit::Resync);
+    }
     Ok(())
+}
+
+/// A generic timer register access: the EL0 checks from CNTKCTL_EL1 (EL0PCTEN,
+/// EL0VCTEN, EL0VTEN, EL0PTEN; CNTFRQ needs either counter enable), then the
+/// run loop completes it. A read-only register written is UNDEFINED.
+fn timer(c: &Cpu, i: u32, key: u32) -> R<u64> {
+    let read = bit(i, 21);
+    let need = match key {
+        CNTPCT | CNTVCT if !read => return Err(Exit::Undefined),
+        CNTFRQ => 0b11,
+        CNTPCT => 1 << 0,
+        CNTVCT => 1 << 1,
+        CNTV_TVAL | CNTV_CTL | CNTV_CVAL => 1 << 8,
+        _ => 1 << 9,
+    };
+    if c.el() == 0 && c.cntkctl_el1 & need == 0 {
+        return Err(trap_sys(i));
+    }
+    Err(Exit::Platform(i))
+}
+
+/// Whether a timer's interrupt condition is met: enabled, not masked, and the
+/// count has reached the compare value.
+pub fn timer_fires(ctl: u64, cval: u64, now: u64) -> bool {
+    ctl & 3 == 1 && now >= cval
+}
+
+/// Completes an [`Exit::Platform`] access (the MRS or MSR `i`) at counter value
+/// `now`, with frequency `frq` and `irq` the GIC's IRQ signal (for `ISR_EL1`).
+/// The caller retires the instruction.
+pub fn platform(c: &mut Cpu, i: u32, now: u64, frq: u64, irq: bool) {
+    let (key, rt, read) = (bits(i, 20, 5), bits(i, 4, 0), bit(i, 21));
+    let v = c.reg(rt);
+    let (ctl, cval) = match key {
+        CNTP_TVAL | CNTP_CTL | CNTP_CVAL => (&mut c.cntp_ctl_el0, &mut c.cntp_cval_el0),
+        _ => (&mut c.cntv_ctl_el0, &mut c.cntv_cval_el0),
+    };
+    let r = match key {
+        CNTFRQ => frq,
+        CNTPCT | CNTVCT => now,
+        ISR => (irq as u64) << 7,
+        // ISTATUS: the condition is met (reported only while enabled).
+        CNTP_CTL | CNTV_CTL if read => *ctl | ((*ctl & 1 == 1 && now >= *cval) as u64) << 2,
+        CNTP_CTL | CNTV_CTL => {
+            *ctl = v & 3;
+            return;
+        }
+        CNTP_CVAL | CNTV_CVAL if read => *cval,
+        CNTP_CVAL | CNTV_CVAL => {
+            *cval = v;
+            return;
+        }
+        // TVAL: a signed 32-bit view of CVAL - count.
+        _ if read => cval.wrapping_sub(now) as u32 as u64,
+        _ => {
+            *cval = now.wrapping_add(v as i32 as u64);
+            return;
+        }
+    };
+    c.set_reg(rt, r);
 }
 
 /// ERET from EL1. An illegal return (to EL2/EL3, AArch32 or "EL0h") stays at
@@ -359,26 +455,40 @@ pub fn take_exception(c: &mut Cpu, e: Exit) {
             ..
         }) => (0x22 << 26, Some(pc), pc),
         Exit::Fetch(f) => (abort(0x20, f), Some(f.addr), pc),
-        Exit::Hvc(_) | Exit::Unimplemented(_) | Exit::Resync => panic!("{e:?} is no exception"),
+        Exit::Hvc(_) | Exit::Unimplemented(_) | Exit::Resync | Exit::Wfi | Exit::Platform(_) => {
+            panic!("{e:?} is no exception")
+        }
     };
     enter(c, esr, far, ret, 0);
 }
 
-/// Exception entry to EL1h: ESR (IL = 1, all our instructions are 32-bit), FAR
-/// if the class sets it, ELR, SPSR (plus `spsr_extra`), DAIF masked, the vector.
+/// Takes an IRQ into EL1 before the instruction at `c.pc` (vector +0x80; ESR
+/// and FAR are left alone).
+pub fn take_irq(c: &mut Cpu) {
+    vector(c, c.pc, 0, 0x80);
+}
+
+/// Synchronous exception entry to EL1h: ESR (IL = 1, all our instructions are
+/// 32-bit), FAR if the class sets it, then [`vector`].
 fn enter(c: &mut Cpu, esr: u32, far: Option<u64>, ret: u64, spsr_extra: u64) {
-    let vector = match (c.el(), c.pstate & 1) {
-        (0, _) => 0x400, // lower EL, AArch64
-        (_, 1) => 0x200, // current EL with SP_EL1
-        _ => 0,          // current EL with SP_EL0
-    };
     c.esr_el1 = (esr | 1 << 25) as u64;
     if let Some(a) = far {
         c.far_el1 = a;
     }
+    vector(c, ret, spsr_extra, 0);
+}
+
+/// Exception entry: ELR, SPSR (plus `spsr_extra`), DAIF masked, EL1h, and the
+/// PC at the vector for the exception's origin plus `kind` (0 synchronous, 0x80 IRQ).
+fn vector(c: &mut Cpu, ret: u64, spsr_extra: u64, kind: u64) {
+    let base = match (c.el(), c.pstate & 1) {
+        (0, _) => 0x400, // lower EL, AArch64
+        (_, 1) => 0x200, // current EL with SP_EL1
+        _ => 0,          // current EL with SP_EL0
+    };
     c.elr_el1 = ret;
     c.spsr_el1 = c.nzcv | c.pstate | spsr_extra;
     c.monitor.size = 0;
     c.set_pstate(M_EL1H | DAIF);
-    c.pc = c.vbar_el1.wrapping_add(vector);
+    c.pc = c.vbar_el1.wrapping_add(base + kind);
 }

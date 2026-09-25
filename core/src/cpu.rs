@@ -50,14 +50,23 @@ pub struct Cpu {
     pub mdscr_el1: u64,
     /// OSLSR_EL1.OSLK (bit 1), set and cleared through OSLAR_EL1.
     pub os_lock: u64,
+    /// Generic timer: EL0 access controls, and each timer's ENABLE/IMASK
+    /// (ISTATUS is computed) and compare value. There's no CNTVOFF (no EL2),
+    /// so the virtual and physical counts are the same.
+    pub cntkctl_el1: u64,
+    pub cntp_ctl_el0: u64,
+    pub cntp_cval_el0: u64,
+    pub cntv_ctl_el0: u64,
+    pub cntv_cval_el0: u64,
 }
 
 /// PSTATE.M values (with M[4] = 0, AArch64): EL0t, EL1t, EL1h.
 pub const M_EL0T: u64 = 0b0000;
 pub const M_EL1T: u64 = 0b0100;
 pub const M_EL1H: u64 = 0b0101;
-/// PSTATE.{D,A,I,F}.
+/// PSTATE.{D,A,I,F}, and I alone.
 pub const DAIF: u64 = 0x3c0;
+pub const PSTATE_I: u64 = 0x80;
 /// SPSR.IL: an illegal exception return happened.
 pub const SPSR_IL: u64 = 1 << 20;
 

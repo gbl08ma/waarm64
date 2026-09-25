@@ -6,14 +6,17 @@
 pub mod cpu;
 pub mod decode;
 pub mod fp;
+pub mod gic;
 pub mod interp;
 pub mod mem;
 pub mod mmu;
+pub mod pl011;
+pub mod vm;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 4;
+pub const ABI_VERSION: u32 = 5;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -103,9 +106,108 @@ pub unsafe extern "C" fn interp_run_exit(
         Err(Exit::Brk(imm)) => [6, imm as u64],
         Err(Exit::Trap(esr)) => [7, esr as u64],
         Err(Exit::Hvc(imm)) => [8, imm as u64],
-        Err(Exit::Resync) => unreachable!("run handles Resync"),
+        // A timer register or ISR_EL1: only a VM has them.
+        Err(Exit::Platform(i)) => [2, decode::decode(i) as u64],
+        Err(Exit::Resync | Exit::Wfi) => unreachable!("run handles {r:?}"),
     };
     done
+}
+
+// The whole-VM ABI (PLAN.md §2 "Host ABI for a whole VM"). Every `vm` argument
+// comes from `vm_new` and isn't used by two calls at once; the pointers the
+// getters return stay valid until `vm_free`.
+
+/// Creates a VM with `ram_size` bytes of RAM at `ram` (layout A: after the
+/// core's heap), which appears at guest PA 0x4000_0000. The vCPU starts in its
+/// EL1 reset state at the start of RAM. Returns null if `cfg` doesn't match
+/// `ram_size`, asks for realtime mode (not implemented), or `ram` isn't 16-byte aligned.
+///
+/// # Safety
+/// `cfg` points at a `VmConfig`; `ram..ram + ram_size` is as for [`mem::Mem::new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_new(
+    ram: *mut u8,
+    ram_size: u64,
+    cfg: *const vm::VmConfig,
+) -> *mut vm::Vm {
+    // SAFETY: guaranteed by the caller.
+    let cfg = unsafe { *cfg };
+    if cfg.ram_size != ram_size || cfg.deterministic == 0 || !(ram as usize).is_multiple_of(16) {
+        return core::ptr::null_mut();
+    }
+    // SAFETY: guaranteed by the caller, alignment checked above.
+    let mem = unsafe { mem::Mem::new(ram, ram_size) };
+    Box::into_raw(Box::new(vm::Vm::new(mem, cfg)))
+}
+
+/// # Safety
+/// `vm` comes from [`vm_new`] and is not used again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_free(vm: *mut vm::Vm) {
+    // SAFETY: guaranteed by the caller.
+    drop(unsafe { Box::from_raw(vm) });
+}
+
+/// The vCPU's registers (the `cpu::Cpu` offsets, as for [`vcpu_new`]); the host
+/// may read and write them between [`vm_run`] calls.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_cpu(vm: *mut vm::Vm) -> *mut cpu::Cpu {
+    // SAFETY: guaranteed by the caller.
+    &mut unsafe { &mut *vm }.vcpu.cpu
+}
+
+/// Runs at most `budget` steps and returns the exit kind (`vm::exit`); [`vm_exit`] has the details.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_run(vm: *mut vm::Vm, budget: u64) -> u32 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &mut *vm }.run(budget)
+}
+
+/// The last run's `vm::ExitInfo`: kind, steps, value, x0–x3 (u64 each).
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_exit(vm: *const vm::Vm) -> *const vm::ExitInfo {
+    // SAFETY: guaranteed by the caller.
+    &unsafe { &*vm }.exit
+}
+
+/// The console rings (`pl011::Rings`): TX at 0, RX at 4104, each {head: u32,
+/// tail: u32, 4096 bytes}. Usable from any thread.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_console(vm: *const vm::Vm) -> *const pl011::Rings {
+    // SAFETY: guaranteed by the caller.
+    &unsafe { &*vm }.shared.console
+}
+
+/// The signal word (`vm::SIGNAL_STOP`, `vm::SIGNAL_RX`), set from any thread.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_signal(vm: *const vm::Vm) -> *const AtomicU32 {
+    // SAFETY: guaranteed by the caller.
+    &unsafe { &*vm }.shared.signal
+}
+
+/// The counters (`vm::Counters`, u64s), read from any thread with atomic loads.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_counters(vm: *const vm::Vm) -> *const vm::Counters {
+    // SAFETY: guaranteed by the caller.
+    &unsafe { &*vm }.shared.counters
 }
 
 #[cfg(test)]
