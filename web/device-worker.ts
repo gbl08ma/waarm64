@@ -26,7 +26,7 @@ async function start(init: Init) {
     }
     seen = rung;
     try {
-      devices.poll();
+      await devices.poll();
     } catch (e) {
       Atomics.store(bell, 1, -1);
       Atomics.notify(bell, 1);

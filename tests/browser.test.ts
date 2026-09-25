@@ -53,3 +53,21 @@ for (const mode of ['deterministic', 'realtime']) {
     assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'webpc: hvc0 ok\n');
   });
 }
+
+// The distro boots take minutes at interpreter speed: opt-in with WEBPC_DISTROS=alpine,debian (scripts/ci.sh sets it).
+const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
+for (const [distro, expect] of [['alpine', /webpc: alpine 3\.24\.2 6\.18\.53-0-virt\n[^]*\/dev\/vda \/ ext4 ro,[^]*webpc: test ok\n/], ['debian', /webpc: debian\n13\.[^]*\n6\.12\.107\+deb13-arm64\nwebpc: test ok\n/]] as const) {
+  const img = new URL(`../target/images/${distro}/Image`, import.meta.url);
+  const skip = !DISTRO_TESTS.includes(distro) ? `SKIPPED: set WEBPC_DISTROS=${distro}` : !existsSync(img) && `SKIPPED: run images/build.sh ${distro}`;
+  test(`${distro} boots from virtio-blk in a worker, deterministic mode`, { skip }, async () => {
+    const page = await browser.newPage();
+    await page.goto(`${base}/tests/browser/boot.html?distro=${distro}`);
+    const h = await page.waitForFunction(() => (window as never)['result'], null, { timeout: 120 * 60_000, polling: 5000 });
+    const r = (await h.jsonValue()) as { error?: string; kind: number; x0: string; steps: number; ms: number; console: string };
+    await page.close();
+    assert.equal(r.error, undefined);
+    console.log(`# chromium ${distro} boot: ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
+    assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+    assert.match(r.console.replaceAll('\r\n', '\n'), expect);
+  });
+}

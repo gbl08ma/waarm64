@@ -1,0 +1,10 @@
+#!/bin/sh
+# webpc's Alpine boot test (M4 step 4): OpenRC's local service runs this at the
+# end of the default runlevel; the runner checks these lines on the console
+# (written there directly: OpenRC hides local.d output unless rc_verbose).
+exec > /dev/console 2>&1
+echo "webpc: alpine $(cat /etc/alpine-release) $(uname -r)"
+grep ' / ' /proc/mounts
+echo "webpc: modules $(lsmod | cut -d' ' -f1 | grep -E '^(virtio_mmio|virtio_blk|ext4)$' | sort | tr '\n' ' ')"
+echo "webpc: test ok"
+poweroff

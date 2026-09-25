@@ -14,7 +14,7 @@ and runs unmodified arm64 Linux. Chromium is the primary target.
 - M1 (A64 integer interpreter + golden corpus): done. Decoder `core/build.rs` ← `core/src/a64/a64.inc`; interpreter `core/src/interp*`; corpus `tests/corpus/` (grow it with `node tools/corpus/run.ts`, compare with `cargo test`); decoder fuzzing `core/fuzz`; MIPS `bench/interp/REPORT.md`.
 - M2 (FP and AdvSIMD in the interpreter): done. FP core `core/src/fp.rs` (own implementation of the ARM pseudocode, RNE fast paths; `scripts/testfloat.sh`); FP/SIMD handlers `core/src/interp/{ldst_fp,simd,simd_int,simd_fp,float}.rs`; corpus also runs on wasm (`tests/corpus-wasm.test.ts`); MIPS in `bench/interp/REPORT.md`.
 - M3 (system level, Linux boots on the interpreter): done. Whole-VM ABI 5 `core/src/vm.rs` (run loop, deterministic time, IRQs, PSCI), `gic.rs`, `pl011.rs`, `mmu.rs`, `boot.rs` + `fdt.rs`; bare-metal tests `tests/baremetal/`; guest images `images/` (Podman; Linux + BusyBox, kvm-unit-tests); boot runners `core/tests/{boot,kvm_unit_tests}.rs` and `web/vm.ts`; boot baseline and profile `bench/boot/REPORT.md`.
-- **M4** (virtio devices and real distros) in progress, from `M4-KICKOFF.md`: steps 1–3 done (`vm_run` MIPS; GIC to 96 INTIDs, virtio-mmio transport and split queues `core/src/virtio.rs`, backends `web/devices.ts` in `web/device-worker.ts`: console, rng, read-only blk over HTTP ranges with the root filesystem on it; realtime mode, ABI 7). PLAN.md §7 M4 "Progress".
+- **M4** (virtio devices and real distros) in progress, from `M4-KICKOFF.md`: steps 1–3 done (`vm_run` MIPS; GIC to 96 INTIDs, virtio-mmio transport and split queues `core/src/virtio.rs`, backends `web/devices.ts` in `web/device-worker.ts`: console, rng, read-only blk over HTTP ranges with the root filesystem on it; realtime mode, ABI 7); step 4: Alpine and Debian 13 boot from virtio-blk (`images/build.sh alpine|debian`, `core/tests/distros.rs`), qcow2 reader (`web/qcow2.ts`, `core/tests/common/qcow2.rs`), arm64 defconfig kernel as `linux/Image-defconfig`. PLAN.md §7 M4 "Progress".
 - Loose ends no milestone owns yet (speed levers, unadvertised extensions, the arm64 spike re-run, …) are listed in PLAN.md §7 "M9". Add to that list rather than leaving TODOs scattered.
 
 ## Commands
@@ -36,6 +36,10 @@ node bench/boot/profile.ts                                    # PC-sampling prof
 images/build.sh [name...]      # guest images in rootless Podman -> target/images/{linux,kvm-unit-tests}/ (--check <name>)
 cargo test --release --test boot -- --ignored --nocapture   # boot target/images/linux natively (ci.sh runs it when images exist)
 cargo test --release --test kvm_unit_tests -- --ignored --nocapture   # kvm-unit-tests, likewise
+cargo test --release --test distros [alpine|debian] -- --ignored --nocapture  # distro boots (Debian: ~8 min native)
+WEBPC_DISTROS=alpine,debian scripts/ci.sh   # which distro boots ci.sh and npm test run (default: alpine when current)
+tests/qcow2/make.sh            # regenerate the qcow2 reader's fixtures with qemu-img
+npm run bench -- --page bench/boot/index.html --only dd    # realtime virtio-blk read throughput (also: boot_defconfig)
 (cd core/fuzz && cargo run --release --bin sweep [-- sys])    # exhaustive decoder check vs Capstone (~3 min; sys: MRS/MSR/SYS at EL1, seconds)
 (cd core && cargo fuzz run virtqueue)                         # libFuzzer on the virtio-mmio transport and split-queue parser
 tests/baremetal/build.sh && tests/baremetal/oracle.sh [--hvf] # rebuild the bare-metal EL1 tests (.bin committed), run them on QEMU virt (TCG, or hvf on the Mac)

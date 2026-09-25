@@ -1,23 +1,26 @@
 //! Boots the Buildroot guest (target/images/linux/, from images/build.sh) with
 //! virtio-console, virtio-rng and its root filesystem on virtio-blk: Linux runs
 //! /test.sh and powers off; the console must show the test passed. Once in
-//! deterministic mode and once in realtime mode. Ignored by default (it needs
+//! deterministic mode and once in realtime mode, and once with the arm64
+//! defconfig kernel (Image-defconfig). Ignored by default (it needs
 //! the images and a release build); scripts/ci.sh runs it with
 //! `cargo test --release --test boot -- --ignored`.
 
 mod common;
 
 fn boot(realtime: bool) {
-    let kernel = common::image("linux/Image");
-    let r = common::boot(
-        &kernel,
-        None,
-        common::GUEST_CMDLINE,
-        &common::guest_devices(),
+    boot_kernel("linux/Image", realtime);
+}
+
+fn boot_kernel(image: &str, realtime: bool) {
+    let kernel = common::image(image);
+    let devices = common::guest_devices("linux/rootfs.ext4");
+    let r = common::boot(&common::Boot {
+        devices: &devices,
         realtime,
-        20_000_000_000,
-        true,
-    );
+        echo: true,
+        ..common::Boot::new(&kernel, common::GUEST_CMDLINE)
+    });
     eprintln!("\n[{}]", r.summary);
     assert!(r.powered_off(), "no SYSTEM_OFF");
     let out = &r.console;
@@ -48,4 +51,10 @@ fn linux_boots_and_runs_the_test_script() {
 #[ignore = "needs target/images (images/build.sh) and --release"]
 fn linux_boots_in_realtime_mode() {
     boot(true);
+}
+
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn defconfig_kernel_boots() {
+    boot_kernel("linux/Image-defconfig", false);
 }

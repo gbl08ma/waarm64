@@ -4,11 +4,13 @@
 // device protocol. `Devices` works on the shared memory from any thread: in the
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
 import { splitmix64 } from '../tools/corpus/corpus.ts';
+import { openDisk } from './qcow2.ts';
 
 /**
  * Host-side device configuration, one per virtio-mmio slot (in order). `blk`
- * is a read-only disk read with HTTP range requests; `size` (bytes, a
- * multiple of 512) is filled in by `bootVm` with a HEAD request if missing.
+ * is a read-only disk image (raw or qcow2, web/qcow2.ts) read with HTTP range
+ * requests; `size` (its virtual size in bytes, a multiple of 512) is filled in
+ * by `bootVm` from the file's first bytes if missing.
  */
 export type DeviceSpec = { type: 'console' } | { type: 'rng' } | { type: 'blk'; url: string; size?: number };
 
@@ -45,8 +47,11 @@ type Segment = { off: number; len: number };
 type Request = { w0: number; queue: number; read: Segment[]; write: Segment[] };
 type Ctx = { ram: () => Uint8Array; complete: (w0: number, len: number) => void };
 
-/** A backend handles a request now (returns bytes written), or keeps it and completes it later. */
-type Backend = { request(r: Request): number | undefined; reset(): void };
+/**
+ * A backend handles a request now (returns bytes written, or a promise of
+ * them: requests complete in order either way), or keeps it and completes it later.
+ */
+type Backend = { request(r: Request): number | Promise<number> | undefined; reset(): void };
 
 function console_(out: (text: string) => void, ctx: Ctx): Backend {
   const decoder = new TextDecoder();
@@ -138,23 +143,30 @@ const S_IOERR = 1;
 const S_UNSUPP = 2;
 
 /**
- * Read-only virtio-blk over HTTP range requests: a synchronous XHR (workers
- * only), so the backend stays synchronous like the others and the device
- * worker simply blocks on the network.
+ * Read-only virtio-blk over HTTP range requests: synchronous XHRs (workers
+ * only), so the device worker simply blocks on the network. Only qcow2's
+ * compressed clusters are asynchronous (DecompressionStream).
  */
 // ponytail: one request at a time, no cache (the guest's page cache is the cache); batch or cache if an I/O benchmark says so.
-function blk(ctx: Ctx, url: string, size: number): Backend {
-  const read = (off: number, len: number) => {
+function blk(ctx: Ctx, url: string): Backend {
+  const xhr = (method: string, range?: string) => {
     const x = new XMLHttpRequest();
-    x.open('GET', url, false);
+    x.open(method, url, false);
     x.responseType = 'arraybuffer';
-    x.setRequestHeader('Range', `bytes=${off}-${off + len - 1}`);
+    if (range) x.setRequestHeader('Range', range);
     x.send();
+    return x;
+  };
+  const head = xhr('HEAD');
+  if (head.status !== 200) throw new Error(`${url}: ${head.status}`);
+  const disk = openDisk((off, len) => {
+    if (len === 0) return new Uint8Array(0);
+    const x = xhr('GET', `bytes=${off}-${off + len - 1}`);
     const b = x.response as ArrayBuffer | null;
     return x.status === 206 && b?.byteLength === len ? new Uint8Array(b) : undefined;
-  };
+  }, Number(head.getResponseHeader('content-length')));
   return {
-    request(r) {
+    async request(r) {
       const ram = ctx.ram();
       const last = r.write.at(-1);
       if (!last || last.len === 0) return 0; // no status byte: nothing to answer with
@@ -164,8 +176,7 @@ function blk(ctx: Ctx, url: string, size: number): Backend {
       const h = new DataView(gather(ram, r.read, 16).slice().buffer);
       let [status, n] = [S_UNSUPP, 0];
       if (h.byteLength === 16 && h.getUint32(0, true) === T_IN) {
-        const off = Number(h.getBigUint64(8, true)) * 512;
-        const bytes = room === 0 ? new Uint8Array(0) : off + room <= size ? read(off, room) : undefined;
+        const bytes = await disk.read(Number(h.getBigUint64(8, true)) * 512, room);
         if (bytes) scatter(ram, data, bytes);
         [status, n] = bytes ? [S_OK, room] : [S_IOERR, 0];
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_GET_ID) {
@@ -207,7 +218,7 @@ export class Devices {
       switch (d.type) {
         case 'console': return console_((t) => out(i, t), ctx);
         case 'rng': return rng(ctx, deterministic);
-        case 'blk': return blk(ctx, d.url, d.size ?? 0);
+        case 'blk': return blk(ctx, d.url);
       }
     });
     this.epochs = specs.map(() => 0);
@@ -218,10 +229,14 @@ export class Devices {
     specs.forEach((d, i) => new Uint8Array(memory.buffer).set(deviceEntry(d).config, shared[i] + CONFIG));
   }
 
-  /** Takes every device's events and requests, completing what can be completed now. */
-  poll() {
-    const u32 = new Uint32Array(this.memory.buffer);
-    this.backends.forEach((b, i) => {
+  /**
+   * Takes every device's events and requests, completing what can be completed
+   * now; resolves once the asynchronous ones completed too (in order). Without
+   * those it all happens before it returns.
+   */
+  async poll() {
+    for (const [i, b] of this.backends.entries()) {
+      const u32 = new Uint32Array(this.memory.buffer);
       const base = this.shared[i] / 4;
       Atomics.exchange(u32, base + EVENTS / 4, 0);
       const epoch = Atomics.load(u32, base + EPOCH / 4) & 0xff;
@@ -242,9 +257,9 @@ export class Devices {
         Atomics.store(u32, ring + 1, tail);
         if (w0 >>> 24 !== epoch) continue; // posted before a reset
         const len = b.request(r);
-        if (len !== undefined) this.complete(i, w0, len);
+        if (len !== undefined) this.complete(i, w0, typeof len === 'number' ? len : await len);
       }
-    });
+    }
   }
 
   private complete(i: number, w0: number, len: number) {

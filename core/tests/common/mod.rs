@@ -4,13 +4,15 @@
 //! the guest the same bytes at the same steps in deterministic mode).
 #![allow(dead_code)] // each runner uses part of it
 
+pub mod qcow2;
+
+use qcow2::Disk;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 use webpc_core::mem::{Access, Mem};
 use webpc_core::virtio::{DeviceEntry, Request};
 use webpc_core::vm::{RAM_BASE, SIGNAL_DEVICE, Vm, VmConfig, exit};
 
-pub const RAM_SIZE: u64 = 256 << 20;
 /// Where the runners put the kernel and initrd (web/vm.ts does the same).
 const KERNEL: u64 = RAM_BASE + (2 << 20);
 const INITRD: u64 = RAM_BASE + (128 << 20);
@@ -20,24 +22,55 @@ pub fn image(rel: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e} (run images/build.sh)"))
 }
 
+/// A target/images disk image (raw or qcow2), open for the life of the process.
+pub fn disk(rel: &str) -> &'static Disk {
+    let d = Disk::open(image(rel).leak()).unwrap_or_else(|e| panic!("{rel}: {e}"));
+    Box::leak(Box::new(d))
+}
+
 /// The virtio devices a runner configures, in slot order (web/devices.ts
 /// `DeviceSpec`). `Blk` is a read-only disk image.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub enum Dev {
     Console,
     Rng,
-    Blk(&'static [u8]),
+    Blk(&'static Disk),
 }
 
-/// What the test and benchmark guests expect, with target/images/linux's root
-/// filesystem as /dev/vda (web/vm.ts `guestDevices`).
-pub fn guest_devices() -> Vec<Dev> {
-    let disk = image("linux/rootfs.ext4").leak();
-    vec![Dev::Console, Dev::Rng, Dev::Blk(disk)]
+/// What the test and benchmark guests expect, with `root` (a target/images
+/// disk image) as /dev/vda (web/vm.ts `guestDevices`).
+pub fn guest_devices(root: &str) -> Vec<Dev> {
+    vec![Dev::Console, Dev::Rng, Dev::Blk(disk(root))]
 }
 
 /// Their kernel command line (web/vm.ts `GUEST_CMDLINE`).
 pub const GUEST_CMDLINE: &str = "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init";
+
+/// A distro image from images/build.sh: kernel, initrd and root disk (target/images
+/// paths), and a command line that runs a test and powers off (web/vm.ts `DISTROS`).
+pub struct Distro {
+    pub kernel: &'static str,
+    pub initrd: &'static str,
+    pub disk: &'static str,
+    pub cmdline: &'static str,
+}
+
+/// Alpine: OpenRC's local service runs images/alpine/webpc.start, which powers off.
+pub const ALPINE: Distro = Distro {
+    kernel: "alpine/Image",
+    initrd: "alpine/initramfs-virt",
+    disk: "alpine/rootfs.ext4",
+    cmdline: "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+};
+
+/// Debian: the stock image; systemd runs the command from the kernel command
+/// line as a unit once the system is up, then powers off (systemd-run-generator).
+pub const DEBIAN: Distro = Distro {
+    kernel: "debian/Image",
+    initrd: "debian/initrd.img",
+    disk: "debian/disk.qcow2",
+    cmdline: "console=ttyAMA0 root=/dev/vda1 ro systemd.run=\"/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; echo webpc: test ok'\" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff",
+};
 
 impl Dev {
     /// web/devices.ts `deviceEntry`: the entry and the initial config space.
@@ -58,7 +91,7 @@ impl Dev {
             Dev::Rng => e(4, 0, 1, 64, vec![]),
             Dev::Blk(disk) => {
                 // SEG_MAX and RO; capacity in sectors, seg_max 126.
-                let mut c = (disk.len() as u64 / 512).to_le_bytes().to_vec();
+                let mut c = (disk.size() / 512).to_le_bytes().to_vec();
                 c.extend([0; 4]);
                 c.extend(126u32.to_le_bytes());
                 e(2, 1 << 2 | 1 << 5, 1, 128, c)
@@ -70,7 +103,7 @@ impl Dev {
 /// A virtio-blk request on a read-only `disk` (web/devices.ts `blk`): the
 /// header from the readable bytes, data into the writable ones but the last,
 /// which takes the status. Returns the bytes written.
-fn blk(disk: &[u8], read: &[&mut [u8]], write: &mut [&mut [u8]]) -> u32 {
+fn blk(disk: &Disk, read: &[&mut [u8]], write: &mut [&mut [u8]]) -> u32 {
     let hdr: Vec<u8> = read
         .iter()
         .flat_map(|s| s.iter().copied())
@@ -94,13 +127,13 @@ fn blk(disk: &[u8], read: &[&mut [u8]], write: &mut [&mut [u8]]) -> u32 {
     };
     let (status, n) = match (hdr.len() == 16).then(|| word(0)) {
         Some(0) => {
-            let off = u64::from_le_bytes(hdr[8..16].try_into().unwrap()) as usize * 512;
-            match disk.get(off..off + room) {
-                Some(src) => {
-                    fill(&mut data, src);
-                    (0, room)
-                }
-                None => (1, 0),
+            let off = u64::from_le_bytes(hdr[8..16].try_into().unwrap()).wrapping_mul(512);
+            let mut src = vec![0; room];
+            if disk.read(off, &mut src) {
+                fill(&mut data, &src);
+                (0, room)
+            } else {
+                (1, 0)
             }
         }
         Some(8) => {
@@ -214,23 +247,54 @@ impl Run {
     }
 }
 
-/// Boots `kernel` (and `initrd`) with `cmdline` and `devices`, and runs up to
-/// `max_steps`, in deterministic mode unless `realtime`. With `echo`, the
-/// console goes to stderr as it comes (seen with --nocapture).
-pub fn boot(
-    kernel: &[u8],
-    initrd: Option<&[u8]>,
-    cmdline: &str,
-    devices: &[Dev],
-    realtime: bool,
-    max_steps: u64,
-    echo: bool,
-) -> Run {
-    let mut ram = vec![0u128; RAM_SIZE as usize / 16];
-    // SAFETY: ram is 16-byte aligned, RAM_SIZE bytes long, and outlives the Vm.
-    let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, RAM_SIZE) };
+/// What to boot: `kernel` (and `initrd`) with `cmdline` and `devices` on
+/// `ram_size` bytes of RAM, run up to `max_steps`, in deterministic mode unless
+/// `realtime`. With `echo`, the console goes to stderr as it comes (seen with
+/// --nocapture).
+pub struct Boot<'a> {
+    pub kernel: &'a [u8],
+    pub initrd: Option<&'a [u8]>,
+    pub cmdline: &'a str,
+    pub devices: &'a [Dev],
+    pub ram_size: u64,
+    pub realtime: bool,
+    pub max_steps: u64,
+    pub echo: bool,
+}
+
+impl<'a> Boot<'a> {
+    /// 256 MiB, no initrd or devices, deterministic, 20 G steps, quiet.
+    pub fn new(kernel: &'a [u8], cmdline: &'a str) -> Boot<'a> {
+        Boot {
+            kernel,
+            initrd: None,
+            cmdline,
+            devices: &[],
+            ram_size: 256 << 20,
+            realtime: false,
+            max_steps: 20_000_000_000,
+            echo: false,
+        }
+    }
+}
+
+pub fn boot(b: &Boot) -> Run {
+    let &Boot {
+        kernel,
+        initrd,
+        cmdline,
+        devices,
+        ram_size,
+        realtime,
+        max_steps,
+        echo,
+    } = b;
+    let mut ram = vec![0u128; ram_size as usize / 16];
+    // SAFETY: ram is 16-byte aligned, ram_size bytes long, and outlives the Vm.
+    let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, ram_size) };
     let (entries, configs): (Vec<_>, Vec<_>) = devices.iter().map(|d| d.entry()).unzip();
     let cfg = VmConfig {
+        ram_size,
         deterministic: !realtime as u64,
         ..VmConfig::default()
     };

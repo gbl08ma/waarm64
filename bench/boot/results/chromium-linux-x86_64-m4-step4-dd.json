@@ -1,0 +1,49 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-25T21:13:45.969Z",
+ "commit": "f3b37b35abd9",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "blk_dd_read",
+   "unit": "MiB/s",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-dd.sh",
+    "bytes": 33554432,
+    "bs": "1M",
+    "realtime": true,
+    "backend": "sync XHR, one request at a time"
+   },
+   "samples": [
+    46.32578609132231,
+    45.93345391085062,
+    46.68397863948173,
+    44.76745406044977,
+    46.414481318331774,
+    44.68119270843912,
+    46.27855350771724,
+    46.01171860800603,
+    45.590215201920984,
+    46.50723405508329
+   ],
+   "median": 46.145136057861635,
+   "iqr": 0.7162826324260081,
+   "n": 10
+  }
+ ]
+}

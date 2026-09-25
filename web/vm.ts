@@ -6,6 +6,7 @@
 // Time is deterministic unless `realtime` is set (the host clock, and idle
 // WFIs sleep on the signal word).
 import { Devices, deviceEntry, type DeviceSpec, type DevicesInit } from './devices.ts';
+import { isQcow2, qcow2Size } from './qcow2.ts';
 
 export const ABI = 7;
 const RAM_BASE = 0x4000_0000;
@@ -42,6 +43,19 @@ export type BootOptions = { ramSize: number; kernel: Uint8Array; initrd?: Uint8A
 export const guestDevices = (disk: string): DeviceSpec[] => [{ type: 'console' }, { type: 'rng' }, { type: 'blk', url: disk }];
 /** Their kernel command line. */
 export const GUEST_CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init';
+/**
+ * Distro images from images/build.sh (paths under target/images) with a command
+ * line that runs a test and powers off (core/tests/common `ALPINE`, `DEBIAN`).
+ * Alpine: OpenRC's local service runs images/alpine/webpc.start. Debian: the
+ * stock image; systemd runs `systemd.run=` as a unit, then powers off.
+ */
+export const DISTROS = {
+  alpine: { kernel: 'alpine/Image', initrd: 'alpine/initramfs-virt', disk: 'alpine/rootfs.ext4', cmdline: 'console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro' },
+  debian: {
+    kernel: 'debian/Image', initrd: 'debian/initrd.img', disk: 'debian/disk.qcow2',
+    cmdline: `console=ttyAMA0 root=/dev/vda1 ro systemd.run="/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; echo webpc: test ok'" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff`,
+  },
+} as const;
 
 // The scratch page before RAM: VmConfig, device entries, the doorbell, the command line.
 const S_CFG = 0;
@@ -61,9 +75,11 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const bytes = () => new Uint8Array(memory.buffer);
   const specs = await Promise.all((o.devices ?? []).map(async (d) => {
     if (d.type !== 'blk' || d.size !== undefined) return d;
-    const r = await fetch(d.url, { method: 'HEAD' });
-    if (!r.ok) throw new Error(`${d.url}: ${r.status}`);
-    return { ...d, size: Number(r.headers.get('content-length')) };
+    // The capacity: a qcow2 header's virtual size, or the file size.
+    const r = await fetch(d.url, { headers: { Range: 'bytes=0-31' } });
+    if (r.status !== 206) throw new Error(`${d.url}: ${r.status}`);
+    const head = new Uint8Array(await r.arrayBuffer());
+    return { ...d, size: isQcow2(head) ? qcow2Size(head) : Number(r.headers.get('content-range')?.split('/')[1]) };
   }));
   const deterministic = !o.realtime;
   // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries.
@@ -183,7 +199,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
   if (!inWorker || init.specs.length === 0) {
     // The blk backend needs a worker (Node has no XHR; a page can't make binary sync XHRs).
     const d = new Devices(init, out);
-    return { kick: () => d.poll(), output: () => text, flush: async () => {}, close: () => {} };
+    return { kick: () => void d.poll(), output: () => text, flush: async () => {}, close: () => {} };
   }
   const worker = new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
   let flushed = () => {};

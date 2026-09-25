@@ -1,0 +1,147 @@
+// Disk images for the read-only block backends (web/devices.ts): raw, or qcow2
+// v2/v3 read through its L1/L2 tables (M4 step 4). Written from the format
+// spec, QEMU's docs/interop/qcow2.txt (no QEMU code). Refcounts are ignored
+// (read-only); unallocated and zero-flag clusters read as zeros; compressed
+// clusters are raw deflate. Refused at open: encryption, backing files,
+// external data files, extended L2 entries, zstd, unknown incompatible
+// features. core/tests/common/qcow2.rs is the native twin.
+
+/** Reads exactly `len` bytes of the image file at `off`, or undefined (error, past the end). */
+export type ReadAt = (off: number, len: number) => Uint8Array | undefined;
+
+export type Disk = {
+  /** Virtual size in bytes. */
+  size: number;
+  format: 'raw' | 'qcow2';
+  /** Exactly `len` bytes at `off`, or undefined past the end or on a read error. */
+  read(off: number, len: number): Promise<Uint8Array | undefined>;
+};
+
+const MAGIC = 0x514649fb; // "QFI\xfb"
+const HEADER = 112; // enough for every field we read
+const OFFSET_MASK = 0x00ff_ffff_ffff_fe00n; // bits 9-55: L1/L2 table and standard cluster offsets
+const COMPRESSED = 1n << 62n;
+const ZERO = 1n; // v3: the cluster reads as zeros
+const KNOWN_INCOMPATIBLE = 1n << 0n | 1n << 1n | 1n << 3n; // dirty, corrupt (both only matter to writers), compression type
+
+/** Whether the first bytes of a file are a qcow2 header. */
+export const isQcow2 = (head: Uint8Array) => head.length >= 4 && new DataView(head.buffer, head.byteOffset).getUint32(0) === MAGIC;
+
+/** The virtual size from a qcow2 header (its first 32 bytes). */
+export const qcow2Size = (head: Uint8Array) => Number(new DataView(head.buffer, head.byteOffset).getBigUint64(24));
+
+/** Opens an image of `fileSize` bytes: qcow2 by its magic, raw otherwise. Throws on what qcow2 we don't support. */
+export function openDisk(readAt: ReadAt, fileSize: number): Disk {
+  const head = fileSize >= HEADER ? readAt(0, HEADER) : undefined;
+  if (!head || !isQcow2(head)) {
+    return { size: fileSize, format: 'raw', read: async (off, len) => (off + len <= fileSize ? readAt(off, len) : undefined) };
+  }
+  const h = new DataView(head.buffer, head.byteOffset, HEADER);
+  const fail = (why: string): never => { throw new Error(`qcow2: ${why}`); };
+  const version = h.getUint32(4);
+  if (version !== 2 && version !== 3) fail(`version ${version}`);
+  if (h.getBigUint64(8) !== 0n) fail('backing files are not supported');
+  const clusterBits = h.getUint32(20);
+  if (clusterBits < 9 || clusterBits > 21) fail(`cluster_bits ${clusterBits}`);
+  const size = Number(h.getBigUint64(24));
+  if (h.getUint32(32) !== 0) fail('encrypted images are not supported');
+  const l1Size = h.getUint32(36);
+  const l1Offset = Number(h.getBigUint64(40));
+  if (version === 3) {
+    const incompatible = h.getBigUint64(72);
+    if (incompatible & 1n << 2n) fail('external data files are not supported');
+    if (incompatible & 1n << 4n) fail('extended L2 entries are not supported');
+    if (incompatible & ~KNOWN_INCOMPATIBLE) fail(`unknown incompatible features 0x${incompatible.toString(16)}`);
+    if (incompatible & 1n << 3n && h.getUint32(100) > 104 && h.getUint8(104) !== 0) fail('zstd compression is not supported');
+  }
+  const cs = 2 ** clusterBits;
+  const l2Entries = cs / 8;
+  if (l1Size * l2Entries * cs < size) fail('L1 table too small for the virtual size');
+  const l1b = readAt(l1Offset, l1Size * 8) ?? fail('L1 table past the end of the file');
+  const l1 = new DataView(l1b.buffer, l1b.byteOffset, l1b.byteLength);
+
+  // L2 tables, kept once read (1/8192 of the virtual size at 64 KiB clusters).
+  const l2s = new Map<number, DataView>();
+  const l2 = (i: number) => {
+    let t = l2s.get(i);
+    if (!t) {
+      const off = Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
+      const b = off === 0 ? new Uint8Array(cs) : readAt(off, cs); // unallocated: every entry 0
+      if (!b) return undefined;
+      l2s.set(i, (t = new DataView(b.buffer, b.byteOffset, cs)));
+    }
+    return t;
+  };
+
+  // Compressed clusters: bits 0..x-1 the host offset, x..61 the number of 512-byte
+  // sectors after the first; kept decompressed for the few most recent (a guest
+  // reads a 64 KiB cluster a page at a time).
+  const x = BigInt(62 - (clusterBits - 8));
+  const recent = new Map<bigint, Uint8Array>();
+  const compressed = async (e: bigint) => {
+    let data = recent.get(e);
+    if (!data) {
+      const off = Number(e & ((1n << x) - 1n));
+      const sectors = Number((e & ((1n << 62n) - 1n)) >> x) + 1;
+      const len = Math.min(sectors * 512 - (off & 511), fileSize - off);
+      const input = len > 0 ? readAt(off, len) : undefined;
+      data = input && (await inflate(input, cs));
+      if (!data) return undefined;
+      recent.set(e, data);
+      if (recent.size > 16) recent.delete(recent.keys().next().value!);
+    }
+    return data;
+  };
+
+  // ponytail: one host read per cluster; merge contiguous clusters if the HTTP request count matters.
+  const read = async (off: number, len: number) => {
+    if (off < 0 || off + len > size) return undefined;
+    const out = new Uint8Array(len);
+    for (let k = 0; k < len;) {
+      const pos = off + k;
+      const c = Math.floor(pos / cs);
+      const o = pos % cs;
+      const n = Math.min(cs - o, len - k);
+      const t = l2(Math.floor(c / l2Entries));
+      if (!t) return undefined;
+      const e = t.getBigUint64((c % l2Entries) * 8);
+      if (e & COMPRESSED) {
+        const data = await compressed(e);
+        if (!data) return undefined;
+        out.set(data.subarray(o, o + n), k);
+      } else if (!(version === 3 && e & ZERO) && (e & OFFSET_MASK) !== 0n) {
+        const data = readAt(Number(e & OFFSET_MASK) + o, n);
+        if (!data) return undefined;
+        out.set(data, k);
+      } // else unallocated or zero: out is already zeros
+      k += n;
+    }
+    return out;
+  };
+  return { size, format: 'qcow2', read };
+}
+
+/**
+ * Raw deflate of one cluster: exactly `size` bytes out, or undefined. The input
+ * runs to a sector boundary, so it usually ends with the next cluster's bytes:
+ * the stream reports them as junk after its end, having produced its output.
+ */
+async function inflate(input: Uint8Array, size: number) {
+  const ds = new DecompressionStream('deflate-raw');
+  const w = ds.writable.getWriter();
+  w.write(input as Uint8Array<ArrayBuffer>).catch(() => {});
+  w.close().catch(() => {});
+  const r = ds.readable.getReader();
+  const out = new Uint8Array(size);
+  let n = 0;
+  try {
+    for (;;) {
+      const { done, value } = await r.read();
+      if (done || n + value.length > size) break;
+      out.set(value, n);
+      n += value.length;
+    }
+  } catch { /* junk after the end */ }
+  r.cancel().catch(() => {});
+  return n === size ? out : undefined;
+}

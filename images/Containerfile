@@ -10,5 +10,6 @@ RUN rm -f /etc/apt/sources.list.d/* /etc/apt/sources.list \
       build-essential bc bison flex cpio rsync file unzip wget ca-certificates git \
       python3 perl patch gzip bzip2 xz-utils which \
       gcc-aarch64-linux-gnu \
+      e2fsprogs fdisk qemu-utils qemu-user-static libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 ENV LANG=C.UTF-8

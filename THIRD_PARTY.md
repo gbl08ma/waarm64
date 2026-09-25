@@ -20,6 +20,7 @@ copyright/license header in the file.
 | libfuzzer-sys (`core/fuzz` only) | 0.4.13 | (MIT OR Apache-2.0) AND NCSA (bundled libFuzzer) |
 | capstone / capstone-sys (`core/fuzz` only) | 0.14.0 / 0.18.0 | MIT; bundles Capstone 5.0 (BSD-3-Clause) |
 | Berkeley SoftFloat 3e + TestFloat 3e (built under `target/testfloat` by `scripts/testfloat.sh`; `testfloat_gen` only) | `a0c6494cdc11` / `a9c849f1b0eb` | BSD-3-Clause |
+| miniz_oxide (`core` dev-dependency: the native test runners' qcow2 reader, `core/tests/common/qcow2.rs`; default features off) | 0.9.1 | MIT OR Zlib OR Apache-2.0 |
 
 ## Reference projects: verified licenses
 
