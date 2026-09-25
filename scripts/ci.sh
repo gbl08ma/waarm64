@@ -12,4 +12,10 @@ step wasm build;  scripts/build-wasm.sh -q
 step npm deps;    [ -d node_modules ] || npm ci --no-fund --no-audit
 step typecheck;   npx tsc --noEmit
 step js tests;    npm test --silent
+step boot test
+if msg=$(images/build.sh --check); then
+  cargo test -q --release --test boot -- --ignored
+else
+  printf '\n**************** SKIPPED: %s ****************\n' "$msg"
+fi
 printf '\nCI OK\n'

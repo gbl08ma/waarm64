@@ -3,8 +3,10 @@
 //! The crate builds natively (for tests) and for wasm32 with shared imported
 //! memory and atomics.
 
+pub mod boot;
 pub mod cpu;
 pub mod decode;
+pub mod fdt;
 pub mod fp;
 pub mod gic;
 pub mod interp;
@@ -157,6 +159,38 @@ pub unsafe extern "C" fn vm_free(vm: *mut vm::Vm) {
 pub unsafe extern "C" fn vm_cpu(vm: *mut vm::Vm) -> *mut cpu::Cpu {
     // SAFETY: guaranteed by the caller.
     &mut unsafe { &mut *vm }.vcpu.cpu
+}
+
+/// Boots the arm64 `Image` the host copied to guest PA `kernel_pa`, with the
+/// initrd at `initrd_pa` (`initrd_len` 0 for none) and the kernel command line
+/// at `cmdline_ptr` (UTF-8, `cmdline_len` bytes, in linear memory). The core
+/// writes the DTB into the top 2 MiB of RAM, which the host leaves free, and
+/// sets x0 and the PC (booting.rst). Returns 0, or 1 if the Image or the
+/// layout is invalid.
+///
+/// # Safety
+/// See the note above [`vm_new`]; `cmdline_ptr..+cmdline_len` is readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_boot(
+    vm: *mut vm::Vm,
+    kernel_pa: u64,
+    initrd_pa: u64,
+    initrd_len: u64,
+    cmdline_ptr: *const u8,
+    cmdline_len: usize,
+) -> u32 {
+    // SAFETY: guaranteed by the caller.
+    let (vm, cmdline) = unsafe {
+        (
+            &mut *vm,
+            core::slice::from_raw_parts(cmdline_ptr, cmdline_len),
+        )
+    };
+    let Ok(cmdline) = core::str::from_utf8(cmdline) else {
+        return 1;
+    };
+    let initrd = (initrd_len > 0).then_some((initrd_pa, initrd_len));
+    vm.boot(kernel_pa, initrd, cmdline).is_err() as u32
 }
 
 /// Runs at most `budget` steps and returns the exit kind (`vm::exit`); [`vm_exit`] has the details.

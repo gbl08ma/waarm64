@@ -1,0 +1,10 @@
+#!/bin/sh
+# webpc test initramfs: mount the pseudo filesystems, run the test script,
+# report, power off (PSCI SYSTEM_OFF).
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+echo "webpc: init"
+/test.sh
+echo "webpc: test exit $?"
+poweroff -f

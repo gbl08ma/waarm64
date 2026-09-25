@@ -1,0 +1,24 @@
+# Linux 6.18 for webpc: allnoconfig plus these (images/build.sh checks that each
+# one took effect). Our platform only: arm64 4K pages and 48-bit VA, GICv2,
+# PL011 with earlycon, the arch timer, PSCI, an initramfs; printk, devtmpfs.
+# No modules, networking, block layer or virtio: at interpreter speed, boot
+# time is what this costs. A distro-like config comes in M4.
+CONFIG_ARM64_4K_PAGES=y
+CONFIG_ARM64_VA_BITS_48=y
+CONFIG_HZ_100=y
+CONFIG_PRINTK=y
+CONFIG_PRINTK_TIME=y
+CONFIG_TTY=y
+CONFIG_SERIAL_AMBA_PL011=y
+CONFIG_SERIAL_AMBA_PL011_CONSOLE=y
+CONFIG_ARM_GIC=y
+CONFIG_ARM_ARCH_TIMER=y
+CONFIG_ARM_PSCI_FW=y
+CONFIG_BLK_DEV_INITRD=y
+CONFIG_DEVTMPFS=y
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
+CONFIG_BINFMT_ELF=y
+CONFIG_BINFMT_SCRIPT=y
+CONFIG_FUTEX=y
+CONFIG_POSIX_TIMERS=y
