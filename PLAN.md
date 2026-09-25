@@ -8,7 +8,7 @@ primary target.
 
 | Area | Decision |
 |---|---|
-| Guest ISA | ARMv8.0-A AArch64 with FP and AdvSIMD (NEON), no AArch32. LSE atomics (v8.1) added early. No SVE/SME, PAC, BTI or MTE: leave them unadvertised, and their hint-space encodings run as NOPs |
+| Guest ISA | ARMv8.0-A AArch64 with FP and AdvSIMD (NEON), no AArch32. LSE atomics (v8.1) added early. The crypto extensions (AES, PMULL, SHA1, SHA2) come in M6.5, and stay unadvertised until then. No SVE/SME, PAC, BTI or MTE: leave them unadvertised, and their hint-space encodings run as NOPs |
 | Privilege | EL0 and EL1 only. No EL2/EL3 and no secure state |
 | MMU | Stage 1 only, 4K granule, 48-bit VA, TTBR0/TTBR1, ASIDs, software-managed access flag |
 | Platform | GICv2 (a GICv3 subset later), generic timer, PL011 UART, PSCI over HVC handled by the host, virtio-mmio v2, and a DTB generated from the VM config |
@@ -312,6 +312,11 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
   - NEON → SIMD128 lowering;
   - tuning compile thresholds and batch sizes for V8 tiering.
 - **Exit:** meets the targets set after M5, and the comparison table against QEMU TCG, native and in-browser peers is published.
+
+### M6.5 — Crypto extensions
+- AES (`AESE`/`AESD`/`AESMC`/`AESIMC`), `PMULL`/`PMULL2` (including the 64-bit form), SHA1 and SHA256, in the interpreter and the JIT. Advertise them in `ID_AA64ISAR0_EL1` and the hwcaps only once both tiers pass.
+- They come after the JIT so the lowering can be designed with it (wasm SIMD128 has no AES or carry-less multiply, so they're helper calls or table-based), and before SMP so they're settled before the concurrency work.
+- **Exit:** golden-corpus coverage on the M4, NIST/known-answer vectors, and `openssl speed` (AES-GCM, SHA-256) recorded in Chromium against the NEON-only baseline.
 
 ### M7 — SMP
 - One worker per vCPU on shared memory. PSCI `CPU_ON`, GIC SGIs, WFI → `Atomics.wait`, broadcast TLBI/IC with `DSB` completion, per-worker code caches with cross-vCPU invalidation.
