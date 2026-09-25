@@ -216,10 +216,8 @@ fn system() {
     assert_eq!(one(0xd53b4200, &[], N | V).x[0], N | V); // mrs x0, nzcv
     assert_eq!(one(0xd51b4201, &[(1, u64::MAX)], 0).nzcv, 0xf000_0000); // msr nzcv, x1
     assert_eq!(T::new(&[0]).step(), Err(Exit::Undefined)); // udf #0
-    assert!(matches!(
-        T::new(&[0xd5380000]).step(),
-        Err(Exit::Unimplemented(_))
-    )); // mrs x0, midr_el1 (M3)
+    // mrs x0, midr_el1: an EL1 register, UNDEFINED at EL0 (Linux emulates it).
+    assert_eq!(T::new(&[0xd5380000]).step(), Err(Exit::Undefined));
 }
 
 #[test]
@@ -389,14 +387,32 @@ fn lse() {
 #[test]
 fn faults_leave_state_alone() {
     let mut t = T::new(&[0xf9400120]).x(9, 0xffff_0000).x(0, 1); // ldr x0, [x9]
-    assert_eq!(t.step(), Err(Exit::Fault(Fault::Bus { addr: 0xffff_0000 })));
+    assert_eq!(
+        t.step(),
+        Err(Exit::Fault(Fault::Bus {
+            addr: 0xffff_0000,
+            write: false
+        }))
+    );
     assert_eq!((t.c.x[0], t.c.pc), (1, CODE));
     let mut t = T::new(&[0xc85f7d20]).x(9, DATA + 4); // ldxr x0, [x9]
-    assert_eq!(t.step(), Err(Exit::Fault(Fault::Align { addr: DATA + 4 })));
+    assert_eq!(
+        t.step(),
+        Err(Exit::Fault(Fault::Align {
+            addr: DATA + 4,
+            write: false
+        }))
+    );
     // ldp x3, x4, [sp], #16 with the second word out of RAM.
     let sp = RAM as u64 - 8;
     let mut t = T::new(&[0xa8c113e3]).x(31, sp).x(3, 1);
-    assert_eq!(t.step(), Err(Exit::Fault(Fault::Bus { addr: RAM as u64 })));
+    assert_eq!(
+        t.step(),
+        Err(Exit::Fault(Fault::Bus {
+            addr: RAM as u64,
+            write: false
+        }))
+    );
     assert_eq!((t.c.x[3], t.c.x[31]), (1, sp));
 }
 
@@ -845,4 +861,152 @@ fn simd_float() {
         vone(0x7ee2d420, &[(1, d(&[1.0])), (2, d(&[3.5]))]).v[0],
         d(&[2.5])
     ); // fabd d0, d1, d2
+}
+
+// EL1 and the exception model (M3). Vectors at VBAR = 0x8000.
+
+const VBAR: u64 = 0x8000;
+
+impl T {
+    /// At EL1h with FP enabled and VBAR set, as a kernel runs.
+    fn el1(mut self) -> T {
+        let pc = self.c.pc;
+        self.c = Cpu {
+            pc,
+            vbar_el1: VBAR,
+            cpacr_el1: 3 << 20,
+            ..Cpu::reset()
+        };
+        self
+    }
+
+    /// One step of `run_system`.
+    fn sys(&mut self) -> R {
+        run_system(&mut self.c, &self.r.mem, 1).1
+    }
+}
+
+#[test]
+fn svc_from_el0_and_eret_back() {
+    use crate::cpu::{DAIF, M_EL1H};
+    let mut t = T::new(&[0xd4000841]).x(31, 0x3000).nzcv(Z); // svc #0x42
+    t.c.sp_other = 0x7000; // SP_EL1
+    t.c.vbar_el1 = VBAR;
+    t.sys().unwrap();
+    let c = &t.c;
+    assert_eq!((c.pc, c.el(), c.pstate), (VBAR + 0x400, 1, M_EL1H | DAIF));
+    assert_eq!(
+        (c.esr_el1, c.elr_el1, c.spsr_el1),
+        (0x5600_0042, CODE + 4, Z)
+    );
+    assert_eq!((c.x[31], c.sp_other), (0x7000, 0x3000));
+    // eret at the vector goes back to EL0 with its SP and flags.
+    t.r.mem.write(VBAR + 0x400, 4, 0xd69f03e0).unwrap();
+    t.c.nzcv = 0;
+    t.sys().unwrap();
+    assert_eq!(
+        (t.c.pc, t.c.el(), t.c.nzcv, t.c.x[31]),
+        (CODE + 4, 0, Z, 0x3000)
+    );
+}
+
+#[test]
+fn el0_faults_and_traps() {
+    let esr = |prog: &[u32], f: fn(&mut Cpu)| {
+        let mut t = T::new(prog).x(9, 0xffff_0000);
+        t.c.vbar_el1 = VBAR;
+        f(&mut t.c);
+        t.sys().unwrap();
+        assert_eq!((t.c.pc, t.c.elr_el1), (VBAR + 0x400, CODE));
+        (t.c.esr_el1, t.c.far_el1)
+    };
+    let none = |_: &mut Cpu| {};
+    assert_eq!(esr(&[0xd5381000], none).0, 0x0200_0000); // mrs x0, sctlr_el1: UNDEFINED
+    assert_eq!(esr(&[0xd4000002], none).0, 0x0200_0000); // hvc #0
+    assert_eq!(esr(&[0xd69f03e0], none).0, 0x0200_0000); // eret
+    assert_eq!(esr(&[0xd51bd060], none).0, 0x0200_0000); // msr tpidrro_el0, x0
+    assert_eq!(esr(&[0xd4200060], none).0, 0xf200_0003); // brk #3
+    // str x0, [x9] to nothing: data abort from EL0, WnR, external abort.
+    assert_eq!(esr(&[0xf9000120], none), (0x9200_0050, 0xffff_0000));
+    // fmov d0, x1 with CPACR_EL1.FPEN = 0b01 (EL1 only).
+    let fp_el1 = |c: &mut Cpu| c.cpacr_el1 = 1 << 20;
+    assert_eq!(esr(&[0x9e670020], fp_el1).0, 0x1fe0_0000);
+    assert_eq!(esr(&[0xd53b4400], fp_el1).0, 0x1fe0_0000); // mrs x0, fpcr
+    // wfi (Linux leaves nTWI clear), and mrs x0, ctr_el0 without UCT: ISS has
+    // op0 3, op2 1, op1 3, CRn 0, Rt 0, CRm 0, read.
+    assert_eq!(esr(&[0xd503207f], none).0, 0x07e0_0000);
+    let no_uct = |c: &mut Cpu| c.sctlr_el1 &= !crate::cpu::sctlr::UCT;
+    assert_eq!(esr(&[0xd53b0020], no_uct).0, 0x6232_c001);
+    // A misaligned PC (from br): PC alignment fault with FAR = PC.
+    let mut t = T::new(&[0xd61f0120]).x(9, CODE + 2); // br x9
+    t.c.vbar_el1 = VBAR;
+    t.sys().unwrap();
+    t.sys().unwrap();
+    assert_eq!(
+        (t.c.esr_el1, t.c.far_el1, t.c.elr_el1),
+        (0x8a00_0000, CODE + 2, CODE + 2)
+    );
+}
+
+#[test]
+fn el1_registers() {
+    let prog = [
+        0xd5034fdf, // msr daifset, #15
+        0xd50342ff, // msr daifclr, #2
+        0xd53b4220, // mrs x0, daif
+        0xd5384241, // mrs x1, currentel
+        0xd5380402, // mrs x2, id_aa64pfr0_el1
+        0xd5380623, // mrs x3, id_aa64isar1_el1 (RAZ)
+        0xd5184104, // msr sp_el0, x4
+        0xd50040bf, // msr spsel, #0
+        0xd53b00e5, // mrs x5, dczid_el0
+        0xd508831f, // tlbi vmalle1is
+    ];
+    let mut t = T::new(&prog).el1().x(4, 0x5000).x(3, 1).x(31, 0x9000);
+    for _ in 0..prog.len() {
+        t.sys().unwrap();
+    }
+    let c = &t.c;
+    assert_eq!(
+        (c.x[0], c.x[1], c.x[2], c.x[3]),
+        (0x340, 4, 0x1100_0000_0000_0011, 0)
+    );
+    assert_eq!(
+        (c.x[31], c.sp_other, c.pstate & 0xf, c.x[5]),
+        (0x5000, 0x9000, 0b0100, 4)
+    );
+    // At EL1t, SP_EL0 is SP: MRS SP_EL0 is UNDEFINED, taken to the SP_EL0 vector.
+    t.r.mem.write(t.c.pc, 4, 0xd5384100).unwrap(); // mrs x0, sp_el0
+    t.end += 4;
+    t.sys().unwrap();
+    assert_eq!(
+        (t.c.pc, t.c.esr_el1, t.c.x[31]),
+        (VBAR, 0x0200_0000, 0x9000)
+    );
+}
+
+#[test]
+fn el1_aborts_hvc_and_illegal_return() {
+    // Data abort from EL1 (EC 0x25), read.
+    let mut t = T::new(&[0xf9400120]).el1().x(9, 0xffff_0000); // ldr x0, [x9]
+    t.sys().unwrap();
+    assert_eq!(
+        (t.c.pc, t.c.esr_el1, t.c.far_el1),
+        (VBAR + 0x200, 0x9600_0010, 0xffff_0000)
+    );
+    // HVC at EL1 goes to the host with the PC after it.
+    let mut t = T::new(&[0xd4000002]).el1();
+    assert_eq!(t.sys(), Err(Exit::Hvc(0)));
+    assert_eq!(t.c.pc, CODE + 4);
+    // ERET to EL2h is illegal: stay at EL1, and take an Illegal Execution State
+    // exception whose ELR is the return target and whose SPSR has IL.
+    let mut t = T::new(&[0xd69f03e0]).el1();
+    (t.c.spsr_el1, t.c.elr_el1) = (0b1001 | N, 0x4444);
+    t.sys().unwrap();
+    let c = &t.c;
+    assert_eq!(
+        (c.pc, c.esr_el1, c.elr_el1),
+        (VBAR + 0x200, 0x3a00_0000, 0x4444)
+    );
+    assert_eq!(c.spsr_el1, N | crate::cpu::SPSR_IL | 0b0101); // EL1h, D A I F cleared
 }

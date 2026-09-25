@@ -303,6 +303,9 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
   - EL0-accessible system registers: `TPIDR_EL0`, `TPIDRRO_EL0`, `CTR_EL0` (`DIC=0`, §2), `DCZID_EL0`, `CNTVCT_EL0`, `CNTFRQ_EL0`. Linux emulates EL0 reads of ID registers.
   - Once the MRS/MSR/SYS space is implemented, it joins the decoder sweep comparison. `core/fuzz/src/check.rs` still skips it.
   - `interp_run_exit` (ABI 3) reports only EL0-style exits. It grows exception classes for the host runners, with an ABI bump.
+- **Progress:**
+  - Step 1 (EL1 state and exception model) done: PSTATE EL/SPSel/DAIF with banked SP, exception entry and ERET (illegal returns take the Illegal Execution State exception), EL0→EL1 traps (`SCTLR_EL1` UCT/UMA/DZE/UCI/nTWI/nTWE, `CPACR_EL1.FPEN`), and the system register table in `core/src/interp/sys.rs`. `interp::run` still hands exceptions to the host (corpus, benchmarks); `interp::run_system` takes them into EL1 and exits only for HVC and unimplemented instructions. `Cpu::default()` is a Linux user process at EL0, `Cpu::reset()` the EL1 boot state.
+  - ID registers: `MIDR_EL1` implementer 0 (software use); `ID_AA64PFR0_EL1` sets **CSV2 and CSV3** (nothing speculates, and it spares the guest Spectre mitigations and KPTI); 4K granule, 16-bit ASIDs, 40-bit PA; LSE and CRC32 only in ISAR0; `CTR_EL0` IDC=1, DIC=0; `CLIDR_EL1` = 0 (no caches, so set/way ops are NOPs). Trapped FP and WFx ISS use CV=1, COND=AL, as QEMU does.
 - **Exit:** Buildroot kernel boots to a shell in native and Chromium test runners. First **boot-time baseline** and PC-sampling profile.
 
 ### M4 — virtio devices and real distros
@@ -355,6 +358,7 @@ Open items that no milestone owns yet. Pick them up when a milestone touches the
 - **Extensions the M4 has and we leave unadvertised**, in case real workloads benefit: FP16 (scalar and AdvSIMD), DotProd, RDM, FHM, FCMA, JSCVT (JS engines use `FJCVTZS`), FRINTTS, BF16, I8MM, LSE2, RCpc, FlagM, SB, DIT. Each needs the handlers, golden-corpus groups (the generator already knows how to avoid them), the ID register fields and a decoder-sweep update.
 - **Arm AARCHMRS JSON:** its in-package proprietary notice is still unread (`THIRD_PARTY.md`). Read it only if we want to generate decoder tables or coverage checks from it.
 - **Corpus depth:** some FP flag paths are thin (only 8 `fp_scalar` tests raise Divide-by-Zero). Add biased forms when touching FP again.
+- **Self-hosted debug:** `ID_AA64DFR0_EL1` advertises the architectural minimum (2 breakpoints, 2 watchpoints), but the debug registers are RAZ/WI, `OSLAR_EL1` is ignored and no debug exceptions are raised (breakpoints, watchpoints, `MDSCR_EL1.SS` single step). Needed for in-guest `gdb` hardware breakpoints and `ptrace` single step.
 - **`core/fuzz` hygiene:** `Mismatch::key` is dead code in the libFuzzer target build (a warning, not in CI).
 
 ## 8. Risks to watch

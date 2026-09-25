@@ -1,12 +1,15 @@
 //! Per-vCPU architectural state. Everything a vCPU owns lives here, behind the
 //! pointer the host hands to the core: no globals.
 
-/// Register files, PC, flags and the local exclusive monitor. The host reads PC
-/// at offset 256 and NZCV at 264; new fields go at the end.
+/// Register files, PC, flags, the local exclusive monitor and the EL1 system
+/// registers. The host reads PC at offset 256 and NZCV at 264; new fields go at the end.
+///
+/// `Default` is a Linux user process at EL0 (see [`Cpu::default`]); [`Cpu::reset`]
+/// is the EL1 state a kernel boots in.
 #[repr(C)]
-#[derive(Clone, Default, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cpu {
-    /// X0–X30, then SP in slot 31. M1 runs at EL0 only, so SP is SP_EL0.
+    /// X0–X30, then the current SP in slot 31 (SP_EL0 or SP_EL1, by `pstate`).
     pub x: [u64; 32],
     pub pc: u64,
     /// N, Z, C, V in bits 31..28, laid out as the NZCV system register.
@@ -19,6 +22,76 @@ pub struct Cpu {
     pub fpcr: u64,
     /// FPSR (offset 824): QC and the cumulative exception flags.
     pub fpsr: u64,
+    /// The rest of PSTATE, laid out as in SPSR: M[3:0] (EL in 3:2, SPSel in 0) and
+    /// DAIF (9:6). NZCV lives in `nzcv`; IL is only ever set in a saved SPSR.
+    pub pstate: u64,
+    /// The stack pointer that isn't in `x[31]`: SP_EL1 while SP_EL0 is selected, and vice versa.
+    pub sp_other: u64,
+    pub elr_el1: u64,
+    pub spsr_el1: u64,
+    pub esr_el1: u64,
+    pub far_el1: u64,
+    pub vbar_el1: u64,
+    pub sctlr_el1: u64,
+    /// Only FPEN (21:20) holds a value.
+    pub cpacr_el1: u64,
+    pub tcr_el1: u64,
+    pub ttbr0_el1: u64,
+    pub ttbr1_el1: u64,
+    pub mair_el1: u64,
+    pub amair_el1: u64,
+    pub par_el1: u64,
+    pub afsr0_el1: u64,
+    pub afsr1_el1: u64,
+    pub contextidr_el1: u64,
+    pub tpidr_el0: u64,
+    pub tpidrro_el0: u64,
+    pub tpidr_el1: u64,
+    pub mdscr_el1: u64,
+    pub csselr_el1: u64,
+}
+
+/// PSTATE.M values (with M[4] = 0, AArch64): EL0t, EL1t, EL1h.
+pub const M_EL0T: u64 = 0b0000;
+pub const M_EL1T: u64 = 0b0100;
+pub const M_EL1H: u64 = 0b0101;
+/// PSTATE.{D,A,I,F}.
+pub const DAIF: u64 = 0x3c0;
+/// SPSR.IL: an illegal exception return happened.
+pub const SPSR_IL: u64 = 1 << 20;
+
+/// SCTLR_EL1 bits the core interprets.
+pub mod sctlr {
+    pub const M: u64 = 1 << 0;
+    pub const A: u64 = 1 << 1;
+    pub const C: u64 = 1 << 2;
+    pub const SA: u64 = 1 << 3;
+    pub const SA0: u64 = 1 << 4;
+    pub const UMA: u64 = 1 << 9;
+    pub const I: u64 = 1 << 12;
+    pub const DZE: u64 = 1 << 14;
+    pub const UCT: u64 = 1 << 15;
+    pub const NTWI: u64 = 1 << 16;
+    pub const NTWE: u64 = 1 << 18;
+    /// EE and E0E: RES0, we implement little-endian only.
+    pub const ENDIAN: u64 = 3 << 24;
+    pub const UCI: u64 = 1 << 26;
+    /// The v8.0 RES1 bits: 29, 28, 23, 22, 20, 11.
+    pub const RES1: u64 = 0x30d0_0800;
+}
+
+impl Default for Cpu {
+    /// A Linux user process: EL0, FP/AdvSIMD enabled, and the EL0 cache,
+    /// CTR_EL0, DC ZVA and WFE permissions Linux grants (WFI still traps, as there).
+    /// The golden corpus, the fuzzer and the MIPS benchmark run in this state.
+    fn default() -> Self {
+        use sctlr::*;
+        Cpu {
+            sctlr_el1: RES1 | C | SA | SA0 | I | DZE | UCT | NTWE | UCI,
+            cpacr_el1: 3 << 20,
+            ..Cpu::zeroed()
+        }
+    }
 }
 
 /// FPCR bits that hold values: AHP (26), DN (25), FZ (24), RMode (23:22). The
@@ -40,6 +113,37 @@ pub struct Monitor {
 }
 
 impl Cpu {
+    fn zeroed() -> Self {
+        // SAFETY: Cpu is plain integers all the way down; all-zero is a valid value
+        // (EL0t, every register 0).
+        unsafe { core::mem::zeroed() }
+    }
+
+    /// Reset into EL1h with DAIF masked, the MMU off and FP/AdvSIMD trapped
+    /// (CPACR_EL1 resets UNKNOWN; kernels and bare-metal tests enable FP themselves).
+    pub fn reset() -> Self {
+        Cpu {
+            pstate: M_EL1H | DAIF,
+            sctlr_el1: sctlr::RES1,
+            ..Cpu::zeroed()
+        }
+    }
+
+    /// PSTATE.EL.
+    #[inline]
+    pub fn el(&self) -> u64 {
+        (self.pstate >> 2) & 3
+    }
+
+    /// Sets PSTATE (M and DAIF) and swaps the stack pointers when the selected one changes.
+    pub fn set_pstate(&mut self, p: u64) {
+        let el1h = |p: u64| p & 0xf == M_EL1H;
+        if el1h(p) != el1h(self.pstate) {
+            core::mem::swap(&mut self.x[31], &mut self.sp_other);
+        }
+        self.pstate = p;
+    }
+
     /// Register `n` where 31 encodes XZR.
     #[inline]
     pub fn reg(&self, n: u32) -> u64 {
@@ -91,5 +195,18 @@ mod tests {
         assert_eq!(off(c.v.as_ptr() as *const u8), 304);
         assert_eq!(off(&c.fpcr as *const u64 as *const u8), 816);
         assert_eq!(off(&c.fpsr as *const u64 as *const u8), 824);
+    }
+
+    #[test]
+    fn sp_banking() {
+        let mut c = Cpu::reset();
+        c.x[31] = 0x1000; // SP_EL1
+        c.set_pstate(M_EL0T);
+        assert_eq!((c.x[31], c.sp_other), (0, 0x1000));
+        c.x[31] = 0x2000; // SP_EL0
+        c.set_pstate(M_EL1T); // still SP_EL0
+        assert_eq!(c.x[31], 0x2000);
+        c.set_pstate(M_EL1H | DAIF);
+        assert_eq!((c.x[31], c.sp_other, c.el()), (0x1000, 0x2000, 1));
     }
 }

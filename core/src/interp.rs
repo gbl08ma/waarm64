@@ -1,6 +1,8 @@
-//! Tier-0 interpreter: the reference semantics for A64 integer instructions.
-//! FP/AdvSIMD (M2) and EL1 system instructions (M3) come back as
-//! [`Exit::Unimplemented`].
+//! Tier-0 interpreter: the reference semantics for A64.
+//!
+//! [`step`] reports exceptions as [`Exit`]s. [`run`] hands them to the caller, as
+//! a user-mode host wants (the golden corpus, the benchmarks); [`run_system`]
+//! takes them into EL1 the way hardware does.
 
 mod float;
 mod ldst;
@@ -8,21 +10,35 @@ mod ldst_fp;
 mod simd;
 mod simd_fp;
 mod simd_int;
+mod sys;
 
-use crate::cpu::{Cpu, FPCR_MASK, FPSR_MASK};
+pub use sys::take_exception;
+
+use crate::cpu::Cpu;
 use crate::decode::{Op, decode};
 use crate::mem::{Fault, Mem};
 
 /// Why an instruction didn't retire. The PC still points at it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Exit {
-    /// UNDEFINED at EL0: unallocated, a reserved field value, or a feature we don't advertise.
+    /// UNDEFINED: unallocated, a reserved field value, a feature we don't
+    /// advertise, or not permitted at the current EL.
     Undefined,
     /// Allocated, but implemented in a later milestone.
     Unimplemented(Op),
+    /// Data abort.
     Fault(Fault),
+    /// Instruction abort, or PC alignment fault (`Fault::Align`).
+    Fetch(Fault),
     Svc(u16),
     Brk(u16),
+    /// HVC at EL1: a PSCI call for the host (PLAN.md §1). No EL2, so the host
+    /// completes it; [`run_system`] leaves the PC after the HVC.
+    Hvc(u16),
+    /// A configurable trap to EL1, as ESR_EL1 EC (31:26) and ISS (24:0): FP/AdvSIMD
+    /// access (`CPACR_EL1.FPEN`), EL0 system register and SYS access (`SCTLR_EL1`
+    /// UCT, UMA, DZE, UCI), WFI/WFE (nTWI, nTWE).
+    Trap(u32),
 }
 
 impl From<Fault> for Exit {
@@ -39,9 +55,12 @@ type R<T = ()> = Result<T, Exit>;
 pub fn step(cpu: &mut Cpu, mem: &Mem) -> R {
     let pc = cpu.pc;
     if pc & 3 != 0 {
-        return Err(Exit::Fault(Fault::Align { addr: pc }));
+        return Err(Exit::Fetch(Fault::Align {
+            addr: pc,
+            write: false,
+        }));
     }
-    let insn = mem.read(pc, 4)? as u32;
+    let insn = mem.read(pc, 4).map_err(Exit::Fetch)? as u32;
     cpu.pc = pc.wrapping_add(4);
     let r = exec(cpu, mem, insn, pc);
     if r.is_err() {
@@ -58,6 +77,34 @@ pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
         }
     }
     (n, Ok(()))
+}
+
+/// Runs up to `n` steps at EL0/EL1, taking exceptions into EL1 (each counts as a
+/// step, so a guest stuck in an exception loop still returns). It stops early
+/// only for the host: an HVC (PC after it) or an unimplemented instruction.
+pub fn run_system(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
+    for done in 0..n {
+        match step(cpu, mem) {
+            Ok(()) => {}
+            Err(e @ Exit::Hvc(_)) => {
+                cpu.pc = cpu.pc.wrapping_add(4);
+                return (done + 1, Err(e));
+            }
+            Err(e @ Exit::Unimplemented(_)) => return (done, Err(e)),
+            Err(e) => take_exception(cpu, e),
+        }
+    }
+    (n, Ok(()))
+}
+
+/// FP/AdvSIMD access check (`CPACR_EL1.FPEN`): 0b11 enables EL0 and EL1, 0b01 EL1 only.
+#[inline]
+fn fp_enabled(c: &Cpu) -> R {
+    match (c.cpacr_el1 >> 20) & 3 {
+        3 => Ok(()),
+        1 if c.el() == 1 => Ok(()),
+        _ => Err(Exit::Trap(0x07 << 26 | sys::ISS_COND_AL)),
+    }
 }
 
 // Field helpers.
@@ -510,49 +557,22 @@ fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64) -> R {
             c.x[30] = pc.wrapping_add(4);
         }
 
-        // Hints, barriers, exceptions, NZCV. Unallocated hints and the PAC/BTI
+        // Hints, barriers, exceptions. Unallocated hints and the PAC/BTI
         // hint-space instructions are NOPs (PLAN.md §1). WFE/WFI may complete at
-        // once; M3 gives them wake-up semantics.
-        NOP | YIELD | WFE | WFI | SEV | SEVL | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2
-        | AUTIB_2 | BTI | ESB | PSB | TSB | CSDB | DGH => {}
+        // once; M3 step 4 gives them wake-up semantics.
+        NOP | YIELD | SEV | SEVL | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2 | AUTIB_2 | BTI
+        | ESB | PSB | TSB | CSDB | DGH => {}
         CLREX => c.monitor.size = 0,
         DMB | DSB | SSBB | PSSBB => core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst),
         ISB => {}
         SVC => return Err(Exit::Svc(bits(i, 20, 5) as u16)),
         BRK => return Err(Exit::Brk(bits(i, 20, 5) as u16)),
-        MRS | MSR_reg if bits(i, 20, 5) == 0xda10 => {
-            // NZCV (op0=3 op1=3 CRn=4 CRm=2 op2=0). Other registers are M2/M3.
-            if op == MRS {
-                c.set_reg(rd, c.nzcv);
-            } else {
-                c.nzcv = c.reg(rd) & 0xf000_0000;
-            }
-        }
-        // FPCR (op0=3 op1=3 CRn=4 CRm=4 op2=0) and FPSR (op2=1).
-        MRS | MSR_reg if bits(i, 20, 6) == 0xda20 >> 1 => {
-            let x = c.reg(rd);
-            let (reg, mask) = if bit(i, 5) {
-                (&mut c.fpsr, FPSR_MASK)
-            } else {
-                (&mut c.fpcr, FPCR_MASK)
-            };
-            if op == MSR_reg {
-                *reg = x & mask;
-            } else {
-                let v = *reg;
-                c.set_reg(rd, v);
-            }
-        }
-        DC_ZVA => {
-            // DCZID_EL0.BS = 4: 64-byte blocks (as on the M4).
-            let a = c.reg(rd) & !63;
-            for k in 0..8 {
-                m.write(a + 8 * k, 8, 0)?;
-            }
-        }
-        // Cache maintenance permitted at EL0: nothing to do on flat memory
-        // without caches. M5 hooks JIT invalidation into IC IVAU.
-        DC_CVAC | DC_CVAU | DC_CIVAC | IC_IVAU => {}
+
+        // System registers, SYS, cache maintenance, WFx, ERET, HVC and the rest of
+        // exception generation.
+        MRS | MSR_reg | MSR_imm | SYS | SYSL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_ZVA
+        | DC_CVAC | DC_CVAU | DC_CIVAC | IC_IALLU | IC_IALLUIS | IC_IVAU | WFE | WFI | ERET
+        | HVC | SMC | HLT | DCPS1 | DCPS2 | DCPS3 | DRPS => sys::exec(c, m, i, op)?,
 
         // Loads and stores.
         LDR_lit_gen | LDRSW_lit | PRFM_lit | STNP_LDNP_gen | STP_LDP_gen | STURx_LDURx
@@ -569,7 +589,10 @@ fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64) -> R {
         | ST1_sngl_1 | ST1_sngl_2 | ST2_sngl_1 | ST2_sngl_2 | ST3_sngl_1 | ST3_sngl_2
         | ST4_sngl_1 | ST4_sngl_2 | LD1_sngl_1 | LD1_sngl_2 | LD2_sngl_1 | LD2_sngl_2
         | LD3_sngl_1 | LD3_sngl_2 | LD4_sngl_1 | LD4_sngl_2 | LD1R_1 | LD1R_2 | LD2R_1 | LD2R_2
-        | LD3R_1 | LD3R_2 | LD4R_1 | LD4R_2 => ldst_fp::exec(c, m, i, pc, op)?,
+        | LD3R_1 | LD3R_2 | LD4R_1 | LD4R_2 => {
+            fp_enabled(c)?;
+            ldst_fp::exec(c, m, i, pc, op)?
+        }
 
         // Scalar floating point.
         FCVT_float | SCVTF_float_int | UCVTF_float_int | SCVTF_float_fix | UCVTF_float_fix
@@ -580,11 +603,17 @@ fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64) -> R {
         | FRINTP_float | FRINTM_float | FRINTZ_float | FRINTA_float | FRINTX_float
         | FRINTI_float | FMUL_float | FNMUL_float | FDIV_float | FADD_float | FSUB_float
         | FMAX_float | FMIN_float | FMAXNM_float | FMINNM_float | FMADD_float | FMSUB_float
-        | FNMADD_float | FNMSUB_float => float::exec(c, i, op)?,
+        | FNMADD_float | FNMSUB_float => {
+            fp_enabled(c)?;
+            float::exec(c, i, op)?
+        }
 
         // AdvSIMD and FP moves.
         DUP_elt_1 | DUP_elt_2 | DUP_gen | SMOV | UMOV | INS_gen | INS_elt | MOVI | FMOV_2
-        | FMOV_float_gen | FMOV_float | FMOV_float_imm => simd::exec(c, i, op)?,
+        | FMOV_float_gen | FMOV_float | FMOV_float_imm => {
+            fp_enabled(c)?;
+            simd::exec(c, i, op)?
+        }
 
         // Unallocated, or features PLAN.md §1 leaves out (PAC, BTI, MTE, SB,
         // v8.2+ flag manipulation, RCpc, LOR, DPB, LS64, WFxT, FP16).
@@ -630,7 +659,10 @@ fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64) -> R {
 
         // AdvSIMD integer and FP; EL1 system instructions (M3) are still unimplemented.
         _ => match simd_int::handler(op).or_else(|| simd_fp::handler(op)) {
-            Some(f) => f(c, i)?,
+            Some(f) => {
+                fp_enabled(c)?;
+                f(c, i)?
+            }
             None => return Err(Exit::Unimplemented(op)),
         },
     }

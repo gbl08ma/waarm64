@@ -13,9 +13,9 @@ use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {
     /// Nothing is mapped at `addr` (external abort in M1; a translation fault once the MMU exists).
-    Bus { addr: u64 },
+    Bus { addr: u64, write: bool },
     /// Misaligned exclusive, acquire/release or atomic access.
-    Align { addr: u64 },
+    Align { addr: u64, write: bool },
 }
 
 /// Guest RAM, shared by all vCPUs.
@@ -59,27 +59,27 @@ impl Mem {
 
     /// The one translation point: guest address to host pointer for `len` bytes.
     #[inline]
-    fn host(&self, addr: u64, len: u64) -> Result<*mut u8, Fault> {
+    fn host(&self, addr: u64, len: u64, write: bool) -> Result<*mut u8, Fault> {
         match addr.checked_add(len) {
             // SAFETY: addr + len <= size, so the result is inside the RAM block.
             Some(end) if end <= self.size => Ok(unsafe { self.base.add(addr as usize) }),
-            _ => Err(Fault::Bus { addr }),
+            _ => Err(Fault::Bus { addr, write }),
         }
     }
 
     #[inline]
-    fn host_aligned(&self, addr: u64, len: u64) -> Result<*mut u8, Fault> {
+    fn host_aligned(&self, addr: u64, len: u64, write: bool) -> Result<*mut u8, Fault> {
         if !addr.is_multiple_of(len) {
-            return Err(Fault::Align { addr });
+            return Err(Fault::Align { addr, write });
         }
-        self.host(addr, len)
+        self.host(addr, len, write)
     }
 
     /// Little-endian read of 1, 2, 4 or 8 bytes, zero-extended. Unaligned is allowed.
     // ponytail: flat memory, so no page-crossing split; M3 adds it where host() learns pages.
     #[inline]
     pub fn read(&self, addr: u64, size: u32) -> Result<u64, Fault> {
-        let p = self.host(addr, size as u64)?;
+        let p = self.host(addr, size as u64, false)?;
         // SAFETY: host() checked that `size` bytes at p are guest RAM.
         Ok(unsafe {
             match size {
@@ -95,7 +95,7 @@ impl Mem {
     /// Little-endian write of the low 1, 2, 4 or 8 bytes of `val`. Unaligned is allowed.
     #[inline]
     pub fn write(&self, addr: u64, size: u32, val: u64) -> Result<(), Fault> {
-        let p = self.host(addr, size as u64)?;
+        let p = self.host(addr, size as u64, true)?;
         // SAFETY: host() checked that `size` bytes at p are guest RAM.
         unsafe {
             match size {
@@ -111,7 +111,7 @@ impl Mem {
 
     /// Aligned single-copy-atomic read (acquire loads, exclusives).
     pub fn read_atomic(&self, addr: u64, size: u32) -> Result<u64, Fault> {
-        let p = self.host_aligned(addr, size as u64)?;
+        let p = self.host_aligned(addr, size as u64, false)?;
         // SAFETY: p is aligned and in bounds (host_aligned, 16-byte-aligned base).
         Ok(unsafe {
             match size {
@@ -126,7 +126,7 @@ impl Mem {
 
     /// Aligned single-copy-atomic write (release stores).
     pub fn write_atomic(&self, addr: u64, size: u32, val: u64) -> Result<(), Fault> {
-        let p = self.host_aligned(addr, size as u64)?;
+        let p = self.host_aligned(addr, size as u64, true)?;
         // SAFETY: as in read_atomic.
         unsafe {
             match size {
@@ -141,8 +141,9 @@ impl Mem {
     }
 
     /// Atomic compare-and-swap. Returns the old value; the swap happened iff it equals `expected`.
+    /// Faults report a write, as a read-modify-write's must (Linux relies on it for CoW).
     pub fn cas(&self, addr: u64, size: u32, expected: u64, new: u64) -> Result<u64, Fault> {
-        let p = self.host_aligned(addr, size as u64)?;
+        let p = self.host_aligned(addr, size as u64, true)?;
         const O: Ordering = Ordering::SeqCst;
         // Ok and Err both carry the old value.
         let old = |r: Result<u64, u64>| r.unwrap_or_else(|v| v);
@@ -171,6 +172,7 @@ impl Mem {
     pub fn rmw(&self, addr: u64, size: u32, op: impl Fn(u64) -> u64) -> Result<u64, Fault> {
         // ponytail: generic CAS loop; add/and/or/xor/xchg map to single wasm
         // atomic.rmw ops if a profile ever shows this.
+        self.host_aligned(addr, size as u64, true)?; // fault as a write
         let mut old = self.read_atomic(addr, size)?;
         loop {
             let seen = self.cas(addr, size, old, op(old))?;
@@ -183,7 +185,7 @@ impl Mem {
 
     /// 2×`size` read of a naturally aligned pair, atomic with respect to [`Mem::cas_pair`] (LDXP).
     pub fn read_pair(&self, addr: u64, size: u32) -> Result<[u64; 2], Fault> {
-        self.pair_locked(addr, size, |old| (old, None))
+        self.pair_locked(addr, size, false, |old| (old, None))
     }
 
     /// 2×`size` compare-and-swap of a naturally aligned pair (CASP, STXP).
@@ -195,7 +197,9 @@ impl Mem {
         expected: [u64; 2],
         new: [u64; 2],
     ) -> Result<[u64; 2], Fault> {
-        self.pair_locked(addr, size, |old| (old, (old == expected).then_some(new)))
+        self.pair_locked(addr, size, true, |old| {
+            (old, (old == expected).then_some(new))
+        })
     }
 
     /// Runs `f` on the pair at `addr` under `pair_lock`; writes back what it returns, if anything.
@@ -203,9 +207,10 @@ impl Mem {
         &self,
         addr: u64,
         size: u32,
+        write: bool,
         f: impl FnOnce([u64; 2]) -> ([u64; 2], Option<[u64; 2]>),
     ) -> Result<[u64; 2], Fault> {
-        self.host_aligned(addr, 2 * size as u64)?;
+        self.host_aligned(addr, 2 * size as u64, write)?;
         let hi = addr + size as u64;
         while self.pair_lock.swap(1, Ordering::Acquire) != 0 {
             core::hint::spin_loop();
@@ -252,13 +257,17 @@ pub(crate) mod tests {
     #[test]
     fn bounds_and_alignment() {
         let r = TestRam::new(64);
-        assert_eq!(r.mem.read(57, 8), Err(Fault::Bus { addr: 57 }));
-        assert_eq!(r.mem.read(u64::MAX, 2), Err(Fault::Bus { addr: u64::MAX }));
+        let bus = |addr, write| Err(Fault::Bus { addr, write });
+        let align = |addr, write| Err(Fault::Align { addr, write });
+        assert_eq!(r.mem.read(57, 8), bus(57, false));
+        assert_eq!(r.mem.read(u64::MAX, 2), bus(u64::MAX, false));
+        assert_eq!(r.mem.write(60, 8, 0).map(|_| 0), bus(60, true));
         assert!(r.mem.read(56, 8).is_ok());
-        assert_eq!(r.mem.read_atomic(4, 8), Err(Fault::Align { addr: 4 }));
+        assert_eq!(r.mem.read_atomic(4, 8), align(4, false));
+        assert_eq!(r.mem.rmw(4, 8, |v| v), align(4, true));
         assert_eq!(
-            r.mem.cas_pair(8, 8, [0; 2], [1; 2]),
-            Err(Fault::Align { addr: 8 })
+            r.mem.cas_pair(8, 8, [0; 2], [1; 2]).map(|_| 0),
+            align(8, true)
         );
     }
 

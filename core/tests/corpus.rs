@@ -169,10 +169,12 @@ fn exit_string(r: Result<(), Exit>, pc: u64, end: u64) -> String {
         Err(Exit::Brk(_)) if pc == end => "end".into(),
         Err(Exit::Brk(_)) => format!("sigtrap pc=+{off} code=1"),
         Err(Exit::Undefined) => format!("sigill pc=+{off} code=1"),
-        Err(Exit::Fault(Fault::Align { addr })) => {
+        Err(Exit::Fault(Fault::Align { addr, .. }) | Exit::Fetch(Fault::Align { addr, .. })) => {
             format!("sigbus pc=+{off} code=1 addr={addr:#x}")
         }
-        Err(Exit::Fault(Fault::Bus { addr })) => format!("sigsegv pc=+{off} code=1 addr={addr:#x}"),
+        Err(Exit::Fault(Fault::Bus { addr, .. }) | Exit::Fetch(Fault::Bus { addr, .. })) => {
+            format!("sigsegv pc=+{off} code=1 addr={addr:#x}")
+        }
         Err(e) => format!("{e:?} pc=+{off}"),
     }
 }

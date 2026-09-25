@@ -201,11 +201,12 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
     Ok(())
 }
 
+/// Store-exclusive alignment check.
 fn aligned(addr: u64, size: u32) -> R {
     if addr.is_multiple_of(size as u64) {
         Ok(())
     } else {
-        Err(Exit::Fault(Fault::Align { addr }))
+        Err(Exit::Fault(Fault::Align { addr, write: true }))
     }
 }
 
