@@ -14,9 +14,10 @@ mod sys;
 
 pub use sys::take_exception;
 
-use crate::cpu::Cpu;
+use crate::cpu::{Cpu, sctlr};
 use crate::decode::{Op, decode};
-use crate::mem::{Fault, Mem};
+use crate::mem::{Access, Fault, FaultKind, Mem};
+use crate::mmu::{Bus, Vcpu};
 
 /// Why an instruction didn't retire. The PC still points at it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,16 +54,21 @@ type R<T = ()> = Result<T, Exit>;
 // ponytail: fetch + decode every instruction; add a decoded-block cache if the
 // M1 MIPS baseline says the interpreter matters beyond being the JIT's fallback.
 pub fn step(cpu: &mut Cpu, mem: &Mem) -> R {
+    step_bus(cpu, &mut Bus::new(mem, None))
+}
+
+fn step_bus(cpu: &mut Cpu, m: &mut Bus) -> R {
     let pc = cpu.pc;
     if pc & 3 != 0 {
-        return Err(Exit::Fetch(Fault::Align {
+        return Err(Exit::Fetch(Fault {
             addr: pc,
-            write: false,
+            access: Access::Read,
+            kind: FaultKind::Align,
         }));
     }
-    let insn = mem.read(pc, 4).map_err(Exit::Fetch)? as u32;
+    let insn = m.fetch(cpu, pc).map_err(Exit::Fetch)?;
     cpu.pc = pc.wrapping_add(4);
-    let r = exec(cpu, mem, insn, pc);
+    let r = exec(cpu, m, insn, pc);
     if r.is_err() {
         cpu.pc = pc;
     }
@@ -70,9 +76,11 @@ pub fn step(cpu: &mut Cpu, mem: &Mem) -> R {
 }
 
 /// Runs up to `n` instructions; returns how many retired and why it stopped early.
+/// No TLB: meant for user-mode hosts, which run with the MMU off.
 pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
+    let mut m = Bus::new(mem, None);
     for done in 0..n {
-        if let Err(e) = step(cpu, mem) {
+        if let Err(e) = step_bus(cpu, &mut m) {
             return (done, Err(e));
         }
     }
@@ -82,9 +90,11 @@ pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
 /// Runs up to `n` steps at EL0/EL1, taking exceptions into EL1 (each counts as a
 /// step, so a guest stuck in an exception loop still returns). It stops early
 /// only for the host: an HVC (PC after it) or an unimplemented instruction.
-pub fn run_system(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
+pub fn run_system(v: &mut Vcpu, mem: &Mem, n: u64) -> (u64, R) {
+    let cpu = &mut v.cpu;
+    let mut m = Bus::new(mem, Some(&mut v.tlb));
     for done in 0..n {
-        match step(cpu, mem) {
+        match step_bus(cpu, &mut m) {
             Ok(()) => {}
             Err(e @ Exit::Hvc(_)) => {
                 cpu.pc = cpu.pc.wrapping_add(4);
@@ -95,6 +105,19 @@ pub fn run_system(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
         }
     }
     (n, Ok(()))
+}
+
+/// A load/store base register; with SP as the base, `SCTLR_EL1.SA0`/`SA` make a
+/// misaligned SP take an SP alignment fault (EC 0x26).
+// ponytail: PRFM with a misaligned SP faults too, where hardware wouldn't.
+#[inline]
+fn base_reg(c: &Cpu, rn: u32) -> R<u64> {
+    let v = c.reg_sp(rn);
+    let check = if c.el() == 0 { sctlr::SA0 } else { sctlr::SA };
+    if rn == 31 && v & 15 != 0 && c.sctlr_el1 & check != 0 {
+        return Err(Exit::Trap(0x26 << 26));
+    }
+    Ok(v)
 }
 
 /// FP/AdvSIMD access check (`CPACR_EL1.FPEN`): 0b11 enables EL0 and EL1, 0b01 EL1 only.
@@ -260,7 +283,7 @@ fn adr_imm(i: u32) -> u64 {
     sext(((bits(i, 23, 5) << 2) | bits(i, 30, 29)) as u64, 21)
 }
 
-fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64) -> R {
+fn exec(c: &mut Cpu, m: &mut Bus, i: u32, pc: u64) -> R {
     use Op::*;
     let sf = bit(i, 31);
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));

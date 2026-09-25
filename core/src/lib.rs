@@ -8,6 +8,7 @@ pub mod decode;
 pub mod fp;
 pub mod interp;
 pub mod mem;
+pub mod mmu;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -72,7 +73,7 @@ pub unsafe extern "C" fn interp_run(cpu: *mut cpu::Cpu, mem: *const mem::Mem, n:
 }
 
 /// Like [`interp_run`], and also writes why it stopped to `exit` as two u64s:
-/// kind (0 ran all `n`, 1 UNDEFINED, 2 unimplemented, 3 bus fault, 4 alignment
+/// kind (0 ran all `n`, 1 UNDEFINED, 2 unimplemented, 3 other fault, 4 alignment
 /// fault, 5 SVC, 6 BRK, 7 trap to EL1, 8 HVC) and a value (the `Op` index, fault
 /// address, immediate, or for a trap the ESR_EL1 EC and ISS). Faults include
 /// instruction fetches; a misaligned PC is an alignment fault at the PC.
@@ -94,9 +95,9 @@ pub unsafe extern "C" fn interp_run_exit(
         Ok(()) => [0, 0],
         Err(Exit::Undefined) => [1, 0],
         Err(Exit::Unimplemented(op)) => [2, op as u64],
-        Err(Exit::Fault(f) | Exit::Fetch(f)) => match f {
-            mem::Fault::Bus { addr, .. } => [3, addr],
-            mem::Fault::Align { addr, .. } => [4, addr],
+        Err(Exit::Fault(f) | Exit::Fetch(f)) => match f.kind {
+            mem::FaultKind::Align => [4, f.addr],
+            _ => [3, f.addr],
         },
         Err(Exit::Svc(imm)) => [5, imm as u64],
         Err(Exit::Brk(imm)) => [6, imm as u64],

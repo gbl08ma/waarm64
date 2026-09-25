@@ -8,7 +8,8 @@
 use super::{Exit, R, bits};
 use crate::cpu::{Cpu, DAIF, FPCR_MASK, FPSR_MASK, M_EL0T, M_EL1H, M_EL1T, SPSR_IL, sctlr};
 use crate::decode::Op;
-use crate::mem::{Fault, Mem};
+use crate::mem::{Access, Fault, FaultKind};
+use crate::mmu::{self, Bus, Use};
 
 /// ISS CV = 1, COND = 0xE (AL): the condition fields for trapped AArch64
 /// instructions, as QEMU reports them (Linux ignores them).
@@ -105,7 +106,7 @@ fn raz_wi(key: u32) -> bool {
     ) || key & !0b1011 == sr(2, 0, 0, 0, 4) // DBGB{V,C}R<n>, DBGW{V,C}R<n>, n = 0, 1
 }
 
-pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, op: Op) -> R {
+pub(super) fn exec(c: &mut Cpu, m: &mut Bus, i: u32, op: Op) -> R {
     use Op::*;
     let el0 = c.el() == 0;
     let rt = bits(i, 4, 0);
@@ -129,7 +130,7 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, op: Op) -> R {
             let v = read(c, i, key)?;
             c.set_reg(rt, v);
         }
-        MSR_reg => write(c, i, key, c.reg(rt))?,
+        MSR_reg => write(c, m, i, key, c.reg(rt))?,
         MSR_imm => {
             let (op1, op2, crm) = (bits(i, 18, 16), bits(i, 7, 5), bits(i, 11, 8) as u64);
             match (op1, op2) {
@@ -154,28 +155,36 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, op: Op) -> R {
             }
             let a = c.reg(rt) & !63;
             for k in 0..8 {
-                m.write(a + 8 * k, 8, 0)?;
+                m.write(c, a + 8 * k, 8, 0)?;
             }
         }
-        // No caches to maintain. M5 hooks JIT invalidation into IC IVAU and IALLU.
-        // ponytail: no MMU permission/translation checks yet (step 3).
+        // No caches to maintain, but the address must translate (and, from
+        // EL0, be readable) like a data access. M5 hooks JIT invalidation into
+        // IC IVAU and IALLU.
         DC_CVAC | DC_CVAU | DC_CIVAC | IC_IVAU => {
             if el0 && c.sctlr_el1 & sctlr::UCI == 0 {
                 return Err(trap_sys(i));
             }
+            m.maint(c, c.reg(rt), false)?;
         }
-        DC_IVAC | DC_ISW | DC_CSW | DC_CISW | IC_IALLU | IC_IALLUIS => {}
+        DC_IVAC => m.maint(c, c.reg(rt), true)?,
+        DC_ISW | DC_CSW | DC_CISW | IC_IALLU | IC_IALLUIS => {}
         SYS => match (
             bits(i, 18, 16),
             bits(i, 15, 12),
             bits(i, 11, 8),
             bits(i, 7, 5),
         ) {
-            // TLBI VMALLE1, VAE1, ASIDE1, VAAE1, VALE1, VAALE1 and their IS forms.
-            // ponytail: no TLB until step 3, so there's nothing to invalidate.
-            (0, 8, 3 | 7, 0 | 1 | 2 | 3 | 5 | 7) => {}
-            // AT S1E1R/W, S1E0R/W: step 3.
-            (0, 7, 8, 0..=3) => return Err(Exit::Unimplemented(op)),
+            // TLBI VMALLE1 and ASIDE1 (the TLB holds no ASIDs), and their IS
+            // forms. One vCPU until M7, so IS is local.
+            (0, 8, 3 | 7, 0 | 2) => m.flush_all(),
+            // TLBI VAE1, VAAE1, VALE1, VAALE1 (IS): Xt[43:0] is VA[55:12].
+            (0, 8, 3 | 7, 1 | 3 | 5 | 7) => m.flush_va(c.reg(rt) << 12),
+            // AT S1E1R, S1E1W, S1E0R, S1E0W.
+            (0, 7, 8, op2 @ 0..=3) => {
+                let u = if op2 & 1 == 1 { Use::Write } else { Use::Read };
+                c.par_el1 = mmu::at(c, m.mem, c.reg(rt), (op2 < 2) as u64, u);
+            }
             _ => return Err(Exit::Undefined),
         },
         _ => unreachable!("{op:?} isn't a system instruction"),
@@ -256,8 +265,11 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
     })
 }
 
-fn write(c: &mut Cpu, i: u32, key: u32, v: u64) -> R {
+fn write(c: &mut Cpu, m: &mut Bus, i: u32, key: u32, v: u64) -> R {
     let el0 = c.el() == 0;
+    // The TLB holds neither ASIDs nor the MMU enable: flush when either changes.
+    let regime = |c: &Cpu| (mmu::asid(c), c.sctlr_el1 & sctlr::M);
+    let before = regime(c);
     match key {
         NZCV => c.nzcv = v & 0xf000_0000,
         DAIF_R if el0 && c.sctlr_el1 & sctlr::UMA == 0 => return Err(trap_sys(i)),
@@ -293,6 +305,9 @@ fn write(c: &mut Cpu, i: u32, key: u32, v: u64) -> R {
         k if raz_wi(k) => {}
         _ => return Err(Exit::Undefined),
     }
+    if regime(c) != before {
+        m.flush_all();
+    }
     Ok(())
 }
 
@@ -320,25 +335,27 @@ fn eret(c: &mut Cpu) {
 pub fn take_exception(c: &mut Cpu, e: Exit) {
     let pc = c.pc;
     let lower = c.el() == 0;
-    // Instruction abort 0x20, data abort 0x24; +1 when taken from EL1.
+    // Instruction abort 0x20, data abort 0x24; +1 when taken from EL1. ISS:
+    // CM (8), WnR (6), and the fault status.
     let abort = |ec: u32, f: Fault| {
-        let (fsc, write) = match f {
-            Fault::Bus { write, .. } => (0x10, write), // synchronous external abort
-            Fault::Align { write, .. } => (0x21, write),
+        let (wnr, cm) = match f.access {
+            Access::Read => (0, 0),
+            Access::Write => (1, 0),
+            Access::Maint => (1, 1),
         };
-        (ec + !lower as u32) << 26 | (write as u32) << 6 | fsc
-    };
-    let addr = |f: Fault| match f {
-        Fault::Bus { addr, .. } | Fault::Align { addr, .. } => addr,
+        (ec + !lower as u32) << 26 | cm << 8 | wnr << 6 | f.kind.fsc()
     };
     let (esr, far, ret) = match e {
         Exit::Undefined => (0, None, pc),
         Exit::Svc(imm) => (0x15 << 26 | imm as u32, None, pc.wrapping_add(4)),
         Exit::Brk(imm) => (0x3c << 26 | imm as u32, None, pc),
         Exit::Trap(esr) => (esr, None, pc),
-        Exit::Fault(f) => (abort(0x24, f), Some(addr(f)), pc),
-        Exit::Fetch(Fault::Align { .. }) => (0x22 << 26, Some(pc), pc),
-        Exit::Fetch(f) => (abort(0x20, f), Some(addr(f)), pc),
+        Exit::Fault(f) => (abort(0x24, f), Some(f.addr), pc),
+        Exit::Fetch(Fault {
+            kind: FaultKind::Align,
+            ..
+        }) => (0x22 << 26, Some(pc), pc),
+        Exit::Fetch(f) => (abort(0x20, f), Some(f.addr), pc),
         Exit::Hvc(_) | Exit::Unimplemented(_) => panic!("{e:?} is a host exit"),
     };
     enter(c, esr, far, ret, 0);

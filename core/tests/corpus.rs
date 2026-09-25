@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use webpc_core::cpu::Cpu;
 use webpc_core::interp::{Exit, run};
-use webpc_core::mem::{Fault, Mem};
+use webpc_core::mem::{FaultKind, Mem};
 
 const CODE: u64 = 0x100000;
 const DATA: u64 = 0x200000;
@@ -169,11 +169,11 @@ fn exit_string(r: Result<(), Exit>, pc: u64, end: u64) -> String {
         Err(Exit::Brk(_)) if pc == end => "end".into(),
         Err(Exit::Brk(_)) => format!("sigtrap pc=+{off} code=1"),
         Err(Exit::Undefined) => format!("sigill pc=+{off} code=1"),
-        Err(Exit::Fault(Fault::Align { addr, .. }) | Exit::Fetch(Fault::Align { addr, .. })) => {
-            format!("sigbus pc=+{off} code=1 addr={addr:#x}")
+        Err(Exit::Fault(f) | Exit::Fetch(f)) if f.kind == FaultKind::Align => {
+            format!("sigbus pc=+{off} code=1 addr={:#x}", f.addr)
         }
-        Err(Exit::Fault(Fault::Bus { addr, .. }) | Exit::Fetch(Fault::Bus { addr, .. })) => {
-            format!("sigsegv pc=+{off} code=1 addr={addr:#x}")
+        Err(Exit::Fault(f) | Exit::Fetch(f)) => {
+            format!("sigsegv pc=+{off} code=1 addr={:#x}", f.addr)
         }
         Err(e) => format!("{e:?} pc=+{off}"),
     }

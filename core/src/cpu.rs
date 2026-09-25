@@ -74,6 +74,7 @@ pub mod sctlr {
     pub const UCT: u64 = 1 << 15;
     pub const NTWI: u64 = 1 << 16;
     pub const NTWE: u64 = 1 << 18;
+    pub const WXN: u64 = 1 << 19;
     /// EE and E0E: RES0, we implement little-endian only.
     pub const ENDIAN: u64 = 3 << 24;
     pub const UCI: u64 = 1 << 26;

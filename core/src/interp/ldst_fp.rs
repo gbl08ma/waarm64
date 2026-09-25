@@ -5,25 +5,25 @@
 use super::{Exit, R, bit, bits, extend, sext};
 use crate::cpu::Cpu;
 use crate::decode::Op;
-use crate::mem::Mem;
+use crate::mmu::Bus;
 
 /// Little-endian read of 1, 2, 4, 8 or 16 bytes.
-pub(super) fn load(m: &Mem, addr: u64, bytes: u32) -> R<u128> {
+pub(super) fn load(c: &Cpu, m: &mut Bus, addr: u64, bytes: u32) -> R<u128> {
     Ok(if bytes == 16 {
-        m.read(addr, 8)? as u128 | (m.read(addr.wrapping_add(8), 8)? as u128) << 64
+        m.read(c, addr, 8)? as u128 | (m.read(c, addr.wrapping_add(8), 8)? as u128) << 64
     } else {
-        m.read(addr, bytes)? as u128
+        m.read(c, addr, bytes)? as u128
     })
 }
 
 /// Little-endian write of the low 1, 2, 4, 8 or 16 bytes of `v`.
-pub(super) fn store(m: &Mem, addr: u64, bytes: u32, v: u128) -> R {
+pub(super) fn store(c: &Cpu, m: &mut Bus, addr: u64, bytes: u32, v: u128) -> R {
     if bytes == 16 {
-        // High half first: on flat memory a fault then leaves memory untouched.
-        m.write(addr.wrapping_add(8), 8, (v >> 64) as u64)?;
-        m.write(addr, 8, v as u64)?;
+        // High half first: when only it faults, memory is left untouched.
+        m.write(c, addr.wrapping_add(8), 8, (v >> 64) as u64)?;
+        m.write(c, addr, 8, v as u64)?;
     } else {
-        m.write(addr, bytes, v as u64)?;
+        m.write(c, addr, bytes, v as u64)?;
     }
     Ok(())
 }
@@ -37,10 +37,13 @@ fn low(v: u128, bytes: u32) -> u128 {
     }
 }
 
-pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
+pub(super) fn exec(c: &mut Cpu, m: &mut Bus, i: u32, pc: u64, op: Op) -> R {
     use Op::*;
     let (rt, rn, rm) = (bits(i, 4, 0) as usize, bits(i, 9, 5), bits(i, 20, 16));
-    let base = c.reg_sp(rn);
+    let base = match op {
+        LDR_lit_fpsimd => 0, // no base register
+        _ => super::base_reg(c, rn)?,
+    };
     match op {
         LDR_lit_fpsimd => {
             let bytes = match bits(i, 31, 30) {
@@ -48,7 +51,7 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
                 opc => 4 << opc,
             };
             let addr = pc.wrapping_add(sext((bits(i, 23, 5) << 2) as u64, 21));
-            c.v[rt] = load(m, addr, bytes)?;
+            c.v[rt] = load(c, m, addr, bytes)?;
         }
         STP_LDP_fpsimd | STNP_LDNP_fpsimd => {
             let bytes = match bits(i, 31, 30) {
@@ -65,12 +68,12 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
             };
             let (a2, rt2) = (addr.wrapping_add(bytes as u64), bits(i, 14, 10) as usize);
             if bit(i, 22) {
-                let (v1, v2) = (load(m, addr, bytes)?, load(m, a2, bytes)?);
+                let (v1, v2) = (load(c, m, addr, bytes)?, load(c, m, a2, bytes)?);
                 c.v[rt] = v1;
                 c.v[rt2] = v2;
             } else {
-                store(m, addr, bytes, c.v[rt])?;
-                store(m, a2, bytes, c.v[rt2])?;
+                store(c, m, addr, bytes, c.v[rt])?;
+                store(c, m, a2, bytes, c.v[rt2])?;
             }
             if mode & 1 == 1 {
                 c.set_reg_sp(rn, base.wrapping_add(off));
@@ -127,12 +130,12 @@ fn single_size(i: u32) -> R<u32> {
 }
 
 /// STR/LDR of one B/H/S/D/Q register (L in bit 22). Loads zero the rest of the register.
-fn single(c: &mut Cpu, m: &Mem, i: u32, addr: u64, bytes: u32) -> R {
+fn single(c: &mut Cpu, m: &mut Bus, i: u32, addr: u64, bytes: u32) -> R {
     let rt = bits(i, 4, 0) as usize;
     if bit(i, 22) {
-        c.v[rt] = load(m, addr, bytes)?;
+        c.v[rt] = load(c, m, addr, bytes)?;
     } else {
-        store(m, addr, bytes, low(c.v[rt], bytes))?;
+        store(c, m, addr, bytes, low(c.v[rt], bytes))?;
     }
     Ok(())
 }
@@ -147,7 +150,7 @@ fn post_index(c: &mut Cpu, i: u32, base: u64, total: u64) {
 }
 
 /// LD1–LD4 / ST1–ST4 (multiple structures).
-fn multiple(c: &mut Cpu, m: &Mem, i: u32) -> R {
+fn multiple(c: &mut Cpu, m: &mut Bus, i: u32) -> R {
     let (q, load_, size) = (bit(i, 30), bit(i, 22), bits(i, 11, 10));
     let (rpt, selem) = match bits(i, 15, 12) {
         0b0000 => (1, 4),
@@ -166,7 +169,7 @@ fn multiple(c: &mut Cpu, m: &Mem, i: u32) -> R {
     let elements = datasize / ebytes;
     let esize = 8 * ebytes;
     let emask = (1u128 << esize) - 1;
-    let (t, base) = (bits(i, 4, 0) as usize, c.reg_sp(bits(i, 9, 5)));
+    let (t, base) = (bits(i, 4, 0) as usize, super::base_reg(c, bits(i, 9, 5))?);
     // Loads build the new registers in a copy and commit after the last read.
     let mut v = c.v;
     if load_ {
@@ -182,10 +185,10 @@ fn multiple(c: &mut Cpu, m: &Mem, i: u32) -> R {
                 let tt = (t + r + s) % 32;
                 let sh = e * esize;
                 if load_ {
-                    let x = load(m, addr, ebytes)?;
+                    let x = load(c, m, addr, ebytes)?;
                     v[tt] = (v[tt] & !(emask << sh)) | x << sh;
                 } else {
-                    store(m, addr, ebytes, (c.v[tt] >> sh) & emask)?;
+                    store(c, m, addr, ebytes, (c.v[tt] >> sh) & emask)?;
                 }
                 addr = addr.wrapping_add(ebytes as u64);
             }
@@ -199,7 +202,7 @@ fn multiple(c: &mut Cpu, m: &Mem, i: u32) -> R {
 }
 
 /// LD1–LD4 / ST1–ST4 (single structure) and LD1R–LD4R.
-fn single_structure(c: &mut Cpu, m: &Mem, i: u32) -> R {
+fn single_structure(c: &mut Cpu, m: &mut Bus, i: u32) -> R {
     let (q, load_, s, size) = (bit(i, 30), bit(i, 22), bit(i, 12), bits(i, 11, 10));
     let opcode = bits(i, 15, 13);
     let selem = (((opcode & 1) << 1) | bit(i, 21) as u32) as usize + 1;
@@ -213,14 +216,14 @@ fn single_structure(c: &mut Cpu, m: &Mem, i: u32) -> R {
         3 if load_ && !s => (1 << size, u32::MAX),
         _ => return Err(Exit::Undefined),
     };
-    let (t, base) = (bits(i, 4, 0) as usize, c.reg_sp(bits(i, 9, 5)));
+    let (t, base) = (bits(i, 4, 0) as usize, super::base_reg(c, bits(i, 9, 5))?);
     let esize = 8 * ebytes;
     let emask = (1u128 << esize) - 1;
     let mut addr = base;
     if index == u32::MAX {
         let mut vals = [0u128; 4];
         for x in vals.iter_mut().take(selem) {
-            *x = load(m, addr, ebytes)?;
+            *x = load(c, m, addr, ebytes)?;
             addr = addr.wrapping_add(ebytes as u64);
         }
         let n = if q { 128 / esize } else { 64 / esize };
@@ -233,9 +236,9 @@ fn single_structure(c: &mut Cpu, m: &Mem, i: u32) -> R {
         for (k, x) in vals.iter_mut().take(selem).enumerate() {
             let tt = (t + k) % 32;
             if load_ {
-                *x = load(m, addr, ebytes)?;
+                *x = load(c, m, addr, ebytes)?;
             } else {
-                store(m, addr, ebytes, (c.v[tt] >> sh) & emask)?;
+                store(c, m, addr, ebytes, (c.v[tt] >> sh) & emask)?;
             }
             addr = addr.wrapping_add(ebytes as u64);
         }

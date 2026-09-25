@@ -5,19 +5,23 @@
 use super::{Exit, R, bit, bits, extend, sext};
 use crate::cpu::{Cpu, Monitor};
 use crate::decode::Op;
-use crate::mem::{Fault, Mem};
+use crate::mem::{Access, Fault, FaultKind};
+use crate::mmu::Bus;
 
-pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
+pub(super) fn exec(c: &mut Cpu, m: &mut Bus, i: u32, pc: u64, op: Op) -> R {
     use Op::*;
     let (rt, rn, rs) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
-    let base = c.reg_sp(rn);
+    let base = match op {
+        LDR_lit_gen | LDRSW_lit | PRFM_lit => 0, // no base register
+        _ => super::base_reg(c, rn)?,
+    };
     match op {
         LDR_lit_gen | LDRSW_lit => {
             let addr = pc.wrapping_add(sext((bits(i, 23, 5) << 2) as u64, 21));
             let v = match (op, bit(i, 30)) {
-                (LDRSW_lit, _) => m.read(addr, 4)? as i32 as u64,
-                (_, false) => m.read(addr, 4)?,
-                (_, true) => m.read(addr, 8)?,
+                (LDRSW_lit, _) => m.read(c, addr, 4)? as i32 as u64,
+                (_, false) => m.read(c, addr, 4)?,
+                (_, true) => m.read(c, addr, 8)?,
             };
             c.set_reg(rt, v);
         }
@@ -67,13 +71,13 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
             };
             let (a2, rt2) = (addr.wrapping_add(size as u64), bits(i, 14, 10));
             if load {
-                let (v1, v2) = (m.read(addr, size)?, m.read(a2, size)?);
+                let (v1, v2) = (m.read(c, addr, size)?, m.read(c, a2, size)?);
                 let ext = |v: u64| if signed { v as i32 as u64 } else { v };
                 c.set_reg(rt, ext(v1));
                 c.set_reg(rt2, ext(v2));
             } else {
-                m.write(addr, size, c.reg(rt))?;
-                m.write(a2, size, c.reg(bits(i, 14, 10)))?;
+                m.write(c, addr, size, c.reg(rt))?;
+                m.write(c, a2, size, c.reg(bits(i, 14, 10)))?;
             }
             if mode & 1 == 1 {
                 c.set_reg_sp(rn, base.wrapping_add(off));
@@ -83,7 +87,7 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
         // Exclusives and acquire/release. Size in 31:30 (single) or 30 (pairs).
         LDXR | LDAXR => {
             let size = 1 << bits(i, 31, 30);
-            let v = m.read_atomic(base, size)?;
+            let v = m.read_atomic(c, base, size)?;
             c.monitor = Monitor {
                 addr: base,
                 size: size as u64,
@@ -94,10 +98,10 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
         LDXP | LDAXP => {
             let rt2 = bits(i, 14, 10);
             let (lo, hi, val) = if bit(i, 30) {
-                let p = m.read_pair(base, 8)?;
+                let p = m.read_pair(c, base, 8)?;
                 (p[0], p[1], p)
             } else {
-                let v = m.read_atomic(base, 8)?;
+                let v = m.read_atomic(c, base, 8)?;
                 (v as u32 as u64, v >> 32, [v, 0])
             };
             let size = if bit(i, 30) { 16 } else { 8 };
@@ -116,7 +120,7 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
             c.monitor.size = 0;
             let ok = mon.addr == base
                 && mon.size == size as u64
-                && m.cas(base, size, mon.val[0], new)? == mon.val[0];
+                && m.cas(c, base, size, mon.val[0], new)? == mon.val[0];
             c.set_reg(rs, !ok as u64);
         }
         STXP | STLXP => {
@@ -127,25 +131,27 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
                 aligned(base, 16)?;
                 mon.addr == base
                     && mon.size == 16
-                    && m.cas_pair(base, 8, mon.val, [lo, hi])? == mon.val
+                    && m.cas_pair(c, base, 8, mon.val, [lo, hi])? == mon.val
             } else {
                 aligned(base, 8)?;
                 let new = lo as u32 as u64 | hi << 32;
-                mon.addr == base && mon.size == 8 && m.cas(base, 8, mon.val[0], new)? == mon.val[0]
+                mon.addr == base
+                    && mon.size == 8
+                    && m.cas(c, base, 8, mon.val[0], new)? == mon.val[0]
             };
             c.set_reg(rs, !ok as u64);
         }
         LDAR => {
-            let v = m.read_atomic(base, 1 << bits(i, 31, 30))?;
+            let v = m.read_atomic(c, base, 1 << bits(i, 31, 30))?;
             c.set_reg(rt, v);
         }
-        STLR => m.write_atomic(base, 1 << bits(i, 31, 30), c.reg(rt))?,
+        STLR => m.write_atomic(c, base, 1 << bits(i, 31, 30), c.reg(rt))?,
 
         // LSE.
         CAS | CASB | CASH => {
             let size = 1 << bits(i, 31, 30);
             let mask = u64::MAX >> (64 - 8 * size);
-            let old = m.cas(base, size, c.reg(rs) & mask, c.reg(rt) & mask)?;
+            let old = m.cas(c, base, size, c.reg(rs) & mask, c.reg(rt) & mask)?;
             c.set_reg(rs, old);
         }
         CASP => {
@@ -154,10 +160,10 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
             }
             let (e, n) = ([c.reg(rs), c.reg(rs + 1)], [c.reg(rt), c.reg(rt + 1)]);
             let old = if bit(i, 30) {
-                m.cas_pair(base, 8, e, n)?
+                m.cas_pair(c, base, 8, e, n)?
             } else {
                 let join = |p: [u64; 2]| p[0] as u32 as u64 | p[1] << 32;
-                let v = m.cas(base, 8, join(e), join(n))?;
+                let v = m.cas(c, base, 8, join(e), join(n))?;
                 [v as u32 as u64, v >> 32]
             };
             c.set_reg(rs, old[0]);
@@ -170,7 +176,7 @@ pub(super) fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64, op: Op) -> R {
             let mask = u64::MAX >> (64 - bw);
             let v = c.reg(rs) & mask;
             let s = |x: u64| sext(x, bw) as i64;
-            let old = m.rmw(base, size, |old| {
+            let old = m.rmw(c, base, size, |old| {
                 (match bits(i, 15, 12) {
                     0 => old.wrapping_add(v),
                     1 => old & !v,
@@ -206,13 +212,17 @@ fn aligned(addr: u64, size: u32) -> R {
     if addr.is_multiple_of(size as u64) {
         Ok(())
     } else {
-        Err(Exit::Fault(Fault::Align { addr, write: true }))
+        Err(Exit::Fault(Fault {
+            addr,
+            access: Access::Write,
+            kind: FaultKind::Align,
+        }))
     }
 }
 
 /// One register load/store: STR/LDR/LDRS* by size (31:30) and opc (23:22).
 /// `prfm` says whether size 3, opc 2 is PRFM here (else it's unallocated).
-fn single(c: &mut Cpu, m: &Mem, i: u32, addr: u64, wb: Option<u64>, prfm: bool) -> R {
+fn single(c: &mut Cpu, m: &mut Bus, i: u32, addr: u64, wb: Option<u64>, prfm: bool) -> R {
     let (size, opc, rt, rn) = (
         bits(i, 31, 30),
         bits(i, 23, 22),
@@ -221,16 +231,16 @@ fn single(c: &mut Cpu, m: &Mem, i: u32, addr: u64, wb: Option<u64>, prfm: bool) 
     );
     let bytes = 1 << size;
     match opc {
-        0 => m.write(addr, bytes, c.reg(rt))?,
+        0 => m.write(c, addr, bytes, c.reg(rt))?,
         1 => {
-            let v = m.read(addr, bytes)?;
+            let v = m.read(c, addr, bytes)?;
             c.set_reg(rt, v);
         }
         2 if size == 3 && prfm => return Ok(()),
         _ if size == 3 || (size == 2 && opc == 3) => return Err(Exit::Undefined),
         _ => {
             // Sign-extending: opc 2 to 64 bits, opc 3 to 32 bits.
-            let v = sext(m.read(addr, bytes)?, 8 * bytes);
+            let v = sext(m.read(c, addr, bytes)?, 8 * bytes);
             c.set_reg(rt, if opc == 3 { v as u32 as u64 } else { v });
         }
     }

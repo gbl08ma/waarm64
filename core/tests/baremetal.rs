@@ -5,6 +5,7 @@
 use webpc_core::cpu::Cpu;
 use webpc_core::interp::{Exit, run_system};
 use webpc_core::mem::Mem;
+use webpc_core::mmu::Vcpu;
 
 const RAM_BASE: u64 = 0x4000_0000;
 const RAM_SIZE: usize = 16 << 20;
@@ -22,28 +23,29 @@ fn boot(image: &[u8]) -> Result<u64, String> {
     for (k, b) in image.iter().enumerate() {
         mem.write(RAM_BASE + k as u64, 1, *b as u64).unwrap();
     }
-    let mut cpu = Cpu {
+    let mut v = Vcpu::new(Cpu {
         pc: RAM_BASE,
         ..Cpu::reset()
-    };
+    });
     let mut left = BUDGET;
     while left > 0 {
-        let (done, r) = run_system(&mut cpu, &mem, left);
+        let (done, r) = run_system(&mut v, &mem, left);
         left -= done;
         match r {
             Ok(()) => break,
             // ponytail: the minimal PSCI a test needs; step 4 brings the real one.
-            Err(Exit::Hvc(_)) => match cpu.x[0] {
-                PSCI_SYSTEM_OFF => return Ok(cpu.x[1]),
-                PSCI_VERSION => cpu.x[0] = 1 << 16, // 1.0
-                _ => cpu.x[0] = PSCI_NOT_SUPPORTED,
+            Err(Exit::Hvc(_)) => match v.cpu.x[0] {
+                PSCI_SYSTEM_OFF => return Ok(v.cpu.x[1]),
+                PSCI_VERSION => v.cpu.x[0] = 1 << 16, // 1.0
+                _ => v.cpu.x[0] = PSCI_NOT_SUPPORTED,
             },
-            Err(e) => return Err(format!("{e:?} at pc={:#x}", cpu.pc)),
+            Err(e) => return Err(format!("{e:?} at pc={:#x}", v.cpu.pc)),
         }
     }
+    let c = &v.cpu;
     Err(format!(
         "no SYSTEM_OFF after {BUDGET} steps: pc={:#x} esr={:#x} elr={:#x} far={:#x}",
-        cpu.pc, cpu.esr_el1, cpu.elr_el1, cpu.far_el1
+        c.pc, c.esr_el1, c.elr_el1, c.far_el1
     ))
 }
 

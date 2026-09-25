@@ -384,36 +384,25 @@ fn lse() {
     assert_eq!(rmw(0x78217040, 2, 0x8000, 0x7fff), (0x8000, 0x7fff)); // lduminh w1, w0, [x2]
 }
 
+fn fault(addr: u64, access: Access, kind: FaultKind) -> R {
+    Err(Exit::Fault(Fault { addr, access, kind }))
+}
+
 #[test]
 fn faults_leave_state_alone() {
     let mut t = T::new(&[0xf9400120]).x(9, 0xffff_0000).x(0, 1); // ldr x0, [x9]
-    assert_eq!(
-        t.step(),
-        Err(Exit::Fault(Fault::Bus {
-            addr: 0xffff_0000,
-            write: false
-        }))
-    );
+    assert_eq!(t.step(), fault(0xffff_0000, Access::Read, FaultKind::Bus));
     assert_eq!((t.c.x[0], t.c.pc), (1, CODE));
     let mut t = T::new(&[0xc85f7d20]).x(9, DATA + 4); // ldxr x0, [x9]
-    assert_eq!(
-        t.step(),
-        Err(Exit::Fault(Fault::Align {
-            addr: DATA + 4,
-            write: false
-        }))
-    );
-    // ldp x3, x4, [sp], #16 with the second word out of RAM.
-    let sp = RAM as u64 - 8;
-    let mut t = T::new(&[0xa8c113e3]).x(31, sp).x(3, 1);
-    assert_eq!(
-        t.step(),
-        Err(Exit::Fault(Fault::Bus {
-            addr: RAM as u64,
-            write: false
-        }))
-    );
-    assert_eq!((t.c.x[3], t.c.x[31]), (1, sp));
+    assert_eq!(t.step(), fault(DATA + 4, Access::Read, FaultKind::Align));
+    // ldp x3, x4, [x9], #16 with the second word out of RAM.
+    let a = RAM as u64 - 8;
+    let mut t = T::new(&[0xa8c11123]).x(9, a).x(3, 1);
+    assert_eq!(t.step(), fault(RAM as u64, Access::Read, FaultKind::Bus));
+    assert_eq!((t.c.x[3], t.c.x[9]), (1, a));
+    // ldr x0, [sp] with SP misaligned: SP alignment fault (SCTLR_EL1.SA0).
+    let mut t = T::new(&[0xf94003e0]).x(31, DATA + 8);
+    assert_eq!(t.step(), Err(Exit::Trap(0x26 << 26)));
 }
 
 /// DATA holds bytes 0, 1, 2, … (mod 256); `seq(k, n)` is the n-byte LE value at DATA + k.
@@ -880,9 +869,12 @@ impl T {
         self
     }
 
-    /// One step of `run_system`.
+    /// One step of `run_system` (with a fresh TLB).
     fn sys(&mut self) -> R {
-        run_system(&mut self.c, &self.r.mem, 1).1
+        let mut v = crate::mmu::Vcpu::new(self.c.clone());
+        let r = run_system(&mut v, &self.r.mem, 1).1;
+        self.c = v.cpu.clone();
+        r
     }
 }
 
@@ -1058,10 +1050,10 @@ fn el1_exceptions_and_eret_state() {
         (VBAR + 0x400, 0x3a00_0000, 0x4444)
     );
     assert_eq!(c.spsr_el1, crate::cpu::SPSR_IL); // from EL0t
-    // Unimplemented stops run_system with the PC on the instruction.
-    let mut t = T::new(&[0xd5087800]).el1(); // at s1e1r, x0
-    assert!(matches!(t.sys(), Err(Exit::Unimplemented(_))));
-    assert_eq!(t.c.pc, CODE);
+    // at s1e1r, x0 with the MMU off: PAR_EL1 is the flat address, Device, outer shareable.
+    let mut t = T::new(&[0xd5087800]).el1().x(0, 0x1234_5678);
+    t.sys().unwrap();
+    assert_eq!(t.c.par_el1, 0x1234_5000 | 2 << 7 | 1 << 11);
 }
 
 #[test]
