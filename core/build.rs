@@ -7,6 +7,21 @@
 use std::fmt::Write;
 
 const TABLE: &str = "src/a64/a64.inc";
+/// Should-be-one fields the M4 ignores (it executes these with any value there),
+/// relaxed to don't-care. QEMU SIGILLs some of them; the M4 is the reference
+/// (PLAN.md §4.2). CAS/CASP keep theirs: the M4 raises UNDEFINED for those.
+const RELAX: &[(&str, &str)] = &[
+    ("LDXR", "zz001000010-----0-----nnnnnttttt"),
+    ("LDAXR", "zz001000010-----1-----nnnnnttttt"),
+    ("STXR", "zz001000000sssss0-----nnnnnttttt"),
+    ("STLXR", "zz001000000sssss1-----nnnnnttttt"),
+    ("LDXP", "1z001000011-----0uuuuunnnnnttttt"),
+    ("LDAXP", "1z001000011-----1uuuuunnnnnttttt"),
+    ("LDAR", "zz001000110-----1-----nnnnnttttt"),
+    ("STLR", "zz001000100-----1-----nnnnnttttt"),
+    ("SMULH", "10011011010mmmmm0-----nnnnnddddd"),
+    ("UMULH", "10011011110mmmmm0-----nnnnnddddd"),
+];
 const COMES_FIRST: [&str; 3] = [
     "MOVI, MVNI, ORR, BIC (vector, immediate)",
     "FMOV (vector, immediate)",
@@ -35,8 +50,9 @@ fn main() {
         // INST(id, "name", "bits"); names contain commas, so split on quotes.
         let q: Vec<&str> = rest.split('"').collect();
         let id = q[0].trim().trim_end_matches(',');
-        let (name, bits) = (q[1].to_string(), q[3]);
-        assert_eq!(bits.len(), 32, "{line}");
+        let name = q[1].to_string();
+        let bits = RELAX.iter().find(|r| r.0 == id).map_or(q[3], |r| r.1);
+        assert_eq!(bits.len(), 32, "{line} / {bits}");
         let (mut mask, mut value) = (0u32, 0u32);
         for c in bits.chars() {
             mask = mask << 1 | matches!(c, '0' | '1') as u32;

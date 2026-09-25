@@ -16,6 +16,9 @@ copyright/license header in the file.
 | playwright-core | 1.63.0 | Apache-2.0 |
 | typescript | 7.0.2 | Apache-2.0 |
 | @types/node | 26.6.2 | MIT |
+| cargo-fuzz (installed tool) | 0.13.2 | MIT OR Apache-2.0 |
+| libfuzzer-sys (`core/fuzz` only) | 0.4.13 | (MIT OR Apache-2.0) AND NCSA (bundled libFuzzer) |
+| capstone / capstone-sys (`core/fuzz` only) | 0.14.0 / 0.18.0 | MIT; bundles Capstone 5.0 (BSD-3-Clause) |
 
 ## Reference projects: verified licenses
 
