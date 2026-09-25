@@ -399,3 +399,92 @@ fn faults_leave_state_alone() {
     assert_eq!(t.step(), Err(Exit::Fault(Fault::Bus { addr: RAM as u64 })));
     assert_eq!((t.c.x[3], t.c.x[31]), (1, sp));
 }
+
+/// DATA holds bytes 0, 1, 2, … (mod 256); `seq(k, n)` is the n-byte LE value at DATA + k.
+fn seq_mem(t: T) -> T {
+    for k in 0..256 {
+        t.r.mem.write(DATA + k, 1, k).unwrap();
+    }
+    t
+}
+
+fn seq(k: u64, n: u64) -> u128 {
+    (0..n).fold(0, |acc, j| acc | (((k + j) & 0xff) as u128) << (8 * j))
+}
+
+fn fp(prog: &[u32]) -> T {
+    let mut t = seq_mem(T::new(prog)).x(2, DATA);
+    t.c.v = core::array::from_fn(|n| u128::MAX - n as u128);
+    t
+}
+
+#[test]
+fn fp_load_store_single_and_pair() {
+    assert_eq!(fp(&[0x3dc00040]).run().c.v[0], seq(0, 16)); // ldr q0, [x2]
+    assert_eq!(fp(&[0xbd400441]).run().c.v[1], seq(4, 4)); // ldr s1, [x2, #4]
+    let t = fp(&[0x7c5fe443]).run(); // ldr h3, [x2], #-2
+    assert_eq!((t.c.v[3], t.c.x[2]), (seq(0, 2), DATA - 2));
+    assert_eq!(fp(&[0x3c636844]).x(3, 9).run().c.v[4], 9); // ldr b4, [x2, x3]
+    assert_eq!(fp(&[0xfc5f8046]).x(2, DATA + 16).run().c.v[6], seq(8, 8)); // ldur d6, [x2, #-8]
+    assert_eq!(fp(&[0x9c000007]).run().c.v[7], 0x9c000007); // ldr q7, . (itself, then zeros)
+    let t = fp(&[0xfc008c41]).run(); // str d1, [x2, #8]!
+    assert_eq!(
+        (t.rd(DATA + 8, 8), t.rd(DATA + 16, 1), t.c.x[2]),
+        (!1, 16, DATA + 8)
+    );
+    let t = fp(&[0x3ca37845]).x(3, 1).run(); // str q5, [x2, x3, lsl #4]
+    assert_eq!((t.rd(DATA + 16, 8), t.rd(DATA + 24, 8)), (!5, u64::MAX));
+    let t = fp(&[0xad410440]).run(); // ldp q0, q1, [x2, #32]
+    assert_eq!((t.c.v[0], t.c.v[1]), (seq(32, 16), seq(48, 16)));
+    let t = fp(&[0x2c810c42]).run(); // stp s2, s3, [x2], #8
+    assert_eq!((t.rd(DATA, 8), t.c.x[2]), (0xffff_fffc_ffff_fffd, DATA + 8));
+    let t = fp(&[0x6c401444]).run(); // ldnp d4, d5, [x2]
+    assert_eq!((t.c.v[4], t.c.v[5]), (seq(0, 8), seq(8, 8)));
+}
+
+#[test]
+fn fp_load_store_structures() {
+    let t = fp(&[0x0cdf8440]).run(); // ld2 {v0.4h, v1.4h}, [x2], #16
+    assert_eq!(t.c.v[0], 0x0d0c_0908_0504_0100);
+    assert_eq!((t.c.v[1], t.c.x[2]), (0x0f0e_0b0a_0706_0302, DATA + 16));
+    let t = fp(&[0x4c40085e]).run(); // ld4 {v30.4s, v31.4s, v0.4s, v1.4s}, [x2]
+    let lanes = |k: u64| (0..4).fold(0u128, |a, e| a | seq(k + 16 * e, 4) << (32 * e));
+    assert_eq!(
+        [t.c.v[30], t.c.v[31], t.c.v[0], t.c.v[1]],
+        [lanes(0), lanes(4), lanes(8), lanes(12)]
+    );
+    let t = fp(&[0x4c836c40]).x(3, 100).run(); // st1 {v0.2d, v1.2d, v2.2d}, [x2], x3
+    assert_eq!(
+        (t.rd(DATA + 16, 8), t.rd(DATA + 32, 8), t.c.x[2]),
+        (!1, !2, DATA + 100)
+    );
+    let t = fp(&[0x0d40b040]).run(); // ld3 {v0.s, v1.s, v2.s}[1], [x2]
+    assert_eq!(
+        t.c.v[1],
+        (u128::MAX - 1) & !(0xffff_ffff << 32) | seq(4, 4) << 32
+    );
+    let t = fp(&[0x4d9f8440]).run(); // st1 {v0.d}[1], [x2], #8
+    assert_eq!(
+        (t.rd(DATA, 8), t.rd(DATA + 8, 1), t.c.x[2]),
+        (u64::MAX, 8, DATA + 8)
+    );
+    let t = fp(&[0x4d40c440]).run(); // ld1r {v0.8h}, [x2]
+    assert_eq!(t.c.v[0], 0x0100_0100_0100_0100_0100_0100_0100_0100);
+    let t = fp(&[0x0dffe840]).run(); // ld4r {v0.2s, v1.2s, v2.2s, v3.2s}, [x2], #16
+    assert_eq!(
+        (t.c.v[3], t.c.x[2]),
+        (seq(12, 4) * 0x1_0000_0001, DATA + 16)
+    );
+    assert_eq!(fp(&[0x0c407c40]).run().c.v[0], seq(0, 8)); // ld1 {v0.1d}, [x2]
+    // ld2 {v0.1d, v1.1d}: size 3 with Q=0 and more than one element per structure is reserved.
+    assert_eq!(fp(&[0x0c408c40]).step(), Err(Exit::Undefined));
+}
+
+#[test]
+fn fpcr_fpsr() {
+    // msr fpsr, x1; mrs x0, fpcr (after msr fpcr, x1): only the implemented bits stick.
+    let t = T::new(&[0xd51b4421]).x(1, u64::MAX).run();
+    assert_eq!(t.c.fpsr, 0x0800_009f);
+    let t = T::new(&[0xd51b4401, 0xd53b4400]).x(1, u64::MAX).run();
+    assert_eq!(t.c.x[0], 0x07c0_0000);
+}

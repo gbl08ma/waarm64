@@ -11,7 +11,7 @@ pub mod mem;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -41,7 +41,7 @@ pub unsafe extern "C" fn atomic_inc(ptr: *const AtomicU32) -> u32 {
 }
 
 /// Allocates a zeroed vCPU. The host reads and writes its registers through the
-/// returned pointer (`cpu::Cpu` is `repr(C)`: X0–X30 and SP at 0, PC at 256, NZCV at 264).
+/// returned pointer (`cpu::Cpu` is `repr(C)`: X0–X30 and SP at 0, PC at 256, NZCV at 264, V0–V31 at 304, FPCR at 816, FPSR at 824).
 #[unsafe(no_mangle)]
 pub extern "C" fn vcpu_new() -> *mut cpu::Cpu {
     Box::into_raw(Box::default())

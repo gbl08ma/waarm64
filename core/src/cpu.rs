@@ -1,7 +1,8 @@
 //! Per-vCPU architectural state. Everything a vCPU owns lives here, behind the
 //! pointer the host hands to the core: no globals.
 
-/// Integer register file, PC, flags and the local exclusive monitor.
+/// Register files, PC, flags and the local exclusive monitor. The host reads PC
+/// at offset 256 and NZCV at 264; new fields go at the end.
 #[repr(C)]
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct Cpu {
@@ -11,7 +12,20 @@ pub struct Cpu {
     /// N, Z, C, V in bits 31..28, laid out as the NZCV system register.
     pub nzcv: u64,
     pub monitor: Monitor,
+    /// V0–V31 (offset 304). Element `e` of an `esize`-bit vector is bits
+    /// `e*esize..(e+1)*esize`, as the ARM `Elem[]` accessor has it.
+    pub v: [u128; 32],
+    /// FPCR (offset 816): only the v8.0 bits AHP, DN, FZ and RMode hold values.
+    pub fpcr: u64,
+    /// FPSR (offset 824): QC and the cumulative exception flags.
+    pub fpsr: u64,
 }
+
+/// FPCR bits that hold values: AHP (26), DN (25), FZ (24), RMode (23:22). The
+/// trap enables are RAZ/WI (no trapping, as on the M4); FZ16 and the FEAT_AFP bits aren't implemented.
+pub const FPCR_MASK: u64 = 0x07c0_0000;
+/// FPSR bits that hold values: QC (27), IDC (7), IXC, UFC, OFC, DZC, IOC (4:0).
+pub const FPSR_MASK: u64 = 0x0800_009f;
 
 /// Local exclusive monitor, armed by LDXR/LDAXR/LDXP and consumed by STXR/STXP/CLREX.
 /// The store-exclusive compares memory against `val` with a real atomic
@@ -66,5 +80,16 @@ mod tests {
         assert_eq!(c.reg_sp(31), 0x1000);
         c.set_reg(3, 7);
         assert_eq!((c.reg(3), c.reg_sp(3)), (7, 7));
+    }
+
+    #[test]
+    fn host_abi_offsets() {
+        let c = Cpu::default();
+        let off = |p: *const u8| p as usize - &c as *const Cpu as usize;
+        assert_eq!(off(&c.pc as *const u64 as *const u8), 256);
+        assert_eq!(off(&c.nzcv as *const u64 as *const u8), 264);
+        assert_eq!(off(c.v.as_ptr() as *const u8), 304);
+        assert_eq!(off(&c.fpcr as *const u64 as *const u8), 816);
+        assert_eq!(off(&c.fpsr as *const u64 as *const u8), 824);
     }
 }
