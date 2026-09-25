@@ -12,10 +12,15 @@ step wasm build;  scripts/build-wasm.sh -q
 step npm deps;    [ -d node_modules ] || npm ci --no-fund --no-audit
 step typecheck;   npx tsc --noEmit
 step js tests;    npm test --silent
-step boot test
-if msg=$(images/build.sh --check); then
-  cargo test -q --release --test boot -- --ignored
-else
-  printf '\n**************** SKIPPED: %s ****************\n' "$msg"
-fi
+# Guest-image tests: run when target/images has the image and it's current.
+image_test() {
+  step "$1"
+  if msg=$(images/build.sh --check "$2"); then
+    cargo test -q --release --test "$3" -- --ignored
+  else
+    printf '\n**************** SKIPPED: %s ****************\n' "$msg"
+  fi
+}
+image_test 'boot test' linux boot
+image_test kvm-unit-tests kvm-unit-tests kvm_unit_tests
 printf '\nCI OK\n'

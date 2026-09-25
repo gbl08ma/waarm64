@@ -161,12 +161,13 @@ pub unsafe extern "C" fn vm_cpu(vm: *mut vm::Vm) -> *mut cpu::Cpu {
     &mut unsafe { &mut *vm }.vcpu.cpu
 }
 
-/// Boots the arm64 `Image` the host copied to guest PA `kernel_pa`, with the
+/// Boots the arm64 `Image` (or, without its header, a raw binary entered at
+/// its first byte) the host copied to guest PA `kernel_pa`, with the
 /// initrd at `initrd_pa` (`initrd_len` 0 for none) and the kernel command line
 /// at `cmdline_ptr` (UTF-8, `cmdline_len` bytes, in linear memory). The core
 /// writes the DTB into the top 2 MiB of RAM, which the host leaves free, and
-/// sets x0 and the PC (booting.rst). Returns 0, or 1 if the Image or the
-/// layout is invalid.
+/// sets x0 and the PC (booting.rst). Returns 0, or 1 if the Image is
+/// misaligned or the layout is invalid.
 ///
 /// # Safety
 /// See the note above [`vm_new`]; `cmdline_ptr..+cmdline_len` is readable.

@@ -1,6 +1,9 @@
 //! Direct kernel boot: the arm64 `Image` protocol (Linux
 //! Documentation/arch/arm64/booting.rst) and the device tree describing the VM.
 //!
+//! A kernel without the `Image` header (kvm-unit-tests' `.flat` files) boots
+//! as a raw binary entered at its first byte, as QEMU does.
+//!
 //! The host has already copied the `Image` and the initrd into RAM. The DTB
 //! goes in the last 2 MiB of RAM, which the host must leave free. The vCPU
 //! starts at the `Image`'s first byte in its reset state (EL1h, DAIF masked,
@@ -100,7 +103,7 @@ pub fn dtb(ram_size: u64, cmdline: &str, initrd: Option<(u64, u64)>) -> Vec<u8> 
 }
 
 impl Vm {
-    /// Boots the `Image` the host placed at `kernel_pa`, with the initrd at
+    /// Boots the `Image` (or raw binary) the host placed at `kernel_pa`, with the initrd at
     /// `initrd_pa..+initrd_len` (none if the length is 0) and `cmdline`: writes
     /// the DTB into the top `DTB_SPACE` of RAM and resets the vCPU to the entry.
     pub fn boot(
@@ -109,16 +112,12 @@ impl Vm {
         initrd: Option<(u64, u64)>,
         cmdline: &str,
     ) -> Result<(), &'static str> {
-        let rd32 = |pa| self.mem.read(pa, 4).map_err(|_| "kernel outside RAM");
-        if rd32(kernel_pa + 0x38)? as u32 != IMAGE_MAGIC {
-            return Err("not an arm64 Image (no ARM\\x64 magic)");
-        }
-        let text_offset = self
-            .mem
-            .read(kernel_pa + 8, 8)
-            .map_err(|_| "kernel outside RAM")?;
-        if !(kernel_pa - text_offset).is_multiple_of(2 << 20) {
-            return Err("Image base not 2 MiB aligned");
+        let rd = |pa, size| self.mem.read(pa, size).map_err(|_| "kernel outside RAM");
+        if rd(kernel_pa + 0x38, 4)? as u32 == IMAGE_MAGIC {
+            let text_offset = rd(kernel_pa + 8, 8)?;
+            if !(kernel_pa - text_offset).is_multiple_of(2 << 20) {
+                return Err("Image base not 2 MiB aligned");
+            }
         }
         let ram = self.mem.size();
         let dtb_pa = RAM_BASE + ram - DTB_SPACE;
@@ -158,7 +157,12 @@ mod tests {
         let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 8 << 20) };
         let mut vm = Vm::new(mem, VmConfig::default());
         let k = RAM_BASE + (2 << 20);
-        assert!(vm.boot(k, None, "").is_err(), "no magic");
+        assert!(
+            vm.boot(RAM_BASE + (8 << 20), None, "").is_err(),
+            "outside RAM"
+        );
+        vm.boot(k + 0x1000, None, "").unwrap(); // no header: a raw binary, anywhere
+        assert_eq!(vm.vcpu.cpu.pc, k + 0x1000);
         vm.mem.write(k + 0x38, 4, IMAGE_MAGIC as u64).unwrap();
         vm.mem
             .write(k + 0x1000 + 0x38, 4, IMAGE_MAGIC as u64)
