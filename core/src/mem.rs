@@ -181,6 +181,11 @@ impl Mem {
         }
     }
 
+    /// 2×`size` read of a naturally aligned pair, atomic with respect to [`Mem::cas_pair`] (LDXP).
+    pub fn read_pair(&self, addr: u64, size: u32) -> Result<[u64; 2], Fault> {
+        self.pair_locked(addr, size, |old| (old, None))
+    }
+
     /// 2×`size` compare-and-swap of a naturally aligned pair (CASP, STXP).
     /// Returns the old pair; the swap happened iff it equals `expected`.
     pub fn cas_pair(
@@ -190,17 +195,29 @@ impl Mem {
         expected: [u64; 2],
         new: [u64; 2],
     ) -> Result<[u64; 2], Fault> {
+        self.pair_locked(addr, size, |old| (old, (old == expected).then_some(new)))
+    }
+
+    /// Runs `f` on the pair at `addr` under `pair_lock`; writes back what it returns, if anything.
+    fn pair_locked(
+        &self,
+        addr: u64,
+        size: u32,
+        f: impl FnOnce([u64; 2]) -> ([u64; 2], Option<[u64; 2]>),
+    ) -> Result<[u64; 2], Fault> {
         self.host_aligned(addr, 2 * size as u64)?;
+        let hi = addr + size as u64;
         while self.pair_lock.swap(1, Ordering::Acquire) != 0 {
             core::hint::spin_loop();
         }
-        let old = [self.read(addr, size), self.read(addr + size as u64, size)].map(Result::unwrap);
-        if old == expected {
-            self.write(addr, size, new[0]).unwrap();
-            self.write(addr + size as u64, size, new[1]).unwrap();
+        // In bounds: host_aligned checked both halves.
+        let (ret, new) = f([self.read(addr, size).unwrap(), self.read(hi, size).unwrap()]);
+        if let Some([lo_v, hi_v]) = new {
+            self.write(addr, size, lo_v).unwrap();
+            self.write(hi, size, hi_v).unwrap();
         }
         self.pair_lock.store(0, Ordering::Release);
-        Ok(old)
+        Ok(ret)
     }
 }
 
@@ -262,6 +279,7 @@ pub(crate) mod tests {
         }
         assert_eq!(r.mem.cas_pair(48, 8, [0, 0], [7, 9]).unwrap(), [0, 0]);
         assert_eq!(r.mem.cas_pair(48, 8, [7, 0], [1, 1]).unwrap(), [7, 9]);
+        assert_eq!(r.mem.read_pair(48, 8).unwrap(), [7, 9]);
         assert_eq!(
             (r.mem.read(48, 8).unwrap(), r.mem.read(56, 8).unwrap()),
             (7, 9)

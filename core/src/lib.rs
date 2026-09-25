@@ -5,6 +5,7 @@
 
 pub mod cpu;
 pub mod decode;
+pub mod interp;
 pub mod mem;
 
 use core::sync::atomic::{AtomicU32, Ordering};
