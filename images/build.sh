@@ -39,7 +39,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   podman image exists "$tag" || podman build -t "$tag" -f images/Containerfile images
   mkdir -p "$out"
   exec podman run --rm --userns=keep-id -v "$root:$root:z" -w "$root" \
-    -e WEBPC_IN_CONTAINER=1 "$tag" images/build.sh "$@"
+    -e WEBPC_IN_CONTAINER=1 -e HOME=/tmp "$tag" images/build.sh "$@"
 fi
 
 jobs=$(nproc)
