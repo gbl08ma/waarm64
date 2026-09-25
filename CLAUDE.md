@@ -14,7 +14,7 @@ and runs unmodified arm64 Linux. Chromium is the primary target.
 - M1 (A64 integer interpreter + golden corpus): done. Decoder `core/build.rs` ← `core/src/a64/a64.inc`; interpreter `core/src/interp*`; corpus `tests/corpus/` (grow it with `node tools/corpus/run.ts`, compare with `cargo test`); decoder fuzzing `core/fuzz`; MIPS `bench/interp/REPORT.md`.
 - M2 (FP and AdvSIMD in the interpreter): done. FP core `core/src/fp.rs` (own implementation of the ARM pseudocode, RNE fast paths; `scripts/testfloat.sh`); FP/SIMD handlers `core/src/interp/{ldst_fp,simd,simd_int,simd_fp,float}.rs`; corpus also runs on wasm (`tests/corpus-wasm.test.ts`); MIPS in `bench/interp/REPORT.md`.
 - M3 (system level, Linux boots on the interpreter): done. Whole-VM ABI 5 `core/src/vm.rs` (run loop, deterministic time, IRQs, PSCI), `gic.rs`, `pl011.rs`, `mmu.rs`, `boot.rs` + `fdt.rs`; bare-metal tests `tests/baremetal/`; guest images `images/` (Podman; Linux + BusyBox, kvm-unit-tests); boot runners `core/tests/{boot,kvm_unit_tests}.rs` and `web/vm.ts`; boot baseline and profile `bench/boot/REPORT.md`.
-- **Next: M4**, virtio devices and real distros. Start from `M4-KICKOFF.md`.
+- **M4** (virtio devices and real distros) in progress, from `M4-KICKOFF.md`: steps 1–2 done (`vm_run` MIPS; GIC to 96 INTIDs, virtio-mmio transport and split queues `core/src/virtio.rs`, ABI 6, backends `web/devices.ts` in `web/device-worker.ts`, console + rng booting). PLAN.md §7 M4 "Progress".
 - Loose ends no milestone owns yet (speed levers, unadvertised extensions, the arm64 spike re-run, …) are listed in PLAN.md §7 "M9". Add to that list rather than leaving TODOs scattered.
 
 ## Commands
@@ -37,6 +37,7 @@ images/build.sh [name...]      # guest images in rootless Podman -> target/image
 cargo test --release --test boot -- --ignored --nocapture   # boot target/images/linux natively (ci.sh runs it when images exist)
 cargo test --release --test kvm_unit_tests -- --ignored --nocapture   # kvm-unit-tests, likewise
 (cd core/fuzz && cargo run --release --bin sweep [-- sys])    # exhaustive decoder check vs Capstone (~3 min; sys: MRS/MSR/SYS at EL1, seconds)
+(cd core && cargo fuzz run virtqueue)                         # libFuzzer on the virtio-mmio transport and split-queue parser
 tests/baremetal/build.sh && tests/baremetal/oracle.sh [--hvf] # rebuild the bare-metal EL1 tests (.bin committed), run them on QEMU virt (TCG, or hvf on the Mac)
 ```
 

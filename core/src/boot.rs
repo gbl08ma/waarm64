@@ -11,6 +11,7 @@
 
 use crate::cpu::Cpu;
 use crate::fdt::Fdt;
+use crate::virtio;
 use crate::vm::{GICC, GICD, IRQ_UART, RAM_BASE, UART, Vm};
 
 /// Space reserved for the DTB at the top of RAM (booting.rst's limit is 2 MiB).
@@ -20,8 +21,9 @@ const GIC_PHANDLE: u32 = 1;
 const CLK_PHANDLE: u32 = 2;
 
 /// The device tree for this VM: QEMU `virt`'s addresses and bindings for the
-/// devices we have. `initrd` is (start, end) in guest PA.
-pub fn dtb(ram_size: u64, cmdline: &str, initrd: Option<(u64, u64)>) -> Vec<u8> {
+/// devices we have, with `virtio` virtio-mmio transports in the first slots.
+/// `initrd` is (start, end) in guest PA.
+pub fn dtb(ram_size: u64, cmdline: &str, initrd: Option<(u64, u64)>, virtio: usize) -> Vec<u8> {
     let mut f = Fdt::default();
     f.begin("");
     f.cells("#address-cells", &[2]);
@@ -98,6 +100,17 @@ pub fn dtb(ram_size: u64, cmdline: &str, initrd: Option<(u64, u64)>) -> Vec<u8> 
     f.strs("clock-names", &["uartclk", "apb_pclk"]);
     f.end();
 
+    // The line is level-high: it follows InterruptStatus (QEMU says edge).
+    for i in 0..virtio {
+        let pa = virtio::MMIO_BASE + i as u64 * virtio::MMIO_STRIDE;
+        f.begin(&format!("virtio_mmio@{pa:x}"));
+        f.strs("compatible", &["virtio,mmio"]);
+        f.cells64("reg", &[pa, virtio::MMIO_STRIDE]);
+        f.cells("interrupts", &[0, (virtio::IRQ_BASE + i - 32) as u32, 4]);
+        f.flag("dma-coherent");
+        f.end();
+    }
+
     f.end();
     f.finish()
 }
@@ -127,7 +140,7 @@ impl Vm {
         {
             return Err("initrd outside RAM or over the DTB space");
         }
-        let blob = dtb(ram, cmdline, initrd);
+        let blob = dtb(ram, cmdline, initrd, self.virtio.len());
         if blob.len() as u64 > DTB_SPACE {
             return Err("DTB too large");
         }
@@ -186,6 +199,7 @@ mod tests {
             256 << 20,
             "console=ttyAMA0 earlycon",
             Some((0x4800_0000, 0x4810_0000)),
+            2,
         );
         let dir = std::env::temp_dir().join(format!("webpc-dtb-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

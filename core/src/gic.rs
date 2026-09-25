@@ -3,13 +3,13 @@
 //! RAZ/WI, FIQ is never raised). Written from the GICv2 architecture
 //! specification (IHI 0048B); QEMU's model was a behavioral reference only.
 //!
-//! 64 interrupt IDs: SGIs 0–15, PPIs 16–31 (the timers use 27 and 30), SPIs
-//! 32–63 (the PL011 is 33). Per-interrupt state is one bit in a `u64` mask.
+//! 96 interrupt IDs: SGIs 0–15, PPIs 16–31 (the timers use 27 and 30), SPIs
+//! 32–95 (the PL011 is 33, the virtio-mmio transports 48–79). Per-interrupt
+//! state is one bit in a `u128` mask.
 //! Priorities keep all 8 bits. `GICD_ITARGETSR` is RAZ/WI, as the spec has it
 //! for a uniprocessor GIC (and QEMU does); M7 needs real targets.
-// ponytail: 64 IDs is all M3's devices need; widen the masks for virtio in M4.
 
-pub const NIRQ: usize = 64;
+pub const NIRQ: usize = 96;
 pub const SPURIOUS: u32 = 1023;
 /// `GICC_CTLR.EOImode` (bit 9 without the Security Extensions): EOIR only
 /// drops priority, and GICC_DIR deactivates.
@@ -21,16 +21,16 @@ pub struct Gic {
     pmr: u32,
     bpr: u32,
     abpr: u32,
-    enabled: u64,
+    enabled: u128,
     /// Pending state latched by an edge, a GICD_ISPENDR write or an SGI.
-    latch: u64,
+    latch: u128,
     /// Input lines from the devices; a level-sensitive interrupt is pending while its line is high.
-    level: u64,
+    level: u128,
     /// ICFGR: edge-triggered (SGIs always are).
-    edge: u64,
-    active: u64,
+    edge: u128,
+    active: u128,
     /// Acknowledged and not yet EOId: these set the running priority.
-    in_service: u64,
+    in_service: u128,
     prio: [u8; NIRQ],
 }
 
@@ -53,8 +53,8 @@ impl Default for Gic {
     }
 }
 
-/// Word `n` of a 64-bit per-interrupt mask, and the mask bits a write of `v` to it covers.
-fn word(m: u64, n: usize) -> u32 {
+/// Word `n` of a per-interrupt mask, and the mask bits a write of `v` to it covers.
+fn word(m: u128, n: usize) -> u32 {
     if n < NIRQ / 32 {
         (m >> (32 * n)) as u32
     } else {
@@ -62,9 +62,9 @@ fn word(m: u64, n: usize) -> u32 {
     }
 }
 
-fn bits_of(v: u32, n: usize) -> u64 {
+fn bits_of(v: u32, n: usize) -> u128 {
     if n < NIRQ / 32 {
-        (v as u64) << (32 * n)
+        (v as u128) << (32 * n)
     } else {
         0
     }
@@ -73,7 +73,7 @@ fn bits_of(v: u32, n: usize) -> u64 {
 impl Gic {
     /// Drives device line `irq` (a PPI or SPI) high or low.
     pub fn set_level(&mut self, irq: usize, high: bool) {
-        let b = 1u64 << irq;
+        let b = 1u128 << irq;
         if high && self.level & b == 0 && self.edge & b != 0 {
             self.latch |= b;
         }
@@ -84,7 +84,7 @@ impl Gic {
         };
     }
 
-    fn pending(&self) -> u64 {
+    fn pending(&self) -> u128 {
         self.latch | (self.level & !self.edge)
     }
 
@@ -137,7 +137,7 @@ impl Gic {
         let Some(i) = self.signaled() else {
             return SPURIOUS;
         };
-        let b = 1u64 << i;
+        let b = 1u128 << i;
         self.active |= b;
         self.in_service |= b;
         self.latch &= !b;
@@ -147,9 +147,9 @@ impl Gic {
     fn eoi(&mut self, v: u32) {
         let id = (v & 0x3ff) as usize;
         if id < NIRQ {
-            self.in_service &= !(1 << id);
+            self.in_service &= !(1u128 << id);
             if self.cctlr & EOIMODE == 0 {
-                self.active &= !(1 << id);
+                self.active &= !(1u128 << id);
             }
         }
     }
@@ -217,7 +217,7 @@ impl Gic {
             }
             0xc00..0xd00 if n > 0 && n < NIRQ / 16 => {
                 // SGIs (field 0) stay edge-triggered.
-                let e = (0..16).fold(0u64, |e, k| e | ((v >> (2 * k + 1) & 1) as u64) << k);
+                let e = (0..16).fold(0u128, |e, k| e | ((v >> (2 * k + 1) & 1) as u128) << k);
                 let sh = 16 * n;
                 self.edge = self.edge & !(0xffff << sh) | e << sh;
             }
@@ -225,7 +225,7 @@ impl Gic {
                 // GICD_SGIR: filter 0 (the target list) with CPU 0 in it, or 2 (self).
                 let filter = v >> 24 & 3;
                 if filter == 2 || filter == 0 && v & 1 << 16 != 0 {
-                    self.latch |= 1 << (v & 0xf);
+                    self.latch |= 1u128 << (v & 0xf);
                 }
             }
             _ => {}
@@ -265,7 +265,7 @@ impl Gic {
             0x1000 => {
                 let id = (v & 0x3ff) as usize;
                 if id < NIRQ {
-                    self.active &= !(1 << id); // GICC_DIR
+                    self.active &= !(1u128 << id); // GICC_DIR
                 }
             }
             _ => {}
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn register_shapes() {
         let mut g = Gic::default();
-        assert_eq!(g.dist_read(4, 4), Some(1));
+        assert_eq!(g.dist_read(4, 4), Some(2), "ITLinesNumber: 96 IDs");
         assert_eq!(g.dist_read(0xc00, 4), Some(0xaaaa_aaaa)); // SGIs edge
         g.dist_write(0xc00, 4, 0).unwrap();
         assert_eq!(g.dist_read(0xc00, 4), Some(0xaaaa_aaaa), "read-only");
@@ -396,7 +396,11 @@ mod tests {
         assert_eq!(g.cpu_read(0x0c, 2), None);
         g.dist_write(0x401, 1, 0x40).unwrap();
         assert_eq!(g.dist_read(0x400, 4), Some(0x4000));
-        assert_eq!(g.dist_read(0x480, 4), Some(0), "past the implemented IDs");
+        g.dist_write(0x45c, 4, 0xffff_ffff).unwrap();
+        assert_eq!(g.dist_read(0x45c, 4), Some(0xffff_ffff), "IDs 92-95");
+        assert_eq!(g.dist_read(0x460, 4), Some(0), "past the implemented IDs");
+        g.dist_write(0x10c, 4, 1).unwrap();
+        assert_eq!(g.dist_read(0x10c, 4), Some(0));
         assert_eq!(g.dist_read(0xc80, 4), Some(0));
     }
 }

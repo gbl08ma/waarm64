@@ -64,4 +64,18 @@
 		clocks = <0x02 0x02>;
 		clock-names = "uartclk", "apb_pclk";
 	};
+
+	virtio_mmio@a000000 {
+		compatible = "virtio,mmio";
+		reg = <0x00 0xa000000 0x00 0x200>;
+		interrupts = <0x00 0x10 0x04>;
+		dma-coherent;
+	};
+
+	virtio_mmio@a000200 {
+		compatible = "virtio,mmio";
+		reg = <0x00 0xa000200 0x00 0x200>;
+		interrupts = <0x00 0x11 0x04>;
+		dma-coherent;
+	};
 };

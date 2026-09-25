@@ -1,5 +1,5 @@
 // Boots target/images/linux (images/build.sh) on the wasm core in a worker.
-import { runToPowerOff } from '../../web/vm.ts';
+import { GUEST_DEVICES, runToPowerOff } from '../../web/vm.ts';
 
 const get = async (path: string) => {
   const r = await fetch(path);
@@ -13,8 +13,8 @@ try {
     get('/target/images/linux/Image'),
     get('/target/images/linux/rootfs.cpio'),
   ]);
-  const r = await runToPowerOff(wasm, { ramSize: 256 << 20, kernel, initrd, cmdline: 'console=ttyAMA0 earlycon panic=-1' });
-  self.postMessage({ kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console });
+  const r = await runToPowerOff(wasm, { ramSize: 256 << 20, kernel, initrd, cmdline: 'console=ttyAMA0 earlycon panic=-1', devices: GUEST_DEVICES });
+  self.postMessage({ kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc });
 } catch (e) {
   self.postMessage({ error: String(e) });
 }

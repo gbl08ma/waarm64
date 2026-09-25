@@ -10,7 +10,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, { env: { memory: mem } }).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 5);
+  assert.equal(ex.abi_version(), 6);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -44,7 +44,7 @@ for (const mmu of [false, true]) {
   });
 }
 
-test('whole VM boots a bare-metal test through the vm_* exports (ABI 5)', () => {
+test('whole VM boots a bare-metal test through the vm_* exports (ABI 6)', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const ex = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(WASM)), { env: { memory: mem } }).exports as Record<
     string,

@@ -74,7 +74,7 @@ fn kvm_unit_tests() {
     let mut failed = Vec::new();
     for (name, file, args, expect_fail) in RUN {
         let flat = common::image(&format!("kvm-unit-tests/{file}.flat"));
-        let r = common::boot(&flat, None, args, 5_000_000_000, false);
+        let r = common::boot(&flat, None, args, &[], 5_000_000_000, false);
         let status = r
             .console
             .lines()

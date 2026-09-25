@@ -4,7 +4,7 @@
 // Cold: a freshly compiled module per boot (V8 starts on Liftoff code).
 // Warm: one module, reused after warm-up boots.
 import type { Options, Sample } from '../spike/benchmarks.ts';
-import { bootVm, Exit, PSCI_SYSTEM_OFF } from '../../web/vm.ts';
+import { bootVm, Exit, GUEST_DEVICES, PSCI_SYSTEM_OFF } from '../../web/vm.ts';
 
 export const CMDLINE = 'console=ttyAMA0 earlycon panic=-1';
 const CHUNK = 1_000_000; // steps per vm_run, so the /init marker is timed to ~a chunk
@@ -26,7 +26,7 @@ export async function images() {
 
 /** One boot to power-off: ms to "webpc: init" and to the end, and the counters. */
 export async function boot(module: WebAssembly.Module, img: { kernel: Uint8Array; initrd: Uint8Array }, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>) {
-  const vm = await bootVm(module, { ramSize: 256 << 20, kernel: img.kernel, initrd: img.initrd, cmdline: CMDLINE });
+  const vm = await bootVm(module, { ramSize: 256 << 20, kernel: img.kernel, initrd: img.initrd, cmdline: CMDLINE, devices: GUEST_DEVICES });
   await onVm?.(vm);
   let console = '';
   let init = NaN;

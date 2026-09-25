@@ -17,10 +17,14 @@ struct T {
 
 impl T {
     fn new(prog: &[u32], cfg: VmConfig) -> T {
+        T::with_devices(prog, cfg, &[])
+    }
+
+    fn with_devices(prog: &[u32], cfg: VmConfig, devices: &[DeviceEntry]) -> T {
         let mut ram = vec![0u128; 1 << 16];
         // SAFETY: ram is 16-byte aligned, 1 MiB, and lives as long as the Vm.
         let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 1 << 20) };
-        let mut vm = Vm::new(mem, cfg);
+        let mut vm = Vm::with_devices(mem, cfg, devices);
         for (k, w) in prog.iter().enumerate() {
             vm.mem.write(RAM_BASE + 4 * k as u64, 4, *w as u64).unwrap();
         }
@@ -169,4 +173,40 @@ fn stop_signal() {
     t.vm.shared.signal.fetch_or(SIGNAL_STOP, Ordering::Relaxed);
     assert_eq!(t.vm.run(10), exit::STOP);
     assert_eq!(t.vm.run(10), exit::BUDGET, "a stop is consumed");
+}
+
+#[test]
+fn virtio_register_write_exits_to_the_host() {
+    let rng = DeviceEntry {
+        device_id: 4,
+        queues: 1,
+        queue_size: 8,
+        ..DeviceEntry::default()
+    };
+    let mut t = T::with_devices(&[STR_W1_X0, STR_W1_X0, B_SELF], VmConfig::default(), &[rng]);
+    (t.cpu().x[0], t.cpu().x[1]) = (virtio::MMIO_BASE + 0x70, 0); // Status = 0: reset
+    assert_eq!(t.vm.run(10), exit::DEVICE);
+    assert_eq!(
+        (t.vm.exit.retired, t.vm.exit.value),
+        (1, (virtio::EV_STATUS as u64) << 8)
+    );
+    assert_eq!(
+        (
+            t.cpu().pc,
+            t.vm.shared.devices[0].events.swap(0, Ordering::Relaxed)
+        ),
+        (RAM_BASE + 4, virtio::EV_STATUS)
+    );
+    // A completion signal with nothing to complete runs on.
+    t.vm.shared
+        .signal
+        .fetch_or(SIGNAL_DEVICE, Ordering::Relaxed);
+    t.cpu().x[0] = virtio::MMIO_BASE + 0x200; // slot 1: no device
+    assert_eq!(t.vm.run(1), exit::BUDGET);
+    assert_eq!(t.vm.shared.signal.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        (t.cpu().pc, t.cpu().far_el1),
+        (VBAR + 0x200, virtio::MMIO_BASE + 0x200),
+        "external abort"
+    );
 }

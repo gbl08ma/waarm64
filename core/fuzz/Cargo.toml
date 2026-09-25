@@ -1,6 +1,7 @@
 # Decoder/interpreter fuzzing against Capstone (PLAN.md §4 item 10). Development
 # only: a separate workspace, so capstone never reaches the core's builds.
 #   cargo fuzz run decode            (from core/)
+#   cargo fuzz run virtqueue         (from core/; the virtio transport and split queues)
 #   cargo run --release --bin sweep  (from core/fuzz/)
 [package]
 name = "webpc-core-fuzz"
@@ -20,6 +21,13 @@ webpc-core = { path = ".." }
 [[bin]]
 name = "decode"
 path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "virtqueue"
+path = "fuzz_targets/virtqueue.rs"
 test = false
 doc = false
 bench = false

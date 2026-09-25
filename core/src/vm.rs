@@ -15,6 +15,12 @@
 //! instruction again through [`Io`], a third `Bus` that sends non-RAM accesses to
 //! the devices. Handlers do all their reads before writing registers, so the
 //! first, faulted attempt left nothing behind that matters.
+//!
+//! **virtio-mmio** transports (`virtio.rs`) sit in slots of QEMU `virt`'s
+//! window; their backends are the host's. A register write that has news for
+//! the host (a queue notify that posted requests, a status or config write)
+//! ends the run with [`exit::DEVICE`]; completions come back through
+//! `SIGNAL_DEVICE` and are drained at the next chunk boundary.
 
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
@@ -24,6 +30,7 @@ use crate::interp::{self, Exit, platform, take_exception, take_irq};
 use crate::mem::{Access, Fault, FaultKind, Mem};
 use crate::mmu::{Bus, Mmu, Vcpu, walk};
 use crate::pl011::{Pl011, Rings};
+use crate::virtio::{self, DevShared, DeviceEntry, Transport};
 use std::sync::Arc;
 
 pub const RAM_BASE: u64 = 0x4000_0000;
@@ -48,6 +55,9 @@ pub struct VmConfig {
     pub cntfrq: u64,
     /// Counter ticks per step; 0 means 1.
     pub ticks_per_insn: u64,
+    /// Address of `ndevices` `virtio::DeviceEntry`s, one per transport slot (ABI 6).
+    pub devices: u64,
+    pub ndevices: u64,
 }
 
 impl Default for VmConfig {
@@ -57,6 +67,8 @@ impl Default for VmConfig {
             deterministic: 1,
             cntfrq: 62_500_000,
             ticks_per_insn: 1,
+            devices: 0,
+            ndevices: 0,
         }
     }
 }
@@ -74,6 +86,9 @@ pub mod exit {
     /// `value` is the `Op` index; the PC is on the instruction.
     pub const UNIMPLEMENTED: u32 = 4;
     pub const STOP: u32 = 5;
+    /// A virtio transport has news for the host (`value` = slot | `virtio::EV_*` << 8;
+    /// every device's pending events are in its `DevShared::events`). The PC is past the access.
+    pub const DEVICE: u32 = 6;
 }
 
 /// Why `Vm::run` returned. `repr(C)`: kind, steps this run, value, x0–x3.
@@ -89,6 +104,8 @@ pub struct ExitInfo {
 /// Signal word bits.
 pub const SIGNAL_STOP: u32 = 1;
 pub const SIGNAL_RX: u32 = 2;
+/// A backend posted completions.
+pub const SIGNAL_DEVICE: u32 = 4;
 
 /// Written by the vCPU with relaxed stores, read by the host at any time.
 /// `repr(C)`: steps, exceptions by EC, IRQs, the TLB counters (step 8), PC.
@@ -131,6 +148,8 @@ pub struct Shared {
     pub console: Rings,
     pub signal: AtomicU32,
     pub counters: Counters,
+    /// One per virtio transport.
+    pub devices: Vec<DevShared>,
 }
 
 pub struct Vm {
@@ -138,6 +157,7 @@ pub struct Vm {
     pub mem: Mem,
     pub gic: Gic,
     pub uart: Pl011,
+    pub virtio: Vec<Transport>,
     pub shared: Arc<Shared>,
     pub exit: ExitInfo,
     cfg: VmConfig,
@@ -159,6 +179,12 @@ impl Vm {
     /// A VM over `mem` (placed at `RAM_BASE`), with the vCPU in its reset state at
     /// the start of RAM. Zeroes in `cfg` pick the defaults.
     pub fn new(mem: Mem, cfg: VmConfig) -> Vm {
+        Vm::with_devices(mem, cfg, &[])
+    }
+
+    /// As [`Vm::new`], with a virtio-mmio transport per entry (valid ones, `DeviceEntry::valid`).
+    pub fn with_devices(mem: Mem, cfg: VmConfig, devices: &[DeviceEntry]) -> Vm {
+        assert!(devices.len() <= virtio::MAX_DEVICES && devices.iter().all(DeviceEntry::valid));
         let d = VmConfig::default();
         let pick = |v, d| if v == 0 { d } else { v };
         Vm {
@@ -169,7 +195,11 @@ impl Vm {
             mem: mem.at(RAM_BASE),
             gic: Gic::default(),
             uart: Pl011::default(),
-            shared: Arc::default(),
+            virtio: devices.iter().map(|&e| Transport::new(e)).collect(),
+            shared: Arc::new(Shared {
+                devices: devices.iter().map(|_| DevShared::default()).collect(),
+                ..Shared::default()
+            }),
             exit: ExitInfo::default(),
             cfg: VmConfig {
                 cntfrq: pick(cfg.cntfrq, d.cntfrq),
@@ -199,6 +229,14 @@ impl Vm {
             if sig & SIGNAL_RX != 0 {
                 // A wake-up only: the PL011 reads the ring directly.
                 self.shared.signal.fetch_and(!SIGNAL_RX, Ordering::AcqRel);
+            }
+            if sig & SIGNAL_DEVICE != 0 {
+                self.shared
+                    .signal
+                    .fetch_and(!SIGNAL_DEVICE, Ordering::AcqRel);
+                if self.complete() {
+                    break exit::DEVICE;
+                }
             }
             let left = budget.saturating_sub(self.steps - start);
             if left == 0 {
@@ -238,6 +276,23 @@ impl Vm {
         c.tlb_flushes.store(t.flushes, Ordering::Relaxed);
     }
 
+    /// Drains every backend's completions; true if that posted new requests
+    /// (chains that hadn't fit before), with `exit.value` set.
+    fn complete(&mut self) -> bool {
+        let mut any = false;
+        for (i, (t, sh)) in self.virtio.iter_mut().zip(&self.shared.devices).enumerate() {
+            let ev = t.complete(&self.mem, sh);
+            if ev != 0 {
+                sh.events.fetch_or(ev, Ordering::AcqRel);
+                if !any {
+                    self.exit.value = (i as u64) | (ev as u64) << 8;
+                }
+                any = true;
+            }
+        }
+        any
+    }
+
     /// Drives the device interrupt lines into the GIC.
     fn lines(&mut self) {
         let (c, now) = (&self.vcpu.cpu, self.now());
@@ -248,6 +303,9 @@ impl Vm {
             .set_level(IRQ_PTIMER, fires(c.cntp_ctl_el0, c.cntp_cval_el0));
         let irq = self.uart.irq(&self.shared.console.rx);
         self.gic.set_level(IRQ_UART, irq);
+        for (i, t) in self.virtio.iter().enumerate() {
+            self.gic.set_level(virtio::IRQ_BASE + i, t.irq());
+        }
     }
 
     /// The earliest compare value of an enabled, unmasked timer that hasn't fired yet.
@@ -332,6 +390,7 @@ impl Vm {
             mem,
             gic,
             uart,
+            virtio,
             shared,
             ..
         } = self;
@@ -340,12 +399,21 @@ impl Vm {
             gic,
             uart,
             console: &shared.console,
+            virtio,
+            devices: &shared.devices,
             tx_full: false,
+            device: None,
         };
         let r = interp::step_bus(&mut vcpu.cpu, &mut io);
-        let tx_full = io.tx_full;
+        let (tx_full, device) = (io.tx_full, io.device);
         match r {
-            Ok(()) => self.steps += 1,
+            Ok(()) => {
+                self.steps += 1;
+                if let Some(v) = device {
+                    self.exit.value = v;
+                    return Some(exit::DEVICE);
+                }
+            }
             Err(_) if tx_full => return Some(exit::TX_FULL),
             Err(e @ Exit::Fault(_)) => self.exception(e), // nothing there: external abort
             Err(e) => return self.handle(e),
@@ -397,8 +465,12 @@ struct Io<'a> {
     gic: &'a mut Gic,
     uart: &'a mut Pl011,
     console: &'a Rings,
+    virtio: &'a mut [Transport],
+    devices: &'a [DevShared],
     /// A PL011 DR write found the TX ring full.
     tx_full: bool,
+    /// A virtio register write with events for the host: the `DEVICE` exit's value.
+    device: Option<u64>,
 }
 
 impl Io<'_> {
@@ -419,6 +491,13 @@ impl Io<'_> {
                 let w = self.uart.read(off & !3, self.console) >> (8 * (off & 3));
                 Some(w & (u64::MAX >> (64 - 8 * size)) as u32)
             }
+            virtio::MMIO_BASE..VIRTIO_END => {
+                let (i, off) = virtio_slot(pa);
+                return self
+                    .virtio
+                    .get_mut(i)?
+                    .read(off, size, self.devices.get(i)?);
+            }
             _ => None,
         }
         .map(u64::from)
@@ -433,9 +512,33 @@ impl Io<'_> {
                 self.tx_full = !self.uart.write(pa - UART, v as u32, self.console);
                 (!self.tx_full).then_some(())
             }
+            virtio::MMIO_BASE..VIRTIO_END => {
+                let (i, off) = virtio_slot(pa);
+                let sh = self.devices.get(i)?;
+                let ev = self
+                    .virtio
+                    .get_mut(i)?
+                    .write(off, size, v, self.mmu.mem, sh)?;
+                if ev != 0 {
+                    sh.events.fetch_or(ev, Ordering::AcqRel);
+                    self.device = Some(i as u64 | (ev as u64) << 8);
+                }
+                Some(())
+            }
             _ => None,
         }
     }
+}
+
+const VIRTIO_END: u64 = virtio::MMIO_BASE + virtio::MAX_DEVICES as u64 * virtio::MMIO_STRIDE;
+
+/// Transport slot and register offset of a PA in the virtio-mmio window.
+fn virtio_slot(pa: u64) -> (usize, u64) {
+    let off = pa - virtio::MMIO_BASE;
+    (
+        (off / virtio::MMIO_STRIDE) as usize,
+        off % virtio::MMIO_STRIDE,
+    )
 }
 
 impl Bus for Io<'_> {
