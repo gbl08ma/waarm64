@@ -2,11 +2,12 @@
 
 ## Code in this repository derived from other projects
 
-None yet. When porting or copying code, add a row here and keep the original
+When porting or copying code, add a row here and keep the original
 copyright/license header in the file.
 
 | Our file(s) | Source project, file, commit | License |
 |---|---|---|
+| `core/src/a64/a64.inc` | dynarmic, `src/dynarmic/frontend/A64/decoder/a64.inc`, `a41c380246d3` (verbatim, header added). `core/build.rs` follows the match order of dynarmic's `a64.h` | 0BSD |
 
 ## Development dependencies (not distributed)
 

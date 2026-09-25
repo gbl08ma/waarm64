@@ -1,7 +1,11 @@
 //! webpc core: AArch64 CPU, MMU, JIT and platform devices.
 //!
-//! M0 only proves the toolchain: the crate builds natively (for tests) and for
-//! wasm32 with shared imported memory and atomics.
+//! The crate builds natively (for tests) and for wasm32 with shared imported
+//! memory and atomics.
+
+pub mod cpu;
+pub mod decode;
+pub mod mem;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
