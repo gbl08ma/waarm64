@@ -86,6 +86,12 @@ Testing is layered. The cheaper layers run on every commit.
      - Homebrew `qemu` (11.1) on the same Mac provides `qemu-system-aarch64 -accel hvf` for the system-level oracle (item 3).
    - The results are committed as golden files. Every CI run compares the interpreter (native build) and the JIT (in Node/V8) against that corpus. The oracles are only needed again when the corpus grows, so the Mac doesn't need to be always-on.
    - The generator must avoid CONSTRAINED UNPREDICTABLE and IMPLEMENTATION DEFINED cases (for example `LDP` with `Rt==Rt2`, or writeback with `Rn==Rt`). Otherwise the oracles legitimately disagree.
+   - **Corpus format (M1, `webpc-corpus 1`):** `tests/corpus/<group>.txt`, line-oriented text. Each test has `code`, a `seed` (splitmix64 expands to X0–X30, SP, NZCV, then the 8 KiB data region), `in` overrides, then the oracle's `out` (changed registers), `mem` (changed bytes) and `exit` (`end`, or `sigill`/`sigbus`/`sigsegv`/`sigtrap` with PC offset, `si_code` and fault address). A `note qemu: …` line records a QEMU result that differs from the M4's. New keys are additive (M2 adds V registers, FPCR and FPSR); anything else bumps the version. Fixed guest VAs: code at `0x100000` followed by a `brk #0` end marker, data at `0x200000`, harness at `0x400000`.
+   - **Tooling:** `tests/harness/harness.c` (static, freestanding; state loaded by a trampoline, dumped from the signal `ucontext` on an alternate stack), `tools/corpus/gen.ts` (deterministic generator), `tools/corpus/run.ts` (runs QEMU and the M4, writes the golden files; `node tools/corpus/run.ts [--oracle qemu|m4|both] [group…]`), and `core/tests/corpus.rs` (the comparator in `cargo test`).
+   - **Known oracle behavior** (M1 findings; the generator avoids these):
+     - Both oracles implement FEAT_LSE2: misaligned exclusives, `LDAR`/`STLR` and LSE atomics only fault when they cross a 16-byte granule. We don't advertise LSE2 and keep the v8.0 rule (natural alignment or an alignment fault). Wasm atomics need natural alignment anyway, so the check costs nothing extra.
+     - QEMU's `max` CPU has MTE (`ADDG`/`SUBG`, `STGP` execute), while the M4 raises SIGILL, as we do. QEMU's `DC ZVA` block is 512 bytes; the M4's is 64, as is ours.
+     - The M4 guest also advertises `lrcpc ilrcpc dcpop dcpodp flagm uscat sha3 sha512 asimddp asimdrdm fphp jscvt fcma`, so the generator must not emit those instructions either.
 3. **System-level oracles**, for things that can't run at EL0 on real hardware:
    - `qemu-system-aarch64 -M virt` for behavioral comparison (traces of exceptions and system register state).
    - The same QEMU with `-accel hvf` on the Mac: real Apple hardware running EL1 code (MMU, exceptions). The devices are still QEMU's.
@@ -278,6 +284,7 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
 ### M3 — System level, Linux boots (interpreter only)
 - EL0/EL1, the exception model, system registers (ID registers advertising exactly what's implemented), MMU walker + software TLB, TLBI, generic timer, GICv2, PL011, PSCI, DTB generation, `Image` boot protocol.
 - kvm-unit-tests. Deterministic mode.
+- Carry-overs from M1: SP alignment checking (`SCTLR_EL1.SA0`, which Linux sets; the M1 corpus keeps SP 16-byte aligned), `DCZID_EL0.BS = 4` to match the 64-byte `DC ZVA`, faults for EL0 cache maintenance to unmapped addresses, and page-crossing accesses in `Mem::host`.
 - **Exit:** Buildroot kernel boots to a shell in native and Chromium test runners. First **boot-time baseline** and PC-sampling profile.
 
 ### M4 — virtio devices and real distros

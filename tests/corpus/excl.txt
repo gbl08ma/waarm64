@@ -1,0 +1,8698 @@
+webpc-corpus 1
+oracle m4 2026-09-25
+test excl.ldxr.0000
+code 485ffddb
+seed f071ae53481fd771
+in x14=0x2003dc
+out x27=0x2f43
+exit end
+test excl.ldxr.0001
+code 885f7ebe
+seed 1eb68d90af7fb493
+in x21=0x201a50
+out x30=0x5f90657a
+exit end
+test excl.ldxr.0002
+code 885f7c19
+seed ee3d617ca66a8c62
+in x0=0x200ff4
+out x25=0x16fc25d
+exit end
+test excl.ldxr.0003
+code 485f7c5a
+seed 6f6c45f8ab055e0a
+in x2=0x2003ee
+out x26=0x84a5
+exit end
+test excl.ldxr.0004
+code 085fffa6
+seed b693ec8fb505c555
+in x29=0x200285
+out x6=0xb6
+exit end
+test excl.ldxr.0005
+code 885ffe0e
+seed caac8c1235d6d2ec
+in x16=0x200d88
+out x14=0x2128c6f0
+exit end
+test excl.ldxr.0006
+code c85fffb0
+seed 6a3df33a62ff40b3
+in x29=0x201e00
+out x16=0x221e16777de38d03
+exit end
+test excl.ldxr.0007
+code 085ffda9
+seed cd32ead2a9dabb55
+in x13=0x2016f8
+out x9=0x85
+exit end
+test excl.ldxr.0008
+code 085ffd02
+seed 03a044efac892b42
+in x8=0x2009d7
+out x2=0x7c
+exit end
+test excl.ldxr.0009
+code 085f7ee2
+seed 71dbb1a90aed32a2
+in x23=0x201160
+out x2=0xaa
+exit end
+test excl.ldxr.0010
+code 485ffd72
+seed 6aa25d8dfad7013c
+in x11=0x2015b8
+out x18=0x6a3b
+exit end
+test excl.ldxr.0011
+code c85f7e3f
+seed ddfd326f972b52b6
+in x17=0x200f08
+exit end
+test excl.ldxr.0012
+code 085f7c76
+seed 942bb677747f8ae7
+in x3=0x200c03
+out x22=0xf6
+exit end
+test excl.ldxr.0013
+code c85f7d0d
+seed 9060929e7c9e4990
+in x8=0x2000a8
+out x13=0xb59e8e5b3b9a3d08
+exit end
+test excl.ldxr.0014
+code c85fffbf
+seed 7c7284cdfc42d57b
+in x29=0x2009d0
+exit end
+test excl.ldxr.0015
+code 485f7cca
+seed ab31982431b43f65
+in x6=0x2002ee
+out x10=0x8f18
+exit end
+test excl.ldxr.0016
+code 485f7c3a
+seed 9067c0f9c3987927
+in x1=0x201fa2
+out x26=0x3518
+exit end
+test excl.ldxr.0017
+code 885ffe6f
+seed 8c2515eade1a33d3
+in x19=0x20093c
+out x15=0xfe7fcfd0
+exit end
+test excl.ldxr.0018
+code c85f7fdc
+seed 9266c080117b0fde
+in x30=0x201a98
+out x28=0xf68dd3c78ed0061
+exit end
+test excl.ldxr.0019
+code 085ffe05
+seed 0ab399b7b2964822
+in x16=0x20142f
+out x5=0xa3
+exit end
+test excl.ldxr.0020
+code 085ffe63
+seed 72e39c8e236577a8
+in x19=0x201cbf
+out x3=0x69
+exit end
+test excl.ldxr.0021
+code 085ffe26
+seed 6c65488f647374d2
+in x17=0x20141d
+out x6=0xec
+exit end
+test excl.ldxr.0022
+code 885f7e88
+seed b4c7d6c881ba1f5d
+in x20=0x2017c8
+out x8=0xe07818b9
+exit end
+test excl.ldxr.0023
+code 885fff42
+seed f4113391eb773a2a
+in x26=0x201ac8
+out x2=0xd12edb7b
+exit end
+test excl.ldxr.0024
+code 085f7cfa
+seed 19fb10e1da4fc1c4
+in x7=0x200282
+out x26=0xcd
+exit end
+test excl.ldxr.0025
+code 885fff8c
+seed d0cee70f3eb0365f
+in x28=0x200328
+out x12=0xeba59e16
+exit end
+test excl.ldxr.0026
+code 885ffd37
+seed 4675bf49411be6ea
+in x9=0x200f78
+out x23=0x1a28fc7e
+exit end
+test excl.ldxr.0027
+code 085ffdcd
+seed bee89a945d6c3d62
+in x14=0x201a77
+out x13=0x16
+exit end
+test excl.ldxr.0028
+code 085ffc06
+seed e4dcbc22d1ab9f81
+in x0=0x200417
+out x6=0x74
+exit end
+test excl.ldxr.0029
+code 085ffe24
+seed 724c21a0f0102bc1
+in x17=0x201561
+out x4=0x47
+exit end
+test excl.ldxr.0030
+code 485fff17
+seed a4d3a8bdcacc1c6d
+in x24=0x201ebc
+out x23=0xefaa
+exit end
+test excl.ldxr.0031
+code 085fffc9
+seed ad2a1c24bfdb0d98
+in x30=0x200dec
+out x9=0x2d
+exit end
+test excl.ldxr.0032
+code 885fffb9
+seed 06d5cd9d275f97f8
+in x29=0x200ab4
+out x25=0x564823a7
+exit end
+test excl.ldxr.0033
+code 085ffd45
+seed 2c3d142e8e4d6f94
+in x10=0x200777
+out x5=0x72
+exit end
+test excl.ldxr.0034
+code c85ffea3
+seed 78d293ae0031378c
+in x21=0x200798
+out x3=0xaf4f9daf7100ad28
+exit end
+test excl.ldxr.0035
+code 085fff03
+seed 2c46c2c3d80f939e
+in x24=0x201c80
+out x3=0x72
+exit end
+test excl.ldxr.0036
+code 485f7d1d
+seed 2bef426cb354a872
+in x8=0x200a92
+out x29=0xaf98
+exit end
+test excl.ldxr.0037
+code c85f7c52
+seed 61761e6ba17d63a3
+in x2=0x2016d0
+out x18=0xef8d80075fb6be38
+exit end
+test excl.ldxr.0038
+code c85f7c6c
+seed 90fef6b5d3a38435
+in x3=0x2017d8
+out x12=0x41234ddb6842248
+exit end
+test excl.ldxr.0039
+code c85f7c22
+seed afa764a3ad1ebf20
+in x1=0x200240
+out x2=0x60f155af0fd0ad06
+exit end
+test excl.ldxr.0040
+code c85f7c5f
+seed 861df791789df77e
+in x2=0x200e48
+exit end
+test excl.ldxr.0041
+code c85ffc20
+seed 3a3f96e7af25a698
+in x1=0x200dd8
+out x0=0x6d7a1937777d00fd
+exit end
+test excl.ldxr.0042
+code 485f7f70
+seed 81c5f92ba9447a73
+in x27=0x2018b4
+out x16=0x4386
+exit end
+test excl.ldxr.0043
+code 485fff00
+seed d878d219334895fe
+in x24=0x2000fe
+out x0=0x1445
+exit end
+test excl.ldxr.0044
+code 885f7e97
+seed 4cc0d4035ecac43d
+in x20=0x20131c
+out x23=0x8a8f1966
+exit end
+test excl.ldxr.0045
+code c85f7e42
+seed 766ca316470be2de
+in x18=0x201f78
+out x2=0x60f9b849e1b70ff9
+exit end
+test excl.ldxr.0046
+code c85ffff4
+seed 34536dd2f1ce0e59
+in sp=0x2013c0
+out x20=0x2760ddeae17197e8
+exit end
+test excl.ldxr.0047
+code 885f7ee5
+seed 61feaa700ba88609
+in x23=0x200694
+out x5=0x6429d993
+exit end
+test excl.ldxr.0048
+code 885fffe3
+seed 5584877363764afb
+in sp=0x200c40
+out x3=0xf48acd06
+exit end
+test excl.ldxr.0049
+code 885ffe8f
+seed df05205d2748a365
+in x20=0x2013d4
+out x15=0xfe4ef8cf
+exit end
+test excl.ldxr.0050
+code 085ffdc9
+seed 64b27d21f7795313
+in x14=0x201316
+out x9=0xb
+exit end
+test excl.ldxr.0051
+code c85ffeb0
+seed 10bda5ab42d745f0
+in x21=0x200620
+out x16=0x31a3536a7a701b48
+exit end
+test excl.ldxr.0052
+code 885ffcf4
+seed 4379f3b673aa4ee1
+in x7=0x20153c
+out x20=0x589b4d34
+exit end
+test excl.ldxr.0053
+code 485f7ec6
+seed e2bee6b67a361487
+in x22=0x200e60
+out x6=0x9ebf
+exit end
+test excl.ldxr.0054
+code c85ffe02
+seed 9976377cea49c091
+in x16=0x2014e8
+out x2=0x4d289731522beb6c
+exit end
+test excl.ldxr.0055
+code c85ffeed
+seed ba1a90ede2ec6e16
+in x23=0x200db0
+out x13=0x25de9bedabc674c3
+exit end
+test excl.ldxr.0056
+code 085fff51
+seed 24663b5bd56eb813
+in x26=0x2010c7
+out x17=0xb3
+exit end
+test excl.ldxr.0057
+code 085f7f37
+seed a30af7f494a7b973
+in x25=0x2004e9
+out x23=0x4
+exit end
+test excl.ldxr.0058
+code 885ffe82
+seed b21b6ad2972e7978
+in x20=0x200fdc
+out x2=0xd8567676
+exit end
+test excl.ldxr.0059
+code c85ffee2
+seed 77cbb1ce31ddd666
+in x23=0x201468
+out x2=0x16402a0556cb95a6
+exit end
+test excl.ldxr.0060
+code 085ffcd6
+seed 0ef226c5a1c32a43
+in x6=0x200905
+out x22=0xe
+exit end
+test excl.ldxr.0061
+code 885f7f82
+seed 496db4ba17722a65
+in x28=0x200f04
+out x2=0xe0a6f7d6
+exit end
+test excl.ldxr.0062
+code 085fff37
+seed 4d144fb9691e0ec1
+in x25=0x2015ae
+out x23=0x4c
+exit end
+test excl.ldxr.0063
+code 085f7fcb
+seed 8a6885e1748a0465
+in x30=0x201990
+out x11=0x83
+exit end
+test excl.ldxr.0064
+code 885ffde7
+seed 34c15a9f1c009522
+in x15=0x2019ec
+out x7=0x25dcb9ab
+exit end
+test excl.ldxr.0065
+code c85f7f9f
+seed ebe468dd30cdc0a4
+in x28=0x2018e8
+exit end
+test excl.ldxr.0066
+code 485f7cab
+seed 95338d9f385e84af
+in x5=0x201d7c
+out x11=0xe3a3
+exit end
+test excl.ldxr.0067
+code c85ffcc3
+seed 99c5a66037c0a087
+in x6=0x200e10
+out x3=0x521de7da21c5b4e5
+exit end
+test excl.ldxr.0068
+code 485ffe84
+seed d845def193a4b505
+in x20=0x201da2
+out x4=0x367
+exit end
+test excl.ldxr.0069
+code 885ffeb5
+seed dc042aaf3e0f6cc7
+in x21=0x2018a0
+out x21=0xd7974bcc
+exit end
+test excl.ldxr.0070
+code 485fff71
+seed 656a0d4bc193a68c
+in x27=0x20070c
+out x17=0xfc0f
+exit end
+test excl.ldxr.0071
+code 085f7dbb
+seed 6b9618c59a317b21
+in x13=0x201536
+out x27=0xef
+exit end
+test excl.ldxr.0072
+code 485ffd39
+seed a494e4d08b9a2191
+in x9=0x201ca4
+out x25=0xd6e5
+exit end
+test excl.ldxr.0073
+code c85f7c1f
+seed f672245f31fadd34
+in x0=0x200100
+exit end
+test excl.ldxr.0074
+code 485f7c11
+seed 1aca6a998d3621f8
+in x0=0x20114e
+out x17=0x2338
+exit end
+test excl.ldxr.0075
+code 085ffe59
+seed 013b49721be88e4c
+in x18=0x200b99
+out x25=0x6a
+exit end
+test excl.ldxr.0076
+code c85f7f66
+seed 2fd8e6830b30db8c
+in x27=0x201680
+out x6=0xb03cd55d0c14c4f3
+exit end
+test excl.ldxr.0077
+code c85ffe84
+seed e85c44962ed1c1e5
+in x20=0x2011c0
+out x4=0x7be260cd07ae64e6
+exit end
+test excl.ldxr.0078
+code c85f7cde
+seed 44eb2374d952b9fe
+in x6=0x200910
+out x30=0xc54364d3bb5a8433
+exit end
+test excl.ldxr.0079
+code c85f7f0f
+seed 3740ab303227ad9c
+in x24=0x200ad8
+out x15=0x26fde9e5911b9842
+exit end
+test excl.ldxr.0080
+code c85ffff6
+seed a40bcfd4697fc16c
+in sp=0x201220
+out x22=0xb8e6c1d1ba67bc52
+exit end
+test excl.ldxr.0081
+code 085ffc68
+seed ef15501d94ceebad
+in x3=0x201170
+out x8=0x45
+exit end
+test excl.ldxr.0082
+code c85ffefd
+seed ef30e9e0ec5c0de5
+in x23=0x200548
+out x29=0xf2b9cce0c11298ba
+exit end
+test excl.ldxr.0083
+code 885fff70
+seed d82a8728e43dd7f5
+in x27=0x200798
+out x16=0x7907a38a
+exit end
+test excl.ldxr.0084
+code 485ffd1d
+seed b64726198cc88ba0
+in x8=0x20007c
+out x29=0x93ba
+exit end
+test excl.ldxr.0085
+code 885fff3c
+seed c6ca496ca428aec6
+in x25=0x201828
+out x28=0xa4fddc6e
+exit end
+test excl.ldxr.0086
+code 885f7c8d
+seed 0ff81688915ee396
+in x4=0x200e60
+out x13=0x5e8115c7
+exit end
+test excl.ldxr.0087
+code 085f7c48
+seed ae76aa5206c5b687
+in x2=0x20057a
+out x8=0x19
+exit end
+test excl.ldxr.0088
+code 885f7c06
+seed e6533711ba6a41ed
+in x0=0x201cec
+out x6=0x871d600
+exit end
+test excl.ldxr.0089
+code 885ffd21
+seed d6f0fa2d94b024ae
+in x9=0x2011f0
+out x1=0x8891992a
+exit end
+test excl.ldxr.0090
+code 085f7caa
+seed beee422117ba4db0
+in x5=0x200e95
+out x10=0x56
+exit end
+test excl.ldxr.0091
+code 085fff26
+seed b487b1f51857af02
+in x25=0x2012d9
+out x6=0x6a
+exit end
+test excl.ldxr.0092
+code 885f7e89
+seed 559187a7751e8095
+in x20=0x201870
+out x9=0x461f2a78
+exit end
+test excl.ldxr.0093
+code c85f7d09
+seed f76c05cea5ed9d4b
+in x8=0x200b38
+out x9=0x488f382badd371ae
+exit end
+test excl.ldxr.0094
+code 085f7d50
+seed 7cf7b8181a91fe6a
+in x10=0x2001b1
+out x16=0x6b
+exit end
+test excl.ldxr.0095
+code 485f7dc2
+seed 6d486175079dea86
+in x14=0x201f24
+out x2=0xcf43
+exit end
+test excl.ldxr.0096
+code 885ffd4c
+seed 18c0958cc6bd2148
+in x10=0x2017d8
+out x12=0x74096b92
+exit end
+test excl.ldxr.0097
+code 085ffdb9
+seed 696fe92f5104b40f
+in x13=0x200826
+out x25=0x74
+exit end
+test excl.ldxr.0098
+code 085f7ed8
+seed 33c2d8eff37a69f6
+in x22=0x2012e1
+out x24=0x94
+exit end
+test excl.ldxr.0099
+code 485ffe7c
+seed a68bc2137353fb74
+in x19=0x2002c8
+out x28=0x6436
+exit end
+test excl.ldxr.0100
+code 885fff31
+seed fe4679c780c2dd58
+in x25=0x200004
+out x17=0x988bb83e
+exit end
+test excl.ldxr.0101
+code c85ffd8a
+seed e5e32b7acc4e914c
+in x12=0x201068
+out x10=0xd77b1ab61cd671d6
+exit end
+test excl.ldxr.0102
+code 085ffc40
+seed dc6cba2c83daa704
+in x2=0x20099f
+out x0=0x18
+exit end
+test excl.ldxr.0103
+code 485fff4e
+seed 2b9557bba23f8057
+in x26=0x2005e8
+out x14=0x99c0
+exit end
+test excl.ldxr.0104
+code 085f7ca7
+seed 34390d1b2d42ac19
+in x5=0x20008d
+out x7=0x9e
+exit end
+test excl.ldxr.0105
+code c85ffd6f
+seed 77599cbab6cfb747
+in x11=0x2018c0
+out x15=0xa156b08f0ee5557c
+exit end
+test excl.ldxr.0106
+code 885f7fe9
+seed c852ebcc87ee7d15
+in sp=0x201430
+out x9=0x1e598c72
+exit end
+test excl.ldxr.0107
+code 485f7c5f
+seed 01c4d88ee4839b1c
+in x2=0x200fb6
+exit end
+test excl.ldxr.0108
+code 085f7e6c
+seed cb09ae017ba18f1d
+in x19=0x200c36
+out x12=0x5c
+exit end
+test excl.ldxr.0109
+code c85ffc1b
+seed 6522f8fa08e9b3c6
+in x0=0x200150
+out x27=0x54f880bddba7e2e4
+exit end
+test excl.ldxr.0110
+code 085f7ec4
+seed 8175367bb0167ef3
+in x22=0x200695
+out x4=0xa5
+exit end
+test excl.ldxr.0111
+code 085f7dc7
+seed 49abca337ac2ed0b
+in x14=0x2019c0
+out x7=0x92
+exit end
+test excl.ldxr.0112
+code 085f7e53
+seed dbc39662ca6e72c4
+in x18=0x2000ef
+out x19=0xf0
+exit end
+test excl.ldxr.0113
+code 885ffcb7
+seed 31d337d92f52e241
+in x5=0x20095c
+out x23=0x2790cdea
+exit end
+test excl.ldxr.0114
+code 085f7f57
+seed 6f3f01b947e36d12
+in x26=0x201d06
+out x23=0x58
+exit end
+test excl.ldxr.0115
+code 085fff8e
+seed cc49a2d5daa744bd
+in x28=0x20019b
+out x14=0x7e
+exit end
+test excl.ldxr.0116
+code 485f7d52
+seed 8df75d9313263bc6
+in x10=0x201cac
+out x18=0xecfd
+exit end
+test excl.ldxr.0117
+code c85ffc0d
+seed 42751add547af4b8
+in x0=0x200368
+out x13=0x3df86e0f4cc051f9
+exit end
+test excl.ldxr.0118
+code 485ffede
+seed 1ee49843952bb2c3
+in x22=0x200872
+out x30=0xe068
+exit end
+test excl.ldxr.0119
+code c85fffa6
+seed a60714cf6d0e74ae
+in x29=0x2003b0
+out x6=0x3cbcc4ce270413ac
+exit end
+test excl.ldxr.0120
+code c85f7c8a
+seed ed3c13e09e9ba6f2
+in x4=0x200c90
+out x10=0x9721f73d94f6e008
+exit end
+test excl.ldxr.0121
+code c85f7fdb
+seed 4dfbcbbcd4cf2403
+in x30=0x201fc0
+out x27=0x11b492f61faf8af0
+exit end
+test excl.ldxr.0122
+code c85f7cbd
+seed 02367523086ce8c3
+in x5=0x200788
+out x29=0x6a9ccd9464ffcbb6
+exit end
+test excl.ldxr.0123
+code c85f7f12
+seed 998db67a3c029f7f
+in x24=0x200500
+out x18=0x16d462558a78d81b
+exit end
+test excl.ldxr.0124
+code 085ffdc7
+seed dd22edbf9dca427b
+in x14=0x200e95
+out x7=0x42
+exit end
+test excl.ldxr.0125
+code 885f7e18
+seed c6157b43f110eb1c
+in x16=0x201558
+out x24=0x5d4ac0a9
+exit end
+test excl.ldxr.0126
+code 885ffcf6
+seed 25b5f42b1061bdf4
+in x7=0x201e64
+out x22=0x1e236db4
+exit end
+test excl.ldxr.0127
+code 485ffe1f
+seed 54405d0b8c4585f9
+in x16=0x2008f8
+exit end
+test excl.ldxr.0128
+code c85ffede
+seed 064a5346e73294f3
+in x22=0x200cb8
+out x30=0x7100f1fd86e63bb8
+exit end
+test excl.ldxr.0129
+code c85f7e68
+seed b96dfc96fa0f0f93
+in x19=0x200b60
+out x8=0xfec1c5bdf829a268
+exit end
+test excl.ldxr.0130
+code 085ffefd
+seed dfabd89105576e96
+in x23=0x2011e3
+out x29=0x8e
+exit end
+test excl.ldxr.0131
+code 885f7f2a
+seed 7d229eb2bba34969
+in x25=0x201b44
+out x10=0x474fe831
+exit end
+test excl.ldxr.0132
+code 085ffd86
+seed 9bae9b1a0bf528f0
+in x12=0x20083f
+out x6=0x67
+exit end
+test excl.ldxr.0133
+code 885f7e8c
+seed ea9ad6493fc10b85
+in x20=0x2002e8
+out x12=0x7e991053
+exit end
+test excl.ldxr.0134
+code c85ffebc
+seed 38daea4e47b2eb25
+in x21=0x201118
+out x28=0xeead1423dcbc842e
+exit end
+test excl.ldxr.0135
+code 485f7d65
+seed 034f3375b79c277a
+in x11=0x200318
+out x5=0x2c07
+exit end
+test excl.ldxr.0136
+code c85f7cc3
+seed c57d78726854fc59
+in x6=0x2009c8
+out x3=0xfcfab68e2310fe32
+exit end
+test excl.ldxr.0137
+code 485fff54
+seed b4a703626e01069b
+in x26=0x2015be
+out x20=0x63c7
+exit end
+test excl.ldxr.0138
+code c85f7d7b
+seed b6bd5ad974288762
+in x11=0x200c38
+out x27=0x1ebbecbb9a8fa1c8
+exit end
+test excl.ldxr.0139
+code 085fff3b
+seed e86a2197f0885daa
+in x25=0x201ec1
+out x27=0xc1
+exit end
+test excl.ldxr.0140
+code 485f7fe5
+seed 552621c86e5684dc
+in sp=0x201d10
+out x5=0xbff7
+exit end
+test excl.ldxr.0141
+code 085ffe13
+seed cbdcbe152db39fe6
+in x16=0x200326
+out x19=0xba
+exit end
+test excl.ldxr.0142
+code 485f7ee2
+seed 535f646ecfc3c91e
+in x23=0x20012e
+out x2=0x98a4
+exit end
+test excl.ldxr.0143
+code 085f7ee9
+seed e577f03c889e9aa6
+in x23=0x2015ce
+out x9=0x6f
+exit end
+test excl.ldxr.0144
+code c85ffdb7
+seed b4c17849f1cfcec4
+in x13=0x200110
+out x23=0xe0e424589b92e8e4
+exit end
+test excl.ldxr.0145
+code 085ffc09
+seed b5bf48fc0289409d
+in x0=0x200e4b
+out x9=0x4c
+exit end
+test excl.ldxr.0146
+code 885f7d8d
+seed f44c4c5b3d2b0c86
+in x12=0x2019fc
+out x13=0x23be134b
+exit end
+test excl.ldxr.0147
+code c85f7f18
+seed 17891d90af2538d1
+in x24=0x201b10
+out x24=0x24c076a5b1a0f077
+exit end
+test excl.ldxr.0148
+code 485f7d6c
+seed 52d511273591f82a
+in x11=0x200f3a
+out x12=0xb10
+exit end
+test excl.ldxr.0149
+code c85ffeca
+seed d9e0a5e1f097199b
+in x22=0x200618
+out x10=0xb9a15a098e5aec
+exit end
+test excl.ldxr.0150
+code c85f7fd2
+seed 2df4af5fee12d0ba
+in x30=0x201790
+out x18=0x2977ef1940d24033
+exit end
+test excl.ldxr.0151
+code 085f7c33
+seed db5ae04bde77917e
+in x1=0x200025
+out x19=0x48
+exit end
+test excl.ldxr.0152
+code 485fff60
+seed 432af154b8eb9f52
+in x27=0x2008ea
+out x0=0x48bf
+exit end
+test excl.ldxr.0153
+code 485f7dd8
+seed 30da916dc8c6093f
+in x14=0x201466
+out x24=0x3e10
+exit end
+test excl.ldxr.0154
+code c85f7cfe
+seed 1d533de46950581a
+in x7=0x2014d0
+out x30=0x23e0bef5ed074eeb
+exit end
+test excl.ldxr.0155
+code 885fff71
+seed be3a6b4a18183494
+in x27=0x200448
+out x17=0xba6611a2
+exit end
+test excl.ldxr.0156
+code 485ffedb
+seed 4c4beaa447097b26
+in x22=0x2006fc
+out x27=0x5e99
+exit end
+test excl.ldxr.0157
+code 085ffdd5
+seed 86270b836b04883b
+in x14=0x200b4f
+out x21=0x99
+exit end
+test excl.ldxr.0158
+code 085ffc77
+seed 6c140a1f64416d65
+in x3=0x20096f
+out x23=0xb
+exit end
+test excl.ldxr.0159
+code c85f7e49
+seed cbeb2c5b6198d1b6
+in x18=0x2011d8
+out x9=0x2e7596d0e94c6c93
+exit end
+test excl.ldxr.0160
+code 085fff5e
+seed ff8954dadc0a7f41
+in x26=0x200d0e
+out x30=0x72
+exit end
+test excl.ldxr.0161
+code 485ffeda
+seed d821057a3dae1c4c
+in x22=0x20067c
+out x26=0xe24b
+exit end
+test excl.ldxr.0162
+code 085f7c1e
+seed b83cf117209e7083
+in x0=0x201ed4
+out x30=0xb5
+exit end
+test excl.ldxr.0163
+code c85fffd2
+seed d7cd1e7b26e62035
+in x30=0x201160
+out x18=0xe65a2ed83de030b2
+exit end
+test excl.ldxr.0164
+code c85ffe1d
+seed 17f0b18174604107
+in x16=0x2009c0
+out x29=0x3f8655c71ee6ab49
+exit end
+test excl.ldxr.0165
+code 085ffdc8
+seed e6dcb6bbc14c0f8a
+in x14=0x201e22
+out x8=0x30
+exit end
+test excl.ldxr.0166
+code 085ffe46
+seed e8c704e48e353a7f
+in x18=0x2013b1
+out x6=0xae
+exit end
+test excl.ldxr.0167
+code c85f7eaf
+seed a3bfc08f3ce356e3
+in x21=0x200a28
+out x15=0x4dbc610c7e619d10
+exit end
+test excl.ldxr.0168
+code 085ffdbd
+seed bd936172b2833c32
+in x13=0x2008a2
+out x29=0x43
+exit end
+test excl.ldxr.0169
+code 085f7d2b
+seed 22b672ccb154ecb2
+in x9=0x2003e4
+out x11=0x16
+exit end
+test excl.ldxr.0170
+code 485ffd67
+seed 9cbbe16580bed6f5
+in x11=0x2002fc
+out x7=0x67e7
+exit end
+test excl.ldxr.0171
+code 485f7dc4
+seed e71d2c9304fbddbc
+in x14=0x201258
+out x4=0x1284
+exit end
+test excl.ldxr.0172
+code 885fff87
+seed 6e75a97c535c3f18
+in x28=0x200df4
+out x7=0xa2fbfcbc
+exit end
+test excl.ldxr.0173
+code 485ffe43
+seed a0e7c1ee599b7b4a
+in x18=0x201808
+out x3=0xb36d
+exit end
+test excl.ldxr.0174
+code 085f7e62
+seed cabaa9523652aa8d
+in x19=0x2019bd
+out x2=0xd1
+exit end
+test excl.ldxr.0175
+code 085f7e81
+seed 6c1fd6ec7d2f11c1
+in x20=0x201b68
+out x1=0x56
+exit end
+test excl.ldxr.0176
+code 085f7ef1
+seed ceb3fd2938c4bb8f
+in x23=0x200d5d
+out x17=0xe1
+exit end
+test excl.ldxr.0177
+code c85f7c64
+seed fa805358ca00b86e
+in x3=0x2005c0
+out x4=0xf7acaad397bf7293
+exit end
+test excl.ldxr.0178
+code 885f7f13
+seed 783fc0d71e123399
+in x24=0x200eb4
+out x19=0x9a3be984
+exit end
+test excl.ldxr.0179
+code c85f7c5e
+seed 4ac1cfaaf22cecea
+in x2=0x2007f0
+out x30=0xc69d3698e5a29010
+exit end
+test excl.ldxr.0180
+code 885f7f27
+seed 26a51edd9a1d472a
+in x25=0x201aa0
+out x7=0x37552910
+exit end
+test excl.ldxr.0181
+code 485f7e55
+seed f22c443005cb7404
+in x18=0x2011c4
+out x21=0x515c
+exit end
+test excl.ldxr.0182
+code 485ffdc2
+seed 37284656e243abf4
+in x14=0x200754
+out x2=0x6b68
+exit end
+test excl.ldxr.0183
+code 485f7dd4
+seed 3157ef4473474747
+in x14=0x2011ae
+out x20=0x2db6
+exit end
+test excl.ldxr.0184
+code 085ffcff
+seed 693d38c7d62f122d
+in x7=0x200fca
+exit end
+test excl.ldxr.0185
+code 885ffec0
+seed 75c019ce0dbc37ae
+in x22=0x200b10
+out x0=0x886f1f73
+exit end
+test excl.ldxr.0186
+code 085ffc56
+seed a281e9524c8ec4f4
+in x2=0x2002f8
+out x22=0xa0
+exit end
+test excl.ldxr.0187
+code 485f7da6
+seed 7897b24a7d2a8c7b
+in x13=0x2005f6
+out x6=0xf1fd
+exit end
+test excl.ldxr.0188
+code 485ffe98
+seed 77387c1d00991244
+in x20=0x20005a
+out x24=0xfe93
+exit end
+test excl.ldxr.0189
+code 885f7c5f
+seed d1b9bc78aaa8cc07
+in x2=0x200efc
+exit end
+test excl.ldxr.0190
+code 885ffee3
+seed 2d6c8d98618d7250
+in x23=0x2011c4
+out x3=0x17220fb8
+exit end
+test excl.ldxr.0191
+code 485ffe65
+seed 027a0f1af5100377
+in x19=0x201064
+out x5=0xce66
+exit end
+test excl.ldxr.0192
+code 085f7e85
+seed df5fdba13950eb31
+in x20=0x201486
+out x5=0xfa
+exit end
+test excl.ldxr.0193
+code c85f7dc3
+seed bad27d1a844eaabb
+in x14=0x2008f8
+out x3=0x99d189c0503f151b
+exit end
+test excl.ldxr.0194
+code c85f7f33
+seed 49383156eb9b15c3
+in x25=0x2005c0
+out x19=0x931057e724c53f67
+exit end
+test excl.ldxr.0195
+code 885f7ef2
+seed 1f48ac759b9ce55a
+in x23=0x2010dc
+out x18=0x5e6da167
+exit end
+test excl.ldxr.0196
+code 485f7d38
+seed 2dd6485939160a19
+in x9=0x20104e
+out x24=0xb57c
+exit end
+test excl.ldxr.0197
+code 485ffce1
+seed 4f78d980ac3efdf7
+in x7=0x200e06
+out x1=0x1a3b
+exit end
+test excl.ldxr.0198
+code c85f7ed4
+seed 80704f6684de9cd2
+in x22=0x2011e8
+out x20=0x6bb62af37600d3ff
+exit end
+test excl.ldxr.0199
+code 485ffd8b
+seed a90a1e74196ee8dd
+in x12=0x200c50
+out x11=0x44ac
+exit end
+test excl.stxr_alone.0000
+code c815fca0
+seed 0122dcfa5c52087b
+in x5=0x2001c0
+out x21=0x1
+exit end
+test excl.stxr_alone.0001
+code 88087e6f
+seed 5a2c2c62068e3374
+in x19=0x201a58
+out x8=0x1
+exit end
+test excl.stxr_alone.0002
+code 08017d65
+seed bad71d4d51ff76de
+in x11=0x200f45
+out x1=0x1
+exit end
+test excl.stxr_alone.0003
+code 480b7cc4
+seed 9f529ee7439d34d7
+in x6=0x200588
+out x11=0x1
+exit end
+test excl.stxr_alone.0004
+code 881e7f10
+seed 2d3a2b3680bb34d1
+in x24=0x2015b4
+out x30=0x1
+exit end
+test excl.stxr_alone.0005
+code c8177c46
+seed 36a88b57f28c47d9
+in x2=0x200018
+out x23=0x1
+exit end
+test excl.stxr_alone.0006
+code c812fc34
+seed 498da550af0f93ef
+in x1=0x201c20
+out x18=0x1
+exit end
+test excl.stxr_alone.0007
+code 8818fc73
+seed 4f7368dd30e003d5
+in x3=0x201de4
+out x24=0x1
+exit end
+test excl.stxr_alone.0008
+code c80ffd01
+seed e266c5b548f4f464
+in x8=0x201da0
+out x15=0x1
+exit end
+test excl.stxr_alone.0009
+code 88127d02
+seed c744cda25491352f
+in x8=0x2011d4
+out x18=0x1
+exit end
+test excl.stxr_alone.0010
+code 88097cc7
+seed 7aba5b8661eece70
+in x6=0x20111c
+out x9=0x1
+exit end
+test excl.stxr_alone.0011
+code 881afd69
+seed b8517d17d397a28d
+in x11=0x200c6c
+out x26=0x1
+exit end
+test excl.stxr_alone.0012
+code 080f7dcd
+seed e8b2cac783091b08
+in x14=0x20138c
+out x15=0x1
+exit end
+test excl.stxr_alone.0013
+code 48027fc0
+seed f0b6c7200b4b29a8
+in x30=0x201fc4
+out x2=0x1
+exit end
+test excl.stxr_alone.0014
+code c806fe82
+seed 67f052de34a15a87
+in x20=0x2000a0
+out x6=0x1
+exit end
+test excl.stxr_alone.0015
+code 48167c7b
+seed af9f393a7d6ff068
+in x3=0x201532
+out x22=0x1
+exit end
+test excl.stxr_alone.0016
+code 081a7c6a
+seed eb16824cddadb97f
+in x3=0x201186
+out x26=0x1
+exit end
+test excl.stxr_alone.0017
+code 4805ffc0
+seed 7ac817d6276cdbe9
+in x30=0x200d04
+out x5=0x1
+exit end
+test excl.stxr_alone.0018
+code 0803ff28
+seed f0890e4205ecad07
+in x25=0x200193
+out x3=0x1
+exit end
+test excl.stxr_alone.0019
+code 8806fd84
+seed f916d971754cee55
+in x12=0x2016e8
+out x6=0x1
+exit end
+test excl.stxr_alone.0020
+code 48147ea9
+seed 4eea73d6c9a6abda
+in x21=0x20004a
+out x20=0x1
+exit end
+test excl.stxr_alone.0021
+code 0811ffc6
+seed 7674adcf5690bbd6
+in x30=0x200acf
+out x17=0x1
+exit end
+test excl.stxr_alone.0022
+code c8107cf3
+seed 041e0dcc5ddf2ea3
+in x7=0x201350
+out x16=0x1
+exit end
+test excl.stxr_alone.0023
+code 080cff9d
+seed 066723ce830a0a5e
+in x28=0x20094f
+out x12=0x1
+exit end
+test excl.stxr_alone.0024
+code c801fd00
+seed b74dbe2beb917ed0
+in x8=0x201840
+out x1=0x1
+exit end
+test excl.stxr_alone.0025
+code c80d7f27
+seed 6b85e1878444cf27
+in x25=0x200f28
+out x13=0x1
+exit end
+test excl.stxr_alone.0026
+code 481aff28
+seed da1edbc662fef5c6
+in x25=0x201676
+out x26=0x1
+exit end
+test excl.stxr_alone.0027
+code 4816fc94
+seed 79afaa894074d6d9
+in x4=0x200d62
+out x22=0x1
+exit end
+test excl.stxr_alone.0028
+code 48107c27
+seed a19ee955c2377813
+in x1=0x2000aa
+out x16=0x1
+exit end
+test excl.stxr_alone.0029
+code 080a7e9e
+seed 1e007246f79ff487
+in x20=0x201f8c
+out x10=0x1
+exit end
+test excl.stxr_alone.0030
+code c8117c90
+seed e12cc345c97102ae
+in x4=0x201b78
+out x17=0x1
+exit end
+test excl.stxr_alone.0031
+code c8047f97
+seed c31d9c14a4667237
+in x28=0x201b68
+out x4=0x1
+exit end
+test excl.stxr_alone.0032
+code 081d7c79
+seed 249629a635a7c69c
+in x3=0x20027d
+out x29=0x1
+exit end
+test excl.stxr_alone.0033
+code 081efe73
+seed abf42f7e745e7351
+in x19=0x200a18
+out x30=0x1
+exit end
+test excl.stxr_alone.0034
+code 8810ffe4
+seed 5733f423728fe6c9
+in sp=0x201d10
+out x16=0x1
+exit end
+test excl.stxr_alone.0035
+code 08017dcc
+seed 90a81dcd55e91fae
+in x14=0x2015b1
+out x1=0x1
+exit end
+test excl.stxr_alone.0036
+code 880ffd90
+seed 3143f308041ab163
+in x12=0x2010a8
+out x15=0x1
+exit end
+test excl.stxr_alone.0037
+code 081d7df7
+seed 1bb542924dfc1f67
+in x15=0x201544
+out x29=0x1
+exit end
+test excl.stxr_alone.0038
+code 080f7cc1
+seed f8f73d0a256ed5d0
+in x6=0x2015f8
+out x15=0x1
+exit end
+test excl.stxr_alone.0039
+code c8137c3b
+seed 1d0a2f7a2bd47194
+in x1=0x200730
+out x19=0x1
+exit end
+test excl.stxr_alone.0040
+code 4803fe5e
+seed b798331ab501cd33
+in x18=0x2003e4
+out x3=0x1
+exit end
+test excl.stxr_alone.0041
+code c806fd15
+seed ab6a7127c63c809b
+in x8=0x200e90
+out x6=0x1
+exit end
+test excl.stxr_alone.0042
+code c8167dab
+seed c412b7ed4b4e6816
+in x13=0x201a68
+out x22=0x1
+exit end
+test excl.stxr_alone.0043
+code 081bfd52
+seed d1d0a5906c46010b
+in x10=0x2018da
+out x27=0x1
+exit end
+test excl.stxr_alone.0044
+code c8187e46
+seed 4e9945cc183948dc
+in x18=0x201bb0
+out x24=0x1
+exit end
+test excl.stxr_alone.0045
+code 4804fc71
+seed 313498d4ace47487
+in x3=0x2009de
+out x4=0x1
+exit end
+test excl.stxr_alone.0046
+code 4803fe34
+seed 5b30160a40ed411b
+in x17=0x201396
+out x3=0x1
+exit end
+test excl.stxr_alone.0047
+code c80ffe40
+seed 3a6cafeba693430a
+in x18=0x200440
+out x15=0x1
+exit end
+test excl.stxr_alone.0048
+code 480c7dab
+seed 91c9eca9ebe33ad9
+in x13=0x2018ae
+out x12=0x1
+exit end
+test excl.stxr_alone.0049
+code 081d7d24
+seed 48ffd27d9890a19e
+in x9=0x201130
+out x29=0x1
+exit end
+test excl.stxr_alone.0050
+code c814fec9
+seed f241ff2ea264b9ad
+in x22=0x201580
+out x20=0x1
+exit end
+test excl.stxr_alone.0051
+code c8047faf
+seed 8756c107d8de22aa
+in x29=0x200ac8
+out x4=0x1
+exit end
+test excl.stxr_alone.0052
+code 4811fc0f
+seed 8e4909982faf2cd7
+in x0=0x2012b6
+out x17=0x1
+exit end
+test excl.stxr_alone.0053
+code 480e7e70
+seed b7052ef24e656862
+in x19=0x200ec4
+out x14=0x1
+exit end
+test excl.stxr_alone.0054
+code 4814fe35
+seed a9712e9e5c2b0b7c
+in x17=0x20051a
+out x20=0x1
+exit end
+test excl.stxr_alone.0055
+code 0808ff2f
+seed a7da49e0eaa9b380
+in x25=0x201fde
+out x8=0x1
+exit end
+test excl.stxr_alone.0056
+code 88097d02
+seed e916426bb3be0d35
+in x8=0x20004c
+out x9=0x1
+exit end
+test excl.stxr_alone.0057
+code c8147ea7
+seed 5b812fad834f584e
+in x21=0x201e20
+out x20=0x1
+exit end
+test excl.stxr_alone.0058
+code 88027ff0
+seed 14f70e01148889d8
+in sp=0x200890
+out x2=0x1
+exit end
+test excl.stxr_alone.0059
+code 080f7dbd
+seed 48aca0cf74e11e80
+in x13=0x2003fc
+out x15=0x1
+exit end
+test excl.stxr_alone.0060
+code 8809febd
+seed ec17d8b06ca97c77
+in x21=0x201f3c
+out x9=0x1
+exit end
+test excl.stxr_alone.0061
+code 4809fe27
+seed bbbfe4c3277f6c91
+in x17=0x2004ea
+out x9=0x1
+exit end
+test excl.stxr_alone.0062
+code 88097e3e
+seed 4b4cd2c95ac510d8
+in x17=0x201964
+out x9=0x1
+exit end
+test excl.stxr_alone.0063
+code c80afe9a
+seed 96d0585b2596056a
+in x20=0x201580
+out x10=0x1
+exit end
+test excl.stxr_alone.0064
+code 48007f8a
+seed 866c127cb052f555
+in x28=0x201132
+out x0=0x1
+exit end
+test excl.stxr_alone.0065
+code 880fff95
+seed 29b2dd959c3128c3
+in x28=0x2010b8
+out x15=0x1
+exit end
+test excl.stxr_alone.0066
+code 480f7c09
+seed 96af8a7677c579b3
+in x0=0x20043a
+out x15=0x1
+exit end
+test excl.stxr_alone.0067
+code 8805fc70
+seed 787ab0397fefb9ab
+in x3=0x2015b0
+out x5=0x1
+exit end
+test excl.stxr_alone.0068
+code c8157c70
+seed 28ef123bf14d0e55
+in x3=0x200fa0
+out x21=0x1
+exit end
+test excl.stxr_alone.0069
+code 4807fe4f
+seed 45492be7d237e4c5
+in x18=0x2004c8
+out x7=0x1
+exit end
+test excl.stxr_alone.0070
+code 4811fc35
+seed 93c2724e47e71dce
+in x1=0x2010b8
+out x17=0x1
+exit end
+test excl.stxr_alone.0071
+code c80cfe67
+seed 28c1e3269c35e0c6
+in x19=0x2002d8
+out x12=0x1
+exit end
+test excl.stxr_alone.0072
+code 8810fe92
+seed 450414f9a33cc9f0
+in x20=0x200fe4
+out x16=0x1
+exit end
+test excl.stxr_alone.0073
+code 8819fd92
+seed 4623db9e5ed896d7
+in x12=0x200ae0
+out x25=0x1
+exit end
+test excl.stxr_alone.0074
+code 88177ccb
+seed 0c8f614b5ea22873
+in x6=0x201c78
+out x23=0x1
+exit end
+test excl.stxr_alone.0075
+code 880efcbb
+seed 9f0a3bcba7ff14ee
+in x5=0x200538
+out x14=0x1
+exit end
+test excl.stxr_alone.0076
+code c801fc90
+seed a905ecffb7a804cb
+in x4=0x201e98
+out x1=0x1
+exit end
+test excl.stxr_alone.0077
+code 481c7d79
+seed 310b933adae93c2f
+in x11=0x20065a
+out x28=0x1
+exit end
+test excl.stxr_alone.0078
+code 0811fe53
+seed c59426d8d4274f34
+in x18=0x2018d6
+out x17=0x1
+exit end
+test excl.stxr_alone.0079
+code 080c7dd5
+seed aa7673ea68ed3f30
+in x14=0x20015d
+out x12=0x1
+exit end
+test excl.stxr_alone.0080
+code 0811fca9
+seed 57267ac464113c43
+in x5=0x200afc
+out x17=0x1
+exit end
+test excl.stxr_alone.0081
+code 080cff98
+seed 23542565ecd1de37
+in x28=0x2017d2
+out x12=0x1
+exit end
+test excl.stxr_alone.0082
+code 881c7f21
+seed a96ed2cd31589590
+in x25=0x201dc8
+out x28=0x1
+exit end
+test excl.stxr_alone.0083
+code 880cfe73
+seed c65da61189da69b5
+in x19=0x201c34
+out x12=0x1
+exit end
+test excl.stxr_alone.0084
+code 08117c37
+seed 7eb9693ee0688ead
+in x1=0x20156b
+out x17=0x1
+exit end
+test excl.stxr_alone.0085
+code 88187fa9
+seed d3da56ea362dbfda
+in x29=0x201230
+out x24=0x1
+exit end
+test excl.stxr_alone.0086
+code 880b7ef8
+seed 91710c058c428bcc
+in x23=0x200fc0
+out x11=0x1
+exit end
+test excl.stxr_alone.0087
+code 48157dfe
+seed 51c3ac51a5ff8a4a
+in x15=0x200806
+out x21=0x1
+exit end
+test excl.stxr_alone.0088
+code 081dffd4
+seed 52e5de2325b0b409
+in x30=0x2000bc
+out x29=0x1
+exit end
+test excl.stxr_alone.0089
+code c81d7f32
+seed 7b9dd7b41a625900
+in x25=0x200f60
+out x29=0x1
+exit end
+test excl.stxr_alone.0090
+code 48067e5b
+seed 849b786123037a13
+in x18=0x20160c
+out x6=0x1
+exit end
+test excl.stxr_alone.0091
+code 881c7fbf
+seed 97fe112c88eeec1b
+in x29=0x201c98
+out x28=0x1
+exit end
+test excl.stxr_alone.0092
+code c80a7f43
+seed bad0685c66e2f47e
+in x26=0x200e80
+out x10=0x1
+exit end
+test excl.stxr_alone.0093
+code c8107c3d
+seed 164b70dd2fe06c76
+in x1=0x201240
+out x16=0x1
+exit end
+test excl.stxr_alone.0094
+code 080dfc01
+seed 1084af7d0b17224b
+in x0=0x200628
+out x13=0x1
+exit end
+test excl.stxr_alone.0095
+code 0818fc86
+seed 63fc3ce7b1f65245
+in x4=0x20188e
+out x24=0x1
+exit end
+test excl.stxr_alone.0096
+code 081b7dd7
+seed 6b7cb6adcab74e34
+in x14=0x201d82
+out x27=0x1
+exit end
+test excl.stxr_alone.0097
+code 4806fd4f
+seed 83c378325e45a960
+in x10=0x201326
+out x6=0x1
+exit end
+test excl.stxr_alone.0098
+code c8107cce
+seed 8d6fab3e093e8e16
+in x6=0x201500
+out x16=0x1
+exit end
+test excl.stxr_alone.0099
+code 08067d98
+seed 0f6f50620b5731c9
+in x12=0x201370
+out x6=0x1
+exit end
+test excl.ldxr_stxr.0000
+code 085f7df4 080e7df6
+seed 4bcfa37175799781
+in x22=0x7fff x15=0x200eb3
+out x14=0x0 x20=0xfb
+mem 0x200eb3=ff
+exit end
+test excl.ldxr_stxr.0001
+code 885ffec1 88097edf
+seed 02d9bf8dca6728b8
+in x22=0x2002dc
+out x1=0x50771550 x9=0x0
+mem 0x2002dc=00000000
+exit end
+test excl.ldxr_stxr.0002
+code 885f7c2c 88187c30
+seed b30e9b28ce41d82f
+in x1=0x2010e8
+out x12=0xc9f20dcf x24=0x0
+mem 0x2010e8=f61e4e6d
+exit end
+test excl.ldxr_stxr.0003
+code 085fff9e 0807ff8e
+seed f1d11b919a40ac6f
+in x14=0xffffffffffffffff x28=0x200bac
+out x7=0x0 x30=0x2a
+mem 0x200bac=ff
+exit end
+test excl.ldxr_stxr.0004
+code 885f7cd5 8815fcc0
+seed f770fdde60e39229
+in x6=0x201ba8
+out x21=0x0
+mem 0x201ba8=c84d2ff9
+exit end
+test excl.ldxr_stxr.0005
+code 485f7cd4 481b7ccf
+seed d5af0255c35ec5a6
+in x15=0x5555555555555555 x6=0x200530
+out x20=0xb35 x27=0x0
+mem 0x200530=5555
+exit end
+test excl.ldxr_stxr.0006
+code 885ffe4b 8816fe49
+seed 19555752e2ec72dd
+in x18=0x2005d4
+out x11=0x93e63122 x22=0x0
+mem 0x2005d4=4bfa65d0
+exit end
+test excl.ldxr_stxr.0007
+code 485f7f7d 48057f6f
+seed f4af20e3149daaec
+in x27=0x20096a
+out x5=0x0 x29=0xd6ae
+mem 0x20096a=2a03
+exit end
+test excl.ldxr_stxr.0008
+code c85f7e25 c81bfe32
+seed 4487836c98636632
+in x17=0x200b60
+out x5=0x676821a0b64ce212 x27=0x0
+mem 0x200b60=fd40ad8d09500d38
+exit end
+test excl.ldxr_stxr.0009
+code 485ffc4e 4818fc47
+seed d8ec8b4899f393d5
+in x7=0x0 x2=0x200714
+out x14=0x5c20 x24=0x0
+mem 0x200714=0000
+exit end
+test excl.ldxr_stxr.0010
+code 885ffc53 88087c46
+seed 359e5467ae540296
+in x2=0x2013f8
+out x8=0x0 x19=0xe71bdb46
+mem 0x2013f8=ec4f9c0c
+exit end
+test excl.ldxr_stxr.0011
+code 085f7dd3 0818fdde
+seed 284805d3a107f0fb
+in x30=0x1 x14=0x201ac7
+out x19=0xd x24=0x0
+mem 0x201ac7=01
+exit end
+test excl.ldxr_stxr.0012
+code 485f7f74 4812ff69
+seed fe5647525c612ded
+in x27=0x200dc4
+out x18=0x0 x20=0x2049
+mem 0x200dc4=1a98
+exit end
+test excl.ldxr_stxr.0013
+code 085ffef2 0818fef1
+seed 4bcc7e405d0d0764
+in x17=0x8000 x23=0x200b86
+out x18=0x91 x24=0x0
+mem 0x200b86=00
+exit end
+test excl.ldxr_stxr.0014
+code 485ffd63 4811fd64
+seed d7b99f484f76c414
+in x11=0x201a90
+out x3=0x8427 x17=0x0
+mem 0x201a90=7e6e
+exit end
+test excl.ldxr_stxr.0015
+code c85ffcc7 c814fcc2
+seed e6612c9b24930582
+in x2=0xfffffffffffffffe x6=0x200590
+out x7=0xb2f28f57c21eebd4 x20=0x0
+mem 0x200590=feffffffffffffff
+exit end
+test excl.ldxr_stxr.0016
+code c85ffc7e c8127c6e
+seed 3e7c561d973907f5
+in x14=0x7fffffff x3=0x201f20
+out x18=0x0 x30=0xf4bc0f2393b310c1
+mem 0x201f20=ffffff7f00000000
+exit end
+test excl.ldxr_stxr.0017
+code 085f7cab 0819fcbf
+seed 3c079bc98d3200ed
+in x5=0x201df0
+out x11=0x32 x25=0x0
+mem 0x201df0=00
+exit end
+test excl.ldxr_stxr.0018
+code c85ffcd5 c81c7cc0
+seed f1498c681cf28451
+in x0=0x7fff x6=0x201d20
+out x21=0x5e6579bbef46dc67 x28=0x0
+mem 0x201d20=ff7f000000000000
+exit end
+test excl.ldxr_stxr.0019
+code 885ffd22 8800fd3d
+seed f3c6af1d52f596c9
+in x29=0xffffffff x9=0x200aac
+out x0=0x0 x2=0x18179844
+mem 0x200aac=ffffffff
+exit end
+test excl.ldxr_stxr.0020
+code c85f7f3c c8047f23
+seed d1881c0b36dede75
+in x25=0x200dc0
+out x4=0x0 x28=0xa070de1ee1f85cb6
+mem 0x200dc0=3542bbece1076c98
+exit end
+test excl.ldxr_stxr.0021
+code 885ffc0f 881bfc11
+seed a27c5ece9cf38979
+in x0=0x201168
+out x15=0x2098b5f8 x27=0x0
+mem 0x201168=4744884e
+exit end
+test excl.ldxr_stxr.0022
+code c85f7fb4 c801ffb7
+seed 5b936791dfd448bd
+in x23=0x2 x29=0x200dd0
+out x1=0x0 x20=0x1374b4b109470c4b
+mem 0x200dd0=0200000000000000
+exit end
+test excl.ldxr_stxr.0023
+code 485ffee5 4812fee5
+seed 5b38b2445d119e00
+in x23=0x201e96
+out x5=0xbfaf x18=0x0
+exit end
+test excl.ldxr_stxr.0024
+code 485f7efb 481bfefd
+seed 332491a443a3f2a1
+in x29=0x7fffffffffffffff x23=0x201d4a
+out x27=0x0
+mem 0x201d4a=ffff
+exit end
+test excl.ldxr_stxr.0025
+code 485f7d52 48027d41
+seed f379e6c596f18ade
+in x10=0x2019b2
+out x2=0x0 x18=0xd98f
+mem 0x2019b2=9059
+exit end
+test excl.ldxr_stxr.0026
+code 485ffccb 4808fcda
+seed 003686fd46893e28
+in x26=0xff x6=0x201db8
+out x8=0x0 x11=0x560e
+mem 0x201db8=ff00
+exit end
+test excl.ldxr_stxr.0027
+code 485f7dd5 4818fdcf
+seed 5e44da79e871934a
+in x14=0x200c2c
+out x21=0xc8c6 x24=0x0
+mem 0x200c2c=5b4e
+exit end
+test excl.ldxr_stxr.0028
+code c85ffeb1 c8117ebf
+seed 2d652b338c89ad52
+in x21=0x201670
+out x17=0x0
+mem 0x201670=0000000000000000
+exit end
+test excl.ldxr_stxr.0029
+code 485f7d91 48107d94
+seed 823685740776af78
+in x12=0x200c78
+out x16=0x0 x17=0x6d4f
+mem 0x200c78=441f
+exit end
+test excl.ldxr_stxr.0030
+code 085f7ca3 0808fca9
+seed 9ecd7b8f70dd6814
+in x9=0x1 x5=0x201313
+out x3=0xfa x8=0x0
+mem 0x201313=01
+exit end
+test excl.ldxr_stxr.0031
+code 085ffe2b 080b7e36
+seed 3def106510b93899
+in x22=0xffff x17=0x201c99
+out x11=0x0
+mem 0x201c99=ff
+exit end
+test excl.ldxr_stxr.0032
+code 485f7d6a 480c7d7e
+seed 36ee851b12b608fc
+in x30=0x0 x11=0x201bf4
+out x10=0xb71 x12=0x0
+mem 0x201bf4=0000
+exit end
+test excl.ldxr_stxr.0033
+code c85ffce4 c8117ce4
+seed 184ad5afcba9633c
+in x4=0x8000 x7=0x201948
+out x4=0xdc6514e53bd5d0a0 x17=0x0
+exit end
+test excl.ldxr_stxr.0034
+code 085ffcbc 0807fcb9
+seed f1ad2ab23faeb41e
+in x25=0x8000 x5=0x200847
+out x7=0x0 x28=0x62
+mem 0x200847=00
+exit end
+test excl.ldxr_stxr.0035
+code 085ffc7b 08047c73
+seed 00cfc9a608e05e61
+in x3=0x201560
+out x4=0x0 x27=0xbb
+mem 0x201560=4d
+exit end
+test excl.ldxr_stxr.0036
+code 085ffe50 0816fe5f
+seed 9b8ee0c48c920eca
+in x18=0x201fd2
+out x16=0x9a x22=0x0
+mem 0x201fd2=00
+exit end
+test excl.ldxr_stxr.0037
+code 485f7e11 4817fe06
+seed 45c4564af1568a85
+in x6=0x2 x16=0x20152e
+out x17=0x68d9 x23=0x0
+mem 0x20152e=0200
+exit end
+test excl.ldxr_stxr.0038
+code 485f7cf5 480d7ce1
+seed f27b199359a1e34b
+in x7=0x201eea
+out x13=0x0 x21=0x2d0a
+mem 0x201eea=d95a
+exit end
+test excl.ldxr_stxr.0039
+code 885f7eb0 8802fea7
+seed c467d65eadce8e9a
+in x7=0xffff x21=0x200370
+out x2=0x0 x16=0x5b2d54a5
+mem 0x200370=ffff0000
+exit end
+test excl.ldxr_stxr.0040
+code 485ffc1d 480f7c0b
+seed 7eb1229123f83b26
+in x0=0x201bc4
+out x15=0x0 x29=0xb3ce
+mem 0x201bc4=73c4
+exit end
+test excl.ldxr_stxr.0041
+code 485ffff7 48147ffe
+seed 0764f1596122a87a
+in sp=0x2003c0
+out x20=0x0 x23=0x89e7
+mem 0x2003c0=22b1
+exit end
+test excl.ldxr_stxr.0042
+code 885ffc7d 88127c7a
+seed 997dd4754c636fe9
+in x3=0x201350
+out x18=0x0 x29=0xaf283a97
+mem 0x201350=732bb803
+exit end
+test excl.ldxr_stxr.0043
+code 485ffebc 4802feb4
+seed 828f9bd71f54027c
+in x21=0x200084
+out x2=0x0 x28=0x2646
+mem 0x200084=6ffc
+exit end
+test excl.ldxr_stxr.0044
+code c85ffdd0 c80ffddc
+seed 8d80411dbeb9edcd
+in x28=0x2 x14=0x200180
+out x15=0x0 x16=0x546f8b9ca0e31acb
+mem 0x200180=0200000000000000
+exit end
+test excl.ldxr_stxr.0045
+code 485f7e4f 48187e44
+seed 23bd3a852579a40c
+in x4=0x8000000000000001 x18=0x200b16
+out x15=0x6681 x24=0x0
+mem 0x200b16=0100
+exit end
+test excl.ldxr_stxr.0046
+code 085ffdd7 080afdda
+seed 81df7bf5bcd0ff3d
+in x26=0x8000 x14=0x20091c
+out x10=0x0 x23=0x38
+mem 0x20091c=00
+exit end
+test excl.ldxr_stxr.0047
+code 485ffd2d 4811fd35
+seed 7aed10b2c0f238df
+in x9=0x2017e4
+out x13=0xb10f x17=0x0
+mem 0x2017e4=b3ca
+exit end
+test excl.ldxr_stxr.0048
+code 085f7f0d 081e7f1a
+seed 390b9a4fd90d793d
+in x24=0x200d1a
+out x13=0x58 x30=0x0
+mem 0x200d1a=38
+exit end
+test excl.ldxr_stxr.0049
+code 485f7d6a 4804fd7b
+seed 875c1b58ce48811b
+in x27=0x7fffffff x11=0x201fe4
+out x4=0x0 x10=0xd748
+mem 0x201fe4=ffff
+exit end
+test excl.ldxr_stxr.0050
+code c85ffcb1 c80cfca5
+seed a6d8a2cb47c44a0b
+in x5=0x200330
+out x12=0x0 x17=0xc271cb4cbf3f5201
+mem 0x200330=3003200000000000
+exit end
+test excl.ldxr_stxr.0051
+code c85f7c69 c8117c7b
+seed b754ad79c07695c3
+in x27=0xffffffff x3=0x2001b8
+out x9=0x857d34742e012b20 x17=0x0
+mem 0x2001b8=ffffffff00000000
+exit end
+test excl.ldxr_stxr.0052
+code c85f7f72 c80eff77
+seed ff3954458b0bf874
+in x27=0x201de8
+out x14=0x0 x18=0x6523d34834cab9f
+mem 0x201de8=272c23bd0a64343e
+exit end
+test excl.ldxr_stxr.0053
+code 085f7e29 08127e3c
+seed 8db20b6fab06aabd
+in x17=0x201a47
+out x9=0xfc x18=0x0
+mem 0x201a47=d0
+exit end
+test excl.ldxr_stxr.0054
+code c85fffb5 c80c7fb3
+seed 6e3840098072d7bc
+in x19=0x2 x29=0x201150
+out x12=0x0 x21=0x74e1c2de94dc38f4
+mem 0x201150=0200000000000000
+exit end
+test excl.ldxr_stxr.0055
+code 885f7cab 88167cae
+seed 01c45f33b90c9a8e
+in x14=0x80000000 x5=0x200ef0
+out x11=0x6e9761e7 x22=0x0
+mem 0x200ef0=00000080
+exit end
+test excl.ldxr_stxr.0056
+code 085fffc9 0810ffdc
+seed f828e10112a5f72e
+in x30=0x2004e9
+out x9=0x7 x16=0x0
+mem 0x2004e9=4c
+exit end
+test excl.ldxr_stxr.0057
+code 885f7c8b 880f7c91
+seed 94e5f8f825a01058
+in x4=0x201840
+out x11=0x13823f78 x15=0x0
+mem 0x201840=f4f7193e
+exit end
+test excl.ldxr_stxr.0058
+code c85f7e59 c816fe53
+seed e5df4a8db171a8e7
+in x19=0x7f x18=0x2002b8
+out x22=0x0 x25=0xaf6c18e1bccc0ee8
+mem 0x2002b8=7f00000000000000
+exit end
+test excl.ldxr_stxr.0059
+code 485f7d40 48017d47
+seed 162b2c1d7573c437
+in x10=0x200da0
+out x0=0xf69f x1=0x0
+mem 0x200da0=8e2f
+exit end
+test excl.ldxr_stxr.0060
+code 885ffc39 881e7c23
+seed 2b9be475e1d5f432
+in x1=0x200f84
+out x25=0x1e02fc4 x30=0x0
+mem 0x200f84=6b65f95a
+exit end
+test excl.ldxr_stxr.0061
+code 885f7c09 88187c1d
+seed 991b5e8646c4b035
+in x0=0x201498
+out x9=0x7522294a x24=0x0
+mem 0x201498=3a1b0357
+exit end
+test excl.ldxr_stxr.0062
+code 885ffc76 8807fc6e
+seed 66c1ecb64de57414
+in x14=0x7fffffff x3=0x201350
+out x7=0x0 x22=0x2a4ac6ae
+mem 0x201350=ffffff7f
+exit end
+test excl.ldxr_stxr.0063
+code c85f7d9b c803fd9f
+seed 4cbf2ca7ae665dcd
+in x12=0x200aa8
+out x3=0x0 x27=0xb6f8fb7acff662e0
+mem 0x200aa8=0000000000000000
+exit end
+test excl.ldxr_stxr.0064
+code 085f7f2f 08177f3a
+seed 8ced2921595c0fcf
+in x26=0x8000000000000000 x25=0x201eee
+out x15=0xfd x23=0x0
+mem 0x201eee=00
+exit end
+test excl.ldxr_stxr.0065
+code 885fff7d 88107f7b
+seed 9158aa28d746a0dc
+in x27=0x2001b8
+out x16=0x0 x29=0x1455b4bb
+mem 0x2001b8=b8012000
+exit end
+test excl.ldxr_stxr.0066
+code c85f7cf4 c81efce0
+seed 7ac3c470ecd425a9
+in x7=0x201390
+out x20=0x59dd734acc777a1d x30=0x0
+mem 0x201390=630a05a1bf315b90
+exit end
+test excl.ldxr_stxr.0067
+code 485f7c66 4813fc6f
+seed 390d4f2aea5d33f5
+in x3=0x201dd6
+out x6=0xa948 x19=0x0
+mem 0x201dd6=31de
+exit end
+test excl.ldxr_stxr.0068
+code 885fffdb 881affdf
+seed fa04cdcfed297fbf
+in x30=0x200248
+out x26=0x0 x27=0xad04b204
+mem 0x200248=00000000
+exit end
+test excl.ldxr_stxr.0069
+code c85f7f3d c803ff2c
+seed c615d26ce62b3769
+in x12=0x8000 x25=0x2014b0
+out x3=0x0 x29=0x87211bfcac161ca1
+mem 0x2014b0=0080000000000000
+exit end
+test excl.ldxr_stxr.0070
+code 085f7d53 0816fd57
+seed 7511222d8c9c6d82
+in x23=0x7fffffff x10=0x2006e9
+out x19=0x6 x22=0x0
+mem 0x2006e9=ff
+exit end
+test excl.ldxr_stxr.0071
+code 085ffd1b 08027d1f
+seed c53acb833ab2cd16
+in x8=0x201562
+out x2=0x0 x27=0xa5
+mem 0x201562=00
+exit end
+test excl.ldxr_stxr.0072
+code 885ffeab 881e7ea6
+seed 7098fcd02b3a7c7d
+in x6=0xff x21=0x200a2c
+out x11=0xe4e61799 x30=0x0
+mem 0x200a2c=ff000000
+exit end
+test excl.ldxr_stxr.0073
+code 485ffc13 48167c0c
+seed cb1ad77a2af909e1
+in x12=0xffffffff00000000 x0=0x2019c2
+out x19=0x1976 x22=0x0
+mem 0x2019c2=0000
+exit end
+test excl.ldxr_stxr.0074
+code 885f7cfe 880ffcee
+seed b12e26c9c8bd1f89
+in x7=0x20149c
+out x15=0x0 x30=0x95b4cb4a
+mem 0x20149c=f68c142f
+exit end
+test excl.ldxr_stxr.0075
+code c85f7dd2 c805fdc9
+seed 51be5e3899ef2b21
+in x14=0x201170
+out x5=0x0 x18=0xb2c6c1d6aa120b3e
+mem 0x201170=cbebb8db7b654efd
+exit end
+test excl.ldxr_stxr.0076
+code c85f7e5c c81d7e55
+seed 38326e7b5e7c88db
+in x18=0x201110
+out x28=0xffc3774bdfe6146b x29=0x0
+mem 0x201110=8df62f174370edab
+exit end
+test excl.ldxr_stxr.0077
+code 485f7fc6 48087fdb
+seed 97e89a662d5b4be5
+in x30=0x2013ae
+out x6=0x1f1a x8=0x0
+mem 0x2013ae=0f20
+exit end
+test excl.ldxr_stxr.0078
+code 085ffc96 0818fc96
+seed 69d22fae40415fc2
+in x22=0xffff x4=0x200d09
+out x22=0xef x24=0x0
+exit end
+test excl.ldxr_stxr.0079
+code 485fffea 4814fff1
+seed 4d4017e7c4068972
+in sp=0x200490
+out x10=0x3a79 x20=0x0
+mem 0x200490=e763
+exit end
+test excl.ldxr_stxr.0080
+code 485ffcc8 480b7cde
+seed ce7f858c840dab32
+in x6=0x2015c8
+out x8=0xa678 x11=0x0
+mem 0x2015c8=636d
+exit end
+test excl.ldxr_stxr.0081
+code 085fff22 0809ff37
+seed ac355df90d5a350a
+in x23=0x80000000 x25=0x200f08
+out x2=0x48 x9=0x0
+mem 0x200f08=00
+exit end
+test excl.ldxr_stxr.0082
+code c85ffeeb c81a7ee5
+seed 445619cb53452096
+in x23=0x201ee8
+out x11=0x17679eb647987659 x26=0x0
+mem 0x201ee8=279acb9151572097
+exit end
+test excl.ldxr_stxr.0083
+code 085ffc2a 08127c3c
+seed e4deeab5db692da1
+in x28=0x7fffffff x1=0x200368
+out x10=0x5a x18=0x0
+mem 0x200368=ff
+exit end
+test excl.ldxr_stxr.0084
+code c85f7cc3 c80f7cc9
+seed e4eb314a10fd87ab
+in x6=0x201e18
+out x3=0x64fb811f78f239fb x15=0x0
+mem 0x201e18=aece8662c726ea91
+exit end
+test excl.ldxr_stxr.0085
+code c85f7c52 c81afc43
+seed fda4791d511afdfc
+in x3=0xff x2=0x200250
+out x18=0xf3d2c6563e011bba x26=0x0
+mem 0x200250=ff00000000000000
+exit end
+test excl.ldxr_stxr.0086
+code 485ffd06 48077d19
+seed 114a5097e65000c5
+in x25=0xffffffffffffffff x8=0x200ea8
+out x6=0xf8c1 x7=0x0
+mem 0x200ea8=ffff
+exit end
+test excl.ldxr_stxr.0087
+code 085ffece 0802fece
+seed ebfa4d7004bff0d8
+in x14=0x8000 x22=0x200562
+out x2=0x0 x14=0x78
+exit end
+test excl.ldxr_stxr.0088
+code 485f7e9d 48137e83
+seed 154547782984c730
+in x20=0x200c3e
+out x19=0x0 x29=0xf68d
+mem 0x200c3e=9145
+exit end
+test excl.ldxr_stxr.0089
+code c85ffc01 c80dfc12
+seed db46eefe8879b0d4
+in x0=0x200f58
+out x1=0x925a3d592203a2bd x13=0x0
+mem 0x200f58=6c3b599f6b915007
+exit end
+test excl.ldxr_stxr.0090
+code c85f7e4c c803fe4d
+seed ed85a3e836751887
+in x18=0x201700
+out x3=0x0 x12=0x146400ea5aeb4377
+mem 0x201700=3b4c158fdacd19fe
+exit end
+test excl.ldxr_stxr.0091
+code c85ffd76 c8197d7c
+seed 215148b8c0e091f3
+in x11=0x201df8
+out x22=0x49f08b734e080039 x25=0x0
+mem 0x201df8=4f6062e7dcab8fb0
+exit end
+test excl.ldxr_stxr.0092
+code 085ffe43 08007e5b
+seed 29e2741f56576b81
+in x18=0x2008c4
+out x0=0x0 x3=0xcc
+mem 0x2008c4=85
+exit end
+test excl.ldxr_stxr.0093
+code 485fffd6 4818ffce
+seed 9a36b072363ef823
+in x30=0x200b74
+out x22=0x46ce x24=0x0
+mem 0x200b74=d262
+exit end
+test excl.ldxr_stxr.0094
+code 085ffc54 0816fc46
+seed b9468a7e97c81240
+in x6=0xffffffff x2=0x201d31
+out x20=0x7 x22=0x0
+mem 0x201d31=ff
+exit end
+test excl.ldxr_stxr.0095
+code 085f7dfd 0814fdfa
+seed 8f83b82ba8d59d2e
+in x15=0x201a34
+out x20=0x0 x29=0x43
+mem 0x201a34=37
+exit end
+test excl.ldxr_stxr.0096
+code 085fffec 08137fe7
+seed b68370c13d03277f
+in sp=0x2017b0
+out x12=0xfb x19=0x0
+mem 0x2017b0=56
+exit end
+test excl.ldxr_stxr.0097
+code c85ffd19 c818fd19
+seed e87a0e520575b727
+in x8=0x201f28
+out x24=0x0 x25=0xa6d2b36e0fc8029f
+exit end
+test excl.ldxr_stxr.0098
+code 085ffe03 08127e1b
+seed 5dcac2c30bf64e5f
+in x16=0x20165a
+out x3=0x97 x18=0x0
+mem 0x20165a=d7
+exit end
+test excl.ldxr_stxr.0099
+code 085f7fd1 08157fcd
+seed 2d37241df66aef6e
+in x30=0x2008fa
+out x17=0x75 x21=0x0
+mem 0x2008fa=9a
+exit end
+test excl.ldxr_stxr.0100
+code 885f7f82 88057f88
+seed 2db3073396cc7f51
+in x28=0x200210
+out x2=0x1799a23b x5=0x0
+mem 0x200210=a10c27ab
+exit end
+test excl.ldxr_stxr.0101
+code c85f7c13 c80efc12
+seed 7c9b40257cce4c69
+in x18=0x8000000000000000 x0=0x200aa0
+out x14=0x0 x19=0x818ac72664c1e71d
+mem 0x200aa0=0000000000000080
+exit end
+test excl.ldxr_stxr.0102
+code 085f7ca8 0814fca3
+seed abcae2fd8bec961e
+in x5=0x201d2e
+out x8=0x7c x20=0x0
+mem 0x201d2e=6a
+exit end
+test excl.ldxr_stxr.0103
+code 085f7fec 08137fe3
+seed 0ffab839d4109da1
+in sp=0x2006e0
+out x12=0xad x19=0x0
+mem 0x2006e0=85
+exit end
+test excl.ldxr_stxr.0104
+code 885f7ce1 880dfcee
+seed 1e6ababce4e7e9d3
+in x7=0x200e04
+out x1=0x19ba85f1 x13=0x0
+mem 0x200e04=2a79fa68
+exit end
+test excl.ldxr_stxr.0105
+code 485f7cb4 4803fcb3
+seed bde3c15337593ecd
+in x19=0xffffffff x5=0x20049a
+out x3=0x0 x20=0xaf03
+mem 0x20049a=ffff
+exit end
+test excl.ldxr_stxr.0106
+code 885ffc10 88117c0d
+seed 1201ab4a04e36fa3
+in x13=0x5555555555555555 x0=0x200244
+out x16=0xe31d6dd4 x17=0x0
+mem 0x200244=55555555
+exit end
+test excl.ldxr_stxr.0107
+code 485f7cca 480efcd4
+seed 803681d84e3901a0
+in x20=0x80 x6=0x201acc
+out x10=0xf732 x14=0x0
+mem 0x201acc=8000
+exit end
+test excl.ldxr_stxr.0108
+code 085fff51 08027f5e
+seed 1650431b4c5bc459
+in x26=0x200812
+out x2=0x0 x17=0x43
+mem 0x200812=d3
+exit end
+test excl.ldxr_stxr.0109
+code 885f7c3c 880b7c27
+seed f7a86459f3f1b873
+in x1=0x200478
+out x11=0x0 x28=0xfdd1c730
+mem 0x200478=92a3cbbe
+exit end
+test excl.ldxr_stxr.0110
+code 885f7f91 8806ff80
+seed aff71df6b899184b
+in x0=0x80 x28=0x2003ac
+out x6=0x0 x17=0xbc5d5be8
+mem 0x2003ac=80000000
+exit end
+test excl.ldxr_stxr.0111
+code c85f7cd3 c80bfcd9
+seed 443801896996dc6a
+in x6=0x200ae0
+out x11=0x0 x19=0x3a09e21b0ad797f0
+mem 0x200ae0=0193fdcc75c24d19
+exit end
+test excl.ldxr_stxr.0112
+code 885f7daf 881a7dbd
+seed 3b8445f625dce2e3
+in x13=0x200780
+out x15=0x3121f0ae x26=0x0
+mem 0x200780=d7711e73
+exit end
+test excl.ldxr_stxr.0113
+code 885ffe88 88037e9e
+seed 52810f8dc7cad051
+in x30=0xffffffff x20=0x201c18
+out x3=0x0 x8=0x53e212a4
+mem 0x201c18=ffffffff
+exit end
+test excl.ldxr_stxr.0114
+code 085f7dbc 081e7daa
+seed 35ef14588ea09453
+in x10=0xffffffff x13=0x20141c
+out x28=0x1f x30=0x0
+mem 0x20141c=ff
+exit end
+test excl.ldxr_stxr.0115
+code 085ffdfd 08057dfb
+seed 95d3de8ef555e2e4
+in x27=0xffff x15=0x2018b4
+out x5=0x0 x29=0xf8
+mem 0x2018b4=ff
+exit end
+test excl.ldxr_stxr.0116
+code 485ffc61 481cfc67
+seed e923945be0bf46d1
+in x3=0x201584
+out x1=0x89a9 x28=0x0
+mem 0x201584=391e
+exit end
+test excl.ldxr_stxr.0117
+code c85f7d51 c80d7d58
+seed 74120e7d457127bd
+in x10=0x201fe8
+out x13=0x0 x17=0x20986234500718fd
+mem 0x201fe8=2cc193d54bfd304f
+exit end
+test excl.ldxr_stxr.0118
+code 485f7ee0 4810fef1
+seed 24059e213db7594c
+in x23=0x200f80
+out x0=0x76c5 x16=0x0
+mem 0x200f80=009b
+exit end
+test excl.ldxr_stxr.0119
+code 085ffefa 08167efa
+seed 50d3ae3a3a0da38f
+in x23=0x201152
+out x22=0x0 x26=0x33
+exit end
+test excl.ldxr_stxr.0120
+code 085f7edc 080dfecb
+seed 1be7d46e1f724019
+in x11=0x1 x22=0x200c25
+out x13=0x0 x28=0x76
+mem 0x200c25=01
+exit end
+test excl.ldxr_stxr.0121
+code c85ffd63 c810fd7f
+seed d153f371cd8b396c
+in x11=0x201430
+out x3=0xdf2217fc7f549f3e x16=0x0
+mem 0x201430=0000000000000000
+exit end
+test excl.ldxr_stxr.0122
+code 485ffe37 48197e29
+seed 1772fce844818c3b
+in x9=0x0 x17=0x2013dc
+out x23=0x4212 x25=0x0
+mem 0x2013dc=0000
+exit end
+test excl.ldxr_stxr.0123
+code 085fff52 081cff4f
+seed eae07ea439373f4f
+in x15=0x0 x26=0x2018be
+out x18=0x5b x28=0x0
+mem 0x2018be=00
+exit end
+test excl.ldxr_stxr.0124
+code 885ffd3a 880bfd3e
+seed 59369dbf308fba11
+in x30=0xfffffffffffffffe x9=0x2011a8
+out x11=0x0 x26=0x866b3bcb
+mem 0x2011a8=feffffff
+exit end
+test excl.ldxr_stxr.0125
+code 085ffd06 081efd13
+seed b0164f31e379aee5
+in x19=0xff x8=0x200813
+out x6=0xae x30=0x0
+mem 0x200813=ff
+exit end
+test excl.ldxr_stxr.0126
+code 485fff7c 480aff72
+seed 427eddf4faa8b710
+in x27=0x201a78
+out x10=0x0 x28=0x803c
+mem 0x201a78=f0cd
+exit end
+test excl.ldxr_stxr.0127
+code c85f7fb6 c8037fbf
+seed 981512da5610e069
+in x29=0x201460
+out x3=0x0 x22=0x45d4255b24781634
+mem 0x201460=0000000000000000
+exit end
+test excl.ldxr_stxr.0128
+code 885fff43 88167f49
+seed ee037b4f27d62ce2
+in x26=0x201710
+out x3=0xb848cf59 x22=0x0
+mem 0x201710=18463679
+exit end
+test excl.ldxr_stxr.0129
+code 885f7d15 8811fd0b
+seed 935d7d9554873514
+in x8=0x201f54
+out x17=0x0 x21=0x1c34d3c8
+mem 0x201f54=86e3b674
+exit end
+test excl.ldxr_stxr.0130
+code 085ffebb 0808feb8
+seed bbeb089382baa924
+in x21=0x200555
+out x8=0x0 x27=0x6c
+mem 0x200555=15
+exit end
+test excl.ldxr_stxr.0131
+code 485fff47 48157f54
+seed 834d1b28f9794938
+in x20=0xff x26=0x20049e
+out x7=0xd529 x21=0x0
+mem 0x20049e=ff00
+exit end
+test excl.ldxr_stxr.0132
+code 085f7eca 08057eda
+seed deb44028044c26a1
+in x22=0x2017e7
+out x5=0x0 x10=0xa5
+mem 0x2017e7=ac
+exit end
+test excl.ldxr_stxr.0133
+code 085f7e86 080cfe92
+seed b8de3ba805c82deb
+in x20=0x201826
+out x6=0xbc x12=0x0
+mem 0x201826=c3
+exit end
+test excl.ldxr_stxr.0134
+code 085f7da1 08137da3
+seed 484aec55108a3cad
+in x13=0x201eb9
+out x1=0x74 x19=0x0
+mem 0x201eb9=28
+exit end
+test excl.ldxr_stxr.0135
+code 485ffe48 480bfe42
+seed 72c2e14edc3686ea
+in x18=0x2004ea
+out x8=0x995c x11=0x0
+mem 0x2004ea=86be
+exit end
+test excl.ldxr_stxr.0136
+code 485f7e55 480bfe5b
+seed d9dd18d514da1ea4
+in x27=0x8000 x18=0x200282
+out x11=0x0 x21=0x9bb9
+mem 0x200282=0080
+exit end
+test excl.ldxr_stxr.0137
+code 485f7d94 4816fd81
+seed 5111baaab9790462
+in x1=0x100000000 x12=0x201456
+out x20=0x2867 x22=0x0
+mem 0x201456=0000
+exit end
+test excl.ldxr_stxr.0138
+code 085f7dc3 08137dd1
+seed 1ba89528618f00da
+in x17=0x2 x14=0x200de1
+out x3=0x77 x19=0x0
+mem 0x200de1=02
+exit end
+test excl.ldxr_stxr.0139
+code 085ffe0a 0817fe0b
+seed a1a418f5cc062c7a
+in x16=0x2002f8
+out x10=0x4b x23=0x0
+mem 0x2002f8=9e
+exit end
+test excl.ldxr_stxr.0140
+code 085f7f89 0808ff98
+seed 0680dd0bded9fce3
+in x28=0x201796
+out x8=0x0 x9=0x4c
+mem 0x201796=e0
+exit end
+test excl.ldxr_stxr.0141
+code 085ffc64 080a7c6b
+seed e3c90e2709f9c14d
+in x11=0x80000000 x3=0x2019a8
+out x4=0x7a x10=0x0
+mem 0x2019a8=00
+exit end
+test excl.ldxr_stxr.0142
+code 085ffee2 08137ef7
+seed 479e7ac1c11f12c2
+in x23=0x201eb2
+out x2=0x33 x19=0x0
+mem 0x201eb2=b2
+exit end
+test excl.ldxr_stxr.0143
+code c85ffd33 c8057d24
+seed 99120687fe84b4f1
+in x9=0x201310
+out x5=0x0 x19=0xeebf7c0eb9708948
+mem 0x201310=39c6477f760f0d71
+exit end
+test excl.ldxr_stxr.0144
+code 885f7ee5 88047efd
+seed 39f4d17adc0a87d7
+in x29=0xffffffff x23=0x201524
+out x4=0x0 x5=0xe96ae400
+mem 0x201524=ffffffff
+exit end
+test excl.ldxr_stxr.0145
+code 485f7d11 4815fd09
+seed 3c6a189f3105e9d4
+in x8=0x200a8e
+out x17=0x6e49 x21=0x0
+mem 0x200a8e=2a89
+exit end
+test excl.ldxr_stxr.0146
+code 485ffd67 481d7d70
+seed f58d312797eadae7
+in x16=0x7fff x11=0x201e8a
+out x7=0x43f6 x29=0x0
+mem 0x201e8a=ff7f
+exit end
+test excl.ldxr_stxr.0147
+code 885f7fcb 88007fdb
+seed d7ab1f96a2772dff
+in x27=0x7fffffffffffffff x30=0x200454
+out x0=0x0 x11=0x341de4e3
+mem 0x200454=ffffffff
+exit end
+test excl.ldxr_stxr.0148
+code 085f7f48 08127f4b
+seed eceb8382414ce61a
+in x26=0x201c74
+out x8=0xae x18=0x0
+mem 0x201c74=a5
+exit end
+test excl.ldxr_stxr.0149
+code 085f7fed 081bfffd
+seed 968c13b65913dda6
+in x29=0xffffffff00000000 sp=0x201370
+out x13=0x9e x27=0x0
+mem 0x201370=00
+exit end
+test excl.ldxr_stxr.0150
+code 485ffcdb 481d7cc9
+seed 7ac317502c6ba88f
+in x9=0x100000000 x6=0x200602
+out x27=0x9760 x29=0x0
+mem 0x200602=0000
+exit end
+test excl.ldxr_stxr.0151
+code c85f7c58 c817fc58
+seed 344a5cc31808945a
+in x2=0x200e10
+out x23=0x0 x24=0x9d96cce041a0ab6a
+exit end
+test excl.ldxr_stxr.0152
+code 485f7f70 4808ff73
+seed 28b6e9098aeae56e
+in x27=0x201da2
+out x8=0x0 x16=0x4a0a
+mem 0x201da2=2bb9
+exit end
+test excl.ldxr_stxr.0153
+code 885ffe65 8811fe7e
+seed 67a324be39b23885
+in x19=0x201cec
+out x5=0x66483911 x17=0x0
+mem 0x201cec=e4795a0c
+exit end
+test excl.ldxr_stxr.0154
+code 485f7e34 48037e21
+seed 1e36becced68ae29
+in x1=0x0 x17=0x201282
+out x3=0x0 x20=0xc205
+mem 0x201282=0000
+exit end
+test excl.ldxr_stxr.0155
+code 085f7f97 08187f9d
+seed afdb97aba8345fa8
+in x28=0x201402
+out x23=0xf1 x24=0x0
+mem 0x201402=36
+exit end
+test excl.ldxr_stxr.0156
+code 885f7e36 880ffe23
+seed 7625321067f09f8b
+in x3=0xaaaaaaaaaaaaaaaa x17=0x200360
+out x15=0x0 x22=0x93cfe9d6
+mem 0x200360=aaaaaaaa
+exit end
+test excl.ldxr_stxr.0157
+code 085f7c36 08027c2f
+seed 0f48aff1f038a3e2
+in x15=0x5555555555555555 x1=0x2010a7
+out x2=0x0 x22=0xa8
+mem 0x2010a7=55
+exit end
+test excl.ldxr_stxr.0158
+code 485f7c7a 480d7c7c
+seed b9a5173a930051cc
+in x3=0x200426
+out x13=0x0 x26=0x4e1e
+mem 0x200426=e8eb
+exit end
+test excl.ldxr_stxr.0159
+code 485f7ddb 4813fdc4
+seed 0108570e7f6ba453
+in x14=0x200504
+out x19=0x0 x27=0xc7ca
+mem 0x200504=009d
+exit end
+test excl.ldxr_stxr.0160
+code c85f7f8b c80b7f9a
+seed 3c65a81780078e2a
+in x28=0x2005a0
+out x11=0x0
+mem 0x2005a0=a975354a08694cd6
+exit end
+test excl.ldxr_stxr.0161
+code 085ffca3 08077ca6
+seed bd68f99fa1e703c6
+in x5=0x2005a1
+out x3=0x65 x7=0x0
+mem 0x2005a1=e2
+exit end
+test excl.ldxr_stxr.0162
+code 885f7c65 881afc74
+seed 78619fe3f5185782
+in x20=0x8000000000000001 x3=0x2016bc
+out x5=0x86b8f42f x26=0x0
+mem 0x2016bc=01000000
+exit end
+test excl.ldxr_stxr.0163
+code 885ffc76 880a7c77
+seed c4b0064af2026bf5
+in x3=0x2015b8
+out x10=0x0 x22=0x66af643c
+mem 0x2015b8=1f1ee5f2
+exit end
+test excl.ldxr_stxr.0164
+code 885f7db1 88027db5
+seed f28c467a6aeeb3de
+in x13=0x200510
+out x2=0x0 x17=0x655f8aae
+mem 0x200510=fdcbecc7
+exit end
+test excl.ldxr_stxr.0165
+code 485fff4a 48187f5e
+seed cc865a8d82f3e801
+in x26=0x200aa6
+out x10=0xbfb6 x24=0x0
+mem 0x200aa6=2158
+exit end
+test excl.ldxr_stxr.0166
+code 885fff87 880dff83
+seed 9d6c0691e7a174aa
+in x3=0x7fff x28=0x201aa0
+out x7=0xafc5cf1f x13=0x0
+mem 0x201aa0=ff7f0000
+exit end
+test excl.ldxr_stxr.0167
+code 085ffc68 081d7c76
+seed 24942222a16a5dfe
+in x3=0x2009bc
+out x8=0x69 x29=0x0
+mem 0x2009bc=79
+exit end
+test excl.ldxr_stxr.0168
+code 485fff92 48127f97
+seed 7e0b8eb483599b12
+in x23=0xff x28=0x2014ca
+out x18=0x0
+mem 0x2014ca=ff00
+exit end
+test excl.ldxr_stxr.0169
+code c85f7f07 c806ff1e
+seed 13ea20523bcabc7f
+in x24=0x200440
+out x6=0x0 x7=0x16048eb8f375037
+mem 0x200440=298c00870c6e62bb
+exit end
+test excl.ldxr_stxr.0170
+code c85ffd46 c80f7d51
+seed 13f486a1da32feaf
+in x10=0x201718
+out x6=0x8c0ff0e5035736cc x15=0x0
+mem 0x201718=d30d084ba807a3e8
+exit end
+test excl.ldxr_stxr.0171
+code 885fff8b 88037f93
+seed 9897506a2efe0596
+in x28=0x201c58
+out x3=0x0 x11=0xb1d463fc
+mem 0x201c58=a8360257
+exit end
+test excl.ldxr_stxr.0172
+code 885fff70 880a7f74
+seed 74ad2ec7357559d7
+in x27=0x201b08
+out x10=0x0 x16=0xf3071096
+mem 0x201b08=f69fd944
+exit end
+test excl.ldxr_stxr.0173
+code c85ffe03 c8097e15
+seed ce802e85dab06135
+in x21=0xffffffffffffffff x16=0x2016d0
+out x3=0x543037165ec9cfd2 x9=0x0
+mem 0x2016d0=ffffffffffffffff
+exit end
+test excl.ldxr_stxr.0174
+code 085ffe34 080efe30
+seed fd54a1ecca7c6aa0
+in x16=0xffffffff x17=0x2007a5
+out x14=0x0 x20=0x12
+mem 0x2007a5=ff
+exit end
+test excl.ldxr_stxr.0175
+code 885ffd43 880f7d4e
+seed e0179eabc35f5457
+in x14=0x7fffffffffffffff x10=0x201848
+out x3=0xc7aa91dd x15=0x0
+mem 0x201848=ffffffff
+exit end
+test excl.ldxr_stxr.0176
+code 085f7e13 08097e06
+seed 100367ce9a90f77e
+in x16=0x201461
+out x9=0x0 x19=0x59
+mem 0x201461=a9
+exit end
+test excl.ldxr_stxr.0177
+code 085f7eca 0800fede
+seed 543f1b960cd725c9
+in x30=0x2 x22=0x201b9e
+out x0=0x0 x10=0x66
+mem 0x201b9e=02
+exit end
+test excl.ldxr_stxr.0178
+code 085f7c34 0804fc2f
+seed 7eb7d6f6a172d612
+in x1=0x200ca0
+out x4=0x0 x20=0x78
+mem 0x200ca0=8f
+exit end
+test excl.ldxr_stxr.0179
+code c85f7cef c81dfce7
+seed f8e7b217f341e147
+in x7=0x201270
+out x15=0xadda0495ab3fae9 x29=0x0
+mem 0x201270=7012200000000000
+exit end
+test excl.ldxr_stxr.0180
+code 885f7f25 8812ff2a
+seed a0bdcb90d3c60b7b
+in x25=0x201308
+out x5=0x6c222d69 x18=0x0
+mem 0x201308=8a11cdb9
+exit end
+test excl.ldxr_stxr.0181
+code 885f7c56 880ffc42
+seed 53215d8d75b2c695
+in x2=0x200e28
+out x15=0x0 x22=0xba697948
+mem 0x200e28=280e2000
+exit end
+test excl.ldxr_stxr.0182
+code 485ffc67 48147c76
+seed 1710b0e8cea63f55
+in x3=0x201312
+out x7=0x9ff6 x20=0x0
+mem 0x201312=4f02
+exit end
+test excl.ldxr_stxr.0183
+code 085f7c28 08057c23
+seed a074375415e402b2
+in x1=0x2004bd
+out x5=0x0 x8=0xed
+mem 0x2004bd=00
+exit end
+test excl.ldxr_stxr.0184
+code 885ffc1a 88047c02
+seed cd178927e12ee29c
+in x2=0x7fff x0=0x2011c0
+out x4=0x0 x26=0x2d5f303c
+mem 0x2011c0=ff7f0000
+exit end
+test excl.ldxr_stxr.0185
+code 885ffe3e 8815fe26
+seed ddeb88ade7584f50
+in x17=0x200be0
+out x21=0x0 x30=0x4c68e3be
+mem 0x200be0=9f01eb52
+exit end
+test excl.ldxr_stxr.0186
+code c85f7cc0 c80bfcc3
+seed d3c6bfe812c1856b
+in x6=0x201d78
+out x0=0x3a66ffec2e153df5 x11=0x0
+mem 0x201d78=897320948c5870c9
+exit end
+test excl.ldxr_stxr.0187
+code 885fffe8 8815fff9
+seed 612d491d538f8886
+in x25=0x80 sp=0x201230
+out x8=0xf0e69360 x21=0x0
+mem 0x201230=80000000
+exit end
+test excl.ldxr_stxr.0188
+code 485ffc2a 4804fc21
+seed 7ac407d6e3205a17
+in x1=0x201570
+out x4=0x0 x10=0xd764
+mem 0x201570=7015
+exit end
+test excl.ldxr_stxr.0189
+code 885f7c1d 88137c0b
+seed a90d6102e0daf77c
+in x0=0x2005b8
+out x19=0x0 x29=0xc51c9522
+mem 0x2005b8=77de58d0
+exit end
+test excl.ldxr_stxr.0190
+code 485fff9d 4817ff8a
+seed b255bc87afa469d0
+in x28=0x200696
+out x23=0x0 x29=0x86e9
+mem 0x200696=3be2
+exit end
+test excl.ldxr_stxr.0191
+code 085ffdcb 0800fddb
+seed 1c203eb21ec019c4
+in x14=0x200e63
+out x0=0x0 x11=0x35
+mem 0x200e63=ec
+exit end
+test excl.ldxr_stxr.0192
+code 885ffc37 8810fc38
+seed 04705e1c666dd4fd
+in x1=0x20082c
+out x16=0x0 x23=0x5c5e66ab
+mem 0x20082c=23517423
+exit end
+test excl.ldxr_stxr.0193
+code 085ffc64 080d7c77
+seed 01a693afc83de5a9
+in x3=0x2019b8
+out x4=0x1b x13=0x0
+mem 0x2019b8=6d
+exit end
+test excl.ldxr_stxr.0194
+code 085ffebc 08037eab
+seed d97be78d72615949
+in x21=0x20019d
+out x3=0x0 x28=0x22
+mem 0x20019d=a2
+exit end
+test excl.ldxr_stxr.0195
+code c85f7d92 c803fd95
+seed 127e2cf1a080b2a1
+in x12=0x200000
+out x3=0x0 x18=0xb83c823507a37556
+mem 0x200000=093f0a4782fcf206
+exit end
+test excl.ldxr_stxr.0196
+code c85f7d9a c81efd9a
+seed 9433300de57d167e
+in x26=0xffff x12=0x201340
+out x26=0xc941e3b20d35a5b4 x30=0x0
+exit end
+test excl.ldxr_stxr.0197
+code 085f7d41 08187d48
+seed a845cfc6dc202f69
+in x8=0xffffffff00000000 x10=0x200c2d
+out x1=0xae x24=0x0
+mem 0x200c2d=00
+exit end
+test excl.ldxr_stxr.0198
+code 885f7e76 881d7e75
+seed 8a31c3820c4ed133
+in x19=0x201364
+out x22=0x598bf828 x29=0x0
+mem 0x201364=e2 0x201366=9ad8
+exit end
+test excl.ldxr_stxr.0199
+code 485ffd25 4807fd23
+seed 128ab9b302736604
+in x3=0x5555555555555555 x9=0x20131a
+out x5=0x90a x7=0x0
+mem 0x20131a=5555
+exit end
+test excl.ldxr_stxr.0200
+code 885f7ce5 8811fce8
+seed 203df47f404a9dc9
+in x8=0x80000000 x7=0x201f18
+out x5=0x2fcf68f0 x17=0x0
+mem 0x201f18=00000080
+exit end
+test excl.ldxr_stxr.0201
+code c85ffc9e c813fc8d
+seed d03b937d996175a8
+in x13=0x5555555555555555 x4=0x200b88
+out x19=0x0 x30=0xf32cd6e41924f8f5
+mem 0x200b88=5555555555555555
+exit end
+test excl.ldxr_stxr.0202
+code 085f7fe0 081affea
+seed 0cd2b8011a92cbb8
+in sp=0x200280
+out x0=0x2f x26=0x0
+mem 0x200280=ee
+exit end
+test excl.ldxr_stxr.0203
+code c85ffd76 c81cfd6c
+seed 1837565e3270a00e
+in x11=0x200a80
+out x22=0x226519215d21f076 x28=0x0
+mem 0x200a80=4c660413d957bc7e
+exit end
+test excl.ldxr_stxr.0204
+code c85ffe81 c80cfe87
+seed a8f58a9c5a8138cb
+in x7=0xffffffff x20=0x200200
+out x1=0xd452f3e098f4bde0 x12=0x0
+mem 0x200200=ffffffff00000000
+exit end
+test excl.ldxr_stxr.0205
+code c85f7f78 c8077f6d
+seed 3d24eaf2dd4ce45e
+in x27=0x200048
+out x7=0x0 x24=0x423b69d7df48a8ef
+mem 0x200048=ebd97253c7380b2f
+exit end
+test excl.ldxr_stxr.0206
+code 085f7fa1 080cffa3
+seed ee9ded8ac97f8cee
+in x29=0x20187d
+out x1=0x4 x12=0x0
+mem 0x20187d=bf
+exit end
+test excl.ldxr_stxr.0207
+code c85ffdab c8127dbe
+seed 00879cb46567491e
+in x13=0x2000c0
+out x11=0x6855633b99991a05 x18=0x0
+mem 0x2000c0=7751cc83baae0bcd
+exit end
+test excl.ldxr_stxr.0208
+code c85ffd1c c815fd1c
+seed d1a60f9d7999ed88
+in x28=0xffffffffffffffff x8=0x2005d0
+out x21=0x0 x28=0x6776b68465d1195f
+exit end
+test excl.ldxr_stxr.0209
+code 085ffffb 0812fff8
+seed 1d8a2af4243d40a0
+in sp=0x200040
+out x18=0x0 x27=0xb0
+mem 0x200040=25
+exit end
+test excl.ldxr_stxr.0210
+code 485f7e05 4801fe06
+seed a577f5fd7a40860d
+in x16=0x201868
+out x1=0x0 x5=0x961d
+mem 0x201868=c76c
+exit end
+test excl.ldxr_stxr.0211
+code 885fff8f 880cff93
+seed 33453171014cb879
+in x28=0x2004a8
+out x12=0x0 x15=0xa4ee2a87
+mem 0x2004a8=1e390485
+exit end
+test excl.ldxr_stxr.0212
+code 885ffd88 8808fd8f
+seed 7216b5bd48b37ada
+in x12=0x200684
+out x8=0x0
+mem 0x200684=72d86d2a
+exit end
+test excl.ldxr_stxr.0213
+code 885ffe78 88097e73
+seed 5fdb537dc53a5b86
+in x19=0x201cdc
+out x9=0x0 x24=0x4447d884
+mem 0x201cdc=dc1c2000
+exit end
+test excl.ldxr_stxr.0214
+code 885ffe2e 881cfe2b
+seed c46e1142e82ceb25
+in x17=0x201170
+out x14=0xa0087ba4 x28=0x0
+mem 0x201170=4f8e0676
+exit end
+test excl.ldxr_stxr.0215
+code c85fff26 c8117f39
+seed 40dbe81181d75c82
+in x25=0x200350
+out x6=0xc1ebc9864d430075 x17=0x0
+mem 0x200350=5003200000000000
+exit end
+test excl.ldxr_stxr.0216
+code 085f7d05 08187d1f
+seed c785fc4b27a495fa
+in x8=0x200b85
+out x5=0x7e x24=0x0
+mem 0x200b85=00
+exit end
+test excl.ldxr_stxr.0217
+code c85f7ef6 c81c7ef8
+seed aa02dccbcbfe08c5
+in x24=0x7f x23=0x200a40
+out x22=0xad9da97d6ab69ffc x28=0x0
+mem 0x200a40=7f00000000000000
+exit end
+test excl.ldxr_stxr.0218
+code 485ffe89 480a7e8f
+seed cdcf98fb423e8103
+in x15=0x7fff x20=0x201bec
+out x9=0x6ef8 x10=0x0
+mem 0x201bec=ff7f
+exit end
+test excl.ldxr_stxr.0219
+code 085f7d48 080ffd5f
+seed 475b3463322ef714
+in x10=0x2014a5
+out x8=0x7 x15=0x0
+mem 0x2014a5=00
+exit end
+test excl.ldxr_stxr.0220
+code 485f7dc2 480afdde
+seed a0b1fc4eb201440c
+in x30=0x8000000000000000 x14=0x20178a
+out x2=0x6df5 x10=0x0
+mem 0x20178a=0000
+exit end
+test excl.ldxr_stxr.0221
+code 485f7c7d 481cfc73
+seed 232f278db5aa696f
+in x3=0x200b56
+out x28=0x0 x29=0x1ff3
+mem 0x200b56=3278
+exit end
+test excl.ldxr_stxr.0222
+code 485f7ca7 48077cb0
+seed 9991d72df3f331f6
+in x5=0x20159a
+out x7=0x0
+mem 0x20159a=3096
+exit end
+test excl.ldxr_stxr.0223
+code 085f7cd3 08147cce
+seed 5cbc5f61872feb40
+in x6=0x2001ed
+out x19=0x55 x20=0x0
+mem 0x2001ed=7c
+exit end
+test excl.ldxr_stxr.0224
+code 885ffe92 8816fe99
+seed e0298aaa9b0af971
+in x25=0x8000 x20=0x20136c
+out x18=0x185f953b x22=0x0
+mem 0x20136c=00800000
+exit end
+test excl.ldxr_stxr.0225
+code 085f7f6f 0807ff6b
+seed 0913472fda6d4ca4
+in x27=0x201275
+out x7=0x0 x15=0x5a
+mem 0x201275=d2
+exit end
+test excl.ldxr_stxr.0226
+code 485fff2a 4816ff27
+seed 886fbed3addd1265
+in x25=0x20182e
+out x10=0x7417 x22=0x0
+mem 0x20182e=2b38
+exit end
+test excl.ldxr_stxr.0227
+code 885ffd69 8811fd60
+seed d053d9bca1f798fd
+in x0=0x80000000 x11=0x200d84
+out x9=0x694d3192 x17=0x0
+mem 0x200d84=00000080
+exit end
+test excl.ldxr_stxr.0228
+code 485ffea7 480cfeb9
+seed 1437d1a835f0caa8
+in x21=0x200f56
+out x7=0x3780 x12=0x0
+mem 0x200f56=ac49
+exit end
+test excl.ldxr_stxr.0229
+code 485f7faa 4806ffae
+seed d1841a39f8b47ac0
+in x14=0x2 x29=0x2015cc
+out x6=0x0 x10=0xa76e
+mem 0x2015cc=0200
+exit end
+test excl.ldxr_stxr.0230
+code 885ffdc7 8818fdc0
+seed b71b8dbebc405c8b
+in x14=0x2009e4
+out x7=0x8cf61a5d x24=0x0
+mem 0x2009e4=5e24a02e
+exit end
+test excl.ldxr_stxr.0231
+code 085ffdf2 0809fdec
+seed 49c4138ac5c7523a
+in x15=0x200c70
+out x9=0x0 x18=0xba
+mem 0x200c70=7e
+exit end
+test excl.ldxr_stxr.0232
+code c85f7cd6 c80a7cdb
+seed 9c9f40482a37bd9e
+in x6=0x201a28
+out x10=0x0 x22=0xb86b7d736b1464c0
+mem 0x201a28=19e8bafe67387491
+exit end
+test excl.ldxr_stxr.0233
+code 885ffffb 8810ffe3
+seed 4528ebff095708af
+in sp=0x201e90
+out x16=0x0 x27=0xf838dd4b
+mem 0x201e90=c84de876
+exit end
+test excl.ldxr_stxr.0234
+code c85f7caf c801fcbb
+seed 63a63d1f0f1c91cd
+in x27=0x7fffffffffffffff x5=0x201378
+out x1=0x0 x15=0x1968219d14552087
+mem 0x201378=ffffffffffffff7f
+exit end
+test excl.ldxr_stxr.0235
+code 085f7eab 081bfeb9
+seed a06d544044fc49a1
+in x25=0xffffffffffffffff x21=0x201f63
+out x11=0xf2 x27=0x0
+mem 0x201f63=ff
+exit end
+test excl.ldxr_stxr.0236
+code c85f7df5 c80efdfa
+seed 7458e29245b26abd
+in x15=0x200898
+out x14=0x0 x21=0x153259c466c97ac3
+mem 0x200898=51872137017a87be
+exit end
+test excl.ldxr_stxr.0237
+code 085f7f5d 0804ff4a
+seed 2f14738f77d770f8
+in x10=0x8000000000000001 x26=0x201b19
+out x4=0x0 x29=0xca
+mem 0x201b19=01
+exit end
+test excl.ldxr_stxr.0238
+code 485fff6a 480e7f63
+seed e81bfc4831d8669e
+in x27=0x2010a8
+out x10=0xf195 x14=0x0
+mem 0x2010a8=0d15
+exit end
+test excl.ldxr_stxr.0239
+code 885f7c45 880ffc40
+seed ff937e228a53db79
+in x0=0x7f x2=0x2005b0
+out x5=0xf116e3a8 x15=0x0
+mem 0x2005b0=7f000000
+exit end
+test excl.ldxr_stxr.0240
+code 885f7ffa 880a7fee
+seed c1ee19f70b92b2a4
+in sp=0x2010e0
+out x10=0x0 x26=0x848fee32
+mem 0x2010e0=80a7b62e
+exit end
+test excl.ldxr_stxr.0241
+code 085ffec9 08047ed1
+seed cee51032c34f804f
+in x22=0x201896
+out x4=0x0 x9=0x7a
+mem 0x201896=4b
+exit end
+test excl.ldxr_stxr.0242
+code 885fffe2 8819ffef
+seed c187508ba1f1a40a
+in sp=0x200410
+out x2=0x3c07ddff x25=0x0
+mem 0x200410=31a21831
+exit end
+test excl.ldxr_stxr.0243
+code 885fffe9 8818fffe
+seed f738d76f63f5ac88
+in sp=0x200520
+out x9=0xe368097f x24=0x0
+mem 0x200520=e64a52d6
+exit end
+test excl.ldxr_stxr.0244
+code c85ffdb1 c8037dad
+seed 2adcef186ea221c0
+in x13=0x201f20
+out x3=0x0 x17=0x83a4a4237cb7633a
+mem 0x201f20=201f200000000000
+exit end
+test excl.ldxr_stxr.0245
+code 085f7dd6 0801fdc8
+seed 6764e222e6168019
+in x14=0x200785
+out x1=0x0 x22=0xc
+mem 0x200785=b0
+exit end
+test excl.ldxr_stxr.0246
+code 485f7cb6 4814fcbb
+seed ae8c1332b3130371
+in x27=0xff x5=0x201ae8
+out x20=0x0 x22=0xdddd
+mem 0x201ae8=ff00
+exit end
+test excl.ldxr_stxr.0247
+code 485ffffa 481cffe2
+seed ea49a4337ac88496
+in sp=0x2019e0
+out x26=0x1e0e x28=0x0
+mem 0x2019e0=0fd8
+exit end
+test excl.ldxr_stxr.0248
+code 085fffa5 081e7fad
+seed 723156f48e577a91
+in x29=0x2009c6
+out x5=0xfd x30=0x0
+mem 0x2009c6=b2
+exit end
+test excl.ldxr_stxr.0249
+code 485f7cb3 481dfcb0
+seed 8d48e983922f21f9
+in x5=0x201c58
+out x19=0x6248 x29=0x0
+mem 0x201c58=1f0d
+exit end
+test excl.ldxr_stxr.0250
+code c85ffc0c c809fc00
+seed 7332618d3b6ced05
+in x0=0x201570
+out x9=0x0 x12=0x28aa27f6d129fdc1
+mem 0x201570=7015200000000000
+exit end
+test excl.ldxr_stxr.0251
+code c85f7c1c c816fc1a
+seed 7cce807d9d77f239
+in x0=0x201118
+out x22=0x0 x28=0x8cb6de59c4c13f82
+mem 0x201118=8cb4f595f6a74d3c
+exit end
+test excl.ldxr_stxr.0252
+code c85f7c68 c80cfc6b
+seed dce0ea89b67c0958
+in x11=0xffff x3=0x201060
+out x8=0x4fdf1de310171e x12=0x0
+mem 0x201060=ffff0000000000
+exit end
+test excl.ldxr_stxr.0253
+code 485ffcd3 480e7cd0
+seed e43a50472e8a56f8
+in x16=0x8000 x6=0x2005ae
+out x14=0x0 x19=0x10e1
+mem 0x2005ae=0080
+exit end
+test excl.ldxr_stxr.0254
+code c85f7ec8 c8127edf
+seed 40afb218ab51d87a
+in x22=0x200b08
+out x8=0xeeafe7dc0574ff69 x18=0x0
+mem 0x200b08=0000000000000000
+exit end
+test excl.ldxr_stxr.0255
+code 885f7c37 8816fc3f
+seed 4406df92b3f6a70b
+in x1=0x20069c
+out x22=0x0 x23=0xb847cac6
+mem 0x20069c=00000000
+exit end
+test excl.ldxr_stxr.0256
+code c85f7fda c8167fcc
+seed 4603effd73edd978
+in x12=0xfffffffffffffffe x30=0x201028
+out x22=0x0 x26=0x143ea17cbc0e3559
+mem 0x201028=feffffffffffffff
+exit end
+test excl.ldxr_stxr.0257
+code 085ffd2d 08047d2a
+seed d9d236ad00ceb8d2
+in x9=0x200091
+out x4=0x0 x13=0x7e
+mem 0x200091=b6
+exit end
+test excl.ldxr_stxr.0258
+code c85ffc5e c80d7c51
+seed 9da8c5dc24879383
+in x2=0x201690
+out x13=0x0 x30=0x321b52ad2a522310
+mem 0x201690=53efca231b29342a
+exit end
+test excl.ldxr_stxr.0259
+code 885ffede 881e7ed5
+seed 17b782893e7ed7e2
+in x21=0x80000000 x22=0x200870
+out x30=0x0
+mem 0x200870=00000080
+exit end
+test excl.ldxr_stxr.0260
+code 885ffd70 880ffd74
+seed bd86b686ac706954
+in x11=0x201fb4
+out x15=0x0 x16=0xce4e118f
+mem 0x201fb4=da52dc81
+exit end
+test excl.ldxr_stxr.0261
+code 085f7e0c 0808fe01
+seed 1b675c09e75bf3d0
+in x16=0x201bb4
+out x8=0x0 x12=0x2b
+mem 0x201bb4=ea
+exit end
+test excl.ldxr_stxr.0262
+code 085ffd1e 0806fd1a
+seed 11d3407f862d1a51
+in x8=0x200a1a
+out x6=0x0 x30=0xdc
+mem 0x200a1a=0c
+exit end
+test excl.ldxr_stxr.0263
+code 085ffece 08187edf
+seed 2cc34a1942211bcb
+in x22=0x201998
+out x14=0x66 x24=0x0
+mem 0x201998=00
+exit end
+test excl.ldxr_stxr.0264
+code c85ffdf9 c80afded
+seed 58a4717e064741a6
+in x15=0x200768
+out x10=0x0 x25=0xcc99c838e91c7b4e
+mem 0x200768=430ed4458b594d4e
+exit end
+test excl.ldxr_stxr.0265
+code 485ffe8a 48117e86
+seed ce04c44330584253
+in x6=0xffffffffffffffff x20=0x201492
+out x10=0x85aa x17=0x0
+mem 0x201492=ffff
+exit end
+test excl.ldxr_stxr.0266
+code 885f7c24 881e7c20
+seed 894a717c152a767c
+in x1=0x200528
+out x4=0x33573f2 x30=0x0
+mem 0x200528=07c4dbc6
+exit end
+test excl.ldxr_stxr.0267
+code 885f7c74 88027c6d
+seed 3fa0e7715e424804
+in x3=0x201ad4
+out x2=0x0 x20=0xd14249db
+mem 0x201ad4=ea39e8cf
+exit end
+test excl.ldxr_stxr.0268
+code c85f7c80 c808fc87
+seed 9ae846feffc545a7
+in x4=0x2004c8
+out x0=0x4bef8be62dfd64ef x8=0x0
+mem 0x2004c8=7a2421e7afa7b91f
+exit end
+test excl.ldxr_stxr.0269
+code c85f7ee3 c802fee5
+seed 6feac78da2f23bdc
+in x23=0x200d40
+out x2=0x0 x3=0xd107947f277e70ae
+mem 0x200d40=2be748fbe34a344a
+exit end
+test excl.ldxr_stxr.0270
+code 085f7dc9 08177dcd
+seed 87049488ce74c24d
+in x14=0x200cd2
+out x9=0xf6 x23=0x0
+mem 0x200cd2=0c
+exit end
+test excl.ldxr_stxr.0271
+code 885ffef3 881c7ee3
+seed 66d529c4a14fa243
+in x23=0x201320
+out x19=0xd03ea4d3 x28=0x0
+mem 0x201320=aed5b860
+exit end
+test excl.ldxr_stxr.0272
+code 885ffeab 8803fea8
+seed f82fbd4e966e4761
+in x8=0xaaaaaaaaaaaaaaaa x21=0x201e30
+out x3=0x0 x11=0x62287388
+mem 0x201e30=aaaaaaaa
+exit end
+test excl.ldxr_stxr.0273
+code 485f7e35 4804fe31
+seed 3e5fc102d2ca3230
+in x17=0x200684
+out x4=0x0 x21=0xf7bf
+mem 0x200684=8406
+exit end
+test excl.ldxr_stxr.0274
+code c85f7d7a c802fd67
+seed 8c351299317a1e97
+in x11=0x200be0
+out x2=0x0 x26=0x2f6e5c7041555edd
+mem 0x200be0=28a0af00d5e99bf6
+exit end
+test excl.ldxr_stxr.0275
+code c85f7e3d c813fe35
+seed 01e57eee9d28c5a0
+in x17=0x201ea8
+out x19=0x0 x29=0xd10e95308e815793
+mem 0x201ea8=ea0eb4b2c30c9d1b
+exit end
+test excl.ldxr_stxr.0276
+code 885f7d05 881e7d1b
+seed f471a364de884c42
+in x27=0x1 x8=0x200e28
+out x5=0xe940c5ca x30=0x0
+mem 0x200e28=01000000
+exit end
+test excl.ldxr_stxr.0277
+code 085ffe6c 0807fe71
+seed 47848c0f9f82e0d9
+in x17=0x7fffffff x19=0x200e10
+out x7=0x0 x12=0xc7
+mem 0x200e10=ff
+exit end
+test excl.ldxr_stxr.0278
+code 085ffe04 0811fe16
+seed 1631a4f198ae09aa
+in x22=0x7fffffffffffffff x16=0x201ac1
+out x4=0x18 x17=0x0
+mem 0x201ac1=ff
+exit end
+test excl.ldxr_stxr.0279
+code 885ffe5d 881a7e44
+seed f7d2dfedf832b972
+in x4=0xffff x18=0x200044
+out x26=0x0 x29=0x6736d523
+mem 0x200044=ffff0000
+exit end
+test excl.ldxr_stxr.0280
+code c85f7eb7 c801fea9
+seed 1ea2df15818d1af7
+in x9=0x8000000000000001 x21=0x201448
+out x1=0x0 x23=0x845f8ce0092c28d6
+mem 0x201448=0100000000000080
+exit end
+test excl.ldxr_stxr.0281
+code 885f7e57 8818fe46
+seed 2726772985c24868
+in x6=0x7f x18=0x2016e8
+out x23=0xc2a165ee x24=0x0
+mem 0x2016e8=7f000000
+exit end
+test excl.ldxr_stxr.0282
+code 885f7d56 8818fd5b
+seed 42bb19444649cde2
+in x27=0xffffffff x10=0x201fe8
+out x22=0x7295010f x24=0x0
+mem 0x201fe8=ffffffff
+exit end
+test excl.ldxr_stxr.0283
+code 885f7fc0 8819ffd1
+seed 804ce6fee51f748c
+in x30=0x200d14
+out x0=0x6918daa2 x25=0x0
+mem 0x200d14=84b8ad47
+exit end
+test excl.ldxr_stxr.0284
+code 485f7f1e 4811ff17
+seed ef6c42813b7906e1
+in x24=0x20157e
+out x17=0x0 x30=0x1471
+mem 0x20157e=f827
+exit end
+test excl.ldxr_stxr.0285
+code c85ffec3 c80ffedb
+seed 032dea5a98e0e0ed
+in x22=0x200fe0
+out x3=0x5ca7cd1f456819a1 x15=0x0
+mem 0x200fe0=703426535557f800
+exit end
+test excl.ldxr_stxr.0286
+code 485f7c88 48127c9b
+seed 8fd06f03492a11d8
+in x4=0x20172c
+out x8=0x4fe5 x18=0x0
+mem 0x20172c=1f86
+exit end
+test excl.ldxr_stxr.0287
+code c85ffe24 c8087e2a
+seed 42dac5b04f192f44
+in x17=0x200eb0
+out x4=0x447154e13735b8cc x8=0x0
+mem 0x200eb0=966d3677e4ebb94d
+exit end
+test excl.ldxr_stxr.0288
+code 085fff5c 08177f51
+seed 022cd187121f2d97
+in x26=0x200734
+out x23=0x0 x28=0x82
+mem 0x200734=cd
+exit end
+test excl.ldxr_stxr.0289
+code 885ffd0e 880afd0d
+seed c83cfdec9e7da3e1
+in x8=0x201af4
+out x10=0x0 x14=0x473bb6ac
+mem 0x201af4=1f003d54
+exit end
+test excl.ldxr_stxr.0290
+code 485f7e3a 48167e30
+seed 0510847b5dfbe410
+in x17=0x2009d4
+out x22=0x0 x26=0x8fef
+mem 0x2009d4=cc4d
+exit end
+test excl.ldxr_stxr.0291
+code 485ffcf3 48187ce4
+seed ca20a4b8fd77373f
+in x4=0x5555555555555555 x7=0x201a9e
+out x19=0xaa6c x24=0x0
+mem 0x201a9e=5555
+exit end
+test excl.ldxr_stxr.0292
+code c85f7f7a c81aff7c
+seed bfb6b3944bf2da6d
+in x27=0x200e30
+out x26=0x0
+mem 0x200e30=ef0b465e0f5ad70f
+exit end
+test excl.ldxr_stxr.0293
+code c85ffde1 c803fde9
+seed 679bfc34fad92364
+in x9=0x8000000000000000 x15=0x2010b0
+out x1=0xae9fe09043f792f x3=0x0
+mem 0x2010b0=0000000000000080
+exit end
+test excl.ldxr_stxr.0294
+code 485fffe3 4816fff3
+seed 2ddba6c6ea779e6e
+in x19=0xaaaaaaaaaaaaaaaa sp=0x2005b0
+out x3=0xf8bc x22=0x0
+mem 0x2005b0=aaaa
+exit end
+test excl.ldxr_stxr.0295
+code 485ffcca 4809fcc4
+seed 0a464e40a56e8f2c
+in x6=0x201ac4
+out x9=0x0 x10=0xa65d
+mem 0x201ac4=1070
+exit end
+test excl.ldxr_stxr.0296
+code 085f7f63 081e7f66
+seed 801029863a96fa23
+in x27=0x2003de
+out x3=0x5f x30=0x0
+mem 0x2003de=47
+exit end
+test excl.ldxr_stxr.0297
+code 485fffba 480f7fb8
+seed 67c7a6479220b11b
+in x29=0x20004e
+out x15=0x0 x26=0x9b23
+mem 0x20004e=2f09
+exit end
+test excl.ldxr_stxr.0298
+code 085f7ed9 0802fec9
+seed 1e7d8debe5e4b128
+in x22=0x201a32
+out x2=0x0 x25=0xd9
+mem 0x201a32=6b
+exit end
+test excl.ldxr_stxr.0299
+code 485f7f29 481cff29
+seed eca242fedf5207b4
+in x25=0x201880
+out x9=0x95f9 x28=0x0
+exit end
+test excl.ldxr_stxr.0300
+code 885f7e63 88107e75
+seed e6f52d59ad583786
+in x19=0x200f98
+out x3=0xeb8ea66e x16=0x0
+mem 0x200f98=19d3f9d4
+exit end
+test excl.ldxr_stxr.0301
+code 085ffc2c 08147c2d
+seed 9876eac9a06e2069
+in x13=0xaaaaaaaaaaaaaaaa x1=0x20039f
+out x12=0xc9 x20=0x0
+mem 0x20039f=aa
+exit end
+test excl.ldxr_stxr.0302
+code 485f7ded 48007df9
+seed 909c1f01bd2098d5
+in x15=0x2014e4
+out x0=0x0 x13=0x84e5
+mem 0x2014e4=9fc1
+exit end
+test excl.ldxr_stxr.0303
+code c85ffe89 c81c7e96
+seed be559326cc788244
+in x22=0x8000000000000001 x20=0x200508
+out x9=0x60cb5bda8c8d0700 x28=0x0
+mem 0x200508=0100000000000080
+exit end
+test excl.ldxr_stxr.0304
+code 085f7de5 0813fde9
+seed 82f03d96cdc4a98e
+in x9=0x8000000000000001 x15=0x200d04
+out x5=0xc0 x19=0x0
+mem 0x200d04=01
+exit end
+test excl.ldxr_stxr.0305
+code c85f7d23 c802fd3a
+seed ea50ea7917f43917
+in x26=0xffffffff x9=0x201280
+out x2=0x0 x3=0xf82b568fac183224
+mem 0x201280=ffffffff00000000
+exit end
+test excl.ldxr_stxr.0306
+code 485f7f15 4808ff1c
+seed 2347465af7bd3eb1
+in x28=0x8000 x24=0x2013d4
+out x8=0x0 x21=0x2250
+mem 0x2013d4=0080
+exit end
+test excl.ldxr_stxr.0307
+code 085ffd20 081a7d39
+seed e3c6af7929e354ec
+in x25=0x5555555555555555 x9=0x201972
+out x0=0xd0 x26=0x0
+mem 0x201972=55
+exit end
+test excl.ldxr_stxr.0308
+code 485ffd86 481a7d92
+seed a8a4bc0653b39fa3
+in x12=0x200b5e
+out x6=0xdeab x26=0x0
+mem 0x200b5e=dc28
+exit end
+test excl.ldxr_stxr.0309
+code c85ffc0c c80b7c01
+seed 80a9aedaa95c7981
+in x0=0x201ef8
+out x11=0x0 x12=0x9d9a48987986fced
+mem 0x201ef8=f573d2bb0ee802b1
+exit end
+test excl.ldxr_stxr.0310
+code 085ffeee 081e7eec
+seed d0dc7891716af22a
+in x23=0x2001b6
+out x14=0xc7 x30=0x0
+mem 0x2001b6=6b
+exit end
+test excl.ldxr_stxr.0311
+code c85ffdc0 c8007dca
+seed 2955b795ec7aec4e
+in x10=0x80000000 x14=0x201dc8
+out x0=0x0
+mem 0x201dc8=0000008000000000
+exit end
+test excl.ldxr_stxr.0312
+code 085f7ceb 081bfce4
+seed 2dba0f05b75f507b
+in x7=0x20148f
+out x11=0x53 x27=0x0
+mem 0x20148f=07
+exit end
+test excl.ldxr_stxr.0313
+code 885f7e4f 8811fe5c
+seed fc723e68cfa78d13
+in x18=0x201b0c
+out x15=0xe82a0e7e x17=0x0
+mem 0x201b0c=f80bb36c
+exit end
+test excl.ldxr_stxr.0314
+code c85f7e4d c80cfe4a
+seed 987731529cc64fab
+in x18=0x2012b0
+out x12=0x0 x13=0x49e7a3e68144d477
+mem 0x2012b0=9fe1054ef648727e
+exit end
+test excl.ldxr_stxr.0315
+code c85f7d85 c80ffd96
+seed d73324f35f69acae
+in x22=0x80 x12=0x200f50
+out x5=0x4367e220e2e7636f x15=0x0
+mem 0x200f50=8000000000000000
+exit end
+test excl.ldxr_stxr.0316
+code 885f7c1d 880ffc10
+seed d635b7624f4daf2f
+in x16=0x7fffffffffffffff x0=0x2000b8
+out x15=0x0 x29=0x38c3c327
+mem 0x2000b8=ffffffff
+exit end
+test excl.ldxr_stxr.0317
+code 085ffdc7 0814fddd
+seed e2fb7b98a2739295
+in x14=0x200692
+out x7=0x40 x20=0x0
+mem 0x200692=02
+exit end
+test excl.ldxr_stxr.0318
+code 485ffd97 4819fd8b
+seed df270362e44dd205
+in x12=0x201e50
+out x23=0x6558 x25=0x0
+mem 0x201e50=931e
+exit end
+test excl.ldxr_stxr.0319
+code 485ffcae 48127cb8
+seed c35b70f44a0352f9
+in x5=0x201c92
+out x14=0x7795 x18=0x0
+mem 0x201c92=12e2
+exit end
+test excl.ldxr_stxr.0320
+code 885f7c1a 8808fc02
+seed 1c3f0381d266fbeb
+in x0=0x201720
+out x8=0x0 x26=0xf72bf23f
+mem 0x201720=1209f158
+exit end
+test excl.ldxr_stxr.0321
+code c85f7f46 c800ff56
+seed 903ed6a4ef261971
+in x26=0x201530
+out x0=0x0 x6=0xf7ad6337e2b42702
+mem 0x201530=b0c172809e66a1f0
+exit end
+test excl.ldxr_stxr.0322
+code 885ffe27 88187e3f
+seed 6c03a06488df7be4
+in x17=0x200b48
+out x7=0x44cd81ef x24=0x0
+mem 0x200b48=00000000
+exit end
+test excl.ldxr_stxr.0323
+code c85fff8b c80eff90
+seed 016add223a282262
+in x28=0x200448
+out x11=0x655d17352e9dc180 x14=0x0
+mem 0x200448=ede9f62321547f43
+exit end
+test excl.ldxr_stxr.0324
+code 085ffce0 0813fcf1
+seed c6fa1611f6b355b0
+in x17=0xfffffffffffffffe x7=0x2018eb
+out x0=0x69 x19=0x0
+mem 0x2018eb=fe
+exit end
+test excl.ldxr_stxr.0325
+code 085f7dd3 08067dd2
+seed 684b6c5e215cc0d0
+in x18=0xaaaaaaaaaaaaaaaa x14=0x201afa
+out x6=0x0 x19=0x51
+mem 0x201afa=aa
+exit end
+test excl.ldxr_stxr.0326
+code 485f7e6e 48117e6d
+seed 345a22193a8f7796
+in x13=0x7fffffff x19=0x201584
+out x14=0x670 x17=0x0
+mem 0x201584=ffff
+exit end
+test excl.ldxr_stxr.0327
+code 085f7fae 0804ffbc
+seed 4f11811e33d11508
+in x28=0x8000000000000000 x29=0x2001ef
+out x4=0x0 x14=0xe0
+mem 0x2001ef=00
+exit end
+test excl.ldxr_stxr.0328
+code c85ffd1e c809fd13
+seed eafc25dfda77375c
+in x19=0xffffffffffffffff x8=0x2008f8
+out x9=0x0 x30=0x5a8e5774eb94576d
+mem 0x2008f8=ffffffffffffffff
+exit end
+test excl.ldxr_stxr.0329
+code 885f7f97 8805ff8b
+seed 0906fe448cc0aa41
+in x11=0x5555555555555555 x28=0x201d3c
+out x5=0x0 x23=0x8ca56031
+mem 0x201d3c=55555555
+exit end
+test excl.ldxr_stxr.0330
+code 885f7f2a 88167f24
+seed a85f4283def217c2
+in x25=0x200428
+out x10=0xa3c93a13 x22=0x0
+mem 0x200428=3157032d
+exit end
+test excl.ldxr_stxr.0331
+code 885f7e12 880c7e0a
+seed 2cb50ce78d46043a
+in x10=0x7f x16=0x200cb4
+out x12=0x0 x18=0x939bf2b7
+mem 0x200cb4=7f000000
+exit end
+test excl.ldxr_stxr.0332
+code c85fff41 c802ff5e
+seed 3aaae7b9169bbd5e
+in x26=0x200fb0
+out x1=0x5c0f68f683affc4 x2=0x0
+mem 0x200fb0=ad69dd1c57b62e22
+exit end
+test excl.ldxr_stxr.0333
+code 485ffca9 4802fcb8
+seed 0bf3a73ea5274983
+in x5=0x200b26
+out x2=0x0 x9=0x1b89
+mem 0x200b26=7dae
+exit end
+test excl.ldxr_stxr.0334
+code 885ffc32 88037c33
+seed af19cbc435188241
+in x19=0x1 x1=0x200018
+out x3=0x0 x18=0xb05724db
+mem 0x200018=01000000
+exit end
+test excl.ldxr_stxr.0335
+code 885ffc27 881afc35
+seed 19bdd2fe77de75d1
+in x1=0x20052c
+out x7=0xba59592b x26=0x0
+mem 0x20052c=069af0bb
+exit end
+test excl.ldxr_stxr.0336
+code 885ffdbe 881cfdbd
+seed 5e2ce3fa2580a64d
+in x13=0x200934
+out x28=0x0 x30=0x4bc5ff2
+mem 0x200934=0aa8d14d
+exit end
+test excl.ldxr_stxr.0337
+code c85ffee0 c80a7ee7
+seed 83d5bff7fc1d2950
+in x23=0x2008d0
+out x0=0xa17fb90ecf3a611a x10=0x0
+mem 0x2008d0=b9721846cc593ffc
+exit end
+test excl.ldxr_stxr.0338
+code 085ffcd8 080b7cda
+seed aee44e85baff61d5
+in x6=0x201b73
+out x11=0x0 x24=0xaa
+mem 0x201b73=b0
+exit end
+test excl.ldxr_stxr.0339
+code c85f7c8e c800fc8e
+seed 22e86ce2e5dd88bf
+in x4=0x200db0
+out x0=0x0 x14=0x384c950bdfe9792a
+exit end
+test excl.ldxr_stxr.0340
+code c85ffc8b c80f7c9c
+seed 8495447c40372fc1
+in x4=0x2013f8
+out x11=0x5ac4cfdc22429def x15=0x0
+mem 0x2013f8=710c15a8a684874c
+exit end
+test excl.ldxr_stxr.0341
+code 485f7c2c 4817fc20
+seed 751966907f446c9e
+in x1=0x201d60
+out x12=0x36ad x23=0x0
+mem 0x201d60=049a
+exit end
+test excl.ldxr_stxr.0342
+code 085f7f14 08157f0f
+seed ab0b639295860a41
+in x24=0x200bf3
+out x20=0xdf x21=0x0
+mem 0x200bf3=48
+exit end
+test excl.ldxr_stxr.0343
+code c85f7f21 c811ff21
+seed db79dae1bc498ea2
+in x25=0x201ec0
+out x1=0x9c0617dabe7dd63c x17=0x0
+exit end
+test excl.ldxr_stxr.0344
+code 485f7ec9 48117ec9
+seed 29d4cdb91ff98bd5
+in x22=0x20026e
+out x9=0x2bd9 x17=0x0
+exit end
+test excl.ldxr_stxr.0345
+code 885fff15 880e7f1b
+seed f25f482fe9d76736
+in x27=0xfffffffffffffffe x24=0x201438
+out x14=0x0 x21=0x96fd8c00
+mem 0x201438=feffffff
+exit end
+test excl.ldxr_stxr.0346
+code 085f7db1 080e7dab
+seed 46f7d04a41098b35
+in x13=0x2004e8
+out x14=0x0 x17=0xe5
+exit end
+test excl.ldxr_stxr.0347
+code 485ffc9b 48197c9a
+seed 098b12fe86a4b895
+in x26=0x8000000000000001 x4=0x20183e
+out x25=0x0 x27=0x3666
+mem 0x20183e=0100
+exit end
+test excl.ldxr_stxr.0348
+code c85f7e2b c8187e36
+seed 092af3a6f26e9ebe
+in x22=0xff x17=0x201d80
+out x11=0x4a8f0d41e9db7c5c x24=0x0
+mem 0x201d80=ff00000000000000
+exit end
+test excl.ldxr_stxr.0349
+code c85ffd0a c81c7d09
+seed 79f3a04606f65224
+in x9=0x0 x8=0x200f68
+out x10=0xb2d7d4608acf5ba6 x28=0x0
+mem 0x200f68=0000000000000000
+exit end
+test excl.ldxr_stxr.0350
+code c85ffe03 c803fe0c
+seed 37255405c74f5c09
+in x16=0x201210
+out x3=0x0
+mem 0x201210=c09249d4da0e711d
+exit end
+test excl.ldxr_stxr.0351
+code c85fff97 c8107f9d
+seed 85daa8cfd8f8b58d
+in x29=0xffffffff x28=0x201ff8
+out x16=0x0 x23=0xaf734cb9b4f51604
+mem 0x201ff8=ffffffff00000000
+exit end
+test excl.ldxr_stxr.0352
+code 085f7fc2 08167fd5
+seed 9220e7efb8fb5bac
+in x21=0xffffffff00000000 x30=0x201765
+out x2=0xaa x22=0x0
+mem 0x201765=00
+exit end
+test excl.ldxr_stxr.0353
+code c85f7e17 c80afe0b
+seed a6b865578bd5136c
+in x16=0x200d90
+out x10=0x0 x23=0xf1d17e2f5af7c650
+mem 0x200d90=54a98881795c1e65
+exit end
+test excl.ldxr_stxr.0354
+code 885f7c2f 8819fc2e
+seed 5cceda4f7c4c74f9
+in x1=0x201dd0
+out x15=0x164cb28 x25=0x0
+mem 0x201dd0=41625525
+exit end
+test excl.ldxr_stxr.0355
+code 485ffc48 480dfc4c
+seed 81b7118897ba73fa
+in x2=0x200fa6
+out x8=0x6cf1 x13=0x0
+mem 0x200fa6=15e2
+exit end
+test excl.ldxr_stxr.0356
+code 085ffe2b 0810fe22
+seed 78a46e9391860eb0
+in x2=0x80000000 x17=0x200865
+out x11=0x89 x16=0x0
+mem 0x200865=00
+exit end
+test excl.ldxr_stxr.0357
+code 085f7e4f 08047e5e
+seed cfc28d9cbb420bc2
+in x18=0x201f1c
+out x4=0x0 x15=0xc8
+mem 0x201f1c=48
+exit end
+test excl.ldxr_stxr.0358
+code c85f7fba c807ffa9
+seed a032348e16e01cf3
+in x29=0x200c50
+out x7=0x0 x26=0xfb40649f8f726e53
+mem 0x200c50=1b726f861a 0x200c56=df85
+exit end
+test excl.ldxr_stxr.0359
+code 085ffff2 081afffe
+seed 813f1f3f40316522
+in sp=0x2016a0
+out x18=0xd0 x26=0x0
+mem 0x2016a0=36
+exit end
+test excl.ldxr_stxr.0360
+code 485f7ede 480d7edd
+seed 505f7f777e636c3a
+in x29=0x7fffffffffffffff x22=0x2005c8
+out x13=0x0 x30=0x910c
+mem 0x2005c8=ffff
+exit end
+test excl.ldxr_stxr.0361
+code c85ffeed c80dfeec
+seed edfc3c89dfc53cb2
+in x12=0xffffffff x23=0x201ec8
+out x13=0x0
+mem 0x201ec8=ffffffff00000000
+exit end
+test excl.ldxr_stxr.0362
+code c85fff20 c80e7f26
+seed f13d42b2b93626cd
+in x6=0x1 x25=0x201540
+out x0=0xae9aea43a2f9498d x14=0x0
+mem 0x201540=0100000000000000
+exit end
+test excl.ldxr_stxr.0363
+code c85ffc8f c810fc96
+seed b50339c18903dfc2
+in x22=0x7fff x4=0x201218
+out x15=0x92fe1e633b5c4be9 x16=0x0
+mem 0x201218=ff7f000000000000
+exit end
+test excl.ldxr_stxr.0364
+code 885ffe8d 88137e9d
+seed 862e2b5642b02dc6
+in x20=0x200548
+out x13=0x2750400 x19=0x0
+mem 0x200548=368bca26
+exit end
+test excl.ldxr_stxr.0365
+code 885ffd4e 880bfd42
+seed 1d829f0a1dd74104
+in x10=0x2000b8
+out x11=0x0 x14=0xfb44251
+mem 0x2000b8=04504075
+exit end
+test excl.ldxr_stxr.0366
+code 085fffc9 080d7fc5
+seed 514e663fdd4e73db
+in x30=0x2016df
+out x9=0x29 x13=0x0
+mem 0x2016df=24
+exit end
+test excl.ldxr_stxr.0367
+code 485f7d69 4809fd74
+seed e99756512ccb9be5
+in x20=0x7fffffff x11=0x201ac2
+out x9=0x0
+mem 0x201ac2=ffff
+exit end
+test excl.ldxr_stxr.0368
+code c85fffb7 c802ffba
+seed cfd0fc718bb80fc1
+in x29=0x201778
+out x2=0x0 x23=0xda5dcd514c4d3abc
+mem 0x201778=5a4b196c0f58d47b
+exit end
+test excl.ldxr_stxr.0369
+code 885fff34 8817ff3a
+seed 2ddf9a16610f67e1
+in x25=0x201994
+out x20=0xa9cafff4 x23=0x0
+mem 0x201994=7f0a4a43
+exit end
+test excl.ldxr_stxr.0370
+code 885ffc2c 881afc27
+seed 4e30f2392297104b
+in x1=0x200a1c
+out x12=0x8a185677 x26=0x0
+mem 0x200a1c=c43202b0
+exit end
+test excl.ldxr_stxr.0371
+code 485f7c26 48137c3c
+seed 5b3c6e037bcc755d
+in x28=0x1 x1=0x200be6
+out x6=0xf46a x19=0x0
+mem 0x200be6=0100
+exit end
+test excl.ldxr_stxr.0372
+code 485f7fd5 4801ffc9
+seed 0915d110d8c144c6
+in x30=0x201cc6
+out x1=0x0 x21=0xfba9
+mem 0x201cc6=7bfe
+exit end
+test excl.ldxr_stxr.0373
+code 085f7c50 081afc46
+seed f6859e45601506e9
+in x2=0x201184
+out x16=0x78 x26=0x0
+mem 0x201184=07
+exit end
+test excl.ldxr_stxr.0374
+code c85ffc47 c8127c4f
+seed 7e34121696f386e2
+in x2=0x2004f0
+out x7=0xd4144250b7d826c3 x18=0x0
+mem 0x2004f0=d2ecfdb452f63521
+exit end
+test excl.ldxr_stxr.0375
+code 885f7c1d 8803fc17
+seed d26a174db30912a3
+in x0=0x200844
+out x3=0x0 x29=0x8d72c3ad
+mem 0x200844=01db58d0
+exit end
+test excl.ldxr_stxr.0376
+code 485f7d12 481b7d19
+seed 403ed9ed13078cd1
+in x8=0x200ee4
+out x18=0x62c5 x27=0x0
+mem 0x200ee4=b98b
+exit end
+test excl.ldxr_stxr.0377
+code 085fffc2 080affcb
+seed a7373003ce8c5c0f
+in x30=0x2018de
+out x2=0x8e x10=0x0
+mem 0x2018de=30
+exit end
+test excl.ldxr_stxr.0378
+code 485f7d7e 48147d61
+seed 7c6808e49bc96c6e
+in x1=0xff x11=0x201610
+out x20=0x0 x30=0xbb5d
+mem 0x201610=ff00
+exit end
+test excl.ldxr_stxr.0379
+code c85ffe9c c81a7e8c
+seed a12015e3cb2b61b7
+in x20=0x200878
+out x26=0x0 x28=0xc760215c3fc4069c
+mem 0x200878=d51c2fa2b7ccbb2f
+exit end
+test excl.ldxr_stxr.0380
+code c85f7dd7 c80a7dd0
+seed f3ffa4626c7348a1
+in x16=0xffff x14=0x201868
+out x10=0x0 x23=0x6475edbaf3cd9488
+mem 0x201868=ffff000000000000
+exit end
+test excl.ldxr_stxr.0381
+code 885fff41 8808ff57
+seed bb6822b6fe00f97c
+in x26=0x2003d0
+out x1=0x85bce8da x8=0x0
+mem 0x2003d0=332d05f0
+exit end
+test excl.ldxr_stxr.0382
+code c85ffc66 c8197c72
+seed 42bfd1fb50fe6750
+in x3=0x2018c0
+out x6=0x88fbdf6987187b47 x25=0x0
+mem 0x2018c0=d301f4849a2776f3
+exit end
+test excl.ldxr_stxr.0383
+code 085f7d8b 08117d98
+seed cdedde9b45903d94
+in x12=0x200701
+out x11=0xcf x17=0x0
+mem 0x200701=a7
+exit end
+test excl.ldxr_stxr.0384
+code c85f7e72 c817fe7f
+seed cacb320c9f8e78cf
+in x19=0x200880
+out x18=0x42fa49b93f98a3e x23=0x0
+mem 0x200880=0000000000000000
+exit end
+test excl.ldxr_stxr.0385
+code 885f7f0d 8810ff1f
+seed ae8448d7e3bf9659
+in x24=0x201f84
+out x13=0xb817b6a9 x16=0x0
+mem 0x201f84=00000000
+exit end
+test excl.ldxr_stxr.0386
+code 885f7cd6 881efcdd
+seed b4c562d262cb3b76
+in x29=0x1 x6=0x201dc0
+out x22=0xa6a63d19 x30=0x0
+mem 0x201dc0=01000000
+exit end
+test excl.ldxr_stxr.0387
+code c85f7e02 c816fe05
+seed 70cb0fd66baedad7
+in x5=0x80 x16=0x201fe8
+out x2=0x5fcc8478996e069b x22=0x0
+mem 0x201fe8=8000000000000000
+exit end
+test excl.ldxr_stxr.0388
+code 885f7c2a 8819fc24
+seed 2fde28ca4e9236a2
+in x1=0x200be8
+out x10=0xf660ca6d x25=0x0
+mem 0x200be8=7507c0be
+exit end
+test excl.ldxr_stxr.0389
+code 485f7c78 481bfc60
+seed 0f2c89aa4a70a1cd
+in x3=0x20172a
+out x24=0x3f22 x27=0x0
+mem 0x20172a=4773
+exit end
+test excl.ldxr_stxr.0390
+code 885fff37 88077f33
+seed 3ce255c16e792fc9
+in x19=0xffffffffffffffff x25=0x2011c8
+out x7=0x0 x23=0x4aa8276e
+mem 0x2011c8=ffffffff
+exit end
+test excl.ldxr_stxr.0391
+code 885f7c9b 881bfc80
+seed 7c5d053d4073fa4d
+in x4=0x200d10
+out x27=0x0
+mem 0x200d10=65198bff
+exit end
+test excl.ldxr_stxr.0392
+code 485fff63 48157f73
+seed 8f44b69b780dafea
+in x27=0x20186e
+out x3=0x97e6 x21=0x0
+mem 0x20186e=742a
+exit end
+test excl.ldxr_stxr.0393
+code 485f7f0e 48097f0d
+seed dd5dd8d3dbdd0a9f
+in x24=0x200fca
+out x9=0x0 x14=0x807c
+mem 0x200fca=33dc
+exit end
+test excl.ldxr_stxr.0394
+code c85ffceb c806fcea
+seed a3dfb6f53f034da9
+in x7=0x201e98
+out x6=0x0 x11=0x95ecd0dc0fded690
+mem 0x201e98=1a285c854e2c28ef
+exit end
+test excl.ldxr_stxr.0395
+code 485ffe0e 480dfe16
+seed 71201fe137855413
+in x22=0xffff x16=0x20171a
+out x13=0x0 x14=0x181c
+mem 0x20171a=ffff
+exit end
+test excl.ldxr_stxr.0396
+code c85ffdb1 c802fdab
+seed f0045e1a643eb5cb
+in x13=0x2019c0
+out x2=0x0 x17=0x581d48669d914e15
+mem 0x2019c0=596a94de9bc4435f
+exit end
+test excl.ldxr_stxr.0397
+code c85f7c7a c8007c6b
+seed 3ee048e571516b94
+in x3=0x200be8
+out x0=0x0 x26=0xa812b6f04e6b87
+mem 0x200be8=5705d960c0348ed4
+exit end
+test excl.ldxr_stxr.0398
+code 885f7cbe 881d7cae
+seed b000d8022ac463b2
+in x5=0x201ea0
+out x29=0x0 x30=0xf0dd1198
+mem 0x201ea0=2a409083
+exit end
+test excl.ldxr_stxr.0399
+code c85ffd40 c8057d40
+seed f5d5266e3a584b5c
+in x10=0x200620
+out x0=0xe815ec1601570593 x5=0x0
+exit end
+test excl.ldxp_stxp.0000
+code c87f84d9 c82d7cc9
+seed 381788f24e5edf07
+in x6=0x201240
+out x1=0x7891bf6c53da5c16 x13=0x0 x25=0x4992f56dd7f49415
+mem 0x201240=34ed49c88d3bf4e70000000000000000
+exit end
+test excl.ldxp_stxp.0001
+code c87f3833 c8255023
+seed c0d8afe812d5e605
+in x1=0x201db0
+out x5=0x0 x14=0x9446eeff54fa798c x19=0x64538a0104e5dd7
+mem 0x201db0=f71cf9c10cae381f2f63e20848ea09ca
+exit end
+test excl.ldxp_stxp.0002
+code c87fd0d8 c83e2cd9
+seed f1f5928eaeb3d50a
+in x25=0xfffffffffffffffe x6=0x200070
+out x20=0x8fa8d3a1841a6444 x24=0x81a10e02f84f4ec1 x30=0x0
+mem 0x200070=feffffffffffffff2b5c14b5bc758086
+exit end
+test excl.ldxp_stxp.0003
+code c87fed73
+seed c488fd6efc6db6be
+in x27=0x7f x11=0x200680
+out x19=0xabb265d5867de7c7 x27=0x44111682333e6b87
+exit end
+test excl.ldxp_stxp.0004
+code c87f6f0f c8237b0c
+seed ad201a4e36ae768d
+in x30=0xff x24=0x200c60
+out x3=0x0 x15=0xace17bd5e56d697d x27=0xb579ba4f81d4214f
+mem 0x200c60=75aec8afe63c8b3aff00000000000000
+exit end
+test excl.ldxp_stxp.0005
+code c87f9325 c823e734
+seed 5c6228a466af9517
+in x25=0x2017c0
+out x3=0x0 x4=0x78b3076c7fd932b2 x5=0xe2fa13e245326877
+mem 0x2017c0=9008deefd1db2a01c017200000000000
+exit end
+test excl.ldxp_stxp.0006
+code 887f4441
+seed 94fe70461dc1b0d9
+in x22=0x5555555555555555 x2=0x201dc8
+out x1=0xaa293443 x17=0x1f2daf10
+exit end
+test excl.ldxp_stxp.0007
+code 887f7995 88285d8a
+seed 55e8ae0b69ca4846
+in x23=0xffff x12=0x200b68
+out x8=0x0 x21=0xbc1bfc94 x30=0x912fc24d
+mem 0x200b68=6f8a0976ffff0000
+exit end
+test excl.ldxp_stxp.0008
+code c87f8c34 c83c6039
+seed 204663d28f1fb2fc
+in x1=0x2005b0
+out x3=0x2857d2668e931f69 x20=0xbafa22a435b9a61d x28=0x0
+mem 0x2005b0=ba4957270942c9aae583049ea4987b06
+exit end
+test excl.ldxp_stxp.0009
+code 887f432d 883ab729
+seed 4202734259e73e53
+in x25=0x200b20
+out x13=0xf96d4130 x16=0xa63314e0 x26=0x0
+mem 0x200b20=177cf28e30416df9
+exit end
+test excl.ldxp_stxp.0010
+code 887f63b5
+seed 1a8e87e718f2d995
+in x29=0x201f50
+out x21=0xf974abf3 x24=0x158ac7d4
+exit end
+test excl.ldxp_stxp.0011
+code c87f20b5 c83a1ca5
+seed 6142afedb2d876ef
+in x7=0x8000000000000000 x5=0x201030
+out x8=0x68cd302fed8c61dd x21=0xab905891ee4547ec x26=0x0
+mem 0x201030=30102000000000000000000000000080
+exit end
+test excl.ldxp_stxp.0012
+code c87f18ee
+seed 65df55dfc0f41abf
+in x19=0x5555555555555555 x7=0x200280
+out x6=0x89b919f4605df20a x14=0xb0b86b24cdfa1fec
+exit end
+test excl.ldxp_stxp.0013
+code c87fc0d1 c82f44de
+seed 06c6d39764cd9b0b
+in x6=0x2004d0
+out x15=0x0 x16=0x41f82bad4cfdef32 x17=0x599edd35a4bdbc57
+mem 0x2004d0=6f9bc6896138ff0757bcbda435dd9e59
+exit end
+test excl.ldxp_stxp.0014
+code 887f8eee
+seed d984c8d3981c6721
+in x24=0x8000000000000000 x23=0x2014e0
+out x3=0xeed3d95e x14=0x977b9608
+exit end
+test excl.ldxp_stxp.0015
+code 887f813a 882bd137
+seed e51aab3cbc1644b3
+in x9=0x2001d0
+out x0=0x1283426d x11=0x0 x26=0xc991a2bf
+mem 0x2001d0=400337645503dcee
+exit end
+test excl.ldxp_stxp.0016
+code c87fc6d9
+seed 8a4068c3f0a1269b
+in x7=0xffffffffffffffff x22=0x2018d0
+out x17=0xa0ce287362f05fc8 x25=0xe2f7eb3061d6f9e1
+exit end
+test excl.ldxp_stxp.0017
+code c87f430d c831ff06
+seed b2146e723a1260f4
+in x24=0x2003c0
+out x13=0x42bbfe6722a5db2b x16=0x8b9100b8ddeb216f x17=0x0
+mem 0x2003c0=932012e8ddaed8eb0000000000 0x2003ce=0000
+exit end
+test excl.ldxp_stxp.0018
+code 887ff2a6
+seed cbf57be2fcd7e7ce
+in x27=0xaaaaaaaaaaaaaaaa x21=0x200a90
+out x6=0xc9e86be6 x28=0xc4480d00
+exit end
+test excl.ldxp_stxp.0019
+code 887f9dc3 883e9dc0
+seed 143c0262a1c46e03
+in x14=0x201bc8
+out x3=0x47ac6635 x7=0x401812c1 x30=0x0
+mem 0x201bc8=8a9a6061
+exit end
+test excl.ldxp_stxp.0020
+code 887faf29 88376b28
+seed f58534660b0ffb2c
+in x25=0x201278
+out x9=0xd064f973 x11=0x6fd974bb x23=0x0
+mem 0x201278=447cd708822072ed
+exit end
+test excl.ldxp_stxp.0021
+code c87fcdb4 c820e1af
+seed 2dd0718e4e438545
+in x15=0x1 x13=0x200100
+out x0=0x0 x19=0x6a2cf795bdc68dbd x20=0x2abb49cd731d661d
+mem 0x200100=0100000000000000d8cd28b3b842df44
+exit end
+test excl.ldxp_stxp.0022
+code c87f9c51 c82d5455
+seed bdceffc76457c74d
+in x21=0x0 x2=0x200640
+out x7=0x57182bf48d0ebeb7 x13=0x0 x17=0x2cafe686e3ddd02a
+mem 0x200640=00000000000000000000000000000000
+exit end
+test excl.ldxp_stxp.0023
+code c87f129c c826f69b
+seed 1526e501d4b3ef1a
+in x20=0x2004d0
+out x4=0xc87b0c1fb5b2a655 x6=0x0 x28=0x67ab81f1c4f0b666
+mem 0x2004d0=7eb736d25d906a582464b45e4c738170
+exit end
+test excl.ldxp_stxp.0024
+code 887ff6cb 882416c3
+seed cf1defa8f2e07bff
+in x3=0x7fffffffffffffff x5=0x80000000 x22=0x201198
+out x4=0x0 x11=0xac8a5ef9 x29=0xc0cd59fd
+mem 0x201198=ffffffff00000080
+exit end
+test excl.ldxp_stxp.0025
+code 887f5556 88346d5d
+seed 1ad649c546ee90a6
+in x10=0x200410
+out x20=0x0 x21=0xcdf7d862 x22=0xcc73190c
+mem 0x200410=09b9eec4637840a8
+exit end
+test excl.ldxp_stxp.0026
+code c87f6132 c831792d
+seed 97a940599a389980
+in x30=0x2 x9=0x201760
+out x17=0x0 x18=0x3b31073cb0b0cab6 x24=0xf2543518dc27c651
+mem 0x201760=abdddf17c5887e1a0200000000000000
+exit end
+test excl.ldxp_stxp.0027
+code c87ff3f6 c82c7ff1
+seed 8f54800b81a697de
+in x17=0xff sp=0x201c30
+out x12=0x0 x22=0xe3caf4f1cd8442e0 x28=0x128a1802d7788e71
+mem 0x201c30=ff000000000000000000000000000000
+exit end
+test excl.ldxp_stxp.0028
+code c87f81a2 c82e41bb
+seed 75558cecc86ff564
+in x27=0xff x13=0x2018a0
+out x0=0x7a21e831697277a2 x2=0x760581483a246419 x14=0x0
+mem 0x2018a0=ff000000000000005e15e2d81c184a90
+exit end
+test excl.ldxp_stxp.0029
+code 887fdcc2 8821ccd1
+seed 5a26f8d280496818
+in x19=0x8000 x6=0x2010a0
+out x1=0x0 x2=0x7918694b x23=0x202ad2bd
+mem 0x2010a0=bfb4362900800000
+exit end
+test excl.ldxp_stxp.0030
+code c87f047c
+seed c814bc06204f297f
+in x11=0x1 x3=0x200df0
+out x1=0xdc71cf563c22f9bd x28=0x783b895902559442
+exit end
+test excl.ldxp_stxp.0031
+code 887fa9d5
+seed 8cc245855d8bc100
+in x9=0xaaaaaaaaaaaaaaaa x14=0x200170
+out x10=0x138b4c3 x21=0xed171eb1
+exit end
+test excl.ldxp_stxp.0032
+code c87f94d8 c83230d6
+seed d9c4e0e2e0edcdf2
+in x6=0x2010e0
+out x5=0xdc5b1a548965522a x18=0x0 x24=0x3f7fba1961eed23e
+mem 0x2010e0=fdb1f4cc84c6b2c2092fb5419d6606be
+exit end
+test excl.ldxp_stxp.0033
+code 887f706a 8830706a
+seed 1c42687c5091114b
+in x3=0x200408
+out x10=0x10cae533 x16=0x0 x28=0x1cfeae21
+exit end
+test excl.ldxp_stxp.0034
+code c87fbd1e c83d8510
+seed feb0d4afff09e3c1
+in x8=0x200ea0
+out x15=0x6a8bb6511aa13bae x29=0x0 x30=0xf5ba78ffa49b1fc0
+mem 0x200ea0=36df8c051687fdb1422f6fffdcfeda69
+exit end
+test excl.ldxp_stxp.0035
+code c87f39e9 c83769ec
+seed 00cec5a729cd759e
+in x12=0x80000000 x15=0x201ad0
+out x9=0x288b5d41ac2ce53 x14=0xf5179992d2988eff x23=0x0
+mem 0x201ad0=00000080000000004c6e614362226a0c
+exit end
+test excl.ldxp_stxp.0036
+code 887fbed1
+seed bbebfbe31e0e71bf
+in x22=0x200340
+out x15=0x42980a5f x17=0x9b36733d
+exit end
+test excl.ldxp_stxp.0037
+code 887f5b99 88280b9a
+seed b1cb16f138c7d167
+in x28=0x2017d8
+out x8=0x0 x22=0x7d569359 x25=0x2620d74f
+mem 0x2017d8=4d6b18c7ecc8808f
+exit end
+test excl.ldxp_stxp.0038
+code 887f97e9 883287ec
+seed cd9d167fafa2518e
+in x1=0xffffffff sp=0x200a90
+out x5=0xc2e4b4 x9=0xb08e9001 x18=0x0
+mem 0x200a90=7df53fdaffffffff
+exit end
+test excl.ldxp_stxp.0039
+code c87f62fe c82eb2e5
+seed e924e7202f515ad5
+in x12=0x7fffffffffffffff x23=0x200070
+out x14=0x0 x24=0x30f6e53801184752 x30=0x174ae70a900fb751
+mem 0x200070=65fb43df116e9c35ffffffffffffff7f
+exit end
+test excl.ldxp_stxp.0040
+code c87f0892
+seed d2fbc050d885a586
+in x28=0xffffffff x5=0x100000000 x4=0x200170
+out x2=0xd36250deaaa1d03b x18=0xd637b6cbafccc0b7
+exit end
+test excl.ldxp_stxp.0041
+code 887fdc2e
+seed 7768d941829fac12
+in x1=0x2019b0
+out x14=0xaba7b813 x23=0x515e1eee
+exit end
+test excl.ldxp_stxp.0042
+code 887f99f4 8823d5e6
+seed feb3674b253fea23
+in x15=0x200f38
+out x3=0x0 x6=0x8dc74f5f x20=0x51aaf6d3
+mem 0x200f38=5f4fc78de3f22a43
+exit end
+test excl.ldxp_stxp.0043
+code c87f7496 c82fe895
+seed d9442490ee2ddf43
+in x4=0x2000e0
+out x15=0x0 x22=0xf1687b832be77473 x29=0x675604d42ebad0b7
+mem 0x2000e0=a50563f45bad33f8c78a7037968fb49e
+exit end
+test excl.ldxp_stxp.0044
+code c87f6aa6 c8242ab3
+seed 1423f358d902ec04
+in x19=0xff x21=0x200d50
+out x4=0x0 x6=0x1a8f3bf8d140719f x26=0x591bf9e746f37e53
+mem 0x200d50=ff00000000000000faab90c767eace33
+exit end
+test excl.ldxp_stxp.0045
+code 887fecd3 883114c5
+seed 1e5c0334406be2c0
+in x5=0x80000000 x6=0x201140
+out x17=0x0 x19=0xdde8b158 x27=0x7afa1e0a
+mem 0x201140=0000008000000080
+exit end
+test excl.ldxp_stxp.0046
+code c87f02ef
+seed a6d8a9626189bc78
+in x13=0xffffffff x23=0x2004b0
+out x0=0x257e53611e30aa1c x15=0x76ce76d197c3a9a9
+exit end
+test excl.ldxp_stxp.0047
+code c87f41fb c82dc9e9
+seed 471c2f86ca295b62
+in x9=0xff x18=0x5555555555555555 x15=0x200360
+out x13=0x0 x16=0x230a9893694eb885 x27=0x2ef6b5418b7f8907
+mem 0x200360=ff000000000000005555555555555555
+exit end
+test excl.ldxp_stxp.0048
+code 887fc95b 883e715b
+seed fd62ffd71ea0a823
+in x28=0x2 x10=0x200028
+out x18=0xcecef44 x27=0x658ad214 x30=0x0
+mem 0x20002c=02000000
+exit end
+test excl.ldxp_stxp.0049
+code c87ff5dc c83d6dd4
+seed 004d4fcdc7dbdb89
+in x27=0x7f x14=0x2015d0
+out x28=0x2d1c836c7378be0c x29=0x0
+mem 0x2015d0=2805f756e9a361367f00000000000000
+exit end
+test excl.ldxp_stxp.0050
+code 887ff55b 88262d55
+seed fd6c9bae57a39e7f
+in x21=0xffffffff00000000 x11=0x80 x10=0x2011a0
+out x6=0x0 x27=0x53a59d05 x29=0xbd24aace
+mem 0x2011a0=0000000080000000
+exit end
+test excl.ldxp_stxp.0051
+code 887fbd48
+seed f4d794ab251e439c
+in x6=0xffffffffffffffff x10=0x201110
+out x8=0x8dd9db9b x15=0x8653dca0
+exit end
+test excl.ldxp_stxp.0052
+code c87fc785
+seed 3a282c03fe51318e
+in x28=0x200480
+out x5=0xf8ebccb0221d4140 x17=0x7e9abe1e55728acf
+exit end
+test excl.ldxp_stxp.0053
+code c87f6cf3 c828b8e7
+seed c326f7fc30f7a6d2
+in x7=0x200d90
+out x8=0x0 x19=0x3b770356abc19ce1 x27=0x433d8a77f921db80
+mem 0x200d90=900d20000000000039eb982c41916a1b
+exit end
+test excl.ldxp_stxp.0054
+code 887fb522 882d0536
+seed 8d4315b15323a087
+in x9=0x200080
+out x2=0xdf45ff39 x13=0x0
+mem 0x200080=8388b8fb5d56c259
+exit end
+test excl.ldxp_stxp.0055
+code c87f43c0
+seed b7d246ec208ad9f7
+in x30=0x2009c0
+out x0=0x2667c97345f931f3 x16=0x9bb12d20dd413a52
+exit end
+test excl.ldxp_stxp.0056
+code c87f5530 c820192e
+seed a7b0ab18e5801d36
+in x6=0xffffffff x9=0x200240
+out x0=0x0 x16=0xcdffb3c8f7e194db x21=0x4f349397063f3a12
+mem 0x200240=010a087a8c56d97affffffff00000000
+exit end
+test excl.ldxp_stxp.0057
+code 887fe5d1 883969cb
+seed e9d55915c04342ce
+in x11=0xaaaaaaaaaaaaaaaa x14=0x200710
+out x17=0xfc31bf95 x25=0x0
+mem 0x200710=aaaaaaaa4a35e950
+exit end
+test excl.ldxp_stxp.0058
+code 887f5e70 88372a71
+seed 5a4a11bb10fa3b41
+in x17=0x8000 x10=0x8000000000000001 x19=0x200740
+out x16=0xfce5ead1 x23=0x0
+mem 0x200740=0080000001000000
+exit end
+test excl.ldxp_stxp.0059
+code 887fac69 88260c6a
+seed 32af3d12abb77690
+in x3=0x200e78
+out x6=0x0 x9=0x3694b15a x11=0x54308062
+mem 0x200e78=efc5de72780e2000
+exit end
+test excl.ldxp_stxp.0060
+code c87f8ef5 c83bdef6
+seed 99a3602590956e7f
+in x23=0x200aa0
+out x3=0xb82fbe5206c7da2c x21=0x93912075ba85a257 x27=0x0
+mem 0x200aa0=f6736dbec263e232a00a200000000000
+exit end
+test excl.ldxp_stxp.0061
+code 887f5197 883b4d87
+seed 7ebd3d49340de266
+in x7=0x7f x12=0x200270
+out x20=0x92a46894 x23=0x180a95cf x27=0x0
+mem 0x200270=7f0000003eaf2e67
+exit end
+test excl.ldxp_stxp.0062
+code c87f6d9e c8230196
+seed 7da4740e49f541f7
+in x22=0x80 x12=0x2013d0
+out x3=0x0 x27=0xfac99382b85bdf57 x30=0x3f46cacc6312dfc1
+mem 0x2013d0=80000000000000007ed47970b55deef2
+exit end
+test excl.ldxp_stxp.0063
+code 887f6bc9 8831f3c5
+seed 4233fd6ff4a68619
+in x28=0x2 x30=0x200370
+out x9=0xfe03279d x17=0x0 x26=0x5c5be37c
+mem 0x200370=be19d5a202000000
+exit end
+test excl.ldxp_stxp.0064
+code 887f0b29 882d1339
+seed e5275dac63dfd841
+in x4=0x8000 x25=0x200e80
+out x2=0xab70a36 x9=0x8f2aa6b1 x13=0x0
+mem 0x200e80=800e200000800000
+exit end
+test excl.ldxp_stxp.0065
+code 887f15c2 8820e5da
+seed 035a2792161a60f3
+in x26=0xaaaaaaaaaaaaaaaa x14=0x200b40
+out x0=0x0 x2=0x728e592 x5=0x373f7a9c
+mem 0x200b40=aaaaaaaa0c3d18cd
+exit end
+test excl.ldxp_stxp.0066
+code 887f680a 883cc81f
+seed d90af7768f4c9649
+in x0=0x2010d8
+out x10=0xb0dd5431 x26=0x6b0629c8 x28=0x0
+mem 0x2010d8=0000000011758000
+exit end
+test excl.ldxp_stxp.0067
+code c87f612e c82ff139
+seed 450ce98fc501f7fd
+in x28=0x8000000000000001 x9=0x201b80
+out x14=0xb7309e5497a59ba2 x15=0x0 x24=0xbea8e3c8da9eb410
+mem 0x201b80=ae2bcd0fbe4e3e5e0100000000000080
+exit end
+test excl.ldxp_stxp.0068
+code 887f0342 8822bb5c
+seed 3aad82cb776a14ed
+in x28=0x8000000000000001 x14=0x8000000000000000 x26=0x201ea0
+out x0=0x6d79f426 x2=0x0
+mem 0x201ea0=0100000000000000
+exit end
+test excl.ldxp_stxp.0069
+code c87f2a29 c83cbe21
+seed 402de94b8b8252c2
+in x15=0x7fff x17=0x200a30
+out x9=0xd4079767acf401e5 x10=0xfad7750b11787706 x28=0x0
+mem 0x200a30=df4f4bb85ef6410cff7f000000000000
+exit end
+test excl.ldxp_stxp.0070
+code c87fbfce c82657dc
+seed 56887b9e0d8111f3
+in x28=0x80000000 x21=0xaaaaaaaaaaaaaaaa x30=0x201060
+out x6=0x0 x14=0x463fe52e73f2145a x15=0x5e13fb169985f4dd
+mem 0x201060=0000008000000000aaaaaaaaaaaaaaaa
+exit end
+test excl.ldxp_stxp.0071
+code c87fd5b4 c82815ac
+seed 306e8b85ab1a80ee
+in x12=0xffffffff x5=0x100000000 x13=0x2010a0
+out x8=0x0 x20=0x3dc56a6dede0a7f8 x21=0x4faacc8a403c1636
+mem 0x2010a0=ffffffff000000000000000001000000
+exit end
+test excl.ldxp_stxp.0072
+code c87f5e1e
+seed b2336911f2f06d8c
+in x16=0x201e40
+out x23=0xcac6234281c1ceed x30=0x5fcb2dd0dbeb8580
+exit end
+test excl.ldxp_stxp.0073
+code 887f06b3 883cbeb7
+seed 61b60acc1a1790ec
+in x21=0x201700
+out x1=0x55986713 x19=0x9bfcb74d x28=0x0
+mem 0x201700=6598f0b6e43b7b35
+exit end
+test excl.ldxp_stxp.0074
+code 887f6260 88235e61
+seed b672efa3de88baec
+in x23=0xffff x19=0x201718
+out x0=0xcf96c6e5 x3=0x0 x24=0xea911d97
+mem 0x201718=6e87973fffff0000
+exit end
+test excl.ldxp_stxp.0075
+code 887f510c 8833291f
+seed 85678f4094ac63c3
+in x8=0x201e58
+out x12=0x5ede97bc x19=0x0 x20=0x6236e9d7
+mem 0x201e58=0000000012d7cb7a
+exit end
+test excl.ldxp_stxp.0076
+code 887fb684
+seed 9c2ac8ed078868bb
+in x25=0x80 x20=0x2010f0
+out x4=0xec6de8c5 x13=0x4101c166
+exit end
+test excl.ldxp_stxp.0077
+code 887fdf47 88332743
+seed 39f9bd55caa86f2c
+in x3=0xffff x9=0x100000000 x26=0x201ca8
+out x7=0xf281d286 x19=0x0 x23=0xfdadebbb
+mem 0x201ca8=ffff000000000000
+exit end
+test excl.ldxp_stxp.0078
+code c87fc517
+seed c862c5655c5e10ea
+in x8=0x2011b0
+out x17=0xfaee0b46fd3af816 x23=0xb05a7bc04606d0b7
+exit end
+test excl.ldxp_stxp.0079
+code 887fe1b4 88398daf
+seed 59a863ec8b699b22
+in x13=0x200740
+out x20=0x911911b1 x24=0x9f037e2d x25=0x0
+mem 0x200740=7cce2708a0a6a6fb
+exit end
+test excl.ldxp_stxp.0080
+code 887f6e88 8826e698
+seed a787e4a90dbd6702
+in x20=0x201180
+out x6=0x0 x8=0x4bac2770 x27=0x49ef6f88
+mem 0x201180=649028baef607387
+exit end
+test excl.ldxp_stxp.0081
+code 887f10ad 8838c8b3
+seed f58b8beb090b6fd5
+in x5=0x200738
+out x4=0xd6547ff6 x13=0xd77a0ab8 x24=0x0
+mem 0x200738=035b0460eddcf6d4
+exit end
+test excl.ldxp_stxp.0082
+code 887f2319
+seed 873293b4269b4a22
+in x26=0x8000000000000000 x24=0x201670
+out x8=0x41b3ee53 x25=0xa981b2c0
+exit end
+test excl.ldxp_stxp.0083
+code c87f1e08
+seed 8b8843a1b4b7223b
+in x15=0x100000000 x16=0x201120
+out x7=0x804e45f1505863d9 x8=0x217b3669171906bf
+exit end
+test excl.ldxp_stxp.0084
+code c87f95f8
+seed 19ca1c8f2fd4ed03
+in x15=0x200280
+out x5=0xe69fcfa74800471f x24=0x292377e4f2375a83
+exit end
+test excl.ldxp_stxp.0085
+code c87ff709 c83cdf14
+seed e34d12ee46074f83
+in x20=0x100000000 x24=0x201440
+out x9=0x380afc9790d38aab x28=0x0 x29=0x37abc433e09e17f0
+mem 0x201440=00000000010000007973eccc79b96879
+exit end
+test excl.ldxp_stxp.0086
+code c87fc985 c8255988
+seed 48205a74f49d9e73
+in x8=0xffff x12=0x201060
+out x5=0x0 x18=0xe3018b656a30270
+mem 0x201060=ffff000000000000dde0ef08112b16fa
+exit end
+test excl.ldxp_stxp.0087
+code 887fd057 8834d448
+seed e221a18312ce49aa
+in x21=0x2 x2=0x201d28
+out x20=0x0 x23=0xc3bdc0c5
+mem 0x201d28=2bfd5b9c02000000
+exit end
+test excl.ldxp_stxp.0088
+code c87f6435
+seed 2a8f3b24768985c6
+in x22=0x100000000 x1=0x201140
+out x21=0xaf0f7b4e1efa5253 x25=0x5519cc6ecbf8a587
+exit end
+test excl.ldxp_stxp.0089
+code 887fe655 882bde52
+seed 723aebdce6fd8f13
+in x18=0x200cc0 x23=0xffff
+out x11=0x0 x21=0xa2005ab5 x25=0x3f505cb4
+mem 0x200cc0=c00c2000ffff0000
+exit end
+test excl.ldxp_stxp.0090
+code 887f83ad
+seed b5741cf4707c21cd
+in x29=0x201c00
+out x0=0x38093e3e x13=0x51d75aaf
+exit end
+test excl.ldxp_stxp.0091
+code c87f4767
+seed b61221f473f97856
+in x22=0x8000000000000000 x18=0xffff x27=0x2006e0
+out x7=0x3ed0ee91be8df9c5 x17=0x78e79b4af95ef8bf
+exit end
+test excl.ldxp_stxp.0092
+code 887fd2a7 882aceb6
+seed c91332e92e5e5a83
+in x21=0x2006a8
+out x7=0xc49b3af4 x10=0x0 x20=0xbf19ab42
+mem 0x2006a8=17e511f8ef986217
+exit end
+test excl.ldxp_stxp.0093
+code 887f8f44 882fef51
+seed 50a21b40970c436e
+in x26=0x200498
+out x3=0x9a21d883 x4=0x34b2f3f7 x15=0x0
+mem 0x200498=147fcf26e3c495c0
+exit end
+test excl.ldxp_stxp.0094
+code c87fe29d c83d528f
+seed bfdc24dbda936507
+in x20=0x201a90
+out x24=0xc2440d1d6ff99fb5 x29=0x0
+mem 0x201a90=6b1d4a799e7a8361901a200000000000
+exit end
+test excl.ldxp_stxp.0095
+code 887fa2a6 8839a2a0
+seed 292e78bd1e942d24
+in x21=0x200078
+out x6=0xd8ff6192 x8=0x199391dd x25=0x0
+mem 0x200078=857340da
+exit end
+test excl.ldxp_stxp.0096
+code 887f8963 8826ed6c
+seed d8d321bc3fee996c
+in x11=0x201d28
+out x2=0xcee780e8 x3=0xc6f3509d x6=0x0
+mem 0x201d28=1cee6c155f9e72c5
+exit end
+test excl.ldxp_stxp.0097
+code c87f260e c8360205
+seed 5c705f6580ae900b
+in x5=0x0 x0=0x0 x16=0x200d10
+out x9=0x1f606d9c822dd167 x14=0x6f53b6fb3c35521d x22=0x0
+mem 0x200d10=00000000000000000000000000000000
+exit end
+test excl.ldxp_stxp.0098
+code 887f37f7 882eafff
+seed 68011a4b88a34de8
+in sp=0x200df0
+out x13=0xcfb3f7e5 x14=0x0 x23=0xb0f7d0ed
+mem 0x200df0=000000006807ac17
+exit end
+test excl.ldxp_stxp.0099
+code c87ffb8b
+seed f4afc0d923ff472a
+in x28=0x200220
+out x11=0xa32ec783533c9246 x30=0x9be4e050be4f6305
+exit end
+test excl.ldxp_stxp.0100
+code 887f5078 88370875
+seed e7e0fb6a35efcd5f
+in x3=0x200620
+out x20=0xf3562d3f x23=0x0 x24=0x57f807f0
+mem 0x200620=3502275990482393
+exit end
+test excl.ldxp_stxp.0101
+code c87ff537 c83e9920
+seed 22a9439f0db85680
+in x9=0x200840
+out x23=0x68b23295107a08ca x29=0x7e01b40836a1059c x30=0x0
+mem 0x200840=f09e5afa6d8775cb496db90f40baec95
+exit end
+test excl.ldxp_stxp.0102
+code 887f88cb
+seed 0f7496bb0e4db6f7
+in x25=0x5555555555555555 x6=0x2015f8
+out x2=0xeea2feeb x11=0x14949a3d
+exit end
+test excl.ldxp_stxp.0103
+code 887faebd
+seed ed909abb5cbc1bd6
+in x22=0x8000000000000001 x21=0x2018c8
+out x11=0x5f7a17e9 x29=0xec4474e4
+exit end
+test excl.ldxp_stxp.0104
+code 887f3506
+seed 87521f5eaa23a0f8
+in x6=0x0 x1=0x8000 x8=0x2004f8
+out x6=0x2f79be5e x13=0xeffcbfe2
+exit end
+test excl.ldxp_stxp.0105
+code c87f6334 c8246730
+seed eb47acffcad38d6c
+in x25=0x2012b0
+out x4=0x0 x20=0x74421c3dcda2faeb x24=0x1bd211ead6244a14
+mem 0x2012b0=849ba47680353686b012200000000000
+exit end
+test excl.ldxp_stxp.0106
+code 887f75fa
+seed ea9191bfa3ecee98
+in x15=0x200ff8
+out x26=0x57b0ac36 x29=0x4a17a3dc
+exit end
+test excl.ldxp_stxp.0107
+code c87f1c49 c83b1c51
+seed 78cb71e36858432a
+in x2=0x200e20
+out x7=0x9afe18f0856a7166 x9=0x48a9d1a3d21f654d x27=0x0
+mem 0x200e20=d71e92aca8496643
+exit end
+test excl.ldxp_stxp.0108
+code c87f0b21 c834bb38
+seed 9e50e1cf1c8a517b
+in x25=0x200860
+out x1=0xb2fdc7076e2f36d8 x2=0xd43b0e18b5da3af5 x20=0x0
+mem 0x200860=c938da9b10cd9acc589763351fa84837
+exit end
+test excl.ldxp_stxp.0109
+code c87fb3bb
+seed c05ff339a8b527db
+in x29=0x201e30
+out x12=0x95eac098fc6cd4fd x27=0x58a40e590239670d
+exit end
+test excl.ldxp_stxp.0110
+code c87ffa43
+seed 5b2dd02e150d8817
+in x18=0x2016c0
+out x3=0x95282199a7004911 x30=0x95834edb9f59d0ed
+exit end
+test excl.ldxp_stxp.0111
+code c87ffb1c c830b70b
+seed 9355659b924a4084
+in x11=0xffffffff x24=0x2017c0
+out x16=0x0 x28=0xce1a2428fd2a1e9f x30=0x900e55461d1e7e1
+mem 0x2017c0=ffffffff00000000dcf3534f9ad23191
+exit end
+test excl.ldxp_stxp.0112
+code c87fe2bc c8235ea6
+seed 8209422b178c5ed1
+in x21=0x2009d0
+out x3=0x0 x24=0x653a00420f6dd880 x28=0xd3cc1c3b5a42c64f
+mem 0x2009d0=c496141b4df7885abfd6a3745006be59
+exit end
+test excl.ldxp_stxp.0113
+code c87fda0d
+seed 43c91f37668b28d8
+in x3=0xffffffff00000000 x16=0x2001f0
+out x13=0x27e8c2060a0c8460 x22=0x5a07a5b50f81ecb6
+exit end
+test excl.ldxp_stxp.0114
+code c87f01a4 c82f61a6
+seed c7d57ea9a3d3d352
+in x6=0xffffffffffffffff x24=0x7fffffff x13=0x2001d0
+out x0=0x4599e3c225f0cbe4 x4=0x7a90d9182c26c08b x15=0x0
+mem 0x2001d0=ffffffffffffffffffffff7f00000000
+exit end
+test excl.ldxp_stxp.0115
+code c87f967a c822467f
+seed 0dc54f0d85861b98
+in x17=0x100000000 x19=0x201790
+out x2=0x0 x5=0xc955bc9747f4adf6 x26=0xeb446ef557099071
+mem 0x201790=00000000000000000000000001000000
+exit end
+test excl.ldxp_stxp.0116
+code c87fd050
+seed 7142bf9f725ec16d
+in x2=0x200590
+out x16=0x2f40f51a34b95275 x20=0x1f5f3c30575d0ba0
+exit end
+test excl.ldxp_stxp.0117
+code 887ff8b4 883328a7
+seed 7abea3733baf5085
+in x7=0xffff x5=0x201038
+out x19=0x0 x20=0x2ab67b66 x30=0xac5d641c
+mem 0x201038=ffff000012a27ea8
+exit end
+test excl.ldxp_stxp.0118
+code 887fd38e
+seed 89d402f5943ffdd2
+in x28=0x200588
+out x14=0x4ce49591 x20=0x372a4678
+exit end
+test excl.ldxp_stxp.0119
+code 887f532f 88382731
+seed b793857ea22dd875
+in x25=0x201f40
+out x15=0xfe38b336 x20=0xd458c40e x24=0x0
+mem 0x201f40=137356d833428054
+exit end
+test excl.ldxp_stxp.0120
+code c87f6ab9 c8239ab4
+seed a245a21e41a4435b
+in x20=0xfffffffffffffffe x21=0x200c10
+out x3=0x0 x25=0x448e664cd37583c8 x26=0x65e0ed49e32dc116
+mem 0x200c10=feffffffffffffff6acca3487d0ed7c2
+exit end
+test excl.ldxp_stxp.0121
+code c87f4eb2
+seed a5fcdf09d34856a3
+in x21=0x200cf0
+out x18=0xab2c8488d7c4a1f9 x19=0x1ece2f820229b450
+exit end
+test excl.ldxp_stxp.0122
+code 887f5963 8823c170
+seed 5fab158365bf9d04
+in x11=0x201ef0
+out x3=0x0 x22=0xfc344953
+mem 0x201ef0=b4b6c1d7b4b6c1d7
+exit end
+test excl.ldxp_stxp.0123
+code 887f7236 8820f229
+seed 73b5a9ec5145a618
+in x17=0x200030
+out x0=0x0 x22=0xfde0e023 x28=0x2bcde04
+mem 0x200030=d3873b53
+exit end
+test excl.ldxp_stxp.0124
+code c87faf6a c82ee77d
+seed fb5239a098185be3
+in x29=0x5555555555555555 x27=0x200580
+out x10=0x21969e46eaf8c98 x11=0x811a60825e6a48a8 x14=0x0
+mem 0x200580=5555555555555555245a88ee189de6b2
+exit end
+test excl.ldxp_stxp.0125
+code c87f09d0
+seed 405d2a93814c2bd0
+in x12=0x7fff x14=0x201b80
+out x2=0x88885533343df061 x16=0x510fa349375c17f4
+exit end
+test excl.ldxp_stxp.0126
+code c87f3f16 c83cff17
+seed 29976677a63a64e1
+in x23=0xff x24=0x200cf0
+out x15=0x89095c58bace95d7 x22=0xb7b048d8aa86cb43 x28=0x0
+mem 0x200cf0=ff000000000000000000000000000000
+exit end
+test excl.ldxp_stxp.0127
+code 887fa086 88374899
+seed 4e8895e34b215ff2
+in x4=0x2019a0
+out x6=0xf49d0849 x8=0xd079acf9 x23=0x0
+mem 0x2019a0=b99138b7518d2346
+exit end
+test excl.ldxp_stxp.0128
+code c87fa14d c8327542
+seed 3334871072069642
+in x2=0x8000000000000001 x29=0xaaaaaaaaaaaaaaaa x10=0x200ad0
+out x8=0x91756493267cac x13=0xfb55899c9961938 x18=0x0
+mem 0x200ad0=0100000000000080aaaaaaaaaaaaaaaa
+exit end
+test excl.ldxp_stxp.0129
+code c87f6b78 c835177d
+seed 9cd445ff1e357cfb
+in x27=0x2009f0
+out x21=0x0 x24=0x433c14225699912b x26=0xe1b2d3d5523a6b28
+mem 0x2009f0=d4b911ece5d97e5490a4e60d8832f89a
+exit end
+test excl.ldxp_stxp.0130
+code c87fe9f0
+seed 6cd998c8a225c755
+in x27=0x5555555555555555 x15=0x200270
+out x16=0x96d80914fc4a9e9a x26=0x3a8730d42453cb3e
+exit end
+test excl.ldxp_stxp.0131
+code 887fa67b 8835c269
+seed 6025639c5da5ee36
+in x16=0xffffffff x19=0x200690
+out x9=0xd7e060b6 x21=0x0 x27=0x8265bd02
+mem 0x200690=b660e0d7ffffffff
+exit end
+test excl.ldxp_stxp.0132
+code c87f2e20 c8343e3e
+seed 930832971704e676
+in x17=0x200c60
+out x0=0x12b21352ac291d72 x11=0x10016a9c1b7e8b38 x20=0x0
+mem 0x200c60=2919509a66d63cb26bca809e27e12d4c
+exit end
+test excl.ldxp_stxp.0133
+code 887fc979 882cad6d
+seed 421daa2dc7d522df
+in x11=0x201000
+out x12=0x0 x18=0x886d5cdd x25=0x433e0c2c
+mem 0x201000=bbf545f500102000
+exit end
+test excl.ldxp_stxp.0134
+code c87f1ab4 c83762a7
+seed 2426de8afebf0b2f
+in x24=0x1 x21=0x201b00
+out x6=0xac90d1eee5a6be1c x20=0x4cd95793e65bfa0c x23=0x0
+mem 0x201b00=654ba7ddf6f9c5d90100000000000000
+exit end
+test excl.ldxp_stxp.0135
+code c87f4221 c83d3629
+seed 906b909d3074def9
+in x9=0x80000000 x17=0x2011e0
+out x1=0xdeaf883e420d7c51 x16=0xa00de813f31d1c06 x29=0x0
+mem 0x2011e0=0000008000000000dce2041064321a07
+exit end
+test excl.ldxp_stxp.0136
+code c87f18e5 c823d8ef
+seed de697a60d1c84e8b
+in x15=0xffffffff x22=0xffffffff00000000 x7=0x2014c0
+out x3=0x0 x5=0xa6f7304f756e5e29 x6=0xeedf45686cddf684
+mem 0x2014c0=ffffffff0000000000000000ffffffff
+exit end
+test excl.ldxp_stxp.0137
+code 887fdf21 8820cb3e
+seed 2ecbba1333db7b0d
+in x30=0x100000000 x25=0x2004a0
+out x0=0x0 x1=0x59f99073 x23=0x6fa5872f
+mem 0x2004a0=00000000ebfb45ce
+exit end
+test excl.ldxp_stxp.0138
+code 887f662f 88249e3c
+seed 810cab8da8484ee4
+in x7=0x8000000000000001 x17=0x200938
+out x4=0x0 x15=0x3622e0c1 x25=0x3a77a8ca
+mem 0x200938=f165a41f01000000
+exit end
+test excl.ldxp_stxp.0139
+code 887f299a
+seed 1d66085e4e4622e4
+in x15=0x80000000 x8=0x7f x12=0x201690
+out x10=0x51537ce9 x26=0xf11b59fb
+exit end
+test excl.ldxp_stxp.0140
+code 887fb3af 882eeba5
+seed 9ef2de7660ff0685
+in x5=0x80 x29=0x200930
+out x12=0xac085a87 x14=0x0 x15=0xb5d4319
+mem 0x200930=80000000270299a9
+exit end
+test excl.ldxp_stxp.0141
+code 887fb282 8836168b
+seed 3072f253ecbc095d
+in x11=0x7fffffffffffffff x5=0xffffffffffffffff x20=0x200ae8
+out x2=0x75e21262 x12=0xfba3c4cf x22=0x0
+mem 0x200ae8=ffffffffffffffff
+exit end
+test excl.ldxp_stxp.0142
+code c87f2073
+seed a93ecb389dd19809
+in x29=0xffffffff x3=0x200e30
+out x8=0xba15baa0c4e7770f x19=0x226ede30f4de2f96
+exit end
+test excl.ldxp_stxp.0143
+code c87f552e c837893a
+seed f6958c8783ea5f1a
+in x26=0x100000000 x9=0x201450
+out x14=0x974ee5e13d9449a1 x21=0xf86b7d2439f0b815 x23=0x0
+mem 0x201450=0000000001000000166214d07f84dc2e
+exit end
+test excl.ldxp_stxp.0144
+code c87fc786 c823ff95
+seed b0c6fd7baed912fd
+in x21=0x7f x28=0x201f50
+out x3=0x0 x6=0x4ec7286255584609 x17=0x2670c85ae0a5aef7
+mem 0x201f50=7f000000000000000000000000000000
+exit end
+test excl.ldxp_stxp.0145
+code 887ff3f4 88361fe7
+seed 3e606b3d83148409
+in sp=0x200ea0
+out x20=0xab27513b x22=0x0 x28=0x3fd6bf9
+mem 0x200ea0=7a5b6f8b7a5b6f8b
+exit end
+test excl.ldxp_stxp.0146
+code 887f80f6
+seed 76928afb0e78507b
+in x7=0x201ec0
+out x0=0xf762754f x22=0xea057049
+exit end
+test excl.ldxp_stxp.0147
+code c87f3489 c83e6c9b
+seed c3b9c4a265090008
+in x4=0x201700
+out x9=0x20feaddbd9e3b6cb x13=0x3db12ba161f77b2c x30=0x0
+mem 0x201700=46ecbb3727f77cbe46ecbb3727f77cbe
+exit end
+test excl.ldxp_stxp.0148
+code c87f81f2 c839f1e2
+seed b03424801433eeb3
+in x28=0x80000000 x15=0x200f40
+out x0=0xdd4c5c009a883ac5 x18=0x179fd8370f658182 x25=0x0
+mem 0x200f40=a343e6d2d32fa8e600000080 0x200f4d=000000
+exit end
+test excl.ldxp_stxp.0149
+code 887f23b7 883ceba9
+seed 8472d93d994029d8
+in x29=0x201308
+out x8=0x5e484a2e x23=0x37602e65 x28=0x0
+mem 0x201308=f802ba04e1411e65
+exit end
+test excl.ldxp_stxp.0150
+code 887fef53 8820435d
+seed 98dac7e80f7c6327
+in x16=0x8000 x26=0x201b38
+out x0=0x0 x19=0x6722e82f x27=0x78f6b5f8
+mem 0x201b38=358e4c2a00800000
+exit end
+test excl.ldxp_stxp.0151
+code c87f748d c831f087
+seed c563468b410ac891
+in x7=0x8000 x28=0x100000000 x4=0x200ac0
+out x13=0xfde73f87a9c4db6f x17=0x0 x29=0xde1d1419304bd2ee
+mem 0x200ac0=00800000000000000000000001000000
+exit end
+test excl.ldxp_stxp.0152
+code 887f68b3 882c90ae
+seed 7456a1314be3a047
+in x4=0xff x5=0x201100
+out x12=0x0 x19=0xfcffa1de x26=0x56bd0ce8
+mem 0x201100=8efabf71ff000000
+exit end
+test excl.ldxp_stxp.0153
+code 887f9391
+seed 7b8d8451f40f202f
+in x28=0x201520
+out x4=0xbc437240 x17=0xb3a91d3b
+exit end
+test excl.ldxp_stxp.0154
+code c87f11be c820f5a3
+seed 80d3bb8fefe284dd
+in x3=0xffffffff x29=0x1 x13=0x2019a0
+out x0=0x0 x4=0x20c6b7b229f1d886 x30=0x31c70cc8a7739637
+mem 0x2019a0=ffffffff000000000100000000000000
+exit end
+test excl.ldxp_stxp.0155
+code c87fbc4c c8341443
+seed 29edabdb0fca50a6
+in x2=0x201af0
+out x12=0x5e994141af1f32bc x15=0xb7ad27394d5de77b x20=0x0
+mem 0x201af0=eba29ade 0x201af5=6a0e5bda07d33e10626b97
+exit end
+test excl.ldxp_stxp.0156
+code c87fb58e c820158f
+seed ebcfb3758e75afe2
+in x12=0x2011a0
+out x0=0x0 x13=0xd55c89bb78dcb1f2 x14=0x3cc0950529ea831c
+mem 0x2011a0=0b8846a8fb0f4f7cdd6afdff3a953834
+exit end
+test excl.ldxp_stxp.0157
+code c87fd7fe c838cbfe
+seed 68420c426ae802b1
+in x30=0x80000000 x18=0x7f sp=0x200950
+out x21=0x22b722f9b703b840 x24=0x0 x30=0xf43294a89168d693
+mem 0x200958=7f00000000000000
+exit end
+test excl.ldxp_stxp.0158
+code c87f1f1b c8258b0b
+seed 8e239011a224db6d
+in x11=0x5555555555555555 x24=0x201e50
+out x5=0x0 x7=0xe2ef5b28c7e3a0dc x27=0x3f31dc7c24fa23fb
+mem 0x201e50=555555555555555535c10d10691b95d4
+exit end
+test excl.ldxp_stxp.0159
+code 887ff9f1 883721f5
+seed cab22467cc6b3154
+in x21=0x7fffffff x15=0x2017d0
+out x17=0x543c4ae3 x23=0x0 x30=0x325f4953
+mem 0x2017d0=ffffff7f77cf85ae
+exit end
+test excl.ldxp_stxp.0160
+code 887f5a81 8838769b
+seed 686c89002a0d35d2
+in x29=0x2 x20=0x201c80
+out x1=0x424fd562 x22=0xaca46cdf x24=0x0
+mem 0x201c80=a74266e702000000
+exit end
+test excl.ldxp_stxp.0161
+code 887f44ac 8820dcac
+seed 33f143dbc3560701
+in x5=0x201150
+out x0=0x0 x12=0xc3d2bd77 x17=0x51a9e2ea
+mem 0x201154=800c53da
+exit end
+test excl.ldxp_stxp.0162
+code 887f123b 883a8a25
+seed 908e09ad1bc6f058
+in x2=0x80 x17=0x200c70
+out x4=0x59e49a5b x26=0x0 x27=0x576b04aa
+mem 0x200c70=d87c8b8f80000000
+exit end
+test excl.ldxp_stxp.0163
+code c87f1bd5
+seed acf02d49e7ad52ae
+in x30=0x2008f0
+out x6=0x9900f510c7731d20 x21=0x67b0cccb5af42e2d
+exit end
+test excl.ldxp_stxp.0164
+code c87fca6d c83eee6f
+seed ad9121eae0f9967d
+in x19=0x2001a0
+out x13=0x9608dc8b7b3ce9a9 x18=0x1d2486b97f4a8c43 x30=0x0
+mem 0x2001a0=8cdc82d47d85b1717ab453d42c406709
+exit end
+test excl.ldxp_stxp.0165
+code 887fae3c
+seed 46314d1b46de81d5
+in x15=0xffffffff00000000 x17=0x200398
+out x11=0xdd06af5c x28=0x80a3e6d1
+exit end
+test excl.ldxp_stxp.0166
+code 887fd416 88358010
+seed 27452a24aa25c7fd
+in x0=0x200e40
+out x21=0x0 x22=0x93513e31
+mem 0x200e40=a7db86fe400e2000
+exit end
+test excl.ldxp_stxp.0167
+code c87f612c c831293e
+seed 5fb1ee52177935c0
+in x9=0x200ea0
+out x12=0xa615a34c834889f7 x17=0x0 x24=0x15ab25ffd03cef7
+mem 0x200ea0=1c1bee 0x200ea4=17f0cc6e4dcacec9ff93d13e
+exit end
+test excl.ldxp_stxp.0168
+code c87f2eaa c8232aaa
+seed fffdfb26f25ff0df
+in x21=0x201f90
+out x3=0x0 x10=0xdd8a0aa9ebf6b64c x11=0x49704daae9cfb796
+mem 0x201f98=4cb6f6eba90a8add
+exit end
+test excl.ldxp_stxp.0169
+code 887f31a1 8837b9ac
+seed e825ec7a9ff1a07d
+in x14=0x7fffffffffffffff x13=0x201a40
+out x1=0x3d748724 x12=0xdb2af3db x23=0x0
+mem 0x201a40=dbf32adbffffffff
+exit end
+test excl.ldxp_stxp.0170
+code c87f42ed
+seed eb946a0ff834241a
+in x22=0x8000000000000001 x23=0x2005c0
+out x13=0xf6da5964cd1f0bca x16=0x926cc65fa5d189a9
+exit end
+test excl.ldxp_stxp.0171
+code 887fb854 883b5458
+seed 215ecb0b2a87dd8d
+in x21=0xfffffffffffffffe x2=0x200af0
+out x14=0xcb88fc62 x20=0x8d7b9d07 x27=0x0
+mem 0x200af0=3b34360ffeffffff
+exit end
+test excl.ldxp_stxp.0172
+code 887f55d4 883361ca
+seed 049484a977dab84e
+in x10=0xfffffffffffffffe x14=0x201cd8
+out x19=0x0 x20=0x882fef88 x21=0xc66b2741
+mem 0x201cd8=feffffff052d2b95
+exit end
+test excl.ldxp_stxp.0173
+code 887f998b
+seed 33b4e5c22308c3b1
+in x12=0x200c30
+out x6=0x749a7a69 x11=0x17214ef1
+exit end
+test excl.ldxp_stxp.0174
+code 887f7b59
+seed 4f03d083b957e4bc
+in x26=0x200e98
+out x25=0x2af7a60 x30=0x3a60e840
+exit end
+test excl.ldxp_stxp.0175
+code c87f3305 c8348b1c
+seed fce98caa8d84178f
+in x24=0x201660
+out x5=0x72aeebafe506c631 x12=0x12f2efada878bb03 x20=0x0
+mem 0x201660=0bb6b3f48cadd41321d7be5d3a7812f1
+exit end
+test excl.ldxp_stxp.0176
+code c87f0f77
+seed d7e73955bb77291e
+in x27=0x200310
+out x3=0x90a556188c603cb1 x23=0x9d1894d9f1e049bc
+exit end
+test excl.ldxp_stxp.0177
+code c87f02e7 c82406e2
+seed fb0fd32e8c082090
+in x23=0x201ea0
+out x0=0x54efeb77808b9897 x4=0x0 x7=0xce71fa9ace4482ca
+mem 0x201ea0=6ed616d55ee77b73412b90834a92f6b7
+exit end
+test excl.ldxp_stxp.0178
+code c87fa1e6 c832a1fe
+seed bbe6b175f2bef0f6
+in x30=0x7f x15=0x2016d0
+out x6=0xd5836e52929b0276 x8=0xbd51a4fab5874f8c x18=0x0
+mem 0x2016d0=7f00000000000000
+exit end
+test excl.ldxp_stxp.0179
+code 887fde92 8836be88
+seed c704b6edf3b7496d
+in x20=0x200210
+out x18=0x5418c2f6 x22=0x0 x23=0xc725786d
+mem 0x200210=166c5a3413d18403
+exit end
+test excl.ldxp_stxp.0180
+code c87f80ae c832b0a2
+seed 71485eeba1252f61
+in x5=0x2019e0
+out x0=0x7c1520298d0eb662 x14=0x5c442b3163816a71 x18=0x0
+mem 0x2019e0=047516286300270b9f024d7c93f1d68a
+exit end
+test excl.ldxp_stxp.0181
+code 887f3732 88261721
+seed 658987d7c63780b4
+in x5=0x100000000 x25=0x2015b0
+out x6=0x0 x13=0x650c60c0 x18=0x9d303618
+mem 0x2015b0=d514328400000000
+exit end
+test excl.ldxp_stxp.0182
+code 887f8c9d 8825c88f
+seed 5574aad08349f1b2
+in x18=0xffffffff x4=0x2016c0
+out x3=0x69e22929 x5=0x0 x29=0xed559cea
+mem 0x2016c0=f78cfb9effffffff
+exit end
+test excl.ldxp_stxp.0183
+code c87f05b5 c83dd9bf
+seed 630ac78ca0ee315f
+in x13=0x200a00
+out x1=0x416629021051e248 x21=0xfc2fb1f1125c22f x29=0x0
+mem 0x200a00=0000000000000000f8989adcd0476c1b
+exit end
+test excl.ldxp_stxp.0184
+code c87f1bdd c83537c6
+seed 84d48e682f4c6638
+in x30=0x201720
+out x6=0x53e86d9c0f51c9b5 x21=0x0 x29=0x5e113bb7531dcc17
+mem 0x201720=b5c9510f9c6de8538782858fba72749a
+exit end
+test excl.ldxp_stxp.0185
+code c87f9bcb c8298bcd
+seed 252ed006f42d8439
+in x13=0xffffffff00000000 x30=0x201c50
+out x6=0x10c0d81ebb332b9f x9=0x0 x11=0x8bf1e3cfdf782d79
+mem 0x201c50=00000000ffffffffb71c5268ac764c11
+exit end
+test excl.ldxp_stxp.0186
+code c87fbedb
+seed f022ccd1a80ee475
+in x16=0x8000 x22=0x2002d0
+out x15=0x39f1fe4a30a32c66 x27=0xa80bb87c45a93f7c
+exit end
+test excl.ldxp_stxp.0187
+code c87ff536 c82f9d39
+seed b7ceed42f1782d6d
+in x9=0x201720
+out x15=0x0 x22=0x7df3e5f6317a75ca x29=0x30164a5d24cfb48d
+mem 0x201720=86366b4eb709d501dedd034051467251
+exit end
+test excl.ldxp_stxp.0188
+code c87f12b6 c821eab9
+seed c8e16b81e763c342
+in x21=0x2001f0
+out x1=0x0 x4=0xff6810bbe5be206f x22=0x7d308057cb575978
+mem 0x2001f0=a715b0c852b1ae7e86738a91bc4385f8
+exit end
+test excl.ldxp_stxp.0189
+code 887fd10b
+seed 999271679dafadd3
+in x29=0x7fff x8=0x200d58
+out x11=0x4413449d x20=0xf74c4172
+exit end
+test excl.ldxp_stxp.0190
+code c87fab22 c8317734
+seed 6449383d351f5de0
+in x20=0x8000 x25=0x200440
+out x2=0x85ed5e437ba6bd32 x10=0x4c5f1e394c736eed x17=0x0
+mem 0x200440=00800000000000000eb6bc927cdc783d
+exit end
+test excl.ldxp_stxp.0191
+code 887fa00a 88393006
+seed bfb5cff09fa08a7b
+in x0=0x2008e0
+out x8=0x3efed74d x10=0x415351c2 x25=0x0
+mem 0x2008e0=32bce5e9564137b7
+exit end
+test excl.ldxp_stxp.0192
+code c87f2e96 c83b4a8a
+seed eef0c3083730c3ce
+in x10=0x100000000 x20=0x2012c0
+out x11=0x239b54b6ddb9e492 x22=0xeb52e0c8db025aed x27=0x0
+mem 0x2012c0=0000000001000000a612143afa4ff471
+exit end
+test excl.ldxp_stxp.0193
+code c87ff469
+seed 277cab64198dff68
+in x26=0xffff x3=0x201730
+out x9=0x730fbef91bae5389 x29=0xa6643d478092dcbd
+exit end
+test excl.ldxp_stxp.0194
+code 887fdafa 882a5af0
+seed 0d23068b15a0d9d9
+in x23=0x200070
+out x10=0x0 x22=0x9cd8797f x26=0xabdcba07
+mem 0x200070=8089fd7b
+exit end
+test excl.ldxp_stxp.0195
+code c87f6220 c8205634
+seed 6c5b3e0d59c58ba6
+in x20=0x8000000000000001 x17=0x201320
+out x0=0x0 x24=0xb81e4d4c70692eaa
+mem 0x201320=0100000000000080352aaf589eea3e35
+exit end
+test excl.ldxp_stxp.0196
+code c87f4ec6 c8342edb
+seed a088b7e586ffebf4
+in x11=0x1 x22=0x2008c0
+out x6=0x810f20ede79e886c x19=0xb89e71d5f58c1141 x20=0x0
+mem 0x2008c0=cc4fccd58ab35e2c0100000000000000
+exit end
+test excl.ldxp_stxp.0197
+code 887f0290 88274e85
+seed d91e6cbecb8d6acd
+in x5=0xff x20=0x2009d8
+out x0=0xa1eea228 x7=0x0 x16=0xa9bdfb06
+mem 0x2009d8=ff00000079bf4f3d
+exit end
+test excl.ldxp_stxp.0198
+code c87fdb52 c825275d
+seed 78eadb9a85d1a03b
+in x9=0x7fffffff x26=0x2019d0
+out x5=0x0 x18=0xbee498efbdf7ea53 x22=0x15e9536add972207
+mem 0x2019d0=26bb2fcb63718207ffffff7f00000000
+exit end
+test excl.ldxp_stxp.0199
+code 887ff570 8825316e
+seed 3543c421f0ed813b
+in x11=0x2009b0
+out x5=0x0 x16=0x65ca3d03 x29=0xa4c110a8
+mem 0x2009b1=5ac0a771c421fb
+exit end
+test excl.ldxp_stxp.0200
+code 887f162c 882c7e2e
+seed 15fa9e4d90a5e43b
+in x17=0x201970
+out x5=0x29233c6b x12=0x0
+mem 0x201970=31e4911800000000
+exit end
+test excl.ldxp_stxp.0201
+code c87fadb2 c82035b9
+seed 2feefe66a4fda97a
+in x13=0x200aa0
+out x0=0x0 x11=0xc2d9f1f86666e5cf x18=0xe3f350f27b41d72f
+mem 0x200aa0=1fa2a43466c0443da00a200000000000
+exit end
+test excl.ldxp_stxp.0202
+code 887f3810 88269005
+seed 75392a389c500d13
+in x0=0x2014b8
+out x6=0x0 x14=0xa26b328c x16=0x1953b4f7
+mem 0x2014b8=2d10ff14838e5b9f
+exit end
+test excl.ldxp_stxp.0203
+code 887f9a95 88298a96
+seed 9f5f7f8f0ddfc493
+in x2=0x8000 x20=0x201130
+out x6=0xbbdb94f1 x9=0x0 x21=0x86e5d626
+mem 0x201130=1fbc134200800000
+exit end
+test excl.ldxp_stxp.0204
+code 887f72d0
+seed f8d5d205c737755b
+in x28=0x7fffffffffffffff x22=0x200178
+out x16=0x6123f2af x28=0x19c16769
+exit end
+test excl.ldxp_stxp.0205
+code c87f79f7
+seed c63c267646a37e5d
+in x20=0x7fffffffffffffff x15=0x2002d0
+out x23=0xb45b91a7d48cd8d2 x30=0xdc67a771fd3a5769
+exit end
+test excl.ldxp_stxp.0206
+code c87f9ada c8354ec5
+seed d195b84e66b6874b
+in x22=0x200ab0
+out x6=0x8b129e7acfd64394 x21=0x0 x26=0x8a1f50b63f657881
+mem 0x200ab0=ca79a417f8fe3a27d87cc9a7144bc3a4
+exit end
+test excl.ldxp_stxp.0207
+code c87f171a c826df1a
+seed 11efedd6ce9edcc2
+in x24=0x2012f0
+out x5=0x38ccc5294fa2d983 x6=0x0 x26=0x2656f050435696d8
+mem 0x2012f8=a9b19e22535b9427
+exit end
+test excl.ldxp_stxp.0208
+code c87f6128 c8284d22
+seed 683d68bd34eb2973
+in x19=0x2 x9=0x201d40
+out x8=0x0 x24=0x1b9b47ebe03d560e
+mem 0x201d40=6e50c85312ee93f70200000000000000
+exit end
+test excl.ldxp_stxp.0209
+code c87f08d3 c82880db
+seed 705e57b032617ee6
+in x0=0x0 x6=0x201540
+out x2=0x6df1b9014d0f47dd x8=0x0 x19=0xf9aaa6884734ab09
+mem 0x201540=6e5405fed37676cd0000000000000000
+exit end
+test excl.ldxp_stxp.0210
+code c87fef36 c8306b21
+seed 12f0b72c8277ec79
+in x1=0x7fffffff x26=0x5555555555555555 x25=0x2008f0
+out x16=0x0 x22=0xacee2993649bc3a0 x27=0x4bcbaf738c2a4f16
+mem 0x2008f0=ffffff7f000000005555555555555555
+exit end
+test excl.ldxp_stxp.0211
+code 887fbd95 8837e187
+seed 4b3908e538598a42
+in x7=0xaaaaaaaaaaaaaaaa x12=0x201c18
+out x15=0x2a1a9e8a x21=0xc101be1f x23=0x0
+mem 0x201c18=aaaaaaaa7a838c8d
+exit end
+test excl.ldxp_stxp.0212
+code c87f049b
+seed 0b340909deda4c8f
+in x18=0x80 x4=0x200730
+out x1=0x6dd62cd29fbdace3 x27=0xd3c1048cf76afdb3
+exit end
+test excl.ldxp_stxp.0213
+code 887f83d2 882257de
+seed deaf681cb318c969
+in x30=0x200e08
+out x0=0xb162ebe7 x2=0x0 x18=0xaf559ff7
+mem 0x200e08=080e200075ca48af
+exit end
+test excl.ldxp_stxp.0214
+code c87f53a4 c82b4bb1
+seed 3ec367215c9435b2
+in x18=0xff x29=0x201fe0
+out x4=0x1fdff76943de0f76 x11=0x0 x20=0x650c509eb5fe4c63
+mem 0x201fe0=fae92036bbdf0092ff00000000000000
+exit end
+test excl.ldxp_stxp.0215
+code 887f55a7 882aa1b7
+seed e1d4dd60dcfab511
+in x8=0x80000000 x13=0x201de0
+out x7=0x566ca7b1 x10=0x0 x21=0xda4559ce
+mem 0x201de0=913590e000000080
+exit end
+test excl.ldxp_stxp.0216
+code c87fa21b c829f213
+seed 90fe79ba42e14f47
+in x16=0x200c30
+out x8=0x6fc85846b6d2739d x9=0x0 x27=0x8c1c01abc15ac0d3
+mem 0x200c30=6a22a3f767119c8094ad2621c4ac2f7e
+exit end
+test excl.ldxp_stxp.0217
+code c87f2311
+seed 758132b809380a3f
+in x24=0x2018e0
+out x8=0x6304d7d4b7ca429b x17=0xe948f18ec836df84
+exit end
+test excl.ldxp_stxp.0218
+code 887f68f8
+seed f2a4042e384c1b0b
+in x20=0x80000000 x7=0x201658
+out x24=0x6b5d3cd x26=0xa5f37ced
+exit end
+test excl.ldxp_stxp.0219
+code c87f0f94
+seed 0754f6dcbaa65fef
+in x28=0x201fa0
+out x3=0x65acd6a471c482d7 x20=0x7a380c6d0d50f1e9
+exit end
+test excl.ldxp_stxp.0220
+code 887fefa5 8832ebbf
+seed 6fc6d8f6308e611a
+in x26=0x1 x29=0x201c20
+out x5=0xe8b50638 x18=0x0 x27=0xbf8603d8
+mem 0x201c20=0000000001000000
+exit end
+test excl.ldxp_stxp.0221
+code c87fc3be c82d03b8
+seed 386242728185afeb
+in x29=0x201960
+out x13=0x0 x16=0xc149b7772a6abf89 x30=0xfea3721735b8a859
+mem 0x201960=537993b950749edef7170b41cd610c9c
+exit end
+test excl.ldxp_stxp.0222
+code c87f491e c8375901
+seed 9790ba804c0facf1
+in x1=0x8000000000000000 x8=0x2012c0
+out x18=0x18f500fcb13aeda7 x23=0x0 x30=0x15cb642e7bb8c282
+mem 0x2012c0=00000000000000808c09807ab33e93be
+exit end
+test excl.ldxp_stxp.0223
+code 887f3bec 882b07e1
+seed f31df2de354a501d
+in x1=0xffffffff sp=0x201ae0
+out x11=0x0 x12=0x5dea14b x14=0x39aa8a34
+mem 0x201ae0=ffffffffffffffff
+exit end
+test excl.ldxp_stxp.0224
+code 887f76c7 88236ecc
+seed 30dd14e136c3d025
+in x12=0xfffffffffffffffe x22=0x201aa8
+out x3=0x0 x7=0x6fbda9c8 x29=0xa6472334
+mem 0x201aa8=feffffffcbe05ef1
+exit end
+test excl.ldxp_stxp.0225
+code 887fd4b0 882d14b0
+seed 7e874d0d96bd8a94
+in x16=0x7fff x5=0x201270
+out x13=0x0 x16=0xfa424cdb x21=0x6a9e37c7
+mem 0x201274=70122000
+exit end
+test excl.ldxp_stxp.0226
+code c87f5b26 c824272a
+seed 0c6e429936240b54
+in x10=0x80 x25=0x201f20
+out x4=0x0 x6=0xc2fd20c635869496 x22=0x7e38ba9fe92be4c0
+mem 0x201f20=80000000000000003d2f37ad5e37ed13
+exit end
+test excl.ldxp_stxp.0227
+code 887f90be 8831e0bf
+seed 92dea054658e2af4
+in x5=0x200290
+out x4=0xca6ae297 x17=0x0 x30=0x7a196147
+mem 0x200290=00000000d2dee7d3
+exit end
+test excl.ldxp_stxp.0228
+code c87fe194 c83ccd8d
+seed b69afd31797c55d7
+in x12=0x200330
+out x20=0x309427087bd1c6d2 x24=0xa601356a59a4766e x28=0x0
+mem 0x200330=dc6c2dbc25fcbec145329287362af25f
+exit end
+test excl.ldxp_stxp.0229
+code 887f4808 8835b003
+seed 94828aa1903f0f3e
+in x3=0xffffffff x0=0x2011f0
+out x8=0x4e86b90e x18=0x24ee97b8 x21=0x0
+mem 0x2011f0=ffffffffc4619df4
+exit end
+test excl.ldxp_stxp.0230
+code 887f6712
+seed b073d5792e1f2488
+in x24=0x200af0
+out x18=0xd52516d7 x25=0x1451bb61
+exit end
+test excl.ldxp_stxp.0231
+code c87f87ec c8390bee
+seed 71712911d88db6cb
+in x2=0x8000000000000001 sp=0x200ba0
+out x1=0x5e50311a8a26dbc4 x12=0xddc865cca958bcbd x25=0x0
+mem 0x200ba0=ac3de302be8e5f2f0100000000000080
+exit end
+test excl.ldxp_stxp.0232
+code 887fefba 882d7ba3
+seed 27493c9349cf65f4
+in x3=0x100000000 x30=0xffffffff00000000 x29=0x200268
+out x13=0x0 x26=0xf9127b68 x27=0xd6414d2f
+mem 0x200268=0000000000000000
+exit end
+test excl.ldxp_stxp.0233
+code 887f31fb 882251e3
+seed 975e2907e6167db5
+in x3=0x8000 x20=0xffffffff x15=0x200488
+out x2=0x0 x12=0xeffdf913 x27=0x3e263431
+mem 0x200488=00800000ffffffff
+exit end
+test excl.ldxp_stxp.0234
+code c87f01a8 c822eda7
+seed 89f4d7ba94d0f2af
+in x13=0x201210
+out x0=0x3abf322af7f9eb1c x2=0x0 x8=0x9b01204844800e3b
+mem 0x201210=ef5e3b9293cee4 0x201218=0ec1279c7c1793cd
+exit end
+test excl.ldxp_stxp.0235
+code c87f496e c836d564
+seed f6406dc7e7cf5b7f
+in x21=0xfffffffffffffffe x11=0x201620
+out x14=0x46eae22c5e0b6943 x18=0x85cbad337cf3a354 x22=0x0
+mem 0x201620=66e439f4ac5951f7feffffffffffffff
+exit end
+test excl.ldxp_stxp.0236
+code 887f3357 88261f57
+seed 104e01698072d931
+in x23=0xaaaaaaaaaaaaaaaa x26=0x2007f0
+out x6=0x0 x12=0x186834d4 x23=0x59bda423
+mem 0x2007f4=ed857f5d
+exit end
+test excl.ldxp_stxp.0237
+code c87f8958 c83b514f
+seed 786fc2a68364640c
+in x10=0x200c60
+out x2=0xd8e4a7588330c1f x24=0xc02cead3aa3df78d x27=0x0
+mem 0x200c60=f688b8072c4bb064c0da4a84ef17cbe9
+exit end
+test excl.ldxp_stxp.0238
+code c87f03b0 c82e73a8
+seed 9c56fdc21de5e014
+in x28=0x5555555555555555 x29=0x2016b0
+out x0=0xcd870eb9f15ed63 x14=0x0 x16=0x3309c55281f7c59
+mem 0x2016b0=580b95170d67fdba5555555555555555
+exit end
+test excl.ldxp_stxp.0239
+code c87f7408 c838a00e
+seed 01603f8e6661a127
+in x8=0x2 x0=0x200aa0
+out x8=0x6b1bbfcb692ccb4b x24=0x0 x29=0xc488bb15df6110ec
+mem 0x200aa0=197dc0122a4803d54bcb2c69cbbf1b6b
+exit end
+test excl.ldxp_stxp.0240
+code c87f6da5
+seed 57baba377c76c7e0
+in x30=0xffffffff00000000 x13=0x200e50
+out x5=0xe9010a50ff273052 x27=0x400c33a57ee1150b
+exit end
+test excl.ldxp_stxp.0241
+code 887f2788 883a4389
+seed 1dc8dcaef4ecfd7d
+in x16=0x7f x28=0x201a28
+out x8=0xc523f381 x9=0x9b808444 x26=0x0
+mem 0x201a28=4484809b7f000000
+exit end
+test excl.ldxp_stxp.0242
+code 887f83dc 883d97ca
+seed 3983cac6d8e702e2
+in x10=0xffffffff00000000 x5=0xaaaaaaaaaaaaaaaa x30=0x201338
+out x0=0xbcfe6d62 x28=0x2ff0b75c x29=0x0
+mem 0x201338=00000000aaaaaaaa
+exit end
+test excl.ldxp_stxp.0243
+code c87f0ee4 c8270efd
+seed 847170eefd44e302
+in x29=0x8000 x3=0x100000000 x23=0x201650
+out x3=0xa2e517590f15bd1d x4=0x5b3d16349d33c6f4 x7=0x0
+mem 0x201650=0080000000000000
+exit end
+test excl.ldxp_stxp.0244
+code c87f80d8 c820c0c9
+seed d7e850285049296d
+in x9=0x7f x16=0x7fffffffffffffff x6=0x2000a0
+out x0=0x0 x24=0xda899e244d9758f9
+mem 0x2000a0=7f00000000000000ffffffffffffff7f
+exit end
+test excl.ldxp_stxp.0245
+code c87fd223 c838b63a
+seed 00e928fb1c1c13b1
+in x26=0xffffffff00000000 x17=0x201cf0
+out x3=0xe92363a1f40c09fd x20=0xff24db65b7c8f289 x24=0x0
+mem 0x201cf0=00000000ffffffff2aa9af70f411b155
+exit end
+test excl.ldxp_stxp.0246
+code 887fe5a2 882269bb
+seed 30d5cfdbb4a1917b
+in x26=0x100000000 x13=0x2002e8
+out x2=0x0 x25=0x7f76c8f5
+mem 0x2002e8=46a2d8be00000000
+exit end
+test excl.ldxp_stxp.0247
+code c87f2c28 c82b6827
+seed 7fa930ab33efde57
+in x26=0x7fffffffffffffff x1=0x201530
+out x8=0xb3e526911e6f3a6c x11=0x0
+mem 0x201530=8defdad14fc0043cffffffffffffff7f
+exit end
+test excl.ldxp_stxp.0248
+code 887f0d31 883c352c
+seed 630edfb73fb3153c
+in x12=0xfffffffffffffffe x9=0x200e40
+out x3=0x9c42b12 x17=0x3e36b7b7 x28=0x0
+mem 0x200e40=feffffffbba3c150
+exit end
+test excl.ldxp_stxp.0249
+code 887f3580 88337999
+seed 21c33c83964dfe2e
+in x25=0xfffffffffffffffe x12=0x200360
+out x0=0x28f4f7e5 x13=0xb0d456f0 x19=0x0
+mem 0x200360=feffffffa0936452
+exit end
+test excl.ldxp_stxp.0250
+code c87ff033 c823a83b
+seed 509973e16ed908c9
+in x27=0xffffffff00000000 x1=0x2004b0
+out x3=0x0 x19=0x160270590237313a x28=0x8d487eabacce00a1
+mem 0x2004b0=00000000ffffffffe63ecaebb5d0f4e5
+exit end
+test excl.ldxp_stxp.0251
+code 887f1dc4 882b0dd9
+seed c08e91951cb0bc77
+in x3=0xfffffffffffffffe x14=0x201990
+out x4=0x3887f8ed x7=0x8ab89cd8 x11=0x0
+mem 0x201990=2f9b31f3feffffff
+exit end
+test excl.ldxp_stxp.0252
+code 887fccf8 883e00e1
+seed 9a4fbffc0a13f14d
+in x7=0x200cb8
+out x19=0x46b40f8f x24=0x8ac61a77 x30=0x0
+mem 0x200cb8=187386716fa023df
+exit end
+test excl.ldxp_stxp.0253
+code 887f0c80 8825f894
+seed c10c5b3145d60698
+in x30=0x80 x4=0x200ab8
+out x0=0xed152619 x3=0x3908f9d0 x5=0x0
+mem 0x200ab8=489e59fe80000000
+exit end
+test excl.ldxp_stxp.0254
+code 887f4c8e 88270c85
+seed 24a47d3d7dd2ab0d
+in x4=0x2007e0
+out x7=0x0 x14=0xe8ed49a5 x19=0x619932b1
+mem 0x2007e0=fa71e068279ff659
+exit end
+test excl.ldxp_stxp.0255
+code 887f0871 8835506f
+seed a334ccedbdcfb3ec
+in x15=0xff x3=0x200030
+out x2=0x62c0263c x17=0xb752da2a x21=0x0
+mem 0x200030=ff0000000fb84005
+exit end
+test excl.ldxp_stxp.0256
+code 887fd666 8832ae7d
+seed f1a42d6f8d308e16
+in x29=0xaaaaaaaaaaaaaaaa x19=0x201248
+out x6=0xb2e1b79 x18=0x0 x21=0x62f55ee0
+mem 0x201248=aaaaaaaac9647319
+exit end
+test excl.ldxp_stxp.0257
+code c87f0aa9
+seed dbdfb0fa572cda97
+in x21=0x200eb0
+out x2=0xd9b8ddd5b2768f8b x9=0x3ecda0abf5564194
+exit end
+test excl.ldxp_stxp.0258
+code c87f0d16 c83d5d19
+seed a1058bc7c989919b
+in x23=0x2 x8=0x201280
+out x3=0xb22cb985d229a2b7 x22=0xe3c1a20fec68a12f x29=0x0
+mem 0x201280=5c6a73408b91cce10200000000000000
+exit end
+test excl.ldxp_stxp.0259
+code 887fa7f8 88262fe1
+seed d96a90405d3621af
+in x1=0x7fffffff x11=0xffffffffffffffff sp=0x2002f0
+out x6=0x0 x9=0xd7d1a80b x24=0xf2cfeff7
+mem 0x2002f0=ffffff7fffffffff
+exit end
+test excl.ldxp_stxp.0260
+code c87f52e9 c824f6e9
+seed 73753776f772d3a1
+in x9=0xffffffffffffffff x23=0x200340
+out x4=0x0 x9=0x30dce23ad2d51653 x20=0x55d701f00b8c6c6b
+mem 0x200348=df7615dd96c09087
+exit end
+test excl.ldxp_stxp.0261
+code 887f8119
+seed a491642d43a2109f
+in x8=0x200618
+out x0=0x4a483dca x25=0x66b1b070
+exit end
+test excl.ldxp_stxp.0262
+code c87fc472
+seed 985f97413ab3c2a1
+in x19=0xffffffffffffffff x3=0x201bb0
+out x17=0x7ae8944062c5916 x18=0x991abb2ffbff555
+exit end
+test excl.ldxp_stxp.0263
+code 887f5432 88364c3c
+seed 008fac5b302cb9a0
+in x19=0x8000000000000001 x1=0x201c30
+out x18=0x85cd2283 x21=0x32718e34 x22=0x0
+mem 0x201c30=61bce5d501000000
+exit end
+test excl.ldxp_stxp.0264
+code c87fa77c c8333f6c
+seed 1a0054b7fc965993
+in x12=0x80000000 x15=0x2 x27=0x201c80
+out x9=0xed09189b0b8b430c x19=0x0 x28=0x534641b86707b05e
+mem 0x201c80=00000080000000000200000000000000
+exit end
+test excl.ldxp_stxp.0265
+code c87f0831 c833e43f
+seed 847f65d5851bdf2d
+in x25=0x0 x1=0x201a70
+out x2=0x24c258bf5f3d97bc x17=0x13ef269f58c0dd1d x19=0x0
+mem 0x201a70=00000000000000000000000000000000
+exit end
+test excl.ldxp_stxp.0266
+code c87f7910
+seed 94a9ff51a053d10a
+in x8=0x2009f0
+out x16=0x5106e3cc12ee40ac x30=0xc2276fbeb753e91b
+exit end
+test excl.ldxp_stxp.0267
+code c87f7048 c8247c54
+seed e4e4840c1863fb59
+in x2=0x2013b0
+out x4=0x0 x8=0x8dca4e86690e2123 x28=0x87c79e0b0b15949b
+mem 0x2013b0=53f7027bbcfd22600000000000000000
+exit end
+test excl.ldxp_stxp.0268
+code 887f9d6a 883a8d7e
+seed 8aa906f0ad4d3845
+in x11=0x201c08
+out x7=0xc8b98abe x10=0xec48772 x26=0x0
+mem 0x201c08=ad70eada076d6569
+exit end
+test excl.ldxp_stxp.0269
+code c87fde2e
+seed 941272ea1acf015d
+in x25=0x8000000000000001 x17=0x200a60
+out x14=0xe2f15f960280ae25 x23=0xa821c86c4a9f07f4
+exit end
+test excl.ldxp_stxp.0270
+code c87fe6d8 c83976d3
+seed eaf0461bcf028926
+in x19=0xffff x22=0x201580
+out x24=0xf1a0785de43f600d x25=0x0
+mem 0x201580=ffff0000000000003650a199b7a4b32e
+exit end
+test excl.ldxp_stxp.0271
+code 887fc8bd
+seed 4edbdbdd520ce024
+in x3=0x7f x5=0x201880
+out x18=0x1b8f924f x29=0x2f4e5c4f
+exit end
+test excl.ldxp_stxp.0272
+code c87f72da c832decf
+seed 8bde49944504d9a3
+in x22=0x200c70
+out x18=0x0 x26=0x18de2131d85a22ea x28=0xa4cd883f5b267556
+mem 0x200c70=e71384162df8aa9f0e7605752b129b53
+exit end
+test excl.ldxp_stxp.0273
+code 887f3ccb 882fc4c1
+seed 38855b3be21ea7f0
+in x1=0x80 x17=0x7fffffff x6=0x2005d8
+out x11=0xa8818cde x15=0x0
+mem 0x2005d8=80000000ffffff7f
+exit end
+test excl.ldxp_stxp.0274
+code c87f88b9 c82420b1
+seed 18dd181942a738c4
+in x8=0x7fff x5=0x201e70
+out x2=0x3e6be5094fc2ec0d x4=0x0 x25=0x84e0a37b1d135098
+mem 0x201e70=9d854c8221e72d97ff7f000000000000
+exit end
+test excl.ldxp_stxp.0275
+code c87ff5e6
+seed e34807529e14549d
+in x16=0xffffffff00000000 x15=0x2000e0
+out x6=0x66d780926e2666ea x29=0x6fe74e7bb5731525
+exit end
+test excl.ldxp_stxp.0276
+code c87ff7f2
+seed 7dc985daf6163b47
+in sp=0x200090
+out x18=0xa54d201f3cfc9cf1 x29=0x79fdf8076062ae39
+exit end
+test excl.ldxp_stxp.0277
+code 887f11d1
+seed 64e100c71c1182cf
+in x14=0x200100
+out x4=0x3be8a83b x17=0xcee5a214
+exit end
+test excl.ldxp_stxp.0278
+code 887f04e3 8839fce6
+seed 0d69fab067889573
+in x7=0x200808
+out x1=0x3198b1b3 x3=0x2cf64e2 x25=0x0
+mem 0x200808=21cd711600000000
+exit end
+test excl.ldxp_stxp.0279
+code 887f2c50 8834784f
+seed 0f0e7f94454a6e3a
+in x30=0x7fff x2=0x201728
+out x11=0x4feb7e46 x16=0x489b0bb0 x20=0x0
+mem 0x201728=bd08a8dbff7f0000
+exit end
+test excl.ldxp_stxp.0280
+code 887f5cde 8837e8dc
+seed 56f9bf10937d3c7d
+in x28=0x7fffffff x6=0x200208
+out x23=0x0 x30=0x4c9f83e5
+mem 0x200208=ffffff7f2d415850
+exit end
+test excl.ldxp_stxp.0281
+code 887fa75c
+seed 6a24d158463267c2
+in x28=0xff x29=0x80 x26=0x2012c8
+out x9=0x3a0095eb x28=0x8341eb1d
+exit end
+test excl.ldxp_stxp.0282
+code c87f4bb7 c8325bbc
+seed 83c45fab08a7db08
+in x22=0x0 x29=0x201a60
+out x18=0x0 x23=0xdfa0903496c3bd92
+mem 0x201a60=4419a29142f77d190000000000000000
+exit end
+test excl.ldxp_stxp.0283
+code 887f804f 883df84b
+seed f888b6723c25a4bf
+in x11=0x8000000000000000 x2=0x201840
+out x0=0xd4b317ea x15=0xb8b9a0ad x29=0x0
+mem 0x201840=00000000bab2b65a
+exit end
+test excl.ldxp_stxp.0284
+code 887fc414 883db810
+seed ff114534454ec4ff
+in x0=0x200930
+out x17=0x342f5263 x20=0x8aa6293 x29=0x0
+mem 0x200930=b0f80d06f1edb9ef
+exit end
+test excl.ldxp_stxp.0285
+code c87fe466 c824b472
+seed 65ecc748a4369b6b
+in x3=0x200e30
+out x4=0x0 x6=0x6f77cb4538a0b56b x25=0x104337c20793fc88
+mem 0x200e30=094e7db07da8bcbaf451e5387ec79c8d
+exit end
+test excl.ldxp_stxp.0286
+code 887f3920 88255521
+seed e9e0305c24f709b7
+in x1=0xaaaaaaaaaaaaaaaa x9=0x200018
+out x0=0xdb1b8db4 x5=0x0 x14=0x66af82ff
+mem 0x200018=aaaaaaaa7657aacc
+exit end
+test excl.ldxp_stxp.0287
+code c87f05cf c82b29df
+seed c3174a787e296eda
+in x14=0x200440
+out x1=0x246aed379cfffb9e x11=0x0 x15=0x4eda9e06a50181ec
+mem 0x200440=000000000000000039e0318ec35b88dd
+exit end
+test excl.ldxp_stxp.0288
+code 887f9262
+seed 2f7de3ba5499c350
+in x19=0x2017e8
+out x2=0x9f686cc1 x4=0x9cf91955
+exit end
+test excl.ldxp_stxp.0289
+code 887f7b58
+seed f92d6a845ce43747
+in x20=0x100000000 x26=0x200298
+out x24=0x527af551 x30=0x3a2743c6
+exit end
+test excl.ldxp_stxp.0290
+code 887ff774 882bf37a
+seed 59438ac1d39b9214
+in x27=0x200bf8
+out x11=0x0 x20=0x1c612627 x29=0xf2ada954
+mem 0x200bf8=05004c6e0615f294
+exit end
+test excl.ldxp_stxp.0291
+code 887f5840 882ea44d
+seed 41d11c2fc74cbe87
+in x2=0x201a48
+out x0=0x5f59f83a x14=0x0 x22=0x4d8467ef
+mem 0x201a48=56629ef6da1dc200
+exit end
+test excl.ldxp_stxp.0292
+code 887f6264 88395e71
+seed e6e66c6ea720c8f5
+in x17=0xfffffffffffffffe x23=0x80000000 x19=0x201618
+out x4=0xa90572eb x24=0x309bea96 x25=0x0
+mem 0x201618=feffffff00000080
+exit end
+test excl.ldxp_stxp.0293
+code c87f929d
+seed 2233fbdae40a3a90
+in x20=0x201f50
+out x4=0x918928f1d4d8a5ff x29=0xa8af376f09c6cab5
+exit end
+test excl.ldxp_stxp.0294
+code c87faf45 c82a8f56
+seed 4b34baeee0b6b311
+in x22=0x0 x26=0x2002b0
+out x5=0x532a9443416cfa29 x10=0x0 x11=0xf6f248ef0d769139
+mem 0x2002b0=0000000000000000ff48463c86f93134
+exit end
+test excl.ldxp_stxp.0295
+code c87f7b9a c8274782
+seed 263cd9a8b29bef51
+in x17=0xffffffffffffffff x28=0x201870
+out x7=0x0 x26=0x1d61048eefdf3a05 x30=0x9ebda493f70329a7
+mem 0x201870=eb34d8f48382b225ffffffffffffffff
+exit end
+test excl.ldxp_stxp.0296
+code 887f178a 882b7f85
+seed 2a20cc9681ec475a
+in x28=0x201f78
+out x5=0x41d48756 x10=0x3598e18e x11=0x0
+mem 0x201f78=5687d44100000000
+exit end
+test excl.ldxp_stxp.0297
+code 887fc3e2 883ee7e6
+seed 703466bbc2b9b7b5
+in sp=0x200df0
+out x2=0x3a5cb39f x16=0xeff802a1 x30=0x0
+mem 0x200df0=b072c5119fe63724
+exit end
+test excl.ldxp_stxp.0298
+code 887fc3e0
+seed 7bb845cecd269b85
+in sp=0x201b30
+out x0=0x81d8bbf9 x16=0x93dfbacf
+exit end
+test excl.ldxp_stxp.0299
+code 887fd199 88291193
+seed 9f38266214c967a8
+in x19=0xfffffffffffffffe x4=0xffffffffffffffff x12=0x201620
+out x9=0x0 x20=0xa1a6928c x25=0x1f2ac1ae
+mem 0x201620=feffffffffffffff
+exit end
+test excl.ldar_stlr.0000
+code 489ffe93
+seed 6474e36ebc3fa92f
+in x20=0x2005d6
+mem 0x2005d6=15f8
+exit end
+test excl.ldar_stlr.0001
+code 889ffe5b
+seed c4abd10b7659d9c7
+in x18=0x201780
+mem 0x201780=7d80de11
+exit end
+test excl.ldar_stlr.0002
+code 88dffd78
+seed 85deb698bc6a3ad5
+in x11=0x200cac
+out x24=0xe9f0afbd
+exit end
+test excl.ldar_stlr.0003
+code c8dfff39
+seed 50b2de7c28acd70a
+in x25=0x2001e0
+out x25=0xdfaaf3a2779555f8
+exit end
+test excl.ldar_stlr.0004
+code 48dfff34
+seed c7e8c5cf60f7be8a
+in x25=0x201d5a
+out x20=0x3a73
+exit end
+test excl.ldar_stlr.0005
+code 089ffd33
+seed 31e4e4a4457383e3
+in x19=0x7fff x9=0x201e4e
+mem 0x201e4e=ff
+exit end
+test excl.ldar_stlr.0006
+code 88dffd2d
+seed b07f8f1c4e55e88d
+in x9=0x200fc0
+out x13=0x50fcbab9
+exit end
+test excl.ldar_stlr.0007
+code 089fffa3
+seed aff956454fe57d6e
+in x29=0x201b23
+mem 0x201b23=c1
+exit end
+test excl.ldar_stlr.0008
+code 489ffc00
+seed ded4c24f243003ff
+in x0=0x200b56
+mem 0x200b56=560b
+exit end
+test excl.ldar_stlr.0009
+code 889fff11
+seed f4e3ea3e3514b725
+in x24=0x200d40
+mem 0x200d40=50120fa7
+exit end
+test excl.ldar_stlr.0010
+code c89ffcd6
+seed 5c7a85427146e3e9
+in x6=0x201d90
+mem 0x201d90=5278e24a1cd76ecc
+exit end
+test excl.ldar_stlr.0011
+code 889ffcdb
+seed 93ec206fcb91da31
+in x27=0xffffffff x6=0x200c68
+mem 0x200c68=ffffffff
+exit end
+test excl.ldar_stlr.0012
+code 089ffeb0
+seed b2ad09f9d22a2b30
+in x21=0x200908
+mem 0x200908=62
+exit end
+test excl.ldar_stlr.0013
+code 489ffff7
+seed c682d315bbc5e475
+in sp=0x200450
+mem 0x200450=3b6d
+exit end
+test excl.ldar_stlr.0014
+code c89ffc5d
+seed d3d6bc3d2cc86a59
+in x2=0x200888
+mem 0x200888=4d39a24f4265a98e
+exit end
+test excl.ldar_stlr.0015
+code 48dffe5b
+seed ff86b2b49556d5b9
+in x27=0x5555555555555555 x18=0x200846
+out x27=0xc763
+exit end
+test excl.ldar_stlr.0016
+code 089ffe6f
+seed 94f462c824c7baf7
+in x19=0x201fad
+mem 0x201fad=b1
+exit end
+test excl.ldar_stlr.0017
+code c8dffdcd
+seed a4c4e5831f6b33b7
+in x13=0xffffffffffffffff x14=0x200b78
+out x13=0xb5f27998bc96ae00
+exit end
+test excl.ldar_stlr.0018
+code 489ffd6b
+seed addf23284597eeb4
+in x11=0x20063a
+mem 0x20063a=3a06
+exit end
+test excl.ldar_stlr.0019
+code 48dffdcb
+seed 5b0ea902982ff2e8
+in x11=0x5555555555555555 x14=0x201ffc
+out x11=0x59a7
+exit end
+test excl.ldar_stlr.0020
+code 089fff13
+seed be517918dded589a
+in x24=0x20106a
+mem 0x20106a=db
+exit end
+test excl.ldar_stlr.0021
+code 48dffe55
+seed 425a476645667d6a
+in x18=0x201e92
+out x21=0xa200
+exit end
+test excl.ldar_stlr.0022
+code c89fff7d
+seed 79f3635540af2361
+in x29=0x7fffffff x27=0x201718
+mem 0x201718=ffffff7f00000000
+exit end
+test excl.ldar_stlr.0023
+code 489ffd8e
+seed 6972ec251406e6b3
+in x12=0x2012ec
+mem 0x2012ec=48ef
+exit end
+test excl.ldar_stlr.0024
+code 089ffdff
+seed 2251a74fc4d66525
+in x15=0x201eec
+mem 0x201eec=00
+exit end
+test excl.ldar_stlr.0025
+code 48dffda8
+seed 4b0705bfea6611df
+in x8=0xffffffff x13=0x200bc4
+out x8=0x23b4
+exit end
+test excl.ldar_stlr.0026
+code 489ffc9c
+seed 5e86d83063545f5d
+in x4=0x2003d4
+mem 0x2003d4=6508
+exit end
+test excl.ldar_stlr.0027
+code 08dfff35
+seed 659045901cd30308
+in x25=0x201f19
+out x21=0x86
+exit end
+test excl.ldar_stlr.0028
+code 48dfff48
+seed e80b8635548bd5b4
+in x8=0x5555555555555555 x26=0x2004e6
+out x8=0xbcad
+exit end
+test excl.ldar_stlr.0029
+code 08dffdf6
+seed bc3cbc1809927ca4
+in x15=0x20150d
+out x22=0xe9
+exit end
+test excl.ldar_stlr.0030
+code 08dffedf
+seed 3cf7affcf8155bfe
+in x22=0x20032d
+exit end
+test excl.ldar_stlr.0031
+code 489ffd8a
+seed 1933b5e512cc720d
+in x12=0x200726
+mem 0x200726=fbf9
+exit end
+test excl.ldar_stlr.0032
+code 889fffe7
+seed 12714dfddabb3446
+in sp=0x200910
+mem 0x200910=043e5fa0
+exit end
+test excl.ldar_stlr.0033
+code 889fff28
+seed 4b6ac93bb07247bb
+in x25=0x200f98
+mem 0x200f98=5c021c8c
+exit end
+test excl.ldar_stlr.0034
+code 48dffdd6
+seed 3579d46a1963691c
+in x14=0x2011ec
+out x22=0x6d12
+exit end
+test excl.ldar_stlr.0035
+code c8dffedb
+seed 6fa96eb3d6c4878d
+in x22=0x201e60
+out x27=0x8c3fe4c5ee35ff43
+exit end
+test excl.ldar_stlr.0036
+code 88dfff55
+seed 31239825a7c7d660
+in x26=0x2010e8
+out x21=0x412397ea
+exit end
+test excl.ldar_stlr.0037
+code 88dffee4
+seed e32e20f843bfaf22
+in x4=0x8000000000000001 x23=0x2013d0
+out x4=0xf22ccff0
+exit end
+test excl.ldar_stlr.0038
+code 089ffd8b
+seed 4e8d942c2a353421
+in x12=0x201104
+mem 0x201104=57
+exit end
+test excl.ldar_stlr.0039
+code 48dfff93
+seed 9eaba6ca3edbe09b
+in x19=0x80000000 x28=0x2006c4
+out x19=0x4299
+exit end
+test excl.ldar_stlr.0040
+code 889ffe6f
+seed 42f77873d919361a
+in x19=0x201738
+mem 0x201738=25bddd09
+exit end
+test excl.ldar_stlr.0041
+code c89fffb1
+seed dae62e9884884877
+in x29=0x201ed0
+mem 0x201ed0=4eea80b272f3bc8d
+exit end
+test excl.ldar_stlr.0042
+code 88dffcd1
+seed b40503ad7be52a0d
+in x6=0x2016f0
+out x17=0x674cce92
+exit end
+test excl.ldar_stlr.0043
+code 889ffd89
+seed 8207505c907cb2f2
+in x12=0x200584
+mem 0x200584=623fb9b1
+exit end
+test excl.ldar_stlr.0044
+code c8dfffef
+seed a853a2740b992bdb
+in sp=0x200ec0
+out x15=0x3d5d45ef90439d1c
+exit end
+test excl.ldar_stlr.0045
+code c8dffe9a
+seed ad3dd96edb94b0fc
+in x26=0xffffffff x20=0x201f88
+out x26=0xd292a89b96c88ffc
+exit end
+test excl.ldar_stlr.0046
+code c8dffefd
+seed 148148f9adde8813
+in x29=0x1 x23=0x201ec0
+out x29=0xc1c61bd745952944
+exit end
+test excl.ldar_stlr.0047
+code 88dffcbb
+seed 554a64455b8156ff
+in x27=0x8000 x5=0x201680
+out x27=0x58850f34
+exit end
+test excl.ldar_stlr.0048
+code 889ffca0
+seed fdb356ac4c6d14e7
+in x5=0x200a7c
+mem 0x200a7c=46cf7c3b
+exit end
+test excl.ldar_stlr.0049
+code 88dffe38
+seed d602ac1c083281bc
+in x17=0x2000f8
+out x24=0x680b0a3f
+exit end
+test excl.ldar_stlr.0050
+code 48dfff9b
+seed 12fcde929c077aa1
+in x28=0x20121e
+out x27=0x445e
+exit end
+test excl.ldar_stlr.0051
+code 089fff4d
+seed f3b9fdfc20aaff7f
+in x26=0x201d5c
+mem 0x201d5c=12
+exit end
+test excl.ldar_stlr.0052
+code 08dffc94
+seed 8cf5b98edad75bef
+in x20=0x0 x4=0x201510
+out x20=0xe8
+exit end
+test excl.ldar_stlr.0053
+code 889ffc71
+seed 9f2ed1f31609c032
+in x17=0xffffffffffffffff x3=0x201a10
+mem 0x201a10=ffffffff
+exit end
+test excl.ldar_stlr.0054
+code 489ffd10
+seed 4b847774b2192c6d
+in x8=0x2007d6
+mem 0x2007d6=6c6b
+exit end
+test excl.ldar_stlr.0055
+code 889ffcb0
+seed ac9b84957ff9dd7c
+in x16=0xffffffff x5=0x200d94
+mem 0x200d94=ffffffff
+exit end
+test excl.ldar_stlr.0056
+code 089ffd87
+seed b25ed002b2807089
+in x7=0x7fffffff x12=0x200f0f
+mem 0x200f0f=ff
+exit end
+test excl.ldar_stlr.0057
+code 489fff3a
+seed c90d96114528a5ab
+in x26=0x7fffffffffffffff x25=0x200908
+mem 0x200908=ffff
+exit end
+test excl.ldar_stlr.0058
+code 489fff4c
+seed 469cf54debf169c0
+in x26=0x200ed8
+mem 0x200ed8=d504
+exit end
+test excl.ldar_stlr.0059
+code 489fffd2
+seed 08363855c0aba6e3
+in x30=0x20018a
+mem 0x20018a=23bd
+exit end
+test excl.ldar_stlr.0060
+code 489ffd99
+seed f811e4962762b608
+in x25=0x2 x12=0x200cae
+mem 0x200cae=0200
+exit end
+test excl.ldar_stlr.0061
+code 889ffe21
+seed 7f98bbe94807beb5
+in x1=0x8000000000000000 x17=0x2001f4
+mem 0x2001f4=00000000
+exit end
+test excl.ldar_stlr.0062
+code 889ffde6
+seed 87cf9f5dd1ca577b
+in x15=0x201f68
+mem 0x201f68=82aae270
+exit end
+test excl.ldar_stlr.0063
+code 489fff5b
+seed ba40d57a0889055b
+in x27=0xfffffffffffffffe x26=0x200762
+mem 0x200762=feff
+exit end
+test excl.ldar_stlr.0064
+code c89fffb5
+seed 965c327c95765902
+in x29=0x201eb8
+mem 0x201eb8=13d83b34a82f24e4
+exit end
+test excl.ldar_stlr.0065
+code c89ffcc5
+seed 1e35fcecd2ca3602
+in x6=0x2002b8
+mem 0x2002b8=5dd3b9 0x2002bc=44630815
+exit end
+test excl.ldar_stlr.0066
+code 08dfff60
+seed 95eb5790045c93df
+in x27=0x201b4a
+out x0=0xff
+exit end
+test excl.ldar_stlr.0067
+code 889ffda7
+seed 47b4c6ce6a65f1aa
+in x13=0x201390
+mem 0x201390=6f02d9b2
+exit end
+test excl.ldar_stlr.0068
+code 88dffe77
+seed 02b29f48702203fe
+in x23=0xffffffff x19=0x2005a8
+out x23=0xf7643bfb
+exit end
+test excl.ldar_stlr.0069
+code 489fffd2
+seed 55667cc3be64c709
+in x18=0x7fffffffffffffff x30=0x2011be
+mem 0x2011be=ffff
+exit end
+test excl.ldar_stlr.0070
+code 089ffe29
+seed 919fa47f67078007
+in x17=0x2007cf
+mem 0x2007cf=2d
+exit end
+test excl.ldar_stlr.0071
+code 489ffd3a
+seed 16244c47b2364192
+in x26=0x100000000 x9=0x201b42
+mem 0x201b42=0000
+exit end
+test excl.ldar_stlr.0072
+code 889fffb2
+seed a4ff4164fd5e5870
+in x18=0x0 x29=0x201cf8
+mem 0x201cf8=00000000
+exit end
+test excl.ldar_stlr.0073
+code 089ffc1f
+seed c92f889aab3b590a
+in x0=0x20037f
+mem 0x20037f=00
+exit end
+test excl.ldar_stlr.0074
+code c89ffe95
+seed 9f96995507b04152
+in x21=0x80000000 x20=0x201ab8
+mem 0x201ab8=0000008000000000
+exit end
+test excl.ldar_stlr.0075
+code 889ffcb2
+seed c8c3c15f982d0d56
+in x18=0xfffffffffffffffe x5=0x200270
+mem 0x200270=feffffff
+exit end
+test excl.ldar_stlr.0076
+code 889fff4b
+seed 3d0bdf6d75129551
+in x11=0x7fffffffffffffff x26=0x2004f8
+mem 0x2004f8=ffffffff
+exit end
+test excl.ldar_stlr.0077
+code 88dffedf
+seed 5d15045e51f9dd59
+in x22=0x200c38
+exit end
+test excl.ldar_stlr.0078
+code 489ffd6a
+seed 49070cab70f64e3c
+in x11=0x2019f6
+mem 0x2019f6=e842
+exit end
+test excl.ldar_stlr.0079
+code 889ffc09
+seed 0421c5282ba68b78
+in x0=0x200d48
+mem 0x200d48=4e9abf24
+exit end
+test excl.ldar_stlr.0080
+code 889fff5e
+seed ae29f6771c830a5c
+in x30=0x8000 x26=0x201174
+mem 0x201174=00800000
+exit end
+test excl.ldar_stlr.0081
+code 88dffe64
+seed 4b46a7e81e548e86
+in x19=0x201204
+out x4=0xa09eb0dc
+exit end
+test excl.ldar_stlr.0082
+code 88dffc76
+seed ba7893d7e5ba2676
+in x22=0x0 x3=0x201bfc
+out x22=0xf4b142f0
+exit end
+test excl.ldar_stlr.0083
+code 48dffee1
+seed c815c77fb0362397
+in x23=0x2018b6
+out x1=0xc60c
+exit end
+test excl.ldar_stlr.0084
+code c8dffdfa
+seed 0ada2f2c03b876e4
+in x15=0x200b60
+out x26=0x468bd79a67de231f
+exit end
+test excl.ldar_stlr.0085
+code 489fff7a
+seed 34275f0adff7d65f
+in x26=0xaaaaaaaaaaaaaaaa x27=0x201cbe
+mem 0x201cbe=aaaa
+exit end
+test excl.ldar_stlr.0086
+code 889ffcb9
+seed 715de8270fc38132
+in x25=0x8000000000000001 x5=0x201f9c
+mem 0x201f9c=01000000
+exit end
+test excl.ldar_stlr.0087
+code c8dffd84
+seed 2b462e75a72d0877
+in x12=0x200460
+out x4=0xedb4ad75d88bb4c4
+exit end
+test excl.ldar_stlr.0088
+code 88dffe71
+seed a3f3a60ef6fb5f15
+in x19=0x2008f8
+out x17=0xcf735fa
+exit end
+test excl.ldar_stlr.0089
+code c89ffecf
+seed ac8d999ab10e0ba9
+in x15=0xffff x22=0x200658
+mem 0x200658=ffff000000000000
+exit end
+test excl.ldar_stlr.0090
+code c8dffd73
+seed 798523b94110cbce
+in x11=0x200520
+out x19=0xe64f69fd77812705
+exit end
+test excl.ldar_stlr.0091
+code c8dffd2c
+seed a9d88232e6ba7d8c
+in x9=0x2013b8
+out x12=0x4794652d8b3bb9ef
+exit end
+test excl.ldar_stlr.0092
+code 489ffdc5
+seed d66b631516771ef1
+in x5=0x8000000000000000 x14=0x2019e2
+mem 0x2019e2=0000
+exit end
+test excl.ldar_stlr.0093
+code 889ffe9b
+seed f0601fbf155a8130
+in x27=0xffffffffffffffff x20=0x20011c
+mem 0x20011c=ffffffff
+exit end
+test excl.ldar_stlr.0094
+code c8dfffd6
+seed 7842cad422d49cf0
+in x30=0x2001b8
+out x22=0x6a0bbc6bbaa620c
+exit end
+test excl.ldar_stlr.0095
+code 889ffd86
+seed 1cff145a87d571de
+in x6=0x7f x12=0x201a68
+mem 0x201a68=7f000000
+exit end
+test excl.ldar_stlr.0096
+code 889fff46
+seed 704386306fc85891
+in x26=0x200f44
+mem 0x200f44=dd066657
+exit end
+test excl.ldar_stlr.0097
+code 48dffca2
+seed be7c692c8b084d30
+in x5=0x20040c
+out x2=0xce5e
+exit end
+test excl.ldar_stlr.0098
+code 089ffcb4
+seed 600895aa7317572f
+in x20=0x0 x5=0x2016f5
+mem 0x2016f5=00
+exit end
+test excl.ldar_stlr.0099
+code 08dfff4a
+seed 4c863d54b69d6205
+in x10=0x7fff x26=0x201c83
+out x10=0xf9
+exit end
+test excl.ldar_stlr.0100
+code 089ffc18
+seed 04475cbf50708ca9
+in x24=0x8000000000000000 x0=0x20045e
+mem 0x20045e=00
+exit end
+test excl.ldar_stlr.0101
+code 889fff7d
+seed 6247afe7cd558de2
+in x29=0xffff x27=0x200788
+mem 0x200788=ffff0000
+exit end
+test excl.ldar_stlr.0102
+code 889ffc89
+seed b88f4707b67ac292
+in x4=0x201b3c
+mem 0x201b3c=aee086c0
+exit end
+test excl.ldar_stlr.0103
+code 08dffeeb
+seed 52c3dc0fdff77b50
+in x11=0x100000000 x23=0x2017ac
+out x11=0x59
+exit end
+test excl.ldar_stlr.0104
+code 88dffec9
+seed e82d6856906c126d
+in x9=0x8000000000000001 x22=0x200db4
+out x9=0xb22181ac
+exit end
+test excl.ldar_stlr.0105
+code 889ffd1d
+seed 19feb503a1512fe2
+in x29=0x0 x8=0x20097c
+mem 0x20097c=00000000
+exit end
+test excl.ldar_stlr.0106
+code c8dfff5f
+seed 82ad5d605a77604c
+in x26=0x201708
+exit end
+test excl.ldar_stlr.0107
+code 48dffe2c
+seed d3f3f63c6171fa48
+in x12=0x0 x17=0x201f2a
+out x12=0xfb53
+exit end
+test excl.ldar_stlr.0108
+code 88dfff61
+seed d68436dd7a31638a
+in x1=0x5555555555555555 x27=0x201bb4
+out x1=0xfaa08a42
+exit end
+test excl.ldar_stlr.0109
+code 88dffe61
+seed 0a3a559f631c895c
+in x19=0x201c3c
+out x1=0xa3491564
+exit end
+test excl.ldar_stlr.0110
+code c89ffca6
+seed d45169ae241a4198
+in x5=0x200700
+mem 0x200700=8d107b0c67b2e5e5
+exit end
+test excl.ldar_stlr.0111
+code 089fff10
+seed fc2891fca335bc5a
+in x16=0x0 x24=0x201a48
+mem 0x201a48=00
+exit end
+test excl.ldar_stlr.0112
+code c89ffde9
+seed cd41cddab1de8df4
+in x9=0x80 x15=0x2000c8
+mem 0x2000c8=8000000000000000
+exit end
+test excl.ldar_stlr.0113
+code c8dffe01
+seed beec6ffcce4d1062
+in x16=0x201d60
+out x1=0xb4162bd4e3a6e436
+exit end
+test excl.ldar_stlr.0114
+code 889fff5c
+seed 4a559c7897200c40
+in x26=0x2016dc
+mem 0x2016dc=c9132684
+exit end
+test excl.ldar_stlr.0115
+code 489ffc33
+seed 79a66e5ae2c317cd
+in x1=0x2002d4
+mem 0x2002d4=463b
+exit end
+test excl.ldar_stlr.0116
+code 48dffea5
+seed a32f07d18a0dee7a
+in x21=0x200094
+out x5=0x8331
+exit end
+test excl.ldar_stlr.0117
+code 489ffef5
+seed d95dda8c54bd214c
+in x23=0x201d04
+mem 0x201d04=172e
+exit end
+test excl.ldar_stlr.0118
+code 48dffdf9
+seed 25b3962eadec7f8f
+in x15=0x20179c
+out x25=0x551a
+exit end
+test excl.ldar_stlr.0119
+code 889ffd4b
+seed 770e9d125bf61bad
+in x11=0xfffffffffffffffe x10=0x201490
+mem 0x201490=feffffff
+exit end
+test excl.ldar_stlr.0120
+code 089ffd1b
+seed 50fd6d987d81fc2b
+in x27=0xffff x8=0x201053
+mem 0x201053=ff
+exit end
+test excl.ldar_stlr.0121
+code c8dffff2
+seed cf044a95761a2a14
+in x18=0x7fffffff sp=0x200ca0
+out x18=0xac4a8a4806d06e46
+exit end
+test excl.ldar_stlr.0122
+code 489fffff
+seed 29a31172a2c267ab
+in sp=0x200e20
+mem 0x200e20=0000
+exit end
+test excl.ldar_stlr.0123
+code 08dffd1a
+seed 603b7e75ab3272ef
+in x8=0x200216
+out x26=0x4c
+exit end
+test excl.ldar_stlr.0124
+code 48dffff5
+seed 2152181d07d4f012
+in x21=0x8000000000000001 sp=0x2004d0
+out x21=0xc30e
+exit end
+test excl.ldar_stlr.0125
+code 489ffc9e
+seed c4e3c41ea4955083
+in x30=0xffffffffffffffff x4=0x200f10
+mem 0x200f10=ffff
+exit end
+test excl.ldar_stlr.0126
+code 88dffea4
+seed 1d425fec9ca9a0ee
+in x21=0x200cb4
+out x4=0x6cfab4c5
+exit end
+test excl.ldar_stlr.0127
+code 48dffe58
+seed 66d7ea582feac7e9
+in x24=0x5555555555555555 x18=0x2012a8
+out x24=0x1a17
+exit end
+test excl.ldar_stlr.0128
+code c8dffe97
+seed 86f1c275357efedd
+in x23=0x1 x20=0x201f70
+out x23=0x6fc6a192fd87a450
+exit end
+test excl.ldar_stlr.0129
+code 889ffe2d
+seed b530731c4188eb5e
+in x17=0x2009c0
+mem 0x2009c0=2b01c722
+exit end
+test excl.ldar_stlr.0130
+code c89ffcf3
+seed 28def87c32f04327
+in x7=0x200598
+mem 0x200598=431b82bb5f592adc
+exit end
+test excl.ldar_stlr.0131
+code 08dffc6a
+seed e315858187feece0
+in x3=0x200150
+out x10=0x2e
+exit end
+test excl.ldar_stlr.0132
+code c8dfffff
+seed ae61243f07e4f59a
+in sp=0x2013d0
+exit end
+test excl.ldar_stlr.0133
+code c89ffef9
+seed 98efbabbbe748a7f
+in x25=0xfffffffffffffffe x23=0x2008e8
+mem 0x2008e8=feffffffffffffff
+exit end
+test excl.ldar_stlr.0134
+code 089fffe5
+seed eeab5e41838f0355
+in sp=0x2019b0
+mem 0x2019b0=b8
+exit end
+test excl.ldar_stlr.0135
+code c89ffe06
+seed 137876c2514b880f
+in x16=0x201670
+mem 0x201670=16e3e42d19e6909d
+exit end
+test excl.ldar_stlr.0136
+code 089ffc96
+seed 1f1eb67ddba2fe30
+in x22=0xffff x4=0x201fd2
+mem 0x201fd2=ff
+exit end
+test excl.ldar_stlr.0137
+code c89ffff4
+seed 31830727e1f61ffb
+in x20=0xff sp=0x200280
+mem 0x200280=ff00000000000000
+exit end
+test excl.ldar_stlr.0138
+code 089ffcd0
+seed 5ffa2250e31f5cb7
+in x6=0x2003b5
+mem 0x2003b5=97
+exit end
+test excl.ldar_stlr.0139
+code c89ffde2
+seed ec358751ae5caeb7
+in x15=0x201a20
+mem 0x201a20=087ae7c0eebcd744
+exit end
+test excl.ldar_stlr.0140
+code c89ffc3e
+seed e105d1159a57253c
+in x30=0x1 x1=0x2018a8
+mem 0x2018a8=0100000000000000
+exit end
+test excl.ldar_stlr.0141
+code 089ffcda
+seed e411b4554434c5c5
+in x6=0x200571
+mem 0x200571=ae
+exit end
+test excl.ldar_stlr.0142
+code c89ffc4e
+seed 800f22cd5c1a944a
+in x14=0x8000 x2=0x2018a8
+mem 0x2018a8=0080000000000000
+exit end
+test excl.ldar_stlr.0143
+code 889ffc92
+seed 9f8ff88c54e5f9cf
+in x4=0x201eb0
+mem 0x201eb0=756c0610
+exit end
+test excl.ldar_stlr.0144
+code 889ffd48
+seed d318dca0a4df44f9
+in x10=0x2008e4
+mem 0x2008e4=6e0b74b9
+exit end
+test excl.ldar_stlr.0145
+code c8dffd3f
+seed 29347403a49428b1
+in x9=0x2001f0
+exit end
+test excl.ldar_stlr.0146
+code 089fffa6
+seed 475423ba7334e82d
+in x29=0x201d61
+mem 0x201d61=9d
+exit end
+test excl.ldar_stlr.0147
+code c8dffe67
+seed 5500dabd7e24399d
+in x19=0x2012e8
+out x7=0xb72268c3ff71eb7d
+exit end
+test excl.ldar_stlr.0148
+code 88dffc38
+seed d7c44b6fb115fcd6
+in x1=0x201a38
+out x24=0x4473bc70
+exit end
+test excl.ldar_stlr.0149
+code 489ffce4
+seed 14b28210142a6c6e
+in x4=0x7fff x7=0x2015f2
+mem 0x2015f2=ff7f
+exit end
+test excl.ldar_stlr.0150
+code 88dffed8
+seed b25d544bedcf652f
+in x22=0x2016f4
+out x24=0x3a3a7023
+exit end
+test excl.ldar_stlr.0151
+code 489ffc9a
+seed b6c24c6fa40c59fd
+in x4=0x20167e
+mem 0x20167e=9e2e
+exit end
+test excl.ldar_stlr.0152
+code 889ffc44
+seed e54d3414e7835677
+in x2=0x200e50
+mem 0x200e50=b909891c
+exit end
+test excl.ldar_stlr.0153
+code 089ffe34
+seed bb57c30a6d933b81
+in x20=0x80 x17=0x20163e
+mem 0x20163e=80
+exit end
+test excl.ldar_stlr.0154
+code 089ffc7c
+seed 285dfebfe5227ade
+in x28=0x8000000000000001 x3=0x200523
+mem 0x200523=01
+exit end
+test excl.ldar_stlr.0155
+code c8dffc80
+seed c6a0888af41d2dba
+in x4=0x201550
+out x0=0x765b28aff1a381f4
+exit end
+test excl.ldar_stlr.0156
+code c89ffc85
+seed 590078b595e76eed
+in x4=0x200e78
+mem 0x200e78=53f717acf6a48700
+exit end
+test excl.ldar_stlr.0157
+code 489ffde5
+seed a9c4fba59edd107d
+in x15=0x200ea0
+mem 0x200ea0=99b1
+exit end
+test excl.ldar_stlr.0158
+code 489fffce
+seed 3a0760c3b486ef4c
+in x14=0xffffffff x30=0x201c90
+mem 0x201c90=ffff
+exit end
+test excl.ldar_stlr.0159
+code 48dffd73
+seed 42c47a962cf35409
+in x11=0x2001d6
+out x19=0xbbd
+exit end
+test excl.ldar_stlr.0160
+code c89fff17
+seed 41acf5a3ae7b6cb2
+in x24=0x2017c0
+mem 0x2017c0=4504fa2ecba95f5c
+exit end
+test excl.ldar_stlr.0161
+code 889ffcb6
+seed a19518416839da88
+in x5=0x201188
+mem 0x201188=0fbf302d
+exit end
+test excl.ldar_stlr.0162
+code 48dffcb1
+seed 81a0012478a05d5d
+in x17=0x7fffffffffffffff x5=0x200e0c
+out x17=0xbbac
+exit end
+test excl.ldar_stlr.0163
+code 08dffe21
+seed 6cee30dbd92fcca5
+in x17=0x2017cd
+out x1=0x8b
+exit end
+test excl.ldar_stlr.0164
+code 48dfffa2
+seed 16959b87415e24fb
+in x29=0x200950
+out x2=0x61c1
+exit end
+test excl.ldar_stlr.0165
+code 489ffc67
+seed 2480acf1ac8550fb
+in x3=0x201c7e
+mem 0x201c7e=271e
+exit end
+test excl.ldar_stlr.0166
+code 889ffe09
+seed 6e72b1eb7ad0f0f6
+in x9=0x80000000 x16=0x200a58
+mem 0x200a58=00000080
+exit end
+test excl.ldar_stlr.0167
+code c89ffc31
+seed 58a66d640af4b70f
+in x17=0x7fffffffffffffff x1=0x200020
+mem 0x200020=ffffffffffffff7f
+exit end
+test excl.ldar_stlr.0168
+code 089ffdef
+seed eed54324ff676418
+in x15=0x201e57
+mem 0x201e57=57
+exit end
+test excl.ldar_stlr.0169
+code c8dfff90
+seed 91e93cbbbc5b7e78
+in x28=0x2008a0
+out x16=0x25a96501b9a546c1
+exit end
+test excl.ldar_stlr.0170
+code c89ffdac
+seed dbbd7de0bb88238c
+in x13=0x201938
+mem 0x201938=ebc84a292f8b792e
+exit end
+test excl.ldar_stlr.0171
+code 489ffee7
+seed e19821ec726c9d32
+in x23=0x2008a2
+mem 0x2008a2=46f3
+exit end
+test excl.ldar_stlr.0172
+code 489ffcb1
+seed ee0afb208c838c53
+in x5=0x2004b8
+mem 0x2004b8=8070
+exit end
+test excl.ldar_stlr.0173
+code 489ffdc8
+seed c771b6c5e4246e01
+in x8=0x80 x14=0x200632
+mem 0x200632=8000
+exit end
+test excl.ldar_stlr.0174
+code 08dffee0
+seed fa7f6e93e1a0cbcd
+in x23=0x200eee
+out x0=0xda
+exit end
+test excl.ldar_stlr.0175
+code 089ffe0d
+seed 5a54583b4030289a
+in x13=0x1 x16=0x2016ac
+mem 0x2016ac=01
+exit end
+test excl.ldar_stlr.0176
+code 489ffcd3
+seed 426c395dbf6d1139
+in x6=0x200bc4
+mem 0x200bc4=0624
+exit end
+test excl.ldar_stlr.0177
+code 889ffc15
+seed 70c65c515d4fef14
+in x21=0x7fffffffffffffff x0=0x200748
+mem 0x200748=ffffffff
+exit end
+test excl.ldar_stlr.0178
+code 089ffc33
+seed 735a7ff1238f6c80
+in x19=0x7fffffff x1=0x20050e
+mem 0x20050e=ff
+exit end
+test excl.ldar_stlr.0179
+code 889fff15
+seed 5c0c485280267940
+in x24=0x201d78
+mem 0x201d78=70891ece
+exit end
+test excl.ldar_stlr.0180
+code 08dffd07
+seed 0ee53869feb79c3d
+in x8=0x201f97
+out x7=0x7e
+exit end
+test excl.ldar_stlr.0181
+code 489ffec7
+seed 59c2cf539985733a
+in x22=0x20107e
+mem 0x20107e=864f
+exit end
+test excl.ldar_stlr.0182
+code 08dffc6a
+seed 6b144b91012a0bd7
+in x3=0x201f26
+out x10=0x70
+exit end
+test excl.ldar_stlr.0183
+code 88dffc8c
+seed 5fb1dc2799890fbf
+in x4=0x20045c
+out x12=0x62ce2c5d
+exit end
+test excl.ldar_stlr.0184
+code 08dffd73
+seed 5175f96068c0245f
+in x11=0x2004a9
+out x19=0xfc
+exit end
+test excl.ldar_stlr.0185
+code 889fff42
+seed 0936f7820d6c68f4
+in x2=0xaaaaaaaaaaaaaaaa x26=0x200078
+mem 0x200078=aaaaaaaa
+exit end
+test excl.ldar_stlr.0186
+code 089ffe8f
+seed 65bee6238deacbc9
+in x15=0x5555555555555555 x20=0x201e06
+mem 0x201e06=55
+exit end
+test excl.ldar_stlr.0187
+code 08dffe59
+seed c9552ced2a1bf6ac
+in x25=0x2 x18=0x200fa5
+out x25=0x40
+exit end
+test excl.ldar_stlr.0188
+code 48dfff88
+seed b51d9900a61608aa
+in x8=0x2 x28=0x201886
+out x8=0xb876
+exit end
+test excl.ldar_stlr.0189
+code c8dfff34
+seed 7b8457be5aa79d21
+in x20=0x7fffffff x25=0x200fb0
+out x20=0x68ca4f7e35fcdecb
+exit end
+test excl.ldar_stlr.0190
+code 08dffc4e
+seed e0cf78bb46f8cd59
+in x14=0x80 x2=0x201371
+out x14=0xbd
+exit end
+test excl.ldar_stlr.0191
+code 08dffc26
+seed 6bee4206ab4e00ca
+in x1=0x20042f
+out x6=0xd9
+exit end
+test excl.ldar_stlr.0192
+code 089ffddd
+seed 14e8a398663985c3
+in x14=0x20023d
+mem 0x20023d=5f
+exit end
+test excl.ldar_stlr.0193
+code 489ffe10
+seed eb7838b5ff1fd961
+in x16=0x201ada
+mem 0x201ada=da1a
+exit end
+test excl.ldar_stlr.0194
+code c89ffed2
+seed 8a750c6ac09af6b6
+in x22=0x201658
+mem 0x201658=0831c6f0fa4e2c82
+exit end
+test excl.ldar_stlr.0195
+code c89ffe52
+seed 765ac65c4a1980c7
+in x18=0x201110
+mem 0x201110=1011200000000000
+exit end
+test excl.ldar_stlr.0196
+code c8dffe23
+seed 35d0adbd87c2f3ff
+in x3=0x8000 x17=0x201500
+out x3=0x4779569b25261965
+exit end
+test excl.ldar_stlr.0197
+code c8dffd0c
+seed f7a3859a4adc2645
+in x12=0x2 x8=0x201798
+out x12=0x49ba1f5ab5b13090
+exit end
+test excl.ldar_stlr.0198
+code 089fffe1
+seed af65ffa4a1f9c2d6
+in x1=0x2 sp=0x200b10
+mem 0x200b10=02
+exit end
+test excl.ldar_stlr.0199
+code 489fffdd
+seed 50de82f29e50cd15
+in x29=0x7f x30=0x201274
+mem 0x201274=7f00
+exit end
+test excl.ldar_stlr.0200
+code c8dffdf2
+seed d3243a82cd031e1a
+in x15=0x201ef0
+out x18=0x9b21b4720f6c0554
+exit end
+test excl.ldar_stlr.0201
+code 889fff16
+seed 70388f6a5f62506a
+in x24=0x201b94
+mem 0x201b94=fcfaafbe
+exit end
+test excl.ldar_stlr.0202
+code 08dfff27
+seed 5cc67c2abb59529b
+in x7=0x7fffffffffffffff x25=0x200088
+out x7=0x2d
+exit end
+test excl.ldar_stlr.0203
+code 489ffd92
+seed 161f3da4b9c618ab
+in x12=0x2015e0
+mem 0x2015e0=9de6
+exit end
+test excl.ldar_stlr.0204
+code 88dffe52
+seed 29d4d53133de2b70
+in x18=0x200e1c
+out x18=0xd8e0a511
+exit end
+test excl.ldar_stlr.0205
+code c8dffed9
+seed 18bbe8aac2fc4dc0
+in x25=0x7f x22=0x2006b0
+out x25=0xb4c3133ba8f2dc03
+exit end
+test excl.ldar_stlr.0206
+code 48dffc65
+seed 980a8b186b1d6362
+in x5=0xffff x3=0x200758
+out x5=0xf5f
+exit end
+test excl.ldar_stlr.0207
+code 88dffcab
+seed 8517fb4787cf6e98
+in x5=0x201d44
+out x11=0x8d3ba4a0
+exit end
+test excl.ldar_stlr.0208
+code c89ffdae
+seed f41101de84039c33
+in x13=0x201478
+mem 0x201478=d8cb58ffd7287800
+exit end
+test excl.ldar_stlr.0209
+code 48dffca9
+seed fac986caf7f1cba3
+in x5=0x201c1c
+out x9=0x71bf
+exit end
+test excl.ldar_stlr.0210
+code c89ffd82
+seed 049d0e4abe75054a
+in x12=0x201b40
+mem 0x201b40=c112049632640cf2
+exit end
+test excl.ldar_stlr.0211
+code 88dfffd0
+seed 0251816d1797fda0
+in x30=0x201790
+out x16=0x3c7874dc
+exit end
+test excl.ldar_stlr.0212
+code c89ffd32
+seed 1c500f6f661efe4f
+in x9=0x200d08
+mem 0x200d08=f062576957f086d8
+exit end
+test excl.ldar_stlr.0213
+code 08dffdc7
+seed 0e84da288015a105
+in x7=0x8000000000000000 x14=0x201357
+out x7=0x44
+exit end
+test excl.ldar_stlr.0214
+code 089fff05
+seed f91b8deab9c49b1d
+in x5=0xff x24=0x2015d6
+mem 0x2015d6=ff
+exit end
+test excl.ldar_stlr.0215
+code 08dffd18
+seed 9c1b3f4126ff1e00
+in x8=0x200449
+out x24=0x64
+exit end
+test excl.ldar_stlr.0216
+code 489ffeb0
+seed ab095ff8ad508552
+in x16=0x8000000000000001 x21=0x201fae
+mem 0x201fae=0100
+exit end
+test excl.ldar_stlr.0217
+code 489ffce0
+seed 3e6c5134a021543c
+in x0=0xffffffff x7=0x200744
+mem 0x200744=ffff
+exit end
+test excl.ldar_stlr.0218
+code c89ffeb7
+seed db0cf4ce16aa9c83
+in x23=0x80 x21=0x200a40
+mem 0x200a40=8000000000000000
+exit end
+test excl.ldar_stlr.0219
+code 489ffdfa
+seed 1e70d38433dcfe5e
+in x26=0xffffffff00000000 x15=0x200e8a
+mem 0x200e8a=0000
+exit end
+test excl.ldar_stlr.0220
+code 489ffe65
+seed 02d6a1aa1c87eb23
+in x19=0x20189c
+mem 0x20189c=ec3f
+exit end
+test excl.ldar_stlr.0221
+code c8dffc58
+seed 7da33993243cb01e
+in x2=0x201080
+out x24=0xe9df1d03170cd995
+exit end
+test excl.ldar_stlr.0222
+code 089ffe46
+seed a3fa3fce40119c60
+in x6=0x100000000 x18=0x201974
+mem 0x201974=00
+exit end
+test excl.ldar_stlr.0223
+code 88dffd90
+seed a14676de7f43a078
+in x12=0x20057c
+out x16=0xfe82292a
+exit end
+test excl.ldar_stlr.0224
+code 08dffe31
+seed 98edd97b19cb384e
+in x17=0x2005e9
+out x17=0x19
+exit end
+test excl.ldar_stlr.0225
+code 889ffc16
+seed b77b1fa859affa7f
+in x0=0x201364
+mem 0x201364=23 0x201366=5a59
+exit end
+test excl.ldar_stlr.0226
+code c8dffc9d
+seed 1db093e98f143799
+in x4=0x200050
+out x29=0x43a6647442c6a784
+exit end
+test excl.ldar_stlr.0227
+code 08dffd44
+seed 7c6370058868cfe5
+in x4=0x7fffffffffffffff x10=0x201048
+out x4=0x63
+exit end
+test excl.ldar_stlr.0228
+code 48dffe39
+seed 5474f9b62710a576
+in x25=0x8000000000000001 x17=0x200870
+out x25=0xfd49
+exit end
+test excl.ldar_stlr.0229
+code 889ffd20
+seed 8a49d21ba7b8e22b
+in x9=0x20131c
+mem 0x20131c=968da2ff
+exit end
+test excl.ldar_stlr.0230
+code 489ffec5
+seed 46cfdbfd8264da36
+in x5=0x80 x22=0x20064c
+mem 0x20064c=8000
+exit end
+test excl.ldar_stlr.0231
+code 08dffd16
+seed eeaa35f5b7a6c985
+in x8=0x201d17
+out x22=0xc2
+exit end
+test excl.ldar_stlr.0232
+code c8dffe6b
+seed 589c6a5dacbec108
+in x11=0x8000000000000001 x19=0x200aa8
+out x11=0x2fcdd4ad2dfd1071
+exit end
+test excl.ldar_stlr.0233
+code 08dffe9e
+seed 1bf035613d21a43f
+in x20=0x200c1a
+out x30=0xfe
+exit end
+test excl.ldar_stlr.0234
+code 88dfffeb
+seed 904316b147d87e15
+in sp=0x2019f0
+out x11=0x28b1aadb
+exit end
+test excl.ldar_stlr.0235
+code c8dffdf6
+seed 1ad918f2cb572acf
+in x22=0xffff x15=0x2009f0
+out x22=0x14d95be418ccb7ef
+exit end
+test excl.ldar_stlr.0236
+code c8dffc6c
+seed a538a1f664e639ba
+in x12=0x100000000 x3=0x201518
+out x12=0xb58e25ad91d93587
+exit end
+test excl.ldar_stlr.0237
+code 88dffd6d
+seed 5960b54fb332ecaf
+in x13=0x8000000000000000 x11=0x201fb4
+out x13=0x1f2a8202
+exit end
+test excl.ldar_stlr.0238
+code 489ffccf
+seed a08e15e5ab72bcbf
+in x6=0x20116a
+mem 0x20116a=e053
+exit end
+test excl.ldar_stlr.0239
+code 88dffefe
+seed cf71199348f889e4
+in x23=0x2008bc
+out x30=0xbbd93150
+exit end
+test excl.ldar_stlr.0240
+code c8dffd08
+seed 393de2a389bda3ef
+in x8=0x201fa8
+out x8=0x2e6db8c0f3bee81d
+exit end
+test excl.ldar_stlr.0241
+code 889ffc26
+seed 47a9150d0205400a
+in x6=0x7f x1=0x201384
+mem 0x201384=7f000000
+exit end
+test excl.ldar_stlr.0242
+code 489ffe76
+seed e378d71faf9e50e5
+in x19=0x201344
+mem 0x201344=2a41
+exit end
+test excl.ldar_stlr.0243
+code 88dffef0
+seed fbe76930605ae994
+in x16=0x8000000000000000 x23=0x20091c
+out x16=0x750775ff
+exit end
+test excl.ldar_stlr.0244
+code c89fffd0
+seed 02fc8ca502710073
+in x16=0x7f x30=0x200660
+mem 0x200660=7f0000000000 0x200667=00
+exit end
+test excl.ldar_stlr.0245
+code c89fff67
+seed 7563423ec87b76d2
+in x7=0x7fffffff x27=0x200050
+mem 0x200050=ffffff7f00000000
+exit end
+test excl.ldar_stlr.0246
+code c8dffee5
+seed 2d4fe4fa872dc408
+in x23=0x200360
+out x5=0x1c0fae1c15b4a2fe
+exit end
+test excl.ldar_stlr.0247
+code c89fff13
+seed 18b5649e7989bfdc
+in x19=0xfffffffffffffffe x24=0x2011e0
+mem 0x2011e0=feffffffffffffff
+exit end
+test excl.ldar_stlr.0248
+code 489ffe42
+seed 6746b20f1b4e2fc4
+in x18=0x20111c
+mem 0x20111c=7af8
+exit end
+test excl.ldar_stlr.0249
+code 88dffc2d
+seed 5f10a7a80e739ae8
+in x1=0x200c48
+out x13=0x5cb50fe4
+exit end
+test excl.ldar_stlr.0250
+code 48dffdd9
+seed 98a1cbbf3b444402
+in x14=0x20043a
+out x25=0x9302
+exit end
+test excl.ldar_stlr.0251
+code c8dffc6d
+seed 75b8de4d9e8f47ce
+in x13=0x2 x3=0x201128
+out x13=0xeecf3a78b3d9fab2
+exit end
+test excl.ldar_stlr.0252
+code 08dffdef
+seed 76939b62c160a1e0
+in x15=0x2003ff
+out x15=0x83
+exit end
+test excl.ldar_stlr.0253
+code c89ffd6d
+seed 41306b7006304c43
+in x13=0xffff x11=0x201dc8
+mem 0x201dc8=ffff000000000000
+exit end
+test excl.ldar_stlr.0254
+code 48dfffd4
+seed f718526b519ac909
+in x20=0x7fffffffffffffff x30=0x2013f8
+out x20=0x200a
+exit end
+test excl.ldar_stlr.0255
+code 08dffc62
+seed f28807dba9b12f9e
+in x2=0x8000000000000000 x3=0x2013ee
+out x2=0xa6
+exit end
+test excl.ldar_stlr.0256
+code c89ffd88
+seed a74414deb4645e96
+in x12=0x2006a8
+mem 0x2006a8=a8d4a9c020d13d49
+exit end
+test excl.ldar_stlr.0257
+code 08dffe4d
+seed 5b0ead2fe8624b7f
+in x13=0x0 x18=0x201ee8
+out x13=0x1f
+exit end
+test excl.ldar_stlr.0258
+code 48dffc53
+seed 381fcf0bbe763c47
+in x19=0x7fffffff x2=0x20008e
+out x19=0x7f9a
+exit end
+test excl.ldar_stlr.0259
+code 88dffe11
+seed 538f55b9c187c601
+in x16=0x20021c
+out x17=0xfe87ea0f
+exit end
+test excl.ldar_stlr.0260
+code 089ffd33
+seed befc7463ea556996
+in x19=0x80 x9=0x2003ca
+mem 0x2003ca=80
+exit end
+test excl.ldar_stlr.0261
+code c89ffeef
+seed 0529c8806b4af1c6
+in x23=0x200458
+mem 0x200458=808ccc75c29f55f2
+exit end
+test excl.ldar_stlr.0262
+code 089ffc19
+seed b8509731546dc984
+in x25=0xffffffff x0=0x200173
+mem 0x200173=ff
+exit end
+test excl.ldar_stlr.0263
+code 489fff4d
+seed bcf5f6f036837647
+in x26=0x2005fc
+mem 0x2005fc=254a
+exit end
+test excl.ldar_stlr.0264
+code 48dffe85
+seed 34446d42716d061d
+in x5=0xffffffff00000000 x20=0x201e24
+out x5=0x5db6
+exit end
+test excl.ldar_stlr.0265
+code 88dffce8
+seed 5738c61921fc952a
+in x7=0x2011f8
+out x8=0x1303f4e3
+exit end
+test excl.ldar_stlr.0266
+code c8dffe3c
+seed 188426b7700b7bc4
+in x17=0x201b10
+out x28=0xf6c7d7abc294a6cb
+exit end
+test excl.ldar_stlr.0267
+code c8dffd59
+seed f434ae24ff7ba632
+in x10=0x200b08
+out x25=0x55aadce86babe55f
+exit end
+test excl.ldar_stlr.0268
+code c89ffd92
+seed b473c9e38b6ac0f5
+in x18=0x7fff x12=0x200a30
+mem 0x200a30=ff7f000000000000
+exit end
+test excl.ldar_stlr.0269
+code c8dfff1c
+seed 566cdc36f8f0dbf9
+in x24=0x201838
+out x28=0x9f269c4eafc10b93
+exit end
+test excl.ldar_stlr.0270
+code 089ffe65
+seed 9d817e093cfeb516
+in x19=0x200b52
+mem 0x200b52=85
+exit end
+test excl.ldar_stlr.0271
+code 48dffc10
+seed 2a04454ac4d1af88
+in x0=0x201a58
+out x16=0xb2d1
+exit end
+test excl.ldar_stlr.0272
+code 889ffdc3
+seed 19e8544fc19044d9
+in x3=0xffffffffffffffff x14=0x200fc4
+mem 0x200fc4=ffffffff
+exit end
+test excl.ldar_stlr.0273
+code 089ffde4
+seed 107d1e2296ec66b1
+in x4=0x100000000 x15=0x200393
+mem 0x200393=00
+exit end
+test excl.ldar_stlr.0274
+code 489ffd8e
+seed 50aa1c9ca5334004
+in x14=0x2 x12=0x200a3c
+mem 0x200a3c=0200
+exit end
+test excl.ldar_stlr.0275
+code 089fff2e
+seed 0d1a51a052f3f5b5
+in x25=0x201be0
+mem 0x201be0=49
+exit end
+test excl.ldar_stlr.0276
+code 089ffed1
+seed 60d2f1b32e9903d5
+in x22=0x20007d
+mem 0x20007d=2b
+exit end
+test excl.ldar_stlr.0277
+code 48dfff5f
+seed 17486eba7d163abe
+in x26=0x200928
+exit end
+test excl.ldar_stlr.0278
+code 88dfff43
+seed 7df5fc7ecb138cfb
+in x26=0x2014c0
+out x3=0xe9d53595
+exit end
+test excl.ldar_stlr.0279
+code c89ffe0b
+seed 4ee8e2612bba398f
+in x11=0xffffffff x16=0x201e38
+mem 0x201e38=ffffffff00000000
+exit end
+test excl.ldar_stlr.0280
+code c8dffcfc
+seed 069b5b4f4145cf21
+in x7=0x200b08
+out x28=0x682babafa599cab
+exit end
+test excl.ldar_stlr.0281
+code c8dfff13
+seed 193a5941b1c38908
+in x19=0xaaaaaaaaaaaaaaaa x24=0x201910
+out x19=0xe23a6138aed8561d
+exit end
+test excl.ldar_stlr.0282
+code 88dffcc1
+seed ade902e2edfe0bd0
+in x6=0x201b00
+out x1=0x82164323
+exit end
+test excl.ldar_stlr.0283
+code 88dfff39
+seed 951f6dc5312350b9
+in x25=0x20193c
+out x25=0xfe2b6d9c
+exit end
+test excl.ldar_stlr.0284
+code 089ffe76
+seed 6c7d615f6c986beb
+in x19=0x200005
+mem 0x200005=63
+exit end
+test excl.ldar_stlr.0285
+code c8dffec4
+seed 6be267d82df9f343
+in x4=0x8000000000000001 x22=0x201dd8
+out x4=0x1b559d4231ef10c0
+exit end
+test excl.ldar_stlr.0286
+code 489ffe49
+seed 52186fd9ecbb132e
+in x9=0x7fffffffffffffff x18=0x201e66
+mem 0x201e66=ffff
+exit end
+test excl.ldar_stlr.0287
+code 88dffeb3
+seed ac99452ea3d6cb04
+in x19=0x0 x21=0x2009f8
+out x19=0xf630a2ce
+exit end
+test excl.ldar_stlr.0288
+code c89fffc5
+seed 7a2fccaf4f3a8ffa
+in x5=0x8000 x30=0x200448
+mem 0x200448=0080000000000000
+exit end
+test excl.ldar_stlr.0289
+code 48dffd40
+seed f6e2cd1611bbdb41
+in x10=0x201e82
+out x0=0xf357
+exit end
+test excl.ldar_stlr.0290
+code 489ffda6
+seed dac7351d694470a1
+in x6=0xffffffff00000000 x13=0x201d58
+mem 0x201d58=0000
+exit end
+test excl.ldar_stlr.0291
+code 089fff3e
+seed f3df60b8cffa2c6d
+in x25=0x20043c
+mem 0x20043c=46
+exit end
+test excl.ldar_stlr.0292
+code 88dfff01
+seed a639582a71272080
+in x1=0x7f x24=0x2011bc
+out x1=0xa85e22a9
+exit end
+test excl.ldar_stlr.0293
+code 08dffee9
+seed 2a17161a2069c244
+in x23=0x201849
+out x9=0xc0
+exit end
+test excl.ldar_stlr.0294
+code c8dffc71
+seed 7104934d83c7f731
+in x17=0xffffffff x3=0x200040
+out x17=0xe994f8829db92c6b
+exit end
+test excl.ldar_stlr.0295
+code 08dfff8d
+seed 6a9237f5debad692
+in x13=0x5555555555555555 x28=0x200bc6
+out x13=0x3c
+exit end
+test excl.ldar_stlr.0296
+code 489ffc0d
+seed 20acc873770897f3
+in x13=0x7f x0=0x20080e
+mem 0x20080e=7f00
+exit end
+test excl.ldar_stlr.0297
+code 08dfff7c
+seed ef10b741f9a8f7f8
+in x27=0x20139d
+out x28=0xa6
+exit end
+test excl.ldar_stlr.0298
+code 889ffe96
+seed 1b2268d2761c082d
+in x20=0x20098c
+mem 0x20098c=55a7cf29
+exit end
+test excl.ldar_stlr.0299
+code 08dfff33
+seed b58dbdfb9f64e9b4
+in x25=0x200a84
+out x19=0x78
+exit end
+test excl.clrex.0000
+code c85f7f76 d503315f c80e7f79
+seed d2de6db635ef7ea4
+in x27=0x200ed8
+out x14=0x1 x22=0x8c4352a58eb18d06
+exit end
+test excl.clrex.0001
+code c85f7fc0 d503305f c80c7fdb
+seed d7b1b2f95699f731
+in x30=0x2005a8
+out x0=0x82095c41f18f4a4c x12=0x1
+exit end
+test excl.clrex.0002
+code c85f7e47 d5033e5f c81a7e51
+seed 815163565ba26333
+in x18=0x2001f0
+out x7=0x6f92e7c8bc2d9ac5 x26=0x1
+exit end
+test excl.clrex.0003
+code c85f7c44 d5033c5f c80a7c47
+seed b730017d894d9d92
+in x2=0x2015a8
+out x4=0x11b9ef5d1dd05750 x10=0x1
+exit end
+test excl.clrex.0004
+code c85f7c2e d503365f c8167c2f
+seed f8c3ca93f6294083
+in x1=0x2015b0
+out x14=0xb142acd7e518e964 x22=0x1
+exit end
+test excl.clrex.0005
+code c85f7dfd d5033b5f c80e7def
+seed 2e4eefe082aa3c32
+in x15=0x200ca8
+out x14=0x1 x29=0x7ac65680cde873ec
+exit end
+test excl.clrex.0006
+code c85f7d37 d5033a5f c8037d24
+seed d975ce969422f026
+in x9=0x200ac8
+out x3=0x1 x23=0xa7431f47058bd9d
+exit end
+test excl.clrex.0007
+code c85f7c22 d503375f c8107c2c
+seed dafe284f6eda231a
+in x1=0x201498
+out x2=0x53f48ef97a3ae544 x16=0x1
+exit end
+test excl.clrex.0008
+code c85f7fe9 d5033f5f c8197ff2
+seed 75788dd324a2a4b2
+in sp=0x201c20
+out x9=0x6addc3af65c6c5c x25=0x1
+exit end
+test excl.clrex.0009
+code c85f7c32 d5033b5f c80c7c3c
+seed 46cbd591fb468e4d
+in x1=0x2000f8
+out x12=0x1 x18=0x49bb21d6c2a96744
+exit end
+test excl.clrex.0010
+code c85f7c45 d503315f c81a7c5d
+seed 6ba9297fe9b7c1d7
+in x2=0x201048
+out x5=0x73595f6ac781f291 x26=0x1
+exit end
+test excl.clrex.0011
+code c85f7d20 d503345f c80f7d39
+seed 3bc88dc5a25b4e76
+in x9=0x201030
+out x0=0x834debb86eabdf76 x15=0x1
+exit end
+test excl.clrex.0012
+code c85f7c7b d5033a5f c8107c79
+seed f2d700bdf5fb143f
+in x3=0x201ab8
+out x16=0x1 x27=0xdb9de26639671153
+exit end
+test excl.clrex.0013
+code c85f7d06 d5033a5f c80e7d05
+seed 162c0e8c28fa0960
+in x8=0x201ed8
+out x6=0x57e3dea282f9cca3 x14=0x1
+exit end
+test excl.clrex.0014
+code c85f7f5e d503345f c8187f4b
+seed c1ee60634bbfd256
+in x26=0x200a58
+out x24=0x1 x30=0x23b44fc666eb1abf
+exit end
+test excl.clrex.0015
+code c85f7dbb d5033d5f c8067dad
+seed 189d9e5c15c8153a
+in x13=0x200088
+out x6=0x1 x27=0xeb45a6d42ff66e05
+exit end
+test excl.clrex.0016
+code c85f7e9d d5033f5f c80d7e97
+seed e189069eef893dfb
+in x20=0x200578
+out x13=0x1 x29=0x62e89feab9745933
+exit end
+test excl.clrex.0017
+code c85f7ff1 d503305f c80a7ff5
+seed 5d70b083ec21cbe3
+in sp=0x200510
+out x10=0x1 x17=0x580547970453df37
+exit end
+test excl.clrex.0018
+code c85f7de3 d503305f c8057df6
+seed 7babe6ced115c725
+in x15=0x201068
+out x3=0x3823d6dcfdb6a9b9 x5=0x1
+exit end
+test excl.clrex.0019
+code c85f7e91 d503315f c8097e8f
+seed f8db4f4a46fcb96b
+in x20=0x200f20
+out x9=0x1 x17=0xa0bed3674157d5cc
+exit end
+test excl.clrex.0020
+code c85f7ed1 d5033d5f c8107ecc
+seed f25792ede0a7b304
+in x22=0x200de0
+out x16=0x1 x17=0x301a49277df95d75
+exit end
+test excl.clrex.0021
+code c85f7f12 d5033a5f c8147f0e
+seed 976b7cd3fa9344f9
+in x24=0x200088
+out x18=0x1de1a6ef5df202db x20=0x1
+exit end
+test excl.clrex.0022
+code c85f7fc5 d503315f c80a7fde
+seed 5368a31a8aeef965
+in x30=0x200f80
+out x5=0x3bb3982b1cb2aac2 x10=0x1
+exit end
+test excl.clrex.0023
+code c85f7c31 d5033d5f c8177c2e
+seed 0c1c51049d47385a
+in x1=0x201320
+out x17=0x570b3e292517b656 x23=0x1
+exit end
+test excl.clrex.0024
+code c85f7c6e d5033d5f c8047c7f
+seed e6a8b15daa816339
+in x3=0x200d40
+out x4=0x1 x14=0xac64b0357509c290
+exit end
+test excl.clrex.0025
+code c85f7c80 d5033d5f c8037c92
+seed 894b55e909758017
+in x4=0x200678
+out x0=0x7c407a5336fa11b9 x3=0x1
+exit end
+test excl.clrex.0026
+code c85f7e13 d5033a5f c81d7e02
+seed 011dc7cc79cb49c3
+in x16=0x200d18
+out x19=0xdf35b477c2df757e x29=0x1
+exit end
+test excl.clrex.0027
+code c85f7d21 d503395f c81e7d33
+seed 0f2e0d8dc727a6f8
+in x9=0x200328
+out x1=0x1c71764077c5fe8f x30=0x1
+exit end
+test excl.clrex.0028
+code c85f7ced d503395f c81c7cf6
+seed 169d7060b6df4bc4
+in x7=0x200140
+out x13=0xf58e32c2599d58ba x28=0x1
+exit end
+test excl.clrex.0029
+code c85f7d72 d503315f c8007d75
+seed f7ea91c292f93edf
+in x11=0x2000a0
+out x0=0x1 x18=0xcab2358bf54086b1
+exit end
+test excl.clrex.0030
+code c85f7c03 d503385f c8037c1e
+seed 5cc836b75d19dbb2
+in x0=0x2007f0
+out x3=0x1
+exit end
+test excl.clrex.0031
+code c85f7e65 d503325f c8047e76
+seed 90913ed9500088e4
+in x19=0x201d90
+out x4=0x1 x5=0x1b1dcae5804edc47
+exit end
+test excl.clrex.0032
+code c85f7c9b d5033a5f c8007c83
+seed 8ae31051239a84f6
+in x4=0x2008d8
+out x0=0x1 x27=0x88d8d26e8a620040
+exit end
+test excl.clrex.0033
+code c85f7e68 d5033d5f c8067e64
+seed 07e0a80d1055ba7f
+in x19=0x201c10
+out x6=0x1 x8=0xaf373d35517f9af3
+exit end
+test excl.clrex.0034
+code c85f7c80 d503335f c80c7c8b
+seed 9180b46d6c6e1a1d
+in x4=0x200360
+out x0=0x4f9d94dae2ff561b x12=0x1
+exit end
+test excl.clrex.0035
+code c85f7f13 d5033f5f c8097f12
+seed 5168050881cce557
+in x24=0x2017e0
+out x9=0x1 x19=0x4453da3450e836ac
+exit end
+test excl.clrex.0036
+code c85f7e60 d503355f c8027e69
+seed 29aea2c602c98b05
+in x19=0x201310
+out x0=0x67c46496ab92aa92 x2=0x1
+exit end
+test excl.clrex.0037
+code c85f7c96 d5033b5f c8137c91
+seed e2e74c2bebfc57dc
+in x4=0x200b78
+out x19=0x1 x22=0x927b051d99f45270
+exit end
+test excl.clrex.0038
+code c85f7c1d d503315f c8157c10
+seed de81403b195bef71
+in x0=0x201d80
+out x21=0x1 x29=0x8f22d9e19a1940ba
+exit end
+test excl.clrex.0039
+code c85f7ecb d503355f c80c7ed7
+seed ba019285f61662b4
+in x22=0x2002d0
+out x11=0x403233951ad6b711 x12=0x1
+exit end
+test excl.clrex.0040
+code c85f7d4c d503305f c81e7d5b
+seed f61e83a33662e062
+in x10=0x200c98
+out x12=0x31fc50c0110f55b6 x30=0x1
+exit end
+test excl.clrex.0041
+code c85f7d51 d5033d5f c8087d51
+seed 7af451f968417abe
+in x10=0x2012f8
+out x8=0x1 x17=0x9a2714341137692
+exit end
+test excl.clrex.0042
+code c85f7f14 d5033b5f c8197f15
+seed 5f0ecd3e7a48e97a
+in x24=0x201210
+out x20=0x1410b54fe74f7eed x25=0x1
+exit end
+test excl.clrex.0043
+code c85f7dcd d503375f c8177dcb
+seed 2731f1ac68aab8b0
+in x14=0x201b60
+out x13=0x62c3096662120abe x23=0x1
+exit end
+test excl.clrex.0044
+code c85f7d35 d5033b5f c81b7d28
+seed 9c1adfbfe83cfecd
+in x9=0x200d50
+out x21=0x3f59027a81d7aa8b x27=0x1
+exit end
+test excl.clrex.0045
+code c85f7d26 d503315f c8007d25
+seed bf6e129261050777
+in x9=0x2008a0
+out x0=0x1 x6=0xbb26ba7fd1f7ce00
+exit end
+test excl.clrex.0046
+code c85f7c76 d503345f c81c7c64
+seed 0954a2e379056e9f
+in x3=0x2006c8
+out x22=0x85711a90bd40cef8 x28=0x1
+exit end
+test excl.clrex.0047
+code c85f7f6b d503315f c8147f61
+seed b399a2ca9f8a98ae
+in x27=0x200910
+out x11=0xd1e605618af2af x20=0x1
+exit end
+test excl.clrex.0048
+code c85f7ebe d503325f c8177eb4
+seed d521a2d429dfe86e
+in x21=0x200418
+out x23=0x1 x30=0x228b160aed574ca8
+exit end
+test excl.clrex.0049
+code c85f7f3c d503315f c8167f2f
+seed 674483ec6c7a60dc
+in x25=0x2014a8
+out x22=0x1 x28=0x64dcc36225e72568
+exit end
