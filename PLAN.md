@@ -187,7 +187,7 @@ Licenses were verified in M0. Commits, caveats and details are in [`THIRD_PARTY.
 | [Firecracker](https://github.com/firecracker-microvm/firecracker) | Apache-2.0 | Minimal virtio-mmio device model, arm64 FDT, direct kernel boot |
 | [rust-vmm](https://github.com/rust-vmm) (`vm-fdt`, `virtio-queue`, `virtio-bindings`) | Apache-2.0 / BSD-3-Clause (virtio-queue requires both) | Crates usable directly from core |
 | [gem5](https://github.com/gem5/gem5) | BSD-3-Clause | GICv2/GICv3 and generic timer models |
-| [Berkeley SoftFloat 3 / TestFloat 3](http://www.jhauser.us/arithmetic/) | BSD-3-Clause | Software FP slow path (rounding modes, FMA). FP conformance vectors |
+| [Berkeley SoftFloat 3 / TestFloat 3](http://www.jhauser.us/arithmetic/) | BSD-3-Clause | FP conformance vectors (`scripts/testfloat.sh`). The FP slow path itself is our own (M2, §2) |
 | [Capstone](https://github.com/capstone-engine/capstone) | BSD-3-Clause | Disassembly for traces and debugging, and cross-checking the decoder |
 | [Sail ARM model](https://github.com/rems-project/sail-arm) | BSD-3-Clause-Clear | Executable ISA model derived from Arm's ASL. Oracle for corner cases |
 | Arm A64 machine-readable spec (AARCHMRS JSON) | "BSD license" release, but it defers to an in-package notice: read that before use | Decoder generation and encoding coverage checks |
@@ -213,7 +213,7 @@ Guest images you distribute (kernel, BusyBox, and so on) carry their own GPL obl
 Every milestone ends with: all test layers green, a recorded benchmark baseline in Chromium, and the counters reviewed.
 
 ### M0 — Foundations and feasibility spike
-**Status:** done 2026-09-25 (see `bench/spike/REPORT.md`). The M4 Mac Linux VM is up (§4.2). Still pending: a spike re-run on Chromium arm64.
+**Status:** done 2026-09-25 (see `bench/spike/REPORT.md`). The M4 Mac Linux VM is up (§4.2). Still pending: a spike re-run on Chromium arm64 (tracked in M9).
 
 - Repo, license, `THIRD_PARTY.md`, Rust core building to both native and wasm (pinned nightly toolchain), TS host skeleton, script-based CI, Linux VM on the M4 Mac with remote access.
 - Playwright harness serving with COOP/COEP headers, results JSON schema, Node variant.
@@ -291,6 +291,12 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
 - EL0/EL1, the exception model, system registers (ID registers advertising exactly what's implemented), MMU walker + software TLB, TLBI, generic timer, GICv2, PL011, PSCI, DTB generation, `Image` boot protocol.
 - kvm-unit-tests. Deterministic mode.
 - Carry-overs from M1: SP alignment checking (`SCTLR_EL1.SA0`, which Linux sets; the M1 corpus keeps SP 16-byte aligned), `DCZID_EL0.BS = 4` to match the 64-byte `DC ZVA`, faults for EL0 cache maintenance to unmapped addresses, and page-crossing accesses in `Mem::host`.
+- Carry-overs from M2:
+  - FP/AdvSIMD access traps from `CPACR_EL1.FPEN`. They apply to FP/SIMD loads and stores and to FPCR/FPSR accesses too.
+  - The ID registers advertise exactly what M2 implements. `ID_AA64PFR0_EL1.FP` and `.AdvSIMD` = 0 (present, no FP16). `ID_AA64ISAR0/1_EL1` report no AES/PMULL/SHA (until M6.5), RDM, DotProd, FHM, FCMA, JSCVT, FRINTTS, BF16 or I8MM. `ID_AA64MMFR*`/`ISAR*` fields report no AFP. The hwcaps follow from these.
+  - EL0-accessible system registers: `TPIDR_EL0`, `TPIDRRO_EL0`, `CTR_EL0` (`DIC=0`, §2), `DCZID_EL0`, `CNTVCT_EL0`, `CNTFRQ_EL0`. Linux emulates EL0 reads of ID registers.
+  - Once the MRS/MSR/SYS space is implemented, it joins the decoder sweep comparison. `core/fuzz/src/check.rs` still skips it.
+  - `interp_run_exit` (ABI 3) reports only EL0-style exits. It grows exception classes for the host runners, with an ABI bump.
 - **Exit:** Buildroot kernel boots to a shell in native and Chromium test runners. First **boot-time baseline** and PC-sampling profile.
 
 ### M4 — virtio devices and real distros
@@ -332,6 +338,18 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
 - Snapshots (save/restore CPU + devices + compressed RAM) for instant "boot".
 - Stable embedding API (VM config → DTB/devices), networking backend API for your P2P network, persistence UX, docs.
 - Firefox and Safari compatibility pass (Chromium remains the performance target).
+
+### M9 — Loose ends (unscheduled)
+Open items that no milestone owns yet. Pick them up when a milestone touches the area or a measurement says they matter; move an item into that milestone when it's scheduled.
+
+- **M0 spike re-run on Chromium arm64** (the M4), to confirm the JIT design numbers in `bench/spike/REPORT.md` on the second host.
+- **Interpreter speed** (`bench/interp/REPORT.md`). There's no decoded-block cache yet: each instruction is fetched through `Mem::host` and decoded again (`ponytail:` in `interp::step`). FP runs at about a sixth of the integer rate. `FMLA`/`FMADD` always take the exact software FMA, and vector FP goes lane by lane through an `Fpu` context and `u128` lanes. None of this matters while the interpreter is only the JIT's reference and fallback.
+- **V8 tiering on FP-heavy code.** On the FP/NEON guest, TurboFan-only beats the default tiering by 21% (x86_64) and 32% (M4); the integer guest shows the opposite. Understand it before the core's FP helpers become JIT slow paths (M5).
+- **`Mem::rmw`** is a generic CAS loop (`ponytail:` in `core/src/mem.rs`). Map add/and/or/xor/xchg to single wasm `atomic.rmw` ops if a profile shows LSE atomics.
+- **Extensions the M4 has and we leave unadvertised**, in case real workloads benefit: FP16 (scalar and AdvSIMD), DotProd, RDM, FHM, FCMA, JSCVT (JS engines use `FJCVTZS`), FRINTTS, BF16, I8MM, LSE2, RCpc, FlagM, SB, DIT. Each needs the handlers, golden-corpus groups (the generator already knows how to avoid them), the ID register fields and a decoder-sweep update.
+- **Arm AARCHMRS JSON:** its in-package proprietary notice is still unread (`THIRD_PARTY.md`). Read it only if we want to generate decoder tables or coverage checks from it.
+- **Corpus depth:** some FP flag paths are thin (only 8 `fp_scalar` tests raise Divide-by-Zero). Add biased forms when touching FP again.
+- **`core/fuzz` hygiene:** `Mismatch::key` is dead code in the libFuzzer target build (a warning, not in CI).
 
 ## 8. Risks to watch
 
