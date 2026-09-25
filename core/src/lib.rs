@@ -11,7 +11,7 @@ pub mod mem;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 0;
+pub const ABI_VERSION: u32 = 1;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -38,6 +38,35 @@ pub unsafe extern "C" fn sum_u64(ptr: *const u64, len: usize) -> u64 {
 pub unsafe extern "C" fn atomic_inc(ptr: *const AtomicU32) -> u32 {
     // SAFETY: guaranteed by the caller.
     unsafe { &*ptr }.fetch_add(1, Ordering::SeqCst)
+}
+
+/// Allocates a zeroed vCPU. The host reads and writes its registers through the
+/// returned pointer (`cpu::Cpu` is `repr(C)`: X0–X30 and SP at 0, PC at 256, NZCV at 264).
+#[unsafe(no_mangle)]
+pub extern "C" fn vcpu_new() -> *mut cpu::Cpu {
+    Box::into_raw(Box::default())
+}
+
+/// Allocates the guest-memory handle for RAM at `base..base + size` in linear memory.
+///
+/// # Safety
+/// As for [`mem::Mem::new`]: the range stays valid, is only guest RAM and is 16-byte aligned.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn mem_new(base: *mut u8, size: u64) -> *mut mem::Mem {
+    // SAFETY: guaranteed by the caller.
+    Box::into_raw(Box::new(unsafe { mem::Mem::new(base, size) }))
+}
+
+/// Interprets up to `n` instructions and returns how many retired. It stops early
+/// at an exit (exception, fault, unimplemented instruction), with the PC on that instruction.
+///
+/// # Safety
+/// `cpu` and `mem` come from [`vcpu_new`] and [`mem_new`]; nothing else uses `cpu` meanwhile.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn interp_run(cpu: *mut cpu::Cpu, mem: *const mem::Mem, n: u64) -> u64 {
+    // SAFETY: guaranteed by the caller.
+    let (cpu, mem) = unsafe { (&mut *cpu, &*mem) };
+    interp::run(cpu, mem, n).0
 }
 
 #[cfg(test)]
