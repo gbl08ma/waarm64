@@ -1,0 +1,55 @@
+# Third-party code and references
+
+## Code in this repository derived from other projects
+
+None yet. When porting or copying code, add a row here and keep the original
+copyright/license header in the file.
+
+| Our file(s) | Source project, file, commit | License |
+|---|---|---|
+
+## Development dependencies (not distributed)
+
+| Package | Version | License |
+|---|---|---|
+| playwright-core | 1.63.0 | Apache-2.0 |
+| typescript | 7.0.2 | Apache-2.0 |
+| @types/node | 26.6.2 | MIT |
+
+## Reference projects: verified licenses
+
+Checked on 2026-09-25 against the upstream default branch at the commit listed.
+Re-check at the commit you actually pin before copying anything.
+
+**Permissive: code may be ported with attribution.**
+
+| Project | Commit / version | License | Notes |
+|---|---|---|---|
+| [v86](https://github.com/copy/v86) | `5f9a90f2be01` | BSD-2-Clause | |
+| [TinyEMU](https://bellard.org/tinyemu/) | 2019-12-21 tarball | MIT (per-file headers, `MIT-LICENSE.txt`) | `virtio.c`, `fs*.c` and `riscv_*` are MIT. `slirp/` has its own headers. `aes.c`, `sha256.c`, `fbuf.h`, `ps2.h` lack the MIT header, so check them individually |
+| [dynarmic](https://github.com/lioncash/dynarmic) | `a41c380246d3` | 0BSD | Repository **archived** 2024-03. The former upstream (merryhime/dynarmic) is gone. Fine as a read-only reference |
+| [crosvm](https://github.com/google/crosvm) | `501fcaaa701d` | BSD-3-Clause | |
+| [Firecracker](https://github.com/firecracker-microvm/firecracker) | `8ff4940e6a72` | Apache-2.0 | Needs NOTICE/attribution if code is copied |
+| [rust-vmm/vm-fdt](https://github.com/rust-vmm/vm-fdt) | crate 0.3.0 | Apache-2.0 OR BSD-3-Clause | |
+| [rust-vmm/vm-virtio](https://github.com/rust-vmm/vm-virtio) (`virtio-queue`, `virtio-bindings`) | virtio-queue 0.18.0, virtio-bindings 0.2.7 | virtio-queue: **Apache-2.0 AND BSD-3-Clause**; virtio-bindings: BSD-3-Clause OR Apache-2.0 | Repository **archived** 2026-09-11. Crates are still published |
+| [gem5](https://github.com/gem5/gem5) | `f5c5a6e390f5` | BSD-3-Clause | |
+| [Berkeley SoftFloat 3e](https://github.com/ucb-bar/berkeley-softfloat-3) / [TestFloat 3e](https://github.com/ucb-bar/berkeley-testfloat-3) | `a0c6494cdc11` / `a9c849f1b0eb` | BSD-3-Clause (text in `COPYING.txt`) | |
+| [Capstone](https://github.com/capstone-engine/capstone) | `9791930a895b` (`next`) | BSD-3-Clause (`LICENSES/`) | Some parts are LLVM-derived under their own license. We use it only as a tool |
+| [Sail ARM model](https://github.com/rems-project/sail-arm) | `1bf2e5574ba9` | BSD-3-Clause-Clear (per model directory) | The Clear variant explicitly grants no patent rights |
+| Arm A64 machine-readable spec (AARCHMRS JSON) | 2024-12 release | Arm publishes a "BSD license JSON" release, but its release notes defer to the Proprietary Notice inside the package | **Read the notice in the downloaded package before generating code from it.** Until then, dynarmic's 0BSD decoder table is the safe source |
+| [Playwright](https://github.com/microsoft/playwright) | 1.63.0 | Apache-2.0 | |
+
+**Copyleft or other: use as oracle, guest workload or behavioral reference only. Never copy code.**
+
+| Project | Commit | License |
+|---|---|---|
+| [QEMU](https://gitlab.com/qemu-project/qemu) | `a97f90fcf802` | GPL-2.0 overall, per-file licenses (TCG mostly BSD/MIT) |
+| [Unicorn](https://github.com/unicorn-engine/unicorn) | `7c5db94191de` | GPL-2.0 |
+| [kvm-unit-tests](https://gitlab.com/kvm-unit-tests/kvm-unit-tests) | master, 2026-09-25 | GPL-2.0 (many files LGPL-2) |
+| [LTP](https://github.com/linux-test-project/ltp) | `f5bf852334d5` | GPL-2.0 |
+| [herdtools7](https://github.com/herd/herdtools7) | `ca7d66e90bf3` | CeCILL-B (`asllib/` is BSD-3-Clause, © Arm) |
+| [risu](https://gitlab.com/pm215/risu) | `eed224965e7b` | EPL-1.0 |
+| [Buildroot](https://gitlab.com/buildroot.org/buildroot) | master, 2026-09-25 | GPL-2.0-or-later |
+
+Guest images we build and distribute (kernel, BusyBox, and so on) carry their own
+licenses and obligations. Publish the Buildroot configs and point to the sources.

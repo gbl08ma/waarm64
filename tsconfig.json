@@ -1,0 +1,17 @@
+{
+  // Type-check only. Node runs .ts directly and tools/serve.ts strips types for
+  // the browser, so only erasable syntax is allowed (no enums, namespaces, etc).
+  "compilerOptions": {
+    "target": "es2024",
+    "module": "nodenext",
+    "lib": ["es2024", "dom", "webworker"],
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true
+  },
+  "include": ["tools", "bench", "web", "tests"]
+}

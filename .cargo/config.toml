@@ -1,0 +1,10 @@
+# Shared, imported memory so JIT-generated modules and other vCPU workers can use it.
+# The memory layout is provisional until the M0.5 decision (see PLAN.md).
+[target.wasm32-unknown-unknown]
+rustflags = [
+  "-C", "target-feature=+bulk-memory,+mutable-globals,+simd128",
+  "-Z", "llvm-target-feature=+atomics",
+  "-C", "link-arg=--import-memory",
+  "-C", "link-arg=--shared-memory",
+  "-C", "link-arg=--max-memory=4294967296",
+]

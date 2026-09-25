@@ -1,0 +1,7 @@
+# Nightly is required for wasm threads: std must be rebuilt with +atomics (-Zbuild-std).
+# Bump deliberately; benchmark results record the toolchain in use.
+[toolchain]
+channel = "nightly-2026-09-24"
+components = ["rust-src", "rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"
