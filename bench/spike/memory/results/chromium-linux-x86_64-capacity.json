@@ -1,0 +1,1045 @@
+{
+ "schema": 1,
+ "kind": "capacity",
+ "date": "2026-09-25T01:20:56.502Z",
+ "commit": "1b695b476a63",
+ "dirty": true,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "Chromium 152.0.7977.75 Arch Linux"
+ },
+ "capGiB": 24,
+ "results": {
+  "limits": {
+   "wasm32_unshared": {
+    "maxInitial": {
+     "pages": 65536,
+     "bytes": 4294967296
+    },
+    "overMaximumJs": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): Property 'maximum': value 65537 is above the upper bound 65536"
+    },
+    "overInitialJs": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): Property 'initial': value 65537 is above the upper bound 65536"
+    },
+    "grewToBytes": 4294967296,
+    "growPastMaximum": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory.grow(): Maximum memory size exceeded"
+    },
+    "moduleDeclared": [
+     {
+      "limits": {
+       "min": 1,
+       "max": 65536,
+       "shared": false
+      },
+      "validates": true,
+      "instantiates": true,
+      "bytes": 65536
+     },
+     {
+      "limits": {
+       "min": 1,
+       "max": 65537,
+       "shared": false
+      },
+      "validates": false,
+      "instantiates": false,
+      "error": {
+       "name": "CompileError",
+       "message": "WebAssembly.Module(): maximum memory size (65537 pages) is larger than implementation limit (65536 pages) @+13"
+      }
+     },
+     {
+      "limits": {
+       "min": 65536,
+       "max": 65536,
+       "shared": false
+      },
+      "validates": true,
+      "instantiates": true,
+      "bytes": 4294967296
+     }
+    ]
+   },
+   "wasm32_shared": {
+    "maxInitial": {
+     "pages": 65536,
+     "bytes": 4294967296
+    },
+    "overMaximumJs": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): Property 'maximum': value 65537 is above the upper bound 65536"
+    },
+    "overInitialJs": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): Property 'initial': value 65537 is above the upper bound 65536"
+    },
+    "grewToBytes": 4294967296,
+    "growPastMaximum": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory.grow(): Maximum memory size exceeded"
+    },
+    "moduleDeclared": [
+     {
+      "limits": {
+       "min": 1,
+       "max": 65536,
+       "shared": true
+      },
+      "validates": true,
+      "instantiates": true,
+      "bytes": 65536
+     },
+     {
+      "limits": {
+       "min": 1,
+       "max": 65537,
+       "shared": true
+      },
+      "validates": false,
+      "instantiates": false,
+      "error": {
+       "name": "CompileError",
+       "message": "WebAssembly.Module(): maximum memory size (65537 pages) is larger than implementation limit (65536 pages) @+13"
+      }
+     },
+     {
+      "limits": {
+       "min": 65536,
+       "max": 65536,
+       "shared": true
+      },
+      "validates": true,
+      "instantiates": true,
+      "bytes": 4294967296
+     }
+    ]
+   },
+   "memory64_unshared": {
+    "maxInitial": {
+     "pages": 262144,
+     "bytes": 17179869184
+    },
+    "overMaximumJs": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): Property 'maximum': value 262145 is above the upper bound 262144"
+    },
+    "overInitialJs": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): Property 'initial': value 262145 is above the upper bound 262144"
+    },
+    "grewToBytes": 17179869184,
+    "growPastMaximum": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory.grow(): Maximum memory size exceeded"
+    },
+    "moduleDeclared": [
+     {
+      "limits": {
+       "min": 1,
+       "max": 262144,
+       "shared": false,
+       "memory64": true
+      },
+      "validates": true,
+      "instantiates": true,
+      "bytes": 65536
+     },
+     {
+      "limits": {
+       "min": 1,
+       "max": 262145,
+       "shared": false,
+       "memory64": true
+      },
+      "validates": false,
+      "instantiates": false,
+      "error": {
+       "name": "CompileError",
+       "message": "WebAssembly.Module(): maximum memory size (262145 pages) is larger than implementation limit (262144 pages) @+13"
+      }
+     },
+     {
+      "limits": {
+       "min": 1,
+       "max": 281474976710656,
+       "shared": false,
+       "memory64": true
+      },
+      "validates": false,
+      "instantiates": false,
+      "error": {
+       "name": "CompileError",
+       "message": "WebAssembly.Module(): maximum memory size (281474976710656 pages) is larger than implementation limit (262144 pages) @+13"
+      }
+     },
+     {
+      "limits": {
+       "min": 262144,
+       "max": 262144,
+       "shared": false,
+       "memory64": true
+      },
+      "validates": true,
+      "instantiates": true,
+      "bytes": 17179869184
+     }
+    ]
+   },
+   "memory64_shared": {
+    "maxInitial": {
+     "pages": 262144,
+     "bytes": 17179869184
+    },
+    "overMaximumJs": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): Property 'maximum': value 262145 is above the upper bound 262144"
+    },
+    "overInitialJs": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): Property 'initial': value 262145 is above the upper bound 262144"
+    },
+    "grewToBytes": 17179869184,
+    "growPastMaximum": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory.grow(): Maximum memory size exceeded"
+    },
+    "moduleDeclared": [
+     {
+      "limits": {
+       "min": 1,
+       "max": 262144,
+       "shared": true,
+       "memory64": true
+      },
+      "validates": true,
+      "instantiates": true,
+      "bytes": 65536
+     },
+     {
+      "limits": {
+       "min": 1,
+       "max": 262145,
+       "shared": true,
+       "memory64": true
+      },
+      "validates": false,
+      "instantiates": false,
+      "error": {
+       "name": "CompileError",
+       "message": "WebAssembly.Module(): maximum memory size (262145 pages) is larger than implementation limit (262144 pages) @+13"
+      }
+     },
+     {
+      "limits": {
+       "min": 1,
+       "max": 281474976710656,
+       "shared": true,
+       "memory64": true
+      },
+      "validates": false,
+      "instantiates": false,
+      "error": {
+       "name": "CompileError",
+       "message": "WebAssembly.Module(): maximum memory size (281474976710656 pages) is larger than implementation limit (262144 pages) @+13"
+      }
+     },
+     {
+      "limits": {
+       "min": 262144,
+       "max": 262144,
+       "shared": true,
+       "memory64": true
+      },
+      "validates": true,
+      "instantiates": true,
+      "bytes": 17179869184
+     }
+    ]
+   },
+   "psAfter": {
+    "pid": 2398542,
+    "rssMiB": 190,
+    "vszGiB": 1448.3,
+    "renderers": 3
+   }
+  },
+  "lazy": [
+   {
+    "what": "baseline",
+    "pid": 2398696,
+    "rssMiB": 132,
+    "vszGiB": 1448.3,
+    "renderers": 3
+   },
+   {
+    "what": "alloc shared wasm32 4 GiB (untouched)",
+    "result": {
+     "id": 0
+    },
+    "pid": 2398696,
+    "rssMiB": 137,
+    "vszGiB": 1448.3,
+    "renderers": 3
+   },
+   {
+    "what": "touched 256 MiB of it",
+    "pid": 2398705,
+    "rssMiB": 381,
+    "vszGiB": 1448.3,
+    "renderers": 3
+   },
+   {
+    "what": "touched 1 GiB of it",
+    "pid": 2398705,
+    "rssMiB": 1149,
+    "vszGiB": 1448.3,
+    "renderers": 3
+   },
+   {
+    "what": "alloc shared memory64 16 GiB (untouched)",
+    "result": {
+     "id": 1
+    },
+    "pid": 2398705,
+    "rssMiB": 1149,
+    "vszGiB": 1448.3,
+    "renderers": 3
+   },
+   {
+    "what": "touched 256 MiB at 8 GiB offset of the memory64",
+    "pid": 2398705,
+    "rssMiB": 1407,
+    "vszGiB": 1448.3,
+    "renderers": 3
+   },
+   {
+    "what": "dropped all + gc()",
+    "pid": 2398696,
+    "rssMiB": 203,
+    "vszGiB": 1448.3,
+    "renderers": 3
+   },
+   {
+    "what": "worker: alloc unshared wasm32 1 GiB, touch 512 MiB",
+    "result": {
+     "allocated": 1
+    },
+    "pid": 2398705,
+    "rssMiB": 642,
+    "vszGiB": 1450.2,
+    "renderers": 3
+   }
+  ],
+  "total": {
+   "mainThread": [
+    {
+     "memories": 1,
+     "allocatedGiB": 4,
+     "result": {
+      "id": 0
+     },
+     "pid": 2398875,
+     "rssMiB": 189,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "memories": 2,
+     "allocatedGiB": 8,
+     "result": {
+      "id": 1
+     },
+     "pid": 2398875,
+     "rssMiB": 253,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "memories": 3,
+     "allocatedGiB": 12,
+     "result": {
+      "id": 2
+     },
+     "pid": 2398875,
+     "rssMiB": 317,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "memories": 4,
+     "allocatedGiB": 16,
+     "result": {
+      "id": 3
+     },
+     "pid": 2398875,
+     "rssMiB": 381,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "memories": 5,
+     "allocatedGiB": 20,
+     "result": {
+      "id": 4
+     },
+     "pid": 2398875,
+     "rssMiB": 445,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "memories": 6,
+     "allocatedGiB": 24,
+     "result": {
+      "id": 5
+     },
+     "pid": 2398875,
+     "rssMiB": 509,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    }
+   ],
+   "withWorkers": {
+    "note": "2 x 4 GiB in the page + 1 x 4 GiB in each of 4 workers",
+    "main": {
+     "allocated": 2
+    },
+    "workers": [
+     {
+      "allocated": 1
+     },
+     {
+      "allocated": 1
+     },
+     {
+      "allocated": 1
+     },
+     {
+      "allocated": 1
+     }
+    ],
+    "pid": 2399034,
+    "rssMiB": 395,
+    "vszGiB": 1455.9,
+    "renderers": 3
+   }
+  },
+  "reserve": {
+   "wasm32_shared_max4GiB": {
+    "desc": {
+     "initial": 1,
+     "maximum": 65536,
+     "shared": true
+    },
+    "count": 124,
+    "error": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): could not allocate memory"
+    },
+    "reachedLimit": false,
+    "points": [
+     {
+      "count": 8,
+      "pid": 2399188,
+      "rssMiB": 139,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 16,
+      "pid": 2399188,
+      "rssMiB": 143,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 24,
+      "pid": 2399188,
+      "rssMiB": 149,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 32,
+      "pid": 2399188,
+      "rssMiB": 166,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 40,
+      "pid": 2399188,
+      "rssMiB": 172,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 48,
+      "pid": 2399188,
+      "rssMiB": 174,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 56,
+      "pid": 2399188,
+      "rssMiB": 177,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 64,
+      "pid": 2399188,
+      "rssMiB": 182,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 72,
+      "pid": 2399188,
+      "rssMiB": 187,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 80,
+      "pid": 2399188,
+      "rssMiB": 194,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 88,
+      "pid": 2399188,
+      "rssMiB": 199,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 96,
+      "pid": 2399188,
+      "rssMiB": 204,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 104,
+      "pid": 2399188,
+      "rssMiB": 209,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 112,
+      "pid": 2399188,
+      "rssMiB": 215,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 120,
+      "pid": 2399188,
+      "rssMiB": 221,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 124,
+      "pid": 2399188,
+      "rssMiB": 223,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     }
+    ]
+   },
+   "wasm32_unshared": {
+    "desc": {
+     "initial": 1
+    },
+    "count": 125,
+    "error": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): could not allocate memory"
+    },
+    "reachedLimit": false,
+    "points": [
+     {
+      "count": 8,
+      "pid": 2399383,
+      "rssMiB": 137,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 16,
+      "pid": 2399383,
+      "rssMiB": 142,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 24,
+      "pid": 2399383,
+      "rssMiB": 145,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 32,
+      "pid": 2399383,
+      "rssMiB": 154,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 40,
+      "pid": 2399383,
+      "rssMiB": 166,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 48,
+      "pid": 2399383,
+      "rssMiB": 170,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 56,
+      "pid": 2399383,
+      "rssMiB": 177,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 64,
+      "pid": 2399383,
+      "rssMiB": 181,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 72,
+      "pid": 2399383,
+      "rssMiB": 186,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 80,
+      "pid": 2399383,
+      "rssMiB": 192,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 88,
+      "pid": 2399383,
+      "rssMiB": 198,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 96,
+      "pid": 2399383,
+      "rssMiB": 204,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 104,
+      "pid": 2399383,
+      "rssMiB": 209,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 112,
+      "pid": 2399383,
+      "rssMiB": 215,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 120,
+      "pid": 2399383,
+      "rssMiB": 220,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 125,
+      "pid": 2399383,
+      "rssMiB": 224,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     }
+    ]
+   },
+   "memory64_shared_max16GiB": {
+    "desc": {
+     "i64": true,
+     "initial": 1,
+     "maximum": 262144,
+     "shared": true
+    },
+    "count": 62,
+    "error": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): could not allocate memory"
+    },
+    "reachedLimit": false,
+    "points": [
+     {
+      "count": 8,
+      "pid": 2399574,
+      "rssMiB": 140,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 16,
+      "pid": 2399574,
+      "rssMiB": 144,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 24,
+      "pid": 2399574,
+      "rssMiB": 151,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 32,
+      "pid": 2399574,
+      "rssMiB": 168,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 40,
+      "pid": 2399574,
+      "rssMiB": 169,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 48,
+      "pid": 2399574,
+      "rssMiB": 171,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 56,
+      "pid": 2399574,
+      "rssMiB": 175,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 62,
+      "pid": 2399574,
+      "rssMiB": 183,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     }
+    ]
+   },
+   "memory64_unshared": {
+    "desc": {
+     "i64": true,
+     "initial": 1
+    },
+    "count": 62,
+    "error": {
+     "name": "RangeError",
+     "message": "WebAssembly.Memory(): could not allocate memory"
+    },
+    "reachedLimit": false,
+    "points": [
+     {
+      "count": 8,
+      "pid": 2399742,
+      "rssMiB": 141,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 16,
+      "pid": 2399742,
+      "rssMiB": 144,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 24,
+      "pid": 2399742,
+      "rssMiB": 150,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 32,
+      "pid": 2399742,
+      "rssMiB": 152,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 40,
+      "pid": 2399742,
+      "rssMiB": 154,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 48,
+      "pid": 2399742,
+      "rssMiB": 169,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 56,
+      "pid": 2399742,
+      "rssMiB": 173,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     },
+     {
+      "count": 62,
+      "pid": 2399742,
+      "rssMiB": 181,
+      "vszGiB": 1448.3,
+      "renderers": 3
+     }
+    ]
+   },
+   "wasm32_shared_page_plus_4_workers": {
+    "desc": {
+     "initial": 1,
+     "maximum": 65536,
+     "shared": true
+    },
+    "perThread": [
+     {
+      "allocated": 124,
+      "error": {
+       "name": "RangeError",
+       "message": "WebAssembly.Memory(): could not allocate memory"
+      }
+     },
+     {
+      "allocated": 0,
+      "error": {
+       "name": "RangeError",
+       "message": "WebAssembly.Memory(): could not allocate memory"
+      }
+     },
+     {
+      "allocated": 0,
+      "error": {
+       "name": "RangeError",
+       "message": "WebAssembly.Memory(): could not allocate memory"
+      }
+     },
+     {
+      "allocated": 0,
+      "error": {
+       "name": "RangeError",
+       "message": "WebAssembly.Memory(): could not allocate memory"
+      }
+     },
+     {
+      "allocated": 0,
+      "error": {
+       "name": "RangeError",
+       "message": "WebAssembly.Memory(): could not allocate memory"
+      }
+     }
+    ],
+    "total": 124,
+    "pid": 2399911,
+    "rssMiB": 145,
+    "vszGiB": 1448.3,
+    "renderers": 3
+   }
+  },
+  "oom": {
+   "limit": "MemoryMax=2G, MemorySwapMax=0, OOMPolicy=continue (whole browser in one cgroup)",
+   "touchedMiBBeforeFailure": 1792,
+   "failure": {
+    "evaluateError": "page.evaluate: Target crashed ",
+    "pageCrashEvent": true
+   },
+   "browserSurvived": true,
+   "steps": [
+    {
+     "what": "alloc shared memory64 8 GiB under a 2 GiB limit",
+     "result": {
+      "id": 0
+     },
+     "pid": 2400060,
+     "rssMiB": 142,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "alloc shared wasm32 4 GiB",
+     "result": {
+      "id": 1
+     },
+     "pid": 2400060,
+     "rssMiB": 144,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 128 MiB",
+     "pid": 2400069,
+     "rssMiB": 255,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 256 MiB",
+     "pid": 2400069,
+     "rssMiB": 383,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 384 MiB",
+     "pid": 2400069,
+     "rssMiB": 511,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 512 MiB",
+     "pid": 2400069,
+     "rssMiB": 639,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 640 MiB",
+     "pid": 2400069,
+     "rssMiB": 767,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 768 MiB",
+     "pid": 2400069,
+     "rssMiB": 895,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 896 MiB",
+     "pid": 2400069,
+     "rssMiB": 1023,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 1024 MiB",
+     "pid": 2400069,
+     "rssMiB": 1151,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 1152 MiB",
+     "pid": 2400069,
+     "rssMiB": 1279,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 1280 MiB",
+     "pid": 2400069,
+     "rssMiB": 1408,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 1408 MiB",
+     "pid": 2400069,
+     "rssMiB": 1536,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 1536 MiB",
+     "pid": 2400069,
+     "rssMiB": 1664,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 1664 MiB",
+     "pid": 2400069,
+     "rssMiB": 1793,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    },
+    {
+     "what": "touched 1792 MiB",
+     "pid": 2400069,
+     "rssMiB": 1921,
+     "vszGiB": 1448.3,
+     "renderers": 3
+    }
+   ]
+  },
+  "features": {
+   "sharedMemory64": {
+    "ok": true,
+    "bufferType": "SharedArrayBuffer",
+    "bytes": 4296015872
+   },
+   "jsViewsAbove4GiB": {
+    "ok": true,
+    "uint8Length": 4296015872,
+    "atomicsAddAbove4GiB": true
+   },
+   "atomicsModuleValidates": true,
+   "atomicRmwNonZeroMemory": {
+    "expected": 10000000,
+    "wasm32Memory1": 10000000,
+    "memory64Memory2Above4GiB": 10000000,
+    "ok": true
+   },
+   "wait_m1": {
+    "woken": 1,
+    "waitResult": 0,
+    "ok": true
+   },
+   "wait_m2": {
+    "woken": 1,
+    "waitResult": 0,
+    "ok": true
+   },
+   "memoryCopyMixedIndexTypes": {
+    "ok": true
+   }
+  }
+ }
+}

@@ -1,6 +1,6 @@
 # Benchmarks
 
-`node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only] [--page <path>] [--out <file>]`
+`node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks] [--page <path>] [--out <file>]`
 (also available as `npm run bench -- …`)
 
 This serves the repo with COOP/COEP headers, opens `--page` (default: the M0 spike) in
@@ -22,3 +22,6 @@ A benchmark page posts `{ results: [{ name, unit, params?, samples }], crossOrig
 or `{ error }`. The harness refuses results that aren't cross-origin isolated.
 
 Commit only results that back a written report (for example `bench/spike/results/`).
+
+The M0.5 memory suite has its own drivers under `spike/memory/`, and `node bench/spike/memory/run-all.ts` runs all of them
+(capacity, cost under every config, machine code). See `spike/memory/REPORT.md`.

@@ -8,4 +8,5 @@ worker.onmessage = (e: MessageEvent) => {
   else Object.assign(window, { benchResult: e.data });
 };
 worker.onerror = (e) => Object.assign(window, { benchResult: { error: e.message } });
-worker.postMessage({ quick: params.has('quick'), only: params.get('only') });
+// <body data-suite> picks the suite module (relative to worker.ts); default: the M0 spike.
+worker.postMessage({ quick: params.has('quick'), only: params.get('only'), suite: document.body.dataset.suite ?? './benchmarks.ts' });

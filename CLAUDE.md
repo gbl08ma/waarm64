@@ -10,7 +10,8 @@ and runs unmodified arm64 Linux. Chromium is the primary target.
 ## Status
 
 - M0 (foundations + spike): done. Still pending: re-run the spike on Chromium arm64 (the M4 Mac, not set up yet).
-- **Next: M0.5**, the memory architecture decision gate. Don't write memory-layout-dependent code (TLB entry format, guest RAM placement, core memory layout) until its `REPORT.md` exists.
+- M0.5 (memory architecture): done on x86_64, **layout A**: one shared wasm32 memory with core state then guest RAM, and a wasm32 Rust core. TLB tag bits 3–11 are reserved for a memory index. See `bench/spike/memory/REPORT.md`. Still pending: the arm64 run, `node bench/spike/memory/run-all.ts`.
+- **Next: M1**, the A64 integer interpreter and golden corpus.
 
 ## Commands
 
@@ -19,7 +20,8 @@ scripts/ci.sh                  # everything CI runs: fmt, clippy, cargo test, wa
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
 cargo test                     # native core tests
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium e2e; needs the wasm build)
-npm run bench -- [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only]
+npm run bench -- [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks]
+node bench/spike/memory/run-all.ts # M0.5 memory suite (capacity, cost, machine code) -> bench/spike/memory/results/
 node bench/spike/node.ts --quick   # spike in Node, fast iteration only
 npm run serve                  # dev server with COOP/COEP on :8080 (PORT env overrides)
 ```

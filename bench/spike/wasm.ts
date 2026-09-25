@@ -60,6 +60,12 @@ export const op = {
   i64Add: [0x7c], i64Sub: [0x7d], i64Mul: [0x7e], i64And: [0x83], i64Or: [0x84], i64Xor: [0x85],
   i64Shl: [0x86], i64ShrU: [0x88], i64Rotl: [0x89],
   i32WrapI64: [0xa7], i64ExtendI32U: [0xad],
+  brTable: (targets: number[], def: number) => [0x0e, ...uleb(targets.length), ...targets.flatMap((t) => uleb(t)), ...uleb(def)],
+  memoryCopy: (dst = 0, src = 0) => [0xfc, ...uleb(10), ...uleb(dst), ...uleb(src)],
+  i64AtomicRmwAdd: (off: number | bigint = 0, mem = 0) => [0xfe, ...uleb(0x1f), ...memarg(3, off, mem)],
+  i32AtomicRmwAdd: (off: number | bigint = 0, mem = 0) => [0xfe, ...uleb(0x1e), ...memarg(2, off, mem)],
+  atomicNotify: (off: number | bigint = 0, mem = 0) => [0xfe, ...uleb(0x00), ...memarg(2, off, mem)],
+  atomicWait32: (off: number | bigint = 0, mem = 0) => [0xfe, ...uleb(0x01), ...memarg(2, off, mem)],
   v128Load: (off = 0) => [0xfd, ...uleb(0), ...memarg(4, off, 0)],
   v128Store: (off = 0) => [0xfd, ...uleb(11), ...memarg(4, off, 0)],
   i32x4Add: [0xfd, ...uleb(174)],
@@ -82,6 +88,7 @@ export class ModuleBuilder {
   private exports: number[][] = [];
   private elems: number[][] = [];
   private importedFuncs = 0;
+  private names: number[][] = [];
 
   type(params: number[], results: number[]): number {
     const t = [0x60, ...uleb(params.length), ...params, ...uleb(results.length), ...results];
@@ -111,6 +118,8 @@ export class ModuleBuilder {
   exportFunc(name: string, f: number) { this.exports.push([...str(name), 0x00, ...uleb(f)]); }
   exportTable(name: string, t: number) { this.exports.push([...str(name), 0x01, ...uleb(t)]); }
   exportMemory(name: string, m: number) { this.exports.push([...str(name), 0x02, ...uleb(m)]); }
+  /** Function name for the name section (shows up in profiles and jitdump). */
+  name(f: number, name: string) { this.names.push([...uleb(f), ...str(name)]); }
   /** Active element segment into table 0 at `offset`. */
   elem(offset: number, funcs: number[]) {
     this.elems.push([0x00, ...op.i32Const(offset), ...op.end, ...vec(funcs.map((f) => uleb(f)))]);
@@ -127,6 +136,9 @@ export class ModuleBuilder {
       const b = [...decl, ...body, ...op.end];
       return [...uleb(b.length), ...b];
     });
+    // Custom "name" section, function-names subsection (id 1).
+    const names = vec(this.names);
+    const nameSec = this.names.length ? [...str('name'), 1, ...uleb(names.length), ...names] : [];
     return new Uint8Array([
       0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
       ...section(1, this.types),
@@ -137,6 +149,7 @@ export class ModuleBuilder {
       ...section(7, this.exports),
       ...section(9, this.elems),
       ...section(10, code),
+      ...(nameSec.length ? [0, ...uleb(nameSec.length), ...nameSec] : []),
     ]);
   }
 }

@@ -1,6 +1,6 @@
 // Runs a benchmark page in a pinned Chromium via Playwright and writes a
 // results JSON (see bench/README.md for the schema).
-//   node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only]
+//   node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks]
 import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -13,6 +13,7 @@ const CONFIGS: Record<string, string> = {
   default: '',
   'liftoff-only': '--liftoff-only',
   'turbofan-only': '--no-liftoff',
+  'bounds-checks': '--wasm-enforce-bounds-checks', // explicit checks even where guard regions exist
 };
 
 const { values: args } = parseArgs({

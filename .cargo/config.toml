@@ -1,5 +1,5 @@
 # Shared, imported memory so JIT-generated modules and other vCPU workers can use it.
-# The memory layout is provisional until the M0.5 decision (see PLAN.md).
+# Layout A (M0.5): this one memory holds core state and guest RAM (see bench/spike/memory/REPORT.md).
 [target.wasm32-unknown-unknown]
 rustflags = [
   "-C", "target-feature=+bulk-memory,+mutable-globals,+simd128",
