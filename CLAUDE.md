@@ -9,7 +9,7 @@ and runs unmodified arm64 Linux. Chromium is the primary target.
 
 ## Status
 
-- M0 (foundations + spike): done. Still pending: re-run the spike on Chromium arm64 (the M4 Mac, not set up yet).
+- M0 (foundations + spike): done. Still pending: re-run the spike on Chromium arm64 on the M4 Mac.
 - M0.5 (memory architecture): done on x86_64, **layout A**: one shared wasm32 memory with core state then guest RAM, and a wasm32 Rust core. TLB tag bits 3–11 are reserved for a memory index. See `bench/spike/memory/REPORT.md`. Still pending: the arm64 run, `node bench/spike/memory/run-all.ts`.
 - **Next: M1**, the A64 integer interpreter and golden corpus.
 
@@ -50,7 +50,7 @@ the planned directories.
 **Testing** (PLAN.md §4)
 - New behavior comes with tests at the cheapest layer that catches it.
 - From M1: instruction semantics need golden-corpus coverage, and JIT changes must pass lockstep against the interpreter.
-- Oracles: `qemu-aarch64` is installed locally (user mode). Real arm64 hardware (a Linux VM on an M4 Mac) is planned but not available yet. Don't depend on GitHub-hosted runners.
+- Oracles: `qemu-aarch64` is installed locally (user mode). Real arm64 hardware: the Lima VM `oracle` (Debian 13) on the M4 Mac, reached with `ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>` (see PLAN.md §4.2). Don't depend on GitHub-hosted runners.
 
 **Performance** (PLAN.md §5)
 - Don't claim a speedup or regression without numbers from `bench/run.ts` in Chromium. Report medians and IQR, the host and the Chromium version.

@@ -80,7 +80,10 @@ Testing is layered. The cheaper layers run on every commit.
    - Generate random or structured instruction sequences plus initial register/memory state, risu-style.
    - A tiny static harness loads the state, executes and dumps the state. It runs on two oracles:
      - **QEMU user mode** (`qemu-aarch64`, via binfmt on any x86_64 dev machine): always available and used for day-to-day corpus growth. QEMU's A64 is itself validated against hardware with risu, but it can still be wrong.
-     - **Real hardware:** the M4 Mac mini, in a Linux VM (Virtualization.framework / OrbStack / UTM). EL0 code runs natively there. This is the authoritative oracle. The corpus is re-validated on it periodically and whenever QEMU and our emulator disagree.
+     - **Real hardware:** the M4 Mac mini (`macmini.lan`, macOS 26), in a Linux VM. EL0 code runs natively there. This is the authoritative oracle. The corpus is re-validated on it periodically and whenever QEMU and our emulator disagree.
+       - The VM is **Lima** (`vz` backend, Virtualization.framework, plain mode) instance `oracle`: Debian 13 arm64, 4 vCPU, 8 GiB, 60 GiB disk, 4K pages. It was created with `limactl create --name=oracle --vm-type=vz --cpus=4 --memory=8 --disk=60 --plain template:debian-13`. Reach it with `ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>` (Homebrew isn't on the non-interactive ssh `PATH`).
+       - Apple's hypervisor filters the ID registers, so the guest sees v8.x/v9 features that PLAN §1 leaves out: `paca pacg bti` plus `sb flagm2 frint i8mm bf16 afp dit`, and no SVE or SME. PAC hint-space instructions (e.g. `PACIASP`) really sign pointers there, while our emulator treats them as NOPs. The corpus generator must exclude them, or the comparator must skip the registers they affect.
+     - Homebrew `qemu` (11.1) on the same Mac provides `qemu-system-aarch64 -accel hvf` for the system-level oracle (item 3).
    - The results are committed as golden files. Every CI run compares the interpreter (native build) and the JIT (in Node/V8) against that corpus. The oracles are only needed again when the corpus grows, so the Mac doesn't need to be always-on.
    - The generator must avoid CONSTRAINED UNPREDICTABLE and IMPLEMENTATION DEFINED cases (for example `LDP` with `Rt==Rt2`, or writeback with `Rn==Rt`). Otherwise the oracles legitimately disagree.
 3. **System-level oracles**, for things that can't run at EL0 on real hardware:
@@ -202,7 +205,7 @@ Guest images you distribute (kernel, BusyBox, and so on) carry their own GPL obl
 Every milestone ends with: all test layers green, a recorded benchmark baseline in Chromium, and the counters reviewed.
 
 ### M0 — Foundations and feasibility spike
-**Status:** done 2026-09-25 (see `bench/spike/REPORT.md`). Still pending: the M4 Mac Linux VM and a spike re-run on Chromium arm64.
+**Status:** done 2026-09-25 (see `bench/spike/REPORT.md`). The M4 Mac Linux VM is up (§4.2). Still pending: a spike re-run on Chromium arm64.
 
 - Repo, license, `THIRD_PARTY.md`, Rust core building to both native and wasm (pinned nightly toolchain), TS host skeleton, script-based CI, Linux VM on the M4 Mac with remote access.
 - Playwright harness serving with COOP/COEP headers, results JSON schema, Node variant.
