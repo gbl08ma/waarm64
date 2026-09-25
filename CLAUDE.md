@@ -31,6 +31,7 @@ npm run serve                  # dev server with COOP/COEP on :8080 (PORT env ov
 node tools/corpus/run.ts [--oracle qemu|m4|both] [group...]  # regenerate golden corpus (needs qemu / the M4 VM)
 npm run bench -- --page bench/interp/index.html               # interpreter MIPS
 (cd core/fuzz && cargo run --release --bin sweep)             # exhaustive decoder check vs Capstone (~2 min)
+tests/baremetal/build.sh && tests/baremetal/oracle.sh         # rebuild the bare-metal EL1 tests (.bin committed), run them on QEMU virt
 ```
 
 `scripts/ci.sh` must pass before any piece of work is considered done.

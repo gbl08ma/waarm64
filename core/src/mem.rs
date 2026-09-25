@@ -3,8 +3,9 @@
 //! and the "A + spill memories" memory index (TLB tag bits 3–11,
 //! `bench/spike/memory/REPORT.md` §4) will hook in.
 //!
-//! M1 memory is flat: guest address = offset into one RAM block, which on wasm32
-//! sits in the shared linear memory after the core state (layout A).
+//! Memory is still flat (no MMU yet): guest address = RAM base + offset into one
+//! RAM block, which on wasm32 sits in the shared linear memory after the core
+//! state (layout A).
 
 use core::ptr;
 use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
@@ -22,6 +23,9 @@ pub enum Fault {
 pub struct Mem {
     base: *mut u8,
     size: u64,
+    /// Guest physical address of the first RAM byte: 0 for user-mode hosts,
+    /// 0x4000_0000 for a VM (the `virt` memory map, PLAN.md M3).
+    phys: u64,
     /// Serializes 128-bit atomics (CASP, STXP of two X registers): wasm has no
     /// 128-bit compare-and-swap.
     // ponytail: pair atomics aren't atomic against a concurrent 64-bit atomic on
@@ -49,8 +53,14 @@ impl Mem {
         Mem {
             base,
             size,
+            phys: 0,
             pair_lock: AtomicU32::new(0),
         }
+    }
+
+    /// Places the RAM at guest physical address `phys`.
+    pub fn at(self, phys: u64) -> Self {
+        Mem { phys, ..self }
     }
 
     pub fn size(&self) -> u64 {
@@ -60,9 +70,10 @@ impl Mem {
     /// The one translation point: guest address to host pointer for `len` bytes.
     #[inline]
     fn host(&self, addr: u64, len: u64, write: bool) -> Result<*mut u8, Fault> {
-        match addr.checked_add(len) {
-            // SAFETY: addr + len <= size, so the result is inside the RAM block.
-            Some(end) if end <= self.size => Ok(unsafe { self.base.add(addr as usize) }),
+        let off = addr.wrapping_sub(self.phys);
+        match off.checked_add(len) {
+            // SAFETY: off + len <= size, so the result is inside the RAM block.
+            Some(end) if end <= self.size => Ok(unsafe { self.base.add(off as usize) }),
             _ => Err(Fault::Bus { addr, write }),
         }
     }
@@ -269,6 +280,11 @@ pub(crate) mod tests {
             r.mem.cas_pair(8, 8, [0; 2], [1; 2]).map(|_| 0),
             align(8, true)
         );
+        let mut t = TestRam::new(64);
+        t.mem.phys = 0x4000_0000;
+        t.mem.write(0x4000_0038, 8, 7).unwrap();
+        assert_eq!(t.mem.read(0x4000_0038, 8), Ok(7));
+        assert_eq!(t.mem.read(0x3fff_fff8, 8), bus(0x3fff_fff8, false));
     }
 
     #[test]
