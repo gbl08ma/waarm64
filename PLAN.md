@@ -378,7 +378,7 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
 ### M4 — virtio devices and real distros
 - virtio-mmio v2 transport and split virtqueues. Devices, in order:
   1. console, rng, blk: HTTP range-request read-only backend, then a writable overlay on OPFS;
-  2. net: a pluggable backend interface, a loopback test backend first, your WebRTC network later;
+  2. net: a pluggable backend interface, a loopback test backend first, your WebRTC network later. The interface is raw Ethernet frames, as v86's network adapters (decided before step 6): the device hands the host each frame the guest transmits and takes frames for the guest from it; IP, DHCP, NAT and the rest live in the adapter, not in the emulator;
   3. 9p: port or adapt v86;
   4. input;
   5. display: `simple-framebuffer` DT node → canvas first, virtio-gpu 2D later.
