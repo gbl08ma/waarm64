@@ -5,6 +5,7 @@
 mod ldst;
 mod ldst_fp;
 mod simd;
+mod simd_int;
 
 use crate::cpu::{Cpu, FPCR_MASK, FPSR_MASK};
 use crate::decode::{Op, decode};
@@ -582,9 +583,27 @@ fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64) -> R {
         | STLLR | LDLAR | DC_CVAP | LD64B | ST64B | ST64BV | ST64BV0 | WFET | WFIT | FMOV_3 => {
             return Err(Exit::Undefined);
         }
+        // FP/AdvSIMD beyond v8.0: RDM, DotProd, I8MM, FCMA, FHM, FRINTTS, JSCVT,
+        // BF16, SHA3, SHA512, SM3, SM4. The v8.0 crypto instructions (AES, SHA1,
+        // SHA256, 64-bit PMULL) come in M6.5 and are UNDEFINED until then.
+        SQRDMLAH_vec_1 | SQRDMLAH_vec_2 | SQRDMLSH_vec_1 | SQRDMLSH_vec_2 | SQRDMLAH_elt_1
+        | SQRDMLSH_elt_1 | SQRDMLAH_elt_2 | SQRDMLSH_elt_2 | SDOT_vec | UDOT_vec | SDOT_elt
+        | UDOT_elt | SMMLA_vec | UMMLA_vec | USMMLA_vec | SUDOT_element | USDOT_element
+        | USDOT_vec | FCMLA_vec | FCADD_vec | FCMLA_elt | FMLAL_vec_1 | FMLSL_vec_1
+        | FMLAL_vec_2 | FMLSL_vec_2 | FMLAL_elt_1 | FMLAL_elt_2 | FMLSL_elt_1 | FMLSL_elt_2
+        | FRINT32X_1 | FRINT64X_1 | FRINT32Z_1 | FRINT64Z_1 | FRINT32X_float | FRINT64X_float
+        | FRINT32Z_float | FRINT64Z_float | FJCVTZS | BFCVT | BFCVTN | BFDOT_element
+        | BFDOT_vec | BFMLALX_element | BFMLALX_vector | BFMMLA | SHA512H | SHA512H2
+        | SHA512SU1 | SHA512SU0 | RAX1 | XAR | EOR3 | BCAX | SM3TT1A | SM3TT1B | SM3TT2A
+        | SM3TT2B | SM3PARTW1 | SM3PARTW2 | SM3SS1 | SM4EKEY | SM4E | AESE | AESD | AESMC
+        | AESIMC | SHA1C | SHA1P | SHA1M | SHA1SU0 | SHA256H | SHA256H2 | SHA256SU1 | SHA1H
+        | SHA1SU1 | SHA256SU0 => return Err(Exit::Undefined),
 
-        // FP/AdvSIMD (M2) and EL1 system instructions (M3).
-        _ => return Err(Exit::Unimplemented(op)),
+        // AdvSIMD integer; then FP (M2) and EL1 system instructions (M3).
+        _ => match simd_int::handler(op) {
+            Some(f) => f(c, i)?,
+            None => return Err(Exit::Unimplemented(op)),
+        },
     }
     Ok(())
 }

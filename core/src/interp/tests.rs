@@ -538,3 +538,229 @@ fn simd_moves() {
         assert_eq!(T::new(&[insn]).step(), Err(Exit::Undefined), "{insn:#010x}");
     }
 }
+
+/// A vector from `esize`-bit lanes, lane 0 first.
+fn vl(esize: u32, lanes: &[u64]) -> u128 {
+    lanes.iter().enumerate().fold(0, |v, (e, &x)| {
+        v | ((x as u128) & ((1u128 << esize) - 1)) << (e as u32 * esize)
+    })
+}
+
+/// One instruction with V register inputs; returns the CPU after it.
+fn vone(insn: u32, regs: &[(usize, u128)]) -> Cpu {
+    let mut t = T::new(&[insn]);
+    for &(n, v) in regs {
+        t.c.v[n] = v;
+    }
+    t.run().c
+}
+
+const QC: u64 = 1 << 27;
+
+#[test]
+fn simd_three_same() {
+    let c = vone(
+        0x4e220c20,
+        &[
+            (1, vl(8, &[0x7f, 0x80, 0x10])),
+            (2, vl(8, &[1, 0xff, 0x20])),
+        ],
+    ); // sqadd v0.16b
+    assert_eq!((c.v[0], c.fpsr), (vl(8, &[0x7f, 0x80, 0x30]), QC));
+    let c = vone(
+        0x6e622c20,
+        &[(1, vl(16, &[5, 0xffff])), (2, vl(16, &[7, 1]))],
+    ); // uqsub v0.8h
+    assert_eq!((c.v[0], c.fpsr), (vl(16, &[0, 0xfffe]), QC));
+    assert_eq!(vone(0x7ee23420, &[(1, 2), (2, 1)]).v[0], u64::MAX as u128); // cmhi d0, d1, d2
+    let c = vone(
+        0x4ea25420, // srshl v0.4s, v1.4s, v2.4s
+        &[
+            (1, vl(32, &[0x10, (-5i32) as u64, 1, 0x4000_0000])),
+            (2, vl(32, &[0xfd, 0xff, 31, 1])),
+        ],
+    );
+    assert_eq!(c.v[0], vl(32, &[2, 0xffff_fffe, 0x8000_0000, 0x8000_0000]));
+    let c = vone(
+        0x4e62b420,
+        &[
+            (1, vl(16, &[0x8000, 0x4000])),
+            (2, vl(16, &[0x8000, 0x4000])),
+        ],
+    ); // sqdmulh v0.8h
+    assert_eq!((c.v[0], c.fpsr), (vl(16, &[0x7fff, 0x2000]), QC));
+    let c = vone(
+        0x4ea2bc20,
+        &[(1, vl(32, &[1, 2, 3, 4])), (2, vl(32, &[10, 20, 30, 40]))],
+    ); // addp v0.4s
+    assert_eq!(c.v[0], vl(32, &[3, 7, 30, 70]));
+    let bytes = |b: u8| u128::from_le_bytes([b; 16]);
+    let c = vone(
+        0x6e621c20,
+        &[
+            (0, vl(16, &[0x00ff; 8])),
+            (1, bytes(0xaa)),
+            (2, bytes(0x55)),
+        ],
+    ); // bsl
+    assert_eq!(c.v[0], vl(16, &[0x55aa; 8]));
+    let c = vone(
+        0x2e229c20,
+        &[(0, u128::MAX), (1, vl(8, &[3, 0x80])), (2, vl(8, &[3, 2]))],
+    ); // pmul v0.8b
+    assert_eq!(c.v[0], vl(8, &[5, 0]));
+}
+
+#[test]
+fn simd_three_different_and_by_element() {
+    let c = vone(
+        0x6ea2c020, // umull2 v0.2d, v1.4s, v2.4s
+        &[
+            (1, vl(32, &[0, 0, 0xffff_ffff, 2])),
+            (2, vl(32, &[0, 0, 0xffff_ffff, 3])),
+        ],
+    );
+    assert_eq!(c.v[0], vl(64, &[0xffff_fffe_0000_0001, 6]));
+    let c = vone(
+        0x0e629020, // sqdmlal v0.4s, v1.4h, v2.4h
+        &[
+            (0, vl(32, &[1, 0x7fff_ffff])),
+            (1, vl(16, &[2, 0x8000])),
+            (2, vl(16, &[3, 0x8000])),
+        ],
+    );
+    assert_eq!((c.v[0], c.fpsr), (vl(32, &[13, 0x7fff_ffff]), QC));
+    let c = vone(
+        0x6e224020,
+        &[(0, vl(64, &[0x1111, 7])), (1, vl(16, &[0x1280, 0xff80]))],
+    ); // raddhn2 v0.16b
+    assert_eq!(c.v[0], vl(64, &[0x1111, 0x13]));
+    assert_eq!(vone(0x0e22e020, &[(1, 0xff), (2, 0xff)]).v[0], 0x5555); // pmull v0.8h, v1.8b, v2.8b
+    let c = vone(
+        0x6f720820,
+        &[
+            (0, vl(16, &[1; 8])),
+            (1, vl(16, &[1, 2, 3, 4, 5, 6, 7, 8])),
+            (2, 3 << 112),
+        ],
+    ); // mla v0.8h, v1.8h, v2.h[7]
+    assert_eq!(c.v[0], vl(16, &[4, 7, 10, 13, 16, 19, 22, 25]));
+    let c = vone(
+        0x4fa2b820, // sqdmull2 v0.2d, v1.4s, v2.s[3]
+        &[
+            (1, vl(32, &[0, 0, 0x8000_0000, 2])),
+            (2, vl(32, &[0, 0, 0, 0x8000_0000])),
+        ],
+    );
+    assert_eq!(
+        (c.v[0], c.fpsr),
+        (vl(64, &[i64::MAX as u64, 0xffff_fffe_0000_0000]), QC)
+    );
+}
+
+#[test]
+fn simd_two_misc_and_across() {
+    let c = vone(
+        0x0e204820,
+        &[(0, u128::MAX), (1, vl(8, &[0, 0xff, 1, 0x80, 0x3f]))],
+    ); // cls v0.8b
+    assert_eq!(c.v[0], vl(8, &[7, 7, 6, 0, 1, 7, 7, 7]));
+    let c = vone(
+        0x6e606820,
+        &[
+            (0, vl(32, &[1, 2, 3, 4])),
+            (1, vl(16, &[0xffff, 0xffff, 1, 2])),
+        ],
+    ); // uadalp v0.4s
+    assert_eq!(c.v[0], vl(32, &[0x1ffff, 5, 3, 4]));
+    let c = vone(
+        0x2e212820,
+        &[(0, u128::MAX), (1, vl(16, &[0xffff, 0x100, 0x7f, 0x7fff]))],
+    ); // sqxtun v0.8b
+    assert_eq!((c.v[0], c.fpsr), (vl(8, &[0, 0xff, 0x7f, 0xff]), QC));
+    let c = vone(0x6e600820, &[(1, vl(16, &[1, 2, 3, 4, 5, 6, 7, 8]))]); // rev32 v0.8h
+    assert_eq!(c.v[0], vl(16, &[2, 1, 4, 3, 6, 5, 8, 7]));
+    assert_eq!(vone(0x5ee0b820, &[(1, (-5i64) as u64 as u128)]).v[0], 5); // abs d0, d1
+    assert_eq!(vone(0x6e703820, &[(1, u128::MAX)]).v[0], 0x7fff8); // uaddlv s0, v1.8h
+    assert_eq!(vone(0x4e31a820, &[(1, vl(8, &[5, 0x80, 0x7f]))]).v[0], 0x80); // sminv b0, v1.16b
+}
+
+#[test]
+fn simd_shift_immediate() {
+    let c = vone(0x4f7f2420, &[(1, vl(64, &[3, (-3i64) as u64]))]); // srshr v0.2d, v1.2d, #1
+    assert_eq!(c.v[0], vl(64, &[2, u64::MAX]));
+    let c = vone(
+        0x6f384420,
+        &[
+            (0, vl(32, &[0xaabb_ccdd; 4])),
+            (1, vl(32, &[0x1122_3344; 4])),
+        ],
+    ); // sri v0.4s, v1.4s, #8
+    assert_eq!(c.v[0], vl(32, &[0xaa11_2233; 4]));
+    let c = vone(0x7f0b6420, &[(1, 0x20)]); // sqshlu b0, b1, #3
+    assert_eq!((c.v[0], c.fpsr), (0xff, QC));
+    let c = vone(
+        0x4f1c9c20, // sqrshrn2 v0.8h, v1.4s, #4
+        &[
+            (0, 0x1234),
+            (1, vl(32, &[0x18, 0x7fff_ffff, 0xffff_fff8, 0x8000_0000])),
+        ],
+    );
+    assert_eq!(
+        (c.v[0], c.fpsr),
+        (vl(64, &[0x1234, 0x8000_0000_7fff_0002]), QC)
+    );
+    let c = vone(0x2f27a420, &[(1, vl(32, &[1, 0xffff_ffff]))]); // ushll v0.2d, v1.2s, #7
+    assert_eq!(c.v[0], vl(64, &[0x80, 0x7f_ffff_ff80]));
+}
+
+#[test]
+fn simd_permute_ext_table() {
+    let (a, b) = (vl(32, &[1, 2, 3, 4]), vl(32, &[5, 6, 7, 8]));
+    assert_eq!(
+        vone(0x4e827820, &[(1, a), (2, b)]).v[0],
+        vl(32, &[3, 7, 4, 8])
+    ); // zip2 v0.4s
+    let seq = |k: u8| u128::from_le_bytes(core::array::from_fn(|j| k + j as u8));
+    let c = vone(0x0e021820, &[(1, seq(0)), (2, seq(16))]); // uzp1 v0.8b
+    assert_eq!(c.v[0], vl(8, &[0, 2, 4, 6, 16, 18, 20, 22]));
+    let c = vone(
+        0x4e426820,
+        &[
+            (1, vl(16, &[0, 1, 2, 3, 4, 5, 6, 7])),
+            (2, vl(16, &[10, 11, 12, 13, 14, 15, 16, 17])),
+        ],
+    ); // trn2 v0.8h
+    assert_eq!(c.v[0], vl(16, &[1, 11, 3, 13, 5, 15, 7, 17]));
+    assert_eq!(vone(0x6e021820, &[(1, seq(0)), (2, seq(16))]).v[0], seq(3)); // ext v0.16b, #3
+    let c = vone(
+        0x4e032020,
+        &[
+            (1, seq(0x40)),
+            (2, seq(0x60)),
+            (3, vl(8, &[0, 17, 31, 32, 255])),
+        ],
+    ); // tbl
+    assert_eq!(
+        c.v[0],
+        vl(
+            8,
+            &[
+                0x40, 0x61, 0x6f, 0, 0, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40,
+                0x40
+            ]
+        )
+    );
+    let c = vone(
+        0x0e031020,
+        &[
+            (0, u128::from_le_bytes([0xcc; 16])),
+            (1, seq(0x40)),
+            (3, vl(8, &[1, 16, 15, 200])),
+        ],
+    ); // tbx v0.8b
+    assert_eq!(
+        c.v[0],
+        vl(8, &[0x41, 0xcc, 0x4f, 0xcc, 0x40, 0x40, 0x40, 0x40])
+    );
+}

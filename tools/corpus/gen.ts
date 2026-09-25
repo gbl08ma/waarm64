@@ -403,6 +403,163 @@ const simdMove: Form[] = [
   dp("fmov_imm", "00011110yy1iiiiiiii10000000ddddd", 100, { src: "", ok: noHalf, fix: (r): Fields => (r.chance(0.9) ? { y: r.int(2) } : {}) }),
 ];
 
+// AdvSIMD integer. Vector sources get edge values lane by lane; shift-by-register
+// operands get small signed shift counts in their low byte. Only v8.0 encodings:
+// the M4 also runs RDM (SQRDMLAH), DotProd, FCMA, I8MM and the crypto
+// instructions, which we leave UNDEFINED.
+function laneEdges(esize: number): bigint[] {
+  const e = BigInt(esize);
+  const ones = (1n << e) - 1n, smin = 1n << (e - 1n), smax = smin - 1n;
+  return [0n, 1n, 2n, ones, ones - 1n, smax, smin, smin + 1n, smax - 1n];
+}
+
+/** A random 128-bit value built from `esize`-bit lanes, many of them edge values. */
+function vlanes(r: Rng, esize: number, lane: (r: Rng) => bigint = (r) => r.pick(laneEdges(esize))): bigint {
+  let v = 0n;
+  const mask = (1n << BigInt(esize)) - 1n;
+  for (let k = 0; k < 128 / esize; k++) {
+    const x = r.chance(0.5) ? lane(r) : r.u64() & mask;
+    v |= (x & mask) << BigInt(k * esize);
+  }
+  return v;
+}
+
+/** Shift counts for SSHL & co: small signed values in each lane's low byte, garbage above. */
+const shiftLane = (esize: number) => (r: Rng) => (r.u64() & ~0xffn) | (BigInt(r.range(-esize - 2, esize + 2)) & 0xffn);
+
+interface VOpts {
+  fix?: (r: Rng) => Fields;
+  ok?: (f: Fields) => boolean;
+  /** Letters of vector source registers (default n, m and d). */
+  src?: string;
+  /** Lane size for the edge values (default 8 << z). */
+  esize?: (f: Fields) => number;
+  /** A letter whose register holds shift counts. */
+  shift?: string;
+}
+
+function vform(name: string, pat: string, count: number, o: VOpts = {}): Form {
+  return {
+    name,
+    count,
+    gen(r) {
+      const { w, f } = enc(r, pat, o.fix?.(r) ?? {});
+      if (o.ok && !o.ok(f)) return undefined;
+      const esize = o.esize?.(f) ?? 8 << (f.z ?? r.int(4));
+      const m = new Map<string, bigint>();
+      for (const l of o.src ?? "nmd") {
+        if (!(l in f) || !r.chance(0.8)) continue;
+        m.set(`v${f[l]}`, vlanes(r, esize, l === o.shift ? shiftLane(esize) : undefined));
+      }
+      return { code: [w], in: m };
+    },
+  };
+}
+
+const oneOf = (a: number[]) => (r: Rng) => r.pick(a);
+const SAME = [...Array(23).keys()]; // 0b11xxx is FP
+const SCA_SAME = [1, 5, 6, 7, 8, 9, 10, 11, 16, 17, 22];
+const simdSame: Form[] = [
+  vform("vec", "0QU01110zz1mmmmmooooo1nnnnnddddd", 1500, { fix: (r) => ({ o: r.chance(0.97) ? r.pick(SAME) : 23 }), shift: "m" }),
+  vform("scalar", "01U11110zz1mmmmmooooo1nnnnnddddd", 500, { fix: (r) => ({ o: r.pick(SCA_SAME), z: r.chance(0.7) ? 3 : r.int(3) }), shift: "m" }),
+  vform("across", "0QU01110zz11000ooooo10nnnnnddddd", 300, {
+    fix: (r): Fields => {
+      const o = r.pick([0b00011, 0b01010, 0b11010, 0b11011]);
+      if (!r.chance(0.9)) return { o };
+      const z = r.int(3);
+      return z === 2 ? { o, z, Q: 1 } : { o, z };
+    },
+  }),
+  vform("addp_scalar", "01011110zz110001101110nnnnnddddd", 50, { fix: (r) => ({ z: r.chance(0.9) ? 3 : r.int(3) }) }),
+];
+
+// Three different: size 3 with PMULL is the 64-bit crypto form (M6.5).
+const simdDiff: Form[] = [
+  vform("vec", "0QU01110zz1mmmmmoooo00nnnnnddddd", 1200, {
+    fix: (r): Fields => {
+      const o = r.int(15);
+      if (!r.chance(0.9)) return { o };
+      // Valid: U=0 for the SQDM* (9, 11, 13) and PMULL (14, size 0) opcodes; size < 3.
+      const U = [9, 11, 13, 14].includes(o) ? 0 : r.int(2);
+      return { o, U, z: o === 14 ? 0 : [9, 11, 13].includes(o) ? 1 + r.int(2) : r.int(3) };
+    },
+    ok: (f) => !(f.o === 14 && f.z === 3 && !f.U),
+  }),
+  vform("scalar", "01011110zz1mmmmm1oo100nnnnnddddd", 200, { fix: (r) => ({ o: r.int(3), z: r.chance(0.9) ? 1 + r.int(2) : 3 * r.int(2) }) }),
+  // By element: only the integer opcodes (FP, SDOT/UDOT, SQRDMLAH/SH and FCMLA share the space).
+  vform("elem", "0QU01111zzLMmmmmooooH0nnnnnddddd", 1000, {
+    fix: (r): Fields => {
+      const U = r.int(2);
+      return { U, o: r.pick(U ? [0, 2, 4, 6, 10] : [2, 3, 6, 7, 8, 10, 11, 12, 13]), z: r.chance(0.9) ? 1 + r.int(2) : 3 * r.int(2) };
+    },
+  }),
+  vform("elem_scalar", "01011111zzLMmmmmooooH0nnnnnddddd", 300, {
+    fix: (r) => ({ o: r.pick([3, 7, 11, 12, 13]), z: r.chance(0.9) ? 1 + r.int(2) : 3 * r.int(2) }),
+  }),
+];
+
+const MISC_S = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 20];
+const MISC_U = [0, 2, 3, 4, 5, 6, 7, 8, 9, 11, 18, 19, 20];
+const simdMisc: Form[] = [
+  vform("vec", "0QU01110zz10000ooooo10nnnnnddddd", 1200, {
+    fix: (r): Fields => {
+      const U = r.int(2);
+      return { U, o: r.pick(U ? MISC_U : MISC_S) };
+    },
+  }),
+  vform("scalar", "01U11110zz10000ooooo10nnnnnddddd", 400, {
+    fix: (r): Fields => {
+      const U = r.int(2);
+      return { U, o: r.pick(U ? [3, 7, 8, 9, 11, 18, 20] : [3, 7, 8, 9, 10, 11, 20]) };
+    },
+  }),
+];
+
+// Shift by immediate: immh (h) = 0 is the modified-immediate group. 11100/11111 are FP.
+const immhEsize = (f: Fields) => 8 << (31 - Math.clz32(f.h));
+/** immh for a lane size below 8 << `sizes` (90%), or any nonzero immh. */
+const immh = (r: Rng, sizes: number) => {
+  if (!r.chance(0.9)) return r.range(1, 15);
+  const k = r.int(sizes);
+  return (1 << k) | r.int(1 << k);
+};
+const simdShift: Form[] = [
+  vform("vec", "0QU011110hhhhbbbooooo1nnnnnddddd", 1500, {
+    fix: (r): Fields => {
+      const U = r.int(2);
+      const o = r.pick(U ? [0, 2, 4, 6, 8, 10, 12, 14, 16, 17, 18, 19, 20] : [0, 2, 4, 6, 10, 14, 16, 17, 18, 19, 20]);
+      return { U, o, h: immh(r, o >= 16 ? 3 : 4) };
+    },
+    esize: immhEsize,
+  }),
+  vform("scalar", "01U111110hhhhbbbooooo1nnnnnddddd", 600, {
+    fix: (r): Fields => {
+      const U = r.int(2);
+      const o = r.pick(U ? [0, 2, 4, 6, 8, 10, 12, 14, 16, 17, 18, 19] : [0, 2, 4, 6, 10, 14, 18, 19]);
+      // Scalar: 64-bit lanes only, except SQSHL/UQSHL/SQSHLU (any) and the narrowing forms (not 64).
+      const k = o >= 16 ? r.int(3) : o === 12 || o === 14 ? r.int(4) : 3;
+      return { U, o, h: r.chance(0.9) ? (1 << k) | r.int(1 << k) : r.range(1, 15) };
+    },
+    esize: immhEsize,
+  }),
+];
+
+const simdPerm: Form[] = [
+  vform("zip_uzp_trn", "0Q001110zz0mmmmm0ooo10nnnnnddddd", 500, { fix: (r) => ({ o: r.pick([1, 2, 3, 5, 6, 7]) }) }),
+  vform("ext", "0Q101110000mmmmm0iiii0nnnnnddddd", 200, { esize: () => 8 }),
+  {
+    name: "tbl_tbx",
+    count: 400,
+    gen(r) {
+      const { w, f } = enc(r, "0Q001110000mmmmm0LLo00nnnnnddddd");
+      // Indices mostly inside the table (16 bytes per register), some past it.
+      const m = new Map<string, bigint>();
+      m.set(`v${f.m}`, vlanes(r, 8, (r) => BigInt(r.int(16 * (f.L + 1) + 8))));
+      return { code: [w], in: m };
+    },
+  },
+];
+
 // Exclusives and acquire/release. Always aligned: the architecture requires it,
 // but neither oracle faults on misaligned exclusives (recorded in PLAN.md §4.2).
 function exclusive(name: string, count: number, make: (r: Rng, m: Map<string, bigint>) => number[] | undefined): Form {
@@ -550,7 +707,7 @@ const sys: Form[] = [
   { name: "udf", count: 20, gen: (r) => ({ code: [r.int(0x10000)], in: new Map() }) },
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove };
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {
