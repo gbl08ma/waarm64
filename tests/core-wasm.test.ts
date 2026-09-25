@@ -27,3 +27,10 @@ test('interpreter runs the integer benchmark guest through the vCPU exports', as
   assert.equal(g.run(3_000_000), 3_000_000, `stopped at pc 0x${g.pc().toString(16)}`);
   assert.ok(g.rounds() > 0n);
 });
+
+test('interpreter runs the FP/NEON benchmark guest', async () => {
+  const { setup } = await import('../bench/interp/suite.ts');
+  const g = await setup('guest-fp.bin');
+  assert.equal(g.run(5_000_000), 5_000_000, `stopped at pc 0x${g.pc().toString(16)}`);
+  assert.ok(g.rounds() > 0n);
+});
