@@ -351,6 +351,7 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
     - **Boot-time benchmark:** `bench/boot/` (`node bench/run.ts --page bench/boot/index.html`): time to the initramfs's `/init` and to power-off, cold (a fresh `WebAssembly.compile` per boot, compile time included) and warm (one module after warm-up boots). Results and the profile are in `bench/boot/REPORT.md`.
   - ID registers: `MIDR_EL1` implementer 0 (software use); `ID_AA64PFR0_EL1` sets **CSV2 and CSV3** (nothing speculates, and it spares the guest Spectre mitigations and KPTI); 4K granule, 16-bit ASIDs, 40-bit PA; LSE and CRC32 only in ISAR0; `CTR_EL0` IDC=1, DIC=0; `CLIDR_EL1` = 0 (no caches, so set/way ops are NOPs). Trapped FP and WFx ISS use CV=1, COND=AL, as QEMU does.
 - **Exit:** Buildroot kernel boots to a shell in native and Chromium test runners. First **boot-time baseline** and PC-sampling profile.
+- **Done (2026-09-25).** The test guest boots to `/init`, runs its script and powers off in 35,362,607 steps natively and in Chromium; warm boot 797 ms (x86_64) and 519 ms (M4), `bench/boot/REPORT.md`. kvm-unit-tests: 7 pass (one with two expected failures), the rest skipped with reasons. Carry-overs into M4 are in its section.
 
 ### M4 — virtio devices and real distros
 - virtio-mmio v2 transport and split virtqueues. Devices, in order:
@@ -360,6 +361,12 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
   4. input;
   5. display: `simple-framebuffer` DT node → canvas first, virtio-gpu 2D later.
 - **Exit:** Alpine and Debian arm64 boot from virtio-blk, LTP subset and selftests run, I/O benchmarks recorded.
+- **Carry-overs from M3:**
+  - The GIC has 64 INTIDs (`core/src/gic.rs`); virtio-mmio transports on `virt` use SPIs 16–47 (INTIDs 48–79), so it must grow.
+  - Device MMIO goes through `vm::Io` by re-executing the faulting instruction; fine for rare register accesses, measure it once virtio notifications are frequent.
+  - Only deterministic time exists. Asynchronous backends make completion timing host-dependent anyway, and interactive guests want realtime mode (§2 ABI note, "Deferred").
+  - System mode runs at about half the user-mode MIPS (`bench/boot/REPORT.md`); split the gap with a `vm_run` MIPS benchmark before optimizing, and time I/O benchmarks against it.
+  - The runners use 256 MiB of RAM and put the DTB in its top 2 MiB; distros need more, and the RAM size comes from the VM config.
 
 ### M5 — JIT tier 1
 - TLB entry layout experiments the M0 spike suggested and M3 didn't test (they only matter for inlined JIT code): an i32 addend (layout A host addresses are 32-bit), and split tag and addend arrays for density. The interpreter's TLB (`core/src/mmu.rs`) is the spike's measured 16-byte {tag, addend} shape.
