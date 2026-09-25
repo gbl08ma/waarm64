@@ -306,6 +306,8 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
 ### M7 — SMP
 - One worker per vCPU on shared memory. PSCI `CPU_ON`, GIC SGIs, WFI → `Atomics.wait`, broadcast TLBI/IC with `DSB` completion, per-worker code caches with cross-vCPU invalidation.
 - litmus7 suites and atomics stress. Scaling benchmarks (parallel `make`, `7z b -mmt`).
+- **Revisit 128-bit atomics.** Wasm has no 128-bit compare-and-swap, so since M1 `CASP` and 64-bit-pair `LDXP`/`STXP` run under one spinlock in `Mem` (`core/src/mem.rs`, `pair_locked`). The lock only excludes other pair operations: a concurrent 64-bit atomic or plain store from another vCPU to the same bytes can interleave with a locked pair op, which breaks single-copy atomicity. Options: make every atomic that can overlap a pair take the lock (hashed per-line locks to limit contention), or stop the world for pair ops. Decide with litmus tests and a CASP-heavy stress test (e.g. lock-free 128-bit queues).
+- **Exclusives are compare-and-swap based:** `STXR` succeeds if memory still holds the value `LDXR` saw (ABA-tolerant, like QEMU). Check that litmus7 and the atomics stress tests accept this.
 - **Exit:** a multi-core Debian boot is stable under stress, and the scaling curve is recorded.
 
 ### M8 — Product integration
