@@ -269,7 +269,7 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
     let el0 = c.el() == 0;
     // The TLB holds neither ASIDs nor the MMU enable: flush when either changes.
     let regime = |c: &Cpu| (mmu::asid(c), c.sctlr_el1 & sctlr::M);
-    let before = regime(c);
+    let (before, copy) = (regime(c), c.sctlr_el1 & (sctlr::M | sctlr::A));
     match key {
         NZCV => c.nzcv = v & 0xf000_0000,
         DAIF_R if el0 && c.sctlr_el1 & sctlr::UMA == 0 => return Err(trap_sys(i)),
@@ -308,6 +308,9 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
     if regime(c) != before {
         m.flush_all();
     }
+    if c.sctlr_el1 & (sctlr::M | sctlr::A) != copy {
+        return Err(Exit::Resync); // retired; the run loop switches interpreter copy
+    }
     Ok(())
 }
 
@@ -331,7 +334,7 @@ fn eret(c: &mut Cpu) {
 /// Takes the synchronous exception `e`, raised by the instruction at `c.pc`, into EL1.
 ///
 /// # Panics
-/// On `Exit::Hvc` and `Exit::Unimplemented`, which are for the host.
+/// On `Exit::Hvc` and `Exit::Unimplemented`, which are for the host, and `Exit::Resync`.
 pub fn take_exception(c: &mut Cpu, e: Exit) {
     let pc = c.pc;
     let lower = c.el() == 0;
@@ -356,7 +359,7 @@ pub fn take_exception(c: &mut Cpu, e: Exit) {
             ..
         }) => (0x22 << 26, Some(pc), pc),
         Exit::Fetch(f) => (abort(0x20, f), Some(f.addr), pc),
-        Exit::Hvc(_) | Exit::Unimplemented(_) => panic!("{e:?} is a host exit"),
+        Exit::Hvc(_) | Exit::Unimplemented(_) | Exit::Resync => panic!("{e:?} is no exception"),
     };
     enter(c, esr, far, ret, 0);
 }

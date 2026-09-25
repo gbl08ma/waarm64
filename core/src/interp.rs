@@ -40,6 +40,10 @@ pub enum Exit {
     /// access (`CPACR_EL1.FPEN`), EL0 system register and SYS access (`SCTLR_EL1`
     /// UCT, UMA, DZE, UCI), WFI/WFE (nTWI, nTWE).
     Trap(u32),
+    /// Internal to the run loops: the instruction retired (the PC is past it)
+    /// and changed `SCTLR_EL1.M` or `.A`, so the next one may need the other
+    /// interpreter copy. Never returned by `step`, `run` or `run_system`.
+    Resync,
 }
 
 impl From<Fault> for Exit {
@@ -54,16 +58,31 @@ type R<T = ()> = Result<T, Exit>;
 // ponytail: fetch + decode every instruction; add a decoded-block cache if the
 // M1 MIPS baseline says the interpreter matters beyond being the JIT's fallback.
 pub fn step(cpu: &mut Cpu, mem: &Mem) -> R {
-    step_in(cpu, mem, None)
+    match steps(cpu, mem, None, 1) {
+        (_, None | Some(Exit::Resync)) => Ok(()),
+        (_, Some(e)) => Err(e),
+    }
 }
 
-/// One instruction through the interpreter copy for the current regime.
+/// Runs up to `n` instructions through the interpreter copy for the current
+/// regime (`Flat` with the MMU and alignment checks off, else `Mmu`), until
+/// one doesn't retire or changes the regime (`Exit::Resync`, which retired).
+/// Returns how many retired before that one. Choosing the copy here rather
+/// than per instruction is worth ~3% (bench/interp/REPORT.md, M3).
 #[inline(always)]
-fn step_in(cpu: &mut Cpu, mem: &Mem, tlb: Option<&mut Tlb>) -> R {
+fn steps(cpu: &mut Cpu, mem: &Mem, tlb: Option<&mut Tlb>, n: u64) -> (u64, Option<Exit>) {
+    fn go(cpu: &mut Cpu, m: &mut impl Bus, n: u64) -> (u64, Option<Exit>) {
+        for done in 0..n {
+            if let Err(e) = step_bus(cpu, m) {
+                return (done, Some(e));
+            }
+        }
+        (n, None)
+    }
     if cpu.sctlr_el1 & (sctlr::M | sctlr::A) == 0 {
-        step_bus(cpu, &mut Flat(mem))
+        go(cpu, &mut Flat(mem), n)
     } else {
-        step_bus(cpu, &mut Mmu::new(mem, tlb))
+        go(cpu, &mut Mmu::new(mem, tlb), n)
     }
 }
 
@@ -82,7 +101,9 @@ fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
     let insn = m.fetch(cpu, pc).map_err(Exit::Fetch)?;
     cpu.pc = pc.wrapping_add(4);
     let r = exec(cpu, m, insn, pc);
-    if r.is_err() {
+    if let Err(e) = r
+        && e != Exit::Resync
+    {
         cpu.pc = pc;
     }
     r
@@ -91,9 +112,14 @@ fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
 /// Runs up to `n` instructions; returns how many retired and why it stopped early.
 /// No TLB: meant for user-mode hosts, which run with the MMU off.
 pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
-    for done in 0..n {
-        if let Err(e) = step_in(cpu, mem, None) {
-            return (done, Err(e));
+    let mut done = 0;
+    while done < n {
+        let (k, e) = steps(cpu, mem, None, n - done);
+        done += k;
+        match e {
+            None => {}
+            Some(Exit::Resync) => done += 1,
+            Some(e) => return (done, Err(e)),
         }
     }
     (n, Ok(()))
@@ -104,15 +130,22 @@ pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
 /// only for the host: an HVC (PC after it) or an unimplemented instruction.
 pub fn run_system(v: &mut Vcpu, mem: &Mem, n: u64) -> (u64, R) {
     let (cpu, tlb) = (&mut v.cpu, &mut v.tlb);
-    for done in 0..n {
-        match step_in(cpu, mem, Some(&mut *tlb)) {
-            Ok(()) => {}
-            Err(e @ Exit::Hvc(_)) => {
+    let mut done = 0;
+    while done < n {
+        let (k, e) = steps(cpu, mem, Some(&mut *tlb), n - done);
+        done += k;
+        match e {
+            None => {}
+            Some(Exit::Resync) => done += 1,
+            Some(e @ Exit::Hvc(_)) => {
                 cpu.pc = cpu.pc.wrapping_add(4);
                 return (done + 1, Err(e));
             }
-            Err(e @ Exit::Unimplemented(_)) => return (done, Err(e)),
-            Err(e) => take_exception(cpu, e),
+            Some(e @ Exit::Unimplemented(_)) => return (done, Err(e)),
+            Some(e) => {
+                take_exception(cpu, e);
+                done += 1;
+            }
         }
     }
     (n, Ok(()))

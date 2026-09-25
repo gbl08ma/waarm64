@@ -103,6 +103,7 @@ pub unsafe extern "C" fn interp_run_exit(
         Err(Exit::Brk(imm)) => [6, imm as u64],
         Err(Exit::Trap(esr)) => [7, esr as u64],
         Err(Exit::Hvc(imm)) => [8, imm as u64],
+        Err(Exit::Resync) => unreachable!("run handles Resync"),
     };
     done
 }

@@ -1094,3 +1094,22 @@ fn el0_privilege_and_dze() {
     t.step().unwrap();
     assert_eq!(t.c.x[0], 0x14);
 }
+
+#[test]
+fn sctlr_write_switches_interpreter_copy_mid_run() {
+    // msr sctlr_el1, x0 (setting A); ldr x1, [x2] misaligned: one run_system call.
+    let mut t = T::new(&[0xd5181000, 0xf9400041])
+        .el1()
+        .x(0, crate::cpu::sctlr::RES1 | crate::cpu::sctlr::A)
+        .x(2, DATA + 1);
+    let mut v = crate::mmu::Vcpu::new(t.c.clone());
+    assert_eq!(run_system(&mut v, &t.r.mem, 2), (2, Ok(())));
+    assert_eq!(
+        (v.cpu.pc, v.cpu.esr_el1, v.cpu.far_el1),
+        (VBAR + 0x200, 0x9600_0021, DATA + 1)
+    );
+    // step() retires the MSR and reports no exit.
+    t.c.pc = CODE;
+    assert_eq!(t.step(), Ok(()));
+    assert_eq!(t.c.pc, CODE + 4);
+}
