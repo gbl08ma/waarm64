@@ -7,6 +7,8 @@
 pub mod qcow2;
 
 use qcow2::Disk;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 use webpc_core::mem::{Access, Mem};
@@ -28,19 +30,76 @@ pub fn disk(rel: &str) -> &'static Disk {
     Box::leak(Box::new(d))
 }
 
+/// A copy-on-write overlay over a read-only disk, in memory, in 512-byte
+/// sectors (web/overlay.ts keeps one on OPFS in 4 KiB blocks; the guest can't
+/// tell). Held by reference, so it outlives a boot: the next boot sees the writes.
+#[derive(Default)]
+pub struct Overlay(RefCell<HashMap<u64, [u8; 512]>>);
+
+impl Overlay {
+    pub fn new() -> &'static Overlay {
+        Box::leak(Box::default())
+    }
+
+    fn read(&self, disk: &Disk, off: u64, buf: &mut [u8]) -> bool {
+        if !disk.read(off, buf) {
+            return false;
+        }
+        let o = self.0.borrow();
+        if !o.is_empty() {
+            for s in off / 512..(off + buf.len() as u64).div_ceil(512) {
+                if let Some(d) = o.get(&s) {
+                    let (lo, hi) = (
+                        (s * 512).max(off),
+                        ((s + 1) * 512).min(off + buf.len() as u64),
+                    );
+                    buf[(lo - off) as usize..(hi - off) as usize]
+                        .copy_from_slice(&d[(lo - s * 512) as usize..(hi - s * 512) as usize]);
+                }
+            }
+        }
+        true
+    }
+
+    fn write(&self, disk: &Disk, off: u64, data: &[u8]) -> bool {
+        if off
+            .checked_add(data.len() as u64)
+            .is_none_or(|end| end > disk.size())
+        {
+            return false;
+        }
+        for s in off / 512..(off + data.len() as u64).div_ceil(512) {
+            let mut sector = [0; 512];
+            let n = (512).min(disk.size() - s * 512) as usize; // a partial last sector
+            if !self.read(disk, s * 512, &mut sector[..n]) {
+                return false;
+            }
+            let (lo, hi) = (
+                (s * 512).max(off),
+                ((s + 1) * 512).min(off + data.len() as u64),
+            );
+            sector[(lo - s * 512) as usize..(hi - s * 512) as usize]
+                .copy_from_slice(&data[(lo - off) as usize..(hi - off) as usize]);
+            self.0.borrow_mut().insert(s, sector);
+        }
+        true
+    }
+}
+
 /// The virtio devices a runner configures, in slot order (web/devices.ts
-/// `DeviceSpec`). `Blk` is a read-only disk image.
+/// `DeviceSpec`). `Blk` is a disk image, read-only or writable through an overlay.
 #[derive(Clone, Copy)]
 pub enum Dev {
     Console,
     Rng,
-    Blk(&'static Disk),
+    Blk(&'static Disk, Option<&'static Overlay>),
 }
 
 /// What the test and benchmark guests expect, with `root` (a target/images
-/// disk image) as /dev/vda (web/vm.ts `guestDevices`).
-pub fn guest_devices(root: &str) -> Vec<Dev> {
-    vec![Dev::Console, Dev::Rng, Dev::Blk(disk(root))]
+/// disk image) as /dev/vda, writable through `overlay` if given (web/vm.ts
+/// `guestDevices`).
+pub fn guest_devices(root: &str, overlay: Option<&'static Overlay>) -> Vec<Dev> {
+    vec![Dev::Console, Dev::Rng, Dev::Blk(disk(root), overlay)]
 }
 
 /// Their kernel command line (web/vm.ts `GUEST_CMDLINE`).
@@ -69,7 +128,7 @@ pub const DEBIAN: Distro = Distro {
     kernel: "debian/Image",
     initrd: "debian/initrd.img",
     disk: "debian/disk.qcow2",
-    cmdline: "console=ttyAMA0 root=/dev/vda1 ro systemd.run=\"/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; echo webpc: test ok'\" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff",
+    cmdline: "console=ttyAMA0 root=/dev/vda1 ro systemd.run=\"/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; findmnt -no OPTIONS /; echo webpc: test ok'\" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff systemd.firstboot=off",
 };
 
 impl Dev {
@@ -89,26 +148,24 @@ impl Dev {
         match self {
             Dev::Console => e(3, 0, 2, 64, vec![0; 12]),
             Dev::Rng => e(4, 0, 1, 64, vec![]),
-            Dev::Blk(disk) => {
-                // SEG_MAX and RO; capacity in sectors, seg_max 126.
+            Dev::Blk(disk, overlay) => {
+                // SEG_MAX, and RO or (with an overlay) FLUSH; capacity in sectors, seg_max 126.
                 let mut c = (disk.size() / 512).to_le_bytes().to_vec();
                 c.extend([0; 4]);
                 c.extend(126u32.to_le_bytes());
-                e(2, 1 << 2 | 1 << 5, 1, 128, c)
+                let rw = if overlay.is_some() { 1 << 9 } else { 1 << 5 };
+                e(2, 1 << 2 | rw, 1, 128, c)
             }
         }
     }
 }
 
-/// A virtio-blk request on a read-only `disk` (web/devices.ts `blk`): the
-/// header from the readable bytes, data into the writable ones but the last,
-/// which takes the status. Returns the bytes written.
-fn blk(disk: &Disk, read: &[&mut [u8]], write: &mut [&mut [u8]]) -> u32 {
-    let hdr: Vec<u8> = read
-        .iter()
-        .flat_map(|s| s.iter().copied())
-        .take(16)
-        .collect();
+/// A virtio-blk request on `disk`, writable through `overlay` (web/devices.ts
+/// `blk`): the header (and OUT's data) from the readable bytes, IN's data into
+/// the writable ones but the last, which takes the status. Returns the bytes written.
+fn blk(disk: &Disk, overlay: Option<&Overlay>, read: &[&mut [u8]], write: &mut [&mut [u8]]) -> u32 {
+    let readable: Vec<u8> = read.iter().flat_map(|s| s.iter().copied()).collect();
+    let hdr = &readable[..readable.len().min(16)];
     let Some((status, data)) = write.split_last_mut() else {
         return 0;
     };
@@ -125,11 +182,15 @@ fn blk(disk: &Disk, read: &[&mut [u8]], write: &mut [&mut [u8]]) -> u32 {
             src = &src[n..];
         }
     };
+    let off = || u64::from_le_bytes(hdr[8..16].try_into().unwrap()).wrapping_mul(512);
     let (status, n) = match (hdr.len() == 16).then(|| word(0)) {
         Some(0) => {
-            let off = u64::from_le_bytes(hdr[8..16].try_into().unwrap()).wrapping_mul(512);
             let mut src = vec![0; room];
-            if disk.read(off, &mut src) {
+            let ok = match overlay {
+                Some(o) => o.read(disk, off(), &mut src),
+                None => disk.read(off(), &mut src),
+            };
+            if ok {
                 fill(&mut data, &src);
                 (0, room)
             } else {
@@ -142,7 +203,12 @@ fn blk(disk: &Disk, read: &[&mut [u8]], write: &mut [&mut [u8]]) -> u32 {
             fill(&mut data, &id[..room.min(20)]);
             (0, room.min(20))
         }
-        Some(1) => (1, 0), // OUT on a read-only disk
+        // OUT: IOERR on a read-only disk.
+        Some(1) => match overlay {
+            Some(o) if o.write(disk, off(), &readable[16..]) => (0, 0),
+            _ => (1, 0),
+        },
+        Some(4) if overlay.is_some() => (0, 0), // FLUSH: nothing is volatile
         _ => (2, 0),
     };
     *st = status;
@@ -217,10 +283,10 @@ impl Backends {
                         seg(s).iter_mut().for_each(|b| *b = self.rng_byte());
                         n + s.1
                     }),
-                    (Dev::Blk(disk), _) => {
+                    (Dev::Blk(disk, overlay), _) => {
                         let r: Vec<_> = read.into_iter().map(seg).collect();
                         let mut w: Vec<_> = write.into_iter().map(seg).collect();
-                        blk(disk, &r, &mut w)
+                        blk(disk, overlay, &r, &mut w)
                     }
                 };
                 assert!(d.cpl.push(&[w0, len]), "completion ring full");

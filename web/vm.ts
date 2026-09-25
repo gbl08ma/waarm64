@@ -39,8 +39,12 @@ export const Counter = { STEPS: 0, EXCEPTIONS: 1, IRQS: 65, TLB_HITS: 66, TLB_MI
 
 export type BootOptions = { ramSize: number; kernel: Uint8Array; initrd?: Uint8Array; cmdline: string; devices?: DeviceSpec[]; realtime?: boolean };
 
-/** The devices the test and benchmark guests expect: target/images/linux's root filesystem at `disk` (a URL) is /dev/vda. */
-export const guestDevices = (disk: string): DeviceSpec[] => [{ type: 'console' }, { type: 'rng' }, { type: 'blk', url: disk }];
+/**
+ * The devices the test and benchmark guests expect: the root filesystem at
+ * `disk` (a URL) is /dev/vda, read-only, or writable through the OPFS overlay
+ * directory `overlay`.
+ */
+export const guestDevices = (disk: string, overlay?: string): DeviceSpec[] => [{ type: 'console' }, { type: 'rng' }, { type: 'blk', url: disk, overlay }];
 /** Their kernel command line. */
 export const GUEST_CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init';
 /**
@@ -53,7 +57,7 @@ export const DISTROS = {
   alpine: { kernel: 'alpine/Image', initrd: 'alpine/initramfs-virt', disk: 'alpine/rootfs.ext4', cmdline: 'console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro' },
   debian: {
     kernel: 'debian/Image', initrd: 'debian/initrd.img', disk: 'debian/disk.qcow2',
-    cmdline: `console=ttyAMA0 root=/dev/vda1 ro systemd.run="/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; echo webpc: test ok'" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff`,
+    cmdline: `console=ttyAMA0 root=/dev/vda1 ro systemd.run="/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; findmnt -no OPTIONS /; echo webpc: test ok'" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff systemd.firstboot=off`,
   },
 } as const;
 
@@ -198,7 +202,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
   const inWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
   if (!inWorker || init.specs.length === 0) {
     // The blk backend needs a worker (Node has no XHR; a page can't make binary sync XHRs).
-    const d = new Devices(init, out);
+    const d = await Devices.open(init, out);
     return { kick: () => void d.poll(), output: () => text, flush: async () => {}, close: () => {} };
   }
   const worker = new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
@@ -207,6 +211,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
     worker.onmessage = (e: MessageEvent) => {
       if (e.data.type === 'ready') resolve();
+      else if (e.data.type === 'error') reject(new Error(`device worker: ${e.data.message}`));
       else if (e.data.type === 'console') out(e.data.device, e.data.text);
       else if (e.data.type === 'flushed') flushed();
     };
@@ -229,6 +234,6 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
       flushed = resolve;
       worker.postMessage({ type: 'flush' });
     }),
-    close: () => worker.terminate(),
+    close: () => worker.postMessage({ type: 'close' }), // it releases its files, then ends
   };
 }

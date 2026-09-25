@@ -4,15 +4,18 @@
 // device protocol. `Devices` works on the shared memory from any thread: in the
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
 import { splitmix64 } from '../tools/corpus/corpus.ts';
-import { openDisk } from './qcow2.ts';
+import { overlay } from './overlay.ts';
+import { openDisk, type Disk } from './qcow2.ts';
 
 /**
  * Host-side device configuration, one per virtio-mmio slot (in order). `blk`
  * is a read-only disk image (raw or qcow2, web/qcow2.ts) read with HTTP range
  * requests; `size` (its virtual size in bytes, a multiple of 512) is filled in
- * by `bootVm` from the file's first bytes if missing.
+ * by `bootVm` from the file's first bytes if missing. With `overlay` (an OPFS
+ * directory name) the disk is writable: writes go to a copy-on-write overlay
+ * there (web/overlay.ts), which persists across boots and belongs to that image.
  */
-export type DeviceSpec = { type: 'console' } | { type: 'rng' } | { type: 'blk'; url: string; size?: number };
+export type DeviceSpec = { type: 'console' } | { type: 'rng' } | { type: 'blk'; url: string; size?: number; overlay?: string };
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
@@ -32,13 +35,13 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     case 'console': return { entry: [3n, 0n, 2n, 64n, 12n], config: new Uint8Array(12) };
     case 'rng': return { entry: [4n, 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
     case 'blk': {
-      // Features SEG_MAX (2) and RO (5); config: capacity in sectors (u64 at 0),
-      // seg_max (u32 at 12) = queue size - 2, as QEMU.
+      // Features SEG_MAX (2), and RO (5) or, with an overlay, FLUSH (9); config:
+      // capacity in sectors (u64 at 0), seg_max (u32 at 12) = queue size - 2, as QEMU.
       const config = new Uint8Array(16);
       const v = new DataView(config.buffer);
       v.setBigUint64(0, BigInt(Math.floor((d.size ?? 0) / 512)), true);
       v.setUint32(12, 126, true);
-      return { entry: [2n, 1n << 2n | 1n << 5n, 1n, 128n, 16n], config };
+      return { entry: [2n, 1n << 2n | (d.overlay ? 1n << 9n : 1n << 5n), 1n, 128n, 16n], config };
     }
   }
 }
@@ -51,7 +54,7 @@ type Ctx = { ram: () => Uint8Array; complete: (w0: number, len: number) => void 
  * A backend handles a request now (returns bytes written, or a promise of
  * them: requests complete in order either way), or keeps it and completes it later.
  */
-type Backend = { request(r: Request): number | Promise<number> | undefined; reset(): void };
+type Backend = { request(r: Request): number | Promise<number> | undefined; reset(): void; close?(): void };
 
 function console_(out: (text: string) => void, ctx: Ctx): Backend {
   const decoder = new TextDecoder();
@@ -137,18 +140,50 @@ function scatter(ram: Uint8Array, segs: Segment[], data: Uint8Array) {
 
 // virtio-blk request types and status (virtio 1.2 §5.2.6).
 const T_IN = 0;
+const T_OUT = 1;
+const T_FLUSH = 4;
 const T_GET_ID = 8;
 const S_OK = 0;
 const S_IOERR = 1;
 const S_UNSUPP = 2;
 
+/** An overlay's OPFS files: sync access handles, so the backend stays synchronous. */
+type OverlayFiles = { data: FileSystemSyncAccessHandle; map: FileSystemSyncAccessHandle };
+
 /**
- * Read-only virtio-blk over HTTP range requests: synchronous XHRs (workers
- * only), so the device worker simply blocks on the network. Only qcow2's
- * compressed clusters are asynchronous (DecompressionStream).
+ * Opens (or creates) the overlay directory `name` for the image at `url`. Its
+ * `base` file records the image (URL path and size): an overlay only makes
+ * sense over the bytes it was written against, so a mismatch is an error.
+ */
+// ponytail: the image is identified by path and size, not content; add a hash if images get replaced in place.
+async function openOverlay(name: string, url: string, size: number): Promise<OverlayFiles> {
+  const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name, { create: true });
+  const open = async (f: string) => (await dir.getFileHandle(f, { create: true })).createSyncAccessHandle();
+  const [data, map, base] = [await open('data'), await open('map'), await open('base')];
+  const want = JSON.stringify({ path: new URL(url).pathname, size });
+  if (base.getSize() === 0) {
+    base.write(new TextEncoder().encode(want), { at: 0 });
+    base.flush();
+  }
+  const got = new Uint8Array(base.getSize());
+  base.read(got, { at: 0 });
+  base.close();
+  if (new TextDecoder().decode(got) !== want) {
+    data.close();
+    map.close();
+    throw new Error(`overlay ${name} belongs to ${new TextDecoder().decode(got)}, not ${want}`);
+  }
+  return { data, map };
+}
+
+/**
+ * virtio-blk over HTTP range requests: synchronous XHRs (workers only), so the
+ * device worker simply blocks on the network. Only qcow2's compressed clusters
+ * are asynchronous (DecompressionStream). Read-only, or writable through an
+ * overlay on OPFS.
  */
 // ponytail: one request at a time, no cache (the guest's page cache is the cache); batch or cache if an I/O benchmark says so.
-function blk(ctx: Ctx, url: string): Backend {
+function blk(ctx: Ctx, url: string, files?: OverlayFiles): Backend {
   const xhr = (method: string, range?: string) => {
     const x = new XMLHttpRequest();
     x.open(method, url, false);
@@ -159,12 +194,14 @@ function blk(ctx: Ctx, url: string): Backend {
   };
   const head = xhr('HEAD');
   if (head.status !== 200) throw new Error(`${url}: ${head.status}`);
-  const disk = openDisk((off, len) => {
+  const base = openDisk((off, len) => {
     if (len === 0) return new Uint8Array(0);
     const x = xhr('GET', `bytes=${off}-${off + len - 1}`);
     const b = x.response as ArrayBuffer | null;
     return x.status === 206 && b?.byteLength === len ? new Uint8Array(b) : undefined;
   }, Number(head.getResponseHeader('content-length')));
+  const rw = files && overlay(base, files.data, files.map);
+  const disk: Disk = rw ?? base;
   return {
     async request(r) {
       const ram = ctx.ram();
@@ -184,13 +221,23 @@ function blk(ctx: Ctx, url: string): Backend {
         id.set(new TextEncoder().encode('webpc-blk'));
         scatter(ram, data, id.subarray(0, room));
         [status, n] = [S_OK, Math.min(room, 20)];
-      } else if (h.byteLength === 16 && h.getUint32(0, true) === 1) {
-        status = S_IOERR; // OUT on a read-only disk
+      } else if (h.byteLength === 16 && h.getUint32(0, true) === T_OUT) {
+        // The data follows the header in the readable buffers. Read-only: IOERR.
+        const len = r.read.reduce((k, s) => k + s.len, 0);
+        const ok = rw && (await rw.write(Number(h.getBigUint64(8, true)) * 512, gather(ram, r.read, len).subarray(16)).catch(() => false)); // e.g. OPFS over quota
+        status = ok ? S_OK : S_IOERR;
+      } else if (h.byteLength === 16 && h.getUint32(0, true) === T_FLUSH && rw) {
+        rw.flush();
+        status = S_OK;
       }
       ram[last.off + last.len - 1] = status;
       return n + 1;
     },
     reset() {},
+    close() {
+      files?.data.close();
+      files?.map.close();
+    },
   };
 }
 
@@ -211,17 +258,28 @@ export class Devices {
   private backends: Backend[];
   private epochs: number[];
   /** `out` receives what a console device's guest side wrote. */
-  constructor({ memory, shared, ram, signal, specs, deterministic }: DevicesInit, out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, signal, specs, deterministic }: DevicesInit, overlays: (OverlayFiles | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal] = [memory, shared, signal];
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = { ram: () => new Uint8Array(this.memory.buffer, ram), complete: (w0, len) => this.complete(i, w0, len) };
       switch (d.type) {
         case 'console': return console_((t) => out(i, t), ctx);
         case 'rng': return rng(ctx, deterministic);
-        case 'blk': return blk(ctx, d.url);
+        case 'blk': return blk(ctx, d.url, overlays[i]);
       }
     });
     this.epochs = specs.map(() => 0);
+  }
+
+  /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
+  static async open(init: DevicesInit, out: (device: number, text: string) => void) {
+    const overlays = await Promise.all(init.specs.map((d) => (d.type === 'blk' && d.overlay ? openOverlay(d.overlay, d.url, d.size ?? 0) : undefined)));
+    return new Devices(init, overlays, out);
+  }
+
+  /** Releases the backends' files (an overlay's handles lock them). */
+  close() {
+    for (const b of this.backends) b.close?.();
   }
 
   /** Writes each device's initial config space (after vm_new, before the guest runs). */
