@@ -3,7 +3,7 @@
 <link rel="icon" href="data:,">
 <script type="module">
   // Boots the Buildroot guest in a worker; the result lands in window.result.
-  const worker = new Worker(new URL('./boot-worker.ts', import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL('./boot-worker.ts' + location.search, import.meta.url), { type: 'module' });
   worker.onmessage = (e) => { window.result = e.data; };
   worker.onerror = (e) => { window.result = { error: e.message }; };
 </script>

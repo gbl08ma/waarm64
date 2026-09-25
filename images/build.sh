@@ -2,8 +2,8 @@
 # Builds the guest images in rootless Podman, never on the host (PLAN.md §7 M3).
 #   images/build.sh [name...]      names: linux, kvm-unit-tests (default: both)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
-# linux: Buildroot's BusyBox initramfs (rootfs.cpio) and a Linux Image built from
-#   allnoconfig + linux.fragment with Buildroot's Bootlin toolchain.
+# linux: Buildroot's BusyBox root filesystem (rootfs.ext4) and a Linux Image built
+#   from allnoconfig + linux.fragment with Buildroot's Bootlin toolchain.
 # kvm-unit-tests: the arm64 tests (*.flat) and their unittests.cfg, built with
 #   Debian's gcc-aarch64-linux-gnu.
 # Outputs go to target/images/<name>/, downloads to target/images/dl/. Output
@@ -34,7 +34,7 @@ build_linux() {
   export WEBPC_IMAGES=$root/images
   make -s -C "$br" O="$root/$bro" BR2_DL_DIR="$root/$out/dl" BR2_DEFCONFIG="$root/images/buildroot.defconfig" defconfig
   make -s -C "$br" O="$root/$bro" BR2_DL_DIR="$root/$out/dl" -j"$(nproc)"
-  cp "$bro/images/rootfs.cpio" "$dst/"
+  cp "$bro/images/rootfs.ext2" "$dst/rootfs.ext4"
 
   # Linux: allnoconfig + the fragment, every fragment line checked.
   local tar=$out/dl/linux-$LINUX.tar.xz src=$out/build/linux-$LINUX obj=$out/build/linux
@@ -74,7 +74,7 @@ inputs() {
 
 outputs() {
   case $1 in
-    linux) echo linux/Image linux/rootfs.cpio ;;
+    linux) echo linux/Image linux/rootfs.ext4 ;;
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
   esac
 }

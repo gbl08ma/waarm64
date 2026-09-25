@@ -1,11 +1,13 @@
-// Host side of the whole-VM ABI (PLAN.md §2, ABI 6): instantiates the core on
+// Host side of the whole-VM ABI (PLAN.md §2, ABI 7): instantiates the core on
 // shared memory, places guest RAM after the core's heap (layout A), boots an
 // arm64 Image and runs it, draining the console. virtio backends run in a
 // device worker (web/device-worker.ts) when this runs in a worker, and inline
 // otherwise (Node, a page's main thread). Runs in a worker or in Node.
+// Time is deterministic unless `realtime` is set (the host clock, and idle
+// WFIs sleep on the signal word).
 import { Devices, deviceEntry, type DeviceSpec, type DevicesInit } from './devices.ts';
 
-export const ABI = 6;
+export const ABI = 7;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -26,13 +28,20 @@ type Exports = {
   vm_device(vm: number, i: number): number;
 };
 
+/** The core's imports: the shared memory, and the host clock for realtime mode. */
+export function coreImports(memory: WebAssembly.Memory) {
+  return { env: { memory, now_ms: () => performance.now() } };
+}
+
 /** u64 word indexes in `vm::Counters` (core/src/vm.rs). */
 export const Counter = { STEPS: 0, EXCEPTIONS: 1, IRQS: 65, TLB_HITS: 66, TLB_MISSES: 67, TLB_WALKS: 68, TLB_FLUSHES: 69, PC: 70, LEN: 71 } as const;
 
-export type BootOptions = { ramSize: number; kernel: Uint8Array; initrd?: Uint8Array; cmdline: string; devices?: DeviceSpec[] };
+export type BootOptions = { ramSize: number; kernel: Uint8Array; initrd?: Uint8Array; cmdline: string; devices?: DeviceSpec[]; realtime?: boolean };
 
-/** The devices the test and benchmark guests (target/images/linux) expect. */
-export const GUEST_DEVICES: DeviceSpec[] = [{ type: 'console' }, { type: 'rng' }];
+/** The devices the test and benchmark guests expect: target/images/linux's root filesystem at `disk` (a URL) is /dev/vda. */
+export const guestDevices = (disk: string): DeviceSpec[] => [{ type: 'console' }, { type: 'rng' }, { type: 'blk', url: disk }];
+/** Their kernel command line. */
+export const GUEST_CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init';
 
 // The scratch page before RAM: VmConfig, device entries, the doorbell, the command line.
 const S_CFG = 0;
@@ -43,16 +52,22 @@ const S_CMDLINE = 4096;
 export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
-  const ex = (await WebAssembly.instantiate(module, { env: { memory } })).exports as unknown as Exports;
+  const ex = (await WebAssembly.instantiate(module, coreImports(memory))).exports as unknown as Exports;
   if (ex.abi_version() !== ABI) throw new Error(`core ABI ${ex.abi_version()}, expected ${ABI}`);
 
   // Scratch page for VmConfig and the command line, then RAM.
   const scratch = memory.grow(1) * 65536;
   const ram = memory.grow(o.ramSize / 65536) * 65536;
   const bytes = () => new Uint8Array(memory.buffer);
-  const specs = o.devices ?? [];
+  const specs = await Promise.all((o.devices ?? []).map(async (d) => {
+    if (d.type !== 'blk' || d.size !== undefined) return d;
+    const r = await fetch(d.url, { method: 'HEAD' });
+    if (!r.ok) throw new Error(`${d.url}: ${r.status}`);
+    return { ...d, size: Number(r.headers.get('content-length')) };
+  }));
+  const deterministic = !o.realtime;
   // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries.
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 6).set([BigInt(o.ramSize), 1n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length)]);
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 6).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length)]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
@@ -70,7 +85,10 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   }
   const shared = specs.map((_, i) => ex.vm_device(vm, i));
   Devices.writeConfig(memory, shared, specs);
-  const devices = await deviceHost({ memory, shared, ram, signal: ex.vm_signal(vm), specs }, scratch + S_BELL);
+  const signal = ex.vm_signal(vm);
+  const devices = await deviceHost({ memory, shared, ram, signal, specs, deterministic }, scratch + S_BELL);
+  // Realtime idling blocks on the signal word, which a page's main thread can't.
+  const canBlock = typeof window === 'undefined';
 
   const tx = ex.vm_console(vm);
   const decoder = new TextDecoder();
@@ -104,7 +122,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /**
      * Runs up to `budget` steps; returns the exit kind and steps taken. DEVICE
      * exits are handled here (the backends take the requests, and in
-     * deterministic mode this waits for them), as core/tests/common does.
+     * deterministic mode this waits for them), as core/tests/common does. In
+     * realtime mode an idle WFI sleeps here until its deadline or a signal.
      */
     run(budget: number) {
       let steps = 0;
@@ -115,6 +134,12 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
         if (kind === Exit.DEVICE) {
           devices.kick();
           if (steps < budget) continue;
+        }
+        if (kind === Exit.IDLE && !deterministic && canBlock) {
+          const sig = new Int32Array(memory.buffer, signal, 1);
+          const ns = info[2];
+          if (Atomics.load(sig, 0) === 0) Atomics.wait(sig, 0, 0, ns === 0xffff_ffff_ffff_ffffn ? Infinity : Number(ns) / 1e6);
+          continue;
         }
         return { kind: kind === Exit.DEVICE ? Exit.BUDGET : kind, steps, value: info[2], x: [...info.subarray(3)] };
       }
@@ -156,6 +181,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
   const out = (_device: number, t: string) => { text += t; };
   const inWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
   if (!inWorker || init.specs.length === 0) {
+    // The blk backend needs a worker (Node has no XHR; a page can't make binary sync XHRs).
     const d = new Devices(init, out);
     return { kick: () => d.poll(), output: () => text, flush: async () => {}, close: () => {} };
   }
@@ -176,6 +202,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
     kick() {
       const n = Atomics.add(bell, 0, 1) + 1;
       Atomics.notify(bell, 0);
+      if (!init.deterministic) return; // completions come back through SIGNAL_DEVICE
       for (let a; (a = Atomics.load(bell, 1)) !== n;) {
         if (a === -1) throw new Error('device worker failed (see its error)');
         Atomics.wait(bell, 1, a);

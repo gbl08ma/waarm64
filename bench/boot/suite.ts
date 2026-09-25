@@ -1,12 +1,12 @@
 // Boot time of the Buildroot guest (target/images/linux, images/build.sh) on the
-// wasm core in a worker, deterministic mode: time to the initramfs's /init
-// ("webpc: init" on the console) and to power-off after /test.sh.
+// wasm core in a worker, deterministic mode, root filesystem on virtio-blk over
+// HTTP ranges: time to /init ("webpc: init" on the console) and to power-off
+// after /test.sh.
 // Cold: a freshly compiled module per boot (V8 starts on Liftoff code).
 // Warm: one module, reused after warm-up boots.
 import type { Options, Sample } from '../spike/benchmarks.ts';
-import { bootVm, Exit, GUEST_DEVICES, PSCI_SYSTEM_OFF } from '../../web/vm.ts';
+import { bootVm, Exit, GUEST_CMDLINE as CMDLINE, guestDevices, PSCI_SYSTEM_OFF } from '../../web/vm.ts';
 
-export const CMDLINE = 'console=ttyAMA0 earlycon panic=-1';
 const CHUNK = 1_000_000; // steps per vm_run, so the /init marker is timed to ~a chunk
 
 async function get(rel: string): Promise<Uint8Array<ArrayBuffer>> {
@@ -16,17 +16,16 @@ async function get(rel: string): Promise<Uint8Array<ArrayBuffer>> {
 }
 
 export async function images() {
-  const [wasm, kernel, initrd] = await Promise.all([
+  const [wasm, kernel] = await Promise.all([
     get('../../target/wasm32-unknown-unknown/release/webpc_core.wasm'),
     get('../../target/images/linux/Image'),
-    get('../../target/images/linux/rootfs.cpio'),
   ]);
-  return { wasm, kernel, initrd };
+  return { wasm, kernel, disk: new URL('../../target/images/linux/rootfs.ext4', import.meta.url).href };
 }
 
 /** One boot to power-off: ms to "webpc: init" and to the end, and the counters. */
-export async function boot(module: WebAssembly.Module, img: { kernel: Uint8Array; initrd: Uint8Array }, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>) {
-  const vm = await bootVm(module, { ramSize: 256 << 20, kernel: img.kernel, initrd: img.initrd, cmdline: CMDLINE, devices: GUEST_DEVICES });
+export async function boot(module: WebAssembly.Module, img: { kernel: Uint8Array; disk: string }, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>) {
+  const vm = await bootVm(module, { ramSize: 256 << 20, kernel: img.kernel, cmdline: CMDLINE, devices: guestDevices(img.disk) });
   await onVm?.(vm);
   let console = '';
   let init = NaN;
@@ -37,6 +36,7 @@ export async function boot(module: WebAssembly.Module, img: { kernel: Uint8Array
     if (Number.isNaN(init) && console.includes('webpc: init')) init = performance.now() - t0;
     if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL) continue;
     const total = performance.now() - t0;
+    vm.close();
     if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !console.includes('webpc: test exit 0')) {
       throw new Error(`boot failed: exit ${r.kind} at pc 0x${vm.pc().toString(16)}\n${console}`);
     }

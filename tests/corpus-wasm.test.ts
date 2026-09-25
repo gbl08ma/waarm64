@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { coreImports } from '../web/vm.ts';
 import { CODE, DATA, DATA_SIZE, REGS, initialState, parseFile } from '../tools/corpus/corpus.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
@@ -30,7 +31,7 @@ function offset(name: string): number {
 test('golden corpus on the wasm core', () => {
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const mod = new WebAssembly.Module(readFileSync(WASM));
-  const ex = new WebAssembly.Instance(mod, { env: { memory } }).exports as unknown as Exports;
+  const ex = new WebAssembly.Instance(mod, coreImports(memory)).exports as unknown as Exports;
   const cpu = ex.vcpu_new();
   const exit = ex.vcpu_new(); // any 16 aligned bytes the core won't touch otherwise
   const base = memory.grow(Math.ceil(RAM / 65536)) * 65536;

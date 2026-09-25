@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { coreImports } from '../web/vm.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
 
@@ -9,8 +10,8 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mod = new WebAssembly.Module(readFileSync(WASM));
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
-  const ex = new WebAssembly.Instance(mod, { env: { memory: mem } }).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 6);
+  const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
+  assert.equal(ex.abi_version(), 7);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -44,9 +45,9 @@ for (const mmu of [false, true]) {
   });
 }
 
-test('whole VM boots a bare-metal test through the vm_* exports (ABI 6)', () => {
+test('whole VM boots a bare-metal test through the vm_* exports (ABI 7)', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
-  const ex = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(WASM)), { env: { memory: mem } }).exports as Record<
+  const ex = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(WASM)), coreImports(mem)).exports as Record<
     string,
     (...a: (number | bigint)[]) => number
   >;
@@ -54,10 +55,10 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 6)', () => 
   const ram = mem.grow(RAM / 65536) * 65536;
   const img = readFileSync(new URL('./baremetal/uart.bin', import.meta.url));
   new Uint8Array(mem.buffer, ram, img.length).set(img);
-  const cfg = mem.grow(1) * 65536; // VmConfig: ram_size, deterministic, cntfrq, ticks_per_insn
-  new BigUint64Array(mem.buffer, cfg, 4).set([BigInt(RAM), 0n, 0n, 0n]);
-  assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'realtime mode is rejected');
-  new BigUint64Array(mem.buffer, cfg, 4).set([BigInt(RAM), 1n, 0n, 0n]);
+  const cfg = mem.grow(1) * 65536; // VmConfig: ram_size, deterministic, cntfrq, ticks_per_insn, devices, ndevices
+  new BigUint64Array(mem.buffer, cfg, 6).set([BigInt(RAM), 1n, 0n, 0n, 0n, 33n]);
+  assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'more than 32 devices is rejected');
+  new BigUint64Array(mem.buffer, cfg, 6).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n]);
   const vm = ex.vm_new(ram, BigInt(RAM), cfg);
   assert.notEqual(vm, 0);
 

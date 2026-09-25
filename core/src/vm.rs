@@ -2,13 +2,18 @@
 //! PL011 at QEMU `virt`'s addresses, and the run loop that delivers IRQs, waits
 //! in WFI and answers PSCI. lib.rs exports it (PLAN.md §2 "Host ABI for a whole VM").
 //!
-//! **Time** is deterministic: the counter is `steps × ticks_per_insn` plus the
-//! ticks WFI skipped, where steps are instructions retired and exceptions taken.
-//! The loop runs the interpreter in chunks of at most `CHUNK` steps, cut short
-//! at the next timer deadline, so a timer fires exactly on time. Between chunks
-//! it checks the signal word, updates the interrupt lines and takes a pending
-//! IRQ. Timer registers and `ISR_EL1` exit the interpreter
+//! **Time** is deterministic by default: the counter is `steps × ticks_per_insn`
+//! plus the ticks WFI skipped, where steps are instructions retired and
+//! exceptions taken. The loop runs the interpreter in chunks of at most `CHUNK`
+//! steps, cut short at the next timer deadline, so a timer fires exactly on
+//! time. Between chunks it checks the signal word, updates the interrupt lines
+//! and takes a pending IRQ. Timer registers and `ISR_EL1` exit the interpreter
 //! ([`Exit::Platform`]), so they see the exact count.
+//!
+//! In **realtime** mode the counter follows the host clock ([`Clock`]), read at
+//! each chunk boundary and timer-register access, so timers fire within a chunk
+//! of their deadline. A WFI with nothing to wake it returns [`exit::IDLE`] with
+//! the time to the next deadline, and the host sleeps on the signal word.
 //!
 //! **Device MMIO** stays out of the interpreter's fast copies: an access to a
 //! physical address that isn't RAM faults there, and the loop runs that one
@@ -49,7 +54,7 @@ const CHUNK: u64 = 1024;
 #[derive(Clone, Copy, Debug)]
 pub struct VmConfig {
     pub ram_size: u64,
-    /// Non-zero: virtual time from the instruction count. Realtime mode (0) isn't implemented yet.
+    /// Non-zero: virtual time from the instruction count; 0: realtime (the host clock).
     pub deterministic: u64,
     /// CNTFRQ_EL0 in Hz; 0 means 62.5 MHz (QEMU's).
     pub cntfrq: u64,
@@ -79,7 +84,8 @@ pub mod exit {
     /// PSCI SYSTEM_OFF or SYSTEM_RESET, PC past the HVC; `ExitInfo.x` has x0–x3.
     pub const PSCI: u32 = 1;
     /// WFI with nothing that could wake it; the PC is on the WFI. `value` is
-    /// the deadline (none in deterministic mode: u64::MAX).
+    /// the nanoseconds until the next timer deadline in realtime mode, or
+    /// u64::MAX with none (always, in deterministic mode, which skips to deadlines).
     pub const IDLE: u32 = 2;
     /// A PL011 write found the TX ring full; the PC is on that store.
     pub const TX_FULL: u32 = 3;
@@ -164,6 +170,46 @@ pub struct Vm {
     steps: u64,
     /// Ticks WFI jumped over.
     skipped: u64,
+    clock: Clock,
+}
+
+/// The host clock for realtime mode: `performance.now()` through the core's
+/// `env.now_ms` import on wasm, `Instant` natively.
+struct Clock {
+    #[cfg(target_arch = "wasm32")]
+    t0: f64,
+    #[cfg(not(target_arch = "wasm32"))]
+    t0: std::time::Instant,
+}
+
+#[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "env")]
+unsafe extern "C" {
+    /// Milliseconds on a monotonic clock (the host passes `performance.now`).
+    fn now_ms() -> f64;
+}
+
+impl Clock {
+    fn new() -> Clock {
+        #[cfg(target_arch = "wasm32")]
+        // SAFETY: a host function with no preconditions.
+        return Clock {
+            t0: unsafe { now_ms() },
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        Clock {
+            t0: std::time::Instant::now(),
+        }
+    }
+
+    /// Nanoseconds since the VM was created.
+    fn ns(&self) -> u64 {
+        #[cfg(target_arch = "wasm32")]
+        // SAFETY: as in `new`.
+        return ((unsafe { now_ms() } - self.t0) * 1e6) as u64;
+        #[cfg(not(target_arch = "wasm32"))]
+        (self.t0.elapsed().as_nanos() as u64)
+    }
 }
 
 // PSCI 1.0 function IDs (SMC32 unless noted).
@@ -208,11 +254,19 @@ impl Vm {
             },
             steps: 0,
             skipped: 0,
+            clock: Clock::new(),
         }
+    }
+
+    fn realtime(&self) -> bool {
+        self.cfg.deterministic == 0
     }
 
     /// The counter value (CNTPCT = CNTVCT).
     pub fn now(&self) -> u64 {
+        if self.realtime() {
+            return (self.clock.ns() as u128 * self.cfg.cntfrq as u128 / 1_000_000_000) as u64;
+        }
         self.steps * self.cfg.ticks_per_insn + self.skipped
     }
 
@@ -321,8 +375,12 @@ impl Vm {
         .min()
     }
 
-    /// Steps until the next deadline (at least 1), or u64::MAX.
+    /// Steps until the next deadline (at least 1), or u64::MAX (also in
+    /// realtime mode, where steps don't measure time).
     fn until_deadline(&self) -> u64 {
+        if self.realtime() {
+            return u64::MAX;
+        }
         self.next_deadline().map_or(u64::MAX, |t| {
             (t - self.now()).div_ceil(self.cfg.ticks_per_insn)
         })
@@ -367,15 +425,22 @@ impl Vm {
     }
 
     /// WFI completes when an interrupt is signaled (masked or not). Otherwise
-    /// time jumps to the next timer deadline, or the vCPU is idle.
+    /// deterministic time jumps to the next timer deadline, and realtime mode
+    /// (or no deadline) returns the idle exit with the PC on the WFI.
     fn wfi(&mut self) -> Option<u32> {
         self.lines();
         if !self.gic.irq() {
-            let Some(t) = self.next_deadline() else {
-                self.exit.value = u64::MAX;
-                return Some(exit::IDLE);
-            };
-            self.skipped += t - self.now();
+            let t = self.next_deadline();
+            match t {
+                Some(t) if !self.realtime() => self.skipped += t - self.now(),
+                _ => {
+                    let frq = self.cfg.cntfrq as u128;
+                    self.exit.value = t.map_or(u64::MAX, |t| {
+                        ((t - self.now()) as u128 * 1_000_000_000).div_ceil(frq) as u64
+                    });
+                    return Some(exit::IDLE);
+                }
+            }
         }
         let c = &mut self.vcpu.cpu;
         c.pc = c.pc.wrapping_add(4);

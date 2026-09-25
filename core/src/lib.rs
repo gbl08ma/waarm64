@@ -19,7 +19,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 6;
+pub const ABI_VERSION: u32 = 7;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -123,8 +123,9 @@ pub unsafe extern "C" fn interp_run_exit(
 /// Creates a VM with `ram_size` bytes of RAM at `ram` (layout A: after the
 /// core's heap), which appears at guest PA 0x4000_0000. The vCPU starts in its
 /// EL1 reset state at the start of RAM, with a virtio-mmio transport per
-/// `cfg.devices` entry. Returns null if `cfg` doesn't match `ram_size`, asks for
-/// realtime mode (not implemented), has more than 32 or invalid device entries
+/// `cfg.devices` entry. `cfg.deterministic` = 0 selects realtime mode, where the
+/// core calls its `env.now_ms` import (`performance.now`). Returns null if `cfg`
+/// doesn't match `ram_size`, has more than 32 or invalid device entries
 /// (`virtio::DeviceEntry::valid`), or `ram` isn't 16-byte aligned.
 ///
 /// # Safety
@@ -139,7 +140,6 @@ pub unsafe extern "C" fn vm_new(
     // SAFETY: guaranteed by the caller.
     let cfg = unsafe { *cfg };
     if cfg.ram_size != ram_size
-        || cfg.deterministic == 0
         || !(ram as usize).is_multiple_of(16)
         || cfg.ndevices > virtio::MAX_DEVICES as u64
     {

@@ -210,3 +210,22 @@ fn virtio_register_write_exits_to_the_host() {
         "external abort"
     );
 }
+
+#[test]
+fn realtime_wfi_idles_until_the_deadline() {
+    let cfg = VmConfig {
+        deterministic: 0,
+        ..VmConfig::default()
+    };
+    let mut t = T::new(&[WFI, B_SELF], cfg);
+    let cval = t.vm.now() + 125_000; // 2 ms at 62.5 MHz
+    t.vtimer_at(cval);
+    assert_eq!(t.vm.run(10), exit::IDLE);
+    let ns = t.vm.exit.value;
+    assert!(ns > 0 && ns <= 2_000_000, "{ns} ns to the deadline");
+    assert_eq!(t.cpu().pc, RAM_BASE, "on the WFI");
+    std::thread::sleep(std::time::Duration::from_nanos(ns));
+    assert!(t.vm.now() >= cval);
+    t.vm.run(1);
+    assert_eq!(t.cpu().pc, RAM_BASE + 4, "the timer woke it (IRQs masked)");
+}

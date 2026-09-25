@@ -5,8 +5,12 @@
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 
-/** Host-side device configuration, one per virtio-mmio slot (in order). */
-export type DeviceSpec = { type: 'console' } | { type: 'rng' };
+/**
+ * Host-side device configuration, one per virtio-mmio slot (in order). `blk`
+ * is a read-only disk read with HTTP range requests; `size` (bytes, a
+ * multiple of 512) is filled in by `bootVm` with a HEAD request if missing.
+ */
+export type DeviceSpec = { type: 'console' } | { type: 'rng' } | { type: 'blk'; url: string; size?: number };
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
@@ -25,6 +29,15 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     // max_nr_ports, emerg_wr, unused without them.
     case 'console': return { entry: [3n, 0n, 2n, 64n, 12n], config: new Uint8Array(12) };
     case 'rng': return { entry: [4n, 0n, 1n, 64n, 0n], config: new Uint8Array(0) };
+    case 'blk': {
+      // Features SEG_MAX (2) and RO (5); config: capacity in sectors (u64 at 0),
+      // seg_max (u32 at 12) = queue size - 2, as QEMU.
+      const config = new Uint8Array(16);
+      const v = new DataView(config.buffer);
+      v.setBigUint64(0, BigInt(Math.floor((d.size ?? 0) / 512)), true);
+      v.setUint32(12, 126, true);
+      return { entry: [2n, 1n << 2n | 1n << 5n, 1n, 128n, 16n], config };
+    }
   }
 }
 
@@ -52,10 +65,23 @@ function console_(out: (text: string) => void, ctx: Ctx): Backend {
   };
 }
 
-function rng(ctx: Ctx): Backend {
+function rng(ctx: Ctx, deterministic: boolean): Backend {
   // Deterministic mode: the same bytes natively (core/tests/common) and here,
-  // so boots keep one step count.
-  // ponytail: crypto.getRandomValues once realtime mode exists.
+  // so boots keep one step count. Realtime: the platform's CSPRNG.
+  if (!deterministic) {
+    return {
+      request(r) {
+        const ram = ctx.ram();
+        let n = 0;
+        for (const s of r.write) {
+          for (let k = 0; k < s.len; k += 65536) ram.set(crypto.getRandomValues(new Uint8Array(Math.min(65536, s.len - k))), s.off + k); // not on shared memory directly
+          n += s.len;
+        }
+        return n;
+      },
+      reset() {},
+    };
+  }
   const g = splitmix64(0n);
   let word = 0n;
   let left = 0;
@@ -80,6 +106,83 @@ function rng(ctx: Ctx): Backend {
   };
 }
 
+/** Bytes `n` onward of the concatenated segments, `len` of them. */
+function gather(ram: Uint8Array, segs: Segment[], len: number) {
+  const out = new Uint8Array(len);
+  let k = 0;
+  for (const s of segs) {
+    if (k === len) break;
+    const n = Math.min(s.len, len - k);
+    out.set(ram.subarray(s.off, s.off + n), k);
+    k += n;
+  }
+  return out.subarray(0, k);
+}
+
+/** Writes `data` across the segments, in order. */
+function scatter(ram: Uint8Array, segs: Segment[], data: Uint8Array) {
+  let k = 0;
+  for (const s of segs) {
+    if (k === data.length) break;
+    const n = Math.min(s.len, data.length - k);
+    ram.set(data.subarray(k, k + n), s.off);
+    k += n;
+  }
+}
+
+// virtio-blk request types and status (virtio 1.2 §5.2.6).
+const T_IN = 0;
+const T_GET_ID = 8;
+const S_OK = 0;
+const S_IOERR = 1;
+const S_UNSUPP = 2;
+
+/**
+ * Read-only virtio-blk over HTTP range requests: a synchronous XHR (workers
+ * only), so the backend stays synchronous like the others and the device
+ * worker simply blocks on the network.
+ */
+// ponytail: one request at a time, no cache (the guest's page cache is the cache); batch or cache if an I/O benchmark says so.
+function blk(ctx: Ctx, url: string, size: number): Backend {
+  const read = (off: number, len: number) => {
+    const x = new XMLHttpRequest();
+    x.open('GET', url, false);
+    x.responseType = 'arraybuffer';
+    x.setRequestHeader('Range', `bytes=${off}-${off + len - 1}`);
+    x.send();
+    const b = x.response as ArrayBuffer | null;
+    return x.status === 206 && b?.byteLength === len ? new Uint8Array(b) : undefined;
+  };
+  return {
+    request(r) {
+      const ram = ctx.ram();
+      const last = r.write.at(-1);
+      if (!last || last.len === 0) return 0; // no status byte: nothing to answer with
+      // Data: every writable byte but the status byte at the end.
+      const data = [...r.write.slice(0, -1), { off: last.off, len: last.len - 1 }];
+      const room = data.reduce((n, s) => n + s.len, 0);
+      const h = new DataView(gather(ram, r.read, 16).slice().buffer);
+      let [status, n] = [S_UNSUPP, 0];
+      if (h.byteLength === 16 && h.getUint32(0, true) === T_IN) {
+        const off = Number(h.getBigUint64(8, true)) * 512;
+        const bytes = room === 0 ? new Uint8Array(0) : off + room <= size ? read(off, room) : undefined;
+        if (bytes) scatter(ram, data, bytes);
+        [status, n] = bytes ? [S_OK, room] : [S_IOERR, 0];
+      } else if (h.byteLength === 16 && h.getUint32(0, true) === T_GET_ID) {
+        const id = new Uint8Array(20);
+        id.set(new TextEncoder().encode('webpc-blk'));
+        scatter(ram, data, id.subarray(0, room));
+        [status, n] = [S_OK, Math.min(room, 20)];
+      } else if (h.byteLength === 16 && h.getUint32(0, true) === 1) {
+        status = S_IOERR; // OUT on a read-only disk
+      }
+      ram[last.off + last.len - 1] = status;
+      return n + 1;
+    },
+    reset() {},
+  };
+}
+
 export type DevicesInit = {
   memory: WebAssembly.Memory;
   /** Addresses in `memory` of each device's `virtio::DevShared`, of guest RAM and of the signal word. */
@@ -87,6 +190,7 @@ export type DevicesInit = {
   ram: number;
   signal: number;
   specs: DeviceSpec[];
+  deterministic: boolean;
 };
 
 export class Devices {
@@ -96,13 +200,14 @@ export class Devices {
   private backends: Backend[];
   private epochs: number[];
   /** `out` receives what a console device's guest side wrote. */
-  constructor({ memory, shared, ram, signal, specs }: DevicesInit, out: (device: number, text: string) => void) {
+  constructor({ memory, shared, ram, signal, specs, deterministic }: DevicesInit, out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal] = [memory, shared, signal];
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = { ram: () => new Uint8Array(this.memory.buffer, ram), complete: (w0, len) => this.complete(i, w0, len) };
       switch (d.type) {
         case 'console': return console_((t) => out(i, t), ctx);
-        case 'rng': return rng(ctx);
+        case 'rng': return rng(ctx, deterministic);
+        case 'blk': return blk(ctx, d.url, d.size ?? 0);
       }
     });
     this.epochs = specs.map(() => 0);

@@ -3,7 +3,7 @@
 // --page bench/interp/index.html) and in Node (tests/core-wasm.test.ts).
 // M4: the integer guest again in a whole VM through vm_run, at EL1 with the MMU off and on (vm-start.S).
 import type { Options, Sample } from '../spike/benchmarks.ts';
-import { ABI, bootVm } from '../../web/vm.ts';
+import { ABI, bootVm, coreImports } from '../../web/vm.ts';
 
 const RAM = 16 << 20;
 const LOAD = 0x10000; // guest.ld
@@ -31,7 +31,7 @@ type Exports = {
 export async function setup(bin = 'guest.bin') {
   const wasm = await load('../../target/wasm32-unknown-unknown/release/webpc_core.wasm');
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
-  const { instance } = await WebAssembly.instantiate(wasm, { env: { memory } });
+  const { instance } = await WebAssembly.instantiate(wasm, coreImports(memory));
   const ex = instance.exports as unknown as Exports;
   if (ex.abi_version() !== ABI) throw new Error(`core ABI ${ex.abi_version()}, expected ${ABI}`);
   const cpu = ex.vcpu_new();
