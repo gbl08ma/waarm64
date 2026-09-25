@@ -273,6 +273,8 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
 - **Exit:** `REPORT.md` with capacity tables, cost tables, machine-code evidence and the decision. The §1 "Guest memory" row is updated.
 
 ### M1 — A64 integer interpreter + golden corpus
+**Status:** done 2026-09-25. The decoder is generated from dynarmic's table; 13,940 golden tests with M4 results all pass; the exhaustive 2³² decoder sweep against Capstone is clean. Warm interpreter speed is 91 MIPS (x86_64, Chromium 152) and 149 MIPS (M4, Chromium 153), see `bench/interp/REPORT.md`.
+
 - Decoder generated from a pattern table (port dynarmic's `a64.inc` or generate from Arm's spec).
 - Interpreter for data processing, branches, loads/stores (all addressing modes), exclusives, LSE, on flat memory.
 - Golden-corpus generator, oracle harness (qemu-aarch64 + M4 hardware), comparator. Decoder fuzzing against Capstone.

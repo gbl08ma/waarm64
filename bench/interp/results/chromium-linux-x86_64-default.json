@@ -1,0 +1,65 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-25T10:55:06.997Z",
+ "commit": "fa617211a391",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "interp_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 2000000
+   },
+   "samples": [
+    68.31767725461386
+   ],
+   "median": 68.31767725461386,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "interp_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 20000000
+   },
+   "samples": [
+    91.11617312072893,
+    91.0352989401267,
+    91.14731684590835,
+    90.99388067929223,
+    91.08712481314518,
+    91.00630219235026,
+    91.05602222557653,
+    91.00009098725774,
+    91.04980425675643,
+    90.87191602056805,
+    91.00423170467201,
+    90.8471496559212,
+    90.94836407813398,
+    91.04773176448833,
+    91.04773176448833
+   ],
+   "median": 91.0352989401267,
+   "iqr": 0.05592740789150241,
+   "n": 15
+  }
+ ]
+}

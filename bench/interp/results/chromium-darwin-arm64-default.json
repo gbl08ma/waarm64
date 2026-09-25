@@ -1,0 +1,65 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-25T10:56:10.178Z",
+ "commit": null,
+ "dirty": false,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M4",
+  "cores": 10,
+  "memGiB": 24
+ },
+ "browser": {
+  "version": "153.0.8010.12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "interp_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 2000000
+   },
+   "samples": [
+    104.1937995370643
+   ],
+   "median": 104.1937995370643,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "interp_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 20000000
+   },
+   "samples": [
+    142.75517497226406,
+    147.79235195410422,
+    150.07128388131147,
+    146.17211736290753,
+    146.16677637324884,
+    147.18869578418892,
+    148.8482861094204,
+    144.75446028677266,
+    146.68671407661517,
+    149.05906444247617,
+    150.20653441456437,
+    150.32507789493107,
+    151.68177162115128,
+    151.71629075621152,
+    151.75658248568976
+   ],
+   "median": 148.8482861094204,
+   "iqr": 3.8363904349863844,
+   "n": 15
+  }
+ ]
+}

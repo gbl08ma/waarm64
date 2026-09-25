@@ -11,7 +11,8 @@ and runs unmodified arm64 Linux. Chromium is the primary target.
 
 - M0 (foundations + spike): done. Still pending: re-run the spike on Chromium arm64 on the M4 Mac.
 - M0.5 (memory architecture): done on x86_64 and arm64 (M4), **layout A**: one shared wasm32 memory with core state then guest RAM, and a wasm32 Rust core. TLB tag bits 3–11 are reserved for a memory index. See `bench/spike/memory/REPORT.md`.
-- **Next: M1**, the A64 integer interpreter and golden corpus.
+- M1 (A64 integer interpreter + golden corpus): done. Decoder `core/build.rs` ← `core/src/a64/a64.inc`; interpreter `core/src/interp*`; corpus `tests/corpus/` (grow it with `node tools/corpus/run.ts`, compare with `cargo test`); decoder fuzzing `core/fuzz`; MIPS `bench/interp/REPORT.md`.
+- **Next: M2**, FP and AdvSIMD in the interpreter.
 
 ## Commands
 
@@ -24,6 +25,9 @@ npm run bench -- [--quick] [--only <bench>] [--config default|liftoff-only|turbo
 node bench/spike/memory/run-all.ts # M0.5 memory suite (capacity, cost, machine code) -> bench/spike/memory/results/
 node bench/spike/node.ts --quick   # spike in Node, fast iteration only
 npm run serve                  # dev server with COOP/COEP on :8080 (PORT env overrides)
+node tools/corpus/run.ts [--oracle qemu|m4|both] [group...]  # regenerate golden corpus (needs qemu / the M4 VM)
+npm run bench -- --page bench/interp/index.html               # interpreter MIPS
+(cd core/fuzz && cargo run --release --bin sweep)             # exhaustive decoder check vs Capstone (~2 min)
 ```
 
 `scripts/ci.sh` must pass before any piece of work is considered done.
