@@ -1,6 +1,7 @@
 // One command for the whole M0.5 memory suite on this host:
-//   node bench/spike/memory/run-all.ts [--quick]
-// Builds the Rust side, then writes bench/spike/memory/results/chromium-<os>-<arch>-*:
+//   node bench/spike/memory/run-all.ts [--quick] [--no-build]
+// Builds the Rust side (--no-build: use the wasm already in target/, e.g. copied
+// from another host, so both hosts run identical bytes), then writes bench/spike/memory/results/chromium-<os>-<arch>-*:
 // capacity.json, cost-<config>.json, and on Linux cost-default-nothp.json (1 GiB
 // working sets with transparent huge pages off) and machine-code-<tier>.txt.
 import { spawnSync } from 'node:child_process';
@@ -20,7 +21,7 @@ const cost = (config: string, suffix = '', env: Record<string, string> = {}, onl
   shEnv(env, process.execPath, '--disable-warning=ExperimentalWarning', 'bench/run.ts', '--page', 'bench/spike/memory/index.html', '--config', config,
     '--out', `${prefix}-cost-${config}${suffix}.json`, ...only, ...(quick ? ['--quick'] : []));
 
-sh('bench/spike/memory/build.sh', '-q');
+if (!process.argv.includes('--no-build')) sh('bench/spike/memory/build.sh', '-q');
 node('bench/spike/memory/capacity.ts', '--out', `${prefix}-capacity.json`);
 for (const config of ['default', 'liftoff-only', 'turbofan-only', 'bounds-checks']) cost(config);
 if (os.platform() === 'linux') {

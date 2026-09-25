@@ -1,12 +1,12 @@
 # M0.5 report: memory architecture decision
 
 **Host:** AMD Ryzen 7 5800X3D (Zen 3, x86_64), 47 GiB, Linux 7.2 (THP `always`), Chromium 152.0.7977.75 headless.
-**Date:** 2026-09-25. **Raw data:** `results/chromium-linux-x86_64-*` (capacity JSON, cost JSON per V8 config, disassembly per tier).
+**Date:** 2026-09-25. **Raw data:** `results/chromium-linux-x86_64-*` (capacity JSON, cost JSON per V8 config, disassembly per tier), `results/chromium-darwin-arm64-*` (capacity, cost) and `results/chromium-linux-arm64-machine-code-*`.
 **Reproduce (any host, one command):** `node bench/spike/memory/run-all.ts`. It builds the Rust side and writes
 `results/chromium-<os>-<arch>-{capacity,cost-<config>}.json` (plus `cost-default-nothp.json` and `machine-code-<tier>.txt` on Linux).
 Tables: `node bench/spike/memory/tables.ts <cost json>`.
 
-**Pending:** Chromium on arm64 (the M4 Mac isn't set up yet). Every number here is x86_64 only. See §5.
+**arm64:** Apple M4 (macOS 26.6, 24 GiB), Chrome for Testing 153.0.8010.12 headless (Playwright's build), same wasm bytes as x86_64. arm64 machine code comes from the same Chromium build in the Debian 13 arm64 VM on that Mac. See §5. §1–§4 are the x86_64 numbers.
 Firefox wasn't measured: project rule, it is the user's daily browser.
 
 ## Decision
@@ -22,7 +22,8 @@ By the rule, no >4 GiB-capable layout came within 5% of A on the realistic mixed
 | **A + spill memory** (`AB_spec_one`, memory-0 pages) | **±0%** (identical machine code) | ±0% | ±0% | ±0% |
 
 - **C is the near miss:** +6.4% on random access, but +20% on sequential, and every Rust load and store in the core gets an explicit bounds check (+8–11%). Liftoff and TurboFan-only runs are worse (+9–11%).
-- **The recorded gap is 6–28% on JIT code and 11–30% on the core**, depending on the candidate. Revisit when V8 changes the lowering described in §3: either memory64 bounds checks go away, or non-zero memory bases get hoisted. Also revisit if the arm64 run disagrees.
+- **The recorded gap is 6–28% on JIT code and 11–30% on the core**, depending on the candidate. Revisit when V8 changes the lowering described in §3: either memory64 bounds checks go away, or non-zero memory bases get hoisted.
+- **arm64 (M4, §5) confirms A.** V8 emits the same lowering there. C's JIT-code gap is wider (+17.5% random, +18.9% sequential), even though its wasm64 core is free on arm64. B (+31–40%) and D (+26–32%) are also worse than on x86_64.
 - **Upgrade path without regressions: "A + spill memories" (the NUMA follow-up).** Keep A. Put guest RAM beyond memory 0 in additional wasm32 memories, and fold the memory index into the TLB tag. Memory-0 pages then run **byte-identical code** to A (verified in the disassembly). Spill pages go through the slow path. That costs +120% when half the pages are spill pages, so Linux must be steered to keep hot data in memory 0. Describing each spill memory as a CPU-less NUMA node does that. This adds nothing to the fast path and changes no layout decision made now, only the TLB tag format (see §4).
 
 ## 1. Capacity (Chromium 152, x86_64 Linux)
@@ -208,8 +209,61 @@ D   (memory 1, memory64)     cmp  + jae                      ; both costs: the e
 - **Size guest RAM against host RAM up front.** Overcommitting ends in a renderer OOM kill, not an exception.
 - **The NUMA follow-up applies** (B's cost is asymmetric). It's validated in M3 once Linux boots, and only if >3.5 GiB guests are wanted.
 
-## 5. Pending: arm64 (M4 Mac)
+## 5. arm64 (Apple M4)
 
-- **Run** `node bench/spike/memory/run-all.ts` under Chromium on the M4 (macOS). It writes `results/chromium-darwin-arm64-*`.
-- **Machine code:** V8 only writes jitdump on Linux, so the arm64 disassembly needs Chromium in the planned arm64 Linux VM (same command). Until then arm64 codegen is unverified.
-- **What would change the decision:** C's gap closing to ≤5% on both the random and sequential mixed kernels **and** the wasm64 core. That would take V8 on arm64 lowering memory64 without per-access checks. The other candidates' gaps (B +12–14%, D +19–28%) come from engine-level lowering (base reload, per-access check), which isn't architecture-specific. They're unlikely to close there.
+**Setup:**
+- **Host:** Apple M4, 10 cores, 24 GiB, macOS 26.6.2.
+- **Browser:** Chrome for Testing 153.0.8010.12 headless (Playwright `chromium-1243`). There's no system Chromium on the Mac, and x86_64 ran Arch's 152.
+- **wasm:** the x86_64 build copied over (`run-all.ts --no-build`), so both hosts ran identical bytes.
+- **Raw data:** `results/chromium-darwin-arm64-{capacity,cost-<config>}.json`.
+- **Machine code:** V8 writes jitdump only on Linux, so it comes from the same Chromium build (linux-arm64) in the Debian 13 arm64 VM (Lima `oracle`, Virtualization.framework) on that Mac. It's in `results/chromium-linux-arm64-machine-code-{turbofan,liftoff}.txt`.
+
+**Capacity:** the same as x86_64 (§1).
+- Per-memory limits: 4 GiB wasm32, 16 GiB memory64, with the same errors.
+- Six 4 GiB memories (24 GiB) fit, including memories created in workers.
+- Commit is lazy, and dropping a memory returns its pages.
+- 125 shared wasm32 reservations fit before `RangeError`. The cage is ~1.8 TiB of VSZ.
+- Every feature check passes.
+- The OOM experiment was skipped: it needs a Linux cgroup.
+
+**Cost vs A, mixed kernels** (`tables.ts results/chromium-darwin-arm64-cost-<config>.json`):
+
+| layout | default: rand 8 MiB / seq 64 MiB / chase 8 MiB | TurboFan only (rand / seq) | Liftoff only | `--wasm-enforce-bounds-checks` |
+|---|---|---|---|---|
+| A (absolute) | 2.05 / 1.67 / 10.81 ns | 2.08 / 1.61 ns | 2.88 / 2.81 ns | 2.59 / 2.25 ns |
+| AB spec, one | −0.7 / +12.5\* / −0.8% | −3.7 / +0.0% | +1.8 / +0.3% | +0.0 / −0.4% |
+| B1 | +37.6 / +31.5 / +1.5% | +36.9 / +44.2% | +20.1 / +25.0% | +33.5 / +23.7% |
+| B2 spec, one | +39.7 / +31.3 / +1.5% | +35.7 / +36.6% | +19.2 / +23.2% | +34.2 / +23.7% |
+| **C** | **+17.5 / +18.9** / −3.1% | +28.5 / +22.8% | +13.1 / +9.0% | +2.7 / −1.3% |
+| D | +25.8 / +31.7 / −2.7% | +23.4 / +37.3% | +21.3 / +23.9% | +27.3 / +21.7% |
+
+\* AB spec one compiles to code byte-identical to A on arm64 as well (the disassembly matches once absolute addresses are masked). Its seq gap shows up only under dynamic tiering and has a tight IQR (±0.003 ns). Under TurboFan only it is +0.0%. So this is a tiering artifact, not a layout cost. IQRs on the other decision rows are ±0.002–0.09 ns, far below the gaps.
+
+**Rust core, interpreter ns/guest insn** (default; TurboFan only; Liftoff only):
+- A: 1.67; 1.67; 2.95.
+- B: +10.6%; +9.1%; +6.7%.
+- **C (wasm64): −0.1%; −0.5%; +0.1%.**
+- D: +10.0%; +9.0%; +5.4%.
+
+DMA copies are within ±5%, except the Liftoff 4 KiB case, where A is the slow one.
+
+**Machine code** (TurboFan, arm64; same structure as §3):
+
+```
+A   (memory 0)      ldur x1,[x7,#23]                        ; memory-0 base: once, before the loop
+                    ldr  x2,[x1,x2]                         ; the access: no bounds check (trap handler)
+B1  (memory 1)      mov x8,#0x3f ; ldr w8,[x7,x8]           ; memory-1 base reloaded at every access:
+                    ldr x16,[x26,#520] ; orr x8,x8,x16      ;   compressed pointer, decompress,
+                    ldur x8,[x8,#23] ; ldr x2,[x8,x2]       ;   base, then the access
+C   (memory64)      tst x2,#0xfffffffc00000000 ; b.ne trap  ; explicit check on every access (16 GiB reservation), TLB loads included
+D   (memory 1, m64) tst + b.ne, then the base reload
+```
+
+- **Non-zero memories:** same three-load base reload as x86_64, never hoisted. It costs more on the M4 (+31–40% vs +12–14%). A likely reason is that the rest of the loop runs faster there, so the reload is a bigger share. That's untested.
+- **memory64:** a one-instruction `tst` against the 16 GiB reservation plus a branch, per access.
+  - **The wasm64 core** has only 38 such checks for 634 memory operands in `run-3`, vs 151 `jae` for 716 on x86_64. The reason for the difference wasn't investigated. The measured core cost is ~0%.
+  - **The JIT kernels** index RAM with values V8 can't bound (TLB addends), so every guest access keeps its check.
+
+**Verdict:** the rule needs C ≤ 5% on the random and sequential mixed kernels **and** on the core. On arm64 C passes the core (−0.1%) but fails both JIT kernels (+17.5%, +18.9%). **A stands on both hosts.**
+
+**Not measured on arm64:** the OOM kill (no cgroups on macOS), and the no-THP 1 GiB run (Linux-only). The 1 GiB groups in the JSON have the same host-placement noise as on x86_64 (A2 = A code, +111% in one group), and aren't used.

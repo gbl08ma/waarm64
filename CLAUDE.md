@@ -10,7 +10,7 @@ and runs unmodified arm64 Linux. Chromium is the primary target.
 ## Status
 
 - M0 (foundations + spike): done. Still pending: re-run the spike on Chromium arm64 on the M4 Mac.
-- M0.5 (memory architecture): done on x86_64, **layout A**: one shared wasm32 memory with core state then guest RAM, and a wasm32 Rust core. TLB tag bits 3–11 are reserved for a memory index. See `bench/spike/memory/REPORT.md`. Still pending: the arm64 run, `node bench/spike/memory/run-all.ts`.
+- M0.5 (memory architecture): done on x86_64 and arm64 (M4), **layout A**: one shared wasm32 memory with core state then guest RAM, and a wasm32 Rust core. TLB tag bits 3–11 are reserved for a memory index. See `bench/spike/memory/REPORT.md`.
 - **Next: M1**, the A64 integer interpreter and golden corpus.
 
 ## Commands

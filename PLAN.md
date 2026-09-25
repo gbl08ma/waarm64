@@ -14,7 +14,7 @@ primary target.
 | Platform | GICv2 (a GICv3 subset later), generic timer, PL011 UART, PSCI over HVC handled by the host, virtio-mmio v2, and a DTB generated from the VM config |
 | Boot | Direct kernel boot (arm64 `Image` + initrd + DTB). No UEFI. For distro disk images, the kernel and initrd are extracted and booted directly |
 | Core language | Rust compiled to `wasm32` (the same crate also builds natively for tests). Host glue is in TypeScript |
-| Guest memory | **Layout A (decided in M0.5, `bench/spike/memory/REPORT.md`):** one shared wasm32 memory: core state first, then guest RAM (≤ ~3.5 GiB, sized against host RAM at VM start). The Rust core targets wasm32. Every >4 GiB layout cost more than the 5% threshold on x86_64 Chromium: C (memory64) +6–20% in JIT code and +11% in the core, B +12–14%, D +19–28%. The guest physical address map is independent of placement, because the TLB translates. Every guest RAM access in generated code goes through one lowering function. TLB tag bits 3–11 are reserved for a memory index, so "A + spill memories" (extra wasm32 memories as NUMA nodes, same fast path as A for memory-0 pages) can be added later without changing A's code |
+| Guest memory | **Layout A (decided in M0.5, `bench/spike/memory/REPORT.md`):** one shared wasm32 memory: core state first, then guest RAM (≤ ~3.5 GiB, sized against host RAM at VM start). The Rust core targets wasm32. Every >4 GiB layout cost more than the 5% threshold on x86_64 Chromium: C (memory64) +6–20% in JIT code and +11% in the core, B +12–14%, D +19–28%. On arm64 (M4, macOS Chromium 153) they cost C +17–19% in JIT code (its wasm64 core is free there), B +31–40% and D +26–32%. The guest physical address map is independent of placement, because the TLB translates. Every guest RAM access in generated code goes through one lowering function. TLB tag bits 3–11 are reserved for a memory index, so "A + spill memories" (extra wasm32 memories as NUMA nodes, same fast path as A for memory-0 pages) can be added later without changing A's code |
 | License | MIT (or MIT OR Apache-2.0, the Rust-ecosystem default, which also adds a patent grant). Nothing in §6 requires GPL |
 
 Deferred: SVE, EL2, 16K/64K granules (needed for RHEL-family kernels), virtio-pci/MSI, GICv3 ITS.
@@ -221,7 +221,7 @@ Every milestone ends with: all test layers green, a recorded benchmark baseline 
 - **Exit:** CI green. Spike report written into `bench/` with numbers.
 
 ### M0.5 — Memory architecture experiment (decision gate)
-**Status:** done 2026-09-25 on x86_64 (see `bench/spike/memory/REPORT.md`). **Decision: A.** Still pending: the arm64 (M4) run with `node bench/spike/memory/run-all.ts`, which reopens the decision only if C comes in at ≤ 5% there on both kernels and the wasm64 core.
+**Status:** done 2026-09-25 on x86_64 and arm64 (M4, macOS; machine code from the arm64 Linux VM). See `bench/spike/memory/REPORT.md` §5. **Decision: A, on both hosts.**
 
 This decision shapes the TLB entry format, the core's memory layout and the Rust target, so it's made before M1 writes any of them.
 Code lives in `bench/spike/memory/`, and results plus the written decision go in `bench/spike/memory/REPORT.md`.
@@ -319,5 +319,5 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
 - **FP exactness** (FMA, NaN payloads, rounding modes) costing more than expected. It's contained to the slow paths, and TestFloat catches regressions.
 - **Broadcast TLBI/IC + `DSB` synchronization** across workers under SMP. This is a known ARM cost that shapes the M7 design.
 - **Rust + wasm threads** needs nightly with `-Z build-std`, with atomics enabled via `-Zllvm-target-feature=+atomics` (`-Ctarget-feature=+atomics` is being phased out, rust-lang/rust#162235). The toolchain is pinned in `rust-toolchain.toml`.
-- **Guest RAM ceiling / memory layout.** Settled in M0.5: layout A, so guest RAM ≤ ~3.5 GiB. The measured gaps to B/C/D are recorded in `bench/spike/memory/REPORT.md`; re-measure them on new Chromium releases and on arm64. Past 3.5 GiB the path is spill memories as NUMA nodes (the M0.5 NUMA follow-up). Chromium gives no catchable error when host RAM runs out: the renderer is OOM-killed, so guest RAM must be sized against host RAM up front.
+- **Guest RAM ceiling / memory layout.** Settled in M0.5: layout A, so guest RAM ≤ ~3.5 GiB. The measured gaps to B/C/D are recorded in `bench/spike/memory/REPORT.md`; re-measure them on new Chromium releases. Past 3.5 GiB the path is spill memories as NUMA nodes (the M0.5 NUMA follow-up). Chromium gives no catchable error when host RAM runs out: the renderer is OOM-killed, so guest RAM must be sized against host RAM up front.
 - **Cross-origin isolation** (COOP/COEP) is required for `SharedArrayBuffer`. It constrains embedding and third-party resources.
