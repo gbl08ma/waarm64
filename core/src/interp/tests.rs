@@ -1113,3 +1113,29 @@ fn sctlr_write_switches_interpreter_copy_mid_run() {
     assert_eq!(t.step(), Ok(()));
     assert_eq!(t.c.pc, CODE + 4);
 }
+
+#[test]
+fn v8_0_registers_the_sweep_found() {
+    // IMPLEMENTATION DEFINED, debug and reset registers that exist at EL1 when
+    // it's the highest EL (M3 step 7): RAZ/WI, or read-only.
+    let prog = [
+        0xd5381020, // mrs x0, actlr_el1
+        0xd5181021, // msr actlr_el1, x1
+        0xd538c041, // mrs x1, rmr_el1 (AA64 reads as one)
+        0xd538c022, // mrs x2, rvbar_el1
+        0xd5301003, // mrs x3, mdrar_el1
+        0xd5100641, // msr oseccr_el1, x1
+        0xd508751f, // ic iallu
+        0xd5087500, // ic iallu with Rt = 0 (should-be-ones)
+    ];
+    let mut t = T::new(&prog).el1().x(0, 7).x(1, 7).x(2, 7).x(3, 7);
+    for _ in 0..prog.len() {
+        t.sys().unwrap();
+    }
+    assert_eq!((t.c.x[0], t.c.x[1], t.c.x[2], t.c.x[3]), (0, 1, 0, 0));
+    assert_eq!(t.c.pc, CODE + 4 * prog.len() as u64, "no exception taken");
+    // MDRAR_EL1 is read-only: MSR is UNDEFINED.
+    let mut t = T::new(&[0xd5101000]).el1();
+    t.sys().unwrap();
+    assert_eq!((t.c.pc, t.c.esr_el1), (VBAR + 0x200, 0x0200_0000));
+}

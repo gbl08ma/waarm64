@@ -35,10 +35,12 @@ impl Checker {
         Checker { cs, _buf: buf, mem }
     }
 
-    /// Executes `w` on a scratch vCPU (it must not panic) and compares
-    /// "valid instruction" with Capstone. EL1 system encodings (Unimplemented
-    /// until M3) are only executed, not compared.
+    /// Executes `w` on a scratch vCPU at EL0 (it must not panic) and compares
+    /// "valid instruction" with Capstone. The system space goes to `check_sys`.
     pub fn check(&mut self, w: u32) -> Option<Mismatch> {
+        if w & 0xffc0_0000 == 0xd500_0000 {
+            return self.check_sys(w);
+        }
         self.mem.write(PC, 4, w as u64).unwrap();
         let mut cpu = Cpu {
             pc: PC,
@@ -57,13 +59,7 @@ impl Checker {
                 i.op_str().unwrap_or("").to_string(),
             )
         });
-        // System registers and SYS/SYSL are EL1 system level (M3): not compared yet.
-        if cs
-            .as_ref()
-            .is_some_and(|(m, _)| matches!(m.as_str(), "mrs" | "msr" | "sys" | "sysl"))
-        {
-            return None;
-        }
+
         // The hint space (PAC and BTI included) is ours: those run as NOPs.
         let hint = w & 0xffff_f01f == 0xd503_201f;
         let theirs = cs.as_ref().is_some_and(|(m, o)| hint || !not_ours(m, o));
@@ -83,6 +79,177 @@ impl Checker {
         })
     }
 }
+
+impl Checker {
+    /// The system instruction space (MRS, MSR, SYS, SYSL and their aliases),
+    /// executed at EL1 with FP enabled. Capstone decodes every MRS/MSR
+    /// encoding, naming the registers it knows (others print as
+    /// `s<op0>_<op1>_c<n>_c<m>_<op2>`), and names the SYS operations it knows
+    /// (`tlbi`, `dc`, `ic`, `at`, …; others print as `sys`). A named one should
+    /// work, unless its feature is one we leave out (`sys_not_ours`); an unnamed
+    /// one should be UNDEFINED, except in the ID space, which reads as zero.
+    fn check_sys(&mut self, w: u32) -> Option<Mismatch> {
+        self.mem.write(PC, 4, w as u64).unwrap();
+        let mut cpu = Cpu {
+            pc: PC,
+            cpacr_el1: 3 << 20,
+            ..Cpu::reset()
+        };
+        cpu.x = [0x8000; 32];
+        let r = step(&mut cpu, &self.mem);
+        let ours = !matches!(r, Err(Exit::Undefined));
+        let insns = self.cs.disasm_count(&w.to_le_bytes(), PC, 1).ok();
+        let (m, o) = insns
+            .as_ref()
+            .and_then(|i| i.iter().next())
+            .map(|i| {
+                (
+                    i.mnemonic().unwrap_or("").to_string(),
+                    i.op_str().unwrap_or("").to_string(),
+                )
+            })
+            .unwrap_or(("invalid".into(), String::new()));
+        let theirs = sys_named(&m, &o) && !sys_not_ours(&m, &o);
+        let id_space =
+            w & 0xfff8_0000 == 0xd518_0000 && (w >> 12) & 0xf == 0 && (w >> 8) & 0xf != 0
+                || w & 0xfff8_0000 == 0xd538_0000 && (w >> 12) & 0xf == 0; // op0 3, op1 0, CRn 0
+        // The hint space (PAC and BTI included) runs as NOPs, as in `check`.
+        let hint = w & 0xffff_f01f == 0xd503_201f;
+        if ours == theirs || hint || (ours && id_space && m == "mrs") {
+            return None;
+        }
+        let what = sys_name(&m, &o);
+        Some(Mismatch {
+            key: format!("{} {m} {what}", if ours { "ours" } else { "UNDEFINED" }),
+            detail: format!("{w:#010x}: {r:?}, capstone {m} {o}"),
+        })
+    }
+}
+
+/// The register or operation an MRS/MSR/SYS names, without the Xt operand.
+fn sys_name<'a>(m: &str, o: &'a str) -> &'a str {
+    let parts: Vec<&str> = o.split(", ").collect();
+    match m {
+        "mrs" => parts.get(1).copied().unwrap_or(""),
+        _ => parts.first().copied().unwrap_or(""),
+    }
+}
+
+/// Whether Capstone knows the register or operation (not the generic form).
+fn sys_named(m: &str, o: &str) -> bool {
+    let n = sys_name(m, o);
+    let generic = n.starts_with('s') && n.contains("_c") && n.split('_').count() == 5;
+    !matches!(m, "sys" | "sysl" | "invalid") && !generic
+}
+
+/// Named system registers and operations of features we don't have: EL2/EL3,
+/// AArch32, GICv3's CPU interface, PMU, SPE, AMU, trace, RAS, SVE/SME, MTE,
+/// PAuth, and the post-v8.0 PSTATE fields and maintenance operations.
+fn sys_not_ours(m: &str, o: &str) -> bool {
+    let n = sys_name(m, o);
+    let el2_el3 = ["e2", "e3", "_el2", "_el3", "_el12", "_el02"].iter().any(|s| n.ends_with(s))
+        || n.starts_with("s12e") // stage 1+2 AT
+        || n.contains("e2os") || n.contains("e3os") || n.contains("e2is") || n.contains("e3is");
+    not_ours(m, o)
+        || el2_el3
+        || SYS_NOT_OURS.iter().any(|p| n.starts_with(p))
+        || SYS_NOT_OURS_OPS.iter().any(|s| n.ends_with(s))
+        || matches!(m, "smstart" | "smstop" | "brb")
+        || debug_beyond_two(n)
+}
+
+/// DBG{B,W}{C,V}R<n>_EL1 for n >= 2: we advertise two breakpoints and two watchpoints.
+fn debug_beyond_two(n: &str) -> bool {
+    ["dbgbcr", "dbgbvr", "dbgwcr", "dbgwvr"].iter().any(|p| {
+        n.strip_prefix(p)
+            .and_then(|r| r.strip_suffix("_el1"))
+            .and_then(|k| k.parse::<u32>().ok())
+            .is_some_and(|k| k >= 2)
+    })
+}
+
+/// Register and operation name prefixes of features we leave out.
+const SYS_NOT_OURS: &[&str] = &[
+    // Secure state and AArch32: the secure physical timer, the AArch32 banked SPSRs,
+    // ThumbEE; SP_EL1 is only reachable from EL2.
+    "cntps_",
+    "spsr_abt",
+    "spsr_fiq",
+    "spsr_irq",
+    "spsr_und",
+    "teecr",
+    "teehbr",
+    "sp_el1",
+    // Debug state only (DLR, DSPSR).
+    "dlr_",
+    "dspsr_",
+    // GICv3 CPU interface, PMU, SPE, AMU, trace (ETE/TRBE), RAS, BRBE, MPAM, v8-R MPU.
+    "icc_",
+    "pm",
+    "trc",
+    "trb",
+    "trfcr",
+    "amc",
+    "ame",
+    "amu",
+    "disr",
+    "err",
+    "erx",
+    "brb",
+    "mpam",
+    "mpuir",
+    "prbar",
+    "prlar",
+    "prenr",
+    "prselr",
+    // SVE, SME, MTE, PAuth keys, LOR, LS64, CSV2_2 context numbers, RNG, v8.6 self-synchronized counters.
+    "zcr",
+    "smcr",
+    "smidr",
+    "smpri",
+    "svcr",
+    "tpidr2",
+    "gcr",
+    "gmid",
+    "rgsr",
+    "tfsr",
+    "tco",
+    "ap",
+    "lor",
+    "accdata",
+    "scxtnum",
+    "rndr",
+    "cntpctss",
+    "cntvctss",
+    "ccsidr2",
+    // PSTATE fields after v8.0: PAN, UAO, DIT, SSBS.
+    "pan",
+    "uao",
+    "dit",
+    "ssbs",
+    // EL2 maintenance (TLBI ALLE1, VMALLS12E1, IPAS2*, AT S1E2*/S1E3*) and RME's TLBI PAALL.
+    "alle1",
+    "vmalls12e1",
+    "ipas2",
+    "s1e2",
+    "s1e3",
+    "paall",
+    // Maintenance after v8.0: range and outer-shareable TLBI (v8.4), AT with PAN (v8.2),
+    // DC to the point of persistence and the MTE tag operations.
+    "rva",
+    "ripa",
+    "rpa",
+    "cvap",
+    "cvadp",
+    "gva",
+    "gzva",
+    "cg",
+    "cig",
+    "ig",
+];
+
+/// Operation name suffixes of features we leave out: outer-shareable TLBI (v8.4).
+const SYS_NOT_OURS_OPS: &[&str] = &["os", "e1rp", "e1wp"];
 
 /// Encodings where we follow the M4 rather than Capstone: CONSTRAINED
 /// UNPREDICTABLE ones Capstone rejects and we execute, relaxed should-be-one
@@ -157,6 +324,9 @@ const NOT_OURS: &[&str] = &[
     "fjcvtzs", "frint32x", "frint32z", "frint64x", "frint64z", "fmlal", "fmlal2", "fmlsl", "fmlsl2",
     "sqrdmlah", "sqrdmlsh", "sdot", "udot", "usdot", "sudot", "smmla", "ummla", "usmmla", "fcmla",
     "fcadd", "rax1", "xar", "eor3", "bcax",
+    // At EL0, where `check` runs: HVC and ERET are EL1-only; no EL3 (SMC), no
+    // halting or external debug (HLT, DCPS1-3, DRPS).
+    "hvc", "eret", "smc", "hlt", "dcps1", "dcps2", "dcps3", "drps",
     // UDF is allocated but always UNDEFINED. TME, SVE scalar forms.
     "udf", "zero", "tstart", "tcommit", "tcancel", "ttest", "addvl", "addpl", "rdvl", "addsvl",
     "addspl", "rdsvl",

@@ -99,6 +99,18 @@ const OSDLR: u32 = sr(2, 0, 1, 3, 4);
 const DBGPRCR: u32 = sr(2, 0, 1, 4, 4);
 const DBGCLAIMSET: u32 = sr(2, 0, 7, 8, 6);
 const DBGCLAIMCLR: u32 = sr(2, 0, 7, 9, 6);
+const ACTLR: u32 = sr(3, 0, 1, 0, 1);
+const OSDTRRX: u32 = sr(2, 0, 0, 0, 2);
+const OSDTRTX: u32 = sr(2, 0, 0, 3, 2);
+const OSECCR: u32 = sr(2, 0, 0, 6, 2);
+const MDRAR: u32 = sr(2, 0, 1, 0, 0);
+const DBGAUTHSTATUS: u32 = sr(2, 0, 7, 14, 6);
+const MDCCSR: u32 = sr(2, 3, 0, 1, 0);
+const DBGDTR: u32 = sr(2, 3, 0, 4, 0);
+/// DBGDTRRX_EL0 when read, DBGDTRTX_EL0 when written.
+const DBGDTRRXTX: u32 = sr(2, 3, 0, 5, 0);
+const RVBAR: u32 = sr(3, 0, 12, 0, 1);
+const RMR: u32 = sr(3, 0, 12, 0, 2);
 const CNTKCTL: u32 = sr(3, 0, 14, 1, 0);
 const CNTFRQ: u32 = sr(3, 3, 14, 0, 0);
 const CNTPCT: u32 = sr(3, 3, 14, 0, 1);
@@ -111,12 +123,27 @@ const CNTV_CTL: u32 = sr(3, 3, 14, 3, 1);
 const CNTV_CVAL: u32 = sr(3, 3, 14, 3, 2);
 
 /// Registers that read as zero and ignore writes: IMPLEMENTATION DEFINED ones
-/// with nothing to control (AMAIR, AFSR0/1), CSSELR (CLIDR reports no caches),
-/// and the debug registers (see `ID_AA64DFR0`).
+/// with nothing to control (ACTLR, AMAIR, AFSR0/1), CSSELR (CLIDR reports no
+/// caches), and the debug registers (see `ID_AA64DFR0`), including the OS
+/// save/restore and debug communications channel ones.
 fn raz_wi(key: u32) -> bool {
     matches!(
         key,
-        AMAIR | AFSR0 | AFSR1 | CSSELR | MDCCINT | OSDLR | DBGPRCR | DBGCLAIMSET | DBGCLAIMCLR
+        ACTLR
+            | AMAIR
+            | AFSR0
+            | AFSR1
+            | CSSELR
+            | MDCCINT
+            | OSDLR
+            | DBGPRCR
+            | DBGCLAIMSET
+            | DBGCLAIMCLR
+            | OSDTRRX
+            | OSDTRTX
+            | OSECCR
+            | DBGDTR
+            | DBGDTRRXTX
     ) || key & !0b1011 == sr(2, 0, 0, 0, 4) // DBGB{V,C}R<n>, DBGW{V,C}R<n>, n = 0, 1
 }
 
@@ -196,6 +223,8 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
             // TLBI VMALLE1 and ASIDE1 (the TLB holds no ASIDs), and their IS
             // forms. One vCPU until M7, so IS is local.
             (0, 8, 3 | 7, 0 | 2) => m.flush_all(),
+            // IC IALLU(IS) with Rt != 31 (should-be-ones): as with 31.
+            (0, 7, 5 | 1, 0) => {}
             // TLBI VAE1, VAAE1, VALE1, VAALE1 (IS): Xt[43:0] is VA[55:12].
             (0, 8, 3 | 7, 1 | 3 | 5 | 7) => m.flush_va(c.reg(rt) << 12),
             // AT S1E1R, S1E1W, S1E0R, S1E0W.
@@ -281,6 +310,11 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         CCSIDR | CLIDR => 0, // no caches
         AIDR => 0,
         k if raz_wi(k) => 0,
+        // Read-only: no debug ROM (MDRAR.Valid = 0), no debug authentication
+        // signals, no DCC traffic; RVBAR (EL1 is the highest EL) is IMPLEMENTATION
+        // DEFINED; RMR's AA64 is RAO (AArch64 only).
+        MDRAR | DBGAUTHSTATUS | MDCCSR | RVBAR => 0,
+        RMR => 1,
         _ => return Err(Exit::Undefined),
     })
 }
@@ -330,6 +364,7 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
         MDSCR => c.mdscr_el1 = v,
         OSLAR => c.os_lock = (v & 1) << 1,
         k if raz_wi(k) => {}
+        RMR => {} // a warm reset request (RR) isn't honored
         _ => return Err(Exit::Undefined),
     }
     if regime(c) != before {

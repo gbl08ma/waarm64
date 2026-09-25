@@ -1,6 +1,7 @@
 //! Tallies disagreements with Capstone by class, over the whole encoding space or a sample.
 //!   cargo run --release --bin sweep              every 32-bit word, all cores (a few minutes)
 //!   cargo run --release --bin sweep -- <count>   <count> random words
+//!   cargo run --release --bin sweep -- sys       the system space (MRS/MSR/SYS) at EL1
 
 use std::collections::HashMap;
 
@@ -20,7 +21,11 @@ fn tally(words: impl Iterator<Item = u32>) -> Tally {
 }
 
 fn main() {
-    let count: Option<u64> = std::env::args().nth(1).map(|a| a.parse().unwrap());
+    let arg = std::env::args().nth(1);
+    if arg.as_deref() == Some("sys") {
+        return report(tally(0xd500_0000..0xd540_0000));
+    }
+    let count: Option<u64> = arg.map(|a| a.parse().unwrap());
     let seen = match count {
         Some(n) => {
             let mut s = 0x9e37_79b9_7f4a_7c15u64;
@@ -49,6 +54,10 @@ fn main() {
             all
         }
     };
+    report(seen);
+}
+
+fn report(seen: Tally) {
     let mut v: Vec<_> = seen.into_iter().collect();
     v.sort_by(|a, b| b.1.0.cmp(&a.1.0));
     for (k, (n, d)) in &v {

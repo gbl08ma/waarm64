@@ -33,7 +33,7 @@ npm run bench -- --page bench/interp/index.html               # interpreter MIPS
 images/build.sh [name...]      # guest images in rootless Podman -> target/images/{linux,kvm-unit-tests}/ (--check <name>)
 cargo test --release --test boot -- --ignored --nocapture   # boot target/images/linux natively (ci.sh runs it when images exist)
 cargo test --release --test kvm_unit_tests -- --ignored --nocapture   # kvm-unit-tests, likewise
-(cd core/fuzz && cargo run --release --bin sweep)             # exhaustive decoder check vs Capstone (~2 min)
+(cd core/fuzz && cargo run --release --bin sweep [-- sys])    # exhaustive decoder check vs Capstone (~3 min; sys: MRS/MSR/SYS at EL1, seconds)
 tests/baremetal/build.sh && tests/baremetal/oracle.sh [--hvf] # rebuild the bare-metal EL1 tests (.bin committed), run them on QEMU virt (TCG, or hvf on the Mac)
 ```
 
