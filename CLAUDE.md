@@ -12,7 +12,8 @@ and runs unmodified arm64 Linux. Chromium is the primary target.
 - M0 (foundations + spike): done. Still pending: re-run the spike on Chromium arm64 on the M4 Mac.
 - M0.5 (memory architecture): done on x86_64 and arm64 (M4), **layout A**: one shared wasm32 memory with core state then guest RAM, and a wasm32 Rust core. TLB tag bits 3–11 are reserved for a memory index. See `bench/spike/memory/REPORT.md`.
 - M1 (A64 integer interpreter + golden corpus): done. Decoder `core/build.rs` ← `core/src/a64/a64.inc`; interpreter `core/src/interp*`; corpus `tests/corpus/` (grow it with `node tools/corpus/run.ts`, compare with `cargo test`); decoder fuzzing `core/fuzz`; MIPS `bench/interp/REPORT.md`.
-- **Next: M2**, FP and AdvSIMD in the interpreter.
+- M2 (FP and AdvSIMD in the interpreter): done. FP core `core/src/fp.rs` (own implementation of the ARM pseudocode, RNE fast paths; `scripts/testfloat.sh`); FP/SIMD handlers `core/src/interp/{ldst_fp,simd,simd_int,simd_fp,float}.rs`; corpus also runs on wasm (`tests/corpus-wasm.test.ts`); MIPS in `bench/interp/REPORT.md`.
+- **Next: M3**, system level: Linux boots on the interpreter.
 
 ## Commands
 

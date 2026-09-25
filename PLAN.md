@@ -92,6 +92,7 @@ Testing is layered. The cheaper layers run on every commit.
      - Both oracles implement FEAT_LSE2: misaligned exclusives, `LDAR`/`STLR` and LSE atomics only fault when they cross a 16-byte granule. We don't advertise LSE2 and keep the v8.0 rule (natural alignment or an alignment fault). Wasm atomics need natural alignment anyway, so the check costs nothing extra.
      - QEMU's `max` CPU has MTE (`ADDG`/`SUBG`, `STGP` execute), while the M4 raises SIGILL, as we do. QEMU's `DC ZVA` block is 512 bytes; the M4's is 64, as is ours.
      - The M4 guest also advertises `lrcpc ilrcpc dcpop dcpodp flagm uscat sha3 sha512 asimddp asimdrdm fphp jscvt fcma`, so the generator must not emit those instructions either.
+     - M2: beyond v8.0 FP/AdvSIMD the M4 runs FP16 (including FP16 FMOV and the fixed-point conversions with immh = 001x), BF16 (BFCVT is the FCVT encoding with ftype 01, opc 10), FHM, RDM, DotProd, I8MM, FCMA, JSCVT and FRINTTS, plus AES/PMULL/SHA1/SHA2 (M6.5). The generator emits none of them. QEMU agreed with the M4 on every M2 test.
 3. **System-level oracles**, for things that can't run at EL0 on real hardware:
    - `qemu-system-aarch64 -M virt` for behavioral comparison (traces of exceptions and system register state).
    - The same QEMU with `-accel hvf` on the Mac: real Apple hardware running EL1 code (MMU, exceptions). The devices are still QEMU's.
@@ -281,7 +282,9 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
 - **Exit:** integer golden corpus passes, and interpreter MIPS in Chromium is recorded.
 
 ### M2 — FP and AdvSIMD in the interpreter
-- Scalar FP, NEON integer and FP, FPCR/FPSR semantics, SoftFloat slow path, software FMA.
+**Status:** done 2026-09-25. All v8.0 FP/AdvSIMD, including every FP/SIMD load and store; FPCR RMode/FZ/DN/AHP and FPSR flags and QC. `core/src/fp.rs` (own software FP from the ARM pseudocode, RNE fast paths) passes 51.2M TestFloat 3e cases under every FZ/DN combination. 31,850 new golden tests (45,790 in all) pass natively and on the wasm core in Node, with M4 results and no QEMU disagreements. The decoder sweep is clean again. Interpreter speed: 95 MIPS integer / 15 MIPS FP/NEON (x86_64, Chromium 152), 152 / 23 MIPS (M4, Chromium 153); see `bench/interp/REPORT.md`.
+
+- Scalar FP, NEON integer and FP, FPCR/FPSR semantics, a software slow path (our own; see §2), software FMA.
 - **Exit:** TestFloat and the FP/NEON golden corpus pass.
 
 ### M3 — System level, Linux boots (interpreter only)
