@@ -64,6 +64,9 @@ the planned directories.
 - Commit the result JSON that backs any written report (`bench/spike/results/` style). Ad-hoc runs go to the gitignored `bench/results/local/`.
 - The machine is a shared desktop, so treat differences under ~5% as noise unless repeated.
 
+**Guest images**
+- Build them only in rootless Podman, through `images/` (PLAN.md §7 M3). Never install cross toolchains or build dependencies on the host, and never use Docker.
+
 **Browsers**
 - Chromium only: `/usr/bin/chromium`, driven by Playwright (`playwright-core`, temporary profile, headless).
 - **Never launch, automate or touch Firefox.** It's the user's daily browser. Firefox incompatibilities are never blockers.
