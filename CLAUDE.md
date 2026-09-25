@@ -30,6 +30,8 @@ node bench/spike/node.ts --quick   # spike in Node, fast iteration only
 npm run serve                  # dev server with COOP/COEP on :8080 (PORT env overrides)
 node tools/corpus/run.ts [--oracle qemu|m4|both] [group...]  # regenerate golden corpus (needs qemu / the M4 VM)
 npm run bench -- --page bench/interp/index.html               # interpreter MIPS
+npm run bench -- --page bench/boot/index.html                 # Linux boot time (needs target/images)
+node bench/boot/profile.ts                                    # PC-sampling profile of a boot, symbolized
 images/build.sh [name...]      # guest images in rootless Podman -> target/images/{linux,kvm-unit-tests}/ (--check <name>)
 cargo test --release --test boot -- --ignored --nocapture   # boot target/images/linux natively (ci.sh runs it when images exist)
 cargo test --release --test kvm_unit_tests -- --ignored --nocapture   # kvm-unit-tests, likewise

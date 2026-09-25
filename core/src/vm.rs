@@ -215,21 +215,27 @@ impl Vm {
             let v = &mut *self.vcpu;
             let (k, e) = interp::steps(&mut v.cpu, &self.mem, Some(&mut v.tlb), n);
             self.steps += k;
-            let c = &self.shared.counters;
-            c.retired.store(self.steps, Ordering::Relaxed);
-            c.pc.store(self.vcpu.cpu.pc, Ordering::Relaxed);
+            self.publish();
             if let Some(e) = e
                 && let Some(kind) = self.handle(e)
             {
                 break kind;
             }
         };
-        let c = &self.shared.counters;
-        c.retired.store(self.steps, Ordering::Relaxed);
-        c.pc.store(self.vcpu.cpu.pc, Ordering::Relaxed);
+        self.publish();
         self.exit.kind = kind as u64;
         self.exit.retired = self.steps - start;
         kind
+    }
+
+    /// Copies the run loop's own counts into the shared counters (once per chunk).
+    fn publish(&self) {
+        let (c, t) = (&self.shared.counters, &self.vcpu.tlb.stats);
+        c.retired.store(self.steps, Ordering::Relaxed);
+        c.pc.store(self.vcpu.cpu.pc, Ordering::Relaxed);
+        c.tlb_misses.store(t.misses, Ordering::Relaxed);
+        c.tlb_walks.store(t.walks, Ordering::Relaxed);
+        c.tlb_flushes.store(t.flushes, Ordering::Relaxed);
     }
 
     /// Drives the device interrupt lines into the GIC.

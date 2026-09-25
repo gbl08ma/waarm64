@@ -18,7 +18,11 @@ type Exports = {
   vm_exit(vm: number): number;
   vm_console(vm: number): number;
   vm_cpu(vm: number): number;
+  vm_counters(vm: number): number;
 };
+
+/** u64 word indexes in `vm::Counters` (core/src/vm.rs). */
+export const Counter = { STEPS: 0, EXCEPTIONS: 1, IRQS: 65, TLB_HITS: 66, TLB_MISSES: 67, TLB_WALKS: 68, TLB_FLUSHES: 69, PC: 70, LEN: 71 } as const;
 
 export type BootOptions = { ramSize: number; kernel: Uint8Array; initrd?: Uint8Array; cmdline: string };
 
@@ -61,7 +65,19 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     Atomics.store(u32, tx / 4 + 1, head);
     return decoder.decode(new Uint8Array(out), { stream: true });
   };
+  const counters = ex.vm_counters(vm);
   return {
+    memory,
+    /** Byte address of `vm::Counters` in `memory` (u64s, read with Atomics.load). */
+    counters,
+    /** A snapshot of the counters; exceptions by EC only where non-zero. */
+    stats() {
+      const c = new BigUint64Array(memory.buffer, counters, Counter.LEN);
+      const n = (i: number) => Number(Atomics.load(c, i));
+      const exceptions: Record<string, number> = {};
+      for (let ec = 0; ec < 64; ec++) if (n(Counter.EXCEPTIONS + ec)) exceptions[`0x${ec.toString(16)}`] = n(Counter.EXCEPTIONS + ec);
+      return { steps: n(Counter.STEPS), irqs: n(Counter.IRQS), exceptions, tlbMisses: n(Counter.TLB_MISSES), tlbWalks: n(Counter.TLB_WALKS), tlbFlushes: n(Counter.TLB_FLUSHES) };
+    },
     /** Runs up to `budget` steps; returns the exit kind and steps taken. */
     run(budget: number) {
       const kind = ex.vm_run(vm, BigInt(budget));

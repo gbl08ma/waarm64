@@ -46,10 +46,24 @@ pub struct Entry {
 #[repr(C)]
 pub struct Tlb {
     pub e: [[Entry; TLB_ENTRIES]; 6],
+    pub stats: TlbStats,
+}
+
+/// Counted in the slow paths; the VM run loop publishes them (`vm::Counters`).
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug)]
+pub struct TlbStats {
+    /// Lookups with the MMU on that missed (each walks the tables).
+    pub misses: u64,
+    /// Walks that reached a page with the access permitted.
+    pub walks: u64,
+    /// Whole-TLB and by-VA invalidations (TLBI, ASID and MMU-enable changes).
+    pub flushes: u64,
 }
 
 impl Tlb {
     fn flush_all(&mut self) {
+        self.stats.flushes += 1;
         for a in &mut self.e {
             a.fill(Entry::default());
         }
@@ -57,6 +71,7 @@ impl Tlb {
 
     /// Drops the page holding `va` from every array, whatever its top byte (TBI).
     fn flush_va(&mut self, va: u64) {
+        self.stats.flushes += 1;
         let i = index(va);
         for a in &mut self.e {
             if (a[i].tag ^ va) & 0x00ff_ffff_ffff_f000 == 0 {
@@ -447,9 +462,15 @@ impl<'a> Mmu<'a> {
             access,
             kind,
         };
+        if let Some(t) = &mut self.tlb {
+            t.stats.misses += 1;
+        }
         let w = walk(c, self.mem, va).map_err(fault)?;
         if !w.allows(el, u) {
             return Err(fault(FaultKind::Permission(w.level)));
+        }
+        if let Some(t) = &mut self.tlb {
+            t.stats.walks += 1;
         }
         let p = self
             .mem
