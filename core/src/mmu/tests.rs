@@ -203,7 +203,7 @@ fn bus_translates_faults_and_caches() {
     p.r.mem.write(0x9010, 8, 0x1122).unwrap();
     let mut c = cpu();
     let mut v = Vcpu::new(c.clone());
-    let mut b = Bus::new(&p.r.mem, Some(&mut v.tlb));
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
     assert_eq!(b.read(&c, 0x1010, 8), Ok(0x1122));
     fn fault<T>(addr: u64, access: Access, kind: FaultKind) -> Result<T, Fault> {
         Err(Fault { addr, access, kind })
@@ -237,7 +237,7 @@ fn bus_translates_faults_and_caches() {
     b.flush_va(0x1000);
     assert_eq!(b.read(&c, 0x1010, 8), Ok(0x5566));
     // Without a TLB, every access walks.
-    let mut nb = Bus::new(&p.r.mem, None);
+    let mut nb = Mmu::new(&p.r.mem, None);
     p.r.mem.write(l3 + 8, 8, 0x9000 | PAGE | AP_EL0_RO).unwrap();
     assert_eq!(nb.read(&c, 0x1010, 8), Ok(0x3344));
 }
@@ -250,7 +250,7 @@ fn page_crossing() {
     p.map(0x2000, 3, 0x8000 | PAGE);
     let c = cpu();
     let mut v = Vcpu::new(c.clone());
-    let mut b = Bus::new(&p.r.mem, Some(&mut v.tlb));
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
     b.write(&c, 0x1ffc, 8, 0x8877_6655_4433_2211).unwrap();
     assert_eq!(p.r.mem.read(0xbffc, 4), Ok(0x4433_2211));
     assert_eq!(p.r.mem.read(0x8000, 4), Ok(0x8877_6655));
@@ -315,7 +315,7 @@ fn asid_follows_a1_and_as() {
 fn atomics_mmu_off() {
     let r = TestRam::new(64);
     let c = Cpu::default();
-    let mut b = Bus::new(&r.mem, None);
+    let mut b = Mmu::new(&r.mem, None);
     for size in [1, 2, 4, 8] {
         let a = 4 * size as u64;
         let top = u64::MAX >> (64 - 8 * size);

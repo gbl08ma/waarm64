@@ -17,7 +17,7 @@ pub use sys::take_exception;
 use crate::cpu::{Cpu, sctlr};
 use crate::decode::{Op, decode};
 use crate::mem::{Access, Fault, FaultKind, Mem};
-use crate::mmu::{Bus, Vcpu};
+use crate::mmu::{Bus, Flat, Mmu, Tlb, Vcpu};
 
 /// Why an instruction didn't retire. The PC still points at it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,10 +54,23 @@ type R<T = ()> = Result<T, Exit>;
 // ponytail: fetch + decode every instruction; add a decoded-block cache if the
 // M1 MIPS baseline says the interpreter matters beyond being the JIT's fallback.
 pub fn step(cpu: &mut Cpu, mem: &Mem) -> R {
-    step_bus(cpu, &mut Bus::new(mem, None))
+    step_in(cpu, mem, None)
 }
 
-fn step_bus(cpu: &mut Cpu, m: &mut Bus) -> R {
+/// One instruction through the interpreter copy for the current regime.
+#[inline(always)]
+fn step_in(cpu: &mut Cpu, mem: &Mem, tlb: Option<&mut Tlb>) -> R {
+    if cpu.sctlr_el1 & (sctlr::M | sctlr::A) == 0 {
+        step_bus(cpu, &mut Flat(mem))
+    } else {
+        step_bus(cpu, &mut Mmu::new(mem, tlb))
+    }
+}
+
+// Inlined into the run loops: left to V8, a call per instruction cost ~15%
+// (bench/interp/REPORT.md, M3).
+#[inline(always)]
+fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
     let pc = cpu.pc;
     if pc & 3 != 0 {
         return Err(Exit::Fetch(Fault {
@@ -78,9 +91,8 @@ fn step_bus(cpu: &mut Cpu, m: &mut Bus) -> R {
 /// Runs up to `n` instructions; returns how many retired and why it stopped early.
 /// No TLB: meant for user-mode hosts, which run with the MMU off.
 pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
-    let mut m = Bus::new(mem, None);
     for done in 0..n {
-        if let Err(e) = step_bus(cpu, &mut m) {
+        if let Err(e) = step_in(cpu, mem, None) {
             return (done, Err(e));
         }
     }
@@ -91,10 +103,9 @@ pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
 /// step, so a guest stuck in an exception loop still returns). It stops early
 /// only for the host: an HVC (PC after it) or an unimplemented instruction.
 pub fn run_system(v: &mut Vcpu, mem: &Mem, n: u64) -> (u64, R) {
-    let cpu = &mut v.cpu;
-    let mut m = Bus::new(mem, Some(&mut v.tlb));
+    let (cpu, tlb) = (&mut v.cpu, &mut v.tlb);
     for done in 0..n {
-        match step_bus(cpu, &mut m) {
+        match step_in(cpu, mem, Some(&mut *tlb)) {
             Ok(()) => {}
             Err(e @ Exit::Hvc(_)) => {
                 cpu.pc = cpu.pc.wrapping_add(4);
@@ -110,14 +121,23 @@ pub fn run_system(v: &mut Vcpu, mem: &Mem, n: u64) -> (u64, R) {
 /// A load/store base register; with SP as the base, `SCTLR_EL1.SA0`/`SA` make a
 /// misaligned SP take an SP alignment fault (EC 0x26).
 // ponytail: PRFM with a misaligned SP faults too, where hardware wouldn't.
-#[inline]
+#[inline(always)]
 fn base_reg(c: &Cpu, rn: u32) -> R<u64> {
     let v = c.reg_sp(rn);
-    let check = if c.el() == 0 { sctlr::SA0 } else { sctlr::SA };
-    if rn == 31 && v & 15 != 0 && c.sctlr_el1 & check != 0 {
-        return Err(Exit::Trap(0x26 << 26));
+    if rn == 31 && v & 15 != 0 {
+        return sp_misaligned(c, v);
     }
     Ok(v)
+}
+
+#[cold]
+#[inline(never)]
+fn sp_misaligned(c: &Cpu, sp: u64) -> R<u64> {
+    let check = if c.el() == 0 { sctlr::SA0 } else { sctlr::SA };
+    if c.sctlr_el1 & check != 0 {
+        return Err(Exit::Trap(0x26 << 26));
+    }
+    Ok(sp)
 }
 
 /// FP/AdvSIMD access check (`CPACR_EL1.FPEN`): 0b11 enables EL0 and EL1, 0b01 EL1 only.
@@ -283,7 +303,7 @@ fn adr_imm(i: u32) -> u64 {
     sext(((bits(i, 23, 5) << 2) | bits(i, 30, 29)) as u64, 21)
 }
 
-fn exec(c: &mut Cpu, m: &mut Bus, i: u32, pc: u64) -> R {
+fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
     use Op::*;
     let sf = bit(i, 31);
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));

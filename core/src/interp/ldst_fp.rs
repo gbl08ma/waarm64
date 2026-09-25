@@ -8,7 +8,7 @@ use crate::decode::Op;
 use crate::mmu::Bus;
 
 /// Little-endian read of 1, 2, 4, 8 or 16 bytes.
-pub(super) fn load(c: &Cpu, m: &mut Bus, addr: u64, bytes: u32) -> R<u128> {
+pub(super) fn load(c: &Cpu, m: &mut impl Bus, addr: u64, bytes: u32) -> R<u128> {
     Ok(if bytes == 16 {
         m.read(c, addr, 8)? as u128 | (m.read(c, addr.wrapping_add(8), 8)? as u128) << 64
     } else {
@@ -17,7 +17,7 @@ pub(super) fn load(c: &Cpu, m: &mut Bus, addr: u64, bytes: u32) -> R<u128> {
 }
 
 /// Little-endian write of the low 1, 2, 4, 8 or 16 bytes of `v`.
-pub(super) fn store(c: &Cpu, m: &mut Bus, addr: u64, bytes: u32, v: u128) -> R {
+pub(super) fn store(c: &Cpu, m: &mut impl Bus, addr: u64, bytes: u32, v: u128) -> R {
     if bytes == 16 {
         // High half first: when only it faults, memory is left untouched.
         m.write(c, addr.wrapping_add(8), 8, (v >> 64) as u64)?;
@@ -37,7 +37,7 @@ fn low(v: u128, bytes: u32) -> u128 {
     }
 }
 
-pub(super) fn exec(c: &mut Cpu, m: &mut Bus, i: u32, pc: u64, op: Op) -> R {
+pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
     use Op::*;
     let (rt, rn, rm) = (bits(i, 4, 0) as usize, bits(i, 9, 5), bits(i, 20, 16));
     let base = match op {
@@ -130,7 +130,7 @@ fn single_size(i: u32) -> R<u32> {
 }
 
 /// STR/LDR of one B/H/S/D/Q register (L in bit 22). Loads zero the rest of the register.
-fn single(c: &mut Cpu, m: &mut Bus, i: u32, addr: u64, bytes: u32) -> R {
+fn single(c: &mut Cpu, m: &mut impl Bus, i: u32, addr: u64, bytes: u32) -> R {
     let rt = bits(i, 4, 0) as usize;
     if bit(i, 22) {
         c.v[rt] = load(c, m, addr, bytes)?;
@@ -150,7 +150,7 @@ fn post_index(c: &mut Cpu, i: u32, base: u64, total: u64) {
 }
 
 /// LD1–LD4 / ST1–ST4 (multiple structures).
-fn multiple(c: &mut Cpu, m: &mut Bus, i: u32) -> R {
+fn multiple(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
     let (q, load_, size) = (bit(i, 30), bit(i, 22), bits(i, 11, 10));
     let (rpt, selem) = match bits(i, 15, 12) {
         0b0000 => (1, 4),
@@ -202,7 +202,7 @@ fn multiple(c: &mut Cpu, m: &mut Bus, i: u32) -> R {
 }
 
 /// LD1–LD4 / ST1–ST4 (single structure) and LD1R–LD4R.
-fn single_structure(c: &mut Cpu, m: &mut Bus, i: u32) -> R {
+fn single_structure(c: &mut Cpu, m: &mut impl Bus, i: u32) -> R {
     let (q, load_, s, size) = (bit(i, 30), bit(i, 22), bit(i, 12), bits(i, 11, 10));
     let opcode = bits(i, 15, 13);
     let selem = (((opcode & 1) << 1) | bit(i, 21) as u32) as usize + 1;

@@ -106,7 +106,7 @@ fn raz_wi(key: u32) -> bool {
     ) || key & !0b1011 == sr(2, 0, 0, 0, 4) // DBGB{V,C}R<n>, DBGW{V,C}R<n>, n = 0, 1
 }
 
-pub(super) fn exec(c: &mut Cpu, m: &mut Bus, i: u32, op: Op) -> R {
+pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
     use Op::*;
     let el0 = c.el() == 0;
     let rt = bits(i, 4, 0);
@@ -183,7 +183,7 @@ pub(super) fn exec(c: &mut Cpu, m: &mut Bus, i: u32, op: Op) -> R {
             // AT S1E1R, S1E1W, S1E0R, S1E0W.
             (0, 7, 8, op2 @ 0..=3) => {
                 let u = if op2 & 1 == 1 { Use::Write } else { Use::Read };
-                c.par_el1 = mmu::at(c, m.mem, c.reg(rt), (op2 < 2) as u64, u);
+                c.par_el1 = mmu::at(c, m.mem(), c.reg(rt), (op2 < 2) as u64, u);
             }
             _ => return Err(Exit::Undefined),
         },
@@ -265,7 +265,7 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
     })
 }
 
-fn write(c: &mut Cpu, m: &mut Bus, i: u32, key: u32, v: u64) -> R {
+fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
     let el0 = c.el() == 0;
     // The TLB holds neither ASIDs nor the MMU enable: flush when either changes.
     let regime = |c: &Cpu| (mmu::asid(c), c.sctlr_el1 & sctlr::M);

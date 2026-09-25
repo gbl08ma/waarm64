@@ -8,7 +8,7 @@ use crate::decode::Op;
 use crate::mem::{Access, Fault, FaultKind};
 use crate::mmu::Bus;
 
-pub(super) fn exec(c: &mut Cpu, m: &mut Bus, i: u32, pc: u64, op: Op) -> R {
+pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
     use Op::*;
     let (rt, rn, rs) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
     let base = match op {
@@ -222,7 +222,7 @@ fn aligned(addr: u64, size: u32) -> R {
 
 /// One register load/store: STR/LDR/LDRS* by size (31:30) and opc (23:22).
 /// `prfm` says whether size 3, opc 2 is PRFM here (else it's unallocated).
-fn single(c: &mut Cpu, m: &mut Bus, i: u32, addr: u64, wb: Option<u64>, prfm: bool) -> R {
+fn single(c: &mut Cpu, m: &mut impl Bus, i: u32, addr: u64, wb: Option<u64>, prfm: bool) -> R {
     let (size, opc, rt, rn) = (
         bits(i, 31, 30),
         bits(i, 23, 22),

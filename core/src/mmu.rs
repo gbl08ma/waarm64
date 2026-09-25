@@ -2,8 +2,8 @@
 //! TBI, software-managed access flag) and the per-vCPU software TLB.
 //!
 //! [`Bus`] is the one virtual-address accessor: the interpreter (and later the
-//! JIT's slow paths) do every guest access through it. It returns host pointers
-//! from the TLB or from a walk, and [`Mem`] only knows physical addresses.
+//! JIT's slow paths) do every guest access through it. [`Mmu`] returns host
+//! pointers from the TLB or from a walk; [`Mem`] only knows physical addresses.
 //!
 //! **TLB entry (the shape the M0 spike measured, `bench/spike/REPORT.md` §4):**
 //! direct-mapped, `TLB_ENTRIES` × `{tag, addend}` of 16 bytes, one array per
@@ -234,37 +234,180 @@ pub fn at(c: &Cpu, mem: &Mem, va: u64, el: u64, u: Use) -> u64 {
     }
 }
 
+/// Guest virtual memory as the interpreter sees it. Two implementations, and
+/// the interpreter is compiled once for each: [`Flat`] while the MMU and
+/// alignment checks are off, [`Mmu`] otherwise. The run loop picks one per
+/// instruction from `SCTLR_EL1`. Keeping the flat copy free of any MMU code
+/// is worth ~15% in V8 (bench/interp/REPORT.md, M3).
+pub trait Bus {
+    fn mem(&self) -> &Mem;
+    /// Little-endian read of 1, 2, 4 or 8 bytes, zero-extended, with `el`'s
+    /// permissions (0 for LDTR at EL1).
+    fn read_el(&mut self, c: &Cpu, va: u64, size: u32, el: u64) -> Result<u64, Fault>;
+    /// Little-endian write of the low 1, 2, 4 or 8 bytes of `val` with `el`'s permissions.
+    fn write_el(&mut self, c: &Cpu, va: u64, size: u32, val: u64, el: u64) -> Result<(), Fault>;
+    /// Instruction fetch (PC alignment is the caller's).
+    fn fetch(&mut self, c: &Cpu, pc: u64) -> Result<u32, Fault>;
+    /// Cache maintenance by VA: translates and checks permission (write for
+    /// `DC IVAC`, read otherwise), and faults like a data access with CM set.
+    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<(), Fault>;
+    /// Host pointer for an access by the atomics, which must be aligned to `len`.
+    fn host_aligned(
+        &mut self,
+        c: &Cpu,
+        va: u64,
+        len: u64,
+        access: Access,
+    ) -> Result<*mut u8, Fault>;
+    fn flush_all(&mut self) {}
+    fn flush_va(&mut self, _va: u64) {}
+
+    #[inline(always)]
+    fn read(&mut self, c: &Cpu, va: u64, size: u32) -> Result<u64, Fault> {
+        self.read_el(c, va, size, c.el())
+    }
+
+    #[inline(always)]
+    fn write(&mut self, c: &Cpu, va: u64, size: u32, val: u64) -> Result<(), Fault> {
+        self.write_el(c, va, size, val, c.el())
+    }
+
+    /// Aligned single-copy-atomic read (acquire loads, exclusives).
+    fn read_atomic(&mut self, c: &Cpu, va: u64, size: u32) -> Result<u64, Fault> {
+        let p = self.host_aligned(c, va, size as u64, Access::Read)?;
+        // SAFETY: aligned RAM (host_aligned).
+        Ok(unsafe { mem::load_atomic(p, size) })
+    }
+
+    /// Aligned single-copy-atomic write (release stores).
+    fn write_atomic(&mut self, c: &Cpu, va: u64, size: u32, val: u64) -> Result<(), Fault> {
+        let p = self.host_aligned(c, va, size as u64, Access::Write)?;
+        // SAFETY: as in read_atomic.
+        unsafe { mem::store_atomic(p, size, val) };
+        Ok(())
+    }
+
+    /// Atomic compare-and-swap. Returns the old value; the swap happened iff it
+    /// equals `expected`. Faults report a write.
+    fn cas(&mut self, c: &Cpu, va: u64, size: u32, expected: u64, new: u64) -> Result<u64, Fault> {
+        let p = self.host_aligned(c, va, size as u64, Access::Write)?;
+        // SAFETY: as in read_atomic.
+        Ok(unsafe { mem::cas(p, size, expected, new) })
+    }
+
+    /// Atomic read-modify-write (LSE LDADD & co, SWP). Returns the old value.
+    fn rmw(&mut self, c: &Cpu, va: u64, size: u32, op: impl Fn(u64) -> u64) -> Result<u64, Fault> {
+        // ponytail: generic CAS loop; add/and/or/xor/xchg map to single wasm
+        // atomic.rmw ops if a profile ever shows this.
+        let p = self.host_aligned(c, va, size as u64, Access::Write)?;
+        // SAFETY: as in read_atomic.
+        unsafe {
+            let mut old = mem::load_atomic(p, size);
+            loop {
+                let seen = mem::cas(p, size, old, op(old));
+                if seen == old {
+                    return Ok(old);
+                }
+                old = seen;
+            }
+        }
+    }
+
+    /// 2×`size` read of a naturally aligned pair, atomic with respect to `cas_pair` (LDXP).
+    fn read_pair(&mut self, c: &Cpu, va: u64, size: u32) -> Result<[u64; 2], Fault> {
+        let p = self.host_aligned(c, va, 2 * size as u64, Access::Read)?;
+        // SAFETY: 2×size aligned bytes of RAM.
+        Ok(unsafe { self.mem().pair_locked(p, size, |old| (old, None)) })
+    }
+
+    /// 2×`size` compare-and-swap of a naturally aligned pair (CASP, STXP).
+    /// Returns the old pair; the swap happened iff it equals `expected`.
+    fn cas_pair(
+        &mut self,
+        c: &Cpu,
+        va: u64,
+        size: u32,
+        expected: [u64; 2],
+        new: [u64; 2],
+    ) -> Result<[u64; 2], Fault> {
+        let p = self.host_aligned(c, va, 2 * size as u64, Access::Write)?;
+        // SAFETY: as in read_pair.
+        Ok(unsafe {
+            self.mem()
+                .pair_locked(p, size, |old| (old, (old == expected).then_some(new)))
+        })
+    }
+}
+
+fn misaligned(va: u64, access: Access) -> Fault {
+    Fault {
+        addr: va,
+        access,
+        kind: FaultKind::Align,
+    }
+}
+
+/// MMU and `SCTLR_EL1.A` off: VA = PA, no permissions, no page splits.
+pub struct Flat<'a>(pub &'a Mem);
+
+impl Bus for Flat<'_> {
+    #[inline(always)]
+    fn mem(&self) -> &Mem {
+        self.0
+    }
+
+    #[inline(always)]
+    fn read_el(&mut self, _: &Cpu, va: u64, size: u32, _: u64) -> Result<u64, Fault> {
+        self.0.read(va, size)
+    }
+
+    #[inline(always)]
+    fn write_el(&mut self, _: &Cpu, va: u64, size: u32, val: u64, _: u64) -> Result<(), Fault> {
+        self.0.write(va, size, val)
+    }
+
+    #[inline(always)]
+    fn fetch(&mut self, _: &Cpu, pc: u64) -> Result<u32, Fault> {
+        self.0.read(pc, 4).map(|v| v as u32)
+    }
+
+    fn maint(&mut self, _: &Cpu, va: u64, _: bool) -> Result<(), Fault> {
+        self.0.host(va, 1, Access::Maint).map(|_| ())
+    }
+
+    #[inline(always)]
+    fn host_aligned(
+        &mut self,
+        _: &Cpu,
+        va: u64,
+        len: u64,
+        access: Access,
+    ) -> Result<*mut u8, Fault> {
+        if !va.is_multiple_of(len) {
+            return Err(misaligned(va, access));
+        }
+        self.0.host(va, len, access)
+    }
+}
+
 /// One host pointer, or two for a page-crossing access (the second with the
 /// number of bytes that go to the first).
 type Span = (*mut u8, Option<(*mut u8, u64)>);
 
-/// Guest virtual memory as one vCPU sees it: its translation regime and TLB
-/// over the shared [`Mem`]. Without a TLB (user-mode hosts, most unit tests)
-/// every translation walks; with the MMU off, VA = PA.
-pub struct Bus<'a> {
+/// Stage 1 translation through the vCPU's TLB. Without a TLB (unit tests)
+/// every access walks. With the MMU off but `SCTLR_EL1.A` on, VA = PA.
+pub struct Mmu<'a> {
     pub mem: &'a Mem,
     pub tlb: Option<&'a mut Tlb>,
 }
 
-impl<'a> Bus<'a> {
+impl<'a> Mmu<'a> {
     pub fn new(mem: &'a Mem, tlb: Option<&'a mut Tlb>) -> Self {
-        Bus { mem, tlb }
-    }
-
-    pub fn flush_all(&mut self) {
-        if let Some(t) = &mut self.tlb {
-            t.flush_all();
-        }
-    }
-
-    pub fn flush_va(&mut self, va: u64) {
-        if let Some(t) = &mut self.tlb {
-            t.flush_va(va);
-        }
+        Mmu { mem, tlb }
     }
 
     /// Host pointer for `len` bytes at `va`, which must not cross a page.
-    #[inline]
+    #[inline(always)]
     fn host(
         &mut self,
         c: &Cpu,
@@ -279,13 +422,26 @@ impl<'a> Bus<'a> {
             // off; they aren't RAM, so they fault as external aborts instead.
             return self.mem.host(va, len, access);
         }
-        let (k, i) = (3 * el as usize + u as usize, index(va));
         if let Some(t) = &self.tlb {
-            let e = t.e[k][i];
+            let e = t.e[3 * el as usize + u as usize][index(va)];
             if e.tag == va.wrapping_add(len - 1) | 0xfff {
                 return Ok(va.wrapping_add(e.addend) as usize as *mut u8);
             }
         }
+        self.miss(c, va, len, access, u, el)
+    }
+
+    /// TLB miss: walk, check permissions, and fill the TLB if the page is RAM.
+    #[inline(never)]
+    fn miss(
+        &mut self,
+        c: &Cpu,
+        va: u64,
+        len: u64,
+        access: Access,
+        u: Use,
+        el: u64,
+    ) -> Result<*mut u8, Fault> {
         let fault = |kind| Fault {
             addr: va,
             access,
@@ -302,7 +458,7 @@ impl<'a> Bus<'a> {
         if let Some(t) = &mut self.tlb
             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
         {
-            t.e[k][i] = Entry {
+            t.e[3 * el as usize + u as usize][index(va)] = Entry {
                 tag: va | 0xfff,
                 addend: (page as usize as u64).wrapping_sub(va & !0xfff),
             };
@@ -310,23 +466,10 @@ impl<'a> Bus<'a> {
         Ok(p)
     }
 
-    /// `SCTLR_EL1.A`: every load and store must be aligned to its size.
-    #[inline]
-    fn check_align(c: &Cpu, va: u64, size: u32, access: Access) -> Result<(), Fault> {
-        if c.sctlr_el1 & sctlr::A != 0 && !va.is_multiple_of(size as u64) {
-            return Err(Fault {
-                addr: va,
-                access,
-                kind: FaultKind::Align,
-            });
-        }
-        Ok(())
-    }
-
-    /// Host pointers for `size` bytes at `va`: one, or one per page when the
-    /// access crosses a page (both translated before either is touched), with
-    /// the byte count in the first.
-    #[inline]
+    /// Host pointers for the two pages of a page-crossing access, both
+    /// translated before either is touched, and the byte count in the first.
+    /// `SCTLR_EL1.A` makes every misaligned access fault first.
+    #[inline(always)]
     fn span(
         &mut self,
         c: &Cpu,
@@ -336,25 +479,37 @@ impl<'a> Bus<'a> {
         u: Use,
         el: u64,
     ) -> Result<Span, Fault> {
+        if c.sctlr_el1 & sctlr::A != 0 && !va.is_multiple_of(size as u64) {
+            return Err(misaligned(va, access));
+        }
         let first = 0x1000 - (va & 0xfff);
         if size as u64 <= first {
             return Ok((self.host(c, va, size as u64, access, u, el)?, None));
         }
         let p1 = self.host(c, va, first, access, u, el)?;
-        let va2 = va.wrapping_add(first);
-        let p2 = self.host(c, va2, size as u64 - first, access, u, el)?;
+        let p2 = self.host(
+            c,
+            va.wrapping_add(first),
+            size as u64 - first,
+            access,
+            u,
+            el,
+        )?;
         Ok((p1, Some((p2, first))))
     }
+}
 
-    /// Little-endian read of 1, 2, 4 or 8 bytes, zero-extended, with `el`'s
-    /// permissions (0 for LDTR at EL1).
-    pub fn read_el(&mut self, c: &Cpu, va: u64, size: u32, el: u64) -> Result<u64, Fault> {
-        Self::check_align(c, va, size, Access::Read)?;
+impl Bus for Mmu<'_> {
+    fn mem(&self) -> &Mem {
+        self.mem
+    }
+
+    fn read_el(&mut self, c: &Cpu, va: u64, size: u32, el: u64) -> Result<u64, Fault> {
         Ok(match self.span(c, va, size, Access::Read, Use::Read, el)? {
             // SAFETY: host() checked the bytes are RAM.
             (p, None) => unsafe { mem::load(p, size) },
             (p1, Some((p2, first))) => (0..size as u64).fold(0, |v, k| {
-                // SAFETY: k < first bytes at p1, the rest at p2, all RAM.
+                // SAFETY: the first `first` bytes are at p1, the rest at p2, all RAM.
                 let b = unsafe {
                     *if k < first {
                         p1.add(k as usize)
@@ -367,16 +522,7 @@ impl<'a> Bus<'a> {
         })
     }
 
-    /// Little-endian write of the low 1, 2, 4 or 8 bytes of `val` with `el`'s permissions.
-    pub fn write_el(
-        &mut self,
-        c: &Cpu,
-        va: u64,
-        size: u32,
-        val: u64,
-        el: u64,
-    ) -> Result<(), Fault> {
-        Self::check_align(c, va, size, Access::Write)?;
+    fn write_el(&mut self, c: &Cpu, va: u64, size: u32, val: u64, el: u64) -> Result<(), Fault> {
         match self.span(c, va, size, Access::Write, Use::Write, el)? {
             // SAFETY: host() checked the bytes are RAM.
             (p, None) => unsafe { mem::store(p, size, val) },
@@ -396,32 +542,17 @@ impl<'a> Bus<'a> {
         Ok(())
     }
 
-    #[inline]
-    pub fn read(&mut self, c: &Cpu, va: u64, size: u32) -> Result<u64, Fault> {
-        self.read_el(c, va, size, c.el())
-    }
-
-    #[inline]
-    pub fn write(&mut self, c: &Cpu, va: u64, size: u32, val: u64) -> Result<(), Fault> {
-        self.write_el(c, va, size, val, c.el())
-    }
-
-    /// Instruction fetch (PC alignment is the caller's).
-    #[inline]
-    pub fn fetch(&mut self, c: &Cpu, pc: u64) -> Result<u32, Fault> {
+    fn fetch(&mut self, c: &Cpu, pc: u64) -> Result<u32, Fault> {
         let p = self.host(c, pc, 4, Access::Read, Use::Exec, c.el())?;
         // SAFETY: host() checked 4 bytes of RAM.
         Ok(unsafe { mem::load(p, 4) } as u32)
     }
 
-    /// Cache maintenance by VA: translates and checks permission (write for
-    /// `DC IVAC`, read otherwise), and faults like a data access with CM set.
-    pub fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<(), Fault> {
+    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<(), Fault> {
         let u = if write { Use::Write } else { Use::Read };
         self.host(c, va, 1, Access::Maint, u, c.el()).map(|_| ())
     }
 
-    /// An aligned access for the atomics: host pointer for `len` bytes.
     fn host_aligned(
         &mut self,
         c: &Cpu,
@@ -430,11 +561,7 @@ impl<'a> Bus<'a> {
         access: Access,
     ) -> Result<*mut u8, Fault> {
         if !va.is_multiple_of(len) {
-            return Err(Fault {
-                addr: va,
-                access,
-                kind: FaultKind::Align,
-            });
+            return Err(misaligned(va, access));
         }
         let u = if access == Access::Read {
             Use::Read
@@ -444,83 +571,16 @@ impl<'a> Bus<'a> {
         self.host(c, va, len, access, u, c.el())
     }
 
-    /// Aligned single-copy-atomic read (acquire loads, exclusives).
-    pub fn read_atomic(&mut self, c: &Cpu, va: u64, size: u32) -> Result<u64, Fault> {
-        let p = self.host_aligned(c, va, size as u64, Access::Read)?;
-        // SAFETY: aligned RAM (host_aligned).
-        Ok(unsafe { mem::load_atomic(p, size) })
-    }
-
-    /// Aligned single-copy-atomic write (release stores).
-    pub fn write_atomic(&mut self, c: &Cpu, va: u64, size: u32, val: u64) -> Result<(), Fault> {
-        let p = self.host_aligned(c, va, size as u64, Access::Write)?;
-        // SAFETY: as in read_atomic.
-        unsafe { mem::store_atomic(p, size, val) };
-        Ok(())
-    }
-
-    /// Atomic compare-and-swap. Returns the old value; the swap happened iff it
-    /// equals `expected`. Faults report a write.
-    pub fn cas(
-        &mut self,
-        c: &Cpu,
-        va: u64,
-        size: u32,
-        expected: u64,
-        new: u64,
-    ) -> Result<u64, Fault> {
-        let p = self.host_aligned(c, va, size as u64, Access::Write)?;
-        // SAFETY: as in read_atomic.
-        Ok(unsafe { mem::cas(p, size, expected, new) })
-    }
-
-    /// Atomic read-modify-write (LSE LDADD & co, SWP). Returns the old value.
-    pub fn rmw(
-        &mut self,
-        c: &Cpu,
-        va: u64,
-        size: u32,
-        op: impl Fn(u64) -> u64,
-    ) -> Result<u64, Fault> {
-        // ponytail: generic CAS loop; add/and/or/xor/xchg map to single wasm
-        // atomic.rmw ops if a profile ever shows this.
-        let p = self.host_aligned(c, va, size as u64, Access::Write)?;
-        // SAFETY: as in read_atomic.
-        unsafe {
-            let mut old = mem::load_atomic(p, size);
-            loop {
-                let seen = mem::cas(p, size, old, op(old));
-                if seen == old {
-                    return Ok(old);
-                }
-                old = seen;
-            }
+    fn flush_all(&mut self) {
+        if let Some(t) = &mut self.tlb {
+            t.flush_all();
         }
     }
 
-    /// 2×`size` read of a naturally aligned pair, atomic with respect to [`Bus::cas_pair`] (LDXP).
-    pub fn read_pair(&mut self, c: &Cpu, va: u64, size: u32) -> Result<[u64; 2], Fault> {
-        let p = self.host_aligned(c, va, 2 * size as u64, Access::Read)?;
-        // SAFETY: 2×size aligned bytes of RAM.
-        Ok(unsafe { self.mem.pair_locked(p, size, |old| (old, None)) })
-    }
-
-    /// 2×`size` compare-and-swap of a naturally aligned pair (CASP, STXP).
-    /// Returns the old pair; the swap happened iff it equals `expected`.
-    pub fn cas_pair(
-        &mut self,
-        c: &Cpu,
-        va: u64,
-        size: u32,
-        expected: [u64; 2],
-        new: [u64; 2],
-    ) -> Result<[u64; 2], Fault> {
-        let p = self.host_aligned(c, va, 2 * size as u64, Access::Write)?;
-        // SAFETY: as in read_pair.
-        Ok(unsafe {
-            self.mem
-                .pair_locked(p, size, |old| (old, (old == expected).then_some(new)))
-        })
+    fn flush_va(&mut self, va: u64) {
+        if let Some(t) = &mut self.tlb {
+            t.flush_va(va);
+        }
     }
 }
 
