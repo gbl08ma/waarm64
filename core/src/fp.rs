@@ -746,6 +746,208 @@ impl Fpu {
     }
 }
 
+// Reciprocal and reciprocal square root: steps and estimates (AdvSIMD).
+impl Fpu {
+    /// FPRecipStepFused (FRECPS, `2 - a × b`) and FPRSqrtStepFused (FRSQRTS, `(3 - a × b) / 2`).
+    pub fn step(&mut self, f: Fmt, a: u64, b: u64, rsqrt: bool) -> u64 {
+        let na = a ^ f.sign(); // FPNeg(op1), NaN included
+        let (va, vb) = (self.unpack(f, na), self.unpack(f, b));
+        if let Some(r) = self.process_nans(f, &[(va, na), (vb, b)]) {
+            return r;
+        }
+        let (ia, ib) = (va.class == Class::Inf, vb.class == Class::Inf);
+        let (za, zb) = (va.class == Class::Zero, vb.class == Class::Zero);
+        let bias = f.bias() as u64;
+        if (ia && zb) || (za && ib) {
+            // 1.5 or 2.0.
+            return if rsqrt {
+                bias << f.f | f.qbit()
+            } else {
+                (bias + 1) << f.f
+            };
+        }
+        if ia || ib {
+            return f.inf(va.sign ^ vb.sign);
+        }
+        let p = if za || zb {
+            Term::ZERO
+        } else {
+            Term {
+                sign: va.sign ^ vb.sign,
+                exp: va.exp + vb.exp,
+                mant: va.mant as u128 * vb.mant as u128,
+            }
+        };
+        let c = Term {
+            sign: false,
+            exp: 0,
+            mant: if rsqrt { 3 } else { 2 },
+        };
+        let mut s = add_exact(c, p);
+        if rsqrt {
+            s.exp -= 1;
+        }
+        self.round_sum(f, s)
+    }
+
+    /// The fraction (as 52 bits) and biased exponent fields of a single or double.
+    fn fields52(f: Fmt, x: u64) -> (u64, i32) {
+        let frac = (x & f.frac_mask()) << (52 - f.f);
+        (frac, ((x >> f.f) & f.exp_ones()) as i32)
+    }
+
+    /// Packs a single or double from sign, biased exponent and a 52-bit fraction.
+    fn pack52(f: Fmt, sign: bool, exp: i32, frac: u64) -> u64 {
+        f.zero(sign) | (exp as u64 & f.exp_ones()) << f.f | frac >> (52 - f.f)
+    }
+
+    /// FPRecipEstimate (FRECPE).
+    pub fn recip_estimate(&mut self, f: Fmt, x: u64) -> u64 {
+        let v = self.unpack(f, x);
+        match v.class {
+            Class::QNaN | Class::SNaN => return self.process_nan(f, &v, x),
+            Class::Inf => return f.zero(v.sign),
+            Class::Zero => {
+                self.flags |= DZC;
+                return f.inf(v.sign);
+            }
+            Class::Num => {}
+        }
+        let top = v.exp + 63 - v.mant.leading_zeros() as i32; // floor(log2 |value|)
+        let (lo, hi, base) = if f == S {
+            (-128, 126, 253)
+        } else {
+            (-1024, 1022, 2045)
+        };
+        if top < lo {
+            self.flags |= OFC | IXC;
+            let to_inf = match self.rounding() {
+                Rounding::PosInf => !v.sign,
+                Rounding::NegInf => v.sign,
+                Rounding::Zero => false,
+                _ => true,
+            };
+            return if to_inf {
+                f.inf(v.sign)
+            } else {
+                f.max_normal(v.sign)
+            };
+        }
+        if self.fz(f) && top >= hi {
+            self.flags |= UFC;
+            return f.zero(v.sign);
+        }
+        let (mut frac, mut exp) = Self::fields52(f, x);
+        if exp == 0 {
+            if frac >> 51 == 0 {
+                exp = -1;
+                frac <<= 2;
+            } else {
+                frac <<= 1;
+            }
+            frac &= (1 << 52) - 1;
+        }
+        let est = recip_estimate_int(256 | (frac >> 44) as u32) as u64;
+        let mut rexp = base - exp;
+        let mut frac = (est & 0xff) << 44;
+        if rexp == 0 {
+            frac = 1 << 51 | frac >> 1;
+        } else if rexp == -1 {
+            frac = 1 << 50 | frac >> 2;
+            rexp = 0;
+        }
+        Self::pack52(f, v.sign, rexp, frac)
+    }
+
+    /// FPRSqrtEstimate (FRSQRTE).
+    pub fn rsqrt_estimate(&mut self, f: Fmt, x: u64) -> u64 {
+        let v = self.unpack(f, x);
+        match v.class {
+            Class::QNaN | Class::SNaN => return self.process_nan(f, &v, x),
+            Class::Zero => {
+                self.flags |= DZC;
+                return f.inf(v.sign);
+            }
+            _ if v.sign => return self.invalid(f),
+            Class::Inf => return f.zero(false),
+            Class::Num => {}
+        }
+        let (mut frac, mut exp) = Self::fields52(f, x);
+        if exp == 0 {
+            while frac >> 51 == 0 {
+                frac <<= 1;
+                exp -= 1;
+            }
+            frac = (frac << 1) & ((1 << 52) - 1);
+        }
+        // Even exponent: 0.5 <= scaled < 1; odd: 0.25 <= scaled < 0.5 (units of 1/512).
+        let scaled = if exp & 1 == 0 {
+            256 | (frac >> 44)
+        } else {
+            128 | (frac >> 45)
+        };
+        let est = rsqrt_estimate_int(scaled as u32) as u64;
+        let rexp = (if f == S { 380 } else { 3068 } - exp) / 2;
+        Self::pack52(f, false, rexp, (est & 0xff) << 44)
+    }
+
+    /// FPRecpX (FRECPX): the exponent inverted, fraction zero.
+    pub fn recpx(&mut self, f: Fmt, x: u64) -> u64 {
+        let v = self.unpack(f, x);
+        if v.nan() {
+            return self.process_nan(f, &v, x);
+        }
+        let exp = (x >> f.f) & f.exp_ones();
+        let e = if exp == 0 {
+            f.exp_ones() - 1
+        } else {
+            !exp & f.exp_ones()
+        };
+        f.zero(v.sign) | e << f.f
+    }
+}
+
+/// RecipEstimate: `a` in 256..512 (0.5 <= a/512 < 1) to 256..512 (1 <= r/256 < 2).
+fn recip_estimate_int(a: u32) -> u32 {
+    let a = a * 2 + 1;
+    let b = (1 << 19) / a;
+    b.div_ceil(2)
+}
+
+/// RecipSqrtEstimate: `a` in 128..512 to 256..512.
+fn rsqrt_estimate_int(a: u32) -> u32 {
+    // In units of 1/512 (below 0.5) or 1/256 (above), rounded to nearest.
+    let a = if a < 256 {
+        a * 2 + 1
+    } else {
+        (((a >> 1) << 1) + 1) * 2
+    } as u64;
+    // The largest b with b < 2^14 / sqrt(a).
+    let mut b = 512u64;
+    while a * (b + 1) * (b + 1) < 1 << 28 {
+        b += 1;
+    }
+    b.div_ceil(2) as u32
+}
+
+/// UnsignedRecipEstimate (URECPE).
+pub fn urecpe(x: u32) -> u32 {
+    if x >> 31 == 0 {
+        u32::MAX
+    } else {
+        recip_estimate_int(x >> 23) << 23
+    }
+}
+
+/// UnsignedRSqrtEstimate (URSQRTE).
+pub fn ursqrte(x: u32) -> u32 {
+    if x >> 30 == 0 {
+        u32::MAX
+    } else {
+        rsqrt_estimate_int(x >> 23) << 23
+    }
+}
+
 /// A signed exact value `mant × 2^exp` (mant may be 0).
 #[derive(Clone, Copy)]
 struct Term {

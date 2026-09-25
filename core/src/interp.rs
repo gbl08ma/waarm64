@@ -6,6 +6,7 @@ mod float;
 mod ldst;
 mod ldst_fp;
 mod simd;
+mod simd_fp;
 mod simd_int;
 
 use crate::cpu::{Cpu, FPCR_MASK, FPSR_MASK};
@@ -610,9 +611,25 @@ fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64) -> R {
         | SM3TT2B | SM3PARTW1 | SM3PARTW2 | SM3SS1 | SM4EKEY | SM4E | AESE | AESD | AESMC
         | AESIMC | SHA1C | SHA1P | SHA1M | SHA1SU0 | SHA256H | SHA256H2 | SHA256SU1 | SHA1H
         | SHA1SU1 | SHA256SU0 => return Err(Exit::Undefined),
+        // Half-precision AdvSIMD arithmetic (FEAT_FP16).
+        FMULX_vec_1 | FCMEQ_reg_1 | FRECPS_1 | FRSQRTS_1 | FCMGE_reg_1 | FACGE_1 | FABD_1
+        | FCMGT_reg_1 | FACGT_1 | FCVTNS_1 | FCVTMS_1 | FCVTAS_1 | SCVTF_int_1 | FCMGT_zero_1
+        | FCMEQ_zero_1 | FCMLT_1 | FCVTPS_1 | FCVTZS_int_1 | FRECPE_1 | FRECPX_1 | FCVTNU_1
+        | FCVTMU_1 | FCVTAU_1 | UCVTF_int_1 | FCMGE_zero_1 | FCMLE_1 | FCVTPU_1 | FCVTZU_int_1
+        | FRSQRTE_1 | FMAXNMP_pair_1 | FADDP_pair_1 | FMAXP_pair_1 | FMINNMP_pair_1
+        | FMINP_pair_1 | FMLA_elt_1 | FMLS_elt_1 | FMUL_elt_1 | FMULX_elt_1 | FMULX_vec_3
+        | FCMEQ_reg_3 | FRECPS_3 | FRSQRTS_3 | FCMGE_reg_3 | FACGE_3 | FABD_3 | FCMGT_reg_3
+        | FACGT_3 | FMAXNM_1 | FMLA_vec_1 | FADD_1 | FMAX_1 | FMINNM_1 | FMLS_vec_1 | FSUB_1
+        | FMIN_1 | FMAXNMP_vec_1 | FADDP_vec_1 | FMUL_vec_1 | FMAXP_vec_1 | FDIV_1
+        | FMINNMP_vec_1 | FMINP_vec_1 | FRINTN_1 | FRINTM_1 | FCVTNS_3 | FCVTMS_3 | FCVTAS_3
+        | SCVTF_int_3 | FCMGT_zero_3 | FCMEQ_zero_3 | FCMLT_3 | FABS_1 | FRINTP_1 | FRINTZ_1
+        | FCVTPS_3 | FCVTZS_int_3 | FRECPE_3 | FRINTA_1 | FRINTX_1 | FCVTNU_3 | FCVTMU_3
+        | FCVTAU_3 | UCVTF_int_3 | FNEG_1 | FRINTI_1 | FCMGE_zero_3 | FCMLE_3 | FCVTPU_3
+        | FCVTZU_int_3 | FRSQRTE_3 | FSQRT_1 | FMAXNMV_1 | FMAXV_1 | FMINNMV_1 | FMINV_1
+        | FMLA_elt_3 | FMLS_elt_3 | FMUL_elt_3 | FMULX_elt_3 => return Err(Exit::Undefined),
 
-        // AdvSIMD integer; then FP (M2) and EL1 system instructions (M3).
-        _ => match simd_int::handler(op) {
+        // AdvSIMD integer and FP; EL1 system instructions (M3) are still unimplemented.
+        _ => match simd_int::handler(op).or_else(|| simd_fp::handler(op)) {
             Some(f) => f(c, i)?,
             None => return Err(Exit::Unimplemented(op)),
         },

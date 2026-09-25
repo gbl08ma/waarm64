@@ -669,6 +669,76 @@ const fpScalar: Form[] = [
   }),
 ];
 
+// AdvSIMD floating point: FP edge values in every lane (sz picks single or
+// double). Only v8.0 encodings: the M4 also runs FEAT_FHM (FMLAL), FRINTTS,
+// BF16 and FP16 in this space.
+function vfpForm(name: string, pat: string, count: number, combos: [number, number, number][], o: { fmt?: (f: Fields) => FpFmt; fix?: (r: Rng) => Fields } = {}): Form {
+  return {
+    name,
+    count,
+    gen(r) {
+      const [U, a, op] = r.pick(combos);
+      const fx: Fields = { U, a, o: op, ...(o.fix?.(r) ?? {}) };
+      if (!("z" in fx)) fx.z = r.int(2);
+      if (!("Q" in fx) && fx.z && r.chance(0.9)) fx.Q = 1; // doubles need Q (mostly)
+      const { w, f } = enc(r, pat, fx);
+      const t = o.fmt?.(f) ?? (f.z ? FD : FS);
+      const m = new Map<string, bigint>();
+      for (const l of "nmd") {
+        if (!(l in f)) continue;
+        let v = 0n;
+        const b = 1 + t.e + t.f;
+        for (let k = 0; k < 128 / b; k++) v |= fpVal(r, t) << BigInt(k * b);
+        m.set(`v${f[l]}`, v);
+      }
+      fpEnv(r, m);
+      return { code: [w], in: m };
+    },
+  };
+}
+
+const combos = (u: number, a: number, ops: number[]) => ops.map((o) => [u, a, o] as [number, number, number]);
+const simdFp: Form[] = [
+  vfpForm("vec_same", "0QU01110az1mmmmmooooo1nnnnnddddd", 2000, [
+    ...combos(0, 0, [24, 25, 26, 27, 28, 30, 31]),
+    ...combos(0, 1, [24, 25, 26, 30, 31]),
+    ...combos(1, 0, [24, 26, 27, 28, 29, 30, 31]),
+    ...combos(1, 1, [24, 26, 28, 29, 30]),
+  ]),
+  vfpForm("scalar_same", "01U11110az1mmmmmooooo1nnnnnddddd", 600, [
+    ...combos(0, 0, [27, 28, 31]),
+    [0, 1, 31],
+    ...combos(1, 0, [28, 29]),
+    ...combos(1, 1, [26, 28, 29]),
+  ]),
+  vfpForm("vec_misc", "0QU01110az10000ooooo10nnnnnddddd", 2000, [
+    ...combos(0, 0, [22, 23, 24, 25, 26, 27, 28, 29]),
+    ...combos(0, 1, [12, 13, 14, 15, 24, 25, 26, 27, 28, 29]),
+    ...combos(1, 0, [22, 24, 25, 26, 27, 28, 29]),
+    ...combos(1, 1, [12, 13, 15, 25, 26, 27, 28, 29, 31]),
+  ]),
+  vfpForm("scalar_misc", "01U11110az10000ooooo10nnnnnddddd", 800, [
+    ...combos(0, 0, [26, 27, 28, 29]),
+    ...combos(0, 1, [12, 13, 14, 26, 27, 29, 31]),
+    ...combos(1, 0, [22, 26, 27, 28, 29]),
+    ...combos(1, 1, [12, 13, 26, 27, 29]),
+  ]),
+  vfpForm("scalar_pair", "01111110az11000ooooo10nnnnnddddd", 300, [...combos(1, 0, [12, 13, 15]), ...combos(1, 1, [12, 15])]),
+  vfpForm("across", "0QU01110az11000ooooo10nnnnnddddd", 300, [...combos(1, 0, [12, 15]), ...combos(1, 1, [12, 15])], {
+    fix: (r): Fields => (r.chance(0.9) ? { Q: 1, z: 0 } : {}),
+  }),
+  vfpForm("elem", "0QU011111zLMmmmmooooH0nnnnnddddd", 800, [...combos(0, 0, [1, 5, 9]), [1, 0, 9]]),
+  vfpForm("scalar_elem", "01U111111zLMmmmmooooH0nnnnnddddd", 300, [...combos(0, 0, [1, 5, 9]), [1, 0, 9]]),
+  vfpForm("fixed", "0QU011110hhhhbbbooooo1nnnnnddddd", 500, [...combos(0, 0, [28, 31]), ...combos(1, 0, [28, 31])], {
+    fix: (r): Fields => ({ h: r.chance(0.95) ? r.range(4, 15) : 1, Q: r.chance(0.9) ? 1 : 0 }),
+    fmt: (f) => (f.h >= 8 ? FD : FS),
+  }),
+  vfpForm("scalar_fixed", "01U111110hhhhbbbooooo1nnnnnddddd", 300, [...combos(0, 0, [28, 31]), ...combos(1, 0, [28, 31])], {
+    fix: (r): Fields => ({ h: r.chance(0.95) ? r.range(4, 15) : 1 }),
+    fmt: (f) => (f.h >= 8 ? FD : FS),
+  }),
+];
+
 // Exclusives and acquire/release. Always aligned: the architecture requires it,
 // but neither oracle faults on misaligned exclusives (recorded in PLAN.md §4.2).
 function exclusive(name: string, count: number, make: (r: Rng, m: Map<string, bigint>) => number[] | undefined): Form {
@@ -816,7 +886,7 @@ const sys: Form[] = [
   { name: "udf", count: 20, gen: (r) => ({ code: [r.int(0x10000)], in: new Map() }) },
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar };
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

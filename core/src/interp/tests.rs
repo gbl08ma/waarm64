@@ -764,3 +764,85 @@ fn simd_permute_ext_table() {
         vl(8, &[0x41, 0xcc, 0x4f, 0xcc, 0x40, 0x40, 0x40, 0x40])
     );
 }
+
+#[test]
+fn simd_float() {
+    let s = |xs: &[f32]| {
+        vl(
+            32,
+            &xs.iter().map(|x| x.to_bits() as u64).collect::<Vec<_>>(),
+        )
+    };
+    let d = |xs: &[f64]| vl(64, &xs.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
+    const IOC: u64 = 1;
+    const OFC: u64 = 4;
+    const IXC: u64 = 16;
+    let c = vone(
+        0x6e22d420,
+        &[
+            (1, s(&[1.0, 2.0, 3.0, 4.0])),
+            (2, s(&[10.0, 20.0, 30.0, 40.0])),
+        ],
+    ); // faddp v0.4s
+    assert_eq!(c.v[0], s(&[3.0, 7.0, 30.0, 70.0]));
+    let c = vone(
+        0x4fc21820,
+        &[
+            (0, d(&[1.0, 2.0])),
+            (1, d(&[3.0, 4.0])),
+            (2, d(&[9.0, 0.5])),
+        ],
+    ); // fmla v0.2d, v1.2d, v2.d[1]
+    assert_eq!(c.v[0], d(&[2.5, 4.0]));
+    let c = vone(
+        0x6e22e420,
+        &[
+            (1, s(&[1.0, f32::NAN, 2.0, -0.0])),
+            (2, s(&[1.0, 1.0, 3.0, 0.0])),
+        ],
+    ); // fcmge v0.4s
+    assert_eq!(
+        (c.v[0], c.fpsr),
+        (vl(32, &[0xffff_ffff, 0, 0, 0xffff_ffff]), IOC)
+    );
+    assert_eq!(vone(0x5ea1d820, &[(1, s(&[1.0]))]).v[0], 0x3f7f_8000); // frecpe s0, s1: 0.998046875
+    assert_eq!(vone(0x7ea1d820, &[(1, s(&[4.0]))]).v[0], 0x3eff_8000); // frsqrte s0, s1: 0.4990234375
+    let c = vone(0x0ea1c820, &[(1, vl(32, &[0x8000_0000, 0x7fff_ffff]))]); // urecpe v0.2s
+    assert_eq!(c.v[0], vl(32, &[0xff80_0000, 0xffff_ffff]));
+    let c = vone(
+        0x4e216820,
+        &[(0, 0x1234), (1, s(&[1.0, -2.0, 131008.0, 0.5]))],
+    ); // fcvtn2 v0.8h, v1.4s
+    assert_eq!(
+        (c.v[0], c.fpsr),
+        (vl(64, &[0x1234, 0x3800_7c00_c000_3c00]), OFC | IXC)
+    );
+    assert_eq!(
+        vone(0x0e617820, &[(1, s(&[1.5, -0.25]))]).v[0],
+        d(&[1.5, -0.25])
+    ); // fcvtl v0.2d, v1.2s
+    let c = vone(0x7e616820, &[(1, d(&[1.0 + 2f64.powi(-40)]))]); // fcvtxn s0, d1: round to odd
+    assert_eq!((c.v[0], c.fpsr), (0x3f80_0001, IXC));
+    let c = vone(0x4f3ffc20, &[(1, s(&[1.25, -1.75, 1e10, f32::NAN]))]); // fcvtzs v0.4s, v1.4s, #1
+    assert_eq!(
+        (c.v[0], c.fpsr),
+        (
+            vl(32, &[2, (-3i32) as u32 as u64, 0x7fff_ffff, 0]),
+            IOC | IXC
+        )
+    );
+    let c = vone(
+        0x4e22fc20,
+        &[
+            (1, s(&[2.0, f32::INFINITY, 0.0, 1.0])),
+            (2, s(&[0.5, 0.0, 3.0, 1.0])),
+        ],
+    ); // frecps
+    assert_eq!((c.v[0], c.fpsr), (s(&[1.0, 2.0, 2.0, 1.0]), 0));
+    let c = vone(0x6e30c820, &[(1, s(&[f32::NAN, 1.0, -5.0, 3.0]))]); // fmaxnmv s0, v1.4s
+    assert_eq!(c.v[0], s(&[3.0]));
+    assert_eq!(
+        vone(0x7ee2d420, &[(1, d(&[1.0])), (2, d(&[3.5]))]).v[0],
+        d(&[2.5])
+    ); // fabd d0, d1, d2
+}
