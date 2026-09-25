@@ -42,9 +42,9 @@ const ID_AA64MMFR0: u64 = 0xf << 24 | 2 << 4 | 2;
 const CTR_EL0: u64 = 1 << 31 | 1 << 28 | 4 << 24 | 4 << 20 | 4 << 16 | 3 << 14 | 4;
 /// DC ZVA block: BS = 4 (64 bytes, as on the M4).
 const DCZID_BS: u64 = 4;
-/// OSLSR_EL1: the OS lock is implemented (OSLM = 0b10) and unlocked.
-// ponytail: OSLAR_EL1 writes are ignored, so OSLK always reads 0.
-const OSLSR: u64 = 0b1000;
+/// OSLSR_EL1.OSLM = 0b10: the OS lock is implemented (v8.0 requires it). It
+/// only gates debug exceptions, which we don't raise, so it's just state.
+const OSLM: u64 = 0b1000;
 
 const NZCV: u32 = sr(3, 3, 4, 2, 0);
 const DAIF_R: u32 = sr(3, 3, 4, 2, 1);
@@ -238,7 +238,7 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         CONTEXTIDR => c.contextidr_el1,
         TPIDR_EL1 => c.tpidr_el1,
         MDSCR => c.mdscr_el1,
-        OSLSR_R => OSLSR,
+        OSLSR_R => OSLM | c.os_lock,
         MIDR_R => MIDR,
         MPIDR_R => MPIDR,
         REVIDR => 0,
@@ -276,7 +276,7 @@ fn write(c: &mut Cpu, i: u32, key: u32, v: u64) -> R {
         ELR_EL1 => c.elr_el1 = v,
         SP_EL0 if c.pstate & 1 == 1 => c.sp_other = v,
         SPSEL => c.set_pstate(c.pstate & !1 | v & 1),
-        SCTLR => c.sctlr_el1 = v & !sctlr::ENDIAN,
+        SCTLR => c.sctlr_el1 = (v | sctlr::RES1) & !sctlr::ENDIAN,
         CPACR => c.cpacr_el1 = v & 3 << 20,
         TTBR0 => c.ttbr0_el1 = v,
         TTBR1 => c.ttbr1_el1 = v,
@@ -289,7 +289,7 @@ fn write(c: &mut Cpu, i: u32, key: u32, v: u64) -> R {
         CONTEXTIDR => c.contextidr_el1 = v as u32 as u64,
         TPIDR_EL1 => c.tpidr_el1 = v,
         MDSCR => c.mdscr_el1 = v,
-        OSLAR => {}
+        OSLAR => c.os_lock = (v & 1) << 1,
         k if raz_wi(k) => {}
         _ => return Err(Exit::Undefined),
     }

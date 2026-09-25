@@ -1010,3 +1010,95 @@ fn el1_aborts_hvc_and_illegal_return() {
     );
     assert_eq!(c.spsr_el1, N | crate::cpu::SPSR_IL | 0b0101); // EL1h, D A I F cleared
 }
+
+#[test]
+fn el1_exceptions_and_eret_state() {
+    // Taken from EL1h: UNDEFINED and BRK to VBAR + 0x200 with ELR at the instruction.
+    for (insn, esr) in [(0, 0x0200_0000), (0xd4200060, 0xf200_0003)] {
+        let mut t = T::new(&[insn]).el1();
+        t.sys().unwrap();
+        assert_eq!(
+            (t.c.pc, t.c.esr_el1, t.c.elr_el1),
+            (VBAR + 0x200, esr, CODE)
+        );
+    }
+    // Instruction aborts: br x9 to nothing, from EL1 (EC 0x21) and EL0 (EC 0x20).
+    let mut t = T::new(&[0xd61f0120]).el1().x(9, 0xffff_0000);
+    t.sys().unwrap();
+    t.sys().unwrap();
+    assert_eq!(
+        (t.c.pc, t.c.esr_el1, t.c.far_el1),
+        (VBAR + 0x200, 0x8600_0010, 0xffff_0000)
+    );
+    let mut t = T::new(&[0xd61f0120]).x(9, 0xffff_0000);
+    t.c.vbar_el1 = VBAR;
+    t.sys().unwrap();
+    t.sys().unwrap();
+    assert_eq!(
+        (t.c.pc, t.c.esr_el1, t.c.elr_el1),
+        (VBAR + 0x400, 0x8200_0010, 0xffff_0000)
+    );
+    // ERET to EL1t restores NZCV and DAIF and selects SP_EL0.
+    let mut t = T::new(&[0xd69f03e0]).el1().x(31, 0x9000);
+    t.c.sp_other = 0x5000;
+    (t.c.spsr_el1, t.c.elr_el1) = (N | C | 0x80 | 0b0100, 0x4444);
+    t.sys().unwrap();
+    let c = &t.c;
+    assert_eq!(
+        (c.pc, c.nzcv, c.pstate, c.x[31], c.sp_other),
+        (0x4444, N | C, 0x84, 0x5000, 0x9000)
+    );
+    // ERET to EL0 with SPSR.IL set: Illegal Execution State taken from EL0.
+    let mut t = T::new(&[0xd69f03e0]).el1();
+    (t.c.spsr_el1, t.c.elr_el1) = (crate::cpu::SPSR_IL, 0x4444);
+    t.sys().unwrap();
+    let c = &t.c;
+    assert_eq!(
+        (c.pc, c.esr_el1, c.elr_el1),
+        (VBAR + 0x400, 0x3a00_0000, 0x4444)
+    );
+    assert_eq!(c.spsr_el1, crate::cpu::SPSR_IL); // from EL0t
+    // Unimplemented stops run_system with the PC on the instruction.
+    let mut t = T::new(&[0xd5087800]).el1(); // at s1e1r, x0
+    assert!(matches!(t.sys(), Err(Exit::Unimplemented(_))));
+    assert_eq!(t.c.pc, CODE);
+}
+
+#[test]
+fn el1_register_writes() {
+    let prog = [
+        0xd5101080, // msr oslar_el1, x0
+        0xd5301181, // mrs x1, oslsr_el1
+        0xd518101f, // msr sctlr_el1, xzr
+        0xd5381002, // mrs x2, sctlr_el1
+    ];
+    let mut t = T::new(&prog).el1().x(0, 1);
+    for _ in 0..prog.len() {
+        t.sys().unwrap();
+    }
+    assert_eq!((t.c.x[1], t.c.x[2]), (0b1010, crate::cpu::sctlr::RES1));
+}
+
+#[test]
+fn el0_privilege_and_dze() {
+    // EL1-only cache maintenance is UNDEFINED at EL0 (op1 = 0).
+    for insn in [
+        0xd5087620, // dc ivac, x0
+        0xd5087640, // dc isw, x0
+        0xd5087a40, // dc csw, x0
+        0xd5087e40, // dc cisw, x0
+        0xd508751f, // ic iallu
+        0xd508711f, // ic ialluis
+    ] {
+        assert_eq!(T::new(&[insn]).step(), Err(Exit::Undefined), "{insn:#x}");
+    }
+    // Without SCTLR_EL1.DZE: DC ZVA traps, and DCZID_EL0.DZP says so.
+    let mut t = T::new(&[0xd50b7420]); // dc zva, x0
+    t.c.sctlr_el1 &= !crate::cpu::sctlr::DZE;
+    // EC 0x18; ISS op0 1, op2 1, op1 3, CRn 7, Rt 0, CRm 4, write.
+    assert_eq!(t.step(), Err(Exit::Trap(0x6012_dc08)));
+    let mut t = T::new(&[0xd53b00e0]); // mrs x0, dczid_el0
+    t.c.sctlr_el1 &= !crate::cpu::sctlr::DZE;
+    t.step().unwrap();
+    assert_eq!(t.c.x[0], 0x14);
+}

@@ -48,7 +48,8 @@ pub struct Cpu {
     pub tpidrro_el0: u64,
     pub tpidr_el1: u64,
     pub mdscr_el1: u64,
-    pub csselr_el1: u64,
+    /// OSLSR_EL1.OSLK (bit 1), set and cleared through OSLAR_EL1.
+    pub os_lock: u64,
 }
 
 /// PSTATE.M values (with M[4] = 0, AArch64): EL0t, EL1t, EL1h.
