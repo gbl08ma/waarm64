@@ -560,6 +560,115 @@ const simdPerm: Form[] = [
   },
 ];
 
+// Scalar floating point. Operands are FP edge values in lane 0 (random bits
+// above), FPCR has a random rounding mode, FZ, DN and AHP, and FPSR sometimes
+// starts with flags set. ftype 3 (half precision arithmetic) is FEAT_FP16,
+// which the M4 has and we don't, so it only appears where v8.0 allows it (FCVT).
+interface FpFmt {
+  e: number;
+  f: number;
+}
+const FS: FpFmt = { e: 8, f: 23 }, FD: FpFmt = { e: 11, f: 52 }, FH: FpFmt = { e: 5, f: 10 };
+const fpFmt = (y: number) => [FS, FD, FS, FH][y];
+
+/** An interesting value in format `t`, as bits. */
+function fpVal(r: Rng, t: FpFmt): bigint {
+  const E = BigInt(t.e), F = BigInt(t.f);
+  const bias = (1n << (E - 1n)) - 1n;
+  const expOnes = (1n << E) - 1n;
+  const sign = r.chance(0.5) ? 1n << (E + F) : 0n;
+  const frac = () => r.u64() & ((1n << F) - 1n);
+  const num = (exp: bigint, fr: bigint) => sign | (exp << F) | fr;
+  switch (r.int(12)) {
+    case 0: return sign; // zero
+    case 1: return num(expOnes, 0n); // infinity
+    case 2: return num(expOnes, (1n << (F - 1n)) | frac()); // QNaN
+    case 3: return num(expOnes, (frac() >> 1n) | 1n); // SNaN
+    case 4: return num(0n, r.chance(0.3) ? r.pick([1n, (1n << F) - 1n]) : frac() | 1n); // denormal
+    case 5: return num(r.pick([1n, 2n, expOnes - 1n]), r.chance(0.5) ? frac() : r.pick([0n, (1n << F) - 1n])); // extremes
+    case 6: return num(bias + BigInt(r.range(-2, 2)), frac()); // near 1
+    case 7: {
+      // Near an integer or an int32/int64/uint boundary (for conversions and FRINT).
+      const e = BigInt(r.pick([0, 1, 2, 22, 23, 30, 31, 32, 52, 62, 63, 64]));
+      const fr = e >= F ? r.int(4) === 0 ? 0n : frac() : ((BigInt(r.int(8)) << (F - e)) | (r.chance(0.5) ? 1n << (F - e - 1n) : 0n)) & ((1n << F) - 1n);
+      return num(bias + e > expOnes - 1n ? expOnes - 1n : bias + e, fr);
+    }
+    case 8: {
+      // Short mantissas, so some results are exact.
+      const e = bias + BigInt(r.range(-40, 40));
+      return num(e < 1n ? 1n : e > expOnes - 1n ? expOnes - 1n : e, frac() & ~((1n << (F / 2n)) - 1n));
+    }
+    default: return num(BigInt(r.range(1, Number(expOnes) - 1)), frac());
+  }
+}
+
+/** Sets lane 0 of V[n] to an FP value of `t` (the rest random). */
+function setFp(r: Rng, m: Map<string, bigint>, n: number, t: FpFmt) {
+  const bits = BigInt(1 + t.e + t.f);
+  const hi = (r.u64() | (r.u64() << 64n)) & ~((1n << bits) - 1n) & ((1n << 128n) - 1n);
+  m.set(`v${n}`, hi | fpVal(r, t));
+}
+
+/** Random FPCR (RMode, FZ, DN, AHP) and sometimes a nonzero FPSR. */
+function fpEnv(r: Rng, m: Map<string, bigint>) {
+  let fpcr = BigInt(r.int(4)) << 22n;
+  if (r.chance(0.25)) fpcr |= 1n << 24n; // FZ
+  if (r.chance(0.25)) fpcr |= 1n << 25n; // DN
+  if (r.chance(0.25)) fpcr |= 1n << 26n; // AHP
+  if (fpcr) m.set("fpcr", fpcr);
+  if (r.chance(0.2)) m.set("fpsr", r.u64() & 0x0800009fn);
+}
+
+function fpForm(name: string, pat: string, count: number, o: { fix?: (r: Rng) => Fields; ok?: (f: Fields) => boolean; fmt?: (f: Fields) => FpFmt; fp?: string; x?: string } = {}): Form {
+  return {
+    name,
+    count,
+    gen(r) {
+      const { w, f } = enc(r, pat, o.fix?.(r) ?? {});
+      if (o.ok && !o.ok(f)) return undefined;
+      const m = new Map<string, bigint>();
+      const t = o.fmt?.(f) ?? fpFmt(f.y ?? 0);
+      for (const l of o.fp ?? "nma") if (l in f) setFp(r, m, f[l], t);
+      for (const l of o.x ?? "") if (l in f && f[l] !== 31) m.set(`x${f[l]}`, r.chance(0.5) ? r.pick(EDGES) : r.u64() >> BigInt(r.int(64)));
+      fpEnv(r, m);
+      return { code: [w], in: m };
+    },
+  };
+}
+
+const fty = (r: Rng) => (r.chance(0.95) ? r.int(2) : 2); // S or D; 2 is unallocated
+const DP1 = [1, 2, 3, 8, 9, 10, 11, 12, 14, 15]; // FABS FNEG FSQRT FRINT{N,P,M,Z,A,X,I}
+const fpScalar: Form[] = [
+  fpForm("dp2", "00011110yy1mmmmmoooo10nnnnnddddd", 1500, { fix: (r) => ({ y: fty(r), o: r.int(9) }) }),
+  fpForm("dp1", "00011110yy1oooooo10000nnnnnddddd", 900, { fix: (r) => ({ y: fty(r), o: r.pick(DP1) }) }),
+  fpForm("fcvt", "00011110yy10001oo10000nnnnnddddd", 500, {
+    // S, D and H in both directions; the same type or type 2 is unallocated,
+    // except D to type 2, which is BFCVT (FEAT_BF16: the M4 has it, we don't).
+    fix: (r) => (r.chance(0.95) ? { y: r.pick([0, 1, 3]), o: r.pick([0, 1, 3]) } : { y: r.pick([0, 3]), o: 2 }),
+  }),
+  fpForm("dp3", "00011111yyAmmmmmBaaaaannnnnddddd", 1200, { fix: (r) => ({ y: fty(r) }) }),
+  fpForm("fcmp", "00011110yy1mmmmm001000nnnnnEZ000", 500, { fix: (r): Fields => (r.chance(0.3) ? { y: fty(r), Z: 1, m: 0 } : { y: fty(r), Z: 0 }) }),
+  fpForm("fccmp", "00011110yy1mmmmmcccc01nnnnnEffff", 400, { fix: (r) => ({ y: fty(r) }) }),
+  fpForm("fcsel", "00011110yy1mmmmmcccc11nnnnnddddd", 200, { fix: (r) => ({ y: fty(r) }) }),
+  fpForm("fp_to_int", "z0011110yy1rrooo000000nnnnnddddd", 1200, {
+    fix: (r): Fields => {
+      const [rr, o] = r.pick([[0, 0], [0, 1], [1, 0], [1, 1], [2, 0], [2, 1], [3, 0], [3, 1], [0, 4], [0, 5]]);
+      return { y: fty(r), r: rr, o };
+    },
+    fp: "n",
+  }),
+  fpForm("int_to_fp", "z0011110yy10001o000000nnnnnddddd", 500, { fix: (r) => ({ y: fty(r) }), fp: "", x: "n" }),
+  fpForm("fixed", "z0011110yy0rrooossssssnnnnnddddd", 800, {
+    fix: (r): Fields => {
+      const [rr, o] = r.pick([[0, 2], [0, 3], [3, 0], [3, 1]]);
+      const z = r.int(2);
+      return { y: fty(r), r: rr, o, z, s: r.chance(0.95) ? r.range(z ? 0 : 32, 63) : r.int(32) };
+    },
+    fp: "n",
+    x: "n",
+  }),
+];
+
 // Exclusives and acquire/release. Always aligned: the architecture requires it,
 // but neither oracle faults on misaligned exclusives (recorded in PLAN.md §4.2).
 function exclusive(name: string, count: number, make: (r: Rng, m: Map<string, bigint>) => number[] | undefined): Form {
@@ -707,7 +816,7 @@ const sys: Form[] = [
   { name: "udf", count: 20, gen: (r) => ({ code: [r.int(0x10000)], in: new Map() }) },
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm };
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

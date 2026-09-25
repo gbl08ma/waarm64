@@ -5,13 +5,14 @@
 
 pub mod cpu;
 pub mod decode;
+pub mod fp;
 pub mod interp;
 pub mod mem;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 2;
+pub const ABI_VERSION: u32 = 3;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -67,6 +68,35 @@ pub unsafe extern "C" fn interp_run(cpu: *mut cpu::Cpu, mem: *const mem::Mem, n:
     // SAFETY: guaranteed by the caller.
     let (cpu, mem) = unsafe { (&mut *cpu, &*mem) };
     interp::run(cpu, mem, n).0
+}
+
+/// Like [`interp_run`], and also writes why it stopped to `exit` as two u64s:
+/// kind (0 ran all `n`, 1 UNDEFINED, 2 unimplemented, 3 bus fault, 4 alignment
+/// fault, 5 SVC, 6 BRK) and a value (the `Op` index, fault address or immediate).
+///
+/// # Safety
+/// As for [`interp_run`]; `exit` points at 16 writable, 8-byte-aligned bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn interp_run_exit(
+    cpu: *mut cpu::Cpu,
+    mem: *const mem::Mem,
+    n: u64,
+    exit: *mut [u64; 2],
+) -> u64 {
+    use interp::Exit;
+    // SAFETY: guaranteed by the caller.
+    let (cpu, mem, exit) = unsafe { (&mut *cpu, &*mem, &mut *exit) };
+    let (done, r) = interp::run(cpu, mem, n);
+    *exit = match r {
+        Ok(()) => [0, 0],
+        Err(Exit::Undefined) => [1, 0],
+        Err(Exit::Unimplemented(op)) => [2, op as u64],
+        Err(Exit::Fault(mem::Fault::Bus { addr })) => [3, addr],
+        Err(Exit::Fault(mem::Fault::Align { addr })) => [4, addr],
+        Err(Exit::Svc(imm)) => [5, imm as u64],
+        Err(Exit::Brk(imm)) => [6, imm as u64],
+    };
+    done
 }
 
 #[cfg(test)]

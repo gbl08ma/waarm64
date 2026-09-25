@@ -2,6 +2,7 @@
 //! FP/AdvSIMD (M2) and EL1 system instructions (M3) come back as
 //! [`Exit::Unimplemented`].
 
+mod float;
 mod ldst;
 mod ldst_fp;
 mod simd;
@@ -568,6 +569,17 @@ fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64) -> R {
         | ST4_sngl_1 | ST4_sngl_2 | LD1_sngl_1 | LD1_sngl_2 | LD2_sngl_1 | LD2_sngl_2
         | LD3_sngl_1 | LD3_sngl_2 | LD4_sngl_1 | LD4_sngl_2 | LD1R_1 | LD1R_2 | LD2R_1 | LD2R_2
         | LD3R_1 | LD3R_2 | LD4R_1 | LD4R_2 => ldst_fp::exec(c, m, i, pc, op)?,
+
+        // Scalar floating point.
+        FCVT_float | SCVTF_float_int | UCVTF_float_int | SCVTF_float_fix | UCVTF_float_fix
+        | FCVTNS_float | FCVTNU_float | FCVTAS_float | FCVTAU_float | FCVTPS_float
+        | FCVTPU_float | FCVTMS_float | FCVTMU_float | FCVTZS_float_int | FCVTZU_float_int
+        | FCVTZS_float_fix | FCVTZU_float_fix | FCMP_float | FCMPE_float | FCCMP_float
+        | FCCMPE_float | FCSEL_float | FABS_float | FNEG_float | FSQRT_float | FRINTN_float
+        | FRINTP_float | FRINTM_float | FRINTZ_float | FRINTA_float | FRINTX_float
+        | FRINTI_float | FMUL_float | FNMUL_float | FDIV_float | FADD_float | FSUB_float
+        | FMAX_float | FMIN_float | FMAXNM_float | FMINNM_float | FMADD_float | FMSUB_float
+        | FNMADD_float | FNMSUB_float => float::exec(c, i, op)?,
 
         // AdvSIMD and FP moves.
         DUP_elt_1 | DUP_elt_2 | DUP_gen | SMOV | UMOV | INS_gen | INS_elt | MOVI | FMOV_2

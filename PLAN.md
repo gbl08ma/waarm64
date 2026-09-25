@@ -54,9 +54,9 @@ Key design points. The spike in M0 will confirm or adjust each of these.
 
 ### FP semantics (a known hard spot)
 
-- Wasm arithmetic is round-to-nearest-even only. Other `FPCR.RMode` settings and `FZ` go through a SoftFloat-based slow path.
+- Wasm arithmetic is round-to-nearest-even only. Other `FPCR.RMode` settings and `FZ` go through a software slow path: `core/src/fp.rs`, our own implementation written from the ARM pseudocode (FPRound with tininess before rounding, FZ, DN, the ARM NaN order) over one generic u128 unpack/round/pack for half, single and double. It was chosen over porting SoftFloat in M2, being smaller and ARM-specific; TestFloat 3e validates it. Single and double add/sub/mul/div/sqrt take host arithmetic in round-to-nearest-even when inputs are normal and the result is normal above the smallest binade, with the Inexact flag computed exactly.
 - Wasm NaN payloads are nondeterministic. After each FP op, a rarely taken branch fixes up NaNs to ARM propagation rules (or to the default NaN when `FPCR.DN=1`).
-- Core wasm has no scalar FMA. `FMADD` and friends need an exact software FMA. Validate it against TestFloat.
+- Core wasm has no scalar FMA. `FMADD` and friends use the exact software FMA in `fp.rs`, validated against TestFloat.
 - Cumulative exception flags in `FPSR` are computed lazily or on demand.
 
 ## 3. Repository layout
@@ -97,7 +97,7 @@ Testing is layered. The cheaper layers run on every commit.
    - The same QEMU with `-accel hvf` on the Mac: real Apple hardware running EL1 code (MMU, exceptions). The devices are still QEMU's.
    - The Sail ARM model as the authoritative reference for disputed corner cases.
 4. **JIT vs interpreter lockstep.** Run the same guest in both and compare architectural state at region boundaries. A "JIT stress" mode sets the compile threshold to 0 and uses a tiny code cache so eviction and invalidation are exercised constantly.
-5. **FP conformance.** TestFloat vectors for every FP op, rounding mode, FZ/DN combination and FMA.
+5. **FP conformance.** TestFloat vectors for every FP op, rounding mode, FZ/DN combination and FMA. `scripts/testfloat.sh` (part of `scripts/ci.sh`) builds TestFloat 3e under `target/testfloat` and runs `core/tests/testfloat.rs`, which checks every case under all four FZ/DN combinations. The golden corpus also runs on the wasm core in Node (`tests/corpus-wasm.test.ts`), because host float behavior is where native and wasm builds can diverge.
 6. **Bare-metal system tests.**
    - Small EL1 assembly/C tests report results through PSCI `SYSTEM_OFF` with a code.
    - Run **kvm-unit-tests** (arm64: selftest, psci, gic, timer, mmu-related) unmodified as guests.

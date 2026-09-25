@@ -20,6 +20,7 @@ and runs unmodified arm64 Linux. Chromium is the primary target.
 scripts/ci.sh                  # everything CI runs: fmt, clippy, cargo test, wasm build, tsc, node + Chromium tests
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
 cargo test                     # native core tests
+scripts/testfloat.sh           # FP core vs TestFloat 3e (builds it under target/ on first run; in ci.sh)
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium e2e; needs the wasm build)
 npm run bench -- [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks]
 node bench/spike/memory/run-all.ts # M0.5 memory suite (capacity, cost, machine code) -> bench/spike/memory/results/
