@@ -4,6 +4,7 @@
 
 mod ldst;
 mod ldst_fp;
+mod simd;
 
 use crate::cpu::{Cpu, FPCR_MASK, FPSR_MASK};
 use crate::decode::{Op, decode};
@@ -567,14 +568,18 @@ fn exec(c: &mut Cpu, m: &Mem, i: u32, pc: u64) -> R {
         | LD3_sngl_1 | LD3_sngl_2 | LD4_sngl_1 | LD4_sngl_2 | LD1R_1 | LD1R_2 | LD2R_1 | LD2R_2
         | LD3R_1 | LD3R_2 | LD4R_1 | LD4R_2 => ldst_fp::exec(c, m, i, pc, op)?,
 
+        // AdvSIMD and FP moves.
+        DUP_elt_1 | DUP_elt_2 | DUP_gen | SMOV | UMOV | INS_gen | INS_elt | MOVI | FMOV_2
+        | FMOV_float_gen | FMOV_float | FMOV_float_imm => simd::exec(c, i, op)?,
+
         // Unallocated, or features PLAN.md §1 leaves out (PAC, BTI, MTE, SB,
-        // v8.2+ flag manipulation, RCpc, LOR, DPB, LS64, WFxT).
+        // v8.2+ flag manipulation, RCpc, LOR, DPB, LS64, WFxT, FP16).
         UnallocatedEncoding | ADDG | SUBG | PACIA_1 | PACIB_1 | AUTIA_1 | AUTIB_1 | PACDA
         | PACDB | AUTDA | AUTDB | XPAC_1 | PACGA | BLRA | BRA | RETA | ERETA | LDRA | SUBP
         | SUBPS | IRG | GMI | STGP_1 | STGP_2 | STGP_3 | STG_1 | STG_2 | STG_3 | LDG | STZG_1
         | STZG_2 | STZG_3 | ST2G_1 | ST2G_2 | ST2G_3 | STZ2G_1 | STZ2G_2 | STZ2G_3 | STGV
         | LDGV | SB | CFINV | RMIF | SETF8 | SETF16 | XAFlag | AXFlag | LDAPRB | LDAPRH | LDAPR
-        | STLLR | LDLAR | DC_CVAP | LD64B | ST64B | ST64BV | ST64BV0 | WFET | WFIT => {
+        | STLLR | LDLAR | DC_CVAP | LD64B | ST64B | ST64BV | ST64BV0 | WFET | WFIT | FMOV_3 => {
             return Err(Exit::Undefined);
         }
 

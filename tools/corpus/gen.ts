@@ -378,6 +378,31 @@ const ldstFp: Form[] = [
   structure("vec_single_post", "0Q0011011LRmmmmmoooSzznnnnnttttt", 500, sngl),
 ];
 
+// AdvSIMD and FP moves. ftype 3 (half precision) is left out: the M4 has FEAT_FP16, we don't.
+const noHalf = (f: Fields) => f.y !== 3;
+const simdMove: Form[] = [
+  dp("dup_elt_scalar", "01011110000iiiii000001nnnnnddddd", 100, { src: "" }),
+  dp("dup_elt", "0Q001110000iiiii000001nnnnnddddd", 200, { src: "" }),
+  dp("dup_gen", "0Q001110000iiiii000011nnnnnddddd", 200, { src: "n" }),
+  dp("smov", "0Q001110000iiiii001011nnnnnddddd", 200, { src: "" }),
+  dp("umov", "0Q001110000iiiii001111nnnnnddddd", 200, { src: "" }),
+  dp("ins_gen", "01001110000iiiii000111nnnnnddddd", 200, { src: "n" }),
+  dp("ins_elt", "01101110000iiiii0jjjj1nnnnnddddd", 200, { src: "" }),
+  dp("movi", "0Qo0111100000abcmmmm01defghddddd", 500, { src: "" }),
+  dp("fmov_gen", "z0011110yy10r11o000000nnnnnddddd", 300, {
+    src: "n",
+    ok: noHalf,
+    // Mostly the valid sf/ftype/rmode combinations: W<->S, X<->D, X<->V.D[1].
+    fix: (r): Fields => {
+      if (!r.chance(0.9)) return {};
+      const [z, y, rm] = r.pick([[0, 0, 0], [1, 1, 0], [1, 2, 1]]);
+      return { z, y, r: rm };
+    },
+  }),
+  dp("fmov_reg", "00011110yy100000010000nnnnnddddd", 100, { src: "", ok: noHalf, fix: (r): Fields => (r.chance(0.9) ? { y: r.int(2) } : {}) }),
+  dp("fmov_imm", "00011110yy1iiiiiiii10000000ddddd", 100, { src: "", ok: noHalf, fix: (r): Fields => (r.chance(0.9) ? { y: r.int(2) } : {}) }),
+];
+
 // Exclusives and acquire/release. Always aligned: the architecture requires it,
 // but neither oracle faults on misaligned exclusives (recorded in PLAN.md §4.2).
 function exclusive(name: string, count: number, make: (r: Rng, m: Map<string, bigint>) => number[] | undefined): Form {
@@ -525,7 +550,7 @@ const sys: Form[] = [
   { name: "udf", count: 20, gen: (r) => ({ code: [r.int(0x10000)], in: new Map() }) },
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp };
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

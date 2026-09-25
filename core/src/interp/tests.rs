@@ -217,9 +217,9 @@ fn system() {
     assert_eq!(one(0xd51b4201, &[(1, u64::MAX)], 0).nzcv, 0xf000_0000); // msr nzcv, x1
     assert_eq!(T::new(&[0]).step(), Err(Exit::Undefined)); // udf #0
     assert!(matches!(
-        T::new(&[0x9e670020]).step(),
+        T::new(&[0xd5380000]).step(),
         Err(Exit::Unimplemented(_))
-    )); // fmov d0, x1
+    )); // mrs x0, midr_el1 (M3)
 }
 
 #[test]
@@ -487,4 +487,54 @@ fn fpcr_fpsr() {
     assert_eq!(t.c.fpsr, 0x0800_009f);
     let t = T::new(&[0xd51b4401, 0xd53b4400]).x(1, u64::MAX).run();
     assert_eq!(t.c.x[0], 0x07c0_0000);
+}
+
+#[test]
+fn simd_moves() {
+    // V0 is 0xcc bytes, V1 bytes 0x80..0x8f, X1 0x1122334455667788.
+    let cc = u128::from_le_bytes([0xcc; 16]);
+    let v1 = u128::from_le_bytes(core::array::from_fn(|k| 0x80 + k as u8));
+    let run = |insn| {
+        let mut t = T::new(&[insn]).x(1, 0x1122_3344_5566_7788);
+        (t.c.v[0], t.c.v[1]) = (cc, v1);
+        t.run().c
+    };
+    let rep = |x: u128, esize: u32| (0..128 / esize).fold(0u128, |a, e| a | x << (e * esize));
+    let d1 = 0x8f8e_8d8c_8b8a_8988u64;
+    let d0 = 0x8786_8584_8382_8180u64;
+    for (insn, want) in [
+        (0x4e0e0420, rep(0x8786, 16)),       // dup v0.8h, v1.h[3]
+        (0x5e180420, d1 as u128),            // dup d0, v1.d[1]
+        (0x0e040c20, 0x5566_7788_5566_7788), // dup v0.2s, w1
+        (0x4e141c20, cc & !(0xffff_ffff << 64) | 0x5566_7788 << 64), // mov v0.s[2], w1
+        (0x6e037420, cc & !0xff00 | 0x8e00), // mov v0.b[1], v1.b[14]
+        (0x4f054560, rep(0x00ab_0000, 32)),  // movi v0.4s, #0xab, lsl #16
+        (0x2f00c640, 0xffff_ed00_ffff_ed00), // mvni v0.2s, #0x12, msl #8
+        (0x4f00b420, rep(0xcdcc, 16)),       // orr v0.8h, #0x1, lsl #8
+        (0x2f0717e0, 0xcccc_cc00_cccc_cc00), // bic v0.2s, #0xff
+        (0x2f05e540, 0xff00_ff00_ff00_ff00), // movi d0, #0xff00ff00ff00ff00
+        (0x4f02e740, rep(0x5a, 8)),          // movi v0.16b, #0x5a
+        (0x4f03f600, rep(0x3f80_0000, 32)),  // fmov v0.4s, #1.0
+        (0x6f07f400, rep(0xbfe0_0000_0000_0000, 64)), // fmov v0.2d, #-0.5
+        (0x1e270020, 0x5566_7788),           // fmov s0, w1
+        (0x9eaf0020, cc as u64 as u128 | 0x1122_3344_5566_7788 << 64), // fmov v0.d[1], x1
+        (0x1e604020, d0 as u128),            // fmov d0, d1
+        (0x1e209000, 0x4020_0000),           // fmov s0, #2.5
+        (0x1e77f000, 0xc03f_0000_0000_0000), // fmov d0, #-31.0
+    ] {
+        assert_eq!(run(insn).v[0], want, "{insn:#010x}");
+    }
+    for (insn, want) in [
+        (0x4e1f2c20, 0xffff_ffff_ffff_ff8f), // smov x0, v1.b[15]
+        (0x0e063c20, 0x8382),                // umov w0, v1.h[1]
+        (0x4e183c20, d1),                    // mov x0, v1.d[1]
+        (0x9e660020, d0),                    // fmov x0, d1
+        (0x9eae0020, d1),                    // fmov x0, v1.d[1]
+    ] {
+        assert_eq!(run(insn).x[0], want, "{insn:#010x}");
+    }
+    // fmov h0, w1 (FEAT_FP16) and umov w0, v1.d[0] are UNDEFINED.
+    for insn in [0x1ee70020, 0x0e083c20] {
+        assert_eq!(T::new(&[insn]).step(), Err(Exit::Undefined), "{insn:#010x}");
+    }
 }
