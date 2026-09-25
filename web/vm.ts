@@ -68,6 +68,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const counters = ex.vm_counters(vm);
   return {
     memory,
+    /** Byte addresses of guest RAM (PA 0x4000_0000) and of the vCPU registers (`cpu::Cpu`) in `memory`. */
+    ram,
+    cpu: ex.vm_cpu(vm),
     /** Byte address of `vm::Counters` in `memory` (u64s, read with Atomics.load). */
     counters,
     /** A snapshot of the counters; exceptions by EC only where non-zero. */

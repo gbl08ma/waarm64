@@ -8,7 +8,12 @@ typedef unsigned long u64;
 typedef unsigned int u32;
 typedef unsigned char u8;
 
-#define ROUNDS ((volatile u64 *)0x80000)
+#ifndef BASE
+#define BASE 0 // guest-vm.bin: BASE=0x40200000, loaded by vm-start.S (M4)
+#endif
+#define STR_(x) #x
+#define STR(x) STR_(x)
+#define ROUNDS ((volatile u64 *)(BASE + 0x80000))
 
 static u32 crc_table[256];
 static u32 arr[256];
@@ -93,5 +98,10 @@ __attribute__((noreturn)) void guest_main(void) {
 __asm__(".section .text.start\n"
         ".globl _start\n"
         "_start:\n"
+#if BASE
+        "  ldr x0, =" STR(BASE) " + 0x100000\n"
+        "  mov sp, x0\n"
+#else
         "  mov sp, #0x100000\n"
+#endif
         "  bl guest_main\n");

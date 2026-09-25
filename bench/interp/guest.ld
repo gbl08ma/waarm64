@@ -1,5 +1,5 @@
 SECTIONS {
-  . = 0x10000;
+  . = BASE + 0x10000; /* BASE: --defsym, build.sh */
   .text : { *(.text.start) *(.text*) }
   .rodata : { *(.rodata*) }
   .data : { *(.data*) }

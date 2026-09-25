@@ -367,6 +367,8 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
   - Only deterministic time exists. Asynchronous backends make completion timing host-dependent anyway, and interactive guests want realtime mode (§2 ABI note, "Deferred").
   - System mode runs at about half the user-mode MIPS (`bench/boot/REPORT.md`); split the gap with a `vm_run` MIPS benchmark before optimizing, and time I/O benchmarks against it.
   - The runners use 256 MiB of RAM and put the DTB in its top 2 MiB; distros need more, and the RAM size comes from the VM config.
+- **Progress:**
+  - Step 1 (`vm_run` MIPS): `bench/interp/suite.ts` runs the integer guest through `vm_run` at EL1 with the MMU off (`vm_flat_mips`) and on (`vm_mmu_mips`, one 1 GiB identity block), entered by `bench/interp/vm-start.S`. x86_64: user mode 87.5, EL1 MMU off 85.9, MMU on 54.9, boot 44 MIPS; M4: 145.9, 145.7, 94.7, 68. The run loop is free; the MMU copy is most of the gap; the rest is the boot's own work (misses, exceptions, IRQs, device exits, instruction mix). `bench/interp/REPORT.md` "M4 step 1".
 
 ### M5 — JIT tier 1
 - TLB entry layout experiments the M0 spike suggested and M3 didn't test (they only matter for inlined JIT code): an i32 addend (layout A host addresses are 32-bit), and split tag and addend arrays for density. The interpreter's TLB (`core/src/mmu.rs`) is the spike's measured 16-byte {tag, addend} shape.
@@ -415,7 +417,7 @@ Open items that no milestone owns yet. Pick them up when a milestone touches the
   - The TLB holds no ASIDs, so every ASID change flushes it, global kernel entries included. Tag entries with the ASID (and keep nG) if the TLB counters (step 8) show refills after context switches matter.
   - No Device-memory alignment faults (misaligned accesses to Device memory, or with the MMU off) and no address size fault for VAs past 40 bits with the MMU off (they fault as external aborts).
   - PRFM with a misaligned SP as its base takes an SP alignment fault, where hardware wouldn't.
-  - Interpreter speed with the MMU on isn't measured yet. The whole-VM export exists since step 4; a `vm_run` variant of the MIPS benchmark would also measure the chunked run loop.
+  - Interpreter speed with the MMU on (M4 step 1, `bench/interp/REPORT.md`): the MMU copy runs the integer guest 36% (x86_64) and 35% (M4) slower than the flat copy, every access a TLB hit; the 1024-step run loop costs nothing measurable. Every fetch goes through the TLB (no decode cache or per-page fetch pointer). Worth a look only if the interpreter's system-mode speed matters before or beside the JIT.
 - **Spectre reporting:** Linux prints "detected: Spectre-v4" and "Spectre-BHB" because our implementer-0 `MIDR` is on none of its safe lists; nothing gets mitigated (no SSBS, no SMCCC 1.1 firmware), so it only reports "Vulnerable". Advertising `CSV2_3` (needs the `SCXTNUM_ELx` registers) or answering SMCCC 1.1 `ARCH_WORKAROUND_*` as not required would make it say "Not affected".
 - **Platform loose ends (M3 step 4):**
   - No realtime mode (`performance.now()`, idle exit with a deadline, `Atomics.wait`); `vm_new` rejects it.

@@ -35,6 +35,15 @@ test('interpreter runs the FP/NEON benchmark guest', async () => {
   assert.ok(g.rounds() > 0n);
 });
 
+for (const mmu of [false, true]) {
+  test(`whole VM runs the integer benchmark guest at EL1, MMU ${mmu ? 'on' : 'off'}`, async () => {
+    const { setupVm } = await import('../bench/interp/suite.ts');
+    const g = await setupVm(mmu);
+    assert.equal(g.run(3_000_000), 3_000_000, `stopped at pc 0x${g.pc().toString(16)}`);
+    assert.ok(g.rounds() > 0n);
+  });
+}
+
 test('whole VM boots a bare-metal test through the vm_* exports (ABI 5)', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const ex = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(WASM)), { env: { memory: mem } }).exports as Record<
