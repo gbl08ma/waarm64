@@ -2,12 +2,15 @@
 // or real hardware) and dumps the resulting state. Static and freestanding: no libc.
 //
 // Protocol (little-endian records on stdin/stdout; see PLAN.md §4.2):
-//   in:  magic 'WPCI', ncode u32, x[31] u64, sp u64, nzcv u64, mem[8192], code[ncode] u32
+//   in:  magic 'WPCI', ncode u32, x[31] u64, sp u64, nzcv u64, fpcr u64, fpsr u64,
+//        v[32] (16 bytes each), mem[8192], code[ncode] u32
 //   out: magic 'WPCO', signo u32, si_code u32, pad u32, si_addr u64, pc u64,
-//        x[31] u64, sp u64, pstate u64, mem[8192]
+//        x[31] u64, sp u64, pstate u64, fpcr u64, fpsr u64, v[32], mem[8192]
 // The code runs at CODE, followed by a BRK end marker; the data region is DATA.
 // Every test ends in a signal (SIGTRAP at the end marker when it completes). The
 // handler runs on an alternate stack, so the test's SP and memory stay untouched.
+// The C code is general-registers-only; the FP/SIMD state is loaded by the
+// trampoline's asm and dumped from the signal frame's fpsimd_context record.
 //
 // Build: tests/harness/build.sh (it defines test_code = CODE at link time)
 
@@ -23,13 +26,13 @@ typedef unsigned char u8;
 #define BRK_END 0xd4200000u // brk #0
 
 struct state {
-    u64 x[31], sp, nzcv;
+    u64 x[31], sp, nzcv, fpcr, fpsr, v[64];
 };
 
 struct out {
     u32 magic, signo, si_code, pad;
     u64 si_addr, pc;
-    u64 x[31], sp, pstate;
+    u64 x[31], sp, pstate, fpcr, fpsr, v[64];
     u8 mem[DATA_SIZE];
 };
 
@@ -42,6 +45,12 @@ struct kernel_sigaction {
 };
 struct sigcontext {
     u64 fault_address, regs[31], sp, pc, pstate;
+    u8 reserved[4096] __attribute__((aligned(16))); // records: {u32 magic, u32 size, ...}
+};
+#define FPSIMD_MAGIC 0x46508001u
+struct fpsimd_context {
+    u32 magic, size, fpsr, fpcr;
+    u64 v[64];
 };
 struct ucontext {
     u64 uc_flags;
@@ -140,6 +149,29 @@ __asm__(
     "  mov x2, sp\n"
     "  str x2, [x1, #96]\n"
     "  mov x30, x0\n"
+    "  .arch_extension fp\n"
+    "  .arch_extension simd\n"
+    "  ldr x0, [x30, #264]\n"
+    "  msr fpcr, x0\n"
+    "  ldr x0, [x30, #272]\n"
+    "  msr fpsr, x0\n"
+    "  add x0, x30, #280\n"
+    "  ldp q0, q1, [x0], #32\n"
+    "  ldp q2, q3, [x0], #32\n"
+    "  ldp q4, q5, [x0], #32\n"
+    "  ldp q6, q7, [x0], #32\n"
+    "  ldp q8, q9, [x0], #32\n"
+    "  ldp q10, q11, [x0], #32\n"
+    "  ldp q12, q13, [x0], #32\n"
+    "  ldp q14, q15, [x0], #32\n"
+    "  ldp q16, q17, [x0], #32\n"
+    "  ldp q18, q19, [x0], #32\n"
+    "  ldp q20, q21, [x0], #32\n"
+    "  ldp q22, q23, [x0], #32\n"
+    "  ldp q24, q25, [x0], #32\n"
+    "  ldp q26, q27, [x0], #32\n"
+    "  ldp q28, q29, [x0], #32\n"
+    "  ldp q30, q31, [x0], #32\n"
     "  ldr x0, [x30, #248]\n"
     "  mov sp, x0\n"
     "  ldr x0, [x30, #256]\n"
@@ -177,6 +209,19 @@ static void handler(int sig, struct siginfo *si, void *ucv) {
     for (int i = 0; i < 31; i++) out.x[i] = m->regs[i];
     out.sp = m->sp;
     out.pstate = m->pstate;
+    const u8 *r = m->reserved;
+    for (;;) {
+        const struct fpsimd_context *f = (const void *)r;
+        if (f->magic == FPSIMD_MAGIC) {
+            out.fpcr = f->fpcr;
+            out.fpsr = f->fpsr;
+            for (int i = 0; i < 64; i++) out.v[i] = f->v[i];
+            break;
+        }
+        if (f->magic == 0 || f->size == 0 || r + f->size >= m->reserved + sizeof m->reserved)
+            die("harness: no fpsimd_context in the signal frame\n");
+        r += f->size;
+    }
     // Resume in run_test's caller.
     for (int i = 0; i < 12; i++) m->regs[19 + i] = saved[i];
     m->sp = saved[12];

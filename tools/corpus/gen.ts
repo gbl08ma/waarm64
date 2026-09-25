@@ -281,6 +281,103 @@ const ldst: Form[] = [
   },
 ];
 
+// SIMD&FP loads and stores. z (size) and o (opc<1>) pick B/H/S/D/Q; o with z != 0 is reserved.
+const fpBytes = (f: Fields) => (f.o ? (f.z === 0 ? 16 : 0) : 1 << f.z);
+
+/** A SIMD&FP single-register form: `offset` gives the offset from the base for the access. */
+function fpSingle(name: string, pat: string, count: number, offset: (f: Fields, bytes: number, r: Rng, m: Map<string, bigint>) => { off: bigint; wb?: "pre" | "post" } | undefined): Form {
+  return {
+    name,
+    count,
+    gen(r) {
+      // Mostly valid sizes; the reserved ones stay for UNDEFINED coverage.
+      const q = r.int(5) === 0 ? 1 : 0;
+      const { w, f } = enc(r, pat, r.chance(0.95) ? { o: q, z: q ? 0 : r.int(4) } : {});
+      const bytes = fpBytes(f) || 16;
+      const m = new Map<string, bigint>();
+      const o = offset(f, bytes, r, m);
+      if (!o) return undefined;
+      const p = place(r, f.n, o.off, bytes, 1, o.wb === "post");
+      if (!p) return undefined;
+      m.set(reg(f.n), p.base);
+      return { code: [w], in: m };
+    },
+  };
+}
+
+/** Structure load/store: base anywhere with room for 64 bytes; `post` also sets Rm. */
+function structure(name: string, pat: string, count: number, fix: (r: Rng) => Fields): Form {
+  return {
+    name,
+    count,
+    gen(r) {
+      const { w, f } = enc(r, pat, fix(r));
+      const m = new Map<string, bigint>();
+      if (!base(r, m, f.n, 64, 1)) return undefined;
+      if ("m" in f && f.m !== 31) {
+        if (f.m === f.n) return undefined;
+        m.set(`x${f.m}`, BigInt(r.range(-64, 64)) & M64);
+      }
+      return { code: [w], in: m };
+    },
+  };
+}
+
+const MULT_OPC = [0b0000, 0b0010, 0b0100, 0b0110, 0b0111, 0b1000, 0b1010];
+const multOpc = (r: Rng): Fields => ({ o: r.chance(0.95) ? r.pick(MULT_OPC) : r.int(16) });
+// Single structure: opcode 15:13 and S; 11x is LDnR for loads (S = 0) and reserved for stores.
+// Mostly valid sizes per scale: 1 needs size<0> = 0, 2 needs size 0 (S) or 1 (D, S = 0).
+function sngl(r: Rng): Fields {
+  if (!r.chance(0.8)) return { o: r.range(6, 7), S: r.chance(0.9) ? 0 : 1 };
+  const o = r.int(6);
+  if (!r.chance(0.9)) return { o };
+  const S = r.int(2);
+  return [{ o }, { o, z: 2 * r.int(2) }, S ? { o, S, z: 0 } : { o, S, z: r.int(2) }][o >> 1];
+}
+
+const ldstFp: Form[] = [
+  fpSingle("fp_uimm", "zz111101oLiiiiiiiiiiiinnnnnttttt", 400, (f, b) => ({ off: BigInt(f.i * b) })),
+  fpSingle("fp_unscaled", "zz111100oL0iiiiiiiii00nnnnnttttt", 300, (f) => ({ off: sext(f.i, 9) })),
+  fpSingle("fp_pre", "zz111100oL0iiiiiiiii11nnnnnttttt", 300, (f) => ({ off: sext(f.i, 9), wb: "pre" })),
+  fpSingle("fp_post", "zz111100oL0iiiiiiiii01nnnnnttttt", 300, (f) => ({ off: sext(f.i, 9), wb: "post" })),
+  fpSingle("fp_reg", "zz111100oL1mmmmmxxxS10nnnnnttttt", 400, (f, b, r, m) => {
+    if (!(f.x & 2) && r.chance(0.9)) return undefined; // option<1> = 0 is reserved: keep a few
+    if (f.m === f.n) return undefined;
+    const idx = BigInt(r.range(-64, 64)) & M64;
+    const v = (f.x & 3) === 3 ? idx : (idx & 0xffffffffn) | (r.u64() & 0xffffffff00000000n);
+    if (f.m !== 31) m.set(`x${f.m}`, v);
+    return { off: extendReg(f.m === 31 ? 0n : v, f.x, f.S ? Math.log2(b) : 0) };
+  }),
+  {
+    name: "fp_literal",
+    count: 100,
+    gen(r) {
+      const target = r.int(1020) * 4;
+      const { w } = enc(r, "oo011100iiiiiiiiiiiiiiiiiiittttt", { o: r.chance(0.95) ? r.int(3) : 3, i: imm(target / 4, 19) });
+      return { code: [w], in: new Map() };
+    },
+  },
+  {
+    name: "fp_pair",
+    count: 500,
+    gen(r) {
+      const { w, f } = enc(r, "oo10110ppLiiiiiiiuuuuunnnnnttttt", { o: r.chance(0.95) ? r.int(3) : 3 });
+      if (f.L && f.t === f.u) return undefined; // LDP Rt == Rt2
+      const wb = f.p === 1 ? "post" : f.p === 3 ? "pre" : undefined;
+      const size = 4 << Math.min(f.o, 2);
+      const m = new Map<string, bigint>();
+      const p = place(r, f.n, sext(f.i, 7) * BigInt(size), 2 * size, 1, wb === "post");
+      if (!p) return undefined;
+      m.set(reg(f.n), p.base);
+      return { code: [w], in: m };
+    },
+  },
+  structure("vec_mult", "0Q0011000L000000oooozznnnnnttttt", 400, multOpc),
+  structure("vec_mult_post", "0Q0011001L0mmmmmoooozznnnnnttttt", 400, multOpc),
+  structure("vec_single", "0Q0011010LR00000oooSzznnnnnttttt", 500, sngl),
+  structure("vec_single_post", "0Q0011011LRmmmmmoooSzznnnnnttttt", 500, sngl),
+];
+
 // Exclusives and acquire/release. Always aligned: the architecture requires it,
 // but neither oracle faults on misaligned exclusives (recorded in PLAN.md §4.2).
 function exclusive(name: string, count: number, make: (r: Rng, m: Map<string, bigint>) => number[] | undefined): Form {
@@ -428,7 +525,7 @@ const sys: Form[] = [
   { name: "udf", count: 20, gen: (r) => ({ code: [r.int(0x10000)], in: new Map() }) },
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys };
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

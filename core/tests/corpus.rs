@@ -1,5 +1,5 @@
 //! Golden-corpus comparator: runs every test in tests/corpus/*.txt on the
-//! interpreter and checks registers, NZCV, memory and how it stopped against the
+//! interpreter and checks registers, NZCV, FPCR, FPSR, V registers, memory and how it stopped against the
 //! oracle's results. Format and seed expansion: tools/corpus/corpus.ts.
 
 use std::collections::HashMap;
@@ -12,13 +12,16 @@ const DATA: u64 = 0x200000;
 const DATA_SIZE: usize = 8192;
 const RAM: usize = (DATA as usize) + DATA_SIZE;
 const BRK_END: u64 = 0xd420_0000;
+/// State slots: x0..x30, sp, nzcv, fpcr, fpsr, v0..v31 (as in tools/corpus/corpus.ts).
+const NREGS: usize = 67;
+const V0: usize = 35;
 
 struct Test {
     name: String,
     code: Vec<u32>,
     seed: u64,
-    inp: Vec<(usize, u64)>,
-    out: Vec<(usize, u64)>,
+    inp: Vec<(usize, u128)>,
+    out: Vec<(usize, u128)>,
     mem: Vec<(u64, Vec<u8>)>,
     exit: String,
 }
@@ -27,24 +30,46 @@ fn reg_index(name: &str) -> usize {
     match name {
         "sp" => 31,
         "nzcv" => 32,
-        _ => name
-            .strip_prefix('x')
-            .and_then(|n| n.parse().ok())
-            .filter(|&n| n < 31)
-            .unwrap_or_else(|| panic!("register {name}")),
+        "fpcr" => 33,
+        "fpsr" => 34,
+        _ => {
+            let n = |p: char, max: usize| {
+                name.strip_prefix(p)
+                    .and_then(|n| n.parse::<usize>().ok())
+                    .filter(|&n| n < max)
+            };
+            n('x', 31)
+                .or(n('v', 32).map(|n| V0 + n))
+                .unwrap_or_else(|| panic!("register {name}"))
+        }
     }
+}
+
+fn reg_name(i: usize) -> String {
+    match i {
+        31 => "sp".into(),
+        32 => "nzcv".into(),
+        33 => "fpcr".into(),
+        34 => "fpsr".into(),
+        _ if i >= V0 => format!("v{}", i - V0),
+        _ => format!("x{i}"),
+    }
+}
+
+fn num128(s: &str) -> u128 {
+    u128::from_str_radix(s.trim_start_matches("0x"), 16).unwrap_or_else(|_| panic!("number {s}"))
 }
 
 fn num(s: &str) -> u64 {
     u64::from_str_radix(s.trim_start_matches("0x"), 16).unwrap_or_else(|_| panic!("number {s}"))
 }
 
-fn regs(words: &[&str]) -> Vec<(usize, u64)> {
+fn regs(words: &[&str]) -> Vec<(usize, u128)> {
     words
         .iter()
         .map(|w| {
             let (k, v) = w.split_once('=').unwrap();
-            (reg_index(k), num(v))
+            (reg_index(k), num128(v))
         })
         .collect()
 }
@@ -116,17 +141,21 @@ impl SplitMix {
     }
 }
 
-/// Seed expansion: x0..x30, sp, nzcv (top 4 bits), then the data region; then overrides.
-fn initial(t: &Test) -> ([u64; 33], Vec<u8>) {
+/// Seed expansion: x0..x30, sp, nzcv (top 4 bits), then the data region, then
+/// v0..v31 (low then high half); fpcr and fpsr are 0. Then overrides.
+fn initial(t: &Test) -> ([u128; NREGS], Vec<u8>) {
     let mut g = SplitMix(t.seed);
-    let mut r = [0u64; 33];
-    for v in r.iter_mut() {
-        *v = g.next();
+    let mut r = [0u128; NREGS];
+    for v in r.iter_mut().take(33) {
+        *v = g.next() as u128;
     }
     r[32] &= 0xf000_0000;
     let mem: Vec<u8> = (0..DATA_SIZE / 8)
         .flat_map(|_| g.next().to_le_bytes())
         .collect();
+    for v in r.iter_mut().skip(V0) {
+        *v = g.next() as u128 | (g.next() as u128) << 64;
+    }
     for &(i, v) in &t.inp {
         r[i] = v;
     }
@@ -160,10 +189,15 @@ fn check(t: &Test, mem: &Mem, ram: &mut [u8]) -> Vec<String> {
 
     let mut cpu = Cpu {
         pc: CODE,
-        nzcv: regs[32],
+        nzcv: regs[32] as u64,
+        fpcr: regs[33] as u64,
+        fpsr: regs[34] as u64,
+        v: regs[V0..].try_into().unwrap(),
         ..Cpu::default()
     };
-    cpu.x.copy_from_slice(&regs[..32]);
+    for (x, r) in cpu.x.iter_mut().zip(&regs) {
+        *x = *r as u64;
+    }
     let (_, r) = run(&mut cpu, mem, 1000);
 
     let mut want = regs;
@@ -179,17 +213,18 @@ fn check(t: &Test, mem: &Mem, ram: &mut [u8]) -> Vec<String> {
     if got_exit != t.exit {
         errs.push(format!("exit: got {got_exit}, want {}", t.exit));
     }
-    let names = |i: usize| match i {
-        31 => "sp".to_string(),
-        32 => "nzcv".to_string(),
-        _ => format!("x{i}"),
-    };
-    let got: Vec<u64> = cpu.x.iter().copied().chain([cpu.nzcv]).collect();
-    for i in 0..33 {
+    let got: Vec<u128> = cpu
+        .x
+        .iter()
+        .chain(&[cpu.nzcv, cpu.fpcr, cpu.fpsr])
+        .map(|&x| x as u128)
+        .chain(cpu.v)
+        .collect();
+    for i in 0..NREGS {
         if got[i] != want[i] {
             errs.push(format!(
                 "{}: got {:#x}, want {:#x}",
-                names(i),
+                reg_name(i),
                 got[i],
                 want[i]
             ));
