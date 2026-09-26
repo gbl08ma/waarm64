@@ -11,6 +11,9 @@
 //   JIT only, against the interpreter's step count (core/tests/distros.rs runs
 //   it natively; the interpreter in Node would add another minute), and under
 //   JIT-stress with WEBPC_JIT_STRESS=1 too (hours).
+// - The LTP subset and arm64 kselftests (images/build.sh ltp linux; M5 step 9)
+//   when the image is there: the interpreter (~50 s), the JIT (~15 s), and
+//   JIT-stress with WEBPC_JIT_STRESS=1 (hours).
 // Needs the wasm build; the guests that need target/images skip without them.
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -26,6 +29,7 @@ const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean
 /** The Buildroot boot's and the device test's steps (PLAN.md §7 M4; core/tests/boot.rs). */
 const BUILDROOT_STEPS = 40_909_861;
 const DEVICES_STEPS = 113_872_868;
+const LTP_STEPS = 2_737_414_881; // images/build.sh ltp, on linux/Image-defconfig
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
 const boot = (o: BootOptions, jit: 0 | 1 | 2, max = 20e9) => runToPowerOff(WASM, { ...o, jit }, max);
@@ -100,6 +104,22 @@ guest('Buildroot device test', () => ({
   poweredOff(r);
   for (const want of ['3 packets transmitted, 3 packets received, 0% packet loss', '9p: big 200000 ok', 'fb: 0 simple 640,480', 'webpc: test ok']) assert.ok(r.console.includes(want), `missing ${want}`);
 }, { skip: linux, stress: STRESS, steps: DEVICES_STEPS });
+
+// The LTP subset and the arm64 kselftests (images/build.sh ltp linux; M5 step 9):
+// core/tests/ltp.rs checks each result natively; here the JIT and JIT-stress
+// must print the interpreter's console exactly, in its steps.
+const ltp = (!has('ltp/rootfs.ext4') || !has('linux/Image-defconfig')) && 'SKIPPED: run images/build.sh ltp linux';
+guest('LTP and kselftests', () => ({
+  ramSize: 512 << 20, kernel: image('linux/Image-defconfig'), cmdline: `${GUEST_CMDLINE} -- /ltp.sh`, devices: guestDevices(new URL('ltp/rootfs.ext4', IMAGES).href),
+}), (r) => {
+  poweredOff(r);
+  assert.match(r.console, /webpc: test ok\r?\n/);
+  // Every test passes or skips (ltp.rs has which, and why).
+  const failed = [...r.console.matchAll(/^(ltp|kselftest): (\S+) (\d+)\r?$/gm)]
+    .filter(([, suite, , code]) => !(code === '0' || code === (suite === 'ltp' ? '32' : '4')));
+  assert.deepEqual(failed.map((m) => m[0].trim()), []);
+  assert.ok(r.console.split('\n').filter((l) => /^(ltp|kselftest): /.test(l)).length > 100, 'too few results');
+}, { skip: ltp, stress: STRESS, max: 200e9, steps: LTP_STEPS });
 
 const a = DISTROS.alpine;
 const ALPINE_STEPS = 3_009_151_562; // PLAN.md §7 M4

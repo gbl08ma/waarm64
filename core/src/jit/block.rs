@@ -209,6 +209,10 @@ pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region
         );
     }
     blocks.reverse();
+    // No words (the code at `key` changed since it was queued): no region.
+    if blocks.is_empty() {
+        return Region { blocks, tier: None };
+    }
     // Only the loop: the blocks from which the head is reachable.
     let mut keep = vec![false; blocks.len()];
     keep[0] = true;
@@ -1148,6 +1152,11 @@ mod tests {
         // Nor past the page.
         let (_r, m) = mem_with(0xff8, &[ADD, 0x14000002, ADD, ADD, 0xd65f03c0]);
         assert_eq!(region(&m, 0xff8, 0, &|_| true).blocks.len(), 1);
+        // A head whose words would make no block (it was queued, then the
+        // code at it changed: an Alpine boot with threshold 2 found it) has
+        // no region.
+        let (_r, m) = mem_with(0x100, &[0xd4000001]); // svc #0
+        assert!(region(&m, 0x100, 0, &|_| true).blocks.is_empty());
     }
 
     #[test]
