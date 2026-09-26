@@ -58,7 +58,7 @@ impl Config {
     pub const DEFAULT: Config = Config {
         threshold: 50,
         batch: 32,
-        capacity: 16384,
+        capacity: 65536,
         check: false,
     };
     /// Compile everything on first sight, one block per module, and flush constantly.
@@ -289,11 +289,7 @@ impl Cache {
                 }
                 self.pending.push((key, va));
             }
-            if self.pending.len() >= self.cfg.batch as usize
-                || (!self.pending.is_empty() && self.clock - self.since >= BATCH_TIMEOUT)
-            {
-                self.emit(mem);
-            }
+            self.emit_if_due(mem);
         }
         match self.map.get(&key) {
             Some(&Info { idx, len, .. }) if idx != 0 => {
@@ -302,6 +298,15 @@ impl Cache {
             }
             Some(i) => Err(i.len.max(1)),
             None => Err(1), // flushed by the emit
+        }
+    }
+
+    /// Emits the pending batch when it's full or has waited long enough.
+    fn emit_if_due(&mut self, mem: &Mem) {
+        if self.pending.len() >= self.cfg.batch as usize
+            || (!self.pending.is_empty() && self.clock - self.since >= BATCH_TIMEOUT)
+        {
+            self.emit(mem);
         }
     }
 

@@ -759,6 +759,22 @@ pub enum Bus {
     Tlb { read: u32 },
 }
 
+/// Pushes an i32 that is non-zero iff the instruction at the entry PC + `off`
+/// hits the TLB array at `arr` (the block's EL's instruction TLB) and maps to
+/// `host` (a successor's page, in another guest page than the block: step 7).
+pub fn maps_to(c: &mut Func, off: i64, arr: u32, host: u64) {
+    pc_plus(c, off);
+    c.local_tee(ADDR).i64_const(8).op(SHR_U + W).i32_wrap_i64();
+    c.i32_const((TLB_ENTRIES as i32 - 1) << 4).op(AND);
+    c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
+    c.local_get(ADDR).i64_const(0xfff).op(OR + W).op(EQ + WC);
+    c.local_get(TLBE)
+        .i64_load(arr + 8)
+        .local_get(ADDR)
+        .i64_add();
+    c.i64_const(host as i64).op(EQ + WC).op(AND);
+}
+
 /// The `Vcpu` offset of TLB array `3 * el + u` (read 0, write 1).
 pub fn tlb_array(el: u64, u: u64) -> u32 {
     (core::mem::offset_of!(Vcpu, tlb) + (3 * el + u) as usize * TLB_ENTRIES * 16) as u32

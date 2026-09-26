@@ -166,10 +166,7 @@ pub fn module(
         m.import_func("env", "jit_check", ct)
     });
     // Each block's successor keys, then their functions: this batch's own, or imports.
-    let succ = |b: &Block, off: i64| {
-        let (pa, t) = (b.key & !3, (b.key & !3).wrapping_add(off as u64));
-        (b.key & KEY_MMU == 0 || t >> 12 == pa >> 12).then_some(t | (b.key & 3))
-    };
+    let succ = |b: &Block, off: i64| Some((b.key & !3).wrapping_add(off as u64) | (b.key & 3));
     let targets: Vec<Vec<u64>> = blocks
         .iter()
         .map(|b| match next(&b.words) {
@@ -217,6 +214,11 @@ pub fn module(
         let h = cx.helper;
         let len = b.words.len() as u32;
         // A compiled successor at `off`: (key, function, length).
+        let offs = match next(&b.words) {
+            Next::One(o) => (o, 0),
+            Next::Cond(t, o) => (t, o),
+            Next::None => (0, 0),
+        };
         let target = |off: i64| succ(b, off).and_then(|k| funcs.get(&k).map(|&(f, l)| (k, f, l)));
         let (next, links): (_, Vec<u64>) = match next(&b.words) {
             Next::None => (None, vec![]),
@@ -230,12 +232,20 @@ pub fn module(
                 (Some((t, Some(o))), links)
             }
         };
-        // The chaining tail to a compiled successor.
-        let chain = |c: &mut emit::Func, t: Option<(u64, u32, u32)>| {
+        // The chaining tail to a compiled successor at `off`; with the MMU on,
+        // one in another page only if its VA still maps to the PA it was
+        // compiled for (the instruction TLB of the block's EL).
+        let chain = |c: &mut emit::Func, off: i64, t: Option<(u64, u32, u32)>| {
             let Some((k, f, tlen)) = t else { return };
             c.local_get(emit::LEFT)
                 .i32_const((len + tlen) as i32)
                 .op(0x4f); // i32.ge_u
+            if b.key & KEY_MMU != 0 && (k ^ b.key) >> 12 != 0 {
+                let exec = emit::tlb_array(b.key & KEY_EL1, 2);
+                let host = (base as usize as u64).wrapping_add((k & !0xfff) - phys);
+                emit::maps_to(c, off, exec, host);
+                c.op(0x71); // i32.and
+            }
             c.if_();
             if let Some(chk) = checker {
                 c.local_get(0).i64_const(k as i64).call(chk);
@@ -279,15 +289,15 @@ pub fn module(
             c.flush();
             c.sync_flags();
             match next {
-                Some((t, None)) => chain(&mut c, t),
-                Some((t, Some(o))) if t.is_some() || o.is_some() => {
+                Some((t, None)) => chain(&mut c, offs.0, t),
+                Some((t, Some(o))) => {
                     c.local_get(emit::TAKEN).if_();
-                    chain(&mut c, t);
+                    chain(&mut c, offs.0, t);
                     c.else_();
-                    chain(&mut c, o);
+                    chain(&mut c, offs.1, o);
                     c.end();
                 }
-                _ => {}
+                None => {}
             }
             c.ret(len);
             c.end();
@@ -608,8 +618,8 @@ mod tests {
         let e = build(&[b]);
         assert_eq!(e.links, [vec![0x4000_0200]]);
         assert!(has(&e.bytes, &[0x6b, 0x12, 2, 0x0b]));
-        // With the MMU on, a successor in another page isn't chained (its VA
-        // may map elsewhere); a conditional branch chains the side it can.
+        // A conditional branch chains the side it can (here: itself when taken;
+        // 0x4000_1000, not taken, isn't compiled).
         let b = Block {
             key: 0x4000_0ff8 | KEY_MMU,
             va: 0,
@@ -619,5 +629,23 @@ mod tests {
         assert_eq!(e.links, [vec![0x4000_0ff8 | KEY_MMU]]); // taken: itself; not taken: 0x1000
         assert!(has(&e.bytes, &[0x20, 5, 0x04, 0x40])); // if TAKEN (compacted: after entry and x1)
         assert_eq!(e.bytes.iter().filter(|&&b| b == 0x12).count(), 1);
+        // With the MMU on, a successor in another page is chained only while
+        // its VA maps to its PA: the instruction TLB of the block's EL (EL0
+        // here) is checked first.
+        let b = Block {
+            key: 0x4000_0200 | KEY_MMU,
+            va: 0,
+            words: vec![MOVZ, 0x14000400], // b .+0x1000
+        };
+        let e = module(
+            &[b],
+            &test_mem(),
+            |k| (k == 0x4000_1204 | KEY_MMU).then_some((9, 1)),
+            false,
+        );
+        let mut tag = vec![0x29, 3];
+        crate::jit::wasm::uleb(&mut tag, emit::tlb_array(0, 2) as u64);
+        assert!(has(&e.bytes, &tag));
+        assert!(has(&e.bytes, &[0x12, 2, 0x0b])); // the tail call behind it
     }
 }
