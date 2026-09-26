@@ -145,6 +145,12 @@ pub struct Func {
     /// The block's offset from the function's entry PC (local 1): a region's
     /// blocks (step 8) share the head's.
     pub base: i64,
+    /// Whether NZCV was live at the block's entry, once known (step 8.4):
+    /// false if a setter came first, true if a condition, a helper, a
+    /// possible exit (a load/store's failure path, the block's end) or a
+    /// commit did. A region member that sets flags before anything else
+    /// needs none from its edges.
+    pub touched: Option<bool>,
 }
 
 impl Deref for Func {
@@ -237,6 +243,7 @@ impl Func {
 
     /// A new flag setter replaces the current one.
     fn set_flags(&mut self, kind: Kind, sf: bool) {
+        self.touched.get_or_insert(false);
         self.retire_flags();
         self.flags = Flags::Lazy {
             kind,
@@ -261,6 +268,7 @@ impl Func {
     /// Stores lazy flags to the `Cpu` on a path that returns (a load/store's
     /// failure path), leaving them lazy for the other one.
     pub fn store_flags(&mut self) {
+        self.touched.get_or_insert(true);
         if let Flags::Lazy { kind, sf, .. } = self.flags {
             self.c.local_get(VCPU);
             nzcv_of(self, kind, sf);
@@ -277,6 +285,7 @@ impl Func {
     /// branch's `select` of the next PC ran 35% slower under TurboFan
     /// (`bench/interp/REPORT.md` "M5 step 6").
     pub fn commit_flags(&mut self) {
+        self.touched.get_or_insert(true);
         if let Flags::Lazy { current: false, .. } = self.flags {
             self.store_flags();
             if let Flags::Lazy { current, .. } = &mut self.flags {
@@ -300,6 +309,30 @@ impl Func {
             self.c.i32_const(k as i32).op(0x6a); // i32.add
         }
         self.c.return_();
+    }
+
+    /// Starts a region member (step 8.4) with its edges' lazy flags (the
+    /// flag locals hold them; the `Cpu` may not), or with NZCV in memory
+    /// (or dead: nothing reads it before a setter replaces it).
+    pub fn enter_flags(&mut self, lazy: Option<(Kind, bool)>) {
+        self.touched = None;
+        self.flags = match lazy {
+            Some((kind, sf)) => Flags::Lazy {
+                kind,
+                sf,
+                stored: false,
+                current: false,
+            },
+            None => Flags::Mem,
+        };
+    }
+
+    /// The lazy setter's kind and size, if the flags are lazy.
+    pub fn lazy(&self) -> Option<(Kind, bool)> {
+        match self.flags {
+            Flags::Lazy { kind, sf, .. } => Some((kind, sf)),
+            Flags::Mem => None,
+        }
     }
 
     /// Brings the register state to `to` on an edge into a region block
@@ -1362,6 +1395,7 @@ fn cond(c: &mut Func, cond: u32) {
         c.i32_const(1);
         return;
     }
+    c.touched.get_or_insert(true);
     match c.flags {
         Flags::Mem => {
             c.counts.cond_memory += 1;
@@ -1457,6 +1491,7 @@ fn direct(c: &mut Func, kind: Kind, sf: bool, cond: u32) -> bool {
 
 /// Pushes C (0 or 1) of the current flags, for ADC and SBC.
 fn carry(c: &mut Func) {
+    c.touched.get_or_insert(true);
     match c.flags {
         Flags::Mem => {
             c.counts.cond_memory += 1;

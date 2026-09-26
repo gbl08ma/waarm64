@@ -399,26 +399,52 @@ pub fn module(
         // A loop reads its registers on every iteration, so none is plain
         // there, and its entry states feed on each other (the head's comes
         // from the back-edges): emitted again until they settle (or four times).
-        let none = vec![emit::Regs::default(); r.blocks.len()];
-        let (first, _, into) = emit_region(&env, r, 0, &none);
+        //
+        // Flags likewise (step 8.4): the first emission finds the members
+        // whose flags are dead at entry, and what lazy flags the edges carry.
+        let n = r.blocks.len();
+        let mem = vec![In::Mem; n];
+        let first = emit_region(&env, r, 0, &vec![emit::Regs::default(); n], &mem);
         let plain = if r.looped() {
             0
         } else {
-            first.read & !first.reused
+            first.c.read & !first.c.reused
         };
-        let settle =
-            |into: &[emit::Regs]| -> Vec<_> { into.iter().map(|s| s.merge(*s, plain)).collect() };
-        let mut entry = settle(&into);
+        let settle = |x: &Emission| -> (Vec<emit::Regs>, Vec<In>) {
+            let regs = x.into.iter().map(|s| s.merge(*s, plain)).collect();
+            let flags = (0..n)
+                .map(|j| match x.flags[j] {
+                    _ if first.dead[j] => In::Dead,
+                    In::Lazy(k, sf) if j > 0 => In::Lazy(k, sf),
+                    _ => In::Mem,
+                })
+                .collect();
+            (regs, flags)
+        };
+        let (mut entry, mut flags) = settle(&first);
         if r.looped() {
             for _ in 0..4 {
-                let next = settle(&emit_region(&env, r, plain, &entry).2);
-                if next == entry {
+                let next = settle(&emit_region(&env, r, plain, &entry, &flags));
+                if next == (entry.clone(), flags.clone()) {
                     break;
                 }
-                entry = next;
+                (entry, flags) = next;
             }
         }
-        let (mut c, n, _) = emit_region(&env, r, plain, &entry);
+        let mut x = emit_region(&env, r, plain, &entry, &flags);
+        if x.bad {
+            // The lazy states didn't settle: flags in memory on every edge.
+            let dead = |j: usize| if first.dead[j] { In::Dead } else { In::Mem };
+            x = emit_region(
+                &env,
+                r,
+                plain,
+                &entry,
+                &(0..n).map(dead).collect::<Vec<_>>(),
+            );
+            assert!(!x.bad);
+        }
+        let (mut c, n) = (x.c, x.inl);
         let name = format!("{:#x}_pa{:#x}", head.va, head.key & !3);
         let locals = c.locals();
         m.func(bt, &locals, &c.c, &name);
@@ -441,20 +467,54 @@ pub fn module(
     out
 }
 
+/// Where a region member's flags are at its entry (step 8.4): lazy from its
+/// edges (every edge carries the same setter), in memory, or dead (a setter
+/// comes before anything that reads them). The head's are never lazy: the
+/// function starts with NZCV in memory. Merging edges: `Unset` is none yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum In {
+    Unset,
+    Lazy(emit::Kind, bool),
+    Mem,
+    Dead,
+}
+
+impl In {
+    fn merge(self, o: In) -> In {
+        match (self, o) {
+            (In::Unset, x) | (x, In::Unset) => x,
+            (a, b) if a == b => a,
+            _ => In::Mem,
+        }
+    }
+}
+
+/// One emission of a region: the function, its inline instruction count,
+/// each member's merged incoming register and flag states, whether each
+/// member's flags are dead at its entry, and whether an edge carried lazy
+/// flags other than its member's entry state (then emitted again, flags in
+/// memory).
+struct Emission {
+    c: emit::Func,
+    inl: u32,
+    into: Vec<emit::Regs>,
+    flags: Vec<In>,
+    dead: Vec<bool>,
+    bad: bool,
+}
+
 /// One emission of region `r` with the registers in `plain` read without a
-/// local, each member starting in its `entry` state: the function, its
-/// inline instruction count, and each member's merged incoming edge states.
-fn emit_region(
-    e: &Env,
-    r: &Region,
-    plain: u32,
-    entry: &[emit::Regs],
-) -> (emit::Func, u32, Vec<emit::Regs>) {
+/// local, each member starting in its `entry` register state and `fin` flag
+/// state.
+fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]) -> Emission {
     let n = r.blocks.len();
     let head = r.blocks[0].key & !3;
     let mut c = emit::Func::default();
     c.plain = plain;
     let mut into = vec![emit::Regs::default(); n];
+    let mut flags = vec![In::Unset; n];
+    let mut dead = vec![false; n];
+    let mut bad = false;
     let mut inl = 0;
     c.local_get(0).i64_load(emit::PC).local_set(1);
     if let (Some(word), Some(hot)) = (r.tier, e.hot) {
@@ -475,12 +535,35 @@ fn emit_region(
         }
         c.base = (b.key & !3).wrapping_sub(head) as i64;
         c.regs = entry[i];
+        c.enter_flags(match fin[i] {
+            In::Lazy(k, sf) => Some((k, sf)),
+            _ => None,
+        });
         let len = b.words.len() as u32;
+        let internal = |off: i64| r.pos(succ(b.key, off)).filter(|&j| j > i || j == 0);
+        let succs = next(&b.words);
+        // An edge to member `j` with these lazy flags must store NZCV first.
+        let store = |j: usize, lazy: Option<(emit::Kind, bool)>| match fin[j] {
+            In::Dead => false,
+            In::Lazy(k, sf) => lazy != Some((k, sf)),
+            _ => true,
+        };
         let mut last = false;
         for (k, &w) in b.words.iter().enumerate() {
             let op = decode(w);
+            // NZCV is stored before the block's branch (see `commit_flags`),
+            // unless every successor is a member that needs none.
             if end(op) == End::After {
-                c.commit_flags(); // see `commit_flags`
+                let lazy = c.lazy();
+                let keep = |o: i64| internal(o).is_some_and(|j| !store(j, lazy));
+                let keep = match succs {
+                    Next::One(o) => keep(o),
+                    Next::Cond(t, o) => keep(t) && keep(o),
+                    Next::None => false,
+                };
+                if !keep {
+                    c.commit_flags();
+                }
             }
             last = emit::inline(&mut c, w, op, k, &e.cx);
             if last {
@@ -501,17 +584,23 @@ fn emit_region(
         if last {
             emit::set_pc(&mut c, 4 * len as i64);
         }
-        // Edges to later members and back to the head, with the flags
-        // current in the `Cpu`.
-        let internal = |off: i64| r.pos(succ(b.key, off)).filter(|&j| j > i || j == 0);
+        dead[i] = c.touched == Some(false);
+        // Edges to later members and back to the head: NZCV stored on the
+        // way unless the member's flags are dead or its edges' lazy ones.
         let mut edge = |c: &mut emit::Func, j: usize, depth: u32| {
             let jlen = r.blocks[j].words.len() as u32;
             c.local_get(emit::LEFT)
                 .i32_const((len + jlen) as i32)
                 .op(0x4f); // i32.ge_u
             c.if_();
-            let here = c.regs;
+            let (here, fl) = (c.regs, c.flags);
             into[j] = into[j].merge(here, 0);
+            let lazy = c.lazy();
+            flags[j] = flags[j].merge(lazy.map_or(In::Mem, |(k, sf)| In::Lazy(k, sf)));
+            if store(j, lazy) {
+                c.commit_flags();
+            }
+            bad |= matches!(fin[j], In::Lazy(..)) && store(j, lazy);
             c.conform(entry[j]);
             c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
             c.local_set(emit::ACC);
@@ -524,20 +613,17 @@ fn emit_region(
             // The loop's label is outside every member's.
             let label = if j == 0 { n - 1 - i } else { j - i - 1 };
             c.br(label as u32 + depth + 1).end();
-            c.regs = here;
+            (c.regs, c.flags) = (here, fl);
         };
-        let succs = next(&b.words);
         match succs {
             Next::One(o) => {
                 if let Some(j) = internal(o) {
-                    c.commit_flags();
                     edge(&mut c, j, 0);
                 }
             }
             Next::Cond(t, o) => match (internal(t), internal(o)) {
                 (None, None) => {}
                 (jt, jo) => {
-                    c.commit_flags();
                     c.local_get(emit::TAKEN);
                     if jt.is_none() {
                         c.op(0x45); // i32.eqz
@@ -596,7 +682,14 @@ fn emit_region(
         c.end().op(0x00); // the loop; unreachable
     }
     c.end();
-    (c, inl, into)
+    Emission {
+        c,
+        inl,
+        into,
+        flags,
+        dead,
+        bad,
+    }
 }
 
 /// The chaining tail of block `b` to its successor at `off`: a direct tail
@@ -1035,6 +1128,28 @@ mod tests {
         // Nor past the page.
         let (_r, m) = mem_with(0xff8, &[ADD, 0x14000002, ADD, ADD, 0xd65f03c0]);
         assert_eq!(region(&m, 0xff8, 0, &|_| true).blocks.len(), 1);
+    }
+
+    #[test]
+    fn flags_cross_region_edges_lazily() {
+        // 0x100: cmp x1, x2; b 0x10c
+        // 0x10c: b.lt 0x100 (then ret)
+        // b.lt reads the compare's operands across the edge (i64.lt_s, no
+        // NZCV load); the head sets flags before anything reads them, so the
+        // back-edge stores none. NZCV is stored before b.lt (the way out of
+        // the loop) and where the head returns when `left` doesn't cover its
+        // edge, not on the edge itself.
+        let words = [0xeb02003f, 0x14000002, 0xd4200000, 0x54ffffab, 0xd65f03c0];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = region(&m, 0x100, 0x100, &|_| true);
+        assert_eq!(r.blocks.len(), 2);
+        let e = module(&[r], &test_mem(), |_| None, false, 0);
+        assert_eq!((e.counts.cond_direct, e.counts.cond_memory), (1, 0));
+        assert!(!has(&e.bytes, &[0x28, 2, 0x88, 2])); // NZCV never loaded
+        assert!(has(&e.bytes, &[0x53])); // i64.lt_s
+        assert_eq!(nzcv_stores(&e.bytes), 2);
+        let edge = e.bytes.windows(2).position(|w| w == [0x0c, 1]).unwrap(); // br to b.lt
+        assert_eq!(nzcv_stores(&e.bytes[..edge]), 0);
     }
 
     #[test]

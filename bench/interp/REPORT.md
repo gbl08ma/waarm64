@@ -300,3 +300,19 @@ Raw data: `results/m5-step8/chromium-linux-arm64-{step7,step8.2,step8.2-r2,step8
 The first version silenced every member that was a candidate head, which left nested loops' inner loops without a region (the integer guest ran at 1637 MIPS: `results/m5-step8/chromium-linux-arm64-step8.3-silenced-inner-heads.json`); `block::Region::inner_free` keeps inner loops' heads counting. **Validation:** the corpus through the JIT (forced: regions at once; stress: tier-up on the second entry, which found that a tier-up must never flush the cache, since JIT code is running: the stale-code checker tripped in kvm-unit-tests `cache`), `tests/jit-diff.test.ts`, a tier-up test in `tests/jit.test.ts`, the Node boots with exact steps. Buildroot is still ~3–6% behind step 7 (694 vs 655–677 ms), Alpine even within noise; the steady-state guests keep regions' gain.
 
 Raw data: `results/m5-step8/chromium-linux-arm64-step8.3*.json`, `../boot/results/m5-step8/chromium-linux-arm64-step8.3-*.json`.
+
+### 8.4: flags across region edges
+
+**What runs:** each region member starts with its flags lazy (every edge into it carries the same setter: conditions come from its operands, `cmp; b` → `b.lt` is `i64.lt_s` across the edge), in memory, or dead (a setter comes before anything reads them, a helper or a possible exit: `emit::Func::touched`); an edge stores NZCV only into a member that needs it in memory, and a block skips the store before its branch when every successor is such a member (exits store it on their way out). The head's flags are never lazy (the function starts from memory), but a head that sets flags first takes its back-edges without a store.
+
+| Guest (MIPS) | 8.3 default | **8.4 default** | 8.3 / 8.4 Liftoff only | 8.3 / 8.4 TurboFan only |
+|---|---|---|---|---|
+| integer, EL0 | 2672.0 (±12) | **3279.2** (±17), **+23%** | 1639 / **1898** (+16%) | 2683 / **1802** (−33%) |
+| EL1 MMU off | 1878.8 | **1944.7** (+3.5%) | 1225 / 1324 | — / 1969 |
+| EL1 MMU on | 1724.9 | **1749.9** (+1.4%) | 1118 / 1231 | — / 1747 |
+
+Static counts (integer guest): conditions direct 30 → 32, from memory 5 → 3. Boots unchanged within noise (they have few loop regions): Buildroot 711 ms (±8), Alpine 17.79 s (±0.12).
+
+**TurboFan-only runs the integer guest 33% slower**, the default 23% faster, and both come from the store skipped before the branch: storing there always (lazy flags and dead flags still carried) reads 2642 default and 2674 TurboFan-only. Both tiers run TurboFan code in the loop; what differs is the feedback dynamic tiering collects in Liftoff (speculative inlining of indirect calls among others), which is also where step 7's jump-cache probe cost showed up. Default tiering is the product configuration (M5 decision), so the skip stays; the TurboFan-only drop is in PLAN M9. **Validation:** `tests/jit-diff.test.ts` region classes fail with each planted bug (no store on any edge: 4 and 10 of 1024 programs differ; every member's flags dead: 17 / 19; lazy entry states started from memory: 9 / 4); unit test `flags_cross_region_edges_lazily`; CI.
+
+Raw data: `results/m5-step8/chromium-linux-arm64-step8.{3,4}*.json`, `../boot/results/m5-step8/chromium-linux-arm64-step8.4-*.json`.
