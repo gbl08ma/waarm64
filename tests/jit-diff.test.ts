@@ -135,8 +135,8 @@ function setup(code: number) {
   };
   /** Instructions compiled inline and as helper calls so far. */
   const counts = () => {
-    const st = new BigUint64Array(memory.buffer, ex.jit_stats(jit), 11);
-    return `${st[8]} compiled inline, ${st[9]} as helper calls`;
+    const st = new BigUint64Array(memory.buffer, ex.jit_stats(jit), 17);
+    return `${st[8]} compiled inline, ${st[9]} as helper calls, ${st[16]} blocks in ${st[0]} regions`;
   };
   /** Whether `w` is allocated and implemented: one interpreter step on it, in
    * the gap, with every register outside RAM (so it writes nothing). */
@@ -277,4 +277,83 @@ for (const [name, { pool, helpers }] of Object.entries(SEQUENCES)) test(`JIT vs 
   }
   console.log(`${name}: ${SEQS} sequences, ${counts()}, ${skipped} runs skipped (they rewrote their code)`);
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${SEQS} sequences differ`);
+});
+
+// Regions (step 8): small programs of 2–6 blocks, each 1–6 words (ALU, loads
+// and stores, some helper calls) ending in a branch to the start of any block
+// (conditional or not) or falling through, the last one ending in brk. The JIT
+// compiles each program as a region, so edges inside it are wasm branches with
+// registers kept in locals; runs of a random length stop anywhere, mid-block or
+// at the step budget before an edge. (A pass-2 register state collected as
+// `Option`s was miscompiled with simd128; this class caught it: PLAN.md M9.)
+const PROG = 48; // words per program slot
+function branchTo(k: number, to: number) {
+  const off = to - k; // in words
+  const imm19 = (off & 0x7ffff) << 5, imm14 = (off & 0x3fff) << 5;
+  const rt = pick(REGS.slice(0, 5));
+  switch (rand32() % 5) {
+    case 0: return (0x54000000 | imm19 | (rand32() % 14)) >>> 0; // b.cond (not AL/NV)
+    case 1: return ((rand32() % 2 << 31) | 0x34000000 | (rand32() % 2 << 24) | imm19 | rt) >>> 0; // cbz/cbnz
+    case 2: return ((rand32() % 2 << 31) | 0x36000000 | (rand32() % 2 << 24) | (rand32() % 32 << 19) | imm14 | rt) >>> 0; // tbz/tbnz
+    case 3: return (0x14000000 | (off & 0x3ffffff)) >>> 0; // b
+    default: return -1; // fall through
+  }
+}
+
+test('JIT vs interpreter, regions: branches between blocks', () => {
+  const { ex, jit, ca32, cb32, cpus, run, counts, allocated, data } = setup(4 * PROG * SEQS);
+  const pool = [...ALU, ...Object.values(MEMORY)];
+  const draw = () => {
+    if (rand32() % 6 === 0) return pick(HELPERS)(pick(REGS.slice(0, 5)), pick(REGS)) >>> 0;
+    for (;;) {
+      const [mask, bits] = pick(pool);
+      const w = fewRegs(((field(rand32()) & ~mask) | bits) >>> 0);
+      if (allocated(w)) return w;
+    }
+  };
+  const progs = Array.from({ length: SEQS }, () => {
+    const lens = Array.from({ length: 2 + (rand32() % 5) }, () => 1 + (rand32() % 6));
+    const starts = lens.map((_, b) => lens.slice(0, b).reduce((s, n) => s + n + 1, 0));
+    const words: number[] = [];
+    lens.forEach((n, b) => {
+      for (let k = 0; k < n; k++) words.push(draw());
+      if (b === lens.length - 1) return words.push(BRK);
+      const w = branchTo(words.length, starts[rand32() % lens.length]);
+      words.push(w < 0 ? draw() : w); // no branch: one more word, falling through
+    });
+    return words;
+  });
+  const place = (k: number) => {
+    ca32.set(progs[k], PROG * k);
+    cb32.set(progs[k], PROG * k);
+  };
+  progs.forEach((_, k) => place(k));
+  const same = (k: number) => progs[k].every((w, j) => ca32[PROG * k + j] === w && cb32[PROG * k + j] === w);
+
+  const failures: string[] = [];
+  let skipped = 0;
+  for (let k = 0; k < SEQS; k++) {
+    for (let s = 0; s < STATES; s++) {
+      if (!same(k)) {
+        place(k);
+        ex.jit_flush(jit);
+      }
+      const [a, b] = cpus();
+      for (let r = 0; r < 32; r++) a[r] = value(rand32() % 2 === 0, data);
+      a[32] = BigInt(4 * PROG * k); // PC
+      a[33] = BigInt(rand32() & 0xf) << 28n; // NZCV
+      b.set(a);
+      const what = run(BigInt(1 + (rand32() % 48)), true);
+      if (!same(k)) {
+        skipped++;
+        continue;
+      }
+      if (what) {
+        failures.push(`${progs[k].map((w) => w.toString(16).padStart(8, '0')).join(' ')}: ${what} differs`);
+        break;
+      }
+    }
+  }
+  console.log(`regions: ${SEQS} programs, ${counts()}, ${skipped} runs skipped (they rewrote their code)`);
+  assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${SEQS} programs differ`);
 });

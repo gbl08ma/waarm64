@@ -109,9 +109,11 @@ for (const [mode, jit] of Object.entries(MODES)) test(`golden corpus on the wasm
   assert.ok(GROUPS ? total > 0 : total > 30_000, `only ${total} corpus tests`);
   if (jit) {
     // jit::Stats: blocks, modules, bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes,
-    // instructions compiled inline and as helper calls, inline instructions run.
-    const [blocks, modules, bytes, ns, steps, dispatches, , , inl, helpers, inlSteps] = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 11)].map(Number);
-    console.log(`${mode}: ${blocks} blocks in ${modules} modules, ${(bytes / 1e6).toFixed(1)} MB, ${(ns / 1e6).toFixed(0)} ms compiling; ${steps} steps in ${dispatches} block calls; ${inl} inline / ${helpers} helper instructions compiled, ${inlSteps} inline steps`);
+    // instructions compiled inline and as helper calls, inline instructions run, (16) blocks in the regions.
+    const st = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 17)].map(Number);
+    const [regions, modules, bytes, ns, steps, dispatches, , , inl, helpers, inlSteps] = st;
+    const blocks = st[16];
+    console.log(`${mode}: ${blocks} blocks in ${regions} regions in ${modules} modules, ${(bytes / 1e6).toFixed(1)} MB, ${(ns / 1e6).toFixed(0)} ms compiling; ${steps} steps in ${dispatches} block calls; ${inl} inline / ${helpers} helper instructions compiled, ${inlSteps} inline steps`);
     assert.ok(blocks > total, `only ${blocks} blocks compiled`);
   }
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${total} failed`);

@@ -137,6 +137,17 @@ impl Code {
         uleb(&mut self.b, f as u64);
         self
     }
+    /// `block` with no result type; closed by [`Code::end`].
+    pub fn block(&mut self) -> &mut Self {
+        self.b.extend([0x02, 0x40]);
+        self
+    }
+    /// `br` to the label `depth` levels out.
+    pub fn br(&mut self, depth: u32) -> &mut Self {
+        self.b.push(0x0c);
+        uleb(&mut self.b, depth as u64);
+        self
+    }
     /// `if` with no result type; closed by [`Code::end`].
     pub fn if_(&mut self) -> &mut Self {
         self.b.extend([0x04, 0x40]);

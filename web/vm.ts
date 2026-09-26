@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 14;
+export const ABI = 15;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -83,7 +83,9 @@ export const Counter = {
   JIT_INLINE: 79, JIT_HELPERS: 80, JIT_INLINE_STEPS: 81,
   // ABI 13 (static): lazy flag setters stored and elided; conditions direct, computed and from memory.
   JIT_FLAGS_STORED: 82, JIT_FLAGS_ELIDED: 83, JIT_COND_DIRECT: 84, JIT_COND_COMPUTED: 85, JIT_COND_MEMORY: 86,
-  LEN: 87,
+  // ABI 15: blocks in the compiled regions (JIT_BLOCKS counts regions).
+  JIT_REGION_BLOCKS: 87,
+  LEN: 88,
 } as const;
 
 /**
@@ -240,6 +242,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
           inline: n(Counter.JIT_INLINE), helpers: n(Counter.JIT_HELPERS), inlineSteps: n(Counter.JIT_INLINE_STEPS),
           flagsStored: n(Counter.JIT_FLAGS_STORED), flagsElided: n(Counter.JIT_FLAGS_ELIDED),
           condDirect: n(Counter.JIT_COND_DIRECT), condComputed: n(Counter.JIT_COND_COMPUTED), condMemory: n(Counter.JIT_COND_MEMORY),
+          regionBlocks: n(Counter.JIT_REGION_BLOCKS),
         },
       };
     },

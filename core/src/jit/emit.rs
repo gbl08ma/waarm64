@@ -55,6 +55,19 @@ pub struct Regs {
     dirty: u32,
 }
 
+impl Regs {
+    /// The state a region block entered from both `self` and `o` starts in
+    /// (step 8): every register valid on either side, dirty if dirty on
+    /// either; each edge conforms to it ([`Func::conform`]). Registers in
+    /// `plain` never have a local.
+    pub fn merge(self, o: Regs, plain: u32) -> Regs {
+        Regs {
+            valid: (self.valid | o.valid) & !plain,
+            dirty: (self.dirty | o.dirty) & !plain,
+        }
+    }
+}
+
 /// Where NZCV is: in the `Cpu`, or to be computed from the last flag setter's
 /// kind and flag locals (`stored`: stored somewhere already, so it counts as
 /// materialized; `current`: the `Cpu` holds it on this path too).
@@ -129,6 +142,9 @@ pub struct Func {
     pub read: u32,
     pub reused: u32,
     pub plain: u32,
+    /// The block's offset from the function's entry PC (local 1): a region's
+    /// blocks (step 8) share the head's.
+    pub base: i64,
 }
 
 impl Deref for Func {
@@ -286,6 +302,21 @@ impl Func {
         self.c.return_();
     }
 
+    /// Brings the register state to `to` on an edge into a region block
+    /// (step 8): writes back what is dirty here but not there, and loads
+    /// what is valid there but not here.
+    pub fn conform(&mut self, to: Regs) {
+        let mut d = self.regs.dirty & !to.dirty;
+        while d != 0 {
+            let n = d.trailing_zeros();
+            d &= d - 1;
+            let l = self.local[n as usize];
+            self.c.local_get(VCPU).local_get(l).i64_store(8 * n);
+        }
+        self.regs.dirty &= to.dirty;
+        self.reload(to.valid);
+    }
+
     /// Loads the registers in `mask` whose locals aren't valid.
     fn reload(&mut self, mask: u32) {
         let mut m = mask & !self.regs.valid;
@@ -344,8 +375,9 @@ fn set_sp(c: &mut Func, sf: bool, rd: u32, value: impl FnOnce(&mut Func)) {
     c.set_reg(rd);
 }
 
-/// Pushes the entry PC + `off`.
-fn pc_plus(c: &mut Func, off: i64) {
+/// Pushes the block's entry PC + `off`.
+pub fn pc_plus(c: &mut Func, off: i64) {
+    let off = off + c.base;
     c.local_get(ENTRY);
     if off != 0 {
         c.i64_const(off).i64_add();

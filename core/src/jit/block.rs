@@ -128,8 +128,72 @@ pub fn next(words: &[u32]) -> Next {
     }
 }
 
-/// What [`module`] emitted: the module, each block's inline instruction
-/// count and the keys of the blocks it chains to, and the flag counts.
+/// Blocks per region, at most (step 8).
+pub const REGION: usize = 16;
+
+/// A region (step 8): its head and the blocks reachable from it by static
+/// edges within the head's page, in reverse postorder (`blocks[0]` is the
+/// head), compiled into one function. Every other member is reached only
+/// through the region's own edges.
+pub struct Region {
+    pub blocks: Vec<Block>,
+}
+
+impl From<Block> for Region {
+    fn from(b: Block) -> Region {
+        Region { blocks: vec![b] }
+    }
+}
+
+impl Region {
+    /// The member at `key`, if any.
+    fn pos(&self, key: u64) -> Option<usize> {
+        self.blocks.iter().position(|b| b.key == key)
+    }
+}
+
+/// The key of the block at byte offset `off` from the block at `key`.
+fn succ(key: u64, off: i64) -> u64 {
+    (key & !3).wrapping_add(off as u64) | (key & 3)
+}
+
+/// The keys of a block's static successors (the taken side first).
+fn succs(key: u64, words: &[u32]) -> Vec<u64> {
+    match next(words) {
+        Next::None => vec![],
+        Next::One(o) => vec![succ(key, o)],
+        Next::Cond(t, n) => vec![succ(key, t), succ(key, n)],
+    }
+}
+
+/// The region headed by the block at `key` (first seen at `va`), up to
+/// [`REGION`] blocks in its page; empty if that block would have no words.
+pub fn region(mem: &Mem, key: u64, va: u64) -> Region {
+    fn visit(mem: &Mem, b: Block, seen: &mut Vec<u64>, post: &mut Vec<Block>) {
+        for s in succs(b.key, &b.words) {
+            if (s ^ b.key) >> 12 != 0 || seen.contains(&s) || seen.len() >= REGION {
+                continue;
+            }
+            let words = form(mem, s & !3);
+            if !words.is_empty() {
+                seen.push(s);
+                let va = b.va.wrapping_add(s & !3).wrapping_sub(b.key & !3);
+                visit(mem, Block { key: s, va, words }, seen, post);
+            }
+        }
+        post.push(b);
+    }
+    let words = form(mem, key & !3);
+    let mut blocks = vec![];
+    if !words.is_empty() {
+        visit(mem, Block { key, va, words }, &mut vec![key], &mut blocks);
+    }
+    blocks.reverse();
+    Region { blocks }
+}
+
+/// What [`module`] emitted: the module; for each region its inline
+/// instruction count and the keys of the blocks it chains to; the flag counts.
 pub struct Emitted {
     pub bytes: Vec<u8>,
     pub inl: Vec<u32>,
@@ -137,28 +201,49 @@ pub struct Emitted {
     pub counts: emit::Counts,
 }
 
-/// One module with a function per block, `block(vcpu, acc, left) -> acc +
-/// retired`, named `<va>_pa<pa>`. Instruction *i* is inline or `if
-/// helper(vcpu, insn_i, pc + 4i) { return acc + i }`, with `pc` read at entry:
-/// blocks are keyed by PA, so one can run at any VA that maps its page.
-/// Helpers set `Cpu::pc` themselves; a block that ends on an inline
-/// instruction other than a branch stores it before returning. Registers in
-/// locals are written back before each helper call and before the return, and
-/// reloaded on use after a helper (which may have written any of them); lazy
-/// flags are stored at the same points.
+/// What every region of a module is emitted against.
+struct Env<'a> {
+    /// The functions of successors outside a region: this batch's own, or imports.
+    funcs: &'a HashMap<u64, (u32, u32)>,
+    cx: emit::Ctx,
+    /// The block function type, the checker's import, the jump cache.
+    bt: u32,
+    checker: Option<u32>,
+    jc: u32,
+    /// RAM's host base and guest PA.
+    base: u64,
+    phys: u64,
+}
+
+/// One module with a function per region, `f(vcpu, acc, left) -> acc +
+/// retired`, named `<va>_pa<pa>` after its head. Instruction *i* of a block
+/// is inline or `if helper(vcpu, insn_i, pc + 4i) { return acc + i }`, with
+/// `pc` read at entry: regions are keyed by PA, so one can run at any VA that
+/// maps its page. Helpers set `Cpu::pc` themselves; a block that ends on an
+/// inline instruction other than a branch stores it before returning.
+/// Registers in locals are written back before each helper call and before
+/// returns, and reloaded on use after a helper (which may have written any of
+/// them); lazy flags are stored at the same points.
+///
+/// **Regions** (step 8): the blocks are nested wasm `block`s in reverse
+/// postorder, and an edge to a later member is a `br` to its label when
+/// `left` covers both blocks, adding the block's length to `acc` and taking
+/// it from `left` on the way; register locals stay live across it (the edge
+/// conforms them to the member's entry state, [`emit::Func::conform`]).
+/// Other edges leave the region through the chaining tails below.
 ///
 /// **Chaining** (step 7): a block whose successor is static and compiled (in
 /// this batch, or already: `compiled(key)` gives its table index and length,
 /// and the module imports it as `t.<index>`) tail-calls it with `acc + len`
 /// and `left - len` when `left` covers both, so a chain retires exactly what
-/// the dispatcher would have run. With the MMU on only successors in the
-/// block's page are chained (keys are PAs: another page may map elsewhere).
-/// A block that ends on BR, BLR or RET looks its target up in the jump cache
-/// at `jc` (0: never) and tail-calls it through the table on a hit
-/// (`emit::indirect`). With `check`, each chained entry calls `jit_check`
-/// first (the stale-code checker, as the dispatcher runs it).
+/// the dispatcher would have run. With the MMU on, a successor in another
+/// page is chained behind an instruction-TLB check (keys are PAs: another
+/// page may map elsewhere). A block that ends on BR, BLR or RET looks its
+/// target up in the jump cache at `jc` (0: never) and tail-calls it through
+/// the table on a hit (`emit::indirect`). With `check`, each chained entry
+/// calls `jit_check` first (the stale-code checker, as the dispatcher runs it).
 pub fn module(
-    blocks: &[Block],
+    regions: &[Region],
     mem: &Mem,
     compiled: impl Fn(u64) -> Option<(u32, u32)>,
     check: bool,
@@ -173,24 +258,20 @@ pub fn module(
         let ct = m.ty(&[I32, I64], &[]);
         m.import_func("env", "jit_check", ct)
     });
-    // Each block's successor keys, then their functions: this batch's own, or imports.
-    let succ = |b: &Block, off: i64| (b.key & !3).wrapping_add(off as u64) | (b.key & 3);
-    let targets: Vec<Vec<u64>> = blocks
-        .iter()
-        .map(|b| match next(&b.words) {
-            Next::None => vec![],
-            Next::One(o) => vec![succ(b, o)],
-            Next::Cond(t, n) => vec![succ(b, t), succ(b, n)],
-        })
-        .collect();
+    // Successors outside their region: this batch's heads, or imports.
+    let heads = |k| regions.iter().any(|r| r.blocks[0].key == k);
     let mut funcs: HashMap<u64, (u32, u32)> = HashMap::new();
-    for &k in targets.iter().flatten() {
-        if funcs.contains_key(&k) || blocks.iter().any(|b| b.key == k) {
-            continue;
-        }
-        if let Some((idx, len)) = compiled(k) {
-            let f = m.import_func("t", &idx.to_string(), bt);
-            funcs.insert(k, (f, len));
+    for r in regions {
+        for b in &r.blocks {
+            for k in succs(b.key, &b.words) {
+                if funcs.contains_key(&k) || heads(k) {
+                    continue;
+                }
+                if let Some((idx, len)) = compiled(k) {
+                    let f = m.import_func("t", &idx.to_string(), bt);
+                    funcs.insert(k, (f, len));
+                }
+            }
         }
     }
     m.import_memory("env", "memory", 0, 65536);
@@ -198,19 +279,21 @@ pub fn module(
         m.import_table("env", "table", 0);
     }
     let first = m.next_func();
-    for (k, b) in blocks.iter().enumerate() {
-        funcs.insert(b.key, (first + k as u32, b.words.len() as u32));
+    for (k, r) in regions.iter().enumerate() {
+        let h = &r.blocks[0];
+        funcs.insert(h.key, (first + k as u32, h.words.len() as u32));
     }
     let mut out = Emitted {
         bytes: vec![],
-        inl: Vec::with_capacity(blocks.len()),
-        links: Vec::with_capacity(blocks.len()),
+        inl: Vec::with_capacity(regions.len()),
+        links: Vec::with_capacity(regions.len()),
         counts: emit::Counts::default(),
     };
     let (base, phys) = mem.base();
-    for b in blocks {
-        let cx = if b.key & KEY_MMU != 0 {
-            let read = emit::tlb_array(b.key & KEY_EL1, 0);
+    for r in regions {
+        let head = &r.blocks[0];
+        let cx = if head.key & KEY_MMU != 0 {
+            let read = emit::tlb_array(head.key & KEY_EL1, 0);
             emit::Ctx {
                 helper: mmu,
                 bus: emit::Bus::Tlb { read },
@@ -222,131 +305,223 @@ pub fn module(
                 bus: emit::Bus::Flat { base, phys, size },
             }
         };
-        let h = cx.helper;
-        let len = b.words.len() as u32;
-        let succs = next(&b.words);
-        // Links: the compiled successors this block calls directly.
-        let links: Vec<u64> = match succs {
-            Next::None => vec![],
-            Next::One(o) => vec![succ(b, o)],
-            Next::Cond(t, o) => vec![succ(b, t), succ(b, o)],
-        }
-        .into_iter()
-        .filter(|k| funcs.contains_key(k))
-        .collect();
-        // The chaining tail to the successor at `off`: a direct tail call if
-        // it's compiled, else (with a jump cache) through the jump cache, which
-        // has it once it's compiled and entered. With the MMU on, one in
-        // another page only if its VA still maps to its PA (the instruction
-        // TLB of the block's EL).
-        let chain = |c: &mut emit::Func, off: i64| {
-            let k = succ(b, off);
-            let f = funcs.get(&k);
-            if f.is_none() && jc == 0 {
-                return;
-            }
-            let guarded = b.key & KEY_MMU != 0 && (k ^ b.key) >> 12 != 0;
-            let guard = |c: &mut emit::Func| {
-                let exec = emit::tlb_array(b.key & KEY_EL1, 2);
-                let host = (base as usize as u64).wrapping_add((k & !3) - phys);
-                emit::maps_to(c, off, exec, host);
-            };
-            let Some(&(f, tlen)) = f else {
-                if guarded {
-                    guard(c);
-                } else {
-                    c.i32_const(1);
-                }
-                return emit::via_jc(c, Some(k), jc, len, bt, checker);
-            };
-            c.local_get(emit::LEFT)
-                .i32_const((len + tlen) as i32)
-                .op(0x4f); // i32.ge_u
-            if guarded {
-                guard(c);
-                c.op(0x71); // i32.and
-            }
-            c.if_();
-            if let Some(chk) = checker {
-                c.local_get(0).i64_const(k as i64).call(chk);
-            }
-            c.local_get(0);
-            c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
-            c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
-            c.return_call(f).end();
+        let env = Env {
+            funcs: &funcs,
+            cx,
+            bt,
+            checker,
+            jc,
+            base: base as usize as u64,
+            phys,
         };
-        let emit = |plain: u32| {
-            let mut c = emit::Func::default();
-            c.plain = plain;
-            c.local_get(0).i64_load(emit::PC).local_set(1);
-            let (mut n, mut last) = (0, false);
-            for (i, &w) in b.words.iter().enumerate() {
-                let op = decode(w);
-                if end(op) == End::After {
-                    c.commit_flags(); // see `commit_flags`
-                }
-                last = emit::inline(&mut c, w, op, i, &cx);
-                if last {
-                    n += 1;
-                    // Branches end blocks and set the PC.
-                    last = end(op) == End::No;
-                    continue;
-                }
-                c.flush();
-                c.sync_flags();
-                c.local_get(0).i32_const(w as i32).local_get(1);
-                if i > 0 {
-                    c.i64_const(4 * i as i64).i64_add();
-                }
-                c.call(h).if_();
-                c.ret(i as u32);
-                c.end();
-                c.forget(!0);
-            }
-            if last {
-                emit::set_pc(&mut c, 4 * len as i64);
-            }
-            c.flush();
-            c.sync_flags();
-            match succs {
-                Next::One(o) => chain(&mut c, o),
-                Next::Cond(t, o) => {
-                    c.local_get(emit::TAKEN).if_();
-                    chain(&mut c, t);
-                    c.else_();
-                    chain(&mut c, o);
-                    c.end();
-                }
-                Next::None => {
-                    let op = b.words.last().map(|&w| decode(w));
-                    if jc != 0 && matches!(op, Some(Op::BR | Op::BLR | Op::RET)) {
-                        let tlb = (b.key & KEY_MMU != 0).then(|| {
-                            (
-                                emit::tlb_array(b.key & KEY_EL1, 2),
-                                base as usize as u64,
-                                phys,
-                            )
-                        });
-                        emit::indirect(&mut c, b.key & 3, tlb, jc, len, bt, checker);
-                    }
-                }
-            }
-            c.ret(len);
-            c.end();
-            (c, n)
-        };
-        // Twice: the first emission finds the registers to read plainly (`Func::plain`).
-        let first = emit(0).0;
-        let (mut c, n) = emit(first.read & !first.reused);
-        let name = format!("{:#x}_pa{:#x}", b.va, b.key & !3);
+        // Twice: the first emission finds the registers to read plainly
+        // (`Func::plain`) and what each member's edges carry into it, which
+        // the second starts it with.
+        let none = vec![emit::Regs::default(); r.blocks.len()];
+        let (first, _, into) = emit_region(&env, r, 0, &none);
+        let plain = first.read & !first.reused;
+        let entry: Vec<_> = into.iter().map(|s| s.merge(*s, plain)).collect();
+        let (mut c, n, _) = emit_region(&env, r, plain, &entry);
+        let name = format!("{:#x}_pa{:#x}", head.va, head.key & !3);
         let locals = c.locals();
         m.func(bt, &locals, &c.c, &name);
         out.inl.push(n);
+        let mut links = vec![];
+        for (i, b) in r.blocks.iter().enumerate() {
+            for k in succs(b.key, &b.words) {
+                if r.pos(k).is_none_or(|j| j <= i) && funcs.contains_key(&k) && !links.contains(&k)
+                {
+                    links.push(k);
+                }
+            }
+        }
         out.links.push(links);
         out.counts += c.counts;
     }
     out.bytes = m.finish();
     out
+}
+
+/// One emission of region `r` with the registers in `plain` read without a
+/// local, each member starting in its `entry` state: the function, its
+/// inline instruction count, and each member's merged incoming edge states.
+fn emit_region(
+    e: &Env,
+    r: &Region,
+    plain: u32,
+    entry: &[emit::Regs],
+) -> (emit::Func, u32, Vec<emit::Regs>) {
+    let n = r.blocks.len();
+    let head = r.blocks[0].key & !3;
+    let mut c = emit::Func::default();
+    c.plain = plain;
+    let mut into = vec![emit::Regs::default(); n];
+    let mut inl = 0;
+    c.local_get(0).i64_load(emit::PC).local_set(1);
+    for _ in 1..n {
+        c.block();
+    }
+    for (i, b) in r.blocks.iter().enumerate() {
+        if i > 0 {
+            c.end(); // member i's label
+        }
+        c.base = (b.key & !3).wrapping_sub(head) as i64;
+        c.regs = entry[i];
+        let len = b.words.len() as u32;
+        let mut last = false;
+        for (k, &w) in b.words.iter().enumerate() {
+            let op = decode(w);
+            if end(op) == End::After {
+                c.commit_flags(); // see `commit_flags`
+            }
+            last = emit::inline(&mut c, w, op, k, &e.cx);
+            if last {
+                inl += 1;
+                // Branches end blocks and set the PC.
+                last = end(op) == End::No;
+                continue;
+            }
+            c.flush();
+            c.sync_flags();
+            c.local_get(0).i32_const(w as i32);
+            emit::pc_plus(&mut c, 4 * k as i64);
+            c.call(e.cx.helper).if_();
+            c.ret(k as u32);
+            c.end();
+            c.forget(!0);
+        }
+        if last {
+            emit::set_pc(&mut c, 4 * len as i64);
+        }
+        // Edges to later members, with the flags current in the `Cpu`.
+        let internal = |off: i64| r.pos(succ(b.key, off)).filter(|&j| j > i);
+        let mut edge = |c: &mut emit::Func, j: usize, depth: u32| {
+            let jlen = r.blocks[j].words.len() as u32;
+            c.local_get(emit::LEFT)
+                .i32_const((len + jlen) as i32)
+                .op(0x4f); // i32.ge_u
+            c.if_();
+            let here = c.regs;
+            into[j] = into[j].merge(here, 0);
+            c.conform(entry[j]);
+            c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
+            c.local_set(emit::ACC);
+            c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
+            c.local_set(emit::LEFT);
+            c.br((j - i - 1) as u32 + depth + 1).end();
+            c.regs = here;
+        };
+        let succs = next(&b.words);
+        match succs {
+            Next::One(o) => {
+                if let Some(j) = internal(o) {
+                    c.commit_flags();
+                    edge(&mut c, j, 0);
+                }
+            }
+            Next::Cond(t, o) => match (internal(t), internal(o)) {
+                (None, None) => {}
+                (jt, jo) => {
+                    c.commit_flags();
+                    c.local_get(emit::TAKEN);
+                    if jt.is_none() {
+                        c.op(0x45); // i32.eqz
+                    }
+                    c.if_();
+                    edge(&mut c, jt.or(jo).expect("one side"), 1);
+                    if let (Some(_), Some(j)) = (jt, jo) {
+                        c.else_();
+                        edge(&mut c, j, 1);
+                    }
+                    c.end();
+                }
+            },
+            Next::None => {}
+        }
+        // The rest leave the region (or stay when `left` doesn't cover them).
+        c.flush();
+        c.sync_flags();
+        match succs {
+            Next::One(o) => {
+                if internal(o).is_none() {
+                    chain(e, &mut c, b, o);
+                }
+            }
+            Next::Cond(t, o) => match (internal(t), internal(o)) {
+                (None, None) => {
+                    c.local_get(emit::TAKEN).if_();
+                    chain(e, &mut c, b, t);
+                    c.else_();
+                    chain(e, &mut c, b, o);
+                    c.end();
+                }
+                (Some(_), Some(_)) => {}
+                (jt, _) => {
+                    c.local_get(emit::TAKEN);
+                    if jt.is_some() {
+                        c.op(0x45); // i32.eqz
+                    }
+                    c.if_();
+                    chain(e, &mut c, b, if jt.is_some() { o } else { t });
+                    c.end();
+                }
+            },
+            Next::None => {
+                let op = b.words.last().map(|&w| decode(w));
+                if e.jc != 0 && matches!(op, Some(Op::BR | Op::BLR | Op::RET)) {
+                    let tlb = (b.key & KEY_MMU != 0)
+                        .then(|| (emit::tlb_array(b.key & KEY_EL1, 2), e.base, e.phys));
+                    emit::indirect(&mut c, b.key & 3, tlb, e.jc, len, e.bt, e.checker);
+                }
+            }
+        }
+        c.ret(len);
+    }
+    c.end();
+    (c, inl, into)
+}
+
+/// The chaining tail of block `b` to its successor at `off`: a direct tail
+/// call if it's compiled, else (with a jump cache) through the jump cache,
+/// which has it once it's compiled and entered. With the MMU on, one in
+/// another page only if its VA still maps to its PA (the instruction TLB of
+/// the block's EL).
+fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
+    let k = succ(b.key, off);
+    let len = b.words.len() as u32;
+    let f = e.funcs.get(&k);
+    if f.is_none() && e.jc == 0 {
+        return;
+    }
+    let guarded = b.key & KEY_MMU != 0 && (k ^ b.key) >> 12 != 0;
+    let guard = |c: &mut emit::Func| {
+        let exec = emit::tlb_array(b.key & KEY_EL1, 2);
+        let host = e.base.wrapping_add((k & !3) - e.phys);
+        emit::maps_to(c, off, exec, host);
+    };
+    let Some(&(f, tlen)) = f else {
+        if guarded {
+            guard(c);
+        } else {
+            c.i32_const(1);
+        }
+        return emit::via_jc(c, Some(k), e.jc, len, e.bt, e.checker);
+    };
+    c.local_get(emit::LEFT)
+        .i32_const((len + tlen) as i32)
+        .op(0x4f); // i32.ge_u
+    if guarded {
+        guard(c);
+        c.op(0x71); // i32.and
+    }
+    c.if_();
+    if let Some(chk) = e.checker {
+        c.local_get(0).i64_const(k as i64).call(chk);
+    }
+    c.local_get(0);
+    c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
+    c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
+    c.return_call(f).end();
 }
 
 #[cfg(test)]
@@ -369,9 +544,9 @@ mod tests {
         (ram, mem)
     }
 
-    /// A module of `blocks`, nothing else compiled.
-    fn build(blocks: &[Block]) -> Emitted {
-        module(blocks, &test_mem(), |_| None, false, 0)
+    /// A module of one block, nothing else compiled.
+    fn build(b: Block) -> Emitted {
+        module(&[b.into()], &test_mem(), |_| None, false, 0)
     }
 
     fn test_mem() -> Mem {
@@ -436,7 +611,7 @@ mod tests {
             va: 0xffff_0100,
             words: vec![MOVZ, MRS],
         };
-        let Emitted { bytes, inl, .. } = build(&[b]);
+        let Emitted { bytes, inl, .. } = build(b);
         assert_eq!(inl, [1]);
         #[rustfmt::skip]
         let body = [
@@ -476,7 +651,7 @@ mod tests {
             va: 0x4000_0200,
             words: vec![MOVZ, MOVZ],
         };
-        let Emitted { bytes, inl, .. } = build(&[b]);
+        let Emitted { bytes, inl, .. } = build(b);
         assert_eq!(inl, [2]);
         // vcpu; entry + 8; i64.store 256; x1 written back; return acc + 2 (the
         // next block isn't compiled: nothing to chain to)
@@ -502,7 +677,7 @@ mod tests {
             va: 0x4000_0200,
             words: vec![ADD, 0x91000423],
         };
-        let Emitted { bytes, .. } = build(&[b]);
+        let Emitted { bytes, .. } = build(b);
         #[rustfmt::skip]
         let body = [
             0x20, 0, 0x29, 3, 16, 0x42, 3, 0x7c, 0x21, 4, // x1 = x2 + 3
@@ -525,7 +700,7 @@ mod tests {
             va: 0x4000_0200,
             words: vec![ADD, 0x9e660001, 0x91000423],
         };
-        let Emitted { bytes, inl, .. } = build(&[b]);
+        let Emitted { bytes, inl, .. } = build(b);
         assert_eq!(inl, [2]);
         #[rustfmt::skip]
         let around = [
@@ -552,7 +727,7 @@ mod tests {
             va: 0x4000_0200,
             words: words.to_vec(),
         };
-        let Emitted { bytes, counts, .. } = build(&[b]);
+        let Emitted { bytes, counts, .. } = build(b);
         (bytes, counts)
     }
 
@@ -627,7 +802,7 @@ mod tests {
             words: vec![MOVZ, B8],
         };
         let e = module(
-            &[b],
+            &[b.into()],
             &test_mem(),
             |k| (k == 0x4000_020c).then_some((77, 3)),
             false,
@@ -648,7 +823,7 @@ mod tests {
             va: 0x4000_0200,
             words: vec![MOVZ, 0x17ffffff], // b .-4
         };
-        let e = build(&[b]);
+        let e = build(b);
         assert_eq!(e.links, [vec![0x4000_0200]]);
         assert!(has(&e.bytes, &[0x6b, 0x12, 2, 0x0b]));
         // A conditional branch chains the side it can (here: itself when taken;
@@ -658,7 +833,7 @@ mod tests {
             va: 0,
             words: vec![MOVZ, 0x54ffffe0], // b.eq .-4
         };
-        let e = build(&[b]);
+        let e = build(b);
         assert_eq!(e.links, [vec![0x4000_0ff8 | KEY_MMU]]); // taken: itself; not taken: 0x1000
         assert!(has(&e.bytes, &[0x20, 5, 0x04, 0x40])); // if TAKEN (compacted: after entry and x1)
         assert_eq!(e.bytes.iter().filter(|&&b| b == 0x12).count(), 1);
@@ -671,7 +846,7 @@ mod tests {
             words: vec![MOVZ, 0x14000400], // b .+0x1000
         };
         let e = module(
-            &[b],
+            &[b.into()],
             &test_mem(),
             |k| (k == 0x4000_1204 | KEY_MMU).then_some((9, 1)),
             false,
@@ -684,6 +859,48 @@ mod tests {
     }
 
     #[test]
+    fn a_region_keeps_registers_across_its_edges() {
+        // 0x100: add x1, x2, #3; cbz x1, 0x110
+        // 0x108: add x3, x1, #1; b 0x114
+        // 0x110: add x3, x1, #2
+        // 0x114: ret
+        let words = [
+            ADD, 0xb4000061, 0x91000423, 0x14000002, 0x91000823, 0xd65f03c0,
+        ];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = region(&m, 0x100, 0x100);
+        // Reverse postorder: the head, the fall-through side and its successor, the taken side.
+        let keys: Vec<u64> = r.blocks.iter().map(|b| b.key).collect();
+        assert_eq!(keys, [0x100, 0x108, 0x114, 0x110]);
+        assert_eq!(r.blocks[3].words, [0x91000823, 0xd65f03c0]);
+        let e = module(&[r], &test_mem(), |_| None, false, 0);
+        // The head's edges, both inside the `if TAKEN` (depth 1): to the taken
+        // side (member 3, br 4) and the fall-through (member 1, br 2), each
+        // when `left` covers the head (2) and the member (2), with acc and
+        // left updated on the way.
+        #[rustfmt::skip]
+        let taken = [
+            0x20, 2, 0x41, 4, 0x4f, 0x04, 0x40,           // if left >= 4:
+            0x20, 1, 0x41, 2, 0x6a, 0x21, 1,              //   acc += 2
+            0x20, 2, 0x41, 2, 0x6b, 0x21, 2, 0x0c, 4, 0x0b, //   left -= 2; br 4
+        ];
+        assert!(has(&e.bytes, &taken));
+        assert!(has(&e.bytes, &[0x6b, 0x21, 2, 0x0c, 2, 0x0b]));
+        // x1 is written in the head and read in both sides from its local:
+        // never loaded; x2 is read once (a plain load).
+        assert!(!has(&e.bytes, &[0x29, 3, 8]));
+        assert_eq!(
+            e.bytes.windows(3).filter(|w| *w == [0x29, 3, 16]).count(),
+            1
+        );
+        assert_eq!(e.inl, [7]); // the ret at 0x114 twice: in its own block and ending the taken side
+        assert_eq!(e.links, [Vec::<u64>::new()]);
+        // Nothing past the page: a region at 0xff8 stays a block.
+        let (_r, m) = mem_with(0xff8, &[ADD, 0x14000002, ADD, ADD, 0xd65f03c0]);
+        assert_eq!(region(&m, 0xff8, 0).blocks.len(), 1);
+    }
+
+    #[test]
     fn indirect_branches_look_up_the_jump_cache() {
         // movz x1, #3; ret with the jump cache at 0x1000: the module imports the
         // table, and the block ends in return_call_indirect (type 0, table 0).
@@ -692,7 +909,7 @@ mod tests {
             va: 0,
             words: vec![MOVZ, 0xd65f03c0],
         };
-        let e = module(&[b], &test_mem(), |_| None, false, 0x1000);
+        let e = module(&[b.into()], &test_mem(), |_| None, false, 0x1000);
         assert!(has(
             &e.bytes,
             &[3, b'e', b'n', b'v', 5, b't', b'a', b'b', b'l', b'e', 1]
@@ -705,7 +922,7 @@ mod tests {
             va: 0,
             words: vec![MOVZ, 0x14000002], // b .+8 (0x4000_020c)
         };
-        let e = module(&[b], &test_mem(), |_| None, false, 0x1000);
+        let e = module(&[b.into()], &test_mem(), |_| None, false, 0x1000);
         let mut entry = vec![0x41];
         let at = 0x1000 + ((0x4000_020c_u64 >> 2) as u32 & (crate::jit::JC as u32 - 1)) * 16;
         crate::jit::wasm::sleb(&mut entry, at as i32 as i64);
@@ -718,6 +935,6 @@ mod tests {
             va: 0,
             words: vec![MOVZ, 0xd65f03c0],
         };
-        assert!(!has(&build(&[b]).bytes, &[0x13, 0, 0]));
+        assert!(!has(&build(b).bytes, &[0x13, 0, 0]));
     }
 }

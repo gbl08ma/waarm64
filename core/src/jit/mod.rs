@@ -98,6 +98,9 @@ pub struct Stats {
     pub cond_direct: u64,
     pub cond_computed: u64,
     pub cond_memory: u64,
+    /// Blocks in the compiled regions (ABI 15, step 8: `blocks` counts
+    /// regions, one function each).
+    pub region_blocks: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -166,6 +169,8 @@ pub struct Cache {
     pages: Map<Vec<u64>>,
     /// The compiled blocks that chain to a key (step 7), dropped with it.
     linkers: Map<Vec<u64>>,
+    /// Each compiled region's blocks as (PA, length), for the stale-code checker.
+    spans: Map<Vec<(u64, u32)>>,
     jc: Box<[Jc; JC]>,
     /// (key, VA) of blocks waiting to be compiled.
     pending: Vec<(u64, u64)>,
@@ -190,6 +195,7 @@ impl Cache {
             map: HashMap::default(),
             pages: HashMap::default(),
             linkers: HashMap::default(),
+            spans: HashMap::default(),
             jc: vec![JC_EMPTY; JC]
                 .into_boxed_slice()
                 .try_into()
@@ -225,6 +231,7 @@ impl Cache {
         self.map.clear();
         self.pages.clear();
         self.linkers.clear();
+        self.spans.clear();
         self.jc.fill(JC_EMPTY);
         self.pending.clear();
         self.next = 0;
@@ -239,6 +246,7 @@ impl Cache {
             // calls the dropped functions directly.
             while let Some(k) = keys.pop() {
                 self.map.remove(&k);
+                self.spans.remove(&k);
                 if self.jc[jc_index(k)].key == k {
                     self.jc[jc_index(k)] = JC_EMPTY;
                 }
@@ -256,12 +264,14 @@ impl Cache {
         info(&mut self.map, &mut self.pages, key, len)
     }
 
-    /// The stale-code checker at a block's entry.
+    /// The stale-code checker at a region's entry: all its blocks' words.
     fn check(&self, key: u64, mem: &Mem) {
-        let i = &self.map[&key];
-        let words = block::read(mem, key & !3, i.len as usize);
+        let words: Vec<u32> = self.spans[&key]
+            .iter()
+            .flat_map(|&(pa, n)| block::read(mem, pa, n as usize))
+            .collect();
         assert!(
-            block::hash(&words) == i.hash,
+            block::hash(&words) == self.map[&key].hash,
             "stale JIT block at PA {:#x}: its code changed without an IC",
             key & !3
         );
@@ -325,20 +335,20 @@ impl Cache {
             "a JIT vCPU runs on one RAM"
         );
         let pending = core::mem::take(&mut self.pending);
-        let mut blocks = Vec::with_capacity(pending.len());
+        let mut regions = Vec::with_capacity(pending.len());
         for (key, va) in pending {
-            let words = block::form(mem, key & !3);
+            let r = block::region(mem, key, va);
             if let Some(i) = self.map.get_mut(&key) {
-                (i.queued, i.len) = (false, words.len() as u32);
+                (i.queued, i.len) = (false, r.blocks.first().map_or(0, |b| b.words.len() as u32));
             }
-            if !words.is_empty() {
-                blocks.push(block::Block { key, va, words });
+            if !r.blocks.is_empty() {
+                regions.push(r);
             }
         }
-        if blocks.is_empty() {
+        if regions.is_empty() {
             return;
         }
-        let n = blocks.len() as u32;
+        let n = regions.len() as u32;
         let slot = self.alloc(n);
         let map = &self.map;
         let compiled = |k| map.get(&k).filter(|i| i.idx != 0).map(|i| (i.idx, i.len));
@@ -348,7 +358,7 @@ impl Cache {
             links,
             counts,
         } = block::module(
-            &blocks,
+            &regions,
             mem,
             compiled,
             self.cfg.check,
@@ -371,14 +381,25 @@ impl Cache {
             s.blocks + n as u64,
             s.bytes + bytes.len() as u64,
         );
-        for (k, ((b, inl), links)) in blocks.iter().zip(inl).zip(links).enumerate() {
-            let len = b.words.len() as u32;
+        for (k, ((r, inl), links)) in regions.iter().zip(inl).zip(links).enumerate() {
+            let size: u32 = r.blocks.iter().map(|b| b.words.len() as u32).sum();
             let s = &mut self.stats;
-            (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (len - inl) as u64);
-            let i = self.info(b.key, || 0);
-            (i.idx, i.len, i.hash) = (idx + k as u32, len, block::hash(&b.words));
+            (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (size - inl) as u64);
+            s.region_blocks += r.blocks.len() as u64;
+            let (key, len) = (r.blocks[0].key, r.blocks[0].words.len() as u32);
+            let words: Vec<u32> = r
+                .blocks
+                .iter()
+                .flat_map(|b| b.words.iter().copied())
+                .collect();
+            let i = self.info(key, || 0);
+            (i.idx, i.len, i.hash) = (idx + k as u32, len, block::hash(&words));
+            if self.cfg.check {
+                let spans = r.blocks.iter().map(|b| (b.key & !3, b.words.len() as u32));
+                self.spans.insert(key, spans.collect());
+            }
             for t in links {
-                self.linkers.entry(t).or_default().push(b.key);
+                self.linkers.entry(t).or_default().push(key);
             }
         }
     }

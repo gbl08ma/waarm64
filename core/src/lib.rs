@@ -20,7 +20,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 14;
+pub const ABI_VERSION: u32 = 15;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {

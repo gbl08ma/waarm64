@@ -139,8 +139,8 @@ pub struct Counters {
     /// steps in JIT code, block calls, invalidations, cache flushes; ABI 12:
     /// instructions compiled inline and as helper calls, inline instructions run;
     /// ABI 13: lazy flag setters stored and elided, conditions direct, computed
-    /// and from memory.
-    pub jit: [AtomicU64; 16],
+    /// and from memory; ABI 15: blocks in the compiled regions.
+    pub jit: [AtomicU64; 17],
 }
 
 impl Default for Counters {
@@ -155,7 +155,7 @@ impl Default for Counters {
             tlb_walks: z(),
             tlb_flushes: z(),
             pc: z(),
-            jit: [const { AtomicU64::new(0) }; 16],
+            jit: [const { AtomicU64::new(0) }; 17],
         }
     }
 }
@@ -376,6 +376,7 @@ impl Vm {
                 s.cond_direct,
                 s.cond_computed,
                 s.cond_memory,
+                s.region_blocks,
             ];
             for (a, v) in c.jit.iter().zip(v) {
                 a.store(v, Ordering::Relaxed);
