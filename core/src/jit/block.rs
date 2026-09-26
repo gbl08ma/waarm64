@@ -201,23 +201,6 @@ pub fn module(
     for (k, b) in blocks.iter().enumerate() {
         funcs.insert(b.key, (first + k as u32, b.words.len() as u32));
     }
-    // The probes, after the blocks: the static one, then one per regime of
-    // the blocks that end on an indirect branch.
-    let probe = first + blocks.len() as u32;
-    let mut regimes: Vec<u64> = blocks
-        .iter()
-        .filter(|b| {
-            matches!(
-                b.words.last().map(|&w| decode(w)),
-                Some(Op::BR | Op::BLR | Op::RET)
-            )
-        })
-        .map(|b| b.key & 3)
-        .collect();
-    regimes.sort_unstable();
-    regimes.dedup();
-    let probe_for =
-        |regime: u64| probe + 1 + regimes.iter().position(|&r| r == regime).unwrap() as u32;
     let mut out = Emitted {
         bytes: vec![],
         inl: Vec::with_capacity(blocks.len()),
@@ -271,13 +254,10 @@ pub fn module(
             let Some(&(f, tlen)) = f else {
                 if guarded {
                     guard(c);
-                    c.if_();
-                    emit::tail(c, len, Some(k), probe);
-                    c.end();
                 } else {
-                    emit::tail(c, len, Some(k), probe);
+                    c.i32_const(1);
                 }
-                return;
+                return emit::via_jc(c, Some(k), jc, len, bt, checker);
             };
             c.local_get(emit::LEFT)
                 .i32_const((len + tlen) as i32)
@@ -340,7 +320,14 @@ pub fn module(
                 Next::None => {
                     let op = b.words.last().map(|&w| decode(w));
                     if jc != 0 && matches!(op, Some(Op::BR | Op::BLR | Op::RET)) {
-                        emit::tail(&mut c, len, None, probe_for(b.key & 3));
+                        let tlb = (b.key & KEY_MMU != 0).then(|| {
+                            (
+                                emit::tlb_array(b.key & KEY_EL1, 2),
+                                base as usize as u64,
+                                phys,
+                            )
+                        });
+                        emit::indirect(&mut c, b.key & 3, tlb, jc, len, bt, checker);
                     }
                 }
             }
@@ -357,16 +344,6 @@ pub fn module(
         out.inl.push(n);
         out.links.push(links);
         out.counts += c.counts;
-    }
-    if jc != 0 {
-        let (c, l) = emit::probe_static(jc, bt, checker);
-        m.internal_func(bt, &l, &c.c, "probe");
-        for &r in &regimes {
-            let tlb = (r & KEY_MMU != 0)
-                .then(|| (emit::tlb_array(r & KEY_EL1, 2), base as usize as u64, phys));
-            let (c, l) = emit::probe_indirect(r, tlb, jc, bt, checker);
-            m.internal_func(bt, &l, &c.c, &format!("probe_indirect_{r}"));
-        }
     }
     out.bytes = m.finish();
     out
@@ -720,23 +697,19 @@ mod tests {
             &e.bytes,
             &[3, b'e', b'n', b'v', 5, b't', b'a', b'b', b'l', b'e', 1]
         ));
-        assert!(has(&e.bytes, &[0x12, 4])); // to the probe for EL0, MMU on (function 4)
         assert!(has(&e.bytes, &[0x13, 0, 0, 0x0b]));
-        assert!(has(&e.bytes, &[6, 1, 2, b'f', b'0', 0, 2])); // one export: the block
-        // A static successor that isn't compiled: the block stores its key in
-        // State::probe_key and tail-calls the module's probe (function 3:
-        // after the helpers and the block), which looks it up in the jump cache.
+        // A static successor that isn't compiled: probed in the jump cache at
+        // its own entry, jc + ((key >> 2) & (JC - 1)) * 16.
         let b = Block {
             key: 0x4000_0200,
             va: 0,
             words: vec![MOVZ, 0x14000002], // b .+8 (0x4000_020c)
         };
         let e = module(&[b], &test_mem(), |_| None, false, 0x1000);
-        let mut key = vec![0x42];
-        crate::jit::wasm::sleb(&mut key, 0x4000_020c);
-        key.extend([0x37, 3]);
-        assert!(has(&e.bytes, &key));
-        assert!(has(&e.bytes, &[0x6b, 0x12, 3])); // left - len; return_call probe
+        let mut entry = vec![0x41];
+        let at = 0x1000 + ((0x4000_020c_u64 >> 2) as u32 & (crate::jit::JC as u32 - 1)) * 16;
+        crate::jit::wasm::sleb(&mut entry, at as i32 as i64);
+        assert!(has(&e.bytes, &entry));
         assert!(has(&e.bytes, &[0x13, 0, 0, 0x0b]));
         assert_eq!(e.links, [Vec::<u64>::new()]);
         // Without a jump cache (0), it just returns.
