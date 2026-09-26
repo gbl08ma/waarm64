@@ -150,3 +150,32 @@ Host: Ryzen 7 5800X3D, Linux x86_64, Chromium 152.0.7977.75. Raw data: `results/
 - **Buildroot breaks even**: its boot is short and cold. 15.5% of its steps run in the interpreter (code below the threshold, or blocks that don't fit a chunk), the JIT compiles 12k blocks in 51 ms, and its warm IQR (±113 ms) is 10× the interpreter's, which looks like V8 tiering the 471 modules up at different points in each boot.
 - **Alpine flushes the code cache 14 times** (244k blocks through a 16,384-block cache). What it costs, and a larger cache or per-module eviction, belong to steps 7–8 (linking and regions change the block count anyway).
 - **The dynamic mix follows the static one** (72% of the integer guest's instructions are inline, statically and as run). The helper-call histogram that picked group 6 was ad hoc (a counter in the interpreter's step for words `emit::inline` rejects, over the Buildroot boot): loads and stores were 85% of the remaining helper calls; then NOP/BTI/PAC hints (2.9% of helper calls), MRS (1.7%), exclusives, MADD (1.1%), DC ZVA, DMB, REV, UMADDL, CLZ. The histogram by `Op` is step 9.
+
+## M5 step 5: inline loads and stores
+
+**What runs:** step 4 plus `emit::ldst`: LDR/STR of every size and sign (unsigned offset, unscaled, pre/post-index, register offset), the integer pairs, LDR (literal) and PRFM inline, through the TLB array of the block's EL with the MMU on (the spike's fast path: tag compare on `(va + len − 1) | 0xfff`, `host = va + addend`) or a bounds check against RAM with it off. Misses, faults, MMIO, page-crossing accesses and a misaligned SP base re-execute the instruction through the step 2 helper. Exclusives, atomics, LDTR/STTR and FP/SIMD accesses stay helpers. **Method:** as step 4, one full `bench/interp` run at `1f5c2b9`, then `boot_jit` and `boot_alpine_jit`; the interpreter's boot numbers are step 4's (its code hasn't changed since).
+
+| Guest | Interpreter warm (IQR) | JIT warm (IQR) | JIT / interp | Step 4 JIT | Interp cold | JIT cold | Inline, dynamic |
+|---|---|---|---|---|---|---|---|
+| integer, EL0 | 89.2 (±0.31) | **337.9** (±0.80) | **3.79×** | 134.8 | 51.9 | 116.6 | 100% |
+| FP/NEON, EL0 | 15.2 (±0.04) | **15.6** (±0.05) | +3% | 15.5 | 14.6 | 15.3 | 31% |
+| integer, EL1 MMU off | 89.0 (±0.08) | **218.6** (±0.26)³ | **2.46×** | 131.9 | 78.2 | 98.5 | 100% |
+| integer, EL1 MMU on | 54.0 (±0.25) | **179.6** (±0.32)³ | **3.33×** | 90.5 | 40.6 | 81.5 | 100% |
+
+³ The low of two modes. In other runs the same builds switched mid-run, for several samples, to 320 (MMU off) and 225–240 (MMU on) and back (`../results/local` runs; the step 5.1 samples `217 217 217 217 320 320 …`), under the default config and under `--config turbofan-only` alike, so it isn't Liftoff→TurboFan tier-up. It's plausibly V8's speculative inlining of the core's `call_indirect` into the blocks and its deopts, but I haven't verified that. Linking (step 7) replaces that call; until then, compare these guests' modes, not their medians alone.
+
+| Boot (Chromium, deterministic) | Interpreter warm (IQR) | JIT warm (IQR) | JIT / interp | Step 4 JIT | Steps in JIT code | Inline, dynamic | Compiled |
+|---|---|---|---|---|---|---|---|
+| Buildroot, to power-off | 1069 ms (±6) | **853 ms** (±136) | **−20%** | 1071 ms | 84.5% | 97.1% | 12,425 blocks, 471 modules, 3.4 MB, 56 ms |
+| Alpine, to power-off | 68.1 s (±0.07) | **40.1 s** (±0.18) | **−41%** | 58.9 s | 96.1% | 96.9% | 244,487 blocks, 15,116 modules, 69 MB, 1.98 s, 14 flushes |
+| Alpine, to its script | 57.3 s (±0.07) | **32.3 s** (±0.12) | −44% | 48.2 s | | | |
+
+Cold: Buildroot 962 ms (JIT) vs 1091 (interpreter), Alpine 40.2 s vs 68.1 s. Host: Ryzen 7 5800X3D, Linux x86_64, Chromium 152.0.7977.75. Raw data: `results/chromium-linux-x86_64-m5-step5.json`, `../boot/results/chromium-linux-x86_64-m5-step5-{boot_jit,boot_alpine_jit}.json`, `results/m5-step5-tlb/` (the layout experiments).
+
+**TLB entry layout (PLAN §7 M5):** against the 16-byte {tag, u64 addend} entry, (A) a `usize` addend (32 bits on wasm32, added in i32) and (B) A plus split tag and addend arrays (12 bytes per entry), on Alpine's boot under the JIT: 40.34 s (±0.21), 40.42 s (±0.02), 41.23 s (±0.18); the interpreter's MMU guest 53.4, 52.6, 52.5 MIPS; Buildroot's JIT boot 857, 860, 870 ms (±135 each) and the JIT's MMU guest (TurboFan-only, bimodal as above) the same within noise. Neither pays: B's extra index arithmetic (the addend offset is half the tag's) costs more than the denser arrays save on this trace, and A saves one wasm op. The entry stays as it is; the emitter finds it with one shift and mask, `(va >> 8) & 0xfff0`.
+
+**Notes**
+- **Where the integer guest's time goes now:** 3.0 ns per instruction (11.2 in the interpreter), every instruction inline, one dispatch and one `call_indirect` per 4.2-instruction block. That per-block cost is likely most of what's left: step 1's 13–16 ns per table call cycling over 16 blocks would be more than the whole 12.4 ns a block takes now, so it's cheaper in this steady loop, but it's still a call V8 can't inline without speculation, and linking (step 7) removes it. Registers and NZCV still round-trip through memory (step 6).
+- **Alpine:** 97% of the instructions run in JIT code are inline, and 3.9% of its steps are interpreted (cold code under the threshold, blocks that don't fit a chunk). Compiling costs 2.0 s of the 40 s (69 MB of wasm: inline loads and stores are larger than the helper calls they replace, +65% bytes over step 4), and the 16,384-block cache flushes 14 times.
+- **Buildroot:** −20%, but its warm IQR stays wide (±136 ms), which fits the same bimodality at boot scale.
+- **Still slower under the JIT:** kvm-unit-tests `timer` (3.3 s vs 2.6 s in Node, 106M steps): it spends its time in short blocks around timer polls and WFI, where a dispatch per block costs more than it saves.
