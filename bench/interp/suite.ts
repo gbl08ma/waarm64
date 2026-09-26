@@ -32,7 +32,7 @@ type Exports = {
 };
 
 /** What the JIT did so far (`jit::Stats`, `vm::Counters`); steps are all steps, jitSteps those in JIT code. */
-type JitCounts = { steps: number; jitSteps: number; dispatches: number; blocks: number; modules: number; bytes: number; compileNs: number; inline: number; helpers: number; inlineSteps: number; flagsStored: number; flagsElided: number; condDirect: number; condComputed: number; condMemory: number; regionBlocks: number };
+type JitCounts = { steps: number; jitSteps: number; dispatches: number; blocks: number; modules: number; bytes: number; compileNs: number; inline: number; helpers: number; inlineSteps: number; flagsStored: number; flagsElided: number; condDirect: number; condComputed: number; condMemory: number; regionBlocks: number; backEdges: number };
 
 /** jit_new's arguments: threshold, batch, capacity, stale-code check. */
 export type JitConfig = [number, number, number, number];
@@ -70,8 +70,8 @@ export async function setup(bin = 'guest.bin', jit?: JitConfig) {
     pc: () => u64(cpu + 256)[0],
     rounds: () => u64(base + ROUNDS)[0],
     counts: jit ? (): JitCounts => {
-      const [blocks, modules, bytes, compileNs, jitSteps, dispatches, , , inline, helpers, inlineSteps, flagsStored, flagsElided, condDirect, condComputed, condMemory, regionBlocks] = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 17)].map(Number);
-      return { steps, jitSteps, dispatches, blocks, modules, bytes, compileNs, inline, helpers, inlineSteps, flagsStored, flagsElided, condDirect, condComputed, condMemory, regionBlocks };
+      const [blocks, modules, bytes, compileNs, jitSteps, dispatches, , , inline, helpers, inlineSteps, flagsStored, flagsElided, condDirect, condComputed, condMemory, regionBlocks, backEdges] = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 18)].map(Number);
+      return { steps, jitSteps, dispatches, blocks, modules, bytes, compileNs, inline, helpers, inlineSteps, flagsStored, flagsElided, condDirect, condComputed, condMemory, regionBlocks, backEdges };
     } : undefined,
   };
 }
@@ -110,7 +110,7 @@ function jitParams(a: JitCounts, b: JitCounts) {
     // Static, so far: lazy flag setters whose NZCV is never stored; conditions by where they come from.
     flagsElided: b.flagsElided, flagsStored: b.flagsStored, condDirect: b.condDirect, condComputed: b.condComputed, condMemory: b.condMemory,
     // Blocks per region (static, so far; step 8).
-    blocksPerRegion: +(b.regionBlocks / b.blocks).toFixed(2),
+    blocksPerRegion: +(b.regionBlocks / b.blocks).toFixed(2), backEdges: b.backEdges,
   };
 }
 
@@ -125,7 +125,7 @@ async function mipsOf(o: Options, name: string, guest: string, g: Guest): Promis
     return n / dt / 1000;
   };
   // Cold: the first instructions after instantiation, while V8 still runs Liftoff code.
-  const zero: JitCounts = { steps: 0, jitSteps: 0, dispatches: 0, blocks: 0, modules: 0, bytes: 0, compileNs: 0, inline: 0, helpers: 0, inlineSteps: 0, flagsStored: 0, flagsElided: 0, condDirect: 0, condComputed: 0, condMemory: 0, regionBlocks: 0 };
+  const zero: JitCounts = { steps: 0, jitSteps: 0, dispatches: 0, blocks: 0, modules: 0, bytes: 0, compileNs: 0, inline: 0, helpers: 0, inlineSteps: 0, flagsStored: 0, flagsElided: 0, condDirect: 0, condComputed: 0, condMemory: 0, regionBlocks: 0, backEdges: 0 };
   const cold = [mips(2_000_000)];
   const c1 = g.counts?.();
   for (let i = 0; i < 3; i++) mips(chunk);

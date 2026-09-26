@@ -142,6 +142,11 @@ impl Code {
         self.b.extend([0x02, 0x40]);
         self
     }
+    /// `loop` with no result type; closed by [`Code::end`].
+    pub fn loop_(&mut self) -> &mut Self {
+        self.b.extend([0x03, 0x40]);
+        self
+    }
     /// `br` to the label `depth` levels out.
     pub fn br(&mut self, depth: u32) -> &mut Self {
         self.b.push(0x0c);

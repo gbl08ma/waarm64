@@ -101,6 +101,8 @@ pub struct Stats {
     /// Blocks in the compiled regions (ABI 15, step 8: `blocks` counts
     /// regions, one function each).
     pub region_blocks: u64,
+    /// Edges back to a region's head, compiled as wasm loop branches (ABI 16, static).
+    pub back_edges: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -337,7 +339,10 @@ impl Cache {
         let pending = core::mem::take(&mut self.pending);
         let mut regions = Vec::with_capacity(pending.len());
         for (key, va) in pending {
-            let r = block::region(mem, key, va);
+            // Members: blocks the dispatcher has seen (so they ran at least
+            // once); with a threshold of 0 (forced, stress), any.
+            let (map, all) = (&self.map, self.cfg.threshold == 0);
+            let r = block::region(mem, key, va, &|k| all || map.contains_key(&k));
             if let Some(i) = self.map.get_mut(&key) {
                 (i.queued, i.len) = (false, r.blocks.first().map_or(0, |b| b.words.len() as u32));
             }
@@ -386,6 +391,7 @@ impl Cache {
             let s = &mut self.stats;
             (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (size - inl) as u64);
             s.region_blocks += r.blocks.len() as u64;
+            s.back_edges += r.back_edges() as u64;
             let (key, len) = (r.blocks[0].key, r.blocks[0].words.len() as u32);
             let words: Vec<u32> = r
                 .blocks

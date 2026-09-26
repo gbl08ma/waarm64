@@ -135,8 +135,8 @@ function setup(code: number) {
   };
   /** Instructions compiled inline and as helper calls so far. */
   const counts = () => {
-    const st = new BigUint64Array(memory.buffer, ex.jit_stats(jit), 17);
-    return `${st[8]} compiled inline, ${st[9]} as helper calls, ${st[16]} blocks in ${st[0]} regions`;
+    const st = new BigUint64Array(memory.buffer, ex.jit_stats(jit), 18);
+    return `${st[8]} compiled inline, ${st[9]} as helper calls, ${st[16]} blocks in ${st[0]} regions, ${st[17]} back-edges`;
   };
   /** Whether `w` is allocated and implemented: one interpreter step on it, in
    * the gap, with every register outside RAM (so it writes nothing). */
@@ -355,5 +355,80 @@ test('JIT vs interpreter, regions: branches between blocks', () => {
     }
   }
   console.log(`regions: ${SEQS} programs, ${counts()}, ${skipped} runs skipped (they rewrote their code)`);
+  assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${SEQS} programs differ`);
+});
+
+// Loops (step 8): a counted loop (x5 from movz, 1–20) of 1–3 blocks of random
+// words, the inner ones branching forward to each other or back to the head, closed by a
+// back-edge (sub + cbnz, subs + b.ne, or a random b.cond), after an optional
+// prefix and before a brk; runs of up to 400 steps stop at any iteration, and
+// the region's budget check on the back-edge is what stops it there.
+test('JIT vs interpreter, regions: loops', () => {
+  const { ex, jit, ca32, cb32, cpus, run, counts, allocated, data } = setup(4 * PROG * SEQS);
+  const pool = [...ALU, ...Object.values(MEMORY)];
+  const draw = () => {
+    if (rand32() % 8 === 0) return pick(HELPERS)(pick(REGS.slice(0, 5)), pick(REGS)) >>> 0;
+    for (;;) {
+      const [mask, bits] = pick(pool);
+      const w = fewRegs(((field(rand32()) & ~mask) | bits) >>> 0);
+      if (allocated(w)) return w;
+    }
+  };
+  const progs = Array.from({ length: SEQS }, () => {
+    const words: number[] = [(0xd2800005 | ((1 + (rand32() % 20)) << 5)) >>> 0]; // movz x5, #k
+    for (let k = rand32() % 3; k > 0; k--) words.push(draw());
+    const head = words.length;
+    const lens = Array.from({ length: 1 + (rand32() % 3) }, () => 1 + (rand32() % 5));
+    const starts = lens.map((_, b) => head + lens.slice(0, b).reduce((s, n) => s + n + 1, 0));
+    lens.forEach((n, b) => {
+      for (let k = 0; k < n; k++) words.push(draw());
+      if (b < lens.length - 1) {
+        // Forward, or (a third of them) back to the head: a second back-edge.
+        const to = rand32() % 3 === 0 ? head : starts[b + 1 + (rand32() % (lens.length - b - 1))];
+        const w = branchTo(words.length, to);
+        words.push(w < 0 ? draw() : w);
+      }
+    });
+    const back = (to: number) => ((to - words.length) & 0x7ffff) << 5;
+    switch (rand32() % 3) {
+      case 0: words.push(0xd10004a5, (0xb5000005 | back(head)) >>> 0); break; // sub x5, x5, #1; cbnz x5
+      case 1: words.push(0xf10004a5, (0x54000001 | back(head)) >>> 0); break; // subs x5, x5, #1; b.ne
+      default: words.push((0x54000000 | back(head) | (rand32() % 14)) >>> 0); // b.cond
+    }
+    words.push(draw(), BRK);
+    return words;
+  });
+  const place = (k: number) => {
+    ca32.set(progs[k], PROG * k);
+    cb32.set(progs[k], PROG * k);
+  };
+  progs.forEach((_, k) => place(k));
+  const same = (k: number) => progs[k].every((w, j) => ca32[PROG * k + j] === w && cb32[PROG * k + j] === w);
+
+  const failures: string[] = [];
+  let skipped = 0;
+  for (let k = 0; k < SEQS; k++) {
+    for (let s = 0; s < STATES; s++) {
+      if (!same(k)) {
+        place(k);
+        ex.jit_flush(jit);
+      }
+      const [a, b] = cpus();
+      for (let r = 0; r < 32; r++) a[r] = value(rand32() % 2 === 0, data);
+      a[32] = BigInt(4 * PROG * k); // PC
+      a[33] = BigInt(rand32() & 0xf) << 28n; // NZCV
+      b.set(a);
+      const what = run(BigInt(1 + (rand32() % 400)), true);
+      if (!same(k)) {
+        skipped++;
+        continue;
+      }
+      if (what) {
+        failures.push(`${progs[k].map((w) => w.toString(16).padStart(8, '0')).join(' ')}: ${what} differs`);
+        break;
+      }
+    }
+  }
+  console.log(`loops: ${SEQS} programs, ${counts()}, ${skipped} runs skipped (they rewrote their code)`);
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${SEQS} programs differ`);
 });

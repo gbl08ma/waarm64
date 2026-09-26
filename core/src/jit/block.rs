@@ -131,10 +131,11 @@ pub fn next(words: &[u32]) -> Next {
 /// Blocks per region, at most (step 8).
 pub const REGION: usize = 16;
 
-/// A region (step 8): its head and the blocks reachable from it by static
-/// edges within the head's page, in reverse postorder (`blocks[0]` is the
-/// head), compiled into one function. Every other member is reached only
-/// through the region's own edges.
+/// A region (step 8): its head and the blocks of its loop, those reachable
+/// from it by static edges within the head's page that lead back to it, in
+/// reverse postorder (`blocks[0]` is the head), compiled into one function.
+/// Every other member is reached only through the region's own edges.
+/// Without a loop through the head it is the head alone.
 pub struct Region {
     pub blocks: Vec<Block>,
 }
@@ -166,19 +167,26 @@ fn succs(key: u64, words: &[u32]) -> Vec<u64> {
     }
 }
 
-/// The region headed by the block at `key` (first seen at `va`), up to
-/// [`REGION`] blocks in its page; empty if that block would have no words.
-pub fn region(mem: &Mem, key: u64, va: u64) -> Region {
-    fn visit(mem: &Mem, b: Block, seen: &mut Vec<u64>, post: &mut Vec<Block>) {
+/// The region headed by the block at `key` (first seen at `va`): the blocks
+/// in its page that `hot(key)` admits, up to [`REGION`], that lead back to
+/// the head; empty if the head would have no words.
+pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region {
+    fn visit(
+        mem: &Mem,
+        b: Block,
+        hot: &dyn Fn(u64) -> bool,
+        seen: &mut Vec<u64>,
+        post: &mut Vec<Block>,
+    ) {
         for s in succs(b.key, &b.words) {
-            if (s ^ b.key) >> 12 != 0 || seen.contains(&s) || seen.len() >= REGION {
+            if (s ^ b.key) >> 12 != 0 || seen.contains(&s) || seen.len() >= REGION || !hot(s) {
                 continue;
             }
             let words = form(mem, s & !3);
             if !words.is_empty() {
                 seen.push(s);
                 let va = b.va.wrapping_add(s & !3).wrapping_sub(b.key & !3);
-                visit(mem, Block { key: s, va, words }, seen, post);
+                visit(mem, Block { key: s, va, words }, hot, seen, post);
             }
         }
         post.push(b);
@@ -186,10 +194,52 @@ pub fn region(mem: &Mem, key: u64, va: u64) -> Region {
     let words = form(mem, key & !3);
     let mut blocks = vec![];
     if !words.is_empty() {
-        visit(mem, Block { key, va, words }, &mut vec![key], &mut blocks);
+        visit(
+            mem,
+            Block { key, va, words },
+            hot,
+            &mut vec![key],
+            &mut blocks,
+        );
     }
     blocks.reverse();
+    // Only the loop: the blocks from which the head is reachable.
+    let mut keep = vec![false; blocks.len()];
+    keep[0] = true;
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for i in 1..blocks.len() {
+            let kept = |s: u64| blocks.iter().zip(&keep).any(|(m, &k)| k && m.key == s);
+            if !keep[i] && succs(blocks[i].key, &blocks[i].words).into_iter().any(kept) {
+                (keep[i], changed) = (true, true);
+            }
+        }
+    }
+    let mut k = keep.into_iter();
+    blocks.retain(|_| k.next().expect("one per block"));
     Region { blocks }
+}
+
+impl Region {
+    /// Whether a member branches back to the head.
+    pub fn looped(&self) -> bool {
+        self.back_edges() > 0
+    }
+
+    /// The edges back to the head.
+    pub fn back_edges(&self) -> usize {
+        let head = self.blocks[0].key;
+        self.blocks
+            .iter()
+            .map(|b| {
+                succs(b.key, &b.words)
+                    .iter()
+                    .filter(|&&s| s == head)
+                    .count()
+            })
+            .sum()
+    }
 }
 
 /// What [`module`] emitted: the module; for each region its inline
@@ -317,10 +367,29 @@ pub fn module(
         // Twice: the first emission finds the registers to read plainly
         // (`Func::plain`) and what each member's edges carry into it, which
         // the second starts it with.
+        //
+        // A loop reads its registers on every iteration, so none is plain
+        // there, and its entry states feed on each other (the head's comes
+        // from the back-edges): emitted again until they settle (or four times).
         let none = vec![emit::Regs::default(); r.blocks.len()];
         let (first, _, into) = emit_region(&env, r, 0, &none);
-        let plain = first.read & !first.reused;
-        let entry: Vec<_> = into.iter().map(|s| s.merge(*s, plain)).collect();
+        let plain = if r.looped() {
+            0
+        } else {
+            first.read & !first.reused
+        };
+        let settle =
+            |into: &[emit::Regs]| -> Vec<_> { into.iter().map(|s| s.merge(*s, plain)).collect() };
+        let mut entry = settle(&into);
+        if r.looped() {
+            for _ in 0..4 {
+                let next = settle(&emit_region(&env, r, plain, &entry).2);
+                if next == entry {
+                    break;
+                }
+                entry = next;
+            }
+        }
         let (mut c, n, _) = emit_region(&env, r, plain, &entry);
         let name = format!("{:#x}_pa{:#x}", head.va, head.key & !3);
         let locals = c.locals();
@@ -329,7 +398,9 @@ pub fn module(
         let mut links = vec![];
         for (i, b) in r.blocks.iter().enumerate() {
             for k in succs(b.key, &b.words) {
-                if r.pos(k).is_none_or(|j| j <= i) && funcs.contains_key(&k) && !links.contains(&k)
+                if r.pos(k).is_none_or(|j| j <= i && j != 0)
+                    && funcs.contains_key(&k)
+                    && !links.contains(&k)
                 {
                     links.push(k);
                 }
@@ -358,6 +429,12 @@ fn emit_region(
     let mut into = vec![emit::Regs::default(); n];
     let mut inl = 0;
     c.local_get(0).i64_load(emit::PC).local_set(1);
+    // The head's state: loaded once, before the loop.
+    c.conform(entry[0]);
+    let looped = r.looped();
+    if looped {
+        c.loop_();
+    }
     for _ in 1..n {
         c.block();
     }
@@ -393,8 +470,9 @@ fn emit_region(
         if last {
             emit::set_pc(&mut c, 4 * len as i64);
         }
-        // Edges to later members, with the flags current in the `Cpu`.
-        let internal = |off: i64| r.pos(succ(b.key, off)).filter(|&j| j > i);
+        // Edges to later members and back to the head, with the flags
+        // current in the `Cpu`.
+        let internal = |off: i64| r.pos(succ(b.key, off)).filter(|&j| j > i || j == 0);
         let mut edge = |c: &mut emit::Func, j: usize, depth: u32| {
             let jlen = r.blocks[j].words.len() as u32;
             c.local_get(emit::LEFT)
@@ -408,7 +486,13 @@ fn emit_region(
             c.local_set(emit::ACC);
             c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
             c.local_set(emit::LEFT);
-            c.br((j - i - 1) as u32 + depth + 1).end();
+            // Around a loop, the stale-code checker runs as at a chained entry.
+            if let (0, Some(chk)) = (j, e.checker) {
+                c.local_get(0).i64_const(r.blocks[0].key as i64).call(chk);
+            }
+            // The loop's label is outside every member's.
+            let label = if j == 0 { n - 1 - i } else { j - i - 1 };
+            c.br(label as u32 + depth + 1).end();
             c.regs = here;
         };
         let succs = next(&b.words);
@@ -476,6 +560,9 @@ fn emit_region(
             }
         }
         c.ret(len);
+    }
+    if looped {
+        c.end().op(0x00); // the loop; unreachable
     }
     c.end();
     (c, inl, into)
@@ -817,26 +904,27 @@ mod tests {
             0x20, 1, 0x41, 2, 0x6a, 0x0f, 0x0b,           // else return acc + 2
         ];
         assert!(has(&e.bytes, &tail));
-        // A loop onto itself chains to its own function (index 2: no imports).
+        // A loop onto itself is a wasm loop (step 8), no link.
         let b = Block {
             key: 0x4000_0200,
             va: 0x4000_0200,
             words: vec![MOVZ, 0x17ffffff], // b .-4
         };
         let e = build(b);
-        assert_eq!(e.links, [vec![0x4000_0200]]);
-        assert!(has(&e.bytes, &[0x6b, 0x12, 2, 0x0b]));
-        // A conditional branch chains the side it can (here: itself when taken;
-        // 0x4000_1000, not taken, isn't compiled).
+        assert_eq!(e.links, [Vec::<u64>::new()]);
+        assert!(has(&e.bytes, &[0x03, 0x40]) && has(&e.bytes, &[0x21, 2, 0x0c, 1, 0x0b]));
+        // A conditional branch chains the side it can (here: itself when
+        // taken, a loop; 0x4000_1000, not taken, isn't compiled).
         let b = Block {
             key: 0x4000_0ff8 | KEY_MMU,
             va: 0,
             words: vec![MOVZ, 0x54ffffe0], // b.eq .-4
         };
         let e = build(b);
-        assert_eq!(e.links, [vec![0x4000_0ff8 | KEY_MMU]]); // taken: itself; not taken: 0x1000
+        assert_eq!(e.links, [Vec::<u64>::new()]);
         assert!(has(&e.bytes, &[0x20, 5, 0x04, 0x40])); // if TAKEN (compacted: after entry and x1)
-        assert_eq!(e.bytes.iter().filter(|&&b| b == 0x12).count(), 1);
+        assert!(has(&e.bytes, &[0x0c, 2, 0x0b])); // the loop, from inside `if TAKEN`
+        assert_eq!(e.bytes.iter().filter(|&&b| b == 0x12).count(), 0);
         // With the MMU on, a successor in another page is chained only while
         // its VA maps to its PA: the instruction TLB of the block's EL (EL0
         // here) is checked first.
@@ -859,20 +947,24 @@ mod tests {
     }
 
     #[test]
-    fn a_region_keeps_registers_across_its_edges() {
-        // 0x100: add x1, x2, #3; cbz x1, 0x110
+    fn a_region_is_a_loop_with_registers_across_its_edges() {
+        // 0x100: add x1, x1, #1; cbz x2, 0x110
         // 0x108: add x3, x1, #1; b 0x114
         // 0x110: add x3, x1, #2
-        // 0x114: ret
+        // 0x114: cbnz x3, 0x100
+        // 0x118: ret
         let words = [
-            ADD, 0xb4000061, 0x91000423, 0x14000002, 0x91000823, 0xd65f03c0,
+            0x91000421, 0xb4000062, 0x91000423, 0x14000002, 0x91000823, 0xb5ffff63, 0xd65f03c0,
         ];
         let (_r, m) = mem_with(0x100, &words);
-        let r = region(&m, 0x100, 0x100);
-        // Reverse postorder: the head, the fall-through side and its successor, the taken side.
+        let r = region(&m, 0x100, 0x100, &|_| true);
+        // Reverse postorder: the head, the fall-through side and its
+        // successor, the taken side (which runs on to 0x114); not the ret
+        // block, which doesn't lead back to the head.
         let keys: Vec<u64> = r.blocks.iter().map(|b| b.key).collect();
         assert_eq!(keys, [0x100, 0x108, 0x114, 0x110]);
-        assert_eq!(r.blocks[3].words, [0x91000823, 0xd65f03c0]);
+        assert_eq!(r.blocks[3].words, [0x91000823, 0xb5ffff63]);
+        assert_eq!(r.back_edges(), 2);
         let e = module(&[r], &test_mem(), |_| None, false, 0);
         // The head's edges, both inside the `if TAKEN` (depth 1): to the taken
         // side (member 3, br 4) and the fall-through (member 1, br 2), each
@@ -880,24 +972,38 @@ mod tests {
         // left updated on the way.
         #[rustfmt::skip]
         let taken = [
-            0x20, 2, 0x41, 4, 0x4f, 0x04, 0x40,           // if left >= 4:
-            0x20, 1, 0x41, 2, 0x6a, 0x21, 1,              //   acc += 2
+            0x20, 2, 0x41, 4, 0x4f, 0x04, 0x40,             // if left >= 4:
+            0x20, 1, 0x41, 2, 0x6a, 0x21, 1,                //   acc += 2
             0x20, 2, 0x41, 2, 0x6b, 0x21, 2, 0x0c, 4, 0x0b, //   left -= 2; br 4
         ];
         assert!(has(&e.bytes, &taken));
-        assert!(has(&e.bytes, &[0x6b, 0x21, 2, 0x0c, 2, 0x0b]));
-        // x1 is written in the head and read in both sides from its local:
-        // never loaded; x2 is read once (a plain load).
-        assert!(!has(&e.bytes, &[0x29, 3, 8]));
-        assert_eq!(
-            e.bytes.windows(3).filter(|w| *w == [0x29, 3, 16]).count(),
-            1
-        );
-        assert_eq!(e.inl, [7]); // the ret at 0x114 twice: in its own block and ending the taken side
+        // The back-edge from 0x114 (member 2, inside its `if TAKEN`): the
+        // budget for it (1) and the head (2), then br 3, the loop.
+        #[rustfmt::skip]
+        let back = [
+            0x20, 2, 0x41, 3, 0x4f, 0x04, 0x40,
+            0x20, 1, 0x41, 1, 0x6a, 0x21, 1, 0x20, 2, 0x41, 1, 0x6b, 0x21, 2, 0x0c, 3, 0x0b,
+        ];
+        assert!(has(&e.bytes, &back));
+        // x1 and x2 are loaded once, before the loop, and stay in their
+        // locals across every edge; x1 and x3 are written back where the
+        // loop is left (0x110 and 0x114 to 0x118, or the budget).
+        let lp = e.bytes.windows(2).position(|w| w == [0x03, 0x40]).unwrap();
+        for x in [8, 16] {
+            let at: Vec<usize> = (0..e.bytes.len() - 2)
+                .filter(|&k| e.bytes[k..k + 3] == [0x29, 3, x])
+                .collect();
+            assert!(at.len() == 1 && at[0] < lp, "x{} loaded at {at:?}", x / 8);
+        }
+        assert!(has(&e.bytes, &[0x37, 3, 8]) && has(&e.bytes, &[0x37, 3, 24]));
+        assert_eq!(e.inl, [7]);
         assert_eq!(e.links, [Vec::<u64>::new()]);
-        // Nothing past the page: a region at 0xff8 stays a block.
+        // Without a loop through the head, a region is the head alone.
+        let (_r, m) = mem_with(0x100, &[ADD, 0xb4000061, ADD, 0xd65f03c0]);
+        assert_eq!(region(&m, 0x100, 0, &|_| true).blocks.len(), 1);
+        // Nor past the page.
         let (_r, m) = mem_with(0xff8, &[ADD, 0x14000002, ADD, ADD, 0xd65f03c0]);
-        assert_eq!(region(&m, 0xff8, 0).blocks.len(), 1);
+        assert_eq!(region(&m, 0xff8, 0, &|_| true).blocks.len(), 1);
     }
 
     #[test]
