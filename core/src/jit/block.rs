@@ -548,6 +548,12 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
             In::Lazy(k, sf) => lazy != Some((k, sf)),
             _ => true,
         };
+        // Every successor a member: the PC is stored only on the way out.
+        c.defer_pc = match succs {
+            Next::One(o) => internal(o).is_some(),
+            Next::Cond(t, o) => internal(t).is_some() && internal(o).is_some(),
+            Next::None => false,
+        };
         let mut last = false;
         for (k, &w) in b.words.iter().enumerate() {
             let op = decode(w);
@@ -581,7 +587,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
             c.end();
             c.forget(!0);
         }
-        if last {
+        if last && !c.defer_pc {
             emit::set_pc(&mut c, 4 * len as i64);
         }
         dead[i] = c.touched == Some(false);
@@ -642,6 +648,20 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
         // The rest leave the region (or stay when `left` doesn't cover them).
         c.flush();
         c.sync_flags();
+        if c.defer_pc {
+            c.local_get(0);
+            match succs {
+                Next::One(o) => emit::pc_plus(&mut c, o),
+                Next::Cond(t, o) => {
+                    emit::pc_plus(&mut c, t);
+                    emit::pc_plus(&mut c, o);
+                    c.local_get(emit::TAKEN).select();
+                }
+                Next::None => unreachable!("members only"),
+            }
+            c.i64_store(emit::PC);
+            c.defer_pc = false;
+        }
         match succs {
             Next::One(o) => {
                 if internal(o).is_none() {
@@ -1150,6 +1170,12 @@ mod tests {
         assert_eq!(nzcv_stores(&e.bytes), 2);
         let edge = e.bytes.windows(2).position(|w| w == [0x0c, 1]).unwrap(); // br to b.lt
         assert_eq!(nzcv_stores(&e.bytes[..edge]), 0);
+        // Nor the PC (step 8.5): the head's `b` goes to a member, so only its
+        // way out stores it (i64.store 256, once, after the edge).
+        let pc = |b: &[u8]| b.windows(4).filter(|w| *w == [0x37, 3, 0x80, 2]).count();
+        let body = e.bytes.windows(2).position(|w| w == [0x03, 0x40]).unwrap(); // the loop
+        assert_eq!(pc(&e.bytes[body..edge]), 0);
+        assert!(pc(&e.bytes[edge..]) >= 2); // the head's exit, b.lt's select
     }
 
     #[test]

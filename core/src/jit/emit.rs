@@ -151,6 +151,10 @@ pub struct Func {
     /// commit did. A region member that sets flags before anything else
     /// needs none from its edges.
     pub touched: Option<bool>,
+    /// The block's branch leaves the PC to its exits (step 8.5): every
+    /// successor is a region member, so only a return needs it; a
+    /// conditional branch keeps just its outcome in `TAKEN`.
+    pub defer_pc: bool,
 }
 
 impl Deref for Func {
@@ -654,16 +658,20 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             if op == BL {
                 set(c, true, 30, |c| pc_plus(c, here + 4));
             }
-            set_pc(c, here + sext((bits(i, 25, 0) << 2) as u64, 28) as i64);
+            if !c.defer_pc {
+                set_pc(c, here + sext((bits(i, 25, 0) << 2) as u64, 28) as i64);
+            }
         }
         B_cond | CBZ | CBNZ | TBZ | TBNZ => {
             let off = match op {
                 TBZ | TBNZ => sext((bits(i, 18, 5) << 2) as u64, 16),
                 _ => sext((bits(i, 23, 5) << 2) as u64, 21),
             };
-            c.local_get(VCPU);
-            pc_plus(c, here + off as i64);
-            pc_plus(c, here + 4);
+            if !c.defer_pc {
+                c.local_get(VCPU);
+                pc_plus(c, here + off as i64);
+                pc_plus(c, here + 4);
+            }
             match op {
                 B_cond => cond(c, bits(i, 3, 0)),
                 CBZ | CBNZ => {
@@ -684,7 +692,11 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                 }
             }
             // The outcome, for the block's chaining to the successor (step 7).
-            c.local_tee(TAKEN).select().i64_store(PC);
+            if c.defer_pc {
+                c.local_set(TAKEN);
+            } else {
+                c.local_tee(TAKEN).select().i64_store(PC);
+            }
         }
         BR | BLR | RET => {
             c.local_get(VCPU);

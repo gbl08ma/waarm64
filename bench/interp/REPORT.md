@@ -316,3 +316,18 @@ Static counts (integer guest): conditions direct 30 → 32, from memory 5 → 3.
 **TurboFan-only runs the integer guest 33% slower**, the default 23% faster, and both come from the store skipped before the branch: storing there always (lazy flags and dead flags still carried) reads 2642 default and 2674 TurboFan-only. Both tiers run TurboFan code in the loop; what differs is the feedback dynamic tiering collects in Liftoff (speculative inlining of indirect calls among others), which is also where step 7's jump-cache probe cost showed up. Default tiering is the product configuration (M5 decision), so the skip stays; the TurboFan-only drop is in PLAN M9. **Validation:** `tests/jit-diff.test.ts` region classes fail with each planted bug (no store on any edge: 4 and 10 of 1024 programs differ; every member's flags dead: 17 / 19; lazy entry states started from memory: 9 / 4); unit test `flags_cross_region_edges_lazily`; CI.
 
 Raw data: `results/m5-step8/chromium-linux-arm64-step8.{3,4}*.json`, `../boot/results/m5-step8/chromium-linux-arm64-step8.4-*.json`.
+
+### 8.5: the PC stored only on the way out
+
+**What runs:** a block whose successors are all region members doesn't store the next PC at its branch (a conditional one keeps only its outcome): the path that leaves the region when `left` doesn't cover the edge stores it before returning.
+
+| Guest (MIPS) | 8.4 | **8.5** |
+|---|---|---|
+| integer, EL0: full suite | 3279.2 (±17) | **3856.8** (±30), **+18%**; one run of four in a slow mode, 1986 (±11) for all 15 samples |
+| integer, EL0: alone, two runs | 3247, 3226 | **3810, 3766** (+17%) |
+| integer, Liftoff only | 1898 | **2231** (+18%) |
+| EL1 MMU off / on | 1944.7 / 1749.9 | **2148.2 / 1913.4** (+10% / +9%) |
+
+Boots: Buildroot 725 ms (±18), Alpine 18.17 s (±0.30), against 8.4's 711 and 17.79 (+2%, within the runs' spread; they have few loop regions). The slow mode is decided when the hot code tiers up (the same run gives the same number throughout), like step 4–6's modes and 8.4's TurboFan-only drop; Node runs the same guest at 3656–3819 every time. **Validation:** a planted bug (the exit's PC store dropped) fails the differential test's region classes (228 and 93 of 1024 programs); unit test `flags_cross_region_edges_lazily` checks no PC store before the edge.
+
+Raw data: `results/m5-step8/chromium-linux-arm64-step8.{4,5}*.json`, `../boot/results/m5-step8/chromium-linux-arm64-step8.5-*.json`.
