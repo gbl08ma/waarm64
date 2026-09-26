@@ -69,6 +69,24 @@ impl Code {
         uleb(&mut self.b, i as u64);
         self
     }
+    pub fn local_set(&mut self, i: u32) -> &mut Self {
+        self.b.push(0x21);
+        uleb(&mut self.b, i as u64);
+        self
+    }
+    pub fn call(&mut self, f: u32) -> &mut Self {
+        self.b.push(0x10);
+        uleb(&mut self.b, f as u64);
+        self
+    }
+    /// `if` with no result type; closed by [`Code::end`].
+    pub fn if_(&mut self) -> &mut Self {
+        self.b.extend([0x04, 0x40]);
+        self
+    }
+    pub fn return_(&mut self) -> &mut Self {
+        self.op(0x0f)
+    }
     pub fn i32_const(&mut self, v: i32) -> &mut Self {
         self.b.push(0x41);
         sleb(&mut self.b, v as i64);

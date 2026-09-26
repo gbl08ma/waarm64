@@ -111,6 +111,14 @@ pub(crate) fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
         }));
     }
     let insn = m.fetch(cpu, pc).map_err(Exit::Fetch)?;
+    exec_at(cpu, m, insn, pc)
+}
+
+/// Executes `insn`, fetched from `pc`, as [`step_bus`] does after the fetch:
+/// the PC is past it, or back on it if it didn't retire (except `Resync`).
+/// The JIT's per-instruction helpers call this too (`jit::jit_exec_flat`).
+#[inline(always)]
+pub(crate) fn exec_at(cpu: &mut Cpu, m: &mut impl Bus, insn: u32, pc: u64) -> R {
     cpu.pc = pc.wrapping_add(4);
     let r = exec(cpu, m, insn, pc);
     if let Err(e) = r

@@ -86,21 +86,28 @@ fn index(va: u64) -> usize {
     (va >> 12) as usize & (TLB_ENTRIES - 1)
 }
 
-/// A vCPU: architectural state, then its TLB. `repr(C)` with `cpu` first, so a
-/// `*mut Vcpu` is also a `*mut Cpu` with the host ABI offsets.
+/// A vCPU: architectural state, then its TLB, then its JIT state. `repr(C)`
+/// with `cpu` first, so a `*mut Vcpu` is also a `*mut Cpu` with the host ABI
+/// offsets; JIT blocks get this pointer (PLAN.md §2 "JIT ABI").
 #[repr(C)]
 pub struct Vcpu {
     pub cpu: Cpu,
     pub tlb: Tlb,
+    pub jit: crate::jit::State,
 }
 
 impl Vcpu {
     /// Boxed: the TLB is 384 KiB.
     pub fn new(cpu: Cpu) -> Box<Vcpu> {
-        // SAFETY: all-zero is a valid Vcpu: Cpu is plain integers and a zeroed TLB is empty.
-        let mut v = unsafe { Box::<Vcpu>::new_zeroed().assume_init() };
-        v.cpu = cpu;
-        v
+        let mut v = Box::<Vcpu>::new_zeroed();
+        let p = v.as_mut_ptr();
+        // SAFETY: `cpu` and `jit` are written here; the TLB is plain integers,
+        // valid zeroed (and empty).
+        unsafe {
+            (&raw mut (*p).cpu).write(cpu);
+            (&raw mut (*p).jit).write(Default::default());
+            v.assume_init()
+        }
     }
 }
 

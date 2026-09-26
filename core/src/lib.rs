@@ -309,7 +309,7 @@ pub unsafe extern "C" fn jit_call(cpu: *mut cpu::Cpu, idx: u32, k: u32, n: u32) 
     let (mut s, mut j) = (0u32, 0);
     for _ in 0..n {
         // SAFETY: guaranteed by the caller.
-        s = s.wrapping_add(unsafe { jit::block(idx + j)(cpu) });
+        s = s.wrapping_add(unsafe { jit::block(idx + j)(cpu.cast()) });
         j = if j + 1 == k { 0 } else { j + 1 };
     }
     s
