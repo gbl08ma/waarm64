@@ -45,12 +45,23 @@ pub enum Exit {
     /// interpreter copy, or unmasked IRQs, so one may be due. Never returned by
     /// `step`, `run` or `run_system`.
     Resync,
+    /// Internal, like `Resync` (retired, PC past it): `IC IVAU` (the PA it
+    /// named) or `IC IALLU(IS)` (`u64::MAX`) ran; the run loop drops the JIT
+    /// blocks of that page, or all of them.
+    Invalidate(u64),
     /// WFI that doesn't trap: the run loop decides when it completes (the PC is on it).
     Wfi,
     /// An MRS or MSR (the encoding) of a register the platform computes: the
     /// generic timer's, and `ISR_EL1`. Access checks have passed; the VM run loop
     /// performs it with [`platform`] and the current virtual time.
     Platform(u32),
+}
+
+impl Exit {
+    /// The internal exits whose instruction retired (the PC is past it).
+    pub fn retired(self) -> bool {
+        matches!(self, Exit::Resync | Exit::Invalidate(_))
+    }
 }
 
 impl From<Fault> for Exit {
@@ -66,7 +77,7 @@ type R<T = ()> = Result<T, Exit>;
 // M1 MIPS baseline says the interpreter matters beyond being the JIT's fallback.
 pub fn step(cpu: &mut Cpu, mem: &Mem) -> R {
     match steps(cpu, mem, None, 1) {
-        (_, None | Some(Exit::Resync)) => Ok(()),
+        (_, None | Some(Exit::Resync | Exit::Invalidate(_))) => Ok(()),
         (_, Some(e)) => Err(e),
     }
 }
@@ -122,7 +133,7 @@ pub(crate) fn exec_at(cpu: &mut Cpu, m: &mut impl Bus, insn: u32, pc: u64) -> R 
     cpu.pc = pc.wrapping_add(4);
     let r = exec(cpu, m, insn, pc);
     if let Err(e) = r
-        && e != Exit::Resync
+        && !e.retired()
     {
         cpu.pc = pc;
     }
@@ -138,7 +149,7 @@ pub fn run(cpu: &mut Cpu, mem: &Mem, n: u64) -> (u64, R) {
         done += k;
         match e {
             None => {}
-            Some(Exit::Resync) => done += 1,
+            Some(Exit::Resync | Exit::Invalidate(_)) => done += 1,
             Some(Exit::Wfi) => {
                 cpu.pc = cpu.pc.wrapping_add(4);
                 done += 1;
@@ -162,7 +173,7 @@ pub fn run_system(v: &mut Vcpu, mem: &Mem, n: u64) -> (u64, R) {
         done += k;
         match e {
             None => {}
-            Some(Exit::Resync) => done += 1,
+            Some(Exit::Resync | Exit::Invalidate(_)) => done += 1,
             Some(Exit::Wfi) => {
                 cpu.pc = cpu.pc.wrapping_add(4);
                 done += 1;

@@ -3,7 +3,7 @@
 // native and wasm builds could diverge. Needs the wasm build (scripts/ci.sh).
 // It also runs through the JIT (M5): forced (every block compiled on first
 // sight, one per module) and in stress (the same with a 4-block code cache,
-// so it flushes constantly).
+// so it flushes constantly, and the stale-code checker).
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -19,14 +19,14 @@ type Exports = {
   vcpu_new(): number;
   mem_new(base: number, size: bigint): number;
   interp_run_exit(cpu: number, mem: number, n: bigint, exit: number): bigint;
-  jit_new(threshold: number, batch: number, capacity: number): number;
+  jit_new(threshold: number, batch: number, capacity: number, check: number): number;
   jit_run_exit(v: number, mem: number, n: bigint, exit: number): bigint;
   jit_flush(v: number): void;
   jit_stats(v: number): number;
 };
 
-/** jit_new's threshold, batch and code cache capacity; none: the interpreter. */
-const MODES: Record<string, [number, number, number] | undefined> = { interpreter: undefined, 'JIT (forced)': [0, 1, 16384], 'JIT stress': [0, 1, 4] };
+/** jit_new's threshold, batch, code cache capacity and stale-code check; none: the interpreter. */
+const MODES: Record<string, [number, number, number, number] | undefined> = { interpreter: undefined, 'JIT (forced)': [0, 1, 16384, 0], 'JIT stress': [0, 1, 4, 1] };
 
 /** Byte offset of each REGS slot in cpu::Cpu (x0..x30, sp, then nzcv, fpcr, fpsr, v0..v31). */
 function offset(name: string): number {

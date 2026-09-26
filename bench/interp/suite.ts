@@ -26,7 +26,7 @@ type Exports = {
   vcpu_new(): number;
   mem_new(base: number, size: bigint): number;
   interp_run(cpu: number, mem: number, n: bigint): bigint;
-  jit_new(threshold: number, batch: number, capacity: number): number;
+  jit_new(threshold: number, batch: number, capacity: number, check: number): number;
   jit_run(v: number, mem: number, n: bigint): bigint;
   jit_stats(v: number): number;
 };
@@ -34,14 +34,17 @@ type Exports = {
 /** What the JIT did so far (`jit::Stats`, `vm::Counters`); steps are all steps, jitSteps those in JIT code. */
 type JitCounts = { steps: number; jitSteps: number; dispatches: number; blocks: number; modules: number; bytes: number; compileNs: number };
 
-/** The JIT's default policy (`jit::Config::DEFAULT`): threshold, batch, capacity. */
-export const JIT_DEFAULT: [number, number, number] = [50, 32, 16384];
+/** jit_new's arguments: threshold, batch, capacity, stale-code check. */
+export type JitConfig = [number, number, number, number];
+/** The JIT's default policy (`jit::Config::DEFAULT`) and JIT-stress (`jit::Config::STRESS`). */
+export const JIT_DEFAULT: JitConfig = [50, 32, 16384, 0];
+export const JIT_STRESS: JitConfig = [0, 1, 4, 1];
 
 /**
  * Instantiates the core, loads a guest into RAM placed after the core's state
  * (layout A); with `jit` (jit_new's arguments), runs it through the JIT.
  */
-export async function setup(bin = 'guest.bin', jit?: [number, number, number]) {
+export async function setup(bin = 'guest.bin', jit?: JitConfig) {
   const wasm = await load('../../target/wasm32-unknown-unknown/release/webpc_core.wasm');
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const imports = coreImports(memory);

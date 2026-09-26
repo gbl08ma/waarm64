@@ -44,6 +44,10 @@ pub struct Config {
     pub batch: u32,
     /// Code cache size in blocks (= table slots); everything is flushed when it's full.
     pub capacity: u32,
+    /// The stale-code checker: hash each block's words when it's compiled and
+    /// again at every entry, and panic on a mismatch (code changed without an
+    /// `IC` invalidating it).
+    pub check: bool,
 }
 
 impl Config {
@@ -51,12 +55,14 @@ impl Config {
         threshold: 50,
         batch: 32,
         capacity: 16384,
+        check: false,
     };
     /// Compile everything on first sight, one block per module, and flush constantly.
     pub const STRESS: Config = Config {
         threshold: 0,
         batch: 1,
         capacity: 4,
+        check: true,
     };
 }
 
@@ -104,6 +110,8 @@ struct Info {
     len: u32,
     /// In the pending batch.
     queued: bool,
+    /// The compiled words' hash, for the stale-code checker.
+    hash: u64,
 }
 
 /// A jump cache entry: the compiled block for a key.
@@ -133,7 +141,9 @@ pub const BATCH_TIMEOUT: u64 = 100_000;
 /// The block cache, the pending batch and the code cache's slot allocator.
 pub struct Cache {
     pub cfg: Config,
-    map: HashMap<u64, Info, BuildHasherDefault<KeyHasher>>,
+    map: Map<Info>,
+    /// The keys in `map` by physical page, for `IC IVAU`.
+    pages: Map<Vec<u64>>,
     jc: Box<[Jc; JC]>,
     /// (key, VA) of blocks waiting to be compiled.
     pending: Vec<(u64, u64)>,
@@ -154,6 +164,7 @@ impl Cache {
         Cache {
             cfg,
             map: HashMap::default(),
+            pages: HashMap::default(),
             jc: Box::new([JC_EMPTY; JC]),
             pending: Vec::new(),
             since: 0,
@@ -176,11 +187,50 @@ impl Cache {
     /// Drops every block (their slots are reused; the modules are left to the
     /// GC) and the pending batch.
     pub fn flush(&mut self) {
+        self.drop_all();
+        self.stats.flushes += 1;
+    }
+
+    fn drop_all(&mut self) {
         self.map.clear();
+        self.pages.clear();
         self.jc.fill(JC_EMPTY);
         self.pending.clear();
         self.next = 0;
-        self.stats.flushes += 1;
+    }
+
+    /// `IC IVAU` on `pa` drops the blocks of its page; `IC IALLU` (`u64::MAX`) all of them.
+    pub fn invalidate(&mut self, pa: u64) {
+        if pa == u64::MAX {
+            self.drop_all();
+        } else if let Some(keys) = self.pages.remove(&(pa >> 12)) {
+            for k in keys {
+                self.map.remove(&k);
+                if self.jc[jc_index(k)].key == k {
+                    self.jc[jc_index(k)] = JC_EMPTY;
+                }
+                self.pending.retain(|p| p.0 != k);
+            }
+        } else {
+            return;
+        }
+        self.stats.invalidations += 1;
+    }
+
+    /// The entry for `key`, created (and filed under its page) if new.
+    fn info(&mut self, key: u64, len: impl FnOnce() -> u32) -> &mut Info {
+        info(&mut self.map, &mut self.pages, key, len)
+    }
+
+    /// The stale-code checker at a block's entry.
+    fn check(&self, key: u64, mem: &Mem) {
+        let i = &self.map[&key];
+        let words = block::read(mem, key & !3, i.len as usize);
+        assert!(
+            block::hash(&words) == i.hash,
+            "stale JIT block at PA {:#x}: its code changed without an IC",
+            key & !3
+        );
     }
 
     /// The compiled block for `key` as (table index, length), or else how many
@@ -199,9 +249,8 @@ impl Cache {
     /// batch when due.
     #[inline(never)]
     fn miss(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32), u32> {
-        let info = self.map.entry(key).or_insert_with(|| Info {
-            len: block::form(mem, key & !3).len() as u32,
-            ..Info::default()
+        let info = info(&mut self.map, &mut self.pages, key, || {
+            block::form(mem, key & !3).len() as u32
         });
         if info.idx == 0 && !self.off && info.len > 0 {
             info.hits += 1;
@@ -260,8 +309,30 @@ impl Cache {
             s.bytes + bytes.len() as u64,
         );
         for (k, b) in blocks.iter().enumerate() {
-            let i = self.map.entry(b.key).or_default();
-            (i.idx, i.len) = (idx + k as u32, b.words.len() as u32);
+            let i = self.info(b.key, || 0);
+            (i.idx, i.len, i.hash) = (idx + k as u32, b.words.len() as u32, block::hash(&b.words));
+        }
+    }
+}
+
+type Map<V> = HashMap<u64, V, BuildHasherDefault<KeyHasher>>;
+
+/// `Cache::info`, over the fields it needs.
+fn info<'a>(
+    map: &'a mut Map<Info>,
+    pages: &mut Map<Vec<u64>>,
+    key: u64,
+    len: impl FnOnce() -> u32,
+) -> &'a mut Info {
+    use std::collections::hash_map::Entry;
+    match map.entry(key) {
+        Entry::Occupied(e) => e.into_mut(),
+        Entry::Vacant(e) => {
+            pages.entry(key >> 12).or_default().push(key);
+            e.insert(Info {
+                len: len(),
+                ..Info::default()
+            })
         }
     }
 }
@@ -311,6 +382,9 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
         if let Ok((idx, len)) = r
             && len as u64 <= left
         {
+            if cache.cfg.check {
+                cache.check(key.expect("compiled"), mem);
+            }
             // SAFETY: `idx` is a compiled block (the cache drops blocks before
             // it reuses their slots), and no reference into `*v` is live: the
             // block and its helpers use the raw pointer. `mem` isn't in `*v`.
@@ -321,7 +395,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             let e = vr.jit.exit.take();
             let s = &mut cache.stats;
             s.dispatches += 1;
-            s.steps += k + (e == Some(Exit::Resync)) as u64;
+            s.steps += k + e.is_some_and(Exit::retired) as u64;
             cache.clock += k;
             done += k;
             if e.is_some() {
@@ -359,6 +433,13 @@ pub unsafe fn run(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Result<(), Exit>) {
         match e {
             None => {}
             Some(Exit::Resync) => done += 1,
+            Some(Exit::Invalidate(pa)) => {
+                done += 1;
+                // SAFETY: no block is running.
+                if let Some(j) = unsafe { &mut (*v).jit.cache } {
+                    j.invalidate(pa);
+                }
+            }
             Some(Exit::Wfi) => {
                 c.pc = c.pc.wrapping_add(4);
                 done += 1;
@@ -477,6 +558,7 @@ mod tests {
             threshold: 0,
             batch: 4,
             capacity: 10,
+            check: false,
         });
         c.map.insert(0x100, Info::default());
         assert_eq!((c.alloc(4), c.alloc(4)), (0, 4));
@@ -520,6 +602,31 @@ mod tests {
         assert_eq!(want, (301, Err(Exit::Brk(0))));
         let cache = v.jit.cache.as_deref().unwrap();
         assert!(cache.off && cache.map.len() == 3); // mov, the loop, brk
+    }
+
+    #[test]
+    fn invalidation_by_page_and_all() {
+        let mut c = Cache::new(Config::DEFAULT);
+        for k in [0x1000, 0x1ff8 | block::KEY_EL1, 0x2000] {
+            c.info(k, || 1).idx = 7;
+            c.jc[jc_index(k)] = Jc {
+                key: k,
+                idx: 7,
+                len: 1,
+            };
+        }
+        c.info(0x1004, || 1).queued = true;
+        c.pending.push((0x1004, 0));
+        c.invalidate(0x1ab0); // IC IVAU on page 1
+        assert_eq!(c.map.keys().copied().collect::<Vec<_>>(), [0x2000]);
+        assert!(c.jc[jc_index(0x1000)].key == u64::MAX && c.jc[jc_index(0x2000)].key == 0x2000);
+        assert_eq!(c.pending, []);
+        assert_eq!(c.stats.invalidations, 1);
+        c.invalidate(0x5000); // no code there
+        assert_eq!(c.stats.invalidations, 1);
+        c.invalidate(u64::MAX); // IC IALLU
+        assert!(c.map.is_empty() && c.pages.is_empty());
+        assert_eq!((c.stats.invalidations, c.stats.flushes), (2, 0));
     }
 
     #[test]

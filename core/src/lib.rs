@@ -20,7 +20,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 10;
+pub const ABI_VERSION: u32 = 11;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -118,7 +118,9 @@ fn exit_code(r: Result<(), interp::Exit>) -> [u64; 2] {
         Err(Exit::Hvc(imm)) => [8, imm as u64],
         // A timer register or ISR_EL1: only a VM has them.
         Err(Exit::Platform(i)) => [2, decode::decode(i) as u64],
-        Err(e @ (Exit::Resync | Exit::Wfi)) => unreachable!("run handles {e:?}"),
+        Err(e @ (Exit::Resync | Exit::Invalidate(_) | Exit::Wfi)) => {
+            unreachable!("run handles {e:?}")
+        }
     }
 }
 
@@ -127,14 +129,16 @@ fn exit_code(r: Result<(), interp::Exit>) -> [u64; 2] {
 /// Allocates a vCPU with a JIT (`mmu::Vcpu`: the `cpu::Cpu` at 0, with the
 /// offsets of [`vcpu_new`], and the same user-process state) that compiles a
 /// block after `threshold` dispatches, `batch` blocks per module, into a code
-/// cache of `capacity` blocks (`capacity` ≥ `batch` ≥ 1).
+/// cache of `capacity` blocks (`capacity` ≥ `batch` ≥ 1), with the stale-code
+/// checker if `check` ≠ 0 (ABI 11).
 #[unsafe(no_mangle)]
-pub extern "C" fn jit_new(threshold: u32, batch: u32, capacity: u32) -> *mut mmu::Vcpu {
+pub extern "C" fn jit_new(threshold: u32, batch: u32, capacity: u32, check: u32) -> *mut mmu::Vcpu {
     let mut v = mmu::Vcpu::new(cpu::Cpu::default());
     v.jit.cache = Some(Box::new(jit::Cache::new(jit::Config {
         threshold,
         batch,
         capacity,
+        check: check != 0,
     })));
     Box::into_raw(v)
 }

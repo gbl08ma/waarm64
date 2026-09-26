@@ -272,7 +272,8 @@ pub trait Bus {
     fn fetch(&mut self, c: &Cpu, pc: u64) -> Result<u32, Fault>;
     /// Cache maintenance by VA: translates and checks permission (write for
     /// `DC IVAC`, read otherwise), and faults like a data access with CM set.
-    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<(), Fault>;
+    /// Returns the PA (for `IC IVAU`, which invalidates JIT blocks).
+    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<u64, Fault>;
     /// Host pointer for an access by the atomics, which must be aligned to `len`.
     fn host_aligned(
         &mut self,
@@ -393,8 +394,8 @@ impl Bus for Flat<'_> {
         self.0.read(pc, 4).map(|v| v as u32)
     }
 
-    fn maint(&mut self, _: &Cpu, va: u64, _: bool) -> Result<(), Fault> {
-        self.0.host(va, 1, Access::Maint).map(|_| ())
+    fn maint(&mut self, _: &Cpu, va: u64, _: bool) -> Result<u64, Fault> {
+        self.0.host(va, 1, Access::Maint).map(|_| va)
     }
 
     #[inline(always)]
@@ -583,9 +584,10 @@ impl Bus for Mmu<'_> {
         Ok(unsafe { mem::load(p, 4) } as u32)
     }
 
-    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<(), Fault> {
+    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<u64, Fault> {
         let u = if write { Use::Write } else { Use::Read };
-        self.host(c, va, 1, Access::Maint, u, c.el()).map(|_| ())
+        let p = self.host(c, va, 1, Access::Maint, u, c.el())?;
+        Ok(self.mem.pa(p))
     }
 
     fn host_aligned(

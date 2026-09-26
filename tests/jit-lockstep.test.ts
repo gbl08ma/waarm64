@@ -6,10 +6,9 @@
 // Needs the wasm build (scripts/ci.sh).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { JIT_DEFAULT, setup, setupVm } from '../bench/interp/suite.ts';
+import { JIT_DEFAULT, JIT_STRESS, setup, setupVm } from '../bench/interp/suite.ts';
 
 const STEPS = Number(process.env.WEBPC_LOCKSTEP_STEPS ?? 20_000_000);
-const STRESS: [number, number, number] = [0, 1, 4]; // jit::Config::STRESS
 const RAM = 16 << 20; // bench/interp/suite.ts
 const CPU_BYTES = 1056; // size_of::<cpu::Cpu>()
 
@@ -34,9 +33,9 @@ function lockstep(a: Side, b: Side, steps: number, chunk: number) {
 }
 
 for (const [bin, what] of [['guest.bin', 'integer'], ['guest-fp.bin', 'FP/NEON']]) {
-  for (const [mode, jit, steps] of [['JIT', JIT_DEFAULT, STEPS], ['JIT-stress', STRESS, STEPS / 10]] as const) {
+  for (const [mode, jit, steps] of [['JIT', JIT_DEFAULT, STEPS], ['JIT-stress', JIT_STRESS, STEPS / 10]] as const) {
     test(`lockstep: ${what} guest, user mode, ${mode}`, async () => {
-      const [a, b] = [await setup(bin), await setup(bin, [...jit])];
+      const [a, b] = [await setup(bin), await setup(bin, jit)];
       lockstep({ ...a, ram: a.base }, { ...b, ram: b.base }, steps, 100_000);
       const c = b.counts!();
       assert.ok(c.jitSteps > (mode === 'JIT' ? steps / 2 : 0), `${c.jitSteps} of ${steps} steps in JIT code`);

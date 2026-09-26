@@ -69,6 +69,20 @@ pub fn form(mem: &Mem, pa: u64) -> Vec<u32> {
     words
 }
 
+/// `n` words at `pa` (fewer if they leave RAM).
+pub fn read(mem: &Mem, pa: u64, n: usize) -> Vec<u32> {
+    (0..n as u64)
+        .map_while(|k| mem.read(pa + 4 * k, 4).ok().map(|w| w as u32))
+        .collect()
+}
+
+/// FNV-1a over a block's words, for the stale-code checker.
+pub fn hash(words: &[u32]) -> u64 {
+    words.iter().fold(0xcbf2_9ce4_8422_2325, |h, &w| {
+        (h ^ w as u64).wrapping_mul(0x100_0000_01b3)
+    })
+}
+
 /// A block to emit: its key (PA and regime bits), the VA it was first seen at
 /// (for its name only) and its words.
 pub struct Block {

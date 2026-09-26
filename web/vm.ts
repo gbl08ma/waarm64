@@ -1,4 +1,4 @@
-// Host side of the whole-VM ABI (PLAN.md §2, ABI 10): instantiates the core on
+// Host side of the whole-VM ABI (PLAN.md §2, ABI 11): instantiates the core on
 // shared memory, places guest RAM after the core's heap (layout A), boots an
 // arm64 Image and runs it, draining the console. virtio backends run in a
 // device worker (web/device-worker.ts) when this runs in a worker, and inline
@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 10;
+export const ABI = 11;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -89,6 +89,8 @@ export type BootOptions = {
   devices?: DeviceSpec[];
   realtime?: boolean;
   framebuffer?: { width: number; height: number };
+  /** Where in RAM the kernel goes (default 2 MiB); 0 for the bare-metal tests, linked at the start of RAM. */
+  kernelOffset?: number;
   /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress. */
   jit?: 0 | 1 | 2;
 };
@@ -173,7 +175,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
   // The same placement as core/tests/boot.rs: Image at +2 MiB, initrd at +128 MiB.
-  const kernelOff = 2 << 20;
+  const kernelOff = o.kernelOffset ?? 2 << 20;
   const initrdOff = 128 << 20;
   bytes().set(o.kernel, ram + kernelOff);
   if (o.initrd) bytes().set(o.initrd, ram + initrdOff);

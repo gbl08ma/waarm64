@@ -29,7 +29,7 @@ async function result(path: string, global: string) {
 }
 
 test('core wasm runs in a cross-origin isolated worker', async () => {
-  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 10, counter: 2 });
+  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 11, counter: 2 });
 });
 
 test('spike page runs', async () => {
@@ -58,16 +58,20 @@ async function removeOverlay(name: string) {
 }
 
 const IMAGES = new URL('../target/images/linux/Image', import.meta.url);
-for (const mode of ['deterministic', 'realtime']) {
+/** The Buildroot boot's and the device test's steps in deterministic mode (tests/boot-node.test.ts). */
+const BUILDROOT_STEPS = 40_909_861;
+const DEVICES_STEPS = 113_872_868;
+for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], ['deterministic JIT', '?jit=1']]) {
   test(`Linux boots in a worker with virtio devices (root on virtio-blk over HTTP), ${mode} mode`, { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
     const page = await browser.newPage();
-    await page.goto(base + '/tests/browser/boot.html' + (mode === 'realtime' ? '?realtime' : ''));
+    await page.goto(base + '/tests/browser/boot.html' + query);
     const h = await page.waitForFunction(() => (window as never)['result'], null, { timeout: 30 * 60_000, polling: 1000 });
     const r = (await h.jsonValue()) as { error?: string; kind: number; x0: string; steps: number; ms: number; console: string; hvc: string };
     await page.close();
     assert.equal(r.error, undefined);
     console.log(`# chromium boot (${mode}): ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+    if (mode !== 'realtime') assert.equal(r.steps, BUILDROOT_STEPS);
     const out = r.console.replaceAll('\r\n', '\n');
     assert.match(out, /answer: 42\n[^]*hwrng: [0-9a-f]{32}\n[^]*\/dev\/root \/ ext4 ro,[^]*vda magic: 53ef\nwebpc: test ok\nwebpc: test exit 0\n/);
     assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'webpc: hvc0 ok\n');
@@ -92,11 +96,12 @@ test('the root filesystem is writable through an OPFS overlay, and it persists a
   await removeOverlay(name);
 });
 
-test('net (loopback adapter), 9p and the framebuffer work in the guest, deterministic mode', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
-  const r = await bootPage('devices&script=/test-devices.sh', 10);
+for (const jit of [0, 1]) test(`net (loopback adapter), 9p and the framebuffer work in the guest, deterministic mode${jit ? ', JIT' : ''}`, { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
+  const r = await bootPage(`devices&script=/test-devices.sh&jit=${jit}`, 10);
   assert.equal(r.error, undefined);
-  console.log(`# chromium devices boot: ${r.steps} steps`);
+  console.log(`# chromium devices boot${jit ? ' (JIT)' : ''}: ${r.steps} steps`);
   assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+  assert.equal(r.steps, DEVICES_STEPS);
   for (const want of ['net: mac 52:54:00:12:34:56\n', '3 packets transmitted, 3 packets received, 0% packet loss\n', '9p: hello from the host\n',
     '9p: b some text 10 -rw-r--r--\n', '9p: big 200000 ok\n', '9p: ls b big l \n', '9p: after rm b \n', '9p: top from-guest hello.txt \n', 'fb: 0 simple 640,480\n', 'webpc: test ok\n']) {
     assert.ok(r.console.includes(want), `missing ${JSON.stringify(want)}`);
@@ -122,13 +127,14 @@ for (const [distro, expect] of [['alpine', /webpc: alpine 3\.24\.2 6\.18\.53-0-v
   const skip = !DISTRO_TESTS.includes(distro) ? `SKIPPED: set WEBPC_DISTROS=${distro}` : !existsSync(img) && `SKIPPED: run images/build.sh ${distro}`;
   // Debian's root is writable through an overlay (a fresh one each run); Alpine's is read-only.
   const overlay = distro === 'debian' ? `webpc-test-${distro}` : undefined;
-  test(`${distro} boots from virtio-blk in a worker, deterministic mode`, { skip }, async () => {
+  for (const jit of distro === 'alpine' ? [0, 1] : [0]) test(`${distro} boots from virtio-blk in a worker, deterministic mode${jit ? ', JIT' : ''}`, { skip }, async () => {
     if (overlay) await removeOverlay(overlay);
-    const r = await bootPage(`distro=${distro}${overlay ? `&overlay=${overlay}` : ''}`, 120);
+    const r = await bootPage(`distro=${distro}${overlay ? `&overlay=${overlay}` : ''}&jit=${jit}`, 120);
     if (overlay) await removeOverlay(overlay);
     assert.equal(r.error, undefined);
-    console.log(`# chromium ${distro} boot: ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
+    console.log(`# chromium ${distro} boot${jit ? ' (JIT)' : ''}: ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
     assert.match(r.console, expect);
+    if (distro === 'alpine') assert.equal(r.steps, 3_009_151_562); // PLAN.md §7 M4; the JIT must not move it
   });
 }

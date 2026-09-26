@@ -433,6 +433,12 @@ impl Vm {
         let c = &mut self.vcpu.cpu;
         match e {
             Exit::Resync => self.steps += 1,
+            Exit::Invalidate(pa) => {
+                self.steps += 1;
+                if let Some(j) = &mut self.vcpu.jit.cache {
+                    j.invalidate(pa);
+                }
+            }
             Exit::Hvc(_) => {
                 c.pc = c.pc.wrapping_add(4);
                 self.steps += 1;
@@ -677,7 +683,7 @@ impl Bus for Io<'_> {
         self.mmu.fetch(c, pc)
     }
 
-    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<(), Fault> {
+    fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<u64, Fault> {
         self.mmu.maint(c, va, write)
     }
 

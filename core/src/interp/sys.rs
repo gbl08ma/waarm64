@@ -204,16 +204,22 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
             }
         }
         // No caches to maintain, but the address must translate (and, from
-        // EL0, be readable) like a data access. M5 hooks JIT invalidation into
-        // IC IVAU and IALLU.
+        // EL0, be readable) like a data access. IC IVAU and IALLU invalidate
+        // JIT blocks (`Exit::Invalidate`).
         DC_CVAC | DC_CVAU | DC_CIVAC | IC_IVAU => {
             if el0 && c.sctlr_el1 & sctlr::UCI == 0 {
                 return Err(trap_sys(i));
             }
-            m.maint(c, c.reg(rt), false)?;
+            let pa = m.maint(c, c.reg(rt), false)?;
+            if op == IC_IVAU {
+                return Err(Exit::Invalidate(pa));
+            }
         }
-        DC_IVAC => m.maint(c, c.reg(rt), true)?,
-        DC_ISW | DC_CSW | DC_CISW | IC_IALLU | IC_IALLUIS => {}
+        DC_IVAC => {
+            m.maint(c, c.reg(rt), true)?;
+        }
+        DC_ISW | DC_CSW | DC_CISW => {}
+        IC_IALLU | IC_IALLUIS => return Err(Exit::Invalidate(u64::MAX)),
         SYS => match (
             bits(i, 18, 16),
             bits(i, 15, 12),
@@ -490,7 +496,12 @@ pub fn take_exception(c: &mut Cpu, e: Exit) {
             ..
         }) => (0x22 << 26, Some(pc), pc),
         Exit::Fetch(f) => (abort(0x20, f), Some(f.addr), pc),
-        Exit::Hvc(_) | Exit::Unimplemented(_) | Exit::Resync | Exit::Wfi | Exit::Platform(_) => {
+        Exit::Hvc(_)
+        | Exit::Unimplemented(_)
+        | Exit::Resync
+        | Exit::Invalidate(_)
+        | Exit::Wfi
+        | Exit::Platform(_) => {
             panic!("{e:?} is no exception")
         }
     };
