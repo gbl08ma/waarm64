@@ -1,0 +1,229 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-26T12:57:41.771Z",
+ "commit": "38de992d34fc",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "boot_jit_init_cold",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "jit": 1,
+    "first": "init",
+    "steps": 40909861,
+    "counters": {
+     "steps": 40909861,
+     "irqs": 188,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 339,
+      "0x24": 909,
+      "0x25": 66
+     },
+     "tlbMisses": 92542,
+     "tlbWalks": 90889,
+     "tlbFlushes": 1247,
+     "jit": {
+      "blocks": 12425,
+      "modules": 471,
+      "bytes": 3512226,
+      "compileNs": 53635007,
+      "steps": 34555012,
+      "dispatches": 8084592,
+      "invalidations": 47,
+      "flushes": 0,
+      "inline": 53524,
+      "helpers": 1821,
+      "inlineSteps": 33535696
+     }
+    }
+   },
+   "samples": [
+    731.2150000333786,
+    701.3849999904633,
+    685.8500000238419,
+    690.6999999284744,
+    696.2700000405312
+   ],
+   "median": 696.2700000405312,
+   "iqr": 10.68500006198883,
+   "n": 5
+  },
+  {
+   "name": "boot_jit_total_cold",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "jit": 1,
+    "first": "init",
+    "steps": 40909861,
+    "counters": {
+     "steps": 40909861,
+     "irqs": 188,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 339,
+      "0x24": 909,
+      "0x25": 66
+     },
+     "tlbMisses": 92542,
+     "tlbWalks": 90889,
+     "tlbFlushes": 1247,
+     "jit": {
+      "blocks": 12425,
+      "modules": 471,
+      "bytes": 3512226,
+      "compileNs": 53635007,
+      "steps": 34555012,
+      "dispatches": 8084592,
+      "invalidations": 47,
+      "flushes": 0,
+      "inline": 53524,
+      "helpers": 1821,
+      "inlineSteps": 33535696
+     }
+    }
+   },
+   "samples": [
+    1018.2150000333786,
+    983.3000000119209,
+    969.5649999976158,
+    974.0849999785423,
+    980.8550000190735
+   ],
+   "median": 980.8550000190735,
+   "iqr": 9.215000033378601,
+   "n": 5
+  },
+  {
+   "name": "boot_jit_init",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "jit": 1,
+    "first": "init",
+    "steps": 40909861,
+    "counters": {
+     "steps": 40909861,
+     "irqs": 188,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 339,
+      "0x24": 909,
+      "0x25": 66
+     },
+     "tlbMisses": 92542,
+     "tlbWalks": 90889,
+     "tlbFlushes": 1247,
+     "jit": {
+      "blocks": 12425,
+      "modules": 471,
+      "bytes": 3512226,
+      "compileNs": 53635007,
+      "steps": 34555012,
+      "dispatches": 8084592,
+      "invalidations": 47,
+      "flushes": 0,
+      "inline": 53524,
+      "helpers": 1821,
+      "inlineSteps": 33535696
+     }
+    }
+   },
+   "samples": [
+    659.8249999880791,
+    566.1150000095367,
+    656.4550000429153,
+    566.2699999809265,
+    657.2450000047684,
+    566.6699999570847,
+    661.8050000071526,
+    563.1100000143051,
+    557.0450000166893,
+    648.4150000214577
+   ],
+   "median": 607.5424999892712,
+   "iqr": 90.89375001192093,
+   "n": 10
+  },
+  {
+   "name": "boot_jit_total",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "jit": 1,
+    "first": "init",
+    "steps": 40909861,
+    "counters": {
+     "steps": 40909861,
+     "irqs": 188,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 339,
+      "0x24": 909,
+      "0x25": 66
+     },
+     "tlbMisses": 92542,
+     "tlbWalks": 90889,
+     "tlbFlushes": 1247,
+     "jit": {
+      "blocks": 12425,
+      "modules": 471,
+      "bytes": 3512226,
+      "compileNs": 53635007,
+      "steps": 34555012,
+      "dispatches": 8084592,
+      "invalidations": 47,
+      "flushes": 0,
+      "inline": 53524,
+      "helpers": 1821,
+      "inlineSteps": 33535696
+     }
+    }
+   },
+   "samples": [
+    940.7750000357628,
+    806.3449999690056,
+    940.910000026226,
+    806.0999999642372,
+    938.9850000143051,
+    810.2349999547005,
+    943.4099999666214,
+    801.3249999880791,
+    789.5749999880791,
+    929.1800000071526
+   ],
+   "median": 869.7074999809265,
+   "iqr": 134.16625006496906,
+   "n": 10
+  }
+ ]
+}

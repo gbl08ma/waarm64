@@ -1,0 +1,87 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-26T12:50:48.546Z",
+ "commit": "38de992d34fc",
+ "dirty": true,
+ "config": "turbofan-only",
+ "jsFlags": "--no-liftoff",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "vm_jit_mmu_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2243,
+     "avgBlock": 4.13,
+     "interpretedPct": 7.318,
+     "blocks": 25,
+     "modules": 5,
+     "bytes": 12553,
+     "compileMs": 0.64,
+     "inlinePct": 100,
+     "inlineStepsPct": 100
+    }
+   },
+   "samples": [
+    13.589726170980551
+   ],
+   "median": 13.589726170980551,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_jit_mmu_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2401,
+     "avgBlock": 4.15,
+     "interpretedPct": 0.256,
+     "blocks": 1,
+     "modules": 1,
+     "bytes": 2390,
+     "compileMs": 0.15,
+     "inlinePct": 100,
+     "inlineStepsPct": 100
+    }
+   },
+   "samples": [
+    179.6945192979144,
+    179.13121365222412,
+    179.9208347902248,
+    179.25965762554597,
+    239.09145254871947,
+    239.19153259246417,
+    238.66348445292255,
+    239.4922764014367,
+    239.67883038785206,
+    238.16612097073516,
+    239.13433373923073,
+    239.22014228140947,
+    239.00573611723826,
+    239.98080161139606,
+    208.75737172910442
+   ],
+   "median": 239.00573611723826,
+   "iqr": 44.86673417727218,
+   "n": 15
+  }
+ ]
+}

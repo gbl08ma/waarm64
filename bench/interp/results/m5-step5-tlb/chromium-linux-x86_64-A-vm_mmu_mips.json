@@ -1,0 +1,65 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-26T12:50:45.959Z",
+ "commit": "38de992d34fc",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "vm_mmu_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 2000000
+   },
+   "samples": [
+    36.619976190620974
+   ],
+   "median": 36.619976190620974,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_mmu_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 20000000
+   },
+   "samples": [
+    52.67455029135765,
+    52.703699797076936,
+    52.69675651860898,
+    52.64335443157126,
+    52.60735187577529,
+    52.667614682408285,
+    52.509287581555505,
+    52.69050912369919,
+    52.67385664909138,
+    52.629501460773675,
+    52.678018785006536,
+    52.56725322498884,
+    52.571398530299945,
+    52.38962161661226,
+    52.52514641647671
+   ],
+   "median": 52.64335443157126,
+   "iqr": 0.10695866053769976,
+   "n": 15
+  }
+ ]
+}

@@ -679,11 +679,9 @@ fn access(
         }
         Bus::Tlb { read } => {
             let arr = read + if write { (TLB_ENTRIES * 16) as u32 } else { 0 };
-            c.local_get(ADDR).i64_const(12).op(SHR_U + W).i32_wrap_i64();
-            c.i32_const(TLB_ENTRIES as i32 - 1)
-                .op(AND)
-                .i32_const(4)
-                .op(SHL);
+            // The entry's offset, index × 16, in one shift and mask.
+            c.local_get(ADDR).i64_const(8).op(SHR_U + W).i32_wrap_i64();
+            c.i32_const((TLB_ENTRIES as i32 - 1) << 4).op(AND);
             c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
             c.local_get(ADDR);
             if len > 1 {
