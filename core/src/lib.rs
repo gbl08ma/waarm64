@@ -19,7 +19,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 7;
+pub const ABI_VERSION: u32 = 8;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -142,6 +142,7 @@ pub unsafe extern "C" fn vm_new(
     if cfg.ram_size != ram_size
         || !(ram as usize).is_multiple_of(16)
         || cfg.ndevices > virtio::MAX_DEVICES as u64
+        || (cfg.fb_width | cfg.fb_height != 0 && boot::framebuffer(&cfg).is_none())
     {
         return core::ptr::null_mut();
     }
@@ -265,6 +266,17 @@ pub unsafe extern "C" fn vm_device(vm: *const vm::Vm, i: u32) -> *const virtio::
         .devices
         .get(i as usize)
         .map_or(core::ptr::null(), |d| d)
+}
+
+/// The framebuffer's guest PA (`boot::framebuffer`: x8r8g8b8, `fb_width` ×
+/// `fb_height` packed rows, in guest RAM), or 0 without one (ABI 8).
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_framebuffer(vm: *const vm::Vm) -> u64 {
+    // SAFETY: guaranteed by the caller.
+    boot::framebuffer(&unsafe { &*vm }.cfg).map_or(0, |f| f.0)
 }
 
 /// The counters (`vm::Counters`, u64s), read from any thread with atomic loads.

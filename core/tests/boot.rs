@@ -3,7 +3,8 @@
 //! /test.sh and powers off; the console must show the test passed. Once in
 //! deterministic mode and once in realtime mode, and once with the arm64
 //! defconfig kernel (Image-defconfig). And twice with the root filesystem
-//! writable through one overlay: the second boot finds what the first wrote. Ignored by default (it needs
+//! writable through one overlay: the second boot finds what the first wrote.
+//! And with the step 6 devices: net, 9p, the framebuffer, input. Ignored by default (it needs
 //! the images and a release build); scripts/ci.sh runs it with
 //! `cargo test --release --test boot -- --ignored`.
 
@@ -93,4 +94,72 @@ fn root_is_writable_through_an_overlay_across_boots() {
         );
     }
     assert_eq!(hashes[0], hashes[1]);
+}
+
+/// Boots the Buildroot guest with the device test's devices (net with the
+/// loopback adapter, 9p, keyboard, tablet) and a 640×480 framebuffer, running `script`.
+fn boot_devices(script: &str) -> common::Run {
+    let kernel = common::image("linux/Image");
+    let devices = common::test_devices("linux/rootfs.ext4");
+    let cmdline = format!("{} -- {script}", common::GUEST_CMDLINE);
+    let r = common::boot(&common::Boot {
+        devices: &devices,
+        fb: (640, 480),
+        ..common::Boot::new(&kernel, &cmdline)
+    });
+    eprintln!("[{}]\n{}", r.summary, r.console);
+    assert!(
+        r.powered_off() && r.console.contains("webpc: test ok\n"),
+        "test script failed"
+    );
+    r
+}
+
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn net_9p_and_framebuffer_work() {
+    let r = boot_devices("/test-devices.sh");
+    let out = &r.console;
+    for want in [
+        "net: mac 52:54:00:12:34:56\n",
+        "3 packets transmitted, 3 packets received, 0% packet loss\n",
+        "9p: hello from the host\n",
+        "9p: b some text 10 -rw-r--r--\n",
+        "9p: big 200000 ok\n",
+        "9p: ls b big l \n",
+        "9p: after rm b \n",
+        "9p: top from-guest hello.txt \n",
+        "fb: 0 simple 640,480\n",
+    ] {
+        assert!(out.contains(want), "missing {want:?}");
+    }
+    // Row 0 red, row 1 grey, the rest untouched (x8r8g8b8: B, G, R, X in memory).
+    let px = |x: usize, y: usize| &r.fb[(y * 640 + x) * 4..][..3];
+    assert_eq!((px(0, 0), px(639, 0)), (&[0, 0, 255][..], &[0, 0, 255][..]));
+    assert_eq!(px(5, 1), [64, 64, 64]);
+    assert_eq!(px(5, 2), [0, 0, 0]);
+}
+
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn input_events_reach_the_guest() {
+    let r = boot_devices("/test-input.sh");
+    let out = &r.console;
+    for want in [
+        "N: Name=\"webpc keyboard\"\n",
+        "B: EV=120003\n",
+        "B: LED=7\n",
+        "N: Name=\"webpc tablet\"\n",
+        "B: EV=f\n",
+        "B: REL=100\n",
+        "B: ABS=3\n",
+        "input3: 1 30 1\n",
+        "input3: 1 30 0\n",
+        "input4: 3 0 16384\n",
+        "input4: 3 1 8192\n",
+        "input4: 1 272 1\n",
+        "input4: 1 272 0\n",
+    ] {
+        assert!(out.contains(want), "missing {want:?}");
+    }
 }

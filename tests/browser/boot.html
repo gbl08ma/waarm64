@@ -1,9 +1,37 @@
 <!doctype html>
 <meta charset="utf-8">
 <link rel="icon" href="data:,">
+<canvas id="screen"></canvas>
 <script type="module">
   // Boots the Buildroot guest in a worker; the result lands in window.result.
+  // The page shows the framebuffer (and reads a few pixels back at the end),
+  // and is the input test's agent: when the guest sets a keyboard LED, it
+  // presses A on the keyboard and clicks the tablet, through their ports.
+  import { showFramebuffer } from '../../web/display.ts';
+  import { KEY_EVENTS, TABLET_EVENTS } from '../../web/vm.ts';
   const worker = new Worker(new URL('./boot-worker.ts' + location.search, import.meta.url), { type: 'module' });
-  worker.onmessage = (e) => { window.result = e.data; };
+  const [kbd, tablet] = [new MessageChannel(), new MessageChannel()];
+  kbd.port1.onmessage = (e) => {
+    if (e.data[0] === 0x11 && e.data[2] === 1) {
+      kbd.port1.postMessage(KEY_EVENTS);
+      tablet.port1.postMessage(TABLET_EVENTS);
+    }
+  };
+  worker.postMessage({ keyboard: kbd.port2, tablet: tablet.port2 }, [kbd.port2, tablet.port2]);
+  const canvas = document.getElementById('screen');
+  let screen;
+  worker.onmessage = (e) => {
+    if (e.data.framebuffer) {
+      screen = showFramebuffer(canvas, e.data.memory, e.data.framebuffer);
+      return;
+    }
+    if (screen) {
+      screen.draw();
+      screen.stop();
+      const ctx = canvas.getContext('2d');
+      e.data.pixels = Object.fromEntries([[0, 0], [639, 0], [5, 1], [5, 2]].map(([x, y]) => [`${x},${y}`, [...ctx.getImageData(x, y, 1, 1).data]]));
+    }
+    window.result = e.data;
+  };
   worker.onerror = (e) => { window.result = { error: e.message }; };
 </script>

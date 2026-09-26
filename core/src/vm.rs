@@ -63,6 +63,10 @@ pub struct VmConfig {
     /// Address of `ndevices` `virtio::DeviceEntry`s, one per transport slot (ABI 6).
     pub devices: u64,
     pub ndevices: u64,
+    /// A `simple-framebuffer` of this many pixels (x8r8g8b8), or none if 0
+    /// (ABI 8); `boot::framebuffer` places it.
+    pub fb_width: u64,
+    pub fb_height: u64,
 }
 
 impl Default for VmConfig {
@@ -74,6 +78,8 @@ impl Default for VmConfig {
             ticks_per_insn: 1,
             devices: 0,
             ndevices: 0,
+            fb_width: 0,
+            fb_height: 0,
         }
     }
 }
@@ -166,7 +172,7 @@ pub struct Vm {
     pub virtio: Vec<Transport>,
     pub shared: Arc<Shared>,
     pub exit: ExitInfo,
-    cfg: VmConfig,
+    pub(crate) cfg: VmConfig,
     steps: u64,
     /// Ticks WFI jumped over.
     skipped: u64,

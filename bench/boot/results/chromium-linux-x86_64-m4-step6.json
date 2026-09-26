@@ -1,0 +1,169 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-26T00:05:25.025Z",
+ "commit": "7ab9c43f1be0",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "boot_init_cold",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "steps": 40764416,
+    "counters": {
+     "steps": 40764416,
+     "irqs": 189,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 327,
+      "0x24": 907,
+      "0x25": 64
+     },
+     "tlbMisses": 91956,
+     "tlbWalks": 90658,
+     "tlbFlushes": 1246
+    }
+   },
+   "samples": [
+    761.2000000476837,
+    721.8849999904633,
+    749.5499999523163,
+    753.3499999642372,
+    738.9950000047684
+   ],
+   "median": 749.5499999523163,
+   "iqr": 14.354999959468842,
+   "n": 5
+  },
+  {
+   "name": "boot_total_cold",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "steps": 40764416,
+    "counters": {
+     "steps": 40764416,
+     "irqs": 189,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 327,
+      "0x24": 907,
+      "0x25": 64
+     },
+     "tlbMisses": 91956,
+     "tlbWalks": 90658,
+     "tlbFlushes": 1246
+    }
+   },
+   "samples": [
+    1101.8550000190735,
+    1057.425000011921,
+    1092.5449999570847,
+    1099.6700000166893,
+    1081.574999988079
+   ],
+   "median": 1092.5449999570847,
+   "iqr": 18.09500002861023,
+   "n": 5
+  },
+  {
+   "name": "boot_init",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "steps": 40764416,
+    "counters": {
+     "steps": 40764416,
+     "irqs": 189,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 327,
+      "0x24": 907,
+      "0x25": 64
+     },
+     "tlbMisses": 91956,
+     "tlbWalks": 90658,
+     "tlbFlushes": 1246
+    }
+   },
+   "samples": [
+    717.6750000119209,
+    713.3549999594688,
+    703.8949999809265,
+    712.7849999666214,
+    704.3199999928474,
+    715.6550000309944,
+    698.6450000405312,
+    704.125,
+    710.0550000071526,
+    712.8500000238419
+   ],
+   "median": 711.419999986887,
+   "iqr": 9.054999977350235,
+   "n": 10
+  },
+  {
+   "name": "boot_total",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "steps": 40764416,
+    "counters": {
+     "steps": 40764416,
+     "irqs": 189,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 327,
+      "0x24": 907,
+      "0x25": 64
+     },
+     "tlbMisses": 91956,
+     "tlbWalks": 90658,
+     "tlbFlushes": 1246
+    }
+   },
+   "samples": [
+    1062.3100000023842,
+    1050.9699999690056,
+    1041.0199999809265,
+    1050.7849999666214,
+    1042.4049999713898,
+    1055.9050000309944,
+    1032.1850000023842,
+    1041.9300000071526,
+    1048.1800000071526,
+    1053.2000000476837
+   ],
+   "median": 1049.482499986887,
+   "iqr": 10.593750029802322,
+   "n": 10
+  }
+ ]
+}

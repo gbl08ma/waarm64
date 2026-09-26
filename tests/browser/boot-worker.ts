@@ -3,8 +3,10 @@
 // alpine|debian that image (web/vm.ts `DISTROS`) on 1 GiB. `?realtime` in the
 // page URL selects realtime mode, `?overlay=<name>` makes the root disk
 // writable through that OPFS overlay, and `?script=<path>` runs that script
-// instead of the Buildroot guest's /test.sh.
-import { DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff } from '../../web/vm.ts';
+// instead of the Buildroot guest's /test.sh; with `?devices` the guest gets the
+// device tests' devices (web/vm.ts `testDevices`, the input ones on the ports
+// the page sends first) and a 640×480 framebuffer, which goes to the page.
+import { DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/vm.ts';
 
 const get = async (path: string) => {
   const r = await fetch(path);
@@ -13,6 +15,7 @@ const get = async (path: string) => {
 };
 
 try {
+  const ports = await new Promise<{ keyboard: MessagePort; tablet: MessagePort }>((resolve) => { self.onmessage = (e) => resolve(e.data); });
   const params = new URLSearchParams(location.search);
   const distro = params.get('distro') as keyof typeof DISTROS | null;
   const script = params.get('script');
@@ -22,8 +25,12 @@ try {
     get(`/target/images/${img.kernel}`),
     img.initrd && get(`/target/images/${img.initrd}`),
   ]);
-  const devices = guestDevices(new URL(`/target/images/${img.disk}`, location.href).href, params.get('overlay') ?? undefined);
-  const r = await runToPowerOff(wasm, { ramSize: distro ? 1 << 30 : 256 << 20, kernel, initrd, cmdline: img.cmdline, devices, realtime: params.has('realtime') }, 1e12);
+  const disk = new URL(`/target/images/${img.disk}`, location.href).href;
+  const test = params.has('devices') || distro === 'alpine'; // Alpine checks linux-virt's modules for them
+  const devices = test ? testDevices(disk, ports.keyboard, ports.tablet) : guestDevices(disk, params.get('overlay') ?? undefined);
+  const framebuffer = test ? { width: 640, height: 480 } : undefined;
+  const opts = { ramSize: distro ? 1 << 30 : 256 << 20, kernel, initrd, cmdline: img.cmdline, devices, realtime: params.has('realtime'), framebuffer };
+  const r = await runToPowerOff(wasm, opts, 1e12, (vm) => vm.framebuffer && self.postMessage({ memory: vm.memory, framebuffer: vm.framebuffer }));
   self.postMessage({ kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc });
 } catch (e) {
   self.postMessage({ error: String(e) });

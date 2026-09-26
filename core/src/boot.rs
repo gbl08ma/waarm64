@@ -5,14 +5,15 @@
 //! as a raw binary entered at its first byte, as QEMU does.
 //!
 //! The host has already copied the `Image` and the initrd into RAM. The DTB
-//! goes in the last 2 MiB of RAM, which the host must leave free. The vCPU
+//! goes in the last 2 MiB of RAM, which the host must leave free, and a
+//! framebuffer, if the config has one, just below it. The vCPU
 //! starts at the `Image`'s first byte in its reset state (EL1h, DAIF masked,
 //! MMU and caches off) with x0 = the DTB's address and x1–x3 = 0.
 
 use crate::cpu::Cpu;
 use crate::fdt::Fdt;
 use crate::virtio;
-use crate::vm::{GICC, GICD, IRQ_UART, RAM_BASE, UART, Vm};
+use crate::vm::{GICC, GICD, IRQ_UART, RAM_BASE, UART, Vm, VmConfig};
 
 /// Space reserved for the DTB at the top of RAM (booting.rst's limit is 2 MiB).
 pub const DTB_SPACE: u64 = 2 << 20;
@@ -20,10 +21,28 @@ const IMAGE_MAGIC: u32 = 0x644d_5241; // "ARM\x64" at offset 0x38
 const GIC_PHANDLE: u32 = 1;
 const CLK_PHANDLE: u32 = 2;
 
+/// The framebuffer `cfg` asks for: its guest PA and the bytes it spans
+/// (4 per pixel, rows packed). It sits at the top of RAM below the DTB space,
+/// in a region of whole 2 MiB units the DT reserves (`no-map`), so the host
+/// reads it straight out of guest RAM. None without one, or if it would take
+/// more than half of RAM.
+pub fn framebuffer(cfg: &VmConfig) -> Option<(u64, u64)> {
+    let bytes = cfg.fb_width.checked_mul(cfg.fb_height)?.checked_mul(4)?;
+    let region = bytes.checked_next_multiple_of(DTB_SPACE)?;
+    (bytes > 0 && region <= cfg.ram_size / 2)
+        .then(|| (RAM_BASE + cfg.ram_size - DTB_SPACE - region, bytes))
+}
+
 /// The device tree for this VM: QEMU `virt`'s addresses and bindings for the
 /// devices we have, with `virtio` virtio-mmio transports in the first slots.
-/// `initrd` is (start, end) in guest PA.
-pub fn dtb(ram_size: u64, cmdline: &str, initrd: Option<(u64, u64)>, virtio: usize) -> Vec<u8> {
+/// `initrd` is (start, end) in guest PA; `fb` a framebuffer as (PA, width, height).
+pub fn dtb(
+    ram_size: u64,
+    cmdline: &str,
+    initrd: Option<(u64, u64)>,
+    virtio: usize,
+    fb: Option<(u64, u64, u64)>,
+) -> Vec<u8> {
     let mut f = Fdt::default();
     f.begin("");
     f.cells("#address-cells", &[2]);
@@ -39,12 +58,40 @@ pub fn dtb(ram_size: u64, cmdline: &str, initrd: Option<(u64, u64)>, virtio: usi
         f.cells64("linux,initrd-start", &[start]);
         f.cells64("linux,initrd-end", &[end]);
     }
+    // The simple-framebuffer binding's place for one set up before the OS
+    // (its `reg` translates through an empty `ranges`, as U-Boot does it).
+    if let Some((pa, w, h)) = fb {
+        f.cells("#address-cells", &[2]);
+        f.cells("#size-cells", &[2]);
+        f.flag("ranges");
+        f.begin(&format!("framebuffer@{pa:x}"));
+        f.strs("compatible", &["simple-framebuffer"]);
+        f.cells64("reg", &[pa, w * h * 4]);
+        f.cells("width", &[w as u32]);
+        f.cells("height", &[h as u32]);
+        f.cells("stride", &[w as u32 * 4]);
+        f.strs("format", &["x8r8g8b8"]);
+        f.end();
+    }
     f.end();
 
     f.begin(&format!("memory@{RAM_BASE:x}"));
     f.strs("device_type", &["memory"]);
     f.cells64("reg", &[RAM_BASE, ram_size]);
     f.end();
+
+    // The framebuffer's region, out of the kernel's linear map (the driver maps it).
+    if let Some((pa, w, h)) = fb {
+        f.begin("reserved-memory");
+        f.cells("#address-cells", &[2]);
+        f.cells("#size-cells", &[2]);
+        f.flag("ranges");
+        f.begin(&format!("framebuffer@{pa:x}"));
+        f.cells64("reg", &[pa, (w * h * 4).next_multiple_of(DTB_SPACE)]);
+        f.flag("no-map");
+        f.end();
+        f.end();
+    }
 
     f.begin("cpus");
     f.cells("#address-cells", &[1]);
@@ -134,13 +181,15 @@ impl Vm {
         }
         let ram = self.mem.size();
         let dtb_pa = RAM_BASE + ram - DTB_SPACE;
+        let fb = framebuffer(&self.cfg);
         let initrd = initrd.map(|(pa, len)| (pa, pa + len));
         if let Some((start, end)) = initrd
-            && (start < RAM_BASE || end > dtb_pa)
+            && (start < RAM_BASE || end > fb.map_or(dtb_pa, |f| f.0))
         {
-            return Err("initrd outside RAM or over the DTB space");
+            return Err("initrd outside RAM or over the framebuffer or DTB space");
         }
-        let blob = dtb(ram, cmdline, initrd, self.virtio.len());
+        let fb = fb.map(|(pa, _)| (pa, self.cfg.fb_width, self.cfg.fb_height));
+        let blob = dtb(ram, cmdline, initrd, self.virtio.len(), fb);
         if blob.len() as u64 > DTB_SPACE {
             return Err("DTB too large");
         }
@@ -190,6 +239,25 @@ mod tests {
         assert_eq!(vm.mem.read(dtb, 4), Ok(0xedfe0dd0)); // FDT magic, big-endian
     }
 
+    #[test]
+    fn framebuffer_sits_below_the_dtb_in_whole_2_mib_units() {
+        let cfg = |w, h| VmConfig {
+            ram_size: 256 << 20,
+            fb_width: w,
+            fb_height: h,
+            ..VmConfig::default()
+        };
+        assert_eq!(framebuffer(&cfg(0, 0)), None);
+        assert_eq!(
+            framebuffer(&cfg(640, 480)),
+            Some((0x4fc0_0000, 640 * 480 * 4))
+        );
+        let big = 1024 * 768 * 4;
+        assert_eq!(framebuffer(&cfg(1024, 768)), Some((0x4fa0_0000, big)));
+        assert_eq!(framebuffer(&cfg(8192, 8192)), None, "over half of RAM");
+        assert_eq!(framebuffer(&cfg(u64::MAX, 2)), None);
+    }
+
     /// Our DTB, decompiled by `dtc`, must match the reviewed source in
     /// tests/dtb/webpc.dts (a round trip through the reference tool). Set
     /// UPDATE_DTS=1 to rewrite it after an intended change.
@@ -200,6 +268,7 @@ mod tests {
             "console=ttyAMA0 earlycon",
             Some((0x4800_0000, 0x4810_0000)),
             2,
+            Some((0x4fc0_0000, 640, 480)),
         );
         let dir = std::env::temp_dir().join(format!("webpc-dtb-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

@@ -1,14 +1,14 @@
-// Host side of the whole-VM ABI (PLAN.md §2, ABI 7): instantiates the core on
+// Host side of the whole-VM ABI (PLAN.md §2, ABI 8): instantiates the core on
 // shared memory, places guest RAM after the core's heap (layout A), boots an
 // arm64 Image and runs it, draining the console. virtio backends run in a
 // device worker (web/device-worker.ts) when this runs in a worker, and inline
 // otherwise (Node, a page's main thread). Runs in a worker or in Node.
 // Time is deterministic unless `realtime` is set (the host clock, and idle
 // WFIs sleep on the signal word).
-import { Devices, deviceEntry, type DeviceSpec, type DevicesInit } from './devices.ts';
+import { Devices, EV_CONFIG, deviceEntry, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 7;
+export const ABI = 8;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -27,6 +27,7 @@ type Exports = {
   vm_counters(vm: number): number;
   vm_signal(vm: number): number;
   vm_device(vm: number, i: number): number;
+  vm_framebuffer(vm: number): bigint;
 };
 
 /** The core's imports: the shared memory, and the host clock for realtime mode. */
@@ -37,7 +38,19 @@ export function coreImports(memory: WebAssembly.Memory) {
 /** u64 word indexes in `vm::Counters` (core/src/vm.rs). */
 export const Counter = { STEPS: 0, EXCEPTIONS: 1, IRQS: 65, TLB_HITS: 66, TLB_MISSES: 67, TLB_WALKS: 68, TLB_FLUSHES: 69, PC: 70, LEN: 71 } as const;
 
-export type BootOptions = { ramSize: number; kernel: Uint8Array; initrd?: Uint8Array; cmdline: string; devices?: DeviceSpec[]; realtime?: boolean };
+/**
+ * `framebuffer`: a simple-framebuffer of that many pixels (x8r8g8b8) at the top
+ * of RAM, which `bootVm`'s `framebuffer` locates for web/display.ts.
+ */
+export type BootOptions = {
+  ramSize: number;
+  kernel: Uint8Array;
+  initrd?: Uint8Array;
+  cmdline: string;
+  devices?: DeviceSpec[];
+  realtime?: boolean;
+  framebuffer?: { width: number; height: number };
+};
 
 /**
  * The devices the test and benchmark guests expect: the root filesystem at
@@ -45,6 +58,21 @@ export type BootOptions = { ramSize: number; kernel: Uint8Array; initrd?: Uint8A
  * directory `overlay`.
  */
 export const guestDevices = (disk: string, overlay?: string): DeviceSpec[] => [{ type: 'console' }, { type: 'rng' }, { type: 'blk', url: disk, overlay }];
+/**
+ * The Buildroot guest's device tests (`/test-devices.sh`, `/test-input.sh`):
+ * its devices plus net on the loopback adapter, 9p (tag `host`, with
+ * /hello.txt), a keyboard and a tablet (core/tests/common `test_devices`).
+ */
+export const testDevices = (disk: string, keyboard?: MessagePort, tablet?: MessagePort): DeviceSpec[] => [
+  ...guestDevices(disk),
+  { type: 'net', adapter: 'loopback' },
+  { type: '9p', tag: 'host', files: { 'hello.txt': 'hello from the host\n' } },
+  { type: 'input', kind: 'keyboard', port: keyboard },
+  { type: 'input', kind: 'tablet', port: tablet },
+];
+/** What the test agents inject when the guest sets a keyboard LED (core/tests/common `KEY_EVENTS`, `TABLET_EVENTS`). */
+export const KEY_EVENTS = [[1, 30, 1], [0, 0, 0], [1, 30, 0], [0, 0, 0]];
+export const TABLET_EVENTS = [[3, 0, 16384], [3, 1, 8192], [1, 272, 1], [0, 0, 0], [1, 272, 0], [0, 0, 0]];
 /** Their kernel command line. */
 export const GUEST_CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init';
 /**
@@ -67,6 +95,8 @@ const S_DEVICES = 64;
 const S_BELL = 2048;
 const S_CMDLINE = 4096;
 
+export type Vm = Awaited<ReturnType<typeof bootVm>>;
+
 export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
@@ -86,8 +116,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     return { ...d, size: isQcow2(head) ? qcow2Size(head) : Number(r.headers.get('content-range')?.split('/')[1]) };
   }));
   const deterministic = !o.realtime;
-  // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries.
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 6).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length)]);
+  // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries, framebuffer.
+  const fb = o.framebuffer ?? { width: 0, height: 0 };
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 8).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height)]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
@@ -124,8 +155,11 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     return decoder.decode(new Uint8Array(out), { stream: true });
   };
   const counters = ex.vm_counters(vm);
+  const fbPa = Number(ex.vm_framebuffer(vm));
   return {
     memory,
+    /** The framebuffer (web/display.ts): byte address in `memory`, width, height; x8r8g8b8, packed rows. */
+    framebuffer: fbPa ? { addr: ram + fbPa - RAM_BASE, ...fb } : undefined,
     /** Byte addresses of guest RAM (PA 0x4000_0000) and of the vCPU registers (`cpu::Cpu`) in `memory`. */
     ram,
     cpu: ex.vm_cpu(vm),
@@ -152,7 +186,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
         const info = new BigUint64Array(memory.buffer, ex.vm_exit(vm), 7); // kind, steps, value, x0-x3
         steps += Number(info[1]);
         if (kind === Exit.DEVICE) {
-          devices.kick();
+          // A config-space write waits even in realtime mode: the driver reads
+          // the answer next (virtio-input's select/subsel).
+          devices.kick(deterministic || (Number(info[2] >> 8n) & EV_CONFIG) !== 0);
           if (steps < budget) continue;
         }
         if (kind === Exit.IDLE && !deterministic && canBlock) {
@@ -173,9 +209,13 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   };
 }
 
-/** Boots and runs until the guest powers off (or `maxSteps`), collecting the console. */
-export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: BootOptions, maxSteps = 20e9) {
+/**
+ * Boots and runs until the guest powers off (or `maxSteps`), collecting the
+ * console. `booted` sees the VM before it runs.
+ */
+export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: BootOptions, maxSteps = 20e9, booted?: (vm: Vm) => void) {
   const vm = await bootVm(wasm, o);
+  booted?.(vm);
   let console = '';
   let steps = 0;
   const t0 = performance.now();
@@ -203,7 +243,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
   if (!inWorker || init.specs.length === 0) {
     // The blk backend needs a worker (Node has no XHR; a page can't make binary sync XHRs).
     const d = await Devices.open(init, out);
-    return { kick: () => void d.poll(), output: () => text, flush: async () => {}, close: () => {} };
+    return { kick: (_wait: boolean) => void d.poll(), output: () => text, flush: async () => {}, close: () => d.close() };
   }
   const worker = new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
   let flushed = () => {};
@@ -216,14 +256,14 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
       else if (e.data.type === 'flushed') flushed();
     };
   });
-  worker.postMessage({ type: 'init', ...init, bell: bellAddr });
+  worker.postMessage({ type: 'init', ...init, bell: bellAddr }, specPorts(init.specs));
   await ready; // before anything blocks on it
   const bell = new Int32Array(init.memory.buffer, bellAddr, 2);
   return {
-    kick() {
+    kick(wait: boolean) {
       const n = Atomics.add(bell, 0, 1) + 1;
       Atomics.notify(bell, 0);
-      if (!init.deterministic) return; // completions come back through SIGNAL_DEVICE
+      if (!wait) return; // completions come back through SIGNAL_DEVICE
       for (let a; (a = Atomics.load(bell, 1)) !== n;) {
         if (a === -1) throw new Error('device worker failed (see its error)');
         Atomics.wait(bell, 1, a);

@@ -4,15 +4,16 @@
 //! the guest the same bytes at the same steps in deterministic mode).
 #![allow(dead_code)] // each runner uses part of it
 
+pub mod p9;
 pub mod qcow2;
 
 use qcow2::Disk;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 use webpc_core::mem::{Access, Mem};
-use webpc_core::virtio::{DeviceEntry, Request};
+use webpc_core::virtio::{DeviceEntry, EV_CONFIG, Request};
 use webpc_core::vm::{RAM_BASE, SIGNAL_DEVICE, Vm, VmConfig, exit};
 
 /// Where the runners put the kernel and initrd (web/vm.ts does the same).
@@ -93,13 +94,46 @@ pub enum Dev {
     Console,
     Rng,
     Blk(&'static Disk, Option<&'static Overlay>),
+    /// virtio-net with the loopback test adapter (web/net.ts `loopback`).
+    Net,
+    /// virtio-9p: the tag and the tree's initial files (web/9p.ts).
+    P9(&'static str, &'static [(&'static str, &'static str)]),
+    /// virtio-input: a keyboard (true) or a tablet. Setting a keyboard LED
+    /// makes the runner inject `KEY_EVENTS` and `TABLET_EVENTS`, as the
+    /// Chromium test page does (tests/browser/boot.html).
+    Input(bool),
 }
+
+/// What the runners inject when the guest sets a keyboard LED: A pressed and
+/// released; a click at (16384, 8192). [type, code, value].
+pub const KEY_EVENTS: &[[u32; 3]] = &[[1, 30, 1], [0, 0, 0], [1, 30, 0], [0, 0, 0]];
+pub const TABLET_EVENTS: &[[u32; 3]] = &[
+    [3, 0, 16384],
+    [3, 1, 8192],
+    [1, 272, 1],
+    [0, 0, 0],
+    [1, 272, 0],
+    [0, 0, 0],
+];
 
 /// What the test and benchmark guests expect, with `root` (a target/images
 /// disk image) as /dev/vda, writable through `overlay` if given (web/vm.ts
 /// `guestDevices`).
 pub fn guest_devices(root: &str, overlay: Option<&'static Overlay>) -> Vec<Dev> {
     vec![Dev::Console, Dev::Rng, Dev::Blk(disk(root), overlay)]
+}
+
+/// The Buildroot guest's device test (`/test-devices.sh`, `/test-input.sh`):
+/// its devices plus net, 9p with /hello.txt, a keyboard and a tablet (web/vm.ts `testDevices`).
+pub fn test_devices(root: &str) -> Vec<Dev> {
+    let mut d = guest_devices(root, None);
+    d.extend([
+        Dev::Net,
+        Dev::P9("host", &[("hello.txt", "hello from the host\n")]),
+        Dev::Input(true),
+        Dev::Input(false),
+    ]);
+    d
 }
 
 /// Their kernel command line (web/vm.ts `GUEST_CMDLINE`).
@@ -156,7 +190,93 @@ impl Dev {
                 let rw = if overlay.is_some() { 1 << 9 } else { 1 << 5 };
                 e(2, 1 << 2 | rw, 1, 128, c)
             }
+            // MAC and STATUS; the default MAC, LINK_UP.
+            Dev::Net => e(
+                1,
+                1 << 5 | 1 << 16,
+                2,
+                256,
+                vec![0x52, 0x54, 0, 0x12, 0x34, 0x56, 1, 0],
+            ),
+            Dev::P9(tag, _) => {
+                let mut c = (tag.len() as u16).to_le_bytes().to_vec();
+                c.extend(tag.as_bytes());
+                e(9, 1, 1, 128, c)
+            }
+            Dev::Input(_) => e(18, 0, 2, 64, vec![0; 136]),
         }
+    }
+}
+
+/// web/net.ts `loopback`: the reply to a frame, if it's an ARP or ICMP echo
+/// request for 10.0.2.2 (at 52:55:0a:00:02:02).
+pub fn loopback(f: &[u8]) -> Option<Vec<u8>> {
+    const IP: [u8; 4] = [10, 0, 2, 2];
+    const MAC: [u8; 6] = [0x52, 0x55, 0x0a, 0x00, 0x02, 0x02];
+    let ty = u16::from_be_bytes([*f.get(12)?, *f.get(13)?]);
+    if ty == 0x0806 && f.len() >= 42 && f[21] == 1 && f[38..42] == IP {
+        let mut r = f[6..12].to_vec();
+        r.extend(MAC);
+        r.extend([0x08, 0x06, 0, 1, 0x08, 0, 6, 4, 0, 2]);
+        r.extend(MAC);
+        r.extend(IP);
+        r.extend(&f[22..32]);
+        return Some(r);
+    }
+    if ty != 0x0800 || f.len() < 34 {
+        return None;
+    }
+    let icmp = 14 + (f[14] as usize & 0xf) * 4;
+    if f[23] != 1 || f[30..34] != IP || f.len() < icmp + 8 || f[icmp] != 8 {
+        return None;
+    }
+    let mut r = f[..(14 + u16::from_be_bytes([f[16], f[17]]) as usize).min(f.len())].to_vec();
+    r[..6].copy_from_slice(&f[6..12]);
+    r[6..12].copy_from_slice(&MAC);
+    r[26..30].copy_from_slice(&f[30..34]);
+    r[30..34].copy_from_slice(&f[26..30]);
+    r[icmp] = 0;
+    r[icmp + 2..icmp + 4].fill(0);
+    let mut sum: u32 = r[icmp..]
+        .chunks(2)
+        .map(|c| (c[0] as u32) << 8 | *c.get(1).unwrap_or(&0) as u32)
+        .sum();
+    while sum > 0xffff {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    r[icmp + 2..icmp + 4].copy_from_slice(&(!sum as u16).to_be_bytes());
+    Some(r)
+}
+
+/// web/devices.ts `inputConfig`: the answer to a config query about a keyboard or a tablet.
+fn input_config(kbd: bool, select: u8, subsel: u8) -> Vec<u8> {
+    let bitmap = |bits: &[usize]| {
+        let mut b = vec![0u8; bits.iter().max().unwrap() / 8 + 1];
+        bits.iter().for_each(|&k| b[k / 8] |= 1 << (k % 8));
+        b
+    };
+    match (select, subsel, kbd) {
+        (1, _, _) => (if kbd {
+            "webpc keyboard"
+        } else {
+            "webpc tablet"
+        })
+        .into(),
+        (3, _, _) => [6u16, 0, if kbd { 1 } else { 2 }, 1]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect(),
+        (0x11, 1, true) => bitmap(&(1..=248).collect::<Vec<_>>()),
+        (0x11, 0x11, true) => bitmap(&[0, 1, 2]),
+        (0x11, 0x14, true) => vec![0],
+        (0x11, 1, false) => bitmap(&[0x110, 0x111, 0x112]),
+        (0x11, 2, false) => bitmap(&[8]),
+        (0x11, 3, false) => bitmap(&[0, 1]),
+        (0x12, 0 | 1, false) => [0u32, 32767, 0, 0, 0]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect(),
+        _ => vec![],
     }
 }
 
@@ -215,13 +335,84 @@ fn blk(disk: &Disk, overlay: Option<&Overlay>, read: &[&mut [u8]], write: &mut [
     n as u32 + 1
 }
 
+/// A request's buffer: guest RAM at (RAM offset, length).
+fn seg(vm: &Vm, (off, len): (u32, u32)) -> &'static mut [u8] {
+    let p = vm
+        .mem
+        .host(RAM_BASE + off as u64, len as u64, Access::Write)
+        .unwrap();
+    // SAFETY: the core checked the buffer is guest RAM, which outlives the
+    // run; a guest may overlap buffers, but only bytes move through them.
+    unsafe { std::slice::from_raw_parts_mut(p, len as usize) }
+}
+
+/// Writes `data` across the request's writable buffers, in order.
+fn scatter(vm: &Vm, r: &Request, mut data: &[u8]) {
+    for &s in &r.write {
+        let b = seg(vm, s);
+        let n = b.len().min(data.len());
+        b[..n].copy_from_slice(&data[..n]);
+        data = &data[n..];
+    }
+}
+
+fn complete(vm: &Vm, i: usize, w0: u32, len: u32) {
+    assert!(
+        vm.shared.devices[i].cpl.push(&[w0, len]),
+        "completion ring full"
+    );
+    vm.shared.signal.fetch_or(SIGNAL_DEVICE, Ordering::AcqRel);
+}
+
+/// Buffers a backend holds until it has something for them, and what waits for
+/// buffers: frames for virtio-net, events for virtio-input (web/devices.ts `net`, `input`).
+#[derive(Default)]
+struct Held {
+    bufs: VecDeque<Request>,
+    items: VecDeque<Vec<u8>>,
+}
+
+impl Held {
+    /// Queues `item`, dropping the oldest past `max`, and fills buffers.
+    fn push(&mut self, vm: &Vm, i: usize, item: Vec<u8>, max: usize) {
+        self.items.push_back(item);
+        if self.items.len() > max {
+            self.items.pop_front();
+        }
+        self.deliver(vm, i);
+    }
+
+    /// Items that don't fit the next buffer are dropped.
+    fn deliver(&mut self, vm: &Vm, i: usize) {
+        while let (Some(r), Some(item)) = (self.bufs.front(), self.items.front()) {
+            let room: u32 = r.write.iter().map(|s| s.1).sum();
+            if item.len() as u32 <= room {
+                scatter(vm, r, item);
+                complete(vm, i, r.w0, item.len() as u32);
+                self.bufs.pop_front();
+            }
+            self.items.pop_front();
+        }
+    }
+}
+
+fn event([ty, code, value]: [u32; 3]) -> Vec<u8> {
+    let mut e = (ty as u16).to_le_bytes().to_vec();
+    e.extend((code as u16).to_le_bytes());
+    e.extend(value.to_le_bytes());
+    e
+}
+
 /// The backends, as web/devices.ts has them: console TX to `hvc` (receive
 /// buffers wait for input that never comes), rng from splitmix64 seeded 0
-/// (in realtime mode too: std has no CSPRNG), blk from memory.
+/// (in realtime mode too: std has no CSPRNG), blk from memory, net to the
+/// loopback adapter, 9p on an in-memory tree, input from the runner.
 struct Backends {
     devs: Vec<Dev>,
     hvc: Vec<u8>,
     rng: (u64, u64, u32),
+    held: Vec<Held>,
+    p9: Vec<Option<p9::Server>>,
 }
 
 impl Backends {
@@ -230,6 +421,14 @@ impl Backends {
             devs: devs.to_vec(),
             hvc: Vec::new(),
             rng: (0, 0, 0),
+            held: devs.iter().map(|_| Held::default()).collect(),
+            p9: devs
+                .iter()
+                .map(|d| match d {
+                    Dev::P9(_, files) => Some(p9::Server::new(files)),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 
@@ -247,50 +446,114 @@ impl Backends {
         b
     }
 
+    /// The guest set a keyboard LED: inject the test events.
+    fn led(&mut self, vm: &Vm) {
+        for i in 0..self.devs.len() {
+            if let Dev::Input(kbd) = self.devs[i] {
+                let events = if kbd { KEY_EVENTS } else { TABLET_EVENTS };
+                for &e in events {
+                    self.held[i].push(vm, i, event(e), 1024);
+                }
+            }
+        }
+    }
+
     /// Takes every device's events and requests (a DEVICE exit).
     fn poll(&mut self, vm: &Vm) {
         let sh = &vm.shared;
         for (i, d) in sh.devices.iter().enumerate() {
-            d.events.swap(0, Ordering::AcqRel);
-            // Nothing waits in these backends, so a reset only drops old records.
-            let epoch = d.epoch.load(Ordering::Acquire) & 0xff;
-            while let Some(Request {
-                w0,
-                queue,
-                read,
-                write,
-            }) = d.req.pop_request()
+            let events = d.events.swap(0, Ordering::AcqRel);
+            if let Dev::Input(kbd) = self.devs[i]
+                && events & EV_CONFIG != 0
             {
-                if w0 >> 24 != epoch {
+                let c = &d.config;
+                let (sel, sub) = (c[0].load(Ordering::Relaxed), c[1].load(Ordering::Relaxed));
+                let mut a = input_config(kbd, sel, sub);
+                a.truncate(128);
+                c[2].store(a.len() as u8, Ordering::Relaxed);
+                for k in 0..128 {
+                    c[8 + k].store(*a.get(k).unwrap_or(&0), Ordering::Relaxed);
+                }
+            }
+            // A reset drops old records and whatever the backend held.
+            let epoch = d.epoch.load(Ordering::Acquire) & 0xff;
+            if self.held[i]
+                .bufs
+                .front()
+                .is_some_and(|r| r.w0 >> 24 != epoch)
+            {
+                self.held[i] = Held::default();
+            }
+            while let Some(r) = d.req.pop_request() {
+                if r.w0 >> 24 != epoch {
                     continue;
                 }
-                let seg = |(off, len): (u32, u32)| {
-                    let p = vm
-                        .mem
-                        .host(RAM_BASE + off as u64, len as u64, Access::Write);
-                    // SAFETY: the core checked the buffer is guest RAM; a
-                    // guest may overlap buffers, but only bytes move through them.
-                    unsafe { std::slice::from_raw_parts_mut(p.unwrap(), len as usize) }
-                };
-                let len = match (self.devs[i], queue) {
+                let readable =
+                    || -> Vec<u8> { r.read.iter().flat_map(|&s| seg(vm, s).to_vec()).collect() };
+                let len = match (self.devs[i], r.queue) {
                     (Dev::Console, 0) => continue, // a receive buffer
                     (Dev::Console, _) => {
-                        read.into_iter()
-                            .for_each(|s| self.hvc.extend_from_slice(seg(s)));
+                        self.hvc.extend(readable());
                         0
                     }
-                    (Dev::Rng, _) => write.into_iter().fold(0, |n, s| {
-                        seg(s).iter_mut().for_each(|b| *b = self.rng_byte());
+                    (Dev::Rng, _) => r.write.iter().fold(0, |n, &s| {
+                        seg(vm, s).iter_mut().for_each(|b| *b = self.rng_byte());
                         n + s.1
                     }),
                     (Dev::Blk(disk, overlay), _) => {
-                        let r: Vec<_> = read.into_iter().map(seg).collect();
-                        let mut w: Vec<_> = write.into_iter().map(seg).collect();
-                        blk(disk, overlay, &r, &mut w)
+                        let rd: Vec<_> = r.read.iter().map(|&s| seg(vm, s)).collect();
+                        let mut w: Vec<_> = r.write.iter().map(|&s| seg(vm, s)).collect();
+                        blk(disk, overlay, &rd, &mut w)
+                    }
+                    (Dev::Net | Dev::Input(_), 0) => {
+                        self.held[i].bufs.push_back(r);
+                        self.held[i].deliver(vm, i);
+                        continue;
+                    }
+                    (Dev::Net, _) => {
+                        // A frame for the adapter: the header stripped, guest bugs dropped.
+                        let f = readable();
+                        if f.len() > 12
+                            && f.len() <= 12 + 1518
+                            && let Some(reply) = loopback(&f[12..])
+                        {
+                            let mut b = vec![0; 12];
+                            b[10] = 1; // num_buffers
+                            b.extend(reply);
+                            self.held[i].push(vm, i, b, 256);
+                        }
+                        0
+                    }
+                    (Dev::Input(_), _) => {
+                        // A status event: an LED (type 0x11) set to 1 triggers the test's events.
+                        let e = readable();
+                        if e.len() >= 8 && e[..2] == [0x11, 0] && e[4..8] == [1, 0, 0, 0] {
+                            complete(vm, i, r.w0, 0);
+                            self.led(vm);
+                            continue;
+                        }
+                        0
+                    }
+                    (Dev::P9(..), _) => {
+                        let m = readable();
+                        let room: usize = r.write.iter().map(|s| s.1 as usize).sum();
+                        let size = m
+                            .get(..4)
+                            .map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
+                        if !(7..=m.len()).contains(&size) || room < 11 {
+                            0
+                        } else {
+                            let reply = self.p9[i].as_mut().unwrap().handle(&m[..size], room);
+                            if reply.len() > room {
+                                0
+                            } else {
+                                scatter(vm, &r, &reply);
+                                reply.len() as u32
+                            }
+                        }
                     }
                 };
-                assert!(d.cpl.push(&[w0, len]), "completion ring full");
-                sh.signal.fetch_or(SIGNAL_DEVICE, Ordering::AcqRel);
+                complete(vm, i, r.w0, len);
             }
         }
     }
@@ -304,6 +567,8 @@ pub struct Run {
     pub console: String,
     /// What the guest wrote to its virtio console, \r\n turned into \n too.
     pub hvc: String,
+    /// The framebuffer's bytes at the end, if there was one.
+    pub fb: Vec<u8>,
     pub summary: String,
 }
 
@@ -326,6 +591,8 @@ pub struct Boot<'a> {
     pub realtime: bool,
     pub max_steps: u64,
     pub echo: bool,
+    /// A framebuffer's width and height (0, 0: none).
+    pub fb: (u64, u64),
 }
 
 impl<'a> Boot<'a> {
@@ -340,6 +607,7 @@ impl<'a> Boot<'a> {
             realtime: false,
             max_steps: 20_000_000_000,
             echo: false,
+            fb: (0, 0),
         }
     }
 }
@@ -354,6 +622,7 @@ pub fn boot(b: &Boot) -> Run {
         realtime,
         max_steps,
         echo,
+        fb,
     } = b;
     let mut ram = vec![0u128; ram_size as usize / 16];
     // SAFETY: ram is 16-byte aligned, ram_size bytes long, and outlives the Vm.
@@ -362,6 +631,8 @@ pub fn boot(b: &Boot) -> Run {
     let cfg = VmConfig {
         ram_size,
         deterministic: !realtime as u64,
+        fb_width: fb.0,
+        fb_height: fb.1,
         ..VmConfig::default()
     };
     let mut vm = Vm::with_devices(mem, cfg, &entries);
@@ -419,7 +690,13 @@ pub fn boot(b: &Boot) -> Run {
         }
     };
     let secs = t.elapsed().as_secs_f64();
+    let fb = webpc_core::boot::framebuffer(&cfg).map_or(vec![], |(pa, len)| {
+        let p = vm.mem.host(pa, len, Access::Read).unwrap();
+        // SAFETY: host() checked the range is guest RAM.
+        unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec()
+    });
     Run {
+        fb,
         kind,
         x0: vm.exit.x[0],
         console: String::from_utf8_lossy(&out).replace("\r\n", "\n"),

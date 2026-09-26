@@ -3,8 +3,8 @@
 # PL011 with earlycon, the arch timer, PSCI, initrd support; printk, devtmpfs
 # (mounted by the kernel: the root filesystem has an empty /dev); virtio-mmio
 # with the console, entropy and block devices, and ext4 for the root on
-# /dev/vda (M4 steps 2-3). No modules or networking yet: at interpreter speed,
-# boot time is what this costs. A distro-like config comes later in M4.
+# /dev/vda (M4 steps 2-3). No modules: at interpreter speed, boot time is what
+# this costs (images/build.sh also builds arm64 defconfig + this fragment).
 CONFIG_ARM64_4K_PAGES=y
 CONFIG_ARM64_VA_BITS_48=y
 CONFIG_HZ_100=y
@@ -34,3 +34,21 @@ CONFIG_BLOCK=y
 CONFIG_BLK_DEV=y
 CONFIG_VIRTIO_BLK=y
 CONFIG_EXT4_FS=y
+# M4 step 6: virtio-net with IPv4 (BusyBox ip and ping), 9p over virtio,
+# virtio-input with evdev, and fbdev on a simple-framebuffer (no fbcon: drawing
+# the boot log would cost the boot test).
+CONFIG_NET=y
+CONFIG_INET=y
+CONFIG_NETDEVICES=y
+CONFIG_NET_CORE=y
+CONFIG_VIRTIO_NET=y
+CONFIG_NET_9P=y
+CONFIG_NET_9P_VIRTIO=y
+CONFIG_NETWORK_FILESYSTEMS=y
+CONFIG_9P_FS=y
+CONFIG_INPUT=y
+CONFIG_INPUT_EVDEV=y
+CONFIG_VIRTIO_INPUT=y
+CONFIG_FB=y
+CONFIG_FB_DEVICE=y
+CONFIG_FB_SIMPLE=y
