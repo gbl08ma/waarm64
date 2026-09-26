@@ -126,36 +126,43 @@ pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>, emit::Counts) 
             }
         };
         let h = cx.helper;
-        let mut c = emit::Func::default();
-        c.local_get(0).i64_load(emit::PC).local_set(1);
-        let (mut n, mut last) = (0, false);
-        for (i, &w) in b.words.iter().enumerate() {
-            let op = decode(w);
-            if end(op) == End::After {
-                c.commit_flags(); // see `commit_flags`
+        let emit = |plain: u32| {
+            let mut c = emit::Func::default();
+            c.plain = plain;
+            c.local_get(0).i64_load(emit::PC).local_set(1);
+            let (mut n, mut last) = (0, false);
+            for (i, &w) in b.words.iter().enumerate() {
+                let op = decode(w);
+                if end(op) == End::After {
+                    c.commit_flags(); // see `commit_flags`
+                }
+                last = emit::inline(&mut c, w, op, i, &cx);
+                if last {
+                    n += 1;
+                    // Branches end blocks and set the PC.
+                    last = end(op) == End::No;
+                    continue;
+                }
+                c.flush();
+                c.sync_flags();
+                c.local_get(0).i32_const(w as i32).local_get(1);
+                if i > 0 {
+                    c.i64_const(4 * i as i64).i64_add();
+                }
+                c.call(h).if_().i32_const(i as i32).return_().end();
+                c.forget(!0);
             }
-            last = emit::inline(&mut c, w, op, i, &cx);
             if last {
-                n += 1;
-                // Branches end blocks and set the PC.
-                last = end(op) == End::No;
-                continue;
+                emit::set_pc(&mut c, 4 * b.words.len() as i64);
             }
             c.flush();
             c.sync_flags();
-            c.local_get(0).i32_const(w as i32).local_get(1);
-            if i > 0 {
-                c.i64_const(4 * i as i64).i64_add();
-            }
-            c.call(h).if_().i32_const(i as i32).return_().end();
-            c.forget(!0);
-        }
-        if last {
-            emit::set_pc(&mut c, 4 * b.words.len() as i64);
-        }
-        c.flush();
-        c.sync_flags();
-        c.i32_const(b.words.len() as i32).end();
+            c.i32_const(b.words.len() as i32).end();
+            (c, n)
+        };
+        // Twice: the first emission finds the registers to read plainly (`Func::plain`).
+        let first = emit(0).0;
+        let (mut c, n) = emit(first.read & !first.reused);
         let name = format!("{:#x}_pa{:#x}", b.va, b.key & !3);
         let locals = c.locals();
         m.func(bt, &locals, &c.c, &name);
@@ -304,7 +311,8 @@ mod tests {
     #[test]
     fn registers_stay_in_locals() {
         // add x1, x2, #3; add x3, x1, #1: the second reads x1 from its local,
-        // and both results are written back once, at the end.
+        // and both results are written back once, at the end. x2, read once,
+        // is a plain load (no local).
         let b = Block {
             key: 0x4000_0200,
             va: 0x4000_0200,
@@ -313,13 +321,13 @@ mod tests {
         let (bytes, _, _) = module(&[b], &test_mem());
         #[rustfmt::skip]
         let body = [
-            0x20, 0, 0x29, 3, 16, 0x22, 2, 0x42, 3, 0x7c, 0x21, 3, // x1 = x2 + 3
-            0x20, 3, 0x42, 1, 0x7c, 0x21, 4,                       // x3 = x1 + 1
+            0x20, 0, 0x29, 3, 16, 0x42, 3, 0x7c, 0x21, 2, // x1 = x2 + 3
+            0x20, 2, 0x42, 1, 0x7c, 0x21, 3,              // x3 = x1 + 1
         ];
         assert!(has(&bytes, &body));
         assert!(has(
             &bytes,
-            &[0x20, 0, 0x20, 3, 0x37, 3, 8, 0x20, 0, 0x20, 4, 0x37, 3, 24]
+            &[0x20, 0, 0x20, 2, 0x37, 3, 8, 0x20, 0, 0x20, 3, 0x37, 3, 24]
         ));
         assert_eq!(bytes.windows(2).filter(|w| *w == [0x29, 3]).count(), 2); // the PC and x2
     }
@@ -337,14 +345,14 @@ mod tests {
         assert_eq!(inl, [2]);
         #[rustfmt::skip]
         let around = [
-            0x20, 0, 0x20, 3, 0x37, 3, 8,                    // x1 written back
+            0x20, 0, 0x20, 2, 0x37, 3, 8,                    // x1 written back
             0x20, 0, 0x41,                                    // helper(vcpu, insn, …)
         ];
         assert!(has(&bytes, &around));
         #[rustfmt::skip]
         let after = [
             0x0f, 0x0b,                                       // …; if: return 1; end
-            0x20, 0, 0x29, 3, 8, 0x22, 3, 0x42, 1, 0x7c, 0x21, 4, // x3 = x1 (reloaded) + 1
+            0x20, 0, 0x29, 3, 8, 0x22, 2, 0x42, 1, 0x7c, 0x21, 3, // x3 = x1 (reloaded) + 1
         ];
         assert!(has(&bytes, &after));
     }
@@ -387,7 +395,7 @@ mod tests {
         assert_eq!(counts, want);
         // tst w1, #1; b.ne: the i32 result against zero (i32.ne).
         let (bytes, _) = one(&[0x7200003f, 0x54000001]);
-        assert!(has(&bytes, &[0x20, 3, 0x41, 0, 0x47])); // the i32 result, after entry and x1
+        assert!(has(&bytes, &[0x20, 2, 0x41, 0, 0x47])); // the i32 result, after the entry PC
         // adds x0, x1, x2; adc x3, x3, x3: the carry in is x + y < x, unsigned.
         let (bytes, counts) = one(&[0xab020020, 0x9a030063]);
         assert!(has(&bytes, &[0x20, 5, 0x20, 6, 0x7c, 0x20, 5, 0x54])); // i64.lt_u

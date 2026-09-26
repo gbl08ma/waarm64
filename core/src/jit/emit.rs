@@ -113,6 +113,15 @@ pub struct Func {
     pub regs: Regs,
     pub flags: Flags,
     pub counts: Counts,
+    /// Registers read at least once, and read more than once or written; and
+    /// the registers to read straight from the `Cpu` without a local: a first
+    /// emission of the block finds them, and registers read once and never
+    /// written are `plain` in the second (a local costs Liftoff more than it
+    /// saves them). Bit masks, not counts: rustc nightly-2026-09-24 with
+    /// simd128 miscompiles a `[u8; 32]` compared into a u32 mask (PLAN.md M9).
+    pub read: u32,
+    pub reused: u32,
+    pub plain: u32,
 }
 
 impl Deref for Func {
@@ -161,7 +170,11 @@ impl Func {
 
     /// Pushes register `n` (31 is SP) as an i64.
     fn reg(&mut self, n: u32) {
-        if self.regs.valid & 1 << n != 0 {
+        self.reused |= self.read & 1 << n;
+        self.read |= 1 << n;
+        if self.plain & 1 << n != 0 {
+            self.c.local_get(VCPU).i64_load(8 * n);
+        } else if self.regs.valid & 1 << n != 0 {
             let l = self.local[n as usize];
             self.c.local_get(l);
         } else {
@@ -173,6 +186,7 @@ impl Func {
 
     /// Pops an i64 into register `n` (31 is SP).
     fn set_reg(&mut self, n: u32) {
+        self.reused |= 1 << n;
         let l = self.local(n);
         self.c.local_set(l);
         self.regs.valid |= 1 << n;
