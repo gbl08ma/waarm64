@@ -98,7 +98,7 @@ pub struct Block {
 /// read at entry: blocks are keyed by PA, so one can run at any VA that maps
 /// its page. Helpers set `Cpu::pc` themselves; a block that ends on an inline
 /// instruction other than a branch stores it before returning.
-pub fn module(blocks: &[Block]) -> (Vec<u8>, Vec<u32>) {
+pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>) {
     let mut m = Module::default();
     let bt = m.ty(&[I32], &[I32]);
     let ht = m.ty(&[I32, I32, I64], &[I32]);
@@ -106,14 +106,28 @@ pub fn module(blocks: &[Block]) -> (Vec<u8>, Vec<u32>) {
     let mmu = m.import_func("env", "jit_exec_mmu", ht);
     m.import_memory("env", "memory", 0, 65536);
     let mut inl = Vec::with_capacity(blocks.len());
+    let (base, phys) = mem.base();
     for b in blocks {
-        let h = if b.key & KEY_MMU != 0 { mmu } else { flat };
+        let cx = if b.key & KEY_MMU != 0 {
+            let read = emit::tlb_array(b.key & KEY_EL1, 0);
+            emit::Ctx {
+                helper: mmu,
+                bus: emit::Bus::Tlb { read },
+            }
+        } else {
+            let (base, size) = (base as usize as u32, mem.size());
+            emit::Ctx {
+                helper: flat,
+                bus: emit::Bus::Flat { base, phys, size },
+            }
+        };
+        let h = cx.helper;
         let mut c = Code::default();
         c.local_get(0).i64_load(emit::PC).local_set(1);
         let (mut n, mut last) = (0, false);
         for (i, &w) in b.words.iter().enumerate() {
             let op = decode(w);
-            last = emit::inline(&mut c, w, op, i);
+            last = emit::inline(&mut c, w, op, i, &cx);
             if last {
                 n += 1;
                 // Branches end blocks and set the PC.
@@ -155,6 +169,11 @@ mod tests {
             mem.write(at + 4 * k as u64, 4, w as u64).unwrap();
         }
         (ram, mem)
+    }
+
+    fn test_mem() -> Mem {
+        // SAFETY: never accessed (module only reads its layout).
+        unsafe { Mem::new(core::ptr::dangling_mut::<u128>().cast(), 0) }
     }
 
     #[test]
@@ -214,7 +233,7 @@ mod tests {
             va: 0xffff_0100,
             words: vec![MOVZ, MRS],
         };
-        let (bytes, inl) = module(&[b]);
+        let (bytes, inl) = module(&[b], &test_mem());
         assert_eq!(inl, [1]);
         #[rustfmt::skip]
         let body = [
@@ -252,7 +271,7 @@ mod tests {
             va: 0x4000_0200,
             words: vec![MOVZ, MOVZ],
         };
-        let (bytes, inl) = module(&[b]);
+        let (bytes, inl) = module(&[b], &test_mem());
         assert_eq!(inl, [2]);
         // vcpu; entry + 8; i64.store 256; return 2
         let tail = [

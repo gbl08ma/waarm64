@@ -10,6 +10,7 @@
 use super::wasm::{Code, I32, I64};
 use crate::decode::Op;
 use crate::interp::{adr_imm, bit, bit_masks, bits, sext, trunc};
+use crate::mmu::{TLB_ENTRIES, Vcpu};
 
 /// A block function's locals after its parameter (local 0, the vCPU): the
 /// entry PC (local 1), then scratch: i64 in 2..=5, i32 in 6..=9.
@@ -88,7 +89,7 @@ pub fn set_pc(c: &mut Code, off: i64) {
 
 /// Emits instruction `i` (the `k`-th of its block) inline if this step covers
 /// it; false (and nothing emitted) if it stays a helper call.
-pub fn inline(c: &mut Code, i: u32, op: Op, k: usize) -> bool {
+pub fn inline(c: &mut Code, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
     use Op::*;
     let sf = bit(i, 31);
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
@@ -444,6 +445,10 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize) -> bool {
             konst(c, sf, 1);
             arith(c, sf, SUB);
         }),
+        LDR_lit_gen | LDRSW_lit | PRFM_lit | PRFM_imm | PRFM_unscaled_imm | STRx_LDRx_imm_2
+        | STURx_LDURx | STRx_reg | LDRx_reg | STRx_LDRx_imm_1 | STP_LDP_gen | STNP_LDNP_gen => {
+            return ldst(c, cx, i, op, k);
+        }
         // The shift amount is Rm modulo the width, as wasm shifts take it.
         LSLV | LSRV | ASRV | RORV => set(c, sf, rd, |c| {
             get(c, sf, rn);
@@ -453,6 +458,271 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize) -> bool {
         _ => return false,
     }
     true
+}
+
+/// How a block's inline loads and stores reach guest RAM, and the helper that
+/// re-executes an instruction whose fast path doesn't apply.
+#[derive(Clone, Copy, Debug)]
+pub struct Ctx {
+    pub helper: u32,
+    pub bus: Bus,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Bus {
+    /// MMU and alignment checks off (VA = PA): `size` bytes of RAM at guest
+    /// PA `phys`, at `base` in the wasm memory.
+    Flat { base: u32, phys: u64, size: u64 },
+    /// MMU on, alignment checks off: the TLB's read array for the block's EL
+    /// at this offset in the `Vcpu` (its write array follows).
+    Tlb { read: u32 },
+}
+
+/// The `Vcpu` offset of TLB array `3 * el + u` (read 0, write 1).
+pub fn tlb_array(el: u64, u: u64) -> u32 {
+    (core::mem::offset_of!(Vcpu, tlb) + (3 * el + u) as usize * TLB_ENTRIES * 16) as u32
+}
+
+// Load/store scratch: the address and base (i64), the RAM offset or entry
+// pointer (flat: i64 offset; TLB: i32 entry), the host address (i32).
+const ADDR: u32 = 2;
+const BASE: u32 = 3;
+const OFF: u32 = 4;
+const TLBE: u32 = 7;
+const HOST: u32 = 6;
+
+/// Loads, stores and pairs whose handlers can't fail for other reasons than
+/// the access itself. Exclusives, atomics, unprivileged and FP accesses stay
+/// helper calls.
+fn ldst(c: &mut Code, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+    use Op::*;
+    let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let here = 4 * k as i64;
+    let (size, opc) = (bits(i, 31, 30), bits(i, 23, 22));
+    // The base register, with SP's alignment check left to the helper.
+    let base = |c: &mut Code| {
+        get_sp(c, true, rn);
+        c.local_set(BASE);
+    };
+    match op {
+        LDR_lit_gen | LDRSW_lit => {
+            let (len, sign) = match (op, bit(i, 30)) {
+                (LDRSW_lit, _) => (4, true),
+                (_, b) => (if b { 8 } else { 4 }, false),
+            };
+            pc_plus(c, here + sext((bits(i, 23, 5) << 2) as u64, 21) as i64);
+            c.local_set(ADDR);
+            access(c, cx, i, here, len, false, false, |c, off| {
+                load_reg(c, rt, off, len, sign, false)
+            });
+        }
+        PRFM_lit => {}
+        PRFM_imm | PRFM_unscaled_imm => {
+            if rn == 31 {
+                return false; // SP's alignment check
+            }
+        }
+        STRx_LDRx_imm_2 | STURx_LDURx | STRx_reg | LDRx_reg | STRx_LDRx_imm_1 => {
+            if matches!(op, STRx_reg | LDRx_reg) && bits(i, 15, 13) & 2 == 0 {
+                return false; // UNDEFINED, PRFM included
+            }
+            let len = 1 << size;
+            let prfm = op != STRx_LDRx_imm_1;
+            let (store, sign, to32) = match opc {
+                0 => (true, false, false),
+                1 => (false, false, false),
+                2 if size == 3 && prfm => {
+                    return rn != 31; // PRFM: nothing but SP's alignment check
+                }
+                _ if size == 3 || (size == 2 && opc == 3) => return false, // UNDEFINED
+                _ => (false, true, opc == 3),
+            };
+            base(c);
+            let mut wb = false;
+            match op {
+                STRx_LDRx_imm_2 => {
+                    c.local_get(BASE);
+                    c.i64_const(((bits(i, 21, 10) as u64) << size) as i64)
+                        .i64_add();
+                }
+                STURx_LDURx => {
+                    c.local_get(BASE);
+                    c.i64_const(sext(bits(i, 20, 12) as u64, 9) as i64)
+                        .i64_add();
+                }
+                STRx_reg | LDRx_reg => {
+                    let amt = if bit(i, 12) { size } else { 0 };
+                    c.local_get(BASE);
+                    extend(c, true, rm, bits(i, 15, 13), amt);
+                    c.i64_add();
+                }
+                _ => {
+                    // Pre-index (bit 11) accesses base + imm9, post-index the
+                    // base; both write base + imm9 back.
+                    wb = true;
+                    c.local_get(BASE);
+                    if bit(i, 11) {
+                        c.i64_const(sext(bits(i, 20, 12) as u64, 9) as i64)
+                            .i64_add();
+                    }
+                }
+            }
+            c.local_set(ADDR);
+            let imm9 = sext(bits(i, 20, 12) as u64, 9) as i64;
+            access(c, cx, i, here, len, store, rn == 31, |c, off| {
+                if store {
+                    c.local_get(HOST);
+                    get(c, true, rt);
+                    c.memarg(STORE[size as usize], 0, off);
+                } else {
+                    load_reg(c, rt, off, len, sign, to32);
+                }
+                if wb {
+                    writeback(c, rn, imm9);
+                }
+            });
+        }
+        STP_LDP_gen | STNP_LDNP_gen => {
+            let load = bit(i, 22);
+            let (len, sign) = match (bits(i, 31, 30), load) {
+                (0, _) => (4, false),
+                (2, _) => (8, false),
+                (1, true) if op == STP_LDP_gen => (4, true), // LDPSW
+                _ => return false,                           // STGP, or reserved
+            };
+            let rt2 = bits(i, 14, 10);
+            let off = sext(bits(i, 21, 15) as u64, 7).wrapping_mul(len as u64) as i64;
+            // 24:23 is 01 post-index, 11 pre-index, 10 (or 00 for the non-temporal forms) offset.
+            let mode = bits(i, 24, 23);
+            base(c);
+            c.local_get(BASE);
+            if mode != 1 {
+                c.i64_const(off).i64_add();
+            }
+            c.local_set(ADDR);
+            access(c, cx, i, here, 2 * len, !load, rn == 31, |c, o| {
+                if load {
+                    load_reg(c, rt, o, len, sign, false);
+                    load_reg(c, rt2, o + len, len, sign, false);
+                } else {
+                    for (r, o) in [(rt, o), (rt2, o + len)] {
+                        c.local_get(HOST);
+                        get(c, true, r);
+                        c.memarg(STORE[len.trailing_zeros() as usize], 0, o);
+                    }
+                }
+                if mode & 1 == 1 {
+                    writeback(c, rn, off);
+                }
+            });
+        }
+        _ => return false,
+    }
+    true
+}
+
+// i64 loads by log2 size, zero- and sign-extending, and i64 stores.
+const LOAD_U: [u8; 4] = [0x31, 0x33, 0x35, 0x29];
+const LOAD_S: [u8; 4] = [0x30, 0x32, 0x34, 0x29];
+const STORE: [u8; 4] = [0x3c, 0x3d, 0x3e, 0x37];
+
+/// Loads `len` bytes at the host address (+ `off`) into Xt: zero-extended,
+/// sign-extended to 64 bits, or (`to32`) sign-extended to 32 and zero-extended.
+fn load_reg(c: &mut Code, rt: u32, off: u32, len: u32, sign: bool, to32: bool) {
+    let lg = len.trailing_zeros() as usize;
+    set(c, true, rt, |c| {
+        c.local_get(HOST);
+        if to32 {
+            // i32.load8_s / i32.load16_s
+            c.memarg([0x2c, 0x2e][lg], 0, off).i64_extend_i32_u();
+        } else {
+            c.memarg(if sign { LOAD_S[lg] } else { LOAD_U[lg] }, 0, off);
+        }
+    });
+}
+
+/// Rn (31: SP) = the base + `imm`.
+fn writeback(c: &mut Code, rn: u32, imm: i64) {
+    set_sp(c, true, rn, |c| {
+        c.local_get(BASE).i64_const(imm).i64_add();
+    });
+}
+
+/// The fast path of an access of `len` bytes at the address in `ADDR`: if it
+/// is RAM (flat: in bounds; MMU: a TLB hit for the page, which the access
+/// doesn't leave) and, for an SP base (`sp`), SP is 16-byte aligned, `body`
+/// runs with the host address in `HOST`, to be used with the memarg offset
+/// it gets. Otherwise the helper re-executes the instruction (exact faults,
+/// MMIO through `vm::Io`, page-crossing accesses) and the block returns if it
+/// didn't retire.
+#[allow(clippy::too_many_arguments)]
+fn access(
+    c: &mut Code,
+    cx: &Ctx,
+    i: u32,
+    here: i64,
+    len: u32,
+    write: bool,
+    sp: bool,
+    body: impl FnOnce(&mut Code, u32),
+) {
+    let off = match cx.bus {
+        Bus::Flat { base, phys, size } => {
+            c.local_get(ADDR);
+            if phys != 0 {
+                c.i64_const(phys as i64).op(SUB + W);
+            }
+            c.local_tee(OFF);
+            c.i64_const(size.saturating_sub(len as u64) as i64)
+                .op(LE_U + WC);
+            base
+        }
+        Bus::Tlb { read } => {
+            let arr = read + if write { (TLB_ENTRIES * 16) as u32 } else { 0 };
+            c.local_get(ADDR).i64_const(12).op(SHR_U + W).i32_wrap_i64();
+            c.i32_const(TLB_ENTRIES as i32 - 1)
+                .op(AND)
+                .i32_const(4)
+                .op(SHL);
+            c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
+            c.local_get(ADDR);
+            if len > 1 {
+                c.i64_const(len as i64 - 1).i64_add();
+            }
+            c.i64_const(0xfff).op(OR + W).op(EQ + WC);
+            0
+        }
+    };
+    if sp {
+        c.local_get(BASE)
+            .i64_const(15)
+            .i64_and()
+            .op(EQZ + WC)
+            .op(AND);
+    }
+    c.if_();
+    match cx.bus {
+        Bus::Flat { .. } => c.local_get(OFF).i32_wrap_i64(),
+        Bus::Tlb { read } => {
+            let arr = read + if write { (TLB_ENTRIES * 16) as u32 } else { 0 };
+            c.local_get(TLBE)
+                .i64_load(arr + 8)
+                .local_get(ADDR)
+                .i64_add()
+                .i32_wrap_i64()
+        }
+    };
+    c.local_set(HOST);
+    body(c, off);
+    c.else_();
+    c.local_get(VCPU).i32_const(i as i32);
+    pc_plus(c, here);
+    c.call(cx.helper)
+        .if_()
+        .i32_const((here / 4) as i32)
+        .return_()
+        .end();
+    c.end();
 }
 
 // i32 opcodes. The i64 twin of an arithmetic one is `W` higher, of a
@@ -700,9 +970,14 @@ fn shifted(c: &mut Code, i: u32) {
 
 /// Pushes the extended-register operand (Rm, option 15:13, left shift 12:10 ≤ 4).
 fn extended(c: &mut Code, i: u32) {
-    let (sf, amt) = (bit(i, 31), bits(i, 12, 10));
-    get(c, sf, bits(i, 20, 16));
-    match (bits(i, 15, 13), sf) {
+    let sf = bit(i, 31);
+    extend(c, sf, bits(i, 20, 16), bits(i, 15, 13), bits(i, 12, 10));
+}
+
+/// Pushes ExtendReg(Rm, `option`, `amt`) at the operation size.
+fn extend(c: &mut Code, sf: bool, rm: u32, option: u32, amt: u32) {
+    get(c, sf, rm);
+    match (option, sf) {
         (0, _) => mask(c, sf, 0xff),
         (1, _) => mask(c, sf, 0xffff),
         (2, true) => mask(c, sf, 0xffff_ffff),
@@ -799,9 +1074,22 @@ mod tests {
     use super::*;
     use crate::decode::decode;
 
+    const FLAT: Ctx = Ctx {
+        helper: 0,
+        bus: Bus::Flat {
+            base: 0x10000,
+            phys: 0,
+            size: 0x1000,
+        },
+    };
+
     fn emit(i: u32, k: usize) -> Option<Vec<u8>> {
+        emit_in(i, k, &FLAT)
+    }
+
+    fn emit_in(i: u32, k: usize, cx: &Ctx) -> Option<Vec<u8>> {
         let mut c = Code::default();
-        inline(&mut c, i, decode(i), k).then_some(c.b)
+        inline(&mut c, i, decode(i), k, cx).then_some(c.b)
     }
 
     #[test]
@@ -960,5 +1248,50 @@ mod tests {
         );
         assert_eq!(emit(0x5ac00c20, 0), None); // rev w0 with opc 11: UNDEFINED
         assert_eq!(emit(0xd503201f, 0).unwrap(), []); // nop
+    }
+
+    #[test]
+    fn loads_and_stores() {
+        use crate::jit::wasm::{sleb, uleb};
+        // ldr x0, [x1, #8], flat: base, address, bounds check, load or helper.
+        let insn = 0xf9400420u32;
+        #[rustfmt::skip]
+        let mut want = vec![
+            0x20, 0, 0x29, 3, 8, 0x21, 3,           // BASE = x1
+            0x20, 3, 0x42, 8, 0x7c, 0x21, 2,        // ADDR = BASE + 8
+            0x20, 2, 0x22, 4, 0x42, 0xf8, 0x1f, 0x58, // OFF = ADDR; OFF <= 0x1000 - 8
+            0x04, 0x40, 0x20, 4, 0xa7, 0x21, 6,     // if: HOST = OFF
+            0x20, 0, 0x20, 6, 0x29, 0, 0x80, 0x80, 4, 0x37, 3, 0, // x0 = [HOST + base]
+            0x05, 0x20, 0, 0x41,                    // else: helper(vcpu, insn, pc)
+        ];
+        sleb(&mut want, insn as i32 as i64);
+        want.extend([0x20, 1, 0x10, 0, 0x04, 0x40, 0x41, 0, 0x0f, 0x0b, 0x0b]);
+        assert_eq!(emit(insn, 0).unwrap(), want);
+        // Through the TLB at EL1: the tag at the entry, then the addend at + 8.
+        let read = tlb_array(1, 0);
+        let tlb = Ctx {
+            helper: 0,
+            bus: Bus::Tlb { read },
+        };
+        let b = emit_in(insn, 0, &tlb).unwrap();
+        for off in [read, read + 8] {
+            let mut load = vec![0x29, 3];
+            uleb(&mut load, off as u64);
+            assert!(b.windows(load.len()).any(|w| w == load), "{off:#x}");
+        }
+        // A store uses the write array; an SP base checks SP's alignment first.
+        let mut load = vec![0x29, 3];
+        uleb(&mut load, (read + 0x10000) as u64);
+        let b = emit_in(0xf90007e0, 0, &tlb).unwrap(); // str x0, [sp, #8]
+        assert!(b.windows(load.len()).any(|w| w == load));
+        assert!(
+            b.windows(7)
+                .any(|w| w == [0x20, 3, 0x42, 15, 0x83, 0x50, 0x71])
+        );
+        // PRFM: nothing, unless its base is SP; with a reserved option, a helper.
+        assert_eq!(emit(0xf9800020, 0).unwrap(), []); // prfm pldl1keep, [x1]
+        assert_eq!(emit(0xf98003e0, 0), None); // prfm pldl1keep, [sp]
+        assert_eq!(emit(0xf8a10820, 0), None); // prfm pldl1keep, [x1, w1, uxtb]: UNDEFINED
+        assert_eq!(emit(0xc85f7c20, 0), None); // ldxr x0, [x1]: a helper
     }
 }

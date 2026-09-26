@@ -166,6 +166,8 @@ pub struct Cache {
     next: u32,
     /// No JIT host (natively, or before `jit.bind`): interpret everything.
     off: bool,
+    /// The RAM the blocks were compiled for (flat blocks embed its layout).
+    ram: Option<(usize, u64, u64)>,
     pub stats: Stats,
 }
 
@@ -182,6 +184,7 @@ impl Cache {
             clock: 0,
             next: 0,
             off: false,
+            ram: None,
             stats: Stats::default(),
         }
     }
@@ -295,6 +298,12 @@ impl Cache {
 
     /// Compiles the pending batch into one module and installs it.
     fn emit(&mut self, mem: &Mem) {
+        let (base, phys) = mem.base();
+        let ram = (base as usize, phys, mem.size());
+        assert!(
+            *self.ram.get_or_insert(ram) == ram,
+            "a JIT vCPU runs on one RAM"
+        );
         let pending = core::mem::take(&mut self.pending);
         let mut blocks = Vec::with_capacity(pending.len());
         for (key, va) in pending {
@@ -311,7 +320,7 @@ impl Cache {
         }
         let n = blocks.len() as u32;
         let slot = self.alloc(n);
-        let (bytes, inl) = block::module(&blocks);
+        let (bytes, inl) = block::module(&blocks, mem);
         let t = now_ns();
         let Some(idx) = install(&bytes, slot) else {
             self.off = true;
@@ -366,12 +375,14 @@ fn now_ns() -> u64 {
 
 /// The block key for the PC: its PA (through the instruction TLB when the
 /// MMU copy runs) and the regime bits; `None` if the fetch would fault, which
-/// the interpreter then raises.
+/// the interpreter then raises, or alignment checking is on.
 #[inline(always)]
 fn key(v: &mut Vcpu, mem: &Mem) -> Option<u64> {
     let c = &v.cpu;
     let (pc, el) = (c.pc, c.el() & 1);
-    if pc & 3 != 0 {
+    // Inline loads and stores don't check alignment: with SCTLR_EL1.A set
+    // (Linux never sets it) everything runs in the interpreter.
+    if pc & 3 != 0 || c.sctlr_el1 & sctlr::A != 0 {
         return None;
     }
     if c.sctlr_el1 & (sctlr::M | sctlr::A) == 0 {

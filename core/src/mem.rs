@@ -104,6 +104,11 @@ impl Mem {
         self.size
     }
 
+    /// The host address of the first RAM byte, and its guest PA (the JIT's flat fast path).
+    pub fn base(&self) -> (*mut u8, u64) {
+        (self.base, self.phys)
+    }
+
     /// Guest physical address to host pointer for `len` bytes of RAM.
     #[inline]
     pub fn host(&self, pa: u64, len: u64, access: Access) -> Result<*mut u8, Fault> {

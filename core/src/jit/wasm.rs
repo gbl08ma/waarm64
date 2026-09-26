@@ -58,7 +58,8 @@ impl Code {
         self.b.push(op);
         self
     }
-    fn memarg(&mut self, op: u8, align: u32, offset: u32) -> &mut Self {
+    /// A load or store `op` with its alignment hint (log2) and constant offset.
+    pub fn memarg(&mut self, op: u8, align: u32, offset: u32) -> &mut Self {
         self.b.push(op);
         uleb(&mut self.b, align as u64);
         uleb(&mut self.b, offset as u64);
