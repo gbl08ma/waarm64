@@ -40,6 +40,8 @@ const CLASSES: Record<string, [number, number]> = {
   'extract, 64-bit': [0xffe00000, 0x93c00000],
   'extract, 32-bit': [0xffe08000, 0x13800000],
   'variable shifts': [0x5fe0f000, 0x1ac02000],
+  'conditional select': [0x3fe00800, 0x1a800000],
+  'conditional compare': [0x3fe00410, 0x3a400000],
 };
 
 // xorshift64*, seeded: failures reproduce.

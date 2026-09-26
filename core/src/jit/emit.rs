@@ -264,6 +264,45 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize) -> bool {
                 }
             });
         }
+        CSEL | CSINC | CSINV | CSNEG => set(c, sf, rd, |c| {
+            get(c, sf, rn);
+            if op == CSNEG {
+                konst(c, sf, 0);
+            }
+            get(c, sf, rm);
+            match op {
+                CSINC => {
+                    konst(c, sf, 1);
+                    arith(c, sf, ADD);
+                }
+                CSINV => {
+                    konst(c, sf, u64::MAX);
+                    arith(c, sf, XOR);
+                }
+                CSNEG => arith(c, sf, SUB),
+                _ => {}
+            }
+            cond_holds(c, bits(i, 15, 12));
+            c.select();
+        }),
+        CCMN_reg | CCMP_reg | CCMN_imm | CCMP_imm => {
+            // NZCV = cond ? AddWithCarry's flags : nzcv (3:0).
+            let sub = bit(i, 30);
+            c.local_get(VCPU);
+            let y = |c: &mut Code| {
+                if bit(i, 11) {
+                    konst(c, sf, rm as u64);
+                } else {
+                    get(c, sf, rm);
+                }
+            };
+            let (tx, ty, tr) = add_with_carry(c, sf, |c| get(c, sf, rn), y, sub);
+            let carry = if sub { Carry::One } else { Carry::Zero };
+            add_nzcv(c, sf, tx, ty, tr, carry);
+            c.i32_const((bits(i, 3, 0) << 28) as i32);
+            cond_holds(c, bits(i, 15, 12));
+            c.select().i64_extend_i32_u().i64_store(NZCV);
+        }
         // The shift amount is Rm modulo the width, as wasm shifts take it.
         LSLV | LSRV | ASRV | RORV => set(c, sf, rd, |c| {
             get(c, sf, rn);
@@ -290,7 +329,10 @@ const SHR_U: u8 = 0x76;
 const ROTR: u8 = 0x78;
 const EQZ: u8 = 0x45;
 const EQ: u8 = 0x46;
+const NE: u8 = 0x47;
+const LT_S: u8 = 0x48;
 const LT_U: u8 = 0x49;
+const GE_S: u8 = 0x4e;
 const LE_U: u8 = 0x4d;
 
 /// A binary or unary arithmetic op at the operation size.
@@ -334,7 +376,22 @@ fn addsub(
         }
         return;
     }
-    // AddWithCarry(x, sub ? !y : y, sub).
+    let (tx, ty, tr) = add_with_carry(c, sf, x, y, sub);
+    set(c, sf, rd, |c| {
+        c.local_get(tr);
+    });
+    let carry = if sub { Carry::One } else { Carry::Zero };
+    add_flags(c, sf, tx, ty, tr, carry);
+}
+
+/// AddWithCarry(x, sub ? !y : y, sub) into scratch locals (x, y, result).
+fn add_with_carry(
+    c: &mut Code,
+    sf: bool,
+    x: impl FnOnce(&mut Code),
+    y: impl FnOnce(&mut Code),
+    sub: bool,
+) -> (u32, u32, u32) {
     let (tx, ty, tr) = (tmp(sf, 0), tmp(sf, 1), tmp(sf, 2));
     x(c);
     c.local_set(tx);
@@ -351,17 +408,7 @@ fn addsub(
         arith(c, sf, ADD);
     }
     c.local_set(tr);
-    set(c, sf, rd, |c| {
-        c.local_get(tr);
-    });
-    add_flags(
-        c,
-        sf,
-        tx,
-        ty,
-        tr,
-        if sub { Carry::One } else { Carry::Zero },
-    );
+    (tx, ty, tr)
 }
 
 /// Stores AddWithCarry's NZCV for `r` = `x` + `y` + carry (locals of the
@@ -369,6 +416,12 @@ fn addsub(
 /// the sign of `(x ^ r) & (y ^ r)`.
 fn add_flags(c: &mut Code, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
     c.local_get(VCPU);
+    add_nzcv(c, sf, x, y, r, carry);
+    c.i64_extend_i32_u().i64_store(NZCV);
+}
+
+/// Pushes [`add_flags`]'s NZCV as an i32.
+fn add_nzcv(c: &mut Code, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
     nz(c, sf, r);
     c.local_get(r).local_get(x);
     match carry {
@@ -388,7 +441,41 @@ fn add_flags(c: &mut Code, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
     arith(c, sf, XOR);
     arith(c, sf, AND);
     sign_to(c, sf, 28);
-    c.op(OR).i64_extend_i32_u().i64_store(NZCV);
+    c.op(OR);
+}
+
+/// Pushes an i32 that is non-zero iff condition `cond` holds for NZCV in
+/// memory (ConditionHolds): GE and GT line N up with V (`n ^ n << 3`) and Z
+/// (`n << 1`) in the sign bit.
+fn cond_holds(c: &mut Code, cond: u32) {
+    let n = tmp(false, 3);
+    let invert = cond & 1 == 1 && cond != 15;
+    if cond >> 1 == 7 {
+        c.i32_const(1);
+        return;
+    }
+    c.local_get(VCPU).i32_load(NZCV);
+    match cond >> 1 {
+        b @ 0..=3 => {
+            c.i32_const([0x4000_0000, 0x2000_0000, 0x8000_0000u32 as i32, 0x1000_0000][b as usize]);
+            c.op(AND);
+            if invert {
+                c.op(EQZ);
+            }
+        }
+        4 => {
+            // HI: C set and Z clear.
+            c.i32_const(0x6000_0000).op(AND).i32_const(0x2000_0000);
+            c.op(if invert { NE } else { EQ });
+        }
+        b => {
+            c.local_tee(n).local_get(n).i32_const(3).op(SHL).op(XOR);
+            if b == 6 {
+                c.local_get(n).i32_const(1).op(SHL).op(OR);
+            }
+            c.i32_const(0).op(if invert { LT_S } else { GE_S });
+        }
+    }
 }
 
 /// Pushes N and Z of the result in local `r`, in place in an i32.
@@ -586,5 +673,19 @@ mod tests {
         assert!(b.ends_with(&[0xad, 0x37, 3, 0x88, 2]));
         assert_eq!(emit(0x92400000 | 0x3f << 10, 0), None); // and x0, x0, #<all ones>: reserved
         assert_eq!(emit(0x13400000, 0), None); // sbfm w0, w0, #0, #0 with N = 1: UNDEFINED
+    }
+
+    #[test]
+    fn conditional() {
+        // csel x0, x1, x2, eq: x1, x2, NZCV & Z, select
+        #[rustfmt::skip]
+        let want = [
+            0x20, 0, 0x20, 0, 0x29, 3, 8, 0x20, 0, 0x29, 3, 16,
+            0x20, 0, 0x28, 2, 0x88, 2, 0x41, 0x80, 0x80, 0x80, 0x80, 0x04, 0x71, 0x1b, 0x37, 3, 0,
+        ];
+        assert_eq!(emit(0x9a820020, 0).unwrap(), want);
+        // ccmp x1, #3, #4, ne: the flags or #4 << 28, selected, stored to NZCV
+        let b = emit(0xfa431824, 0).unwrap();
+        assert!(b.ends_with(&[0x45, 0x1b, 0xad, 0x37, 3, 0x88, 2]));
     }
 }
