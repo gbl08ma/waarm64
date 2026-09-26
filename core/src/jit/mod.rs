@@ -366,10 +366,14 @@ impl Cache {
     }
 
     /// The region headed by `key`: its members are the blocks the dispatcher
-    /// has seen (so they ran at least once); with a threshold of 0 (forced,
-    /// stress), any.
+    /// has seen (so they ran at least once); when everything is compiled at
+    /// once (threshold 0 and regions at once: the forced mode of the
+    /// differential tests), any. Not in JIT-stress: regions of every block in
+    /// reach, compiled on every miss into a 4-block cache, ran its boots 42×
+    /// slower than step 7 (kvm-unit-tests `gic active`: 522 s vs 12.5 s).
     fn region(&self, key: u64, va: u64, mem: &Mem) -> block::Region {
-        let (map, all) = (&self.map, self.cfg.threshold == 0);
+        let all = self.cfg.threshold == 0 && self.cfg.region_after == 0;
+        let map = &self.map;
         block::region(mem, key, va, &|k| all || map.contains_key(&k))
     }
 
