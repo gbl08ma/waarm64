@@ -9,7 +9,7 @@
 
 use super::wasm::{Code, I32, I64};
 use crate::decode::Op;
-use crate::interp::{adr_imm, bit, bits, trunc};
+use crate::interp::{adr_imm, bit, bit_masks, bits, trunc};
 
 /// A block function's locals after its parameter (local 0, the vCPU): the
 /// entry PC (local 1), then scratch: i64 in 2..=5, i32 in 6..=9.
@@ -170,10 +170,106 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize) -> bool {
                 add_flags(c, sf, x, y, r, Carry::Dynamic(cin));
             }
         }
-        // MOV (register): ORR Rd, ZR, Rm with no shift.
-        ORR_shift if rn == 31 && !bit(i, 21) && bits(i, 15, 10) == 0 => {
-            set(c, sf, rd, |c| get(c, sf, rm));
+        AND_imm | ORR_imm | EOR_imm | ANDS_imm => {
+            let n = bits(i, 22, 22);
+            if !sf && n == 1 {
+                return false;
+            }
+            let Some((imm, _)) = bit_masks(n, bits(i, 15, 10), bits(i, 21, 16), true) else {
+                return false;
+            };
+            logical(
+                c,
+                i,
+                Some(&|c: &mut Code| get(c, sf, rn)),
+                |c| konst(c, sf, imm),
+                true,
+            );
         }
+        AND_shift | BIC_shift | ORR_shift | ORN_shift | EOR_shift | EON | ANDS_shift | BICS => {
+            if !sf && bits(i, 15, 10) >= 32 {
+                return false;
+            }
+            let y = |c: &mut Code| {
+                shifted(c, i);
+                if bit(i, 21) {
+                    konst(c, sf, u64::MAX);
+                    arith(c, sf, XOR);
+                }
+            };
+            // MOV and MVN: ORR/ORN with XZR.
+            let x = |c: &mut Code| get(c, sf, rn);
+            let x: Option<&dyn Fn(&mut Code)> = (rn != 31 || bits(i, 30, 29) != 1).then_some(&x);
+            logical(c, i, x, y, false);
+        }
+        SBFM | BFM | UBFM | ASR_1 | ASR_2 | SXTB_1 | SXTB_2 | SXTH_1 | SXTH_2 | SXTW => {
+            let (n, immr, imms) = (bits(i, 22, 22), bits(i, 21, 16), bits(i, 15, 10));
+            if (sf && n != 1) || (!sf && (n != 0 || immr >= 32 || imms >= 32)) {
+                return false;
+            }
+            let Some((wmask, tmask)) = bit_masks(n, imms, immr, false) else {
+                return false;
+            };
+            let w = if sf { 64 } else { 32 };
+            match bits(i, 30, 29) {
+                // SBFX/ASR/SXT* (imms >= immr): the field imms:immr, sign-extended;
+                // SBFIZ: the field imms:0 sign-extended, shifted left to immr.
+                0 => set(c, sf, rd, |c| {
+                    get(c, sf, rn);
+                    shift(c, sf, SHL, w - 1 - imms);
+                    if imms >= immr {
+                        shift(c, sf, SHR_S, w - 1 - imms + immr);
+                    } else {
+                        shift(c, sf, SHR_S, w - 1 - imms);
+                        shift(c, sf, SHL, w - immr);
+                    }
+                }),
+                // BFM: Rd with the rotated source inserted, as the pseudocode.
+                1 => set(c, sf, rd, |c| {
+                    let d = tmp(sf, 0);
+                    get(c, sf, rd);
+                    c.local_tee(d);
+                    mask(c, sf, !wmask);
+                    get(c, sf, rn);
+                    shift(c, sf, ROTR, immr);
+                    mask(c, sf, wmask);
+                    arith(c, sf, OR);
+                    mask(c, sf, tmask);
+                    c.local_get(d);
+                    mask(c, sf, !tmask);
+                    arith(c, sf, OR);
+                }),
+                // UBFM: the rotated source under both masks (LSL, LSR, UBFX, UXT*).
+                2 => set(c, sf, rd, |c| {
+                    get(c, sf, rn);
+                    shift(c, sf, ROTR, immr);
+                    mask(c, sf, wmask & tmask);
+                }),
+                _ => return false,
+            }
+        }
+        EXTR => {
+            let lsb = bits(i, 15, 10);
+            if bit(i, 22) != sf || (!sf && lsb >= 32) {
+                return false;
+            }
+            let w = if sf { 64 } else { 32 };
+            set(c, sf, rd, |c| {
+                get(c, sf, rm);
+                if lsb != 0 {
+                    shift(c, sf, SHR_U, lsb);
+                    get(c, sf, rn);
+                    shift(c, sf, SHL, w - lsb);
+                    arith(c, sf, OR);
+                }
+            });
+        }
+        // The shift amount is Rm modulo the width, as wasm shifts take it.
+        LSLV | LSRV | ASRV | RORV => set(c, sf, rd, |c| {
+            get(c, sf, rn);
+            get(c, sf, rm);
+            arith(c, sf, [SHL, SHR_U, SHR_S, ROTR][bits(i, 11, 10) as usize]);
+        }),
         _ => return false,
     }
     true
@@ -314,14 +410,60 @@ fn sign_to(c: &mut Code, sf: bool, p: u32) {
     c.i32_const((1u32 << p) as i32).op(AND);
 }
 
+/// AND/ORR/EOR/ANDS (opc in 30:29) of what `x` (none: zero) and `y` push.
+/// Without S, Rd 31 is SP if `sp_dest`; ANDS sets N and Z and clears C and V.
+fn logical(
+    c: &mut Code,
+    i: u32,
+    x: Option<&dyn Fn(&mut Code)>,
+    y: impl FnOnce(&mut Code),
+    sp_dest: bool,
+) {
+    let (sf, rd, opc) = (bit(i, 31), bits(i, 4, 0), bits(i, 30, 29));
+    let v = |c: &mut Code| {
+        let Some(x) = x else {
+            return y(c); // ORR with zero
+        };
+        x(c);
+        y(c);
+        arith(c, sf, [AND, OR, XOR, AND][opc as usize]);
+    };
+    if opc != 3 {
+        return if sp_dest {
+            set_sp(c, sf, rd, v)
+        } else {
+            set(c, sf, rd, v)
+        };
+    }
+    let r = tmp(sf, 0);
+    v(c);
+    c.local_set(r);
+    set(c, sf, rd, |c| {
+        c.local_get(r);
+    });
+    c.local_get(VCPU);
+    nz(c, sf, r);
+    c.i64_extend_i32_u().i64_store(NZCV);
+}
+
+/// A shift of the value on the stack by a constant; nothing for 0.
+fn shift(c: &mut Code, sf: bool, op32: u8, amt: u32) {
+    if amt != 0 {
+        konst(c, sf, amt as u64);
+        arith(c, sf, op32);
+    }
+}
+
 /// Pushes the shifted-register operand (Rm, shift type 23:22, amount 15:10).
 fn shifted(c: &mut Code, i: u32) {
     let (sf, amt) = (bit(i, 31), bits(i, 15, 10));
     get(c, sf, bits(i, 20, 16));
-    if amt != 0 {
-        konst(c, sf, amt as u64);
-        arith(c, sf, [SHL, SHR_U, SHR_S, ROTR][bits(i, 23, 22) as usize]);
-    }
+    shift(
+        c,
+        sf,
+        [SHL, SHR_U, SHR_S, ROTR][bits(i, 23, 22) as usize],
+        amt,
+    );
 }
 
 /// Pushes the extended-register operand (Rm, option 15:13, left shift 12:10 ≤ 4).
@@ -338,10 +480,7 @@ fn extended(c: &mut Code, i: u32) {
         (6, true) => drop(c.op(0xc4)),
         _ => {} // UXTW/SXTW at 32 bits, UXTX/SXTX
     }
-    if amt != 0 {
-        konst(c, sf, amt as u64);
-        arith(c, sf, SHL);
-    }
+    shift(c, sf, SHL, amt);
 }
 
 fn mask(c: &mut Code, sf: bool, m: u64) {
@@ -381,7 +520,11 @@ mod tests {
             emit(0xaa0403e3, 0).unwrap(),
             [0x20, 0, 0x20, 0, 0x29, 3, 32, 0x37, 3, 24]
         );
-        assert_eq!(emit(0xaa0413e3, 0), None); // orr x3, xzr, x4, lsl #4: not yet
+        // orr x3, xzr, x4, lsl #4: the shift, no or
+        assert_eq!(
+            emit(0xaa0413e3, 0).unwrap(),
+            [0x20, 0, 0x20, 0, 0x29, 3, 32, 0x42, 4, 0x86, 0x37, 3, 24]
+        );
     }
 
     #[test]
@@ -421,5 +564,27 @@ mod tests {
         assert_eq!(b.iter().filter(|&&x| x == 0x37).count(), 1);
         assert_eq!(emit(0x91c00000, 0), None); // add x0, x0, #0, lsl #24: reserved shift
         assert_eq!(emit(0x8b221400, 0), None); // add x0, x0, w2, uxtb #5: reserved amount
+    }
+
+    #[test]
+    fn logical_bitfield_shifts() {
+        // lsr x0, x1, #4 (ubfm x0, x1, #4, #63): rotr 4, then the masks
+        let mut want = vec![0x20, 0, 0x20, 0, 0x29, 3, 8, 0x42, 4, 0x8a, 0x42];
+        crate::jit::wasm::sleb(&mut want, 0x0fff_ffff_ffff_ffff);
+        want.extend([0x83, 0x37, 3, 0]);
+        assert_eq!(emit(0xd344fc20, 0).unwrap(), want);
+        // sxtw x0, w1 (sbfm x0, x1, #0, #31): shl 32, shr_s 32
+        #[rustfmt::skip]
+        let want = [0x20, 0, 0x20, 0, 0x29, 3, 8, 0x42, 32, 0x86, 0x42, 32, 0x87, 0x37, 3, 0];
+        assert_eq!(emit(0x93407c20, 0).unwrap(), want);
+        // lslv w0, w1, w2: i32.shl takes the amount modulo 32
+        #[rustfmt::skip]
+        let want = [0x20, 0, 0x20, 0, 0x28, 2, 8, 0x20, 0, 0x28, 2, 16, 0x74, 0xad, 0x37, 3, 0];
+        assert_eq!(emit(0x1ac22020, 0).unwrap(), want);
+        // tst w1, #1 (ands wzr, w1, #1): N and Z only, stored to NZCV
+        let b = emit(0x7200003f, 0).unwrap();
+        assert!(b.ends_with(&[0xad, 0x37, 3, 0x88, 2]));
+        assert_eq!(emit(0x92400000 | 0x3f << 10, 0), None); // and x0, x0, #<all ones>: reserved
+        assert_eq!(emit(0x13400000, 0), None); // sbfm w0, w0, #0, #0 with N = 1: UNDEFINED
     }
 }

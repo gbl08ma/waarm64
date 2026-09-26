@@ -33,6 +33,13 @@ const CLASSES: Record<string, [number, number]> = {
   'add/sub, immediate': [0x1f800000, 0x11000000],
   'add/sub, shifted and extended register': [0x1f000000, 0x0b000000],
   'add/sub with carry': [0x1fe0fc00, 0x1a000000],
+  'logical, immediate': [0x1f800000, 0x12000000],
+  'logical, shifted register': [0x1f000000, 0x0a000000],
+  'bitfield, 64-bit': [0x9fc00000, 0x93400000],
+  'bitfield, 32-bit': [0x9fe08000, 0x13000000], // immr, imms < 32
+  'extract, 64-bit': [0xffe00000, 0x93c00000],
+  'extract, 32-bit': [0xffe08000, 0x13800000],
+  'variable shifts': [0x5fe0f000, 0x1ac02000],
 };
 
 // xorshift64*, seeded: failures reproduce.
