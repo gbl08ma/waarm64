@@ -1,4 +1,4 @@
-# Interpreter MIPS baselines (M1 integer, M2 FP/NEON)
+# Interpreter MIPS baselines (M1 integer, M2 FP/NEON), and the JIT's (M5)
 
 ## M1: integer guest
 
@@ -96,3 +96,25 @@ Cold (first 2M instructions): 50.3 / 86.1 / 41.0 on x86_64, 78.2 / 144.8 / 68.9 
 - **The MMU copy of the interpreter costs 36% (x86_64) and 35% (M4)** on a guest whose every fetch, load and store hits the TLB. It's most of the gap: 87.5 → 54.9 of the way to 44, and 146 → 95 of the way to 68.
 - **The rest (54.9 → 44, 95 → 68, about −20% and −28%) is the boot's own work:** TLB misses and walks, ~1,000 exceptions, ~46 IRQs, timer and UART accesses leaving the interpreter, and a different instruction mix (`bench/boot/REPORT.md`).
 - Why the TLB-hit path costs a third isn't split yet: every instruction fetch goes through the TLB (no decode cache or per-page fetch pointer), and so does every load and store. M3 step 3 measured the MMU copy only with the MMU off. The JIT (M5) replaces both paths with its own inlined lookup, so whether to tune the interpreter's is an open choice (PLAN.md §7 M9).
+
+## M5 step 2: the gadget-only JIT baseline
+
+**What runs:** the same four guests through the tier-1 JIT's correctness scaffold (`core/src/jit/`): blocks of up to 32 instructions keyed by PA, every instruction a call from the block's wasm function to a core helper (`jit_exec_flat`/`jit_exec_mmu`, the interpreter's `exec_at`), batched into modules, entered through a dispatcher (instruction-TLB translation of the PC, a 4096-entry direct-mapped jump cache, a `call_indirect` through the core's table). Policy `jit::Config::DEFAULT`: threshold 50 dispatches, 32 blocks per module or a 100,000-step timeout, 16,384 blocks of code cache. `jit_mips`/`jit_fp_mips` run in user mode (`jit_new`/`jit_run`), `vm_jit_*` in the whole VM (`VmConfig.jit` = 1). **Expected to be slower than the interpreter; this is the baseline steps 4–8 improve on.**
+**Method:** `node bench/run.ts --page bench/interp/index.html`, default config, one full run of all eight benchmarks, x86_64 only (both hosts come in M5 step 10). Code at `2ada422` plus step 2c. JIT counters over the cold window (the first 2M instructions) and the warm window (the 15 measured chunks), from `jit::Stats`.
+
+| Guest | Interpreter warm (IQR) | JIT warm (IQR) | JIT / interp | Interp cold | JIT cold | Dispatches / insn | Avg block | Interpreted, cold / warm | Cold: blocks, modules, bytes, compile |
+|---|---|---|---|---|---|---|---|---|---|
+| integer, EL0 | 88.7 (±0.60) | **64.8** (±0.31) | −27% | 50.4 | 44.6 | 0.240 | 4.16 | 6.9% / 0 | 20, 4, 6.0 KB, 0.5 ms |
+| FP/NEON, EL0 | 15.1 (±0.02) | **14.8** (±0.10) | −2% | 14.5 | 13.2 | 0.087 | 11.48 | 5.7% / 0 | 30, 2, 12.4 KB, 0.2 ms |
+| integer, EL1 MMU off | 87.8 (±0.66) | **64.6** (±0.49) | −26% | 87.5 | 43.1 | 0.240 | 4.15 | 7.3% / 0.26% | 25, 5, 6.6 KB, 0.4 ms |
+| integer, EL1 MMU on | 54.5 (±0.43) | **54.9** (±0.08) | +1% | 40.5 | 39.7 | 0.240 | 4.15 | 7.3% / 0.26% | 25, 5, 6.6 KB, 0.4 ms |
+
+Host: Ryzen 7 5800X3D, Linux x86_64, Chromium 152.0.7977.75. Raw data: `results/chromium-linux-x86_64-m5-step2.json`.
+
+**Notes**
+- **The interpreter didn't move.** Sharing `exec_at` between `step_bus` and the helpers, and the run loop's branch to the dispatcher, left `interp_mips` 86.5 → 88.7, `interp_fp_mips` 14.7 → 15.1, `vm_flat_mips` 89.2 → 87.8 and `vm_mmu_mips` 54.9 → 54.5 against a build of `7de3be8` run just before (all within noise). One full run in between read 81.8 and 80.8 for the first and third; they came back to 88.5 and 86.6 alone and in the run above, so that was the shared desktop.
+- **Where the gadget JIT loses:** on the integer guest it costs 15.4 ns per instruction against the interpreter's 11.3, about 17 ns more per 4.16-instruction block. Each block is one dispatch (a PC translation and a jump cache hit: the warm windows compile nothing and never reach the `HashMap`) plus a `call_indirect` over up to 20 hot blocks, which step 1 measured at 13–16 ns cycling over 16 blocks, plus four import calls into the core (~2.2 ns each, spike §3). So the table call, not the lookup, is most of the loss; linking (step 7) removes it, and inlining (steps 4–6) removes the helper calls.
+- **FP loses little** because the blocks are long (11.5 instructions) and each instruction's helper does a lot of work.
+- **With the MMU on the JIT breaks even**: a block translates its fetch once at entry, where the interpreter's MMU copy translates every instruction's fetch through the TLB (the 36% M4 step 1 measured is partly that).
+- **Warm, in the VM, 0.26% of steps are interpreted:** blocks that don't fit in what's left of a 1024-step chunk (or before a deadline) run in the interpreter, which keeps the step count exact.
+- **Cold:** 4–5 modules of ≤ 32 blocks compile in 0.4–0.5 ms in total (the 100,000-step timeout emits the partial batches); cold MIPS is 44.6 against the interpreter's 50.4 in user mode. The VM guest's cold window hides the interpreter's own warm-up (87.5, nearly warm), so the JIT's cold number there is mostly V8 compiling the JIT modules lazily.

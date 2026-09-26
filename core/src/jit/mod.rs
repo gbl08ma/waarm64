@@ -466,6 +466,12 @@ mod tests {
     use crate::cpu::Cpu;
 
     #[test]
+    fn cpu_size() {
+        // tests/jit-lockstep.test.ts compares this many bytes (`CPU_BYTES`).
+        assert_eq!(size_of::<Cpu>(), 1056);
+    }
+
+    #[test]
     fn slots_and_flush() {
         let mut c = Cache::new(Config {
             threshold: 0,

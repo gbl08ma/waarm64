@@ -32,6 +32,7 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use crate::cpu::{Cpu, PSTATE_I, sctlr};
 use crate::gic::Gic;
 use crate::interp::{self, Exit, platform, take_exception, take_irq};
+use crate::jit;
 use crate::mem::{Access, Fault, FaultKind, Mem};
 use crate::mmu::{Bus, Mmu, Vcpu, walk};
 use crate::pl011::{Pl011, Rings};
@@ -67,6 +68,8 @@ pub struct VmConfig {
     /// (ABI 8); `boot::framebuffer` places it.
     pub fb_width: u64,
     pub fb_height: u64,
+    /// 0 interpreter only; 1 JIT; 2 JIT-stress (`jit::Config::STRESS`) (ABI 10).
+    pub jit: u64,
 }
 
 impl Default for VmConfig {
@@ -80,6 +83,7 @@ impl Default for VmConfig {
             ndevices: 0,
             fb_width: 0,
             fb_height: 0,
+            jit: 0,
         }
     }
 }
@@ -131,6 +135,9 @@ pub struct Counters {
     pub tlb_walks: AtomicU64,
     pub tlb_flushes: AtomicU64,
     pub pc: AtomicU64,
+    /// `jit::Stats` (ABI 10): blocks compiled, modules, wasm bytes, compile ns,
+    /// steps in JIT code, block calls, invalidations, cache flushes.
+    pub jit: [AtomicU64; 8],
 }
 
 impl Default for Counters {
@@ -145,6 +152,7 @@ impl Default for Counters {
             tlb_walks: z(),
             tlb_flushes: z(),
             pc: z(),
+            jit: [const { AtomicU64::new(0) }; 8],
         }
     }
 }
@@ -239,11 +247,18 @@ impl Vm {
         assert!(devices.len() <= virtio::MAX_DEVICES && devices.iter().all(DeviceEntry::valid));
         let d = VmConfig::default();
         let pick = |v, d| if v == 0 { d } else { v };
+        let mut vcpu = Vcpu::new(Cpu {
+            pc: RAM_BASE,
+            ..Cpu::reset()
+        });
+        vcpu.jit.cache = match cfg.jit {
+            0 => None,
+            1 => Some(jit::Config::DEFAULT),
+            _ => Some(jit::Config::STRESS),
+        }
+        .map(|c| Box::new(jit::Cache::new(c)));
         Vm {
-            vcpu: Vcpu::new(Cpu {
-                pc: RAM_BASE,
-                ..Cpu::reset()
-            }),
+            vcpu,
             mem: mem.at(RAM_BASE),
             gic: Gic::default(),
             uart: Pl011::default(),
@@ -311,7 +326,12 @@ impl Vm {
             }
             let n = CHUNK.min(left).min(self.until_deadline());
             let v = &mut *self.vcpu;
-            let (k, e) = interp::steps(&mut v.cpu, &self.mem, Some(&mut v.tlb), n);
+            let (k, e) = if v.jit.cache.is_some() {
+                // SAFETY: `v` is this VM's vCPU, not otherwise referenced during the call.
+                unsafe { jit::steps(v, &self.mem, n) }
+            } else {
+                interp::steps(&mut v.cpu, &self.mem, Some(&mut v.tlb), n)
+            };
             self.steps += k;
             self.publish();
             if let Some(e) = e
@@ -334,6 +354,22 @@ impl Vm {
         c.tlb_misses.store(t.misses, Ordering::Relaxed);
         c.tlb_walks.store(t.walks, Ordering::Relaxed);
         c.tlb_flushes.store(t.flushes, Ordering::Relaxed);
+        if let Some(j) = &self.vcpu.jit.cache {
+            let s = j.stats;
+            let v = [
+                s.blocks,
+                s.modules,
+                s.bytes,
+                s.compile_ns,
+                s.steps,
+                s.dispatches,
+                s.invalidations,
+                s.flushes,
+            ];
+            for (a, v) in c.jit.iter().zip(v) {
+                a.store(v, Ordering::Relaxed);
+            }
+        }
     }
 
     /// Drains every backend's completions; true if that posted new requests

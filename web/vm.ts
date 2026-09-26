@@ -1,4 +1,4 @@
-// Host side of the whole-VM ABI (PLAN.md §2, ABI 9): instantiates the core on
+// Host side of the whole-VM ABI (PLAN.md §2, ABI 10): instantiates the core on
 // shared memory, places guest RAM after the core's heap (layout A), boots an
 // arm64 Image and runs it, draining the console. virtio backends run in a
 // device worker (web/device-worker.ts) when this runs in a worker, and inline
@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 9;
+export const ABI = 10;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -70,7 +70,12 @@ function jitHost(memory: WebAssembly.Memory) {
 }
 
 /** u64 word indexes in `vm::Counters` (core/src/vm.rs). */
-export const Counter = { STEPS: 0, EXCEPTIONS: 1, IRQS: 65, TLB_HITS: 66, TLB_MISSES: 67, TLB_WALKS: 68, TLB_FLUSHES: 69, PC: 70, LEN: 71 } as const;
+export const Counter = {
+  STEPS: 0, EXCEPTIONS: 1, IRQS: 65, TLB_HITS: 66, TLB_MISSES: 67, TLB_WALKS: 68, TLB_FLUSHES: 69, PC: 70,
+  // The JIT's (ABI 10, `jit::Stats`).
+  JIT_BLOCKS: 71, JIT_MODULES: 72, JIT_BYTES: 73, JIT_COMPILE_NS: 74, JIT_STEPS: 75, JIT_DISPATCHES: 76, JIT_INVALIDATIONS: 77, JIT_FLUSHES: 78,
+  LEN: 79,
+} as const;
 
 /**
  * `framebuffer`: a simple-framebuffer of that many pixels (x8r8g8b8) at the top
@@ -84,6 +89,8 @@ export type BootOptions = {
   devices?: DeviceSpec[];
   realtime?: boolean;
   framebuffer?: { width: number; height: number };
+  /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress. */
+  jit?: 0 | 1 | 2;
 };
 
 /**
@@ -125,7 +132,7 @@ export const DISTROS = {
 
 // The scratch page before RAM: VmConfig, device entries, the doorbell, the command line.
 const S_CFG = 0;
-const S_DEVICES = 64;
+const S_DEVICES = 128;
 const S_BELL = 2048;
 const S_CMDLINE = 4096;
 
@@ -134,7 +141,10 @@ export type Vm = Awaited<ReturnType<typeof bootVm>>;
 export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
-  const ex = (await WebAssembly.instantiate(module, coreImports(memory))).exports as unknown as Exports;
+  const imports = coreImports(memory);
+  const instance = await WebAssembly.instantiate(module, imports);
+  imports.jit.bind(instance);
+  const ex = instance.exports as unknown as Exports;
   if (ex.abi_version() !== ABI) throw new Error(`core ABI ${ex.abi_version()}, expected ${ABI}`);
 
   // Scratch page for VmConfig and the command line, then RAM.
@@ -150,9 +160,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     return { ...d, size: isQcow2(head) ? qcow2Size(head) : Number(r.headers.get('content-range')?.split('/')[1]) };
   }));
   const deterministic = !o.realtime;
-  // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries, framebuffer.
+  // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries, framebuffer, JIT.
   const fb = o.framebuffer ?? { width: 0, height: 0 };
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 8).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height)]);
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 9).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0)]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
@@ -205,7 +215,13 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       const n = (i: number) => Number(Atomics.load(c, i));
       const exceptions: Record<string, number> = {};
       for (let ec = 0; ec < 64; ec++) if (n(Counter.EXCEPTIONS + ec)) exceptions[`0x${ec.toString(16)}`] = n(Counter.EXCEPTIONS + ec);
-      return { steps: n(Counter.STEPS), irqs: n(Counter.IRQS), exceptions, tlbMisses: n(Counter.TLB_MISSES), tlbWalks: n(Counter.TLB_WALKS), tlbFlushes: n(Counter.TLB_FLUSHES) };
+      return {
+        steps: n(Counter.STEPS), irqs: n(Counter.IRQS), exceptions, tlbMisses: n(Counter.TLB_MISSES), tlbWalks: n(Counter.TLB_WALKS), tlbFlushes: n(Counter.TLB_FLUSHES),
+        jit: {
+          blocks: n(Counter.JIT_BLOCKS), modules: n(Counter.JIT_MODULES), bytes: n(Counter.JIT_BYTES), compileNs: n(Counter.JIT_COMPILE_NS),
+          steps: n(Counter.JIT_STEPS), dispatches: n(Counter.JIT_DISPATCHES), invalidations: n(Counter.JIT_INVALIDATIONS), flushes: n(Counter.JIT_FLUSHES),
+        },
+      };
     },
     /**
      * Runs up to `budget` steps; returns the exit kind and steps taken. DEVICE
