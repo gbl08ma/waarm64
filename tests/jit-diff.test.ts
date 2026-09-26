@@ -46,6 +46,12 @@ const CLASSES: Record<string, [number, number]> = {
   'compare and branch': [0x7e000000, 0x34000000],
   'test and branch': [0x7e000000, 0x36000000],
   'branch to register': [0xff9ffc1f, 0xd61f0000],
+  'multiply-add': [0x7fe00000, 0x1b000000],
+  'multiply-add long': [0xff600000, 0x9b200000],
+  'multiply high': [0xff608000, 0x9b400000],
+  'divide': [0x7fe0f800, 0x1ac00800],
+  'bit and byte reversal, CLZ, CLS': [0x7fffe000, 0x5ac00000],
+  hints: [0xfffff01f, 0xd503201f],
 };
 
 // xorshift64*, seeded: failures reproduce.

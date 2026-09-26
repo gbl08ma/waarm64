@@ -347,6 +347,103 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize) -> bool {
                 set(c, true, 30, |c| pc_plus(c, here + 4));
             }
         }
+        // Hints that are NOPs here (PLAN.md §1) and don't end a block.
+        NOP | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2 | AUTIB_2 | BTI | ESB | PSB | TSB
+        | CSDB | DGH => {}
+        MADD | MSUB => set(c, sf, rd, |c| {
+            get(c, sf, bits(i, 14, 10));
+            get(c, sf, rn);
+            get(c, sf, rm);
+            arith(c, sf, MUL);
+            arith(c, sf, if op == MADD { ADD } else { SUB });
+        }),
+        SMADDL | SMSUBL | UMADDL | UMSUBL => set(c, true, rd, |c| {
+            // Wn and Wm extended (i64.extend_i32_s or _u), multiplied, into Xa.
+            let ext = if matches!(op, SMADDL | SMSUBL) {
+                0xac
+            } else {
+                0xad
+            };
+            get(c, true, bits(i, 14, 10));
+            get(c, false, rn);
+            c.op(ext);
+            get(c, false, rm);
+            c.op(ext);
+            arith(c, true, MUL);
+            arith(c, true, if bit(i, 15) { SUB } else { ADD });
+        }),
+        SMULH | UMULH => set(c, true, rd, |c| mulh(c, op == SMULH, rn, rm)),
+        UDIV | SDIV => set(c, sf, rd, |c| {
+            // x / 0 is 0, and INT_MIN / -1 wraps (wasm traps on both).
+            let (x, y) = (tmp(sf, 0), tmp(sf, 1));
+            get(c, sf, rn);
+            c.local_set(x);
+            get(c, sf, rm);
+            c.local_tee(y);
+            cmp(c, sf, EQZ);
+            let ty = if sf { I64 } else { I32 };
+            c.if_t(ty);
+            konst(c, sf, 0);
+            c.else_();
+            if op == SDIV {
+                c.local_get(y);
+                konst(c, sf, u64::MAX);
+                cmp(c, sf, EQ);
+                c.if_t(ty);
+                konst(c, sf, 0);
+                c.local_get(x);
+                arith(c, sf, SUB);
+                c.else_();
+            }
+            c.local_get(x).local_get(y);
+            arith(c, sf, if op == SDIV { DIV_S } else { DIV_U });
+            if op == SDIV {
+                c.end();
+            }
+            c.end();
+        }),
+        RBIT_int => set(c, sf, rd, |c| {
+            get(c, sf, rn);
+            swap(c, sf, 1, 0x5555_5555_5555_5555);
+            swap(c, sf, 2, 0x3333_3333_3333_3333);
+            swap(c, sf, 4, 0x0f0f_0f0f_0f0f_0f0f);
+            bswap(c, sf);
+        }),
+        REV16_int => set(c, sf, rd, |c| {
+            get(c, sf, rn);
+            swap(c, sf, 8, 0x00ff_00ff_00ff_00ff);
+        }),
+        // Bytes reversed in each word, at 64 bits whatever sf says (as the interpreter).
+        REV32_int => set(c, true, rd, |c| {
+            get(c, true, rn);
+            swap(c, true, 8, 0x00ff_00ff_00ff_00ff);
+            swap(c, true, 16, 0x0000_ffff_0000_ffff);
+        }),
+        REV => {
+            if sf != bit(i, 10) {
+                return false;
+            }
+            set(c, sf, rd, |c| {
+                get(c, sf, rn);
+                bswap(c, sf);
+            });
+        }
+        CLZ_int => set(c, sf, rd, |c| {
+            get(c, sf, rn);
+            arith(c, sf, CLZ);
+        }),
+        CLS_int => set(c, sf, rd, |c| {
+            // clz((x ^ x >> 1) & MAX >> 1) - 1
+            let x = tmp(sf, 0);
+            get(c, sf, rn);
+            c.local_tee(x).local_get(x);
+            shift(c, sf, SHR_U, 1);
+            arith(c, sf, XOR);
+            mask(c, sf, u64::MAX >> 1 >> if sf { 0 } else { 32 });
+            arith(c, sf, CLZ);
+            konst(c, sf, 1);
+            arith(c, sf, SUB);
+        }),
         // The shift amount is Rm modulo the width, as wasm shifts take it.
         LSLV | LSRV | ASRV | RORV => set(c, sf, rd, |c| {
             get(c, sf, rn);
@@ -362,8 +459,12 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize) -> bool {
 // comparison `WC` higher.
 const W: u8 = 0x12;
 const WC: u8 = 0xb;
+const CLZ: u8 = 0x67;
 const ADD: u8 = 0x6a;
 const SUB: u8 = 0x6b;
+const MUL: u8 = 0x6c;
+const DIV_S: u8 = 0x6d;
+const DIV_U: u8 = 0x6e;
 const AND: u8 = 0x71;
 const OR: u8 = 0x72;
 const XOR: u8 = 0x73;
@@ -614,6 +715,80 @@ fn extended(c: &mut Code, i: u32) {
     shift(c, sf, SHL, amt);
 }
 
+/// Swaps the adjacent `sh`-bit fields of the value on the stack: `m` selects
+/// the low field of each pair.
+fn swap(c: &mut Code, sf: bool, sh: u32, m: u64) {
+    let x = tmp(sf, 3);
+    c.local_tee(x);
+    shift(c, sf, SHR_U, sh);
+    mask(c, sf, m);
+    c.local_get(x);
+    mask(c, sf, m);
+    shift(c, sf, SHL, sh);
+    arith(c, sf, OR);
+}
+
+/// Reverses the bytes of the value on the stack.
+fn bswap(c: &mut Code, sf: bool) {
+    swap(c, sf, 8, 0x00ff_00ff_00ff_00ff);
+    if sf {
+        swap(c, sf, 16, 0x0000_ffff_0000_ffff);
+    }
+    shift(c, sf, ROTR, if sf { 32 } else { 16 });
+}
+
+/// Pushes the high 64 bits of Xn × Xm, from 32-bit halves; signed, it
+/// subtracts `b` if `a` < 0 and `a` if `b` < 0 from the unsigned result.
+fn mulh(c: &mut Code, signed: bool, rn: u32, rm: u32) {
+    let (a, b, u, w) = (2, 3, 4, 5);
+    let lo = |c: &mut Code, v: u32| {
+        c.local_get(v);
+        mask(c, true, 0xffff_ffff);
+    };
+    let hi = |c: &mut Code, v: u32| {
+        c.local_get(v);
+        shift(c, true, SHR_U, 32);
+    };
+    get(c, true, rn);
+    c.local_set(a);
+    get(c, true, rm);
+    c.local_set(b);
+    // u = hi(a) lo(b) + (lo(a) lo(b) >> 32)
+    hi(c, a);
+    lo(c, b);
+    arith(c, true, MUL);
+    lo(c, a);
+    lo(c, b);
+    arith(c, true, MUL);
+    shift(c, true, SHR_U, 32);
+    arith(c, true, ADD);
+    c.local_set(u);
+    // w = lo(u) + lo(a) hi(b)
+    lo(c, u);
+    lo(c, a);
+    hi(c, b);
+    arith(c, true, MUL);
+    arith(c, true, ADD);
+    c.local_set(w);
+    // hi(a) hi(b) + hi(u) + hi(w)
+    hi(c, a);
+    hi(c, b);
+    arith(c, true, MUL);
+    hi(c, u);
+    arith(c, true, ADD);
+    hi(c, w);
+    arith(c, true, ADD);
+    if signed {
+        for (s, v) in [(a, b), (b, a)] {
+            c.local_get(s);
+            shift(c, true, SHR_S, 63);
+            c.local_get(v);
+            arith(c, true, AND);
+            arith(c, true, SUB);
+        }
+    }
+}
+
 fn mask(c: &mut Code, sf: bool, m: u64) {
     konst(c, sf, m);
     arith(c, sf, AND);
@@ -761,5 +936,29 @@ mod tests {
             0x20, 0, 0x20, 1, 0x42, 4, 0x7c, 0x37, 3, 0xf0, 1,
         ];
         assert_eq!(emit(0xd63f03c0, 0).unwrap(), want);
+    }
+
+    #[test]
+    fn multiply_divide_bits() {
+        // mul x0, x1, x2 (madd x0, x1, x2, xzr)
+        #[rustfmt::skip]
+        let want = [
+            0x20, 0, 0x42, 0, 0x20, 0, 0x29, 3, 8, 0x20, 0, 0x29, 3, 16, 0x7e, 0x7c, 0x37, 3, 0,
+        ];
+        assert_eq!(emit(0x9b027c20, 0).unwrap(), want);
+        // udiv w0, w1, w2: w2 == 0 ? 0 : w1 / w2
+        #[rustfmt::skip]
+        let want = [
+            0x20, 0, 0x20, 0, 0x28, 2, 8, 0x21, 6, 0x20, 0, 0x28, 2, 16, 0x22, 7, 0x45,
+            0x04, I32, 0x41, 0, 0x05, 0x20, 6, 0x20, 7, 0x6e, 0x0b, 0xad, 0x37, 3, 0,
+        ];
+        assert_eq!(emit(0x1ac20820, 0).unwrap(), want);
+        // clz x0, x1
+        assert_eq!(
+            emit(0xdac01020, 0).unwrap(),
+            [0x20, 0, 0x20, 0, 0x29, 3, 8, 0x79, 0x37, 3, 0]
+        );
+        assert_eq!(emit(0x5ac00c20, 0), None); // rev w0 with opc 11: UNDEFINED
+        assert_eq!(emit(0xd503201f, 0).unwrap(), []); // nop
     }
 }

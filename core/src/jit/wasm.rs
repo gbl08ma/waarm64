@@ -89,6 +89,11 @@ impl Code {
         self.b.extend([0x04, 0x40]);
         self
     }
+    /// `if` with a result of type `ty`; needs an `else`.
+    pub fn if_t(&mut self, ty: u8) -> &mut Self {
+        self.b.extend([0x04, ty]);
+        self
+    }
     /// `else` of an [`Code::if_`].
     pub fn else_(&mut self) -> &mut Self {
         self.op(0x05)
