@@ -1,0 +1,97 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-26T14:41:14.404Z",
+ "commit": "56c28cdc5548",
+ "dirty": true,
+ "config": "turbofan-only",
+ "jsFlags": "--no-liftoff",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "jit_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2246,
+     "avgBlock": 4.14,
+     "interpretedPct": 6.904,
+     "blocks": 20,
+     "modules": 4,
+     "bytes": 15372,
+     "compileMs": 0.48,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 2,
+     "flagsStored": 16,
+     "condDirect": 16,
+     "condComputed": 0,
+     "condMemory": 2
+    }
+   },
+   "samples": [
+    17.597114068493138
+   ],
+   "median": 17.597114068493138,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2401,
+     "avgBlock": 4.16,
+     "interpretedPct": 0,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 4,
+     "flagsStored": 21,
+     "condDirect": 22,
+     "condComputed": 0,
+     "condMemory": 3
+    }
+   },
+   "samples": [
+    232.95090570661895,
+    235.68230021952084,
+    234.96240600187514,
+    236.19722464935705,
+    231.9109461710149,
+    232.0858717404505,
+    231.3475998005538,
+    232.3825016040672,
+    231.6691764608641,
+    231.77656733140125,
+    231.02691465464287,
+    229.937916712052,
+    231.8437373594917,
+    232.0993384719325,
+    231.78999835124097
+   ],
+   "median": 231.9109461710149,
+   "iqr": 0.9438317592103829,
+   "n": 15
+  }
+ ]
+}

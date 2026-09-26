@@ -1,0 +1,97 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-26T14:57:20.072Z",
+ "commit": "bf3cbb39d46b",
+ "dirty": true,
+ "config": "liftoff-only",
+ "jsFlags": "--liftoff-only",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "jit_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2246,
+     "avgBlock": 4.14,
+     "interpretedPct": 6.904,
+     "blocks": 20,
+     "modules": 4,
+     "bytes": 15372,
+     "compileMs": 0.42,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 2,
+     "flagsStored": 16,
+     "condDirect": 16,
+     "condComputed": 0,
+     "condMemory": 2
+    }
+   },
+   "samples": [
+    68.95362869604539
+   ],
+   "median": 68.95362869604539,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2401,
+     "avgBlock": 4.16,
+     "interpretedPct": 0,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 4,
+     "flagsStored": 21,
+     "condDirect": 22,
+     "condComputed": 0,
+     "condMemory": 3
+    }
+   },
+   "samples": [
+    100.88781274736611,
+    101.025407905901,
+    101.16849613152515,
+    101.23250575882042,
+    101.28890124662912,
+    101.07646434284142,
+    101.10456740005081,
+    101.1173467003252,
+    101.12757241189858,
+    101.18641067969425,
+    101.10201193369295,
+    101.1812915682032,
+    101.16849613152515,
+    101.00244931669243,
+    101.31199026058958
+   ],
+   "median": 101.12757241189858,
+   "iqr": 0.0946129856815503,
+   "n": 15
+  }
+ ]
+}

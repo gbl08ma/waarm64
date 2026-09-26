@@ -1,0 +1,249 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-26T15:32:13.813Z",
+ "commit": "901bb1abcfb1",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "boot_jit_init_cold",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "jit": 1,
+    "first": "init",
+    "steps": 40909861,
+    "counters": {
+     "steps": 40909861,
+     "irqs": 188,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 339,
+      "0x24": 909,
+      "0x25": 66
+     },
+     "tlbMisses": 92542,
+     "tlbWalks": 90889,
+     "tlbFlushes": 1247,
+     "jit": {
+      "blocks": 12425,
+      "modules": 471,
+      "bytes": 3862038,
+      "compileNs": 56870006,
+      "steps": 34555012,
+      "dispatches": 8084592,
+      "invalidations": 47,
+      "flushes": 0,
+      "inline": 53524,
+      "helpers": 1821,
+      "inlineSteps": 33535696,
+      "flagsStored": 3354,
+      "flagsElided": 338,
+      "condDirect": 3614,
+      "condComputed": 49,
+      "condMemory": 374
+     }
+    }
+   },
+   "samples": [
+    734.6300000548363,
+    698.2649999260902,
+    704.3500000238419,
+    697.379999935627,
+    696.4650000333786
+   ],
+   "median": 698.2649999260902,
+   "iqr": 6.970000088214874,
+   "n": 5
+  },
+  {
+   "name": "boot_jit_total_cold",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "jit": 1,
+    "first": "init",
+    "steps": 40909861,
+    "counters": {
+     "steps": 40909861,
+     "irqs": 188,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 339,
+      "0x24": 909,
+      "0x25": 66
+     },
+     "tlbMisses": 92542,
+     "tlbWalks": 90889,
+     "tlbFlushes": 1247,
+     "jit": {
+      "blocks": 12425,
+      "modules": 471,
+      "bytes": 3862038,
+      "compileNs": 56870006,
+      "steps": 34555012,
+      "dispatches": 8084592,
+      "invalidations": 47,
+      "flushes": 0,
+      "inline": 53524,
+      "helpers": 1821,
+      "inlineSteps": 33535696,
+      "flagsStored": 3354,
+      "flagsElided": 338,
+      "condDirect": 3614,
+      "condComputed": 49,
+      "condMemory": 374
+     }
+    }
+   },
+   "samples": [
+    1020.210000038147,
+    980.6049999594688,
+    985.9700000286102,
+    976.3299999833107,
+    977.9250000119209
+   ],
+   "median": 980.6049999594688,
+   "iqr": 8.0450000166893,
+   "n": 5
+  },
+  {
+   "name": "boot_jit_init",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "jit": 1,
+    "first": "init",
+    "steps": 40909861,
+    "counters": {
+     "steps": 40909861,
+     "irqs": 188,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 339,
+      "0x24": 909,
+      "0x25": 66
+     },
+     "tlbMisses": 92542,
+     "tlbWalks": 90889,
+     "tlbFlushes": 1247,
+     "jit": {
+      "blocks": 12425,
+      "modules": 471,
+      "bytes": 3862038,
+      "compileNs": 56870006,
+      "steps": 34555012,
+      "dispatches": 8084592,
+      "invalidations": 47,
+      "flushes": 0,
+      "inline": 53524,
+      "helpers": 1821,
+      "inlineSteps": 33535696,
+      "flagsStored": 3354,
+      "flagsElided": 338,
+      "condDirect": 3614,
+      "condComputed": 49,
+      "condMemory": 374
+     }
+    }
+   },
+   "samples": [
+    667.5749999880791,
+    553.4499999880791,
+    663.6550000309944,
+    559.664999961853,
+    662.3299999833107,
+    560.9300000071526,
+    661.4300000071526,
+    555.7350000143051,
+    556.3999999761581,
+    663.4250000119209
+   ],
+   "median": 611.1800000071526,
+   "iqr": 105.93500003218651,
+   "n": 10
+  },
+  {
+   "name": "boot_jit_total",
+   "unit": "ms",
+   "params": {
+    "kernel": "Image",
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init",
+    "ramMiB": 256,
+    "jit": 1,
+    "first": "init",
+    "steps": 40909861,
+    "counters": {
+     "steps": 40909861,
+     "irqs": 188,
+     "exceptions": {
+      "0x0": 15,
+      "0x15": 834,
+      "0x20": 339,
+      "0x24": 909,
+      "0x25": 66
+     },
+     "tlbMisses": 92542,
+     "tlbWalks": 90889,
+     "tlbFlushes": 1247,
+     "jit": {
+      "blocks": 12425,
+      "modules": 471,
+      "bytes": 3862038,
+      "compileNs": 56870006,
+      "steps": 34555012,
+      "dispatches": 8084592,
+      "invalidations": 47,
+      "flushes": 0,
+      "inline": 53524,
+      "helpers": 1821,
+      "inlineSteps": 33535696,
+      "flagsStored": 3354,
+      "flagsElided": 338,
+      "condDirect": 3614,
+      "condComputed": 49,
+      "condMemory": 374
+     }
+    }
+   },
+   "samples": [
+    946.9150000214577,
+    785.8999999761581,
+    950.1000000238419,
+    790.6599999666214,
+    943.3999999761581,
+    790.5799999833107,
+    942.75,
+    786.2299999594688,
+    785.8249999880791,
+    944.5550000071526
+   ],
+   "median": 866.7049999833107,
+   "iqr": 156.94875003397465,
+   "n": 10
+  }
+ ]
+}

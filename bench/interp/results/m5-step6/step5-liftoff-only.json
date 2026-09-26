@@ -1,0 +1,87 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-26T14:57:26.352Z",
+ "commit": "941a73d3317f",
+ "dirty": true,
+ "config": "liftoff-only",
+ "jsFlags": "--liftoff-only",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "jit_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2246,
+     "avgBlock": 4.14,
+     "interpretedPct": 6.904,
+     "blocks": 20,
+     "modules": 4,
+     "bytes": 10099,
+     "compileMs": 0.42,
+     "inlinePct": 100,
+     "inlineStepsPct": 100
+    }
+   },
+   "samples": [
+    76.42338550724291
+   ],
+   "median": 76.42338550724291,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2401,
+     "avgBlock": 4.16,
+     "interpretedPct": 0,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": 100,
+     "inlineStepsPct": 100
+    }
+   },
+   "samples": [
+    118.42027351906933,
+    118.52905446628922,
+    117.93495884365444,
+    118.07420964740706,
+    118.0498170111547,
+    117.83073617897121,
+    118.24524059739592,
+    118.6802753516713,
+    118.06375444400743,
+    118.41326226030321,
+    118.22776581745651,
+    118.06026974611606,
+    117.40534192662659,
+    117.87240315674433,
+    118.08815279942031
+   ],
+   "median": 118.07420964740706,
+   "iqr": 0.3368635014450092,
+   "n": 15
+  }
+ ]
+}

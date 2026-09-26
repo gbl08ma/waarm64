@@ -1,0 +1,487 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-26T15:52:06.123Z",
+ "commit": "901bb1abcfb1",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "interp_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 2000000
+   },
+   "samples": [
+    52.04267498380853
+   ],
+   "median": 52.04267498380853,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "interp_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 20000000
+   },
+   "samples": [
+    89.34554390527248,
+    89.02935743817177,
+    89.27176556189325,
+    89.45143905861046,
+    89.40745211399224,
+    89.38148016112088,
+    89.35951567237696,
+    89.19611995929712,
+    89.39945911993371,
+    89.43743853369294,
+    89.29368692872961,
+    89.18418764542714,
+    89.36151199583104,
+    89.39546317071694,
+    88.75673997339301
+   ],
+   "median": 89.35951567237696,
+   "iqr": 0.16351838473013913,
+   "n": 15
+  },
+  {
+   "name": "interp_fp_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 2000000
+   },
+   "samples": [
+    14.515894907935136
+   ],
+   "median": 14.515894907935136,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "interp_fp_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 20000000
+   },
+   "samples": [
+    15.122130103273605,
+    15.10226118665424,
+    15.08221693441648,
+    15.074032341715615,
+    15.054912794093413,
+    15.072896294813601,
+    15.082160067046141,
+    15.086540166000242,
+    15.104428241320617,
+    15.10813648666013,
+    15.107565868606274,
+    15.064721811540776,
+    15.065856625153085,
+    15.068694410698663,
+    15.097131167704209
+   ],
+   "median": 15.08221693441648,
+   "iqr": 0.032549361231296814,
+   "n": 15
+  },
+  {
+   "name": "vm_flat_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU off",
+    "chunk": 2000000
+   },
+   "samples": [
+    78.06401247571279
+   ],
+   "median": 78.06401247571279,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_flat_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU off",
+    "chunk": 20000000
+   },
+   "samples": [
+    88.34897846493651,
+    88.18730983776932,
+    88.35092989167606,
+    88.02042074961774,
+    88.09408447020031,
+    87.80594886222569,
+    87.88890841883659,
+    87.82329951400739,
+    88.02429471365167,
+    87.63281848137001,
+    88.05917576426604,
+    88.09796494441167,
+    88.24178247008263,
+    87.98944128550666,
+    87.70583462056186
+   ],
+   "median": 88.02429471365167,
+   "iqr": 0.2865334246685052,
+   "n": 15
+  },
+  {
+   "name": "vm_mmu_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 2000000
+   },
+   "samples": [
+    41.86289897441897
+   ],
+   "median": 41.86289897441897,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_mmu_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 20000000
+   },
+   "samples": [
+    53.918529101486385,
+    54.20862188236114,
+    54.22258370260874,
+    54.0642824307661,
+    54.20641804304842,
+    54.17851822102592,
+    54.17264823025856,
+    54.27040227409033,
+    54.32420687150496,
+    54.12060777198112,
+    54.25862372720147,
+    53.85319618788517,
+    54.11767889310142,
+    53.893829161755306,
+    53.901091495371105
+   ],
+   "median": 54.17264823025856,
+   "iqr": 0.2241970263587021,
+   "n": 15
+  },
+  {
+   "name": "jit_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2246,
+     "avgBlock": 4.14,
+     "interpretedPct": 6.904,
+     "blocks": 20,
+     "modules": 4,
+     "bytes": 15108,
+     "compileMs": 0.46,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 2,
+     "flagsStored": 16,
+     "condDirect": 16,
+     "condComputed": 0,
+     "condMemory": 2
+    }
+   },
+   "samples": [
+    117.33646260108739
+   ],
+   "median": 117.33646260108739,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2401,
+     "avgBlock": 4.16,
+     "interpretedPct": 0,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 4,
+     "flagsStored": 21,
+     "condDirect": 22,
+     "condComputed": 0,
+     "condMemory": 3
+    }
+   },
+   "samples": [
+    366.46816315838095,
+    371.2641544130253,
+    371.29861684691394,
+    370.816723817853,
+    370.6792698764967,
+    370.23324666779007,
+    370.61058111219586,
+    369.5150115473441,
+    370.6105807028544,
+    370.7479841069941,
+    368.1207437169828,
+    370.5419173907474,
+    369.82248532122924,
+    370.0277519997951,
+    368.18851256689044
+   ],
+   "median": 370.5419173907474,
+   "iqr": 1.0448785574587305,
+   "n": 15
+  },
+  {
+   "name": "jit_fp_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0824,
+     "avgBlock": 11.44,
+     "interpretedPct": 5.711,
+     "blocks": 30,
+     "modules": 2,
+     "bytes": 13920,
+     "compileMs": 0.23,
+     "inlinePct": 29.25,
+     "inlineStepsPct": 30.52,
+     "flagsElided": 0,
+     "flagsStored": 21,
+     "condDirect": 7,
+     "condComputed": 0,
+     "condMemory": 14
+    }
+   },
+   "samples": [
+    15.13431706667295
+   ],
+   "median": 15.13431706667295,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_fp_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0871,
+     "avgBlock": 11.48,
+     "interpretedPct": 0,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": 29.25,
+     "inlineStepsPct": 30.5,
+     "flagsElided": 0,
+     "flagsStored": 21,
+     "condDirect": 7,
+     "condComputed": 0,
+     "condMemory": 14
+    }
+   },
+   "samples": [
+    15.555002488915772,
+    15.548472362446278,
+    15.550104380536858,
+    15.543699167332722,
+    15.546478140025357,
+    15.546296871854578,
+    15.54581351265158,
+    15.522406593458754,
+    15.510128114145736,
+    15.50471731015567,
+    15.507482359665461,
+    15.496728253619697,
+    15.485029847480785,
+    15.510428824064713,
+    15.498769785005127
+   ],
+   "median": 15.522406593458754,
+   "iqr": 0.04028767102940378,
+   "n": 15
+  },
+  {
+   "name": "vm_jit_flat_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU off",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2243,
+     "avgBlock": 4.13,
+     "interpretedPct": 7.32,
+     "blocks": 25,
+     "modules": 5,
+     "bytes": 16436,
+     "compileMs": 0.43,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 2,
+     "flagsStored": 18,
+     "condDirect": 18,
+     "condComputed": 0,
+     "condMemory": 5
+    }
+   },
+   "samples": [
+    106.157112338462
+   ],
+   "median": 106.157112338462,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_jit_flat_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU off",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2401,
+     "avgBlock": 4.15,
+     "interpretedPct": 0.257,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 17,
+     "flagsStored": 52,
+     "condDirect": 64,
+     "condComputed": 0,
+     "condMemory": 53
+    }
+   },
+   "samples": [
+    349.9562556140614,
+    349.7726477351912,
+    350.90797435435985,
+    349.0705994270749,
+    348.00765635612134,
+    348.43205553204007,
+    350.5389539634826,
+    349.74206521231355,
+    350.0787673867142,
+    349.6503497232195,
+    349.5586823239979,
+    348.97923572095567,
+    348.97923572095567,
+    348.4624097333634,
+    349.0401395434401
+   ],
+   "median": 349.5586823239979,
+   "iqr": 0.8852159536705813,
+   "n": 15
+  },
+  {
+   "name": "vm_jit_mmu_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2243,
+     "avgBlock": 4.13,
+     "interpretedPct": 7.318,
+     "blocks": 25,
+     "modules": 5,
+     "bytes": 17556,
+     "compileMs": 0.42,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 2,
+     "flagsStored": 18,
+     "condDirect": 18,
+     "condComputed": 0,
+     "condMemory": 5
+    }
+   },
+   "samples": [
+    79.76071788437973
+   ],
+   "median": 79.76071788437973,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_jit_mmu_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0.2401,
+     "avgBlock": 4.15,
+     "interpretedPct": 0.256,
+     "blocks": 1,
+     "modules": 1,
+     "bytes": 5260,
+     "compileMs": 0.2,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 17,
+     "flagsStored": 53,
+     "condDirect": 64,
+     "condComputed": 0,
+     "condMemory": 53
+    }
+   },
+   "samples": [
+    192.83613743010557,
+    192.8919322904963,
+    192.64110962606316,
+    192.78966645615398,
+    192.88263092352076,
+    192.83613754092784,
+    192.83613743010557,
+    192.9012345545936,
+    192.83613754092784,
+    192.54837777107784,
+    193.2180465833511,
+    193.33945576280024,
+    192.91984177467253,
+    192.91984177467253,
+    192.57618791899188
+   ],
+   "median": 192.83613754092784,
+   "iqr": 0.09763622150330775,
+   "n": 15
+  }
+ ]
+}

@@ -179,3 +179,43 @@ Cold: Buildroot 962 ms (JIT) vs 1091 (interpreter), Alpine 40.2 s vs 68.1 s. Hos
 - **Alpine:** 97% of the instructions run in JIT code are inline, and 3.9% of its steps are interpreted (cold code under the threshold, blocks that don't fit a chunk). Compiling costs 2.0 s of the 40 s (69 MB of wasm: inline loads and stores are larger than the helper calls they replace, +65% bytes over step 4), and the 16,384-block cache flushes 14 times.
 - **Buildroot:** −20%, but its warm IQR stays wide (±136 ms), which fits the same bimodality at boot scale.
 - **Still slower under the JIT:** kvm-unit-tests `timer` (3.3 s vs 2.6 s in Node, 106M steps): it spends its time in short blocks around timer polls and WFI, where a dispatch per block costs more than it saves.
+
+## M5 step 6: registers in locals, lazy NZCV
+
+**What runs:** step 5 plus, within each block: guest registers in i64 locals (loaded on first use, written back before helper calls and returns; the load/store slow path writes back before its helper and reloads the instruction's destinations after it), lazy NZCV (setters keep their operands in flag locals; a setter the next one replaces emits no flag code; conditions come straight from the operands where the kind allows, e.g. `cmp; b.lt` is `i64.lt_s`; NZCV is stored before helpers, on a load/store's failure return, and before the block's branch), only the locals a block uses declared, and registers read once and never written read straight from memory. NZCV is still live out of every block (no successor knowledge until steps 7–8). **Method:** as step 5: one full `bench/interp` run at `901bb1a`, `boot_jit` and `boot_alpine_jit`; `--only jit_mips --config liftoff-only|turbofan-only` runs for the per-tier numbers (`results/m5-step6/`, each named after the slice and experiment).
+
+| Guest | Interpreter warm (IQR) | JIT warm (IQR) | JIT / interp | Step 5 JIT |
+|---|---|---|---|---|
+| integer, EL0 | 89.4 (±0.16) | **370.5** (±1.04) | **4.14×** | 337.9 |
+| FP/NEON, EL0 | 15.1 (±0.03) | **15.5** (±0.04) | +3% | 15.6 |
+| integer, EL1 MMU off | 88.0 (±0.29) | **349.6** (±0.89)⁴ | **3.97×** | 218.6 (modes 218 / 320) |
+| integer, EL1 MMU on | 54.2 (±0.22) | **192.8** (±0.10)⁴ | **3.56×** | 179.6 (modes 177 / 240) |
+
+⁴ The high mode (MMU off) and the low mode (MMU on) of step 5's two-mode behavior, which persists: compare with 320 and 177–180. Earlier step 6 runs read MMU off at 307, 220 and 231.
+
+**The integer guest by V8 tier and slice** (`--only jit_mips`, MIPS):
+
+| Build | Default | TurboFan only | Liftoff only |
+|---|---|---|---|
+| step 5 | 337.9 | 351.7 | 118.1 |
+| 6.1 registers in locals | 357.4 | 368.1 | 111.3 |
+| 6.2 lazy NZCV (stored at the block's end) | **240.5** | 231.9 | 105.5 |
+| 6.3 NZCV stored before the block's branch | 369.8 | | 101.1 |
+| 6.4 only the used locals declared | 373.5 | 382.2 | 107.9 |
+| 6.5 once-read registers without a local | 370.5 | 379–384 | 116.2 |
+
+| Boot (Chromium, deterministic) | Step 5 JIT | Step 6 JIT (IQR) | Steps in JIT code | Inline, dynamic | Compiled |
+|---|---|---|---|---|---|
+| Buildroot, to power-off | 853 ms (modes 785 / 920) | **867 ms** (±157; modes 786 / 945) | 84.5% | 97.1% | 12,425 blocks, 3.9 MB (+13%), 56 ms |
+| Alpine, to power-off | 40.1 s (±0.18) | **39.3 s** (±0.32) | 96.1% | 96.9% | 244,487 blocks, 77.6 MB (+12%), 2.04 s, 14 flushes |
+| Alpine, to its script | 32.3 s (±0.12) | **31.5 s** (±0.27) | | | |
+
+**Flags (static, `jit::Stats`, ABI 13):** in Alpine's compiled code 8.5% of the lazy flag setters are never stored (Buildroot 9.2%) and 90.5% of conditions are computed directly from a setter's operands (0.8% from NZCV computed in registers, 8.6% from NZCV in memory: flags set before the block). The rest of the setters are stored because NZCV is live out of every block; that, and the conditions from memory, are what steps 7–8 (successor knowledge, regions) can remove.
+
+Host: Ryzen 7 5800X3D, Linux x86_64, Chromium 152.0.7977.75. Raw data: `results/chromium-linux-x86_64-m5-step6.json`, `results/m5-step6/`, `../boot/results/chromium-linux-x86_64-m5-step6-{boot_jit,boot_alpine_jit}.json`.
+
+**Notes**
+- **Where NZCV is computed matters to TurboFan, not how often.** 6.2 computed the lazy NZCV at the block's end, after the branch's `select` of the next PC: 240 MIPS (TurboFan only 232). Storing it eagerly after every setter (more work) ran at 368, and storing it just before the block's last instruction at 371. So 6.3 stores lazy flags before a block-ending instruction, keeping them lazy so the branch's condition stays direct. I haven't looked at V8's machine code to see why; the order is pinned by a unit test.
+- **Liftoff pays for every declared local**, on every call (it zero-initializes them): 20 unused i64 locals took the integer guest from 101 to 83 MIPS under `--liftoff-only`. Registers in locals won under TurboFan (+5–9%) and lost under Liftoff (118 → 101), which is why the boots didn't gain at first (Alpine 41.9 s at 6.3, Buildroot slower in both modes: much of a boot runs in Liftoff code, and Alpine flushes and recompiles 14 times). Declaring only the used locals (6.4) and leaving once-read registers in memory (6.5) brought Liftoff back to 116 and Alpine to 39.3 s.
+- **Code size:** +12–13% over step 5, mostly the load/store slow paths (each writes back the dirty registers before its helper call, stores lazy NZCV on its failure return, and reloads after). Compile time barely moved (Alpine 2.04 s vs 1.98 s).
+- **A rustc/LLVM miscompile** (wasm32, simd128, nightly-2026-09-24): counting register uses in a `[u8; 32]` and comparing it into a u32 mask swapped the mask's 16-bit halves (PLAN.md M9 has a 12-line repro). The multi-instruction differential test caught it within the first run; the emitter tracks uses as bit masks instead.
