@@ -29,6 +29,10 @@ const CLASSES: Record<string, [number, number]> = {
   'data processing, immediate': [0x1c000000, 0x10000000], // op0 100x
   'data processing, register': [0x0e000000, 0x0a000000], // op0 x101
   branches: [0x1c000000, 0x14000000], // op0 101x
+  // Narrower, for the flag and operand edge cases.
+  'add/sub, immediate': [0x1f800000, 0x11000000],
+  'add/sub, shifted and extended register': [0x1f000000, 0x0b000000],
+  'add/sub with carry': [0x1fe0fc00, 0x1a000000],
 };
 
 // xorshift64*, seeded: failures reproduce.
@@ -47,6 +51,13 @@ function value() {
   return r === 0 ? rand64() : r === 1 ? rand64() & 0xffff_ffffn : EDGES[rand32() % EDGES.length];
 }
 
+/** Two thirds of the words get a random bit window cleared or set: zero and all-ones immediates, XZR/SP. */
+function field(w: number) {
+  const r = rand32() % 3, lo = rand32() % 27, len = 1 + (rand32() % 12);
+  const m = (len >= 32 ? -1 : ((1 << len) - 1) << lo) | 0;
+  return r === 0 ? w : r === 1 ? w & ~m : w | m;
+}
+
 for (const [name, [mask, bits]] of Object.entries(CLASSES)) test(`JIT vs interpreter: ${name}`, () => {
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const imports = coreImports(memory);
@@ -59,7 +70,7 @@ for (const [name, [mask, bits]] of Object.entries(CLASSES)) test(`JIT vs interpr
   const interp = ex.vcpu_new();
   const jit = ex.jit_new(0, 1, 16384, 0);
   const [ei, ej] = [ex.vcpu_new(), ex.vcpu_new()]; // exit words
-  const words = Array.from({ length: WORDS }, () => ((rand32() & ~mask) | bits) >>> 0);
+  const words = Array.from({ length: WORDS }, () => ((field(rand32()) & ~mask) | bits) >>> 0);
   const code = new Uint32Array(memory.buffer, base, 2 * WORDS);
   words.forEach((w, k) => code.set([w, BRK], 2 * k));
 
