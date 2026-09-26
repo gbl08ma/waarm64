@@ -119,6 +119,12 @@ impl Mem {
         }
     }
 
+    /// The guest physical address of `p`, a pointer into the RAM ([`Mem::host`]'s inverse).
+    #[inline]
+    pub fn pa(&self, p: *const u8) -> u64 {
+        (p as usize - self.base as usize) as u64 + self.phys
+    }
+
     /// Physical little-endian read of 1, 2, 4 or 8 bytes (loaders, table walks, tests).
     pub fn read(&self, pa: u64, size: u32) -> Result<u64, Fault> {
         let p = self.host(pa, size as u64, Access::Read)?;

@@ -192,7 +192,7 @@ struct Clock {
 #[link(wasm_import_module = "env")]
 unsafe extern "C" {
     /// Milliseconds on a monotonic clock (the host passes `performance.now`).
-    fn now_ms() -> f64;
+    pub(crate) fn now_ms() -> f64;
 }
 
 impl Clock {

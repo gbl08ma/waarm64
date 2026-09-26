@@ -94,11 +94,17 @@ pub unsafe extern "C" fn interp_run_exit(
     n: u64,
     exit: *mut [u64; 2],
 ) -> u64 {
-    use interp::Exit;
     // SAFETY: guaranteed by the caller.
     let (cpu, mem, exit) = unsafe { (&mut *cpu, &*mem, &mut *exit) };
     let (done, r) = interp::run(cpu, mem, n);
-    *exit = match r {
+    *exit = exit_code(r);
+    done
+}
+
+/// `interp_run_exit`'s (kind, value) for a run's result.
+fn exit_code(r: Result<(), interp::Exit>) -> [u64; 2] {
+    use interp::Exit;
+    match r {
         Ok(()) => [0, 0],
         Err(Exit::Undefined) => [1, 0],
         Err(Exit::Unimplemented(op)) => [2, op as u64],
@@ -112,9 +118,80 @@ pub unsafe extern "C" fn interp_run_exit(
         Err(Exit::Hvc(imm)) => [8, imm as u64],
         // A timer register or ISR_EL1: only a VM has them.
         Err(Exit::Platform(i)) => [2, decode::decode(i) as u64],
-        Err(Exit::Resync | Exit::Wfi) => unreachable!("run handles {r:?}"),
-    };
+        Err(e @ (Exit::Resync | Exit::Wfi)) => unreachable!("run handles {e:?}"),
+    }
+}
+
+// User-mode JIT twins of the exports above (M5 step 2, PLAN.md §2 "JIT ABI").
+
+/// Allocates a vCPU with a JIT (`mmu::Vcpu`: the `cpu::Cpu` at 0, with the
+/// offsets of [`vcpu_new`], and the same user-process state) that compiles a
+/// block after `threshold` dispatches, `batch` blocks per module, into a code
+/// cache of `capacity` blocks (`capacity` ≥ `batch` ≥ 1).
+#[unsafe(no_mangle)]
+pub extern "C" fn jit_new(threshold: u32, batch: u32, capacity: u32) -> *mut mmu::Vcpu {
+    let mut v = mmu::Vcpu::new(cpu::Cpu::default());
+    v.jit.cache = Some(Box::new(jit::Cache::new(jit::Config {
+        threshold,
+        batch,
+        capacity,
+    })));
+    Box::into_raw(v)
+}
+
+/// [`interp_run`] through the JIT.
+///
+/// # Safety
+/// `v` comes from [`jit_new`], `mem` from [`mem_new`]; nothing else uses `v` meanwhile.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_run(v: *mut mmu::Vcpu, mem: *const mem::Mem, n: u64) -> u64 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { jit::run(v, &*mem, n) }.0
+}
+
+/// [`interp_run_exit`] through the JIT.
+///
+/// # Safety
+/// As for [`jit_run`]; `exit` as for [`interp_run_exit`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_run_exit(
+    v: *mut mmu::Vcpu,
+    mem: *const mem::Mem,
+    n: u64,
+    exit: *mut [u64; 2],
+) -> u64 {
+    // SAFETY: guaranteed by the caller.
+    let (done, r) = unsafe { jit::run(v, &*mem, n) };
+    // SAFETY: guaranteed by the caller.
+    unsafe { *exit = exit_code(r) };
     done
+}
+
+/// Drops every compiled block, for hosts that rewrite guest code between runs.
+///
+/// # Safety
+/// As for [`jit_run`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_flush(v: *mut mmu::Vcpu) {
+    // SAFETY: guaranteed by the caller.
+    if let Some(c) = unsafe { &mut *v }.jit.cache.as_deref_mut() {
+        c.flush();
+    }
+}
+
+/// The JIT's counts (`jit::Stats`, u64s: blocks, modules, bytes, compile ns,
+/// steps in JIT code, dispatches, invalidations, flushes).
+///
+/// # Safety
+/// As for [`jit_run`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_stats(v: *const mmu::Vcpu) -> *const jit::Stats {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &*v }
+        .jit
+        .cache
+        .as_deref()
+        .map_or(core::ptr::null(), |c| &c.stats)
 }
 
 // The whole-VM ABI (PLAN.md §2 "Host ABI for a whole VM"). Every `vm` argument

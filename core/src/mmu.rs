@@ -453,6 +453,13 @@ impl<'a> Mmu<'a> {
         self.miss(c, va, len, access, u, el)
     }
 
+    /// The host pointer of the instruction at `pc` (aligned), through the
+    /// instruction TLB; the JIT keys blocks by its PA (`Mem::pa`).
+    #[inline(always)]
+    pub fn fetch_ptr(&mut self, c: &Cpu, pc: u64) -> Result<*mut u8, Fault> {
+        self.host(c, pc, 4, Access::Read, Use::Exec, c.el())
+    }
+
     /// TLB miss: walk, check permissions, and fill the TLB if the page is RAM.
     #[inline(never)]
     fn miss(
@@ -571,7 +578,7 @@ impl Bus for Mmu<'_> {
     }
 
     fn fetch(&mut self, c: &Cpu, pc: u64) -> Result<u32, Fault> {
-        let p = self.host(c, pc, 4, Access::Read, Use::Exec, c.el())?;
+        let p = self.fetch_ptr(c, pc)?;
         // SAFETY: host() checked 4 bytes of RAM.
         Ok(unsafe { mem::load(p, 4) } as u32)
     }

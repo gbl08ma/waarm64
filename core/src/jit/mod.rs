@@ -13,6 +13,7 @@ pub mod wasm;
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, Hasher};
 
+use crate::cpu::sctlr;
 use crate::interp::{self, Exit};
 use crate::mem::Mem;
 use crate::mmu::{Flat, Mmu, Vcpu};
@@ -60,6 +61,7 @@ impl Config {
 }
 
 /// What the JIT did (`vm::Counters` publishes them).
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Stats {
     pub blocks: u64,
@@ -93,22 +95,56 @@ impl Hasher for KeyHasher {
 
 /// A block key's state.
 #[derive(Clone, Copy, Debug, Default)]
-#[allow(dead_code)] // the dispatcher (step 2b) reads it
 struct Info {
     /// Dispatches while not compiled.
     hits: u32,
     /// Table index once compiled (0 is never a JIT block: the table's null entry).
     idx: u32,
-    /// Its length once compiled.
+    /// The block's length (0: it would have none, so it's never compiled).
+    len: u32,
+    /// In the pending batch.
+    queued: bool,
+}
+
+/// A jump cache entry: the compiled block for a key.
+#[derive(Clone, Copy)]
+struct Jc {
+    key: u64,
+    idx: u32,
     len: u32,
 }
 
-/// The block cache and the code cache's slot allocator.
+/// Direct-mapped jump cache in front of the map (as QEMU's `tb_jmp_cache`).
+const JC: usize = 4096;
+const JC_EMPTY: Jc = Jc {
+    key: u64::MAX,
+    idx: 0,
+    len: 0,
+};
+
+fn jc_index(key: u64) -> usize {
+    (key >> 2) as usize & (JC - 1)
+}
+
+/// Steps after the first block joins a pending batch before it's emitted
+/// anyway, so a lone hot block doesn't wait for a full batch.
+pub const BATCH_TIMEOUT: u64 = 100_000;
+
+/// The block cache, the pending batch and the code cache's slot allocator.
 pub struct Cache {
     pub cfg: Config,
     map: HashMap<u64, Info, BuildHasherDefault<KeyHasher>>,
+    jc: Box<[Jc; JC]>,
+    /// (key, VA) of blocks waiting to be compiled.
+    pending: Vec<(u64, u64)>,
+    /// `clock` when the first pending block was queued.
+    since: u64,
+    /// Steps dispatched so far (the batch timeout's clock).
+    clock: u64,
     /// The next free slot.
     next: u32,
+    /// No JIT host (natively, or before `jit.bind`): interpret everything.
+    off: bool,
     pub stats: Stats,
 }
 
@@ -118,13 +154,17 @@ impl Cache {
         Cache {
             cfg,
             map: HashMap::default(),
+            jc: Box::new([JC_EMPTY; JC]),
+            pending: Vec::new(),
+            since: 0,
+            clock: 0,
             next: 0,
+            off: false,
             stats: Stats::default(),
         }
     }
 
     /// `n` consecutive slots for a module; flushes the cache first if they don't fit.
-    #[allow(dead_code)] // the dispatcher's (step 2b)
     fn alloc(&mut self, n: u32) -> u32 {
         if self.next + n > self.cfg.capacity {
             self.flush();
@@ -133,12 +173,200 @@ impl Cache {
         self.next - n
     }
 
-    /// Drops every block (their slots are reused; the modules are left to the GC).
+    /// Drops every block (their slots are reused; the modules are left to the
+    /// GC) and the pending batch.
     pub fn flush(&mut self) {
         self.map.clear();
+        self.jc.fill(JC_EMPTY);
+        self.pending.clear();
         self.next = 0;
         self.stats.flushes += 1;
     }
+
+    /// The compiled block for `key` as (table index, length), or else how many
+    /// instructions to interpret: the would-be block's length, so the next
+    /// lookup is at a block start again.
+    #[inline(always)]
+    fn enter(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32), u32> {
+        let j = self.jc[jc_index(key)];
+        if j.key == key {
+            return Ok((j.idx, j.len));
+        }
+        self.miss(key, va, mem)
+    }
+
+    /// Not in the jump cache: look it up, count a hit, queue it and emit the
+    /// batch when due.
+    #[inline(never)]
+    fn miss(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32), u32> {
+        let info = self.map.entry(key).or_insert_with(|| Info {
+            len: block::form(mem, key & !3).len() as u32,
+            ..Info::default()
+        });
+        if info.idx == 0 && !self.off && info.len > 0 {
+            info.hits += 1;
+            if info.hits > self.cfg.threshold && !info.queued {
+                info.queued = true;
+                if self.pending.is_empty() {
+                    self.since = self.clock;
+                }
+                self.pending.push((key, va));
+            }
+            if self.pending.len() >= self.cfg.batch as usize
+                || (!self.pending.is_empty() && self.clock - self.since >= BATCH_TIMEOUT)
+            {
+                self.emit(mem);
+            }
+        }
+        match self.map.get(&key) {
+            Some(&Info { idx, len, .. }) if idx != 0 => {
+                self.jc[jc_index(key)] = Jc { key, idx, len };
+                Ok((idx, len))
+            }
+            Some(i) => Err(i.len.max(1)),
+            None => Err(1), // flushed by the emit
+        }
+    }
+
+    /// Compiles the pending batch into one module and installs it.
+    fn emit(&mut self, mem: &Mem) {
+        let pending = core::mem::take(&mut self.pending);
+        let mut blocks = Vec::with_capacity(pending.len());
+        for (key, va) in pending {
+            let words = block::form(mem, key & !3);
+            if let Some(i) = self.map.get_mut(&key) {
+                (i.queued, i.len) = (false, words.len() as u32);
+            }
+            if !words.is_empty() {
+                blocks.push(block::Block { key, va, words });
+            }
+        }
+        if blocks.is_empty() {
+            return;
+        }
+        let n = blocks.len() as u32;
+        let slot = self.alloc(n);
+        let bytes = block::module(&blocks);
+        let t = now_ns();
+        let Some(idx) = install(&bytes, slot) else {
+            self.off = true;
+            return;
+        };
+        let s = &mut self.stats;
+        s.compile_ns += now_ns() - t;
+        (s.modules, s.blocks, s.bytes) = (
+            s.modules + 1,
+            s.blocks + n as u64,
+            s.bytes + bytes.len() as u64,
+        );
+        for (k, b) in blocks.iter().enumerate() {
+            let i = self.map.entry(b.key).or_default();
+            (i.idx, i.len) = (idx + k as u32, b.words.len() as u32);
+        }
+    }
+}
+
+fn now_ns() -> u64 {
+    #[cfg(target_arch = "wasm32")]
+    // SAFETY: a host function with no preconditions.
+    return (unsafe { crate::vm::now_ms() } * 1e6) as u64;
+    #[cfg(not(target_arch = "wasm32"))]
+    0
+}
+
+/// The block key for the PC: its PA (through the instruction TLB when the
+/// MMU copy runs) and the regime bits; `None` if the fetch would fault, which
+/// the interpreter then raises.
+#[inline(always)]
+fn key(v: &mut Vcpu, mem: &Mem) -> Option<u64> {
+    let c = &v.cpu;
+    let (pc, el) = (c.pc, c.el() & 1);
+    if pc & 3 != 0 {
+        return None;
+    }
+    if c.sctlr_el1 & (sctlr::M | sctlr::A) == 0 {
+        return Some(pc | el);
+    }
+    let p = Mmu::new(mem, Some(&mut v.tlb)).fetch_ptr(c, pc).ok()?;
+    Some(mem.pa(p) | el | block::KEY_MMU)
+}
+
+/// Runs up to `n` instructions exactly as [`interp::steps`] does (same
+/// result, same exits), through compiled blocks where the cache has them and
+/// they fit in what's left of `n`, and through the interpreter otherwise.
+/// `v` has a cache (`jit.cache`).
+///
+/// # Safety
+/// `v` is valid and nothing else references it while this runs.
+pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+    let mut done = 0;
+    while done < n {
+        let left = n - done;
+        // SAFETY: guaranteed by the caller; the reference ends before a block runs.
+        let vr = unsafe { &mut *v };
+        vr.jit.mem = mem;
+        let (pc, key) = (vr.cpu.pc, key(vr, mem));
+        let cache = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
+        let r = key.map_or(Err(1), |k| cache.enter(k, pc, mem));
+        if let Ok((idx, len)) = r
+            && len as u64 <= left
+        {
+            // SAFETY: `idx` is a compiled block (the cache drops blocks before
+            // it reuses their slots), and no reference into `*v` is live: the
+            // block and its helpers use the raw pointer. `mem` isn't in `*v`.
+            let k = unsafe { block(idx)(v) } as u64;
+            // SAFETY: the block has returned.
+            let vr = unsafe { &mut *v };
+            let cache = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
+            let e = vr.jit.exit.take();
+            let s = &mut cache.stats;
+            s.dispatches += 1;
+            s.steps += k + (e == Some(Exit::Resync)) as u64;
+            cache.clock += k;
+            done += k;
+            if e.is_some() {
+                return (done, e);
+            }
+        } else {
+            let m = match r {
+                Ok((_, len)) | Err(len) => len as u64,
+            };
+            let (k, e) = interp::steps(&mut vr.cpu, mem, Some(&mut vr.tlb), m.min(left));
+            if let Some(c) = vr.jit.cache.as_deref_mut() {
+                c.clock += k;
+            }
+            done += k;
+            if e.is_some() {
+                return (done, e);
+            }
+        }
+    }
+    (n, None)
+}
+
+/// [`interp::run`] through the JIT, for user-mode hosts (the corpus, the benchmarks).
+///
+/// # Safety
+/// As for [`steps`].
+pub unsafe fn run(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Result<(), Exit>) {
+    let mut done = 0;
+    while done < n {
+        // SAFETY: guaranteed by the caller.
+        let (k, e) = unsafe { steps(v, mem, n - done) };
+        done += k;
+        // SAFETY: no block is running.
+        let c = unsafe { &mut (*v).cpu };
+        match e {
+            None => {}
+            Some(Exit::Resync) => done += 1,
+            Some(Exit::Wfi) => {
+                c.pc = c.pc.wrapping_add(4);
+                done += 1;
+            }
+            Some(e) => return (done, Err(e)),
+        }
+    }
+    (n, Ok(()))
 }
 
 /// Runs one instruction of a block compiled for the flat bus (MMU and
@@ -254,6 +482,38 @@ mod tests {
         assert_eq!(c.stats.flushes, 1);
         c.flush();
         assert_eq!((c.alloc(1), c.stats.flushes), (0, 2));
+    }
+
+    #[test]
+    fn without_a_jit_host_the_dispatcher_interprets() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        // mov x0, #0; 1: add x0, x0, #1; cmp x0, #100; b.ne 1b; brk #0
+        for (k, w) in [
+            0xd2800000u32,
+            0x91000400,
+            0xf101901f,
+            0x54ffffc1,
+            0xd4200000,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            mem.write(0x100 + 4 * k as u64, 4, w as u64).unwrap();
+        }
+        let mut c = Cpu {
+            pc: 0x100,
+            ..Cpu::default()
+        };
+        let mut v = Vcpu::new(c.clone());
+        v.jit.cache = Some(Box::new(Cache::new(Config::STRESS)));
+        let want = interp::run(&mut c, &mem, 1000);
+        let got = unsafe { run(&mut *v, &mem, 1000) };
+        assert_eq!((got, &v.cpu), (want, &c));
+        assert_eq!(want, (301, Err(Exit::Brk(0))));
+        let cache = v.jit.cache.as_deref().unwrap();
+        assert!(cache.off && cache.map.len() == 3); // mov, the loop, brk
     }
 
     #[test]

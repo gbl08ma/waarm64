@@ -1,6 +1,9 @@
 // The golden corpus on the wasm core in Node (V8), the counterpart of the
 // native comparator in core/tests/corpus.rs. Host float behavior is where the
 // native and wasm builds could diverge. Needs the wasm build (scripts/ci.sh).
+// It also runs through the JIT (M5): forced (every block compiled on first
+// sight, one per module) and in stress (the same with a 4-block code cache,
+// so it flushes constantly).
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -16,7 +19,14 @@ type Exports = {
   vcpu_new(): number;
   mem_new(base: number, size: bigint): number;
   interp_run_exit(cpu: number, mem: number, n: bigint, exit: number): bigint;
+  jit_new(threshold: number, batch: number, capacity: number): number;
+  jit_run_exit(v: number, mem: number, n: bigint, exit: number): bigint;
+  jit_flush(v: number): void;
+  jit_stats(v: number): number;
 };
+
+/** jit_new's threshold, batch and code cache capacity; none: the interpreter. */
+const MODES: Record<string, [number, number, number] | undefined> = { interpreter: undefined, 'JIT (forced)': [0, 1, 16384], 'JIT stress': [0, 1, 4] };
 
 /** Byte offset of each REGS slot in cpu::Cpu (x0..x30, sp, then nzcv, fpcr, fpsr, v0..v31). */
 function offset(name: string): number {
@@ -28,11 +38,14 @@ function offset(name: string): number {
   return 8 * Number(name.slice(1));
 }
 
-test('golden corpus on the wasm core', () => {
+for (const [mode, jit] of Object.entries(MODES)) test(`golden corpus on the wasm core: ${mode}`, () => {
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const mod = new WebAssembly.Module(readFileSync(WASM));
-  const ex = new WebAssembly.Instance(mod, coreImports(memory)).exports as unknown as Exports;
-  const cpu = ex.vcpu_new();
+  const imports = coreImports(memory);
+  const instance = new WebAssembly.Instance(mod, imports);
+  imports.jit.bind(instance);
+  const ex = instance.exports as unknown as Exports;
+  const cpu = jit ? ex.jit_new(...jit) : ex.vcpu_new();
   const exit = ex.vcpu_new(); // any 16 aligned bytes the core won't touch otherwise
   const base = memory.grow(Math.ceil(RAM / 65536)) * 65536;
   const mem = ex.mem_new(base, BigInt(RAM));
@@ -60,7 +73,10 @@ test('golden corpus on the wasm core', () => {
       bytes.set(init.mem, base + Number(DATA));
       REGS.forEach((r, i) => set(r, init.regs[i]));
       dv.setBigUint64(cpu + 256, CODE, true); // PC
-      ex.interp_run_exit(cpu, mem, 1000n, exit);
+      if (jit) {
+        ex.jit_flush(cpu); // the code changed
+        ex.jit_run_exit(cpu, mem, 1000n, exit);
+      } else ex.interp_run_exit(cpu, mem, 1000n, exit);
 
       const [kind, val] = [dv.getBigUint64(exit, true), dv.getBigUint64(exit + 8, true)];
       const pc = dv.getBigUint64(cpu + 256, true);
@@ -89,5 +105,11 @@ test('golden corpus on the wasm core', () => {
     }
   }
   assert.ok(total > 30_000, `only ${total} corpus tests`);
+  if (jit) {
+    // jit::Stats: blocks, modules, bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes.
+    const [blocks, modules, bytes, ns, steps, dispatches] = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 8)].map(Number);
+    console.log(`${mode}: ${blocks} blocks in ${modules} modules, ${(bytes / 1e6).toFixed(1)} MB, ${(ns / 1e6).toFixed(0)} ms compiling; ${steps} steps in ${dispatches} block calls`);
+    assert.ok(blocks > total, `only ${blocks} blocks compiled`);
+  }
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${total} failed`);
 });
