@@ -99,8 +99,9 @@ pub struct Block {
 /// its page. Helpers set `Cpu::pc` themselves; a block that ends on an inline
 /// instruction other than a branch stores it before returning. Registers in
 /// locals are written back before each helper call and before the return, and
-/// reloaded on use after a helper (which may have written any of them).
-pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>) {
+/// reloaded on use after a helper (which may have written any of them); lazy
+/// flags are stored at the same points. Also returns the module's flag counts.
+pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>, emit::Counts) {
     let mut m = Module::default();
     let bt = m.ty(&[I32], &[I32]);
     let ht = m.ty(&[I32, I32, I64], &[I32]);
@@ -108,6 +109,7 @@ pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>) {
     let mmu = m.import_func("env", "jit_exec_mmu", ht);
     m.import_memory("env", "memory", 0, 65536);
     let mut inl = Vec::with_capacity(blocks.len());
+    let mut counts = emit::Counts::default();
     let (base, phys) = mem.base();
     for b in blocks {
         let cx = if b.key & KEY_MMU != 0 {
@@ -137,6 +139,7 @@ pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>) {
                 continue;
             }
             c.flush();
+            c.sync_flags();
             c.local_get(0).i32_const(w as i32).local_get(1);
             if i > 0 {
                 c.i64_const(4 * i as i64).i64_add();
@@ -148,12 +151,14 @@ pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>) {
             emit::set_pc(&mut c, 4 * b.words.len() as i64);
         }
         c.flush();
+        c.sync_flags();
         c.i32_const(b.words.len() as i32).end();
         let name = format!("{:#x}_pa{:#x}", b.va, b.key & !3);
         m.func(bt, &c.locals(), &c.c, &name);
         inl.push(n);
+        counts += c.counts;
     }
-    (m.finish(), inl)
+    (m.finish(), inl, counts)
 }
 
 #[cfg(test)]
@@ -238,14 +243,14 @@ mod tests {
             va: 0xffff_0100,
             words: vec![MOVZ, MRS],
         };
-        let (bytes, inl) = module(&[b], &test_mem());
+        let (bytes, inl, _) = module(&[b], &test_mem());
         assert_eq!(inl, [1]);
         #[rustfmt::skip]
         let body = [
-            3, 5, I64, 4, I32, 1, I64,              // locals: the entry PC, scratch, x1
+            5, 5, I64, 4, I32, 3, I64, 4, I32, 1, I64, // locals: entry PC, scratch, flags, x1
             0x20, 0, 0x29, 3, 0x80, 2, 0x21, 1,     // local.get 0; i64.load 256; local.set 1
-            0x42, 3, 0x21, 10,                      // movz inline: x1 (local 10) = 3
-            0x20, 0, 0x20, 10, 0x37, 3, 8,          // written back before the helper
+            0x42, 3, 0x21, 17,                      // movz inline: x1 (local 17) = 3
+            0x20, 0, 0x20, 17, 0x37, 3, 8,          // written back before the helper
             0x20, 0, 0x41, 0x80, 0x84, 0xed, 0xa9, 0x7d, 0x20, 1, 0x42, 4, 0x7c, // mrs, pc + 4
             0x10, 1, 0x04, 0x40, 0x41, 1, 0x0f, 0x0b, // call mmu; if: return 1
             0x41, 2, 0x0b,                          // return 2
@@ -277,13 +282,13 @@ mod tests {
             va: 0x4000_0200,
             words: vec![MOVZ, MOVZ],
         };
-        let (bytes, inl) = module(&[b], &test_mem());
+        let (bytes, inl, _) = module(&[b], &test_mem());
         assert_eq!(inl, [2]);
         // vcpu; entry + 8; i64.store 256; x1 written back; return 2
         #[rustfmt::skip]
         let tail = [
             0x20, 0, 0x20, 1, 0x42, 8, 0x7c, 0x37, 3, 0x80, 2,
-            0x20, 0, 0x20, 10, 0x37, 3, 8, 0x41, 2, 0x0b,
+            0x20, 0, 0x20, 17, 0x37, 3, 8, 0x41, 2, 0x0b,
         ];
         assert!(bytes.windows(tail.len()).any(|w| w == tail));
     }
@@ -301,17 +306,17 @@ mod tests {
             va: 0x4000_0200,
             words: vec![ADD, 0x91000423],
         };
-        let (bytes, _) = module(&[b], &test_mem());
+        let (bytes, _, _) = module(&[b], &test_mem());
         #[rustfmt::skip]
         let body = [
-            0x20, 0, 0x29, 3, 16, 0x22, 10, 0x42, 3, 0x7c, 0x21, 11, // x1 = x2 + 3
-            0x20, 11, 0x42, 1, 0x7c, 0x21, 12,                       // x3 = x1 + 1
+            0x20, 0, 0x29, 3, 16, 0x22, 17, 0x42, 3, 0x7c, 0x21, 18, // x1 = x2 + 3
+            0x20, 18, 0x42, 1, 0x7c, 0x21, 19,                       // x3 = x1 + 1
         ];
         assert!(has(&bytes, &body));
         assert!(has(
             &bytes,
             &[
-                0x20, 0, 0x20, 11, 0x37, 3, 8, 0x20, 0, 0x20, 12, 0x37, 3, 24
+                0x20, 0, 0x20, 18, 0x37, 3, 8, 0x20, 0, 0x20, 19, 0x37, 3, 24
             ]
         ));
         assert_eq!(bytes.windows(2).filter(|w| *w == [0x29, 3]).count(), 2); // the PC and x2
@@ -326,19 +331,83 @@ mod tests {
             va: 0x4000_0200,
             words: vec![ADD, 0x9e660001, 0x91000423],
         };
-        let (bytes, inl) = module(&[b], &test_mem());
+        let (bytes, inl, _) = module(&[b], &test_mem());
         assert_eq!(inl, [2]);
         #[rustfmt::skip]
         let around = [
-            0x20, 0, 0x20, 11, 0x37, 3, 8,                    // x1 written back
+            0x20, 0, 0x20, 18, 0x37, 3, 8,                    // x1 written back
             0x20, 0, 0x41,                                    // helper(vcpu, insn, …)
         ];
         assert!(has(&bytes, &around));
         #[rustfmt::skip]
         let after = [
             0x0f, 0x0b,                                       // …; if: return 1; end
-            0x20, 0, 0x29, 3, 8, 0x22, 11, 0x42, 1, 0x7c, 0x21, 12, // x3 = x1 (reloaded) + 1
+            0x20, 0, 0x29, 3, 8, 0x22, 18, 0x42, 1, 0x7c, 0x21, 19, // x3 = x1 (reloaded) + 1
         ];
         assert!(has(&bytes, &after));
+    }
+
+    /// The number of NZCV stores (`i64.store 264`) in `bytes`.
+    fn nzcv_stores(bytes: &[u8]) -> usize {
+        bytes.windows(3).filter(|w| *w == [0x37, 3, 0x88]).count()
+    }
+
+    fn one(words: &[u32]) -> (Vec<u8>, emit::Counts) {
+        let b = Block {
+            key: 0x4000_0200,
+            va: 0x4000_0200,
+            words: words.to_vec(),
+        };
+        let (bytes, _, counts) = module(&[b], &test_mem());
+        (bytes, counts)
+    }
+
+    #[test]
+    fn dead_flags_and_direct_conditions() {
+        // cmp x1, x2; cmp x3, x4; b.lt: the first compare's flags are dead,
+        // b.lt is i64.lt_s on the second's operands, and NZCV is stored once,
+        // at the end (live out of every block).
+        let (bytes, counts) = one(&[0xeb02003f, 0xeb04007f, 0x5400000b]);
+        assert!(has(&bytes, &[0x20, 10, 0x20, 11, 0x53])); // i64.lt_s
+        assert_eq!(nzcv_stores(&bytes), 1);
+        assert!(!has(&bytes, &[0x28, 2, 0x88, 2])); // NZCV never loaded
+        let want = emit::Counts {
+            flags_stored: 1,
+            flags_elided: 1,
+            cond_direct: 1,
+            ..Default::default()
+        };
+        assert_eq!(counts, want);
+        // tst w1, #1; b.ne: the i32 result against zero (i32.ne).
+        let (bytes, _) = one(&[0x7200003f, 0x54000001]);
+        assert!(has(&bytes, &[0x20, 15, 0x41, 0, 0x47]));
+        // adds x0, x1, x2; adc x3, x3, x3: the carry in is x + y < x, unsigned.
+        let (bytes, counts) = one(&[0xab020020, 0x9a030063]);
+        assert!(has(&bytes, &[0x20, 10, 0x20, 11, 0x7c, 0x20, 10, 0x54])); // i64.lt_u
+        assert_eq!(counts.cond_direct, 1);
+        // Flags from outside the block come from memory.
+        let (_, counts) = one(&[0x5400000b]);
+        assert_eq!(counts.cond_memory, 1);
+        // adcs x0, x0, x0; b.vs: no direct form, NZCV computed in registers.
+        let (_, counts) = one(&[0xba000000, 0x54000006]);
+        assert_eq!(counts.cond_computed, 1);
+    }
+
+    #[test]
+    fn flags_are_stored_before_helpers_and_on_failure_returns() {
+        // cmp x1, x2; fmov x1, d0 (a helper): NZCV stored before the call; the
+        // helper may write it, so nothing is left to store at the end.
+        let (bytes, counts) = one(&[0xeb02003f, 0x9e660001]);
+        assert_eq!(nzcv_stores(&bytes), 1);
+        let at = bytes.windows(3).position(|w| w == [0x37, 3, 0x88]).unwrap();
+        assert!(bytes[at..].windows(2).any(|w| w == [0x10, 0])); // the call comes after
+        assert_eq!(counts.flags_stored, 1);
+        // cmp x1, x2; ldr x0, [x1]: stored on the load's failure return, and at the end.
+        let (bytes, counts) = one(&[0xeb02003f, 0xf9400020]);
+        assert_eq!(nzcv_stores(&bytes), 2);
+        let ret = bytes.windows(2).position(|w| w == [0x41, 1]).unwrap(); // i32.const 1; return
+        assert_eq!(bytes[ret + 2], 0x0f);
+        assert!(nzcv_stores(&bytes[..ret]) == 1);
+        assert_eq!((counts.flags_stored, counts.flags_elided), (1, 0));
     }
 }

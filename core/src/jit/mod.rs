@@ -87,6 +87,15 @@ pub struct Stats {
     /// Inline instructions run: each dispatch adds its block's inline count,
     /// capped at the instructions that retired (exact unless a block stops early).
     pub inline_steps: u64,
+    /// Static flag counts over the compiled code (ABI 13, `emit::Counts`):
+    /// lazy flag setters whose NZCV is stored somewhere, and never; conditions
+    /// computed directly from a lazy setter's operands, from NZCV computed in
+    /// registers, and from NZCV in memory.
+    pub flags_stored: u64,
+    pub flags_elided: u64,
+    pub cond_direct: u64,
+    pub cond_computed: u64,
+    pub cond_memory: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -320,7 +329,7 @@ impl Cache {
         }
         let n = blocks.len() as u32;
         let slot = self.alloc(n);
-        let (bytes, inl) = block::module(&blocks, mem);
+        let (bytes, inl, counts) = block::module(&blocks, mem);
         let t = now_ns();
         let Some(idx) = install(&bytes, slot) else {
             self.off = true;
@@ -328,6 +337,11 @@ impl Cache {
         };
         let s = &mut self.stats;
         s.compile_ns += now_ns() - t;
+        s.flags_stored += counts.flags_stored;
+        s.flags_elided += counts.flags_elided;
+        s.cond_direct += counts.cond_direct;
+        s.cond_computed += counts.cond_computed;
+        s.cond_memory += counts.cond_memory;
         (s.modules, s.blocks, s.bytes) = (
             s.modules + 1,
             s.blocks + n as u64,

@@ -10,7 +10,14 @@
 //! register is loaded from the `Cpu` (at `8n`, SP at 248 as `x[31]`) on first
 //! use, and the dirty ones are written back where memory must be current:
 //! before a helper call and before the block returns ([`Func::flush`]). The PC
-//! (256) and NZCV (264) stay in memory.
+//! (256) stays in memory.
+//!
+//! NZCV (264) is lazy: a flag-setting instruction keeps its operands (or its
+//! result) in the flag locals and records how its flags would be computed
+//! ([`Flags`]); conditions are computed from those directly where the kind
+//! allows (`cmp x, y; b.lt` is `i64.lt_s`), and NZCV is stored only before a
+//! helper call, on a load/store's failure return and at the block's end. A
+//! setter whose flags the next setter replaces first emits no flag code.
 
 use core::ops::{Deref, DerefMut};
 
@@ -20,10 +27,12 @@ use crate::interp::{adr_imm, bit, bit_masks, bits, sext, trunc};
 use crate::mmu::{TLB_ENTRIES, Vcpu};
 
 /// A block function's locals after its parameter (local 0, the vCPU): the
-/// entry PC (local 1), scratch (i64 in 2..=5, i32 in 6..=9), then one i64 per
-/// guest register the block uses, in order of first use.
-const SCRATCH: &[(u32, u8)] = &[(5, I64), (4, I32)];
-const FIRST_REG: u32 = 10;
+/// entry PC (local 1), scratch (i64 in 2..=5, i32 in 6..=9), the flag locals
+/// (x, y, result: i64 in 10..=12, i32 in 13..=15; the carry in, 16), then one
+/// i64 per guest register the block uses, in order of first use.
+const SCRATCH: &[(u32, u8)] = &[(5, I64), (4, I32), (3, I64), (4, I32)];
+const FIRST_REG: u32 = 17;
+const FC: u32 = 16;
 const VCPU: u32 = 0;
 const ENTRY: u32 = 1;
 
@@ -39,7 +48,61 @@ pub struct Regs {
     dirty: u32,
 }
 
-/// A block function under construction: its code and its register locals.
+/// Where NZCV is: in the `Cpu`, or to be computed from the last flag setter's
+/// kind and flag locals (`stored`: it has been stored somewhere already, so
+/// it counts as materialized).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Flags {
+    #[default]
+    Mem,
+    Lazy {
+        kind: Kind,
+        sf: bool,
+        stored: bool,
+    },
+}
+
+/// A lazy flag setter: x + y (ADDS: x, y in the flag locals), x − y (SUBS),
+/// x + y + carry (ADCS/SBCS: y already inverted for SBCS, the result and the
+/// carry in too), or a logical result (ANDS/BICS: the result only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Add,
+    Sub,
+    Adc,
+    Logic,
+}
+
+/// The flag locals (x, y, result) of the operation size.
+fn flag_locals(sf: bool) -> (u32, u32, u32) {
+    if sf { (10, 11, 12) } else { (13, 14, 15) }
+}
+
+/// Static counts over the emitted code (`jit::Stats`, ABI 13): lazy flag
+/// setters whose NZCV was stored somewhere or never; conditions (B.cond,
+/// CSEL & co, CCMP, ADC's carry) computed directly from a lazy setter's
+/// operands, from its NZCV computed in registers, or from NZCV in memory.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Counts {
+    pub flags_stored: u64,
+    pub flags_elided: u64,
+    pub cond_direct: u64,
+    pub cond_computed: u64,
+    pub cond_memory: u64,
+}
+
+impl core::ops::AddAssign for Counts {
+    fn add_assign(&mut self, o: Counts) {
+        self.flags_stored += o.flags_stored;
+        self.flags_elided += o.flags_elided;
+        self.cond_direct += o.cond_direct;
+        self.cond_computed += o.cond_computed;
+        self.cond_memory += o.cond_memory;
+    }
+}
+
+/// A block function under construction: its code, its register locals and
+/// where its flags are.
 #[derive(Default)]
 pub struct Func {
     pub c: Code,
@@ -47,6 +110,8 @@ pub struct Func {
     local: [u32; 32],
     nregs: u32,
     pub regs: Regs,
+    pub flags: Flags,
+    pub counts: Counts,
 }
 
 impl Deref for Func {
@@ -127,6 +192,50 @@ impl Func {
     pub fn forget(&mut self, mask: u32) {
         debug_assert_eq!(self.regs.dirty & mask, 0);
         self.regs.valid &= !mask;
+    }
+
+    /// A new flag setter replaces the current one.
+    fn set_flags(&mut self, kind: Kind, sf: bool) {
+        self.retire_flags();
+        self.flags = Flags::Lazy {
+            kind,
+            sf,
+            stored: false,
+        };
+    }
+
+    /// Counts the lazy setter's fate as it goes.
+    fn retire_flags(&mut self) {
+        if let Flags::Lazy { stored, .. } = self.flags {
+            if stored {
+                self.counts.flags_stored += 1;
+            } else {
+                self.counts.flags_elided += 1;
+            }
+        }
+        self.flags = Flags::Mem;
+    }
+
+    /// Stores lazy flags to the `Cpu`, leaving them lazy (for a path that
+    /// returns: the other one still has them in locals).
+    pub fn store_flags(&mut self) {
+        if let Flags::Lazy { kind, sf, .. } = self.flags {
+            self.c.local_get(VCPU);
+            nzcv_of(self, kind, sf);
+            self.c.i64_extend_i32_u().i64_store(NZCV);
+            self.flags = Flags::Lazy {
+                kind,
+                sf,
+                stored: true,
+            };
+        }
+    }
+
+    /// Makes NZCV in the `Cpu` current (before a helper call, which may read
+    /// or write it, and at the block's end).
+    pub fn sync_flags(&mut self) {
+        self.store_flags();
+        self.retire_flags();
     }
 
     /// Loads the registers in `mask` whose locals aren't valid.
@@ -259,10 +368,17 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             addsub(c, i, |c| get_sp(c, sf, rn), |c| extended(c, i), true);
         }
         ADC | ADCS | SBC | SBCS => {
-            let (x, y, r, cin) = (tmp(sf, 0), tmp(sf, 1), tmp(sf, 2), tmp(false, 3));
-            // The carry in: NZCV.C.
-            c.local_get(VCPU).i32_load(NZCV).i32_const(29).op(SHR_U);
-            c.i32_const(1).op(AND).local_set(cin);
+            // With S, into the flag locals (after the carry in is read from
+            // the current flags); without, into scratch.
+            let s = bit(i, 29);
+            let (x, y, r) = if s {
+                flag_locals(sf)
+            } else {
+                (tmp(sf, 0), tmp(sf, 1), tmp(sf, 2))
+            };
+            let cin = if s { FC } else { tmp(false, 3) };
+            carry(c);
+            c.local_set(cin);
             get(c, sf, rn);
             c.local_set(x);
             get(c, sf, rm);
@@ -282,8 +398,8 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             set(c, sf, rd, |c| {
                 c.local_get(r);
             });
-            if bit(i, 29) {
-                add_flags(c, sf, x, y, r, Carry::Dynamic(cin));
+            if s {
+                c.set_flags(Kind::Adc, sf);
             }
         }
         AND_imm | ORR_imm | EOR_imm | ANDS_imm => {
@@ -398,7 +514,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                 CSNEG => arith(c, sf, SUB),
                 _ => {}
             }
-            cond_holds(c, bits(i, 15, 12));
+            cond(c, bits(i, 15, 12));
             c.select();
         }),
         CCMN_reg | CCMP_reg | CCMN_imm | CCMP_imm => {
@@ -416,8 +532,9 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             let carry = if sub { Carry::One } else { Carry::Zero };
             add_nzcv(c, sf, tx, ty, tr, carry);
             c.i32_const((bits(i, 3, 0) << 28) as i32);
-            cond_holds(c, bits(i, 15, 12));
+            cond(c, bits(i, 15, 12));
             c.select().i64_extend_i32_u().i64_store(NZCV);
+            c.retire_flags();
         }
         // Branches end their block: they store the PC, and the block returns.
         B_uncond | BL => {
@@ -435,7 +552,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             pc_plus(c, here + off as i64);
             pc_plus(c, here + 4);
             match op {
-                B_cond => cond_holds(c, bits(i, 3, 0)),
+                B_cond => cond(c, bits(i, 3, 0)),
                 CBZ | CBNZ => {
                     get(c, sf, rd);
                     cmp(c, sf, EQZ);
@@ -845,11 +962,9 @@ fn access(
     c.flush();
     c.local_get(VCPU).i32_const(i as i32);
     pc_plus(c, here);
-    c.call(cx.helper)
-        .if_()
-        .i32_const((here / 4) as i32)
-        .return_()
-        .end();
+    c.call(cx.helper).if_();
+    c.store_flags();
+    c.i32_const((here / 4) as i32).return_().end();
     c.forget(written);
     c.reload(fast.valid);
     // Clean here, maybe dirty there: the merge is dirty (a clean write-back is harmless).
@@ -879,8 +994,12 @@ const EQ: u8 = 0x46;
 const NE: u8 = 0x47;
 const LT_S: u8 = 0x48;
 const LT_U: u8 = 0x49;
-const GE_S: u8 = 0x4e;
+const GT_S: u8 = 0x4a;
+const GT_U: u8 = 0x4b;
+const LE_S: u8 = 0x4c;
 const LE_U: u8 = 0x4d;
+const GE_S: u8 = 0x4e;
+const GE_U: u8 = 0x4f;
 
 /// A binary or unary arithmetic op at the operation size.
 fn arith(c: &mut Func, sf: bool, op32: u8) {
@@ -923,12 +1042,16 @@ fn addsub(
         }
         return;
     }
-    let (tx, ty, tr) = add_with_carry(c, sf, x, y, sub);
+    let (fx, fy, _) = flag_locals(sf);
+    x(c);
+    c.local_set(fx);
+    y(c);
+    c.local_set(fy);
     set(c, sf, rd, |c| {
-        c.local_get(tr);
+        c.local_get(fx).local_get(fy);
+        arith(c, sf, if sub { SUB } else { ADD });
     });
-    let carry = if sub { Carry::One } else { Carry::Zero };
-    add_flags(c, sf, tx, ty, tr, carry);
+    c.set_flags(if sub { Kind::Sub } else { Kind::Add }, sf);
 }
 
 /// AddWithCarry(x, sub ? !y : y, sub) into scratch locals (x, y, result).
@@ -958,16 +1081,9 @@ fn add_with_carry(
     (tx, ty, tr)
 }
 
-/// Stores AddWithCarry's NZCV for `r` = `x` + `y` + carry (locals of the
-/// operation size): C is `r < x` unsigned, or `r <= x` with a carry in; V is
-/// the sign of `(x ^ r) & (y ^ r)`.
-fn add_flags(c: &mut Func, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
-    c.local_get(VCPU);
-    add_nzcv(c, sf, x, y, r, carry);
-    c.i64_extend_i32_u().i64_store(NZCV);
-}
-
-/// Pushes [`add_flags`]'s NZCV as an i32.
+/// Pushes AddWithCarry's NZCV as an i32 for `r` = `x` + `y` + carry (locals
+/// of the operation size): C is `r < x` unsigned, or `r <= x` with a carry
+/// in; V is the sign of `(x ^ r) & (y ^ r)`.
 fn add_nzcv(c: &mut Func, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
     nz(c, sf, r);
     c.local_get(r).local_get(x);
@@ -991,17 +1107,166 @@ fn add_nzcv(c: &mut Func, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
     c.op(OR);
 }
 
-/// Pushes an i32 that is non-zero iff condition `cond` holds for NZCV in
-/// memory (ConditionHolds): GE and GT line N up with V (`n ^ n << 3`) and Z
-/// (`n << 1`) in the sign bit.
-fn cond_holds(c: &mut Func, cond: u32) {
-    let n = tmp(false, 3);
-    let invert = cond & 1 == 1 && cond != 15;
+/// Pushes the NZCV of a lazy setter as an i32 (scratch: `tmp(sf, 1..=2)`).
+fn nzcv_of(c: &mut Func, kind: Kind, sf: bool) {
+    let (x, y, r) = flag_locals(sf);
+    let (ty, tr) = (tmp(sf, 1), tmp(sf, 2));
+    match kind {
+        Kind::Logic => nz(c, sf, r),
+        Kind::Adc => add_nzcv(c, sf, x, y, r, Carry::Dynamic(FC)),
+        Kind::Add => {
+            c.local_get(x).local_get(y);
+            arith(c, sf, ADD);
+            c.local_set(tr);
+            add_nzcv(c, sf, x, y, tr, Carry::Zero);
+        }
+        Kind::Sub => {
+            // x + !y + 1
+            c.local_get(y);
+            konst(c, sf, u64::MAX);
+            arith(c, sf, XOR);
+            c.local_tee(ty).local_get(x);
+            arith(c, sf, ADD);
+            konst(c, sf, 1);
+            arith(c, sf, ADD);
+            c.local_set(tr);
+            add_nzcv(c, sf, x, ty, tr, Carry::One);
+        }
+    }
+}
+
+/// Pushes an i32 that is non-zero iff condition `cond` holds for the current
+/// flags: from a lazy setter's operands where its kind has a direct form,
+/// else from its NZCV computed in registers or from NZCV in memory.
+fn cond(c: &mut Func, cond: u32) {
     if cond >> 1 == 7 {
         c.i32_const(1);
         return;
     }
-    c.local_get(VCPU).i32_load(NZCV);
+    match c.flags {
+        Flags::Mem => {
+            c.counts.cond_memory += 1;
+            c.local_get(VCPU).i32_load(NZCV);
+            holds(c, cond);
+        }
+        Flags::Lazy { kind, sf, .. } => {
+            if direct(c, kind, sf, cond) {
+                c.counts.cond_direct += 1;
+            } else {
+                c.counts.cond_computed += 1;
+                nzcv_of(c, kind, sf);
+                holds(c, cond);
+            }
+        }
+    }
+}
+
+/// The comparison that is false exactly where `op` is true.
+fn negate(op: u8) -> u8 {
+    match op {
+        EQ => NE,
+        NE => EQ,
+        LT_S => GE_S,
+        GE_S => LT_S,
+        LT_U => GE_U,
+        GE_U => LT_U,
+        GT_S => LE_S,
+        LE_S => GT_S,
+        GT_U => LE_U,
+        LE_U => GT_U,
+        _ => unreachable!(),
+    }
+}
+
+/// Emits `cond` (not AL/NV) as one comparison on a lazy setter's operands, if
+/// its kind has one: SUBS compares x with y (EQ `x == y`, CS `x >= y`
+/// unsigned, HI `x > y` unsigned, GE and GT signed), ADDS and the logical
+/// setters test the result (EQ, MI; ADDS's CS is `x + y < x` unsigned; the
+/// logical ones have C = V = 0). False (nothing emitted) otherwise.
+fn direct(c: &mut Func, kind: Kind, sf: bool, cond: u32) -> bool {
+    let (x, y, r) = flag_locals(sf);
+    let inv = cond & 1 == 1;
+    let result = |c: &mut Func| {
+        match kind {
+            Kind::Logic => drop(c.local_get(r)),
+            _ => {
+                c.local_get(x).local_get(y);
+                arith(c, sf, if kind == Kind::Sub { SUB } else { ADD });
+            }
+        }
+        konst(c, sf, 0);
+    };
+    let op = match (kind, cond >> 1) {
+        (Kind::Adc, _) => return false,
+        (Kind::Sub, 0 | 1 | 4 | 5 | 6) => {
+            c.local_get(x).local_get(y);
+            [EQ, GE_U, 0, 0, GT_U, GE_S, GT_S][(cond >> 1) as usize]
+        }
+        (Kind::Add, 1) => {
+            c.local_get(x).local_get(y);
+            arith(c, sf, ADD);
+            c.local_get(x);
+            LT_U
+        }
+        (_, 0) => {
+            result(c);
+            EQ
+        }
+        (_, 2) => {
+            result(c);
+            LT_S
+        }
+        // Logical: C and V clear, so CS, VS and HI never hold; GE is N clear,
+        // GT is N and Z clear.
+        (Kind::Logic, 1 | 3 | 4) => {
+            c.i32_const(inv as i32);
+            return true;
+        }
+        (Kind::Logic, 5) => {
+            result(c);
+            GE_S
+        }
+        (Kind::Logic, 6) => {
+            result(c);
+            GT_S
+        }
+        _ => return false,
+    };
+    cmp(c, sf, if inv { negate(op) } else { op });
+    true
+}
+
+/// Pushes C (0 or 1) of the current flags, for ADC and SBC.
+fn carry(c: &mut Func) {
+    match c.flags {
+        Flags::Mem => {
+            c.counts.cond_memory += 1;
+            c.local_get(VCPU).i32_load(NZCV).i32_const(29).op(SHR_U);
+            c.i32_const(1).op(AND);
+        }
+        Flags::Lazy {
+            kind: Kind::Adc,
+            sf,
+            ..
+        } => {
+            c.counts.cond_computed += 1;
+            nzcv_of(c, Kind::Adc, sf);
+            c.i32_const(29).op(SHR_U).i32_const(1).op(AND);
+        }
+        Flags::Lazy { kind, sf, .. } => {
+            c.counts.cond_direct += 1;
+            // CS, a comparison: 0 or 1.
+            assert!(direct(c, kind, sf, 2));
+        }
+    }
+}
+
+/// Pushes an i32 that is non-zero iff condition `cond` (not AL/NV) holds for
+/// the NZCV on the stack (ConditionHolds): GE and GT line N up with V
+/// (`n ^ n << 3`) and Z (`n << 1`) in the sign bit.
+fn holds(c: &mut Func, cond: u32) {
+    let n = tmp(false, 3);
+    let invert = cond & 1 == 1;
     match cond >> 1 {
         b @ 0..=3 => {
             c.i32_const([0x4000_0000, 0x2000_0000, 0x8000_0000u32 as i32, 0x1000_0000][b as usize]);
@@ -1069,15 +1334,13 @@ fn logical(
             set(c, sf, rd, v)
         };
     }
-    let r = tmp(sf, 0);
+    let (_, _, r) = flag_locals(sf);
     v(c);
     c.local_set(r);
     set(c, sf, rd, |c| {
         c.local_get(r);
     });
-    c.local_get(VCPU);
-    nz(c, sf, r);
-    c.i64_extend_i32_u().i64_store(NZCV);
+    c.set_flags(Kind::Logic, sf);
 }
 
 /// A shift of the value on the stack by a constant; nothing for 0.
@@ -1226,30 +1489,30 @@ mod tests {
 
     #[test]
     fn moves() {
-        // movz x1, #5, lsl #16: i64.const 0x50000; local.set x1 (the first register local, 10)
+        // movz x1, #5, lsl #16: i64.const 0x50000; local.set x1 (the first register local, 17)
         assert_eq!(
             emit(0xd2a000a1, 0).unwrap(),
-            [0x42, 0x80, 0x80, 0x14, 0x21, 10]
+            [0x42, 0x80, 0x80, 0x14, 0x21, 17]
         );
         // movk w2, #1: x2 loaded into its local (vcpu; i64.load 16; local.tee), wrapped;
         // i32.const !0xffff; and; i32.const 1; or; i64.extend_i32_u; local.set
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x29, 3, 16, 0x22, 10, 0xa7, 0x41, 0x80, 0x80, 0x7c, 0x71, 0x41, 1, 0x72,
-            0xad, 0x21, 10,
+            0x20, 0, 0x29, 3, 16, 0x22, 17, 0xa7, 0x41, 0x80, 0x80, 0x7c, 0x71, 0x41, 1, 0x72,
+            0xad, 0x21, 17,
         ];
         assert_eq!(emit(0x72800022, 0).unwrap(), want);
         assert_eq!(emit(0xd280001f, 0).unwrap(), []); // movz xzr: nothing to do
         assert_eq!(emit(0x52c00000, 0), None); // movz w0, #0, lsl #32: UNDEFINED, a helper
-        // mov x3, x4 (orr x3, xzr, x4): x4 loaded (local 10), set into x3 (local 11)
+        // mov x3, x4 (orr x3, xzr, x4): x4 loaded (local 17), set into x3 (local 18)
         assert_eq!(
             emit(0xaa0403e3, 0).unwrap(),
-            [0x20, 0, 0x29, 3, 32, 0x22, 10, 0x21, 11]
+            [0x20, 0, 0x29, 3, 32, 0x22, 17, 0x21, 18]
         );
         // orr x3, xzr, x4, lsl #4: the shift, no or
         assert_eq!(
             emit(0xaa0413e3, 0).unwrap(),
-            [0x20, 0, 0x29, 3, 32, 0x22, 10, 0x42, 4, 0x86, 0x21, 11]
+            [0x20, 0, 0x29, 3, 32, 0x22, 17, 0x42, 4, 0x86, 0x21, 18]
         );
     }
 
@@ -1258,12 +1521,12 @@ mod tests {
         // adr x0, .+8 as instruction 2: entry; i64.const 16; add; local.set x0
         assert_eq!(
             emit(0x10000040, 2).unwrap(),
-            [0x20, 1, 0x42, 16, 0x7c, 0x21, 10]
+            [0x20, 1, 0x42, 16, 0x7c, 0x21, 17]
         );
         // adrp x1, .+0x1000 as instruction 0: (entry & !0xfff) + 0x1000
         #[rustfmt::skip]
         let want = [
-            0x20, 1, 0x42, 0x80, 0x60, 0x83, 0x42, 0x80, 0x20, 0x7c, 0x21, 10,
+            0x20, 1, 0x42, 0x80, 0x60, 0x83, 0x42, 0x80, 0x20, 0x7c, 0x21, 17,
         ];
         assert_eq!(emit(0xb0000001, 0).unwrap(), want);
     }
@@ -1274,20 +1537,23 @@ mod tests {
         assert_eq!(
             emit(0x910043e0, 0).unwrap(),
             [
-                0x20, 0, 0x29, 3, 0xf8, 1, 0x22, 10, 0x42, 16, 0x7c, 0x21, 11
+                0x20, 0, 0x29, 3, 0xf8, 1, 0x22, 17, 0x42, 16, 0x7c, 0x21, 18
             ]
         );
         // sub w0, w1, w2, uxtb #2: w1 - ((w2 & 0xff) << 2), zero-extended
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x29, 3, 8, 0x22, 10, 0xa7, 0x20, 0, 0x29, 3, 16, 0x22, 11, 0xa7,
-            0x41, 0xff, 1, 0x71, 0x41, 2, 0x74, 0x6b, 0xad, 0x21, 12,
+            0x20, 0, 0x29, 3, 8, 0x22, 17, 0xa7, 0x20, 0, 0x29, 3, 16, 0x22, 18, 0xa7,
+            0x41, 0xff, 1, 0x71, 0x41, 2, 0x74, 0x6b, 0xad, 0x21, 19,
         ];
         assert_eq!(emit(0x4b220820, 0).unwrap(), want);
-        // cmp x1, x2 (subs xzr, x1, x2): no register store, NZCV stored last.
-        let b = emit(0xeb02003f, 0).unwrap();
-        assert!(b.ends_with(&[0xad, 0x37, 3, 0x88, 2]));
-        assert_eq!(b.iter().filter(|&&x| x == 0x37).count(), 1);
+        // cmp x1, x2 (subs xzr, x1, x2): the operands into the i64 flag locals
+        // (10, 11), nothing stored: the flags are lazy.
+        #[rustfmt::skip]
+        let want = [
+            0x20, 0, 0x29, 3, 8, 0x22, 17, 0x21, 10, 0x20, 0, 0x29, 3, 16, 0x22, 18, 0x21, 11,
+        ];
+        assert_eq!(emit(0xeb02003f, 0).unwrap(), want);
         assert_eq!(emit(0x91c00000, 0), None); // add x0, x0, #0, lsl #24: reserved shift
         assert_eq!(emit(0x8b221400, 0), None); // add x0, x0, w2, uxtb #5: reserved amount
     }
@@ -1295,24 +1561,24 @@ mod tests {
     #[test]
     fn logical_bitfield_shifts() {
         // lsr x0, x1, #4 (ubfm x0, x1, #4, #63): rotr 4, then the masks
-        let mut want = vec![0x20, 0, 0x29, 3, 8, 0x22, 10, 0x42, 4, 0x8a, 0x42];
+        let mut want = vec![0x20, 0, 0x29, 3, 8, 0x22, 17, 0x42, 4, 0x8a, 0x42];
         crate::jit::wasm::sleb(&mut want, 0x0fff_ffff_ffff_ffff);
-        want.extend([0x83, 0x21, 11]);
+        want.extend([0x83, 0x21, 18]);
         assert_eq!(emit(0xd344fc20, 0).unwrap(), want);
         // sxtw x0, w1 (sbfm x0, x1, #0, #31): shl 32, shr_s 32
         #[rustfmt::skip]
-        let want = [0x20, 0, 0x29, 3, 8, 0x22, 10, 0x42, 32, 0x86, 0x42, 32, 0x87, 0x21, 11];
+        let want = [0x20, 0, 0x29, 3, 8, 0x22, 17, 0x42, 32, 0x86, 0x42, 32, 0x87, 0x21, 18];
         assert_eq!(emit(0x93407c20, 0).unwrap(), want);
         // lslv w0, w1, w2: i32.shl takes the amount modulo 32
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x29, 3, 8, 0x22, 10, 0xa7, 0x20, 0, 0x29, 3, 16, 0x22, 11, 0xa7, 0x74, 0xad,
-            0x21, 12,
+            0x20, 0, 0x29, 3, 8, 0x22, 17, 0xa7, 0x20, 0, 0x29, 3, 16, 0x22, 18, 0xa7, 0x74, 0xad,
+            0x21, 19,
         ];
         assert_eq!(emit(0x1ac22020, 0).unwrap(), want);
-        // tst w1, #1 (ands wzr, w1, #1): N and Z only, stored to NZCV
-        let b = emit(0x7200003f, 0).unwrap();
-        assert!(b.ends_with(&[0xad, 0x37, 3, 0x88, 2]));
+        // tst w1, #1 (ands wzr, w1, #1): the result into the i32 flag local 15
+        let want = [0x20, 0, 0x29, 3, 8, 0x22, 17, 0xa7, 0x41, 1, 0x71, 0x21, 15];
+        assert_eq!(emit(0x7200003f, 0).unwrap(), want);
         assert_eq!(emit(0x92400000 | 0x3f << 10, 0), None); // and x0, x0, #<all ones>: reserved
         assert_eq!(emit(0x13400000, 0), None); // sbfm w0, w0, #0, #0 with N = 1: UNDEFINED
     }
@@ -1322,8 +1588,8 @@ mod tests {
         // csel x0, x1, x2, eq: x1, x2, NZCV & Z, select
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x29, 3, 8, 0x22, 10, 0x20, 0, 0x29, 3, 16, 0x22, 11,
-            0x20, 0, 0x28, 2, 0x88, 2, 0x41, 0x80, 0x80, 0x80, 0x80, 0x04, 0x71, 0x1b, 0x21, 12,
+            0x20, 0, 0x29, 3, 8, 0x22, 17, 0x20, 0, 0x29, 3, 16, 0x22, 18,
+            0x20, 0, 0x28, 2, 0x88, 2, 0x41, 0x80, 0x80, 0x80, 0x80, 0x04, 0x71, 0x1b, 0x21, 19,
         ];
         assert_eq!(emit(0x9a820020, 0).unwrap(), want);
         // ccmp x1, #3, #4, ne: the flags or #4 << 28, selected, stored to NZCV
@@ -1341,7 +1607,7 @@ mod tests {
         // bl .-4 as instruction 0: x30 = entry + 4, pc = entry - 4
         #[rustfmt::skip]
         let want = [
-            0x20, 1, 0x42, 4, 0x7c, 0x21, 10,
+            0x20, 1, 0x42, 4, 0x7c, 0x21, 17,
             0x20, 0, 0x20, 1, 0x42, 0x7c, 0x7c, 0x37, 3, 0x80, 2,
         ];
         assert_eq!(emit(0x97ffffff, 0).unwrap(), want);
@@ -1349,14 +1615,14 @@ mod tests {
         #[rustfmt::skip]
         let want = [
             0x20, 0, 0x20, 1, 0x42, 16, 0x7c, 0x20, 1, 0x42, 4, 0x7c,
-            0x20, 0, 0x29, 3, 24, 0x22, 10, 0xa7, 0x45, 0x45, 0x1b, 0x37, 3, 0x80, 2,
+            0x20, 0, 0x29, 3, 24, 0x22, 17, 0xa7, 0x45, 0x45, 0x1b, 0x37, 3, 0x80, 2,
         ];
         assert_eq!(emit(0x35000083, 0).unwrap(), want);
         // blr x30: the PC from x30 before x30 is written
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x20, 0, 0x29, 3, 0xf0, 1, 0x22, 10, 0x37, 3, 0x80, 2,
-            0x20, 1, 0x42, 4, 0x7c, 0x21, 10,
+            0x20, 0, 0x20, 0, 0x29, 3, 0xf0, 1, 0x22, 17, 0x37, 3, 0x80, 2,
+            0x20, 1, 0x42, 4, 0x7c, 0x21, 17,
         ];
         assert_eq!(emit(0xd63f03c0, 0).unwrap(), want);
     }
@@ -1366,21 +1632,21 @@ mod tests {
         // mul x0, x1, x2 (madd x0, x1, x2, xzr)
         #[rustfmt::skip]
         let want = [
-            0x42, 0, 0x20, 0, 0x29, 3, 8, 0x22, 10, 0x20, 0, 0x29, 3, 16, 0x22, 11, 0x7e, 0x7c,
-            0x21, 12,
+            0x42, 0, 0x20, 0, 0x29, 3, 8, 0x22, 17, 0x20, 0, 0x29, 3, 16, 0x22, 18, 0x7e, 0x7c,
+            0x21, 19,
         ];
         assert_eq!(emit(0x9b027c20, 0).unwrap(), want);
         // udiv w0, w1, w2: w2 == 0 ? 0 : w1 / w2
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x29, 3, 8, 0x22, 10, 0xa7, 0x21, 6, 0x20, 0, 0x29, 3, 16, 0x22, 11, 0xa7,
-            0x22, 7, 0x45, 0x04, I32, 0x41, 0, 0x05, 0x20, 6, 0x20, 7, 0x6e, 0x0b, 0xad, 0x21, 12,
+            0x20, 0, 0x29, 3, 8, 0x22, 17, 0xa7, 0x21, 6, 0x20, 0, 0x29, 3, 16, 0x22, 18, 0xa7,
+            0x22, 7, 0x45, 0x04, I32, 0x41, 0, 0x05, 0x20, 6, 0x20, 7, 0x6e, 0x0b, 0xad, 0x21, 19,
         ];
         assert_eq!(emit(0x1ac20820, 0).unwrap(), want);
         // clz x0, x1
         assert_eq!(
             emit(0xdac01020, 0).unwrap(),
-            [0x20, 0, 0x29, 3, 8, 0x22, 10, 0x79, 0x21, 11]
+            [0x20, 0, 0x29, 3, 8, 0x22, 17, 0x79, 0x21, 18]
         );
         assert_eq!(emit(0x5ac00c20, 0), None); // rev w0 with opc 11: UNDEFINED
         assert_eq!(emit(0xd503201f, 0).unwrap(), []); // nop
@@ -1393,17 +1659,17 @@ mod tests {
         let insn = 0xf9400420u32;
         #[rustfmt::skip]
         let mut want = vec![
-            0x20, 0, 0x29, 3, 8, 0x22, 10, 0x21, 3, // BASE = x1 (loaded into local 10)
+            0x20, 0, 0x29, 3, 8, 0x22, 17, 0x21, 3, // BASE = x1 (loaded into local 17)
             0x20, 3, 0x42, 8, 0x7c, 0x21, 2,        // ADDR = BASE + 8
             0x20, 2, 0x22, 4, 0x42, 0xf8, 0x1f, 0x58, // OFF = ADDR; OFF <= 0x1000 - 8
             0x04, 0x40, 0x20, 4, 0xa7, 0x21, 6,     // if: HOST = OFF
-            0x20, 6, 0x29, 0, 0x80, 0x80, 4, 0x21, 11, // x0 (local 11) = [HOST + base]
+            0x20, 6, 0x29, 0, 0x80, 0x80, 4, 0x21, 18, // x0 (local 18) = [HOST + base]
             0x05, 0x20, 0, 0x41,                    // else: helper(vcpu, insn, pc)
         ];
         sleb(&mut want, insn as i32 as i64);
         want.extend([0x20, 1, 0x10, 0, 0x04, 0x40, 0x41, 0, 0x0f, 0x0b]);
         // After the helper, x0 (written) is reloaded; x1 (only read) stays in its local.
-        want.extend([0x20, 0, 0x29, 3, 0, 0x21, 11, 0x0b]);
+        want.extend([0x20, 0, 0x29, 3, 0, 0x21, 18, 0x0b]);
         assert_eq!(emit(insn, 0).unwrap(), want);
         // Through the TLB at EL1: the tag at the entry, then the addend at + 8.
         let read = tlb_array(1, 0);
