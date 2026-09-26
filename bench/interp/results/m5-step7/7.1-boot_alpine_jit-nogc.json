@@ -1,0 +1,239 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-26T17:00:08.504Z",
+ "commit": "29f6678794af",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "alpine_jit_script_cold",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 3009151562,
+    "counters": {
+     "steps": 3009151562,
+     "irqs": 46574,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114610,
+      "0x20": 7290,
+      "0x24": 41445,
+      "0x25": 1866
+     },
+     "tlbMisses": 3608986,
+     "tlbWalks": 3551095,
+     "tlbFlushes": 41665,
+     "jit": {
+      "blocks": 244487,
+      "modules": 15116,
+      "bytes": 83995052,
+      "compileNs": 1759304916,
+      "steps": 2891385231,
+      "dispatches": 203004271,
+      "invalidations": 46,
+      "flushes": 14,
+      "inline": 1254830,
+      "helpers": 47921,
+      "inlineSteps": 2799887868,
+      "flagsStored": 62353,
+      "flagsElided": 5787,
+      "condDirect": 67496,
+      "condComputed": 633,
+      "condMemory": 6446
+     }
+    }
+   },
+   "samples": [
+    27602.6400000453,
+    27683.02999997139,
+    27869.259999990463
+   ],
+   "median": 27683.02999997139,
+   "iqr": 133.30999997258186,
+   "n": 3
+  },
+  {
+   "name": "alpine_jit_total_cold",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 3009151562,
+    "counters": {
+     "steps": 3009151562,
+     "irqs": 46574,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114610,
+      "0x20": 7290,
+      "0x24": 41445,
+      "0x25": 1866
+     },
+     "tlbMisses": 3608986,
+     "tlbWalks": 3551095,
+     "tlbFlushes": 41665,
+     "jit": {
+      "blocks": 244487,
+      "modules": 15116,
+      "bytes": 83995052,
+      "compileNs": 1759304916,
+      "steps": 2891385231,
+      "dispatches": 203004271,
+      "invalidations": 46,
+      "flushes": 14,
+      "inline": 1254830,
+      "helpers": 47921,
+      "inlineSteps": 2799887868,
+      "flagsStored": 62353,
+      "flagsElided": 5787,
+      "condDirect": 67496,
+      "condComputed": 633,
+      "condMemory": 6446
+     }
+    }
+   },
+   "samples": [
+    34752.10000002384,
+    34391.60500001907,
+    34640.75499999523
+   ],
+   "median": 34640.75499999523,
+   "iqr": 180.2475000023842,
+   "n": 3
+  },
+  {
+   "name": "alpine_jit_script",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 3009151562,
+    "counters": {
+     "steps": 3009151562,
+     "irqs": 46574,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114610,
+      "0x20": 7290,
+      "0x24": 41445,
+      "0x25": 1866
+     },
+     "tlbMisses": 3608986,
+     "tlbWalks": 3551095,
+     "tlbFlushes": 41665,
+     "jit": {
+      "blocks": 244487,
+      "modules": 15116,
+      "bytes": 83995052,
+      "compileNs": 1759304916,
+      "steps": 2891385231,
+      "dispatches": 203004271,
+      "invalidations": 46,
+      "flushes": 14,
+      "inline": 1254830,
+      "helpers": 47921,
+      "inlineSteps": 2799887868,
+      "flagsStored": 62353,
+      "flagsElided": 5787,
+      "condDirect": 67496,
+      "condComputed": 633,
+      "condMemory": 6446
+     }
+    }
+   },
+   "samples": [
+    27602.475000023842,
+    27119.24500000477,
+    27259.310000002384,
+    27441.384999990463,
+    27218.25499999523
+   ],
+   "median": 27259.310000002384,
+   "iqr": 223.12999999523163,
+   "n": 5
+  },
+  {
+   "name": "alpine_jit_total",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 3009151562,
+    "counters": {
+     "steps": 3009151562,
+     "irqs": 46574,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114610,
+      "0x20": 7290,
+      "0x24": 41445,
+      "0x25": 1866
+     },
+     "tlbMisses": 3608986,
+     "tlbWalks": 3551095,
+     "tlbFlushes": 41665,
+     "jit": {
+      "blocks": 244487,
+      "modules": 15116,
+      "bytes": 83995052,
+      "compileNs": 1759304916,
+      "steps": 2891385231,
+      "dispatches": 203004271,
+      "invalidations": 46,
+      "flushes": 14,
+      "inline": 1254830,
+      "helpers": 47921,
+      "inlineSteps": 2799887868,
+      "flagsStored": 62353,
+      "flagsElided": 5787,
+      "condDirect": 67496,
+      "condComputed": 633,
+      "condMemory": 6446
+     }
+    }
+   },
+   "samples": [
+    34343.49000000954,
+    33765.82499998808,
+    33553.10500001907,
+    34140.339999973774,
+    33898.12000000477
+   ],
+   "median": 33898.12000000477,
+   "iqr": 374.5149999856949,
+   "n": 5
+  }
+ ]
+}
