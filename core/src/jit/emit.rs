@@ -35,6 +35,13 @@ const FIRST_REG: u32 = 17;
 const FC: u32 = 16;
 const VCPU: u32 = 0;
 const ENTRY: u32 = 1;
+/// The other parameters (step 7): the instructions retired by the blocks
+/// chained before this one, and the steps left for this one and its
+/// successors. As emitted they're locals 126 and 127 ([`Func::locals`] makes
+/// them parameters 1 and 2); 125 (i32) holds a conditional branch's outcome.
+pub const ACC: u32 = 126;
+pub const LEFT: u32 = 127;
+pub const TAKEN: u32 = 125;
 
 /// Offsets in the `Cpu`.
 pub const PC: u32 = 256;
@@ -141,8 +148,8 @@ impl Func {
     /// Renumbers the function's locals to the ones it uses (i64s, then
     /// i32s) and returns their declarations, for `Module::func`.
     pub fn locals(&mut self) -> Vec<(u32, u8)> {
-        self.c.compact_locals(1, |i| {
-            if (6..=9).contains(&i) || (13..=16).contains(&i) {
+        self.c.compact_locals(&[VCPU, ACC, LEFT], |i| {
+            if (6..=9).contains(&i) || (13..=16).contains(&i) || i == TAKEN {
                 I32
             } else {
                 I64
@@ -267,6 +274,16 @@ impl Func {
     pub fn sync_flags(&mut self) {
         self.commit_flags();
         self.retire_flags();
+    }
+
+    /// Returns the chain's retired count with `k` more of this block's
+    /// instructions retired (the registers and flags already in the `Cpu`).
+    pub fn ret(&mut self, k: u32) {
+        self.c.local_get(ACC);
+        if k != 0 {
+            self.c.i32_const(k as i32).op(0x6a); // i32.add
+        }
+        self.c.return_();
     }
 
     /// Loads the registers in `mask` whose locals aren't valid.
@@ -601,7 +618,8 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                     }
                 }
             }
-            c.select().i64_store(PC);
+            // The outcome, for the block's chaining to the successor (step 7).
+            c.local_tee(TAKEN).select().i64_store(PC);
         }
         BR | BLR | RET => {
             c.local_get(VCPU);
@@ -995,7 +1013,8 @@ fn access(
     pc_plus(c, here);
     c.call(cx.helper).if_();
     c.store_flags();
-    c.i32_const((here / 4) as i32).return_().end();
+    c.ret((here / 4) as u32);
+    c.end();
     c.forget(written);
     c.reload(fast.valid);
     // Clean here, maybe dirty there: the merge is dirty (a clean write-back is harmless).
@@ -1646,7 +1665,8 @@ mod tests {
         #[rustfmt::skip]
         let want = [
             0x20, 0, 0x20, 1, 0x42, 16, 0x7c, 0x20, 1, 0x42, 4, 0x7c,
-            0x20, 0, 0x29, 3, 24, 0x22, 17, 0xa7, 0x45, 0x45, 0x1b, 0x37, 3, 0x80, 2,
+            0x20, 0, 0x29, 3, 24, 0x22, 17, 0xa7, 0x45, 0x45,
+            0x22, TAKEN as u8, 0x1b, 0x37, 3, 0x80, 2, // the outcome kept for chaining
         ];
         assert_eq!(emit(0x35000083, 0).unwrap(), want);
         // blr x30: the PC from x30 before x30 is written
@@ -1698,7 +1718,8 @@ mod tests {
             0x05, 0x20, 0, 0x41,                    // else: helper(vcpu, insn, pc)
         ];
         sleb(&mut want, insn as i32 as i64);
-        want.extend([0x20, 1, 0x10, 0, 0x04, 0x40, 0x41, 0, 0x0f, 0x0b]);
+        // if it didn't retire: return acc + 0
+        want.extend([0x20, 1, 0x10, 0, 0x04, 0x40, 0x20, ACC as u8, 0x0f, 0x0b]);
         // After the helper, x0 (written) is reloaded; x1 (only read) stays in its local.
         want.extend([0x20, 0, 0x29, 3, 0, 0x21, 18, 0x0b]);
         assert_eq!(emit(insn, 0).unwrap(), want);

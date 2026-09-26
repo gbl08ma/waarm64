@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 13;
+export const ABI = 14;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -44,7 +44,8 @@ export function coreImports(memory: WebAssembly.Memory) {
  * The host half of the JIT: compiles a module the core generated,
  * synchronously, and puts its exports f0, f1, … into the core's function table
  * at JIT slot `slot` on (after the core's own entries). The modules import the
- * memory, the table and the core's exports (its helpers) from `env`.
+ * memory, the table and the core's exports (its helpers) from `env`, and
+ * already-installed blocks they chain to from `t`, by table index.
  */
 function jitHost(memory: WebAssembly.Memory) {
   let table: WebAssembly.Table | undefined;
@@ -59,7 +60,11 @@ function jitHost(memory: WebAssembly.Memory) {
     install(ptr: number, len: number, slot: number): number {
       if (!table) return -1;
       const bytes = new Uint8Array(memory.buffer, ptr, len).slice(); // a non-shared copy
-      const f = new WebAssembly.Instance(new WebAssembly.Module(bytes), imports).exports;
+      const module = new WebAssembly.Module(bytes);
+      // Blocks it chains to that are already compiled (M5 step 7): `t.<table index>`.
+      const t: Record<string, WebAssembly.ExportValue> = {};
+      for (const i of WebAssembly.Module.imports(module)) if (i.module === 't') t[i.name] = table.get(Number(i.name));
+      const f = new WebAssembly.Instance(module, { ...imports, t }).exports;
       const n = Object.keys(f).length;
       const at = base + slot;
       if (table.length < at + n) table.grow(at + n - table.length);

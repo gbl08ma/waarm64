@@ -20,7 +20,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 13;
+pub const ABI_VERSION: u32 = 14;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -393,7 +393,7 @@ pub unsafe extern "C" fn jit_call(cpu: *mut cpu::Cpu, idx: u32, k: u32, n: u32) 
     let (mut s, mut j) = (0u32, 0);
     for _ in 0..n {
         // SAFETY: guaranteed by the caller.
-        s = s.wrapping_add(unsafe { jit::block(idx + j)(cpu.cast()) });
+        s = s.wrapping_add(unsafe { jit::block(idx + j)(cpu.cast(), 0, 1) });
         j = if j + 1 == k { 0 } else { j + 1 };
     }
     s

@@ -19,10 +19,11 @@ use crate::interp::{self, Exit};
 use crate::mem::Mem;
 use crate::mmu::{Flat, Mmu, Vcpu};
 
-/// A compiled block: `f(vcpu) -> retired`, equivalent to `interp::steps` for
-/// its length (PLAN.md §2 "JIT ABI"): if fewer than all its instructions
-/// retired, the one that didn't left its exit in [`State::exit`] and the PC on it.
-pub type Block = unsafe extern "C" fn(*mut Vcpu) -> u32;
+/// A compiled block: `f(vcpu, acc, left) -> acc + retired`, equivalent to
+/// `interp::steps` for its length and the blocks it chains to within `left`
+/// steps (PLAN.md §2 "JIT ABI"): if fewer than all their instructions retired,
+/// the one that didn't left its exit in [`State::exit`] and the PC on it.
+pub type Block = unsafe extern "C" fn(*mut Vcpu, u32, u32) -> u32;
 
 /// Per-vCPU JIT state, after the TLB in [`Vcpu`]. The helpers use the first
 /// two fields; the cache exists only while the JIT is on.
@@ -33,6 +34,8 @@ pub struct State {
     pub mem: *const Mem,
     /// Why the last block stopped early (the instruction that didn't retire).
     pub exit: Option<Exit>,
+    /// Instructions the helpers retired (so JIT steps minus these ran inline).
+    pub helper_steps: u64,
     pub cache: Option<Box<Cache>>,
 }
 
@@ -84,8 +87,7 @@ pub struct Stats {
     /// Instructions compiled inline, and as helper calls (ABI 12).
     pub inline: u64,
     pub helpers: u64,
-    /// Inline instructions run: each dispatch adds its block's inline count,
-    /// capped at the instructions that retired (exact unless a block stops early).
+    /// Inline instructions run (step 7: the steps in JIT code that no helper retired).
     pub inline_steps: u64,
     /// Static flag counts over the compiled code (ABI 13, `emit::Counts`):
     /// lazy flag setters whose NZCV is stored somewhere, and never; conditions
@@ -124,8 +126,6 @@ struct Info {
     idx: u32,
     /// The block's length (0: it would have none, so it's never compiled).
     len: u32,
-    /// Its inline instructions, once compiled.
-    inl: u32,
     /// In the pending batch.
     queued: bool,
     /// The compiled words' hash, for the stale-code checker.
@@ -137,8 +137,7 @@ struct Info {
 struct Jc {
     key: u64,
     idx: u32,
-    len: u16,
-    inl: u16,
+    len: u32,
 }
 
 /// Direct-mapped jump cache in front of the map (as QEMU's `tb_jmp_cache`).
@@ -147,7 +146,6 @@ const JC_EMPTY: Jc = Jc {
     key: u64::MAX,
     idx: 0,
     len: 0,
-    inl: 0,
 };
 
 fn jc_index(key: u64) -> usize {
@@ -164,6 +162,8 @@ pub struct Cache {
     map: Map<Info>,
     /// The keys in `map` by physical page, for `IC IVAU`.
     pages: Map<Vec<u64>>,
+    /// The compiled blocks that chain to a key (step 7), dropped with it.
+    linkers: Map<Vec<u64>>,
     jc: Box<[Jc; JC]>,
     /// (key, VA) of blocks waiting to be compiled.
     pending: Vec<(u64, u64)>,
@@ -187,6 +187,7 @@ impl Cache {
             cfg,
             map: HashMap::default(),
             pages: HashMap::default(),
+            linkers: HashMap::default(),
             jc: Box::new([JC_EMPTY; JC]),
             pending: Vec::new(),
             since: 0,
@@ -217,6 +218,7 @@ impl Cache {
     fn drop_all(&mut self) {
         self.map.clear();
         self.pages.clear();
+        self.linkers.clear();
         self.jc.fill(JC_EMPTY);
         self.pending.clear();
         self.next = 0;
@@ -226,13 +228,16 @@ impl Cache {
     pub fn invalidate(&mut self, pa: u64) {
         if pa == u64::MAX {
             self.drop_all();
-        } else if let Some(keys) = self.pages.remove(&(pa >> 12)) {
-            for k in keys {
+        } else if let Some(mut keys) = self.pages.remove(&(pa >> 12)) {
+            // With the blocks that chain to them, transitively: their code
+            // calls the dropped functions directly.
+            while let Some(k) = keys.pop() {
                 self.map.remove(&k);
                 if self.jc[jc_index(k)].key == k {
                     self.jc[jc_index(k)] = JC_EMPTY;
                 }
                 self.pending.retain(|p| p.0 != k);
+                keys.extend(self.linkers.remove(&k).unwrap_or_default());
             }
         } else {
             return;
@@ -256,14 +261,14 @@ impl Cache {
         );
     }
 
-    /// The compiled block for `key` as (table index, length, inline count), or else how many
+    /// The compiled block for `key` as (table index, length), or else how many
     /// instructions to interpret: the would-be block's length, so the next
     /// lookup is at a block start again.
     #[inline(always)]
-    fn enter(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32, u32), u32> {
+    fn enter(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32), u32> {
         let j = self.jc[jc_index(key)];
         if j.key == key {
-            return Ok((j.idx, j.len as u32, j.inl as u32));
+            return Ok((j.idx, j.len));
         }
         self.miss(key, va, mem)
     }
@@ -271,7 +276,7 @@ impl Cache {
     /// Not in the jump cache: look it up, count a hit, queue it and emit the
     /// batch when due.
     #[inline(never)]
-    fn miss(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32, u32), u32> {
+    fn miss(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32), u32> {
         let info = info(&mut self.map, &mut self.pages, key, || {
             block::form(mem, key & !3).len() as u32
         });
@@ -291,14 +296,9 @@ impl Cache {
             }
         }
         match self.map.get(&key) {
-            Some(&Info { idx, len, inl, .. }) if idx != 0 => {
-                self.jc[jc_index(key)] = Jc {
-                    key,
-                    idx,
-                    len: len as u16,
-                    inl: inl as u16,
-                };
-                Ok((idx, len, inl))
+            Some(&Info { idx, len, .. }) if idx != 0 => {
+                self.jc[jc_index(key)] = Jc { key, idx, len };
+                Ok((idx, len))
             }
             Some(i) => Err(i.len.max(1)),
             None => Err(1), // flushed by the emit
@@ -329,7 +329,14 @@ impl Cache {
         }
         let n = blocks.len() as u32;
         let slot = self.alloc(n);
-        let (bytes, inl, counts) = block::module(&blocks, mem);
+        let map = &self.map;
+        let compiled = |k| map.get(&k).filter(|i| i.idx != 0).map(|i| (i.idx, i.len));
+        let block::Emitted {
+            bytes,
+            inl,
+            links,
+            counts,
+        } = block::module(&blocks, mem, compiled, self.cfg.check);
         let t = now_ns();
         let Some(idx) = install(&bytes, slot) else {
             self.off = true;
@@ -347,12 +354,15 @@ impl Cache {
             s.blocks + n as u64,
             s.bytes + bytes.len() as u64,
         );
-        for (k, (b, inl)) in blocks.iter().zip(inl).enumerate() {
+        for (k, ((b, inl), links)) in blocks.iter().zip(inl).zip(links).enumerate() {
             let len = b.words.len() as u32;
             let s = &mut self.stats;
             (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (len - inl) as u64);
             let i = self.info(b.key, || 0);
-            (i.idx, i.len, i.inl, i.hash) = (idx + k as u32, len, inl, block::hash(&b.words));
+            (i.idx, i.len, i.hash) = (idx + k as u32, len, block::hash(&b.words));
+            for t in links {
+                self.linkers.entry(t).or_default().push(b.key);
+            }
         }
     }
 }
@@ -423,24 +433,27 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
         let (pc, key) = (vr.cpu.pc, key(vr, mem));
         let cache = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
         let r = key.map_or(Err(1), |k| cache.enter(k, pc, mem));
-        if let Ok((idx, len, inl)) = r
+        if let Ok((idx, len)) = r
             && len as u64 <= left
         {
             if cache.cfg.check {
                 cache.check(key.expect("compiled"), mem);
             }
-            // SAFETY: `idx` is a compiled block (the cache drops blocks before
-            // it reuses their slots), and no reference into `*v` is live: the
-            // block and its helpers use the raw pointer. `mem` isn't in `*v`.
-            let k = unsafe { block(idx)(v) } as u64;
+            let helped = vr.jit.helper_steps;
+            // SAFETY: `idx` is a compiled block (the cache drops blocks, and
+            // the blocks chained to them, before it reuses their slots), and no
+            // reference into `*v` is live: the block and its helpers use the
+            // raw pointer. `mem` isn't in `*v`.
+            let k = unsafe { block(idx)(v, 0, left.min(i32::MAX as u64) as u32) } as u64;
             // SAFETY: the block has returned.
             let vr = unsafe { &mut *v };
             let cache = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
             let e = vr.jit.exit.take();
             let s = &mut cache.stats;
+            let ran = k + e.is_some_and(Exit::retired) as u64;
             s.dispatches += 1;
-            s.steps += k + e.is_some_and(Exit::retired) as u64;
-            s.inline_steps += k.min(inl as u64);
+            s.steps += ran;
+            s.inline_steps += ran - (vr.jit.helper_steps - helped);
             cache.clock += k;
             done += k;
             if e.is_some() {
@@ -448,7 +461,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             }
         } else {
             let m = match r {
-                Ok((_, len, _)) | Err(len) => len as u64,
+                Ok((_, len)) | Err(len) => len as u64,
             };
             let (k, e) = interp::steps(&mut vr.cpu, mem, Some(&mut vr.tlb), m.min(left));
             if let Some(c) = vr.jit.cache.as_deref_mut() {
@@ -506,10 +519,8 @@ pub unsafe fn run(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Result<(), Exit>) {
 pub unsafe extern "C" fn jit_exec_flat(v: *mut Vcpu, insn: u32, pc: u64) -> u32 {
     // SAFETY: guaranteed by the caller.
     let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
-    status(
-        &mut v.jit.exit,
-        interp::exec_at(&mut v.cpu, &mut Flat(mem), insn, pc),
-    )
+    let r = interp::exec_at(&mut v.cpu, &mut Flat(mem), insn, pc);
+    status(&mut v.jit, r)
 }
 
 /// As [`jit_exec_flat`], through the MMU and the vCPU's TLB.
@@ -521,20 +532,34 @@ pub unsafe extern "C" fn jit_exec_mmu(v: *mut Vcpu, insn: u32, pc: u64) -> u32 {
     // SAFETY: guaranteed by the caller.
     let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
     let mut m = Mmu::new(mem, Some(&mut v.tlb));
-    status(
-        &mut v.jit.exit,
-        interp::exec_at(&mut v.cpu, &mut m, insn, pc),
-    )
+    let r = interp::exec_at(&mut v.cpu, &mut m, insn, pc);
+    status(&mut v.jit, r)
 }
 
-fn status(exit: &mut Option<Exit>, r: Result<(), Exit>) -> u32 {
+fn status(j: &mut State, r: Result<(), Exit>) -> u32 {
     match r {
-        Ok(()) => 0,
+        Ok(()) => {
+            j.helper_steps += 1;
+            0
+        }
         Err(e) => {
-            *exit = Some(e);
+            j.helper_steps += e.retired() as u64;
+            j.exit = Some(e);
             1
         }
     }
+}
+
+/// The stale-code checker at a chained entry into the block at `key` (blocks
+/// compiled with `jit::Config::check` call it before they chain).
+///
+/// # Safety
+/// As for [`jit_exec_flat`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_check(v: *mut Vcpu, key: u64) {
+    // SAFETY: guaranteed by the caller.
+    let (mem, v) = unsafe { (&*(*v).jit.mem, &*v) };
+    v.jit.cache.as_deref().expect("a JIT vCPU").check(key, mem);
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -577,7 +602,7 @@ pub fn add_module(reg: u32, imm: i64) -> Vec<u8> {
     use wasm::{Code, I32, Module};
     let mut m = Module::default();
     m.import_memory("env", "memory", 0, 65536);
-    let t = m.ty(&[I32], &[I32]);
+    let t = m.ty(&[I32, I32, I32], &[I32]);
     let mut c = Code::default();
     let off = 8 * reg;
     c.local_get(0).local_get(0).i64_load(off);
@@ -652,20 +677,23 @@ mod tests {
     #[test]
     fn invalidation_by_page_and_all() {
         let mut c = Cache::new(Config::DEFAULT);
-        for k in [0x1000, 0x1ff8 | block::KEY_EL1, 0x2000] {
+        for k in [0x1000, 0x1ff8 | block::KEY_EL1, 0x2000, 0x3000, 0x4000] {
             c.info(k, || 1).idx = 7;
             c.jc[jc_index(k)] = Jc {
                 key: k,
                 idx: 7,
                 len: 1,
-                inl: 0,
             };
         }
+        // 0x3000 chains to 0x1000, and 0x4000 to 0x3000: both go with page 1.
+        c.linkers.insert(0x1000, vec![0x3000]);
+        c.linkers.insert(0x3000, vec![0x4000]);
         c.info(0x1004, || 1).queued = true;
         c.pending.push((0x1004, 0));
         c.invalidate(0x1ab0); // IC IVAU on page 1
         assert_eq!(c.map.keys().copied().collect::<Vec<_>>(), [0x2000]);
         assert!(c.jc[jc_index(0x1000)].key == u64::MAX && c.jc[jc_index(0x2000)].key == 0x2000);
+        assert!(c.jc[jc_index(0x4000)].key == u64::MAX && c.linkers.is_empty());
         assert_eq!(c.pending, []);
         assert_eq!(c.stats.invalidations, 1);
         c.invalidate(0x5000); // no code there

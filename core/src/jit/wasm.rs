@@ -86,20 +86,25 @@ impl Code {
     }
 
     /// Renumbers the locals the code uses so that only those are declared:
-    /// `ty(i)` is local `i`'s type, locals below `params` stay as they are,
-    /// and the rest are grouped by type in order (every declared local costs
-    /// Liftoff a zero-initialization per call). Returns the declarations.
-    pub fn compact_locals(&mut self, params: u32, ty: impl Fn(u32) -> u8) -> Vec<(u32, u8)> {
+    /// `params[k]` (as emitted) becomes parameter `k`, `ty(i)` is local `i`'s
+    /// type, and the other locals are grouped by type in order (every
+    /// declared local costs Liftoff a zero-initialization per call). Returns
+    /// the declarations.
+    pub fn compact_locals(&mut self, params: &[u32], ty: impl Fn(u32) -> u8) -> Vec<(u32, u8)> {
         let mut used = [false; 128];
         for &p in &self.locals {
             used[self.b[p] as usize] = true;
         }
         let mut map = [0u8; 128];
+        for (k, &p) in params.iter().enumerate() {
+            used[p as usize] = false;
+            map[p as usize] = k as u8;
+        }
         let mut decls = Vec::new();
-        let mut next = params;
+        let mut next = params.len() as u32;
         for t in [I64, I32] {
             let n = next;
-            for i in params..128 {
+            for i in 0..128 {
                 if used[i as usize] && ty(i) == t {
                     map[i as usize] = next as u8;
                     next += 1;
@@ -109,9 +114,6 @@ impl Code {
                 decls.push((next - n, t));
             }
         }
-        for i in 0..params {
-            map[i as usize] = i as u8;
-        }
         for &p in &self.locals {
             self.b[p] = map[self.b[p] as usize];
         }
@@ -119,6 +121,12 @@ impl Code {
     }
     pub fn call(&mut self, f: u32) -> &mut Self {
         self.b.push(0x10);
+        uleb(&mut self.b, f as u64);
+        self
+    }
+    /// A tail call (the tail-call proposal, in V8 since 11.2).
+    pub fn return_call(&mut self, f: u32) -> &mut Self {
+        self.b.push(0x12);
         uleb(&mut self.b, f as u64);
         self
     }
@@ -235,6 +243,11 @@ impl Module {
     /// Adds a function of type `ty` with `locals` (count, type) runs and
     /// `body` (ending in `end`), exported as `f<k>` for the k-th defined
     /// function and named `fname` in the name section. Returns its index.
+    /// The index the next [`Module::func`] gets.
+    pub fn next_func(&self) -> u32 {
+        self.nfunc_imports + self.funcs.len() as u32
+    }
+
     pub fn func(&mut self, ty: u32, locals: &[(u32, u8)], body: &Code, fname: &str) -> u32 {
         let idx = self.nfunc_imports + self.funcs.len() as u32;
         self.funcs.push(ty);
@@ -329,16 +342,17 @@ mod tests {
 
     #[test]
     fn compact_locals() {
-        // Param 0; locals 3 (i32), 5 and 9 (i64) used.
+        // Params 0 and 100 (the second); locals 3 (i32), 5 and 9 (i64) used.
         let mut c = Code::default();
         c.local_get(0)
             .local_get(9)
             .local_set(3)
             .local_tee(5)
-            .local_get(9);
-        let decls = c.compact_locals(1, |i| if i == 3 { I32 } else { I64 });
+            .local_get(9)
+            .local_get(100);
+        let decls = c.compact_locals(&[0, 100], |i| if i == 3 { I32 } else { I64 });
         assert_eq!(decls, [(2, I64), (1, I32)]);
-        assert_eq!(c.b, [0x20, 0, 0x20, 2, 0x21, 3, 0x22, 1, 0x20, 2]);
+        assert_eq!(c.b, [0x20, 0, 0x20, 3, 0x21, 4, 0x22, 2, 0x20, 3, 0x20, 1]);
     }
 
     #[test]

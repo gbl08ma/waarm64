@@ -74,3 +74,38 @@ test('IC IVAU drops the JIT blocks of rewritten code', () => {
 test('the stale-code checker fails the run when code changes without an IC', () => {
   assert.throws(() => smc(false, 1), WebAssembly.RuntimeError);
 });
+
+// Chaining (M5 step 7): a block that tail-calls another must go when that one
+// is invalidated. A at 0x1000 (`movz x0, #1; b 0x2000`); at 0x2000 a counter:
+// the first pass goes back to A through L (`b 0x1000` at 0x2014, compiled
+// after A, so it chains to A); the second rewrites A to `movz x0, #2`, runs
+// `ic ivau` on it and goes back through L; the third ends on `brk`. L is in
+// another page than A: only the link says it must go too.
+function chained(ic: boolean) {
+  const { ex, memory } = core(true);
+  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
+  const base = memory.grow(1) * 65536;
+  new Uint32Array(memory.buffer, base + 0x1000, 2).set([0xd2800020, 0x140003ff]);
+  new Uint32Array(memory.buffer, base + 0x2000, 13).set([
+    0x910004a5, 0xf10008bf, 0x540000c0, // add x5, x5, #1; cmp x5, #2; b.eq 0x2020
+    0xf1000cbf, 0x54000100, // cmp x5, #3; b.eq 0x2030
+    0x17fffbfb, 0, 0, // L: b 0x1000
+    0xb9000062, ic ? 0xd50b7523 : 0xd503201f, // str w2, [x3]; ic ivau, x3 (or nop)
+    0x17fffffb, 0, // b 0x2014 (L)
+    0xd4200000, // brk
+  ]);
+  const v = e.jit_new(0, 1, 64, 0) as number;
+  const x = new BigUint64Array(memory.buffer, v, 33);
+  [x[2], x[3], x[32]] = [0xd2800040n, 0x1000n, 0x1000n];
+  const exit = e.vcpu_new() as number;
+  e.jit_run_exit(v, e.mem_new(base, 65536n), 100n, exit);
+  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 11);
+  return { x0: x[0], kind: new BigUint64Array(memory.buffer, exit, 1)[0], steps: st[4], dispatches: st[5] };
+}
+
+test('IC IVAU drops the blocks chained to the rewritten code, in other pages too', () => {
+  const r = chained(true);
+  assert.deepEqual([r.x0, r.kind], [2n, 6n]);
+  assert.ok(r.dispatches < r.steps, `${r.dispatches} dispatches for ${r.steps} steps: nothing chained`);
+  assert.deepEqual([chained(false).x0], [1n]); // without the ic, the old code (as a real core may)
+});
