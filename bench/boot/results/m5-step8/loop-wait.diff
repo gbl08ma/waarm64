@@ -1,0 +1,42 @@
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 466f0df..b502c6c 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -70,6 +70,8 @@ impl Config {
+     };
+ }
+ 
++const LOOP_WAIT: u32 = 500;
++
+ /// What the JIT did (`vm::Counters` publishes them).
+ #[repr(C)]
+ #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+@@ -133,6 +135,8 @@ struct Info {
+     len: u32,
+     /// In the pending batch.
+     queued: bool,
++    /// Dispatches before a loop region is compiled (EXP).
++    wait: u32,
+     /// The compiled words' hash, for the stale-code checker.
+     hash: u64,
+ }
+@@ -300,7 +304,7 @@ impl Cache {
+         });
+         if info.idx == 0 && !self.off && info.len > 0 {
+             info.hits += 1;
+-            if info.hits > self.cfg.threshold && !info.queued {
++            if info.hits > self.cfg.threshold.max(info.wait) && !info.queued {
+                 info.queued = true;
+                 if self.pending.is_empty() {
+                     self.since = self.clock;
+@@ -345,6 +349,10 @@ impl Cache {
+             let r = block::region(mem, key, va, &|k| all || map.contains_key(&k));
+             if let Some(i) = self.map.get_mut(&key) {
+                 (i.queued, i.len) = (false, r.blocks.first().map_or(0, |b| b.words.len() as u32));
++                if !all && r.looped() && r.blocks.len() > 1 && i.hits <= LOOP_WAIT {
++                    i.wait = LOOP_WAIT; // EXP
++                    continue;
++                }
+             }
+             if !r.blocks.is_empty() {
+                 regions.push(r);

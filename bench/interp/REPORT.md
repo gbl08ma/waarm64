@@ -249,3 +249,37 @@ Alpine now boots 2.84× faster than on the interpreter. The interpreter numbers 
 - **Buildroot doesn't gain:** its boot is short and cold (15.6% of its steps interpreted, 12k blocks compiled for 41M steps), so compiling and Liftoff code dominate, not dispatch.
 - **Two bugs in 7.2/7.3 only cost chaining,** so no correctness test could see them: the cross-page guard compared against the page's host address instead of the target's, and the jump-cache index was computed wrongly. The dispatch histogram found both; a call-and-return loop test now pins the indirect lookup.
 - **Open (M9):** the jump-cache probes cost the integer guest 12% under default tiering (1258 vs 1430 MIPS without them) though they run once per ~5,000 instructions, and the same build does 1481 under TurboFan-only; flags for inlining, deopts and the tier-up budget change nothing, and moving the probes out of line made the EL1 guest erratic. The remaining Alpine dispatches are mostly instruction-TLB refills after whole-TLB flushes (41,665 per boot: no ASIDs, M9).
+
+## M5 step 8: regions
+
+**Host change.** From step 8 on, numbers come from the Lima VM `dev` on the M4 Mac mini (openSUSE Tumbleweed aarch64, 8 vCPUs, Chromium 153.0.8010.52 headless), not the x86_64 desktop: none of the step 2–7 numbers above compare with them. The step 7 commit `70e323d` is re-measured there as the baseline (a worktree build, with simd128 as it was then).
+
+### 8.1–8.2 measured (regions as the head's loop)
+
+**What runs:** step 7 plus regions (8.1: one function per region, members as nested wasm `block`s, registers kept across internal edges; 8.2: members only the seen blocks of the head's loop, back-edges a wasm `loop` under the budget check). **Method:** `bench/run.ts`, default config, one full `bench/interp` run and `boot_jit` / `boot_alpine_jit` for each build; Buildroot again for the tier split and the experiments; Alpine also in Node (`bench/results/local` scripts, single runs, for profiles).
+
+| Guest (MIPS) | Step 7 (IQR) | 8.2 (IQR) | 8.2 / step 7 | Blocks per region, back-edges (static) |
+|---|---|---|---|---|
+| interpreter, integer | 138.6 (±1.85) | 138.8 (±1.49) | 0% | |
+| integer, EL0 | 1184.5 (±4.6) | **2607.6** (±15.2) | **2.20×** | 2.15, 20 |
+| FP/NEON, EL0 | 20.3 (±0.10) | 20.4 (±0.16) | +1% | 1.43, 18 |
+| integer, EL1 MMU off | 1105.9 (±10.7) | **1942.7** (±16.9) | **1.76×** | 1.37, 24 |
+| integer, EL1 MMU on | 1072.4 (±4.6) | **1736.1** (±19.1) | **1.62×** | 1.37, 24 |
+
+| Boot (Chromium, deterministic, warm; cold) | Step 7 | 8.2 | Compiled, step 7 → 8.2 |
+|---|---|---|---|
+| Buildroot, to power-off | **655 ms** (±8), rerun 677 (±7); cold 685 | 746 ms (±5), rerun 767 (±6); cold 805 | 12,430 blocks, 5.0 MB → 12,225 regions of 16,970 blocks (1,212 back-edges), 6.8 MB |
+| Alpine, to power-off | **17.54 s** (±0.15); cold 17.99 | 18.23 s (±0.19); cold 17.85 | 56,791 blocks, 23.9 MB → 56,137 regions of 69,166 blocks (3,620 back-edges), 28.5 MB |
+
+Dispatches per instruction don't move (Buildroot 0.0075 → 0.0072, Alpine 0.0062). Between runs of the same build the Buildroot medians moved ~3% (655 vs 677), more than their IQRs.
+
+**Buildroot by V8 tier** (warm total, ms): default 655 / 746 / 678, Liftoff-only 1012 / 1054 / 950, TurboFan-only 2147 / 2845 / 2221 for step 7 / 8.2 / 8.2 with regions cut to the head (self-loops still wasm loops). Regions cost ~10% in both tiers and +28% where everything is compiled by TurboFan; without them 8.2 is step 7 within noise.
+
+**Where the boots lose** (Node `--cpu-prof`, self time, step 7 → 8.2):
+- Buildroot: JIT code 99 → 92 ms (regions do save execution), but the dispatcher (`jit::steps`, which V8's lazy compilation of JIT functions is charged to) 206 → 245 ms, and our own emission ~+45 ms (`emit_region` runs twice per region, up to six times for a loop, with allocations; `block::next` recomputed per query). 930 of the 12,227 regions are loops, 6.1 blocks each: their members, mostly also compiled on their own, are the +4,750 block copies.
+- Alpine (Node: 17.0 s step 7 and 8.2 without regions, 17.7 s 8.2): JIT code 8.28 → 8.62 s, dispatcher +0.20 s, emission ~+0.15 s. By tier (Node, one run each): Liftoff-only 25.6 → **23.6 s**, TurboFan-only 20.4 → 23.1 s; with V8's tier-up budget lowered to 2M (diagnostic only) 16.6 → **16.1 s**, raised to 60M 17.4 → 17.3 s. Region code is faster once compiled; the loss is compiling more and bigger code, and when it reaches TurboFan.
+- **Deferring loop regions** to 500 dispatches of the head (the head interpreted until then): Buildroot 705 ms (8.2: 746), Alpine 18.23 s (±0.92; no gain); 5,000: Buildroot 728 ms (interpreting the heads costs more). Not kept (`../boot/results/m5-step8/loop-wait.diff`).
+
+**simd128** (off since 8.2, PLAN M9): the interpreter doesn't notice it: 138.1 (±2.2) integer, 19.7 FP, 142.9 EL1 MMU off, 84.2 MMU on with `+simd128`, against 138.5–138.8, 19.6–19.7, 140.5–142.4, 84.7–85.3 without (two runs).
+
+Raw data: `results/m5-step8/chromium-linux-arm64-{step7,step8.2,step8.2-r2,step8.2-simd128}.json`, `../boot/results/m5-step8/`.
