@@ -118,3 +118,35 @@ Host: Ryzen 7 5800X3D, Linux x86_64, Chromium 152.0.7977.75. Raw data: `results/
 - **With the MMU on the JIT breaks even**: a block translates its fetch once at entry, where the interpreter's MMU copy translates every instruction's fetch through the TLB (the 36% M4 step 1 measured is partly that).
 - **Warm, in the VM, 0.26% of steps are interpreted:** blocks that don't fit in what's left of a 1024-step chunk (or before a deadline) run in the interpreter, which keeps the step count exact.
 - **Cold:** 4–5 modules of ≤ 32 blocks compile in 0.4–0.5 ms in total (the 100,000-step timeout emits the partial batches); cold MIPS is 44.6 against the interpreter's 50.4 in user mode. The VM guest's cold window hides the interpreter's own warm-up (87.5, nearly warm), so the JIT's cold number there is mostly V8 compiling the JIT modules lazily.
+
+## M5 step 4: inline integer ALU and branches
+
+**What runs:** the step 2 JIT with `core/src/jit/emit.rs`: moves, ADR/ADRP, add/sub (all forms, with flags), ADC/SBC, logical, bitfield moves, EXTR, shifts, conditional select and compare, multiplies, divides, REV/RBIT/CLZ/CLS, the NOP hints and every branch are emitted as wasm over the `Cpu` in memory (NZCV stored whole after each flag-setting instruction). Everything else (loads and stores above all) is still a helper call. Same policy as step 2 (threshold 50, batches of 32, 16,384 blocks).
+**Method:** `node bench/run.ts --page bench/interp/index.html`, default config, one full run of the eight benchmarks at `641aa67`; `interp_mips` again alone twice (below). Boots: `--page bench/boot/index.html --only boot|boot_jit|boot_alpine|boot_alpine_jit` (the `_jit` variants are new: `VmConfig.jit` = 1), deterministic, 5 cold and 10 warm Buildroot boots, 3 cold and 5 warm Alpine boots. "Inline, static / dynamic": the share of compiled instructions that are inline, and of the instructions run in JIT code (`jit::Stats`, ABI 12).
+
+| Guest | Interpreter warm (IQR) | JIT warm (IQR) | JIT / interp | Step 2 JIT | Interp cold | JIT cold | Dispatches / insn | Inline, static / dynamic |
+|---|---|---|---|---|---|---|---|---|
+| integer, EL0 | 88.8 (±0.33)¹ | **134.8** (±0.15) | **+52%** | 64.8 | 48.4¹ | 89.3 | 0.240 | 72% / 72% |
+| FP/NEON, EL0 | 15.2 (±0.01) | **15.5** (±0.03) | +1% | 14.8 | 14.2 | 13.6 | 0.087 | 28% / 30% |
+| integer, EL1 MMU off | 89.1 (±0.11) | **131.9** (±0.12) | **+48%** | 64.6 | 77.5 | 65.0 | 0.240 | 70% / 72% |
+| integer, EL1 MMU on | 54.1 (±0.19) | **90.5** (±0.09) | **+67%** | 54.9 | 41.0 | 55.9 | 0.240 | 70% / 72% |
+
+¹ Alone (`results/chromium-linux-x86_64-m5-step4-interp-alone.json`; a second run read 88.6 ± 0.21). In the full run it read 69.0 (± 1.20), the shared desktop's one-off low reading the step 2 notes describe; the interpreter's code didn't change in step 4 (a few field helpers became `pub(crate)`).
+
+| Boot (Chromium, deterministic) | Interpreter warm (IQR) | JIT warm (IQR) | JIT / interp | Step 3 JIT | Steps in JIT code | Dispatches / insn | Inline, static / dynamic | Compiled |
+|---|---|---|---|---|---|---|---|---|
+| Buildroot, to power-off | 1069 ms (±6) | **1071 ms** (±113) | 0% | 1.6 s² | 84.5% | 0.198 | 66% / 68% | 12,425 blocks, 471 modules, 2.0 MB, 51 ms |
+| Alpine, to power-off | 68.1 s (±0.07) | **58.9 s** (±0.05) | **−14%** | 104 s² | 96.1% | 0.180 | 70% / 73% | 244,487 blocks, 15,116 modules, 42 MB, 1.49 s, 14 flushes |
+| Alpine, to its script | 57.3 s (±0.07) | **48.2 s** (±0.07) | −16% | | | | | |
+
+² `tests/browser.test.ts` timings from step 3 (one boot each), not `bench/run.ts`. Cold boots: Buildroot 1168 ms JIT vs 1091 interpreter, Alpine 58.9 s vs 68.1 s.
+
+Host: Ryzen 7 5800X3D, Linux x86_64, Chromium 152.0.7977.75. Raw data: `results/chromium-linux-x86_64-m5-step4.json`, `results/chromium-linux-x86_64-m5-step4-interp-alone.json`, `../boot/results/chromium-linux-x86_64-m5-step4-{boot,boot_jit,boot_alpine,boot_alpine_jit}.json`.
+
+**Notes**
+- **The JIT now beats the interpreter** on every integer guest and on Alpine. The integer guest costs 7.4 ns per instruction against 15.4 at step 2 and the interpreter's 11.3; the other 28% of its instructions (loads and stores) are still helper calls, and each 4.2-instruction block is still one dispatch and one `call_indirect`, the costs steps 5 and 7 remove.
+- **With the MMU on the gain is largest (+67%)**: the interpreter translates every fetch through the TLB, a block translates once at entry, and inline instructions touch no TLB at all.
+- **FP barely moves**: its hot code is FP and NEON helpers (M6 lowers them); 30% of its steps are inline integer bookkeeping.
+- **Buildroot breaks even**: its boot is short and cold. 15.5% of its steps run in the interpreter (code below the threshold, or blocks that don't fit a chunk), the JIT compiles 12k blocks in 51 ms, and its warm IQR (±113 ms) is 10× the interpreter's, which looks like V8 tiering the 471 modules up at different points in each boot.
+- **Alpine flushes the code cache 14 times** (244k blocks through a 16,384-block cache). What it costs, and a larger cache or per-module eviction, belong to steps 7–8 (linking and regions change the block count anyway).
+- **The dynamic mix follows the static one** (72% of the integer guest's instructions are inline, statically and as run). The helper-call histogram that picked group 6 was ad hoc (a counter in the interpreter's step for words `emit::inline` rejects, over the Buildroot boot): loads and stores were 85% of the remaining helper calls; then NOP/BTI/PAC hints (2.9% of helper calls), MRS (1.7%), exclusives, MADD (1.1%), DC ZVA, DMB, REV, UMADDL, CLZ. The histogram by `Op` is step 9.

@@ -7,6 +7,7 @@
 // `--only boot_defconfig`: the same with the arm64 defconfig kernel (Image-defconfig).
 // `--only boot_alpine`: Alpine (target/images/alpine) as its boot test runs it:
 // 1 GiB, the test devices and a framebuffer; to its local.d script and to power-off.
+// `--only boot_jit`, `--only boot_alpine_jit`: the Buildroot and Alpine boots under the JIT (VmConfig.jit = 1).
 // I/O, realtime mode, a fresh boot per sample, timed by the host between the
 // guest script's "webpc: … start/end" markers unless fio times itself:
 // `--only dd`: /bench-dd.sh reads all of /dev/vda (sync-XHR block backend);
@@ -24,7 +25,8 @@ async function get(rel: string): Promise<Uint8Array<ArrayBuffer>> {
   return new Uint8Array(await r.arrayBuffer());
 }
 
-type Img = { kernel: Uint8Array; initrd?: Uint8Array; disk: string; cmdline: string; ramSize: number; test?: boolean };
+/** `jit`: `VmConfig.jit` (0 interpreter, 1 JIT). */
+type Img = { kernel: Uint8Array; initrd?: Uint8Array; disk: string; cmdline: string; ramSize: number; test?: boolean; jit?: 0 | 1 };
 
 export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<ArrayBuffer> }> {
   const [wasm, kernel] = await Promise.all([
@@ -42,7 +44,7 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
 export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean } = {}) {
   const devices = img.test ? testDevices(img.disk) : guestDevices(img.disk);
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer });
+  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit });
   await onVm?.(vm);
   let console = '';
   let scanned = 0;
@@ -66,8 +68,9 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
   }
 }
 
-export async function runAll(o: Options, image = 'Image'): Promise<Sample[]> {
-  return bootTimes(o, await images(image), 'init', { kernel: image, cmdline: CMDLINE, ramMiB: 256 });
+export async function runAll(o: Options, image = 'Image', jit: 0 | 1 = 0): Promise<Sample[]> {
+  const s = await bootTimes(o, { ...(await images(image)), jit }, 'init', { kernel: image, cmdline: CMDLINE, ramMiB: 256, jit });
+  return jit ? s.map((x) => ({ ...x, name: x.name.replace('boot_', 'boot_jit_') })) : s;
 }
 
 /** Cold and warm boots of `img`: ms to the `first` marker and to power-off. */
@@ -120,12 +123,13 @@ async function dd(o: Options): Promise<Sample[]> {
 }
 
 /** Alpine's boot test (core/tests/distros.rs): time to its local.d script and to power-off. */
-async function bootAlpine(o: Options): Promise<Sample[]> {
+async function bootAlpine(o: Options, jit: 0 | 1 = 0): Promise<Sample[]> {
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
-  const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${a.disk}`, import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, test: true };
-  const s = await bootTimes(o, img, 'alpine 3.24.2 6.18.53-0-virt', { distro: 'alpine', cmdline: a.cmdline, ramMiB: 1024, devices: 'test' }, { cold: 3, warmup: 1, warm: 5 });
-  return s.map((x) => ({ ...x, name: x.name.replace('boot_init', 'alpine_script').replace('boot_total', 'alpine_total') }));
+  const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${a.disk}`, import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, test: true, jit };
+  const s = await bootTimes(o, img, 'alpine 3.24.2 6.18.53-0-virt', { distro: 'alpine', cmdline: a.cmdline, ramMiB: 1024, devices: 'test', jit }, { cold: 3, warmup: 1, warm: 5 });
+  const pre = jit ? 'alpine_jit' : 'alpine';
+  return s.map((x) => ({ ...x, name: x.name.replace('boot_init', `${pre}_script`).replace('boot_total', `${pre}_total`) }));
 }
 
 /** Realtime boots of the Buildroot guest with the test devices running `script`, `n` of them. */
@@ -193,4 +197,8 @@ async function net(o: Options): Promise<Sample[]> {
   ];
 }
 
-export const suite = { boot: runAll, boot_defconfig: (o: Options) => runAll(o, 'Image-defconfig'), boot_alpine: bootAlpine, dd, fio, p9, net };
+export const suite = {
+  boot: runAll, boot_defconfig: (o: Options) => runAll(o, 'Image-defconfig'), boot_alpine: bootAlpine, dd, fio, p9, net,
+  // Under the JIT (VmConfig.jit = 1), deterministic.
+  boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1),
+};
