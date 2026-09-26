@@ -131,6 +131,9 @@ pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>, emit::Counts) 
         let (mut n, mut last) = (0, false);
         for (i, &w) in b.words.iter().enumerate() {
             let op = decode(w);
+            if end(op) == End::After {
+                c.commit_flags(); // see `commit_flags`
+            }
             last = emit::inline(&mut c, w, op, i, &cx);
             if last {
                 n += 1;
@@ -371,6 +374,10 @@ mod tests {
         assert!(has(&bytes, &[0x20, 10, 0x20, 11, 0x53])); // i64.lt_s
         assert_eq!(nzcv_stores(&bytes), 1);
         assert!(!has(&bytes, &[0x28, 2, 0x88, 2])); // NZCV never loaded
+        // Stored before the branch's PC store (`commit_flags`), not after it.
+        let nzcv = bytes.windows(3).position(|w| w == [0x37, 3, 0x88]).unwrap();
+        let pc = bytes.windows(3).position(|w| w == [0x37, 3, 0x80]).unwrap();
+        assert!(nzcv < pc);
         let want = emit::Counts {
             flags_stored: 1,
             flags_elided: 1,

@@ -49,8 +49,8 @@ pub struct Regs {
 }
 
 /// Where NZCV is: in the `Cpu`, or to be computed from the last flag setter's
-/// kind and flag locals (`stored`: it has been stored somewhere already, so
-/// it counts as materialized).
+/// kind and flag locals (`stored`: stored somewhere already, so it counts as
+/// materialized; `current`: the `Cpu` holds it on this path too).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Flags {
     #[default]
@@ -59,6 +59,7 @@ pub enum Flags {
         kind: Kind,
         sf: bool,
         stored: bool,
+        current: bool,
     },
 }
 
@@ -201,6 +202,7 @@ impl Func {
             kind,
             sf,
             stored: false,
+            current: false,
         };
     }
 
@@ -216,25 +218,37 @@ impl Func {
         self.flags = Flags::Mem;
     }
 
-    /// Stores lazy flags to the `Cpu`, leaving them lazy (for a path that
-    /// returns: the other one still has them in locals).
+    /// Stores lazy flags to the `Cpu` on a path that returns (a load/store's
+    /// failure path), leaving them lazy for the other one.
     pub fn store_flags(&mut self) {
         if let Flags::Lazy { kind, sf, .. } = self.flags {
             self.c.local_get(VCPU);
             nzcv_of(self, kind, sf);
             self.c.i64_extend_i32_u().i64_store(NZCV);
-            self.flags = Flags::Lazy {
-                kind,
-                sf,
-                stored: true,
-            };
+            if let Flags::Lazy { stored, .. } = &mut self.flags {
+                *stored = true;
+            }
         }
     }
 
-    /// Makes NZCV in the `Cpu` current (before a helper call, which may read
-    /// or write it, and at the block's end).
+    /// Makes NZCV in the `Cpu` current on this path, the flags staying lazy
+    /// for the conditions that follow. The block does it before its last
+    /// instruction when that is a branch: the same NZCV computed after the
+    /// branch's `select` of the next PC ran 35% slower under TurboFan
+    /// (`bench/interp/REPORT.md` "M5 step 6").
+    pub fn commit_flags(&mut self) {
+        if let Flags::Lazy { current: false, .. } = self.flags {
+            self.store_flags();
+            if let Flags::Lazy { current, .. } = &mut self.flags {
+                *current = true;
+            }
+        }
+    }
+
+    /// Makes NZCV in the `Cpu` current and drops the lazy state (before a
+    /// helper call, which may read or write it, and at the block's end).
     pub fn sync_flags(&mut self) {
-        self.store_flags();
+        self.commit_flags();
         self.retire_flags();
     }
 
