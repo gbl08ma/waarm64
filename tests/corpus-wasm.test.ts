@@ -4,6 +4,7 @@
 // It also runs through the JIT (M5): forced (every block compiled on first
 // sight, one per module) and in stress (the same with a 4-block code cache,
 // so it flushes constantly, and the stale-code checker).
+// `WEBPC_CORPUS=dp_imm,dp_reg` runs only those groups (tests/corpus/<group>.txt).
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
@@ -14,6 +15,7 @@ const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm',
 const DIR = new URL('corpus/', import.meta.url);
 const RAM = Number(DATA) + DATA_SIZE;
 const BRK_END = 0xd4200000;
+const GROUPS = process.env.WEBPC_CORPUS?.split(',');
 
 type Exports = {
   vcpu_new(): number;
@@ -63,7 +65,7 @@ for (const [mode, jit] of Object.entries(MODES)) test(`golden corpus on the wasm
 
   let total = 0;
   const failures: string[] = [];
-  for (const file of readdirSync(DIR).filter((f) => f.endsWith('.txt')).sort()) {
+  for (const file of readdirSync(DIR).filter((f) => f.endsWith('.txt') && (!GROUPS || GROUPS.includes(f.slice(0, -4)))).sort()) {
     for (const t of parseFile(readFileSync(new URL(file, DIR), 'utf8')).tests) {
       total++;
       const init = initialState(t);
@@ -104,11 +106,12 @@ for (const [mode, jit] of Object.entries(MODES)) test(`golden corpus on the wasm
       if (errs.length) failures.push(`${t.name}: ${errs.join('; ')}`);
     }
   }
-  assert.ok(total > 30_000, `only ${total} corpus tests`);
+  assert.ok(GROUPS ? total > 0 : total > 30_000, `only ${total} corpus tests`);
   if (jit) {
-    // jit::Stats: blocks, modules, bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes.
-    const [blocks, modules, bytes, ns, steps, dispatches] = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 8)].map(Number);
-    console.log(`${mode}: ${blocks} blocks in ${modules} modules, ${(bytes / 1e6).toFixed(1)} MB, ${(ns / 1e6).toFixed(0)} ms compiling; ${steps} steps in ${dispatches} block calls`);
+    // jit::Stats: blocks, modules, bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes,
+    // instructions compiled inline and as helper calls, inline instructions run.
+    const [blocks, modules, bytes, ns, steps, dispatches, , , inl, helpers, inlSteps] = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 11)].map(Number);
+    console.log(`${mode}: ${blocks} blocks in ${modules} modules, ${(bytes / 1e6).toFixed(1)} MB, ${(ns / 1e6).toFixed(0)} ms compiling; ${steps} steps in ${dispatches} block calls; ${inl} inline / ${helpers} helper instructions compiled, ${inlSteps} inline steps`);
     assert.ok(blocks > total, `only ${blocks} blocks compiled`);
   }
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${total} failed`);

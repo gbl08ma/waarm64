@@ -226,24 +226,24 @@ fn fp_enabled(c: &Cpu) -> R {
 
 // Field helpers.
 #[inline]
-fn bits(i: u32, hi: u32, lo: u32) -> u32 {
+pub(crate) fn bits(i: u32, hi: u32, lo: u32) -> u32 {
     (i >> lo) & ((1 << (hi - lo + 1)) - 1)
 }
 
 #[inline]
-fn bit(i: u32, n: u32) -> bool {
+pub(crate) fn bit(i: u32, n: u32) -> bool {
     (i >> n) & 1 == 1
 }
 
 /// Sign-extends the low `n` bits of `v`.
 #[inline]
-fn sext(v: u64, n: u32) -> u64 {
+pub(crate) fn sext(v: u64, n: u32) -> u64 {
     (((v << (64 - n)) as i64) >> (64 - n)) as u64
 }
 
 /// Truncates to the operation size: 64 bits if `sf`, else 32 (upper bits zero).
 #[inline]
-fn trunc(v: u64, sf: bool) -> u64 {
+pub(crate) fn trunc(v: u64, sf: bool) -> u64 {
     if sf { v } else { v as u32 as u64 }
 }
 
@@ -346,7 +346,7 @@ fn replicate(v: u64, esize: u32) -> u64 {
 }
 
 /// DecodeBitMasks: (wmask, tmask), or `None` for a reserved encoding.
-fn bit_masks(n: u32, imms: u32, immr: u32, immediate: bool) -> Option<(u64, u64)> {
+pub(crate) fn bit_masks(n: u32, imms: u32, immr: u32, immediate: bool) -> Option<(u64, u64)> {
     let x = (n << 6) | (!imms & 0x3f);
     if x == 0 {
         return None;
@@ -373,7 +373,7 @@ fn bit_masks(n: u32, imms: u32, immr: u32, immediate: bool) -> Option<(u64, u64)
 }
 
 /// ADR/ADRP immediate: immhi:immlo, sign-extended.
-fn adr_imm(i: u32) -> u64 {
+pub(crate) fn adr_imm(i: u32) -> u64 {
     sext(((bits(i, 23, 5) << 2) | bits(i, 30, 29)) as u64, 21)
 }
 

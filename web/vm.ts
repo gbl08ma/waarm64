@@ -1,4 +1,4 @@
-// Host side of the whole-VM ABI (PLAN.md §2, ABI 11): instantiates the core on
+// Host side of the whole-VM ABI (PLAN.md §2, ABI 12): instantiates the core on
 // shared memory, places guest RAM after the core's heap (layout A), boots an
 // arm64 Image and runs it, draining the console. virtio backends run in a
 // device worker (web/device-worker.ts) when this runs in a worker, and inline
@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 11;
+export const ABI = 12;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -74,7 +74,9 @@ export const Counter = {
   STEPS: 0, EXCEPTIONS: 1, IRQS: 65, TLB_HITS: 66, TLB_MISSES: 67, TLB_WALKS: 68, TLB_FLUSHES: 69, PC: 70,
   // The JIT's (ABI 10, `jit::Stats`).
   JIT_BLOCKS: 71, JIT_MODULES: 72, JIT_BYTES: 73, JIT_COMPILE_NS: 74, JIT_STEPS: 75, JIT_DISPATCHES: 76, JIT_INVALIDATIONS: 77, JIT_FLUSHES: 78,
-  LEN: 79,
+  // ABI 12: instructions compiled inline and as helper calls, inline instructions run.
+  JIT_INLINE: 79, JIT_HELPERS: 80, JIT_INLINE_STEPS: 81,
+  LEN: 82,
 } as const;
 
 /**
@@ -228,6 +230,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
         jit: {
           blocks: n(Counter.JIT_BLOCKS), modules: n(Counter.JIT_MODULES), bytes: n(Counter.JIT_BYTES), compileNs: n(Counter.JIT_COMPILE_NS),
           steps: n(Counter.JIT_STEPS), dispatches: n(Counter.JIT_DISPATCHES), invalidations: n(Counter.JIT_INVALIDATIONS), flushes: n(Counter.JIT_FLUSHES),
+          inline: n(Counter.JIT_INLINE), helpers: n(Counter.JIT_HELPERS), inlineSteps: n(Counter.JIT_INLINE_STEPS),
         },
       };
     },

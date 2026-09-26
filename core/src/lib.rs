@@ -20,7 +20,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 11;
+pub const ABI_VERSION: u32 = 12;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -184,7 +184,8 @@ pub unsafe extern "C" fn jit_flush(v: *mut mmu::Vcpu) {
 }
 
 /// The JIT's counts (`jit::Stats`, u64s: blocks, modules, bytes, compile ns,
-/// steps in JIT code, dispatches, invalidations, flushes).
+/// steps in JIT code, dispatches, invalidations, flushes, instructions
+/// compiled inline and as helper calls, inline instructions run).
 ///
 /// # Safety
 /// As for [`jit_run`].

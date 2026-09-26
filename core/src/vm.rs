@@ -136,8 +136,9 @@ pub struct Counters {
     pub tlb_flushes: AtomicU64,
     pub pc: AtomicU64,
     /// `jit::Stats` (ABI 10): blocks compiled, modules, wasm bytes, compile ns,
-    /// steps in JIT code, block calls, invalidations, cache flushes.
-    pub jit: [AtomicU64; 8],
+    /// steps in JIT code, block calls, invalidations, cache flushes; ABI 12:
+    /// instructions compiled inline and as helper calls, inline instructions run.
+    pub jit: [AtomicU64; 11],
 }
 
 impl Default for Counters {
@@ -152,7 +153,7 @@ impl Default for Counters {
             tlb_walks: z(),
             tlb_flushes: z(),
             pc: z(),
-            jit: [const { AtomicU64::new(0) }; 8],
+            jit: [const { AtomicU64::new(0) }; 11],
         }
     }
 }
@@ -365,6 +366,9 @@ impl Vm {
                 s.dispatches,
                 s.invalidations,
                 s.flushes,
+                s.inline,
+                s.helpers,
+                s.inline_steps,
             ];
             for (a, v) in c.jit.iter().zip(v) {
                 a.store(v, Ordering::Relaxed);

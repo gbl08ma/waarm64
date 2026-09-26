@@ -32,7 +32,7 @@ type Exports = {
 };
 
 /** What the JIT did so far (`jit::Stats`, `vm::Counters`); steps are all steps, jitSteps those in JIT code. */
-type JitCounts = { steps: number; jitSteps: number; dispatches: number; blocks: number; modules: number; bytes: number; compileNs: number };
+type JitCounts = { steps: number; jitSteps: number; dispatches: number; blocks: number; modules: number; bytes: number; compileNs: number; inline: number; helpers: number; inlineSteps: number };
 
 /** jit_new's arguments: threshold, batch, capacity, stale-code check. */
 export type JitConfig = [number, number, number, number];
@@ -70,8 +70,8 @@ export async function setup(bin = 'guest.bin', jit?: JitConfig) {
     pc: () => u64(cpu + 256)[0],
     rounds: () => u64(base + ROUNDS)[0],
     counts: jit ? (): JitCounts => {
-      const [blocks, modules, bytes, compileNs, jitSteps, dispatches] = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 6)].map(Number);
-      return { steps, jitSteps, dispatches, blocks, modules, bytes, compileNs };
+      const [blocks, modules, bytes, compileNs, jitSteps, dispatches, , , inline, helpers, inlineSteps] = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 11)].map(Number);
+      return { steps, jitSteps, dispatches, blocks, modules, bytes, compileNs, inline, helpers, inlineSteps };
     } : undefined,
   };
 }
@@ -91,7 +91,8 @@ export async function setupVm(mmu: boolean, jit: 0 | 1 | 2 = 0) {
     rounds: () => new BigUint64Array(vm.memory.buffer, vm.ram + 0x28_0000, 1)[0], // guest-vm.bin's ROUNDS
     counts: jit ? (): JitCounts => {
       const s = vm.stats();
-      return { steps: s.steps, jitSteps: s.jit.steps, dispatches: s.jit.dispatches, blocks: s.jit.blocks, modules: s.jit.modules, bytes: s.jit.bytes, compileNs: s.jit.compileNs };
+      const j = s.jit;
+      return { steps: s.steps, jitSteps: j.steps, dispatches: j.dispatches, blocks: j.blocks, modules: j.modules, bytes: j.bytes, compileNs: j.compileNs, inline: j.inline, helpers: j.helpers, inlineSteps: j.inlineSteps };
     } : undefined,
   };
 }
@@ -104,6 +105,8 @@ function jitParams(a: JitCounts, b: JitCounts) {
   return {
     dispatchesPerInsn: +(d / steps).toFixed(4), avgBlock: +(jit / d).toFixed(2), interpretedPct: +((100 * (steps - jit)) / steps).toFixed(3),
     blocks: b.blocks - a.blocks, modules: b.modules - a.modules, bytes: b.bytes - a.bytes, compileMs: +((b.compileNs - a.compileNs) / 1e6).toFixed(2),
+    // Inline share of the instructions compiled (static, so far) and of those run in JIT code (dynamic, this window).
+    inlinePct: +((100 * b.inline) / (b.inline + b.helpers)).toFixed(2), inlineStepsPct: +((100 * (b.inlineSteps - a.inlineSteps)) / jit).toFixed(2),
   };
 }
 
@@ -118,7 +121,7 @@ async function mipsOf(o: Options, name: string, guest: string, g: Guest): Promis
     return n / dt / 1000;
   };
   // Cold: the first instructions after instantiation, while V8 still runs Liftoff code.
-  const zero: JitCounts = { steps: 0, jitSteps: 0, dispatches: 0, blocks: 0, modules: 0, bytes: 0, compileNs: 0 };
+  const zero: JitCounts = { steps: 0, jitSteps: 0, dispatches: 0, blocks: 0, modules: 0, bytes: 0, compileNs: 0, inline: 0, helpers: 0, inlineSteps: 0 };
   const cold = [mips(2_000_000)];
   const c1 = g.counts?.();
   for (let i = 0; i < 3; i++) mips(chunk);

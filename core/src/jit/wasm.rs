@@ -74,6 +74,11 @@ impl Code {
         uleb(&mut self.b, i as u64);
         self
     }
+    pub fn local_tee(&mut self, i: u32) -> &mut Self {
+        self.b.push(0x22);
+        uleb(&mut self.b, i as u64);
+        self
+    }
     pub fn call(&mut self, f: u32) -> &mut Self {
         self.b.push(0x10);
         uleb(&mut self.b, f as u64);
@@ -83,6 +88,14 @@ impl Code {
     pub fn if_(&mut self) -> &mut Self {
         self.b.extend([0x04, 0x40]);
         self
+    }
+    /// `else` of an [`Code::if_`].
+    pub fn else_(&mut self) -> &mut Self {
+        self.op(0x05)
+    }
+    /// Untyped `select` (i32 or i64 operands).
+    pub fn select(&mut self) -> &mut Self {
+        self.op(0x1b)
     }
     pub fn return_(&mut self) -> &mut Self {
         self.op(0x0f)
@@ -100,11 +113,23 @@ impl Code {
     pub fn i64_load(&mut self, offset: u32) -> &mut Self {
         self.memarg(0x29, 3, offset)
     }
+    pub fn i32_load(&mut self, offset: u32) -> &mut Self {
+        self.memarg(0x28, 2, offset)
+    }
     pub fn i64_store(&mut self, offset: u32) -> &mut Self {
         self.memarg(0x37, 3, offset)
     }
     pub fn i64_add(&mut self) -> &mut Self {
         self.op(0x7c)
+    }
+    pub fn i64_and(&mut self) -> &mut Self {
+        self.op(0x83)
+    }
+    pub fn i32_wrap_i64(&mut self) -> &mut Self {
+        self.op(0xa7)
+    }
+    pub fn i64_extend_i32_u(&mut self) -> &mut Self {
+        self.op(0xad)
     }
     pub fn end(&mut self) -> &mut Self {
         self.op(0x0b)

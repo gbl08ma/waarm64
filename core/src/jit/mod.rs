@@ -8,6 +8,7 @@
 //! everything runs in the interpreter.
 
 pub mod block;
+pub mod emit;
 pub mod wasm;
 
 use std::collections::HashMap;
@@ -80,6 +81,12 @@ pub struct Stats {
     pub dispatches: u64,
     pub invalidations: u64,
     pub flushes: u64,
+    /// Instructions compiled inline, and as helper calls (ABI 12).
+    pub inline: u64,
+    pub helpers: u64,
+    /// Inline instructions run: each dispatch adds its block's inline count,
+    /// capped at the instructions that retired (exact unless a block stops early).
+    pub inline_steps: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -108,6 +115,8 @@ struct Info {
     idx: u32,
     /// The block's length (0: it would have none, so it's never compiled).
     len: u32,
+    /// Its inline instructions, once compiled.
+    inl: u32,
     /// In the pending batch.
     queued: bool,
     /// The compiled words' hash, for the stale-code checker.
@@ -119,7 +128,8 @@ struct Info {
 struct Jc {
     key: u64,
     idx: u32,
-    len: u32,
+    len: u16,
+    inl: u16,
 }
 
 /// Direct-mapped jump cache in front of the map (as QEMU's `tb_jmp_cache`).
@@ -128,6 +138,7 @@ const JC_EMPTY: Jc = Jc {
     key: u64::MAX,
     idx: 0,
     len: 0,
+    inl: 0,
 };
 
 fn jc_index(key: u64) -> usize {
@@ -233,14 +244,14 @@ impl Cache {
         );
     }
 
-    /// The compiled block for `key` as (table index, length), or else how many
+    /// The compiled block for `key` as (table index, length, inline count), or else how many
     /// instructions to interpret: the would-be block's length, so the next
     /// lookup is at a block start again.
     #[inline(always)]
-    fn enter(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32), u32> {
+    fn enter(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32, u32), u32> {
         let j = self.jc[jc_index(key)];
         if j.key == key {
-            return Ok((j.idx, j.len));
+            return Ok((j.idx, j.len as u32, j.inl as u32));
         }
         self.miss(key, va, mem)
     }
@@ -248,7 +259,7 @@ impl Cache {
     /// Not in the jump cache: look it up, count a hit, queue it and emit the
     /// batch when due.
     #[inline(never)]
-    fn miss(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32), u32> {
+    fn miss(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32, u32), u32> {
         let info = info(&mut self.map, &mut self.pages, key, || {
             block::form(mem, key & !3).len() as u32
         });
@@ -268,9 +279,14 @@ impl Cache {
             }
         }
         match self.map.get(&key) {
-            Some(&Info { idx, len, .. }) if idx != 0 => {
-                self.jc[jc_index(key)] = Jc { key, idx, len };
-                Ok((idx, len))
+            Some(&Info { idx, len, inl, .. }) if idx != 0 => {
+                self.jc[jc_index(key)] = Jc {
+                    key,
+                    idx,
+                    len: len as u16,
+                    inl: inl as u16,
+                };
+                Ok((idx, len, inl))
             }
             Some(i) => Err(i.len.max(1)),
             None => Err(1), // flushed by the emit
@@ -295,7 +311,7 @@ impl Cache {
         }
         let n = blocks.len() as u32;
         let slot = self.alloc(n);
-        let bytes = block::module(&blocks);
+        let (bytes, inl) = block::module(&blocks);
         let t = now_ns();
         let Some(idx) = install(&bytes, slot) else {
             self.off = true;
@@ -308,9 +324,12 @@ impl Cache {
             s.blocks + n as u64,
             s.bytes + bytes.len() as u64,
         );
-        for (k, b) in blocks.iter().enumerate() {
+        for (k, (b, inl)) in blocks.iter().zip(inl).enumerate() {
+            let len = b.words.len() as u32;
+            let s = &mut self.stats;
+            (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (len - inl) as u64);
             let i = self.info(b.key, || 0);
-            (i.idx, i.len, i.hash) = (idx + k as u32, b.words.len() as u32, block::hash(&b.words));
+            (i.idx, i.len, i.inl, i.hash) = (idx + k as u32, len, inl, block::hash(&b.words));
         }
     }
 }
@@ -379,7 +398,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
         let (pc, key) = (vr.cpu.pc, key(vr, mem));
         let cache = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
         let r = key.map_or(Err(1), |k| cache.enter(k, pc, mem));
-        if let Ok((idx, len)) = r
+        if let Ok((idx, len, inl)) = r
             && len as u64 <= left
         {
             if cache.cfg.check {
@@ -396,6 +415,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             let s = &mut cache.stats;
             s.dispatches += 1;
             s.steps += k + e.is_some_and(Exit::retired) as u64;
+            s.inline_steps += k.min(inl as u64);
             cache.clock += k;
             done += k;
             if e.is_some() {
@@ -403,7 +423,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             }
         } else {
             let m = match r {
-                Ok((_, len)) | Err(len) => len as u64,
+                Ok((_, len, _)) | Err(len) => len as u64,
             };
             let (k, e) = interp::steps(&mut vr.cpu, mem, Some(&mut vr.tlb), m.min(left));
             if let Some(c) = vr.jit.cache.as_deref_mut() {
@@ -613,6 +633,7 @@ mod tests {
                 key: k,
                 idx: 7,
                 len: 1,
+                inl: 0,
             };
         }
         c.info(0x1004, || 1).queued = true;

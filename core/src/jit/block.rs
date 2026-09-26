@@ -1,11 +1,12 @@
-//! Block formation and emission (M5 step 2: gadget-only, every instruction a
-//! helper call).
+//! Block formation and emission: each instruction inline (`emit`, M5 step 4)
+//! or a call to an interpreter helper.
 //!
 //! A block starts at a physical address and runs straight on: it ends after a
 //! branch or a system-class instruction, before an exception-generating or
 //! unallocated one, at the end of the 4 KiB page, or at [`CAP`] instructions.
 //! Its words are read at compile time, so the block executes the words it saw.
 
+use super::emit;
 use super::wasm::{Code, I32, I64, Module};
 use crate::decode::{Op, decode};
 use crate::mem::Mem;
@@ -91,36 +92,49 @@ pub struct Block {
     pub words: Vec<u32>,
 }
 
-/// Offset of `Cpu::pc` in the `Vcpu` a block gets.
-const PC: u32 = 256;
-
 /// One module with a function per block, `block(vcpu) -> retired`, named
-/// `<va>_pa<pa>`. Instruction *i* is `if helper(vcpu, insn_i, pc + 4i) { return i }`,
-/// with `pc` read at entry: blocks are keyed by PA, so one can run at any VA
-/// that maps its page.
-pub fn module(blocks: &[Block]) -> Vec<u8> {
+/// `<va>_pa<pa>`, and each block's count of inline instructions. Instruction
+/// *i* is inline or `if helper(vcpu, insn_i, pc + 4i) { return i }`, with `pc`
+/// read at entry: blocks are keyed by PA, so one can run at any VA that maps
+/// its page. Helpers set `Cpu::pc` themselves; a block that ends on an inline
+/// instruction other than a branch stores it before returning.
+pub fn module(blocks: &[Block]) -> (Vec<u8>, Vec<u32>) {
     let mut m = Module::default();
     let bt = m.ty(&[I32], &[I32]);
     let ht = m.ty(&[I32, I32, I64], &[I32]);
     let flat = m.import_func("env", "jit_exec_flat", ht);
     let mmu = m.import_func("env", "jit_exec_mmu", ht);
     m.import_memory("env", "memory", 0, 65536);
+    let mut inl = Vec::with_capacity(blocks.len());
     for b in blocks {
         let h = if b.key & KEY_MMU != 0 { mmu } else { flat };
         let mut c = Code::default();
-        c.local_get(0).i64_load(PC).local_set(1);
+        c.local_get(0).i64_load(emit::PC).local_set(1);
+        let (mut n, mut last) = (0, false);
         for (i, &w) in b.words.iter().enumerate() {
+            let op = decode(w);
+            last = emit::inline(&mut c, w, op, i);
+            if last {
+                n += 1;
+                // Branches end blocks and set the PC.
+                last = end(op) == End::No;
+                continue;
+            }
             c.local_get(0).i32_const(w as i32).local_get(1);
             if i > 0 {
                 c.i64_const(4 * i as i64).i64_add();
             }
             c.call(h).if_().i32_const(i as i32).return_().end();
         }
+        if last {
+            emit::set_pc(&mut c, 4 * b.words.len() as i64);
+        }
         c.i32_const(b.words.len() as i32).end();
         let name = format!("{:#x}_pa{:#x}", b.va, b.key & !3);
-        m.func(bt, &[(1, I64)], &c, &name);
+        m.func(bt, emit::LOCALS, &c, &name);
+        inl.push(n);
     }
-    m.finish()
+    (m.finish(), inl)
 }
 
 #[cfg(test)]
@@ -130,6 +144,8 @@ mod tests {
     const NOP: u32 = 0xd503201f;
     const ADD: u32 = 0x91000c41; // add x1, x2, #3
     const PACIASP: u32 = 0xd503233f;
+    const MOVZ: u32 = 0xd2800061; // movz x1, #3
+    const MRS: u32 = 0xd53b4200; // mrs x0, nzcv
 
     fn mem_with(at: u64, words: &[u32]) -> (Vec<u128>, Mem) {
         let mut ram = vec![0u128; 0x4000 / 16];
@@ -196,16 +212,16 @@ mod tests {
         let b = Block {
             key: 0x4000_0100 | KEY_EL1 | KEY_MMU,
             va: 0xffff_0100,
-            words: vec![ADD, 0xd65f03c0],
+            words: vec![MOVZ, MRS],
         };
-        let bytes = module(&[b]);
+        let (bytes, inl) = module(&[b]);
+        assert_eq!(inl, [1]);
         #[rustfmt::skip]
         let body = [
-            1, 1, I64,                              // one i64 local: the entry PC
+            2, 5, I64, 4, I32,                      // locals: the entry PC and scratch
             0x20, 0, 0x29, 3, 0x80, 2, 0x21, 1,     // local.get 0; i64.load 256; local.set 1
-            0x20, 0, 0x41, 0xc1, 0x98, 0x80, 0x88, 0x79, 0x20, 1, // vcpu, add, pc
-            0x10, 1, 0x04, 0x40, 0x41, 0, 0x0f, 0x0b, // call mmu; if: return 0
-            0x20, 0, 0x41, 0xc0, 0x87, 0xfc, 0xb2, 0x7d, 0x20, 1, 0x42, 4, 0x7c, // ret, pc + 4
+            0x20, 0, 0x42, 3, 0x37, 3, 8,           // movz inline: x1 = 3
+            0x20, 0, 0x41, 0x80, 0x84, 0xed, 0xa9, 0x7d, 0x20, 1, 0x42, 4, 0x7c, // mrs, pc + 4
             0x10, 1, 0x04, 0x40, 0x41, 1, 0x0f, 0x0b, // call mmu; if: return 1
             0x41, 2, 0x0b,                          // return 2
         ];
@@ -227,5 +243,21 @@ mod tests {
         want.extend([3 + name.len() as u8, 1, 2, name.len() as u8]);
         want.extend(name);
         assert_eq!(bytes, want);
+    }
+
+    #[test]
+    fn a_block_ending_inline_stores_the_pc() {
+        let b = Block {
+            key: 0x4000_0200,
+            va: 0x4000_0200,
+            words: vec![MOVZ, MOVZ],
+        };
+        let (bytes, inl) = module(&[b]);
+        assert_eq!(inl, [2]);
+        // vcpu; entry + 8; i64.store 256; return 2
+        let tail = [
+            0x20, 0, 0x20, 1, 0x42, 8, 0x7c, 0x37, 3, 0x80, 2, 0x41, 2, 0x0b,
+        ];
+        assert!(bytes.windows(tail.len()).any(|w| w == tail));
     }
 }
