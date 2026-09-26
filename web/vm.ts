@@ -1,4 +1,4 @@
-// Host side of the whole-VM ABI (PLAN.md §2, ABI 8): instantiates the core on
+// Host side of the whole-VM ABI (PLAN.md §2, ABI 9): instantiates the core on
 // shared memory, places guest RAM after the core's heap (layout A), boots an
 // arm64 Image and runs it, draining the console. virtio backends run in a
 // device worker (web/device-worker.ts) when this runs in a worker, and inline
@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 8;
+export const ABI = 9;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -30,9 +30,43 @@ type Exports = {
   vm_framebuffer(vm: number): bigint;
 };
 
-/** The core's imports: the shared memory, and the host clock for realtime mode. */
+/**
+ * The core's imports: the shared memory, the host clock for realtime mode, and
+ * `jit_install` (core/src/jit). The JIT works once `jit.bind` has the core's
+ * instance; until then `jit_install` fails and the core only interprets.
+ */
 export function coreImports(memory: WebAssembly.Memory) {
-  return { env: { memory, now_ms: () => performance.now() } };
+  const jit = jitHost(memory);
+  return { env: { memory, now_ms: () => performance.now(), jit_install: jit.install }, jit };
+}
+
+/**
+ * The host half of the JIT: compiles a module the core generated,
+ * synchronously, and puts its exports f0, f1, … into the core's function table
+ * at JIT slot `slot` on (after the core's own entries). The modules import the
+ * memory, the table and the core's exports (its helpers) from `env`.
+ */
+function jitHost(memory: WebAssembly.Memory) {
+  let table: WebAssembly.Table | undefined;
+  let base = 0;
+  let imports: WebAssembly.Imports = {};
+  return {
+    bind(core: WebAssembly.Instance) {
+      table = core.exports.__indirect_function_table as WebAssembly.Table;
+      base = table.length;
+      imports = { env: { ...core.exports, memory, table } };
+    },
+    install(ptr: number, len: number, slot: number): number {
+      if (!table) return -1;
+      const bytes = new Uint8Array(memory.buffer, ptr, len).slice(); // a non-shared copy
+      const f = new WebAssembly.Instance(new WebAssembly.Module(bytes), imports).exports;
+      const n = Object.keys(f).length;
+      const at = base + slot;
+      if (table.length < at + n) table.grow(at + n - table.length);
+      for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`] as WebAssembly.ExportValue as never);
+      return at;
+    },
+  };
 }
 
 /** u64 word indexes in `vm::Counters` (core/src/vm.rs). */

@@ -10,6 +10,7 @@ pub mod fdt;
 pub mod fp;
 pub mod gic;
 pub mod interp;
+pub mod jit;
 pub mod mem;
 pub mod mmu;
 pub mod pl011;
@@ -19,7 +20,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 8;
+pub const ABI_VERSION: u32 = 9;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -287,6 +288,31 @@ pub unsafe extern "C" fn vm_framebuffer(vm: *const vm::Vm) -> u64 {
 pub unsafe extern "C" fn vm_counters(vm: *const vm::Vm) -> *const vm::Counters {
     // SAFETY: guaranteed by the caller.
     &unsafe { &*vm }.shared.counters
+}
+
+// JIT plumbing (M5 step 1), for tests/jit.test.ts and bench/jit.
+
+/// Emits [`jit::add_module`] (X`reg` += `imm`) and installs it at JIT slot
+/// `slot`; returns its table index, or -1 without a JIT host.
+#[unsafe(no_mangle)]
+pub extern "C" fn jit_add_install(reg: u32, imm: i64, slot: u32) -> i32 {
+    jit::install(&jit::add_module(reg, imm), slot).map_or(-1, |i| i as i32)
+}
+
+/// Makes `n` calls on `cpu` through one call site, cycling over the blocks at
+/// table indexes `idx..idx + k`; returns the sum of their results.
+///
+/// # Safety
+/// `cpu` comes from [`vcpu_new`] or [`vm_cpu`]; each index from [`jit_add_install`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_call(cpu: *mut cpu::Cpu, idx: u32, k: u32, n: u32) -> u32 {
+    let (mut s, mut j) = (0u32, 0);
+    for _ in 0..n {
+        // SAFETY: guaranteed by the caller.
+        s = s.wrapping_add(unsafe { jit::block(idx + j)(cpu) });
+        j = if j + 1 == k { 0 } else { j + 1 };
+    }
+    s
 }
 
 #[cfg(test)]
