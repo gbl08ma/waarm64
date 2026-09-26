@@ -157,7 +157,8 @@ pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>, emit::Counts) 
         c.sync_flags();
         c.i32_const(b.words.len() as i32).end();
         let name = format!("{:#x}_pa{:#x}", b.va, b.key & !3);
-        m.func(bt, &c.locals(), &c.c, &name);
+        let locals = c.locals();
+        m.func(bt, &locals, &c.c, &name);
         inl.push(n);
         counts += c.counts;
     }
@@ -250,10 +251,10 @@ mod tests {
         assert_eq!(inl, [1]);
         #[rustfmt::skip]
         let body = [
-            5, 5, I64, 4, I32, 3, I64, 4, I32, 1, I64, // locals: entry PC, scratch, flags, x1
+            1, 2, I64,                              // locals: the entry PC and x1, all it uses
             0x20, 0, 0x29, 3, 0x80, 2, 0x21, 1,     // local.get 0; i64.load 256; local.set 1
-            0x42, 3, 0x21, 17,                      // movz inline: x1 (local 17) = 3
-            0x20, 0, 0x20, 17, 0x37, 3, 8,          // written back before the helper
+            0x42, 3, 0x21, 2,                      // movz inline: x1 (local 2) = 3
+            0x20, 0, 0x20, 2, 0x37, 3, 8,          // written back before the helper
             0x20, 0, 0x41, 0x80, 0x84, 0xed, 0xa9, 0x7d, 0x20, 1, 0x42, 4, 0x7c, // mrs, pc + 4
             0x10, 1, 0x04, 0x40, 0x41, 1, 0x0f, 0x0b, // call mmu; if: return 1
             0x41, 2, 0x0b,                          // return 2
@@ -291,7 +292,7 @@ mod tests {
         #[rustfmt::skip]
         let tail = [
             0x20, 0, 0x20, 1, 0x42, 8, 0x7c, 0x37, 3, 0x80, 2,
-            0x20, 0, 0x20, 17, 0x37, 3, 8, 0x41, 2, 0x0b,
+            0x20, 0, 0x20, 2, 0x37, 3, 8, 0x41, 2, 0x0b,
         ];
         assert!(bytes.windows(tail.len()).any(|w| w == tail));
     }
@@ -312,15 +313,13 @@ mod tests {
         let (bytes, _, _) = module(&[b], &test_mem());
         #[rustfmt::skip]
         let body = [
-            0x20, 0, 0x29, 3, 16, 0x22, 17, 0x42, 3, 0x7c, 0x21, 18, // x1 = x2 + 3
-            0x20, 18, 0x42, 1, 0x7c, 0x21, 19,                       // x3 = x1 + 1
+            0x20, 0, 0x29, 3, 16, 0x22, 2, 0x42, 3, 0x7c, 0x21, 3, // x1 = x2 + 3
+            0x20, 3, 0x42, 1, 0x7c, 0x21, 4,                       // x3 = x1 + 1
         ];
         assert!(has(&bytes, &body));
         assert!(has(
             &bytes,
-            &[
-                0x20, 0, 0x20, 18, 0x37, 3, 8, 0x20, 0, 0x20, 19, 0x37, 3, 24
-            ]
+            &[0x20, 0, 0x20, 3, 0x37, 3, 8, 0x20, 0, 0x20, 4, 0x37, 3, 24]
         ));
         assert_eq!(bytes.windows(2).filter(|w| *w == [0x29, 3]).count(), 2); // the PC and x2
     }
@@ -338,14 +337,14 @@ mod tests {
         assert_eq!(inl, [2]);
         #[rustfmt::skip]
         let around = [
-            0x20, 0, 0x20, 18, 0x37, 3, 8,                    // x1 written back
+            0x20, 0, 0x20, 3, 0x37, 3, 8,                    // x1 written back
             0x20, 0, 0x41,                                    // helper(vcpu, insn, …)
         ];
         assert!(has(&bytes, &around));
         #[rustfmt::skip]
         let after = [
             0x0f, 0x0b,                                       // …; if: return 1; end
-            0x20, 0, 0x29, 3, 8, 0x22, 18, 0x42, 1, 0x7c, 0x21, 19, // x3 = x1 (reloaded) + 1
+            0x20, 0, 0x29, 3, 8, 0x22, 3, 0x42, 1, 0x7c, 0x21, 4, // x3 = x1 (reloaded) + 1
         ];
         assert!(has(&bytes, &after));
     }
@@ -371,7 +370,8 @@ mod tests {
         // b.lt is i64.lt_s on the second's operands, and NZCV is stored once,
         // at the end (live out of every block).
         let (bytes, counts) = one(&[0xeb02003f, 0xeb04007f, 0x5400000b]);
-        assert!(has(&bytes, &[0x20, 10, 0x20, 11, 0x53])); // i64.lt_s
+        // Locals after compaction: entry, two scratch (for the store), the flag locals.
+        assert!(has(&bytes, &[0x20, 4, 0x20, 5, 0x53])); // i64.lt_s
         assert_eq!(nzcv_stores(&bytes), 1);
         assert!(!has(&bytes, &[0x28, 2, 0x88, 2])); // NZCV never loaded
         // Stored before the branch's PC store (`commit_flags`), not after it.
@@ -387,10 +387,10 @@ mod tests {
         assert_eq!(counts, want);
         // tst w1, #1; b.ne: the i32 result against zero (i32.ne).
         let (bytes, _) = one(&[0x7200003f, 0x54000001]);
-        assert!(has(&bytes, &[0x20, 15, 0x41, 0, 0x47]));
+        assert!(has(&bytes, &[0x20, 3, 0x41, 0, 0x47])); // the i32 result, after entry and x1
         // adds x0, x1, x2; adc x3, x3, x3: the carry in is x + y < x, unsigned.
         let (bytes, counts) = one(&[0xab020020, 0x9a030063]);
-        assert!(has(&bytes, &[0x20, 10, 0x20, 11, 0x7c, 0x20, 10, 0x54])); // i64.lt_u
+        assert!(has(&bytes, &[0x20, 5, 0x20, 6, 0x7c, 0x20, 5, 0x54])); // i64.lt_u
         assert_eq!(counts.cond_direct, 1);
         // Flags from outside the block come from memory.
         let (_, counts) = one(&[0x5400000b]);

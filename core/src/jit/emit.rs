@@ -26,11 +26,11 @@ use crate::decode::Op;
 use crate::interp::{adr_imm, bit, bit_masks, bits, sext, trunc};
 use crate::mmu::{TLB_ENTRIES, Vcpu};
 
-/// A block function's locals after its parameter (local 0, the vCPU): the
-/// entry PC (local 1), scratch (i64 in 2..=5, i32 in 6..=9), the flag locals
-/// (x, y, result: i64 in 10..=12, i32 in 13..=15; the carry in, 16), then one
-/// i64 per guest register the block uses, in order of first use.
-const SCRATCH: &[(u32, u8)] = &[(5, I64), (4, I32), (3, I64), (4, I32)];
+/// A block function's locals after its parameter (local 0, the vCPU), as
+/// emitted: the entry PC (local 1), scratch (i64 in 2..=5, i32 in 6..=9), the
+/// flag locals (x, y, result: i64 in 10..=12, i32 in 13..=15; the carry in,
+/// 16), then one i64 per guest register the block uses, in order of first
+/// use. [`Func::locals`] keeps only the ones used.
 const FIRST_REG: u32 = 17;
 const FC: u32 = 16;
 const VCPU: u32 = 0;
@@ -129,13 +129,16 @@ impl DerefMut for Func {
 }
 
 impl Func {
-    /// The function's locals, for `Module::func`.
-    pub fn locals(&self) -> Vec<(u32, u8)> {
-        let mut l = SCRATCH.to_vec();
-        if self.nregs > 0 {
-            l.push((self.nregs, I64));
-        }
-        l
+    /// Renumbers the function's locals to the ones it uses (i64s, then
+    /// i32s) and returns their declarations, for `Module::func`.
+    pub fn locals(&mut self) -> Vec<(u32, u8)> {
+        self.c.compact_locals(1, |i| {
+            if (6..=9).contains(&i) || (13..=16).contains(&i) {
+                I32
+            } else {
+                I64
+            }
+        })
     }
 
     /// Register `n`'s local (31 is SP).

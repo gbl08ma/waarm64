@@ -50,6 +50,9 @@ fn section(out: &mut Vec<u8>, id: u8, count: usize, body: &[u8]) {
 #[derive(Default)]
 pub struct Code {
     pub b: Vec<u8>,
+    /// Where each local index operand is in `b` (one byte: indices < 128),
+    /// for [`Code::compact_locals`].
+    locals: Vec<usize>,
 }
 
 /// Instruction encoders; each appends one instruction.
@@ -65,20 +68,54 @@ impl Code {
         uleb(&mut self.b, offset as u64);
         self
     }
-    pub fn local_get(&mut self, i: u32) -> &mut Self {
-        self.b.push(0x20);
-        uleb(&mut self.b, i as u64);
+    fn local(&mut self, op: u8, i: u32) -> &mut Self {
+        assert!(i < 128);
+        self.b.push(op);
+        self.locals.push(self.b.len());
+        self.b.push(i as u8);
         self
+    }
+    pub fn local_get(&mut self, i: u32) -> &mut Self {
+        self.local(0x20, i)
     }
     pub fn local_set(&mut self, i: u32) -> &mut Self {
-        self.b.push(0x21);
-        uleb(&mut self.b, i as u64);
-        self
+        self.local(0x21, i)
     }
     pub fn local_tee(&mut self, i: u32) -> &mut Self {
-        self.b.push(0x22);
-        uleb(&mut self.b, i as u64);
-        self
+        self.local(0x22, i)
+    }
+
+    /// Renumbers the locals the code uses so that only those are declared:
+    /// `ty(i)` is local `i`'s type, locals below `params` stay as they are,
+    /// and the rest are grouped by type in order (every declared local costs
+    /// Liftoff a zero-initialization per call). Returns the declarations.
+    pub fn compact_locals(&mut self, params: u32, ty: impl Fn(u32) -> u8) -> Vec<(u32, u8)> {
+        let mut used = [false; 128];
+        for &p in &self.locals {
+            used[self.b[p] as usize] = true;
+        }
+        let mut map = [0u8; 128];
+        let mut decls = Vec::new();
+        let mut next = params;
+        for t in [I64, I32] {
+            let n = next;
+            for i in params..128 {
+                if used[i as usize] && ty(i) == t {
+                    map[i as usize] = next as u8;
+                    next += 1;
+                }
+            }
+            if next > n {
+                decls.push((next - n, t));
+            }
+        }
+        for i in 0..params {
+            map[i as usize] = i as u8;
+        }
+        for &p in &self.locals {
+            self.b[p] = map[self.b[p] as usize];
+        }
+        decls
     }
     pub fn call(&mut self, f: u32) -> &mut Self {
         self.b.push(0x10);
@@ -288,6 +325,20 @@ mod tests {
             s(i64::MIN),
             [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x7f]
         );
+    }
+
+    #[test]
+    fn compact_locals() {
+        // Param 0; locals 3 (i32), 5 and 9 (i64) used.
+        let mut c = Code::default();
+        c.local_get(0)
+            .local_get(9)
+            .local_set(3)
+            .local_tee(5)
+            .local_get(9);
+        let decls = c.compact_locals(1, |i| if i == 3 { I32 } else { I64 });
+        assert_eq!(decls, [(2, I64), (1, I32)]);
+        assert_eq!(c.b, [0x20, 0, 0x20, 2, 0x21, 3, 0x22, 1, 0x20, 2]);
     }
 
     #[test]
