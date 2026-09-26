@@ -42,6 +42,10 @@ const CLASSES: Record<string, [number, number]> = {
   'variable shifts': [0x5fe0f000, 0x1ac02000],
   'conditional select': [0x3fe00800, 0x1a800000],
   'conditional compare': [0x3fe00410, 0x3a400000],
+  'conditional branch': [0xff000010, 0x54000000],
+  'compare and branch': [0x7e000000, 0x34000000],
+  'test and branch': [0x7e000000, 0x36000000],
+  'branch to register': [0xff9ffc1f, 0xd61f0000],
 };
 
 // xorshift64*, seeded: failures reproduce.

@@ -9,7 +9,7 @@
 
 use super::wasm::{Code, I32, I64};
 use crate::decode::Op;
-use crate::interp::{adr_imm, bit, bit_masks, bits, trunc};
+use crate::interp::{adr_imm, bit, bit_masks, bits, sext, trunc};
 
 /// A block function's locals after its parameter (local 0, the vCPU): the
 /// entry PC (local 1), then scratch: i64 in 2..=5, i32 in 6..=9.
@@ -302,6 +302,50 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize) -> bool {
             c.i32_const((bits(i, 3, 0) << 28) as i32);
             cond_holds(c, bits(i, 15, 12));
             c.select().i64_extend_i32_u().i64_store(NZCV);
+        }
+        // Branches end their block: they store the PC, and the block returns.
+        B_uncond | BL => {
+            if op == BL {
+                set(c, true, 30, |c| pc_plus(c, here + 4));
+            }
+            set_pc(c, here + sext((bits(i, 25, 0) << 2) as u64, 28) as i64);
+        }
+        B_cond | CBZ | CBNZ | TBZ | TBNZ => {
+            let off = match op {
+                TBZ | TBNZ => sext((bits(i, 18, 5) << 2) as u64, 16),
+                _ => sext((bits(i, 23, 5) << 2) as u64, 21),
+            };
+            c.local_get(VCPU);
+            pc_plus(c, here + off as i64);
+            pc_plus(c, here + 4);
+            match op {
+                B_cond => cond_holds(c, bits(i, 3, 0)),
+                CBZ | CBNZ => {
+                    get(c, sf, rd);
+                    cmp(c, sf, EQZ);
+                    if op == CBNZ {
+                        c.op(EQZ);
+                    }
+                }
+                _ => {
+                    let b = (bits(i, 31, 31) << 5) | bits(i, 23, 19);
+                    get(c, true, rd);
+                    mask(c, true, 1 << b);
+                    cmp(c, true, EQZ);
+                    if op == TBNZ {
+                        c.op(EQZ);
+                    }
+                }
+            }
+            c.select().i64_store(PC);
+        }
+        BR | BLR | RET => {
+            c.local_get(VCPU);
+            get(c, true, rn);
+            c.i64_store(PC);
+            if op == BLR {
+                set(c, true, 30, |c| pc_plus(c, here + 4));
+            }
         }
         // The shift amount is Rm modulo the width, as wasm shifts take it.
         LSLV | LSRV | ASRV | RORV => set(c, sf, rd, |c| {
@@ -687,5 +731,35 @@ mod tests {
         // ccmp x1, #3, #4, ne: the flags or #4 << 28, selected, stored to NZCV
         let b = emit(0xfa431824, 0).unwrap();
         assert!(b.ends_with(&[0x45, 0x1b, 0xad, 0x37, 3, 0x88, 2]));
+    }
+
+    #[test]
+    fn branches() {
+        // b .+8 as instruction 1: pc = entry + 12
+        assert_eq!(
+            emit(0x14000002, 1).unwrap(),
+            [0x20, 0, 0x20, 1, 0x42, 12, 0x7c, 0x37, 3, 0x80, 2]
+        );
+        // bl .-4 as instruction 0: x30 = entry + 4, pc = entry - 4
+        #[rustfmt::skip]
+        let want = [
+            0x20, 0, 0x20, 1, 0x42, 4, 0x7c, 0x37, 3, 0xf0, 1,
+            0x20, 0, 0x20, 1, 0x42, 0x7c, 0x7c, 0x37, 3, 0x80, 2,
+        ];
+        assert_eq!(emit(0x97ffffff, 0).unwrap(), want);
+        // cbnz w3, .+16: the target, the next PC, w3 != 0, select
+        #[rustfmt::skip]
+        let want = [
+            0x20, 0, 0x20, 1, 0x42, 16, 0x7c, 0x20, 1, 0x42, 4, 0x7c,
+            0x20, 0, 0x28, 2, 24, 0x45, 0x45, 0x1b, 0x37, 3, 0x80, 2,
+        ];
+        assert_eq!(emit(0x35000083, 0).unwrap(), want);
+        // blr x30: the PC from x30 before x30 is written
+        #[rustfmt::skip]
+        let want = [
+            0x20, 0, 0x20, 0, 0x29, 3, 0xf0, 1, 0x37, 3, 0x80, 2,
+            0x20, 0, 0x20, 1, 0x42, 4, 0x7c, 0x37, 3, 0xf0, 1,
+        ];
+        assert_eq!(emit(0xd63f03c0, 0).unwrap(), want);
     }
 }
