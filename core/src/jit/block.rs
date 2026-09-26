@@ -7,7 +7,7 @@
 //! Its words are read at compile time, so the block executes the words it saw.
 
 use super::emit;
-use super::wasm::{Code, I32, I64, Module};
+use super::wasm::{I32, I64, Module};
 use crate::decode::{Op, decode};
 use crate::mem::Mem;
 
@@ -97,7 +97,9 @@ pub struct Block {
 /// *i* is inline or `if helper(vcpu, insn_i, pc + 4i) { return i }`, with `pc`
 /// read at entry: blocks are keyed by PA, so one can run at any VA that maps
 /// its page. Helpers set `Cpu::pc` themselves; a block that ends on an inline
-/// instruction other than a branch stores it before returning.
+/// instruction other than a branch stores it before returning. Registers in
+/// locals are written back before each helper call and before the return, and
+/// reloaded on use after a helper (which may have written any of them).
 pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>) {
     let mut m = Module::default();
     let bt = m.ty(&[I32], &[I32]);
@@ -122,7 +124,7 @@ pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>) {
             }
         };
         let h = cx.helper;
-        let mut c = Code::default();
+        let mut c = emit::Func::default();
         c.local_get(0).i64_load(emit::PC).local_set(1);
         let (mut n, mut last) = (0, false);
         for (i, &w) in b.words.iter().enumerate() {
@@ -134,18 +136,21 @@ pub fn module(blocks: &[Block], mem: &Mem) -> (Vec<u8>, Vec<u32>) {
                 last = end(op) == End::No;
                 continue;
             }
+            c.flush();
             c.local_get(0).i32_const(w as i32).local_get(1);
             if i > 0 {
                 c.i64_const(4 * i as i64).i64_add();
             }
             c.call(h).if_().i32_const(i as i32).return_().end();
+            c.forget(!0);
         }
         if last {
             emit::set_pc(&mut c, 4 * b.words.len() as i64);
         }
+        c.flush();
         c.i32_const(b.words.len() as i32).end();
         let name = format!("{:#x}_pa{:#x}", b.va, b.key & !3);
-        m.func(bt, emit::LOCALS, &c, &name);
+        m.func(bt, &c.locals(), &c.c, &name);
         inl.push(n);
     }
     (m.finish(), inl)
@@ -237,9 +242,10 @@ mod tests {
         assert_eq!(inl, [1]);
         #[rustfmt::skip]
         let body = [
-            2, 5, I64, 4, I32,                      // locals: the entry PC and scratch
+            3, 5, I64, 4, I32, 1, I64,              // locals: the entry PC, scratch, x1
             0x20, 0, 0x29, 3, 0x80, 2, 0x21, 1,     // local.get 0; i64.load 256; local.set 1
-            0x20, 0, 0x42, 3, 0x37, 3, 8,           // movz inline: x1 = 3
+            0x42, 3, 0x21, 10,                      // movz inline: x1 (local 10) = 3
+            0x20, 0, 0x20, 10, 0x37, 3, 8,          // written back before the helper
             0x20, 0, 0x41, 0x80, 0x84, 0xed, 0xa9, 0x7d, 0x20, 1, 0x42, 4, 0x7c, // mrs, pc + 4
             0x10, 1, 0x04, 0x40, 0x41, 1, 0x0f, 0x0b, // call mmu; if: return 1
             0x41, 2, 0x0b,                          // return 2
@@ -273,10 +279,66 @@ mod tests {
         };
         let (bytes, inl) = module(&[b], &test_mem());
         assert_eq!(inl, [2]);
-        // vcpu; entry + 8; i64.store 256; return 2
+        // vcpu; entry + 8; i64.store 256; x1 written back; return 2
+        #[rustfmt::skip]
         let tail = [
-            0x20, 0, 0x20, 1, 0x42, 8, 0x7c, 0x37, 3, 0x80, 2, 0x41, 2, 0x0b,
+            0x20, 0, 0x20, 1, 0x42, 8, 0x7c, 0x37, 3, 0x80, 2,
+            0x20, 0, 0x20, 10, 0x37, 3, 8, 0x41, 2, 0x0b,
         ];
         assert!(bytes.windows(tail.len()).any(|w| w == tail));
+    }
+
+    fn has(bytes: &[u8], w: &[u8]) -> bool {
+        bytes.windows(w.len()).any(|x| x == w)
+    }
+
+    #[test]
+    fn registers_stay_in_locals() {
+        // add x1, x2, #3; add x3, x1, #1: the second reads x1 from its local,
+        // and both results are written back once, at the end.
+        let b = Block {
+            key: 0x4000_0200,
+            va: 0x4000_0200,
+            words: vec![ADD, 0x91000423],
+        };
+        let (bytes, _) = module(&[b], &test_mem());
+        #[rustfmt::skip]
+        let body = [
+            0x20, 0, 0x29, 3, 16, 0x22, 10, 0x42, 3, 0x7c, 0x21, 11, // x1 = x2 + 3
+            0x20, 11, 0x42, 1, 0x7c, 0x21, 12,                       // x3 = x1 + 1
+        ];
+        assert!(has(&bytes, &body));
+        assert!(has(
+            &bytes,
+            &[
+                0x20, 0, 0x20, 11, 0x37, 3, 8, 0x20, 0, 0x20, 12, 0x37, 3, 24
+            ]
+        ));
+        assert_eq!(bytes.windows(2).filter(|w| *w == [0x29, 3]).count(), 2); // the PC and x2
+    }
+
+    #[test]
+    fn a_helper_writes_back_and_forgets() {
+        // add x1, x2, #3; fmov x1, d0 (a helper); add x3, x1, #1: x1 is written
+        // back before the call and loaded again after it.
+        let b = Block {
+            key: 0x4000_0200,
+            va: 0x4000_0200,
+            words: vec![ADD, 0x9e660001, 0x91000423],
+        };
+        let (bytes, inl) = module(&[b], &test_mem());
+        assert_eq!(inl, [2]);
+        #[rustfmt::skip]
+        let around = [
+            0x20, 0, 0x20, 11, 0x37, 3, 8,                    // x1 written back
+            0x20, 0, 0x41,                                    // helper(vcpu, insn, …)
+        ];
+        assert!(has(&bytes, &around));
+        #[rustfmt::skip]
+        let after = [
+            0x0f, 0x0b,                                       // …; if: return 1; end
+            0x20, 0, 0x29, 3, 8, 0x22, 11, 0x42, 1, 0x7c, 0x21, 12, // x3 = x1 (reloaded) + 1
+        ];
+        assert!(has(&bytes, &after));
     }
 }

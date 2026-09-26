@@ -1,11 +1,18 @@
-//! Inline emission (M5 step 4): simple integer instructions and branches
-//! straight to wasm over the `Cpu` in memory (registers at `8n`, SP at 248 as
-//! `x[31]`, PC at 256, NZCV at 264). Everything else stays a helper call.
+//! Inline emission (M5 steps 4–6): simple integer instructions, branches,
+//! loads and stores straight to wasm. Everything else stays a helper call.
 //!
 //! The rule: [`inline`] takes an instruction only if it can't fail, decided
 //! from the word alone (an encoding whose handler could return `Undefined`
 //! stays a helper call), and emits its exact interpreter semantics. 32-bit
 //! (`sf` = 0) operations run on i32 and zero-extend into the X register.
+//!
+//! Guest registers live in i64 locals for the length of a block (step 6): a
+//! register is loaded from the `Cpu` (at `8n`, SP at 248 as `x[31]`) on first
+//! use, and the dirty ones are written back where memory must be current:
+//! before a helper call and before the block returns ([`Func::flush`]). The PC
+//! (256) and NZCV (264) stay in memory.
+
+use core::ops::{Deref, DerefMut};
 
 use super::wasm::{Code, I32, I64};
 use crate::decode::Op;
@@ -13,8 +20,10 @@ use crate::interp::{adr_imm, bit, bit_masks, bits, sext, trunc};
 use crate::mmu::{TLB_ENTRIES, Vcpu};
 
 /// A block function's locals after its parameter (local 0, the vCPU): the
-/// entry PC (local 1), then scratch: i64 in 2..=5, i32 in 6..=9.
-pub const LOCALS: &[(u32, u8)] = &[(5, I64), (4, I32)];
+/// entry PC (local 1), scratch (i64 in 2..=5, i32 in 6..=9), then one i64 per
+/// guest register the block uses, in order of first use.
+const SCRATCH: &[(u32, u8)] = &[(5, I64), (4, I32)];
+const FIRST_REG: u32 = 10;
 const VCPU: u32 = 0;
 const ENTRY: u32 = 1;
 
@@ -22,13 +31,122 @@ const ENTRY: u32 = 1;
 pub const PC: u32 = 256;
 const NZCV: u32 = 264;
 
+/// Which register locals hold the register's value (`valid`), and which of
+/// those are newer than the `Cpu` (`dirty`); bit 31 is SP.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Regs {
+    valid: u32,
+    dirty: u32,
+}
+
+/// A block function under construction: its code and its register locals.
+#[derive(Default)]
+pub struct Func {
+    pub c: Code,
+    /// Each register's local (0: none yet).
+    local: [u32; 32],
+    nregs: u32,
+    pub regs: Regs,
+}
+
+impl Deref for Func {
+    type Target = Code;
+    fn deref(&self) -> &Code {
+        &self.c
+    }
+}
+
+impl DerefMut for Func {
+    fn deref_mut(&mut self) -> &mut Code {
+        &mut self.c
+    }
+}
+
+impl Func {
+    /// The function's locals, for `Module::func`.
+    pub fn locals(&self) -> Vec<(u32, u8)> {
+        let mut l = SCRATCH.to_vec();
+        if self.nregs > 0 {
+            l.push((self.nregs, I64));
+        }
+        l
+    }
+
+    /// Register `n`'s local (31 is SP).
+    fn local(&mut self, n: u32) -> u32 {
+        let l = &mut self.local[n as usize];
+        if *l == 0 {
+            *l = FIRST_REG + self.nregs;
+            self.nregs += 1;
+        }
+        *l
+    }
+
+    /// Loads register `n` from the `Cpu` into its local.
+    fn load(&mut self, n: u32) -> u32 {
+        let l = self.local(n);
+        self.c.local_get(VCPU).i64_load(8 * n).local_set(l);
+        self.regs.valid |= 1 << n;
+        l
+    }
+
+    /// Pushes register `n` (31 is SP) as an i64.
+    fn reg(&mut self, n: u32) {
+        if self.regs.valid & 1 << n != 0 {
+            let l = self.local[n as usize];
+            self.c.local_get(l);
+        } else {
+            let l = self.local(n);
+            self.c.local_get(VCPU).i64_load(8 * n).local_tee(l);
+            self.regs.valid |= 1 << n;
+        }
+    }
+
+    /// Pops an i64 into register `n` (31 is SP).
+    fn set_reg(&mut self, n: u32) {
+        let l = self.local(n);
+        self.c.local_set(l);
+        self.regs.valid |= 1 << n;
+        self.regs.dirty |= 1 << n;
+    }
+
+    /// Writes the dirty registers back to the `Cpu`.
+    pub fn flush(&mut self) {
+        let mut d = self.regs.dirty;
+        while d != 0 {
+            let n = d.trailing_zeros();
+            d &= d - 1;
+            let l = self.local[n as usize];
+            self.c.local_get(VCPU).local_get(l).i64_store(8 * n);
+        }
+        self.regs.dirty = 0;
+    }
+
+    /// Drops the locals of the registers in `mask` (clean: flushed first),
+    /// which something else may have written in the `Cpu`.
+    pub fn forget(&mut self, mask: u32) {
+        debug_assert_eq!(self.regs.dirty & mask, 0);
+        self.regs.valid &= !mask;
+    }
+
+    /// Loads the registers in `mask` whose locals aren't valid.
+    fn reload(&mut self, mask: u32) {
+        let mut m = mask & !self.regs.valid;
+        while m != 0 {
+            let n = m.trailing_zeros();
+            m &= m - 1;
+            self.load(n);
+        }
+    }
+}
+
 /// The `k`-th scratch local of the operation size.
 fn tmp(sf: bool, k: u32) -> u32 {
     if sf { 2 + k } else { 6 + k }
 }
 
 /// Pushes register `n` at the operation size; 31 is XZR.
-fn get(c: &mut Code, sf: bool, n: u32) {
+fn get(c: &mut Func, sf: bool, n: u32) {
     if n == 31 {
         konst(c, sf, 0);
     } else {
@@ -37,16 +155,14 @@ fn get(c: &mut Code, sf: bool, n: u32) {
 }
 
 /// Pushes register `n` at the operation size; 31 is SP.
-fn get_sp(c: &mut Code, sf: bool, n: u32) {
-    c.local_get(VCPU);
-    if sf {
-        c.i64_load(8 * n);
-    } else {
-        c.i32_load(8 * n);
+fn get_sp(c: &mut Func, sf: bool, n: u32) {
+    c.reg(n);
+    if !sf {
+        c.i32_wrap_i64();
     }
 }
 
-fn konst(c: &mut Code, sf: bool, v: u64) {
+fn konst(c: &mut Func, sf: bool, v: u64) {
     if sf {
         c.i64_const(v as i64);
     } else {
@@ -54,26 +170,25 @@ fn konst(c: &mut Code, sf: bool, v: u64) {
     }
 }
 
-/// Stores what `value` pushes (at the operation size, zero-extended) to
-/// register `rd`; 31 is XZR, so nothing is emitted.
-fn set(c: &mut Code, sf: bool, rd: u32, value: impl FnOnce(&mut Code)) {
+/// Sets register `rd` to what `value` pushes (at the operation size,
+/// zero-extended); 31 is XZR, so nothing is emitted.
+fn set(c: &mut Func, sf: bool, rd: u32, value: impl FnOnce(&mut Func)) {
     if rd != 31 {
         set_sp(c, sf, rd, value);
     }
 }
 
 /// As [`set`], with 31 as SP.
-fn set_sp(c: &mut Code, sf: bool, rd: u32, value: impl FnOnce(&mut Code)) {
-    c.local_get(VCPU);
+fn set_sp(c: &mut Func, sf: bool, rd: u32, value: impl FnOnce(&mut Func)) {
     value(c);
     if !sf {
         c.i64_extend_i32_u();
     }
-    c.i64_store(8 * rd);
+    c.set_reg(rd);
 }
 
 /// Pushes the entry PC + `off`.
-fn pc_plus(c: &mut Code, off: i64) {
+fn pc_plus(c: &mut Func, off: i64) {
     c.local_get(ENTRY);
     if off != 0 {
         c.i64_const(off).i64_add();
@@ -81,7 +196,7 @@ fn pc_plus(c: &mut Code, off: i64) {
 }
 
 /// Stores the entry PC + `off` to `Cpu::pc`.
-pub fn set_pc(c: &mut Code, off: i64) {
+pub fn set_pc(c: &mut Func, off: i64) {
     c.local_get(VCPU);
     pc_plus(c, off);
     c.i64_store(PC);
@@ -89,7 +204,7 @@ pub fn set_pc(c: &mut Code, off: i64) {
 
 /// Emits instruction `i` (the `k`-th of its block) inline if this step covers
 /// it; false (and nothing emitted) if it stays a helper call.
-pub fn inline(c: &mut Code, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
     use Op::*;
     let sf = bit(i, 31);
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
@@ -182,7 +297,7 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             logical(
                 c,
                 i,
-                Some(&|c: &mut Code| get(c, sf, rn)),
+                Some(&|c: &mut Func| get(c, sf, rn)),
                 |c| konst(c, sf, imm),
                 true,
             );
@@ -191,7 +306,7 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             if !sf && bits(i, 15, 10) >= 32 {
                 return false;
             }
-            let y = |c: &mut Code| {
+            let y = |c: &mut Func| {
                 shifted(c, i);
                 if bit(i, 21) {
                     konst(c, sf, u64::MAX);
@@ -199,8 +314,8 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                 }
             };
             // MOV and MVN: ORR/ORN with XZR.
-            let x = |c: &mut Code| get(c, sf, rn);
-            let x: Option<&dyn Fn(&mut Code)> = (rn != 31 || bits(i, 30, 29) != 1).then_some(&x);
+            let x = |c: &mut Func| get(c, sf, rn);
+            let x: Option<&dyn Fn(&mut Func)> = (rn != 31 || bits(i, 30, 29) != 1).then_some(&x);
             logical(c, i, x, y, false);
         }
         SBFM | BFM | UBFM | ASR_1 | ASR_2 | SXTB_1 | SXTB_2 | SXTH_1 | SXTH_2 | SXTW => {
@@ -290,7 +405,7 @@ pub fn inline(c: &mut Code, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             // NZCV = cond ? AddWithCarry's flags : nzcv (3:0).
             let sub = bit(i, 30);
             c.local_get(VCPU);
-            let y = |c: &mut Code| {
+            let y = |c: &mut Func| {
                 if bit(i, 11) {
                     konst(c, sf, rm as u64);
                 } else {
@@ -494,13 +609,13 @@ const HOST: u32 = 6;
 /// Loads, stores and pairs whose handlers can't fail for other reasons than
 /// the access itself. Exclusives, atomics, unprivileged and FP accesses stay
 /// helper calls.
-fn ldst(c: &mut Code, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     use Op::*;
     let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
     let here = 4 * k as i64;
     let (size, opc) = (bits(i, 31, 30), bits(i, 23, 22));
     // The base register, with SP's alignment check left to the helper.
-    let base = |c: &mut Code| {
+    let base = |c: &mut Func| {
         get_sp(c, true, rn);
         c.local_set(BASE);
     };
@@ -512,7 +627,7 @@ fn ldst(c: &mut Code, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             };
             pc_plus(c, here + sext((bits(i, 23, 5) << 2) as u64, 21) as i64);
             c.local_set(ADDR);
-            access(c, cx, i, here, len, false, false, |c, off| {
+            access(c, cx, i, here, len, false, false, xmask(rt), |c, off| {
                 load_reg(c, rt, off, len, sign, false)
             });
         }
@@ -569,7 +684,8 @@ fn ldst(c: &mut Code, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }
             c.local_set(ADDR);
             let imm9 = sext(bits(i, 20, 12) as u64, 9) as i64;
-            access(c, cx, i, here, len, store, rn == 31, |c, off| {
+            let written = if store { 0 } else { xmask(rt) } | if wb { 1 << rn } else { 0 };
+            access(c, cx, i, here, len, store, rn == 31, written, |c, off| {
                 if store {
                     c.local_get(HOST);
                     get(c, true, rt);
@@ -600,7 +716,9 @@ fn ldst(c: &mut Code, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.i64_const(off).i64_add();
             }
             c.local_set(ADDR);
-            access(c, cx, i, here, 2 * len, !load, rn == 31, |c, o| {
+            let written = if load { xmask(rt) | xmask(rt2) } else { 0 }
+                | if mode & 1 == 1 { 1 << rn } else { 0 };
+            access(c, cx, i, here, 2 * len, !load, rn == 31, written, |c, o| {
                 if load {
                     load_reg(c, rt, o, len, sign, false);
                     load_reg(c, rt2, o + len, len, sign, false);
@@ -628,7 +746,7 @@ const STORE: [u8; 4] = [0x3c, 0x3d, 0x3e, 0x37];
 
 /// Loads `len` bytes at the host address (+ `off`) into Xt: zero-extended,
 /// sign-extended to 64 bits, or (`to32`) sign-extended to 32 and zero-extended.
-fn load_reg(c: &mut Code, rt: u32, off: u32, len: u32, sign: bool, to32: bool) {
+fn load_reg(c: &mut Func, rt: u32, off: u32, len: u32, sign: bool, to32: bool) {
     let lg = len.trailing_zeros() as usize;
     set(c, true, rt, |c| {
         c.local_get(HOST);
@@ -642,10 +760,15 @@ fn load_reg(c: &mut Code, rt: u32, off: u32, len: u32, sign: bool, to32: bool) {
 }
 
 /// Rn (31: SP) = the base + `imm`.
-fn writeback(c: &mut Code, rn: u32, imm: i64) {
+fn writeback(c: &mut Func, rn: u32, imm: i64) {
     set_sp(c, true, rn, |c| {
         c.local_get(BASE).i64_const(imm).i64_add();
     });
+}
+
+/// The register-mask bit of Xt, none for XZR.
+fn xmask(rt: u32) -> u32 {
+    if rt == 31 { 0 } else { 1 << rt }
 }
 
 /// The fast path of an access of `len` bytes at the address in `ADDR`: if it
@@ -654,17 +777,20 @@ fn writeback(c: &mut Code, rn: u32, imm: i64) {
 /// runs with the host address in `HOST`, to be used with the memarg offset
 /// it gets. Otherwise the helper re-executes the instruction (exact faults,
 /// MMIO through `vm::Io`, page-crossing accesses) and the block returns if it
-/// didn't retire.
+/// didn't retire; the registers are written back before the call, and after
+/// it the ones in `written` (the instruction's destinations), and any the fast
+/// path loaded, are reloaded, so both arms leave the fast path's register state.
 #[allow(clippy::too_many_arguments)]
 fn access(
-    c: &mut Code,
+    c: &mut Func,
     cx: &Ctx,
     i: u32,
     here: i64,
     len: u32,
     write: bool,
     sp: bool,
-    body: impl FnOnce(&mut Code, u32),
+    written: u32,
+    body: impl FnOnce(&mut Func, u32),
 ) {
     let off = match cx.bus {
         Bus::Flat { base, phys, size } => {
@@ -711,8 +837,12 @@ fn access(
         }
     };
     c.local_set(HOST);
+    let before = c.regs;
     body(c, off);
+    let fast = c.regs;
     c.else_();
+    c.regs = before;
+    c.flush();
     c.local_get(VCPU).i32_const(i as i32);
     pc_plus(c, here);
     c.call(cx.helper)
@@ -720,6 +850,10 @@ fn access(
         .i32_const((here / 4) as i32)
         .return_()
         .end();
+    c.forget(written);
+    c.reload(fast.valid);
+    // Clean here, maybe dirty there: the merge is dirty (a clean write-back is harmless).
+    c.regs = fast;
     c.end();
 }
 
@@ -749,12 +883,12 @@ const GE_S: u8 = 0x4e;
 const LE_U: u8 = 0x4d;
 
 /// A binary or unary arithmetic op at the operation size.
-fn arith(c: &mut Code, sf: bool, op32: u8) {
+fn arith(c: &mut Func, sf: bool, op32: u8) {
     c.op(if sf { op32 + W } else { op32 });
 }
 
 /// A comparison at the operation size (an i32 result either way).
-fn cmp(c: &mut Code, sf: bool, op32: u8) {
+fn cmp(c: &mut Func, sf: bool, op32: u8) {
     c.op(if sf { op32 + WC } else { op32 });
 }
 
@@ -769,15 +903,15 @@ enum Carry {
 /// ADD/ADDS/SUB/SUBS (op in bit 30, S in bit 29) of what `x` and `y` push.
 /// Without S, Rd 31 is SP if `sp_dest`.
 fn addsub(
-    c: &mut Code,
+    c: &mut Func,
     i: u32,
-    x: impl FnOnce(&mut Code),
-    y: impl FnOnce(&mut Code),
+    x: impl FnOnce(&mut Func),
+    y: impl FnOnce(&mut Func),
     sp_dest: bool,
 ) {
     let (sf, sub, s, rd) = (bit(i, 31), bit(i, 30), bit(i, 29), bits(i, 4, 0));
     if !s {
-        let v = |c: &mut Code| {
+        let v = |c: &mut Func| {
             x(c);
             y(c);
             arith(c, sf, if sub { SUB } else { ADD });
@@ -799,10 +933,10 @@ fn addsub(
 
 /// AddWithCarry(x, sub ? !y : y, sub) into scratch locals (x, y, result).
 fn add_with_carry(
-    c: &mut Code,
+    c: &mut Func,
     sf: bool,
-    x: impl FnOnce(&mut Code),
-    y: impl FnOnce(&mut Code),
+    x: impl FnOnce(&mut Func),
+    y: impl FnOnce(&mut Func),
     sub: bool,
 ) -> (u32, u32, u32) {
     let (tx, ty, tr) = (tmp(sf, 0), tmp(sf, 1), tmp(sf, 2));
@@ -827,14 +961,14 @@ fn add_with_carry(
 /// Stores AddWithCarry's NZCV for `r` = `x` + `y` + carry (locals of the
 /// operation size): C is `r < x` unsigned, or `r <= x` with a carry in; V is
 /// the sign of `(x ^ r) & (y ^ r)`.
-fn add_flags(c: &mut Code, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
+fn add_flags(c: &mut Func, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
     c.local_get(VCPU);
     add_nzcv(c, sf, x, y, r, carry);
     c.i64_extend_i32_u().i64_store(NZCV);
 }
 
 /// Pushes [`add_flags`]'s NZCV as an i32.
-fn add_nzcv(c: &mut Code, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
+fn add_nzcv(c: &mut Func, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
     nz(c, sf, r);
     c.local_get(r).local_get(x);
     match carry {
@@ -860,7 +994,7 @@ fn add_nzcv(c: &mut Code, sf: bool, x: u32, y: u32, r: u32, carry: Carry) {
 /// Pushes an i32 that is non-zero iff condition `cond` holds for NZCV in
 /// memory (ConditionHolds): GE and GT line N up with V (`n ^ n << 3`) and Z
 /// (`n << 1`) in the sign bit.
-fn cond_holds(c: &mut Code, cond: u32) {
+fn cond_holds(c: &mut Func, cond: u32) {
     let n = tmp(false, 3);
     let invert = cond & 1 == 1 && cond != 15;
     if cond >> 1 == 7 {
@@ -892,7 +1026,7 @@ fn cond_holds(c: &mut Code, cond: u32) {
 }
 
 /// Pushes N and Z of the result in local `r`, in place in an i32.
-fn nz(c: &mut Code, sf: bool, r: u32) {
+fn nz(c: &mut Func, sf: bool, r: u32) {
     c.local_get(r);
     sign_to(c, sf, 31);
     c.local_get(r);
@@ -901,7 +1035,7 @@ fn nz(c: &mut Code, sf: bool, r: u32) {
 }
 
 /// Turns the value on the stack into an i32 holding just its sign bit, moved to bit `p`.
-fn sign_to(c: &mut Code, sf: bool, p: u32) {
+fn sign_to(c: &mut Func, sf: bool, p: u32) {
     if sf {
         c.i64_const(63 - p as i64).op(SHR_U + W).i32_wrap_i64();
     } else if p < 31 {
@@ -913,14 +1047,14 @@ fn sign_to(c: &mut Code, sf: bool, p: u32) {
 /// AND/ORR/EOR/ANDS (opc in 30:29) of what `x` (none: zero) and `y` push.
 /// Without S, Rd 31 is SP if `sp_dest`; ANDS sets N and Z and clears C and V.
 fn logical(
-    c: &mut Code,
+    c: &mut Func,
     i: u32,
-    x: Option<&dyn Fn(&mut Code)>,
-    y: impl FnOnce(&mut Code),
+    x: Option<&dyn Fn(&mut Func)>,
+    y: impl FnOnce(&mut Func),
     sp_dest: bool,
 ) {
     let (sf, rd, opc) = (bit(i, 31), bits(i, 4, 0), bits(i, 30, 29));
-    let v = |c: &mut Code| {
+    let v = |c: &mut Func| {
         let Some(x) = x else {
             return y(c); // ORR with zero
         };
@@ -947,7 +1081,7 @@ fn logical(
 }
 
 /// A shift of the value on the stack by a constant; nothing for 0.
-fn shift(c: &mut Code, sf: bool, op32: u8, amt: u32) {
+fn shift(c: &mut Func, sf: bool, op32: u8, amt: u32) {
     if amt != 0 {
         konst(c, sf, amt as u64);
         arith(c, sf, op32);
@@ -955,7 +1089,7 @@ fn shift(c: &mut Code, sf: bool, op32: u8, amt: u32) {
 }
 
 /// Pushes the shifted-register operand (Rm, shift type 23:22, amount 15:10).
-fn shifted(c: &mut Code, i: u32) {
+fn shifted(c: &mut Func, i: u32) {
     let (sf, amt) = (bit(i, 31), bits(i, 15, 10));
     get(c, sf, bits(i, 20, 16));
     shift(
@@ -967,13 +1101,13 @@ fn shifted(c: &mut Code, i: u32) {
 }
 
 /// Pushes the extended-register operand (Rm, option 15:13, left shift 12:10 ≤ 4).
-fn extended(c: &mut Code, i: u32) {
+fn extended(c: &mut Func, i: u32) {
     let sf = bit(i, 31);
     extend(c, sf, bits(i, 20, 16), bits(i, 15, 13), bits(i, 12, 10));
 }
 
 /// Pushes ExtendReg(Rm, `option`, `amt`) at the operation size.
-fn extend(c: &mut Code, sf: bool, rm: u32, option: u32, amt: u32) {
+fn extend(c: &mut Func, sf: bool, rm: u32, option: u32, amt: u32) {
     get(c, sf, rm);
     match (option, sf) {
         (0, _) => mask(c, sf, 0xff),
@@ -990,7 +1124,7 @@ fn extend(c: &mut Code, sf: bool, rm: u32, option: u32, amt: u32) {
 
 /// Swaps the adjacent `sh`-bit fields of the value on the stack: `m` selects
 /// the low field of each pair.
-fn swap(c: &mut Code, sf: bool, sh: u32, m: u64) {
+fn swap(c: &mut Func, sf: bool, sh: u32, m: u64) {
     let x = tmp(sf, 3);
     c.local_tee(x);
     shift(c, sf, SHR_U, sh);
@@ -1002,7 +1136,7 @@ fn swap(c: &mut Code, sf: bool, sh: u32, m: u64) {
 }
 
 /// Reverses the bytes of the value on the stack.
-fn bswap(c: &mut Code, sf: bool) {
+fn bswap(c: &mut Func, sf: bool) {
     swap(c, sf, 8, 0x00ff_00ff_00ff_00ff);
     if sf {
         swap(c, sf, 16, 0x0000_ffff_0000_ffff);
@@ -1012,13 +1146,13 @@ fn bswap(c: &mut Code, sf: bool) {
 
 /// Pushes the high 64 bits of Xn × Xm, from 32-bit halves; signed, it
 /// subtracts `b` if `a` < 0 and `a` if `b` < 0 from the unsigned result.
-fn mulh(c: &mut Code, signed: bool, rn: u32, rm: u32) {
+fn mulh(c: &mut Func, signed: bool, rn: u32, rm: u32) {
     let (a, b, u, w) = (2, 3, 4, 5);
-    let lo = |c: &mut Code, v: u32| {
+    let lo = |c: &mut Func, v: u32| {
         c.local_get(v);
         mask(c, true, 0xffff_ffff);
     };
-    let hi = |c: &mut Code, v: u32| {
+    let hi = |c: &mut Func, v: u32| {
         c.local_get(v);
         shift(c, true, SHR_U, 32);
     };
@@ -1062,7 +1196,7 @@ fn mulh(c: &mut Code, signed: bool, rn: u32, rm: u32) {
     }
 }
 
-fn mask(c: &mut Code, sf: bool, m: u64) {
+fn mask(c: &mut Func, sf: bool, m: u64) {
     konst(c, sf, m);
     arith(c, sf, AND);
 }
@@ -1086,68 +1220,68 @@ mod tests {
     }
 
     fn emit_in(i: u32, k: usize, cx: &Ctx) -> Option<Vec<u8>> {
-        let mut c = Code::default();
-        inline(&mut c, i, decode(i), k, cx).then_some(c.b)
+        let mut c = Func::default();
+        inline(&mut c, i, decode(i), k, cx).then_some(c.c.b)
     }
 
     #[test]
     fn moves() {
-        // movz x1, #5, lsl #16: vcpu; i64.const 0x50000; i64.store 8
+        // movz x1, #5, lsl #16: i64.const 0x50000; local.set x1 (the first register local, 10)
         assert_eq!(
             emit(0xd2a000a1, 0).unwrap(),
-            [0x20, 0, 0x42, 0x80, 0x80, 0x14, 0x37, 3, 8]
+            [0x42, 0x80, 0x80, 0x14, 0x21, 10]
         );
-        // movk w2, #1: vcpu; vcpu; i32.load 16; i32.const !0xffff; and; i32.const 1; or;
-        // i64.extend_i32_u; i64.store 16
+        // movk w2, #1: x2 loaded into its local (vcpu; i64.load 16; local.tee), wrapped;
+        // i32.const !0xffff; and; i32.const 1; or; i64.extend_i32_u; local.set
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x20, 0, 0x28, 2, 16, 0x41, 0x80, 0x80, 0x7c, 0x71, 0x41, 1, 0x72,
-            0xad, 0x37, 3, 16,
+            0x20, 0, 0x29, 3, 16, 0x22, 10, 0xa7, 0x41, 0x80, 0x80, 0x7c, 0x71, 0x41, 1, 0x72,
+            0xad, 0x21, 10,
         ];
         assert_eq!(emit(0x72800022, 0).unwrap(), want);
         assert_eq!(emit(0xd280001f, 0).unwrap(), []); // movz xzr: nothing to do
         assert_eq!(emit(0x52c00000, 0), None); // movz w0, #0, lsl #32: UNDEFINED, a helper
-        // mov x3, x4 (orr x3, xzr, x4): vcpu; vcpu; i64.load 32; i64.store 24
+        // mov x3, x4 (orr x3, xzr, x4): x4 loaded (local 10), set into x3 (local 11)
         assert_eq!(
             emit(0xaa0403e3, 0).unwrap(),
-            [0x20, 0, 0x20, 0, 0x29, 3, 32, 0x37, 3, 24]
+            [0x20, 0, 0x29, 3, 32, 0x22, 10, 0x21, 11]
         );
         // orr x3, xzr, x4, lsl #4: the shift, no or
         assert_eq!(
             emit(0xaa0413e3, 0).unwrap(),
-            [0x20, 0, 0x20, 0, 0x29, 3, 32, 0x42, 4, 0x86, 0x37, 3, 24]
+            [0x20, 0, 0x29, 3, 32, 0x22, 10, 0x42, 4, 0x86, 0x21, 11]
         );
     }
 
     #[test]
     fn pc_relative() {
-        // adr x0, .+8 as instruction 2: vcpu; entry; i64.const 16; add; i64.store 0
+        // adr x0, .+8 as instruction 2: entry; i64.const 16; add; local.set x0
         assert_eq!(
             emit(0x10000040, 2).unwrap(),
-            [0x20, 0, 0x20, 1, 0x42, 16, 0x7c, 0x37, 3, 0]
+            [0x20, 1, 0x42, 16, 0x7c, 0x21, 10]
         );
         // adrp x1, .+0x1000 as instruction 0: (entry & !0xfff) + 0x1000
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x20, 1, 0x42, 0x80, 0x60, 0x83, 0x42, 0x80, 0x20, 0x7c, 0x37, 3, 8,
+            0x20, 1, 0x42, 0x80, 0x60, 0x83, 0x42, 0x80, 0x20, 0x7c, 0x21, 10,
         ];
         assert_eq!(emit(0xb0000001, 0).unwrap(), want);
     }
 
     #[test]
     fn add_sub() {
-        // add x0, sp, #16: vcpu; vcpu; i64.load 248; i64.const 16; add; i64.store 0
+        // add x0, sp, #16: SP loaded (i64.load 248) into local 10; add; local.set x0
         assert_eq!(
             emit(0x910043e0, 0).unwrap(),
             [
-                0x20, 0, 0x20, 0, 0x29, 3, 0xf8, 1, 0x42, 16, 0x7c, 0x37, 3, 0
+                0x20, 0, 0x29, 3, 0xf8, 1, 0x22, 10, 0x42, 16, 0x7c, 0x21, 11
             ]
         );
         // sub w0, w1, w2, uxtb #2: w1 - ((w2 & 0xff) << 2), zero-extended
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x20, 0, 0x28, 2, 8, 0x20, 0, 0x28, 2, 16, 0x41, 0xff, 1, 0x71,
-            0x41, 2, 0x74, 0x6b, 0xad, 0x37, 3, 0,
+            0x20, 0, 0x29, 3, 8, 0x22, 10, 0xa7, 0x20, 0, 0x29, 3, 16, 0x22, 11, 0xa7,
+            0x41, 0xff, 1, 0x71, 0x41, 2, 0x74, 0x6b, 0xad, 0x21, 12,
         ];
         assert_eq!(emit(0x4b220820, 0).unwrap(), want);
         // cmp x1, x2 (subs xzr, x1, x2): no register store, NZCV stored last.
@@ -1161,17 +1295,20 @@ mod tests {
     #[test]
     fn logical_bitfield_shifts() {
         // lsr x0, x1, #4 (ubfm x0, x1, #4, #63): rotr 4, then the masks
-        let mut want = vec![0x20, 0, 0x20, 0, 0x29, 3, 8, 0x42, 4, 0x8a, 0x42];
+        let mut want = vec![0x20, 0, 0x29, 3, 8, 0x22, 10, 0x42, 4, 0x8a, 0x42];
         crate::jit::wasm::sleb(&mut want, 0x0fff_ffff_ffff_ffff);
-        want.extend([0x83, 0x37, 3, 0]);
+        want.extend([0x83, 0x21, 11]);
         assert_eq!(emit(0xd344fc20, 0).unwrap(), want);
         // sxtw x0, w1 (sbfm x0, x1, #0, #31): shl 32, shr_s 32
         #[rustfmt::skip]
-        let want = [0x20, 0, 0x20, 0, 0x29, 3, 8, 0x42, 32, 0x86, 0x42, 32, 0x87, 0x37, 3, 0];
+        let want = [0x20, 0, 0x29, 3, 8, 0x22, 10, 0x42, 32, 0x86, 0x42, 32, 0x87, 0x21, 11];
         assert_eq!(emit(0x93407c20, 0).unwrap(), want);
         // lslv w0, w1, w2: i32.shl takes the amount modulo 32
         #[rustfmt::skip]
-        let want = [0x20, 0, 0x20, 0, 0x28, 2, 8, 0x20, 0, 0x28, 2, 16, 0x74, 0xad, 0x37, 3, 0];
+        let want = [
+            0x20, 0, 0x29, 3, 8, 0x22, 10, 0xa7, 0x20, 0, 0x29, 3, 16, 0x22, 11, 0xa7, 0x74, 0xad,
+            0x21, 12,
+        ];
         assert_eq!(emit(0x1ac22020, 0).unwrap(), want);
         // tst w1, #1 (ands wzr, w1, #1): N and Z only, stored to NZCV
         let b = emit(0x7200003f, 0).unwrap();
@@ -1185,8 +1322,8 @@ mod tests {
         // csel x0, x1, x2, eq: x1, x2, NZCV & Z, select
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x20, 0, 0x29, 3, 8, 0x20, 0, 0x29, 3, 16,
-            0x20, 0, 0x28, 2, 0x88, 2, 0x41, 0x80, 0x80, 0x80, 0x80, 0x04, 0x71, 0x1b, 0x37, 3, 0,
+            0x20, 0, 0x29, 3, 8, 0x22, 10, 0x20, 0, 0x29, 3, 16, 0x22, 11,
+            0x20, 0, 0x28, 2, 0x88, 2, 0x41, 0x80, 0x80, 0x80, 0x80, 0x04, 0x71, 0x1b, 0x21, 12,
         ];
         assert_eq!(emit(0x9a820020, 0).unwrap(), want);
         // ccmp x1, #3, #4, ne: the flags or #4 << 28, selected, stored to NZCV
@@ -1204,7 +1341,7 @@ mod tests {
         // bl .-4 as instruction 0: x30 = entry + 4, pc = entry - 4
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x20, 1, 0x42, 4, 0x7c, 0x37, 3, 0xf0, 1,
+            0x20, 1, 0x42, 4, 0x7c, 0x21, 10,
             0x20, 0, 0x20, 1, 0x42, 0x7c, 0x7c, 0x37, 3, 0x80, 2,
         ];
         assert_eq!(emit(0x97ffffff, 0).unwrap(), want);
@@ -1212,14 +1349,14 @@ mod tests {
         #[rustfmt::skip]
         let want = [
             0x20, 0, 0x20, 1, 0x42, 16, 0x7c, 0x20, 1, 0x42, 4, 0x7c,
-            0x20, 0, 0x28, 2, 24, 0x45, 0x45, 0x1b, 0x37, 3, 0x80, 2,
+            0x20, 0, 0x29, 3, 24, 0x22, 10, 0xa7, 0x45, 0x45, 0x1b, 0x37, 3, 0x80, 2,
         ];
         assert_eq!(emit(0x35000083, 0).unwrap(), want);
         // blr x30: the PC from x30 before x30 is written
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x20, 0, 0x29, 3, 0xf0, 1, 0x37, 3, 0x80, 2,
-            0x20, 0, 0x20, 1, 0x42, 4, 0x7c, 0x37, 3, 0xf0, 1,
+            0x20, 0, 0x20, 0, 0x29, 3, 0xf0, 1, 0x22, 10, 0x37, 3, 0x80, 2,
+            0x20, 1, 0x42, 4, 0x7c, 0x21, 10,
         ];
         assert_eq!(emit(0xd63f03c0, 0).unwrap(), want);
     }
@@ -1229,20 +1366,21 @@ mod tests {
         // mul x0, x1, x2 (madd x0, x1, x2, xzr)
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x42, 0, 0x20, 0, 0x29, 3, 8, 0x20, 0, 0x29, 3, 16, 0x7e, 0x7c, 0x37, 3, 0,
+            0x42, 0, 0x20, 0, 0x29, 3, 8, 0x22, 10, 0x20, 0, 0x29, 3, 16, 0x22, 11, 0x7e, 0x7c,
+            0x21, 12,
         ];
         assert_eq!(emit(0x9b027c20, 0).unwrap(), want);
         // udiv w0, w1, w2: w2 == 0 ? 0 : w1 / w2
         #[rustfmt::skip]
         let want = [
-            0x20, 0, 0x20, 0, 0x28, 2, 8, 0x21, 6, 0x20, 0, 0x28, 2, 16, 0x22, 7, 0x45,
-            0x04, I32, 0x41, 0, 0x05, 0x20, 6, 0x20, 7, 0x6e, 0x0b, 0xad, 0x37, 3, 0,
+            0x20, 0, 0x29, 3, 8, 0x22, 10, 0xa7, 0x21, 6, 0x20, 0, 0x29, 3, 16, 0x22, 11, 0xa7,
+            0x22, 7, 0x45, 0x04, I32, 0x41, 0, 0x05, 0x20, 6, 0x20, 7, 0x6e, 0x0b, 0xad, 0x21, 12,
         ];
         assert_eq!(emit(0x1ac20820, 0).unwrap(), want);
         // clz x0, x1
         assert_eq!(
             emit(0xdac01020, 0).unwrap(),
-            [0x20, 0, 0x20, 0, 0x29, 3, 8, 0x79, 0x37, 3, 0]
+            [0x20, 0, 0x29, 3, 8, 0x22, 10, 0x79, 0x21, 11]
         );
         assert_eq!(emit(0x5ac00c20, 0), None); // rev w0 with opc 11: UNDEFINED
         assert_eq!(emit(0xd503201f, 0).unwrap(), []); // nop
@@ -1255,15 +1393,17 @@ mod tests {
         let insn = 0xf9400420u32;
         #[rustfmt::skip]
         let mut want = vec![
-            0x20, 0, 0x29, 3, 8, 0x21, 3,           // BASE = x1
+            0x20, 0, 0x29, 3, 8, 0x22, 10, 0x21, 3, // BASE = x1 (loaded into local 10)
             0x20, 3, 0x42, 8, 0x7c, 0x21, 2,        // ADDR = BASE + 8
             0x20, 2, 0x22, 4, 0x42, 0xf8, 0x1f, 0x58, // OFF = ADDR; OFF <= 0x1000 - 8
             0x04, 0x40, 0x20, 4, 0xa7, 0x21, 6,     // if: HOST = OFF
-            0x20, 0, 0x20, 6, 0x29, 0, 0x80, 0x80, 4, 0x37, 3, 0, // x0 = [HOST + base]
+            0x20, 6, 0x29, 0, 0x80, 0x80, 4, 0x21, 11, // x0 (local 11) = [HOST + base]
             0x05, 0x20, 0, 0x41,                    // else: helper(vcpu, insn, pc)
         ];
         sleb(&mut want, insn as i32 as i64);
-        want.extend([0x20, 1, 0x10, 0, 0x04, 0x40, 0x41, 0, 0x0f, 0x0b, 0x0b]);
+        want.extend([0x20, 1, 0x10, 0, 0x04, 0x40, 0x41, 0, 0x0f, 0x0b]);
+        // After the helper, x0 (written) is reloaded; x1 (only read) stays in its local.
+        want.extend([0x20, 0, 0x29, 3, 0, 0x21, 11, 0x0b]);
         assert_eq!(emit(insn, 0).unwrap(), want);
         // Through the TLB at EL1: the tag at the entry, then the addend at + 8.
         let read = tlb_array(1, 0);
