@@ -5,7 +5,7 @@
 // otherwise (Node, a page's main thread). Runs in a worker or in Node.
 // Time is deterministic unless `realtime` is set (the host clock, and idle
 // WFIs sleep on the signal word).
-import { Devices, EV_CONFIG, deviceEntry, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
+import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
 export const ABI = 10;
@@ -154,6 +154,12 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const specs = await Promise.all((o.devices ?? []).map(async (d) => {
     if (d.type !== 'blk' || d.size !== undefined) return d;
     // The capacity: a qcow2 header's virtual size, or the file size.
+    if (d.url.startsWith('file:')) {
+      const f = await fileSource(d.url);
+      const head = f.read(0, 32)!;
+      f.close?.();
+      return { ...d, size: isQcow2(head) ? qcow2Size(head) : f.size };
+    }
     const r = await fetch(d.url, { headers: { Range: 'bytes=0-31' } });
     if (r.status !== 206) throw new Error(`${d.url}: ${r.status}`);
     const head = new Uint8Array(await r.arrayBuffer());
@@ -226,8 +232,11 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /**
      * Runs up to `budget` steps; returns the exit kind and steps taken. DEVICE
      * exits are handled here (the backends take the requests, and in
-     * deterministic mode this waits for them), as core/tests/common does. In
-     * realtime mode an idle WFI sleeps here until its deadline or a signal.
+     * deterministic mode this waits for them), as core/tests/common does,
+     * except where the backends run inline (Node, a page's main thread) and
+     * have work in flight: then it returns `DEVICE`, and the caller awaits
+     * `settle()` before running on. In realtime mode an idle WFI sleeps here
+     * until its deadline or a signal.
      */
     run(budget: number) {
       let steps = 0;
@@ -239,6 +248,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
           // A config-space write waits even in realtime mode: the driver reads
           // the answer next (virtio-input's select/subsel).
           devices.kick(deterministic || (Number(info[2] >> 8n) & EV_CONFIG) !== 0);
+          if (devices.inFlight()) return { kind, steps, value: info[2], x: [...info.subarray(3)] };
           if (steps < budget) continue;
         }
         if (kind === Exit.IDLE && !deterministic && canBlock) {
@@ -251,6 +261,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       }
     },
     drain,
+    /** Resolves once inline backends finished what a `DEVICE` exit from `run` handed them. */
+    settle: () => devices.settle(),
     /** What the guest wrote to its virtio consoles so far (all of it once `flush` resolves). */
     hvc: () => devices.output(),
     flush: () => devices.flush(),
@@ -273,6 +285,10 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
     const r = vm.run(100_000_000);
     steps += r.steps;
     console += vm.drain();
+    if (r.kind === Exit.DEVICE) {
+      await vm.settle();
+      continue;
+    }
     if ((r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL) && steps < maxSteps) continue;
     const ms = performance.now() - t0;
     await vm.flush();
@@ -291,9 +307,18 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
   const out = (_device: number, t: string) => { text += t; };
   const inWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
   if (!inWorker || init.specs.length === 0) {
-    // The blk backend needs a worker (Node has no XHR; a page can't make binary sync XHRs).
+    // blk over HTTP needs a worker (Node has no XHR; a page can't make binary sync XHRs); Node reads `file:` images.
     const d = await Devices.open(init, out);
-    return { kick: (_wait: boolean) => void d.poll(), output: () => text, flush: async () => {}, close: () => d.close() };
+    // Requests complete asynchronously (disk reads return promises), so `run`
+    // hands a DEVICE exit to its caller while they're in flight, and the
+    // caller awaits `settle` before resuming: the same step as in a worker.
+    let pending: Promise<void> | undefined;
+    return {
+      kick: (_wait: boolean) => { pending = d.poll(); },
+      inFlight: () => pending !== undefined,
+      settle: async () => { await pending; pending = undefined; },
+      output: () => text, flush: async () => {}, close: () => d.close(),
+    };
   }
   const worker = new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
   let flushed = () => {};
@@ -310,6 +335,8 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
   await ready; // before anything blocks on it
   const bell = new Int32Array(init.memory.buffer, bellAddr, 2);
   return {
+    inFlight: () => false,
+    settle: async () => {},
     kick(wait: boolean) {
       const n = Atomics.add(bell, 0, 1) + 1;
       Atomics.notify(bell, 0);

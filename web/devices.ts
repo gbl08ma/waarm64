@@ -367,14 +367,12 @@ async function openOverlay(name: string, url: string, size: number): Promise<Ove
   return { data, map };
 }
 
-/**
- * virtio-blk over HTTP range requests: synchronous XHRs (workers only), so the
- * device worker simply blocks on the network. Only qcow2's compressed clusters
- * are asynchronous (DecompressionStream). Read-only, or writable through an
- * overlay on OPFS.
- */
+/** A disk image's bytes: synchronous range reads (`undefined` on a short or failed read). */
+type Source = { size: number; read(off: number, len: number): Uint8Array | undefined; close?(): void };
+
+/** An image over HTTP range requests: synchronous XHRs (workers only), so the device worker simply blocks on the network. */
 // ponytail: one request at a time, no cache (the guest's page cache is the cache); batch or cache if an I/O benchmark says so.
-function blk(ctx: Ctx, url: string, files?: OverlayFiles): Backend {
+function httpSource(url: string): Source {
   const xhr = (method: string, range?: string) => {
     const x = new XMLHttpRequest();
     x.open(method, url, false);
@@ -385,12 +383,37 @@ function blk(ctx: Ctx, url: string, files?: OverlayFiles): Backend {
   };
   const head = xhr('HEAD');
   if (head.status !== 200) throw new Error(`${url}: ${head.status}`);
-  const base = openDisk((off, len) => {
-    if (len === 0) return new Uint8Array(0);
-    const x = xhr('GET', `bytes=${off}-${off + len - 1}`);
-    const b = x.response as ArrayBuffer | null;
-    return x.status === 206 && b?.byteLength === len ? new Uint8Array(b) : undefined;
-  }, Number(head.getResponseHeader('content-length')));
+  return {
+    size: Number(head.getResponseHeader('content-length')),
+    read(off, len) {
+      const x = xhr('GET', `bytes=${off}-${off + len - 1}`);
+      const b = x.response as ArrayBuffer | null;
+      return x.status === 206 && b?.byteLength === len ? new Uint8Array(b) : undefined;
+    },
+  };
+}
+
+/** An image in a local file (`file:` URLs, Node only: its boots and the JIT's). */
+export async function fileSource(url: string): Promise<Source> {
+  const fs = await import('node:fs');
+  const fd = fs.openSync(new URL(url), 'r');
+  return {
+    size: fs.fstatSync(fd).size,
+    read(off, len) {
+      const b = new Uint8Array(len);
+      return fs.readSync(fd, b, 0, len, off) === len ? b : undefined;
+    },
+    close: () => fs.closeSync(fd),
+  };
+}
+
+/**
+ * virtio-blk over a `Source` (HTTP ranges, or a file in Node). Only qcow2's
+ * compressed clusters are asynchronous (DecompressionStream). Read-only, or
+ * writable through an overlay on OPFS.
+ */
+function blk(ctx: Ctx, src: Source, files?: OverlayFiles): Backend {
+  const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size);
   const rw = files && overlay(base, files.data, files.map);
   const disk: Disk = rw ?? base;
   return {
@@ -426,6 +449,7 @@ function blk(ctx: Ctx, url: string, files?: OverlayFiles): Backend {
     },
     reset() {},
     close() {
+      src.close?.();
       files?.data.close();
       files?.map.close();
     },
@@ -449,7 +473,7 @@ export class Devices {
   private backends: Backend[];
   private epochs: number[];
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, signal, specs, deterministic }: DevicesInit, overlays: (OverlayFiles | undefined)[], out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, signal, specs, deterministic }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal] = [memory, shared, signal];
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = {
@@ -460,7 +484,7 @@ export class Devices {
       switch (d.type) {
         case 'console': return console_((t) => out(i, t), ctx);
         case 'rng': return rng(ctx, deterministic);
-        case 'blk': return blk(ctx, d.url, overlays[i]);
+        case 'blk': return blk(ctx, sources[i]!, overlays[i]);
         case 'net': return net(ctx, d);
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
         case 'input': return input(ctx, d);
@@ -472,7 +496,8 @@ export class Devices {
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
   static async open(init: DevicesInit, out: (device: number, text: string) => void) {
     const overlays = await Promise.all(init.specs.map((d) => (d.type === 'blk' && d.overlay ? openOverlay(d.overlay, d.url, d.size ?? 0) : undefined)));
-    return new Devices(init, overlays, out);
+    const sources = await Promise.all(init.specs.map((d) => (d.type !== 'blk' ? undefined : d.url.startsWith('file:') ? fileSource(d.url) : httpSource(d.url))));
+    return new Devices(init, overlays, sources, out);
   }
 
   /** Releases the backends' files (an overlay's handles lock them). */

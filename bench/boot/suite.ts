@@ -55,7 +55,8 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
     const end = console.lastIndexOf('\n') + 1; // whole lines only
     for (const m of console.slice(scanned, end).matchAll(/webpc: ([^\r\n]*)/g)) marks[m[1]] ??= now;
     scanned = Math.max(scanned, end);
-    if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL) continue;
+    if (r.kind === Exit.DEVICE) await vm.settle(); // backends inline (Node)
+    if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) continue;
     const total = performance.now() - t0;
     vm.close();
     if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !/webpc: test (exit 0|ok)/.test(console)) {
