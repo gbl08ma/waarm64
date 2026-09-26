@@ -759,6 +759,100 @@ pub enum Bus {
     Tlb { read: u32 },
 }
 
+/// The end of a block that branched to a register (BR, BLR, RET; step 7):
+/// its target's block key, from the PC through the instruction TLB of the
+/// block's EL (`tlb`: its array, and RAM's host base and guest PA) or with
+/// the MMU off (`regime`: the key's low bits), looked up in the jump cache at
+/// `jc`. If it's there and `left` covers this block's `len` and its length,
+/// tail-calls it through the table (type `ty`), after `check` (the stale-code
+/// checker) if given. Otherwise falls through (to the block's return).
+pub fn indirect(
+    c: &mut Func,
+    regime: u64,
+    tlb: Option<(u32, u64, u64)>,
+    jc: u32,
+    len: u32,
+    ty: u32,
+    check: Option<u32>,
+) {
+    const KEY: u32 = BASE; // i64 scratch
+    c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
+    c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
+    match tlb {
+        Some((arr, base, phys)) => {
+            c.local_get(ADDR).i64_const(8).op(SHR_U + W).i32_wrap_i64();
+            c.i32_const((TLB_ENTRIES as i32 - 1) << 4).op(AND);
+            c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
+            c.local_get(ADDR)
+                .i64_const(0xfff)
+                .op(OR + W)
+                .op(EQ + WC)
+                .op(AND);
+            // PA = host - base + phys, host = addend + VA
+            c.local_get(TLBE)
+                .i64_load(arr + 8)
+                .local_get(ADDR)
+                .i64_add();
+            c.i64_const(phys.wrapping_sub(base) as i64).i64_add();
+        }
+        None => drop(c.local_get(ADDR)),
+    }
+    if regime != 0 {
+        c.i64_const(regime as i64).op(OR + W);
+    }
+    c.local_set(KEY);
+    via_jc(c, None, jc, len, ty, check);
+}
+
+/// The jump-cache tail of [`indirect`], also for a static successor that
+/// wasn't compiled when this block was (`key`: its key; else the key is in
+/// the i64 scratch local). With an i32 condition on the stack, tail-calls the
+/// block the entry holds if the condition holds, its key matches and `left`
+/// covers both blocks; otherwise falls through.
+pub fn via_jc(c: &mut Func, key: Option<u64>, jc: u32, len: u32, ty: u32, check: Option<u32>) {
+    const KEY: u32 = BASE; // i64 scratch
+    const JCE: u32 = HOST; // i32 scratch
+    match key {
+        // The entry's offset, `((key >> 2) & (JC - 1)) * 16`, in one shift and mask.
+        None => {
+            c.local_get(KEY).i32_wrap_i64().i32_const(2).op(SHL);
+            c.i32_const((super::JC as i32 - 1) << 4).op(AND);
+            c.i32_const(jc as i32)
+                .op(ADD)
+                .local_tee(JCE)
+                .i64_load(0)
+                .local_get(KEY);
+        }
+        Some(k) => {
+            let e = jc + (((k >> 2) as u32) & (super::JC as u32 - 1)) * 16;
+            c.i32_const(e as i32)
+                .local_tee(JCE)
+                .i64_load(0)
+                .i64_const(k as i64);
+        }
+    }
+    c.op(EQ + WC).op(AND);
+    // left >= len + its length
+    c.local_get(LEFT)
+        .local_get(JCE)
+        .i32_load(12)
+        .i32_const(len as i32)
+        .op(ADD);
+    c.op(GE_U).op(AND).if_();
+    if let Some(chk) = check {
+        c.local_get(VCPU);
+        match key {
+            Some(k) => c.i64_const(k as i64),
+            None => c.local_get(KEY),
+        };
+        c.call(chk);
+    }
+    c.local_get(VCPU);
+    c.local_get(ACC).i32_const(len as i32).op(ADD);
+    c.local_get(LEFT).i32_const(len as i32).op(SUB);
+    c.local_get(JCE).i32_load(8).return_call_indirect(ty).end();
+}
+
 /// Pushes an i32 that is non-zero iff the instruction at the entry PC + `off`
 /// hits the TLB array at `arr` (the block's EL's instruction TLB) and maps to
 /// `host` (a successor's page, in another guest page than the block: step 7).

@@ -96,8 +96,11 @@ pub struct Block {
 /// A block's static successors, as byte offsets from its entry: the target of
 /// a direct branch, both of a conditional one (taken, then not), or the next
 /// instruction when the block just stops (its cap, the page's end, before an
-/// exception-generating instruction). None after an indirect branch or a
-/// system instruction (a helper that may change the regime).
+/// exception-generating instruction) or ends on a system instruction that
+/// can't change the regime (MRS, barriers, CLREX, YIELD/SEV, DC: when its
+/// helper retires, the interpreter would go on to the next instruction in
+/// the same regime). None after an indirect branch, ERET, MSR, SYS (TLBI, AT),
+/// IC, WFI/WFE.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Next {
     None,
@@ -119,6 +122,8 @@ pub fn next(words: &[u32]) -> Next {
         B_cond | CBZ | CBNZ => Next::Cond(at + ofs(23, 5, 21), at + 4),
         TBZ | TBNZ => Next::Cond(at + ofs(18, 5, 16), at + 4),
         _ if end(op) == End::No => Next::One(at + 4),
+        MRS | DMB | DSB | ISB | SSBB | PSSBB | CLREX | YIELD | SEV | SEVL | DC_IVAC | DC_ISW
+        | DC_CSW | DC_CISW | DC_ZVA | DC_CVAC | DC_CVAU | DC_CIVAC => Next::One(at + 4),
         _ => Next::None,
     }
 }
@@ -148,13 +153,16 @@ pub struct Emitted {
 /// and `left - len` when `left` covers both, so a chain retires exactly what
 /// the dispatcher would have run. With the MMU on only successors in the
 /// block's page are chained (keys are PAs: another page may map elsewhere).
-/// With `check`, each chained entry calls `jit_check` first (the stale-code
-/// checker, as the dispatcher runs it).
+/// A block that ends on BR, BLR or RET looks its target up in the jump cache
+/// at `jc` (0: never) and tail-calls it through the table on a hit
+/// (`emit::indirect`). With `check`, each chained entry calls `jit_check`
+/// first (the stale-code checker, as the dispatcher runs it).
 pub fn module(
     blocks: &[Block],
     mem: &Mem,
     compiled: impl Fn(u64) -> Option<(u32, u32)>,
     check: bool,
+    jc: u32,
 ) -> Emitted {
     let mut m = Module::default();
     let bt = m.ty(&[I32, I32, I32], &[I32]);
@@ -166,13 +174,13 @@ pub fn module(
         m.import_func("env", "jit_check", ct)
     });
     // Each block's successor keys, then their functions: this batch's own, or imports.
-    let succ = |b: &Block, off: i64| Some((b.key & !3).wrapping_add(off as u64) | (b.key & 3));
+    let succ = |b: &Block, off: i64| (b.key & !3).wrapping_add(off as u64) | (b.key & 3);
     let targets: Vec<Vec<u64>> = blocks
         .iter()
         .map(|b| match next(&b.words) {
             Next::None => vec![],
-            Next::One(o) => succ(b, o).into_iter().collect(),
-            Next::Cond(t, n) => [succ(b, t), succ(b, n)].into_iter().flatten().collect(),
+            Next::One(o) => vec![succ(b, o)],
+            Next::Cond(t, n) => vec![succ(b, t), succ(b, n)],
         })
         .collect();
     let mut funcs: HashMap<u64, (u32, u32)> = HashMap::new();
@@ -186,6 +194,9 @@ pub fn module(
         }
     }
     m.import_memory("env", "memory", 0, 65536);
+    if jc != 0 {
+        m.import_table("env", "table", 0);
+    }
     let first = m.next_func();
     for (k, b) in blocks.iter().enumerate() {
         funcs.insert(b.key, (first + k as u32, b.words.len() as u32));
@@ -213,37 +224,46 @@ pub fn module(
         };
         let h = cx.helper;
         let len = b.words.len() as u32;
-        // A compiled successor at `off`: (key, function, length).
-        let offs = match next(&b.words) {
-            Next::One(o) => (o, 0),
-            Next::Cond(t, o) => (t, o),
-            Next::None => (0, 0),
-        };
-        let target = |off: i64| succ(b, off).and_then(|k| funcs.get(&k).map(|&(f, l)| (k, f, l)));
-        let (next, links): (_, Vec<u64>) = match next(&b.words) {
-            Next::None => (None, vec![]),
-            Next::One(o) => (
-                Some((target(o), None)),
-                target(o).into_iter().map(|t| t.0).collect(),
-            ),
-            Next::Cond(t, o) => {
-                let (t, o) = (target(t), target(o));
-                let links = [t, o].into_iter().flatten().map(|t| t.0).collect();
-                (Some((t, Some(o))), links)
+        let succs = next(&b.words);
+        // Links: the compiled successors this block calls directly.
+        let links: Vec<u64> = match succs {
+            Next::None => vec![],
+            Next::One(o) => vec![succ(b, o)],
+            Next::Cond(t, o) => vec![succ(b, t), succ(b, o)],
+        }
+        .into_iter()
+        .filter(|k| funcs.contains_key(k))
+        .collect();
+        // The chaining tail to the successor at `off`: a direct tail call if
+        // it's compiled, else (with a jump cache) through the jump cache, which
+        // has it once it's compiled and entered. With the MMU on, one in
+        // another page only if its VA still maps to its PA (the instruction
+        // TLB of the block's EL).
+        let chain = |c: &mut emit::Func, off: i64| {
+            let k = succ(b, off);
+            let f = funcs.get(&k);
+            if f.is_none() && jc == 0 {
+                return;
             }
-        };
-        // The chaining tail to a compiled successor at `off`; with the MMU on,
-        // one in another page only if its VA still maps to the PA it was
-        // compiled for (the instruction TLB of the block's EL).
-        let chain = |c: &mut emit::Func, off: i64, t: Option<(u64, u32, u32)>| {
-            let Some((k, f, tlen)) = t else { return };
+            let guarded = b.key & KEY_MMU != 0 && (k ^ b.key) >> 12 != 0;
+            let guard = |c: &mut emit::Func| {
+                let exec = emit::tlb_array(b.key & KEY_EL1, 2);
+                let host = (base as usize as u64).wrapping_add((k & !3) - phys);
+                emit::maps_to(c, off, exec, host);
+            };
+            let Some(&(f, tlen)) = f else {
+                if guarded {
+                    guard(c);
+                } else {
+                    c.i32_const(1);
+                }
+                return emit::via_jc(c, Some(k), jc, len, bt, checker);
+            };
             c.local_get(emit::LEFT)
                 .i32_const((len + tlen) as i32)
                 .op(0x4f); // i32.ge_u
-            if b.key & KEY_MMU != 0 && (k ^ b.key) >> 12 != 0 {
-                let exec = emit::tlb_array(b.key & KEY_EL1, 2);
-                let host = (base as usize as u64).wrapping_add((k & !0xfff) - phys);
-                emit::maps_to(c, off, exec, host);
+            if guarded {
+                guard(c);
                 c.op(0x71); // i32.and
             }
             c.if_();
@@ -288,16 +308,28 @@ pub fn module(
             }
             c.flush();
             c.sync_flags();
-            match next {
-                Some((t, None)) => chain(&mut c, offs.0, t),
-                Some((t, Some(o))) => {
+            match succs {
+                Next::One(o) => chain(&mut c, o),
+                Next::Cond(t, o) => {
                     c.local_get(emit::TAKEN).if_();
-                    chain(&mut c, offs.0, t);
+                    chain(&mut c, t);
                     c.else_();
-                    chain(&mut c, offs.1, o);
+                    chain(&mut c, o);
                     c.end();
                 }
-                None => {}
+                Next::None => {
+                    let op = b.words.last().map(|&w| decode(w));
+                    if jc != 0 && matches!(op, Some(Op::BR | Op::BLR | Op::RET)) {
+                        let tlb = (b.key & KEY_MMU != 0).then(|| {
+                            (
+                                emit::tlb_array(b.key & KEY_EL1, 2),
+                                base as usize as u64,
+                                phys,
+                            )
+                        });
+                        emit::indirect(&mut c, b.key & 3, tlb, jc, len, bt, checker);
+                    }
+                }
             }
             c.ret(len);
             c.end();
@@ -339,7 +371,7 @@ mod tests {
 
     /// A module of `blocks`, nothing else compiled.
     fn build(blocks: &[Block]) -> Emitted {
-        module(blocks, &test_mem(), |_| None, false)
+        module(blocks, &test_mem(), |_| None, false, 0)
     }
 
     fn test_mem() -> Mem {
@@ -599,6 +631,7 @@ mod tests {
             &test_mem(),
             |k| (k == 0x4000_020c).then_some((77, 3)),
             false,
+            0,
         );
         assert_eq!(e.links, [vec![0x4000_020c]]);
         assert!(has(&e.bytes, &[1, b't', 2, b'7', b'7', 0, 0])); // import t.77, type 0
@@ -642,10 +675,49 @@ mod tests {
             &test_mem(),
             |k| (k == 0x4000_1204 | KEY_MMU).then_some((9, 1)),
             false,
+            0,
         );
         let mut tag = vec![0x29, 3];
         crate::jit::wasm::uleb(&mut tag, emit::tlb_array(0, 2) as u64);
         assert!(has(&e.bytes, &tag));
         assert!(has(&e.bytes, &[0x12, 2, 0x0b])); // the tail call behind it
+    }
+
+    #[test]
+    fn indirect_branches_look_up_the_jump_cache() {
+        // movz x1, #3; ret with the jump cache at 0x1000: the module imports the
+        // table, and the block ends in return_call_indirect (type 0, table 0).
+        let b = Block {
+            key: 0x4000_0200 | KEY_MMU,
+            va: 0,
+            words: vec![MOVZ, 0xd65f03c0],
+        };
+        let e = module(&[b], &test_mem(), |_| None, false, 0x1000);
+        assert!(has(
+            &e.bytes,
+            &[3, b'e', b'n', b'v', 5, b't', b'a', b'b', b'l', b'e', 1]
+        ));
+        assert!(has(&e.bytes, &[0x13, 0, 0, 0x0b]));
+        // A static successor that isn't compiled: probed in the jump cache at
+        // its own entry, jc + ((key >> 2) & (JC - 1)) * 16.
+        let b = Block {
+            key: 0x4000_0200,
+            va: 0,
+            words: vec![MOVZ, 0x14000002], // b .+8 (0x4000_020c)
+        };
+        let e = module(&[b], &test_mem(), |_| None, false, 0x1000);
+        let mut entry = vec![0x41];
+        let at = 0x1000 + ((0x4000_020c_u64 >> 2) as u32 & (crate::jit::JC as u32 - 1)) * 16;
+        crate::jit::wasm::sleb(&mut entry, at as i32 as i64);
+        assert!(has(&e.bytes, &entry));
+        assert!(has(&e.bytes, &[0x13, 0, 0, 0x0b]));
+        assert_eq!(e.links, [Vec::<u64>::new()]);
+        // Without a jump cache (0), it just returns.
+        let b = Block {
+            key: 0x4000_0200,
+            va: 0,
+            words: vec![MOVZ, 0xd65f03c0],
+        };
+        assert!(!has(&build(&[b]).bytes, &[0x13, 0, 0]));
     }
 }

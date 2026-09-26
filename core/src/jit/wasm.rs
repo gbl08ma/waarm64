@@ -124,6 +124,13 @@ impl Code {
         uleb(&mut self.b, f as u64);
         self
     }
+    /// An indirect tail call of type `ty` through table 0.
+    pub fn return_call_indirect(&mut self, ty: u32) -> &mut Self {
+        self.b.push(0x13);
+        uleb(&mut self.b, ty as u64);
+        self.b.push(0);
+        self
+    }
     /// A tail call (the tail-call proposal, in V8 since 11.2).
     pub fn return_call(&mut self, f: u32) -> &mut Self {
         self.b.push(0x12);

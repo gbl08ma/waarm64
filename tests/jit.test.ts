@@ -109,3 +109,28 @@ test('IC IVAU drops the blocks chained to the rewritten code, in other pages too
   assert.ok(r.dispatches < r.steps, `${r.dispatches} dispatches for ${r.steps} steps: nothing chained`);
   assert.deepEqual([chained(false).x0], [1n]); // without the ic, the old code (as a real core may)
 });
+
+// Chaining keeps a call-and-return loop out of the dispatcher: `bl f` and the
+// loop's conditional branch chain directly, `ret` through the jump cache (a
+// lookup that once read the wrong entries and always missed: M5 step 7).
+test('a call-and-return loop runs chained, without the dispatcher', () => {
+  const { ex, memory } = core(true);
+  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
+  const base = memory.grow(1) * 65536;
+  new Uint32Array(memory.buffer, base + 0x1000, 5).set([
+    0x94000004, // loop: bl f (0x1010)
+    0xf10004a5, // subs x5, x5, #1
+    0x54ffffc1, // b.ne loop
+    0xd4200000, // brk
+    0xd65f03c0, // f: ret
+  ]);
+  const v = e.jit_new(0, 1, 64, 0) as number;
+  const x = new BigUint64Array(memory.buffer, v, 33);
+  [x[5], x[32]] = [10_000n, 0x1000n];
+  const exit = e.vcpu_new() as number;
+  const done = e.jit_run_exit(v, e.mem_new(base, 65536n), 1_000_000n, exit) as bigint;
+  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 11);
+  assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
+  assert.equal(done, 40_000n); // bl, ret, subs, b.ne
+  assert.ok(st[5] < 20n, `${st[5]} dispatches for ${done} steps`);
+});

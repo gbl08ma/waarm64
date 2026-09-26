@@ -132,16 +132,18 @@ struct Info {
     hash: u64,
 }
 
-/// A jump cache entry: the compiled block for a key.
+/// A jump cache entry: the compiled block for a key. Blocks read it too
+/// (indirect branches, step 7: `emit::indirect`), so its layout is fixed.
+#[repr(C)]
 #[derive(Clone, Copy)]
-struct Jc {
+pub struct Jc {
     key: u64,
     idx: u32,
     len: u32,
 }
 
 /// Direct-mapped jump cache in front of the map (as QEMU's `tb_jmp_cache`).
-const JC: usize = 4096;
+pub const JC: usize = 65536;
 const JC_EMPTY: Jc = Jc {
     key: u64::MAX,
     idx: 0,
@@ -188,7 +190,11 @@ impl Cache {
             map: HashMap::default(),
             pages: HashMap::default(),
             linkers: HashMap::default(),
-            jc: Box::new([JC_EMPTY; JC]),
+            jc: vec![JC_EMPTY; JC]
+                .into_boxed_slice()
+                .try_into()
+                .ok()
+                .expect("JC entries"),
             pending: Vec::new(),
             since: 0,
             clock: 0,
@@ -341,7 +347,13 @@ impl Cache {
             inl,
             links,
             counts,
-        } = block::module(&blocks, mem, compiled, self.cfg.check);
+        } = block::module(
+            &blocks,
+            mem,
+            compiled,
+            self.cfg.check,
+            self.jc.as_ptr() as usize as u32,
+        );
         let t = now_ns();
         let Some(idx) = install(&bytes, slot) else {
             self.off = true;
