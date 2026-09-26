@@ -885,6 +885,33 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, jc: u32, len: u32, ty: u32, check:
     c.local_get(JCE).i32_load(8).return_call_indirect(ty).end();
 }
 
+/// The tier-up prologue of a loop head compiled alone (step 8.3): the hot
+/// word at `word` counts its entries down; the entry that takes it from 1 to
+/// 0 calls `hot(vcpu, key, pc)`, which compiles the head's loop region and
+/// then stores `REDIRECT | its table index` in the word; from then on every
+/// entry tail-calls the region (entries through links compiled before it).
+/// 0 stays 0: the region wasn't compiled.
+pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
+    const V: u32 = 6; // i32 scratch
+    c.i32_const(word as i32).i32_load(0).local_tee(V);
+    c.i32_const(0).op(LT_S).if_();
+    c.local_get(VCPU).local_get(ACC).local_get(LEFT);
+    c.local_get(V).i32_const(!REDIRECT as i32).op(AND);
+    c.return_call_indirect(ty).end();
+    c.local_get(V).if_();
+    c.i32_const(word as i32).local_get(V).i32_const(1).op(SUB);
+    c.memarg(0x36, 2, 0); // i32.store
+    c.local_get(V).i32_const(1).op(EQ).if_();
+    c.local_get(VCPU)
+        .i64_const(key as i64)
+        .local_get(ENTRY)
+        .call(hot);
+    c.end().end();
+}
+
+/// A hot word holding a region's table index (below this bit).
+pub const REDIRECT: u32 = 1 << 31;
+
 /// Pushes an i32 that is non-zero iff the instruction at the entry PC + `off`
 /// hits the TLB array at `arr` (the block's EL's instruction TLB) and maps to
 /// `host` (a successor's page, in another guest page than the block: step 7).

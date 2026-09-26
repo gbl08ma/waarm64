@@ -283,3 +283,20 @@ Dispatches per instruction don't move (Buildroot 0.0075 → 0.0072, Alpine 0.006
 **simd128** (off since 8.2, PLAN M9): the interpreter doesn't notice it: 138.1 (±2.2) integer, 19.7 FP, 142.9 EL1 MMU off, 84.2 MMU on with `+simd128`, against 138.5–138.8, 19.6–19.7, 140.5–142.4, 84.7–85.3 without (two runs).
 
 Raw data: `results/m5-step8/chromium-linux-arm64-{step7,step8.2,step8.2-r2,step8.2-simd128}.json`, `../boot/results/m5-step8/`.
+
+### 8.3: tier-up to loop regions
+
+**What runs:** a head whose region is a loop is compiled alone first, with a hot word counting its entries down from 1000 (`jit::Config::region_after`); the entry that reaches 0 calls `jit_hot`, which compiles the loop region at once and points the head at it (its prologue then tail-calls the region through the table). A region's members that are candidate heads stop counting, except inner loops' heads (PLAN §2 "ABI 17"). **Method:** as 8.2; `region_after` picked in Node (Buildroot 640 / 607 / 620 ms and Alpine within noise at 100 / 1000 / 10,000).
+
+| | Step 7 | 8.2 | **8.3** |
+|---|---|---|---|
+| integer guest, EL0 (MIPS) | 1184.5 | 2607.6 | **2672.0** |
+| EL1 MMU off / on (MIPS) | 1105.9 / 1072.4 | 1942.7 / 1736.1 | **1878.8 / 1724.9** |
+| Buildroot, warm (cold) | 655 / 677 ms (685) | 746 / 767 ms (805) | **694 ms** (±6; cold 724) |
+| Alpine, warm (cold) | 17.54 s (17.99) | 18.23 s (17.85) | **17.81 s** (±0.30; cold 17.76) |
+| Buildroot compiled | 12,430 blocks, 5.0 MB | 16,970 blocks in 12,225 regions, 6.8 MB | 12,777 blocks in 12,494 functions, 69 tier-ups, 5.3 MB |
+| Alpine compiled | 56,791 blocks, 23.9 MB | 69,166 in 56,137, 28.5 MB | 59,540 in 57,292, 566 tier-ups, 25.3 MB |
+
+The first version silenced every member that was a candidate head, which left nested loops' inner loops without a region (the integer guest ran at 1637 MIPS: `results/m5-step8/chromium-linux-arm64-step8.3-silenced-inner-heads.json`); `block::Region::inner_free` keeps inner loops' heads counting. **Validation:** the corpus through the JIT (forced: regions at once; stress: tier-up on the second entry, which found that a tier-up must never flush the cache, since JIT code is running: the stale-code checker tripped in kvm-unit-tests `cache`), `tests/jit-diff.test.ts`, a tier-up test in `tests/jit.test.ts`, the Node boots with exact steps. Buildroot is still ~3–6% behind step 7 (694 vs 655–677 ms), Alpine even within noise; the steady-state guests keep regions' gain.
+
+Raw data: `results/m5-step8/chromium-linux-arm64-step8.3*.json`, `../boot/results/m5-step8/chromium-linux-arm64-step8.3-*.json`.

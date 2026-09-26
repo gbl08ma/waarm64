@@ -57,7 +57,7 @@ function smc(ic: boolean, check: number) {
   const words = [...SMC];
   if (!ic) words[7] = 0xd503201f; // nop instead of the ic
   new Uint32Array(memory.buffer, base + 0x1000, words.length).set(words);
-  const v = e.jit_new(0, 1, 16, check) as number;
+  const v = e.jit_new(0, 1, 16, check, 0) as number;
   const x = new BigUint64Array(memory.buffer, v, 33);
   [x[2], x[3], x[32]] = [0xd2800040n, 0x1000n, 0x1000n]; // new word, its address, PC
   const exit = e.vcpu_new() as number;
@@ -94,7 +94,7 @@ function chained(ic: boolean) {
     0x17fffffb, 0, // b 0x2014 (L)
     0xd4200000, // brk
   ]);
-  const v = e.jit_new(0, 1, 64, 0) as number;
+  const v = e.jit_new(0, 1, 64, 0, 0) as number;
   const x = new BigUint64Array(memory.buffer, v, 33);
   [x[2], x[3], x[32]] = [0xd2800040n, 0x1000n, 0x1000n];
   const exit = e.vcpu_new() as number;
@@ -124,7 +124,7 @@ test('a call-and-return loop runs chained, without the dispatcher', () => {
     0xd4200000, // brk
     0xd65f03c0, // f: ret
   ]);
-  const v = e.jit_new(0, 1, 64, 0) as number;
+  const v = e.jit_new(0, 1, 64, 0, 0) as number;
   const x = new BigUint64Array(memory.buffer, v, 33);
   [x[5], x[32]] = [10_000n, 0x1000n];
   const exit = e.vcpu_new() as number;
@@ -132,5 +132,33 @@ test('a call-and-return loop runs chained, without the dispatcher', () => {
   const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 11);
   assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
   assert.equal(done, 40_000n); // bl, ret, subs, b.ne
+  assert.ok(st[5] < 20n, `${st[5]} dispatches for ${done} steps`);
+});
+
+// A loop of two blocks tiers up (M5 step 8.3): its head is compiled alone
+// first, counting its entries; the 50th compiles the loop region and points
+// the head at it, so the rest of the loop runs as a wasm loop in one call.
+test('a hot loop head compiled alone tiers up to its loop region', () => {
+  const { ex, memory } = core(true);
+  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
+  const base = memory.grow(1) * 65536;
+  new Uint32Array(memory.buffer, base + 0x1000, 7).set([
+    0x91000421, // loop: add x1, x1, #1
+    0x14000003, // b 0x1010
+    0xd4200000, 0xd4200000, // brk
+    0xf10004a5, // subs x5, x5, #1
+    0x54ffff61, // b.ne loop
+    0xd4200000, // brk
+  ]);
+  const v = e.jit_new(2, 1, 64, 0, 50) as number;
+  const x = new BigUint64Array(memory.buffer, v, 33);
+  [x[5], x[32]] = [10_000n, 0x1000n];
+  const exit = e.vcpu_new() as number;
+  const done = e.jit_run_exit(v, e.mem_new(base, 65536n), 1_000_000n, exit) as bigint;
+  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 19);
+  assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
+  assert.deepEqual([done, x[1], x[5]], [40_000n, 10_000n, 0n]);
+  assert.equal(st[18], 1n, 'tier-ups');
+  assert.equal(st[16] - st[0], 1n, 'one region of two blocks besides the heads compiled alone (the other head stops counting)');
   assert.ok(st[5] < 20n, `${st[5]} dispatches for ${done} steps`);
 });

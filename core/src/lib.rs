@@ -20,7 +20,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 16;
+pub const ABI_VERSION: u32 = 17;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -130,15 +130,23 @@ fn exit_code(r: Result<(), interp::Exit>) -> [u64; 2] {
 /// offsets of [`vcpu_new`], and the same user-process state) that compiles a
 /// block after `threshold` dispatches, `batch` blocks per module, into a code
 /// cache of `capacity` blocks (`capacity` ≥ `batch` ≥ 1), with the stale-code
-/// checker if `check` ≠ 0 (ABI 11).
+/// checker if `check` ≠ 0 (ABI 11), and a loop head's region after
+/// `region_after` entries of the head compiled alone (0: at once; ABI 17).
 #[unsafe(no_mangle)]
-pub extern "C" fn jit_new(threshold: u32, batch: u32, capacity: u32, check: u32) -> *mut mmu::Vcpu {
+pub extern "C" fn jit_new(
+    threshold: u32,
+    batch: u32,
+    capacity: u32,
+    check: u32,
+    region_after: u32,
+) -> *mut mmu::Vcpu {
     let mut v = mmu::Vcpu::new(cpu::Cpu::default());
     v.jit.cache = Some(Box::new(jit::Cache::new(jit::Config {
         threshold,
         batch,
         capacity,
         check: check != 0,
+        region_after,
     })));
     Box::into_raw(v)
 }

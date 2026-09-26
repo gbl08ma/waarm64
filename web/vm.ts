@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 16;
+export const ABI = 17;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -87,7 +87,9 @@ export const Counter = {
   JIT_REGION_BLOCKS: 87,
   // ABI 16: edges back to a region's head (static).
   JIT_BACK_EDGES: 88,
-  LEN: 89,
+  // ABI 17: loop regions compiled for a hot head compiled alone.
+  JIT_TIER_UPS: 89,
+  LEN: 90,
 } as const;
 
 /**
@@ -244,7 +246,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
           inline: n(Counter.JIT_INLINE), helpers: n(Counter.JIT_HELPERS), inlineSteps: n(Counter.JIT_INLINE_STEPS),
           flagsStored: n(Counter.JIT_FLAGS_STORED), flagsElided: n(Counter.JIT_FLAGS_ELIDED),
           condDirect: n(Counter.JIT_COND_DIRECT), condComputed: n(Counter.JIT_COND_COMPUTED), condMemory: n(Counter.JIT_COND_MEMORY),
-          regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES),
+          regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS),
         },
       };
     },

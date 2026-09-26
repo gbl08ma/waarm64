@@ -138,11 +138,17 @@ pub const REGION: usize = 16;
 /// Without a loop through the head it is the head alone.
 pub struct Region {
     pub blocks: Vec<Block>,
+    /// A loop head compiled alone until it's hot (step 8.3): the address of
+    /// its hot word ([`emit::tier_up`]).
+    pub tier: Option<u32>,
 }
 
 impl From<Block> for Region {
     fn from(b: Block) -> Region {
-        Region { blocks: vec![b] }
+        Region {
+            blocks: vec![b],
+            tier: None,
+        }
     }
 }
 
@@ -218,13 +224,27 @@ pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region
     }
     let mut k = keep.into_iter();
     blocks.retain(|_| k.next().expect("one per block"));
-    Region { blocks }
+    Region { blocks, tier: None }
 }
 
 impl Region {
     /// Whether a member branches back to the head.
     pub fn looped(&self) -> bool {
         self.back_edges() > 0
+    }
+
+    /// The members (not the head) that no member branches back to: none
+    /// heads an inner loop.
+    pub fn inner_free(&self) -> Vec<u64> {
+        let back = |j: usize| {
+            self.blocks[j..]
+                .iter()
+                .any(|b| succs(b.key, &b.words).contains(&self.blocks[j].key))
+        };
+        (1..self.blocks.len())
+            .filter(|&j| !back(j))
+            .map(|j| self.blocks[j].key)
+            .collect()
     }
 
     /// The edges back to the head.
@@ -260,6 +280,8 @@ struct Env<'a> {
     bt: u32,
     checker: Option<u32>,
     jc: u32,
+    /// `jit_hot`, for the tier-up prologues.
+    hot: Option<u32>,
     /// RAM's host base and guest PA.
     base: u64,
     phys: u64,
@@ -308,6 +330,11 @@ pub fn module(
         let ct = m.ty(&[I32, I64], &[]);
         m.import_func("env", "jit_check", ct)
     });
+    let tiers = regions.iter().any(|r| r.tier.is_some());
+    let hot = tiers.then(|| {
+        let t = m.ty(&[I32, I64, I64], &[]);
+        m.import_func("env", "jit_hot", t)
+    });
     // Successors outside their region: this batch's heads, or imports.
     let heads = |k| regions.iter().any(|r| r.blocks[0].key == k);
     let mut funcs: HashMap<u64, (u32, u32)> = HashMap::new();
@@ -325,7 +352,7 @@ pub fn module(
         }
     }
     m.import_memory("env", "memory", 0, 65536);
-    if jc != 0 {
+    if jc != 0 || tiers {
         m.import_table("env", "table", 0);
     }
     let first = m.next_func();
@@ -361,6 +388,7 @@ pub fn module(
             bt,
             checker,
             jc,
+            hot,
             base: base as usize as u64,
             phys,
         };
@@ -429,6 +457,9 @@ fn emit_region(
     let mut into = vec![emit::Regs::default(); n];
     let mut inl = 0;
     c.local_get(0).i64_load(emit::PC).local_set(1);
+    if let (Some(word), Some(hot)) = (r.tier, e.hot) {
+        emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
+    }
     // The head's state: loaded once, before the loop.
     c.conform(entry[0]);
     let looped = r.looped();
@@ -1004,6 +1035,66 @@ mod tests {
         // Nor past the page.
         let (_r, m) = mem_with(0xff8, &[ADD, 0x14000002, ADD, ADD, 0xd65f03c0]);
         assert_eq!(region(&m, 0xff8, 0, &|_| true).blocks.len(), 1);
+    }
+
+    #[test]
+    fn an_inner_loop_head_is_not_inner_free() {
+        // 0x100 outer: movz x6, #50; add x1, x1, #1; b 0x118
+        // 0x10c        subs x5, x5, #1; b.ne 0x100
+        // 0x114        brk
+        // 0x118        subs x6, x6, #1; b.ne 0x104 (inner: add; b 0x118)
+        // 0x120        b 0x10c
+        let words = [
+            0xd2800646, 0x91000421, 0x14000004, 0xf10004a5, 0x54ffff81, 0xd4200000, 0xf10004c6,
+            0x54ffff41, 0x17fffffb,
+        ];
+        let (_r, m) = mem_with(0x100, &words);
+        let r = region(&m, 0x100, 0x100, &|_| true);
+        let keys: Vec<u64> = r.blocks.iter().map(|b| b.key).collect();
+        assert_eq!(keys, [0x100, 0x118, 0x120, 0x10c, 0x104]);
+        // 0x104 branches back to 0x118, which heads the inner loop: it keeps
+        // its own tier-up (the region leaves on that edge).
+        assert_eq!(r.inner_free(), [0x120, 0x10c, 0x104]);
+    }
+
+    #[test]
+    fn a_loop_head_compiled_alone_counts_its_entries() {
+        // A head with a hot word at 0x2000 (step 8.3): the module imports
+        // jit_hot and the table; the function starts by loading the word,
+        // tail-calls the region its low bits name when the top bit is set,
+        // else counts down and calls jit_hot at 1.
+        let r = Region {
+            blocks: vec![Block {
+                key: 0x4000_0200,
+                va: 0,
+                words: vec![MOVZ, 0x14000002],
+            }],
+            tier: Some(0x2000),
+        };
+        let e = module(&[r], &test_mem(), |_| None, false, 0);
+        assert!(has(&e.bytes, b"\x07jit_hot"));
+        assert!(has(
+            &e.bytes,
+            &[3, b'e', b'n', b'v', 5, b't', b'a', b'b', b'l', b'e', 1]
+        ));
+        #[rustfmt::skip]
+        let head = [
+            0x20, 0, 0x29, 3, 0x80, 2, 0x21, 3,     // the entry PC
+            0x41, 0x80, 0xc0, 0, 0x28, 2, 0,        // i32.const 0x2000; i32.load
+        ];
+        assert!(has(&e.bytes, &head));
+        assert!(has(
+            &e.bytes,
+            &[0x41, 0xff, 0xff, 0xff, 0xff, 7, 0x71, 0x13, 0, 0, 0x0b]
+        ));
+        assert!(has(&e.bytes, &[0x41, 1, 0x6b, 0x36, 2, 0])); // word - 1, stored
+        // Without a hot word, none of it.
+        let e = build(Block {
+            key: 0x4000_0200,
+            va: 0,
+            words: vec![MOVZ, 0x14000002],
+        });
+        assert!(!has(&e.bytes, b"jit_hot") && !has(&e.bytes, &[0x28, 2, 0]));
     }
 
     #[test]

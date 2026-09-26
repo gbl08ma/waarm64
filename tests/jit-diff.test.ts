@@ -25,7 +25,7 @@ type Exports = {
   vcpu_new(): number;
   mem_new(base: number, size: bigint): number;
   interp_run_exit(cpu: number, mem: number, n: bigint, exit: number): bigint;
-  jit_new(threshold: number, batch: number, capacity: number, check: number): number;
+  jit_new(threshold: number, batch: number, capacity: number, check: number, regionAfter: number): number;
   jit_run_exit(v: number, mem: number, n: bigint, exit: number): bigint;
   jit_stats(v: number): number;
   jit_flush(v: number): void;
@@ -109,7 +109,7 @@ function setup(code: number) {
   const [ra, rb] = [base, base + RAM + ((16 - (RAM % 16)) % 16)];
   const [ma, mb] = [ex.mem_new(ra, BigInt(RAM)), ex.mem_new(rb, BigInt(RAM))];
   const interp = ex.vcpu_new();
-  const jit = ex.jit_new(0, 1, 16384, 0);
+  const jit = ex.jit_new(0, 1, 16384, 0, 0);
   const [ei, ej] = [ex.vcpu_new(), ex.vcpu_new()]; // exit words
   const [a8, b8] = [new Uint8Array(memory.buffer, ra, RAM), new Uint8Array(memory.buffer, rb, RAM)];
   // Stores only reach the gap and the data area (the addresses registers hold).

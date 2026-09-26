@@ -52,6 +52,9 @@ pub struct Config {
     /// again at every entry, and panic on a mismatch (code changed without an
     /// `IC` invalidating it).
     pub check: bool,
+    /// Entries of a loop head, compiled alone, before its loop region is
+    /// (step 8.3; 0: the region at once).
+    pub region_after: u32,
 }
 
 impl Config {
@@ -60,6 +63,7 @@ impl Config {
         batch: 32,
         capacity: 65536,
         check: false,
+        region_after: REGION_AFTER,
     };
     /// Compile everything on first sight, one block per module, and flush constantly.
     pub const STRESS: Config = Config {
@@ -67,8 +71,12 @@ impl Config {
         batch: 1,
         capacity: 4,
         check: true,
+        region_after: 1,
     };
 }
+
+/// [`Config::DEFAULT`]'s `region_after`.
+pub const REGION_AFTER: u32 = 1000;
 
 /// What the JIT did (`vm::Counters` publishes them).
 #[repr(C)]
@@ -103,6 +111,8 @@ pub struct Stats {
     pub region_blocks: u64,
     /// Edges back to a region's head, compiled as wasm loop branches (ABI 16, static).
     pub back_edges: u64,
+    /// Loop regions compiled for a hot head that was compiled alone (ABI 17).
+    pub tier_ups: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -135,6 +145,8 @@ struct Info {
     queued: bool,
     /// The compiled words' hash, for the stale-code checker.
     hash: u64,
+    /// A loop head compiled alone: its hot word's index + 1 (step 8.3).
+    word: u32,
 }
 
 /// A jump cache entry: the compiled block for a key. Blocks read it too
@@ -174,6 +186,8 @@ pub struct Cache {
     /// Each compiled region's blocks as (PA, length), for the stale-code checker.
     spans: Map<Vec<(u64, u32)>>,
     jc: Box<[Jc; JC]>,
+    /// One hot word per slot, at a fixed address ([`emit::tier_up`]).
+    hot: Box<[u32]>,
     /// (key, VA) of blocks waiting to be compiled.
     pending: Vec<(u64, u64)>,
     /// `clock` when the first pending block was queued.
@@ -203,6 +217,7 @@ impl Cache {
                 .try_into()
                 .ok()
                 .expect("JC entries"),
+            hot: vec![0; cfg.capacity as usize].into_boxed_slice(),
             pending: Vec::new(),
             since: 0,
             clock: 0,
@@ -328,33 +343,89 @@ impl Cache {
         }
     }
 
-    /// Compiles the pending batch into one module and installs it.
+    /// Compiles the pending batch into one module and installs it. A head
+    /// whose region is a loop is compiled alone, with a hot word, until it's
+    /// hot ([`Cache::tier_up`]).
     fn emit(&mut self, mem: &Mem) {
+        let pending = core::mem::take(&mut self.pending);
+        let mut regions = Vec::with_capacity(pending.len());
+        for (key, va) in pending {
+            let mut r = self.region(key, va, mem);
+            if let Some(i) = self.map.get_mut(&key) {
+                (i.queued, i.len) = (false, r.blocks.first().map_or(0, |b| b.words.len() as u32));
+            }
+            if r.blocks.len() > 1 && self.cfg.region_after > 0 {
+                r.blocks.truncate(1);
+                r.tier = Some(0); // its word's address once it has a slot
+            }
+            if !r.blocks.is_empty() {
+                regions.push(r);
+            }
+        }
+        self.install(regions, mem);
+    }
+
+    /// The region headed by `key`: its members are the blocks the dispatcher
+    /// has seen (so they ran at least once); with a threshold of 0 (forced,
+    /// stress), any.
+    fn region(&self, key: u64, va: u64, mem: &Mem) -> block::Region {
+        let (map, all) = (&self.map, self.cfg.threshold == 0);
+        block::region(mem, key, va, &|k| all || map.contains_key(&k))
+    }
+
+    /// A loop head compiled alone got hot (`jit_hot`): compiles its region
+    /// and points the head's hot word at it.
+    fn tier_up(&mut self, key: u64, va: u64, mem: &Mem) {
+        let Some(word) = self.map.get(&key).map(|i| i.word).filter(|&w| w != 0) else {
+            return;
+        };
+        // Never a flush here: JIT code is running (the head's prologue), and
+        // what it goes on to call must stay in the cache. Without room, the
+        // head stays alone until the next flush drops it.
+        let r = self.region(key, va, mem);
+        if r.blocks.len() < 2 || self.next >= self.cfg.capacity {
+            return;
+        }
+        // Members that are loop heads compiled alone stop counting: this
+        // region runs their loop now, unless they head an inner loop (an
+        // edge back to them leaves the region).
+        for m in r.inner_free() {
+            if let Some(w) = self.map.get(&m).map(|i| i.word).filter(|&w| w != 0) {
+                self.hot[w as usize - 1] &= emit::REDIRECT;
+            }
+        }
+        let Some(idx) = self.install(vec![r], mem) else {
+            return;
+        };
+        self.hot[word as usize - 1] = emit::REDIRECT | idx;
+        let j = &mut self.jc[jc_index(key)];
+        if j.key == key {
+            j.idx = idx;
+        }
+        self.stats.tier_ups += 1;
+    }
+
+    /// Compiles `regions` into one module and installs it; the table index
+    /// of its first function.
+    fn install(&mut self, mut regions: Vec<block::Region>, mem: &Mem) -> Option<u32> {
         let (base, phys) = mem.base();
         let ram = (base as usize, phys, mem.size());
         assert!(
             *self.ram.get_or_insert(ram) == ram,
             "a JIT vCPU runs on one RAM"
         );
-        let pending = core::mem::take(&mut self.pending);
-        let mut regions = Vec::with_capacity(pending.len());
-        for (key, va) in pending {
-            // Members: blocks the dispatcher has seen (so they ran at least
-            // once); with a threshold of 0 (forced, stress), any.
-            let (map, all) = (&self.map, self.cfg.threshold == 0);
-            let r = block::region(mem, key, va, &|k| all || map.contains_key(&k));
-            if let Some(i) = self.map.get_mut(&key) {
-                (i.queued, i.len) = (false, r.blocks.first().map_or(0, |b| b.words.len() as u32));
-            }
-            if !r.blocks.is_empty() {
-                regions.push(r);
-            }
-        }
         if regions.is_empty() {
-            return;
+            return None;
         }
         let n = regions.len() as u32;
         let slot = self.alloc(n);
+        for (k, r) in regions.iter_mut().enumerate() {
+            if r.tier.is_some() {
+                let w = slot as usize + k;
+                self.hot[w] = self.cfg.region_after;
+                r.tier = Some(self.hot[w..].as_ptr() as usize as u32);
+            }
+        }
         let map = &self.map;
         let compiled = |k| map.get(&k).filter(|i| i.idx != 0).map(|i| (i.idx, i.len));
         let block::Emitted {
@@ -372,7 +443,7 @@ impl Cache {
         let t = now_ns();
         let Some(idx) = install(&bytes, slot) else {
             self.off = true;
-            return;
+            return None;
         };
         let s = &mut self.stats;
         s.compile_ns += now_ns() - t;
@@ -398,8 +469,13 @@ impl Cache {
                 .iter()
                 .flat_map(|b| b.words.iter().copied())
                 .collect();
+            let word = if r.tier.is_some() {
+                slot + k as u32 + 1
+            } else {
+                0
+            };
             let i = self.info(key, || 0);
-            (i.idx, i.len, i.hash) = (idx + k as u32, len, block::hash(&words));
+            (i.idx, i.len, i.hash, i.word) = (idx + k as u32, len, block::hash(&words), word);
             if self.cfg.check {
                 let spans = r.blocks.iter().map(|b| (b.key & !3, b.words.len() as u32));
                 self.spans.insert(key, spans.collect());
@@ -408,6 +484,7 @@ impl Cache {
                 self.linkers.entry(t).or_default().push(key);
             }
         }
+        Some(idx)
     }
 }
 
@@ -606,6 +683,19 @@ pub unsafe extern "C" fn jit_check(v: *mut Vcpu, key: u64) {
     v.jit.cache.as_deref().expect("a JIT vCPU").check(key, mem);
 }
 
+/// A loop head compiled alone got hot (step 8.3, [`emit::tier_up`]): its
+/// loop region is compiled now, at the head's entry (`pc`: its VA).
+///
+/// # Safety
+/// As for [`jit_exec_flat`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_hot(v: *mut Vcpu, key: u64, pc: u64) {
+    // SAFETY: guaranteed by the caller.
+    let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
+    let cache = v.jit.cache.as_deref_mut().expect("a JIT vCPU");
+    cache.tier_up(key, pc, mem);
+}
+
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "env")]
 unsafe extern "C" {
@@ -673,6 +763,7 @@ mod tests {
             batch: 4,
             capacity: 10,
             check: false,
+            region_after: 0,
         });
         c.map.insert(0x100, Info::default());
         assert_eq!((c.alloc(4), c.alloc(4)), (0, 4));

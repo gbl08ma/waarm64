@@ -21,14 +21,14 @@ type Exports = {
   vcpu_new(): number;
   mem_new(base: number, size: bigint): number;
   interp_run_exit(cpu: number, mem: number, n: bigint, exit: number): bigint;
-  jit_new(threshold: number, batch: number, capacity: number, check: number): number;
+  jit_new(threshold: number, batch: number, capacity: number, check: number, regionAfter: number): number;
   jit_run_exit(v: number, mem: number, n: bigint, exit: number): bigint;
   jit_flush(v: number): void;
   jit_stats(v: number): number;
 };
 
-/** jit_new's threshold, batch, code cache capacity and stale-code check; none: the interpreter. */
-const MODES: Record<string, [number, number, number, number] | undefined> = { interpreter: undefined, 'JIT (forced)': [0, 1, 16384, 0], 'JIT stress': [0, 1, 4, 1] };
+/** jit_new's threshold, batch, code cache capacity, stale-code check and region_after; none: the interpreter. */
+const MODES: Record<string, [number, number, number, number, number] | undefined> = { interpreter: undefined, 'JIT (forced)': [0, 1, 16384, 0, 0], 'JIT stress': [0, 1, 4, 1, 1] };
 
 /** Byte offset of each REGS slot in cpu::Cpu (x0..x30, sp, then nzcv, fpcr, fpsr, v0..v31). */
 function offset(name: string): number {
