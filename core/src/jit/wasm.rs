@@ -201,6 +201,8 @@ pub struct Module {
     nimports: usize,
     nfunc_imports: u32,
     funcs: Vec<u32>,
+    /// Exported functions (the first ones defined).
+    exported: usize,
     code: Vec<u8>,
     names: Vec<u8>,
 }
@@ -247,15 +249,27 @@ impl Module {
         uleb(&mut self.imports, max as u64);
     }
 
-    /// Adds a function of type `ty` with `locals` (count, type) runs and
-    /// `body` (ending in `end`), exported as `f<k>` for the k-th defined
-    /// function and named `fname` in the name section. Returns its index.
     /// The index the next [`Module::func`] gets.
     pub fn next_func(&self) -> u32 {
         self.nfunc_imports + self.funcs.len() as u32
     }
 
+    /// Adds a function of type `ty` with `locals` (count, type) runs and
+    /// `body` (ending in `end`), exported as `f<k>` for the k-th exported
+    /// function and named `fname` in the name section. Returns its index.
     pub fn func(&mut self, ty: u32, locals: &[(u32, u8)], body: &Code, fname: &str) -> u32 {
+        self.exported += 1;
+        self.internal_func(ty, locals, body, fname)
+    }
+
+    /// As [`Module::func`], not exported.
+    pub fn internal_func(
+        &mut self,
+        ty: u32,
+        locals: &[(u32, u8)],
+        body: &Code,
+        fname: &str,
+    ) -> u32 {
         let idx = self.nfunc_imports + self.funcs.len() as u32;
         self.funcs.push(ty);
         let mut f = Vec::with_capacity(body.b.len() + 8);
@@ -288,12 +302,14 @@ impl Module {
         let mut exports = Vec::new();
         for (k, &t) in self.funcs.iter().enumerate() {
             uleb(&mut funcs, t as u64);
-            name(&mut exports, &format!("f{k}"));
-            exports.push(0);
-            uleb(&mut exports, self.nfunc_imports as u64 + k as u64);
+            if k < self.exported {
+                name(&mut exports, &format!("f{k}"));
+                exports.push(0);
+                uleb(&mut exports, self.nfunc_imports as u64 + k as u64);
+            }
         }
         section(&mut out, 3, self.funcs.len(), &funcs);
-        section(&mut out, 7, self.funcs.len(), &exports);
+        section(&mut out, 7, self.exported, &exports);
         section(&mut out, 10, self.funcs.len(), &self.code);
         if !self.funcs.is_empty() {
             // The name section: subsection 1, function names.

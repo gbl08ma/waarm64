@@ -36,6 +36,8 @@ pub struct State {
     pub exit: Option<Exit>,
     /// Instructions the helpers retired (so JIT steps minus these ran inline).
     pub helper_steps: u64,
+    /// The key a block passes to its module's static probe (`emit::probe_static`).
+    pub probe_key: u64,
     pub cache: Option<Box<Cache>>,
 }
 

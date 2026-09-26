@@ -1,6 +1,6 @@
 // Runs a benchmark page in a pinned Chromium via Playwright and writes a
 // results JSON (see bench/README.md for the schema).
-//   node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks]
+//   node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks] [--flags='<more V8 flags>']
 import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -23,10 +23,12 @@ const { values: args } = parseArgs({
     config: { type: 'string', default: 'default' },
     page: { type: 'string', default: 'bench/spike/index.html' },
     out: { type: 'string' },
+    flags: { type: 'string', default: '' },
   },
 });
-const jsFlags = CONFIGS[args.config!];
-if (jsFlags === undefined) throw new Error(`unknown --config ${args.config}; one of ${Object.keys(CONFIGS)}`);
+if (CONFIGS[args.config!] === undefined) throw new Error(`unknown --config ${args.config}; one of ${Object.keys(CONFIGS)}`);
+// --expose-gc: benchmarks may collect before a measurement (bench/boot/suite.ts).
+const jsFlags = ['--expose-gc', CONFIGS[args.config!], args.flags].filter(Boolean).join(' ');
 
 const git = (cmd: string) => { try { return execSync(`git ${cmd}`, { cwd: ROOT, stdio: 'pipe' }).toString().trim(); } catch { return null; } };
 

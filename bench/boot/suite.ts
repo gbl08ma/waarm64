@@ -74,12 +74,23 @@ export async function runAll(o: Options, image = 'Image', jit: 0 | 1 = 0): Promi
 }
 
 /** Cold and warm boots of `img`: ms to the `first` marker and to power-off. */
+/**
+ * A full GC before each timed boot (bench/run.ts runs Chromium with
+ * --expose-gc): V8 reuses the compiled code of a wasm module whose bytes match
+ * one still alive, and a deterministic boot generates the same JIT modules
+ * (and loads the same core) every time, so without it a boot is fast or slow
+ * (Buildroot under the JIT 710 vs 920 ms) by whether the previous one's
+ * modules were collected yet (M5 step 7). A first boot compiles everything.
+ */
+const fresh = () => (globalThis as { gc?: () => void }).gc?.();
+
 async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> }, first: string, params: Record<string, unknown>, n = { cold: 5, warmup: 3, warm: 10 }): Promise<Sample[]> {
   if (o.quick) n = { cold: 2, warmup: 1, warm: 3 };
   const cold = { init: [] as number[], total: [] as number[] };
   const warm = { init: [] as number[], total: [] as number[] };
   let stats;
   for (let i = 0; i < n.cold; i++) {
+    fresh();
     const t = performance.now();
     const module = await WebAssembly.compile(img.wasm);
     const r = await boot(module, img);
@@ -90,6 +101,7 @@ async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> 
   const module = await WebAssembly.compile(img.wasm);
   for (let i = 0; i < n.warmup; i++) await boot(module, img);
   for (let i = 0; i < n.warm; i++) {
+    fresh();
     const r = await boot(module, img);
     warm.init.push(r.marks[first]);
     warm.total.push(r.total);

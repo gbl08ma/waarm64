@@ -148,7 +148,11 @@ impl Func {
     /// Renumbers the function's locals to the ones it uses (i64s, then
     /// i32s) and returns their declarations, for `Module::func`.
     pub fn locals(&mut self) -> Vec<(u32, u8)> {
-        self.c.compact_locals(&[VCPU, ACC, LEFT], |i| {
+        self.locals_after(&[VCPU, ACC, LEFT])
+    }
+
+    fn locals_after(&mut self, params: &[u32]) -> Vec<(u32, u8)> {
+        self.c.compact_locals(params, |i| {
             if (6..=9).contains(&i) || (13..=16).contains(&i) || i == TAKEN {
                 I32
             } else {
@@ -802,6 +806,61 @@ pub fn indirect(
     }
     c.local_set(KEY);
     via_jc(c, None, jc, len, ty, check);
+}
+
+/// The `Vcpu` offset of `State::probe_key`.
+fn probe_key() -> u32 {
+    (core::mem::offset_of!(Vcpu, jit) + core::mem::offset_of!(super::State, probe_key)) as u32
+}
+
+/// Tail-calls function `f` of the block type with `acc + len` and `left -
+/// len`; for the static probe, with `key` in `State::probe_key` (a probe of
+/// the blocks' own type: a tail call to another signature slowed the blocks
+/// that contain one by 12% under TurboFan).
+pub fn tail(c: &mut Func, len: u32, key: Option<u64>, f: u32) {
+    if let Some(k) = key {
+        c.local_get(VCPU).i64_const(k as i64).i64_store(probe_key());
+    }
+    c.local_get(VCPU);
+    c.local_get(ACC).i32_const(len as i32).op(ADD);
+    c.local_get(LEFT).i32_const(len as i32).op(SUB);
+    c.return_call(f);
+}
+
+/// A module's static probe, `probe(vcpu, acc, left, key) -> acc + retired`:
+/// the block at `key` from the jump cache, tail-called if it's there and fits
+/// `left`, else `acc` (blocks tail-call it, with their own steps already in
+/// `acc`, for a successor that wasn't compiled when they were). Kept out of
+/// the blocks: an inline `return_call_indirect` cost the integer guest 12%
+/// under TurboFan. Returns the body and its locals.
+pub fn probe_static(jc: u32, ty: u32, check: Option<u32>) -> (Func, Vec<(u32, u8)>) {
+    let mut c = Func::default();
+    c.i32_const(1)
+        .local_get(VCPU)
+        .i64_load(probe_key())
+        .local_set(BASE);
+    via_jc(&mut c, None, jc, 0, ty, check);
+    c.ret(0);
+    c.end();
+    let l = c.locals();
+    (c, l)
+}
+
+/// A module's probe for the indirect branches of blocks of one regime (as
+/// [`indirect`], out of the blocks as [`probe_static`]).
+pub fn probe_indirect(
+    regime: u64,
+    tlb: Option<(u32, u64, u64)>,
+    jc: u32,
+    ty: u32,
+    check: Option<u32>,
+) -> (Func, Vec<(u32, u8)>) {
+    let mut c = Func::default();
+    indirect(&mut c, regime, tlb, jc, 0, ty, check);
+    c.ret(0);
+    c.end();
+    let l = c.locals();
+    (c, l)
 }
 
 /// The jump-cache tail of [`indirect`], also for a static successor that
