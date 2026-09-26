@@ -276,11 +276,11 @@ export function inputConfig(kind: InputSpec['kind'], select: number, subsel: num
 const INPUT_QUEUE = 1024; // events held while the guest has posted no event buffer
 
 /**
- * virtio-input: events from `port` (or `inject`) fill the guest's event
- * buffers, 8 bytes each (type u16, code u16, value u32), the oldest dropped
- * past INPUT_QUEUE; status events from the guest go to `port` (and `status`).
+ * virtio-input: events from `port` fill the guest's event buffers, 8 bytes
+ * each (type u16, code u16, value s32), the oldest dropped past INPUT_QUEUE;
+ * status events from the guest go to `port`.
  */
-function input(ctx: Ctx, d: InputSpec, status: (e: number[]) => void): Backend & { inject(events: number[][]): void } {
+function input(ctx: Ctx, d: InputSpec): Backend {
   const bufs: Request[] = [];
   const events: number[][] = [];
   const deliver = () => {
@@ -302,7 +302,6 @@ function input(ctx: Ctx, d: InputSpec, status: (e: number[]) => void): Backend &
   };
   if (d.port) d.port.onmessage = (e: MessageEvent) => inject(e.data);
   return {
-    inject,
     request(r) {
       if (r.queue === 0) {
         bufs.push(r);
@@ -311,9 +310,7 @@ function input(ctx: Ctx, d: InputSpec, status: (e: number[]) => void): Backend &
       }
       const b = new DataView(gather(ctx.ram(), r.read, 8).slice().buffer);
       if (b.byteLength === 8) {
-        const e = [b.getUint16(0, true), b.getUint16(2, true), b.getInt32(4, true)];
-        d.port?.postMessage(e);
-        status(e);
+        d.port?.postMessage([b.getUint16(0, true), b.getUint16(2, true), b.getInt32(4, true)]);
       }
       return 0;
     },
@@ -466,7 +463,7 @@ export class Devices {
         case 'blk': return blk(ctx, d.url, overlays[i]);
         case 'net': return net(ctx, d);
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
-        case 'input': return input(ctx, d, () => {});
+        case 'input': return input(ctx, d);
       }
     });
     this.epochs = specs.map(() => 0);

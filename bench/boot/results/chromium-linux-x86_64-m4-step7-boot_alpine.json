@@ -1,0 +1,163 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-26T00:51:47.949Z",
+ "commit": "8349652a7343",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "x64",
+  "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+  "cores": 16,
+  "memGiB": 47
+ },
+ "browser": {
+  "version": "152.0.7977.75",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/152.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "alpine_script_cold",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 3009151562,
+    "counters": {
+     "steps": 3009151562,
+     "irqs": 46574,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114610,
+      "0x20": 7290,
+      "0x24": 41445,
+      "0x25": 1866
+     },
+     "tlbMisses": 3601696,
+     "tlbWalks": 3551095,
+     "tlbFlushes": 41665
+    }
+   },
+   "samples": [
+    56884.435000002384,
+    56958.36499994993,
+    56937.90000003576
+   ],
+   "median": 56937.90000003576,
+   "iqr": 36.964999973773956,
+   "n": 3
+  },
+  {
+   "name": "alpine_total_cold",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 3009151562,
+    "counters": {
+     "steps": 3009151562,
+     "irqs": 46574,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114610,
+      "0x20": 7290,
+      "0x24": 41445,
+      "0x25": 1866
+     },
+     "tlbMisses": 3601696,
+     "tlbWalks": 3551095,
+     "tlbFlushes": 41665
+    }
+   },
+   "samples": [
+    67596.60000002384,
+    67599.20499998331,
+    67628.625
+   ],
+   "median": 67599.20499998331,
+   "iqr": 16.01249998807907,
+   "n": 3
+  },
+  {
+   "name": "alpine_script",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 3009151562,
+    "counters": {
+     "steps": 3009151562,
+     "irqs": 46574,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114610,
+      "0x20": 7290,
+      "0x24": 41445,
+      "0x25": 1866
+     },
+     "tlbMisses": 3601696,
+     "tlbWalks": 3551095,
+     "tlbFlushes": 41665
+    }
+   },
+   "samples": [
+    56998.02500003576,
+    57377.51999998093,
+    56813.85000002384,
+    56981.89499998093,
+    56822.860000014305
+   ],
+   "median": 56981.89499998093,
+   "iqr": 175.16500002145767,
+   "n": 5
+  },
+  {
+   "name": "alpine_total",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 3009151562,
+    "counters": {
+     "steps": 3009151562,
+     "irqs": 46574,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114610,
+      "0x20": 7290,
+      "0x24": 41445,
+      "0x25": 1866
+     },
+     "tlbMisses": 3601696,
+     "tlbWalks": 3551095,
+     "tlbFlushes": 41665
+    }
+   },
+   "samples": [
+    67802.36500000954,
+    68290.75999999046,
+    67524.47000002861,
+    67673.02500003576,
+    67529.78500002623
+   ],
+   "median": 67673.02500003576,
+   "iqr": 272.5799999833107,
+   "n": 5
+  }
+ ]
+}

@@ -1,0 +1,49 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-26T00:44:54.569Z",
+ "commit": "1287f3e0c677",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M4",
+  "cores": 10,
+  "memGiB": 24
+ },
+ "browser": {
+  "version": "153.0.8010.12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "blk_dd_read",
+   "unit": "MiB/s",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-dd.sh",
+    "bytes": 33554432,
+    "bs": "1M",
+    "realtime": true,
+    "backend": "sync XHR, one request at a time"
+   },
+   "samples": [
+    84.64041046756027,
+    84.66616397840885,
+    84.44720071999713,
+    84.49067956658944,
+    84.7603533789805,
+    85.22197656094372,
+    85.21289905499326,
+    85.20382348263651,
+    84.72669024411374,
+    85.76559199551146
+   ],
+   "median": 84.74352181154711,
+   "iqr": 0.5637813166316619,
+   "n": 10
+  }
+ ]
+}

@@ -1,0 +1,137 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-26T00:45:33.768Z",
+ "commit": "1287f3e0c677",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M4",
+  "cores": 10,
+  "memGiB": 24
+ },
+ "browser": {
+  "version": "153.0.8010.12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "fio_randread_bw",
+   "unit": "KiB/s",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-fio.sh",
+    "realtime": true,
+    "job": "psync, O_DIRECT, 3 s"
+   },
+   "samples": [
+    7118,
+    7082,
+    7113,
+    7105,
+    7150
+   ],
+   "median": 7113,
+   "iqr": 13,
+   "n": 5
+  },
+  {
+   "name": "fio_randread_iops",
+   "unit": "IOPS",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-fio.sh",
+    "realtime": true,
+    "job": "psync, O_DIRECT, 3 s"
+   },
+   "samples": [
+    1779,
+    1770,
+    1778,
+    1776,
+    1787
+   ],
+   "median": 1778,
+   "iqr": 3,
+   "n": 5
+  },
+  {
+   "name": "fio_randread_lat",
+   "unit": "us",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-fio.sh",
+    "realtime": true,
+    "job": "psync, O_DIRECT, 3 s"
+   },
+   "samples": [
+    521.100822,
+    524.088813,
+    521.775472,
+    521.806271,
+    518.540915
+   ],
+   "median": 521.775472,
+   "iqr": 0.7054490000000442,
+   "n": 5
+  },
+  {
+   "name": "fio_read_bw",
+   "unit": "KiB/s",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-fio.sh",
+    "realtime": true,
+    "job": "psync, O_DIRECT, 3 s"
+   },
+   "samples": [
+    326547,
+    331103,
+    330983,
+    329959,
+    328682
+   ],
+   "median": 329959,
+   "iqr": 2301,
+   "n": 5
+  },
+  {
+   "name": "fio_read_iops",
+   "unit": "IOPS",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-fio.sh",
+    "realtime": true,
+    "job": "psync, O_DIRECT, 3 s"
+   },
+   "samples": [
+    318,
+    323,
+    323,
+    322,
+    320
+   ],
+   "median": 322,
+   "iqr": 3,
+   "n": 5
+  },
+  {
+   "name": "fio_read_lat",
+   "unit": "us",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-fio.sh",
+    "realtime": true,
+    "job": "psync, O_DIRECT, 3 s"
+   },
+   "samples": [
+    3093.98624,
+    3050.45291,
+    3051.144115,
+    3061.602962,
+    3073.252272
+   ],
+   "median": 3061.602962,
+   "iqr": 22.10815700000012,
+   "n": 5
+  }
+ ]
+}

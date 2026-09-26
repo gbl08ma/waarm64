@@ -27,6 +27,7 @@ image_test() {
 }
 image_test 'boot test' linux boot
 image_test kvm-unit-tests kvm-unit-tests kvm_unit_tests
+image_test 'LTP and kselftests' ltp ltp
 for d in alpine debian; do
   if [[ ",$WEBPC_DISTROS," == *",$d,"* ]]; then image_test "$d boot" $d distros $d; else step "$d boot: SKIPPED (not in WEBPC_DISTROS)"; fi
 done

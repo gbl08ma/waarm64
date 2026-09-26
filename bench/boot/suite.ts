@@ -5,12 +5,18 @@
 // Cold: a freshly compiled module per boot (V8 starts on Liftoff code).
 // Warm: one module, reused after warm-up boots.
 // `--only boot_defconfig`: the same with the arm64 defconfig kernel (Image-defconfig).
-// `--only dd`: realtime mode, /bench-dd.sh reads all of /dev/vda; throughput
-// timed by the host between its markers, one sample per boot.
+// `--only boot_alpine`: Alpine (target/images/alpine) as its boot test runs it:
+// 1 GiB, the test devices and a framebuffer; to its local.d script and to power-off.
+// I/O, realtime mode, a fresh boot per sample, timed by the host between the
+// guest script's "webpc: … start/end" markers unless fio times itself:
+// `--only dd`: /bench-dd.sh reads all of /dev/vda (sync-XHR block backend);
+// `--only fio`: /bench-fio.sh, fio random 4 KiB and sequential 1 MiB O_DIRECT reads;
+// `--only p9`: /bench-9p.sh, 9p file operations on the in-memory tree;
+// `--only net`: /bench-net.sh, ping-pong with the loopback adapter.
 import type { Options, Sample } from '../spike/benchmarks.ts';
-import { bootVm, Exit, GUEST_CMDLINE as CMDLINE, guestDevices, PSCI_SYSTEM_OFF } from '../../web/vm.ts';
+import { bootVm, DISTROS, Exit, GUEST_CMDLINE as CMDLINE, guestDevices, PSCI_SYSTEM_OFF, testDevices } from '../../web/vm.ts';
 
-const CHUNK = 1_000_000; // steps per vm_run, so the /init marker is timed to ~a chunk
+const CHUNK = 1_000_000; // steps per vm_run, so console markers are timed to ~a chunk
 
 async function get(rel: string): Promise<Uint8Array<ArrayBuffer>> {
   const r = await fetch(new URL(rel, import.meta.url));
@@ -18,58 +24,75 @@ async function get(rel: string): Promise<Uint8Array<ArrayBuffer>> {
   return new Uint8Array(await r.arrayBuffer());
 }
 
-export async function images(image = 'Image') {
+type Img = { kernel: Uint8Array; initrd?: Uint8Array; disk: string; cmdline: string; ramSize: number; test?: boolean };
+
+export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<ArrayBuffer> }> {
   const [wasm, kernel] = await Promise.all([
     get('../../target/wasm32-unknown-unknown/release/webpc_core.wasm'),
     get(`../../target/images/linux/${image}`),
   ]);
-  return { wasm, kernel, disk: new URL('../../target/images/linux/rootfs.ext4', import.meta.url).href };
+  return { wasm, kernel, disk: new URL('../../target/images/linux/rootfs.ext4', import.meta.url).href, cmdline: CMDLINE, ramSize: 256 << 20 };
 }
 
-/** One boot to power-off: ms to "webpc: init" and to the end, and the counters. */
-export async function boot(module: WebAssembly.Module, img: { kernel: Uint8Array; disk: string }, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean } = {}) {
-  const vm = await bootVm(module, { ramSize: 256 << 20, kernel: img.kernel, cmdline: o.cmdline ?? CMDLINE, devices: guestDevices(img.disk), realtime: o.realtime });
+/**
+ * One boot to power-off: ms to each "webpc: …" console line (`marks`, keyed
+ * by the text after "webpc: ") and to the end, and the counters. `test`: the
+ * device tests' devices and a 640×480 framebuffer (web/vm.ts `testDevices`).
+ */
+export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean } = {}) {
+  const devices = img.test ? testDevices(img.disk) : guestDevices(img.disk);
+  const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
+  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer });
   await onVm?.(vm);
   let console = '';
+  let scanned = 0;
   const marks: Record<string, number> = {};
   const t0 = performance.now();
   for (;;) {
     const r = vm.run(CHUNK);
     console += vm.drain();
-    for (const m of ['webpc: init', 'webpc: dd start', 'webpc: dd end']) if (!(m in marks) && console.includes(m)) marks[m] = performance.now() - t0;
+    const now = performance.now() - t0;
+    const end = console.lastIndexOf('\n') + 1; // whole lines only
+    for (const m of console.slice(scanned, end).matchAll(/webpc: ([^\r\n]*)/g)) marks[m[1]] ??= now;
+    scanned = Math.max(scanned, end);
     if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL) continue;
     const total = performance.now() - t0;
     vm.close();
-    if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !console.includes('webpc: test exit 0')) {
+    if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !/webpc: test (exit 0|ok)/.test(console)) {
       throw new Error(`boot failed: exit ${r.kind} at pc 0x${vm.pc().toString(16)}\n${console}`);
     }
-    return { init: marks['webpc: init'], total, marks, console, stats: vm.stats() };
+    return { init: marks['init'], total, marks, console, stats: vm.stats() };
   }
 }
 
 export async function runAll(o: Options, image = 'Image'): Promise<Sample[]> {
-  const img = await images(image);
+  return bootTimes(o, await images(image), 'init', { kernel: image, cmdline: CMDLINE, ramMiB: 256 });
+}
+
+/** Cold and warm boots of `img`: ms to the `first` marker and to power-off. */
+async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> }, first: string, params: Record<string, unknown>, n = { cold: 5, warmup: 3, warm: 10 }): Promise<Sample[]> {
+  if (o.quick) n = { cold: 2, warmup: 1, warm: 3 };
   const cold = { init: [] as number[], total: [] as number[] };
   const warm = { init: [] as number[], total: [] as number[] };
   let stats;
-  for (let i = 0; i < (o.quick ? 2 : 5); i++) {
+  for (let i = 0; i < n.cold; i++) {
     const t = performance.now();
     const module = await WebAssembly.compile(img.wasm);
     const r = await boot(module, img);
     // Cold includes compiling the core: it's part of a first boot.
-    cold.init.push(r.init + (performance.now() - t - r.total));
+    cold.init.push(r.marks[first] + (performance.now() - t - r.total));
     cold.total.push(performance.now() - t);
   }
   const module = await WebAssembly.compile(img.wasm);
-  for (let i = 0; i < 3; i++) await boot(module, img);
-  for (let i = 0; i < (o.quick ? 3 : 10); i++) {
+  for (let i = 0; i < n.warmup; i++) await boot(module, img);
+  for (let i = 0; i < n.warm; i++) {
     const r = await boot(module, img);
-    warm.init.push(r.init);
+    warm.init.push(r.marks[first]);
     warm.total.push(r.total);
     stats = r.stats;
   }
   o.log?.(`warm total: ${warm.total.map((x) => x.toFixed(0)).join(' ')} ms; counters ${JSON.stringify(stats)}`);
-  const params = { kernel: image, cmdline: CMDLINE, ramMiB: 256, steps: stats!.steps, counters: stats };
+  params = { ...params, first, steps: stats!.steps, counters: stats };
   return [
     { name: 'boot_init_cold', unit: 'ms', params, samples: cold.init },
     { name: 'boot_total_cold', unit: 'ms', params, samples: cold.total },
@@ -87,7 +110,7 @@ async function dd(o: Options): Promise<Sample[]> {
   const mibs: number[] = [];
   for (let i = 0; i < (o.quick ? 3 : 10); i++) {
     const r = await boot(module, img, undefined, { cmdline, realtime: true });
-    const ms = r.marks['webpc: dd end'] - r.marks['webpc: dd start'];
+    const ms = r.marks['dd end'] - r.marks['dd start'];
     if (!(ms > 0)) throw new Error(`no dd markers:\n${r.console}`);
     mibs.push(size / 2 ** 20 / (ms / 1000));
     o.log?.(`dd: ${ms.toFixed(0)} ms; guest: ${JSON.stringify(r.console.split('webpc: dd start')[1]?.split('webpc: dd end')[0].trim())}`);
@@ -95,4 +118,78 @@ async function dd(o: Options): Promise<Sample[]> {
   return [{ name: 'blk_dd_read', unit: 'MiB/s', params: { cmdline, bytes: size, bs: '1M', realtime: true, backend: 'sync XHR, one request at a time' }, samples: mibs }];
 }
 
-export const suite = { boot: runAll, boot_defconfig: (o: Options) => runAll(o, 'Image-defconfig'), dd };
+/** Alpine's boot test (core/tests/distros.rs): time to its local.d script and to power-off. */
+async function bootAlpine(o: Options): Promise<Sample[]> {
+  const a = DISTROS.alpine;
+  const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
+  const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${a.disk}`, import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, test: true };
+  const s = await bootTimes(o, img, 'alpine 3.24.2 6.18.53-0-virt', { distro: 'alpine', cmdline: a.cmdline, ramMiB: 1024, devices: 'test' }, { cold: 3, warmup: 1, warm: 5 });
+  return s.map((x) => ({ ...x, name: x.name.replace('boot_init', 'alpine_script').replace('boot_total', 'alpine_total') }));
+}
+
+/** Realtime boots of the Buildroot guest with the test devices running `script`, `n` of them. */
+async function scriptBoots(o: Options, script: string, n: number) {
+  const img = { ...(await images()), test: true };
+  const module = await WebAssembly.compile(img.wasm);
+  const cmdline = `${CMDLINE} -- ${script}`;
+  const runs = [];
+  for (let i = 0; i < (o.quick ? Math.min(n, 2) : n); i++) runs.push(await boot(module, img, undefined, { cmdline, realtime: true }));
+  return { runs, params: { cmdline, realtime: true } };
+}
+
+/** ms between the markers "<what> start" and "<what> end". */
+function between(r: { marks: Record<string, number>; console: string }, what: string) {
+  const ms = r.marks[`${what} end`] - r.marks[`${what} start`];
+  if (!(ms > 0)) throw new Error(`no ${what} markers:\n${r.console}`);
+  return ms;
+}
+
+/** fio's own numbers ("BENCH <name> <value> <unit>" lines). */
+async function fio(o: Options): Promise<Sample[]> {
+  const { runs, params } = await scriptBoots(o, '/bench-fio.sh', 5);
+  const out = new Map<string, Sample>();
+  for (const r of runs) {
+    for (const [, name, v, unit] of r.console.matchAll(/BENCH (\S+) (\S+) (\S+)/g)) {
+      if (!out.has(name)) out.set(name, { name, unit, params: { ...params, job: 'psync, O_DIRECT, 3 s' }, samples: [] });
+      out.get(name)!.samples.push(Number(v));
+    }
+  }
+  o.log?.(`fio: ${runs[0].console.match(/BENCH[^]*/)?.[0]}`);
+  return [...out.values()];
+}
+
+/** 9p: 16 MiB written and read, 200 files created, listed with stat, removed. */
+async function p9(o: Options): Promise<Sample[]> {
+  const { runs, params } = await scriptBoots(o, '/bench-9p.sh', 10);
+  const per = (f: (r: (typeof runs)[0]) => number) => runs.map(f);
+  o.log?.(`9p ms: ${JSON.stringify(Object.fromEntries(['write', 'read', 'create', 'stat', 'unlink'].map((w) => [w, between(runs[0], `9p ${w}`).toFixed(0)])))}`);
+  return [
+    { name: 'p9_write', unit: 'MiB/s', params: { ...params, bytes: 16 << 20, bs: '1M' }, samples: per((r) => 16 / (between(r, '9p write') / 1000)) },
+    { name: 'p9_read', unit: 'MiB/s', params: { ...params, bytes: 16 << 20, bs: '1M' }, samples: per((r) => 16 / (between(r, '9p read') / 1000)) },
+    { name: 'p9_create', unit: 'files/s', params: { ...params, files: 200 }, samples: per((r) => 200 / (between(r, '9p create') / 1000)) },
+    { name: 'p9_ls_l', unit: 'ms', params: { ...params, files: 200 }, samples: per((r) => between(r, '9p stat')) },
+    { name: 'p9_unlink', unit: 'files/s', params: { ...params, files: 200 }, samples: per((r) => 200 / (between(r, '9p unlink') / 1000)) },
+  ];
+}
+
+/** virtio-net ping-pong with the loopback adapter: full-size and small frames. */
+async function net(o: Options): Promise<Sample[]> {
+  const { runs, params } = await scriptBoots(o, '/bench-net.sh', 10);
+  const rtt = (r: (typeof runs)[0], what: string) => {
+    const s = r.console.split(`webpc: net ${what} start`)[1];
+    const m = s?.match(/round-trip min\/avg\/max = [\d.]+\/([\d.]+)\//);
+    if (!m) throw new Error(`no ping summary:\n${r.console}`);
+    return Number(m[1]);
+  };
+  o.log?.(`net: ${runs[0].console.match(/webpc: net big start[^]*/)?.[0]}`);
+  const p = { ...params, pings: 1000, adapter: 'loopback (device worker)' };
+  return [
+    { name: 'net_big_pps', unit: 'round trips/s', params: { ...p, frame: 1514 }, samples: runs.map((r) => 1000 / (between(r, 'net big') / 1000)) },
+    { name: 'net_big_mibs', unit: 'MiB/s each way', params: { ...p, frame: 1514 }, samples: runs.map((r) => (1000 * 1514) / 2 ** 20 / (between(r, 'net big') / 1000)) },
+    { name: 'net_big_rtt', unit: 'ms', params: { ...p, frame: 1514, source: "ping's average" }, samples: runs.map((r) => rtt(r, 'big')) },
+    { name: 'net_small_pps', unit: 'round trips/s', params: { ...p, frame: 98 }, samples: runs.map((r) => 1000 / (between(r, 'net small') / 1000)) },
+    { name: 'net_small_rtt', unit: 'ms', params: { ...p, frame: 98, source: "ping's average" }, samples: runs.map((r) => rtt(r, 'small')) },
+  ];
+}
+
+export const suite = { boot: runAll, boot_defconfig: (o: Options) => runAll(o, 'Image-defconfig'), boot_alpine: bootAlpine, dd, fio, p9, net };

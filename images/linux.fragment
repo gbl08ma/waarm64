@@ -52,3 +52,5 @@ CONFIG_VIRTIO_INPUT=y
 CONFIG_FB=y
 CONFIG_FB_DEVICE=y
 CONFIG_FB_SIMPLE=y
+# M4 step 7: SysV IPC, which fio needs (shared memory for its job state).
+CONFIG_SYSVIPC=y

@@ -1,0 +1,145 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-26T00:46:03.215Z",
+ "commit": "1287f3e0c677",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "",
+ "quick": false,
+ "host": {
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M4",
+  "cores": 10,
+  "memGiB": 24
+ },
+ "browser": {
+  "version": "153.0.8010.12",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "p9_write",
+   "unit": "MiB/s",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-9p.sh",
+    "realtime": true,
+    "bytes": 16777216,
+    "bs": "1M"
+   },
+   "samples": [
+    21.257232429343098,
+    21.32466130928172,
+    21.17592561154289,
+    21.24749345383597,
+    21.314434535795705,
+    21.360389821675227,
+    21.051108148244094,
+    21.383941998782895,
+    21.204972567138793,
+    21.19486024371268
+   ],
+   "median": 21.25236294158953,
+   "iqr": 0.12471629134100937,
+   "n": 10
+  },
+  {
+   "name": "p9_read",
+   "unit": "MiB/s",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-9p.sh",
+    "realtime": true,
+    "bytes": 16777216,
+    "bs": "1M"
+   },
+   "samples": [
+    25.145964471639232,
+    25.249337211738315,
+    24.961971999501632,
+    25.144778920127933,
+    25.30784623617923,
+    25.298242565763736,
+    24.888971851389943,
+    25.30784623617923,
+    25.077583775552988,
+    25.001953266422195
+   ],
+   "median": 25.145371695883583,
+   "iqr": 0.26515533355248877,
+   "n": 10
+  },
+  {
+   "name": "p9_create",
+   "unit": "files/s",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-9p.sh",
+    "realtime": true,
+    "files": 200
+   },
+   "samples": [
+    683.6555058122382,
+    689.7503102968965,
+    682.1631394479039,
+    689.952565761104,
+    689.5600607719784,
+    689.3223964018559,
+    680.0986147401802,
+    688.9424728508255,
+    684.8376935561035,
+    686.0592755662923
+   ],
+   "median": 687.5008742085589,
+   "iqr": 5.549591931243185,
+   "n": 10
+  },
+  {
+   "name": "p9_ls_l",
+   "unit": "ms",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-9p.sh",
+    "realtime": true,
+    "files": 200
+   },
+   "samples": [
+    222.32999992370605,
+    222.66499996185303,
+    224.2699999809265,
+    206.38499975204468,
+    222.1449999809265,
+    221.4550004005432,
+    224.47500038146973,
+    220.74000024795532,
+    223.1100001335144,
+    223.66499996185303
+   ],
+   "median": 222.49749994277954,
+   "iqr": 1.8987497091293335,
+   "n": 10
+  },
+  {
+   "name": "p9_unlink",
+   "unit": "files/s",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-9p.sh",
+    "realtime": true,
+    "files": 200
+   },
+   "samples": [
+    498.21266214582175,
+    498.16302337621494,
+    493.3703361085415,
+    497.6052749701213,
+    497.75388521321923,
+    497.7043389974306,
+    491.3099553981697,
+    499.71266519368544,
+    495.2947006976349,
+    492.2047078918229
+   ],
+   "median": 497.654806983776,
+   "iqr": 4.209311579651171,
+   "n": 10
+  }
+ ]
+}

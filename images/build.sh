@@ -13,6 +13,10 @@
 #   with the kernel (Image) and initrd (initrd.img) taken out of its /boot.
 # kvm-unit-tests: the arm64 tests (*.flat) and their unittests.cfg, built with
 #   Debian's gcc-aarch64-linux-gnu.
+# ltp: the linux image's root filesystem plus a subset of LTP (Buildroot's
+#   package, pruned to images/ltp/tests) and the arm64 kernel selftests (abi,
+#   signal, tags) built from the kernel tree with Buildroot's toolchain, as
+#   rootfs.ext4; it boots linux/Image-defconfig and runs /ltp.sh.
 # Outputs go to target/images/<name>/, downloads to target/images/dl/. Output
 # hashes are compared with images/SHA256SUMS (a mismatch warns: reproducibility
 # is best-effort).
@@ -35,26 +39,37 @@ export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(linux kvm-unit-tests alpine debian)
+NAMES=(linux kvm-unit-tests alpine debian ltp)
 
-build_linux() {
-  local dst=$out/linux br=$out/dl/buildroot-$BUILDROOT_TAG bro=$out/build/buildroot
-  rm -rf "$bro" "$out/build/linux" "$out/build/linux-defconfig" "$dst"
-  mkdir -p "$out/dl" "$dst"
-
-  # Buildroot, pinned by tag and checked against the commit.
+# Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
+buildroot() {
+  local br=$out/dl/buildroot-$BUILDROOT_TAG
+  mkdir -p "$out/dl"
   [ -d "$br" ] || git clone -q --depth 1 --branch "$BUILDROOT_TAG" https://gitlab.com/buildroot.org/buildroot.git "$br"
   [ "$(git -C "$br" rev-parse HEAD)" = "$BUILDROOT_COMMIT" ] || { echo "buildroot: not $BUILDROOT_COMMIT" >&2; exit 1; }
   export WEBPC_IMAGES=$root/images
-  make -s -C "$br" O="$root/$bro" BR2_DL_DIR="$root/$out/dl" BR2_DEFCONFIG="$root/images/buildroot.defconfig" defconfig
-  make -s -C "$br" O="$root/$bro" BR2_DL_DIR="$root/$out/dl" -j"$(nproc)"
+  make -s -C "$br" O="$root/$1" BR2_DL_DIR="$root/$out/dl" BR2_DEFCONFIG="$root/$2" defconfig
+  make -s -C "$br" O="$root/$1" BR2_DL_DIR="$root/$out/dl" -j"$(nproc)"
+}
+
+# The kernel source tree, $out/build/linux-$LINUX.
+linux_src() {
+  local tar=$out/dl/linux-$LINUX.tar.xz
+  [ -f "$tar" ] || wget -q -O "$tar" "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$LINUX.tar.xz"
+  echo "$LINUX_SHA256  $tar" | sha256sum -c --quiet
+  [ -d "$out/build/linux-$LINUX" ] || tar -xf "$tar" -C "$out/build"
+}
+
+build_linux() {
+  local dst=$out/linux bro=$out/build/buildroot
+  rm -rf "$bro" "$out/build/linux" "$out/build/linux-defconfig" "$dst"
+  mkdir -p "$dst"
+  buildroot "$bro" images/buildroot.defconfig
   cp "$bro/images/rootfs.ext2" "$dst/rootfs.ext4"
 
   # Linux: allnoconfig + the fragment, every fragment line checked.
-  local tar=$out/dl/linux-$LINUX.tar.xz src=$out/build/linux-$LINUX obj=$out/build/linux
-  [ -f "$tar" ] || wget -q -O "$tar" "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-$LINUX.tar.xz"
-  echo "$LINUX_SHA256  $tar" | sha256sum -c --quiet
-  [ -d "$src" ] || tar -xf "$tar" -C "$out/build"
+  linux_src
+  local src=$out/build/linux-$LINUX obj=$out/build/linux
   local kmake=(make -s -C "$src" O="$root/$obj" ARCH=arm64 CROSS_COMPILE="$root/$bro/host/bin/aarch64-linux-"
     KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc)
   # base: allnoconfig, or alldefconfig over arm64's defconfig (what `make defconfig` gives).
@@ -78,6 +93,24 @@ build_linux() {
     cp "$obj/System.map" "$dst/System.map$sfx"
     cp "$obj/.config" "$dst/config$sfx"
   done
+}
+
+build_ltp() {
+  local dst=$out/ltp bro=$out/build/buildroot-ltp src=$out/build/linux-$LINUX obj=$out/build/linux-headers
+  rm -rf "$bro" "$obj" "$dst"
+  mkdir -p "$bro" "$obj" "$dst"
+  cat images/buildroot.defconfig images/ltp/buildroot.fragment > "$bro/webpc_defconfig"
+  buildroot "$bro" "$bro/webpc_defconfig"
+  # The arm64 selftests, with the kernel's UAPI headers, into the target tree;
+  # then Buildroot again to remake the root filesystem with them.
+  linux_src
+  make -s -C "$src" O="$root/$obj" ARCH=arm64 headers
+  local cc=$root/$bro/host/bin/aarch64-linux-
+  make -s -C "$src/tools/testing/selftests" O="$root/$obj/kselftest" ARCH=arm64 CROSS_COMPILE="$cc" \
+    TARGETS=arm64 ARM64_SUBTARGETS="abi signal tags" KHDR_INCLUDES="-isystem $root/$obj/usr/include" \
+    INSTALL_PATH="$root/$bro/target/usr/lib/kselftests" install
+  make -s -C "$out/dl/buildroot-$BUILDROOT_TAG" O="$root/$bro" BR2_DL_DIR="$root/$out/dl"
+  cp "$bro/images/rootfs.ext2" "$dst/rootfs.ext4"
 }
 
 # binfmt_misc: aarch64 ELF executables run under qemu-user (F: opened now, so it works in the chroot).
@@ -159,7 +192,8 @@ inputs() {
   local files=(images/Containerfile)
   [ "$1" = linux ] && files+=(images/buildroot.defconfig images/linux.fragment $(find images/overlay -type f | sort))
   [ "$1" = alpine ] && files+=(images/alpine/webpc.start)
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "^${1^^}" images/build.sh; declare -f "build_$1"; } |
+  [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "^${1^^}" images/build.sh; declare -f "build_$1"; [[ $1 == linux || $1 == ltp ]] && declare -f buildroot linux_src; } |
     sha256sum | cut -c1-16
 }
 
@@ -169,6 +203,7 @@ outputs() {
     alpine) echo alpine/Image alpine/initramfs-virt alpine/rootfs.ext4 ;;
     debian) echo debian/Image debian/initrd.img debian/disk.qcow2 ;;
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
+    ltp) echo ltp/rootfs.ext4 ;;
   esac
 }
 
