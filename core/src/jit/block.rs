@@ -549,6 +549,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
         c.base = (b.key & !3).wrapping_sub(head) as i64;
         c.regs = entry[i];
         c.fp_ok = false;
+        c.fpa_ok = false;
         c.enter_flags(match fin[i] {
             In::Lazy(k, sf) => Some((k, sf)),
             _ => None,

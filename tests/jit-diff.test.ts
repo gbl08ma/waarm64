@@ -69,6 +69,10 @@ const CLASSES: Record<string, [number, number]> = {
   'AdvSIMD across lanes': [0x9f3e0c00, 0x0e300800],
   'AdvSIMD table lookup': [0xbfe08c00, 0x0e000000],
   'FP and general register moves, conversions': [0x7f20fc00, 0x1e200000],
+  // Scalar FP (M6 loop 5): special values in the V registers, FPCR and FPSR.IXC random.
+  'FP data processing, 1 source': [0xff207c00, 0x1e204000],
+  'FP data processing, 2 sources': [0xff200c00, 0x1e200800],
+  'FP data processing, 3 sources': [0xff000000, 0x1f000000],
 };
 /** Load/store classes: registers are mostly addresses around the data area. */
 const MEMORY: Record<string, [number, number]> = {
@@ -100,6 +104,17 @@ function value(mem: boolean, data: number) {
   if (mem && rand32() % 4 !== 0) return BigInt(data - 64 + (rand32() % (DATA_SIZE + 128))); // in RAM, or just past either end
   const r = rand32() % 4;
   return r === 0 ? rand64() : r === 1 ? rand64() & 0xffff_ffffn : EDGES[rand32() % EDGES.length];
+}
+
+/** A 32- or 64-bit FP value, special half of the time: zeros, infinities,
+ * quiet and signalling NaNs, denormals, the extreme normals, one. */
+function fpValue(d: boolean): bigint {
+  const r = rand64();
+  if (rand32() % 2 === 0) return d ? r : r & 0xffff_ffffn;
+  const [sign, e, f] = d ? [1n << 63n, 0x7ffn << 52n, (1n << 52n) - 1n] : [1n << 31n, 0xffn << 23n, (1n << 23n) - 1n];
+  const s = rand32() % 2 === 0 ? sign : 0n;
+  const one = d ? 0x3ffn << 52n : 0x7fn << 23n;
+  return s | [0n, e, e | (f & r) | (f + 1n) >> 1n, e | ((f >> 1n) & r | 1n), f & r | 1n, (e - (1n << (d ? 52n : 23n))) | f, 1n << (d ? 52n : 23n), one, one | (r & f)][rand32() % 9];
 }
 
 /** Two thirds of the words get a random bit window cleared or set: zero and all-ones immediates, XZR/SP. */
@@ -204,8 +219,15 @@ for (const [name, [mask, bits], mem] of [
       // V0–V31 (offset 304), random; FPSR (824) clear or QC only (it's
       // sticky: a helper's saturation earlier would hide a missing QC).
       const va = new BigUint64Array(a.buffer, a.byteOffset + 304, 64);
-      for (let r = 0; r < 64; r++) va[r] = rand32() % 8 === 0 ? EDGES[rand32() % EDGES.length] : rand64();
-      new BigUint64Array(a.buffer, a.byteOffset + 824, 1)[0] = rand32() % 4 === 0 ? 1n << 27n : 0n;
+      for (let r = 0; r < 64; r++) {
+        const k = rand32() % 4;
+        va[r] = k === 0 ? EDGES[rand32() % EDGES.length] : k === 1 ? fpValue(true) : k === 2 ? fpValue(false) | fpValue(false) << 32n : rand64();
+      }
+      // FPCR (816): the default half the time, else RMode, FZ and DN random;
+      // FPSR (824): IXC mostly set (the FP fast paths need it), QC sometimes.
+      const fp = new BigUint64Array(a.buffer, a.byteOffset + 816, 2);
+      fp[0] = rand32() % 2 === 0 ? 0n : BigInt(rand32() & 0xf) << 22n;
+      fp[1] = (rand32() % 4 === 0 ? 0n : 16n) | (rand32() % 4 === 0 ? 1n << 27n : 0n);
       // The JIT's vCPU starts from exactly the interpreter's state.
       new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
       const what = run(1n, mem);
@@ -279,6 +301,54 @@ test('JIT vs interpreter: system registers and barriers', () => {
   }
   console.log(`system registers and barriers: ${WORDS} words, ${counts()}`);
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${WORDS} words differ`);
+});
+
+// FP edge cases (M6 loop 5): operands the random classes rarely produce, at
+// the fast paths' limits, each under several FPCR/FPSR states.
+const f32bits = (x: number) => { const d = new DataView(new ArrayBuffer(4)); d.setFloat32(0, x, true); return BigInt(d.getUint32(0, true)); };
+const f64bits = (x: number) => { const d = new DataView(new ArrayBuffer(8)); d.setFloat64(0, x, true); return d.getBigUint64(0, true); };
+const FP_EDGES: [string, number, bigint[]][] = [
+  // Exact product just below the smallest normal, rounding up to it: tiny (Underflow).
+  ['fmul s0, s1, s2', 0x1e220820, [0n, 0x3f7fffffn, 0x00800000n]],
+  ['fmul d0, d1, d2', 0x1e620820, [0n, 0x3fefffffffffffffn, 0x0010000000000000n]],
+  ['fdiv s0, s1, s2', 0x1e221820, [0n, 0x00ffffffn, 0x40000000n]],
+  // 1 + 2^-23 + 2^-24 - 2^-60: t = RN64 lands on the singles' midpoint, ties-to-even would pick 1 + 2^-22.
+  ['fmadd s0, s1, s2, s3', 0x1f020c20, [0n, f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18)), f32bits(1 + 2 ** -23)]],
+  ['fmsub s0, s1, s2, s3', 0x1f028c20, [0n, f32bits(-(1 + 2 ** -18)), f32bits(2 ** -24 * (1 - 2 ** -18)), f32bits(1 + 2 ** -23)]],
+  ['fcvtzs w0, s1 (2^31)', 0x1e380020, [0n, 0x4f000000n]],
+  ['fcvtzs w0, s1 (-2^31)', 0x1e380020, [0n, 0xcf000000n]],
+  ['fcvtzs w0, d1 (-2^31 - 0.5)', 0x1e780020, [0n, f64bits(-2147483648.5)]],
+  ['fcvtzs w0, d1 (-2^31 - 1)', 0x1e780020, [0n, f64bits(-2147483649)]],
+  ['fcvtzs w0, d1 (2^31 - 0.1)', 0x1e780020, [0n, f64bits(2147483647.9)]],
+  ['fcvtzs x0, s1 (2^63)', 0x9e380020, [0n, 0x5f000000n]],
+  ['fcvtzu w0, s1 (-0.5)', 0x1e390020, [0n, 0xbf000000n]],
+  ['fcvtzu w0, s1 (2^32)', 0x1e390020, [0n, 0x4f800000n]],
+];
+test('JIT vs interpreter: FP edge cases', () => {
+  const { ex, jit, ca32, cb32, cpus, run } = setup(8 * FP_EDGES.length);
+  const failures: string[] = [];
+  FP_EDGES.forEach(([name, w], k) => {
+    ca32.set([w, BRK], 2 * k);
+    cb32.set([w, BRK], 2 * k);
+  });
+  FP_EDGES.forEach(([name, , vs], k) => {
+    // FPCR default, FZ, DN, round toward zero; FPSR.IXC set and clear.
+    for (const fpcr of [0n, 1n << 24n, 1n << 25n, 3n << 22n]) {
+      for (const fpsr of [16n, 0n]) {
+        const [a, b] = cpus();
+        a.fill(0n);
+        a[32] = BigInt(8 * k);
+        const all = new BigUint64Array(a.buffer, a.byteOffset, CPU_BYTES / 8);
+        vs.forEach((v, r) => { all[38 + 2 * r] = v; all[39 + 2 * r] = 0n; });
+        [all[102], all[103]] = [fpcr, fpsr];
+        new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
+        const what = run(1n, false);
+        if (what) failures.push(`${name} (FPCR ${fpcr.toString(16)}, FPSR ${fpsr}): ${what} differs`);
+      }
+    }
+  });
+  ex.jit_flush(jit);
+  assert.deepEqual(failures, []);
 });
 
 // Sequences (step 6). Words that read or write NZCV outside the ALU: MRS

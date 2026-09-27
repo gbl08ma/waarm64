@@ -102,6 +102,16 @@ impl Code {
         self.b.push(lane);
         self
     }
+    pub fn f32_const(&mut self, v: f32) -> &mut Self {
+        self.b.push(0x43);
+        self.b.extend_from_slice(&v.to_le_bytes());
+        self
+    }
+    pub fn f64_const(&mut self, v: f64) -> &mut Self {
+        self.b.push(0x44);
+        self.b.extend_from_slice(&v.to_le_bytes());
+        self
+    }
     /// v128.const.
     pub fn v128_const(&mut self, v: u128) -> &mut Self {
         self.simd(0x0c);

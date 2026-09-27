@@ -19,6 +19,7 @@
 //! helper call, on a load/store's failure return and at the block's end. A
 //! setter whose flags the next setter replaces first emits no flag code.
 
+mod float;
 mod simd;
 
 use core::mem::offset_of;
@@ -49,6 +50,8 @@ pub const LEFT: u32 = 127;
 pub const TAKEN: u32 = 125;
 /// A v128 scratch local (AdvSIMD reductions, M6 loop 4).
 pub const VTMP: u32 = 124;
+/// The block's FP guard (i32; `float::fpa_guard`, M6 loop 5).
+pub const FPOK: u32 = 123;
 
 /// Offsets in the `Cpu`.
 pub const PC: u32 = 256;
@@ -166,6 +169,9 @@ pub struct Func {
     /// The block checked already that SIMD&FP instructions may run
     /// ([`fp_guard`]); false at each block's start.
     pub fp_ok: bool,
+    /// The block computed its FP guard already (`float::fpa_guard`); false at
+    /// each block's start.
+    pub fpa_ok: bool,
 }
 
 impl Deref for Func {
@@ -186,7 +192,7 @@ impl Func {
     /// i32s) and returns their declarations, for `Module::func`.
     pub fn locals(&mut self) -> Vec<(u32, u8)> {
         self.c.compact_locals(&[VCPU, ACC, LEFT], |i| {
-            if (6..=9).contains(&i) || (13..=16).contains(&i) || i == TAKEN {
+            if (6..=9).contains(&i) || (13..=16).contains(&i) || i == TAKEN || i == FPOK {
                 I32
             } else if i == VTMP {
                 V128
@@ -837,11 +843,13 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         // AdvSIMD and SIMD&FP moves (M6 loop 4), after the block's FP check;
         // nothing emitted for the rest.
         _ => {
-            let (mark, flags, touched, fp_ok) = (c.c.mark(), c.flags, c.touched, c.fp_ok);
+            let snap = (c.c.mark(), c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs);
             fp_guard(c, cx, i, k);
-            if !simd::inline(c, i, op) {
+            if !simd::inline(c, i, op) && !float::inline(c, cx, i, op, k) {
+                let (mark, flags, touched, fp_ok, fpa_ok, regs) = snap;
                 c.c.rewind(mark);
-                (c.flags, c.touched, c.fp_ok) = (flags, touched, fp_ok);
+                (c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs) =
+                    (flags, touched, fp_ok, fpa_ok, regs);
                 return false;
             }
         }
@@ -2223,6 +2231,30 @@ mod tests {
         // mul v0.16b (no i8x16.mul) and pmul: helper calls, nothing emitted.
         assert_eq!(emit(0x4e229c20, 0), None);
         assert_eq!(emit(0x6e229c20, 0), None);
+    }
+
+    #[test]
+    fn scalar_fp() {
+        // fadd s0, s1, s2: the block's guard (FPCR.RMode, FPSR.IXC) into FPOK,
+        // f32.add, then FPOK && normal operands && a fast result, or the helper.
+        let b = emit(0x1e222820, 0).unwrap();
+        assert!(has(&b, &[0x21, FPOK as u8])); // local.set FPOK
+        assert!(has(&b, &[0x92])); // f32.add
+        assert!(has(&b, &[0x20, FPOK as u8])); // local.get FPOK
+        assert!(has(&b, &[0x10, 0])); // the helper, on the other arm
+        // fmadd d0: a helper call; fmadd s0: through f64 (mul, add, demote).
+        assert_eq!(emit(0x1f420c20, 0), None);
+        let b = emit(0x1f020c20, 0).unwrap();
+        assert!(has(&b, &[0xa2]) && has(&b, &[0xa0]) && has(&b, &[0xb6]));
+        // fneg d0, d1: a bit flip, no guard.
+        let b = emit(0x1e614020, 0).unwrap();
+        assert!(!has(&b, &[0x21, FPOK as u8]));
+        assert!(has(
+            &b,
+            &[
+                0x42, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x7f, 0x85
+            ]
+        ));
     }
 
     #[test]
