@@ -477,11 +477,11 @@ Raw data: `results/m6-loop4/`, `../boot/results/m6-loop4/`.
 
 | Chromium (small guests: eight placements) | Loop 4.2 | 5 | **6** (`55defe0`) |
 |---|---|---|---|
-| FP guest (MIPS) | 28.7 | 31.1 (±0.1) | 139.2 (±0.5); **6.1: 152.9** (±0.5), 7.8× M5's 19.6 |
+| FP guest (MIPS) | 28.7 | 31.1 (±0.3) | 139.2 (±0.8); **6.1: 152.9** (±0.8), 7.8× M5's 19.6 |
 | FP guest: steps retired inline | 54.7% (loop 2) | 78.2% | 90.8%; 6.1: **93.7%** |
-| CoreMark (iterations/s) | 7934 | – | 7899 (±34) |
+| CoreMark (iterations/s) | 7934 | – | 7899 (±53) |
 | integer, EL1 MMU off / on | 3687, 2155 / 1897 | – | 3751, 2169 / 1895 |
-| Buildroot to power-off | 687 ms | – | 689 ms (±6) |
+| Buildroot to power-off | 687 ms | – | 689 ms (±13) |
 
 Loop 5 alone moved the FP guest little: its hot loop is the auto-vectorized single-precision matrix multiply, whose `FMLA` by element (19.1M calls per window) is loop 6's. The FP target (≥ 5× M5, ≥ 98 MIPS) is met. **Helpers left** per window: `FMADD` double 6.35M (a helper by design), `FMLA` vector 2.17M and by element 1.36M (the 2D forms of the n-body code), all f64 fused multiply-adds; loop 6's `SCVTF` 4.78M was the scalar form of 6.1.
 
@@ -490,3 +490,25 @@ Loop 5 alone moved the FP guest little: its hot loop is the auto-vectorized sing
 **Validation:** unit tests for the scalar and vector shapes; differential classes for FP data processing with one, two and three sources, FP three-same, by element, two-register miscellaneous and conversions, seeded with zeros, infinities, NaNs, denormals and extreme normals, with random FPCR (RMode, FZ, DN) and FPSR.IXC; directed "FP edge cases" (a product rounding up into the smallest binade, f32 FMAs whose f64 sum lands on a midpoint in every lane, the FCVTZS/FCVTZU range limits) under four FPCR states with IXC set and clear. Planted bugs caught, loop 5: no IXC test (233 of 4096 words), no RMode test (215), an operand unchecked (17), the smallest binade allowed, no midpoint check, FCVTZS's bound inclusive (the last three by the directed cases only); loop 6: no midpoint check, lanes 2–3 of Q=1 unchecked (34), no result check (21), FCVTN's result unchecked (13). Lockstep at 300M steps per case after loop 6: clean in all eight (JIT and JIT-stress; the integer and FP/NEON guests in user mode, EL1 MMU off and on). **Harness fix (6.1):** the sequence and region classes copied only X, PC and NZCV into the JIT's vCPU, so a run skipped because it rewrote its code could leave V different for every later run; the new class shifted the seed onto such a run (1 skipped, then 271 of 1024 sequences "differing" in V3). They now start from a full `Cpu` copy, as the single-word classes have since loop 4.
 
 Raw data: `results/m6-loop5/`, `results/m6-loop6/`, `../boot/results/m6-loop6/` (the recheck runs in `recheck/`).
+
+## M6 loop 11: branch hints, so TurboFan spills on the slow paths
+
+**Why** (`perf` with `--perf-prof` in Node, CoreMark): nearly all of CoreMark's time is TurboFan code of our regions, and the hot loops spent it on stack spills at the loop head and on bounds checks, not on the guest's work. V8's wasm code has no callee-saved registers, so every value live across a call is spilled, and TurboFan spills at the definition when *any* path calls: here the slow paths of loads and stores (a TLB miss, MMIO, a misaligned access) and the helper-call exits, which almost never run. TurboFan moves spills into *deferred* blocks when it knows a branch is unlikely, and wasm can say so: the branch-hinting custom section (`metadata.code.branch_hint`, on by default in V8 14.6 and Chromium 153). A micro-benchmark (a loop with two cold calls) ran 12% faster with the two `if`s hinted.
+
+**What runs:** `wasm::Code::hint` records an `if`'s offset and whether it's likely; `Module` writes the section before the code section (offsets from the function body's start, its locals included; rewinding code drops its hints). Hinted likely: the load/store fast path, the scalar and vector FP fast paths, SP_EL0's SPSel check, jump-cache hits and the `left` checks of region edges and chains; unlikely: a helper that didn't retire (the block returns), the FPEN check's trap, division by zero and INT_MIN / −1. Also (measured separately, neutral): a conditional branch with one side in the region defers its PC store to the paths that leave, as when both sides are members, so a loop's conditional back-edge no longer stores the PC every iteration.
+
+| Chromium (small guests: eight placements), same session | base (`2a54962`) | deferred PC only | hints only | **both** |
+|---|---|---|---|---|
+| integer guest (MIPS) | 3683 (±15) | 3393 | 3906 | **4020** (±28), +9.1% |
+| EL1 MMU off / on | 2129 / 1886 | 2091 / 1899 | 3784 / 2965 | **3887 / 3028**, +83% / +61% |
+| CoreMark (iterations/s) | 7753 (±83) | 7615 | 7788 | **8285** (±162), +6.9% |
+| FP guest (MIPS) | 152.6 | 150.0 | 151.8 | 152.7 |
+| interpreter (MIPS; untouched: the host's state) | 141.6 | 133.3 | 130.8 | 141.2 |
+| Buildroot to power-off (JIT) | 729 ms | – | – | 733 ms |
+| Alpine to power-off (JIT), two runs each, alternated | 15.80, 15.83 s | – | – | 15.76, 14.92 s |
+
+The base and "both" runs saw the same host (interpreter 141.6 vs 141.2 MIPS); the two single-change runs came during slower host states (interpreter −6 to −8%), so their columns only show that the hints carry the gain and the deferred PC store adds nothing measurable. The EL1 guests gain most: their loops have more slow paths (TLB lookups with the MMU on, the MMU-off RAM check) whose calls spilled the hot path. Alpine and Buildroot don't move beyond the host's noise: most of Alpine's JIT time is Liftoff code (loop 4's profile), which hints don't change. Steps unchanged (Alpine 3,009,151,562); code +5% (25.7 → 27.0 MB, the sections), compile +3%.
+
+**Validation:** unit tests `wasm::branch_hints` (the section's bytes, a rewound hint dropped) and `two_instruction_block_bytes` (a hinted helper exit at its offset); the differential test, the corpus through the JIT and 20M-step lockstep; exact steps in every boot (CI). Hints don't change semantics (V8 treats a wrong hint as a slow path, not a wrong one), so no planted bugs apply.
+
+Raw data: `results/m6-loop11/`, `../boot/results/m6-loop11/`.

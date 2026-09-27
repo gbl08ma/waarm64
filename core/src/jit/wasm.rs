@@ -54,17 +54,29 @@ pub struct Code {
     /// Where each local index operand is in `b` (one byte: indices < 128),
     /// for [`Code::compact_locals`].
     locals: Vec<usize>,
+    /// Branch hints (M6): where an `if` or `br_if` is in `b`, and whether
+    /// it's likely taken; the module's `metadata.code.branch_hint` section.
+    hints: Vec<(usize, bool)>,
 }
 
 impl Code {
     /// Where the code is now, for [`Code::rewind`].
-    pub fn mark(&self) -> (usize, usize) {
-        (self.b.len(), self.locals.len())
+    pub fn mark(&self) -> (usize, usize, usize) {
+        (self.b.len(), self.locals.len(), self.hints.len())
     }
     /// Drops what was emitted since `m`.
-    pub fn rewind(&mut self, m: (usize, usize)) {
+    pub fn rewind(&mut self, m: (usize, usize, usize)) {
         self.b.truncate(m.0);
         self.locals.truncate(m.1);
+        self.hints.truncate(m.2);
+    }
+    /// Hints the `if` or `br_if` emitted next: its condition is likely true
+    /// (or not). V8 moves the unlikely side out of line as deferred code,
+    /// where TurboFan's register allocator puts the spills a call there needs
+    /// instead of on the hot path.
+    pub fn hint(&mut self, likely: bool) -> &mut Self {
+        self.hints.push((self.b.len(), likely));
+        self
     }
 }
 
@@ -282,6 +294,9 @@ pub struct Module {
     funcs: Vec<u32>,
     code: Vec<u8>,
     names: Vec<u8>,
+    /// The branch-hint section's entries, and how many functions have some.
+    hints: Vec<u8>,
+    nhinted: usize,
 }
 
 impl Module {
@@ -343,6 +358,16 @@ impl Module {
             uleb(&mut f, n as u64);
             f.push(t);
         }
+        // Hint offsets count from the body's start, its locals included.
+        if !body.hints.is_empty() {
+            uleb(&mut self.hints, idx as u64);
+            uleb(&mut self.hints, body.hints.len() as u64);
+            for &(at, likely) in &body.hints {
+                uleb(&mut self.hints, (f.len() + at) as u64);
+                self.hints.extend([1, likely as u8]);
+            }
+            self.nhinted += 1;
+        }
         f.extend_from_slice(&body.b);
         uleb(&mut self.code, f.len() as u64);
         self.code.extend(f);
@@ -373,6 +398,16 @@ impl Module {
         }
         section(&mut out, 3, self.funcs.len(), &funcs);
         section(&mut out, 7, self.funcs.len(), &exports);
+        if self.nhinted > 0 {
+            // Branch hints, before the code they describe.
+            let mut body = Vec::new();
+            name(&mut body, "metadata.code.branch_hint");
+            uleb(&mut body, self.nhinted as u64);
+            body.extend(&self.hints);
+            out.push(0);
+            uleb(&mut out, body.len() as u64);
+            out.extend(body);
+        }
         section(&mut out, 10, self.funcs.len(), &self.code);
         if !self.funcs.is_empty() {
             // The name section: subsection 1, function names.
@@ -464,5 +499,31 @@ mod tests {
             0, 14, 4, b'n', b'a', b'm', b'e', 1, 7, 1, 1, 4, b'0', b'x', b'4', b'0', // names
         ];
         assert_eq!(m.finish(), want);
+    }
+
+    #[test]
+    fn branch_hints() {
+        let mut m = Module::default();
+        let t = m.ty(&[I32], &[]);
+        let mut c = Code::default();
+        // local.get 0; if (unlikely) end; local.get 0; if (likely) end; end
+        c.local_get(0).hint(false).if_().end();
+        let mark = c.mark();
+        c.local_get(0).hint(true).if_().end();
+        c.rewind(mark); // a rewound hint goes with its code
+        c.local_get(0).hint(true).if_().end().end();
+        m.func(t, &[(1, I64)], &c, "f");
+        let b = m.finish();
+        // The section, before the code section: function 0, two hints; the
+        // `if`s at 2 and 7 in the code, after the 3 bytes of locals.
+        #[rustfmt::skip]
+        let want = [
+            0, 35, 25, b'm', b'e', b't', b'a', b'd', b'a', b't', b'a', b'.', b'c', b'o', b'd', b'e', b'.',
+            b'b', b'r', b'a', b'n', b'c', b'h', b'_', b'h', b'i', b'n', b't',
+            1, 0, 2, 5, 1, 0, 10, 1, 1,
+            10,
+        ];
+        let at = b.windows(want.len()).position(|w| w == want);
+        assert!(at.is_some(), "{b:x?}");
     }
 }

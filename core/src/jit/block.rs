@@ -563,10 +563,12 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
             In::Lazy(k, sf) => lazy != Some((k, sf)),
             _ => true,
         };
-        // Every successor a member: the PC is stored only on the way out.
+        // A successor that's a member: the PC is stored only on the way out
+        // (after the edges to members, which leave first), so a loop whose
+        // back-edge is conditional doesn't store it every iteration.
         c.defer_pc = match succs {
             Next::One(o) => internal(o).is_some(),
-            Next::Cond(t, o) => internal(t).is_some() && internal(o).is_some(),
+            Next::Cond(t, o) => internal(t).is_some() || internal(o).is_some(),
             Next::None => false,
         };
         let mut last = false;
@@ -597,7 +599,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
             c.sync_flags();
             c.local_get(0).i32_const(w as i32);
             emit::pc_plus(&mut c, 4 * k as i64);
-            c.call(e.cx.helper).if_();
+            c.call(e.cx.helper).hint(false).if_();
             c.ret(k as u32);
             c.end();
             c.forget(!0);
@@ -613,7 +615,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
             c.local_get(emit::LEFT)
                 .i32_const((len + jlen) as i32)
                 .op(0x4f); // i32.ge_u
-            c.if_();
+            c.hint(true).if_();
             let (here, fl) = (c.regs, c.flags);
             into[j] = into[j].merge(here, 0);
             let lazy = c.lazy();
@@ -760,7 +762,7 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
         guard(c);
         c.op(0x71); // i32.and
     }
-    c.if_();
+    c.hint(true).if_();
     if let Some(chk) = e.checker {
         c.local_get(0).i64_const(k as i64).call(chk);
     }
@@ -866,7 +868,7 @@ mod tests {
             0x42, 3, 0x21, 4,                       // movz inline: x1 (local 4) = 3
             0x20, 0, 0x20, 4, 0x37, 3, 8,           // written back before the helper
             0x20, 0, 0x41, 0x80, 0x84, 0xed, 0xa8, 0x7d, 0x20, 3, 0x42, 4, 0x7c, // msr, pc + 4
-            0x10, 1, 0x04, 0x40,                    // call mmu; if:
+            0x10, 1, 0x04, 0x40,                    // call mmu; if (hinted unlikely, at 37):
             0x20, 1, 0x41, 1, 0x6a, 0x0f, 0x0b,     //   return acc + 1
             0x20, 1, 0x41, 2, 0x6a, 0x0f, 0x0b,     // return acc + 2 (MSR ends it: no chaining)
         ];
@@ -881,6 +883,9 @@ mod tests {
             3, b'e', b'n', b'v', 6, b'm', b'e', b'm', b'o', b'r', b'y', 2, 3, 0, 0x80, 0x80, 4,
             3, 2, 1, 0, // function section
             7, 6, 1, 2, b'f', b'0', 0, 2, // export f0 = function 2
+            0, 32, 25, // branch hints: function 2, one hint, at 37, unlikely
+            b'm', b'e', b't', b'a', b'd', b'a', b't', b'a', b'.', b'c', b'o', b'd', b'e', b'.',
+            b'b', b'r', b'a', b'n', b'c', b'h', b'_', b'h', b'i', b'n', b't', 1, 2, 1, 37, 1, 0,
             10, 2 + body.len() as u8, 1, body.len() as u8,
         ];
         want.extend(body);

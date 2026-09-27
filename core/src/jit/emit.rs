@@ -164,9 +164,10 @@ pub struct Func {
     /// commit did. A region member that sets flags before anything else
     /// needs none from its edges.
     pub touched: Option<bool>,
-    /// The block's branch leaves the PC to its exits (step 8.5): every
-    /// successor is a region member, so only a return needs it; a
-    /// conditional branch keeps just its outcome in `TAKEN`.
+    /// The block's branch leaves the PC to its exits (step 8.5): a
+    /// successor is a region member (since M6: either side of a conditional
+    /// branch), so only the paths that leave store it; a conditional branch
+    /// keeps just its outcome in `TAKEN`.
     pub defer_pc: bool,
     /// The block checked already that SIMD&FP instructions may run
     /// ([`fp_guard`]); false at each block's start.
@@ -766,14 +767,14 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             c.local_tee(y);
             cmp(c, sf, EQZ);
             let ty = if sf { I64 } else { I32 };
-            c.if_t(ty);
+            c.hint(false).if_t(ty);
             konst(c, sf, 0);
             c.else_();
             if op == SDIV {
                 c.local_get(y);
                 konst(c, sf, u64::MAX);
                 cmp(c, sf, EQ);
-                c.if_t(ty);
+                c.hint(false).if_t(ty);
                 konst(c, sf, 0);
                 c.local_get(x);
                 arith(c, sf, SUB);
@@ -961,7 +962,7 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, jc: u32, len: u32, ty: u32, check:
         .i32_load(12)
         .i32_const(len as i32)
         .op(ADD);
-    c.op(GE_U).op(AND).if_();
+    c.op(GE_U).op(AND).hint(true).if_();
     if let Some(chk) = check {
         c.local_get(VCPU);
         match key {
@@ -1237,7 +1238,12 @@ pub fn fp_guard(c: &mut Func, cx: &Ctx, i: u32, k: usize) {
     let m = if cx.el1 { 1 << 20 } else { 3 << 20 };
     c.local_get(VCPU)
         .i64_load(offset_of!(Cpu, cpacr_el1) as u32);
-    c.i64_const(m).i64_and().i64_const(m).op(NE + WC).if_();
+    c.i64_const(m)
+        .i64_and()
+        .i64_const(m)
+        .op(NE + WC)
+        .hint(false)
+        .if_();
     let saved = c.regs;
     c.flush();
     c.store_flags();
@@ -1516,7 +1522,7 @@ fn access(
     for &g in guards {
         guard(c, g, len);
     }
-    c.if_();
+    c.hint(true).if_();
     match cx.bus {
         Bus::Flat { .. } => c.local_get(OFF).i32_wrap_i64(),
         Bus::Tlb { read } => {
@@ -1569,7 +1575,7 @@ fn fallback(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, written: u3
     c.flush();
     c.local_get(VCPU).i32_const(i as i32);
     pc_plus(c, here);
-    c.call(cx.helper).if_();
+    c.call(cx.helper).hint(false).if_();
     c.store_flags();
     c.ret((here / 4) as u32);
     c.end();
@@ -1611,7 +1617,7 @@ fn mrs(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
         Plain::SpEl0 => {
             // sp_other while SPSel is 1; else UNDEFINED, which the helper raises.
             field(c, PSTATE);
-            c.i32_wrap_i64().i32_const(1).op(AND).if_();
+            c.i32_wrap_i64().i32_const(1).op(AND).hint(true).if_();
             let before = c.regs;
             set(c, true, rt, |c| field(c, offset_of!(Cpu, sp_other)));
             fallback(c, cx, i, 4 * k as i64, before, xmask(rt));

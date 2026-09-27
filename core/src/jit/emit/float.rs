@@ -123,7 +123,7 @@ fn put(c: &mut Func, f: F, rd: u32, r: u32) {
 /// `if cond { fast } else { the helper runs instruction i }`, with `cond` an
 /// i32 already on the stack.
 fn guarded(c: &mut Func, cx: &Ctx, i: u32, k: usize, written: u32, fast: impl FnOnce(&mut Func)) {
-    c.if_();
+    c.hint(true).if_();
     let before: Regs = c.regs;
     fast(c);
     fallback(c, cx, i, 4 * k as i64, before, written);
