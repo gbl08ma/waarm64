@@ -604,3 +604,26 @@ Raw data: `results/m6-chunk/`, `../boot/results/m6-chunk/`.
 Debian 13 to power-off under the JIT in Chromium (`--only boot_debian_jit`, new: one cold and one warm boot): 50.3 s cold, 48.2 s warm, 16,654,729,762 steps. It compiled 183K regions into a 65,536-region cache and flushed it twice, recompiling. With 262,144 regions (the cache's only up-front cost is its hot words, 4 bytes a slot): no flush, 110,685 regions, 52.6 MB of wasm instead of 87.6 MB, **44.3 s** cold and warm (Node: 42.9 → 39.3–40.0 s); steps unchanged. Alpine and Buildroot never filled the old cache. Per-module eviction isn't needed for these guests.
 
 Raw data: `../boot/results/m6-debian/`.
+
+## M6 exit table
+
+On a quiet host (a stale experiment had held one vCPU busy through the earlier M6 measurements; alternated A/Bs are unaffected, absolute numbers were ~5% pessimistic): Chromium 153, the M4 VM, `2c9771b`. Peers run the same kernels, images and CoreMark binary; peer comparisons are a one-off for this table (PLAN §5).
+
+| | M5 (JIT) | **M6 (JIT)** | qemu-wasm (Chromium) | QEMU TCG (this VM) | native (M4) |
+|---|---|---|---|---|---|
+| CoreMark, user mode (it/s) | 5955 | **8602** | — | 12,500 (`qemu-aarch64`) | 61,111 |
+| CoreMark as init in a VM (it/s) | — | **7857** | 428–461, invalid (CRC errors) | 10,000 | 61,111 (hvf) |
+| integer / FP guest (MIPS) | 3857 / 19.6 | **5175 / 155** | — | — | — |
+| EL1 guest, MMU off / on (MIPS) | 2136 / 1919 | **4932 / 4045** | — | — | — |
+| Buildroot to power-off, cold | 717 ms | **670 ms** | 3.13 s | 0.30 s | 0.10 s (hvf) |
+| Alpine boot to power-off, cold | 18.4 s | **10.2 s** | — | 5.4–5.6 s | 2.4 s (hvf) |
+| Alpine userspace (new) | — | **23.7 s** | — | 11.2 s | 2.9 s (hvf) |
+| Debian 13 boot to power-off | (377 s interpreted) | **42.2 s** | — | 31.3 s | 2.4 s (hvf) |
+
+**Against the targets:** Alpine ≤ 12.2 s: met (10.2 s, 1.80× M5). FP guest ≥ 98 MIPS: met (155, 7.9× M5). CoreMark ≥ TCG: not met, 69% of TCG user mode and 79% of TCG system mode in a VM; the user decided it doesn't block the exit (wasm's usual 10–30% gap to native on compute-bound code is most of what's left).
+
+**Alpine userspace, per phase** (the approved M6 phase, 3 boots): compress 2.78 s, Lua 5.14, churn 2.14, SQLite 3.93; 23.7 s to power-off.
+
+**The peers:** QEMU TCG runs 1.4–2.1× faster than webpc on the boots and 1.2–1.45× on CoreMark, from native code on the same host; hvf is 3.5–18× faster than TCG on boots dominated by kernel work. qemu-wasm (ktock/qemu-wasm, built in rootless Podman under x86_64 emulation, GPL, only run) boots Buildroot 4.7× slower than webpc and gets CoreMark wrong (its list and state CRCs mismatch, with either CPU model), so its CoreMark speed isn't a valid result. Details and every run: `../boot/results/m6-exit/peers.txt`.
+
+Raw data: `results/m6-exit/`, `../boot/results/m6-exit/`.

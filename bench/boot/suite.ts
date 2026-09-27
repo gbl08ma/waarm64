@@ -160,7 +160,7 @@ const USER_PHASES = ['compress', 'lua', 'churn', 'sqlite'];
 async function alpineUser(o: Options): Promise<Sample[]> {
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
-  const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
+  const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
   const module = await WebAssembly.compile(img.wasm);
   const phases: Record<string, number[]> = Object.fromEntries([...USER_PHASES, 'total'].map((p) => [p, []]));
   let stats;
