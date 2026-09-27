@@ -892,14 +892,22 @@ fn svc_from_el0_and_eret_back() {
         (0x5600_0042, CODE + 4, Z)
     );
     assert_eq!((c.x[31], c.sp_other), (0x7000, 0x3000));
-    // eret at the vector goes back to EL0 with its SP and flags.
+    // eret at the vector goes back to EL0 with its SP and flags; it unmasks
+    // IRQs, so it ends the chunk (retired) for a pending one to be taken
+    // right after it, as an MSR that unmasks does.
     t.r.mem.write(VBAR + 0x400, 4, 0xd69f03e0).unwrap();
     t.c.nzcv = 0;
-    t.sys().unwrap();
+    let at_vector = t.c.clone();
+    assert_eq!(steps(&mut t.c, &t.r.mem, None, 1), (0, Some(Exit::Resync)));
     assert_eq!(
         (t.c.pc, t.c.el(), t.c.nzcv, t.c.x[31]),
         (CODE + 4, 0, Z, 0x3000)
     );
+    // With IRQs still masked in SPSR, nothing to resync.
+    t.c = at_vector;
+    t.c.spsr_el1 |= DAIF;
+    assert_eq!(steps(&mut t.c, &t.r.mem, None, 1), (1, None));
+    assert_eq!((t.c.pc, t.c.el(), t.c.pstate & DAIF), (CODE + 4, 0, DAIF));
 }
 
 #[test]

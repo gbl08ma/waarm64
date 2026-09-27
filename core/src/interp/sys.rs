@@ -163,7 +163,14 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
                 return Err(Exit::Wfi);
             }
         }
-        ERET if !el0 => eret(c),
+        // An ERET that unmasks IRQs ends the chunk as MSR does, so a pending
+        // IRQ is taken right after it (M6: before, it waited for the chunk's
+        // end, which made the chunk size visible to guests).
+        ERET if !el0 => {
+            let before = c.pstate;
+            eret(c);
+            return unmasked(before, c);
+        }
         HVC if !el0 => return Err(Exit::Hvc(bits(i, 20, 5) as u16)),
         // No EL2/EL3, no halting or external debug.
         ERET | HVC | SMC | HLT | DCPS1 | DCPS2 | DCPS3 | DRPS | SYSL => {

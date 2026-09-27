@@ -47,8 +47,12 @@ pub const UART: u64 = 0x0900_0000;
 pub const IRQ_VTIMER: usize = 27;
 pub const IRQ_PTIMER: usize = 30;
 pub const IRQ_UART: usize = 33;
-/// Steps between signal checks.
-const CHUNK: u64 = 1024;
+/// Steps between signal checks. Deterministic guests can't tell chunk
+/// boundaries apart (anything that makes an IRQ takeable ends a chunk: MSR or
+/// ERET unmasking, MMIO, timer deadlines), so the size only trades realtime
+/// latency against how long JIT loops run between returns (M6: 1024 → 32768,
+/// Alpine −14% in Node; identical steps at 1024–131072).
+const CHUNK: u64 = 32768;
 
 /// `repr(C)`, all u64 so the host can fill it with a `BigUint64Array`; new fields go at the end.
 #[repr(C)]

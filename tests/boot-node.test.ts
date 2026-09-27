@@ -26,10 +26,10 @@ const image = (rel: string) => readFileSync(new URL(rel, IMAGES));
 const has = (rel: string) => existsSync(new URL(rel, IMAGES));
 const STRESS = process.env.WEBPC_JIT_STRESS === '1';
 const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
-/** The Buildroot boot's and the device test's steps (PLAN.md §7 M4; core/tests/boot.rs). */
+/** The Buildroot boot's and the device test's steps (PLAN.md §7 M4, and M3 "Run loop" for M6; core/tests/boot.rs). */
 const BUILDROOT_STEPS = 40_909_861;
-const DEVICES_STEPS = 113_872_868;
-const LTP_STEPS = 2_737_414_881; // images/build.sh ltp, on linux/Image-defconfig
+const DEVICES_STEPS = 113_841_233;
+const LTP_STEPS = 2_747_263_866; // images/build.sh ltp, on linux/Image-defconfig
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
 const boot = (o: BootOptions, jit: 0 | 1 | 2, max = 20e9) => runToPowerOff(WASM, { ...o, jit }, max);
@@ -122,7 +122,7 @@ guest('LTP and kselftests', () => ({
 }, { skip: ltp, stress: STRESS, max: 200e9, steps: LTP_STEPS });
 
 const a = DISTROS.alpine;
-const ALPINE_STEPS = 3_009_151_562; // PLAN.md §7 M4
+const ALPINE_STEPS = 3_009_537_573; // PLAN.md §7 M3 "Run loop" (moved in M6)
 const alpineSkip = !DISTRO_TESTS.includes('alpine') ? 'SKIPPED: set WEBPC_DISTROS=alpine' : !has(a.kernel) && 'SKIPPED: run images/build.sh alpine';
 for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2]] as const) {
   test(`Alpine: ${mode}`, { skip: alpineSkip || (jit === 2 && !STRESS && 'SKIPPED: set WEBPC_JIT_STRESS=1') }, async () => {

@@ -569,3 +569,26 @@ The baseline itself moved 13.4–14.0 s between sessions (host state); the "afte
 **Validation:** unit tests (the nG list and its overflow; LDTR/STTR permissions; the emitted TLB arrays); the differential test with new classes (LSE atomics, compare and swap, load and store exclusive with the monitor armed at random, LD1/ST1 multiple, MSR in the system-register class at EL0/EL1t/EL1h), `ldxp`/`ldsmax`/`msr daif` in the sequences; the golden corpus through the JIT (forced and stress); lockstep 300M steps; every Node boot with exact steps. **Planted bugs:** STXR ignoring the monitor's size, STXR's status inverted, LDXR leaving `val[1]`, LDCLR without the complement, LD1 registers not wrapping, LD1 post-index by one register, DAIFSet on the wrong bits, SP_EL0 ignoring SPSel: all caught by the differential test. An MSR DAIF that unmasks done inline (no `Resync`) is invisible to the differential test and to Buildroot's boot; Alpine's steps catch it (3,010,874,217).
 
 Raw data: `results/m6-loop7/`, `../boot/results/m6-loop7/`.
+
+## M6: ERET and the chunk size
+
+**Why:** after loops 9 and 7, Alpine interpreted ~59M of its 3.0G steps (Node, a temporary counter by reason): 22.4M hot blocks waiting in the pending batch, 21.6M cold ones, and 14.1M in compiled blocks longer than what was left of the run loop's 1024-step chunk (2.07M times, a chunk's tail each). Trying larger chunks moved Alpine's steps, although chunk boundaries should be invisible to a deterministic guest: ERET restored DAIF from SPSR without ending the chunk, so an IRQ that went pending while masked waited up to a chunk (running up to 1023 more guest instructions) instead of being taken right after the ERET, as hardware does and as an unmasking MSR already did.
+
+**What changed (both with the user's OK):** ERET returns `Exit::Resync` when it clears PSTATE.I (retired; the run loop then takes the IRQ). With that, every suite takes identical steps at chunk sizes 1024, 8192, 32,768 and 131,072 (bare-metal, kvm-unit-tests, Buildroot, the device test, LTP/kselftests, Alpine), so `CHUNK` is now 32,768. Step constants: Buildroot's boot unchanged (40,909,861), device test 113,872,868 → 113,841,233, LTP/kselftests 2,737,414,881 → 2,747,263,866, Alpine 3,009,151,562 → 3,009,537,573.
+
+**Why it's fast:** a loop region checks its step budget on every back-edge, and the budget is the chunk, so with 1024-step chunks every hot loop returned to the dispatcher and the run loop ~3M times per boot. Alpine in Node by chunk size: 11.4 s (1024), 9.8 s (8192), 9.5 s (32,768 and 131,072); dispatches 14.8M → 12.4M, compiled-block tails 14.1M → 0.4M interpreted steps.
+
+| Chromium 153, alternated with `c60acf2` | loop 7 | **ERET + 32K chunks** |
+|---|---|---|
+| Alpine to power-off (JIT), cold | 12.99, 12.80 s | **10.73, 10.79 s** (−17%) |
+| Alpine, warm | 13.02, 12.68 s | 10.73, 10.87 s |
+| Buildroot to power-off (JIT), cold | 722 ms | 707 ms |
+| EL1 MMU off / on (MIPS) | 3650 / 2833 | **4843 / 3752** (+33%) |
+| integer / FP guest (MIPS, eight placements) | 5086 / 152.1 | 5099 / 151.6 |
+| CoreMark (iterations/s) | 8444 | 8315 (noise: no chunk boundaries in user mode) |
+
+Alpine's M6 target (≤ 12.2 s, 1.5× M5's 18.4 s) is met: 1.71×. Cost: in realtime mode, host signals and timers are seen up to one chunk (~0.1 ms) late, and the PC-sampling profiler's samples each stand for up to 32K steps.
+
+**Validation:** a unit test for the ERET exit (unmasking and not); CI with the new constants (Node and Chromium boots with exact steps).
+
+Raw data: `results/m6-chunk/`, `../boot/results/m6-chunk/`.
