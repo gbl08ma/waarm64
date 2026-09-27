@@ -20,7 +20,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 17;
+pub const ABI_VERSION: u32 = 18;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -207,6 +207,23 @@ pub unsafe extern "C" fn jit_stats(v: *const mmu::Vcpu) -> *const jit::Stats {
         .cache
         .as_deref()
         .map_or(core::ptr::null(), |c| &c.stats)
+}
+
+/// The JIT's helper calls so far by instruction class (ABI 18, M5 step 10):
+/// a NUL-terminated `<Op> <calls>` line each, most frequent first, valid until
+/// the next call; null without a JIT. `v` is a [`jit_new`] vCPU or a VM's
+/// ([`vm_cpu`]: the `Cpu` is at the vCPU's start).
+///
+/// # Safety
+/// As for [`jit_run`], or `v` from [`vm_cpu`] while the VM isn't running.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &mut *v }
+        .jit
+        .cache
+        .as_deref_mut()
+        .map_or(core::ptr::null(), |c| c.helper_report())
 }
 
 // The whole-VM ABI (PLAN.md §2 "Host ABI for a whole VM"). Every `vm` argument

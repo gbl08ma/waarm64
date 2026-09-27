@@ -64,7 +64,7 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
     if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !/webpc: test (exit 0|ok)/.test(console)) {
       throw new Error(`boot failed: exit ${r.kind} at pc 0x${vm.pc().toString(16)}\n${console}`);
     }
-    return { init: marks['init'], total, marks, console, stats: vm.stats() };
+    return { init: marks['init'], total, marks, console, stats: vm.stats(), helpers: vm.helperReport().slice(0, 30) };
   }
 }
 
@@ -88,7 +88,7 @@ async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> 
   if (o.quick) n = { cold: 2, warmup: 1, warm: 3 };
   const cold = { init: [] as number[], total: [] as number[] };
   const warm = { init: [] as number[], total: [] as number[] };
-  let stats;
+  let stats, helpers: { op: string; calls: number }[] | undefined;
   for (let i = 0; i < n.cold; i++) {
     fresh();
     const t = performance.now();
@@ -106,9 +106,10 @@ async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> 
     warm.init.push(r.marks[first]);
     warm.total.push(r.total);
     stats = r.stats;
+    helpers = r.helpers;
   }
   o.log?.(`warm total: ${warm.total.map((x) => x.toFixed(0)).join(' ')} ms; counters ${JSON.stringify(stats)}`);
-  params = { ...params, first, steps: stats!.steps, counters: stats };
+  params = { ...params, first, steps: stats!.steps, counters: stats, ...(helpers?.length && { helpers }) };
   return [
     { name: 'boot_init_cold', unit: 'ms', params, samples: cold.init },
     { name: 'boot_total_cold', unit: 'ms', params, samples: cold.total },

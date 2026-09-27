@@ -188,6 +188,10 @@ pub struct Cache {
     jc: Box<[Jc; JC]>,
     /// One hot word per slot, at a fixed address ([`emit::tier_up`]).
     hot: Box<[u32]>,
+    /// Helper calls by instruction class (step 10: the input to M6), and
+    /// the last report of them ([`Cache::helper_report`]).
+    helper_ops: Vec<u64>,
+    report: String,
     /// (key, VA) of blocks waiting to be compiled.
     pending: Vec<(u64, u64)>,
     /// `clock` when the first pending block was queued.
@@ -218,6 +222,8 @@ impl Cache {
                 .ok()
                 .expect("JC entries"),
             hot: vec![0; cfg.capacity as usize].into_boxed_slice(),
+            helper_ops: vec![0; crate::decode::Op::ALL.len()],
+            report: String::new(),
             pending: Vec::new(),
             since: 0,
             clock: 0,
@@ -279,6 +285,22 @@ impl Cache {
     /// The entry for `key`, created (and filed under its page) if new.
     fn info(&mut self, key: u64, len: impl FnOnce() -> u32) -> &mut Info {
         info(&mut self.map, &mut self.pages, key, len)
+    }
+
+    /// The helper calls so far by instruction class, most frequent first,
+    /// one `<Op> <calls>` per line, NUL-terminated.
+    pub fn helper_report(&mut self) -> *const u8 {
+        let mut ops: Vec<(u64, crate::decode::Op)> = self
+            .helper_ops
+            .iter()
+            .zip(crate::decode::Op::ALL)
+            .filter(|(n, _)| **n != 0)
+            .map(|(&n, op)| (n, op))
+            .collect();
+        ops.sort_by_key(|a| core::cmp::Reverse(a.0));
+        self.report = ops.iter().map(|(n, op)| format!("{op:?} {n}\n")).collect();
+        self.report.push('\0');
+        self.report.as_ptr()
     }
 
     /// The stale-code checker at a region's entry: all its blocks' words.
@@ -645,6 +667,7 @@ pub unsafe extern "C" fn jit_exec_flat(v: *mut Vcpu, insn: u32, pc: u64) -> u32 
     // SAFETY: guaranteed by the caller.
     let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
     let r = interp::exec_at(&mut v.cpu, &mut Flat(mem), insn, pc);
+    count(&mut v.jit, insn);
     status(&mut v.jit, r)
 }
 
@@ -658,7 +681,15 @@ pub unsafe extern "C" fn jit_exec_mmu(v: *mut Vcpu, insn: u32, pc: u64) -> u32 {
     let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
     let mut m = Mmu::new(mem, Some(&mut v.tlb));
     let r = interp::exec_at(&mut v.cpu, &mut m, insn, pc);
+    count(&mut v.jit, insn);
     status(&mut v.jit, r)
+}
+
+/// Counts a helper call by instruction class.
+fn count(j: &mut State, insn: u32) {
+    if let Some(c) = j.cache.as_deref_mut() {
+        c.helper_ops[crate::decode::decode(insn) as usize] += 1;
+    }
 }
 
 fn status(j: &mut State, r: Result<(), Exit>) -> u32 {

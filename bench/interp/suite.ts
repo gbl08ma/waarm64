@@ -4,7 +4,7 @@
 // M4: the integer guest again in a whole VM through vm_run, at EL1 with the MMU off and on (vm-start.S).
 // M5: each of them again through the JIT (`jit_*`, `VmConfig.jit`), with the JIT's counters in the params.
 import type { Options, Sample } from '../spike/benchmarks.ts';
-import { ABI, bootVm, coreImports } from '../../web/vm.ts';
+import { ABI, bootVm, coreImports, helperReport } from '../../web/vm.ts';
 
 const RAM = 16 << 20;
 const LOAD = 0x10000; // guest.ld
@@ -29,6 +29,7 @@ type Exports = {
   jit_new(threshold: number, batch: number, capacity: number, check: number, regionAfter: number): number;
   jit_run(v: number, mem: number, n: bigint): bigint;
   jit_stats(v: number): number;
+  jit_helper_report(v: number): number;
 };
 
 /** What the JIT did so far (`jit::Stats`, `vm::Counters`); steps are all steps, jitSteps those in JIT code. */
@@ -73,6 +74,7 @@ export async function setup(bin = 'guest.bin', jit?: JitConfig) {
       const [blocks, modules, bytes, compileNs, jitSteps, dispatches, , , inline, helpers, inlineSteps, flagsStored, flagsElided, condDirect, condComputed, condMemory, regionBlocks, backEdges, tierUps] = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 19)].map(Number);
       return { steps, jitSteps, dispatches, blocks, modules, bytes, compileNs, inline, helpers, inlineSteps, flagsStored, flagsElided, condDirect, condComputed, condMemory, regionBlocks, backEdges, tierUps };
     } : undefined,
+    helpers: jit ? () => helperReport(ex, memory, cpu) : undefined,
   };
 }
 
@@ -94,10 +96,11 @@ export async function setupVm(mmu: boolean, jit: 0 | 1 | 2 = 0) {
       const j = s.jit;
       return { ...j, steps: s.steps, jitSteps: j.steps };
     } : undefined,
+    helpers: jit ? vm.helperReport : undefined,
   };
 }
 
-type Guest = { run(n: number): number; pc(): bigint; rounds(): bigint; counts?: () => JitCounts };
+type Guest = { run(n: number): number; pc(): bigint; rounds(): bigint; counts?: () => JitCounts; helpers?: () => { op: string; calls: number }[] };
 
 /** The JIT's counters over a window (between two `counts()`). */
 function jitParams(a: JitCounts, b: JitCounts) {
@@ -132,7 +135,7 @@ async function mipsOf(o: Options, name: string, guest: string, g: Guest): Promis
   const c2 = g.counts?.();
   const warm = Array.from({ length: o.quick ? 5 : 15 }, () => mips(chunk));
   const c3 = g.counts?.();
-  const jc = c1 && c2 && c3 ? { cold: jitParams(zero, c1), warm: jitParams(c2, c3) } : undefined;
+  const jc = c1 && c2 && c3 ? { cold: jitParams(zero, c1), warm: { ...jitParams(c2, c3), helpers: g.helpers?.().slice(0, 15) } } : undefined;
   o.log?.(`${name}: ${warm.map((x) => x.toFixed(1)).join(' ')} MIPS, ${g.rounds()} guest rounds${jc ? ` ${JSON.stringify(jc)}` : ''}`);
   if (g.rounds() === 0n) throw new Error('guest made no progress');
   const params = { guest, chunk };

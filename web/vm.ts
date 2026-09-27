@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 17;
+export const ABI = 18;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -25,6 +25,7 @@ type Exports = {
   vm_console(vm: number): number;
   vm_cpu(vm: number): number;
   vm_counters(vm: number): number;
+  jit_helper_report(v: number): number;
   vm_signal(vm: number): number;
   vm_device(vm: number, i: number): number;
   vm_framebuffer(vm: number): bigint;
@@ -132,6 +133,18 @@ export const testDevices = (disk: string, keyboard?: MessagePort, tablet?: Messa
 export const KEY_EVENTS = [[1, 30, 1], [0, 0, 0], [1, 30, 0], [0, 0, 0]];
 export const TABLET_EVENTS = [[3, 0, 16384], [3, 1, 8192], [1, 272, 1], [0, 0, 0], [1, 272, 0], [0, 0, 0]];
 /** Their kernel command line. */
+/** `jit_helper_report` of the vCPU at `cpu` (a `jit_new` vCPU, or `vm_cpu`), parsed. */
+export function helperReport(ex: { jit_helper_report(v: number): number }, memory: WebAssembly.Memory, cpu: number): { op: string; calls: number }[] {
+  const p = ex.jit_helper_report(cpu);
+  if (!p) return [];
+  const bytes = new Uint8Array(memory.buffer, p);
+  const text = new TextDecoder().decode(bytes.slice(0, bytes.indexOf(0)));
+  return text.split('\n').filter(Boolean).map((l) => {
+    const [op, n] = l.split(' ');
+    return { op, calls: Number(n) };
+  });
+}
+
 export const GUEST_CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init';
 /**
  * Distro images from images/build.sh (paths under target/images) with a command
@@ -250,6 +263,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
         },
       };
     },
+    /** The JIT's helper calls by instruction class, most frequent first (ABI 18; empty without a JIT). */
+    helperReport: () => helperReport(ex, memory, ex.vm_cpu(vm)),
     /**
      * Runs up to `budget` steps; returns the exit kind and steps taken. DEVICE
      * exits are handled here (the backends take the requests, and in
