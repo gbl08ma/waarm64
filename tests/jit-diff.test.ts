@@ -192,10 +192,63 @@ for (const [name, [mask, bits], mem] of [
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${WORDS} words differ`);
 });
 
-// Sequences (step 6). Words that force helper calls: MRS/MSR NZCV (they end a
-// block), an exclusive load, FMOV between X and D registers (a helper that
-// reads or writes an X register); loads whose address misses come from the
-// register values.
+// System registers (M6 loop 1): MRS of the registers the JIT reads inline
+// and of neighbours that stay helper calls (traps, timers, UNDEFINED), and
+// the barriers, at EL0, EL1t and EL1h, with the system registers random. The
+// `Cpu` offsets are checked natively (`interp::sys::tests::jit_diff_offsets`).
+const SYSREG_FIELDS = [976, 984, 992, 840, 848, 856, 864, 872, 896, 904, 912, 920, 928, 944, 968, 880, 1016, 1000]; // tpidr_el0 … mdscr_el1
+const PSTATE = 832, SCTLR = 888;
+const sr = (op0: number, op1: number, crn: number, crm: number, op2: number) => (op0 - 2) << 14 | op1 << 11 | crn << 7 | crm << 3 | op2;
+const SYSREG_KEYS = [
+  sr(3, 3, 4, 2, 0), sr(3, 3, 13, 0, 2), sr(3, 3, 13, 0, 3), sr(3, 3, 0, 0, 7), sr(3, 3, 4, 2, 1), sr(3, 3, 0, 0, 1), // NZCV TPIDR_EL0 TPIDRRO DCZID DAIF CTR
+  sr(3, 0, 4, 0, 0), sr(3, 0, 4, 0, 1), sr(3, 0, 4, 1, 0), sr(3, 0, 4, 2, 0), sr(3, 0, 4, 2, 2), sr(3, 0, 13, 0, 4), // SPSR ELR SP_EL0 SPSel CurrentEL TPIDR_EL1
+  sr(3, 0, 1, 0, 0), sr(3, 0, 1, 0, 2), sr(3, 0, 2, 0, 0), sr(3, 0, 2, 0, 1), sr(3, 0, 2, 0, 2), sr(3, 0, 5, 2, 0), sr(3, 0, 6, 0, 0), // SCTLR CPACR TTBR0/1 TCR ESR FAR
+  sr(3, 0, 7, 4, 0), sr(3, 0, 10, 2, 0), sr(3, 0, 12, 0, 0), sr(3, 0, 14, 1, 0), sr(3, 0, 13, 0, 1), sr(2, 0, 0, 2, 2), // PAR MAIR VBAR CNTKCTL CONTEXTIDR MDSCR
+  sr(3, 0, 0, 0, 0), sr(3, 0, 0, 0, 5), sr(3, 0, 0, 0, 6), sr(3, 0, 0, 4, 0), sr(3, 0, 0, 5, 0), sr(3, 0, 0, 6, 0), sr(3, 0, 0, 7, 0), // MIDR MPIDR REVIDR ID_AA64*
+  sr(3, 3, 4, 4, 0), sr(3, 3, 4, 4, 1), sr(3, 3, 14, 0, 0), sr(3, 3, 14, 0, 2), sr(3, 0, 12, 1, 0), sr(3, 1, 0, 0, 0), // FPCR FPSR CNTFRQ CNTVCT ISR CCSIDR
+];
+test('JIT vs interpreter: system registers and barriers', () => {
+  const { ex, jit, ca32, cb32, cpus, run, counts, data } = setup(8 * WORDS);
+  const words = Array.from({ length: WORDS }, () => {
+    const rt = rand32() & 31;
+    if (rand32() % 8 === 0) return (0xd503301f | (rand32() & 0xfe0)) >>> 0; // barriers and the rest of that space
+    const key = rand32() % 4 === 0 ? rand32() & 0xffff : SYSREG_KEYS[rand32() % SYSREG_KEYS.length];
+    return (0xd5300000 | key << 5 | rt) >>> 0; // MRS
+  });
+  words.forEach((w, k) => {
+    ca32.set([w, BRK], 2 * k);
+    cb32.set([w, BRK], 2 * k);
+  });
+  const failures: string[] = [];
+  for (let k = 0; k < WORDS; k++) {
+    for (let s = 0; s < STATES; s++) {
+      const [a, b] = cpus();
+      const full = [new BigUint64Array(a.buffer, a.byteOffset, CPU_BYTES / 8), new BigUint64Array(b.buffer, b.byteOffset, CPU_BYTES / 8)];
+      for (let r = 0; r < 32; r++) a[r] = value(false, data);
+      a[32] = BigInt(8 * k);
+      a[33] = BigInt(rand32() & 0xf) << 28n;
+      for (const off of SYSREG_FIELDS) full[0][off / 8] = rand64();
+      // EL0, EL1t or EL1h (MMU off: the flat bus), random DAIF; SCTLR's EL0 trap enables flipped.
+      full[0][PSTATE / 8] = BigInt([0, 4, 5][rand32() % 3]) | BigInt(rand32() & 0x3c0);
+      full[0][SCTLR / 8] = full[1][SCTLR / 8] ^ BigInt(rand32() & (1 << 9 | 1 << 14 | 1 << 15));
+      full[1].set(full[0]);
+      const what = run(1n, false);
+      if (what) {
+        failures.push(`${words[k].toString(16).padStart(8, '0')} (pstate ${full[0][PSTATE / 8]}): ${what} differs`);
+        break;
+      }
+    }
+  }
+  console.log(`system registers and barriers: ${WORDS} words, ${counts()}`);
+  assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${WORDS} words differ`);
+});
+
+// Sequences (step 6). Words that read or write NZCV outside the ALU: MRS
+// NZCV (inline since M6 loop 1: it reads lazy flags made current) and MSR
+// NZCV (a helper that ends the block); words that force helper calls: an
+// exclusive load, FMOV between X and D registers (a helper that reads or
+// writes an X register); loads whose address misses come from the register
+// values.
 const HELPERS = [
   (d: number, _n: number) => 0xd53b4200 | d, // mrs xd, nzcv
   (d: number, _n: number) => 0xd51b4200 | d, // msr nzcv, xd

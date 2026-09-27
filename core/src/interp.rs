@@ -10,7 +10,7 @@ mod ldst_fp;
 mod simd;
 mod simd_fp;
 mod simd_int;
-mod sys;
+pub mod sys;
 
 pub use sys::{platform, take_exception, take_irq, timer_fires};
 

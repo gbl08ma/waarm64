@@ -46,7 +46,7 @@ const ID_AA64MMFR0: u64 = 0xf << 24 | 2 << 4 | 2;
 /// CWG, ERG, DminLine = 64 bytes, PIPT I-cache, IminLine = 64 bytes.
 const CTR_EL0: u64 = 1 << 31 | 1 << 28 | 4 << 24 | 4 << 20 | 4 << 16 | 3 << 14 | 4;
 /// DC ZVA block: BS = 4 (64 bytes, as on the M4).
-const DCZID_BS: u64 = 4;
+pub const DCZID_BS: u64 = 4;
 /// OSLSR_EL1.OSLM = 0b10: the OS lock is implemented (v8.0 requires it). It
 /// only gates debug exceptions, which we don't raise, so it's just state.
 const OSLM: u64 = 0b1000;
@@ -325,6 +325,71 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
     })
 }
 
+/// A system register read the JIT does inline (M6 loop 1): what [`read`]
+/// returns for a key at an EL without a trap, an exception or the platform
+/// (the timers and `ISR_EL1` stay helper calls). `plain_matches_read` checks
+/// the two agree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Plain {
+    /// The u64 at this offset in the `Cpu`.
+    Field(usize),
+    Const(u64),
+    /// `pstate & mask`.
+    Pstate(u64),
+    /// NZCV, the flags made current in the `Cpu`.
+    Nzcv,
+    /// SP_EL0 at EL1: `sp_other` while SPSel is 1; UNDEFINED otherwise (the
+    /// helper raises it).
+    SpEl0,
+    /// DCZID_EL0 at EL0: DZP set unless SCTLR_EL1.DZE lets EL0 use DC ZVA.
+    Dczid0,
+}
+
+/// How [`read`] returns system register `key` (bits 20:5 of an MRS) at EL1
+/// (`el1`) or EL0, if the JIT can do it inline.
+pub fn plain(key: u32, el1: bool) -> Option<Plain> {
+    use Plain::*;
+    use core::mem::offset_of;
+    let f = |off: usize| Some(Field(off));
+    match key {
+        NZCV => Some(Nzcv),
+        TPIDR_EL0 => f(offset_of!(Cpu, tpidr_el0)),
+        TPIDRRO_EL0 => f(offset_of!(Cpu, tpidrro_el0)),
+        DCZID if el1 => Some(Const(DCZID_BS)),
+        DCZID => Some(Dczid0),
+        // EL0 from here on: traps (DAIF, CTR, FP registers) or, with op1 ≠ 3, UNDEFINED.
+        _ if !el1 => None,
+        DAIF_R => Some(Pstate(DAIF)),
+        CTR => Some(Const(CTR_EL0)),
+        SPSR_EL1 => f(offset_of!(Cpu, spsr_el1)),
+        ELR_EL1 => f(offset_of!(Cpu, elr_el1)),
+        SP_EL0 => Some(SpEl0),
+        SPSEL => Some(Pstate(1)),
+        CURRENT_EL => Some(Const(4)),
+        SCTLR => f(offset_of!(Cpu, sctlr_el1)),
+        CPACR => f(offset_of!(Cpu, cpacr_el1)),
+        TTBR0 => f(offset_of!(Cpu, ttbr0_el1)),
+        TTBR1 => f(offset_of!(Cpu, ttbr1_el1)),
+        TCR => f(offset_of!(Cpu, tcr_el1)),
+        ESR => f(offset_of!(Cpu, esr_el1)),
+        FAR => f(offset_of!(Cpu, far_el1)),
+        PAR => f(offset_of!(Cpu, par_el1)),
+        MAIR => f(offset_of!(Cpu, mair_el1)),
+        VBAR => f(offset_of!(Cpu, vbar_el1)),
+        CNTKCTL => f(offset_of!(Cpu, cntkctl_el1)),
+        CONTEXTIDR => f(offset_of!(Cpu, contextidr_el1)),
+        TPIDR_EL1 => f(offset_of!(Cpu, tpidr_el1)),
+        MDSCR => f(offset_of!(Cpu, mdscr_el1)),
+        MIDR_R => Some(Const(MIDR)),
+        MPIDR_R => Some(Const(MPIDR)),
+        PFR0 => Some(Const(ID_AA64PFR0)),
+        DFR0 => Some(Const(ID_AA64DFR0)),
+        ISAR0 => Some(Const(ID_AA64ISAR0)),
+        MMFR0 => Some(Const(ID_AA64MMFR0)),
+        _ => None,
+    }
+}
+
 fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
     let el0 = c.el() == 0;
     // The TLB holds neither ASIDs nor the MMU enable: flush when either changes.
@@ -537,4 +602,115 @@ fn vector(c: &mut Cpu, ret: u64, spsr_extra: u64, kind: u64) {
     c.monitor.size = 0;
     c.set_pstate(M_EL1H | DAIF);
     c.pc = c.vbar_el1.wrapping_add(base + kind);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// [`plain`] gives what [`read`] returns, for every key it claims, at
+    /// both ELs and over random register state.
+    #[test]
+    fn plain_matches_read() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let mut claimed = 0;
+        for key in 0..1u32 << 16 {
+            for el1 in [false, true] {
+                let Some(p) = plain(key, el1) else { continue };
+                claimed += 1;
+                for _ in 0..16 {
+                    let mut c = Cpu::default();
+                    for f in [
+                        &mut c.tpidr_el0,
+                        &mut c.tpidrro_el0,
+                        &mut c.spsr_el1,
+                        &mut c.elr_el1,
+                        &mut c.sp_other,
+                        &mut c.sctlr_el1,
+                        &mut c.cpacr_el1,
+                        &mut c.ttbr0_el1,
+                        &mut c.ttbr1_el1,
+                        &mut c.tcr_el1,
+                        &mut c.esr_el1,
+                        &mut c.far_el1,
+                        &mut c.par_el1,
+                        &mut c.mair_el1,
+                        &mut c.vbar_el1,
+                        &mut c.cntkctl_el1,
+                        &mut c.contextidr_el1,
+                        &mut c.tpidr_el1,
+                        &mut c.mdscr_el1,
+                    ] {
+                        *f = rnd();
+                    }
+                    c.nzcv = rnd() & 0xf000_0000;
+                    c.pstate = rnd() & (DAIF | 1) | if el1 { 4 } else { 0 };
+                    let i = 0xd520_0003 | 1 << 21 | key << 5; // MRS x3, <key>
+                    let want = read(&c, i, key);
+                    let got = match p {
+                        // SAFETY: `off` is a u64 field's offset in `c` (offset_of!).
+                        Plain::Field(off) => unsafe {
+                            (&raw const c).cast::<u8>().add(off).cast::<u64>().read()
+                        },
+                        Plain::Const(v) => v,
+                        Plain::Pstate(m) => c.pstate & m,
+                        Plain::Nzcv => c.nzcv,
+                        Plain::SpEl0 if c.pstate & 1 == 1 => c.sp_other,
+                        Plain::SpEl0 => {
+                            assert!(want.is_err(), "SP_EL0 with SPSel 0");
+                            continue;
+                        }
+                        Plain::Dczid0 => DCZID_BS | ((c.sctlr_el1 & sctlr::DZE == 0) as u64) << 4,
+                    };
+                    assert_eq!(want.ok(), Some(got), "key {key:#x}, EL1 {el1}");
+                }
+            }
+        }
+        assert_eq!(claimed, 4 + 31); // at EL0 and EL1
+    }
+
+    /// The `Cpu` offsets `tests/jit-diff.test.ts` randomizes (SYSREG_FIELDS,
+    /// PSTATE, SCTLR): update both together.
+    #[test]
+    fn jit_diff_offsets() {
+        use core::mem::offset_of;
+        let fields = [
+            offset_of!(Cpu, tpidr_el0),
+            offset_of!(Cpu, tpidrro_el0),
+            offset_of!(Cpu, tpidr_el1),
+            offset_of!(Cpu, sp_other),
+            offset_of!(Cpu, elr_el1),
+            offset_of!(Cpu, spsr_el1),
+            offset_of!(Cpu, esr_el1),
+            offset_of!(Cpu, far_el1),
+            offset_of!(Cpu, cpacr_el1),
+            offset_of!(Cpu, tcr_el1),
+            offset_of!(Cpu, ttbr0_el1),
+            offset_of!(Cpu, ttbr1_el1),
+            offset_of!(Cpu, mair_el1),
+            offset_of!(Cpu, par_el1),
+            offset_of!(Cpu, contextidr_el1),
+            offset_of!(Cpu, vbar_el1),
+            offset_of!(Cpu, cntkctl_el1),
+            offset_of!(Cpu, mdscr_el1),
+        ];
+        assert_eq!(
+            fields,
+            [
+                976, 984, 992, 840, 848, 856, 864, 872, 896, 904, 912, 920, 928, 944, 968, 880,
+                1016, 1000
+            ]
+        );
+        assert_eq!(
+            (offset_of!(Cpu, pstate), offset_of!(Cpu, sctlr_el1)),
+            (832, 888)
+        );
+        assert_eq!(size_of::<Cpu>(), 1056);
+    }
 }

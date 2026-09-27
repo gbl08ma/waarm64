@@ -30,18 +30,24 @@ pub enum End {
     Before,
 }
 
-/// Branches and system-class instructions end a block after them;
+/// Branches and most system-class instructions end a block after them;
 /// exception-generating and unallocated encodings end it before them.
-/// Hints that are NOPs here (PAC and BTI hint space, CSDB, …) don't end one.
-// ponytail: conservative on purpose (every barrier, MRS/MSR, SYS, CLREX ends a
-// block); relax with evidence once blocks link (M5 step 7).
+/// Hints that are NOPs here (PAC and BTI hint space, CSDB, …), MRS and the
+/// data barriers don't end one.
+// ponytail: still conservative for the other system instructions (MSR, SYS,
+// CLREX, DC); relax each with a profile that shows it (M6 loop 1 did MRS and
+// the barriers).
 pub fn end(op: Op) -> End {
     use Op::*;
     match op {
-        B_uncond | BL | B_cond | CBZ | CBNZ | TBZ | TBNZ | BR | BLR | RET | ERET | MRS
-        | MSR_reg | MSR_imm | SYS | SYSL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_ZVA
-        | DC_CVAC | DC_CVAU | DC_CIVAC | IC_IALLU | IC_IALLUIS | IC_IVAU | WFE | WFI | YIELD
-        | SEV | SEVL | CLREX | DMB | DSB | ISB | SSBB | PSSBB => End::After,
+        // MRS and the data barriers don't end a block (M6 loop 1): the
+        // barriers are no-ops for one vCPU, MRS changes nothing but its
+        // register, and one that leaves (a timer, a trap) returns from the
+        // block through its helper call, as a load from MMIO does.
+        B_uncond | BL | B_cond | CBZ | CBNZ | TBZ | TBNZ | BR | BLR | RET | ERET | MSR_reg
+        | MSR_imm | SYS | SYSL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_ZVA | DC_CVAC
+        | DC_CVAU | DC_CIVAC | IC_IALLU | IC_IALLUIS | IC_IVAU | WFE | WFI | YIELD | SEV | SEVL
+        | CLREX | ISB => End::After,
         SVC | HVC | SMC | BRK | HLT | DCPS1 | DCPS2 | DCPS3 | DRPS | UnallocatedEncoding => {
             End::Before
         }
@@ -97,7 +103,7 @@ pub struct Block {
 /// a direct branch, both of a conditional one (taken, then not), or the next
 /// instruction when the block just stops (its cap, the page's end, before an
 /// exception-generating instruction) or ends on a system instruction that
-/// can't change the regime (MRS, barriers, CLREX, YIELD/SEV, DC: when its
+/// can't change the regime (ISB, CLREX, YIELD/SEV, DC: when its
 /// helper retires, the interpreter would go on to the next instruction in
 /// the same regime). None after an indirect branch, ERET, MSR, SYS (TLBI, AT),
 /// IC, WFI/WFE.
@@ -122,8 +128,8 @@ pub fn next(words: &[u32]) -> Next {
         B_cond | CBZ | CBNZ => Next::Cond(at + ofs(23, 5, 21), at + 4),
         TBZ | TBNZ => Next::Cond(at + ofs(18, 5, 16), at + 4),
         _ if end(op) == End::No => Next::One(at + 4),
-        MRS | DMB | DSB | ISB | SSBB | PSSBB | CLREX | YIELD | SEV | SEVL | DC_IVAC | DC_ISW
-        | DC_CSW | DC_CISW | DC_ZVA | DC_CVAC | DC_CVAU | DC_CIVAC => Next::One(at + 4),
+        ISB | CLREX | YIELD | SEV | SEVL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_ZVA
+        | DC_CVAC | DC_CVAU | DC_CIVAC => Next::One(at + 4),
         _ => Next::None,
     }
 }
@@ -378,12 +384,14 @@ pub fn module(
             emit::Ctx {
                 helper: mmu,
                 bus: emit::Bus::Tlb { read },
+                el1: head.key & KEY_EL1 != 0,
             }
         } else {
             let (base, size) = (base as usize as u32, mem.size());
             emit::Ctx {
                 helper: flat,
                 bus: emit::Bus::Flat { base, phys, size },
+                el1: head.key & KEY_EL1 != 0,
             }
         };
         let env = Env {
@@ -767,7 +775,7 @@ mod tests {
     const ADD: u32 = 0x91000c41; // add x1, x2, #3
     const PACIASP: u32 = 0xd503233f;
     const MOVZ: u32 = 0xd2800061; // movz x1, #3
-    const MRS: u32 = 0xd53b4200; // mrs x0, nzcv
+    const MSR: u32 = 0xd51b4200; // msr nzcv, x0
 
     fn mem_with(at: u64, words: &[u32]) -> (Vec<u128>, Mem) {
         let mut ram = vec![0u128; 0x4000 / 16];
@@ -801,12 +809,12 @@ mod tests {
             (0xd63f0000, End::After),  // blr x0
             (0xd65f03c0, End::After),  // ret
             (0xd69f03e0, End::After),  // eret
-            (0xd53b4200, End::After),  // mrs x0, nzcv
+            (0xd53b4200, End::No),     // mrs x0, nzcv (M6 loop 1)
             (0xd51b4200, End::After),  // msr nzcv, x0
             (0xd508871f, End::After),  // tlbi vmalle1
             (0xd50b7520, End::After),  // ic ivau, x0
             (0xd503207f, End::After),  // wfi
-            (0xd5033bbf, End::After),  // dmb ish
+            (0xd5033bbf, End::No),     // dmb ish (M6 loop 1)
             (0xd5033fdf, End::After),  // isb
             (0xd4000001, End::Before), // svc #0
             (0xd4000002, End::Before), // hvc #0
@@ -844,7 +852,7 @@ mod tests {
         let b = Block {
             key: 0x4000_0100 | KEY_EL1 | KEY_MMU,
             va: 0xffff_0100,
-            words: vec![MOVZ, MRS],
+            words: vec![MOVZ, MSR],
         };
         let Emitted { bytes, inl, .. } = build(b);
         assert_eq!(inl, [1]);
@@ -854,10 +862,10 @@ mod tests {
             0x20, 0, 0x29, 3, 0x80, 2, 0x21, 3,     // local.get 0; i64.load 256; local.set 3
             0x42, 3, 0x21, 4,                       // movz inline: x1 (local 4) = 3
             0x20, 0, 0x20, 4, 0x37, 3, 8,           // written back before the helper
-            0x20, 0, 0x41, 0x80, 0x84, 0xed, 0xa9, 0x7d, 0x20, 3, 0x42, 4, 0x7c, // mrs, pc + 4
+            0x20, 0, 0x41, 0x80, 0x84, 0xed, 0xa8, 0x7d, 0x20, 3, 0x42, 4, 0x7c, // msr, pc + 4
             0x10, 1, 0x04, 0x40,                    // call mmu; if:
             0x20, 1, 0x41, 1, 0x6a, 0x0f, 0x0b,     //   return acc + 1
-            0x20, 1, 0x41, 2, 0x6a, 0x0f, 0x0b,     // return acc + 2 (MRS ends it: no chaining)
+            0x20, 1, 0x41, 2, 0x6a, 0x0f, 0x0b,     // return acc + 2 (MSR ends it: no chaining)
         ];
         let name = b"0xffff0100_pa0x40000100";
         #[rustfmt::skip]

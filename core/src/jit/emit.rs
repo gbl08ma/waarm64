@@ -19,10 +19,13 @@
 //! helper call, on a load/store's failure return and at the block's end. A
 //! setter whose flags the next setter replaces first emits no flag code.
 
+use core::mem::offset_of;
 use core::ops::{Deref, DerefMut};
 
 use super::wasm::{Code, I32, I64};
+use crate::cpu::Cpu;
 use crate::decode::Op;
+use crate::interp::sys::DCZID_BS;
 use crate::interp::{adr_imm, bit, bit_masks, bits, sext, trunc};
 use crate::mmu::{TLB_ENTRIES, Vcpu};
 
@@ -46,6 +49,7 @@ pub const TAKEN: u32 = 125;
 /// Offsets in the `Cpu`.
 pub const PC: u32 = 256;
 const NZCV: u32 = 264;
+const PSTATE: usize = offset_of!(Cpu, pstate);
 
 /// Which register locals hold the register's value (`valid`), and which of
 /// those are newer than the `Cpu` (`dirty`); bit 31 is SP.
@@ -709,6 +713,10 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         // Hints that are NOPs here (PLAN.md §1) and don't end a block.
         NOP | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2 | AUTIB_2 | BTI | ESB | PSB | TSB
         | CSDB | DGH => {}
+        // Barriers order nothing for one vCPU on wasm's sequentially consistent
+        // memory (M6 loop 1; M7 revisits them), and don't end a block.
+        DMB | DSB | SSBB | PSSBB => {}
+        MRS => return mrs(c, cx, i, k),
         MADD | MSUB => set(c, sf, rd, |c| {
             get(c, sf, bits(i, 14, 10));
             get(c, sf, rn);
@@ -824,6 +832,8 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
 pub struct Ctx {
     pub helper: u32,
     pub bus: Bus,
+    /// The block runs at EL1 (its key says; else EL0).
+    pub el1: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1219,6 +1229,16 @@ fn access(
     c.local_set(HOST);
     let before = c.regs;
     body(c, off);
+    fallback(c, cx, i, here, before, written);
+}
+
+/// Ends the fast arm of an `if` (its register state in `c`, `before` it at
+/// the `if`) with an `else` in which the helper runs instruction `i`, the
+/// block returning if it didn't retire; the registers are written back before
+/// the call and, after it, the ones in `written` (the instruction's
+/// destinations) and any the fast arm loaded are reloaded, so both arms leave
+/// the fast arm's register state. Closes the `if`.
+fn fallback(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, written: u32) {
     let fast = c.regs;
     c.else_();
     c.regs = before;
@@ -1234,6 +1254,46 @@ fn access(
     // Clean here, maybe dirty there: the merge is dirty (a clean write-back is harmless).
     c.regs = fast;
     c.end();
+}
+
+/// MRS of a register [`sys::plain`] reads inline at the block's EL (M6 loop
+/// 1); false for the rest (timers, `ISR_EL1`, traps: helper calls).
+fn mrs(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
+    use crate::interp::sys::{Plain, plain};
+    let (rt, key) = (bits(i, 4, 0), bits(i, 20, 5));
+    let Some(p) = plain(key, cx.el1) else {
+        return false;
+    };
+    let field = |c: &mut Func, off: usize| {
+        c.local_get(VCPU).i64_load(off as u32);
+    };
+    match p {
+        Plain::Field(off) => set(c, true, rt, |c| field(c, off)),
+        Plain::Const(v) => set(c, true, rt, |c| konst(c, true, v)),
+        Plain::Pstate(m) => set(c, true, rt, |c| {
+            field(c, PSTATE);
+            c.i64_const(m as i64).i64_and();
+        }),
+        Plain::Nzcv => {
+            c.commit_flags();
+            set(c, true, rt, |c| field(c, NZCV as usize));
+        }
+        Plain::Dczid0 => set(c, true, rt, |c| {
+            // DZP (bit 4) = !SCTLR_EL1.DZE (bit 14), with the block size.
+            field(c, offset_of!(Cpu, sctlr_el1));
+            c.i64_const(10).op(SHR_U + W).i64_const(16).i64_and();
+            c.i64_const(16 | DCZID_BS as i64).op(XOR + W);
+        }),
+        Plain::SpEl0 => {
+            // sp_other while SPSel is 1; else UNDEFINED, which the helper raises.
+            field(c, PSTATE);
+            c.i32_wrap_i64().i32_const(1).op(AND).if_();
+            let before = c.regs;
+            set(c, true, rt, |c| field(c, offset_of!(Cpu, sp_other)));
+            fallback(c, cx, i, 4 * k as i64, before, xmask(rt));
+        }
+    }
+    true
 }
 
 // i32 opcodes. The i64 twin of an arithmetic one is `W` higher, of a
@@ -1742,6 +1802,7 @@ mod tests {
             phys: 0,
             size: 0x1000,
         },
+        el1: false,
     };
 
     fn emit(i: u32, k: usize) -> Option<Vec<u8>> {
@@ -1944,6 +2005,7 @@ mod tests {
         let tlb = Ctx {
             helper: 0,
             bus: Bus::Tlb { read },
+            el1: true,
         };
         let b = emit_in(insn, 0, &tlb).unwrap();
         for off in [read, read + 8] {
