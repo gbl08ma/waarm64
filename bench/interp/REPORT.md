@@ -450,3 +450,23 @@ Raw data: `results/m6-loop1/`, `../boot/results/m6-loop1/chromium-linux-arm64-1.
 **Validation:** unit test `simd_fp_loads_and_stores`; four SIMD&FP differential classes (random V registers) and SIMD&FP accesses in the system-register class (random CPACR_EL1); planted bugs caught: FPEN guard dropped (148 of 4096 words), an S load not zeroing the rest (148), the pair's second register at the first's address (2878), a Q store of 8 bytes (a trap). The new classes needed two harness fixes: the probe that finds allocated words ran them on the interpreter's vCPU and left SIMD&FP literal loads' V registers changed (sequences don't reset V), and the system-register class didn't restore code that DC ZVA zeroed; both mismatches were the harness's, not the JIT's.
 
 Raw data: `results/m6-loop2/`, `../boot/results/m6-loop2/`.
+
+## M6 loop 4: integer NEON and SIMD&FP moves as SIMD128
+
+**What runs** (`core/src/jit/emit/simd.rs`, mirroring `interp::simd` and `interp::simd_int` handler by handler): 4.1 three-same ADD/SUB, the logical group (AND…BIF as `v128.bitselect`), CMEQ/CMTST/CMGT/CMGE/CMHI/CMHS (unsigned compares by flipping sign bits: wasm has no unsigned 64-bit compare), MUL/MLA/MLS (16/32-bit), S/UMAX, S/UMIN; SSHR/USHR/SSRA/USRA/SHL/SLI/SRI (a shift by the lane width special-cased: wasm takes it modulo the width); REV16/32/64, NOT, NEG, ABS, CNT, XTN(2); EXT; DUP/INS/UMOV/SMOV; MOVI/MVNI/ORR/BIC/FMOV (vector immediate, expanded at compile time with the interpreter's function); FMOV general/register/immediate. 4.2 ADDL/ADDW/SUBL/SUBW, MULL (`extmul`), MLAL/MLSL with the 2 forms; ADDV, S/UMAXV, S/UMINV, S/UADDLV (shuffle trees in a v128 scratch local); S/UADDLP, S/UADALP; S/USHLL, SHRN; UQXTN (setting FPSR.QC); TBL/TBX (`i8x16.swizzle`, which gives 0 past index 15 as TBL does). Operands and results stay in the `Cpu`'s V registers; Q=0 clears the top half. SIMD&FP instructions check CPACR_EL1.FPEN once per block, before the first inline one (nothing within a block can change it), which replaced loop 2's per-access guard. Scalar forms, saturating arithmetic other than UQXTN, rounding shifts, polynomial multiply and the rest stay helper calls.
+
+| Chromium (small guests: eight placements) | Loop 2 | 4.1 | **4.2** |
+|---|---|---|---|
+| CoreMark (iterations/s) | 6288 (±38) | 7068 (±195) | **7934** (±27), +26% |
+| FP guest (MIPS) | 21.6 | 24.2 | **28.7** (±0.1), +33% |
+| Alpine to power-off | 16.58 s | **14.86 s** (±0.09) | 14.83 s (±0.02) |
+| Buildroot to power-off | 686 ms | 712 ms | 687 ms |
+| integer, EL1 MMU off / on | 3745, 2170 / 1918 | 3687, 2124 / 1885 | 3687, 2155 / 1897 |
+
+Alpine's NEON helper calls (the kernel's ChaCha: USHR, EOR, SLI, ADD, EXT, 31M a boot) are gone: 1.72 s of its boot. CoreMark now retires every step inline; the FP guest's helpers are FP arithmetic (FMLA by element 19.1M, FMADD 9.0M, SCVTF 4.8M, FMUL, FADD, FMLA vector, FNMUL, FSUB, FCVTZS per window): loops 5–6.
+
+**Alpine, where the time goes now** (`perf` with `--perf-prof` in Node, whole boot at 4.1): JIT code 43.9% of samples, **more than half of it in Liftoff code** (23.4 points against 20.5 in TurboFan), spread thin (3207 functions with samples; the top 1000 hold half of the JIT time): the boot is a long tail of lukewarm code that dynamic tiering never promotes. V8's own work: background TurboFan 12.9%, main-thread native ~14% (lazy Liftoff compiles, `CallIndirectIC`, module creation: `new WebAssembly.Module` 0.58 s), the interpreter and helpers (`interp::exec`) 7.1%, the dispatcher 2.8%, the JIT cache's misses and the MMU's fetch/walk ~2%. Helper calls retire 16.9M of 3.0G steps (LSE atomics ~5.5M, MSR 3.3M, LD1/ST1 multiple 3.2M, STTR/LDTR 2.1M). The input to loop 8 (compiling off the vCPU thread) and the tuning loop.
+
+**Validation:** unit test `advsimd_integer`; differential classes for every AdvSIMD encoding group (three same, three different, shift by immediate and modified immediate, two-register miscellaneous, across lanes, copy, extract, table lookup; FP/general moves) with random V registers, and NEON in the system-register class (random CPACR); the golden corpus through the JIT; planted bugs caught: USHR by the lane width (16 of 4096 words), BIT's operand order (10), DUP's lane (166), the FP check skipped (226), Q=0 keeping the top half (348), a short reduction (228), extmul's halves swapped (490), TBL's register offsets (2876), UQXTN not setting QC (31, after the harness fix below). Harness fix: each run now starts the JIT's vCPU from a full copy of the interpreter's, FPSR cleared or QC only; QC is sticky, and a helper's saturation earlier in a class had hidden the missing-QC bug.
+
+Raw data: `results/m6-loop4/`, `../boot/results/m6-loop4/`.
