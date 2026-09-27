@@ -812,7 +812,8 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             arith(c, sf, SUB);
         }),
         LDR_lit_gen | LDRSW_lit | PRFM_lit | PRFM_imm | PRFM_unscaled_imm | STRx_LDRx_imm_2
-        | STURx_LDURx | STRx_reg | LDRx_reg | STRx_LDRx_imm_1 | STP_LDP_gen | STNP_LDNP_gen => {
+        | STURx_LDURx | STRx_reg | LDRx_reg | STRx_LDRx_imm_1 | STP_LDP_gen | STNP_LDNP_gen
+        | LDAR | STLR | DC_ZVA => {
             return ldst(c, cx, i, op, k);
         }
         // The shift amount is Rm modulo the width, as wasm shifts take it.
@@ -1017,9 +1018,17 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             };
             pc_plus(c, here + sext((bits(i, 23, 5) << 2) as u64, 21) as i64);
             c.local_set(ADDR);
-            access(c, cx, i, here, len, false, false, xmask(rt), |c, off| {
-                load_reg(c, rt, off, len, sign, false)
-            });
+            access(
+                c,
+                cx,
+                i,
+                here,
+                len,
+                false,
+                Guard::None,
+                xmask(rt),
+                |c, off| load_reg(c, rt, off, len, sign, false),
+            );
         }
         PRFM_lit => {}
         PRFM_imm | PRFM_unscaled_imm => {
@@ -1075,18 +1084,28 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_set(ADDR);
             let imm9 = sext(bits(i, 20, 12) as u64, 9) as i64;
             let written = if store { 0 } else { xmask(rt) } | if wb { 1 << rn } else { 0 };
-            access(c, cx, i, here, len, store, rn == 31, written, |c, off| {
-                if store {
-                    c.local_get(HOST);
-                    get(c, true, rt);
-                    c.memarg(STORE[size as usize], 0, off);
-                } else {
-                    load_reg(c, rt, off, len, sign, to32);
-                }
-                if wb {
-                    writeback(c, rn, imm9);
-                }
-            });
+            access(
+                c,
+                cx,
+                i,
+                here,
+                len,
+                store,
+                Guard::sp(rn),
+                written,
+                |c, off| {
+                    if store {
+                        c.local_get(HOST);
+                        get(c, true, rt);
+                        c.memarg(STORE[size as usize], 0, off);
+                    } else {
+                        load_reg(c, rt, off, len, sign, to32);
+                    }
+                    if wb {
+                        writeback(c, rn, imm9);
+                    }
+                },
+            );
         }
         STP_LDP_gen | STNP_LDNP_gen => {
             let load = bit(i, 22);
@@ -1108,19 +1127,69 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_set(ADDR);
             let written = if load { xmask(rt) | xmask(rt2) } else { 0 }
                 | if mode & 1 == 1 { 1 << rn } else { 0 };
-            access(c, cx, i, here, 2 * len, !load, rn == 31, written, |c, o| {
-                if load {
-                    load_reg(c, rt, o, len, sign, false);
-                    load_reg(c, rt2, o + len, len, sign, false);
-                } else {
-                    for (r, o) in [(rt, o), (rt2, o + len)] {
-                        c.local_get(HOST);
-                        get(c, true, r);
-                        c.memarg(STORE[len.trailing_zeros() as usize], 0, o);
+            access(
+                c,
+                cx,
+                i,
+                here,
+                2 * len,
+                !load,
+                Guard::sp(rn),
+                written,
+                |c, o| {
+                    if load {
+                        load_reg(c, rt, o, len, sign, false);
+                        load_reg(c, rt2, o + len, len, sign, false);
+                    } else {
+                        for (r, o) in [(rt, o), (rt2, o + len)] {
+                            c.local_get(HOST);
+                            get(c, true, r);
+                            c.memarg(STORE[len.trailing_zeros() as usize], 0, o);
+                        }
                     }
+                    if mode & 1 == 1 {
+                        writeback(c, rn, off);
+                    }
+                },
+            );
+        }
+        // Acquire/release: atomic accesses (the interpreter's too, and M7's
+        // vCPUs need them), which must be aligned (M6 loop 1).
+        LDAR | STLR => {
+            let len = 1 << size;
+            base(c);
+            c.local_get(BASE).local_set(ADDR);
+            let store = op == STLR;
+            let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
+            let written = if store { 0 } else { xmask(rt) };
+            access(c, cx, i, here, len, store, guard, written, |c, off| {
+                if store {
+                    c.local_get(HOST);
+                    get(c, true, rt);
+                    c.atomic(ATOMIC_STORE[size as usize], size, off);
+                } else {
+                    set(c, true, rt, |c| {
+                        c.local_get(HOST)
+                            .atomic(ATOMIC_LOAD[size as usize], size, off);
+                    });
                 }
-                if mode & 1 == 1 {
-                    writeback(c, rn, off);
+            });
+        }
+        // Zeroes the aligned 64 bytes (DCZID_EL0's block) at Xt; from EL0 only
+        // while SCTLR_EL1.DZE allows it (else the helper traps).
+        DC_ZVA => {
+            get(c, true, rt);
+            c.i64_const(!63).i64_and().local_set(ADDR);
+            let guard = if cx.el1 {
+                Guard::None
+            } else {
+                Guard::Bit(offset_of!(Cpu, sctlr_el1) as u32, crate::cpu::sctlr::DZE)
+            };
+            access(c, cx, i, here, 64, true, guard, 0, |c, off| {
+                for k in 0..8 {
+                    c.local_get(HOST)
+                        .i64_const(0)
+                        .memarg(STORE[3], 0, off + 8 * k);
                 }
             });
         }
@@ -1128,6 +1197,10 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     }
     true
 }
+
+// i64 atomic loads (zero-extending) and stores by log2 size (0xfe-prefixed).
+const ATOMIC_LOAD: [u8; 4] = [0x14, 0x15, 0x16, 0x11];
+const ATOMIC_STORE: [u8; 4] = [0x1b, 0x1c, 0x1d, 0x18];
 
 // i64 loads by log2 size, zero- and sign-extending, and i64 stores.
 const LOAD_U: [u8; 4] = [0x31, 0x33, 0x35, 0x29];
@@ -1161,9 +1234,28 @@ fn xmask(rt: u32) -> u32 {
     if rt == 31 { 0 } else { 1 << rt }
 }
 
+/// What else an access's fast path requires.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Guard {
+    None,
+    /// An SP base (in `BASE`) is 16-byte aligned (else an SP alignment fault).
+    Sp,
+    /// The address (in `ADDR`) is aligned to the access (acquire/release).
+    Aligned,
+    /// The u64 at this `Cpu` offset has a bit of the mask set (DC ZVA at EL0: SCTLR_EL1.DZE).
+    Bit(u32, u64),
+}
+
+impl Guard {
+    /// `Sp` for base register 31, else nothing.
+    fn sp(rn: u32) -> Guard {
+        if rn == 31 { Guard::Sp } else { Guard::None }
+    }
+}
+
 /// The fast path of an access of `len` bytes at the address in `ADDR`: if it
 /// is RAM (flat: in bounds; MMU: a TLB hit for the page, which the access
-/// doesn't leave) and, for an SP base (`sp`), SP is 16-byte aligned, `body`
+/// doesn't leave) and `guard` holds, `body`
 /// runs with the host address in `HOST`, to be used with the memarg offset
 /// it gets. Otherwise the helper re-executes the instruction (exact faults,
 /// MMIO through `vm::Io`, page-crossing accesses) and the block returns if it
@@ -1178,7 +1270,7 @@ fn access(
     here: i64,
     len: u32,
     write: bool,
-    sp: bool,
+    guard: Guard,
     written: u32,
     body: impl FnOnce(&mut Func, u32),
 ) {
@@ -1207,12 +1299,23 @@ fn access(
             0
         }
     };
-    if sp {
-        c.local_get(BASE)
-            .i64_const(15)
-            .i64_and()
-            .op(EQZ + WC)
-            .op(AND);
+    match guard {
+        Guard::None => {}
+        Guard::Sp | Guard::Aligned => {
+            let (l, m) = if guard == Guard::Sp {
+                (BASE, 15)
+            } else {
+                (ADDR, len as i64 - 1)
+            };
+            c.local_get(l).i64_const(m).i64_and().op(EQZ + WC).op(AND);
+        }
+        Guard::Bit(off, m) => {
+            c.local_get(VCPU)
+                .i64_load(off)
+                .i64_const(m as i64)
+                .i64_and();
+            c.i64_const(0).op(NE + WC).op(AND);
+        }
     }
     c.if_();
     match cx.bus {
@@ -1812,6 +1915,52 @@ mod tests {
     fn emit_in(i: u32, k: usize, cx: &Ctx) -> Option<Vec<u8>> {
         let mut c = Func::default();
         inline(&mut c, i, decode(i), k, cx).then_some(c.c.b)
+    }
+
+    /// `needle` occurs in `hay`.
+    fn has(hay: &[u8], needle: &[u8]) -> bool {
+        hay.windows(needle.len()).any(|w| w == needle)
+    }
+
+    #[test]
+    fn system_register_reads() {
+        const EL1: Ctx = Ctx { el1: true, ..FLAT };
+        // mrs x1, tpidr_el1 at EL1: vcpu; i64.load 992; local.set x1.
+        assert_eq!(
+            emit_in(0xd538d081, 0, &EL1).unwrap(),
+            [0x20, 0, 0x29, 3, 0xe0, 7, 0x21, 17]
+        );
+        // At EL0 it's UNDEFINED: the helper raises it.
+        assert_eq!(emit(0xd538d081, 0), None);
+        // mrs x1, currentel: a constant; mrs x1, cntvct_el0: the platform.
+        assert_eq!(emit_in(0xd5384241, 0, &EL1).unwrap(), [0x42, 4, 0x21, 17]);
+        assert_eq!(emit_in(0xd53be041, 0, &EL1), None);
+        // mrs x1, sp_el0 at EL1: sp_other (840) under `if pstate & 1`, the helper otherwise.
+        let b = emit_in(0xd5384101, 0, &EL1).unwrap();
+        assert!(has(&b, &[0x20, 0, 0x29, 3, 0xc0, 6])); // pstate
+        assert!(has(&b, &[0x20, 0, 0x29, 3, 0xc8, 6])); // sp_other
+        assert!(has(&b, &[0x10, 0])); // call helper 0
+        // Barriers: nothing.
+        assert_eq!(emit(0xd5033bbf, 0).unwrap(), []); // dmb ish
+        assert_eq!(emit(0xd5033f9f, 0).unwrap(), []); // dsb sy
+    }
+
+    #[test]
+    fn acquire_release_and_dc_zva() {
+        // ldar x0, [x1]: an aligned atomic load (0xfe 0x11, alignment 3) behind
+        // the address's alignment check (& 7 == 0).
+        let b = emit(0xc8dffc20, 0).unwrap();
+        assert!(has(&b, &[0xfe, 0x11, 3]));
+        assert!(has(&b, &[0x42, 7, 0x83, 0x50]));
+        // stlrb w0, [x1]: an 8-bit atomic store.
+        assert!(has(&emit(0x089ffc20, 0).unwrap(), &[0xfe, 0x1b, 0]));
+        // dc zva, x1: & !63, eight i64 stores of 0; at EL0 behind SCTLR_EL1.DZE (888).
+        let b = emit(0xd50b7421, 0).unwrap();
+        assert!(has(&b, &[0x42, 0x40, 0x83]));
+        assert_eq!(b.windows(3).filter(|w| *w == [0x42, 0, 0x37]).count(), 8);
+        assert!(has(&b, &[0x20, 0, 0x29, 3, 0xf8, 6]));
+        let el1 = emit_in(0xd50b7421, 0, &Ctx { el1: true, ..FLAT }).unwrap();
+        assert!(!has(&el1, &[0x20, 0, 0x29, 3, 0xf8, 6]));
     }
 
     #[test]

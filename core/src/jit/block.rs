@@ -33,21 +33,22 @@ pub enum End {
 /// Branches and most system-class instructions end a block after them;
 /// exception-generating and unallocated encodings end it before them.
 /// Hints that are NOPs here (PAC and BTI hint space, CSDB, …), MRS and the
-/// data barriers don't end one.
+/// data barriers and DC ZVA don't end one.
 // ponytail: still conservative for the other system instructions (MSR, SYS,
-// CLREX, DC); relax each with a profile that shows it (M6 loop 1 did MRS and
-// the barriers).
+// CLREX, the other DC); relax each with a profile that shows it (M6 loop 1
+// did MRS, the barriers and DC ZVA).
 pub fn end(op: Op) -> End {
     use Op::*;
     match op {
-        // MRS and the data barriers don't end a block (M6 loop 1): the
-        // barriers are no-ops for one vCPU, MRS changes nothing but its
-        // register, and one that leaves (a timer, a trap) returns from the
-        // block through its helper call, as a load from MMIO does.
+        // MRS, the data barriers and DC ZVA don't end a block (M6 loop 1):
+        // the barriers are no-ops for one vCPU, MRS changes nothing but its
+        // register, DC ZVA is a 64-byte store, and one that leaves (a timer,
+        // a trap, a fault) returns from the block through its helper call,
+        // as a load from MMIO does.
         B_uncond | BL | B_cond | CBZ | CBNZ | TBZ | TBNZ | BR | BLR | RET | ERET | MSR_reg
-        | MSR_imm | SYS | SYSL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_ZVA | DC_CVAC
-        | DC_CVAU | DC_CIVAC | IC_IALLU | IC_IALLUIS | IC_IVAU | WFE | WFI | YIELD | SEV | SEVL
-        | CLREX | ISB => End::After,
+        | MSR_imm | SYS | SYSL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_CVAC | DC_CVAU
+        | DC_CIVAC | IC_IALLU | IC_IALLUIS | IC_IVAU | WFE | WFI | YIELD | SEV | SEVL | CLREX
+        | ISB => End::After,
         SVC | HVC | SMC | BRK | HLT | DCPS1 | DCPS2 | DCPS3 | DRPS | UnallocatedEncoding => {
             End::Before
         }
@@ -128,8 +129,8 @@ pub fn next(words: &[u32]) -> Next {
         B_cond | CBZ | CBNZ => Next::Cond(at + ofs(23, 5, 21), at + 4),
         TBZ | TBNZ => Next::Cond(at + ofs(18, 5, 16), at + 4),
         _ if end(op) == End::No => Next::One(at + 4),
-        ISB | CLREX | YIELD | SEV | SEVL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_ZVA
-        | DC_CVAC | DC_CVAU | DC_CIVAC => Next::One(at + 4),
+        ISB | CLREX | YIELD | SEV | SEVL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_CVAC
+        | DC_CVAU | DC_CIVAC => Next::One(at + 4),
         _ => Next::None,
     }
 }

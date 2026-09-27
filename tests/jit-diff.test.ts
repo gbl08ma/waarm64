@@ -66,6 +66,8 @@ const MEMORY: Record<string, [number, number]> = {
   'load/store, unscaled, pre/post-index, register offset': [0x3f000000, 0x38000000],
   'load/store pair': [0x3e000000, 0x28000000],
   'load literal': [0x3f000000, 0x18000000],
+  'load-acquire, store-release': [0x3fa08000, 0x08808000], // LDAR, STLR (M6 loop 1)
+  'DC ZVA': [0xffffffe0, 0xd50b7420],
 };
 
 // xorshift64*, seeded: failures reproduce.
@@ -193,8 +195,9 @@ for (const [name, [mask, bits], mem] of [
 });
 
 // System registers (M6 loop 1): MRS of the registers the JIT reads inline
-// and of neighbours that stay helper calls (traps, timers, UNDEFINED), and
-// the barriers, at EL0, EL1t and EL1h, with the system registers random. The
+// and of neighbours that stay helper calls (traps, timers, UNDEFINED), the
+// barriers and DC ZVA, at EL0, EL1t and EL1h, with the system registers
+// random (registers mostly addresses in and around the data area). The
 // `Cpu` offsets are checked natively (`interp::sys::tests::jit_diff_offsets`).
 const SYSREG_FIELDS = [976, 984, 992, 840, 848, 856, 864, 872, 896, 904, 912, 920, 928, 944, 968, 880, 1016, 1000]; // tpidr_el0 … mdscr_el1
 const PSTATE = 832, SCTLR = 888;
@@ -212,6 +215,7 @@ test('JIT vs interpreter: system registers and barriers', () => {
   const words = Array.from({ length: WORDS }, () => {
     const rt = rand32() & 31;
     if (rand32() % 8 === 0) return (0xd503301f | (rand32() & 0xfe0)) >>> 0; // barriers and the rest of that space
+    if (rand32() % 8 === 0) return (0xd50b7420 | rt) >>> 0; // DC ZVA: SCTLR_EL1.DZE decides at EL0
     const key = rand32() % 4 === 0 ? rand32() & 0xffff : SYSREG_KEYS[rand32() % SYSREG_KEYS.length];
     return (0xd5300000 | key << 5 | rt) >>> 0; // MRS
   });
@@ -224,7 +228,7 @@ test('JIT vs interpreter: system registers and barriers', () => {
     for (let s = 0; s < STATES; s++) {
       const [a, b] = cpus();
       const full = [new BigUint64Array(a.buffer, a.byteOffset, CPU_BYTES / 8), new BigUint64Array(b.buffer, b.byteOffset, CPU_BYTES / 8)];
-      for (let r = 0; r < 32; r++) a[r] = value(false, data);
+      for (let r = 0; r < 32; r++) a[r] = value(true, data);
       a[32] = BigInt(8 * k);
       a[33] = BigInt(rand32() & 0xf) << 28n;
       for (const off of SYSREG_FIELDS) full[0][off / 8] = rand64();
@@ -232,7 +236,7 @@ test('JIT vs interpreter: system registers and barriers', () => {
       full[0][PSTATE / 8] = BigInt([0, 4, 5][rand32() % 3]) | BigInt(rand32() & 0x3c0);
       full[0][SCTLR / 8] = full[1][SCTLR / 8] ^ BigInt(rand32() & (1 << 9 | 1 << 14 | 1 << 15));
       full[1].set(full[0]);
-      const what = run(1n, false);
+      const what = run(1n, true);
       if (what) {
         failures.push(`${words[k].toString(16).padStart(8, '0')} (pstate ${full[0][PSTATE / 8]}): ${what} differs`);
         break;
