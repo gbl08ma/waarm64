@@ -532,7 +532,7 @@ Raw data: `results/m6-loop11/`, `../boot/results/m6-loop11/`.
 | Buildroot to power-off (JIT) | 730 ms | 696 ms (batching alone 701) |
 | Alpine: modules, compile | 8245, 0.55 s (Node) | 2580, 0.32 s (Node) |
 
-Steps unchanged (Alpine 3,009,151,562). The EL1 guests lose 4–5% in Chromium (8–10% in Node, with the same dispatches and a slightly different set of tier-ups and chains: a code-layout effect in a synthetic guest); accepted under the user's decision to favor real workloads over "no guest slower" (PLAN §7 M6). The flag rule may cost Alpine up to ~2% (13.5–13.7 s with batching alone vs 13.9–14.1 s with both, below the noise line): lukewarm code carries the NZCV computation on its exit paths instead of once before the branch.
+Steps unchanged (Alpine 3,009,151,562). The EL1 guests lose 4–5% in Chromium (8–10% in Node, with the same dispatches and a slightly different set of tier-ups and chains: a code-layout effect in a synthetic guest); accepted under the relaxed target: distro boots and real programs first, short boots and synthetic guests second (PLAN §7 M6). The flag rule may cost Alpine up to ~2% (13.5–13.7 s with batching alone vs 13.9–14.1 s with both, below the noise line): lukewarm code carries the NZCV computation on its exit paths instead of once before the branch.
 
 **Validation:** the differential test (sequences, regions, loops), the golden corpus through the JIT, 20M-step lockstep, CI's boots with exact steps; planted bug: region exits without their flag store, caught by all five sequence and region classes.
 
