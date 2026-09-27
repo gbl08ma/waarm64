@@ -1,0 +1,727 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-27T17:53:17.481Z",
+ "commit": "e1082cbe41f5",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "debian_jit_first_cold",
+   "unit": "ms",
+   "params": {
+    "distro": "debian",
+    "cmdline": "console=ttyAMA0 root=/dev/vda1 ro systemd.run=\"/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; findmnt -no OPTIONS /; echo webpc: test ok'\" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff systemd.firstboot=off",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "debian",
+    "steps": 16654729762,
+    "counters": {
+     "steps": 16654729762,
+     "irqs": 68031,
+     "exceptions": {
+      "0x0": 283,
+      "0x15": 560946,
+      "0x20": 11874,
+      "0x24": 83965,
+      "0x25": 5045
+     },
+     "tlbMisses": 8062871,
+     "tlbWalks": 7950113,
+     "tlbFlushes": 204561,
+     "jit": {
+      "blocks": 183225,
+      "modules": 7817,
+      "bytes": 87903935,
+      "compileNs": 1600664988,
+      "steps": 16525211391,
+      "dispatches": 103781013,
+      "invalidations": 412,
+      "flushes": 2,
+      "inline": 970446,
+      "helpers": 981,
+      "inlineSteps": 16495833802,
+      "flagsStored": 58490,
+      "flagsElided": 4994,
+      "condDirect": 59023,
+      "condComputed": 729,
+      "condMemory": 5363,
+      "regionBlocks": 190227,
+      "backEdges": 3344,
+      "tierUps": 1571
+     }
+    },
+    "helpers": [
+     {
+      "op": "CMEQ_zero_2",
+      "calls": 7137425
+     },
+     {
+      "op": "UMAXP",
+      "calls": 4924228
+     },
+     {
+      "op": "STRx_LDRx_imm_2",
+      "calls": 3731709
+     },
+     {
+      "op": "MSR_reg",
+      "calls": 3205427
+     },
+     {
+      "op": "ISB",
+      "calls": 2919689
+     },
+     {
+      "op": "MRS",
+      "calls": 2564534
+     },
+     {
+      "op": "CASP",
+      "calls": 1680993
+     },
+     {
+      "op": "UMINP",
+      "calls": 872468
+     },
+     {
+      "op": "ERET",
+      "calls": 729672
+     },
+     {
+      "op": "IC_IVAU",
+      "calls": 655878
+     },
+     {
+      "op": "LDRx_reg",
+      "calls": 617666
+     },
+     {
+      "op": "STP_LDP_gen",
+      "calls": 615132
+     },
+     {
+      "op": "CRC32",
+      "calls": 456070
+     },
+     {
+      "op": "MSR_imm",
+      "calls": 436937
+     },
+     {
+      "op": "ADDHN",
+      "calls": 278589
+     },
+     {
+      "op": "CRC32C",
+      "calls": 217399
+     },
+     {
+      "op": "SYS",
+      "calls": 166201
+     },
+     {
+      "op": "STRx_reg",
+      "calls": 159162
+     },
+     {
+      "op": "CAS",
+      "calls": 158795
+     },
+     {
+      "op": "ADDP_vec",
+      "calls": 142263
+     },
+     {
+      "op": "STRx_LDRx_imm_1",
+      "calls": 128319
+     },
+     {
+      "op": "DC_ZVA",
+      "calls": 111488
+     },
+     {
+      "op": "YIELD",
+      "calls": 84468
+     },
+     {
+      "op": "STP_LDP_fpsimd",
+      "calls": 57793
+     },
+     {
+      "op": "DC_CVAU",
+      "calls": 49753
+     },
+     {
+      "op": "STTR",
+      "calls": 43569
+     },
+     {
+      "op": "LDADD",
+      "calls": 40554
+     },
+     {
+      "op": "LDx_mult_1",
+      "calls": 36328
+     },
+     {
+      "op": "LDTR",
+      "calls": 36096
+     },
+     {
+      "op": "STURx_LDURx",
+      "calls": 34881
+     }
+    ]
+   },
+   "samples": [
+    48265.87000000477
+   ],
+   "median": 48265.87000000477,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "debian_jit_total_cold",
+   "unit": "ms",
+   "params": {
+    "distro": "debian",
+    "cmdline": "console=ttyAMA0 root=/dev/vda1 ro systemd.run=\"/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; findmnt -no OPTIONS /; echo webpc: test ok'\" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff systemd.firstboot=off",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "debian",
+    "steps": 16654729762,
+    "counters": {
+     "steps": 16654729762,
+     "irqs": 68031,
+     "exceptions": {
+      "0x0": 283,
+      "0x15": 560946,
+      "0x20": 11874,
+      "0x24": 83965,
+      "0x25": 5045
+     },
+     "tlbMisses": 8062871,
+     "tlbWalks": 7950113,
+     "tlbFlushes": 204561,
+     "jit": {
+      "blocks": 183225,
+      "modules": 7817,
+      "bytes": 87903935,
+      "compileNs": 1600664988,
+      "steps": 16525211391,
+      "dispatches": 103781013,
+      "invalidations": 412,
+      "flushes": 2,
+      "inline": 970446,
+      "helpers": 981,
+      "inlineSteps": 16495833802,
+      "flagsStored": 58490,
+      "flagsElided": 4994,
+      "condDirect": 59023,
+      "condComputed": 729,
+      "condMemory": 5363,
+      "regionBlocks": 190227,
+      "backEdges": 3344,
+      "tierUps": 1571
+     }
+    },
+    "helpers": [
+     {
+      "op": "CMEQ_zero_2",
+      "calls": 7137425
+     },
+     {
+      "op": "UMAXP",
+      "calls": 4924228
+     },
+     {
+      "op": "STRx_LDRx_imm_2",
+      "calls": 3731709
+     },
+     {
+      "op": "MSR_reg",
+      "calls": 3205427
+     },
+     {
+      "op": "ISB",
+      "calls": 2919689
+     },
+     {
+      "op": "MRS",
+      "calls": 2564534
+     },
+     {
+      "op": "CASP",
+      "calls": 1680993
+     },
+     {
+      "op": "UMINP",
+      "calls": 872468
+     },
+     {
+      "op": "ERET",
+      "calls": 729672
+     },
+     {
+      "op": "IC_IVAU",
+      "calls": 655878
+     },
+     {
+      "op": "LDRx_reg",
+      "calls": 617666
+     },
+     {
+      "op": "STP_LDP_gen",
+      "calls": 615132
+     },
+     {
+      "op": "CRC32",
+      "calls": 456070
+     },
+     {
+      "op": "MSR_imm",
+      "calls": 436937
+     },
+     {
+      "op": "ADDHN",
+      "calls": 278589
+     },
+     {
+      "op": "CRC32C",
+      "calls": 217399
+     },
+     {
+      "op": "SYS",
+      "calls": 166201
+     },
+     {
+      "op": "STRx_reg",
+      "calls": 159162
+     },
+     {
+      "op": "CAS",
+      "calls": 158795
+     },
+     {
+      "op": "ADDP_vec",
+      "calls": 142263
+     },
+     {
+      "op": "STRx_LDRx_imm_1",
+      "calls": 128319
+     },
+     {
+      "op": "DC_ZVA",
+      "calls": 111488
+     },
+     {
+      "op": "YIELD",
+      "calls": 84468
+     },
+     {
+      "op": "STP_LDP_fpsimd",
+      "calls": 57793
+     },
+     {
+      "op": "DC_CVAU",
+      "calls": 49753
+     },
+     {
+      "op": "STTR",
+      "calls": 43569
+     },
+     {
+      "op": "LDADD",
+      "calls": 40554
+     },
+     {
+      "op": "LDx_mult_1",
+      "calls": 36328
+     },
+     {
+      "op": "LDTR",
+      "calls": 36096
+     },
+     {
+      "op": "STURx_LDURx",
+      "calls": 34881
+     }
+    ]
+   },
+   "samples": [
+    50315.60500000417
+   ],
+   "median": 50315.60500000417,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "debian_jit_first",
+   "unit": "ms",
+   "params": {
+    "distro": "debian",
+    "cmdline": "console=ttyAMA0 root=/dev/vda1 ro systemd.run=\"/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; findmnt -no OPTIONS /; echo webpc: test ok'\" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff systemd.firstboot=off",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "debian",
+    "steps": 16654729762,
+    "counters": {
+     "steps": 16654729762,
+     "irqs": 68031,
+     "exceptions": {
+      "0x0": 283,
+      "0x15": 560946,
+      "0x20": 11874,
+      "0x24": 83965,
+      "0x25": 5045
+     },
+     "tlbMisses": 8062871,
+     "tlbWalks": 7950113,
+     "tlbFlushes": 204561,
+     "jit": {
+      "blocks": 183225,
+      "modules": 7817,
+      "bytes": 87903935,
+      "compileNs": 1600664988,
+      "steps": 16525211391,
+      "dispatches": 103781013,
+      "invalidations": 412,
+      "flushes": 2,
+      "inline": 970446,
+      "helpers": 981,
+      "inlineSteps": 16495833802,
+      "flagsStored": 58490,
+      "flagsElided": 4994,
+      "condDirect": 59023,
+      "condComputed": 729,
+      "condMemory": 5363,
+      "regionBlocks": 190227,
+      "backEdges": 3344,
+      "tierUps": 1571
+     }
+    },
+    "helpers": [
+     {
+      "op": "CMEQ_zero_2",
+      "calls": 7137425
+     },
+     {
+      "op": "UMAXP",
+      "calls": 4924228
+     },
+     {
+      "op": "STRx_LDRx_imm_2",
+      "calls": 3731709
+     },
+     {
+      "op": "MSR_reg",
+      "calls": 3205427
+     },
+     {
+      "op": "ISB",
+      "calls": 2919689
+     },
+     {
+      "op": "MRS",
+      "calls": 2564534
+     },
+     {
+      "op": "CASP",
+      "calls": 1680993
+     },
+     {
+      "op": "UMINP",
+      "calls": 872468
+     },
+     {
+      "op": "ERET",
+      "calls": 729672
+     },
+     {
+      "op": "IC_IVAU",
+      "calls": 655878
+     },
+     {
+      "op": "LDRx_reg",
+      "calls": 617666
+     },
+     {
+      "op": "STP_LDP_gen",
+      "calls": 615132
+     },
+     {
+      "op": "CRC32",
+      "calls": 456070
+     },
+     {
+      "op": "MSR_imm",
+      "calls": 436937
+     },
+     {
+      "op": "ADDHN",
+      "calls": 278589
+     },
+     {
+      "op": "CRC32C",
+      "calls": 217399
+     },
+     {
+      "op": "SYS",
+      "calls": 166201
+     },
+     {
+      "op": "STRx_reg",
+      "calls": 159162
+     },
+     {
+      "op": "CAS",
+      "calls": 158795
+     },
+     {
+      "op": "ADDP_vec",
+      "calls": 142263
+     },
+     {
+      "op": "STRx_LDRx_imm_1",
+      "calls": 128319
+     },
+     {
+      "op": "DC_ZVA",
+      "calls": 111488
+     },
+     {
+      "op": "YIELD",
+      "calls": 84468
+     },
+     {
+      "op": "STP_LDP_fpsimd",
+      "calls": 57793
+     },
+     {
+      "op": "DC_CVAU",
+      "calls": 49753
+     },
+     {
+      "op": "STTR",
+      "calls": 43569
+     },
+     {
+      "op": "LDADD",
+      "calls": 40554
+     },
+     {
+      "op": "LDx_mult_1",
+      "calls": 36328
+     },
+     {
+      "op": "LDTR",
+      "calls": 36096
+     },
+     {
+      "op": "STURx_LDURx",
+      "calls": 34881
+     }
+    ]
+   },
+   "samples": [
+    46355.04999999702
+   ],
+   "median": 46355.04999999702,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "debian_jit_total",
+   "unit": "ms",
+   "params": {
+    "distro": "debian",
+    "cmdline": "console=ttyAMA0 root=/dev/vda1 ro systemd.run=\"/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; findmnt -no OPTIONS /; echo webpc: test ok'\" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff systemd.firstboot=off",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "debian",
+    "steps": 16654729762,
+    "counters": {
+     "steps": 16654729762,
+     "irqs": 68031,
+     "exceptions": {
+      "0x0": 283,
+      "0x15": 560946,
+      "0x20": 11874,
+      "0x24": 83965,
+      "0x25": 5045
+     },
+     "tlbMisses": 8062871,
+     "tlbWalks": 7950113,
+     "tlbFlushes": 204561,
+     "jit": {
+      "blocks": 183225,
+      "modules": 7817,
+      "bytes": 87903935,
+      "compileNs": 1600664988,
+      "steps": 16525211391,
+      "dispatches": 103781013,
+      "invalidations": 412,
+      "flushes": 2,
+      "inline": 970446,
+      "helpers": 981,
+      "inlineSteps": 16495833802,
+      "flagsStored": 58490,
+      "flagsElided": 4994,
+      "condDirect": 59023,
+      "condComputed": 729,
+      "condMemory": 5363,
+      "regionBlocks": 190227,
+      "backEdges": 3344,
+      "tierUps": 1571
+     }
+    },
+    "helpers": [
+     {
+      "op": "CMEQ_zero_2",
+      "calls": 7137425
+     },
+     {
+      "op": "UMAXP",
+      "calls": 4924228
+     },
+     {
+      "op": "STRx_LDRx_imm_2",
+      "calls": 3731709
+     },
+     {
+      "op": "MSR_reg",
+      "calls": 3205427
+     },
+     {
+      "op": "ISB",
+      "calls": 2919689
+     },
+     {
+      "op": "MRS",
+      "calls": 2564534
+     },
+     {
+      "op": "CASP",
+      "calls": 1680993
+     },
+     {
+      "op": "UMINP",
+      "calls": 872468
+     },
+     {
+      "op": "ERET",
+      "calls": 729672
+     },
+     {
+      "op": "IC_IVAU",
+      "calls": 655878
+     },
+     {
+      "op": "LDRx_reg",
+      "calls": 617666
+     },
+     {
+      "op": "STP_LDP_gen",
+      "calls": 615132
+     },
+     {
+      "op": "CRC32",
+      "calls": 456070
+     },
+     {
+      "op": "MSR_imm",
+      "calls": 436937
+     },
+     {
+      "op": "ADDHN",
+      "calls": 278589
+     },
+     {
+      "op": "CRC32C",
+      "calls": 217399
+     },
+     {
+      "op": "SYS",
+      "calls": 166201
+     },
+     {
+      "op": "STRx_reg",
+      "calls": 159162
+     },
+     {
+      "op": "CAS",
+      "calls": 158795
+     },
+     {
+      "op": "ADDP_vec",
+      "calls": 142263
+     },
+     {
+      "op": "STRx_LDRx_imm_1",
+      "calls": 128319
+     },
+     {
+      "op": "DC_ZVA",
+      "calls": 111488
+     },
+     {
+      "op": "YIELD",
+      "calls": 84468
+     },
+     {
+      "op": "STP_LDP_fpsimd",
+      "calls": 57793
+     },
+     {
+      "op": "DC_CVAU",
+      "calls": 49753
+     },
+     {
+      "op": "STTR",
+      "calls": 43569
+     },
+     {
+      "op": "LDADD",
+      "calls": 40554
+     },
+     {
+      "op": "LDx_mult_1",
+      "calls": 36328
+     },
+     {
+      "op": "LDTR",
+      "calls": 36096
+     },
+     {
+      "op": "STURx_LDURx",
+      "calls": 34881
+     }
+    ]
+   },
+   "samples": [
+    48245.46999999881
+   ],
+   "median": 48245.46999999881,
+   "iqr": 0,
+   "n": 1
+  }
+ ]
+}

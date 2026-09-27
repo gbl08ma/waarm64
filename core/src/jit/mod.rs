@@ -61,7 +61,7 @@ impl Config {
     pub const DEFAULT: Config = Config {
         threshold: 50,
         batch: 512,
-        capacity: 65536,
+        capacity: 262_144,
         check: false,
         region_after: REGION_AFTER,
     };

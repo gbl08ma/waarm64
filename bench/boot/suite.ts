@@ -7,7 +7,8 @@
 // `--only boot_defconfig`: the same with the arm64 defconfig kernel (Image-defconfig).
 // `--only boot_alpine`: Alpine (target/images/alpine) as its boot test runs it:
 // 1 GiB, the test devices and a framebuffer; to its local.d script and to power-off.
-// `--only boot_jit`, `--only boot_alpine_jit`: the Buildroot and Alpine boots under the JIT (VmConfig.jit = 1).
+// `--only boot_jit`, `--only boot_alpine_jit`: the Buildroot and Alpine boots under the JIT (VmConfig.jit = 1);
+// `--only boot_debian_jit`: Debian 13's (one cold and one warm boot, several minutes; not in the default set).
 // I/O, realtime mode, a fresh boot per sample, timed by the host between the
 // guest script's "webpc: … start/end" markers unless fio times itself:
 // `--only dd`: /bench-dd.sh reads all of /dev/vda (sync-XHR block backend);
@@ -145,6 +146,15 @@ async function bootAlpine(o: Options, jit: 0 | 1 = 0): Promise<Sample[]> {
   return s.map((x) => ({ ...x, name: x.name.replace('boot_init', `${pre}_script`).replace('boot_total', `${pre}_total`) }));
 }
 
+/** Debian 13 under the JIT to power-off (M6: timed once; long, so one cold and one warm boot). */
+async function bootDebian(o: Options): Promise<Sample[]> {
+  const d = DISTROS.debian;
+  const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${d.initrd}`), get(`../../target/images/${d.kernel}`)]);
+  const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${d.disk}`, import.meta.url).href, cmdline: d.cmdline, ramSize: 1 << 30, test: true, jit: 1 as const };
+  const s = await bootTimes(o, img, 'debian', { distro: 'debian', cmdline: d.cmdline, ramMiB: 1024, devices: 'test', jit: 1 }, { cold: 1, warmup: 0, warm: 1 });
+  return s.map((x) => ({ ...x, name: x.name.replace('boot_init', 'debian_jit_first').replace('boot_total', 'debian_jit_total') }));
+}
+
 /** Realtime boots of the Buildroot guest with the test devices running `script`, `n` of them. */
 async function scriptBoots(o: Options, script: string, n: number) {
   const img = { ...(await images()), test: true };
@@ -213,5 +223,5 @@ async function net(o: Options): Promise<Sample[]> {
 export const suite = {
   boot: runAll, boot_defconfig: (o: Options) => runAll(o, 'Image-defconfig'), boot_alpine: bootAlpine, dd, fio, p9, net,
   // Under the JIT (VmConfig.jit = 1), deterministic.
-  boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1),
+  boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), boot_debian_jit: bootDebian,
 };
