@@ -433,3 +433,20 @@ Steps unchanged (Alpine 3,009,151,562, Buildroot 40,909,861); dispatches per ins
 **Validation:** unit tests for each shape (`system_register_reads`, `acquire_release_and_dc_zva`, `plain_matches_read`, `jit_diff_offsets`); new differential classes: system registers and barriers (MRS of the inline registers and helper-call neighbours, barriers, DC ZVA, at EL0, EL1t and EL1h with random system registers and SCTLR trap bits), load-acquire/store-release, DC ZVA; planted bugs caught: SP_EL0 unguarded (89 of 4096 words), TPIDR_EL1 at a wrong offset (64), NZCV read without committing lazy flags (110 of 1024 sequences), LDAR/STLR without the alignment check (a wasm alignment trap), DC ZVA unmasked (195), DC ZVA without the DZE guard (280); CI (the Node boots with exact steps); lockstep at 300M steps per case, clean in all eight (JIT and JIT-stress; user mode, EL1 MMU off and on).
 
 Raw data: `results/m6-loop1/`, `../boot/results/m6-loop1/chromium-linux-arm64-1.{1,2}-*.json`.
+
+## M6 loop 2: SIMD&FP loads and stores inline
+
+**What runs:** LDR/STR/LDUR/STUR (unsigned offset, unscaled, pre/post-index, register offset), LDP/STP/LDNP/STNP and LDR (literal) of B/H/S/D/Q registers take the load/store fast path, with the V registers read and written in the `Cpu`: `v128.load`/`v128.store` for Q, `v128.load32_zero`/`load64_zero` for S/D loads (which zero the rest of the register), i64 loads and narrow stores otherwise; behind CPACR_EL1.FPEN (11 at EL0, x1 at EL1) and, for an SP base, SP's alignment (`access` now takes a list of guards). Structure loads and stores (LD1/ST1 & co) stay helper calls.
+
+| Chromium (small guests: eight placements) | Loop 1 (`0e3fc15`, where measured) | **Loop 2** |
+|---|---|---|
+| FP guest (MIPS) | 19.5 (baseline) | **21.6** (±0.07), +11% |
+| CoreMark (iterations/s) | 5636 (baseline) | **6288** (±38), +11.6% |
+| integer, EL1 MMU off / on | 3735, 2166 / 1895 (baseline) | 3745, 2170 / 1918 |
+| Alpine / Buildroot boot | 16.76 s / 711 ms | 16.58 s (±0.08) / 686 ms (±7) |
+
+**Where they stand:** CoreMark retires 99.73% of its steps inline (its helper calls: `ADD` 0.12M, `MOVI` 0.10M, `SMLAL`/`SMULL`/`SUB` 0.05M each per window), yet runs at 1544 MIPS against the integer guest's 3745: what's left of its gap to QEMU is in the inline code and the linking, not in helpers. The FP guest is 54.7% inline: `FMLA` (by element) 19.1M, `FMADD` 9.0M, `FMOV` 4.8M, `SCVTF` 4.8M, `MOVI` 3.7M, `FMUL` 2.6M per window.
+
+**Validation:** unit test `simd_fp_loads_and_stores`; four SIMD&FP differential classes (random V registers) and SIMD&FP accesses in the system-register class (random CPACR_EL1); planted bugs caught: FPEN guard dropped (148 of 4096 words), an S load not zeroing the rest (148), the pair's second register at the first's address (2878), a Q store of 8 bytes (a trap). The new classes needed two harness fixes: the probe that finds allocated words ran them on the interpreter's vCPU and left SIMD&FP literal loads' V registers changed (sequences don't reset V), and the system-register class didn't restore code that DC ZVA zeroed; both mismatches were the harness's, not the JIT's.
+
+Raw data: `results/m6-loop2/`, `../boot/results/m6-loop2/`.
