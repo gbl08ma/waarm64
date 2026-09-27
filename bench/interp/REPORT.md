@@ -335,3 +335,58 @@ Raw data: `results/m5-step8/chromium-linux-arm64-step8.{4,5}*.json`, `../boot/re
 ### Step 8 summary
 
 Regions pay where guests loop: the integer guest runs at **3857 MIPS against step 7's 1184 (3.3×)**, the EL1 guests at 2148 / 1913 (1.9× / 1.8×). The boots don't gain: Buildroot 694–725 ms against 655–677 and Alpine 17.6–18.2 s against 17.5 s. They run few hot loops, and compiling more costs them a little; the tier-up (8.3) is what kept regions from costing them 10–14%. **JIT-stress** at first built regions of every block in reach on every miss, 42× slower than step 7 (kvm-unit-tests `gic active` 522 s vs 12.5 s); from seen blocks only it takes 15.7 s, and the stress boots take Buildroot 198 s, the device test 568 s (`cache` 32 s vs step 7's 26.5 s). **Validation at the end of the step:** CI, lockstep at 300M steps per JIT case (clean), every Node boot under the JIT and JIT-stress with the interpreter's steps, Alpine under the JIT in Node and Chromium (3,009,151,562 steps). Open (PLAN M9): the TurboFan-only drop and the one-off slow mode of 8.4–8.5; compiling off the vCPU thread.
+
+## M5 step 9: coverage and JIT-stress everywhere
+
+**Coverage.** Every instruction the JIT meets compiles, inline or as a helper call; the only steps interpreted are ones the JIT chooses not to run. An ad hoc histogram of why the dispatcher interpreted (reverted) on Buildroot's boot in Node: with the default policy 15.28% of the steps, of which 98% are code not compiled yet (below the 50-dispatch threshold, or waiting in a batch), 1.6% chunk-end tails (a block longer than the budget left before a deadline, run step by step so interrupts land where the interpreter's would) and nothing else; compiling on first sight (threshold 0) leaves 2.49%, still pending batches and tails. Alpine interprets 1.37% of its steps (default policy).
+
+**The threshold** (Node, Buildroot boot ms and interpreted share / Alpine boot s and share, blocks compiled):
+
+| Threshold | Buildroot | Alpine |
+|---|---|---|
+| 50 (default) | 625 ms, 15.3%, 12,493 blocks | 16.3 s, 1.36%, 57,279 blocks |
+| 20 | 734 ms, 10.1% | 17.3 s, 1.07%, 86,439 |
+| 10 | 876 ms, 7.4% | 18.8 s, 0.95%, 121,840 |
+| 5 | 971 ms, 5.6% | 18.7 s, 0.80%, 135,460 |
+| 2 | 1071 ms, 3.9% | (found the bug below) |
+
+Lower thresholds compile far more cold code and are slower everywhere, so the default stays; "≥ 99% of steps in JIT code" holds for Alpine (98.6%, of which the rest is warm-up) and for everything under compile-on-sight, and Buildroot's short, cold boot is the exception by design.
+
+**A bug the sweep found:** a head queued for compilation whose code changed before its batch was emitted formed no blocks, and `block::region` indexed the empty list (Alpine with threshold 2). Fixed, with a unit test in `a_region_is_a_loop_with_registers_across_its_edges`.
+
+**Under the JIT and JIT-stress, exactly the interpreter's steps and console:** the bare-metal tests, kvm-unit-tests, the Buildroot boot and device test, Alpine (JIT in Node and Chromium; JIT-stress in Node: 3,009,151,562 steps in 15,306 s), and now the LTP subset with the arm64 kselftests, which only ran natively before: `tests/boot-node.test.ts` runs them under the interpreter (52 s), the JIT (16 s) and JIT-stress (10,331 s), 2,737,414,881 steps, every test passing or skipping as `core/tests/ltp.rs` expects.
+
+**JIT-stress speed:** regions in stress mode now take only blocks the dispatcher has seen (building them from every block in reach made the stress boots 42× slower than step 7's), and a flush clears only the jump-cache entries used since the last one (clearing all 65,536 was a fifth of a stress run's time): kvm-unit-tests `gic active` 522 s → 15.7 s → 9.4 s (step 7: 12.5 s), Buildroot 198 s → 134 s.
+
+**How long stress runs should be:** no bug in M5 was found only by a long stress run; the short ones (kvm-unit-tests `cache` caught the tier-up flush bug in seconds), the differential test and the exact-step boots found them. The long Alpine and LTP stress runs passed on their first try. From here: the long ones once per milestone, at its end; short stress variants (tiny cache with the default threshold, compile-on-sight with a big cache, tier-up after one entry) for coverage per minute (PLAN §4).
+
+## M5 step 10 and M5 in numbers
+
+**CoreMark** is a benchmark guest now (`bench/interp/build-coremark.sh`: EEMBC's sources at a pinned commit, unmodified, with our port layer, `-O2`, the 2K performance run; CoreMark's own CRC validation checked on every run). **The helper-call histogram** comes from `jit_helper_report` (ABI 18) and is recorded with every JIT guest and boot.
+
+**Method:** `bench/run.ts`, default config, one full `bench/interp` run and `boot`, `boot_jit`, `boot_alpine`, `boot_alpine_jit` at `fa98e31` (the code of `e812e2c`: the commits between them changed PLAN.md only; `dirty` in the JSON is the untracked kickoff notes), run after the stress runs had finished; this commit's stress-speed fix changes nothing outside stress mode. Host: the Lima VM `dev` on the M4 Mac mini (Linux aarch64, 8 vCPUs), Chromium 153.0.8010.52 headless; only this host (the user's call: the x86_64 desktop ranked every M0–M5 change the same way).
+
+| Workload | Interpreter warm (IQR) | JIT warm (IQR) | JIT / interp | Cold: interp / JIT |
+|---|---|---|---|---|
+| integer guest, EL0 (MIPS) | 143.1 (±2.4) | **3857.3** (±14.9) | **27×** | 55.9 / 211.0 |
+| FP/NEON guest, EL0 (MIPS) | 19.7 (±0.0) | 19.6 (±0.0) | 1.0× | 18.9 / 18.8 |
+| integer guest, EL1 MMU off (MIPS) | 147.7 (±3.3) | **2135.6** (±26.0) | **14.5×** | 119.7 / 146.2 |
+| integer guest, EL1 MMU on (MIPS) | 85.5 (±0.2) | **1918.5** (±20.6) | **22×** | 58.1 / 187.7 |
+| CoreMark (iterations/s) | 528.1 (±2.1) | **5955** (±219) | **11.3×** | 400 / 606 |
+| Buildroot boot, to power-off | 722 ms (±5) | 717 ms (±7) | 1.0× | 749 / 744 ms |
+| Alpine boot, to power-off | 46.9 s (±0.31) | **18.4 s** (±0.10) | **2.55×** | 46.5 / 18.5 s |
+| Alpine boot, to its script | 39.4 s | **15.3 s** | 2.57× | |
+
+**CoreMark against references** on the same host with the same sources and flags (`target/bench/coremark-linux`, raw syscalls, CoreMark timing itself for a valid run): native 55,000 iterations/s, QEMU 11.1.1 TCG user mode (`qemu-aarch64`) 11,764. The JIT runs it at **51% of QEMU's TCG** (1.98× slower) and 10.8% of native; one iteration is 244,595 guest instructions.
+
+**JIT counters:** Buildroot 84.7% of steps in JIT code (the rest is warm-up, above), 97.0% of those inline, 12,494 functions (69 loop tier-ups), 5.3 MB, 0.0073 dispatches per instruction; Alpine 98.6% in JIT code, 96.8% inline, 57,292 functions, 25.4 MB, 0.78 s in `new WebAssembly.Module`, 0.0062 dispatches per instruction.
+
+**Where the helper calls are** (the input to M6):
+- Buildroot: `MRS` 200,780, `LDXR` 141,697, `DC ZVA` 122,046, `STXR` 112,393, `DMB` 101,998, `STLXR` 88,472, `LDAXR` 59,024, `STLR` 41,083, `IC IVAU` 31,168, then `STTR`/`LDTR`-class and `MSR`.
+- Alpine: `MRS` 27.1M, NEON integer (`USHR` 9.6M, `EOR` 7.5M, `SLI` 6.4M, `ADD` 5.7M, `EXT` 2.1M: the kernel's ChaCha/crypto code), `DC ZVA` 7.7M, `DMB` 3.3M, `LDADD` 2.2M, `CAS` 1.8M, `LD1`/`ST1` multiple 1.8M/1.4M, `STLR` 1.4M.
+- FP guest: `FMLA` (by element) 42.8M, FP/SIMD loads and stores (`LDR` register 37.6M, `LDP`/`STP` 29.1M), `FMADD` 20.0M, `FMOV`, `SCVTF`.
+- CoreMark: FP/SIMD loads and stores and integer NEON (the autovectorized matrix code: `ADD`, `MOVI`, `SMLAL`, `SMULL`, `ADDV`).
+
+**What's inline** (`emit::inline`, `emit::ldst`): moves, ADR/ADRP, every add/sub form (with flags), ADC/SBC, logical, bitfield moves and extends, EXTR, shifts, CSEL/CSINC/CSINV/CSNEG, CCMP/CCMN, multiplies (including long and high), divides, REV/RBIT/CLZ/CLS, the NOP-class hints, every branch, and every integer load and store (all sizes and signs, unsigned offset, unscaled, pre/post-index, register offset, pairs, literal, PRFM) through the TLB or the flat RAM check. **Helpers:** everything FP and SIMD (loads and stores included), system instructions (MRS/MSR, barriers, cache maintenance, SYS), exclusives, LSE atomics, LDTR/STTR, exception-generating instructions.
+
+Raw data: `results/m5-step10/chromium-linux-arm64-m5.json`, `../boot/results/m5-step10/chromium-linux-arm64-m5-{boot,boot_jit,boot_alpine,boot_alpine_jit}.json`.

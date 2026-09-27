@@ -186,6 +186,11 @@ pub struct Cache {
     /// Each compiled region's blocks as (PA, length), for the stale-code checker.
     spans: Map<Vec<(u64, u32)>>,
     jc: Box<[Jc; JC]>,
+    /// The jump-cache entries filled since the last flush (up to `JC / 16`;
+    /// more, and a flush clears it whole): JIT-stress flushes every few
+    /// compiles, and clearing all 65,536 entries each time was a fifth of an
+    /// Alpine boot under it.
+    jc_used: Vec<u32>,
     /// One hot word per slot, at a fixed address ([`emit::tier_up`]).
     hot: Box<[u32]>,
     /// Helper calls by instruction class (step 10: the input to M6), and
@@ -221,6 +226,7 @@ impl Cache {
                 .try_into()
                 .ok()
                 .expect("JC entries"),
+            jc_used: Vec::new(),
             hot: vec![0; cfg.capacity as usize].into_boxed_slice(),
             helper_ops: vec![0; crate::decode::Op::ALL.len()],
             report: String::new(),
@@ -255,7 +261,14 @@ impl Cache {
         self.pages.clear();
         self.linkers.clear();
         self.spans.clear();
-        self.jc.fill(JC_EMPTY);
+        if self.jc_used.len() < JC / 16 {
+            for &i in &self.jc_used {
+                self.jc[i as usize] = JC_EMPTY;
+            }
+        } else {
+            self.jc.fill(JC_EMPTY);
+        }
+        self.jc_used.clear();
         self.pending.clear();
         self.next = 0;
     }
@@ -349,6 +362,9 @@ impl Cache {
         match self.map.get(&key) {
             Some(&Info { idx, len, .. }) if idx != 0 => {
                 self.jc[jc_index(key)] = Jc { key, idx, len };
+                if self.jc_used.len() < JC / 16 {
+                    self.jc_used.push(jc_index(key) as u32);
+                }
                 Ok((idx, len))
             }
             Some(i) => Err(i.len.max(1)),
