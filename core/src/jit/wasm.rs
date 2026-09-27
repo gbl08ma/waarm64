@@ -68,6 +68,15 @@ impl Code {
         uleb(&mut self.b, offset as u64);
         self
     }
+    /// A SIMD memory instruction (`0xfd` prefix): v128.load (0), v128.store
+    /// (11), v128.load32_zero (92), v128.load64_zero (93).
+    pub fn simd_mem(&mut self, op: u8, align: u32, offset: u32) -> &mut Self {
+        self.b.push(0xfd);
+        uleb(&mut self.b, op as u64);
+        uleb(&mut self.b, align as u64);
+        uleb(&mut self.b, offset as u64);
+        self
+    }
     /// An atomic load or store (threads proposal, `0xfe` prefix) of
     /// `1 << align` bytes: wasm requires the natural alignment as the hint,
     /// and traps on a misaligned address.

@@ -816,6 +816,9 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         | LDAR | STLR | DC_ZVA => {
             return ldst(c, cx, i, op, k);
         }
+        LDR_lit_fpsimd | STP_LDP_fpsimd | STNP_LDNP_fpsimd | STR_imm_fpsimd_2
+        | LDR_imm_fpsimd_2 | STUR_fpsimd | LDUR_fpsimd | STR_imm_fpsimd_1 | LDR_imm_fpsimd_1
+        | STR_reg_fpsimd | LDR_reg_fpsimd => return ldst_fp(c, cx, i, op, k),
         // The shift amount is Rm modulo the width, as wasm shifts take it.
         LSLV | LSRV | ASRV | RORV => set(c, sf, rd, |c| {
             get(c, sf, rn);
@@ -1018,17 +1021,9 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             };
             pc_plus(c, here + sext((bits(i, 23, 5) << 2) as u64, 21) as i64);
             c.local_set(ADDR);
-            access(
-                c,
-                cx,
-                i,
-                here,
-                len,
-                false,
-                Guard::None,
-                xmask(rt),
-                |c, off| load_reg(c, rt, off, len, sign, false),
-            );
+            access(c, cx, i, here, len, false, &[], xmask(rt), |c, off| {
+                load_reg(c, rt, off, len, sign, false)
+            });
         }
         PRFM_lit => {}
         PRFM_imm | PRFM_unscaled_imm => {
@@ -1091,7 +1086,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 here,
                 len,
                 store,
-                Guard::sp(rn),
+                &[Guard::sp(rn)],
                 written,
                 |c, off| {
                     if store {
@@ -1134,7 +1129,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 here,
                 2 * len,
                 !load,
-                Guard::sp(rn),
+                &[Guard::sp(rn)],
                 written,
                 |c, o| {
                     if load {
@@ -1162,7 +1157,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             let store = op == STLR;
             let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
             let written = if store { 0 } else { xmask(rt) };
-            access(c, cx, i, here, len, store, guard, written, |c, off| {
+            access(c, cx, i, here, len, store, &[guard], written, |c, off| {
                 if store {
                     c.local_get(HOST);
                     get(c, true, rt);
@@ -1183,9 +1178,9 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             let guard = if cx.el1 {
                 Guard::None
             } else {
-                Guard::Bit(offset_of!(Cpu, sctlr_el1) as u32, crate::cpu::sctlr::DZE)
+                Guard::Bits(offset_of!(Cpu, sctlr_el1) as u32, crate::cpu::sctlr::DZE)
             };
-            access(c, cx, i, here, 64, true, guard, 0, |c, off| {
+            access(c, cx, i, here, 64, true, &[guard], 0, |c, off| {
                 for k in 0..8 {
                     c.local_get(HOST)
                         .i64_const(0)
@@ -1196,6 +1191,171 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         _ => return false,
     }
     true
+}
+
+/// SIMD&FP loads and stores of one register or a pair, every addressing form
+/// (M6 loop 2): the fast path of [`access`] with the V registers read and
+/// written in the `Cpu`, behind CPACR_EL1.FPEN (else the helper traps) and,
+/// for an SP base, SP's alignment. Structure loads and stores (LD1 & co)
+/// stay helper calls.
+fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+    use Op::*;
+    let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let here = 4 * k as i64;
+    // FPEN 11 lets EL0 and EL1 in, x1 EL1 only.
+    let fpen = Guard::Bits(
+        offset_of!(Cpu, cpacr_el1) as u32,
+        if cx.el1 { 1 << 20 } else { 3 << 20 },
+    );
+    let load = bit(i, 22);
+    // The access size: S/D/Q for the literal and pair forms, B/H/S/D/Q (Q:
+    // size 0 with opc<1>) for the rest; the other encodings are UNDEFINED.
+    let len = match op {
+        LDR_lit_fpsimd | STP_LDP_fpsimd | STNP_LDNP_fpsimd => match bits(i, 31, 30) {
+            3 => return false,
+            o => 4 << o,
+        },
+        _ => match (bits(i, 31, 30), bit(i, 23)) {
+            (0, true) => 16,
+            (s, false) => 1 << s,
+            _ => return false,
+        },
+    };
+    if matches!(op, STR_reg_fpsimd | LDR_reg_fpsimd) && bits(i, 15, 13) & 2 == 0 {
+        return false;
+    }
+    let imm9 = sext(bits(i, 20, 12) as u64, 9) as i64;
+    match op {
+        LDR_lit_fpsimd => {
+            pc_plus(c, here + sext((bits(i, 23, 5) << 2) as u64, 21) as i64);
+            c.local_set(ADDR);
+            access(c, cx, i, here, len, false, &[fpen], 0, |c, off| {
+                vload(c, rt, off, len)
+            });
+        }
+        STP_LDP_fpsimd | STNP_LDNP_fpsimd => {
+            let rt2 = bits(i, 14, 10);
+            let off = sext(bits(i, 21, 15) as u64, 7).wrapping_mul(len as u64) as i64;
+            // 24:23 is 01 post-index, 11 pre-index, 10 (or 00 for the non-temporal forms) offset.
+            let mode = bits(i, 24, 23);
+            get_sp(c, true, rn);
+            c.local_tee(BASE);
+            if mode != 1 {
+                c.i64_const(off).i64_add();
+            }
+            c.local_set(ADDR);
+            let wb = mode & 1 == 1;
+            let guards = [fpen, Guard::sp(rn)];
+            access(
+                c,
+                cx,
+                i,
+                here,
+                2 * len,
+                !load,
+                &guards,
+                if wb { 1 << rn } else { 0 },
+                |c, o| {
+                    for (r, o) in [(rt, o), (rt2, o + len)] {
+                        if load {
+                            vload(c, r, o, len);
+                        } else {
+                            vstore(c, r, o, len);
+                        }
+                    }
+                    if wb {
+                        writeback(c, rn, off);
+                    }
+                },
+            );
+        }
+        _ => {
+            get_sp(c, true, rn);
+            c.local_tee(BASE);
+            let wb = matches!(op, STR_imm_fpsimd_1 | LDR_imm_fpsimd_1);
+            match op {
+                STR_imm_fpsimd_2 | LDR_imm_fpsimd_2 => {
+                    c.i64_const(bits(i, 21, 10) as i64 * len as i64).i64_add();
+                }
+                STUR_fpsimd | LDUR_fpsimd => {
+                    c.i64_const(imm9).i64_add();
+                }
+                STR_reg_fpsimd | LDR_reg_fpsimd => {
+                    let amt = if bit(i, 12) { len.trailing_zeros() } else { 0 };
+                    extend(c, true, rm, bits(i, 15, 13), amt);
+                    c.i64_add();
+                }
+                // Pre-index (bit 11) accesses base + imm9, post-index the base.
+                _ => {
+                    if bit(i, 11) {
+                        c.i64_const(imm9).i64_add();
+                    }
+                }
+            }
+            c.local_set(ADDR);
+            let guards = [fpen, Guard::sp(rn)];
+            access(
+                c,
+                cx,
+                i,
+                here,
+                len,
+                !load,
+                &guards,
+                if wb { 1 << rn } else { 0 },
+                |c, off| {
+                    if load {
+                        vload(c, rt, off, len);
+                    } else {
+                        vstore(c, rt, off, len);
+                    }
+                    if wb {
+                        writeback(c, rn, imm9);
+                    }
+                },
+            );
+        }
+    }
+    true
+}
+
+/// The V registers' offset in the `Cpu`.
+const V: u32 = offset_of!(Cpu, v) as u32;
+
+// SIMD memory opcodes (0xfd-prefixed).
+const V128_LOAD: u8 = 0;
+const V128_STORE: u8 = 11;
+const V128_LOAD32_ZERO: u8 = 92;
+const V128_LOAD64_ZERO: u8 = 93;
+
+/// Vt = the `len` bytes at the host address (+ `off`), zero-extended to 128 bits.
+fn vload(c: &mut Func, t: u32, off: u32, len: u32) {
+    let v = V + 16 * t;
+    c.local_get(VCPU).local_get(HOST);
+    match len {
+        16 | 8 | 4 => {
+            let op =
+                [V128_LOAD32_ZERO, V128_LOAD64_ZERO, V128_LOAD][len.trailing_zeros() as usize - 2];
+            c.simd_mem(op, 0, off).simd_mem(V128_STORE, 0, v);
+        }
+        _ => {
+            c.memarg(LOAD_U[len.trailing_zeros() as usize], 0, off)
+                .i64_store(v);
+            c.local_get(VCPU).i64_const(0).i64_store(v + 8);
+        }
+    }
+}
+
+/// The low `len` bytes of Vt to the host address (+ `off`).
+fn vstore(c: &mut Func, t: u32, off: u32, len: u32) {
+    let v = V + 16 * t;
+    c.local_get(HOST).local_get(VCPU);
+    if len == 16 {
+        c.simd_mem(V128_LOAD, 0, v).simd_mem(V128_STORE, 0, off);
+    } else {
+        c.i64_load(v)
+            .memarg(STORE[len.trailing_zeros() as usize], 0, off);
+    }
 }
 
 // i64 atomic loads (zero-extending) and stores by log2 size (0xfe-prefixed).
@@ -1242,8 +1402,9 @@ enum Guard {
     Sp,
     /// The address (in `ADDR`) is aligned to the access (acquire/release).
     Aligned,
-    /// The u64 at this `Cpu` offset has a bit of the mask set (DC ZVA at EL0: SCTLR_EL1.DZE).
-    Bit(u32, u64),
+    /// The u64 at this `Cpu` offset has every bit of the mask set (DC ZVA at
+    /// EL0: SCTLR_EL1.DZE; SIMD&FP accesses: CPACR_EL1.FPEN).
+    Bits(u32, u64),
 }
 
 impl Guard {
@@ -1255,7 +1416,7 @@ impl Guard {
 
 /// The fast path of an access of `len` bytes at the address in `ADDR`: if it
 /// is RAM (flat: in bounds; MMU: a TLB hit for the page, which the access
-/// doesn't leave) and `guard` holds, `body`
+/// doesn't leave) and the `guards` hold, `body`
 /// runs with the host address in `HOST`, to be used with the memarg offset
 /// it gets. Otherwise the helper re-executes the instruction (exact faults,
 /// MMIO through `vm::Io`, page-crossing accesses) and the block returns if it
@@ -1270,7 +1431,7 @@ fn access(
     here: i64,
     len: u32,
     write: bool,
-    guard: Guard,
+    guards: &[Guard],
     written: u32,
     body: impl FnOnce(&mut Func, u32),
 ) {
@@ -1299,23 +1460,8 @@ fn access(
             0
         }
     };
-    match guard {
-        Guard::None => {}
-        Guard::Sp | Guard::Aligned => {
-            let (l, m) = if guard == Guard::Sp {
-                (BASE, 15)
-            } else {
-                (ADDR, len as i64 - 1)
-            };
-            c.local_get(l).i64_const(m).i64_and().op(EQZ + WC).op(AND);
-        }
-        Guard::Bit(off, m) => {
-            c.local_get(VCPU)
-                .i64_load(off)
-                .i64_const(m as i64)
-                .i64_and();
-            c.i64_const(0).op(NE + WC).op(AND);
-        }
+    for &g in guards {
+        guard(c, g, len);
     }
     c.if_();
     match cx.bus {
@@ -1333,6 +1479,28 @@ fn access(
     let before = c.regs;
     body(c, off);
     fallback(c, cx, i, here, before, written);
+}
+
+/// ANDs the condition of `g` into the i32 on the stack (an access of `len` bytes).
+fn guard(c: &mut Func, g: Guard, len: u32) {
+    match g {
+        Guard::None => {}
+        Guard::Sp | Guard::Aligned => {
+            let (l, m) = if g == Guard::Sp {
+                (BASE, 15)
+            } else {
+                (ADDR, len as i64 - 1)
+            };
+            c.local_get(l).i64_const(m).i64_and().op(EQZ + WC).op(AND);
+        }
+        Guard::Bits(off, m) => {
+            c.local_get(VCPU)
+                .i64_load(off)
+                .i64_const(m as i64)
+                .i64_and();
+            c.i64_const(m as i64).op(EQ + WC).op(AND);
+        }
+    }
 }
 
 /// Ends the fast arm of an `if` (its register state in `c`, `before` it at
@@ -1943,6 +2111,48 @@ mod tests {
         // Barriers: nothing.
         assert_eq!(emit(0xd5033bbf, 0).unwrap(), []); // dmb ish
         assert_eq!(emit(0xd5033f9f, 0).unwrap(), []); // dsb sy
+    }
+
+    #[test]
+    fn simd_fp_loads_and_stores() {
+        // ldr q1, [x2]: behind CPACR_EL1.FPEN = 11 at EL0 (896, mask 3 << 20);
+        // v128.load from the host address, v128.store to V1 (304 + 16).
+        let b = emit(0x3dc00041, 0).unwrap();
+        assert!(has(
+            &b,
+            &[0x20, 0, 0x29, 3, 0x80, 7, 0x42, 0x80, 0x80, 0xc0, 1, 0x83]
+        ));
+        assert!(has(&b, &[0xfd, 0, 0, 0x80, 0x80, 4, 0xfd, 11, 0, 0xc0, 2]));
+        // At EL1 only FPEN bit 20.
+        let b = emit_in(0x3dc00041, 0, &Ctx { el1: true, ..FLAT }).unwrap();
+        assert!(has(&b, &[0x42, 0x80, 0x80, 0xc0, 0, 0x83]));
+        // ldr s1, [x2]: v128.load32_zero; ldr d1: v128.load64_zero (RAM at 0x10000).
+        assert!(has(
+            &emit(0xbd400041, 0).unwrap(),
+            &[0xfd, 92, 0, 0x80, 0x80, 4, 0xfd, 11]
+        ));
+        assert!(has(
+            &emit(0xfd400041, 0).unwrap(),
+            &[0xfd, 93, 0, 0x80, 0x80, 4, 0xfd, 11]
+        ));
+        // ldr h1, [x2]: i64.load16_u to V1's low half, 0 to its high half.
+        let b = emit(0x7d400041, 0).unwrap();
+        assert!(has(&b, &[0x33, 0, 0x80, 0x80, 4, 0x37, 3, 0xc0, 2]));
+        assert!(has(&b, &[0x42, 0, 0x37, 3, 0xc8, 2]));
+        // str d1, [x2]: V1's low half, i64.store; str q1: v128 both ways.
+        assert!(has(
+            &emit(0xfd000041, 0).unwrap(),
+            &[0x29, 3, 0xc0, 2, 0x37, 0, 0x80, 0x80, 4]
+        ));
+        assert!(has(
+            &emit(0x3d800041, 0).unwrap(),
+            &[0xfd, 0, 0, 0xc0, 2, 0xfd, 11, 0, 0x80, 0x80, 4]
+        ));
+        // ldp q1, q2, [x3]: the second 16 bytes on.
+        let b = emit(0xad400861, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0, 0, 0x90, 0x80, 4, 0xfd, 11, 0, 0xd0, 2]));
+        // ldr q1 with size 1 and opc<1> (UNDEFINED): the helper.
+        assert_eq!(emit(0x7dc00041, 0), None);
     }
 
     #[test]
