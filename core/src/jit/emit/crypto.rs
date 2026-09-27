@@ -128,9 +128,118 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
             }
             c.simd_mem(V128_STORE, 0, V + 16 * rd);
         }
+        PMULL if bits(i, 23, 22) == 3 => pmull64(c, i),
         _ => return false,
     }
     true
+}
+
+// i64 scratch locals for PMULL (above the register locals, below the v128 ones).
+const PA: u32 = 100;
+const PB: u32 = 101;
+const PLO: u32 = 102;
+const PHI: u32 = 103;
+const PMID: u32 = 104;
+const PX: u32 = 105; // ..=108: x's four bit classes
+const PY: u32 = 109; // ..=112: y's
+const I64_AND: u8 = 0x83;
+const I64_OR: u8 = 0x84;
+const I64_XOR: u8 = 0x85;
+const I64_SHL: u8 = 0x86;
+const I64_SHR_U: u8 = 0x88;
+const I64_MUL: u8 = 0x7e;
+/// Every fourth bit, from bit k.
+const HOLES: [i64; 4] = [
+    0x1111_1111_1111_1111,
+    0x2222_2222_2222_2222,
+    0x4444_4444_4444_4444,
+    0x8888_8888_8888_8888u64 as i64,
+];
+
+/// PMULL/PMULL2 Vd.1Q, Vn.1D, Vm.1D (or .2D): the 128-bit carry-less product
+/// of the low (Q = 0) or high 64-bit halves, as `crypto::clmul64` computes it:
+/// Karatsuba over three 32×32 products with holes, i64 multiplies only
+/// (4.5% faster on GCM than four products, measured twice; wasm has no wide
+/// or carry-less multiply, and `i64x2.mul` has no arm64 instruction).
+fn pmull64(c: &mut Func, i: u32) {
+    let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let half = 8 * bits(i, 30, 30);
+    c.local_get(VCPU).i64_load(V + 16 * rn + half).local_set(PA);
+    c.local_get(VCPU).i64_load(V + 16 * rm + half).local_set(PB);
+    // lo = a0·b0, hi = a1·b1, mid = (a0 + a1)(b0 + b1) + lo + hi.
+    let lo32 = |c: &mut Func, l: u32| {
+        c.local_get(l).i64_const(0xffff_ffff).op(I64_AND);
+    };
+    let hi32 = |c: &mut Func, l: u32| {
+        c.local_get(l).i64_const(32).op(I64_SHR_U);
+    };
+    lo32(c, PA);
+    lo32(c, PB);
+    clmul32(c, PLO);
+    hi32(c, PA);
+    hi32(c, PB);
+    clmul32(c, PHI);
+    lo32(c, PA);
+    hi32(c, PA);
+    c.op(I64_XOR);
+    lo32(c, PB);
+    hi32(c, PB);
+    c.op(I64_XOR);
+    clmul32(c, PMID);
+    c.local_get(PMID)
+        .local_get(PLO)
+        .op(I64_XOR)
+        .local_get(PHI)
+        .op(I64_XOR)
+        .local_set(PMID);
+    c.local_get(VCPU);
+    c.local_get(PLO)
+        .local_get(PMID)
+        .i64_const(32)
+        .op(I64_SHL)
+        .op(I64_XOR);
+    c.i64_store(V + 16 * rd);
+    c.local_get(VCPU);
+    c.local_get(PHI)
+        .local_get(PMID)
+        .i64_const(32)
+        .op(I64_SHR_U)
+        .op(I64_XOR);
+    c.i64_store(V + 16 * rd + 8);
+}
+
+/// The 64-bit carry-less product of the two 32-bit values on the stack (x
+/// under y) into local `out`: each operand split into its four bit classes
+/// (every fourth bit), so each integer product's partial sums (≤ 8 terms per
+/// bit) can't carry into the next bit of its class.
+fn clmul32(c: &mut Func, out: u32) {
+    c.local_set(PY);
+    c.local_set(PX);
+    for k in (0..4).rev() {
+        c.local_get(PX)
+            .i64_const(HOLES[k])
+            .op(I64_AND)
+            .local_set(PX + k as u32);
+        c.local_get(PY)
+            .i64_const(HOLES[k])
+            .op(I64_AND)
+            .local_set(PY + k as u32);
+    }
+    for (k, &holes) in HOLES.iter().enumerate() {
+        for j in 0..4 {
+            c.local_get(PX + j as u32)
+                .local_get(PY + ((k + 4 - j) % 4) as u32)
+                .op(I64_MUL);
+            if j > 0 {
+                c.op(I64_XOR);
+            }
+        }
+        c.i64_const(holes).op(I64_AND);
+        if k > 0 {
+            c.op(I64_OR);
+        }
+    }
+    c.local_set(out);
 }
 
 /// Pushes Vn.

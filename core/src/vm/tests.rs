@@ -229,3 +229,19 @@ fn realtime_wfi_idles_until_the_deadline() {
     t.vm.run(1);
     assert_eq!(t.cpu().pc, RAM_BASE + 4, "the timer woke it (IRQs masked)");
 }
+
+#[test]
+fn a_timer_is_pending_or_a_deadline_at_one_instant() {
+    // WFI decides from one counter reading (M6.5: in realtime mode a timer
+    // due between two readings was neither, and the host slept for good).
+    let mut t = T::new(&[B_SELF], VmConfig::default());
+    t.vtimer_at(1000);
+    for now in [998, 999, 1000, 1001] {
+        t.vm.lines_at(now);
+        let (pending, deadline) = (t.vm.gic.irq(), t.vm.next_deadline_at(now));
+        assert!(
+            pending != deadline.is_some(),
+            "now {now}: pending {pending}, deadline {deadline:?}"
+        );
+    }
+}

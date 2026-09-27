@@ -3,11 +3,12 @@
 //! FIPS 197, FIPS 180-4 and the Arm pseudocode (AESSubBytes, SHA256hash, …);
 //! the interpreter's reference semantics and the JIT's helpers.
 //!
-//! **Constant time** (PLAN.md §7 M6.5): no memory index or branch depends on
-//! the data. The S-box isn't a table: it is the GF(2⁸) inverse (x²⁵⁴ by an
-//! addition chain) and the affine map, on all 16 bytes at once as lanes of a
-//! u128. The carry-less multiply uses integer multiplies of operands with holes
-//! (BearSSL's `bmul` idea, reimplemented; `THIRD_PARTY.md`).
+//! Speed first (PLAN.md §7 M6.5: constant time was dropped as a requirement
+//! on 2026-09-28): the interpreter's S-box is a 256-byte table computed at
+//! compile time; the JIT inlines AES with swizzles (`jit::emit::crypto`). The
+//! carry-less multiply uses integer multiplies of operands with holes
+//! (BearSSL's `bmul` idea, reimplemented; `THIRD_PARTY.md`), which the JIT's
+//! inline PMULL follows.
 //!
 //! A vector register is a u128 with byte *i* (of an AES block, in memory
 //! order) in bits 8i+7:8i, and 32-bit element *e* in bits 32e+31:32e.
@@ -21,6 +22,7 @@ fn shl8(x: u128, k: u32) -> u128 {
 }
 
 /// Each byte rotated left by `k` (0 < k < 8).
+#[cfg(test)]
 fn rotl8(x: u128, k: u32) -> u128 {
     shl8(x, k) | (x >> (8 - k)) & (LO * (0xff >> (8 - k)))
 }
@@ -31,7 +33,8 @@ fn xtime(x: u128) -> u128 {
     shl8(x, 1) ^ hi << 4 ^ hi << 3 ^ hi << 1 ^ hi
 }
 
-/// Bytewise GF(2⁸) product.
+/// Bytewise GF(2⁸) product (the tests' arithmetic S-box).
+#[cfg(test)]
 fn gmul(mut a: u128, b: u128) -> u128 {
     let mut r = 0;
     for k in 0..8 {
@@ -43,6 +46,7 @@ fn gmul(mut a: u128, b: u128) -> u128 {
 }
 
 /// Bytewise GF(2⁸) inverse (0 for 0): x²⁵⁴.
+#[cfg(test)]
 fn ginv(x: u128) -> u128 {
     let x2 = gmul(x, x);
     let x3 = gmul(x2, x);
@@ -59,23 +63,32 @@ fn ginv(x: u128) -> u128 {
 
 /// SubBytes (FIPS 197 5.1.1) of all 16 bytes.
 pub fn sub_bytes(x: u128) -> u128 {
+    bytewise(x, &SBOX)
+}
+
+/// InvSubBytes (FIPS 197 5.3.2).
+pub fn inv_sub_bytes(x: u128) -> u128 {
+    bytewise(x, &INV_SBOX)
+}
+
+fn bytewise(x: u128, t: &[u8; 256]) -> u128 {
+    u128::from_le_bytes(x.to_le_bytes().map(|b| t[b as usize]))
+}
+
+/// SubBytes as arithmetic, all 16 bytes at once in a u128: the GF(2⁸) inverse
+/// (x²⁵⁴ by an addition chain) and the affine map (the tests' second
+/// reference, computed differently from the table's square and multiply).
+#[cfg(test)]
+fn sub_bytes_arith(x: u128) -> u128 {
     let b = ginv(x);
     b ^ rotl8(b, 1) ^ rotl8(b, 2) ^ rotl8(b, 3) ^ rotl8(b, 4) ^ (LO * 0x63)
 }
 
-/// InvSubBytes (FIPS 197 5.3.2): the inverse affine map, then the inverse.
-pub fn inv_sub_bytes(x: u128) -> u128 {
-    ginv(rotl8(x, 1) ^ rotl8(x, 3) ^ rotl8(x, 6) ^ (LO * 0x05))
-}
-
-/// The S-box and its inverse as bytes, computed at compile time one byte at a
-/// time: the tests' reference (the core has no S-box table).
-#[cfg(test)]
+/// The S-box and its inverse as bytes, computed at compile time (x²⁵⁴ by
+/// square and multiply, then the affine map).
 pub const SBOX: [u8; 256] = sbox(false);
-#[cfg(test)]
 pub const INV_SBOX: [u8; 256] = sbox(true);
 
-#[cfg(test)]
 const fn sbox(inv: bool) -> [u8; 256] {
     const fn mul(mut a: u8, mut b: u8) -> u8 {
         let mut r = 0;
@@ -539,7 +552,7 @@ mod tests {
     #[test]
     fn sbox_tables() {
         for x in 0..=255u8 {
-            assert_eq!(SBOX[x as usize], sub_bytes(x as u128) as u8);
+            assert_eq!(SBOX[x as usize], sub_bytes_arith(x as u128) as u8);
             assert_eq!(INV_SBOX[SBOX[x as usize] as usize], x);
         }
     }

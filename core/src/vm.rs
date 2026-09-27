@@ -417,7 +417,12 @@ impl Vm {
 
     /// Drives the device interrupt lines into the GIC.
     fn lines(&mut self) {
-        let (c, now) = (&self.vcpu.cpu, self.now());
+        self.lines_at(self.now());
+    }
+
+    /// [`Vm::lines`] with the counter at `now`.
+    fn lines_at(&mut self, now: u64) {
+        let c = &self.vcpu.cpu;
         let fires = |ctl, cval| interp::timer_fires(ctl, cval, now);
         self.gic
             .set_level(IRQ_VTIMER, fires(c.cntv_ctl_el0, c.cntv_cval_el0));
@@ -432,7 +437,13 @@ impl Vm {
 
     /// The earliest compare value of an enabled, unmasked timer that hasn't fired yet.
     fn next_deadline(&self) -> Option<u64> {
-        let (c, now) = (&self.vcpu.cpu, self.now());
+        self.next_deadline_at(self.now())
+    }
+
+    /// [`Vm::next_deadline`] with the counter at `now`: exactly the timers
+    /// [`Vm::lines_at`] doesn't fire at the same `now`.
+    fn next_deadline_at(&self, now: u64) -> Option<u64> {
+        let c = &self.vcpu.cpu;
         [
             (c.cntv_ctl_el0, c.cntv_cval_el0),
             (c.cntp_ctl_el0, c.cntp_cval_el0),
@@ -501,16 +512,22 @@ impl Vm {
     /// WFI completes when an interrupt is signaled (masked or not). Otherwise
     /// deterministic time jumps to the next timer deadline, and realtime mode
     /// (or no deadline) returns the idle exit with the PC on the WFI.
+    ///
+    /// One reading of the counter decides both whether a timer fires and the
+    /// deadline: in realtime mode the clock moves between reads, and a timer
+    /// due between two of them was neither pending nor a future deadline, so
+    /// the host slept with no deadline for good (found in M6.5 loop 5).
     fn wfi(&mut self) -> Option<u32> {
-        self.lines();
+        let now = self.now();
+        self.lines_at(now);
         if !self.gic.irq() {
-            let t = self.next_deadline();
+            let t = self.next_deadline_at(now);
             match t {
-                Some(t) if !self.realtime() => self.skipped += t - self.now(),
+                Some(t) if !self.realtime() => self.skipped += t - now,
                 _ => {
                     let frq = self.cfg.cntfrq as u128;
                     self.exit.value = t.map_or(u64::MAX, |t| {
-                        ((t - self.now()) as u128 * 1_000_000_000).div_ceil(frq) as u64
+                        ((t - now) as u128 * 1_000_000_000).div_ceil(frq) as u64
                     });
                     return Some(exit::IDLE);
                 }

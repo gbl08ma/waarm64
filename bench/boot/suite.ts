@@ -49,7 +49,7 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
 export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = img.test ? testDevices(img.disk) : guestDevices(img.disk);
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto });
+  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, idleLimitMs: 30_000 });
   await onVm?.(vm);
   let console = '';
   let scanned = 0;
@@ -266,7 +266,7 @@ async function coremarkVm(o: Options): Promise<Sample[]> {
   const samples: number[] = [];
   for (let i = 0; i < (o.quick ? 1 : 3); i++) {
     fresh();
-    const vm = await bootVm(module, { ramSize: 256 << 20, kernel: base.kernel, initrd, cmdline, devices: [], realtime: true, jit: 1 });
+    const vm = await bootVm(module, { ramSize: 256 << 20, kernel: base.kernel, initrd, cmdline, devices: [], realtime: true, jit: 1, idleLimitMs: 30_000 });
     let out = '';
     for (;;) {
       const r = vm.run(CHUNK);

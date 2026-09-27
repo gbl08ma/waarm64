@@ -666,3 +666,20 @@ Raw data: `../boot/results/m65-loop0/neon-only.json`.
 - The GCM runs still spend helpers on `PMULL` (58M calls in the phase: loop 5) and SHA is all helpers (loop 6).
 
 Raw data: `../boot/results/m65-loop4/` (each variant's JSON; `helpers-only-quick.json` is the one-boot helper run).
+
+## M6.5 loop 5: PMULL.1Q inline; a realtime WFI race
+
+**PMULL/PMULL2 (64-bit)** inline (`jit::emit::crypto::pmull64`): Karatsuba over three 32×32 carry-less products, each 16 `i64.mul`s of the operands masked to every fourth bit (the partial sums can't carry into the next bit of a class), all scalar: wasm has no carry-less or wide multiply, and `i64x2.mul` has no arm64 instruction. Four 32×32 products instead of Karatsuba, measured alternately with the fix below in both: `alpine_crypto_ce_jit`, Chromium 153, 5 boots each, medians (IQR), MB/s at 16 KiB:
+
+| | loop 4 (PMULL a helper) | four products | **Karatsuba** |
+|---|---|---|---|
+| AES-128-GCM | 124.7 | 204.4 (2.7), 204.0 (2.9) | **213.8** (0.6); 212.8 (2.4), 212.2 before the fix |
+| AES-256-GCM | 112.7 | 167.3, 167.2 | **175.0** (1.6), 172.5 |
+
+Karatsuba is 4.5% faster in both repeats; kept. GCM is now 4.2× (AES-128) and 4.3× (AES-256) the NEON-only bar (51.0, 40.7). The phase's helper calls are all SHA now (SHA1H 28M, SHA1SU0/SU1 22M each, SHA256H/H2 20M each): loop 6.
+
+**The realtime WFI race (found here, fixed):** a 5-boot run stalled with the vCPU asleep at ~9% CPU for 17 minutes; the same run passed 11 times after that. The boot benchmarks now pass `idleLimitMs` (`web/vm.ts`: a realtime idle with no timer deadline and nothing signaled for 30 s throws), and the next stall threw at the kernel's idle loop with no device request in flight. Cause: `Vm::wfi` read the realtime clock three times: `lines()` at time A found the timer not yet due, `next_deadline()` at a later time B dropped it as already fired, so the WFI returned idle with no deadline and the host slept for good (and `t - now()` could wrap for the reported sleep). `openssl speed`'s 1 s alarms land in that window more often than boots do. `wfi` now decides from one reading (`lines_at`, `next_deadline_at`; the invariant is a unit test in `vm::tests`). Deterministic mode was never affected (its clock is the step count). The watchdog stays on in the benchmarks.
+
+**Constant time dropped** (the user, 2026-09-28, PLAN §7 M6.5): the interpreter's S-box is now a 256-byte table (the SWAR arithmetic stays as a test reference); the JIT's code was table-free because it measured fastest, and stays so.
+
+Raw data: `../boot/results/m65-loop5/`.

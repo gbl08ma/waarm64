@@ -111,6 +111,12 @@ export type BootOptions = {
   jit?: 0 | 1 | 2;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented. */
   crypto?: boolean;
+  /**
+   * Realtime mode: throw if the vCPU sleeps this long with no timer deadline
+   * and nothing signaled (a lost wake-up would otherwise hang the run).
+   * Benchmarks set it; unset, an idle guest may sleep forever.
+   */
+  idleLimitMs?: number;
 };
 
 /**
@@ -292,7 +298,11 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
         if (kind === Exit.IDLE && !deterministic && canBlock) {
           const sig = new Int32Array(memory.buffer, signal, 1);
           const ns = info[2];
-          if (Atomics.load(sig, 0) === 0) Atomics.wait(sig, 0, 0, ns === 0xffff_ffff_ffff_ffffn ? Infinity : Number(ns) / 1e6);
+          const none = ns === 0xffff_ffff_ffff_ffffn;
+          const ms = none ? (o.idleLimitMs ?? Infinity) : Number(ns) / 1e6;
+          if (Atomics.load(sig, 0) === 0 && Atomics.wait(sig, 0, 0, ms) === 'timed-out' && none) {
+            throw new Error(`idle ${ms} ms with no timer deadline and no signal at pc 0x${new BigUint64Array(memory.buffer, ex.vm_cpu(vm) + 256, 1)[0].toString(16)}; device requests in flight: ${devices.inFlight()}`);
+          }
           continue;
         }
         return { kind: kind === Exit.DEVICE ? Exit.BUDGET : kind, steps, value: info[2], x: [...info.subarray(3)] };
