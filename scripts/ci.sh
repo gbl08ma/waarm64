@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Everything CI runs; works the same locally. CHROMIUM overrides the browser binary.
 # Distro boots (M4 step 4): Alpine runs when its image is current; WEBPC_DISTROS
-# (a comma list: alpine,debian) overrides which ones (Debian takes many minutes).
+# (a comma list: alpine,alpine-user,debian) overrides which ones (Debian takes many
+# minutes; alpine-user, the userspace benchmark's image, runs in Node's tests only).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s\n' "$*"; }
@@ -14,7 +15,7 @@ step wasm build;  scripts/build-wasm.sh -q
 step npm deps;    [ -d node_modules ] || npm ci --no-fund --no-audit
 step typecheck;   npx tsc --noEmit
 current() { images/build.sh --check "$1" > /dev/null; }
-export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)}
+export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)}
 step js tests;    npm test --silent
 # Guest-image tests: run when target/images has the image and it's current.
 image_test() {

@@ -9,6 +9,13 @@
 # alpine: Alpine's aarch64 minirootfs plus linux-virt and openrc (apk in a qemu-user
 #   chroot), as an ext4 root (rootfs.ext4); the kernel (Image) and initramfs come
 #   from linux-virt. images/alpine/ has the boot test's local.d script.
+# alpine-user: the userspace benchmark's root (M6, images/alpine/user): alpine's
+#   rootfs.ext4 plus xz, lua5.4 and sqlite and the workloads, with its local.d
+#   script instead of the boot test's, as rootfs-user.ext4 (it boots alpine's
+#   Image and initramfs-virt). Built on the host side in Alpine's own container,
+#   natively on arm64 and as that container's root: apk needs neither qemu-user
+#   nor unshare, neither of which works in the x86_64 images container (kept for
+#   Buildroot's x86_64 toolchains) under emulation.
 # debian: the official debian-13-nocloud-arm64 qcow2 as published (disk.qcow2),
 #   with the kernel (Image) and initrd (initrd.img) taken out of its /boot.
 # kvm-unit-tests: the arm64 tests (*.flat) and their unittests.cfg, built with
@@ -32,6 +39,9 @@ ALPINE_SHA256=9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773 #
 # Alpine keeps only the latest build of each package in its repository, so the
 # pins fail loudly (rather than drift) once these are superseded.
 ALPINE_PKGS="linux-virt=6.18.53-r0 openrc=0.63.2-r0"
+USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0"
+USERLAND_TOOLS="e2fsprogs=1.47.4-r0 e2fsprogs-extra=1.47.4-r0"
+USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 DEBIAN=20260914-2601
 DEBIAN_SHA512=54c8a9b348129796bd28a1df0488f810385f6417cfa2e242ce4d6feb64c54444ed3c505700f3eda3b122763829a9074bf82e06fc8a6635e52c9ae924eb9a509a
 export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
@@ -39,7 +49,7 @@ export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(linux kvm-unit-tests alpine debian ltp)
+NAMES=(linux kvm-unit-tests alpine alpine-user debian ltp)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -156,6 +166,30 @@ build_alpine() {
   tail -c +$(($(od -An -tu4 -j8 -N4 "$z") + 1)) "$z" | head -c "$(od -An -tu4 -j12 -N4 "$z")" | gunzip > "$dst/Image"
 }
 
+build_alpine-user() {
+  local dst=$out/alpine-user
+  [ -f "$out/alpine/rootfs.ext4" ] || { echo "alpine-user needs the alpine image: images/build.sh alpine" >&2; exit 1; }
+  rm -rf "$dst"
+  mkdir -p "$dst"
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache $3
+    r=/tmp/r
+    mkdir $r
+    debugfs -R "rdump / $r" "$1/alpine/rootfs.ext4" 2>/dev/null
+    cp /etc/resolv.conf "$r/etc/"
+    chroot "$r" apk --no-progress --no-cache -q add $2
+    rm "$r/etc/resolv.conf" "$r/var/log/apk.log" "$r/etc/local.d/webpc.start"
+    install -m 755 images/alpine/user/webpc-user.start "$r/etc/local.d/"
+    mkdir -p "$r/usr/local/share/webpc"
+    install -m 644 images/alpine/user/*.lua images/alpine/user/speed.sql "$r/usr/local/share/webpc/"
+    find "$r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+    # no_copy_xattrs: the host'"'"'s SELinux labels (random per container) would reach the image.
+    E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d "$r" -L alpine-user \
+      -U 77656270-6300-4000-8000-000000000013 -E hash_seed=77656270-6300-4000-8000-000000000014,no_copy_xattrs \
+      "$1/alpine-user/rootfs-user.ext4" 256M
+  ' - "$out" "$USERLAND_PKGS" "$USERLAND_TOOLS"
+}
+
 build_debian() {
   local dst=$out/debian b=$out/build/debian q=$out/dl/debian-13-nocloud-arm64-$DEBIAN.qcow2
   rm -rf "$b" "$dst"
@@ -192,8 +226,11 @@ inputs() {
   local files=(images/Containerfile)
   [ "$1" = linux ] && files+=(images/buildroot.defconfig images/linux.fragment $(find images/overlay -type f | sort))
   [ "$1" = alpine ] && files+=(images/alpine/webpc.start)
+  [ "$1" = alpine-user ] && files+=($(find images/alpine/user -type f | sort) "$out/alpine/.inputs")
+  local pins="^${1^^}"
+  [ "$1" = alpine-user ] && pins='^USERLAND_' 
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "^${1^^}" images/build.sh; declare -f "build_$1"; [[ $1 == linux || $1 == ltp ]] && declare -f buildroot linux_src; } |
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == linux || $1 == ltp ]]; then declare -f buildroot linux_src; fi; } |
     sha256sum | cut -c1-16
 }
 
@@ -201,6 +238,7 @@ outputs() {
   case $1 in
     linux) echo linux/Image linux/Image-defconfig linux/rootfs.ext4 ;;
     alpine) echo alpine/Image alpine/initramfs-virt alpine/rootfs.ext4 ;;
+    alpine-user) echo alpine-user/rootfs-user.ext4 ;;
     debian) echo debian/Image debian/initrd.img debian/disk.qcow2 ;;
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
     ltp) echo ltp/rootfs.ext4 ;;
@@ -219,16 +257,9 @@ if [ "${1:-}" = --check ]; then
   exit 0
 fi
 
-if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
-  podman image exists "$tag" || podman build -t "$tag" -f images/Containerfile images
-  mkdir -p "$out"
-  exec podman run --rm --userns=keep-id -v "$root:$root:z" -w "$root" \
-    -e WEBPC_IN_CONTAINER=1 -e HOME=/tmp "$tag" images/build.sh "$@"
-fi
-
-for name in "${@:-${NAMES[@]}}"; do
-  [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
+# One image built and checked (its outputs' hashes against images/SHA256SUMS).
+build() {
+  local name=$1 key sums
   key=$(inputs "$name")
   if [ "$(cat "$out/$name/.inputs" 2>/dev/null)" = "$key" ]; then
     echo "$name: up to date"
@@ -240,4 +271,24 @@ for name in "${@:-${NAMES[@]}}"; do
   echo "$sums"
   [ "$sums" = "$(grep " $name/" images/SHA256SUMS 2>/dev/null)" ] ||
     echo "WARNING: $name differs from images/SHA256SUMS (update it if the inputs changed on purpose)" >&2
-done
+}
+
+if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
+  rest=() user=
+  for name in "${@:-${NAMES[@]}}"; do
+    [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
+    if [ "$name" = alpine-user ]; then user=1; else rest+=("$name"); fi
+  done
+  if [ ${#rest[@]} -gt 0 ]; then
+    tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
+    podman image exists "$tag" || podman build -t "$tag" -f images/Containerfile images
+    mkdir -p "$out"
+    podman run --rm --userns=keep-id -v "$root:$root:z" -w "$root" \
+      -e WEBPC_IN_CONTAINER=1 -e HOME=/tmp "$tag" images/build.sh "${rest[@]}"
+  fi
+  # After the images container: alpine-user builds on alpine, in its own container.
+  if [ -n "$user" ]; then build alpine-user; fi
+  exit 0
+fi
+
+for name in "$@"; do build "$name"; done

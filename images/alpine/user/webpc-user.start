@@ -1,0 +1,37 @@
+#!/bin/sh
+# webpc's Alpine userspace benchmark (PLAN.md §7 M6 "Benchmark coverage"): the
+# user image's local.d script. Each phase prints "webpc: <phase> start/end" for
+# the host to time, and a check line; sizes keep the whole run within ~30 s on
+# one vCPU under the JIT. webpc.threads=N on the kernel command line runs N
+# workers per phase (M7's scaling runs); the default is 1.
+exec > /dev/console 2>&1
+echo "webpc: alpine-user $(cat /etc/alpine-release) $(uname -r)"
+n=$(sed -n 's/.*webpc\.threads=\([0-9]*\).*/\1/p' /proc/cmdline)
+n=${n:-1}
+d=/usr/local/share/webpc
+mount -t tmpfs -o size=192m tmpfs /mnt
+cd /mnt
+# N copies of a command in parallel, each in its own directory.
+par() { i=0; while [ $i -lt "$n" ]; do mkdir -p w$i; (cd w$i && "$@") & i=$((i + 1)); done; wait; }
+
+# The compression corpus: the start of a tar of /usr (the image is built reproducibly).
+tar -cf - /usr/lib /usr/bin 2>/dev/null | head -c 1048576 > corpus
+
+echo "webpc: compress start"
+par sh -c 'xz -6 -T1 -c ../corpus > c.xz && gzip -6 -c ../corpus > c.gz && xz -dc c.xz | cmp -s - ../corpus && gzip -dc c.gz | cmp -s - ../corpus && echo "compress: ok $(wc -c < c.xz) $(wc -c < c.gz)"'
+echo "webpc: compress end"
+
+echo "webpc: lua start"
+par sh -c "for p in binarytrees fannkuch nbody spectralnorm; do lua5.4 $d/\$p.lua; done"
+echo "webpc: lua end"
+
+echo "webpc: churn start"
+par sh -c 'i=0; while [ $i -lt 400 ]; do /bin/true; i=$((i + 1)); done; echo "churn: $(find /usr /lib -type f | xargs stat -c %s | wc -l) files"'
+echo "webpc: churn end"
+
+echo "webpc: sqlite start"
+par sh -c "sqlite3 -list :memory: < $d/speed.sql"
+echo "webpc: sqlite end"
+
+echo "webpc: test ok"
+poweroff

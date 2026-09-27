@@ -46,7 +46,7 @@ npm run bench -- --page bench/interp/index.html               # interpreter MIPS
 bench/interp/build-coremark.sh # CoreMark (pinned, fetched) -> target/bench/coremark{.bin,-linux}; coremark_mips / jit_coremark_mips in bench/interp
 npm run bench -- --page bench/boot/index.html                 # Linux boot time (needs target/images)
 node bench/boot/profile.ts                                    # PC-sampling profile of a boot, symbolized
-images/build.sh [name...]      # guest images in rootless Podman -> target/images/{linux,kvm-unit-tests}/ (--check <name>)
+images/build.sh [name...]      # guest images in rootless Podman -> target/images/<name>/ (--check <name>); alpine-user needs alpine
 cargo test --release --test boot -- --ignored --nocapture   # boot target/images/linux natively (ci.sh runs it when images exist)
 cargo test --release --test kvm_unit_tests -- --ignored --nocapture   # kvm-unit-tests, likewise
 cargo test --release --test distros [alpine|debian] -- --ignored --nocapture  # distro boots (Debian: ~8 min native, occasional only)
@@ -57,7 +57,8 @@ WEBPC_LOCKSTEP_STEPS=300000000 node --test tests/jit-lockstep.test.ts   # long J
 WEBPC_JIT_STRESS=1 node --test tests/boot-node.test.ts   # every Node boot under JIT-stress too (hours with LTP; + WEBPC_DISTROS=alpine: +4 h); not routine since M6 (PLAN §4)
 tests/qcow2/make.sh            # regenerate the qcow2 reader's fixtures with qemu-img
 npm run bench -- --page bench/boot/index.html --only dd    # realtime virtio-blk read throughput (also: boot_defconfig)
-npm run bench -- --page bench/boot/index.html --only boot_jit   # Buildroot boot under the JIT (also: boot_alpine_jit)
+npm run bench -- --page bench/boot/index.html --only boot_jit   # Buildroot boot under the JIT (also: boot_alpine_jit, boot_debian_jit)
+npm run bench -- --page bench/boot/index.html --only alpine_user_jit   # Alpine's userspace phases (images/build.sh alpine-user); coremark_vm_jit: CoreMark as init in the VM
 WEBPC_CORPUS=dp_imm,dp_reg node --test tests/corpus-wasm.test.ts   # corpus groups only (fast JIT iteration); tests/jit-diff.test.ts: JIT vs interpreter on random words
 (cd core/fuzz && cargo run --release --bin sweep [-- sys])    # exhaustive decoder check vs Capstone (~3 min; sys: MRS/MSR/SYS at EL1, seconds)
 (cd core && cargo fuzz run virtqueue)                         # libFuzzer on the virtio-mmio transport and split-queue parser

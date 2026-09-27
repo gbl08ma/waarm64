@@ -8,7 +8,9 @@
 // `--only boot_alpine`: Alpine (target/images/alpine) as its boot test runs it:
 // 1 GiB, the test devices and a framebuffer; to its local.d script and to power-off.
 // `--only boot_jit`, `--only boot_alpine_jit`: the Buildroot and Alpine boots under the JIT (VmConfig.jit = 1);
-// `--only boot_debian_jit`: Debian 13's (one cold and one warm boot, several minutes; not in the default set).
+// `--only boot_debian_jit`: Debian 13's (one cold and one warm boot, several minutes; not in the default set);
+// `--only coremark_vm_jit`: CoreMark as init under Buildroot's kernel, realtime mode (its own score);
+// `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase.
 // I/O, realtime mode, a fresh boot per sample, timed by the host between the
 // guest script's "webpc: … start/end" markers unless fio times itself:
 // `--only dd`: /bench-dd.sh reads all of /dev/vda (sync-XHR block backend);
@@ -146,6 +148,34 @@ async function bootAlpine(o: Options, jit: 0 | 1 = 0): Promise<Sample[]> {
   return s.map((x) => ({ ...x, name: x.name.replace('boot_init', `${pre}_script`).replace('boot_total', `${pre}_total`) }));
 }
 
+/** The userspace phases after Alpine's boot, under the JIT (M6's end; PLAN §7 M6 "Benchmark coverage"). */
+const USER_PHASES = ['compress', 'lua', 'churn', 'sqlite'];
+
+/**
+ * Alpine's userspace benchmark: the boot image's kernel and initramfs with
+ * rootfs-user.ext4, whose local.d script runs timed phases after booting
+ * (images/alpine/user). Deterministic, the root disk only; ms per phase from
+ * its "webpc: <phase> start/end" lines, and to power-off.
+ */
+async function alpineUser(o: Options): Promise<Sample[]> {
+  const a = DISTROS.alpine;
+  const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
+  const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
+  const module = await WebAssembly.compile(img.wasm);
+  const phases: Record<string, number[]> = Object.fromEntries([...USER_PHASES, 'total'].map((p) => [p, []]));
+  let stats;
+  for (let i = 0; i < (o.quick ? 1 : 3); i++) {
+    fresh();
+    const r = await boot(module, img);
+    for (const p of USER_PHASES) phases[p].push(between(r, p));
+    phases.total.push(r.total);
+    stats = r.stats;
+    o.log?.(`alpine_user_jit: ${USER_PHASES.map((p) => `${p} ${between(r, p).toFixed(0)}`).join(', ')}, total ${r.total.toFixed(0)} ms`);
+  }
+  const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline: a.cmdline, ramMiB: 1024, jit: 1, steps: stats!.steps, counters: stats };
+  return Object.entries(phases).map(([p, samples]) => ({ name: `alpine_user_jit_${p}`, unit: 'ms', params, samples }));
+}
+
 /** Debian 13 under the JIT to power-off (M6: timed once; long, so one cold and one warm boot). */
 async function bootDebian(o: Options): Promise<Sample[]> {
   const d = DISTROS.debian;
@@ -153,6 +183,58 @@ async function bootDebian(o: Options): Promise<Sample[]> {
   const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${d.disk}`, import.meta.url).href, cmdline: d.cmdline, ramSize: 1 << 30, test: true, jit: 1 as const };
   const s = await bootTimes(o, img, 'debian', { distro: 'debian', cmdline: d.cmdline, ramMiB: 1024, devices: 'test', jit: 1 }, { cold: 1, warmup: 0, warm: 1 });
   return s.map((x) => ({ ...x, name: x.name.replace('boot_init', 'debian_jit_first').replace('boot_total', 'debian_jit_total') }));
+}
+
+/** A newc cpio archive of `[path, mode, data?, [major, minor]?]` entries. */
+function cpio(entries: [string, number, Uint8Array?, [number, number]?][]): Uint8Array<ArrayBuffer> {
+  const bytes: number[] = [];
+  const align = () => { while (bytes.length % 4) bytes.push(0); };
+  let ino = 1;
+  for (const [name, mode, data = new Uint8Array(), [maj, min] = [0, 0]] of [...entries, ['TRAILER!!!', 0] as [string, number]]) {
+    const n = new TextEncoder().encode(`${name}\0`);
+    const fields = [ino++, mode, 0, 0, 1, 0, data.length, 0, 0, maj, min, n.length, 0];
+    bytes.push(...new TextEncoder().encode(`070701${fields.map((v) => v.toString(16).padStart(8, '0')).join('')}`), ...n);
+    align();
+    for (const b of data) bytes.push(b);
+    align();
+  }
+  return new Uint8Array(bytes);
+}
+
+/**
+ * CoreMark in the whole VM under the JIT (M6 exit table): `coremark-linux`
+ * (bench/interp/build-coremark.sh) as the init of a minimal initramfs under
+ * Buildroot's kernel, MMU on, in realtime mode so CoreMark's own timing (the
+ * kernel's clock) is the host's; the same initramfs runs under QEMU for
+ * comparison. The guest panics when CoreMark exits (panic=-1: a reset).
+ */
+async function coremarkVm(o: Options): Promise<Sample[]> {
+  const [base, cm] = await Promise.all([images(), get('../../target/bench/coremark-linux')]);
+  const initrd = cpio([['dev', 0o40755], ['dev/console', 0o20600, undefined, [5, 1]], ['init', 0o100755, cm]]);
+  const module = await WebAssembly.compile(base.wasm);
+  const cmdline = 'console=ttyAMA0 panic=-1 rdinit=/init';
+  const samples: number[] = [];
+  for (let i = 0; i < (o.quick ? 1 : 3); i++) {
+    fresh();
+    const vm = await bootVm(module, { ramSize: 256 << 20, kernel: base.kernel, initrd, cmdline, devices: [], realtime: true, jit: 1 });
+    let out = '';
+    for (;;) {
+      const r = vm.run(CHUNK);
+      out += vm.drain();
+      if (r.kind === Exit.DEVICE) await vm.settle();
+      if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE || r.kind === Exit.IDLE) continue;
+      break;
+    }
+    vm.close();
+    // A CRC mismatch is "ERROR! … crc"; a run under 10 s (CoreMark sizes it
+    // from a calibration run, which a cold JIT slows) is its own "ERROR!" and
+    // is still a correct run.
+    const m = out.match(/Iterations\/Sec\s*:\s*([\d.]+)/);
+    if (!m || /ERROR!(?! Must execute for at least 10 secs)/.test(out)) throw new Error(`CoreMark failed:\n${out}`);
+    samples.push(Number(m[1]));
+    o.log?.(`coremark_vm_jit: ${m[1]} iterations/s${out.includes('Correct operation validated') ? '' : ' (under 10 s)'}`);
+  }
+  return [{ name: 'coremark_vm_jit', unit: 'iterations/s', params: { kernel: 'Image', cmdline, realtime: true, jit: 1 }, samples }];
 }
 
 /** Realtime boots of the Buildroot guest with the test devices running `script`, `n` of them. */
@@ -223,5 +305,5 @@ async function net(o: Options): Promise<Sample[]> {
 export const suite = {
   boot: runAll, boot_defconfig: (o: Options) => runAll(o, 'Image-defconfig'), boot_alpine: bootAlpine, dd, fio, p9, net,
   // Under the JIT (VmConfig.jit = 1), deterministic.
-  boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), boot_debian_jit: bootDebian,
+  boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), boot_debian_jit: bootDebian, coremark_vm_jit: coremarkVm, alpine_user_jit: alpineUser,
 };

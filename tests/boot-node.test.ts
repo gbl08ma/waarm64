@@ -134,3 +134,17 @@ for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2]] as const) {
     assert.equal(r.steps, ALPINE_STEPS);
   });
 }
+
+// Alpine's userspace benchmark (M6's end, images/alpine/user): its image under
+// the JIT only (10.9G steps: minutes interpreted), with its phases' check lines.
+const ALPINE_USER_STEPS = 10_856_495_986;
+const userSkip = !DISTRO_TESTS.includes('alpine-user') ? 'SKIPPED: set WEBPC_DISTROS=alpine-user' : !has('alpine-user/rootfs-user.ext4') && 'SKIPPED: run images/build.sh alpine-user';
+test('Alpine userspace: JIT', { skip: userSkip }, async () => {
+  const r = await boot({ ramSize: 1 << 30, kernel: image(a.kernel), initrd: image(a.initrd), cmdline: a.cmdline, devices: guestDevices(new URL('alpine-user/rootfs-user.ext4', IMAGES).href) }, 1);
+  console.log(`# Alpine userspace JIT: ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s`);
+  poweredOff(r);
+  for (const l of ['compress: ok 3', 'binarytrees: 649904 8191', 'fannkuch: 1616 22', 'nbody: -0.169075164 -0.169078071', 'spectralnorm: 1.274222587', 'churn: 1068 files', 'sqlite: 85715 2470168', 'webpc: test ok']) {
+    assert.ok(r.console.includes(l), `no "${l}"`);
+  }
+  assert.equal(r.steps, ALPINE_USER_STEPS);
+});
