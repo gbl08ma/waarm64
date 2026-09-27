@@ -496,6 +496,7 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
 ### M8 — Product integration
 - Snapshots (save/restore CPU + devices + compressed RAM) for instant "boot".
 - Stable embedding API (VM config → DTB/devices), networking backend API for your P2P network, persistence UX, docs.
+  - Networking is planned in `PLAN-NETWORKING.md` (drafted 2026-09-27, not scheduled): the frame interface stays, v86 adapter compatibility is dropped, a Tailscale backend (upstream Go client in wasm with a custom TUN, behind a DHCP/ARP gateway) comes first, `tailscale-rs` is re-evaluated later for size, WebRTC stays experimental.
 - Firefox and Safari compatibility pass (Chromium remains the performance target).
 
 ### M9 — Loose ends (unscheduled)
