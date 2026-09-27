@@ -65,6 +65,9 @@ const CLASSES: Record<string, [number, number]> = {
   'AdvSIMD two-register miscellaneous': [0x9f3e0c00, 0x0e200800],
   'AdvSIMD copy (DUP, INS, UMOV, SMOV)': [0x9fe08400, 0x0e000400],
   'AdvSIMD extract': [0xbfe08400, 0x2e000000],
+  'AdvSIMD three different': [0x9f200c00, 0x0e200000],
+  'AdvSIMD across lanes': [0x9f3e0c00, 0x0e300800],
+  'AdvSIMD table lookup': [0xbfe08c00, 0x0e000000],
   'FP and general register moves, conversions': [0x7f20fc00, 0x1e200000],
 };
 /** Load/store classes: registers are mostly addresses around the data area. */
@@ -198,11 +201,13 @@ for (const [name, [mask, bits], mem] of [
       for (let r = 0; r < 32; r++) a[r] = value(mem, data);
       a[32] = BigInt(8 * k); // PC
       a[33] = BigInt(rand32() & 0xf) << 28n; // NZCV
-      b.set(a);
-      // V0–V31 (offset 304).
-      const [va, vb] = [new BigUint64Array(a.buffer, a.byteOffset + 304, 64), new BigUint64Array(b.buffer, b.byteOffset + 304, 64)];
+      // V0–V31 (offset 304), random; FPSR (824) clear or QC only (it's
+      // sticky: a helper's saturation earlier would hide a missing QC).
+      const va = new BigUint64Array(a.buffer, a.byteOffset + 304, 64);
       for (let r = 0; r < 64; r++) va[r] = rand32() % 8 === 0 ? EDGES[rand32() % EDGES.length] : rand64();
-      vb.set(va);
+      new BigUint64Array(a.buffer, a.byteOffset + 824, 1)[0] = rand32() % 4 === 0 ? 1n << 27n : 0n;
+      // The JIT's vCPU starts from exactly the interpreter's state.
+      new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
       const what = run(1n, mem);
       if (what) {
         failures.push(`${words[k].toString(16).padStart(8, '0')}: ${what} differs`);

@@ -5,6 +5,7 @@
 
 pub const I32: u8 = 0x7f;
 pub const I64: u8 = 0x7e;
+pub const V128: u8 = 0x7b;
 const FUNCREF: u8 = 0x70;
 
 pub fn uleb(out: &mut Vec<u8>, mut v: u64) {
@@ -154,7 +155,7 @@ impl Code {
         }
         let mut decls = Vec::new();
         let mut next = params.len() as u32;
-        for t in [I64, I32] {
+        for t in [I64, I32, V128] {
             let n = next;
             for i in 0..128 {
                 if used[i as usize] && ty(i) == t {

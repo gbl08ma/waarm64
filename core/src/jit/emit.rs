@@ -24,7 +24,7 @@ mod simd;
 use core::mem::offset_of;
 use core::ops::{Deref, DerefMut};
 
-use super::wasm::{Code, I32, I64};
+use super::wasm::{Code, I32, I64, V128};
 use crate::cpu::Cpu;
 use crate::decode::Op;
 use crate::interp::sys::DCZID_BS;
@@ -47,6 +47,8 @@ const ENTRY: u32 = 1;
 pub const ACC: u32 = 126;
 pub const LEFT: u32 = 127;
 pub const TAKEN: u32 = 125;
+/// A v128 scratch local (AdvSIMD reductions, M6 loop 4).
+pub const VTMP: u32 = 124;
 
 /// Offsets in the `Cpu`.
 pub const PC: u32 = 256;
@@ -186,6 +188,8 @@ impl Func {
         self.c.compact_locals(&[VCPU, ACC, LEFT], |i| {
             if (6..=9).contains(&i) || (13..=16).contains(&i) || i == TAKEN {
                 I32
+            } else if i == VTMP {
+                V128
             } else {
                 I64
             }
