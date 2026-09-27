@@ -592,3 +592,9 @@ Alpine's M6 target (≤ 12.2 s, 1.5× M5's 18.4 s) is met: 1.71×. Cost: in real
 **Validation:** a unit test for the ERET exit (unmasking and not); CI with the new constants (Node and Chromium boots with exact steps).
 
 Raw data: `results/m6-chunk/`, `../boot/results/m6-chunk/`.
+
+## M6 loop 10 (tuning) and the loop 8 question (compile pauses)
+
+**Tuning, re-swept after the chunk change** (Alpine in Node at `4b552a4`, two runs each; the baseline's three runs 9.6–9.7 s): threshold 10: 9.4, 9.7 s; 20: 9.6, 9.3; 200: 9.8, 9.9. Batch timeout 300K steps: 9.7, 9.7; 3M: 9.8, 9.8. Batch size 128: 9.7, 9.8; 2048: 9.7, 9.6. `region_after` 100: 9.6, 9.8; 300: 9.6, 9.6; 3000: 9.6, 9.7. All within noise except threshold 200 (slower): the defaults (50, 512, 1M, 1000) stay.
+
+**Would a compile worker (loop 8) help latency?** The question (the user's): even if it doesn't change total time, does compiling on the vCPU thread pause the guest noticeably (a guest GUI)? Measured in Node over Alpine's boot (`bench/results/local/alpine-stalls.ts`, ad hoc): each JIT module's compile + instantiate (1,923 installs: every batch and tier-up) took a median 0.07 ms, p99 0.5 ms, **max 1.3 ms** (188 ms in all); wall time per 100K guest steps (emission, V8's lazy Liftoff compiles and cold code interpreted included) had a median of 0.25 ms, p99 1.9 ms, p99.9 4.6 ms, and one slice in 29,948 above 16 ms (29 ms). So synchronous compiling doesn't make visible pauses; the slow stretches are cold code being interpreted, which a compile worker wouldn't remove. **Loop 8 isn't built in M6**; worth a second look with a GUI guest (M8), which compiles far more new code than a boot.
