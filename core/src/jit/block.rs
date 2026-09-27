@@ -335,7 +335,9 @@ pub fn module(
     compiled: impl Fn(u64) -> Option<(u32, u32)>,
     check: bool,
     jc: u32,
+    features: u64,
 ) -> Emitted {
+    let crypto = features & crate::cpu::FEATURE_CRYPTO != 0;
     let mut m = Module::default();
     let bt = m.ty(&[I32, I32, I32], &[I32]);
     let ht = m.ty(&[I32, I32, I64], &[I32]);
@@ -390,6 +392,7 @@ pub fn module(
                 helper: mmu,
                 bus: emit::Bus::Tlb { read },
                 el1: head.key & KEY_EL1 != 0,
+                crypto,
             }
         } else {
             let (base, size) = (base as usize as u32, mem.size());
@@ -397,6 +400,7 @@ pub fn module(
                 helper: flat,
                 bus: emit::Bus::Flat { base, phys, size },
                 el1: head.key & KEY_EL1 != 0,
+                crypto,
             }
         };
         let env = Env {
@@ -576,7 +580,13 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
             Next::None => false,
         };
         let mut last = false;
+        let mut skip = false;
         for (k, &w) in b.words.iter().enumerate() {
+            // The second word of a fused pair was emitted with the first.
+            if core::mem::take(&mut skip) {
+                inl += 1;
+                continue;
+            }
             let op = decode(w);
             // NZCV is stored before the block's branch (see `commit_flags`),
             // unless a successor is a member and none that is needs it: the
@@ -597,7 +607,9 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
                     c.commit_flags();
                 }
             }
+            c.next = b.words.get(k + 1).copied().unwrap_or(0);
             last = emit::inline(&mut c, w, op, k, &e.cx);
+            skip = core::mem::take(&mut c.fused);
             if last {
                 inl += 1;
                 // Branches end blocks and set the PC.
@@ -803,7 +815,14 @@ mod tests {
 
     /// A module of one block, nothing else compiled.
     fn build(b: Block) -> Emitted {
-        module(&[b.into()], &test_mem(), |_| None, false, 0)
+        module(
+            &[b.into()],
+            &test_mem(),
+            |_| None,
+            false,
+            0,
+            crate::cpu::FEATURES,
+        )
     }
 
     fn test_mem() -> Mem {
@@ -1073,6 +1092,7 @@ mod tests {
             |k| (k == 0x4000_020c).then_some((77, 3)),
             false,
             0,
+            crate::cpu::FEATURES,
         );
         assert_eq!(e.links, [vec![0x4000_020c]]);
         assert!(has(&e.bytes, &[1, b't', 2, b'7', b'7', 0, 0])); // import t.77, type 0
@@ -1118,6 +1138,7 @@ mod tests {
             |k| (k == 0x4000_1204 | KEY_MMU).then_some((9, 1)),
             false,
             0,
+            crate::cpu::FEATURES,
         );
         let mut tag = vec![0x29, 3];
         crate::jit::wasm::uleb(&mut tag, emit::tlb_array(0, 2) as u64);
@@ -1144,7 +1165,7 @@ mod tests {
         assert_eq!(keys, [0x100, 0x108, 0x114, 0x110]);
         assert_eq!(r.blocks[3].words, [0x91000823, 0xb5ffff63]);
         assert_eq!(r.back_edges(), 2);
-        let e = module(&[r], &test_mem(), |_| None, false, 0);
+        let e = module(&[r], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES);
         // The head's edges, both inside the `if TAKEN` (depth 1): to the taken
         // side (member 3, br 4) and the fall-through (member 1, br 2), each
         // when `left` covers the head (2) and the member (2), with acc and
@@ -1203,7 +1224,7 @@ mod tests {
         let (_r, m) = mem_with(0x100, &words);
         let r = region(&m, 0x100, 0x100, &|_| true);
         assert_eq!(r.blocks.len(), 2);
-        let e = module(&[r], &test_mem(), |_| None, false, 0);
+        let e = module(&[r], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES);
         assert_eq!((e.counts.cond_direct, e.counts.cond_memory), (1, 0));
         assert!(!has(&e.bytes, &[0x28, 2, 0x88, 2])); // NZCV never loaded
         assert!(has(&e.bytes, &[0x53])); // i64.lt_s
@@ -1252,7 +1273,7 @@ mod tests {
             }],
             tier: Some(0x2000),
         };
-        let e = module(&[r], &test_mem(), |_| None, false, 0);
+        let e = module(&[r], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES);
         assert!(has(&e.bytes, b"\x07jit_hot"));
         assert!(has(
             &e.bytes,
@@ -1287,7 +1308,14 @@ mod tests {
             va: 0,
             words: vec![MOVZ, 0xd65f03c0],
         };
-        let e = module(&[b.into()], &test_mem(), |_| None, false, 0x1000);
+        let e = module(
+            &[b.into()],
+            &test_mem(),
+            |_| None,
+            false,
+            0x1000,
+            crate::cpu::FEATURES,
+        );
         assert!(has(
             &e.bytes,
             &[3, b'e', b'n', b'v', 5, b't', b'a', b'b', b'l', b'e', 1]
@@ -1300,7 +1328,14 @@ mod tests {
             va: 0,
             words: vec![MOVZ, 0x14000002], // b .+8 (0x4000_020c)
         };
-        let e = module(&[b.into()], &test_mem(), |_| None, false, 0x1000);
+        let e = module(
+            &[b.into()],
+            &test_mem(),
+            |_| None,
+            false,
+            0x1000,
+            crate::cpu::FEATURES,
+        );
         let mut entry = vec![0x41];
         let at = 0x1000 + ((0x4000_020c_u64 >> 2) as u32 & (crate::jit::JC as u32 - 1)) * 16;
         crate::jit::wasm::sleb(&mut entry, at as i32 as i64);

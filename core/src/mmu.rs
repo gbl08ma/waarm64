@@ -126,12 +126,17 @@ fn index(va: u64) -> usize {
     (va >> 12) as usize & (TLB_ENTRIES - 1)
 }
 
-/// A vCPU: architectural state, then its TLB, then its JIT state. `repr(C)`
-/// with `cpu` first, so a `*mut Vcpu` is also a `*mut Cpu` with the host ABI
-/// offsets; JIT blocks get this pointer (PLAN.md §2 "JIT ABI").
+/// A vCPU: architectural state, the JIT's vector constants, then its TLB,
+/// then its JIT state. `repr(C)` with `cpu` first, so a `*mut Vcpu` is also a
+/// `*mut Cpu` with the host ABI offsets; JIT blocks get this pointer (PLAN.md
+/// §2 "JIT ABI").
 #[repr(C)]
 pub struct Vcpu {
     pub cpu: Cpu,
+    /// Constants JIT code loads at fixed offsets from the vCPU pointer
+    /// (`jit::emit::crypto`, M6.5): one `ldr q` each, where V8 would build a
+    /// `v128.const` from sixteen bytes of immediates every time.
+    pub consts: crate::jit::emit::Consts,
     pub tlb: Tlb,
     pub jit: crate::jit::State,
 }
@@ -141,10 +146,11 @@ impl Vcpu {
     pub fn new(cpu: Cpu) -> Box<Vcpu> {
         let mut v = Box::<Vcpu>::new_zeroed();
         let p = v.as_mut_ptr();
-        // SAFETY: `cpu` and `jit` are written here; the TLB is plain integers,
+        // SAFETY: `cpu`, `consts` and `jit` are written here; the TLB is plain integers,
         // valid zeroed (and empty).
         unsafe {
             (&raw mut (*p).cpu).write(cpu);
+            (&raw mut (*p).consts).write(crate::jit::emit::CONSTS);
             (&raw mut (*p).jit).write(Default::default());
             v.assume_init()
         }

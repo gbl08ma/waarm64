@@ -15,6 +15,8 @@ Reimplemented from the description, nothing copied; credited all the same.
 
 | Where | Idea | Source |
 |---|---|---|
+| `core/src/crypto.rs` `Nested`, `core/src/jit/emit/crypto.rs` (M6.5) | AES SubBytes by "nested inversion" over the tower field GF(2⁴)[t]/(t² + t + ζ) with 16-entry lookups as vector permutes and an infinity flag; the formulas and field representation of section 3.3, implemented by us (tables generated at compile time) | Mike Hamburg, "Accelerating AES with Vector Permute Instructions", CHES 2009 (the paper; the technique behind OpenSSL's `vpaes`, whose code we didn't read) |
+| `core/src/jit/emit/crypto.rs` `inv_mix_columns` (M6.5) | InvMixColumns as MixColumns after a multiply by 04 00 05 00 | Daemen and Rijmen, "The Design of Rijndael", 4.1.3 |
 | `core/src/crypto.rs` `clmul32`/`clmul64` (M6.5) | Carry-less multiplication with integer multiplies of operands masked to every fourth bit ("multiply with holes"), so partial sums can't carry into the next bit of the same class; constant time without a carry-less multiply instruction | Thomas Pornin, BearSSL's `bmul` (`src/hash/ghash_ctmul.c`) and its "Constant-Time Mul" notes (bearssl.org), MIT |
 
 ## Development dependencies (not distributed)

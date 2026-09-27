@@ -3,7 +3,7 @@
 // the functions whose name matches (JIT functions are named after their guest
 // PC: `<va>_pa<pa>`; core functions by their Rust symbol).
 //
-//   node tools/v8code.ts [--guest int|fp|coremark|el1|el1-mmu] [--steps N]
+//   node tools/v8code.ts [--guest int|fp|coremark|el1|el1-mmu|bin:<path>] [--steps N]
 //     [--match REGEX] [--tier liftoff|turbofan] [--list] [--v8 '<more V8 flags>']
 //
 // --list prints one line per matching function (tier, code size); without it,
@@ -35,6 +35,7 @@ if (a.child) {
     : a.guest === 'fp' ? suite.setup('guest-fp.bin', suite.JIT_DEFAULT)
     : a.guest === 'coremark' ? suite.setup('../../target/bench/coremark.bin', suite.JIT_DEFAULT)
     : a.guest === 'el1' || a.guest === 'el1-mmu' ? suite.setupVm(a.guest === 'el1-mmu', 1)
+    : a.guest!.startsWith('bin:') ? suite.setup(new URL(a.guest!.slice(4), `file://${process.cwd()}/`).href, suite.JIT_DEFAULT) // a raw user-mode binary, loaded as guest.bin is
     : Promise.reject(new Error(`unknown --guest ${a.guest}`)));
   // In chunks, so the dispatcher re-enters blocks and V8 tiers them up.
   for (let done = 0; done < n; ) done += g.run(Math.min(10_000_000, n - done));

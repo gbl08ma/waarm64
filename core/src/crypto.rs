@@ -68,6 +68,208 @@ pub fn inv_sub_bytes(x: u128) -> u128 {
     ginv(rotl8(x, 1) ^ rotl8(x, 3) ^ rotl8(x, 6) ^ (LO * 0x05))
 }
 
+/// The S-box and its inverse as bytes, computed at compile time one byte at a
+/// time: the tests' reference (the core has no S-box table).
+#[cfg(test)]
+pub const SBOX: [u8; 256] = sbox(false);
+#[cfg(test)]
+pub const INV_SBOX: [u8; 256] = sbox(true);
+
+#[cfg(test)]
+const fn sbox(inv: bool) -> [u8; 256] {
+    const fn mul(mut a: u8, mut b: u8) -> u8 {
+        let mut r = 0;
+        while b != 0 {
+            if b & 1 != 0 {
+                r ^= a;
+            }
+            a = (a << 1) ^ if a & 0x80 != 0 { 0x1b } else { 0 };
+            b >>= 1;
+        }
+        r
+    }
+    let mut t = [0u8; 256];
+    let mut x = 0;
+    while x < 256 {
+        // x²⁵⁴ by square and multiply, then the affine map.
+        let (mut p, mut e, mut b) = (1u8, 254u32, x as u8);
+        while e != 0 {
+            if e & 1 != 0 {
+                p = mul(p, b);
+            }
+            b = mul(b, b);
+            e >>= 1;
+        }
+        let s =
+            p ^ p.rotate_left(1) ^ p.rotate_left(2) ^ p.rotate_left(3) ^ p.rotate_left(4) ^ 0x63;
+        if inv {
+            t[s as usize] = x as u8;
+        } else {
+            t[x] = s;
+        }
+        x += 1;
+    }
+    t
+}
+
+/// The 16-entry tables of the S-box by nested inversion (Hamburg, "Accelerating
+/// AES with vector permute instructions", CHES 2009, 3.3; our own
+/// implementation of the paper's formulas): GF(2⁸) as GF(2⁴)[t]/(t² + t + ζ),
+/// GF(2⁴) = F₂[ζ]/(ζ⁴ + ζ³ + ζ² + ζ + 1), an element as x·t + y·t̄ (t̄ = t + 1)
+/// with x in the high nibble, and
+///   1/(xt + yt̄) = (t + ζ)/P + (t̄ + ζ)/Q,
+///   P = 1/(1/y + 1/ζ(x + y)) + x,  Q = 1/(1/x + 1/ζ(x + y)) + y,
+/// where 1/0 is ∞ (0x80: a swizzle index ≥ 16 reads 0, so 1/∞ = 0 and
+/// ∞ + a stays ∞). For the S-box (`inv` false): `lo`/`hi` map the input's
+/// nibbles into the tower (XOR them), `f`/`g` map 1/P and 1/Q back with the
+/// affine map's linear part (0x63 is added after). For its inverse, `lo`/`hi`
+/// apply the inverse affine map first (its constant folded into `lo`) and
+/// `f`/`g` map back plainly.
+#[derive(Clone, Copy, Debug)]
+pub struct Nested {
+    pub lo: [u8; 16],
+    pub hi: [u8; 16],
+    pub inv: [u8; 16],
+    pub invz: [u8; 16],
+    pub f: [u8; 16],
+    pub g: [u8; 16],
+}
+
+pub const NESTED: Nested = nested(false);
+pub const INV_NESTED: Nested = nested(true);
+
+/// GF(2⁴) = F₂[ζ]/(ζ⁴ + ζ³ + ζ² + ζ + 1).
+const fn gm16(a: u8, b: u8) -> u8 {
+    let mut r = 0u8;
+    let mut s = 0;
+    while s < 4 {
+        if b >> s & 1 != 0 {
+            r ^= a << s;
+        }
+        s += 1;
+    }
+    let mut s = 7;
+    while s >= 4 {
+        if r >> s & 1 != 0 {
+            r ^= 0b11111 << (s - 4);
+        }
+        s -= 1;
+    }
+    r
+}
+
+const fn inv16(a: u8) -> u8 {
+    let mut b = 1;
+    while b < 16 {
+        if gm16(a, b) == 1 {
+            return b;
+        }
+        b += 1;
+    }
+    0
+}
+
+/// ζ, and the tower's product of x·t + y·t̄ pairs (as `x << 4 | y`): with
+/// a = y and b = x + y, (a + bt)(c + dt) = ac + ζbd + (ad + bc + bd)t.
+const ZETA: u8 = 2;
+const fn tmul(p: u8, q: u8) -> u8 {
+    let (a, b, c, d) = (p & 15, (p >> 4) ^ (p & 15), q & 15, (q >> 4) ^ (q & 15));
+    let lo = gm16(a, c) ^ gm16(gm16(b, d), ZETA);
+    let hi = gm16(a, d) ^ gm16(b, c) ^ gm16(b, d);
+    (lo ^ hi) << 4 | lo
+}
+
+/// The AES field's basis zᵏ in the tower: powers of a root of z⁸ + z⁴ + z³ + z + 1.
+const fn tower_basis() -> [u8; 8] {
+    const ONE: u8 = 0x11; // t + t̄
+    let mut r = 1;
+    while r < 256 {
+        let mut pw = [0u8; 9];
+        pw[0] = ONE;
+        let mut k = 1;
+        while k < 9 {
+            pw[k] = tmul(pw[k - 1], r as u8);
+            k += 1;
+        }
+        if pw[8] ^ pw[4] ^ pw[3] ^ pw[1] ^ pw[0] == 0 {
+            let mut b = [0u8; 8];
+            let mut k = 0;
+            while k < 8 {
+                b[k] = pw[k];
+                k += 1;
+            }
+            return b;
+        }
+        r += 1;
+    }
+    panic!("no root");
+}
+
+/// The linear parts of the affine map and its inverse (FIPS 197 5.1.1, 5.3.2).
+const fn skew(b: u8) -> u8 {
+    b ^ b.rotate_left(1) ^ b.rotate_left(2) ^ b.rotate_left(3) ^ b.rotate_left(4)
+}
+const fn unskew(b: u8) -> u8 {
+    b.rotate_left(1) ^ b.rotate_left(3) ^ b.rotate_left(6)
+}
+
+const fn nested(inv: bool) -> Nested {
+    const INF: u8 = 0x80;
+    let mut n = Nested {
+        lo: [0; 16],
+        hi: [0; 16],
+        inv: [0; 16],
+        invz: [0; 16],
+        f: [0; 16],
+        g: [0; 16],
+    };
+    // AES bytes to the tower (GF(2)-linear) and back.
+    let basis = tower_basis();
+    let (mut to, mut from) = ([0u8; 256], [0u8; 256]);
+    let mut x = 0;
+    while x < 256 {
+        let mut t = 0;
+        let mut k = 0;
+        while k < 8 {
+            if x >> k & 1 != 0 {
+                t ^= basis[k];
+            }
+            k += 1;
+        }
+        to[x] = t;
+        from[t as usize] = x as u8;
+        x += 1;
+    }
+    // (t + ζ) and (t̄ + ζ) as pairs: ζ = ζ(t + t̄).
+    let (tz, tbz) = ((1 ^ ZETA) << 4 | ZETA, ZETA << 4 | (1 ^ ZETA));
+    let mut v = 0;
+    while v < 16 {
+        let v8 = v as u8;
+        if inv {
+            n.lo[v] = to[unskew(v8 ^ 0x63) as usize];
+            n.hi[v] = to[unskew(v8 << 4) as usize];
+        } else {
+            n.lo[v] = to[v];
+            n.hi[v] = to[(v8 << 4) as usize];
+        }
+        n.inv[v] = if v == 0 { INF } else { inv16(v8) };
+        n.invz[v] = if v == 0 { INF } else { inv16(gm16(ZETA, v8)) };
+        if v != 0 {
+            let r = inv16(v8);
+            let (fp, gq) = (from[scale(r, tz) as usize], from[scale(r, tbz) as usize]);
+            n.f[v] = if inv { fp } else { skew(fp) };
+            n.g[v] = if inv { gq } else { skew(gq) };
+        }
+        v += 1;
+    }
+    n
+}
+
+/// c · (x·t + y·t̄) for c in GF(2⁴).
+const fn scale(c: u8, p: u8) -> u8 {
+    gm16(c, p >> 4) << 4 | gm16(c, p & 15)
+}
+
 /// `out[j] = x[p[j]]` for a constant byte permutation.
 fn permute(x: u128, p: &[usize; 16]) -> u128 {
     p.iter()
@@ -332,6 +534,41 @@ mod tests {
         }
         // FIPS 197 figure 7: S(0x53) = 0xed.
         assert_eq!(sub_bytes(0x53) as u8, 0xed);
+    }
+
+    #[test]
+    fn sbox_tables() {
+        for x in 0..=255u8 {
+            assert_eq!(SBOX[x as usize], sub_bytes(x as u128) as u8);
+            assert_eq!(INV_SBOX[SBOX[x as usize] as usize], x);
+        }
+    }
+
+    /// The nested-inversion S-box as the JIT computes it, one byte at a time
+    /// with swizzle semantics (an index ≥ 16 reads 0), against SubBytes.
+    pub fn nested_byte(b: u8, n: &Nested) -> u8 {
+        let swz = |t: &[u8; 16], i: u8| if i < 16 { t[i as usize] } else { 0 };
+        let m = swz(&n.lo, b & 15) ^ swz(&n.hi, b >> 4);
+        let (x, y) = (m >> 4, m & 15);
+        let u = swz(&n.invz, x ^ y);
+        let (p, q) = (swz(&n.inv, y) ^ u, swz(&n.inv, x) ^ u);
+        swz(&n.f, swz(&n.inv, p) ^ x) ^ swz(&n.g, swz(&n.inv, q) ^ y)
+    }
+
+    #[test]
+    fn nested_inversion() {
+        for x in 0..=255u8 {
+            assert_eq!(
+                nested_byte(x, &NESTED) ^ 0x63,
+                SBOX[x as usize],
+                "S({x:#x})"
+            );
+            assert_eq!(
+                nested_byte(x, &INV_NESTED),
+                INV_SBOX[x as usize],
+                "S⁻¹({x:#x})"
+            );
+        }
     }
 
     #[test]

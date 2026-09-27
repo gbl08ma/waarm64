@@ -19,7 +19,10 @@
 //! helper call, on a load/store's failure return and at the block's end. A
 //! setter whose flags the next setter replaces first emits no flag code.
 
+mod crypto;
 mod float;
+
+pub use crypto::{CONSTS, Consts};
 mod simd;
 
 use core::mem::offset_of;
@@ -175,6 +178,10 @@ pub struct Func {
     /// The block computed its FP guard already (`float::fpa_guard`); false at
     /// each block's start.
     pub fpa_ok: bool,
+    /// The block's next word (0 at its end), and whether the instruction just
+    /// emitted consumed it too: a fused AES round and mix (M6.5, `crypto`).
+    pub next: u32,
+    pub fused: bool,
 }
 
 impl Deref for Func {
@@ -853,7 +860,8 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         _ => {
             let snap = (c.c.mark(), c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs);
             fp_guard(c, cx, i, k);
-            if !simd::inline(c, i, op)
+            if !(cx.crypto && crypto::inline(c, i, op))
+                && !simd::inline(c, i, op)
                 && !float::inline(c, cx, i, op, k)
                 && !float::vector(c, cx, i, op, k)
             {
@@ -876,6 +884,9 @@ pub struct Ctx {
     pub bus: Bus,
     /// The block runs at EL1 (its key says; else EL0).
     pub el1: bool,
+    /// The vCPU has the crypto extensions (`cpu::FEATURE_CRYPTO`, fixed for its
+    /// life): without them the helper runs those words (UNDEFINED).
+    pub crypto: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2401,6 +2412,7 @@ mod tests {
             size: 0x1000,
         },
         el1: false,
+        crypto: true,
     };
 
     fn emit(i: u32, k: usize) -> Option<Vec<u8>> {
@@ -2767,6 +2779,7 @@ mod tests {
             helper: 0,
             bus: Bus::Tlb { read },
             el1: true,
+            crypto: true,
         };
         let b = emit_in(insn, 0, &tlb).unwrap();
         for off in [read, read + 8] {

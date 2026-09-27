@@ -267,7 +267,11 @@ impl Vm {
             1 => Some(jit::Config::DEFAULT),
             _ => Some(jit::Config::STRESS),
         }
-        .map(|c| Box::new(jit::Cache::new(c)));
+        .map(|c| {
+            let mut cache = jit::Cache::new(c);
+            cache.features = cfg.features;
+            Box::new(cache)
+        });
         Vm {
             vcpu,
             mem: mem.at(RAM_BASE),

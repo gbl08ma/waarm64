@@ -645,3 +645,24 @@ Raw data: `results/m6-exit/`, `../boot/results/m6-exit/`.
 - The 256-byte AES-GCM rows are the first `openssl speed` runs, when the JIT still compiles `libcrypto`'s code (kept afterwards: blocks are keyed by physical address, and the library's pages are shared), hence their IQR; the 16 KiB rows are the steady-state numbers to beat.
 
 Raw data: `../boot/results/m65-loop0/neon-only.json`.
+
+## M6.5 loops 2–4: the extensions switchable, then AES inline
+
+`--only alpine_crypto_ce_jit`: loop 0's benchmark with `VmConfig.features` bit 0 (ABI 19, loop 2): the guest's OpenSSL sees `OPENSSL_armcap=0xbd` and takes its CE paths (`aes-gcm-armv8_64`, the AESE/AESMC CBC loop, `sha1/sha256` with SHA1*/SHA256*); its check line matches arm64 hardware's. Chromium 153, the M4 VM, 5 boots each unless marked, medians (IQR), MB/s at 16 KiB (256 B in the JSON):
+
+| | NEON-only (loop 0) | CE, all helpers (1 boot) | CE, AES inline: 16 slices | nested inversion | **nested, constants in the `Vcpu`** |
+|---|---|---|---|---|---|
+| AES-128-GCM | 51.0 | 4.5 | 86.0 (0.2), 86.1 (1.6) | 104.7 (0.1), 102.2 (1.0) | **124.7** (0.8) |
+| AES-256-GCM | 40.7 | 3.2 | 70.1, 70.4 | 89.4, 89.1 | **112.7** (0.7) |
+| AES-128-CBC | 46.8 | 4.7 | 112.1 (0.7), 111.2 (0.1) | 148.4 (2.3), 143.5 (0.6) | **152.1** (1.5) |
+| SHA-1 | 256.5 | 57.2 | | | 56.7 (helpers) |
+| SHA-256 | 87.5 | 48.1 | | | 48.3 (helpers) |
+
+- **Through the generic helper** every crypto instruction costs a call into the interpreter's table-free arithmetic (the SWAR S-box is ~1800 wasm ops): 10× under the NEON bar for AES, 2–4.5× for SHA.
+- **Loop 4, AES inline** (`core/src/jit/emit/crypto.rs`): AESE/AESD as AddRoundKey, a ShiftRows swizzle and SubBytes; AESMC/AESIMC by `xtime` and column rotations; an `AESE`+`AESMC` (`AESD`+`AESIMC`) whose mix reads and writes the round's register is one emitted round (`Func::next`/`fused`), anything else two instructions. Only when the vCPU has the feature (`Ctx::crypto`, from `jit::Cache::features`).
+- **The two SubBytes candidates**, measured alternately (slices, nested, slices, nested): the S-box as 16 swizzles of 16-byte slices (a byte selects slice j by XOR with 16j: other lanes' indices are ≥ 16, which swizzle reads as 0) against **nested inversion** over GF(2⁴) (Hamburg, CHES 2009, §3.3: GF(2⁴) = F₂[ζ]/(ζ⁴+ζ³+ζ²+ζ+1), GF(2⁸) = GF(2⁴)[t]/(t²+t+ζ), 1/(xt+yt̄) = (t+ζ)/(1/(1/y+1/ζ(x+y))+x) + (t̄+ζ)/(1/(1/x+1/ζ(x+y))+y) with ∞ as an out-of-range index; our implementation of the paper's formulas, tables generated at compile time by `crypto::nested`, checked byte by byte in a swizzle model): 9 swizzles instead of 16, **+30% on CBC, +20–27% on GCM**. Nested inversion is kept.
+- **Constants out of `v128.const`**: TurboFan built every 128-bit constant from immediates at each use, in the loop (the AESE+AESMC, AESD+AESIMC loop's TurboFan code: 145 `movk`, 50 `movz`, 24 `fmov` of 1720 bytes; `tools/v8code.ts --guest bin:<raw>`, new). The tables and swizzle indices now sit in `Vcpu::consts` (between the `Cpu` and the TLB, filled at creation), one `ldr q` each: 816 bytes, 24 `tbl` (one per swizzle, as planned), no `movk`. GCM +19–26%; CBC +3%.
+- **CBC is latency-bound**: its rounds are one dependency chain, and each instruction stores its V register to the `Cpu` and the next loads it back, so a round costs ~2 cycles per swizzle level plus a store-to-load round trip. Vector registers in locals (M6 loop 3, not done) is what would help it; GCM's parallel blocks hide it.
+- The GCM runs still spend helpers on `PMULL` (58M calls in the phase: loop 5) and SHA is all helpers (loop 6).
+
+Raw data: `../boot/results/m65-loop4/` (each variant's JSON; `helpers-only-quick.json` is the one-boot helper run).

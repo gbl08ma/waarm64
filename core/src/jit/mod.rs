@@ -178,6 +178,9 @@ pub const BATCH_TIMEOUT: u64 = 1_000_000;
 /// The block cache, the pending batch and the code cache's slot allocator.
 pub struct Cache {
     pub cfg: Config,
+    /// The vCPU's `Cpu::features`, which the emitted code may assume (a VM
+    /// sets it from its config; user-mode vCPUs have them all).
+    pub features: u64,
     map: Map<Info>,
     /// The keys in `map` by physical page, for `IC IVAU`.
     pages: Map<Vec<u64>>,
@@ -237,6 +240,7 @@ impl Cache {
             off: false,
             ram: None,
             stats: Stats::default(),
+            features: crate::cpu::FEATURES,
         }
     }
 
@@ -481,6 +485,7 @@ impl Cache {
             compiled,
             self.cfg.check,
             self.jc.as_ptr() as usize as u32,
+            self.features,
         );
         let t = now_ns();
         let Some(idx) = install(&bytes, slot) else {
