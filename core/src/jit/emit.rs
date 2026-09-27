@@ -19,6 +19,8 @@
 //! helper call, on a load/store's failure return and at the block's end. A
 //! setter whose flags the next setter replaces first emits no flag code.
 
+mod simd;
+
 use core::mem::offset_of;
 use core::ops::{Deref, DerefMut};
 
@@ -159,6 +161,9 @@ pub struct Func {
     /// successor is a region member, so only a return needs it; a
     /// conditional branch keeps just its outcome in `TAKEN`.
     pub defer_pc: bool,
+    /// The block checked already that SIMD&FP instructions may run
+    /// ([`fp_guard`]); false at each block's start.
+    pub fp_ok: bool,
 }
 
 impl Deref for Func {
@@ -825,7 +830,17 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             get(c, sf, rm);
             arith(c, sf, [SHL, SHR_U, SHR_S, ROTR][bits(i, 11, 10) as usize]);
         }),
-        _ => return false,
+        // AdvSIMD and SIMD&FP moves (M6 loop 4), after the block's FP check;
+        // nothing emitted for the rest.
+        _ => {
+            let (mark, flags, touched, fp_ok) = (c.c.mark(), c.flags, c.touched, c.fp_ok);
+            fp_guard(c, cx, i, k);
+            if !simd::inline(c, i, op) {
+                c.c.rewind(mark);
+                (c.flags, c.touched, c.fp_ok) = (flags, touched, fp_ok);
+                return false;
+            }
+        }
     }
     true
 }
@@ -1193,20 +1208,40 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     true
 }
 
+/// Before a block's first inline SIMD&FP instruction (the `k`-th, `i`):
+/// checks that CPACR_EL1.FPEN lets it run (11 at EL0, x1 at EL1). If not,
+/// the helper runs it (it traps) and the block returns. Nothing later in the
+/// block can change FPEN (an MSR ends a block), so the rest need no check.
+pub fn fp_guard(c: &mut Func, cx: &Ctx, i: u32, k: usize) {
+    if c.fp_ok {
+        return;
+    }
+    c.fp_ok = true;
+    let m = if cx.el1 { 1 << 20 } else { 3 << 20 };
+    c.local_get(VCPU)
+        .i64_load(offset_of!(Cpu, cpacr_el1) as u32);
+    c.i64_const(m).i64_and().i64_const(m).op(NE + WC).if_();
+    let saved = c.regs;
+    c.flush();
+    c.store_flags();
+    // acc + k, plus one if the helper retired it after all.
+    c.local_get(VCPU).i32_const(i as i32);
+    pc_plus(c, 4 * k as i64);
+    c.call(cx.helper).op(EQZ).local_get(ACC).op(ADD);
+    c.i32_const(k as i32).op(ADD).return_();
+    c.end();
+    c.regs = saved;
+}
+
 /// SIMD&FP loads and stores of one register or a pair, every addressing form
 /// (M6 loop 2): the fast path of [`access`] with the V registers read and
-/// written in the `Cpu`, behind CPACR_EL1.FPEN (else the helper traps) and,
-/// for an SP base, SP's alignment. Structure loads and stores (LD1 & co)
+/// written in the `Cpu`, after the block's [`fp_guard`] and, for an SP base,
+/// behind SP's alignment. Structure loads and stores (LD1 & co)
 /// stay helper calls.
 fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     use Op::*;
     let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
     let here = 4 * k as i64;
-    // FPEN 11 lets EL0 and EL1 in, x1 EL1 only.
-    let fpen = Guard::Bits(
-        offset_of!(Cpu, cpacr_el1) as u32,
-        if cx.el1 { 1 << 20 } else { 3 << 20 },
-    );
     let load = bit(i, 22);
     // The access size: S/D/Q for the literal and pair forms, B/H/S/D/Q (Q:
     // size 0 with opc<1>) for the rest; the other encodings are UNDEFINED.
@@ -1225,11 +1260,12 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         return false;
     }
     let imm9 = sext(bits(i, 20, 12) as u64, 9) as i64;
+    fp_guard(c, cx, i, k);
     match op {
         LDR_lit_fpsimd => {
             pc_plus(c, here + sext((bits(i, 23, 5) << 2) as u64, 21) as i64);
             c.local_set(ADDR);
-            access(c, cx, i, here, len, false, &[fpen], 0, |c, off| {
+            access(c, cx, i, here, len, false, &[], 0, |c, off| {
                 vload(c, rt, off, len)
             });
         }
@@ -1245,7 +1281,7 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }
             c.local_set(ADDR);
             let wb = mode & 1 == 1;
-            let guards = [fpen, Guard::sp(rn)];
+            let guards = [Guard::sp(rn)];
             access(
                 c,
                 cx,
@@ -1293,7 +1329,7 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 }
             }
             c.local_set(ADDR);
-            let guards = [fpen, Guard::sp(rn)];
+            let guards = [Guard::sp(rn)];
             access(
                 c,
                 cx,
@@ -2153,6 +2189,36 @@ mod tests {
         assert!(has(&b, &[0xfd, 0, 0, 0x90, 0x80, 4, 0xfd, 11, 0, 0xd0, 2]));
         // ldr q1 with size 1 and opc<1> (UNDEFINED): the helper.
         assert_eq!(emit(0x7dc00041, 0), None);
+    }
+
+    #[test]
+    fn advsimd_integer() {
+        // add v0.4s, v1.4s, v2.4s: vcpu; V1, V2 loaded; i32x4.add; v128.store to V0.
+        let b = emit(0x4ea28420, 0).unwrap();
+        assert!(has(
+            &b,
+            &[
+                0xfd, 0, 0, 0xc0, 2, 0x20, 0, 0xfd, 0, 0, 0xd0, 2, 0xfd, 0xae, 1, 0xfd, 11, 0,
+                0xb0, 2
+            ]
+        ));
+        // The block's FP check comes first: CPACR_EL1 (896).
+        assert!(b.starts_with(&[0x20, 0, 0x29, 3, 0x80, 7]));
+        // add v0.2s: the top half cleared (i64.const 0; i64x2.replace_lane 1).
+        assert!(has(
+            &emit(0x0ea28420, 0).unwrap(),
+            &[0x42, 0, 0xfd, 0x1e, 1, 0xfd, 11]
+        ));
+        // ushr v0.4s, v1.4s, #32: 0 (the lane width, which wasm would take as 0).
+        assert!(has(
+            &emit(0x6f200420, 0).unwrap(),
+            &[0xfd, 0x0c, 0, 0, 0, 0]
+        ));
+        // dup v0.16b, w1: i8x16.splat of the 32-bit register.
+        assert!(has(&emit(0x4e010c20, 0).unwrap(), &[0xfd, 0x0f]));
+        // mul v0.16b (no i8x16.mul) and pmul: helper calls, nothing emitted.
+        assert_eq!(emit(0x4e229c20, 0), None);
+        assert_eq!(emit(0x6e229c20, 0), None);
     }
 
     #[test]

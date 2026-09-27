@@ -55,6 +55,18 @@ pub struct Code {
     locals: Vec<usize>,
 }
 
+impl Code {
+    /// Where the code is now, for [`Code::rewind`].
+    pub fn mark(&self) -> (usize, usize) {
+        (self.b.len(), self.locals.len())
+    }
+    /// Drops what was emitted since `m`.
+    pub fn rewind(&mut self, m: (usize, usize)) {
+        self.b.truncate(m.0);
+        self.locals.truncate(m.1);
+    }
+}
+
 /// Instruction encoders; each appends one instruction.
 impl Code {
     pub fn op(&mut self, op: u8) -> &mut Self {
@@ -75,6 +87,30 @@ impl Code {
         uleb(&mut self.b, op as u64);
         uleb(&mut self.b, align as u64);
         uleb(&mut self.b, offset as u64);
+        self
+    }
+    /// A SIMD instruction without immediates (`0xfd` prefix, LEB opcode).
+    pub fn simd(&mut self, op: u32) -> &mut Self {
+        self.b.push(0xfd);
+        uleb(&mut self.b, op as u64);
+        self
+    }
+    /// A SIMD lane instruction (extract_lane, replace_lane) on lane `lane`.
+    pub fn simd_lane(&mut self, op: u32, lane: u8) -> &mut Self {
+        self.simd(op);
+        self.b.push(lane);
+        self
+    }
+    /// v128.const.
+    pub fn v128_const(&mut self, v: u128) -> &mut Self {
+        self.simd(0x0c);
+        self.b.extend_from_slice(&v.to_le_bytes());
+        self
+    }
+    /// i8x16.shuffle: byte `k` of the result is byte `lanes[k]` of a:b (b's are 16–31).
+    pub fn shuffle(&mut self, lanes: [u8; 16]) -> &mut Self {
+        self.simd(0x0d);
+        self.b.extend_from_slice(&lanes);
         self
     }
     /// An atomic load or store (threads proposal, `0xfe` prefix) of

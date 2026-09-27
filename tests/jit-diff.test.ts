@@ -59,6 +59,13 @@ const CLASSES: Record<string, [number, number]> = {
   'divide': [0x7fe0f800, 0x1ac00800],
   'bit and byte reversal, CLZ, CLS': [0x7fffe000, 0x5ac00000],
   hints: [0xfffff01f, 0xd503201f],
+  // AdvSIMD (M6 loop 4), V registers random.
+  'AdvSIMD three same': [0x9f200400, 0x0e200400],
+  'AdvSIMD shift by immediate, modified immediate': [0x9f800400, 0x0f000400],
+  'AdvSIMD two-register miscellaneous': [0x9f3e0c00, 0x0e200800],
+  'AdvSIMD copy (DUP, INS, UMOV, SMOV)': [0x9fe08400, 0x0e000400],
+  'AdvSIMD extract': [0xbfe08400, 0x2e000000],
+  'FP and general register moves, conversions': [0x7f20fc00, 0x1e200000],
 };
 /** Load/store classes: registers are mostly addresses around the data area. */
 const MEMORY: Record<string, [number, number]> = {
@@ -192,12 +199,10 @@ for (const [name, [mask, bits], mem] of [
       a[32] = BigInt(8 * k); // PC
       a[33] = BigInt(rand32() & 0xf) << 28n; // NZCV
       b.set(a);
-      if (mem) {
-        // V0–V31 (offset 304).
-        const [va, vb] = [new BigUint64Array(a.buffer, a.byteOffset + 304, 64), new BigUint64Array(b.buffer, b.byteOffset + 304, 64)];
-        for (let r = 0; r < 64; r++) va[r] = rand64();
-        vb.set(va);
-      }
+      // V0–V31 (offset 304).
+      const [va, vb] = [new BigUint64Array(a.buffer, a.byteOffset + 304, 64), new BigUint64Array(b.buffer, b.byteOffset + 304, 64)];
+      for (let r = 0; r < 64; r++) va[r] = rand32() % 8 === 0 ? EDGES[rand32() % EDGES.length] : rand64();
+      vb.set(va);
       const what = run(1n, mem);
       if (what) {
         failures.push(`${words[k].toString(16).padStart(8, '0')}: ${what} differs`);
@@ -232,6 +237,7 @@ test('JIT vs interpreter: system registers and barriers', () => {
     if (rand32() % 8 === 0) return (0xd503301f | (rand32() & 0xfe0)) >>> 0; // barriers and the rest of that space
     if (rand32() % 8 === 0) return (0xd50b7420 | rt) >>> 0; // DC ZVA: SCTLR_EL1.DZE decides at EL0
     if (rand32() % 8 === 0) return ((field(rand32()) & ~0x3f000000) | 0x3d000000) >>> 0; // SIMD&FP load/store: CPACR_EL1.FPEN decides
+    if (rand32() % 8 === 0) return ((field(rand32()) & ~0x9f200400) | 0x0e200400) >>> 0; // AdvSIMD three same: likewise
     const key = rand32() % 4 === 0 ? rand32() & 0xffff : SYSREG_KEYS[rand32() % SYSREG_KEYS.length];
     return (0xd5300000 | key << 5 | rt) >>> 0; // MRS
   });
@@ -273,15 +279,16 @@ test('JIT vs interpreter: system registers and barriers', () => {
 // Sequences (step 6). Words that read or write NZCV outside the ALU: MRS
 // NZCV (inline since M6 loop 1: it reads lazy flags made current) and MSR
 // NZCV (a helper that ends the block); words that force helper calls: an
-// exclusive load, FMOV between X and D registers (a helper that reads or
-// writes an X register); loads whose address misses come from the register
-// values.
+// exclusive load, FCVTZS (a helper that writes an X register); FMOV between X
+// and D registers (inline since M6 loop 4); loads whose address misses come
+// from the register values.
 const HELPERS = [
   (d: number, _n: number) => 0xd53b4200 | d, // mrs xd, nzcv
   (d: number, _n: number) => 0xd51b4200 | d, // msr nzcv, xd
   (d: number, n: number) => 0xc85f7c00 | (n << 5) | d, // ldxr xd, [xn]
-  (d: number, n: number) => 0x9e660000 | (n << 5) | d, // fmov xd, dn
-  (d: number, n: number) => 0x9e670000 | (n << 5) | d, // fmov dd, xn
+  (d: number, n: number) => 0x9e660000 | (n << 5) | d, // fmov xd, dn (inline since M6 loop 4)
+  (d: number, n: number) => 0x9e670000 | (n << 5) | d, // fmov dd, xn (likewise)
+  (d: number, n: number) => 0x9e780000 | (n << 5) | d, // fcvtzs xd, dn (a helper that writes an X register)
 ];
 const ALU = ['add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);

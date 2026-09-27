@@ -41,7 +41,7 @@ fn imm5(i: u32) -> R<(u32, u32)> {
 }
 
 /// VFPExpandImm for single (`n` = 32) or double (64) precision.
-pub(super) fn vfp_expand_imm(imm8: u32, n: u32) -> u64 {
+pub(crate) fn vfp_expand_imm(imm8: u32, n: u32) -> u64 {
     let (sign, b6, rest) = (
         (imm8 >> 7) as u64,
         (imm8 >> 6) & 1 == 1,
@@ -55,7 +55,7 @@ pub(super) fn vfp_expand_imm(imm8: u32, n: u32) -> u64 {
 }
 
 /// AdvSIMDExpandImm: the 64-bit pattern for op (29), cmode (15:12) and imm8 (a:b:c at 18:16, d–h at 9:5).
-fn adv_simd_expand_imm(op: bool, cmode: u32, imm8: u32, q: bool) -> R<u64> {
+pub(crate) fn adv_simd_expand_imm(op: bool, cmode: u32, imm8: u32, q: bool) -> R<u64> {
     let imm = imm8 as u64;
     let rep32 = |x: u64| x | x << 32;
     let rep16 = |x: u64| rep32(x | x << 16);

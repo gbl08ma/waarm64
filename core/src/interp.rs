@@ -7,7 +7,7 @@
 mod float;
 mod ldst;
 mod ldst_fp;
-mod simd;
+pub(crate) mod simd;
 mod simd_fp;
 mod simd_int;
 pub mod sys;

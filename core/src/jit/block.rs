@@ -548,6 +548,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
         }
         c.base = (b.key & !3).wrapping_sub(head) as i64;
         c.regs = entry[i];
+        c.fp_ok = false;
         c.enter_flags(match fin[i] {
             In::Lazy(k, sf) => Some((k, sf)),
             _ => None,
@@ -937,12 +938,12 @@ mod tests {
 
     #[test]
     fn a_helper_writes_back_and_forgets() {
-        // add x1, x2, #3; fmov x1, d0 (a helper); add x3, x1, #1: x1 is written
+        // add x1, x2, #3; ldxr x1, [x2] (a helper); add x3, x1, #1: x1 is written
         // back before the call and loaded again after it.
         let b = Block {
             key: 0x4000_0200,
             va: 0x4000_0200,
-            words: vec![ADD, 0x9e660001, 0x91000423],
+            words: vec![ADD, 0xc85f7c41, 0x91000423],
         };
         let Emitted { bytes, inl, .. } = build(b);
         assert_eq!(inl, [2]);
@@ -1013,9 +1014,9 @@ mod tests {
 
     #[test]
     fn flags_are_stored_before_helpers_and_on_failure_returns() {
-        // cmp x1, x2; fmov x1, d0 (a helper): NZCV stored before the call; the
+        // cmp x1, x2; ldxr x1, [x2] (a helper): NZCV stored before the call; the
         // helper may write it, so nothing is left to store at the end.
-        let (bytes, counts) = one(&[0xeb02003f, 0x9e660001]);
+        let (bytes, counts) = one(&[0xeb02003f, 0xc85f7c41]);
         assert_eq!(nzcv_stores(&bytes), 1);
         let at = bytes.windows(3).position(|w| w == [0x37, 3, 0x88]).unwrap();
         assert!(bytes[at..].windows(2).any(|w| w == [0x10, 0])); // the call comes after
