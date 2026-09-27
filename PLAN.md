@@ -245,6 +245,8 @@ Testing is layered. The cheaper layers run on every commit.
 
 **Since M6's exit (the user, 2026-09-27):** peer comparisons are rare: the M6 exit table measures them once, and they aren't repeated per loop or kept as variants. Performance work and regression checks compare webpc against itself, in Chromium (and Node for iteration).
 
+**qemu-wasm is dropped as a peer (the user, 2026-09-27):** in the M6 exit table it booted Buildroot 4.7× slower than webpc and computed CoreMark wrong (CRC mismatches); it looks like a personal experiment abandoned about a year ago, and its public demo doesn't feel fast either. Don't spend more time comparing against it; its build and artifacts were deleted.
+
 - **Native arm64** (M4 Linux VM). Gives the slowdown factor, the headline number.
 - **QEMU TCG** (`qemu-system-aarch64 -M virt`, native, same kernel and image). The practical reference for "good" emulation speed.
 - **In-browser peers** running the same workload built for their ISA, in the same Chromium:
