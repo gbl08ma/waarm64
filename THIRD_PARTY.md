@@ -22,6 +22,12 @@ copyright/license header in the file.
 | Berkeley SoftFloat 3e + TestFloat 3e (built under `target/testfloat` by `scripts/testfloat.sh`; `testfloat_gen` only) | `a0c6494cdc11` / `a9c849f1b0eb` | BSD-3-Clause |
 | miniz_oxide (`core` dev-dependency: the native test runners' qcow2 reader, `core/tests/common/qcow2.rs`; default features off) | 0.9.1 | MIT OR Zlib OR Apache-2.0 |
 
+## Benchmark workloads fetched at build time (not in the repository)
+
+| Workload | Source, commit | License | How we use it |
+|---|---|---|---|
+| CoreMark | [eembc/coremark](https://github.com/eembc/coremark), `1f483d5b8316` | Apache-2.0, plus EEMBC's CoreMark Acceptable Use Agreement (the CoreMark trademark only for results of unmodified sources) | `bench/interp/build-coremark.sh` fetches it into `target/dl/coremark` and builds it unmodified with our own port layer (`bench/interp/coremark/core_portme.{c,h}`, MIT) into `target/bench/` (not committed, not distributed) |
+
 ## Reference projects: verified licenses
 
 Checked on 2026-09-25 against the upstream default branch at the commit listed.

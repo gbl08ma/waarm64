@@ -151,9 +151,38 @@ const jitFpMips = async (o: Options) => mipsOf(o, 'jit_fp_mips', 'bench/interp/g
 const vmJitFlatMips = async (o: Options) => mipsOf(o, 'vm_jit_flat_mips', 'bench/interp/guest.c EL1 MMU off', await setupVm(false, 1));
 const vmJitMmuMips = async (o: Options) => mipsOf(o, 'vm_jit_mmu_mips', 'bench/interp/guest.c EL1 MMU on', await setupVm(true, 1));
 
+/**
+ * CoreMark (M5 step 10): target/bench/coremark.bin from bench/interp/build-coremark.sh,
+ * the 2K performance run, CoreMark's main() rerun forever (COREMARK_ITERATIONS
+ * each; the guest counts runs at ROUNDS and leaves the first run's report at
+ * 0x88000). Samples in MIPS and, through the instructions per iteration this
+ * run took, in iterations per second (the CoreMark score's unit; CoreMark's own
+ * 10-second rule for publishing a score doesn't apply to these).
+ */
+const COREMARK_ITERATIONS = 10;
+async function coremark(o: Options, name: string, jit?: JitConfig): Promise<Sample[]> {
+  const g = await setup('../../target/bench/coremark.bin', jit).catch((e) => {
+    throw new Error(`${e}: build it with bench/interp/build-coremark.sh`);
+  });
+  let steps = 0;
+  const counted: Guest = { ...g, run: (n) => { const k = g.run(n); steps += k; return k; } };
+  const s = await mipsOf(o, name, 'CoreMark 2K performance run (bench/interp/build-coremark.sh)', counted);
+  const out = new Uint8Array(g.memory.buffer, g.base + 0x88000, 0x4000);
+  const report = new TextDecoder().decode(out.slice(0, out.indexOf(0)));
+  if (!report.includes('2K performance run parameters') || /ERROR! \w+ crc/.test(report)) throw new Error(`CoreMark didn't validate:\n${report}`);
+  const perIteration = steps / (Number(g.rounds()) * COREMARK_ITERATIONS);
+  return [...s, ...s.map((x) => ({
+    ...x, name: x.name.replace('_mips', '_iterations'), unit: 'iterations/s',
+    params: { ...x.params, insnsPerIteration: Math.round(perIteration) }, samples: x.samples.map((m) => (m * 1e6) / perIteration),
+  }))];
+}
+const coremarkInterp = async (o: Options) => coremark(o, 'coremark_mips');
+const coremarkJit = async (o: Options) => coremark(o, 'jit_coremark_mips', JIT_DEFAULT);
+
 export const suite = {
   interp_mips: interpMips, interp_fp_mips: interpFpMips, vm_flat_mips: vmFlatMips, vm_mmu_mips: vmMmuMips,
   jit_mips: jitMips, jit_fp_mips: jitFpMips, vm_jit_flat_mips: vmJitFlatMips, vm_jit_mmu_mips: vmJitMmuMips,
+  coremark_mips: coremarkInterp, jit_coremark_mips: coremarkJit,
 };
 export const runAll = async (o: Options) => {
   const out = [];

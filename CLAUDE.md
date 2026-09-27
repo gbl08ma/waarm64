@@ -40,6 +40,7 @@ node bench/spike/node.ts --quick   # spike in Node, fast iteration only
 npm run serve                  # dev server with COOP/COEP on :8080 (PORT env overrides)
 node tools/corpus/run.ts [--oracle qemu|m4|both] [group...]  # regenerate golden corpus (needs qemu / the M4 VM)
 npm run bench -- --page bench/interp/index.html               # interpreter MIPS
+bench/interp/build-coremark.sh # CoreMark (pinned, fetched) -> target/bench/coremark{.bin,-linux}; coremark_mips / jit_coremark_mips in bench/interp
 npm run bench -- --page bench/boot/index.html                 # Linux boot time (needs target/images)
 node bench/boot/profile.ts                                    # PC-sampling profile of a boot, symbolized
 images/build.sh [name...]      # guest images in rootless Podman -> target/images/{linux,kvm-unit-tests}/ (--check <name>)
