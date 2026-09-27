@@ -271,7 +271,7 @@ Guest images you distribute (kernel, BusyBox, and so on) carry their own GPL obl
 Every milestone ends with: all test layers green, a recorded benchmark baseline in Chromium, and the counters reviewed.
 
 ### M0 — Foundations and feasibility spike
-**Status:** done 2026-09-25 (see `bench/spike/REPORT.md`). The M4 Mac Linux VM is up (§4.2). Still pending: a spike re-run on Chromium arm64 (tracked in M9).
+**Status:** done 2026-09-25 (see `bench/spike/REPORT.md`). The M4 Mac Linux VM is up (§4.2). Re-run on Chromium arm64 (the M4 VM) in M6 loop 0 (`bench/spike/REPORT.md` "Re-run on arm64").
 
 - Repo, license, `THIRD_PARTY.md`, Rust core building to both native and wasm (pinned nightly toolchain), TS host skeleton, script-based CI, Linux VM on the M4 Mac with remote access.
 - Playwright harness serving with COOP/COEP headers, results JSON schema, Node variant.
@@ -486,7 +486,6 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
 ### M9 — Loose ends (unscheduled)
 Open items that no milestone owns yet. Pick them up when a milestone touches the area or a measurement says they matter; move an item into that milestone when it's scheduled.
 
-- **M0 spike re-run on Chromium arm64** (the M4), to confirm the JIT design numbers in `bench/spike/REPORT.md` on the second host.
 - **Interpreter speed** (`bench/interp/REPORT.md`). There's no decoded-block cache yet: each instruction is fetched through `Mem::host` and decoded again (`ponytail:` in `interp::step`). FP runs at about a sixth of the integer rate. `FMLA`/`FMADD` always take the exact software FMA, and vector FP goes lane by lane through an `Fpu` context and `u128` lanes. None of this matters while the interpreter is only the JIT's reference and fallback.
 - **V8 tiering on FP-heavy code** (→ M6, loop 0). On the FP/NEON guest, TurboFan-only beats the default tiering by 21% (x86_64) and 32% (M4); the integer guest shows the opposite. Understand it before the core's FP helpers become JIT slow paths (M5).
 - **`Mem::rmw`** (→ M6 if the boots' histogram puts LSE atomics high) is a generic CAS loop (`ponytail:` in `core/src/mem.rs`). Map add/and/or/xor/xchg to single wasm `atomic.rmw` ops if a profile shows LSE atomics.

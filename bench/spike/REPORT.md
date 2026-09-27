@@ -6,7 +6,7 @@
 
 Caveats:
 - The machine is a desktop that was in use during the run, not an isolated benchmark box. IQRs were small throughout, so the medians are trustworthy to roughly ±5%.
-- **Chromium on arm64 (M4 Mac) isn't measured yet.** Re-run there before treating any number as host-independent.
+- Chromium on arm64 is measured since M6 loop 0: see "Re-run on arm64" at the end.
 - Memory layout alternatives (memory64, multi-memory) are M0.5's job and aren't covered here.
 
 Columns are medians for V8 default (dynamic tiering), `--liftoff-only` and `--no-liftoff` (TurboFan only).
@@ -80,4 +80,28 @@ Available. `i32x4.add` streams at 40.9 GB/s vs 13.5 GB/s for scalar `i32.add` (3
 4. TLB fast path as designed is cheap on hits. Entry size and TLB geometry get tuned in M5 with real guest traces.
 5. SIMD128 lowering for NEON is worth doing (M6).
 
-**Open:** re-run on Chromium arm64 (M4 Mac). Memory64 and multi-memory move to M0.5.
+Memory64 and multi-memory moved to M0.5.
+
+## Re-run on arm64 (M6 loop 0, 2026-09-27)
+
+**Host:** the Lima VM `dev` on the M4 Mac mini (Linux aarch64 under the macOS hypervisor, 8 vCPUs, 14 GiB), Chromium 153.0.8010.52 headless, the benchmark code unchanged since M0. Raw data: `results/chromium-linux-arm64-{default,liftoff-only,turbofan-only}.json`. Medians, x86_64 (Chromium 152) → arm64:
+
+| | x86_64 | arm64 | |
+|---|---|---|---|
+| sync compile + instantiate, 64 funcs | 0.155 ms | 0.150 ms | same |
+| first call of every function, 512 funcs, default / TurboFan-only | 2.63 / 35.8 ms | 2.09 / 21.3 ms | Liftoff ~4 µs, TurboFan ~42 µs per block function |
+| `call_indirect`, 16 targets (default) | **11.1 ns** | **2.5 ns** | 4.4× cheaper |
+| `call_indirect`, 16 targets, Liftoff-only | 13.1 | 10.3 | |
+| `call_indirect`, one target (default / TurboFan-only) | 0.31 / 2.5 | 0.25 / 1.6 | speculative inlining as before |
+| imported wasm function (other instance) | 2.2 ns | 1.4 ns | |
+| JS → wasm export | 3.1 ns | 2.3 ns | |
+| TLB load, 1 MiB / 16 MiB working set | 2.13 / 2.44 ns | **1.13 / 1.25** ns | raw loads 1.07: the fast path is ~0.06–0.2 ns |
+| TLB load, 64 MiB / 512 MiB | 3.70 / 2.66 | 3.31 / 3.46 | raw 512 MiB 3.35 vs 1.58: host page walks under the hypervisor |
+| tier-up, second chunk on | 2.15 ns | 1.13 ns | promoted within ~1 ms, as on x86_64 |
+| `i32x4.add` / scalar `i32.add` streaming | 40.9 / 13.5 GB/s (3.0×) | 35.4 / 12.9 GB/s (2.7×) | |
+
+What changes for the design:
+- **Polymorphic indirect calls are cheap on this host** (2.5 ns: the M4's indirect branch prediction). M0 decision 3's order (region, same-module, import, then table) still holds, but a table dispatch per block is no longer a disaster here, so x86_64 remains the host where dispatch overhead shows. Re-check dispatch changes on x86_64 when hosts are compared again.
+- **The TLB fast path is nearly free while the TLB stays in cache**; the misses cost more than on x86_64 (a VM's two-stage page walks), so TLB reach matters more here than entry size.
+- **TurboFan compiles ~1.7× faster per function** than on the x86_64 run; Liftoff about the same. Batching, synchronous compile in the worker, and relying on dynamic tiering (decisions 2 and 3) are unchanged.
+- SIMD128 still pays (2.7×), decision 5 unchanged.
