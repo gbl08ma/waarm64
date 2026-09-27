@@ -460,8 +460,10 @@ Code lives in `bench/spike/memory/`, and results plus the written decision go in
   - vector registers in locals;
   - tuning compile thresholds, batch sizes, region caps and `region_after` for V8 tiering; per-module eviction if Debian needs it.
 - **Moved from M9 (triaged 2026-09-27):** V8's behavior on our code (the TurboFan-only vs default disagreement on region code, the one-off slow mode, the jump-cache probes' cost, the FP guest's tiering): look at the machine code first and turn it into emitter rules; compiling off the vCPU thread (a compile worker; host ABI change); the instruction-TLB refills after whole-TLB flushes (ASID-tagged TLB entries; an MMU change, only with the profile that shows it matters); SMULH/UMULH without 32-bit halves and CRC32 inline if the histogram shows them; kvm-unit-tests `timer` slower under the JIT than interpreted.
-- Draft kickoff: `M6-KICKOFF.md` (untracked, reworked after M5).
-- **Exit:** meets the targets set after M5, and the comparison table against QEMU TCG, native and in-browser peers is published.
+- Kickoff: `M6-KICKOFF.md` (untracked), confirmed 2026-09-27.
+- **Targets (confirmed 2026-09-27; stretch goals, "the best we can", falling short isn't a project failure):** CoreMark under the JIT at or above QEMU TCG user mode on the same host (M5: 5955 vs 11,764 iterations/s); the FP guest at least 5× its M5 JIT number (19.6 MIPS); Alpine's boot under the JIT at least 1.5× faster than M5's 18.4 s, from tuning and profile-driven work as much as from inlining helpers; no guest slower than M5.
+- **Decided at kickoff:** the compile worker (host ABI) and ASID/nG-tagged TLB entries (MMU) are approved once a profile shows they matter: design note here first, then report. Dev-only tools `wasm-tools` (debugging emitted modules; not in tests or CI) and Linux `perf` (V8 `--perf-prof`). In-browser peer for the exit table: QEMU built to wasm (qemu-wasm, arm64 guest), built in rootless Podman and only run (GPL: never copied); x86 peers as published context only.
+- **Exit:** meets the targets above as far as they go, and the comparison table against QEMU TCG, native and in-browser peers is published.
 
 ### M6.5 — Crypto extensions
 - AES (`AESE`/`AESD`/`AESMC`/`AESIMC`), `PMULL`/`PMULL2` (including the 64-bit form), SHA1 and SHA256, in the interpreter and the JIT. Advertise them in `ID_AA64ISAR0_EL1` and the hwcaps only once both tiers pass.
