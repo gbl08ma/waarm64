@@ -1147,3 +1147,385 @@ fn v8_0_registers_the_sweep_found() {
     t.sys().unwrap();
     assert_eq!((t.c.pc, t.c.esr_el1), (VBAR + 0x200, 0x0200_0000));
 }
+
+// The crypto extensions (M6.5): known-answer vectors driven through the
+// instructions, one at a time on a CPU carried across them.
+
+/// Runs one instruction on `c`'s vector registers.
+fn vx(c: &mut Cpu, insn: u32) {
+    let mut t = T::new(&[insn]);
+    t.c.v = c.v;
+    c.v = t.run().c.v;
+}
+
+/// `insn` with Rd, Rn and Rm.
+fn rdnm(insn: u32, d: u32, n: u32, m: u32) -> u32 {
+    insn | m << 16 | n << 5 | d
+}
+
+const AESE: u32 = 0x4e284800;
+const AESD: u32 = 0x4e285800;
+const AESMC: u32 = 0x4e286800;
+const AESIMC: u32 = 0x4e287800;
+
+/// A block written as hex, first byte first (FIPS 197's order).
+fn block(s: &str) -> u128 {
+    u128::from_be_bytes(u128::from_str_radix(s, 16).unwrap().to_le_bytes())
+}
+
+/// FIPS 197 5.2 KeyExpansion (Nk = 4 or 8), SubWord through AESE with a zero
+/// state and key (ShiftRows moves nothing when all four columns are equal).
+fn expand(key: &[u32]) -> Vec<u128> {
+    let nk = key.len();
+    let mut w = key.to_vec();
+    let mut rcon = 1u32;
+    let sub = |x: u32| {
+        let mut c = Cpu::default();
+        c.v[1] = (x as u128) * (u128::MAX / 0xffff_ffff);
+        vx(&mut c, rdnm(AESE, 1, 2, 0));
+        c.v[1] as u32
+    };
+    for i in nk..4 * (nk + 7) {
+        let mut t = w[i - 1];
+        if i % nk == 0 {
+            t = sub(t.rotate_right(8)) ^ rcon;
+            rcon = if rcon & 0x80 != 0 {
+                (rcon << 1) ^ 0x11b
+            } else {
+                rcon << 1
+            };
+        } else if nk > 6 && i % nk == 4 {
+            t = sub(t);
+        }
+        w.push(w[i - nk] ^ t);
+    }
+    w.chunks(4)
+        .map(|q| q.iter().rev().fold(0, |o, &x| o << 32 | x as u128))
+        .collect()
+}
+
+fn key_words(s: &str) -> Vec<u32> {
+    let b = (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect::<Vec<_>>();
+    b.chunks(4)
+        .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+        .collect()
+}
+
+/// Encrypts with AESE/AESMC and decrypts with AESD/AESIMC (the equivalent
+/// inverse cipher, round keys through AESIMC), as OpenSSL and Linux do.
+fn aes_block(key: &str, pt: &str, ct: &str) {
+    let rk = expand(&key_words(key));
+    let nr = rk.len() - 1;
+    let mut c = Cpu::default();
+    c.v[0] = block(pt);
+    for (r, k) in rk.iter().enumerate().take(nr) {
+        c.v[1] = *k;
+        vx(&mut c, rdnm(AESE, 0, 1, 0));
+        if r < nr - 1 {
+            vx(&mut c, rdnm(AESMC, 0, 0, 0));
+        }
+    }
+    assert_eq!(c.v[0] ^ rk[nr], block(ct), "encrypt with {key}");
+    c.v[0] = block(ct);
+    for r in (1..=nr).rev() {
+        c.v[1] = rk[r];
+        if r < nr {
+            vx(&mut c, rdnm(AESIMC, 1, 1, 0));
+        }
+        vx(&mut c, rdnm(AESD, 0, 1, 0));
+        if r > 1 {
+            vx(&mut c, rdnm(AESIMC, 0, 0, 0));
+        }
+    }
+    assert_eq!(c.v[0] ^ rk[0], block(pt), "decrypt with {key}");
+}
+
+#[test]
+fn aes_known_answers() {
+    // FIPS 197 appendix C.1 and C.3.
+    aes_block(
+        "000102030405060708090a0b0c0d0e0f",
+        "00112233445566778899aabbccddeeff",
+        "69c4e0d86a7b0430d8cdb78070b4c55a",
+    );
+    aes_block(
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "00112233445566778899aabbccddeeff",
+        "8ea2b7ca516745bfeafc49904b496089",
+    );
+    // FIPS 197 appendix A.1's key; NIST SP 800-38A F.1.1 (ECB-AES128) block 1.
+    aes_block(
+        "2b7e151628aed2a6abf7158809cf4f3c",
+        "6bc1bee22e409f96e93d7e117393172a",
+        "3ad77bb40d7a3660a89ecaf32466ef97",
+    );
+    // SP 800-38A F.1.5 (ECB-AES256) block 1.
+    aes_block(
+        "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
+        "6bc1bee22e409f96e93d7e117393172a",
+        "f3eed1bdb5d2a03c064b5a7e3db181f8",
+    );
+}
+
+const SHA1C: u32 = 0x5e000000;
+const SHA1P: u32 = 0x5e001000;
+const SHA1M: u32 = 0x5e002000;
+const SHA1SU0: u32 = 0x5e003000;
+const SHA256H: u32 = 0x5e004000;
+const SHA256H2: u32 = 0x5e005000;
+const SHA256SU1: u32 = 0x5e006000;
+const SHA1H: u32 = 0x5e280800;
+const SHA1SU1: u32 = 0x5e281800;
+const SHA256SU0: u32 = 0x5e282800;
+
+/// FIPS 180-4 padding into 64-byte blocks of 16 big-endian words.
+fn sha_blocks(msg: &[u8]) -> Vec<[u32; 16]> {
+    let mut m = msg.to_vec();
+    m.push(0x80);
+    while m.len() % 64 != 56 {
+        m.push(0);
+    }
+    m.extend_from_slice(&(8 * msg.len() as u64).to_be_bytes());
+    m.chunks(64)
+        .map(|b| {
+            core::array::from_fn(|i| u32::from_be_bytes(b[4 * i..4 * i + 4].try_into().unwrap()))
+        })
+        .collect()
+}
+
+fn quad(w: &[u32]) -> u128 {
+    w.iter().rev().fold(0, |o, &x| o << 32 | x as u128)
+}
+
+fn add4(a: u128, b: u128) -> u128 {
+    quad(
+        &(0..4)
+            .map(|e| ((a >> (32 * e)) as u32).wrapping_add((b >> (32 * e)) as u32))
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// SHA-1 as Linux's sha1-ce and OpenSSL's sha1-armv8 run it: v0 abcd, v1 e,
+/// v2 the round's W + K, v3 the saved e, v4–v7 the message schedule.
+fn sha1(msg: &[u8]) -> [u32; 5] {
+    let mut h = [
+        0x67452301u32,
+        0xefcdab89,
+        0x98badcfe,
+        0x10325476,
+        0xc3d2e1f0,
+    ];
+    const K: [u32; 4] = [0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xca62c1d6];
+    for b in sha_blocks(msg) {
+        let mut c = Cpu::default();
+        c.v[0] = quad(&h[..4]);
+        c.v[1] = h[4] as u128;
+        for (q, w) in b.chunks(4).enumerate() {
+            c.v[4 + q] = quad(w);
+        }
+        for i in 0..20u32 {
+            let m = 4 + i % 4;
+            c.v[2] = add4(
+                c.v[m as usize],
+                K[i as usize / 5] as u128 * (u128::MAX / 0xffff_ffff),
+            );
+            vx(&mut c, rdnm(SHA1H, 3, 0, 0));
+            let f = [SHA1C, SHA1P, SHA1M, SHA1P][i as usize / 5];
+            vx(&mut c, rdnm(f, 0, 1, 2));
+            c.v[1] = c.v[3];
+            if i < 16 {
+                let (m1, m2, m3) = (4 + (i + 1) % 4, 4 + (i + 2) % 4, 4 + (i + 3) % 4);
+                vx(&mut c, rdnm(SHA1SU0, m, m1, m2));
+                vx(&mut c, rdnm(SHA1SU1, m, m3, 0));
+            }
+        }
+        for (e, h) in h.iter_mut().enumerate() {
+            *h = h.wrapping_add((c.v[e / 4] >> (32 * (e % 4))) as u32);
+        }
+    }
+    h
+}
+
+const K256: [u32; 64] = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+/// SHA-256 with SHA256H/H2/SU0/SU1: v0 abcd, v1 efgh, v2 W + K, v3 the saved abcd, v4–v7 the schedule.
+fn sha256(msg: &[u8]) -> [u32; 8] {
+    let mut h = [
+        0x6a09e667u32,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
+        0x5be0cd19,
+    ];
+    for b in sha_blocks(msg) {
+        let mut c = Cpu::default();
+        c.v[0] = quad(&h[..4]);
+        c.v[1] = quad(&h[4..]);
+        for (q, w) in b.chunks(4).enumerate() {
+            c.v[4 + q] = quad(w);
+        }
+        for i in 0..16u32 {
+            let m = 4 + i % 4;
+            c.v[2] = add4(
+                c.v[m as usize],
+                quad(&K256[4 * i as usize..4 * i as usize + 4]),
+            );
+            c.v[3] = c.v[0];
+            vx(&mut c, rdnm(SHA256H, 0, 1, 2));
+            vx(&mut c, rdnm(SHA256H2, 1, 3, 2));
+            if i < 12 {
+                let (m1, m2, m3) = (4 + (i + 1) % 4, 4 + (i + 2) % 4, 4 + (i + 3) % 4);
+                vx(&mut c, rdnm(SHA256SU0, m, m1, 0));
+                vx(&mut c, rdnm(SHA256SU1, m, m2, m3));
+            }
+        }
+        for (e, h) in h.iter_mut().enumerate() {
+            *h = h.wrapping_add((c.v[e / 4] >> (32 * (e % 4))) as u32);
+        }
+    }
+    h
+}
+
+#[test]
+fn sha_known_answers() {
+    // FIPS 180-4's examples (NIST's "Example Algorithms"): one block and two.
+    let two = b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+    assert_eq!(
+        sha1(b"abc"),
+        [0xa9993e36, 0x4706816a, 0xba3e2571, 0x7850c26c, 0x9cd0d89d]
+    );
+    assert_eq!(
+        sha1(two),
+        [0x84983e44, 0x1c3bd26e, 0xbaae4aa1, 0xf95129e5, 0xe54670f1]
+    );
+    assert_eq!(
+        sha256(b"abc"),
+        [
+            0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61,
+            0xf20015ad
+        ]
+    );
+    assert_eq!(
+        sha256(two),
+        [
+            0x248d6a61, 0xd20638b8, 0xe5c02693, 0x0c3e6039, 0xa33ce459, 0x64ff2167, 0xf6ecedd4,
+            0x19db06c1
+        ]
+    );
+    // The empty message (padding only), from NIST's CAVP SHA byte-oriented short messages.
+    assert_eq!(
+        sha1(b""),
+        [0xda39a3ee, 0x5e6b4b0d, 0x3255bfef, 0x95601890, 0xafd80709]
+    );
+    assert_eq!(
+        sha256(b""),
+        [
+            0xe3b0c442, 0x98fc1c14, 0x9afbf4c8, 0x996fb924, 0x27ae41e4, 0x649b934c, 0xa495991b,
+            0x7852b855
+        ]
+    );
+    // SHA1H alone: the rotation by 30, upper bits cleared.
+    let mut c = Cpu::default();
+    c.v[2] = u128::MAX << 32 | 0x8000_0001;
+    vx(&mut c, rdnm(SHA1H, 1, 2, 0));
+    assert_eq!(c.v[1], 0x6000_0000);
+}
+
+const PMULL: u32 = 0x0ee0e000;
+const PMULL2: u32 = 0x4ee0e000;
+
+/// GCM's multiply in GF(2¹²⁸) (SP 800-38D 6.3, bit 0 of a block = the MSB of its
+/// first byte = the coefficient of x⁰): the four 64×64 products through
+/// PMULL/PMULL2, the reduction by x¹²⁸ + x⁷ + x² + x + 1 in the test.
+fn gf128_mul(x: u128, y: u128) -> u128 {
+    // Blocks in memory order → polynomials with bit i = the coefficient of xⁱ.
+    let to_poly = |b: u128| u128::from_be_bytes(b.to_le_bytes()).reverse_bits();
+    let (a, b) = (to_poly(x), to_poly(y));
+    let mut c = Cpu::default();
+    c.v[1] = a;
+    c.v[2] = b;
+    c.v[3] = b.rotate_left(64);
+    vx(&mut c, rdnm(PMULL, 4, 1, 2)); // a0·b0
+    vx(&mut c, rdnm(PMULL2, 5, 1, 2)); // a1·b1
+    vx(&mut c, rdnm(PMULL, 6, 1, 3)); // a0·b1
+    vx(&mut c, rdnm(PMULL2, 7, 1, 3)); // a1·b0
+    let mid = c.v[6] ^ c.v[7];
+    let (mut lo, mut hi) = (c.v[4] ^ mid << 64, c.v[5] ^ mid >> 64);
+    // Fold the high 128 bits down: x¹²⁸ = x⁷ + x² + x + 1.
+    for _ in 0..2 {
+        let over = hi;
+        hi = 0;
+        for s in [0, 1, 2, 7] {
+            lo ^= over << s;
+            if s > 0 {
+                hi ^= over >> (128 - s);
+            }
+        }
+    }
+    let from_poly = |p: u128| u128::from_le_bytes(p.reverse_bits().to_be_bytes());
+    from_poly(lo)
+}
+
+/// The same product bit by bit (SP 800-38D algorithm 1), for the check.
+fn gf128_mul_ref(x: u128, y: u128) -> u128 {
+    let (x, y) = (
+        u128::from_be_bytes(x.to_le_bytes()),
+        u128::from_be_bytes(y.to_le_bytes()),
+    );
+    let (mut z, mut v) = (0u128, y);
+    for i in 0..128 {
+        if x >> (127 - i) & 1 == 1 {
+            z ^= v;
+        }
+        v = if v & 1 == 1 {
+            v >> 1 ^ 0xe1 << 120
+        } else {
+            v >> 1
+        };
+    }
+    u128::from_le_bytes(z.to_be_bytes())
+}
+
+#[test]
+fn pmull_ghash() {
+    // GCM test case 2 (McGrew and Viega): H = AES_0(0); GHASH over one ciphertext
+    // block and the length block.
+    let h = block("66e94bd4ef8a2c3b884cfa59ca342b2e");
+    let ct = block("0388dace60b6a392f328c2b971b2fe78");
+    let len = block("00000000000000000000000000000080");
+    for mul in [gf128_mul, gf128_mul_ref] {
+        let y = mul(mul(ct, h) ^ len, h);
+        assert_eq!(y, block("f38cbb1ad69223dcc3457ae5b6b0f885"));
+    }
+    let mut s = 0x0123_4567_89ab_cdef_u128 << 64 | 0xfedc_ba98_7654_3210;
+    for _ in 0..200 {
+        s = s
+            .wrapping_mul(0x2360_ed05_1fc6_5da4_4385_df64_9fcc_f645)
+            .wrapping_add(0x5851_f42d_4c95_7f2d_1405_7b7e_f767_814f);
+        let t = s.rotate_left(61) ^ s >> 3;
+        assert_eq!(gf128_mul(s, t), gf128_mul_ref(s, t));
+    }
+    // PMULL2 takes the high halves; the 8-bit form (size 0) is unchanged.
+    let mut c = Cpu::default();
+    c.v[1] = 3u128 << 64 | 1;
+    c.v[2] = 3u128 << 64 | 1;
+    vx(&mut c, rdnm(PMULL2, 0, 1, 2));
+    assert_eq!(c.v[0], 5);
+    vx(&mut c, rdnm(PMULL, 0, 1, 2));
+    assert_eq!(c.v[0], 1);
+}

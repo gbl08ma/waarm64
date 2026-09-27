@@ -886,7 +886,30 @@ const sys: Form[] = [
   { name: "udf", count: 20, gen: (r) => ({ code: [r.int(0x10000)], in: new Map() }) },
 ];
 
-export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp };
+// The v8.0 crypto extensions (M6.5): AES, SHA1, SHA256 and the 64-bit PMULL,
+// random full registers; a few reserved sizes and opcodes for UNDEFINED.
+const size0 = (r: Rng) => (r.chance(0.95) ? 0 : r.range(1, 3));
+const crypto: Form[] = [
+  vform("aes", "01001110zz10100001oo10nnnnnddddd", 400, { fix: (r) => ({ z: size0(r) }), esize: () => 8 }),
+  vform("sha_3reg", "01011110zz0mmmmm0ooo00nnnnnddddd", 700, { fix: (r) => ({ z: size0(r), o: r.chance(0.97) ? r.int(7) : 7 }), esize: () => 32 }),
+  vform("sha_2reg", "01011110zz10100ooooo10nnnnnddddd", 300, { fix: (r) => ({ z: size0(r), o: r.chance(0.95) ? r.int(3) : r.range(3, 31) }), esize: () => 32 }),
+  vform("pmull64", "0Q001110111mmmmm111000nnnnnddddd", 300, { esize: () => 64 }),
+  // A round and its mix, as compilers emit them (the JIT fuses the pair when the
+  // mix reads and writes the round's register), and a fifth with another destination.
+  {
+    name: "aes_pair",
+    count: 300,
+    gen(r) {
+      const dec = r.int(2);
+      const { w, f } = enc(r, `0100111000101000010${dec}10nnnnnddddd`);
+      const t = r.chance(0.8) ? f.d : r.int(32);
+      const { w: w2 } = enc(r, `0100111000101000011${dec}10nnnnnddddd`, { n: r.chance(0.9) ? f.d : r.int(32), d: t });
+      return { code: [w, w2], in: new Map() };
+    },
+  },
+];
+
+export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto };
 
 /** Generates a group's tests (without oracle results). */
 export function generate(group: string): Test[] {

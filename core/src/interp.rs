@@ -224,6 +224,35 @@ fn fp_enabled(c: &Cpu) -> R {
     }
 }
 
+/// The AES, SHA1 and SHA256 instructions (`crate::crypto`); FPEN checked by the caller.
+fn crypto_exec(c: &mut Cpu, i: u32, op: Op) {
+    use crate::crypto::*;
+    use Op::*;
+    let (rd, rn, rm) = (
+        bits(i, 4, 0) as usize,
+        bits(i, 9, 5) as usize,
+        bits(i, 20, 16) as usize,
+    );
+    let (d, n, m) = (c.v[rd], c.v[rn], c.v[rm]);
+    c.v[rd] = match op {
+        AESE => aese(d, n),
+        AESD => aesd(d, n),
+        AESMC => mix_columns(n),
+        AESIMC => inv_mix_columns(n),
+        SHA1C => sha1c(d, n, m),
+        SHA1P => sha1p(d, n, m),
+        SHA1M => sha1m(d, n, m),
+        SHA1SU0 => sha1su0(d, n, m),
+        SHA1H => sha1h(n),
+        SHA1SU1 => sha1su1(d, n),
+        SHA256H => sha256h(d, n, m),
+        SHA256H2 => sha256h2(d, n, m),
+        SHA256SU0 => sha256su0(d, n),
+        SHA256SU1 => sha256su1(d, n, m),
+        _ => unreachable!(),
+    };
+}
+
 // Field helpers.
 #[inline]
 pub(crate) fn bits(i: u32, hi: u32, lo: u32) -> u32 {
@@ -741,9 +770,14 @@ fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
         | STLLR | LDLAR | DC_CVAP | LD64B | ST64B | ST64BV | ST64BV0 | WFET | WFIT | FMOV_3 => {
             return Err(Exit::Undefined);
         }
+        // The v8.0 crypto extensions (M6.5; the 64-bit PMULL is in simd_int).
+        AESE | AESD | AESMC | AESIMC | SHA1C | SHA1P | SHA1M | SHA1SU0 | SHA256H | SHA256H2
+        | SHA256SU1 | SHA1H | SHA1SU1 | SHA256SU0 => {
+            fp_enabled(c)?;
+            crypto_exec(c, i, op)
+        }
         // FP/AdvSIMD beyond v8.0: RDM, DotProd, I8MM, FCMA, FHM, FRINTTS, JSCVT,
-        // BF16, SHA3, SHA512, SM3, SM4. The v8.0 crypto instructions (AES, SHA1,
-        // SHA256, 64-bit PMULL) come in M6.5 and are UNDEFINED until then.
+        // BF16, SHA3, SHA512, SM3, SM4.
         SQRDMLAH_vec_1 | SQRDMLAH_vec_2 | SQRDMLSH_vec_1 | SQRDMLSH_vec_2 | SQRDMLAH_elt_1
         | SQRDMLSH_elt_1 | SQRDMLAH_elt_2 | SQRDMLSH_elt_2 | SDOT_vec | UDOT_vec | SDOT_elt
         | UDOT_elt | SMMLA_vec | UMMLA_vec | USMMLA_vec | SUDOT_element | USDOT_element
@@ -753,9 +787,7 @@ fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
         | FRINT32Z_float | FRINT64Z_float | FJCVTZS | BFCVT | BFCVTN | BFDOT_element
         | BFDOT_vec | BFMLALX_element | BFMLALX_vector | BFMMLA | SHA512H | SHA512H2
         | SHA512SU1 | SHA512SU0 | RAX1 | XAR | EOR3 | BCAX | SM3TT1A | SM3TT1B | SM3TT2A
-        | SM3TT2B | SM3PARTW1 | SM3PARTW2 | SM3SS1 | SM4EKEY | SM4E | AESE | AESD | AESMC
-        | AESIMC | SHA1C | SHA1P | SHA1M | SHA1SU0 | SHA256H | SHA256H2 | SHA256SU1 | SHA1H
-        | SHA1SU1 | SHA256SU0 => return Err(Exit::Undefined),
+        | SM3TT2B | SM3PARTW1 | SM3PARTW2 | SM3SS1 | SM4EKEY | SM4E => return Err(Exit::Undefined),
         // Half-precision AdvSIMD arithmetic (FEAT_FP16).
         FMULX_vec_1 | FCMEQ_reg_1 | FRECPS_1 | FRSQRTS_1 | FCMGE_reg_1 | FACGE_1 | FABD_1
         | FCMGT_reg_1 | FACGT_1 | FCVTNS_1 | FCVTMS_1 | FCVTAS_1 | SCVTF_int_1 | FCMGT_zero_1

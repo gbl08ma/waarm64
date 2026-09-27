@@ -64,10 +64,12 @@ for (const [mode, jit] of Object.entries(MODES)) test(`golden corpus on the wasm
   };
 
   let total = 0;
+  let compilable = 0; // tests whose first instruction isn't UNDEFINED
   const failures: string[] = [];
   for (const file of readdirSync(DIR).filter((f) => f.endsWith('.txt') && (!GROUPS || GROUPS.includes(f.slice(0, -4)))).sort()) {
     for (const t of parseFile(readFileSync(new URL(file, DIR), 'utf8')).tests) {
       total++;
+      if (!t.exit?.startsWith('sigill pc=+0 ')) compilable++;
       const init = initialState(t);
       const code = base + Number(CODE);
       bytes.fill(0, code, code + 4096);
@@ -114,7 +116,7 @@ for (const [mode, jit] of Object.entries(MODES)) test(`golden corpus on the wasm
     const [regions, modules, bytes, ns, steps, dispatches, , , inl, helpers, inlSteps] = st;
     const blocks = st[16];
     console.log(`${mode}: ${blocks} blocks in ${regions} regions in ${modules} modules, ${(bytes / 1e6).toFixed(1)} MB, ${(ns / 1e6).toFixed(0)} ms compiling; ${steps} steps in ${dispatches} block calls; ${inl} inline / ${helpers} helper instructions compiled, ${inlSteps} inline steps`);
-    assert.ok(blocks > total, `only ${blocks} blocks compiled`);
+    assert.ok(blocks >= compilable, `only ${blocks} blocks compiled for ${compilable} tests`);
   }
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${total} failed`);
 });

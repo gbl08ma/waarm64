@@ -5,6 +5,7 @@
 
 pub mod boot;
 pub mod cpu;
+pub mod crypto;
 pub mod decode;
 pub mod fdt;
 pub mod fp;

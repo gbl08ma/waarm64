@@ -57,17 +57,6 @@ fn shift(x: i128, s: i32, esize: u32, round: bool) -> i128 {
     }
 }
 
-/// Polynomial multiply of two 8-bit lanes: the full 16-bit product.
-fn pmul8(x: u64, y: u64) -> u64 {
-    (0..8).fold(0, |acc, k| {
-        if (y >> k) & 1 == 1 {
-            acc ^ (x << k)
-        } else {
-            acc
-        }
-    })
-}
-
 /// Results of a lane loop: the value and whether any lane saturated (FPSR.QC).
 struct Out {
     v: u128,
@@ -282,7 +271,7 @@ fn same(
             0b10001 => o.set(e, esize, mask(x & y != 0)),
             0b10010 if u => o.set(e, esize, de.wrapping_sub(x.wrapping_mul(y))),
             0b10010 => o.set(e, esize, de.wrapping_add(x.wrapping_mul(y))),
-            0b10011 if u => o.set(e, esize, pmul8(x, y)),
+            0b10011 if u => o.set(e, esize, crate::crypto::clmul8(x, y)),
             0b10011 => o.set(e, esize, x.wrapping_mul(y)),
             0b10110 => {
                 // SQDMULH / SQRDMULH (U): high half of the doubled product.
@@ -300,11 +289,16 @@ fn three_diff(c: &mut Cpu, i: u32) -> R {
     let (rd, rn, rm, q, u, size, scalar) = fields(i);
     let opc = bits(i, 15, 12);
     need(match opc {
-        // PMULL with size 3 (64-bit) is FEAT_PMULL: milestone M6.5.
-        0b1110 => size == 0,
+        // PMULL with size 3 is FEAT_PMULL's 64×64 → 128-bit product (M6.5).
+        0b1110 => size == 0 || size == 3,
         0b1001 | 0b1011 | 0b1101 => size == 1 || size == 2,
         _ => size != 3,
     })?;
+    if size == 3 {
+        let half = |v: u128| (if q { v >> 64 } else { v }) as u64;
+        c.v[rd] = crate::crypto::clmul64(half(c.v[rn]), half(c.v[rm]));
+        return Ok(());
+    }
     diff(c, rd, c.v[rn], c.v[rm], q, u, size, opc, scalar);
     Ok(())
 }
@@ -361,7 +355,7 @@ fn diff(
             0b1000 => de as i128 + x * y,
             0b1010 => de as i128 - x * y,
             0b1100 => x * y,
-            0b1110 => pmul8(xn, elem(half(b), e, esize)) as i128,
+            0b1110 => crate::crypto::clmul8(xn, elem(half(b), e, esize)) as i128,
             _ => {
                 // SQDMLAL / SQDMLSL / SQDMULL: saturate the doubled product, then the sum.
                 let (p, s1) = sat(2 * x * y, w, false);

@@ -287,11 +287,8 @@ fn not_ours(m: &str, ops: &str) -> bool {
     let dpb = m == "dc" && (ops.starts_with("cvap") || ops.starts_with("cvadp"));
     // FEAT_XS
     let xs = m == "dsb" && ops.ends_with("nxs");
-    // FEAT_PMULL: the 64-bit polynomial multiply (M6.5).
-    let pmull64 = m.starts_with("pmull") && ops.contains(".1q");
     sve || dpb
         || xs
-        || pmull64
         || fp16(m, ops)
         || NOT_OURS.contains(&m)
         || NOT_OURS_PREFIX.iter().any(|p| m.starts_with(p))
@@ -332,9 +329,8 @@ const NOT_OURS: &[&str] = &[
     "addspl", "rdsvl",
 ];
 const NOT_OURS_PREFIX: &[&str] = &[
-    // FEAT_AES, FEAT_SHA1, FEAT_SHA256, FEAT_SHA512 (M6.5 for the v8.0 ones), FEAT_SM3/SM4, FEAT_BF16
-    "aes", "sha1", "sha256", "sha512", "sm3", "sm4", "bfcvt", "bfdot", "bfmlal", "bfmmla",
-    // FEAT_PAuth
+    // FEAT_SHA512, FEAT_SM3/SM4, FEAT_BF16 (the v8.0 AES, SHA1 and SHA256 are ours since M6.5)
+    "sha512", "sm3", "sm4", "bfcvt", "bfdot", "bfmlal", "bfmmla", // FEAT_PAuth
     "pac", "aut", "xpac", "braa", "brab", "blraa", "blrab", "retaa", "retab", "eretaa", "eretab",
     "ldraa", "ldrab", // FEAT_LRCPC, FEAT_LRCPC2, FEAT_LOR
     "ldapr", "ldapur", "stlur", "ldlar", "stllr",

@@ -9,6 +9,14 @@ copyright/license header in the file.
 |---|---|---|
 | `core/src/a64/a64.inc` | dynarmic, `src/dynarmic/frontend/A64/decoder/a64.inc`, `a41c380246d3` (verbatim, header added). `core/build.rs` follows the match order of dynarmic's `a64.h` | 0BSD |
 
+## Techniques from papers and other projects (ideas, no code)
+
+Reimplemented from the description, nothing copied; credited all the same.
+
+| Where | Idea | Source |
+|---|---|---|
+| `core/src/crypto.rs` `clmul32`/`clmul64` (M6.5) | Carry-less multiplication with integer multiplies of operands masked to every fourth bit ("multiply with holes"), so partial sums can't carry into the next bit of the same class; constant time without a carry-less multiply instruction | Thomas Pornin, BearSSL's `bmul` (`src/hash/ghash_ctmul.c`) and its "Constant-Time Mul" notes (bearssl.org), MIT |
+
 ## Development dependencies (not distributed)
 
 | Package | Version | License |

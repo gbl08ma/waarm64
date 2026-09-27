@@ -29,7 +29,7 @@ const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean
 /** The Buildroot boot's and the device test's steps (PLAN.md §7 M4, and M3 "Run loop" for M6; core/tests/boot.rs). */
 const BUILDROOT_STEPS = 40_909_861;
 const DEVICES_STEPS = 113_841_233;
-const LTP_STEPS = 2_747_263_866; // images/build.sh ltp, on linux/Image-defconfig
+const LTP_STEPS = 2_747_265_646; // images/build.sh ltp, on linux/Image-defconfig (M6.5 loop 1: the hwcap kselftest probes the crypto instructions, which no longer trap)
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
 const boot = (o: BootOptions, jit: 0 | 1 | 2, max = 20e9) => runToPowerOff(WASM, { ...o, jit }, max);
