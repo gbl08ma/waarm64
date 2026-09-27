@@ -718,6 +718,10 @@ impl Bus for Io<'_> {
     fn flush_va(&mut self, va: u64) {
         self.mmu.flush_va(va);
     }
+
+    fn flush_ng(&mut self) {
+        self.mmu.flush_ng();
+    }
 }
 
 #[cfg(test)]

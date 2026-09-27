@@ -33,13 +33,17 @@ pub enum End {
 /// Branches and most system-class instructions end a block after them;
 /// exception-generating and unallocated encodings end it before them.
 /// Hints that are NOPs here (PAC and BTI hint space, CSDB, …), MRS and the
-/// data barriers and DC ZVA don't end one.
-// ponytail: still conservative for the other system instructions (MSR, SYS,
-// CLREX, the other DC); relax each with a profile that shows it (M6 loop 1
-// did MRS, the barriers and DC ZVA).
-pub fn end(op: Op) -> End {
+/// data barriers and DC ZVA don't end one, nor do the MSRs of
+/// [`crate::interp::sys::msr_continues`].
+// ponytail: still conservative for the other system instructions (other MSRs,
+// SYS, CLREX, the other DC); relax each with a profile that shows it (M6
+// loop 1 did MRS, the barriers and DC ZVA; loop 7 the MSRs above).
+pub fn end(w: u32) -> End {
     use Op::*;
-    match op {
+    match decode(w) {
+        // DAIF masking and plain registers (M6 loop 7): inline or a helper
+        // call that returns mid-block if it leaves.
+        MSR_reg | MSR_imm if crate::interp::sys::msr_continues(w) => End::No,
         // MRS, the data barriers and DC ZVA don't end a block (M6 loop 1):
         // the barriers are no-ops for one vCPU, MRS changes nothing but its
         // register, DC ZVA is a 64-byte store, and one that leaves (a timer,
@@ -62,7 +66,7 @@ pub fn form(mem: &Mem, pa: u64) -> Vec<u32> {
     let mut a = pa;
     while let Ok(w) = mem.read(a, 4) {
         let w = w as u32;
-        match end(decode(w)) {
+        match end(w) {
             End::Before => break,
             End::After => {
                 words.push(w);
@@ -128,7 +132,7 @@ pub fn next(words: &[u32]) -> Next {
         B_uncond | BL => Next::One(at + ofs(25, 0, 28)),
         B_cond | CBZ | CBNZ => Next::Cond(at + ofs(23, 5, 21), at + 4),
         TBZ | TBNZ => Next::Cond(at + ofs(18, 5, 16), at + 4),
-        _ if end(op) == End::No => Next::One(at + 4),
+        _ if end(w) == End::No => Next::One(at + 4),
         ISB | CLREX | YIELD | SEV | SEVL | DC_IVAC | DC_ISW | DC_CSW | DC_CISW | DC_CVAC
         | DC_CVAU | DC_CIVAC => Next::One(at + 4),
         _ => Next::None,
@@ -578,7 +582,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
             // unless a successor is a member and none that is needs it: the
             // exits then store it on their own paths (`sync_flags` below), so
             // a loop that leaves on one side doesn't store it every iteration.
-            if end(op) == End::After {
+            if end(w) == End::After {
                 let lazy = c.lazy();
                 let keep = |o: i64| internal(o).map(|j| !store(j, lazy));
                 let keep = match succs {
@@ -597,7 +601,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
             if last {
                 inl += 1;
                 // Branches end blocks and set the PC.
-                last = end(op) == End::No;
+                last = end(w) == End::No;
                 continue;
             }
             c.flush();
@@ -833,9 +837,15 @@ mod tests {
             (NOP, End::No),
             (PACIASP, End::No),
             (ADD, End::No),
-            (0xf9400020, End::No), // ldr x0, [x1]
+            (0xf9400020, End::No),    // ldr x0, [x1]
+            (0xd50343df, End::No),    // msr daifset, #3
+            (0xd51b4220, End::No),    // msr daif, x0
+            (0xd5184020, End::No),    // msr elr_el1, x0
+            (0xd50342ff, End::After), // msr daifclr, #2
+            (0xd51b4200, End::After), // msr nzcv, x0
+            (0xd5181040, End::After), // msr cpacr_el1, x0
         ] {
-            assert_eq!(end(decode(w)), e, "{w:#010x}");
+            assert_eq!(end(w), e, "{w:#010x}");
         }
     }
 
@@ -949,12 +959,12 @@ mod tests {
 
     #[test]
     fn a_helper_writes_back_and_forgets() {
-        // add x1, x2, #3; ldxr x1, [x2] (a helper); add x3, x1, #1: x1 is written
-        // back before the call and loaded again after it.
+        // add x1, x2, #3; ldxp x1, x0, [x2] (a helper); add x3, x1, #1: x1 is
+        // written back before the call and loaded again after it.
         let b = Block {
             key: 0x4000_0200,
             va: 0x4000_0200,
-            words: vec![ADD, 0xc85f7c41, 0x91000423],
+            words: vec![ADD, 0xc87f0041, 0x91000423],
         };
         let Emitted { bytes, inl, .. } = build(b);
         assert_eq!(inl, [2]);
@@ -1025,9 +1035,9 @@ mod tests {
 
     #[test]
     fn flags_are_stored_before_helpers_and_on_failure_returns() {
-        // cmp x1, x2; ldxr x1, [x2] (a helper): NZCV stored before the call; the
-        // helper may write it, so nothing is left to store at the end.
-        let (bytes, counts) = one(&[0xeb02003f, 0xc85f7c41]);
+        // cmp x1, x2; ldxp x1, x0, [x2] (a helper): NZCV stored before the call;
+        // the helper may write it, so nothing is left to store at the end.
+        let (bytes, counts) = one(&[0xeb02003f, 0xc87f0041]);
         assert_eq!(nzcv_stores(&bytes), 1);
         let at = bytes.windows(3).position(|w| w == [0x37, 3, 0x88]).unwrap();
         assert!(bytes[at..].windows(2).any(|w| w == [0x10, 0])); // the call comes after

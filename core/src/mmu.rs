@@ -14,15 +14,20 @@
 //! (`bench/spike/memory/REPORT.md` §4), stored inverted: all ones is memory 0, the
 //! only one so far. `host = va + addend`.
 //!
-//! The TLB holds no ASIDs: it's flushed whenever the effective ASID changes.
-// ponytail: flushing on every ASID change drops global (kernel) entries too;
-// tag entries with the ASID if the TLB counters (step 8) show refills after
-// context switches matter.
+//! Entries carry no ASID: the arrays only ever hold global entries and the
+//! current ASID's non-global (nG) ones. An ASID change or `TLBI ASIDE1` drops
+//! the nG entries alone, found through a list of the slots they were filled
+//! into (`Tlb::ng`), so the kernel's global entries survive context switches
+//! (M6 loop 9: Alpine's boot refilled 3.2M of them after 5,700 whole flushes).
+// ponytail: the nG entries of the previous ASID are dropped, not kept for when
+// it's current again (per-ASID stashes; 0.3M nG refills in Alpine's boot).
 
 use crate::cpu::{Cpu, sctlr};
 use crate::mem::{self, Access, Fault, FaultKind, Mem};
 
 pub const TLB_ENTRIES: usize = 4096;
+/// Capacity of the nG slot list; past it, dropping the nG entries flushes all.
+const NG_SLOTS: usize = 1024;
 /// Physical address size we advertise (`ID_AA64MMFR0_EL1.PARange` = 40 bits).
 pub const PA_BITS: u32 = 40;
 const OA_MASK: u64 = 0x0000_ffff_ffff_f000;
@@ -46,6 +51,12 @@ pub struct Entry {
 #[repr(C)]
 pub struct Tlb {
     pub e: [[Entry; TLB_ENTRIES]; 6],
+    /// Slots (`array * TLB_ENTRIES + index`) filled with nG entries since the
+    /// last flush, `ng_len` of them; `ng_len` past `NG_SLOTS` means the list
+    /// overflowed. A slot may since hold another entry: dropping it then is an
+    /// over-invalidation, which is always allowed.
+    ng: [u16; NG_SLOTS],
+    ng_len: u32,
     pub stats: TlbStats,
 }
 
@@ -57,7 +68,8 @@ pub struct TlbStats {
     pub misses: u64,
     /// Walks that reached a page with the access permitted.
     pub walks: u64,
-    /// Whole-TLB and by-VA invalidations (TLBI, ASID and MMU-enable changes).
+    /// Whole-TLB, nG and by-VA invalidations (TLBI, ASID and MMU-enable
+    /// changes).
     pub flushes: u64,
 }
 
@@ -66,6 +78,34 @@ impl Tlb {
         self.stats.flushes += 1;
         for a in &mut self.e {
             a.fill(Entry::default());
+        }
+        self.ng_len = 0;
+    }
+
+    /// Drops every nG entry: the global ones match any ASID.
+    fn flush_ng(&mut self) {
+        let n = self.ng_len as usize;
+        if n > NG_SLOTS {
+            return self.flush_all();
+        }
+        self.stats.flushes += 1;
+        for &s in &self.ng[..n] {
+            self.e[s as usize / TLB_ENTRIES][s as usize % TLB_ENTRIES] = Entry::default();
+        }
+        self.ng_len = 0;
+    }
+
+    fn fill(&mut self, array: usize, va: u64, addend: u64, ng: bool) {
+        self.e[array][index(va)] = Entry {
+            tag: va | 0xfff,
+            addend,
+        };
+        if ng {
+            let n = self.ng_len as usize;
+            if n < NG_SLOTS {
+                self.ng[n] = (array * TLB_ENTRIES + index(va)) as u16;
+            }
+            self.ng_len = (n + 1).min(NG_SLOTS + 1) as u32;
         }
     }
 
@@ -123,6 +163,8 @@ pub struct Walk {
     pub sh: u8,
     /// Bit `3 * el + use`: EL0 read, write, exec, EL1 read, write, exec.
     perms: u8,
+    /// Not global: the translation belongs to the current ASID only.
+    pub ng: bool,
 }
 
 impl Walk {
@@ -218,6 +260,7 @@ pub fn walk(c: &Cpu, mem: &Mem, va: u64) -> Result<Walk, FaultKind> {
             attr: (c.mair_el1 >> (8 * ((desc >> 2) & 7))) as u8,
             sh: ((desc >> 8) & 3) as u8,
             perms,
+            ng: desc >> 11 & 1 == 1,
         });
     }
 }
@@ -284,6 +327,8 @@ pub trait Bus {
     ) -> Result<*mut u8, Fault>;
     fn flush_all(&mut self) {}
     fn flush_va(&mut self, _va: u64) {}
+    /// Drops the non-global entries (ASID changes, `TLBI ASIDE1`).
+    fn flush_ng(&mut self) {}
 
     #[inline(always)]
     fn read(&mut self, c: &Cpu, va: u64, size: u32) -> Result<u64, Fault> {
@@ -494,10 +539,8 @@ impl<'a> Mmu<'a> {
         if let Some(t) = &mut self.tlb
             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
         {
-            t.e[3 * el as usize + u as usize][index(va)] = Entry {
-                tag: va | 0xfff,
-                addend: (page as usize as u64).wrapping_sub(va & !0xfff),
-            };
+            let addend = (page as usize as u64).wrapping_sub(va & !0xfff);
+            t.fill(3 * el as usize + u as usize, va, addend, w.ng);
         }
         Ok(p)
     }
@@ -617,6 +660,12 @@ impl Bus for Mmu<'_> {
     fn flush_va(&mut self, va: u64) {
         if let Some(t) = &mut self.tlb {
             t.flush_va(va);
+        }
+    }
+
+    fn flush_ng(&mut self) {
+        if let Some(t) = &mut self.tlb {
+            t.flush_ng();
         }
     }
 }

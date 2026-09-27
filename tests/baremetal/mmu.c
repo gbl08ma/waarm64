@@ -63,6 +63,12 @@ static u64 load(u64 va) {
   return v;
 }
 static void store(u64 va, u64 v) { __asm__ volatile("str %0, [%1]" : : "r"(v), "r"(va) : "memory"); }
+static u64 ldtr(u64 va) {
+  u64 v = 0xdead;
+  __asm__ volatile("ldtr %0, [%1]" : "+r"(v) : "r"(va) : "memory");
+  return v;
+}
+static void sttr(u64 va, u64 v) { __asm__ volatile("sttr %0, [%1]" : : "r"(v), "r"(va) : "memory"); }
 static u64 at_s1e1r(u64 va) {
   __asm__ volatile("at s1e1r, %0; isb" : : "r"(va));
   return sysreg(PAR_EL1);
@@ -143,6 +149,15 @@ int main(void) {
   *(volatile u64 *)(TEST_VA + PAGE_SZ - 4) = 0x8877665544332211UL;
   check(((volatile u32 *)pages[1])[1023] == 0x44332211 && ((volatile u32 *)pages[0])[0] == 0x88776655, 30);
   check(*(volatile u32 *)(TEST_VA + PAGE_SZ - 2) == 0x66554433, 31);
+
+  // LDTR/STTR at EL1 have EL0's permissions: they fault on EL1-only pages
+  // (permission, level 3) and reach the user stack.
+  n0 = n_exc;
+  check(ldtr(TEST_VA + 8) == 0xdead && last_esr == DATA_ABORT_EL1(0x0f, 0) && last_far == TEST_VA + 8, 32);
+  sttr(TEST_VA + 16, 1);
+  check(last_esr == DATA_ABORT_EL1(0x0f, 1) && last_far == TEST_VA + 16 && n_exc == n0 + 2, 33);
+  sttr((u64)user_stack_top - 16, 0x5555);
+  check(ldtr((u64)user_stack_top - 16) == 0x5555 && n_exc == n0 + 2, 34);
 
   // SCTLR_EL1.A: misaligned accesses fault (alignment, DFSC 0x21).
   u64 sctlr = sysreg(SCTLR_EL1);

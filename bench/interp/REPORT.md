@@ -537,3 +537,35 @@ Steps unchanged (Alpine 3,009,151,562). The EL1 guests lose 4–5% in Chromium (
 **Validation:** the differential test (sequences, regions, loops), the golden corpus through the JIT, 20M-step lockstep, CI's boots with exact steps; planted bug: region exits without their flag store, caught by all five sequence and region classes.
 
 Raw data: `results/m6-loop10/` (`head`, `loop10`), `../boot/results/m6-loop10/` (`head-*`, `batchonly-*`, `loop10-*`).
+
+## M6 loops 9 and 7: global TLB entries kept; atomics, exclusives, LDTR/STTR, LD1/ST1 and MSR inline
+
+**Why (loop 9):** Alpine's TLB counters split by cause (Node, instrumented once): of 3.61M misses, 3.26M landed on an empty slot right after a whole-TLB flush and 3.24M were global kernel pages; only 0.30M were conflicts and 0.32M nG. The whole flushes were 4,162 ASID switches and 1,559 `TLBI ASIDE1` (Linux's `flush_tlb_mm`), each dropping ~560 kernel entries that refilled at once; the other 35,867 flushes are `TLBI` by VA. (No KPTI: we advertise CSV3; no ASID changes on syscalls: they don't happen with software PAN either.)
+
+**What changed (loop 9):** an ASID change or `TLBI ASIDE1` drops only the non-global entries, found through a list of the slots they were filled into (`Tlb::ng`, 1024 slots; past that it flushes all). Architecturally exact: global entries match every ASID and ASIDE1 never touches them. `VMALLE1` and MMU enable changes still flush everything. Misses 3.61M → 1.07M, dispatches 18.5M → 17.3M.
+
+**What changed (loop 7):** inline through the same TLB fast path as loads and stores:
+- LSE LDADD, LDCLR (an AND with the complement), LDEOR, LDSET and SWP as one wasm `atomic.rmw`, CAS as a `cmpxchg` of the masked expected value, every size and ordering (wasm atomics are sequentially consistent); LSE min/max and CASP stay helpers.
+- LDXR/LDAXR and STXR/STLXR of one register with the interpreter's compare-and-swap semantics, the monitor in the `Cpu`; exclusive pairs stay helpers.
+- LDTR/STTR through EL0's TLB arrays at EL1. **This fixed an interpreter bug (approved by the user):** since M3 the interpreter checked LDTR/STTR at EL1 against EL1's permissions; they now use EL0's (`tests/baremetal/mmu.c` checks 32–34, passed on QEMU TCG and on the M4 under hvf; check 32 failed on the old core).
+- LD1/ST1 (multiple structures) of one to four registers, one contiguous access; LD2–LD4/ST2–ST4 stay helpers.
+- MSR of DAIFSet, DAIF (unless it unmasks IRQs: then the helper, whose `Exit::Resync` leaves mid-block), SP_EL0, SPSR/ELR_EL1 and the TPIDRs inline, and those MSRs no longer end a block (`interp::sys::msr_continues`).
+
+Alpine in Node: helper-retired steps 16.9M → 2.5M (left: MSR (register) 0.66M, ISB 0.56M, MRS 0.52M, STR fallbacks 0.46M, CASP 0.30M, ERET 0.21M), dispatches 17.3M → 14.9M. Steps unchanged (Alpine 3,009,151,562; every Node boot, LTP/kselftests included).
+
+| Chromium 153, M4 VM, alternated with the baseline (`b8c01bf`) | baseline | after |
+|---|---|---|
+| Alpine to power-off (JIT), loop 9 alone, cold | 13.66, 13.78 s | 13.48, 13.36 s |
+| Alpine, loop 9 + atomics/exclusives/LDTR, cold | 13.75, 13.72 s | 13.42, 12.90 s |
+| **Alpine, loops 9 + 7 complete, cold** | 13.41, 13.98 s | **12.39, 12.70 s** (−8 to −9%) |
+| Alpine, loops 9 + 7 complete, warm | 13.45, 13.95 s | 12.44, 12.73 s |
+| Buildroot to power-off (JIT), cold | 746 ms | 712 ms |
+| integer / FP guest (MIPS, eight placements; before LD1/MSR) | 5076 / 151.6 | 5083 / 151.8 |
+| CoreMark (iterations/s; before LD1/MSR) | 8413 | 8383 |
+| EL1 MMU off / on (MIPS; before LD1/MSR) | 3663 / 2811 | 3683 / 2880 |
+
+The baseline itself moved 13.4–14.0 s between sessions (host state); the "after" column beats every baseline run it alternated with. The small guests use none of these instructions.
+
+**Validation:** unit tests (the nG list and its overflow; LDTR/STTR permissions; the emitted TLB arrays); the differential test with new classes (LSE atomics, compare and swap, load and store exclusive with the monitor armed at random, LD1/ST1 multiple, MSR in the system-register class at EL0/EL1t/EL1h), `ldxp`/`ldsmax`/`msr daif` in the sequences; the golden corpus through the JIT (forced and stress); lockstep 300M steps; every Node boot with exact steps. **Planted bugs:** STXR ignoring the monitor's size, STXR's status inverted, LDXR leaving `val[1]`, LDCLR without the complement, LD1 registers not wrapping, LD1 post-index by one register, DAIFSet on the wrong bits, SP_EL0 ignoring SPSel: all caught by the differential test. An MSR DAIF that unmasks done inline (no `Resync`) is invisible to the differential test and to Buildroot's boot; Alpine's steps catch it (3,010,874,217).
+
+Raw data: `results/m6-loop7/`, `../boot/results/m6-loop7/`.

@@ -30,17 +30,20 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
         // Single register. Size in 31:30, opc in 23:22.
         STRx_LDRx_imm_2 => {
             let off = (bits(i, 21, 10) as u64) << bits(i, 31, 30);
-            single(c, m, i, base.wrapping_add(off), None, true)?;
+            single(c, m, i, base.wrapping_add(off), None, true, c.el())?;
         }
         STURx_LDURx | STTRB | LDTRB | LDTRSB | STTRH | LDTRH | LDTRSH | STTR | LDTR | LDTRSW => {
-            // Unscaled, and unprivileged (the same as unscaled at EL0). PRFUM is PRFM_unscaled_imm.
+            // Unscaled, and unprivileged: with EL0's permissions (at EL0 the
+            // same as unscaled). PRFUM is PRFM_unscaled_imm.
             let off = sext(bits(i, 20, 12) as u64, 9);
-            single(c, m, i, base.wrapping_add(off), None, op == STURx_LDURx)?;
+            let unscaled = op == STURx_LDURx;
+            let el = if unscaled { c.el() } else { 0 };
+            single(c, m, i, base.wrapping_add(off), None, unscaled, el)?;
         }
         STRx_LDRx_imm_1 => {
             let wb = base.wrapping_add(sext(bits(i, 20, 12) as u64, 9));
             let addr = if bit(i, 11) { wb } else { base };
-            single(c, m, i, addr, Some(wb), false)?;
+            single(c, m, i, addr, Some(wb), false, c.el())?;
         }
         STRx_reg | LDRx_reg => {
             let option = bits(i, 15, 13);
@@ -49,7 +52,7 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
             }
             let amt = if bit(i, 12) { bits(i, 31, 30) } else { 0 };
             let off = extend(c.reg(rs), option, amt);
-            single(c, m, i, base.wrapping_add(off), None, true)?;
+            single(c, m, i, base.wrapping_add(off), None, true, c.el())?;
         }
 
         // Pairs.
@@ -222,7 +225,16 @@ fn aligned(addr: u64, size: u32) -> R {
 
 /// One register load/store: STR/LDR/LDRS* by size (31:30) and opc (23:22).
 /// `prfm` says whether size 3, opc 2 is PRFM here (else it's unallocated).
-fn single(c: &mut Cpu, m: &mut impl Bus, i: u32, addr: u64, wb: Option<u64>, prfm: bool) -> R {
+/// A single-register load or store at `addr` with `el`'s permissions.
+fn single(
+    c: &mut Cpu,
+    m: &mut impl Bus,
+    i: u32,
+    addr: u64,
+    wb: Option<u64>,
+    prfm: bool,
+    el: u64,
+) -> R {
     let (size, opc, rt, rn) = (
         bits(i, 31, 30),
         bits(i, 23, 22),
@@ -231,16 +243,16 @@ fn single(c: &mut Cpu, m: &mut impl Bus, i: u32, addr: u64, wb: Option<u64>, prf
     );
     let bytes = 1 << size;
     match opc {
-        0 => m.write(c, addr, bytes, c.reg(rt))?,
+        0 => m.write_el(c, addr, bytes, c.reg(rt), el)?,
         1 => {
-            let v = m.read(c, addr, bytes)?;
+            let v = m.read_el(c, addr, bytes, el)?;
             c.set_reg(rt, v);
         }
         2 if size == 3 && prfm => return Ok(()),
         _ if size == 3 || (size == 2 && opc == 3) => return Err(Exit::Undefined),
         _ => {
             // Sign-extending: opc 2 to 64 bits, opc 3 to 32 bits.
-            let v = sext(m.read(c, addr, bytes)?, 8 * bytes);
+            let v = sext(m.read_el(c, addr, bytes, el)?, 8 * bytes);
             c.set_reg(rt, if opc == 3 { v as u32 as u64 } else { v });
         }
     }

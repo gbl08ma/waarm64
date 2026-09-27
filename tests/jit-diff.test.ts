@@ -87,11 +87,17 @@ const MEMORY: Record<string, [number, number]> = {
   'load literal': [0x3f000000, 0x18000000],
   'load-acquire, store-release': [0x3fa08000, 0x08808000], // LDAR, STLR (M6 loop 1)
   'DC ZVA': [0xffffffe0, 0xd50b7420],
+  // M6 loop 7; the exclusives with the monitor armed at random (below).
+  'LSE atomics': [0x3f200c00, 0x38200000], // LD<op>, SWP (min/max: helpers)
+  'compare and swap': [0x3fa07c00, 0x08a07c00], // CAS, CASB, CASH
+  'load exclusive': [0x3fff7c00, 0x085f7c00],
+  'store exclusive': [0x3fe07c00, 0x08007c00],
   // SIMD&FP (M6 loop 2): V set; the V registers are random too.
   'SIMD&FP load/store, unsigned offset': [0x3f000000, 0x3d000000],
   'SIMD&FP load/store, unscaled, pre/post-index, register offset': [0x3f000000, 0x3c000000],
   'SIMD&FP load/store pair': [0x3e000000, 0x2c000000],
   'SIMD&FP load literal': [0x3f000000, 0x1c000000],
+  'AdvSIMD load/store multiple structures': [0xbf200000, 0x0c000000], // LD1/ST1 inline (M6 loop 7)
 };
 
 // xorshift64*, seeded: failures reproduce.
@@ -192,7 +198,7 @@ function setup(code: number) {
     const kind = new BigUint64Array(memory.buffer, ei, 2)[0];
     return kind !== 1n && kind !== 2n;
   };
-  return { ex, jit, ca32, cb32, cpus, run, counts, allocated, data: DATA };
+  return { ex, jit, a8, ca32, cb32, cpus, run, counts, allocated, data: DATA };
 }
 
 for (const [name, [mask, bits], mem] of [
@@ -200,7 +206,7 @@ for (const [name, [mask, bits], mem] of [
   ...Object.entries(MEMORY).map(([n, c]) => [n, c, true] as const),
 ]) test(`JIT vs interpreter: ${name}`, () => {
   // Each word with a brk after it.
-  const { ex, jit, ca32, cb32, cpus, run, counts, data } = setup(8 * WORDS);
+  const { ex, jit, a8, ca32, cb32, cpus, run, counts, data } = setup(8 * WORDS);
   const words = Array.from({ length: WORDS }, () => ((field(rand32()) & ~mask) | bits) >>> 0);
   words.forEach((w, k) => {
     ca32.set([w, BRK], 2 * k);
@@ -233,6 +239,19 @@ for (const [name, [mask, bits], mem] of [
       const fp = new BigUint64Array(a.buffer, a.byteOffset + 816, 2);
       fp[0] = rand32() % 2 === 0 ? 0n : BigInt(rand32() & 0xf) << 22n;
       fp[1] = (rand32() % 4 === 0 ? 0n : 16n) | (rand32() % 4 === 0 ? 1n << 27n : 0n);
+      // The exclusive monitor (272: address, size, value), mostly armed for
+      // this word's address, size and the value in memory, so STXR stores.
+      if (name.endsWith('exclusive')) {
+        const mon = new BigUint64Array(a.buffer, a.byteOffset + 272, 4);
+        const w = words[k], size = 1 << (w >>> 30);
+        const addr = rand32() % 4 === 0 ? value(true, data) : a[(w >>> 5) & 31];
+        let v = 0n;
+        for (let i = size - 1; i >= 0; i--) v = (v << 8n) | BigInt(addr + BigInt(i) < BigInt(a8.length) ? a8[Number(addr) + i] : 0);
+        mon[0] = addr;
+        mon[1] = BigInt(rand32() % 4 === 0 ? [0, 1, 2, 4, 8, 16][rand32() % 6] : size);
+        mon[2] = rand32() % 4 === 0 ? rand64() : v;
+        mon[3] = rand32() % 2 === 0 ? rand64() : 0n;
+      }
       // The JIT's vCPU starts from exactly the interpreter's state.
       new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
       const what = run(1n, mem);
@@ -262,11 +281,15 @@ const SYSREG_KEYS = [
   sr(3, 0, 0, 0, 0), sr(3, 0, 0, 0, 5), sr(3, 0, 0, 0, 6), sr(3, 0, 0, 4, 0), sr(3, 0, 0, 5, 0), sr(3, 0, 0, 6, 0), sr(3, 0, 0, 7, 0), // MIDR MPIDR REVIDR ID_AA64*
   sr(3, 3, 4, 4, 0), sr(3, 3, 4, 4, 1), sr(3, 3, 14, 0, 0), sr(3, 3, 14, 0, 2), sr(3, 0, 12, 1, 0), sr(3, 1, 0, 0, 0), // FPCR FPSR CNTFRQ CNTVCT ISR CCSIDR
 ];
+// MSR (M6 loop 7): the registers the JIT writes inline (DAIF, SP_EL0, SPSR, ELR, TPIDR_EL0/EL1, TPIDRRO_EL0).
+const MSR_KEYS = [sr(3, 3, 4, 2, 1), sr(3, 0, 4, 1, 0), sr(3, 0, 4, 0, 0), sr(3, 0, 4, 0, 1), sr(3, 3, 13, 0, 2), sr(3, 0, 13, 0, 4), sr(3, 3, 13, 0, 3)];
 test('JIT vs interpreter: system registers and barriers', () => {
   const { ex, jit, ca32, cb32, cpus, run, counts, data } = setup(8 * WORDS);
   const words = Array.from({ length: WORDS }, () => {
     const rt = rand32() & 31;
     if (rand32() % 8 === 0) return (0xd503301f | (rand32() & 0xfe0)) >>> 0; // barriers and the rest of that space
+    if (rand32() % 8 === 0) return (0xd503401f | (6 + (rand32() % 2)) << 5 | (rand32() & 0xf) << 8) >>> 0; // MSR DAIFSet, DAIFClr
+    if (rand32() % 6 === 0) return (0xd5100000 | MSR_KEYS[rand32() % MSR_KEYS.length] << 5 | rt) >>> 0; // MSR
     if (rand32() % 8 === 0) return (0xd50b7420 | rt) >>> 0; // DC ZVA: SCTLR_EL1.DZE decides at EL0
     if (rand32() % 8 === 0) return ((field(rand32()) & ~0x3f000000) | 0x3d000000) >>> 0; // SIMD&FP load/store: CPACR_EL1.FPEN decides
     if (rand32() % 8 === 0) return ((field(rand32()) & ~0x9f200400) | 0x0e200400) >>> 0; // AdvSIMD three same: likewise
@@ -365,13 +388,16 @@ test('JIT vs interpreter: FP edge cases', () => {
 // Sequences (step 6). Words that read or write NZCV outside the ALU: MRS
 // NZCV (inline since M6 loop 1: it reads lazy flags made current) and MSR
 // NZCV (a helper that ends the block); words that force helper calls: an
-// exclusive load, FCVTZS (a helper that writes an X register); FMOV between X
-// and D registers (inline since M6 loop 4); loads whose address misses come
-// from the register values.
+// exclusive pair load, LDSMAX, FCVTZS (helpers that write X registers); an
+// exclusive load (inline since M6 loop 7) and FMOV between X and D registers
+// (since loop 4); loads whose address misses come from the register values.
 const HELPERS = [
   (d: number, _n: number) => 0xd53b4200 | d, // mrs xd, nzcv
   (d: number, _n: number) => 0xd51b4200 | d, // msr nzcv, xd
-  (d: number, n: number) => 0xc85f7c00 | (n << 5) | d, // ldxr xd, [xn]
+  (d: number, _n: number) => 0xd51b4220 | d, // msr daif, xd (doesn't end a block since M6 loop 7)
+  (d: number, n: number) => 0xc85f7c00 | (n << 5) | d, // ldxr xd, [xn] (inline since M6 loop 7)
+  (d: number, n: number) => 0xc87f0000 | (((d + 1) & 31) << 10) | (n << 5) | d, // ldxp xd, xd+1, [xn]
+  (d: number, n: number) => 0xf8204000 | (n << 16) | (n << 5) | d, // ldsmax xn, xd, [xn]
   (d: number, n: number) => 0x9e660000 | (n << 5) | d, // fmov xd, dn (inline since M6 loop 4)
   (d: number, n: number) => 0x9e670000 | (n << 5) | d, // fmov dd, xn (likewise)
   (d: number, n: number) => 0x9e780000 | (n << 5) | d, // fcvtzs xd, dn (a helper that writes an X register)

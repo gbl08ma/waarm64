@@ -735,6 +735,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         // memory (M6 loop 1; M7 revisits them), and don't end a block.
         DMB | DSB | SSBB | PSSBB => {}
         MRS => return mrs(c, cx, i, k),
+        MSR_reg | MSR_imm => return msr(c, cx, i, k),
         MADD | MSUB => set(c, sf, rd, |c| {
             get(c, sf, bits(i, 14, 10));
             get(c, sf, rn);
@@ -831,12 +832,16 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         }),
         LDR_lit_gen | LDRSW_lit | PRFM_lit | PRFM_imm | PRFM_unscaled_imm | STRx_LDRx_imm_2
         | STURx_LDURx | STRx_reg | LDRx_reg | STRx_LDRx_imm_1 | STP_LDP_gen | STNP_LDNP_gen
-        | LDAR | STLR | DC_ZVA => {
+        | LDAR | STLR | DC_ZVA | STTRB | LDTRB | LDTRSB | STTRH | LDTRH | LDTRSH | STTR | LDTR
+        | LDTRSW | LDXR | LDAXR | STXR | STLXR | CAS | CASB | CASH | LDADDB | LDCLRB | LDEORB
+        | LDSETB | SWPB | LDADDH | LDCLRH | LDEORH | LDSETH | SWPH | LDADD | LDCLR | LDEOR
+        | LDSET | SWP => {
             return ldst(c, cx, i, op, k);
         }
         LDR_lit_fpsimd | STP_LDP_fpsimd | STNP_LDNP_fpsimd | STR_imm_fpsimd_2
         | LDR_imm_fpsimd_2 | STUR_fpsimd | LDUR_fpsimd | STR_imm_fpsimd_1 | LDR_imm_fpsimd_1
         | STR_reg_fpsimd | LDR_reg_fpsimd => return ldst_fp(c, cx, i, op, k),
+        LDx_mult_1 | LDx_mult_2 | STx_mult_1 | STx_mult_2 => return ld1_st1(c, cx, i, k),
         // The shift amount is Rm modulo the width, as wasm shifts take it.
         LSLV | LSRV | ASRV | RORV => set(c, sf, rd, |c| {
             get(c, sf, rn);
@@ -1032,10 +1037,13 @@ const BASE: u32 = 3;
 const OFF: u32 = 4;
 const TLBE: u32 = 7;
 const HOST: u32 = 6;
+/// An i64 the access's fast path keeps across a nested `if` (exclusives).
+const VALUE: u32 = 5;
 
-/// Loads, stores and pairs whose handlers can't fail for other reasons than
-/// the access itself. Exclusives, atomics, unprivileged and FP accesses stay
-/// helper calls.
+/// Loads, stores and pairs, acquire/release, exclusives of one register and
+/// LSE atomics, whose handlers can't fail for other reasons than the access
+/// itself. Exclusive pairs, CASP, LSE min/max, unprivileged and FP accesses
+/// stay helper calls (FP ones: [`ldst_fp`]).
 fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     use Op::*;
     let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
@@ -1064,12 +1072,32 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 return false; // SP's alignment check
             }
         }
-        STRx_LDRx_imm_2 | STURx_LDURx | STRx_reg | LDRx_reg | STRx_LDRx_imm_1 => {
+        STRx_LDRx_imm_2 | STURx_LDURx | STRx_reg | LDRx_reg | STRx_LDRx_imm_1 | STTRB | LDTRB
+        | LDTRSB | STTRH | LDTRH | LDTRSH | STTR | LDTR | LDTRSW => {
             if matches!(op, STRx_reg | LDRx_reg) && bits(i, 15, 13) & 2 == 0 {
                 return false; // UNDEFINED, PRFM included
             }
             let len = 1 << size;
-            let prfm = op != STRx_LDRx_imm_1;
+            // Unprivileged (LDTR & co): unscaled, with EL0's permissions, so
+            // at EL1 through EL0's TLB arrays (M6 loop 7).
+            let unpriv = matches!(
+                op,
+                STTRB | LDTRB | LDTRSB | STTRH | LDTRH | LDTRSH | STTR | LDTR | LDTRSW
+            );
+            let ucx;
+            let cx = match cx.bus {
+                Bus::Tlb { .. } if unpriv && cx.el1 => {
+                    ucx = Ctx {
+                        bus: Bus::Tlb {
+                            read: tlb_array(0, 0),
+                        },
+                        ..*cx
+                    };
+                    &ucx
+                }
+                _ => cx,
+            };
+            let prfm = op != STRx_LDRx_imm_1 && !unpriv;
             let (store, sign, to32) = match opc {
                 0 => (true, false, false),
                 1 => (false, false, false),
@@ -1087,7 +1115,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     c.i64_const(((bits(i, 21, 10) as u64) << size) as i64)
                         .i64_add();
                 }
-                STURx_LDURx => {
+                _ if op == STURx_LDURx || unpriv => {
                     c.local_get(BASE);
                     c.i64_const(sext(bits(i, 20, 12) as u64, 9) as i64)
                         .i64_add();
@@ -1202,6 +1230,114 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     });
                 }
             });
+        }
+        // Exclusives of one register (M6 loop 7), with the interpreter's
+        // compare-and-swap semantics and its monitor in the `Cpu`: LDXR arms it
+        // with the address, size and value read; STXR stores (a cmpxchg against
+        // that value) only if it's armed for this address and size, and
+        // disarms it. Both must be aligned.
+        LDXR | LDAXR | STXR | STLXR => {
+            let len = 1 << size;
+            base(c);
+            c.local_get(BASE).local_set(ADDR);
+            let load = matches!(op, LDXR | LDAXR);
+            let rs = bits(i, 20, 16);
+            let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
+            let written = xmask(if load { rt } else { rs });
+            access(c, cx, i, here, len, !load, &[guard], written, |c, off| {
+                const MON: u32 = offset_of!(Cpu, monitor) as u32;
+                const VAL: u32 = offset_of!(Cpu, monitor.val) as u32;
+                const MON_SIZE: u32 = offset_of!(Cpu, monitor.size) as u32;
+                if load {
+                    c.local_get(HOST)
+                        .atomic(ATOMIC_LOAD[size as usize], size, off)
+                        .local_set(VALUE);
+                    c.local_get(VCPU).local_get(ADDR).i64_store(MON);
+                    c.local_get(VCPU).i64_const(len as i64).i64_store(MON_SIZE);
+                    c.local_get(VCPU).local_get(VALUE).i64_store(VAL);
+                    c.local_get(VCPU).i64_const(0).i64_store(VAL + 8);
+                    set(c, true, rt, |c| {
+                        c.local_get(VALUE);
+                    });
+                } else {
+                    // VALUE = the status: 0 stored, 1 not.
+                    get(c, true, rt);
+                    c.local_set(VALUE);
+                    c.local_get(VCPU).i64_load(MON).local_get(ADDR).op(EQ + WC);
+                    c.local_get(VCPU).i64_load(MON_SIZE).i64_const(len as i64);
+                    c.op(EQ + WC).op(AND).if_t(I64);
+                    c.local_get(HOST)
+                        .local_get(VCPU)
+                        .i64_load(VAL)
+                        .local_get(VALUE);
+                    c.atomic(RMW_CMPXCHG + RMW_SIZE[size as usize], size, off);
+                    c.local_get(VCPU)
+                        .i64_load(VAL)
+                        .op(NE + WC)
+                        .i64_extend_i32_u();
+                    c.else_().i64_const(1).end().local_set(VALUE);
+                    c.local_get(VCPU).i64_const(0).i64_store(MON_SIZE);
+                    set(c, true, rs, |c| {
+                        c.local_get(VALUE);
+                    });
+                }
+            });
+        }
+        // LSE atomics (M6 loop 7): LDADD, LDCLR (an AND with the complement),
+        // LDEOR, LDSET and SWP as one wasm atomic.rmw, CAS as a cmpxchg of the
+        // masked expected value, every size and ordering (wasm atomics are
+        // sequentially consistent). Rt (CAS: Rs) = the old value,
+        // zero-extended; with XZR the result is dropped (ST<op>). Signed and
+        // unsigned min/max have no wasm op and stay helper calls, as CASP does.
+        CAS | CASB | CASH | LDADDB | LDCLRB | LDEORB | LDSETB | SWPB | LDADDH | LDCLRH | LDEORH
+        | LDSETH | SWPH | LDADD | LDCLR | LDEOR | LDSET | SWP => {
+            let cas = matches!(op, CAS | CASB | CASH);
+            let rs = bits(i, 20, 16);
+            let rmw = match bits(i, 15, 12) {
+                _ if cas => RMW_CMPXCHG,
+                0 => RMW_ADD,
+                1 => RMW_AND,
+                2 => RMW_XOR,
+                3 => RMW_OR,
+                8 => RMW_XCHG,
+                _ => return false,
+            } + RMW_SIZE[size as usize];
+            let len = 1 << size;
+            base(c);
+            c.local_get(BASE).local_set(ADDR);
+            let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
+            let dest = if cas { rs } else { rt };
+            access(
+                c,
+                cx,
+                i,
+                here,
+                len,
+                true,
+                &[guard],
+                xmask(dest),
+                |c, off| {
+                    let value = |c: &mut Func| {
+                        c.local_get(HOST);
+                        get(c, true, rs);
+                        if cas {
+                            if size < 3 {
+                                c.i64_const((u64::MAX >> (64 - 8 * len)) as i64).i64_and();
+                            }
+                            get(c, true, rt);
+                        } else if bits(i, 15, 12) == 1 {
+                            c.i64_const(-1).op(XOR + W);
+                        }
+                        c.atomic(rmw, size, off);
+                    };
+                    if dest == 31 {
+                        value(c);
+                        c.op(DROP);
+                    } else {
+                        set(c, true, dest, value);
+                    }
+                },
+            );
         }
         // Zeroes the aligned 64 bytes (DCZID_EL0's block) at Xt; from EL0 only
         // while SCTLR_EL1.DZE allows it (else the helper traps).
@@ -1405,6 +1541,59 @@ fn vload(c: &mut Func, t: u32, off: u32, len: u32) {
     }
 }
 
+/// LD1/ST1 (multiple structures) of one to four registers (M6 loop 7): one
+/// contiguous access of 8 or 16 bytes per register (the element size doesn't
+/// matter, little-endian), through the fast path of [`access`], after the
+/// block's [`fp_guard`]. LD2–LD4 and ST2–ST4 interleave and stay helper calls.
+fn ld1_st1(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
+    let n = match bits(i, 15, 12) {
+        0b0111 => 1,
+        0b1010 => 2,
+        0b0110 => 3,
+        0b0010 => 4,
+        _ => return false,
+    };
+    let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let (load, wb) = (bit(i, 22), bit(i, 23));
+    let len = if bit(i, 30) { 16 } else { 8 };
+    let here = 4 * k as i64;
+    fp_guard(c, cx, i, k);
+    get_sp(c, true, rn);
+    c.local_tee(BASE).local_set(ADDR);
+    let written = if wb { 1 << rn } else { 0 };
+    access(
+        c,
+        cx,
+        i,
+        here,
+        n * len,
+        !load,
+        &[Guard::sp(rn)],
+        written,
+        |c, off| {
+            for r in 0..n {
+                let (t, o) = ((rt + r) % 32, off + r * len);
+                if load {
+                    vload(c, t, o, len);
+                } else {
+                    vstore(c, t, o, len);
+                }
+            }
+            // Post-index: by the bytes transferred, or by Xm.
+            if wb && rm == 31 {
+                writeback(c, rn, (n * len) as i64);
+            } else if wb {
+                set_sp(c, true, rn, |c| {
+                    c.local_get(BASE);
+                    get(c, true, rm);
+                    c.i64_add();
+                });
+            }
+        },
+    );
+    true
+}
+
 /// The low `len` bytes of Vt to the host address (+ `off`).
 fn vstore(c: &mut Func, t: u32, off: u32, len: u32) {
     let v = V + 16 * t;
@@ -1420,6 +1609,15 @@ fn vstore(c: &mut Func, t: u32, off: u32, len: u32) {
 // i64 atomic loads (zero-extending) and stores by log2 size (0xfe-prefixed).
 const ATOMIC_LOAD: [u8; 4] = [0x14, 0x15, 0x16, 0x11];
 const ATOMIC_STORE: [u8; 4] = [0x1b, 0x1c, 0x1d, 0x18];
+// i32 atomic read-modify-writes (0xfe-prefixed); plus `RMW_SIZE` by log2 size,
+// the zero-extending i64 forms.
+const RMW_ADD: u8 = 0x1e;
+const RMW_AND: u8 = 0x2c;
+const RMW_OR: u8 = 0x33;
+const RMW_XOR: u8 = 0x3a;
+const RMW_XCHG: u8 = 0x41;
+const RMW_CMPXCHG: u8 = 0x48;
+const RMW_SIZE: [u8; 4] = [4, 5, 6, 1];
 
 // i64 loads by log2 size, zero- and sign-extending, and i64 stores.
 const LOAD_U: [u8; 4] = [0x31, 0x33, 0x35, 0x29];
@@ -1626,6 +1824,75 @@ fn mrs(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
     true
 }
 
+/// MSR of a register [`sys::plain_write`] names, and DAIFSet, inline at the
+/// block's EL (M6 loop 7); false for the rest (helper calls, which end the
+/// block unless [`sys::msr_continues`]).
+///
+/// [`sys::plain_write`]: crate::interp::sys::plain_write
+/// [`sys::msr_continues`]: crate::interp::sys::msr_continues
+fn msr(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
+    use crate::cpu::{DAIF, PSTATE_I};
+    use crate::interp::sys::{PlainWrite, plain_write};
+    const P: u32 = PSTATE as u32;
+    let rt = bits(i, 4, 0);
+    if bits(i, 20, 19) == 0 {
+        // MSR (immediate): DAIFSet at EL1 only masks (EL0 may trap).
+        if !cx.el1 || (bits(i, 18, 16), bits(i, 7, 5)) != (3, 6) {
+            return false;
+        }
+        c.local_get(VCPU).local_get(VCPU).i64_load(P);
+        c.i64_const((bits(i, 11, 8) as i64) << 6)
+            .op(OR + W)
+            .i64_store(P);
+        return true;
+    }
+    let Some(p) = plain_write(bits(i, 20, 5), cx.el1) else {
+        return false;
+    };
+    let here = 4 * k as i64;
+    match p {
+        PlainWrite::Field(off) => {
+            c.local_get(VCPU);
+            get(c, true, rt);
+            c.i64_store(off as u32);
+        }
+        PlainWrite::SpEl0 => {
+            // sp_other while SPSel is 1; else UNDEFINED, which the helper raises.
+            c.local_get(VCPU).i64_load(P).i32_wrap_i64();
+            c.i32_const(1).op(AND).hint(true).if_();
+            let before = c.regs;
+            c.local_get(VCPU);
+            get(c, true, rt);
+            c.i64_store(offset_of!(Cpu, sp_other) as u32);
+            fallback(c, cx, i, here, before, 0);
+        }
+        PlainWrite::Daif => {
+            // VALUE = the new PSTATE; stored unless it unmasks IRQs (the
+            // helper's `Exit::Resync` then lets the run loop take one).
+            c.local_get(VCPU)
+                .i64_load(P)
+                .i64_const(!DAIF as i64)
+                .i64_and();
+            get(c, true, rt);
+            c.i64_const(DAIF as i64)
+                .i64_and()
+                .op(OR + W)
+                .local_set(VALUE);
+            c.local_get(VCPU).i64_load(P).local_get(VALUE);
+            c.i64_const(-1).op(XOR + W).i64_and();
+            c.i64_const(PSTATE_I as i64)
+                .i64_and()
+                .op(EQZ + WC)
+                .hint(true)
+                .if_();
+            let before = c.regs;
+            c.local_get(VCPU).local_get(VALUE).i64_store(P);
+            fallback(c, cx, i, here, before, 0);
+        }
+    }
+    true
+}
+
 // i32 opcodes. The i64 twin of an arithmetic one is `W` higher, of a
 // comparison `WC` higher.
 const W: u8 = 0x12;
@@ -1643,6 +1910,7 @@ const SHL: u8 = 0x74;
 const SHR_S: u8 = 0x75;
 const SHR_U: u8 = 0x76;
 const ROTR: u8 = 0x78;
+const DROP: u8 = 0x1a;
 const EQZ: u8 = 0x45;
 const EQ: u8 = 0x46;
 const NE: u8 = 0x47;
@@ -2519,6 +2787,16 @@ mod tests {
         assert_eq!(emit(0xf9800020, 0).unwrap(), []); // prfm pldl1keep, [x1]
         assert_eq!(emit(0xf98003e0, 0), None); // prfm pldl1keep, [sp]
         assert_eq!(emit(0xf8a10820, 0), None); // prfm pldl1keep, [x1, w1, uxtb]: UNDEFINED
-        assert_eq!(emit(0xc85f7c20, 0), None); // ldxr x0, [x1]: a helper
+        // LDTR and STTR at EL1 go through EL0's arrays (loads: read; stores: write).
+        for (insn, arr) in [(0xf8408820, tlb_array(0, 0)), (0xf8008840, tlb_array(0, 1))] {
+            let b = emit_in(insn, 0, &tlb).unwrap(); // ldtr x0, [x1, #8]; sttr x0, [x2, #8]
+            let mut load = vec![0x29, 3];
+            uleb(&mut load, arr as u64);
+            assert!(b.windows(load.len()).any(|w| w == load), "{insn:#x}");
+        }
+        assert!(emit(0xc85f7c20, 0).is_some()); // ldxr x0, [x1] (M6 loop 7)
+        assert!(emit(0xf8200020, 0).is_some()); // ldadd x0, x0, [x1]
+        assert_eq!(emit(0xf8204020, 0), None); // ldsmax x0, x0, [x1]: a helper
+        assert_eq!(emit(0xc87f0020, 0), None); // ldxp x0, x0, [x1]: likewise
     }
 }

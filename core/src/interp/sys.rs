@@ -226,9 +226,11 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
             bits(i, 11, 8),
             bits(i, 7, 5),
         ) {
-            // TLBI VMALLE1 and ASIDE1 (the TLB holds no ASIDs), and their IS
-            // forms. One vCPU until M7, so IS is local.
-            (0, 8, 3 | 7, 0 | 2) => m.flush_all(),
+            // TLBI VMALLE1 and ASIDE1, and their IS forms. One vCPU until M7,
+            // so IS is local. The TLB holds only the current ASID's nG entries,
+            // so ASIDE1 drops them whatever its ASID (over-invalidating).
+            (0, 8, 3 | 7, 0) => m.flush_all(),
+            (0, 8, 3 | 7, 2) => m.flush_ng(),
             // IC IALLU(IS) with Rt != 31 (should-be-ones): as with 31.
             (0, 7, 5 | 1, 0) => {}
             // TLBI VAE1, VAAE1, VALE1, VAALE1 (IS): Xt[43:0] is VA[55:12].
@@ -390,11 +392,60 @@ pub fn plain(key: u32, el1: bool) -> Option<Plain> {
     }
 }
 
+/// How [`write`] sets system register `key` (bits 20:5 of an MSR) at EL1
+/// (`el1`) or EL0, if the JIT can do it inline without ending its block
+/// (M6 loop 7; [`msr_continues`] names the MSRs that don't end one).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlainWrite {
+    /// The u64 at this offset in the `Cpu`, the whole value.
+    Field(usize),
+    /// SP_EL0 at EL1: `sp_other` while SPSel is 1; UNDEFINED otherwise.
+    SpEl0,
+    /// DAIF at EL1: PSTATE's DAIF bits; one that unmasks IRQs leaves through
+    /// `Exit::Resync`, so the JIT runs that case through the helper.
+    Daif,
+}
+
+pub fn plain_write(key: u32, el1: bool) -> Option<PlainWrite> {
+    use PlainWrite::*;
+    use core::mem::offset_of;
+    match key {
+        TPIDR_EL0 => Some(Field(offset_of!(Cpu, tpidr_el0))),
+        _ if !el1 => None,
+        TPIDRRO_EL0 => Some(Field(offset_of!(Cpu, tpidrro_el0))),
+        SPSR_EL1 => Some(Field(offset_of!(Cpu, spsr_el1))),
+        ELR_EL1 => Some(Field(offset_of!(Cpu, elr_el1))),
+        TPIDR_EL1 => Some(Field(offset_of!(Cpu, tpidr_el1))),
+        SP_EL0 => Some(SpEl0),
+        DAIF_R => Some(Daif),
+        _ => None,
+    }
+}
+
+/// Whether MSR `i` (register or immediate form) leaves everything a JIT block
+/// assumes as it was, at any EL: no regime, SP selection, FP control or flags
+/// change, and an IRQ it unmasks leaves through `Exit::Resync` (mid-block, as
+/// any helper's exit does). Those don't end a block: DAIFSet (it only masks),
+/// and MSR of DAIF and the registers [`plain_write`] names.
+pub fn msr_continues(i: u32) -> bool {
+    if bit(i, 21) {
+        return false; // MRS
+    }
+    if bits(i, 20, 19) == 0 {
+        // MSR (immediate): DAIFSet.
+        return (bits(i, 18, 16), bits(i, 7, 5)) == (3, 6);
+    }
+    matches!(
+        bits(i, 20, 5),
+        TPIDR_EL0 | TPIDRRO_EL0 | SPSR_EL1 | ELR_EL1 | TPIDR_EL1 | SP_EL0 | DAIF_R
+    )
+}
+
 fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
     let el0 = c.el() == 0;
-    // The TLB holds neither ASIDs nor the MMU enable: flush when either changes.
-    let regime = |c: &Cpu| (mmu::asid(c), c.sctlr_el1 & sctlr::M);
-    let (before, copy, pstate) = (regime(c), c.sctlr_el1 & (sctlr::M | sctlr::A), c.pstate);
+    // The TLB holds only the current ASID's nG entries and doesn't hold the MMU
+    // enable: drop those when the ASID changes, everything when the MMU does.
+    let (asid, copy, pstate) = (mmu::asid(c), c.sctlr_el1 & (sctlr::M | sctlr::A), c.pstate);
     match key {
         NZCV => c.nzcv = v & 0xf000_0000,
         DAIF_R if el0 && c.sctlr_el1 & sctlr::UMA == 0 => return Err(trap_sys(i)),
@@ -438,8 +489,10 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
         RMR => {} // a warm reset request (RR) isn't honored
         _ => return Err(Exit::Undefined),
     }
-    if regime(c) != before {
+    if (c.sctlr_el1 ^ copy) & sctlr::M != 0 {
         m.flush_all();
+    } else if mmu::asid(c) != asid {
+        m.flush_ng();
     }
     if c.sctlr_el1 & (sctlr::M | sctlr::A) != copy {
         return Err(Exit::Resync); // retired; the run loop switches interpreter copy
@@ -708,8 +761,12 @@ mod tests {
             ]
         );
         assert_eq!(
-            (offset_of!(Cpu, pstate), offset_of!(Cpu, sctlr_el1)),
-            (832, 888)
+            (
+                offset_of!(Cpu, pstate),
+                offset_of!(Cpu, sctlr_el1),
+                offset_of!(Cpu, monitor)
+            ),
+            (832, 888, 272)
         );
         assert_eq!(size_of::<Cpu>(), 1056);
     }

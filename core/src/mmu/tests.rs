@@ -345,3 +345,84 @@ fn atomics_mmu_off() {
         align(8, Access::Write)
     );
 }
+
+#[test]
+fn asid_changes_keep_global_entries() {
+    const NG: u64 = 1 << 11;
+    let mut p = Pt::new();
+    p.map(0x1000, 3, 0x9000 | PAGE); // global
+    p.map(0x2000, 3, 0xa000 | PAGE | NG);
+    p.r.mem.write(0x9000, 8, 1).unwrap();
+    p.r.mem.write(0xa000, 8, 2).unwrap();
+    p.r.mem.write(0xb000, 8, 3).unwrap();
+    const MANY: u64 = 0x10_0000_0000;
+    for i in 0..NG_SLOTS as u64 + 1 {
+        p.map(MANY + (i << 12), 3, 0xa000 | PAGE | NG);
+    }
+    let c = cpu();
+    let mut v = Vcpu::new(c.clone());
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    assert_eq!(
+        (b.read(&c, 0x1000, 8), b.read(&c, 0x2000, 8)),
+        (Ok(1), Ok(2))
+    );
+    assert!(b.fetch(&c, 0x2000).is_ok());
+    // Remap both to PA 0xb000: only the nG translations are dropped.
+    let l3 = {
+        let l0 = p.r.mem.read(ROOT0, 8).unwrap() & OA_MASK;
+        let l1 = p.r.mem.read(l0, 8).unwrap() & OA_MASK;
+        p.r.mem.read(l1, 8).unwrap() & OA_MASK
+    };
+    p.r.mem.write(l3 + 8, 8, 0xb000 | PAGE).unwrap();
+    p.r.mem.write(l3 + 16, 8, 0xb000 | PAGE | NG).unwrap();
+    b.flush_ng();
+    assert_eq!(
+        (b.read(&c, 0x1000, 8), b.read(&c, 0x2000, 8)),
+        (Ok(1), Ok(3))
+    );
+    b.flush_all();
+    assert_eq!(b.read(&c, 0x1000, 8), Ok(3));
+    // Past the list's capacity, dropping the nG entries flushes everything.
+    for i in 0..NG_SLOTS as u64 + 1 {
+        b.read(&c, MANY + (i << 12), 8).unwrap();
+    }
+    p.r.mem.write(l3 + 8, 8, 0x9000 | PAGE).unwrap();
+    b.flush_ng();
+    assert_eq!(b.read(&c, 0x1000, 8), Ok(1));
+}
+
+#[test]
+fn unprivileged_accesses_use_el0_permissions() {
+    use crate::interp::{Exit, steps};
+    let mut p = Pt::new();
+    p.map(0x1000, 3, 0x9000 | PAGE | UXN); // code, EL1 only
+    p.map(0x2000, 3, 0xa000 | PAGE | AP_EL0_RW | PXN);
+    p.map(0x3000, 3, 0xb000 | PAGE); // EL1 only
+    p.r.mem.write(0xa008, 8, 0x1234).unwrap();
+    p.r.mem.write(0xb008, 8, 0x5678).unwrap();
+    // ldtr x0, [x1, #8]; sttr x0, [x2, #8]
+    p.r.mem.write(0x9000, 4, 0xf8408820).unwrap();
+    p.r.mem.write(0x9004, 4, 0xf8008840).unwrap();
+    let mut v = Vcpu::new(cpu());
+    let run = |v: &mut Vcpu, x1: u64, x2: u64| {
+        (v.cpu.x[0], v.cpu.x[1], v.cpu.x[2], v.cpu.pc) = (0, x1, x2, 0x1000);
+        steps(&mut v.cpu, &p.r.mem, Some(&mut v.tlb), 2)
+    };
+    assert!(matches!(run(&mut v, 0x2000, 0x2000), (2, None)));
+    assert_eq!(v.cpu.x[0], 0x1234);
+    // EL1 may read and write 0x3000, but LDTR and STTR at EL1 may not.
+    let perm = |addr, access| Fault {
+        addr,
+        access,
+        kind: FaultKind::Permission(3),
+    };
+    assert_eq!(
+        run(&mut v, 0x3000, 0x2000),
+        (0, Some(Exit::Fault(perm(0x3008, Access::Read))))
+    );
+    assert_eq!(
+        run(&mut v, 0x2000, 0x3000),
+        (1, Some(Exit::Fault(perm(0x3008, Access::Write))))
+    );
+    assert_eq!(p.r.mem.read(0xb008, 8), Ok(0x5678));
+}
