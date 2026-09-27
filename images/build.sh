@@ -10,7 +10,7 @@
 #   chroot), as an ext4 root (rootfs.ext4); the kernel (Image) and initramfs come
 #   from linux-virt. images/alpine/ has the boot test's local.d script.
 # alpine-user: the userspace benchmark's root (M6, images/alpine/user): alpine's
-#   rootfs.ext4 plus xz, lua5.4 and sqlite and the workloads, with its local.d
+#   rootfs.ext4 plus xz, lua5.4, sqlite and openssl (M6.5) and the workloads, with its local.d
 #   script instead of the boot test's, as rootfs-user.ext4 (it boots alpine's
 #   Image and initramfs-virt). Built on the host side in Alpine's own container,
 #   natively on arm64 and as that container's root: apk needs neither qemu-user
@@ -39,7 +39,7 @@ ALPINE_SHA256=9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773 #
 # Alpine keeps only the latest build of each package in its repository, so the
 # pins fail loudly (rather than drift) once these are superseded.
 ALPINE_PKGS="linux-virt=6.18.53-r0 openrc=0.63.2-r0"
-USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0"
+USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0 openssl=3.5.8-r0"
 USERLAND_TOOLS="e2fsprogs=1.47.4-r0 e2fsprogs-extra=1.47.4-r0"
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 DEBIAN=20260914-2601

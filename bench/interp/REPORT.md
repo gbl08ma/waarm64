@@ -627,3 +627,21 @@ On a quiet host (a stale experiment had held one vCPU busy through the earlier M
 **The peers:** QEMU TCG runs 1.4–2.1× faster than webpc on the boots and 1.2–1.45× on CoreMark, from native code on the same host; hvf is 3.5–18× faster than TCG on boots dominated by kernel work. qemu-wasm (ktock/qemu-wasm, built in rootless Podman under x86_64 emulation, GPL, only run) boots Buildroot 4.7× slower than webpc and gets CoreMark wrong (its list and state CRCs mismatch, with either CPU model), so its CoreMark speed isn't a valid result. Details and every run: `../boot/results/m6-exit/peers.txt`.
 
 Raw data: `results/m6-exit/`, `../boot/results/m6-exit/`.
+
+## M6.5 loop 0: the bar (`openssl speed` on the NEON-only paths)
+
+`--only alpine_crypto_jit` (new, `bench/boot/suite.ts`): Alpine's user image (`images/build.sh alpine-user`, now with `openssl=3.5.8-r0`) booted with `webpc.phase=crypto`, which runs only OpenSSL: a check line (SHA-1 and SHA-256 of a fixed MiB, AES-128-CBC encrypt and decrypt, AES-256-CTR, compared with arm64 hardware's) and `openssl speed -elapsed -mr -seconds 1 -bytes {256,16384} -evp <alg>`, one process per algorithm and size. **Realtime mode** (`openssl speed` times itself with the guest clock); the default `alpine_user_jit` run and the Alpine boot benchmark are unchanged apart from the image's new package (`ALPINE_USER_STEPS` 10,856,495,986 → 10,873,074,162; `churn: 1069 files`). `webpc.armcap=X` on the command line sets `OPENSSL_armcap` (for loop 7's on/off). Chromium 153, the M4 VM, 5 boots, medians (IQR), MB/s = 10⁶ bytes/s:
+
+| | 256 B | 16 KiB |
+|---|---|---|
+| AES-128-GCM | 24.4 (3.3) | **51.0** (0.7) |
+| AES-256-GCM | 24.4 (6.4) | **40.7** (0.3) |
+| AES-128-CBC (encrypt) | 44.7 (1.0) | **46.8** (0.9) |
+| SHA-1 | 45.8 (0.8) | **256.5** (1.4) |
+| SHA-256 | 32.7 (0.4) | **87.5** (0.2) |
+
+- The guest's OpenSSL sees `OPENSSL_armcap=0x81` (NEON and the CPUID bit): `vpaes` for AES, the scalar/NEON SHA code, and for GHASH no 8-bit `PMULL` at all.
+- **The helper histogram of the phase** (from its start marker to power-off): 1.2M helper calls in 10.5 s, none of them crypto or NEON arithmetic (the top ones are the kernel's: `STRx_LDRx_imm_2` 0.26M, `LD1` multiple 0.14M, `MSR` 0.13M, `ISB` 0.13M; process start-up and exits). The NEON-only paths run entirely inline since M6 loop 4, so the bar is the inline code's speed; 8-bit `PMULL` doesn't appear, so loop 5 has no reason to inline it for OpenSSL.
+- The 256-byte AES-GCM rows are the first `openssl speed` runs, when the JIT still compiles `libcrypto`'s code (kept afterwards: blocks are keyed by physical address, and the library's pages are shared), hence their IQR; the 16 KiB rows are the steady-state numbers to beat.
+
+Raw data: `../boot/results/m65-loop0/neon-only.json`.

@@ -10,7 +10,8 @@
 // `--only boot_jit`, `--only boot_alpine_jit`: the Buildroot and Alpine boots under the JIT (VmConfig.jit = 1);
 // `--only boot_debian_jit`: Debian 13's (one cold and one warm boot, several minutes; not in the default set);
 // `--only coremark_vm_jit`: CoreMark as init under Buildroot's kernel, realtime mode (its own score);
-// `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase.
+// `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
+// `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s.
 // I/O, realtime mode, a fresh boot per sample, timed by the host between the
 // guest script's "webpc: … start/end" markers unless fio times itself:
 // `--only dd`: /bench-dd.sh reads all of /dev/vda (sync-XHR block backend);
@@ -44,7 +45,7 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
  * by the text after "webpc: ") and to the end, and the counters. `test`: the
  * device tests' devices and a 640×480 framebuffer (web/vm.ts `testDevices`).
  */
-export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean } = {}) {
+export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = img.test ? testDevices(img.disk) : guestDevices(img.disk);
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
   const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit });
@@ -58,7 +59,11 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
     console += vm.drain();
     const now = performance.now() - t0;
     const end = console.lastIndexOf('\n') + 1; // whole lines only
-    for (const m of console.slice(scanned, end).matchAll(/webpc: ([^\r\n]*)/g)) marks[m[1]] ??= now;
+    for (const m of console.slice(scanned, end).matchAll(/webpc: ([^\r\n]*)/g)) {
+      if (m[1] in marks) continue;
+      marks[m[1]] = now;
+      o.onMark?.(m[1], vm);
+    }
     scanned = Math.max(scanned, end);
     if (r.kind === Exit.DEVICE) await vm.settle(); // backends inline (Node)
     if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) continue;
@@ -175,6 +180,49 @@ async function alpineUser(o: Options): Promise<Sample[]> {
   const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline: a.cmdline, ramMiB: 1024, jit: 1, steps: stats!.steps, counters: stats };
   return Object.entries(phases).map(([p, samples]) => ({ name: `alpine_user_jit_${p}`, unit: 'ms', params, samples }));
 }
+
+/**
+ * `openssl speed` in Alpine's user image under the JIT (M6.5 loop 0): its
+ * `webpc.phase=crypto` path (images/alpine/user) after the boot, in realtime
+ * mode, since `openssl speed` times itself with the guest clock. MB/s (10^6
+ * bytes) per algorithm and block size, and the helper calls made during the
+ * phase. `cmdline` adds to Alpine's (`webpc.armcap=…` sets OPENSSL_armcap).
+ */
+async function alpineCrypto(o: Options, extra = ''): Promise<Sample[]> {
+  const a = DISTROS.alpine;
+  const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
+  const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
+  const cmdline = `${a.cmdline} webpc.phase=crypto${extra && ` ${extra}`}`;
+  const module = await WebAssembly.compile(img.wasm);
+  const out = new Map<string, Sample>();
+  const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline, ramMiB: 1024, jit: 1, realtime: true, seconds: 1 };
+  let helpers: { op: string; calls: number }[] = [];
+  let check = '';
+  for (let i = 0; i < (o.quick ? 1 : 5); i++) {
+    fresh();
+    let before = new Map<string, number>();
+    const r = await boot(module, img, undefined, { cmdline, realtime: true, onMark: (m, vm) => { if (m === 'crypto start') before = new Map(vm.helperReport().map((h) => [h.op, h.calls])); } });
+    helpers = r.helpers.map((h) => ({ op: h.op, calls: h.calls - (before.get(h.op) ?? 0) })).filter((h) => h.calls > 0).sort((x, y) => y.calls - x.calls);
+    check = r.console.match(/crypto: [0-9a-f]{16} [^\r\n]*/)?.[0] ?? '';
+    const phase = r.console.split('webpc: crypto start')[1]?.split('webpc: crypto end')[0] ?? '';
+    let bytes = 0;
+    for (const [, kind, rest] of phase.matchAll(/\+([HF]):([^\r\n]*)/g)) {
+      const f = rest.split(':');
+      if (kind === 'H') { bytes = Number(f[0]); continue; }
+      const name = `crypto_${f[1].toLowerCase()}_${bytes}`;
+      if (!out.has(name)) out.set(name, { name, unit: 'MB/s', params: { ...params, algorithm: f[1], bytes }, samples: [] });
+      out.get(name)!.samples.push(Number(f[2]) / 1e6);
+    }
+    o.log?.(`alpine_crypto_jit: ${r.console.match(/crypto: CPUINFO[^\r\n]*/)?.[0]}; ${[...out.values()].map((s) => `${s.name} ${s.samples.at(-1)!.toFixed(1)}`).join(', ')}; phase ${between(r, 'crypto').toFixed(0)} ms`);
+  }
+  if (check !== CRYPTO_CHECK) throw new Error(`OpenSSL check: "${check}", expected "${CRYPTO_CHECK}"`);
+  o.log?.(`helpers in the phase: ${helpers.slice(0, 15).map((h) => `${h.op} ${h.calls}`).join(', ')}`);
+  // The phase's helper calls go with the first sample only.
+  return [...out.values()].map((s, i) => (i ? s : { ...s, params: { ...s.params, helpers: helpers.slice(0, 30) } }));
+}
+
+/** The crypto phase's check line (SHA-1, SHA-256, AES-128-CBC, AES-256-CTR, AES-128-CBC decrypt), from arm64 hardware. */
+const CRYPTO_CHECK = 'crypto: 82a2bffdaeb5d862 0e66434871168f25 9705ef3ce219893e 5aa8ca270a880d01 63bd397e0cc0e537';
 
 /** Debian 13 under the JIT to power-off (M6: timed once; long, so one cold and one warm boot). */
 async function bootDebian(o: Options): Promise<Sample[]> {
@@ -306,4 +354,6 @@ export const suite = {
   boot: runAll, boot_defconfig: (o: Options) => runAll(o, 'Image-defconfig'), boot_alpine: bootAlpine, dd, fio, p9, net,
   // Under the JIT (VmConfig.jit = 1), deterministic.
   boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), boot_debian_jit: bootDebian, coremark_vm_jit: coremarkVm, alpine_user_jit: alpineUser,
+  // Realtime (M6.5).
+  alpine_crypto_jit: (o: Options) => alpineCrypto(o),
 };
