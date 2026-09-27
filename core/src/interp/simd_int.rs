@@ -285,7 +285,7 @@ fn same(
     write(c, rd, o, q || scalar);
 }
 
-fn three_diff(c: &mut Cpu, i: u32) -> R {
+pub(super) fn three_diff(c: &mut Cpu, i: u32) -> R {
     let (rd, rn, rm, q, u, size, scalar) = fields(i);
     let opc = bits(i, 15, 12);
     need(match opc {

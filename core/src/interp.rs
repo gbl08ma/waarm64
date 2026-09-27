@@ -224,6 +224,16 @@ fn fp_enabled(c: &Cpu) -> R {
     }
 }
 
+/// UNDEFINED unless the vCPU has `FEATURE_CRYPTO` (ahead of the FPEN trap).
+#[inline]
+pub(crate) fn crypto_enabled(c: &Cpu) -> R {
+    if c.features & crate::cpu::FEATURE_CRYPTO != 0 {
+        Ok(())
+    } else {
+        Err(Exit::Undefined)
+    }
+}
+
 /// The AES, SHA1 and SHA256 instructions (`crate::crypto`); FPEN checked by the caller.
 fn crypto_exec(c: &mut Cpu, i: u32, op: Op) {
     use crate::crypto::*;
@@ -773,6 +783,7 @@ fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
         // The v8.0 crypto extensions (M6.5; the 64-bit PMULL is in simd_int).
         AESE | AESD | AESMC | AESIMC | SHA1C | SHA1P | SHA1M | SHA1SU0 | SHA256H | SHA256H2
         | SHA256SU1 | SHA1H | SHA1SU1 | SHA256SU0 => {
+            crypto_enabled(c)?;
             fp_enabled(c)?;
             crypto_exec(c, i, op)
         }
@@ -805,6 +816,12 @@ fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
         | FCVTZU_int_3 | FRSQRTE_3 | FSQRT_1 | FMAXNMV_1 | FMAXV_1 | FMINNMV_1 | FMINV_1
         | FMLA_elt_3 | FMLS_elt_3 | FMUL_elt_3 | FMULX_elt_3 => return Err(Exit::Undefined),
 
+        // The 64-bit PMULL: UNDEFINED without the feature, before the FPEN trap.
+        PMULL if bits(i, 23, 22) == 3 => {
+            crypto_enabled(c)?;
+            fp_enabled(c)?;
+            simd_int::three_diff(c, i)?
+        }
         // AdvSIMD integer and FP; EL1 system instructions (M3) are still unimplemented.
         _ => match simd_int::handler(op).or_else(|| simd_fp::handler(op)) {
             Some(f) => {

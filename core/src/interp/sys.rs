@@ -38,8 +38,20 @@ const ID_AA64PFR0: u64 = 1 << 60 | 1 << 56 | 1 << 4 | 1;
 // ponytail: the debug registers are RAZ/WI and no debug exceptions are raised
 // (breakpoints, watchpoints, MDSCR_EL1.SS); M9 lists it.
 const ID_AA64DFR0: u64 = 1 << 20 | 1 << 12 | 6;
-/// LSE atomics (2) and CRC32. No AES/PMULL/SHA until M6.5, nothing past v8.1.
+/// LSE atomics (2) and CRC32; nothing past v8.1. AES (2: with PMULL), SHA1
+/// and SHA2 with `FEATURE_CRYPTO` (`isar0`).
 const ID_AA64ISAR0: u64 = 2 << 20 | 1 << 16;
+const ISAR0_CRYPTO: u64 = 1 << 12 | 1 << 8 | 2 << 4;
+
+/// ID_AA64ISAR0_EL1 for a vCPU with `features`.
+pub fn isar0(features: u64) -> u64 {
+    ID_AA64ISAR0
+        | if features & crate::cpu::FEATURE_CRYPTO != 0 {
+            ISAR0_CRYPTO
+        } else {
+            0
+        }
+}
 /// 4K granule only (TGran64 = 0xf, TGran16 = 0), 16-bit ASIDs, 40-bit PA.
 const ID_AA64MMFR0: u64 = 0xf << 24 | 2 << 4 | 2;
 /// DIC = 0 (guests issue IC IVAU; PLAN.md §2), IDC = 1 (no data cache to clean),
@@ -317,7 +329,7 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         REVIDR => 0,
         PFR0 => ID_AA64PFR0,
         DFR0 => ID_AA64DFR0,
-        ISAR0 => ID_AA64ISAR0,
+        ISAR0 => isar0(c.features),
         MMFR0 => ID_AA64MMFR0,
         // The rest of the ID space (op1 = 0, CRn = 0, CRm = 1..7) is RAZ: the
         // AArch32 ID registers (no AArch32) and everything past v8.0 we don't have.
@@ -393,7 +405,6 @@ pub fn plain(key: u32, el1: bool) -> Option<Plain> {
         MPIDR_R => Some(Const(MPIDR)),
         PFR0 => Some(Const(ID_AA64PFR0)),
         DFR0 => Some(Const(ID_AA64DFR0)),
-        ISAR0 => Some(Const(ID_AA64ISAR0)),
         MMFR0 => Some(Const(ID_AA64MMFR0)),
         _ => None,
     }
@@ -732,7 +743,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(claimed, 4 + 31); // at EL0 and EL1
+        assert_eq!(claimed, 4 + 30); // at EL0 and EL1 (ID_AA64ISAR0_EL1 is a helper since M6.5: it depends on Cpu.features)
     }
 
     /// The `Cpu` offsets `tests/jit-diff.test.ts` randomizes (SYSREG_FIELDS,
@@ -775,6 +786,6 @@ mod tests {
             ),
             (832, 888, 272)
         );
-        assert_eq!(size_of::<Cpu>(), 1056);
+        assert_eq!(size_of::<Cpu>(), 1072);
     }
 }

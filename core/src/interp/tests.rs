@@ -1529,3 +1529,33 @@ fn pmull_ghash() {
     vx(&mut c, rdnm(PMULL, 0, 1, 2));
     assert_eq!(c.v[0], 1);
 }
+
+#[test]
+fn crypto_feature_gate() {
+    // Without FEATURE_CRYPTO the crypto instructions are UNDEFINED, ahead of the
+    // FPEN trap; with it (every user-mode vCPU) they run.
+    for insn in [
+        rdnm(AESE, 1, 2, 0),
+        rdnm(SHA256H, 1, 2, 3),
+        rdnm(SHA1H, 1, 2, 0),
+        rdnm(PMULL2, 1, 2, 3),
+    ] {
+        for cpacr in [3 << 20, 0] {
+            let mut t = T::new(&[insn]);
+            t.c.features = 0;
+            t.c.cpacr_el1 = cpacr;
+            assert_eq!(t.step(), Err(Exit::Undefined), "{insn:#x}");
+        }
+        let mut t = T::new(&[insn]);
+        assert_eq!(t.step(), Ok(()), "{insn:#x}");
+    }
+    // The 8-bit PMULL is plain AdvSIMD.
+    let mut t = T::new(&[0x0e22e020]);
+    t.c.features = 0;
+    assert_eq!(t.step(), Ok(()));
+    assert_eq!(sys::isar0(0), 2 << 20 | 1 << 16);
+    assert_eq!(
+        sys::isar0(crate::cpu::FEATURE_CRYPTO),
+        2 << 20 | 1 << 16 | 1 << 12 | 1 << 8 | 2 << 4
+    );
+}

@@ -58,7 +58,16 @@ pub struct Cpu {
     pub cntp_cval_el0: u64,
     pub cntv_ctl_el0: u64,
     pub cntv_cval_el0: u64,
+    /// The optional features this vCPU implements (`FEATURE_*`, ABI 19): a VM's
+    /// come from `VmConfig.features`, a user-mode vCPU (`Default`) has them all.
+    pub features: u64,
 }
+
+/// FEAT_AES (with PMULL), FEAT_SHA1 and FEAT_SHA256 (M6.5): advertised in
+/// ID_AA64ISAR0_EL1, and UNDEFINED without it.
+pub const FEATURE_CRYPTO: u64 = 1;
+/// Every feature bit the core knows.
+pub const FEATURES: u64 = FEATURE_CRYPTO;
 
 /// PSTATE.M values (with M[4] = 0, AArch64): EL0t, EL1t, EL1h.
 pub const M_EL0T: u64 = 0b0000;
@@ -100,6 +109,7 @@ impl Default for Cpu {
         Cpu {
             sctlr_el1: RES1 | C | SA | SA0 | I | DZE | UCT | NTWE | UCI,
             cpacr_el1: 3 << 20,
+            features: FEATURES,
             ..Cpu::zeroed()
         }
     }

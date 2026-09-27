@@ -201,6 +201,7 @@ impl Vm {
         let mut c = Cpu::reset();
         c.pc = kernel_pa;
         c.x[0] = dtb_pa;
+        c.features = self.cfg.features;
         self.vcpu.cpu = c;
         Ok(())
     }
@@ -217,7 +218,11 @@ mod tests {
         let mut ram = vec![0u128; (8 << 20) / 16];
         // SAFETY: ram is 16-byte aligned, 8 MiB, and outlives the Vm.
         let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 8 << 20) };
-        let mut vm = Vm::new(mem, VmConfig::default());
+        let cfg = VmConfig {
+            features: crate::cpu::FEATURE_CRYPTO,
+            ..VmConfig::default()
+        };
+        let mut vm = Vm::new(mem, cfg);
         let k = RAM_BASE + (2 << 20);
         assert!(
             vm.boot(RAM_BASE + (8 << 20), None, "").is_err(),
@@ -236,6 +241,11 @@ mod tests {
         let dtb = RAM_BASE + (6 << 20);
         let c = &vm.vcpu.cpu;
         assert_eq!((c.pc, c.x[0], c.el(), c.sctlr_el1 & 1), (k, dtb, 1, 0));
+        assert_eq!(
+            c.features,
+            crate::cpu::FEATURE_CRYPTO,
+            "the reset keeps the VM's features"
+        );
         assert_eq!(vm.mem.read(dtb, 4), Ok(0xedfe0dd0)); // FDT magic, big-endian
     }
 

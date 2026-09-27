@@ -804,7 +804,7 @@ mod tests {
     #[test]
     fn cpu_size() {
         // tests/jit-lockstep.test.ts compares this many bytes (`CPU_BYTES`).
-        assert_eq!(size_of::<Cpu>(), 1056);
+        assert_eq!(size_of::<Cpu>(), 1072);
     }
 
     #[test]

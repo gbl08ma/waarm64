@@ -11,7 +11,8 @@
 // `--only boot_debian_jit`: Debian 13's (one cold and one warm boot, several minutes; not in the default set);
 // `--only coremark_vm_jit`: CoreMark as init under Buildroot's kernel, realtime mode (its own score);
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
-// `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s.
+// `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s;
+// `--only alpine_crypto_ce_jit`: the same with the crypto extensions on.
 // I/O, realtime mode, a fresh boot per sample, timed by the host between the
 // guest script's "webpc: … start/end" markers unless fio times itself:
 // `--only dd`: /bench-dd.sh reads all of /dev/vda (sync-XHR block backend);
@@ -45,10 +46,10 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
  * by the text after "webpc: ") and to the end, and the counters. `test`: the
  * device tests' devices and a 640×480 framebuffer (web/vm.ts `testDevices`).
  */
-export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
+export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = img.test ? testDevices(img.disk) : guestDevices(img.disk);
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit });
+  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto });
   await onVm?.(vm);
   let console = '';
   let scanned = 0;
@@ -186,22 +187,23 @@ async function alpineUser(o: Options): Promise<Sample[]> {
  * `webpc.phase=crypto` path (images/alpine/user) after the boot, in realtime
  * mode, since `openssl speed` times itself with the guest clock. MB/s (10^6
  * bytes) per algorithm and block size, and the helper calls made during the
- * phase. `cmdline` adds to Alpine's (`webpc.armcap=…` sets OPENSSL_armcap).
+ * phase. `extra` adds to Alpine's command line (`webpc.armcap=…` sets
+ * OPENSSL_armcap); `crypto` gives the vCPU the crypto extensions (ABI 19).
  */
-async function alpineCrypto(o: Options, extra = ''): Promise<Sample[]> {
+async function alpineCrypto(o: Options, extra = '', crypto = false): Promise<Sample[]> {
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
   const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
   const cmdline = `${a.cmdline} webpc.phase=crypto${extra && ` ${extra}`}`;
   const module = await WebAssembly.compile(img.wasm);
   const out = new Map<string, Sample>();
-  const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline, ramMiB: 1024, jit: 1, realtime: true, seconds: 1 };
+  const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline, ramMiB: 1024, jit: 1, realtime: true, seconds: 1, crypto };
   let helpers: { op: string; calls: number }[] = [];
   let check = '';
   for (let i = 0; i < (o.quick ? 1 : 5); i++) {
     fresh();
     let before = new Map<string, number>();
-    const r = await boot(module, img, undefined, { cmdline, realtime: true, onMark: (m, vm) => { if (m === 'crypto start') before = new Map(vm.helperReport().map((h) => [h.op, h.calls])); } });
+    const r = await boot(module, img, undefined, { cmdline, realtime: true, crypto, onMark: (m, vm) => { if (m === 'crypto start') before = new Map(vm.helperReport().map((h) => [h.op, h.calls])); } });
     helpers = r.helpers.map((h) => ({ op: h.op, calls: h.calls - (before.get(h.op) ?? 0) })).filter((h) => h.calls > 0).sort((x, y) => y.calls - x.calls);
     check = r.console.match(/crypto: [0-9a-f]{16} [^\r\n]*/)?.[0] ?? '';
     const phase = r.console.split('webpc: crypto start')[1]?.split('webpc: crypto end')[0] ?? '';
@@ -213,7 +215,7 @@ async function alpineCrypto(o: Options, extra = ''): Promise<Sample[]> {
       if (!out.has(name)) out.set(name, { name, unit: 'MB/s', params: { ...params, algorithm: f[1], bytes }, samples: [] });
       out.get(name)!.samples.push(Number(f[2]) / 1e6);
     }
-    o.log?.(`alpine_crypto_jit: ${r.console.match(/crypto: CPUINFO[^\r\n]*/)?.[0]}; ${[...out.values()].map((s) => `${s.name} ${s.samples.at(-1)!.toFixed(1)}`).join(', ')}; phase ${between(r, 'crypto').toFixed(0)} ms`);
+    o.log?.(`alpine_crypto${crypto ? '_ce' : ''}_jit: ${r.console.match(/crypto: CPUINFO[^\r\n]*/)?.[0]}; ${[...out.values()].map((s) => `${s.name} ${s.samples.at(-1)!.toFixed(1)}`).join(', ')}; phase ${between(r, 'crypto').toFixed(0)} ms`);
   }
   if (check !== CRYPTO_CHECK) throw new Error(`OpenSSL check: "${check}", expected "${CRYPTO_CHECK}"`);
   o.log?.(`helpers in the phase: ${helpers.slice(0, 15).map((h) => `${h.op} ${h.calls}`).join(', ')}`);
@@ -356,4 +358,5 @@ export const suite = {
   boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), boot_debian_jit: bootDebian, coremark_vm_jit: coremarkVm, alpine_user_jit: alpineUser,
   // Realtime (M6.5).
   alpine_crypto_jit: (o: Options) => alpineCrypto(o),
+  alpine_crypto_ce_jit: (o: Options) => alpineCrypto(o, '', true), // the crypto extensions on (VmConfig.features)
 };

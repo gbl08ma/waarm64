@@ -74,6 +74,8 @@ pub struct VmConfig {
     pub fb_height: u64,
     /// 0 interpreter only; 1 JIT; 2 JIT-stress (`jit::Config::STRESS`) (ABI 10).
     pub jit: u64,
+    /// Optional CPU features (`cpu::FEATURE_*`; ABI 19); 0, the default, is none.
+    pub features: u64,
 }
 
 impl Default for VmConfig {
@@ -88,6 +90,7 @@ impl Default for VmConfig {
             fb_width: 0,
             fb_height: 0,
             jit: 0,
+            features: 0,
         }
     }
 }
@@ -256,6 +259,7 @@ impl Vm {
         let pick = |v, d| if v == 0 { d } else { v };
         let mut vcpu = Vcpu::new(Cpu {
             pc: RAM_BASE,
+            features: cfg.features,
             ..Cpu::reset()
         });
         vcpu.jit.cache = match cfg.jit {

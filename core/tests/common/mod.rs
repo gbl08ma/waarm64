@@ -593,6 +593,8 @@ pub struct Boot<'a> {
     pub echo: bool,
     /// A framebuffer's width and height (0, 0: none).
     pub fb: (u64, u64),
+    /// `VmConfig.features` (`cpu::FEATURE_*`; M6.5).
+    pub features: u64,
 }
 
 impl<'a> Boot<'a> {
@@ -608,6 +610,7 @@ impl<'a> Boot<'a> {
             max_steps: 20_000_000_000,
             echo: false,
             fb: (0, 0),
+            features: 0,
         }
     }
 }
@@ -623,6 +626,7 @@ pub fn boot(b: &Boot) -> Run {
         max_steps,
         echo,
         fb,
+        features,
     } = b;
     let mut ram = vec![0u128; ram_size as usize / 16];
     // SAFETY: ram is 16-byte aligned, ram_size bytes long, and outlives the Vm.
@@ -633,6 +637,7 @@ pub fn boot(b: &Boot) -> Run {
         deterministic: !realtime as u64,
         fb_width: fb.0,
         fb_height: fb.1,
+        features,
         ..VmConfig::default()
     };
     let mut vm = Vm::with_devices(mem, cfg, &entries);

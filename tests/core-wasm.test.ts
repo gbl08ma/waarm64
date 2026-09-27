@@ -11,7 +11,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 18);
+  assert.equal(ex.abi_version(), 19);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -55,12 +55,14 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 8)', () => 
   const ram = mem.grow(RAM / 65536) * 65536;
   const img = readFileSync(new URL('./baremetal/uart.bin', import.meta.url));
   new Uint8Array(mem.buffer, ram, img.length).set(img);
-  const cfg = mem.grow(1) * 65536; // VmConfig: ram_size, deterministic, cntfrq, ticks_per_insn, devices, ndevices, fb_width, fb_height, jit (0)
+  const cfg = mem.grow(1) * 65536; // VmConfig: ram_size, deterministic, cntfrq, ticks_per_insn, devices, ndevices, fb_width, fb_height, jit, features (0)
   new BigUint64Array(mem.buffer, cfg, 8).set([BigInt(RAM), 1n, 0n, 0n, 0n, 33n, 0n, 0n]);
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'more than 32 devices is rejected');
   new BigUint64Array(mem.buffer, cfg, 8).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 2048n, 2048n]);
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a framebuffer over half of RAM is rejected');
-  new BigUint64Array(mem.buffer, cfg, 8).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n]);
+  new BigUint64Array(mem.buffer, cfg, 10).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 2n]);
+  assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a reserved feature bit is rejected');
+  new BigUint64Array(mem.buffer, cfg, 10).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 0n]);
   const vm = ex.vm_new(ram, BigInt(RAM), cfg);
   assert.notEqual(vm, 0);
   assert.equal(BigInt(ex.vm_framebuffer(vm)), 0x4000_0000n + BigInt(RAM) - (4n << 20n), 'the framebuffer sits below the DTB space');
