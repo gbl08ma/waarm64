@@ -428,14 +428,24 @@ const HELPERS = [
 ];
 const ALU = ['add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);
-const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean; aes?: boolean }> = {
+const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean; aes?: boolean; sha?: boolean }> = {
   'ALU, flags and conditions': { pool: ALU, helpers: false },
   'loads, stores and ALU': { pool: [...ALU, ...Object.values(MEMORY), ...Object.values(MEMORY)], helpers: false },
   'with helper calls': { pool: [...ALU, ...Object.values(MEMORY)], helpers: true },
   // AES rounds as compilers emit them (M6.5): round and mix pairs on the same
   // register (fused by the JIT) or not, among single AES words, EOR and other NEON.
+  // SHA-256 rounds and schedule (M6.5 loop 6): the fused triple among SHA words and NEON.
+  'SHA rounds and NEON': { pool: [CLASSES['SHA three-register'], CLASSES['SHA two-register'], CLASSES['AdvSIMD three same']], helpers: false, sha: true },
   'AES rounds and NEON': { pool: [CLASSES['AES'], CLASSES['AdvSIMD three same'], CLASSES['AdvSIMD copy (DUP, INS, UMOV, SMOV)'], MEMORY['SIMD&FP load/store, unsigned offset']], helpers: false, aes: true },
 };
+/** mov S, A; sha256h A, E, W; sha256h2 E, S, W (fused by the JIT), one register sometimes off. */
+function shaTriple(): number[] {
+  const r5 = REGS.slice(0, 5);
+  const [A, E, S, W] = [pick(r5), pick(r5), pick(r5), pick(r5)];
+  const odd = rand32() % 4 === 0 ? rand32() % 4 : -1;
+  const x = (k: number, v: number) => (odd === k ? pick(r5) : v);
+  return [(0x4ea01c00 | x(0, A) << 16 | A << 5 | S) >>> 0, (0x5e004000 | W << 16 | x(1, E) << 5 | A) >>> 0, (0x5e005000 | x(3, W) << 16 | x(2, S) << 5 | E) >>> 0];
+}
 /** AESE/AESD then AESMC/AESIMC, mostly on the round's register. */
 function aesPair(): number[] {
   const dec = rand32() % 2, d = pick(REGS.slice(0, 5)), n = pick(REGS.slice(0, 5));
@@ -454,7 +464,7 @@ function fewRegs(w: number) {
   return w >>> 0;
 }
 
-for (const [name, { pool, helpers, aes }] of Object.entries(SEQUENCES)) test(`JIT vs interpreter, sequences: ${name}`, () => {
+for (const [name, { pool, helpers, aes, sha }] of Object.entries(SEQUENCES)) test(`JIT vs interpreter, sequences: ${name}`, () => {
   const { ex, jit, ca32, cb32, cpus, run, counts, allocated, data } = setup(4 * SLOT * SEQS);
   /** A random allocated word of a class in `from`, on few registers. */
   const draw = (from: [number, number][]) => {
@@ -473,6 +483,7 @@ for (const [name, { pool, helpers, aes }] of Object.entries(SEQUENCES)) test(`JI
     });
     // Pairs replace words, the length stays n (a slot holds 16 words).
     if (aes) for (let k = 0; k + 1 < n; k++) if (rand32() % 3 === 0) words.splice(k, 2, ...aesPair());
+    if (sha) for (let k = 0; k + 2 < n; k++) if (rand32() % 3 === 0) words.splice(k, 3, ...shaTriple());
     return [...words, BRK];
   });
   const place = (k: number) => {
@@ -495,7 +506,7 @@ for (const [name, { pool, helpers, aes }] of Object.entries(SEQUENCES)) test(`JI
       for (let r = 0; r < 32; r++) a[r] = value(rand32() % 2 === 0, data);
       a[32] = BigInt(4 * SLOT * k); // PC
       a[33] = BigInt(rand32() & 0xf) << 28n; // NZCV
-      if (aes) {
+      if (aes || sha) {
         const va = new BigUint64Array(a.buffer, a.byteOffset + 304, 64);
         for (let r = 0; r < 32; r++) {
           const v = rand32() % 3 === 0 ? CRYPTO_STATES[rand32() % CRYPTO_STATES.length] : rand64() | rand64() << 64n;

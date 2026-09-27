@@ -608,6 +608,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
                 }
             }
             c.next = b.words.get(k + 1).copied().unwrap_or(0);
+            c.prev = if k > 0 { b.words[k - 1] } else { 0 };
             last = emit::inline(&mut c, w, op, k, &e.cx);
             skip = core::mem::take(&mut c.fused);
             if last {

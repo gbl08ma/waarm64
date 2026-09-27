@@ -265,6 +265,9 @@ impl Code {
     pub fn i32_load(&mut self, offset: u32) -> &mut Self {
         self.memarg(0x28, 2, offset)
     }
+    pub fn i32_store(&mut self, offset: u32) -> &mut Self {
+        self.memarg(0x36, 2, offset)
+    }
     pub fn i64_store(&mut self, offset: u32) -> &mut Self {
         self.memarg(0x37, 3, offset)
     }

@@ -907,6 +907,23 @@ const crypto: Form[] = [
       return { code: [w, w2], in: new Map() };
     },
   },
+  // SHA-256's four rounds as OpenSSL and Linux write them (the JIT computes
+  // the pair once): mov S, A; sha256h A, E, W; sha256h2 E, S, W; and a fifth
+  // with one register changed, which the JIT must not fuse.
+  {
+    name: "sha256_rounds",
+    count: 300,
+    gen(r) {
+      const [A, E, S, W] = [r.int(32), r.int(32), r.int(32), r.int(32)];
+      if (new Set([A, E, S, W]).size < 4 && r.chance(0.9)) return undefined;
+      const odd = r.chance(0.2) ? r.int(4) : -1;
+      const x = (k: number, v: number) => (odd === k ? r.int(32) : v);
+      const mov = (0x4ea01c00 | (x(0, A) << 16) | (A << 5) | S) >>> 0; // orr S.16b, A.16b, A.16b
+      const h = (0x5e004000 | (W << 16) | (x(1, E) << 5) | A) >>> 0;
+      const h2 = (0x5e005000 | (x(3, W) << 16) | (x(2, S) << 5) | E) >>> 0;
+      return { code: [mov, h, h2], in: new Map() };
+    },
+  },
 ];
 
 export const GROUPS: Record<string, Form[]> = { dp_imm: dpImm, dp_reg: dpReg, branch: branches, ldst, excl, lse, sys, ldst_fp: ldstFp, simd_move: simdMove, simd_same: simdSame, simd_diff: simdDiff, simd_misc: simdMisc, simd_shift: simdShift, simd_perm: simdPerm, fp_scalar: fpScalar, simd_fp: simdFp, crypto };

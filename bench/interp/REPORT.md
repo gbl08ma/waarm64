@@ -683,3 +683,19 @@ Karatsuba is 4.5% faster in both repeats; kept. GCM is now 4.2× (AES-128) and 4
 **Constant time dropped** (the user, 2026-09-28, PLAN §7 M6.5): the interpreter's S-box is now a 256-byte table (the SWAR arithmetic stays as a test reference); the JIT's code was table-free because it measured fastest, and stays so.
 
 Raw data: `../boot/results/m65-loop5/`.
+
+## M6.5 loop 6: SHA-1 and SHA-256 inline
+
+`jit::emit::crypto`: SHA1C/P/M and SHA256H/H2 as four scalar rounds on i32 locals (the words renamed between rounds at emit time, not moved), SHA1H a rotate; the schedule updates (SHA1SU0/SU1, SHA256SU0/SU1) as SIMD128 shuffles and `i32x4` rotations. SHA256H and SHA256H2 run the same four rounds and keep one half each; OpenSSL and Linux write them as `mov S, A; sha256h A, E, W; sha256h2 E, S, W`, and that triple is emitted as one set of rounds writing both halves (`Func::prev`; any other shape, two). New corpus form `crypto.sha256_rounds` (the triple, a fifth with one register changed; M4 and QEMU agree on all 2300 tests) and jit-diff class "SHA rounds and NEON". `alpine_crypto_ce_jit`, Chromium 153, 5 boots, medians (IQR), MB/s at 16 KiB (256 B):
+
+| | NEON-only (loop 0) | CE, SHA helpers (loop 5) | **CE, all inline** |
+|---|---|---|---|
+| SHA-1 | 256.5 (45.8) | 56.7 | **369.9** (3.5); 51.8 at 256 B |
+| SHA-256 | 87.5 (32.7) | 48.3 | **293.7** (4.9); 56.2 at 256 B |
+| AES-128-GCM | 51.0 | 213.8 | 231.3 (0.9) |
+| AES-256-GCM | 40.7 | 175.0 | 191.4 (2.7) |
+| AES-128-CBC | 46.8 | 152.1 | 151.9 (1.0) |
+
+(GCM's gain here isn't from SHA: same code; within one session's spread, not claimed.) Helpers left in the phase: scalar `SHL` (6.6M, plain AdvSIMD in OpenSSL's GCM glue), `LD1`/`ST1` single structure (0.45M each), the kernel's usual. Planted: σ0's rotation off by one (913 of 4096 words, 118 of 1024 sequences, 42 corpus tests), the triple fused when SHA256H2 reads another register (9 sequences, 30 corpus tests).
+
+Raw data: `../boot/results/m65-loop6/`.

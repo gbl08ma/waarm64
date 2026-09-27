@@ -178,8 +178,10 @@ pub struct Func {
     /// The block computed its FP guard already (`float::fpa_guard`); false at
     /// each block's start.
     pub fpa_ok: bool,
-    /// The block's next word (0 at its end), and whether the instruction just
-    /// emitted consumed it too: a fused AES round and mix (M6.5, `crypto`).
+    /// The block's previous and next words (0 past its ends), and whether the
+    /// instruction just emitted consumed the next one too: a fused AES round
+    /// and mix, or SHA256H and SHA256H2 (M6.5, `crypto`).
+    pub prev: u32,
     pub next: u32,
     pub fused: bool,
 }
@@ -202,7 +204,12 @@ impl Func {
     /// i32s) and returns their declarations, for `Module::func`.
     pub fn locals(&mut self) -> Vec<(u32, u8)> {
         self.c.compact_locals(&[VCPU, ACC, LEFT], |i| {
-            if (6..=9).contains(&i) || (13..=16).contains(&i) || i == TAKEN || i == FPOK {
+            if (6..=9).contains(&i)
+                || (13..=16).contains(&i)
+                || i == TAKEN
+                || i == FPOK
+                || crypto::I32_LOCALS.contains(&i)
+            {
                 I32
             } else if i == VTMP || VT.contains(&i) {
                 V128
