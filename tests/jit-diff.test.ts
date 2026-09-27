@@ -78,7 +78,24 @@ const CLASSES: Record<string, [number, number]> = {
   'AdvSIMD FP by element': [0x9f800400, 0x0f800000],
   'AdvSIMD FP two-register miscellaneous, FCVTL/FCVTN': [0x9f3f0c00, 0x0e210800],
   'AdvSIMD scalar FP two-register miscellaneous': [0xdf3f0c00, 0x5e210800], // SCVTF/UCVTF with the integer in Vn
+  // The crypto extensions (M6.5): V registers random, or states from the FIPS vectors (CRYPTO_STATES).
+  'AES': [0xffffcc00, 0x4e284800], // AESE, AESD, AESMC, AESIMC (size 0; the corpus has the reserved ones)
+  'SHA three-register': [0xffe08c00, 0x5e000000], // opcodes 0-6, and 7 (reserved)
+  'SHA two-register': [0xffffcc00, 0x5e280800], // SHA1H, SHA1SU1, SHA256SU0, and 3 (reserved)
+  'PMULL, 64-bit': [0xbfe0fc00, 0x0ee0e000],
 };
+const CRYPTO = new Set(['AES', 'SHA three-register', 'SHA two-register', 'PMULL, 64-bit']);
+/** Vector states from the known-answer vectors: FIPS 197 C.1's plaintext, key and
+ * round-1 state (appendix B), SP 800-38A's key, the SHA-1 and SHA-256 initial hash
+ * values, their first round constants, GCM test case 2's H (as registers: byte 0 low). */
+const CRYPTO_STATES = [
+  '00112233445566778899aabbccddeeff', '000102030405060708090a0b0c0d0e0f', '193de3bea0f4e22b9ac68d2ae9f84808', '2b7e151628aed2a6abf7158809cf4f3c',
+  '0123456789abcdeffedcba9876543210', '66e94bd4ef8a2c3b884cfa59ca342b2e',
+].map((h) => BigInt('0x' + h.match(/../g)!.reverse().join('')))
+  .concat([
+    [0x67452301n, 0xefcdab89n, 0x98badcfen, 0x10325476n], [0xc3d2e1f0n, 0n, 0n, 0n], [0x5a827999n, 0x5a827999n, 0x5a827999n, 0x5a827999n],
+    [0x6a09e667n, 0xbb67ae85n, 0x3c6ef372n, 0xa54ff53an], [0x510e527fn, 0x9b05688cn, 0x1f83d9abn, 0x5be0cd19n], [0x428a2f98n, 0x71374491n, 0xb5c0fbcfn, 0xe9b5dba5n],
+  ].map((e) => e.reduceRight((o, w) => (o << 32n) | w, 0n)));
 /** Load/store classes: registers are mostly addresses around the data area. */
 const MEMORY: Record<string, [number, number]> = {
   'load/store, unsigned offset': [0x3f000000, 0x39000000],
@@ -233,6 +250,13 @@ for (const [name, [mask, bits], mem] of [
       for (let r = 0; r < 64; r++) {
         const k = rand32() % 4;
         va[r] = k === 0 ? EDGES[rand32() % EDGES.length] : k === 1 ? fpValue(true) : k === 2 ? fpValue(false) | fpValue(false) << 32n : rand64();
+      }
+      if (CRYPTO.has(name)) {
+        for (let r = 0; r < 32; r++) {
+          if (rand32() % 3 !== 0) continue;
+          const v = CRYPTO_STATES[rand32() % CRYPTO_STATES.length];
+          [va[2 * r], va[2 * r + 1]] = [v & M64, v >> 64n];
+        }
       }
       // FPCR (816): the default half the time, else RMode, FZ and DN random;
       // FPSR (824): IXC mostly set (the FP fast paths need it), QC sometimes.
@@ -404,11 +428,20 @@ const HELPERS = [
 ];
 const ALU = ['add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);
-const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean }> = {
+const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean; aes?: boolean }> = {
   'ALU, flags and conditions': { pool: ALU, helpers: false },
   'loads, stores and ALU': { pool: [...ALU, ...Object.values(MEMORY), ...Object.values(MEMORY)], helpers: false },
   'with helper calls': { pool: [...ALU, ...Object.values(MEMORY)], helpers: true },
+  // AES rounds as compilers emit them (M6.5): round and mix pairs on the same
+  // register (fused by the JIT) or not, among single AES words, EOR and other NEON.
+  'AES rounds and NEON': { pool: [CLASSES['AES'], CLASSES['AdvSIMD three same'], CLASSES['AdvSIMD copy (DUP, INS, UMOV, SMOV)'], MEMORY['SIMD&FP load/store, unsigned offset']], helpers: false, aes: true },
 };
+/** AESE/AESD then AESMC/AESIMC, mostly on the round's register. */
+function aesPair(): number[] {
+  const dec = rand32() % 2, d = pick(REGS.slice(0, 5)), n = pick(REGS.slice(0, 5));
+  const d2 = rand32() % 5 === 0 ? pick(REGS.slice(0, 5)) : d, n2 = rand32() % 8 === 0 ? pick(REGS.slice(0, 5)) : d;
+  return [(0x4e284800 | dec << 12 | n << 5 | d) >>> 0, (0x4e286800 | dec << 12 | n2 << 5 | d2) >>> 0];
+}
 const SEQS = Math.max(1, WORDS >> 2);
 const SLOT = 17; // up to 16 words, then brk
 const REGS = [0, 1, 2, 3, 4, 31];
@@ -421,7 +454,7 @@ function fewRegs(w: number) {
   return w >>> 0;
 }
 
-for (const [name, { pool, helpers }] of Object.entries(SEQUENCES)) test(`JIT vs interpreter, sequences: ${name}`, () => {
+for (const [name, { pool, helpers, aes }] of Object.entries(SEQUENCES)) test(`JIT vs interpreter, sequences: ${name}`, () => {
   const { ex, jit, ca32, cb32, cpus, run, counts, allocated, data } = setup(4 * SLOT * SEQS);
   /** A random allocated word of a class in `from`, on few registers. */
   const draw = (from: [number, number][]) => {
@@ -438,6 +471,8 @@ for (const [name, { pool, helpers }] of Object.entries(SEQUENCES)) test(`JIT vs 
       if (helpers && rand32() % 5 === 0) return pick(HELPERS)(pick(REGS.slice(0, 5)), pick(REGS)) >>> 0;
       return draw(pool);
     });
+    // Pairs replace words, the length stays n (a slot holds 16 words).
+    if (aes) for (let k = 0; k + 1 < n; k++) if (rand32() % 3 === 0) words.splice(k, 2, ...aesPair());
     return [...words, BRK];
   });
   const place = (k: number) => {
@@ -460,6 +495,13 @@ for (const [name, { pool, helpers }] of Object.entries(SEQUENCES)) test(`JIT vs 
       for (let r = 0; r < 32; r++) a[r] = value(rand32() % 2 === 0, data);
       a[32] = BigInt(4 * SLOT * k); // PC
       a[33] = BigInt(rand32() & 0xf) << 28n; // NZCV
+      if (aes) {
+        const va = new BigUint64Array(a.buffer, a.byteOffset + 304, 64);
+        for (let r = 0; r < 32; r++) {
+          const v = rand32() % 3 === 0 ? CRYPTO_STATES[rand32() % CRYPTO_STATES.length] : rand64() | rand64() << 64n;
+          [va[2 * r], va[2 * r + 1]] = [v & M64, v >> 64n];
+        }
+      }
       new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES)); // all of it: V too (a skipped run may leave V different)
       // Exactly the sequence: a final branch is its last step (where it goes may be data).
       const what = run(BigInt(seqs[k].length - 1), true);
