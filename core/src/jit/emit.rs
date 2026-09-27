@@ -50,6 +50,8 @@ pub const LEFT: u32 = 127;
 pub const TAKEN: u32 = 125;
 /// A v128 scratch local (AdvSIMD reductions, M6 loop 4).
 pub const VTMP: u32 = 124;
+/// More v128 scratch locals (vector FP, M6 loop 6).
+pub const VT: [u32; 4] = [119, 120, 121, 122];
 /// The block's FP guard (i32; `float::fpa_guard`, M6 loop 5).
 pub const FPOK: u32 = 123;
 
@@ -194,7 +196,7 @@ impl Func {
         self.c.compact_locals(&[VCPU, ACC, LEFT], |i| {
             if (6..=9).contains(&i) || (13..=16).contains(&i) || i == TAKEN || i == FPOK {
                 I32
-            } else if i == VTMP {
+            } else if i == VTMP || VT.contains(&i) {
                 V128
             } else {
                 I64
@@ -845,7 +847,10 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         _ => {
             let snap = (c.c.mark(), c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs);
             fp_guard(c, cx, i, k);
-            if !simd::inline(c, i, op) && !float::inline(c, cx, i, op, k) {
+            if !simd::inline(c, i, op)
+                && !float::inline(c, cx, i, op, k)
+                && !float::vector(c, cx, i, op, k)
+            {
                 let (mark, flags, touched, fp_ok, fpa_ok, regs) = snap;
                 c.c.rewind(mark);
                 (c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs) =
@@ -2255,6 +2260,22 @@ mod tests {
                 0x42, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x7f, 0x85
             ]
         ));
+    }
+
+    #[test]
+    fn vector_fp() {
+        // fmla v0.4s, v1.4s, v2.4s: f64x2.promote_low_f32x4 (0x5f), f64x2 mul
+        // (0xf2) and add (0xf0), demote (0x5e), lanes checked (i32x4.all_true, 0xa3).
+        let b = emit(0x4e22cc20, 0).unwrap();
+        for op in [[0xfd, 0x5f], [0xfd, 0xf2], [0xfd, 0xf0], [0xfd, 0x5e]] {
+            assert!(has(&b, &op));
+        }
+        assert!(has(&b, &[0xfd, 0xa3, 1]));
+        // fmla v0.2d: a helper call (no exact f64 FMA in wasm).
+        assert_eq!(emit(0x4e62cc20, 0), None);
+        // fadd v0.2d: f64x2.add, i64x2.all_true (0xc3).
+        let b = emit(0x4e62d420, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0xf0, 1]) && has(&b, &[0xfd, 0xc3, 1]));
     }
 
     #[test]

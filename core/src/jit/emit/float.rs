@@ -309,3 +309,303 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     }
     true
 }
+
+// Vector FP (M6 loop 6): the same rules lane by lane; any lane off the fast
+// path sends the whole instruction to the helper.
+
+use super::VT;
+
+/// SIMD opcodes (0xfd-prefixed).
+mod op {
+    pub const LOAD: u32 = 0x00;
+    pub const AND: u32 = 0x4e;
+    pub const OR: u32 = 0x50;
+    pub const XOR: u32 = 0x51;
+    pub const ANY_TRUE: u32 = 0x53;
+    pub const I32X4_ALL_TRUE: u32 = 0xa3;
+    pub const I64X2_ALL_TRUE: u32 = 0xc3;
+    pub const I32X4_SHR_U: u32 = 0xad;
+    pub const I32X4_SUB: u32 = 0xb1;
+    pub const I32X4_LT_U: u32 = 0x3a;
+    pub const I64X2_SHR_U: u32 = 0xcd;
+    pub const I64X2_SUB: u32 = 0xd1;
+    pub const I64X2_LT_S: u32 = 0xd8;
+    pub const I64X2_EQ: u32 = 0xd6;
+    /// f32x4 add, sub, mul, div; f64x2 likewise.
+    pub const F32X4: [u32; 4] = [0xe4, 0xe5, 0xe6, 0xe7];
+    pub const F64X2: [u32; 4] = [0xf0, 0xf1, 0xf2, 0xf3];
+    pub const F32X4_NEG: u32 = 0xe1;
+    pub const F32X4_GT: u32 = 0x44;
+    pub const F32X4_LT: u32 = 0x43;
+    pub const F32X4_GE: u32 = 0x46;
+    pub const F32X4_SPLAT: u32 = 0x13;
+    pub const TRUNC_SAT_F32X4: [u32; 2] = [0xf8, 0xf9];
+    pub const CONVERT_I32X4: [u32; 2] = [0xfa, 0xfb];
+    pub const DEMOTE: u32 = 0x5e;
+    pub const PROMOTE: u32 = 0x5f;
+}
+
+/// `x` in every 32-bit (`d` false) or 64-bit lane.
+fn splat(d: bool, x: u64) -> u128 {
+    if d {
+        x as u128 | (x as u128) << 64
+    } else {
+        let x = x as u32 as u128;
+        x | x << 32 | x << 64 | x << 96
+    }
+}
+
+/// Replaces the v128 on the stack with a lane mask: all ones where the lane's
+/// exponent field is in `lo`..all ones (1: normal; 2: a fast result).
+fn lanes_in(c: &mut Func, d: bool, lo: u64) {
+    if d {
+        c.i32_const(52).simd(op::I64X2_SHR_U);
+        c.v128_const(splat(true, 0x7ff)).simd(op::AND);
+        c.v128_const(splat(true, lo)).simd(op::I64X2_SUB);
+        // Unsigned `< 0x7ff - lo`, as signed with the sign bits flipped.
+        let s = 1u64 << 63;
+        c.v128_const(splat(true, s)).simd(op::XOR);
+        c.v128_const(splat(true, (0x7ff - lo) ^ s))
+            .simd(op::I64X2_LT_S);
+    } else {
+        c.i32_const(23).simd(op::I32X4_SHR_U);
+        c.v128_const(splat(false, 0xff)).simd(op::AND);
+        c.v128_const(splat(false, lo)).simd(op::I32X4_SUB);
+        c.v128_const(splat(false, 0xff - lo)).simd(op::I32X4_LT_U);
+    }
+}
+
+/// Pushes Vn.
+fn vreg(c: &mut Func, n: u32) {
+    c.local_get(VCPU).simd_mem(op::LOAD as u8, 0, V + 16 * n);
+}
+
+/// Vd = the v128 in local `l`, its top half cleared unless `q`.
+fn vput(c: &mut Func, rd: u32, q: bool, l: u32) {
+    c.local_get(VCPU).local_get(l);
+    if !q {
+        c.i64_const(0).simd_lane(0x1e, 1); // i64x2.replace_lane 1
+    }
+    c.simd_mem(11, 0, V + 16 * rd); // v128.store
+}
+
+/// ANDs lane masks into one i32 with FPOK: every lane of the masks all ones
+/// (with Q = 0, lanes 2 and 3 of 32-bit masks don't count).
+fn all_lanes(c: &mut Func, d: bool, q: bool, masks: usize) {
+    for _ in 1..masks {
+        c.simd(op::AND);
+    }
+    if !q && !d {
+        c.v128_const(u128::MAX << 64).simd(op::OR);
+    }
+    c.simd(if d {
+        op::I64X2_ALL_TRUE
+    } else {
+        op::I32X4_ALL_TRUE
+    });
+    c.local_get(FPOK).op(AND);
+}
+
+/// Emits vector FP instruction `i` inline if it's one this covers; false
+/// (and nothing emitted) otherwise.
+pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+    use Op::*;
+    let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let (q, d) = (bit(i, 30), bit(i, 22));
+    if bit(i, 28) || (d && !q && !matches!(op, FCVTL | FCVTN)) {
+        return false; // scalar forms; a vector of doubles needs Q
+    }
+    let [ta, tb, tr, tt] = VT;
+    // The multiplier: Vm, or (by element) its lane `index` in every lane.
+    let by_element = matches!(op, FMLA_elt_4 | FMLS_elt_4 | FMUL_elt_4);
+    let index = if d {
+        bit(i, 11) as u8
+    } else {
+        (bit(i, 11) as u8) << 1 | bit(i, 21) as u8
+    };
+    if by_element && d && bit(i, 21) {
+        return false;
+    }
+    let factor = |c: &mut Func| {
+        vreg(c, rm);
+        if by_element {
+            vreg(c, rm);
+            let lb = if d { 8 } else { 4 };
+            c.shuffle(core::array::from_fn(|b| index * lb + (b as u8 % lb)));
+        }
+    };
+    match op {
+        // FADD, FSUB (a = 1), FMUL, FDIV, and FMUL by element: the host's
+        // lane operation, normal operands, fast results.
+        FADD_2 | FSUB_2 | FMUL_vec_2 | FDIV_2 | FMUL_elt_4 => {
+            if op == FMUL_elt_4 && bit(i, 29) {
+                return false; // FMULX
+            }
+            fpa_guard(c);
+            let kk = match op {
+                FADD_2 => 0,
+                FSUB_2 => 1,
+                FDIV_2 => 3,
+                _ => 2,
+            };
+            vreg(c, rn);
+            factor(c);
+            c.simd(if d { op::F64X2[kk] } else { op::F32X4[kk] })
+                .local_set(tr);
+            vreg(c, rn);
+            lanes_in(c, d, 1);
+            factor(c);
+            lanes_in(c, d, 1);
+            c.local_get(tr);
+            lanes_in(c, d, 2);
+            all_lanes(c, d, q, 3);
+            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+        }
+        // Fused, single precision (PLAN.md §2): each half through f64x2,
+        // t = a × b + d, a lane with t halfway between two singles to the helper.
+        FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 if !d => {
+            fpa_guard(c);
+            let neg = matches!(op, FMLS_vec_2 | FMLS_elt_4);
+            let halves: &[bool] = if q { &[false, true] } else { &[false] };
+            for (&hi, &t) in halves.iter().zip(&[ta, tb]) {
+                // promote(half of Vn (negated for FMLS)) × promote(half of the
+                // factor) + promote(half of Vd).
+                for step in 0..3 {
+                    match step {
+                        0 => vreg(c, rn),
+                        1 => factor(c),
+                        _ => vreg(c, rd),
+                    }
+                    if step == 0 && neg {
+                        c.simd(op::F32X4_NEG);
+                    }
+                    if hi {
+                        c.local_tee(tt).local_get(tt);
+                        c.shuffle(core::array::from_fn(|b| 8 + b as u8 % 8));
+                    }
+                    c.simd(op::PROMOTE);
+                    // × after the factor, + after the addend.
+                    match step {
+                        1 => c.simd(op::F64X2[2]),
+                        2 => c.simd(op::F64X2[0]),
+                        _ => c,
+                    };
+                }
+                c.local_set(t);
+            }
+            // r = the demoted halves side by side.
+            c.local_get(ta).simd(op::DEMOTE);
+            if q {
+                c.local_get(tb).simd(op::DEMOTE);
+            } else {
+                c.v128_const(0);
+            }
+            c.shuffle(core::array::from_fn(|b| {
+                if b < 8 { b as u8 } else { 8 + b as u8 }
+            }));
+            c.local_set(tr);
+            // Normal operands, fast results, then no midpoint.
+            vreg(c, rn);
+            lanes_in(c, false, 1);
+            factor(c);
+            lanes_in(c, false, 1);
+            vreg(c, rd);
+            lanes_in(c, false, 1);
+            c.local_get(tr);
+            lanes_in(c, false, 2);
+            all_lanes(c, false, q, 4);
+            for &t in &[ta, tb][..halves.len()] {
+                c.local_get(t)
+                    .v128_const(splat(true, 0x1fff_ffff))
+                    .simd(op::AND);
+                c.v128_const(splat(true, 0x1000_0000)).simd(op::I64X2_EQ);
+                c.simd(op::ANY_TRUE).op(EQZ).op(AND);
+            }
+            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+        }
+        // SCVTF/UCVTF, 32-bit lanes: wasm's converts round to nearest even.
+        SCVTF_int_2 | UCVTF_int_2 if !d => {
+            fpa_guard(c);
+            vreg(c, rn);
+            c.simd(op::CONVERT_I32X4[(op == UCVTF_int_2) as usize])
+                .local_set(tr);
+            c.local_get(FPOK);
+            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+        }
+        // FCVTZS/FCVTZU, 32-bit lanes: normal and in range, then truncated.
+        FCVTZS_int_4 | FCVTZU_int_4 if !d => {
+            fpa_guard(c);
+            let u = op == FCVTZU_int_4;
+            vreg(c, rn);
+            c.simd(op::TRUNC_SAT_F32X4[u as usize]).local_set(tr);
+            vreg(c, rn);
+            lanes_in(c, false, 1);
+            let (lo, lo_cmp) = if u {
+                (-1.0f32, op::F32X4_GT)
+            } else {
+                (-2147483648.0, op::F32X4_GE)
+            };
+            let hi = if u { 4294967296.0f32 } else { 2147483648.0 };
+            for (bound, cmp) in [(lo, lo_cmp), (hi, op::F32X4_LT)] {
+                vreg(c, rn);
+                c.f32_const(bound).simd(op::F32X4_SPLAT).simd(cmp);
+            }
+            all_lanes(c, false, q, 3);
+            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+        }
+        // FABS, FNEG: bit operations, no flags.
+        FABS_2 | FNEG_2 => {
+            let sign = splat(d, if d { 1 << 63 } else { 1 << 31 });
+            vreg(c, rn);
+            if op == FNEG_2 {
+                c.v128_const(sign).simd(op::XOR);
+            } else {
+                c.v128_const(!sign).simd(op::AND);
+            }
+            c.local_set(tr);
+            vput(c, rd, q, tr);
+        }
+        // FCVTL(2), single to double (exact): normal operands. FCVTN(2),
+        // double to single: normal operands, fast results. Half precision
+        // (sz = 0) and FCVTXN stay helper calls.
+        FCVTL | FCVTN if d && !bit(i, 29) => {
+            fpa_guard(c);
+            if op == FCVTL {
+                vreg(c, rn);
+                if q {
+                    c.local_tee(tt).local_get(tt);
+                    c.shuffle(core::array::from_fn(|b| 8 + b as u8 % 8));
+                }
+                c.local_tee(ta).simd(op::PROMOTE).local_set(tr);
+                c.local_get(ta);
+                lanes_in(c, false, 1);
+                all_lanes(c, false, false, 1);
+                guarded(c, cx, i, k, 0, |c| vput(c, rd, true, tr));
+            } else {
+                vreg(c, rn);
+                c.simd(op::DEMOTE).local_set(ta);
+                vreg(c, rn);
+                lanes_in(c, true, 1);
+                all_lanes(c, true, true, 1);
+                c.local_get(ta);
+                lanes_in(c, false, 2);
+                all_lanes(c, false, false, 1);
+                c.op(AND);
+                // FCVTN2 keeps Vd's low half.
+                if q {
+                    vreg(c, rd);
+                    c.local_get(ta);
+                    c.shuffle(core::array::from_fn(|b| {
+                        if b < 8 { b as u8 } else { 8 + b as u8 }
+                    }));
+                } else {
+                    c.local_get(ta);
+                }
+                c.local_set(tr);
+                guarded(c, cx, i, k, 0, |c| vput(c, rd, true, tr));
+            }
+        }
+        _ => return false,
+    }
+    true
+}

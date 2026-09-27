@@ -73,6 +73,10 @@ const CLASSES: Record<string, [number, number]> = {
   'FP data processing, 1 source': [0xff207c00, 0x1e204000],
   'FP data processing, 2 sources': [0xff200c00, 0x1e200800],
   'FP data processing, 3 sources': [0xff000000, 0x1f000000],
+  // Vector FP (M6 loop 6).
+  'AdvSIMD FP three same': [0x9f20c400, 0x0e20c400],
+  'AdvSIMD FP by element': [0x9f800400, 0x0f800000],
+  'AdvSIMD FP two-register miscellaneous, FCVTL/FCVTN': [0x9f3f0c00, 0x0e210800],
 };
 /** Load/store classes: registers are mostly addresses around the data area. */
 const MEMORY: Record<string, [number, number]> = {
@@ -323,6 +327,10 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['fcvtzs x0, s1 (2^63)', 0x9e380020, [0n, 0x5f000000n]],
   ['fcvtzu w0, s1 (-0.5)', 0x1e390020, [0n, 0xbf000000n]],
   ['fcvtzu w0, s1 (2^32)', 0x1e390020, [0n, 0x4f800000n]],
+  // The same midpoint case in every lane of a vector FMLA (the values replicated).
+  ['v fmla v0.4s, v1.4s, v2.4s', 0x4e22cc20, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
+  ['v fmla v0.4s, v1.4s, v2.s[1]', 0x4fa21020, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
+  ['v fmul v0.4s, v1.4s, v2.4s', 0x6e22dc20, [0n, 0x3f7fffffn, 0x00800000n]],
 ];
 test('JIT vs interpreter: FP edge cases', () => {
   const { ex, jit, ca32, cb32, cpus, run } = setup(8 * FP_EDGES.length);
@@ -339,7 +347,9 @@ test('JIT vs interpreter: FP edge cases', () => {
         a.fill(0n);
         a[32] = BigInt(8 * k);
         const all = new BigUint64Array(a.buffer, a.byteOffset, CPU_BYTES / 8);
-        vs.forEach((v, r) => { all[38 + 2 * r] = v; all[39 + 2 * r] = 0n; });
+        // "v …" cases: the 32-bit value in every lane.
+        const rep = (v: bigint) => (name.startsWith('v ') ? v | (v << 32n) : v);
+        vs.forEach((v, r) => { all[38 + 2 * r] = rep(v); all[39 + 2 * r] = name.startsWith('v ') ? rep(v) : 0n; });
         [all[102], all[103]] = [fpcr, fpsr];
         new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
         const what = run(1n, false);
