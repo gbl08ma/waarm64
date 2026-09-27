@@ -77,6 +77,7 @@ const CLASSES: Record<string, [number, number]> = {
   'AdvSIMD FP three same': [0x9f20c400, 0x0e20c400],
   'AdvSIMD FP by element': [0x9f800400, 0x0f800000],
   'AdvSIMD FP two-register miscellaneous, FCVTL/FCVTN': [0x9f3f0c00, 0x0e210800],
+  'AdvSIMD scalar FP two-register miscellaneous': [0xdf3f0c00, 0x5e210800], // SCVTF/UCVTF with the integer in Vn
 };
 /** Load/store classes: registers are mostly addresses around the data area. */
 const MEMORY: Record<string, [number, number]> = {
@@ -433,7 +434,7 @@ for (const [name, { pool, helpers }] of Object.entries(SEQUENCES)) test(`JIT vs 
       for (let r = 0; r < 32; r++) a[r] = value(rand32() % 2 === 0, data);
       a[32] = BigInt(4 * SLOT * k); // PC
       a[33] = BigInt(rand32() & 0xf) << 28n; // NZCV
-      b.set(a);
+      new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES)); // all of it: V too (a skipped run may leave V different)
       // Exactly the sequence: a final branch is its last step (where it goes may be data).
       const what = run(BigInt(seqs[k].length - 1), true);
       // Code the run itself rewrote (without an IC) may legitimately differ.
@@ -514,7 +515,7 @@ test('JIT vs interpreter, regions: branches between blocks', () => {
       for (let r = 0; r < 32; r++) a[r] = value(rand32() % 2 === 0, data);
       a[32] = BigInt(4 * PROG * k); // PC
       a[33] = BigInt(rand32() & 0xf) << 28n; // NZCV
-      b.set(a);
+      new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES)); // all of it: V too (a skipped run may leave V different)
       const what = run(BigInt(1 + (rand32() % 48)), true);
       if (!same(k)) {
         skipped++;
@@ -589,7 +590,7 @@ test('JIT vs interpreter, regions: loops', () => {
       for (let r = 0; r < 32; r++) a[r] = value(rand32() % 2 === 0, data);
       a[32] = BigInt(4 * PROG * k); // PC
       a[33] = BigInt(rand32() & 0xf) << 28n; // NZCV
-      b.set(a);
+      new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES)); // all of it: V too (a skipped run may leave V different)
       const what = run(BigInt(1 + (rand32() % 400)), true);
       if (!same(k)) {
         skipped++;

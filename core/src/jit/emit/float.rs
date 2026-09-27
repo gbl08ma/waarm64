@@ -258,6 +258,18 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_get(FPOK);
             guarded(c, cx, i, k, 0, |c| put(c, f, rd, r));
         }
+        // SCVTF/UCVTF (scalar, the integer in Vn): as from a general register,
+        // the integer as wide as the float.
+        SCVTF_int_2 | UCVTF_int_2 => {
+            fpa_guard(c);
+            f.load(c, rn);
+            // f32.convert_i32_s/u, f64.convert_i64_s/u.
+            c.op(if f.d { 0xb9 } else { 0xb2 } + (op == UCVTF_int_2) as u8);
+            f.to_int(c);
+            c.local_set(r);
+            c.local_get(FPOK);
+            guarded(c, cx, i, k, 0, |c| put(c, f, rd, r));
+        }
         // FCVTZS/FCVTZU to a general register (toward zero whatever FPCR
         // says): a normal operand whose integer part fits; the saturating
         // truncation never traps, and the check decides whether it's used.
@@ -524,10 +536,10 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
         }
         // SCVTF/UCVTF, 32-bit lanes: wasm's converts round to nearest even.
-        SCVTF_int_2 | UCVTF_int_2 if !d => {
+        SCVTF_int_4 | UCVTF_int_4 if !d => {
             fpa_guard(c);
             vreg(c, rn);
-            c.simd(op::CONVERT_I32X4[(op == UCVTF_int_2) as usize])
+            c.simd(op::CONVERT_I32X4[(op == UCVTF_int_4) as usize])
                 .local_set(tr);
             c.local_get(FPOK);
             guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));

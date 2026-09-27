@@ -2276,6 +2276,11 @@ mod tests {
         // fadd v0.2d: f64x2.add, i64x2.all_true (0xc3).
         let b = emit(0x4e62d420, 0).unwrap();
         assert!(has(&b, &[0xfd, 0xf0, 1]) && has(&b, &[0xfd, 0xc3, 1]));
+        // scvtf v0.4s, v1.4s: f32x4.convert_i32x4_s (0xfa); scvtf s0, s1 and
+        // ucvtf d0, d1 (the integer in Vn): f32.convert_i32_s, f64.convert_i64_u.
+        assert!(has(&emit(0x4e21d820, 0).unwrap(), &[0xfd, 0xfa, 1]));
+        assert!(has(&emit(0x5e21d820, 0).unwrap(), &[0xb2]));
+        assert!(has(&emit(0x7e61d820, 0).unwrap(), &[0xba]));
     }
 
     #[test]

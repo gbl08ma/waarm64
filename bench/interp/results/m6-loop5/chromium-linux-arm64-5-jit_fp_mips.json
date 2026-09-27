@@ -1,0 +1,212 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-27T12:36:53.380Z",
+ "commit": "a864eb666932",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "jit_fp_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0002,
+     "avgBlock": 5055.73,
+     "interpretedPct": 5.711,
+     "blocks": 35,
+     "modules": 7,
+     "bytes": 46046,
+     "compileMs": 1.08,
+     "inlinePct": 78.99,
+     "inlineStepsPct": 79.71,
+     "flagsElided": 0,
+     "flagsStored": 33,
+     "condDirect": 17,
+     "condComputed": 0,
+     "condMemory": 14,
+     "blocksPerRegion": 1.2,
+     "backEdges": 15,
+     "tierUps": 5
+    }
+   },
+   "samples": [
+    22.285364087801817
+   ],
+   "median": 22.285364087801817,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_fp_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0,
+     "avgBlock": 19999994,
+     "interpretedPct": 0,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": 78.99,
+     "inlineStepsPct": 78.24,
+     "flagsElided": 0,
+     "flagsStored": 33,
+     "condDirect": 17,
+     "condComputed": 0,
+     "condMemory": 14,
+     "blocksPerRegion": 1.2,
+     "backEdges": 15,
+     "tierUps": 5,
+     "helpers": [
+      {
+       "op": "FMLA_elt_4",
+       "calls": 19128108
+      },
+      {
+       "op": "FMADD_float",
+       "calls": 6348709
+      },
+      {
+       "op": "SCVTF_int_2",
+       "calls": 4781930
+      },
+      {
+       "op": "FMLA_vec_2",
+       "calls": 2165216
+      },
+      {
+       "op": "FCVTZS_int_4",
+       "calls": 1195416
+      },
+      {
+       "op": "FMUL_vec_2",
+       "calls": 746576
+      },
+      {
+       "op": "FCVTL",
+       "calls": 597552
+      },
+      {
+       "op": "FADD_float",
+       "calls": 55936
+      }
+     ]
+    },
+    "placements": [
+     {
+      "pad": 0,
+      "samples": [
+       31.152647975077883,
+       31.229993285725843,
+       31.22487373438778,
+       31.2243862457305,
+       31.21951219512195
+      ]
+     },
+     {
+      "pad": 7424,
+      "samples": [
+       30.99910102608456,
+       30.98157370895073,
+       30.901154930594387,
+       30.963586822168892,
+       30.957835428189707
+      ]
+     },
+     {
+      "pad": 14848,
+      "samples": [
+       31.316547664121668,
+       31.33691096392856,
+       31.31924489332719,
+       31.270032364308648,
+       31.33838403621254
+      ]
+     },
+     {
+      "pad": 22272,
+      "samples": [
+       31.346979718343057,
+       31.329302296306224,
+       31.303068483331877,
+       31.344032096010714,
+       31.282504477629264
+      ]
+     },
+     {
+      "pad": 29696,
+      "samples": [
+       30.883499718244916,
+       30.831605478662976,
+       30.875156305677663,
+       30.908557034356523,
+       30.8865998485988
+      ]
+     },
+     {
+      "pad": 37120,
+      "samples": [
+       30.992856146543687,
+       30.994297049285663,
+       30.977974660145424,
+       30.90927355481251,
+       31.032770605917538
+      ]
+     },
+     {
+      "pad": 44544,
+      "samples": [
+       31.296455676540603,
+       31.279813572646443,
+       31.243897676235107,
+       31.26783243578796,
+       31.232187893104
+      ]
+     },
+     {
+      "pad": 51968,
+      "samples": [
+       30.69414816048471,
+       30.746761981558375,
+       30.764261157968104,
+       30.734949479356413,
+       30.782490918868664
+      ]
+     }
+    ]
+   },
+   "samples": [
+    31.2243862457305,
+    30.963586822168892,
+    31.31924489332719,
+    31.329302296306224,
+    30.883499718244916,
+    30.992856146543687,
+    31.26783243578796,
+    30.746761981558375
+   ],
+   "median": 31.108621196137094,
+   "iqr": 0.3371205039848668,
+   "n": 8
+  }
+ ]
+}
