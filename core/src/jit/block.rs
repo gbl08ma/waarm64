@@ -575,13 +575,18 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
         for (k, &w) in b.words.iter().enumerate() {
             let op = decode(w);
             // NZCV is stored before the block's branch (see `commit_flags`),
-            // unless every successor is a member that needs none.
+            // unless a successor is a member and none that is needs it: the
+            // exits then store it on their own paths (`sync_flags` below), so
+            // a loop that leaves on one side doesn't store it every iteration.
             if end(op) == End::After {
                 let lazy = c.lazy();
-                let keep = |o: i64| internal(o).is_some_and(|j| !store(j, lazy));
+                let keep = |o: i64| internal(o).map(|j| !store(j, lazy));
                 let keep = match succs {
-                    Next::One(o) => keep(o),
-                    Next::Cond(t, o) => keep(t) && keep(o),
+                    Next::One(o) => keep(o).unwrap_or(false),
+                    Next::Cond(t, o) => match (keep(t), keep(o)) {
+                        (None, None) => false,
+                        (a, b) => a.unwrap_or(true) && b.unwrap_or(true),
+                    },
                     Next::None => false,
                 };
                 if !keep {

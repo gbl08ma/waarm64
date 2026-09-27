@@ -512,3 +512,28 @@ The base and "both" runs saw the same host (interpreter 141.6 vs 141.2 MIPS); th
 **Validation:** unit tests `wasm::branch_hints` (the section's bytes, a rewound hint dropped) and `two_instruction_block_bytes` (a hinted helper exit at its offset); the differential test, the corpus through the JIT and 20M-step lockstep; exact steps in every boot (CI). Hints don't change semantics (V8 treats a wrong hint as a slow path, not a wrong one), so no planted bugs apply.
 
 Raw data: `results/m6-loop11/`, `../boot/results/m6-loop11/`.
+
+## M6 loop 10.1: fewer, larger modules; flags stored on the way out
+
+**Why:** Alpine in Node, sweeping the JIT's batching (one run each, `bench/results/local/alpine.ts`): the pending batch was emitted after 100,000 dispatched steps (`BATCH_TIMEOUT`) far more often than when full (32 blocks), making 8245 modules a boot. Timeout 100K / batch 32: 13.3 s; 1M / 128: 12.4 s; 1M / 512: 12.0–12.3 s; 2M / 512: 12.1 s; 10M / 512: 12.4 s (blocks wait interpreted too long); batch 8: 15.3 s. The threshold (20, 50, 200 dispatches) moved nothing beyond noise. Profiled (Node, `perf`): with 2580 modules instead of 8245, Liftoff JIT code −1.0 s, TurboFan JIT code −0.6 s, V8's native work (compiles, instantiation) −0.6 s. So most of the gain is JIT code running faster, not compiling less: chains within a module are direct calls and tail calls, across modules imports or `call_indirect` between instances. A compile worker (loop 8) would move the native part off the vCPU thread but not the execution part.
+
+**A code shape it exposed:** the longer timeout made the integer guest 25% slower (4029 → 3000 MIPS in Node) with byte-identical code volume. Its insertion-sort loop has two blocks, and which one heads the loop region depends on which hot counter reaches zero first, which the batching changed. With the second block as head, the region stored the full NZCV to the `Cpu` before that block's branch on every iteration: the step 8.4 rule skipped the store only when *every* successor is a member that doesn't need it, and one side of this branch leaves the region. Now the store is skipped when a successor is a member and no member successor needs it; the exits store NZCV on their own paths (`sync_flags`, as they already did). A region headed at the loop's first block had simply been lucky.
+
+**What changed:** `BATCH_TIMEOUT` 100,000 → 1,000,000 steps, `Config::DEFAULT.batch` 32 → 512; the flag rule above (`block::emit_region`).
+
+| Chromium, same session | HEAD (`665a3be`) | **loop 10.1** |
+|---|---|---|
+| integer guest (MIPS, eight placements) | 4014 (±35) | **5076** (±37), +26% |
+| EL1 MMU off / on (MIPS) | 3857 (±74) / 3058 (±65) | 3673 (±40) / 2930 (±43), −5% / −4% |
+| CoreMark (iterations/s) | 8274 (±172) | 8278 (±572) |
+| FP guest (MIPS) | 151.6 | 152.4 |
+| Alpine to power-off (JIT), alternated | 14.88, 14.91, 14.93, 15.11 s | **14.11, 13.85 s** (batching alone: 13.67, 13.50 s) |
+| Alpine cold | 14.8–15.2 s | 13.9–14.1 s |
+| Buildroot to power-off (JIT) | 730 ms | 696 ms (batching alone 701) |
+| Alpine: modules, compile | 8245, 0.55 s (Node) | 2580, 0.32 s (Node) |
+
+Steps unchanged (Alpine 3,009,151,562). The EL1 guests lose 4–5% in Chromium (8–10% in Node, with the same dispatches and a slightly different set of tier-ups and chains: a code-layout effect in a synthetic guest); accepted under the user's decision to favor real workloads over "no guest slower" (PLAN §7 M6). The flag rule may cost Alpine up to ~2% (13.5–13.7 s with batching alone vs 13.9–14.1 s with both, below the noise line): lukewarm code carries the NZCV computation on its exit paths instead of once before the branch.
+
+**Validation:** the differential test (sequences, regions, loops), the golden corpus through the JIT, 20M-step lockstep, CI's boots with exact steps; planted bug: region exits without their flag store, caught by all five sequence and region classes.
+
+Raw data: `results/m6-loop10/` (`head`, `loop10`), `../boot/results/m6-loop10/` (`head-*`, `batchonly-*`, `loop10-*`).

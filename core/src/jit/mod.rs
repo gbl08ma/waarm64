@@ -60,7 +60,7 @@ pub struct Config {
 impl Config {
     pub const DEFAULT: Config = Config {
         threshold: 50,
-        batch: 32,
+        batch: 512,
         capacity: 65536,
         check: false,
         region_after: REGION_AFTER,
@@ -173,7 +173,7 @@ fn jc_index(key: u64) -> usize {
 
 /// Steps after the first block joins a pending batch before it's emitted
 /// anyway, so a lone hot block doesn't wait for a full batch.
-pub const BATCH_TIMEOUT: u64 = 100_000;
+pub const BATCH_TIMEOUT: u64 = 1_000_000;
 
 /// The block cache, the pending batch and the code cache's slot allocator.
 pub struct Cache {
