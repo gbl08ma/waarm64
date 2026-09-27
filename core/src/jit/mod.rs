@@ -209,9 +209,6 @@ pub struct Cache {
     off: bool,
     /// The RAM the blocks were compiled for (flat blocks embed its layout).
     ram: Option<(usize, u64, u64)>,
-    /// The `Vcpu` this cache belongs to (its address, set on each entry to
-    /// the dispatcher), for the emitter's constant `Cpu` accesses.
-    vcpu: usize,
     pub stats: Stats,
 }
 
@@ -239,7 +236,6 @@ impl Cache {
             next: 0,
             off: false,
             ram: None,
-            vcpu: 0,
             stats: Stats::default(),
         }
     }
@@ -485,8 +481,6 @@ impl Cache {
             compiled,
             self.cfg.check,
             self.jc.as_ptr() as usize as u32,
-            // wasm32 only: a native address isn't one the modules could use.
-            cfg!(target_arch = "wasm32").then_some(self.vcpu as u32),
         );
         let t = now_ns();
         let Some(idx) = install(&bytes, slot) else {
@@ -601,7 +595,6 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
         vr.jit.mem = mem;
         let (pc, key) = (vr.cpu.pc, key(vr, mem));
         let cache = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
-        cache.vcpu = v as usize;
         let r = key.map_or(Err(1), |k| cache.enter(k, pc, mem));
         if let Ok((idx, len)) = r
             && len as u64 <= left

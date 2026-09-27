@@ -1,0 +1,12 @@
+(module (import "env" "mem" (memory 1 65536 shared))
+ (func (export "f") (param $n i32) (local $i i32) (local $a i32)
+  (loop $l
+   (local.set $a (i32.and (i32.mul (local.get $i) (i32.const 40)) (i32.const 0x7ff8)))
+   (i64.store offset=0 (local.get $a) (i64.extend_i32_u (local.get $i)))
+   (i64.store offset=8 (local.get $a) (i64.extend_i32_u (local.get $a)))
+   (if (i32.eqz (i32.and (local.get $i) (i32.const 1023))) (then (i64.store offset=512 (local.get $a) (i64.const 0))))
+   (i64.store offset=16 (local.get $a) (i64.extend_i32_u (local.get $i)))
+   (if (i32.eqz (i32.and (local.get $i) (i32.const 511))) (then (i64.store offset=600 (local.get $a) (i64.const 0))))
+   (i64.store offset=24 (local.get $a) (i64.extend_i32_u (local.get $a)))
+   (local.set $i (i32.add (local.get $i) (i32.const 1)))
+   (br_if $l (i32.lt_u (local.get $i) (local.get $n))))))

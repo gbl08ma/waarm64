@@ -43,9 +43,10 @@ export const JIT_STRESS: JitConfig = [0, 1, 4, 1, 1];
 
 /**
  * Instantiates the core, loads a guest into RAM placed after the core's state
- * (layout A); with `jit` (jit_new's arguments), runs it through the JIT.
+ * (layout A), `pad` bytes into its first page; with `jit` (jit_new's
+ * arguments), runs it through the JIT.
  */
-export async function setup(bin = 'guest.bin', jit?: JitConfig) {
+export async function setup(bin = 'guest.bin', jit?: JitConfig, pad = 0) {
   const wasm = await load('../../target/wasm32-unknown-unknown/release/webpc_core.wasm');
   const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   const imports = coreImports(memory);
@@ -54,7 +55,7 @@ export async function setup(bin = 'guest.bin', jit?: JitConfig) {
   const ex = instance.exports as unknown as Exports;
   if (ex.abi_version() !== ABI) throw new Error(`core ABI ${ex.abi_version()}, expected ${ABI}`);
   const cpu = jit ? ex.jit_new(...jit) : ex.vcpu_new();
-  const base = memory.grow(RAM / 65536) * 65536;
+  const base = memory.grow(RAM / 65536 + 1) * 65536 + pad;
   const guest = await load(bin);
   new Uint8Array(memory.buffer, base + LOAD, guest.length).set(guest);
   const mem = ex.mem_new(base, BigInt(RAM));
@@ -117,8 +118,31 @@ function jitParams(a: JitCounts, b: JitCounts) {
   };
 }
 
+/**
+ * Where guest RAM starts within its first wasm page, for [`placed`] (M6 loop
+ * 0): a hot loop's speed depends on where the guest's data falls relative to
+ * the core's (the `Cpu` above all) by up to 40% on the M4, with the same code,
+ * so one placement can't rank two builds. Fixed, so builds are compared at the
+ * same placements; spread irregularly over the page.
+ */
+const PADS = [0, 7424, 14848, 22272, 29696, 37120, 44544, 51968];
+
+/**
+ * [`mipsOf`] at each of `PADS` (a fresh core each; the quick run takes
+ * three): the warm sample is the median of each placement's samples, one per
+ * placement, and the params keep every sample; cold is the first placement's.
+ */
+async function placed(o: Options, name: string, guest: string, make: (pad: number) => Promise<Guest>): Promise<Sample[]> {
+  const pads = o.quick ? PADS.slice(0, 3) : PADS;
+  const runs: Sample[][] = [];
+  for (const pad of pads) runs.push(await mipsOf({ ...o, samples: o.quick ? 3 : 5 }, name, guest, await make(pad)));
+  const median = (a: number[]) => [...a].sort((x, y) => x - y)[a.length >> 1];
+  const [cold, warm] = runs[0];
+  return [cold, { ...warm, params: { ...warm.params, placements: pads.map((pad, k) => ({ pad, samples: runs[k][1].samples })) }, samples: runs.map((r) => median(r[1].samples)) }];
+}
+
 /** Cold and warm MIPS for one guest; sample names are `<name>_cold` and `<name>`. */
-async function mipsOf(o: Options, name: string, guest: string, g: Guest): Promise<Sample[]> {
+async function mipsOf(o: Options & { samples?: number }, name: string, guest: string, g: Guest): Promise<Sample[]> {
   const chunk = o.quick ? 2_000_000 : 20_000_000;
   const mips = (n: number) => {
     const t = performance.now();
@@ -133,7 +157,7 @@ async function mipsOf(o: Options, name: string, guest: string, g: Guest): Promis
   const c1 = g.counts?.();
   for (let i = 0; i < 3; i++) mips(chunk);
   const c2 = g.counts?.();
-  const warm = Array.from({ length: o.quick ? 5 : 15 }, () => mips(chunk));
+  const warm = Array.from({ length: o.samples ?? (o.quick ? 5 : 15) }, () => mips(chunk));
   const c3 = g.counts?.();
   const jc = c1 && c2 && c3 ? { cold: jitParams(zero, c1), warm: { ...jitParams(c2, c3), helpers: g.helpers?.().slice(0, 15) } } : undefined;
   o.log?.(`${name}: ${warm.map((x) => x.toFixed(1)).join(' ')} MIPS, ${g.rounds()} guest rounds${jc ? ` ${JSON.stringify(jc)}` : ''}`);
@@ -145,12 +169,12 @@ async function mipsOf(o: Options, name: string, guest: string, g: Guest): Promis
   ];
 }
 
-const interpMips = async (o: Options) => mipsOf(o, 'interp_mips', 'bench/interp/guest.c', await setup('guest.bin'));
-const interpFpMips = async (o: Options) => mipsOf(o, 'interp_fp_mips', 'bench/interp/guest-fp.c', await setup('guest-fp.bin'));
+const interpMips = async (o: Options) => placed(o, 'interp_mips', 'bench/interp/guest.c', (pad) => setup('guest.bin', undefined, pad));
+const interpFpMips = async (o: Options) => placed(o, 'interp_fp_mips', 'bench/interp/guest-fp.c', (pad) => setup('guest-fp.bin', undefined, pad));
 const vmFlatMips = async (o: Options) => mipsOf(o, 'vm_flat_mips', 'bench/interp/guest.c EL1 MMU off', await setupVm(false));
 const vmMmuMips = async (o: Options) => mipsOf(o, 'vm_mmu_mips', 'bench/interp/guest.c EL1 MMU on', await setupVm(true));
-const jitMips = async (o: Options) => mipsOf(o, 'jit_mips', 'bench/interp/guest.c', await setup('guest.bin', JIT_DEFAULT));
-const jitFpMips = async (o: Options) => mipsOf(o, 'jit_fp_mips', 'bench/interp/guest-fp.c', await setup('guest-fp.bin', JIT_DEFAULT));
+const jitMips = async (o: Options) => placed(o, 'jit_mips', 'bench/interp/guest.c', (pad) => setup('guest.bin', JIT_DEFAULT, pad));
+const jitFpMips = async (o: Options) => placed(o, 'jit_fp_mips', 'bench/interp/guest-fp.c', (pad) => setup('guest-fp.bin', JIT_DEFAULT, pad));
 const vmJitFlatMips = async (o: Options) => mipsOf(o, 'vm_jit_flat_mips', 'bench/interp/guest.c EL1 MMU off', await setupVm(false, 1));
 const vmJitMmuMips = async (o: Options) => mipsOf(o, 'vm_jit_mmu_mips', 'bench/interp/guest.c EL1 MMU on', await setupVm(true, 1));
 
@@ -164,16 +188,23 @@ const vmJitMmuMips = async (o: Options) => mipsOf(o, 'vm_jit_mmu_mips', 'bench/i
  */
 const COREMARK_ITERATIONS = 10;
 async function coremark(o: Options, name: string, jit?: JitConfig): Promise<Sample[]> {
-  const g = await setup('../../target/bench/coremark.bin', jit).catch((e) => {
-    throw new Error(`${e}: build it with bench/interp/build-coremark.sh`);
+  // Every placement runs the same instructions per iteration; the last one's count is kept.
+  let perIteration = 0;
+  const check: (() => void)[] = [];
+  const s = await placed(o, name, 'CoreMark 2K performance run (bench/interp/build-coremark.sh)', async (pad) => {
+    const g = await setup('../../target/bench/coremark.bin', jit, pad).catch((e) => {
+      throw new Error(`${e}: build it with bench/interp/build-coremark.sh`);
+    });
+    let steps = 0;
+    check.push(() => {
+      const out = new Uint8Array(g.memory.buffer, g.base + 0x88000, 0x4000);
+      const report = new TextDecoder().decode(out.slice(0, out.indexOf(0)));
+      if (!report.includes('2K performance run parameters') || /ERROR! \w+ crc/.test(report)) throw new Error(`CoreMark didn't validate:\n${report}`);
+      perIteration = steps / (Number(g.rounds()) * COREMARK_ITERATIONS);
+    });
+    return { ...g, run: (n) => { const k = g.run(n); steps += k; return k; } };
   });
-  let steps = 0;
-  const counted: Guest = { ...g, run: (n) => { const k = g.run(n); steps += k; return k; } };
-  const s = await mipsOf(o, name, 'CoreMark 2K performance run (bench/interp/build-coremark.sh)', counted);
-  const out = new Uint8Array(g.memory.buffer, g.base + 0x88000, 0x4000);
-  const report = new TextDecoder().decode(out.slice(0, out.indexOf(0)));
-  if (!report.includes('2K performance run parameters') || /ERROR! \w+ crc/.test(report)) throw new Error(`CoreMark didn't validate:\n${report}`);
-  const perIteration = steps / (Number(g.rounds()) * COREMARK_ITERATIONS);
+  for (const c of check) c();
   return [...s, ...s.map((x) => ({
     ...x, name: x.name.replace('_mips', '_iterations'), unit: 'iterations/s',
     params: { ...x.params, insnsPerIteration: Math.round(perIteration) }, samples: x.samples.map((m) => (m * 1e6) / perIteration),

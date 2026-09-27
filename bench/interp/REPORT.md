@@ -390,3 +390,26 @@ Lower thresholds compile far more cold code and are slower everywhere, so the de
 **What's inline** (`emit::inline`, `emit::ldst`): moves, ADR/ADRP, every add/sub form (with flags), ADC/SBC, logical, bitfield moves and extends, EXTR, shifts, CSEL/CSINC/CSINV/CSNEG, CCMP/CCMN, multiplies (including long and high), divides, REV/RBIT/CLZ/CLS, the NOP-class hints, every branch, and every integer load and store (all sizes and signs, unsigned offset, unscaled, pre/post-index, register offset, pairs, literal, PRFM) through the TLB or the flat RAM check. **Helpers:** everything FP and SIMD (loads and stores included), system instructions (MRS/MSR, barriers, cache maintenance, SYS), exclusives, LSE atomics, LDTR/STTR, exception-generating instructions.
 
 Raw data: `results/m5-step10/chromium-linux-arm64-m5.json`, `../boot/results/m5-step10/chromium-linux-arm64-m5-{boot,boot_jit,boot_alpine,boot_alpine_jit}.json`.
+
+## M6 loop 0: V8 on our code, and the placement effect
+
+**Host:** the Lima VM `dev` on the M4 Mac mini (Linux aarch64, 8 vCPUs; the host otherwise idle), Chromium 153.0.8010.52 headless; Node 26.7 (V8 14.6) where it says so. Raw data: `results/m6-loop0/`, `../boot/results/m6-loop0/`. The rules that came out of it are in PLAN.md §2 "V8 and our code". V8's code for a JIT function: `node tools/v8code.ts` (Node; openSUSE's Chromium has no disassembler, and `--perf-prof` with `perf` gives Chromium's code as annotated profiles).
+
+**Tiering (integer guest, Chromium, at `80e7bda`):** default 3660–3756 MIPS over 12 runs, TurboFan-only 3806 and 3835; the default's first ~4 samples (~20 ms) are ~10% slower while hot code tiers up, which is its wider IQR. At step 8.4's own commit: default 3157, TurboFan-only 3218–3249 over 8 runs, so 8.4's "TurboFan-only 1802" and 8.5's one-in-four 1986 don't reproduce (both about half speed for a whole run; the host was shared then). FP guest: default 19.2, TurboFan-only 26.1 (+36%); `perf` in Node puts 14% of the default's time in calls to compiler-rt's `__lshrti3`/`__ashlti3` from `fp.rs`, which TurboFan-only inlines.
+
+**Bounds checks (integer guest, Chromium):** default 3740 MIPS, `--wasm-enforce-bounds-checks` 3469, `--no-wasm-bounds-checks` 4739 (diagnostic only). A store loop (`st.wat`, `st-chrome.mjs`) runs at 1.025 / 1.030 / 0.540 ns per iteration with default / enforced / no checks in Chromium, 1.022 / – / 0.501 in Node: no trap handler on this host.
+
+**The `Cpu` through a constant address (committed as `78e2086`, reverted):**
+
+| Chromium, one placement | `80e7bda` (parameter base) | `78e2086` (heap address as a constant) |
+|---|---|---|
+| integer guest | 3740 | 3972 (+6%) |
+| EL1 MMU off / on | 2149 / 1911 | 2087 / **1687** (−3% / −12%) |
+| CoreMark (it/s) | 5919 | **5545** (−6%) |
+| Buildroot / Alpine boot (JIT) | M5: 717 ms / 18.4 s | 690 ms / 17.33 s |
+
+The hot region's machine code halved (52 KB → 26 KB) and its checks went, but each access now materializes a 32-bit constant (`movz`/`movk`), and the EL1 and CoreMark code spilled more. A **low slot** (the first `Vcpu` below `--global-base`, the stack moved after static data, so the `Cpu` is below 32 KiB: one `str x, [membase, #imm]` per access) made the integer guest 4200 MIPS in Node but **2500 in Chromium, with either code shape** (`low-*`, `low64k*`: at 4096 and 64 KiB, with and without bounds checks, TurboFan-only), and 3802 with the same flags and the `Vcpu` back on the heap (`nolow-layout`). That led to:
+
+**The placement effect.** `node-vcpu-placement-sweep.txt`: 15 `Vcpu` addresses from 4 to 27 KiB × both code shapes × four guests, in Node. The integer guest is bimodal under both shapes (constant: 2500 or 4170–4270; parameter: 2458–2535 or 3680–3790), CoreMark likewise (~1200 or ~1500), and the EL1 guests aren't (±4%). With the parameter base the JIT code is byte-identical at every address, and with the `Vcpu` fixed a sub-page offset of guest RAM flips the integer guest the same way (pad 0 and 1 KiB: 3778, 3757; 2, 3, 4 KiB: ~2530; 8 KiB: 3683; 16 and 32 KiB: ~2535), so it's where guest data falls relative to the core's, a hardware aliasing effect (no PMU in the VM to name the unit). Placement-averaged, the constant base against the parameter base: integer 3547 vs 3332 (+6.5%), CoreMark 1393 vs 1339 (+4%), EL1 MMU off 2109 vs 2122, **MMU on 1797 vs 1865 (−3.6%)**; not kept (PLAN §2).
+
+**Benchmarks from here:** the small guests run at eight fixed guest-RAM offsets within a page (`PADS` in `suite.ts`), each on a fresh core, one median per placement as the samples (every sample in `params.placements`). At `80e7bda`'s code, two runs each in Chromium: integer 3733 (±52) and 3742 (±29) MIPS, CoreMark 5550 (±82) and 5642 (±51) iterations/s (`p1-*`, `p2-*`); no placement split in Chromium at these offsets for this build, where Node splits.

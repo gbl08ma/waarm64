@@ -1,0 +1,165 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-27T10:02:20.963Z",
+ "commit": "80e7bdac77a7",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "jit_fp_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0002,
+     "avgBlock": 5055.73,
+     "interpretedPct": 5.711,
+     "blocks": 35,
+     "modules": 7,
+     "bytes": 24065,
+     "compileMs": 0.92,
+     "inlinePct": 28.49,
+     "inlineStepsPct": 30.52,
+     "flagsElided": 0,
+     "flagsStored": 31,
+     "condDirect": 10,
+     "condComputed": 0,
+     "condMemory": 21,
+     "blocksPerRegion": 1.2,
+     "backEdges": 15,
+     "tierUps": 5
+    }
+   },
+   "samples": [
+    15.237514761895989
+   ],
+   "median": 15.237514761895989,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_fp_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0,
+     "avgBlock": 19999987.33,
+     "interpretedPct": 0,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": 28.49,
+     "inlineStepsPct": 30.5,
+     "flagsElided": 0,
+     "flagsStored": 31,
+     "condDirect": 10,
+     "condComputed": 0,
+     "condMemory": 21,
+     "blocksPerRegion": 1.2,
+     "backEdges": 15,
+     "tierUps": 5,
+     "helpers": [
+      {
+       "op": "FMLA_elt_4",
+       "calls": 42757916
+      },
+      {
+       "op": "LDR_reg_fpsimd",
+       "calls": 37580141
+      },
+      {
+       "op": "STP_LDP_fpsimd",
+       "calls": 29144374
+      },
+      {
+       "op": "FMADD_float",
+       "calls": 20042737
+      },
+      {
+       "op": "FMOV_float_gen",
+       "calls": 10814529
+      },
+      {
+       "op": "SCVTF_int_2",
+       "calls": 10689417
+      },
+      {
+       "op": "STR_imm_fpsimd_1",
+       "calls": 10689417
+      },
+      {
+       "op": "STR_reg_fpsimd",
+       "calls": 9687321
+      },
+      {
+       "op": "MOVI",
+       "calls": 8225353
+      },
+      {
+       "op": "FMUL_float",
+       "calls": 5887529
+      },
+      {
+       "op": "ADD_vector",
+       "calls": 5386260
+      },
+      {
+       "op": "UMULL_vec",
+       "calls": 5344662
+      },
+      {
+       "op": "UQXTN_2",
+       "calls": 5344662
+      },
+      {
+       "op": "USRA_2",
+       "calls": 5344662
+      },
+      {
+       "op": "FADD_float",
+       "calls": 4884565
+      }
+     ]
+    }
+   },
+   "samples": [
+    19.152960329403587,
+    19.160850550123097,
+    19.138114991292973,
+    19.19404216927222,
+    19.177110201192534,
+    19.141503565077738,
+    19.16195202806404,
+    19.146084625666735,
+    19.17683438411885,
+    19.113515166661387,
+    19.20003072006563,
+    19.141595164854902,
+    19.20104453683379,
+    19.161125907736455,
+    19.159015034976882
+   ],
+   "median": 19.160850550123097,
+   "iqr": 0.033132397394872726,
+   "n": 15
+  }
+ ]
+}

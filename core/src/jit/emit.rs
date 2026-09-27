@@ -155,8 +155,6 @@ pub struct Func {
     /// successor is a region member, so only a return needs it; a
     /// conditional branch keeps just its outcome in `TAKEN`.
     pub defer_pc: bool,
-    /// The `Cpu`'s address, when the module knows it (wasm32): see [`Func::cpu`].
-    pub cpu: Option<u32>,
 }
 
 impl Deref for Func {
@@ -185,19 +183,6 @@ impl Func {
         })
     }
 
-    /// Pushes the `Cpu`'s address as the base of an access to it: a
-    /// constant when the module knows it, else the vCPU parameter. V8 drops
-    /// the bounds check of a constant address below the memory's declared
-    /// minimum (the module declares one covering the `Vcpu`); every other
-    /// access is checked explicitly where V8 has no trap handler (Linux
-    /// arm64, Android: M6 loop 0, PLAN.md §2 "V8 and our code").
-    pub fn cpu(&mut self) -> &mut Code {
-        match self.cpu {
-            Some(a) => self.c.i32_const(a as i32),
-            None => self.c.local_get(VCPU),
-        }
-    }
-
     /// Register `n`'s local (31 is SP).
     fn local(&mut self, n: u32) -> u32 {
         let l = &mut self.local[n as usize];
@@ -211,7 +196,7 @@ impl Func {
     /// Loads register `n` from the `Cpu` into its local.
     fn load(&mut self, n: u32) -> u32 {
         let l = self.local(n);
-        self.cpu().i64_load(8 * n).local_set(l);
+        self.c.local_get(VCPU).i64_load(8 * n).local_set(l);
         self.regs.valid |= 1 << n;
         l
     }
@@ -221,13 +206,13 @@ impl Func {
         self.reused |= self.read & 1 << n;
         self.read |= 1 << n;
         if self.plain & 1 << n != 0 {
-            self.cpu().i64_load(8 * n);
+            self.c.local_get(VCPU).i64_load(8 * n);
         } else if self.regs.valid & 1 << n != 0 {
             let l = self.local[n as usize];
             self.c.local_get(l);
         } else {
             let l = self.local(n);
-            self.cpu().i64_load(8 * n).local_tee(l);
+            self.c.local_get(VCPU).i64_load(8 * n).local_tee(l);
             self.regs.valid |= 1 << n;
         }
     }
@@ -248,7 +233,7 @@ impl Func {
             let n = d.trailing_zeros();
             d &= d - 1;
             let l = self.local[n as usize];
-            self.cpu().local_get(l).i64_store(8 * n);
+            self.c.local_get(VCPU).local_get(l).i64_store(8 * n);
         }
         self.regs.dirty = 0;
     }
@@ -289,7 +274,7 @@ impl Func {
     pub fn store_flags(&mut self) {
         self.touched.get_or_insert(true);
         if let Flags::Lazy { kind, sf, .. } = self.flags {
-            self.cpu();
+            self.c.local_get(VCPU);
             nzcv_of(self, kind, sf);
             self.c.i64_extend_i32_u().i64_store(NZCV);
             if let Flags::Lazy { stored, .. } = &mut self.flags {
@@ -363,7 +348,7 @@ impl Func {
             let n = d.trailing_zeros();
             d &= d - 1;
             let l = self.local[n as usize];
-            self.cpu().local_get(l).i64_store(8 * n);
+            self.c.local_get(VCPU).local_get(l).i64_store(8 * n);
         }
         self.regs.dirty &= to.dirty;
         self.reload(to.valid);
@@ -438,7 +423,7 @@ pub fn pc_plus(c: &mut Func, off: i64) {
 
 /// Stores the entry PC + `off` to `Cpu::pc`.
 pub fn set_pc(c: &mut Func, off: i64) {
-    c.cpu();
+    c.local_get(VCPU);
     pc_plus(c, off);
     c.i64_store(PC);
 }
@@ -652,7 +637,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         CCMN_reg | CCMP_reg | CCMN_imm | CCMP_imm => {
             // NZCV = cond ? AddWithCarry's flags : nzcv (3:0).
             let sub = bit(i, 30);
-            c.cpu();
+            c.local_get(VCPU);
             let y = |c: &mut Func| {
                 if bit(i, 11) {
                     konst(c, sf, rm as u64);
@@ -683,7 +668,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                 _ => sext((bits(i, 23, 5) << 2) as u64, 21),
             };
             if !c.defer_pc {
-                c.cpu();
+                c.local_get(VCPU);
                 pc_plus(c, here + off as i64);
                 pc_plus(c, here + 4);
             }
@@ -714,7 +699,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             }
         }
         BR | BLR | RET => {
-            c.cpu();
+            c.local_get(VCPU);
             get(c, true, rn);
             c.i64_store(PC);
             if op == BLR {
@@ -868,7 +853,7 @@ pub fn indirect(
     check: Option<u32>,
 ) {
     const KEY: u32 = BASE; // i64 scratch
-    c.cpu().i64_load(PC).local_tee(ADDR);
+    c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
     match tlb {
         Some((arr, base, phys)) => {
@@ -1426,7 +1411,7 @@ fn cond(c: &mut Func, cond: u32) {
     match c.flags {
         Flags::Mem => {
             c.counts.cond_memory += 1;
-            c.cpu().i32_load(NZCV);
+            c.local_get(VCPU).i32_load(NZCV);
             holds(c, cond);
         }
         Flags::Lazy { kind, sf, .. } => {
@@ -1522,7 +1507,7 @@ fn carry(c: &mut Func) {
     match c.flags {
         Flags::Mem => {
             c.counts.cond_memory += 1;
-            c.cpu().i32_load(NZCV).i32_const(29).op(SHR_U);
+            c.local_get(VCPU).i32_load(NZCV).i32_const(29).op(SHR_U);
             c.i32_const(1).op(AND);
         }
         Flags::Lazy {

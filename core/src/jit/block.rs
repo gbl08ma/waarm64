@@ -289,8 +289,6 @@ struct Env<'a> {
     /// RAM's host base and guest PA.
     base: u64,
     phys: u64,
-    /// The `Cpu`'s address, if known ([`emit::Func::cpu`]).
-    cpu: Option<u32>,
 }
 
 /// One module with a function per region, `f(vcpu, acc, left) -> acc +
@@ -326,7 +324,6 @@ pub fn module(
     compiled: impl Fn(u64) -> Option<(u32, u32)>,
     check: bool,
     jc: u32,
-    cpu: Option<u32>,
 ) -> Emitted {
     let mut m = Module::default();
     let bt = m.ty(&[I32, I32, I32], &[I32]);
@@ -358,12 +355,7 @@ pub fn module(
             }
         }
     }
-    // A declared minimum covering the `Vcpu`, so that V8 can prove its
-    // constant-address accesses in bounds (`emit::Func::cpu`).
-    let min = cpu.map_or(0, |a| {
-        (a as usize + size_of::<crate::mmu::Vcpu>()).div_ceil(65536)
-    });
-    m.import_memory("env", "memory", min as u32, 65536);
+    m.import_memory("env", "memory", 0, 65536);
     if jc != 0 || tiers {
         m.import_table("env", "table", 0);
     }
@@ -403,7 +395,6 @@ pub fn module(
             hot,
             base: base as usize as u64,
             phys,
-            cpu,
         };
         // Twice: the first emission finds the registers to read plainly
         // (`Func::plain`) and what each member's edges carry into it, which
@@ -524,13 +515,12 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
     let head = r.blocks[0].key & !3;
     let mut c = emit::Func::default();
     c.plain = plain;
-    c.cpu = e.cpu;
     let mut into = vec![emit::Regs::default(); n];
     let mut flags = vec![In::Unset; n];
     let mut dead = vec![false; n];
     let mut bad = false;
     let mut inl = 0;
-    c.cpu().i64_load(emit::PC).local_set(1);
+    c.local_get(0).i64_load(emit::PC).local_set(1);
     if let (Some(word), Some(hot)) = (r.tier, e.hot) {
         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
     }
@@ -663,7 +653,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
         c.flush();
         c.sync_flags();
         if c.defer_pc {
-            c.cpu();
+            c.local_get(0);
             match succs {
                 Next::One(o) => emit::pc_plus(&mut c, o),
                 Next::Cond(t, o) => {
@@ -791,45 +781,12 @@ mod tests {
 
     /// A module of one block, nothing else compiled.
     fn build(b: Block) -> Emitted {
-        module(&[b.into()], &test_mem(), |_| None, false, 0, None)
+        module(&[b.into()], &test_mem(), |_| None, false, 0)
     }
 
     fn test_mem() -> Mem {
         // SAFETY: never accessed (module only reads its layout).
         unsafe { Mem::new(core::ptr::dangling_mut::<u128>().cast(), 0) }
-    }
-
-    #[test]
-    fn cpu_accesses_through_a_constant_address() {
-        // With the `Cpu`'s address known (M6 loop 0), the module's memory
-        // import declares a minimum covering the `Vcpu` and the `Cpu` is
-        // addressed as a constant, so V8 proves those accesses in bounds.
-        let at = 0x2a_0000u32;
-        let b = Block {
-            key: 0x4000_0200,
-            va: 0x4000_0200,
-            words: vec![MOVZ, 0x1400_0002], // b .+8
-        };
-        let e = module(&[b.into()], &test_mem(), |_| None, false, 0, Some(at));
-        let pages = (at as usize + size_of::<crate::mmu::Vcpu>()).div_ceil(65536) as u8;
-        assert!(pages < 128, "one LEB byte");
-        // env.memory: shared, with a maximum (flags 3), min `pages`, max 65536.
-        let mut import = vec![3, b'e', b'n', b'v', 6];
-        import.extend(b"memory");
-        import.extend([2, 3, pages, 0x80, 0x80, 0x04]);
-        let has = |needle: &[u8]| e.bytes.windows(needle.len()).any(|w| w == needle);
-        assert!(has(&import));
-        // The entry PC: i32.const 0x2a0000; i64.load offset=256.
-        assert!(has(&[0x41, 0x80, 0x80, 0xa8, 0x01, 0x29, 3, 0x80, 2]));
-        // Without the address, the vCPU parameter: local.get 0; i64.load 256.
-        let b = Block {
-            key: 0x4000_0200,
-            va: 0x4000_0200,
-            words: vec![MOVZ, 0x1400_0002], // b .+8
-        };
-        let e = module(&[b.into()], &test_mem(), |_| None, false, 0, None);
-        assert!(e.bytes.windows(4).any(|w| w == [0x20, 0, 0x29, 3]));
-        assert!(!e.bytes.windows(2).any(|w| w == [0x41, 0x80]));
     }
 
     #[test]
@@ -1085,7 +1042,6 @@ mod tests {
             |k| (k == 0x4000_020c).then_some((77, 3)),
             false,
             0,
-            None,
         );
         assert_eq!(e.links, [vec![0x4000_020c]]);
         assert!(has(&e.bytes, &[1, b't', 2, b'7', b'7', 0, 0])); // import t.77, type 0
@@ -1131,7 +1087,6 @@ mod tests {
             |k| (k == 0x4000_1204 | KEY_MMU).then_some((9, 1)),
             false,
             0,
-            None,
         );
         let mut tag = vec![0x29, 3];
         crate::jit::wasm::uleb(&mut tag, emit::tlb_array(0, 2) as u64);
@@ -1158,7 +1113,7 @@ mod tests {
         assert_eq!(keys, [0x100, 0x108, 0x114, 0x110]);
         assert_eq!(r.blocks[3].words, [0x91000823, 0xb5ffff63]);
         assert_eq!(r.back_edges(), 2);
-        let e = module(&[r], &test_mem(), |_| None, false, 0, None);
+        let e = module(&[r], &test_mem(), |_| None, false, 0);
         // The head's edges, both inside the `if TAKEN` (depth 1): to the taken
         // side (member 3, br 4) and the fall-through (member 1, br 2), each
         // when `left` covers the head (2) and the member (2), with acc and
@@ -1217,7 +1172,7 @@ mod tests {
         let (_r, m) = mem_with(0x100, &words);
         let r = region(&m, 0x100, 0x100, &|_| true);
         assert_eq!(r.blocks.len(), 2);
-        let e = module(&[r], &test_mem(), |_| None, false, 0, None);
+        let e = module(&[r], &test_mem(), |_| None, false, 0);
         assert_eq!((e.counts.cond_direct, e.counts.cond_memory), (1, 0));
         assert!(!has(&e.bytes, &[0x28, 2, 0x88, 2])); // NZCV never loaded
         assert!(has(&e.bytes, &[0x53])); // i64.lt_s
@@ -1266,7 +1221,7 @@ mod tests {
             }],
             tier: Some(0x2000),
         };
-        let e = module(&[r], &test_mem(), |_| None, false, 0, None);
+        let e = module(&[r], &test_mem(), |_| None, false, 0);
         assert!(has(&e.bytes, b"\x07jit_hot"));
         assert!(has(
             &e.bytes,
@@ -1301,7 +1256,7 @@ mod tests {
             va: 0,
             words: vec![MOVZ, 0xd65f03c0],
         };
-        let e = module(&[b.into()], &test_mem(), |_| None, false, 0x1000, None);
+        let e = module(&[b.into()], &test_mem(), |_| None, false, 0x1000);
         assert!(has(
             &e.bytes,
             &[3, b'e', b'n', b'v', 5, b't', b'a', b'b', b'l', b'e', 1]
@@ -1314,7 +1269,7 @@ mod tests {
             va: 0,
             words: vec![MOVZ, 0x14000002], // b .+8 (0x4000_020c)
         };
-        let e = module(&[b.into()], &test_mem(), |_| None, false, 0x1000, None);
+        let e = module(&[b.into()], &test_mem(), |_| None, false, 0x1000);
         let mut entry = vec![0x41];
         let at = 0x1000 + ((0x4000_020c_u64 >> 2) as u32 & (crate::jit::JC as u32 - 1)) * 16;
         crate::jit::wasm::sleb(&mut entry, at as i32 as i64);
