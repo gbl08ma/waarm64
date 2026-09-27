@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (PLAN.md §7 M3).
-#   images/build.sh [name...]      names: linux, kvm-unit-tests, alpine, debian (default: all)
+#   images/build.sh [name...]      names: linux, kvm-unit-tests, alpine, alpine-user, linux-crypto, debian, ltp (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 # linux: Buildroot's BusyBox root filesystem (rootfs.ext4) and a Linux Image built
 #   from allnoconfig + linux.fragment with Buildroot's Bootlin toolchain; also
@@ -16,6 +16,10 @@
 #   natively on arm64 and as that container's root: apk needs neither qemu-user
 #   nor unshare, neither of which works in the x86_64 images container (kept for
 #   Buildroot's x86_64 toolchains) under emulation.
+# linux-crypto: the crypto extensions' test kernel (M6.5, images/crypto/):
+#   allnoconfig + linux.fragment + images/crypto/linux.fragment, and an
+#   initramfs whose static init reports the crypto self-tests (Image,
+#   initramfs.cpio). Built natively in Alpine's arm64 container, as alpine-user.
 # debian: the official debian-13-nocloud-arm64 qcow2 as published (disk.qcow2),
 #   with the kernel (Image) and initrd (initrd.img) taken out of its /boot.
 # kvm-unit-tests: the arm64 tests (*.flat) and their unittests.cfg, built with
@@ -41,6 +45,7 @@ ALPINE_SHA256=9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773 #
 ALPINE_PKGS="linux-virt=6.18.53-r0 openrc=0.63.2-r0"
 USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0 openssl=3.5.8-r0"
 USERLAND_TOOLS="e2fsprogs=1.47.4-r0 e2fsprogs-extra=1.47.4-r0"
+CRYPTO_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.2-r1 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1"
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 DEBIAN=20260914-2601
 DEBIAN_SHA512=54c8a9b348129796bd28a1df0488f810385f6417cfa2e242ce4d6feb64c54444ed3c505700f3eda3b122763829a9074bf82e06fc8a6635e52c9ae924eb9a509a
@@ -49,7 +54,7 @@ export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(linux kvm-unit-tests alpine alpine-user debian ltp)
+NAMES=(linux kvm-unit-tests alpine alpine-user linux-crypto debian ltp)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -190,6 +195,30 @@ build_alpine-user() {
   ' - "$out" "$USERLAND_PKGS" "$USERLAND_TOOLS"
 }
 
+build_linux-crypto() {
+  local dst=$out/linux-crypto
+  rm -rf "$dst" "$out/build/linux-crypto"
+  mkdir -p "$dst"
+  linux_src
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH -e root="$root" "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache $1
+    src=$root/$2/build/linux-$3 obj=$root/$2/build/linux-crypto dst=$root/$4
+    mkdir -p "$obj"
+    cat images/linux.fragment images/crypto/linux.fragment > "$obj/allconfig"
+    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc"
+    $k KCONFIG_ALLCONFIG="$obj/allconfig" allnoconfig
+    missing=$(grep "^CONFIG_" "$obj/allconfig" | grep -vxFf "$obj/.config" || true)
+    [ -z "$missing" ] || { echo "linux-crypto: not applied:" >&2; echo "$missing" >&2; exit 1; }
+    $k -j"$(nproc)" Image
+    gcc -static -Os -o "$obj/webpc-init" images/crypto/init.c
+    gcc -O2 -o "$obj/gen_init_cpio" "$src/usr/gen_init_cpio.c"
+    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\nfile /init %s 0755 0 0\n" "$obj/webpc-init" > "$obj/cpio.list"
+    "$obj/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$obj/cpio.list" > "$dst/initramfs.cpio"
+    cp "$obj/arch/arm64/boot/Image" "$dst/Image"
+    cp "$obj/.config" "$dst/config"
+  ' - "$CRYPTO_TOOLS" "$out" "$LINUX" "$dst"
+}
+
 build_debian() {
   local dst=$out/debian b=$out/build/debian q=$out/dl/debian-13-nocloud-arm64-$DEBIAN.qcow2
   rm -rf "$b" "$dst"
@@ -229,6 +258,7 @@ inputs() {
   [ "$1" = alpine-user ] && files+=($(find images/alpine/user -type f | sort) "$out/alpine/.inputs")
   local pins="^${1^^}"
   [ "$1" = alpine-user ] && pins='^USERLAND_' 
+  [ "$1" = linux-crypto ] && files+=(images/linux.fragment $(find images/crypto -type f | sort)) && pins='^(CRYPTO_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
   { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == linux || $1 == ltp ]]; then declare -f buildroot linux_src; fi; } |
     sha256sum | cut -c1-16
@@ -239,6 +269,7 @@ outputs() {
     linux) echo linux/Image linux/Image-defconfig linux/rootfs.ext4 ;;
     alpine) echo alpine/Image alpine/initramfs-virt alpine/rootfs.ext4 ;;
     alpine-user) echo alpine-user/rootfs-user.ext4 ;;
+    linux-crypto) echo linux-crypto/Image linux-crypto/initramfs.cpio ;;
     debian) echo debian/Image debian/initrd.img debian/disk.qcow2 ;;
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
     ltp) echo ltp/rootfs.ext4 ;;
@@ -274,10 +305,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() user=
+  rest=() user= crypto=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine-user ]; then user=1; else rest+=("$name"); fi
+    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -288,6 +319,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   fi
   # After the images container: alpine-user builds on alpine, in its own container.
   if [ -n "$user" ]; then build alpine-user; fi
+  if [ -n "$crypto" ]; then build linux-crypto; fi
   exit 0
 fi
 

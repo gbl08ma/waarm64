@@ -121,6 +121,23 @@ guest('LTP and kselftests', () => ({
   assert.ok(r.console.split('\n').filter((l) => /^(ltp|kselftest): /.test(l)).length > 100, 'too few results');
 }, { skip: ltp, stress: STRESS, max: 200e9, steps: LTP_STEPS });
 
+// The crypto extensions' test kernel (images/build.sh linux-crypto; M6.5 loop 3)
+// with them on: the arm64 CE drivers pass the full crypto self-tests, and
+// lib/crypto's SHA KUnit suites (on the CE code) pass.
+const CRYPTO_STEPS = 4_415_427_994;
+const CE_DRIVERS = ['aes-ce', 'ecb-aes-ce', 'cbc-aes-ce', 'ctr-aes-ce', 'xctr-aes-ce', 'xts-aes-ce', 'cts-cbc-aes-ce', 'essiv-cbc-aes-sha256-ce', 'cmac-aes-ce', 'xcbc-aes-ce', 'cbcmac-aes-ce', 'ccm-aes-ce', 'gcm-aes-ce', 'rfc4106-gcm-aes-ce', 'polyval-ce'];
+guest('crypto test kernel', () => ({
+  ramSize: 256 << 20, kernel: image('linux-crypto/Image'), initrd: image('linux-crypto/initramfs.cpio'), cmdline: 'console=ttyAMA0 panic=-1', crypto: true,
+}), (r) => {
+  poweredOff(r);
+  assert.match(r.console, /webpc: test ok \(0 failed, 0 pending\)/);
+  assert.match(r.console, /cpuinfo: Features\t: fp asimd aes pmull sha1 sha2 /);
+  for (const d of CE_DRIVERS) assert.match(r.console, new RegExp(`^crypto: ${d} \\S+ passed\r?$`, 'm'), d);
+  const totals = [...r.console.matchAll(/# Totals: pass:(\d+) fail:(\d+)/g)];
+  assert.deepEqual(totals.map((m) => m[2]), ['0', '0', '0'], 'the sha1, sha224 and sha256 KUnit suites');
+  assert.doesNotMatch(r.console, /alg: .*(failed|error)/i);
+}, { skip: !has('linux-crypto/Image') && 'SKIPPED: run images/build.sh linux-crypto', stress: STRESS, max: 60e9, steps: CRYPTO_STEPS });
+
 const a = DISTROS.alpine;
 const ALPINE_STEPS = 3_009_537_573; // PLAN.md §7 M3 "Run loop" (moved in M6)
 const alpineSkip = !DISTRO_TESTS.includes('alpine') ? 'SKIPPED: set WEBPC_DISTROS=alpine' : !has(a.kernel) && 'SKIPPED: run images/build.sh alpine';
