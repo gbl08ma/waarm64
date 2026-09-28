@@ -52,7 +52,7 @@ the ABI's 0 means none.
 | Kind | Meaning |
 |---|---|
 | 0 `BUDGET` | the budget is used up |
-| 1 `PSCI` | a PSCI call for the host (SYSTEM_OFF, SYSTEM_RESET; CPU_ON from M7). PC is past the HVC; the host writes x0 if it resumes |
+| 1 `PSCI` | a PSCI call for the host (SYSTEM_OFF, SYSTEM_RESET; M7 handles CPU_ON in the core). PC is past the HVC; the host writes x0 if it resumes |
 | 2 `IDLE` | WFI with nothing pending, realtime mode only: `value` = ns to the next timer deadline (u64::MAX: none); PC on the WFI. (Deterministic mode jumps virtual time instead, and returns `IDLE` with u64::MAX only when no timer is armed) |
 | 3 `TX_FULL` | the console TX ring is full: drain and resume |
 | 4 `UNIMPLEMENTED` | `value` = the `Op` index |

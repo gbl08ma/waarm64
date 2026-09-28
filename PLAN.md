@@ -15,7 +15,7 @@ the docs and its entry here shrinks to a summary.
 | Guest ISA | ARMv8.0-A AArch64 with FP and AdvSIMD, no AArch32; LSE atomics and CRC32; the crypto extensions (AES, PMULL, SHA1, SHA256) switchable and on by default. No SVE/SME, PAC, BTI or MTE (their hint-space encodings are NOPs). **ID registers advertise exactly what's implemented, and an optional extension is advertised only if it's faster than what guests do without it.** ([docs/cpu.md](docs/cpu.md)) |
 | Privilege | EL0 and EL1 only. No EL2/EL3, no secure state |
 | MMU | Stage 1 only, 4K granule, 48-bit VA, TTBR0/TTBR1, ASIDs, software-managed access flag |
-| Platform | QEMU `virt`'s memory map; GICv2 (a GICv3 subset later), generic timer, PL011, PSCI over HVC (answered in the core; SYSTEM_OFF/RESET and CPU_ON exit to the host), virtio-mmio v2, a DTB generated from the VM config ([docs/platform.md](docs/platform.md)) |
+| Platform | QEMU `virt`'s memory map; GICv2 today, **GICv3 (no ITS) as the default from M7**, GICv2 kept as an option; generic timer, PL011, PSCI over HVC (answered in the core, CPU_ON included; SYSTEM_OFF/RESET exit to the host), virtio-mmio v2, a DTB generated from the VM config ([docs/platform.md](docs/platform.md)) |
 | Boot | Direct kernel boot (arm64 `Image` + initrd + DTB); no UEFI. Distro kernels and initrds are extracted from their images |
 | Core | Rust compiled to wasm32 (the same crate builds natively for tests); host glue in TypeScript without a build step |
 | Guest memory | **Layout A** (M0.5): one shared wasm32 memory, core state then guest RAM (≤ ~3.5 GiB). One lowering point for guest accesses in generated code; TLB tag bits 3–11 reserved for a memory index ("A + spill memories" as NUMA nodes later) ([docs/architecture.md](docs/architecture.md)) |
@@ -25,7 +25,7 @@ the docs and its entry here shrinks to a summary.
 | Browsers | Chromium first; cross-origin isolation required |
 | License | MIT. GPL/EPL/CeCILL projects are oracles, guest workloads or behavioral references only, never copied (`THIRD_PARTY.md`) |
 
-Deferred: SVE, EL2, 16K/64K granules (needed for RHEL-family kernels), virtio-pci/MSI, GICv3 ITS.
+Deferred: SVE, EL2, 16K/64K granules (needed for RHEL-family kernels), virtio-pci/MSI, GICv3 ITS and LPIs.
 
 ## 2. How milestones run
 
@@ -60,37 +60,36 @@ Details of each: the docs (by topic) and `bench/*/REPORT.md` (by date). Numbers 
 
 ### M7 — SMP
 
-Kickoff: `M7-KICKOFF.md` (drafted 2026-09-28, to confirm). Goal: N vCPUs (≤ 8, GICv2's limit)
-running Linux SMP, stable under stress, with a scaling curve.
+Kickoff: `M7-KICKOFF.md` (decisions confirmed 2026-09-28). Goal: N vCPUs running Linux SMP on a
+GICv3, stable under stress, with a scaling curve.
 - **Two execution modes, one core:** deterministic SMP runs every vCPU round-robin on one thread
-  with a fixed quantum (exact, reproducible step counts natively, in Node and in Chromium, as
-  today; how QEMU's single-threaded TCG and icount work); realtime SMP runs **one worker per vCPU**
-  on the shared memory (parallel, as MTTCG). Tests use the first, users and scaling benchmarks the
-  second. (Proposed; confirm at kickoff.)
-- **One core instance per worker** on the shared memory, each with its own stack and TLS (the core
-  must export them; today a second instance would share the first one's stack); `Vm` state shared
-  across vCPUs with locks or atomics; per-vCPU `Vcpu` (TLB, JIT state, code cache, table).
-- **PSCI** `CPU_ON`/`CPU_OFF`/`AFFINITY_INFO` for real; `MPIDR_EL1` per vCPU; one DT `cpu` node
-  per vCPU.
-- **GICv2 per-CPU:** banked SGI/PPI state (enable, pending, active, priority) and a CPU interface
-  per vCPU; `GICD_ITARGETSR` implemented with SPIs routed by target; `GICD_TYPER.CPUNumber`; SGIs to
-  other CPUs and all-but-self through `GICD_SGIR` with the source in `GICC_IAR` bits 12:10;
-  `GICD_CPENDSGIR`/`SPENDSGIR`. A cross-worker way to raise a line and wake a vCPU (per-vCPU signal
-  words, `Atomics.notify`).
-- **Broadcast maintenance:** `TLBI …IS` on another vCPU completes before the issuer's `DSB`
-  (a request each target acknowledges at its next chunk boundary or while idle; the issuer waits,
-  as QEMU's `*_all_cpus_synced`); `IC IVAU`/`IALLU(IS)` invalidate every vCPU's code cache, drained
-  at context synchronization (ISB, exception entry, ERET) and chunk boundaries.
-- **Memory model:** DMB/DSB become real fences (`atomic.fence`) in the JIT; the interpreter's
-  plain accesses reviewed for data races; **128-bit atomics** (CASP, LDXP/STXP under one lock that
-  only excludes other pair ops) decided with litmus tests and a CASP stress; CAS-based exclusives
-  checked against litmus7; WFE/SEV as a real wait (a spinning vCPU mustn't burn its quantum or a
-  host core).
-- **Tests:** kvm-unit-tests' SMP tests (`selftest-smp`, `gicv2-ipi`, `gicv2-mmio`, `psci`),
-  herdtools7 `litmus7` suites in the guest, atomics stress, SMP boots of Buildroot, Alpine and
-  Debian in both modes, the Alpine userspace phases at N threads.
-- **Exit:** a multi-core Debian boot is stable under stress, the litmus suites pass, and the
-  scaling curve (userspace phases and a parallel build at 1–N vCPUs) is recorded.
+  with a fixed quantum and one shared code cache (exact, reproducible step counts in every runner;
+  virtual time = total steps of all vCPUs); realtime SMP runs **one worker per vCPU** on the shared
+  memory, a core instance and a code cache each. Tests use the first, users and scaling the
+  second.
+- **One core instance per worker:** per-thread stack and TLS exported from the core; `Vm` state
+  shared across vCPUs with locks or atomics; per-vCPU `Vcpu` (TLB, JIT state).
+- **PSCI** CPU_ON/CPU_OFF/AFFINITY_INFO **in the core** (realtime workers start at boot, parked
+  until CPU_ON); `MPIDR_EL1` per vCPU; one DT `cpu` node per vCPU.
+- **GICv3 becomes the default** (distributor, per-CPU redistributors, `ICC_*` system registers; no
+  ITS/LPIs), so vCPUs aren't capped at 8; a guest-visible change that moves the step counts once.
+  The GICv2 model becomes per-CPU too (banked SGI/PPI, `ITARGETSR` routing, cross-CPU SGIs) and
+  stays as an option for its tests.
+- **Broadcast maintenance:** `TLBI …IS` completes before the issuer's `DSB` returns (every
+  running vCPU acknowledges at its next chunk boundary; idle ones apply it before resuming);
+  `IC IVAU`/`IALLU(IS)` reach every code cache, drained at context synchronization and chunk
+  boundaries.
+- **Memory model:** DMB/DSB as real fences in the JIT; the interpreter's and walker's shared-RAM
+  accesses reviewed; 128-bit atomics (CASP, LDXP/STXP) decided with litmus tests and a CASP
+  stress; CAS-based exclusives checked; WFE ends the quantum (deterministic) or yields (realtime).
+- **ABI 20:** `VmConfig.ncpus`, the GIC choice, per-vCPU run/state/signals/counters, thread setup
+  (design note in `docs/abi.md` first).
+- **Tests:** bare-metal SMP and GICv3 tests against QEMU (TCG, and hvf if it gives a GICv3),
+  kvm-unit-tests' SMP and `gicv3-*` sets, herdtools7 `litmus7` in the guest, atomics stress,
+  deterministic SMP boots with exact steps, repeated realtime boots, ThreadSanitizer on a native
+  realtime runner, the userspace phases at N threads. Debian's JIT boot joins default CI.
+- **Exit:** Debian boots on 4 vCPUs in realtime mode, stable under stress; litmus suites with no
+  forbidden outcome; the scaling curve recorded.
 
 ### M8 — Product integration
 

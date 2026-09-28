@@ -111,8 +111,8 @@ from `web/vm.ts` yet (backlog).
 
 PSCI 1.0: VERSION, FEATURES, AFFINITY_INFO (CPU 0 is on), MIGRATE_INFO_TYPE (2) answered in the
 core; SYSTEM_OFF and SYSTEM_RESET exit to the host (exit kind `PSCI`, PC past the HVC, the host
-writes x0 if it resumes); everything else NOT_SUPPORTED. **CPU_ON is M7's**, and will also exit
-to the host, which starts the vCPU's worker.
+writes x0 if it resumes); everything else NOT_SUPPORTED. **CPU_ON is M7's**, handled in the core
+(no exit: realtime vCPU workers start at boot and wait parked until it).
 
 ## Bare-metal test convention
 
