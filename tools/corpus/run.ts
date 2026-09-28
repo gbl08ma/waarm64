@@ -4,7 +4,7 @@
 //
 // `both` (the default) is authoritative: the M4's results are recorded, and a
 // test where QEMU disagrees gets a `note qemu: ...` line. The M4 is the Lima VM
-// `oracle` on macmini.lan (PLAN.md §4.2); the harness is copied into it on each run.
+// `oracle` on macmini.lan (docs/testing.md "The golden corpus"); the harness is copied into it on each run.
 
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";

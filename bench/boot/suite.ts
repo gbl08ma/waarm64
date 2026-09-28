@@ -154,7 +154,7 @@ async function bootAlpine(o: Options, jit: 0 | 1 = 0): Promise<Sample[]> {
   return s.map((x) => ({ ...x, name: x.name.replace('boot_init', `${pre}_script`).replace('boot_total', `${pre}_total`) }));
 }
 
-/** The userspace phases after Alpine's boot, under the JIT (M6's end; PLAN §7 M6 "Benchmark coverage"). */
+/** The userspace phases after Alpine's boot, under the JIT (M6's end; docs/benchmarking.md). */
 const USER_PHASES = ['compress', 'lua', 'churn', 'sqlite'];
 
 /**

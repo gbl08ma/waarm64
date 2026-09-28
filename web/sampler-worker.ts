@@ -1,4 +1,4 @@
-// Guest PC sampler (PLAN.md §5): runs beside the vCPU worker on the same shared
+// Guest PC sampler (docs/benchmarking.md): runs beside the vCPU worker on the same shared
 // memory and reads `vm::Counters.pc` (updated every run-loop chunk) every
 // `periodUs` until ctl[0] is set; replies with a histogram of PCs.
 type Start = { memory: WebAssembly.Memory; pcAddr: number; ctl: SharedArrayBuffer; periodUs: number };

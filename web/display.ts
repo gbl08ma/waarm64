@@ -1,4 +1,4 @@
-// The simple-framebuffer on a canvas (PLAN.md §2): the guest draws into its
+// The simple-framebuffer on a canvas (docs/devices.md): the guest draws into its
 // framebuffer in guest RAM (x8r8g8b8, packed rows); every animation frame
 // copies it into an ImageData (opaque RGBA) and puts it on the canvas.
 // ponytail: a full copy per frame, no dirty tracking; track dirty rows (or move to virtio-gpu) if it shows in a profile.

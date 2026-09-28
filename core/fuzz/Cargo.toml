@@ -1,4 +1,4 @@
-# Decoder/interpreter fuzzing against Capstone (PLAN.md §4 item 10). Development
+# Decoder/interpreter fuzzing against Capstone (docs/testing.md). Development
 # only: a separate workspace, so capstone never reaches the core's builds.
 #   cargo fuzz run decode            (from core/)
 #   cargo fuzz run virtqueue         (from core/; the virtio transport and split queues)

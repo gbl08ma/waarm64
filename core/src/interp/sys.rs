@@ -54,7 +54,7 @@ pub fn isar0(features: u64) -> u64 {
 }
 /// 4K granule only (TGran64 = 0xf, TGran16 = 0), 16-bit ASIDs, 40-bit PA.
 const ID_AA64MMFR0: u64 = 0xf << 24 | 2 << 4 | 2;
-/// DIC = 0 (guests issue IC IVAU; PLAN.md §2), IDC = 1 (no data cache to clean),
+/// DIC = 0 (guests issue IC IVAU; docs/jit.md), IDC = 1 (no data cache to clean),
 /// CWG, ERG, DminLine = 64 bytes, PIPT I-cache, IminLine = 64 bytes.
 const CTR_EL0: u64 = 1 << 31 | 1 << 28 | 4 << 24 | 4 << 20 | 4 << 16 | 3 << 14 | 4;
 /// DC ZVA block: BS = 4 (64 bytes, as on the M4).

@@ -49,7 +49,7 @@ static inline void uart_dec(u64 v) {
 
 // Prints "exit <code>" on the PL011 (for oracles without a CPU log, like
 // hvf), then PSCI SYSTEM_OFF with the code in x1 (0 = pass; our convention,
-// PLAN.md §4 item 6). The MMU goes off first, so the UART's PA is reachable.
+// docs/testing.md "Bare-metal tests"). The MMU goes off first, so the UART's PA is reachable.
 _Noreturn void power_off(u64 code) {
   __asm__ volatile("mrs x9, sctlr_el1; bic x9, x9, #1; msr sctlr_el1, x9; isb" ::: "x9", "memory");
   mmio32(UART + 0x30) = 0x301; // CR: UARTEN, TXE, RXE

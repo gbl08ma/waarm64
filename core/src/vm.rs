@@ -1,6 +1,6 @@
 //! A whole VM: one vCPU, RAM at `RAM_BASE`, the GICv2, the generic timer and the
 //! PL011 at QEMU `virt`'s addresses, and the run loop that delivers IRQs, waits
-//! in WFI and answers PSCI. lib.rs exports it (PLAN.md §2 "Host ABI for a whole VM").
+//! in WFI and answers PSCI. lib.rs exports it (docs/abi.md).
 //!
 //! **Time** is deterministic by default: the counter is `steps × ticks_per_insn`
 //! plus the ticks WFI skipped, where steps are instructions retired and

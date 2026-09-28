@@ -9,7 +9,7 @@ use std::fmt::Write;
 const TABLE: &str = "src/a64/a64.inc";
 /// Should-be-one fields the M4 ignores (it executes these with any value there),
 /// relaxed to don't-care. QEMU SIGILLs some of them; the M4 is the reference
-/// (PLAN.md §4.2). CAS/CASP keep theirs: the M4 raises UNDEFINED for those.
+/// (docs/testing.md "The golden corpus"). CAS/CASP keep theirs: the M4 raises UNDEFINED for those.
 const RELAX: &[(&str, &str)] = &[
     ("LDXR", "zz001000010-----0-----nnnnnttttt"),
     ("LDAXR", "zz001000010-----1-----nnnnnttttt"),

@@ -1,4 +1,4 @@
-//! Scalar floating point on the fast paths PLAN.md §2 "FP semantics"
+//! Scalar floating point on the fast paths docs/jit.md "Floating point"
 //! describes (M6 loop 5): under the block's FP guard (FPCR.RMode round to
 //! nearest even, FPSR.IXC set already: [`fpa_guard`]), with normal operands
 //! and a result that is normal and above the smallest normal binade, the host's
@@ -207,7 +207,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         }
         // Single precision: the product is exact in double, t = RN64(p + a),
         // and RN32(t) is the correctly rounded sum unless t is halfway between
-        // two singles. Double precision stays a helper call (PLAN.md §2).
+        // two singles. Double precision stays a helper call (docs/jit.md "Floating point").
         FMADD_float | FMSUB_float | FNMADD_float | FNMSUB_float if !f.d => {
             fpa_guard(c);
             // o1 (21) negates the addend, o1 != o0 (15) the first factor.
@@ -473,7 +473,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             all_lanes(c, d, q, 3);
             guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
         }
-        // Fused, single precision (PLAN.md §2): each half through f64x2,
+        // Fused, single precision (docs/jit.md "Floating point"): each half through f64x2,
         // t = a × b + d, a lane with t halfway between two singles to the helper.
         FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 if !d => {
             fpa_guard(c);

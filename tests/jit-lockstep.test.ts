@@ -1,4 +1,4 @@
-// JIT vs interpreter lockstep (PLAN.md §4 item 4): the same guest on an
+// JIT vs interpreter lockstep (docs/testing.md): the same guest on an
 // interpreter-only core and on a JIT core (two instances, two memories),
 // comparing the registers (`cpu::Cpu`) and a RAM checksum after every chunk.
 // CI-sized; `WEBPC_LOCKSTEP_STEPS=300000000 node --test tests/jit-lockstep.test.ts`

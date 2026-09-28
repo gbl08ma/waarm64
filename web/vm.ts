@@ -1,4 +1,4 @@
-// Host side of the whole-VM ABI (PLAN.md §2, ABI 12): instantiates the core on
+// Host side of the whole-VM ABI (docs/abi.md): instantiates the core on
 // shared memory, places guest RAM after the core's heap (layout A), boots an
 // arm64 Image and runs it, draining the console. virtio backends run in a
 // device worker (web/device-worker.ts) when this runs in a worker, and inline

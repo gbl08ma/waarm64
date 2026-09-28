@@ -3,7 +3,7 @@
 //! FIPS 197, FIPS 180-4 and the Arm pseudocode (AESSubBytes, SHA256hash, …);
 //! the interpreter's reference semantics and the JIT's helpers.
 //!
-//! Speed first (PLAN.md §7 M6.5: constant time was dropped as a requirement
+//! Speed first (docs/cpu.md "Crypto extensions": constant time was dropped as a requirement
 //! on 2026-09-28): the interpreter's S-box is a 256-byte table computed at
 //! compile time; the JIT inlines AES with swizzles (`jit::emit::crypto`). The
 //! carry-less multiply uses integer multiplies of operands with holes

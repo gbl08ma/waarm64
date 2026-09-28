@@ -1,4 +1,4 @@
-//! Floating point with ARM semantics (PLAN.md §2 "FP semantics").
+//! Floating point with ARM semantics (docs/cpu.md "Floating point").
 //!
 //! The slow path is a software implementation of the ARM pseudocode (FPUnpack,
 //! FPRound, FPProcessNaNs, FPMulAdd, FPToFixed, FPRoundInt, FPConvert) over one

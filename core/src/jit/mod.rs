@@ -1,4 +1,4 @@
-//! Tier-1 JIT: guest A64 blocks → WebAssembly (PLAN.md §7 M5).
+//! Tier-1 JIT: guest A64 blocks → WebAssembly (docs/jit.md).
 //!
 //! Generated modules import the core's memory, its function table and its
 //! helper exports. The host compiles each module synchronously in the vCPU
@@ -21,7 +21,7 @@ use crate::mmu::{Flat, Mmu, Vcpu};
 
 /// A compiled block: `f(vcpu, acc, left) -> acc + retired`, equivalent to
 /// `interp::steps` for its length and the blocks it chains to within `left`
-/// steps (PLAN.md §2 "JIT ABI"): if fewer than all their instructions retired,
+/// steps (docs/jit.md): if fewer than all their instructions retired,
 /// the one that didn't left its exit in [`State::exit`] and the PC on it.
 pub type Block = unsafe extern "C" fn(*mut Vcpu, u32, u32) -> u32;
 
@@ -39,7 +39,7 @@ pub struct State {
     pub cache: Option<Box<Cache>>,
 }
 
-/// Compile policy (the knobs PLAN.md §2 "JIT ABI" names).
+/// Compile policy (the knobs docs/jit.md "Compile policy" describes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Config {
     /// Dispatches of a block key before it joins the pending batch (0: on first sight).

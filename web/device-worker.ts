@@ -1,4 +1,4 @@
-// The device worker (PLAN.md §2 "Device backends (ABI 6)"): one per VM, holding
+// The device worker (docs/devices.md): one per VM, holding
 // every backend. On each DEVICE exit the vCPU rings the doorbell (word 0 of
 // `bell`); the worker takes every device's events and requests, then writes
 // the doorbell value it handled to word 1, which the vCPU waits on in

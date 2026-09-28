@@ -1,4 +1,4 @@
-// DOM input for virtio-input (PLAN.md §2): the page owns the DOM events and
+// DOM input for virtio-input (docs/devices.md): the page owns the DOM events and
 // sends them to the keyboard's and the tablet's ports as Linux input events
 // ([type, code, value] arrays, one message per report); the device worker
 // hands them to the guest.

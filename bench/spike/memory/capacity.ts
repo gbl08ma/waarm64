@@ -1,4 +1,4 @@
-// M0.5 capacity experiments (PLAN.md §7 M0.5), driven from Node: limits per
+// M0.5 capacity experiments (bench/spike/memory/REPORT.md), driven from Node: limits per
 // memory, total across memories and workers, lazy commit, failure modes and
 // feature support. Renderer RSS/VSZ come from `ps` on the renderer pid.
 //   node bench/spike/memory/capacity.ts [--only limits,lazy,total,reserve,oom,features] [--out <file>]

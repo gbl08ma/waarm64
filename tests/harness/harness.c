@@ -1,7 +1,7 @@
 // Golden-corpus harness: runs A64 test snippets at EL0 under Linux (qemu-aarch64
 // or real hardware) and dumps the resulting state. Static and freestanding: no libc.
 //
-// Protocol (little-endian records on stdin/stdout; see PLAN.md §4.2):
+// Protocol (little-endian records on stdin/stdout; see docs/testing.md "The golden corpus"):
 //   in:  magic 'WPCI', ncode u32, x[31] u64, sp u64, nzcv u64, fpcr u64, fpsr u64,
 //        v[32] (16 bytes each), mem[8192], code[ncode] u32
 //   out: magic 'WPCO', signo u32, si_code u32, pad u32, si_addr u64, pc u64,

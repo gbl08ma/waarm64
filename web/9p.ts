@@ -1,4 +1,4 @@
-// virtio-9p backend: a 9P2000.L server over an in-memory tree (PLAN.md §2
+// virtio-9p backend: a 9P2000.L server over an in-memory tree (docs/devices.md
 // "9p"), written from the protocol as the Linux v9fs client speaks it
 // (net/9p, fs/9p), with v86's lib/9p.js and TinyEMU's virtio 9p as references
 // (no code copied). core/tests/common/p9.rs is its native twin and must give

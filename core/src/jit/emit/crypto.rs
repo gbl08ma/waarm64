@@ -1,7 +1,7 @@
 //! The crypto extensions as wasm SIMD128 (M6.5 loop 4 on): AES rounds, the
 //! round and mix pair fused when the mix reads and writes the round's
 //! register (compilers, OpenSSL and Linux emit them so). Table-free in the
-//! constant-time sense of PLAN.md §7 M6.5: SubBytes is nested inversion over
+//! constant-time sense of docs/cpu.md "Crypto extensions": SubBytes is nested inversion over
 //! GF(2⁴), nine `i8x16.swizzle`s of constant vectors (register permutes, no
 //! memory indexed by data; never `relaxed_swizzle`, whose out-of-range lanes
 //! aren't deterministic). It measured 30% faster than the S-box as sixteen

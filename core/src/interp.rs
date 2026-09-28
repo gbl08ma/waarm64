@@ -33,7 +33,7 @@ pub enum Exit {
     Fetch(Fault),
     Svc(u16),
     Brk(u16),
-    /// HVC at EL1: a PSCI call for the host (PLAN.md §1). No EL2, so the host
+    /// HVC at EL1: a PSCI call for the host (docs/cpu.md). No EL2, so the host
     /// completes it; [`run_system`] leaves the PC after the HVC.
     Hvc(u16),
     /// A configurable trap to EL1, as ESR_EL1 EC (31:26) and ISS (24:0): FP/AdvSIMD
@@ -714,7 +714,7 @@ fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
         }
 
         // Hints, barriers, exceptions. Unallocated hints and the PAC/BTI
-        // hint-space instructions are NOPs (PLAN.md §1). WFI and WFE are in sys.
+        // hint-space instructions are NOPs (docs/cpu.md). WFI and WFE are in sys.
         NOP | YIELD | SEV | SEVL | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2 | AUTIB_2 | BTI
         | ESB | PSB | TSB | CSDB | DGH => {}
         CLREX => c.monitor.size = 0,
@@ -770,7 +770,7 @@ fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
             simd::exec(c, i, op)?
         }
 
-        // Unallocated, or features PLAN.md §1 leaves out (PAC, BTI, MTE, SB,
+        // Unallocated, or features docs/cpu.md leaves out (PAC, BTI, MTE, SB,
         // v8.2+ flag manipulation, RCpc, LOR, DPB, LS64, WFxT, FP16).
         UnallocatedEncoding | ADDG | SUBG | PACIA_1 | PACIB_1 | AUTIA_1 | AUTIB_1 | PACDA
         | PACDB | AUTDA | AUTDB | XPAC_1 | PACGA | BLRA | BRA | RETA | ERETA | LDRA | SUBP

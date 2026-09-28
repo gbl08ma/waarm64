@@ -1,4 +1,8 @@
-# Interpreter MIPS baselines (M1 integer, M2 FP/NEON), and the JIT's (M5)
+# Interpreter and JIT: MIPS, CoreMark, boots, `openssl speed` (M1–M6.5)
+
+> A dated journal, appended to per milestone and loop; the current numbers and rules are in
+> `docs/benchmarking.md`. References to PLAN.md sections (§2, §7 M…, M9) are to its layout before
+> 2026-09-28, when that content moved to `docs/` (M9 is now `docs/backlog.md`).
 
 ## M1: integer guest
 

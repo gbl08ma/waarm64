@@ -1,4 +1,4 @@
-// Golden-corpus format and harness records (PLAN.md §4.2). The Rust comparator
+// Golden-corpus format and harness records (docs/testing.md "The golden corpus"). The Rust comparator
 // (core/tests/corpus.rs) reads the same text format and expands seeds the same way.
 
 export const CODE = 0x100000n;

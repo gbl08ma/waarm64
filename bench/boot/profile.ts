@@ -1,4 +1,4 @@
-// PC-sampling profile of a warm Buildroot boot in Chromium (PLAN.md §5): a
+// PC-sampling profile of a warm Buildroot boot in Chromium (docs/benchmarking.md): a
 // sampler worker reads the vCPU's PC from shared memory every 20 µs; samples
 // are symbolized with target/images/linux/System.map (user-space PCs are
 // grouped as "[user]").

@@ -1,4 +1,4 @@
-// M0 spike: micro-benchmarks that fix the JIT design numbers (PLAN.md §7 M0).
+// M0 spike: micro-benchmarks that fix the JIT design numbers (bench/spike/REPORT.md).
 // Runs unchanged in a browser worker and in Node.
 import { I32, I64, ModuleBuilder, op } from './wasm.ts';
 

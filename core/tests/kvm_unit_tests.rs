@@ -40,7 +40,7 @@ pub const SKIP: &[(&str, &str)] = &[
     ("gicv2-ipi", "SMP (M7)"),
     ("gicv2-mmio", "the SMP variants of gicv2-mmio-up (M7)"),
     ("gicv2-mmio-3p", "SMP (M7)"),
-    ("gicv3-", "GICv2 only (PLAN.md §1)"),
+    ("gicv3-", "GICv2 only (docs/cpu.md)"),
     ("its-", "GICv3 ITS: GICv2 only"),
     ("pmu-", "no PMU (ID_AA64DFR0_EL1.PMUVer = 0)"),
     ("pci-test", "no PCI"),
@@ -48,9 +48,9 @@ pub const SKIP: &[(&str, &str)] = &[
     ("fpu-context", "accel = kvm only, and SMP"),
     (
         "debug-",
-        "no debug exceptions (PLAN.md M9, self-hosted debug)",
+        "no debug exceptions (docs/backlog.md, self-hosted debug)",
     ),
-    ("mte-", "no MTE (PLAN.md §1)"),
+    ("mte-", "no MTE (docs/cpu.md)"),
 ];
 
 #[test]

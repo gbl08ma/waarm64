@@ -61,7 +61,7 @@ pub struct Mem {
     base: *mut u8,
     size: u64,
     /// Guest physical address of the first RAM byte: 0 for user-mode hosts,
-    /// 0x4000_0000 for a VM (the `virt` memory map, PLAN.md M3).
+    /// 0x4000_0000 for a VM (the `virt` memory map, docs/platform.md).
     phys: u64,
     /// Serializes 128-bit atomics (CASP, STXP of two X registers): wasm has no
     /// 128-bit compare-and-swap.

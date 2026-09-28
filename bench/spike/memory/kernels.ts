@@ -1,5 +1,5 @@
 // M0.5: wasm kernels shaped like the planned JIT output, one per memory
-// layout candidate (PLAN.md §7 M0.5). Every guest access does an inline TLB
+// layout candidate (bench/spike/memory/REPORT.md). Every guest access does an inline TLB
 // lookup; hits access RAM inline, misses call an in-module slow path that
 // refills the TLB and performs the access (the planned MMIO/fault path).
 import { I32, I64, ModuleBuilder, op, type Limits } from '../wasm.ts';

@@ -1,4 +1,4 @@
-// virtio device backends (PLAN.md §2 "Device backends (ABI 6)"). The core runs
+// virtio device backends (docs/devices.md). The core runs
 // the virtio-mmio transports and split queues and posts each descriptor chain
 // to the device's request ring as RAM segments; backends here only speak the
 // device protocol. `Devices` works on the shared memory from any thread: in the

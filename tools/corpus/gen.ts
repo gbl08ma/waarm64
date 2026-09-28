@@ -740,7 +740,7 @@ const simdFp: Form[] = [
 ];
 
 // Exclusives and acquire/release. Always aligned: the architecture requires it,
-// but neither oracle faults on misaligned exclusives (recorded in PLAN.md §4.2).
+// but neither oracle faults on misaligned exclusives (recorded in docs/testing.md "The golden corpus").
 function exclusive(name: string, count: number, make: (r: Rng, m: Map<string, bigint>) => number[] | undefined): Form {
   return { name, count, gen: (r) => {
     const m = new Map<string, bigint>();

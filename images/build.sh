@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the guest images in rootless Podman, never on the host (PLAN.md §7 M3).
+# Builds the guest images in rootless Podman, never on the host (docs/images.md).
 #   images/build.sh [name...]      names: linux, kvm-unit-tests, alpine, alpine-user, linux-crypto, debian, ltp (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 # linux: Buildroot's BusyBox root filesystem (rootfs.ext4) and a Linux Image built

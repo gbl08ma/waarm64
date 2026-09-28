@@ -128,8 +128,8 @@ fn index(va: u64) -> usize {
 
 /// A vCPU: architectural state, the JIT's vector constants, then its TLB,
 /// then its JIT state. `repr(C)` with `cpu` first, so a `*mut Vcpu` is also a
-/// `*mut Cpu` with the host ABI offsets; JIT blocks get this pointer (PLAN.md
-/// §2 "JIT ABI").
+/// `*mut Cpu` with the host ABI offsets; JIT blocks get this pointer
+/// (docs/jit.md).
 #[repr(C)]
 pub struct Vcpu {
     pub cpu: Cpu,

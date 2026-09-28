@@ -125,7 +125,7 @@ fn exit_code(r: Result<(), interp::Exit>) -> [u64; 2] {
     }
 }
 
-// User-mode JIT twins of the exports above (M5 step 2, PLAN.md §2 "JIT ABI").
+// User-mode JIT twins of the exports above (M5 step 2, docs/jit.md).
 
 /// Allocates a vCPU with a JIT (`mmu::Vcpu`: the `cpu::Cpu` at 0, with the
 /// offsets of [`vcpu_new`], and the same user-process state) that compiles a
@@ -227,7 +227,7 @@ pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
         .map_or(core::ptr::null(), |c| c.helper_report())
 }
 
-// The whole-VM ABI (PLAN.md §2 "Host ABI for a whole VM"). Every `vm` argument
+// The whole-VM ABI (docs/abi.md). Every `vm` argument
 // comes from `vm_new` and isn't used by two calls at once; the pointers the
 // getters return stay valid until `vm_free`.
 

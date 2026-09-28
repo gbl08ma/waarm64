@@ -1,11 +1,11 @@
 # webpc networking plan
 
 **Status:** exploration, drafted 2026-09-27; not scheduled. It feeds M8's "networking backend API"
-(PLAN.md §7 M8). When a step here is scheduled, move it into PLAN.md and keep this file as the
+(PLAN.md, M8). When a step here is scheduled, move it into PLAN.md and keep this file as the
 background it came from.
 
 The question: how does a VM in the page reach other networks, the internet included, **without
-the guest knowing how**? Today the guest has virtio-net (M4 step 6, PLAN.md §2 "Step 6 devices"):
+the guest knowing how**? Today the guest has virtio-net (`docs/devices.md` "net"):
 the device hands the host raw Ethernet frames, and adapters in `web/net.ts` take them (a loopback
 test adapter, or anything on the page behind a `MessagePort`).
 
@@ -168,9 +168,9 @@ drop it if it doesn't pan out.
 
 ## 7. Steps
 
-Each step comes with tests at the cheapest layer that catches it (PLAN.md §4).
+Each step comes with tests at the cheapest layer that catches it (`docs/testing.md`).
 
-- **N1 — Adapter API cleanup.** Drop `v86Bus` (`web/net.ts`) and the v86 wording in PLAN.md §2;
+- **N1 — Adapter API cleanup.** Drop `v86Bus` (`web/net.ts`) and the v86 wording in `docs/devices.md`;
   document the frame port as the API. Define the IP-packet port for layer-3 backends.
 - **N2 — Tailscale wasm spike, measured.** The Go module with the `Tun` hook, built with the
   feature tags, in a worker; log in with an auth key and ping a tailnet peer from JS alone. Record

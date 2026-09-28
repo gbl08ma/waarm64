@@ -1,4 +1,4 @@
-// Network adapters for virtio-net (PLAN.md §2 "Network"): the device hands an
+// Network adapters for virtio-net (docs/devices.md "net"): the device hands an
 // adapter each Ethernet frame the guest transmits and takes frames for the
 // guest from it, as v86's network adapters do on its bus (`net0-send`,
 // `net0-receive`). IP, ARP, DHCP and the rest live in the adapter or beyond it.

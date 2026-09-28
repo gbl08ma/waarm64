@@ -1,7 +1,7 @@
 //! virtio-mmio v2 transports and split virtqueues (virtio 1.2 §4.2 and §2.7),
 //! written from the specification, with the Linux `virtio_mmio` driver as the
 //! behavior it must satisfy. The device protocols (console, block, …) live in
-//! host backends (PLAN.md §2 "Device backends (ABI 6)"):
+//! host backends (docs/devices.md):
 //!
 //! - On a queue notify the transport walks the new descriptor chains, checks
 //!   that every buffer lies in RAM and posts each chain to the device's

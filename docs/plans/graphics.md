@@ -6,9 +6,9 @@ as the background it came from.
 
 The question: how does a guest get a real display (mode setting, damage, a cursor) and, later,
 **hardware-accelerated 3D** in a browser page, without the guest knowing it runs in one? Today the
-guest has a `simple-framebuffer` (M4 step 6, PLAN.md §2 "Step 6 devices"): a fixed-size x8r8g8b8
+guest has a `simple-framebuffer` (`docs/devices.md` "Framebuffer"): a fixed-size x8r8g8b8
 region in guest RAM that `web/display.ts` copies to a `<canvas>` on every animation frame, whether
-it changed or not (PLAN.md §7 M9, "Framebuffer"). The only 3D a guest can do is Mesa's software
+it changed or not (`docs/backlog.md`, "Framebuffer"). The only 3D a guest can do is Mesa's software
 renderers (llvmpipe, lavapipe) on our emulated CPU.
 
 ## 1. Proposed decisions
@@ -80,7 +80,7 @@ renderers (llvmpipe, lavapipe) on our emulated CPU.
   `SharedArrayBuffer` (our guest RAM), but Chromium's history there is mixed
   ([gpuweb#4186](https://github.com/gpuweb/gpuweb/issues/4186)): check it in G0. WebGPU works in
   workers, with `OffscreenCanvas` for presentation.
-- **crosvm's `rutabaga_gfx`** (BSD-3, already a reference in PLAN.md §6): the virtio-gpu device
+- **crosvm's `rutabaga_gfx`** (BSD-3, already a reference in `THIRD_PARTY.md`): the virtio-gpu device
   model with 2D, virgl, Venus and gfxstream behind one interface. Our model for the device side
   and the command set.
 
@@ -141,7 +141,7 @@ Map what maps, emulate what's cheap, don't advertise the rest:
 - **The `HOSTMEM` window lives in our shared wasm memory**, outside guest RAM in guest-physical
   space. Guest and translator see the same bytes with no copy: that's the one place where
   emulation is better placed than a native VMM. It comes out of the same 4 GiB wasm32 budget as
-  guest RAM (layout A, PLAN.md §7 M0.5), so its size is a VM config choice (e.g. 256 MiB).
+  guest RAM (layout A, `docs/architecture.md`), so its size is a VM config choice (e.g. 256 MiB).
 - **Host-visible memory used by the GPU needs a shadow `GPUBuffer`**, updated at `vkQueueSubmit`
   with the ranges the guest wrote since the last submit. With coherent memory, the guest never
   says which ranges it wrote. **We own the MMU**, so we can track that: the window's pages start
@@ -159,7 +159,7 @@ Map what maps, emulate what's cheap, don't advertise the rest:
   on the GPU worker, as with blk in realtime mode. The Venus "ring" (the driver's
   shared-memory command ring, used where it avoids a virtqueue round trip) polls on the GPU
   worker.
-- **3D runs in realtime mode only**, like networking (PLAN-NETWORKING N4). Deterministic tests
+- **3D runs in realtime mode only**, like networking (`networking.md` N4). Deterministic tests
   stop at 2D and at the protocol level (§6).
 - SMP (M7) changes nothing here: the guest's threads all end up in the same virtqueues.
 
@@ -175,7 +175,7 @@ Map what maps, emulate what's cheap, don't advertise the rest:
 - **Tessellation, geometry shaders, transform feedback** as compute pre-passes, MoltenVK-style,
   only if Zink's GL version or a real workload requires them.
 
-## 6. Testing (PLAN.md §4)
+## 6. Testing (`docs/testing.md`)
 
 - **2D:** byte-exact, deterministic, natively and in Chromium: a guest script draws through KMS
   (a dumb buffer with damage, a cursor), and the test reads the canvas back, as
@@ -194,7 +194,7 @@ Map what maps, emulate what's cheap, don't advertise the rest:
 
 ## 7. Steps
 
-Each step comes with tests at the cheapest layer that catches it (PLAN.md §4).
+Each step comes with tests at the cheapest layer that catches it (`docs/testing.md`).
 
 - **G0 — WebGPU environment spike, measured.** Get a WebGPU adapter in headless Chromium in the
   dev VM (software), and record the adapter's features and limits. Check `writeBuffer` from a

@@ -1,5 +1,5 @@
 //! libFuzzer target for the virtio-mmio transport and split-queue parser
-//! (PLAN.md §4 item 10): the input is the guest RAM (descriptor table, rings,
+//! (docs/testing.md): the input is the guest RAM (descriptor table, rings,
 //! indirect tables) followed by register writes and backend completions. No
 //! input may panic, and every posted buffer must lie in RAM.
 #![no_main]

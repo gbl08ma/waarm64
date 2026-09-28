@@ -1,4 +1,4 @@
-//! TestFloat 3e vectors against `webpc_core::fp` (PLAN.md §4 item 5).
+//! TestFloat 3e vectors against `webpc_core::fp` (docs/testing.md).
 //!
 //! Runs when TESTFLOAT_GEN points at a `testfloat_gen` binary; `scripts/testfloat.sh`
 //! builds it under target/ and runs this in release mode. Every function runs in

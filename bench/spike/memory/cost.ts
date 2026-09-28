@@ -1,4 +1,4 @@
-// M0.5 cost experiments (PLAN.md §7 M0.5): JIT-shaped kernels per memory
+// M0.5 cost experiments (bench/spike/memory/REPORT.md): JIT-shaped kernels per memory
 // layout, and Rust-side access through accessor modules. Runs in a worker via
 // bench/run.ts --page bench/spike/memory/index.html.
 import type { Options, Sample } from '../benchmarks.ts';

@@ -275,7 +275,7 @@ fn unpredictable(w: u32) -> bool {
 }
 
 /// Instructions Capstone decodes that we treat as UNDEFINED on purpose: SVE/SME
-/// and the other features PLAN.md §1 leaves out or we don't advertise.
+/// and the other features docs/cpu.md leaves out or we don't advertise.
 fn not_ours(m: &str, ops: &str) -> bool {
     // SVE/SME operands: z0-z31, p0-p15, za tiles.
     let sve = ops.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| {
