@@ -35,7 +35,8 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   points at the Mac host (`~/.ssh/config`). The `oracle` VM (Debian 13, 4 vCPUs, 8 GiB) shares the
   Mac: `ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>`.
 - Packages from zypper: Node 26, Chromium 153 (`/usr/bin/chromium`), clang/lld/llvm, qemu (user,
-  system, tools), podman (rootless), dtc, capstone; Rust through rustup and `rust-toolchain.toml`.
+  system, tools), podman (rootless), dtc, capstone, dejavu-fonts (headless Chromium draws no page
+  text without a font: screenshots of the page need it); Rust through rustup and `rust-toolchain.toml`.
   Add what's missing with `sudo zypper in`, and note it here.
 - Dev-only tools (not repo dependencies, not in tests or CI): `perf` (with V8's `--perf-prof`;
   `perf_event_paranoid` is 2, so profile your own processes) and `wasm-tools` (`cargo +stable

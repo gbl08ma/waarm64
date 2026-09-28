@@ -1,0 +1,8 @@
+{
+  "what": "the page (web/app/, machine debian, 4 parallel vCPUs, JIT), seconds from page.goto to the 'running' state (serial 'login: ')",
+  "host": "M4 Mac mini, Lima VM dev (8 vCPUs)",
+  "chromium": "153.0.8010.52 headless (Playwright)",
+  "driver": "bench/results/local/m8-loop2/look.ts (ad hoc, not committed)",
+  "freshOverlay": [30.5, 29.9, 30.3, 30.3],
+  "existingOverlay": [29.5]
+}

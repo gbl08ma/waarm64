@@ -500,9 +500,10 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /** What the guest wrote to its virtio consoles so far (all of it once `flush` resolves). */
     hvc: () => devices.output(),
     flush: () => devices.flush(),
+    /** Stops the vCPUs and releases the backends; resolves once their files are closed. */
     close: () => {
       par?.close();
-      devices.close();
+      return devices.close();
     },
     /** vCPU `i`'s PC (published once per chunk while it runs). */
     pc: (i = 0) => new BigUint64Array(memory.buffer, ex.vm_cpu(vm, i) + 256, 1)[0],
@@ -666,7 +667,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       kick: (_wait: boolean) => { throw new Error('parallel: the vCPU workers ring the doorbell'); },
       inFlight: () => false,
       settle: async () => { if (failed) throw failed; },
-      output: () => text, flush: async () => { if (failed) throw failed; }, close: () => d.close(),
+      output: () => text, flush: async () => { if (failed) throw failed; }, close: async () => d.close(),
     };
   }
   if (!inWorker || init.specs.length === 0) {
@@ -680,11 +681,12 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       kick: (_wait: boolean) => { pending = d.poll(); },
       inFlight: () => pending !== undefined,
       settle: async () => { await pending; pending = undefined; },
-      output: () => text, flush: async () => {}, close: () => d.close(),
+      output: () => text, flush: async () => {}, close: async () => d.close(),
     };
   }
   const worker = new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
   let flushed = () => {};
+  let closed = () => {};
   const ready = new Promise<void>((resolve, reject) => {
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
     worker.onmessage = (e: MessageEvent) => {
@@ -692,6 +694,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       else if (e.data.type === 'error') reject(new Error(`device worker: ${e.data.message}`));
       else if (e.data.type === 'console') out(e.data.device, e.data.text);
       else if (e.data.type === 'flushed') flushed();
+      else if (e.data.type === 'closed') closed();
     };
   });
   worker.postMessage({ type: 'init', ...init, bell: bellAddr }, specPorts(init.specs));
@@ -706,6 +709,11 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       flushed = resolve;
       worker.postMessage({ type: 'flush' });
     }),
-    close: () => worker.postMessage({ type: 'close' }), // it releases its files, then ends
+    /** Resolves once it released its files (so another VM can open the overlay), or after a second if it doesn't answer. */
+    close: () => new Promise<void>((resolve) => {
+      closed = resolve;
+      setTimeout(resolve, 1000);
+      worker.postMessage({ type: 'close' });
+    }),
   };
 }

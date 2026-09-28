@@ -207,3 +207,44 @@ for (const [distro, want] of [['alpine', /smp: Brought up 1 node, 4 CPUs[^]*webp
     }
   });
 }
+
+// The page (web/app/, M8 loop 2) on the Buildroot guest, a shell on its serial
+// console: the machine worker boots, serial output reaches xterm.js and keys
+// typed there reach the shell, a key pressed on the screen reaches the guest's
+// keyboard (read from /dev/input/event0), the shell's exit powers it off,
+// Start boots a new machine and Restart replaces a running one. xterm.js's DOM renderer puts the text in `.xterm-rows`.
+test('the page runs a machine: serial terminal both ways, keyboard, power off, start again', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
+  const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=2&view=both`);
+  const state = (s: string, ms = 60_000) => page.waitForFunction((s) => document.body.dataset.state === s || document.body.dataset.state === 'crashed', s, { timeout: ms, polling: 100 })
+    .then(async () => assert.equal(await page.evaluate(() => document.body.dataset.state), s, await page.locator('#message').textContent() ?? ''));
+  const terminal = () => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
+  const shows = (re: RegExp, ms = 20_000) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 100 });
+  await state('running');
+  assert.deepEqual(await page.evaluate(() => { const c = document.querySelector('canvas')!; return [c.width, c.height, Number.isInteger(Number(c.dataset.scale))]; }), [640, 480, true]);
+  await page.locator('.xterm').click();
+  await page.keyboard.type('echo webpc-$((6*7)); echo re""ady; dd bs=24 count=1 </dev/input/event0 2>/dev/null | od -An -j16 -N4 -tu2\n');
+  await shows(/webpc-42.*ready/);
+  await page.waitForTimeout(300); // dd opens the device
+  await page.locator('#screen').click();
+  await page.keyboard.press('KeyA');
+  await shows(/ready\s+1\s+30\b/); // EV_KEY KEY_A
+  await page.locator('.xterm').click();
+  await page.keyboard.type('exit\n');
+  await state('off');
+  assert.equal(await page.locator('#restart').textContent(), 'Start');
+  await page.locator('#restart').click();
+  await state('running');
+  assert.doesNotMatch(await terminal(), /webpc-42/); // a new machine, a cleared terminal
+  // Restart while running (after a confirmation): the old machine releases its disk overlay for the new one.
+  page.once('dialog', (d) => void d.accept());
+  await page.locator('#restart').click();
+  await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 10_000, polling: 50 });
+  await state('running');
+  const t = await terminal();
+  assert.equal(t.match(/Run \/init as init process/g)?.length, 1, t); // one boot's log
+  assert.deepEqual(errors, []);
+  await page.close();
+});

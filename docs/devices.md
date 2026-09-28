@@ -93,7 +93,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   blocks: `data` holds written blocks in first-write order, `map` a u32 per disk block (0 = base,
   n = slot n − 1), `base` the image's URL path and size (a mismatch refuses to open). A block's
   slot is written before its map entry, so a crash leaks a slot but never maps garbage. Opened
-  with synchronous access handles (so deterministic mode stays exact) and closed on `close`.
+  with synchronous access handles (so deterministic mode stays exact) and closed on `close` (the
+  device worker answers `closed`, and `vm.close()` resolves then: the handles are exclusive, so a
+  new VM on the same overlay opens it after that; [frontend.md](frontend.md) "Overlay hand-over").
   Natively, `Overlay` keeps 512-byte sectors in memory and can be shared by several boots. No
   DISCARD/WRITE_ZEROES, compaction, quota handling, content check of the base, or host API to
   reset/export an overlay yet (backlog).

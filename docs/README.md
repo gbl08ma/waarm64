@@ -11,6 +11,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [architecture.md](architecture.md) | threads (vCPU workers), the shared memory (layout A), design principles, the code map, the toolchain |
 | [cpu.md](cpu.md) | the guest CPU: ISA and features, ID registers, exceptions, system registers, MMU and TLB, atomics, FP, crypto, the decoder |
 | [platform.md](platform.md) | memory map, boot and DTB, the run loop (round-robin and parallel SMP), broadcast maintenance, deterministic and realtime time, the GICv3, timer, PL011, PSCI |
+| [frontend.md](frontend.md) | the page (`web/app/`): its machines, the worker protocol, the screen, the serial terminal (xterm.js) |
 | [devices.md](devices.md) | virtio transports and queues, the device worker, blk/qcow2/overlay, net, 9p, input, framebuffer |
 | [abi.md](abi.md) | the host ABI (version 26): exports, `VmConfig`, exits, counters, device layouts, the JIT host interface, version history |
 | [jit.md](jit.md) | the JIT: dispatch, blocks, regions, linking, invalidation, emission, FP fast paths, what's still helpers, what was tried and dropped |

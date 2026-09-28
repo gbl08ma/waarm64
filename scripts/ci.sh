@@ -14,7 +14,7 @@ step rust clippy; cargo clippy --all-targets -q -- -D warnings
 step rust test;   cargo test -q
 step testfloat;   scripts/testfloat.sh
 step wasm build;  scripts/build-wasm.sh -q
-step npm deps;    [ -d node_modules ] || npm ci --no-fund --no-audit
+step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit
 step typecheck;   npx tsc --noEmit
 current() { images/build.sh --check "$1" > /dev/null; }
 export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current debian && echo ,debian)}

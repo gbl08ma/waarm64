@@ -4,7 +4,8 @@
 // the doorbell value it handled to word 1, which the vCPU waits on in
 // deterministic mode. Console output goes to the owner as messages. If a
 // backend throws, word 1 becomes -1 so the vCPU fails instead of waiting.
-// `close` releases the backends' files (OPFS locks) and ends the worker.
+// `close` releases the backends' files (OPFS locks), answers `closed` and ends
+// the worker.
 import { Devices, type DevicesInit } from './devices.ts';
 
 type Init = DevicesInit & { bell: number };
@@ -16,6 +17,7 @@ self.onmessage = (e: MessageEvent) => {
   else if (e.data.type === 'flush') self.postMessage({ type: 'flushed' }); // after every earlier message
   else if (e.data.type === 'close') {
     devices?.close();
+    self.postMessage({ type: 'closed' });
     self.close();
   }
 };

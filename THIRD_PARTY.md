@@ -19,6 +19,12 @@ Reimplemented from the description, nothing copied; credited all the same.
 | `core/src/jit/emit/crypto.rs` `inv_mix_columns` (M6.5) | InvMixColumns as MixColumns after a multiply by 04 00 05 00 | Daemen and Rijmen, "The Design of Rijndael", 4.1.3 |
 | `core/src/crypto.rs` `clmul32`/`clmul64` (M6.5) | Carry-less multiplication with integer multiplies of operands masked to every fourth bit ("multiply with holes"), so partial sums can't carry into the next bit of the same class; constant time without a carry-less multiply instruction | Thomas Pornin, BearSSL's `bmul` (`src/hash/ghash_ctmul.c`) and its "Constant-Time Mul" notes (bearssl.org), MIT |
 
+## Runtime dependencies (npm)
+
+| Package | Version | License | Use |
+|---|---|---|---|
+| @xterm/xterm | 6.0.0 | MIT | the page's serial terminal (`web/app/`); served from `node_modules` (only `lib/xterm.mjs` and `css/xterm.css`), not vendored |
+
 ## Development dependencies (not distributed)
 
 | Package | Version | License |

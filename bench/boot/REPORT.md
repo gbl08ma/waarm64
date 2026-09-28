@@ -320,3 +320,11 @@ Echo latency (Node, parallel on 2 vCPUs, Alpine with `init=/bin/sh`, `echo hi` t
 each): 42–75 ms (median ~55); without `SIGNAL_RX` 59–167 ms (~120), since the tickless kernel only
 looks at the PL011 at its next timer event. ~55 ms for a shell's echo is slow; loop 3 measures
 key-to-glyph and looks into it.
+
+## M8 loop 2: the page
+
+Time from loading the page (`web/app/`, Debian, 4 parallel vCPUs, JIT; Chromium 153.0.8010.52
+headless, the M4 VM) to its `running` state (the serial `login: ` prompt): 30.5, 29.9, 30.3,
+30.3 s on a fresh overlay (median 30.3), 29.5 s over an existing one. Loop 0's throwaway page took
+~34 s fresh; the difference is within what separate sessions give, and nothing on the boot path
+changed. Raw: `results/m8-loop2/`.

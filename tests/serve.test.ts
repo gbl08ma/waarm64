@@ -37,3 +37,16 @@ test('ranges over HTTP', async () => {
   assert.equal((await fetch(base + path, { headers: { Range: `bytes=${whole.length}-` } })).status, 416);
   assert.deepEqual(Buffer.from(await (await fetch(base + path)).arrayBuffer()), whole);
 });
+
+test('the page, and only the files it imports from node_modules', async () => {
+  const root = await fetch(base + '/', { redirect: 'manual' });
+  assert.deepEqual([root.status, root.headers.get('location')], [302, '/web/app/']);
+  const page = await fetch(base + '/web/app/');
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type') ?? '', /^text\/html/);
+  assert.equal(page.headers.get('cross-origin-embedder-policy'), 'require-corp');
+  for (const ok of ['/node_modules/@xterm/xterm/lib/xterm.mjs', '/node_modules/@xterm/xterm/css/xterm.css']) assert.equal((await fetch(base + ok)).status, 200, ok);
+  for (const no of ['/node_modules/@xterm/xterm/lib/xterm.mjs.map', '/node_modules/@xterm/xterm/package.json', '/node_modules/typescript/package.json', '/node_modules/@xterm/xterm/lib/%2e%2e/package.json', '/web/%2e%2e/node_modules/@xterm/xterm/LICENSE']) {
+    assert.equal((await fetch(base + no)).status, 403, no);
+  }
+});

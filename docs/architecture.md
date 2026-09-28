@@ -86,7 +86,7 @@ wasm64 core was free there), B +31–40%, D +26–32%.
 | `core/src/jit/` | the JIT ([jit.md](jit.md)) |
 | `core/tests/` | native runners (corpus, TestFloat, bare-metal, boots, LTP, distros, litmus) and `common/` (native backends, the thread-per-vCPU runner) |
 | `core/fuzz/` | decoder sweep and libFuzzer targets (separate workspace) |
-| `web/` | `vm.ts` (host ABI, parallel SMP's coordinator), `vcpu-worker.ts`, `devices.ts` + `device-worker.ts` (backends), `9p.ts`, `net.ts`, `input.ts`, `display.ts`, `overlay.ts`, `qcow2.ts`, `sampler-worker.ts`, `profiler.ts` |
+| `web/` | `vm.ts` (host ABI, parallel SMP's coordinator), `vcpu-worker.ts`, `devices.ts` + `device-worker.ts` (backends), `9p.ts`, `net.ts`, `input.ts`, `display.ts`, `overlay.ts`, `qcow2.ts`, `sampler-worker.ts`, `profiler.ts`; `app/`: the page ([frontend.md](frontend.md)) |
 | `tests/` | Node and Chromium tests, the corpus, the harness, bare-metal tests, qcow2 fixtures, `steps.txt` |
 | `tools/` | `serve.ts` (dev server with COOP/COEP and ranges), `corpus/` (generator and oracle runner), `v8code.ts` (V8 machine code of JIT functions), `wasm-sizes.ts` |
 | `bench/` | `run.ts` (the harness), `interp/`, `boot/`, `jit/`, `spike/` (pages, suites, reports, committed results) |
