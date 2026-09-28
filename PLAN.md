@@ -61,7 +61,10 @@ Details of each: the docs (by topic) and `bench/*/REPORT.md` (by date). Numbers 
 ### M7 — SMP
 
 Kickoff: `M7-KICKOFF.md` (decisions confirmed 2026-09-28). Goal: N vCPUs running Linux SMP on a
-GICv3, stable under stress, with a scaling curve.
+GICv3, stable under stress, with a scaling curve. **Done (2026-09-28):** loop 0 (Debian in CI,
+litmus image and M4 reference), 1 (core instances per worker), 2 (GICv3 default, native test
+kernels), 3 (deterministic round-robin SMP, PSCI CPU_ON/OFF, WFE/SEV, TLBI IS; Linux boots on up
+to 8 vCPUs with exact steps in every runner). Next: `M7-LOOP4-HANDOVER.md`.
 - **Two execution modes, one core:** deterministic SMP runs every vCPU round-robin on one thread
   with a fixed quantum and one shared code cache (exact, reproducible step counts in every runner;
   virtual time = total steps of all vCPUs); realtime SMP runs **one worker per vCPU** on the shared

@@ -9,17 +9,44 @@
 mod common;
 
 /// Runnable tests: (unittests.cfg name, file, arguments, GIC version (0: the
-/// default), the checks expected to FAIL).
-const RUN: &[(&str, &str, &str, u64, &[&str])] = &[
-    ("selftest-setup", "selftest", "setup smp=1 mem=256", 0, &[]),
+/// default), vCPUs, the checks expected to FAIL). `psci` runs with the
+/// environment (an initrd) that enables its concurrent cpu-on check.
+type Test = (
+    &'static str,
+    &'static str,
+    &'static str,
+    u64,
+    u64,
+    &'static [&'static str],
+);
+const RUN: &[Test] = &[
+    (
+        "selftest-setup",
+        "selftest",
+        "setup smp=1 mem=256",
+        0,
+        1,
+        &[],
+    ),
+    ("selftest-smp", "selftest", "smp", 0, 4, &[]),
     (
         "selftest-vectors-kernel",
         "selftest",
         "vectors-kernel",
         0,
+        1,
         &[],
     ),
-    ("selftest-vectors-user", "selftest", "vectors-user", 0, &[]),
+    (
+        "selftest-vectors-user",
+        "selftest",
+        "vectors-user",
+        0,
+        1,
+        &[],
+    ),
+    ("psci", "psci", "", 0, 4, &[]),
+    ("gicv3-ipi", "gic", "ipi", 3, 4, &[]),
     // The test expects SPI targets to hold CPU 0's bit; on a uniprocessor GIC
     // the GICv2 spec makes ITARGETSR RAZ/WI, and QEMU TCG fails these two
     // checks the same way.
@@ -28,28 +55,23 @@ const RUN: &[(&str, &str, &str, u64, &[&str])] = &[
         "gic",
         "mmio",
         2,
+        1,
         &[
             "gicv2: mmio: ITARGETSR: register content preserved",
             "gicv2: mmio: ITARGETSR: byte writes successful",
         ],
     ),
-    ("gicv2-active", "gic", "active", 2, &[]),
-    ("gicv3-active", "gic", "active", 3, &[]),
-    ("timer", "timer", "", 0, &[]),
-    ("cache", "cache", "", 0, &[]),
+    ("gicv2-active", "gic", "active", 2, 1, &[]),
+    ("gicv3-active", "gic", "active", 3, 4, &[]),
+    ("timer", "timer", "", 0, 1, &[]),
+    ("cache", "cache", "", 0, 1, &[]),
 ];
 
 /// Skipped: (name or prefix, reason).
 pub const SKIP: &[(&str, &str)] = &[
-    ("selftest-smp", "SMP (M7)"),
-    (
-        "psci",
-        "every check needs 2+ CPUs; on one it skips them all (M7)",
-    ),
-    ("gicv2-ipi", "SMP (M7)"),
-    ("gicv2-mmio", "the SMP variants of gicv2-mmio-up (M7)"),
-    ("gicv2-mmio-3p", "SMP (M7)"),
-    ("gicv3-ipi", "SMP (M7)"),
+    ("gicv2-ipi", "the GICv2 model is one CPU's (M7 loop 3b)"),
+    ("gicv2-mmio", "the GICv2 model is one CPU's (M7 loop 3b)"),
+    ("gicv2-mmio-3p", "the GICv2 model is one CPU's (M7 loop 3b)"),
     ("its-", "no GICv3 ITS"),
     ("pmu-", "no PMU (ID_AA64DFR0_EL1.PMUVer = 0)"),
     ("pci-test", "no PCI"),
@@ -81,11 +103,14 @@ fn kvm_unit_tests() {
         );
     }
     let mut failed = Vec::new();
-    for (name, file, args, gic, expect_fail) in RUN {
+    let env = b"ERRATA_6c7a5dce22b3=y\n";
+    for (name, file, args, gic, ncpus, expect_fail) in RUN {
         let flat = common::image(&format!("kvm-unit-tests/{file}.flat"));
         let r = common::boot(&common::Boot {
             max_steps: 5_000_000_000,
             gic: *gic,
+            ncpus: *ncpus,
+            initrd: (*name == "psci").then_some(&env[..]),
             ..common::Boot::new(&flat, args)
         });
         let status = r

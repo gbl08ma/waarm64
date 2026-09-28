@@ -12,7 +12,7 @@ const RAM_SIZE: usize = 16 << 20;
 const BUDGET: u64 = 50_000_000;
 
 /// Boots `image` and returns the SYSTEM_OFF code and the console output, or why it never got there.
-fn boot(image: &[u8], gic: u64) -> Result<(u64, String), String> {
+fn boot(image: &[u8], gic: u64, ncpus: u64) -> Result<(u64, String), String> {
     let mut ram = vec![0u128; RAM_SIZE / 16];
     // SAFETY: ram is 16-byte aligned, RAM_SIZE bytes long, and outlives the Vm.
     let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, RAM_SIZE as u64) };
@@ -20,6 +20,7 @@ fn boot(image: &[u8], gic: u64) -> Result<(u64, String), String> {
     let cfg = VmConfig {
         features: webpc_core::cpu::FEATURE_CRYPTO,
         gic,
+        ncpus,
         ..VmConfig::default()
     };
     let mut vm = Vm::new(mem, cfg);
@@ -40,17 +41,21 @@ fn boot(image: &[u8], gic: u64) -> Result<(u64, String), String> {
             exit::TX_FULL => {}
             exit::PSCI if vm.exit.x[0] == 0x8400_0008 => return Ok((vm.exit.x[1], out())),
             _ => {
-                let c = &vm.vcpu.cpu;
+                let pcs: Vec<_> = vm
+                    .vcpus
+                    .iter()
+                    .map(|v| format!("{:#x}", v.cpu.pc))
+                    .collect();
                 return Err(format!(
-                    "exit {kind} ({:#x}) at pc={:#x}; console: {}",
+                    "exit {kind} ({:#x}) on vCPU {}, pcs {pcs:?}; console: {}",
                     vm.exit.value,
-                    c.pc,
+                    vm.exit.cpu,
                     out()
                 ));
             }
         }
     }
-    let c = &vm.vcpu.cpu;
+    let c = &vm.vcpus[0].cpu;
     Err(format!(
         "no SYSTEM_OFF after {BUDGET} steps: pc={:#x} esr={:#x} elr={:#x} far={:#x}; console: {}",
         c.pc,
@@ -59,6 +64,14 @@ fn boot(image: &[u8], gic: u64) -> Result<(u64, String), String> {
         c.far_el1,
         String::from_utf8_lossy(&out)
     ))
+}
+
+/// The vCPUs a test asks for in its source (`// smp: N`), 1 without.
+fn smp_of(bin: &std::path::Path) -> u64 {
+    let src = std::fs::read_to_string(bin.with_extension("c")).unwrap_or_default();
+    src.lines()
+        .find_map(|l| l.strip_prefix("// smp: ")?.trim().parse().ok())
+        .unwrap_or(1)
 }
 
 /// The GIC a test asks for in its source (`<test>.c` beside the `.bin`): 0 is the default.
@@ -86,7 +99,7 @@ fn baremetal() {
     let mut failed = Vec::new();
     for bin in &bins {
         let name = bin.file_stem().unwrap().to_string_lossy();
-        match boot(&std::fs::read(bin).unwrap(), gic_of(bin)) {
+        match boot(&std::fs::read(bin).unwrap(), gic_of(bin), smp_of(bin)) {
             Ok((code, out)) if !out.ends_with(&format!("exit {code}\n")) => {
                 failed.push(format!("{name}: exit {code}, but the console says {out:?}"))
             }
@@ -104,5 +117,5 @@ fn reports_failure_codes() {
     // mov x1, #5; movz x0, #0x8400, lsl #16; movk x0, #8; hvc #0
     let prog: [u32; 4] = [0xd28000a1, 0xd2b08000, 0xf2800100, 0xd4000002];
     let image: Vec<u8> = prog.iter().flat_map(|w| w.to_le_bytes()).collect();
-    assert_eq!(boot(&image, 0), Ok((5, String::new())));
+    assert_eq!(boot(&image, 0, 1), Ok((5, String::new())));
 }

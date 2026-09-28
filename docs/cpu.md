@@ -62,8 +62,9 @@ match it step for step.
   LDAR/STLR and LSE atomics need natural alignment (v8.0 rules; we don't advertise LSE2, which the
   M4 and QEMU implement: see [testing.md](testing.md) "Known oracle behavior").
 - `Cpu::default()` is a Linux user process at EL0; `Cpu::reset()` the EL1 boot state.
-- WFI: see the run loop ([platform.md](platform.md)). **WFE completes at once** (one vCPU: nothing
-  to wait for; M7 revisits it).
+- WFI: see the run loop ([platform.md](platform.md)). **WFE completes at once** with one vCPU
+  (nothing to wait for); with more it ends the vCPU's quantum unless an event (SEV, SEVL) is
+  pending, and SEV/SEVL set events ([platform.md](platform.md) "The run loop").
 
 ## System registers
 
@@ -88,7 +89,8 @@ The table is `core/src/interp/sys.rs`.
   capped at the 40-bit PARange, APTable/UXNTable/PXNTable, WXN, the implicit PXN on
   EL0-writable pages, **software-managed access flag** (no hardware AF/DBM).
 - AT S1E{0,1}{R,W} into `PAR_EL1`. TLBI VMALLE1, ASIDE1, VAE1, VAAE1, VALE1, VAALE1 and their IS
-  forms (no range or outer-shareable forms).
+  forms (no range or outer-shareable forms); with more than one vCPU the IS forms leave the
+  interpreter (`Exit::TlbiIs`, retired) and the run loop does them on the other vCPUs' TLBs.
 - Faults carry kind, level and access (ESR WnR, CM). Cache maintenance by VA translates and
   faults like a read (`DC IVAC` like a write).
 - **The TLB** is the M0 spike's shape: direct-mapped, 4096 entries × {tag, addend} (16 bytes) per

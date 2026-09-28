@@ -97,10 +97,14 @@ impl VmConfig {
         if self.gic == 0 { GIC_DEFAULT } else { self.gic }
     }
 
-    /// Whether `vm_new` accepts the GIC and CPU fields.
+    /// Whether `vm_new` accepts the GIC and CPU fields: up to `MAX_CPUS` on
+    /// a GICv3; the GICv2 model is one CPU's until it's made per-CPU.
     pub fn valid_smp(&self) -> bool {
-        // M7 loop 3 lifts the one-CPU limit.
-        matches!(self.gic, 0 | 2 | 3) && self.ncpus <= 1
+        match self.gic_version() {
+            3 => self.ncpus <= MAX_CPUS,
+            2 => self.ncpus <= 1,
+            _ => false,
+        }
     }
 }
 
@@ -142,7 +146,8 @@ pub mod exit {
     pub const DEVICE: u32 = 6;
 }
 
-/// Why `Vm::run` returned. `repr(C)`: kind, steps this run, value, x0–x3.
+/// Why `Vm::run` returned. `repr(C)`: kind, steps this run, value, x0–x3,
+/// the vCPU that exited (ABI 22).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ExitInfo {
@@ -150,6 +155,7 @@ pub struct ExitInfo {
     pub retired: u64,
     pub value: u64,
     pub x: [u64; 4],
+    pub cpu: u64,
 }
 
 /// Signal word bits.
@@ -276,8 +282,43 @@ impl Intc {
     }
 }
 
+/// Whether a vCPU is on (PSCI CPU_ON/CPU_OFF; only CPU 0 is on at boot).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Power {
+    Off,
+    On,
+}
+
+/// What an on vCPU is waiting for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Wait {
+    No,
+    /// In WFI (the PC on it) until an interrupt is signaled to it.
+    Wfi,
+    /// Its WFI completes when it next runs: virtual time jumped to its deadline.
+    Woken,
+}
+
+/// A vCPU's place in the run loop.
+#[derive(Clone, Copy, Debug)]
+struct Sched {
+    power: Power,
+    wait: Wait,
+    /// The event register (SEV, SEVL; consumed by WFE).
+    event: bool,
+}
+
 pub struct Vm {
-    pub vcpu: Box<Vcpu>,
+    /// CPU *i* is `vcpus[i]` (MPIDR `gicv3::mpidr(i)`). The JIT's code cache
+    /// lives in vCPU 0's `jit.cache` and moves to another vCPU while it runs
+    /// a chunk (one cache for every vCPU of the thread: block code takes the
+    /// `Vcpu` pointer).
+    pub vcpus: Vec<Box<Vcpu>>,
+    sched: Vec<Sched>,
+    /// The vCPU running (or last run), and the steps left in its quantum
+    /// (u64::MAX with one vCPU).
+    cur: usize,
+    quantum: u64,
     pub mem: Mem,
     pub gic: Intc,
     pub uart: Pl011,
@@ -285,6 +326,7 @@ pub struct Vm {
     pub shared: Arc<Shared>,
     pub exit: ExitInfo,
     pub(crate) cfg: VmConfig,
+    /// Steps of every vCPU (virtual time counts them all).
     steps: u64,
     /// Ticks WFI jumped over.
     skipped: u64,
@@ -332,16 +374,27 @@ impl Clock {
 
 // PSCI 1.0 function IDs (SMC32 unless noted).
 const PSCI_VERSION: u32 = 0x8400_0000;
+const PSCI_CPU_OFF: u32 = 0x8400_0002;
+const PSCI_CPU_ON: u32 = 0x8400_0003;
+const PSCI_CPU_ON_64: u32 = 0xc400_0003;
 const PSCI_AFFINITY_INFO: u32 = 0x8400_0004;
 const PSCI_AFFINITY_INFO_64: u32 = 0xc400_0004;
 const PSCI_MIGRATE_INFO_TYPE: u32 = 0x8400_0006;
 const PSCI_SYSTEM_OFF: u32 = 0x8400_0008;
 const PSCI_SYSTEM_RESET: u32 = 0x8400_0009;
 const PSCI_FEATURES: u32 = 0x8400_000a;
+// PSCI return codes.
+const PSCI_SUCCESS: i64 = 0;
+const PSCI_NOT_SUPPORTED: i64 = -1;
+const PSCI_INVALID_PARAMETERS: i64 = -2;
+const PSCI_ALREADY_ON: i64 = -4;
+
+/// Steps each vCPU runs before the next one's turn (deterministic round-robin).
+const QUANTUM: u64 = CHUNK;
 
 impl Vm {
-    /// A VM over `mem` (placed at `RAM_BASE`), with the vCPU in its reset state at
-    /// the start of RAM. Zeroes in `cfg` pick the defaults.
+    /// A VM over `mem` (placed at `RAM_BASE`), with vCPU 0 in its reset state at
+    /// the start of RAM and the others off. Zeroes in `cfg` pick the defaults.
     pub fn new(mem: Mem, cfg: VmConfig) -> Vm {
         Vm::with_devices(mem, cfg, &[])
     }
@@ -351,15 +404,22 @@ impl Vm {
         assert!(devices.len() <= virtio::MAX_DEVICES && devices.iter().all(DeviceEntry::valid));
         let d = VmConfig::default();
         let pick = |v, d| if v == 0 { d } else { v };
+        let n = cfg.ncpus.max(1) as usize;
         let v3 = cfg.gic_version() == 3;
-        let features = cfg.features | if v3 { crate::cpu::FEATURE_GICV3 } else { 0 };
-        let mut vcpu = Vcpu::new(Cpu {
-            pc: RAM_BASE,
-            features,
-            mpidr: gicv3::mpidr(0),
-            ..Cpu::reset()
-        });
-        vcpu.jit.cache = match cfg.jit {
+        let features = cfg.features
+            | if v3 { crate::cpu::FEATURE_GICV3 } else { 0 }
+            | if n > 1 { crate::cpu::FEATURE_SMP } else { 0 };
+        let mut vcpus: Vec<_> = (0..n)
+            .map(|i| {
+                Vcpu::new(Cpu {
+                    pc: RAM_BASE,
+                    features,
+                    mpidr: gicv3::mpidr(i),
+                    ..Cpu::reset()
+                })
+            })
+            .collect();
+        vcpus[0].jit.cache = match cfg.jit {
             0 => None,
             1 => Some(jit::Config::DEFAULT),
             _ => Some(jit::Config::STRESS),
@@ -369,11 +429,21 @@ impl Vm {
             cache.features = features;
             Box::new(cache)
         });
+        let off = Sched {
+            power: Power::Off,
+            wait: Wait::No,
+            event: false,
+        };
+        let mut sched = vec![off; n];
+        sched[0].power = Power::On;
         Vm {
-            vcpu,
+            vcpus,
+            sched,
+            cur: 0,
+            quantum: if n > 1 { QUANTUM } else { u64::MAX },
             mem: mem.at(RAM_BASE),
             gic: if v3 {
-                Intc::V3(Box::new(Gicv3::new(1)))
+                Intc::V3(Box::new(Gicv3::new(n)))
             } else {
                 Intc::V2(Box::default())
             },
@@ -399,7 +469,12 @@ impl Vm {
         self.cfg.deterministic == 0
     }
 
-    /// The counter value (CNTPCT = CNTVCT).
+    /// Whether vCPU `c` is on (PSCI).
+    pub fn power(&self, c: usize) -> Power {
+        self.sched[c].power
+    }
+
+    /// The counter value (CNTPCT = CNTVCT), the same for every vCPU.
     pub fn now(&self) -> u64 {
         if self.realtime() {
             return (self.clock.ns() as u128 * self.cfg.cntfrq as u128 / 1_000_000_000) as u64;
@@ -407,7 +482,10 @@ impl Vm {
         self.steps * self.cfg.ticks_per_insn + self.skipped
     }
 
-    /// Runs at most `budget` steps; returns the exit kind, with details in `self.exit`.
+    /// Runs at most `budget` steps of all vCPUs; returns the exit kind, with
+    /// details in `self.exit`. The vCPUs take turns on this thread, a quantum
+    /// each in index order (deterministic round-robin); an off or waiting one
+    /// is skipped.
     pub fn run(&mut self, budget: u64) -> u32 {
         let start = self.steps;
         self.exit = ExitInfo::default();
@@ -434,21 +512,29 @@ impl Vm {
                 break exit::BUDGET;
             }
             self.lines();
-            if self.gic.irq(0) && self.vcpu.cpu.pstate & PSTATE_I == 0 {
-                take_irq(&mut self.vcpu.cpu);
-                self.steps += 1;
+            let Some(c) = self.pick() else {
+                match self.idle() {
+                    Some(kind) => break kind,
+                    None => continue,
+                }
+            };
+            if self.sched[c].wait != Wait::No {
+                // Its WFI completes: an interrupt is signaled, or time reached its deadline.
+                self.sched[c].wait = Wait::No;
+                let cpu = &mut self.vcpus[c].cpu;
+                cpu.pc = cpu.pc.wrapping_add(4);
+                self.retire(1);
+                continue;
+            }
+            if self.gic.irq(c) && self.vcpus[c].cpu.pstate & PSTATE_I == 0 {
+                take_irq(&mut self.vcpus[c].cpu);
+                self.retire(1);
                 bump(&self.shared.counters.irqs);
                 continue;
             }
-            let n = CHUNK.min(left).min(self.until_deadline());
-            let v = &mut *self.vcpu;
-            let (k, e) = if v.jit.cache.is_some() {
-                // SAFETY: `v` is this VM's vCPU, not otherwise referenced during the call.
-                unsafe { jit::steps(v, &self.mem, n) }
-            } else {
-                interp::steps(&mut v.cpu, &self.mem, Some(&mut v.tlb), n)
-            };
-            self.steps += k;
+            let n = CHUNK.min(left).min(self.until_deadline()).min(self.quantum);
+            let (k, e) = self.chunk(c, n);
+            self.retire(k);
             self.publish();
             if let Some(e) = e
                 && let Some(kind) = self.handle(e)
@@ -459,18 +545,110 @@ impl Vm {
         self.publish();
         self.exit.kind = kind as u64;
         self.exit.retired = self.steps - start;
+        self.exit.cpu = self.cur as u64;
         kind
+    }
+
+    /// Counts `k` steps of the current vCPU (against its quantum too).
+    fn retire(&mut self, k: u64) {
+        self.steps += k;
+        self.quantum = self.quantum.saturating_sub(k);
+    }
+
+    /// The vCPU to run: the current one while its quantum lasts, else the next
+    /// one in index order that can, with a new quantum; `None` if every vCPU is
+    /// off or waiting in WFI.
+    fn pick(&mut self) -> Option<usize> {
+        let n = self.vcpus.len();
+        let from = if self.quantum > 0 { 0 } else { 1 };
+        for k in from..=n {
+            let c = (self.cur + k) % n;
+            if self.ready(c) {
+                if k > 0 {
+                    self.cur = c;
+                    self.quantum = if n > 1 { QUANTUM } else { u64::MAX };
+                }
+                return Some(c);
+            }
+        }
+        None
+    }
+
+    fn ready(&self, c: usize) -> bool {
+        let s = &self.sched[c];
+        s.power == Power::On
+            && match s.wait {
+                Wait::No | Wait::Woken => true,
+                // WFI completes when an interrupt is signaled, masked or not.
+                Wait::Wfi => self.gic.irq(c),
+            }
+    }
+
+    /// Every vCPU is off or waiting. Deterministic time jumps to the next timer
+    /// deadline (the vCPUs it was for complete their WFI); realtime mode, or no
+    /// deadline, returns the idle exit.
+    ///
+    /// One reading of the counter decides both whether a timer fires and the
+    /// deadline: in realtime mode the clock moves between reads, and a timer
+    /// due between two of them was neither pending nor a future deadline, so
+    /// the host slept with no deadline for good (found in M6.5 loop 5).
+    fn idle(&mut self) -> Option<u32> {
+        let now = self.now();
+        self.lines_at(now);
+        if (0..self.vcpus.len()).any(|c| self.ready(c)) {
+            return None;
+        }
+        match self.next_deadline_at(now) {
+            Some(t) if !self.realtime() => {
+                self.skipped += t - now;
+                for c in 0..self.vcpus.len() {
+                    if self.sched[c].wait == Wait::Wfi && self.deadline_of(c, now) == Some(t) {
+                        self.sched[c].wait = Wait::Woken;
+                    }
+                }
+                None
+            }
+            t => {
+                let frq = self.cfg.cntfrq as u128;
+                self.exit.value = t.map_or(u64::MAX, |t| {
+                    ((t - now) as u128 * 1_000_000_000).div_ceil(frq) as u64
+                });
+                Some(exit::IDLE)
+            }
+        }
+    }
+
+    /// Runs at most `n` steps of vCPU `c`, through the JIT when it's on.
+    fn chunk(&mut self, c: usize, n: u64) -> (u64, Option<Exit>) {
+        if c != 0 {
+            self.vcpus[c].jit.cache = self.vcpus[0].jit.cache.take();
+        }
+        let v = &mut *self.vcpus[c];
+        let r = if v.jit.cache.is_some() {
+            // SAFETY: `v` is this VM's vCPU, not otherwise referenced during the call.
+            unsafe { jit::steps(v, &self.mem, n) }
+        } else {
+            interp::steps(&mut v.cpu, &self.mem, Some(&mut v.tlb), n)
+        };
+        if c != 0 {
+            self.vcpus[0].jit.cache = self.vcpus[c].jit.cache.take();
+        }
+        r
     }
 
     /// Copies the run loop's own counts into the shared counters (once per chunk).
     fn publish(&self) {
-        let (c, t) = (&self.shared.counters, &self.vcpu.tlb.stats);
+        let c = &self.shared.counters;
         c.retired.store(self.steps, Ordering::Relaxed);
-        c.pc.store(self.vcpu.cpu.pc, Ordering::Relaxed);
-        c.tlb_misses.store(t.misses, Ordering::Relaxed);
-        c.tlb_walks.store(t.walks, Ordering::Relaxed);
-        c.tlb_flushes.store(t.flushes, Ordering::Relaxed);
-        if let Some(j) = &self.vcpu.jit.cache {
+        c.pc.store(self.vcpus[self.cur].cpu.pc, Ordering::Relaxed);
+        let t = self.vcpus.iter().map(|v| &v.tlb.stats);
+        let (misses, walks, flushes) = t.fold((0, 0, 0), |(m, w, f), s| {
+            (m + s.misses, w + s.walks, f + s.flushes)
+        });
+        c.tlb_misses.store(misses, Ordering::Relaxed);
+        c.tlb_walks.store(walks, Ordering::Relaxed);
+        c.tlb_flushes.store(flushes, Ordering::Relaxed);
+        if let Some(j) = &self.vcpus[0].jit.cache {
             let s = j.stats;
             let v = [
                 s.blocks,
@@ -516,21 +694,23 @@ impl Vm {
         any
     }
 
-    /// Drives the device interrupt lines into the GIC.
+    /// Drives the timers' and devices' interrupt lines into the GIC.
     fn lines(&mut self) {
         self.lines_at(self.now());
     }
 
     /// [`Vm::lines`] with the counter at `now`.
     fn lines_at(&mut self, now: u64) {
-        let c = &self.vcpu.cpu;
         let fires = |ctl, cval| interp::timer_fires(ctl, cval, now);
-        let (v, p) = (
-            fires(c.cntv_ctl_el0, c.cntv_cval_el0),
-            fires(c.cntp_ctl_el0, c.cntp_cval_el0),
-        );
-        self.gic.set_level(0, IRQ_VTIMER, v);
-        self.gic.set_level(0, IRQ_PTIMER, p);
+        for (i, v) in self.vcpus.iter().enumerate() {
+            let c = &v.cpu;
+            let (vt, pt) = (
+                fires(c.cntv_ctl_el0, c.cntv_cval_el0),
+                fires(c.cntp_ctl_el0, c.cntp_cval_el0),
+            );
+            self.gic.set_level(i, IRQ_VTIMER, vt);
+            self.gic.set_level(i, IRQ_PTIMER, pt);
+        }
         let irq = self.uart.irq(&self.shared.console.rx);
         self.gic.set_level(0, IRQ_UART, irq);
         for (i, t) in self.virtio.iter().enumerate() {
@@ -538,7 +718,8 @@ impl Vm {
         }
     }
 
-    /// The earliest compare value of an enabled, unmasked timer that hasn't fired yet.
+    /// The earliest compare value of an enabled, unmasked timer of an on vCPU
+    /// that hasn't fired yet.
     fn next_deadline(&self) -> Option<u64> {
         self.next_deadline_at(self.now())
     }
@@ -546,7 +727,15 @@ impl Vm {
     /// [`Vm::next_deadline`] with the counter at `now`: exactly the timers
     /// [`Vm::lines_at`] doesn't fire at the same `now`.
     fn next_deadline_at(&self, now: u64) -> Option<u64> {
-        let c = &self.vcpu.cpu;
+        (0..self.vcpus.len())
+            .filter(|&c| self.sched[c].power == Power::On)
+            .filter_map(|c| self.deadline_of(c, now))
+            .min()
+    }
+
+    /// vCPU `c`'s next timer deadline after `now`.
+    fn deadline_of(&self, c: usize, now: u64) -> Option<u64> {
+        let c = &self.vcpus[c].cpu;
         [
             (c.cntv_ctl_el0, c.cntv_cval_el0),
             (c.cntp_ctl_el0, c.cntp_cval_el0),
@@ -568,20 +757,49 @@ impl Vm {
         })
     }
 
-    /// Completes an interpreter exit; `Some` ends the run with that kind.
+    /// Completes an exit of the current vCPU; `Some` ends the run with that kind.
     fn handle(&mut self, e: Exit) -> Option<u32> {
-        let c = &mut self.vcpu.cpu;
+        let c = self.cur;
         match e {
-            Exit::Resync => self.steps += 1,
+            Exit::Resync => self.retire(1),
             Exit::Invalidate(pa) => {
-                self.steps += 1;
-                if let Some(j) = &mut self.vcpu.jit.cache {
+                self.retire(1);
+                // The code cache is home in vCPU 0 between chunks.
+                if let Some(j) = &mut self.vcpus[0].jit.cache {
                     j.invalidate(pa);
                 }
             }
+            Exit::Wfe => {
+                self.retire(1);
+                // No event to consume: the quantum ends (decision 5 of M7's kickoff).
+                if !core::mem::take(&mut self.sched[c].event) {
+                    self.quantum = 0;
+                }
+            }
+            Exit::Sev(local) => {
+                self.retire(1);
+                if local {
+                    self.sched[c].event = true;
+                } else {
+                    self.sched.iter_mut().for_each(|s| s.event = true);
+                }
+            }
+            Exit::TlbiIs(i, v) => {
+                self.retire(1);
+                for (k, other) in self.vcpus.iter_mut().enumerate() {
+                    if k != c {
+                        match i >> 5 & 7 {
+                            0 => other.tlb.flush_all(),
+                            2 => other.tlb.flush_ng(),
+                            _ => other.tlb.flush_va(v << 12),
+                        }
+                    }
+                }
+            }
             Exit::Hvc(_) => {
-                c.pc = c.pc.wrapping_add(4);
-                self.steps += 1;
+                let cpu = &mut self.vcpus[c].cpu;
+                cpu.pc = cpu.pc.wrapping_add(4);
+                self.retire(1);
                 return self.psci();
             }
             Exit::Unimplemented(op) => {
@@ -589,25 +807,24 @@ impl Vm {
                 return Some(exit::UNIMPLEMENTED);
             }
             Exit::Platform(i) => {
-                let c = &mut self.vcpu.cpu;
+                let cpu = &mut self.vcpus[c].cpu;
                 if let (Some(r), Intc::V3(g)) =
-                    (sys::icc(c.features, i >> 5 & 0xffff), &mut self.gic)
+                    (sys::icc(cpu.features, i >> 5 & 0xffff), &mut self.gic)
                 {
                     let (rt, read) = (i & 31, i & 1 << 21 != 0);
-                    let v = g.icc(0, r, (!read).then(|| c.reg(rt)));
+                    let v = g.icc(c, r, (!read).then(|| cpu.reg(rt)));
                     if read {
-                        c.set_reg(rt, v);
+                        cpu.set_reg(rt, v);
                     }
                 } else {
-                    let (now, irq) = (self.now(), self.gic.irq(0));
-                    let c = &mut self.vcpu.cpu;
-                    platform(c, i, now, self.cfg.cntfrq, irq);
+                    let (now, irq) = (self.now(), self.gic.irq(c));
+                    platform(&mut self.vcpus[c].cpu, i, now, self.cfg.cntfrq, irq);
                 }
-                let c = &mut self.vcpu.cpu;
-                c.pc = c.pc.wrapping_add(4);
-                self.steps += 1;
+                let cpu = &mut self.vcpus[c].cpu;
+                cpu.pc = cpu.pc.wrapping_add(4);
+                self.retire(1);
             }
-            Exit::Wfi => return self.wfi(),
+            Exit::Wfi => self.wfi(c),
             Exit::Fault(Fault {
                 kind: FaultKind::Bus,
                 ..
@@ -618,46 +835,33 @@ impl Vm {
     }
 
     fn exception(&mut self, e: Exit) {
-        let c = &mut self.vcpu.cpu;
-        take_exception(c, e);
-        self.steps += 1;
-        bump(&self.shared.counters.exceptions[(c.esr_el1 >> 26) as usize & 63]);
+        let cpu = &mut self.vcpus[self.cur].cpu;
+        take_exception(cpu, e);
+        let ec = (cpu.esr_el1 >> 26) as usize & 63;
+        self.retire(1);
+        bump(&self.shared.counters.exceptions[ec]);
     }
 
-    /// WFI completes when an interrupt is signaled (masked or not). Otherwise
-    /// deterministic time jumps to the next timer deadline, and realtime mode
-    /// (or no deadline) returns the idle exit with the PC on the WFI.
-    ///
-    /// One reading of the counter decides both whether a timer fires and the
-    /// deadline: in realtime mode the clock moves between reads, and a timer
-    /// due between two of them was neither pending nor a future deadline, so
-    /// the host slept with no deadline for good (found in M6.5 loop 5).
-    fn wfi(&mut self) -> Option<u32> {
+    /// WFI completes at once when an interrupt is signaled to vCPU `c` (masked
+    /// or not); otherwise the vCPU waits with the PC on it ([`Vm::pick`]
+    /// passes it over, [`Vm::idle`] moves time on when every vCPU waits).
+    fn wfi(&mut self, c: usize) {
         let now = self.now();
         self.lines_at(now);
-        if !self.gic.irq(0) {
-            let t = self.next_deadline_at(now);
-            match t {
-                Some(t) if !self.realtime() => self.skipped += t - now,
-                _ => {
-                    let frq = self.cfg.cntfrq as u128;
-                    self.exit.value = t.map_or(u64::MAX, |t| {
-                        ((t - now) as u128 * 1_000_000_000).div_ceil(frq) as u64
-                    });
-                    return Some(exit::IDLE);
-                }
-            }
+        if self.gic.irq(c) {
+            let cpu = &mut self.vcpus[c].cpu;
+            cpu.pc = cpu.pc.wrapping_add(4);
+            self.retire(1);
+        } else {
+            self.sched[c].wait = Wait::Wfi;
         }
-        let c = &mut self.vcpu.cpu;
-        c.pc = c.pc.wrapping_add(4);
-        self.steps += 1;
-        None
     }
 
     /// Runs the instruction at the PC again through [`Io`], after it hit a non-RAM address.
     fn io(&mut self) -> Option<u32> {
         let Vm {
-            vcpu,
+            vcpus,
+            cur,
             mem,
             gic,
             uart,
@@ -665,6 +869,7 @@ impl Vm {
             shared,
             ..
         } = self;
+        let vcpu = &mut *vcpus[*cur];
         let mut io = Io {
             mmu: Mmu::new(mem, Some(&mut vcpu.tlb)),
             gic,
@@ -679,7 +884,7 @@ impl Vm {
         let (tx_full, device) = (io.tx_full, io.device);
         match r {
             Ok(()) => {
-                self.steps += 1;
+                self.retire(1);
                 if let Some(v) = device {
                     self.exit.value = v;
                     return Some(exit::DEVICE);
@@ -692,39 +897,95 @@ impl Vm {
         None
     }
 
-    /// A PSCI call (HVC, PC already past it): answered here, or an exit for the host.
+    /// The vCPU whose MPIDR affinity fields are `aff` (Aff3 at 39:32, Aff2–Aff0 at 23:0).
+    fn cpu_of(&self, aff: u64) -> Option<usize> {
+        (0..self.vcpus.len()).find(|&i| gicv3::mpidr(i) & 0xff_00ff_ffff == aff)
+    }
+
+    /// PSCI CPU_ON: vCPU `t` starts at `entry` in its reset state (EL1h, DAIF
+    /// masked, the MMU off) with x0 = `context`.
+    fn cpu_on(&mut self, t: usize, entry: u64, context: u64) {
+        let v = &mut self.vcpus[t];
+        let (features, mpidr) = (v.cpu.features, v.cpu.mpidr);
+        v.cpu = Cpu {
+            pc: entry,
+            features,
+            mpidr,
+            ..Cpu::reset()
+        };
+        v.cpu.x[0] = context;
+        v.tlb.flush_all();
+        self.sched[t] = Sched {
+            power: Power::On,
+            wait: Wait::No,
+            event: false,
+        };
+    }
+
+    /// A PSCI call (HVC, PC already past it) of the current vCPU: answered
+    /// here, or an exit for the host.
     fn psci(&mut self) -> Option<u32> {
-        let x = &mut self.vcpu.cpu.x;
+        let c = self.cur;
+        let x = self.vcpus[c].cpu.x;
         let f = x[0] as u32;
+        // SMC32 calls take 32-bit arguments; for the affinity calls the
+        // MPIDR's Aff2–Aff0.
+        let aff = |v: u64, smc64: bool| {
+            if smc64 {
+                v & 0xff_00ff_ffff
+            } else {
+                v & 0xff_ffff
+            }
+        };
         let r: i64 = match f {
             PSCI_VERSION => 1 << 16, // 1.0
             PSCI_FEATURES => match x[1] as u32 {
                 PSCI_VERSION
                 | PSCI_FEATURES
+                | PSCI_CPU_ON
+                | PSCI_CPU_ON_64
+                | PSCI_CPU_OFF
                 | PSCI_AFFINITY_INFO
                 | PSCI_AFFINITY_INFO_64
                 | PSCI_MIGRATE_INFO_TYPE
                 | PSCI_SYSTEM_OFF
-                | PSCI_SYSTEM_RESET => 0,
-                _ => -1,
+                | PSCI_SYSTEM_RESET => PSCI_SUCCESS,
+                _ => PSCI_NOT_SUPPORTED,
             },
             PSCI_AFFINITY_INFO | PSCI_AFFINITY_INFO_64 => {
-                // Only CPU 0 exists, and it's on.
-                let aff = if f == PSCI_AFFINITY_INFO {
-                    x[1] & 0xff_ffff
-                } else {
-                    x[1] & 0xff_00ff_ffff
-                };
-                if aff == 0 { 0 } else { -2 } // ON, INVALID_PARAMETERS
+                // Level 0 only (one affinity level per vCPU): ON 0, OFF 1.
+                match self.cpu_of(aff(x[1], f == PSCI_AFFINITY_INFO_64)) {
+                    Some(t) if x[2] == 0 => (self.sched[t].power == Power::Off) as i64,
+                    _ => PSCI_INVALID_PARAMETERS,
+                }
+            }
+            PSCI_CPU_ON | PSCI_CPU_ON_64 => {
+                let smc64 = f == PSCI_CPU_ON_64;
+                let entry = if smc64 { x[2] } else { x[2] as u32 as u64 };
+                let context = if smc64 { x[3] } else { x[3] as u32 as u64 };
+                match self.cpu_of(aff(x[1], smc64)) {
+                    None => PSCI_INVALID_PARAMETERS,
+                    Some(t) if self.sched[t].power == Power::On => PSCI_ALREADY_ON,
+                    Some(t) => {
+                        self.cpu_on(t, entry, context);
+                        PSCI_SUCCESS
+                    }
+                }
+            }
+            PSCI_CPU_OFF => {
+                // Doesn't return: the vCPU stops until a CPU_ON starts it again.
+                self.sched[c].power = Power::Off;
+                self.quantum = 0;
+                return None;
             }
             PSCI_MIGRATE_INFO_TYPE => 2, // no Trusted OS to migrate
             PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => {
                 self.exit.x.copy_from_slice(&x[..4]);
                 return Some(exit::PSCI);
             }
-            _ => -1, // NOT_SUPPORTED
+            _ => PSCI_NOT_SUPPORTED,
         };
-        x[0] = r as u64;
+        self.vcpus[c].cpu.x[0] = r as u64;
         None
     }
 }

@@ -16,8 +16,8 @@ and the exact-step boots.
 | Lockstep | `tests/jit-lockstep.test.ts` | the integer and FP guests (user mode) and the integer guest at EL1 (MMU off and on), JIT and JIT-stress vs interpreter, `Cpu` + RAM checksum every chunk; 20M steps per JIT case in CI |
 | Core instances on one memory | `tests/threads.test.ts` (Node workers); `tests/browser.test.ts` (Chromium workers) | three concurrent instances (interpreter, JIT, JIT) with their own stack, TLS and table run the integer guest to the reference's exact state (M7) |
 | JIT plumbing | `tests/jit.test.ts` | install, IC IVAU invalidation (also across chains), the stale-code checker, call/return chaining, tier-up |
-| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv2, GICv3, timer, UART |
-| kvm-unit-tests | `core/tests/kvm_unit_tests.rs`; `tests/boot-node.test.ts` | selftest, gicv2 (UP), gicv3-active, timer, cache |
+| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv2, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF) |
+| kvm-unit-tests | `core/tests/kvm_unit_tests.rs`; `tests/boot-node.test.ts` | selftest (incl. smp), psci, gicv2 (UP), gicv3-ipi, gicv3-active, timer, cache |
 | Buildroot boot and device test | `core/tests/boot.rs`; `tests/boot-node.test.ts`; `tests/browser.test.ts` | Linux boots, virtio console/rng/blk/net/9p/input, framebuffer, realtime mode, writable overlay |
 | LTP subset + arm64 kselftests | `core/tests/ltp.rs` (interpreter, each result against its table); `tests/boot-node.test.ts` (JIT) | 93 syscall tests; `syscall-abi`, `ptrace`, `hwcap`, `tpidr2`, `tags_test`, signal tests |
 | Crypto test kernel | `tests/boot-node.test.ts` (JIT; interpreter with `WEBPC_INTERP=1`) | the arm64 CE drivers' full self-tests, lib/crypto's SHA KUnit suites |
@@ -44,7 +44,8 @@ Rules behind that matrix:
 ## Step counts
 
 **Every deterministic guest takes the same number of steps (instructions retired plus exceptions
-taken) natively, in Node and in Chromium, under the interpreter and the JIT.** The guest images'
+taken) natively, in Node and in Chromium, under the interpreter and the JIT**, on N vCPUs too
+(deterministic round-robin: `buildroot-2cpu`, `buildroot-4cpu`). The guest images'
 counts are in `tests/steps.txt`, read by every runner (`core/tests/common` `steps()`,
 `tests/steps.ts`). A mismatch is a bug unless the change is guest-visible; then the counts move
 **once**, in the same commit, with the reason in its message. Guest-visible changes so far: ERET
@@ -110,7 +111,8 @@ Realtime runs and the rw-overlay boots aren't step-exact.
 
 `start.S` (stack, vectors calling `on_exception(frame, vector)`, FP on, `run_el0()` to drop to EL0
 and come back through SVC #1) plus one C file per test (a test marked `oracle: needs GICv2` runs on
-a GICv2 in every runner, one marked `oracle: GICv3` on a GICv3, the rest on the default GIC), built with host clang and lld by
+a GICv2 in every runner, one marked `oracle: GICv3` on a GICv3, the rest on the default GIC;
+`// smp: N` boots N vCPUs, on the oracles too), built with host clang and lld by
 `build.sh` into committed flat `.bin`s loaded at `0x4000_0000`. Pass = PSCI SYSTEM_OFF with
 x1 = 0; `power_off` also prints `exit <code>`. `oracle.sh` runs the `-DORACLE` builds
 (implementation-specific checks left out) on QEMU TCG, `oracle.sh --hvf` the `-DORACLE -DHVF`
@@ -126,12 +128,13 @@ they were last rebuilt together on the M4 VM in M7 loop 2).
 
 Commit `5a221342a025`, booted with one CPU and 256 MiB; `EXIT: STATUS=` from the UART. Every
 `unittests.cfg` entry is run or skipped with a reason, and the runner fails if a new one appears.
-Pass: `selftest-setup`, `selftest-vectors-kernel`, `selftest-vectors-user`, `gicv3-active` (on a
-GICv3), `gicv2-mmio-up`
+Pass: `selftest-setup`, `selftest-smp`, `selftest-vectors-kernel`, `selftest-vectors-user`,
+`psci` (with the concurrent cpu-on check enabled), `gicv3-ipi` and `gicv3-active` (4 vCPUs),
+`gicv2-mmio-up`
 (**with exactly two expected failures**: ITARGETSR content preserved and byte writes, which a
 uniprocessor GIC makes RAZ/WI per the spec; QEMU TCG fails the same two), `gicv2-active`, `timer`,
-`cache` (the `gicv2-*` ones on a GICv2). Skipped: `psci`, `selftest-smp`, `gicv2-ipi`,
-`gicv2-mmio`, `gicv2-mmio-3p`, `gicv3-ipi` (SMP: M7), `its-*`, `pmu-*`, `pci-test`, `micro-bench`, `fpu-context` (KVM only), `debug-*`,
+`cache` (the `gicv2-*` ones on a GICv2). Skipped: `gicv2-ipi`, `gicv2-mmio`, `gicv2-mmio-3p`
+(the GICv2 model is one CPU's: M7 loop 3b), `its-*`, `pmu-*`, `pci-test`, `micro-bench`, `fpu-context` (KVM only), `debug-*`,
 `mte-*`; `sieve` (not in `unittests.cfg`; too slow interpreted).
 
 **The SMP set on QEMU TCG** (11.1, `-M virt,gic-version=N -cpu max -smp S`), the oracle for M7:

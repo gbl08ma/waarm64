@@ -75,6 +75,11 @@ pub const FEATURES: u64 = FEATURE_CRYPTO;
 /// = 1). Not a `VmConfig.features` bit: a VM sets it from `VmConfig.gic`; a
 /// user-mode vCPU doesn't have it.
 pub const FEATURE_GICV3: u64 = 1 << 32;
+/// More than one vCPU (internal, like `FEATURE_GICV3`: a VM sets it when
+/// `VmConfig.ncpus` > 1): WFE, SEV and SEVL leave the interpreter for the run
+/// loop, and the TLBI IS forms are broadcast to the other vCPUs. Without it
+/// they're NOPs and local, as on one CPU.
+pub const FEATURE_SMP: u64 = 1 << 33;
 /// MPIDR_EL1 of a single CPU: Aff0 = 0, U = 0.
 pub const MPIDR_UP: u64 = 1 << 31;
 

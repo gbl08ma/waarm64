@@ -33,7 +33,7 @@ async function result(path: string, global: string) {
 }
 
 test('core wasm runs in a cross-origin isolated worker', async () => {
-  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 21, counter: 2 });
+  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 22, counter: 2 });
 });
 
 test('three core instances run guests concurrently on one memory in workers (M7)', async () => {
@@ -72,7 +72,7 @@ async function removeOverlay(name: string) {
 }
 
 const IMAGES = new URL('../target/images/linux/Image', import.meta.url);
-for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], ['deterministic JIT', '?jit=1']]) {
+for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], ['deterministic JIT', '?jit=1'], ['deterministic JIT, 4 vCPUs', '?jit=1&ncpus=4']]) {
   test(`Linux boots in a worker with virtio devices (root on virtio-blk over HTTP), ${mode} mode`, { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
     const page = await browser.newPage();
     await page.goto(base + '/tests/browser/boot.html' + query);
@@ -82,7 +82,7 @@ for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], [
     assert.equal(r.error, undefined);
     console.log(`# chromium boot (${mode}): ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-    if (mode !== 'realtime') assert.equal(r.steps, STEPS.buildroot);
+    if (mode !== 'realtime') assert.equal(r.steps, mode.endsWith('4 vCPUs') ? STEPS['buildroot-4cpu'] : STEPS.buildroot);
     const out = r.console.replaceAll('\r\n', '\n');
     assert.match(out, /answer: 42\n[^]*hwrng: [0-9a-f]{32}\n[^]*\/dev\/root \/ ext4 ro,[^]*vda magic: 53ef\nwebpc: test ok\nwebpc: test exit 0\n/);
     assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'webpc: hvc0 ok\n');

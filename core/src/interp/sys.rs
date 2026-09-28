@@ -184,9 +184,13 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
             if el0 && c.sctlr_el1 & allowed == 0 {
                 return Err(Exit::Trap(0x01 << 26 | ISS_COND_AL | (op == WFE) as u32));
             }
-            // WFE completes at once: one vCPU, so nothing to wait for (M7).
+            // WFE completes at once with one vCPU (nothing to wait for); with
+            // more, the run loop decides what it does.
             if op == WFI {
                 return Err(Exit::Wfi);
+            }
+            if c.features & crate::cpu::FEATURE_SMP != 0 {
+                return Err(Exit::Wfe);
             }
         }
         // An ERET that unmasks IRQs ends the chunk as MSR does, so a pending
@@ -259,15 +263,23 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
             bits(i, 11, 8),
             bits(i, 7, 5),
         ) {
-            // TLBI VMALLE1 and ASIDE1, and their IS forms. One vCPU until M7,
-            // so IS is local. The TLB holds only the current ASID's nG entries,
-            // so ASIDE1 drops them whatever its ASID (over-invalidating).
-            (0, 8, 3 | 7, 0) => m.flush_all(),
-            (0, 8, 3 | 7, 2) => m.flush_ng(),
+            // TLBI VMALLE1 and ASIDE1, and their IS forms (CRm 3; with more
+            // than one vCPU the run loop does those on the others too). The
+            // TLB holds only the current ASID's nG entries, so ASIDE1 drops
+            // them whatever its ASID (over-invalidating).
+            (0, 8, crm @ (3 | 7), op2 @ (0 | 2 | 1 | 3 | 5 | 7)) => {
+                match op2 {
+                    0 => m.flush_all(),
+                    2 => m.flush_ng(),
+                    // VAE1, VAAE1, VALE1, VAALE1: Xt[43:0] is VA[55:12].
+                    _ => m.flush_va(c.reg(rt) << 12),
+                }
+                if crm == 3 && c.features & crate::cpu::FEATURE_SMP != 0 {
+                    return Err(Exit::TlbiIs(i, c.reg(rt)));
+                }
+            }
             // IC IALLU(IS) with Rt != 31 (should-be-ones): as with 31.
             (0, 7, 5 | 1, 0) => {}
-            // TLBI VAE1, VAAE1, VALE1, VAALE1 (IS): Xt[43:0] is VA[55:12].
-            (0, 8, 3 | 7, 1 | 3 | 5 | 7) => m.flush_va(c.reg(rt) << 12),
             // AT S1E1R, S1E1W, S1E0R, S1E0W.
             (0, 7, 8, op2 @ 0..=3) => {
                 let u = if op2 & 1 == 1 { Use::Write } else { Use::Read };
@@ -652,6 +664,9 @@ pub fn take_exception(c: &mut Cpu, e: Exit) {
         | Exit::Resync
         | Exit::Invalidate(_)
         | Exit::Wfi
+        | Exit::Wfe
+        | Exit::Sev(_)
+        | Exit::TlbiIs(..)
         | Exit::Platform(_) => {
             panic!("{e:?} is no exception")
         }

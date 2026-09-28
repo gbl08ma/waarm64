@@ -51,6 +51,14 @@ pub enum Exit {
     Invalidate(u64),
     /// WFI that doesn't trap: the run loop decides when it completes (the PC is on it).
     Wfi,
+    /// Internal, retired, SMP only (`FEATURE_SMP`): a WFE that doesn't trap.
+    /// The run loop consumes the vCPU's event, or ends its quantum.
+    Wfe,
+    /// Internal, retired, SMP only: SEV (false: every vCPU's event) or SEVL (true: its own).
+    Sev(bool),
+    /// Internal, retired, SMP only: a TLBI IS form (the instruction) with its
+    /// register's value, done on this vCPU's TLB; the run loop does it on the others'.
+    TlbiIs(u32, u64),
     /// An MRS or MSR (the encoding) of a register the platform computes: the
     /// generic timer's, and `ISR_EL1`. Access checks have passed; the VM run loop
     /// performs it with [`platform`] and the current virtual time.
@@ -60,7 +68,10 @@ pub enum Exit {
 impl Exit {
     /// The internal exits whose instruction retired (the PC is past it).
     pub fn retired(self) -> bool {
-        matches!(self, Exit::Resync | Exit::Invalidate(_))
+        matches!(
+            self,
+            Exit::Resync | Exit::Invalidate(_) | Exit::Wfe | Exit::Sev(_) | Exit::TlbiIs(..)
+        )
     }
 }
 
@@ -715,6 +726,9 @@ fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
 
         // Hints, barriers, exceptions. Unallocated hints and the PAC/BTI
         // hint-space instructions are NOPs (docs/cpu.md). WFI and WFE are in sys.
+        SEV | SEVL if c.features & crate::cpu::FEATURE_SMP != 0 => {
+            return Err(Exit::Sev(op == SEVL));
+        }
         NOP | YIELD | SEV | SEVL | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2 | AUTIB_2 | BTI
         | ESB | PSB | TSB | CSDB | DGH => {}
         CLREX => c.monitor.size = 0,

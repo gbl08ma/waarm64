@@ -22,7 +22,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 21;
+pub const ABI_VERSION: u32 = 22;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -143,7 +143,14 @@ fn exit_code(r: Result<(), interp::Exit>) -> [u64; 2] {
         Err(Exit::Hvc(imm)) => [8, imm as u64],
         // A timer register or ISR_EL1: only a VM has them.
         Err(Exit::Platform(i)) => [2, decode::decode(i) as u64],
-        Err(e @ (Exit::Resync | Exit::Invalidate(_) | Exit::Wfi)) => {
+        Err(
+            e @ (Exit::Resync
+            | Exit::Invalidate(_)
+            | Exit::Wfi
+            | Exit::Wfe
+            | Exit::Sev(_)
+            | Exit::TlbiIs(..)),
+        ) => {
             unreachable!("run handles {e:?}")
         }
     }
@@ -304,15 +311,19 @@ pub unsafe extern "C" fn vm_free(vm: *mut vm::Vm) {
     drop(unsafe { Box::from_raw(vm) });
 }
 
-/// The vCPU's registers (the `cpu::Cpu` offsets, as for [`vcpu_new`]); the host
-/// may read and write them between [`vm_run`] calls.
+/// vCPU `i`'s registers (the `cpu::Cpu` offsets, as for [`vcpu_new`]; ABI 22
+/// added `i`), or null past the last vCPU; the host may read and write them
+/// between [`vm_run`] calls.
 ///
 /// # Safety
 /// See the note above [`vm_new`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn vm_cpu(vm: *mut vm::Vm) -> *mut cpu::Cpu {
+pub unsafe extern "C" fn vm_cpu(vm: *mut vm::Vm, i: u32) -> *mut cpu::Cpu {
     // SAFETY: guaranteed by the caller.
-    &mut unsafe { &mut *vm }.vcpu.cpu
+    match unsafe { &mut *vm }.vcpus.get_mut(i as usize) {
+        Some(v) => &mut v.cpu,
+        None => core::ptr::null_mut(),
+    }
 }
 
 /// Boots the arm64 `Image` (or, without its header, a raw binary entered at

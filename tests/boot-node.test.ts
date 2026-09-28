@@ -73,31 +73,40 @@ const gicOf = (f: string) => {
   const src = readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8');
   return src.includes('oracle: needs GICv2') ? 2 : src.includes('oracle: GICv3') ? 3 : undefined;
 };
+// The vCPUs from its `// smp: N` marker (core/tests/baremetal.rs `smp_of`).
+const smpOf = (f: string) => Number(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ smp: (\d+)$/m)?.[1] ?? 1);
 for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort()) {
-  guest(`bare-metal ${f}`, () => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', gic: gicOf(f) }), (r) => {
+  guest(`bare-metal ${f}`, () => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', gic: gicOf(f), ncpus: smpOf(f) }), (r) => {
     poweredOff(r);
     assert.equal(r.x[1], 0n, r.console);
     assert.match(r.console, /exit 0\n$/);
   }, { max: 50e6 });
 }
 
-// kvm-unit-tests: (file, arguments, the checks expected to FAIL, GIC), from core/tests/kvm_unit_tests.rs `RUN`.
-const KUT: [string, string, string[], (2 | 3)?][] = [
+// kvm-unit-tests: (file, arguments, the checks expected to FAIL, GIC, vCPUs), from core/tests/kvm_unit_tests.rs `RUN`.
+const KUT: [string, string, string[], (2 | 3)?, number?][] = [
   ['selftest', 'setup smp=1 mem=256', []],
+  ['selftest', 'smp', [], undefined, 4],
   ['selftest', 'vectors-kernel', []],
   ['selftest', 'vectors-user', []],
+  ['psci', '', [], undefined, 4],
+  ['gic', 'ipi', [], 3, 4],
   ['gic', 'mmio', ['gicv2: mmio: ITARGETSR: register content preserved', 'gicv2: mmio: ITARGETSR: byte writes successful'], 2],
   ['gic', 'active', [], 2],
-  ['gic', 'active', [], 3],
+  ['gic', 'active', [], 3, 4],
   ['timer', '', []],
   ['cache', '', []],
 ];
-for (const [file, args, fails, gic] of KUT) {
-  guest(`kvm-unit-tests ${file} ${args}${gic ? ` (GICv${gic})` : ''}`.trim(), () => ({ ramSize: 256 << 20, kernel: image(`kvm-unit-tests/${file}.flat`), cmdline: args, gic }), (r) => {
+// psci's environment (an initrd) enables its concurrent cpu-on check.
+const PSCI_ENV = new TextEncoder().encode('ERRATA_6c7a5dce22b3=y\n');
+for (const [file, args, fails, gic, ncpus] of KUT) {
+  const what = [gic && `GICv${gic}`, ncpus && `${ncpus} vCPUs`].filter(Boolean).join(', ');
+  guest(`kvm-unit-tests ${file} ${args}${what ? ` (${what})` : ''}`.replace('  ', ' '), () => ({ ramSize: 256 << 20, kernel: image(`kvm-unit-tests/${file}.flat`), cmdline: args, gic, ncpus, initrd: file === 'psci' ? PSCI_ENV : undefined }), (r) => {
     poweredOff(r);
     const lines = r.console.replaceAll('\r\n', '\n').split('\n');
     assert.deepEqual(lines.filter((l) => l.startsWith('FAIL: ')).map((l) => l.slice(6)), fails, r.console);
     assert.ok(lines.includes(`EXIT: STATUS=${fails.length ? 3 : 1}`), r.console);
+    assert.ok(!lines.some((l) => l.startsWith('SKIP: ')), r.console);
   }, { skip: !has(`kvm-unit-tests/${file}.flat`) && 'SKIPPED: run images/build.sh kvm-unit-tests', max: 5e9, stress: STRESS || file === 'cache' });
 }
 
@@ -107,6 +116,14 @@ guest('Buildroot', () => ({ ramSize: 256 << 20, kernel: image('linux/Image'), cm
   poweredOff(r);
   assert.match(r.console, /webpc: test ok/);
 }, { skip: linux, stress: STRESS, steps: STEPS.buildroot });
+
+// On 2 and 4 vCPUs, deterministic round-robin (M7): the same steps interpreted and under the JIT.
+for (const n of [2, 4]) {
+  guest(`Buildroot on ${n} vCPUs`, () => ({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: n }), (r) => {
+    poweredOff(r);
+    assert.match(r.console, new RegExp(`smp: Brought up 1 node, ${n} CPUs[^]*webpc: test ok`));
+  }, { skip: linux, stress: STRESS, steps: STEPS[`buildroot-${n}cpu`] });
+}
 
 guest('Buildroot device test', () => ({
   ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: `${GUEST_CMDLINE} -- /test-devices.sh`, devices: testDevices(disk()), framebuffer: { width: 640, height: 480 },

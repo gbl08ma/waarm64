@@ -17,6 +17,19 @@ _start:
     bl main
     b power_off
 
+// secondary_start: PSCI CPU_ON's entry for the SMP tests (x0, the context, is
+// the CPU's stack top): the boot CPU's vectors, then secondary_main(), which
+// tests without secondaries don't define.
+    .global secondary_start
+    .weak secondary_main
+secondary_start:
+    mov sp, x0
+    adr x1, vectors
+    msr vbar_el1, x1
+    isb
+    bl secondary_main
+1:  b 1b
+
 // run_el0(fn, sp): runs fn() at EL0t on stack sp and returns its result. fn
 // returns into el0_tramp, whose SVC #1 on_exception turns into a return here.
     .text

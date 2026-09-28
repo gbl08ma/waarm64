@@ -49,6 +49,18 @@ checked by a unit test.
 
 ## The run loop (`vm::Vm::run`)
 
+**N vCPUs, deterministic round-robin** (`VmConfig.ncpus`, M7): `vm_run` runs every vCPU on the
+calling thread, a **quantum** (`QUANTUM` = `CHUNK` steps) each in index order; a vCPU that's off
+(PSCI) or waiting in WFI is passed over. The code cache lives in vCPU 0's `jit.cache` and moves
+into whichever vCPU runs a chunk (block code takes the `Vcpu` pointer). Virtual time counts the
+steps of all vCPUs; timer deadlines of every on vCPU cut chunks. A WFI with no interrupt signaled
+waits (PC on it) until one is; when every vCPU waits, deterministic time jumps to the earliest
+deadline and the vCPUs it was for complete their WFI; with none (or in realtime mode) the run
+returns `IDLE`. With more than one vCPU (`cpu::FEATURE_SMP`): **WFE** ends the quantum unless the
+vCPU's event (SEV, SEVL) is set, which it consumes; **TLBI … IS** is done on every vCPU's TLB
+at once (the others aren't running). With one vCPU the quantum is unbounded, WFE and SEV are
+NOPs, and every step count is what it was before M7.
+
 - `vm_run(vm, budget)` runs **chunks of at most `CHUNK` = 32,768 steps** (instructions retired
   plus exceptions taken), cut at the next timer deadline in deterministic mode so timers fire on
   their exact tick. Each chunk goes through `jit::steps` when the JIT is on, else `interp::steps`.
@@ -148,10 +160,15 @@ from `web/vm.ts` yet (backlog).
 
 ## PSCI (over HVC, in the core)
 
-PSCI 1.0: VERSION, FEATURES, AFFINITY_INFO (CPU 0 is on), MIGRATE_INFO_TYPE (2) answered in the
-core; SYSTEM_OFF and SYSTEM_RESET exit to the host (exit kind `PSCI`, PC past the HVC, the host
-writes x0 if it resumes); everything else NOT_SUPPORTED. **CPU_ON is M7's**, handled in the core
-(no exit: realtime vCPU workers start at boot and wait parked until it).
+PSCI 1.0: VERSION, FEATURES, **CPU_ON** (SMC32/64: the target by MPIDR affinity starts in its
+reset state, EL1h with DAIF masked and the MMU off, at the entry with x0 = the context;
+INVALID_PARAMETERS for no such CPU, ALREADY_ON for an on one), **CPU_OFF** (doesn't return; a
+later CPU_ON restarts the vCPU), **AFFINITY_INFO** (level 0: ON 0 / OFF 1), MIGRATE_INFO_TYPE (2)
+answered in the core; SYSTEM_OFF and SYSTEM_RESET exit to the host (exit kind `PSCI`, PC past the
+HVC, the host writes x0 if it resumes); everything else NOT_SUPPORTED (CPU_SUSPEND included).
+Only CPU 0 is on at boot. kvm-unit-tests' `psci` passes all five checks, including the concurrent
+cpu-on one QEMU TCG fails. In realtime SMP (loop 5) the vCPU workers start at boot, parked until
+CPU_ON.
 
 ## Bare-metal test convention
 

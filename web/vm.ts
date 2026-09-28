@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 21;
+export const ABI = 22;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -23,7 +23,7 @@ type Exports = {
   vm_run(vm: number, budget: bigint): number;
   vm_exit(vm: number): number;
   vm_console(vm: number): number;
-  vm_cpu(vm: number): number;
+  vm_cpu(vm: number, i: number): number;
   vm_counters(vm: number): number;
   jit_helper_report(v: number): number;
   vm_signal(vm: number): number;
@@ -145,6 +145,8 @@ export type BootOptions = {
   crypto?: boolean;
   /** `VmConfig.gic` (ABI 21): 2 GICv2, 3 GICv3; unset, the core's default. */
   gic?: 2 | 3;
+  /** `VmConfig.ncpus` (ABI 21): vCPUs, run round-robin on this thread (default 1). */
+  ncpus?: number;
   /**
    * Realtime mode: throw if the vCPU sleeps this long with no timer deadline
    * and nothing signaled (a lost wake-up would otherwise hang the run).
@@ -241,7 +243,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries, framebuffer, JIT.
   const fb = o.framebuffer ?? { width: 0, height: 0 };
   // …, features, CPUs, GIC (ABI 21).
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 12).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, 1n, BigInt(o.gic ?? 0)]);
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 12).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(o.ncpus ?? 1), BigInt(o.gic ?? 0)]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
@@ -285,7 +287,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     framebuffer: fbPa ? { addr: ram + fbPa - RAM_BASE, ...fb } : undefined,
     /** Byte addresses of guest RAM (PA 0x4000_0000) and of the vCPU registers (`cpu::Cpu`) in `memory`. */
     ram,
-    cpu: ex.vm_cpu(vm),
+    cpu: ex.vm_cpu(vm, 0),
     /** Byte address of `vm::Counters` in `memory` (u64s, read with Atomics.load). */
     counters,
     /** A snapshot of the counters; exceptions by EC only where non-zero. */
@@ -307,7 +309,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       };
     },
     /** The JIT's helper calls by instruction class, most frequent first (ABI 18; empty without a JIT). */
-    helperReport: () => helperReport(ex, memory, ex.vm_cpu(vm)),
+    helperReport: () => helperReport(ex, memory, ex.vm_cpu(vm, 0)),
     /**
      * Runs up to `budget` steps; returns the exit kind and steps taken. DEVICE
      * exits are handled here (the backends take the requests, and in
@@ -336,7 +338,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
           const none = ns === 0xffff_ffff_ffff_ffffn;
           const ms = none ? (o.idleLimitMs ?? Infinity) : Number(ns) / 1e6;
           if (Atomics.load(sig, 0) === 0 && Atomics.wait(sig, 0, 0, ms) === 'timed-out' && none) {
-            throw new Error(`idle ${ms} ms with no timer deadline and no signal at pc 0x${new BigUint64Array(memory.buffer, ex.vm_cpu(vm) + 256, 1)[0].toString(16)}; device requests in flight: ${devices.inFlight()}`);
+            throw new Error(`idle ${ms} ms with no timer deadline and no signal at pc 0x${new BigUint64Array(memory.buffer, ex.vm_cpu(vm, 0) + 256, 1)[0].toString(16)}; device requests in flight: ${devices.inFlight()}`);
           }
           continue;
         }
@@ -350,7 +352,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     hvc: () => devices.output(),
     flush: () => devices.flush(),
     close: () => devices.close(),
-    pc: () => new BigUint64Array(memory.buffer, ex.vm_cpu(vm) + 256, 1)[0],
+    pc: () => new BigUint64Array(memory.buffer, ex.vm_cpu(vm, 0) + 256, 1)[0],
   };
 }
 

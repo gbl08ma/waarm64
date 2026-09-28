@@ -5,7 +5,8 @@
 //! defconfig kernel (Image-defconfig). And twice with the root filesystem
 //! writable through one overlay: the second boot finds what the first wrote.
 //! And with the test devices: net, 9p, the framebuffer, input. The deterministic
-//! boots take exactly tests/steps.txt's counts. Ignored by default (they need
+//! boots take exactly tests/steps.txt's counts, on one vCPU and on 2 and 4
+//! (M7: deterministic round-robin). Ignored by default (they need
 //! the images and a release build); scripts/ci.sh runs it with
 //! `cargo test --release --test boot -- --ignored`.
 
@@ -16,12 +17,17 @@ fn boot(realtime: bool) -> common::Run {
 }
 
 fn boot_kernel(image: &str, realtime: bool) -> common::Run {
+    boot_smp(image, realtime, 1)
+}
+
+fn boot_smp(image: &str, realtime: bool, ncpus: u64) -> common::Run {
     let kernel = common::image(image);
     let devices = common::guest_devices("buildroot/rootfs.ext4", None);
     let r = common::boot(&common::Boot {
         devices: &devices,
         realtime,
         echo: true,
+        ncpus,
         ..common::Boot::new(&kernel, common::GUEST_CMDLINE)
     });
     eprintln!("\n[{}]", r.summary);
@@ -49,6 +55,23 @@ fn boot_kernel(image: &str, realtime: bool) -> common::Run {
 #[ignore = "needs target/images (images/build.sh) and --release"]
 fn linux_boots_and_runs_the_test_script() {
     assert_eq!(boot(false).steps, common::steps("buildroot"));
+}
+
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn linux_boots_on_2_and_4_vcpus() {
+    for n in [2, 4] {
+        let r = boot_smp("linux/Image", false, n);
+        assert!(
+            r.console
+                .contains(&format!("smp: Brought up 1 node, {n} CPUs"))
+        );
+        assert_eq!(
+            r.steps,
+            common::steps(&format!("buildroot-{n}cpu")),
+            "{n} vCPUs"
+        );
+    }
 }
 
 #[test]

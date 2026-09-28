@@ -11,6 +11,10 @@ mod common;
 use common::{Boot, Dev, Distro, Overlay, Run};
 
 fn boot(d: &Distro, devices: &[Dev], fb: (u64, u64), max_steps: u64) -> Run {
+    boot_n(d, devices, fb, max_steps, 1)
+}
+
+fn boot_n(d: &Distro, devices: &[Dev], fb: (u64, u64), max_steps: u64, ncpus: u64) -> Run {
     let (kernel, initrd) = (common::image(d.kernel), common::image(d.initrd));
     let r = common::boot(&Boot {
         initrd: Some(&initrd),
@@ -19,6 +23,7 @@ fn boot(d: &Distro, devices: &[Dev], fb: (u64, u64), max_steps: u64) -> Run {
         max_steps,
         echo: true,
         fb,
+        ncpus,
         ..Boot::new(&kernel, d.cmdline)
     });
     eprintln!("\n[{}]", r.summary);
@@ -42,6 +47,24 @@ fn alpine_boots_and_runs_the_test_script() {
     assert!(out.contains("N: Name=\"webpc keyboard\"\nN: Name=\"webpc tablet\"\n"));
     assert!(out.contains("webpc: drm 640x480\n"));
     assert_eq!(r.steps, common::steps("alpine"));
+}
+
+/// Alpine on `WEBPC_NCPUS` vCPUs (default 2), deterministic round-robin (M7).
+#[test]
+#[ignore = "needs target/images/alpine (images/build.sh alpine) and --release"]
+fn alpine_smp() {
+    let n: u64 = std::env::var("WEBPC_NCPUS").map_or(2, |v| v.parse().unwrap());
+    let devices = common::test_devices(common::ALPINE.disk);
+    let r = boot_n(&common::ALPINE, &devices, (640, 480), 50_000_000_000, n);
+    assert!(
+        r.console
+            .contains(&format!("smp: Brought up 1 node, {n} CPUs")),
+        "not all CPUs up"
+    );
+    assert!(r.console.contains(
+        "webpc: alpine 3.24.2 6.18.53-0-virt
+"
+    ));
 }
 
 #[test]

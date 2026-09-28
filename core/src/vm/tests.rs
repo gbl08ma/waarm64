@@ -34,12 +34,12 @@ impl T {
         for k in 0..16 {
             vm.mem.write(VBAR + 0x80 * k, 4, B_SELF as u64).unwrap();
         }
-        vm.vcpu.cpu.vbar_el1 = VBAR;
+        vm.vcpus[0].cpu.vbar_el1 = VBAR;
         T { _ram: ram, vm }
     }
 
     fn cpu(&mut self) -> &mut Cpu {
-        &mut self.vm.vcpu.cpu
+        &mut self.vm.vcpus[0].cpu
     }
 
     /// GIC on with the virtual timer PPI enabled, and the timer armed at `cval`.
@@ -55,20 +55,29 @@ impl T {
 
 #[test]
 fn psci_in_the_core_and_system_off() {
-    let mut t = T::new(&[HVC, HVC, HVC, HVC], VmConfig::default());
+    let mut t = T::new(&[HVC, HVC, HVC, HVC, HVC, HVC, HVC], VmConfig::default());
     t.cpu().x[0] = 0x8400_0000; // PSCI_VERSION
     assert_eq!(t.vm.run(1), exit::BUDGET);
     assert_eq!(t.cpu().x[0], 1 << 16);
     (t.cpu().x[0], t.cpu().x[1]) = (0x8400_000a, 0xc400_0003); // FEATURES(CPU_ON)
     t.vm.run(1);
+    assert_eq!(t.cpu().x[0], 0);
+    (t.cpu().x[0], t.cpu().x[1]) = (0x8400_000a, 0x8400_0001); // FEATURES(CPU_SUSPEND)
+    t.vm.run(1);
     assert_eq!(t.cpu().x[0], u64::MAX);
+    (t.cpu().x[0], t.cpu().x[1]) = (0xc400_0003, 1); // CPU_ON(1): there's no CPU 1
+    t.vm.run(1);
+    assert_eq!(t.cpu().x[0], -2i64 as u64);
+    (t.cpu().x[0], t.cpu().x[1]) = (0xc400_0003, 0); // CPU_ON(0): itself
+    t.vm.run(1);
+    assert_eq!(t.cpu().x[0], -4i64 as u64);
     (t.cpu().x[0], t.cpu().x[1]) = (0xc400_0004, 0); // AFFINITY_INFO(0)
     t.vm.run(1);
     assert_eq!(t.cpu().x[0], 0);
     (t.cpu().x[0], t.cpu().x[1]) = (0x8400_0008, 7); // SYSTEM_OFF
     assert_eq!(t.vm.run(100), exit::PSCI);
     assert_eq!(t.vm.exit.x[..2], [0x8400_0008, 7]);
-    assert_eq!((t.vm.exit.retired, t.cpu().pc), (1, RAM_BASE + 16));
+    assert_eq!((t.vm.exit.retired, t.cpu().pc), (1, RAM_BASE + 28));
 }
 
 #[test]
@@ -77,17 +86,17 @@ fn uart_tx_through_io_and_full_ring() {
     (t.cpu().x[0], t.cpu().x[1]) = (UART, b'A' as u64);
     assert_eq!(t.vm.run(2), exit::BUDGET);
     let tx = &t.vm.shared.console.tx;
-    assert_eq!((tx.pop(), t.vm.vcpu.cpu.pc), (Some(b'A'), RAM_BASE + 4));
+    assert_eq!((tx.pop(), t.vm.vcpus[0].cpu.pc), (Some(b'A'), RAM_BASE + 4));
     // With the ring full, the store waits for the host.
     t.cpu().pc = RAM_BASE;
     for _ in 0..crate::pl011::RING {
         t.vm.shared.console.tx.push(0);
     }
     assert_eq!(t.vm.run(10), exit::TX_FULL);
-    assert_eq!((t.vm.exit.retired, t.vm.vcpu.cpu.pc), (0, RAM_BASE));
+    assert_eq!((t.vm.exit.retired, t.vm.vcpus[0].cpu.pc), (0, RAM_BASE));
     t.vm.shared.console.tx.pop();
     t.vm.run(1);
-    assert_eq!(t.vm.vcpu.cpu.pc, RAM_BASE + 4);
+    assert_eq!(t.vm.vcpus[0].cpu.pc, RAM_BASE + 4);
 }
 
 #[test]
@@ -116,7 +125,7 @@ fn timer_irq_fires_on_its_tick() {
     t.vtimer_at(300);
     t.cpu().pstate &= !PSTATE_I;
     assert_eq!(t.vm.run(10_000), exit::BUDGET);
-    let c = &t.vm.vcpu.cpu;
+    let c = &t.vm.vcpus[0].cpu;
     // Taken after 100 steps (tick 300), from EL1h, before the branch.
     assert_eq!((c.pc, c.elr_el1), (VBAR + 0x280, RAM_BASE));
     assert_eq!(t.vm.shared.counters.irqs.load(Ordering::Relaxed), 1);
@@ -130,14 +139,17 @@ fn wfi_jumps_to_the_deadline_or_idles() {
     let mut t = T::new(&[WFI, NOP, WFI], VmConfig::default());
     t.vtimer_at(1_000_000);
     assert_eq!(t.vm.run(2), exit::BUDGET);
-    assert_eq!(t.vm.vcpu.cpu.pc, RAM_BASE + 8);
+    assert_eq!(t.vm.vcpus[0].cpu.pc, RAM_BASE + 8);
     assert_eq!(t.vm.now(), 1_000_002);
     // The timer has fired and the GIC signals it, so the next WFI completes at once.
     assert_eq!(t.vm.run(1), exit::BUDGET);
     // Nothing armed: idle, PC on the WFI.
     let mut t = T::new(&[WFI], VmConfig::default());
     assert_eq!(t.vm.run(10), exit::IDLE);
-    assert_eq!((t.vm.vcpu.cpu.pc, t.vm.exit.value), (RAM_BASE, u64::MAX));
+    assert_eq!(
+        (t.vm.vcpus[0].cpu.pc, t.vm.exit.value),
+        (RAM_BASE, u64::MAX)
+    );
 }
 
 #[test]

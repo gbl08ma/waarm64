@@ -74,7 +74,7 @@ pub struct TlbStats {
 }
 
 impl Tlb {
-    fn flush_all(&mut self) {
+    pub(crate) fn flush_all(&mut self) {
         self.stats.flushes += 1;
         for a in &mut self.e {
             a.fill(Entry::default());
@@ -83,7 +83,7 @@ impl Tlb {
     }
 
     /// Drops every nG entry: the global ones match any ASID.
-    fn flush_ng(&mut self) {
+    pub(crate) fn flush_ng(&mut self) {
         let n = self.ng_len as usize;
         if n > NG_SLOTS {
             return self.flush_all();
@@ -110,7 +110,7 @@ impl Tlb {
     }
 
     /// Drops the page holding `va` from every array, whatever its top byte (TBI).
-    fn flush_va(&mut self, va: u64) {
+    pub(crate) fn flush_va(&mut self, va: u64) {
         self.stats.flushes += 1;
         let i = index(va);
         for a in &mut self.e {

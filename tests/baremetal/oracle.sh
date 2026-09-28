@@ -19,17 +19,18 @@ if [ -n "$hvf" ]; then
 fi
 for src in *.c; do
   t=${src%.c}
+  smp=$(sed -n 's|^// smp: \([0-9]*\)$|\1|p' "$src"); smp=${smp:-1}
   if [ -n "$hvf" ]; then
     if grep -q 'oracle: needs GICv2' "$src"; then
       echo "$t: skipped (needs GICv2)"
       continue
     fi
-    log=$(timeout 60 ssh "$MAC" /opt/homebrew/bin/qemu-system-aarch64 -M virt,gic-version=3 -accel hvf -cpu host \
+    log=$(timeout 60 ssh "$MAC" /opt/homebrew/bin/qemu-system-aarch64 -M virt,gic-version=3 -accel hvf -cpu host -smp "$smp" \
       "${qemu_args[@]}" -kernel "/tmp/webpc-baremetal/$t-hvf.elf" </dev/null || true)
   else
     gic=2
     if grep -q 'oracle: GICv3' "$src"; then gic=3; fi
-    log=$(timeout 30 qemu-system-aarch64 -M virt,gic-version=$gic -accel tcg -cpu cortex-a57 "${qemu_args[@]}" \
+    log=$(timeout 30 qemu-system-aarch64 -M virt,gic-version=$gic -accel tcg -cpu cortex-a57 -smp "$smp" "${qemu_args[@]}" \
       -kernel "$out/$t-oracle.elf" </dev/null || true)
   fi
   code=$(printf '%s\n' "$log" | tr -d '\r' | sed -n 's/^exit \([0-9]*\)$/\1/p' | tail -1)

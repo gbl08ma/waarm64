@@ -225,8 +225,9 @@ impl Vm {
         c.pc = kernel_pa;
         c.x[0] = dtb_pa;
         // What the VM gave the vCPU stays: its features (with the GIC's) and MPIDR.
-        (c.features, c.mpidr) = (self.vcpu.cpu.features, self.vcpu.cpu.mpidr);
-        self.vcpu.cpu = c;
+        let v0 = &mut self.vcpus[0];
+        (c.features, c.mpidr) = (v0.cpu.features, v0.cpu.mpidr);
+        v0.cpu = c;
         Ok(())
     }
 }
@@ -253,7 +254,7 @@ mod tests {
             "outside RAM"
         );
         vm.boot(k + 0x1000, None, "").unwrap(); // no header: a raw binary, anywhere
-        assert_eq!(vm.vcpu.cpu.pc, k + 0x1000);
+        assert_eq!(vm.vcpus[0].cpu.pc, k + 0x1000);
         vm.mem.write(k + 0x38, 4, IMAGE_MAGIC as u64).unwrap();
         vm.mem
             .write(k + 0x1000 + 0x38, 4, IMAGE_MAGIC as u64)
@@ -263,7 +264,7 @@ mod tests {
         assert!(vm.boot(k, rd, "").is_err(), "initrd over the DTB space");
         vm.boot(k, Some((RAM_BASE + (4 << 20), 4096)), "x").unwrap();
         let dtb = RAM_BASE + (6 << 20);
-        let c = &vm.vcpu.cpu;
+        let c = &vm.vcpus[0].cpu;
         assert_eq!((c.pc, c.x[0], c.el(), c.sctlr_el1 & 1), (k, dtb, 1, 0));
         assert_eq!(
             c.features,
