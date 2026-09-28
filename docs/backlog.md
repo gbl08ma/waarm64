@@ -111,7 +111,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - The TS backends are tested through boots; a Node test with a bare-metal virtio guest would be
   cheaper when they grow (blk).
 
-## Parallel SMP (M7 loop 8's measurements; `bench/boot/REPORT.md`)
+## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
 - **One copy of compiled code for all vCPU workers:** each worker compiles what it runs (~200 ms of
   compile per vCPU per Alpine boot, ~35 ms in the userspace churn phase: small), but also holds its
@@ -129,6 +129,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **WFE sleeping:** WFE yields (120K per vCPU in 7 s of churn on 4 vCPUs, ~0.1 s); sleep on the
   event word only if a workload shows yields costing.
 - **Parallel `make`** as a scaling workload (the image has no toolchain yet).
+- **A default vCPU count for users:** `ncpus` defaults to 1 and nothing reads
+  `navigator.hardwareConcurrency`; the kickoff's cap (the host's cores minus two: the device
+  worker and the page) belongs with M8's embedding API, as does telling the user that a host's
+  efficiency cores make N above its performance-core count scale poorly (this host: 4 P + 6 E).
+- **Snapshots in parallel SMP** (M8): stop every vCPU worker at a chunk boundary (STOP, all
+  `OUT`), with every maintenance queue drained and no CPU_ON request pending, before saving;
+  round-robin needs nothing new.
 - **Hours-long whole-platform stress** (repeated parallel boots and workloads for hours): deferred
   by the user (2026-09-28) to a later milestone, once more virtio devices and integration features
   exist, when such a run is likelier to catch non-obvious platform-wide issues.

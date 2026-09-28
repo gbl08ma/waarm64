@@ -21,6 +21,7 @@ the docs and its entry here shrinks to a summary.
 | Guest memory | **Layout A** (M0.5): one shared wasm32 memory, core state then guest RAM (≤ ~3.5 GiB). One lowering point for guest accesses in generated code; TLB tag bits 3–11 reserved for a memory index ("A + spill memories" as NUMA nodes later) ([docs/architecture.md](docs/architecture.md)) |
 | JIT | Gadget style (inline what pays, helper calls into the interpreter's code for the rest), blocks keyed by guest PA, loop regions with tier-up, exact step accounting ([docs/jit.md](docs/jit.md)) |
 | Determinism | Deterministic mode (time from steps) for tests and most benchmarks: every guest takes the same steps on every host and tier. Realtime mode for guest-timed work and interactive use |
+| SMP | N vCPUs, one core, two modes: **deterministic round-robin** on one thread (tests; exact steps; virtual time = the steps of all vCPUs) and **parallel**, a worker per vCPU with its own core instance and code cache (users, scaling; realtime only). `TLBI …IS` completes before the issuer's `DSB` returns; `IC` reaches every code cache by its next context synchronization; DMB is a real fence in parallel JIT code; the core's guest-RAM accesses are atomics ([docs/platform.md](docs/platform.md), [docs/cpu.md](docs/cpu.md)) |
 | Devices | Backends in TypeScript in one device worker; the core owns the virtio rings; net is raw Ethernet frames ([docs/devices.md](docs/devices.md)) |
 | Browsers | Chromium first; cross-origin isolation required |
 | License | MIT. GPL/EPL/CeCILL projects are oracles, guest workloads or behavioral references only, never copied (`THIRD_PARTY.md`) |
@@ -54,72 +55,16 @@ Deferred: SVE, EL2, 16K/64K granules (needed for RHEL-family kernels), virtio-pc
 | M5 | JIT tier 1 (2026-09-27) | Gadget JIT with inline ALU, loads/stores through the TLB, registers in locals, lazy flags, linking, loop regions; every suite under the JIT and JIT-stress with the interpreter's steps. Integer 27×, CoreMark 11.3× the interpreter; Alpine 18.4 s vs 46.9 s |
 | M6 | JIT optimization (2026-09-27) | System instructions, SIMD&FP loads/stores, NEON as SIMD128, exact FP fast paths, atomics inline; global TLB entries kept across ASIDs; bigger modules; branch hints; `CHUNK` 32K after ERET ends the chunk. Alpine 10.2 s (target ≤ 12.2 s), FP guest 155 MIPS (target ≥ 98), CoreMark 69% of QEMU TCG (a stretch goal, not an exit blocker); the Alpine userspace benchmark; the M6 exit table vs QEMU and native |
 | M6.5 | Crypto extensions (2026-09-28) | AES, PMULL, SHA1, SHA256 in both tiers (our own code), switchable (ABI 19), advertised by default: `openssl speed` 1.5–4.7× the NEON-only paths |
+| M7 | SMP (2026-09-28) | A GICv3 (the GICv2 dropped), PSCI CPU_ON/OFF/AFFINITY_INFO, per-CPU timers, SGIs, WFE/SEV; deterministic round-robin (Linux on up to 8 vCPUs with exact steps in every runner) and parallel SMP (a worker per vCPU in the browser and Node, a thread natively; ABI 20–26); broadcast TLBI/IC with the DSB wait; the memory model (DMB as `atomic.fence`, relaxed atomics, hashed pair locks); litmus7 with no forbidden outcome and an atomics stress in every mode and tier, ThreadSanitizer in CI. On 4 parallel vCPUs Debian boots to its script in 29.6 s (42.3 s on 1); compute throughput 3.4–3.8×, process churn 1.7× |
 
 Details of each: the docs (by topic) and `bench/*/REPORT.md` (by date). Numbers today:
 [docs/benchmarking.md](docs/benchmarking.md) "Current numbers".
 
-### M7 — SMP
-
-Kickoff: `M7-KICKOFF.md` (decisions confirmed 2026-09-28). Goal: N vCPUs running Linux SMP on a
-GICv3, stable under stress, with a scaling curve. **Done (2026-09-28):** loop 0 (Debian in CI,
-litmus image and M4 reference), 1 (core instances per worker), 2 (GICv3 default, native test
-kernels), 3 (deterministic round-robin SMP, PSCI CPU_ON/OFF, WFE/SEV, TLBI IS; Linux boots on up
-to 8 vCPUs with exact steps in every runner), 3b (the GICv2 dropped), 4 (broadcast TLBI/IC
-tests across vCPUs, JIT-check; the realtime queues and DSB wait designed in docs/platform.md), 5
-(parallel SMP, ABI 25: a worker per vCPU in the browser and Node, a thread per vCPU natively,
-the platform lock, wake words, broadcast queues with the DSB wait, ThreadSanitizer in CI; Linux
-boots on 4 vCPUs in parallel natively, in Node and in Chromium, Debian included), 6 (the memory
-model: DMB as `atomic.fence` in parallel JIT code, guest-RAM accesses as relaxed atomics with
-ThreadSanitizer unsuppressed, 128-bit atomics decided; litmus on 4 parallel vCPUs in CI), 7
-(litmus and an atomics stress in every mode and tier: round-robin with exact steps, parallel,
-interpreter, JIT, JIT-check, Chromium, ThreadSanitizer; spin-wait latency measured), 8 (scaling:
-the `smp_*` benchmarks and per-vCPU counters (ABI 26); the vCPU workers' clock calibrated against
-the VM's creator (Chromium's per-context `timeOrigin` had drifted seconds apart); DSB waits only
-for vCPUs that may hold the ASID's entries (process churn on 4 vCPUs −37%); idle vCPUs poll 50 µs
-before sleeping (futex hand-offs 3.4× faster); the host's 4 performance cores bound N). Next:
-loop 9, exit.
-- **Two execution modes, one core:** deterministic SMP runs every vCPU round-robin on one thread
-  with a fixed quantum and one shared code cache (exact, reproducible step counts in every runner;
-  virtual time = total steps of all vCPUs); realtime SMP runs **one worker per vCPU** on the shared
-  memory, a core instance and a code cache each. Tests use the first, users and scaling the
-  second.
-- **One core instance per worker:** per-thread stack and TLS exported from the core; `Vm` state
-  shared across vCPUs with locks or atomics; per-vCPU `Vcpu` (TLB, JIT state).
-- **PSCI** CPU_ON/CPU_OFF/AFFINITY_INFO **in the core** (realtime workers start at boot, parked
-  until CPU_ON); `MPIDR_EL1` per vCPU; one DT `cpu` node per vCPU.
-- **GICv3 becomes the default** (distributor, per-CPU redistributors, `ICC_*` system registers; no
-  ITS/LPIs), so vCPUs aren't capped at 8; a guest-visible change that moves the step counts once.
-  **The GICv2 model is dropped** (the user, 2026-09-28, revising decision 8: no guest we run
-  needs it, and its tests only tested itself).
-- **Broadcast maintenance:** `TLBI …IS` completes before the issuer's `DSB` returns (every
-  running vCPU acknowledges at its next chunk boundary; idle ones apply it before resuming);
-  `IC IVAU`/`IALLU(IS)` reach every code cache, drained at context synchronization and chunk
-  boundaries.
-- **Scaling (loop 8):** a TLBI IS for one ASID waits only for vCPUs running that ASID (the others
-  apply it at their next boundary; parallel SMP caches no global entries in the TTBR0 half so
-  that's sound); idle vCPU workers poll their wake word 50 µs before `Atomics.wait`; every vCPU
-  worker measures the creator's clock rather than trusting its own `timeOrigin`.
-- **Memory model:** DMB as `atomic.fence` in the JIT in parallel SMP (`dmb ish`; nothing when
-  vCPUs share a thread); the core's guest-RAM accesses are relaxed atomics (no Rust data race;
-  the interpreter pays ~11% on wasm, Alpine within noise). **128-bit atomics** (decided by
-  measurement, loop 6): a hashed lock among pair ops plus a CAS per half, so they're atomic
-  against each other and never overwrite a racing store; not against a 64-bit RMW of the high
-  half inside the op (no guest we run does it). Stopping the world was ruled out by SLUB's
-  ~300K CASPs per Alpine boot. WFE ends the quantum (deterministic) or yields (realtime).
-- **ABI 20:** `VmConfig.ncpus`, the GIC choice, per-vCPU run/state/signals/counters, thread setup
-  (design note in `docs/abi.md` first).
-- **Tests:** bare-metal SMP and GICv3 tests against QEMU (TCG, and hvf if it gives a GICv3),
-  kvm-unit-tests' SMP and `gicv3-*` sets, herdtools7 `litmus7` in the guest, atomics stress,
-  deterministic SMP boots with exact steps, repeated realtime boots, ThreadSanitizer on a native
-  realtime runner, the userspace phases at N threads. Debian's JIT boot joins default CI.
-- **Exit:** Debian boots on 4 vCPUs in realtime mode, stable under stress; litmus suites with no
-  forbidden outcome; the scaling curve recorded.
-
 ### M8 — Product integration
 
 - Snapshots (save/restore CPU + devices + compressed RAM) for instant "boot".
-- A stable embedding API (VM config → DTB/devices; a user-facing CPU features toggle), the
-  networking backend API, persistence UX, docs.
+- A stable embedding API (VM config → DTB/devices; a user-facing CPU features toggle; the vCPU
+  count, parallel SMP for users), the networking backend API, persistence UX, docs.
   - Networking: [docs/plans/networking.md](docs/plans/networking.md) (exploration, not scheduled):
     the frame interface stays, v86 adapter compatibility dropped, a Tailscale backend first
     (upstream Go client in wasm behind a DHCP/ARP gateway), `tailscale-rs` re-evaluated later,
@@ -136,10 +81,15 @@ Unscheduled loose ends, by area: [docs/backlog.md](docs/backlog.md).
 
 ## 4. Risks
 
-- **Broadcast TLBI/IC + `DSB` synchronization across workers** (M7): a known ARM cost that shapes
-  the SMP design; the issuer waits for every running vCPU to reach a chunk boundary.
+- **Broadcast TLBI + `DSB` across workers:** the issuer waits for the targets' chunk boundaries.
+  Waiting only for vCPUs running the TLBI's ASID left ~3K waits of 20–60 µs per userspace run on 4
+  vCPUs; a workload heavy in all-ASID or kernel-range TLBIs would pay more.
 - **Wasm module compile latency** dominating JIT gains: batching, thresholds and tier-up keep it
-  down today (compile pauses ≤ 1.3 ms); per-vCPU code caches in M7 multiply compile work by N.
+  down today (compile pauses ≤ 1.3 ms). Parallel SMP compiles per vCPU (each what it runs, ~200 ms
+  per vCPU in an Alpine boot) until code can be shared across workers.
+- **Host core topology bounds parallel SMP:** past the host's performance cores (4 on the M4),
+  vCPU workers that sleep and wake land on efficiency cores and scaling flattens; the user-facing
+  default vCPU count must account for it (backlog).
 - **FP exactness** costing more than expected: contained to slow paths; TestFloat and the
   differential test catch regressions.
 - **Rust + wasm threads** needs nightly (`-Zbuild-std`, `-Zllvm-target-feature=+atomics`); the

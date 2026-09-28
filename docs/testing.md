@@ -209,7 +209,7 @@ skipped (on one vCPU only `CoRW1`, `CoWR`, `CoWW` run).
   outcome at all; parallel runs show them as the M4 does (MP 32, SB 918, R 49 of 20K under the
   JIT; SB and R under the native interpreter). JIT-stress round-robin takes over 5 min: only with
   `WEBPC_JIT_STRESS=1`. With DMB emitted as nothing (planted), MP+dmb.sys, MP+dmb.st+dmb.ld,
-  MP+dmb.sy+addr, SB+dmb.sys and 2+2W+dmb.sys fail in parallel (M7 loop 6).
+  MP+dmb.sy+addr, SB+dmb.sys and 2+2W+dmb.sys fail in parallel.
 
 ## Atomics stress (`images/litmus/stress.c`, M7)
 
@@ -228,7 +228,7 @@ iterations per thread, 3× each).
   then misses needs two whole pair ops inside one; `pairs.c` covers the lock against plain stores.
   STXR succeeding whenever memory still holds what it reads now (not the monitored value): the
   guest never finishes (no pass within 300 s).
-- Other planted bugs of M7's list (loop 7): an SGI delivered to the CPU after its target (bare-metal
+- Other planted bugs of M7's list: an SGI delivered to the CPU after its target (bare-metal
   `gicv3` check 21; `smp` hangs, deterministic and parallel); no IC broadcast in parallel mode
   (`maint` checks 401–403 on the first parallel run, JIT and JIT-check).
 - **Spin-wait latency** (round trip, 2 × one way; 2026-09-28): the M4 0.08 µs p50, 0.13 p99.9;

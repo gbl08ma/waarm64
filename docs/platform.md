@@ -1,4 +1,4 @@
-# The platform: memory map, boot, run loop, time, GIC, timer, UART, PSCI
+# The platform: memory map, boot, run loop, broadcast maintenance, time, GIC, timer, UART, PSCI
 
 The machine around the CPU, as built. Devices that need no host (the GICv3, generic timer,
 PL011, PSCI, the virtio-mmio transports) live in the Rust core (`core/src/vm.rs`, `gicv3.rs`,
@@ -46,6 +46,10 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
 
 ## The run loop (`vm::Vm::run`)
 
+Two ways to run N vCPUs, one core: **deterministic round-robin** on one thread (tests: exact
+steps in every runner) and **parallel SMP**, a thread per vCPU (users and the scaling curve;
+realtime only). With one vCPU both are the machine as it was before M7.
+
 **N vCPUs, deterministic round-robin** (`VmConfig.ncpus`, M7): `vm_run` runs every vCPU on the
 calling thread, a **quantum** (`QUANTUM` = `CHUNK` steps) each in index order; a vCPU that's off
 (PSCI) or waiting in WFI is passed over. The code cache lives in vCPU 0's `jit.cache` and moves
@@ -57,6 +61,18 @@ returns `IDLE`. With more than one vCPU (`cpu::FEATURE_SMP`): **WFE** ends the q
 vCPU's event (SEV, SEVL) is set, which it consumes; **TLBI … IS** is done on every vCPU's TLB
 at once (the others aren't running). With one vCPU the quantum is unbounded, WFE and SEV are
 NOPs, and every step count is what it was before M7.
+
+- `vm_run(vm, budget)` (and parallel mode's `vm_run_cpu`) runs **chunks of at most `CHUNK` = 32,768 steps** (instructions retired
+  plus exceptions taken), cut at the next timer deadline in deterministic mode so timers fire on
+  their exact tick. Each chunk goes through `jit::steps` when the JIT is on, else `interp::steps`.
+- **Between chunks:** the signal word, device completion rings, the interrupt lines into the GIC,
+  and IRQ entry (vector +0x80) when `PSTATE.I` is clear.
+- **An MSR or ERET that unmasks IRQs ends the chunk** (`Exit::Resync`), so a pending IRQ is taken
+  right after it. That makes the chunk size invisible to deterministic guests: every suite takes
+  identical steps at any `CHUNK` from 1024 to 131,072. (It was 1024 until M6, when ERET didn't end
+  the chunk; the fix let `CHUNK` grow 32×, which cut Alpine's JIT boot by 14%: hot JIT loops return
+  to the run loop far less often.)
+- Exits to the host: [abi.md](abi.md) "Exit kinds".
 
 **Parallel SMP** (`VmConfig.smp` = 1, realtime only; `core/src/vm/parallel.rs`, ABI 25): a
 thread per vCPU, each calling `vm_run_cpu` for its own vCPU in its own core instance (in the
@@ -78,8 +94,11 @@ indexes of their instance).
   wake)` can't miss a wake-up.
 - **WFI** returns `IDLE` (value: ns to the vCPU's own deadline) unless an interrupt is signaled
   to it (the worker polls its wake word for 50 µs before `Atomics.wait`: a futex wake-up costs
-  ~17 µs in the dev VM, and the stress's pingpong went from 34 to 10 µs a hand-off); **WFE** is a yield (it ends the chunk; decision 5), SEV does nothing (no vCPU sleeps in
-  WFE). Measure before making WFE sleep.
+  ~17 µs in the dev VM, and the stress's pingpong went from 34 to 10 µs a hand-off); **WFE** is a
+  yield (it ends the chunk, as QEMU's MTTCG does), and SEV does nothing (no vCPU sleeps in WFE):
+  a vCPU can't cheaply see the store that clears another's exclusive monitor, which is what
+  wakes Linux's LDXR + WFE waits on hardware. Measure before making WFE sleep
+  ([backlog.md](backlog.md)).
 - **CPU_ON:** the caller records the request under the lock and wakes the target; the target's
   own thread applies it (no thread writes another's registers), marking itself on under the same
   lock (between taking the request and marking itself on, a second CPU_ON once saw it off: the
@@ -90,12 +109,14 @@ indexes of their instance).
   vCPU, parallel mode booted Alpine as fast as round-robin realtime in Node (10.28 vs 10.21 s),
   though the boot runs 584K ISBs and 209K ERETs.
 
-**Broadcast maintenance.** Round-robin makes it synchronous: **TLBI … IS** flushes every other
+## Broadcast maintenance
+
+Round-robin makes it synchronous: **TLBI … IS** flushes every other
 vCPU's TLB in the run loop (`Exit::TlbiIs`) before anything else runs, and `IC IVAU`/`IC
 IALLU(IS)` invalidate the one code cache all vCPUs share. JIT code holds no translation of its
 own that a TLBI would have to reach: cross-page chains check the running vCPU's instruction TLB,
 and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor and both ICs across
-4 vCPUs (on QEMU and hvf too). **Parallel mode:**
+4 vCPUs (on QEMU and hvf too). In **parallel mode**:
 - Each vCPU has a queue (TLB operations, and code pages for its cache) under a lock, an atomic
   pending flag checked at every chunk boundary, and `queued`/`applied` counts. An issuer pushes
   to every other vCPU's queue: up to 64 TLB operations (then one flush-all), and **distinct code
@@ -111,15 +132,15 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   against the issuer's push and check), or `OFF`. The waiter drains its own queue while it waits
   (two issuers can't deadlock), sleeps on its wake word in 1 ms steps (a vCPU that drains wakes
   the vCPUs flagged as waiting), and panics after 10 s (a bug).
-- IC operations don't wait (decision 4): the architecture promises another PE the new code only
+- IC operations don't wait: the architecture promises another PE the new code only
   after a context synchronization event *that follows its seeing the change*, which ends the chunk
   here. `maint.c` had its ISB before waiting for the rewrite: parallel mode ran the old code (401),
-  and loop 5 fixed the test (QEMU TCG and hvf pass it either way).
+  and the test was fixed (QEMU TCG and hvf pass it either way).
 - **The stale-code checker tolerates** stale blocks in parallel caches (`jit::Cache::tolerant`:
   code another vCPU rewrote is legal to run until this vCPU drains the IC): it drops the block at
   the run loop's entry and counts it (`JIT_STALE`, counter word 90), and only counts mid-chain. Only
   round-robin runs trap.
-- **Only vCPUs that may hold the entries are waited for** (M7 loop 8): TLBI ASIDE1IS, VAE1IS and
+- **Only vCPUs that may hold the entries are waited for:** TLBI ASIDE1IS, VAE1IS and
   VALE1IS of a TTBR0-half address are for one ASID, and a vCPU's TLB holds nG entries of its
   current ASID only (an ASID change drops them), so the DSB skips targets whose published ASID
   (`CpuPar::asid`, stored before each chunk; `ANY` with the MMU off) differs; they still apply the
@@ -137,31 +158,20 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
 - Planted bugs: no DSB wait fails `maint` in all 20 native parallel runs (checks 211–213: stale
   translations); no IC broadcast fails it in all 10 JIT runs in Node (401, 402).
 
-- `vm_run(vm, budget)` runs **chunks of at most `CHUNK` = 32,768 steps** (instructions retired
-  plus exceptions taken), cut at the next timer deadline in deterministic mode so timers fire on
-  their exact tick. Each chunk goes through `jit::steps` when the JIT is on, else `interp::steps`.
-- **Between chunks:** the signal word, device completion rings, the interrupt lines into the GIC,
-  and IRQ entry (vector +0x80) when `PSTATE.I` is clear.
-- **An MSR or ERET that unmasks IRQs ends the chunk** (`Exit::Resync`), so a pending IRQ is taken
-  right after it. That makes the chunk size invisible to deterministic guests: every suite takes
-  identical steps at any `CHUNK` from 1024 to 131,072. (It was 1024 until M6, when ERET didn't end
-  the chunk; the fix let `CHUNK` grow 32×, which cut Alpine's JIT boot by 14%: hot JIT loops return
-  to the run loop far less often.)
-- Exits to the host: [abi.md](abi.md) "Exit kinds".
-
 ## Time
 
 Two modes, chosen by `VmConfig.deterministic`:
 - **Deterministic** (the default; tests, most benchmarks, reproducible bugs): the counter is
-  steps × `ticks_per_insn` (default 1) plus ticks skipped by WFI. `CNTFRQ` defaults to 62.5 MHz
+  steps × `ticks_per_insn` (default 1) plus ticks skipped by WFI, the steps of all vCPUs with
+  more than one (one counter for every CPU). `CNTFRQ` defaults to 62.5 MHz
   (QEMU's). WFI completes when the GIC signals an interrupt (masked or not); otherwise virtual
   time jumps to the next armed timer deadline, and with none the run returns the idle exit
   (`value` = u64::MAX), PC on the WFI. **Every guest takes the same number of steps natively, in
   Node and in Chromium, interpreted or under the JIT**; tests assert those counts
   ([testing.md](testing.md) "Step counts").
 - **Realtime** (I/O benchmarks, `openssl speed`, interactive use): the core imports
-  `env.now_ms()` (`performance.timeOrigin + performance.now()` in the browser and Node, one clock
-  for every worker; `Instant` natively), read once per chunk and
+  `env.now_ms()` (`performance.timeOrigin + performance.now()` of the thread that creates the VM
+  in the browser and Node, which vCPU workers measure: below; `Instant` natively), read once per chunk and
   on timer-register reads; the counter is (host ns since `vm_new`) × CNTFRQ. Chunks aren't cut at
   deadlines, so a timer fires at the first chunk boundary past it (≤ one chunk late, ~0.1 ms of
   latency). A WFI with no interrupt signaled returns `IDLE` with the PC on the WFI and `value` =
@@ -175,7 +185,7 @@ Two modes, chosen by `VmConfig.deterministic`:
     own `performance.timeOrigin`: Chromium derives a new context's from a wall clock, which
     drifted ~1% from the monotonic clock in the dev VM, so a worker started a minute into a page
     ran ~0.6 s behind the VM's creator, and the guest counter read 0 for that long ("Missing cycle
-    counter", the RNG's jitter loop spinning; M7 loop 8). Each worker measures the creator's clock
+    counter", the RNG's jitter loop spinning). Each worker measures the creator's clock
     instead (`web/vm.ts` `clockOffset`: 16 round trips, the shortest one's midpoint).
   - **Idle watchdog:** `idleLimitMs` (`web/vm.ts`, on in the boot benchmarks) throws on an idle
     with no deadline for that long: a deadline-less idle that long is a bug either way.

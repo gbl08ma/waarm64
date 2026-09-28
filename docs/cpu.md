@@ -63,8 +63,9 @@ match it step for step.
   M4 and QEMU implement: see [testing.md](testing.md) "Known oracle behavior").
 - `Cpu::default()` is a Linux user process at EL0; `Cpu::reset()` the EL1 boot state.
 - WFI: see the run loop ([platform.md](platform.md)). **WFE completes at once** with one vCPU
-  (nothing to wait for); with more it ends the vCPU's quantum unless an event (SEV, SEVL) is
-  pending, and SEV/SEVL set events ([platform.md](platform.md) "The run loop").
+  (nothing to wait for); with more, in round-robin it ends the vCPU's quantum unless an event
+  (SEV, SEVL) is pending, and SEV/SEVL set events; in parallel SMP it's a yield (it ends the
+  chunk) and SEV does nothing ([platform.md](platform.md) "The run loop").
 
 ## System registers
 
@@ -90,7 +91,9 @@ The table is `core/src/interp/sys.rs`.
   EL0-writable pages, **software-managed access flag** (no hardware AF/DBM).
 - AT S1E{0,1}{R,W} into `PAR_EL1`. TLBI VMALLE1, ASIDE1, VAE1, VAAE1, VALE1, VAALE1 and their IS
   forms (no range or outer-shareable forms); with more than one vCPU the IS forms leave the
-  interpreter (`Exit::TlbiIs`, retired) and the run loop does them on the other vCPUs' TLBs.
+  interpreter (`Exit::TlbiIs`, retired): round-robin does them on the other vCPUs' TLBs at once,
+  parallel SMP queues them and the issuer's next DSB waits ([platform.md](platform.md) "Broadcast
+  maintenance").
 - Faults carry kind, level and access (ESR WnR, CM). Cache maintenance by VA translates and
   faults like a read (`DC IVAC` like a write).
 - **The TLB** is the M0 spike's shape: direct-mapped, 4096 entries × {tag, addend} (16 bytes) per
@@ -142,7 +145,7 @@ The table is `core/src/interp/sys.rs`.
   halves with ordered 64-bit loads during it (it can see the new low half with the old high one).
   No guest we run does either: Linux's `cmpxchg128` users (SLUB's freelist and counters, ~300K
   CASPs in an Alpine boot, all at EL1) and libatomic's 16-byte atomics reach those bytes only
-  through pair ops. **Why not the alternatives** (M7 loop 6): stopping the world per pair op
+  through pair ops. **Why not the alternatives:** stopping the world per pair op
   costs up to a chunk of every other vCPU each time, at SLUB's one CASP per ~10K instructions; a
   lock taken by every 64-bit atomic too would tax every LDXR/LDADD/CAS and still not cover plain
   stores. `tests/baremetal/pairs.c` checks it (CASP and LDXP/STXP against each other and against

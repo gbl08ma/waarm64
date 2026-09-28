@@ -18,10 +18,11 @@ runs unmodified arm64 Linux. Chromium is the primary target.
 
 ## Status
 
-M0–M6.5 are done (the summary table is in PLAN.md §3): the interpreter, the golden corpus, Linux
+M0–M7 are done (the summary table is in PLAN.md §3): the interpreter, the golden corpus, Linux
 with virtio devices, Alpine and Debian, a JIT that boots Alpine in ~10 s in Chromium, the crypto
-extensions. **Now: M7 (SMP)**, from `M7-KICKOFF.md` (loops 0–8 done: PLAN.md §3). Loose ends go in [docs/backlog.md](docs/backlog.md),
-not in TODOs.
+extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vCPU for users).
+**Next:** whatever the user's next kickoff sets (PLAN.md §3 has M8, product integration). Loose ends go in
+[docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment
 

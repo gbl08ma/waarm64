@@ -60,8 +60,10 @@ wasm64 core was free there), B +31–40%, D +26–32%.
   ([platform.md](platform.md) "Time", [testing.md](testing.md) "Step counts").
 - **SMP-ready from day one:** no mutable globals in the core; all vCPU state sits behind a
   per-vCPU pointer (`Vcpu`: `Cpu`, TLB, JIT state); guest atomics use real wasm atomics even
-  single-core. `TLBI …IS` and `IC IVAU` are broadcast operations on ARM, so the design must allow
-  another vCPU to raise a request that a `DSB` waits on (M7).
+  single-core. **N vCPUs run two ways** (M7): round-robin on one thread (deterministic, exact
+  steps) or a worker per vCPU (parallel, realtime); broadcast `TLBI …IS` completes before the
+  issuer's `DSB` returns, and `IC` reaches every code cache by the next context synchronization
+  ([platform.md](platform.md) "Broadcast maintenance").
 - **The host never parses virtio rings**, only device protocols ([devices.md](devices.md)).
 - **Our own code** where a port would drag in more than it gives (the FDT writer, the virtqueues,
   the 9p server, the FP core, the crypto, the wasm encoder); ports only from permissively licensed
@@ -79,17 +81,17 @@ wasm64 core was free there), B +31–40%, D +26–32%.
 | `core/src/crypto.rs` | AES, SHA, PMULL |
 | `core/src/mem.rs` | guest RAM accesses and atomics |
 | `core/src/mmu.rs` | the walker, `Vcpu`, the TLB |
-| `core/src/vm.rs` | `Vm`: the run loop, time, IRQs, PSCI, device dispatch |
+| `core/src/vm.rs`, `vm/parallel.rs` | `Vm`: the run loop (round-robin; parallel SMP's per-vCPU run, queues and DSB wait), time, IRQs, PSCI, device dispatch |
 | `core/src/gicv3.rs`, `pl011.rs`, `virtio.rs`, `boot.rs`, `fdt.rs` | the platform ([platform.md](platform.md), [devices.md](devices.md)) |
 | `core/src/jit/` | the JIT ([jit.md](jit.md)) |
-| `core/tests/` | native runners (corpus, TestFloat, bare-metal, boots, LTP, distros) and `common/` (native backends) |
+| `core/tests/` | native runners (corpus, TestFloat, bare-metal, boots, LTP, distros, litmus) and `common/` (native backends, the thread-per-vCPU runner) |
 | `core/fuzz/` | decoder sweep and libFuzzer targets (separate workspace) |
-| `web/` | `vm.ts` (host ABI), `devices.ts` + `device-worker.ts` (backends), `9p.ts`, `net.ts`, `input.ts`, `display.ts`, `overlay.ts`, `qcow2.ts`, `sampler-worker.ts`, `profiler.ts` |
+| `web/` | `vm.ts` (host ABI, parallel SMP's coordinator), `vcpu-worker.ts`, `devices.ts` + `device-worker.ts` (backends), `9p.ts`, `net.ts`, `input.ts`, `display.ts`, `overlay.ts`, `qcow2.ts`, `sampler-worker.ts`, `profiler.ts` |
 | `tests/` | Node and Chromium tests, the corpus, the harness, bare-metal tests, qcow2 fixtures, `steps.txt` |
 | `tools/` | `serve.ts` (dev server with COOP/COEP and ranges), `corpus/` (generator and oracle runner), `v8code.ts` (V8 machine code of JIT functions), `wasm-sizes.ts` |
 | `bench/` | `run.ts` (the harness), `interp/`, `boot/`, `jit/`, `spike/` (pages, suites, reports, committed results) |
 | `images/` | guest image builds ([images.md](images.md)) |
-| `scripts/` | `ci.sh`, `build-wasm.sh`, `testfloat.sh` |
+| `scripts/` | `ci.sh`, `build-wasm.sh`, `testfloat.sh`, `tsan.sh` |
 
 ## Toolchain
 

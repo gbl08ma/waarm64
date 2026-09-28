@@ -49,7 +49,7 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
   device worker), threads that sleep and wake land on efficiency cores: four independent
   one-vCPU VMs slowed each other's process churn from 1.44 to 3.3 s, and 4, 5, 7 busy threads
   of any kind beside one VM to 2.1, 2.5, 3.3 s (its compute phases lost 10–40%); three threads
-  hogging cache or DRAM bandwidth didn't slow it (M7 loop 8). Read N = 4 on this host as a lower
+  hogging cache or DRAM bandwidth didn't slow it. Read N = 4 on this host as a lower
   bound.
 - `coremark_vm_jit`: CoreMark sizes its run from calibration, which a cold JIT slows, so a run can
   fall under CoreMark's 10 s rule (valid results, flagged).
@@ -101,7 +101,7 @@ Chromium 153 on the M4 VM, JIT, crypto extensions on (M6 exit table and M6.5 exi
 | EL1 guest, MMU off / on | 4932 / 4045 MIPS | | |
 | `openssl speed` 16 KiB: AES-128-GCM / AES-128-CBC / SHA-256 | 232 / 151 / 298 MB/s | | |
 
-Parallel SMP (M7 loop 8, `bench/boot/REPORT.md`): Alpine to its script 8.4 / 9.1 / 10.1 s on 1 /
+Parallel SMP (`bench/boot/REPORT.md` "M7 loop 8"): Alpine to its script 8.4 / 9.1 / 10.1 s on 1 /
 2 / 4 vCPUs, Debian 42.3 / 33.5 / 29.6 s; the userspace phases with N copies of the work 25.2 /
 27.3 / 31.6 s (compute phases 3.4–3.8× throughput at 4, process churn 1.7×).
 

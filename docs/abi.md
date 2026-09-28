@@ -1,4 +1,4 @@
-# Host ABI (version 25)
+# Host ABI (version 26)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -149,9 +149,8 @@ have every optional feature. `jit_add_install`/`jit_call` are the JIT plumbing t
 
 Each commit that changes the exports bumps the version (20: the thread setup exports; 21:
 `VmConfig.ncpus` and `gic`; 22: `vm_cpu(vm, i)`, `ExitInfo.cpu`, round-robin SMP; 23: no GICv2;
-24: JIT-check; **25: parallel mode**, below). Pre-approved on the outline in `M7-KICKOFF.md`
-(decision 7); written before the code, and revised here if the code teaches otherwise (ABI 25
-is done as written below). With
+24: JIT-check; **25: parallel mode**, below; 26: parallel counters). Written before the code
+(pre-approved on the outline), and it describes what was built. With
 `ncpus` ≤ 1, `smp` = 0 and the defaults, a host that passes CPU index 0 everywhere sees the
 single-CPU machine.
 
@@ -206,8 +205,10 @@ single-CPU machine.
   locking. Per vCPU, each thread publishes its GIC IRQ line (an atomic the platform code updates
   under the lock), so the fast path between chunks takes no lock.
 - **Time:** the host clock through `env.now_ms`, which must be one clock for every instance:
-  `web/vm.ts` passes `performance.timeOrigin + performance.now()` (each worker's
-  `performance.now()` alone starts at that worker's creation). The core keeps the counter
+  the VM creator's `performance.timeOrigin + performance.now()`; a vCPU worker measures that
+  clock's offset from its own `performance.now()` (`web/vm.ts` `clockOffset`) rather than
+  trusting its own `timeOrigin`, which Chromium derives from a drifting wall clock
+  ([platform.md](platform.md) "Time"). The core keeps the counter
   monotonic across vCPUs (an atomic maximum), so CNTVCT never goes back between CPUs.
 
 **Broadcast maintenance in parallel mode** ([platform.md](platform.md) "Broadcast
@@ -240,3 +241,4 @@ own TLBI IS broadcasts before anything after its DSB runs.
 | 23 | the GICv2 dropped: `VmConfig.gic` 2 is refused (M7) |
 | 24 | `VmConfig.jit` 3: JIT-check (M7) |
 | 25 | parallel SMP: `VmConfig.smp`, `vm_run_cpu`, `vm_exit_cpu`, `vm_cpu_signal`, `ExitInfo.wake`, `vm_counters(vm, i)` per vCPU, counter word 90 (JIT stale blocks); `env.now_ms` is one clock for every instance (M7) |
+| 26 | counter words 91–100: parallel SMP's DSB waits, broadcasts, drains, idles, platform-lock contention, WFEs, time out of the core (M7) |

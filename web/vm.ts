@@ -176,7 +176,7 @@ export type BootOptions = {
   jit?: 0 | 1 | 2 | 3;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
-  /** `VmConfig.ncpus` (ABI 21): vCPUs, run round-robin on this thread (default 1). */
+  /** `VmConfig.ncpus` (ABI 21): vCPUs (default 1), round-robin on this thread unless `parallel`. */
   ncpus?: number;
   /**
    * `VmConfig.smp` 1 (ABI 25): a worker per vCPU (web/vcpu-worker.ts),
