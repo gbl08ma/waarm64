@@ -17,7 +17,7 @@ fn boot(realtime: bool) -> common::Run {
 
 fn boot_kernel(image: &str, realtime: bool) -> common::Run {
     let kernel = common::image(image);
-    let devices = common::guest_devices("linux/rootfs.ext4", None);
+    let devices = common::guest_devices("buildroot/rootfs.ext4", None);
     let r = common::boot(&common::Boot {
         devices: &devices,
         realtime,
@@ -67,7 +67,7 @@ fn defconfig_kernel_boots() {
 #[ignore = "needs target/images (images/build.sh) and --release"]
 fn root_is_writable_through_an_overlay_across_boots() {
     let kernel = common::image("linux/Image");
-    let devices = common::guest_devices("linux/rootfs.ext4", Some(common::Overlay::new()));
+    let devices = common::guest_devices("buildroot/rootfs.ext4", Some(common::Overlay::new()));
     let cmdline = format!("{} -- /test-rw.sh", common::GUEST_CMDLINE);
     let mut hashes = Vec::new();
     for n in 1..=2 {
@@ -102,7 +102,7 @@ fn root_is_writable_through_an_overlay_across_boots() {
 /// loopback adapter, 9p, keyboard, tablet) and a 640×480 framebuffer, running `script`.
 fn boot_devices(script: &str) -> common::Run {
     let kernel = common::image("linux/Image");
-    let devices = common::test_devices("linux/rootfs.ext4");
+    let devices = common::test_devices("buildroot/rootfs.ext4");
     let cmdline = format!("{} -- {script}", common::GUEST_CMDLINE);
     let r = common::boot(&common::Boot {
         devices: &devices,

@@ -27,12 +27,26 @@ const fn sr(op0: u32, op1: u32, crn: u32, crm: u32, op2: u32) -> u32 {
 // Identification. Everything here describes exactly what the core implements.
 /// Implementer 0 (reserved for software use), architecture 0xf (see the ID registers).
 const MIDR: u64 = 0x000f_0000;
-/// Aff0 = 0, U = 0. M7 gives each vCPU its own.
-const MPIDR: u64 = 1 << 31;
 /// EL0 and EL1 AArch64 only; FP and AdvSIMD 0 (present, no FP16); GIC 0 (no
-/// system register interface). CSV2 and CSV3: the interpreter and JIT don't
-/// speculate, and saying so spares the guest Spectre mitigations and KPTI.
+/// system register interface; 1 with `FEATURE_GICV3`, `pfr0`). CSV2 and CSV3:
+/// the interpreter and JIT don't speculate, and saying so spares the guest
+/// Spectre mitigations and KPTI.
 const ID_AA64PFR0: u64 = 1 << 60 | 1 << 56 | 1 << 4 | 1;
+
+/// ID_AA64PFR0_EL1 for a vCPU with `features`.
+pub fn pfr0(features: u64) -> u64 {
+    ID_AA64PFR0 | ((features & crate::cpu::FEATURE_GICV3 != 0) as u64) << 24
+}
+
+/// The GICv3 CPU interface register an MSR/MRS key (bits 20:5) names, if
+/// the vCPU has one (`FEATURE_GICV3`). Its accesses complete in the VM run
+/// loop (`Exit::Platform`), at EL1 (op1 = 0: UNDEFINED at EL0).
+pub fn icc(features: u64, key: u32) -> Option<crate::gicv3::Icc> {
+    if features & crate::cpu::FEATURE_GICV3 == 0 || key >> 11 != 0b11_000 {
+        return None;
+    }
+    crate::gicv3::Icc::decode(key >> 7 & 0xf, key >> 3 & 0xf, key & 7)
+}
 /// DebugVer v8.0, 2 breakpoints, 2 watchpoints, 1 context comparator (the
 /// architectural minimum), no PMU.
 // ponytail: the debug registers are RAZ/WI and no debug exceptions are raised
@@ -325,11 +339,12 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         MDSCR => c.mdscr_el1,
         OSLSR_R => OSLM | c.os_lock,
         MIDR_R => MIDR,
-        MPIDR_R => MPIDR,
+        MPIDR_R => c.mpidr,
         REVIDR => 0,
-        PFR0 => ID_AA64PFR0,
+        PFR0 => pfr0(c.features),
         DFR0 => ID_AA64DFR0,
         ISAR0 => isar0(c.features),
+        k if icc(c.features, k).is_some_and(|r| r.readable()) => return Err(Exit::Platform(i)),
         MMFR0 => ID_AA64MMFR0,
         // The rest of the ID space (op1 = 0, CRn = 0, CRm = 1..7) is RAZ: the
         // AArch32 ID registers (no AArch32) and everything past v8.0 we don't have.
@@ -402,8 +417,7 @@ pub fn plain(key: u32, el1: bool) -> Option<Plain> {
         TPIDR_EL1 => f(offset_of!(Cpu, tpidr_el1)),
         MDSCR => f(offset_of!(Cpu, mdscr_el1)),
         MIDR_R => Some(Const(MIDR)),
-        MPIDR_R => Some(Const(MPIDR)),
-        PFR0 => Some(Const(ID_AA64PFR0)),
+        MPIDR_R => f(offset_of!(Cpu, mpidr)),
         DFR0 => Some(Const(ID_AA64DFR0)),
         MMFR0 => Some(Const(ID_AA64MMFR0)),
         _ => None,
@@ -505,6 +519,7 @@ fn write(c: &mut Cpu, m: &mut impl Bus, i: u32, key: u32, v: u64) -> R {
         OSLAR => c.os_lock = (v & 1) << 1,
         k if raz_wi(k) => {}
         RMR => {} // a warm reset request (RR) isn't honored
+        k if icc(c.features, k).is_some_and(|r| r.writable()) => return Err(Exit::Platform(i)),
         _ => return Err(Exit::Undefined),
     }
     if (c.sctlr_el1 ^ copy) & sctlr::M != 0 {
@@ -717,6 +732,7 @@ mod tests {
                         &mut c.contextidr_el1,
                         &mut c.tpidr_el1,
                         &mut c.mdscr_el1,
+                        &mut c.mpidr,
                     ] {
                         *f = rnd();
                     }
@@ -743,7 +759,9 @@ mod tests {
                 }
             }
         }
-        assert_eq!(claimed, 4 + 30); // at EL0 and EL1 (ID_AA64ISAR0_EL1 is a helper since M6.5: it depends on Cpu.features)
+        // At EL0 and EL1. ID_AA64ISAR0_EL1 (M6.5) and ID_AA64PFR0_EL1 (M7) are
+        // helpers: they depend on Cpu.features.
+        assert_eq!(claimed, 4 + 29);
     }
 
     /// The `Cpu` offsets `tests/jit-diff.test.ts` randomizes (SYSREG_FIELDS,

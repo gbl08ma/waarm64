@@ -19,18 +19,21 @@ step typecheck;   npx tsc --noEmit
 current() { images/build.sh --check "$1" > /dev/null; }
 export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current debian && echo ,debian)}
 step js tests;    npm test --silent
-# Guest-image tests: run when target/images has the image and it's current.
+# Guest-image tests: run when target/images has the images (a space-separated
+# list) and they're current.
 image_test() {
   step "$1"
-  if msg=$(images/build.sh --check "$2"); then
+  local msg= name
+  for name in $2; do msg=$msg$(images/build.sh --check "$name"); done
+  if [ -z "$msg" ]; then
     cargo test -q --release --test "$3" -- --ignored "${@:4}"
   else
     printf '\n**************** SKIPPED: %s ****************\n' "$msg"
   fi
 }
-image_test 'boot test' linux boot
+image_test 'boot test' 'linux buildroot' boot
 image_test kvm-unit-tests kvm-unit-tests kvm_unit_tests
-image_test 'LTP and kselftests' ltp ltp
+image_test 'LTP and kselftests' 'ltp linux' ltp
 for d in alpine debian; do
   if [[ $d == debian && ${WEBPC_DEBIAN_NATIVE-} != 1 ]]; then step "debian boot (native): SKIPPED (set WEBPC_DEBIAN_NATIVE=1)"
   elif [[ ",$WEBPC_DISTROS," == *",$d,"* ]]; then image_test "$d boot" $d distros $d; else step "$d boot: SKIPPED (not in WEBPC_DISTROS)"; fi

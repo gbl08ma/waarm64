@@ -61,6 +61,9 @@ pub struct Cpu {
     /// The optional features this vCPU implements (`FEATURE_*`, ABI 19): a VM's
     /// come from `VmConfig.features`, a user-mode vCPU (`Default`) has them all.
     pub features: u64,
+    /// MPIDR_EL1 (M7: each vCPU its own, `gicv3::mpidr`; 1 << 31 for one CPU).
+    /// In the padding after `features`, so `Cpu` stays 1072 bytes.
+    pub mpidr: u64,
 }
 
 /// FEAT_AES (with PMULL), FEAT_SHA1 and FEAT_SHA256 (M6.5): advertised in
@@ -68,6 +71,12 @@ pub struct Cpu {
 pub const FEATURE_CRYPTO: u64 = 1;
 /// Every feature bit the core knows.
 pub const FEATURES: u64 = FEATURE_CRYPTO;
+/// The GICv3 system-register CPU interface (`ICC_*_EL1`, ID_AA64PFR0_EL1.GIC
+/// = 1). Not a `VmConfig.features` bit: a VM sets it from `VmConfig.gic`; a
+/// user-mode vCPU doesn't have it.
+pub const FEATURE_GICV3: u64 = 1 << 32;
+/// MPIDR_EL1 of a single CPU: Aff0 = 0, U = 0.
+pub const MPIDR_UP: u64 = 1 << 31;
 
 /// PSTATE.M values (with M[4] = 0, AArch64): EL0t, EL1t, EL1h.
 pub const M_EL0T: u64 = 0b0000;
@@ -110,6 +119,7 @@ impl Default for Cpu {
             sctlr_el1: RES1 | C | SA | SA0 | I | DZE | UCT | NTWE | UCI,
             cpacr_el1: 3 << 20,
             features: FEATURES,
+            mpidr: MPIDR_UP,
             ..Cpu::zeroed()
         }
     }
@@ -146,6 +156,7 @@ impl Cpu {
         Cpu {
             pstate: M_EL1H | DAIF,
             sctlr_el1: sctlr::RES1,
+            mpidr: MPIDR_UP,
             ..Cpu::zeroed()
         }
     }

@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: linux, kvm-unit-tests, alpine, alpine-user, linux-crypto, debian, ltp (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, linux-crypto, debian, ltp, litmus (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
-# linux: Buildroot's BusyBox root filesystem (rootfs.ext4) and a Linux Image built
-#   from allnoconfig + linux.fragment with Buildroot's Bootlin toolchain; also
-#   Image-defconfig, the same kernel from arm64 defconfig + linux.fragment (the
-#   distro-like candidate, M4 step 4).
+#   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
+# buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Bootlin's
+#   x86_64-hosted toolchain in the images container (qemu-user on the arm64 VM).
+# linux: a Linux Image from allnoconfig + linux.fragment, and Image-defconfig,
+#   the same kernel from arm64 defconfig + linux.fragment (the distro-like
+#   candidate, M4 step 4); built natively in Alpine's arm64 container (M7: an
+#   hour under qemu-user in the images container before), as linux-crypto.
 # alpine: Alpine's aarch64 minirootfs plus linux-virt and openrc (apk in a qemu-user
 #   chroot), as an ext4 root (rootfs.ext4); the kernel (Image) and initramfs come
 #   from linux-virt. images/alpine/ has the boot test's local.d script.
@@ -52,7 +55,7 @@ ALPINE_SHA256=9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773 #
 ALPINE_PKGS="linux-virt=6.18.53-r0 openrc=0.63.2-r0"
 USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0 openssl=3.5.8-r0"
 USERLAND_TOOLS="e2fsprogs=1.47.4-r0 e2fsprogs-extra=1.47.4-r0"
-CRYPTO_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.2-r1 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1"
+KERNEL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.2-r1 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1 openssl-dev=3.5.8-r0"
 LITMUS_TOOLS="ocaml=4.14.4-r0 dune=3.22.2-r1 ocaml-menhir=20220210-r6 ocaml-menhir-dev=20220210-r6 ocaml-zarith=1.14-r1 ocaml-findlib=1.9.6-r8 gmp-dev=6.3.0-r4 busybox-static=1.37.0-r31 gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 tar=1.35-r5"
 HERDTOOLS_TAG=7.58
 HERDTOOLS_COMMIT=1ca343e16a2038e406d1ac674e7e3a1b722b36c7
@@ -64,7 +67,7 @@ export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(linux kvm-unit-tests alpine alpine-user linux-crypto debian ltp litmus)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user linux-crypto debian ltp litmus)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -85,39 +88,45 @@ linux_src() {
   [ -d "$out/build/linux-$LINUX" ] || tar -xf "$tar" -C "$out/build"
 }
 
-build_linux() {
-  local dst=$out/linux bro=$out/build/buildroot
-  rm -rf "$bro" "$out/build/linux" "$out/build/linux-defconfig" "$dst"
+build_buildroot() {
+  local dst=$out/buildroot bro=$out/build/buildroot
+  rm -rf "$bro" "$dst"
   mkdir -p "$dst"
   buildroot "$bro" images/buildroot.defconfig
   cp "$bro/images/rootfs.ext2" "$dst/rootfs.ext4"
+}
 
-  # Linux: allnoconfig + the fragment, every fragment line checked.
+# The kernels, natively in Alpine's arm64 container: allnoconfig + the fragment
+# (Image), and alldefconfig over arm64's defconfig + the fragment
+# (Image-defconfig), every fragment line checked.
+build_linux() {
+  local dst=$out/linux
+  rm -rf "$dst" "$out/build/linux" "$out/build/linux-defconfig"
+  mkdir -p "$dst"
   linux_src
-  local src=$out/build/linux-$LINUX obj=$out/build/linux
-  local kmake=(make -s -C "$src" O="$root/$obj" ARCH=arm64 CROSS_COMPILE="$root/$bro/host/bin/aarch64-linux-"
-    KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc)
-  # base: allnoconfig, or alldefconfig over arm64's defconfig (what `make defconfig` gives).
-  local base sfx
-  for base in allnoconfig defconfig; do
-    sfx=${base#allnoconfig}; sfx=${sfx:+-$sfx}
-    obj=$out/build/linux$sfx
-    mkdir -p "$obj"
-    if [ $base = allnoconfig ]; then
-      cp images/linux.fragment "$obj/allconfig"
-    else
-      cat "$src/arch/arm64/configs/defconfig" images/linux.fragment > "$obj/allconfig"
-    fi
-    kmake[4]=O=$root/$obj
-    "${kmake[@]}" KCONFIG_ALLCONFIG="$root/$obj/allconfig" ${base/defconfig/alldefconfig}
-    local missing
-    missing=$(grep '^CONFIG_' images/linux.fragment | grep -vxFf "$obj/.config" || true)
-    [ -z "$missing" ] || { echo "linux.fragment ($base): not applied:" >&2; echo "$missing" >&2; exit 1; }
-    "${kmake[@]}" -j"$(nproc)" Image
-    cp "$obj/arch/arm64/boot/Image" "$dst/Image$sfx"
-    cp "$obj/System.map" "$dst/System.map$sfx"
-    cp "$obj/.config" "$dst/config$sfx"
-  done
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH -e root="$root" "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache $1
+    src=$root/$2/build/linux-$3 dst=$root/$4
+    for base in allnoconfig defconfig; do
+      sfx= target=allnoconfig
+      [ $base = defconfig ] && sfx=-defconfig target=alldefconfig
+      obj=$root/$2/build/linux$sfx
+      mkdir -p "$obj"
+      if [ $base = allnoconfig ]; then
+        cp images/linux.fragment "$obj/allconfig"
+      else
+        cat "$src/arch/arm64/configs/defconfig" images/linux.fragment > "$obj/allconfig"
+      fi
+      k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc"
+      $k KCONFIG_ALLCONFIG="$obj/allconfig" $target
+      missing=$(grep "^CONFIG_" images/linux.fragment | grep -vxFf "$obj/.config" || true)
+      [ -z "$missing" ] || { echo "linux.fragment ($base): not applied:" >&2; echo "$missing" >&2; exit 1; }
+      $k -j"$(nproc)" Image
+      cp "$obj/arch/arm64/boot/Image" "$dst/Image$sfx"
+      cp "$obj/System.map" "$dst/System.map$sfx"
+      cp "$obj/.config" "$dst/config$sfx"
+    done
+  ' - "$KERNEL_TOOLS" "$out" "$LINUX" "$dst"
 }
 
 build_ltp() {
@@ -226,7 +235,7 @@ build_linux-crypto() {
     "$obj/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$obj/cpio.list" > "$dst/initramfs.cpio"
     cp "$obj/arch/arm64/boot/Image" "$dst/Image"
     cp "$obj/.config" "$dst/config"
-  ' - "$CRYPTO_TOOLS" "$out" "$LINUX" "$dst"
+  ' - "$KERNEL_TOOLS" "$out" "$LINUX" "$dst"
 }
 
 build_litmus() {
@@ -303,22 +312,23 @@ build_kvm-unit-tests() {
 
 # What decides an image's contents: its files, the pins, and its build steps.
 inputs() {
-  local files=(images/Containerfile)
-  [ "$1" = linux ] && files+=(images/buildroot.defconfig images/linux.fragment $(find images/overlay -type f | sort))
+  local files=(images/Containerfile) pins="^${1^^}"
+  [ "$1" = buildroot ] && files+=(images/buildroot.defconfig $(find images/overlay -type f | sort))
+  [ "$1" = linux ] && files+=(images/linux.fragment) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = alpine ] && files+=(images/alpine/webpc.start)
   [ "$1" = alpine-user ] && files+=($(find images/alpine/user -type f | sort) "$out/alpine/.inputs")
-  local pins="^${1^^}"
   [ "$1" = alpine-user ] && pins='^USERLAND_' 
-  [ "$1" = linux-crypto ] && files+=(images/linux.fragment $(find images/crypto -type f | sort)) && pins='^(CRYPTO_TOOLS|USERLAND_CONTAINER)'
+  [ "$1" = linux-crypto ] && files+=(images/linux.fragment $(find images/crypto -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == linux || $1 == ltp ]]; then declare -f buildroot linux_src; fi; } |
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto ]]; then declare -f linux_src; fi; } |
     sha256sum | cut -c1-16
 }
 
 outputs() {
   case $1 in
-    linux) echo linux/Image linux/Image-defconfig linux/rootfs.ext4 ;;
+    buildroot) echo buildroot/rootfs.ext4 ;;
+    linux) echo linux/Image linux/Image-defconfig ;;
     alpine) echo alpine/Image alpine/initramfs-virt alpine/rootfs.ext4 ;;
     alpine-user) echo alpine-user/rootfs-user.ext4 ;;
     linux-crypto) echo linux-crypto/Image linux-crypto/initramfs.cpio ;;
@@ -328,6 +338,11 @@ outputs() {
     litmus) echo litmus/initramfs.cpio litmus/litmus.tar ;;
   esac
 }
+
+if [ "${1:-}" = --inputs ]; then
+  inputs "${2:?--inputs needs an image name}"
+  exit 0
+fi
 
 if [ "${1:-}" = --check ]; then
   name=${2:?--check needs an image name}
@@ -358,10 +373,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() user= crypto= litmus=
+  rest=() user= crypto= litmus= kernel=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = litmus ]; then litmus=1; else rest+=("$name"); fi
+    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -370,7 +385,9 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
     podman run --rm --userns=keep-id -v "$root:$root:z" -w "$root" \
       -e WEBPC_IN_CONTAINER=1 -e HOME=/tmp "$tag" images/build.sh "${rest[@]}"
   fi
-  # After the images container: alpine-user builds on alpine, in its own container.
+  # After the images container, the ones built natively in Alpine's arm64
+  # container (alpine-user builds on alpine).
+  if [ -n "$kernel" ]; then build linux; fi
   if [ -n "$user" ]; then build alpine-user; fi
   if [ -n "$crypto" ]; then build linux-crypto; fi
   if [ -n "$litmus" ]; then build litmus; fi

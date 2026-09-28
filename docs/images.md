@@ -13,8 +13,9 @@ obligations (publish the configs, point to the sources), separate from webpc's M
   best-effort (a mismatch warns). `SOURCE_DATE_EPOCH` is 2026-09-01.
 - **Two containers:** `images/Containerfile` (Debian 13, pinned by digest, apt on
   `snapshot.debian.org` 20260924T000000Z) is x86_64, because Buildroot uses Bootlin's x86_64-hosted
-  toolchains; on the arm64 dev VM it runs under qemu-user, where `unshare` fails. The Alpine-based
-  images (`alpine-user`, `linux-crypto`, `litmus`) build natively in Alpine's own arm64 container
+  toolchains; on the arm64 dev VM it runs under qemu-user, where `unshare` fails. **Prefer the
+  native container on the dev VM** (the user, M7: development stays on the M4). The Alpine-based
+  images (`linux`, `alpine-user`, `linux-crypto`, `litmus`) build natively in Alpine's own arm64 container
   (`USERLAND_CONTAINER`, pinned by digest), as its root, needing neither qemu-user nor unshare.
 - The Mac builds nothing; it gets artifacts by `scp` if it needs them.
 
@@ -22,7 +23,8 @@ obligations (publish the configs, point to the sources), separate from webpc's M
 
 | Name | What | Used by |
 |---|---|---|
-| `linux` | Buildroot 2026.08 (commit `d5180309b1b6`, Bootlin aarch64 glibc stable 2025.08-1, `BR2_REPRODUCIBLE`) BusyBox root as `rootfs.ext4` (32 MiB, fixed UUID and hash seed); **Linux 6.18.54** as `Image` from `allnoconfig` + `images/linux.fragment` (platform, virtio devices, ext4, net, 9p, input, `FB_SIMPLE` without fbcon, `SYSVIPC`), and `Image-defconfig` (arm64 defconfig + fragment, the distro-like kernel: 5.4× the steps) | the Buildroot boot and device tests; `boot*` benchmarks; I/O benchmarks |
+| `buildroot` | Buildroot 2026.08 (commit `d5180309b1b6`, Bootlin aarch64 glibc stable 2025.08-1, `BR2_REPRODUCIBLE`) BusyBox root as `rootfs.ext4` (32 MiB, fixed UUID and hash seed), in the x86_64 images container (qemu-user on the dev VM: slow; its bytes differ between hosts, so the committed hash is the x86_64 desktop's) | with `linux`: the Buildroot boot and device tests; `boot*` benchmarks; I/O benchmarks |
+| `linux` | **Linux 6.18.54** built natively in Alpine's arm64 container (gcc 15): `Image` from `allnoconfig` + `images/linux.fragment` (platform, both GICs, virtio devices, ext4, net, 9p, input, `FB_SIMPLE` without fbcon, `SYSVIPC`), and `Image-defconfig` (arm64 defconfig + fragment, the distro-like kernel: 5.4× the steps). ~7 min; until M7 it was built with Buildroot's toolchain under qemu-user (an hour and more) | the Buildroot guests, LTP (`Image-defconfig`), the litmus image |
 | `ltp` | the `linux` root plus Buildroot's LTP (20260529) pruned to the 93 syscall tests in `images/ltp/tests`, and the arm64 kselftests `abi`, `signal`, `tags`; boots `Image-defconfig` on 512 MiB and runs `/ltp.sh` | `core/tests/ltp.rs`, Node |
 | `linux-crypto` | allnoconfig + the fragment + `images/crypto/linux.fragment` (the arm64 CE drivers, NEON and bit-sliced AES, `CRYPTO_SELFTESTS_FULL`, lib/crypto's SHA-1/224/256 KUnit suites autorun), with a static init (`images/crypto/init.c`) that waits for the self-tests and prints each implementation's result | Node (the crypto extensions' kernel test) |
 | `kvm-unit-tests` | commit `5a221342a025` (2026-09-08), the arm64 `.flat`s and `unittests.cfg`, built with Debian's `gcc-aarch64-linux-gnu` | `core/tests/kvm_unit_tests.rs`, Node |

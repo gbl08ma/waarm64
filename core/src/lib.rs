@@ -10,6 +10,7 @@ pub mod decode;
 pub mod fdt;
 pub mod fp;
 pub mod gic;
+pub mod gicv3;
 pub mod interp;
 pub mod jit;
 pub mod mem;
@@ -21,7 +22,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 20;
+pub const ABI_VERSION: u32 = 21;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -277,6 +278,7 @@ pub unsafe extern "C" fn vm_new(
         || !(ram as usize).is_multiple_of(16)
         || cfg.ndevices > virtio::MAX_DEVICES as u64
         || cfg.features & !cpu::FEATURES != 0
+        || !cfg.valid_smp()
         || (cfg.fb_width | cfg.fb_height != 0 && boot::framebuffer(&cfg).is_none())
     {
         return core::ptr::null_mut();

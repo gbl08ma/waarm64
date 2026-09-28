@@ -30,9 +30,11 @@ match it step for step.
 ### ID registers and identification
 
 - `MIDR_EL1`: implementer 0 (software use).
-- `MPIDR_EL1` = `1 << 31` (one CPU, Aff0 = 0). M7 changes this per vCPU.
+- `MPIDR_EL1`: `Cpu::mpidr`, per vCPU (`gicv3::mpidr`: `1 << 31`, Aff1 = i / 16, Aff0 = i % 16;
+  `1 << 31` for one CPU).
 - `ID_AA64PFR0_EL1`: FP and AdvSIMD = 0 (present, no FP16); **CSV2 and CSV3 set** (nothing
-  speculates, which spares the guest Spectre mitigations and KPTI).
+  speculates, which spares the guest Spectre mitigations and KPTI); GIC = 1 with a GICv3 (the
+  system-register interface, `cpu::FEATURE_GICV3`), else 0.
 - `ID_AA64ISAR0_EL1` (`interp::sys::isar0`): LSE, CRC32, and with the crypto feature AES = 2,
   SHA1 = 1, SHA2 = 1 (0x211120 with it on; the bare-metal `exceptions` test checks this value).
   `ID_AA64ISAR1_EL1` reports none of RDM, DotProd, FHM, FCMA, JSCVT, FRINTTS, BF16, I8MM; no AFP.
@@ -72,12 +74,13 @@ The table is `core/src/interp/sys.rs`.
   `OSDTRRX/TX_EL1`, `DBGDTR_EL0`, `DBGDTRRX/TX_EL0` are RAZ/WI; `MDRAR_EL1`,
   `DBGAUTHSTATUS_EL1`, `MDCCSR_EL0`, `RVBAR_EL1` read as zero; `RMR_EL1` reads 1 (AA64) and
   ignores writes (no warm reset). `IC IALLU(IS)` with Rt ≠ 31 executes as with 31.
+- The GICv3 CPU interface (`ICC_*_EL1`, with a GICv3 only): [platform.md](platform.md) "GICv3".
 - Left out (the decoder sweep's `SYS_NOT_OURS`, UNDEFINED): EL2/EL3 and secure state, AArch32
-  banked registers, GICv3's `ICC_*`, PMU, SPE, AMU, trace, RAS, BRBE, MPAM, SVE/SME, MTE, PAuth
+  banked registers, `ICC_AP{0,1}R1–3_EL1` (5 priority bits) and `ICC_NMIAR1_EL1`, PMU, SPE, AMU, trace, RAS, BRBE, MPAM, SVE/SME, MTE, PAuth
   keys, LOR, RNG, post-v8.0 PSTATE fields, range and outer-shareable TLBI, AT with PAN,
   `DC CVAP`, and breakpoints/watchpoints past the two advertised.
-- The generic timer registers ([platform.md](platform.md)) and `ISR_EL1` leave the interpreter
-  (`Exit::Platform`) and complete in the run loop with the exact step count.
+- The generic timer registers ([platform.md](platform.md)), `ISR_EL1` and the `ICC_*` registers
+  leave the interpreter (`Exit::Platform`) and complete in the run loop with the exact step count.
 
 ## MMU and TLB (`core/src/mmu.rs`)
 

@@ -50,6 +50,8 @@ Design notes for an ABI change go in this file before the code.
 | `fb_width`, `fb_height` | a `simple-framebuffer`, 0: none (8) |
 | `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10) |
 | `features` | bit 0 `FEATURE_CRYPTO`; other bits reserved, and `vm_new` refuses them (19) |
+| `ncpus` | vCPUs, 0 or 1 = one; `vm_new` refuses more until M7 loop 3 (21) |
+| `gic` | 0 the default (GICv3), 2 GICv2, 3 GICv3; `vm_new` refuses others (21) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`;
 the ABI's 0 means none.
@@ -135,7 +137,7 @@ have every optional feature. `jit_add_install`/`jit_call` are the JIT plumbing t
 ## M7 (SMP): design note for ABI 20 onward
 
 The whole set was called "ABI 20" in the kickoff; each commit that changes the exports bumps the
-version (20: the thread setup exports). Pre-approved on the outline in `M7-KICKOFF.md` (decision 7); written before the code, and
+version (20: the thread setup exports; 21: `VmConfig.ncpus` and `gic`). Pre-approved on the outline in `M7-KICKOFF.md` (decision 7); written before the code, and
 revised here if the code teaches otherwise. With `ncpus` ≤ 1 and the defaults, a host that
 passes CPU index 0 everywhere sees today's machine (except the GIC, which becomes GICv3 by
 default in loop 2).
@@ -159,7 +161,7 @@ default in loop 2).
 | Field | Meaning |
 |---|---|
 | `ncpus` | vCPUs, 0 or 1 = one; at most `vm::MAX_CPUS` |
-| `gic` | 0 the default (GICv3 from loop 2), 2 GICv2 (≤ 8 CPUs), 3 GICv3 |
+| `gic` | 0 the default (GICv3), 2 GICv2 (≤ 8 CPUs), 3 GICv3 (done, ABI 21) |
 | `smp` | 0 round-robin on the calling thread, 1 parallel (one thread per vCPU; realtime only) |
 
 **Exports that change or appear.**
@@ -204,3 +206,4 @@ default in loop 2).
 | 18 | `jit_helper_report` |
 | 19 | `VmConfig.features` (crypto extensions); `Cpu.features` |
 | 20 | thread setup for more instances on one memory: `__stack_pointer`, `__tls_size`, `__tls_align`, `__wasm_init_tls`, `thread_alloc`, `tls_probe` (M7) |
+| 21 | `VmConfig.ncpus` and `VmConfig.gic`; GICv3 the default (M7) |

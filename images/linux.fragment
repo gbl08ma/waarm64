@@ -1,5 +1,5 @@
 # Linux 6.18 for webpc: allnoconfig plus these (images/build.sh checks that each
-# one took effect). Our platform only: arm64 4K pages and 48-bit VA, GICv2,
+# one took effect). Our platform only: arm64 4K pages and 48-bit VA, GICv2 and GICv3 (M7),
 # PL011 with earlycon, the arch timer, PSCI, initrd support; printk, devtmpfs
 # (mounted by the kernel: the root filesystem has an empty /dev); virtio-mmio
 # with the console, entropy and block devices, and ext4 for the root on
@@ -14,6 +14,7 @@ CONFIG_TTY=y
 CONFIG_SERIAL_AMBA_PL011=y
 CONFIG_SERIAL_AMBA_PL011_CONSOLE=y
 CONFIG_ARM_GIC=y
+CONFIG_ARM_GIC_V3=y
 CONFIG_ARM_ARCH_TIMER=y
 CONFIG_ARM_PSCI_FW=y
 CONFIG_BLK_DEV_INITRD=y

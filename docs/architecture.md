@@ -9,7 +9,7 @@ WebAssembly modules at run time. It runs unmodified arm64 Linux. Chromium is the
 ```
 ┌──────────── vCPU worker (one today; one per vCPU in M7) ─────────────┐
 │  core.wasm (Rust): decoder, interpreter, JIT, MMU + software TLB,   │
-│  exceptions, system registers, timer, GICv2, PL011, PSCI, virtio    │
+│  exceptions, system registers, timer, GICv3/v2, PL011, PSCI, virtio │
 │  transports, the run loop, counters                                  │
 │  JIT modules: import the memory, the core's table and its helpers   │
 └──────────────────────────────────────────────────────────────────────┘
@@ -76,7 +76,7 @@ wasm64 core was free there), B +31–40%, D +26–32%.
 | `core/src/mem.rs` | guest RAM accesses and atomics |
 | `core/src/mmu.rs` | the walker, `Vcpu`, the TLB |
 | `core/src/vm.rs` | `Vm`: the run loop, time, IRQs, PSCI, device dispatch |
-| `core/src/gic.rs`, `pl011.rs`, `virtio.rs`, `boot.rs`, `fdt.rs` | the platform ([platform.md](platform.md), [devices.md](devices.md)) |
+| `core/src/gicv3.rs`, `gic.rs`, `pl011.rs`, `virtio.rs`, `boot.rs`, `fdt.rs` | the platform ([platform.md](platform.md), [devices.md](devices.md)) |
 | `core/src/jit/` | the JIT ([jit.md](jit.md)) |
 | `core/tests/` | native runners (corpus, TestFloat, bare-metal, boots, LTP, distros) and `common/` (native backends) |
 | `core/fuzz/` | decoder sweep and libFuzzer targets (separate workspace) |

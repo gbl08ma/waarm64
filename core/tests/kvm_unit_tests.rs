@@ -8,11 +8,18 @@
 
 mod common;
 
-/// Runnable tests: (unittests.cfg name, file, arguments, the checks expected to FAIL).
-const RUN: &[(&str, &str, &str, &[&str])] = &[
-    ("selftest-setup", "selftest", "setup smp=1 mem=256", &[]),
-    ("selftest-vectors-kernel", "selftest", "vectors-kernel", &[]),
-    ("selftest-vectors-user", "selftest", "vectors-user", &[]),
+/// Runnable tests: (unittests.cfg name, file, arguments, GIC version (0: the
+/// default), the checks expected to FAIL).
+const RUN: &[(&str, &str, &str, u64, &[&str])] = &[
+    ("selftest-setup", "selftest", "setup smp=1 mem=256", 0, &[]),
+    (
+        "selftest-vectors-kernel",
+        "selftest",
+        "vectors-kernel",
+        0,
+        &[],
+    ),
+    ("selftest-vectors-user", "selftest", "vectors-user", 0, &[]),
     // The test expects SPI targets to hold CPU 0's bit; on a uniprocessor GIC
     // the GICv2 spec makes ITARGETSR RAZ/WI, and QEMU TCG fails these two
     // checks the same way.
@@ -20,14 +27,16 @@ const RUN: &[(&str, &str, &str, &[&str])] = &[
         "gicv2-mmio-up",
         "gic",
         "mmio",
+        2,
         &[
             "gicv2: mmio: ITARGETSR: register content preserved",
             "gicv2: mmio: ITARGETSR: byte writes successful",
         ],
     ),
-    ("gicv2-active", "gic", "active", &[]),
-    ("timer", "timer", "", &[]),
-    ("cache", "cache", "", &[]),
+    ("gicv2-active", "gic", "active", 2, &[]),
+    ("gicv3-active", "gic", "active", 3, &[]),
+    ("timer", "timer", "", 0, &[]),
+    ("cache", "cache", "", 0, &[]),
 ];
 
 /// Skipped: (name or prefix, reason).
@@ -40,8 +49,8 @@ pub const SKIP: &[(&str, &str)] = &[
     ("gicv2-ipi", "SMP (M7)"),
     ("gicv2-mmio", "the SMP variants of gicv2-mmio-up (M7)"),
     ("gicv2-mmio-3p", "SMP (M7)"),
-    ("gicv3-", "GICv2 only (docs/cpu.md)"),
-    ("its-", "GICv3 ITS: GICv2 only"),
+    ("gicv3-ipi", "SMP (M7)"),
+    ("its-", "no GICv3 ITS"),
     ("pmu-", "no PMU (ID_AA64DFR0_EL1.PMUVer = 0)"),
     ("pci-test", "no PCI"),
     ("micro-bench", "accel = kvm only"),
@@ -72,10 +81,11 @@ fn kvm_unit_tests() {
         );
     }
     let mut failed = Vec::new();
-    for (name, file, args, expect_fail) in RUN {
+    for (name, file, args, gic, expect_fail) in RUN {
         let flat = common::image(&format!("kvm-unit-tests/{file}.flat"));
         let r = common::boot(&common::Boot {
             max_steps: 5_000_000_000,
+            gic: *gic,
             ..common::Boot::new(&flat, args)
         });
         let status = r

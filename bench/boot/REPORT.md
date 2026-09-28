@@ -139,3 +139,18 @@ phase) on today's single vCPU: the reference M7's scaling runs compare against. 
 10,746,996,638 steps. The M6.5 exit's 24.1 s is from another session (sessions move boots by up
 to ~8%); compare later N against this run or re-run it in the same session. Raw:
 `results/m7-loop0/alpine_user_jit.json`.
+
+## M7 loop 2: GICv3 as the default GIC
+
+The GICv3 (system-register CPU interface) against the GICv2 (MMIO CPU interface), same session,
+alternated (A, B, A, B), Chromium 153, the M4 VM, JIT, warm medians (IQR). The test kernels
+(`linux`) are now built natively with Alpine's gcc (images/build.sh), and have the GICv3 driver.
+
+| | GICv3 (default) | GICv2 (`--only …_gicv2`) |
+|---|---|---|
+| Alpine boot to power-off | 10,392 (±268), 10,312 (±132) ms | 10,187 (±25), 10,299 (±240) ms |
+| Alpine userspace, total | 23,956 (±156), 23,819 (±5) ms | 24,153 (±199), 23,790 (±687) ms |
+
+No difference beyond noise (≤ 2%) either way: interrupts are too few for the cheaper CPU
+interface to show (Alpine's boot takes ~15K IRQs). Steps: Alpine 2,856,663,287 (+0.002%),
+userspace 10,763,178,470 (+0.15%). Raw: `results/m7-loop2/`.

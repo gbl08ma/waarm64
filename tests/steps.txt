@@ -4,9 +4,9 @@
 # and JIT) and in Chromium (tests/browser.test.ts). A guest-visible change moves
 # them once: record the new counts here in the same commit, and say why in its
 # message (docs/testing.md "Step counts").
-buildroot 40890907
-devices 114044960
-ltp 2744982696
-crypto 4415427994
-alpine 2856603825
-alpine-user 10746996638
+buildroot 40505789
+devices 113312846
+ltp 2716704198
+crypto 4398705480
+alpine 2856663287
+alpine-user 10763178470

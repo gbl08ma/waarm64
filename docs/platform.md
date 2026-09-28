@@ -1,8 +1,8 @@
 # The platform: memory map, boot, run loop, time, GIC, timer, UART, PSCI
 
-The machine around the CPU, as built. Devices that need no host (GICv2, generic timer, PL011,
-PSCI, the virtio-mmio transports) live in the Rust core (`core/src/vm.rs`, `gic.rs`, `pl011.rs`,
-`virtio.rs`), so native runners and wasm share them. virtio backends are in
+The machine around the CPU, as built. Devices that need no host (the GICv3 or GICv2, generic
+timer, PL011, PSCI, the virtio-mmio transports) live in the Rust core (`core/src/vm.rs`,
+`gicv3.rs`, `gic.rs`, `pl011.rs`, `virtio.rs`), so native runners and wasm share them. virtio backends are in
 [devices.md](devices.md); the host ABI in [abi.md](abi.md).
 
 ## Memory map (QEMU `virt`'s)
@@ -11,7 +11,9 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
 
 | PA | What |
 |---|---|
-| `0x0800_0000` / `0x0801_0000` | GICv2 distributor / CPU interface |
+| `0x0800_0000` | GIC distributor (64 KiB) |
+| `0x0801_0000` | GICv2 CPU interface (GICv2 only) |
+| `0x080a_0000 + 0x2_0000·i` | GICv3 redistributor of CPU *i* (RD_base, then SGI_base; GICv3 only) |
 | `0x0900_0000` | PL011 UART (SPI 1, INTID 33) |
 | `0x0a00_0000 + 0x200·i` | virtio-mmio transport *i* (≤ 32; SPI 16+i, INTID 48+i) |
 | `0x4000_0000` | RAM (`vm::RAM_BASE`), size from `VmConfig.ram_size` |
@@ -34,11 +36,14 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
 - Runner conventions: the Image at RAM + 2 MiB and the initrd at + 128 MiB; raw binaries
   (bare-metal tests) with `kernelOffset: 0`. 256 MiB for Buildroot, 512 MiB for LTP, 1 GiB for the
   distros.
-- **The DTB is our own small FDT writer** (not `vm-fdt`): RAM, one PSCI (HVC) CPU, the GICv2,
-  `arm,armv8-timer`, a 24 MHz fixed clock, the PL011, one `virtio,mmio` node per device in slot
+- **The DTB is our own small FDT writer** (not `vm-fdt`): RAM, a PSCI (HVC) `cpu@<affinity>`
+  node per vCPU, the GIC (`arm,gic-v3` with one redistributor region, or `arm,cortex-a15-gic`),
+  `arm,armv8-timer` (level-high PPIs; with GICv2 also the CPU mask, as QEMU `virt`), a 24 MHz
+  fixed clock, the PL011, one `virtio,mmio` node per device in slot
   order (`dma-coherent`, a **level-high** interrupt: QEMU says edge-rising, but our line follows
   InterruptStatus), and the framebuffer ([devices.md](devices.md)). `tests/dtb/webpc.dts` is its
-  `dtc` decompilation, checked by a unit test.
+  `dtc` decompilation (GICv2, one CPU), `tests/dtb/webpc-gicv3.dts` the GICv3 one (two CPUs),
+checked by a unit test.
 - Guest RAM is sized against host RAM at VM start: Chromium gives no catchable error when host RAM
   runs out (the renderer is OOM-killed).
 
@@ -81,9 +86,43 @@ Two modes, chosen by `VmConfig.deterministic`:
 - Guest-timed benchmarks (`dd`, `fio`, `openssl speed`) are meaningless in deterministic time:
   run them in realtime mode.
 
-## GICv2 (`core/src/gic.rs`)
+## The GIC: GICv3 by default (`VmConfig.gic`)
 
-IHI 0048B without the Security Extensions, **single-CPU** (M7 makes it per-CPU):
+`VmConfig.gic` picks it: **3 (the default since M7) or 2**. `vm::Intc` dispatches MMIO, the lines
+and the IRQ signal to the one the VM has. `ID_AA64PFR0_EL1.GIC` = 1 and the `ICC_*` registers
+exist only with the GICv3 (`cpu::FEATURE_GICV3`, set by the VM; user-mode vCPUs don't have it).
+
+### GICv3 (`core/src/gicv3.rs`)
+
+IHI 0069, **no ITS, no LPIs**, per-CPU from the start (one CPU until M7 loop 3):
+- **One security state** (`GICD_CTLR.DS` = 1) and **affinity routing always on** (`ARE` RAO/WI).
+  Group 1 signals IRQ; group 0 would signal FIQ, which nothing takes (Linux and kvm-unit-tests
+  use group 1), though `ICC_IAR0_EL1` still acknowledges it.
+- **The system-register CPU interface:** `ICC_PMR`, `IAR0/1`, `EOIR0/1`, `HPPIR0/1`, `BPR0/1`,
+  `AP0R0`/`AP1R0`, `DIR`, `RPR`, `SGI0R`/`SGI1R`/`ASGI1R`, `CTLR` (CBPR, EOImode), `SRE` (RAO/WI:
+  no legacy interface), `IGRPEN0/1`. Accesses leave the interpreter (`Exit::Platform`, as the
+  timer registers do) and complete in the run loop; the JIT reaches them through its helper.
+- **5 priority bits** (`PRIbits` = 4, as QEMU's): priority fields keep bits 7:3, one
+  active-priorities register per group (bit = priority >> 3; the others are UNDEFINED). EOIR drops
+  the highest active priority, then deactivates unless EOImode splits that off to `DIR`.
+- 96 INTIDs as the GICv2's: SGIs and PPIs banked per CPU in its redistributor (`GICR_*`: WAKER,
+  TYPER with affinity and Last, IGROUPR0, the enable/pending/active sets, IPRIORITYR, ICFGR1),
+  SPIs in the distributor, routed by `GICD_IROUTER` (an affinity, or 1 of N: the lowest-numbered
+  CPU with group 1 on). The distributor's SGI/PPI words are RAZ/WI (affinity routing).
+- CPU *i*: Aff1 = i / 16, Aff0 = i % 16 (`gicv3::mpidr`, QEMU `virt`'s clustering; a target list
+  covers 16 CPUs), which is also its `MPIDR_EL1`.
+- `GICR_WAKER.ProcessorSleep` is state only (interrupts are forwarded while it's set, as QEMU
+  does). 64-bit registers (`GICR_TYPER`, `GICD_IROUTER`) take 64-bit or 32-bit accesses.
+- **Oracles:** QEMU TCG `gic-version=3`, and **Apple's in-kernel vGIC under hvf** (the Mac's QEMU
+  uses it by default: its `GICR_TYPER` reads 0 through 32-bit halves, where QEMU's own model
+  with `kernel-irqchip=off` doesn't). Where they differ from us: hvf reports
+  `ID_AA64PFR0_EL1.GIC` = 0 while its `ICC_*` registers work; Apple reads `GICR_ICFGR0` as 0 (QEMU
+  and we: `0xaaaa_aaaa`, 0b10 per SGI as GICv2 prescribes).
+
+### GICv2 (`core/src/gic.rs`)
+
+IHI 0048B without the Security Extensions, **single-CPU** (M7 loop 3 makes it per-CPU), kept
+for its kvm-unit-tests and as the `VmConfig.gic` = 2 option:
 - 96 INTIDs (`u128` masks, `ITLinesNumber` 2), all group 0 and IRQ (IGROUPR RAZ/WI), 8 priority
   bits, BPR group priority for preemption, IAR/EOIR/DIR with the `EOImode` split, ICFGR (SGIs edge,
   read-only), self-SGIs through `GICD_SGIR`.

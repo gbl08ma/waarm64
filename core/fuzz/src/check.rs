@@ -90,9 +90,11 @@ impl Checker {
     /// one should be UNDEFINED, except in the ID space, which reads as zero.
     fn check_sys(&mut self, w: u32) -> Option<Mismatch> {
         self.mem.write(PC, 4, w as u64).unwrap();
+        // A VM's vCPU with a GICv3 (its ICC_* registers; M7).
         let mut cpu = Cpu {
             pc: PC,
             cpacr_el1: 3 << 20,
+            features: webpc_core::cpu::FEATURES | webpc_core::cpu::FEATURE_GICV3,
             ..Cpu::reset()
         };
         cpu.x = [0x8000; 32];
@@ -143,7 +145,7 @@ fn sys_named(m: &str, o: &str) -> bool {
 }
 
 /// Named system registers and operations of features we don't have: EL2/EL3,
-/// AArch32, GICv3's CPU interface, PMU, SPE, AMU, trace, RAS, SVE/SME, MTE,
+/// AArch32, the GICv3 CPU interface registers past 5 priority bits and NMIs, PMU, SPE, AMU, trace, RAS, SVE/SME, MTE,
 /// PAuth, and the post-v8.0 PSTATE fields and maintenance operations.
 fn sys_not_ours(m: &str, o: &str) -> bool {
     let n = sys_name(m, o);
@@ -183,8 +185,16 @@ const SYS_NOT_OURS: &[&str] = &[
     // Debug state only (DLR, DSPSR).
     "dlr_",
     "dspsr_",
-    // GICv3 CPU interface, PMU, SPE, AMU, trace (ETE/TRBE), RAS, BRBE, MPAM, v8-R MPU.
-    "icc_",
+    // The GICv3 CPU interface's active-priority registers past 5 priority bits
+    // (gicv3.rs), its NMI acknowledge (v8.8); PMU, SPE, AMU, trace (ETE/TRBE),
+    // RAS, BRBE, MPAM, v8-R MPU.
+    "icc_ap0r1",
+    "icc_ap0r2",
+    "icc_ap0r3",
+    "icc_ap1r1",
+    "icc_ap1r2",
+    "icc_ap1r3",
+    "icc_nmiar1",
     "pm",
     "trc",
     "trb",

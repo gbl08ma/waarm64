@@ -31,14 +31,14 @@ async function get(rel: string): Promise<Uint8Array<ArrayBuffer>> {
 }
 
 /** `jit`: `VmConfig.jit` (0 interpreter, 1 JIT). */
-type Img = { kernel: Uint8Array; initrd?: Uint8Array; disk: string; cmdline: string; ramSize: number; test?: boolean; jit?: 0 | 1 };
+type Img = { kernel: Uint8Array; initrd?: Uint8Array; disk: string; cmdline: string; ramSize: number; test?: boolean; jit?: 0 | 1; gic?: 2 | 3 };
 
 export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<ArrayBuffer> }> {
   const [wasm, kernel] = await Promise.all([
     get('../../target/wasm32-unknown-unknown/release/webpc_core.wasm'),
     get(`../../target/images/linux/${image}`),
   ]);
-  return { wasm, kernel, disk: new URL('../../target/images/linux/rootfs.ext4', import.meta.url).href, cmdline: CMDLINE, ramSize: 256 << 20 };
+  return { wasm, kernel, disk: new URL('../../target/images/buildroot/rootfs.ext4', import.meta.url).href, cmdline: CMDLINE, ramSize: 256 << 20 };
 }
 
 /**
@@ -49,7 +49,7 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
 export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = img.test ? testDevices(img.disk) : guestDevices(img.disk);
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, idleLimitMs: 30_000 });
+  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, gic: img.gic, idleLimitMs: 30_000 });
   await onVm?.(vm);
   let console = '';
   let scanned = 0;
@@ -145,12 +145,12 @@ async function dd(o: Options): Promise<Sample[]> {
 }
 
 /** Alpine's boot test (core/tests/distros.rs): time to its local.d script and to power-off. */
-async function bootAlpine(o: Options, jit: 0 | 1 = 0): Promise<Sample[]> {
+async function bootAlpine(o: Options, jit: 0 | 1 = 0, gic?: 2): Promise<Sample[]> {
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
-  const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${a.disk}`, import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, test: true, jit };
-  const s = await bootTimes(o, img, 'alpine 3.24.2 6.18.53-0-virt', { distro: 'alpine', cmdline: a.cmdline, ramMiB: 1024, devices: 'test', jit }, { cold: 3, warmup: 1, warm: 5 });
-  const pre = jit ? 'alpine_jit' : 'alpine';
+  const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${a.disk}`, import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, test: true, jit, gic };
+  const s = await bootTimes(o, img, 'alpine 3.24.2 6.18.53-0-virt', { distro: 'alpine', cmdline: a.cmdline, ramMiB: 1024, devices: 'test', jit, ...(gic && { gic }) }, { cold: 3, warmup: 1, warm: 5 });
+  const pre = (jit ? 'alpine_jit' : 'alpine') + (gic ? `_gicv${gic}` : '');
   return s.map((x) => ({ ...x, name: x.name.replace('boot_init', `${pre}_script`).replace('boot_total', `${pre}_total`) }));
 }
 
@@ -163,10 +163,10 @@ const USER_PHASES = ['compress', 'lua', 'churn', 'sqlite'];
  * (images/alpine/user). Deterministic, the root disk only; ms per phase from
  * its "webpc: <phase> start/end" lines, and to power-off.
  */
-async function alpineUser(o: Options): Promise<Sample[]> {
+async function alpineUser(o: Options, gic?: 2): Promise<Sample[]> {
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
-  const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const };
+  const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-user/rootfs-user.ext4', import.meta.url).href, cmdline: a.cmdline, ramSize: 1 << 30, jit: 1 as const, gic };
   const module = await WebAssembly.compile(img.wasm);
   const phases: Record<string, number[]> = Object.fromEntries([...USER_PHASES, 'total'].map((p) => [p, []]));
   let stats;
@@ -178,8 +178,8 @@ async function alpineUser(o: Options): Promise<Sample[]> {
     stats = r.stats;
     o.log?.(`alpine_user_jit: ${USER_PHASES.map((p) => `${p} ${between(r, p).toFixed(0)}`).join(', ')}, total ${r.total.toFixed(0)} ms`);
   }
-  const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline: a.cmdline, ramMiB: 1024, jit: 1, steps: stats!.steps, counters: stats };
-  return Object.entries(phases).map(([p, samples]) => ({ name: `alpine_user_jit_${p}`, unit: 'ms', params, samples }));
+  const params = { distro: 'alpine', disk: 'rootfs-user.ext4', cmdline: a.cmdline, ramMiB: 1024, jit: 1, ...(gic && { gic }), steps: stats!.steps, counters: stats };
+  return Object.entries(phases).map(([p, samples]) => ({ name: `alpine_user_jit${gic ? `_gicv${gic}` : ''}_${p}`, unit: 'ms', params, samples }));
 }
 
 /**
@@ -359,4 +359,6 @@ export const suite = {
   // Realtime (M6.5).
   alpine_crypto_jit: (o: Options) => alpineCrypto(o),
   alpine_crypto_ce_jit: (o: Options) => alpineCrypto(o, '', true), // the crypto extensions on (VmConfig.features)
+  // On a GICv2 (VmConfig.gic = 2; M7 loop 2's A/B against the GICv3 default).
+  boot_alpine_jit_gicv2: (o: Options) => bootAlpine(o, 1, 2), alpine_user_jit_gicv2: (o: Options) => alpineUser(o, 2),
 };

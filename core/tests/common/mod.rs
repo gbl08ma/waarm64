@@ -597,6 +597,8 @@ pub struct Boot<'a> {
     pub fb: (u64, u64),
     /// `VmConfig.features` (`cpu::FEATURE_*`; M6.5).
     pub features: u64,
+    /// `VmConfig.gic`: 2, 3, or 0 for the default (M7).
+    pub gic: u64,
 }
 
 impl<'a> Boot<'a> {
@@ -614,6 +616,7 @@ impl<'a> Boot<'a> {
             fb: (0, 0),
             // The crypto extensions, as `bootVm` gives them (M6.5 loop 7).
             features: webpc_core::cpu::FEATURE_CRYPTO,
+            gic: 0,
         }
     }
 }
@@ -630,6 +633,7 @@ pub fn boot(b: &Boot) -> Run {
         echo,
         fb,
         features,
+        gic,
     } = b;
     let mut ram = vec![0u128; ram_size as usize / 16];
     // SAFETY: ram is 16-byte aligned, ram_size bytes long, and outlives the Vm.
@@ -641,6 +645,7 @@ pub fn boot(b: &Boot) -> Run {
         fb_width: fb.0,
         fb_height: fb.1,
         features,
+        gic,
         ..VmConfig::default()
     };
     let mut vm = Vm::with_devices(mem, cfg, &entries);

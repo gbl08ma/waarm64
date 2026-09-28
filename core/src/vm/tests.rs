@@ -24,7 +24,9 @@ impl T {
         let mut ram = vec![0u128; 1 << 16];
         // SAFETY: ram is 16-byte aligned, 1 MiB, and lives as long as the Vm.
         let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 1 << 20) };
-        let mut vm = Vm::with_devices(mem, cfg, devices);
+        // These tests drive the GICv2 directly unless they ask for another.
+        let gic = if cfg.gic == 0 { 2 } else { cfg.gic };
+        let mut vm = Vm::with_devices(mem, VmConfig { gic, ..cfg }, devices);
         for (k, w) in prog.iter().enumerate() {
             vm.mem.write(RAM_BASE + 4 * k as u64, 4, *w as u64).unwrap();
         }
@@ -42,7 +44,7 @@ impl T {
 
     /// GIC on with the virtual timer PPI enabled, and the timer armed at `cval`.
     fn vtimer_at(&mut self, cval: u64) {
-        let g = &mut self.vm.gic;
+        let g = self.vm.gic.v2();
         g.dist_write(0, 4, 1).unwrap();
         g.dist_write(0x100, 4, 1 << IRQ_VTIMER).unwrap();
         g.cpu_write(0, 4, 1).unwrap();
@@ -119,7 +121,7 @@ fn timer_irq_fires_on_its_tick() {
     assert_eq!((c.pc, c.elr_el1), (VBAR + 0x280, RAM_BASE));
     assert_eq!(t.vm.shared.counters.irqs.load(Ordering::Relaxed), 1);
     assert_eq!(t.vm.now(), 3 * 10_000);
-    assert_eq!(t.vm.gic.cpu_read(0x0c, 4), Some(IRQ_VTIMER as u32));
+    assert_eq!(t.vm.gic.v2().cpu_read(0x0c, 4), Some(IRQ_VTIMER as u32));
 }
 
 #[test]
@@ -149,10 +151,10 @@ fn counter_and_timer_registers() {
         0xd538_c103, // mrs x3, isr_el1
     ];
     let mut t = T::new(&prog, VmConfig::default());
-    t.vm.gic.dist_write(0, 4, 1).unwrap();
-    t.vm.gic.dist_write(0x100, 4, 1 << IRQ_VTIMER).unwrap();
-    t.vm.gic.cpu_write(0, 4, 1).unwrap();
-    t.vm.gic.cpu_write(4, 4, 0xff).unwrap();
+    t.vm.gic.v2().dist_write(0, 4, 1).unwrap();
+    t.vm.gic.v2().dist_write(0x100, 4, 1 << IRQ_VTIMER).unwrap();
+    t.vm.gic.v2().cpu_write(0, 4, 1).unwrap();
+    t.vm.gic.v2().cpu_write(4, 4, 0xff).unwrap();
     t.cpu().x[1] = 1;
     t.cpu().cntv_cval_el0 = 3;
     t.vm.run(3);
@@ -238,7 +240,7 @@ fn a_timer_is_pending_or_a_deadline_at_one_instant() {
     t.vtimer_at(1000);
     for now in [998, 999, 1000, 1001] {
         t.vm.lines_at(now);
-        let (pending, deadline) = (t.vm.gic.irq(), t.vm.next_deadline_at(now));
+        let (pending, deadline) = (t.vm.gic.irq(0), t.vm.next_deadline_at(now));
         assert!(
             pending != deadline.is_some(),
             "now {now}: pending {pending}, deadline {deadline:?}"

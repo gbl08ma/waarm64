@@ -68,26 +68,32 @@ const poweredOff = (r: Run) => {
 
 // Bare-metal EL1 tests (core/tests/baremetal.rs): linked at the start of 16 MiB of RAM; SYSTEM_OFF with x1 = 0 passes.
 const BAREMETAL = new URL('baremetal/', import.meta.url);
+// The GIC from the test's source marker (core/tests/baremetal.rs `gic_of`).
+const gicOf = (f: string) => {
+  const src = readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8');
+  return src.includes('oracle: needs GICv2') ? 2 : src.includes('oracle: GICv3') ? 3 : undefined;
+};
 for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort()) {
-  guest(`bare-metal ${f}`, () => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '' }), (r) => {
+  guest(`bare-metal ${f}`, () => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', gic: gicOf(f) }), (r) => {
     poweredOff(r);
     assert.equal(r.x[1], 0n, r.console);
     assert.match(r.console, /exit 0\n$/);
   }, { max: 50e6 });
 }
 
-// kvm-unit-tests: (file, arguments, the checks expected to FAIL), from core/tests/kvm_unit_tests.rs `RUN`.
-const KUT: [string, string, string[]][] = [
+// kvm-unit-tests: (file, arguments, the checks expected to FAIL, GIC), from core/tests/kvm_unit_tests.rs `RUN`.
+const KUT: [string, string, string[], (2 | 3)?][] = [
   ['selftest', 'setup smp=1 mem=256', []],
   ['selftest', 'vectors-kernel', []],
   ['selftest', 'vectors-user', []],
-  ['gic', 'mmio', ['gicv2: mmio: ITARGETSR: register content preserved', 'gicv2: mmio: ITARGETSR: byte writes successful']],
-  ['gic', 'active', []],
+  ['gic', 'mmio', ['gicv2: mmio: ITARGETSR: register content preserved', 'gicv2: mmio: ITARGETSR: byte writes successful'], 2],
+  ['gic', 'active', [], 2],
+  ['gic', 'active', [], 3],
   ['timer', '', []],
   ['cache', '', []],
 ];
-for (const [file, args, fails] of KUT) {
-  guest(`kvm-unit-tests ${file} ${args}`.trim(), () => ({ ramSize: 256 << 20, kernel: image(`kvm-unit-tests/${file}.flat`), cmdline: args }), (r) => {
+for (const [file, args, fails, gic] of KUT) {
+  guest(`kvm-unit-tests ${file} ${args}${gic ? ` (GICv${gic})` : ''}`.trim(), () => ({ ramSize: 256 << 20, kernel: image(`kvm-unit-tests/${file}.flat`), cmdline: args, gic }), (r) => {
     poweredOff(r);
     const lines = r.console.replaceAll('\r\n', '\n').split('\n');
     assert.deepEqual(lines.filter((l) => l.startsWith('FAIL: ')).map((l) => l.slice(6)), fails, r.console);
@@ -95,8 +101,8 @@ for (const [file, args, fails] of KUT) {
   }, { skip: !has(`kvm-unit-tests/${file}.flat`) && 'SKIPPED: run images/build.sh kvm-unit-tests', max: 5e9, stress: STRESS || file === 'cache' });
 }
 
-const linux = !has('linux/Image') && 'SKIPPED: run images/build.sh linux';
-const disk = () => new URL('linux/rootfs.ext4', IMAGES).href;
+const linux = (!has('linux/Image') || !has('buildroot/rootfs.ext4')) && 'SKIPPED: run images/build.sh linux buildroot';
+const disk = () => new URL('buildroot/rootfs.ext4', IMAGES).href;
 guest('Buildroot', () => ({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()) }), (r) => {
   poweredOff(r);
   assert.match(r.console, /webpc: test ok/);

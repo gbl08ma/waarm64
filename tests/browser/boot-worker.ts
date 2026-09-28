@@ -20,7 +20,7 @@ try {
   const params = new URLSearchParams(location.search);
   const distro = params.get('distro') as keyof typeof DISTROS | null;
   const script = params.get('script');
-  const img = distro ? DISTROS[distro] : { kernel: 'linux/Image', initrd: undefined, disk: 'linux/rootfs.ext4', cmdline: GUEST_CMDLINE + (script ? ` -- ${script}` : '') };
+  const img = distro ? DISTROS[distro] : { kernel: 'linux/Image', initrd: undefined, disk: 'buildroot/rootfs.ext4', cmdline: GUEST_CMDLINE + (script ? ` -- ${script}` : '') };
   const [wasm, kernel, initrd] = await Promise.all([
     get('/target/wasm32-unknown-unknown/release/webpc_core.wasm'),
     get(`/target/images/${img.kernel}`),

@@ -13,7 +13,7 @@
 use crate::cpu::Cpu;
 use crate::fdt::Fdt;
 use crate::virtio;
-use crate::vm::{GICC, GICD, IRQ_UART, RAM_BASE, UART, Vm, VmConfig};
+use crate::vm::{GICC, GICD, GICR, IRQ_UART, RAM_BASE, UART, Vm, VmConfig};
 
 /// Space reserved for the DTB at the top of RAM (booting.rst's limit is 2 MiB).
 pub const DTB_SPACE: u64 = 2 << 20;
@@ -35,13 +35,16 @@ pub fn framebuffer(cfg: &VmConfig) -> Option<(u64, u64)> {
 
 /// The device tree for this VM: QEMU `virt`'s addresses and bindings for the
 /// devices we have, with `virtio` virtio-mmio transports in the first slots.
-/// `initrd` is (start, end) in guest PA; `fb` a framebuffer as (PA, width, height).
+/// `initrd` is (start, end) in guest PA; `fb` a framebuffer as (PA, width, height);
+/// `gic` the GIC version (2 or 3) and `ncpus` the vCPUs.
 pub fn dtb(
     ram_size: u64,
     cmdline: &str,
     initrd: Option<(u64, u64)>,
     virtio: usize,
     fb: Option<(u64, u64, u64)>,
+    gic: u64,
+    ncpus: usize,
 ) -> Vec<u8> {
     let mut f = Fdt::default();
     f.begin("");
@@ -96,12 +99,16 @@ pub fn dtb(
     f.begin("cpus");
     f.cells("#address-cells", &[1]);
     f.cells("#size-cells", &[0]);
-    f.begin("cpu@0");
-    f.strs("device_type", &["cpu"]);
-    f.strs("compatible", &["arm,armv8"]);
-    f.cells("reg", &[0]);
-    f.strs("enable-method", &["psci"]);
-    f.end();
+    for i in 0..ncpus {
+        // `reg`: the MPIDR_EL1 affinity fields (Aff2–Aff0 fit one cell).
+        let aff = crate::gicv3::mpidr(i) as u32 & 0xff_ffff;
+        f.begin(&format!("cpu@{aff:x}"));
+        f.strs("device_type", &["cpu"]);
+        f.strs("compatible", &["arm,armv8"]);
+        f.cells("reg", &[aff]);
+        f.strs("enable-method", &["psci"]);
+        f.end();
+    }
     f.end();
 
     f.begin("psci");
@@ -110,23 +117,38 @@ pub fn dtb(
     f.end();
 
     f.begin(&format!("intc@{GICD:x}"));
-    f.strs("compatible", &["arm,cortex-a15-gic"]);
-    f.cells("#interrupt-cells", &[3]);
-    f.flag("interrupt-controller");
-    f.cells64("reg", &[GICD, 0x1_0000, GICC, 0x1_0000]);
+    if gic == 3 {
+        // QEMU `virt`'s map: the distributor, then one region of redistributors.
+        f.strs("compatible", &["arm,gic-v3"]);
+        f.cells("#interrupt-cells", &[3]);
+        f.flag("interrupt-controller");
+        f.cells("#redistributor-regions", &[1]);
+        let rd = ncpus as u64 * crate::gicv3::GICR_STRIDE;
+        f.cells64("reg", &[GICD, crate::gicv3::GICD_SIZE, GICR, rd]);
+    } else {
+        f.strs("compatible", &["arm,cortex-a15-gic"]);
+        f.cells("#interrupt-cells", &[3]);
+        f.flag("interrupt-controller");
+        f.cells64("reg", &[GICD, 0x1_0000, GICC, 0x1_0000]);
+    }
     f.cells("phandle", &[GIC_PHANDLE]);
     f.end();
 
     // PPIs (type 1): secure physical 13, non-secure physical 14, virtual 11,
-    // hypervisor 10 (INTIDs 29, 30, 27, 26); level-high, CPU 0.
+    // hypervisor 10 (INTIDs 29, 30, 27, 26); level-high, with GICv2 the CPU
+    // mask (every CPU), as QEMU `virt` has them.
     const PPI: u32 = 1;
-    const LEVEL_CPU0: u32 = 1 << 8 | 4;
+    let level = 4 | if gic == 3 {
+        0
+    } else {
+        ((1u32 << ncpus.min(8)) - 1) << 8
+    };
     f.begin("timer");
     f.strs("compatible", &["arm,armv8-timer"]);
     f.cells(
         "interrupts",
         &[
-            PPI, 13, LEVEL_CPU0, PPI, 14, LEVEL_CPU0, PPI, 11, LEVEL_CPU0, PPI, 10, LEVEL_CPU0,
+            PPI, 13, level, PPI, 14, level, PPI, 11, level, PPI, 10, level,
         ],
     );
     f.end();
@@ -189,7 +211,8 @@ impl Vm {
             return Err("initrd outside RAM or over the framebuffer or DTB space");
         }
         let fb = fb.map(|(pa, _)| (pa, self.cfg.fb_width, self.cfg.fb_height));
-        let blob = dtb(ram, cmdline, initrd, self.virtio.len(), fb);
+        let (gic, ncpus) = (self.cfg.gic_version(), self.cfg.ncpus.max(1) as usize);
+        let blob = dtb(ram, cmdline, initrd, self.virtio.len(), fb, gic, ncpus);
         if blob.len() as u64 > DTB_SPACE {
             return Err("DTB too large");
         }
@@ -201,7 +224,8 @@ impl Vm {
         let mut c = Cpu::reset();
         c.pc = kernel_pa;
         c.x[0] = dtb_pa;
-        c.features = self.cfg.features;
+        // What the VM gave the vCPU stays: its features (with the GIC's) and MPIDR.
+        (c.features, c.mpidr) = (self.vcpu.cpu.features, self.vcpu.cpu.mpidr);
         self.vcpu.cpu = c;
         Ok(())
     }
@@ -243,7 +267,7 @@ mod tests {
         assert_eq!((c.pc, c.x[0], c.el(), c.sctlr_el1 & 1), (k, dtb, 1, 0));
         assert_eq!(
             c.features,
-            crate::cpu::FEATURE_CRYPTO,
+            crate::cpu::FEATURE_CRYPTO | crate::cpu::FEATURE_GICV3,
             "the reset keeps the VM's features"
         );
         assert_eq!(vm.mem.read(dtb, 4), Ok(0xedfe0dd0)); // FDT magic, big-endian
@@ -268,42 +292,47 @@ mod tests {
         assert_eq!(framebuffer(&cfg(u64::MAX, 2)), None);
     }
 
-    /// Our DTB, decompiled by `dtc`, must match the reviewed source in
-    /// tests/dtb/webpc.dts (a round trip through the reference tool). Set
-    /// UPDATE_DTS=1 to rewrite it after an intended change.
+    /// Our DTB, decompiled by `dtc`, must match the reviewed sources in
+    /// tests/dtb/ (a round trip through the reference tool): webpc.dts (GICv2,
+    /// one CPU) and webpc-gicv3.dts (GICv3, two CPUs). Set UPDATE_DTS=1 to
+    /// rewrite them after an intended change.
     #[test]
     fn dtb_round_trips_through_dtc() {
-        let blob = dtb(
-            256 << 20,
-            "console=ttyAMA0 earlycon",
-            Some((0x4800_0000, 0x4810_0000)),
-            2,
-            Some((0x4fc0_0000, 640, 480)),
-        );
-        let dir = std::env::temp_dir().join(format!("webpc-dtb-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("webpc.dtb");
-        std::fs::write(&path, &blob).unwrap();
-        let out = std::process::Command::new("dtc")
-            .args(["-q", "-I", "dtb", "-O", "dts"])
-            .arg(&path)
-            .output()
-            .expect("dtc (device-tree-compiler) is needed for this test");
-        std::fs::remove_dir_all(&dir).unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let dts = String::from_utf8(out.stdout).unwrap();
-        let golden = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/dtb/webpc.dts");
-        if std::env::var_os("UPDATE_DTS").is_some() {
-            std::fs::write(golden, &dts).unwrap();
+        for (name, gic, ncpus) in [("webpc.dts", 2, 1), ("webpc-gicv3.dts", 3, 2)] {
+            let blob = dtb(
+                256 << 20,
+                "console=ttyAMA0 earlycon",
+                Some((0x4800_0000, 0x4810_0000)),
+                2,
+                Some((0x4fc0_0000, 640, 480)),
+                gic,
+                ncpus,
+            );
+            let dir = std::env::temp_dir().join(format!("webpc-dtb-{}-{gic}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("webpc.dtb");
+            std::fs::write(&path, &blob).unwrap();
+            let out = std::process::Command::new("dtc")
+                .args(["-q", "-I", "dtb", "-O", "dts"])
+                .arg(&path)
+                .output()
+                .expect("dtc (device-tree-compiler) is needed for this test");
+            std::fs::remove_dir_all(&dir).unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let dts = String::from_utf8(out.stdout).unwrap();
+            let golden = format!("{}/../tests/dtb/{name}", env!("CARGO_MANIFEST_DIR"));
+            if std::env::var_os("UPDATE_DTS").is_some() {
+                std::fs::write(&golden, &dts).unwrap();
+            }
+            assert_eq!(
+                dts,
+                std::fs::read_to_string(&golden).unwrap(),
+                "UPDATE_DTS=1 rewrites {golden}"
+            );
         }
-        assert_eq!(
-            dts,
-            std::fs::read_to_string(golden).unwrap(),
-            "UPDATE_DTS=1 rewrites {golden}"
-        );
     }
 }
