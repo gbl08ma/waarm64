@@ -102,6 +102,17 @@ test('Linux boots on 4 vCPUs in parallel (a worker each), JIT', { skip: !existsS
   }
 });
 
+// The litmus image's tests and atomics stress on 4 parallel vCPUs (M7 loop 7;
+// tests/boot-node.test.ts has the rest of its runs).
+const LITMUS = new URL('../target/images/litmus/initramfs.cpio', import.meta.url);
+test('litmus and atomics stress on 4 vCPUs in parallel, JIT', { skip: !existsSync(LITMUS) && 'SKIPPED: run images/build.sh linux litmus' }, async () => {
+  const r = await bootPage('litmus=-s,1000,-r,10&stress=-n,100000&parallel&ncpus=4&jit=1', 5);
+  assert.equal(r.error, undefined);
+  console.log(`# chromium litmus and stress (4 vCPUs, JIT): ${(r.ms / 1000).toFixed(1)} s; ${r.console.match(/stress: spin ok .*/g)?.join('; ')}`);
+  assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+  assert.match(r.console, /litmus: all ok, 0 skipped\nwebpc: stress on 4 CPUs[^]*\nwebpc: test ok\n/, r.console);
+});
+
 test('the root filesystem is writable through an OPFS overlay, and it persists across boots', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
   const name = 'webpc-test-rw';
   await removeOverlay(name);

@@ -7,7 +7,8 @@
 // device tests' devices (web/vm.ts `testDevices`, the input ones on the ports
 // the page sends first) and a 640×480 framebuffer, which goes to the page.
 // `?jit=1|2|3` runs it under the JIT, JIT-stress or JIT-check (`VmConfig.jit`), `?ncpus=N` on N vCPUs,
-// `?parallel` with a worker per vCPU (realtime; M7).
+// `?parallel` with a worker per vCPU (realtime; M7). `?litmus=<options>&stress=<options>`
+// boots the litmus image (images/build.sh litmus) instead, with no devices.
 import { DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/vm.ts';
 
 const get = async (path: string) => {
@@ -21,15 +22,18 @@ try {
   const params = new URLSearchParams(location.search);
   const distro = params.get('distro') as keyof typeof DISTROS | null;
   const script = params.get('script');
-  const img = distro ? DISTROS[distro] : { kernel: 'linux/Image', initrd: undefined, disk: 'buildroot/rootfs.ext4', cmdline: GUEST_CMDLINE + (script ? ` -- ${script}` : '') };
+  const litmus = params.get('litmus');
+  const img = distro ? DISTROS[distro]
+    : litmus !== null ? { kernel: 'linux/Image', initrd: 'litmus/initramfs.cpio', disk: '', cmdline: `console=ttyAMA0 panic=-1 webpc.litmus=${litmus} webpc.stress=${params.get('stress') ?? ''}` }
+    : { kernel: 'linux/Image', initrd: undefined, disk: 'buildroot/rootfs.ext4', cmdline: GUEST_CMDLINE + (script ? ` -- ${script}` : '') };
   const [wasm, kernel, initrd] = await Promise.all([
     get('/target/wasm32-unknown-unknown/release/webpc_core.wasm'),
     get(`/target/images/${img.kernel}`),
-    img.initrd && get(`/target/images/${img.initrd}`),
+    img.initrd ? get(`/target/images/${img.initrd}`) : undefined,
   ]);
   const disk = new URL(`/target/images/${img.disk}`, location.href).href;
   const test = params.has('devices') || distro === 'alpine'; // Alpine checks linux-virt's modules for them
-  const devices = test ? testDevices(disk, ports.keyboard, ports.tablet) : guestDevices(disk, params.get('overlay') ?? undefined);
+  const devices = litmus !== null ? [] : test ? testDevices(disk, ports.keyboard, ports.tablet) : guestDevices(disk, params.get('overlay') ?? undefined);
   const framebuffer = test ? { width: 640, height: 480 } : undefined;
   const opts = { ramSize: distro ? 1 << 30 : 256 << 20, kernel, initrd, cmdline: img.cmdline, devices, realtime: params.has('realtime'), framebuffer, jit: Number(params.get('jit') ?? 0) as 0 | 1 | 2 | 3, ncpus: Number(params.get('ncpus') ?? 1), parallel: params.has('parallel'), idleLimitMs: params.has('parallel') ? 60_000 : undefined };
   const r = await runToPowerOff(wasm, opts, 1e12, (vm) => vm.framebuffer && self.postMessage({ memory: vm.memory, framebuffer: vm.framebuffer }));

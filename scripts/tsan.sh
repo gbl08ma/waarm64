@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ThreadSanitizer on the native parallel SMP runner (M7): every bare-metal
-# test in parallel mode, then (with its images) Buildroot on 1, 2 and 4
-# vCPUs, a thread each. Any report fails the run (nothing is suppressed: guest
+# test in parallel mode, then (with their images) Buildroot on 1, 2 and 4
+# vCPUs, a thread each, and the litmus image's tests and atomics stress on 4
+# (small: ~1 min). Any report fails the run (nothing is suppressed: guest
 # RAM is accessed with atomics too). Builds std with the sanitizer into target/tsan.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -13,4 +14,9 @@ if images/build.sh --check linux > /dev/null && images/build.sh --check buildroo
   WEBPC_PARALLEL_RUNS=1 t --test boot -- --ignored linux_boots_in_parallel
 else
   echo 'tsan: Buildroot SKIPPED (images not current)'
+fi
+if images/build.sh --check linux > /dev/null && images/build.sh --check litmus > /dev/null; then
+  WEBPC_LITMUS=-s,100,-r,1 WEBPC_STRESS=-n,10000 t --test litmus -- --ignored litmus_parallel
+else
+  echo 'tsan: litmus SKIPPED (images not current)'
 fi

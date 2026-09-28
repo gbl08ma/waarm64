@@ -18,12 +18,13 @@ and the exact-step boots.
 | JIT plumbing | `tests/jit.test.ts` | install, IC IVAU invalidation (also across chains), the stale-code checker, call/return chaining, tier-up |
 | Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF), broadcast maintenance (`maint`, 4 vCPUs: every TLBI …IS flavor, IC IVAU and IALLUIS on code the others run; its IC planted out, JIT-check's stale-code checker must trap), 128-bit atomics (`pairs`, 4 vCPUs: CASP and LDXP/STXP against each other and against plain stores to the same bytes) |
 | kvm-unit-tests | `core/tests/kvm_unit_tests.rs`; `tests/boot-node.test.ts` | selftest (incl. smp), psci, gicv3-ipi, gicv3-active, timer, cache |
+| Litmus and atomics stress (4 vCPUs) | `core/tests/litmus.rs` (interpreter: round-robin with exact steps, parallel); `tests/boot-node.test.ts` (round-robin JIT with exact steps; parallel JIT and JIT-check); `tests/browser.test.ts` (parallel JIT); `scripts/tsan.sh` (parallel, small) | the memory model (no state herd7 forbids), LSE and LL/SC atomics, 128-bit CAS, futex wake-ups, spin-wait latency (M7) |
 | Buildroot boot and device test | `core/tests/boot.rs`; `tests/boot-node.test.ts`; `tests/browser.test.ts` | Linux boots, virtio console/rng/blk/net/9p/input, framebuffer, realtime mode, writable overlay |
 | LTP subset + arm64 kselftests | `core/tests/ltp.rs` (interpreter, each result against its table); `tests/boot-node.test.ts` (JIT) | 93 syscall tests; `syscall-abi`, `ptrace`, `hwcap`, `tpidr2`, `tags_test`, signal tests |
 | Crypto test kernel | `tests/boot-node.test.ts` (JIT; interpreter with `WEBPC_INTERP=1`) | the arm64 CE drivers' full self-tests, lib/crypto's SHA KUnit suites |
 | Distros | `core/tests/distros.rs` (interpreter: Alpine; Debian with `WEBPC_DEBIAN_NATIVE=1`); `tests/boot-node.test.ts` (Alpine, Alpine userspace, JIT); `tests/browser.test.ts` (Alpine, Debian, JIT) | real distro boots from virtio-blk |
-| Parallel SMP (a thread per vCPU, realtime: not reproducible, so repeated, every run must pass; `WEBPC_PARALLEL_RUNS`) | `core/tests/baremetal.rs` `baremetal_parallel` (every test, 5×), `core/tests/boot.rs` (Buildroot on 1, 2, 4 vCPUs), `core/tests/distros.rs` `alpine_smp` with `WEBPC_PARALLEL=1`; `tests/boot-node.test.ts` (bare-metal under the JIT and JIT-check, kvm-unit-tests' SMP set, litmus on 4, Buildroot on 2 and 4, Alpine on 4); `tests/browser.test.ts` (Buildroot on 4; Alpine on 4; Debian on 4 with `WEBPC_PARALLEL_DEBIAN=1`) | the vCPU workers, wake-ups, the platform lock, broadcast maintenance and the DSB wait (M7) |
-| ThreadSanitizer | `scripts/tsan.sh` (in `ci.sh`, ~20 s warm) | the native parallel runner under `-Zsanitizer=thread` (std rebuilt, `target/tsan`): the bare-metal tests 3× and Buildroot on 1, 2, 4 vCPUs; any report fails, nothing is suppressed (guest RAM is accessed with relaxed atomics: [cpu.md](cpu.md) "Memory accesses and atomics"); a planted plain load is reported |
+| Parallel SMP (a thread per vCPU, realtime: not reproducible, so repeated, every run must pass; `WEBPC_PARALLEL_RUNS`) | `core/tests/baremetal.rs` `baremetal_parallel` (every test, 5×), `core/tests/boot.rs` (Buildroot on 1, 2, 4 vCPUs), `core/tests/distros.rs` `alpine_smp` with `WEBPC_PARALLEL=1`; `tests/boot-node.test.ts` (bare-metal under the JIT and JIT-check, kvm-unit-tests' SMP set, litmus and stress on 4, Buildroot on 2 and 4, Alpine on 4); `tests/browser.test.ts` (Buildroot on 4; litmus and stress on 4; Alpine on 4; Debian on 4 with `WEBPC_PARALLEL_DEBIAN=1`) | the vCPU workers, wake-ups, the platform lock, broadcast maintenance and the DSB wait (M7) |
+| ThreadSanitizer | `scripts/tsan.sh` (in `ci.sh`, ~20 s warm) | the native parallel runner under `-Zsanitizer=thread` (std rebuilt, `target/tsan`): the bare-metal tests 3×, Buildroot on 1, 2, 4 vCPUs, the litmus image on 4 (~1 min); any report fails, nothing is suppressed (guest RAM is accessed with relaxed atomics: [cpu.md](cpu.md) "Memory accesses and atomics"); a planted plain load is reported |
 | Browser-only | `tests/browser.test.ts` | cross-origin isolation, the device worker, sync XHR ranges, OPFS, the canvas, DOM input, the spike page |
 | Host code | `tests/{devices,overlay,qcow2,serve,wasm-encoder,core-wasm,memory-kernels}.test.ts` | 9p server, loopback adapter, input config, overlay, qcow2 fixtures, the dev server, the encoder |
 | Decoder sweep | `core/fuzz` (not in CI) | every 2³² word vs Capstone |
@@ -193,14 +194,52 @@ skipped (on one vCPU only `CoRW1`, `CoWR`, `CoWW` run).
   litmus7's default settings the M4 showed almost nothing (SB never in 2M): the image uses
   herdtools7's Arm settings (stride 1, `userfence` barriers, `incr0` affinity, 5k × 200).
 - The checker was checked by removing SB's allowed states (it fails, listing each state).
-- **In CI:** `tests/boot-node.test.ts` boots the image on 4 parallel vCPUs under the JIT, 20K
-  outcomes per test (`-s 1000 -r 10`, ~5 s): no forbidden state. The host reorders there as the M4
-  does (MP 32, SB 918, R 49 of 20K); with DMB emitted as nothing (planted), MP+dmb.sys,
-  MP+dmb.st+dmb.ld, MP+dmb.sy+addr, SB+dmb.sys and 2+2W+dmb.sys fail (M7 loop 6).
+- **In CI, every mode and tier** (4 vCPUs; `webpc.litmus=` options, then the stress's):
+
+  | Runner | Mode, tier | Litmus, stress | Time |
+  |---|---|---|---|
+  | `core/tests/litmus.rs` | round-robin, interpreter (steps: `litmus-4cpu`) | `-s 100 -r 1`, `-n 20000` | 9 s |
+  | `core/tests/litmus.rs` | parallel, interpreter | `-s 1000 -r 10`, `-n 100000` | 12 s |
+  | `tests/boot-node.test.ts` | round-robin, JIT (the same steps) | as the interpreter's | 3.4 s |
+  | `tests/boot-node.test.ts` | parallel, JIT / JIT-check | as above / `-s 100 -r 2`, `-n 10000` | 8 s / 43 s (JIT-check's boot is 30 s) |
+  | `tests/browser.test.ts` | parallel, JIT | `-s 1000 -r 10`, `-n 100000` | 9 s |
+  | `scripts/tsan.sh` | parallel, interpreter, ThreadSanitizer | `-s 100 -r 1`, `-n 10000` | 60 s |
+
+  Round-robin is sequentially consistent (one thread, whole quanta), so it shows no relaxed
+  outcome at all; parallel runs show them as the M4 does (MP 32, SB 918, R 49 of 20K under the
+  JIT; SB and R under the native interpreter). JIT-stress round-robin takes over 5 min: only with
+  `WEBPC_JIT_STRESS=1`. With DMB emitted as nothing (planted), MP+dmb.sys, MP+dmb.st+dmb.ld,
+  MP+dmb.sy+addr, SB+dmb.sys and 2+2W+dmb.sys fail in parallel (M7 loop 6).
+
+## Atomics stress (`images/litmus/stress.c`, M7)
+
+In the litmus image, built twice: `stress-lse` (`-march=armv8.1-a`: CASAL, CASPAL, LDADD) and
+`stress-llsc` (`-march=armv8-a`: LDXR/STXR, LDXP/STLXP), both `-mno-outline-atomics`; the build
+fails if a binary lacks its instructions. `webpc.stress=<options>` runs both, a thread per CPU,
+each pinned: `count` (32- and 64-bit fetch-add and a CAS loop on one cache line: exact totals),
+`stack` (a Treiber stack of 64 nodes under a 128-bit (top, tag) CAS: every node back once, the
+pops exact; GCC calls libatomic for a 16-byte `__atomic` CAS, so it uses `__sync`), `pingpong`
+(mutex/condvar token passing: futex sleeps and wake-ups), `spin` (plain `STR`/`LDR` round trips
+between CPUs 0 and 1: percentiles, not checked). It passes on the oracle VM (4 vCPUs, 10⁶
+iterations per thread, 3× each).
+- **Planted bugs caught** (native parallel interpreter): LDADD as a load and a store (`count`:
+  385K of 400K); CASP/STXP as two plain stores, no lock (`stack` loses nodes, 3 of 3 runs, both
+  binaries). A pair op without its lock but with its per-half CASes passes (3 of 3): the ABA it
+  then misses needs two whole pair ops inside one; `pairs.c` covers the lock against plain stores.
+  STXR succeeding whenever memory still holds what it reads now (not the monitored value): the
+  guest never finishes (no pass within 300 s).
+- Other planted bugs of M7's list (loop 7): an SGI delivered to the CPU after its target (bare-metal
+  `gicv3` check 21; `smp` hangs, deterministic and parallel); no IC broadcast in parallel mode
+  (`maint` checks 401–403 on the first parallel run, JIT and JIT-check).
+- **Spin-wait latency** (round trip, 2 × one way; 2026-09-28): the M4 0.08 µs p50, 0.13 p99.9;
+  parallel JIT in Node (10⁶ per thread) 0.5 µs p50, 1.2–2.2 p99, 1.5–3.9 p99.9, max 0.3–0.9 ms;
+  native parallel interpreter 0.72 p50, 0.95 p99; round-robin ~1 ms (virtual: a quantum each
+  way). No chunk-long tail, so TurboFan doesn't keep a polled `LDR` in a register across a
+  loop's iterations for long. In Chromium the guest counter moves in `performance.now()`'s
+  5 µs steps (coarsened under cross-origin isolation), so sub-5 µs latencies read as 0 or 5.
 
 ## Planned layers
 
-- **Memory model and SMP** (M7 loop 7): the litmus tests in every mode and tier, atomics stress.
 - **In-guest suites** not yet run: more LTP areas (need `mkfs` tools and a scratch disk), the
   kselftests `fp` and the generic suites, language test suites (Python), guest JITs (Node/V8,
   LuaJIT) for code invalidation.

@@ -12,3 +12,4 @@ alpine 2856663287
 alpine-user 10763178470
 buildroot-2cpu 42577681
 buildroot-4cpu 45231514
+litmus-4cpu 879959970

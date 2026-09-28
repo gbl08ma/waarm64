@@ -26,7 +26,8 @@
 # litmus: herdtools7's litmus7 tests for the memory model (M7, images/litmus/):
 #   diyone7 makes each test in images/litmus/tests.txt, herd7's aarch64.cat
 #   lists its allowed final states (allowed.txt), litmus7 turns it into a
-#   static C program. Output: an initramfs (BusyBox + the tests, booted with
+#   static C program; stress.c is the atomics stress, built with LSE and with
+#   LL/SC atomics. Output: an initramfs (BusyBox + the tests, booted with
 #   linux/Image) and litmus.tar (the same tests for real hardware: the oracle
 #   VM). herdtools7 is CeCILL-B: built and run here, never copied into webpc.
 #   Built natively in Alpine's arm64 container, as alpine-user.
@@ -263,6 +264,16 @@ build_litmus() {
     mkdir "$b/c"
     "$bin/litmus/litmus.exe" -set-libdir "$ht/litmus/libdir" -mode std -driver shell -a 4 -mem direct -st 1 -barrier userfence -affinity incr0 -s 5k -r 200 -linkopt "-static -s" -o "$b/c" $(sed "s|^|$b/t/|; s/$/.litmus/" "$b/r/litmus/tests")
     make -s -C "$b/c" -j"$(nproc)"
+    # The atomics stress (stress.c), with LSE and with LL/SC atomics inlined:
+    # stress <variant> <-march> <instructions it must contain>.
+    stress() {
+      gcc -static -s -O2 -march=$2 -mno-outline-atomics -pthread -o "$b/r/litmus/stress-$1" images/litmus/stress.c
+      insns=$(objdump -d "$b/r/litmus/stress-$1" | awk "{ print \$3 }" | sort -u) v=$1
+      shift 2
+      for i; do echo "$insns" | grep -qx "$i" || { echo "stress-$v: no $i" >&2; exit 1; }; done
+    }
+    stress lse armv8.1-a casal caspal ldadd
+    stress llsc armv8-a ldxr stxr ldxp stlxp
     cp "$b"/c/*.exe "$b"/t/*.litmus images/litmus/run.sh images/litmus/check.awk "$b/r/litmus/"
     find "$b/r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
     tar -C "$b/r" --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" -cf "$dst/litmus.tar" litmus
@@ -272,7 +283,7 @@ build_litmus() {
       for d in proc tmp bin sbin usr usr/bin usr/sbin litmus; do printf "dir /%s 0755 0 0\n" $d; done
       printf "file /bin/busybox /bin/busybox.static 0755 0 0\nfile /init %s 0755 0 0\n" "$root/images/litmus/init"
       for f in $(cd "$b/r/litmus" && ls); do
-        m=0644; case $f in *.exe|run.sh) m=0755;; esac
+        m=0644; case $f in *.exe|run.sh|stress-*) m=0755;; esac
         printf "file /litmus/%s %s %s 0 0\n" "$f" "$b/r/litmus/$f" $m
       done; } > "$b/cpio.list"
     "$b/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$b/cpio.list" > "$dst/initramfs.cpio"

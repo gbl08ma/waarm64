@@ -70,8 +70,10 @@ tests across vCPUs, JIT-check; the realtime queues and DSB wait designed in docs
 the platform lock, wake words, broadcast queues with the DSB wait, ThreadSanitizer in CI; Linux
 boots on 4 vCPUs in parallel natively, in Node and in Chromium, Debian included), 6 (the memory
 model: DMB as `atomic.fence` in parallel JIT code, guest-RAM accesses as relaxed atomics with
-ThreadSanitizer unsuppressed, 128-bit atomics decided; litmus on 4 parallel vCPUs in CI). Next:
-loop 7, litmus and stress.
+ThreadSanitizer unsuppressed, 128-bit atomics decided; litmus on 4 parallel vCPUs in CI), 7
+(litmus and an atomics stress in every mode and tier: round-robin with exact steps, parallel,
+interpreter, JIT, JIT-check, Chromium, ThreadSanitizer; spin-wait latency measured). Next: loop
+8, scaling.
 - **Two execution modes, one core:** deterministic SMP runs every vCPU round-robin on one thread
   with a fixed quantum and one shared code cache (exact, reproducible step counts in every runner;
   virtual time = total steps of all vCPUs); realtime SMP runs **one worker per vCPU** on the shared

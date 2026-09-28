@@ -34,6 +34,7 @@ image_test() {
 image_test 'boot test' 'linux buildroot' boot
 step tsan;        scripts/tsan.sh
 image_test kvm-unit-tests kvm-unit-tests kvm_unit_tests
+image_test 'litmus and stress' 'linux litmus' litmus
 image_test 'LTP and kselftests' 'ltp linux' ltp
 for d in alpine debian; do
   if [[ $d == debian && ${WEBPC_DEBIAN_NATIVE-} != 1 ]]; then step "debian boot (native): SKIPPED (set WEBPC_DEBIAN_NATIVE=1)"
