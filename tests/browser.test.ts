@@ -1,9 +1,13 @@
-// Chromium end-to-end smoke tests (CHROMIUM env var overrides the binary).
+// Chromium end-to-end tests (CHROMIUM env var overrides the binary): what only a
+// browser has (workers with a device worker, sync XHR range reads, OPFS, the
+// canvas, DOM input, cross-origin isolation). Guest semantics are covered more
+// cheaply natively and in Node (docs/testing.md).
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { STEPS } from './steps.ts';
 
 let browser: Browser;
 let context: BrowserContext; // one origin storage (OPFS) for the boot pages; browser.newPage() gets a fresh one each time
@@ -58,9 +62,6 @@ async function removeOverlay(name: string) {
 }
 
 const IMAGES = new URL('../target/images/linux/Image', import.meta.url);
-/** The Buildroot boot's and the device test's steps in deterministic mode (tests/boot-node.test.ts). */
-const BUILDROOT_STEPS = 40_890_907;
-const DEVICES_STEPS = 114_044_960;
 for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], ['deterministic JIT', '?jit=1']]) {
   test(`Linux boots in a worker with virtio devices (root on virtio-blk over HTTP), ${mode} mode`, { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
     const page = await browser.newPage();
@@ -71,7 +72,7 @@ for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], [
     assert.equal(r.error, undefined);
     console.log(`# chromium boot (${mode}): ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-    if (mode !== 'realtime') assert.equal(r.steps, BUILDROOT_STEPS);
+    if (mode !== 'realtime') assert.equal(r.steps, STEPS.buildroot);
     const out = r.console.replaceAll('\r\n', '\n');
     assert.match(out, /answer: 42\n[^]*hwrng: [0-9a-f]{32}\n[^]*\/dev\/root \/ ext4 ro,[^]*vda magic: 53ef\nwebpc: test ok\nwebpc: test exit 0\n/);
     assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'webpc: hvc0 ok\n');
@@ -101,7 +102,7 @@ for (const jit of [0, 1]) test(`net (loopback adapter), 9p and the framebuffer w
   assert.equal(r.error, undefined);
   console.log(`# chromium devices boot${jit ? ' (JIT)' : ''}: ${r.steps} steps`);
   assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-  assert.equal(r.steps, DEVICES_STEPS);
+  assert.equal(r.steps, STEPS.devices);
   for (const want of ['net: mac 52:54:00:12:34:56\n', '3 packets transmitted, 3 packets received, 0% packet loss\n', '9p: hello from the host\n',
     '9p: b some text 10 -rw-r--r--\n', '9p: big 200000 ok\n', '9p: ls b big l \n', '9p: after rm b \n', '9p: top from-guest hello.txt \n', 'fb: 0 simple 640,480\n', 'webpc: test ok\n']) {
     assert.ok(r.console.includes(want), `missing ${JSON.stringify(want)}`);
@@ -120,21 +121,23 @@ test('input events from the page reach the guest (keyboard LED to the page, keys
   }
 });
 
-// The distro boots take minutes at interpreter speed: opt-in with WEBPC_DISTROS=alpine,debian (scripts/ci.sh sets it).
+// The distros, under the JIT only (interpreted they take minutes: Alpine's
+// interpreter run is native, core/tests/distros.rs). Opt-in with
+// WEBPC_DISTROS=alpine,debian (scripts/ci.sh sets alpine when its image is current).
 const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
 for (const [distro, expect] of [['alpine', /webpc: alpine 3\.24\.2 6\.18\.53-0-virt\n[^]*\/dev\/vda \/ ext4 ro,[^]*1 packets received[^]*webpc: 9p hello from the host\n[^]*webpc: drm 640x480\nwebpc: test ok\n/], ['debian', /webpc: debian\n13\.[^]*\n6\.12\.107\+deb13-arm64\nrw,[^]*webpc: test ok\n/]] as const) {
   const img = new URL(`../target/images/${distro}/Image`, import.meta.url);
   const skip = !DISTRO_TESTS.includes(distro) ? `SKIPPED: set WEBPC_DISTROS=${distro}` : !existsSync(img) && `SKIPPED: run images/build.sh ${distro}`;
   // Debian's root is writable through an overlay (a fresh one each run); Alpine's is read-only.
   const overlay = distro === 'debian' ? `webpc-test-${distro}` : undefined;
-  for (const jit of distro === 'alpine' ? [0, 1] : [0]) test(`${distro} boots from virtio-blk in a worker, deterministic mode${jit ? ', JIT' : ''}`, { skip }, async () => {
+  test(`${distro} boots from virtio-blk in a worker, deterministic mode, JIT`, { skip }, async () => {
     if (overlay) await removeOverlay(overlay);
-    const r = await bootPage(`distro=${distro}${overlay ? `&overlay=${overlay}` : ''}&jit=${jit}`, 120);
+    const r = await bootPage(`distro=${distro}${overlay ? `&overlay=${overlay}` : ''}&jit=1`, 10);
     if (overlay) await removeOverlay(overlay);
     assert.equal(r.error, undefined);
-    console.log(`# chromium ${distro} boot${jit ? ' (JIT)' : ''}: ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
+    console.log(`# chromium ${distro} boot (JIT): ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
     assert.match(r.console, expect);
-    if (distro === 'alpine') assert.equal(r.steps, 2_856_603_825); // PLAN.md §7 M3 "Run loop"; the JIT must not move it
+    if (distro === 'alpine') assert.equal(r.steps, STEPS.alpine);
   });
 }

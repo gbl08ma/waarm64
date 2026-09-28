@@ -4,17 +4,18 @@
 //! deterministic mode and once in realtime mode, and once with the arm64
 //! defconfig kernel (Image-defconfig). And twice with the root filesystem
 //! writable through one overlay: the second boot finds what the first wrote.
-//! And with the step 6 devices: net, 9p, the framebuffer, input. Ignored by default (it needs
+//! And with the test devices: net, 9p, the framebuffer, input. The deterministic
+//! boots take exactly tests/steps.txt's counts. Ignored by default (they need
 //! the images and a release build); scripts/ci.sh runs it with
 //! `cargo test --release --test boot -- --ignored`.
 
 mod common;
 
-fn boot(realtime: bool) {
-    boot_kernel("linux/Image", realtime);
+fn boot(realtime: bool) -> common::Run {
+    boot_kernel("linux/Image", realtime)
 }
 
-fn boot_kernel(image: &str, realtime: bool) {
+fn boot_kernel(image: &str, realtime: bool) -> common::Run {
     let kernel = common::image(image);
     let devices = common::guest_devices("linux/rootfs.ext4", None);
     let r = common::boot(&common::Boot {
@@ -41,12 +42,13 @@ fn boot_kernel(image: &str, realtime: bool) {
     assert_eq!(r.hvc, "webpc: hvc0 ok\n");
     assert!(out.contains("/dev/root / ext4 ro,"), "root filesystem");
     assert!(out.contains("vda magic: 53ef\n"));
+    r
 }
 
 #[test]
 #[ignore = "needs target/images (images/build.sh) and --release"]
 fn linux_boots_and_runs_the_test_script() {
-    boot(false);
+    assert_eq!(boot(false).steps, common::steps("buildroot"));
 }
 
 #[test]
@@ -119,6 +121,7 @@ fn boot_devices(script: &str) -> common::Run {
 #[ignore = "needs target/images (images/build.sh) and --release"]
 fn net_9p_and_framebuffer_work() {
     let r = boot_devices("/test-devices.sh");
+    assert_eq!(r.steps, common::steps("devices"));
     let out = &r.console;
     for want in [
         "net: mac 52:54:00:12:34:56\n",

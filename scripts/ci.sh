@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Everything CI runs; works the same locally. CHROMIUM overrides the browser binary.
-# Distro boots (M4 step 4): Alpine runs when its image is current; WEBPC_DISTROS
-# (a comma list: alpine,alpine-user,debian) overrides which ones (Debian takes many
-# minutes; alpine-user, the userspace benchmark's image, runs in Node's tests only).
+# docs/testing.md says which runner covers what. Distro boots: alpine and
+# alpine-user run when their images are current; WEBPC_DISTROS (a comma list:
+# alpine,alpine-user,debian) overrides which ones. Debian is occasional: its
+# native run here is interpreted (~8 min); Chromium boots it under the JIT (~1 min).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s\n' "$*"; }

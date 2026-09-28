@@ -41,6 +41,7 @@ fn alpine_boots_and_runs_the_test_script() {
     assert!(out.contains("webpc: 9p hello from the host\n"));
     assert!(out.contains("N: Name=\"webpc keyboard\"\nN: Name=\"webpc tablet\"\n"));
     assert!(out.contains("webpc: drm 640x480\n"));
+    assert_eq!(r.steps, common::steps("alpine"));
 }
 
 #[test]

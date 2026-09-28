@@ -569,6 +569,8 @@ pub struct Run {
     pub hvc: String,
     /// The framebuffer's bytes at the end, if there was one.
     pub fb: Vec<u8>,
+    /// Steps retired (instructions plus exceptions taken).
+    pub steps: u64,
     pub summary: String,
 }
 
@@ -703,6 +705,7 @@ pub fn boot(b: &Boot) -> Run {
     });
     Run {
         fb,
+        steps,
         kind,
         x0: vm.exit.x[0],
         console: String::from_utf8_lossy(&out).replace("\r\n", "\n"),
@@ -715,4 +718,14 @@ pub fn boot(b: &Boot) -> Run {
             vm.vcpu.cpu.pc
         ),
     }
+}
+
+/// A guest's deterministic step count from `tests/steps.txt`, which every
+/// runner (native, Node, Chromium; interpreter and JIT) checks against.
+pub fn steps(name: &str) -> u64 {
+    include_str!("../../../tests/steps.txt")
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .find_map(|l| l.strip_prefix(name)?.strip_prefix(' ')?.trim().parse().ok())
+        .unwrap_or_else(|| panic!("no {name} in tests/steps.txt"))
 }

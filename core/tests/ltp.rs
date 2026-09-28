@@ -112,24 +112,24 @@ const EXPECTED: &[(&str, &str)] = &[
     ("kselftest: fake_sigreturn_missing_fpsimd", "pass"),
     (
         "kselftest: fake_sigreturn_sme_change_vl",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: fake_sigreturn_sve_change_vl",
-        "skip: needs SVE, which we leave out (PLAN §1)",
+        "skip: needs SVE, which we leave out (docs/cpu.md)",
     ),
     ("kselftest: fpmr_siginfo", "pass"),
     (
         "kselftest: gcs_exception_fault",
-        "skip: needs GCS, which we leave out (PLAN §1)",
+        "skip: needs GCS, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: gcs_frame",
-        "skip: needs GCS, which we leave out (PLAN §1)",
+        "skip: needs GCS, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: gcs_write_fault",
-        "skip: needs GCS, which we leave out (PLAN §1)",
+        "skip: needs GCS, which we leave out (docs/cpu.md)",
     ),
     ("kselftest: hwcap", "pass"),
     ("kselftest: mangle_pstate_invalid_compat_toggle", "pass"),
@@ -144,56 +144,56 @@ const EXPECTED: &[(&str, &str)] = &[
     ("kselftest: ptrace", "pass"),
     (
         "kselftest: sme_trap_no_sm",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: sme_trap_non_streaming",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     ("kselftest: sme_trap_za", "pass"),
     (
         "kselftest: sme_vl",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: ssve_regs",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: ssve_za_regs",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: sve_regs",
-        "skip: needs SVE, which we leave out (PLAN §1)",
+        "skip: needs SVE, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: sve_vl",
-        "skip: needs SVE, which we leave out (PLAN §1)",
+        "skip: needs SVE, which we leave out (docs/cpu.md)",
     ),
     ("kselftest: syscall-abi", "pass"),
     ("kselftest: tags_test", "pass"),
     ("kselftest: tpidr2", "pass"),
     (
         "kselftest: tpidr2_restore",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     ("kselftest: tpidr2_siginfo", "pass"),
     (
         "kselftest: za_no_regs",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: za_regs",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: zt_no_regs",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
     (
         "kselftest: zt_regs",
-        "skip: needs SME, which we leave out (PLAN §1)",
+        "skip: needs SME, which we leave out (docs/cpu.md)",
     ),
 ];
 
@@ -215,6 +215,7 @@ fn ltp_and_kselftests() {
         r.powered_off() && r.console.contains("webpc: test ok\n"),
         "the run didn't finish"
     );
+    assert_eq!(r.steps, common::steps("ltp"));
     let got: Vec<(String, String)> = r
         .console
         .lines()
