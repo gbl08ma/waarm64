@@ -21,7 +21,7 @@ runs unmodified arm64 Linux. Chromium is the primary target.
 M0–M7 are done (the summary table is in PLAN.md §3): the interpreter, the golden corpus, Linux
 with virtio devices, Alpine and Debian, a JIT that boots Alpine in ~10 s in Chromium, the crypto
 extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vCPU for users).
-**Next:** whatever the user's next kickoff sets (PLAN.md §3 has M8, product integration). Loose ends go in
+**Current:** M8, a usable machine (PLAN.md §3; the brief is `M8-KICKOFF.md`). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment

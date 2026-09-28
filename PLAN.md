@@ -16,7 +16,7 @@ the docs and its entry here shrinks to a summary.
 | Privilege | EL0 and EL1 only. No EL2/EL3, no secure state |
 | MMU | Stage 1 only, 4K granule, 48-bit VA, TTBR0/TTBR1, ASIDs, software-managed access flag |
 | Platform | QEMU `virt`'s memory map; **GICv3 (no ITS) since M7** (the GICv2 model was dropped in M7: every guest we run has a GICv3 driver); generic timer, PL011, PSCI over HVC (answered in the core, CPU_ON included; SYSTEM_OFF/RESET exit to the host), virtio-mmio v2, a DTB generated from the VM config ([docs/platform.md](docs/platform.md)) |
-| Boot | Direct kernel boot (arm64 `Image` + initrd + DTB); no UEFI. Distro kernels and initrds are extracted from their images |
+| Boot | Direct kernel boot (arm64 `Image` + initrd + DTB); no UEFI. Distro kernels and initrds are extracted from their images. **Goal for a future milestone:** boot conventional arm64 disk images unmodified, through their own bootloader (UEFI; [backlog](docs/backlog.md)) |
 | Core | Rust compiled to wasm32 (the same crate builds natively for tests); host glue in TypeScript without a build step |
 | Guest memory | **Layout A** (M0.5): one shared wasm32 memory, core state then guest RAM (≤ ~3.5 GiB). One lowering point for guest accesses in generated code; TLB tag bits 3–11 reserved for a memory index ("A + spill memories" as NUMA nodes later) ([docs/architecture.md](docs/architecture.md)) |
 | JIT | Gadget style (inline what pays, helper calls into the interpreter's code for the rest), blocks keyed by guest PA, loop regions with tier-up, exact step accounting ([docs/jit.md](docs/jit.md)) |
@@ -60,20 +60,61 @@ Deferred: SVE, EL2, 16K/64K granules (needed for RHEL-family kernels), virtio-pc
 Details of each: the docs (by topic) and `bench/*/REPORT.md` (by date). Numbers today:
 [docs/benchmarking.md](docs/benchmarking.md) "Current numbers".
 
-### M8 — Product integration
+### M8 — A usable machine
 
-- Snapshots (save/restore CPU + devices + compressed RAM) for instant "boot".
-- A stable embedding API (VM config → DTB/devices; a user-facing CPU features toggle; the vCPU
-  count, parallel SMP for users), the networking backend API, persistence UX, docs.
-  - Networking: [docs/plans/networking.md](docs/plans/networking.md) (exploration, not scheduled):
-    the frame interface stays, v86 adapter compatibility dropped, a Tailscale backend first
-    (upstream Go client in wasm behind a DHCP/ARP gateway), `tailscale-rs` re-evaluated later,
-    WebRTC experimental.
-  - Graphics: [docs/plans/graphics.md](docs/plans/graphics.md) (exploration, not scheduled):
-    virtio-gpu 2D, a software baseline, then Venus (Vulkan) replayed on WebGPU, with OpenGL
-    through Zink, behind a decision gate after the first frame.
-- Compiling off the vCPU thread if a GUI guest's latency asks for it.
-- Firefox and Safari compatibility pass (Chromium stays the performance target).
+**Drive:** something to show for the project. A person runs one command on a fresh clone, opens a
+URL and uses a Linux VM with keyboard and mouse, seeing its screen live, as in v86's demos. Until
+M8 every guest ran headless under a test. Snapshots, networking, graphics, audio and the
+embedding API are scheduled by what that page needs, not as ends in themselves. Kickoff:
+`M8-KICKOFF.md`.
+
+Decisions (the user, 2026-09-28):
+- **One VM per page, Debian 13 first**, hardcoded at the start (the nocloud image: root without a
+  password), under the JIT, realtime, parallel SMP. Image choice, extra disks and settings come
+  later in M8 or after it.
+- **The framebuffer is the default view**: the guest's fbcon on the canvas (Debian's kernel has
+  `simplefb` and `fbcon` built in), with keyboard and mouse through virtio-input. **A serial
+  terminal on xterm.js** (`@xterm/xterm`, MIT: approved as the first runtime dependency, with its
+  official addons) is the fallback, debug and "advanced" view.
+- **The disk persists** across reloads in the OPFS copy-on-write overlay, with a reset on the
+  page.
+- **One command from a fresh clone** (`npm start`): builds from source on Linux and macOS (Node
+  and rustup are the only prerequisites; it says clearly what's missing), builds the wasm core if
+  stale, downloads Debian and extracts its kernel and initrd without host tools beyond Node,
+  serves on localhost and prints the URL.
+- **Frontend stack:** start with plain TypeScript and the DOM (as the rest of `web/`); Chromium
+  only. **Not a hard rule:** Svelte is pre-approved if a framework would make a specific part
+  easier. It needs compiling, so it would come with a compile step in `tools/serve.ts` (as type
+  stripping is) rather than a separate build.
+- **No public hosting in M8** (others clone the repo); **no guest network in the first phase.**
+- The Firefox and Safari pass left M8 for the backlog (the user checks Firefox by hand later).
+
+Phases (A first; after A, the tracks in C can run in parallel, one agent each):
+- **A. The interactive machine** (the kickoff): console input from the host (the PL011 RX path
+  the core already has), the page (screen, input focus and capture, the xterm.js view, power
+  and disk controls, boot progress, errors a user can act on), `npm start`, and an end-to-end
+  Chromium test that logs in and runs a command.
+- **B. Instant start: snapshots.** Save and restore CPU, devices and compressed RAM, so the page
+  resumes a booted machine in seconds instead of a full Debian boot. A snapshot pins the overlay
+  state it was taken with; parallel SMP stops every vCPU at a chunk boundary first
+  ([backlog](docs/backlog.md) "Snapshots in parallel SMP").
+- **C. Parallel tracks**, each starting from its plan doc (written first where none exists):
+  - Networking ([docs/plans/networking.md](docs/plans/networking.md)): the Ethernet gateway, then
+    a first backend. For a page served by our dev server, a relay to a user-mode NAT in the dev
+    server (no account needed) is the candidate to weigh against the plan's Tailscale-first
+    order, which targets static hosting.
+  - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): virtio-gpu 2D first (the screen
+    follows the page's size, damage instead of full copies, a cursor), then the software
+    baseline and the 3D decision gate.
+  - Audio: virtio-snd to an AudioWorklet over a shared ring (`docs/plans/audio.md`, to write).
+  - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
+    layouts.
+- **D. Choosing and shaping machines:** image selection (Debian, Alpine, a URL), extra disks,
+  RAM and vCPU settings (default vCPUs from `navigator.hardwareConcurrency` minus the device
+  worker and the page, with the P/E-core caveat), overlay export and import; and **the stable
+  embedding API**, extracted from what the page ended up using (VM config to DTB and devices,
+  CPU feature switches, devices, snapshots, network backends), with its docs.
+- Compiling off the vCPU thread, if a GUI guest's latency asks for it.
 
 ### M9 — Backlog
 

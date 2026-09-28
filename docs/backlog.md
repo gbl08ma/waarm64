@@ -87,6 +87,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
+- **Booting conventional arm64 disk images unmodified** (the user, 2026-09-28: a goal for a
+  future milestone): today a distro's kernel and initrd are extracted from its image and booted
+  directly (PLAN.md §1 "Boot"). The goal is to boot a published image (Debian's qcow2, other
+  distros' cloud and installer images) as it is, through its own bootloader. That means UEFI
+  firmware as a guest workload (EDK2's ArmVirtQemu, BSD-2-Clause-Patent; or U-Boot's EFI, GPL:
+  run, never copied) with a flash device or `fw_cfg`-like handoff, a boot ROM region, EFI
+  variables, and the ESP on virtio-blk; GRUB then loads the kernel. It also brings RTC, reboot
+  and `efi=`-dependent paths into play. A cheaper intermediate step, if it's ever useful: a
+  host-side loader that reads the image's `/boot` (and GRUB's or the Boot Loader Spec's entries
+  for the command line) at start time, in the browser, instead of a preparation step; M8's
+  in-Node ext4 reader is written so it can run there.
 - The timer, GIC and PL011 tests have no hardware oracle; a GICv3-free subset of `timer.c`
   (ISTATUS, TVAL, CNTKCTL traps) could run on hvf.
 - No host input path to the PL011 RX ring or virtio-console receive buffers from `web/vm.ts` (a
@@ -142,6 +153,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- **Firefox and Safari compatibility pass** (moved out of M8 by the user, 2026-09-28; Chromium
+  stays the target): the user checks Firefox by hand (never automated here); WebKit could run
+  through Playwright. Matters most once the page is publicly hosted.
 - LTP: only the syscalls subset; the loop-device tests (`getdents01`, `rename01`) and other areas
   need `mkfs` tools, a scratch disk and more RAM. kselftests: not `fp` (minutes of stress) nor the
   generic suites.

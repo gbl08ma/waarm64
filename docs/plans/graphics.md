@@ -35,7 +35,7 @@ renderers (llvmpipe, lavapipe) on our emulated CPU.
 - **A decision gate after the first frame** (G3): if Venus's memory model makes the translator
   too slow or too complex, stop and reconsider the alternatives in §2.
 - Chromium only, as everywhere in the project. WebGPU ships in Chromium (Linux, macOS, Windows,
-  ChromeOS). The graphics path doesn't block the Firefox/Safari pass in M8; a page without WebGPU
+  ChromeOS). The graphics path doesn't block a later Firefox/Safari pass; a page without WebGPU
   falls back to 2D plus the software baseline.
 
 ## 2. What exists elsewhere (findings, 2026-09-27)
