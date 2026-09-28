@@ -7,7 +7,7 @@
 // its run (PSCI, UNIMPLEMENTED, STOP) or its error to the coordinator
 // (web/vm.ts `bootVm`). Runs in a browser worker or a Node worker thread.
 import { EV_CONFIG, ring } from './devices.ts';
-import { clockOffset, Exit, instantiateThread, type ThreadBlock } from './vm.ts';
+import { clockOffset, Exit, instantiateThread, unsigned, type ThreadBlock } from './vm.ts';
 
 export type VcpuJob = {
   module: WebAssembly.Module;
@@ -41,7 +41,7 @@ const NONE = 0xffff_ffff_ffff_ffffn;
 const SPIN_MS = 0.05;
 
 function run(j: VcpuJob, clock: number): VcpuEnd {
-  const ex = instantiateThread(j.module, j.memory, j.block, clock).exports as unknown as Ex;
+  const ex = unsigned(instantiateThread(j.module, j.memory, j.block, clock).exports) as unknown as Ex;
   const mem = j.memory;
   const wake = new Int32Array(mem.buffer, ex.vm_cpu_signal(j.vm, j.cpu), 1);
   const bell = new Int32Array(mem.buffer, j.bell, 2);

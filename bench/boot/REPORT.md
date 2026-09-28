@@ -258,3 +258,52 @@ Raw: `results/m7-loop8/boot_alpine_jit-*.json`.
 The boot suite now ignores markers in the kernel's echo of its command line: Debian's contains
 `echo webpc: debian`, so `boot_debian_jit`'s first-marker time (`debian_jit_first`) had been ~1 s
 into the boot rather than its script.
+
+## M8 loop 0: Debian for interaction
+
+Debian 13 booted to its login prompts in a throwaway page (Playwright, headless): JIT, realtime,
+parallel SMP, the framebuffer, a keyboard and a tablet, the root on a fresh OPFS overlay, then
+reloaded onto the same overlay (after an unclean stop, as a closed tab leaves it). Chromium
+153.0.8010.52, the M4 VM (8 vCPUs), one boot per cell (two for the 2-vCPU default: 39.1, 39.5 s
+fresh; 32.7, 32.0 s reloaded). Seconds from page load to the `ttyAMA0` login prompt; Chromium's
+RSS (every process) at that moment. Raw: `results/m8-loop0/interactive-debian.json`.
+
+| Configuration | Fresh overlay | Reload | RSS (MiB) |
+|---|---|---|---|
+| 1 vCPU, 1 GiB, 1024×768 | 55.1 | 40.4 | 2,345 |
+| 2 vCPUs, 1 GiB, 1024×768 | 39.3 | 34.3 | 2,548 |
+| 4 vCPUs, 1 GiB, 1024×768 | 35.6 | 31.7 | 3,122 |
+| 2 vCPUs, 2 GiB, 1024×768 | 39.6 | 35.2 | 2,618 |
+| 2 vCPUs, 1 GiB, 1280×800 | 39.7 | 33.0 | 2,576 |
+| 2 vCPUs, 1 GiB, no framebuffer, serial console only | 37.5 | 31.7 | 2,514 |
+| 2 vCPUs, 1 GiB, 1024×768, trimmed command line | 33.8 | 29.7 | 2,465 |
+
+- **Both consoles are ready together:** `getty@tty1` and `serial-getty@ttyAMA0` start within
+  0.2 s of each other (at 35.3 and 35.4 s of guest uptime in the 2-vCPU fresh boot). The last
+  `console=` (tty0) gets `/dev/console`.
+- **fbcon draws on `simplefb` from the first kernel line** (a scrolling boot log, then the tty1
+  login), and costs 1.5–2 s of boot. The framebuffer's size doesn't show in the boot time.
+- **`virtio_input` loads** (udev, from the root filesystem, ~27 s in) and the keyboard reaches
+  tty1: the harness logs in and types commands whose output it reads on the serial side. Root is
+  locked in the published image; the `login.noauth` credential lets it in (docs/images.md).
+- **Guest memory:** 130 MiB used at the prompt of 965 MiB (1 GiB), 133 of 1,968 (2 GiB): 1 GiB is
+  plenty for a console. 2 GiB didn't boot at first (JS read the core's pointers past 2 GiB as
+  negative, fixed: docs/abi.md), and costs nothing in RSS until the guest touches it.
+- **Host memory:** each vCPU adds ~300 MiB of RSS (its worker's core instance, V8 heap and JIT
+  code), on top of ~2 GiB for one.
+- **Where the time goes** (`systemd-analyze`, 2 vCPUs, fresh): kernel and initrd 7.5 s, userspace
+  28.4 s. The critical chain is device discovery (the root's partitions at ~16 s), fsck and mount
+  of the ESP, `systemd-tmpfiles-setup`, `ldconfig` (2.7 s), `systemd-logind`. Beside it: AppArmor
+  loading ~100 profiles (7.5 s fresh, 3.4 s reloaded, and ~100 lines of audit noise on the
+  console), `systemd-resolved`, `systemd-networkd` and `systemd-timesyncd` (no network: pointless).
+  The trimmed command line (`apparmor=0` and those four units masked, plus the network generator)
+  saves ~5 s fresh and 3–4 s reloaded, with no failed units; it's the page's default.
+- `systemd-random-seed` takes 6–8 s waiting for the kernel's entropy (crng ready at 26.6 s, once
+  `virtio_rng` loads), off the critical path; KASLR is off for want of a seed (backlog).
+- **Noise:** no unit times out without a network. A reload replaces the uncleanly closed journal,
+  and timers warn that their stamps are "in the future": the guest's clock starts at systemd's
+  build epoch (2026-04-13) with no RTC (backlog). cfg80211 fails to load `regulatory.db`.
+- **Defaults from this:** 1 GiB, 1024×768 (fbcon's 8×16 font: 128×48 characters), vCPUs as the
+  kickoff says (at most 4, at most the cores minus two: 4 here, where 4 beat 2 by ~10%), the
+  trimmed command line, and the screen from the start (the boot log on it is the progress). A
+  reload reaches the prompt in ~30 s: phase B's snapshots would take that to seconds.

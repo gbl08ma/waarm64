@@ -66,6 +66,23 @@ export async function clockOffset(ask: () => Promise<number>, rounds = 16) {
   return best.clock;
 }
 
+/**
+ * The exports that return addresses in the memory. wasm32 pointers are u32,
+ * but JS sees an i32, negative past 2 GiB of memory (a guest with 2 GiB of
+ * RAM puts the core's later allocations there, M8 loop 0).
+ */
+const POINTERS = ['thread_alloc', 'vm_new', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_counters', 'jit_helper_report'];
+
+/** `exports` with the address-returning functions ({@link POINTERS}) made unsigned. */
+export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
+  const ex = { ...exports };
+  for (const name of POINTERS) {
+    const f = ex[name];
+    if (typeof f === 'function') ex[name] = (...args: unknown[]) => (f as (...a: unknown[]) => number)(...args) >>> 0;
+  }
+  return ex;
+}
+
 /** Each extra core instance's stack (docs/abi.md "Many core instances on one memory"). */
 export const THREAD_STACK = 1 << 20;
 /** A stack and a TLS block for another core instance on the same memory. */
@@ -76,7 +93,7 @@ export type ThreadBlock = { stack: number; tls: number };
  * up (instance 0, or one made by {@link instantiateThread}). Blocks are never freed.
  */
 export function threadAlloc(ex: WebAssembly.Exports): ThreadBlock {
-  const alloc = ex.thread_alloc as (size: number, align: number) => number;
+  const alloc = unsigned(ex).thread_alloc as (size: number, align: number) => number;
   const g = (name: string) => (ex[name] as WebAssembly.Global).value as number;
   const tls = alloc(g('__tls_size'), g('__tls_align'));
   const stack = alloc(THREAD_STACK, 16);
@@ -118,7 +135,7 @@ function jitHost(memory: WebAssembly.Memory) {
     },
     install(ptr: number, len: number, slot: number): number {
       if (!table) return -1;
-      const bytes = new Uint8Array(memory.buffer, ptr, len).slice(); // a non-shared copy
+      const bytes = new Uint8Array(memory.buffer, ptr >>> 0, len).slice(); // a non-shared copy (`ptr` is a u32 the i32 import signs)
       const module = new WebAssembly.Module(bytes);
       // Blocks it chains to that are already compiled (M5 step 7): `t.<table index>`.
       const t: Record<string, WebAssembly.ExportValue> = {};
@@ -256,7 +273,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const imports = coreImports(memory);
   const instance = await WebAssembly.instantiate(module, imports);
   imports.jit.bind(instance);
-  const ex = instance.exports as unknown as Exports;
+  const ex = unsigned(instance.exports) as unknown as Exports;
   if (ex.abi_version() !== ABI) throw new Error(`core ABI ${ex.abi_version()}, expected ${ABI}`);
 
   // Scratch page for VmConfig and the command line, then RAM.
@@ -525,7 +542,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
       if (steps !== last.steps) last = { steps, at: performance.now() };
       return last.at;
     },
-    pcs: () => Array.from({ length: c.ncpus }, (_, i) => `0x${new BigUint64Array(c.memory.buffer, (c.instance.exports.vm_cpu as (vm: number, i: number) => number)(c.vm, i) + 256, 1)[0].toString(16)}`),
+    pcs: () => Array.from({ length: c.ncpus }, (_, i) => `0x${new BigUint64Array(c.memory.buffer, (unsigned(c.instance.exports).vm_cpu as (vm: number, i: number) => number)(c.vm, i) + 256, 1)[0].toString(16)}`),
     close() {
       c.raise(STOP);
       for (const w of workers ?? []) void w.then((h) => h.terminate());

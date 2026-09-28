@@ -41,6 +41,19 @@ systemd.run="…" systemd.run_success_action=poweroff systemd.run_failure_action
 systemd.firstboot=off` (systemd-run-generator runs the test as a unit; `firstboot=off` because a
 writable first boot waits on the console forever, on QEMU too). Distros get 1 GiB.
 
+**Debian for interaction** (the page's VM, M8; `bench/boot/REPORT.md` "M8 loop 0"): `console=ttyAMA0
+console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes
+apparmor=0` and `systemd.mask=` for `systemd-networkd.service`, `systemd-networkd.socket`,
+`systemd-resolved.service`, `systemd-timesyncd.service`, `systemd-network-generator.service` (no
+guest network in M8 phase A: they only cost boot time). The last `console=` gets `/dev/console`,
+so systemd's status lines go to the screen; the kernel log goes to both. systemd's getty generator
+starts `getty@tty1` and `serial-getty@ttyAMA0` (and `serial-getty@hvc0` for the virtio console).
+**The published image locks root** (`root:!unprovisioned` in `/etc/shadow`; the nocloud image has
+no provisioning of its own): `login.noauth` is a credential util-linux's `login` reads (both getty
+units import `login.*`), so `root` logs in with no password on every console without touching the
+image. The kernel has `simplefb` and `fbcon` built in: fbcon draws on the framebuffer from the
+first kernel line.
+
 ## Gotchas
 
 - **Alpine keeps only the latest build of each package**, so the pins fail loudly once

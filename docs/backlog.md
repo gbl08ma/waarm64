@@ -102,6 +102,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (ISTATUS, TVAL, CNTKCTL traps) could run on hvf.
 - No host input path to the PL011 RX ring or virtio-console receive buffers from `web/vm.ts` (a
   `MessagePort` in the console's spec, as virtio-input has, is the shape).
+- **No RTC:** a guest's wall clock starts from what it finds (Debian: systemd's build epoch, 2026-04-13,
+  so timers warn "in the future" after a reboot). A PL031 (a DT node: guest-visible, so for new VM
+  configurations or with the user's OK) fed from the host clock in realtime mode.
+- **No `rng-seed` in the DT:** Linux's crng initializes only once `virtio_rng` loads from the root
+  filesystem (Debian: 26 s into a 31 s boot; `systemd-random-seed` waits for it) and KASLR is off
+  ("lack of seed"). `/chosen/rng-seed` (and `kaslr-seed`) from the host's CSPRNG in realtime mode;
+  deterministic mode would need a fixed seed (a step-count change).
 - virtio: `EVENT_IDX` not offered (do it when an I/O benchmark shows notify exits or interrupts
   matter); ConfigGeneration always 0 and no host API to change config space under a running driver
   (console resize, capacity change, net link state).
@@ -116,7 +123,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   candidates); no xattrs/ACLs; `qid.version` 0 (only `cache=none` coherent); readdir offsets are
   entry indices; whole-second timestamps.
 - Input: US PC layout only, no pointer lock (relative mouse), no multitouch; events injected in
-  deterministic mode land when they land.
+  deterministic mode land when they land. Past 1024 queued events the oldest are dropped, so
+  anything that types a long string (a test agent, a paste into the screen) must pace itself.
 - Framebuffer: full copy per animation frame (no dirty tracking), x8r8g8b8 only, fixed size;
   virtio-gpu next ([plans/graphics.md](plans/graphics.md)).
 - The TS backends are tested through boots; a Node test with a bare-metal virtio guest would be

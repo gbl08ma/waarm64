@@ -40,6 +40,9 @@ Design notes for an ABI change go in this file before the code.
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
   1056; `Cpu` is 1072 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none).
+- **Addresses are u32, but JS sees a wasm `i32` as signed:** past 2 GiB of memory (a guest with
+  2 GiB of RAM puts the core's later allocations there) they'd come back negative. `web/vm.ts`
+  `unsigned` wraps the exports that return one, and `jit_install` unsigns its `ptr`.
 
 ### `VmConfig` (u64 fields, in order)
 

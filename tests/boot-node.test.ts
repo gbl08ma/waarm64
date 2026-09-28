@@ -104,6 +104,22 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort())
   }
 }
 
+// Over 2 GiB of memory (M8 loop 0): with 2.5 GiB of RAM the core's later
+// allocations (the VM, the vCPUs, JIT code) sit above 2^31, where the i32 an
+// export returns is negative in JS (web/vm.ts `unsigned`), as is the address
+// `jit_install` gets. smp.bin on 4 vCPUs, round-robin under JIT-check (which
+// compiles on sight) and parallel under the JIT.
+test('bare-metal smp.bin with 2.5 GiB of RAM, round-robin (JIT-check) and parallel (JIT)', async () => {
+  const o = { ramSize: 2560 * 2 ** 20, kernel: readFileSync(new URL('smp.bin', BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: 4 };
+  const r = await boot(o, 3, 50e6);
+  poweredOff(r);
+  assert.equal(r.x[1], 0n, r.console);
+  await parallel(o, 1, (r) => {
+    poweredOff(r);
+    assert.equal(r.x[1], 0n, r.console);
+  });
+});
+
 // The stale-code checker across vCPUs (M7 loop 4): maint.bin with its one
 // `IC IVAU` planted out (a NOP), so CPU 0 rewrites code the secondaries have
 // compiled without invalidating it. The interpreter has no code cache and

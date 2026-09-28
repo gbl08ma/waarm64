@@ -1,0 +1,112 @@
+{
+ "host": "M4 Lima VM dev (8 vCPUs), Chromium 153.0.8010.52 headless, Node 26.7.0",
+ "date": "2026-09-28",
+ "what": "Debian 13 nocloud, JIT, realtime, parallel SMP; serialLoginS = page load to the ttyAMA0 login prompt; run 1 on a fresh OPFS overlay, run 2 a reload on the same overlay (after an unclean stop)",
+ "runs": [
+  {
+   "label": "c2-r1-1024",
+   "query": "ncpus=2&ram=1024&fb=1024x768",
+   "run": 1,
+   "serialLoginS": 39.27,
+   "rssAtLoginMiB": 2548
+  },
+  {
+   "label": "c2-r1-1024",
+   "query": "ncpus=2&ram=1024&fb=1024x768",
+   "run": 2,
+   "serialLoginS": 34.26,
+   "rssAtLoginMiB": 2546
+  },
+  {
+   "label": "c1-r1-1024",
+   "query": "ncpus=1&ram=1024&fb=1024x768",
+   "run": 1,
+   "serialLoginS": 55.12,
+   "rssAtLoginMiB": 2345
+  },
+  {
+   "label": "c1-r1-1024",
+   "query": "ncpus=1&ram=1024&fb=1024x768",
+   "run": 2,
+   "serialLoginS": 40.37,
+   "rssAtLoginMiB": 2156
+  },
+  {
+   "label": "c4-r1-1024",
+   "query": "ncpus=4&ram=1024&fb=1024x768",
+   "run": 1,
+   "serialLoginS": 35.58,
+   "rssAtLoginMiB": 3122
+  },
+  {
+   "label": "c4-r1-1024",
+   "query": "ncpus=4&ram=1024&fb=1024x768",
+   "run": 2,
+   "serialLoginS": 31.69,
+   "rssAtLoginMiB": 3084
+  },
+  {
+   "label": "c2-r1-1280",
+   "query": "ncpus=2&ram=1024&fb=1280x800",
+   "run": 1,
+   "serialLoginS": 39.72,
+   "rssAtLoginMiB": 2576
+  },
+  {
+   "label": "c2-r1-1280",
+   "query": "ncpus=2&ram=1024&fb=1280x800",
+   "run": 2,
+   "serialLoginS": 33,
+   "rssAtLoginMiB": 2545
+  },
+  {
+   "label": "c2-r2-1024",
+   "query": "ncpus=2&ram=2048&fb=1024x768",
+   "run": 1,
+   "serialLoginS": 39.61,
+   "rssAtLoginMiB": 2618
+  },
+  {
+   "label": "c2-r2-1024",
+   "query": "ncpus=2&ram=2048&fb=1024x768",
+   "run": 2,
+   "serialLoginS": 35.17,
+   "rssAtLoginMiB": 2719
+  },
+  {
+   "label": "c2-r1-nofb",
+   "query": "ncpus=2&ram=1024&fb=0&cmdline=console=ttyAMA0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes",
+   "run": 1,
+   "serialLoginS": 37.48,
+   "rssAtLoginMiB": 2514
+  },
+  {
+   "label": "c2-r1-nofb",
+   "query": "ncpus=2&ram=1024&fb=0&cmdline=console=ttyAMA0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes",
+   "run": 2,
+   "serialLoginS": 31.67,
+   "rssAtLoginMiB": 2439
+  },
+  {
+   "label": "c2-r1-trim",
+   "query": "ncpus=2&ram=1024&fb=1024x768&cmdline=console=ttyAMA0 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes apparmor=0 systemd.mask=systemd-networkd.service systemd.mask=systemd-networkd.socket systemd.mask=systemd-resolved.service systemd.mask=systemd-timesyncd.service systemd.mask=systemd-network-generator.service",
+   "run": 1,
+   "serialLoginS": 33.82,
+   "rssAtLoginMiB": 2465
+  },
+  {
+   "label": "c2-r1-trim",
+   "query": "ncpus=2&ram=1024&fb=1024x768&cmdline=console=ttyAMA0 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes apparmor=0 systemd.mask=systemd-networkd.service systemd.mask=systemd-networkd.socket systemd.mask=systemd-resolved.service systemd.mask=systemd-timesyncd.service systemd.mask=systemd-network-generator.service",
+   "run": 2,
+   "serialLoginS": 29.7,
+   "rssAtLoginMiB": 2458
+  },
+  {
+   "label": "c2-trim-diag",
+   "query": "ncpus=2&ram=1024&fb=1024x768&cmdline=console=ttyAMA0 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes apparmor=0 systemd.mask=systemd-networkd.service systemd.mask=systemd-networkd.socket systemd.mask=systemd-resolved.service systemd.mask=systemd-timesyncd.service systemd.mask=systemd-network-generator.service",
+   "run": 1,
+   "serialLoginS": 33.96,
+   "rssAtLoginMiB": 2522
+  }
+ ]
+}
