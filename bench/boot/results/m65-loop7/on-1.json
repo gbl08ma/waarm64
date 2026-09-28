@@ -1,0 +1,397 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-27T23:58:05.184Z",
+ "commit": "c39cd91b9c8f",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "crypto_aes-128-gcm_256",
+   "unit": "MB/s",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.phase=crypto",
+    "ramMiB": 1024,
+    "jit": 1,
+    "realtime": true,
+    "seconds": 1,
+    "crypto": true,
+    "algorithm": "AES-128-GCM",
+    "bytes": 256,
+    "helpers": [
+     {
+      "op": "SHL_1",
+      "calls": 6587439
+     },
+     {
+      "op": "ST1_sngl_1",
+      "calls": 450954
+     },
+     {
+      "op": "LD1_sngl_1",
+      "calls": 450561
+     },
+     {
+      "op": "LDx_mult_2",
+      "calls": 173887
+     },
+     {
+      "op": "MSR_reg",
+      "calls": 132703
+     },
+     {
+      "op": "ISB",
+      "calls": 126587
+     },
+     {
+      "op": "MRS",
+      "calls": 115337
+     },
+     {
+      "op": "STRx_LDRx_imm_2",
+      "calls": 104217
+     },
+     {
+      "op": "TRN2",
+      "calls": 51112
+     },
+     {
+      "op": "TRN1",
+      "calls": 51110
+     },
+     {
+      "op": "CASP",
+      "calls": 49893
+     },
+     {
+      "op": "ERET",
+      "calls": 47256
+     },
+     {
+      "op": "MSR_imm",
+      "calls": 21085
+     },
+     {
+      "op": "STP_LDP_gen",
+      "calls": 18345
+     },
+     {
+      "op": "LDRx_reg",
+      "calls": 15180
+     },
+     {
+      "op": "STP_LDP_fpsimd",
+      "calls": 12997
+     },
+     {
+      "op": "SYS",
+      "calls": 11782
+     },
+     {
+      "op": "STUR_fpsimd",
+      "calls": 11314
+     },
+     {
+      "op": "STRx_reg",
+      "calls": 5861
+     },
+     {
+      "op": "STURx_LDURx",
+      "calls": 5296
+     },
+     {
+      "op": "DC_ZVA",
+      "calls": 4817
+     },
+     {
+      "op": "CAS",
+      "calls": 1669
+     },
+     {
+      "op": "STRx_LDRx_imm_1",
+      "calls": 1452
+     },
+     {
+      "op": "IC_IVAU",
+      "calls": 1408
+     },
+     {
+      "op": "STTR",
+      "calls": 1139
+     },
+     {
+      "op": "LDADD",
+      "calls": 1051
+     },
+     {
+      "op": "LDTR",
+      "calls": 996
+     },
+     {
+      "op": "CRC32C",
+      "calls": 592
+     }
+    ]
+   },
+   "samples": [
+    48.52156768,
+    49.33947475,
+    48.653312,
+    50.96985859,
+    48.87298586
+   ],
+   "median": 48.87298586,
+   "iqr": 0.6861627500000012,
+   "n": 5
+  },
+  {
+   "name": "crypto_aes-128-gcm_16384",
+   "unit": "MB/s",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.phase=crypto",
+    "ramMiB": 1024,
+    "jit": 1,
+    "realtime": true,
+    "seconds": 1,
+    "crypto": true,
+    "algorithm": "AES-128-GCM",
+    "bytes": 16384
+   },
+   "samples": [
+    235.27424,
+    230.621184,
+    232.046592,
+    235.91305050999998,
+    231.849984
+   ],
+   "median": 232.046592,
+   "iqr": 3.4242559999999855,
+   "n": 5
+  },
+  {
+   "name": "crypto_aes-256-gcm_256",
+   "unit": "MB/s",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.phase=crypto",
+    "ramMiB": 1024,
+    "jit": 1,
+    "realtime": true,
+    "seconds": 1,
+    "crypto": true,
+    "algorithm": "AES-256-GCM",
+    "bytes": 256
+   },
+   "samples": [
+    47.016704,
+    47.479808,
+    47.271936,
+    48.599552,
+    47.474944
+   ],
+   "median": 47.474944,
+   "iqr": 0.20787200000000183,
+   "n": 5
+  },
+  {
+   "name": "crypto_aes-256-gcm_16384",
+   "unit": "MB/s",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.phase=crypto",
+    "ramMiB": 1024,
+    "jit": 1,
+    "realtime": true,
+    "seconds": 1,
+    "crypto": true,
+    "algorithm": "AES-256-GCM",
+    "bytes": 16384
+   },
+   "samples": [
+    192.151552,
+    192.397312,
+    191.52896,
+    191.85664,
+    190.480384
+   ],
+   "median": 191.85664,
+   "iqr": 0.6225919999999974,
+   "n": 5
+  },
+  {
+   "name": "crypto_aes-128-cbc_256",
+   "unit": "MB/s",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.phase=crypto",
+    "ramMiB": 1024,
+    "jit": 1,
+    "realtime": true,
+    "seconds": 1,
+    "crypto": true,
+    "algorithm": "AES-128-CBC",
+    "bytes": 256
+   },
+   "samples": [
+    131.48961616,
+    128.629248,
+    130.340096,
+    129.652736,
+    128.81408
+   ],
+   "median": 129.652736,
+   "iqr": 1.5260159999999985,
+   "n": 5
+  },
+  {
+   "name": "crypto_aes-128-cbc_16384",
+   "unit": "MB/s",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.phase=crypto",
+    "ramMiB": 1024,
+    "jit": 1,
+    "realtime": true,
+    "seconds": 1,
+    "crypto": true,
+    "algorithm": "AES-128-CBC",
+    "bytes": 16384
+   },
+   "samples": [
+    150.56896,
+    151.87968,
+    150.683648,
+    151.06048,
+    152.53669495
+   ],
+   "median": 151.06048,
+   "iqr": 1.1960320000000024,
+   "n": 5
+  },
+  {
+   "name": "crypto_sha1_256",
+   "unit": "MB/s",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.phase=crypto",
+    "ramMiB": 1024,
+    "jit": 1,
+    "realtime": true,
+    "seconds": 1,
+    "crypto": true,
+    "algorithm": "sha1",
+    "bytes": 256
+   },
+   "samples": [
+    53.6768,
+    53.422592,
+    50.579712,
+    51.666688,
+    51.42026139
+   ],
+   "median": 51.666688,
+   "iqr": 2.0023306100000013,
+   "n": 5
+  },
+  {
+   "name": "crypto_sha1_16384",
+   "unit": "MB/s",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.phase=crypto",
+    "ramMiB": 1024,
+    "jit": 1,
+    "realtime": true,
+    "seconds": 1,
+    "crypto": true,
+    "algorithm": "sha1",
+    "bytes": 16384
+   },
+   "samples": [
+    373.424128,
+    372.850688,
+    374.030336,
+    376.34048,
+    370.786304
+   ],
+   "median": 373.424128,
+   "iqr": 1.179647999999986,
+   "n": 5
+  },
+  {
+   "name": "crypto_sha256_256",
+   "unit": "MB/s",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.phase=crypto",
+    "ramMiB": 1024,
+    "jit": 1,
+    "realtime": true,
+    "seconds": 1,
+    "crypto": true,
+    "algorithm": "sha256",
+    "bytes": 256
+   },
+   "samples": [
+    56.633856,
+    55.55605545,
+    55.996416,
+    57.601024,
+    55.72736
+   ],
+   "median": 55.996416,
+   "iqr": 0.9064960000000042,
+   "n": 5
+  },
+  {
+   "name": "crypto_sha256_16384",
+   "unit": "MB/s",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.phase=crypto",
+    "ramMiB": 1024,
+    "jit": 1,
+    "realtime": true,
+    "seconds": 1,
+    "crypto": true,
+    "algorithm": "sha256",
+    "bytes": 16384
+   },
+   "samples": [
+    297.222144,
+    297.304064,
+    296.46848,
+    297.320448,
+    295.829504
+   ],
+   "median": 297.222144,
+   "iqr": 0.835583999999983,
+   "n": 5
+  }
+ ]
+}

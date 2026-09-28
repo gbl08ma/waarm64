@@ -699,3 +699,24 @@ Raw data: `../boot/results/m65-loop5/`.
 (GCM's gain here isn't from SHA: same code; within one session's spread, not claimed.) Helpers left in the phase: scalar `SHL` (6.6M, plain AdvSIMD in OpenSSL's GCM glue), `LD1`/`ST1` single structure (0.45M each), the kernel's usual. Planted: σ0's rotation off by one (913 of 4096 words, 118 of 1024 sequences, 42 corpus tests), the triple fused when SHA256H2 reads another register (9 sequences, 30 corpus tests).
 
 Raw data: `../boot/results/m65-loop6/`.
+
+## M6.5 loop 7: the extensions off and on
+
+`--only alpine_crypto_jit` (off: NEON-only paths) and `--only alpine_crypto_ce_jit` (on), alternated in one session (off, on, off, on): Chromium 153, the M4 VM, 5 boots each, medians (IQR), MB/s:
+
+| | off | on | on / off |
+|---|---|---|---|
+| AES-128-GCM, 16 KiB | 50.2 (0.9), 50.4 (0.4) | **232.0** (3.4), **232.2** (0.6) | 4.6× |
+| AES-128-GCM, 256 B | 24.1 (3.0), 26.7 (1.1) | 48.9 (0.7), 50.6 (0.4) | 1.9–2.0× |
+| AES-256-GCM, 16 KiB | 40.7 (0.6), 40.7 (1.6) | **191.9** (0.6), **192.3** (0.9) | 4.7× |
+| AES-256-GCM, 256 B | 24.3 (6.0), 23.9 (0.4) | 47.5 (0.2), 48.1 (1.2) | 2.0× |
+| AES-128-CBC, 16 KiB | 45.2 (0.5), 45.0 (0.9) | **151.1** (1.2), **151.2** (0.7) | 3.4× |
+| AES-128-CBC, 256 B | 43.3 (1.0), 42.4 (0.7) | 129.7 (1.5), 129.4 (0.4) | 3.0× |
+| SHA-1, 16 KiB | 256.9 (1.0), 253.0 (2.5) | **373.4** (1.2), **375.3** (2.1) | 1.5× |
+| SHA-1, 256 B | 45.3 (0.4), 44.3 (0.9) | 51.7 (2.0), 52.1 (1.1) | 1.16× |
+| SHA-256, 16 KiB | 87.1 (0.4), 86.0 (0.4) | **297.2** (0.8), **297.9** (1.7) | 3.4× |
+| SHA-256, 256 B | 32.4 (0.2), 31.7 (0.3) | 56.0 (0.9), 56.0 (0.7) | 1.7× |
+
+On beats off in every row of both repeats (the smallest margin, SHA-1 at 256 B, is 16%). **Boot with them advertised** (Node, deterministic, Alpine's boot test, twice each): 3,009,537,573 → 2,856,603,825 steps (−5.1%: the kernel's CE code), 8.9–9.1 s either way; the boot passes.
+
+Raw data: `../boot/results/m65-loop7/`.
