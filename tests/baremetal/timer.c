@@ -1,6 +1,5 @@
-// M3 step 4: the generic timer, and its interrupts through the GICv2 to the
+// M3 step 4: the generic timer, and its interrupts through the GICv3 to the
 // IRQ vector; WFI; the EL0 access controls in CNTKCTL_EL1.
-// oracle: needs GICv2 (HVF has none)
 #include "lib.h"
 
 #define VTIMER 27
@@ -10,13 +9,13 @@ static volatile u64 n_irq, last_iar, n_trap, last_trap;
 
 void on_exception(struct frame *f, u64 vec) {
   if (vec == VEC_EL1H_IRQ) {
-    u32 iar = mmio32(GICC + 0x0c);
+    u64 iar = sysreg(ICC_IAR1_EL1);
     n_irq++;
     last_iar = iar;
     // Quiet the source (IMASK), then EOI.
     if ((iar & 0x3ff) == VTIMER) set_sysreg(cntv_ctl_el0, 3);
     if ((iar & 0x3ff) == PTIMER) set_sysreg(cntp_ctl_el0, 3);
-    mmio32(GICC + 0x10) = iar;
+    set_sysreg(ICC_EOIR1_EL1, iar);
     return;
   }
   u64 ec = f->esr >> 26;
@@ -51,12 +50,10 @@ int main(void) {
   check(sysreg(CNTPCT_EL0) > t0, 4);
 
   // GIC: both timer PPIs enabled at priority 0xa0, unmasked by PMR 0xf0.
-  mmio32(GICD + 0x000) = 1;
-  mmio32(GICD + 0x100) = 1u << VTIMER | 1u << PTIMER;
-  mmio32(GICD + 0x418) = 0xa0a0a0a0; // IPRIORITYR, INTIDs 24-27
-  mmio32(GICD + 0x41c) = 0xa0a0a0a0; // 28-31
-  mmio32(GICC + 0x004) = 0xf0;
-  mmio32(GICC + 0x000) = 1;
+  gic_init();
+  mmio32(SGI_BASE + 0x100) = 1u << VTIMER | 1u << PTIMER;
+  mmio32(SGI_BASE + 0x418) = 0xa0a0a0a0; // IPRIORITYR, INTIDs 24-27
+  mmio32(SGI_BASE + 0x41c) = 0xa0a0a0a0; // 28-31
 
   // Virtual timer through TVAL, polled with IRQs masked: ISTATUS, a negative
   // TVAL and ISR_EL1.I once it fires; the IRQ is taken on unmasking.
@@ -69,7 +66,7 @@ int main(void) {
   check(sysreg(ISR_EL1) & 0x80, 12);
   check(n_irq == 0, 13);
   __asm__ volatile("msr daifclr, #2; isb; msr daifset, #2" ::: "memory");
-  check(n_irq == 1 && (last_iar & 0x3ff) == VTIMER, 14);
+  check(n_irq == 1 && last_iar == VTIMER, 14);
   check(!(sysreg(ISR_EL1) & 0x80), 15); // IMASK dropped the line
 
   // Physical timer through CVAL; WFI wakes on the pending interrupt though
@@ -79,7 +76,7 @@ int main(void) {
   while (!(sysreg(CNTP_CTL_EL0) & 4))
     __asm__ volatile("wfi");
   __asm__ volatile("msr daifclr, #2; isb; msr daifset, #2" ::: "memory");
-  check(n_irq == 2 && (last_iar & 0x3ff) == PTIMER, 20);
+  check(n_irq == 2 && last_iar == PTIMER, 20);
 
   // A disabled timer never interrupts; CVAL reads back; TVAL writes are relative.
   set_sysreg(cntv_ctl_el0, 0);

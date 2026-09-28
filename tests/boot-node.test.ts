@@ -68,40 +68,32 @@ const poweredOff = (r: Run) => {
 
 // Bare-metal EL1 tests (core/tests/baremetal.rs): linked at the start of 16 MiB of RAM; SYSTEM_OFF with x1 = 0 passes.
 const BAREMETAL = new URL('baremetal/', import.meta.url);
-// The GIC from the test's source marker (core/tests/baremetal.rs `gic_of`).
-const gicOf = (f: string) => {
-  const src = readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8');
-  return src.includes('oracle: needs GICv2') ? 2 : src.includes('oracle: GICv3') ? 3 : undefined;
-};
 // The vCPUs from its `// smp: N` marker (core/tests/baremetal.rs `smp_of`).
 const smpOf = (f: string) => Number(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ smp: (\d+)$/m)?.[1] ?? 1);
 for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort()) {
-  guest(`bare-metal ${f}`, () => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', gic: gicOf(f), ncpus: smpOf(f) }), (r) => {
+  guest(`bare-metal ${f}`, () => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f) }), (r) => {
     poweredOff(r);
     assert.equal(r.x[1], 0n, r.console);
     assert.match(r.console, /exit 0\n$/);
   }, { max: 50e6 });
 }
 
-// kvm-unit-tests: (file, arguments, the checks expected to FAIL, GIC, vCPUs), from core/tests/kvm_unit_tests.rs `RUN`.
-const KUT: [string, string, string[], (2 | 3)?, number?][] = [
+// kvm-unit-tests: (file, arguments, the checks expected to FAIL, vCPUs), from core/tests/kvm_unit_tests.rs `RUN`.
+const KUT: [string, string, string[], number?][] = [
   ['selftest', 'setup smp=1 mem=256', []],
-  ['selftest', 'smp', [], undefined, 4],
+  ['selftest', 'smp', [], 4],
   ['selftest', 'vectors-kernel', []],
   ['selftest', 'vectors-user', []],
-  ['psci', '', [], undefined, 4],
-  ['gic', 'ipi', [], 3, 4],
-  ['gic', 'mmio', ['gicv2: mmio: ITARGETSR: register content preserved', 'gicv2: mmio: ITARGETSR: byte writes successful'], 2],
-  ['gic', 'active', [], 2],
-  ['gic', 'active', [], 3, 4],
+  ['psci', '', [], 4],
+  ['gic', 'ipi', [], 4],
+  ['gic', 'active', [], 4],
   ['timer', '', []],
   ['cache', '', []],
 ];
 // psci's environment (an initrd) enables its concurrent cpu-on check.
 const PSCI_ENV = new TextEncoder().encode('ERRATA_6c7a5dce22b3=y\n');
-for (const [file, args, fails, gic, ncpus] of KUT) {
-  const what = [gic && `GICv${gic}`, ncpus && `${ncpus} vCPUs`].filter(Boolean).join(', ');
-  guest(`kvm-unit-tests ${file} ${args}${what ? ` (${what})` : ''}`.replace('  ', ' '), () => ({ ramSize: 256 << 20, kernel: image(`kvm-unit-tests/${file}.flat`), cmdline: args, gic, ncpus, initrd: file === 'psci' ? PSCI_ENV : undefined }), (r) => {
+for (const [file, args, fails, ncpus] of KUT) {
+  guest(`kvm-unit-tests ${file} ${args}${ncpus ? ` (${ncpus} vCPUs)` : ''}`.replace('  ', ' '), () => ({ ramSize: 256 << 20, kernel: image(`kvm-unit-tests/${file}.flat`), cmdline: args, ncpus, initrd: file === 'psci' ? PSCI_ENV : undefined }), (r) => {
     poweredOff(r);
     const lines = r.console.replaceAll('\r\n', '\n').split('\n');
     assert.deepEqual(lines.filter((l) => l.startsWith('FAIL: ')).map((l) => l.slice(6)), fails, r.console);

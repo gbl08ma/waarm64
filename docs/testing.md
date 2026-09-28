@@ -16,8 +16,8 @@ and the exact-step boots.
 | Lockstep | `tests/jit-lockstep.test.ts` | the integer and FP guests (user mode) and the integer guest at EL1 (MMU off and on), JIT and JIT-stress vs interpreter, `Cpu` + RAM checksum every chunk; 20M steps per JIT case in CI |
 | Core instances on one memory | `tests/threads.test.ts` (Node workers); `tests/browser.test.ts` (Chromium workers) | three concurrent instances (interpreter, JIT, JIT) with their own stack, TLS and table run the integer guest to the reference's exact state (M7) |
 | JIT plumbing | `tests/jit.test.ts` | install, IC IVAU invalidation (also across chains), the stale-code checker, call/return chaining, tier-up |
-| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv2, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF) |
-| kvm-unit-tests | `core/tests/kvm_unit_tests.rs`; `tests/boot-node.test.ts` | selftest (incl. smp), psci, gicv2 (UP), gicv3-ipi, gicv3-active, timer, cache |
+| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF) |
+| kvm-unit-tests | `core/tests/kvm_unit_tests.rs`; `tests/boot-node.test.ts` | selftest (incl. smp), psci, gicv3-ipi, gicv3-active, timer, cache |
 | Buildroot boot and device test | `core/tests/boot.rs`; `tests/boot-node.test.ts`; `tests/browser.test.ts` | Linux boots, virtio console/rng/blk/net/9p/input, framebuffer, realtime mode, writable overlay |
 | LTP subset + arm64 kselftests | `core/tests/ltp.rs` (interpreter, each result against its table); `tests/boot-node.test.ts` (JIT) | 93 syscall tests; `syscall-abi`, `ptrace`, `hwcap`, `tpidr2`, `tags_test`, signal tests |
 | Crypto test kernel | `tests/boot-node.test.ts` (JIT; interpreter with `WEBPC_INTERP=1`) | the arm64 CE drivers' full self-tests, lib/crypto's SHA KUnit suites |
@@ -100,8 +100,8 @@ Realtime runs and the rw-overlay boots aren't step-exact.
   (11.1) on the Mac with `-accel hvf` for real Apple hardware at EL1 (MMU, exceptions; devices are
   QEMU's). The Sail ARM model for disputed corner cases.
 - **Findings:** QEMU TCG raises no SP alignment faults (hvf does, as do we); QEMU under hvf makes
-  unassigned PAs RAZ/WI (TCG aborts, as do we); **HVF can't emulate a GICv2**, so the GICv2, timer
-  and UART tests have only TCG as an oracle. **hvf does give a GICv3** (`-M
+  unassigned PAs RAZ/WI (TCG aborts, as do we); HVF can't emulate a GICv2 (moot since we dropped
+  ours). **hvf does give a GICv3** (`-M
   virt,gic-version=3`): kvm-unit-tests' `gicv3-ipi`, `gicv3-active`, `selftest-smp`, `psci` and
   `timer` pass there at 4 CPUs. **It's Apple's in-kernel vGIC** (the default, and with
   `kernel-irqchip=on`): its `GICR_TYPER` reads 0 through 32-bit halves, QEMU's own model
@@ -110,19 +110,18 @@ Realtime runs and the rw-overlay boots aren't step-exact.
 ## Bare-metal tests (`tests/baremetal/`)
 
 `start.S` (stack, vectors calling `on_exception(frame, vector)`, FP on, `run_el0()` to drop to EL0
-and come back through SVC #1) plus one C file per test (a test marked `oracle: needs GICv2` runs on
-a GICv2 in every runner, one marked `oracle: GICv3` on a GICv3, the rest on the default GIC;
-`// smp: N` boots N vCPUs, on the oracles too), built with host clang and lld by
+and come back through SVC #1) plus one C file per test (all on a GICv3, `lib.h` `gic_init()`; `// smp: N` boots N
+vCPUs, on the oracles too), built with host clang and lld by
 `build.sh` into committed flat `.bin`s loaded at `0x4000_0000`. Pass = PSCI SYSTEM_OFF with
 x1 = 0; `power_off` also prints `exit <code>`. `oracle.sh` runs the `-DORACLE` builds
 (implementation-specific checks left out) on QEMU TCG, `oracle.sh --hvf` the `-DORACLE -DHVF`
-builds on the Mac (`gic-version=3`: Apple's in-kernel vGIC); tests marked `oracle: needs GICv2`
-run on TCG only. `gicv3` passes on both; two of its checks are ours and QEMU's but not Apple's
-(`ID_AA64PFR0_EL1.GIC`, `GICR_ICFGR0`: [platform.md](platform.md) "GICv3") and are left out of
-the HVF build. Tests mustn't rely on
+builds on the Mac (`gic-version=3`: Apple's in-kernel vGIC); every test runs on both. Left out
+of the HVF build: two `gicv3` checks that are ours and QEMU's but not Apple's
+(`ID_AA64PFR0_EL1.GIC`, `GICR_ICFGR0`: [platform.md](platform.md) "The GIC"), and `smp`'s second
+CPU_ON (QEMU's PSCI races it against the target's start: another answer ~1 in 5 under hvf). Tests mustn't rely on
 UNKNOWN or IMPLEMENTATION DEFINED reset values and must pick addresses unmapped on `virt` too (its
 flash covers `0x0`–`0x0800_0000`). **Rebuild all of them together** when one changes (different clangs build different bytes;
-they were last rebuilt together on the M4 VM in M7 loop 2).
+they were last rebuilt together on the M4 VM in M7 loop 3b).
 
 ## kvm-unit-tests
 
@@ -130,19 +129,12 @@ Commit `5a221342a025`, booted with one CPU and 256 MiB; `EXIT: STATUS=` from the
 `unittests.cfg` entry is run or skipped with a reason, and the runner fails if a new one appears.
 Pass: `selftest-setup`, `selftest-smp`, `selftest-vectors-kernel`, `selftest-vectors-user`,
 `psci` (with the concurrent cpu-on check enabled), `gicv3-ipi` and `gicv3-active` (4 vCPUs),
-`gicv2-mmio-up`
-(**with exactly two expected failures**: ITARGETSR content preserved and byte writes, which a
-uniprocessor GIC makes RAZ/WI per the spec; QEMU TCG fails the same two), `gicv2-active`, `timer`,
-`cache` (the `gicv2-*` ones on a GICv2). Skipped: `gicv2-ipi`, `gicv2-mmio`, `gicv2-mmio-3p`
-(the GICv2 model is one CPU's: M7 loop 3b), `its-*`, `pmu-*`, `pci-test`, `micro-bench`, `fpu-context` (KVM only), `debug-*`,
+`timer`, `cache`. Skipped: `gicv2-*` (no GICv2), `its-*`, `pmu-*`, `pci-test`, `micro-bench`, `fpu-context` (KVM only), `debug-*`,
 `mte-*`; `sieve` (not in `unittests.cfg`; too slow interpreted).
 
-**The SMP set on QEMU TCG** (11.1, `-M virt,gic-version=N -cpu max -smp S`), the oracle for M7:
-`selftest-setup` (smp 2), `selftest-smp` (4 and 8), `gicv2-ipi` (4, 8), `gicv2-active`,
-`gicv3-ipi` (4, 8), `gicv3-active` and `psci` (4) pass. QEMU fails `gicv2-mmio` at 4 CPUs
-(`ITARGETSR: bits for non-existent CPUs masked`, `byte writes successful`) and at 3
-(`gicv2-mmio-3p`: also `register content preserved`), which the spec says a GIC must do: our
-target is to pass them. `psci` skips its concurrent cpu-on check unless the environment (passed as
+**The SMP set on QEMU TCG** (11.1, `-M virt,gic-version=3 -cpu max -smp S`), the oracle for M7:
+`selftest-setup` (smp 2), `selftest-smp` (4 and 8), `gicv3-ipi` (4, 8), `gicv3-active` and `psci`
+(4) pass. `psci` skips its concurrent cpu-on check unless the environment (passed as
 an initrd, `ERRATA_6c7a5dce22b3=y`) enables it; enabled, QEMU fails it (several CPUs racing to
 start one target must get ALREADY_ON or ON_PENDING).
 

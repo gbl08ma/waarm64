@@ -9,7 +9,6 @@ pub mod crypto;
 pub mod decode;
 pub mod fdt;
 pub mod fp;
-pub mod gic;
 pub mod gicv3;
 pub mod interp;
 pub mod jit;
@@ -22,7 +21,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 22;
+pub const ABI_VERSION: u32 = 23;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {

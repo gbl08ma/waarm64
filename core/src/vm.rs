@@ -30,7 +30,6 @@
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crate::cpu::{Cpu, PSTATE_I, sctlr};
-use crate::gic::Gic;
 use crate::gicv3::{self, Gicv3};
 use crate::interp::{self, Exit, platform, sys, take_exception, take_irq};
 use crate::jit;
@@ -42,7 +41,6 @@ use std::sync::Arc;
 
 pub const RAM_BASE: u64 = 0x4000_0000;
 pub const GICD: u64 = 0x0800_0000;
-pub const GICC: u64 = 0x0801_0000;
 /// The GICv3 redistributors (QEMU `virt`'s), `gicv3::GICR_STRIDE` apart.
 pub const GICR: u64 = 0x080a_0000;
 /// The most vCPUs a VM may have: the GICv3 redistributor window (0x080a_0000
@@ -84,27 +82,15 @@ pub struct VmConfig {
     pub features: u64,
     /// vCPUs; 0 or 1 is one (ABI 21).
     pub ncpus: u64,
-    /// The interrupt controller: 2 GICv2, 3 GICv3, 0 the default ([`GIC_DEFAULT`]) (ABI 21).
+    /// The interrupt controller: 0 or 3, the GICv3 (the only one since ABI
+    /// 23; ABI 21 also had 2, a GICv2).
     pub gic: u64,
 }
 
-/// The GIC a VM gets with `VmConfig.gic` = 0.
-pub const GIC_DEFAULT: u64 = 3;
-
 impl VmConfig {
-    /// The GIC version, 2 or 3.
-    pub fn gic_version(&self) -> u64 {
-        if self.gic == 0 { GIC_DEFAULT } else { self.gic }
-    }
-
-    /// Whether `vm_new` accepts the GIC and CPU fields: up to `MAX_CPUS` on
-    /// a GICv3; the GICv2 model is one CPU's until it's made per-CPU.
+    /// Whether `vm_new` accepts the GIC and CPU fields.
     pub fn valid_smp(&self) -> bool {
-        match self.gic_version() {
-            3 => self.ncpus <= MAX_CPUS,
-            2 => self.ncpus <= 1,
-            _ => false,
-        }
+        matches!(self.gic, 0 | 3) && self.ncpus <= MAX_CPUS
     }
 }
 
@@ -216,69 +202,21 @@ pub struct Shared {
     pub devices: Vec<DevShared>,
 }
 
-/// The VM's interrupt controller (`VmConfig.gic`).
-pub enum Intc {
-    V2(Box<Gic>),
-    V3(Box<Gicv3>),
+/// A GIC register read at `pa` (the distributor or a redistributor): `None`
+/// if no register is there or the size isn't allowed (an external abort).
+fn gic_read(g: &Gicv3, pa: u64, size: u32) -> Option<u64> {
+    match pa {
+        GICD..0x0801_0000 => g.dist_read(pa - GICD, size),
+        GICR..0x0900_0000 => g.redist_read(pa - GICR, size),
+        _ => None,
+    }
 }
 
-impl Intc {
-    /// Drives line `irq` (a PPI of CPU `cpu`, or an SPI) high or low.
-    pub fn set_level(&mut self, cpu: usize, irq: usize, high: bool) {
-        match self {
-            Intc::V2(g) => g.set_level(irq, high),
-            Intc::V3(g) => g.set_level(cpu, irq, high),
-        }
-    }
-
-    /// The GICv2 (tests that drive it directly).
-    #[cfg(test)]
-    pub fn v2(&mut self) -> &mut Gic {
-        match self {
-            Intc::V2(g) => g,
-            Intc::V3(_) => panic!("not a GICv2"),
-        }
-    }
-
-    /// The IRQ line into CPU `cpu`.
-    pub fn irq(&self, cpu: usize) -> bool {
-        match self {
-            Intc::V2(g) => g.irq(),
-            Intc::V3(g) => g.irq(cpu),
-        }
-    }
-
-    /// A register read at `pa`: `None` if no GIC register is there (or the
-    /// size isn't allowed), else the value.
-    fn read(&mut self, pa: u64, size: u32) -> Option<u64> {
-        match self {
-            Intc::V2(g) => match pa {
-                GICD..0x0801_0000 => g.dist_read(pa - GICD, size),
-                GICC..0x0802_0000 => g.cpu_read(pa - GICC, size),
-                _ => None,
-            }
-            .map(u64::from),
-            Intc::V3(g) => match pa {
-                GICD..0x0801_0000 => g.dist_read(pa - GICD, size),
-                GICR..0x0900_0000 => g.redist_read(pa - GICR, size),
-                _ => None,
-            },
-        }
-    }
-
-    fn write(&mut self, pa: u64, size: u32, v: u64) -> Option<()> {
-        match self {
-            Intc::V2(g) => match pa {
-                GICD..0x0801_0000 => g.dist_write(pa - GICD, size, v as u32),
-                GICC..0x0802_0000 => g.cpu_write(pa - GICC, size, v as u32),
-                _ => None,
-            },
-            Intc::V3(g) => match pa {
-                GICD..0x0801_0000 => g.dist_write(pa - GICD, size, v),
-                GICR..0x0900_0000 => g.redist_write(pa - GICR, size, v),
-                _ => None,
-            },
-        }
+fn gic_write(g: &mut Gicv3, pa: u64, size: u32, v: u64) -> Option<()> {
+    match pa {
+        GICD..0x0801_0000 => g.dist_write(pa - GICD, size, v),
+        GICR..0x0900_0000 => g.redist_write(pa - GICR, size, v),
+        _ => None,
     }
 }
 
@@ -320,7 +258,7 @@ pub struct Vm {
     cur: usize,
     quantum: u64,
     pub mem: Mem,
-    pub gic: Intc,
+    pub gic: Box<Gicv3>,
     pub uart: Pl011,
     pub virtio: Vec<Transport>,
     pub shared: Arc<Shared>,
@@ -405,9 +343,8 @@ impl Vm {
         let d = VmConfig::default();
         let pick = |v, d| if v == 0 { d } else { v };
         let n = cfg.ncpus.max(1) as usize;
-        let v3 = cfg.gic_version() == 3;
         let features = cfg.features
-            | if v3 { crate::cpu::FEATURE_GICV3 } else { 0 }
+            | crate::cpu::FEATURE_GICV3
             | if n > 1 { crate::cpu::FEATURE_SMP } else { 0 };
         let mut vcpus: Vec<_> = (0..n)
             .map(|i| {
@@ -442,11 +379,7 @@ impl Vm {
             cur: 0,
             quantum: if n > 1 { QUANTUM } else { u64::MAX },
             mem: mem.at(RAM_BASE),
-            gic: if v3 {
-                Intc::V3(Box::new(Gicv3::new(n)))
-            } else {
-                Intc::V2(Box::default())
-            },
+            gic: Box::new(Gicv3::new(n)),
             uart: Pl011::default(),
             virtio: devices.iter().map(|&e| Transport::new(e)).collect(),
             shared: Arc::new(Shared {
@@ -808,11 +741,9 @@ impl Vm {
             }
             Exit::Platform(i) => {
                 let cpu = &mut self.vcpus[c].cpu;
-                if let (Some(r), Intc::V3(g)) =
-                    (sys::icc(cpu.features, i >> 5 & 0xffff), &mut self.gic)
-                {
+                if let Some(r) = sys::icc(cpu.features, i >> 5 & 0xffff) {
                     let (rt, read) = (i & 31, i & 1 << 21 != 0);
-                    let v = g.icc(c, r, (!read).then(|| cpu.reg(rt)));
+                    let v = self.gic.icc(c, r, (!read).then(|| cpu.reg(rt)));
                     if read {
                         cpu.set_reg(rt, v);
                     }
@@ -994,7 +925,7 @@ impl Vm {
 /// through the MMU as usual, and device registers where the address is one.
 struct Io<'a> {
     mmu: Mmu<'a>,
-    gic: &'a mut Intc,
+    gic: &'a mut Gicv3,
     uart: &'a mut Pl011,
     console: &'a Rings,
     virtio: &'a mut [Transport],
@@ -1016,7 +947,7 @@ impl Io<'_> {
 
     fn dev_read(&mut self, pa: u64, size: u32) -> Option<u64> {
         match pa {
-            GICD..0x0900_0000 => return self.gic.read(pa, size),
+            GICD..0x0900_0000 => return gic_read(self.gic, pa, size),
             UART..0x0900_1000 if size <= 4 => {
                 let off = pa - UART;
                 let w = self.uart.read(off & !3, self.console) >> (8 * (off & 3));
@@ -1036,7 +967,7 @@ impl Io<'_> {
 
     fn dev_write(&mut self, pa: u64, size: u32, v: u64) -> Option<()> {
         match pa {
-            GICD..0x0900_0000 => self.gic.write(pa, size, v),
+            GICD..0x0900_0000 => gic_write(self.gic, pa, size, v),
             // Sub-word writes go to the register at the aligned offset (DR by writeb).
             UART..0x0900_1000 if size <= 4 && pa & 3 == 0 => {
                 self.tx_full = !self.uart.write(pa - UART, v as u32, self.console);

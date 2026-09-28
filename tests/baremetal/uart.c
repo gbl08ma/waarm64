@@ -1,6 +1,5 @@
 // M3 step 4: the PL011 registers Linux's amba-pl011 driver uses, and its
-// interrupt through the GIC (SPI 1, INTID 33).
-// oracle: needs GICv2 (HVF has none)
+// interrupt through the GICv3 (SPI 1, INTID 33, routed to CPU 0).
 #include "lib.h"
 
 #define DR 0x00
@@ -19,12 +18,12 @@ static volatile u64 n_irq, last_iar, last_mis;
 
 void on_exception(struct frame *f, u64 vec) {
   if (vec != VEC_EL1H_IRQ) power_off(100 + vec);
-  u32 iar = mmio32(GICC + 0x0c);
+  u64 iar = sysreg(ICC_IAR1_EL1);
   n_irq++;
   last_iar = iar;
   last_mis = R(MIS);
   R(IMSC) = 0; // the driver's stop_tx
-  mmio32(GICC + 0x10) = iar;
+  set_sysreg(ICC_EOIR1_EL1, iar);
   (void)f;
 }
 
@@ -51,17 +50,17 @@ int main(void) {
   check(R(RIS) & TXI, 20);
   R(ICR) = TXI;
   check(!(R(RIS) & TXI), 21);
-  mmio32(GICD + 0x000) = 1;
+  gic_init();
+  mmio32(GICD + 0x6000 + 8 * 33) = 0; // IROUTER33: CPU 0 (affinity 0.0.0.0)
+  mmio32(GICD + 0x084) = 1 << 1;      // IGROUPR1: group 1
   mmio8(GICD + 0x400 + 33) = 0xa0;
   mmio32(GICD + 0x104) = 1 << 1; // ISENABLER1: SPI 1 = INTID 33
-  mmio32(GICC + 0x004) = 0xf0;
-  mmio32(GICC + 0x000) = 1;
   R(IMSC) = TXI;
   uart_putc('.');
   for (int i = 0; i < 100000 && !(R(RIS) & TXI); i++)
     ;
   __asm__ volatile("msr daifclr, #2; isb; msr daifset, #2" ::: "memory");
-  check(n_irq == 1 && (last_iar & 0x3ff) == 33 && last_mis == TXI, 22);
+  check(n_irq == 1 && last_iar == 33 && last_mis == TXI, 22);
   uart_putc('\n');
   return 0;
 }

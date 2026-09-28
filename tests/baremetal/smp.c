@@ -5,14 +5,12 @@
 // SGI 2 (after recording the answer: SGIs from different CPUs to one target
 // may merge, since an SGI is pending per target); every CPU takes its own timer's PPI (banked per CPU); the secondaries
 // turn themselves off with CPU_OFF, which AFFINITY_INFO then reports.
-// oracle: GICv3
 // smp: 4
 #include "lib.h"
 
 #define NCPU 4
-#define GICR 0x080a0000UL
 #define RD(c) (GICR + 0x20000UL * (c))
-#define SGI_BASE(c) (RD(c) + 0x10000)
+#define SGI_C(c) (RD(c) + 0x10000)
 #define VTIMER 27
 #define PSCI_CPU_OFF 0x84000002UL
 #define PSCI_CPU_ON 0xc4000003UL
@@ -40,8 +38,8 @@ static void gic_cpu_init(u64 c) {
   mmio32(RD(c) + 0x14) &= ~2u; // GICR_WAKER.ProcessorSleep
   while (mmio32(RD(c) + 0x14) & 4)
     ;
-  mmio32(SGI_BASE(c) + 0x080) = ~0u; // SGIs and PPIs group 1
-  mmio32(SGI_BASE(c) + 0x100) = 1u << 1 | 1u << 2 | 1u << VTIMER;
+  mmio32(SGI_C(c) + 0x080) = ~0u; // SGIs and PPIs group 1
+  mmio32(SGI_C(c) + 0x100) = 1u << 1 | 1u << 2 | 1u << VTIMER;
   set_sysreg(ICC_PMR_EL1, 0xf0);
   set_sysreg(ICC_IGRPEN1_EL1, 1);
 }
@@ -95,8 +93,10 @@ int main(void) {
   check(psci(PSCI_AFFINITY_INFO, 1, 0, 0) == 1, 2); // OFF
   for (u64 c = 1; c < NCPU; c++)
     check(psci(PSCI_CPU_ON, c, (u64)secondary_start, (u64)(stacks[c] + sizeof stacks[c])) == 0, 3);
+#ifndef HVF // QEMU's PSCI races a CPU_ON against the target's start (1 in 5 on hvf; kvm-unit-tests' psci erratum)
   long again = psci(PSCI_CPU_ON, 1, (u64)secondary_start, (u64)(stacks[1] + sizeof stacks[1]));
   check(again == -4 || again == -5, 4); // ALREADY_ON or ON_PENDING
+#endif
   check(psci(PSCI_CPU_ON, 0x63, (u64)secondary_start, 0) == -2, 5); // INVALID_PARAMETERS: no such CPU
 
   for (u64 c = 1; c < NCPU; c++) WAIT(__atomic_load_n(&started[c], __ATOMIC_SEQ_CST), 10);
@@ -115,9 +115,10 @@ int main(void) {
     __asm__ volatile("wfi");
   }
   __asm__ volatile("msr daifset, #2" ::: "memory");
-  for (u64 c = 1; c < NCPU; c++) check(pings[c] == 1 && timer_hits[c] == 1, 20);
   check(pings[0] == 0 && timer_hits[0] == 1 && sgi2 >= 1 && sgi2 < NCPU, 21);
-  // The secondaries turn themselves off.
+  // The secondaries turn themselves off once they've had their ping and their
+  // timer (which may still be pending when their pong arrives).
   for (u64 c = 1; c < NCPU; c++) WAIT(psci(PSCI_AFFINITY_INFO, c, 0, 0) == 1, 30);
+  for (u64 c = 1; c < NCPU; c++) check(pings[c] == 1 && timer_hits[c] == 1, 31);
   return 0;
 }

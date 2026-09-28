@@ -146,7 +146,7 @@ The GICv3 (system-register CPU interface) against the GICv2 (MMIO CPU interface)
 alternated (A, B, A, B), Chromium 153, the M4 VM, JIT, warm medians (IQR). The test kernels
 (`linux`) are now built natively with Alpine's gcc (images/build.sh), and have the GICv3 driver.
 
-| | GICv3 (default) | GICv2 (`--only …_gicv2`) |
+| | GICv3 (default) | GICv2 (`--only …_gicv2`, removed with the GICv2 in loop 3b) |
 |---|---|---|
 | Alpine boot to power-off | 10,392 (±268), 10,312 (±132) ms | 10,187 (±25), 10,299 (±240) ms |
 | Alpine userspace, total | 23,956 (±156), 23,819 (±5) ms | 24,153 (±199), 23,790 (±687) ms |

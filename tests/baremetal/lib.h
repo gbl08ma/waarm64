@@ -23,12 +23,29 @@ extern char user_stack_top[], el0_return[];
 // so the same test also runs on QEMU (oracle.sh).
 #define check(c, code) do { if (!(c)) power_off(code); } while (0)
 
-// Devices at QEMU virt's addresses.
+// Devices at QEMU virt's addresses: the GICv3 distributor and CPU 0's
+// redistributor (RD_base, then SGI_base), the PL011.
 #define GICD 0x08000000UL
-#define GICC 0x08010000UL
+#define GICR 0x080a0000UL
+#define SGI_BASE (GICR + 0x10000)
 #define UART 0x09000000UL
 #define mmio32(a) (*(volatile u32 *)(a))
 #define mmio8(a) (*(volatile unsigned char *)(a))
+
+// The GICv3 on for CPU 0: affinity routing and group 1 at the distributor,
+// the redistributor awake, SGIs and PPIs in group 1, the CPU interface open
+// (PMR 0xf0) with group 1 enabled. Interrupts are acknowledged with
+// ICC_IAR1_EL1 and ended with ICC_EOIR1_EL1.
+static inline void gic_init(void) {
+  mmio32(GICD) = 1 << 4 | 1 << 1; // ARE, EnableGrp1
+  while (mmio32(GICD) & 1u << 31) // RWP
+    ;
+  mmio32(GICR + 0x14) &= ~2u; // GICR_WAKER.ProcessorSleep
+  while (mmio32(GICR + 0x14) & 4)
+    ;
+  mmio32(SGI_BASE + 0x080) = ~0u;
+  __asm__ volatile("msr ICC_PMR_EL1, %0; msr ICC_IGRPEN1_EL1, %1; isb" : : "r"(0xf0UL), "r"(1UL));
+}
 
 static inline void uart_putc(char c) {
   while (mmio32(UART + 0x18) & 0x20) // FR.TXFF

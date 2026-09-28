@@ -2,11 +2,10 @@
 // interface, one CPU: register shapes, SGIs through ICC_SGI1R_EL1,
 // pending/active state, priorities and preemption, split EOI, an SPI and the
 // virtual timer's PPI taken through the IRQ vector.
-// oracle: GICv3
 #include "lib.h"
 
-#define GICR 0x080a0000UL
-#define SGI_BASE (GICR + 0x10000)
+
+
 #define VTIMER 27
 
 static volatile u64 n_irq, last_iar;

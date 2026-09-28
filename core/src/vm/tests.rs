@@ -2,6 +2,7 @@
 //! (tests/baremetal) cover the devices from real guest code.
 
 use super::*;
+use crate::gicv3::{Group, Icc};
 
 const B_SELF: u32 = 0x1400_0000; // b .
 const WFI: u32 = 0xd503_207f;
@@ -24,9 +25,7 @@ impl T {
         let mut ram = vec![0u128; 1 << 16];
         // SAFETY: ram is 16-byte aligned, 1 MiB, and lives as long as the Vm.
         let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 1 << 20) };
-        // These tests drive the GICv2 directly unless they ask for another.
-        let gic = if cfg.gic == 0 { 2 } else { cfg.gic };
-        let mut vm = Vm::with_devices(mem, VmConfig { gic, ..cfg }, devices);
+        let mut vm = Vm::with_devices(mem, cfg, devices);
         for (k, w) in prog.iter().enumerate() {
             vm.mem.write(RAM_BASE + 4 * k as u64, 4, *w as u64).unwrap();
         }
@@ -42,13 +41,21 @@ impl T {
         &mut self.vm.vcpus[0].cpu
     }
 
-    /// GIC on with the virtual timer PPI enabled, and the timer armed at `cval`.
+    /// The GIC on (group 1, CPU 0's redistributor awake, the CPU interface
+    /// open) with the virtual timer PPI enabled.
+    fn gic_on(&mut self) {
+        let g = &mut self.vm.gic;
+        g.dist_write(0, 4, 2).unwrap();
+        g.redist_write(0x14, 4, 0).unwrap();
+        g.redist_write(0x1_0080, 4, !0).unwrap();
+        g.redist_write(0x1_0100, 4, 1 << IRQ_VTIMER).unwrap();
+        g.icc(0, Icc::Igrpen(Group::G1), Some(1));
+        g.icc(0, Icc::Pmr, Some(0xff));
+    }
+
+    /// [`T::gic_on`], and the timer armed at `cval`.
     fn vtimer_at(&mut self, cval: u64) {
-        let g = self.vm.gic.v2();
-        g.dist_write(0, 4, 1).unwrap();
-        g.dist_write(0x100, 4, 1 << IRQ_VTIMER).unwrap();
-        g.cpu_write(0, 4, 1).unwrap();
-        g.cpu_write(4, 4, 0xff).unwrap();
+        self.gic_on();
         (self.cpu().cntv_ctl_el0, self.cpu().cntv_cval_el0) = (1, cval);
     }
 }
@@ -130,7 +137,8 @@ fn timer_irq_fires_on_its_tick() {
     assert_eq!((c.pc, c.elr_el1), (VBAR + 0x280, RAM_BASE));
     assert_eq!(t.vm.shared.counters.irqs.load(Ordering::Relaxed), 1);
     assert_eq!(t.vm.now(), 3 * 10_000);
-    assert_eq!(t.vm.gic.v2().cpu_read(0x0c, 4), Some(IRQ_VTIMER as u32));
+    let iar = t.vm.gic.icc(0, Icc::Iar(Group::G1), None);
+    assert_eq!(iar, IRQ_VTIMER as u64);
 }
 
 #[test]
@@ -163,10 +171,7 @@ fn counter_and_timer_registers() {
         0xd538_c103, // mrs x3, isr_el1
     ];
     let mut t = T::new(&prog, VmConfig::default());
-    t.vm.gic.v2().dist_write(0, 4, 1).unwrap();
-    t.vm.gic.v2().dist_write(0x100, 4, 1 << IRQ_VTIMER).unwrap();
-    t.vm.gic.v2().cpu_write(0, 4, 1).unwrap();
-    t.vm.gic.v2().cpu_write(4, 4, 0xff).unwrap();
+    t.gic_on();
     t.cpu().x[1] = 1;
     t.cpu().cntv_cval_el0 = 3;
     t.vm.run(3);

@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 22;
+export const ABI = 23;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -143,8 +143,6 @@ export type BootOptions = {
   jit?: 0 | 1 | 2;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
-  /** `VmConfig.gic` (ABI 21): 2 GICv2, 3 GICv3; unset, the core's default. */
-  gic?: 2 | 3;
   /** `VmConfig.ncpus` (ABI 21): vCPUs, run round-robin on this thread (default 1). */
   ncpus?: number;
   /**
@@ -243,7 +241,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries, framebuffer, JIT.
   const fb = o.framebuffer ?? { width: 0, height: 0 };
   // …, features, CPUs, GIC (ABI 21).
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 12).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(o.ncpus ?? 1), BigInt(o.gic ?? 0)]);
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 12).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(o.ncpus ?? 1), 0n]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);

@@ -15,7 +15,7 @@ the docs and its entry here shrinks to a summary.
 | Guest ISA | ARMv8.0-A AArch64 with FP and AdvSIMD, no AArch32; LSE atomics and CRC32; the crypto extensions (AES, PMULL, SHA1, SHA256) switchable and on by default. No SVE/SME, PAC, BTI or MTE (their hint-space encodings are NOPs). **ID registers advertise exactly what's implemented, and an optional extension is advertised only if it's faster than what guests do without it.** ([docs/cpu.md](docs/cpu.md)) |
 | Privilege | EL0 and EL1 only. No EL2/EL3, no secure state |
 | MMU | Stage 1 only, 4K granule, 48-bit VA, TTBR0/TTBR1, ASIDs, software-managed access flag |
-| Platform | QEMU `virt`'s memory map; **GICv3 (no ITS) the default since M7**, GICv2 kept as an option; generic timer, PL011, PSCI over HVC (answered in the core, CPU_ON included; SYSTEM_OFF/RESET exit to the host), virtio-mmio v2, a DTB generated from the VM config ([docs/platform.md](docs/platform.md)) |
+| Platform | QEMU `virt`'s memory map; **GICv3 (no ITS) since M7** (the GICv2 model was dropped in M7: every guest we run has a GICv3 driver); generic timer, PL011, PSCI over HVC (answered in the core, CPU_ON included; SYSTEM_OFF/RESET exit to the host), virtio-mmio v2, a DTB generated from the VM config ([docs/platform.md](docs/platform.md)) |
 | Boot | Direct kernel boot (arm64 `Image` + initrd + DTB); no UEFI. Distro kernels and initrds are extracted from their images |
 | Core | Rust compiled to wasm32 (the same crate builds natively for tests); host glue in TypeScript without a build step |
 | Guest memory | **Layout A** (M0.5): one shared wasm32 memory, core state then guest RAM (≤ ~3.5 GiB). One lowering point for guest accesses in generated code; TLB tag bits 3–11 reserved for a memory index ("A + spill memories" as NUMA nodes later) ([docs/architecture.md](docs/architecture.md)) |
@@ -64,7 +64,8 @@ Kickoff: `M7-KICKOFF.md` (decisions confirmed 2026-09-28). Goal: N vCPUs running
 GICv3, stable under stress, with a scaling curve. **Done (2026-09-28):** loop 0 (Debian in CI,
 litmus image and M4 reference), 1 (core instances per worker), 2 (GICv3 default, native test
 kernels), 3 (deterministic round-robin SMP, PSCI CPU_ON/OFF, WFE/SEV, TLBI IS; Linux boots on up
-to 8 vCPUs with exact steps in every runner). Next: `M7-LOOP4-HANDOVER.md`.
+to 8 vCPUs with exact steps in every runner), 3b (the GICv2 dropped). Next:
+`M7-LOOP4-HANDOVER.md`.
 - **Two execution modes, one core:** deterministic SMP runs every vCPU round-robin on one thread
   with a fixed quantum and one shared code cache (exact, reproducible step counts in every runner;
   virtual time = total steps of all vCPUs); realtime SMP runs **one worker per vCPU** on the shared
@@ -76,8 +77,8 @@ to 8 vCPUs with exact steps in every runner). Next: `M7-LOOP4-HANDOVER.md`.
   until CPU_ON); `MPIDR_EL1` per vCPU; one DT `cpu` node per vCPU.
 - **GICv3 becomes the default** (distributor, per-CPU redistributors, `ICC_*` system registers; no
   ITS/LPIs), so vCPUs aren't capped at 8; a guest-visible change that moves the step counts once.
-  The GICv2 model becomes per-CPU too (banked SGI/PPI, `ITARGETSR` routing, cross-CPU SGIs) and
-  stays as an option for its tests.
+  **The GICv2 model is dropped** (the user, 2026-09-28, revising decision 8: no guest we run
+  needs it, and its tests only tested itself).
 - **Broadcast maintenance:** `TLBI …IS` completes before the issuer's `DSB` returns (every
   running vCPU acknowledges at its next chunk boundary; idle ones apply it before resuming);
   `IC IVAU`/`IALLU(IS)` reach every code cache, drained at context synchronization and chunk

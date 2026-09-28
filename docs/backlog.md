@@ -87,7 +87,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- GIC: `GICD_CPENDSGIR`/`SPENDSGIR` and `GICC_APR*` RAZ/WI; SGIs only to self (M7).
 - The timer, GIC and PL011 tests have no hardware oracle; a GICv3-free subset of `timer.c`
   (ISTATUS, TVAL, CNTKCTL traps) could run on hvf.
 - No host input path to the PL011 RX ring or virtio-console receive buffers from `web/vm.ts` (a
