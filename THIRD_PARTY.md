@@ -69,7 +69,7 @@ Re-check at the commit you actually pin before copying anything.
 | [Unicorn](https://github.com/unicorn-engine/unicorn) | `7c5db94191de` | GPL-2.0 | optional in-process fuzzing oracle (not used so far) |
 | [kvm-unit-tests](https://gitlab.com/kvm-unit-tests/kvm-unit-tests) | master, 2026-09-25 | GPL-2.0 (many files LGPL-2) | guest-run system tests |
 | [LTP](https://github.com/linux-test-project/ltp) | `f5bf852334d5` | GPL-2.0 | in-guest tests (with the kernel selftests) |
-| [herdtools7](https://github.com/herd/herdtools7) | `ca7d66e90bf3` | CeCILL-B (`asllib/` is BSD-3-Clause, © Arm) | `litmus7` memory-model tests in the guest (M7) |
+| [herdtools7](https://github.com/herd/herdtools7) | 7.58, `1ca343e16a20` | CeCILL-B (`asllib/` is BSD-3-Clause, © Arm) | built and run in the images container (`images/build.sh litmus`: `diyone7` makes the tests, `herd7` their allowed outcomes, `litmus7` the programs run in the guest and on the oracle VM); nothing copied (M7) |
 | [risu](https://gitlab.com/pm215/risu) | `eed224965e7b` | EPL-1.0 | the methodology behind the golden corpus |
 | [Buildroot](https://gitlab.com/buildroot.org/buildroot) | master, 2026-09-25 | GPL-2.0-or-later | building test and bench images |
 | Linux kernel | — | GPL-2.0 | `booting.rst`, the DT bindings and the drivers as the spec our devices must satisfy |

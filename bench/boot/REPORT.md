@@ -121,3 +121,21 @@ Raw: `results/chromium-{linux-x86_64,darwin-arm64}-m4-step7-{boot,boot_alpine,dd
 | `el0_svc` | 1.17% | 1.32% | system calls |
 
 The rest is spread thinly (the next ones are each ~1%: `_parse_integer_limit`, `idr_get_free`, `__free_pages_core`, `blake2s_compress_generic`, `kernfs_*`, `unmap_page_range`). At this size the boot is dominated by unpacking the initramfs and initializing memory, so a smaller initramfs and less RAM are the guest-side levers. On the emulator side, the timer-read exits are a candidate worth measuring.
+
+## M7 loop 0: the single-vCPU reference for the scaling curve
+
+`--only alpine_user_jit`, the userspace phases at N = 1 (`webpc.threads` unset: one worker per
+phase) on today's single vCPU: the reference M7's scaling runs compare against. Chromium
+153.0.8010.52, the M4 VM (8 vCPUs), deterministic, JIT, 3 boots, medians (IQR):
+
+| Phase | ms |
+|---|---|
+| compress | 2680 (±38) |
+| Lua | 4958 (±72) |
+| churn | 2008 (±31) |
+| SQLite | 3856 (±58) |
+| **total** (to power-off) | **22,888** (±212) |
+
+10,746,996,638 steps. The M6.5 exit's 24.1 s is from another session (sessions move boots by up
+to ~8%); compare later N against this run or re-run it in the same session. Raw:
+`results/m7-loop0/alpine_user_jit.json`.

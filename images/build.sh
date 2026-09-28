@@ -20,6 +20,13 @@
 #   allnoconfig + linux.fragment + images/crypto/linux.fragment, and an
 #   initramfs whose static init reports the crypto self-tests (Image,
 #   initramfs.cpio). Built natively in Alpine's arm64 container, as alpine-user.
+# litmus: herdtools7's litmus7 tests for the memory model (M7, images/litmus/):
+#   diyone7 makes each test in images/litmus/tests.txt, herd7's aarch64.cat
+#   lists its allowed final states (allowed.txt), litmus7 turns it into a
+#   static C program. Output: an initramfs (BusyBox + the tests, booted with
+#   linux/Image) and litmus.tar (the same tests for real hardware: the oracle
+#   VM). herdtools7 is CeCILL-B: built and run here, never copied into webpc.
+#   Built natively in Alpine's arm64 container, as alpine-user.
 # debian: the official debian-13-nocloud-arm64 qcow2 as published (disk.qcow2),
 #   with the kernel (Image) and initrd (initrd.img) taken out of its /boot.
 # kvm-unit-tests: the arm64 tests (*.flat) and their unittests.cfg, built with
@@ -46,6 +53,9 @@ ALPINE_PKGS="linux-virt=6.18.53-r0 openrc=0.63.2-r0"
 USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0 openssl=3.5.8-r0"
 USERLAND_TOOLS="e2fsprogs=1.47.4-r0 e2fsprogs-extra=1.47.4-r0"
 CRYPTO_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.2-r1 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1"
+LITMUS_TOOLS="ocaml=4.14.4-r0 dune=3.22.2-r1 ocaml-menhir=20220210-r6 ocaml-menhir-dev=20220210-r6 ocaml-zarith=1.14-r1 ocaml-findlib=1.9.6-r8 gmp-dev=6.3.0-r4 busybox-static=1.37.0-r31 gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 tar=1.35-r5"
+HERDTOOLS_TAG=7.58
+HERDTOOLS_COMMIT=1ca343e16a2038e406d1ac674e7e3a1b722b36c7
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 DEBIAN=20260914-2601
 DEBIAN_SHA512=54c8a9b348129796bd28a1df0488f810385f6417cfa2e242ce4d6feb64c54444ed3c505700f3eda3b122763829a9074bf82e06fc8a6635e52c9ae924eb9a509a
@@ -54,7 +64,7 @@ export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(linux kvm-unit-tests alpine alpine-user linux-crypto debian ltp)
+NAMES=(linux kvm-unit-tests alpine alpine-user linux-crypto debian ltp litmus)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -219,6 +229,47 @@ build_linux-crypto() {
   ' - "$CRYPTO_TOOLS" "$out" "$LINUX" "$dst"
 }
 
+build_litmus() {
+  local dst=$out/litmus ht=$out/dl/herdtools7-$HERDTOOLS_TAG
+  rm -rf "$dst" "$out/build/litmus"
+  mkdir -p "$dst" "$out/build/litmus"
+  [ -d "$ht" ] || git clone -q --depth 1 --branch "$HERDTOOLS_TAG" https://github.com/herd/herdtools7.git "$ht"
+  [ "$(git -C "$ht" rev-parse HEAD)" = "$HERDTOOLS_COMMIT" ] || { echo "herdtools7: not $HERDTOOLS_COMMIT" >&2; exit 1; }
+  linux_src
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH -e root="$root" "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache $1
+    ht=$root/$2 b=$root/$3/build/litmus dst=$root/$4 src=$root/$3/build/linux-$5
+    (cd "$ht" && sh ./version-gen.sh /usr > /dev/null && dune build -j"$(nproc)" --profile release herd/herd.exe litmus/litmus.exe gen/diyone.exe)
+    bin=$ht/_build/default
+    # The tests, their allowed states and verdicts, and their C programs.
+    mkdir -p "$b/t" "$b/r/litmus"
+    grep -v "^#" images/litmus/tests.txt | while read -r name cycle; do
+      (cd "$b/t" && "$bin/gen/diyone.exe" -arch AArch64 -oneloc -name "$name" $cycle)
+      echo "$name" >> "$b/r/litmus/tests"
+    done
+    (cd "$b/t" && "$bin/herd/herd.exe" -set-libdir "$ht/herd/libdir" -model aarch64.cat $(sed "s/$/.litmus/" "$b/r/litmus/tests")) |
+      awk -f images/litmus/allowed.awk > "$b/r/litmus/allowed.txt"
+    # Settings from the Arm machine configs of herdtools7 (aarch64.cfg): they make the
+    # M4 show relaxed outcomes (SB, MP ~50 per million); the defaults showed none.
+    mkdir "$b/c"
+    "$bin/litmus/litmus.exe" -set-libdir "$ht/litmus/libdir" -mode std -driver shell -a 4 -mem direct -st 1 -barrier userfence -affinity incr0 -s 5k -r 200 -linkopt "-static -s" -o "$b/c" $(sed "s|^|$b/t/|; s/$/.litmus/" "$b/r/litmus/tests")
+    make -s -C "$b/c" -j"$(nproc)"
+    cp "$b"/c/*.exe "$b"/t/*.litmus images/litmus/run.sh images/litmus/check.awk "$b/r/litmus/"
+    find "$b/r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+    tar -C "$b/r" --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" -cf "$dst/litmus.tar" litmus
+    # The initramfs: BusyBox, the init script, the tests.
+    gcc -O2 -o "$b/gen_init_cpio" "$src/usr/gen_init_cpio.c"
+    { printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\n"
+      for d in proc tmp bin sbin usr usr/bin usr/sbin litmus; do printf "dir /%s 0755 0 0\n" $d; done
+      printf "file /bin/busybox /bin/busybox.static 0755 0 0\nfile /init %s 0755 0 0\n" "$root/images/litmus/init"
+      for f in $(cd "$b/r/litmus" && ls); do
+        m=0644; case $f in *.exe|run.sh) m=0755;; esac
+        printf "file /litmus/%s %s %s 0 0\n" "$f" "$b/r/litmus/$f" $m
+      done; } > "$b/cpio.list"
+    "$b/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$b/cpio.list" > "$dst/initramfs.cpio"
+  ' - "$LITMUS_TOOLS" "$ht" "$out" "$dst" "$LINUX"
+}
+
 build_debian() {
   local dst=$out/debian b=$out/build/debian q=$out/dl/debian-13-nocloud-arm64-$DEBIAN.qcow2
   rm -rf "$b" "$dst"
@@ -259,6 +310,7 @@ inputs() {
   local pins="^${1^^}"
   [ "$1" = alpine-user ] && pins='^USERLAND_' 
   [ "$1" = linux-crypto ] && files+=(images/linux.fragment $(find images/crypto -type f | sort)) && pins='^(CRYPTO_TOOLS|USERLAND_CONTAINER)'
+  [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
   { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == linux || $1 == ltp ]]; then declare -f buildroot linux_src; fi; } |
     sha256sum | cut -c1-16
@@ -273,6 +325,7 @@ outputs() {
     debian) echo debian/Image debian/initrd.img debian/disk.qcow2 ;;
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
     ltp) echo ltp/rootfs.ext4 ;;
+    litmus) echo litmus/initramfs.cpio litmus/litmus.tar ;;
   esac
 }
 
@@ -305,10 +358,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() user= crypto=
+  rest=() user= crypto= litmus=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; else rest+=("$name"); fi
+    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = litmus ]; then litmus=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -320,6 +373,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   # After the images container: alpine-user builds on alpine, in its own container.
   if [ -n "$user" ]; then build alpine-user; fi
   if [ -n "$crypto" ]; then build linux-crypto; fi
+  if [ -n "$litmus" ]; then build litmus; fi
   exit 0
 fi
 

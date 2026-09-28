@@ -1,0 +1,13 @@
+#!/bin/busybox sh
+# The litmus image's init: runs /litmus/run.sh on every CPU the kernel brought
+# up and powers off. webpc.litmus=<options, commas for spaces> on the kernel
+# command line passes options to the tests (e.g. webpc.litmus=-s,1000,-r,2).
+/bin/busybox --install -s
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+mount -t proc proc /proc
+mount -t tmpfs tmpfs /tmp
+opts=$(sed -n 's/.*webpc\.litmus=\([^ ]*\).*/\1/p' /proc/cmdline | tr , ' ')
+echo "webpc: litmus on $(nproc) CPUs: $opts"
+# shellcheck disable=SC2086
+if /litmus/run.sh $opts; then echo "webpc: test ok"; else echo "webpc: test FAILED"; fi
+poweroff -f

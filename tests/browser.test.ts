@@ -123,7 +123,7 @@ test('input events from the page reach the guest (keyboard LED to the page, keys
 
 // The distros, under the JIT only (interpreted they take minutes: Alpine's
 // interpreter run is native, core/tests/distros.rs). Opt-in with
-// WEBPC_DISTROS=alpine,debian (scripts/ci.sh sets alpine when its image is current).
+// WEBPC_DISTROS=alpine,debian (scripts/ci.sh sets both when their images are current).
 const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
 for (const [distro, expect] of [['alpine', /webpc: alpine 3\.24\.2 6\.18\.53-0-virt\n[^]*\/dev\/vda \/ ext4 ro,[^]*1 packets received[^]*webpc: 9p hello from the host\n[^]*webpc: drm 640x480\nwebpc: test ok\n/], ['debian', /webpc: debian\n13\.[^]*\n6\.12\.107\+deb13-arm64\nrw,[^]*webpc: test ok\n/]] as const) {
   const img = new URL(`../target/images/${distro}/Image`, import.meta.url);

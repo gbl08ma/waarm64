@@ -20,7 +20,7 @@ and the exact-step boots.
 | Buildroot boot and device test | `core/tests/boot.rs`; `tests/boot-node.test.ts`; `tests/browser.test.ts` | Linux boots, virtio console/rng/blk/net/9p/input, framebuffer, realtime mode, writable overlay |
 | LTP subset + arm64 kselftests | `core/tests/ltp.rs` (interpreter, each result against its table); `tests/boot-node.test.ts` (JIT) | 93 syscall tests; `syscall-abi`, `ptrace`, `hwcap`, `tpidr2`, `tags_test`, signal tests |
 | Crypto test kernel | `tests/boot-node.test.ts` (JIT; interpreter with `WEBPC_INTERP=1`) | the arm64 CE drivers' full self-tests, lib/crypto's SHA KUnit suites |
-| Distros | `core/tests/distros.rs` (interpreter: Alpine; Debian with `WEBPC_DISTROS=debian`); `tests/boot-node.test.ts` (Alpine, Alpine userspace, JIT); `tests/browser.test.ts` (Alpine, Debian, JIT) | real distro boots from virtio-blk |
+| Distros | `core/tests/distros.rs` (interpreter: Alpine; Debian with `WEBPC_DEBIAN_NATIVE=1`); `tests/boot-node.test.ts` (Alpine, Alpine userspace, JIT); `tests/browser.test.ts` (Alpine, Debian, JIT) | real distro boots from virtio-blk |
 | Browser-only | `tests/browser.test.ts` | cross-origin isolation, the device worker, sync XHR ranges, OPFS, the canvas, DOM input, the spike page |
 | Host code | `tests/{devices,overlay,qcow2,serve,wasm-encoder,core-wasm,memory-kernels}.test.ts` | 9p server, loopback adapter, input config, overlay, qcow2 fixtures, the dev server, the encoder |
 | Decoder sweep | `core/fuzz` (not in CI) | every 2³² word vs Capstone |
@@ -34,9 +34,9 @@ Rules behind that matrix:
   complex guests under the interpreter in Node or Chromium**: it costs minutes and tests nothing
   the native run doesn't.
 - `WEBPC_DISTROS` (comma list: `alpine,alpine-user,debian`) picks the distro tests; `ci.sh`
-  defaults to the current images of `alpine` and `alpine-user`. Debian is occasional (before a
-  guest-visible change and at milestone ends): ~1 min in Chromium under the JIT, ~2.5 min
-  natively interpreted.
+  defaults to the current images of all three. Debian boots in Chromium under the JIT by default
+  (~45 s); its native interpreted boot (~2.5 min) also needs `WEBPC_DEBIAN_NATIVE=1` (before a
+  guest-visible change and at milestone ends).
 - Guest-image tests skip loudly when `target/images/<name>` is missing or stale
   (`images/build.sh --check`).
 
@@ -97,8 +97,12 @@ Realtime runs and the rw-overlay boots aren't step-exact.
   (11.1) on the Mac with `-accel hvf` for real Apple hardware at EL1 (MMU, exceptions; devices are
   QEMU's). The Sail ARM model for disputed corner cases.
 - **Findings:** QEMU TCG raises no SP alignment faults (hvf does, as do we); QEMU under hvf makes
-  unassigned PAs RAZ/WI (TCG aborts, as do we); **HVF can't emulate a GICv2**, so the GIC, timer
-  and UART tests have only TCG as an oracle.
+  unassigned PAs RAZ/WI (TCG aborts, as do we); **HVF can't emulate a GICv2**, so the GICv2, timer
+  and UART tests have only TCG as an oracle. **hvf does give a GICv3** (`-M
+  virt,gic-version=3`): kvm-unit-tests' `gicv3-ipi`, `gicv3-active`, `selftest-smp`, `psci` and
+  `timer` pass there at 4 CPUs. The Mac's QEMU 11.1 accepts `kernel-irqchip=on` under hvf (and
+  rejects `split` with an HVF-specific error), so Apple's in-kernel vGIC looks usable; whether it's
+  really in use is to be confirmed from a register only it would show (M7 loop 2).
 
 ## Bare-metal tests (`tests/baremetal/`)
 
@@ -123,6 +127,15 @@ uniprocessor GIC makes RAZ/WI per the spec; QEMU TCG fails the same two), `gicv2
 `cache`. Skipped: `psci`, `selftest-smp`, `gicv2-ipi`, `gicv2-mmio`, `gicv2-mmio-3p` (SMP: M7),
 `gicv3-*`, `its-*`, `pmu-*`, `pci-test`, `micro-bench`, `fpu-context` (KVM only), `debug-*`,
 `mte-*`; `sieve` (not in `unittests.cfg`; too slow interpreted).
+
+**The SMP set on QEMU TCG** (11.1, `-M virt,gic-version=N -cpu max -smp S`), the oracle for M7:
+`selftest-setup` (smp 2), `selftest-smp` (4 and 8), `gicv2-ipi` (4, 8), `gicv2-active`,
+`gicv3-ipi` (4, 8), `gicv3-active` and `psci` (4) pass. QEMU fails `gicv2-mmio` at 4 CPUs
+(`ITARGETSR: bits for non-existent CPUs masked`, `byte writes successful`) and at 3
+(`gicv2-mmio-3p`: also `register content preserved`), which the spec says a GIC must do: our
+target is to pass them. `psci` skips its concurrent cpu-on check unless the environment (passed as
+an initrd, `ERRATA_6c7a5dce22b3=y`) enables it; enabled, QEMU fails it (several CPUs racing to
+start one target must get ALREADY_ON or ON_PENDING).
 
 ## The JIT's tests
 
@@ -159,10 +172,26 @@ CONSTRAINED UNPREDICTABLE encodings Capstone rejects, should-be-one fields the M
 report 0 mismatch classes. Not in `ci.sh` (it builds Capstone from C): rerun it when the decoder
 changes. `cargo fuzz run decode` (from `core/`) is the libFuzzer target.
 
+## Litmus tests (`images/build.sh litmus`, M7)
+
+herdtools7's tools, built and run in the images container ([images.md](images.md)): 42 tests
+from our own list of cycles (`images/litmus/tests.txt`), each with herd7's allowed final states
+under `aarch64.cat`. `run.sh` runs each program and **`check.awk` fails a test if it observes
+any final state herd7 doesn't allow** (the general form of "forbidden outcomes never appear");
+each test prints `litmus: <test> ok model=<herd7's verdict on its condition> seen=<litmus7's
+observation>`. A test with more threads than the machine has CPUs prints nothing and counts as
+skipped (on one vCPU only `CoRW1`, `CoWR`, `CoWW` run).
+- **The M4 reference** (`tests/litmus/m4-reference.txt`: the oracle VM, 4 vCPUs, 10⁸ outcomes
+  per test): no forbidden outcome; 16 of the 20 allowed relaxations appear (R and SB ~60–70 per
+  million, MP ~47, IRIW 1.5, WRC 0.1), never `LB`, `2+2W+dmb.sy+po`, `S+dmb.sy+po`. With
+  litmus7's default settings the M4 showed almost nothing (SB never in 2M): the image uses
+  herdtools7's Arm settings (stride 1, `userfence` barriers, `incr0` affinity, 5k × 200).
+- The checker was checked by removing SB's allowed states (it fails, listing each state).
+
 ## Planned layers
 
-- **Memory model and SMP** (M7): herdtools7 `litmus7` ARMv8 litmus tests in the guest (outcomes
-  checked against the allowed set), atomics stress, kvm-unit-tests' SMP tests.
+- **Memory model and SMP** (M7): the litmus tests above in the guest at N vCPUs, atomics stress,
+  kvm-unit-tests' SMP tests.
 - **In-guest suites** not yet run: more LTP areas (need `mkfs` tools and a scratch disk), the
   kselftests `fp` and the generic suites, language test suites (Python), guest JITs (Node/V8,
   LuaJIT) for code invalidation.

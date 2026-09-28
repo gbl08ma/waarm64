@@ -96,7 +96,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
 | Mixed / realistic | `7z b`, compiling a C file with GCC in the guest (heavy code churn) |
 | Kernel paths | lmbench `lat_syscall`, `lat_pagefault`, `lat_ctx` |
 | JIT behavior | compile latency p50/p99, % time interpreted, code bytes, invalidations |
-| SMP (M7) | the userspace phases at N vCPUs, parallel `make` |
+| SMP (M7) | the userspace phases at N vCPUs (the N = 1 reference: 22.9 s, `bench/boot/REPORT.md` "M7 loop 0"), parallel `make` |
 | I/O | a write benchmark (a scratch disk behind an overlay); re-run 9p and net under the JIT |
 
 ## Instrumentation and profiling

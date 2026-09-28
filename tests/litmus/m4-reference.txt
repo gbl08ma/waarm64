@@ -1,0 +1,49 @@
+# litmus image (images/build.sh litmus) on real hardware: the oracle VM (Apple M4, Lima vz,
+# 4 vCPUs, Debian 13, Linux 6.12.95+deb13-cloud-arm64), 2026-09-28, `litmus/run.sh -r 10000`
+# (5k outcomes x 10000 runs per test; tests with 3-4 threads run half as many at once).
+# model = herd7's aarch64.cat verdict on the test's condition (Never: forbidden);
+# seen = what the M4 showed: Never/Sometimes/Always, positive and negative counts.
+litmus: MP ok model=Sometimes seen=Sometimes 4686 99995314
+litmus: MP+dmb.sys ok model=Never seen=Never 0 100000000
+litmus: MP+dsb.sys ok model=Never seen=Never 0 100000000
+litmus: MP+dmb.st+dmb.ld ok model=Never seen=Never 0 100000000
+litmus: MP+dmb.sy+po ok model=Sometimes seen=Sometimes 703 99999297
+litmus: MP+po+dmb.sy ok model=Sometimes seen=Sometimes 1472 99998528
+litmus: MP+dmb.sy+addr ok model=Never seen=Never 0 100000000
+litmus: MP+po+addr ok model=Sometimes seen=Sometimes 1936 99998064
+litmus: MP+dmb.sy+ctrl ok model=Sometimes seen=Sometimes 798 99999202
+litmus: MP+dmb.sy+ctrlisb ok model=Never seen=Never 0 100000000
+litmus: MP+popl+poap ok model=Never seen=Never 0 100000000
+litmus: MP+popl+po ok model=Sometimes seen=Sometimes 3937 99996063
+litmus: SB ok model=Sometimes seen=Sometimes 5601 99994399
+litmus: SB+dmb.sys ok model=Never seen=Never 0 100000000
+litmus: SB+dsb.sys ok model=Never seen=Never 0 100000000
+litmus: SB+dmb.sy+po ok model=Sometimes seen=Sometimes 1544 99998456
+litmus: SB+poslas ok model=Never seen=Never 0 100000000
+litmus: LB ok model=Sometimes seen=Never 0 100000000
+litmus: LB+dmb.sys ok model=Never seen=Never 0 100000000
+litmus: LB+datas ok model=Never seen=Never 0 100000000
+litmus: LB+addrs ok model=Never seen=Never 0 100000000
+litmus: LB+ctrls ok model=Never seen=Never 0 100000000
+litmus: 2+2W ok model=Sometimes seen=Sometimes 73 99999927
+litmus: 2+2W+dmb.sys ok model=Never seen=Never 0 100000000
+litmus: 2+2W+dmb.sy+po ok model=Sometimes seen=Never 0 100000000
+litmus: IRIW ok model=Sometimes seen=Sometimes 75 49999925
+litmus: IRIW+dmb.sys ok model=Never seen=Never 0 50000000
+litmus: IRIW+addrs ok model=Never seen=Never 0 50000000
+litmus: IRIW+poaas ok model=Never seen=Never 0 50000000
+litmus: WRC ok model=Sometimes seen=Sometimes 5 49999995
+litmus: WRC+addrs ok model=Never seen=Never 0 50000000
+litmus: WRC+dmb.sy+addr ok model=Never seen=Never 0 50000000
+litmus: R ok model=Sometimes seen=Sometimes 6930 99993070
+litmus: R+dmb.sys ok model=Never seen=Never 0 100000000
+litmus: R+dmb.sy+po ok model=Sometimes seen=Sometimes 962 99999038
+litmus: S ok model=Sometimes seen=Sometimes 84 99999916
+litmus: S+dmb.sys ok model=Never seen=Never 0 100000000
+litmus: S+dmb.sy+data ok model=Never seen=Never 0 100000000
+litmus: S+dmb.sy+po ok model=Sometimes seen=Never 0 100000000
+litmus: CoRR ok model=Never seen=Never 0 100000000
+litmus: CoRW1 ok model=Never seen=Never 0 200000000
+litmus: CoWR ok model=Never seen=Never 0 200000000
+litmus: CoWW ok model=Always seen=Always 200000000 0
+litmus: all ok
