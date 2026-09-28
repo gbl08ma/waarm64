@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // Many core instances on one memory in Chromium workers (M7 loop 1): the
+  // check runs in a worker, which starts three more (tests/threads-run.ts).
+  const worker = new Worker(new URL('./threads-main.ts', import.meta.url), { type: 'module' });
+  worker.onmessage = (e) => { window.result = e.data; };
+  worker.onerror = (e) => { window.result = { error: e.message }; };
+</script>

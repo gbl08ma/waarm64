@@ -21,11 +21,34 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 19;
+pub const ABI_VERSION: u32 = 20;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
     ABI_VERSION
+}
+
+/// Allocates `size` bytes aligned to `align` (a power of two) from the core's
+/// shared heap, for a new core instance's stack and TLS block (ABI 20, docs/abi.md
+/// "Many core instances on one memory"); null if that fails. Never freed.
+#[unsafe(no_mangle)]
+pub extern "C" fn thread_alloc(size: usize, align: usize) -> *mut u8 {
+    match std::alloc::Layout::from_size_align(size.max(1), align) {
+        // SAFETY: the layout has a non-zero size.
+        Ok(l) => unsafe { std::alloc::alloc_zeroed(l) },
+        Err(_) => core::ptr::null_mut(),
+    }
+}
+
+/// Counts calls in a thread-local: each instance's first call returns 1 when
+/// its TLS block is its own (the multi-instance test's check of `__wasm_init_tls`).
+#[unsafe(no_mangle)]
+pub extern "C" fn tls_probe() -> u32 {
+    thread_local!(static CALLS: core::cell::Cell<u32> = const { core::cell::Cell::new(0) });
+    CALLS.with(|c| {
+        c.set(c.get() + 1);
+        c.get()
+    })
 }
 
 /// Sums `len` little-endian u64 words starting at `ptr` in linear memory.

@@ -1,4 +1,4 @@
-# Host ABI (version 19)
+# Host ABI (version 20)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -15,9 +15,16 @@ Design notes for an ABI change go in this file before the code.
 - Imports: `env.memory`, `env.now_ms() -> f64` (the realtime clock), `env.jit_install(ptr, len,
   slot) -> i32` (below). `web/vm.ts` `coreImports(memory)` returns `{env, jit}`; after
   instantiating, the host calls `jit.bind(instance)`.
-- Only one instance runs on a memory today: `__stack_pointer` and `__tls_base` are internal
-  globals with fixed initial values, so a second instance would share the first one's stack.
-  M7 changes this (per-thread stack and TLS).
+- **More instances on the same memory** (one per worker, ABI 20): the core exports
+  `__stack_pointer`, `__tls_size`, `__tls_align`, `__wasm_init_tls` and `thread_alloc(size,
+  align) -> ptr`. Another instance needs its own stack and TLS block, allocated through an instance
+  that's already set up (`web/vm.ts` `threadAlloc`), and set **before any other call**
+  (`instantiateThread`: `__stack_pointer` = the stack's top, then `__wasm_init_tls(tls)`); its
+  start function finds the memory initialized. Instance 0 keeps the linker's static stack (1 MiB)
+  and TLS. Each instance has its own function table, so each has its own JIT host and code.
+  `tls_probe()` (a thread-local call count) lets tests check the TLS block is the instance's own.
+  Tested with three concurrent instances (interpreter, JIT, JIT) in Node's `worker_threads` and in
+  Chromium workers (`tests/threads.test.ts`, `tests/browser/threads.html`).
 
 ## Whole-VM exports
 
@@ -125,6 +132,59 @@ HVC kinds and the EL1 state at the end of `Cpu`), and their JIT twins over a per
 `jit_flush` (for hosts that rewrite guest code between runs), `jit_stats`. These vCPUs always
 have every optional feature. `jit_add_install`/`jit_call` are the JIT plumbing test.
 
+## M7 (SMP): design note for ABI 20 onward
+
+The whole set was called "ABI 20" in the kickoff; each commit that changes the exports bumps the
+version (20: the thread setup exports). Pre-approved on the outline in `M7-KICKOFF.md` (decision 7); written before the code, and
+revised here if the code teaches otherwise. With `ncpus` ≤ 1 and the defaults, a host that
+passes CPU index 0 everywhere sees today's machine (except the GIC, which becomes GICv3 by
+default in loop 2).
+
+**Two ways to run the vCPUs.**
+- *Round-robin* (`VmConfig.smp` = 0, the default; deterministic or realtime): `vm_run(vm,
+  budget)` runs every vCPU on the calling thread, one quantum (`CHUNK` steps, cut at the next
+  timer deadline in deterministic mode) each in index order, skipping vCPUs that are off or idle.
+  `budget` counts the steps of all vCPUs. One code cache serves them all (block code takes the
+  `Vcpu` pointer). In deterministic mode virtual time is the total steps of all vCPUs
+  (× `ticks_per_insn`, plus WFI skips), one counter for every CPU; the run returns `IDLE` only
+  when every on vCPU is idle (time jumps to the earliest deadline first).
+- *Parallel* (`smp` = 1, realtime only; `vm_new` refuses it with `deterministic`): one thread
+  (worker) per vCPU, each with its own core instance on the shared memory and its own code
+  cache. Each worker calls `vm_run_cpu(runner, cpu, budget)` for its vCPU.
+
+**Many core instances on one memory** (done, ABI 20): "Instantiation" above.
+
+**`VmConfig`** (appended u64 fields; 0 keeps today's meaning):
+
+| Field | Meaning |
+|---|---|
+| `ncpus` | vCPUs, 0 or 1 = one; at most `vm::MAX_CPUS` |
+| `gic` | 0 the default (GICv3 from loop 2), 2 GICv2 (≤ 8 CPUs), 3 GICv3 |
+| `smp` | 0 round-robin on the calling thread, 1 parallel (one thread per vCPU; realtime only) |
+
+**Exports that change or appear.**
+- `vm_run(vm, budget)`: round-robin mode (as today for one vCPU). `vm_exit(vm)` gains `cpu` (the
+  vCPU that exited, appended to `ExitInfo`).
+- `vm_runner(vm) -> *mut Runner`: parallel mode, once per worker after its thread setup: this
+  instance's code cache (the JIT installs into this instance's table). `vm_run_cpu(runner, cpu,
+  budget) -> kind` runs vCPU `cpu` until an exit; `vm_exit_cpu(vm, cpu)` its `ExitInfo`.
+- Per vCPU: `vm_cpu(vm, i)` (the `Cpu`), `vm_counters(vm, i)` (a counters block per vCPU: the
+  host sums them for totals; the JIT words describe the code cache that runs vCPU *i*, so in
+  round-robin mode they're in block 0 only and the sum is the total either way), `vm_cpu_signal(vm,
+  i)` (below). Existing calls pass `i` = 0.
+- **Signals.** The VM's signal word (`vm_signal`) keeps STOP, RX and DEVICE. Each vCPU also has a
+  wake word, the only word its worker sleeps on (`Atomics.wait`, in `IDLE` and while the vCPU is
+  off): whoever sets a VM signal bit must also bump every vCPU's wake word and notify it (the
+  host's `signal()` does both), so a wake-up can't fall between a check and the wait. The core
+  bumps and notifies wake words itself for what it raises (SGIs, SPIs routed to a vCPU, CPU_ON,
+  SEV, a TLBI broadcast waiting on idle vCPUs).
+- **Exit kinds per vCPU:** `IDLE` for an off vCPU has `value` = u64::MAX until PSCI CPU_ON (in
+  the core) starts it; SYSTEM_OFF/RESET from any vCPU exits `PSCI` on that vCPU's thread, and the
+  host stops the others with STOP. `TX_FULL` and `DEVICE` exit on whichever vCPU hit them.
+- Shared device state (the GIC distributor, the PL011 and console rings, the virtio transports,
+  device completion draining) sits behind one lock in the core in parallel mode; the console's
+  TX ring stays single-producer because PL011 writes hold it.
+
 ## Version history
 
 | ABI | What changed |
@@ -143,3 +203,4 @@ have every optional feature. `jit_add_install`/`jit_call` are the JIT plumbing t
 | 15–17 | regions: region counters, back-edges, tier-up (`jit_hot`, `region_after`) |
 | 18 | `jit_helper_report` |
 | 19 | `VmConfig.features` (crypto extensions); `Cpu.features` |
+| 20 | thread setup for more instances on one memory: `__stack_pointer`, `__tls_size`, `__tls_align`, `__wasm_init_tls`, `thread_alloc`, `tls_probe` (M7) |

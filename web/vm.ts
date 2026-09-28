@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 19;
+export const ABI = 20;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -39,6 +39,38 @@ type Exports = {
 export function coreImports(memory: WebAssembly.Memory) {
   const jit = jitHost(memory);
   return { env: { memory, now_ms: () => performance.now(), jit_install: jit.install }, jit };
+}
+
+/** Each extra core instance's stack (docs/abi.md "Many core instances on one memory"). */
+export const THREAD_STACK = 1 << 20;
+/** A stack and a TLS block for another core instance on the same memory. */
+export type ThreadBlock = { stack: number; tls: number };
+
+/**
+ * Allocates a {@link ThreadBlock} through `ex`, an instance that's already set
+ * up (instance 0, or one made by {@link instantiateThread}). Blocks are never freed.
+ */
+export function threadAlloc(ex: WebAssembly.Exports): ThreadBlock {
+  const alloc = ex.thread_alloc as (size: number, align: number) => number;
+  const g = (name: string) => (ex[name] as WebAssembly.Global).value as number;
+  const tls = alloc(g('__tls_size'), g('__tls_align'));
+  const stack = alloc(THREAD_STACK, 16);
+  if (!tls || !stack) throw new Error('thread_alloc failed');
+  return { stack, tls };
+}
+
+/**
+ * Instantiates the core on `memory` for another thread (a worker): its start
+ * function finds the memory initialized, then, before any other call, the
+ * instance gets its own stack and TLS from `block`. Its JIT is bound to it.
+ */
+export function instantiateThread(module: WebAssembly.Module, memory: WebAssembly.Memory, block: ThreadBlock) {
+  const imports = coreImports(memory);
+  const instance = new WebAssembly.Instance(module, imports);
+  (instance.exports.__stack_pointer as WebAssembly.Global).value = block.stack + THREAD_STACK;
+  (instance.exports.__wasm_init_tls as (tls: number) => void)(block.tls);
+  imports.jit.bind(instance);
+  return instance;
 }
 
 /**

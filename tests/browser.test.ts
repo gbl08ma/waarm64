@@ -33,7 +33,17 @@ async function result(path: string, global: string) {
 }
 
 test('core wasm runs in a cross-origin isolated worker', async () => {
-  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 19, counter: 2 });
+  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 20, counter: 2 });
+});
+
+test('three core instances run guests concurrently on one memory in workers (M7)', async () => {
+  const r = (await result('/tests/browser/threads.html', 'result')) as { error?: string; reference: number; checks: { what: string; done: number; ms: number; tls: number; registers: boolean; ram: boolean }[] };
+  assert.equal(r.error, undefined);
+  assert.equal(r.reference, 30_000_000);
+  for (const c of r.checks) {
+    console.log(`# chromium ${c.what}: ${c.done} steps in ${c.ms.toFixed(0)} ms`);
+    assert.deepEqual({ done: c.done, tls: c.tls, registers: c.registers, ram: c.ram }, { done: 30_000_000, tls: 1, registers: true, ram: true }, c.what);
+  }
 });
 
 test('spike page runs', async () => {
