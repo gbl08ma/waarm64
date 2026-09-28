@@ -11,8 +11,8 @@
 // `--only boot_debian_jit`: Debian 13's (one cold and one warm boot, several minutes; not in the default set);
 // `--only coremark_vm_jit`: CoreMark as init under Buildroot's kernel, realtime mode (its own score);
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
-// `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s;
-// `--only alpine_crypto_ce_jit`: the same with the crypto extensions on.
+// `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s, the crypto extensions off (the NEON-only paths);
+// `--only alpine_crypto_ce_jit`: the same with them on (every other benchmark's default since M6.5 loop 7).
 // I/O, realtime mode, a fresh boot per sample, timed by the host between the
 // guest script's "webpc: … start/end" markers unless fio times itself:
 // `--only dd`: /bench-dd.sh reads all of /dev/vda (sync-XHR block backend);

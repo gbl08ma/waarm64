@@ -720,3 +720,19 @@ Raw data: `../boot/results/m65-loop6/`.
 On beats off in every row of both repeats (the smallest margin, SHA-1 at 256 B, is 16%). **Boot with them advertised** (Node, deterministic, Alpine's boot test, twice each): 3,009,537,573 → 2,856,603,825 steps (−5.1%: the kernel's CE code), 8.9–9.1 s either way; the boot passes.
 
 Raw data: `../boot/results/m65-loop7/`.
+
+## M6.5 exit: advertised by default
+
+The user approved advertising the crypto extensions by default on loop 7's numbers (2026-09-28): `bootVm` and the native runners (`core/tests/common`, `core/tests/baremetal.rs`) give VMs `VmConfig.features` bit 0 unless told otherwise (`crypto: false`; the ABI's 0 still means none). The step constants moved once, in the same session as the re-baselined boots: Buildroot 40,909,861 → 40,890,907, the device test 113,841,233 → 114,044,960, LTP/kselftests 2,747,263,866 → 2,744,982,696, Alpine 3,009,537,573 → 2,856,603,825, Alpine userspace 10,873,074,162 → 10,746,996,638 (interpreter and JIT alike); the bare-metal `exceptions` test now expects `ID_AA64ISAR0_EL1` = 0x211120.
+
+**Boots re-baselined** (Chromium 153, the M4 VM, extensions on; medians, IQR): Buildroot under the JIT 674 (17) ms cold, 655 (4) warm; Alpine 9963 (57) ms cold, 10,048 (19) warm; Alpine userspace 24.1 s (compress 2.82, Lua 5.13, churn 2.21, SQLite 4.00). M6's exit table (another session: 670 ms, 10.2 s, 23.7 s) is within the host's session-to-session spread; no gain or loss claimed for the boots, whose kernels spend little time in crypto (in Node, Alpine's boot was 8.9–9.1 s either way).
+
+| `openssl speed`, 16 KiB, MB/s | NEON-only | **crypto extensions** |
+|---|---|---|
+| AES-128-GCM | 50.3 | **232.1** (4.6×) |
+| AES-256-GCM | 40.7 | **192.1** (4.7×) |
+| AES-128-CBC | 45.1 | **151.2** (3.4×) |
+| SHA-1 | 255.0 | **374.4** (1.5×) |
+| SHA-256 | 86.6 | **297.6** (3.4×) |
+
+(Loop 7's two alternated runs per column, averaged.) Raw data: `../boot/results/m65-exit/`, `../boot/results/m65-loop7/`.

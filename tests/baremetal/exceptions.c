@@ -52,7 +52,7 @@ int main(void) {
   check(sysreg(DAIF) == 0x3c0, 3); // masked at reset
 #ifndef ORACLE // our values, not the oracle CPU's
   check(sysreg(ID_AA64PFR0_EL1) == 0x1100000000000011, 4);
-  check(sysreg(ID_AA64ISAR0_EL1) == 0x210000, 5);
+  check(sysreg(ID_AA64ISAR0_EL1) == 0x211120, 5); // LSE, CRC32, and the crypto extensions (the hosts' default)
   check(sysreg(ID_AA64MMFR0_EL1) == 0x0f000022, 6);
   check(sysreg(ID_AA64ISAR1_EL1) == 0, 7);
   check((sysreg(SCTLR_EL1) & 0x30d00800) == 0x30d00800, 8);

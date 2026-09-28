@@ -610,7 +610,8 @@ impl<'a> Boot<'a> {
             max_steps: 20_000_000_000,
             echo: false,
             fb: (0, 0),
-            features: 0,
+            // The crypto extensions, as `bootVm` gives them (M6.5 loop 7).
+            features: webpc_core::cpu::FEATURE_CRYPTO,
         }
     }
 }

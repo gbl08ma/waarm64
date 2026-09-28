@@ -59,8 +59,8 @@ async function removeOverlay(name: string) {
 
 const IMAGES = new URL('../target/images/linux/Image', import.meta.url);
 /** The Buildroot boot's and the device test's steps in deterministic mode (tests/boot-node.test.ts). */
-const BUILDROOT_STEPS = 40_909_861;
-const DEVICES_STEPS = 113_841_233;
+const BUILDROOT_STEPS = 40_890_907;
+const DEVICES_STEPS = 114_044_960;
 for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], ['deterministic JIT', '?jit=1']]) {
   test(`Linux boots in a worker with virtio devices (root on virtio-blk over HTTP), ${mode} mode`, { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
     const page = await browser.newPage();
@@ -135,6 +135,6 @@ for (const [distro, expect] of [['alpine', /webpc: alpine 3\.24\.2 6\.18\.53-0-v
     console.log(`# chromium ${distro} boot${jit ? ' (JIT)' : ''}: ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
     assert.match(r.console, expect);
-    if (distro === 'alpine') assert.equal(r.steps, 3_009_537_573); // PLAN.md §7 M3 "Run loop"; the JIT must not move it
+    if (distro === 'alpine') assert.equal(r.steps, 2_856_603_825); // PLAN.md §7 M3 "Run loop"; the JIT must not move it
   });
 }

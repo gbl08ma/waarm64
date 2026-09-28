@@ -14,7 +14,12 @@ fn boot(image: &[u8]) -> Result<(u64, String), String> {
     let mut ram = vec![0u128; RAM_SIZE / 16];
     // SAFETY: ram is 16-byte aligned, RAM_SIZE bytes long, and outlives the Vm.
     let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, RAM_SIZE as u64) };
-    let mut vm = Vm::new(mem, VmConfig::default());
+    // The crypto extensions, as the hosts give them by default (M6.5 loop 7).
+    let cfg = VmConfig {
+        features: webpc_core::cpu::FEATURE_CRYPTO,
+        ..VmConfig::default()
+    };
+    let mut vm = Vm::new(mem, cfg);
     for (k, b) in image.iter().enumerate() {
         vm.mem.write(RAM_BASE + k as u64, 1, *b as u64).unwrap();
     }

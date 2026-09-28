@@ -109,7 +109,7 @@ export type BootOptions = {
   kernelOffset?: number;
   /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress. */
   jit?: 0 | 1 | 2;
-  /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented. */
+  /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
   /**
    * Realtime mode: throw if the vCPU sleeps this long with no timer deadline
@@ -206,7 +206,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const deterministic = !o.realtime;
   // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries, framebuffer, JIT.
   const fb = o.framebuffer ?? { width: 0, height: 0 };
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 10).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto ? 1n : 0n]);
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 10).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
