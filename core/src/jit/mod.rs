@@ -73,6 +73,17 @@ impl Config {
         check: true,
         region_after: 1,
     };
+    /// JIT-check: compile everything on first sight into a full-size cache,
+    /// with the stale-code checker. JIT-stress's 4-region cache evicts most
+    /// blocks before they're entered again, which hides stale ones (M7 loop 4:
+    /// code rewritten by another vCPU).
+    pub const CHECK: Config = Config {
+        threshold: 0,
+        batch: 1,
+        check: true,
+        region_after: 0,
+        ..Config::DEFAULT
+    };
 }
 
 /// [`Config::DEFAULT`]'s `region_after`.

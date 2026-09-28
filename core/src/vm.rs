@@ -76,7 +76,8 @@ pub struct VmConfig {
     /// (ABI 8); `boot::framebuffer` places it.
     pub fb_width: u64,
     pub fb_height: u64,
-    /// 0 interpreter only; 1 JIT; 2 JIT-stress (`jit::Config::STRESS`) (ABI 10).
+    /// 0 interpreter only; 1 JIT; 2 JIT-stress (`jit::Config::STRESS`) (ABI 10);
+    /// 3 JIT-check (`jit::Config::CHECK`) (ABI 24).
     pub jit: u64,
     /// Optional CPU features (`cpu::FEATURE_*`; ABI 19); 0, the default, is none.
     pub features: u64,
@@ -359,6 +360,7 @@ impl Vm {
         vcpus[0].jit.cache = match cfg.jit {
             0 => None,
             1 => Some(jit::Config::DEFAULT),
+            3 => Some(jit::Config::CHECK),
             _ => Some(jit::Config::STRESS),
         }
         .map(|c| {

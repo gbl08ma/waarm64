@@ -29,7 +29,7 @@ const INTERP = process.env.WEBPC_INTERP === '1';
 const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
-const boot = (o: BootOptions, jit: 0 | 1 | 2, max = 20e9) => runToPowerOff(WASM, { ...o, jit }, max);
+const boot = (o: BootOptions, jit: 0 | 1 | 2 | 3, max = 20e9) => runToPowerOff(WASM, { ...o, jit }, max);
 const summary = (r: Run) => ({ kind: r.kind, x0: r.x[0], x1: r.x[1], steps: r.steps, console: r.console, hvc: r.hvc });
 
 /**
@@ -77,6 +77,25 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort())
     assert.match(r.console, /exit 0\n$/);
   }, { max: 50e6 });
 }
+
+// The stale-code checker across vCPUs (M7 loop 4): maint.bin with its one
+// `IC IVAU` planted out (a NOP), so CPU 0 rewrites code the secondaries have
+// compiled without invalidating it. The interpreter has no code cache and
+// passes; the JIT runs the old code on CPU 1 (allowed without the IC: check
+// 401); JIT-check's checker traps (JIT-stress's 4-region cache has evicted the
+// block by then). With the IC, JIT-check passes.
+test('bare-metal maint.bin without its IC IVAU: the JIT keeps the old code, the checker traps', async () => {
+  const img = new Uint8Array(readFileSync(new URL('maint.bin', BAREMETAL)));
+  const words = new Uint32Array(img.buffer);
+  const ic = words.findIndex((w) => (w & ~31) >>> 0 === 0xd50b7520);
+  assert.ok(ic >= 0 && words.findLastIndex((w) => (w & ~31) >>> 0 === 0xd50b7520) === ic, 'one IC IVAU');
+  const o = { ramSize: 16 << 20, kernel: img, kernelOffset: 0, cmdline: '', ncpus: 4 };
+  assert.equal((await boot({ ...o, kernel: readFileSync(new URL('maint.bin', BAREMETAL)) }, 3, 50e6)).x[1], 0n);
+  words[ic] = 0xd503201f;
+  assert.equal((await boot(o, 0, 50e6)).x[1], 0n);
+  assert.equal((await boot(o, 1, 50e6)).x[1], 401n);
+  await assert.rejects(boot(o, 3, 50e6), WebAssembly.RuntimeError);
+});
 
 // kvm-unit-tests: (file, arguments, the checks expected to FAIL, vCPUs), from core/tests/kvm_unit_tests.rs `RUN`.
 const KUT: [string, string, string[], number?][] = [

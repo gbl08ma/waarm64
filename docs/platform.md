@@ -58,6 +58,28 @@ vCPU's event (SEV, SEVL) is set, which it consumes; **TLBI … IS** is done on e
 at once (the others aren't running). With one vCPU the quantum is unbounded, WFE and SEV are
 NOPs, and every step count is what it was before M7.
 
+**Broadcast maintenance.** Round-robin makes it synchronous: **TLBI … IS** flushes every other
+vCPU's TLB in the run loop (`Exit::TlbiIs`) before anything else runs, and `IC IVAU`/`IC
+IALLU(IS)` invalidate the one code cache all vCPUs share. JIT code holds no translation of its
+own that a TLBI would have to reach: cross-page chains check the running vCPU's instruction TLB,
+and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor and both ICs across
+4 vCPUs (on QEMU and hvf too). **Realtime (loop 5), designed so round-robin stays immediate:**
+- Each vCPU gets a maintenance queue (TLB ops, and IC ops for its own code cache) under a lock,
+  with an atomic pending flag it checks at every chunk boundary (one relaxed load), and an
+  `applied` sequence number. An issuer pushes the op to every other vCPU's queue (a full queue
+  collapses to one flush-all) and bumps its own `issued` sequence.
+- TLB ops are applied at the target's next chunk boundary; IC ops there and at context
+  synchronization (ISB, exception entry, ERET), which the architecture requires before the new
+  code is promised.
+- The issuer's next `DSB` waits (`Atomics.wait`, bounded) until every other vCPU's `applied` ≥
+  its `issued`, or that vCPU is off or idle (in WFI: it drains before it resumes, so it counts as
+  acknowledged). Pending requests shrink the targets' chunks if the wait shows in profiles.
+- In round-robin the queues aren't used: the others aren't running, so every op is applied at
+  once and the DSB wait is always satisfied.
+- The stale-code checker must tolerate the window between another vCPU's write and its IC being
+  drained (legal cross-modification): in realtime, a mismatch drops the block and counts; only
+  deterministic runs trap.
+
 - `vm_run(vm, budget)` runs **chunks of at most `CHUNK` = 32,768 steps** (instructions retired
   plus exceptions taken), cut at the next timer deadline in deterministic mode so timers fire on
   their exact tick. Each chunk goes through `jit::steps` when the JIT is on, else `interp::steps`.

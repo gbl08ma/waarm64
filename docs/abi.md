@@ -48,7 +48,7 @@ Design notes for an ABI change go in this file before the code.
 | `ticks_per_insn` | counter ticks per step, 0 → 1 (5) |
 | `devices`, `ndevices` | address and count (≤ 32) of `DeviceEntry`s (6) |
 | `fb_width`, `fb_height` | a `simple-framebuffer`, 0: none (8) |
-| `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10) |
+| `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24) |
 | `features` | bit 0 `FEATURE_CRYPTO`; other bits reserved, and `vm_new` refuses them (19) |
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
@@ -211,3 +211,4 @@ default in loop 2).
 | 21 | `VmConfig.ncpus` and `VmConfig.gic`; GICv3 the default (M7) |
 | 22 | `vm_cpu(vm, i)` takes a vCPU index; `ExitInfo.cpu`; `ncpus` > 1 accepted on a GICv3 (deterministic round-robin) (M7) |
 | 23 | the GICv2 dropped: `VmConfig.gic` 2 is refused (M7) |
+| 24 | `VmConfig.jit` 3: JIT-check (M7) |

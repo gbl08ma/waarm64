@@ -16,7 +16,7 @@ and the exact-step boots.
 | Lockstep | `tests/jit-lockstep.test.ts` | the integer and FP guests (user mode) and the integer guest at EL1 (MMU off and on), JIT and JIT-stress vs interpreter, `Cpu` + RAM checksum every chunk; 20M steps per JIT case in CI |
 | Core instances on one memory | `tests/threads.test.ts` (Node workers); `tests/browser.test.ts` (Chromium workers) | three concurrent instances (interpreter, JIT, JIT) with their own stack, TLS and table run the integer guest to the reference's exact state (M7) |
 | JIT plumbing | `tests/jit.test.ts` | install, IC IVAU invalidation (also across chains), the stale-code checker, call/return chaining, tier-up |
-| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF) |
+| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF), broadcast maintenance (`maint`, 4 vCPUs: every TLBI …IS flavor, IC IVAU and IALLUIS on code the others run; its IC planted out, JIT-check's stale-code checker must trap) |
 | kvm-unit-tests | `core/tests/kvm_unit_tests.rs`; `tests/boot-node.test.ts` | selftest (incl. smp), psci, gicv3-ipi, gicv3-active, timer, cache |
 | Buildroot boot and device test | `core/tests/boot.rs`; `tests/boot-node.test.ts`; `tests/browser.test.ts` | Linux boots, virtio console/rng/blk/net/9p/input, framebuffer, realtime mode, writable overlay |
 | LTP subset + arm64 kselftests | `core/tests/ltp.rs` (interpreter, each result against its table); `tests/boot-node.test.ts` (JIT) | 93 syscall tests; `syscall-abi`, `ptrace`, `hwcap`, `tpidr2`, `tags_test`, signal tests |
@@ -155,6 +155,9 @@ start one target must get ALREADY_ON or ON_PENDING).
   when a change targets eviction or invalidation; for coverage per minute prefer short variants
   (a tiny cache with the default threshold, compile-on-sight with a big cache, tier-up after one
   entry).
+- **JIT-check** (`VmConfig.jit` 3: compile on sight into the full-size cache, with the checker)
+  finds stale blocks JIT-stress's 4-region cache evicts before they're entered again; the `maint`
+  test uses it (code rewritten by another vCPU).
 - **Planted bugs:** every new emitter rule gets deliberately broken once (a carry, a condition, a
   write-back, a fusion taken when the registers differ, a swapped swizzle operand, …) and the
   tests must fail. After a planted-bug experiment, restore the source **and rebuild the wasm**,

@@ -8,7 +8,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 
-export const ABI = 23;
+export const ABI = 24;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -139,8 +139,8 @@ export type BootOptions = {
   framebuffer?: { width: number; height: number };
   /** Where in RAM the kernel goes (default 2 MiB); 0 for the bare-metal tests, linked at the start of RAM. */
   kernelOffset?: number;
-  /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress. */
-  jit?: 0 | 1 | 2;
+  /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress, 3 JIT-check (ABI 24). */
+  jit?: 0 | 1 | 2 | 3;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
   /** `VmConfig.ncpus` (ABI 21): vCPUs, run round-robin on this thread (default 1). */

@@ -83,7 +83,10 @@ the interpreter's own code.
   flushed (slots freed, modules left to the GC). Alpine's boot compiles ~57K and Debian's ~110K,
   so neither flushes. Per-module eviction is backlog.
 - **Modes** (`jit::Config`; `VmConfig.jit`): 1 = the default above; 2 = **JIT-stress**: threshold
-  0, batch 1, a 4-region cache, `region_after` 1 and the stale-code checker. Tests also use a
+  0, batch 1, a 4-region cache, `region_after` 1 and the stale-code checker; 3 = **JIT-check**:
+  the same with the full-size cache and `region_after` 0 (the 4-region cache evicts most blocks
+  before they're entered again, so JIT-stress's checker misses stale code that lives longer, e.g.
+  code another vCPU rewrote without an IC). Tests also use a
   forced mode (threshold 0, batch 1, a big cache, `region_after` 0: regions at once). The
   user-mode `jit_new` takes all five knobs.
 - The sweeps of threshold (2–200), batch size, timeout and `region_after` after M6's chunk change
