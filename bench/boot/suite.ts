@@ -46,21 +46,23 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
  * by the text after "webpc: ") and to the end, and the counters. `test`: the
  * device tests' devices and a 640×480 framebuffer (web/vm.ts `testDevices`).
  */
-export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
+export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; ncpus?: number; parallel?: boolean; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
   const devices = img.test ? testDevices(img.disk) : guestDevices(img.disk);
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
-  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, idleLimitMs: 30_000 });
+  const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000 });
   await onVm?.(vm);
   let console = '';
   let scanned = 0;
   const marks: Record<string, number> = {};
   const t0 = performance.now();
   for (;;) {
-    const r = vm.run(CHUNK);
+    // Parallel mode returns at least every 50 ms (web/vm.ts `runAsync`).
+    const r = o.parallel ? await vm.runAsync(CHUNK) : vm.run(CHUNK);
     console += vm.drain();
     const now = performance.now() - t0;
     const end = console.lastIndexOf('\n') + 1; // whole lines only
-    for (const m of console.slice(scanned, end).matchAll(/webpc: ([^\r\n]*)/g)) {
+    // Not in the kernel's echo of its command line (Debian's runs `echo webpc: debian`).
+    for (const m of console.slice(scanned, end).replace(/^.*Kernel command line:.*$/gm, '').matchAll(/webpc: ([^\r\n]*)/g)) {
       if (m[1] in marks) continue;
       marks[m[1]] = now;
       o.onMark?.(m[1], vm);
@@ -70,10 +72,12 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
     if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) continue;
     const total = performance.now() - t0;
     vm.close();
+    // The guest's counter read 0 at boot (a vCPU worker's clock behind the VM's; web/vm.ts `clockOffset`).
+    if (/Missing cycle counter/.test(console)) throw new Error(`the counter didn't run at boot:\n${console}`);
     if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !/webpc: test (exit 0|ok)/.test(console)) {
       throw new Error(`boot failed: exit ${r.kind} at pc 0x${vm.pc().toString(16)}\n${console}`);
     }
-    return { init: marks['init'], total, marks, console, stats: vm.stats(), helpers: vm.helperReport().slice(0, 30) };
+    return { init: marks['init'], total, marks, console, stats: vm.stats(), cpus: vm.cpuStats(), helpers: vm.helperReport().slice(0, 30) };
   }
 }
 
@@ -82,7 +86,6 @@ export async function runAll(o: Options, image = 'Image', jit: 0 | 1 = 0): Promi
   return jit ? s.map((x) => ({ ...x, name: x.name.replace('boot_', 'boot_jit_') })) : s;
 }
 
-/** Cold and warm boots of `img`: ms to the `first` marker and to power-off. */
 /**
  * A full GC before each timed boot (bench/run.ts runs Chromium with
  * --expose-gc): V8 reuses the compiled code of a wasm module whose bytes match
@@ -93,6 +96,7 @@ export async function runAll(o: Options, image = 'Image', jit: 0 | 1 = 0): Promi
  */
 const fresh = () => (globalThis as { gc?: () => void }).gc?.();
 
+/** Cold and warm boots of `img`: ms to the `first` marker and to power-off. */
 async function bootTimes(o: Options, img: Img & { wasm: Uint8Array<ArrayBuffer> }, first: string, params: Record<string, unknown>, n = { cold: 5, warmup: 3, warm: 10 }): Promise<Sample[]> {
   if (o.quick) n = { cold: 2, warmup: 1, warm: 3 };
   const cold = { init: [] as number[], total: [] as number[] };
@@ -225,6 +229,47 @@ async function alpineCrypto(o: Options, extra = '', crypto = false): Promise<Sam
 
 /** The crypto phase's check line (SHA-1, SHA-256, AES-128-CBC, AES-256-CTR, AES-128-CBC decrypt), from arm64 hardware. */
 const CRYPTO_CHECK = 'crypto: 82a2bffdaeb5d862 0e66434871168f25 9705ef3ce219893e 5aa8ca270a880d01 63bd397e0cc0e537';
+
+/**
+ * M7's scaling curve (docs/benchmarking.md "SMP"): parallel SMP (a worker per
+ * vCPU, realtime) under the JIT on N vCPUs, the Ns alternated within each
+ * round so session drift hits them alike. `alpine`: Alpine's boot test to
+ * power-off and to its local.d script; `debian`: Debian's; `user`: Alpine's userspace phases with
+ * `webpc.threads=N` (N copies of each phase's work), ms per phase. One untimed
+ * boot at each N first (the page's caches, V8's code for the core). Per-vCPU
+ * counters of the last sample go into the params.
+ */
+async function smp(o: Options, what: 'alpine' | 'debian' | 'user', ns: number[], rounds: number): Promise<Sample[]> {
+  const d = what === 'debian' ? DISTROS.debian : DISTROS.alpine;
+  const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${d.initrd}`), get(`../../target/images/${d.kernel}`)]);
+  const disk = what === 'user' ? '../../target/images/alpine-user/rootfs-user.ext4' : `../../target/images/${d.disk}`;
+  const img = { ...base, kernel, initrd, disk: new URL(disk, import.meta.url).href, cmdline: d.cmdline, ramSize: 1 << 30, test: what !== 'user', jit: 1 as const };
+  const module = await WebAssembly.compile(img.wasm);
+  // Boots: also to the distro's first marker (its local.d script), since realtime power-off includes busybox init's 2 s of sleeps.
+  const phases = what === 'user' ? [...USER_PHASES, 'total'] : ['script', 'total'];
+  const out = new Map<string, Sample>();
+  const one = (n: number) => boot(module, img, undefined, { cmdline: what === 'user' ? `${d.cmdline} webpc.threads=${n}` : d.cmdline, ncpus: n, parallel: true });
+  for (const n of ns) await one(n);
+  for (let i = 0; i < (o.quick ? 1 : rounds); i++) {
+    for (const n of ns) {
+      fresh();
+      const r = await one(n);
+      const ms: Record<string, number> = { total: r.total };
+      for (const p of USER_PHASES) if (what === 'user') ms[p] = between(r, p);
+      if (what !== 'user') ms.script = Object.entries(r.marks).find(([m]) => m.startsWith(what))![1];
+      for (const p of phases) {
+        const name = `smp_${what}_jit_n${n}_${p}`;
+        if (!out.has(name)) out.set(name, { name, unit: 'ms', params: {}, samples: [] });
+        const s = out.get(name)!;
+        s.samples.push(ms[p]);
+        s.params = { distro: what === 'debian' ? 'debian' : 'alpine', cmdline: d.cmdline, threads: what === 'user' ? n : undefined, ncpus: n, parallel: true, jit: 1, steps: r.stats.steps, counters: r.stats, cpus: r.cpus };
+      }
+      const cpus = r.cpus.map((c) => `${(c.steps / 1e6).toFixed(0)}M/${c.jit.blocks}b/${(c.jit.compileNs / 1e6).toFixed(0)}ms`).join(' ');
+      o.log?.(`smp_${what} n=${n}: ${phases.map((p) => `${p} ${ms[p].toFixed(0)}`).join(', ')} ms; per vCPU steps/regions/compile: ${cpus}`);
+    }
+  }
+  return [...out.values()];
+}
 
 /** Debian 13 under the JIT to power-off (M6: timed once; long, so one cold and one warm boot). */
 async function bootDebian(o: Options): Promise<Sample[]> {
@@ -359,4 +404,11 @@ export const suite = {
   // Realtime (M6.5).
   alpine_crypto_jit: (o: Options) => alpineCrypto(o),
   alpine_crypto_ce_jit: (o: Options) => alpineCrypto(o, '', true), // the crypto extensions on (VmConfig.features)
+  // M7: parallel SMP at N = 1, 2, 4 vCPUs, alternated; `…_8` once as a check (N + 2 threads: more than the dev VM's 8).
+  smp_alpine_jit: (o: Options) => smp(o, 'alpine', [1, 2, 4], 5),
+  smp_user_jit: (o: Options) => smp(o, 'user', [1, 2, 4], 2),
+  smp_debian_jit: (o: Options) => smp(o, 'debian', [1, 2, 4], 1),
+  smp_user_jit_4: (o: Options) => smp(o, 'user', [4], 2), // one N, for A/B sessions
+  smp_alpine_jit_8: (o: Options) => smp(o, 'alpine', [8], 2),
+  smp_user_jit_8: (o: Options) => smp(o, 'user', [8], 1),
 };

@@ -539,7 +539,16 @@ impl<'a> Mmu<'a> {
             .mem
             .host(w.pa, len, access)
             .map_err(|f| Fault { addr: va, ..f })?;
+        // Parallel SMP doesn't cache global entries in the TTBR0 half: then
+        // a vCPU's TLB holds nothing there but its current ASID's, which a
+        // TLBI IS for another ASID lets it skip waiting for (vm/parallel.rs
+        // `broadcast`). Linux maps nothing global there.
+        let skip = !w.ng
+            && va >> 55 & 1 == 0
+            && c.features & crate::cpu::FEATURE_PARALLEL != 0
+            && c.features & crate::cpu::FEATURE_SMP != 0;
         if let Some(t) = &mut self.tlb
+            && !skip
             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
         {
             let addend = (page as usize as u64).wrapping_sub(va & !0xfff);

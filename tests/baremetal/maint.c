@@ -4,6 +4,11 @@
 // - TLBI, one round per ...IS flavor: each secondary reads through TEST_VA
 //   (its TLB now holds the translation), CPU 0 remaps TEST_VA to the next page
 //   and runs the TLBI + DSB ISH, and each secondary must read the new page.
+// - TLBI by ASID while the secondaries run another ASID (M7 loop 8: parallel
+//   SMP doesn't wait for them then): with ASID 6, the new page once they're
+//   back on ASID 5 (their ASID 5 entries went with the TLBI); and a global
+//   mapping of TEST_VA, which TLBI VAE1IS for ASID 5 drops on CPUs running
+//   ASID 6 too.
 // - IC IVAU, then IC IALLUIS: each secondary calls a function in a code page
 //   often enough for the JIT to compile it (its batch goes out after 1M
 //   dispatched steps: docs/jit.md "Compile policy"), CPU 0 rewrites it (DC CVAU, DSB
@@ -29,7 +34,7 @@
 typedef u64 table[512] __attribute__((aligned(4096)));
 static table l0, l1, l2_test, l3_test;
 #define NTLBI 6
-static u64 pages[NTLBI + 1][512] __attribute__((aligned(4096)));
+static u64 pages[NTLBI + 3][512] __attribute__((aligned(4096)));
 // The rewritten function (`movz w0, #1; ret`), alone in its page.
 static u32 code[1024] __attribute__((aligned(4096))) = {0x52800020, 0xd65f03c0};
 #define MOVZ_W0(v) (0x52800000u | (u32)(v) << 5)
@@ -75,6 +80,17 @@ static void next_phase(void) {
 
 static u64 read_test(void) { return *(volatile u64 *)TEST_VA; }
 
+static void set_asid(u64 asid) {
+  set_sysreg(ttbr0_el1, (u64)l0 | asid << 48);
+  isb();
+}
+
+// TEST_VA to pages[r], nG or global, then TLBI VAE1IS for ASID 5 (+ DSB ISH).
+static void remap_asid5(u64 r, u64 ng) {
+  l3_test[0] = (u64)pages[r] | PAGE | ng;
+  __asm__ volatile("dsb ishst; tlbi vae1is, %0; dsb ish; isb" : : "r"(ASID << 48 | TEST_VA >> 12) : "memory");
+}
+
 static void remap(u64 r) {
   l3_test[0] = (u64)pages[r] | PAGE | NG;
   u64 va = TEST_VA >> 12, asid_va = ASID << 48 | va;
@@ -116,6 +132,13 @@ void secondary_main(void) {
     PHASE(read_test() == 1000 + r - 1, 100 + 10 * r + c); // cached: the old page
     PHASE(read_test() == 1000 + r, 200 + 10 * r + c);     // after the TLBI: the new one
   }
+  // Round 7: on ASID 6 (reading pages[6], the last round's page), then back on 5.
+  PHASE((set_asid(6), read_test() == 1000 + NTLBI), 150 + c);
+  PHASE((set_asid(ASID), read_test() == 1000 + NTLBI + 1), 250 + c);
+  // Round 8: TEST_VA global (pages[7]), read on ASID 6; after the TLBI for ASID 5, the new page.
+  PHASE((set_asid(6), read_test() == 1000 + NTLBI + 1), 160 + c);
+  PHASE(read_test() == 1000 + NTLBI + 2, 260 + c);
+  set_asid(ASID);
   for (u64 k = 0; k < 2; k++) {
     u64 ok = 1;
     for (int i = 0; i < 1 << 17; i++) ok &= f() == 1 + k;
@@ -136,7 +159,7 @@ int main(void) {
   l2_test[0] = (u64)l3_test | TABLE;
   l3_test[0] = (u64)pages[0] | PAGE | NG;
   mmu_on();
-  for (u64 r = 0; r <= NTLBI; r++) pages[r][0] = 1000 + r;
+  for (u64 r = 0; r <= NTLBI + 2; r++) pages[r][0] = 1000 + r;
   check(read_test() == 1000, 1);
 
   for (u64 c = 1; c < NCPU; c++)
@@ -147,6 +170,18 @@ int main(void) {
     check(read_test() == 1000 + r, 10 + r);
     next_phase();
   }
+  // Round 7: the secondaries go to ASID 6; TEST_VA (nG) to pages[7] for ASID 5.
+  next_phase();
+  remap_asid5(NTLBI + 1, NG);
+  next_phase();
+  // Round 8: TEST_VA global (pages[7] still: VMALLE1IS drops the nG entries),
+  // read by the secondaries on ASID 6; then to pages[8], TLBI for ASID 5.
+  l3_test[0] = (u64)pages[NTLBI + 1] | PAGE;
+  __asm__ volatile("dsb ishst; tlbi vmalle1is; dsb ish; isb" ::: "memory");
+  next_phase();
+  remap_asid5(NTLBI + 2, 0);
+  check(read_test() == 1000 + NTLBI + 2, 17);
+  next_phase();
   for (u64 k = 0; k < 2; k++) {
     next_phase();
     rewrite(2 + k, k == 1);

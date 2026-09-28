@@ -36,6 +36,21 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
   phase takes a thread/process count so M7 can rerun them at N vCPUs. `webpc.phase=crypto` runs
   `openssl speed` instead; `webpc.armcap=X` sets `OPENSSL_armcap`. `7z b` was left out (12 s
   natively for one pass).
+- **SMP (M7):** `smp_alpine_jit`, `smp_user_jit`, `smp_debian_jit` run parallel SMP (a worker
+  per vCPU, realtime, JIT) at N = 1, 2, 4 vCPUs, the Ns alternated within each round; `…_8` once
+  as a check, `smp_user_jit_4` alone for A/B sessions. Boots report the time to the distro's
+  local.d script and to power-off (realtime power-off includes busybox init's 2 s of sleeps after
+  SIGTERM and SIGKILL); `smp_user_jit` runs the userspace phases with `webpc.threads=N` (N copies
+  of each phase's work, so perfect scaling keeps the time). Per-vCPU counters (`cpuStats()`) go
+  into the params; a boot whose console says "Missing cycle counter" fails (the vCPU workers' clock,
+  platform.md "Time").
+- **The host limits N:** the M4 has 4 performance and 6 efficiency cores, and the dev VM's 8 vCPUs
+  run on either. Once more than ~4 host threads are busy (N vCPU workers, the coordinator, the
+  device worker), threads that sleep and wake land on efficiency cores: four independent
+  one-vCPU VMs slowed each other's process churn from 1.44 to 3.3 s, and 4, 5, 7 busy threads
+  of any kind beside one VM to 2.1, 2.5, 3.3 s (its compute phases lost 10–40%); three threads
+  hogging cache or DRAM bandwidth didn't slow it (M7 loop 8). Read N = 4 on this host as a lower
+  bound.
 - `coremark_vm_jit`: CoreMark sizes its run from calibration, which a cold JIT slows, so a run can
   fall under CoreMark's 10 s rule (valid results, flagged).
 - CoreMark: `bench/interp/build-coremark.sh` fetches EEMBC's pinned sources (unmodified; our port
@@ -86,6 +101,10 @@ Chromium 153 on the M4 VM, JIT, crypto extensions on (M6 exit table and M6.5 exi
 | EL1 guest, MMU off / on | 4932 / 4045 MIPS | | |
 | `openssl speed` 16 KiB: AES-128-GCM / AES-128-CBC / SHA-256 | 232 / 151 / 298 MB/s | | |
 
+Parallel SMP (M7 loop 8, `bench/boot/REPORT.md`): Alpine to its script 8.4 / 9.1 / 10.1 s on 1 /
+2 / 4 vCPUs, Debian 42.3 / 33.5 / 29.6 s; the userspace phases with N copies of the work 25.2 /
+27.3 / 31.6 s (compute phases 3.4–3.8× throughput at 4, process churn 1.7×).
+
 Interpreter: ~143 MIPS integer, ~20 FP; Alpine boots in 46.9 s interpreted. I/O (M4 step 7,
 interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 full-size pings/s.
 
@@ -96,19 +115,26 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
 | Mixed / realistic | `7z b`, compiling a C file with GCC in the guest (heavy code churn) |
 | Kernel paths | lmbench `lat_syscall`, `lat_pagefault`, `lat_ctx` |
 | JIT behavior | compile latency p50/p99, % time interpreted, code bytes, invalidations |
-| SMP (M7) | the userspace phases at N vCPUs (the N = 1 reference: 22.9 s, `bench/boot/REPORT.md` "M7 loop 0"), parallel `make` |
+| SMP (M7) | parallel `make` (not in the image yet) |
 | I/O | a write benchmark (a scratch disk behind an overlay); re-run 9p and net under the JIT |
 
 ## Instrumentation and profiling
 
 - **Counters** in shared memory ([abi.md](abi.md) "Counters"): steps, exceptions by EC, IRQs, TLB
-  misses/walks/flushes, the JIT's compile and execution statistics. The benchmarks record them in
+  misses/walks/flushes, the JIT's compile and execution statistics, and parallel SMP's (DSB waits
+  and their time, broadcasts, drains, idles, platform-lock contention, WFEs, time out of the core),
+  per vCPU (`cpuStats()`). The benchmarks record them in
   each result's params.
 - **The helper histogram** (`jit_helper_report`, `web/vm.ts` `helperReport`): helper calls by
   instruction class, most frequent first; it says what to inline next.
 - **PC sampling** (`web/sampler-worker.ts`, `node bench/boot/profile.ts`): reads `Counters.pc` every
   20 µs beside the vCPU worker; symbolized with `System.map` (user space as one bucket). The PC is
   published once per chunk, so its resolution is a chunk (32K steps): coarse under the JIT.
+- **perf with parallel SMP:** `--perf-prof`'s jitdump misses the code worker isolates compile (the
+  guest's blocks run in the vCPU workers: 73% of samples unknown); `--perf-basic-prof` (a
+  `/tmp/perf-<pid>.map`) names them. Guest blocks are thousands of symbols that round to 0.00% in
+  `perf report`: aggregate `perf script -F tid,time,ip,sym` by guest VA (`<va>_pa<pa>` names) and
+  the kernel's System.map (Alpine's is in its rootfs, `/boot/System.map-*`). The VM has no PMU.
 - **perf with V8's `--perf-prof`** (dev-only tool): `perf record -k mono -F 2000 -o x.data node
   --perf-prof …; perf inject -j -i x.data -o x.jit.data; perf report -i x.jit.data --no-children
   --sort sym`; `perf annotate -s "JS:<name>-<n>-turbofan"` for machine code with samples. Run from

@@ -95,6 +95,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 66–69 | TLB hits (not counted: 0), misses, walks, flushes (published once per chunk) |
 | 70 | current PC, published at every chunk end (the PC sampler reads it) |
 | 71–90 | `jit::Stats`: regions compiled, modules, wasm bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes; instructions compiled inline and as helpers, inline steps run; static flag setters stored/elided, conditions direct/computed/from memory; blocks in regions, back-edges, tier-ups; stale blocks tolerated (parallel, 25) |
+| 91–100 | parallel SMP (26): DSBs that waited for TLBI IS, ns waited; TLBI IS and IC operations broadcast; queue drains that applied something; IDLE exits (WFI); platform-lock acquisitions that found it held, ns waited; WFEs (each a yield); ns out of `vm_run_cpu` between runs (idle or in the host) |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 

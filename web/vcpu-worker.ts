@@ -7,7 +7,7 @@
 // its run (PSCI, UNIMPLEMENTED, STOP) or its error to the coordinator
 // (web/vm.ts `bootVm`). Runs in a browser worker or a Node worker thread.
 import { EV_CONFIG, ring } from './devices.ts';
-import { Exit, instantiateThread, type ThreadBlock } from './vm.ts';
+import { clockOffset, Exit, instantiateThread, type ThreadBlock } from './vm.ts';
 
 export type VcpuJob = {
   module: WebAssembly.Module;
@@ -20,6 +20,8 @@ export type VcpuJob = {
   ctl: number;
 };
 export type VcpuEnd = { type: 'exit'; cpu: number; kind: number; value: bigint; x: bigint[] } | { type: 'error'; cpu: number; message: string };
+/** A clock query to the coordinator (web/vm.ts `clockOffset`) and its answer, `t` its clock. */
+export type VcpuClock = { type: 'clock'; t?: number };
 
 type Ex = {
   vm_run_cpu(vm: number, cpu: number, budget: bigint): number;
@@ -30,9 +32,16 @@ type Ex = {
 /** Steps per `vm_run_cpu` call: it returns early on anything the worker handles. */
 const BUDGET = 100_000_000n;
 const NONE = 0xffff_ffff_ffff_ffffn;
+/**
+ * How long an idle vCPU polls its wake word before sleeping on it (M7 loop 8:
+ * the stress's pingpong, a futex hand-off per round, went from 34 to 10 µs a
+ * round in Node; 20 µs polled as well; the boots and userspace phases didn't
+ * move).
+ */
+const SPIN_MS = 0.05;
 
-function run(j: VcpuJob): VcpuEnd {
-  const ex = instantiateThread(j.module, j.memory, j.block).exports as unknown as Ex;
+function run(j: VcpuJob, clock: number): VcpuEnd {
+  const ex = instantiateThread(j.module, j.memory, j.block, clock).exports as unknown as Ex;
   const mem = j.memory;
   const wake = new Int32Array(mem.buffer, ex.vm_cpu_signal(j.vm, j.cpu), 1);
   const bell = new Int32Array(mem.buffer, j.bell, 2);
@@ -48,7 +57,12 @@ function run(j: VcpuJob): VcpuEnd {
       case Exit.IDLE: {
         // Until its deadline or a wake-up; an off vCPU (no deadline) rechecks every second.
         const ms = e[2] === NONE ? 1000 : Number(e[2]) / 1e6;
-        Atomics.wait(wake, 0, Number(e[8]) | 0, ms);
+        const word = Number(e[8]) | 0;
+        // Polls first: a wake-up through Atomics.wait takes ~17 µs in the dev VM.
+        const t0 = performance.now();
+        const spin = Math.min(ms, SPIN_MS);
+        while (Atomics.load(wake, 0) === word && performance.now() - t0 < spin);
+        Atomics.wait(wake, 0, word, ms - (performance.now() - t0));
         continue;
       }
       case Exit.TX_FULL:
@@ -66,18 +80,33 @@ function run(j: VcpuJob): VcpuEnd {
   }
 }
 
-function start(j: VcpuJob): VcpuEnd {
-  try {
-    return run(j);
-  } catch (err) {
-    return { type: 'error', cpu: j.cpu, message: String((err as Error).stack ?? err) };
-  }
+/**
+ * The job, then the coordinator's clock (the answers to `clockOffset`'s
+ * queries), then the run: it blocks this thread until the VM stops.
+ */
+function serve(post: (m: VcpuEnd | VcpuClock) => void, listen: (on: (m: VcpuJob | VcpuClock) => void) => void, done = () => {}) {
+  let job: VcpuJob | undefined;
+  let answer: ((t: number) => void) | undefined;
+  listen((m) => {
+    if ('type' in m) return answer?.(m.t!);
+    job = m;
+    const ask = () => new Promise<number>((resolve) => { answer = resolve; post({ type: 'clock' }); });
+    void clockOffset(ask).then((clock) => {
+      try {
+        post(run(job!, clock));
+      } catch (err) {
+        post({ type: 'error', cpu: job!.cpu, message: String((err as Error).stack ?? err) });
+      }
+      done();
+    });
+  });
 }
 
 if ('WorkerGlobalScope' in globalThis) {
-  const self = globalThis as unknown as { onmessage: (e: MessageEvent<VcpuJob>) => void; postMessage(m: unknown): void };
-  self.onmessage = (e) => self.postMessage(start(e.data));
+  const self = globalThis as unknown as { onmessage: (e: MessageEvent<VcpuJob | VcpuClock>) => void; postMessage(m: unknown): void };
+  serve((m) => self.postMessage(m), (on) => { self.onmessage = (e) => on(e.data); });
 } else {
   const { parentPort } = await import('node:worker_threads');
-  parentPort!.once('message', (j: VcpuJob) => parentPort!.postMessage(start(j)));
+  // Unref'd once the run ends, so the thread can exit.
+  serve((m) => parentPort!.postMessage(m), (on) => parentPort!.on('message', on), () => parentPort!.unref());
 }

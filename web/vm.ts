@@ -8,9 +8,9 @@
 // its own worker (web/vcpu-worker.ts) and this thread coordinates them.
 import { Devices, EV_CONFIG, deviceEntry, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
-import type { VcpuEnd, VcpuJob } from './vcpu-worker.ts';
+import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 25;
+export const ABI = 26;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -39,11 +39,31 @@ type Exports = {
  * `jit_install` (core/src/jit). The JIT works once `jit.bind` has the core's
  * instance; until then `jit_install` fails and the core only interprets.
  */
-export function coreImports(memory: WebAssembly.Memory) {
+export function coreImports(memory: WebAssembly.Memory, clock = performance.timeOrigin) {
   const jit = jitHost(memory);
-  // One clock for every instance: each worker's performance.now() starts at its own creation.
-  const now_ms = () => performance.timeOrigin + performance.now();
+  const now_ms = () => clock + performance.now();
   return { env: { memory, now_ms, jit_install: jit.install }, jit };
+}
+
+/**
+ * The core's clock (`env.now_ms`) is `performance.timeOrigin + performance.now()`
+ * on the thread that creates the VM. Another thread's `timeOrigin` doesn't agree
+ * with it: Chromium derives a new context's from a wall clock, which drifted
+ * ~1% from the monotonic one in the dev VM, so a worker started a minute into a
+ * page ran ~0.6 s behind it and the guest's counter read 0 for as long (M7
+ * loop 8). So a vCPU worker measures the creator's clock instead, through
+ * `ask` (a round trip to it), and keeps the estimate with the shortest round
+ * trip; the result is what to add to its own `performance.now()`.
+ */
+export async function clockOffset(ask: () => Promise<number>, rounds = 16) {
+  let best = { rtt: Infinity, clock: performance.timeOrigin };
+  for (let i = 0; i < rounds; i++) {
+    const t1 = performance.now();
+    const theirs = await ask();
+    const t2 = performance.now();
+    if (t2 - t1 < best.rtt) best = { rtt: t2 - t1, clock: theirs - (t1 + t2) / 2 };
+  }
+  return best.clock;
 }
 
 /** Each extra core instance's stack (docs/abi.md "Many core instances on one memory"). */
@@ -68,9 +88,10 @@ export function threadAlloc(ex: WebAssembly.Exports): ThreadBlock {
  * Instantiates the core on `memory` for another thread (a worker): its start
  * function finds the memory initialized, then, before any other call, the
  * instance gets its own stack and TLS from `block`. Its JIT is bound to it.
+ * `clock`: see {@link clockOffset}.
  */
-export function instantiateThread(module: WebAssembly.Module, memory: WebAssembly.Memory, block: ThreadBlock) {
-  const imports = coreImports(memory);
+export function instantiateThread(module: WebAssembly.Module, memory: WebAssembly.Memory, block: ThreadBlock, clock?: number) {
+  const imports = coreImports(memory, clock);
   const instance = new WebAssembly.Instance(module, imports);
   (instance.exports.__stack_pointer as WebAssembly.Global).value = block.stack + THREAD_STACK;
   (instance.exports.__wasm_init_tls as (tls: number) => void)(block.tls);
@@ -129,7 +150,12 @@ export const Counter = {
   JIT_TIER_UPS: 89,
   // ABI 25: stale blocks a parallel vCPU's checker tolerated.
   JIT_STALE: 90,
-  LEN: 91,
+  // ABI 26 (parallel SMP): DSBs that waited for TLBI IS and their ns, TLBI IS and IC broadcasts,
+  // queue drains, IDLE exits, contended platform-lock acquisitions and their ns, WFEs.
+  PAR_DSB_WAITS: 91, PAR_DSB_WAIT_NS: 92, PAR_TLBI_IS: 93, PAR_IC: 94, PAR_DRAINS: 95, PAR_IDLES: 96, PAR_LOCK_CONTENDED: 97, PAR_LOCK_WAIT_NS: 98, PAR_WFES: 99,
+  // ns out of vm_run_cpu between runs (idle, or in the host).
+  PAR_OUT_NS: 100,
+  LEN: 101,
 } as const;
 
 /**
@@ -327,22 +353,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /** Sets bits in the signal word and wakes every vCPU (docs/abi.md). */
     signal: raise,
     /** A snapshot of the counters, summed over the vCPUs; exceptions by EC only where non-zero. */
-    stats() {
-      const n = counter;
-      const exceptions: Record<string, number> = {};
-      for (let ec = 0; ec < 64; ec++) if (n(Counter.EXCEPTIONS + ec)) exceptions[`0x${ec.toString(16)}`] = n(Counter.EXCEPTIONS + ec);
-      return {
-        steps: n(Counter.STEPS), irqs: n(Counter.IRQS), exceptions, tlbMisses: n(Counter.TLB_MISSES), tlbWalks: n(Counter.TLB_WALKS), tlbFlushes: n(Counter.TLB_FLUSHES),
-        jit: {
-          blocks: n(Counter.JIT_BLOCKS), modules: n(Counter.JIT_MODULES), bytes: n(Counter.JIT_BYTES), compileNs: n(Counter.JIT_COMPILE_NS),
-          steps: n(Counter.JIT_STEPS), dispatches: n(Counter.JIT_DISPATCHES), invalidations: n(Counter.JIT_INVALIDATIONS), flushes: n(Counter.JIT_FLUSHES),
-          inline: n(Counter.JIT_INLINE), helpers: n(Counter.JIT_HELPERS), inlineSteps: n(Counter.JIT_INLINE_STEPS),
-          flagsStored: n(Counter.JIT_FLAGS_STORED), flagsElided: n(Counter.JIT_FLAGS_ELIDED),
-          condDirect: n(Counter.JIT_COND_DIRECT), condComputed: n(Counter.JIT_COND_COMPUTED), condMemory: n(Counter.JIT_COND_MEMORY),
-          regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS), stale: n(Counter.JIT_STALE),
-        },
-      };
-    },
+    stats: () => stats(counter),
+    /** The same for each vCPU's own block (parallel mode; round-robin counts everything in vCPU 0's). */
+    cpuStats: () => blocks.map((b) => stats((i) => Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)))),
     /** The JIT's helper calls by instruction class, most frequent first (ABI 18; empty without a JIT). */
     helperReport: () => helperReport(ex, memory, ex.vm_cpu(vm, 0)),
     /**
@@ -415,7 +428,29 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       par?.close();
       devices.close();
     },
-    pc: () => new BigUint64Array(memory.buffer, ex.vm_cpu(vm, 0) + 256, 1)[0],
+    /** vCPU `i`'s PC (published once per chunk while it runs). */
+    pc: (i = 0) => new BigUint64Array(memory.buffer, ex.vm_cpu(vm, i) + 256, 1)[0],
+  };
+}
+
+/** A snapshot of counters read through `n` (word index → value); exceptions by EC only where non-zero. */
+function stats(n: (i: number) => number) {
+  const exceptions: Record<string, number> = {};
+  for (let ec = 0; ec < 64; ec++) if (n(Counter.EXCEPTIONS + ec)) exceptions[`0x${ec.toString(16)}`] = n(Counter.EXCEPTIONS + ec);
+  return {
+    steps: n(Counter.STEPS), irqs: n(Counter.IRQS), exceptions, tlbMisses: n(Counter.TLB_MISSES), tlbWalks: n(Counter.TLB_WALKS), tlbFlushes: n(Counter.TLB_FLUSHES),
+    jit: {
+      blocks: n(Counter.JIT_BLOCKS), modules: n(Counter.JIT_MODULES), bytes: n(Counter.JIT_BYTES), compileNs: n(Counter.JIT_COMPILE_NS),
+      steps: n(Counter.JIT_STEPS), dispatches: n(Counter.JIT_DISPATCHES), invalidations: n(Counter.JIT_INVALIDATIONS), flushes: n(Counter.JIT_FLUSHES),
+      inline: n(Counter.JIT_INLINE), helpers: n(Counter.JIT_HELPERS), inlineSteps: n(Counter.JIT_INLINE_STEPS),
+      flagsStored: n(Counter.JIT_FLAGS_STORED), flagsElided: n(Counter.JIT_FLAGS_ELIDED),
+      condDirect: n(Counter.JIT_COND_DIRECT), condComputed: n(Counter.JIT_COND_COMPUTED), condMemory: n(Counter.JIT_COND_MEMORY),
+      regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS), stale: n(Counter.JIT_STALE),
+    },
+    par: {
+      dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),
+      drains: n(Counter.PAR_DRAINS), idles: n(Counter.PAR_IDLES), lockContended: n(Counter.PAR_LOCK_CONTENDED), lockWaitNs: n(Counter.PAR_LOCK_WAIT_NS), wfes: n(Counter.PAR_WFES), outNs: n(Counter.PAR_OUT_NS),
+    },
   };
 }
 
@@ -429,7 +464,7 @@ const STOP = 1;
  * docs/abi.md).
  */
 function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; raise: (bits: number) => void }) {
-  type Handle = { post(job: VcpuJob): void; terminate(): void };
+  type Handle = { post(m: VcpuJob | VcpuClock): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
   let error: Error | undefined;
@@ -439,6 +474,11 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
   const bump = () => {
     Atomics.add(ctl, 0, 1);
     Atomics.notify(ctl, 0);
+  };
+  /** A worker's clock query (`clockOffset`), or its end. */
+  const heard = (h: Handle, m: VcpuEnd | VcpuClock) => {
+    if (m.type === 'clock') h.post({ type: 'clock', t: performance.timeOrigin + performance.now() });
+    else ended(m);
   };
   const ended = (m: VcpuEnd) => {
     stopped++;
@@ -451,15 +491,17 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     const url = new URL('./vcpu-worker.ts', import.meta.url);
     if (typeof Worker !== 'undefined') {
       const w = new Worker(url, { type: 'module' });
-      w.onmessage = (e: MessageEvent<VcpuEnd>) => ended(e.data);
+      const h: Handle = { post: (m) => w.postMessage(m), terminate: () => w.terminate() };
+      w.onmessage = (e: MessageEvent<VcpuEnd | VcpuClock>) => heard(h, e.data);
       w.onerror = (e) => ended({ type: 'error', cpu: -1, message: e.message });
-      return { post: (j) => w.postMessage(j), terminate: () => w.terminate() };
+      return h;
     }
     const { Worker: NodeWorker } = await import('node:worker_threads');
     const w = new NodeWorker(url);
-    w.on('message', ended);
+    const h: Handle = { post: (m) => w.postMessage(m), terminate: () => void w.terminate() };
+    w.on('message', (m: VcpuEnd | VcpuClock) => heard(h, m));
     w.on('error', (e: Error) => ended({ type: 'error', cpu: -1, message: String(e.stack ?? e) }));
-    return { post: (j) => w.postMessage(j), terminate: () => void w.terminate() };
+    return h;
   };
   const start = () => Array.from({ length: c.ncpus }, async (_, cpu) => {
     const h = await spawn();

@@ -41,7 +41,7 @@ use crate::mem::{Access, Fault, FaultKind, Mem};
 use crate::mmu::{Bus, Mmu, Vcpu, walk};
 use crate::pl011::{Pl011, Rings};
 use crate::virtio::{self, DevShared, DeviceEntry, Transport};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 
 mod parallel;
 pub use parallel::{notify, wait};
@@ -185,7 +185,25 @@ pub struct Counters {
     /// and from memory; ABI 15: blocks in the compiled regions; ABI 16:
     /// back-edges; ABI 17: tier-ups; ABI 25: stale blocks tolerated.
     pub jit: [AtomicU64; 20],
+    /// Parallel SMP (ABI 26, `PAR_*`): DSBs that waited for TLBI IS and the
+    /// ns they waited, TLBI IS and IC operations broadcast, queue drains that
+    /// applied something, IDLE exits, platform-lock acquisitions that found
+    /// it held and the ns they waited, WFEs (each ends the chunk), ns spent
+    /// out of `vm_run_cpu` between runs (idle, or in the host).
+    pub par: [AtomicU64; 10],
 }
+
+/// Indexes into [`Counters::par`].
+pub const PAR_DSB_WAITS: usize = 0;
+pub const PAR_DSB_WAIT_NS: usize = 1;
+pub const PAR_TLBI_IS: usize = 2;
+pub const PAR_IC: usize = 3;
+pub const PAR_DRAINS: usize = 4;
+pub const PAR_IDLES: usize = 5;
+pub const PAR_LOCK_CONTENDED: usize = 6;
+pub const PAR_LOCK_WAIT_NS: usize = 7;
+pub const PAR_WFES: usize = 8;
+pub const PAR_OUT_NS: usize = 9;
 
 impl Default for Counters {
     fn default() -> Self {
@@ -200,12 +218,18 @@ impl Default for Counters {
             tlb_flushes: z(),
             pc: z(),
             jit: [const { AtomicU64::new(0) }; 20],
+            par: [const { AtomicU64::new(0) }; 10],
         }
     }
 }
 
 fn bump(a: &AtomicU64) {
-    a.store(a.load(Ordering::Relaxed) + 1, Ordering::Relaxed);
+    add(a, 1);
+}
+
+/// Adds to a counter only its own thread writes (a load and a store, no RMW).
+fn add(a: &AtomicU64, n: u64) {
+    a.store(a.load(Ordering::Relaxed) + n, Ordering::Relaxed);
 }
 
 /// What other threads touch while the vCPUs run. Behind a shared reference
@@ -247,6 +271,15 @@ impl<T> Lock<T> {
 
     pub fn lock(&self) -> MutexGuard<'_, T> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The lock if it's free.
+    pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
+        match self.0.try_lock() {
+            Ok(g) => Some(g),
+            Err(TryLockError::Poisoned(e)) => Some(e.into_inner()),
+            Err(TryLockError::WouldBlock) => None,
+        }
     }
 }
 

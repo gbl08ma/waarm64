@@ -77,7 +77,8 @@ indexes of their instance).
   changes that state first, then bumps the word and notifies it, so the host's `Atomics.wait(word,
   wake)` can't miss a wake-up.
 - **WFI** returns `IDLE` (value: ns to the vCPU's own deadline) unless an interrupt is signaled
-  to it; **WFE** is a yield (it ends the chunk; decision 5), SEV does nothing (no vCPU sleeps in
+  to it (the worker polls its wake word for 50 µs before `Atomics.wait`: a futex wake-up costs
+  ~17 µs in the dev VM, and the stress's pingpong went from 34 to 10 µs a hand-off); **WFE** is a yield (it ends the chunk; decision 5), SEV does nothing (no vCPU sleeps in
   WFE). Measure before making WFE sleep.
 - **CPU_ON:** the caller records the request under the lock and wakes the target; the target's
   own thread applies it (no thread writes another's registers), marking itself on under the same
@@ -118,6 +119,21 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   code another vCPU rewrote is legal to run until this vCPU drains the IC): it drops the block at
   the run loop's entry and counts it (`JIT_STALE`, counter word 90), and only counts mid-chain. Only
   round-robin runs trap.
+- **Only vCPUs that may hold the entries are waited for** (M7 loop 8): TLBI ASIDE1IS, VAE1IS and
+  VALE1IS of a TTBR0-half address are for one ASID, and a vCPU's TLB holds nG entries of its
+  current ASID only (an ASID change drops them), so the DSB skips targets whose published ASID
+  (`CpuPar::asid`, stored before each chunk; `ANY` with the MMU off) differs; they still apply the
+  operation at their next boundary. That needs no global entries in the TTBR0 half, which a TLBI
+  for any ASID drops: parallel SMP doesn't cache them (`Mmu::miss`; Linux maps nothing global
+  there). The issuer fences between the guest's table stores and reading the ASIDs, the target
+  between publishing its ASID and walking. A TTBR write that changes the ASID mid-chunk needs an
+  ISB before the new ASID is promised to translate, and the ISB ends the chunk (and drains). In
+  the userspace phases on 4 vCPUs this cut the DSB waits from 92K (8.3 s over the vCPUs) to 3K
+  (0.06 s) and process churn by 37% in Chromium (`bench/boot/REPORT.md` "M7 loop 8"): after a
+  fork, parent and child have different ASIDs, so COW faults rarely concern another running vCPU.
+  `maint` rounds 7 and 8 test it (another ASID; a global mapping), on QEMU and hvf too; planted
+  out (global entries cached, or same-ASID targets skipped), `maint` fails (checks 261–263,
+  212–213).
 - Planted bugs: no DSB wait fails `maint` in all 20 native parallel runs (checks 211–213: stale
   translations); no IC broadcast fails it in all 10 JIT runs in Node (401, 402).
 
@@ -155,7 +171,12 @@ Two modes, chosen by `VmConfig.deterministic`:
   - `Vm::wfi` takes **one** clock reading (three readings once let a timer fall due between them
     and be neither pending nor a deadline, so the host slept forever).
   - **Parallel SMP:** every vCPU reads the clock itself; the core keeps the counter from going
-    back between vCPUs (an atomic maximum of what any vCPU read).
+    back between vCPUs (an atomic maximum of what any vCPU read). A vCPU worker doesn't trust its
+    own `performance.timeOrigin`: Chromium derives a new context's from a wall clock, which
+    drifted ~1% from the monotonic clock in the dev VM, so a worker started a minute into a page
+    ran ~0.6 s behind the VM's creator, and the guest counter read 0 for that long ("Missing cycle
+    counter", the RNG's jitter loop spinning; M7 loop 8). Each worker measures the creator's clock
+    instead (`web/vm.ts` `clockOffset`: 16 round trips, the shortest one's midpoint).
   - **Idle watchdog:** `idleLimitMs` (`web/vm.ts`, on in the boot benchmarks) throws on an idle
     with no deadline for that long: a deadline-less idle that long is a bug either way.
 - Guest-timed benchmarks (`dd`, `fio`, `openssl speed`) are meaningless in deterministic time:

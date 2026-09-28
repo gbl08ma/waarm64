@@ -111,6 +111,28 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - The TS backends are tested through boots; a Node test with a bare-metal virtio guest would be
   cheaper when they grow (blk).
 
+## Parallel SMP (M7 loop 8's measurements; `bench/boot/REPORT.md`)
+
+- **One copy of compiled code for all vCPU workers:** each worker compiles what it runs (~200 ms of
+  compile per vCPU per Alpine boot, ~35 ms in the userspace churn phase: small), but also holds its
+  own machine code, which may matter for kernel-heavy phases' footprint (unmeasured: the VM has no
+  PMU). Sharing needs position-independent links (through the jump cache) so one
+  `WebAssembly.Module` can be instantiated in every worker.
+- **The remaining DSB waits** (~3K per userspace run on 4 vCPUs, 20–60 µs each: same-ASID
+  targets, and all-ASID or kernel-range TLBIs) wait for the target's chunk boundary. A 4096-step
+  chunk in parallel mode cut the average from 100 to 65 µs and polling before sleeping to 55 µs,
+  before the ASID filter made both moot; ending a target's chunk from outside would need a memory
+  check in the JIT's hot path.
+- **Pair atomics:** CASP is the 5th most called helper even on one vCPU (SLUB's `cmpxchg128`,
+  ~300K per Alpine boot, ~30 ms); the LSE stack stress takes 2.65 s against 0.4 s on the M4.
+  Inline it if a workload shows it.
+- **WFE sleeping:** WFE yields (120K per vCPU in 7 s of churn on 4 vCPUs, ~0.1 s); sleep on the
+  event word only if a workload shows yields costing.
+- **Parallel `make`** as a scaling workload (the image has no toolchain yet).
+- **Hours-long whole-platform stress** (repeated parallel boots and workloads for hours): deferred
+  by the user (2026-09-28) to a later milestone, once more virtio devices and integration features
+  exist, when such a run is likelier to catch non-obvious platform-wide issues.
+
 ## Tests and tools
 
 - LTP: only the syscalls subset; the loop-device tests (`getdents01`, `rename01`) and other areas

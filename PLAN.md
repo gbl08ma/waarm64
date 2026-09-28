@@ -72,8 +72,12 @@ boots on 4 vCPUs in parallel natively, in Node and in Chromium, Debian included)
 model: DMB as `atomic.fence` in parallel JIT code, guest-RAM accesses as relaxed atomics with
 ThreadSanitizer unsuppressed, 128-bit atomics decided; litmus on 4 parallel vCPUs in CI), 7
 (litmus and an atomics stress in every mode and tier: round-robin with exact steps, parallel,
-interpreter, JIT, JIT-check, Chromium, ThreadSanitizer; spin-wait latency measured). Next: loop
-8, scaling.
+interpreter, JIT, JIT-check, Chromium, ThreadSanitizer; spin-wait latency measured), 8 (scaling:
+the `smp_*` benchmarks and per-vCPU counters (ABI 26); the vCPU workers' clock calibrated against
+the VM's creator (Chromium's per-context `timeOrigin` had drifted seconds apart); DSB waits only
+for vCPUs that may hold the ASID's entries (process churn on 4 vCPUs −37%); idle vCPUs poll 50 µs
+before sleeping (futex hand-offs 3.4× faster); the host's 4 performance cores bound N). Next:
+loop 9, exit.
 - **Two execution modes, one core:** deterministic SMP runs every vCPU round-robin on one thread
   with a fixed quantum and one shared code cache (exact, reproducible step counts in every runner;
   virtual time = total steps of all vCPUs); realtime SMP runs **one worker per vCPU** on the shared
@@ -91,6 +95,10 @@ interpreter, JIT, JIT-check, Chromium, ThreadSanitizer; spin-wait latency measur
   running vCPU acknowledges at its next chunk boundary; idle ones apply it before resuming);
   `IC IVAU`/`IALLU(IS)` reach every code cache, drained at context synchronization and chunk
   boundaries.
+- **Scaling (loop 8):** a TLBI IS for one ASID waits only for vCPUs running that ASID (the others
+  apply it at their next boundary; parallel SMP caches no global entries in the TTBR0 half so
+  that's sound); idle vCPU workers poll their wake word 50 µs before `Atomics.wait`; every vCPU
+  worker measures the creator's clock rather than trusting its own `timeOrigin`.
 - **Memory model:** DMB as `atomic.fence` in the JIT in parallel SMP (`dmb ish`; nothing when
   vCPUs share a thread); the core's guest-RAM accesses are relaxed atomics (no Rust data race;
   the interpreter pays ~11% on wasm, Alpine within noise). **128-bit atomics** (decided by

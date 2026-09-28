@@ -19,6 +19,7 @@
 //!   (off, idle or back in the host: it drains before it runs again).
 
 use super::*;
+use core::sync::atomic::fence;
 
 /// `CpuPar::state`: off (PSCI), running guest code in `run_cpu`, or out of it
 /// (idle, or anywhere in the host).
@@ -49,7 +50,15 @@ pub(super) struct CpuPar {
     applied: AtomicU64,
     /// It's in a DSB wait: whoever drains a queue wakes it.
     waiting: AtomicBool,
+    /// The ASID its TLB holds nG entries of, published before each chunk;
+    /// `ANY` with the MMU off or before it runs. A TTBR write changing it
+    /// mid-chunk needs an ISB before the new ASID is promised to translate,
+    /// and the ISB ends the chunk (and drains the queue).
+    asid: AtomicU64,
 }
+
+/// `CpuPar::asid` when a TLBI IS must wait for the vCPU whatever its ASID.
+const ANY: u64 = u64::MAX;
 
 impl Default for CpuPar {
     fn default() -> CpuPar {
@@ -60,6 +69,7 @@ impl Default for CpuPar {
             pending: AtomicBool::new(false),
             applied: AtomicU64::new(0),
             waiting: AtomicBool::new(false),
+            asid: AtomicU64::new(ANY),
         }
     }
 }
@@ -92,10 +102,11 @@ struct Queue {
     queued: u64,
 }
 
-/// One broadcast operation.
+/// One broadcast operation: a TLBI IS (op2, VA, and the ASID it's
+/// limited to, `ANY` for every ASID), or an IC.
 #[derive(Clone, Copy, Debug)]
 enum Op {
-    Tlb(u32, u64),
+    Tlb(u32, u64, u64),
     Ic(u64),
 }
 
@@ -112,6 +123,8 @@ pub(super) struct Own {
     ppi: (bool, bool),
     /// In WFI (the PC on it).
     wfi: bool,
+    /// When its last run ended (clock ns), if it ran.
+    out: Option<u64>,
 }
 
 /// Waits while `word` holds `expected`, at most `ns` nanoseconds (or until a
@@ -159,6 +172,12 @@ impl Vm {
         let p = &self.shared.cpus[c].par;
         own.exit = ExitInfo::default();
         let start = own.steps;
+        if let Some(t) = own.out {
+            add(
+                &self.shared.cpus[c].counters.par[PAR_OUT_NS],
+                self.clock.ns() - t,
+            );
+        }
         // Before anything uses its TLB: then a DSB elsewhere either saw it
         // out (and it drains below) or waits for it.
         if p.state.load(Ordering::SeqCst) != OFF {
@@ -169,6 +188,7 @@ impl Vm {
             .state
             .compare_exchange(RUN, OUT, Ordering::SeqCst, Ordering::SeqCst);
         self.publish_cpu(c, v, own);
+        own.out = Some(self.clock.ns());
         own.exit.kind = kind as u64;
         own.exit.retired = own.steps - start;
         own.exit.cpu = c as u64;
@@ -205,7 +225,7 @@ impl Vm {
             if sig & SIGNAL_RX != 0
                 && self.shared.signal.fetch_and(!SIGNAL_RX, Ordering::AcqRel) & SIGNAL_RX != 0
             {
-                self.refresh(&mut self.plat.lock());
+                self.refresh(&mut self.plat_of(c));
             }
             if sig & SIGNAL_DEVICE != 0
                 && self
@@ -215,7 +235,7 @@ impl Vm {
                     & SIGNAL_DEVICE
                     != 0
             {
-                let mut pl = self.plat.lock();
+                let mut pl = self.plat_of(c);
                 let r = complete(&mut pl.virtio, &self.mem, &self.shared);
                 self.refresh(&mut pl);
                 drop(pl);
@@ -225,7 +245,7 @@ impl Vm {
                 }
             }
             if p.state.load(Ordering::SeqCst) == OFF {
-                let mut pl = self.plat.lock();
+                let mut pl = self.plat_of(c);
                 let Some((entry, context)) = pl.start[c].take() else {
                     own.exit.value = u64::MAX;
                     own.exit.wake = wake as u64;
@@ -248,7 +268,7 @@ impl Vm {
             let now = self.now();
             let ppi = timers(&v.cpu, now);
             if ppi != own.ppi {
-                let mut pl = self.plat.lock();
+                let mut pl = self.plat_of(c);
                 pl.gic.set_level(c, IRQ_VTIMER, ppi.0);
                 pl.gic.set_level(c, IRQ_PTIMER, ppi.1);
                 self.refresh(&mut pl);
@@ -268,6 +288,7 @@ impl Vm {
                     ((t - now) as u128 * 1_000_000_000).div_ceil(frq) as u64
                 });
                 own.exit.wake = wake as u64;
+                bump(&sh.counters.par[PAR_IDLES]);
                 return exit::IDLE;
             }
             if irq && v.cpu.pstate & PSTATE_I == 0 {
@@ -275,6 +296,18 @@ impl Vm {
                 own.steps += 1;
                 bump(&sh.counters.irqs);
                 continue;
+            }
+            // Before the chunk translates anything (`broadcast`).
+            if self.vcpus.len() > 1 {
+                let asid = if v.cpu.sctlr_el1 & sctlr::M != 0 {
+                    crate::mmu::asid(&v.cpu)
+                } else {
+                    ANY
+                };
+                if p.asid.load(Ordering::Relaxed) != asid {
+                    p.asid.store(asid, Ordering::SeqCst);
+                }
+                fence(Ordering::SeqCst);
             }
             let n = CHUNK.min(budget - (own.steps - start));
             let (k, e) = if v.jit.cache.is_some() {
@@ -309,10 +342,29 @@ impl Vm {
                 self.broadcast(c, own, Op::Ic(pa));
             }
             // A yield (decision 5 of M7's kickoff): the chunk ended.
-            Exit::Wfe | Exit::Sev(_) => own.steps += 1,
-            Exit::TlbiIs(i, va) => {
+            Exit::Wfe => {
                 own.steps += 1;
-                self.broadcast(c, own, Op::Tlb(i >> 5 & 7, va << 12));
+                bump(&self.shared.cpus[c].counters.par[PAR_WFES]);
+            }
+            Exit::Sev(_) => own.steps += 1,
+            Exit::TlbiIs(i, xt) => {
+                own.steps += 1;
+                let op2 = i >> 5 & 7;
+                // ASIDE1IS, VAE1IS and VALE1IS are for one ASID (Xt[63:48],
+                // 8 bits wide unless TCR_EL1.AS); by VA, only the TTBR0 half's
+                // (VA[55] = Xt[43]), where no global entry is cached.
+                let wide = v.cpu.tcr_el1 >> 36 & 1 == 1;
+                let asid = match op2 {
+                    2 => xt >> 48,
+                    1 | 5 if xt >> 43 & 1 == 0 => xt >> 48,
+                    _ => ANY,
+                };
+                let asid = if asid == ANY || wide {
+                    asid
+                } else {
+                    asid & 0xff
+                };
+                self.broadcast(c, own, Op::Tlb(op2, xt << 12, asid));
             }
             Exit::Hvc(_) => {
                 v.cpu.pc = v.cpu.pc.wrapping_add(4);
@@ -327,7 +379,7 @@ impl Vm {
                 let cpu = &mut v.cpu;
                 if let Some(r) = sys::icc(cpu.features, i >> 5 & 0xffff) {
                     let (rt, read) = (i & 31, i & 1 << 21 != 0);
-                    let mut pl = self.plat.lock();
+                    let mut pl = self.plat_of(c);
                     let val = pl.gic.icc(c, r, (!read).then(|| cpu.reg(rt)));
                     self.refresh(&mut pl);
                     drop(pl);
@@ -347,7 +399,7 @@ impl Vm {
                 kind: FaultKind::Bus,
                 ..
             }) => {
-                let mut pl = self.plat.lock();
+                let mut pl = self.plat_of(c);
                 let (r, tx_full, device) = io(v, &self.mem, &mut pl, &self.shared);
                 self.refresh(&mut pl);
                 drop(pl);
@@ -376,6 +428,20 @@ impl Vm {
         bump(&self.shared.cpus[c].counters.exceptions[ec]);
     }
 
+    /// `Vm::plat`'s lock for vCPU `c`, counting the times it was held
+    /// already and how long `c` waited.
+    fn plat_of(&self, c: usize) -> MutexGuard<'_, Platform> {
+        if let Some(g) = self.plat.try_lock() {
+            return g;
+        }
+        let t0 = self.clock.ns();
+        let g = self.plat.lock();
+        let k = &self.shared.cpus[c].counters.par;
+        bump(&k[PAR_LOCK_CONTENDED]);
+        add(&k[PAR_LOCK_WAIT_NS], self.clock.ns() - t0);
+        g
+    }
+
     /// After a change to the platform (under its lock): drives the device
     /// lines and publishes every vCPU's IRQ line, waking those it raised.
     fn refresh(&self, pl: &mut Platform) {
@@ -401,6 +467,17 @@ impl Vm {
         if self.vcpus.len() == 1 {
             return;
         }
+        let k = &self.shared.cpus[c].counters.par;
+        bump(
+            &k[if let Op::Tlb(..) = op {
+                PAR_TLBI_IS
+            } else {
+                PAR_IC
+            }],
+        );
+        // Orders the guest's page-table stores before the ASID reads below
+        // (the target publishes its ASID, then fences, then walks).
+        fence(Ordering::SeqCst);
         for (t, s) in self.shared.cpus.iter().enumerate() {
             if t == c {
                 continue;
@@ -412,7 +489,7 @@ impl Vm {
                     q.tlb.clear();
                     q.tlb_all = true;
                 }
-                Op::Tlb(kind, va) => q.tlb.push((kind, va)),
+                Op::Tlb(kind, va, _) => q.tlb.push((kind, va)),
                 Op::Ic(_) if q.ic_all => {}
                 // The same page as the last (an IC IVAU per line), or queued already.
                 Op::Ic(pa)
@@ -429,7 +506,12 @@ impl Vm {
             let seq = q.queued;
             s.par.pending.store(true, Ordering::SeqCst);
             drop(q);
-            if let Op::Tlb(..) = op {
+            // A vCPU running another ASID holds no entry the operation
+            // drops: it applies it at its next chunk boundary, unwaited.
+            if let Op::Tlb(_, _, asid) = op
+                && let theirs = s.par.asid.load(Ordering::SeqCst)
+                && (asid == ANY || theirs == ANY || theirs == asid)
+            {
                 match own.waits.iter_mut().find(|w| w.0 == t) {
                     Some(w) => w.1 = seq,
                     None => own.waits.push((t, seq)),
@@ -473,6 +555,7 @@ impl Vm {
             }
         }
         p.applied.store(queued, Ordering::SeqCst);
+        bump(&self.shared.cpus[c].counters.par[PAR_DRAINS]);
         for (o, s) in self.shared.cpus.iter().enumerate() {
             if o != c && s.par.waiting.load(Ordering::SeqCst) {
                 self.wake(o);
@@ -510,11 +593,13 @@ impl Vm {
             );
         }
         sh.par.waiting.store(false, Ordering::SeqCst);
+        bump(&sh.counters.par[PAR_DSB_WAITS]);
+        add(&sh.counters.par[PAR_DSB_WAIT_NS], self.clock.ns() - t0);
     }
 
     /// Whether vCPU `c` is on, or starting (parallel mode).
     pub(super) fn power_par(&self, c: usize) -> Power {
-        let pl = self.plat.lock();
+        let pl = self.plat_of(c);
         if self.shared.cpus[c].par.state.load(Ordering::SeqCst) != OFF || pl.start[c].is_some() {
             Power::On
         } else {
@@ -541,7 +626,7 @@ impl Vm {
                 match self.cpu_of(psci_aff(x[1], smc64)) {
                     None => PSCI_INVALID_PARAMETERS,
                     Some(t) => {
-                        let mut pl = self.plat.lock();
+                        let mut pl = self.plat_of(c);
                         let off = self.shared.cpus[t].par.state.load(Ordering::SeqCst) == OFF;
                         if off && pl.start[t].is_none() {
                             pl.start[t] = Some((entry, context));
@@ -556,7 +641,7 @@ impl Vm {
             }
             PSCI_CPU_OFF => {
                 // Doesn't return: the vCPU stops until a CPU_ON starts it again.
-                let _pl = self.plat.lock();
+                let _pl = self.plat_of(c);
                 self.shared.cpus[c].par.state.store(OFF, Ordering::SeqCst);
                 return None;
             }

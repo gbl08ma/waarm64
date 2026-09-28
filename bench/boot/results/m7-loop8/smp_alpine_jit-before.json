@@ -1,0 +1,887 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-09-28T18:22:30.281Z",
+ "commit": "c2f927a0c2a3",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "smp_alpine_jit_n1_script",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ncpus": 1,
+    "parallel": true,
+    "jit": 1,
+    "steps": 2657196174,
+    "counters": {
+     "steps": 2657196174,
+     "irqs": 9730,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114552,
+      "0x20": 7318,
+      "0x24": 40850,
+      "0x25": 1774
+     },
+     "tlbMisses": 608212,
+     "tlbWalks": 550952,
+     "tlbFlushes": 39449,
+     "jit": {
+      "blocks": 46358,
+      "modules": 1753,
+      "bytes": 22028484,
+      "compileNs": 323304448,
+      "steps": 2615672076,
+      "dispatches": 12968693,
+      "invalidations": 182,
+      "flushes": 0,
+      "inline": 252563,
+      "helpers": 211,
+      "inlineSteps": 2613629994,
+      "flagsStored": 14944,
+      "flagsElided": 1278,
+      "condDirect": 14911,
+      "condComputed": 148,
+      "condMemory": 1290,
+      "regionBlocks": 48561,
+      "backEdges": 1042,
+      "tierUps": 541,
+      "stale": 0
+     }
+    },
+    "cpus": [
+     {
+      "steps": 2657196174,
+      "irqs": 9730,
+      "exceptions": {
+       "0x0": 9,
+       "0x15": 114552,
+       "0x20": 7318,
+       "0x24": 40850,
+       "0x25": 1774
+      },
+      "tlbMisses": 608212,
+      "tlbWalks": 550952,
+      "tlbFlushes": 39449,
+      "jit": {
+       "blocks": 46358,
+       "modules": 1753,
+       "bytes": 22028484,
+       "compileNs": 323304448,
+       "steps": 2615672076,
+       "dispatches": 12968693,
+       "invalidations": 182,
+       "flushes": 0,
+       "inline": 252563,
+       "helpers": 211,
+       "inlineSteps": 2613629994,
+       "flagsStored": 14944,
+       "flagsElided": 1278,
+       "condDirect": 14911,
+       "condComputed": 148,
+       "condMemory": 1290,
+       "regionBlocks": 48561,
+       "backEdges": 1042,
+       "tierUps": 541,
+       "stale": 0
+      }
+     }
+    ]
+   },
+   "samples": [
+    8334.774999976158,
+    8354.834999978542,
+    8450.84999999404,
+    8418.365000009537,
+    8393.110000014305
+   ],
+   "median": 8393.110000014305,
+   "iqr": 63.530000030994415,
+   "n": 5
+  },
+  {
+   "name": "smp_alpine_jit_n1_total",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ncpus": 1,
+    "parallel": true,
+    "jit": 1,
+    "steps": 2657196174,
+    "counters": {
+     "steps": 2657196174,
+     "irqs": 9730,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114552,
+      "0x20": 7318,
+      "0x24": 40850,
+      "0x25": 1774
+     },
+     "tlbMisses": 608212,
+     "tlbWalks": 550952,
+     "tlbFlushes": 39449,
+     "jit": {
+      "blocks": 46358,
+      "modules": 1753,
+      "bytes": 22028484,
+      "compileNs": 323304448,
+      "steps": 2615672076,
+      "dispatches": 12968693,
+      "invalidations": 182,
+      "flushes": 0,
+      "inline": 252563,
+      "helpers": 211,
+      "inlineSteps": 2613629994,
+      "flagsStored": 14944,
+      "flagsElided": 1278,
+      "condDirect": 14911,
+      "condComputed": 148,
+      "condMemory": 1290,
+      "regionBlocks": 48561,
+      "backEdges": 1042,
+      "tierUps": 541,
+      "stale": 0
+     }
+    },
+    "cpus": [
+     {
+      "steps": 2657196174,
+      "irqs": 9730,
+      "exceptions": {
+       "0x0": 9,
+       "0x15": 114552,
+       "0x20": 7318,
+       "0x24": 40850,
+       "0x25": 1774
+      },
+      "tlbMisses": 608212,
+      "tlbWalks": 550952,
+      "tlbFlushes": 39449,
+      "jit": {
+       "blocks": 46358,
+       "modules": 1753,
+       "bytes": 22028484,
+       "compileNs": 323304448,
+       "steps": 2615672076,
+       "dispatches": 12968693,
+       "invalidations": 182,
+       "flushes": 0,
+       "inline": 252563,
+       "helpers": 211,
+       "inlineSteps": 2613629994,
+       "flagsStored": 14944,
+       "flagsElided": 1278,
+       "condDirect": 14911,
+       "condComputed": 148,
+       "condMemory": 1290,
+       "regionBlocks": 48561,
+       "backEdges": 1042,
+       "tierUps": 541,
+       "stale": 0
+      }
+     }
+    ]
+   },
+   "samples": [
+    11805.174999982119,
+    11865.194999992847,
+    11920.614999979734,
+    11903.90000000596,
+    11890.350000023842
+   ],
+   "median": 11890.350000023842,
+   "iqr": 38.70500001311302,
+   "n": 5
+  },
+  {
+   "name": "smp_alpine_jit_n2_script",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ncpus": 2,
+    "parallel": true,
+    "jit": 1,
+    "steps": 2761269591,
+    "counters": {
+     "steps": 2761269591,
+     "irqs": 25140,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114810,
+      "0x20": 7466,
+      "0x24": 40960,
+      "0x25": 1784
+     },
+     "tlbMisses": 882729,
+     "tlbWalks": 825053,
+     "tlbFlushes": 70391,
+     "jit": {
+      "blocks": 79022,
+      "modules": 2417,
+      "bytes": 37618976,
+      "compileNs": 519506944,
+      "steps": 2700625165,
+      "dispatches": 11820421,
+      "invalidations": 165,
+      "flushes": 0,
+      "inline": 431163,
+      "helpers": 391,
+      "inlineSteps": 2697841970,
+      "flagsStored": 25189,
+      "flagsElided": 2208,
+      "condDirect": 25367,
+      "condComputed": 241,
+      "condMemory": 2188,
+      "regionBlocks": 82371,
+      "backEdges": 1654,
+      "tierUps": 851,
+      "stale": 0
+     }
+    },
+    "cpus": [
+     {
+      "steps": 1538480521,
+      "irqs": 12843,
+      "exceptions": {
+       "0x0": 3,
+       "0x15": 60082,
+       "0x20": 3596,
+       "0x24": 20052,
+       "0x25": 867
+      },
+      "tlbMisses": 485337,
+      "tlbWalks": 457226,
+      "tlbFlushes": 35231,
+      "jit": {
+       "blocks": 40794,
+       "modules": 1254,
+       "bytes": 19342666,
+       "compileNs": 267379968,
+       "steps": 1504493216,
+       "dispatches": 6492582,
+       "invalidations": 98,
+       "flushes": 0,
+       "inline": 222945,
+       "helpers": 222,
+       "inlineSteps": 1503071677,
+       "flagsStored": 12898,
+       "flagsElided": 1157,
+       "condDirect": 13062,
+       "condComputed": 120,
+       "condMemory": 1165,
+       "regionBlocks": 42448,
+       "backEdges": 830,
+       "tierUps": 422,
+       "stale": 0
+      }
+     },
+     {
+      "steps": 1222789070,
+      "irqs": 12297,
+      "exceptions": {
+       "0x0": 6,
+       "0x15": 54728,
+       "0x20": 3870,
+       "0x24": 20908,
+       "0x25": 917
+      },
+      "tlbMisses": 397392,
+      "tlbWalks": 367827,
+      "tlbFlushes": 35160,
+      "jit": {
+       "blocks": 38228,
+       "modules": 1163,
+       "bytes": 18276310,
+       "compileNs": 252126976,
+       "steps": 1196131949,
+       "dispatches": 5327839,
+       "invalidations": 67,
+       "flushes": 0,
+       "inline": 208218,
+       "helpers": 169,
+       "inlineSteps": 1194770293,
+       "flagsStored": 12291,
+       "flagsElided": 1051,
+       "condDirect": 12305,
+       "condComputed": 121,
+       "condMemory": 1023,
+       "regionBlocks": 39923,
+       "backEdges": 824,
+       "tierUps": 429,
+       "stale": 0
+      }
+     }
+    ]
+   },
+   "samples": [
+    9485.949999988079,
+    9584.17000001669,
+    9547.965000003576,
+    9633.555000007153,
+    9710.19500002265
+   ],
+   "median": 9584.17000001669,
+   "iqr": 85.59000000357628,
+   "n": 5
+  },
+  {
+   "name": "smp_alpine_jit_n2_total",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ncpus": 2,
+    "parallel": true,
+    "jit": 1,
+    "steps": 2761269591,
+    "counters": {
+     "steps": 2761269591,
+     "irqs": 25140,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114810,
+      "0x20": 7466,
+      "0x24": 40960,
+      "0x25": 1784
+     },
+     "tlbMisses": 882729,
+     "tlbWalks": 825053,
+     "tlbFlushes": 70391,
+     "jit": {
+      "blocks": 79022,
+      "modules": 2417,
+      "bytes": 37618976,
+      "compileNs": 519506944,
+      "steps": 2700625165,
+      "dispatches": 11820421,
+      "invalidations": 165,
+      "flushes": 0,
+      "inline": 431163,
+      "helpers": 391,
+      "inlineSteps": 2697841970,
+      "flagsStored": 25189,
+      "flagsElided": 2208,
+      "condDirect": 25367,
+      "condComputed": 241,
+      "condMemory": 2188,
+      "regionBlocks": 82371,
+      "backEdges": 1654,
+      "tierUps": 851,
+      "stale": 0
+     }
+    },
+    "cpus": [
+     {
+      "steps": 1538480521,
+      "irqs": 12843,
+      "exceptions": {
+       "0x0": 3,
+       "0x15": 60082,
+       "0x20": 3596,
+       "0x24": 20052,
+       "0x25": 867
+      },
+      "tlbMisses": 485337,
+      "tlbWalks": 457226,
+      "tlbFlushes": 35231,
+      "jit": {
+       "blocks": 40794,
+       "modules": 1254,
+       "bytes": 19342666,
+       "compileNs": 267379968,
+       "steps": 1504493216,
+       "dispatches": 6492582,
+       "invalidations": 98,
+       "flushes": 0,
+       "inline": 222945,
+       "helpers": 222,
+       "inlineSteps": 1503071677,
+       "flagsStored": 12898,
+       "flagsElided": 1157,
+       "condDirect": 13062,
+       "condComputed": 120,
+       "condMemory": 1165,
+       "regionBlocks": 42448,
+       "backEdges": 830,
+       "tierUps": 422,
+       "stale": 0
+      }
+     },
+     {
+      "steps": 1222789070,
+      "irqs": 12297,
+      "exceptions": {
+       "0x0": 6,
+       "0x15": 54728,
+       "0x20": 3870,
+       "0x24": 20908,
+       "0x25": 917
+      },
+      "tlbMisses": 397392,
+      "tlbWalks": 367827,
+      "tlbFlushes": 35160,
+      "jit": {
+       "blocks": 38228,
+       "modules": 1163,
+       "bytes": 18276310,
+       "compileNs": 252126976,
+       "steps": 1196131949,
+       "dispatches": 5327839,
+       "invalidations": 67,
+       "flushes": 0,
+       "inline": 208218,
+       "helpers": 169,
+       "inlineSteps": 1194770293,
+       "flagsStored": 12291,
+       "flagsElided": 1051,
+       "condDirect": 12305,
+       "condComputed": 121,
+       "condMemory": 1023,
+       "regionBlocks": 39923,
+       "backEdges": 824,
+       "tierUps": 429,
+       "stale": 0
+      }
+     }
+    ]
+   },
+   "samples": [
+    13472.109999984503,
+    13560.990000009537,
+    13493.390000015497,
+    13639.340000003576,
+    13661.22499999404
+   ],
+   "median": 13560.990000009537,
+   "iqr": 145.94999998807907,
+   "n": 5
+  },
+  {
+   "name": "smp_alpine_jit_n4_script",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ncpus": 4,
+    "parallel": true,
+    "jit": 1,
+    "steps": 2903493909,
+    "counters": {
+     "steps": 2903493909,
+     "irqs": 44459,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 115102,
+      "0x20": 7422,
+      "0x24": 41715,
+      "0x25": 1749
+     },
+     "tlbMisses": 1247923,
+     "tlbWalks": 1189615,
+     "tlbFlushes": 130794,
+     "jit": {
+      "blocks": 126757,
+      "modules": 3132,
+      "bytes": 60056834,
+      "compileNs": 772746240,
+      "steps": 2810949409,
+      "dispatches": 9826794,
+      "invalidations": 402,
+      "flushes": 0,
+      "inline": 693036,
+      "helpers": 705,
+      "inlineSteps": 2806882419,
+      "flagsStored": 39978,
+      "flagsElided": 3537,
+      "condDirect": 40655,
+      "condComputed": 382,
+      "condMemory": 3503,
+      "regionBlocks": 131422,
+      "backEdges": 2466,
+      "tierUps": 1215,
+      "stale": 0
+     }
+    },
+    "cpus": [
+     {
+      "steps": 793354200,
+      "irqs": 11544,
+      "exceptions": {
+       "0x0": 2,
+       "0x15": 27415,
+       "0x20": 1912,
+       "0x24": 11101,
+       "0x25": 510
+      },
+      "tlbMisses": 280406,
+      "tlbWalks": 264971,
+      "tlbFlushes": 34687,
+      "jit": {
+       "blocks": 35836,
+       "modules": 843,
+       "bytes": 16875721,
+       "compileNs": 217099520,
+       "steps": 760999720,
+       "dispatches": 2616051,
+       "invalidations": 120,
+       "flushes": 0,
+       "inline": 197056,
+       "helpers": 216,
+       "inlineSteps": 759973012,
+       "flagsStored": 11314,
+       "flagsElided": 1025,
+       "condDirect": 11595,
+       "condComputed": 103,
+       "condMemory": 1006,
+       "regionBlocks": 37097,
+       "backEdges": 695,
+       "tierUps": 334,
+       "stale": 0
+      }
+     },
+     {
+      "steps": 687760306,
+      "irqs": 10995,
+      "exceptions": {
+       "0x0": 4,
+       "0x15": 30432,
+       "0x20": 1777,
+       "0x24": 10138,
+       "0x25": 434
+      },
+      "tlbMisses": 246734,
+      "tlbWalks": 232608,
+      "tlbFlushes": 33387,
+      "jit": {
+       "blocks": 31682,
+       "modules": 803,
+       "bytes": 15053108,
+       "compileNs": 191400704,
+       "steps": 667337377,
+       "dispatches": 2000210,
+       "invalidations": 101,
+       "flushes": 0,
+       "inline": 171954,
+       "helpers": 169,
+       "inlineSteps": 666373552,
+       "flagsStored": 10058,
+       "flagsElided": 895,
+       "condDirect": 10177,
+       "condComputed": 94,
+       "condMemory": 901,
+       "regionBlocks": 32961,
+       "backEdges": 624,
+       "tierUps": 314,
+       "stale": 0
+      }
+     },
+     {
+      "steps": 699785657,
+      "irqs": 10977,
+      "exceptions": {
+       "0x0": 1,
+       "0x15": 27135,
+       "0x20": 1762,
+       "0x24": 8617,
+       "0x25": 366
+      },
+      "tlbMisses": 370054,
+      "tlbWalks": 357547,
+      "tlbFlushes": 30971,
+      "jit": {
+       "blocks": 30551,
+       "modules": 737,
+       "bytes": 14501085,
+       "compileNs": 179452672,
+       "steps": 678063506,
+       "dispatches": 2037958,
+       "invalidations": 105,
+       "flushes": 0,
+       "inline": 167413,
+       "helpers": 162,
+       "inlineSteps": 676973132,
+       "flagsStored": 9550,
+       "flagsElided": 828,
+       "condDirect": 9692,
+       "condComputed": 97,
+       "condMemory": 823,
+       "regionBlocks": 31644,
+       "backEdges": 598,
+       "tierUps": 296,
+       "stale": 0
+      }
+     },
+     {
+      "steps": 722593746,
+      "irqs": 10943,
+      "exceptions": {
+       "0x0": 2,
+       "0x15": 30120,
+       "0x20": 1971,
+       "0x24": 11859,
+       "0x25": 439
+      },
+      "tlbMisses": 350729,
+      "tlbWalks": 334489,
+      "tlbFlushes": 31749,
+      "jit": {
+       "blocks": 28688,
+       "modules": 749,
+       "bytes": 13626920,
+       "compileNs": 184793344,
+       "steps": 704548806,
+       "dispatches": 3172575,
+       "invalidations": 76,
+       "flushes": 0,
+       "inline": 156613,
+       "helpers": 158,
+       "inlineSteps": 703562723,
+       "flagsStored": 9056,
+       "flagsElided": 789,
+       "condDirect": 9191,
+       "condComputed": 88,
+       "condMemory": 773,
+       "regionBlocks": 29720,
+       "backEdges": 549,
+       "tierUps": 271,
+       "stale": 0
+      }
+     }
+    ]
+   },
+   "samples": [
+    11372.965000003576,
+    11127.940000027418,
+    11399.34999999404,
+    11341.439999997616,
+    11342.699999988079
+   ],
+   "median": 11342.699999988079,
+   "iqr": 31.525000005960464,
+   "n": 5
+  },
+  {
+   "name": "smp_alpine_jit_n4_total",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ncpus": 4,
+    "parallel": true,
+    "jit": 1,
+    "steps": 2903493909,
+    "counters": {
+     "steps": 2903493909,
+     "irqs": 44459,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 115102,
+      "0x20": 7422,
+      "0x24": 41715,
+      "0x25": 1749
+     },
+     "tlbMisses": 1247923,
+     "tlbWalks": 1189615,
+     "tlbFlushes": 130794,
+     "jit": {
+      "blocks": 126757,
+      "modules": 3132,
+      "bytes": 60056834,
+      "compileNs": 772746240,
+      "steps": 2810949409,
+      "dispatches": 9826794,
+      "invalidations": 402,
+      "flushes": 0,
+      "inline": 693036,
+      "helpers": 705,
+      "inlineSteps": 2806882419,
+      "flagsStored": 39978,
+      "flagsElided": 3537,
+      "condDirect": 40655,
+      "condComputed": 382,
+      "condMemory": 3503,
+      "regionBlocks": 131422,
+      "backEdges": 2466,
+      "tierUps": 1215,
+      "stale": 0
+     }
+    },
+    "cpus": [
+     {
+      "steps": 793354200,
+      "irqs": 11544,
+      "exceptions": {
+       "0x0": 2,
+       "0x15": 27415,
+       "0x20": 1912,
+       "0x24": 11101,
+       "0x25": 510
+      },
+      "tlbMisses": 280406,
+      "tlbWalks": 264971,
+      "tlbFlushes": 34687,
+      "jit": {
+       "blocks": 35836,
+       "modules": 843,
+       "bytes": 16875721,
+       "compileNs": 217099520,
+       "steps": 760999720,
+       "dispatches": 2616051,
+       "invalidations": 120,
+       "flushes": 0,
+       "inline": 197056,
+       "helpers": 216,
+       "inlineSteps": 759973012,
+       "flagsStored": 11314,
+       "flagsElided": 1025,
+       "condDirect": 11595,
+       "condComputed": 103,
+       "condMemory": 1006,
+       "regionBlocks": 37097,
+       "backEdges": 695,
+       "tierUps": 334,
+       "stale": 0
+      }
+     },
+     {
+      "steps": 687760306,
+      "irqs": 10995,
+      "exceptions": {
+       "0x0": 4,
+       "0x15": 30432,
+       "0x20": 1777,
+       "0x24": 10138,
+       "0x25": 434
+      },
+      "tlbMisses": 246734,
+      "tlbWalks": 232608,
+      "tlbFlushes": 33387,
+      "jit": {
+       "blocks": 31682,
+       "modules": 803,
+       "bytes": 15053108,
+       "compileNs": 191400704,
+       "steps": 667337377,
+       "dispatches": 2000210,
+       "invalidations": 101,
+       "flushes": 0,
+       "inline": 171954,
+       "helpers": 169,
+       "inlineSteps": 666373552,
+       "flagsStored": 10058,
+       "flagsElided": 895,
+       "condDirect": 10177,
+       "condComputed": 94,
+       "condMemory": 901,
+       "regionBlocks": 32961,
+       "backEdges": 624,
+       "tierUps": 314,
+       "stale": 0
+      }
+     },
+     {
+      "steps": 699785657,
+      "irqs": 10977,
+      "exceptions": {
+       "0x0": 1,
+       "0x15": 27135,
+       "0x20": 1762,
+       "0x24": 8617,
+       "0x25": 366
+      },
+      "tlbMisses": 370054,
+      "tlbWalks": 357547,
+      "tlbFlushes": 30971,
+      "jit": {
+       "blocks": 30551,
+       "modules": 737,
+       "bytes": 14501085,
+       "compileNs": 179452672,
+       "steps": 678063506,
+       "dispatches": 2037958,
+       "invalidations": 105,
+       "flushes": 0,
+       "inline": 167413,
+       "helpers": 162,
+       "inlineSteps": 676973132,
+       "flagsStored": 9550,
+       "flagsElided": 828,
+       "condDirect": 9692,
+       "condComputed": 97,
+       "condMemory": 823,
+       "regionBlocks": 31644,
+       "backEdges": 598,
+       "tierUps": 296,
+       "stale": 0
+      }
+     },
+     {
+      "steps": 722593746,
+      "irqs": 10943,
+      "exceptions": {
+       "0x0": 2,
+       "0x15": 30120,
+       "0x20": 1971,
+       "0x24": 11859,
+       "0x25": 439
+      },
+      "tlbMisses": 350729,
+      "tlbWalks": 334489,
+      "tlbFlushes": 31749,
+      "jit": {
+       "blocks": 28688,
+       "modules": 749,
+       "bytes": 13626920,
+       "compileNs": 184793344,
+       "steps": 704548806,
+       "dispatches": 3172575,
+       "invalidations": 76,
+       "flushes": 0,
+       "inline": 156613,
+       "helpers": 158,
+       "inlineSteps": 703562723,
+       "flagsStored": 9056,
+       "flagsElided": 789,
+       "condDirect": 9191,
+       "condComputed": 88,
+       "condMemory": 773,
+       "regionBlocks": 29720,
+       "backEdges": 549,
+       "tierUps": 271,
+       "stale": 0
+      }
+     }
+    ]
+   },
+   "samples": [
+    15820.120000004768,
+    15688.640000015497,
+    15825.215000003576,
+    15811.030000001192,
+    15861.889999985695
+   ],
+   "median": 15820.120000004768,
+   "iqr": 14.185000002384186,
+   "n": 5
+  }
+ ]
+}

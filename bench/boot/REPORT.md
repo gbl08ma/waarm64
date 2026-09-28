@@ -193,3 +193,68 @@ Within noise: +0.8%, +2.5%, +0.1% per pair, +0.3% on the median of medians; step
 (2,856,663,287). The session drifted (A's first runs of the day were 10,128–10,213 ms). Earlier
 pairs in the same session measured B, a first version with a slower interpreter (74.7 MIPS),
 at +1 to +5%, and C once; they're kept with the rest. Raw: `results/m7-loop6/`.
+
+## M7 loop 8: scaling (parallel SMP)
+
+New benchmarks `smp_alpine_jit`, `smp_user_jit`, `smp_debian_jit` (docs/benchmarking.md "SMP"):
+parallel SMP (a worker per vCPU, realtime, JIT) at N = 1, 2, 4, the Ns alternated within each
+round; per-vCPU counters (ABI 26) in the params. Chromium 153.0.8010.52, the M4 VM (8 vCPUs),
+medians (IQR). Boots: ms to the distro's local.d script (realtime power-off adds busybox init's
+2 s of shutdown sleeps).
+
+**A clock bug first.** The first runs drifted: the same boot got slower and took more steps
+through a session (N = 1: 2.66 G → 6.24 G steps). A new worker's `performance.timeOrigin +
+performance.now()` ran behind the page's by ~150 ms more per boot (−2.3 s after 11 boots): Chromium
+derives a context's `timeOrigin` from a wall clock that drifted ~1% from the monotonic one in this
+VM. The vCPU workers' counter read 0 until they caught up with the VM's `t0` ("Missing cycle
+counter" in the kernel log, the RNG's jitter entropy loop spinning). Fixed: each worker measures
+the creator's clock (`clockOffset`); 12 alternated boots then took constant steps. Node wasn't
+affected. Every parallel number below is after the fix.
+
+**Profile of what scaled badly.** The compute phases scaled (N = 4: 3.1–3.5× throughput), process
+churn (`fork`/`exec`, `find | xargs stat`) didn't (1.1×). In Node at N = 4, each vCPU did a lone
+vCPU's churn work (~500 M steps) in 6.9 s instead of 1.44 s: DSB waits for TLBI IS took 1.3 s
+(13K waits, ~100 µs each), time out of the core 0.14 s, the platform lock 2 ms, compiles 35 ms,
+WFE yields ~0.1 s; the rest was guest code running ~2.4× slower. That part is the host: four
+independent one-vCPU VMs slowed each other's churn the same way (1.44 → 3.3 s; 2.2 s with two,
+2.9 s with three), as do four or more busy threads of any kind beside one VM; memory hogs don't. The
+M4 has 4 performance cores (docs/benchmarking.md "SMP"). No PMU in the VM to say more.
+
+**Tuning:**
+- **DSB waits only for vCPUs running the TLBI's ASID** (docs/platform.md "Broadcast
+  maintenance"). A/B at N = 4 (`smp_user_jit_4`, alternated A, B, A, B; A = the same build
+  without the filter): churn 7,652 (±7), 7,797 (±71) → 4,871 (±2), 4,929 (±53) ms; total 35,709
+  (±96), 36,198 (±9) → 31,224 (±159), 31,434 (±133) ms; DSB waits over the run 92K (8.3 s) → 3K
+  (0.06 s). Raw: `results/m7-loop8/asid-*.json`.
+- **Idle vCPUs poll 50 µs before `Atomics.wait`:** a futex round trip between two Node threads
+  costs 34 µs in this VM (0.5 µs polling). The stress's pingpong (futex hand-offs, N = 2, Node):
+  4.2 → 1.25 s; 20 µs did as well. The userspace phases (27.4–28.4 s) and Alpine boots
+  (13.4–13.7 s, N = 4, Node) didn't move.
+- Tried and dropped (moot after the ASID filter): a 4096-step chunk in parallel mode (average DSB
+  wait 100 → 65 µs), polling 50 µs before sleeping in the DSB wait (→ 55 µs).
+
+**The curve** (final build; before = loop 7 plus the clock fix, same day):
+
+| | N = 1 | N = 2 | N = 4 | N = 8 (once) |
+|---|---|---|---|---|
+| Alpine boot to script, before | 8,393 (±64) | 9,584 (±86) | 11,343 (±32) | |
+| Alpine boot to script | 8,401 (±22) | 9,054 (±71) | 10,121 (±88) | 13,217 (2 boots) |
+| Debian boot to script (1 boot each) | 42,318 | 33,498 | 29,588 | |
+| Userspace total, before | 25,227 (±616) | 29,763 (±168) | 37,308 (±909) | |
+| Userspace total | 25,184 (±341) | 27,291 (±67) | 31,576 (±587) | 50,330 |
+| compress (throughput vs N = 1) | 2,599 (±190) | 2,272 (2.3×) | 2,704 (3.8×) | 5,355 (3.9×) |
+| Lua | 4,758 (±58) | 4,915 (1.9×) | 5,532 (3.4×) | 8,975 (4.2×) |
+| churn | 2,103 (±2) | 3,422 (1.2×) | 4,937 (1.7×) | 10,270 (1.6×) |
+| SQLite | 3,649 (±12) | 3,931 (1.9×) | 4,239 (3.4×) | 8,146 (3.6×) |
+
+The userspace phases run N copies of the work at N (`webpc.threads=N`): throughput = N × t₁ / t_N.
+Alpine's boot is mostly serial and still loses 20% at N = 4; Debian's (systemd) gains 30%. N = 8
+exceeds the VM's cores (N + 2 threads). Raw: `results/m7-loop8/smp_*.json`.
+
+**Single vCPU** (deterministic `boot_alpine_jit`, c2f927a as A against this loop as B, alternated):
+10,633 (±202), 10,365 (±154) → 10,598 (±185), 10,333 (±12) ms, steps identical (2,856,663,287).
+Raw: `results/m7-loop8/boot_alpine_jit-*.json`.
+
+The boot suite now ignores markers in the kernel's echo of its command line: Debian's contains
+`echo webpc: debian`, so `boot_debian_jit`'s first-marker time (`debian_jit_first`) had been ~1 s
+into the boot rather than its script.
