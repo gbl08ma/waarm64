@@ -13,6 +13,9 @@
 //   WEBPC_INTERP=1 (the crypto kernel has no native runner: ~100 s in Node).
 // - Alpine and its userspace benchmark only with WEBPC_DISTROS=alpine,alpine-user
 //   (scripts/ci.sh sets it when their images are current).
+// - Parallel SMP (a worker per vCPU, realtime: not reproducible): the
+//   bare-metal tests, Buildroot and (with WEBPC_DISTROS=alpine) Alpine, each
+//   WEBPC_PARALLEL_RUNS times (default 3), every run must pass.
 // Needs the wasm build; the guests that need target/images skip without them.
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -78,6 +81,29 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort())
   }, { max: 50e6 });
 }
 
+// Parallel SMP (M7 loop 5): each bare-metal test under the JIT and JIT-check
+// (whose checker tolerates the legal cross-modification window here: a stale
+// block is dropped and counted, not a trap).
+const RUNS = Number(process.env.WEBPC_PARALLEL_RUNS ?? 3);
+const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => void) => {
+  for (let i = 0; i < RUNS; i++) {
+    const r = await boot({ ...o, parallel: true, idleLimitMs: 30_000 }, jit, 1e12);
+    try {
+      check(r);
+    } catch (e) {
+      throw new Error(`run ${i + 1} of ${RUNS} (${(r.ms / 1000).toFixed(1)} s): ${(e as Error).message}`);
+    }
+  }
+};
+for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort()) {
+  for (const [mode, jit] of [['JIT', 1], ['JIT-check', 3]] as const) {
+    test(`parallel: bare-metal ${f} (${mode})`, () => parallel({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f) }, jit, (r) => {
+      poweredOff(r);
+      assert.equal(r.x[1], 0n, r.console);
+    }));
+  }
+}
+
 // The stale-code checker across vCPUs (M7 loop 4): maint.bin with its one
 // `IC IVAU` planted out (a NOP), so CPU 0 rewrites code the secondaries have
 // compiled without invalidating it. The interpreter has no code cache and
@@ -121,6 +147,16 @@ for (const [file, args, fails, ncpus] of KUT) {
   }, { skip: !has(`kvm-unit-tests/${file}.flat`) && 'SKIPPED: run images/build.sh kvm-unit-tests', max: 5e9, stress: STRESS || file === 'cache' });
 }
 
+// kvm-unit-tests' SMP set in parallel (M7 loop 5).
+for (const [file, args, fails, ncpus] of KUT.filter((k) => k[3])) {
+  test(`parallel: kvm-unit-tests ${file} ${args} (${ncpus} vCPUs, JIT)`.replace('  ', ' '), { skip: !has(`kvm-unit-tests/${file}.flat`) && 'SKIPPED: run images/build.sh kvm-unit-tests' }, () => parallel({ ramSize: 256 << 20, kernel: image(`kvm-unit-tests/${file}.flat`), cmdline: args, ncpus, initrd: file === 'psci' ? PSCI_ENV : undefined }, 1, (r) => {
+    poweredOff(r);
+    const lines = r.console.replaceAll('\r\n', '\n').split('\n');
+    assert.deepEqual(lines.filter((l) => l.startsWith('FAIL: ')).map((l) => l.slice(6)), fails, r.console);
+    assert.ok(lines.includes(`EXIT: STATUS=${fails.length ? 3 : 1}`), r.console);
+  }));
+}
+
 const linux = (!has('linux/Image') || !has('buildroot/rootfs.ext4')) && 'SKIPPED: run images/build.sh linux buildroot';
 const disk = () => new URL('buildroot/rootfs.ext4', IMAGES).href;
 guest('Buildroot', () => ({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()) }), (r) => {
@@ -134,6 +170,14 @@ for (const n of [2, 4]) {
     poweredOff(r);
     assert.match(r.console, new RegExp(`smp: Brought up 1 node, ${n} CPUs[^]*webpc: test ok`));
   }, { skip: linux, stress: STRESS, steps: STEPS[`buildroot-${n}cpu`] });
+}
+
+// In parallel, a worker per vCPU (M7 loop 5).
+for (const n of [2, 4]) {
+  test(`parallel: Buildroot on ${n} vCPUs (JIT)`, { skip: linux }, () => parallel({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: n }, 1, (r) => {
+    poweredOff(r);
+    assert.match(r.console, new RegExp(`smp: Brought up 1 node, ${n} CPUs[^]*webpc: test ok`));
+  }));
 }
 
 guest('Buildroot device test', () => ({
@@ -182,6 +226,13 @@ guest('Alpine', () => ({
   poweredOff(r);
   assert.match(r.console, /webpc: alpine [^]*webpc: test ok\r?\n/);
 }, { skip: alpineSkip, stress: STRESS, steps: STEPS.alpine, interp: false });
+
+test('parallel: Alpine on 4 vCPUs (JIT)', { skip: alpineSkip }, () => parallel({
+  ramSize: 1 << 30, kernel: image(a.kernel), initrd: image(a.initrd), cmdline: a.cmdline, devices: testDevices(new URL(a.disk, IMAGES).href), framebuffer: { width: 640, height: 480 }, ncpus: 4,
+}, 1, (r) => {
+  poweredOff(r);
+  assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: alpine [^]*webpc: test ok\r?\n/);
+}));
 
 // Alpine's userspace benchmark (images/alpine/user): its image under the JIT
 // only (10.7G steps: minutes interpreted), with its phases' check lines.

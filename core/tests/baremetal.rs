@@ -2,6 +2,10 @@
 //! `build.sh`) on a whole VM: each boots at 0x4000_0000 in EL1h, prints
 //! `exit <code>` on the PL011 and powers off through PSCI SYSTEM_OFF with x1 =
 //! the same code, 0 for a pass. A test with `// smp: N` in its source boots N vCPUs.
+//! `baremetal_parallel` runs them all again with a thread per vCPU (parallel
+//! SMP, realtime), several times: those runs aren't reproducible.
+
+mod common;
 
 use webpc_core::mem::Mem;
 use webpc_core::vm::{RAM_BASE, Vm, VmConfig, exit};
@@ -11,6 +15,11 @@ const BUDGET: u64 = 50_000_000;
 
 /// Boots `image` and returns the SYSTEM_OFF code and the console output, or why it never got there.
 fn boot(image: &[u8], ncpus: u64) -> Result<(u64, String), String> {
+    boot_mode(image, ncpus, false)
+}
+
+/// [`boot`], round-robin or `parallel`.
+fn boot_mode(image: &[u8], ncpus: u64, parallel: bool) -> Result<(u64, String), String> {
     let mut ram = vec![0u128; RAM_SIZE / 16];
     // SAFETY: ram is 16-byte aligned, RAM_SIZE bytes long, and outlives the Vm.
     let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, RAM_SIZE as u64) };
@@ -18,11 +27,30 @@ fn boot(image: &[u8], ncpus: u64) -> Result<(u64, String), String> {
     let cfg = VmConfig {
         features: webpc_core::cpu::FEATURE_CRYPTO,
         ncpus,
+        deterministic: !parallel as u64,
+        smp: parallel as u64,
         ..VmConfig::default()
     };
     let mut vm = Vm::new(mem, cfg);
     for (k, b) in image.iter().enumerate() {
         vm.mem.write(RAM_BASE + k as u64, 1, *b as u64).unwrap();
+    }
+    if parallel {
+        let limit = std::time::Duration::from_secs(60);
+        let r = common::run_parallel(&vm, limit, BUDGET * ncpus, false, &|_| {});
+        let out = String::from_utf8_lossy(&r.console).into_owned();
+        let pcs: Vec<_> = vm
+            .vcpus
+            .iter()
+            .map(|v| format!("{:#x}", v.cpu.pc))
+            .collect();
+        return match (r.kind, r.exit.x[0]) {
+            (exit::PSCI, 0x8400_0008) => Ok((r.exit.x[1], out)),
+            (k, _) => Err(format!(
+                "exit {k} ({:#x}) on vCPU {} after {} steps, pcs {pcs:?}; console: {out}",
+                r.exit.value, r.exit.cpu, r.steps
+            )),
+        };
     }
     let mut out = Vec::new();
     let mut left = BUDGET;
@@ -73,6 +101,18 @@ fn smp_of(bin: &std::path::Path) -> u64 {
 
 #[test]
 fn baremetal() {
+    run_all(false, 1);
+}
+
+/// Every test in parallel SMP (a thread per vCPU), `WEBPC_PARALLEL_RUNS`
+/// times (default 5).
+#[test]
+fn baremetal_parallel() {
+    let runs = std::env::var("WEBPC_PARALLEL_RUNS").map_or(5, |v| v.parse().unwrap());
+    run_all(true, runs);
+}
+
+fn run_all(parallel: bool, runs: usize) {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/baremetal");
     let mut bins: Vec<_> = std::fs::read_dir(dir)
         .unwrap()
@@ -82,9 +122,9 @@ fn baremetal() {
     bins.sort();
     assert!(!bins.is_empty(), "no tests in {dir}");
     let mut failed = Vec::new();
-    for bin in &bins {
+    for bin in bins.iter().flat_map(|b| std::iter::repeat_n(b, runs)) {
         let name = bin.file_stem().unwrap().to_string_lossy();
-        match boot(&std::fs::read(bin).unwrap(), smp_of(bin)) {
+        match boot_mode(&std::fs::read(bin).unwrap(), smp_of(bin), parallel) {
             Ok((code, out)) if !out.ends_with(&format!("exit {code}\n")) => {
                 failed.push(format!("{name}: exit {code}, but the console says {out:?}"))
             }

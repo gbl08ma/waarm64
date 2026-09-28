@@ -11,7 +11,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 24);
+  assert.equal(ex.abi_version(), 25);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -64,8 +64,10 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 8)', () => 
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a reserved feature bit is rejected');
   new BigUint64Array(mem.buffer, cfg, 12).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 0n, 1n, 2n]);
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'no GICv2 (ABI 23)');
-  // …, ncpus 1, the GICv3.
-  new BigUint64Array(mem.buffer, cfg, 12).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 0n, 1n, 0n]);
+  new BigUint64Array(mem.buffer, cfg, 13).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 0n, 2n, 0n, 1n]);
+  assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'parallel SMP needs realtime (ABI 25)');
+  // …, ncpus 1, the GICv3, round-robin.
+  new BigUint64Array(mem.buffer, cfg, 13).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 0n, 1n, 0n, 0n]);
   const vm = ex.vm_new(ram, BigInt(RAM), cfg);
   assert.notEqual(vm, 0);
   assert.equal(BigInt(ex.vm_framebuffer(vm)), 0x4000_0000n + BigInt(RAM) - (4n << 20n), 'the framebuffer sits below the DTB space');
@@ -89,7 +91,7 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 8)', () => 
   assert.equal(kind, 1, `exit ${kind}, console ${JSON.stringify(out)}`);
   assert.deepEqual([exit[0], exit[3], exit[4]], [1n, 0x84000008n, 0n]); // PSCI SYSTEM_OFF, code 0
   assert.match(out, /^hello from the PL011\n\.\nexit 0\n$/);
-  const counters = new BigUint64Array(mem.buffer, ex.vm_counters(vm), 71);
+  const counters = new BigUint64Array(mem.buffer, ex.vm_counters(vm, 0), 71);
   assert.ok(Atomics.load(counters, 0) >= exit[1] && exit[1] > 100n, 'steps counted');
   assert.equal(Atomics.load(counters, 65), 1n, 'one IRQ');
   ex.vm_free(vm);

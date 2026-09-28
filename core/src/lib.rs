@@ -3,6 +3,8 @@
 //! The crate builds natively (for tests) and for wasm32 with shared imported
 //! memory and atomics.
 
+#![cfg_attr(target_arch = "wasm32", feature(stdarch_wasm_atomic_wait))]
+
 pub mod boot;
 pub mod cpu;
 pub mod crypto;
@@ -21,7 +23,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 24;
+pub const ABI_VERSION: u32 = 25;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -359,6 +361,7 @@ pub unsafe extern "C" fn vm_boot(
 }
 
 /// Runs at most `budget` steps and returns the exit kind (`vm::exit`); [`vm_exit`] has the details.
+/// Round-robin mode only (`VmConfig.smp` = 0).
 ///
 /// # Safety
 /// See the note above [`vm_new`].
@@ -368,14 +371,48 @@ pub unsafe extern "C" fn vm_run(vm: *mut vm::Vm, budget: u64) -> u32 {
     unsafe { &mut *vm }.run(budget)
 }
 
-/// The last run's `vm::ExitInfo`: kind, steps, value, x0–x3 (u64 each).
+/// Parallel mode (`VmConfig.smp` = 1, ABI 25): runs vCPU `cpu` on the calling
+/// thread for at most `budget` of its steps; returns the exit kind, with the
+/// details in [`vm_exit_cpu`]. Every vCPU has its own thread, and calls for
+/// one vCPU always come from the same core instance (docs/abi.md).
+///
+/// # Safety
+/// `vm` comes from [`vm_new`] and isn't freed meanwhile; no other thread runs
+/// vCPU `cpu` at the same time, and nothing else (`vm_cpu`) uses it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_run_cpu(vm: *const vm::Vm, cpu: u32, budget: u64) -> u32 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { (*vm).run_cpu(cpu as usize, budget) }
+}
+
+/// The last run's `vm::ExitInfo`: kind, steps, value, x0–x3, cpu, wake (u64
+/// each); in parallel mode, vCPU 0's.
 ///
 /// # Safety
 /// See the note above [`vm_new`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn vm_exit(vm: *const vm::Vm) -> *const vm::ExitInfo {
     // SAFETY: guaranteed by the caller.
-    &unsafe { &*vm }.exit
+    let vm = unsafe { &*vm };
+    if vm.parallel() {
+        return vm.exit_of(0);
+    }
+    &vm.exit
+}
+
+/// vCPU `cpu`'s last exit in parallel mode (ABI 25), read by its thread
+/// after [`vm_run_cpu`]; null past the last vCPU.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_exit_cpu(vm: *const vm::Vm, cpu: u32) -> *const vm::ExitInfo {
+    // SAFETY: guaranteed by the caller.
+    let vm = unsafe { &*vm };
+    if cpu as usize >= vm.vcpus.len() {
+        return core::ptr::null();
+    }
+    vm.exit_of(cpu as usize)
 }
 
 /// The console rings (`pl011::Rings`): TX at 0, RX at 4104, each {head: u32,
@@ -397,6 +434,22 @@ pub unsafe extern "C" fn vm_console(vm: *const vm::Vm) -> *const pl011::Rings {
 pub unsafe extern "C" fn vm_signal(vm: *const vm::Vm) -> *const AtomicU32 {
     // SAFETY: guaranteed by the caller.
     &unsafe { &*vm }.shared.signal
+}
+
+/// vCPU `i`'s wake word (ABI 25): its thread sleeps on it after an `IDLE`
+/// in parallel mode; bump and notify it after setting a signal bit. Null past
+/// the last vCPU.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_cpu_signal(vm: *const vm::Vm, i: u32) -> *const AtomicU32 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &*vm }
+        .shared
+        .cpus
+        .get(i as usize)
+        .map_or(core::ptr::null(), |c| &c.wake)
 }
 
 /// Virtio transport `i`'s shared block (`virtio::DevShared`: events, status,
@@ -426,14 +479,20 @@ pub unsafe extern "C" fn vm_framebuffer(vm: *const vm::Vm) -> u64 {
     boot::framebuffer(&unsafe { &*vm }.cfg).map_or(0, |f| f.0)
 }
 
-/// The counters (`vm::Counters`, u64s), read from any thread with atomic loads.
+/// vCPU `i`'s counters (`vm::Counters`, u64s; ABI 25 added `i`), read from
+/// any thread with atomic loads; null past the last vCPU. Round-robin mode
+/// counts everything in vCPU 0's; hosts sum the blocks.
 ///
 /// # Safety
 /// See the note above [`vm_new`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn vm_counters(vm: *const vm::Vm) -> *const vm::Counters {
+pub unsafe extern "C" fn vm_counters(vm: *const vm::Vm, i: u32) -> *const vm::Counters {
     // SAFETY: guaranteed by the caller.
-    &unsafe { &*vm }.shared.counters
+    unsafe { &*vm }
+        .shared
+        .cpus
+        .get(i as usize)
+        .map_or(core::ptr::null(), |c| &c.counters)
 }
 
 // JIT plumbing (M5 step 1), for tests/jit.test.ts and bench/jit.

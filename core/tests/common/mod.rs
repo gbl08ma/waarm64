@@ -8,13 +8,13 @@ pub mod p9;
 pub mod qcow2;
 
 use qcow2::Disk;
-use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::Ordering;
-use std::time::Instant;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 use webpc_core::mem::{Access, Mem};
 use webpc_core::virtio::{DeviceEntry, EV_CONFIG, Request};
-use webpc_core::vm::{RAM_BASE, SIGNAL_DEVICE, Vm, VmConfig, exit};
+use webpc_core::vm::{ExitInfo, RAM_BASE, SIGNAL_DEVICE, SIGNAL_STOP, Vm, VmConfig, exit};
 
 /// Where the runners put the kernel and initrd (web/vm.ts does the same).
 const KERNEL: u64 = RAM_BASE + (2 << 20);
@@ -35,7 +35,7 @@ pub fn disk(rel: &str) -> &'static Disk {
 /// sectors (web/overlay.ts keeps one on OPFS in 4 KiB blocks; the guest can't
 /// tell). Held by reference, so it outlives a boot: the next boot sees the writes.
 #[derive(Default)]
-pub struct Overlay(RefCell<HashMap<u64, [u8; 512]>>);
+pub struct Overlay(Mutex<HashMap<u64, [u8; 512]>>);
 
 impl Overlay {
     pub fn new() -> &'static Overlay {
@@ -46,7 +46,7 @@ impl Overlay {
         if !disk.read(off, buf) {
             return false;
         }
-        let o = self.0.borrow();
+        let o = self.0.lock().unwrap();
         if !o.is_empty() {
             for s in off / 512..(off + buf.len() as u64).div_ceil(512) {
                 if let Some(d) = o.get(&s) {
@@ -81,7 +81,7 @@ impl Overlay {
             );
             sector[(lo - s * 512) as usize..(hi - s * 512) as usize]
                 .copy_from_slice(&data[(lo - off) as usize..(hi - off) as usize]);
-            self.0.borrow_mut().insert(s, sector);
+            self.0.lock().unwrap().insert(s, sector);
         }
         true
     }
@@ -361,7 +361,7 @@ fn complete(vm: &Vm, i: usize, w0: u32, len: u32) {
         vm.shared.devices[i].cpl.push(&[w0, len]),
         "completion ring full"
     );
-    vm.shared.signal.fetch_or(SIGNAL_DEVICE, Ordering::AcqRel);
+    vm.signal(SIGNAL_DEVICE);
 }
 
 /// Buffers a backend holds until it has something for them, and what waits for
@@ -599,6 +599,10 @@ pub struct Boot<'a> {
     pub features: u64,
     /// `VmConfig.ncpus` (M7).
     pub ncpus: u64,
+    /// Parallel SMP (`VmConfig.smp` = 1, realtime): a thread per vCPU
+    /// ([`run_parallel`]), for at most `max_steps` of all of them or
+    /// [`PARALLEL_LIMIT`] of wall time.
+    pub parallel: bool,
 }
 
 impl<'a> Boot<'a> {
@@ -617,6 +621,7 @@ impl<'a> Boot<'a> {
             // The crypto extensions, as `bootVm` gives them (M6.5 loop 7).
             features: webpc_core::cpu::FEATURE_CRYPTO,
             ncpus: 1,
+            parallel: false,
         }
     }
 }
@@ -634,6 +639,7 @@ pub fn boot(b: &Boot) -> Run {
         fb,
         features,
         ncpus,
+        parallel,
     } = b;
     let mut ram = vec![0u128; ram_size as usize / 16];
     // SAFETY: ram is 16-byte aligned, ram_size bytes long, and outlives the Vm.
@@ -641,11 +647,12 @@ pub fn boot(b: &Boot) -> Run {
     let (entries, configs): (Vec<_>, Vec<_>) = devices.iter().map(|d| d.entry()).unzip();
     let cfg = VmConfig {
         ram_size,
-        deterministic: !realtime as u64,
+        deterministic: !(realtime || parallel) as u64,
         fb_width: fb.0,
         fb_height: fb.1,
         features,
         ncpus,
+        smp: parallel as u64,
         ..VmConfig::default()
     };
     let mut vm = Vm::with_devices(mem, cfg, &entries);
@@ -669,37 +676,51 @@ pub fn boot(b: &Boot) -> Run {
 
     let t = Instant::now();
     let (mut out, mut steps) = (Vec::new(), 0);
-    let kind = loop {
-        // As web/vm.ts `run`: DEVICE exits are handled within one budget.
-        let (budget, mut ran) = (100_000_000, 0);
-        let kind = loop {
-            let kind = vm.run(budget - ran);
-            ran += vm.exit.retired;
-            if kind == exit::IDLE && realtime {
-                // Nothing completes asynchronously here: sleep to the deadline.
-                let ns = vm.exit.value.min(10_000_000);
-                std::thread::sleep(std::time::Duration::from_nanos(ns));
-                continue;
+    let x0;
+    let kind = if parallel {
+        let b = Mutex::new(backends);
+        let r = run_parallel(&vm, PARALLEL_LIMIT, max_steps, echo, &|vm| {
+            b.lock().unwrap().poll(vm)
+        });
+        backends = b.into_inner().unwrap();
+        (out, steps, x0) = (r.console, r.steps, r.exit.x[0]);
+        r.kind
+    } else {
+        loop {
+            // As web/vm.ts `run`: DEVICE exits are handled within one budget.
+            let (budget, mut ran) = (100_000_000, 0);
+            let kind = loop {
+                let kind = vm.run(budget - ran);
+                ran += vm.exit.retired;
+                if kind == exit::IDLE && realtime {
+                    // Nothing completes asynchronously here: sleep to the deadline.
+                    let ns = vm.exit.value.min(10_000_000);
+                    std::thread::sleep(std::time::Duration::from_nanos(ns));
+                    continue;
+                }
+                if kind != exit::DEVICE {
+                    break kind;
+                }
+                backends.poll(&vm);
+                if ran == budget {
+                    break exit::BUDGET;
+                }
+            };
+            steps += ran;
+            let start = out.len();
+            while let Some(b) = vm.shared.console.tx.pop() {
+                out.push(b);
             }
-            if kind != exit::DEVICE {
-                break kind;
+            if echo {
+                eprint!("{}", String::from_utf8_lossy(&out[start..]));
             }
-            backends.poll(&vm);
-            if ran == budget {
-                break exit::BUDGET;
+            match kind {
+                exit::BUDGET | exit::TX_FULL if steps < max_steps => {}
+                _ => {
+                    x0 = vm.exit.x[0];
+                    break kind;
+                }
             }
-        };
-        steps += ran;
-        let start = out.len();
-        while let Some(b) = vm.shared.console.tx.pop() {
-            out.push(b);
-        }
-        if echo {
-            eprint!("{}", String::from_utf8_lossy(&out[start..]));
-        }
-        match kind {
-            exit::BUDGET | exit::TX_FULL if steps < max_steps => {}
-            _ => break kind,
         }
     };
     let secs = t.elapsed().as_secs_f64();
@@ -712,7 +733,7 @@ pub fn boot(b: &Boot) -> Run {
         fb,
         steps,
         kind,
-        x0: vm.exit.x[0],
+        x0,
         console: String::from_utf8_lossy(&out).replace("\r\n", "\n"),
         hvc: String::from_utf8_lossy(&backends.hvc).replace("\r\n", "\n"),
         summary: format!(
@@ -722,6 +743,100 @@ pub fn boot(b: &Boot) -> Run {
             vm.exit.value,
             vm.vcpus[0].cpu.pc
         ),
+    }
+}
+
+/// How long a parallel run may take (they can deadlock).
+pub const PARALLEL_LIMIT: Duration = Duration::from_secs(300);
+
+/// How a parallel run ended: the exit that ended it (on vCPU `exit.cpu`),
+/// or `BUDGET` after `max_steps`; `STOP` if the wall-clock limit ran out.
+pub struct ParallelRun {
+    pub kind: u32,
+    pub exit: ExitInfo,
+    pub steps: u64,
+    pub console: Vec<u8>,
+}
+
+/// Runs a parallel VM (`VmConfig.smp` = 1) with a thread per vCPU, as the
+/// browser's vCPU workers do (web/vm.ts), until an exit the host doesn't
+/// handle (PSCI SYSTEM_OFF/RESET, UNIMPLEMENTED), `max_steps` of all vCPUs,
+/// or `limit` of wall time. This thread drains the console (its one
+/// consumer); `device` takes a vCPU's DEVICE exit.
+pub fn run_parallel(
+    vm: &Vm,
+    limit: Duration,
+    max_steps: u64,
+    echo: bool,
+    device: &(dyn Fn(&Vm) + Sync),
+) -> ParallelRun {
+    let n = vm.vcpus.len();
+    let end: Mutex<Option<(u32, ExitInfo)>> = Mutex::new(None);
+    let done = AtomicBool::new(false);
+    let finish = |kind, e| {
+        end.lock().unwrap().get_or_insert((kind, e));
+        done.store(true, Ordering::SeqCst);
+        vm.signal(SIGNAL_STOP);
+    };
+    let steps = || -> u64 {
+        (0..n)
+            .map(|i| vm.shared.cpus[i].counters.retired.load(Ordering::Relaxed))
+            .sum()
+    };
+    let mut console = Vec::new();
+    let t = Instant::now();
+    std::thread::scope(|s| {
+        for c in 0..n {
+            let finish = &finish;
+            let done = &done;
+            s.spawn(move || {
+                while !done.load(Ordering::SeqCst) {
+                    // SAFETY: this thread is the only one that runs vCPU c.
+                    let kind = unsafe { vm.run_cpu(c, 10_000_000) };
+                    // SAFETY: this thread's vCPU's exit, written by that call.
+                    let e = unsafe { *vm.exit_of(c) };
+                    match kind {
+                        exit::BUDGET => {}
+                        exit::IDLE => {
+                            let wake = &vm.shared.cpus[c].wake;
+                            webpc_core::vm::wait(wake, e.wake as u32, e.value);
+                        }
+                        exit::TX_FULL => std::thread::sleep(Duration::from_micros(100)),
+                        exit::DEVICE => device(vm),
+                        exit::STOP => break,
+                        k => finish(k, e),
+                    }
+                }
+            });
+        }
+        loop {
+            let start = console.len();
+            while let Some(b) = vm.shared.console.tx.pop() {
+                console.push(b);
+            }
+            if echo {
+                eprint!("{}", String::from_utf8_lossy(&console[start..]));
+            }
+            if done.load(Ordering::SeqCst) {
+                break;
+            }
+            if steps() >= max_steps {
+                finish(exit::BUDGET, ExitInfo::default());
+            } else if t.elapsed() > limit {
+                finish(exit::STOP, ExitInfo::default());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    });
+    while let Some(b) = vm.shared.console.tx.pop() {
+        console.push(b);
+    }
+    let (kind, exit) = end.into_inner().unwrap().expect("an end");
+    ParallelRun {
+        kind,
+        exit,
+        steps: steps(),
+        console,
     }
 }
 

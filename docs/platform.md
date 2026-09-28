@@ -58,27 +58,68 @@ vCPU's event (SEV, SEVL) is set, which it consumes; **TLBI … IS** is done on e
 at once (the others aren't running). With one vCPU the quantum is unbounded, WFE and SEV are
 NOPs, and every step count is what it was before M7.
 
+**Parallel SMP** (`VmConfig.smp` = 1, realtime only; `core/src/vm/parallel.rs`, ABI 25): a
+thread per vCPU, each calling `vm_run_cpu` for its own vCPU in its own core instance (in the
+browser a worker each, `web/vcpu-worker.ts`, coordinated by `web/vm.ts`; natively a `std::thread`
+each, `core/tests/common` `run_parallel`). Each vCPU has its own code cache (blocks hold table
+indexes of their instance).
+- **Shared state** (the GIC, the PL011, the virtio transports, completion draining, PSCI power
+  states and CPU_ON requests) is behind one lock, `Vm::plat` (a `Mutex`; round-robin reaches it
+  through `&mut` without locking). Each vCPU drives its own timer PPIs (taking the lock only when a
+  level changes) and reads its IRQ line from an atomic that the platform code republishes after
+  every change under the lock (`Vm::refresh`, which also wakes a vCPU whose line went up). A chunk
+  boundary with nothing new takes no lock: the signal word, the maintenance flag, the clock, the
+  timer levels, the IRQ atomic.
+- **Signals:** RX and DEVICE are taken by the first vCPU that sees them (`fetch_and`); STOP isn't
+  cleared by the core (every vCPU must see it). **Wake words:** a vCPU with nothing to run
+  returns `IDLE` with its wake word as read *before* it looked for work; everything that makes
+  work for it (an interrupt line going up, CPU_ON, a drained queue it waits on, a host signal)
+  changes that state first, then bumps the word and notifies it, so the host's `Atomics.wait(word,
+  wake)` can't miss a wake-up.
+- **WFI** returns `IDLE` (value: ns to the vCPU's own deadline) unless an interrupt is signaled
+  to it; **WFE** is a yield (it ends the chunk; decision 5), SEV does nothing (no vCPU sleeps in
+  WFE). Measure before making WFE sleep.
+- **CPU_ON:** the caller records the request under the lock and wakes the target; the target's
+  own thread applies it (no thread writes another's registers), marking itself on under the same
+  lock (between taking the request and marking itself on, a second CPU_ON once saw it off: the
+  bare-metal `smp` test's check 4 caught it, 1 run in 30).
+- **DSB, ISB and ERET end the chunk** (`cpu::FEATURE_PARALLEL`: `Exit::Resync` in the interpreter;
+  the JIT calls the helper for DSB, and ISB and ERET were helpers already): the run loop drains
+  the vCPU's queue there (context synchronization) and completes its TLBI IS broadcasts. With one
+  vCPU, parallel mode booted Alpine as fast as round-robin realtime in Node (10.28 vs 10.21 s),
+  though the boot runs 584K ISBs and 209K ERETs.
+
 **Broadcast maintenance.** Round-robin makes it synchronous: **TLBI … IS** flushes every other
 vCPU's TLB in the run loop (`Exit::TlbiIs`) before anything else runs, and `IC IVAU`/`IC
 IALLU(IS)` invalidate the one code cache all vCPUs share. JIT code holds no translation of its
 own that a TLBI would have to reach: cross-page chains check the running vCPU's instruction TLB,
 and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor and both ICs across
-4 vCPUs (on QEMU and hvf too). **Realtime (loop 5), designed so round-robin stays immediate:**
-- Each vCPU gets a maintenance queue (TLB ops, and IC ops for its own code cache) under a lock,
-  with an atomic pending flag it checks at every chunk boundary (one relaxed load), and an
-  `applied` sequence number. An issuer pushes the op to every other vCPU's queue (a full queue
-  collapses to one flush-all) and bumps its own `issued` sequence.
-- TLB ops are applied at the target's next chunk boundary; IC ops there and at context
-  synchronization (ISB, exception entry, ERET), which the architecture requires before the new
-  code is promised.
-- The issuer's next `DSB` waits (`Atomics.wait`, bounded) until every other vCPU's `applied` ≥
-  its `issued`, or that vCPU is off or idle (in WFI: it drains before it resumes, so it counts as
-  acknowledged). Pending requests shrink the targets' chunks if the wait shows in profiles.
-- In round-robin the queues aren't used: the others aren't running, so every op is applied at
-  once and the DSB wait is always satisfied.
-- The stale-code checker must tolerate the window between another vCPU's write and its IC being
-  drained (legal cross-modification): in realtime, a mismatch drops the block and counts; only
-  deterministic runs trap.
+4 vCPUs (on QEMU and hvf too). **Parallel mode:**
+- Each vCPU has a queue (TLB operations, and code pages for its cache) under a lock, an atomic
+  pending flag checked at every chunk boundary, and `queued`/`applied` counts. An issuer pushes
+  to every other vCPU's queue: up to 64 TLB operations (then one flush-all), and **distinct code
+  pages**, up to 1024 (then the whole cache). Linux cleans a page with an IC IVAU per 64-byte line,
+  and an idle vCPU collects the pages of every exec page fault elsewhere: queues of 64 addresses,
+  then of 64 pages, collapsed into whole-cache flushes often enough to compile 6×, then 3×, the
+  blocks of a one-vCPU Alpine boot on two vCPUs (now 1.7×: each vCPU compiles what it runs).
+- A vCPU applies its queue at every chunk boundary, and when it enters `vm_run_cpu`, before it
+  runs anything.
+- **The issuer's DSB after TLBI IS waits** until each target has applied the operations or isn't
+  running guest code: a vCPU is `RUN` inside `vm_run_cpu` and `OUT` once it returns to the host
+  (idle or anywhere else: it drains on re-entry, having set `RUN` first, sequentially consistent
+  against the issuer's push and check), or `OFF`. The waiter drains its own queue while it waits
+  (two issuers can't deadlock), sleeps on its wake word in 1 ms steps (a vCPU that drains wakes
+  the vCPUs flagged as waiting), and panics after 10 s (a bug).
+- IC operations don't wait (decision 4): the architecture promises another PE the new code only
+  after a context synchronization event *that follows its seeing the change*, which ends the chunk
+  here. `maint.c` had its ISB before waiting for the rewrite: parallel mode ran the old code (401),
+  and loop 5 fixed the test (QEMU TCG and hvf pass it either way).
+- **The stale-code checker tolerates** stale blocks in parallel caches (`jit::Cache::tolerant`:
+  code another vCPU rewrote is legal to run until this vCPU drains the IC): it drops the block at
+  the run loop's entry and counts it (`JIT_STALE`, counter word 90), and only counts mid-chain. Only
+  round-robin runs trap.
+- Planted bugs: no DSB wait fails `maint` in all 20 native parallel runs (checks 211–213: stale
+  translations); no IC broadcast fails it in all 10 JIT runs in Node (401, 402).
 
 - `vm_run(vm, budget)` runs **chunks of at most `CHUNK` = 32,768 steps** (instructions retired
   plus exceptions taken), cut at the next timer deadline in deterministic mode so timers fire on
@@ -103,7 +144,8 @@ Two modes, chosen by `VmConfig.deterministic`:
   Node and in Chromium, interpreted or under the JIT**; tests assert those counts
   ([testing.md](testing.md) "Step counts").
 - **Realtime** (I/O benchmarks, `openssl speed`, interactive use): the core imports
-  `env.now_ms()` (`performance.now()` in the browser, `Instant` natively), read once per chunk and
+  `env.now_ms()` (`performance.timeOrigin + performance.now()` in the browser and Node, one clock
+  for every worker; `Instant` natively), read once per chunk and
   on timer-register reads; the counter is (host ns since `vm_new`) × CNTFRQ. Chunks aren't cut at
   deadlines, so a timer fires at the first chunk boundary past it (≤ one chunk late, ~0.1 ms of
   latency). A WFI with no interrupt signaled returns `IDLE` with the PC on the WFI and `value` =
@@ -112,6 +154,8 @@ Two modes, chosen by `VmConfig.deterministic`:
   `Atomics.notify` it), except on a page's main thread, which gets the exit.
   - `Vm::wfi` takes **one** clock reading (three readings once let a timer fall due between them
     and be neither pending nor a deadline, so the host slept forever).
+  - **Parallel SMP:** every vCPU reads the clock itself; the core keeps the counter from going
+    back between vCPUs (an atomic maximum of what any vCPU read).
   - **Idle watchdog:** `idleLimitMs` (`web/vm.ts`, on in the boot benchmarks) throws on an idle
     with no deadline for that long: a deadline-less idle that long is a bug either way.
 - Guest-timed benchmarks (`dd`, `fio`, `openssl speed`) are meaningless in deterministic time:
@@ -173,8 +217,8 @@ later CPU_ON restarts the vCPU), **AFFINITY_INFO** (level 0: ON 0 / OFF 1), MIGR
 answered in the core; SYSTEM_OFF and SYSTEM_RESET exit to the host (exit kind `PSCI`, PC past the
 HVC, the host writes x0 if it resumes); everything else NOT_SUPPORTED (CPU_SUSPEND included).
 Only CPU 0 is on at boot. kvm-unit-tests' `psci` passes all five checks, including the concurrent
-cpu-on one QEMU TCG fails. In realtime SMP (loop 5) the vCPU workers start at boot, parked until
-CPU_ON.
+cpu-on one QEMU TCG fails. In parallel SMP every vCPU's worker starts at boot and sleeps on its
+wake word (`IDLE`, u64::MAX) until a CPU_ON, which its own thread carries out.
 
 ## Bare-metal test convention
 

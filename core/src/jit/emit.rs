@@ -747,6 +747,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         | CSDB | DGH => {}
         // Barriers order nothing for one vCPU on wasm's sequentially consistent
         // memory (M6 loop 1; M7 revisits them), and don't end a block.
+        DSB if cx.parallel => return false,
         DMB | DSB | SSBB | PSSBB => {}
         MRS => return mrs(c, cx, i, k),
         MSR_reg | MSR_imm => return msr(c, cx, i, k),
@@ -894,6 +895,9 @@ pub struct Ctx {
     /// The vCPU has the crypto extensions (`cpu::FEATURE_CRYPTO`, fixed for its
     /// life): without them the helper runs those words (UNDEFINED).
     pub crypto: bool,
+    /// Parallel SMP (`cpu::FEATURE_PARALLEL`): DSB is the helper's, which
+    /// ends the chunk there.
+    pub parallel: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2420,6 +2424,7 @@ mod tests {
         },
         el1: false,
         crypto: true,
+        parallel: false,
     };
 
     fn emit(i: u32, k: usize) -> Option<Vec<u8>> {
@@ -2787,6 +2792,7 @@ mod tests {
             bus: Bus::Tlb { read },
             el1: true,
             crypto: true,
+            parallel: false,
         };
         let b = emit_in(insn, 0, &tlb).unwrap();
         for off in [read, read + 8] {

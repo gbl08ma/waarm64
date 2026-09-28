@@ -39,7 +39,10 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   UI, canvas and input and forwards events to it through `MessagePort`s (transferred with the
   device specs, `specPorts`).
 - Doorbell: a pair of i32s in the host's scratch page; word 0 rung by the vCPU
-  (`Atomics.notify`), word 1 the last value the device worker handled.
+  (`Atomics.notify`), word 1 the last value the device worker handled (`Devices.serve`). In
+  parallel SMP every vCPU worker rings it (`ring`: a waiter compares with wrap-around, since the
+  handled value may pass its own ring), Node serves it inline between the coordinator's awaits,
+  and completions also bump and notify every vCPU's wake word (`DevicesInit.wakes`).
 - **Deterministic mode:** the vCPU worker `Atomics.wait`s on each `DEVICE` exit until the device
   worker has completed everything posted, so completions land at a fixed step and boots keep one
   exact step count natively, in Node and in Chromium (backend latency only lengthens the wait).

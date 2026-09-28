@@ -32,6 +32,7 @@ image_test() {
   fi
 }
 image_test 'boot test' 'linux buildroot' boot
+step tsan;        scripts/tsan.sh
 image_test kvm-unit-tests kvm-unit-tests kvm_unit_tests
 image_test 'LTP and kselftests' 'ltp linux' ltp
 for d in alpine debian; do

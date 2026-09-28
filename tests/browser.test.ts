@@ -33,7 +33,7 @@ async function result(path: string, global: string) {
 }
 
 test('core wasm runs in a cross-origin isolated worker', async () => {
-  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 24, counter: 2 });
+  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 25, counter: 2 });
 });
 
 test('three core instances run guests concurrently on one memory in workers (M7)', async () => {
@@ -88,6 +88,19 @@ for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], [
     assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'webpc: hvc0 ok\n');
   });
 }
+
+// Parallel SMP (M7 loop 5): a worker per vCPU (nested in the boot worker),
+// realtime, so not reproducible: WEBPC_PARALLEL_RUNS boots (default 3), all must pass.
+const RUNS = Number(process.env.WEBPC_PARALLEL_RUNS ?? 3);
+test('Linux boots on 4 vCPUs in parallel (a worker each), JIT', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
+  for (let i = 1; i <= RUNS; i++) {
+    const r = await bootPage('parallel&ncpus=4&jit=1', 10);
+    assert.equal(r.error, undefined, `run ${i}`);
+    console.log(`# chromium parallel boot ${i} (4 vCPUs, JIT): ${(r.ms / 1000).toFixed(1)} s`);
+    assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\nwebpc: test exit 0\n/);
+  }
+});
 
 test('the root filesystem is writable through an OPFS overlay, and it persists across boots', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
   const name = 'webpc-test-rw';
@@ -149,5 +162,23 @@ for (const [distro, expect] of [['alpine', /webpc: alpine 3\.24\.2 6\.18\.53-0-v
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
     assert.match(r.console, expect);
     if (distro === 'alpine') assert.equal(r.steps, STEPS.alpine);
+  });
+}
+
+// Debian on 4 vCPUs in parallel is an occasional check (WEBPC_PARALLEL_DEBIAN=1, ~1 min).
+for (const [distro, want] of [['alpine', /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\n/], ['debian', /smp: Brought up 1 node, 4 CPUs[^]*webpc: debian\n13\.[^]*webpc: test ok\n/]] as const) {
+  const on = distro === 'alpine' ? DISTRO_TESTS.includes('alpine') : DISTRO_TESTS.includes('debian') && process.env.WEBPC_PARALLEL_DEBIAN === '1';
+  const skip = !on && (distro === 'alpine' ? 'SKIPPED: set WEBPC_DISTROS=alpine' : 'SKIPPED: set WEBPC_DISTROS=debian WEBPC_PARALLEL_DEBIAN=1');
+  test(`${distro} boots on 4 vCPUs in parallel (a worker each), JIT`, { skip }, async () => {
+    const overlay = distro === 'debian' ? '&overlay=webpc-test-debian' : '';
+    for (let i = 1; i <= (distro === 'alpine' ? Math.min(RUNS, 2) : 1); i++) {
+      if (overlay) await removeOverlay('webpc-test-debian');
+      const r = await bootPage(`distro=${distro}${overlay}&parallel&ncpus=4&jit=1`, 10);
+      if (overlay) await removeOverlay('webpc-test-debian');
+      assert.equal(r.error, undefined, `run ${i}`);
+      console.log(`# chromium ${distro} parallel boot ${i} (4 vCPUs, JIT): ${(r.ms / 1000).toFixed(1)} s`);
+      assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+      assert.match(r.console, want);
+    }
   });
 }

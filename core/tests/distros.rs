@@ -15,6 +15,17 @@ fn boot(d: &Distro, devices: &[Dev], fb: (u64, u64), max_steps: u64) -> Run {
 }
 
 fn boot_n(d: &Distro, devices: &[Dev], fb: (u64, u64), max_steps: u64, ncpus: u64) -> Run {
+    boot_mode(d, devices, fb, max_steps, ncpus, false)
+}
+
+fn boot_mode(
+    d: &Distro,
+    devices: &[Dev],
+    fb: (u64, u64),
+    max_steps: u64,
+    ncpus: u64,
+    parallel: bool,
+) -> Run {
     let (kernel, initrd) = (common::image(d.kernel), common::image(d.initrd));
     let r = common::boot(&Boot {
         initrd: Some(&initrd),
@@ -24,6 +35,7 @@ fn boot_n(d: &Distro, devices: &[Dev], fb: (u64, u64), max_steps: u64, ncpus: u6
         echo: true,
         fb,
         ncpus,
+        parallel,
         ..Boot::new(&kernel, d.cmdline)
     });
     eprintln!("\n[{}]", r.summary);
@@ -49,13 +61,22 @@ fn alpine_boots_and_runs_the_test_script() {
     assert_eq!(r.steps, common::steps("alpine"));
 }
 
-/// Alpine on `WEBPC_NCPUS` vCPUs (default 2), deterministic round-robin (M7).
+/// Alpine on `WEBPC_NCPUS` vCPUs (default 2), deterministic round-robin
+/// (M7), or in parallel with `WEBPC_PARALLEL=1` (a thread per vCPU).
 #[test]
 #[ignore = "needs target/images/alpine (images/build.sh alpine) and --release"]
 fn alpine_smp() {
     let n: u64 = std::env::var("WEBPC_NCPUS").map_or(2, |v| v.parse().unwrap());
+    let parallel = std::env::var("WEBPC_PARALLEL").is_ok_and(|v| v == "1");
     let devices = common::test_devices(common::ALPINE.disk);
-    let r = boot_n(&common::ALPINE, &devices, (640, 480), 50_000_000_000, n);
+    let r = boot_mode(
+        &common::ALPINE,
+        &devices,
+        (640, 480),
+        50_000_000_000,
+        n,
+        parallel,
+    );
     assert!(
         r.console
             .contains(&format!("smp: Brought up 1 node, {n} CPUs")),

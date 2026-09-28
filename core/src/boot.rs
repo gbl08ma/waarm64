@@ -200,7 +200,14 @@ impl Vm {
         }
         let fb = fb.map(|(pa, _)| (pa, self.cfg.fb_width, self.cfg.fb_height));
         let ncpus = self.cfg.ncpus.max(1) as usize;
-        let blob = dtb(ram, cmdline, initrd, self.virtio.len(), fb, ncpus);
+        let blob = dtb(
+            ram,
+            cmdline,
+            initrd,
+            self.plat.get_mut().virtio.len(),
+            fb,
+            ncpus,
+        );
         if blob.len() as u64 > DTB_SPACE {
             return Err("DTB too large");
         }

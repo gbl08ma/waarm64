@@ -4,11 +4,13 @@
 // device worker (web/device-worker.ts) when this runs in a worker, and inline
 // otherwise (Node, a page's main thread). Runs in a worker or in Node.
 // Time is deterministic unless `realtime` is set (the host clock, and idle
-// WFIs sleep on the signal word).
-import { Devices, EV_CONFIG, deviceEntry, fileSource, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
+// WFIs sleep on the signal word). With `parallel` (M7), every vCPU runs in
+// its own worker (web/vcpu-worker.ts) and this thread coordinates them.
+import { Devices, EV_CONFIG, deviceEntry, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
+import type { VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 24;
+export const ABI = 25;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -24,7 +26,8 @@ type Exports = {
   vm_exit(vm: number): number;
   vm_console(vm: number): number;
   vm_cpu(vm: number, i: number): number;
-  vm_counters(vm: number): number;
+  vm_counters(vm: number, i: number): number;
+  vm_cpu_signal(vm: number, i: number): number;
   jit_helper_report(v: number): number;
   vm_signal(vm: number): number;
   vm_device(vm: number, i: number): number;
@@ -38,7 +41,9 @@ type Exports = {
  */
 export function coreImports(memory: WebAssembly.Memory) {
   const jit = jitHost(memory);
-  return { env: { memory, now_ms: () => performance.now(), jit_install: jit.install }, jit };
+  // One clock for every instance: each worker's performance.now() starts at its own creation.
+  const now_ms = () => performance.timeOrigin + performance.now();
+  return { env: { memory, now_ms, jit_install: jit.install }, jit };
 }
 
 /** Each extra core instance's stack (docs/abi.md "Many core instances on one memory"). */
@@ -122,7 +127,9 @@ export const Counter = {
   JIT_BACK_EDGES: 88,
   // ABI 17: loop regions compiled for a hot head compiled alone.
   JIT_TIER_UPS: 89,
-  LEN: 90,
+  // ABI 25: stale blocks a parallel vCPU's checker tolerated.
+  JIT_STALE: 90,
+  LEN: 91,
 } as const;
 
 /**
@@ -145,6 +152,11 @@ export type BootOptions = {
   crypto?: boolean;
   /** `VmConfig.ncpus` (ABI 21): vCPUs, run round-robin on this thread (default 1). */
   ncpus?: number;
+  /**
+   * `VmConfig.smp` 1 (ABI 25): a worker per vCPU (web/vcpu-worker.ts),
+   * realtime only (it implies `realtime`). Drive it with `runAsync`.
+   */
+  parallel?: boolean;
   /**
    * Realtime mode: throw if the vCPU sleeps this long with no timer deadline
    * and nothing signaled (a lost wake-up would otherwise hang the run).
@@ -206,6 +218,8 @@ export const DISTROS = {
 const S_CFG = 0;
 const S_DEVICES = 128;
 const S_BELL = 2048;
+/** Parallel mode: the coordinator's word (vCPU workers bump it on TX_FULL). */
+const S_CTL = 2056;
 const S_CMDLINE = 4096;
 
 export type Vm = Awaited<ReturnType<typeof bootVm>>;
@@ -237,11 +251,13 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     const head = new Uint8Array(await r.arrayBuffer());
     return { ...d, size: isQcow2(head) ? qcow2Size(head) : Number(r.headers.get('content-range')?.split('/')[1]) };
   }));
-  const deterministic = !o.realtime;
+  const parallel = o.parallel ?? false;
+  const deterministic = !o.realtime && !parallel;
+  const ncpus = o.ncpus ?? 1;
   // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries, framebuffer, JIT.
   const fb = o.framebuffer ?? { width: 0, height: 0 };
-  // …, features, CPUs, GIC (ABI 21).
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 12).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(o.ncpus ?? 1), 0n]);
+  // …, features, CPUs, GIC (ABI 21), parallel (ABI 25).
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 13).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(ncpus), 0n, parallel ? 1n : 0n]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
@@ -260,7 +276,18 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const shared = specs.map((_, i) => ex.vm_device(vm, i));
   Devices.writeConfig(memory, shared, specs);
   const signal = ex.vm_signal(vm);
-  const devices = await deviceHost({ memory, shared, ram, signal, specs, deterministic }, scratch + S_BELL);
+  const wakes = Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_signal(vm, i));
+  const devices = await deviceHost({ memory, shared, ram, signal, specs, deterministic, wakes }, scratch + S_BELL, parallel);
+  /** Sets signal-word bits, then bumps and notifies every vCPU's wake word (docs/abi.md). */
+  const raise = (bits: number) => {
+    const i32 = new Int32Array(memory.buffer);
+    Atomics.or(i32, signal / 4, bits);
+    Atomics.notify(i32, signal / 4);
+    for (const w of wakes) {
+      Atomics.add(i32, w / 4, 1);
+      Atomics.notify(i32, w / 4);
+    }
+  };
   // Realtime idling blocks on the signal word, which a page's main thread can't.
   const canBlock = typeof window === 'undefined';
 
@@ -277,8 +304,17 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     Atomics.store(u32, tx / 4 + 1, head);
     return decoder.decode(new Uint8Array(out), { stream: true });
   };
-  const counters = ex.vm_counters(vm);
+  const blocks = Array.from({ length: ncpus }, (_, i) => ex.vm_counters(vm, i));
+  const counters = blocks[0];
+  /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
+  const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
+  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, raise }) : undefined;
+  const RING_HALF = RING / 2;
+  const txUsed = () => {
+    const u32 = new Uint32Array(memory.buffer);
+    return (Atomics.load(u32, tx / 4) - Atomics.load(u32, tx / 4 + 1)) >>> 0;
+  };
   return {
     memory,
     /** The framebuffer (web/display.ts): byte address in `memory`, width, height; x8r8g8b8, packed rows. */
@@ -286,12 +322,13 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /** Byte addresses of guest RAM (PA 0x4000_0000) and of the vCPU registers (`cpu::Cpu`) in `memory`. */
     ram,
     cpu: ex.vm_cpu(vm, 0),
-    /** Byte address of `vm::Counters` in `memory` (u64s, read with Atomics.load). */
+    /** Byte address of vCPU 0's `vm::Counters` in `memory` (u64s, read with Atomics.load; its PC word is vCPU 0's). */
     counters,
-    /** A snapshot of the counters; exceptions by EC only where non-zero. */
+    /** Sets bits in the signal word and wakes every vCPU (docs/abi.md). */
+    signal: raise,
+    /** A snapshot of the counters, summed over the vCPUs; exceptions by EC only where non-zero. */
     stats() {
-      const c = new BigUint64Array(memory.buffer, counters, Counter.LEN);
-      const n = (i: number) => Number(Atomics.load(c, i));
+      const n = counter;
       const exceptions: Record<string, number> = {};
       for (let ec = 0; ec < 64; ec++) if (n(Counter.EXCEPTIONS + ec)) exceptions[`0x${ec.toString(16)}`] = n(Counter.EXCEPTIONS + ec);
       return {
@@ -302,7 +339,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
           inline: n(Counter.JIT_INLINE), helpers: n(Counter.JIT_HELPERS), inlineSteps: n(Counter.JIT_INLINE_STEPS),
           flagsStored: n(Counter.JIT_FLAGS_STORED), flagsElided: n(Counter.JIT_FLAGS_ELIDED),
           condDirect: n(Counter.JIT_COND_DIRECT), condComputed: n(Counter.JIT_COND_COMPUTED), condMemory: n(Counter.JIT_COND_MEMORY),
-          regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS),
+          regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS), stale: n(Counter.JIT_STALE),
         },
       };
     },
@@ -318,6 +355,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
      * until its deadline or a signal.
      */
     run(budget: number) {
+      if (par) throw new Error('a parallel VM runs through runAsync');
       let steps = 0;
       for (;;) {
         const kind = ex.vm_run(vm, BigInt(budget - steps));
@@ -343,14 +381,113 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
         return { kind: kind === Exit.DEVICE ? Exit.BUDGET : kind, steps, value: info[2], x: [...info.subarray(3)] };
       }
     },
+    /**
+     * `run` for either mode. In parallel mode the vCPU workers run on their
+     * own (started by the first call); this returns once they retired
+     * `budget` steps together, the console's TX ring is half full (`TX_FULL`:
+     * drain it), 50 ms passed (`BUDGET`), or an exit ended the run on some
+     * vCPU (then every worker has stopped). With `idleLimitMs`, it throws if
+     * no vCPU retired a step for that long.
+     */
+    async runAsync(budget: number): Promise<{ kind: number; steps: number; value: bigint; x: bigint[] }> {
+      if (!par) return this.run(budget);
+      const s0 = counter(Counter.STEPS);
+      const t0 = performance.now();
+      for (;;) {
+        const end = await par.wait(10);
+        const steps = counter(Counter.STEPS) - s0;
+        if (end) return { kind: end.kind, steps, value: end.value, x: end.x };
+        if (steps >= budget || performance.now() - t0 > 50) return { kind: Exit.BUDGET, steps, value: 0n, x: [] };
+        if (txUsed() >= RING_HALF) return { kind: Exit.TX_FULL, steps, value: 0n, x: [] };
+        if (o.idleLimitMs !== undefined && performance.now() - par.progress(counter(Counter.STEPS)) > o.idleLimitMs) {
+          raise(STOP);
+          throw new Error(`no vCPU retired a step in ${o.idleLimitMs} ms (pcs ${par.pcs().join(' ')})`);
+        }
+      }
+    },
     drain,
     /** Resolves once inline backends finished what a `DEVICE` exit from `run` handed them. */
     settle: () => devices.settle(),
     /** What the guest wrote to its virtio consoles so far (all of it once `flush` resolves). */
     hvc: () => devices.output(),
     flush: () => devices.flush(),
-    close: () => devices.close(),
+    close: () => {
+      par?.close();
+      devices.close();
+    },
     pc: () => new BigUint64Array(memory.buffer, ex.vm_cpu(vm, 0) + 256, 1)[0],
+  };
+}
+
+const STOP = 1;
+
+/**
+ * Parallel mode's vCPU workers (web/vcpu-worker.ts), started at the first
+ * `wait`: a core instance each on `memory`, with a stack and TLS block from
+ * `instance`. The first exit a worker reports that isn't STOP (or its error)
+ * ends the run: the others are stopped (STOP stays set; it isn't cleared,
+ * docs/abi.md).
+ */
+function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; raise: (bits: number) => void }) {
+  type Handle = { post(job: VcpuJob): void; terminate(): void };
+  let workers: Promise<Handle>[] | undefined;
+  let end: { kind: number; value: bigint; x: bigint[] } | undefined;
+  let error: Error | undefined;
+  let stopped = 0;
+  let last = { steps: -1, at: performance.now() };
+  const ctl = new Int32Array(c.memory.buffer, c.ctl, 1);
+  const bump = () => {
+    Atomics.add(ctl, 0, 1);
+    Atomics.notify(ctl, 0);
+  };
+  const ended = (m: VcpuEnd) => {
+    stopped++;
+    if (m.type === 'error') error ??= new Error(`vCPU ${m.cpu}: ${m.message}`);
+    else if (m.kind !== Exit.STOP) end ??= { kind: m.kind, value: m.value, x: m.x };
+    if (stopped === 1) c.raise(STOP);
+    bump();
+  };
+  const spawn = async (): Promise<Handle> => {
+    const url = new URL('./vcpu-worker.ts', import.meta.url);
+    if (typeof Worker !== 'undefined') {
+      const w = new Worker(url, { type: 'module' });
+      w.onmessage = (e: MessageEvent<VcpuEnd>) => ended(e.data);
+      w.onerror = (e) => ended({ type: 'error', cpu: -1, message: e.message });
+      return { post: (j) => w.postMessage(j), terminate: () => w.terminate() };
+    }
+    const { Worker: NodeWorker } = await import('node:worker_threads');
+    const w = new NodeWorker(url);
+    w.on('message', ended);
+    w.on('error', (e: Error) => ended({ type: 'error', cpu: -1, message: String(e.stack ?? e) }));
+    return { post: (j) => w.postMessage(j), terminate: () => void w.terminate() };
+  };
+  const start = () => Array.from({ length: c.ncpus }, async (_, cpu) => {
+    const h = await spawn();
+    h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl });
+    return h;
+  });
+  return {
+    /** Waits up to `ms` for news; the run's end once every worker has stopped. */
+    async wait(ms: number) {
+      workers ??= start();
+      await Promise.all(workers);
+      if (!error && !(end && stopped === c.ncpus)) {
+        const r = Atomics.waitAsync(ctl, 0, Atomics.load(ctl, 0), ms);
+        if (r.async) await r.value;
+      }
+      if (error) throw error;
+      return end && stopped === c.ncpus ? end : undefined;
+    },
+    /** When `steps` (all vCPUs) last changed. */
+    progress(steps: number) {
+      if (steps !== last.steps) last = { steps, at: performance.now() };
+      return last.at;
+    },
+    pcs: () => Array.from({ length: c.ncpus }, (_, i) => `0x${new BigUint64Array(c.memory.buffer, (c.instance.exports.vm_cpu as (vm: number, i: number) => number)(c.vm, i) + 256, 1)[0].toString(16)}`),
+    close() {
+      c.raise(STOP);
+      for (const w of workers ?? []) void w.then((h) => h.terminate());
+    },
   };
 }
 
@@ -365,7 +502,7 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
   let steps = 0;
   const t0 = performance.now();
   for (;;) {
-    const r = vm.run(100_000_000);
+    const r = await vm.runAsync(100_000_000);
     steps += r.steps;
     console += vm.drain();
     if (r.kind === Exit.DEVICE) {
@@ -385,10 +522,22 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
  * worker), inline otherwise. `kick` hands them what a DEVICE exit posted and
  * returns once they've taken all of it (deterministic mode).
  */
-async function deviceHost(init: DevicesInit, bellAddr: number) {
+async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean) {
   let text = '';
   const out = (_device: number, t: string) => { text += t; };
   const inWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+  if (parallel && !inWorker) {
+    // The vCPU workers ring the doorbell; this thread serves it between its awaits.
+    const d = await Devices.open(init, out);
+    let failed: unknown;
+    void d.serve(new Int32Array(init.memory.buffer, bellAddr, 2)).catch((e) => { failed = e; });
+    return {
+      kick: (_wait: boolean) => { throw new Error('parallel: the vCPU workers ring the doorbell'); },
+      inFlight: () => false,
+      settle: async () => { if (failed) throw failed; },
+      output: () => text, flush: async () => { if (failed) throw failed; }, close: () => d.close(),
+    };
+  }
   if (!inWorker || init.specs.length === 0) {
     // blk over HTTP needs a worker (Node has no XHR; a page can't make binary sync XHRs); Node reads `file:` images.
     const d = await Devices.open(init, out);
@@ -420,15 +569,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number) {
   return {
     inFlight: () => false,
     settle: async () => {},
-    kick(wait: boolean) {
-      const n = Atomics.add(bell, 0, 1) + 1;
-      Atomics.notify(bell, 0);
-      if (!wait) return; // completions come back through SIGNAL_DEVICE
-      for (let a; (a = Atomics.load(bell, 1)) !== n;) {
-        if (a === -1) throw new Error('device worker failed (see its error)');
-        Atomics.wait(bell, 1, a);
-      }
-    },
+    kick: (wait: boolean) => ring(bell, wait), // completions come back through SIGNAL_DEVICE
     output: () => text,
     flush: () => new Promise<void>((resolve) => {
       flushed = resolve;

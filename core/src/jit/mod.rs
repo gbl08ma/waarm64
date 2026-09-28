@@ -124,6 +124,9 @@ pub struct Stats {
     pub back_edges: u64,
     /// Loop regions compiled for a hot head that was compiled alone (ABI 17).
     pub tier_ups: u64,
+    /// Stale blocks the checker found in a tolerant cache (ABI 25: parallel
+    /// SMP, where another vCPU may rewrite code before its IC reaches this one).
+    pub stale: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -221,6 +224,10 @@ pub struct Cache {
     next: u32,
     /// No JIT host (natively, or before `jit.bind`): interpret everything.
     off: bool,
+    /// The stale-code checker counts stale blocks instead of panicking
+    /// (parallel SMP: code another vCPU rewrote is legal to run until this
+    /// one drains that vCPU's IC at a context synchronization event).
+    pub tolerant: bool,
     /// The RAM the blocks were compiled for (flat blocks embed its layout).
     ram: Option<(usize, u64, u64)>,
     pub stats: Stats,
@@ -249,6 +256,7 @@ impl Cache {
             clock: 0,
             next: 0,
             off: false,
+            tolerant: false,
             ram: None,
             stats: Stats::default(),
             features: crate::cpu::FEATURES,
@@ -332,16 +340,23 @@ impl Cache {
     }
 
     /// The stale-code checker at a region's entry: all its blocks' words.
-    fn check(&self, key: u64, mem: &Mem) {
+    /// False for a stale block in a tolerant cache (counted); a stale block
+    /// in any other panics.
+    fn check(&mut self, key: u64, mem: &Mem) -> bool {
         let words: Vec<u32> = self.spans[&key]
             .iter()
             .flat_map(|&(pa, n)| block::read(mem, pa, n as usize))
             .collect();
+        if block::hash(&words) == self.map[&key].hash {
+            return true;
+        }
         assert!(
-            block::hash(&words) == self.map[&key].hash,
+            self.tolerant,
             "stale JIT block at PA {:#x}: its code changed without an IC",
             key & !3
         );
+        self.stats.stale += 1;
+        false
     }
 
     /// The compiled block for `key` as (table index, length), or else how many
@@ -615,8 +630,10 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
         if let Ok((idx, len)) = r
             && len as u64 <= left
         {
-            if cache.cfg.check {
-                cache.check(key.expect("compiled"), mem);
+            if cache.cfg.check && !cache.check(key.expect("compiled"), mem) {
+                // Tolerated (parallel SMP): drop it and compile the code as it is now.
+                cache.invalidate(key.expect("compiled") & !0xfff);
+                continue;
             }
             let helped = vr.jit.helper_steps;
             // SAFETY: `idx` is a compiled block (the cache drops blocks, and
@@ -746,8 +763,14 @@ fn status(j: &mut State, r: Result<(), Exit>) -> u32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_check(v: *mut Vcpu, key: u64) {
     // SAFETY: guaranteed by the caller.
-    let (mem, v) = unsafe { (&*(*v).jit.mem, &*v) };
-    v.jit.cache.as_deref().expect("a JIT vCPU").check(key, mem);
+    let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
+    // A tolerant cache only counts a stale block here, mid-chain: it's
+    // dropped when the run loop next enters it.
+    v.jit
+        .cache
+        .as_deref_mut()
+        .expect("a JIT vCPU")
+        .check(key, mem);
 }
 
 /// A loop head compiled alone got hot (step 8.3, [`emit::tier_up`]): its

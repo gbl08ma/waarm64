@@ -456,6 +456,18 @@ function blk(ctx: Ctx, src: Source, files?: OverlayFiles): Backend {
   };
 }
 
+/** Rings the doorbell; with `wait`, returns once the backends took everything up to this ring. */
+export function ring(bell: Int32Array, wait: boolean) {
+  const n = Atomics.add(bell, 0, 1) + 1;
+  Atomics.notify(bell, 0);
+  if (!wait) return;
+  // Other threads ring too: the backends may have handled past `n` (wrapping compare).
+  for (let a; ((a = Atomics.load(bell, 1)) - n | 0) < 0;) {
+    if (a === -1) throw new Error('device backends failed (see their error)');
+    Atomics.wait(bell, 1, a, 1000);
+  }
+}
+
 export type DevicesInit = {
   memory: WebAssembly.Memory;
   /** Addresses in `memory` of each device's `virtio::DevShared`, of guest RAM and of the signal word. */
@@ -464,17 +476,20 @@ export type DevicesInit = {
   signal: number;
   specs: DeviceSpec[];
   deterministic: boolean;
+  /** Parallel SMP: each vCPU's wake word (`vm_cpu_signal`), bumped and notified after the signal word (docs/abi.md). */
+  wakes?: number[];
 };
 
 export class Devices {
   private memory: WebAssembly.Memory;
   private shared: number[];
   private signal: number;
+  private wakes: number[];
   private backends: Backend[];
   private epochs: number[];
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, signal, specs, deterministic }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | undefined)[], out: (device: number, text: string) => void) {
-    [this.memory, this.shared, this.signal] = [memory, shared, signal];
+  private constructor({ memory, shared, ram, signal, specs, deterministic, wakes }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | undefined)[], out: (device: number, text: string) => void) {
+    [this.memory, this.shared, this.signal, this.wakes] = [memory, shared, signal, wakes ?? []];
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = {
         ram: () => new Uint8Array(this.memory.buffer, ram),
@@ -555,5 +570,37 @@ export class Devices {
     const sig = new Int32Array(this.memory.buffer, this.signal, 1);
     Atomics.or(sig, 0, SIGNAL_DEVICE);
     Atomics.notify(sig, 0);
+    for (const w of this.wakes) {
+      const word = new Int32Array(this.memory.buffer, w, 1);
+      Atomics.add(word, 0, 1);
+      Atomics.notify(word, 0);
+    }
+  }
+
+  /**
+   * Serves the doorbell (docs/devices.md): whenever a vCPU bumps word 0, takes
+   * every device's events and requests, then writes the value it handled to
+   * word 1 (-1 if a backend threw, and the error propagates). Never returns
+   * otherwise.
+   */
+  async serve(bell: Int32Array) {
+    for (let seen = 0; ;) {
+      const rung = Atomics.load(bell, 0);
+      if (rung === seen) {
+        const w = Atomics.waitAsync(bell, 0, seen);
+        if (w.async) await w.value;
+        continue;
+      }
+      seen = rung;
+      try {
+        await this.poll();
+      } catch (e) {
+        Atomics.store(bell, 1, -1);
+        Atomics.notify(bell, 1);
+        throw e;
+      }
+      Atomics.store(bell, 1, seen);
+      Atomics.notify(bell, 1);
+    }
   }
 }

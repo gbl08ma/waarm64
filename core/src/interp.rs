@@ -732,7 +732,13 @@ fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
         NOP | YIELD | SEV | SEVL | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2 | AUTIB_2 | BTI
         | ESB | PSB | TSB | CSDB | DGH => {}
         CLREX => c.monitor.size = 0,
-        DMB | DSB | SSBB | PSSBB => core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst),
+        DMB | DSB | SSBB | PSSBB => {
+            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+            if op == DSB && c.features & crate::cpu::FEATURE_PARALLEL != 0 {
+                return Err(Exit::Resync);
+            }
+        }
+        ISB if c.features & crate::cpu::FEATURE_PARALLEL != 0 => return Err(Exit::Resync),
         ISB => {}
         SVC => return Err(Exit::Svc(bits(i, 20, 5) as u16)),
         BRK => return Err(Exit::Brk(bits(i, 20, 5) as u16)),

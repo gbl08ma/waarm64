@@ -120,7 +120,14 @@ the interpreter's own code.
   one lookup) or all of them. Invalidation is per 4 KiB page.
 - **The stale-code checker** (`jit::Config::check`, on in JIT-stress) hashes each block's words
   when it's compiled and again at every entry (chained entries and back-edges call
-  `jit_check(vcpu, key)`), and panics (trapping the wasm run) on a mismatch.
+  `jit_check(vcpu, key)`), and panics (trapping the wasm run) on a mismatch. In parallel SMP each
+  vCPU has its own cache, and another vCPU may legally rewrite code before its IC reaches this one:
+  those caches are **tolerant** (`Cache::tolerant`), counting a stale block (`Stats::stale`) and
+  dropping it at the run loop's entry instead ([platform.md](platform.md) "Broadcast
+  maintenance").
+- **Parallel SMP** also compiles DSB as a helper call (the interpreter's DSB ends the chunk under
+  `cpu::FEATURE_PARALLEL`, where the run loop completes this vCPU's TLBI IS broadcasts); ISB and
+  ERET were helper calls already and end the chunk the same way.
 
 ## Emission (`emit.rs`)
 

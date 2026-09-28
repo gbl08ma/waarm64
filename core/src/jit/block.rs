@@ -338,6 +338,7 @@ pub fn module(
     features: u64,
 ) -> Emitted {
     let crypto = features & crate::cpu::FEATURE_CRYPTO != 0;
+    let parallel = features & crate::cpu::FEATURE_PARALLEL != 0;
     let mut m = Module::default();
     let bt = m.ty(&[I32, I32, I32], &[I32]);
     let ht = m.ty(&[I32, I32, I64], &[I32]);
@@ -393,6 +394,7 @@ pub fn module(
                 bus: emit::Bus::Tlb { read },
                 el1: head.key & KEY_EL1 != 0,
                 crypto,
+                parallel,
             }
         } else {
             let (base, size) = (base as usize as u32, mem.size());
@@ -401,6 +403,7 @@ pub fn module(
                 bus: emit::Bus::Flat { base, phys, size },
                 el1: head.key & KEY_EL1 != 0,
                 crypto,
+                parallel,
             }
         };
         let env = Env {

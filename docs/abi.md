@@ -1,4 +1,4 @@
-# Host ABI (version 20)
+# Host ABI (version 25)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -32,10 +32,13 @@ Design notes for an ABI change go in this file before the code.
   config); `vm_free(vm)`. RAM appears at guest PA `0x4000_0000`.
 - `vm_boot(vm, kernel_pa, initrd_pa, initrd_len, cmdline_ptr, cmdline_len)`: the host has copied
   the kernel and initrd into RAM; the core writes the DTB and resets the vCPU at the kernel.
-- `vm_run(vm, budget: u64) -> u32`: an exit kind; details in `vm_exit(vm) -> *const ExitInfo` =
-  {kind, steps retired (all vCPUs), value, x0–x3, cpu (the vCPU that exited, ABI 22)}.
+- `vm_run(vm, budget: u64) -> u32` (round-robin): an exit kind; details in `vm_exit(vm) -> *const
+  ExitInfo` = {kind, steps retired (all vCPUs), value, x0–x3, cpu (the vCPU that exited, ABI 22),
+  wake (ABI 25)}.
+- `vm_run_cpu(vm, cpu, budget) -> u32` (parallel, ABI 25): runs vCPU `cpu` on the calling thread;
+  `vm_exit_cpu(vm, cpu)` its `ExitInfo`; `vm_cpu_signal(vm, i)` vCPU *i*'s wake word (below).
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
-  1056; `Cpu` is 1072 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters`,
+  1056; `Cpu` is 1072 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none).
 
 ### `VmConfig` (u64 fields, in order)
@@ -52,6 +55,7 @@ Design notes for an ABI change go in this file before the code.
 | `features` | bit 0 `FEATURE_CRYPTO`; other bits reserved, and `vm_new` refuses them (19) |
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
+| `smp` | 0 round-robin on the calling thread (`vm_run`), 1 parallel: a thread per vCPU (`vm_run_cpu`), realtime only (25) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`;
 the ABI's 0 means none.
@@ -62,7 +66,7 @@ the ABI's 0 means none.
 |---|---|
 | 0 `BUDGET` | the budget is used up |
 | 1 `PSCI` | a PSCI call for the host (SYSTEM_OFF, SYSTEM_RESET; M7 handles CPU_ON in the core). PC is past the HVC; the host writes x0 if it resumes |
-| 2 `IDLE` | WFI with nothing pending, realtime mode only: `value` = ns to the next timer deadline (u64::MAX: none); PC on the WFI. (Deterministic mode jumps virtual time instead, and returns `IDLE` with u64::MAX only when no timer is armed) |
+| 2 `IDLE` | WFI with nothing pending, realtime mode only: `value` = ns to the next timer deadline (u64::MAX: none); PC on the WFI. (Deterministic mode jumps virtual time instead, and returns `IDLE` with u64::MAX only when no timer is armed.) Parallel mode: per vCPU, also for an off vCPU (u64::MAX), with `wake` the wake word's value to wait on |
 | 3 `TX_FULL` | the console TX ring is full: drain and resume |
 | 4 `UNIMPLEMENTED` | `value` = the `Op` index |
 | 5 `STOP` | a stop was requested through the signal word |
@@ -71,11 +75,17 @@ the ABI's 0 means none.
 ### Signal word and console
 
 - `vm_signal(vm) -> *const AtomicU32`: bit 0 `SIGNAL_STOP`, bit 1 `SIGNAL_RX`, bit 2
-  `SIGNAL_DEVICE`. Checked between chunks and on WFI. Whoever sets a bit `Atomics.notify`s it.
+  `SIGNAL_DEVICE`. Checked between chunks and on WFI. Whoever sets a bit `Atomics.notify`s it, and
+  in parallel mode also bumps and notifies every vCPU's wake word (`vm_cpu_signal`; `web/vm.ts`
+  `signal`, `Vm::signal` natively, the device backends' completions). Parallel mode leaves STOP
+  set; the host clears it.
 - `vm_console(vm)`: two SPSC byte rings (TX, RX), 4 KiB each, atomic head/tail. The PL011 writes
   TX; the host drains it after each `vm_run` and fills RX from any thread.
 
-### Counters (`vm_counters`, u64 words, relaxed atomic stores; `web/vm.ts` `Counter`)
+### Counters (`vm_counters(vm, i)`, u64 words, relaxed atomic stores; `web/vm.ts` `Counter`)
+
+One block per vCPU (ABI 25): round-robin publishes everything in block 0, parallel mode each
+vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per block.
 
 | Words | What |
 |---|---|
@@ -84,7 +94,7 @@ the ABI's 0 means none.
 | 65 | IRQs taken |
 | 66–69 | TLB hits (not counted: 0), misses, walks, flushes (published once per chunk) |
 | 70 | current PC, published at every chunk end (the PC sampler reads it) |
-| 71–89 | `jit::Stats`: regions compiled, modules, wasm bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes; instructions compiled inline and as helpers, inline steps run; static flag setters stored/elided, conditions direct/computed/from memory; blocks in regions, back-edges, tier-ups |
+| 71–90 | `jit::Stats`: regions compiled, modules, wasm bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes; instructions compiled inline and as helpers, inline steps run; static flag setters stored/elided, conditions direct/computed/from memory; blocks in regions, back-edges, tier-ups; stale blocks tolerated (parallel, 25) |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -136,13 +146,13 @@ have every optional feature. `jit_add_install`/`jit_call` are the JIT plumbing t
 
 ## M7 (SMP): design note for ABI 20 onward
 
-The whole set was called "ABI 20" in the kickoff; each commit that changes the exports bumps the
-version (20: the thread setup exports; 21: `VmConfig.ncpus` and `gic`; 22: `vm_cpu(vm, i)`,
-`ExitInfo.cpu`, round-robin SMP; 23: no GICv2). Still to come: `smp` (parallel), `vm_runner`/`vm_run_cpu`,
-per-vCPU counters and wake words (loop 5). Pre-approved on the outline in `M7-KICKOFF.md` (decision 7); written before the code, and
-revised here if the code teaches otherwise. With `ncpus` ≤ 1 and the defaults, a host that
-passes CPU index 0 everywhere sees today's machine (except the GIC, which becomes GICv3 by
-default in loop 2).
+Each commit that changes the exports bumps the version (20: the thread setup exports; 21:
+`VmConfig.ncpus` and `gic`; 22: `vm_cpu(vm, i)`, `ExitInfo.cpu`, round-robin SMP; 23: no GICv2;
+24: JIT-check; **25: parallel mode**, below). Pre-approved on the outline in `M7-KICKOFF.md`
+(decision 7); written before the code, and revised here if the code teaches otherwise (ABI 25
+is done as written below). With
+`ncpus` ≤ 1, `smp` = 0 and the defaults, a host that passes CPU index 0 everywhere sees the
+single-CPU machine.
 
 **Two ways to run the vCPUs.**
 - *Round-robin* (`VmConfig.smp` = 0, the default; deterministic or realtime): `vm_run(vm,
@@ -152,42 +162,58 @@ default in loop 2).
   `Vcpu` pointer). In deterministic mode virtual time is the total steps of all vCPUs
   (× `ticks_per_insn`, plus WFI skips), one counter for every CPU; the run returns `IDLE` only
   when every on vCPU is idle (time jumps to the earliest deadline first).
-- *Parallel* (`smp` = 1, realtime only; `vm_new` refuses it with `deterministic`): one thread
-  (worker) per vCPU, each with its own core instance on the shared memory and its own code
-  cache. Each worker calls `vm_run_cpu(runner, cpu, budget)` for its vCPU.
-
-**Many core instances on one memory** (done, ABI 20): "Instantiation" above.
+- *Parallel* (`smp` = 1, realtime only: `vm_new` refuses it with `deterministic`): one thread
+  (worker) per vCPU, each with its own core instance on the shared memory. Each worker calls
+  `vm_run_cpu(vm, cpu, budget)` for its vCPU, and **vCPU *i* always runs on the same instance**:
+  its code cache (created by `vm_new`, one per vCPU) holds table indexes of that instance.
+  `vm_run` is for round-robin only. (The outline had a `vm_runner(vm)` per worker for the cache;
+  a cache per vCPU made it unnecessary.)
 
 **`VmConfig`** (appended u64 fields; 0 keeps today's meaning):
 
 | Field | Meaning |
 |---|---|
-| `ncpus` | vCPUs, 0 or 1 = one; at most `vm::MAX_CPUS` |
-| `gic` | 0 or 3, the GICv3 (done, ABI 21; the GICv2 option was dropped in 23) |
-| `smp` | 0 round-robin on the calling thread, 1 parallel (one thread per vCPU; realtime only) |
+| `ncpus` | vCPUs, 0 or 1 = one; at most `vm::MAX_CPUS` (ABI 21) |
+| `gic` | 0 or 3, the GICv3 (ABI 21; the GICv2 option was dropped in 23) |
+| `smp` | 0 round-robin on the calling thread, 1 parallel (ABI 25) |
 
-**Exports that change or appear.**
-- `vm_run(vm, budget)`: round-robin mode (as today for one vCPU). `vm_exit(vm)` gains `cpu` (the
-  vCPU that exited, appended to `ExitInfo`).
-- `vm_runner(vm) -> *mut Runner`: parallel mode, once per worker after its thread setup: this
-  instance's code cache (the JIT installs into this instance's table). `vm_run_cpu(runner, cpu,
-  budget) -> kind` runs vCPU `cpu` until an exit; `vm_exit_cpu(vm, cpu)` its `ExitInfo`.
-- Per vCPU: `vm_cpu(vm, i)` (the `Cpu`), `vm_counters(vm, i)` (a counters block per vCPU: the
-  host sums them for totals; the JIT words describe the code cache that runs vCPU *i*, so in
-  round-robin mode they're in block 0 only and the sum is the total either way), `vm_cpu_signal(vm,
-  i)` (below). Existing calls pass `i` = 0.
-- **Signals.** The VM's signal word (`vm_signal`) keeps STOP, RX and DEVICE. Each vCPU also has a
-  wake word, the only word its worker sleeps on (`Atomics.wait`, in `IDLE` and while the vCPU is
-  off): whoever sets a VM signal bit must also bump every vCPU's wake word and notify it (the
-  host's `signal()` does both), so a wake-up can't fall between a check and the wait. The core
-  bumps and notifies wake words itself for what it raises (SGIs, SPIs routed to a vCPU, CPU_ON,
-  SEV, a TLBI broadcast waiting on idle vCPUs).
+**Exports (ABI 25).**
+- `vm_run_cpu(vm, cpu, budget) -> kind`: parallel mode; runs vCPU `cpu` until an exit or
+  `budget` of its own steps. `vm_exit_cpu(vm, cpu) -> *const ExitInfo`, that vCPU's last exit
+  (`vm_exit(vm)` is `vm_exit_cpu(vm, 0)` in parallel mode). `ExitInfo` gains `wake` (appended):
+  on `IDLE`, the vCPU's wake word as the core read it before deciding to idle.
+- `vm_counters(vm, i)`: a counters block per vCPU. Round-robin publishes everything in block 0
+  (the others stay zero); parallel mode publishes each vCPU's steps, exceptions, IRQs, TLB and
+  JIT counts in its own block. Hosts sum the blocks for totals.
+- `vm_cpu_signal(vm, i) -> *const AtomicU32`: vCPU *i*'s **wake word**, a counter, the only word
+  its worker sleeps on (`Atomics.wait(word, ExitInfo.wake, ms)` after `IDLE`). Whoever makes
+  something true that the vCPU waits for bumps it (`fetch_add`) and notifies it, after the
+  change: the core for interrupts it raises (an SGI, an SPI or PPI line that goes up), PSCI
+  CPU_ON, and a DSB wait (below); the host for `vm_signal` bits (it sets the bit, then bumps and
+  notifies every vCPU's wake word; `web/vm.ts` `signal()`).
+- **Signals in parallel mode.** The VM signal word keeps STOP, RX and DEVICE. RX and DEVICE are
+  taken by whichever vCPU sees them first (`fetch_and`), which drains the completion rings and
+  updates the lines under the platform lock. **STOP isn't cleared by the core** (every vCPU must
+  see it); the host clears it before running the VM again.
 - **Exit kinds per vCPU:** `IDLE` for an off vCPU has `value` = u64::MAX until PSCI CPU_ON (in
-  the core) starts it; SYSTEM_OFF/RESET from any vCPU exits `PSCI` on that vCPU's thread, and the
-  host stops the others with STOP. `TX_FULL` and `DEVICE` exit on whichever vCPU hit them.
-- Shared device state (the GIC distributor, the PL011 and console rings, the virtio transports,
-  device completion draining) sits behind one lock in the core in parallel mode; the console's
-  TX ring stays single-producer because PL011 writes hold it.
+  the core) starts it; a vCPU in WFI returns `IDLE` with the ns to its own timer deadline.
+  SYSTEM_OFF/RESET exit `PSCI` on the vCPU that called it, and the host stops the others with
+  STOP. `TX_FULL` and `DEVICE` exit on whichever vCPU hit them; the console's TX ring has one
+  consumer (the host thread that drains it), and its producer holds the platform lock.
+- **Shared state** (the GIC, the PL011, the virtio transports, completion draining, the PSCI
+  power states) sits behind one lock in the core (`Vm.plat`); round-robin reaches it without
+  locking. Per vCPU, each thread publishes its GIC IRQ line (an atomic the platform code updates
+  under the lock), so the fast path between chunks takes no lock.
+- **Time:** the host clock through `env.now_ms`, which must be one clock for every instance:
+  `web/vm.ts` passes `performance.timeOrigin + performance.now()` (each worker's
+  `performance.now()` alone starts at that worker's creation). The core keeps the counter
+  monotonic across vCPUs (an atomic maximum), so CNTVCT never goes back between CPUs.
+
+**Broadcast maintenance in parallel mode** ([platform.md](platform.md) "Broadcast
+maintenance"): `CPU features` gain an internal `FEATURE_PARALLEL`, under which DSB, ISB and ERET
+end the chunk (`Exit::Resync`, retired) in both tiers (the JIT calls the helper for DSB), so the
+run loop can apply what other vCPUs queued (context synchronization) and complete this vCPU's
+own TLBI IS broadcasts before anything after its DSB runs.
 
 ## Version history
 
@@ -212,3 +238,4 @@ default in loop 2).
 | 22 | `vm_cpu(vm, i)` takes a vCPU index; `ExitInfo.cpu`; `ncpus` > 1 accepted on a GICv3 (deterministic round-robin) (M7) |
 | 23 | the GICv2 dropped: `VmConfig.gic` 2 is refused (M7) |
 | 24 | `VmConfig.jit` 3: JIT-check (M7) |
+| 25 | parallel SMP: `VmConfig.smp`, `vm_run_cpu`, `vm_exit_cpu`, `vm_cpu_signal`, `ExitInfo.wake`, `vm_counters(vm, i)` per vCPU, counter word 90 (JIT stale blocks); `env.now_ms` is one clock for every instance (M7) |

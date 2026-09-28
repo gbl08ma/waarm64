@@ -6,7 +6,8 @@
 // instead of the Buildroot guest's /test.sh; with `?devices` the guest gets the
 // device tests' devices (web/vm.ts `testDevices`, the input ones on the ports
 // the page sends first) and a 640×480 framebuffer, which goes to the page.
-// `?jit=1|2` runs it under the JIT or JIT-stress (`VmConfig.jit`), `?ncpus=N` on N vCPUs.
+// `?jit=1|2|3` runs it under the JIT, JIT-stress or JIT-check (`VmConfig.jit`), `?ncpus=N` on N vCPUs,
+// `?parallel` with a worker per vCPU (realtime; M7).
 import { DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/vm.ts';
 
 const get = async (path: string) => {
@@ -30,7 +31,7 @@ try {
   const test = params.has('devices') || distro === 'alpine'; // Alpine checks linux-virt's modules for them
   const devices = test ? testDevices(disk, ports.keyboard, ports.tablet) : guestDevices(disk, params.get('overlay') ?? undefined);
   const framebuffer = test ? { width: 640, height: 480 } : undefined;
-  const opts = { ramSize: distro ? 1 << 30 : 256 << 20, kernel, initrd, cmdline: img.cmdline, devices, realtime: params.has('realtime'), framebuffer, jit: Number(params.get('jit') ?? 0) as 0 | 1 | 2, ncpus: Number(params.get('ncpus') ?? 1) };
+  const opts = { ramSize: distro ? 1 << 30 : 256 << 20, kernel, initrd, cmdline: img.cmdline, devices, realtime: params.has('realtime'), framebuffer, jit: Number(params.get('jit') ?? 0) as 0 | 1 | 2 | 3, ncpus: Number(params.get('ncpus') ?? 1), parallel: params.has('parallel'), idleLimitMs: params.has('parallel') ? 60_000 : undefined };
   const r = await runToPowerOff(wasm, opts, 1e12, (vm) => vm.framebuffer && self.postMessage({ memory: vm.memory, framebuffer: vm.framebuffer }));
   self.postMessage({ kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc });
 } catch (e) {

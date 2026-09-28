@@ -7,7 +7,10 @@
 // - IC IVAU, then IC IALLUIS: each secondary calls a function in a code page
 //   often enough for the JIT to compile it (its batch goes out after 1M
 //   dispatched steps: docs/jit.md "Compile policy"), CPU 0 rewrites it (DC CVAU, DSB
-//   ISH, IC, DSB ISH), and each secondary must run the new code after an ISB.
+//   ISH, IC, DSB ISH), and each secondary must run the new code after an ISB
+//   that follows its seeing the rewrite (the architecture's cross-modification
+//   sequence: an ISB before it promises nothing, and parallel SMP runs the old
+//   code then, M7 loop 5).
 // smp: 4
 #include "lib.h"
 
@@ -47,6 +50,8 @@ static long psci(u64 f, u64 a, u64 b, u64 c) {
 }
 
 static u64 me(void) { return sysreg(MPIDR_EL1) & 0xff; }
+
+static void isb(void) { __asm__ volatile("isb" ::: "memory"); }
 
 // Every CPU: the same tables, TTBR0 with ASID 5 (TEST_VA's mapping is nG),
 // TTBR1 walks off.
@@ -115,8 +120,7 @@ void secondary_main(void) {
     u64 ok = 1;
     for (int i = 0; i < 1 << 17; i++) ok &= f() == 1 + k;
     PHASE(ok, 300 + 10 * k + c);
-    __asm__ volatile("isb" ::: "memory");
-    PHASE(f() == 2 + k, 400 + 10 * k + c);
+    PHASE((isb(), f() == 2 + k), 400 + 10 * k + c);
   }
 #undef PHASE
   for (;;)

@@ -6,7 +6,7 @@
 //! files, external data files, extended L2 entries, zstd, unknown
 //! incompatible features.
 
-use std::cell::RefCell;
+use std::sync::Mutex;
 
 const MAGIC: &[u8] = b"QFI\xfb";
 const OFFSET_MASK: u64 = 0x00ff_ffff_ffff_fe00; // bits 9-55
@@ -25,7 +25,7 @@ struct Qcow2 {
     size: u64,
     l1: Vec<u64>,
     /// The last compressed cluster read (a guest reads one a page at a time).
-    recent: RefCell<Option<(u64, Vec<u8>)>>,
+    recent: Mutex<Option<(u64, Vec<u8>)>>,
 }
 
 fn be64(b: &[u8], at: usize) -> u64 {
@@ -78,7 +78,7 @@ impl Disk {
                 return false;
             };
             if e & COMPRESSED != 0 {
-                let mut recent = q.recent.borrow_mut();
+                let mut recent = q.recent.lock().unwrap();
                 if recent.as_ref().is_none_or(|r| r.0 != e) {
                     let Some(data) = self.inflate(q, e) else {
                         return false;
@@ -172,7 +172,7 @@ impl Qcow2 {
             cluster_bits,
             size,
             l1,
-            recent: RefCell::new(None),
+            recent: Mutex::new(None),
         })
     }
 }

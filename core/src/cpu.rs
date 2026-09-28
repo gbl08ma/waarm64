@@ -80,6 +80,11 @@ pub const FEATURE_GICV3: u64 = 1 << 32;
 /// loop, and the TLBI IS forms are broadcast to the other vCPUs. Without it
 /// they're NOPs and local, as on one CPU.
 pub const FEATURE_SMP: u64 = 1 << 33;
+/// Parallel SMP (internal: a VM sets it with `VmConfig.smp` = 1): DSB, ISB and
+/// ERET end the chunk (`Exit::Resync`) in both tiers, so the run loop applies
+/// the maintenance other vCPUs queued (context synchronization) and completes
+/// this vCPU's TLBI IS broadcasts before anything after its DSB runs.
+pub const FEATURE_PARALLEL: u64 = 1 << 34;
 /// MPIDR_EL1 of a single CPU: Aff0 = 0, U = 0.
 pub const MPIDR_UP: u64 = 1 << 31;
 

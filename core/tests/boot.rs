@@ -6,7 +6,8 @@
 //! writable through one overlay: the second boot finds what the first wrote.
 //! And with the test devices: net, 9p, the framebuffer, input. The deterministic
 //! boots take exactly tests/steps.txt's counts, on one vCPU and on 2 and 4
-//! (M7: deterministic round-robin). Ignored by default (they need
+//! (M7: deterministic round-robin), and on 1, 2 and 4 in parallel (a thread
+//! per vCPU, realtime), repeated. Ignored by default (they need
 //! the images and a release build); scripts/ci.sh runs it with
 //! `cargo test --release --test boot -- --ignored`.
 
@@ -21,13 +22,18 @@ fn boot_kernel(image: &str, realtime: bool) -> common::Run {
 }
 
 fn boot_smp(image: &str, realtime: bool, ncpus: u64) -> common::Run {
+    boot_mode(image, realtime, ncpus, false)
+}
+
+fn boot_mode(image: &str, realtime: bool, ncpus: u64, parallel: bool) -> common::Run {
     let kernel = common::image(image);
     let devices = common::guest_devices("buildroot/rootfs.ext4", None);
     let r = common::boot(&common::Boot {
         devices: &devices,
         realtime,
-        echo: true,
+        echo: !parallel,
         ncpus,
+        parallel,
         ..common::Boot::new(&kernel, common::GUEST_CMDLINE)
     });
     eprintln!("\n[{}]", r.summary);
@@ -71,6 +77,20 @@ fn linux_boots_on_2_and_4_vcpus() {
             common::steps(&format!("buildroot-{n}cpu")),
             "{n} vCPUs"
         );
+    }
+}
+
+/// Parallel SMP isn't reproducible: `WEBPC_PARALLEL_RUNS` boots each (default 2).
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn linux_boots_in_parallel_on_1_2_and_4_vcpus() {
+    let runs = std::env::var("WEBPC_PARALLEL_RUNS").map_or(2, |v| v.parse().unwrap());
+    for n in [1, 2, 4] {
+        for _ in 0..runs {
+            let r = boot_mode("linux/Image", true, n, true);
+            let up = format!("smp: Brought up 1 node, {n} CPU");
+            assert!(r.console.contains(&up), "{n} vCPUs: {}", r.console);
+        }
     }
 }
 

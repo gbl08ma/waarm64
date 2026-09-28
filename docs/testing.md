@@ -22,6 +22,8 @@ and the exact-step boots.
 | LTP subset + arm64 kselftests | `core/tests/ltp.rs` (interpreter, each result against its table); `tests/boot-node.test.ts` (JIT) | 93 syscall tests; `syscall-abi`, `ptrace`, `hwcap`, `tpidr2`, `tags_test`, signal tests |
 | Crypto test kernel | `tests/boot-node.test.ts` (JIT; interpreter with `WEBPC_INTERP=1`) | the arm64 CE drivers' full self-tests, lib/crypto's SHA KUnit suites |
 | Distros | `core/tests/distros.rs` (interpreter: Alpine; Debian with `WEBPC_DEBIAN_NATIVE=1`); `tests/boot-node.test.ts` (Alpine, Alpine userspace, JIT); `tests/browser.test.ts` (Alpine, Debian, JIT) | real distro boots from virtio-blk |
+| Parallel SMP (a thread per vCPU, realtime: not reproducible, so repeated, every run must pass; `WEBPC_PARALLEL_RUNS`) | `core/tests/baremetal.rs` `baremetal_parallel` (every test, 5×), `core/tests/boot.rs` (Buildroot on 1, 2, 4 vCPUs), `core/tests/distros.rs` `alpine_smp` with `WEBPC_PARALLEL=1`; `tests/boot-node.test.ts` (bare-metal under the JIT and JIT-check, kvm-unit-tests' SMP set, Buildroot on 2 and 4, Alpine on 4); `tests/browser.test.ts` (Buildroot on 4; Alpine on 4; Debian on 4 with `WEBPC_PARALLEL_DEBIAN=1`) | the vCPU workers, wake-ups, the platform lock, broadcast maintenance and the DSB wait (M7) |
+| ThreadSanitizer | `scripts/tsan.sh` (in `ci.sh`, ~20 s warm) | the native parallel runner under `-Zsanitizer=thread` (std rebuilt, `target/tsan`): the bare-metal tests 3× and Buildroot on 1, 2, 4 vCPUs; any report fails. Guest-RAM accesses are suppressed (`core/tsan.supp`: the interpreter's plain accesses race the guest's atomics by design until M7 loop 6) |
 | Browser-only | `tests/browser.test.ts` | cross-origin isolation, the device worker, sync XHR ranges, OPFS, the canvas, DOM input, the spike page |
 | Host code | `tests/{devices,overlay,qcow2,serve,wasm-encoder,core-wasm,memory-kernels}.test.ts` | 9p server, loopback adapter, input config, overlay, qcow2 fixtures, the dev server, the encoder |
 | Decoder sweep | `core/fuzz` (not in CI) | every 2³² word vs Capstone |
@@ -121,7 +123,7 @@ of the HVF build: two `gicv3` checks that are ours and QEMU's but not Apple's
 CPU_ON (QEMU's PSCI races it against the target's start: another answer ~1 in 5 under hvf). Tests mustn't rely on
 UNKNOWN or IMPLEMENTATION DEFINED reset values and must pick addresses unmapped on `virt` too (its
 flash covers `0x0`–`0x0800_0000`). **Rebuild all of them together** when one changes (different clangs build different bytes;
-they were last rebuilt together on the M4 VM in M7 loop 3b).
+they were last rebuilt together on the M4 VM in M7 loop 5, when only `maint.bin` changed).
 
 ## kvm-unit-tests
 

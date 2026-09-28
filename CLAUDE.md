@@ -20,7 +20,7 @@ runs unmodified arm64 Linux. Chromium is the primary target.
 
 M0–M6.5 are done (the summary table is in PLAN.md §3): the interpreter, the golden corpus, Linux
 with virtio devices, Alpine and Debian, a JIT that boots Alpine in ~10 s in Chromium, the crypto
-extensions. **Next: M7 (SMP)**, from `M7-KICKOFF.md`. Loose ends go in [docs/backlog.md](docs/backlog.md),
+extensions. **Now: M7 (SMP)**, from `M7-KICKOFF.md` (loops 0–5 done: PLAN.md §3). Loose ends go in [docs/backlog.md](docs/backlog.md),
 not in TODOs.
 
 ## Development environment
@@ -59,6 +59,8 @@ WEBPC_JIT_STRESS=1 node --test tests/boot-node.test.ts  # every Node boot under 
 cargo test --release --test boot -- --ignored --nocapture      # Buildroot natively (also: kvm_unit_tests, ltp, distros [alpine|debian])
 images/build.sh [name...]      # guest images in rootless Podman -> target/images/<name>/ (--check <name>); docs/images.md
 node tools/corpus/run.ts [--oracle qemu|m4|both] [group...]    # regenerate golden corpus groups (QEMU / the M4 oracle VM)
+scripts/tsan.sh                # ThreadSanitizer on the native parallel SMP runner (in ci.sh)
+WEBPC_PARALLEL_RUNS=20 cargo test --release --test baremetal baremetal_parallel   # parallel SMP, repeated
 (cd core/fuzz && cargo run --release --bin sweep [-- sys])      # decoder sweep vs Capstone (~3 min; sys: seconds)
 (cd core && cargo fuzz run virtqueue)                           # libFuzzer on the virtio transport
 tests/baremetal/build.sh && tests/baremetal/oracle.sh [--hvf]  # rebuild the bare-metal tests, run them on QEMU (TCG or hvf)

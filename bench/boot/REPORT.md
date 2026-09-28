@@ -154,3 +154,25 @@ alternated (A, B, A, B), Chromium 153, the M4 VM, JIT, warm medians (IQR). The t
 No difference beyond noise (≤ 2%) either way: interrupts are too few for the cheaper CPU
 interface to show (Alpine's boot takes ~15K IRQs). Steps: Alpine 2,856,663,287 (+0.002%),
 userspace 10,763,178,470 (+0.15%). Raw: `results/m7-loop2/`.
+
+## M7 loop 5: parallel SMP, single-vCPU check
+
+Loop 5 adds parallel SMP (a worker per vCPU, `VmConfig.smp` = 1) and changes round-robin's code
+only where it reaches shared state: the devices behind `Vm::plat` (reached through `&mut`, no
+locking), per-vCPU counter blocks, and a `FEATURE_PARALLEL` test at DSB, ISB and ERET in the
+interpreter. The one-vCPU deterministic Alpine boot, base (loop 4, `7abbc5e`, A) against loop 5
+(B), same session, alternated A, B, A, B, A, B; Chromium 153, the M4 VM, JIT, warm medians (IQR):
+
+| | A (loop 4) | B (loop 5) |
+|---|---|---|
+| Alpine boot to power-off | 10,106 (±80), 10,119 (±44), 10,406 (±33) ms | 10,219 (±45), 10,258 (±170), 10,339 (±61) ms |
+
+Within noise: B's median of medians is 1.4% above A's, and the third pair reversed. Steps are
+identical (2,856,663,287). Raw: `results/m7-loop5/`.
+
+Parallel mode itself isn't benchmarked yet (loop 8). What the tests showed in passing (single
+runs, not `bench/run.ts` numbers): in Node, Alpine on one vCPU boots as fast in parallel mode as in
+round-robin realtime (10.28 vs 10.21 s), so the extra chunk ends at DSB/ISB/ERET cost little; on 2
+and 4 vCPUs it took 12.0 and 14.4 s once the IC queues kept pages (before: 17.9 and 22 s, from
+whole-cache flushes, docs/platform.md "Broadcast maintenance"). In Chromium, Alpine on 4 vCPUs
+took 16.2 and 16.5 s, Debian on 4 vCPUs 33 s.

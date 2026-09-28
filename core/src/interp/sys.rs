@@ -196,9 +196,14 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, op: Op) -> R {
         // An ERET that unmasks IRQs ends the chunk as MSR does, so a pending
         // IRQ is taken right after it (M6: before, it waited for the chunk's
         // end, which made the chunk size visible to guests).
+        // In parallel SMP every ERET ends the chunk (context synchronization:
+        // `cpu::FEATURE_PARALLEL`).
         ERET if !el0 => {
             let before = c.pstate;
             eret(c);
+            if c.features & crate::cpu::FEATURE_PARALLEL != 0 {
+                return Err(Exit::Resync);
+            }
             return unmasked(before, c);
         }
         HVC if !el0 => return Err(Exit::Hvc(bits(i, 20, 5) as u16)),

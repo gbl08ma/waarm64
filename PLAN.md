@@ -65,8 +65,11 @@ GICv3, stable under stress, with a scaling curve. **Done (2026-09-28):** loop 0 
 litmus image and M4 reference), 1 (core instances per worker), 2 (GICv3 default, native test
 kernels), 3 (deterministic round-robin SMP, PSCI CPU_ON/OFF, WFE/SEV, TLBI IS; Linux boots on up
 to 8 vCPUs with exact steps in every runner), 3b (the GICv2 dropped), 4 (broadcast TLBI/IC
-tests across vCPUs, JIT-check; the realtime queues and DSB wait designed in docs/platform.md).
-Next: loop 5, realtime SMP (notes: `M7-LOOP4-HANDOVER.md`).
+tests across vCPUs, JIT-check; the realtime queues and DSB wait designed in docs/platform.md), 5
+(parallel SMP, ABI 25: a worker per vCPU in the browser and Node, a thread per vCPU natively,
+the platform lock, wake words, broadcast queues with the DSB wait, ThreadSanitizer in CI; Linux
+boots on 4 vCPUs in parallel natively, in Node and in Chromium, Debian included). Next: loop 6,
+the memory model.
 - **Two execution modes, one core:** deterministic SMP runs every vCPU round-robin on one thread
   with a fixed quantum and one shared code cache (exact, reproducible step counts in every runner;
   virtual time = total steps of all vCPUs); realtime SMP runs **one worker per vCPU** on the shared

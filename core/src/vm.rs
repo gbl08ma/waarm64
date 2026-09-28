@@ -1,6 +1,8 @@
-//! A whole VM: one vCPU, RAM at `RAM_BASE`, the GICv2, the generic timer and the
+//! A whole VM: N vCPUs, RAM at `RAM_BASE`, the GICv3, the generic timer and the
 //! PL011 at QEMU `virt`'s addresses, and the run loop that delivers IRQs, waits
-//! in WFI and answers PSCI. lib.rs exports it (docs/abi.md).
+//! in WFI and answers PSCI. lib.rs exports it (docs/abi.md). The vCPUs run
+//! round-robin on one thread (here), or in parallel, one thread each
+//! (`parallel.rs`).
 //!
 //! **Time** is deterministic by default: the counter is `steps × ticks_per_insn`
 //! plus the ticks WFI skipped, where steps are instructions retired and
@@ -27,7 +29,9 @@
 //! ends the run with [`exit::DEVICE`]; completions come back through
 //! `SIGNAL_DEVICE` and are drained at the next chunk boundary.
 
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::cell::UnsafeCell;
+use core::ops::{Deref, DerefMut};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use crate::cpu::{Cpu, PSTATE_I, sctlr};
 use crate::gicv3::{self, Gicv3};
@@ -37,7 +41,10 @@ use crate::mem::{Access, Fault, FaultKind, Mem};
 use crate::mmu::{Bus, Mmu, Vcpu, walk};
 use crate::pl011::{Pl011, Rings};
 use crate::virtio::{self, DevShared, DeviceEntry, Transport};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+mod parallel;
+pub use parallel::{notify, wait};
 
 pub const RAM_BASE: u64 = 0x4000_0000;
 pub const GICD: u64 = 0x0800_0000;
@@ -86,12 +93,17 @@ pub struct VmConfig {
     /// The interrupt controller: 0 or 3, the GICv3 (the only one since ABI
     /// 23; ABI 21 also had 2, a GICv2).
     pub gic: u64,
+    /// 0: the vCPUs take turns on the thread that calls `vm_run`; 1: parallel,
+    /// one thread each through `vm_run_cpu` (realtime only; ABI 25).
+    pub smp: u64,
 }
 
 impl VmConfig {
     /// Whether `vm_new` accepts the GIC and CPU fields.
     pub fn valid_smp(&self) -> bool {
-        matches!(self.gic, 0 | 3) && self.ncpus <= MAX_CPUS
+        matches!(self.gic, 0 | 3)
+            && self.ncpus <= MAX_CPUS
+            && (self.smp == 0 || self.smp == 1 && self.deterministic == 0)
     }
 }
 
@@ -110,6 +122,7 @@ impl Default for VmConfig {
             features: 0,
             ncpus: 0,
             gic: 0,
+            smp: 0,
         }
     }
 }
@@ -134,7 +147,8 @@ pub mod exit {
 }
 
 /// Why `Vm::run` returned. `repr(C)`: kind, steps this run, value, x0–x3,
-/// the vCPU that exited (ABI 22).
+/// the vCPU that exited (ABI 22), its wake word as read before an `IDLE`
+/// (parallel mode; ABI 25).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ExitInfo {
@@ -143,6 +157,7 @@ pub struct ExitInfo {
     pub value: u64,
     pub x: [u64; 4],
     pub cpu: u64,
+    pub wake: u64,
 }
 
 /// Signal word bits.
@@ -167,8 +182,9 @@ pub struct Counters {
     /// steps in JIT code, block calls, invalidations, cache flushes; ABI 12:
     /// instructions compiled inline and as helper calls, inline instructions run;
     /// ABI 13: lazy flag setters stored and elided, conditions direct, computed
-    /// and from memory; ABI 15: blocks in the compiled regions; ABI 16: back-edges.
-    pub jit: [AtomicU64; 19],
+    /// and from memory; ABI 15: blocks in the compiled regions; ABI 16:
+    /// back-edges; ABI 17: tier-ups; ABI 25: stale blocks tolerated.
+    pub jit: [AtomicU64; 20],
 }
 
 impl Default for Counters {
@@ -183,7 +199,7 @@ impl Default for Counters {
             tlb_walks: z(),
             tlb_flushes: z(),
             pc: z(),
-            jit: [const { AtomicU64::new(0) }; 19],
+            jit: [const { AtomicU64::new(0) }; 20],
         }
     }
 }
@@ -192,15 +208,107 @@ fn bump(a: &AtomicU64) {
     a.store(a.load(Ordering::Relaxed) + 1, Ordering::Relaxed);
 }
 
-/// What other threads touch while the vCPU runs. Behind a shared reference
+/// What other threads touch while the vCPUs run. Behind a shared reference
 /// (not inside the `&mut Vm`), so concurrent access through it is sound.
 #[derive(Default)]
 pub struct Shared {
     pub console: Rings,
     pub signal: AtomicU32,
-    pub counters: Counters,
+    /// One per vCPU.
+    pub cpus: Vec<CpuShared>,
     /// One per virtio transport.
     pub devices: Vec<DevShared>,
+}
+
+/// A vCPU's words other threads read or write.
+#[derive(Default)]
+pub struct CpuShared {
+    /// Its wake word (parallel mode): a counter its thread sleeps on after
+    /// `IDLE`, bumped and notified by whoever makes something it waits for
+    /// true (docs/abi.md).
+    pub wake: AtomicU32,
+    /// Its counters; round-robin publishes all of them in vCPU 0's.
+    pub counters: Counters,
+    par: parallel::CpuPar,
+}
+
+/// A lock whose owner can also reach the data without locking (`&mut`).
+/// Round-robin does that; parallel vCPUs lock.
+pub struct Lock<T>(Mutex<T>);
+
+impl<T> Lock<T> {
+    pub fn new(t: T) -> Lock<T> {
+        Lock(Mutex::new(t))
+    }
+
+    pub fn get_mut(&mut self) -> &mut T {
+        self.0.get_mut().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    pub fn lock(&self) -> MutexGuard<'_, T> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// The devices every vCPU reaches (behind `Vm::plat`).
+pub struct Platform {
+    pub gic: Box<Gicv3>,
+    pub uart: Pl011,
+    pub virtio: Vec<Transport>,
+    /// Parallel mode: PSCI CPU_ON requests (entry, context) that their
+    /// target's thread carries out.
+    start: Vec<Option<(u64, u64)>>,
+}
+
+/// A vCPU. Round-robin reaches it through `&mut Vm`; in parallel mode only
+/// the thread that runs it does ([`Vm::run_cpu`]), along with that thread's
+/// own run state.
+pub struct Slot {
+    vcpu: UnsafeCell<Box<Vcpu>>,
+    own: UnsafeCell<parallel::Own>,
+}
+
+// SAFETY: a vCPU is used by one thread at a time: the one with `&mut Vm`
+// (round-robin, the host between runs), or in parallel mode the one thread
+// that runs it (`Vm::run_cpu`'s contract); `Deref` is for the times when
+// nothing runs it (docs/abi.md: `vm_cpu` between runs).
+unsafe impl Sync for Slot {}
+// SAFETY: as for `Sync`; the raw pointers in `Vcpu` (its `jit.mem`) point at
+// the VM's `Mem`, which is `Send` and `Sync`.
+unsafe impl Send for Slot {}
+
+impl Slot {
+    fn new(v: Box<Vcpu>) -> Slot {
+        Slot {
+            vcpu: UnsafeCell::new(v),
+            own: UnsafeCell::new(parallel::Own::default()),
+        }
+    }
+
+    /// The vCPU and its run state, for the thread that runs it.
+    ///
+    /// # Safety
+    /// Only the one thread that runs this vCPU calls it, and doesn't hold
+    /// another result of it.
+    #[allow(clippy::mut_from_ref)]
+    unsafe fn parts(&self) -> (&mut Vcpu, &mut parallel::Own) {
+        // SAFETY: guaranteed by the caller.
+        unsafe { (&mut *self.vcpu.get(), &mut *self.own.get()) }
+    }
+}
+
+impl Deref for Slot {
+    type Target = Vcpu;
+    fn deref(&self) -> &Vcpu {
+        // SAFETY: see `Sync` above: no thread runs the vCPU meanwhile.
+        unsafe { &*self.vcpu.get() }
+    }
+}
+
+impl DerefMut for Slot {
+    fn deref_mut(&mut self) -> &mut Vcpu {
+        self.vcpu.get_mut()
+    }
 }
 
 /// A GIC register read at `pa` (the distributor or a redistributor): `None`
@@ -248,21 +356,21 @@ struct Sched {
 }
 
 pub struct Vm {
-    /// CPU *i* is `vcpus[i]` (MPIDR `gicv3::mpidr(i)`). The JIT's code cache
-    /// lives in vCPU 0's `jit.cache` and moves to another vCPU while it runs
-    /// a chunk (one cache for every vCPU of the thread: block code takes the
-    /// `Vcpu` pointer).
-    pub vcpus: Vec<Box<Vcpu>>,
+    /// CPU *i* is `vcpus[i]` (MPIDR `gicv3::mpidr(i)`). Round-robin: the
+    /// JIT's code cache lives in vCPU 0's `jit.cache` and moves to another
+    /// vCPU while it runs a chunk (one cache for every vCPU of the thread:
+    /// block code takes the `Vcpu` pointer). Parallel: each has its own.
+    pub vcpus: Vec<Slot>,
+    /// Round-robin's scheduling state (parallel mode keeps its own in `Shared`).
     sched: Vec<Sched>,
     /// The vCPU running (or last run), and the steps left in its quantum
     /// (u64::MAX with one vCPU).
     cur: usize,
     quantum: u64,
     pub mem: Mem,
-    pub gic: Box<Gicv3>,
-    pub uart: Pl011,
-    pub virtio: Vec<Transport>,
+    pub plat: Lock<Platform>,
     pub shared: Arc<Shared>,
+    /// Round-robin's last exit (parallel mode: each vCPU's own, `exit_of`).
     pub exit: ExitInfo,
     pub(crate) cfg: VmConfig,
     /// Steps of every vCPU (virtual time counts them all).
@@ -270,6 +378,8 @@ pub struct Vm {
     /// Ticks WFI jumped over.
     skipped: u64,
     clock: Clock,
+    /// Parallel mode: the latest counter value any vCPU read (it never goes back).
+    last: AtomicU64,
 }
 
 /// The host clock for realtime mode: `performance.now()` through the core's
@@ -344,30 +454,41 @@ impl Vm {
         let d = VmConfig::default();
         let pick = |v, d| if v == 0 { d } else { v };
         let n = cfg.ncpus.max(1) as usize;
+        let parallel = cfg.smp == 1;
         let features = cfg.features
             | crate::cpu::FEATURE_GICV3
-            | if n > 1 { crate::cpu::FEATURE_SMP } else { 0 };
-        let mut vcpus: Vec<_> = (0..n)
-            .map(|i| {
-                Vcpu::new(Cpu {
-                    pc: RAM_BASE,
-                    features,
-                    mpidr: gicv3::mpidr(i),
-                    ..Cpu::reset()
-                })
-            })
-            .collect();
-        vcpus[0].jit.cache = match cfg.jit {
+            | if n > 1 { crate::cpu::FEATURE_SMP } else { 0 }
+            | if parallel {
+                crate::cpu::FEATURE_PARALLEL
+            } else {
+                0
+            };
+        let jit = match cfg.jit {
             0 => None,
             1 => Some(jit::Config::DEFAULT),
             3 => Some(jit::Config::CHECK),
             _ => Some(jit::Config::STRESS),
-        }
-        .map(|c| {
-            let mut cache = jit::Cache::new(c);
-            cache.features = features;
-            Box::new(cache)
-        });
+        };
+        let vcpus: Vec<_> = (0..n)
+            .map(|i| {
+                let mut v = Vcpu::new(Cpu {
+                    pc: RAM_BASE,
+                    features,
+                    mpidr: gicv3::mpidr(i),
+                    ..Cpu::reset()
+                });
+                // One cache for all (round-robin, in vCPU 0), or one each (parallel).
+                if i == 0 || parallel {
+                    v.jit.cache = jit.map(|c| {
+                        let mut cache = jit::Cache::new(c);
+                        cache.features = features;
+                        cache.tolerant = parallel;
+                        Box::new(cache)
+                    });
+                }
+                Slot::new(v)
+            })
+            .collect();
         let off = Sched {
             power: Power::Off,
             wait: Wait::No,
@@ -381,10 +502,14 @@ impl Vm {
             cur: 0,
             quantum: if n > 1 { QUANTUM } else { u64::MAX },
             mem: mem.at(RAM_BASE),
-            gic: Box::new(Gicv3::new(n)),
-            uart: Pl011::default(),
-            virtio: devices.iter().map(|&e| Transport::new(e)).collect(),
+            plat: Lock::new(Platform {
+                gic: Box::new(Gicv3::new(n)),
+                uart: Pl011::default(),
+                virtio: devices.iter().map(|&e| Transport::new(e)).collect(),
+                start: vec![None; n],
+            }),
             shared: Arc::new(Shared {
+                cpus: (0..n).map(|i| CpuShared::new(i == 0)).collect(),
                 devices: devices.iter().map(|_| DevShared::default()).collect(),
                 ..Shared::default()
             }),
@@ -397,6 +522,7 @@ impl Vm {
             steps: 0,
             skipped: 0,
             clock: Clock::new(),
+            last: AtomicU64::new(0),
         }
     }
 
@@ -404,15 +530,29 @@ impl Vm {
         self.cfg.deterministic == 0
     }
 
+    /// Whether the vCPUs run in parallel (`VmConfig.smp`).
+    pub fn parallel(&self) -> bool {
+        self.cfg.smp == 1
+    }
+
     /// Whether vCPU `c` is on (PSCI).
     pub fn power(&self, c: usize) -> Power {
+        if self.parallel() {
+            return self.power_par(c);
+        }
         self.sched[c].power
     }
 
     /// The counter value (CNTPCT = CNTVCT), the same for every vCPU.
     pub fn now(&self) -> u64 {
         if self.realtime() {
-            return (self.clock.ns() as u128 * self.cfg.cntfrq as u128 / 1_000_000_000) as u64;
+            let t = (self.clock.ns() as u128 * self.cfg.cntfrq as u128 / 1_000_000_000) as u64;
+            if self.parallel() {
+                // Threads read the clock at different times: never let one
+                // see it go back from what another saw.
+                return self.last.fetch_max(t, Ordering::Relaxed).max(t);
+            }
+            return t;
         }
         self.steps * self.cfg.ticks_per_insn + self.skipped
     }
@@ -422,6 +562,7 @@ impl Vm {
     /// each in index order (deterministic round-robin); an off or waiting one
     /// is skipped.
     pub fn run(&mut self, budget: u64) -> u32 {
+        assert!(!self.parallel(), "vm_run in parallel mode: vm_run_cpu");
         let start = self.steps;
         self.exit = ExitInfo::default();
         let kind = loop {
@@ -461,10 +602,10 @@ impl Vm {
                 self.retire(1);
                 continue;
             }
-            if self.gic.irq(c) && self.vcpus[c].cpu.pstate & PSTATE_I == 0 {
+            if self.plat.get_mut().gic.irq(c) && self.vcpus[c].cpu.pstate & PSTATE_I == 0 {
                 take_irq(&mut self.vcpus[c].cpu);
                 self.retire(1);
-                bump(&self.shared.counters.irqs);
+                bump(&self.shared.cpus[0].counters.irqs);
                 continue;
             }
             let n = CHUNK.min(left).min(self.until_deadline()).min(self.quantum);
@@ -509,13 +650,13 @@ impl Vm {
         None
     }
 
-    fn ready(&self, c: usize) -> bool {
+    fn ready(&mut self, c: usize) -> bool {
         let s = &self.sched[c];
         s.power == Power::On
             && match s.wait {
                 Wait::No | Wait::Woken => true,
                 // WFI completes when an interrupt is signaled, masked or not.
-                Wait::Wfi => self.gic.irq(c),
+                Wait::Wfi => self.plat.get_mut().gic.irq(c),
             }
     }
 
@@ -530,8 +671,10 @@ impl Vm {
     fn idle(&mut self) -> Option<u32> {
         let now = self.now();
         self.lines_at(now);
-        if (0..self.vcpus.len()).any(|c| self.ready(c)) {
-            return None;
+        for c in 0..self.vcpus.len() {
+            if self.ready(c) {
+                return None;
+            }
         }
         match self.next_deadline_at(now) {
             Some(t) if !self.realtime() => {
@@ -573,7 +716,7 @@ impl Vm {
 
     /// Copies the run loop's own counts into the shared counters (once per chunk).
     fn publish(&self) {
-        let c = &self.shared.counters;
+        let c = &self.shared.cpus[0].counters;
         c.retired.store(self.steps, Ordering::Relaxed);
         c.pc.store(self.vcpus[self.cur].cpu.pc, Ordering::Relaxed);
         let t = self.vcpus.iter().map(|v| &v.tlb.stats);
@@ -584,49 +727,18 @@ impl Vm {
         c.tlb_walks.store(walks, Ordering::Relaxed);
         c.tlb_flushes.store(flushes, Ordering::Relaxed);
         if let Some(j) = &self.vcpus[0].jit.cache {
-            let s = j.stats;
-            let v = [
-                s.blocks,
-                s.modules,
-                s.bytes,
-                s.compile_ns,
-                s.steps,
-                s.dispatches,
-                s.invalidations,
-                s.flushes,
-                s.inline,
-                s.helpers,
-                s.inline_steps,
-                s.flags_stored,
-                s.flags_elided,
-                s.cond_direct,
-                s.cond_computed,
-                s.cond_memory,
-                s.region_blocks,
-                s.back_edges,
-                s.tier_ups,
-            ];
-            for (a, v) in c.jit.iter().zip(v) {
-                a.store(v, Ordering::Relaxed);
-            }
+            publish_jit(c, &j.stats);
         }
     }
 
     /// Drains every backend's completions; true if that posted new requests
     /// (chains that hadn't fit before), with `exit.value` set.
     fn complete(&mut self) -> bool {
-        let mut any = false;
-        for (i, (t, sh)) in self.virtio.iter_mut().zip(&self.shared.devices).enumerate() {
-            let ev = t.complete(&self.mem, sh);
-            if ev != 0 {
-                sh.events.fetch_or(ev, Ordering::AcqRel);
-                if !any {
-                    self.exit.value = (i as u64) | (ev as u64) << 8;
-                }
-                any = true;
-            }
+        let r = complete(&mut self.plat.get_mut().virtio, &self.mem, &self.shared);
+        if let Some(v) = r {
+            self.exit.value = v;
         }
-        any
+        r.is_some()
     }
 
     /// Drives the timers' and devices' interrupt lines into the GIC.
@@ -636,21 +748,13 @@ impl Vm {
 
     /// [`Vm::lines`] with the counter at `now`.
     fn lines_at(&mut self, now: u64) {
-        let fires = |ctl, cval| interp::timer_fires(ctl, cval, now);
-        for (i, v) in self.vcpus.iter().enumerate() {
-            let c = &v.cpu;
-            let (vt, pt) = (
-                fires(c.cntv_ctl_el0, c.cntv_cval_el0),
-                fires(c.cntp_ctl_el0, c.cntp_cval_el0),
-            );
-            self.gic.set_level(i, IRQ_VTIMER, vt);
-            self.gic.set_level(i, IRQ_PTIMER, pt);
+        let p = self.plat.get_mut();
+        for (i, v) in self.vcpus.iter_mut().enumerate() {
+            let (vt, pt) = timers(&v.cpu, now);
+            p.gic.set_level(i, IRQ_VTIMER, vt);
+            p.gic.set_level(i, IRQ_PTIMER, pt);
         }
-        let irq = self.uart.irq(&self.shared.console.rx);
-        self.gic.set_level(0, IRQ_UART, irq);
-        for (i, t) in self.virtio.iter().enumerate() {
-            self.gic.set_level(0, virtio::IRQ_BASE + i, t.irq());
-        }
+        spis(p, &self.shared);
     }
 
     /// The earliest compare value of an enabled, unmasked timer of an on vCPU
@@ -670,15 +774,7 @@ impl Vm {
 
     /// vCPU `c`'s next timer deadline after `now`.
     fn deadline_of(&self, c: usize, now: u64) -> Option<u64> {
-        let c = &self.vcpus[c].cpu;
-        [
-            (c.cntv_ctl_el0, c.cntv_cval_el0),
-            (c.cntp_ctl_el0, c.cntp_cval_el0),
-        ]
-        .into_iter()
-        .filter(|&(ctl, cval)| ctl & 3 == 1 && cval > now)
-        .map(|(_, cval)| cval)
-        .min()
+        deadline(&self.vcpus[c].cpu, now)
     }
 
     /// Steps until the next deadline (at least 1), or u64::MAX (also in
@@ -745,12 +841,16 @@ impl Vm {
                 let cpu = &mut self.vcpus[c].cpu;
                 if let Some(r) = sys::icc(cpu.features, i >> 5 & 0xffff) {
                     let (rt, read) = (i & 31, i & 1 << 21 != 0);
-                    let v = self.gic.icc(c, r, (!read).then(|| cpu.reg(rt)));
+                    let v = self
+                        .plat
+                        .get_mut()
+                        .gic
+                        .icc(c, r, (!read).then(|| cpu.reg(rt)));
                     if read {
                         cpu.set_reg(rt, v);
                     }
                 } else {
-                    let (now, irq) = (self.now(), self.gic.irq(c));
+                    let (now, irq) = (self.now(), self.plat.get_mut().gic.irq(c));
                     platform(&mut self.vcpus[c].cpu, i, now, self.cfg.cntfrq, irq);
                 }
                 let cpu = &mut self.vcpus[c].cpu;
@@ -772,7 +872,7 @@ impl Vm {
         take_exception(cpu, e);
         let ec = (cpu.esr_el1 >> 26) as usize & 63;
         self.retire(1);
-        bump(&self.shared.counters.exceptions[ec]);
+        bump(&self.shared.cpus[0].counters.exceptions[ec]);
     }
 
     /// WFI completes at once when an interrupt is signaled to vCPU `c` (masked
@@ -781,7 +881,7 @@ impl Vm {
     fn wfi(&mut self, c: usize) {
         let now = self.now();
         self.lines_at(now);
-        if self.gic.irq(c) {
+        if self.plat.get_mut().gic.irq(c) {
             let cpu = &mut self.vcpus[c].cpu;
             cpu.pc = cpu.pc.wrapping_add(4);
             self.retire(1);
@@ -792,29 +892,8 @@ impl Vm {
 
     /// Runs the instruction at the PC again through [`Io`], after it hit a non-RAM address.
     fn io(&mut self) -> Option<u32> {
-        let Vm {
-            vcpus,
-            cur,
-            mem,
-            gic,
-            uart,
-            virtio,
-            shared,
-            ..
-        } = self;
-        let vcpu = &mut *vcpus[*cur];
-        let mut io = Io {
-            mmu: Mmu::new(mem, Some(&mut vcpu.tlb)),
-            gic,
-            uart,
-            console: &shared.console,
-            virtio,
-            devices: &shared.devices,
-            tx_full: false,
-            device: None,
-        };
-        let r = interp::step_bus(&mut vcpu.cpu, &mut io);
-        let (tx_full, device) = (io.tx_full, io.device);
+        let vcpu = &mut *self.vcpus[self.cur];
+        let (r, tx_full, device) = io(vcpu, &self.mem, self.plat.get_mut(), &self.shared);
         match r {
             Ok(()) => {
                 self.retire(1);
@@ -835,19 +914,9 @@ impl Vm {
         (0..self.vcpus.len()).find(|&i| gicv3::mpidr(i) & 0xff_00ff_ffff == aff)
     }
 
-    /// PSCI CPU_ON: vCPU `t` starts at `entry` in its reset state (EL1h, DAIF
-    /// masked, the MMU off) with x0 = `context`.
+    /// PSCI CPU_ON: vCPU `t` starts at `entry` with x0 = `context`.
     fn cpu_on(&mut self, t: usize, entry: u64, context: u64) {
-        let v = &mut self.vcpus[t];
-        let (features, mpidr) = (v.cpu.features, v.cpu.mpidr);
-        v.cpu = Cpu {
-            pc: entry,
-            features,
-            mpidr,
-            ..Cpu::reset()
-        };
-        v.cpu.x[0] = context;
-        v.tlb.flush_all();
+        cpu_on(&mut self.vcpus[t], entry, context);
         self.sched[t] = Sched {
             power: Power::On,
             wait: Wait::No,
@@ -861,30 +930,8 @@ impl Vm {
         let c = self.cur;
         let x = self.vcpus[c].cpu.x;
         let f = x[0] as u32;
-        // SMC32 calls take 32-bit arguments; for the affinity calls the
-        // MPIDR's Aff2–Aff0.
-        let aff = |v: u64, smc64: bool| {
-            if smc64 {
-                v & 0xff_00ff_ffff
-            } else {
-                v & 0xff_ffff
-            }
-        };
+        let aff = psci_aff;
         let r: i64 = match f {
-            PSCI_VERSION => 1 << 16, // 1.0
-            PSCI_FEATURES => match x[1] as u32 {
-                PSCI_VERSION
-                | PSCI_FEATURES
-                | PSCI_CPU_ON
-                | PSCI_CPU_ON_64
-                | PSCI_CPU_OFF
-                | PSCI_AFFINITY_INFO
-                | PSCI_AFFINITY_INFO_64
-                | PSCI_MIGRATE_INFO_TYPE
-                | PSCI_SYSTEM_OFF
-                | PSCI_SYSTEM_RESET => PSCI_SUCCESS,
-                _ => PSCI_NOT_SUPPORTED,
-            },
             PSCI_AFFINITY_INFO | PSCI_AFFINITY_INFO_64 => {
                 // Level 0 only (one affinity level per vCPU): ON 0, OFF 1.
                 match self.cpu_of(aff(x[1], f == PSCI_AFFINITY_INFO_64)) {
@@ -911,16 +958,157 @@ impl Vm {
                 self.quantum = 0;
                 return None;
             }
-            PSCI_MIGRATE_INFO_TYPE => 2, // no Trusted OS to migrate
             PSCI_SYSTEM_OFF | PSCI_SYSTEM_RESET => {
                 self.exit.x.copy_from_slice(&x[..4]);
                 return Some(exit::PSCI);
             }
-            _ => PSCI_NOT_SUPPORTED,
+            f => psci_common(f, x[1]),
         };
         self.vcpus[c].cpu.x[0] = r as u64;
         None
     }
+}
+
+/// The PSCI calls both modes answer alike (function `f`, argument x1).
+fn psci_common(f: u32, x1: u64) -> i64 {
+    match f {
+        PSCI_VERSION => 1 << 16, // 1.0
+        PSCI_FEATURES => match x1 as u32 {
+            PSCI_VERSION
+            | PSCI_FEATURES
+            | PSCI_CPU_ON
+            | PSCI_CPU_ON_64
+            | PSCI_CPU_OFF
+            | PSCI_AFFINITY_INFO
+            | PSCI_AFFINITY_INFO_64
+            | PSCI_MIGRATE_INFO_TYPE
+            | PSCI_SYSTEM_OFF
+            | PSCI_SYSTEM_RESET => PSCI_SUCCESS,
+            _ => PSCI_NOT_SUPPORTED,
+        },
+        PSCI_MIGRATE_INFO_TYPE => 2, // no Trusted OS to migrate
+        _ => PSCI_NOT_SUPPORTED,
+    }
+}
+
+/// A PSCI affinity argument: SMC32 calls take 32-bit arguments, so the
+/// MPIDR's Aff2–Aff0; SMC64 ones Aff3 too.
+fn psci_aff(v: u64, smc64: bool) -> u64 {
+    if smc64 {
+        v & 0xff_00ff_ffff
+    } else {
+        v & 0xff_ffff
+    }
+}
+
+/// PSCI CPU_ON's effect on the vCPU: it starts at `entry` in its reset state
+/// (EL1h, DAIF masked, the MMU off) with x0 = `context`.
+fn cpu_on(v: &mut Vcpu, entry: u64, context: u64) {
+    let (features, mpidr) = (v.cpu.features, v.cpu.mpidr);
+    v.cpu = Cpu {
+        pc: entry,
+        features,
+        mpidr,
+        ..Cpu::reset()
+    };
+    v.cpu.x[0] = context;
+    v.tlb.flush_all();
+}
+
+/// vCPU `cpu`'s timer lines at counter value `now` (virtual, physical).
+fn timers(c: &Cpu, now: u64) -> (bool, bool) {
+    let fires = |ctl, cval| interp::timer_fires(ctl, cval, now);
+    (
+        fires(c.cntv_ctl_el0, c.cntv_cval_el0),
+        fires(c.cntp_ctl_el0, c.cntp_cval_el0),
+    )
+}
+
+/// A vCPU's next timer deadline after `now`.
+fn deadline(c: &Cpu, now: u64) -> Option<u64> {
+    [
+        (c.cntv_ctl_el0, c.cntv_cval_el0),
+        (c.cntp_ctl_el0, c.cntp_cval_el0),
+    ]
+    .into_iter()
+    .filter(|&(ctl, cval)| ctl & 3 == 1 && cval > now)
+    .map(|(_, cval)| cval)
+    .min()
+}
+
+/// Drives the devices' lines (SPIs) into the GIC.
+fn spis(p: &mut Platform, shared: &Shared) {
+    let irq = p.uart.irq(&shared.console.rx);
+    p.gic.set_level(0, IRQ_UART, irq);
+    for (i, t) in p.virtio.iter().enumerate() {
+        p.gic.set_level(0, virtio::IRQ_BASE + i, t.irq());
+    }
+}
+
+/// Drains every backend's completions; the `DEVICE` exit's value if that
+/// posted new requests (chains that hadn't fit before).
+fn complete(virtio: &mut [Transport], mem: &Mem, shared: &Shared) -> Option<u64> {
+    let mut first = None;
+    for (i, (t, sh)) in virtio.iter_mut().zip(&shared.devices).enumerate() {
+        let ev = t.complete(mem, sh);
+        if ev != 0 {
+            sh.events.fetch_or(ev, Ordering::AcqRel);
+            first.get_or_insert((i as u64) | (ev as u64) << 8);
+        }
+    }
+    first
+}
+
+/// Copies the JIT's counts into a counters block.
+fn publish_jit(c: &Counters, s: &jit::Stats) {
+    let v = [
+        s.blocks,
+        s.modules,
+        s.bytes,
+        s.compile_ns,
+        s.steps,
+        s.dispatches,
+        s.invalidations,
+        s.flushes,
+        s.inline,
+        s.helpers,
+        s.inline_steps,
+        s.flags_stored,
+        s.flags_elided,
+        s.cond_direct,
+        s.cond_computed,
+        s.cond_memory,
+        s.region_blocks,
+        s.back_edges,
+        s.tier_ups,
+        s.stale,
+    ];
+    for (a, v) in c.jit.iter().zip(v) {
+        a.store(v, Ordering::Relaxed);
+    }
+}
+
+/// Runs the instruction at `vcpu`'s PC again through [`Io`], after it hit a
+/// non-RAM address: its result, whether the console's TX ring was full, and
+/// a `DEVICE` exit's value.
+fn io(
+    vcpu: &mut Vcpu,
+    mem: &Mem,
+    p: &mut Platform,
+    shared: &Shared,
+) -> (Result<(), Exit>, bool, Option<u64>) {
+    let mut io = Io {
+        mmu: Mmu::new(mem, Some(&mut vcpu.tlb)),
+        gic: &mut p.gic,
+        uart: &mut p.uart,
+        console: &shared.console,
+        virtio: &mut p.virtio,
+        devices: &shared.devices,
+        tx_full: false,
+        device: None,
+    };
+    let r = interp::step_bus(&mut vcpu.cpu, &mut io);
+    (r, io.tx_full, io.device)
 }
 
 /// The bus for one instruction that touched a non-RAM physical address: RAM

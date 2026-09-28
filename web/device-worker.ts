@@ -22,24 +22,6 @@ self.onmessage = (e: MessageEvent) => {
 
 async function start(init: Init) {
   devices = await Devices.open(init, (device, text) => self.postMessage({ type: 'console', device, text }));
-  const bell = new Int32Array(init.memory.buffer, init.bell, 2);
   self.postMessage({ type: 'ready' });
-  for (let seen = 0; ;) {
-    const rung = Atomics.load(bell, 0);
-    if (rung === seen) {
-      const w = Atomics.waitAsync(bell, 0, seen);
-      if (w.async) await w.value;
-      continue;
-    }
-    seen = rung;
-    try {
-      await devices.poll();
-    } catch (e) {
-      Atomics.store(bell, 1, -1);
-      Atomics.notify(bell, 1);
-      throw e;
-    }
-    Atomics.store(bell, 1, seen);
-    Atomics.notify(bell, 1);
-  }
+  await devices.serve(new Int32Array(init.memory.buffer, init.bell, 2));
 }

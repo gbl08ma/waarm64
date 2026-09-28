@@ -44,7 +44,7 @@ impl T {
     /// The GIC on (group 1, CPU 0's redistributor awake, the CPU interface
     /// open) with the virtual timer PPI enabled.
     fn gic_on(&mut self) {
-        let g = &mut self.vm.gic;
+        let g = &mut self.vm.plat.get_mut().gic;
         g.dist_write(0, 4, 2).unwrap();
         g.redist_write(0x14, 4, 0).unwrap();
         g.redist_write(0x1_0080, 4, !0).unwrap();
@@ -117,7 +117,7 @@ fn unmapped_pa_is_still_an_external_abort() {
         (VBAR + 0x200, 0x9600_0050, 0x0b00_0000)
     );
     assert_eq!(
-        t.vm.shared.counters.exceptions[0x25].load(Ordering::Relaxed),
+        t.vm.shared.cpus[0].counters.exceptions[0x25].load(Ordering::Relaxed),
         1
     );
 }
@@ -135,9 +135,9 @@ fn timer_irq_fires_on_its_tick() {
     let c = &t.vm.vcpus[0].cpu;
     // Taken after 100 steps (tick 300), from EL1h, before the branch.
     assert_eq!((c.pc, c.elr_el1), (VBAR + 0x280, RAM_BASE));
-    assert_eq!(t.vm.shared.counters.irqs.load(Ordering::Relaxed), 1);
+    assert_eq!(t.vm.shared.cpus[0].counters.irqs.load(Ordering::Relaxed), 1);
     assert_eq!(t.vm.now(), 3 * 10_000);
-    let iar = t.vm.gic.icc(0, Icc::Iar(Group::G1), None);
+    let iar = t.vm.plat.get_mut().gic.icc(0, Icc::Iar(Group::G1), None);
     assert_eq!(iar, IRQ_VTIMER as u64);
 }
 
@@ -257,7 +257,7 @@ fn a_timer_is_pending_or_a_deadline_at_one_instant() {
     t.vtimer_at(1000);
     for now in [998, 999, 1000, 1001] {
         t.vm.lines_at(now);
-        let (pending, deadline) = (t.vm.gic.irq(0), t.vm.next_deadline_at(now));
+        let (pending, deadline) = (t.vm.plat.get_mut().gic.irq(0), t.vm.next_deadline_at(now));
         assert!(
             pending != deadline.is_some(),
             "now {now}: pending {pending}, deadline {deadline:?}"

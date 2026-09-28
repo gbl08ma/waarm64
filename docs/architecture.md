@@ -7,7 +7,7 @@ WebAssembly modules at run time. It runs unmodified arm64 Linux. Chromium is the
 ## Threads and memory
 
 ```
-┌──────────── vCPU worker (one today; one per vCPU in M7) ─────────────┐
+┌──────────── vCPU worker (one, or one per vCPU in parallel SMP) ──────┐
 │  core.wasm (Rust): decoder, interpreter, JIT, MMU + software TLB,   │
 │  exceptions, system registers, timer, GICv3, PL011, PSCI, virtio    │
 │  transports, the run loop, counters                                  │
@@ -25,8 +25,12 @@ WebAssembly modules at run time. It runs unmodified arm64 Linux. Chromium is the
 - The page must be **cross-origin isolated** (COOP/COEP) for `SharedArrayBuffer`; everything that
   runs in the browser works with it on (`tools/serve.ts` sets the headers).
 - `web/vm.ts` is the host side of the ABI: it instantiates the core, boots a VM (`bootVm`), runs it
-  (`run`, `runToPowerOff`), handles exits, and hosts the JIT's installs. `tests/browser/boot.html`
-  and the bench pages run it in a worker; Node runs it directly (devices inline).
+  (`run`, `runAsync`, `runToPowerOff`), handles exits, and hosts the JIT's installs.
+  `tests/browser/boot.html` and the bench pages run it in a worker; Node runs it directly (devices
+  inline). **Parallel SMP** (M7): that thread becomes a coordinator; each vCPU runs in its own
+  worker (`web/vcpu-worker.ts`: its own core instance, table and JIT code on the one memory),
+  which sleeps on its vCPU's wake word and rings the device doorbell itself; the coordinator drains
+  the console and reports the run's end ([platform.md](platform.md) "The run loop").
 
 ## Guest memory: layout A
 
