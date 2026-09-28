@@ -143,6 +143,12 @@ impl Code {
         self.b.push(0xfe);
         self.memarg(op, align, offset)
     }
+    /// atomic.fence (`0xfe 0x03 0x00`): a sequentially consistent fence
+    /// (`dmb ish` on arm64 in V8).
+    pub fn atomic_fence(&mut self) -> &mut Self {
+        self.b.extend_from_slice(&[0xfe, 0x03, 0x00]);
+        self
+    }
     fn local(&mut self, op: u8, i: u32) -> &mut Self {
         assert!(i < 128);
         self.b.push(op);

@@ -387,29 +387,26 @@ pub trait Bus {
         }
     }
 
-    /// 2×`size` read of a naturally aligned pair, atomic with respect to `cas_pair` (LDXP).
-    fn read_pair(&mut self, c: &Cpu, va: u64, size: u32) -> Result<[u64; 2], Fault> {
-        let p = self.host_aligned(c, va, 2 * size as u64, Access::Read)?;
-        // SAFETY: 2×size aligned bytes of RAM.
-        Ok(unsafe { self.mem().pair_locked(p, size, |old| (old, None)) })
+    /// 16-byte read of an aligned pair of X registers (LDXP), atomic with
+    /// respect to `cas_pair`.
+    fn read_pair(&mut self, c: &Cpu, va: u64) -> Result<[u64; 2], Fault> {
+        let p = self.host_aligned(c, va, 16, Access::Read)?;
+        // SAFETY: 16 aligned bytes of RAM.
+        Ok(unsafe { self.mem().read_pair(p) })
     }
 
-    /// 2×`size` compare-and-swap of a naturally aligned pair (CASP, STXP).
-    /// Returns the old pair; the swap happened iff it equals `expected`.
+    /// 16-byte compare-and-swap of an aligned pair of X registers (CASP,
+    /// STXP). Returns the old pair; the swap happened iff it equals `expected`.
     fn cas_pair(
         &mut self,
         c: &Cpu,
         va: u64,
-        size: u32,
         expected: [u64; 2],
         new: [u64; 2],
     ) -> Result<[u64; 2], Fault> {
-        let p = self.host_aligned(c, va, 2 * size as u64, Access::Write)?;
+        let p = self.host_aligned(c, va, 16, Access::Write)?;
         // SAFETY: as in read_pair.
-        Ok(unsafe {
-            self.mem()
-                .pair_locked(p, size, |old| (old, (old == expected).then_some(new)))
-        })
+        Ok(unsafe { self.mem().cas_pair(p, expected, new) })
     }
 }
 
@@ -594,15 +591,13 @@ impl Bus for Mmu<'_> {
             // SAFETY: host() checked the bytes are RAM.
             (p, None) => unsafe { mem::load(p, size) },
             (p1, Some((p2, first))) => (0..size as u64).fold(0, |v, k| {
-                // SAFETY: the first `first` bytes are at p1, the rest at p2, all RAM.
-                let b = unsafe {
-                    *if k < first {
-                        p1.add(k as usize)
-                    } else {
-                        p2.add((k - first) as usize)
-                    }
+                let b = if k < first {
+                    p1.wrapping_add(k as usize)
+                } else {
+                    p2.wrapping_add((k - first) as usize)
                 };
-                v | (b as u64) << (8 * k)
+                // SAFETY: the first `first` bytes are at p1, the rest at p2, all RAM.
+                v | unsafe { mem::load(b, 1) } << (8 * k)
             }),
         })
     }
@@ -613,14 +608,13 @@ impl Bus for Mmu<'_> {
             (p, None) => unsafe { mem::store(p, size, val) },
             (p1, Some((p2, first))) => {
                 for k in 0..size as u64 {
+                    let b = if k < first {
+                        p1.wrapping_add(k as usize)
+                    } else {
+                        p2.wrapping_add((k - first) as usize)
+                    };
                     // SAFETY: as in read_el.
-                    unsafe {
-                        *if k < first {
-                            p1.add(k as usize)
-                        } else {
-                            p2.add((k - first) as usize)
-                        } = (val >> (8 * k)) as u8;
-                    }
+                    unsafe { mem::store(b, 1, val >> (8 * k)) };
                 }
             }
         }

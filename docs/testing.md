@@ -16,14 +16,14 @@ and the exact-step boots.
 | Lockstep | `tests/jit-lockstep.test.ts` | the integer and FP guests (user mode) and the integer guest at EL1 (MMU off and on), JIT and JIT-stress vs interpreter, `Cpu` + RAM checksum every chunk; 20M steps per JIT case in CI |
 | Core instances on one memory | `tests/threads.test.ts` (Node workers); `tests/browser.test.ts` (Chromium workers) | three concurrent instances (interpreter, JIT, JIT) with their own stack, TLS and table run the integer guest to the reference's exact state (M7) |
 | JIT plumbing | `tests/jit.test.ts` | install, IC IVAU invalidation (also across chains), the stale-code checker, call/return chaining, tier-up |
-| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF), broadcast maintenance (`maint`, 4 vCPUs: every TLBI …IS flavor, IC IVAU and IALLUIS on code the others run; its IC planted out, JIT-check's stale-code checker must trap) |
+| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF), broadcast maintenance (`maint`, 4 vCPUs: every TLBI …IS flavor, IC IVAU and IALLUIS on code the others run; its IC planted out, JIT-check's stale-code checker must trap), 128-bit atomics (`pairs`, 4 vCPUs: CASP and LDXP/STXP against each other and against plain stores to the same bytes) |
 | kvm-unit-tests | `core/tests/kvm_unit_tests.rs`; `tests/boot-node.test.ts` | selftest (incl. smp), psci, gicv3-ipi, gicv3-active, timer, cache |
 | Buildroot boot and device test | `core/tests/boot.rs`; `tests/boot-node.test.ts`; `tests/browser.test.ts` | Linux boots, virtio console/rng/blk/net/9p/input, framebuffer, realtime mode, writable overlay |
 | LTP subset + arm64 kselftests | `core/tests/ltp.rs` (interpreter, each result against its table); `tests/boot-node.test.ts` (JIT) | 93 syscall tests; `syscall-abi`, `ptrace`, `hwcap`, `tpidr2`, `tags_test`, signal tests |
 | Crypto test kernel | `tests/boot-node.test.ts` (JIT; interpreter with `WEBPC_INTERP=1`) | the arm64 CE drivers' full self-tests, lib/crypto's SHA KUnit suites |
 | Distros | `core/tests/distros.rs` (interpreter: Alpine; Debian with `WEBPC_DEBIAN_NATIVE=1`); `tests/boot-node.test.ts` (Alpine, Alpine userspace, JIT); `tests/browser.test.ts` (Alpine, Debian, JIT) | real distro boots from virtio-blk |
-| Parallel SMP (a thread per vCPU, realtime: not reproducible, so repeated, every run must pass; `WEBPC_PARALLEL_RUNS`) | `core/tests/baremetal.rs` `baremetal_parallel` (every test, 5×), `core/tests/boot.rs` (Buildroot on 1, 2, 4 vCPUs), `core/tests/distros.rs` `alpine_smp` with `WEBPC_PARALLEL=1`; `tests/boot-node.test.ts` (bare-metal under the JIT and JIT-check, kvm-unit-tests' SMP set, Buildroot on 2 and 4, Alpine on 4); `tests/browser.test.ts` (Buildroot on 4; Alpine on 4; Debian on 4 with `WEBPC_PARALLEL_DEBIAN=1`) | the vCPU workers, wake-ups, the platform lock, broadcast maintenance and the DSB wait (M7) |
-| ThreadSanitizer | `scripts/tsan.sh` (in `ci.sh`, ~20 s warm) | the native parallel runner under `-Zsanitizer=thread` (std rebuilt, `target/tsan`): the bare-metal tests 3× and Buildroot on 1, 2, 4 vCPUs; any report fails. Guest-RAM accesses are suppressed (`core/tsan.supp`: the interpreter's plain accesses race the guest's atomics by design until M7 loop 6) |
+| Parallel SMP (a thread per vCPU, realtime: not reproducible, so repeated, every run must pass; `WEBPC_PARALLEL_RUNS`) | `core/tests/baremetal.rs` `baremetal_parallel` (every test, 5×), `core/tests/boot.rs` (Buildroot on 1, 2, 4 vCPUs), `core/tests/distros.rs` `alpine_smp` with `WEBPC_PARALLEL=1`; `tests/boot-node.test.ts` (bare-metal under the JIT and JIT-check, kvm-unit-tests' SMP set, litmus on 4, Buildroot on 2 and 4, Alpine on 4); `tests/browser.test.ts` (Buildroot on 4; Alpine on 4; Debian on 4 with `WEBPC_PARALLEL_DEBIAN=1`) | the vCPU workers, wake-ups, the platform lock, broadcast maintenance and the DSB wait (M7) |
+| ThreadSanitizer | `scripts/tsan.sh` (in `ci.sh`, ~20 s warm) | the native parallel runner under `-Zsanitizer=thread` (std rebuilt, `target/tsan`): the bare-metal tests 3× and Buildroot on 1, 2, 4 vCPUs; any report fails, nothing is suppressed (guest RAM is accessed with relaxed atomics: [cpu.md](cpu.md) "Memory accesses and atomics"); a planted plain load is reported |
 | Browser-only | `tests/browser.test.ts` | cross-origin isolation, the device worker, sync XHR ranges, OPFS, the canvas, DOM input, the spike page |
 | Host code | `tests/{devices,overlay,qcow2,serve,wasm-encoder,core-wasm,memory-kernels}.test.ts` | 9p server, loopback adapter, input config, overlay, qcow2 fixtures, the dev server, the encoder |
 | Decoder sweep | `core/fuzz` (not in CI) | every 2³² word vs Capstone |
@@ -113,7 +113,7 @@ Realtime runs and the rw-overlay boots aren't step-exact.
 
 `start.S` (stack, vectors calling `on_exception(frame, vector)`, FP on, `run_el0()` to drop to EL0
 and come back through SVC #1) plus one C file per test (all on a GICv3, `lib.h` `gic_init()`; `// smp: N` boots N
-vCPUs, on the oracles too), built with host clang and lld by
+vCPUs, on the oracles too; `// qemu-cpu: <model>` replaces TCG's Cortex-A57, e.g. `max` for LSE), built with host clang and lld by
 `build.sh` into committed flat `.bin`s loaded at `0x4000_0000`. Pass = PSCI SYSTEM_OFF with
 x1 = 0; `power_off` also prints `exit <code>`. `oracle.sh` runs the `-DORACLE` builds
 (implementation-specific checks left out) on QEMU TCG, `oracle.sh --hvf` the `-DORACLE -DHVF`
@@ -123,7 +123,7 @@ of the HVF build: two `gicv3` checks that are ours and QEMU's but not Apple's
 CPU_ON (QEMU's PSCI races it against the target's start: another answer ~1 in 5 under hvf). Tests mustn't rely on
 UNKNOWN or IMPLEMENTATION DEFINED reset values and must pick addresses unmapped on `virt` too (its
 flash covers `0x0`–`0x0800_0000`). **Rebuild all of them together** when one changes (different clangs build different bytes;
-they were last rebuilt together on the M4 VM in M7 loop 5, when only `maint.bin` changed).
+they were last rebuilt together on the M4 VM in M7 loop 6, when only `pairs.bin` was new).
 
 ## kvm-unit-tests
 
@@ -193,11 +193,14 @@ skipped (on one vCPU only `CoRW1`, `CoWR`, `CoWW` run).
   litmus7's default settings the M4 showed almost nothing (SB never in 2M): the image uses
   herdtools7's Arm settings (stride 1, `userfence` barriers, `incr0` affinity, 5k × 200).
 - The checker was checked by removing SB's allowed states (it fails, listing each state).
+- **In CI:** `tests/boot-node.test.ts` boots the image on 4 parallel vCPUs under the JIT, 20K
+  outcomes per test (`-s 1000 -r 10`, ~5 s): no forbidden state. The host reorders there as the M4
+  does (MP 32, SB 918, R 49 of 20K); with DMB emitted as nothing (planted), MP+dmb.sys,
+  MP+dmb.st+dmb.ld, MP+dmb.sy+addr, SB+dmb.sys and 2+2W+dmb.sys fail (M7 loop 6).
 
 ## Planned layers
 
-- **Memory model and SMP** (M7): the litmus tests above in the guest at N vCPUs, atomics stress,
-  kvm-unit-tests' SMP tests.
+- **Memory model and SMP** (M7 loop 7): the litmus tests in every mode and tier, atomics stress.
 - **In-guest suites** not yet run: more LTP areas (need `mkfs` tools and a scratch disk), the
   kselftests `fp` and the generic suites, language test suites (Python), guest JITs (Node/V8,
   LuaJIT) for code invalidation.

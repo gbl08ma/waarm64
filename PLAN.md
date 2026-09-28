@@ -68,8 +68,10 @@ to 8 vCPUs with exact steps in every runner), 3b (the GICv2 dropped), 4 (broadca
 tests across vCPUs, JIT-check; the realtime queues and DSB wait designed in docs/platform.md), 5
 (parallel SMP, ABI 25: a worker per vCPU in the browser and Node, a thread per vCPU natively,
 the platform lock, wake words, broadcast queues with the DSB wait, ThreadSanitizer in CI; Linux
-boots on 4 vCPUs in parallel natively, in Node and in Chromium, Debian included). Next: loop 6,
-the memory model.
+boots on 4 vCPUs in parallel natively, in Node and in Chromium, Debian included), 6 (the memory
+model: DMB as `atomic.fence` in parallel JIT code, guest-RAM accesses as relaxed atomics with
+ThreadSanitizer unsuppressed, 128-bit atomics decided; litmus on 4 parallel vCPUs in CI). Next:
+loop 7, litmus and stress.
 - **Two execution modes, one core:** deterministic SMP runs every vCPU round-robin on one thread
   with a fixed quantum and one shared code cache (exact, reproducible step counts in every runner;
   virtual time = total steps of all vCPUs); realtime SMP runs **one worker per vCPU** on the shared
@@ -87,9 +89,13 @@ the memory model.
   running vCPU acknowledges at its next chunk boundary; idle ones apply it before resuming);
   `IC IVAU`/`IALLU(IS)` reach every code cache, drained at context synchronization and chunk
   boundaries.
-- **Memory model:** DMB/DSB as real fences in the JIT; the interpreter's and walker's shared-RAM
-  accesses reviewed; 128-bit atomics (CASP, LDXP/STXP) decided with litmus tests and a CASP
-  stress; CAS-based exclusives checked; WFE ends the quantum (deterministic) or yields (realtime).
+- **Memory model:** DMB as `atomic.fence` in the JIT in parallel SMP (`dmb ish`; nothing when
+  vCPUs share a thread); the core's guest-RAM accesses are relaxed atomics (no Rust data race;
+  the interpreter pays ~11% on wasm, Alpine within noise). **128-bit atomics** (decided by
+  measurement, loop 6): a hashed lock among pair ops plus a CAS per half, so they're atomic
+  against each other and never overwrite a racing store; not against a 64-bit RMW of the high
+  half inside the op (no guest we run does it). Stopping the world was ruled out by SLUB's
+  ~300K CASPs per Alpine boot. WFE ends the quantum (deterministic) or yields (realtime).
 - **ABI 20:** `VmConfig.ncpus`, the GIC choice, per-vCPU run/state/signals/counters, thread setup
   (design note in `docs/abi.md` first).
 - **Tests:** bare-metal SMP and GICv3 tests against QEMU (TCG, and hvf if it gives a GICv3),

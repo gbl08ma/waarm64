@@ -180,6 +180,15 @@ for (const n of [2, 4]) {
   }));
 }
 
+// The litmus tests (images/build.sh litmus) on 4 parallel vCPUs under the
+// JIT (M7 loop 6): no final state herd7's aarch64.cat forbids. 20K outcomes
+// per test (5 s); a DMB emitted as nothing fails MP+dmb.sys and SB+dmb.sys here.
+test('parallel: litmus on 4 vCPUs (JIT)', { skip: !has('litmus/initramfs.cpio') && 'SKIPPED: run images/build.sh linux litmus' }, async () => {
+  const r = await boot({ ramSize: 256 << 20, kernel: image('linux/Image'), initrd: image('litmus/initramfs.cpio'), cmdline: 'console=ttyAMA0 panic=-1 webpc.litmus=-s,1000,-r,10', ncpus: 4, parallel: true, idleLimitMs: 30_000 }, 1, 1e12);
+  poweredOff(r);
+  assert.match(r.console, /webpc: litmus on 4 CPUs[^]*litmus: all ok, 0 skipped\r?\nwebpc: test ok/, r.console);
+});
+
 guest('Buildroot device test', () => ({
   ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: `${GUEST_CMDLINE} -- /test-devices.sh`, devices: testDevices(disk()), framebuffer: { width: 640, height: 480 },
 }), (r) => {

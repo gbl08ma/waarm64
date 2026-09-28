@@ -1,7 +1,0 @@
-# ThreadSanitizer suppressions for scripts/tsan.sh.
-# Guest RAM: the interpreter's plain loads and stores race the guest's own
-# atomics and each other, as the guest's plain accesses do on hardware. M7
-# loop 6 decides how they become single-copy atomic; until then every report
-# with a frame in mem.rs is a guest-RAM access (checked in loop 5: all 36
-# reports of a Buildroot boot were on the RAM block).
-race:core/src/mem.rs

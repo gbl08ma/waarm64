@@ -1,0 +1,65 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-09-28T15:49:36.773Z",
+ "commit": "3fcfafbb5380",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "vm_mmu_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 2000000
+   },
+   "samples": [
+    46.0617226907246
+   ],
+   "median": 46.0617226907246,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_mmu_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 20000000
+   },
+   "samples": [
+    88.72327210770682,
+    88.93434422415076,
+    88.62694702651967,
+    89.01548869219918,
+    88.92445867377182,
+    87.37058232629619,
+    88.2670962415606,
+    88.67606632126105,
+    88.81980681221798,
+    88.84940026890087,
+    88.94818768303391,
+    88.59357696566998,
+    88.68589671917884,
+    88.94423196089852,
+    87.39921777381382
+   ],
+   "median": 88.72327210770682,
+   "iqr": 0.31913945286646594,
+   "n": 15
+  }
+ ]
+}

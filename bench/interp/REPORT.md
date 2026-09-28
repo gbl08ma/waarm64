@@ -740,3 +740,28 @@ The user approved advertising the crypto extensions by default on loop 7's numbe
 | SHA-256 | 86.6 | **297.6** (3.4×) |
 
 (Loop 7's two alternated runs per column, averaged.) Raw data: `../boot/results/m65-exit/`, `../boot/results/m65-loop7/`.
+
+## M7 loop 6: guest-RAM accesses as atomics
+
+Loop 6 makes the core's guest-RAM loads and stores relaxed atomics (`mem::load`/`store`: the
+interpreter, the walker, instruction fetch), so parallel SMP has no Rust data race; aligned
+accesses are one atomic, unaligned ones naturally aligned pieces. Wasm's atomics are all
+sequentially consistent (`ldar`/`stlr` on arm64). Measured with `vm_mmu_mips` (the integer guest
+at EL1, MMU on, interpreted; no placements, 15 samples each, all IQRs ≤ 0.8), Chromium 153, the
+M4 VM, one session, 2026-09-28:
+
+| Build | MIPS |
+|---|---|
+| A: base (`3fcfafb`) | 88.7 |
+| B: atomics, `is_multiple_of(size)` (a remainder) and the split inline | 74.7 |
+| C: as B with volatile plain accesses on wasm | 74.9 |
+| C2: as C, a mask test, the split out of line | 80.6 |
+| D: A's plain `read_unaligned` bodies on wasm (diagnostic) | 87.8 |
+| **E: atomics everywhere, a mask test, the split out of line (kept)** | **79.0** |
+| F: as E, the split plain (diagnostic: the split isn't what costs) | 79.3 |
+| G: as E, both paths plain (diagnostic: the alignment test alone) | 83.9 |
+
+The alignment test costs ~5% and the sequentially consistent accesses ~6%; volatile is no cheaper
+than atomics and is UB under races all the same, so E keeps one code path on every target. The
+interpreter runs ~1.4% of Alpine's boot (41M of 2,857M steps), and the boot stayed within noise
+(`../boot/REPORT.md` "M7 loop 6"). Raw data: `results/m7-loop6/`.

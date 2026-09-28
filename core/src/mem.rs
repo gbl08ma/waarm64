@@ -6,7 +6,6 @@
 //! RAM is one block at guest physical `phys..phys + size`, which on wasm32 sits
 //! in the shared linear memory after the core state (layout A).
 
-use core::ptr;
 use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 
 /// A guest memory access that didn't complete.
@@ -63,18 +62,19 @@ pub struct Mem {
     /// Guest physical address of the first RAM byte: 0 for user-mode hosts,
     /// 0x4000_0000 for a VM (the `virt` memory map, docs/platform.md).
     phys: u64,
-    /// Serializes 128-bit atomics (CASP, STXP of two X registers): wasm has no
-    /// 128-bit compare-and-swap.
-    // ponytail: pair atomics aren't atomic against a concurrent 64-bit atomic on
-    // the same bytes from another vCPU; M7 must make those take this lock too (or
-    // stop the world) if litmus tests show it.
-    pair_lock: AtomicU32,
+    /// Serializes the 128-bit atomics (CASP, LDXP/STXP of two X registers)
+    /// on the same 16 bytes: wasm has no 128-bit compare-and-swap. Hashed by
+    /// address, a cache line each, so per-CPU pairs don't contend.
+    pair_locks: [PairLock; PAIR_LOCKS],
 }
 
-// SAFETY: all access to the RAM goes through atomics or through
-// ptr::read/write_unaligned of at most 8 bytes, which the guest memory model
-// allows to race (single-copy atomicity for aligned accesses comes from wasm's
-// and the host ISA's plain loads/stores).
+const PAIR_LOCKS: usize = 16;
+
+#[repr(align(128))]
+struct PairLock(AtomicU32);
+
+// SAFETY: every access to the RAM is atomic (load, store and the atomics
+// below); races between them are the guest's, as on hardware.
 unsafe impl Sync for Mem {}
 unsafe impl Send for Mem {}
 
@@ -91,7 +91,7 @@ impl Mem {
             base,
             size,
             phys: 0,
-            pair_lock: AtomicU32::new(0),
+            pair_locks: [const { PairLock(AtomicU32::new(0)) }; PAIR_LOCKS],
         }
     }
 
@@ -145,66 +145,176 @@ impl Mem {
         Ok(())
     }
 
-    /// Runs `f` on the naturally aligned pair of `size`-byte values at `p` under
-    /// `pair_lock`, and writes back what it returns, if anything.
+    /// LDXP of two X registers: the 16 aligned bytes at `p`, atomic with
+    /// respect to [`Mem::cas_pair`].
     ///
     /// # Safety
-    /// `p` points at 2×`size` bytes of this RAM.
-    pub(crate) unsafe fn pair_locked(
+    /// `p` points at 16 bytes of this RAM, 16-byte aligned.
+    pub(crate) unsafe fn read_pair(&self, p: *mut u8) -> [u64; 2] {
+        // SAFETY: guaranteed by the caller.
+        unsafe { self.pair_op(p, |_| None) }
+    }
+
+    /// CASP and STXP of two X registers: compare-and-swap of the 16 aligned
+    /// bytes at `p`. Returns the old pair; the swap happened iff it equals
+    /// `expected`.
+    ///
+    /// # Safety
+    /// As for [`Mem::read_pair`].
+    pub(crate) unsafe fn cas_pair(
         &self,
         p: *mut u8,
-        size: u32,
-        f: impl FnOnce([u64; 2]) -> ([u64; 2], Option<[u64; 2]>),
+        expected: [u64; 2],
+        new: [u64; 2],
     ) -> [u64; 2] {
-        let hi = p.wrapping_add(size as usize);
-        while self.pair_lock.swap(1, Ordering::Acquire) != 0 {
+        // SAFETY: guaranteed by the caller.
+        unsafe { self.pair_op(p, |old| (old == expected).then_some(new)) }
+    }
+
+    /// Reads the pair at `p` and writes what `f` returns for it, if anything,
+    /// under the pair's lock (docs/cpu.md "Memory accesses and atomics").
+    ///
+    /// # Safety
+    /// As for [`Mem::read_pair`].
+    unsafe fn pair_op(&self, p: *mut u8, f: impl Fn([u64; 2]) -> Option<[u64; 2]>) -> [u64; 2] {
+        let hi = p.wrapping_add(8);
+        let lock = &self.pair_locks[(p as usize >> 4) % PAIR_LOCKS].0;
+        while lock.swap(1, Ordering::Acquire) != 0 {
             core::hint::spin_loop();
         }
-        // SAFETY: guaranteed by the caller.
-        let (ret, new) = f(unsafe { [load(p, size), load(hi, size)] });
-        if let Some([lo_v, hi_v]) = new {
-            // SAFETY: as above.
-            unsafe {
-                store(p, size, lo_v);
-                store(hi, size, hi_v);
+        // SAFETY (the loads and CASes): guaranteed by the caller.
+        let old = loop {
+            let old = unsafe { [load_atomic(p, 8), load_atomic(hi, 8)] };
+            // lo unchanged across the read of hi: the pair held `old` then.
+            if unsafe { load_atomic(p, 8) } != old[0] {
+                continue;
             }
-        }
-        self.pair_lock.store(0, Ordering::Release);
-        ret
+            let Some(new) = f(old) else { break old };
+            // Plain and 64-bit accesses don't take the lock, so each half is a
+            // CAS against what was read: a store to lo since then fails the
+            // first before anything is written (again); a store to hi since
+            // then is ordered after this pair op, and kept.
+            if unsafe { cas(p, 8, old[0], new[0]) } != old[0] {
+                continue;
+            }
+            unsafe { cas(hi, 8, old[1], new[1]) };
+            break old;
+        };
+        lock.store(0, Ordering::Release);
+        old
     }
 }
 
 /// Little-endian load of 1, 2, 4 or 8 bytes, zero-extended. Unaligned is fine.
 ///
+/// Guest RAM is shared with vCPUs on other threads, so every access is a
+/// relaxed atomic (a plain one would be a data race: UB in Rust). An aligned
+/// access is one single-copy-atomic access, as the architecture requires; an
+/// unaligned one is naturally aligned pieces (the architecture asks only for
+/// bytes then: we don't advertise LSE2).
+///
 /// # Safety
 /// `p..p + size` is guest RAM.
-#[inline]
+#[inline(always)]
 pub(crate) unsafe fn load(p: *const u8, size: u32) -> u64 {
+    if p as usize & (size as usize - 1) == 0 {
+        // SAFETY: guaranteed by the caller; aligned.
+        unsafe { load_relaxed(p, size) }
+    } else {
+        // SAFETY: guaranteed by the caller.
+        unsafe { load_split(p, size) }
+    }
+}
+
+/// [`load`] of an unaligned access, in naturally aligned pieces.
+///
+/// # Safety
+/// As for [`load`].
+#[inline(never)]
+unsafe fn load_split(p: *const u8, size: u32) -> u64 {
+    let (mut v, mut k) = (0, 0);
+    while k < size {
+        let q = p.wrapping_add(k as usize);
+        let n = piece(q, size - k);
+        // SAFETY: q..q + n is inside p..p + size, and aligned to n.
+        v |= unsafe { load_relaxed(q, n) } << (8 * k);
+        k += n;
+    }
+    v
+}
+
+/// Little-endian store of the low 1, 2, 4 or 8 bytes of `val`. Unaligned is
+/// fine; atomic as for [`load`].
+///
+/// # Safety
+/// As for [`load`].
+#[inline(always)]
+pub(crate) unsafe fn store(p: *mut u8, size: u32, val: u64) {
+    if p as usize & (size as usize - 1) == 0 {
+        // SAFETY: guaranteed by the caller; aligned.
+        unsafe { store_relaxed(p, size, val) }
+    } else {
+        // SAFETY: guaranteed by the caller.
+        unsafe { store_split(p, size, val) }
+    }
+}
+
+/// [`store`] of an unaligned access, in naturally aligned pieces.
+///
+/// # Safety
+/// As for [`load`].
+#[inline(never)]
+unsafe fn store_split(p: *mut u8, size: u32, val: u64) {
+    let mut k = 0;
+    while k < size {
+        let q = p.wrapping_add(k as usize);
+        let n = piece(q, size - k);
+        // SAFETY: as in load_split.
+        unsafe { store_relaxed(q, n, val >> (8 * k)) };
+        k += n;
+    }
+}
+
+/// The largest naturally aligned access at `p` of at most `left` bytes.
+#[inline]
+fn piece(p: *const u8, left: u32) -> u32 {
+    1 << (p as usize).trailing_zeros().min(left.ilog2())
+}
+
+/// Relaxed atomic load, zero-extended.
+///
+/// # Safety
+/// As for [`load`], and `p` is aligned to `size`.
+#[inline(always)]
+unsafe fn load_relaxed(p: *const u8, size: u32) -> u64 {
+    const O: Ordering = Ordering::Relaxed;
+    let p = p as *mut u8;
     // SAFETY: guaranteed by the caller.
     unsafe {
         match size {
-            1 => *p as u64,
-            2 => u16::from_le(ptr::read_unaligned(p as *const u16)) as u64,
-            4 => u32::from_le(ptr::read_unaligned(p as *const u32)) as u64,
-            8 => u64::from_le(ptr::read_unaligned(p as *const u64)),
+            1 => AtomicU8::from_ptr(p).load(O) as u64,
+            2 => u16::from_le(AtomicU16::from_ptr(p as *mut u16).load(O)) as u64,
+            4 => u32::from_le(AtomicU32::from_ptr(p as *mut u32).load(O)) as u64,
+            8 => u64::from_le(AtomicU64::from_ptr(p as *mut u64).load(O)),
             _ => unreachable!("access size {size}"),
         }
     }
 }
 
-/// Little-endian store of the low 1, 2, 4 or 8 bytes of `val`. Unaligned is fine.
+/// Relaxed atomic store of the low `size` bytes of `val`.
 ///
 /// # Safety
-/// As for [`load`].
-#[inline]
-pub(crate) unsafe fn store(p: *mut u8, size: u32, val: u64) {
+/// As for [`load_relaxed`].
+#[inline(always)]
+unsafe fn store_relaxed(p: *mut u8, size: u32, val: u64) {
+    const O: Ordering = Ordering::Relaxed;
     // SAFETY: guaranteed by the caller.
     unsafe {
         match size {
-            1 => *p = val as u8,
-            2 => ptr::write_unaligned(p as *mut u16, (val as u16).to_le()),
-            4 => ptr::write_unaligned(p as *mut u32, (val as u32).to_le()),
-            8 => ptr::write_unaligned(p as *mut u64, val.to_le()),
+            1 => AtomicU8::from_ptr(p).store(val as u8, O),
+            2 => AtomicU16::from_ptr(p as *mut u16).store((val as u16).to_le(), O),
+            4 => AtomicU32::from_ptr(p as *mut u32).store((val as u32).to_le(), O),
+            8 => AtomicU64::from_ptr(p as *mut u64).store(val.to_le(), O),
             _ => unreachable!("access size {size}"),
         }
     }
@@ -301,6 +411,18 @@ pub(crate) mod tests {
         assert_eq!(r.mem.read(3, 1).unwrap(), 0x88);
         assert_eq!(r.mem.read(4, 4).unwrap(), 0x4455_6677);
         assert_eq!(r.mem.read(3, 8).unwrap(), 0x1122_3344_5566_7788);
+        // Every size at every offset in a 16-byte window, against bytes.
+        for size in [2, 4, 8] {
+            for off in 16..32 {
+                let v = 0x0102_0304_0506_0708u64.wrapping_mul(off + size as u64);
+                r.mem.write(off, size, v).unwrap();
+                let want = v & (u64::MAX >> (64 - 8 * size));
+                assert_eq!(r.mem.read(off, size).unwrap(), want, "{size} at {off}");
+                for k in 0..size as u64 {
+                    assert_eq!(r.mem.read(off + k, 1).unwrap(), want >> (8 * k) & 0xff);
+                }
+            }
+        }
     }
 
     #[test]

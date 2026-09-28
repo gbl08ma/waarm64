@@ -745,9 +745,14 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         // Hints that are NOPs here (docs/cpu.md) and don't end a block.
         NOP | HINT | XPAC_2 | PACIA_2 | PACIB_2 | AUTIA_2 | AUTIB_2 | BTI | ESB | PSB | TSB
         | CSDB | DGH => {}
-        // Barriers order nothing for one vCPU on wasm's sequentially consistent
-        // memory (M6 loop 1; M7 revisits them), and don't end a block.
+        // Barriers order nothing for vCPUs sharing a thread (one vCPU or
+        // round-robin), and don't end a block. In parallel SMP every flavor is
+        // a full fence (`dmb ish` on arm64; stronger than DMB LD/ST need), and
+        // DSB is the helper's (it ends the chunk).
         DSB if cx.parallel => return false,
+        DMB | SSBB | PSSBB if cx.parallel => {
+            c.atomic_fence();
+        }
         DMB | DSB | SSBB | PSSBB => {}
         MRS => return mrs(c, cx, i, k),
         MSR_reg | MSR_imm => return msr(c, cx, i, k),
@@ -2459,9 +2464,17 @@ mod tests {
         assert!(has(&b, &[0x20, 0, 0x29, 3, 0xc0, 6])); // pstate
         assert!(has(&b, &[0x20, 0, 0x29, 3, 0xc8, 6])); // sp_other
         assert!(has(&b, &[0x10, 0])); // call helper 0
-        // Barriers: nothing.
+        // Barriers: nothing on one thread; in parallel SMP an atomic.fence
+        // (DSB: the helper).
         assert_eq!(emit(0xd5033bbf, 0).unwrap(), []); // dmb ish
         assert_eq!(emit(0xd5033f9f, 0).unwrap(), []); // dsb sy
+        let par = Ctx {
+            parallel: true,
+            ..FLAT
+        };
+        assert_eq!(emit_in(0xd5033bbf, 0, &par).unwrap(), [0xfe, 3, 0]); // dmb ish
+        assert_eq!(emit_in(0xd50339bf, 0, &par).unwrap(), [0xfe, 3, 0]); // dmb ishld
+        assert_eq!(emit_in(0xd5033f9f, 0, &par), None); // dsb sy
     }
 
     #[test]

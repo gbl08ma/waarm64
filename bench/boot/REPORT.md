@@ -176,3 +176,20 @@ round-robin realtime (10.28 vs 10.21 s), so the extra chunk ends at DSB/ISB/ERET
 and 4 vCPUs it took 12.0 and 14.4 s once the IC queues kept pages (before: 17.9 and 22 s, from
 whole-cache flushes, docs/platform.md "Broadcast maintenance"). In Chromium, Alpine on 4 vCPUs
 took 16.2 and 16.5 s, Debian on 4 vCPUs 33 s.
+
+## M7 loop 6: memory model, single-vCPU check
+
+Loop 6 changes what one vCPU runs only in the core's guest-RAM accesses (relaxed atomics, which
+cost the interpreter 11% on `vm_mmu_mips`: `../interp/REPORT.md` "M7 loop 6") and the pair
+atomics (CASP, per-half CASes under a hashed lock); DMB's `atomic.fence` is emitted only in
+parallel SMP. The one-vCPU Alpine boot, base (`3fcfafb`, A) against the kept build (E), same
+session, alternated; Chromium 153, the M4 VM, JIT, warm medians (IQR):
+
+| | A (base) | E (loop 6) |
+|---|---|---|
+| Alpine boot to power-off | 10,301 (±27), 10,416 (±32), 10,430 (±49) ms | 10,385 (±69), 10,674 (±56), 10,445 (±17) ms |
+
+Within noise: +0.8%, +2.5%, +0.1% per pair, +0.3% on the median of medians; steps identical
+(2,856,663,287). The session drifted (A's first runs of the day were 10,128–10,213 ms). Earlier
+pairs in the same session measured B, a first version with a slower interpreter (74.7 MIPS),
+at +1 to +5%, and C once; they're kept with the rest. Raw: `results/m7-loop6/`.

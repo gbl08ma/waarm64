@@ -110,15 +110,43 @@ The table is `core/src/interp/sys.rs`.
 
 ## Memory accesses and atomics (`core/src/mem.rs`)
 
-- Guest RAM is one region of the shared wasm memory (layout A). Plain accesses are
-  `ptr::read/write_unaligned` of up to 8 bytes.
-- Exclusives, LSE atomics and LDAR/STLR use real wasm atomics even single-core (SMP-ready).
+- Guest RAM is one region of the shared wasm memory (layout A), shared by every vCPU's thread in
+  parallel SMP.
+- **The core's accesses are relaxed atomics** (`mem::load`/`store`: the interpreter, the table
+  walker's descriptor reads, instruction fetch, DC ZVA): a plain Rust access racing another
+  thread's is UB, even where the hardware is fine. An aligned access is one single-copy-atomic
+  access; an unaligned one is split into naturally aligned pieces (the architecture asks only for
+  bytes: we don't advertise LSE2). ThreadSanitizer checks this natively with nothing suppressed.
+  **The cost** is on wasm, whose atomics are all sequentially consistent (`ldar`/`stlr` on arm64):
+  the interpreter with the MMU on (`vm_mmu_mips`) went from 88.7 to 79.0 MIPS, half from the
+  alignment test and half from the ordering; volatile plain accesses (UB all the same) measured no
+  better. The interpreter runs ~1.4% of Alpine's boot, which stayed within noise
+  (`bench/interp/REPORT.md` "M7 loop 6"). JIT code uses plain wasm loads and stores, which wasm
+  defines under races ([jit.md](jit.md) "Atomics").
+- Exclusives, LSE atomics and LDAR/STLR use real wasm atomics even single-core (SMP-ready), all
+  sequentially consistent (stronger than acquire/release).
 - **Exclusives are compare-and-swap based:** `STXR` succeeds if memory still holds the value
   `LDXR` saw (ABA-tolerant, as QEMU).
-- **128-bit atomics:** wasm has no 128-bit CAS, so `CASP` and 64-bit-pair `LDXP`/`STXP` run
-  under one spinlock (`Mem::pair_locked`). The lock only excludes other pair operations; M7
-  must decide how to keep single-copy atomicity against plain or 64-bit atomic accesses from
-  other vCPUs.
+- **Barriers:** the interpreter fences at every DMB/DSB (`fence(SeqCst)`, `atomic.fence` on
+  wasm); the JIT only in parallel SMP ([jit.md](jit.md) "Atomics"). litmus7's tests pass on 4
+  parallel vCPUs, and a DMB emitted as nothing fails MP+dmb.sys and SB+dmb.sys
+  ([testing.md](testing.md) "Litmus tests").
+- **128-bit atomics** (`CASP`, `LDXP`/`STXP` of two X registers; the 32-bit pairs are one 64-bit
+  atomic): wasm has no 128-bit CAS. They run under a lock that only other pair ops take, hashed by
+  address (16 cache-line-sized locks, so per-CPU pairs don't contend), and write each half with a
+  64-bit CAS against what they read: a store to the low half since the read fails that CAS before
+  anything is written (the op starts over), and a store to the high half is ordered after the op
+  and kept. So pair ops are single-copy atomic against each other and never overwrite a racing
+  plain or 64-bit store. **Not covered:** a 64-bit atomic read-modify-write of the high half inside
+  the op's two-CAS window (both would have read the old value), and an observer that reads the
+  halves with ordered 64-bit loads during it (it can see the new low half with the old high one).
+  No guest we run does either: Linux's `cmpxchg128` users (SLUB's freelist and counters, ~300K
+  CASPs in an Alpine boot, all at EL1) and libatomic's 16-byte atomics reach those bytes only
+  through pair ops. **Why not the alternatives** (M7 loop 6): stopping the world per pair op
+  costs up to a chunk of every other vCPU each time, at SLUB's one CASP per ~10K instructions; a
+  lock taken by every 64-bit atomic too would tax every LDXR/LDADD/CAS and still not cover plain
+  stores. `tests/baremetal/pairs.c` checks it (CASP and LDXP/STXP against each other and against
+  plain stores; passes on QEMU TCG and on the M4 under hvf).
 - `Mem::rmw` is a generic CAS loop (the JIT does the LSE operations as single `atomic.rmw` ops).
 
 ## Floating point (`core/src/fp.rs`)

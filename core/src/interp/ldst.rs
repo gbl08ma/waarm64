@@ -101,7 +101,7 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
         LDXP | LDAXP => {
             let rt2 = bits(i, 14, 10);
             let (lo, hi, val) = if bit(i, 30) {
-                let p = m.read_pair(c, base, 8)?;
+                let p = m.read_pair(c, base)?;
                 (p[0], p[1], p)
             } else {
                 let v = m.read_atomic(c, base, 8)?;
@@ -134,7 +134,7 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
                 aligned(base, 16)?;
                 mon.addr == base
                     && mon.size == 16
-                    && m.cas_pair(c, base, 8, mon.val, [lo, hi])? == mon.val
+                    && m.cas_pair(c, base, mon.val, [lo, hi])? == mon.val
             } else {
                 aligned(base, 8)?;
                 let new = lo as u32 as u64 | hi << 32;
@@ -163,7 +163,7 @@ pub(super) fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R 
             }
             let (e, n) = ([c.reg(rs), c.reg(rs + 1)], [c.reg(rt), c.reg(rt + 1)]);
             let old = if bit(i, 30) {
-                m.cas_pair(c, base, 8, e, n)?
+                m.cas_pair(c, base, e, n)?
             } else {
                 let join = |p: [u64; 2]| p[0] as u32 as u64 | p[1] << 32;
                 let v = m.cas(c, base, 8, join(e), join(n))?;

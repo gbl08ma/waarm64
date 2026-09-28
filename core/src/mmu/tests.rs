@@ -328,9 +328,9 @@ fn atomics_mmu_off() {
         );
         assert_eq!(b.read(&c, a, size).unwrap(), 1);
     }
-    assert_eq!(b.cas_pair(&c, 48, 8, [0, 0], [7, 9]).unwrap(), [0, 0]);
-    assert_eq!(b.cas_pair(&c, 48, 8, [7, 0], [1, 1]).unwrap(), [7, 9]);
-    assert_eq!(b.read_pair(&c, 48, 8).unwrap(), [7, 9]);
+    assert_eq!(b.cas_pair(&c, 48, [0, 0], [7, 9]).unwrap(), [0, 0]);
+    assert_eq!(b.cas_pair(&c, 48, [7, 0], [1, 1]).unwrap(), [7, 9]);
+    assert_eq!(b.read_pair(&c, 48).unwrap(), [7, 9]);
     let align = |addr, access| {
         Err(Fault {
             addr,
@@ -341,7 +341,7 @@ fn atomics_mmu_off() {
     assert_eq!(b.read_atomic(&c, 4, 8), align(4, Access::Read));
     assert_eq!(b.rmw(&c, 4, 8, |v| v), align(4, Access::Write));
     assert_eq!(
-        b.cas_pair(&c, 8, 8, [0; 2], [1; 2]).map(|_| 0),
+        b.cas_pair(&c, 8, [0; 2], [1; 2]).map(|_| 0),
         align(8, Access::Write)
     );
 }

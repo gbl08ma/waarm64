@@ -167,7 +167,12 @@ the interpreter's own code.
   (layout A's single point of change).
 - **Atomics:** LDAR/STLR as aligned wasm atomics, single exclusives and the LSE atomics
   (add/clr/eor/set/swp as `atomic.rmw`, CAS as `cmpxchg`) inline; DC ZVA as a 64-byte zero.
-  DMB/DSB are no-ops (one vCPU; M7 revisits them).
+  Barriers: with vCPUs sharing a thread (one vCPU, or round-robin SMP) they order nothing and
+  emit nothing; in parallel SMP every DMB (and SSBB/PSSBB) is an `atomic.fence`, which V8 lowers
+  to `dmb ish` on arm64 in both tiers (checked with `--print-wasm-code`), and DSB is the helper's
+  (it ends the chunk: [platform.md](platform.md) "Broadcast maintenance"). Plain guest loads and
+  stores are plain wasm ones, which V8 keeps in program order around the fence and lowers to
+  plain `ldr`/`str`: the host's reordering is then the guest's own (litmus MP shows it).
 - **System:** MRS of plain registers inline (checked against the interpreter's read; SP_EL0 and
   TPIDR_EL1 were 91% of Alpine's MRS calls); the MSRs above inline; an MSR or ERET that unmasks
   IRQs leaves through its helper's `Exit::Resync`. SIMD&FP instructions check `CPACR_EL1.FPEN`
