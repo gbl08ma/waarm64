@@ -16,10 +16,10 @@ and the exact-step boots.
 | Lockstep | `tests/jit-lockstep.test.ts` | the integer and FP guests (user mode) and the integer guest at EL1 (MMU off and on), JIT and JIT-stress vs interpreter, `Cpu` + RAM checksum every chunk; 20M steps per JIT case in CI |
 | Core instances on one memory | `tests/threads.test.ts` (Node workers); `tests/browser.test.ts` (Chromium workers) | three concurrent instances (interpreter, JIT, JIT) with their own stack, TLS and table run the integer guest to the reference's exact state (M7) |
 | JIT plumbing | `tests/jit.test.ts` | install, IC IVAU invalidation (also across chains), the stale-code checker, call/return chaining, tier-up |
-| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF), broadcast maintenance (`maint`, 4 vCPUs: every TLBI …IS flavor, TLBI by ASID while the others run another ASID and against a global mapping, IC IVAU and IALLUIS on code the others run; its IC planted out, JIT-check's stale-code checker must trap), 128-bit atomics (`pairs`, 4 vCPUs: CASP and LDXP/STXP against each other and against plain stores to the same bytes) |
+| Bare-metal EL1 tests | `core/tests/baremetal.rs`; `tests/boot-node.test.ts` (interpreter, JIT, JIT-stress) | exceptions, MMU, GICv3, timer, UART, SMP (4 vCPUs: CPU_ON, SGI ping-pong, per-CPU timers, CPU_OFF), broadcast maintenance (`maint`, 4 vCPUs: every TLBI …IS flavor, TLBI by ASID while the others run another ASID and against a global mapping, IC IVAU and IALLUIS on code the others run; its IC planted out, JIT-check's stale-code checker must trap), 128-bit atomics (`pairs`, 4 vCPUs: CASP and LDXP/STXP against each other and against plain stores to the same bytes), console input (`rx`, 2 vCPUs: a line through the PL011's RX interrupt while it waits in WFI with no timer; parallel mode needs `SIGNAL_RX` to wake it) |
 | kvm-unit-tests | `core/tests/kvm_unit_tests.rs`; `tests/boot-node.test.ts` | selftest (incl. smp), psci, gicv3-ipi, gicv3-active, timer, cache |
 | Litmus and atomics stress (4 vCPUs) | `core/tests/litmus.rs` (interpreter: round-robin with exact steps, parallel); `tests/boot-node.test.ts` (round-robin JIT with exact steps; parallel JIT and JIT-check); `tests/browser.test.ts` (parallel JIT); `scripts/tsan.sh` (parallel, small) | the memory model (no state herd7 forbids), LSE and LL/SC atomics, 128-bit CAS, futex wake-ups, spin-wait latency (M7) |
-| Buildroot boot and device test | `core/tests/boot.rs`; `tests/boot-node.test.ts`; `tests/browser.test.ts` | Linux boots, virtio console/rng/blk/net/9p/input, framebuffer, realtime mode, writable overlay |
+| Buildroot boot and device test | `core/tests/boot.rs`; `tests/boot-node.test.ts`; `tests/browser.test.ts` | Linux boots, virtio console/rng/blk/net/9p/input, framebuffer, realtime mode, writable overlay, console input (`-- /bin/sh` reads 5.5 KB from the host at a fixed step: more than the RX ring; in parallel through a `MessagePort`) |
 | LTP subset + arm64 kselftests | `core/tests/ltp.rs` (interpreter, each result against its table); `tests/boot-node.test.ts` (JIT) | 93 syscall tests; `syscall-abi`, `ptrace`, `hwcap`, `tpidr2`, `tags_test`, signal tests |
 | Crypto test kernel | `tests/boot-node.test.ts` (JIT; interpreter with `WEBPC_INTERP=1`) | the arm64 CE drivers' full self-tests, lib/crypto's SHA KUnit suites |
 | Distros | `core/tests/distros.rs` (interpreter: Alpine; Debian with `WEBPC_DEBIAN_NATIVE=1`); `tests/boot-node.test.ts` (Alpine, Alpine userspace, JIT); `tests/browser.test.ts` (Alpine, Debian, JIT) | real distro boots from virtio-blk |
@@ -114,17 +114,20 @@ Realtime runs and the rw-overlay boots aren't step-exact.
 
 `start.S` (stack, vectors calling `on_exception(frame, vector)`, FP on, `run_el0()` to drop to EL0
 and come back through SVC #1) plus one C file per test (all on a GICv3, `lib.h` `gic_init()`; `// smp: N` boots N
-vCPUs, on the oracles too; `// qemu-cpu: <model>` replaces TCG's Cortex-A57, e.g. `max` for LSE), built with host clang and lld by
+vCPUs, on the oracles too; `// qemu-cpu: <model>` replaces TCG's Cortex-A57, e.g. `max` for LSE; `// input: <text>` is typed on
+the serial console once the test waits: at its first idle in round-robin, once it printed `ready` in parallel, after a
+second on the oracles), built with host clang and lld by
 `build.sh` into committed flat `.bin`s loaded at `0x4000_0000`. Pass = PSCI SYSTEM_OFF with
 x1 = 0; `power_off` also prints `exit <code>`. `oracle.sh` runs the `-DORACLE` builds
 (implementation-specific checks left out) on QEMU TCG, `oracle.sh --hvf` the `-DORACLE -DHVF`
 builds on the Mac (`gic-version=3`: Apple's in-kernel vGIC); every test runs on both. Left out
 of the HVF build: two `gicv3` checks that are ours and QEMU's but not Apple's
 (`ID_AA64PFR0_EL1.GIC`, `GICR_ICFGR0`: [platform.md](platform.md) "The GIC"), and `smp`'s second
-CPU_ON (QEMU's PSCI races it against the target's start: another answer ~1 in 5 under hvf). Tests mustn't rely on
+CPU_ON (QEMU's PSCI races it against the target's start: another answer ~1 in 5 under hvf; TCG failed
+its check 4 once in 6 runs on a loaded VM, M8 loop 1). Tests mustn't rely on
 UNKNOWN or IMPLEMENTATION DEFINED reset values and must pick addresses unmapped on `virt` too (its
 flash covers `0x0`–`0x0800_0000`). **Rebuild all of them together** when one changes (different clangs build different bytes;
-they were last rebuilt together on the M4 VM in M7 loop 6, when only `pairs.bin` was new).
+they were last rebuilt together on the M4 VM in M8 loop 1, when only `rx.bin` was new and the others came out identical).
 
 ## kvm-unit-tests
 

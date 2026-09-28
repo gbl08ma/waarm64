@@ -307,3 +307,16 @@ RSS (every process) at that moment. Raw: `results/m8-loop0/interactive-debian.js
   kickoff says (at most 4, at most the cores minus two: 4 here, where 4 beat 2 by ~10%), the
   trimmed command line, and the screen from the start (the boot log on it is the progress). A
   reload reaches the prompt in ~30 s: phase B's snapshots would take that to seconds.
+
+## M8 loop 1: console input, runAsync check
+
+Parallel `runAsync` now returns as soon as the console has output (within its 10 ms waits)
+instead of every 50 ms, so the host drains more often. `smp_user_jit_4` (Chromium 153.0.8010.52,
+the M4 VM), alternated A (34701eb, loop 0), B (this loop), A, B, total median (IQR): A 31,136
+(±14), 31,717 (±151) ms; B 30,808 (±53), 30,919 (±515) ms. No regression. Raw:
+`results/m8-loop1/`.
+
+Echo latency (Node, parallel on 2 vCPUs, Alpine with `init=/bin/sh`, `echo hi` to its prompt, 10
+each): 42–75 ms (median ~55); without `SIGNAL_RX` 59–167 ms (~120), since the tickless kernel only
+looks at the PL011 at its next timer event. ~55 ms for a shell's echo is slow; loop 3 measures
+key-to-glyph and looks into it.

@@ -68,7 +68,8 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
 ## Devices
 
 ### console and rng
-virtio-console: TX to the host, receive buffers held (no host input path yet). virtio-rng:
+virtio-console: TX to the host, receive buffers held (no host input path: console input goes to
+the PL011, [platform.md](platform.md) "PL011"). virtio-rng:
 `crypto.getRandomValues` in the browser's realtime mode; **splitmix64 seeded 0** in deterministic
 mode (and natively in realtime mode: std has no CSPRNG).
 

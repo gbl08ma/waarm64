@@ -9,7 +9,9 @@
 // `?jit=1|2|3` runs it under the JIT, JIT-stress or JIT-check (`VmConfig.jit`), `?ncpus=N` on N vCPUs,
 // `?parallel` with a worker per vCPU (realtime; M7). `?litmus=<options>&stress=<options>`
 // boots the litmus image (images/build.sh litmus) instead, with no devices.
-import { DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/vm.ts';
+// `?input` runs the console input test (web/vm.ts `CONSOLE_INPUT`): a shell
+// instead of /test.sh, given the input at its step.
+import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/vm.ts';
 
 const get = async (path: string) => {
   const r = await fetch(path);
@@ -25,7 +27,7 @@ try {
   const litmus = params.get('litmus');
   const img = distro ? DISTROS[distro]
     : litmus !== null ? { kernel: 'linux/Image', initrd: 'litmus/initramfs.cpio', disk: '', cmdline: `console=ttyAMA0 panic=-1 webpc.litmus=${litmus} webpc.stress=${params.get('stress') ?? ''}` }
-    : { kernel: 'linux/Image', initrd: undefined, disk: 'buildroot/rootfs.ext4', cmdline: GUEST_CMDLINE + (script ? ` -- ${script}` : '') };
+    : { kernel: 'linux/Image', initrd: undefined, disk: 'buildroot/rootfs.ext4', cmdline: GUEST_CMDLINE + (params.has('input') ? ' -- /bin/sh' : script ? ` -- ${script}` : '') };
   const [wasm, kernel, initrd] = await Promise.all([
     get('/target/wasm32-unknown-unknown/release/webpc_core.wasm'),
     get(`/target/images/${img.kernel}`),
@@ -36,7 +38,8 @@ try {
   const devices = litmus !== null ? [] : test ? testDevices(disk, ports.keyboard, ports.tablet) : guestDevices(disk, params.get('overlay') ?? undefined);
   const framebuffer = test ? { width: 640, height: 480 } : undefined;
   const opts = { ramSize: distro ? 1 << 30 : 256 << 20, kernel, initrd, cmdline: img.cmdline, devices, realtime: params.has('realtime'), framebuffer, jit: Number(params.get('jit') ?? 0) as 0 | 1 | 2 | 3, ncpus: Number(params.get('ncpus') ?? 1), parallel: params.has('parallel'), idleLimitMs: params.has('parallel') ? 60_000 : undefined };
-  const r = await runToPowerOff(wasm, opts, 1e12, (vm) => vm.framebuffer && self.postMessage({ memory: vm.memory, framebuffer: vm.framebuffer }));
+  const input = params.has('input') ? { step: CONSOLE_INPUT_STEP, data: CONSOLE_INPUT } : undefined;
+  const r = await runToPowerOff(wasm, opts, input ? 200e6 : 1e12, (vm) => vm.framebuffer && self.postMessage({ memory: vm.memory, framebuffer: vm.framebuffer }), input);
   self.postMessage({ kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc });
 } catch (e) {
   self.postMessage({ error: String(e) });

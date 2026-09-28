@@ -82,8 +82,9 @@ the ABI's 0 means none.
   in parallel mode also bumps and notifies every vCPU's wake word (`vm_cpu_signal`; `web/vm.ts`
   `signal`, `Vm::signal` natively, the device backends' completions). Parallel mode leaves STOP
   set; the host clears it.
-- `vm_console(vm)`: two SPSC byte rings (TX, RX), 4 KiB each, atomic head/tail. The PL011 writes
-  TX; the host drains it after each `vm_run` and fills RX from any thread.
+- `vm_console(vm)`: two SPSC byte rings (TX, RX), 4 KiB each, atomic head/tail (head, tail, then
+  the bytes; RX follows TX). The PL011 writes TX; the host drains it after each `vm_run` and fills
+  RX (one producer, any thread), then sets `SIGNAL_RX` ([platform.md](platform.md) "PL011").
 
 ### Counters (`vm_counters(vm, i)`, u64 words, relaxed atomic stores; `web/vm.ts` `Counter`)
 

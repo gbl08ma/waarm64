@@ -206,6 +206,12 @@ export type BootOptions = {
    * Benchmarks set it; unset, an idle guest may sleep forever.
    */
   idleLimitMs?: number;
+  /**
+   * Input for the PL011 (the serial console): each message, a string or bytes,
+   * goes to `send`. It's handled on this thread between runs: at once while
+   * `runAsync` awaits (parallel mode), at the next `run` otherwise.
+   */
+  serialIn?: MessagePort;
 };
 
 /**
@@ -229,6 +235,17 @@ export const testDevices = (disk: string, keyboard?: MessagePort, tablet?: Messa
 /** What the test agents inject when the guest sets a keyboard LED (core/tests/common `KEY_EVENTS`, `TABLET_EVENTS`). */
 export const KEY_EVENTS = [[1, 30, 1], [0, 0, 0], [1, 30, 0], [0, 0, 0]];
 export const TABLET_EVENTS = [[3, 0, 16384], [3, 1, 8192], [1, 272, 1], [0, 0, 0], [1, 272, 0], [0, 0, 0]];
+/**
+ * The console input test (core/tests/common `CONSOLE_INPUT`): the Buildroot
+ * guest with `-- /bin/sh` gets this on its serial console at step
+ * `CONSOLE_INPUT_STEP` (its prompt is up by 27.3M): a command, a line for its
+ * `read`, then 100 lines (5.5 KB with the rest: more than the 4 KiB RX ring)
+ * whose md5sum it prints before it exits.
+ */
+export const CONSOLE_INPUT = 'stty -echo; read l; echo "webpc: got [$l]"; head -n 100 | md5sum; exit\nhello from the host\n' +
+  Array.from({ length: 100 }, (_, i) => `line ${String(i).padStart(3, '0')}: the quick brown fox jumps over the lazy dog\n`).join('');
+export const CONSOLE_INPUT_STEP = 30_000_000;
+export const CONSOLE_INPUT_WANT = 'webpc: got [hello from the host]\ncccad7da1df76c0ac16983284a789f3e  -\n';
 /** Their kernel command line. */
 /** `jit_helper_report` of the vCPU at `cpu` (a `jit_new` vCPU, or `vm_cpu`), parsed. */
 export function helperReport(ex: { jit_helper_report(v: number): number }, memory: WebAssembly.Memory, cpu: number): { op: string; calls: number }[] {
@@ -347,6 +364,38 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     Atomics.store(u32, tx / 4 + 1, head);
     return decoder.decode(new Uint8Array(out), { stream: true });
   };
+  // Console input: the host is the RX ring's one producer (it follows TX: core/src/pl011.rs `Rings`).
+  const rx = tx + 8 + RING;
+  const queued: Uint8Array[] = [];
+  const encoder = new TextEncoder();
+  /** Moves queued input into the RX ring as far as it has room, and wakes the vCPUs if it moved any. */
+  const pump = () => {
+    if (!queued.length) return;
+    const u32 = new Uint32Array(memory.buffer);
+    const buf = bytes();
+    const tail = Atomics.load(u32, rx / 4 + 1);
+    const start = Atomics.load(u32, rx / 4);
+    let head = start;
+    while (queued.length && ((head - tail) >>> 0) < RING) {
+      const chunk = queued[0];
+      const n = Math.min(chunk.length, RING - ((head - tail) >>> 0));
+      for (let k = 0; k < n; k++) buf[rx + 8 + (((head + k) >>> 0) % RING)] = chunk[k];
+      head = (head + n) >>> 0;
+      if (n === chunk.length) queued.shift();
+      else queued[0] = chunk.subarray(n);
+    }
+    if (head !== start) {
+      Atomics.store(u32, rx / 4, head); // after the bytes (sequentially consistent)
+      raise(SIGNAL_RX);
+    }
+  };
+  /** Queues bytes (a string as UTF-8) for the guest's PL011; what the RX ring can't take yet waits for the next run. */
+  const send = (data: string | Uint8Array | ArrayBuffer) => {
+    const b = typeof data === 'string' ? encoder.encode(data) : new Uint8Array(data).slice(); // a copy: the caller may reuse its buffer
+    if (b.length) queued.push(b);
+    pump();
+  };
+  if (o.serialIn) o.serialIn.onmessage = (e: MessageEvent) => send(e.data);
   const blocks = Array.from({ length: ncpus }, (_, i) => ex.vm_counters(vm, i));
   const counters = blocks[0];
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
@@ -388,6 +437,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       if (par) throw new Error('a parallel VM runs through runAsync');
       let steps = 0;
       for (;;) {
+        pump();
         const kind = ex.vm_run(vm, BigInt(budget - steps));
         const info = new BigUint64Array(memory.buffer, ex.vm_exit(vm), 7); // kind, steps, value, x0-x3
         steps += Number(info[1]);
@@ -398,6 +448,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
           if (devices.inFlight()) return { kind, steps, value: info[2], x: [...info.subarray(3)] };
           if (steps < budget) continue;
         }
+        // Idle with input queued (deterministic time: nothing else would wake it): the next pump fills the ring.
+        if (kind === Exit.IDLE && deterministic && queued.length) continue;
         if (kind === Exit.IDLE && !deterministic && canBlock) {
           const sig = new Int32Array(memory.buffer, signal, 1);
           const ns = info[2];
@@ -415,7 +467,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
      * `run` for either mode. In parallel mode the vCPU workers run on their
      * own (started by the first call); this returns once they retired
      * `budget` steps together, the console's TX ring is half full (`TX_FULL`:
-     * drain it), 50 ms passed (`BUDGET`), or an exit ended the run on some
+     * drain it), the console has any output (`BUDGET`: seen within the 10 ms
+     * this waits at a time, so a terminal's echo isn't held back), 50 ms passed
+     * (`BUDGET`), or an exit ended the run on some
      * vCPU (then every worker has stopped). With `idleLimitMs`, it throws if
      * no vCPU retired a step for that long.
      */
@@ -424,11 +478,13 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       const s0 = counter(Counter.STEPS);
       const t0 = performance.now();
       for (;;) {
+        pump();
         const end = await par.wait(10);
         const steps = counter(Counter.STEPS) - s0;
         if (end) return { kind: end.kind, steps, value: end.value, x: end.x };
         if (steps >= budget || performance.now() - t0 > 50) return { kind: Exit.BUDGET, steps, value: 0n, x: [] };
         if (txUsed() >= RING_HALF) return { kind: Exit.TX_FULL, steps, value: 0n, x: [] };
+        if (txUsed() > 0) return { kind: Exit.BUDGET, steps, value: 0n, x: [] };
         if (o.idleLimitMs !== undefined && performance.now() - par.progress(counter(Counter.STEPS)) > o.idleLimitMs) {
           raise(STOP);
           throw new Error(`no vCPU retired a step in ${o.idleLimitMs} ms (pcs ${par.pcs().join(' ')})`);
@@ -436,6 +492,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       }
     },
     drain,
+    send,
+    /** Bytes `send` queued that the RX ring hasn't taken yet. */
+    queued: () => queued.reduce((n, b) => n + b.length, 0),
     /** Resolves once inline backends finished what a `DEVICE` exit from `run` handed them. */
     settle: () => devices.settle(),
     /** What the guest wrote to its virtio consoles so far (all of it once `flush` resolves). */
@@ -472,6 +531,7 @@ function stats(n: (i: number) => number) {
 }
 
 const STOP = 1;
+const SIGNAL_RX = 2;
 
 /**
  * Parallel mode's vCPU workers (web/vcpu-worker.ts), started at the first
@@ -551,28 +611,40 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
 }
 
 /**
- * Boots and runs until the guest powers off (or `maxSteps`), collecting the
- * console. `booted` sees the VM before it runs.
+ * What to type on a guest's serial console, and when: once `step` steps have
+ * run (exactly then in deterministic mode), once the console shows `after`, or
+ * when a deterministic guest goes idle waiting for it, whichever comes first.
  */
-export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: BootOptions, maxSteps = 20e9, booted?: (vm: Vm) => void) {
+export type ConsoleInput = { step?: number; after?: string; data: string };
+
+/**
+ * Boots and runs until the guest powers off (or `maxSteps`), collecting the
+ * console. `booted` sees the VM before it runs; `input` goes to its serial
+ * console when {@link ConsoleInput} says.
+ */
+export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: BootOptions, maxSteps = 20e9, booted?: (vm: Vm) => void, input?: ConsoleInput) {
   const vm = await bootVm(wasm, o);
   booted?.(vm);
   let console = '';
   let steps = 0;
   const t0 = performance.now();
   for (;;) {
-    const r = await vm.runAsync(100_000_000);
+    const r = await vm.runAsync(input?.step !== undefined && steps < input.step ? Math.min(100_000_000, input.step - steps) : 100_000_000);
     steps += r.steps;
     console += vm.drain();
-    if (r.kind === Exit.DEVICE) {
-      await vm.settle();
-      continue;
+    const idle = r.kind === Exit.IDLE; // deterministic, with no deadline: waiting for input or for nothing
+    if (input && (idle || steps >= (input.step ?? Infinity) || (input.after !== undefined && console.includes(input.after)))) {
+      vm.send(input.data);
+      input = undefined;
+      if (idle) continue;
     }
-    if ((r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL) && steps < maxSteps) continue;
+    if (r.kind === Exit.DEVICE) await vm.settle();
+    // `maxSteps` bounds DEVICE exits too (an idle guest may make one every few million steps).
+    if ((r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) && steps < maxSteps) continue;
     const ms = performance.now() - t0;
     await vm.flush();
     vm.close();
-    return { ...r, steps, console, hvc: vm.hvc(), ms, pc: vm.pc() };
+    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc() };
   }
 }
 

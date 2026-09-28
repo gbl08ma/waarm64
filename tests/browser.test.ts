@@ -8,6 +8,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { STEPS } from './steps.ts';
+import { CONSOLE_INPUT_WANT } from '../web/vm.ts';
 
 let browser: Browser;
 let context: BrowserContext; // one origin storage (OPFS) for the boot pages; browser.newPage() gets a fresh one each time
@@ -86,6 +87,19 @@ for (const [mode, query] of [['deterministic', ''], ['realtime', '?realtime'], [
     const out = r.console.replaceAll('\r\n', '\n');
     assert.match(out, /answer: 42\n[^]*hwrng: [0-9a-f]{32}\n[^]*\/dev\/root \/ ext4 ro,[^]*vda magic: 53ef\nwebpc: test ok\nwebpc: test exit 0\n/);
     assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'webpc: hvc0 ok\n');
+  });
+}
+
+// Console input (M8 loop 1, web/vm.ts `CONSOLE_INPUT`): a shell on the console
+// reads what the host sends through the PL011's RX ring, more than the ring
+// holds; deterministic under the JIT at its step count, and in parallel on 2 vCPUs.
+for (const [mode, query] of [['deterministic JIT', 'jit=1'], ['parallel JIT, 2 vCPUs', 'jit=1&parallel&ncpus=2']]) {
+  test(`console input reaches a shell in a worker, ${mode}`, { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
+    const r = await bootPage(`input&${query}`, 5);
+    assert.equal(r.error, undefined);
+    assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+    assert.ok(r.console.includes(CONSOLE_INPUT_WANT), r.console);
+    if (!mode.startsWith('parallel')) assert.equal(r.steps, STEPS['console-input']);
   });
 }
 

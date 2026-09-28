@@ -4,7 +4,9 @@
 //! deterministic mode and once in realtime mode, and once with the arm64
 //! defconfig kernel (Image-defconfig). And twice with the root filesystem
 //! writable through one overlay: the second boot finds what the first wrote.
-//! And with the test devices: net, 9p, the framebuffer, input. The deterministic
+//! And with the test devices: net, 9p, the framebuffer, input. And with a
+//! shell on the console reading what the host sends (the PL011's RX path,
+//! M8). The deterministic
 //! boots take exactly tests/steps.txt's counts, on one vCPU and on 2 and 4
 //! (M7: deterministic round-robin), and on 1, 2 and 4 in parallel (a thread
 //! per vCPU, realtime), repeated. Ignored by default (they need
@@ -208,4 +210,24 @@ fn input_events_reach_the_guest() {
     ] {
         assert!(out.contains(want), "missing {want:?}");
     }
+}
+
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn console_input_reaches_a_shell() {
+    let kernel = common::image("linux/Image");
+    let devices = common::guest_devices("buildroot/rootfs.ext4", None);
+    let cmdline = format!("{} -- /bin/sh", common::GUEST_CMDLINE);
+    let input = common::console_input();
+    let r = common::boot(&common::Boot {
+        devices: &devices,
+        input: Some((common::CONSOLE_INPUT_STEP, &input)),
+        max_steps: 200_000_000, // lost input leaves the shell waiting
+        ..common::Boot::new(&kernel, &cmdline)
+    });
+    eprintln!("[{}]\n{}", r.summary, r.console);
+    assert!(r.powered_off(), "no SYSTEM_OFF");
+    assert!(r.console.contains(common::CONSOLE_INPUT_WANT), "no echo");
+    assert!(r.console.contains("webpc: test exit 0\n"));
+    assert_eq!(r.steps, common::steps("console-input"));
 }

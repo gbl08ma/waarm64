@@ -21,7 +21,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { STEPS } from './steps.ts';
-import { DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, guestDevices, runToPowerOff, testDevices, type BootOptions } from '../web/vm.ts';
+import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, testDevices, type BootOptions, type ConsoleInput } from '../web/vm.ts';
 
 const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
 const IMAGES = new URL('../target/images/', import.meta.url);
@@ -32,7 +32,7 @@ const INTERP = process.env.WEBPC_INTERP === '1';
 const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
-const boot = (o: BootOptions, jit: 0 | 1 | 2 | 3, max = 20e9) => runToPowerOff(WASM, { ...o, jit }, max);
+const boot = (o: BootOptions, jit: 0 | 1 | 2 | 3, max = 20e9, input?: ConsoleInput) => runToPowerOff(WASM, { ...o, jit }, max, undefined, input);
 const summary = (r: Run) => ({ kind: r.kind, x0: r.x[0], x1: r.x[1], steps: r.steps, console: r.console, hvc: r.hvc });
 
 /**
@@ -41,17 +41,17 @@ const summary = (r: Run) => ({ kind: r.kind, x0: r.x[0], x1: r.x[1], steps: r.st
  * (`interp: false`) skips the interpreter unless WEBPC_INTERP=1: its JIT runs
  * are checked with `check` and against `steps` alone.
  */
-function guest(name: string, o: () => BootOptions, check: (r: Run) => void, { skip = false as string | false, stress = true, max = 20e9, steps = 0, interp = true } = {}) {
+function guest(name: string, o: () => BootOptions, check: (r: Run) => void, { skip = false as string | false, stress = true, max = 20e9, steps = 0, interp = true, input = undefined as ConsoleInput | undefined } = {}) {
   let want: Run | undefined;
   test(`${name}: interpreter`, { skip: skip || (!interp && !INTERP && 'SKIPPED: set WEBPC_INTERP=1') }, async () => {
-    want = await boot(o(), 0, max);
+    want = await boot(o(), 0, max, input);
     check(want);
     if (steps) assert.equal(want.steps, steps);
   });
   for (const [mode, jit] of [['JIT', 1], ['JIT-stress', 2]] as const) {
     const off = skip || (jit === 2 && !stress && 'SKIPPED: set WEBPC_JIT_STRESS=1');
     test(`${name}: ${mode}`, { skip: off }, async () => {
-      const r = await boot(o(), jit, max);
+      const r = await boot(o(), jit, max, input);
       const ref = want ? ` (interpreter ${(want.ms / 1000).toFixed(1)} s)` : '';
       console.log(`# ${name} ${mode}: ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s${ref}`);
       if (want) assert.deepEqual(summary(r), summary(want));
@@ -73,21 +73,27 @@ const poweredOff = (r: Run) => {
 const BAREMETAL = new URL('baremetal/', import.meta.url);
 // The vCPUs from its `// smp: N` marker (core/tests/baremetal.rs `smp_of`).
 const smpOf = (f: string) => Number(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ smp: (\d+)$/m)?.[1] ?? 1);
+// Its `// input: <text>` line, typed once it waits: at its idle, or once it printed "ready" (parallel).
+const inputOf = (f: string): ConsoleInput | undefined => {
+  const text = readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ input: (.*)$/m)?.[1];
+  return text === undefined ? undefined : { after: 'ready\n', data: `${text}\n` };
+};
 for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort()) {
+  const input = inputOf(f);
   guest(`bare-metal ${f}`, () => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f) }), (r) => {
     poweredOff(r);
     assert.equal(r.x[1], 0n, r.console);
     assert.match(r.console, /exit 0\n$/);
-  }, { max: 50e6 });
+  }, { max: 50e6, input: input && { data: input.data } }); // at its idle, as core/tests/baremetal.rs
 }
 
 // Parallel SMP (M7 loop 5): each bare-metal test under the JIT and JIT-check
 // (whose checker tolerates the legal cross-modification window here: a stale
 // block is dropped and counted, not a trap).
 const RUNS = Number(process.env.WEBPC_PARALLEL_RUNS ?? 3);
-const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => void) => {
+const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => void, input?: ConsoleInput) => {
   for (let i = 0; i < RUNS; i++) {
-    const r = await boot({ ...o, parallel: true, idleLimitMs: 30_000 }, jit, 1e12);
+    const r = await boot({ ...o, parallel: true, idleLimitMs: 30_000 }, jit, 1e12, input);
     try {
       check(r);
     } catch (e) {
@@ -100,7 +106,7 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort())
     test(`parallel: bare-metal ${f} (${mode})`, () => parallel({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f) }, jit, (r) => {
       poweredOff(r);
       assert.equal(r.x[1], 0n, r.console);
-    }));
+    }, inputOf(f)));
   }
 }
 
@@ -187,6 +193,45 @@ for (const n of [2, 4]) {
     assert.match(r.console, new RegExp(`smp: Brought up 1 node, ${n} CPUs[^]*webpc: test ok`));
   }, { skip: linux, stress: STRESS, steps: STEPS[`buildroot-${n}cpu`] });
 }
+
+// Console input (M8 loop 1): a shell on the console reads what the host sends
+// through the PL011's RX ring, more than the ring holds (core/tests/boot.rs
+// `console_input_reaches_a_shell`), at a fixed step.
+guest('Buildroot console input', () => ({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: `${GUEST_CMDLINE} -- /bin/sh`, devices: guestDevices(disk()) }), (r) => {
+  poweredOff(r);
+  assert.ok(r.console.replaceAll('\r\n', '\n').includes(CONSOLE_INPUT_WANT), r.console);
+}, { skip: linux, stress: STRESS, steps: STEPS['console-input'], max: 200e6, input: { step: CONSOLE_INPUT_STEP, data: CONSOLE_INPUT } }); // 200M: lost input leaves the shell waiting
+
+// The same in parallel on 2 vCPUs, sent through `serialIn` (a MessagePort)
+// once the prompt shows: SIGNAL_RX must wake an idle vCPU.
+test('parallel: Buildroot console input through a port (2 vCPUs, JIT)', { skip: linux }, async () => {
+  for (let i = 0; i < RUNS; i++) {
+    const { port1, port2 } = new MessageChannel();
+    const vm = await bootVm(WASM, { ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: `${GUEST_CMDLINE} -- /bin/sh`, devices: guestDevices(disk()), ncpus: 2, parallel: true, jit: 1, idleLimitMs: 30_000, serialIn: port2 });
+    let out = '';
+    let sent = false;
+    const t0 = performance.now();
+    try {
+      for (;;) {
+        assert.ok(performance.now() - t0 < 60_000, `run ${i + 1}: no power-off in 60 s: ${out}`);
+        const r = await vm.runAsync(100_000_000);
+        out += vm.drain();
+        if (!sent && out.endsWith('# ')) {
+          port1.postMessage(CONSOLE_INPUT);
+          sent = true;
+        }
+        if (r.kind !== Exit.BUDGET && r.kind !== Exit.TX_FULL) {
+          assert.equal(r.kind, Exit.PSCI, out);
+          assert.ok(out.replaceAll('\r\n', '\n').includes(CONSOLE_INPUT_WANT), `run ${i + 1}: ${out}`);
+          break;
+        }
+      }
+    } finally {
+      vm.close();
+      port1.close();
+    }
+  }
+});
 
 // In parallel, a worker per vCPU (M7 loop 5).
 for (const n of [2, 4]) {

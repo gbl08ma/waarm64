@@ -1,7 +1,9 @@
 //! Runs the bare-metal EL1 tests (`tests/baremetal/*.bin`, built by its
 //! `build.sh`) on a whole VM: each boots at 0x4000_0000 in EL1h, prints
 //! `exit <code>` on the PL011 and powers off through PSCI SYSTEM_OFF with x1 =
-//! the same code, 0 for a pass. A test with `// smp: N` in its source boots N vCPUs.
+//! the same code, 0 for a pass. A test with `// smp: N` in its source boots N vCPUs;
+//! one with `// input: <text>` gets that line on its serial console once it
+//! waits (round-robin: at its first idle; parallel: once it printed "ready").
 //! `baremetal_parallel` runs them all again with a thread per vCPU (parallel
 //! SMP, realtime), several times: those runs aren't reproducible.
 
@@ -15,11 +17,16 @@ const BUDGET: u64 = 50_000_000;
 
 /// Boots `image` and returns the SYSTEM_OFF code and the console output, or why it never got there.
 fn boot(image: &[u8], ncpus: u64) -> Result<(u64, String), String> {
-    boot_mode(image, ncpus, false)
+    boot_mode(image, ncpus, false, None)
 }
 
 /// [`boot`], round-robin or `parallel`.
-fn boot_mode(image: &[u8], ncpus: u64, parallel: bool) -> Result<(u64, String), String> {
+fn boot_mode(
+    image: &[u8],
+    ncpus: u64,
+    parallel: bool,
+    input: Option<&[u8]>,
+) -> Result<(u64, String), String> {
     let mut ram = vec![0u128; RAM_SIZE / 16];
     // SAFETY: ram is 16-byte aligned, RAM_SIZE bytes long, and outlives the Vm.
     let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, RAM_SIZE as u64) };
@@ -37,7 +44,8 @@ fn boot_mode(image: &[u8], ncpus: u64, parallel: bool) -> Result<(u64, String), 
     }
     if parallel {
         let limit = std::time::Duration::from_secs(60);
-        let r = common::run_parallel(&vm, limit, BUDGET * ncpus, false, &|_| {});
+        let input = input.map(|i| ("ready\n", i));
+        let r = common::run_parallel(&vm, limit, BUDGET * ncpus, false, &|_| {}, input);
         let out = String::from_utf8_lossy(&r.console).into_owned();
         let pcs: Vec<_> = vm
             .vcpus
@@ -54,6 +62,7 @@ fn boot_mode(image: &[u8], ncpus: u64, parallel: bool) -> Result<(u64, String), 
     }
     let mut out = Vec::new();
     let mut left = BUDGET;
+    let mut input = input;
     while left > 0 {
         let kind = vm.run(left);
         left -= vm.exit.retired;
@@ -64,6 +73,13 @@ fn boot_mode(image: &[u8], ncpus: u64, parallel: bool) -> Result<(u64, String), 
         match kind {
             exit::BUDGET => break,
             exit::TX_FULL => {}
+            // Waiting with no deadline: the input, then on.
+            exit::IDLE if input.is_some() => {
+                for &b in input.take().unwrap() {
+                    assert!(vm.shared.console.rx.push(b), "input over the RX ring");
+                }
+                vm.signal(webpc_core::vm::SIGNAL_RX);
+            }
             exit::PSCI if vm.exit.x[0] == 0x8400_0008 => return Ok((vm.exit.x[1], out())),
             _ => {
                 let pcs: Vec<_> = vm
@@ -89,6 +105,14 @@ fn boot_mode(image: &[u8], ncpus: u64, parallel: bool) -> Result<(u64, String), 
         c.far_el1,
         String::from_utf8_lossy(&out)
     ))
+}
+
+/// A test's `// input: <text>` line, with a newline.
+fn input_of(bin: &std::path::Path) -> Option<Vec<u8>> {
+    let src = std::fs::read_to_string(bin.with_extension("c")).unwrap_or_default();
+    src.lines()
+        .find_map(|l| l.strip_prefix("// input: "))
+        .map(|l| format!("{l}\n").into_bytes())
 }
 
 /// The vCPUs a test asks for in its source (`// smp: N`), 1 without.
@@ -124,7 +148,13 @@ fn run_all(parallel: bool, runs: usize) {
     let mut failed = Vec::new();
     for bin in bins.iter().flat_map(|b| std::iter::repeat_n(b, runs)) {
         let name = bin.file_stem().unwrap().to_string_lossy();
-        match boot_mode(&std::fs::read(bin).unwrap(), smp_of(bin), parallel) {
+        let input = input_of(bin);
+        match boot_mode(
+            &std::fs::read(bin).unwrap(),
+            smp_of(bin),
+            parallel,
+            input.as_deref(),
+        ) {
             Ok((code, out)) if !out.ends_with(&format!("exit {code}\n")) => {
                 failed.push(format!("{name}: exit {code}, but the console says {out:?}"))
             }

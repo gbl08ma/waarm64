@@ -14,7 +14,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use webpc_core::mem::{Access, Mem};
 use webpc_core::virtio::{DeviceEntry, EV_CONFIG, Request};
-use webpc_core::vm::{ExitInfo, RAM_BASE, SIGNAL_DEVICE, SIGNAL_STOP, Vm, VmConfig, exit};
+use webpc_core::vm::{
+    ExitInfo, RAM_BASE, SIGNAL_DEVICE, SIGNAL_RX, SIGNAL_STOP, Vm, VmConfig, exit,
+};
 
 /// Where the runners put the kernel and initrd (web/vm.ts does the same).
 const KERNEL: u64 = RAM_BASE + (2 << 20);
@@ -106,6 +108,22 @@ pub enum Dev {
 
 /// What the runners inject when the guest sets a keyboard LED: A pressed and
 /// released; a click at (16384, 8192). [type, code, value].
+/// The console input test (`web/vm.ts` `CONSOLE_INPUT`): the Buildroot guest
+/// with `-- /bin/sh` gets this on its serial console at step
+/// [`CONSOLE_INPUT_STEP`]: a command, a line for its `read`, then 100 lines
+/// (more than the 4 KiB RX ring) whose md5sum it prints before it exits.
+pub fn console_input() -> Vec<u8> {
+    let mut s = String::from(
+        "stty -echo; read l; echo \"webpc: got [$l]\"; head -n 100 | md5sum; exit\nhello from the host\n",
+    );
+    for i in 0..100 {
+        s += &format!("line {i:03}: the quick brown fox jumps over the lazy dog\n");
+    }
+    s.into_bytes()
+}
+pub const CONSOLE_INPUT_STEP: u64 = 30_000_000;
+pub const CONSOLE_INPUT_WANT: &str =
+    "webpc: got [hello from the host]\ncccad7da1df76c0ac16983284a789f3e  -\n";
 pub const KEY_EVENTS: &[[u32; 3]] = &[[1, 30, 1], [0, 0, 0], [1, 30, 0], [0, 0, 0]];
 pub const TABLET_EVENTS: &[[u32; 3]] = &[
     [3, 0, 16384],
@@ -603,6 +621,10 @@ pub struct Boot<'a> {
     /// ([`run_parallel`]), for at most `max_steps` of all of them or
     /// [`PARALLEL_LIMIT`] of wall time.
     pub parallel: bool,
+    /// Bytes for the serial console (the PL011's RX ring) once this many
+    /// steps have run (deterministic round-robin only), queued and pumped
+    /// as `web/vm.ts` `send` does, so every runner takes the same steps.
+    pub input: Option<(u64, &'a [u8])>,
 }
 
 impl<'a> Boot<'a> {
@@ -622,6 +644,7 @@ impl<'a> Boot<'a> {
             features: webpc_core::cpu::FEATURE_CRYPTO,
             ncpus: 1,
             parallel: false,
+            input: None,
         }
     }
 }
@@ -640,7 +663,12 @@ pub fn boot(b: &Boot) -> Run {
         features,
         ncpus,
         parallel,
+        input,
     } = b;
+    assert!(
+        input.is_none() || !parallel,
+        "input at a step: round-robin only"
+    );
     let mut ram = vec![0u128; ram_size as usize / 16];
     // SAFETY: ram is 16-byte aligned, ram_size bytes long, and outlives the Vm.
     let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, ram_size) };
@@ -679,19 +707,35 @@ pub fn boot(b: &Boot) -> Run {
     let x0;
     let kind = if parallel {
         let b = Mutex::new(backends);
-        let r = run_parallel(&vm, PARALLEL_LIMIT, max_steps, echo, &|vm| {
-            b.lock().unwrap().poll(vm)
-        });
+        let r = run_parallel(
+            &vm,
+            PARALLEL_LIMIT,
+            max_steps,
+            echo,
+            &|vm| b.lock().unwrap().poll(vm),
+            None,
+        );
         backends = b.into_inner().unwrap();
         (out, steps, x0) = (r.console, r.steps, r.exit.x[0]);
         r.kind
     } else {
+        let mut queued: VecDeque<u8> = VecDeque::new();
+        let mut input = input;
         loop {
-            // As web/vm.ts `run`: DEVICE exits are handled within one budget.
-            let (budget, mut ran) = (100_000_000, 0);
+            // As web/vm.ts `run`: DEVICE exits are handled within one budget,
+            // which stops at the input's step.
+            let budget = match input {
+                Some((at, _)) if steps < at => (at - steps).min(100_000_000),
+                _ => 100_000_000,
+            };
+            let mut ran = 0;
             let kind = loop {
+                pump(&vm, &mut queued);
                 let kind = vm.run(budget - ran);
                 ran += vm.exit.retired;
+                if kind == exit::IDLE && !realtime && !queued.is_empty() {
+                    continue;
+                }
                 if kind == exit::IDLE && realtime {
                     // Nothing completes asynchronously here: sleep to the deadline.
                     let ns = vm.exit.value.min(10_000_000);
@@ -707,6 +751,13 @@ pub fn boot(b: &Boot) -> Run {
                 }
             };
             steps += ran;
+            if let Some((at, bytes)) = input
+                && steps >= at
+            {
+                queued.extend(bytes);
+                pump(&vm, &mut queued);
+                input = None;
+            }
             let start = out.len();
             while let Some(b) = vm.shared.console.tx.pop() {
                 out.push(b);
@@ -746,6 +797,22 @@ pub fn boot(b: &Boot) -> Run {
     }
 }
 
+/// Moves queued console input into the PL011's RX ring as far as it has
+/// room, and signals RX if it moved any (`web/vm.ts` `send`'s pump).
+fn pump(vm: &Vm, queued: &mut VecDeque<u8>) {
+    let mut moved = false;
+    while let Some(&b) = queued.front() {
+        if !vm.shared.console.rx.push(b) {
+            break;
+        }
+        queued.pop_front();
+        moved = true;
+    }
+    if moved {
+        vm.signal(SIGNAL_RX);
+    }
+}
+
 /// How long a parallel run may take (they can deadlock).
 pub const PARALLEL_LIMIT: Duration = Duration::from_secs(300);
 
@@ -762,14 +829,18 @@ pub struct ParallelRun {
 /// browser's vCPU workers do (web/vm.ts), until an exit the host doesn't
 /// handle (PSCI SYSTEM_OFF/RESET, UNIMPLEMENTED), `max_steps` of all vCPUs,
 /// or `limit` of wall time. This thread drains the console (its one
-/// consumer); `device` takes a vCPU's DEVICE exit.
+/// consumer); `device` takes a vCPU's DEVICE exit. `input` (a marker, then
+/// bytes) goes to the serial console once the console shows the marker.
 pub fn run_parallel(
     vm: &Vm,
     limit: Duration,
     max_steps: u64,
     echo: bool,
     device: &(dyn Fn(&Vm) + Sync),
+    input: Option<(&str, &[u8])>,
 ) -> ParallelRun {
+    let mut input = input;
+    let mut queued = VecDeque::new();
     let n = vm.vcpus.len();
     let end: Mutex<Option<(u32, ExitInfo)>> = Mutex::new(None);
     let done = AtomicBool::new(false);
@@ -817,6 +888,13 @@ pub fn run_parallel(
             if echo {
                 eprint!("{}", String::from_utf8_lossy(&console[start..]));
             }
+            if let Some((marker, bytes)) = input
+                && String::from_utf8_lossy(&console).contains(marker)
+            {
+                queued.extend(bytes);
+                input = None;
+            }
+            pump(vm, &mut queued);
             if done.load(Ordering::SeqCst) {
                 break;
             }

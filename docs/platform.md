@@ -236,8 +236,21 @@ and complete in the run loop (exact counts).
 DR, FR, IBRD/FBRD, LCR_H, CR, IFLS, IMSC, RIS/MIS/ICR, DMACR, PeriphID/PCellID. Transmit is
 instant (FR.TXFE always set; TXRIS set per byte, cleared by ICR); RX/RT pending while the RX ring
 has data. The console is two SPSC byte rings ([abi.md](abi.md)); a DR write into a full TX ring
-returns the TX-full exit with the store not retired. There's no host input path to the RX ring
-from `web/vm.ts` yet (backlog).
+returns the TX-full exit with the store not retired.
+
+**Console input** (M8): the host is the RX ring's one producer. `web/vm.ts` `send(bytes | string)`
+queues input and pumps what fits into the ring, then raises `SIGNAL_RX` (so an idle vCPU wakes
+and, in parallel mode, the PL011's line is republished); the rest waits and is pumped before each
+`vm_run` and at each of `runAsync`'s waits, so nothing is dropped while the guest's tty throttles.
+`BootOptions.serialIn` is a `MessagePort` whose messages go to `send`, handled on the VM's thread
+between runs (at once while a parallel VM's `runAsync` awaits). In deterministic mode input lands
+where the runner sends it: `runToPowerOff`'s `ConsoleInput` (at a step, on a console marker, or
+at an idle with no deadline) and the native runners' `Boot.input` pump at the same points, so a
+test with input keeps one step count. Parallel `runAsync` returns as soon as the TX ring has
+output (within its 10 ms waits), so a terminal's echo isn't held back by its 50 ms turns.
+Without `SIGNAL_RX` a tickless guest (Debian, Alpine) sees input only at its next timer event:
+Alpine's shell echoed in ~120 ms instead of ~55 ms, and the bare-metal `rx` test (no timer
+armed) never does.
 
 ## PSCI (over HVC, in the core)
 

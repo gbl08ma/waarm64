@@ -100,8 +100,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   in-Node ext4 reader is written so it can run there.
 - The timer, GIC and PL011 tests have no hardware oracle; a GICv3-free subset of `timer.c`
   (ISTATUS, TVAL, CNTKCTL traps) could run on hvf.
-- No host input path to the PL011 RX ring or virtio-console receive buffers from `web/vm.ts` (a
-  `MessagePort` in the console's spec, as virtio-input has, is the shape).
+- virtio-console has no host input path (its receive buffers are held forever), so a guest's
+  `hvc0` getty is output only. Console input goes to the PL011 (M8); a `MessagePort` in the
+  console's spec, as virtio-input has, is the shape if `hvc0` is ever wanted (it would skip the
+  PL011's trap per byte).
 - **No RTC:** a guest's wall clock starts from what it finds (Debian: systemd's build epoch, 2026-04-13,
   so timers warn "in the future" after a reboot). A PL031 (a DT node: guest-visible, so for new VM
   configurations or with the user's OK) fed from the host clock in realtime mode.
