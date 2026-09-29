@@ -1,7 +1,7 @@
-**Handover, 2026-09-29 (cloud session): the networking lane (docs/plans/networking.md) is at N4 done and
-N5 half done: the Network menu on the page connects, logs in, keeps the node and reconnects. What's
-left needs things this session couldn't have: images, a tailnet with an exit node, a real
-control server's login, and the user's OK for a test-guest change.**
+**Handover, 2026-09-29 (cloud sessions): the networking lane (docs/plans/networking.md) is at N4 done
+and N5 mostly done: the Network menu on the page connects, logs in (checked by hand), keeps the node,
+reconnects and selects an exit node, with the internet and its DNS through it. What's left needs
+images (Alpine, Buildroot) and the user's OK for a test-guest change.**
 
 For whoever continues the lane. Read docs/plans/networking.md (§7 steps) and docs/frontend.md
 "Network" first; this file is what they don't say.
@@ -39,6 +39,31 @@ For whoever continues the lane. Read docs/plans/networking.md (§7 steps) and do
 - Cloud support (earlier in the session): `scripts/cloud-setup.sh`, `.claude/settings.json`,
   `docs/cloud.md`; merged to `main`.
 
+## Done in the follow-up session (exit nodes; branch `claude/ecstatic-fermi-8amxam`)
+- **Exit-node selection** (the old follow-up 3), end to end: the Go client (`net/tailscale/main_js.go`)
+  reports each peer's stable ID and the exit node in use and takes `setExitNode(id, done)`
+  (`ipn.Prefs.ExitNodeID` through `lb.EditPrefs`); the menu lists the approved exit nodes
+  ("Internet through"), the choice is remembered (`exitNode` in the settings) and given to the client
+  at the next connect. The user's own report was that the VM couldn't reach the internet through their
+  tailnet's exit nodes: the menu had no way to select one. Selecting one wasn't enough, though: the
+  client also needed (all three found by running the guest against a real exit node, details in
+  docs/frontend.md "Network"): `ipn.NewPrefs()` as its start prefs (`CorpDNS` was off, so no tailnet DNS
+  at all), the `peerapiclient` feature (DNS via the exit node's DoH), and its own connections dialed in
+  the netstack with `CheckLocalTransportEndpoints`.
+- **Test:** `tests/net-tailnet.test.ts` has an exit-node phase (the guest can't reach a server on the
+  host, can once it uses the peer as its exit node, its DNS is answered by the exit node's resolver,
+  and it can't again after "Nothing: directly"). It passed here, natively (see below), not in Podman.
+  Unit tests for the view and controller in `tests/network.test.ts`.
+- The user confirmed by hand that Tailscale login works, closing the old follow-up 4 (a real
+  interactive login).
+- **How the tailnet ran in the cloud without Podman:** natively, see docs/cloud.md ("Networking work").
+  `WEBPC_TAILNET_SCRIPT` and a `podman` shim on `PATH` made the unchanged test use it. **Still worth
+  running locally in Podman:** `WEBPC_TAILNET=1 node --test tests/net-tailnet.test.ts` (the peer's
+  `--advertise-exit-node` and the route approval in `tests/net/tailnet.sh` are only exercised
+  there; the approval assumes the peer is headscale node 1). Not tested against a real Tailscale
+  exit node either: a DoH query to a stock `tailscaled` exit node is what the test's peer is, but the
+  tailnet's own nameservers with an exit node (which the client now reaches through it) weren't.
+
 ## Follow-ups, in the order they matter
 1. **N3's Buildroot boot** (docs/plans/networking.md N3): a Buildroot boot that takes a DHCP lease
    from the gateway and pings through it, deterministic with exact step counts (like
@@ -49,39 +74,27 @@ For whoever continues the lane. Read docs/plans/networking.md (§7 steps) and do
    exit node reaches the internet. The local test tailnet (`tests/net/tailnet.sh`) has no exit node,
    which is why it can't run there. Until then, the tailnet ping from Debian is the smoke test
    (above), and an Alpine variant of it (busybox `udhcpc`, `ping` a peer) is the cheap step: it needs
-   only the Alpine image and the existing tailnet. To do `apk add` for real: make the headscale
-   test peer an exit node (`--advertise-exit-node`, approve its routes, IP forwarding and NAT in its
-   container) and set the exit node in the client (below).
-3. **Exit-node selection:** the netmap lists `exitNodeOption` peers; the Go side has to set
-   `ipn.Prefs.ExitNodeID` (a `setExitNode` call in `main_js.go`, `MaskedPrefs` through
-   `lb.EditPrefs`) and the menu needs a list. The DNS of an exit node's resolvers changes the lease.
-4. **A real interactive login, by hand:** against Tailscale's service and against a headscale
-   (the tests only use auth keys and an unreachable server). Check that the login link opens, that
-   the client comes up after it, the "waiting for approval" state, and that a reload reconnects
-   without a login (the IndexedDB state; the `ephemeral: false` path in Go is untested for real).
-   Note the CORS requirement on `/key` for a Headscale (frontend.md "Network").
-5. **IPv6:** the netmap has the `fd7a:115c:a1e0::/48` address; the gateway drops IPv6 (routers
+   only the Alpine image and the existing tailnet. For `apk add`: the test tailnet's
+   peer is now an exit node (`tests/net/tailnet.sh` advertises it and approves its routes; a
+   userspace `tailscaled` connects to the destination itself, no forwarding or NAT needed) and the
+   menu selects it, so what is missing is the Alpine image with a card.
+3. **IPv6:** the netmap has the `fd7a:115c:a1e0::/48` address; the gateway drops IPv6 (routers
    advertisements plus a static address, after IPv4).
-6. **The DOM of the menu is only lightly tested** (page-network.test.ts); the login-URL and
+4. **The DOM of the menu is only lightly tested** (page-network.test.ts); the login-URL and
    approval states are covered by `viewOf` unit tests, not in Chromium.
-7. **Page details left:** Buildroot has no card (its kernel has no virtio-net; not needed); the
+5. **Page details left:** Buildroot has no card (its kernel has no virtio-net; not needed); the
    auth key field is a plain password input (no reveal); a Firefox/Safari pass is still the
    PLAN.md item. Debian's command line changed for the page (units unmasked, the credential): the
    guest-visible change is in `web/app/machine.ts`, not in a test guest, so no step counts move.
    `npm run serve` and `npm start` build the Tailscale client (`tools/tailscale.ts`).
-8. **Chromium 141 vs 153:** everything here ran in the Playwright Chromium the cloud has (141),
+6. **Chromium 141 vs 153:** everything here ran in the Playwright Chromium the cloud has (141),
    not the dev VM's 153.
 
 ## Blocked in this session, and why
-- **Podman/Docker for the tailnet.** The cloud has no Podman; `docs/cloud.md` describes starting
-  `dockerd` and a `podman` shim. The harness's permission check refused starting the daemon and
-  creating the shim ("Security Weaken"), and I didn't work around it. So `tests/net-tailnet.test.ts`
-  and N4's re-verification did not run after this session's changes to `web/tailscale*.ts` and
-  `main_js.go`; only the build of the Go client (`net/tailscale/build.sh`, ok) and the tests above
-  did. **Run `WEBPC_TAILNET=1 node --test tests/net-tailnet.test.ts` locally first**: the client
-  worker changed (attach/detach, persisted state, the `ephemeral` config), and that test is what
-  exercises them against a real control server. An alternative that avoids the daemon is building
-  headscale and `tailscaled` from source with Go and running them natively; not tried, since it
-  pursues the same outcome and the user should decide.
+- **Podman/Docker for the tailnet** (first session): the cloud has no Podman and the harness refused
+  starting `dockerd`, so `tests/net-tailnet.test.ts` did not run then. The exit-node session ran the
+  tailnet natively instead (above, docs/cloud.md), which covers the client worker's changes
+  (attach/detach, persisted state, the `ephemeral` config) against a real control server; only the
+  Podman script itself is unexercised.
 - The user's "images can't be built in the cloud" holds (arm64 images, no Podman): Alpine and
   Buildroot work are local.

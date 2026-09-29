@@ -89,7 +89,7 @@ test('the Network menu: a bad URL is refused; connecting starts the client witho
     assert.ok(['connecting', 'login', 'error'].includes((await phase(page))!), `unreachable control server: ${await phase(page)}`);
     const saved = await settings(page);
     assert.ok(!saved.includes('SECRET'), 'the auth key is never saved');
-    assert.deepEqual(JSON.parse(saved).net, { controlURL: 'http://127.0.0.1:1', hostname: 'testbox', autoconnect: false, keyed: true });
+    assert.deepEqual(JSON.parse(saved).net, { controlURL: 'http://127.0.0.1:1', hostname: 'testbox', autoconnect: false, keyed: true, exitNode: '' });
 
     // The machine has the card: its guest sees eth0.
     await running(page);

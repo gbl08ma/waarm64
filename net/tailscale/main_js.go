@@ -19,6 +19,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"net"
+	"net/netip"
 	"os"
 	"syscall/js"
 	"time"
@@ -218,6 +220,26 @@ func newNode(cfg js.Value) map[string]any {
 	// neither, only Tailscale's own services.
 	ns.ProcessLocalIPs = false
 	ns.ProcessSubnets = false
+	// The client's own connections (DNS through an exit node's DoH service, DNS upstreams)
+	// are dialed in the netstack, since a browser has no OS network to dial; their replies
+	// come back addressed to the node's IP, which is also the guest's: the netstack takes
+	// the packets of its own connections and leaves the rest to the guest.
+	ns.CheckLocalTransportEndpoints = true
+	dialer.UseNetstackForIP = func(netip.Addr) bool { return true }
+	dialer.NetstackDialTCP = func(ctx context.Context, dst netip.AddrPort) (net.Conn, error) {
+		c, err := ns.DialContextTCP(ctx, dst) // (not returned directly: a nil *gonet.TCPConn isn't a nil net.Conn)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}
+	dialer.NetstackDialUDP = func(ctx context.Context, dst netip.AddrPort) (net.Conn, error) {
+		c, err := ns.DialContextUDP(ctx, dst)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}
 	sys.Tun.Get().Start()
 
 	priv, err := logid.NewPrivateID()
@@ -277,8 +299,12 @@ func newNode(cfg js.Value) map[string]any {
 			}
 		})
 		go func() {
+			// The defaults of a real client (ipn.NewPrefs: the tailnet's DNS settings apply, subnet routes are accepted).
+			prefs := ipn.NewPrefs()
+			prefs.ControlURL, prefs.WantRunning, prefs.Hostname = controlURL, true, hostname
+			prefs.ExitNodeID = tailcfg.StableNodeID(exitNode)
 			err := lb.Start(ipn.Options{
-				UpdatePrefs: &ipn.Prefs{ControlURL: controlURL, WantRunning: true, Hostname: hostname, ExitNodeID: tailcfg.StableNodeID(exitNode)},
+				UpdatePrefs: prefs,
 				AuthKey:     authKey,
 			})
 			if err != nil {

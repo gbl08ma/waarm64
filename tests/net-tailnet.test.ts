@@ -146,6 +146,14 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
           via = await run(`curl -s -m 8 ${url}; echo "exit=$?"`, 60_000);
         }
         assert.match(via, /hello-from-the-internet/, `through the exit node the guest reaches ${url}${await context()}`);
+        // A DNS query straight to MagicDNS's address (no resolver of the guest's in between); the
+        // tailnet has no nameservers, so the only upstream there can be is the exit node's DNS
+        // (the client asks its peerapi over DoH). What is asked doesn't matter: an answer, even NXDOMAIN
+        // for "localhost", came from the exit node's resolver; without one the client says SERVFAIL.
+        const dnsQuery = "import socket,struct;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(8);s.sendto(struct.pack('>HHHHHH',7,0x100,1,0,0,0)+b'\\x09localhost\\x00\\x00\\x01\\x00\\x01',('100.100.100.100',53));r=s.recv(512);print('rcode',r[3]&15,'answers',struct.unpack('>H',r[6:8])[0])";
+        const dns = () => run(`python3 -c ${JSON.stringify(dnsQuery)}`, 60_000);
+        const answered = await dns();
+        assert.match(answered, /rcode [03] /, `through the exit node the guest's DNS queries reach a resolver (not SERVFAIL): ${answered}`);
         assert.equal(await harness<string>(page, "setExitNode('')"), '');
         const after = await run(`curl -s -m 8 ${url}; echo "exit=$?"`, 60_000);
         assert.doesNotMatch(after, /hello-from-the-internet/, 'and stops when the exit node is cleared');

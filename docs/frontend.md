@@ -281,7 +281,16 @@ web/tailscale.ts, the client in its own worker).
   status line says "internet through <name>". The choice is remembered (`exitNode`) and given to the
   client at the next Connect (`Start`'s prefs would otherwise reset it). The guest's address, router and
   DHCP lease don't change: its default route is the gateway, which hands every packet to the client,
-  and the client's routing decides between the tailnet and the exit node.
+  and the client's routing decides between the tailnet and the exit node. **DNS follows the exit
+  node**: MagicDNS (100.100.100.100, which the lease gives first) asks the exit node's DoH service
+  (its peerapi) for names it doesn't know, and the tailnet's own nameservers are reached through
+  the exit node. That needed three things in the Go client, each found by the test: the client's
+  prefs start from `ipn.NewPrefs()` (a bare `Prefs` has `CorpDNS` off, so the tailnet's DNS
+  settings were ignored), the `peerapiclient` feature is built in (without it the DoH request is
+  refused), and the client's own connections are dialed in its netstack
+  (`dialer.NetstackDialTCP/UDP`, a browser has no OS network) with
+  `CheckLocalTransportEndpoints`, so the replies to them, addressed to the node's IP, which is the
+  guest's too, go to the netstack and everything else to the guest.
 - Settings (`webpc.settings` `net`): `controlURL`, `hostname`, `autoconnect`,
   `keyed`, `exitNode`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
@@ -290,7 +299,7 @@ web/tailscale.ts, the client in its own worker).
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
   tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
-  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in).
+  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver).
   Not tested: the menu's DOM and a real interactive login (they need a control server that serves
   one; the docs/backlog.md "Network" entry says what's missing).
 
