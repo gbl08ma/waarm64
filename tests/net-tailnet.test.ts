@@ -139,11 +139,11 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
         if (!local.includes('hello-from-the-guest')) await page.waitForTimeout(2000);
       }
       assert.match(local, /hello-from-the-guest/, `the guest's server didn't come up: ${await run(page, 'cat /tmp/http.log; ss -ltn')}`);
-      const nc = spawnSync('podman', ['exec', 'webpc-peer', 'sh', '-c', `printf 'GET / HTTP/1.0\\r\\n\\r\\n' | timeout 30 tailscale --socket=/tmp/ts.sock nc ${self} 8080`], { encoding: 'utf8' });
+      const nc = spawnSync('podman', ['exec', 'webpc-peer', 'sh', '-c', `(printf 'GET / HTTP/1.0\\r\\n\\r\\n'; sleep 10) | timeout 30 tailscale --socket=/tmp/ts.sock nc ${self} 8080`], { encoding: 'utf8' });
       if (nc.status !== 0) {
         assert.fail(`the peer couldn't reach the guest's server (${nc.status}): ${nc.stderr}\nguest: ${await run(page, 'ip -s link show dev e*; nstat -az TcpInSegs TcpOutSegs TcpInErrs IpInDelivers IpInAddrErrors; ss -tan; cat /tmp/http.log')}`);
       }
-      const reply = nc.stdout;
+      const reply = nc.stdout; // (`tailscale nc` quits when its stdin ends, so the request is followed by a wait for the reply)
       assert.match(reply, /HTTP\/1\.0 200 OK/);
       assert.match(reply, /hello-from-the-guest/);
       assert.match(peerTs('status'), new RegExp(`${self}\\s+guest`));

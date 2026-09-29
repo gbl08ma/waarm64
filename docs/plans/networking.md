@@ -192,7 +192,12 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   guest gets a DHCP lease with its tailnet address, pings the peer, resolves it through MagicDNS,
   and the peer `ssh`es into the guest. Realtime mode only. Also once by hand against the real
   Tailscale service.
-  *Built so far:* `web/tailscale.ts` + `web/tailscale-worker.ts` (the client in its own worker,
+  *Done (2026-09-29, cloud session, Chromium 141): the test passes in ~117 s.* The guest gets
+  `100.90.0.2/0` from systemd-networkd (the all-on-link mask and option 121 routes are accepted),
+  a default route via 169.254.0.1, pings the peer (0% loss), resolves `peer.tail.test` and `peer`
+  through MagicDNS, and the peer reaches a server in the guest. Not yet done: the manual run
+  against the real Tailscale service, and the `ssh` variant (no sshd in the image). What's built:
+  `web/tailscale.ts` + `web/tailscale-worker.ts` (the client in its own worker,
   an IP port to the gateway, the lease from the client's netmap), `tests/browser/tailnet.*` (a
   page and a Debian machine worker) and `tests/net-tailnet.test.ts` (opt-in, `WEBPC_TAILNET=1`;
   the peer reaches a Python server in the guest through `tailscale nc` instead of ssh: the guest

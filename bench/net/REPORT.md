@@ -52,6 +52,13 @@ TCP SYN retries after 1 s, so it sees a few seconds at worst; N4 looks at whethe
 first peer-to-peer handshake before reporting `Running` (or nudging the peer with a disco ping)
 removes it.
 
+## In Chromium (N4, `tests/net-tailnet.test.ts`, 2026-09-29)
+Playwright's Chromium 141 in the same cloud container: the module (26.9 MB, streamed) loads and
+instantiates in **231–269 ms** (3 runs), the node is `Running` **2.5–2.6 s** after the start
+(module load included), and the whole test, a Debian boot to a DHCP lease, a ping, two MagicDNS
+lookups and a TCP connection from the peer into the guest, takes ~117 s. The CORS requirement on
+the control server's `/key` is in docs/plans/networking.md (N4).
+
 ## What the spike found (don't re-discover)
 - **Go's `net/http` turns `fetch` off when `process.argv0` starts with `node`**: in Node the
   control and DERP dials go through Go's fake network ("connection refused"). The Node harness
