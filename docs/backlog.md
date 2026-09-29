@@ -199,6 +199,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   a tracked baseline: add a `page_debian` case (page load to `running`, fresh profile) then.
 - **Boot time is the page's biggest cost** (~30 s to a login): phase B's snapshots.
 
+## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [frontend.md](frontend.md) "Network")
+
+- Left from N5: exit-node selection, the Alpine `apk add` smoke test (needs an exit node to the
+  internet), IPv6, a real interactive login checked by hand, Buildroot's N3 boot and its Rust
+  twin. The details and the order are in M8-PHASEC-NETWORKING-HANDOVER.md.
+- The Debian tests (`net-guest`, `page-network`, `net-tailnet`) add ~7 min to `scripts/ci.sh`.
+
 ## Tests and tools
 
 - **Firefox and Safari compatibility pass** (moved out of M8 by the user, 2026-09-28; Chromium
