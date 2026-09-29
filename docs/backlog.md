@@ -50,6 +50,12 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - **CoreMark's gap to TCG (~70%)**: the store bounds checks V8 keeps on Linux arm64, register
   write-backs at block exits, call/return between small regions. Only for real programs.
 - **Per-module eviction** instead of whole-cache flushes, for guests that outgrow 262,144 regions.
+- **JIT blocks only grow in long sessions** (the user, 2026-09-30, a Go compile on 4 vCPUs over
+  the tailnet): the block count climbs steadily, and cold blocks are never dropped short of a
+  whole-cache flush. Check what a flush and an invalidation actually free on the host side
+  (the table slots, the `WebAssembly.Instance`s their entries keep alive), and whether the 262,144-region
+  cap is ever reached in practice. Possibly tied to the tab bloat under "The page" and to BUG1's
+  slowdown ([BUG1-HANDOVER.md](../BUG1-HANDOVER.md)).
 - **Compiling off the vCPU thread:** measured and not built ([jit.md](jit.md) "Tried and not
   kept"); revisit with a GUI guest in M8 (latency).
 - **A fixed-size memory** so V8 loads the bounds once per function ([v8.md](v8.md)): needs the
@@ -198,6 +204,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   drivers and the end-to-end test (bench/boot/REPORT.md "M8 loop 6"). Phase B's resume time needs
   a tracked baseline: add a `page_debian` case (page load to `running`, fresh profile) then.
 - **Boot time is the page's biggest cost** (~30 s to a login): phase B's snapshots.
+
+- **A tab that crashed stays bloated across reloads** (the user, 2026-09-30, after BUG1's panic
+  on 4 vCPUs): over 6 GB, and the emulator ~10× slower, even after a hard reload (Shift+F5).
+  Normal again only in a fresh tab. Suspects: vCPU, device or Tailscale workers not terminated on
+  a panic or on unload, the shared memory kept alive by them, the JIT's modules (see "JIT").
+  Measure with headless Chromium: crash, reload, compare the memory and the speed.
 
 ## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [frontend.md](frontend.md) "Network")
 

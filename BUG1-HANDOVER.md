@@ -123,6 +123,11 @@ the crash**. The page still had no message after ace25a6, although a vCPU thread
 it in Node (`bench/results/local/panic-thread.ts`). 8488331 makes the coordinator read the buffer
 itself and say what the buffer held when it's empty, so the next occurrence tells which part failed.
 
+Related (in docs/backlog.md, not chased): the JIT block count grows steadily in these long
+sessions, and the crashed tab stays over 6 GB and ~10× slower even after a reload. JIT growth
+(host compiles, table growth, GC) is a way for one vCPU's worker to stall (hypothesis 3), and would
+explain the slowdown before the crash.
+
 A repro needs the tailnet in the loop: CI's tailnet tests (`tests/net/tailnet.sh`, headscale and a
 peer in Podman) plus a peer that SSHes into the guest and keeps traffic flowing (for example
 `yes | ssh guest cat > /dev/null`, or an interactive-like trickle) while the guest compiles on all
