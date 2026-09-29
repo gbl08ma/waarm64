@@ -91,12 +91,12 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       // The client comes up first: the guest's address is what it reports.
       await page.waitForFunction(() => (window as never as { harness: { tailscale(): { state: string } } }).harness.tailscale().state === 'Running', null, { timeout: 120_000, polling: 250 })
         .catch(async (e) => { throw new Error(`${e}; ${JSON.stringify(await harness(page, 'tailscale()'))}; events ${JSON.stringify(await harness(page, 'events()'))}`); });
-      await page.waitForFunction((ip) => (window as never as { harness: { tailscale(): { netmap?: { peers: { addresses: string[] }[] } } } }).harness.tailscale().netmap?.peers.some((p) => p.addresses.includes(ip)), env.WEBPC_TS_PEER_IP, { timeout: 30_000, polling: 250 });
+      await page.waitForFunction((ip) => (window as never as { harness: { tailscale(): { netmap?: { peers: { addresses: string[] }[] } } } }).harness.tailscale().netmap?.peers.some((p) => p.addresses.some((a) => a.replace(/\/\d+$/, '') === ip)), env.WEBPC_TS_PEER_IP, { timeout: 30_000, polling: 250 });
       const ts = await harness<{ netmap: { addresses: string[]; peers: { name: string; addresses: string[] }[]; dns: string[]; domains: string[]; mtu: number }; timings: { loadMs: number; runningMs: number } }>(page, 'tailscale()');
       const self = ts.netmap.addresses.find((a) => !a.includes(':'))!.replace(/\/\d+$/, '');
       console.log(`# Tailscale in Chromium: module loaded in ${ts.timings.loadMs.toFixed(0)} ms, Running after ${ts.timings.runningMs.toFixed(0)} ms; the guest is ${self}, dns ${ts.netmap.dns}, domains ${ts.netmap.domains}, mtu ${ts.netmap.mtu}`);
       assert.ok(ts.netmap.dns.includes('100.100.100.100'), 'MagicDNS is on');
-      const peer = ts.netmap.peers.find((p) => p.addresses.includes(env.WEBPC_TS_PEER_IP));
+      const peer = ts.netmap.peers.find((p) => p.addresses.some((a) => a.replace(/\/\d+$/, '') === env.WEBPC_TS_PEER_IP));
       assert.ok(peer, `the peer ${env.WEBPC_TS_PEER_IP} is in the netmap`);
 
       await shows(page, /\S+ login: /, 240_000);
