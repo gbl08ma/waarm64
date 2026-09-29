@@ -53,7 +53,7 @@ async function running(page: Page) {
 const phase = (page: Page) => page.evaluate(() => document.getElementById('network')!.dataset.phase);
 const settings = (page: Page) => page.evaluate(() => localStorage.getItem('webpc.settings') ?? '');
 
-test('the Network menu: a bad URL is refused; connecting adds a card and starts the client; the key is not kept; Disconnect stops it', { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
+test('the Network menu: a bad URL is refused; connecting starts the client without a restart; the key is not kept; Disconnect stops it', { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } }); // a fresh profile: empty storage
   const page = await context.newPage();
   const errors: string[] = [];
@@ -64,7 +64,7 @@ test('the Network menu: a bad URL is refused; connecting adds a card and starts 
     await page.goto(`${base}/web/app/?ncpus=2&view=both`);
     assert.equal(await page.locator('#network').isVisible(), true, 'Debian can have a card');
     await page.locator('#network summary').click();
-    assert.match((await page.locator('#net-status').textContent())!, /No network card/);
+    assert.match((await page.locator('#net-status').textContent())!, /Not connected/);
     assert.equal(await page.locator('#net-disconnect').isVisible(), false);
 
     // A bad control server is refused in the form: nothing restarts, nothing is saved.
