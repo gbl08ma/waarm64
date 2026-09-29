@@ -69,13 +69,17 @@ async function shows(page: Page, re: RegExp, ms: number, from = 0) {
   }
 }
 
-/** Runs a shell command on the serial console; resolves with its output. The end marker is built by the shell, so the echoed command doesn't match it. */
+/**
+ * Runs a shell command on the serial console; resolves with its output. The markers are built by
+ * the shell (`$((40+2))`), so the echoed command line never matches them, only what ran (bash
+ * echoes the second line after the first has run, so the output can't be cut by the echo).
+ */
 async function run(page: Page, cmd: string, ms = 60_000) {
   const from = (await harness<string>(page, 'output()')).length;
-  await page.evaluate((c) => (window as never as { harness: { send(s: string): void } }).harness.send(c), `${cmd}\necho __END$((40+2))__\n`);
+  await page.evaluate((c) => (window as never as { harness: { send(s: string): void } }).harness.send(c), `echo __BEGIN$((40+2))__; ${cmd}\necho __END$((40+2))__\n`);
   await shows(page, /__END42__\r?\n/, ms, from);
-  const out = (await harness<string>(page, 'output()')).slice(from);
-  return out.slice(out.indexOf('\n', out.indexOf('__END$((40+2))__')) + 1).replace(/__END42__[\s\S]*$/, '').replace(/\r/g, '').replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+  const out = (await harness<string>(page, 'output()')).slice(from).replace(/\r/g, '').replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+  return out.slice(out.lastIndexOf('__BEGIN42__\n') + 12, out.lastIndexOf('__END42__'));
 }
 
 test('the guest gets a DHCP lease from the tailnet, reaches a peer by address and by name, and is reached', { skip, timeout: 900_000 }, async () => {

@@ -192,6 +192,15 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   guest gets a DHCP lease with its tailnet address, pings the peer, resolves it through MagicDNS,
   and the peer `ssh`es into the guest. Realtime mode only. Also once by hand against the real
   Tailscale service.
+  *Built so far:* `web/tailscale.ts` + `web/tailscale-worker.ts` (the client in its own worker,
+  an IP port to the gateway, the lease from the client's netmap), `tests/browser/tailnet.*` (a
+  page and a Debian machine worker) and `tests/net-tailnet.test.ts` (opt-in, `WEBPC_TAILNET=1`;
+  the peer reaches a Python server in the guest through `tailscale nc` instead of ssh: the guest
+  has no sshd). In Chromium the module loads in ~240 ms and the node is Running ~2.5 s after the
+  start. **Requirement found: the control server must answer `GET /key` with CORS headers**
+  (`Access-Control-Allow-Origin`): the page fetches it cross-origin, and headscale sends none, so
+  behind its reverse proxy (Caddy in the test tailnet) that header has to be added; Tailscale's
+  own control server sends it. Everything else the client does is WebSocket (control, DERP).
 - **N5 — Product surface** (with M8): connect/login UI, persisted node state, exit-node selection,
   Alpine `apk add` through an exit node as the smoke test; IPv6.
 - Later: §5 (tailscale-rs) and §6 (WebRTC), each behind the same interfaces.
