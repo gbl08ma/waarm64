@@ -22,7 +22,9 @@ mkdir -p "$(dirname "$OUT")"
 # server's HTTPS port when dialing over WebSocket. Go refuses overlays inside
 # the module cache, so the build uses a patched copy of the module through a
 # temporary go.mod with a replace directive.
+go mod download tailscale.com
 TS=$(go list -m -f '{{.Dir}}' tailscale.com)
+[ -n "$TS" ] || { echo "build.sh: tailscale.com module directory not found" >&2; exit 1; }
 VER=$(go list -m -f '{{.Version}}' tailscale.com)
 SRC=$(dirname "$OUT")/tailscale-src-$VER
 if [ ! -d "$SRC" ]; then
