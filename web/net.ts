@@ -17,7 +17,7 @@ export const PEER_MAC = [0x52, 0x55, 0x0a, 0x00, 0x02, 0x02];
 const eq = (a: Uint8Array, at: number, b: number[]) => b.every((v, k) => a[at + k] === v);
 
 /** The Internet checksum of `b`. */
-function checksum(b: Uint8Array) {
+export function checksum(b: Uint8Array) {
   let s = 0;
   for (let k = 0; k < b.length; k += 2) s += (b[k] << 8) | (b[k + 1] ?? 0);
   while (s > 0xffff) s = (s & 0xffff) + (s >>> 16);

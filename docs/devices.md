@@ -119,7 +119,23 @@ mode (and natively in realtime mode: std has no CSPRNG).
   This frame port is the adapter API (no v86 compatibility: [plans/networking.md](plans/networking.md)).
   Layer-3 backends use the **IP-packet port**, `IpPort = {send(packet), close?()}` (`ipPort(port,
   receive)` over a `MessagePort`): one IPv4 or IPv6 packet per transferred `ArrayBuffer`, no Ethernet
-  header; the Ethernet gateway between the two is N3.
+  header. **The Ethernet gateway** (`web/gateway.ts`, in the device worker) sits between a frame
+  adapter and an IP backend (`IpBackend = {lease(), send(packet)}` plus the `deliver` it's made
+  with): `{adapter: 'echo'}` is the synchronous test backend (answers ICMP echo for any address;
+  lease 198.18.0.15, MTU 1280), `{adapter: {ip: port}}` a backend behind a `MessagePort` (an
+  ArrayBuffer is one packet; `{type: 'lease', lease}` from the backend sets the lease: the
+  Tailscale worker, N4). What the guest sees: a LAN with one router at 169.254.0.1
+  (`02:77:65:62:70:63`). **Proxy ARP** answers every request except for the guest's own address
+  (probes from 0.0.0.0 ignored), so no address range is assumed. **DHCP** (DISCOVER/REQUEST
+  only) hands out the backend's address with mask 0.0.0.0 (all on-link), router = the gateway,
+  the backend's DNS, first search domain, MTU (option 26), broadcast and classless routes
+  (option 121: the gateway on-link, a default route through it); no lease means no offer and a
+  NAK for a request; a renewal is answered unicast. **Framing:** the Ethernet header is cut on the
+  way out (padding too) and added on the way in (gateway MAC to the guest's, learned from its first
+  frame). Dropped: IPv6 (later), non-IP ethertypes, multicast and broadcast, packets whose
+  source isn't the leased address, anything before a lease. A packet over the lease's MTU gets ICMP
+  fragmentation-needed if DF is set and is dropped otherwise (no fragmentation). The gateway
+  answers pings to its own address. Tests: tests/gateway.test.ts (bytes of ARP, DHCP, framing).
 
 ### 9p (ID 9)
 - **Our own `9P2000.L` server** (`web/9p.ts`, twin `core/tests/common/p9.rs`), **not a port of

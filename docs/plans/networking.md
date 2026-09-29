@@ -1,6 +1,6 @@
 # webpc networking plan
 
-**Status:** exploration, drafted 2026-09-27; the networking lane started 2026-09-29 (N1, N2 done). It feeds M8's "networking backend API"
+**Status:** exploration, drafted 2026-09-27; the networking lane started 2026-09-29 (N1, N2 done; N3's gateway is in, its guest-level tests are pending). It feeds M8's "networking backend API"
 (PLAN.md, M8). When a step here is scheduled, move it into PLAN.md and keep this file as the
 background it came from.
 
@@ -82,7 +82,8 @@ backend keeps deterministic mode exact, as the loopback adapter does now):
 - **IPv6** (Tailscale gives each node an `fd7a:115c:a1e0::/48` address): router advertisements plus
   a static or DHCPv6 address; after IPv4 works.
 - The backend side is an IP-packet port: `{send(packet), receive(packet)}`, one packet per
-  message. The device worker and the backend's worker talk directly (a transferred
+  message. (Built: the guest's mask is 0.0.0.0 with the gateway at 169.254.0.1 and option 121
+  routes, not the tailnet's range; see docs/devices.md.) The device worker and the backend's worker talk directly (a transferred
   `MessagePort`), not through the page's main thread.
 
 ## 4. The Tailscale backend
@@ -182,7 +183,7 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   dialer's HTTPS port), `bench/net/` (Node harness, spike), `tests/net/tailnet.sh` (headscale and a
   peer in rootless Podman). Findings in the report: Go's fetch off in Node, `login()`, custom HTTPS
   ports, DERP needs TLS, the 5 s first-ping mode, logtail dropped.
-- **N3 — The gateway** (§3), IPv4, in the device worker, with a synchronous test backend that
+- **N3 — The gateway** (§3; the gateway and its byte-level tests are done in `web/gateway.ts`, `tests/gateway.test.ts`, docs/devices.md "net"; the Buildroot boot with exact steps and the Rust twin wait for the user's OK to change the test guest and for the images), IPv4, in the device worker, with a synchronous test backend that
   echoes at the IP level: Node unit tests for its ARP, DHCP and framing bytes, and a Buildroot
   boot that takes a DHCP lease and pings through it, deterministic and with exact step counts like
   `/test-devices.sh` (natively too, with a Rust twin in `core/tests/common`).

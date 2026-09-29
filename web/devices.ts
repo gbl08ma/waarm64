@@ -5,6 +5,7 @@
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 import { p9, type P9Files } from './9p.ts';
+import { echoBackend, gateway, portBackend } from './gateway.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
 import { openDisk, type Disk } from './qcow2.ts';
@@ -26,11 +27,14 @@ export type DeviceSpec =
   | InputSpec;
 
 /**
- * virtio-net (web/net.ts): Ethernet frames to and from an adapter, the
- * loopback test adapter in the device worker or a page's adapter behind a
- * MessagePort. `mac` defaults to 52:54:00:12:34:56; the link is always up.
+ * virtio-net (web/net.ts): Ethernet frames to and from an adapter: the
+ * loopback test adapter in the device worker, a page's frame adapter behind a
+ * MessagePort, or the Ethernet gateway (web/gateway.ts) in front of an IP
+ * backend: `'echo'` (a synchronous test backend) or `{ip: port}` (a layer-3
+ * backend, such as Tailscale, behind a MessagePort). `mac` defaults to
+ * 52:54:00:12:34:56; the link is always up.
  */
-export type NetSpec = { type: 'net'; mac?: string; adapter: 'loopback' | MessagePort };
+export type NetSpec = { type: 'net'; mac?: string; adapter: 'loopback' | 'echo' | MessagePort | { ip: MessagePort } };
 /** virtio-9p (web/9p.ts): an in-memory tree, mounted by the guest by `tag`, starting with `files` (path → contents). */
 export type P9Spec = { type: '9p'; tag: string; files?: P9Files };
 /**
@@ -43,7 +47,7 @@ export type InputSpec = { type: 'input'; kind: 'keyboard' | 'tablet'; port?: Mes
 
 /** The MessagePorts in `specs`, to transfer with them. */
 export const specPorts = (specs: DeviceSpec[]) =>
-  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter] : d.type === 'input' && d.port ? [d.port] : []));
+  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : d.type === 'input' && d.port ? [d.port] : []));
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
@@ -216,7 +220,12 @@ function net(ctx: Ctx, d: NetSpec): Backend {
     if (frames.length > RX_QUEUE) frames.shift();
     deliver();
   };
-  const adapter: NetAdapter = d.adapter === 'loopback' ? loopback(receive) : portAdapter(d.adapter, receive);
+  const a = d.adapter;
+  const adapter: NetAdapter =
+    a === 'loopback' ? loopback(receive)
+    : a === 'echo' ? gateway(receive, echoBackend())
+    : a instanceof MessagePort ? portAdapter(a, receive)
+    : gateway(receive, portBackend(a.ip));
   return {
     request(r) {
       if (r.queue === 0) {
