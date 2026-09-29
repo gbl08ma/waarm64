@@ -111,7 +111,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
         addr = (await run(page, "ip -4 -o addr show scope global | awk '{print $4}'")).trim();
         if (!addr) await page.waitForTimeout(1000);
       }
-      assert.ok(addr, `no DHCP lease after 40 s; networkctl: ${await run(page, 'networkctl status 2>&1 | head -30')}`);
+      assert.ok(addr, `no DHCP lease after 40 s:\n${await run(page, 'ip -br link; ip -br addr; systemctl is-active systemd-networkd systemd-resolved; networkctl list 2>&1 | head; journalctl -u systemd-networkd --no-pager 2>&1 | tail -15; lsmod | grep -i virtio')}`);
       assert.equal(addr.split('/')[0], self, 'the lease is the address the client reports');
       const routes = await run(page, 'ip -4 route');
       console.log(`# guest: ${addr}; routes: ${routes.trim().replace(/\n/g, ' | ')}`);
