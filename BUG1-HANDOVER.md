@@ -128,6 +128,19 @@ sessions, and the crashed tab stays over 6 GB and ~10× slower even after a relo
 (host compiles, table growth, GC) is a way for one vCPU's worker to stall (hypothesis 3), and would
 explain the slowdown before the crash.
 
+**Fourth occurrence (2026-09-30 00:52): no panic, but the guest saw the stall.** Debian printed
+"watchdog: Watchdog detected hard LOCKUP on cpu 1" (the buddy detector: no hrtimer interrupts on
+CPU 1 for ~10 s) and an RCU stall on CPU 1 (5255 jiffies, ~21 s at 250 Hz), then carried on. The
+NMI backtrace (an IPI here) arrived ~4 s later, in an ordinary user data abort (`el0_da`, ESR
+0x92000007, the Go `compile` process, DAIF clear): no kernel loop. A guest livelock (a stale TLB
+entry re-faulting, say) would still take timer interrupts. So **vCPU 1's host thread made no
+progress for 10–20 s, then resumed.** No panic this time: other vCPUs' TLBI IS weren't for its ASID,
+so nothing waited on it, or it stalled outside `run_cpu`. **Working theory: BUG1's assert is a
+symptom; the bug is a vCPU worker stalling ≥10 s**, with the slowdown, JIT growth and a 6 GB tab
+beforehand (hypotheses 3 and 5: GC, compiles or table growth in the worker, host memory pressure,
+the Tailscale worker's load). Next evidence to get: Chromium's task manager (per-worker memory) and
+host swapping while it's slow; a per-vCPU "longest gap between chunks" counter would prove it.
+
 A repro needs the tailnet in the loop: CI's tailnet tests (`tests/net/tailnet.sh`, headscale and a
 peer in Podman) plus a peer that SSHes into the guest and keeps traffic flowing (for example
 `yes | ssh guest cat > /dev/null`, or an interactive-like trickle) while the guest compiles on all
