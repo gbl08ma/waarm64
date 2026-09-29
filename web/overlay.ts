@@ -80,3 +80,32 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
 
   return { size: base.size, format: base.format, read, write, flush: () => { data.flush(); mapFile.flush(); } };
 }
+
+/**
+ * Deletes the OPFS overlay `name` (M8's "reset disk"): the disk goes back to
+ * the image's bytes. The overlay must be closed (no VM has it open: its sync
+ * access handles lock the files, and the removal then fails with
+ * `NoModificationAllowedError`). A missing overlay is not an error. Works on a
+ * page or in a worker.
+ */
+export async function removeOverlay(name: string) {
+  const root = await navigator.storage.getDirectory();
+  try {
+    await root.removeEntry(name, { recursive: true });
+  } catch (e) {
+    if ((e as DOMException).name !== 'NotFoundError') throw e;
+  }
+}
+
+/** Bytes the overlay `name` holds on OPFS (its written blocks and map), or 0 without one. */
+export async function overlayBytes(name: string) {
+  let dir: FileSystemDirectoryHandle;
+  try {
+    dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
+  } catch {
+    return 0;
+  }
+  let n = 0;
+  for (const f of ['data', 'map']) n += await dir.getFileHandle(f).then((h) => h.getFile()).then((file) => file.size, () => 0);
+  return n;
+}

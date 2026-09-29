@@ -15,7 +15,9 @@ redirects there). Chromium only.
 | `web/app/machine.ts` | the machines, in one place: image URLs, command line, RAM, screen size, the `ready` marker, the default vCPU count |
 
 Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot` (the
-default is `debian`), `?ncpus=N`, `?view=screen|terminal|both`.
+default is `debian`), `?ncpus=N`, `?view=screen|terminal|both` (over the remembered view),
+`?params=…` (extra kernel parameters, placed before a `--`: e.g. `init=/bin/bash` for a rescue
+shell, or `init=/nonexistent` to make Buildroot panic, as a test does).
 
 ## The machines
 
@@ -42,22 +44,29 @@ The seed of phase D's embedding API; not frozen. One machine per worker: a resta
 worker and starts a new one (fresh memory, fresh ports).
 
 Page → worker:
-- `start {machine, ncpus, keyboard, tablet, serial, screen}`: three transferred `MessagePort`s
+- `start {machine, ncpus, keyboard, tablet, serial, screen, params?}`: three transferred `MessagePort`s
   and a transferred `OffscreenCanvas`. The keyboard's and the tablet's ports go to the device
   worker (web/input.ts's `attachInput` sends Linux input events to the other ends; LED changes
   come back on the keyboard's). `serial` is `BootOptions.serialIn`: strings or bytes for the
   PL011, handled on the machine worker's thread while `runAsync` awaits. `screen` is the page's
   canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the machine worker
-  draws the framebuffer on it (web/display.ts) on its own animation frames.
+  draws the framebuffer on it (web/display.ts) on its own animation frames. `params`: extra kernel
+  parameters.
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. The page then terminates the worker (after 3 s without an answer, anyway).
 
 Worker → page:
-- `state {state, message?}`: `loading` (fetching the wasm, kernel, initrd), `booting` (the VM
-  runs), `running` (the machine's `ready` marker appeared on the serial console), `off` (PSCI
-  SYSTEM_OFF), `rebooting` (PSCI SYSTEM_RESET: the page starts a new machine), `crashed` (an
-  emulator error, an unimplemented exit, or the guest's `Kernel panic - not syncing` line, with
-  the message).
+- `state {state, message?, problem?}`: `loading` (fetching the wasm, kernel, initrd), `booting`
+  (the VM runs), `running` (the machine's `ready` marker appeared on the serial console), `off`
+  (PSCI SYSTEM_OFF), `rebooting` (PSCI SYSTEM_RESET: the page starts a new machine), `crashed`
+  (the guest's `Kernel panic - not syncing` line, an emulator error, an unimplemented exit),
+  `failed` (the machine couldn't start). `crashed` and `failed` carry a message for the user and a
+  `problem` (below, "Errors"), from which the page picks the actions it offers. After a panic the
+  state stays `crashed` even if the guest resets (`panic=N`), so the message stays on show.
+- `progress {loaded, total}`: bytes downloaded of the core, the kernel and the initrd (from
+  `Content-Length`), at most every 100 ms while `loading`.
+- `screen`: the screen first showed a pixel that isn't black (the guest's console took it), once
+  per machine.
 - `serial {data}`: the serial console's output, UTF-8 decoded. The worker drains the TX ring
   after every `runAsync`, which returns as soon as there's new output (the core notifies the TX
   ring's head, docs/abi.md "Signal word and console").
@@ -66,6 +75,55 @@ Worker → page:
 - `stopped`.
 
 The machine runs without `idleLimitMs`: an idle guest may sleep as long as it likes.
+
+## Loading and boot progress
+
+While a machine loads and boots, a card over the screen says what's happening: "Starting
+Debian 13" with a progress bar over the downloads (the state reads "Loading 45%"), then "Booting
+Debian 13" with the kernel's latest serial line, until the machine worker reports `screen` (or the
+machine is `running`). From there **the screen is the boot's progress**: the kernel's console
+(fbcon) replays the boot log from the first line and systemd's status lines follow, so the Screen
+view stays the default (loop 0's finding). On this host (M8 loop 4): the downloads (77.6 MB:
+Debian's kernel, its initrd and the core; the 403 MB disk is read by ranges as the guest needs it)
+take ~0.15 s from localhost, fbcon takes the screen ~2.4 s after the VM starts, and the login
+prompt comes at ~29 s (page load to `running`: 28.6, 29.1, 28.9, 29.0 s; loop 3: 28.6–29.0).
+
+## Errors
+
+What stops a machine is said in a bar under the header: what happened, why, and what to do, with
+buttons for the actions that apply. Checked on the page before a worker starts:
+
+- **No cross-origin isolation** (`crossOriginIsolated` false: served without COOP/COEP, or from
+  a file): the shared memory can't exist. The page says to run `npm start` and open its URL; it
+  starts nothing.
+- **The page's scripts didn't load** (xterm.js missing from `node_modules`, so the module graph
+  fails): an `onerror` on the module's `<script>` tag says to run `npm start`.
+- **Too little memory** for the machine: Chromium has no catchable out-of-memory error (the
+  renderer is killed; PLAN.md §4 "Guest RAM ceiling"), so the page compares
+  `navigator.deviceMemory` (GB, rounded down to a power of two, at most 8 in Chromium) with
+  `hostMemoryGiB` in machine.ts: the guest's RAM + 1 GiB + 0.3 GiB per vCPU (M8 loop 0's RSS: 2.3
+  GiB on 1 vCPU, 3.1 on 4, with 1 GiB of guest RAM). Below it the page doesn't start the machine
+  (state `idle`, "Not started") and offers **Start anyway**, naming a vCPU count that fits if one
+  does. A device that reports 4 GB or more runs Debian's default on up to 4 vCPUs.
+- Another browser than Chromium (no `Chromium` brand in `navigator.userAgentData`): a standing
+  note that webpc is developed and tested in Chromium; nothing else changes.
+
+From the machine worker, as `problem`:
+
+| `problem` | When | Actions |
+|---|---|---|
+| `missing-core` | the wasm answers 404 (or the server doesn't answer) | Retry (the message says `npm start` builds it) |
+| `missing-image` | the kernel, initrd or disk (a `HEAD`) answers 404 | Retry (the message names the file and the machine's `prepare` command) |
+| `disk-in-use` | the overlay's files are locked (`NoModificationAllowedError`): another tab runs the machine | Retry, once that tab is closed |
+| `disk-mismatch` | the overlay's `base` names another image | Reset disk… |
+| `memory` | reserving the guest's RAM throws a `RangeError` | Retry |
+| `panic` | the guest's `Kernel panic - not syncing` line | Show serial log, Copy serial log, Save serial log |
+| `emulator` | anything else (an exception, an unimplemented exit) | the same three |
+
+Retry and Restart start a new machine worker. The failed states (`failed`) make the header's
+button read Retry. **The serial log** is kept by the page (the last 1–2 MB of the serial console's
+output, beyond xterm.js's 5,000 lines of scrollback) for Copy (the clipboard) and Save (a
+`webpc-<machine>-serial-<time>.log` download); Show serial log switches the Screen view to Both.
 
 ## The screen
 
@@ -144,13 +202,25 @@ terminal would (`\r` for Enter, escape sequences) to the `serial` port. No addon
 serves exactly two files from `node_modules`, `@xterm/xterm/lib/xterm.mjs` and
 `@xterm/xterm/css/xterm.css` (`tools/serve.ts` `ALLOWED`); everything else there is refused.
 
-## Views and state
+## Views, settings and the disk
 
 Screen (the default, decision 2), Serial terminal, or Both (side by side; stacked below 1100 px).
+The view chosen last is remembered per browser (`localStorage` `webpc.settings`, JSON; read and
+written in try/catch, so a browser that refuses storage just doesn't remember); `?view=` overrides
+it without being saved. It's the only setting so far; vCPUs and RAM stay defaults (`min(4, cores −
+2)`, 1 GiB) until phase D's settings.
+
 Restart asks for a confirmation while the machine is booting or running (it's a power cut); after
 a power off the button reads Start. The disk overlay persists across reloads and restarts; OPFS
 belongs to the browser profile, so Playwright's temporary profiles start empty and tests don't see
 each other's disks.
+
+**Reset disk** (M8 decision 4; shown for machines with an overlay) asks for a confirmation that
+says what goes (the overlay's size, from `overlayBytes`), stops the machine (its device worker
+releases the overlay's sync access handles), deletes the overlay (`removeOverlay` in
+web/overlay.ts: `removeEntry(name, {recursive: true})` on the OPFS root) and starts a new
+machine, which boots from the image as published. If the removal fails (another tab holds the
+files), the page says so and offers the reset again.
 
 ## Overlay hand-over
 

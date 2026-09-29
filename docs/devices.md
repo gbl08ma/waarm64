@@ -97,8 +97,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   device worker answers `closed`, and `vm.close()` resolves then: the handles are exclusive, so a
   new VM on the same overlay opens it after that; [frontend.md](frontend.md) "Overlay hand-over").
   Natively, `Overlay` keeps 512-byte sectors in memory and can be shared by several boots. No
-  DISCARD/WRITE_ZEROES, compaction, quota handling, content check of the base, or host API to
-  reset/export an overlay yet (backlog).
+  DISCARD/WRITE_ZEROES, compaction, quota handling, content check of the base, or export yet
+  (backlog). Host API (web/overlay.ts, a page or a worker): `removeOverlay(name)` deletes a closed
+  overlay (the page's "Reset disk", M8), `overlayBytes(name)` says what it holds.
 
 ### net (ID 1)
 - **The host sees Ethernet frames only**; IP, DHCP, NAT and the rest live in the adapter, never in

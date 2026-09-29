@@ -13,8 +13,10 @@ export type Framebuffer = { addr: number; width: number; height: number };
  * Draws `fb` (in `memory`) to `canvas` on each animation frame until `stop`
  * (skipping frames while an element canvas isn't rendered). `draw` draws what
  * changed now and returns those rows, `[first, end)` (empty: none).
+ * `onContent` is called once, at the first draw that shows a pixel that isn't
+ * black (the guest's console took the screen: web/app/ hides its boot card).
  */
-export function showFramebuffer(canvas: HTMLCanvasElement | OffscreenCanvas, memory: WebAssembly.Memory, fb: Framebuffer) {
+export function showFramebuffer(canvas: HTMLCanvasElement | OffscreenCanvas, memory: WebAssembly.Memory, fb: Framebuffer, onContent?: () => void) {
   const { width: w, height: h } = fb;
   [canvas.width, canvas.height] = [w, h];
   const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -36,12 +38,18 @@ export function showFramebuffer(canvas: HTMLCanvasElement | OffscreenCanvas, mem
       while (!rowChanged(src, end - 1)) end--;
     }
     fresh = false;
+    let any = 0;
     for (let k = first * w, stop = end * w; k < stop; k++) {
       const p = src[k]; // 0xXXRRGGBB → ImageData's bytes R, G, B, A (0xAABBGGRR little-endian)
       last[k] = p;
+      any |= p & 0xffffff;
       dst[k] = 0xff000000 | ((p & 0xff) << 16) | (p & 0xff00) | ((p >>> 16) & 0xff);
     }
     ctx.putImageData(img, 0, 0, 0, first, w, end - first);
+    if (any && onContent) {
+      onContent();
+      onContent = undefined;
+    }
     return [first, end];
   };
   const shown = () => !('checkVisibility' in canvas) || canvas.checkVisibility(); // a hidden view: display: none

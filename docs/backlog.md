@@ -118,7 +118,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   cache or go async when an I/O benchmark says so. qcow2: no merging of contiguous clusters into
   one request.
 - Overlay: no DISCARD/WRITE_ZEROES, no compaction of leaked slots, no quota handling (OPFS errors
-  come back as `IOERR`), the base identified by path and size only, no host API to reset or export.
+  come back as `IOERR`), the base identified by path and size only, no export or import (M8
+  phase D; the reset is `removeOverlay`).
 - net: no offloads (`CSUM`, `GSO`, `MRG_RXBUF`), no `CTRL_VQ`, one queue pair; frames from a page
   adapter can't be deterministic. The real backends are in [plans/networking.md](plans/networking.md).
 - 9p: an in-memory tree only (OPFS or an HTTP-served tree, as v86's lazy filesystem, are the
@@ -151,13 +152,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **WFE sleeping:** WFE yields (120K per vCPU in 7 s of churn on 4 vCPUs, ~0.1 s); sleep on the
   event word only if a workload shows yields costing.
 - **Parallel `make`** as a scaling workload (the image has no toolchain yet).
-- **A default vCPU count for users:** `ncpus` defaults to 1 and nothing reads
-  `navigator.hardwareConcurrency`; the kickoff's cap (the host's cores minus two: the device
-  worker and the page) belongs with M8's embedding API, as does telling the user that a host's
-  efficiency cores make N above its performance-core count scale poorly (this host: 4 P + 6 E).
+- **A default vCPU count for users:** the page uses `min(4, cores − 2)` (web/app/machine.ts);
+  `bootVm`'s `ncpus` still defaults to 1. Telling the user that a host's efficiency cores make N
+  above its performance-core count scale poorly (this host: 4 P + 6 E) belongs with M8 phase D's
+  settings and embedding API.
+- **The page's memory check** is a rule of thumb (`hostMemoryGiB`: RAM + 1 GiB + 0.3 GiB per
+  vCPU, from one host's RSS) against `navigator.deviceMemory`, which Chromium caps at 8 GB and
+  rounds down; it can't see what else the host is running. Revisit with RAM settings (phase D) or
+  if a user's tab gets killed.
 - **Snapshots in parallel SMP** (M8): stop every vCPU worker at a chunk boundary (STOP, all
   `OUT`), with every maintenance queue drained and no CPU_ON request pending, before saving;
   round-robin needs nothing new.
+- **A forbidden MP+dmb.sy+addr outcome, once** (M8 loop 4's CI, Chromium, parallel JIT, `-s 1000
+  -r 10`): 1 of 20,000 (`1:X1=1; 1:X3=0`); the test passed in 6 repeats right after and in every
+  run before. The litmus address dependency is `eor wN, wM, wM` feeding the load's offset. Not
+  checked yet: whether V8's optimizing tier folds the `i32.xor` of a value with itself to 0 (which
+  would drop the dependency, and the host may then reorder the loads; wasm promises no dependency
+  order for plain accesses). Real code's dependencies (a loaded pointer dereferenced) can't be
+  folded that way. Check with `--print-wasm-code` on that block; if so, keep `eor` of a register
+  with itself opaque (or accept it and document the litmus exception). Rerun CI if it recurs.
 - **Hours-long whole-platform stress** (repeated parallel boots and workloads for hours): deferred
   by the user (2026-09-28) to a later milestone, once more virtio devices and integration features
   exist, when such a run is likelier to catch non-obvious platform-wide issues.

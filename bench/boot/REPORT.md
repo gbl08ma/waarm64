@@ -374,3 +374,15 @@ A serial flood (`yes` on Debian's ttyAMA0) stays interruptible: Ctrl+C returns t
 ~55 ms and the screen keeps drawing (before and after the change; `runAsync` now waits 1 ms rather
 than returning at once when output came in since its last return, so a caller can't spin on
 microtasks).
+
+## M8 loop 4: loading and boot progress
+
+Chromium 153.0.8010.52 headless, the M4 VM; the page (`web/app/`), Debian on 4 parallel vCPUs, a
+fresh overlay each run. Page load to `running` (the serial login prompt): 28.6, 29.1, 28.9, 29.0 s
+(loop 3: 29.0, 28.9, 28.6): streaming the downloads for their progress costs nothing measurable.
+Where the time goes (one run, 50 ms polling): the downloads (77.6 MB: the kernel, the initrd and
+the core, from localhost) are done 0.22 s after page load; fbcon draws its first pixels 2.4 s
+later (1.7 s of guest time: the kernel switches its console to the framebuffer then, replaying
+the log); the login prompt comes 26 s after that. So the boot card over the screen (the downloads'
+progress, then the kernel's serial lines) shows for ~2.6 s, and the screen itself is the boot's
+progress for the rest. Raw: `results/m8-loop4/page-running.json`.

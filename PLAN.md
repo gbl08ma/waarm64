@@ -137,7 +137,7 @@ Unscheduled loose ends, by area: [docs/backlog.md](docs/backlog.md).
   toolchain is pinned, and `simd128` stays off until LLVM's bitmask bug is fixed.
 - **Guest RAM ceiling:** layout A caps RAM at ~3.5 GiB; past it, spill memories as NUMA nodes.
   Chromium gives no catchable error when host RAM runs out (the renderer is OOM-killed), so guest
-  RAM is sized against host RAM up front.
+  RAM is sized against host RAM up front (the page: [docs/frontend.md](docs/frontend.md) "Errors").
 - **Linux arm64 has no V8 trap handler:** explicit bounds checks cost up to 27% there, which
   macOS and x86_64 users don't pay; our numbers on the dev VM are pessimistic for them.
 - **Cross-origin isolation** (COOP/COEP) is required for `SharedArrayBuffer`; it constrains

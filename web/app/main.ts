@@ -2,24 +2,49 @@
 // console on xterm.js, power state and a status line. The VM runs in
 // web/app/worker.ts; this is DOM code only, talking to it through
 // web/app/protocol.ts. `?machine=buildroot` picks the test guest, `?ncpus=N`
-// the vCPU count, `?view=screen|terminal|both` the first view.
+// the vCPU count, `?view=screen|terminal|both` the first view (the last one
+// chosen is remembered), `?params=` extra kernel parameters.
 import { Terminal } from '@xterm/xterm';
 import { attachInput, type Input } from '../input.ts';
-import { defaultCpus, MACHINES, type MachineName } from './machine.ts';
-import type { FromWorker, PowerState, Status, ToWorker } from './protocol.ts';
+import { overlayBytes, removeOverlay } from '../overlay.ts';
+import { defaultCpus, hostMemoryGiB, MACHINES, type MachineName } from './machine.ts';
+import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
 const machine = (params.get('machine') ?? 'debian') as MachineName;
 if (!(machine in MACHINES)) throw new Error(`no machine ${machine}`);
 const ncpus = Number(params.get('ncpus')) || defaultCpus(navigator.hardwareConcurrency || 4);
+const spec = MACHINES[machine];
+
+// Settings remembered per browser (the view, for now). Storage can be off or throw: then nothing is remembered.
+type Settings = { view?: View };
+const SETTINGS = 'webpc.settings';
+const settings = (): Settings => {
+  try {
+    return JSON.parse(localStorage.getItem(SETTINGS) ?? '{}') as Settings;
+  } catch {
+    return {};
+  }
+};
+const remember = (s: Settings) => {
+  try {
+    localStorage.setItem(SETTINGS, JSON.stringify({ ...settings(), ...s }));
+  } catch { /* not remembered */ }
+};
 
 let canvas = $<HTMLCanvasElement>('screen');
 const screenBox = $('screen-view');
 const stateEl = $('state');
 const statusEl = $('status');
 const messageEl = $('message');
+const messageText = $('message-text');
+const messageActions = $('message-actions');
 const restartBtn = $<HTMLButtonElement>('restart');
+const resetDiskBtn = $<HTMLButtonElement>('reset-disk');
+const bootCard = $('boot');
+const bootProgress = $<HTMLProgressElement>('boot-progress');
+const bootLine = $('boot-line');
 
 // The serial terminal. The PL011 has no size negotiation: the guest assumes 80×24 unless told (`stty`).
 const term = new Terminal({ cols: 80, rows: 24, convertEol: false, scrollback: 5000, fontFamily: 'ui-monospace, "DejaVu Sans Mono", Menlo, monospace', fontSize: 14, theme: { background: '#0b0d10' } });
@@ -27,7 +52,8 @@ term.open($('terminal'));
 
 // Views: the screen first (M8 decision 2), the terminal, or both.
 type View = 'screen' | 'terminal' | 'both';
-const setView = (v: View) => {
+const setView = (v: View, save = true) => {
+  if (save) remember({ view: v });
   document.body.dataset.view = v;
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-view-button]')) b.setAttribute('aria-pressed', String(b.dataset.viewButton === v));
   fit();
@@ -38,7 +64,7 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-view-button]
 
 // The canvas at an integer multiple of the framebuffer in device pixels when that fits (crisp),
 // scaled down to fit (smooth) otherwise.
-const fb = MACHINES[machine].framebuffer;
+const fb = spec.framebuffer;
 function fit() {
   if (!screenBox.clientWidth) return; // hidden
   const dpr = devicePixelRatio;
@@ -56,18 +82,72 @@ matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', f
 // One machine at a time; a restart stops it and starts a new worker (fresh memory, fresh ports, a fresh canvas).
 type Run = { worker: Worker; input: Input; serial: MessagePort };
 let run: Run | undefined;
-let state: PowerState = 'loading';
+/** The machine's, plus the page's own `idle`: no machine yet (waiting for "Start anyway"). */
+type PageState = PowerState | 'idle';
+let state: PageState = 'loading';
 let last: { status: Status; at: number } | undefined;
 
-function setState(s: PowerState, message?: string) {
+// The serial console's output, kept for the log a user can copy or save (the terminal's scrollback is shorter).
+const LOG_MAX = 1 << 20;
+let log = '';
+let lastLine = ''; // the boot card's line
+const addLog = (text: string) => {
+  log += text;
+  if (log.length > 2 * LOG_MAX) log = log.slice(-LOG_MAX);
+  if (bootCard.hidden) return;
+  const lines = (lastLine + text).split(/\r?\n/);
+  lastLine = lines.pop()!;
+  const shown = lines.reverse().find((l) => l.trim());
+  if (shown !== undefined) bootLine.textContent = shown.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trim();
+};
+
+type Action = { label: string; run: (button: HTMLButtonElement) => void };
+/** A standing note (another browser), shown while there's no message. */
+let note = '';
+
+function setState(s: PageState, message?: string, actions: Action[] = [], kind: 'error' | 'warn' = 'error') {
   state = s;
-  stateEl.textContent = { loading: 'Loading', booting: 'Booting', running: 'Running', off: 'Powered off', rebooting: 'Rebooting', crashed: 'Crashed' }[s];
+  stateEl.textContent = { idle: 'Not started', loading: 'Loading', booting: 'Booting', running: 'Running', off: 'Powered off', rebooting: 'Rebooting', crashed: 'Crashed', failed: "Couldn't start" }[s];
   stateEl.dataset.state = s;
   document.body.dataset.state = s;
-  messageEl.textContent = message ?? '';
-  messageEl.hidden = !message;
-  restartBtn.textContent = s === 'off' ? 'Start' : 'Restart';
+  messageText.textContent = message ?? note;
+  messageEl.dataset.kind = message ? kind : 'warn';
+  messageActions.replaceChildren(...actions.map((a) => {
+    const b = document.createElement('button');
+    b.textContent = a.label;
+    b.onclick = () => a.run(b);
+    return b;
+  }));
+  messageEl.hidden = !(message || note);
+  restartBtn.textContent = s === 'off' || s === 'idle' ? 'Start' : s === 'failed' ? 'Retry' : 'Restart';
+  bootCard.hidden = !(s === 'loading' || s === 'booting') || bootCard.dataset.done === 'true';
 }
+
+// What a user can do about each problem (the worker's message says what happened and why).
+const retry: Action = { label: 'Retry', run: () => void restart() };
+const showLog: Action = { label: 'Show serial log', run: () => { setView(document.body.dataset.view === 'screen' ? 'both' : (document.body.dataset.view as View), false); term.scrollToBottom(); } };
+const copyLog: Action = {
+  label: 'Copy serial log',
+  run: (b) => navigator.clipboard.writeText(log).then(() => { b.textContent = 'Copied'; }, () => { b.textContent = "Couldn't copy: save it instead"; }),
+};
+const saveLog: Action = {
+  label: 'Save serial log',
+  run: () => {
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([log], { type: 'text/plain' })), download: `webpc-${machine}-serial-${new Date().toISOString().replace(/[:.]/g, '-')}.log` });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  },
+};
+const resetDisk: Action = { label: 'Reset disk…', run: () => void resetDiskAsked() };
+const ACTIONS: Record<Problem, Action[]> = {
+  'missing-core': [retry],
+  'missing-image': [retry],
+  'disk-in-use': [retry],
+  'disk-mismatch': [resetDisk],
+  memory: [retry],
+  panic: [showLog, copyLog, saveLog],
+  emulator: [showLog, copyLog, saveLog],
+};
 
 function start() {
   // The machine worker draws the screen (web/display.ts): a canvas hands its drawing over only once.
@@ -83,36 +163,60 @@ function start() {
   const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1), serial: serial.port1 };
   run = r;
   last = undefined;
+  log = lastLine = '';
+  bootCard.dataset.done = 'false';
+  bootLine.textContent = '';
+  bootProgress.removeAttribute('value'); // indeterminate until the sizes are known
+  $('boot-title').textContent = `Starting ${spec.label}`;
   setState('loading');
   worker.onmessage = (e: MessageEvent<FromWorker>) => {
     if (run !== r) return;
     const m = e.data;
     if (m.type === 'state') {
-      setState(m.state, m.message);
+      setState(m.state, m.message, m.problem ? ACTIONS[m.problem] : []);
+      if (m.state === 'booting') {
+        $('boot-title').textContent = `Booting ${spec.label}`;
+        bootProgress.removeAttribute('value');
+        bootLine.textContent = 'Starting the kernel'; // then its lines, until its console takes the screen (~2 s on Debian)
+      }
+      if (m.state === 'running') bootCard.hidden = true;
       if (m.state === 'rebooting') void restart();
     } else if (m.type === 'serial') {
       term.write(m.data);
+      addLog(m.data);
     } else if (m.type === 'status') {
       showStatus(m.status);
+    } else if (m.type === 'progress') {
+      if (m.total) bootProgress.value = m.loaded / m.total;
+      const mb = (n: number) => (n / 1e6).toFixed(1);
+      bootLine.textContent = m.total ? `Downloading ${mb(m.loaded)} of ${mb(m.total)} MB` : `Downloading ${mb(m.loaded)} MB`;
+      if (state === 'loading') stateEl.textContent = m.total ? `Loading ${Math.floor((100 * m.loaded) / m.total)}%` : 'Loading';
+    } else if (m.type === 'screen') {
+      bootCard.dataset.done = 'true'; // the guest's console has the screen: it shows the boot from here
+      bootCard.hidden = true;
     }
   };
-  worker.onerror = (e) => { if (run === r) setState('crashed', `machine worker: ${e.message}`); };
-  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen]);
+  worker.onerror = (e) => { if (run === r) setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator); };
+  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen]);
 }
 
-/** Stops the machine (its worker releases the disk overlay first, or gets 3 s to) and starts a new one. */
-async function restart() {
+/** Stops the machine, if any: its worker releases the disk overlay first (or gets 3 s to). */
+async function stop() {
   const r = run;
   run = undefined;
-  if (r) {
-    r.input.detach();
-    await new Promise<void>((resolve) => {
-      const t = setTimeout(resolve, 3000);
-      r.worker.onmessage = (e: MessageEvent<FromWorker>) => { if (e.data.type === 'stopped') { clearTimeout(t); resolve(); } };
-      r.worker.postMessage({ type: 'stop' } satisfies ToWorker);
-    });
-    r.worker.terminate();
-  }
+  if (!r) return;
+  r.input.detach();
+  await new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, 3000);
+    r.worker.onmessage = (e: MessageEvent<FromWorker>) => { if (e.data.type === 'stopped') { clearTimeout(t); resolve(); } };
+    r.worker.postMessage({ type: 'stop' } satisfies ToWorker);
+  });
+  r.worker.terminate();
+}
+
+/** Stops the machine and starts a new one. */
+async function restart() {
+  await stop();
   term.reset();
   start();
 }
@@ -121,6 +225,28 @@ restartBtn.onclick = () => {
   if ((state === 'running' || state === 'booting') && !confirm('Restart the machine? Like pulling the plug: unsaved work in the guest is lost.')) return;
   void restart();
 };
+
+// The disk reset (M8 decision 4): stop the machine (its overlay's files are locked while it runs), delete the overlay, start again.
+async function resetDiskAsked() {
+  const name = spec.overlay;
+  if (!name) return;
+  const written = await overlayBytes(name).catch(() => 0);
+  const size = !written ? '' : written < 1e6 ? ` (${Math.ceil(written / 1e3)} KB)` : ` (${(written / 1e6).toFixed(0)} MB)`;
+  if (!confirm(`Reset ${spec.label}'s disk? Everything the machine wrote to it${size} is deleted: your files, installed packages and settings. It then boots from the image as published.`)) return;
+  await stop();
+  term.reset();
+  setState('loading');
+  stateEl.textContent = 'Resetting the disk';
+  try {
+    await removeOverlay(name);
+  } catch (e) {
+    setState('failed', `The disk couldn't be reset: ${String(e)}\nClose other tabs of this page (one of them may have the disk open), then try again.`, [resetDisk, retry]);
+    return;
+  }
+  start();
+}
+resetDiskBtn.hidden = !spec.overlay;
+resetDiskBtn.onclick = () => void resetDiskAsked();
 
 // Keys typed into the terminal go to the PL011 (xterm.js sends what a terminal would: \r for Enter, escape sequences).
 term.onData((d) => run?.serial.postMessage(d));
@@ -166,7 +292,31 @@ function showStatus(s: Status) {
   ].filter(Boolean).join(' · ');
 }
 
-$('machine').textContent = { debian: 'Debian 13', buildroot: 'Buildroot (test guest)' }[machine];
-const view = params.get('view') as View | null;
-setView(view === 'terminal' || view === 'both' ? view : 'screen');
-start();
+$('machine').textContent = spec.label;
+// The view: the query's, else the one chosen last in this browser, else the screen (M8 decision 2).
+const isView = (v: unknown): v is View => v === 'screen' || v === 'terminal' || v === 'both';
+const asked = params.get('view');
+setView(isView(asked) ? asked : isView(settings().view) ? settings().view! : 'screen', false);
+
+// Before starting: what the page can tell won't work.
+function boot() {
+  // SharedArrayBuffer (the guest's memory, shared by the vCPU workers) needs cross-origin isolation.
+  if (!crossOriginIsolated) {
+    setState('failed', "This page needs cross-origin isolation for the emulator's shared memory, and it wasn't served with it (the COOP and COEP headers).\nRun `npm start` in the repository and open the URL it prints: its server sends them.");
+    restartBtn.hidden = resetDiskBtn.hidden = true;
+    return;
+  }
+  // Chromium kills a renderer that runs out of memory without an error to catch (PLAN.md §4): judge up front.
+  const need = hostMemoryGiB(spec.ramMiB, ncpus);
+  const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  if (has !== undefined && has < need) {
+    const fewer = Math.floor((has - hostMemoryGiB(spec.ramMiB, 0)) / (hostMemoryGiB(0, 1) - hostMemoryGiB(0, 0)) + 1e-9);
+    setState('idle', `This machine needs about ${need.toFixed(1)} GB of memory (${spec.ramMiB} MiB of guest RAM plus the emulator, ${ncpus} vCPU${ncpus > 1 ? 's' : ''}), and this device reports ${has} GB.\nIf memory runs out, the browser closes the tab without warning. Close other tabs and apps first${fewer > 0 && fewer < ncpus ? `, or use fewer vCPUs (?ncpus=${fewer} fits)` : ''}.`, [{ label: 'Start anyway', run: () => void restart() }], 'warn');
+    return;
+  }
+  start();
+}
+// Other browsers may work in part; nothing is done for them yet (their pass is in docs/backlog.md).
+const brands = (navigator as Navigator & { userAgentData?: { brands: { brand: string }[] } }).userAgentData?.brands ?? [];
+if (!brands.some((b) => b.brand === 'Chromium')) note = 'webpc is developed and tested in Chromium (and Chrome); in this browser, parts of it may not work.';
+boot();

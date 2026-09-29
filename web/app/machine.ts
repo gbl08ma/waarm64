@@ -5,6 +5,10 @@
 // nothing here depends on the dev server's layout beyond where target/ is.
 
 export type Machine = {
+  /** Its name on the page. */
+  label: string;
+  /** What makes its images, for the page's message when one is missing. */
+  prepare: string;
   kernel: string;
   initrd?: string;
   /** The root disk (virtio-blk over HTTP ranges). */
@@ -23,6 +27,8 @@ const images = (path: string) => new URL(`../../target/images/${path}`, import.m
 export const MACHINES = {
   // The measured configuration (bench/boot/REPORT.md "M8 loop 0", docs/images.md "Debian for interaction").
   debian: {
+    label: 'Debian 13',
+    prepare: '`npm start` (it downloads and prepares Debian)',
     kernel: images('debian/Image'),
     initrd: images('debian/initrd.img'),
     disk: images('debian/disk.qcow2'),
@@ -36,6 +42,8 @@ export const MACHINES = {
   // A shell on the serial console. No fbcon in its kernel: the screen stays black. The root is
   // mounted read-only; the overlay is there so a restart exercises its hand-over (the OPFS locks).
   buildroot: {
+    label: 'Buildroot (test guest)',
+    prepare: '`images/build.sh` (docs/images.md)',
     kernel: images('linux/Image'),
     disk: images('buildroot/rootfs.ext4'),
     overlay: 'webpc-buildroot',
@@ -50,3 +58,19 @@ export type MachineName = keyof typeof MACHINES;
 
 /** The default vCPU count: the host's cores minus two (the page and the device worker), at most 4. */
 export const defaultCpus = (cores: number) => Math.max(1, Math.min(4, cores - 2));
+
+/**
+ * The host memory a machine needs, GiB: its RAM, ~1 GiB for the browser and the first vCPU's
+ * worker, ~0.3 GiB per vCPU (bench/boot/REPORT.md "M8 loop 0": 2.3 GiB of RSS on 1 vCPU, 3.1 on
+ * 4, with 1 GiB of guest RAM). Chromium has no catchable out-of-memory error (its renderer is
+ * killed: PLAN.md §4 "Guest RAM ceiling"), so the page compares this with
+ * `navigator.deviceMemory` before it starts a machine.
+ */
+export const hostMemoryGiB = (ramMiB: number, ncpus: number) => ramMiB / 1024 + 1 + 0.3 * ncpus;
+
+/** `cmdline` with `extra` kernel parameters, before a `--` (whatever follows it goes to init). */
+export function withParams(cmdline: string, extra: string) {
+  if (!extra.trim()) return cmdline;
+  const at = cmdline.indexOf(' -- ');
+  return at < 0 ? `${cmdline} ${extra.trim()}` : `${cmdline.slice(0, at)} ${extra.trim()}${cmdline.slice(at)}`;
+}

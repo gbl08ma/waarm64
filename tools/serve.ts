@@ -69,7 +69,8 @@ export function startServer(port = 0): Promise<Server> {
         await f.close();
       }
     } catch {
-      res.writeHead(404).end();
+      if (res.headersSent) res.destroy(); // the client went away mid-answer
+      else res.writeHead(404).end();
     }
   });
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)));

@@ -23,21 +23,33 @@
   #state::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--busy); }
   #state[data-state=running]::before { background: var(--ok); }
   #state[data-state=off]::before { background: var(--off); }
-  #state[data-state=crashed]::before { background: var(--bad); }
+  #state[data-state=crashed]::before, #state[data-state=failed]::before { background: var(--bad); }
+  #state[data-state=idle]::before { background: var(--off); }
   .spacer { flex: 1; }
   .views { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   button { font: inherit; color: var(--text); background: transparent; border: 0; padding: 4px 12px; cursor: pointer; }
   button:hover { background: #1e232a; }
   .views button[aria-pressed=true] { background: #253044; color: #fff; }
-  #restart { border: 1px solid var(--line); border-radius: 6px; }
-  #message { margin: 0; padding: 8px 16px; background: #2a1215; color: #ffb4b6; border-bottom: 1px solid #5c1d22; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; max-height: 30vh; overflow: auto; }
+  #restart, #reset-disk { border: 1px solid var(--line); border-radius: 6px; }
+  #message { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; padding: 10px 16px; background: #2a1215; color: #ffb4b6; border-bottom: 1px solid #5c1d22; }
+  #message[data-kind=warn] { background: #2a2312; color: #f3d98b; border-color: #5c4b1d; }
+  #message[hidden] { display: none; }
+  #message-text { flex: 1 1 480px; margin: 0; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; max-height: 30vh; overflow: auto; }
+  #message-text::first-line { font-weight: 600; }
+  #message-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  #message-actions button { border: 1px solid currentColor; border-radius: 6px; color: inherit; }
   main { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px; }
   #screen-view { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; }
   #screen-frame { position: relative; display: flex; }
   #screen { background: #000; outline: none; box-shadow: 0 0 0 1px var(--line); touch-action: none; }
   #screen:focus { box-shadow: 0 0 0 2px var(--accent); }
   #screen-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: #000c; color: var(--text); font-size: 12px; pointer-events: none; }
-  #screen:focus + #screen-hint { display: none; }
+  #screen:focus + #screen-hint, body:not([data-state=running]):not([data-state=booting]) #screen-hint { display: none; }
+  #boot { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; background: #000; color: var(--dim); pointer-events: none; }
+  #boot[hidden] { display: none; }
+  #boot-title { color: var(--text); font-size: 15px; }
+  #boot progress { width: min(320px, 80%); height: 6px; accent-color: var(--accent); }
+  #boot-line { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: ui-monospace, monospace; font-size: 12px; }
   #terminal-view { min-height: 0; display: flex; justify-content: center; align-items: flex-start; overflow: auto; }
   #terminal { padding: 8px; background: #0b0d10; border: 1px solid var(--line); border-radius: 4px; }
   #terminal:focus-within { border-color: var(--accent); }
@@ -70,13 +82,14 @@
     <button data-chord="ControlLeft AltLeft F2">Ctrl+Alt+F2</button>
   </div></details>
   <button id="fullscreen" title="Full screen: browser shortcuts (Ctrl+W, Ctrl+T) and Esc go to the machine; hold Esc to leave">Full screen</button>
+  <button id="reset-disk" title="Delete what the machine wrote to its disk and boot from the image again" hidden>Reset disk</button>
   <button id="restart">Restart</button>
 </header>
-<pre id="message" hidden></pre>
+<div id="message" role="alert" hidden><pre id="message-text"></pre><div id="message-actions"></div></div>
 <main>
-  <div id="screen-view"><div id="screen-frame"><canvas id="screen" tabindex="0" aria-label="Machine screen"></canvas><div id="screen-hint">Click to type</div></div></div>
+  <div id="screen-view"><div id="screen-frame"><canvas id="screen" tabindex="0" aria-label="Machine screen"></canvas><div id="screen-hint">Click to type</div><div id="boot"><div id="boot-title"></div><progress id="boot-progress"></progress><div id="boot-line"></div></div></div></div>
   <div id="terminal-view"><div id="terminal"></div></div>
 </main>
 <footer id="status"></footer>
-<script type="module" src="./main.ts"></script>
+<script type="module" src="./main.ts" onerror="document.getElementById('message-text').textContent = 'The page\'s scripts didn\'t load (is xterm.js installed in node_modules?).\nRun `npm start` in the repository: it installs what the page needs, then serves it.'; document.getElementById('message').hidden = false; document.getElementById('state').dataset.state = 'failed'; document.getElementById('state').textContent = 'Couldn\'t start'"></script>
 </html>

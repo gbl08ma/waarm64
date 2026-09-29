@@ -1,0 +1,8 @@
+{
+ "what": "Page load to the `running` state (the serial login prompt), Debian, 4 parallel vCPUs, JIT, a fresh browser context (fresh OPFS overlay) each run; bench/results/local/m8-loop3/boottime.ts. `phases`: one run of bench/results/local/m8-loop4/look.ts, ms from page.goto to the first sight (50 ms polling) of: the boot card while loading, booting (downloads done: 77.6 MB), the screen's first content (the card hidden), running",
+ "commit": "M8 loop 4 working tree (before its commit)",
+ "chromium": "153.0.8010.52 headless",
+ "host": "the M4 dev VM (8 vCPUs)",
+ "seconds": [28.627, 29.053, 28.932, 29.028],
+ "phases": { "loading": 75, "booting": 222, "screen": 2614, "running": 28910 }
+}
