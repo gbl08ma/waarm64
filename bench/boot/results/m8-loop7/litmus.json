@@ -1,0 +1,11 @@
+{
+  "what": "The litmus image (images/build.sh litmus) in Node, parallel SMP, JIT, 4 vCPUs, webpc.litmus=-s,1000,-r,N, webpc.stress=-n,1000: MP+dmb.sy+addr's forbidden outcome (1:X1=1; 1:X3=0) per run. 'before' is b8efa00 (EOR of a register with itself as i32.xor), 'after' the loop 7 fix (x & a mutable zero global).",
+  "node": "26.7.0",
+  "host": "the M4 dev VM (8 vCPUs), otherwise idle",
+  "runs": [
+    { "build": "before", "r": 50, "outcomes": 100000, "forbidden": [2, 1, 4, 5, 5] },
+    { "build": "before", "r": 200, "outcomes": 400000, "forbidden": [33, 12, 50] },
+    { "build": "before", "r": 10, "outcomes": 20000, "node_flags": "--no-liftoff", "forbidden": [1, 0, 0] },
+    { "build": "after", "r": 200, "outcomes": 400000, "forbidden": [0, 0, 0] }
+  ]
+}

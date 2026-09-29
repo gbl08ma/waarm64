@@ -22,13 +22,13 @@ and the exact-step boots.
 | Buildroot boot and device test | `core/tests/boot.rs`; `tests/boot-node.test.ts`; `tests/browser.test.ts` | Linux boots, virtio console/rng/blk/net/9p/input, framebuffer, realtime mode, writable overlay, console input (`-- /bin/sh` reads 5.5 KB from the host at a fixed step: more than the RX ring; in parallel through a `MessagePort`) |
 | LTP subset + arm64 kselftests | `core/tests/ltp.rs` (interpreter, each result against its table); `tests/boot-node.test.ts` (JIT) | 93 syscall tests; `syscall-abi`, `ptrace`, `hwcap`, `tpidr2`, `tags_test`, signal tests |
 | Crypto test kernel | `tests/boot-node.test.ts` (JIT; interpreter with `WEBPC_INTERP=1`) | the arm64 CE drivers' full self-tests, lib/crypto's SHA KUnit suites |
-| Distros | `core/tests/distros.rs` (interpreter: Alpine; Debian with `WEBPC_DEBIAN_NATIVE=1`); `tests/boot-node.test.ts` (Alpine, Alpine userspace, JIT); `tests/browser.test.ts` (Alpine, Debian, JIT) | real distro boots from virtio-blk |
+| Distros | `core/tests/distros.rs` (interpreter: Alpine; Debian with `WEBPC_DEBIAN_NATIVE=1`); `tests/boot-node.test.ts` (Alpine, Alpine userspace, JIT); `tests/browser.test.ts` (Alpine, Debian, JIT); `tests/page-debian.test.ts` (Debian on the page, parallel) | real distro boots from virtio-blk |
 | Parallel SMP (a thread per vCPU, realtime: not reproducible, so repeated, every run must pass; `WEBPC_PARALLEL_RUNS`) | `core/tests/baremetal.rs` `baremetal_parallel` (every test, 5×), `core/tests/boot.rs` (Buildroot on 1, 2, 4 vCPUs), `core/tests/distros.rs` `alpine_smp` with `WEBPC_PARALLEL=1`; `tests/boot-node.test.ts` (bare-metal under the JIT and JIT-check, kvm-unit-tests' SMP set, litmus and stress on 4, Buildroot on 2 and 4, Alpine on 4); `tests/browser.test.ts` (Buildroot on 4; litmus and stress on 4; Alpine on 4; Debian on 4 with `WEBPC_PARALLEL_DEBIAN=1`) | the vCPU workers, wake-ups, the platform lock, broadcast maintenance and the DSB wait (M7) |
 | ThreadSanitizer | `scripts/tsan.sh` (in `ci.sh`, ~20 s warm) | the native parallel runner under `-Zsanitizer=thread` (std rebuilt, `target/tsan`): the bare-metal tests 3×, Buildroot on 1, 2, 4 vCPUs, the litmus image on 4 (~1 min); any report fails, nothing is suppressed (guest RAM is accessed with relaxed atomics: [cpu.md](cpu.md) "Memory accesses and atomics"); a planted plain load is reported |
 | Browser-only | `tests/browser.test.ts` | cross-origin isolation, the device worker, sync XHR ranges, OPFS, the canvas, DOM input, the spike page |
 | The page ([frontend.md](frontend.md)) | `tests/browser.test.ts` (smoke test on the Buildroot guest, 2 parallel vCPUs, ~7 s; and the screen's dirty rows on a canvas) | the machine worker and its protocol, pixels written to `/dev/fb0` on the worker-drawn canvas, serial output to xterm.js and keys typed there to the shell, a key on the screen to `/dev/input/event0`, a held key released when the screen loses the focus, a Keys-menu chord (order and release), the tablet through a scaled-down canvas (`/dev/input/event1`), a paste over 4 KiB (its md5), full screen, power off, Start, Restart while running (the disk overlay handed over); the page's messages (~4 s: served without COOP/COEP, xterm.js, the core or an image missing then Retry, a device reporting 1 GB then Start anyway, an overlay over another image then Reset disk); a guest panic (`?params=init=/nonexistent`) kept on show with the serial log copied and saved, the remembered view, a second tab refused the disk then Retry, a file kept over a restart and gone after Reset disk (~15 s) |
 | The page on Debian, end to end ([frontend.md](frontend.md) "The end-to-end test") | `tests/page-debian.test.ts` (with `WEBPC_DISTROS=debian`: three Debian boots, ~2 min alone; `WEBPC_PAGE_RUNS=N` repeats it; it and the `npm start` run take turns through `tests/debian-lock.ts`; the ready marker's unit test always) | what a user does on the page's own VM: Debian on 2 parallel vCPUs from a fresh profile reaches `running`; root logs in on the serial terminal (xterm.js to the PL011), waits there for tty1's `login: ` in `/dev/vcs1`, then logs in on the **screen** (keys on the canvas through virtio-input) and runs a command that writes a marker to `/dev/ttyAMA0`, read back on the serial side; tty1's text (`/dev/vcs1`) shows the prompt and the command, and the canvas isn't black; a file written and synced is there after a reload (no shutdown), and gone after Reset disk (confirmed) |
-| `npm start` ([frontend.md](frontend.md) "`npm start`") | `tests/start.test.ts` (the checks: ms; the run: ~40 s, with `WEBPC_DISTROS=debian`) | the Node-version and rustup messages (an old Node faked with `--import`; a `PATH` with Node alone), the npm staleness rule, the core's input hash; then a copy of the repository as a clone has it (tracked and untracked files, no `node_modules` or `target/`) runs `npm start` (PORT=0, Debian from this checkout's download cache): `npm ci`, Debian prepared, the URL printed, the page reaches `running` in Chromium, and a second start with nothing to do takes < 5 s (~0.1). The copy gets this checkout's core and a matching stamp; **`WEBPC_START_COLD=1`** makes it build its own (the whole path a user takes; run it when `start.ts` or the build changes) |
+| `npm start` ([frontend.md](frontend.md) "`npm start`") | `tests/start.test.ts` (the checks: ms; the run: ~5 s, with `WEBPC_DISTROS=debian`) | the Node-version and rustup messages (an old Node faked with `--import`; a `PATH` with Node alone), the npm staleness rule, the core's input hash; then a copy of the repository as a clone has it (tracked and untracked files, no `node_modules` or `target/`) runs `npm start` (PORT=0, Debian from this checkout's download cache): `npm ci`, Debian prepared (its kernel and initrd identical to this checkout's), the URL printed, the page boots it in Chromium until the guest's console takes the screen, and a second start with nothing to do takes < 5 s (~0.1). The copy gets this checkout's core and a matching stamp; **`WEBPC_START_COLD=1`** makes it build its own (the whole path a user takes; run it when `start.ts` or the build changes) |
 | Host code | `tests/{devices,overlay,qcow2,ext4,serve,wasm-encoder,core-wasm,memory-kernels}.test.ts` | 9p server, loopback adapter, input config, overlay, qcow2 fixtures, the ext4 reader and partition tables (`tests/ext4/make.sh`'s fixtures against their manifest), the dev server (ranges, the page, the `node_modules` allow-list), the encoder |
 | Decoder sweep | `core/fuzz` (not in CI) | every 2³² word vs Capstone |
 | virtqueue fuzzing | `cargo fuzz run virtqueue` (not in CI) | the transport and split-queue parser |
@@ -42,8 +42,19 @@ Rules behind that matrix:
   the native run doesn't.
 - `WEBPC_DISTROS` (comma list: `alpine,alpine-user,debian`) picks the distro tests; `ci.sh`
   defaults to the current images of all three. Debian boots in Chromium under the JIT by default
-  (~45 s); its native interpreted boot (~2.5 min) also needs `WEBPC_DEBIAN_NATIVE=1` (before a
+  (~45 s alone; the harness's deterministic boot, and the page's in `tests/page-debian.test.ts`);
+  its native interpreted boot (~2.5 min) also needs `WEBPC_DEBIAN_NATIVE=1` (before a
   guest-visible change and at milestone ends).
+- **Overlap between the Debian tests** (M8 loop 7, reviewed when the page test joined CI): the
+  harness's deterministic boot in `browser.test.ts` stays, since it is the only CI run of
+  Debian in deterministic mode and of the one-vCPU (fence-free) JIT on Debian's code, with a
+  systemd power-off; leaving it out saved no wall time anyway (`npm test` 303 → 299 s). The fresh
+  copy's run in `start.test.ts` no longer boots to a login: its kernel and initrd must match this
+  checkout's byte for byte, and the page test boots those to a login three times, so it stops
+  once the guest's console takes the screen (~3 s after the URL instead of ~40 s: a Debian boot
+  less of load). **`npm test`'s wall time is `tests/boot-node.test.ts`'s** (~295 s of tests run
+  one after another in one file; the Debian page pair, chained by the lock, ends ~110 s before
+  it): splitting that file is the lever if CI time matters.
 - Guest-image tests skip loudly when `target/images/<name>` is missing or stale
   (`images/build.sh --check`).
 
@@ -207,7 +218,7 @@ skipped (on one vCPU only `CoRW1`, `CoWR`, `CoWW` run).
   | `core/tests/litmus.rs` | round-robin, interpreter (steps: `litmus-4cpu`) | `-s 100 -r 1`, `-n 20000` | 9 s |
   | `core/tests/litmus.rs` | parallel, interpreter | `-s 1000 -r 10`, `-n 100000` | 12 s |
   | `tests/boot-node.test.ts` | round-robin, JIT (the same steps) | as the interpreter's | 3.4 s |
-  | `tests/boot-node.test.ts` | parallel, JIT / JIT-check | as above / `-s 100 -r 2`, `-n 10000` | 8 s / 43 s (JIT-check's boot is 30 s) |
+  | `tests/boot-node.test.ts` | parallel, JIT / JIT-check | `-s 1000 -r 50`, `-n 100000` / `-s 100 -r 2`, `-n 10000` | 18 s / 43 s (JIT-check's boot is 30 s) |
   | `tests/browser.test.ts` | parallel, JIT | `-s 1000 -r 10`, `-n 100000` | 9 s |
   | `scripts/tsan.sh` | parallel, interpreter, ThreadSanitizer | `-s 100 -r 1`, `-n 10000` | 60 s |
 
@@ -216,6 +227,14 @@ skipped (on one vCPU only `CoRW1`, `CoWR`, `CoWW` run).
   JIT; SB and R under the native interpreter). JIT-stress round-robin takes over 5 min: only with
   `WEBPC_JIT_STRESS=1`. With DMB emitted as nothing (planted), MP+dmb.sys, MP+dmb.st+dmb.ld,
   MP+dmb.sy+addr, SB+dmb.sys and 2+2W+dmb.sys fail in parallel.
+  **An address dependency lost in V8** (M8 loop 7): TurboFan folded the litmus idiom `eor wN, wM,
+  wM` to 0, so the dependent load's address no longer depended on the first load (docs/jit.md
+  "Atomics"). It showed as MP+dmb.sy+addr's forbidden outcome about once in 10⁴–10⁵ once the
+  code tiered up: twice in CI (1 of 20,000, Chromium) and 95 times in 1.2M in Node at `-r 200`
+  (none after the fix). Short runs run mostly Liftoff code, which doesn't fold: the Node parallel
+  JIT run uses `-r 50`, where the unfixed build failed 5 of 5 runs. To look for such a
+  rare outcome, boot the litmus image in parallel JIT with `webpc.litmus=-s,1000,-r,200` (~1 min
+  in Node, 400K outcomes a test).
 
 ## Atomics stress (`images/litmus/stress.c`, M7)
 

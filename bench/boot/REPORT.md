@@ -415,3 +415,28 @@ on both consoles) takes **110–112 s** alone, 8 of 8 runs passing with the fina
 wait, without diagnostics; the page's ready marker is now matched anywhere in the output (the
 likely cause: docs/frontend.md "The end-to-end test"). No boot benchmark ran: nothing on their
 path changed. Raw: `results/m8-loop6/page-debian.json`.
+
+## M8 loop 7: phase A's exit; an address dependency lost in V8
+
+Node 26.7.0 and Chromium 153.0.8010.52 headless, the M4 VM. **The fix:** in parallel SMP the JIT
+emitted `eor wN, wM, wM` as `x ^ x`, which TurboFan folds to 0, dropping the guest's address
+dependency (docs/jit.md "Atomics"). The litmus image in Node, parallel JIT, 4 vCPUs,
+`-s 1000 -r 200` (400K outcomes a test), 3 runs each: before, MP+dmb.sy+addr's forbidden outcome
+**33, 12 and 50 times** (95 in 1.2M); after, **0** (and no other failure). With `-r 50` the
+unfixed build failed 5 of 5 runs (the Node parallel JIT test now runs at `-r 50`); at CI's former
+`-r 10` 1 of 3 even with `--no-liftoff`: most short-run code is Liftoff's, which doesn't fold.
+**Cost:** `smp_user_jit_4` (Alpine userspace on 4 parallel vCPUs), A/B alternating in one
+session, 3 runs × 2 samples each: total median 31,191 ms before, 31,131 ms after (compress 2,815
+→ 2,717, lua 5,011 → 5,054, churn 4,915 → 4,876, sqlite 4,083 → 4,045): noise. Deterministic and
+one-vCPU modules are unchanged (the zero global is defined only in parallel modules). Raw:
+`results/m8-loop7/litmus.json`, `results/m8-loop7/smp-user-{base,new}-{1,2,3}.json` (`base` is
+b8efa00).
+
+**CI time and the Debian tests** (full `scripts/ci.sh`, warm caches, this host): `npm test` 290 s
+in loop 6's last run, 303 s in this loop before the test changes (the Node parallel litmus at
+`-r 50`: 13.6 → 33 s under load), 297 s after; `scripts/ci.sh` 446 s. `npm test`'s wall time is
+`tests/boot-node.test.ts`'s, whose tests run in sequence (290 s in loop 6, 297 s now). Leaving
+out Chromium's deterministic Debian boot (81–85 s) saved nothing (299 s) and was reverted (it's
+the only deterministic Debian run in CI); the fresh copy's `npm start` test now stops when the
+kernel takes the screen (5.2 s after the URL in CI, was 37–47 s), so the Debian page pair ends at
+~186 s instead of ~222–230 s.

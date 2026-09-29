@@ -120,6 +120,9 @@ for (let run = 1; run <= RUNS; run++) {
     await shows(page, /tty1-ready/);
     // Root on the screen, and a command there whose output goes to the serial console.
     await onScreen(page, 'root\n');
+    // Not typed ahead there either: under CI's load the first key after `root` was lost (M8 loop 7).
+    await onSerial(page, "until grep -q 'root@[a-z]*:~# ' /dev/vcs1; do sleep 0.2; done; echo tt\"\"y1-shell\n");
+    await shows(page, /tty1-shell/);
     await onScreen(page, 'echo from-$(tty)-$((6*7)) >/dev/ttyAMA0\n');
     await shows(page, /from-\/dev\/tty1-42/);
     console.log(`# debian page ${run}: logged in on both consoles at ${at()}`);

@@ -21,7 +21,9 @@ runs unmodified arm64 Linux. Chromium is the primary target.
 M0–M7 are done (the summary table is in PLAN.md §3): the interpreter, the golden corpus, Linux
 with virtio devices, Alpine and Debian, a JIT that boots Alpine in ~10 s in Chromium, the crypto
 extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vCPU for users).
-**Current:** M8, a usable machine (PLAN.md §3; the brief is `M8-KICKOFF.md`). Loose ends go in
+**Current:** M8, a usable machine (PLAN.md §3). Phase A (the interactive machine: `npm start`, the
+page in `web/app/`, [docs/frontend.md](docs/frontend.md)) is done; phase B (snapshots) and the C
+tracks wait for their kickoffs (`M8-PHASEB-HANDOVER.md` proposes them). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment

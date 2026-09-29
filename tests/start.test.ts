@@ -1,7 +1,7 @@
 // `npm start` (tools/start.js, tools/start.ts, tools/debian.ts; M8 loop 5): its
 // checks, and a run on a copy of the repository as a fresh clone has it (tracked and
 // untracked files, nothing ignored: no node_modules, no target/), up to the page
-// running Debian in Chromium. The copy gets the core built here unless
+// booting Debian in Chromium (the guest's console on the screen). The copy gets the core built here unless
 // WEBPC_START_COLD=1 (then it builds its own: minutes); Debian comes from this
 // checkout's download cache (WEBPC_DL), so nothing is downloaded.
 import assert from 'node:assert/strict';
@@ -106,11 +106,11 @@ test('the prerequisites: Node 26 and rustup, each said with how to get it', () =
   }
 });
 
-// The run as a user makes it: about a minute (Debian's boot is ~30 s), gated like Debian's other page tests.
+// The run as a user makes it, up to the kernel on the screen (~5 s alone with npm's cache warm), gated like Debian's other page tests.
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const cached = existsSync(join(downloads(), PIN.file));
 const cold = process.env.WEBPC_START_COLD === '1';
-test('npm start on a fresh copy of the repository: install, build, prepare Debian, serve; the page runs it', {
+test('npm start on a fresh copy of the repository: install, build, prepare Debian, serve; the page boots it', {
   skip: !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : !cached && 'SKIPPED: no Debian download (run images/build.sh debian)',
   timeout: cold ? 30 * 60_000 : 15 * 60_000, // with the wait for tests/page-debian.test.ts's boots (tests/debian-lock.ts)
 }, () => withDebianLock(async () => {
@@ -149,11 +149,17 @@ test('npm start on a fresh copy of the repository: install, build, prepare Debia
     assert.match(out, cold ? /Building the emulator core/ : /^(?![^]*emulator core)/);
     assert.match(out, /Debian 13 ready: kernel 6\.12\.107\+deb13-arm64/);
     for (const f of ['Image', 'initrd.img', 'disk.qcow2']) assert.ok(existsSync(join(d, 'target/images/debian', f)), f);
+    // The copy's kernel and initrd are this checkout's (current: images/SHA256SUMS), which
+    // tests/page-debian.test.ts boots to a login three times; so here the page only has to start
+    // the copy's machine: its module graph, core and images load and the kernel takes the screen.
+    const sha = (root: string, f: string) => createHash('sha256').update(readFileSync(join(root, 'target/images/debian', f))).digest('hex');
+    for (const f of ['Image', 'initrd.img']) assert.equal(sha(d, f), sha(ROOT, f), f);
     const page = await browser.newPage();
     await page.goto(url);
-    await page.waitForFunction(() => ['running', 'failed', 'crashed'].includes(document.body.dataset.state!), null, { timeout: 120_000, polling: 250 });
-    assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', await page.evaluate(() => document.getElementById('message-text')?.textContent ?? ''));
-    console.log(`# npm start${cold ? ' (cold)' : ''}: the URL after ${(served / 1000).toFixed(1)} s, the page running ${((performance.now() - start - served) / 1000).toFixed(1)} s later`);
+    await page.waitForFunction(() => document.getElementById('boot')?.dataset.done === 'true' || ['failed', 'crashed', 'off'].includes(document.body.dataset.state!), null, { timeout: 120_000, polling: 250 });
+    const state = await page.evaluate(() => document.body.dataset.state);
+    assert.ok(state === 'booting' || state === 'running', `${state}: ${await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '')}`);
+    console.log(`# npm start${cold ? ' (cold)' : ''}: the URL after ${(served / 1000).toFixed(1)} s, the guest's console on the screen ${((performance.now() - start - served) / 1000).toFixed(1)} s later`);
   } finally {
     await browser.close();
     child.kill();

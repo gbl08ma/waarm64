@@ -91,11 +91,21 @@ Decisions (the user, 2026-09-28):
 - The Firefox and Safari pass left M8 for the backlog (the user checks Firefox by hand later).
 
 Phases (A first; after A, the tracks in C can run in parallel, one agent each):
-- **A. The interactive machine** (the kickoff): console input from the host (the PL011 RX path
-  the core already has), the page (screen, input focus and capture, the xterm.js view, power
-  and disk controls, boot progress, errors a user can act on), `npm start`, and an end-to-end
-  Chromium test that logs in and runs a command (done in M8 loop 6: `tests/page-debian.test.ts`,
-  in CI with the Debian image; [docs/frontend.md](docs/frontend.md) "The end-to-end test").
+- **A. The interactive machine — done (2026-09-29, loops 0–7).** `npm start` on a fresh clone
+  (Node ≥ 26 and rustup; ~0.1 s when nothing changed, ~12 s cold plus Debian's 400 MB download)
+  serves `http://127.0.0.1:8080/`, where Debian 13 boots under the JIT on `min(4, cores − 2)`
+  parallel vCPUs with fbcon on the canvas and a getty on the serial terminal (xterm.js); root logs
+  in without a password on either; the disk persists in the OPFS overlay across reloads, with
+  Reset disk. Page load to the login prompt **~29 s on 4 vCPUs, 31.5 s on 2** (this host);
+  key to glyph **~11 ms** on the terminal, **~15 ms** on the screen. Console input through the
+  PL011 RX ring in every runner; loading progress, errors with actions (Retry, Reset disk, the
+  serial log), a host-memory check; Node's disk reader (partitions, ext4) replaced the host tools
+  for Debian's kernel and initrd. `tests/page-debian.test.ts` (logins on both consoles, a marker
+  across them, persistence and reset) and `tests/start.test.ts` (a fresh clone through `npm
+  start`) run in CI with the Debian image. The exit fixed a JIT memory-ordering bug (address
+  dependencies through `eor x, x, x`, [docs/jit.md](docs/jit.md) "Atomics"). Rough edges the user
+  finds go to [docs/backlog.md](docs/backlog.md) "The page". Details:
+  [docs/frontend.md](docs/frontend.md); numbers: `bench/boot/REPORT.md` "M8 loop 0"–"M8 loop 7".
 - **B. Instant start: snapshots.** Save and restore CPU, devices and compressed RAM, so the page
   resumes a booted machine in seconds instead of a full Debian boot. A snapshot pins the overlay
   state it was taken with; parallel SMP stops every vCPU at a chunk boundary first

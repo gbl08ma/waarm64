@@ -252,7 +252,9 @@ How it types, and why:
   needed), so the test types on the screen only once tty1 shows `login: `.
 - **Not typed ahead of a prompt:** after `root` + Enter the test waits for bash's prompt
   (`root@localhost:~# `) before the next line; typed ahead, the first key of the next line was
-  lost while login handed the tty to the shell.
+  lost while login handed the tty to the shell. On both consoles: on the screen it waits for the
+  prompt in `/dev/vcs1` from the serial shell (without that wait, a CI run under load lost the
+  screen's command, M8 loop 7).
 - **Keys on the screen one at a time**, with Shift pressed for shifted characters (Playwright's
   `type()` sends `>` as Period alone; web/input.ts maps by `code`), 10 ms apart (virtio-input
   drops events past 1,024 queued).

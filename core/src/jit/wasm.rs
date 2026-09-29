@@ -159,6 +159,11 @@ impl Code {
     pub fn local_get(&mut self, i: u32) -> &mut Self {
         self.local(0x20, i)
     }
+    pub fn global_get(&mut self, i: u32) -> &mut Self {
+        self.op(0x23);
+        uleb(&mut self.b, i as u64);
+        self
+    }
     pub fn local_set(&mut self, i: u32) -> &mut Self {
         self.local(0x21, i)
     }
@@ -302,6 +307,8 @@ pub struct Module {
     nfunc_imports: u32,
     funcs: Vec<u32>,
     code: Vec<u8>,
+    globals: Vec<u8>,
+    nglobals: usize,
     names: Vec<u8>,
     /// The branch-hint section's entries, and how many functions have some.
     hints: Vec<u8>,
@@ -348,6 +355,15 @@ impl Module {
         self.imports.push(3); // shared, with a maximum
         uleb(&mut self.imports, min as u64);
         uleb(&mut self.imports, max as u64);
+    }
+
+    /// Defines a mutable i64 global holding 0 (never written); returns its
+    /// index. V8 can't fold a mutable global's value, so `x & global` is zero
+    /// yet still depends on `x` (the JIT's opaque zero: jit.md "Atomics").
+    pub fn zero_global(&mut self) -> u32 {
+        self.globals.extend([0x7e, 1, 0x42, 0, 0x0b]);
+        self.nglobals += 1;
+        self.nglobals as u32 - 1
     }
 
     /// Adds a function of type `ty` with `locals` (count, type) runs and
@@ -406,6 +422,7 @@ impl Module {
             uleb(&mut exports, self.nfunc_imports as u64 + k as u64);
         }
         section(&mut out, 3, self.funcs.len(), &funcs);
+        section(&mut out, 6, self.nglobals, &self.globals);
         section(&mut out, 7, self.funcs.len(), &exports);
         if self.nhinted > 0 {
             // Branch hints, before the code they describe.

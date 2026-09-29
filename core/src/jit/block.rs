@@ -370,6 +370,10 @@ pub fn module(
         }
     }
     m.import_memory("env", "memory", 0, 65536);
+    if parallel {
+        let z = m.zero_global();
+        debug_assert_eq!(z, emit::ZERO_GLOBAL);
+    }
     if jc != 0 || tiers {
         m.import_table("env", "table", 0);
     }

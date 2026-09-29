@@ -253,6 +253,8 @@ for (const n of [2, 4]) {
 // with tests/steps.txt's steps (core/tests/litmus.rs runs the interpreter),
 // and in parallel under the JIT and JIT-check (whose boot alone takes 30 s).
 // A DMB emitted as nothing fails MP+dmb.sys and SB+dmb.sys in parallel (M7 loop 6).
+// Parallel JIT at -r 50 (100K outcomes a test): `eor x, x, x` folded by TurboFan (its address dependency
+// lost) failed MP+dmb.sy+addr in 5 of 5 such runs, in 1 of 3 at -r 10 (M8 loop 7; docs/jit.md "Atomics").
 const litmusSkip = !has('litmus/initramfs.cpio') && 'SKIPPED: run images/build.sh linux litmus';
 const litmus = (l: string, s: string): BootOptions => ({ ramSize: 256 << 20, kernel: image('linux/Image'), initrd: image('litmus/initramfs.cpio'), cmdline: `console=ttyAMA0 panic=-1 webpc.litmus=${l} webpc.stress=${s}`, ncpus: 4 });
 const litmusOk = (r: Run) => {
@@ -260,7 +262,7 @@ const litmusOk = (r: Run) => {
   assert.match(r.console, /webpc: litmus on 4 CPUs[^]*litmus: all ok, 0 skipped\r?\nwebpc: stress on 4 CPUs[^]*\nwebpc: test ok\r?\n/, r.console);
 };
 guest('litmus and stress on 4 vCPUs', () => litmus('-s,100,-r,1', '-n,20000'), litmusOk, { skip: litmusSkip, stress: STRESS, steps: STEPS['litmus-4cpu'], interp: false, max: 5e9 });
-for (const [mode, jit, l, s] of [['JIT', 1, '-s,1000,-r,10', '-n,100000'], ['JIT-check', 3, '-s,100,-r,2', '-n,10000']] as const) {
+for (const [mode, jit, l, s] of [['JIT', 1, '-s,1000,-r,50', '-n,100000'], ['JIT-check', 3, '-s,100,-r,2', '-n,10000']] as const) {
   test(`parallel: litmus and stress on 4 vCPUs (${mode})`, { skip: litmusSkip }, async () => {
     const r = await boot({ ...litmus(l, s), parallel: true, idleLimitMs: 30_000 }, jit, 1e12);
     console.log(`# litmus and stress ${mode}: ${(r.ms / 1000).toFixed(1)} s; ${r.console.match(/stress: spin ok .*/g)?.join('; ')}`);

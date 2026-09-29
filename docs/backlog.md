@@ -164,15 +164,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Snapshots in parallel SMP** (M8): stop every vCPU worker at a chunk boundary (STOP, all
   `OUT`), with every maintenance queue drained and no CPU_ON request pending, before saving;
   round-robin needs nothing new.
-- **A forbidden MP+dmb.sy+addr outcome, twice** (M8 loops 4 and 6, each in a full CI run: Chromium,
-  parallel JIT, `-s 1000 -r 10`, under `npm test`'s load): 1 of 20,000 each time (`1:X1=1;
-  1:X3=0`); the test passed in 6 repeats right after loop 4's, in the two CI runs after loop 6's, and in
-  every run before. No other test failed with it. The litmus address dependency is `eor wN, wM, wM` feeding the load's offset. Not
-  checked yet: whether V8's optimizing tier folds the `i32.xor` of a value with itself to 0 (which
-  would drop the dependency, and the host may then reorder the loads; wasm promises no dependency
-  order for plain accesses). Real code's dependencies (a loaded pointer dereferenced) can't be
-  folded that way. Check with `--print-wasm-code` on that block; if so, keep `eor` of a register
-  with itself opaque (or accept it and document the litmus exception). Rerun CI if it recurs.
 - **The parallel bare-metal `timer.bin` assumes the host keeps a vCPU running for 1 ms** (its check
   10: a 1 ms `CNTV_TVAL` must not have expired by the next instruction; realtime counters follow
   the host clock). It failed twice in one M8 loop 6 CI run (Node, JIT and JIT-check, exit 10) when
@@ -182,6 +173,29 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Hours-long whole-platform stress** (repeated parallel boots and workloads for hours): deferred
   by the user (2026-09-28) to a later milestone, once more virtio devices and integration features
   exist, when such a run is likelier to catch non-obvious platform-wide issues.
+
+## The page (M8 phase A; [frontend.md](frontend.md))
+
+- **The user's own pass** (phase A's exit): the rough edges they report from using the machine
+  land here; none reported yet.
+- **Clipboard for the screen:** paste into tty1 (typed through virtio-input, paced: its queue
+  drops past 1024 events) and copy from fbcon; only the serial terminal has both (xterm.js).
+  Phase C, host integration.
+- **Keyboard layouts** other than US: the page maps `KeyboardEvent.code` as a US PC keyboard and
+  Debian's keymap is US; another layout needs the guest's keymap set to match (loadkeys, or
+  `vconsole.keymap=` on the command line). Phase C, host integration.
+- **The Keyboard Lock** in full screen is checked by hand only: headless Playwright's keys
+  bypass the browser's shortcuts, so no test sees Ctrl+W reach the guest.
+- **Settings:** vCPUs and RAM come from `?ncpus=` and machine.ts, no UI (phase D, with the image
+  choice and the embedding API).
+- **The ready marker is a per-machine regexp** over the serial output (Debian: agetty's
+  `login: ` at a line's start). A guest that prints after its prompt, logs in automatically or
+  has no serial getty would need its own; a guest-side signal (a byte on a port the page owns, a
+  systemd unit writing to a device) would be exact. Revisit with image selection (phase D).
+- **No boot-to-login benchmark case:** the page's time to `running` is measured by ad-hoc
+  drivers and the end-to-end test (bench/boot/REPORT.md "M8 loop 6"). Phase B's resume time needs
+  a tracked baseline: add a `page_debian` case (page load to `running`, fresh profile) then.
+- **Boot time is the page's biggest cost** (~30 s to a login): phase B's snapshots.
 
 ## Tests and tools
 

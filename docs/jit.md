@@ -173,6 +173,15 @@ the interpreter's own code.
   (it ends the chunk: [platform.md](platform.md) "Broadcast maintenance"). Plain guest loads and
   stores are plain wasm ones, which V8 keeps in program order around the fence and lowers to
   plain `ldr`/`str`: the host's reordering is then the guest's own (litmus MP shows it).
+  **Address dependencies** order a guest's loads only while the host's addresses depend on the
+  loaded value, and V8's optimizing tier folds `x ^ x` and `x − x` to 0 (checked with
+  `--print-wasm-code`: the second load's address became a constant). So in parallel SMP, EOR and
+  SUB (shifted register, no shift) of a register with itself are `x & zero`, `zero` being a
+  mutable i64 global each parallel module defines (`Module::zero_global`, never written; V8 can't
+  fold it): the value is 0 and the host address still depends on `x`. That's the litmus idiom
+  (`MP+dmb.sy+addr`: 95 forbidden outcomes in 1.2M before, none after, M8 loop 7) and Linux's
+  `arch_counter_enforce_ordering`. Other always-zero forms (`and x, x, xzr`, a multiply by
+  zero) aren't covered: no code we know builds dependencies with them.
 - **System:** MRS of plain registers inline (checked against the interpreter's read; SP_EL0 and
   TPIDR_EL1 were 91% of Alpine's MRS calls); the MSRs above inline; an MSR or ERET that unmasks
   IRQs leaves through its helper's `Exit::Resync`. SIMD&FP instructions check `CPACR_EL1.FPEN`

@@ -464,6 +464,10 @@ pub fn set_pc(c: &mut Func, off: i64) {
     c.i64_store(PC);
 }
 
+/// The index of the module's mutable i64 global that holds 0 (parallel SMP
+/// only: `Module::zero_global`, defined first).
+pub const ZERO_GLOBAL: u32 = 0;
+
 /// Emits instruction `i` (the `k`-th of its block) inline if this step covers
 /// it; false (and nothing emitted) if it stays a helper call.
 pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
@@ -507,6 +511,27 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
                 _ => return false,
             };
             addsub(c, i, |c| get_sp(c, sf, rn), |c| konst(c, sf, imm), true);
+        }
+        // EOR or SUB of a register with itself is zero, but in parallel SMP an
+        // address dependency through it must survive (litmus MP+dmb.sy+addr;
+        // Linux's arch_counter_enforce_ordering): V8's optimizing tier folds
+        // `x ^ x` and `x - x` to 0 and then the host may reorder the loads.
+        // `x & ZERO_GLOBAL` is zero, yet V8 can't fold it (jit.md "Atomics").
+        EOR_shift | SUB_shift
+            if cx.parallel
+                && rn == rm
+                && rn != 31
+                && bits(i, 15, 10) == 0
+                && bits(i, 23, 22) != 3 =>
+        {
+            set(c, sf, rd, |c| {
+                get(c, sf, rn);
+                c.global_get(ZERO_GLOBAL);
+                if !sf {
+                    c.i32_wrap_i64();
+                }
+                arith(c, sf, AND);
+            });
         }
         ADD_shift | ADDS_shift | SUB_shift | SUBS_shift => {
             if bits(i, 23, 22) == 3 || (!sf && bits(i, 15, 10) >= 32) {
@@ -2475,6 +2500,24 @@ mod tests {
         assert_eq!(emit_in(0xd5033bbf, 0, &par).unwrap(), [0xfe, 3, 0]); // dmb ish
         assert_eq!(emit_in(0xd50339bf, 0, &par).unwrap(), [0xfe, 3, 0]); // dmb ishld
         assert_eq!(emit_in(0xd5033f9f, 0, &par), None); // dsb sy
+    }
+
+    #[test]
+    fn opaque_self_zero_in_parallel() {
+        let par = Ctx {
+            parallel: true,
+            ..FLAT
+        };
+        // eor w2, w0, w0; sub x2, x0, x0: in parallel SMP, x0 & the zero global
+        // (global.get 0); on one thread, a plain xor/sub.
+        for (i, op) in [(0x4a000002, XOR), (0xcb000002, SUB + W)] {
+            assert!(has(&emit_in(i, 0, &par).unwrap(), &[0x23, 0]), "{i:#x}");
+            let one = emit(i, 0).unwrap();
+            assert!(!has(&one, &[0x23, 0]) && one.contains(&op), "{i:#x}");
+        }
+        // Not for other registers or a shift: eor w2, w0, w1; eor w2, w0, w0, lsl #1.
+        assert!(!has(&emit_in(0x4a010002, 0, &par).unwrap(), &[0x23, 0]));
+        assert!(!has(&emit_in(0x4a000402, 0, &par).unwrap(), &[0x23, 0]));
     }
 
     #[test]
