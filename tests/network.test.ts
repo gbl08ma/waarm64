@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { createNetwork, parseControlURL, parseHostname, viewOf } from '../web/app/network.ts';
 import type { FromTailscale, NetMap, Tailscale, TailscaleConfig } from '../web/tailscale.ts';
 
-const netmap = (over: Partial<NetMap> = {}): NetMap => ({ name: 'guest.tail.test.', addresses: ['100.90.0.2/32', 'fd7a:115c:a1e0::2/128'], peers: [{ name: 'peer', addresses: ['100.90.0.3/32'], exitNodeOption: false }], mtu: 1280, dns: ['100.100.100.100'], domains: ['tail.test'], ...over });
+const netmap = (over: Partial<NetMap> = {}): NetMap => ({ name: 'guest.tail.test.', addresses: ['100.90.0.2/32', 'fd7a:115c:a1e0::2/128'], peers: [{ id: 'nPEER', name: 'peer', addresses: ['100.90.0.3/32'], exitNodeOption: false }], mtu: 1280, dns: ['100.100.100.100'], domains: ['tail.test'], exitNode: '', ...over });
 
 test('control server URLs: Tailscale by default, https, http only for this computer', () => {
   assert.deepEqual(parseControlURL(''), { url: 'https://controlplane.tailscale.com' });
@@ -27,11 +27,11 @@ test('hostnames: one DNS label, webpc when empty', () => {
 });
 
 test('the view of the client: contacting, login, approval, connected, stopped, error', () => {
-  assert.deepEqual(viewOf(undefined), { phase: 'off', text: 'Not connected' });
+  assert.deepEqual(viewOf(undefined), { phase: 'off', text: 'Not connected', exitNodes: [] });
   assert.equal(viewOf({ state: '' }).phase, 'connecting');
   assert.equal(viewOf({ state: 'Starting' }).phase, 'connecting');
   assert.equal(viewOf({ state: 'NeedsLogin' }).phase, 'connecting'); // no URL yet
-  assert.deepEqual(viewOf({ state: 'NeedsLogin', loginURL: 'https://login.example.com/a/1' }), { phase: 'login', text: 'Log in to connect', loginURL: 'https://login.example.com/a/1' });
+  assert.deepEqual(viewOf({ state: 'NeedsLogin', loginURL: 'https://login.example.com/a/1' }), { phase: 'login', text: 'Log in to connect', loginURL: 'https://login.example.com/a/1', exitNodes: [] });
   assert.equal(viewOf({ state: 'NeedsMachineAuth' }).phase, 'login');
   const up = viewOf({ state: 'Running', netmap: netmap() });
   assert.equal(up.phase, 'connected');
@@ -39,7 +39,7 @@ test('the view of the client: contacting, login, approval, connected, stopped, e
   assert.match(up.text, /Connected as guest\.tail\.test \(100\.90\.0\.2\), 1 peer$/);
   assert.match(viewOf({ state: 'Running', netmap: netmap({ peers: [] }) }).text, /0 peers$/);
   assert.equal(viewOf({ state: 'Stopped' }).phase, 'off');
-  assert.deepEqual(viewOf({ state: 'Starting', error: 'no route\nmore' }), { phase: 'error', text: "Couldn't connect: no route" });
+  assert.deepEqual(viewOf({ state: 'Starting', error: 'no route\nmore' }), { phase: 'error', text: "Couldn't connect: no route", exitNodes: [] });
 });
 
 test('a login URL that is not http(s) is never offered', () => {
@@ -66,6 +66,7 @@ function fake() {
       state: () => state, netmap: () => nm, loginURL: () => url, running: new Promise<NetMap>(() => {}), timings: () => ({}),
       attach: (ip) => { held = ip; attached.push(ip); log.push('attach'); },
       detach: async () => { log.push('detach'); const h = held; held = undefined; return h; },
+      setExitNode: async (id) => { log.push(`exit ${id || '-'}`); if (id === 'bad') throw new Error('nope'); },
       logout: async () => { log.push('logout'); },
       close: () => log.push('close'),
     };
@@ -77,7 +78,7 @@ test('connecting: the client gets the machine\'s port; a restarted machine\'s ne
   const f = fake();
   let changes = 0;
   const net = createNetwork(() => changes++, f.start);
-  assert.throws(() => net.connect({ controlURL: 'https://c', hostname: 'h' }), /no network card/);
+  assert.throws(() => net.connect({ controlURL: 'https://c', hostname: 'h' }), /hasn't started/);
 
   const dev1 = net.port(); // the machine's end
   net.connect({ controlURL: 'https://c', hostname: 'h' });
@@ -128,4 +129,31 @@ test('a client that fails shows the error until it comes up', () => {
   f.clients[0].setState('Running', netmap());
   assert.equal(net.view().phase, 'connected');
   dev.close();
+});
+
+test('exit nodes: the menu lists the approved ones and the one in use; the choice goes to the client and the next connection', async () => {
+  const peers = [
+    { id: 'nA', name: 'a.tail.test.', addresses: ['100.90.0.3/32'], online: true, exitNodeOption: true },
+    { id: 'nB', name: 'b.tail.test.', addresses: ['100.90.0.4/32'], online: false, exitNodeOption: true },
+    { id: 'nC', name: 'c.tail.test.', addresses: ['100.90.0.5/32'], exitNodeOption: false },
+  ];
+  assert.deepEqual(viewOf({ state: 'Running', netmap: netmap({ peers }) }).exitNodes, [
+    { id: 'nA', name: 'a.tail.test', online: true, use: false },
+    { id: 'nB', name: 'b.tail.test', online: false, use: false },
+  ]);
+  const used = viewOf({ state: 'Running', netmap: netmap({ peers, exitNode: 'nA' }) });
+  assert.deepEqual(used.exitNodes.map((e) => e.use), [true, false]);
+  assert.match(used.text, /internet through a\.tail\.test/);
+  assert.deepEqual(viewOf({ state: 'Starting', netmap: netmap({ peers }) }).exitNodes, [], 'only when connected');
+
+  const f = fake();
+  const net = createNetwork(() => {}, f.start);
+  await assert.rejects(net.setExitNode('nA'), /not connected/);
+  net.port();
+  net.connect({ controlURL: 'https://c', hostname: 'h', exitNode: 'nA' });
+  assert.equal(f.clients[0].config.exitNode, 'nA', 'a remembered choice is applied from the start');
+  await net.setExitNode('nB');
+  await net.setExitNode('');
+  await assert.rejects(net.setExitNode('bad'), /nope/);
+  assert.deepEqual(f.log.slice(1), ['exit nB', 'exit -', 'exit bad']);
 });

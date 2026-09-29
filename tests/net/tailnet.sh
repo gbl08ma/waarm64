@@ -2,7 +2,8 @@
 # A throwaway tailnet for the networking tests (docs/plans/networking.md, N2/N4):
 # headscale with its embedded DERP behind a Caddy reverse proxy that does the
 # TLS (a test CA, 127.0.0.1, the way headscale is deployed) and adds the CORS header
-# a page's fetch of /key needs (headscale sends none), and one peer, `tailscaled` in userspace networking, both in rootless Podman on the
+# a page's fetch of /key needs (headscale sends none), and one peer, `tailscaled` in userspace networking
+# that is also an exit node (its 0.0.0.0/0 is approved), both in rootless Podman on the
 # host network (never Docker, docs/images.md). Usage:
 #   tests/net/tailnet.sh up      start it; prints the environment for the tests
 #   tests/net/tailnet.sh env     print it again
@@ -113,11 +114,17 @@ CADDY
 	hs users create tailnet >/dev/null
 	podman run -d --name "$PEER" --network host -v "$DIR/config/tls/ca.pem:/ca.pem:ro" -e SSL_CERT_FILE=/ca.pem \
 		-e TS_AUTHKEY="$(authkey)" -e TS_HOSTNAME=peer -e TS_USERSPACE=true -e TS_STATE_DIR=/var/lib/tailscale \
-		-e TS_SOCKET=/tmp/ts.sock -e TS_EXTRA_ARGS="--login-server=https://127.0.0.1:$PORT" "$TS_IMAGE" >/dev/null
+		-e TS_SOCKET=/tmp/ts.sock -e TS_EXTRA_ARGS="--login-server=https://127.0.0.1:$PORT --advertise-exit-node" "$TS_IMAGE" >/dev/null
 	for _ in $(seq 60); do
 		peerts ip -4 >/dev/null 2>&1 && break
 		sleep 0.5
 	done
+	# The peer is the tailnet's exit node once an admin approves the routes it advertises.
+	for _ in $(seq 30); do
+		hs nodes list-routes 2>/dev/null | grep -q '0\.0\.0\.0/0' && break
+		sleep 0.5
+	done
+	hs nodes approve-routes -i 1 -r 0.0.0.0/0,::/0 >/dev/null
 	env_
 	;;
 env) env_ ;;

@@ -274,8 +274,16 @@ web/tailscale.ts, the client in its own worker).
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected.
+- **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
+  `0.0.0.0/0` routes) the menu shows **Internet through** with them and "Nothing: directly". Picking one
+  calls the client's `setExitNode(id)` (`ipn.Prefs.ExitNodeID` through `lb.EditPrefs`; the id is the
+  peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the
+  status line says "internet through <name>". The choice is remembered (`exitNode`) and given to the
+  client at the next Connect (`Start`'s prefs would otherwise reset it). The guest's address, router and
+  DHCP lease don't change: its default route is the gateway, which hands every packet to the client,
+  and the client's routing decides between the tailnet and the exit node.
 - Settings (`webpc.settings` `net`): `controlURL`, `hostname`, `autoconnect`,
-  `keyed`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
+  `keyed`, `exitNode`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
 - **The client is built by the servers:** `npm run serve` and `npm start` run `tools/tailscale.ts` first: it builds `net/tailscale` with `net/tailscale/build.sh` into `target/net/tailscale.wasm` (and `wasm_exec.js`) when they're missing or a hash of `net/tailscale`'s files (stamp `tailscale.wasm.inputs`) changed, ~30 s to ~1 min the first time (Go downloads its toolchain and modules). It never stops the server: without Go, or if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `WEBPC_TAILSCALE=0` skips it. `scripts/ci.sh` runs it as a step so the page and tailnet tests find the client.
 - **The control server must answer `GET /key` with CORS headers** (docs/plans/networking.md N4):

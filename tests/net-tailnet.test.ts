@@ -10,6 +10,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { networkInterfaces } from 'node:os';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
@@ -25,7 +27,8 @@ const skip = process.env.WEBPC_TAILNET !== '1' ? 'SKIPPED: set WEBPC_TAILNET=1'
   : !existsSync(WASM) && !has('go') ? 'SKIPPED: no target/net/tailscale.wasm and no Go to build it'
   : undefined;
 
-const script = `${ROOT}tests/net/tailnet.sh`;
+// WEBPC_TAILNET_SCRIPT: another implementation of up|key|env|down (for a machine without Podman); `podman` must then still answer the peer's `tailscale` calls.
+const script = process.env.WEBPC_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
 const podman = (...args: string[]) => execFileSync('podman', args, { encoding: 'utf8' });
 const peerTs = (...args: string[]) => podman('exec', 'webpc-peer', 'tailscale', '--socket=/tmp/ts.sock', ...args);
 
@@ -120,6 +123,35 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       assert.match(reply, /HTTP\/1\.0 200 OK/);
       assert.match(reply, /hello-from-the-guest/);
       assert.match(peerTs('status'), new RegExp(`${self}\\s+guest`));
+
+      // The exit node: the peer offers to carry the guest's internet traffic. A server on this host,
+      // at an address that isn't the tailnet's, stands for the internet: the guest can't reach it
+      // until it uses the peer as its exit node (the peer, in userspace networking, connects for it).
+      const hostIP = Object.values(networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
+      assert.ok(hostIP, 'this host has an IPv4 address that isn\'t loopback');
+      const server = createServer((_, res) => res.end('hello-from-the-internet\n'));
+      await new Promise<void>((resolve) => server.listen(0, '0.0.0.0', resolve));
+      try {
+        const url = `http://${hostIP}:${(server.address() as { port: number }).port}/`;
+        const offers = (await harness<{ netmap: { exitNode: string; peers: { id: string; name: string; exitNodeOption: boolean }[] } }>(page, 'tailscale()')).netmap;
+        const exit = offers.peers.find((p) => p.exitNodeOption);
+        assert.ok(exit, `the peer offers to be an exit node: ${JSON.stringify(offers.peers)}`);
+        assert.equal(offers.exitNode, '', 'none in use yet');
+        const before = await run(`curl -s -m 8 ${url}; echo "exit=$?"`, 60_000);
+        assert.doesNotMatch(before, /hello-from-the-internet/, 'without an exit node the tailnet has no route to the address');
+        assert.equal(await harness<string>(page, `setExitNode(${JSON.stringify(exit.id)})`), '', 'the client takes the exit node');
+        await page.waitForFunction((id) => (window as never as { harness: { tailscale(): { netmap: { exitNode: string } } } }).harness.tailscale().netmap.exitNode === id, exit.id, { timeout: 30_000, polling: 250 });
+        let via = '';
+        for (let k = 0; k < 10 && !via.includes('hello-from-the-internet'); k++) {
+          via = await run(`curl -s -m 8 ${url}; echo "exit=$?"`, 60_000);
+        }
+        assert.match(via, /hello-from-the-internet/, `through the exit node the guest reaches ${url}${await context()}`);
+        assert.equal(await harness<string>(page, "setExitNode('')"), '');
+        const after = await run(`curl -s -m 8 ${url}; echo "exit=$?"`, 60_000);
+        assert.doesNotMatch(after, /hello-from-the-internet/, 'and stops when the exit node is cleared');
+      } finally {
+        server.close();
+      }
     } finally {
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
       await ctx.close();

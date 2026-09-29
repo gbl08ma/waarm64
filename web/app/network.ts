@@ -22,9 +22,11 @@ export type NetworkSettings = {
   autoconnect: boolean;
   /** The last connection used an auth key: an ephemeral node, not kept, so it can't reconnect by itself or log out. */
   keyed: boolean;
+  /** The exit node in use (a peer's stable ID), applied again on the next connection; empty: none. */
+  exitNode: string;
 };
 
-export const DEFAULT_SETTINGS: NetworkSettings = { controlURL: '', hostname: '', autoconnect: false, keyed: false };
+export const DEFAULT_SETTINGS: NetworkSettings = { controlURL: '', hostname: '', autoconnect: false, keyed: false, exitNode: '' };
 
 /** A control server's URL as the client takes it: https (http only for this computer), or an error to show. */
 export function parseControlURL(input: string): { url: string } | { error: string } {
@@ -67,6 +69,8 @@ export type NetworkView = {
   loginURL?: string;
   /** The guest's IPv4 address, when connected. */
   address?: string;
+  /** The peers that offer to be the exit node (approved by the tailnet's admin), when connected; `use` marks the one in use. */
+  exitNodes: { id: string; name: string; online: boolean; use: boolean }[];
 };
 
 /** What a `Tailscale` client reports, as far as the view needs it. */
@@ -83,27 +87,29 @@ const web = (s: string | undefined) => {
 
 /** The menu's view of a client's report (`undefined`: there's no client). */
 export function viewOf(c: ClientReport | undefined): NetworkView {
-  if (!c) return { phase: 'off', text: 'Not connected' };
-  if (c.error) return { phase: 'error', text: `Couldn't connect: ${c.error.split('\n')[0]}` };
+  if (!c) return { phase: 'off', text: 'Not connected', exitNodes: [] };
+  if (c.error) return { phase: 'error', text: `Couldn't connect: ${c.error.split('\n')[0]}`, exitNodes: [] };
   const loginURL = web(c.loginURL);
   switch (c.state) {
     case 'Running': {
       const address = c.netmap?.addresses.find((a) => !a.includes(':'))?.replace(/\/\d+$/, '');
       const peers = c.netmap?.peers.length ?? 0;
-      return { phase: 'connected', address, text: `Connected${c.netmap?.name ? ` as ${c.netmap.name.replace(/\.$/, '')}` : ''}${address ? ` (${address})` : ''}, ${peers} peer${peers === 1 ? '' : 's'}` };
+      const exitNodes = (c.netmap?.peers ?? []).filter((p) => p.exitNodeOption || p.id === c.netmap?.exitNode).map((p) => ({ id: p.id, name: p.name.replace(/\.$/, ''), online: p.online !== false, use: p.id === c.netmap?.exitNode }));
+      const via = exitNodes.find((e) => e.use);
+      return { phase: 'connected', address, exitNodes, text: `Connected${c.netmap?.name ? ` as ${c.netmap.name.replace(/\.$/, '')}` : ''}${address ? ` (${address})` : ''}, ${peers} peer${peers === 1 ? '' : 's'}${via ? `, internet through ${via.name}` : ''}` };
     }
     case 'NeedsLogin':
-      return loginURL ? { phase: 'login', text: 'Log in to connect', loginURL } : { phase: 'connecting', text: 'Contacting the control server…' };
+      return loginURL ? { phase: 'login', text: 'Log in to connect', loginURL, exitNodes: [] } : { phase: 'connecting', text: 'Contacting the control server…', exitNodes: [] };
     case 'NeedsMachineAuth':
-      return { phase: 'login', text: 'Waiting for an administrator to approve this machine', loginURL };
+      return { phase: 'login', text: 'Waiting for an administrator to approve this machine', loginURL, exitNodes: [] };
     case 'Stopped':
-      return { phase: 'off', text: 'Stopped' };
+      return { phase: 'off', text: 'Stopped', exitNodes: [] };
     default:
-      return { phase: 'connecting', text: c.state === '' ? 'Loading the client…' : 'Connecting…' };
+      return { phase: 'connecting', text: c.state === '' ? 'Loading the client…' : 'Connecting…', exitNodes: [] };
   }
 }
 
-export type Connect = { controlURL: string; hostname: string; authKey?: string };
+export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string };
 
 export type Network = {
   /** A new machine's end of the IP port (its device's `{ip: port}`; transfer it). Any client gets the other end. */
@@ -112,6 +118,8 @@ export type Network = {
   connect(c: Connect): void;
   /** Stops the client and takes the port back; the machine keeps its card (and the address it was given). */
   disconnect(): Promise<void>;
+  /** Sends the machine's internet traffic through the peer with this stable ID (see `view().exitNodes`), or with '' directly; rejects with the client's reason. Needs a client. */
+  setExitNode(id: string): Promise<void>;
   /** Logs the node out of its tailnet and forgets it, then disconnects. */
   logout(): Promise<void>;
   view(): NetworkView;
@@ -154,7 +162,7 @@ export function createNetwork(onChange: () => void, start: (config: TailscaleCon
       const ip = free;
       free = undefined;
       // An auth key's node is ephemeral and not kept; the login's node is (under its control server's name).
-      const t = start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, ip, persist: c.authKey ? undefined : c.controlURL }, (m) => {
+      const t = start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, ip, persist: c.authKey ? undefined : c.controlURL }, (m) => {
         if (m.type === 'error') error = m.error;
         else if (m.type === 'state' && m.state === 'Running') error = undefined;
         onChange();
@@ -164,6 +172,10 @@ export function createNetwork(onChange: () => void, start: (config: TailscaleCon
       onChange();
     },
     disconnect,
+    async setExitNode(id) {
+      if (!client) throw new Error('not connected');
+      await client.setExitNode(id);
+    },
     async logout() {
       await client?.logout();
       await disconnect();
