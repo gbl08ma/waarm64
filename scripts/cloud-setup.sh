@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Prepares a Claude Code cloud session (Ubuntu x86_64 container, root, no Lima VM) to build and
+# test the project. Idempotent; run by the SessionStart hook in .claude/settings.json, and a no-op
+# outside cloud sessions (CLAUDE_CODE_REMOTE unset), so the local Lima VM workflow is untouched.
+# What differs from the dev VM, and what is not available: docs/cloud.md.
+set -euo pipefail
+[ -n "${CLAUDE_CODE_REMOTE-}" ] || [ "${1-}" = --force ] || exit 0
+cd "$(dirname "$0")/.."
+NODE_DIR=/opt/node26
+DTC_DIR=/opt/dtc
+# The version of Node that package.json's engines asks for (the container ships an older one).
+if [ ! -x "$NODE_DIR/bin/node" ]; then
+  v=$(curl -fsS https://nodejs.org/dist/index.json | grep -o '"version":"v26\.[0-9.]*"' | head -1 | cut -d'"' -f4)
+  mkdir -p "$NODE_DIR"
+  curl -fsSL "https://nodejs.org/dist/$v/node-$v-linux-x64.tar.xz" | tar -xJ -C "$NODE_DIR" --strip-components=1
+fi
+# Test tools: dtc is built from source below (Ubuntu's 1.7.0 prints strings differently from the
+# 1.7.2 that produced tests/dtb/webpc.dts).
+need=()
+for p in qemu-aarch64:qemu-user qemu-img:qemu-utils flex:flex bison:bison make:make gcc:gcc; do
+  command -v "${p%%:*}" >/dev/null || need+=("${p##*:}")
+done
+fc-list 2>/dev/null | grep -qi dejavu || need+=(fonts-dejavu-core)
+if [ ${#need[@]} -gt 0 ]; then
+  apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${need[@]}" >/dev/null
+fi
+if [ ! -x "$DTC_DIR/dtc" ]; then
+  t=$(mktemp -d)
+  git clone -q --depth 1 --branch v1.7.2 https://git.kernel.org/pub/scm/utils/dtc/dtc.git "$t/dtc"
+  make -s -C "$t/dtc" -j"$(nproc)" dtc NO_PYTHON=1 NO_YAML=1 >/dev/null 2>&1
+  mkdir -p "$DTC_DIR" && cp "$t/dtc/dtc" "$DTC_DIR/" && rm -rf "$t"
+fi
+# The Playwright Chromium the container ships stands in for /usr/bin/chromium.
+chrome=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | sort | tail -1 || true)
+if [ -n "${CLAUDE_ENV_FILE-}" ]; then
+  {
+    echo "export PATH=$NODE_DIR/bin:$DTC_DIR:\$PATH"
+    echo "export NODE_USE_ENV_PROXY=1" # Node ignores HTTPS_PROXY otherwise (tools/debian.ts downloads with fetch)
+    [ -z "$chrome" ] || echo "export CHROMIUM=$chrome"
+  } >> "$CLAUDE_ENV_FILE"
+fi
+# JS dependencies (ci.sh does the same when they're stale).
+PATH=$NODE_DIR/bin:$PATH
+[ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit >/dev/null
+# Pre-fetch the pinned nightly and its std sources (the first cargo call would otherwise do it).
+rustc --version >/dev/null

@@ -52,6 +52,12 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
 - Side checkouts: `../webpc-exp` and `../webpc-base` (detached worktrees for A/B experiments).
 - Benchmark numbers from the x86_64 desktop (M0 to M5 step 7) aren't comparable with the VM's.
 
+**Cloud sessions** (Claude Code on the web) are a secondary path: an Ubuntu x86_64 container without
+Lima, Podman or the macOS oracles. `scripts/cloud-setup.sh` (a SessionStart hook in
+`.claude/settings.json`, a no-op elsewhere) installs Node 26 and dtc 1.7.2, points `CHROMIUM` at
+Playwright's Chromium and sets `NODE_USE_ENV_PROXY=1`. There `systemd-run` doesn't work (run under
+`timeout` only), and guest images other than Debian can't be built. Details: [docs/cloud.md](docs/cloud.md).
+
 ## Commands
 
 ```sh

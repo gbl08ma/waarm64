@@ -19,6 +19,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [testing.md](testing.md) | the test layers and which runner covers what, step counts, the golden corpus and oracles, JIT tests and stress policy, litmus and atomics stress, the decoder sweep |
 | [benchmarking.md](benchmarking.md) | the harness, every benchmark, the rules, current numbers, profiling |
 | [images.md](images.md) | guest images: how they're built, what each is for, gotchas |
+| [cloud.md](cloud.md) | Claude Code cloud sessions: what differs from the dev VM (x86_64, Node, Chromium, dtc, images) and the setup script |
 | [backlog.md](backlog.md) | open loose ends by area (PLAN.md's M9) |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
 | [plans/graphics.md](plans/graphics.md) | exploration for a real display and 3D (not scheduled) |
