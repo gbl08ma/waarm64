@@ -29,6 +29,14 @@ with a per-environment egress policy (Network access in the environment's settin
 | `perf`, `wasm-tools`, `../webpc-exp` worktrees | not installed | dev-only; install if needed |
 | Benchmarks | x86_64 runner of unknown, shared hardware | numbers are not comparable with the VM's; don't record any (CLAUDE.md's rules on benchmarks) |
 
+## Networking work (net/, tests/net/)
+
+Go modules download through the proxy (Go 1.26 is fetched on demand by `go.mod`'s toolchain line),
+and `dockerd` starts (`dockerd &`, root) and pulls Docker Hub images, so the tailnet of
+`tests/net/tailnet.sh` can run here. The script calls `podman` (the project never uses Docker); in
+a cloud session put a shim named `podman` that execs `docker "$@"` first on `PATH`, outside the
+repo. GitHub release downloads (`github.com/.../releases`) are refused by the proxy.
+
 ## Images
 
 `images/build.sh` needs Podman and native arm64, so the cloud can't build Alpine, Buildroot, the

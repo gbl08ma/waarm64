@@ -1,0 +1,17 @@
+{
+  "wasm": "/tmp/claude-0/opt/tailscale.wasm",
+  "controlURL": "https://127.0.0.1:8443",
+  "node": "v26.10.0",
+  "wasmBytes": 24377779,
+  "loadMs": 69.82594900000001,
+  "runningMs": 2437.009053,
+  "firstPingMs": 33.16481700000031,
+  "rttMedianMs": 1.7143280000000232,
+  "rttMinMs": 1.3795570000002044,
+  "rttMaxMs": 4.208100999999715,
+  "echoes": 15854,
+  "lost": 0,
+  "echoBytes": 1280,
+  "seconds": 5,
+  "mbitPerSecEachWay": 32.468992
+}

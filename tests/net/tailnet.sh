@@ -1,0 +1,114 @@
+#!/bin/sh
+# A throwaway tailnet for the networking tests (docs/plans/networking.md, N2/N4):
+# headscale with its embedded DERP over TLS (a test CA, 127.0.0.1) and one
+# peer, `tailscaled` in userspace networking, both in rootless Podman on the
+# host network (never Docker, docs/images.md). Usage:
+#   tests/net/tailnet.sh up      start it; prints the environment for the tests
+#   tests/net/tailnet.sh env     print it again
+#   tests/net/tailnet.sh key     print a new reusable, ephemeral auth key
+#   tests/net/tailnet.sh down    remove the containers and the state
+# The state lives in $TAILNET_DIR (default target/net/tailnet). The tailnet's
+# IPv4 range is $HEADSCALE_V4 (default 100.90.0.0/16, on purpose not the
+# default 100.64.0.0/10): tests take addresses from the clients, never assume.
+set -eu
+ROOT=$(cd "$(dirname "$0")/../.." && pwd)
+DIR=${TAILNET_DIR:-$ROOT/target/net/tailnet}
+HS_IMAGE=docker.io/headscale/headscale:v0.29.4
+TS_IMAGE=docker.io/tailscale/tailscale:v1.102.5
+PORT=${TAILNET_PORT:-8443}
+V4=${HEADSCALE_V4:-100.90.0.0/16}
+HS=webpc-headscale
+PEER=webpc-peer
+
+hs() { podman exec "$HS" headscale "$@"; }
+peerts() { podman exec "$PEER" tailscale --socket=/tmp/ts.sock "$@"; }
+
+authkey() { hs preauthkeys create -u 1 --reusable --ephemeral -e 24h -o json | sed -n 's/.*"key": *"\([^"]*\)".*/\1/p'; }
+
+env_() {
+	echo "WEBPC_TS_CONTROL=https://127.0.0.1:$PORT"
+	echo "WEBPC_TS_PEER_IP=$(peerts ip -4)"
+	echo "WEBPC_TS_PEER_NAME=$(peerts status --json | sed -n 's/.*"DNSName": *"\([^"]*\)".*/\1/p' | head -1)"
+	echo "NODE_EXTRA_CA_CERTS=$DIR/tls/ca.pem"
+}
+
+case ${1:-} in
+up)
+	"$0" down >/dev/null 2>&1 || true
+	mkdir -p "$DIR/config/tls" "$DIR/lib"
+	cd "$DIR/config/tls"
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout ca.key -out ca.pem -subj "/CN=webpc test CA" -days 30 2>/dev/null
+	openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout srv.key -out srv.csr -subj "/CN=127.0.0.1" 2>/dev/null
+	printf 'subjectAltName=IP:127.0.0.1,DNS:localhost\nbasicConstraints=CA:FALSE\n' > ext
+	openssl x509 -req -in srv.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out srv.pem -days 30 -extfile ext 2>/dev/null
+	chmod 644 ./*
+	ln -sf "$DIR/config/tls" "$DIR/tls"
+	cat > "$DIR/config/config.yaml" <<YAML
+server_url: https://127.0.0.1:$PORT
+listen_addr: 0.0.0.0:$PORT
+metrics_listen_addr: 127.0.0.1:9090
+grpc_listen_addr: 127.0.0.1:50443
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+prefixes:
+  v4: $V4
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+derp:
+  server:
+    enabled: true
+    region_id: 999
+    region_code: headscale
+    region_name: Headscale Embedded DERP
+    verify_clients: true
+    stun_listen_addr: 0.0.0.0:3478
+    private_key_path: /var/lib/headscale/derp_server_private.key
+    automatically_add_embedded_derp_region: true
+    ipv4: 127.0.0.1
+  urls: []
+  paths: []
+  auto_update_enabled: false
+disable_check_updates: true
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+tls_cert_path: /etc/headscale/tls/srv.pem
+tls_key_path: /etc/headscale/tls/srv.key
+policy:
+  mode: file
+  path: ""
+dns:
+  magic_dns: true
+  base_domain: tail.test
+  override_local_dns: false
+  nameservers:
+    global: []
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+logtail:
+  enabled: false
+YAML
+	podman run -d --name "$HS" --network host -v "$DIR/config:/etc/headscale" -v "$DIR/lib:/var/lib/headscale" "$HS_IMAGE" serve >/dev/null
+	for _ in $(seq 40); do
+		curl -sf --cacert "$DIR/config/tls/ca.pem" "https://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break
+		sleep 0.5
+	done
+	hs users create tailnet >/dev/null
+	podman run -d --name "$PEER" --network host -v "$DIR/config/tls/ca.pem:/ca.pem:ro" -e SSL_CERT_FILE=/ca.pem \
+		-e TS_AUTHKEY="$(authkey)" -e TS_HOSTNAME=peer -e TS_USERSPACE=true -e TS_STATE_DIR=/var/lib/tailscale \
+		-e TS_SOCKET=/tmp/ts.sock -e TS_EXTRA_ARGS="--login-server=https://127.0.0.1:$PORT" "$TS_IMAGE" >/dev/null
+	for _ in $(seq 60); do
+		peerts ip -4 >/dev/null 2>&1 && break
+		sleep 0.5
+	done
+	env_
+	;;
+env) env_ ;;
+key) authkey ;;
+down)
+	podman rm -f "$PEER" "$HS" >/dev/null 2>&1 || true
+	rm -rf "$DIR"
+	;;
+*) echo "usage: $0 up|env|key|down" >&2; exit 2 ;;
+esac

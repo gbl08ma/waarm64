@@ -45,6 +45,7 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   system, tools), podman (rootless), dtc, capstone, dejavu-fonts (headless Chromium draws no page
   text without a font: screenshots of the page need it); Rust through rustup and `rust-toolchain.toml`.
   Add what's missing with `sudo zypper in`, and note it here.
+- **Go** (from zypper; `net/tailscale/go.mod` pins the toolchain) builds the Tailscale wasm backend, `net/tailscale/build.sh`. The networking tests' headscale and peer run in rootless Podman: `tests/net/tailnet.sh up|down`. Never Docker in scripts or CI.
 - Dev-only tools (not repo dependencies, not in tests or CI): `perf` (with V8's `--perf-prof`;
   `perf_event_paranoid` is 2, so profile your own processes) and `wasm-tools` (`cargo +stable
   install --locked wasm-tools`, in `~/.cargo/bin`). Node's `--print-wasm-code` prints V8's machine

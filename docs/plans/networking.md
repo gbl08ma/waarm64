@@ -1,6 +1,6 @@
 # webpc networking plan
 
-**Status:** exploration, drafted 2026-09-27; the networking lane started 2026-09-29 (N1 done). It feeds M8's "networking backend API"
+**Status:** exploration, drafted 2026-09-27; the networking lane started 2026-09-29 (N1, N2 done). It feeds M8's "networking backend API"
 (PLAN.md, M8). When a step here is scheduled, move it into PLAN.md and keep this file as the
 background it came from.
 
@@ -172,10 +172,16 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
 
 - **N1 — Adapter API cleanup (done).** Drop `v86Bus` (`web/net.ts`) and the v86 wording in `docs/devices.md`;
   document the frame port as the API. Define the IP-packet port for layer-3 backends.
-- **N2 — Tailscale wasm spike, measured.** The Go module with the `Tun` hook, built with the
+- **N2 — Tailscale wasm spike, measured (done: [bench/net/REPORT.md](../../bench/net/REPORT.md)).** The Go module with the `Tun` hook, built with the
   feature tags, in a worker; log in with an auth key and ping a tailnet peer from JS alone. Record
   raw, compressed and `wasm-opt` sizes, startup time, and throughput through DERP. If the size is
   unacceptable even after §4.4, stop here and move to §5 earlier.
+  *Outcome:* 26.9 MB raw, **4.3 MB Brotli** with 71 omit tags (`wasm-opt` gains nothing on the wire
+  and is not used); Running in ~2.3 s; ~33 Mbit/s and 1.6 ms through a local DERP. The Go path
+  stays. Code: `net/tailscale/` (`build.sh`, `main_js.go`, a one-change overlay for the control
+  dialer's HTTPS port), `bench/net/` (Node harness, spike), `tests/net/tailnet.sh` (headscale and a
+  peer in rootless Podman). Findings in the report: Go's fetch off in Node, `login()`, custom HTTPS
+  ports, DERP needs TLS, the 5 s first-ping mode, logtail dropped.
 - **N3 — The gateway** (§3), IPv4, in the device worker, with a synchronous test backend that
   echoes at the IP level: Node unit tests for its ARP, DHCP and framing bytes, and a Buildroot
   boot that takes a DHCP lease and pings through it, deterministic and with exact step counts like

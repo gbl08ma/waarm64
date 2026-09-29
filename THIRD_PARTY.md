@@ -8,6 +8,8 @@ copyright/license header in the file.
 | Our file(s) | Source project, file, commit | License |
 |---|---|---|
 | `core/src/a64/a64.inc` | dynarmic, `src/dynarmic/frontend/A64/decoder/a64.inc`, `a41c380246d3` (verbatim, header added). `core/build.rs` follows the match order of dynarmic's `a64.h` | 0BSD |
+| `net/tailscale/main_js.go` (N2) | the engine setup of Tailscale's `cmd/tsconnect/wasm/wasm_js.go` (v1.102.5), with our `Tun` device and JS API instead of the netstack-terminated sockets and ssh; header kept | BSD-3-Clause |
+| `net/tailscale/overlay/controlhttp_client_js.go` (N2) | `tailscale.com/control/controlhttp/client_js.go` (v1.102.5), copied with one marked change (keep the control server's HTTPS port over WebSocket); `net/tailscale/build.sh` builds against a copy of the module with this file replaced | BSD-3-Clause |
 
 ## Techniques from papers and other projects (ideas, no code)
 
@@ -24,6 +26,18 @@ Reimplemented from the description, nothing copied; credited all the same.
 | Package | Version | License | Use |
 |---|---|---|---|
 | @xterm/xterm | 6.0.0 | MIT | the page's serial terminal (`web/app/`); served from `node_modules` (only `lib/xterm.mjs` and `css/xterm.css`), not vendored |
+
+## Go dependencies of the Tailscale backend (`net/tailscale`, N2)
+
+Built to `target/net/tailscale.wasm` by `net/tailscale/build.sh`, loaded only when the user connects
+to a tailnet. Modules linked into the wasm (`go list -deps`, checked 2026-09-29; `go.mod` pins the
+versions), all permissive: `tailscale.com` v1.102.5 (BSD-3-Clause); `github.com/tailscale/wireguard-go`
+(MIT); `gvisor.dev/gvisor` (Apache-2.0); `github.com/coder/websocket` (ISC);
+`github.com/klauspost/compress` (BSD-3-Clause, Apache-2.0 and MIT parts); `github.com/gaissmai/bart`
+(MIT); `github.com/golang/groupcache`, `github.com/google/btree`, `github.com/akutz/memconn`,
+`go4.org/mem` (Apache-2.0); `go4.org/netipx`, `github.com/go-json-experiment/json`, `golang.org/x/{crypto,exp,net,sys,term,text,time}`
+(BSD-3-Clause). Go's `wasm_exec.js` (BSD-3-Clause) is copied next to the module. Re-run the listing
+when bumping the pin.
 
 ## Development dependencies (not distributed)
 
@@ -66,6 +80,8 @@ Re-check at the commit you actually pin before copying anything.
 | [Sail ARM model](https://github.com/rems-project/sail-arm) | `1bf2e5574ba9` | BSD-3-Clause-Clear (per model directory) | The Clear variant explicitly grants no patent rights. Executable ISA model: the oracle for disputed corner cases |
 | Arm A64 machine-readable spec (AARCHMRS JSON) | 2024-12 release | Arm publishes a "BSD license JSON" release, but its release notes defer to the Proprietary Notice inside the package | **Read the notice in the downloaded package before generating code from it.** Until then, dynarmic's 0BSD decoder table is the safe source |
 | [Playwright](https://github.com/microsoft/playwright) | 1.63.0 | Apache-2.0 | |
+| [Tailscale](https://github.com/tailscale/tailscale) | v1.102.5 | BSD-3-Clause | the client the networking backend is built from (above); its `tailscaled` image is the test peer |
+| [headscale](https://github.com/juanfont/headscale) | v0.29.4 | BSD-3-Clause | the control server the networking tests run in rootless Podman (`tests/net/tailnet.sh`); never linked or distributed |
 
 **Copyleft or other: use as oracle, guest workload or behavioral reference only. Never copy code.**
 

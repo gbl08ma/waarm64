@@ -1,0 +1,17 @@
+{
+  "wasm": "target/net/tailscale.wasm",
+  "controlURL": "https://127.0.0.1:8443",
+  "node": "v26.10.0",
+  "wasmBytes": 26863282,
+  "loadMs": 76.522288,
+  "runningMs": 2447.35391,
+  "firstPingMs": 32.10551400000031,
+  "rttMedianMs": 1.7334040000000641,
+  "rttMinMs": 1.33247799999981,
+  "rttMaxMs": 2.287196000000222,
+  "echoes": 14953,
+  "lost": 0,
+  "echoBytes": 1280,
+  "seconds": 5,
+  "mbitPerSecEachWay": 30.623744
+}
