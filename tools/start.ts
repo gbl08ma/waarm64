@@ -11,6 +11,7 @@ import { homedir } from 'node:os';
 import { delimiter, join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import { prepareDebian } from './debian.ts';
+import { prepareTailscale } from './tailscale.ts';
 import { APP, ROOT, startServer } from './serve.ts';
 
 export const WASM = join(ROOT, 'target/wasm32-unknown-unknown/release/webpc_core.wasm');
@@ -104,6 +105,7 @@ export async function main(argv = process.argv.slice(2)) {
   const env = rustEnv();
   installPackages();
   buildCore(env);
+  prepareTailscale(); // the Network menu's client: built when Go is there, never fatal (tools/tailscale.ts)
   await prepareDebian().catch((e: Error) => stop(e.message));
   if (values['prepare-only']) {
     console.log(`Ready in ${((performance.now() - t0) / 1000).toFixed(1)} s (not serving: --prepare-only).`);

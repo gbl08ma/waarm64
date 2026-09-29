@@ -94,6 +94,10 @@ export type Tailscale = {
   close(): void;
 };
 
+/** Whether the server has the client (target/net/tailscale.wasm): the page says so before it restarts a machine for a card. */
+export const tailscaleBuilt = (wasm = new URL('../target/net/tailscale.wasm', import.meta.url).href) =>
+  fetch(wasm, { method: 'HEAD' }).then((r) => r.ok, () => false);
+
 export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailscale) => void = () => {}): Tailscale {
   const worker = new Worker(new URL('./tailscale-worker.ts', import.meta.url), { type: 'module' });
   const own = config.ip ? undefined : new MessageChannel();

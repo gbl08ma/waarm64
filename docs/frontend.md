@@ -3,7 +3,7 @@
 The interactive machine (M8 phase A): one VM per page, its screen on a canvas and its serial
 console on xterm.js. `npm start` prepares everything and serves it at
 `http://127.0.0.1:8080/web/app/` (`/` redirects there; below, "`npm start`"); `npm run serve` only
-serves. Chromium only.
+serves (and builds the Tailscale client, below, "Network"). Chromium only.
 
 ## Files
 
@@ -16,6 +16,7 @@ serves. Chromium only.
 | `web/app/machine.ts` | the machines, in one place: image URLs, command line (and the one with a network card), RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
+| `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci.sh` ("Network") |
 | `tools/debian.ts` | Debian's download and preparation, for `npm start` and `images/build.sh debian` |
 | `web/bootfs.ts`, `web/ext4.ts` | partition tables, a read-only ext2/3/4 reader, a distribution's kernel and initrd (below, "The disk reader") |
 
@@ -273,6 +274,7 @@ load the client at all.
 - Settings (`webpc.settings` `net`): `enabled` (the card), `controlURL`, `hostname`, `autoconnect`,
   `keyed`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
+- **The client is built by the servers:** `npm run serve` and `npm start` run `tools/tailscale.ts` first: it builds `net/tailscale` with `net/tailscale/build.sh` into `target/net/tailscale.wasm` (and `wasm_exec.js`) when they're missing or a hash of `net/tailscale`'s files (stamp `tailscale.wasm.inputs`) changed, ~30 s to ~1 min the first time (Go downloads its toolchain and modules). It never stops the server: without Go, or if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `WEBPC_TAILSCALE=0` skips it. `scripts/ci.sh` runs it as a step so the page and tailnet tests find the client.
 - **The control server must answer `GET /key` with CORS headers** (docs/plans/networking.md N4):
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),

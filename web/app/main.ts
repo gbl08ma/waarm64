@@ -8,7 +8,7 @@ import { Terminal } from '@xterm/xterm';
 import { attachInput, type Input } from '../input.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
 import { defaultCpus, hostMemoryGiB, MACHINES, type Machine, type MachineName } from './machine.ts';
-import { createNetwork, DEFAULT_SETTINGS, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
+import { createNetwork, DEFAULT_SETTINGS, tailscaleBuilt, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -341,6 +341,7 @@ netEl.form.onsubmit = (e) => {
   formError();
   const authKey = netEl.key.value.trim();
   void (async () => {
+    if (!(await tailscaleBuilt())) return formError("The Tailscale client isn't built on this server. Start the page with `npm run serve` or `npm start` (they build it; Go is needed), or run net/tailscale/build.sh.");
     const had = netSettings().enabled;
     if (!had && (state === 'running' || state === 'booting') && !confirm('Connecting gives the machine a network card, which restarts it: like pulling the plug, unsaved work in the guest is lost. Continue?')) return;
     remember({ net: { enabled: true, controlURL: netEl.control.value.trim(), hostname: netEl.hostname.value.trim(), autoconnect: !authKey, keyed: !!authKey } });

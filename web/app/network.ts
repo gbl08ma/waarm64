@@ -7,7 +7,9 @@
 // client, when there is one, has it (`attach`); a restarted machine brings a new port, and
 // a disconnected client hands it back (`detach`), so a machine can be connected, disconnected and
 // connected again without a restart.
-import { startTailscale, type FromTailscale, type NetMap, type Tailscale, type TailscaleConfig } from '../tailscale.ts';
+import { startTailscale, tailscaleBuilt, type FromTailscale, type NetMap, type Tailscale, type TailscaleConfig } from '../tailscale.ts';
+
+export { tailscaleBuilt };
 
 export const DEFAULT_CONTROL = 'https://controlplane.tailscale.com';
 

@@ -128,7 +128,7 @@ test('npm start on a fresh copy of the repository: install, build, prepare Debia
     copyFileSync(WASM, wasm);
     writeFileSync(wasm + '.inputs', wasmInputs(d) + '\n');
   }
-  const env = { ...process.env, PORT: '0', WEBPC_DL: downloads() };
+  const env = { ...process.env, PORT: '0', WEBPC_DL: downloads(), WEBPC_TAILSCALE: '0' }; // (no Go build in the copy: tests/tailscale-build.test.ts has it)
   const start = performance.now();
   let served = 0;
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'tools/start.js'], { cwd: d, env, stdio: ['ignore', 'pipe', 'pipe'] });
