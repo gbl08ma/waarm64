@@ -44,7 +44,10 @@ milestone loop still needs a local `scripts/ci.sh` with all images.
 
 Toolchain install (`rustup` fetching the pinned nightly): ~1 min. `scripts/build-wasm.sh` from
 scratch: 45 s. `cargo fmt`, `clippy`, `cargo test`: clean (138 unit tests, after dtc). TestFloat:
-53 s including the build. `tsc`: clean. See below for the JS suite.
+53 s including the build. `tsc`: clean. `npm test` (4.7 min): 177 pass, 0 fail, 89 skipped (all
+for missing images or unselected distros). With `WEBPC_DISTROS=debian`, Debian boots in Chromium 141
+under the JIT in ~147 s and the page test (login on screen and serial, disk persistence) passes in
+~5 min: about 2.5x slower than the M4 VM's ~1 min, so budget for it under the 10-minute command cap.
 
 ## Setup
 
