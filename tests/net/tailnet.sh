@@ -19,7 +19,7 @@ HS_IMAGE=docker.io/headscale/headscale:v0.29.4
 TS_IMAGE=docker.io/tailscale/tailscale:v1.102.5
 CADDY_IMAGE=${CADDY_IMAGE:-docker.io/library/caddy:2.10}
 PORT=${TAILNET_PORT:-8443} # what clients use (TLS, the proxy)
-INNER=${TAILNET_INNER_PORT:-8080} # headscale's own, plain HTTP
+INNER=${TAILNET_INNER_PORT:-18080} # headscale's own, plain HTTP
 V4=${HEADSCALE_V4:-100.90.0.0/16}
 HS=webpc-headscale
 PEER=webpc-peer
@@ -51,8 +51,8 @@ up)
 	cat > "$DIR/config/config.yaml" <<YAML
 server_url: https://127.0.0.1:$PORT
 listen_addr: 127.0.0.1:$INNER
-metrics_listen_addr: 127.0.0.1:9090
-grpc_listen_addr: 127.0.0.1:50443
+metrics_listen_addr: 127.0.0.1:19090
+grpc_listen_addr: 127.0.0.1:15443
 noise:
   private_key_path: /var/lib/headscale/noise_private.key
 prefixes:
@@ -80,7 +80,7 @@ database:
     path: /var/lib/headscale/db.sqlite
 policy:
   mode: file
-  path: ""
+  path: /etc/headscale/policy.json
 dns:
   magic_dns: true
   base_domain: tail.test
@@ -92,6 +92,11 @@ unix_socket_permission: "0770"
 logtail:
   enabled: false
 YAML
+	# An explicit allow-all policy (what a tailnet without ACLs means), so the tests never depend on headscale's default
+	# for an empty one.
+	cat > "$DIR/config/policy.json" <<'POLICY'
+{"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}]}
+POLICY
 	cat > "$DIR/config/Caddyfile" <<CADDY
 {
 	auto_https off

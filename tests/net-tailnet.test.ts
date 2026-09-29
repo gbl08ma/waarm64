@@ -10,8 +10,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { createServer } from 'node:http';
-import { networkInterfaces } from 'node:os';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
@@ -54,6 +52,8 @@ after(async () => {
 });
 
 const OVERLAY = 'webpc-tailnet-test';
+const INTERNET_IP = '1.1.1.1';
+const INTERNET_HOST = 'example.com';
 const harness = <T>(page: Page, f: string) => page.evaluate(`window.harness.${f}`) as Promise<T>;
 /** What the client was doing, for a failure's message. */
 const clientState = async (page: Page) => `; the client: ${JSON.stringify(await harness<object>(page, 'tailscale()'))}`;
@@ -124,41 +124,38 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       assert.match(reply, /hello-from-the-guest/);
       assert.match(peerTs('status'), new RegExp(`${self}\\s+guest`));
 
-      // The exit node: the peer offers to carry the guest's internet traffic. A server on this host,
-      // at an address that isn't the tailnet's, stands for the internet: the guest can't reach it
-      // until it uses the peer as its exit node (the peer, in userspace networking, connects for it).
-      const hostIP = Object.values(networkInterfaces()).flat().find((i) => i && i.family === 'IPv4' && !i.internal)?.address;
-      assert.ok(hostIP, 'this host has an IPv4 address that isn\'t loopback');
-      const server = createServer((_, res) => res.end('hello-from-the-internet\n'));
-      await new Promise<void>((resolve) => server.listen(0, '0.0.0.0', resolve));
-      try {
-        const url = `http://${hostIP}:${(server.address() as { port: number }).port}/`;
+      // The exit node: the peer offers to carry the guest's internet traffic. Tailscale's exit nodes
+      // never forward RFC 1918 addresses, the exit node's own LAN included (ipn/ipnlocal's
+      // removeFromDefaultRoute: the "guest wifi" rule), so a server on this host's LAN can't stand for the
+      // internet: the phase uses the real one (the host has it: the images and the Go modules came
+      // through it) and is skipped, loudly, when this host can't reach it.
+      const reach = async (url: string) => fetch(url, { signal: AbortSignal.timeout(8000), redirect: 'manual' }).then((r) => r.status, () => 0);
+      const internet = (await reach(`http://${INTERNET_IP}/`)) !== 0 && (await reach(`http://${INTERNET_HOST}/`)) !== 0;
+      if (!internet) {
+        console.log(`# SKIPPED: the exit-node phase, this host can't reach ${INTERNET_IP} and ${INTERNET_HOST}`);
+      } else {
         const offers = (await harness<{ netmap: { exitNode: string; peers: { id: string; name: string; exitNodeOption: boolean }[] } }>(page, 'tailscale()')).netmap;
         const exit = offers.peers.find((p) => p.exitNodeOption);
         assert.ok(exit, `the peer offers to be an exit node: ${JSON.stringify(offers.peers)}`);
         assert.equal(offers.exitNode, '', 'none in use yet');
-        const before = await run(`curl -s -m 8 ${url}; echo "exit=$?"`, 60_000);
-        assert.doesNotMatch(before, /hello-from-the-internet/, 'without an exit node the tailnet has no route to the address');
+        const probe = (host: string) => run(`curl -s -m 10 -o /dev/null -w 'status=%{http_code}' http://${host}/; echo " exit=$?"`, 60_000);
+        const before = await probe(INTERNET_IP);
+        assert.doesNotMatch(before, /status=[1-5]\d\d/, `without an exit node the tailnet has no route to ${INTERNET_IP}: ${before}`);
         assert.equal(await harness<string>(page, `setExitNode(${JSON.stringify(exit.id)})`), '', 'the client takes the exit node');
         await page.waitForFunction((id) => (window as never as { harness: { tailscale(): { netmap: { exitNode: string } } } }).harness.tailscale().netmap.exitNode === id, exit.id, { timeout: 30_000, polling: 250 });
         let via = '';
-        for (let k = 0; k < 10 && !via.includes('hello-from-the-internet'); k++) {
-          via = await run(`curl -s -m 8 ${url}; echo "exit=$?"`, 60_000);
-        }
-        assert.match(via, /hello-from-the-internet/, `through the exit node the guest reaches ${url}${await context()}`);
-        // A DNS query straight to MagicDNS's address (no resolver of the guest's in between); the
-        // tailnet has no nameservers, so the only upstream there can be is the exit node's DNS
-        // (the client asks its peerapi over DoH). What is asked doesn't matter: an answer, even NXDOMAIN
-        // for "localhost", came from the exit node's resolver; without one the client says SERVFAIL.
-        const dnsQuery = "import socket,struct;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(8);s.sendto(struct.pack('>HHHHHH',7,0x100,1,0,0,0)+b'\\x09localhost\\x00\\x00\\x01\\x00\\x01',('100.100.100.100',53));r=s.recv(512);print('rcode',r[3]&15,'answers',struct.unpack('>H',r[6:8])[0])";
-        const dns = () => run(`python3 -c ${JSON.stringify(dnsQuery)}`, 60_000);
-        const answered = await dns();
-        assert.match(answered, /rcode [03] /, `through the exit node the guest's DNS queries reach a resolver (not SERVFAIL): ${answered}`);
+        for (let k = 0; k < 6 && !/status=[1-5]\d\d/.test(via); k++) via = await probe(INTERNET_IP);
+        assert.match(via, /status=[1-5]\d\d/, `through the exit node the guest reaches ${INTERNET_IP}${await context()}; the peer: ${podman('exec', 'webpc-peer', 'tailscale', '--socket=/tmp/ts.sock', 'metrics', 'print').split('\n').filter((l) => /dropped_packets_total\{/.test(l)).join(' ')}`);
+        // Names: the guest's resolver asks MagicDNS, which (the tailnet has no nameservers) can only
+        // forward to the exit node's resolver (a DoH query to its peerapi); SERVFAIL means it couldn't.
+        let named = '';
+        for (let k = 0; k < 6 && !named.includes(' '); k++) named = (await run(`getent ahostsv4 ${INTERNET_HOST} | head -1`, 60_000)).split('\n')[0].trim();
+        assert.match(named, /^\d+\.\d+\.\d+\.\d+ /, `the guest resolves ${INTERNET_HOST} through the exit node`);
+        const http = await probe(INTERNET_HOST);
+        assert.match(http, /status=[1-5]\d\d/, `and connects to it by name: ${http}`);
         assert.equal(await harness<string>(page, "setExitNode('')"), '');
-        const after = await run(`curl -s -m 8 ${url}; echo "exit=$?"`, 60_000);
-        assert.doesNotMatch(after, /hello-from-the-internet/, 'and stops when the exit node is cleared');
-      } finally {
-        server.close();
+        const after = await probe(INTERNET_IP);
+        assert.doesNotMatch(after, /status=[1-5]\d\d/, 'and stops when the exit node is cleared');
       }
     } finally {
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
