@@ -1,11 +1,11 @@
-**Handover, 2026-09-29: M8 phase A is done (loops 0–7) and the user has made their pass over
-the machine. Next: one loop of the user's rough edges (below), then phase B (snapshots) and the
-phase C tracks, each waiting for a kickoff the user confirms.**
+**Handover, 2026-09-29: M8 phase A is done (loops 0–7), the user has made their pass over the
+machine, and loop 8 fixed the rough edges they found (`4eb7cc4`). Next: phase B (snapshots) and
+the phase C tracks, each waiting for a kickoff the user confirms.**
 
 This file is for whoever drafts or starts the next work. The kickoff (M8-KICKOFF.md, "Check with
 me before") says phase A ends at its exit report, and **phase B or any C track starts only from a
-kickoff the user has confirmed.** The rough-edges loop is phase A follow-up the user asked for and
-can start from this file. Below: the user's answers, the rough-edges loop, where things stand,
+kickoff the user has confirmed.** Loop 8 was the phase A follow-up the user asked for; nothing
+of it is left to do. Below: the user's answers, loop 8 and its outcome, where things stand,
 what the exit found, the numbers, gotchas, the questions still open, and the outline for phase
 B's kickoff (refined with the user's answers) and the C tracks' first steps.
 
@@ -91,7 +91,7 @@ still bind the page), then `docs/frontend.md` (the page), `docs/platform.md` (ru
 SMP, broadcast maintenance), `docs/devices.md` (the device worker, the overlay), `docs/abi.md`
 (the host ABI; a snapshot is an ABI change: design note first), `docs/backlog.md` ("The page",
 "Snapshots in parallel SMP", "Parallel SMP"), `docs/testing.md`, `bench/boot/REPORT.md` "M8
-loop 0"–"M8 loop 7". Kickoff and handover files in the repo root are tracked
+loop 0"–"M8 loop 8". Kickoff and handover files in the repo root are tracked
 (CLAUDE.md "Where things are written down"): commit the next handover with its work and delete
 this one then.
 
@@ -105,9 +105,8 @@ this one then.
 | 4 | `920babd` | Loading and errors a user can act on: download progress, boot card, `failed`/`crashed` with a `problem` and actions, checks before any worker, Reset disk, the serial log, `?params=` |
 | 5 | `dfc7b95` | `npm start` (`tools/start.js` → `tools/start.ts`, `tools/debian.ts`), the disk reader `web/bootfs.ts` + `web/ext4.ts`, top-level README; `tests/ext4.test.ts`, `tests/start.test.ts` |
 | 6 | `b8efa00` | The end-to-end test `tests/page-debian.test.ts` (logins on the serial terminal and the screen, a marker across them, persistence over a reload, Reset disk); the ready-marker fix; `tests/debian-lock.ts` |
-| 8 | `4eb7cc4` | The user's rough edges: Keys menu F1–F12, the overlay's Web Lock and serialized restarts, `timer.bin` hardened, a Node parallel-mode memory leak fixed, Firefox recorded; CLAUDE.md's memory-cap rule |
 | 7 | `bdb35e4` | The exit: **a JIT memory-ordering fix** (below), the e2e test's screen race fixed, the fresh-copy test shortened (Debian overlap review), docs and PLAN.md closed for phase A, backlog "The page" |
-| 8 | `LOOP8` | The user's rough edges: Ctrl+Alt+F1–F12 in the Keys menu; the overlay's hand-over under a Web Lock and restarts that can't overlap (the "disk in use" Restart); `timer.bin` hardened; Firefox's missing root recorded (below) |
+| 8 | `4eb7cc4` | The user's rough edges: Keys menu F1–F12, the overlay's Web Lock and serialized restarts, `timer.bin` hardened, a Node parallel-mode memory leak fixed, Firefox recorded; CLAUDE.md's memory-cap rule |
 
 ## Loop 7 (the exit)
 - **The memory-ordering bug is real, and fixed.** The parallel JIT litmus flake of loops 4 and 6
@@ -143,13 +142,11 @@ this one then.
   side): under load, keys typed while login hands tty1 to bash are lost, as loop 6 found on the
   serial side. The test now waits (from the serial shell) for bash's prompt in `/dev/vcs1` before
   typing on the screen. Test-only; passed alone and in the next CI runs.
-- **The user's pass over the machine** happened after the exit (answers and the rough-edges loop
-  at the top). docs/backlog.md "The page" has the known edges (clipboard for the screen,
-  keyboard layouts, the Keyboard Lock tested by hand only, no settings UI, the ready marker as a
-  per-machine regexp, no boot-to-login bench case, boot time) and an entry for the user's report,
-  still "none reported yet" until the rough-edges loop fills it in.
-- **`timer.bin` under load (loop 6)**: untouched at the exit; the user has since approved
-  hardening it (rough-edges loop, item 3).
+- **The user's pass over the machine** happened after the exit (answers and loop 8 at the top).
+  docs/backlog.md "The page" has the known edges (clipboard for the screen, keyboard layouts, the
+  Keyboard Lock tested by hand only, no settings UI, the ready marker as a per-machine regexp, no
+  boot-to-login bench case, boot time) and, since loop 8, the user's report and what's left of it.
+- **`timer.bin` under load (loop 6)**: untouched at the exit; hardened in loop 8 (item 3).
 - **An unexplained slow `npm test`**: the first full `npm test` of this loop (TAP reporter, all
   distros, idle host) didn't finish in 580 s and was killed; nothing was left running and no
   lock was left behind, and the TAP output (ordered by file) only showed boot-node.test.ts done.
@@ -170,7 +167,7 @@ this one then.
   prebuilt; cold (the core built) ~12 s on the M4 plus Debian's 400 MB download.
 - The e2e test alone 110 s (running 32 s, logged in 38 s, reloaded 68 s, reset 105 s); in CI
   ~180 s.
-- `npm test`: 290 s (loop 6), 303 s (this loop before the test changes; the Node litmus at
+- `npm test`: 290 s (loop 6), 303 s (loop 7 before its test changes; the Node litmus at
   `-r 50` adds ~20 s under load, on boot-node.test.ts, the long pole), 297 s after. Full
   `scripts/ci.sh`: 446 s with warm caches (the green run at `bdb35e4`'s tree).
 - Litmus and A/B raw: `bench/boot/results/m8-loop7/` (`litmus.json`, `smp-user-*.json`).
@@ -193,7 +190,7 @@ this one then.
   `bench/run.ts --out` is joined to the checkout's root (so a run from `../webpc-base` writes
   there).
 - `../webpc-base` is at `b8efa00` (loop 6, wasm built: the pre-fix JIT) for A/B runs.
-- From earlier loops (loop 6's handover has the full list): Playwright's `keyboard.type()` doesn't
+- From earlier loops: Playwright's `keyboard.type()` doesn't
   press Shift; `page.route` can strip COOP/COEP from worker fetches; xterm.js's DOM renderer shows
   only visible rows; virtio-input drops past 1024 queued events (pace typing); never type ahead
   of a prompt on Debian's consoles; a `requestAnimationFrame` loop on the page delays worker
