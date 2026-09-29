@@ -28,6 +28,7 @@ import (
 	"tailscale.com/ipn/ipnlocal"
 	"tailscale.com/ipn/store/mem"
 	"tailscale.com/net/netns"
+	"tailscale.com/net/tsaddr"
 	"tailscale.com/net/tsdial"
 	"tailscale.com/net/tstun"
 	"tailscale.com/tailcfg"
@@ -227,7 +228,7 @@ func newNode(cfg js.Value) map[string]any {
 			if n.BrowseToURL != nil {
 				cb.Call("notifyBrowseToURL", *n.BrowseToURL)
 			}
-			if n.SelfChange != nil || n.State != nil {
+			if n.SelfChange != nil || n.State != nil || len(n.PeersChanged) > 0 || len(n.PeersRemoved) > 0 || len(n.PeerChangedPatch) > 0 {
 				if nm := lb.NetMapWithPeers(); nm != nil {
 					m := netMap{Name: nm.SelfName(), MTU: int(tstun.DefaultTUNMTU())}
 					for _, p := range nm.GetAddresses().All() {
@@ -248,14 +249,15 @@ func newNode(cfg js.Value) map[string]any {
 						}
 						m.Peers = append(m.Peers, q)
 					}
-					if d := nm.DNS; true {
-						for _, r := range d.Resolvers {
-							m.DNS = append(m.DNS, r.Addr)
-						}
-						for _, s := range d.Domains {
-							m.Domains = append(m.Domains, s)
-						}
+					// MagicDNS is answered at the service address (netstack); the
+					// client's other resolvers are for the OS to use, so are ours to pass on.
+					if nm.DNS.Proxied {
+						m.DNS = append(m.DNS, tsaddr.TailscaleServiceIPString)
 					}
+					for _, r := range nm.DNS.Resolvers {
+						m.DNS = append(m.DNS, r.Addr)
+					}
+					m.Domains = append(m.Domains, nm.DNS.Domains...)
 					if b, err := json.Marshal(m); err == nil {
 						cb.Call("notifyNetMap", string(b))
 					}

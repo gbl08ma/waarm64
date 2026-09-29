@@ -1,7 +1,8 @@
 #!/bin/sh
 # A throwaway tailnet for the networking tests (docs/plans/networking.md, N2/N4):
-# headscale with its embedded DERP over TLS (a test CA, 127.0.0.1) and one
-# peer, `tailscaled` in userspace networking, both in rootless Podman on the
+# headscale with its embedded DERP behind a Caddy reverse proxy that does the
+# TLS (a test CA, 127.0.0.1, the way headscale is deployed) and adds the CORS header
+# a page's fetch of /key needs (headscale sends none), and one peer, `tailscaled` in userspace networking, both in rootless Podman on the
 # host network (never Docker, docs/images.md). Usage:
 #   tests/net/tailnet.sh up      start it; prints the environment for the tests
 #   tests/net/tailnet.sh env     print it again
@@ -15,10 +16,13 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 DIR=${TAILNET_DIR:-$ROOT/target/net/tailnet}
 HS_IMAGE=docker.io/headscale/headscale:v0.29.4
 TS_IMAGE=docker.io/tailscale/tailscale:v1.102.5
-PORT=${TAILNET_PORT:-8443}
+CADDY_IMAGE=${CADDY_IMAGE:-docker.io/library/caddy:2.10}
+PORT=${TAILNET_PORT:-8443} # what clients use (TLS, the proxy)
+INNER=${TAILNET_INNER_PORT:-8080} # headscale's own, plain HTTP
 V4=${HEADSCALE_V4:-100.90.0.0/16}
 HS=webpc-headscale
 PEER=webpc-peer
+PROXY=webpc-proxy
 
 hs() { podman exec "$HS" headscale "$@"; }
 peerts() { podman exec "$PEER" tailscale --socket=/tmp/ts.sock "$@"; }
@@ -45,7 +49,7 @@ up)
 	ln -sf "$DIR/config/tls" "$DIR/tls"
 	cat > "$DIR/config/config.yaml" <<YAML
 server_url: https://127.0.0.1:$PORT
-listen_addr: 0.0.0.0:$PORT
+listen_addr: 127.0.0.1:$INNER
 metrics_listen_addr: 127.0.0.1:9090
 grpc_listen_addr: 127.0.0.1:50443
 noise:
@@ -73,8 +77,6 @@ database:
   type: sqlite
   sqlite:
     path: /var/lib/headscale/db.sqlite
-tls_cert_path: /etc/headscale/tls/srv.pem
-tls_key_path: /etc/headscale/tls/srv.key
 policy:
   mode: file
   path: ""
@@ -89,7 +91,21 @@ unix_socket_permission: "0770"
 logtail:
   enabled: false
 YAML
+	cat > "$DIR/config/Caddyfile" <<CADDY
+{
+	auto_https off
+	admin off
+}
+https://127.0.0.1:$PORT {
+	tls /etc/caddy/tls/srv.pem /etc/caddy/tls/srv.key
+	# A page can't read /key from another origin without this (only /key is fetched; the rest is WebSocket).
+	@key path /key
+	header @key Access-Control-Allow-Origin *
+	reverse_proxy 127.0.0.1:$INNER
+}
+CADDY
 	podman run -d --name "$HS" --network host -v "$DIR/config:/etc/headscale" -v "$DIR/lib:/var/lib/headscale" "$HS_IMAGE" serve >/dev/null
+	podman run -d --name "$PROXY" --network host -v "$DIR/config/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$DIR/config/tls:/etc/caddy/tls:ro" "$CADDY_IMAGE" >/dev/null
 	for _ in $(seq 40); do
 		curl -sf --cacert "$DIR/config/tls/ca.pem" "https://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break
 		sleep 0.5
@@ -107,7 +123,7 @@ YAML
 env) env_ ;;
 key) authkey ;;
 down)
-	podman rm -f "$PEER" "$HS" >/dev/null 2>&1 || true
+	podman rm -f "$PEER" "$PROXY" "$HS" >/dev/null 2>&1 || true
 	rm -rf "$DIR"
 	;;
 *) echo "usage: $0 up|env|key|down" >&2; exit 2 ;;

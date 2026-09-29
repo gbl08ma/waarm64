@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // The networking test's page (tests/net-tailnet.test.ts): starts the Tailscale
+  // backend (web/tailscale.ts) and a Debian machine (tailnet-worker.ts) whose
+  // virtio-net is the Ethernet gateway on that backend's IP port. The test
+  // drives the guest's serial console through window.harness.
+  import { startTailscale } from '../../web/tailscale.ts';
+  const q = new URLSearchParams(location.search);
+  const events = [];
+  const ts = startTailscale({ controlURL: q.get('control'), authKey: q.get('authkey') ?? undefined, hostname: q.get('hostname') ?? 'guest' }, (m) => events.push(m));
+  const worker = new Worker(new URL('./tailnet-worker.ts', import.meta.url), { type: 'module' });
+  const serial = new MessageChannel();
+  let output = '';
+  let error;
+  worker.onmessage = (e) => { if (e.data.serial) output += e.data.serial; else if (e.data.error) error = e.data.error; };
+  worker.onerror = (e) => { error = e.message; };
+  worker.postMessage({ ip: ts.ip, serial: serial.port2, overlay: q.get('overlay') }, [ts.ip, serial.port2]);
+  window.harness = {
+    send: (s) => serial.port1.postMessage(s),
+    output: () => output,
+    error: () => error,
+    events: () => events,
+    tailscale: () => ({ state: ts.state(), netmap: ts.netmap(), timings: ts.timings(), loginURL: ts.loginURL() }),
+  };
+</script>
