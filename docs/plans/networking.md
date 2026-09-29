@@ -209,8 +209,8 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
 - **N5 — Product surface** (with M8): connect/login UI, persisted node state, exit-node selection,
   Alpine `apk add` through an exit node as the smoke test; IPv6.
   *In progress.* Done: the Network menu on the page (connect with a control server, hostname and
-  optional auth key; the login link; status; Disconnect, Log out, Remove card), the node kept in
-  IndexedDB with automatic reconnect, a card that survives machine restarts, the page's Debian
+  optional auth key; the login link; status; Disconnect, Log out), the node kept in
+  IndexedDB with automatic reconnect, the card always present (no restart to connect) and surviving machine restarts, the page's Debian
   configuring the card itself (a networkd credential); docs/frontend.md "Network". Left: exit-node selection
   (the netmap already lists `exitNodeOption` peers; the Go side needs `SetExitNode` in its prefs),
   the `apk add` smoke test (needs an Alpine image with a card and a tailnet with an exit node to

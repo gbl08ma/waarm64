@@ -240,23 +240,26 @@ files), the page says so and offers the reset again.
 
 ## Network
 
-The header's **Network** menu (machines with a `network` entry in machine.ts: Debian) gives the
-machine a network card on a Tailscale network (docs/plans/networking.md; the backend is
-web/tailscale.ts, the client in its own worker). Off by default: the measured boot
-(bench/boot/REPORT.md "M8 loop 0") masks the network units, and a machine without a card doesn't
-load the client at all.
+The header's **Network** menu (machines with a `network` entry in machine.ts: Debian) connects the
+machine's network card to a Tailscale network (docs/plans/networking.md; the backend is
+web/tailscale.ts, the client in its own worker).
 
-- **Connect** takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
-  `http://` for this computer), a hostname (default `webpc`) and an optional auth key. **A card
-  can't be added to a running machine, so the first connect restarts it** (with the usual power-cut
-  confirmation); the new machine boots with `machine.network.cmdline`: the units that configure a
-  card are unmasked and a systemd credential on the command line (`network.network.card`) gives
-  networkd a `.network` file, so the guest takes the gateway's DHCP lease by itself (the tailnet
-  address, MagicDNS through systemd-resolved). Not `ip=dhcp`: Debian's initramfs reads it too and
-  waits for a lease before booting, which a machine that isn't connected yet doesn't have (found
-  by the page test: the boot sat at the root mount for minutes). The machine worker gets `ip`, the gateway's end of an IP port, and adds
+- **The card is always there** (`machine.network`): virtio-net on the Ethernet gateway from the
+  boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
+  login, alternating runs, this container: 81.3 s median without it, 79.7 s with it, 3 runs each,
+  noise), and the client isn't loaded until Connect. The command line unmasks networkd and
+  resolved and passes a systemd credential (`network.network.card`) that gives networkd a
+  `.network` file, so the guest asks the gateway for DHCP by itself; the gateway offers nothing
+  until a client has an address (the tailnet address, MagicDNS through systemd-resolved). Not
+  `ip=dhcp`: Debian's initramfs reads it too and waits for a lease before booting (found by the
+  page test: the boot sat at the root mount for minutes). **A lease that arrives after the boot is
+  taken in ~20 s** by networkd's DHCP retries (`tests/net-guest.test.ts`, measured 19 s after the
+  lease); nothing on the page speeds it up (a link flap would, but the device's link is always
+  up). The machine worker gets `ip`, the gateway's end of an IP port, and adds
   `{type: 'net', adapter: {ip}}` (docs/devices.md "net"); the page keeps the other end
   (web/app/network.ts) for as long as no client holds it.
+- **Connect** takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
+  `http://` for this computer), a hostname (default `webpc`) and an optional auth key.
 - **Login:** without an auth key the client asks the control server for a login and the menu opens
   with a **Log in…** link (a new tab; only `http(s)` URLs are ever offered); the client comes up
   when the login completes. An admin-approval wait is shown as such. With an auth key there's no
@@ -268,10 +271,10 @@ load the client at all.
   auth key's node isn't kept: the menu says to enter it again.
 - **Disconnect** withdraws the lease and stops the client (the guest keeps its address until the
   lease runs out; the card stays); **Log out** removes the node from the tailnet and deletes its
-  keys; **Remove card…** restarts the machine without one. A machine restart (Restart, a guest
+  keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected.
-- Settings (`webpc.settings` `net`): `enabled` (the card), `controlURL`, `hostname`, `autoconnect`,
+- Settings (`webpc.settings` `net`): `controlURL`, `hostname`, `autoconnect`,
   `keyed`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
 - **The client is built by the servers:** `npm run serve` and `npm start` run `tools/tailscale.ts` first: it builds `net/tailscale` with `net/tailscale/build.sh` into `target/net/tailscale.wasm` (and `wasm_exec.js`) when they're missing or a hash of `net/tailscale`'s files (stamp `tailscale.wasm.inputs`) changed, ~30 s to ~1 min the first time (Go downloads its toolchain and modules). It never stops the server: without Go, or if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `WEBPC_TAILSCALE=0` skips it. `scripts/ci.sh` runs it as a step so the page and tailnet tests find the client.
@@ -279,7 +282,7 @@ load the client at all.
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
   tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
-  pings, no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in).
+  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in).
   Not tested: the menu's DOM and a real interactive login (they need a control server that serves
   one; the docs/backlog.md "Network" entry says what's missing).
 

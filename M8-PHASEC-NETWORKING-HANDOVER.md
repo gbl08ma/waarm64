@@ -9,8 +9,10 @@ For whoever continues the lane. Read docs/plans/networking.md (§7 steps) and do
 ## Done in this session (branch `claude/ecstatic-fermi-8amxam`)
 - **N5, connect/login on the page** (`web/app/network.ts`, `main.ts`, `index.html`, `worker.ts`,
   `machine.ts`, `web/tailscale.ts`, `web/tailscale-worker.ts`, `net/tailscale/main_js.go`): a Network
-  menu for Debian; Connect (control server, hostname, optional auth key) restarts the machine with a
-  card (`ToWorker.start.ip`); the login link; state dot; Disconnect, Log out, Remove card; the
+  menu for Debian; Connect (control server, hostname, optional auth key); the login link; state dot;
+  Disconnect, Log out; the network card is **always present** in Debian (`ToWorker.start.ip`), so
+  Connect never restarts the machine (boot to login 81.3 s median without the card, 79.7 s with it:
+  noise; a lease arriving after the boot is taken in ~20 s); the
   node's state in IndexedDB (`ephemeral: false` in the Go client when state is kept) with automatic
   reconnect; a restarted machine's new port is handed to the running client (`attach`).
 - **The card configures itself:** `machine.network.cmdline` unmasks networkd and resolved and
@@ -20,7 +22,7 @@ For whoever continues the lane. Read docs/plans/networking.md (§7 steps) and do
 - **Tests:** `tests/network.test.ts` (controller, fake client), `tests/net-guest.test.ts` (Debian,
   card on the echo gateway: configures itself, pings any address and the router: **this is the
   smoke test that pings from inside Debian without a tailnet**, ~1.5 min),
-  `tests/page-network.test.ts` (the menu against an unreachable control server, ~3 min),
+  `tests/page-network.test.ts` (the menu against an unreachable control server, no restart on Connect, ~3 min),
   `tests/serial-console.ts` (helpers shared with `tests/net-tailnet.test.ts`).
   All pass in Chromium 141 here. `tests/net-tailnet.test.ts` (N4: Debian pings a tailnet peer
   through headscale, resolves it by MagicDNS, the peer reaches a guest server) already existed and
@@ -62,10 +64,11 @@ For whoever continues the lane. Read docs/plans/networking.md (§7 steps) and do
    advertisements plus a static address, after IPv4).
 6. **The DOM of the menu is only lightly tested** (page-network.test.ts); the login-URL and
    approval states are covered by `viewOf` unit tests, not in Chromium.
-7. **Page details left:** a per-machine "network" toggle for Buildroot doesn't exist (no card in
-   its kernel); Reset disk and Remove card each restart; the auth key field is a plain password
-   input (no reveal). A card-less boot is byte-for-byte the old command line: the measured boot
-   times don't change.
+7. **Page details left:** Buildroot has no card (its kernel has no virtio-net; not needed); the
+   auth key field is a plain password input (no reveal); a Firefox/Safari pass is still the
+   PLAN.md item. Debian's command line changed for the page (units unmasked, the credential): the
+   guest-visible change is in `web/app/machine.ts`, not in a test guest, so no step counts move.
+   `npm run serve` and `npm start` build the Tailscale client (`tools/tailscale.ts`).
 8. **Chromium 141 vs 153:** everything here ran in the Playwright Chromium the cloud has (141),
    not the dev VM's 153.
 
