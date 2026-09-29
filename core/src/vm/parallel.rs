@@ -35,11 +35,11 @@ const QUEUE: usize = 64;
 const QUEUE_IC: usize = 1024;
 
 /// The DSB wait gives up (a deadlock: a bug) after this long.
-const DSB_LIMIT_NS: u64 = 10_000_000_000;
+pub(super) const DSB_LIMIT_NS: u64 = 10_000_000_000;
 
 /// A vCPU's parallel-mode words that other vCPUs read or write.
 pub(super) struct CpuPar {
-    state: AtomicU32,
+    pub(super) state: AtomicU32,
     /// Its GIC IRQ line, as the last platform update left it.
     irq: AtomicBool,
     /// Maintenance other vCPUs queued for it.
@@ -574,6 +574,7 @@ impl Vm {
         let sh = &self.shared.cpus[c];
         sh.par.waiting.store(true, Ordering::SeqCst);
         let t0 = self.clock.ns();
+        let began = self.progress(&own.waits);
         loop {
             let wake = sh.wake.load(Ordering::SeqCst);
             // Others may wait for this one meanwhile.
@@ -586,15 +587,67 @@ impl Vm {
                 break;
             }
             wait(&sh.wake, wake, 1_000_000);
-            assert!(
-                self.clock.ns() - t0 < DSB_LIMIT_NS,
-                "vCPU {c}: DSB waited 10 s for TLBI IS on {:?}",
-                own.waits
-            );
+            if self.clock.ns() - t0 >= self.dsb_limit_ns {
+                panic!("{}", self.dsb_report(c, own, &began));
+            }
         }
         sh.par.waiting.store(false, Ordering::SeqCst);
         bump(&sh.counters.par[PAR_DSB_WAITS]);
         add(&sh.counters.par[PAR_DSB_WAIT_NS], self.clock.ns() - t0);
+    }
+
+    /// What the vCPUs in `waits` last published: (retired, PC).
+    fn progress(&self, waits: &[(usize, u64)]) -> Vec<(u64, u64)> {
+        waits
+            .iter()
+            .map(|&(t, _)| {
+                let k = &self.shared.cpus[t].counters;
+                (
+                    k.retired.load(Ordering::Relaxed),
+                    k.pc.load(Ordering::Relaxed),
+                )
+            })
+            .collect()
+    }
+
+    /// The panic message of a DSB wait that timed out: for each vCPU still
+    /// waited for, its state, `applied` against the sequence waited for, its
+    /// queue, and its retired count and PC at the wait's start and now (a count
+    /// that moved: it runs and something loses a queue entry; one that froze:
+    /// it's inside one chunk or blocked, the PC says where it last was).
+    fn dsb_report(&self, c: usize, own: &Own, began: &[(u64, u64)]) -> String {
+        let now = self.progress(&own.waits);
+        let mut s = format!("vCPU {c}: DSB waited 10 s for TLBI IS");
+        for (i, &(t, seq)) in own.waits.iter().enumerate() {
+            let p = &self.shared.cpus[t].par;
+            let (queued, tlb, ic, tlb_all, ic_all) = match p.queue.try_lock() {
+                Ok(q) => (q.queued, q.tlb.len(), q.ic.len(), q.tlb_all, q.ic_all),
+                Err(_) => (u64::MAX, 0, 0, false, false),
+            };
+            let (b, n) = (began.get(i).copied().unwrap_or_default(), now[i]);
+            s += &format!(
+                "\n  vCPU {t}: state {} applied {} waited-for {seq} queued {queued} \
+                 (queue: {tlb} tlb, {ic} ic, all {tlb_all}/{ic_all}) pending {} waiting {} \
+                 retired {} -> {} pc {:#x} -> {:#x}",
+                p.state.load(Ordering::SeqCst),
+                p.applied.load(Ordering::SeqCst),
+                p.pending.load(Ordering::SeqCst),
+                p.waiting.load(Ordering::SeqCst),
+                b.0,
+                n.0,
+                b.1,
+                n.1,
+            );
+        }
+        s += &format!(
+            "\n  platform lock {}",
+            if self.plat.try_lock().is_some() {
+                "free"
+            } else {
+                "held"
+            }
+        );
+        s
     }
 
     /// Whether vCPU `c` is on, or starting (parallel mode).

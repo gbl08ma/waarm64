@@ -9,6 +9,7 @@ pub mod boot;
 pub mod cpu;
 pub mod crypto;
 pub mod decode;
+pub mod diag;
 pub mod fdt;
 pub mod fp;
 pub mod gicv3;
@@ -23,7 +24,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 26;
+pub const ABI_VERSION: u32 = 27;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -280,6 +281,7 @@ pub unsafe extern "C" fn vm_new(
     ram_size: u64,
     cfg: *const vm::VmConfig,
 ) -> *mut vm::Vm {
+    diag::install_panic_hook();
     // SAFETY: guaranteed by the caller.
     let cfg = unsafe { *cfg };
     if cfg.ram_size != ram_size

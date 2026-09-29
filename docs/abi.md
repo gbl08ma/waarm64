@@ -1,4 +1,4 @@
-# Host ABI (version 26)
+# Host ABI (version 27)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -221,6 +221,15 @@ single-CPU machine.
   ([platform.md](platform.md) "Time"). The core keeps the counter
   monotonic across vCPUs (an atomic maximum), so CNTVCT never goes back between CPUs.
 
+**Panic message (ABI 27).** The core is built `panic = "abort"`, so a panic reaches the host as a
+trap (`RuntimeError: unreachable`) with nothing else. `vm_new` installs a panic hook that keeps
+the first panic's message (thread, location, text; at most 4096 bytes) in a static in the shared
+memory, and `panic_message()` (core/src/diag.rs) returns its address: a u32 length (0 = none)
+then that many UTF-8 bytes. The hosts read it after catching a trap (`web/vm.ts` `panicMessage`,
+`withPanic`; the vCPU worker and the round-robin `run`) and put it in the error. A DSB wait that
+times out (10 s) panics with each waited vCPU's state, queue and progress
+(`Vm::dsb_report`, core/src/vm/parallel.rs).
+
 **Broadcast maintenance in parallel mode** ([platform.md](platform.md) "Broadcast
 maintenance"): `CPU features` gain an internal `FEATURE_PARALLEL`, under which DSB, ISB and ERET
 end the chunk (`Exit::Resync`, retired) in both tiers (the JIT calls the helper for DSB), so the
@@ -252,3 +261,4 @@ own TLBI IS broadcasts before anything after its DSB runs.
 | 24 | `VmConfig.jit` 3: JIT-check (M7) |
 | 25 | parallel SMP: `VmConfig.smp`, `vm_run_cpu`, `vm_exit_cpu`, `vm_cpu_signal`, `ExitInfo.wake`, `vm_counters(vm, i)` per vCPU, counter word 90 (JIT stale blocks); `env.now_ms` is one clock for every instance (M7) |
 | 26 | counter words 91–100: parallel SMP's DSB waits, broadcasts, drains, idles, platform-lock contention, WFEs, time out of the core (M7) |
+| 27 | `panic_message() -> *const u8`: the first panic's message (BUG1) |

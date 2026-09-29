@@ -413,6 +413,8 @@ pub struct Vm {
     clock: Clock,
     /// Parallel mode: the latest counter value any vCPU read (it never goes back).
     last: AtomicU64,
+    /// Parallel mode: how long a DSB waits for TLBI IS before it panics (a test lowers it).
+    dsb_limit_ns: u64,
 }
 
 /// The host clock for realtime mode: `performance.now()` through the core's
@@ -556,6 +558,7 @@ impl Vm {
             skipped: 0,
             clock: Clock::new(),
             last: AtomicU64::new(0),
+            dsb_limit_ns: parallel::DSB_LIMIT_NS,
         }
     }
 

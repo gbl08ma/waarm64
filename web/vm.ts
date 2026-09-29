@@ -10,7 +10,7 @@ import { Devices, EV_CONFIG, deviceEntry, fileSource, ring, specPorts, type Devi
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 26;
+export const ABI = 27;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -32,6 +32,7 @@ type Exports = {
   vm_signal(vm: number): number;
   vm_device(vm: number, i: number): number;
   vm_framebuffer(vm: number): bigint;
+  panic_message(): number;
 };
 
 /**
@@ -71,7 +72,7 @@ export async function clockOffset(ask: () => Promise<number>, rounds = 16) {
  * but JS sees an i32, negative past 2 GiB of memory (a guest with 2 GiB of
  * RAM puts the core's later allocations there, M8 loop 0).
  */
-const POINTERS = ['thread_alloc', 'vm_new', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_counters', 'jit_helper_report'];
+const POINTERS = ['thread_alloc', 'vm_new', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_counters', 'jit_helper_report', 'panic_message'];
 
 /** `exports` with the address-returning functions ({@link POINTERS}) made unsigned. */
 export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
@@ -81,6 +82,29 @@ export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
     if (typeof f === 'function') ex[name] = (...args: unknown[]) => (f as (...a: unknown[]) => number)(...args) >>> 0;
   }
   return ex;
+}
+
+/**
+ * The message of the core's first panic (ABI 27, core/src/diag.rs), if it had
+ * one: a panic reaches the host as a bare `RuntimeError: unreachable`, this is
+ * what the core's panic hook wrote before it.
+ */
+export function panicMessage(ex: WebAssembly.Exports, memory: WebAssembly.Memory): string | undefined {
+  const at = (unsigned(ex).panic_message as () => number)();
+  const len = Atomics.load(new Int32Array(memory.buffer, at, 1), 0);
+  if (len <= 0 || len > 4096) return undefined;
+  return new TextDecoder().decode(new Uint8Array(memory.buffer.slice(at + 4, at + 4 + len)));
+}
+
+/** `err`, with the core's panic message (if there is one) put in front of its stack. */
+export function withPanic(err: unknown, ex: WebAssembly.Exports, memory: WebAssembly.Memory): Error {
+  const e = err instanceof Error ? err : new Error(String(err));
+  let m: string | undefined;
+  try {
+    m = panicMessage(ex, memory);
+  } catch {}
+  if (m) e.message = `${e.message}: core panic: ${m}`;
+  return e;
 }
 
 /** Each extra core instance's stack (docs/abi.md "Many core instances on one memory"). */
@@ -441,7 +465,12 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       let steps = 0;
       for (;;) {
         pump();
-        const kind = ex.vm_run(vm, BigInt(budget - steps));
+        let kind: number;
+        try {
+          kind = ex.vm_run(vm, BigInt(budget - steps));
+        } catch (err) {
+          throw withPanic(err, ex, memory);
+        }
         const info = new BigUint64Array(memory.buffer, ex.vm_exit(vm), 7); // kind, steps, value, x0-x3
         steps += Number(info[1]);
         if (kind === Exit.DEVICE) {

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { coreImports } from '../web/vm.ts';
+import { coreImports, panicMessage, withPanic } from '../web/vm.ts';
 
 const WASM = new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url);
 
@@ -11,7 +11,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 26);
+  assert.equal(ex.abi_version(), 27);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -94,5 +94,14 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 8)', () => 
   const counters = new BigUint64Array(mem.buffer, ex.vm_counters(vm, 0), 71);
   assert.ok(Atomics.load(counters, 0) >= exit[1] && exit[1] > 100n, 'steps counted');
   assert.equal(Atomics.load(counters, 65), 1n, 'one IRQ');
-  ex.vm_free(vm);
+  // A panic in the core arrives with its message (ABI 27): vm_run_cpu on a round-robin VM asserts.
+  assert.equal(panicMessage(ex as unknown as WebAssembly.Exports, mem), undefined);
+  let trap: unknown;
+  try {
+    (ex as unknown as Record<string, (...a: (number | bigint)[]) => number>).vm_run_cpu(vm, 0, 1n);
+  } catch (e) {
+    trap = e;
+  }
+  assert.ok(trap instanceof WebAssembly.RuntimeError, String(trap));
+  assert.match(withPanic(trap, ex as unknown as WebAssembly.Exports, mem).message, /core panic: .*vm_run_cpu in round-robin mode/s);
 });

@@ -1,6 +1,6 @@
 # BUG1: "vCPU 1: RuntimeError: unreachable" under a 4-vCPU stress load
 
-**Status:** analysed, not reproduced, not fixed. This file carries the analysis to whoever
+**Status:** analysed, not reproduced, not fixed; step 1 of the plan (self-diagnosis) is done, see "Progress" at the end. This file carries the analysis to whoever
 investigates next; delete it in the commit that fixes the bug (or update it with what was found).
 
 ## What happened
@@ -103,3 +103,38 @@ WFI completion. So either `t` stayed inside one chunk (or one `handle_par`) for 
 
 Constraints (CLAUDE.md): `timeout` and the systemd-run memory cap on every run; guests under the JIT
 only; no Firefox; headless Playwright only. The crashed binary's analysis is above, so **rebuilding the wasm is fine now**.
+
+## Progress
+
+### Step 1 done: the next occurrence is self-diagnosing (ABI 27)
+- `core/src/diag.rs`: a panic hook (installed by `vm_new`) keeps the first panic's message in a
+  static; `panic_message()` exports its address (docs/abi.md "Panic message"). `web/vm.ts`
+  `panicMessage`/`withPanic` put it in the error, in the vCPU worker (`web/vcpu-worker.ts`) and in
+  the round-robin `run`. So the page's error now reads `vCPU 1: RuntimeError: unreachable: core
+  panic: <message>`.
+- `Vm::sync` at the DSB timeout panics with `Vm::dsb_report`: per waited vCPU its state (0 off,
+  1 run, 2 out), `applied`, waited-for seq, `queued`, queue sizes, `pending`, `waiting`, retired
+  count and PC at the wait's start and at the timeout, and whether the platform lock is held. Read
+  it as the plan says: retired moved = hypothesis 4; frozen = 1 to 3 (PC = where the last chunk
+  ended; lock held = 2).
+- Tests: `a_dsb_timeout_reports_the_vcpu_it_waited_for` (core/src/vm/tests.rs; `Vm::dsb_limit_ns`
+  is lowered for it), `core/tests/panic_hook.rs`, and `tests/core-wasm.test.ts` (a wasm panic
+  through `vm_run_cpu` on a round-robin VM arrives with its message).
+- `scripts/ci.sh` passes with `WEBPC_TAILNET=0`. The `net-tailnet` exit-node step (curl to the
+  host's IPv4 through the exit node, exit 28) fails in this VM on the pre-change commit b4d4dab too
+  (checked with a stash), so it's environmental (the peer in rootless Podman can't reach the Lima
+  VM's own address), not from this work.
+
+### Step 2, part 1: bare-metal spin vs TLBI IS: no reproduction
+`tests/baremetal/tlbi_spin.c` (4 vCPUs; CPU 0: lock, TLBI VMALLE1IS, DSB ISH, unlock, 100 rounds;
+CPUs 1 to 3 spin in a plain load loop, a LDAXR/STXR acquire-release loop and a YIELD loop, never
+WFE). It passes on the native parallel runner (x5, twice), in Node workers under the JIT (10 runs)
+and JIT-check (10 runs; JIT-check is slow, 15 s a run at 300 rounds, hence 100 rounds). So a tight
+spin does drain at the step budget in both tiers, at least in this shape.
+
+### Step 3 (reading, not exhaustive)
+Budget enforcement in `jit::steps` and the region code: chained tail calls, indirect (jump cache)
+calls and loop back-edges each test `left >= len (+ next len)` and take `len` from it
+(core/src/jit/emit.rs "left >= len + its length", block.rs region edges, unit tests of the
+back-edge). I found no unbudgeted loop. Not checked: a helper that loops in the core, WFE/YIELD
+inline paths (bare-metal test above covers YIELD).

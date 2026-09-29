@@ -264,3 +264,23 @@ fn a_timer_is_pending_or_a_deadline_at_one_instant() {
         );
     }
 }
+
+#[test]
+#[should_panic(expected = "vCPU 1: state 1 applied 0 waited-for 1 queued 1")]
+fn a_dsb_timeout_reports_the_vcpu_it_waited_for() {
+    // vCPU 0: TLBI VMALLE1IS; DSB ISH. vCPU 1 is marked running and never
+    // drains, as if stuck in one chunk: the wait times out and panics with
+    // the state of what it waited for (BUG1-HANDOVER.md).
+    const TLBI_VMALLE1IS: u32 = 0xd508_831f;
+    const DSB_ISH: u32 = 0xd503_3b9f;
+    let cfg = VmConfig {
+        ncpus: 2,
+        smp: 1,
+        ..VmConfig::default()
+    };
+    let mut t = T::new(&[TLBI_VMALLE1IS, DSB_ISH, B_SELF], cfg);
+    t.vm.dsb_limit_ns = 20_000_000;
+    t.vm.shared.cpus[1].par.state.store(1, Ordering::SeqCst);
+    // SAFETY: this thread is the only one, and runs vCPU 0 only.
+    unsafe { t.vm.run_cpu(0, 1000) };
+}
