@@ -10,16 +10,20 @@ import type { Lease } from './gateway.ts';
 export type NetMap = {
   name: string;
   addresses: string[];
-  peers: { name: string; addresses: string[]; online?: boolean; exitNodeOption: boolean }[];
+  peers: { id: string; name: string; addresses: string[]; online?: boolean; exitNodeOption: boolean }[];
   mtu: number;
   dns: string[] | null;
   domains: string[] | null;
+  /** The stable ID of the peer in use as the exit node, or ''. */
+  exitNode: string;
 };
 
 export type TailscaleConfig = {
   controlURL: string;
   authKey?: string;
   hostname?: string;
+  /** A peer's stable ID (an `exitNodeOption` of the netmap): send the guest's internet traffic through it from the start. */
+  exitNode?: string;
   /** Where target/net/tailscale.wasm and wasm_exec.js are served from (default: this checkout's target/net). */
   wasm?: string;
   wasmExec?: string;
@@ -38,11 +42,13 @@ export type TailscaleConfig = {
 
 /** Messages to the worker. */
 export type ToTailscale =
-  | { type: 'start'; wasm: string; wasmExec: string; controlURL: string; authKey?: string; hostname?: string; ip: MessagePort; persist?: string }
+  | { type: 'start'; wasm: string; wasmExec: string; controlURL: string; authKey?: string; hostname?: string; exitNode?: string; ip: MessagePort; persist?: string }
   /** A new gateway port (the machine restarted): the client's packets and the lease go to it. */
   | { type: 'attach'; ip: MessagePort }
   /** Withdraw the lease and hand the gateway's port back (`detached`). */
   | { type: 'detach' }
+  /** Use the peer with this stable ID as the exit node ('': none); answered by `exitnode`. */
+  | { type: 'exitnode'; id: string }
   /** Log the node out of the tailnet and forget its saved state. */
   | { type: 'logout' };
 
@@ -53,6 +59,8 @@ export type FromTailscale =
   | { type: 'login'; url: string }
   | { type: 'loaded'; ms: number }
   | { type: 'detached'; ip?: MessagePort }
+  /** The answer to `exitnode`: '' when it took, else the client's reason. */
+  | { type: 'exitnode'; error: string }
   | { type: 'loggedout' }
   | { type: 'error'; error: string };
 
@@ -89,6 +97,8 @@ export type Tailscale = {
   attach(ip: MessagePort): void;
   /** Withdraws the lease and takes the gateway's port back, for the next client (or machine); undefined if the worker doesn't answer. */
   detach(): Promise<MessagePort | undefined>;
+  /** Sends the internet traffic through the peer with this stable ID (a netmap peer with `exitNodeOption`), or with '' stops; rejects with the client's reason. */
+  setExitNode(id: string): Promise<void>;
   /** Logs the node out of the tailnet (its control server forgets it) and deletes its saved state; resolves once that's done (at most ~8 s). */
   logout(): Promise<void>;
   close(): void;
@@ -104,6 +114,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
   const port1 = config.ip ?? own!.port1;
   let detached: ((ip?: MessagePort) => void) | undefined;
   let loggedOut: (() => void) | undefined;
+  let exitDone: ((error: string) => void) | undefined;
   const base = new URL('../target/net/', import.meta.url);
   let state = '';
   let netmap: NetMap | undefined;
@@ -123,6 +134,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
       } else if (m.type === 'login') loginURL = m.url;
       else if (m.type === 'loaded') timings.loadMs = m.ms;
       else if (m.type === 'detached') detached?.(m.ip);
+      else if (m.type === 'exitnode') exitDone?.(m.error);
       else if (m.type === 'loggedout') loggedOut?.();
       else if (m.type === 'error') reject(new Error(m.error));
       onEvent(m);
@@ -130,7 +142,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
   });
   running.catch(() => {}); // the caller decides whether to look
   worker.postMessage(
-    { type: 'start', wasm: config.wasm ?? new URL('tailscale.wasm', base).href, wasmExec: config.wasmExec ?? new URL('wasm_exec.js', base).href, controlURL: config.controlURL, authKey: config.authKey, hostname: config.hostname, ip: port1, persist: config.persist } satisfies ToTailscale,
+    { type: 'start', wasm: config.wasm ?? new URL('tailscale.wasm', base).href, wasmExec: config.wasmExec ?? new URL('wasm_exec.js', base).href, controlURL: config.controlURL, authKey: config.authKey, hostname: config.hostname, exitNode: config.exitNode, ip: port1, persist: config.persist } satisfies ToTailscale,
     [port1],
   );
   return {
@@ -140,6 +152,11 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
       const t = setTimeout(() => resolve(undefined), 3000);
       detached = (ip) => { clearTimeout(t); resolve(ip); };
       worker.postMessage({ type: 'detach' } satisfies ToTailscale);
+    }),
+    setExitNode: (id) => new Promise<void>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('the client did not answer')), 10_000);
+      exitDone = (error) => { clearTimeout(t); error ? reject(new Error(error)) : resolve(); };
+      worker.postMessage({ type: 'exitnode', id } satisfies ToTailscale);
     }),
     logout: () => new Promise<void>((resolve) => {
       const t = setTimeout(resolve, 8000);

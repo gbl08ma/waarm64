@@ -201,9 +201,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [frontend.md](frontend.md) "Network")
 
-- Left from N5: exit-node selection, the Alpine `apk add` smoke test (needs an exit node to the
-  internet), IPv6, a real interactive login checked by hand, Buildroot's N3 boot and its Rust
-  twin. The details and the order are in M8-PHASEC-NETWORKING-HANDOVER.md.
+- Left from N5: the Alpine `apk add` smoke test (the test tailnet's peer is now an exit node, so
+  only the Alpine image with a card is missing), IPv6, Buildroot's N3 boot and its Rust twin. The details and the order are in M8-PHASEC-NETWORKING-HANDOVER.md.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) add ~7 min to `scripts/ci.sh`.
 
 ## Tests and tools

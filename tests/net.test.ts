@@ -23,7 +23,7 @@ for (const [name, make] of [['frame', portAdapter], ['IP packet', ipPort]] as co
 
 test('the lease comes from what the client reports: its first IPv4 address, IPv4 resolvers only, no range assumed', async () => {
   const { leaseFrom } = await import('../web/tailscale.ts');
-  const nm = { name: 'guest.tail.test.', addresses: ['fd7a:115c:a1e0::3/128', '172.16.9.4/32'], peers: [], mtu: 1280, dns: ['100.100.100.100', 'https://dns.example/dns-query', '9.9.9.9', '2620:fe::fe'], domains: ['tail.test'] };
+  const nm = { name: 'guest.tail.test.', addresses: ['fd7a:115c:a1e0::3/128', '172.16.9.4/32'], peers: [], mtu: 1280, dns: ['100.100.100.100', 'https://dns.example/dns-query', '9.9.9.9', '2620:fe::fe'], domains: ['tail.test'], exitNode: '' };
   assert.deepEqual(leaseFrom(nm), { address: [172, 16, 9, 4], mtu: 1280, dns: [[100, 100, 100, 100], [9, 9, 9, 9]], domains: ['tail.test'] });
   assert.deepEqual(leaseFrom({ ...nm, dns: null, domains: null })?.dns, []);
   assert.equal(leaseFrom({ ...nm, addresses: ['fd7a:115c:a1e0::3/128'] }), null, 'no IPv4 address, no lease');

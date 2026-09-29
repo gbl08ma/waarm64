@@ -79,6 +79,8 @@
   #net-form label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
   #net-form input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
   #network .panel button { border: 1px solid var(--line); border-radius: 6px; text-align: center; }
+  #net-exit-label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
+  #net-exit { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
   #net-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   #fullscreen { border: 1px solid var(--line); border-radius: 6px; }
   body[data-view=screen] #terminal-view, body[data-view=terminal] #screen-view { display: none; }
@@ -102,9 +104,10 @@
       <label>Control server<input id="net-control" placeholder="Tailscale (default), or a Headscale's URL" autocomplete="off" spellcheck="false"></label>
       <label>Hostname<input id="net-hostname" placeholder="webpc" autocomplete="off" spellcheck="false"></label>
       <label>Auth key (optional, never saved)<input id="net-authkey" type="password" autocomplete="off" spellcheck="false"></label>
-      <p id="net-error" hidden></p>
       <button id="net-connect" type="submit">Connect</button>
     </form>
+    <p id="net-error" hidden></p>
+    <label id="net-exit-label" hidden>Internet through<select id="net-exit"></select></label>
     <div id="net-actions"><button id="net-disconnect">Disconnect</button><button id="net-logout" title="Remove this machine from the tailnet and forget its keys">Log out</button></div>
     <p id="net-hint"></p>
   </div></details>

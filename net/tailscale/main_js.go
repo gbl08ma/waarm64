@@ -8,8 +8,9 @@
 // at 100.100.100.100) but terminates none of the guest's traffic.
 //
 // In the worker, after wasm_exec.js, `newNode(config)` returns
-// {run(callbacks), login(), logout(), sendPacket(u8), setPacketHandler(fn)}. The config:
-// {controlURL, authKey, hostname, ephemeral (false to keep the node across restarts, with
+// {run(callbacks), login(), logout(), setExitNode(id, done), sendPacket(u8), setPacketHandler(fn)}. The
+// config: {controlURL, authKey, hostname, exitNode (a peer's stable ID from the netmap; empty or
+// absent: none), ephemeral (false to keep the node across restarts, with
 // stateStorage: {getState(key), setState(key, hex)})}.
 package main
 
@@ -18,6 +19,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"net"
 	"net/netip"
 	"os"
 	"syscall/js"
@@ -149,9 +151,11 @@ type netMap struct {
 	MTU       int      `json:"mtu"`
 	DNS       []string `json:"dns"` // resolvers the client would use (MagicDNS is 100.100.100.100)
 	Domains   []string `json:"domains"`
+	ExitNode  string   `json:"exitNode"` // the stable ID of the peer in use as the exit node, or ""
 }
 
 type peer struct {
+	ID        string   `json:"id"` // the stable ID, what setExitNode takes
 	Name      string   `json:"name"`
 	Addresses []string `json:"addresses"`
 	Online    *bool    `json:"online,omitempty"`
@@ -177,6 +181,7 @@ func newNode(cfg js.Value) map[string]any {
 	if e := cfg.Get("ephemeral"); e.Type() == js.TypeBoolean && !e.Bool() {
 		loginFlags = controlclient.LoginDefault
 	}
+	exitNode, _ := str(cfg, "exitNode")
 	hostname, ok := str(cfg, "hostname")
 	if !ok {
 		hostname = "webpc"
@@ -215,6 +220,26 @@ func newNode(cfg js.Value) map[string]any {
 	// neither, only Tailscale's own services.
 	ns.ProcessLocalIPs = false
 	ns.ProcessSubnets = false
+	// The client's own connections (DNS through an exit node's DoH service, DNS upstreams)
+	// are dialed in the netstack, since a browser has no OS network to dial; their replies
+	// come back addressed to the node's IP, which is also the guest's: the netstack takes
+	// the packets of its own connections and leaves the rest to the guest.
+	ns.CheckLocalTransportEndpoints = true
+	dialer.UseNetstackForIP = func(netip.Addr) bool { return true }
+	dialer.NetstackDialTCP = func(ctx context.Context, dst netip.AddrPort) (net.Conn, error) {
+		c, err := ns.DialContextTCP(ctx, dst) // (not returned directly: a nil *gonet.TCPConn isn't a nil net.Conn)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}
+	dialer.NetstackDialUDP = func(ctx context.Context, dst netip.AddrPort) (net.Conn, error) {
+		c, err := ns.DialContextUDP(ctx, dst)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}
 	sys.Tun.Get().Start()
 
 	priv, err := logid.NewPrivateID()
@@ -237,14 +262,14 @@ func newNode(cfg js.Value) map[string]any {
 			if n.BrowseToURL != nil {
 				cb.Call("notifyBrowseToURL", *n.BrowseToURL)
 			}
-			if n.SelfChange != nil || n.State != nil || len(n.PeersChanged) > 0 || len(n.PeersRemoved) > 0 || len(n.PeerChangedPatch) > 0 {
+			if n.SelfChange != nil || n.State != nil || n.Prefs != nil || len(n.PeersChanged) > 0 || len(n.PeersRemoved) > 0 || len(n.PeerChangedPatch) > 0 {
 				if nm := lb.NetMapWithPeers(); nm != nil {
-					m := netMap{Name: nm.SelfName(), MTU: int(tstun.DefaultTUNMTU())}
+					m := netMap{Name: nm.SelfName(), MTU: int(tstun.DefaultTUNMTU()), ExitNode: string(lb.Prefs().ExitNodeID())}
 					for _, p := range nm.GetAddresses().All() {
 						m.Addresses = append(m.Addresses, p.String())
 					}
 					for _, p := range nm.Peers {
-						q := peer{Name: p.Name()}
+						q := peer{ID: string(p.StableID()), Name: p.Name()}
 						for _, a := range p.Addresses().All() {
 							q.Addresses = append(q.Addresses, a.String())
 						}
@@ -274,8 +299,12 @@ func newNode(cfg js.Value) map[string]any {
 			}
 		})
 		go func() {
+			// The defaults of a real client (ipn.NewPrefs: the tailnet's DNS settings apply, subnet routes are accepted).
+			prefs := ipn.NewPrefs()
+			prefs.ControlURL, prefs.WantRunning, prefs.Hostname = controlURL, true, hostname
+			prefs.ExitNodeID = tailcfg.StableNodeID(exitNode)
 			err := lb.Start(ipn.Options{
-				UpdatePrefs: &ipn.Prefs{ControlURL: controlURL, WantRunning: true, Hostname: hostname},
+				UpdatePrefs: prefs,
 				AuthKey:     authKey,
 			})
 			if err != nil {
@@ -283,8 +312,6 @@ func newNode(cfg js.Value) map[string]any {
 			}
 		}()
 	}
-	_ = netip.Addr{}
-	_ = tailcfg.Node{}
 
 	return map[string]any{
 		"run": js.FuncOf(func(this js.Value, args []js.Value) any { run(args[0]); return nil }),
@@ -297,6 +324,20 @@ func newNode(cfg js.Value) map[string]any {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				lb.Logout(ctx, ipnauth.Self)
+			}()
+			return nil
+		}),
+		// setExitNode(id, done) sends the guest's internet traffic through that peer (the netmap's
+		// `exitNodeOption` peers), or, with "", stops; done(error) gets an error message, or "".
+		"setExitNode": js.FuncOf(func(this js.Value, args []js.Value) any {
+			id, done := args[0].String(), args[1]
+			go func() {
+				_, err := lb.EditPrefs(&ipn.MaskedPrefs{Prefs: ipn.Prefs{ExitNodeID: tailcfg.StableNodeID(id)}, ExitNodeIDSet: true})
+				msg := ""
+				if err != nil {
+					msg = err.Error()
+				}
+				done.Invoke(msg)
 			}()
 			return nil
 		}),

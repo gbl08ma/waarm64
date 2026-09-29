@@ -274,15 +274,32 @@ web/tailscale.ts, the client in its own worker).
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected.
+- **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
+  `0.0.0.0/0` routes) the menu shows **Internet through** with them and "Nothing: directly". Picking one
+  calls the client's `setExitNode(id)` (`ipn.Prefs.ExitNodeID` through `lb.EditPrefs`; the id is the
+  peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the
+  status line says "internet through <name>". The choice is remembered (`exitNode`) and given to the
+  client at the next Connect (`Start`'s prefs would otherwise reset it). The guest's address, router and
+  DHCP lease don't change: its default route is the gateway, which hands every packet to the client,
+  and the client's routing decides between the tailnet and the exit node. **DNS follows the exit
+  node**: MagicDNS (100.100.100.100, which the lease gives first) asks the exit node's DoH service
+  (its peerapi) for names it doesn't know, and the tailnet's own nameservers are reached through
+  the exit node. That needed three things in the Go client, each found by the test: the client's
+  prefs start from `ipn.NewPrefs()` (a bare `Prefs` has `CorpDNS` off, so the tailnet's DNS
+  settings were ignored), the `peerapiclient` feature is built in (without it the DoH request is
+  refused), and the client's own connections are dialed in its netstack
+  (`dialer.NetstackDialTCP/UDP`, a browser has no OS network) with
+  `CheckLocalTransportEndpoints`, so the replies to them, addressed to the node's IP, which is the
+  guest's too, go to the netstack and everything else to the guest.
 - Settings (`webpc.settings` `net`): `controlURL`, `hostname`, `autoconnect`,
-  `keyed`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
+  `keyed`, `exitNode`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
 - **The client is built by the servers:** `npm run serve` and `npm start` run `tools/tailscale.ts` first: it builds `net/tailscale` with `net/tailscale/build.sh` into `target/net/tailscale.wasm` (and `wasm_exec.js`) when they're missing or a hash of `net/tailscale`'s files (stamp `tailscale.wasm.inputs`) changed, ~30 s to ~1 min the first time (Go downloads its toolchain and modules). It never stops the server: without Go, or if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `WEBPC_TAILSCALE=0` skips it. `scripts/ci.sh` runs it as a step so the page and tailnet tests find the client.
 - **The control server must answer `GET /key` with CORS headers** (docs/plans/networking.md N4):
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
   tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
-  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in).
+  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver).
   Not tested: the menu's DOM and a real interactive login (they need a control server that serves
   one; the docs/backlog.md "Network" entry says what's missing).
 

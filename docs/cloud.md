@@ -37,6 +37,16 @@ and `dockerd` starts (`dockerd &`, root) and pulls Docker Hub images, so the tai
 a cloud session put a shim named `podman` that execs `docker "$@"` first on `PATH`, outside the
 repo. GitHub release downloads (`github.com/.../releases`) are refused by the proxy.
 
+Without a container daemon at all the tailnet also runs natively, which is how the exit-node work was
+tested: `go install github.com/juanfont/headscale/cmd/headscale@v0.29.4` and, from an empty
+directory, `go install tailscale.com/cmd/tailscaled@v1.102.5 tailscale.com/cmd/tailscale@v1.102.5`
+(the versions `tests/net/tailnet.sh` pins), headscale with the config that script writes (paths
+changed) behind any TLS proxy that adds `Access-Control-Allow-Origin` on `/key` and passes
+WebSocket upgrades (a 20-line Node script will do; there is no Caddy), a userspace `tailscaled` with
+`--advertise-exit-node`, and `headscale nodes approve-routes -i 1 -r 0.0.0.0/0,::/0`. Point
+`WEBPC_TAILNET_SCRIPT` at a script that prints `tailnet.sh`'s `up` output, and put a `podman` shim
+first on `PATH` that answers `exec webpc-peer tailscale ...` with the native `tailscale`.
+
 ## Images
 
 `images/build.sh` needs Podman and native arm64, so the cloud can't build Alpine, Buildroot, the

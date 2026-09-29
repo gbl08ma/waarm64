@@ -48,6 +48,7 @@ type Node = {
   run(cb: object): void;
   login(): void;
   logout(): void;
+  setExitNode(id: string, done: (error: string) => void): void;
   sendPacket(p: Uint8Array): void;
   setPacketHandler(f: (p: Uint8Array) => void): void;
 };
@@ -77,6 +78,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
     ip = undefined;
     return;
   }
+  if (m.type === 'exitnode') return node ? node.setExitNode(m.id, (error) => post({ type: 'exitnode', error })) : post({ type: 'exitnode', error: 'the client isn\'t running' });
   if (m.type === 'logout') {
     node?.logout();
     // The client's own logout call gives the control server 5 s; the saved node goes after it.
@@ -93,7 +95,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
     go.run(instance).catch((err) => post({ type: 'error', error: `the Tailscale client exited: ${err}` }));
     if (m.persist) state = await openState(m.persist);
     node = (globalThis as never as { newNode(c: object): Node }).newNode({
-      controlURL: m.controlURL, authKey: m.authKey, hostname: m.hostname ?? 'webpc',
+      controlURL: m.controlURL, authKey: m.authKey, hostname: m.hostname ?? 'webpc', exitNode: m.exitNode ?? '',
       ...(state ? { stateStorage: { getState: state.getState, setState: state.setState }, ephemeral: false } : {}),
     });
     node.setPacketHandler((p) => {

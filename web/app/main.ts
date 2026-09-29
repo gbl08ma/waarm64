@@ -296,7 +296,7 @@ document.addEventListener('pointerdown', (e) => { if (!keysMenu.contains(e.targe
 const netSettings = (): NetworkSettings => ({ ...DEFAULT_SETTINGS, ...settings().net });
 const network = createNetwork(() => renderNetwork());
 const netMenu = $<HTMLDetailsElement>('network');
-const netEl = { status: $('net-status'), login: $<HTMLAnchorElement>('net-login'), form: $<HTMLFormElement>('net-form'), control: $<HTMLInputElement>('net-control'), hostname: $<HTMLInputElement>('net-hostname'), key: $<HTMLInputElement>('net-authkey'), error: $('net-error'), hint: $('net-hint'), actions: $('net-actions'), disconnect: $('net-disconnect'), logout: $('net-logout') };
+const netEl = { status: $('net-status'), login: $<HTMLAnchorElement>('net-login'), form: $<HTMLFormElement>('net-form'), control: $<HTMLInputElement>('net-control'), hostname: $<HTMLInputElement>('net-hostname'), key: $<HTMLInputElement>('net-authkey'), exitLabel: $('net-exit-label'), exit: $<HTMLSelectElement>('net-exit'), error: $('net-error'), hint: $('net-hint'), actions: $('net-actions'), disconnect: $('net-disconnect'), logout: $('net-logout') };
 let lastPhase = '';
 
 function renderNetwork() {
@@ -307,6 +307,12 @@ function renderNetwork() {
   netEl.status.textContent = v.text;
   netEl.login.hidden = !v.loginURL;
   if (v.loginURL) netEl.login.href = v.loginURL;
+  // The exit nodes the tailnet offers (unless the menu is being used: a redraw would close its list).
+  netEl.exitLabel.hidden = v.exitNodes.length === 0;
+  if (document.activeElement !== netEl.exit) {
+    netEl.exit.replaceChildren(new Option('Nothing: directly', ''), ...v.exitNodes.map((e) => new Option(e.online ? e.name : `${e.name} (offline)`, e.id)));
+    netEl.exit.value = v.exitNodes.find((e) => e.use)?.id ?? '';
+  }
   netEl.form.hidden = active;
   netEl.actions.hidden = !active;
   netEl.disconnect.hidden = !active;
@@ -328,7 +334,7 @@ function autoconnect() {
   const url = parseControlURL(s.controlURL);
   if ('error' in url) return;
   const host = parseHostname(s.hostname);
-  network.connect({ controlURL: url.url, hostname: 'hostname' in host ? host.hostname : 'webpc' });
+  network.connect({ controlURL: url.url, hostname: 'hostname' in host ? host.hostname : 'webpc', exitNode: s.exitNode });
 }
 
 netEl.form.onsubmit = (e) => {
@@ -341,15 +347,23 @@ netEl.form.onsubmit = (e) => {
   const authKey = netEl.key.value.trim();
   void (async () => {
     if (!(await tailscaleBuilt())) return formError("The Tailscale client isn't built on this server. Start the page with `npm run serve` or `npm start` (they build it; Go is needed), or run net/tailscale/build.sh.");
-    remember({ net: { controlURL: netEl.control.value.trim(), hostname: netEl.hostname.value.trim(), autoconnect: !authKey, keyed: !!authKey } });
+    remember({ net: { ...netSettings(), controlURL: netEl.control.value.trim(), hostname: netEl.hostname.value.trim(), autoconnect: !authKey, keyed: !!authKey } });
     try {
-      network.connect({ controlURL: url.url, hostname: host.hostname, authKey: authKey || undefined });
+      network.connect({ controlURL: url.url, hostname: host.hostname, authKey: authKey || undefined, exitNode: netSettings().exitNode });
       netEl.key.value = '';
     } catch (err) {
       formError(String((err as Error).message ?? err));
     }
     renderNetwork();
   })();
+};
+netEl.exit.onchange = () => {
+  const id = netEl.exit.value;
+  netEl.exit.blur();
+  network.setExitNode(id).then(
+    () => { remember({ net: { ...netSettings(), exitNode: id } }); formError(); },
+    (err) => { formError(`Couldn't ${id ? 'use that exit node' : 'stop using the exit node'}: ${(err as Error).message ?? err}`); },
+  ).finally(renderNetwork);
 };
 netEl.disconnect.onclick = () => {
   remember({ net: { ...netSettings(), autoconnect: false } });

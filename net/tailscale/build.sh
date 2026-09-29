@@ -7,12 +7,12 @@ OUT=${1:-$(cd "$(dirname "$0")/../.." && pwd)/target/net/tailscale.wasm}
 case $OUT in /*) ;; *) OUT=$PWD/$OUT ;; esac
 cd "$(dirname "$0")"
 # Features a guest-carrying client doesn't need. Kept: dns (MagicDNS), netstack
-# (Tailscale's own services), useexitnode, useroutes, health, usermetrics.
+# (Tailscale's own services), useexitnode, peerapiclient (an exit node's DNS is asked over DoH through it), useroutes, health, usermetrics.
 OMIT="ace acme advertiseexitnode advertiseroutes appconnectors aws bakedroots bird c2n cachenetmap \
 captiveportal capture cli cliconndiag clientmetrics clientupdate cloud colorable completion \
 completion_scripts conn25 dbus debug debugeventbus debugportmapper desktop_sessions doctor drive \
 flashappliance gro hujsonconf identityfederation iptables kube linkspeed linuxdnsfight \
-listenrawdisco logtail netlog networkmanager oauthkey osrouter outboundproxy peerapiclient \
+listenrawdisco logtail netlog networkmanager oauthkey osrouter outboundproxy \
 peerapiserver portlist portmapper posture qrcodes relayserver remoteconfig resolved routecheck \
 runtimemetrics sdnotify serve serviceclientprefs ssh synology syslog syspolicy systray taildrop \
 tailnetlock tap tpm tundevstats unixsocketidentity useproxy wakeonlan webbrowser webclient"
