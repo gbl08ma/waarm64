@@ -1,6 +1,9 @@
-// Boots the page's Debian (web/app/machine.ts, without the units the page masks: the
-// networking test wants systemd-networkd and systemd-resolved) with virtio-net on the
-// Ethernet gateway behind the Tailscale backend's IP port, and posts its serial output.
+// Boots the page's Debian with virtio-net on the Ethernet gateway and posts its serial output.
+// Two configurations: `ip` (a MessagePort: the Tailscale backend's IP port) boots it as
+// tests/net-tailnet.test.ts wants it, without the units the page masks (the test sets up
+// systemd-networkd and systemd-resolved itself); `page` boots it exactly as the page does with
+// a network card (web/app/machine.ts `network`) on the synchronous echo backend, for
+// tests/net-guest.test.ts.
 import { bootVm, Exit } from '../../web/vm.ts';
 import { MACHINES } from '../../web/app/machine.ts';
 
@@ -10,7 +13,7 @@ const get = async (url: string) => {
   return new Uint8Array(await r.arrayBuffer());
 };
 
-self.onmessage = async (e: MessageEvent<{ ip: MessagePort; serial: MessagePort; overlay?: string }>) => {
+self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; page?: boolean; serial: MessagePort; overlay?: string }>) => {
   try {
     const m = MACHINES.debian;
     const [wasm, kernel, initrd] = await Promise.all([
@@ -18,8 +21,8 @@ self.onmessage = async (e: MessageEvent<{ ip: MessagePort; serial: MessagePort; 
     ]);
     const vm = await bootVm(wasm, {
       ramSize: m.ramMiB << 20, kernel, initrd, jit: 1, ncpus: 2, parallel: true, realtime: true, serialIn: e.data.serial,
-      cmdline: m.cmdline.split(' ').filter((p) => !p.startsWith('systemd.mask=') && p !== 'console=tty0').join(' '),
-      devices: [{ type: 'rng' }, { type: 'blk', url: m.disk, overlay: e.data.overlay }, { type: 'net', adapter: { ip: e.data.ip } }],
+      cmdline: e.data.page ? m.network.cmdline : m.cmdline.split(' ').filter((p) => !p.startsWith('systemd.mask=') && p !== 'console=tty0').join(' '),
+      devices: [{ type: 'rng' }, { type: 'blk', url: m.disk, overlay: e.data.overlay }, { type: 'net', adapter: e.data.ip ? { ip: e.data.ip } : 'echo' }],
     });
     for (;;) {
       const r = await vm.runAsync(1e9);

@@ -13,7 +13,8 @@ serves. Chromium only.
 | `web/app/main.ts` | DOM code only: views, the canvas's scaling, xterm.js, power state, the status line; starts and stops machine workers |
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
 | `web/app/protocol.ts` | the messages between the two (types only) |
-| `web/app/machine.ts` | the machines, in one place: image URLs, command line, RAM, screen size, the `ready` marker, the default vCPU count |
+| `web/app/machine.ts` | the machines, in one place: image URLs, command line (and the one with a network card), RAM, screen size, the `ready` marker, the default vCPU count |
+| `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/debian.ts` | Debian's download and preparation, for `npm start` and `images/build.sh debian` |
 | `web/bootfs.ts`, `web/ext4.ts` | partition tables, a read-only ext2/3/4 reader, a distribution's kernel and initrd (below, "The disk reader") |
@@ -28,7 +29,7 @@ shell, or `init=/nonexistent` to make Buildroot panic, as a test does).
 - **`debian`**, the page's VM (M8 decision 1): the Debian 13 nocloud image, under the JIT,
   realtime, a worker per vCPU; 1 GiB; a 1024×768 framebuffer; rng, the disk (virtio-blk over HTTP
   ranges, writable through the OPFS overlay `webpc-debian`), keyboard, tablet. No virtio-console
-  (it would only add an output-only `hvc0` getty) and no network (decision 8). Its command line is
+  (it would only add an output-only `hvc0` getty) and, by default, no network card: the Network menu (below) adds one. Its command line is
   [images.md](images.md) "Debian for interaction". vCPUs: `min(4, cores − 2)` (the page and the
   device worker keep a core each). `ready` is the serial console's login prompt (`localhost login: `
   at a line's start, anywhere in the output: below, "The end-to-end test"), ~30 s after
@@ -235,6 +236,48 @@ web/overlay.ts: under the overlay's Web Lock, `removeEntry(name, {recursive: tru
 root) and starts a new
 machine, which boots from the image as published. If the removal fails (another tab holds the
 files), the page says so and offers the reset again.
+
+## Network
+
+The header's **Network** menu (machines with a `network` entry in machine.ts: Debian) gives the
+machine a network card on a Tailscale network (docs/plans/networking.md; the backend is
+web/tailscale.ts, the client in its own worker). Off by default: the measured boot
+(bench/boot/REPORT.md "M8 loop 0") masks the network units, and a machine without a card doesn't
+load the client at all.
+
+- **Connect** takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
+  `http://` for this computer), a hostname (default `webpc`) and an optional auth key. **A card
+  can't be added to a running machine, so the first connect restarts it** (with the usual power-cut
+  confirmation); the new machine boots with `machine.network.cmdline`: the units that configure a
+  card are unmasked and `ip=dhcp` has systemd-network-generator write a `.network` file, so the
+  guest takes the gateway's DHCP lease by itself (the tailnet address, MagicDNS through
+  systemd-resolved). The machine worker gets `ip`, the gateway's end of an IP port, and adds
+  `{type: 'net', adapter: {ip}}` (docs/devices.md "net"); the page keeps the other end
+  (web/app/network.ts) for as long as no client holds it.
+- **Login:** without an auth key the client asks the control server for a login and the menu opens
+  with a **Log in…** link (a new tab; only `http(s)` URLs are ever offered); the client comes up
+  when the login completes. An admin-approval wait is shown as such. With an auth key there's no
+  login; the key is never saved and its node is ephemeral (the control server drops it once it's
+  been away).
+- **The node is kept:** a login's node (its keys, a secret) lives in this origin's IndexedDB
+  (`webpc-tailscale`, one profile per control server), so a reload is the same node with the same
+  address and no new login: **Connect on load is automatic** (`autoconnect`) until Disconnect. An
+  auth key's node isn't kept: the menu says to enter it again.
+- **Disconnect** withdraws the lease and stops the client (the guest keeps its address until the
+  lease runs out; the card stays); **Log out** removes the node from the tailnet and deletes its
+  keys; **Remove card…** restarts the machine without one. A machine restart (Restart, a guest
+  reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
+  connected.
+- Settings (`webpc.settings` `net`): `enabled` (the card), `controlURL`, `hostname`, `autoconnect`,
+  `keyed`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
+  an error (the client's, e.g. the control server didn't answer).
+- **The control server must answer `GET /key` with CORS headers** (docs/plans/networking.md N4):
+  Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
+- Tests: tests/network.test.ts (the controller and its parsers with a fake client),
+  tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
+  pings, no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in).
+  Not tested: the menu's DOM and a real interactive login (they need a control server that serves
+  one; the docs/backlog.md "Network" entry says what's missing).
 
 ## The end-to-end test
 

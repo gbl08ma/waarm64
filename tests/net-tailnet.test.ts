@@ -14,6 +14,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { loginRoot, run as runIn } from './serial-console.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const WASM = `${ROOT}target/net/tailscale.wasm`;
@@ -51,36 +52,8 @@ after(async () => {
 
 const OVERLAY = 'webpc-tailnet-test';
 const harness = <T>(page: Page, f: string) => page.evaluate(`window.harness.${f}`) as Promise<T>;
-
-/** Waits until the serial output matches; on failure says what the guest and the client were doing. */
-async function shows(page: Page, re: RegExp, ms: number, from = 0) {
-  const deadline = Date.now() + ms;
-  for (;;) {
-    const out = (await harness<string>(page, 'output()')).slice(from);
-    const m = re.exec(out);
-    if (m) return m;
-    const err = await harness<string | undefined>(page, 'error()');
-    if (err) throw new Error(`the machine worker failed: ${err}`);
-    if (Date.now() > deadline) {
-      const ts = await harness<object>(page, 'tailscale()');
-      throw new Error(`timed out waiting for ${re}; the client: ${JSON.stringify(ts)}; the serial output ends: ${out.slice(-1500)}`);
-    }
-    await page.waitForTimeout(250);
-  }
-}
-
-/**
- * Runs a shell command on the serial console; resolves with its output. The markers are built by
- * the shell (`$((40+2))`), so the echoed command line never matches them, only what ran (bash
- * echoes the second line after the first has run, so the output can't be cut by the echo).
- */
-async function run(page: Page, cmd: string, ms = 60_000) {
-  const from = (await harness<string>(page, 'output()')).length;
-  await page.evaluate((c) => (window as never as { harness: { send(s: string): void } }).harness.send(c), `echo __BEGIN$((40+2))__; ${cmd}\necho __END$((40+2))__\n`);
-  await shows(page, /__END42__\r?\n/, ms, from);
-  const out = (await harness<string>(page, 'output()')).slice(from).replace(/\r/g, '').replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
-  return out.slice(out.lastIndexOf('__BEGIN42__\n') + 12, out.lastIndexOf('__END42__'));
-}
+/** What the client was doing, for a failure's message. */
+const clientState = async (page: Page) => `; the client: ${JSON.stringify(await harness<object>(page, 'tailscale()'))}`;
 
 test('the guest gets a DHCP lease from the tailnet, reaches a peer by address and by name, and is reached', { skip, timeout: 900_000 }, async () => {
   await withDebianLock(async () => {
@@ -103,45 +76,45 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       const peer = ts.netmap.peers.find((p) => p.addresses.some((a) => a.replace(/\/\d+$/, '') === env.WEBPC_TS_PEER_IP));
       assert.ok(peer, `the peer ${env.WEBPC_TS_PEER_IP} is in the netmap`);
 
-      await shows(page, /\S+ login: /, 240_000);
-      await page.evaluate(() => (window as never as { harness: { send(s: string): void } }).harness.send('root\n'));
-      await shows(page, /root@\S+:~# /, 60_000);
+      const context = () => clientState(page);
+      const run = (cmd: string, ms = 60_000) => runIn(page, cmd, ms, context);
+      await loginRoot(page, 240_000, context);
 
       // Networking as a distribution does it: systemd-networkd's DHCP client and systemd-resolved.
-      await run(page, "mkdir -p /run/systemd/network && printf '[Match]\\nName=e*\\n[Network]\\nDHCP=ipv4\\n' > /run/systemd/network/20-eth.network");
-      await run(page, 'ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf; systemctl start systemd-resolved systemd-networkd', 120_000);
+      await run("mkdir -p /run/systemd/network && printf '[Match]\\nName=e*\\n[Network]\\nDHCP=ipv4\\n' > /run/systemd/network/20-eth.network");
+      await run('ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf; systemctl start systemd-resolved systemd-networkd', 120_000);
       let addr = '';
       for (let k = 0; k < 40 && !addr; k++) {
-        addr = (await run(page, "ip -4 -o addr show scope global | awk '{print $4}'")).trim();
+        addr = (await run("ip -4 -o addr show scope global | awk '{print $4}'")).trim();
         if (!addr) await page.waitForTimeout(1000);
       }
-      assert.ok(addr, `no DHCP lease after 40 s:\n${await run(page, 'ip -br link; ip -br addr; systemctl is-active systemd-networkd systemd-resolved; networkctl list 2>&1 | head; journalctl -u systemd-networkd --no-pager 2>&1 | tail -15; lsmod | grep -i virtio')}`);
+      assert.ok(addr, `no DHCP lease after 40 s:\n${await run('ip -br link; ip -br addr; systemctl is-active systemd-networkd systemd-resolved; networkctl list 2>&1 | head; journalctl -u systemd-networkd --no-pager 2>&1 | tail -15; lsmod | grep -i virtio')}`);
       assert.equal(addr.split('/')[0], self, 'the lease is the address the client reports');
-      const routes = await run(page, 'ip -4 route');
+      const routes = await run('ip -4 route');
       console.log(`# guest: ${addr}; routes: ${routes.trim().replace(/\n/g, ' | ')}`);
       assert.match(routes, /default via 169\.254\.0\.1/);
 
-      const ping = await run(page, `ping -c 3 -W 5 ${env.WEBPC_TS_PEER_IP}`, 90_000);
+      const ping = await run(`ping -c 3 -W 5 ${env.WEBPC_TS_PEER_IP}`, 90_000);
       assert.match(ping, /3 packets transmitted, 3 received, 0% packet loss/, ping);
 
       const name = env.WEBPC_TS_PEER_NAME.replace(/\.$/, '');
-      const resolved = await run(page, `getent hosts ${name}`);
+      const resolved = await run(`getent hosts ${name}`);
       assert.ok(resolved.includes(env.WEBPC_TS_PEER_IP), `MagicDNS: ${name} resolves to the peer (${resolved})`);
-      const short = await run(page, 'getent hosts peer');
+      const short = await run('getent hosts peer');
       assert.ok(short.includes(env.WEBPC_TS_PEER_IP), `the search domain: "peer" resolves (${short})`);
 
       // The peer connects to a server in the guest (through the tailnet, to the guest's own address).
-      await run(page, 'mkdir -p /tmp/www && echo hello-from-the-guest > /tmp/www/index.html && (cd /tmp/www && nohup python3 -m http.server 8080 --bind 0.0.0.0 > /tmp/http.log 2>&1 &)');
+      await run('mkdir -p /tmp/www && echo hello-from-the-guest > /tmp/www/index.html && (cd /tmp/www && nohup python3 -m http.server 8080 --bind 0.0.0.0 > /tmp/http.log 2>&1 &)');
       // Python takes a while to start under emulation: the server must answer inside the guest first.
       let local = '';
       for (let k = 0; k < 30 && !local.includes('hello-from-the-guest'); k++) {
-        local = await run(page, `curl -s -m 5 http://${self}:8080/`);
+        local = await run(`curl -s -m 5 http://${self}:8080/`);
         if (!local.includes('hello-from-the-guest')) await page.waitForTimeout(2000);
       }
-      assert.match(local, /hello-from-the-guest/, `the guest's server didn't come up: ${await run(page, 'cat /tmp/http.log; ss -ltn')}`);
+      assert.match(local, /hello-from-the-guest/, `the guest's server didn't come up: ${await run('cat /tmp/http.log; ss -ltn')}`);
       const nc = spawnSync('podman', ['exec', 'webpc-peer', 'sh', '-c', `(printf 'GET / HTTP/1.0\\r\\n\\r\\n'; sleep 10) | timeout 30 tailscale --socket=/tmp/ts.sock nc ${self} 8080`], { encoding: 'utf8' });
       if (nc.status !== 0) {
-        assert.fail(`the peer couldn't reach the guest's server (${nc.status}): ${nc.stderr}\nguest: ${await run(page, 'ip -s link show dev e*; nstat -az TcpInSegs TcpOutSegs TcpInErrs IpInDelivers IpInAddrErrors; ss -tan; cat /tmp/http.log')}`);
+        assert.fail(`the peer couldn't reach the guest's server (${nc.status}): ${nc.stderr}\nguest: ${await run('ip -s link show dev e*; nstat -az TcpInSegs TcpOutSegs TcpInErrs IpInDelivers IpInAddrErrors; ss -tan; cat /tmp/http.log')}`);
       }
       const reply = nc.stdout; // (`tailscale nc` quits when its stdin ends, so the request is followed by a wait for the reply)
       assert.match(reply, /HTTP\/1\.0 200 OK/);

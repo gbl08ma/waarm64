@@ -21,7 +21,6 @@ const alive = (pid: number) => {
 
 /** Waits for the lock (at most `ms`), runs `f`, releases it. */
 export async function withDebianLock<T>(f: () => Promise<T>, ms = 15 * 60_000): Promise<T> {
-  if (ms) return f(); // EXPERIMENT: no lock
   const until = Date.now() + ms;
   for (;;) {
     try {

@@ -8,7 +8,9 @@
 // at 100.100.100.100) but terminates none of the guest's traffic.
 //
 // In the worker, after wasm_exec.js, `newNode(config)` returns
-// {run(callbacks), login(), logout(), sendPacket(u8), setPacketHandler(fn)}.
+// {run(callbacks), login(), logout(), sendPacket(u8), setPacketHandler(fn)}. The config:
+// {controlURL, authKey, hostname, ephemeral (false to keep the node across restarts, with
+// stateStorage: {getState(key), setState(key, hex)})}.
 package main
 
 import (
@@ -168,6 +170,13 @@ func newNode(cfg js.Value) map[string]any {
 		controlURL = s
 	}
 	authKey, _ := str(cfg, "authKey")
+	// An ephemeral node is removed by the control server once it's been away for a while: the
+	// default for an auth key or when nothing is kept. A node whose state is kept (stateStorage)
+	// is the same node after a reload, so it isn't ephemeral, unless the config says so.
+	loginFlags := controlclient.LoginEphemeral
+	if e := cfg.Get("ephemeral"); e.Type() == js.TypeBoolean && !e.Bool() {
+		loginFlags = controlclient.LoginDefault
+	}
 	hostname, ok := str(cfg, "hostname")
 	if !ok {
 		hostname = "webpc"
@@ -212,7 +221,7 @@ func newNode(cfg js.Value) map[string]any {
 	if err != nil {
 		log.Fatal(err)
 	}
-	lb, err := ipnlocal.NewLocalBackend(logf, priv.Public(), sys, controlclient.LoginEphemeral)
+	lb, err := ipnlocal.NewLocalBackend(logf, priv.Public(), sys, loginFlags)
 	if err != nil {
 		log.Fatalf("ipnlocal.NewLocalBackend: %v", err)
 	}

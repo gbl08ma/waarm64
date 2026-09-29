@@ -16,6 +16,11 @@ export type Machine = {
   /** The OPFS overlay that makes `disk` writable (web/overlay.ts); read-only without one. */
   overlay?: string;
   cmdline: string;
+  /**
+   * What the machine changes when it has a network card (a tailnet, docs/frontend.md "Network"):
+   * its command line, which has the guest configure the card itself. Absent: the machine can't have one.
+   */
+  network?: { cmdline: string };
   ramMiB: number;
   framebuffer: { width: number; height: number };
   /**
@@ -39,6 +44,12 @@ export const MACHINES = {
     overlay: 'webpc-debian',
     cmdline: 'console=ttyAMA0 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes apparmor=0 ' +
       ['systemd-networkd.service', 'systemd-networkd.socket', 'systemd-resolved.service', 'systemd-timesyncd.service', 'systemd-network-generator.service'].map((u) => `systemd.mask=${u}`).join(' '),
+    // The units that configure a card are unmasked and `ip=dhcp` has systemd-network-generator write a
+    // .network file for it: DHCP from the gateway (its lease is the tailnet address), resolved for MagicDNS.
+    network: {
+      cmdline: 'console=ttyAMA0 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes apparmor=0 ip=dhcp ' +
+        ['systemd-timesyncd.service'].map((u) => `systemd.mask=${u}`).join(' '),
+    },
     ramMiB: 1024,
     framebuffer: { width: 1024, height: 768 },
     ready: /(?:^|\n)\S+ login: /, // agetty's prompt ("localhost login: ")

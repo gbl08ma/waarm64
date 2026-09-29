@@ -123,13 +123,14 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
   await disk;
   if (stopping) return;
   booting = bootVm(wasm, {
-    ramSize: machine.ramMiB << 20, kernel, initrd, cmdline: withParams(machine.cmdline, m.params ?? ''), jit: 1, ncpus: m.ncpus, parallel: true, realtime: true,
+    ramSize: machine.ramMiB << 20, kernel, initrd, cmdline: withParams(m.ip && machine.network ? machine.network.cmdline : machine.cmdline, m.params ?? ''), jit: 1, ncpus: m.ncpus, parallel: true, realtime: true,
     framebuffer: machine.framebuffer, serialIn: m.serial,
     devices: [
       { type: 'rng' },
       { type: 'blk', url: machine.disk, overlay: machine.overlay },
       { type: 'input', kind: 'keyboard', port: m.keyboard },
       { type: 'input', kind: 'tablet', port: m.tablet },
+      ...(m.ip && machine.network ? [{ type: 'net' as const, adapter: { ip: m.ip } }] : []),
     ],
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });

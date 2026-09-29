@@ -7,7 +7,8 @@
 import { Terminal } from '@xterm/xterm';
 import { attachInput, type Input } from '../input.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
-import { defaultCpus, hostMemoryGiB, MACHINES, type MachineName } from './machine.ts';
+import { defaultCpus, hostMemoryGiB, MACHINES, type Machine, type MachineName } from './machine.ts';
+import { createNetwork, DEFAULT_SETTINGS, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -15,10 +16,10 @@ const params = new URLSearchParams(location.search);
 const machine = (params.get('machine') ?? 'debian') as MachineName;
 if (!(machine in MACHINES)) throw new Error(`no machine ${machine}`);
 const ncpus = Number(params.get('ncpus')) || defaultCpus(navigator.hardwareConcurrency || 4);
-const spec = MACHINES[machine];
+const spec: Machine = MACHINES[machine];
 
-// Settings remembered per browser (the view, for now). Storage can be off or throw: then nothing is remembered.
-type Settings = { view?: View };
+// Settings remembered per browser (the view and the network). Storage can be off or throw: then nothing is remembered.
+type Settings = { view?: View; net?: NetworkSettings };
 const SETTINGS = 'webpc.settings';
 const settings = (): Settings => {
   try {
@@ -159,6 +160,8 @@ function start() {
   if (focused) canvas.focus();
   const screen = canvas.transferControlToOffscreen();
   const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+  // A network card when the user chose one (Network menu): the machine gets its end of the IP port.
+  const ip = spec.network && netSettings().enabled ? network.port() : undefined;
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
   const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1), serial: serial.port1 };
   run = r;
@@ -197,7 +200,9 @@ function start() {
     }
   };
   worker.onerror = (e) => { if (run === r) setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator); };
-  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen]);
+  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, ip } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
+  if (ip) autoconnect();
+  renderNetwork();
 }
 
 /** Stops the machine, if any: its worker releases the disk overlay first (or gets 3 s to). */
@@ -285,6 +290,91 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-chord]')) {
   };
 }
 document.addEventListener('pointerdown', (e) => { if (!keysMenu.contains(e.target as Node)) keysMenu.open = false; });
+
+// The network (docs/frontend.md "Network"): a machine with `network` gets a card when the user connects; the Network
+// menu logs a Tailscale client in and out. The card can't be added to a running machine: connecting restarts it.
+const netSettings = (): NetworkSettings => ({ ...DEFAULT_SETTINGS, ...settings().net });
+const network = createNetwork(() => renderNetwork());
+const netMenu = $<HTMLDetailsElement>('network');
+const netEl = { status: $('net-status'), login: $<HTMLAnchorElement>('net-login'), form: $<HTMLFormElement>('net-form'), control: $<HTMLInputElement>('net-control'), hostname: $<HTMLInputElement>('net-hostname'), key: $<HTMLInputElement>('net-authkey'), error: $('net-error'), hint: $('net-hint'), actions: $('net-actions'), disconnect: $('net-disconnect'), logout: $('net-logout') };
+let lastPhase = '';
+
+function renderNetwork() {
+  const s = netSettings();
+  const v = network.view();
+  netMenu.dataset.phase = v.phase;
+  const active = network.active();
+  netEl.status.textContent = s.enabled || active ? v.text : 'No network card';
+  netEl.login.hidden = !v.loginURL;
+  if (v.loginURL) netEl.login.href = v.loginURL;
+  netEl.form.hidden = active;
+  netEl.actions.hidden = !s.enabled;
+  netEl.disconnect.hidden = !active;
+  netEl.logout.hidden = !active || s.keyed;
+  netEl.hint.textContent = !s.enabled ? 'Connecting gives the machine a network card, which restarts it (a card can\'t be added to a running machine).'
+    : !active && s.keyed ? 'An auth key isn\'t kept: enter it again to connect.' : '';
+  if (v.phase === 'login' && lastPhase !== 'login') netMenu.open = true; // the user has something to do
+  lastPhase = v.phase;
+}
+
+function formError(message?: string) {
+  netEl.error.textContent = message ?? '';
+  netEl.error.hidden = !message;
+}
+
+/** Starts the client for the settings the machine started under (a login's node is kept, so no key is needed). */
+function autoconnect() {
+  const s = netSettings();
+  if (!s.autoconnect || network.active()) return;
+  const url = parseControlURL(s.controlURL);
+  if ('error' in url) return;
+  const host = parseHostname(s.hostname);
+  network.connect({ controlURL: url.url, hostname: 'hostname' in host ? host.hostname : 'webpc' });
+}
+
+netEl.form.onsubmit = (e) => {
+  e.preventDefault();
+  const url = parseControlURL(netEl.control.value);
+  const host = parseHostname(netEl.hostname.value);
+  if ('error' in url) return formError(url.error);
+  if ('error' in host) return formError(host.error);
+  formError();
+  const authKey = netEl.key.value.trim();
+  void (async () => {
+    const had = netSettings().enabled;
+    if (!had && (state === 'running' || state === 'booting') && !confirm('Connecting gives the machine a network card, which restarts it: like pulling the plug, unsaved work in the guest is lost. Continue?')) return;
+    remember({ net: { enabled: true, controlURL: netEl.control.value.trim(), hostname: netEl.hostname.value.trim(), autoconnect: !authKey, keyed: !!authKey } });
+    if (!had) await restart(); // the new machine has the card
+    try {
+      network.connect({ controlURL: url.url, hostname: host.hostname, authKey: authKey || undefined });
+      netEl.key.value = '';
+    } catch (err) {
+      formError(String((err as Error).message ?? err));
+    }
+    renderNetwork();
+  })();
+};
+netEl.disconnect.onclick = () => {
+  remember({ net: { ...netSettings(), autoconnect: false } });
+  void network.disconnect().then(renderNetwork);
+};
+netEl.logout.onclick = () => {
+  if (!confirm('Log out? This machine is removed from the network and its keys are forgotten here; connecting again logs in as a new node.')) return;
+  remember({ net: { ...netSettings(), autoconnect: false } });
+  void network.logout().then(renderNetwork);
+};
+$('net-remove').onclick = () => {
+  if ((state === 'running' || state === 'booting') && !confirm('Remove the network card? This restarts the machine: like pulling the plug, unsaved work in the guest is lost.')) return;
+  remember({ net: { ...netSettings(), enabled: false, autoconnect: false } });
+  void network.disconnect().then(() => restart()).then(renderNetwork);
+};
+document.addEventListener('pointerdown', (e) => { if (!netMenu.contains(e.target as Node)) netMenu.open = false; });
+if (spec.network) {
+  netMenu.hidden = false;
+  netEl.control.value = netSettings().controlURL;
+  netEl.hostname.value = netSettings().hostname;
+  renderNetwork();
+}
 
 // Full screen, with the Keyboard Lock API (Chromium) so that Ctrl+W, Ctrl+T, Esc and the like reach
 // the machine; Chromium leaves full screen when Esc is held.

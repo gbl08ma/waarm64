@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // tests/net-guest.test.ts's page: the page's Debian with a network card (web/app/machine.ts
+  // `network`) on the Ethernet gateway with the synchronous echo backend, no Tailscale. The test
+  // drives the guest's serial console through window.harness.
+  const q = new URLSearchParams(location.search);
+  const worker = new Worker(new URL('./tailnet-worker.ts', import.meta.url), { type: 'module' });
+  const serial = new MessageChannel();
+  let output = '';
+  let error;
+  worker.onmessage = (e) => { if (e.data.serial) output += e.data.serial; else if (e.data.error) error = e.data.error; };
+  worker.onerror = (e) => { error = e.message; };
+  worker.postMessage({ page: true, serial: serial.port2, overlay: q.get('overlay') }, [serial.port2]);
+  window.harness = { send: (s) => serial.port1.postMessage(s), output: () => output, error: () => error };
+</script>

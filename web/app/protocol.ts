@@ -34,6 +34,12 @@ export type ToWorker =
     screen: OffscreenCanvas;
     /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). */
     params?: string;
+    /**
+     * The gateway's end of the machine's IP port (web/gateway.ts `portBackend`): the machine gets a
+     * network card (virtio-net) and its `network` command line. The page keeps the other end and
+     * gives it to a Tailscale client (web/app/network.ts). Only for a machine with `network`.
+     */
+    ip?: MessagePort;
   }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
   | { type: 'stop' };
