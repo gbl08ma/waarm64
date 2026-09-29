@@ -118,6 +118,11 @@ The page still showed no dump: `withPanic` changed `err.message`, but the worker
 `err.stack`, which V8 had fixed already (something read it first). Fixed in ace25a6 (the stack now
 carries it, and the test reads the stack first). The next occurrence should show the dump.
 
+Third occurrence (the same day, the same site, vCPU 2): the user saw **a general slowdown before
+the crash**. The page still had no message after ace25a6, although a vCPU thread instance does get
+it in Node (`bench/results/local/panic-thread.ts`). 8488331 makes the coordinator read the buffer
+itself and say what the buffer held when it's empty, so the next occurrence tells which part failed.
+
 A repro needs the tailnet in the loop: CI's tailnet tests (`tests/net/tailnet.sh`, headscale and a
 peer in Podman) plus a peer that SSHes into the guest and keeps traffic flowing (for example
 `yes | ssh guest cat > /dev/null`, or an interactive-like trickle) while the guest compiles on all
