@@ -1,0 +1,105 @@
+# BUG1: "vCPU 1: RuntimeError: unreachable" under a 4-vCPU stress load
+
+**Status:** analysed, not reproduced, not fixed. This file carries the analysis to whoever
+investigates next; delete it in the commit that fixes the bug (or update it with what was found).
+
+## What happened
+
+In Chromium, `npm run serve`, core built from 9e0209b (the wasm in
+`target/wasm32-unknown-unknown/release/webpc_core.wasm`, built 2026-09-29 09:15). The VM had 4
+vCPUs (parallel SMP, a worker per vCPU), and Debian was on the tailnet (M8 phase C networking). All 4
+vCPUs were pegged: a Python busy loop, two `dd if=/dev/urandom` (one piped to `sha256sum`), and
+**compiling Go packages** (many threads; heavy mmap/munmap/mprotect, so many TLBI IS). The page reported:
+
+```
+Error: vCPU 1: RuntimeError: unreachable
+    at ...__rust_abort ... rust_panic ... panic_fmt
+    at webpc_core.wasm.<Vm>::handle_par (wasm-function[229]:0x4031a)
+    at webpc_core.wasm.<Vm>::run_cpu    (wasm-function[240]:0x42fff)
+    at ended (web/vm.ts:573) ...
+```
+
+## Where the panic is: the DSB deadlock assert (certain)
+
+The release wasm carries DWARF, so the site can be read off the binary that crashed. **llvm-symbolizer
+takes the file offset from the stack trace as is**; don't subtract the code section's base:
+
+```sh
+llvm-symbolizer --obj=target/wasm32-unknown-unknown/release/webpc_core.wasm -i -f 0x4031a
+#   sync        core/src/vm/parallel.rs:589:13
+#   handle_par  core/src/vm/parallel.rs:335:22   (Exit::Resync => self.sync(...))
+```
+
+`parallel.rs:589` is the assert in `Vm::sync`:
+
+```rust
+assert!(self.clock.ns() - t0 < DSB_LIMIT_NS,
+        "vCPU {c}: DSB waited 10 s for TLBI IS on {:?}", own.waits);
+```
+
+vCPU 1 broadcast a TLBI IS, then hit a DSB/ISB/ERET, and for 10 s at least one other vCPU `t` kept
+`par.state == RUN` with `par.applied < seq`. So `t` never reached `drain`. The message names `t`
+(`own.waits`), but **the core has no panic hook**, so it was lost: wasm32-unknown-unknown's default
+hook prints nothing.
+
+What's ruled out:
+- **The clock going backwards:** `t0` and the later readings come from the same thread
+  (`performance.now()` plus a fixed per-worker base, `web/vm.ts:42`).
+- **A vCPU blocked in the host while `RUN`:** `ring()` and the TX_FULL and IDLE waits
+  (`web/vcpu-worker.ts`) all happen after `run_cpu` returned, which CASes `RUN`→`OUT`.
+- **A worker that threw with `RUN` stuck:** `error ??=` in `web/vm.ts` `ended` keeps the first
+  error, so the throwing vCPU would have been reported, not vCPU 1.
+
+## Hypotheses: what kept `t` in `RUN` without draining
+
+`t` drains at the top of every `run_loop` iteration, which comes around after every chunk, IRQ and
+WFI completion. So either `t` stayed inside one chunk (or one `handle_par`) for 10 s, or its
+`applied` couldn't reach `seq`. In rough order of likelihood:
+
+1. **A chunk that never ends** (JIT or interpreter): some loop that skips the step-budget check (a
+   self-chaining block, a chained back-edge, an exclusive-store retry, a helper that loops, WFE/YIELD
+   handled inline). That alone hangs `t` without the guest noticing within 10 s: the soft-lockup and
+   RCU-stall reports take ≥20 s. Add a guest dependency (`t` spins on a lock that vCPU 1 holds
+   while vCPU 1 waits in the DSB for `t`) and it's a hard deadlock that only the assert breaks.
+   Go's runtime spins a lot (`procyield`, spinning Ms, `osyield`), so Go workloads are the likeliest
+   to find such a loop.
+2. **`t` blocked on `Vm::plat`'s mutex for 10 s** (`plat_of`): a holder slow under the lock
+   (virtio `io`/`complete` doing unexpectedly heavy work, the new virtio-net or SIGNAL_RX refresh
+   paths), or starvation under heavy contention: 4 vCPUs, IPIs (ICC_SGI1R), timer PPIs and network
+   IRQs all take the lock. `PAR_LOCK_WAIT_NS` counts the wait.
+3. **`t` stuck in a host import inside the chunk:** `jit_install` compiles and instantiates
+   synchronously, and grows the table. A GC pause or memory pressure in that worker, with a lot of
+   code churn (Go compiles make IC invalidations, flushes and many modules), would need to be
+   pathological to last 10 s. `JIT_COMPILE_NS` and `JIT_MODULES` per vCPU would show it.
+4. **Bookkeeping:** a `waits` entry that can't be satisfied: `queued` or `applied` reset on some
+   path (CPU_ON's `*own = Own{..}` resets `own` but not the queue; check every writer of
+   `Queue::queued` and `CpuPar::applied`), or a `pending` lost between `broadcast` and `drain`. My
+   reading of the `broadcast`/`drain` ordering found no hole, but it wasn't exhaustive.
+5. **A host stall of ≥10 s** (machine sleep, the debugger paused): would be a spurious assert.
+   Unlikely: the user was watching the load.
+
+## Suggested plan (cheapest first)
+
+1. **Make the next occurrence self-diagnosing** (worth committing whatever else happens):
+   - A panic hook in the core that hands the message to the host (an `env` import, or a
+     buffer the vCPU worker reads after the `unreachable`), and `web/` putting it in the error. That
+     takes an ABI bump (docs/abi.md).
+   - At the DSB timeout, before panicking, report for each `(t, seq)` in `own.waits`:
+     `state`, `applied`, `queue.queued`, `pending`, the retired count and PC that `publish_cpu`
+     published (`counters.retired`, `counters.pc`) at the wait's start and at its end, and whether
+     `plat` is locked (`try_lock`). **If `t`'s retired count moved, it's hypothesis 4; if it froze, 1 to 3**
+     (the PC then points at the loop, or at the code that took the lock).
+2. **Reproduce without the network** where the loop is cheap:
+   - Bare metal (tests/baremetal, the native parallel runner `baremetal_parallel` and the wasm
+     parallel path): vCPU A takes a spinlock, TLBI VAE1IS, DSB, releases it; vCPUs B to D spin on the
+     lock in tight loops without WFE (`ldr; cbnz`, and LDAXR/STXR loops, YIELD loops). Check that
+     every spinning chunk ends at the budget and drains.
+   - Debian or Alpine, 4 vCPUs, JIT, in Chromium or Node workers: a local stress with no network,
+     mixing fork/exec storms, mmap/munmap/mprotect loops (a few lines of C or a shell script)
+     and busy loops. If there's no compiler in the image, a Go or C test binary built in Podman
+     (`images/`) and put on the disk.
+3. Read the JIT's budget enforcement (core/src/jit) against hypothesis 1: every back-edge and
+   chained branch, and every helper that can loop.
+
+Constraints (CLAUDE.md): `timeout` and the systemd-run memory cap on every run; guests under the JIT
+only; no Firefox; headless Playwright only. The crashed binary's analysis is above, so **rebuilding the wasm is fine now**.
