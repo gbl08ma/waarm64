@@ -1,10 +1,13 @@
 // The machine worker (docs/frontend.md): boots one of web/app/machine.ts's
 // machines under the JIT, realtime with a worker per vCPU (web/vm.ts), and runs
 // it until it stops, talking to the page through web/app/protocol.ts. It
-// drains the serial console after every `runAsync` (which returns within 10 ms
-// of new output) and posts the text; serial input comes in on a port straight
-// to the VM, and the keyboard and tablet ports go to the device worker.
+// drains the serial console after every `runAsync` (which returns as soon as
+// there's new output) and posts the text, and draws the screen on the page's
+// canvas (transferred) on its own animation frames; serial input comes in on a
+// port straight to the VM, and the keyboard and tablet ports go to the device
+// worker.
 import { bootVm, Exit, PSCI_SYSTEM_OFF, type Vm } from '../vm.ts';
+import { showFramebuffer } from '../display.ts';
 import { MACHINES, type Machine } from './machine.ts';
 import type { FromWorker, PowerState, Status, ToWorker } from './protocol.ts';
 
@@ -54,7 +57,7 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });
   if (stopping) return;
-  if (vm.framebuffer) post({ type: 'screen', memory: vm.memory, framebuffer: vm.framebuffer });
+  if (vm.framebuffer) showFramebuffer(m.screen, vm.memory, vm.framebuffer); // on this worker's animation frames
   state('booting');
   const t0 = performance.now();
   let ready = false;

@@ -28,14 +28,21 @@ impl Default for Ring {
 }
 
 impl Ring {
-    /// Producer side; false when full.
+    /// Producer side; false when full. A byte into an empty ring notifies
+    /// `head` (`memory.atomic.notify`), so a consumer that drained it can
+    /// sleep on `head` until there's more (docs/abi.md "Signal word and
+    /// console").
     pub fn push(&self, b: u8) -> bool {
         let h = self.head.load(Ordering::Relaxed);
-        if h.wrapping_sub(self.tail.load(Ordering::Acquire)) as usize == RING {
+        let t = self.tail.load(Ordering::SeqCst);
+        if h.wrapping_sub(t) as usize == RING {
             return false;
         }
         self.buf[h as usize % RING].store(b, Ordering::Relaxed);
-        self.head.store(h.wrapping_add(1), Ordering::Release);
+        self.head.store(h.wrapping_add(1), Ordering::SeqCst);
+        if h == t {
+            crate::vm::notify(&self.head);
+        }
         true
     }
 

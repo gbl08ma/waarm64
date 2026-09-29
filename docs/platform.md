@@ -247,7 +247,9 @@ between runs (at once while a parallel VM's `runAsync` awaits). In deterministic
 where the runner sends it: `runToPowerOff`'s `ConsoleInput` (at a step, on a console marker, or
 at an idle with no deadline) and the native runners' `Boot.input` pump at the same points, so a
 test with input keeps one step count. Parallel `runAsync` returns as soon as the TX ring has
-output (within its 10 ms waits), so a terminal's echo isn't held back by its 50 ms turns.
+output, so a terminal's echo isn't held back by its 50 ms turns: it sleeps on the TX ring's head,
+which the core notifies on a byte into an empty ring ([abi.md](abi.md) "Signal word and console";
+before M8 loop 3 it noticed output at its next 10 ms wait).
 Without `SIGNAL_RX` a tickless guest (Debian, Alpine) sees input only at its next timer event:
 Alpine's shell echoed in ~120 ms instead of ~55 ms, and the bare-metal `rx` test (no timer
 armed) never does.

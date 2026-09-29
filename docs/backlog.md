@@ -127,8 +127,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - Input: US PC layout only, no pointer lock (relative mouse), no multitouch; events injected in
   deterministic mode land when they land. Past 1024 queued events the oldest are dropped, so
   anything that types a long string (a test agent, a paste into the screen) must pace itself.
-- Framebuffer: full copy per animation frame (no dirty tracking), x8r8g8b8 only, fixed size;
-  virtio-gpu next ([plans/graphics.md](plans/graphics.md)).
+- Framebuffer: a scan of the whole buffer per animation frame to find the changed rows (~0.4 ms
+  at 1024×768, on the machine worker), x8r8g8b8 only, fixed size; virtio-gpu's damage rectangles
+  would replace the scan ([plans/graphics.md](plans/graphics.md)).
 - The TS backends are tested through boots; a Node test with a bare-metal virtio guest would be
   cheaper when they grow (blk).
 

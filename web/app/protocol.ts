@@ -1,6 +1,5 @@
 // The page ⇄ machine-worker protocol (docs/frontend.md "The worker protocol").
 // The seed of phase D's embedding API: not frozen. Types only.
-import type { Framebuffer } from '../display.ts';
 import type { MachineName } from './machine.ts';
 
 /** booting: the VM runs, its `ready` output not seen yet; running: seen; off: powered off; crashed: see `message`. */
@@ -17,6 +16,8 @@ export type ToWorker =
     tablet: MessagePort;
     /** Bytes or strings for the PL011 (`BootOptions.serialIn`). */
     serial: MessagePort;
+    /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). */
+    screen: OffscreenCanvas;
   }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
   | { type: 'stop' };
@@ -24,8 +25,6 @@ export type ToWorker =
 /** Worker → page. */
 export type FromWorker =
   | { type: 'state'; state: PowerState; message?: string }
-  /** The guest's framebuffer in the shared memory (web/display.ts), once, before it runs. */
-  | { type: 'screen'; memory: WebAssembly.Memory; framebuffer: Framebuffer }
   /** What the guest wrote to its serial console (UTF-8 decoded). */
   | { type: 'serial'; data: string }
   | { type: 'status'; status: Status }

@@ -407,6 +407,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     const u32 = new Uint32Array(memory.buffer);
     return (Atomics.load(u32, tx / 4) - Atomics.load(u32, tx / 4 + 1)) >>> 0;
   };
+  const txHead = () => Atomics.load(new Uint32Array(memory.buffer), tx / 4);
+  /** The TX ring's head when `runAsync` last returned: it also wakes on output after that. */
+  let seenHead = 0;
   return {
     memory,
     /** The framebuffer (web/display.ts): byte address in `memory`, width, height; x8r8g8b8, packed rows. */
@@ -467,24 +470,29 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
      * `run` for either mode. In parallel mode the vCPU workers run on their
      * own (started by the first call); this returns once they retired
      * `budget` steps together, the console's TX ring is half full (`TX_FULL`:
-     * drain it), the console has any output (`BUDGET`: seen within the 10 ms
-     * this waits at a time, so a terminal's echo isn't held back), 50 ms passed
-     * (`BUDGET`), or an exit ended the run on some
-     * vCPU (then every worker has stopped). With `idleLimitMs`, it throws if
-     * no vCPU retired a step for that long.
+     * drain it), the console has any output (`BUDGET`, so a terminal's echo
+     * isn't held back: at once when the caller drained the ring, since the
+     * core notifies its head on a byte into an empty ring; within the 10 ms
+     * this waits at a time otherwise), 50 ms passed (`BUDGET`), or an exit
+     * ended the run on some vCPU (then every worker has stopped). With
+     * `idleLimitMs`, it throws if no vCPU retired a step for that long.
      */
     async runAsync(budget: number): Promise<{ kind: number; steps: number; value: bigint; x: bigint[] }> {
       if (!par) return this.run(budget);
       const s0 = counter(Counter.STEPS);
       const t0 = performance.now();
+      const done = (kind: number, steps: number, value = 0n, x: bigint[] = []) => {
+        seenHead = txHead();
+        return { kind, steps, value, x };
+      };
       for (;;) {
         pump();
-        const end = await par.wait(10);
+        const end = await par.wait(10, { at: tx, value: seenHead });
         const steps = counter(Counter.STEPS) - s0;
-        if (end) return { kind: end.kind, steps, value: end.value, x: end.x };
-        if (steps >= budget || performance.now() - t0 > 50) return { kind: Exit.BUDGET, steps, value: 0n, x: [] };
-        if (txUsed() >= RING_HALF) return { kind: Exit.TX_FULL, steps, value: 0n, x: [] };
-        if (txUsed() > 0) return { kind: Exit.BUDGET, steps, value: 0n, x: [] };
+        if (end) return done(end.kind, steps, end.value, end.x);
+        if (steps >= budget || performance.now() - t0 > 50) return done(Exit.BUDGET, steps);
+        if (txUsed() >= RING_HALF) return done(Exit.TX_FULL, steps);
+        if (txUsed() > 0) return done(Exit.BUDGET, steps);
         if (o.idleLimitMs !== undefined && performance.now() - par.progress(counter(Counter.STEPS)) > o.idleLimitMs) {
           raise(STOP);
           throw new Error(`no vCPU retired a step in ${o.idleLimitMs} ms (pcs ${par.pcs().join(' ')})`);
@@ -492,6 +500,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       }
     },
     drain,
+    /** Byte address in `memory` of the console's rings (core/src/pl011.rs `Rings`: TX head, tail and bytes, then RX). */
+    console: tx,
     send,
     /** Bytes `send` queued that the RX ring hasn't taken yet. */
     queued: () => queued.reduce((n, b) => n + b.length, 0),
@@ -587,13 +597,24 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     return h;
   });
   return {
-    /** Waits up to `ms` for news; the run's end once every worker has stopped. */
-    async wait(ms: number) {
+    /**
+     * Waits up to `ms` for news, or for the u32 at byte `also.at` to differ
+     * from `also.value` (a notify on it); the run's end once every worker has
+     * stopped.
+     */
+    async wait(ms: number, also?: { at: number; value: number }) {
       workers ??= start();
       await Promise.all(workers);
       if (!error && !(end && stopped === c.ncpus)) {
-        const r = Atomics.waitAsync(ctl, 0, Atomics.load(ctl, 0), ms);
-        if (r.async) await r.value;
+        const head = also && { word: new Int32Array(c.memory.buffer, also.at, 1), value: also.value | 0 };
+        // Already different: wait 1 ms at most instead, but wait. Returning at once would let a caller
+        // looping on runAsync (a flood of console output) run on microtasks alone and starve its
+        // event loop (messages, animation frames).
+        const moved = head !== undefined && Atomics.load(head.word, 0) !== head.value;
+        const r = [Atomics.waitAsync(ctl, 0, Atomics.load(ctl, 0), moved ? 1 : ms)];
+        if (head && !moved) r.push(Atomics.waitAsync(head.word, 0, head.value, ms));
+        if (r.every((w) => w.async)) await Promise.race(r.map((w) => w.value));
+        else await new Promise((resolve) => setTimeout(resolve, 0)); // a word changed just now: yield anyway
       }
       if (error) throw error;
       return end && stopped === c.ncpus ? end : undefined;

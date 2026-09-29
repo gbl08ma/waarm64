@@ -85,6 +85,12 @@ the ABI's 0 means none.
 - `vm_console(vm)`: two SPSC byte rings (TX, RX), 4 KiB each, atomic head/tail (head, tail, then
   the bytes; RX follows TX). The PL011 writes TX; the host drains it after each `vm_run` and fills
   RX (one producer, any thread), then sets `SIGNAL_RX` ([platform.md](platform.md) "PL011").
+- **A byte into an empty TX ring notifies its head word** (`memory.atomic.notify`, M8 loop 3), so
+  a host that drained the ring can sleep on the head (`Atomics.waitAsync(head, value)`) and wake
+  at the next output: parallel `runAsync` does, so a terminal's echo isn't held back by its 10 ms
+  wait. Only the empty-to-non-empty transition notifies (a flood doesn't pay one per byte); the
+  exports didn't change, and a host that relies on it with an older core only waits longer, so
+  the ABI version stayed.
 
 ### Counters (`vm_counters(vm, i)`, u64 words, relaxed atomic stores; `web/vm.ts` `Counter`)
 

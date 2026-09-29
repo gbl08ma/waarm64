@@ -328,3 +328,49 @@ headless, the M4 VM) to its `running` state (the serial `login: ` prompt): 30.5,
 30.3 s on a fresh overlay (median 30.3), 29.5 s over an existing one. Loop 0's throwaway page took
 ~34 s fresh; the difference is within what separate sessions give, and nothing on the boot path
 changed. Raw: `results/m8-loop2/`.
+
+## M8 loop 3: key-to-glyph latency
+
+Chromium 153.0.8010.52 headless, the M4 VM (8 vCPUs); the page (`web/app/`) in the Both view,
+Debian on 4 parallel vCPUs, Buildroot (ash on the serial console) on 2. A key is stamped at its
+`keydown`; the terminal's glyph when xterm.js's rows show the text typed so far (a
+`MutationObserver`), the screen's when the next draw after it changed pixels. Random letters on one
+line, no Backspace (a late echo can't hide behind the next key), 40 keys (Debian) or 100
+(Buildroot). Medians, ms. Raw: `results/m8-loop3/`.
+
+| | Loop 2 (0c36e6e) | Loop 3 |
+|---|---|---|
+| Serial terminal, Debian (bash) | 30.4 | 11.4, 10.5 (two sessions) |
+| Serial terminal, Buildroot (ash) | 30.0 | 6.0 |
+| Screen, Debian (bash on tty1) | 16.4 | 16.7, 13.8 |
+
+Where a terminal echo went in loop 2 (Buildroot, stamps in the machine worker and the page, since
+removed): key to worker 0.5, worker to drained (the guest's echo plus `runAsync`'s 10 ms wait) 9.8,
+drained to the page 1.9–3.8, page to glyph ~17. Two changes:
+- **The core notifies the TX ring's head** on a byte into an empty ring, and parallel `runAsync`
+  sleeps on it as well as on its coordinator word: worker to drained went from 9.8 to 3.2 ms
+  (Buildroot; ~7–8 ms on Debian, the guest itself).
+- **The machine worker draws the screen** (an `OffscreenCanvas`), with dirty rows. The ~20 ms on
+  the page came from the page running an animation-frame loop at all: with it, the worker's
+  messages waited 2–6 ms and xterm.js's render landed a frame late (page to glyph ~17 ms);
+  without it, 0.4 and ~2 ms. The full copy itself was cheap (0.35 ms convert + 0.11 ms
+  `putImageData` per 1024×768 frame on the main thread), and dirty rows alone didn't help (the
+  loop stayed). Variants measured on Debian (`variant-*.json`; the first three read the screen
+  with `getImageData` in the page's own frame loop, the last two with a draw stamp, so screen
+  numbers compare within each group only): the page's loop with dirty rows, terminal 34.7 / screen
+  20.2; a 16 ms timer on the page instead, 11.2 / 29.9; frames while the screen changes and a timer
+  otherwise, 27.4 / 20.8 (fbcon's blinking cursor keeps it in frames); the page's loop, 30.1 /
+  14.1; the worker, 11.1 / 18.1. The worker's is the only one that keeps both. Headless Chromium
+  produces frames on demand, so part of the loop's cost may be headless-only; the main thread is
+  free of the screen either way.
+
+The rest of a terminal echo is the guest (Debian's tickless bash on ttyAMA0 ~7 ms) and the page
+(~2 ms). No regression: `smp_user_jit_4` total, A (0c36e6e) / B (this loop) alternated: A 30,676
+(±125), 31,239 (±436) ms; B 30,956 (±100), 30,885 (±360) ms. Page load to `running` (Debian, 4
+vCPUs, fresh overlay): 29.0, 28.9, 28.6 s (loop 2: median 30.3), with ~2,400 serial messages to the
+page during the boot (23 KB).
+
+A serial flood (`yes` on Debian's ttyAMA0) stays interruptible: Ctrl+C returns the prompt in
+~55 ms and the screen keeps drawing (before and after the change; `runAsync` now waits 1 ms rather
+than returning at once when output came in since its last return, so a caller can't spin on
+microtasks).

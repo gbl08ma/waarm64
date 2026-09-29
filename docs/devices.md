@@ -139,17 +139,19 @@ mode (and natively in realtime mode: std has no CSPRNG).
   in realtime mode**: the driver reads `size` right after.
 - Events come from the port as [type, code, value] arrays (`web/input.ts` `attachInput` makes
   them from DOM keyboard, pointer and wheel events, keys by `KeyboardEvent.code`, a US PC
-  layout); they wait for event buffers (oldest dropped past 1024). LED status events go to the
-  port. No pointer lock or multitouch.
+  layout; what's held is released when the element or the window loses the focus, and `chord`
+  sends combinations the browser keeps, docs/frontend.md "Input"); they wait for event buffers
+  (oldest dropped past 1024). LED status events go to the port. No pointer lock or multitouch.
 
 ### Framebuffer (`simple-framebuffer`)
 - `VmConfig.fb_width`/`fb_height` (0: none). x8r8g8b8, packed rows (stride 4 × width), in guest
   RAM in whole 2 MiB units just below the DTB's 2 MiB (`boot::framebuffer`; at most half of RAM).
   The DT has `/chosen/framebuffer@…` and reserves the region under `/reserved-memory` with
   `no-map`. `vm_framebuffer(vm)` returns its PA.
-- `web/display.ts` converts the whole buffer into an opaque `ImageData` on every animation frame
-  and puts it on a `<canvas>` (no dirty tracking, fixed size, no mode setting). virtio-gpu is the
-  next display step ([plans/graphics.md](plans/graphics.md)).
+- `web/display.ts` compares the buffer with the frame drawn last on every animation frame and puts
+  the rows that changed on a `<canvas>` (or a worker's `OffscreenCanvas`: the page draws in its
+  machine worker, docs/frontend.md "The screen") as opaque RGBA; fixed size, no mode setting.
+  virtio-gpu is the next display step ([plans/graphics.md](plans/graphics.md)).
 - The Buildroot test kernel has no fbcon (drawing the boot log would cost the boot test).
 
 ## Validation and oracles

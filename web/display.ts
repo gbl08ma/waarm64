@@ -1,26 +1,52 @@
 // The simple-framebuffer on a canvas (docs/devices.md): the guest draws into its
 // framebuffer in guest RAM (x8r8g8b8, packed rows); every animation frame
-// copies it into an ImageData (opaque RGBA) and puts it on the canvas.
-// ponytail: a full copy per frame, no dirty tracking; track dirty rows (or move to virtio-gpu) if it shows in a profile.
+// compares it with the frame drawn last and puts the rows that changed on the
+// canvas, converted to opaque RGBA. An unchanged frame costs a scan (~0.4 ms
+// at 1024×768 in Chromium on the dev VM) and no drawing. The canvas is a page's
+// or, transferred (`transferControlToOffscreen`), a worker's: the page
+// (web/app/) draws in its machine worker, so its main thread has no per-frame
+// work (docs/frontend.md "The screen").
 
 export type Framebuffer = { addr: number; width: number; height: number };
 
-/** Draws `fb` (in `memory`) to `canvas` on each animation frame until `stop`; `draw` draws once now. */
-export function showFramebuffer(canvas: HTMLCanvasElement, memory: WebAssembly.Memory, fb: Framebuffer) {
-  [canvas.width, canvas.height] = [fb.width, fb.height];
-  const ctx = canvas.getContext('2d')!;
-  const img = new ImageData(fb.width, fb.height);
+/**
+ * Draws `fb` (in `memory`) to `canvas` on each animation frame until `stop`
+ * (skipping frames while an element canvas isn't rendered). `draw` draws what
+ * changed now and returns those rows, `[first, end)` (empty: none).
+ */
+export function showFramebuffer(canvas: HTMLCanvasElement | OffscreenCanvas, memory: WebAssembly.Memory, fb: Framebuffer) {
+  const { width: w, height: h } = fb;
+  [canvas.width, canvas.height] = [w, h];
+  const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  const img = new ImageData(w, h);
   const dst = new Uint32Array(img.data.buffer);
-  const draw = () => {
-    const src = new Uint32Array(memory.buffer, fb.addr, dst.length); // anew: the buffer changes when memory grows
-    for (let k = 0; k < dst.length; k++) {
+  const last = new Uint32Array(w * h); // the guest's pixels as drawn last
+  let fresh = true; // nothing drawn yet: every row counts as changed
+  const rowChanged = (src: Uint32Array, y: number) => {
+    for (let k = y * w, end = k + w; k < end; k++) if (src[k] !== last[k]) return true;
+    return false;
+  };
+  const draw = (): [number, number] => {
+    const src = new Uint32Array(memory.buffer, fb.addr, w * h); // anew: the buffer changes when memory grows
+    let first = 0;
+    let end = h;
+    if (!fresh) {
+      while (first < h && !rowChanged(src, first)) first++;
+      if (first === h) return [0, 0];
+      while (!rowChanged(src, end - 1)) end--;
+    }
+    fresh = false;
+    for (let k = first * w, stop = end * w; k < stop; k++) {
       const p = src[k]; // 0xXXRRGGBB → ImageData's bytes R, G, B, A (0xAABBGGRR little-endian)
+      last[k] = p;
       dst[k] = 0xff000000 | ((p & 0xff) << 16) | (p & 0xff00) | ((p >>> 16) & 0xff);
     }
-    ctx.putImageData(img, 0, 0);
+    ctx.putImageData(img, 0, 0, 0, first, w, end - first);
+    return [first, end];
   };
+  const shown = () => !('checkVisibility' in canvas) || canvas.checkVisibility(); // a hidden view: display: none
   let id = requestAnimationFrame(function frame() {
-    draw();
+    if (shown()) draw();
     id = requestAnimationFrame(frame);
   });
   return { draw, stop: () => cancelAnimationFrame(id) };

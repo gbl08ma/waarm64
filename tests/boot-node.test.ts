@@ -217,8 +217,13 @@ test('parallel: Buildroot console input through a port (2 vCPUs, JIT)', { skip: 
         const r = await vm.runAsync(100_000_000);
         out += vm.drain();
         if (!sent && out.endsWith('# ')) {
+          // The core notifies the TX ring's head on a byte into an empty ring (drained just now), so a
+          // host sleeping on it wakes at the echo (runAsync does, M8 loop 3), not at its next 10 ms poll.
+          const head = new Int32Array(vm.memory.buffer, vm.console, 1);
+          const echo = Atomics.waitAsync(head, 0, Atomics.load(head, 0), 10_000);
           port1.postMessage(CONSOLE_INPUT);
           sent = true;
+          if (echo.async) assert.equal(await echo.value, 'ok', `run ${i + 1}: no notify on the echo`); // else output came first
         }
         if (r.kind !== Exit.BUDGET && r.kind !== Exit.TX_FULL) {
           assert.equal(r.kind, Exit.PSCI, out);

@@ -3,6 +3,7 @@
 // canvas, DOM input, cross-origin isolation). Guest semantics are covered more
 // cheaply natively and in Node (docs/testing.md).
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
@@ -208,6 +209,29 @@ for (const [distro, want] of [['alpine', /smp: Brought up 1 node, 4 CPUs[^]*webp
   });
 }
 
+// web/display.ts puts only the rows that changed since the last frame on the canvas (M8 loop 3).
+test('the screen draws the rows that changed', async () => {
+  const page = await browser.newPage();
+  await page.goto(`${base}/web/display.ts`); // the origin; the module is imported below
+  const r = await page.evaluate(async (url) => {
+    const { showFramebuffer } = (await import(url)) as typeof import('../web/display.ts');
+    const memory = new WebAssembly.Memory({ initial: 1 });
+    const canvas = document.body.appendChild(document.createElement('canvas'));
+    const screen = showFramebuffer(canvas, memory, { addr: 64, width: 64, height: 32 });
+    screen.stop(); // draws only when asked below
+    const px = new Uint32Array(memory.buffer, 64, 64 * 32);
+    const ctx = canvas.getContext('2d')!;
+    const at = (x: number, y: number) => [...ctx.getImageData(x, y, 1, 1).data];
+    const rows = [screen.draw(), screen.draw()];
+    px[5 * 64 + 3] = 0xff0000;
+    px[9 * 64 + 60] = 0x0000ff;
+    rows.push(screen.draw(), screen.draw());
+    return { rows, red: at(3, 5), blue: at(60, 9), black: at(0, 0) };
+  }, '/web/display.ts');
+  assert.deepEqual(r, { rows: [[0, 32], [0, 0], [5, 10], [0, 0]], red: [255, 0, 0, 255], blue: [0, 0, 255, 255], black: [0, 0, 0, 255] });
+  await page.close();
+});
+
 // The page (web/app/, M8 loop 2) on the Buildroot guest, a shell on its serial
 // console: the machine worker boots, serial output reaches xterm.js and keys
 // typed there reach the shell, a key pressed on the screen reaches the guest's
@@ -221,9 +245,21 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
   const state = (s: string, ms = 60_000) => page.waitForFunction((s) => document.body.dataset.state === s || document.body.dataset.state === 'crashed', s, { timeout: ms, polling: 100 })
     .then(async () => assert.equal(await page.evaluate(() => document.body.dataset.state), s, await page.locator('#message').textContent() ?? ''));
   const terminal = () => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
-  const shows = (re: RegExp, ms = 20_000) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 100 });
+  const shows = (re: RegExp, ms = 20_000) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 100 })
+    .catch(async (e) => { throw new Error(`${e}; the terminal shows: ${await terminal()}`); });
   await state('running');
   assert.deepEqual(await page.evaluate(() => { const c = document.querySelector('canvas')!; return [c.width, c.height, Number.isInteger(Number(c.dataset.scale))]; }), [640, 480, true]);
+  // The machine worker draws the screen (a transferred canvas): two pixels written to /dev/fb0 show.
+  await page.locator('.xterm').click();
+  await page.keyboard.type("printf '\\377\\377\\377\\377' >/dev/fb0; printf '\\0\\0\\377\\0' | dd of=/dev/fb0 bs=4 seek=64010 2>/dev/null; echo dr\"\"awn\n");
+  await shows(/drawn/);
+  await page.waitForFunction(() => {
+    const c = Object.assign(document.createElement('canvas'), { width: 640, height: 480 });
+    const ctx = c.getContext('2d')!;
+    ctx.drawImage(document.querySelector('#screen')!, 0, 0);
+    const at = (x: number, y: number) => [...ctx.getImageData(x, y, 1, 1).data].join();
+    return at(0, 0) === '255,255,255,255' && at(10, 100) === '255,0,0,255' && at(5, 5) === '0,0,0,255';
+  }, null, { timeout: 5_000, polling: 100 });
   await page.locator('.xterm').click();
   await page.keyboard.type('echo webpc-$((6*7)); echo re""ady; dd bs=24 count=1 </dev/input/event0 2>/dev/null | od -An -j16 -N4 -tu2\n');
   await shows(/webpc-42.*ready/);
@@ -231,8 +267,56 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
   await page.locator('#screen').click();
   await page.keyboard.press('KeyA');
   await shows(/ready\s+1\s+30\b/); // EV_KEY KEY_A
+  // (M8 loop 3.) Each check reads what the guest got through /dev/input (one event per dd: type, code, value).
+  const events = (dev: number, n: number, marker: string) =>
+    `echo ${marker.slice(0, 2)}""${marker.slice(2)}: $(for i in $(seq ${n}); do dd bs=24 count=1 2>/dev/null | od -An -j16 -N6 -tu2; done </dev/input/event${dev}) :end\n`;
+  // A key held when the screen loses the focus is released then (the keyup goes elsewhere): no stuck keys.
   await page.locator('.xterm').click();
-  await page.keyboard.type('exit\n');
+  await page.keyboard.type(events(0, 3, 'held'));
+  await page.waitForTimeout(300); // dd opens the device
+  await page.locator('#screen').click();
+  await page.keyboard.down('KeyS');
+  await page.locator('.xterm').click();
+  await page.keyboard.up('KeyS');
+  await shows(/held: 1 31 1 0 0 0 1 31 0 :end/); // not a repeat (1 31 2): a stuck key autorepeats
+  // A chord from the Keys menu, in order and released in reverse.
+  await page.keyboard.type(events(0, 12, 'chord'));
+  await page.waitForTimeout(300);
+  await page.locator('#keys summary').click();
+  await page.locator('[data-chord="ControlLeft AltLeft F2"]').click();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'screen');
+  await shows(/chord: 1 29 1 0 0 0 1 56 1 0 0 0 1 60 1 0 0 0 1 60 0 0 0 0 1 56 0 0 0 0 1 29 0 0 0 0 :end/);
+  // The tablet through the canvas's scaling (stacked views below 1100 px: the screen scaled down).
+  await page.setViewportSize({ width: 700, height: 800 });
+  await page.waitForFunction(() => Number(document.querySelector('canvas')!.dataset.scale) < 1, null, { timeout: 5_000 });
+  await page.locator('.xterm').click();
+  await page.keyboard.type(events(1, 2, 'tablet'));
+  await page.waitForTimeout(300);
+  const box = (await page.locator('#screen').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 4, box.y + (box.height * 3) / 4);
+  await shows(/tablet: 3 0 \d+ 3 1 \d+ :end/);
+  const [x, y] = (await terminal()).match(/tablet: 3 0 (\d+) 3 1 (\d+) :end/)!.slice(1).map(Number);
+  assert.ok(Math.abs(x - 8192) < 200 && Math.abs(y - 24575) < 200, `tablet at ${x}, ${y}`);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  // A paste larger than the console's 4 KiB RX ring (xterm.js turns \n into \r; the tty turns it back).
+  const pasted = Array.from({ length: 200 }, (_, i) => `${String(i).padStart(3, '0')}${'x'.repeat(46)}\n`).join('');
+  await page.locator('.xterm').click();
+  await page.keyboard.type('md5sum; echo pa""sted\n');
+  await page.waitForTimeout(300); // md5sum reads (the shell's line editor would take a paste typed ahead as commands)
+  await page.evaluate((text) => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', text);
+    document.querySelector('.xterm-helper-textarea')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+  }, pasted);
+  await page.keyboard.press('Control+D');
+  await shows(new RegExp(`${createHash('md5').update(pasted).digest('hex')}\\s+-\\s*pasted`));
+  // Full screen (the Keyboard Lock is Chromium's; headless may refuse it, which the page tolerates).
+  await page.locator('#fullscreen').click();
+  await page.waitForFunction(() => document.fullscreenElement?.tagName === 'MAIN', null, { timeout: 5_000 });
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'screen');
+  await page.evaluate(() => document.exitFullscreen());
+  await page.locator('.xterm').click();
+  await page.keyboard.type('clear; exit\n');
   await state('off');
   assert.equal(await page.locator('#restart').textContent(), 'Start');
   await page.locator('#restart').click();

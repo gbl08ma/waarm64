@@ -24,21 +24,39 @@ const KEYS = new Map<string, number>([
 ]);
 const BUTTONS = [0x110, 0x112, 0x111]; // DOM buttons 0, 1, 2: BTN_LEFT, BTN_MIDDLE, BTN_RIGHT
 
+/** What `attachInput` returns. */
+export type Input = {
+  /** Releases what's held and removes the listeners. */
+  detach(): void;
+  /** Presses keys (`KeyboardEvent.code` names) in order and releases them in reverse: a chord the browser won't pass, e.g. `ControlLeft AltLeft Delete`. */
+  chord(...codes: string[]): void;
+};
+
 /**
  * Forwards `el`'s keyboard events to `keyboard` and its pointer and wheel
- * events to `tablet` (0–32767 across the element). `el` needs a tabindex to
- * take the focus. Returns a function that detaches them.
+ * events to `tablet` (0–32767 across the element's box as laid out, so CSS
+ * scaling doesn't matter). `el` needs a tabindex to take the focus. Keys and
+ * buttons held when `el` loses the focus, the window loses it or the page is
+ * hidden are released then (their keyup goes elsewhere: no stuck modifiers).
  */
-export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: MessagePort) {
-  const on = <K extends keyof HTMLElementEventMap>(type: K, f: (e: HTMLElementEventMap[K]) => void) => {
-    el.addEventListener(type, f);
-    return () => el.removeEventListener(type, f);
+export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: MessagePort): Input {
+  const keys = new Set<number>(); // held, as the guest sees it
+  const buttons = new Set<number>();
+  const on = <T extends EventTarget, E extends Event>(target: T, type: string, f: (e: E) => void) => {
+    target.addEventListener(type, f as EventListener);
+    return () => target.removeEventListener(type, f as EventListener);
+  };
+  const sendKey = (code: number, value: number) => {
+    if (value === 0) keys.delete(code);
+    else keys.add(code);
+    keyboard?.postMessage([[EV_KEY, code, value], [EV_SYN, 0, 0]]);
   };
   const key = (down: number) => (e: KeyboardEvent) => {
     const code = KEYS.get(e.code);
     if (!keyboard || code === undefined) return;
     e.preventDefault();
-    keyboard.postMessage([[EV_KEY, code, e.repeat ? 2 : down], [EV_SYN, 0, 0]]);
+    if (!down && !keys.has(code)) return; // pressed elsewhere, or released already on a blur
+    sendKey(code, e.repeat && keys.has(code) ? 2 : down);
   };
   const abs = (e: MouseEvent) => {
     const r = el.getBoundingClientRect();
@@ -46,21 +64,50 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     return [[EV_ABS, 0, at(e.clientX - r.left, r.width)], [EV_ABS, 1, at(e.clientY - r.top, r.height)]];
   };
   const button = (down: number) => (e: PointerEvent) => {
-    if (!tablet || BUTTONS[e.button] === undefined) return;
-    tablet.postMessage([...abs(e), [EV_KEY, BUTTONS[e.button], down], [EV_SYN, 0, 0]]);
+    const b = BUTTONS[e.button];
+    if (!tablet || b === undefined) return;
+    if (!down && !buttons.has(b)) return;
+    if (down) buttons.add(b);
+    else buttons.delete(b);
+    tablet.postMessage([...abs(e), [EV_KEY, b, down], [EV_SYN, 0, 0]]);
+  };
+  const releaseAll = () => {
+    for (const code of [...keys].reverse()) sendKey(code, 0);
+    if (buttons.size) tablet?.postMessage([...[...buttons].map((b) => [EV_KEY, b, 0]), [EV_SYN, 0, 0]]);
+    buttons.clear();
   };
   const off = [
-    on('keydown', key(1)),
-    on('keyup', key(0)),
-    on('pointerdown', button(1)),
-    on('pointerup', button(0)),
-    on('pointermove', (e) => tablet?.postMessage([...abs(e), [EV_SYN, 0, 0]])),
-    on('wheel', (e) => {
+    on(el, 'keydown', key(1)),
+    on(el, 'keyup', key(0)),
+    on(el, 'pointerdown', (e: PointerEvent) => {
+      el.setPointerCapture(e.pointerId); // a drag that leaves the screen still ends here
+      button(1)(e);
+    }),
+    on(el, 'pointerup', button(0)),
+    on(el, 'pointermove', (e: PointerEvent) => tablet?.postMessage([...abs(e), [EV_SYN, 0, 0]])),
+    on(el, 'wheel', (e: WheelEvent) => {
       if (!tablet || !e.deltaY) return;
       e.preventDefault();
       tablet.postMessage([[EV_REL, 8, e.deltaY < 0 ? 1 : -1], [EV_SYN, 0, 0]]);
     }),
-    on('contextmenu', (e) => e.preventDefault()),
+    on(el, 'contextmenu', (e: Event) => e.preventDefault()),
+    on(el, 'blur', releaseAll),
+    on(window, 'blur', releaseAll),
+    on(document, 'visibilitychange', () => document.hidden && releaseAll()),
   ];
-  return () => off.forEach((f) => f());
+  return {
+    detach() {
+      releaseAll();
+      off.forEach((f) => f());
+    },
+    chord(...codes: string[]) {
+      const cs = codes.map((c) => {
+        const k = KEYS.get(c);
+        if (k === undefined) throw new Error(`no key ${c}`);
+        return k;
+      });
+      for (const k of cs) sendKey(k, 1);
+      for (const k of cs.reverse()) sendKey(k, 0);
+    },
+  };
 }

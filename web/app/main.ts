@@ -4,8 +4,7 @@
 // web/app/protocol.ts. `?machine=buildroot` picks the test guest, `?ncpus=N`
 // the vCPU count, `?view=screen|terminal|both` the first view.
 import { Terminal } from '@xterm/xterm';
-import { showFramebuffer, type Framebuffer } from '../display.ts';
-import { attachInput } from '../input.ts';
+import { attachInput, type Input } from '../input.ts';
 import { defaultCpus, MACHINES, type MachineName } from './machine.ts';
 import type { FromWorker, PowerState, Status, ToWorker } from './protocol.ts';
 
@@ -15,7 +14,7 @@ const machine = (params.get('machine') ?? 'debian') as MachineName;
 if (!(machine in MACHINES)) throw new Error(`no machine ${machine}`);
 const ncpus = Number(params.get('ncpus')) || defaultCpus(navigator.hardwareConcurrency || 4);
 
-const canvas = $<HTMLCanvasElement>('screen');
+let canvas = $<HTMLCanvasElement>('screen');
 const screenBox = $('screen-view');
 const stateEl = $('state');
 const statusEl = $('status');
@@ -39,9 +38,9 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-view-button]
 
 // The canvas at an integer multiple of the framebuffer in device pixels when that fits (crisp),
 // scaled down to fit (smooth) otherwise.
-let fb: Framebuffer | undefined;
+const fb = MACHINES[machine].framebuffer;
 function fit() {
-  if (!fb || !screenBox.clientWidth) return; // hidden
+  if (!screenBox.clientWidth) return; // hidden
   const dpr = devicePixelRatio;
   const box = screenBox.getBoundingClientRect();
   const fits = Math.min((box.width * dpr) / fb.width, (box.height * dpr) / fb.height);
@@ -54,8 +53,8 @@ function fit() {
 new ResizeObserver(fit).observe(screenBox);
 matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', fit); // moved to a screen with another density
 
-// One machine at a time; a restart stops it and starts a new worker (fresh memory, fresh ports).
-type Run = { worker: Worker; stopScreen?: () => void; detachInput: () => void; serial: MessagePort };
+// One machine at a time; a restart stops it and starts a new worker (fresh memory, fresh ports, a fresh canvas).
+type Run = { worker: Worker; input: Input; serial: MessagePort };
 let run: Run | undefined;
 let state: PowerState = 'loading';
 let last: { status: Status; at: number } | undefined;
@@ -71,9 +70,17 @@ function setState(s: PowerState, message?: string) {
 }
 
 function start() {
+  // The machine worker draws the screen (web/display.ts): a canvas hands its drawing over only once.
+  const focused = document.activeElement === canvas;
+  const fresh = canvas.cloneNode() as HTMLCanvasElement;
+  [fresh.width, fresh.height] = [fb.width, fb.height];
+  canvas.replaceWith(fresh);
+  canvas = fresh;
+  if (focused) canvas.focus();
+  const screen = canvas.transferControlToOffscreen();
   const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
-  const r: Run = { worker, detachInput: attachInput(canvas, kbd.port1, tablet.port1), serial: serial.port1 };
+  const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1), serial: serial.port1 };
   run = r;
   last = undefined;
   setState('loading');
@@ -83,10 +90,6 @@ function start() {
     if (m.type === 'state') {
       setState(m.state, m.message);
       if (m.state === 'rebooting') void restart();
-    } else if (m.type === 'screen') {
-      fb = m.framebuffer;
-      r.stopScreen = showFramebuffer(canvas, m.memory, m.framebuffer).stop;
-      fit();
     } else if (m.type === 'serial') {
       term.write(m.data);
     } else if (m.type === 'status') {
@@ -94,7 +97,7 @@ function start() {
     }
   };
   worker.onerror = (e) => { if (run === r) setState('crashed', `machine worker: ${e.message}`); };
-  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2 } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2]);
+  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen]);
 }
 
 /** Stops the machine (its worker releases the disk overlay first, or gets 3 s to) and starts a new one. */
@@ -102,8 +105,7 @@ async function restart() {
   const r = run;
   run = undefined;
   if (r) {
-    r.stopScreen?.();
-    r.detachInput();
+    r.input.detach();
     await new Promise<void>((resolve) => {
       const t = setTimeout(resolve, 3000);
       r.worker.onmessage = (e: MessageEvent<FromWorker>) => { if (e.data.type === 'stopped') { clearTimeout(t); resolve(); } };
@@ -122,6 +124,29 @@ restartBtn.onclick = () => {
 
 // Keys typed into the terminal go to the PL011 (xterm.js sends what a terminal would: \r for Enter, escape sequences).
 term.onData((d) => run?.serial.postMessage(d));
+
+// Key combinations the browser keeps for itself, to the screen's keyboard (web/input.ts `chord`).
+const keysMenu = $<HTMLDetailsElement>('keys');
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-chord]')) {
+  b.onclick = () => {
+    keysMenu.open = false;
+    canvas.focus();
+    run?.input.chord(...b.dataset.chord!.split(' '));
+  };
+}
+document.addEventListener('pointerdown', (e) => { if (!keysMenu.contains(e.target as Node)) keysMenu.open = false; });
+
+// Full screen, with the Keyboard Lock API (Chromium) so that Ctrl+W, Ctrl+T, Esc and the like reach
+// the machine; Chromium leaves full screen when Esc is held.
+type KeyboardLock = { lock(): Promise<void>; unlock(): void };
+const keyboardLock = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
+const mainEl = document.querySelector('main')!;
+$('fullscreen').onclick = () => {
+  (document.body.dataset.view === 'terminal' ? term : canvas).focus();
+  // Without the lock (refused, or another browser), the browser keeps its shortcuts.
+  mainEl.requestFullscreen({ navigationUI: 'hide' }).then(() => keyboardLock?.lock()).catch(() => {});
+};
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) keyboardLock?.unlock(); });
 
 const hms = (ms: number) => {
   const s = Math.floor(ms / 1000);
