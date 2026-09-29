@@ -30,8 +30,10 @@ Deferred: SVE, EL2, 16K/64K granules (needed for RHEL-family kernels), virtio-pc
 
 ## 2. How milestones run
 
-- Each milestone starts from a kickoff brief (`M<n>-KICKOFF.md`, untracked) that the user
-  confirms: goal, decisions already taken, loops, what needs their OK, validation, exit criteria.
+- Each milestone starts from a kickoff brief (`M<n>-KICKOFF.md`, tracked in the repo root) that
+  the user confirms: goal, decisions already taken, loops, what needs their OK, validation, exit
+  criteria. Handovers (`M<n>-*-HANDOVER.md`, tracked too) carry the work from one session to the
+  next; only the current milestone's brief and latest handover stay in the tree.
 - Work goes in **short loops: one slice, one commit, a short report**, and continues through the
   milestone without check-ins; only decisions that can't be settled by measurement go to the user
   (dependencies, host ABI changes need a design note in [docs/abi.md](docs/abi.md) first,

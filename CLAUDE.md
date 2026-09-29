@@ -14,7 +14,12 @@ runs unmodified arm64 Linux. Chromium is the primary target.
 - `bench/*/REPORT.md`: dated measurement journals with committed JSON. Read `bench/spike/REPORT.md`
   and [docs/v8.md](docs/v8.md) before designing JIT, dispatch or TLB code.
 - `THIRD_PARTY.md`: verified licenses of reference projects and the attribution of ported code.
-- `M<n>-KICKOFF.md` (untracked): the user's brief for a milestone.
+- `M<n>-KICKOFF.md` and `M<n>-*-HANDOVER.md` in the repo root, **tracked** (so a fresh clone or a
+  cloud session has them): the user's brief for the current milestone (or phase), and the notes
+  that carry work from one session to the next. Only the current milestone's live there: commit a
+  handover with the work it describes, and delete a superseded handover, and a finished
+  milestone's kickoff, in the commit that supersedes it (git history keeps them). A kickoff's
+  content is the user's: change it only with their OK.
 
 ## Status
 
