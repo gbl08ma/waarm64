@@ -94,7 +94,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
 - **A. The interactive machine** (the kickoff): console input from the host (the PL011 RX path
   the core already has), the page (screen, input focus and capture, the xterm.js view, power
   and disk controls, boot progress, errors a user can act on), `npm start`, and an end-to-end
-  Chromium test that logs in and runs a command.
+  Chromium test that logs in and runs a command (done in M8 loop 6: `tests/page-debian.test.ts`,
+  in CI with the Debian image; [docs/frontend.md](docs/frontend.md) "The end-to-end test").
 - **B. Instant start: snapshots.** Save and restore CPU, devices and compressed RAM, so the page
   resumes a booted machine in seconds instead of a full Debian boot. A snapshot pins the overlay
   state it was taken with; parallel SMP stops every vCPU at a chunk boundary first

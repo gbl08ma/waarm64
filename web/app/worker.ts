@@ -9,7 +9,7 @@
 // `Problem` with a message a user can act on (docs/frontend.md "Errors").
 import { bootVm, Exit, PSCI_SYSTEM_OFF, type Vm } from '../vm.ts';
 import { showFramebuffer } from '../display.ts';
-import { MACHINES, withParams, type Machine } from './machine.ts';
+import { MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
 const post = (m: FromWorker) => self.postMessage(m);
@@ -131,7 +131,8 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
   if (vm.framebuffer) showFramebuffer(m.screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
   state('booting');
   const t0 = performance.now();
-  let ready = false;
+  const ready = readyWatcher(machine.ready);
+  let running = false;
   let panicked = ''; // the message
   let tail = ''; // the last output, for markers split across drains
   let lastStatus = 0;
@@ -139,8 +140,8 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
     if (!text) return;
     post({ type: 'serial', data: text });
     tail = (tail + text).slice(-256);
-    if (!ready && machine.ready.test(tail)) {
-      ready = true;
+    if (!running && ready(text)) {
+      running = true;
       state('running');
     }
     const at = tail.indexOf(PANIC);

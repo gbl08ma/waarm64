@@ -18,7 +18,11 @@ export type Machine = {
   cmdline: string;
   ramMiB: number;
   framebuffer: { width: number; height: number };
-  /** Serial output that means the machine is up (a login prompt, a shell's prompt). */
+  /**
+   * Serial output that means the machine is up (a login prompt, a shell's prompt), matched by
+   * `readyWatcher` against the output so far: not only at its end, since the kernel may print a
+   * line right after the prompt.
+   */
   ready: RegExp;
 };
 
@@ -37,7 +41,7 @@ export const MACHINES = {
       ['systemd-networkd.service', 'systemd-networkd.socket', 'systemd-resolved.service', 'systemd-timesyncd.service', 'systemd-network-generator.service'].map((u) => `systemd.mask=${u}`).join(' '),
     ramMiB: 1024,
     framebuffer: { width: 1024, height: 768 },
-    ready: /login: $/,
+    ready: /(?:^|\n)\S+ login: /, // agetty's prompt ("localhost login: ")
   },
   // A shell on the serial console. No fbcon in its kernel: the screen stays black. The root is
   // mounted read-only; the overlay is there so a restart exercises its hand-over (the OPFS locks).
@@ -67,6 +71,22 @@ export const defaultCpus = (cores: number) => Math.max(1, Math.min(4, cores - 2)
  * `navigator.deviceMemory` before it starts a machine.
  */
 export const hostMemoryGiB = (ramMiB: number, ncpus: number) => ramMiB / 1024 + 1 + 0.3 * ncpus;
+
+/**
+ * Watches a machine's serial output, given in chunks as it comes, for its `ready` marker: true
+ * once the marker has shown (also when split across chunks, or followed by more output in the
+ * same chunk).
+ */
+export function readyWatcher(ready: RegExp) {
+  let tail = '';
+  let seen = false;
+  return (text: string) => {
+    if (seen) return true;
+    const s = tail + text;
+    tail = s.slice(-256);
+    return (seen = ready.test(s));
+  };
+}
 
 /** `cmdline` with `extra` kernel parameters, before a `--` (whatever follows it goes to init). */
 export function withParams(cmdline: string, extra: string) {

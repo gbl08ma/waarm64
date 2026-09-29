@@ -30,7 +30,8 @@ shell, or `init=/nonexistent` to make Buildroot panic, as a test does).
   ranges, writable through the OPFS overlay `webpc-debian`), keyboard, tablet. No virtio-console
   (it would only add an output-only `hvc0` getty) and no network (decision 8). Its command line is
   [images.md](images.md) "Debian for interaction". vCPUs: `min(4, cores − 2)` (the page and the
-  device worker keep a core each). `ready` is the serial console's `login: ` prompt, ~30 s after
+  device worker keep a core each). `ready` is the serial console's login prompt (`localhost login: `
+  at a line's start, anywhere in the output: below, "The end-to-end test"), ~30 s after
   the page loads (bench/boot/REPORT.md "M8 loop 0"). **Root logs in without a password:** the
   published image locks root (`root:!unprovisioned`) and has no other user; the credential
   `login.noauth` on the command line lets `login` accept root on every console without touching
@@ -61,7 +62,8 @@ Page → worker:
 
 Worker → page:
 - `state {state, message?, problem?}`: `loading` (fetching the wasm, kernel, initrd), `booting`
-  (the VM runs), `running` (the machine's `ready` marker appeared on the serial console), `off`
+  (the VM runs), `running` (the machine's `ready` marker appeared on the serial console:
+  `readyWatcher` in machine.ts, over the output so far, across drains), `off`
   (PSCI SYSTEM_OFF), `rebooting` (PSCI SYSTEM_RESET: the page starts a new machine), `crashed`
   (the guest's `Kernel panic - not syncing` line, an emulator error, an unimplemented exit),
   `failed` (the machine couldn't start). `crashed` and `failed` carry a message for the user and a
@@ -225,6 +227,41 @@ releases the overlay's sync access handles), deletes the overlay (`removeOverlay
 web/overlay.ts: `removeEntry(name, {recursive: true})` on the OPFS root) and starts a new
 machine, which boots from the image as published. If the removal fails (another tab holds the
 files), the page says so and offers the reset again.
+
+## The end-to-end test
+
+`tests/page-debian.test.ts` (M8 loop 6; in `npm test` when `WEBPC_DISTROS` has debian, as
+`scripts/ci.sh` sets it when the image is current) does on the page what a user does, in a fresh
+browser context (an empty OPFS), from this checkout's server (`tests/start.test.ts` covers the
+fresh clone): Debian on 2 parallel vCPUs (`?ncpus=2&view=both`) to `running`; root logs in on the
+serial terminal; from there `until grep -q 'login: ' /dev/vcs1` waits for tty1's getty; root logs
+in on the screen and runs `echo from-$(tty)-$((6*7)) >/dev/ttyAMA0`, which the serial terminal
+shows (`from-/dev/tty1-42`); `/dev/vcs1` read on the serial side shows the screen's prompt and
+command; the canvas isn't black. Then a file written and `sync`ed survives a reload (no shutdown:
+as a closed tab), and Reset disk (the dialog accepted) boots a disk without it. Three Debian boots:
+~111 s alone (running at ~32 s, logged in on both at ~38 s, reloaded and running at ~69 s, reset
+and running at ~106 s); `WEBPC_PAGE_RUNS=N` repeats it. It and the `npm start` test take turns (`tests/debian-lock.ts`, a lock
+directory in the temp directory): two Debian page boots at once beside the rest of `npm test`
+loaded the host enough to fail a realtime bare-metal test (docs/backlog.md). In CI it takes ~3 min
+(the host is shared with the other test files); `npm test` went from ~253 to ~290 s.
+
+How it types, and why:
+- **Serial first, then the screen.** Both gettys start within 0.2 s of each other (loop 0), but
+  the page's `running` is the serial prompt, and keys typed on tty1 before its getty is up can be
+  flushed. The serial shell can see tty1's text (`/dev/vcs1`, the screen as characters: no OCR
+  needed), so the test types on the screen only once tty1 shows `login: `.
+- **Not typed ahead of a prompt:** after `root` + Enter the test waits for bash's prompt
+  (`root@localhost:~# `) before the next line; typed ahead, the first key of the next line was
+  lost while login handed the tty to the shell.
+- **Keys on the screen one at a time**, with Shift pressed for shifted characters (Playwright's
+  `type()` sends `>` as Period alone; web/input.ts maps by `code`), 10 ms apart (virtio-input
+  drops events past 1,024 queued).
+- **The ready marker is matched anywhere in the output** (at a line's start: `(?:^|\n)\S+ login: `),
+  not only at the end of a drain: a kernel line printed right after the prompt, in the same drain,
+  would otherwise leave the page in `booting` for good. The first run of this test sat in
+  `booting` for its whole 4-minute wait, one of the 44 boots of this loop; no line after the prompt was
+  seen in the runs checked afterwards, so this is the likely cause rather than a proven one. The
+  test now says the page's state, status line and terminal on such a timeout.
 
 ## Overlay hand-over
 

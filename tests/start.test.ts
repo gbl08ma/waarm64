@@ -15,6 +15,7 @@ import { chromium } from 'playwright-core';
 import { PIN, download, downloads } from '../tools/debian.ts';
 import { ROOT, startServer } from '../tools/serve.ts';
 import { WASM, npmStale, wasmInputs } from '../tools/start.ts';
+import { withDebianLock } from './debian-lock.ts';
 
 const tmp = (what: string) => mkdtempSync(join(tmpdir(), `webpc-${what}-`));
 const write = (root: string, path: string, data: string | object) => {
@@ -111,8 +112,8 @@ const cached = existsSync(join(downloads(), PIN.file));
 const cold = process.env.WEBPC_START_COLD === '1';
 test('npm start on a fresh copy of the repository: install, build, prepare Debian, serve; the page runs it', {
   skip: !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : !cached && 'SKIPPED: no Debian download (run images/build.sh debian)',
-  timeout: cold ? 20 * 60_000 : 5 * 60_000,
-}, async () => {
+  timeout: cold ? 30 * 60_000 : 15 * 60_000, // with the wait for tests/page-debian.test.ts's boots (tests/debian-lock.ts)
+}, () => withDebianLock(async () => {
   const d = tmp('clone');
   const files = execFileSync('git', ['ls-files', '-z', '-co', '--exclude-standard'], { cwd: ROOT, encoding: 'utf8' }).split('\0')
     .filter((f) => f && !f.startsWith('.claude/') && existsSync(join(ROOT, f)) && statSync(join(ROOT, f)).isFile()); // .claude/: the agent's worktrees
@@ -167,4 +168,4 @@ test('npm start on a fresh copy of the repository: install, build, prepare Debia
   console.log(`# npm start again, with nothing to do: ${ms.toFixed(0)} ms`);
   assert.ok(ms < 5000, `${ms} ms`);
   rmSync(d, { recursive: true });
-});
+}));

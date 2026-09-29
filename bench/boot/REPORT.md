@@ -401,3 +401,17 @@ through npm). The real download from cloud.debian.org: 7.8 s (55 MB/s). `images/
 now runs the same Node code, 1.6 s, and its outputs match `images/SHA256SUMS`. No boot benchmark
 ran: nothing on their path changed (`tools/serve.ts` gained a host parameter and a listen error).
 Raw: `results/m8-loop5/npm-start.json`.
+
+## M8 loop 6: the page end to end on Debian
+
+Chromium 153.0.8010.52 headless, Node 26.7.0, the M4 VM. The page's Debian on **2 parallel
+vCPUs** (the end-to-end test's configuration), a fresh profile each time: page load to `running`
+(the serial login prompt) 30.8–32.5 s, median **31.5 s** over 12 boots (loop 0's throwaway page:
+39.3 s on 2 vCPUs; the trimmed command line and later loops' changes account for it; on 4 vCPUs
+the page takes ~29 s). `tests/page-debian.test.ts` (three boots: fresh, reloaded, reset; logins
+on both consoles) takes **110–112 s** alone, 8 of 8 runs passing with the final test; its phases
+(logged in on both consoles at ~38 s, reloaded and running at ~69 s, reset and running at
+~106 s) move by under a second between runs. One earlier run sat in `booting` for its whole 240 s
+wait, without diagnostics; the page's ready marker is now matched anywhere in the output (the
+likely cause: docs/frontend.md "The end-to-end test"). No boot benchmark ran: nothing on their
+path changed. Raw: `results/m8-loop6/page-debian.json`.
