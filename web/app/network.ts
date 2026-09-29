@@ -1,4 +1,4 @@
-// The page's network (docs/frontend.md "Network"): a machine with a network card
+// The page's network (docs/frontend.md "Network"): a machine with a network card (always there)
 // (virtio-net on the Ethernet gateway, web/gateway.ts) whose IP packets go to a Tailscale
 // client (web/tailscale.ts), which the user connects and logs in from the header's Network
 // menu. DOM-free, so it's tested in Node (tests/network.test.ts).
@@ -15,8 +15,6 @@ export const DEFAULT_CONTROL = 'https://controlplane.tailscale.com';
 
 /** What the user chooses (remembered per browser, except the auth key, which is never kept). */
 export type NetworkSettings = {
-  /** The machine has a network card. */
-  enabled: boolean;
   /** Empty: Tailscale's. */
   controlURL: string;
   hostname: string;
@@ -26,7 +24,7 @@ export type NetworkSettings = {
   keyed: boolean;
 };
 
-export const DEFAULT_SETTINGS: NetworkSettings = { enabled: false, controlURL: '', hostname: '', autoconnect: false, keyed: false };
+export const DEFAULT_SETTINGS: NetworkSettings = { controlURL: '', hostname: '', autoconnect: false, keyed: false };
 
 /** A control server's URL as the client takes it: https (http only for this computer), or an error to show. */
 export function parseControlURL(input: string): { url: string } | { error: string } {
@@ -151,7 +149,7 @@ export function createNetwork(onChange: () => void, start: (config: TailscaleCon
     },
     connect(c) {
       if (client) return;
-      if (!free) throw new Error("the machine has no network card (it starts with one when networking is on)");
+      if (!free) throw new Error('the machine hasn\'t started, so its network card isn\'t there yet: start it first');
       error = undefined;
       const ip = free;
       free = undefined;

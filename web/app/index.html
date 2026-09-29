@@ -95,7 +95,7 @@
   <span class="views" role="group" aria-label="View">
     <button data-view-button="screen">Screen</button><button data-view-button="terminal">Serial terminal</button><button data-view-button="both">Both</button>
   </span>
-  <details class="menu" id="network" data-phase="off" hidden><summary title="Give the machine a network card on a Tailscale network">Network</summary><div class="items panel">
+  <details class="menu" id="network" data-phase="off" hidden><summary title="Connect the machine's network card to a Tailscale network">Network</summary><div class="items panel">
     <p id="net-status"></p>
     <a id="net-login" target="_blank" rel="noopener" hidden>Log in…</a>
     <form id="net-form">
@@ -105,7 +105,7 @@
       <p id="net-error" hidden></p>
       <button id="net-connect" type="submit">Connect</button>
     </form>
-    <div id="net-actions"><button id="net-disconnect">Disconnect</button><button id="net-logout" title="Remove this machine from the tailnet and forget its keys">Log out</button><button id="net-remove" title="Restarts the machine without the card">Remove card…</button></div>
+    <div id="net-actions"><button id="net-disconnect">Disconnect</button><button id="net-logout" title="Remove this machine from the tailnet and forget its keys">Log out</button></div>
     <p id="net-hint"></p>
   </div></details>
   <details class="menu" id="keys"><summary title="Key combinations the browser keeps for itself, sent to the screen's keyboard">Keys</summary><div class="items">

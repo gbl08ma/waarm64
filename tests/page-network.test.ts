@@ -1,9 +1,9 @@
 // The page's Network menu (docs/frontend.md "Network") in headless Chromium, on Debian, without a
 // control server that answers: what the page does around the client. Connecting with a bad URL is
-// refused in the form; connecting with an auth key gives the machine a network card (the guest sees
-// eth0 on its serial console), starts the client (which can't reach 127.0.0.1:1: the menu shows it's
-// connecting or failed, never connected), keeps the settings but never the key, and a reload boots
-// the machine with the card and asks for the key again; Disconnect stops the client. What needs a
+// refused in the form; connecting with an auth key starts the client without restarting the machine (it
+// has its network card from the boot: the guest sees eth0 on its serial console); the client can't
+// reach 127.0.0.1:1, so the menu shows it's connecting or failed, never connected; the settings are
+// kept but never the key, a reload asks for the key again; Disconnect stops the client. What needs a
 // control server (login, the address, peers) is tests/net-tailnet.test.ts's. Two Debian boots,
 // ~4 min alone. Opt-in with WEBPC_DISTROS=debian, like Debian's other Chromium tests.
 import assert from 'node:assert/strict';
@@ -78,7 +78,7 @@ test('the Network menu: a bad URL is refused; connecting adds a card and starts 
     assert.equal(await settings(page), '', 'nothing saved');
     assert.deepEqual(dialogs, []);
 
-    // Connect with an auth key: the machine restarts with a card (it was still loading: no question).
+    // Connect with an auth key: no restart (the card is there from the boot), so no question either.
     await page.fill('#net-hostname', 'testbox');
     await page.fill('#net-authkey', 'tskey-auth-SECRET-1234');
     await page.click('#net-connect');
@@ -89,7 +89,7 @@ test('the Network menu: a bad URL is refused; connecting adds a card and starts 
     assert.ok(['connecting', 'login', 'error'].includes((await phase(page))!), `unreachable control server: ${await phase(page)}`);
     const saved = await settings(page);
     assert.ok(!saved.includes('SECRET'), 'the auth key is never saved');
-    assert.deepEqual(JSON.parse(saved).net, { enabled: true, controlURL: 'http://127.0.0.1:1', hostname: 'testbox', autoconnect: false, keyed: true });
+    assert.deepEqual(JSON.parse(saved).net, { controlURL: 'http://127.0.0.1:1', hostname: 'testbox', autoconnect: false, keyed: true });
 
     // The machine has the card: its guest sees eth0.
     await running(page);
@@ -103,7 +103,7 @@ test('the Network menu: a bad URL is refused; connecting adds a card and starts 
     await page.click('#net-disconnect');
     await page.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
     assert.equal(await page.locator('#net-form').isVisible(), true);
-    assert.equal(await page.locator('#net-remove').isVisible(), true, 'the card stays until it is removed');
+    assert.equal(await page.locator('#net-remove').count(), 0, 'the card is always there: nothing to remove');
 
     // A reload: the machine boots with the card, the client isn't started (no key to start it with).
     await page.reload();
@@ -115,6 +115,7 @@ test('the Network menu: a bad URL is refused; connecting adds a card and starts 
     await shows(page, /root@\S+:~# /);
     await onSerial(page, 'ls /sys/cla""ss/net | tr "\\n" " "; echo\n');
     await shows(page, /eth0/);
+    assert.deepEqual(dialogs, [], 'connecting and disconnecting never restart the machine');
     assert.deepEqual(errors, []);
   } finally {
     await context.close();

@@ -73,3 +73,38 @@ test('the page\'s Debian with a card takes the gateway\'s lease by itself and pi
     }
   });
 });
+
+// The page's card is there from the boot, and the client connects later (the Network menu): the
+// gateway has no lease until then. How long the guest takes to notice one that arrives late is
+// networkd's DHCP retry schedule; the test reports it and bounds it.
+test('a lease that arrives after the boot is taken by the guest without a restart', { skip, timeout: 600_000 }, async () => {
+  await withDebianLock(async () => {
+    const page = await (await browser.newContext()).newPage();
+    const removeOverlay = () => page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
+    try {
+      await page.goto(`${base}/tests/browser/core.html`);
+      await removeOverlay();
+      await page.goto(`${base}/tests/browser/netguest.html?overlay=${OVERLAY}&port=1`);
+      await loginRoot(page);
+      const addr = () => run(page, "ip -4 -o addr show scope global | awk '{print $4}'").then((s) => s.trim());
+      assert.equal(await addr(), '', 'no lease yet: no address');
+      const link = await run(page, 'ip -br link show | grep -c eth0');
+      assert.equal(link.trim(), '1', 'the card is there');
+      // The boot's own DHCP attempts have gone unanswered for a while; then the client "connects".
+      await page.waitForTimeout(20_000);
+      await page.evaluate(() => (window as never as { harness: { lease(): void } }).harness.lease());
+      const t0 = Date.now();
+      let got = '';
+      while (!got && Date.now() - t0 < 180_000) {
+        await page.waitForTimeout(1000);
+        got = await addr();
+      }
+      const took = (Date.now() - t0) / 1000;
+      console.log(`# the guest took a lease that arrived late after ${took.toFixed(0)} s`);
+      assert.match(got, /^198\.18\.0\.15\//, `no address ${took.toFixed(0)} s after the lease`);
+    } finally {
+      await removeOverlay();
+      await page.context().close();
+    }
+  });
+});

@@ -160,8 +160,8 @@ function start() {
   if (focused) canvas.focus();
   const screen = canvas.transferControlToOffscreen();
   const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
-  // A network card when the user chose one (Network menu): the machine gets its end of the IP port.
-  const ip = spec.network && netSettings().enabled ? network.port() : undefined;
+  // A machine that can have a network card has one from the start (it can't be added later without a restart): its end of the IP port.
+  const ip = spec.network ? network.port() : undefined;
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
   const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1), serial: serial.port1 };
   run = r;
@@ -291,8 +291,8 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-chord]')) {
 }
 document.addEventListener('pointerdown', (e) => { if (!keysMenu.contains(e.target as Node)) keysMenu.open = false; });
 
-// The network (docs/frontend.md "Network"): a machine with `network` gets a card when the user connects; the Network
-// menu logs a Tailscale client in and out. The card can't be added to a running machine: connecting restarts it.
+// The network (docs/frontend.md "Network"): a machine with `network` always has a card (it costs no boot time); the
+// Network menu connects and logs in a Tailscale client that gives the card its address.
 const netSettings = (): NetworkSettings => ({ ...DEFAULT_SETTINGS, ...settings().net });
 const network = createNetwork(() => renderNetwork());
 const netMenu = $<HTMLDetailsElement>('network');
@@ -304,15 +304,14 @@ function renderNetwork() {
   const v = network.view();
   netMenu.dataset.phase = v.phase;
   const active = network.active();
-  netEl.status.textContent = s.enabled || active ? v.text : 'No network card';
+  netEl.status.textContent = v.text;
   netEl.login.hidden = !v.loginURL;
   if (v.loginURL) netEl.login.href = v.loginURL;
   netEl.form.hidden = active;
-  netEl.actions.hidden = !s.enabled;
+  netEl.actions.hidden = !active;
   netEl.disconnect.hidden = !active;
   netEl.logout.hidden = !active || s.keyed;
-  netEl.hint.textContent = !s.enabled ? 'Connecting gives the machine a network card, which restarts it (a card can\'t be added to a running machine).'
-    : !active && s.keyed ? 'An auth key isn\'t kept: enter it again to connect.' : '';
+  netEl.hint.textContent = !active && s.keyed ? 'An auth key isn\'t kept: enter it again to connect.' : '';
   if (v.phase === 'login' && lastPhase !== 'login') netMenu.open = true; // the user has something to do
   lastPhase = v.phase;
 }
@@ -342,10 +341,7 @@ netEl.form.onsubmit = (e) => {
   const authKey = netEl.key.value.trim();
   void (async () => {
     if (!(await tailscaleBuilt())) return formError("The Tailscale client isn't built on this server. Start the page with `npm run serve` or `npm start` (they build it; Go is needed), or run net/tailscale/build.sh.");
-    const had = netSettings().enabled;
-    if (!had && (state === 'running' || state === 'booting') && !confirm('Connecting gives the machine a network card, which restarts it: like pulling the plug, unsaved work in the guest is lost. Continue?')) return;
-    remember({ net: { enabled: true, controlURL: netEl.control.value.trim(), hostname: netEl.hostname.value.trim(), autoconnect: !authKey, keyed: !!authKey } });
-    if (!had) await restart(); // the new machine has the card
+    remember({ net: { controlURL: netEl.control.value.trim(), hostname: netEl.hostname.value.trim(), autoconnect: !authKey, keyed: !!authKey } });
     try {
       network.connect({ controlURL: url.url, hostname: host.hostname, authKey: authKey || undefined });
       netEl.key.value = '';
@@ -363,11 +359,6 @@ netEl.logout.onclick = () => {
   if (!confirm('Log out? This machine is removed from the network and its keys are forgotten here; connecting again logs in as a new node.')) return;
   remember({ net: { ...netSettings(), autoconnect: false } });
   void network.logout().then(renderNetwork);
-};
-$('net-remove').onclick = () => {
-  if ((state === 'running' || state === 'booting') && !confirm('Remove the network card? This restarts the machine: like pulling the plug, unsaved work in the guest is lost.')) return;
-  remember({ net: { ...netSettings(), enabled: false, autoconnect: false } });
-  void network.disconnect().then(() => restart()).then(renderNetwork);
 };
 document.addEventListener('pointerdown', (e) => { if (!netMenu.contains(e.target as Node)) netMenu.open = false; });
 if (spec.network) {
