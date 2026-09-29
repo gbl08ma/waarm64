@@ -131,8 +131,19 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       assert.ok(short.includes(env.WEBPC_TS_PEER_IP), `the search domain: "peer" resolves (${short})`);
 
       // The peer connects to a server in the guest (through the tailnet, to the guest's own address).
-      await run(page, 'mkdir -p /tmp/www && echo hello-from-the-guest > /tmp/www/index.html && (cd /tmp/www && nohup python3 -m http.server 8080 --bind 0.0.0.0 > /tmp/http.log 2>&1 &) ; sleep 2');
-      const reply = podman('exec', 'webpc-peer', 'sh', '-c', `printf 'GET / HTTP/1.0\\r\\n\\r\\n' | timeout 30 tailscale --socket=/tmp/ts.sock nc ${self} 8080`);
+      await run(page, 'mkdir -p /tmp/www && echo hello-from-the-guest > /tmp/www/index.html && (cd /tmp/www && nohup python3 -m http.server 8080 --bind 0.0.0.0 > /tmp/http.log 2>&1 &)');
+      // Python takes a while to start under emulation: the server must answer inside the guest first.
+      let local = '';
+      for (let k = 0; k < 30 && !local.includes('hello-from-the-guest'); k++) {
+        local = await run(page, `curl -s -m 5 http://${self}:8080/`);
+        if (!local.includes('hello-from-the-guest')) await page.waitForTimeout(2000);
+      }
+      assert.match(local, /hello-from-the-guest/, `the guest's server didn't come up: ${await run(page, 'cat /tmp/http.log; ss -ltn')}`);
+      const nc = spawnSync('podman', ['exec', 'webpc-peer', 'sh', '-c', `printf 'GET / HTTP/1.0\\r\\n\\r\\n' | timeout 30 tailscale --socket=/tmp/ts.sock nc ${self} 8080`], { encoding: 'utf8' });
+      if (nc.status !== 0) {
+        assert.fail(`the peer couldn't reach the guest's server (${nc.status}): ${nc.stderr}\nguest: ${await run(page, 'ip -s link show dev e*; nstat -az TcpInSegs TcpOutSegs TcpInErrs IpInDelivers IpInAddrErrors; ss -tan; cat /tmp/http.log')}`);
+      }
+      const reply = nc.stdout;
       assert.match(reply, /HTTP\/1\.0 200 OK/);
       assert.match(reply, /hello-from-the-guest/);
       assert.match(peerTs('status'), new RegExp(`${self}\\s+guest`));
