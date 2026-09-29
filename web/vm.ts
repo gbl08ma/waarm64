@@ -96,6 +96,22 @@ export function panicMessage(ex: WebAssembly.Exports, memory: WebAssembly.Memory
   return new TextDecoder().decode(new Uint8Array(memory.buffer.slice(at + 4, at + 4 + len)));
 }
 
+/**
+ * The core's panic message as the coordinator reads it (the memory is shared),
+ * for a worker's error that lacks it; or what the buffer held instead (BUG1).
+ */
+function panicNote(text: string, ex: WebAssembly.Exports, memory: WebAssembly.Memory): string {
+  if (text.includes('core panic:')) return '';
+  try {
+    const m = panicMessage(ex, memory);
+    if (m) return `\ncore panic (read by the coordinator): ${m}`;
+    const at = (unsigned(ex).panic_message as () => number)();
+    return `\n(no core panic message recorded: length word ${Atomics.load(new Int32Array(memory.buffer, at, 1), 0)} at ${at})`;
+  } catch (e) {
+    return `\n(reading the core panic message failed: ${String(e)})`;
+  }
+}
+
 /** `err`, with the core's panic message (if there is one) put in front of its stack. */
 export function withPanic(err: unknown, ex: WebAssembly.Exports, memory: WebAssembly.Memory): Error {
   const e = err instanceof Error ? err : new Error(String(err));
@@ -604,7 +620,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
   };
   const ended = (m: VcpuEnd) => {
     stopped++;
-    if (m.type === 'error') error ??= new Error(`vCPU ${m.cpu}: ${m.message}`);
+    if (m.type === 'error') error ??= new Error(`vCPU ${m.cpu}: ${m.message}${panicNote(m.message, c.instance.exports, c.memory)}`);
     else if (m.kind !== Exit.STOP) end ??= { kind: m.kind, value: m.value, x: m.x };
     if (stopped === 1) c.raise(STOP);
     bump();
