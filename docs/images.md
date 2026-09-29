@@ -31,7 +31,7 @@ obligations (publish the configs, point to the sources), separate from webpc's M
 | `alpine` | **Alpine 3.24.2**: the pinned aarch64 minirootfs plus `apk add` of pinned `linux-virt` (6.18.53) and `openrc` (0.63.2), in a chroot under `qemu-aarch64-static` registered in a user namespace's own binfmt_misc; runlevels sysinit devfs dmesg, boot modules hostname, shutdown killprocs mount-ro, default local (no device manager: the initramfs loads virtio_mmio, virtio_blk, ext4). The test is `images/alpine/webpc.start` (a local.d script writing to `/dev/console`, then `poweroff`) | the Alpine boot tests and `boot_alpine*` |
 | `alpine-user` | alpine's root plus `xz`, `lua5.4`, `sqlite`, `openssl` (3.5.8) and the workloads (`images/alpine/user/`), with its own local.d script, as `rootfs-user.ext4`; boots alpine's Image and initramfs | `alpine_user_jit`, `alpine_crypto*_jit`, Node |
 | `litmus` | herdtools7 7.58 (CeCILL-B: built and run, never copied) in Alpine's arm64 container: `diyone7` makes each test in `images/litmus/tests.txt` (MP, SB, LB, 2+2W, IRIW, WRC, R, S and coherence shapes, plain and with DMB/DSB, dependencies, acquire/release), `herd7`'s `aarch64.cat` lists each one's allowed final states (`allowed.txt`), `litmus7` makes static C programs (`-mem direct -st 1 -barrier userfence -affinity incr0 -s 5k -r 200`, from herdtools7's Arm configs; the defaults showed the M4 no relaxed outcome at all); `images/litmus/stress.c`, the atomics stress, as `stress-lse` and `stress-llsc` (the build checks each has its atomics: [testing.md](testing.md) "Atomics stress"). Output: `initramfs.cpio` (BusyBox, `images/litmus/init`, the tests; booted with `linux/Image`, `webpc.litmus=<options, commas for spaces>`, `webpc.stress=<options>`) and `litmus.tar` (the same tests with `run.sh`, for the oracle VM) | the memory-model tests and the atomics stress (M7) |
-| `debian` | the official `debian-13-nocloud-arm64` qcow2 (20260914-2601), pinned by build date and SHA512 and served as published; the kernel (6.12.107) and initrd (`MODULES=most`) taken out of its `/boot` | Debian boot tests, `boot_debian_jit` |
+| `debian` | the official `debian-13-nocloud-arm64` qcow2 (20260914-2601), pinned by build date and SHA512 (`images/debian.json`) and served as published; the kernel (6.12.107) and initrd (`MODULES=most`) taken out of its `/boot` **in Node, on the host** (`tools/debian.ts`: a partition table and ext4 reader over the qcow2 reader, [frontend.md](frontend.md) "The disk reader"; no container, no `qemu-img`, `sfdisk` or `debugfs`), the same code `npm start` runs; ~2 s with the download cached | Debian boot tests, `boot_debian_jit`, the page |
 
 Command lines: Buildroot `console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init` (a
 script after `--`: `/test.sh` by default, `/test-devices.sh`, `/test-input.sh`, `/test-rw.sh`,
@@ -71,3 +71,8 @@ first kernel line.
   reorganized recently).
 - Debian's published image is 95% compressed qcow2 clusters: it's served as is (deflate in the
   blk backend) rather than converted.
+- Debian isn't built but prepared, so its `.inputs` key covers `images/debian.json` and
+  `build_debian`, not the reader's code (an edit to `web/ext4.ts` shouldn't mark the image stale
+  and skip Debian's tests); the reader is checked by its tests and by `SHA256SUMS` on a rebuild.
+  `npm start` keeps its own stamp (`target/images/debian/.prepared`: the pin), since it can't run
+  `build.sh` (bash 4 syntax; macOS has bash 3.2).

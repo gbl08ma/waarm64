@@ -32,7 +32,9 @@
 #   VM). herdtools7 is CeCILL-B: built and run here, never copied into webpc.
 #   Built natively in Alpine's arm64 container, as alpine-user.
 # debian: the official debian-13-nocloud-arm64 qcow2 as published (disk.qcow2),
-#   with the kernel (Image) and initrd (initrd.img) taken out of its /boot.
+#   with the kernel (Image) and initrd (initrd.img) taken out of its /boot by
+#   tools/debian.ts (Node, on the host: it's what `npm start` runs too; the pin
+#   is images/debian.json).
 # kvm-unit-tests: the arm64 tests (*.flat) and their unittests.cfg, built with
 #   Debian's gcc-aarch64-linux-gnu.
 # ltp: the linux image's root filesystem plus a subset of LTP (Buildroot's
@@ -61,8 +63,6 @@ LITMUS_TOOLS="ocaml=4.14.4-r0 dune=3.22.2-r1 ocaml-menhir=20220210-r6 ocaml-menh
 HERDTOOLS_TAG=7.58
 HERDTOOLS_COMMIT=1ca343e16a2038e406d1ac674e7e3a1b722b36c7
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
-DEBIAN=20260914-2601
-DEBIAN_SHA512=54c8a9b348129796bd28a1df0488f810385f6417cfa2e242ce4d6feb64c54444ed3c505700f3eda3b122763829a9074bf82e06fc8a6635e52c9ae924eb9a509a
 export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 
 cd "$(dirname "$0")/.."
@@ -291,23 +291,8 @@ build_litmus() {
 }
 
 build_debian() {
-  local dst=$out/debian b=$out/build/debian q=$out/dl/debian-13-nocloud-arm64-$DEBIAN.qcow2
-  rm -rf "$b" "$dst"
-  mkdir -p "$b" "$dst"
-  [ -f "$q" ] || wget -q -O "$q" "https://cloud.debian.org/images/cloud/trixie/$DEBIAN/${q##*/}"
-  echo "$DEBIAN_SHA512  $q" | sha512sum -c --quiet
-  # The root filesystem is partition 1: its /boot has the kernel (an arm64 Image) and initrd.
-  qemu-img convert -O raw "$q" "$b/disk.raw"
-  local start size
-  read -r start size < <(sfdisk -d "$b/disk.raw" | sed -n 's/^.*disk.raw1 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-  dd if="$b/disk.raw" of="$b/root.img" bs=512 skip="$start" count="$size" conv=sparse status=none
-  local v
-  v=$(debugfs -R 'ls /boot' "$b/root.img" 2>/dev/null | tr -s ' ' '\n' | sed -n 's/^vmlinuz-//p')
-  debugfs -R "dump /boot/vmlinuz-$v $dst/Image" "$b/root.img" 2>/dev/null
-  debugfs -R "dump /boot/initrd.img-$v $dst/initrd.img" "$b/root.img" 2>/dev/null
-  [ "$(od -An -c -j56 -N4 "$dst/Image" | tr -d ' ')" = ARMd ] || { echo "debian: /boot/vmlinuz-$v is not an arm64 Image" >&2; exit 1; }
-  cp "$q" "$dst/disk.qcow2"
-  rm -rf "$b"
+  rm -rf "$out/debian"
+  WEBPC_DL=$root/$out/dl node --disable-warning=ExperimentalWarning tools/debian.ts
 }
 
 build_kvm-unit-tests() {
@@ -326,6 +311,7 @@ inputs() {
   local files=(images/Containerfile) pins="^${1^^}"
   [ "$1" = buildroot ] && files+=(images/buildroot.defconfig $(find images/overlay -type f | sort))
   [ "$1" = linux ] && files+=(images/linux.fragment) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
+  [ "$1" = debian ] && files+=(images/debian.json) && pins='^export SOURCE'
   [ "$1" = alpine ] && files+=(images/alpine/webpc.start)
   [ "$1" = alpine-user ] && files+=($(find images/alpine/user -type f | sort) "$out/alpine/.inputs")
   [ "$1" = alpine-user ] && pins='^USERLAND_' 
@@ -384,10 +370,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() user= crypto= litmus= kernel=
+  rest=() user= crypto= litmus= kernel= debian=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; else rest+=("$name"); fi
+    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -399,6 +385,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   # After the images container, the ones built natively in Alpine's arm64
   # container (alpine-user builds on alpine).
   if [ -n "$kernel" ]; then build linux; fi
+  if [ -n "$debian" ]; then build debian; fi # Node on the host (tools/debian.ts)
   if [ -n "$user" ]; then build alpine-user; fi
   if [ -n "$crypto" ]; then build linux-crypto; fi
   if [ -n "$litmus" ]; then build litmus; fi

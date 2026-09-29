@@ -386,3 +386,18 @@ later (1.7 s of guest time: the kernel switches its console to the framebuffer t
 the log); the login prompt comes 26 s after that. So the boot card over the screen (the downloads'
 progress, then the kernel's serial lines) shows for ~2.6 s, and the screen itself is the boot's
 progress for the rest. Raw: `results/m8-loop4/page-running.json`.
+
+## M8 loop 5: `npm start`
+
+Node 26.7.0, rustup 1.29.1, Chromium 153.0.8010.52 headless, the M4 VM. A copy of the repository
+as a clone has it, run by `tests/start.test.ts`: with the core copied in, **the URL is printed
+1.2 s after `npm start`** (`npm ci` ~0.4 s, Debian's SHA512 over 403 MB and the kernel and initrd
+taken out of its `/boot` in Node, ~0.4 s of it, the disk hard-linked from the cache) and the page
+reaches `running` 28.7 and 30.7 s later (loop 4: 28.6–29.1 s from page load: unchanged). Building
+its own core (`WEBPC_START_COLD=1`): the URL at 11.6 s. A cold `scripts/build-wasm.sh` in a `git
+clone` takes 10–11 s (the pinned nightly already installed; installing it into an empty
+`RUSTUP_HOME` took 6 s and 722 MB). **With nothing to do, `npm start` serves in ~0.1 s** (0.2 s
+through npm). The real download from cloud.debian.org: 7.8 s (55 MB/s). `images/build.sh debian`
+now runs the same Node code, 1.6 s, and its outputs match `images/SHA256SUMS`. No boot benchmark
+ran: nothing on their path changed (`tools/serve.ts` gained a host parameter and a listen error).
+Raw: `results/m8-loop5/npm-start.json`.

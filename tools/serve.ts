@@ -28,7 +28,8 @@ export const APP = '/web/app/';
 /** The only files served from node_modules: what the page imports (xterm.js). */
 const ALLOWED = new Set(['node_modules/@xterm/xterm/lib/xterm.mjs', 'node_modules/@xterm/xterm/css/xterm.css'].map((p) => join(ROOT, p)));
 
-export function startServer(port = 0): Promise<Server> {
+/** Listens on `host` (loopback by default: the page is for this machine; docs/frontend.md "npm start"). Rejects on a listen error (e.g. EADDRINUSE). */
+export function startServer(port = 0, host = '127.0.0.1'): Promise<Server> {
   const server = createServer(async (req, res) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
@@ -73,7 +74,10 @@ export function startServer(port = 0): Promise<Server> {
       else res.writeHead(404).end();
     }
   });
-  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)));
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => { server.off('error', reject); resolve(server); });
+  });
 }
 
 /** One `bytes=a-b`, `a-` or `-n` range, clamped to the file; 'bad' if unsatisfiable; undefined for none or a multi-range (served whole). */

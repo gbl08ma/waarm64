@@ -1,0 +1,7 @@
+{
+  "comment": "The Debian image webpc boots (docs/images.md), pinned by build and SHA512: read by tools/debian.ts (npm start, images/build.sh debian).",
+  "version": "20260914-2601",
+  "file": "debian-13-nocloud-arm64-20260914-2601.qcow2",
+  "url": "https://cloud.debian.org/images/cloud/trixie/20260914-2601/debian-13-nocloud-arm64-20260914-2601.qcow2",
+  "sha512": "54c8a9b348129796bd28a1df0488f810385f6417cfa2e242ce4d6feb64c54444ed3c505700f3eda3b122763829a9074bf82e06fc8a6635e52c9ae924eb9a509a"
+}

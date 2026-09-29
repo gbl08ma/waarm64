@@ -96,8 +96,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   variables, and the ESP on virtio-blk; GRUB then loads the kernel. It also brings RTC, reboot
   and `efi=`-dependent paths into play. A cheaper intermediate step, if it's ever useful: a
   host-side loader that reads the image's `/boot` (and GRUB's or the Boot Loader Spec's entries
-  for the command line) at start time, in the browser, instead of a preparation step; M8's
-  in-Node ext4 reader is written so it can run there.
+  for the command line) at start time, in the browser, instead of a preparation step: M8's
+  disk reader (`web/bootfs.ts`, `web/ext4.ts`, no Node APIs) already runs there; what's missing is
+  the page reading the qcow2 through its HTTP range backend and handing the files to `bootVm`.
 - The timer, GIC and PL011 tests have no hardware oracle; a GICv3-free subset of `timer.c`
   (ISTATUS, TVAL, CNTKCTL traps) could run on hvf.
 - virtio-console has no host input path (its receive buffers are held forever), so a guest's

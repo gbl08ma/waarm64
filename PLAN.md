@@ -79,9 +79,10 @@ Decisions (the user, 2026-09-28):
 - **The disk persists** across reloads in the OPFS copy-on-write overlay, with a reset on the
   page.
 - **One command from a fresh clone** (`npm start`): builds from source on Linux and macOS (Node
-  and rustup are the only prerequisites; it says clearly what's missing), builds the wasm core if
-  stale, downloads Debian and extracts its kernel and initrd without host tools beyond Node,
-  serves on localhost and prints the URL.
+  and rustup are the only prerequisites, with the C compiler Rust's build scripts need; it says
+  clearly what's missing), builds the wasm core if stale, downloads Debian and extracts its kernel
+  and initrd without host tools beyond Node, serves on localhost and prints the URL. Done in M8
+  loop 5 ([docs/frontend.md](docs/frontend.md) "`npm start`").
 - **Frontend stack:** start with plain TypeScript and the DOM (as the rest of `web/`); Chromium
   only. **Not a hard rule:** Svelte is pre-approved if a framework would make a specific part
   easier. It needs compiling, so it would come with a compile step in `tools/serve.ts` (as type
