@@ -75,7 +75,7 @@ async function run(page: Page, cmd: string, ms = 60_000) {
   await page.evaluate((c) => (window as never as { harness: { send(s: string): void } }).harness.send(c), `${cmd}\necho __END$((40+2))__\n`);
   await shows(page, /__END42__\r?\n/, ms, from);
   const out = (await harness<string>(page, 'output()')).slice(from);
-  return out.slice(out.indexOf('\n', out.indexOf('__END$((40+2))__')) + 1).replace(/__END42__[\s\S]*$/, '').replace(/\r/g, '');
+  return out.slice(out.indexOf('\n', out.indexOf('__END$((40+2))__')) + 1).replace(/__END42__[\s\S]*$/, '').replace(/\r/g, '').replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
 }
 
 test('the guest gets a DHCP lease from the tailnet, reaches a peer by address and by name, and is reached', { skip, timeout: 900_000 }, async () => {
