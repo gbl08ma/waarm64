@@ -138,3 +138,24 @@ calls and loop back-edges each test `left >= len (+ next len)` and take `len` fr
 (core/src/jit/emit.rs "left >= len + its length", block.rs region edges, unit tests of the
 back-edge). I found no unbudgeted loop. Not checked: a helper that loops in the core, WFE/YIELD
 inline paths (bare-metal test above covers YIELD).
+
+### Step 2, part 2: Debian on 4 parallel vCPUs in headless Chromium: no reproduction
+`bench/results/local/stress-debian.ts [seconds]` boots the page (`?machine=debian&ncpus=4`, JIT,
+realtime), logs in on the serial terminal and starts: two busy loops, a `/bin/true` + `ls` fork/exec
+storm, `seq | sort -R` (mmap/munmap churn), `urandom | sha256sum`, and `find /usr | wc`. It reports
+a page state other than `running` and any console line matching panic/error/DSB. Two runs (240 s
+and 500 s) stayed `running` throughout. Not covered: the original load's Go compiler (many threads,
+heavy mprotect), the Tailscale wasm client and network traffic sharing the host's cores (a host
+stall or CPU starvation of one vCPU's worker, hypothesis 5, is not excluded).
+
+## What's left
+- Wait for an occurrence with the new build: the error now carries `core panic: vCPU N: DSB waited
+  10 s ...` with the per-vCPU dump. Decide from the dump (see "Step 1"): retired moved =
+  bookkeeping (hyp. 4); frozen with the lock held = hyp. 2; frozen at a PC in a guest loop =
+  hyp. 1 (then look at that PC's block in the JIT); frozen at a PC unchanged for the whole wait
+  with the lock free and state RUN = a host stall or `jit_install` (hyp. 3, 5; compare
+  `JIT_COMPILE_NS`).
+- A heavier local stress: a Go (or C) mmap/mprotect/thread-churn binary built in Podman and run in
+  Debian under the same load, and with the Tailscale client running for host contention.
+- Not done: reviewing every core helper for loops, and a host-stall test (pausing a vCPU worker
+  from the test harness while another waits in a DSB: the wait should end at 10 s with the report).
