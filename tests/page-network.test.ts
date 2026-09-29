@@ -32,7 +32,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-const BOOT_MS = 300_000;
+const BOOT_MS = 180_000;
 const terminal = (page: Page) => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
 const shows = (page: Page, re: RegExp, ms = 60_000) =>
   page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 100 })
@@ -42,7 +42,11 @@ async function onSerial(page: Page, text: string) {
   await page.keyboard.type(text, { delay: 10 });
 }
 async function running(page: Page) {
-  await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: BOOT_MS, polling: 250 });
+  await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: BOOT_MS, polling: 250 })
+    .catch(async (e) => {
+      const [state, status, message, net] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('status')!.textContent, document.getElementById('message-text')!.textContent, document.getElementById('net-status')!.textContent]);
+      throw new Error(`${e}; the page is ${state} (${status}; ${message}; network: ${net}); the terminal shows: ${await terminal(page)}`);
+    });
   const [state, message] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')!.textContent]);
   assert.equal(state, 'running', message ?? '');
 }
