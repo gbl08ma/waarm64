@@ -17,6 +17,8 @@ const state = (s: PowerState, message?: string, problem?: Problem) => post({ typ
 const PANIC = 'Kernel panic - not syncing';
 
 let vm: Vm | undefined;
+/** The VM being booted: it may hold the overlay before `bootVm` returns it. */
+let booting: Promise<Vm> | undefined;
 let stopping = false;
 
 self.onmessage = (e: MessageEvent<ToWorker>) => {
@@ -29,7 +31,11 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     });
   } else if (m.type === 'stop') {
     stopping = true;
-    void (vm?.close() ?? Promise.resolve()).then(() => post({ type: 'stopped' }));
+    void (async () => {
+      // A machine still booting is closed once it's there (its device worker may have the overlay open).
+      await (vm ?? (await booting?.catch(() => undefined)))?.close();
+      post({ type: 'stopped' });
+    })();
   }
 };
 
@@ -96,7 +102,7 @@ function explain(err: unknown, machine: Machine): [Problem, string] {
   const e = err as Error & { problem?: Problem };
   if (e.problem) return [e.problem, e.message];
   const text = String(e.message ?? e);
-  if (/NoModificationAllowedError/.test(text)) {
+  if (/NoModificationAllowedError|overlay \S+ is in use/.test(text)) {
     return ['disk-in-use', `${machine.label}'s disk is in use: another tab or window of this page runs the machine on it (the browser lets one open it at a time).\nClose that tab, then Retry.\n\n${text}`];
   }
   if (/overlay .* belongs to/.test(text)) {
@@ -116,7 +122,7 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
   const [wasm, kernel, initrd] = await download([CORE, machine.kernel, ...(machine.initrd ? [machine.initrd] : [])], machine);
   await disk;
   if (stopping) return;
-  vm = await bootVm(wasm, {
+  booting = bootVm(wasm, {
     ramSize: machine.ramMiB << 20, kernel, initrd, cmdline: withParams(machine.cmdline, m.params ?? ''), jit: 1, ncpus: m.ncpus, parallel: true, realtime: true,
     framebuffer: machine.framebuffer, serialIn: m.serial,
     devices: [
@@ -127,7 +133,8 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
     ],
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });
-  if (stopping) return;
+  vm = await booting;
+  if (stopping) return; // `stop` closes it
   if (vm.framebuffer) showFramebuffer(m.screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
   state('booting');
   const t0 = performance.now();

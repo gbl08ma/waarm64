@@ -164,20 +164,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Snapshots in parallel SMP** (M8): stop every vCPU worker at a chunk boundary (STOP, all
   `OUT`), with every maintenance queue drained and no CPU_ON request pending, before saving;
   round-robin needs nothing new.
-- **The parallel bare-metal `timer.bin` assumes the host keeps a vCPU running for 1 ms** (its check
-  10: a 1 ms `CNTV_TVAL` must not have expired by the next instruction; realtime counters follow
-  the host clock). It failed twice in one M8 loop 6 CI run (Node, JIT and JIT-check, exit 10) when
-  two Debian page boots ran beside the rest of `npm test`; tests/debian-lock.ts now keeps those
-  boots apart, and the next runs passed. A sturdier guest (a longer TVAL, or retrying the window)
-  changes a test guest's bytes: the user's call.
 - **Hours-long whole-platform stress** (repeated parallel boots and workloads for hours): deferred
   by the user (2026-09-28) to a later milestone, once more virtio devices and integration features
   exist, when such a run is likelier to catch non-obvious platform-wide issues.
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
-- **The user's own pass** (phase A's exit): the rough edges they report from using the machine
-  land here; none reported yet.
+- **The user's own pass** (after phase A's exit, 2026-09-29): "I like what I see", with four
+  rough edges, handled in M8 loop 8: the Keys menu had only Ctrl+Alt+F1 and F2 (now F1 to F12); a
+  Restart once failed with "disk in use" (now a Web Lock orders the overlay's hand-over and
+  restarts don't overlap: [frontend.md](frontend.md) "Overlay hand-over"); `timer.bin` failed
+  under load (hardened: [testing.md](testing.md) "Bare-metal tests"); Debian didn't find its root in Firefox (recorded
+  under "Tests and tools", not fixed). Left from it: whether the user's failure was the
+  overlapping restart that loop 8 reproduced or a browser releasing a lock before the handles
+  (a `NoModificationAllowedError` in the message would say the latter; then a short bounded
+  retry after the lock is the fix); the in-use message comes after a 10 s wait now, with the page
+  in Loading meanwhile (a "waiting for the disk" line would say why).
 - **Clipboard for the screen:** paste into tty1 (typed through virtio-input, paced: its queue
   drops past 1024 events) and copy from fbcon; only the serial terminal has both (xterm.js).
   Phase C, host integration.
@@ -201,12 +203,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - **Firefox and Safari compatibility pass** (moved out of M8 by the user, 2026-09-28; Chromium
   stays the target): the user checks Firefox by hand (never automated here); WebKit could run
-  through Playwright. Matters most once the page is publicly hosted.
+  through Playwright. Matters most once the page is publicly hosted. **Found so far (the user's
+  check, 2026-09-29):** in Firefox the core runs and the kernel boots, but Debian doesn't find its
+  root filesystem and drops to the initramfs emergency shell, so /dev/vda (virtio-blk) doesn't
+  work there. Unverified suspects: the virtio-blk backend's disk path in the device worker
+  (range reads by synchronous XHR in a worker with `responseType = 'arraybuffer'`; qcow2's
+  compressed clusters through `DecompressionStream`), the overlay's OPFS sync access handles in
+  a nested worker (and now its Web Lock), or the device worker's doorbell (`Atomics.waitAsync`
+  on shared memory). The serial log (Save serial log) from Firefox would show whether virtio-blk
+  probed at all and what the first failing request was.
 - LTP: only the syscalls subset; the loop-device tests (`getdents01`, `rename01`) and other areas
   need `mkfs` tools, a scratch disk and more RAM. kselftests: not `fp` (minutes of stress) nor the
   generic suites.
-- `tests/baremetal/build.sh` on the M4 VM's clang gives other bytes for `gic`, `timer`, `uart` than
-  the committed ones: rebuild them together when one changes.
 - `coremark_vm_jit`: pass a fixed iteration count through init's arguments so a run can't fall
   under CoreMark's 10 s rule.
 - The PC-sampling profiler samples once per chunk (32K steps).

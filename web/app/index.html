@@ -61,6 +61,9 @@
   .menu[open] summary, .menu summary:hover { background: #1e232a; }
   .menu .items { position: absolute; right: 0; top: calc(100% + 4px); z-index: 1; display: flex; flex-direction: column; min-width: 150px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px #0008; }
   .menu .items button { text-align: left; border-radius: 4px; }
+  .menu .items .label { padding: 6px 8px 2px; color: var(--dim); font-size: 12px; }
+  .menu .items .fkeys { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .menu .items .fkeys button { text-align: center; padding-left: 4px; padding-right: 4px; }
   #fullscreen { border: 1px solid var(--line); border-radius: 6px; }
   body[data-view=screen] #terminal-view, body[data-view=terminal] #screen-view { display: none; }
   body[data-view=terminal] #terminal-view { flex: 1; }
@@ -78,8 +81,8 @@
   </span>
   <details class="menu" id="keys"><summary title="Key combinations the browser keeps for itself, sent to the screen's keyboard">Keys</summary><div class="items">
     <button data-chord="ControlLeft AltLeft Delete">Ctrl+Alt+Del</button>
-    <button data-chord="ControlLeft AltLeft F1">Ctrl+Alt+F1</button>
-    <button data-chord="ControlLeft AltLeft F2">Ctrl+Alt+F2</button>
+    <div class="label">Ctrl+Alt+</div>
+    <div class="fkeys" id="fkeys"></div>
   </div></details>
   <button id="fullscreen" title="Full screen: browser shortcuts (Ctrl+W, Ctrl+T) and Esc go to the machine; hold Esc to leave">Full screen</button>
   <button id="reset-disk" title="Delete what the machine wrote to its disk and boot from the image again" hidden>Reset disk</button>

@@ -6,7 +6,7 @@
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 import { p9, type P9Files } from './9p.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
-import { overlay } from './overlay.ts';
+import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
 import { openDisk, type Disk } from './qcow2.ts';
 
 /**
@@ -338,35 +338,6 @@ const S_OK = 0;
 const S_IOERR = 1;
 const S_UNSUPP = 2;
 
-/** An overlay's OPFS files: sync access handles, so the backend stays synchronous. */
-type OverlayFiles = { data: FileSystemSyncAccessHandle; map: FileSystemSyncAccessHandle };
-
-/**
- * Opens (or creates) the overlay directory `name` for the image at `url`. Its
- * `base` file records the image (URL path and size): an overlay only makes
- * sense over the bytes it was written against, so a mismatch is an error.
- */
-// ponytail: the image is identified by path and size, not content; add a hash if images get replaced in place.
-async function openOverlay(name: string, url: string, size: number): Promise<OverlayFiles> {
-  const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name, { create: true });
-  const open = async (f: string) => (await dir.getFileHandle(f, { create: true })).createSyncAccessHandle();
-  const [data, map, base] = [await open('data'), await open('map'), await open('base')];
-  const want = JSON.stringify({ path: new URL(url).pathname, size });
-  if (base.getSize() === 0) {
-    base.write(new TextEncoder().encode(want), { at: 0 });
-    base.flush();
-  }
-  const got = new Uint8Array(base.getSize());
-  base.read(got, { at: 0 });
-  base.close();
-  if (new TextDecoder().decode(got) !== want) {
-    data.close();
-    map.close();
-    throw new Error(`overlay ${name} belongs to ${new TextDecoder().decode(got)}, not ${want}`);
-  }
-  return { data, map };
-}
-
 /** A disk image's bytes: synchronous range reads (`undefined` on a short or failed read). */
 type Source = { size: number; read(off: number, len: number): Uint8Array | undefined; close?(): void };
 
@@ -450,8 +421,7 @@ function blk(ctx: Ctx, src: Source, files?: OverlayFiles): Backend {
     reset() {},
     close() {
       src.close?.();
-      files?.data.close();
-      files?.map.close();
+      files?.close();
     },
   };
 }
@@ -487,6 +457,9 @@ export class Devices {
   private wakes: number[];
   private backends: Backend[];
   private epochs: number[];
+  /** Set by `close`: `serve` returns. */
+  private closed = false;
+  private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
   private constructor({ memory, shared, ram, signal, specs, deterministic, wakes }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal, this.wakes] = [memory, shared, signal, wakes ?? []];
@@ -518,6 +491,10 @@ export class Devices {
   /** Releases the backends' files (an overlay's handles lock them). */
   close() {
     for (const b of this.backends) b.close?.();
+    // End `serve`: its pending Atomics.waitAsync would otherwise keep the VM's memory alive for
+    // good (Node's parallel runs, where the backends share the VM's thread: ~10 MB a boot).
+    this.closed = true;
+    if (this.served) Atomics.notify(this.served, 0);
   }
 
   /** Writes each device's initial config space (after vm_new, before the guest runs). */
@@ -580,11 +557,12 @@ export class Devices {
   /**
    * Serves the doorbell (docs/devices.md): whenever a vCPU bumps word 0, takes
    * every device's events and requests, then writes the value it handled to
-   * word 1 (-1 if a backend threw, and the error propagates). Never returns
-   * otherwise.
+   * word 1 (-1 if a backend threw, and the error propagates). Returns once
+   * `close` was called.
    */
   async serve(bell: Int32Array) {
-    for (let seen = 0; ;) {
+    this.served = bell;
+    for (let seen = 0; !this.closed;) {
       const rung = Atomics.load(bell, 0);
       if (rung === seen) {
         const w = Atomics.waitAsync(bell, 0, seen);

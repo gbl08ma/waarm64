@@ -161,6 +161,43 @@ for (const jit of [0, 1]) test(`net (loopback adapter), 9p and the framebuffer w
   assert.deepEqual(r.pixels, { '0,0': [255, 0, 0, 255], '639,0': [255, 0, 0, 255], '5,1': [64, 64, 64, 255], '5,2': [0, 0, 0, 255] });
 });
 
+// The overlay's hand-over (M8 loop 8): OPFS sync access handles are exclusive, so a machine
+// opens the overlay only once the one before it closed it. openOverlay takes a Web Lock that
+// the holder keeps until its handles are closed (web/overlay.ts `lockOverlay`); a terminated
+// holder drops both; one that holds on past the wait is "in use".
+test("the overlay's hand-over: a second opener waits for the holder to close it, a terminated holder lets go, one held too long is in use", async () => {
+  const page = await context.newPage();
+  await page.goto(`${base}/tests/browser/core.html`);
+  const r = await page.evaluate(async () => {
+    type Answer = { type: string; at: number; message?: string };
+    const spawn = () => new Worker('/tests/browser/overlay-worker.ts', { type: 'module' });
+    const ask = (w: Worker, m: object) => new Promise<Answer>((resolve) => { w.onmessage = (e) => resolve(e.data); w.postMessage(m); });
+    const name = 'webpc-test-handover';
+    const [a, b] = [spawn(), spawn()];
+    const opened = await ask(a, { type: 'open', name });
+    const waiting = ask(b, { type: 'open', name }); // at once: it waits for `a`
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const closed = await ask(a, { type: 'close' });
+    const second = await waiting;
+    // Terminated while it holds the overlay (a machine worker that didn't answer `stop`): the next opens it at once.
+    const terminated: Answer[] = [];
+    let holder = b;
+    for (let i = 0; i < 20; i++) {
+      holder.terminate();
+      holder = spawn();
+      terminated.push(await ask(holder, { type: 'open', name }));
+    }
+    const c = spawn();
+    const busy = await ask(c, { type: 'open', name, waitMs: 300 });
+    holder.terminate();
+    c.terminate();
+    await (await navigator.storage.getDirectory()).removeEntry(name, { recursive: true });
+    return { opened: opened.type, second: second.type, waited: second.at >= closed.at, terminated: terminated.filter((t) => t.type !== 'opened').map((t) => t.message), busy: busy.message };
+  });
+  assert.deepEqual(r, { opened: 'opened', second: 'opened', waited: true, terminated: [], busy: 'Error: overlay webpc-test-handover is in use: another machine held it for 0.3 s' });
+  await page.close();
+});
+
 test('input events from the page reach the guest (keyboard LED to the page, keys and a click back), realtime mode', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
   const r = await bootPage('devices&realtime&script=/test-input.sh', 10);
   assert.equal(r.error, undefined);
@@ -284,9 +321,9 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
   await page.keyboard.type(events(0, 12, 'chord'));
   await page.waitForTimeout(300);
   await page.locator('#keys summary').click();
-  await page.locator('[data-chord="ControlLeft AltLeft F2"]').click();
+  await page.locator('[data-chord="ControlLeft AltLeft F12"]').click();
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'screen');
-  await shows(/chord: 1 29 1 0 0 0 1 56 1 0 0 0 1 60 1 0 0 0 1 60 0 0 0 0 1 56 0 0 0 0 1 29 0 0 0 0 :end/);
+  await shows(/chord: 1 29 1 0 0 0 1 56 1 0 0 0 1 88 1 0 0 0 1 88 0 0 0 0 1 56 0 0 0 0 1 29 0 0 0 0 :end/);
   // The tablet through the canvas's scaling (stacked views below 1100 px: the screen scaled down).
   await page.setViewportSize({ width: 700, height: 800 });
   await page.waitForFunction(() => Number(document.querySelector('canvas')!.dataset.scale) < 1, null, { timeout: 5_000 });
@@ -331,6 +368,45 @@ test('the page runs a machine: serial terminal both ways, keyboard, power off, s
   const t = await terminal();
   assert.equal(t.match(/Run \/init as init process/g)?.length, 1, t); // one boot's log
   assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// Restart, repeatedly, while the guest writes to its disk (M8 loop 8: a Restart once failed with
+// "disk in use"): each new machine opens the overlay the one before had open. Half of them
+// restart again while the new machine is still loading or booting (its device worker may have the
+// overlay open before the machine worker has the VM), and one is a double click (a second machine
+// started beside the first would keep the overlay). No state may be `failed` in between.
+test('the page restarts over and over while the guest writes to its disk, also during a boot', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
+  const page = await browser.newPage();
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=2&view=terminal`);
+  await page.evaluate(() => {
+    const w = window as unknown as { states: string[] };
+    w.states = [];
+    new MutationObserver(() => w.states.push(document.body.dataset.state!)).observe(document.body, { attributeFilter: ['data-state'] });
+  });
+  const state = () => page.evaluate(() => document.body.dataset.state!);
+  const running = () => page.waitForFunction(() => ['running', 'failed', 'crashed'].includes(document.body.dataset.state!), null, { timeout: 60_000, polling: 20 });
+  for (let i = 0; i < 6; i++) {
+    await running();
+    assert.equal(await state(), 'running', await page.locator('#message-text').textContent() ?? '');
+    // The root's first 2 MiB written over with themselves (same bytes: the mounted filesystem doesn't mind), synced, in a loop.
+    await page.locator('.xterm').click();
+    await page.keyboard.type('(while :; do dd if=/dev/vda of=/dev/vda bs=64k count=32 2>/dev/null; sync; done) & echo wr""iting\n');
+    await page.waitForFunction(() => /writing/.test(document.querySelector('.xterm-rows')?.textContent ?? ''), null, { timeout: 20_000, polling: 50 });
+    await page.waitForTimeout(100 + 150 * i);
+    if (i === 4) await page.evaluate(() => { const b = document.getElementById('restart')!; b.click(); b.click(); }); // a double click: one restart
+    else await page.locator('#restart').click();
+    if (i % 2) {
+      // Once the new machine is loading (the button is disabled until the old one has stopped), or booting.
+      await page.waitForFunction((i) => document.body.dataset.state === (i % 4 === 1 ? 'loading' : 'booting'), i, { timeout: 30_000, polling: 5 });
+      await page.locator('#restart').click();
+    }
+    await page.waitForFunction(() => document.body.dataset.state === 'loading', null, { timeout: 10_000, polling: 5 });
+  }
+  await running();
+  const states = await page.evaluate(() => (window as unknown as { states: string[] }).states);
+  assert.ok(!states.includes('failed') && !states.includes('crashed'), `${states.join(' ')}: ${await page.locator('#message-text').textContent()}`);
   await page.close();
 });
 

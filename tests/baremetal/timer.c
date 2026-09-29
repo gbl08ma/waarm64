@@ -56,10 +56,16 @@ int main(void) {
   mmio32(SGI_BASE + 0x41c) = 0xa0a0a0a0; // 28-31
 
   // Virtual timer through TVAL, polled with IRQs masked: ISTATUS, a negative
-  // TVAL and ISR_EL1.I once it fires; the IRQ is taken on unmasking.
-  set_sysreg(cntv_tval_el0, frq / 1000); // 1 ms
-  set_sysreg(cntv_ctl_el0, 1);
-  check((sysreg(CNTV_CTL_EL0) & 4) == 0, 10);
+  // TVAL and ISR_EL1.I once it fires; the IRQ is taken on unmasking. Not
+  // expired right after it's set (1 ms ahead), retried: in realtime mode the
+  // counter follows the host's clock, and a vCPU thread the host deschedules
+  // for a millisecond between the write and the read sees it expired (M8).
+  int tries = 0;
+  do {
+    set_sysreg(cntv_tval_el0, frq / 1000); // 1 ms
+    set_sysreg(cntv_ctl_el0, 1);
+  } while ((sysreg(CNTV_CTL_EL0) & 4) && ++tries < 100);
+  check(tries < 100, 10);
   while (!(sysreg(CNTV_CTL_EL0) & 4))
     ;
   check((int)sysreg(CNTV_TVAL_EL0) <= 0, 11);
@@ -85,10 +91,13 @@ int main(void) {
   check(n_irq == 2, 30);
   set_sysreg(cntv_cval_el0, 0x123456789aUL);
   check(sysreg(CNTV_CVAL_EL0) == 0x123456789aUL, 31);
+  // CVAL = the counter at the write + 5000: between the counter read before
+  // and the one after (not a fixed window: the host may deschedule the vCPU).
   u64 now = sysreg(CNTVCT_EL0);
   set_sysreg(cntv_tval_el0, 5000);
   u64 cval = sysreg(CNTV_CVAL_EL0);
-  check(cval >= now + 5000 && cval - now - 5000 < frq / 100, 32);
+  u64 then = sysreg(CNTVCT_EL0);
+  check(cval >= now + 5000 && cval <= then + 5000, 32);
   set_sysreg(cntv_tval_el0, (u64)-100);
   check(sysreg(CNTV_CVAL_EL0) < sysreg(CNTVCT_EL0), 33);
 

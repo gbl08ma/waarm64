@@ -708,6 +708,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   const worker = new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
   let flushed = () => {};
   let closed = () => {};
+  let closing: Promise<void> | undefined;
   const ready = new Promise<void>((resolve, reject) => {
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
     worker.onmessage = (e: MessageEvent) => {
@@ -730,11 +731,14 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       flushed = resolve;
       worker.postMessage({ type: 'flush' });
     }),
-    /** Resolves once it released its files (so another VM can open the overlay), or after a second if it doesn't answer. */
-    close: () => new Promise<void>((resolve) => {
+    /**
+     * Resolves once it released its files (so another VM can open the overlay), or after a second
+     * if it doesn't answer (e.g. a sync XHR still waiting); the same promise on a second call.
+     */
+    close: () => (closing ??= new Promise<void>((resolve) => {
       closed = resolve;
       setTimeout(resolve, 1000);
       worker.postMessage({ type: 'close' });
-    }),
+    })),
   };
 }

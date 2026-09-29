@@ -20,6 +20,8 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import { STEPS } from './steps.ts';
 import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, testDevices, type BootOptions, type ConsoleInput } from '../web/vm.ts';
 
@@ -109,6 +111,24 @@ for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort())
     }, inputOf(f)));
   }
 }
+
+// A closed VM's memory is freed (M8 loop 8): in parallel mode in Node the backends serve the
+// vCPUs' doorbell on this thread, and their Atomics.waitAsync, never ended, kept every VM's
+// memory alive (~10 MB a bare-metal boot, GBs over a test file: a Node process of npm test
+// reached 6 GB and the VM ran out of memory).
+test('parallel: a closed VM is garbage-collected', async () => {
+  setFlagsFromString('--expose-gc');
+  const gc = runInNewContext('gc') as () => void;
+  let memory: WeakRef<WebAssembly.Memory> | undefined;
+  const r = await runToPowerOff(WASM, { ramSize: 16 << 20, kernel: readFileSync(new URL('timer.bin', BAREMETAL)), kernelOffset: 0, cmdline: '', parallel: true, realtime: true, idleLimitMs: 30_000, jit: 1 }, 1e12, (vm) => { memory = new WeakRef(vm.memory); });
+  assert.equal(r.x[1], 0n);
+  // The vCPU workers end asynchronously: give them a few seconds.
+  for (let i = 0; i < 50 && memory!.deref(); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    gc();
+  }
+  assert.equal(memory!.deref(), undefined, "the VM's memory is still reachable");
+});
 
 // Over 2 GiB of memory (M8 loop 0): with 2.5 GiB of RAM the core's later
 // allocations (the VM, the vCPUs, JIT code) sit above 2^31, where the i32 an

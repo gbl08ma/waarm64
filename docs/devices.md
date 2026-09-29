@@ -93,13 +93,15 @@ mode (and natively in realtime mode: std has no CSPRNG).
   blocks: `data` holds written blocks in first-write order, `map` a u32 per disk block (0 = base,
   n = slot n − 1), `base` the image's URL path and size (a mismatch refuses to open). A block's
   slot is written before its map entry, so a crash leaks a slot but never maps garbage. Opened
-  with synchronous access handles (so deterministic mode stays exact) and closed on `close` (the
-  device worker answers `closed`, and `vm.close()` resolves then: the handles are exclusive, so a
-  new VM on the same overlay opens it after that; [frontend.md](frontend.md) "Overlay hand-over").
+  with synchronous access handles (so deterministic mode stays exact) under the overlay's Web Lock
+  (`openOverlay`), and closed on `close` (the device worker answers `closed`, and `vm.close()`
+  resolves then): the handles are exclusive, so a new VM on the same overlay waits for the lock,
+  which the old one holds until its handles are closed or its worker is gone
+  ([frontend.md](frontend.md) "Overlay hand-over").
   Natively, `Overlay` keeps 512-byte sectors in memory and can be shared by several boots. No
   DISCARD/WRITE_ZEROES, compaction, quota handling, content check of the base, or export yet
-  (backlog). Host API (web/overlay.ts, a page or a worker): `removeOverlay(name)` deletes a closed
-  overlay (the page's "Reset disk", M8), `overlayBytes(name)` says what it holds.
+  (backlog). Host API (web/overlay.ts, a page or a worker): `removeOverlay(name)` deletes an
+  overlay once no VM has it open (the page's "Reset disk", M8), `overlayBytes(name)` says what it holds.
 
 ### net (ID 1)
 - **The host sees Ethernet frames only**; IP, DHCP, NAT and the rest live in the adapter, never in

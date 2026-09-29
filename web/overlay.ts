@@ -82,18 +82,95 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
 }
 
 /**
+ * An overlay's OPFS files, open: sync access handles (so the backend stays
+ * synchronous), which lock the files, under the overlay's Web Lock. `close`
+ * closes the handles, then releases the lock.
+ */
+export type OverlayFiles = { data: FileSystemSyncAccessHandle; map: FileSystemSyncAccessHandle; close(): void };
+
+/** How long an opener waits for the overlay's previous holder (another machine, closing or in another tab). */
+export const OVERLAY_WAIT_MS = 10_000;
+
+/**
+ * Takes the Web Lock `webpc-overlay:<name>` (exclusive, per origin: every tab
+ * and worker), which whoever opens the overlay's files holds until they're
+ * closed; resolves to its release. A context that ends (a terminated worker, a
+ * closed tab) drops its locks with its files. Waits up to `ms` for the
+ * previous holder, then rejects with "overlay <name> is in use".
+ */
+export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS): Promise<() => void> {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  try {
+    await new Promise<void>((granted, reject) => {
+      navigator.locks.request(`webpc-overlay:${name}`, { signal: AbortSignal.timeout(ms) }, () => {
+        granted();
+        return held;
+      }).catch(reject);
+    });
+  } catch (e) {
+    if ((e as DOMException).name !== 'TimeoutError') throw e;
+    throw new Error(`overlay ${name} is in use: another machine held it for ${ms / 1000} s`);
+  }
+  return release;
+}
+
+/**
+ * Opens (or creates) the overlay directory `name` for the image at `url`,
+ * once its previous holder has closed it (`lockOverlay`: the hand-over between
+ * machines, docs/frontend.md "Overlay hand-over"). Its `base` file records the
+ * image (URL path and size): an overlay only makes sense over the bytes it was
+ * written against, so a mismatch is an error. Dedicated workers only (sync
+ * access handles).
+ */
+// ponytail: the image is identified by path and size, not content; add a hash if images get replaced in place.
+export async function openOverlay(name: string, url: string, size: number, waitMs = OVERLAY_WAIT_MS): Promise<OverlayFiles> {
+  const release = await lockOverlay(name, waitMs);
+  const handles: FileSystemSyncAccessHandle[] = [];
+  const done = () => {
+    for (const h of handles) h.close();
+    release();
+  };
+  try {
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name, { create: true });
+    const open = async (f: string) => {
+      const h = await (await dir.getFileHandle(f, { create: true })).createSyncAccessHandle();
+      handles.push(h);
+      return h;
+    };
+    const [data, map, base] = [await open('data'), await open('map'), await open('base')];
+    const want = JSON.stringify({ path: new URL(url).pathname, size });
+    if (base.getSize() === 0) {
+      base.write(new TextEncoder().encode(want), { at: 0 });
+      base.flush();
+    }
+    const bytes = new Uint8Array(base.getSize());
+    base.read(bytes, { at: 0 });
+    const got = new TextDecoder().decode(bytes);
+    if (got !== want) throw new Error(`overlay ${name} belongs to ${got}, not ${want}`);
+    base.close();
+    handles.pop();
+    return { data, map, close: done };
+  } catch (e) {
+    done();
+    throw e;
+  }
+}
+
+/**
  * Deletes the OPFS overlay `name` (M8's "reset disk"): the disk goes back to
- * the image's bytes. The overlay must be closed (no VM has it open: its sync
- * access handles lock the files, and the removal then fails with
- * `NoModificationAllowedError`). A missing overlay is not an error. Works on a
- * page or in a worker.
+ * the image's bytes. Waits for a machine that has it open to close it
+ * (`lockOverlay`), or fails as it does. A missing overlay is not an error.
+ * Works on a page or in a worker.
  */
 export async function removeOverlay(name: string) {
-  const root = await navigator.storage.getDirectory();
+  const release = await lockOverlay(name); // after the machine that had it closed it
   try {
-    await root.removeEntry(name, { recursive: true });
+    await (await navigator.storage.getDirectory()).removeEntry(name, { recursive: true });
   } catch (e) {
     if ((e as DOMException).name !== 'NotFoundError') throw e;
+  } finally {
+    release();
   }
 }
 

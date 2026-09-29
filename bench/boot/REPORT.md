@@ -440,3 +440,22 @@ out Chromium's deterministic Debian boot (81–85 s) saved nothing (299 s) and w
 the only deterministic Debian run in CI); the fresh copy's `npm start` test now stops when the
 kernel takes the screen (5.2 s after the URL in CI, was 37–47 s), so the Debian page pair ends at
 ~186 s instead of ~222–230 s.
+
+## M8 loop 8: the user's rough edges
+
+Node 26.7.0 and Chromium 153.0.8010.52 headless, the M4 VM. **`timer.bin` under load:** the old
+and new binaries alternated in a loop while both Debian page tests ran at once beside the rest of
+`npm test` (`tests/debian-lock.ts` bypassed), the load that broke it in loop 6. Old: 451 runs, 3
+failures of the TVAL check (exit 10) and 1 stall; new: 450 runs, no TVAL failure, 2 stalls ("no
+vCPU retired a step in 30000 ms": the host starved every vCPU for 30 s, in both binaries alike,
+a load CI doesn't reach). Raw: `results/m8-loop8/timer-load.json`.
+
+**A memory leak in Node's parallel runs, found by running out of memory:** twice in this loop a
+Node test process of `npm test` grew to 6.2 and 6.9 GB and the VM's OOM killer ended it (and
+with it the developer's session). Cause: in parallel mode in Node the device backends serve the
+vCPUs' doorbell on the VM's thread through `Atomics.waitAsync`, which `Devices.close` never ended,
+so every closed VM's memory stayed reachable (~10 MB a bare-metal boot, GBs over
+`tests/boot-node.test.ts`). `close` now ends `serve`; `tests/boot-node.test.ts` "parallel: a
+closed VM is garbage-collected" checks it (a WeakRef to the memory, forced GCs). The page wasn't
+affected (a worker per machine, terminated on restart): its tab's memory stayed flat over
+repeated restarts.

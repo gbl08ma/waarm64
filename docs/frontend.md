@@ -58,7 +58,9 @@ Page → worker:
   draws the framebuffer on it (web/display.ts) on its own animation frames. `params`: extra kernel
   parameters.
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
-  `stopped`. The page then terminates the worker (after 3 s without an answer, anyway).
+  `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
+  the overlay) is closed once it's there. The page then terminates the worker (after 3 s without
+  an answer, anyway).
 
 Worker → page:
 - `state {state, message?, problem?}`: `loading` (fetching the wasm, kernel, initrd), `booting`
@@ -164,10 +166,12 @@ query refit it.
   then mouse buttons) when the screen loses the focus, the window loses it, or the page is
   hidden; a keyup for a key the guest doesn't hold is dropped. A pointer press captures the
   pointer, so a drag that leaves the screen still ends there.
-- **Keys the browser keeps:** the Keys menu sends Ctrl+Alt+Del, Ctrl+Alt+F1 and Ctrl+Alt+F2 to the
-  screen's keyboard (`Input.chord`: pressed in order, released in reverse). On Debian, Ctrl+Alt+Del
-  reboots (systemd's `ctrl-alt-del.target`; the page then starts a new machine), and Ctrl+Alt+F2
-  switches to tty2, where logind starts a getty on demand (autovt).
+- **Keys the browser keeps:** the Keys menu sends Ctrl+Alt+Del and Ctrl+Alt+F1 to F12 (a grid of
+  F-keys under "Ctrl+Alt+", built by main.ts) to the screen's keyboard (`Input.chord`: pressed in
+  order, released in reverse). On Debian, Ctrl+Alt+Del reboots (systemd's `ctrl-alt-del.target`;
+  the page then starts a new machine), and Ctrl+Alt+F2 to F6 switch to tty2–tty6, where logind
+  starts a getty on demand (autovt, `NAutoVTs=6`); F7 to F12 switch to consoles with nothing on
+  them. The smoke test checks the chord of F12 (the highest keycode of the set, 88).
 - **Full screen** puts the views (`main`) in full screen and asks for the **Keyboard Lock**
   (`navigator.keyboard.lock()`, Chromium, effective only in full screen): Ctrl+W, Ctrl+T, Esc and
   the like go to the machine, and holding Esc leaves full screen (Chromium says so on entry).
@@ -217,14 +221,18 @@ it without being saved. It's the only setting so far; vCPUs and RAM stay default
 2)`, 1 GiB) until phase D's settings.
 
 Restart asks for a confirmation while the machine is booting or running (it's a power cut); after
-a power off the button reads Start. The disk overlay persists across reloads and restarts; OPFS
+a power off the button reads Start. One restart or disk reset at a time (`exclusively` in
+main.ts): Restart and Reset disk are disabled from the click until the new machine's worker is
+started, so a second click can't start a machine beside the one being started (the first would
+keep the overlay, and the page would lose track of it). The disk overlay persists across reloads and restarts; OPFS
 belongs to the browser profile, so Playwright's temporary profiles start empty and tests don't see
 each other's disks.
 
 **Reset disk** (M8 decision 4; shown for machines with an overlay) asks for a confirmation that
 says what goes (the overlay's size, from `overlayBytes`), stops the machine (its device worker
 releases the overlay's sync access handles), deletes the overlay (`removeOverlay` in
-web/overlay.ts: `removeEntry(name, {recursive: true})` on the OPFS root) and starts a new
+web/overlay.ts: under the overlay's Web Lock, `removeEntry(name, {recursive: true})` on the OPFS
+root) and starts a new
 machine, which boots from the image as published. If the removal fails (another tab holds the
 files), the page says so and offers the reset again.
 
@@ -267,12 +275,33 @@ How it types, and why:
 
 ## Overlay hand-over
 
-A new machine opens the overlay the old one had open; OPFS sync access handles are exclusive. The
-old one's device worker releases them on `close` and answers `closed` (`vm.close()` resolves then,
-or after a second), before the page terminates its worker. Tried and not needed (loop 2): a retry
-in `openOverlay` while another context holds the handles. With it planted out, 6 reloads of a
-running page and every restart in the smoke test still opened the overlay: a new machine fetches
-the wasm and the kernel first, and the old worker tree is gone by then.
+A new machine opens the overlay the old one had open, and OPFS sync access handles are exclusive:
+the new one must open it only once the old one's handles are closed. `openOverlay`
+(web/overlay.ts) first takes the Web Lock `webpc-overlay:<name>` (exclusive, per origin: every
+tab and worker) and holds it until `close` has closed the handles; a context that ends (a
+terminated worker, a closed tab) drops its locks with its handles. So the ordering doesn't rest
+on timing: the old machine's device worker closes on `close` and answers `closed` (`vm.close()`
+resolves then, or after a second without an answer: a sync XHR still waiting on a slow link), the
+page terminates the old machine worker after `stopped` (or 3 s), and whichever way the old one
+lets go, the new one's `openOverlay` waits for it. An opener that waits `OVERLAY_WAIT_MS` (10 s)
+fails with "overlay <name> is in use" (`disk-in-use`: another tab runs the machine); a
+`NoModificationAllowedError` after the lock would mean a browser released the lock before the
+handles (not seen: below). Reset disk's `removeOverlay` takes the same lock.
+
+M8 loop 8 (the user's report: a Restart once failed with "disk in use", and Retry fixed it):
+reproduced only with **two restarts overlapping** (a second Restart click, or the guest's reboot,
+while the first restart waits for `stopped`): the page's `stop` found no machine and started one
+at once, then the first restart started another. Not reproduced otherwise without the lock, in
+~150 restarts on Buildroot and Debian at random points (while booting, running, the guest writing
+to its disk, restarts during the next machine's loading or booting, disk reads delayed 0.15–5 s by
+a proxy so `close` timed out), nor in 400 terminations of a worker holding the overlay followed by
+an immediate open: Chromium releases a terminated worker's handles before a new worker can open
+them, and aborts a nested worker's sync XHR when its parent is terminated. Tests:
+`tests/browser.test.ts` "the overlay's hand-over" (a second opener waits for the first's `close`,
+20 holders terminated and the overlay opened at once, one held past the wait is in use; without
+the lock the second opener fails at once) and "the page restarts over and over" (six restarts
+while the guest rewrites its disk, during the next machine's loading and booting, one a double
+click; the page as it was fails on the double click).
 
 ## `npm start`
 

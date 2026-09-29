@@ -103,9 +103,13 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   for Debian's kernel and initrd. `tests/page-debian.test.ts` (logins on both consoles, a marker
   across them, persistence and reset) and `tests/start.test.ts` (a fresh clone through `npm
   start`) run in CI with the Debian image. The exit fixed a JIT memory-ordering bug (address
-  dependencies through `eor x, x, x`, [docs/jit.md](docs/jit.md) "Atomics"). Rough edges the user
-  finds go to [docs/backlog.md](docs/backlog.md) "The page". Details:
-  [docs/frontend.md](docs/frontend.md); numbers: `bench/boot/REPORT.md` "M8 loop 0"–"M8 loop 7".
+  dependencies through `eor x, x, x`, [docs/jit.md](docs/jit.md) "Atomics"). The user's pass
+  ("I like what I see") left four rough edges, handled in loop 8: Ctrl+Alt+F1–F12 in the Keys
+  menu; the overlay's hand-over between machines ordered by a Web Lock, with restarts that can't
+  overlap (a Restart had once failed with "disk in use"); `timer.bin` robust to a descheduled
+  vCPU; Firefox's missing root disk recorded in the backlog. Rough edges the user finds go to
+  [docs/backlog.md](docs/backlog.md) "The page". Details: [docs/frontend.md](docs/frontend.md);
+  numbers: `bench/boot/REPORT.md` "M8 loop 0"–"M8 loop 8".
 - **B. Instant start: snapshots.** Save and restore CPU, devices and compressed RAM, so the page
   resumes a booted machine in seconds instead of a full Debian boot. A snapshot pins the overlay
   state it was taken with; parallel SMP stops every vCPU at a chunk boundary first

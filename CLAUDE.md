@@ -145,6 +145,10 @@ their code.**
   that overruns is backgrounded and can stall unseen: a hung benchmark once sat 17 minutes, an
   experiment 9). Bound every wait too; if a run's CPU or progress doesn't match its expected time,
   kill it and investigate.
+- **Cap memory on heavy runs** (`npm test`, `scripts/ci.sh`, multi-machine experiments):
+  `systemd-run --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout N <cmd>`. A leak
+  once grew a Node test process to 7 GB and the VM's OOM kill took the whole Claude session down
+  (M8 loop 8); a capped scope dies alone.
 - **Never `pkill -f`/`pgrep -f` a pattern that appears in your own command line**: it kills your
   shell (exit 144) or makes a wait loop wait forever. Find the PID and `kill <pid>`; wait on
   background jobs through their completion notification, not polling loops. Before a benchmark

@@ -214,12 +214,27 @@ async function stop() {
   r.worker.terminate();
 }
 
+/**
+ * Runs `f` (a stop, then maybe a start) unless another is running: a second Restart click, or one
+ * during a disk reset, would start a machine beside the one being started, with nothing to stop it.
+ */
+let switching = false;
+async function exclusively(f: () => Promise<void>) {
+  if (switching) return;
+  switching = restartBtn.disabled = resetDiskBtn.disabled = true;
+  try {
+    await f();
+  } finally {
+    switching = restartBtn.disabled = resetDiskBtn.disabled = false;
+  }
+}
+
 /** Stops the machine and starts a new one. */
-async function restart() {
+const restart = () => exclusively(async () => {
   await stop();
   term.reset();
   start();
-}
+});
 
 restartBtn.onclick = () => {
   if ((state === 'running' || state === 'booting') && !confirm('Restart the machine? Like pulling the plug: unsaved work in the guest is lost.')) return;
@@ -233,17 +248,19 @@ async function resetDiskAsked() {
   const written = await overlayBytes(name).catch(() => 0);
   const size = !written ? '' : written < 1e6 ? ` (${Math.ceil(written / 1e3)} KB)` : ` (${(written / 1e6).toFixed(0)} MB)`;
   if (!confirm(`Reset ${spec.label}'s disk? Everything the machine wrote to it${size} is deleted: your files, installed packages and settings. It then boots from the image as published.`)) return;
-  await stop();
-  term.reset();
-  setState('loading');
-  stateEl.textContent = 'Resetting the disk';
-  try {
-    await removeOverlay(name);
-  } catch (e) {
-    setState('failed', `The disk couldn't be reset: ${String(e)}\nClose other tabs of this page (one of them may have the disk open), then try again.`, [resetDisk, retry]);
-    return;
-  }
-  start();
+  await exclusively(async () => {
+    await stop();
+    term.reset();
+    setState('loading');
+    stateEl.textContent = 'Resetting the disk';
+    try {
+      await removeOverlay(name); // once the machine's device worker has closed it
+    } catch (e) {
+      setState('failed', `The disk couldn't be reset: ${String(e)}\nClose other tabs of this page (one of them may have the disk open), then try again.`, [resetDisk, retry]);
+      return;
+    }
+    start();
+  });
 }
 resetDiskBtn.hidden = !spec.overlay;
 resetDiskBtn.onclick = () => void resetDiskAsked();
@@ -253,6 +270,13 @@ term.onData((d) => run?.serial.postMessage(d));
 
 // Key combinations the browser keeps for itself, to the screen's keyboard (web/input.ts `chord`).
 const keysMenu = $<HTMLDetailsElement>('keys');
+// Ctrl+Alt+F1 … F12: Linux's virtual consoles (Debian starts gettys on tty1–tty6 on demand).
+$('fkeys').append(...Array.from({ length: 12 }, (_, k) => {
+  const b = Object.assign(document.createElement('button'), { textContent: `F${k + 1}`, title: `Ctrl+Alt+F${k + 1}` });
+  b.setAttribute('aria-label', `Ctrl+Alt+F${k + 1}`);
+  b.dataset.chord = `ControlLeft AltLeft F${k + 1}`;
+  return b;
+}));
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-chord]')) {
   b.onclick = () => {
     keysMenu.open = false;
