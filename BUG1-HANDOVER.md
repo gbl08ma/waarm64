@@ -104,6 +104,25 @@ WFI completion. So either `t` stayed inside one chunk (or one `handle_par`) for 
 Constraints (CLAUDE.md): `timeout` and the systemd-run memory cap on every run; guests under the JIT
 only; no Firefox; headless Playwright only. The crashed binary's analysis is above, so **rebuilding the wasm is fine now**.
 
+## Second occurrence (2026-09-30): it follows SSH over the tailnet
+
+Same site with the ABI 27 build (`llvm-symbolizer ... 0x40e55` gives `sync` at parallel.rs:591),
+this time on vCPU 2. The workload was only a Go compile across all vCPUs. **Every crash so far came
+while the user was SSHed into the guest over the tailnet**: not at connect, but minutes into a
+session, seemingly under CPU load. So the network path is the prime suspect now: virtio-net
+RX/TX under `Vm::plat`'s lock (SIGNAL_RX `refresh`, SIGNAL_DEVICE `complete`, `io`), the device
+worker, and the Tailscale worker competing for host CPU. That favors hypotheses 2 (the plat lock)
+and 5 (a starved vCPU worker) over 1.
+
+The page still showed no dump: `withPanic` changed `err.message`, but the worker reports
+`err.stack`, which V8 had fixed already (something read it first). Fixed in ace25a6 (the stack now
+carries it, and the test reads the stack first). The next occurrence should show the dump.
+
+A repro needs the tailnet in the loop: CI's tailnet tests (`tests/net/tailnet.sh`, headscale and a
+peer in Podman) plus a peer that SSHes into the guest and keeps traffic flowing (for example
+`yes | ssh guest cat > /dev/null`, or an interactive-like trickle) while the guest compiles on all
+vCPUs.
+
 ## Progress
 
 ### Step 1 done: the next occurrence is self-diagnosing (ABI 27)
