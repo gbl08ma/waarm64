@@ -18,6 +18,9 @@ step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || n
 step typecheck;   npx tsc --noEmit
 current() { images/build.sh --check "$1" > /dev/null; }
 export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current debian && echo ,debian)}
+# The tailnet smoke test (Debian pings a peer through headscale and the Tailscale client, docs/testing.md)
+# runs when Podman and Debian are there; WEBPC_TAILNET=0 skips it.
+export WEBPC_TAILNET=${WEBPC_TAILNET-$(command -v podman > /dev/null && [[ ",$WEBPC_DISTROS," == *,debian,* ]] && echo 1)}
 step js tests;    npm test --silent
 # Guest-image tests: run when target/images has the images (a space-separated
 # list) and they're current.

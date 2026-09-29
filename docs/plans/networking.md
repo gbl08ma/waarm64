@@ -211,7 +211,7 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   *In progress.* Done: the Network menu on the page (connect with a control server, hostname and
   optional auth key; the login link; status; Disconnect, Log out, Remove card), the node kept in
   IndexedDB with automatic reconnect, a card that survives machine restarts, the page's Debian
-  configuring the card itself (`ip=dhcp`); docs/frontend.md "Network". Left: exit-node selection
+  configuring the card itself (a networkd credential); docs/frontend.md "Network". Left: exit-node selection
   (the netmap already lists `exitNodeOption` peers; the Go side needs `SetExitNode` in its prefs),
   the `apk add` smoke test (needs an Alpine image with a card and a tailnet with an exit node to
   the internet), IPv6, a real interactive login checked by hand against Tailscale's service and

@@ -249,9 +249,11 @@ load the client at all.
   `http://` for this computer), a hostname (default `webpc`) and an optional auth key. **A card
   can't be added to a running machine, so the first connect restarts it** (with the usual power-cut
   confirmation); the new machine boots with `machine.network.cmdline`: the units that configure a
-  card are unmasked and `ip=dhcp` has systemd-network-generator write a `.network` file, so the
-  guest takes the gateway's DHCP lease by itself (the tailnet address, MagicDNS through
-  systemd-resolved). The machine worker gets `ip`, the gateway's end of an IP port, and adds
+  card are unmasked and a systemd credential on the command line (`network.network.card`) gives
+  networkd a `.network` file, so the guest takes the gateway's DHCP lease by itself (the tailnet
+  address, MagicDNS through systemd-resolved). Not `ip=dhcp`: Debian's initramfs reads it too and
+  waits for a lease before booting, which a machine that isn't connected yet doesn't have (found
+  by the page test: the boot sat at the root mount for minutes). The machine worker gets `ip`, the gateway's end of an IP port, and adds
   `{type: 'net', adapter: {ip}}` (docs/devices.md "net"); the page keeps the other end
   (web/app/network.ts) for as long as no client holds it.
 - **Login:** without an auth key the client asks the control server for a login and the menu opens

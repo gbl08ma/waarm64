@@ -44,10 +44,13 @@ export const MACHINES = {
     overlay: 'webpc-debian',
     cmdline: 'console=ttyAMA0 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes apparmor=0 ' +
       ['systemd-networkd.service', 'systemd-networkd.socket', 'systemd-resolved.service', 'systemd-timesyncd.service', 'systemd-network-generator.service'].map((u) => `systemd.mask=${u}`).join(' '),
-    // The units that configure a card are unmasked and `ip=dhcp` has systemd-network-generator write a
-    // .network file for it: DHCP from the gateway (its lease is the tailnet address), resolved for MagicDNS.
+    // The units that configure a card are unmasked, and a systemd credential gives networkd a
+    // .network file for it (DHCP from the gateway: its lease is the tailnet address; resolved does
+    // MagicDNS). Not `ip=dhcp`: Debian's initramfs reads that too and waits for a lease before
+    // it boots, and a machine that isn't connected yet has none.
     network: {
-      cmdline: 'console=ttyAMA0 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes apparmor=0 ip=dhcp ' +
+      cmdline: 'console=ttyAMA0 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes apparmor=0 ' +
+        `systemd.set_credential_binary=network.network.card:${btoa('[Match]\nName=e*\n[Network]\nDHCP=ipv4\n')} ` +
         ['systemd-timesyncd.service'].map((u) => `systemd.mask=${u}`).join(' '),
     },
     ramMiB: 1024,

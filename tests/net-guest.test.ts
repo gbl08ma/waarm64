@@ -1,8 +1,8 @@
 // The page's Debian with a network card, without a tailnet (docs/frontend.md "Network"): the
 // command line the page uses for a machine with a card (web/app/machine.ts `network`) on the
 // Ethernet gateway with its synchronous echo backend (lease 198.18.0.15, answers pings to any
-// address). Nobody sets the guest up: systemd-network-generator makes a .network file from
-// `ip=dhcp`, systemd-networkd takes the gateway's lease, and the guest pings an address that
+// address). Nobody sets the guest up: systemd-networkd takes a .network file from a credential on the
+// command line and takes the gateway's lease, and the guest pings an address that
 // exists nowhere and its router. It also checks that the units the card needs don't make the
 // boot wait for a network that isn't coming (a login prompt inside the boot's usual time).
 // Realtime, one Debian boot, ~2 min alone. Opt-in with WEBPC_DISTROS=debian, like Debian's
@@ -49,7 +49,7 @@ test('the page\'s Debian with a card takes the gateway\'s lease by itself and pi
       console.log(`# login prompt after ${((Date.now() - t0) / 1000).toFixed(0)} s`);
 
       const addr = (await run(page, "ip -4 -o addr show scope global | awk '{print $2, $4}'")).trim();
-      const diag = () => run(page, 'ip -br link; ip -br addr; systemctl is-active systemd-networkd systemd-resolved systemd-network-generator; networkctl status --no-pager 2>&1 | head -20; journalctl -u systemd-networkd -u systemd-network-generator --no-pager 2>&1 | tail -20; cat /run/systemd/network/*.network 2>&1 | head -20; cat /proc/cmdline');
+      const diag = () => run(page, 'ip -br link; ip -br addr; systemctl is-active systemd-networkd systemd-resolved; networkctl status --no-pager 2>&1 | head -20; journalctl -u systemd-networkd --no-pager 2>&1 | tail -20; cat /run/systemd/network/*.network 2>&1 | head -20; cat /proc/cmdline');
       // The lease can come a moment after the login prompt.
       let got = addr;
       for (let k = 0; k < 30 && !got; k++) {
