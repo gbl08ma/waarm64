@@ -116,7 +116,10 @@ mode (and natively in realtime mode: std has no CSPRNG).
   synchronously (a TX's replies complete before the doorbell is acked, so deterministic mode
   stays exact). `{adapter: port}` puts the adapter on the page behind a `MessagePort`, one frame
   per transferred `ArrayBuffer`; such frames arrive whenever they arrive (realtime behavior).
-  `v86Bus(port)` is a v86-compatible shim that [plans/networking.md](plans/networking.md) drops.
+  This frame port is the adapter API (no v86 compatibility: [plans/networking.md](plans/networking.md)).
+  Layer-3 backends use the **IP-packet port**, `IpPort = {send(packet), close?()}` (`ipPort(port,
+  receive)` over a `MessagePort`): one IPv4 or IPv6 packet per transferred `ArrayBuffer`, no Ethernet
+  header; the Ethernet gateway between the two is N3.
 
 ### 9p (ID 9)
 - **Our own `9P2000.L` server** (`web/9p.ts`, twin `core/tests/common/p9.rs`), **not a port of

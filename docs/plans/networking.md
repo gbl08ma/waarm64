@@ -1,6 +1,6 @@
 # webpc networking plan
 
-**Status:** exploration, drafted 2026-09-27; not scheduled. It feeds M8's "networking backend API"
+**Status:** exploration, drafted 2026-09-27; the networking lane started 2026-09-29 (N1 done). It feeds M8's "networking backend API"
 (PLAN.md, M8). When a step here is scheduled, move it into PLAN.md and keep this file as the
 background it came from.
 
@@ -170,7 +170,7 @@ drop it if it doesn't pan out.
 
 Each step comes with tests at the cheapest layer that catches it (`docs/testing.md`).
 
-- **N1 — Adapter API cleanup.** Drop `v86Bus` (`web/net.ts`) and the v86 wording in `docs/devices.md`;
+- **N1 — Adapter API cleanup (done).** Drop `v86Bus` (`web/net.ts`) and the v86 wording in `docs/devices.md`;
   document the frame port as the API. Define the IP-packet port for layer-3 backends.
 - **N2 — Tailscale wasm spike, measured.** The Go module with the `Tun` hook, built with the
   feature tags, in a worker; log in with an auth key and ping a tailnet peer from JS alone. Record

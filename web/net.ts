@@ -1,7 +1,6 @@
 // Network adapters for virtio-net (docs/devices.md "net"): the device hands an
 // adapter each Ethernet frame the guest transmits and takes frames for the
-// guest from it, as v86's network adapters do on its bus (`net0-send`,
-// `net0-receive`). IP, ARP, DHCP and the rest live in the adapter or beyond it.
+// guest from it. IP, ARP, DHCP and the rest live in the adapter or beyond it.
 //
 // Adapters run in the device worker (the test adapters, which answer
 // synchronously so deterministic mode stays exact) or on the page, behind a
@@ -78,19 +77,14 @@ export function portAdapter(port: MessagePort, receive: (frame: Uint8Array) => v
 }
 
 /**
- * The page's end of a `{type: 'net', adapter: port}` device as a v86 bus, so a
- * v86 network adapter (WebSocket relay, Wisp, fetch) runs unchanged:
- * `new NetworkAdapter(url, v86Bus(port))`.
+ * The IP-packet port of layer-3 backends (Tailscale, docs/plans/networking.md):
+ * the same shape as a frame port, but each message is one IPv4 or IPv6 packet
+ * with no Ethernet header. The Ethernet gateway (N3) sits between a frame
+ * adapter and one of these.
  */
-export function v86Bus(port: MessagePort) {
-  return {
-    register(name: string, fn: (data: Uint8Array) => void, that?: unknown) {
-      if (name === 'net0-send') port.onmessage = (e: MessageEvent) => fn.call(that, new Uint8Array(e.data));
-    },
-    send(name: string, data: Uint8Array) {
-      if (name !== 'net0-receive') return;
-      const b = data.slice().buffer;
-      port.postMessage(b, [b]);
-    },
-  };
+export type IpPort = { send(packet: Uint8Array): void; close?(): void };
+
+/** Packets cross `port` as ArrayBuffers (transferred), like frames in `portAdapter`. */
+export function ipPort(port: MessagePort, receive: (packet: Uint8Array) => void): IpPort {
+  return portAdapter(port, receive);
 }
