@@ -86,10 +86,10 @@ test('a lease that arrives after the boot is taken by the guest without a restar
       await removeOverlay();
       await page.goto(`${base}/tests/browser/netguest.html?overlay=${OVERLAY}&port=1`);
       await loginRoot(page);
-      const addr = () => run(page, "ip -4 -o addr show scope global | awk '{print $4}'").then((s) => s.trim());
+      // (An empty output leaves the shell's echo of the markers in what `run` returns: look for an address.)
+      const addr = () => run(page, "ip -4 -o addr show scope global | awk '{print $4}'").then((s) => /\d+\.\d+\.\d+\.\d+\/\d+/.exec(s)?.[0] ?? '');
       assert.equal(await addr(), '', 'no lease yet: no address');
-      const link = await run(page, 'ip -br link show | grep -c eth0');
-      assert.equal(link.trim(), '1', 'the card is there');
+      assert.match(await run(page, 'ip -br link show'), /^eth0 /m, 'the card is there');
       // The boot's own DHCP attempts have gone unanswered for a while; then the client "connects".
       await page.waitForTimeout(20_000);
       await page.evaluate(() => (window as never as { harness: { lease(): void } }).harness.lease());
