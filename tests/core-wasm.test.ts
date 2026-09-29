@@ -103,5 +103,9 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 8)', () => 
     trap = e;
   }
   assert.ok(trap instanceof WebAssembly.RuntimeError, String(trap));
-  assert.match(withPanic(trap, ex as unknown as WebAssembly.Exports, mem).message, /core panic: .*vm_run_cpu in round-robin mode/s);
+  void (trap as Error).stack; // as a debugger or console may have: V8 fixes the stack then
+  const e = withPanic(trap, ex as unknown as WebAssembly.Exports, mem);
+  assert.match(e.message, /core panic: .*vm_run_cpu in round-robin mode/s);
+  // The vCPU worker reports the stack.
+  assert.match(String(e.stack), /core panic: .*vm_run_cpu in round-robin mode/s);
 });

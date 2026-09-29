@@ -103,7 +103,12 @@ export function withPanic(err: unknown, ex: WebAssembly.Exports, memory: WebAsse
   try {
     m = panicMessage(ex, memory);
   } catch {}
-  if (m) e.message = `${e.message}: core panic: ${m}`;
+  if (m) {
+    const was = e.message;
+    e.message = `${was}: core panic: ${m}`;
+    // Hosts report the stack, which V8 fixes (message included) once anything reads it.
+    if (e.stack !== undefined && !e.stack.includes(e.message)) e.stack = e.stack.includes(was) ? e.stack.replace(was, e.message) : `core panic: ${m}\n${e.stack}`;
+  }
   return e;
 }
 
