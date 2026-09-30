@@ -1,4 +1,4 @@
-// BUG1 host-stall test (BUG1-HANDOVER.md, tests/hoststall.test.ts): a vCPU's
+// The host-stall test (tests/hoststall.test.ts, docs/testing.md "Host stalls"): a vCPU's
 // host worker stalls while another vCPU's DSB waits for its TLBI IS. This guest
 // cooperates with a test-only hook in the worker (web/vm.ts `Stall`) through a
 // word in RAM at FLAG: CPU 1 writes MODE to it ("armed"); the hook of CPU 1's

@@ -27,9 +27,10 @@ For whoever continues the lane. Read docs/plans/networking.md (§7 steps) and do
   All pass in Chromium 141 here. `tests/net-tailnet.test.ts` (N4: Debian pings a tailnet peer
   through headscale, resolves it by MagicDNS, the peer reaches a guest server) already existed and
   **could not run in this session** (see "Blocked").
-- **`scripts/ci.sh` now sets `WEBPC_TAILNET=1` when `podman` exists and Debian is in
-  `WEBPC_DISTROS`** (`WEBPC_TAILNET=0` skips it). It and the two new Debian tests take turns through
-  the Debian lock, so CI grows by ~7 min: the user may want to gate them differently.
+- **The network tests on Debian run in `scripts/ci-net.sh`** (the user, 2026-09-30: only when a
+  change touches the network): `net-guest`, `page-network` and `net-tailnet` (with Podman), ~4 min.
+  `scripts/ci.sh` keeps the cheap ones (`network`, `gateway`, `net`, `devices`). On 2026-09-30,
+  `net-tailnet` passed locally in Podman, the exit-node phase through the real internet included.
 - **`tests/debian-lock.ts`:** the "EXPERIMENT: no lock" bypass, which loop 8 had committed by
   mistake, is removed (the lock is back). Full `npm test` with `WEBPC_DISTROS=debian`, both Debian page tests
   chained by the lock: 191 pass, 0 fail (`timer.bin` in parallel mode included). Read as "the

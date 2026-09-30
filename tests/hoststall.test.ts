@@ -1,4 +1,4 @@
-// BUG1's host-stall test (BUG1-HANDOVER.md): while vCPU 0 waits in a DSB for its
+// The host-stall test (docs/testing.md "Host stalls"): while vCPU 0 waits in a DSB for its
 // TLBI IS, vCPU 1's host worker stalls (a test-only hook, web/vm.ts `Stall`; the
 // guests are tests/hoststall/stall.c). Parallel SMP, the JIT, real workers in
 // Node. Needs the wasm build.

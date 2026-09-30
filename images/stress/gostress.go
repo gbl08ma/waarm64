@@ -1,4 +1,4 @@
-// gostress: a Go runtime stress for webpc's SMP work (BUG1-HANDOVER.md): the character of a
+// gostress: a Go runtime stress for webpc's SMP work (docs/images.md): the character of a
 // `go build` on 4 vCPUs without the compiler. Many Ms and Ps, spinning Ms (procyield/osyield),
 // heavy mmap/munmap/mprotect (so many TLBI IS broadcasts), the GC and the scavenger returning
 // memory (madvise), futexes (channels, mutexes, timers) and fork/exec of /bin/true.

@@ -408,7 +408,7 @@ function showStatus(s: Status) {
   statusEl.textContent = [
     `${s.ncpus} vCPU${s.ncpus > 1 ? 's' : ''}`, `${s.ramMiB} MiB`, `up ${hms(s.uptime)}`,
     mips === undefined ? '' : `${mips.toFixed(0)} MIPS`,
-    `JIT ${s.jitBlocks.toLocaleString('en')} blocks, ${(s.jitCompileMs / 1000).toFixed(1)} s compiling`,
+    `JIT ${s.jitBlocks.toLocaleString('en')} blocks compiled${s.jitFlushes ? ` (cache flushed ${s.jitFlushes}×)` : ''}, ${(s.jitCompileMs / 1000).toFixed(1)} s compiling`,
     irqs === undefined ? '' : `${irqs.toFixed(0)} IRQ/s`,
   ].filter(Boolean).join(' · ');
 }

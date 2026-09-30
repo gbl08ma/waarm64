@@ -147,6 +147,10 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
 - Node runners for iteration: `bench/interp/suite.ts` `setup(bin, JIT_DEFAULT, pad)` / `setupVm`
   for the small guests; `runToPowerOff` (`web/vm.ts`) for boots. `bench/run.ts --out` resolves
   against the repo root.
+- **A core panic's stack trace** (`webpc_core.wasm.<fn> (wasm-function[N]:0x4031a)`): the
+  release wasm carries DWARF, so `llvm-symbolizer --obj=target/wasm32-unknown-unknown/release/webpc_core.wasm
+  -i -f 0x4031a` gives the source line, **with the offset as printed** (it's a file offset; don't
+  subtract the code section's base). Only for the binary that crashed: keep it before rebuilding.
 - The wasm name section (`<va>_pa<pa>`) makes DevTools and `perf` profiles readable.
   (`performance.mark`/`measure` around compile, instantiate, device I/O and boot phases were
   planned and aren't there yet: backlog.)

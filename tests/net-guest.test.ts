@@ -16,7 +16,8 @@ import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run } from './serial-console.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const skip = !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
+const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
+  : !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
   : !existsSync(`${ROOT}target/images/debian/Image`) ? 'SKIPPED: run tools/debian.ts (or npm start)'
   : undefined;
 

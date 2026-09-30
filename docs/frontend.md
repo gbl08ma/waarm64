@@ -16,7 +16,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/machine.ts` | the machines, in one place: image URLs, command line (and the one with a network card), RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
-| `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci.sh` ("Network") |
+| `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
 | `tools/debian.ts` | Debian's download and preparation, for `npm start` and `images/build.sh debian` |
 | `web/bootfs.ts`, `web/ext4.ts` | partition tables, a read-only ext2/3/4 reader, a distribution's kernel and initrd (below, "The disk reader") |
 
@@ -82,8 +82,8 @@ Worker → page:
 - `serial {data}`: the serial console's output, UTF-8 decoded. The worker drains the TX ring
   after every `runAsync`, which returns as soon as there's new output (the core notifies the TX
   ring's head, docs/abi.md "Signal word and console").
-- `status {status}`: once a second: vCPUs, RAM, uptime, steps, JIT blocks and compile time,
-  IRQs. The page shows MIPS and IRQ/s from the differences.
+- `status {status}`: once a second: vCPUs, RAM, uptime, steps, the JIT's blocks compiled since boot
+  (a total: the flushes that the code cache's budget makes don't reset it), its flushes and compile time, IRQs. The page shows MIPS and IRQ/s from the differences.
   It also carries the run loop's cadence (`loopMaxMs`, `loopAgeMs`) and each vCPU worker's
   liveness (`vcpus`, web/liveness.ts: chunks, time inside the current `vm_run_cpu`, the longest
   chunk and the longest host-side handling of an exit). The worker posts it from a timer, not from
@@ -301,7 +301,7 @@ web/tailscale.ts, the client in its own worker).
 - Settings (`webpc.settings` `net`): `controlURL`, `hostname`, `autoconnect`,
   `keyed`, `exitNode`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
-- **The client is built by the servers:** `npm run serve` and `npm start` run `tools/tailscale.ts` first: it builds `net/tailscale` with `net/tailscale/build.sh` into `target/net/tailscale.wasm` (and `wasm_exec.js`) when they're missing or a hash of `net/tailscale`'s files (stamp `tailscale.wasm.inputs`) changed, ~30 s to ~1 min the first time (Go downloads its toolchain and modules). It never stops the server: without Go, or if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `WEBPC_TAILSCALE=0` skips it. `scripts/ci.sh` runs it as a step so the page and tailnet tests find the client.
+- **The client is built by the servers:** `npm run serve` and `npm start` run `tools/tailscale.ts` first: it builds `net/tailscale` with `net/tailscale/build.sh` into `target/net/tailscale.wasm` (and `wasm_exec.js`) when they're missing or a hash of `net/tailscale`'s files (stamp `tailscale.wasm.inputs`) changed, ~30 s to ~1 min the first time (Go downloads its toolchain and modules). It never stops the server: without Go, or if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `WEBPC_TAILSCALE=0` skips it. `scripts/ci-net.sh` runs it as a step so the Network menu's and the tailnet's tests find the client.
 - **The control server must answer `GET /key` with CORS headers** (docs/plans/networking.md N4):
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),

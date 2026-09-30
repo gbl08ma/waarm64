@@ -16,7 +16,7 @@ the docs and its entry here shrinks to a summary.
 | Privilege | EL0 and EL1 only. No EL2/EL3, no secure state |
 | MMU | Stage 1 only, 4K granule, 48-bit VA, TTBR0/TTBR1, ASIDs, software-managed access flag |
 | Platform | QEMU `virt`'s memory map; **GICv3 (no ITS) since M7** (the GICv2 model was dropped in M7: every guest we run has a GICv3 driver); generic timer, PL011, a PL031 RTC (realtime mode), PSCI over HVC (answered in the core, CPU_ON included; SYSTEM_OFF/RESET exit to the host), virtio-mmio v2, a DTB generated from the VM config ([docs/platform.md](docs/platform.md)) |
-| Boot | Direct kernel boot (arm64 `Image` + initrd + DTB); no UEFI. Distro kernels and initrds are extracted from their images. **Goal for a future milestone:** boot conventional arm64 disk images unmodified, through their own bootloader (UEFI; [backlog](docs/backlog.md)) |
+| Boot | Direct kernel boot (arm64 `Image` + initrd + DTB); no UEFI yet. Distro kernels and initrds are extracted from their images ahead of time. **M8 phase B:** boot conventional arm64 disk images unmodified: their kernel read from the image at start, then through their own bootloader (UEFI) if that proves needed |
 | Core | Rust compiled to wasm32 (the same crate builds natively for tests); host glue in TypeScript without a build step |
 | Guest memory | **Layout A** (M0.5): one shared wasm32 memory, core state then guest RAM (≤ ~3.5 GiB). One lowering point for guest accesses in generated code; TLB tag bits 3–11 reserved for a memory index ("A + spill memories" as NUMA nodes later) ([docs/architecture.md](docs/architecture.md)) |
 | JIT | Gadget style (inline what pays, helper calls into the interpreter's code for the rest), blocks keyed by guest PA, loop regions with tier-up, exact step accounting ([docs/jit.md](docs/jit.md)) |
@@ -112,11 +112,29 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   vCPU; Firefox's missing root disk recorded in the backlog. Rough edges the user finds go to
   [docs/backlog.md](docs/backlog.md) "The page". Details: [docs/frontend.md](docs/frontend.md);
   numbers: `bench/boot/REPORT.md` "M8 loop 0"–"M8 loop 8".
-- **B. Instant start: snapshots.** Save and restore CPU, devices and compressed RAM, so the page
-  resumes a booted machine in seconds instead of a full Debian boot. A snapshot pins the overlay
-  state it was taken with; parallel SMP stops every vCPU at a chunk boundary first
-  ([backlog](docs/backlog.md) "Snapshots in parallel SMP").
-- **C. Parallel tracks**, each starting from its plan doc (written first where none exists):
+- **B. Your own disk: boot an unmodified image, take the disk back** (the user, 2026-09-30:
+  before snapshots, the basic loop has to be right: load a disk into the VM, boot it, work, shut
+  down, take the modified disk away). Kickoff to confirm; outline in `M8-PHASEB-HANDOVER.md`.
+  - **Disk in:** an image by URL (hosted, as the Debian image is now) or a local file, qcow2 or raw,
+    over the existing blk backends. The same path takes a disk of changes back in (below).
+  - **Boot it unmodified**, in two steps:
+    - First, the page reads the image's `/boot` and its boot entries (GRUB's or the Boot Loader
+      Spec's) at each start and boots that kernel, initrd and command line directly. There is no
+      preparation step, and a kernel updated in the guest boots next time. `web/bootfs.ts` and
+      `web/ext4.ts` already run in the browser.
+    - Then UEFI firmware (EDK2's ArmVirtQemu, BSD-2-Clause-Patent, built in Podman) running the
+      image's own GRUB, for what the reader can't do (other filesystems, LVM, LUKS, GRUB menus,
+      EFI variables, compressed EFI kernels). It needs a flash device and QEMU's DTB handover;
+      it comes in if the images the user wants need it, measured against the boot time it costs.
+  - **Work and shut down:** the OPFS overlay as today; a clean power-off.
+  - **Disk out,** two ways:
+    - **Just the changes:** a qcow2 holding the overlay's blocks (4 KiB clusters, as the overlay
+      stores them), with the base image as its backing file (named, and identified by its SHA-256).
+      A user of a hosted image keeps only their documents and software, not the whole OS. The same
+      file uploaded onto the same base brings them back; our qcow2 reader learns backing files for it.
+    - **The whole disk:** the base merged with the overlay, as a qcow2 or raw download, for use
+      elsewhere.
+- **C. Parallel tracks**- **C. Parallel tracks**, each starting from its plan doc (written first where none exists):
   - Networking ([docs/plans/networking.md](docs/plans/networking.md)): the Ethernet gateway, then
     a first backend. For a page served by our dev server, a relay to a user-mode NAT in the dev
     server (no account needed) is the candidate to weigh against the plan's Tailscale-first
@@ -127,9 +145,14 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   - Audio: virtio-snd to an AudioWorklet over a shared ring (`docs/plans/audio.md`, to write).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
-- **D. Choosing and shaping machines:** image selection (Debian, Alpine, a URL), extra disks,
-  RAM and vCPU settings (default vCPUs from `navigator.hardwareConcurrency` minus the device
-  worker and the page, with the P/E-core caveat), overlay export and import; and **the stable
+  - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): save and restore CPU, devices
+    and compressed RAM, so the page resumes a booted machine in seconds instead of a full boot, as
+    files the user downloads and uploads. After phase B: a snapshot pins the disk it was taken
+    with, and phase B settles what the disk is.
+- **D. Choosing and shaping machines:** a catalog of hosted images (Debian, Alpine, …) on top of
+  phase B's disk in, extra disks, RAM and vCPU settings (default vCPUs from
+  `navigator.hardwareConcurrency` minus the device worker and the page, with the P/E-core
+  caveat); and **the stable
   embedding API**, extracted from what the page ended up using (VM config to DTB and devices,
   CPU feature switches, devices, snapshots, network backends), with its docs.
 - Compiling off the vCPU thread, if a GUI guest's latency asks for it.

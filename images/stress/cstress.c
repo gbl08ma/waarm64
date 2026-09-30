@@ -1,4 +1,4 @@
-// cstress: the C twin of gostress (BUG1-HANDOVER.md): pthreads spinning on sched_yield, an
+// cstress: the C twin of gostress (docs/images.md): pthreads spinning on sched_yield, an
 // mmap/mprotect/munmap churn per thread (TLBI IS broadcasts), malloc/free of big blocks (glibc
 // mmaps and trims them), a mutex + condvar ping-pong (futexes) and fork/exec of /bin/true.
 // usage: cstress [seconds] [threads]   (defaults 60, 4). One heartbeat line a second; "cstress: done".

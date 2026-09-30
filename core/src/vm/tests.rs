@@ -270,7 +270,7 @@ fn a_timer_is_pending_or_a_deadline_at_one_instant() {
 fn a_dsb_timeout_reports_the_vcpu_it_waited_for() {
     // vCPU 0: TLBI VMALLE1IS; DSB ISH. vCPU 1 is marked running and never
     // drains, as if stuck in one chunk: the wait times out and panics with
-    // the state of what it waited for (BUG1-HANDOVER.md).
+    // the state of what it waited for.
     const TLBI_VMALLE1IS: u32 = 0xd508_831f;
     const DSB_ISH: u32 = 0xd503_3b9f;
     let cfg = VmConfig {

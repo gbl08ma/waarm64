@@ -1,4 +1,4 @@
-// BUG1 (BUG1-HANDOVER.md): a DSB after TLBI IS waits for every running vCPU to
+// A DSB after TLBI IS waits for every running vCPU to
 // drain its queue, so a vCPU that stays inside one chunk (a tight spin) must
 // still end it at the step budget. CPU 0 takes a lock, runs TLBI VMALLE1IS + DSB
 // ISH under it and releases it, over and over; CPUs 1-3 spin without WFE in

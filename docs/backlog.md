@@ -130,18 +130,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **Booting conventional arm64 disk images unmodified** (the user, 2026-09-28: a goal for a
-  future milestone): today a distro's kernel and initrd are extracted from its image and booted
-  directly (PLAN.md §1 "Boot"). The goal is to boot a published image (Debian's qcow2, other
-  distros' cloud and installer images) as it is, through its own bootloader. That means UEFI
-  firmware as a guest workload (EDK2's ArmVirtQemu, BSD-2-Clause-Patent; or U-Boot's EFI, GPL:
-  run, never copied) with a flash device or `fw_cfg`-like handoff, a boot ROM region, EFI
-  variables, and the ESP on virtio-blk; GRUB then loads the kernel. It also brings RTC, reboot
-  and `efi=`-dependent paths into play. A cheaper intermediate step, if it's ever useful: a
-  host-side loader that reads the image's `/boot` (and GRUB's or the Boot Loader Spec's entries
-  for the command line) at start time, in the browser, instead of a preparation step: M8's
-  disk reader (`web/bootfs.ts`, `web/ext4.ts`, no Node APIs) already runs there; what's missing is
-  the page reading the qcow2 through its HTTP range backend and handing the files to `bootVm`.
+- **Booting conventional arm64 disk images unmodified:** now M8 phase B (PLAN.md §3: the kernel
+  read from the image at start, then UEFI if needed; disk in and out). Until then a distro's kernel
+  and initrd are extracted from its image ahead of time (`tools/debian.ts`).
 - The timer, GIC and PL011 tests have no hardware oracle; a GICv3-free subset of `timer.c`
   (ISTATUS, TVAL, CNTKCTL traps) could run on hvf.
 - virtio-console has no host input path (its receive buffers are held forever), so a guest's
@@ -235,21 +226,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   has no serial getty would need its own; a guest-side signal (a byte on a port the page owns, a
   systemd unit writing to a device) would be exact. Revisit with image selection (phase D).
 - **No boot-to-login benchmark case:** the page's time to `running` is measured by ad-hoc
-  drivers and the end-to-end test (bench/boot/REPORT.md "M8 loop 6"). Phase B's resume time needs
+  drivers and the end-to-end test (bench/boot/REPORT.md "M8 loop 6"). Snapshots' resume time needs
   a tracked baseline: add a `page_debian` case (page load to `running`, fresh profile) then.
-- **Boot time is the page's biggest cost** (~30 s to a login): phase B's snapshots.
-
-- **A tab that crashed stays bloated across reloads** (the user, 2026-09-30, after BUG1's panic
-  on 4 vCPUs): not reproduced. A guest kernel panic (`sysrq c`) after a 4-vCPU load, then
-  `page.reload()` in headless Chromium: the renderer went from 3.55 GB to 1.2 GB at once and the
-  second boot grew like the first (`mem-run6-crash` in `bench/mem/results/summary.json`). The user's tab
-  may have been a BUG1 freeze rather than a panic, or a different reload path (Shift+F5).
+- **Boot time is the page's biggest cost** (~30 s to a login): snapshots (a phase C lane, [plans/snapshots.md](plans/snapshots.md)).
 
 ## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [frontend.md](frontend.md) "Network")
 
 - Left from N5: the Alpine `apk add` smoke test (the test tailnet's peer is now an exit node, so
   only the Alpine image with a card is missing), IPv6, Buildroot's N3 boot and its Rust twin. The details and the order are in M8-PHASEC-NETWORKING-HANDOVER.md.
-- The Debian tests (`net-guest`, `page-network`, `net-tailnet`) add ~7 min to `scripts/ci.sh`.
+- The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
 
 ## Tests and tools
 

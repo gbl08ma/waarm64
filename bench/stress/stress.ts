@@ -1,4 +1,4 @@
-// The long-running Chromium stress test (BUG1-HANDOVER.md; docs/testing.md "The stress test"): boots the
+// The long-running Chromium stress test (docs/testing.md "The stress test"): boots the
 // real page on Debian (parallel SMP, JIT), logs in on the serial console, starts a mixed guest load and
 // samples the page, the browser's processes and the guest for as long as asked, into a JSONL log.
 // It reports (exit code 1) a crash, a frozen page, a stalled vCPU, memory growth, a slowdown and the

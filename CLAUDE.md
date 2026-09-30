@@ -27,8 +27,9 @@ M0–M7 are done (the summary table is in PLAN.md §3): the interpreter, the gol
 with virtio devices, Alpine and Debian, a JIT that boots Alpine in ~10 s in Chromium, the crypto
 extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vCPU for users).
 **Current:** M8, a usable machine (PLAN.md §3). Phase A (the interactive machine: `npm start`, the
-page in `web/app/`, [docs/frontend.md](docs/frontend.md)) is done; phase B (snapshots) and the C
-tracks wait for their kickoffs (`M8-PHASEB-HANDOVER.md` proposes them). Loose ends go in
+page in `web/app/`, [docs/frontend.md](docs/frontend.md)) is done; phase B (your own disk: booting
+unmodified images, disk in and out) waits for its kickoff (`M8-PHASEB-HANDOVER.md` drafts it); of
+the C tracks, networking is under way (`M8-PHASEC-NETWORKING-HANDOVER.md`). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment
@@ -63,6 +64,7 @@ Playwright's Chromium and sets `NODE_USE_ENV_PROXY=1`. There `systemd-run` doesn
 
 ```sh
 scripts/ci.sh                  # everything CI runs (~5 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, Node + Chromium tests, image tests
+scripts/ci-net.sh              # the network tests on Debian (~4 min): also when a change touches the network (docs/testing.md)
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
 cargo test                     # native core tests
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium; needs the wasm build)
@@ -70,8 +72,8 @@ WEBPC_CORPUS=dp_imm,dp_reg node --test tests/corpus-wasm.test.ts   # corpus grou
 node --test tests/jit-diff.test.ts                                 # JIT vs interpreter on random words (WEBPC_JIT_DIFF=<n>)
 WEBPC_LOCKSTEP_STEPS=300000000 node --test tests/jit-lockstep.test.ts   # long lockstep (CI runs 20M)
 WEBPC_DISTROS=alpine,alpine-user,debian scripts/ci.sh   # which distro tests run (default: the current alpine images)
-WEBPC_INTERP=1 node --test tests/boot-node.test.ts      # also the long guests' interpreter runs in Node
-WEBPC_JIT_STRESS=1 node --test tests/boot-node.test.ts  # every Node boot under JIT-stress (hours; not routine)
+WEBPC_INTERP=1 node --test tests/boot-node*.test.ts     # also the long guests' interpreter runs in Node
+WEBPC_JIT_STRESS=1 node --test tests/boot-node*.test.ts # every Node boot under JIT-stress (hours; not routine)
 cargo test --release --test boot -- --ignored --nocapture      # Buildroot natively (also: kvm_unit_tests, ltp, distros [alpine|debian])
 images/build.sh [name...]      # guest images in rootless Podman -> target/images/<name>/ (--check <name>); docs/images.md
 node tools/corpus/run.ts [--oracle qemu|m4|both] [group...]    # regenerate golden corpus groups (QEMU / the M4 oracle VM)
@@ -94,7 +96,7 @@ node bench/spike/memory/run-all.ts   # M0.5 memory suite
 ```
 
 The full benchmark list is in [docs/benchmarking.md](docs/benchmarking.md). **`scripts/ci.sh` must
-pass before any piece of work is considered done.**
+pass before any piece of work is considered done** (and `scripts/ci-net.sh` when it touches the network).
 
 ## Conventions
 

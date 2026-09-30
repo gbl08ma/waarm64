@@ -1,6 +1,39 @@
 **Handover, 2026-09-29: M8 phase A is done (loops 0–7), the user has made their pass over the
 machine, and loop 8 fixed the rough edges they found (`4eb7cc4`). Next: phase B (snapshots) and
-the phase C tracks, each waiting for a kickoff the user confirms.**
+the phase C tracks, each waiting for a kickoff the user confirms.** (Updated 2026-09-30: the
+networking lane of phase C has started, a stability detour is over (next section), and **phase B
+is now "your own disk"** (booting unmodified images, disk in and out); snapshots moved to a phase C
+lane, `docs/plans/snapshots.md`. The draft outline for the new phase B is at the end.)
+
+## Since then (2026-09-29 to 09-30): networking, then a stability detour
+- **Networking (phase C) started** in cloud sessions: N1–N5 of docs/plans/networking.md. The Ethernet
+  gateway, the Tailscale wasm client and the page's Network menu with exit nodes are done.
+  Its state and what's left are in `M8-PHASEC-NETWORKING-HANDOVER.md`. Its Debian tests run in
+  `scripts/ci-net.sh` (248 s), not `scripts/ci.sh`: run it when a change touches the network.
+- **CI time** (2026-09-30): `scripts/ci.sh` took 646 s with the network tests in. It takes 398 s
+  now: the network tests moved out, the Node boots are split across three files, and the native
+  image tests run beside `npm test`. The host's cores are now saturated: every test runs 3–5×
+  slower than alone, so what's left is total CPU work, not ordering.
+- **The detour: the VM hung or crashed in the user's long sessions** (4 vCPUs, Go builds, SSH over
+  the tailnet): a DSB-wait panic, the guest's lockup reports, a frozen page with a live guest, a tab
+  past 6 GB. Two days of theories (the network, the platform lock, unbounded JIT loops) came to
+  nothing. What fixed it, confirmed by the user on 2026-09-30:
+  - **The JIT had no memory bound.** Each vCPU worker compiled its own copy of the guest's code,
+    and V8 spends ~10× a module's bytes. A byte budget now flushes the cache (5145861;
+    docs/jit.md "Memory"). Per-module eviction is backlog: FIFO was tried and collapsed a Go build.
+  - **The screen's row scan could loop forever** when the guest rewrote a row mid-scan. It froze
+    the machine worker, so the display and status stopped while the guest ran on (20c497d).
+  - The DSB wait now counts only waiting, not its own worker's stalls (900127e).
+  - What's left and worth keeping: the core's panic message reaches the page (ABI 27), the
+    per-vCPU liveness in the status, the host-stall test, and the long stress test `bench/stress`
+    (docs/testing.md).
+  - **No JIT slowdown came with the budget:** `smp_debian_jit` at 9e0209b vs HEAD, 27.9 vs 28.4 s
+    on 4 vCPUs (noise; `bench/results/local/perf-ab/`). A boot doesn't reach the budget; under a Go
+    build it flushes about every 30 s per vCPU, at ~6% of CPU spent compiling.
+  - The status line's JIT block count is a total since boot: flushes don't reset it. It now
+    shows the flush count beside it.
+- On the side: a PL031 RTC in realtime mode (ABI 28), so the guest's clock is right and TLS works
+  without `date -s`.
 
 This file is for whoever drafts or starts the next work. The kickoff (M8-KICKOFF.md, "Check with
 me before") says phase A ends at its exit report, and **phase B or any C track starts only from a
@@ -14,7 +47,7 @@ B's kickoff (refined with the user's answers) and the C tracks' first steps.
 - **`timer.bin` may be hardened** (the change to a test guest's bytes is approved; see the loop
   below).
 - **The fresh-copy `npm start` test stopping at the kernel is OK** (loop 7's change stands).
-- **Phase B: snapshots are files the user downloads and uploads.** The page offers a snapshot for
+- **Snapshots (then phase B, now a phase C lane) are files the user downloads and uploads.** The page offers a snapshot for
   download and accepts one uploaded to the page. The same would go for the disk image (the
   user's modified filesystem), but that is **best rethought once the emulator boots generic disk
   images through UEFI** instead of relying on kernel extraction as now: not in phase B (see the
@@ -89,8 +122,8 @@ left in docs/backlog.md "The page" (which says "none reported yet": replace that
 "M8" (phases A–D; phase A's outcome), `M8-KICKOFF.md` (phase A's brief: its confirmed decisions
 still bind the page), then `docs/frontend.md` (the page), `docs/platform.md` (run loop, parallel
 SMP, broadcast maintenance), `docs/devices.md` (the device worker, the overlay), `docs/abi.md`
-(the host ABI; a snapshot is an ABI change: design note first), `docs/backlog.md` ("The page",
-"Snapshots in parallel SMP", "Parallel SMP"), `docs/testing.md`, `bench/boot/REPORT.md` "M8
+(the host ABI: a change needs a design note first), `docs/backlog.md` ("The page",
+"Platform and devices": booting unmodified images), `docs/testing.md`, `bench/boot/REPORT.md` "M8
 loop 0"–"M8 loop 8". Kickoff and handover files in the repo root are tracked
 (CLAUDE.md "Where things are written down"): commit the next handover with its work and delete
 this one then.
@@ -189,7 +222,7 @@ this one then.
   6.9 GB tmpfs; npm's hidden lockfile omits other platforms' optional packages;
   `bench/run.ts --out` is joined to the checkout's root (so a run from `../webpc-base` writes
   there).
-- `../webpc-base` is at `b8efa00` (loop 6, wasm built: the pre-fix JIT) for A/B runs.
+- `../webpc-base` is at `9e0209b` (before the JIT budget, wasm built) for A/B runs.
 - From earlier loops: Playwright's `keyboard.type()` doesn't
   press Shift; `page.route` can strip COOP/COEP from worker fetches; xterm.js's DOM renderer shows
   only visible rows; virtio-input drops past 1024 queued events (pace typing); never type ahead
@@ -204,87 +237,80 @@ this one then.
 ## Questions still open for the user
 (Answered: the rough-edges pass, `timer.bin`, the fresh-copy test, and snapshots as downloads and
 uploads; see the top.)
-1. **Phase B's kickoff** (outline below, refined with the user's answers): confirm it, in
-   particular whether the page also keeps a snapshot in OPFS for automatic resume on reload
-   (proposed: yes, as a cache beside the download/upload), that a snapshot file carries the disk
-   overlay (proposed: yes, see below), and the ABI shape (from the design note).
-2. **Which C track first**, and networking's backend order (a relay to a user-mode NAT in the dev
-   server vs Tailscale first; PLAN.md §3 phase C).
+1. **Phase B's kickoff** (the draft outline below): confirm it; say which images besides Debian
+   matter (Ubuntu, Fedora, Alpine, openSUSE: loop 0 surveys them), and whether UEFI is wanted even
+   if the in-page loader covers those images. (The snapshot questions moved with the lane to
+   docs/plans/snapshots.md.)
+2. **Which C track next.** Networking went first, Tailscale first
+   (M8-PHASEC-NETWORKING-HANDOVER.md).
 
-## Proposed outline for phase B's kickoff (snapshots; refined with the user's answers, for the user to confirm)
-**Goal:** the page resumes a booted Debian in a few seconds instead of a ~30 s boot, and **the
-user owns their snapshots as files**: the page offers the running machine's snapshot for
-download, and a snapshot file uploaded to the page (a file picker and drag and drop onto the
-screen) resumes that machine. Proposed on top: the page also keeps the latest snapshot in OPFS
-and resumes from it on reload (to confirm with the user).
-- **What a snapshot holds:** every vCPU's `Cpu` (1,072 bytes each, `core/src/cpu.rs`: registers,
-  system registers, timers' state) and its pending state; the platform in the core (GICv3
-  distributor and redistributors, the PL011 and its rings, PSCI power states, virtio-mmio
-  transports and their queue addresses and indices, reset epochs); guest RAM, **compressed**
-  (1 GiB, mostly zero pages early on: page-level zero elision plus a fast compressor via
-  `CompressionStream`; measure deflate vs doing it in wasm); the device worker's backend state
-  (the overlay's map is on OPFS already; blk requests in flight must be drained first; input and
-  rng hold nothing that matters); the DTB and command line it was booted with. **Not** the JIT's
-  code caches, TLBs or jump caches: rebuilt on demand (invalidate everything on restore).
-- **Quiescing:** round-robin needs nothing new. Parallel SMP stops every vCPU worker at a chunk
-  boundary (STOP, every `OUT`), with each maintenance queue drained and no CPU_ON pending
-  (backlog "Snapshots in parallel SMP"); the device worker finishes in-flight requests and holds
-  new ones. Time: realtime counters are rebased on restore so the guest sees continuous time
-  (CNTVCT offset), and timers due in the gap fire at once.
-- **The overlay pins the snapshot, so a snapshot file carries the overlay.** A snapshot is valid
-  only with the disk state it was taken with, and an uploaded file may land in a browser with a
-  different overlay or none. Proposed: the file holds the overlay's contents (the blocks written
-  over the base image, compressed) plus the base image's identity (its SHA-256, as pinned in
-  `images/debian.json`); restoring an upload replaces the local overlay after a confirmation (it
-  would discard the local disk's changes, like Reset disk: say how much). The base image itself is
-  never in the file (it's 400 MB and every copy has it). Locally, taking a snapshot freezes the
-  overlay at that point (a generation number in both, or a copy-on-write layer); Reset disk drops
-  the local snapshot; a mismatch refuses to restore and says why.
-- **Not in phase B: a standalone disk export/import** (the user's filesystem as its own file,
-  without a machine state). The user wants it rethought once the emulator boots generic arm64
-  disk images through UEFI (PLAN.md's Boot row; docs/backlog.md), when "the disk" becomes a
-  whole, ordinary image instead of an overlay over a pinned distro image with its kernel pulled
-  out. Add it to the backlog's UEFI entry.
-- **The snapshot file is a user-facing format**, so: a header with a magic, a format version and
-  the core build it needs (the wasm input hash `npm start` computes is a candidate), the machine
-  config (machine name, vCPUs, RAM, command line, base image hash), a checksum per section, and
-  sections for CPU state, platform, devices, overlay and RAM, each compressed. An upload from
-  another core build, another base image or a newer format is refused with a message a user can
-  act on (loop 4's problem/actions style), never restored half-way. Streams both ways, because
-  RAM is up to GiBs: download through the File System Access API's `showSaveFilePicker` (Chromium)
-  with a Blob download as the fallback, upload read as a stream from the `File`, decompressed as
-  it's read; measure save time, file size and restore time for Debian after login.
-- **ABI:** export/import of core state (`vm_snapshot_size`, `vm_snapshot_save(ptr)`,
-  `vm_snapshot_restore(ptr)` or a layout in docs/abi.md), a version in the header that refuses a
-  snapshot from another core build (the wasm's input hash `npm start` already computes is a
-  candidate). Design note in docs/abi.md first (pre-approved in phase A's style).
-- **Where it lives:** with the user, as downloaded files (above); the local copy for resume on
-  reload in OPFS next to the overlay (`webpc-debian.snap`), per origin and profile, if the user
-  confirms it. Prebuilt snapshots shipped with the repo are a later question (they'd tie the page
-  to one core build).
-- **The page:** a Snapshot action (download) and an upload (button plus drop on the screen); a
-  `resumed` power state; the worker protocol grows `snapshot` / `restore` messages (and a
-  streamed transfer of the file between the page and the machine worker).
-- **Tests:** a core unit test (save, restore into a fresh VM, run both in deterministic mode:
-  identical console and **identical steps from the restore point**, the strongest check we have);
-  Buildroot and Alpine round-trips in Node and Chromium (deterministic, exact steps); a parallel
-  round-trip (litmus and stress continuing after a restore); the page: boot, write a file, download
-  the snapshot, then in a **fresh browser profile** upload it and find the machine resumed, logged
-  in and the file there within N seconds; an upload from another core build or base image and a
-  corrupted file refused with their messages. Planted bugs: a register not saved, a queue index
-  not restored, the counter not rebased, the overlay left out of the file.
-- **Numbers:** time to `running` from a snapshot (target: a few seconds), snapshot size and save
-  time; add the `page_debian` bench case then (backlog "The page").
-- **Out of scope:** migrating snapshots between core builds, live migration, snapshots of the
-  test guests' step counts (a restore must not change them).
+## Proposed outline for phase B's kickoff (your own disk; a draft for the user to confirm)
+**Why before snapshots** (the user, 2026-09-30): the basic loop has to be right first: load a disk
+into the VM, boot it, work, shut down, take the modified disk away. For that the VM should boot
+unmodified disk images, not a kernel and initrd extracted ahead of time. PLAN.md §3 phase B has the
+scope.
+
+**Done when:** on the page, the user picks an image (a URL, or a local qcow2 or raw file by picker or
+drop), and it boots with no preparation step. They work and shut down, then download either **just
+their changes** (a qcow2 over the base image as its backing file) or **the whole disk**. In a fresh
+browser profile, the same base plus the uploaded changes boots with their files there.
+
+Loops (a suggestion):
+0. **Survey the images to support** (Debian 13's nocloud image first; the user picks the others):
+   where `/boot` lives and on which filesystem, the kernel's format (a gzip `Image`, or an EFI
+   zboot `vmlinuz.efi` with a gzip or zstd payload), the bootloader config (a generated
+   `grub.cfg`, Boot Loader Spec entries, or the `/vmlinuz` and `/initrd.img` links), how `root=` is
+   given, whether the initrd has virtio-blk, cloud-init waits, and the page size (PLAN.md
+   "Deferred": 16K/64K kernels aren't supported). This decides how far the in-page loader goes and
+   whether UEFI is needed.
+1. **Disk in:** a local `File` as a blk backend (the device worker reads slices synchronously;
+   `FileReaderSync` works in workers), next to the HTTP range backend; qcow2 or raw by magic. The
+   OPFS overlay is keyed by the base image's identity, so switching images doesn't mix overlays.
+2. **The loader in the page:** `web/bootfs.ts` and `web/ext4.ts` over the chosen disk read the
+   default boot entry (BLS entries, or the default `menuentry` of `grub.cfg`'s generated subset, or
+   the `/vmlinuz` links with `root=UUID=` from the filesystem), decompress the kernel (gzip through
+   `DecompressionStream`; zboot's header; zstd would need a decoder: a dependency, so ask), and boot
+   it through `bootVm`. The page's Debian moves to it, so `npm start` no longer extracts anything
+   (tools/debian.ts only downloads). The guest-visible part is the command line, now the image's own
+   plus the page's console settings: say what changes.
+3. **Disk out:**
+   - Just the changes: a qcow2 writer (4 KiB clusters, the overlay's block size, so blocks copy
+     over as they are) with a backing-file name and the base's SHA-256 in a header extension.
+   - The whole disk: the base merged with the overlay, streamed out as qcow2 (zero clusters left
+     out) or raw.
+   - Both are written through `showSaveFilePicker` (streamed), with a Blob download as the fallback.
+     `qemu-img check` and `qemu-img compare` in the dev VM are the oracle for both.
+4. **Changes in:** our qcow2 reader learns backing files (it refuses them today). An uploaded
+   changes file is checked against the base (the SHA-256; a mismatch is refused with a message a
+   user can act on) and becomes the overlay (import into OPFS). It takes the overlay's Web Lock, as
+   Reset disk does.
+5. **UEFI, if loop 0 says it's needed:** EDK2's ArmVirtQemu (BSD-2-Clause-Patent) built in Podman
+   (`images/`). It runs at EL1 as under KVM, and needs:
+   - a CFI flash for its code and variables;
+   - the DTB at RAM's base, as QEMU hands it over;
+   - the PL031 (done), the PL011, and virtio-mmio blk from the DT.
+   Open: the screen before Linux (EDK2's GOP drivers want PCI or `ramfb`), and whether our
+   `simple-framebuffer` node survives the EFI boot. Measure the firmware's cost against the loader's.
+
+**Tests:** the loader's parsing against small ext4 images made in the test (tests/ext4.test.ts does
+this already) with BLS, `grub.cfg` and link layouts; a small bootable disk image from `images/`
+(Podman) that boots through the loader in Node and Chromium (exact steps in deterministic mode);
+the qcow2 writer's output checked by `qemu-img` (check, compare against the merged raw); a changes
+file round-trip (write, export, reset, import, the file is back); a mismatched base refused. The
+page: pick a file, boot, write, export the changes, then in a fresh profile the same base plus the
+upload has the file. Planted bugs: a block left out of the export, a wrong backing hash accepted,
+the wrong boot entry picked.
+
+**Check with the user first:** any dependency (a zstd decoder); vendoring or building EDK2; changes
+to the tests' guests (a new test disk image is new, not a change); the page's Debian dropping the
+extracted kernel.
+
+**Out of scope:** a catalog of hosted images and settings (phase D), snapshots (phase C lane),
+LVM, LUKS and btrfs without UEFI, 16K/64K kernels.
 
 ## Proposed first steps of the C tracks (one agent each, after phase B's kickoff or alongside)
-- **Networking** (docs/plans/networking.md): first the Ethernet gateway (frames ↔ IP, DHCP, ARP,
-  DNS forwarding: our own code) behind the existing frames-on-a-`MessagePort` adapter; then the
-  first backend. For a page served by our dev server, a relay in `tools/serve.ts` to a user-mode
-  NAT (no account needed) is the candidate to weigh against the plan's Tailscale-first order
-  (which targets static hosting). The page's VM gets a net device only once a backend gives it a
-  route (phase A decision 8).
+- **Snapshots:** after phase B (docs/plans/snapshots.md), since a snapshot pins the disk.
+- **Networking:** under way (M8-PHASEC-NETWORKING-HANDOVER.md).
 - **Graphics** (docs/plans/graphics.md §3, §7): virtio-gpu 2D first: the screen follows the page's
   size (dynamic guest resolution: the user expects it from this track), damage rectangles instead of the full-frame scan, a hardware cursor; Debian's kernel has
   `virtio_gpu` as a module (loaded by udev). Then the software baseline and the 3D decision gate.
@@ -298,6 +324,6 @@ and resumes from it on reload (to confirm with the user).
 - Keep the page's VM config (machine.ts) separate from the tests' guests: a new device on the
   page isn't a guest-visible change to the tests; a change to a test guest is (the user's OK).
 - The worker protocol (docs/frontend.md) is still the seed of phase D's embedding API, not frozen:
-  snapshots add messages (`snapshot`, `restore`, a `resumed` state) there.
+  phase B adds the disk (a URL or a `File`) to `start`, and export and import messages.
 - Every Chromium run: headless Playwright only, never Firefox, never `/usr/bin/chromium` except
   `--version`; every run under `timeout`, every wait bounded.

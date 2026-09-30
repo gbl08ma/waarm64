@@ -15,7 +15,8 @@ import { withDebianLock } from './debian-lock.ts';
 
 const IMAGE = new URL('../target/images/debian/Image', import.meta.url);
 const WASM = new URL('../target/net/tailscale.wasm', import.meta.url);
-const skip = !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
+const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
+  : !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
   : !existsSync(IMAGE) ? 'SKIPPED: run tools/debian.ts (or npm start)'
   : !existsSync(WASM) ? 'SKIPPED: build the Tailscale client (net/tailscale/build.sh; needs Go)'
   : undefined;

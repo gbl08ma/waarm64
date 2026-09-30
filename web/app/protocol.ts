@@ -67,7 +67,9 @@ export type Status = {
   uptime: number;
   /** Guest instructions retired (all vCPUs). */
   steps: number;
+  /** Blocks compiled since boot (all vCPUs; a flush doesn't reset it), and how often the code cache was flushed (its byte budget, docs/jit.md "Memory"). */
   jitBlocks: number;
+  jitFlushes: number;
   jitCompileMs: number;
   irqs: number;
   /** The worker's run loop: the longest gap between its iterations since the last status (ms), and ms since the last one now (the stress test, bench/stress). */

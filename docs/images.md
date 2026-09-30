@@ -56,7 +56,7 @@ first kernel line.
 
 ## Stress workloads in the Debian guest (`images/stress/`)
 
-A load with the character of a Go compile on 4 vCPUs (BUG1-HANDOVER.md): many threads, spinning
+A load with the character of a Go compile on 4 vCPUs: many threads, spinning
 Ms (`procyield`, `osyield`), heavy mmap/mprotect/munmap (so many TLBI IS), the GC and scavenger,
 futexes, fork/exec. Not part of `images/build.sh` or CI; built on demand.
 
