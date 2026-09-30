@@ -275,7 +275,6 @@ const probeLoop = async () => {
     const n = ++probeN;
     const sent = Date.now();
     const rec = { type: 'probe' as const, t: secs(), n, answeredMs: undefined as number | undefined };
-    emit(rec);
     void type(`${DMESG}; echo PROBE${n}=$((${n}*7+1))`);
     for (; !finished && Date.now() - sent < 60_000;) {
       await new Promise((r) => setTimeout(r, 500));
@@ -285,6 +284,7 @@ const probeLoop = async () => {
         break;
       }
     }
+    emit(rec); // settled: the log has the answer (or none), not the record as sent
     for (const m of serial.matchAll(/DM> (.*)/g)) {
       const line = m[1].trim();
       if (!seenDmesg.has(line)) {
