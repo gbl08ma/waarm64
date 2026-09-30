@@ -253,10 +253,11 @@ const load = flag('--no-load') ? [] : [
   '(while :; do seq 1 200; sleep 1; done) &',
   `printf '%s\\n' ${CHURN.map((l) => `'${l}'`).join(' ')} > /var/tmp/churn.py; (python3 /var/tmp/churn.py 2>&1 | head -5) &`,
   ...values('--guest-cmd').map((c) => `( ${c} ) &`),
-  'echo LOAD-STARTED',
+  // Output that the terminal's echo of the command can't match: a shell left at a continuation prompt by a garbled line never prints it.
+  'echo LOAD-STARTED-$((6*7))',
 ];
 for (const l of load) await type(l);
-if (load.length && !(await until(/LOAD-STARTED\r?\n/, 120_000))) stop(finishAndCode(2), 'the load did not start');
+if (load.length && !(await until(/LOAD-STARTED-42/, 120_000))) stop(finishAndCode(2), `the load did not start; the console ends ${JSON.stringify(serial.slice(-400))}`);
 function finishAndCode(c: number) {
   finish();
   return c;
@@ -292,7 +293,12 @@ const probeLoop = async () => {
         say(`guest: ${line.slice(0, 200)}`);
       }
     }
-    if (rec.answeredMs === undefined) say(`probe ${n} unanswered`);
+    if (rec.answeredMs === undefined) {
+      // What the console shows instead (a shell stuck at a continuation prompt, a flood of output, nothing).
+      const tail = serial.slice(-300);
+      emit({ type: 'event', t: secs(), kind: 'probe-unanswered', text: tail });
+      say(`probe ${n} unanswered; console ends ${JSON.stringify(tail)}`);
+    }
   }
 };
 void probeLoop();
