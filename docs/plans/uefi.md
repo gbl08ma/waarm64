@@ -141,7 +141,8 @@ at RAM's base) to something smaller:
 - **fw_cfg, minimal:** the MMIO interface (selector, data, and DMA only if EDK2 or Linux needs
   it), the signature, ID and file directory, and named files from the host. Its first use is
   systemd credentials for Debian (no firstboot prompts, passwordless root, the network), which
-  keeps the page's Debian as it is today. It's also the door to SMBIOS (credentials as type 11
+  lets the tests and CI boot Debian unattended (the release build passes none: the user's answer
+  below). It's also the door to SMBIOS (credentials as type 11
   strings) and ramfb (a GOP) if wanted later. Needs an ABI design note. ArmVirtQemuKernel then
   sees fw_cfg with no ACPI tables and keeps the DT.
 - **Alpine's seed:** a small `CIDATA` FAT image the page generates, as a second virtio-blk, for
@@ -149,10 +150,26 @@ at RAM's base) to something smaller:
 - **The PL031 in every firmware configuration** (EDK2's RTC and Linux's `rtc-efi` use it):
   realtime as now; for the deterministic firmware tests, its time from virtual time.
 
-## Open questions for the user (the page's Debian, loop 3)
-- **Menus and timeouts:** the loader's 5 s (Debian) or 10 s (Limine) menu is on the serial
-  console only (no GOP): should the page press Enter for the user, show the serial view until
-  the kernel takes the screen, or leave it? (A GOP via ramfb would put firmware and GRUB on the
-  screen; it needs fw_cfg's file writes and a GOP-backed framebuffer: likely its own step.)
-- **Credentials:** keep today's passwordless root and UTC through fw_cfg (proposed), or let
-  first boot ask?
+## Graphics in the firmware (the user asked, 2026-09-30)
+Our firmware build already has both drivers that would give EDK2 a graphics output (GOP), so
+the firmware's menus, the EFI setup screen and GRUB's `gfxterm` would appear on the screen:
+- **ramfb** (`OvmfPkg/QemuRamfbDxe`, small): when fw_cfg has an `etc/ramfb` file, the firmware
+  allocates a framebuffer in RAM and writes its address, format and size to that file; the host
+  draws from there. Linux takes the framebuffer over from EFI (`efifb` or `simpledrm` through
+  `screen_info`), so the firmware configuration would need no `simple-framebuffer` node. Needs
+  fw_cfg's **DMA interface** (fw_cfg writes go only through DMA). A step after loop 2's fw_cfg.
+- **virtio-gpu** (`OvmfPkg/VirtioGpuDxe`, over virtio-mmio): the graphics track's virtio-gpu 2D
+  (docs/plans/graphics.md) would give a GOP too, and supersede ramfb.
+Until then the menus are on the serial console, where input already works (the PL011's receive
+path, M8 phase A).
+
+## The user's answers for the page (2026-09-30; loop 3)
+- **Menus:** waiting for the loader's timeout is fine for now. The serial console with input is
+  the way into the firmware and bootloader (EFI setup, boot entries, editing the command line);
+  loop 3 checks those keys end to end (arrows, F-keys, Ctrl-X through xterm.js to EDK2's
+  terminal driver and GRUB).
+- **Debian's first boot runs as on a regular machine** in the release build: no credentials over
+  fw_cfg or anything else outside CI and the tests (which keep using them, to boot unattended).
+  Consequence for loop 3: with a DT and no `console=`, `/dev/console` is the serial port, so
+  systemd-firstboot's questions appear on the serial view while the screen waits; the page must
+  make that visible (e.g. show the serial view, or say where to look).

@@ -58,9 +58,12 @@ into the kernel. The page switch is loop 3, not this one.
 5. **A minimal fw_cfg** (`qemu,fw-cfg-mmio` at `0x0902_0000`, as QEMU `virt`): selector (16-bit
    BE), data (8-bit reads suffice for Linux's `qemu_fw_cfg` and EDK2; DMA only if one of them
    needs it), items: signature `QEMU`, ID, the file directory, and named files from the host.
-   First files: Debian's systemd credentials (`opt/io.systemd.credentials/login.noauth`,
-   `firstboot.timezone`, `firstboot.locale`, `passwd.hashed-password.root` empty). QEMU's
-   `docs/specs/fw_cfg.rst` is the spec (a doc: fine to follow).
+   First files: Debian's systemd credentials for **the tests only**
+   (`opt/io.systemd.credentials/login.noauth`, `firstboot.timezone`, `firstboot.locale`,
+   `passwd.hashed-password.root` empty): **the user decided the release build's Debian boots as
+   on a regular machine** (systemd-firstboot asks), so the page passes none. Leave room for the
+   DMA interface: ramfb (a firmware GOP, plans/uefi.md "Graphics in the firmware") needs it, as a
+   later step. QEMU's `docs/specs/fw_cfg.rst` is the spec (a doc: fine to follow).
 6. **The PL031 in the firmware configuration always** (EDK2's RTC and Linux's `rtc-efi`): in
    deterministic mode its time from virtual time (a fixed epoch plus the counter), so firmware
    tests are exact.
@@ -84,8 +87,10 @@ into the kernel. The page switch is loop 3, not this one.
 - `scripts/ci.sh`, and `scripts/ci-long.sh` if the change touches the JIT or the memory model.
 
 **Check with the user first** (from the kickoff): any dependency; any change to an existing test
-guest. The page's switch to UEFI (loop 3) needs the answers to the questions at the end of
-plans/uefi.md (menus on the serial console only; credentials through fw_cfg).
+guest. For loop 3 the user has answered (plans/uefi.md "The user's answers for the page"):
+menus wait for their timeout for now, the serial console with input is the way into the
+firmware and bootloader, and Debian's first boot runs normally in the release build (its
+questions land on the serial console: the page must show that).
 
 ## Gotchas (loops 0–1)
 - `localhost/webpc-images` (images/Containerfile) is **amd64** under qemu-user here: never build

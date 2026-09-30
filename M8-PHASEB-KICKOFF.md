@@ -11,6 +11,13 @@ and continue unless something needs the user's decision.
   UEFI images are in scope (it publishes them: `alpine-<v>-aarch64-{tiny,cloudinit}-r0.qcow2`
   with Limine, and `generic_alpine-<v>-aarch64-uefi-{tiny,cloudinit}-r0.qcow2`).
 - UEFI through EDK2, not a loader in the page (decided earlier the same day).
+- **Later the same day, after loops 0–1:** waiting at the loader's menu is OK for now. The serial
+  console with input is how advanced users reach the firmware and bootloader (EFI setup, other
+  boot entries, editing the kernel command line): one of the reasons for booting through UEFI
+  instead of extracting a kernel. **The release build's Debian behaves as on a regular machine:
+  its first boot runs normally** (systemd-firstboot asks its questions); no credentials or other
+  "hacks" outside CI and the tests. The user asked whether the firmware's lack of graphics can be
+  worked around (answer in docs/plans/uefi.md "Graphics in the firmware").
 
 ## The brief
 **Why before snapshots** (the user, 2026-09-30): the basic loop has to be right first: load a disk
