@@ -8,6 +8,7 @@
 // its own worker (web/vcpu-worker.ts) and this thread coordinates them.
 import { Devices, EV_CONFIG, deviceEntry, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
+import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
 export const ABI = 27;
@@ -565,6 +566,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       par?.close();
       return devices.close();
     },
+    /** Per-vCPU liveness (parallel mode; empty otherwise): time inside the current chunk, the longest chunk and host-side handling so far. */
+    liveness: (): VcpuLiveness[] => par?.liveness() ?? [],
     /** vCPU `i`'s PC (published once per chunk while it runs). */
     pc: (i = 0) => new BigUint64Array(memory.buffer, ex.vm_cpu(vm, i) + 256, 1)[0],
   };
@@ -608,6 +611,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
   let error: Error | undefined;
   let stopped = 0;
   let last = { steps: -1, at: performance.now() };
+  const live = newLiveness(c.ncpus);
   const ctl = new Int32Array(c.memory.buffer, c.ctl, 1);
   const bump = () => {
     Atomics.add(ctl, 0, 1);
@@ -643,7 +647,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
   };
   const start = () => Array.from({ length: c.ncpus }, async (_, cpu) => {
     const h = await spawn();
-    h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl });
+    h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, live });
     return h;
   });
   return {
@@ -669,6 +673,8 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
       if (error) throw error;
       return end && stopped === c.ncpus ? end : undefined;
     },
+    /** Each vCPU worker's timing of its `vm_run_cpu` calls (web/liveness.ts). */
+    liveness: (): VcpuLiveness[] => readLiveness(live),
     /** When `steps` (all vCPUs) last changed. */
     progress(steps: number) {
       if (steps !== last.steps) last = { steps, at: performance.now() };

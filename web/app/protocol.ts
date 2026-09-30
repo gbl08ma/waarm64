@@ -1,5 +1,6 @@
 // The page ⇄ machine-worker protocol (docs/frontend.md "The worker protocol").
 // The seed of phase D's embedding API: not frozen. Types only.
+import type { VcpuLiveness } from '../liveness.ts';
 import type { MachineName } from './machine.ts';
 
 /**
@@ -67,4 +68,9 @@ export type Status = {
   jitBlocks: number;
   jitCompileMs: number;
   irqs: number;
+  /** The worker's run loop: the longest gap between its iterations since the last status (ms), and ms since the last one now (the stress test, bench/stress). */
+  loopMaxMs: number;
+  loopAgeMs: number;
+  /** Each vCPU worker's timing of its `vm_run_cpu` calls (web/liveness.ts). */
+  vcpus: VcpuLiveness[];
 };

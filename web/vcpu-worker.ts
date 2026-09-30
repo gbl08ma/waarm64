@@ -7,6 +7,7 @@
 // its run (PSCI, UNIMPLEMENTED, STOP) or its error to the coordinator
 // (web/vm.ts `bootVm`). Runs in a browser worker or a Node worker thread.
 import { EV_CONFIG, ring } from './devices.ts';
+import { livenessWriter } from './liveness.ts';
 import { clockOffset, Exit, instantiateThread, unsigned, withPanic, type ThreadBlock } from './vm.ts';
 
 export type VcpuJob = {
@@ -18,6 +19,8 @@ export type VcpuJob = {
   /** Byte addresses in `memory`: the device doorbell (two i32 words) and the coordinator's word (bumped on TX_FULL). */
   bell: number;
   ctl: number;
+  /** The vCPUs' liveness block (web/liveness.ts): this worker writes its slot. */
+  live?: Float64Array;
 };
 export type VcpuEnd = { type: 'exit'; cpu: number; kind: number; value: bigint; x: bigint[] } | { type: 'error'; cpu: number; message: string };
 /** A clock query to the coordinator (web/vm.ts `clockOffset`) and its answer, `t` its clock. */
@@ -57,12 +60,16 @@ function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
   const bell = new Int32Array(mem.buffer, j.bell, 2);
   const ctl = new Int32Array(mem.buffer, j.ctl, 1);
   const info = ex.vm_exit_cpu(j.vm, j.cpu);
+  const live = j.live && livenessWriter(j.live, j.cpu);
   for (;;) {
+    live?.enter();
     const kind = ex.vm_run_cpu(j.vm, j.cpu, BUDGET);
+    live?.leave();
     // kind, steps, value, x0-x3, cpu, wake (a fresh view: the memory may have grown).
     const e = new BigUint64Array(mem.buffer, info, 9);
     switch (kind) {
       case Exit.BUDGET:
+        live?.handled();
         continue;
       case Exit.IDLE: {
         // Until its deadline or a wake-up; an off vCPU (no deadline) rechecks every second.
@@ -79,10 +86,12 @@ function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
         Atomics.add(ctl, 0, 1);
         Atomics.notify(ctl, 0);
         Atomics.wait(wake, 0, Atomics.load(wake, 0), 1);
+        live?.handled();
         continue;
       case Exit.DEVICE:
         // A config-space write waits: the driver reads the answer next (virtio-input's select/subsel).
         ring(bell, (Number(e[2] >> 8n) & EV_CONFIG) !== 0);
+        live?.handled();
         continue;
       default:
         return { type: 'exit', cpu: j.cpu, kind, value: e[2], x: [...e.subarray(3, 7)] };

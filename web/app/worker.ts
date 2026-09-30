@@ -143,7 +143,8 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
   let running = false;
   let panicked = ''; // the message
   let tail = ''; // the last output, for markers split across drains
-  let lastStatus = 0;
+  let loopAt = performance.now(); // the run loop's last iteration
+  let loopMax = 0;
   const output = (text: string) => {
     if (!text) return;
     post({ type: 'serial', data: text });
@@ -159,27 +160,35 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
       state('crashed', panicked, 'panic');
     }
   };
-  for (;;) {
-    const r = await vm.runAsync(1e9);
-    if (stopping) return;
-    output(vm.drain());
+  // Once a second on a timer, not from the loop: a stuck loop then shows in `loopAgeMs` rather than as silence.
+  const timer = setInterval(() => {
     const now = performance.now();
-    if (now - lastStatus >= 1000) {
-      lastStatus = now;
-      post({ type: 'status', status: status(vm, m.ncpus, machine.ramMiB, now - t0) });
+    post({ type: 'status', status: status(vm!, m.ncpus, machine.ramMiB, now - t0, loopMax, now - loopAt) });
+    loopMax = 0;
+  }, 1000);
+  try {
+    for (;;) {
+      const r = await vm.runAsync(1e9);
+      if (stopping) return;
+      output(vm.drain());
+      const now = performance.now();
+      loopMax = Math.max(loopMax, now - loopAt);
+      loopAt = now;
+      if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL) continue;
+      // Every vCPU has stopped.
+      output(vm.drain());
+      await vm.close();
+      if (panicked) return; // said
+      else if (r.kind === Exit.PSCI) state(r.x[0] === PSCI_SYSTEM_OFF ? 'off' : 'rebooting');
+      else state('crashed', `The emulator stopped: ${r.kind === Exit.UNIMPLEMENTED ? `an unimplemented instruction or register at pc 0x${vm.pc().toString(16)}` : `exit ${r.kind}`}.`, 'emulator');
+      return;
     }
-    if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL) continue;
-    // Every vCPU has stopped.
-    output(vm.drain());
-    await vm.close();
-    if (panicked) return; // said
-    else if (r.kind === Exit.PSCI) state(r.x[0] === PSCI_SYSTEM_OFF ? 'off' : 'rebooting');
-    else state('crashed', `The emulator stopped: ${r.kind === Exit.UNIMPLEMENTED ? `an unimplemented instruction or register at pc 0x${vm.pc().toString(16)}` : `exit ${r.kind}`}.`, 'emulator');
-    return;
+  } finally {
+    clearInterval(timer);
   }
 }
 
-function status(vm: Vm, ncpus: number, ramMiB: number, uptime: number): Status {
+function status(vm: Vm, ncpus: number, ramMiB: number, uptime: number, loopMaxMs: number, loopAgeMs: number): Status {
   const s = vm.stats();
-  return { ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitCompileMs: s.jit.compileNs / 1e6, irqs: s.irqs };
+  return { ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitCompileMs: s.jit.compileNs / 1e6, irqs: s.irqs, loopMaxMs, loopAgeMs, vcpus: vm.liveness() };
 }
