@@ -274,6 +274,64 @@ iterations per thread, 3× each).
   loop's iterations for long. In Chromium the guest counter moves in `performance.now()`'s
   5 µs steps (coarsened under cross-origin isolation), so sub-5 µs latencies read as 0 or 5.
 
+## The stress test (`bench/stress/`, BUG1)
+
+A long-running run of the real page in headless Chromium (Debian, `?ncpus=4`, JIT, parallel SMP),
+not part of `npm test` or CI (it takes as long as you give it; `tests/stress-analyze.test.ts` and
+`tests/liveness.test.ts` are its cheap layers). It logs in on the serial console, starts a mixed
+guest load (two busy loops, a fork/exec storm, `sort -R` and a Python thread + fork +
+`mmap`/`mprotect`/`munmap` churn, `urandom | sha256sum`, `find /usr`, a `dd`/`cat`/`rm` disk loop,
+console output) and samples every few seconds into a JSONL log.
+
+```sh
+# a few minutes (the guest is up at ~45 s; nothing else heavy should run: the numbers are host-sensitive)
+systemd-run --user --scope -q -p MemoryMax=8G -p MemorySwapMax=0 -- timeout 400 \
+  node bench/stress/stress.ts --seconds 300 --out bench/results/local/stress.jsonl
+# hours, detached: a transient unit that survives the shell; the log is the record
+systemd-run --user --unit=webpc-stress --collect --working-directory="$PWD" -p MemoryMax=10G -p MemorySwapMax=0 -- \
+  timeout 14700 node bench/stress/stress.ts --seconds 14400 --out bench/results/local/stress-4h.jsonl
+tail -f bench/results/local/stress-4h.jsonl | cut -c1-200      # or:
+node bench/stress/summarize.ts bench/results/local/stress-4h.jsonl   # while it runs, or after; exit 1 on findings
+systemctl --user status webpc-stress; journalctl --user -u webpc-stress   # its console lines and final report
+```
+
+Flags: `--seconds` (the sampling time; the ~45 s boot and login come before it), `--interval` (sample period, 5), `--probe` (guest console probe period, 15),
+`--ncpus`, `--guest-cmd '<cmd>'` (repeatable: started as `( cmd ) &` after the built-in load, for a
+Go or C churn binary put on the guest), `--no-load`, `--stall-ms` (2000), `--freeze-ms` (10000),
+`--warmup` (150 s from the tool's start, left out of the memory and speed trends). Exit code 0 clean, 1 findings, 2 the
+harness failed (no login).
+
+What a sample holds (`type: "sample"`): the page's state and message, the status the page shows
+(`data-status`: uptime, steps, JIT blocks, compile time, IRQs, the run loop's cadence, per-vCPU
+liveness), how long since a status message reached the page and the longest gap between two, the
+main thread's timer lag, the last `performance.measureUserAgentSpecificMemory()` result (MiB), CDP
+`Performance.getMetrics` (main-thread JS heap) and every browser process's RSS from `/proc`
+(`SystemInfo.getProcessInfo`; the renderer's includes the workers and guest RAM). Other records:
+`probe` (a `dmesg | grep` and an arithmetic marker typed on the serial console every `--probe`
+seconds; the answer's latency is the guest console's liveness), `dmesg` (new lockup, stall, hung
+task, panic lines), `event` (console errors, page errors, injections), `meta`, `end`.
+
+`bench/stress/analyze.ts` turns the records into findings (the same rules run at the end of a run
+and in `summarize.ts`): `crash` (page state `crashed`/`failed`, a panic or page error: the page's
+message carries the core's panic text), `freeze` (main thread not answering, or no status for
+`--freeze-ms` while running; it says whether a console probe was answered meanwhile), `vcpu-stall`
+(one `vm_run_cpu` call, or the host handling an exit, longer than `--stall-ms`, or one in progress),
+`loop-stall` (the machine worker's run loop), `memory-growth` (renderer RSS slope above 200 MiB/h
+and 200 MiB over at least 600 s after the warm-up), `slowdown` (MIPS in the last third of the run
+below 70% of the first third's, or three samples under 10% of the median), `guest-lockup`,
+`guest-unresponsive` (a probe unanswered for 60 s).
+
+Fault injection checks the detection: `--inject freeze-main@60:25` keeps the page's main thread
+busy for 25 s from t=60 s; `--inject drop-status@60:25` swallows the machine worker's status
+messages for 25 s (a frozen display with a live guest). Both are reported as `freeze`.
+
+Liveness is host-side (web/liveness.ts, no core ABI): each vCPU worker times its `vm_run_cpu` calls
+into a SharedArrayBuffer block (`Vm.liveness()`). The longest chunk is bounded by the step budget
+(100M steps, ~0.3 to 1 s at these speeds), so a call over ~2 s is a real stall, in the core or in
+a host import inside it. Blind spots: while the page's main thread or the machine worker is
+frozen, the guest console can't be read (it goes through them); the vCPU counters are read
+through the same status message.
+
 ## Planned layers
 
 - **In-guest suites** not yet run: more LTP areas (need `mkfs` tools and a scratch disk), the

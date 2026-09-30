@@ -82,6 +82,11 @@ Worker → page:
   ring's head, docs/abi.md "Signal word and console").
 - `status {status}`: once a second: vCPUs, RAM, uptime, steps, JIT blocks and compile time,
   IRQs. The page shows MIPS and IRQ/s from the differences.
+  It also carries the run loop's cadence (`loopMaxMs`, `loopAgeMs`) and each vCPU worker's
+  liveness (`vcpus`, web/liveness.ts: chunks, time inside the current `vm_run_cpu`, the longest
+  chunk and the longest host-side handling of an exit). The worker posts it from a timer, not from
+  its run loop, so a stuck loop shows as a growing `loopAgeMs` instead of silence. The page keeps
+  the last status as JSON in the status line's `data-status` (for `bench/stress`).
 - `stopped`.
 
 The machine runs without `idleLimitMs`: an idle guest may sleep as long as it likes.
