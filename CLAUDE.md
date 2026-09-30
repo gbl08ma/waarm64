@@ -65,6 +65,7 @@ Playwright's Chromium and sets `NODE_USE_ENV_PROXY=1`. There `systemd-run` doesn
 ```sh
 scripts/ci.sh                  # everything CI runs (~5 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, Node + Chromium tests, image tests
 scripts/ci-net.sh              # the network tests on Debian (~4 min): also when a change touches the network (docs/testing.md)
+scripts/ci-long.sh             # the heaviest multi-vCPU runs (~70 s): also for JIT, SMP and memory-model changes, and at milestone ends
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
 cargo test                     # native core tests
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium; needs the wasm build)
@@ -96,7 +97,8 @@ node bench/spike/memory/run-all.ts   # M0.5 memory suite
 ```
 
 The full benchmark list is in [docs/benchmarking.md](docs/benchmarking.md). **`scripts/ci.sh` must
-pass before any piece of work is considered done** (and `scripts/ci-net.sh` when it touches the network).
+pass before any piece of work is considered done** (and `scripts/ci-net.sh` when it touches the network, `scripts/ci-long.sh` when it touches the JIT, SMP
+or the memory model).
 
 ## Conventions
 

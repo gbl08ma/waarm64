@@ -17,9 +17,9 @@
 //   bare-metal tests, Buildroot and (with WEBPC_DISTROS=alpine) Alpine, each
 //   WEBPC_PARALLEL_RUNS times (default 3), every run must pass.
 // Needs the wasm build; the guests that need target/images skip without them.
-// Three files define these tests, each a part picked by name, so that they run side by side
-// (node --test runs files in parallel, a file's tests in sequence): boot-node.test.ts,
-// boot-node-parallel.test.ts and boot-node-litmus.test.ts.
+// Four files define these tests, each a part picked by name, so that they run side by side
+// (node --test runs files in parallel, a file's tests in sequence): boot-node.test.ts (bare metal,
+// kvm-unit-tests), boot-node-linux.test.ts, boot-node-parallel.test.ts, boot-node-litmus.test.ts.
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test as nodeTest } from 'node:test';
@@ -39,6 +39,8 @@ const image = (rel: string) => readFileSync(new URL(rel, IMAGES));
 const has = (rel: string) => existsSync(new URL(rel, IMAGES));
 const STRESS = process.env.WEBPC_JIT_STRESS === '1';
 const INTERP = process.env.WEBPC_INTERP === '1';
+// The heaviest multi-vCPU runs are scripts/ci-long.sh's (for JIT, SMP and memory-model changes, and milestone ends).
+const longSkip = process.env.WEBPC_LONG_TESTS !== '1' && 'SKIPPED: scripts/ci-long.sh runs it (WEBPC_LONG_TESTS=1)';
 const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
@@ -290,8 +292,10 @@ const litmusOk = (r: Run) => {
   assert.match(r.console, /webpc: litmus on 4 CPUs[^]*litmus: all ok, 0 skipped\r?\nwebpc: stress on 4 CPUs[^]*\nwebpc: test ok\r?\n/, r.console);
 };
 guest('litmus and stress on 4 vCPUs', () => litmus('-s,100,-r,1', '-n,20000'), litmusOk, { skip: litmusSkip, stress: STRESS, steps: STEPS['litmus-4cpu'], interp: false, max: 5e9 });
-for (const [mode, jit, l, s] of [['JIT', 1, '-s,1000,-r,50', '-n,100000'], ['JIT-check', 3, '-s,100,-r,2', '-n,10000']] as const) {
-  test(`parallel: litmus and stress on 4 vCPUs (${mode})`, { skip: litmusSkip }, async () => {
+// The JIT's litmus at -r 50 caught V8 folding an address dependency (docs/jit.md "Atomics"; -r 10
+// caught it 1 run in 3); ci.sh runs -r 10 for its time, ci-long.sh -r 50.
+for (const [mode, jit, l, s] of [['JIT', 1, longSkip ? '-s,1000,-r,10' : '-s,1000,-r,50', '-n,100000'], ['JIT-check', 3, '-s,100,-r,2', '-n,10000']] as const) {
+  test(`parallel: litmus and stress on 4 vCPUs (${mode})`, { skip: litmusSkip || (mode === 'JIT-check' && longSkip) }, async () => {
     const r = await boot({ ...litmus(l, s), parallel: true, idleLimitMs: 30_000 }, jit, 1e12);
     console.log(`# litmus and stress ${mode}: ${(r.ms / 1000).toFixed(1)} s; ${r.console.match(/stress: spin ok .*/g)?.join('; ')}`);
     litmusOk(r);
@@ -345,7 +349,7 @@ guest('Alpine', () => ({
   assert.match(r.console, /webpc: alpine [^]*webpc: test ok\r?\n/);
 }, { skip: alpineSkip, stress: STRESS, steps: STEPS.alpine, interp: false });
 
-test('parallel: Alpine on 4 vCPUs (JIT)', { skip: alpineSkip }, () => parallel({
+test('parallel: Alpine on 4 vCPUs (JIT)', { skip: alpineSkip || longSkip }, () => parallel({
   ramSize: 1 << 30, kernel: image(a.kernel), initrd: image(a.initrd), cmdline: a.cmdline, devices: testDevices(new URL(a.disk, IMAGES).href), framebuffer: { width: 640, height: 480 }, ncpus: 4,
 }, 1, (r) => {
   poweredOff(r);

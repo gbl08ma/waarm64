@@ -4,7 +4,11 @@ Layered, cheapest first; `scripts/ci.sh` runs every layer and must pass before a
 is done. **`scripts/ci-net.sh`** runs the network tests on Debian (`net-guest`, `page-network`,
 `net-tailnet`, ~4 min); it must pass too when a change touches the network (the gateway,
 virtio-net, the Tailscale client, the Network menu, Debian's network command line). The rest of
-the network's tests (`network`, `gateway`, `net`, `devices`) are in `ci.sh`. **New behavior comes with tests at the cheapest layer that catches it.** Instruction
+the network's tests (`network`, `gateway`, `net`, `devices`) are in `ci.sh`. **`scripts/ci-long.sh`**
+(~70 s alone) runs the heaviest multi-vCPU runs, which `ci.sh` leaves out or shortens for its time: the
+parallel litmus and atomics stress under JIT-check, the JIT's at `-r 50` (`ci.sh` runs `-r 10`), and Node's Alpine on 4 parallel vCPUs
+(Chromium's parallel Alpine boot stays in `ci.sh`). It must pass too for changes to the JIT,
+parallel SMP, broadcast maintenance or the memory model, and at a milestone's end. **New behavior comes with tests at the cheapest layer that catches it.** Instruction
 semantics need golden-corpus coverage; JIT changes must pass the differential test, lockstep
 and the exact-step boots.
 
@@ -58,7 +62,7 @@ Rules behind that matrix:
   once the guest's console takes the screen (~3 s after the URL instead of ~40 s: a Debian boot
   less of load). **CI's wall time:** Node runs test files in parallel and a file's tests in
   sequence, so the long files set it. The Node boots are one suite (`tests/boot-node-suite.ts`)
-  in three files that pick their tests by name (`tests/boot-node*.test.ts`: ~280 s in one file
+  in four files that pick their tests by name (`tests/boot-node*.test.ts`: ~280 s in one file
   before). `ci.sh` runs the native guest-image tests (~130 s) beside `npm test`, not after it.
 - Guest-image tests skip loudly when `target/images/<name>` is missing or stale
   (`images/build.sh --check`).
@@ -245,7 +249,7 @@ skipped (on one vCPU only `CoRW1`, `CoWR`, `CoWW` run).
   | `core/tests/litmus.rs` | round-robin, interpreter (steps: `litmus-4cpu`) | `-s 100 -r 1`, `-n 20000` | 9 s |
   | `core/tests/litmus.rs` | parallel, interpreter | `-s 1000 -r 10`, `-n 100000` | 12 s |
   | `tests/boot-node*.test.ts` | round-robin, JIT (the same steps) | as the interpreter's | 3.4 s |
-  | `tests/boot-node*.test.ts` | parallel, JIT / JIT-check | `-s 1000 -r 50`, `-n 100000` / `-s 100 -r 2`, `-n 10000` | 18 s / 43 s (JIT-check's boot is 30 s) |
+  | `tests/boot-node*.test.ts` | parallel, JIT / JIT-check | `-s 1000 -r 10` (`-r 50` in `ci-long.sh`), `-n 100000` / `-s 100 -r 2`, `-n 10000` | 18 s / 43 s (JIT-check's boot is 30 s) |
   | `tests/browser.test.ts` | parallel, JIT | `-s 1000 -r 10`, `-n 100000` | 9 s |
   | `scripts/tsan.sh` | parallel, interpreter, ThreadSanitizer | `-s 100 -r 1`, `-n 10000` | 60 s |
 
@@ -259,7 +263,8 @@ skipped (on one vCPU only `CoRW1`, `CoWR`, `CoWW` run).
   "Atomics"). It showed as MP+dmb.sy+addr's forbidden outcome about once in 10⁴–10⁵ once the
   code tiered up: twice in CI (1 of 20,000, Chromium) and 95 times in 1.2M in Node at `-r 200`
   (none after the fix). Short runs run mostly Liftoff code, which doesn't fold: the Node parallel
-  JIT run uses `-r 50`, where the unfixed build failed 5 of 5 runs. To look for such a
+  JIT run uses `-r 50` in `scripts/ci-long.sh`, where the unfixed build failed 5 of 5 runs
+  (`ci.sh` runs `-r 10`, which caught it in 1 run of 3). To look for such a
   rare outcome, boot the litmus image in parallel JIT with `webpc.litmus=-s,1000,-r,200` (~1 min
   in Node, 400K outcomes a test).
 

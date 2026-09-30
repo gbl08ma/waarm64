@@ -130,8 +130,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **Booting conventional arm64 disk images unmodified:** now M8 phase B (PLAN.md §3: the kernel
-  read from the image at start, then UEFI if needed; disk in and out). Until then a distro's kernel
+- **Booting conventional arm64 disk images unmodified:** now M8 phase B (PLAN.md §3: through
+  UEFI firmware and the image's own bootloader; disk in and out). Until then a distro's kernel
   and initrd are extracted from its image ahead of time (`tools/debian.ts`).
 - The timer, GIC and PL011 tests have no hardware oracle; a GICv3-free subset of `timer.c`
   (ISTATUS, TVAL, CNTKCTL traps) could run on hvf.

@@ -16,7 +16,7 @@ the docs and its entry here shrinks to a summary.
 | Privilege | EL0 and EL1 only. No EL2/EL3, no secure state |
 | MMU | Stage 1 only, 4K granule, 48-bit VA, TTBR0/TTBR1, ASIDs, software-managed access flag |
 | Platform | QEMU `virt`'s memory map; **GICv3 (no ITS) since M7** (the GICv2 model was dropped in M7: every guest we run has a GICv3 driver); generic timer, PL011, a PL031 RTC (realtime mode), PSCI over HVC (answered in the core, CPU_ON included; SYSTEM_OFF/RESET exit to the host), virtio-mmio v2, a DTB generated from the VM config ([docs/platform.md](docs/platform.md)) |
-| Boot | Direct kernel boot (arm64 `Image` + initrd + DTB); no UEFI yet. Distro kernels and initrds are extracted from their images ahead of time. **M8 phase B:** boot conventional arm64 disk images unmodified: their kernel read from the image at start, then through their own bootloader (UEFI) if that proves needed |
+| Boot | Direct kernel boot (arm64 `Image` + initrd + DTB); no UEFI yet. Distro kernels and initrds are extracted from their images ahead of time. **M8 phase B:** boot conventional arm64 disk images unmodified, through UEFI firmware and their own bootloader |
 | Core | Rust compiled to wasm32 (the same crate builds natively for tests); host glue in TypeScript without a build step |
 | Guest memory | **Layout A** (M0.5): one shared wasm32 memory, core state then guest RAM (≤ ~3.5 GiB). One lowering point for guest accesses in generated code; TLB tag bits 3–11 reserved for a memory index ("A + spill memories" as NUMA nodes later) ([docs/architecture.md](docs/architecture.md)) |
 | JIT | Gadget style (inline what pays, helper calls into the interpreter's code for the rest), blocks keyed by guest PA, loop regions with tier-up, exact step accounting ([docs/jit.md](docs/jit.md)) |
@@ -117,15 +117,15 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   down, take the modified disk away). Kickoff to confirm; outline in `M8-PHASEB-HANDOVER.md`.
   - **Disk in:** an image by URL (hosted, as the Debian image is now) or a local file, qcow2 or raw,
     over the existing blk backends. The same path takes a disk of changes back in (below).
-  - **Boot it unmodified**, in two steps:
-    - First, the page reads the image's `/boot` and its boot entries (GRUB's or the Boot Loader
-      Spec's) at each start and boots that kernel, initrd and command line directly. There is no
-      preparation step, and a kernel updated in the guest boots next time. `web/bootfs.ts` and
-      `web/ext4.ts` already run in the browser.
-    - Then UEFI firmware (EDK2's ArmVirtQemu, BSD-2-Clause-Patent, built in Podman) running the
-      image's own GRUB, for what the reader can't do (other filesystems, LVM, LUKS, GRUB menus,
-      EFI variables, compressed EFI kernels). It needs a flash device and QEMU's DTB handover;
-      it comes in if the images the user wants need it, measured against the boot time it costs.
+  - **Boot it unmodified through UEFI** (the user, 2026-09-30): EDK2's ArmVirtQemu firmware
+    (BSD-2-Clause-Patent, built in Podman as a guest workload) runs the image's own bootloader
+    (GRUB, systemd-boot), which loads its kernel through the EFI stub. That's the standard path
+    every arm64 distro image supports, so the user's image boots the way it would on a real
+    machine. It covers any filesystem, GRUB menus, EFI variables and kernel updates in the guest.
+    **Not** a loader in the page that reads `/boot` and guesses the boot entry. That was proposed
+    and rejected: it isn't standardized, would break with each distro's layout, and takes the
+    choice of bootloader away from the user. It needs a CFI flash for the firmware and its
+    variables, and QEMU's DTB handover; the PL031 is there.
   - **Work and shut down:** the OPFS overlay as today; a clean power-off.
   - **Disk out,** two ways:
     - **Just the changes:** a qcow2 holding the overlay's blocks (4 KiB clusters, as the overlay
