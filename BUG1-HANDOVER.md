@@ -1,6 +1,6 @@
 # BUG1: "vCPU 1: RuntimeError: unreachable" under a 4-vCPU stress load
 
-**Status:** analysed, not reproduced. The stress test exists (`bench/stress/stress.ts`), the DSB wait no longer trips on the waiter's own stalls, and the tab's memory growth is bounded (see "Progress, 2026-09-30 session 2" at the end). **Next: the multi-hour Go-load stress run on the fixed build.** This file carries the analysis to whoever
+**Status:** not reproduced as the DSB panic. A related intermittent hang *is* reproduced: the page's machine worker freezes during Debian's boot ("A frozen machine worker" at the end). The JIT's memory is bounded (a byte budget that flushes the cache), the DSB wait no longer trips on the waiter's own stalls, and a stress test exists. **Next: the user's manual test on this build ("For the manual test" at the end), and the machine-worker freeze.**
 investigates next; delete it in the commit that fixes the bug (or update it with what was found).
 
 ## What happened
@@ -263,9 +263,8 @@ stall or CPU starvation of one vCPU's worker, hypothesis 5, is not excluded).
   5 GB in ~6 minutes of Go builds. A 160 MiB wasm budget per VM now flushes the cache, the table
   drops flushed slots, and a GC nudge after the flush makes V8 free the code. The tab now holds at
   ~3.3 GB; with the flush alone it peaked at 9.6 GB. The "bloated after reload" case didn't
-  reproduce: a panic and a reload return the tab to ~1.2 GB. Next, in progress: evicting the
-  oldest modules instead of flushing. docs/backlog.md has sharing modules across vCPU workers and
-  V8's per-region overhead.
+  reproduce: a panic and a reload return the tab to ~1.2 GB. docs/backlog.md has coldest-first
+  eviction (FIFO failed, below), sharing modules across vCPU workers, and V8's per-region overhead.
 - The tailnet SSH test (uncommitted in the tree) is parked: it runs inside the exit-node phase,
   which fails in this VM, and its full-length run timed out under load.
 - **A one-off hang in CI (unexplained; watch for it).** The first `scripts/ci.sh` on the merged
@@ -273,3 +272,57 @@ stall or CPU starvation of one vCPU's worker, hypothesis 5, is not excluded).
   after "input events..." passed, so in `alpine boots from virtio-blk in a worker, deterministic
   mode, JIT`. That test passes alone in 11 s, and the file and CI pass on a quiet machine.
   Contention slows a boot, it shouldn't stop one: it may be the same host-side stall as BUG1.
+
+## Session 2, continued: eviction, harness fixes, and a frozen machine worker
+
+- **FIFO module eviction: built, collapsed, removed.** It's on the local branch
+  `fifo-evict-attempt`, not pushed. Under the 4-vCPU Go load it collapsed the guest within 3 min:
+  - ~1200 MIPS fell to 4–100;
+  - the guest reported hard and soft lockups (up to 97 s);
+  - single `vm_run_cpu` calls ran up to 112 s with every vCPU thread busy;
+  - the renderer grew to 6.8 GB.
+
+  FIFO evicts the hottest code, the drop cascades through `linkers`, and the budget stays full.
+  **These are the user's symptoms (a slowdown, then lockups, and a tab past 6 GB), so a JIT that
+  thrashes, with the vCPU inside one long `vm_run_cpu` call recompiling hot code, is a candidate
+  for the original BUG1 too.** The main branch keeps the whole-cache flush (5145861). It ran the
+  same load for 21 min at 600–1100 MIPS, and for 5 more min with no findings. Coldest-first
+  eviction is in docs/backlog.md.
+- **Harness fixes** (bench/stress):
+  - The load's start is checked against the shell's output, not its echo.
+  - A boot that never reaches login dumps the machine's state twice, 10 s apart.
+  - An unanswered probe logs the console's tail.
+  - Probes are logged once settled. Before this, `summarize.ts` read every probe as unanswered: the
+    "0/66 answered" of a Go-load run was this bug, not the guest. The run's own report was right.
+- **Under the Go load, single `vm_run_cpu` calls of 2–5 s are routine** (a call is up to 100 M steps,
+  and the flush build recompiled 10 M blocks in 21 min). Use `--stall-ms 6000` for that load.
+- **A frozen machine worker, three times today, all after 5145861 (the JIT budget).** Earlier runs
+  in this session had none; the pre-budget build hasn't been checked for it:
+  1. The first CI run stuck 40 min in the Alpine deterministic-JIT boot of tests/browser.test.ts.
+  2. The first 4-hour stress attempt: Debian's console went silent ~25 s into the boot.
+  3. CI's `page-network` test: after 180 s the page still said "booting · up 0:00:50".
+  "up" is host time from the machine worker's once-a-second `setInterval`, so that worker's
+  event loop stopped. The main thread still answered. Cases 2 and 3 stop at the same boot point:
+  after `regulatory.db` and the virtio input devices, just before the switch to the root disk.
+  It didn't reproduce in 6 plain 2-vCPU boots, 2 `page-network` runs alone, or 5 under a
+  concurrent Go load. The machine worker's waits are all `Atomics.waitAsync` (web/vm.ts `wait`),
+  so something else blocks it or keeps it busy. **This matches the user's symptom 5 (a frozen page
+  with a live guest)**, and BUG1's stalls may be the same thing seen from a vCPU. Next: when it
+  happens, pause the machine worker and take its JS stack (DevTools by hand; in the harness,
+  CDP `Target.setAutoAttach` plus `Debugger.pause` on the worker target, not built yet).
+
+## For the manual test
+
+`npm start` (or `npm run serve`), with Debian on 4 vCPUs and the usual load (Go compiles, the tailnet, SSH).
+- Memory should level off around 3–3.5 GB. docs/jit.md "Memory" has the numbers.
+- The page's status carries per-vCPU liveness. In the page's console:
+  `JSON.parse(document.getElementById('status').dataset.status)`:
+  - `vcpus[i].maxRunMs`: the longest `vm_run_cpu` call
+  - `loopAgeMs`: time since the machine worker's run loop last went round
+  - `uptime`: host time since boot
+  If "up" stops advancing, the machine worker is frozen.
+- **If the page freezes:** DevTools → Sources → Threads, select the machine worker
+  (web/app/worker.ts), and pause it. Copy the call stack, and also the vCPU workers' stacks.
+  Before reloading, note the tab's memory (Chromium's task manager).
+- A vCPU panic now reads `core panic: vCPU N: DSB waited 10 s ...`, with the per-vCPU dump
+  (see "Step 1").

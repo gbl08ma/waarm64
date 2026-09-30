@@ -84,7 +84,7 @@ the interpreter's own code.
   least 32 MiB each: 40 MiB per vCPU on 4). When either is reached, everything is flushed (slots
   freed, the host's table lets go of the old functions, [Memory](#memory)). Alpine's boot compiles
   ~22 MiB and Debian's ~73 MiB on one vCPU (~31 MiB per vCPU on 4), so neither flushes. Per-module
-  eviction is backlog.
+  eviction is backlog: coldest first. FIFO was tried, and it collapsed a Go build.
 - **Modes** (`jit::Config`; `VmConfig.jit`): 1 = the default above; 2 = **JIT-stress**: threshold
   0, batch 1, a 4-region cache, `region_after` 1 and the stale-code checker; 3 = **JIT-check**:
   the same with the full-size cache and `region_after` 0 (the 4-region cache evicts most blocks

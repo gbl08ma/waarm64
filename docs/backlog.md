@@ -49,10 +49,31 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   catch it.
 - **CoreMark's gap to TCG (~70%)**: the store bounds checks V8 keeps on Linux arm64, register
   write-backs at block exits, call/return between small regions. Only for real programs.
-- **Per-module eviction** instead of whole-cache flushes ([jit.md](jit.md) "Memory"): FIFO by
-  install order, the oldest ~25% of the byte budget, invalidating their blocks through
-  `Cache::invalidate` and `linkers`, nulling their table slots and reusing them from a free list.
-  A Go build flushes every ~30 s per vCPU today (6% of CPU compiling).
+- **Per-module eviction, coldest first,** instead of whole-cache flushes ([jit.md](jit.md)
+  "Memory"). A Go build flushes about every 30 s per vCPU today, spending ~6% of CPU compiling.
+  - **What it would do:** evict the modules unused for the longest time, unlink what chains to them,
+    null their table slots and reuse them from a free list.
+  - **FIFO by install order was built and dropped** (branch `fifo-evict-attempt`, local, not pushed).
+    Under the 4-vCPU Go load of `bench/stress` it collapsed the guest within 3 min:
+    - ~1200 MIPS fell to 4–100;
+    - the guest reported hard and soft lockups (97 s);
+    - single `vm_run_cpu` calls ran up to 112 s;
+    - the renderer grew to 6.8 GB.
+  - **Why FIFO failed:** the oldest code is the hottest (Go's runtime, compiled first). Dropping it
+    cascades through `linkers` to most of the live code, and modules emptied by the cascade kept
+    their bytes until their turn. So the budget stayed full and every install evicted again.
+  - **What a coldest-first design needs:**
+    - a cheap use signal per module, since blocks run inside V8 without telling the core. For
+      example: a word per module that the core or the host sets on dispatch or jump-cache misses and
+      a sweep clears (a second-chance clock), or the sampling profiler's PCs;
+    - modules released as soon as all their regions are dropped;
+    - `drop_key` removals from `pages` and `pending` that don't scan per key.
+  - **Worth keeping from that branch:**
+    - the explicit `env.jit_release(slot, n)` host signal, in place of `web/vm.ts` detecting a
+      flush by slot numbers restarting;
+    - `drop_key` removing the keys that `linkers` drops from `pages` too, which invalidation leaks
+      today.
+  - **Measure it against the flush under the Go load.**
 - **Share compiled modules across vCPU workers:** each worker compiles its own copy of the guest's
   code (its own cache, table and instances), ~4× duplication on 4 vCPUs: 615K regions and 294 MB of
   wasm in total after 8 minutes of a mixed load (~150K and ~72 MB per worker), ~10× that in V8
