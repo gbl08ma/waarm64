@@ -122,7 +122,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   (EDK2 ignores `/reserved-memory`), a **minimal fw_cfg** to pass systemd credentials to
   Debian (its first boot otherwise stops at `systemd-firstboot` and locks root), a generated
   NoCloud seed disk for Alpine, and **the DT stays** the guests' description (DT and ACPI
-  measured the same on these images; the user asked).
+  measured the same on these images; the user asked). Loop 1: `images/build.sh edk2`
+  (reproducible) and the UEFI oracle `tools/uefi-oracle.ts`; loop 2 (the platform) is next.
   - **Disk in:** an image by URL (hosted, as the Debian image is now) or a local file, qcow2 or raw,
     over the existing blk backends. The same path takes a disk of changes back in (below).
   - **Boot it unmodified through UEFI** (the user, 2026-09-30): EDK2's ArmVirtQemu firmware

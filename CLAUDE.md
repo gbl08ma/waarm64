@@ -84,6 +84,7 @@ WEBPC_PARALLEL_RUNS=20 cargo test --release --test baremetal baremetal_parallel 
 (cd core/fuzz && cargo run --release --bin sweep [-- sys])      # decoder sweep vs Capstone (~3 min; sys: seconds)
 (cd core && cargo fuzz run virtqueue)                           # libFuzzer on the virtio transport
 tests/baremetal/build.sh && tests/baremetal/oracle.sh [--hvf]  # rebuild the bare-metal tests, run them on QEMU (TCG or hvf)
+node tools/uefi-oracle.ts debian alpine alpine-grub          # unmodified images through our EDK2 (images/build.sh edk2) on QEMU
 scripts/testfloat.sh           # FP core vs TestFloat 3e (in ci.sh)
 tests/qcow2/make.sh            # regenerate the qcow2 fixtures with qemu-img
 npm start                      # what a user runs: checks, npm ci, wasm core, Debian (tools/debian.ts), then serves (docs/frontend.md)

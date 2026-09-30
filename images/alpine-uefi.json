@@ -1,0 +1,17 @@
+{
+  "comment": "Alpine's published UEFI cloud images (M8 phase B, docs/plans/uefi.md), pinned by SHA512: the images tools/uefi-oracle.ts boots. Their root is locked; a NoCloud seed disk (CIDATA) unlocks it.",
+  "images": {
+    "alpine": {
+      "loader": "Limine",
+      "file": "alpine-3.24.2-aarch64-tiny-r0.qcow2",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud/alpine-3.24.2-aarch64-tiny-r0.qcow2",
+      "sha512": "364bc0cccfef54812ec5796032916fac651479a62165456ca588cabdba17aa79a8fdf94e1f439fe837ceba1ae3ae227e12d264ec0aa9fc7ed7b0623788f836a0"
+    },
+    "alpine-grub": {
+      "loader": "GRUB",
+      "file": "generic_alpine-3.24.1-aarch64-uefi-tiny-r0.qcow2",
+      "url": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/cloud/generic_alpine-3.24.1-aarch64-uefi-tiny-r0.qcow2",
+      "sha512": "eb983aabed32fbf17ccca2ce5e0090d06d860caa52a93ed416d775f18b04d0d9a347366d0dae86ec2ae3923b6c728bb9ec1995fcb036dd63b467125e4b42a7dd"
+    }
+  }
+}

@@ -133,6 +133,17 @@ Realtime runs and the rw-overlay boots aren't step-exact.
   `kernel-irqchip=on`): its `GICR_TYPER` reads 0 through 32-bit halves, QEMU's own model
   (`kernel-irqchip=off`) doesn't, so the interrupt controller has a hardware oracle.
 
+- **The UEFI oracle** (`tools/uefi-oracle.ts`, M8 phase B; [plans/uefi.md](plans/uefi.md)): our
+  EDK2 build (`images/build.sh edk2`) on `qemu-system-aarch64` set up like our machine
+  (ArmVirtQemuKernel via `-kernel` with QEMU's DT minus PCIe, the platform bus, the PMU, the PL061
+  and its `gpio-keys`, the ITS and the seeds; the variable store in flash bank 1; virtio-mmio disks;
+  Cortex-A57), booting `debian`, `alpine` (Limine) and `alpine-grub` unmodified to a root login
+  and a power-off, with each stage's time. Dev-only (needs `qemu-system-aarch64`, `dtc`,
+  `mkfs.vfat`, `mcopy`), not in CI. `node tools/uefi-oracle.ts debian alpine alpine-grub`: ~30 s
+  for all three at once under TCG. **Finding:** QEMU's `kaslr-seed` in `/chosen` made Debian's
+  boot 1.8× slower under TCG (backlog "No `rng-seed` in the DT"), which first looked like DT
+  vs ACPI; without it they're equal.
+
 ## Bare-metal tests (`tests/baremetal/`)
 
 `start.S` (stack, vectors calling `on_exception(frame, vector)`, FP on, `run_el0()` to drop to EL0

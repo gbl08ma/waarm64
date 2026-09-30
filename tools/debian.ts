@@ -18,7 +18,7 @@ import { findBootFiles } from '../web/bootfs.ts';
 import { openDisk } from '../web/qcow2.ts';
 
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
-export type Pin = { version: string; file: string; url: string; sha512: string };
+export type Pin = { version?: string; file: string; url: string; sha512: string; label?: string; pinFile?: string };
 export const PIN = JSON.parse(await readFile(join(ROOT, 'images/debian.json'), 'utf8')) as Pin;
 export const OUT = join(ROOT, 'target/images/debian');
 export const OUTPUTS = ['Image', 'initrd.img', 'disk.qcow2'];
@@ -58,7 +58,7 @@ export async function download(pin: Pin = PIN, log = (s: string) => console.log(
   const path = join(dir, pin.file);
   if (existsSync(path)) {
     if ((await sha512File(path, log)) !== pin.sha512) {
-      throw new Error(`${path} doesn't match the pinned SHA512 (images/debian.json): delete it and run this again to download it afresh.`);
+      throw new Error(`${path} doesn't match the pinned SHA512 (${pin.pinFile ?? 'images/debian.json'}): delete it and run this again to download it afresh.`);
     }
     return path;
   }
@@ -69,10 +69,10 @@ export async function download(pin: Pin = PIN, log = (s: string) => console.log(
     res = await fetch(pin.url);
     if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
   } catch (e) {
-    throw new Error(`Couldn't download Debian from ${pin.url}: ${(e as Error).message}${(e as Error).cause ? ` (${(e as Error & { cause: Error }).cause.message})` : ''}.\nCheck the network, or put ${pin.file} in ${dir} (WEBPC_DL sets that directory).`);
+    throw new Error(`Couldn't download ${pin.label ?? 'Debian'} from ${pin.url}: ${(e as Error).message}${(e as Error).cause ? ` (${(e as Error & { cause: Error }).cause.message})` : ''}.\nCheck the network, or put ${pin.file} in ${dir} (WEBPC_DL sets that directory).`);
   }
   const total = Number(res.headers.get('content-length') ?? 0);
-  const show = progressLine(`Downloading Debian 13 (${pin.file})`);
+  const show = progressLine(`Downloading ${pin.label ?? 'Debian 13'} (${pin.file})`);
   const h = createHash('sha512');
   const f = await open(part, 'w');
   let done = 0;
@@ -91,7 +91,7 @@ export async function download(pin: Pin = PIN, log = (s: string) => console.log(
   show(done, total, true);
   if (h.digest('hex') !== pin.sha512) {
     await rm(part, { force: true });
-    throw new Error(`The download of ${pin.url} doesn't match the pinned SHA512 (images/debian.json); it was deleted. Run this again to retry.`);
+    throw new Error(`The download of ${pin.url} doesn't match the pinned SHA512 (${pin.pinFile ?? 'images/debian.json'}); it was deleted. Run this again to retry.`);
   }
   await rename(part, path);
   return path;

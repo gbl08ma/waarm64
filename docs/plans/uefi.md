@@ -11,8 +11,8 @@ Set-up: `qemu-system-aarch64` 11.1.1 (TCG) in the dev VM, `-M virt,gic-version=3
 cortex-a57 -smp 2 -m 1G`, virtio-mmio disks (`-device virtio-blk-device`), no PCI devices,
 EDK2 edk2-stable202608 (openSUSE's `qemu-uefi-aarch64` package, a DEBUG build, and our own
 RELEASE builds of ArmVirtQemu and ArmVirtQemuKernel, made natively in an arm64 Debian 13
-container in ~1 min each). Scripts and logs: `bench/results/local/m8b-loop0/` (not committed;
-loop 1 turns them into a committed oracle script). Timings below are QEMU TCG's, not ours.
+container in ~1 min each). Loop 0's ad-hoc scripts became `tools/uefi-oracle.ts` in loop 1
+(testing.md "System-level oracles"). Timings below are QEMU TCG's, not ours.
 
 **Images** (all unmodified, all boot on every configuration below):
 - Debian 13 nocloud (`images/debian.json`): `\EFI\BOOT\BOOTAA64.EFI` is shim, which loads GRUB
@@ -36,7 +36,9 @@ loop 1 turns them into a committed oracle script). Timings below are QEMU TCG's,
 - **It does need a variable store:** with no `cfi-flash` node it takes a synchronous exception
   early in DXE. It finds the store in a `cfi-flash` bank that doesn't hold the firmware (QEMU's
   bank 1 at `0x0400_0000`); the store is three 256 KiB areas (variables, FTW working, spare).
-  The boot manager writes it on the first boot (a `Boot0002 "UEFI Misc Device"` entry).
+  The boot manager writes it on the first boot (a `Boot0002 "UEFI Misc Device"` entry). EDK2
+  sets the flash node's `status` to `disabled` in the DT it hands over, so Linux doesn't bind a
+  flash driver to it (no `/proc/mtd` on Debian).
 - Firmware start to the boot manager starting the disk: **3.3 s** (ArmVirtQemuKernel RELEASE),
   5.3 s (ArmVirtQemu RELEASE from flash), 5.6 s (the DEBUG package). Then the loader's menu (5 s
   Debian, 10 s Alpine's Limine) unless a key is pressed; the kernel starts ~1 s after the menu.
@@ -53,7 +55,8 @@ loop 1 turns them into a committed oracle script). Timings below are QEMU TCG's,
 - **DT or ACPI, the same result** for all three images: with QEMU's ACPI tables (fw_cfg's
   `etc/table-loader`) EDK2 installs ACPI and withholds the DT ("EFI stub: Generating empty
   DTB"); with `acpi=off` it passes the DT through. Both: SMP through PSCI, power-off, the root
-  disk, the same boot time. The DT gives `tty0` and `ttyAMA0` (fbcon plus `stdout-path`); ACPI's
+  disk, the same boot time (loop 1 first measured DT 1.8× slower: that was QEMU's `kaslr-seed`
+  in the DT, KASLR, which the ACPI boots lacked; without it they're equal). The DT gives `tty0` and `ttyAMA0` (fbcon plus `stdout-path`); ACPI's
   SPCR gives `ttyAMA0` only.
 - **The RTC is `rtc-efi` either way:** Linux asks EFI's `GetTime`, which EDK2 answers from the
   PL031 (so the PL031 must exist whenever the firmware runs). Other runtime services Linux uses:
@@ -101,14 +104,26 @@ passed through EDK2 unchanged. Revisit when an ACPI-only guest comes into scope.
 DynamicTablesPkg building the tables from our DT, plus AML for virtio-mmio (or a move to
 virtio-pci), keeps AML generation out of the core (backlog "Platform and devices").
 
-## The design for loops 1–3 (follows from loop 0)
+## Loop 1: the firmware as a guest workload (done, 2026-09-30)
+- `images/build.sh edk2`: ArmVirtQemuKernel RELEASE with `NETWORK_ENABLE=FALSE` (no PXE or HTTP
+  boot: nothing to boot from a network, and the network stack linked TLS), natively in Debian's
+  arm64 container, ~1 min, **reproducible** (a fixed stack-cookie list and hash seed: images.md),
+  `QEMU_EFI.fd` `a1e92a5f…` plus `LICENSES.txt`. THIRD_PARTY.md has its row.
+- `tools/uefi-oracle.ts` boots it on QEMU with a DT like ours (also without the PMU, the PL061
+  and `gpio-keys` QEMU adds with `acpi=off`, the ITS, and the seeds), Debian with the fw_cfg
+  credentials and Alpine with a generated seed disk, pressing Enter at the loader's menu. All
+  three log in and power off. An erased (all-ones) variable bank works: EDK2 formats it.
+- Stage times on the oracle (TCG, 2 vCPUs, the three at once): the boot manager starts the disk at
+  3.3 s, the kernel at 4.2 s (Alpine, GRUB or Limine) and 8.4 s (Debian: shim, then GRUB loads a
+  larger kernel and initrd); logins at 17 s (Alpine) and 25 s (Debian).
+- `images/alpine-uefi.json` pins the two Alpine images (SHA512).
+
+## The design for loops 2–3 (follows from loop 0)
 
 This changes the kickoff's suggested loops 1–2 (a code flash at 0, a reset to the flash, the DTB
 at RAM's base) to something smaller:
-- **Firmware: ArmVirtQemuKernel, RELEASE,** built by `images/build.sh edk2` natively in an arm64
-  Debian 13 container (pinned digest and snapshot, `SOURCE_DATE_EPOCH`; stable tag
-  `edk2-stable202608`), hash in `images/SHA256SUMS`, THIRD_PARTY.md row (BSD-2-Clause-Patent; a
-  binary we build and run). A 3 MiB `QEMU_EFI.fd`, served compressed like the other images.
+- **Firmware: ArmVirtQemuKernel** (loop 1). The page serves `QEMU_EFI.fd` (3 MiB, mostly
+  compressed already) with its `LICENSES.txt`.
 - **Boot: the existing direct boot.** The firmware is the `Image` (RAM + 2 MiB); no initrd; the
   DTB goes low in RAM, not in the top 2 MiB where EDK2 allocates (placement settled in loop 2:
   EDK2 must not allocate over it before copying it). A new machine configuration for the page;

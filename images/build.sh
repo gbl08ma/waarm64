@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, linux-crypto, debian, ltp, litmus (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, linux-crypto, debian, ltp, litmus, edk2 (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
 # buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Bootlin's
@@ -41,6 +41,11 @@
 #   package, pruned to images/ltp/tests) and the arm64 kernel selftests (abi,
 #   signal, tags) built from the kernel tree with Buildroot's toolchain, as
 #   rootfs.ext4; it boots linux/Image-defconfig and runs /ltp.sh.
+# edk2: EDK2's ArmVirtQemuKernel firmware (QEMU_EFI.fd, RELEASE), the UEFI that
+#   boots unmodified disk images (M8 phase B, docs/plans/uefi.md): an arm64 Image
+#   entered like a kernel with the DT in x0, without the network stack (no PXE or
+#   HTTP boot). Built natively in Debian's arm64
+#   container (apt from snapshot.debian.org, as images/Containerfile).
 # Outputs go to target/images/<name>/, downloads to target/images/dl/. Output
 # hashes are compared with images/SHA256SUMS (a mismatch warns: reproducibility
 # is best-effort).
@@ -62,13 +67,18 @@ KERNEL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 bc=1.08.2-r1 flex=2.
 LITMUS_TOOLS="ocaml=4.14.4-r0 dune=3.22.2-r1 ocaml-menhir=20220210-r6 ocaml-menhir-dev=20220210-r6 ocaml-zarith=1.14-r1 ocaml-findlib=1.9.6-r8 gmp-dev=6.3.0-r4 busybox-static=1.37.0-r31 gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 tar=1.35-r5"
 HERDTOOLS_TAG=7.58
 HERDTOOLS_COMMIT=1ca343e16a2038e406d1ac674e7e3a1b722b36c7
+EDK2_TAG=edk2-stable202608
+EDK2_COMMIT=2970e5699ba6267f3384ffab20f96647578aebc8
+EDK2_CONTAINER=docker.io/library/debian@sha256:1808211ab6f37c6fc6a75368651697536f7bf47993f2797befa8908b1254979d # trixie, arm64
+EDK2_SNAPSHOT=20260924T000000Z
+EDK2_TOOLS="build-essential uuid-dev acpica-tools python3 python-is-python3"
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user linux-crypto debian ltp litmus)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user linux-crypto debian ltp litmus edk2)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -295,6 +305,44 @@ build_debian() {
   WEBPC_DL=$root/$out/dl node --disable-warning=ExperimentalWarning tools/debian.ts
 }
 
+# EDK2 (pinned by tag, checked against the commit; its submodules pinned by it)
+# into a fresh copy of the tree, built natively in Debian's arm64 container.
+build_edk2() {
+  local dst=$out/edk2 src=$out/dl/edk2-$EDK2_TAG b=$out/build/edk2
+  if [ ! -d "$src" ]; then
+    git clone -q --depth 1 --branch "$EDK2_TAG" https://github.com/tianocore/edk2.git "$src"
+    git -C "$src" submodule update -q --init --depth 1 --jobs 8
+  fi
+  [ "$(git -C "$src" rev-parse HEAD)" = "$EDK2_COMMIT" ] || { echo "edk2: not $EDK2_COMMIT" >&2; exit 1; }
+  rm -rf "$b" "$dst"
+  mkdir -p "$b" "$dst"
+  tar -C "$src" --exclude=.git -cf - . | tar -C "$b" -xf -
+  podman run --rm -v "$root:$root:z" -w "$root/$b" -e SOURCE_DATE_EPOCH "$EDK2_CONTAINER" bash -ec '
+    export DEBIAN_FRONTEND=noninteractive
+    rm -f /etc/apt/sources.list.d/* /etc/apt/sources.list
+    printf "Types: deb\nURIs: http://snapshot.debian.org/archive/debian/%s\nSuites: trixie trixie-updates\nComponents: main\nCheck-Valid-Until: no\n" "$1" > /etc/apt/sources.list.d/snapshot.sources
+    apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends $2 >/dev/null
+    make -s -C BaseTools -j"$(nproc)" >/dev/null 2>&1 || make -C BaseTools
+    export PYTHON_COMMAND=python3 # edksetup.sh reads it unset (and fails under set -u)
+    set -- # and takes the positional parameters for its own options
+    . ./edksetup.sh >/dev/null
+    # Reproducible: BaseTools draws the stack cookies at random into these lists and
+    # picks from them by hash(GUID) (so a fixed hash seed too). They are public in the
+    # binary either way.
+    d=Build/ArmVirtQemuKernel-AArch64/RELEASE_GCC && mkdir -p $d
+    python3 -c "import hashlib, json, sys; [json.dump([int.from_bytes(hashlib.sha256(b\"webpc-edk2-%d-%d\" % (b, i)).digest()[:b // 8], \"little\") % ((1 << b) - 1) for i in range(100)], open(sys.argv[1] + \"/StackCookieValues%d.json\" % b, \"w\")) for b in (32, 64)]" $d
+    export PYTHONHASHSEED=0
+    build -s -a AARCH64 -t GCC -b RELEASE -p ArmVirtPkg/ArmVirtQemuKernel.dsc -D NETWORK_ENABLE=FALSE -n "$(nproc)" > build.log 2>&1 || { tail -30 build.log; exit 1; }
+  ' - "$EDK2_SNAPSHOT" "$EDK2_TOOLS"
+  cp "$b/Build/ArmVirtQemuKernel-AArch64/RELEASE_GCC/FV/QEMU_EFI.fd" "$dst/"
+  # The binary goes to users, so its licenses go with it: EDK2's, and those of the
+  # submodules linked in (OpenSSL in Hash2DxeCrypto, libfdt).
+  { echo "QEMU_EFI.fd: EDK2 $EDK2_TAG ($EDK2_COMMIT), ArmVirtPkg/ArmVirtQemuKernel.dsc, built by webpc's images/build.sh edk2."
+    for f in License.txt CryptoPkg/Library/OpensslLib/openssl/LICENSE.txt MdePkg/Library/BaseFdtLib/libfdt/BSD-2-Clause; do
+      printf '\n==== %s ====\n\n' "$f"; cat "$src/$f"
+    done; } > "$dst/LICENSES.txt"
+}
+
 build_kvm-unit-tests() {
   local dst=$out/kvm-unit-tests src=$out/build/kvm-unit-tests
   rm -rf "$src" "$dst"
@@ -317,6 +365,7 @@ inputs() {
   [ "$1" = alpine-user ] && pins='^USERLAND_' 
   [ "$1" = linux-crypto ] && files+=(images/linux.fragment $(find images/crypto -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
+  [ "$1" = edk2 ] && pins='^EDK2_'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
   { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto ]]; then declare -f linux_src; fi; } |
     sha256sum | cut -c1-16
@@ -333,6 +382,7 @@ outputs() {
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
     ltp) echo ltp/rootfs.ext4 ;;
     litmus) echo litmus/initramfs.cpio litmus/litmus.tar ;;
+    edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt ;;
   esac
 }
 
@@ -370,10 +420,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() user= crypto= litmus= kernel= debian=
+  rest=() user= crypto= litmus= kernel= debian= edk2=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; else rest+=("$name"); fi
+    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -389,6 +439,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   if [ -n "$user" ]; then build alpine-user; fi
   if [ -n "$crypto" ]; then build linux-crypto; fi
   if [ -n "$litmus" ]; then build litmus; fi
+  if [ -n "$edk2" ]; then build edk2; fi
   exit 0
 fi
 

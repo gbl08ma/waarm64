@@ -58,6 +58,12 @@ when bumping the pin.
 |---|---|---|---|
 | CoreMark | [eembc/coremark](https://github.com/eembc/coremark), `1f483d5b8316` | Apache-2.0, plus EEMBC's CoreMark Acceptable Use Agreement (the CoreMark trademark only for results of unmodified sources) | `bench/interp/build-coremark.sh` fetches it into `target/dl/coremark` and builds it unmodified with our own port layer (`bench/interp/coremark/core_portme.{c,h}`, MIT) into `target/bench/` (not committed, not distributed) |
 
+## Firmware we build and distribute (not in the repository)
+
+| Binary | Source, commit | License | How we use it |
+|---|---|---|---|
+| `target/images/edk2/QEMU_EFI.fd` (`images/build.sh edk2`, M8 phase B) | [EDK2](https://github.com/tianocore/edk2) `edk2-stable202608`, `2970e5699ba6`, `ArmVirtPkg/ArmVirtQemuKernel.dsc` | BSD-2-Clause-Patent; linked in from its submodules: OpenSSL (Apache-2.0, in `Hash2DxeCrypto`) and libfdt (BSD-2-Clause, dual with GPL-2.0) | built unmodified and run as the guest's UEFI firmware; served to users with `LICENSES.txt` (the three texts), as binary redistribution requires. No EDK2 code is copied into webpc |
+
 ## Reference projects: verified licenses
 
 Checked on 2026-09-25 against the upstream default branch at the commit listed.

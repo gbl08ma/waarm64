@@ -19,7 +19,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   NZCV result (success sets 0000; an empty pool may fail with Z = 1, which guests retry). EDK2
   uses it when present (`RngDxe`, stack cookies: M8 phase B's QEMU runs log `ARM-RNDR`), and
   Linux seeds its CRNG from it at boot, before `virtio_rng` loads from the root filesystem (see
-  "No `rng-seed` in the DT" below).
+  "No `rng-seed` in the DT" below). Under UEFI it also turns on KASLR (same entry: measure it).
 - **Self-hosted debug:** breakpoints, watchpoints and `MDSCR_EL1.SS` single step raise nothing
   (the registers are RAZ/WI). Needed for in-guest `gdb` hardware breakpoints and `ptrace` single
   step (kvm-unit-tests `debug-*`).
@@ -156,7 +156,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **No `rng-seed` in the DT:** Linux's crng initializes only once `virtio_rng` loads from the root
   filesystem (Debian: 26 s into a 31 s boot; `systemd-random-seed` waits for it) and KASLR is off
   ("lack of seed"). `/chosen/rng-seed` (and `kaslr-seed`) from the host's CSPRNG in realtime mode;
-  deterministic mode would need a fixed seed (a step-count change).
+  deterministic mode would need a fixed seed (a step-count change). **Measure KASLR before
+  turning it on:** on the UEFI oracle (QEMU TCG, M8 phase B loop 1) Debian reached
+  `graphical.target` in 12.3 s without seeds, 10.6 s with `rng-seed` alone, and **22.1 s with
+  `kaslr-seed`** too (kernel and userspace alike). So the RNG seed is a win, and KASLR may cost
+  our JIT and TLB as it cost TCG. Under UEFI the EFI stub randomizes the kernel whenever the
+  firmware has an RNG (`EFI_RNG_PROTOCOL`: EDK2 gets one from RNDR, above), so RNDR brings KASLR
+  with it unless measured and handled (`nokaslr` isn't ours to pass: GRUB's command line).
 - virtio: `EVENT_IDX` not offered (do it when an I/O benchmark shows notify exits or interrupts
   matter); ConfigGeneration always 0 and no host API to change config space under a running driver
   (console resize, capacity change, net link state).
