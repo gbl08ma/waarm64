@@ -204,6 +204,13 @@ function finish() {
 }
 
 if (!(await until(/login: /, 300_000))) {
+  // A boot that stops short: say whether the machine still ran (steps, uptime, per-vCPU liveness), twice 10 s apart.
+  for (let i = 0; i < 2; i++) {
+    if (i) await new Promise((r) => setTimeout(r, 10_000));
+    const st = await hook(() => page.evaluate(() => globalThis.__stress?.state())).catch((e) => ({ error: String(e) }));
+    event('boot-stall', JSON.stringify({ page: await stateOf().catch(() => null), hook: st }));
+    say(`boot stall ${i}: ${JSON.stringify(st).slice(0, 1500)}`);
+  }
   finish();
   stop(2, `no login prompt; the console ended: ${JSON.stringify(serial.slice(-400))}`);
 }
