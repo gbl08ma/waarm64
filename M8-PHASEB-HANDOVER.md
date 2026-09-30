@@ -14,7 +14,7 @@ docs/frontend.md, `web/app/machine.ts`, `web/app/` (the page and its machine wor
 |---|---|---|
 | 0 | `21eff2b` | The kickoff; the QEMU oracle study (docs only) |
 | 1 | `918a8b8` | `images/build.sh edk2` (ArmVirtQemuKernel, reproducible), `tools/uefi-oracle.ts`, `images/alpine-uefi.json` |
-| 2 | (this commit) | ABI 29, the firmware configuration: `VmConfig.firmware`, a CFI flash bank (`core/src/flash.rs`), fw_cfg (`core/src/fw_cfg.rs`), the PL031 always (virtual time when deterministic), `vm_flash`; `BootOptions.firmware` (web/vm.ts); TTBR0 global TLB entries cached in parallel SMP; `web/fat.ts`; in-memory overlays in Node; `shell.img` and `images/build.sh alpine-uefi`; tests |
+| 2 | `bc7bd3a` | ABI 29, the firmware configuration: `VmConfig.firmware`, a CFI flash bank (`core/src/flash.rs`), fw_cfg (`core/src/fw_cfg.rs`), the PL031 always (virtual time when deterministic), `vm_flash`; `BootOptions.firmware` (web/vm.ts); TTBR0 global TLB entries cached in parallel SMP; `web/fat.ts`; in-memory overlays in Node; `shell.img` and `images/build.sh alpine-uefi`; tests |
 
 Loop 2 in short: our machine boots `QEMU_EFI.fd` like a kernel (RAM + 512 KiB; the DTB stays in
 the top 2 MiB, EDK2 copies it first), and EDK2 boots Debian's published qcow2 (shim, GRUB) and
