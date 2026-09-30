@@ -1,6 +1,6 @@
 # BUG1: "vCPU 1: RuntimeError: unreachable" under a 4-vCPU stress load
 
-**Status:** analysed, not reproduced, not fixed. **Next, high priority: the long-running Chromium stress test (the section after "What happened").** So far: step 1 of the plan (self-diagnosis) is done, see "Progress" at the end. This file carries the analysis to whoever
+**Status:** analysed, not reproduced. The stress test exists (`bench/stress/stress.ts`), the DSB wait no longer trips on the waiter's own stalls, and the tab's memory growth is bounded (see "Progress, 2026-09-30 session 2" at the end). **Next: the multi-hour Go-load stress run on the fixed build.** This file carries the analysis to whoever
 investigates next; delete it in the commit that fixes the bug (or update it with what was found).
 
 ## What happened
@@ -232,3 +232,44 @@ stall or CPU starvation of one vCPU's worker, hypothesis 5, is not excluded).
   Debian under the same load, and with the Tailscale client running for host contention.
 - Not done: reviewing every core helper for loops, and a host-stall test (pausing a vCPU worker
   from the test harness while another waits in a DSB: the wait should end at 10 s with the report).
+
+## Progress, 2026-09-30 session 2
+
+- **Audit (read only) of hypotheses 1, 2 and 4: nothing found.** No unbounded loop in the core
+  reachable from a chunk. The only spin, `Mem::pair_op`, has no cross-vCPU dependency. The
+  `broadcast`/`drain`/`applied` bookkeeping has no unsatisfiable `waits` entry, CPU_ON/OFF included.
+  `Vm::plat` is taken only on vCPU threads, for microseconds, never together with a queue lock or
+  inside `sync`. **The assert measured wall time:** a waiter whose *own* worker stalled 10 s fired
+  on resume, whatever the waited vCPU did.
+- **The DSB wait counts waiting, not the waiter's stalls** (900127e, `DsbBudget` in
+  core/src/vm/parallel.rs). Passes over 100 ms are the waiter's own stall; they're reported apart,
+  with a wall backstop of 10 limits. `tests/hoststall.test.ts` stalls a worker in RUN (the clock
+  import, `jit_install`), in OUT, and the waiter itself. It checks the report fields; the waiter case
+  fails on the old logic. `jit_install` is inside RUN; its worst case in a Debian boot was 12.6 ms.
+- **The stress test** (6565e97, docs/testing.md "The stress test"). It runs the real page with 4
+  vCPUs, the JIT, Debian and a mixed load (`--guest-cmd` adds more). It logs JSONL: page metrics,
+  memory, per-vCPU liveness (`web/liveness.ts`: the longest `vm_run_cpu` call and the host-side exit
+  handling), the status cadence, main-thread lag, and dmesg probes. It detects crash, freeze,
+  vcpu-stall, loop-stall, memory-growth, slowdown, guest-lockup and guest-unresponsive; the
+  detectors are unit-tested. Blind spot: while the machine worker is frozen, the console and the
+  liveness data can't be read.
+- **Go load** (e8a23ae, 7c44448, docs/images.md): `gostress`/`cstress` come in a variant initrd
+  (`--initrd`). A trimmed GOROOT is on a read-only second disk (`?disk2=`, `--disk2`). A cold
+  `net/http` build takes 349 s alone on 4 vCPUs, and doesn't finish in 300 s under the full load.
+- **Short runs (≤ 400 s, several contended): no panic, no lockup, no DSB timeout.** The longest
+  `vm_run_cpu` call was 2.6 s under the Go load.
+- **The tab's memory** (5145861, docs/jit.md "Memory"). V8 spends ~10× a JIT module's bytes, and
+  each vCPU worker compiled its own copy with no bound but the region cap, so the tab went past
+  5 GB in ~6 minutes of Go builds. A 160 MiB wasm budget per VM now flushes the cache, the table
+  drops flushed slots, and a GC nudge after the flush makes V8 free the code. The tab now holds at
+  ~3.3 GB; with the flush alone it peaked at 9.6 GB. The "bloated after reload" case didn't
+  reproduce: a panic and a reload return the tab to ~1.2 GB. Next, in progress: evicting the
+  oldest modules instead of flushing. docs/backlog.md has sharing modules across vCPU workers and
+  V8's per-region overhead.
+- The tailnet SSH test (uncommitted in the tree) is parked: it runs inside the exit-node phase,
+  which fails in this VM, and its full-length run timed out under load.
+- **A one-off hang in CI (unexplained; watch for it).** The first `scripts/ci.sh` on the merged
+  tree hung for 40 min in `tests/browser.test.ts` while other Chromium runs loaded the VM. It stuck
+  after "input events..." passed, so in `alpine boots from virtio-blk in a worker, deterministic
+  mode, JIT`. That test passes alone in 11 s, and the file and CI pass on a quiet machine.
+  Contention slows a boot, it shouldn't stop one: it may be the same host-side stall as BUG1.
