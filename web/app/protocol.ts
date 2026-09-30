@@ -35,6 +35,8 @@ export type ToWorker =
     screen: OffscreenCanvas;
     /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). */
     params?: string;
+    /** A second, read-only virtio-blk (the page's `?disk2=<url>`, for tests: /dev/vdb), served over HTTP ranges like the root. */
+    disk2?: string;
     /**
      * The gateway's end of the machine's IP port (web/gateway.ts `portBackend`): the machine gets a
      * network card (virtio-net) and its `network` command line. The page keeps the other end and

@@ -3,7 +3,7 @@
 // web/app/worker.ts; this is DOM code only, talking to it through
 // web/app/protocol.ts. `?machine=buildroot` picks the test guest, `?ncpus=N`
 // the vCPU count, `?view=screen|terminal|both` the first view (the last one
-// chosen is remembered), `?params=` extra kernel parameters.
+// chosen is remembered), `?params=` extra kernel parameters, `?disk2=<url>` a read-only second disk.
 import { Terminal } from '@xterm/xterm';
 import { attachInput, type Input } from '../input.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
@@ -200,7 +200,7 @@ function start() {
     }
   };
   worker.onerror = (e) => { if (run === r) setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator); };
-  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, ip } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
+  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, disk2: params.get('disk2') ?? undefined, ip } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
   if (ip) autoconnect();
   renderNetwork();
 }

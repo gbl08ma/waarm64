@@ -23,7 +23,9 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot` (the
 default is `debian`), `?ncpus=N`, `?view=screen|terminal|both` (over the remembered view),
 `?params=…` (extra kernel parameters, placed before a `--`: e.g. `init=/bin/bash` for a rescue
-shell, or `init=/nonexistent` to make Buildroot panic, as a test does).
+shell, or `init=/nonexistent` to make Buildroot panic, as a test does), `?disk2=<url>` (a second,
+read-only virtio-blk over HTTP ranges, `/dev/vdb` in the guest, no overlay; for tests: the stress
+test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloads").
 
 ## The machines
 
@@ -58,7 +60,7 @@ Page → worker:
   PL011, handled on the machine worker's thread while `runAsync` awaits. `screen` is the page's
   canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the machine worker
   draws the framebuffer on it (web/display.ts) on its own animation frames. `params`: extra kernel
-  parameters.
+  parameters. `disk2`: a URL for the second disk.
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
   the overlay) is closed once it's there. The page then terminates the worker (after 3 s without

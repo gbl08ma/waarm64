@@ -6,6 +6,8 @@
 //
 //   node bench/stress/stress.ts --seconds 600   (sampling time: the ~45 s boot and login come before it) [--out log.jsonl] [--interval 5] [--ncpus 4]
 //     [--guest-cmd '<cmd>']...  extra guest commands, each started in the background as `( cmd ) &`
+//     [--initrd <path>]         serve this initrd for Debian's (images/stress/build.sh: /run/stress/gostress in the guest)
+//     [--disk2 <repo path>]     a read-only second disk, /dev/vdb (images/stress/build-goroot.sh: goroot.ext4)
 //     [--no-load]               only the probes
 //     [--stall-ms 2000] [--freeze-ms 10000] [--warmup 90]   thresholds (analyze.ts DEFAULTS)
 //     [--inject freeze-main@60:30]  fault injection, to check the detection (main thread busy for 30 s at t=60)
@@ -138,7 +140,10 @@ try {
 }
 emit({ type: 'meta', epoch, args: argv, opt, machine, ncpus, chromium: browser.version(), node: process.version });
 say(`log: ${out}`);
-await page.goto(`${base}/web/app/?machine=${machine}&ncpus=${ncpus}&view=terminal`);
+const initrd = values('--initrd')[0];
+if (initrd) await page.route(`**/target/images/${machine}/initrd.img`, (r) => r.fulfill({ path: initrd }));
+const disk2 = values('--disk2')[0];
+await page.goto(`${base}/web/app/?machine=${machine}&ncpus=${ncpus}&view=terminal${disk2 ? `&disk2=${encodeURIComponent(`/${disk2}`)}` : ''}`);
 
 /** Races `p` against a timeout (the main thread may be frozen: Playwright waits for it forever). */
 const within = <T>(p: Promise<T>, ms: number): Promise<T | undefined> => Promise.race([p, new Promise<undefined>((r) => setTimeout(r, ms))]);
@@ -147,11 +152,17 @@ const hook = async <T>(f: () => Promise<T>, ms = 5000) => within(f(), ms);
 // The serial text: the tool's copy of what the guest wrote (the page's hook hands it over in pieces).
 let serial = '';
 let serialTotal = 0;
+let scan = '';
 const pump = async () => {
   const d = await hook(() => page.evaluate(() => globalThis.__stress?.drain() ?? ''));
   if (d) {
     serial = (serial + d).slice(-200_000);
     serialTotal += d.length;
+    // Guest lines a load prints to be counted (images/stress: `GOBUILD rc=<status> <seconds>s` per `go build`).
+    scan += d;
+    let end = Math.max(0, scan.length - 40);
+    for (const m of scan.matchAll(/GOBUILD rc=(\d+) (\d+)s/g)) { emit({ type: 'event', t: secs(), kind: 'gobuild', text: `rc=${m[1]} ${m[2]}s` }); end = m.index! + m[0].length; }
+    scan = scan.slice(end);
   }
   return d ?? '';
 };

@@ -128,6 +128,7 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
     devices: [
       { type: 'rng' },
       { type: 'blk', url: machine.disk, overlay: machine.overlay },
+      ...(m.disk2 ? [{ type: 'blk' as const, url: new URL(m.disk2, self.location.href).href }] : []), // no overlay: read-only
       { type: 'input', kind: 'keyboard', port: m.keyboard },
       { type: 'input', kind: 'tablet', port: m.tablet },
       ...(m.ip && machine.network ? [{ type: 'net' as const, adapter: { ip: m.ip } }] : []),
