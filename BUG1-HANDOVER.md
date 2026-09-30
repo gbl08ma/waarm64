@@ -1,6 +1,6 @@
 # BUG1: "vCPU 1: RuntimeError: unreachable" under a 4-vCPU stress load
 
-**Status:** analysed, not reproduced, not fixed; step 1 of the plan (self-diagnosis) is done, see "Progress" at the end. This file carries the analysis to whoever
+**Status:** analysed, not reproduced, not fixed. **Next, high priority: the long-running Chromium stress test (the section after "What happened").** So far: step 1 of the plan (self-diagnosis) is done, see "Progress" at the end. This file carries the analysis to whoever
 investigates next; delete it in the commit that fixes the bug (or update it with what was found).
 
 ## What happened
