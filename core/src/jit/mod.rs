@@ -48,6 +48,10 @@ pub struct Config {
     pub batch: u32,
     /// Code cache size in blocks (= table slots); everything is flushed when it's full.
     pub capacity: u32,
+    /// The wasm bytes of the modules installed since the last flush at which the
+    /// cache flushes too (V8 spends ~10× a module's bytes on its code and
+    /// metadata, docs/jit.md "Memory").
+    pub max_bytes: u64,
     /// The stale-code checker: hash each block's words when it's compiled and
     /// again at every entry, and panic on a mismatch (code changed without an
     /// `IC` invalidating it).
@@ -58,10 +62,19 @@ pub struct Config {
 }
 
 impl Config {
+    /// [`Config::DEFAULT`] for a VM with `caches` JIT caches (one per vCPU in parallel SMP, else one):
+    /// they share the byte budget.
+    pub fn for_vcpus(caches: u64) -> Config {
+        Config {
+            max_bytes: (MAX_BYTES / caches.max(1)).max(MIN_BYTES),
+            ..Config::DEFAULT
+        }
+    }
     pub const DEFAULT: Config = Config {
         threshold: 50,
         batch: 512,
         capacity: 262_144,
+        max_bytes: MAX_BYTES,
         check: false,
         region_after: REGION_AFTER,
     };
@@ -70,6 +83,7 @@ impl Config {
         threshold: 0,
         batch: 1,
         capacity: 4,
+        max_bytes: u64::MAX,
         check: true,
         region_after: 1,
     };
@@ -80,11 +94,20 @@ impl Config {
     pub const CHECK: Config = Config {
         threshold: 0,
         batch: 1,
+        max_bytes: u64::MAX,
         check: true,
         region_after: 0,
         ..Config::DEFAULT
     };
 }
+
+/// [`Config::DEFAULT`]'s `max_bytes`: the wasm bytes V8 may hold for a whole VM
+/// (~10× that in memory: ~1.6 GiB). A VM with a cache per vCPU divides it
+/// ([`Config::for_vcpus`]).
+pub const MAX_BYTES: u64 = 160 << 20;
+/// The least a vCPU's share of [`MAX_BYTES`] gets: Debian's boot on 4 vCPUs
+/// compiles ~31 MiB in each.
+pub const MIN_BYTES: u64 = 32 << 20;
 
 /// [`Config::DEFAULT`]'s `region_after`.
 pub const REGION_AFTER: u32 = 1000;
@@ -222,6 +245,8 @@ pub struct Cache {
     clock: u64,
     /// The next free slot.
     next: u32,
+    /// The bytes of the modules installed since the last flush (`Config::max_bytes`).
+    live_bytes: u64,
     /// No JIT host (natively, or before `jit.bind`): interpret everything.
     off: bool,
     /// The stale-code checker counts stale blocks instead of panicking
@@ -255,6 +280,7 @@ impl Cache {
             since: 0,
             clock: 0,
             next: 0,
+            live_bytes: 0,
             off: false,
             tolerant: false,
             ram: None,
@@ -265,7 +291,7 @@ impl Cache {
 
     /// `n` consecutive slots for a module; flushes the cache first if they don't fit.
     fn alloc(&mut self, n: u32) -> u32 {
-        if self.next + n > self.cfg.capacity {
+        if self.next + n > self.cfg.capacity || self.live_bytes >= self.cfg.max_bytes {
             self.flush();
         }
         self.next += n;
@@ -294,6 +320,7 @@ impl Cache {
         self.jc_used.clear();
         self.pending.clear();
         self.next = 0;
+        self.live_bytes = 0;
     }
 
     /// `IC IVAU` on `pa` drops the blocks of its page; `IC IALLU` (`u64::MAX`) all of them.
@@ -455,7 +482,10 @@ impl Cache {
         // what it goes on to call must stay in the cache. Without room, the
         // head stays alone until the next flush drops it.
         let r = self.region(key, va, mem);
-        if r.blocks.len() < 2 || self.next >= self.cfg.capacity {
+        if r.blocks.len() < 2
+            || self.next >= self.cfg.capacity
+            || self.live_bytes >= self.cfg.max_bytes
+        {
             return;
         }
         // Members that are loop heads compiled alone stop counting: this
@@ -525,6 +555,8 @@ impl Cache {
         s.cond_direct += counts.cond_direct;
         s.cond_computed += counts.cond_computed;
         s.cond_memory += counts.cond_memory;
+        self.live_bytes += bytes.len() as u64;
+        let s = &mut self.stats;
         (s.modules, s.blocks, s.bytes) = (
             s.modules + 1,
             s.blocks + n as u64,
@@ -852,6 +884,7 @@ mod tests {
             threshold: 0,
             batch: 4,
             capacity: 10,
+            max_bytes: 1000,
             check: false,
             region_after: 0,
         });
@@ -865,6 +898,12 @@ mod tests {
         assert_eq!(c.stats.flushes, 1);
         c.flush();
         assert_eq!((c.alloc(1), c.stats.flushes), (0, 2));
+        // The byte budget flushes too, at the next slots after the modules' bytes reach it.
+        c.live_bytes = 999;
+        assert_eq!((c.alloc(1), c.stats.flushes), (1, 2));
+        c.live_bytes = 1000;
+        assert_eq!((c.alloc(1), c.stats.flushes), (0, 3));
+        assert_eq!(c.live_bytes, 0);
     }
 
     #[test]

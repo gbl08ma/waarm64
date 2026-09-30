@@ -179,6 +179,7 @@ pub extern "C" fn jit_new(
         threshold,
         batch,
         capacity,
+        max_bytes: u64::MAX,
         check: check != 0,
         region_after,
     })));

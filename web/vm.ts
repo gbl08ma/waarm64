@@ -196,6 +196,23 @@ export function instantiateThread(module: WebAssembly.Module, memory: WebAssembl
   return instance;
 }
 
+/** A flush of at least this many slots is worth a {@link collect}. */
+const NUDGE_SLOTS = 4096;
+
+/**
+ * Asks V8 to collect now. The flushed blocks' instances are garbage, and V8 frees their code only when a
+ * major GC collects them; a worker's JS heap stays small, so that GC can come minutes late and the dead
+ * code piles up (a Go build on 4 vCPUs: the tab peaked at 9.6 GB with the code cache capped). Allocating a large
+ * ArrayBuffer (untouched, so no memory) reports external-memory pressure, which makes V8 collect.
+ */
+function collect() {
+  try {
+    new ArrayBuffer(256 << 20);
+  } catch {
+    // no address space to spare: the GC comes when it comes
+  }
+}
+
 /**
  * The host half of the JIT: compiles a module the core generated,
  * synchronously, and puts its exports f0, f1, … into the core's function table
@@ -207,6 +224,9 @@ function jitHost(memory: WebAssembly.Memory) {
   let table: WebAssembly.Table | undefined;
   let base = 0;
   let imports: WebAssembly.Imports = {};
+  // Slots the last install used up to (its end), and the highest slot end since the cache last flushed.
+  let lastEnd = 0;
+  let hi = 0;
   return {
     bind(core: WebAssembly.Instance) {
       table = core.exports.__indirect_function_table as WebAssembly.Table;
@@ -223,6 +243,16 @@ function jitHost(memory: WebAssembly.Memory) {
       const f = new WebAssembly.Instance(module, { ...imports, t }).exports;
       const n = Object.keys(f).length;
       const at = base + slot;
+      // The slots start over from 0 when the cache flushes: its old blocks are dead, so the table lets go of
+      // the ones this module doesn't overwrite, and V8 can free their instances and code.
+      if (slot < lastEnd) {
+        for (let k = slot + n; k < hi; k++) table.set(base + k, null);
+        // Only for a big cache (JIT-stress flushes every few blocks).
+        if (hi > NUDGE_SLOTS) collect();
+        hi = 0;
+      }
+      lastEnd = slot + n;
+      hi = Math.max(hi, lastEnd);
       if (table.length < at + n) table.grow(at + n - table.length);
       for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`] as WebAssembly.ExportValue as never);
       return at;

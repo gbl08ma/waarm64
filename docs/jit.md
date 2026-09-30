@@ -79,9 +79,12 @@ the interpreter's own code.
   `jit_hot(vcpu, key, pc)`, which compiles the loop region in its own module (never with a flush,
   since JIT code is on the stack) and stores `1 << 31 | index` in the word; from then on the head's
   prologue tail-calls the region, so blocks linked to the head reach it too.
-- **The code cache holds 262,144 regions** (4 bytes per slot up front); when full, everything is
-  flushed (slots freed, modules left to the GC). Alpine's boot compiles ~57K and Debian's ~110K,
-  so neither flushes. Per-module eviction is backlog.
+- **The code cache holds 262,144 regions** (4 bytes per slot up front) **and a byte budget**
+  (`Config::max_bytes`: 160 MiB of wasm for a VM, divided among the caches of a parallel SMP VM, at
+  least 32 MiB each: 40 MiB per vCPU on 4). When either is reached, everything is flushed (slots
+  freed, the host's table lets go of the old functions, [Memory](#memory)). Alpine's boot compiles
+  ~22 MiB and Debian's ~73 MiB on one vCPU (~31 MiB per vCPU on 4), so neither flushes. Per-module
+  eviction is backlog.
 - **Modes** (`jit::Config`; `VmConfig.jit`): 1 = the default above; 2 = **JIT-stress**: threshold
   0, batch 1, a 4-region cache, `region_after` 1 and the stale-code checker; 3 = **JIT-check**:
   the same with the full-size cache and `region_after` 0 (the 4-region cache evicts most blocks
@@ -111,6 +114,51 @@ the interpreter's own code.
   edges leave through the tails above.
 - Dropping a block drops the blocks chained to it, transitively (the cache records who chains to
   whom).
+
+## Memory
+
+What a compiled region costs the host, measured in headless Chromium 153 on the dev VM (Debian, 1 GiB
+guest, 4 vCPUs; `bench/mem/`: `memsample.ts` samples the renderer's smaps by mapping, summaries in `results/summary.json`): **V8 spends ~10× a module's wasm bytes**,
+~5× in C++ metadata (PartitionAlloc: NativeModule, wire bytes, code tables) and ~4.7× in code
+(~4.7 KB per region at ~480 wasm bytes), and JS objects (Instances, exports) are small (the four
+workers' JS heaps total ~200 MB). **Each vCPU worker compiles its own copy** of the guest's code
+(its own cache, table and instances), so the total is ×ncpus. A 4-vCPU tab under a mixed load grew
+from 2.3 GB at login to 5 GB in 8 minutes with nothing flushed (615K regions, 294 MB of wasm) and
+was headed for the cache's 262,144 regions per vCPU: ~4.9 GB of V8 memory, the 6 GB tab. The
+guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions) are not what grows.
+- **The byte budget** bounds it: ~10 × 160 MiB + the guest and the core's heap (~1.3 GB) + the browser
+  (~0.2 GB) = ~3.2 GB for the 4-vCPU page, flat (the uncapped run kept climbing).
+- **Why a whole-cache flush, not aging or LRU:** compiled code has no per-block use counts (a block
+  runs inside V8 without telling the core), so aging would need a counter update per block entry, the
+  cost the design avoids everywhere; and links between blocks (`linkers`, direct calls by table index)
+  make dropping a subset need the unlink walk that invalidation does. FIFO by module is the cheaper
+  precise option (backlog); until then a flush is one clear of the maps, and the guest's hot set is
+  recompiled in ~1–2 s of one vCPU's time.
+- **What 40 MiB per vCPU is sized against:** the live set of a Debian boot on 4 vCPUs (~31 MiB
+  per vCPU), so booting doesn't flush; a mixed load then flushes about every 3–4 minutes per vCPU,
+  and a Go build (a compiler's working set is larger than the budget) about every 30 s, which cost ~6% of CPU in
+  compiling (113 s of 4 × 480 s; the mixed load: 1.6%, uncapped 0.8%) and showed no guest slowdown
+  (steps per second matched the uncapped runs within the load's variation).
+- **A flush must free something on the host:** the host's table keeps the functions (so their
+  instances and code) alive until the slots are overwritten, so `web/vm.ts` nulls the slots a flush
+  leaves unused. V8 frees the dead code only when its JS GC collects the instances, and a worker's JS
+  heap stays small, so that GC can lag by minutes: with the flush alone a Go build's tab peaked at
+  9.6 GB (median 4.8 GB). After each flush the host allocates (and drops) a 256 MiB ArrayBuffer, whose
+  external-memory pressure makes V8 collect: median 3.3 GB, p90 4.0–4.9 GB. Two of four runs still had one
+  ~10 GB sample near their end that the sampler could not explain (not reproduced with 8 s sampling).
+- **Measured** (mixed load, 450 s; `bench/mem/results/summary.json`, made by `bench/mem/summarize.mjs` from raw samples kept in bench/results/local): without the budget
+  the renderer is 4.3 / 3.9 GB (median of two runs) and climbing, at 615K regions: 1486 MB
+  PartitionAlloc, 1391 MB wasm code, 1283 MB linear memory (guest 1024 + the core's heap ~150), 221 MB
+  JS heaps. With 40 MiB per vCPU: 3.2 GB median, 3.5 max, 8 flushes, 1.6% of CPU compiling (0.8%
+  without). A/B at 3 alternating pairs (`bench/mem/results/`, `bench/run.ts` defaults): Alpine
+  (no flush; 22 MB) `alpine_jit_total` 10977 (IQR 361, n=15) vs 10952 (IQR 1015): no measurable
+  difference at n=15; Debian on one vCPU with a 40 MiB budget (one flush) `debian_jit_total_cold`
+  47473 (IQR 1504, n=3) vs 45185 (IQR 3999): 5% slower, not separable from noise at n=3. So a
+  single-cache VM gets the whole 160 MiB (`Config::for_vcpus`; Debian's 73 MB boot never flushes) and
+  only the 4-vCPU page runs at 40 MiB per cache. After a guest panic and `page.reload()` the renderer
+  went from 3.55 GB to 1.2 GB at once (`mem-run6-crash` in the summary).
+- **The page's memory estimate** (`hostMemoryGiB`, `web/app/machine.ts`: RAM + 1 + 0.3 per vCPU,
+  3.2 GiB for the default) matches the capped median; the peaks above it are the GC's lag.
 
 ## Invalidation and the stale-code checker
 

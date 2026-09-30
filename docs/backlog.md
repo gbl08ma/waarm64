@@ -49,13 +49,29 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   catch it.
 - **CoreMark's gap to TCG (~70%)**: the store bounds checks V8 keeps on Linux arm64, register
   write-backs at block exits, call/return between small regions. Only for real programs.
-- **Per-module eviction** instead of whole-cache flushes, for guests that outgrow 262,144 regions.
-- **JIT blocks only grow in long sessions** (the user, 2026-09-30, a Go compile on 4 vCPUs over
-  the tailnet): the block count climbs steadily, and cold blocks are never dropped short of a
-  whole-cache flush. Check what a flush and an invalidation actually free on the host side
-  (the table slots, the `WebAssembly.Instance`s their entries keep alive), and whether the 262,144-region
-  cap is ever reached in practice. Possibly tied to the tab bloat under "The page" and to BUG1's
-  slowdown ([BUG1-HANDOVER.md](../BUG1-HANDOVER.md)).
+- **Per-module eviction** instead of whole-cache flushes ([jit.md](jit.md) "Memory"): FIFO by
+  install order, the oldest ~25% of the byte budget, invalidating their blocks through
+  `Cache::invalidate` and `linkers`, nulling their table slots and reusing them from a free list.
+  A Go build flushes every ~30 s per vCPU today (6% of CPU compiling).
+- **Share compiled modules across vCPU workers:** each worker compiles its own copy of the guest's
+  code (its own cache, table and instances), ~4× duplication on 4 vCPUs: 615K regions and 294 MB of
+  wasm in total after 8 minutes of a mixed load (~150K and ~72 MB per worker), ~10× that in V8
+  memory. Posted `WebAssembly.Module`s share V8's code between workers; a shared compile cache
+  keyed by physical address and mode would compile each region once. Cross-vCPU invalidation is the
+  hard part.
+- **Cut V8's per-region overhead:** ~10× the module's bytes, half of it metadata (~2.4 KB of
+  PartitionAlloc per region). Batch the tier-up regions into fewer modules (extend the entry below:
+  ~561 modules of one function in Alpine), and check whether superseded or invalidated blocks'
+  modules stay alive through sibling functions (a module's code is freed only with all of its
+  functions' instances).
+- **Unexplained ~10 GB samples** in the Go-load runs with the flush and the GC nudge (2 of 4 runs,
+  one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
+  mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s sampling.
+  Measure with V8's own counters before trusting the median.
+- **JIT memory in long sessions** (the user, 2026-09-30, a Go compile over the tailnet, a 6 GB tab):
+  understood and bounded by a byte budget with a flush ([jit.md](jit.md) "Memory"); what's left is
+  the items above. The Tailscale client's own memory (a 27 MB wasm Go runtime in its worker)
+  wasn't measured: it needs the headscale test tailnet.
 - **Compiling off the vCPU thread:** measured and not built ([jit.md](jit.md) "Tried and not
   kept"); revisit with a GUI guest in M8 (latency).
 - **A fixed-size memory** so V8 loads the bounds once per function ([v8.md](v8.md)): needs the
@@ -206,10 +222,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Boot time is the page's biggest cost** (~30 s to a login): phase B's snapshots.
 
 - **A tab that crashed stays bloated across reloads** (the user, 2026-09-30, after BUG1's panic
-  on 4 vCPUs): over 6 GB, and the emulator ~10× slower, even after a hard reload (Shift+F5).
-  Normal again only in a fresh tab. Suspects: vCPU, device or Tailscale workers not terminated on
-  a panic or on unload, the shared memory kept alive by them, the JIT's modules (see "JIT").
-  Measure with headless Chromium: crash, reload, compare the memory and the speed.
+  on 4 vCPUs): not reproduced. A guest kernel panic (`sysrq c`) after a 4-vCPU load, then
+  `page.reload()` in headless Chromium: the renderer went from 3.55 GB to 1.2 GB at once and the
+  second boot grew like the first (`mem-run6-crash` in `bench/mem/results/summary.json`). The user's tab
+  may have been a BUG1 freeze rather than a panic, or a different reload path (Shift+F5).
 
 ## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [frontend.md](frontend.md) "Network")
 

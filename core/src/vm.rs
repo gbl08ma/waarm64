@@ -502,7 +502,7 @@ impl Vm {
             };
         let jit = match cfg.jit {
             0 => None,
-            1 => Some(jit::Config::DEFAULT),
+            1 => Some(jit::Config::for_vcpus(if parallel { n as u64 } else { 1 })),
             3 => Some(jit::Config::CHECK),
             _ => Some(jit::Config::STRESS),
         };
