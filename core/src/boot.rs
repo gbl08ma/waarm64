@@ -13,7 +13,7 @@
 use crate::cpu::Cpu;
 use crate::fdt::Fdt;
 use crate::virtio;
-use crate::vm::{GICD, GICR, IRQ_UART, RAM_BASE, UART, Vm, VmConfig};
+use crate::vm::{GICD, GICR, IRQ_RTC, IRQ_UART, RAM_BASE, RTC, UART, Vm, VmConfig};
 
 /// Space reserved for the DTB at the top of RAM (booting.rst's limit is 2 MiB).
 pub const DTB_SPACE: u64 = 2 << 20;
@@ -36,7 +36,7 @@ pub fn framebuffer(cfg: &VmConfig) -> Option<(u64, u64)> {
 /// The device tree for this VM: QEMU `virt`'s addresses and bindings for the
 /// devices we have, with `virtio` virtio-mmio transports in the first slots.
 /// `initrd` is (start, end) in guest PA; `fb` a framebuffer as (PA, width, height);
-/// `ncpus` the vCPUs.
+/// `ncpus` the vCPUs; `rtc` whether there's the PL031.
 pub fn dtb(
     ram_size: u64,
     cmdline: &str,
@@ -44,6 +44,7 @@ pub fn dtb(
     virtio: usize,
     fb: Option<(u64, u64, u64)>,
     ncpus: usize,
+    rtc: bool,
 ) -> Vec<u8> {
     let mut f = Fdt::default();
     f.begin("");
@@ -157,6 +158,16 @@ pub fn dtb(
     f.strs("clock-names", &["uartclk", "apb_pclk"]);
     f.end();
 
+    if rtc {
+        f.begin(&format!("pl031@{RTC:x}"));
+        f.strs("compatible", &["arm,pl031", "arm,primecell"]);
+        f.cells64("reg", &[RTC, 0x1000]);
+        f.cells("interrupts", &[0, IRQ_RTC as u32 - 32, 4]);
+        f.cells("clocks", &[CLK_PHANDLE]);
+        f.strs("clock-names", &["apb_pclk"]);
+        f.end();
+    }
+
     // The line is level-high: it follows InterruptStatus (QEMU says edge).
     for i in 0..virtio {
         let pa = virtio::MMIO_BASE + i as u64 * virtio::MMIO_STRIDE;
@@ -207,6 +218,7 @@ impl Vm {
             self.plat.get_mut().virtio.len(),
             fb,
             ncpus,
+            self.cfg.has_rtc(),
         );
         if blob.len() as u64 > DTB_SPACE {
             return Err("DTB too large");
@@ -289,7 +301,7 @@ mod tests {
     }
 
     /// Our DTB, decompiled by `dtc`, must match the reviewed source
-    /// tests/dtb/webpc.dts (two vCPUs; a round trip through the reference
+    /// tests/dtb/webpc.dts (two vCPUs, the RTC; a round trip through the reference
     /// tool). Set UPDATE_DTS=1 to rewrite it after an intended change.
     #[test]
     fn dtb_round_trips_through_dtc() {
@@ -302,6 +314,7 @@ mod tests {
                 2,
                 Some((0x4fc0_0000, 640, 480)),
                 ncpus,
+                true,
             );
             let dir =
                 std::env::temp_dir().join(format!("webpc-dtb-{}-{ncpus}", std::process::id()));

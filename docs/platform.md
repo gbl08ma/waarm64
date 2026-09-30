@@ -1,8 +1,8 @@
 # The platform: memory map, boot, run loop, broadcast maintenance, time, GIC, timer, UART, PSCI
 
 The machine around the CPU, as built. Devices that need no host (the GICv3, generic timer,
-PL011, PSCI, the virtio-mmio transports) live in the Rust core (`core/src/vm.rs`, `gicv3.rs`,
-`pl011.rs`, `virtio.rs`), so native runners and wasm share them. virtio backends are in
+PL011, the PL031 RTC, PSCI, the virtio-mmio transports) live in the Rust core (`core/src/vm.rs`,
+`gicv3.rs`, `pl011.rs`, `pl031.rs`, `virtio.rs`), so native runners and wasm share them. virtio backends are in
 [devices.md](devices.md); the host ABI in [abi.md](abi.md).
 
 ## Memory map (QEMU `virt`'s)
@@ -14,6 +14,7 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
 | `0x0800_0000` | GIC distributor (64 KiB) |
 | `0x080a_0000 + 0x2_0000·i` | GICv3 redistributor of CPU *i* (RD_base, then SGI_base) |
 | `0x0900_0000` | PL011 UART (SPI 1, INTID 33) |
+| `0x0901_0000` | PL031 RTC (SPI 2, INTID 34), realtime mode only |
 | `0x0a00_0000 + 0x200·i` | virtio-mmio transport *i* (≤ 32; SPI 16+i, INTID 48+i) |
 | `0x4000_0000` | RAM (`vm::RAM_BASE`), size from `VmConfig.ram_size` |
 
@@ -37,7 +38,7 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
   distros.
 - **The DTB is our own small FDT writer** (not `vm-fdt`): RAM, a PSCI (HVC) `cpu@<affinity>`
   node per vCPU, the GIC (`arm,gic-v3`, one redistributor region), `arm,armv8-timer` (level-high
-  PPIs), a 24 MHz fixed clock, the PL011, one `virtio,mmio` node per device in slot
+  PPIs), a 24 MHz fixed clock, the PL011, the PL031 (realtime mode only), one `virtio,mmio` node per device in slot
   order (`dma-coherent`, a **level-high** interrupt: QEMU says edge-rising, but our line follows
   InterruptStatus), and the framebuffer ([devices.md](devices.md)). `tests/dtb/webpc.dts` is its
   `dtc` decompilation (two vCPUs), checked by a unit test.
@@ -258,6 +259,16 @@ before M8 loop 3 it noticed output at its next 10 ms wait).
 Without `SIGNAL_RX` a tickless guest (Debian, Alpine) sees input only at its next timer event:
 Alpine's shell echoed in ~120 ms instead of ~55 ms, and the bare-metal `rx` test (no timer
 armed) never does.
+
+## PL031 RTC (`core/src/pl031.rs`)
+
+Only in realtime mode, when the host passes its wall clock (`VmConfig.rtc`, Unix ms; `web/vm.ts`
+passes `Date.now()`): deterministic runs have no node and no device, so their step counts don't
+depend on the date. DR counts that time plus the realtime clock, in seconds; an LR write moves it
+by an offset (so `hwclock --systohc` sticks until the VM is gone). CR reads 1; the match
+interrupt never fires (MR and IMSC are storage only: no RTC alarm). Linux's `rtc-pl031` (built
+into Debian's kernel; our Buildroot and Alpine kernels have no RTC class) sets the system clock
+from it at boot (`hctosys`).
 
 ## PSCI (over HVC, in the core)
 

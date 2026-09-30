@@ -18,13 +18,14 @@ pub mod jit;
 pub mod mem;
 pub mod mmu;
 pub mod pl011;
+pub mod pl031;
 pub mod virtio;
 pub mod vm;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 27;
+pub const ABI_VERSION: u32 = 28;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {

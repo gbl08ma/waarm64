@@ -11,7 +11,7 @@ import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 27;
+export const ABI = 28;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -429,7 +429,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries, framebuffer, JIT.
   const fb = o.framebuffer ?? { width: 0, height: 0 };
   // …, features, CPUs, GIC (ABI 21), parallel (ABI 25).
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 13).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(ncpus), 0n, parallel ? 1n : 0n]);
+  // The last field: a PL031 RTC from the host's wall clock (ABI 28), realtime only.
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 14).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(ncpus), 0n, parallel ? 1n : 0n, deterministic ? 0n : BigInt(Date.now())]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);

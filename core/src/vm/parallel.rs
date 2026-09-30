@@ -462,7 +462,7 @@ impl Vm {
                 ..
             }) => {
                 let mut pl = self.plat_of(c);
-                let (r, tx_full, device) = io(v, &self.mem, &mut pl, &self.shared);
+                let (r, tx_full, device) = io(v, &self.mem, &mut pl, &self.shared, &self.clock);
                 self.refresh(&mut pl);
                 drop(pl);
                 match r {

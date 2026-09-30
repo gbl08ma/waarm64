@@ -59,6 +59,7 @@ Design notes for an ABI change go in this file before the code.
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
 | `smp` | 0 round-robin on the calling thread (`vm_run`), 1 parallel: a thread per vCPU (`vm_run_cpu`), realtime only (25) |
+| `rtc` | Unix time in ms at `vm_new`: a PL031 RTC (at 0x0901_0000, SPI 2, in the DT) counts from it; 0 or deterministic mode: none (28) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`;
 the ABI's 0 means none.
@@ -263,3 +264,4 @@ own TLBI IS broadcasts before anything after its DSB runs.
 | 25 | parallel SMP: `VmConfig.smp`, `vm_run_cpu`, `vm_exit_cpu`, `vm_cpu_signal`, `ExitInfo.wake`, `vm_counters(vm, i)` per vCPU, counter word 90 (JIT stale blocks); `env.now_ms` is one clock for every instance (M7) |
 | 26 | counter words 91–100: parallel SMP's DSB waits, broadcasts, drains, idles, platform-lock contention, WFEs, time out of the core (M7) |
 | 27 | `panic_message() -> *const u8`: the first panic's message (BUG1) |
+| 28 | `VmConfig.rtc`: a PL031 RTC in realtime mode |

@@ -1,5 +1,5 @@
 //! A whole VM: N vCPUs, RAM at `RAM_BASE`, the GICv3, the generic timer and the
-//! PL011 at QEMU `virt`'s addresses, and the run loop that delivers IRQs, waits
+//! PL011 (and in realtime mode the PL031 RTC) at QEMU `virt`'s addresses, and the run loop that delivers IRQs, waits
 //! in WFI and answers PSCI. lib.rs exports it (docs/abi.md). The vCPUs run
 //! round-robin on one thread (here), or in parallel, one thread each
 //! (`parallel.rs`).
@@ -40,6 +40,7 @@ use crate::jit;
 use crate::mem::{Access, Fault, FaultKind, Mem};
 use crate::mmu::{Bus, Mmu, Vcpu, walk};
 use crate::pl011::{Pl011, Rings};
+use crate::pl031::Pl031;
 use crate::virtio::{self, DevShared, DeviceEntry, Transport};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 
@@ -54,10 +55,13 @@ pub const GICR: u64 = 0x080a_0000;
 /// to 0x0900_0000 on `virt`) holds 123; GICv2 allows 8.
 pub const MAX_CPUS: u64 = 123;
 pub const UART: u64 = 0x0900_0000;
+/// The PL031 RTC (realtime mode with `VmConfig.rtc`).
+pub const RTC: u64 = 0x0901_0000;
 /// INTIDs: the `arm,armv8-timer` PPIs on `virt` (virtual, physical) and SPI 1.
 pub const IRQ_VTIMER: usize = 27;
 pub const IRQ_PTIMER: usize = 30;
 pub const IRQ_UART: usize = 33;
+pub const IRQ_RTC: usize = 34;
 /// Steps between signal checks. Deterministic guests can't tell chunk
 /// boundaries apart (anything that makes an IRQ takeable ends a chunk: MSR or
 /// ERET unmasking, MMIO, timer deadlines), so the size only trades realtime
@@ -96,10 +100,18 @@ pub struct VmConfig {
     /// 0: the vCPUs take turns on the thread that calls `vm_run`; 1: parallel,
     /// one thread each through `vm_run_cpu` (realtime only; ABI 25).
     pub smp: u64,
+    /// Unix time in ms at `vm_new`: a PL031 RTC counts from it (ABI 28); 0,
+    /// or deterministic mode, has none.
+    pub rtc: u64,
 }
 
 impl VmConfig {
     /// Whether `vm_new` accepts the GIC and CPU fields.
+    /// Whether the VM has the PL031 RTC.
+    pub fn has_rtc(&self) -> bool {
+        self.rtc != 0 && self.deterministic == 0
+    }
+
     pub fn valid_smp(&self) -> bool {
         matches!(self.gic, 0 | 3)
             && self.ncpus <= MAX_CPUS
@@ -123,6 +135,7 @@ impl Default for VmConfig {
             ncpus: 0,
             gic: 0,
             smp: 0,
+            rtc: 0,
         }
     }
 }
@@ -288,6 +301,7 @@ pub struct Platform {
     pub gic: Box<Gicv3>,
     pub uart: Pl011,
     pub virtio: Vec<Transport>,
+    pub rtc: Option<Pl031>,
     /// Parallel mode: PSCI CPU_ON requests (entry, context) that their
     /// target's thread carries out.
     start: Vec<Option<(u64, u64)>>,
@@ -543,6 +557,7 @@ impl Vm {
                 gic: Box::new(Gicv3::new(n)),
                 uart: Pl011::default(),
                 virtio: devices.iter().map(|&e| Transport::new(e)).collect(),
+                rtc: cfg.has_rtc().then(|| Pl031::new(cfg.rtc)),
                 start: vec![None; n],
             }),
             shared: Arc::new(Shared {
@@ -932,7 +947,13 @@ impl Vm {
     /// Runs the instruction at the PC again through [`Io`], after it hit a non-RAM address.
     fn io(&mut self) -> Option<u32> {
         let vcpu = &mut *self.vcpus[self.cur];
-        let (r, tx_full, device) = io(vcpu, &self.mem, self.plat.get_mut(), &self.shared);
+        let (r, tx_full, device) = io(
+            vcpu,
+            &self.mem,
+            self.plat.get_mut(),
+            &self.shared,
+            &self.clock,
+        );
         match r {
             Ok(()) => {
                 self.retire(1);
@@ -1135,11 +1156,14 @@ fn io(
     mem: &Mem,
     p: &mut Platform,
     shared: &Shared,
+    clock: &Clock,
 ) -> (Result<(), Exit>, bool, Option<u64>) {
     let mut io = Io {
         mmu: Mmu::new(mem, Some(&mut vcpu.tlb)),
         gic: &mut p.gic,
         uart: &mut p.uart,
+        rtc: p.rtc.as_mut(),
+        clock,
         console: &shared.console,
         virtio: &mut p.virtio,
         devices: &shared.devices,
@@ -1156,6 +1180,8 @@ struct Io<'a> {
     mmu: Mmu<'a>,
     gic: &'a mut Gicv3,
     uart: &'a mut Pl011,
+    rtc: Option<&'a mut Pl031>,
+    clock: &'a Clock,
     console: &'a Rings,
     virtio: &'a mut [Transport],
     devices: &'a [DevShared],
@@ -1182,6 +1208,9 @@ impl Io<'_> {
                 let w = self.uart.read(off & !3, self.console) >> (8 * (off & 3));
                 Some(w & (u64::MAX >> (64 - 8 * size)) as u32)
             }
+            RTC..0x0901_1000 if size == 4 && pa & 3 == 0 => {
+                self.rtc.as_ref()?.read(pa - RTC, self.clock.ns())
+            }
             virtio::MMIO_BASE..VIRTIO_END => {
                 let (i, off) = virtio_slot(pa);
                 return self
@@ -1201,6 +1230,10 @@ impl Io<'_> {
             UART..0x0900_1000 if size <= 4 && pa & 3 == 0 => {
                 self.tx_full = !self.uart.write(pa - UART, v as u32, self.console);
                 (!self.tx_full).then_some(())
+            }
+            RTC..0x0901_1000 if size == 4 && pa & 3 == 0 => {
+                let ns = self.clock.ns();
+                self.rtc.as_mut()?.write(pa - RTC, v as u32, ns)
             }
             virtio::MMIO_BASE..VIRTIO_END => {
                 let (i, off) = virtio_slot(pa);

@@ -148,9 +148,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `hvc0` getty is output only. Console input goes to the PL011 (M8); a `MessagePort` in the
   console's spec, as virtio-input has, is the shape if `hvc0` is ever wanted (it would skip the
   PL011's trap per byte).
-- **No RTC:** a guest's wall clock starts from what it finds (Debian: systemd's build epoch, 2026-04-13,
-  so timers warn "in the future" after a reboot). A PL031 (a DT node: guest-visible, so for new VM
-  configurations or with the user's OK) fed from the host clock in realtime mode.
 - **No `rng-seed` in the DT:** Linux's crng initializes only once `virtio_rng` loads from the root
   filesystem (Debian: 26 s into a 31 s boot; `systemd-random-seed` waits for it) and KASLR is off
   ("lack of seed"). `/chosen/rng-seed` (and `kaslr-seed`) from the host's CSPRNG in realtime mode;

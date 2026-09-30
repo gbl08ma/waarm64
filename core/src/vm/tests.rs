@@ -348,3 +348,35 @@ fn a_dsb_wait_of_stalled_passes_ends_at_the_wall_backstop_with_a_note() {
     // SAFETY: this thread is the only one, and runs vCPU 0 only.
     unsafe { t.vm.run_cpu(0, 1000) };
 }
+
+#[test]
+fn the_rtc_counts_host_time_in_realtime_mode_only() {
+    const LDR_W2_X0: u32 = 0xb940_0002; // ldr w2, [x0]
+    const STR_W1_X0_8: u32 = 0xb900_0801; // str w1, [x0, #8] (LR)
+    let prog = [LDR_W2_X0, STR_W1_X0_8, 0xb940_0003, B_SELF]; // …, ldr w3, [x0]
+    let cfg = VmConfig {
+        deterministic: 0,
+        rtc: 1_700_000_000_000,
+        ..VmConfig::default()
+    };
+    let mut t = T::new(&prog, cfg);
+    (t.cpu().x[0], t.cpu().x[1]) = (RTC, 1000);
+    t.vm.run(3);
+    let c = &t.vm.vcpus[0].cpu;
+    assert_eq!(c.pc, RAM_BASE + 12);
+    assert!(
+        (1_700_000_000..1_700_000_010).contains(&c.x[2]),
+        "{}",
+        c.x[2]
+    );
+    assert!((1000..1010).contains(&c.x[3]), "after the load: {}", c.x[3]);
+    // Deterministic: no RTC, so the read is an external abort (the sync vector).
+    let cfg = VmConfig {
+        rtc: 1_700_000_000_000,
+        ..VmConfig::default()
+    };
+    let mut t = T::new(&prog, cfg);
+    t.cpu().x[0] = RTC;
+    t.vm.run(2);
+    assert_eq!(t.vm.vcpus[0].cpu.pc, VBAR + 0x200);
+}

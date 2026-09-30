@@ -82,7 +82,7 @@ wasm64 core was free there), B +31–40%, D +26–32%.
 | `core/src/mem.rs` | guest RAM accesses and atomics |
 | `core/src/mmu.rs` | the walker, `Vcpu`, the TLB |
 | `core/src/vm.rs`, `vm/parallel.rs` | `Vm`: the run loop (round-robin; parallel SMP's per-vCPU run, queues and DSB wait), time, IRQs, PSCI, device dispatch |
-| `core/src/gicv3.rs`, `pl011.rs`, `virtio.rs`, `boot.rs`, `fdt.rs` | the platform ([platform.md](platform.md), [devices.md](devices.md)) |
+| `core/src/gicv3.rs`, `pl011.rs`, `pl031.rs`, `virtio.rs`, `boot.rs`, `fdt.rs` | the platform ([platform.md](platform.md), [devices.md](devices.md)) |
 | `core/src/jit/` | the JIT ([jit.md](jit.md)) |
 | `core/tests/` | native runners (corpus, TestFloat, bare-metal, boots, LTP, distros, litmus) and `common/` (native backends, the thread-per-vCPU runner) |
 | `core/fuzz/` | decoder sweep and libFuzzer targets (separate workspace) |
