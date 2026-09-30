@@ -404,6 +404,7 @@ function showStatus(s: Status) {
   const mips = last && dt > 0 ? (s.steps - last.status.steps) / dt / 1e6 : undefined;
   const irqs = last && dt > 0 ? (s.irqs - last.status.irqs) / dt : undefined;
   last = { status: s, at: now };
+  statusEl.dataset.status = JSON.stringify(s); // for tools (bench/stress)
   statusEl.textContent = [
     `${s.ncpus} vCPU${s.ncpus > 1 ? 's' : ''}`, `${s.ramMiB} MiB`, `up ${hms(s.uptime)}`,
     mips === undefined ? '' : `${mips.toFixed(0)} MIPS`,
