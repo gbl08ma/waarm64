@@ -1,6 +1,6 @@
 # BUG1: "vCPU 1: RuntimeError: unreachable" under a 4-vCPU stress load
 
-**Status:** not reproduced as the DSB panic. A related intermittent hang *is* reproduced: the page's machine worker freezes during Debian's boot ("A frozen machine worker" at the end). The JIT's memory is bounded (a byte budget that flushes the cache), the DSB wait no longer trips on the waiter's own stalls, and a stress test exists. **Next: the user's manual test on this build ("For the manual test" at the end), and the machine-worker freeze.**
+**Status:** not reproduced as the DSB panic. A related intermittent hang *is* reproduced: the page's machine worker freezes during Debian's boot ("A frozen machine worker" at the end). The JIT's memory is bounded (a byte budget that flushes the cache), the DSB wait no longer trips on the waiter's own stalls, and a stress test exists. **Next: the user's manual test on this build ("For the manual test" at the end). The machine-worker freeze has a found cause (the display's row scan, "Found: the display's scan" at the end); check whether it explains every freeze seen.**
 investigates next; delete it in the commit that fixes the bug (or update it with what was found).
 
 ## What happened
@@ -310,6 +310,22 @@ stall or CPU starvation of one vCPU's worker, hypothesis 5, is not excluded).
   with a live guest)**, and BUG1's stalls may be the same thing seen from a vCPU. Next: when it
   happens, pause the machine worker and take its JS stack (DevTools by hand; in the harness,
   CDP `Target.setAutoAttach` plus `Debugger.pause` on the worker target, not built yet).
+
+## Found: the display's scan froze the machine worker (2026-09-30)
+
+In the user's manual test, the page froze while the guest still answered pings over the tailnet, and the
+page used a full core. Pausing the machine worker (web/app/worker.ts) showed it in `web/display.ts`
+`rowChanged`, with `y` at -7825818. The per-frame scan for changed rows went from the top, then from
+the bottom with no lower bound: `while (!rowChanged(src, end - 1)) end--`. The guest writes the
+framebuffer from the vCPU threads meanwhile. If a row the top-down scan found changed was written
+back to its last-drawn value before the bottom-up scan got there, that scan went past row 0. Reads at
+negative indexes are `undefined` in both arrays, so it never ended. The worker's event loop stopped
+for good: no status, no "up", no serial. The vCPU, device and Tailscale workers went on.
+`changedRows` (web/display.ts) now stops at the first changed row; tests/display.test.ts replays the
+race. **This is the user's symptom 5, and likely the freezes listed in "A frozen machine worker"**
+(the page's cases stopped during boot while fbcon was drawing). The first CI hang (tests/browser.test.ts,
+the deterministic JIT boot) needs the same race: the page draws on its own thread while the VM
+runs in a worker. It isn't known to explain BUG1's panics or the vCPU stalls the guest reported.
 
 ## For the manual test
 

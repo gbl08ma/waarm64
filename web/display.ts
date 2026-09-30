@@ -10,6 +10,22 @@
 export type Framebuffer = { addr: number; width: number; height: number };
 
 /**
+ * The rows `[first, end)` from the first to the last of `h` rows that `changed`
+ * says differ (empty: none). The guest writes the framebuffer from other threads
+ * meanwhile, so a row found changed may read unchanged a moment later: the scan
+ * from the bottom stops at `first` whatever it reads (without that bound it once
+ * ran past row 0 for good, and the machine worker froze with it).
+ */
+export function changedRows(h: number, changed: (y: number) => boolean): [number, number] {
+  let first = 0;
+  while (first < h && !changed(first)) first++;
+  if (first === h) return [0, 0];
+  let end = h;
+  while (end > first + 1 && !changed(end - 1)) end--;
+  return [first, end];
+}
+
+/**
  * Draws `fb` (in `memory`) to `canvas` on each animation frame until `stop`
  * (skipping frames while an element canvas isn't rendered). `draw` draws what
  * changed now and returns those rows, `[first, end)` (empty: none).
@@ -30,13 +46,8 @@ export function showFramebuffer(canvas: HTMLCanvasElement | OffscreenCanvas, mem
   };
   const draw = (): [number, number] => {
     const src = new Uint32Array(memory.buffer, fb.addr, w * h); // anew: the buffer changes when memory grows
-    let first = 0;
-    let end = h;
-    if (!fresh) {
-      while (first < h && !rowChanged(src, first)) first++;
-      if (first === h) return [0, 0];
-      while (!rowChanged(src, end - 1)) end--;
-    }
+    const [first, end] = fresh ? [0, h] : changedRows(h, (y) => rowChanged(src, y));
+    if (first === end) return [0, 0];
     fresh = false;
     let any = 0;
     for (let k = first * w, stop = end * w; k < stop; k++) {
