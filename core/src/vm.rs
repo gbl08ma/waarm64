@@ -415,6 +415,8 @@ pub struct Vm {
     last: AtomicU64,
     /// Parallel mode: how long a DSB waits for TLBI IS before it panics (a test lowers it).
     dsb_limit_ns: u64,
+    /// The longest pass of a DSB wait that counts as waiting (a test lowers it).
+    dsb_pass_max_ns: u64,
 }
 
 /// The host clock for realtime mode: `performance.now()` through the core's
@@ -559,6 +561,7 @@ impl Vm {
             clock: Clock::new(),
             last: AtomicU64::new(0),
             dsb_limit_ns: parallel::DSB_LIMIT_NS,
+            dsb_pass_max_ns: parallel::DSB_PASS_MAX_NS,
         }
     }
 

@@ -131,7 +131,12 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   (idle or anywhere else: it drains on re-entry, having set `RUN` first, sequentially consistent
   against the issuer's push and check), or `OFF`. The waiter drains its own queue while it waits
   (two issuers can't deadlock), sleeps on its wake word in 1 ms steps (a vCPU that drains wakes
-  the vCPUs flagged as waiting), and panics after 10 s (a bug).
+  the vCPUs flagged as waiting), and panics after 10 s of *waiting* (a bug). It counts time only
+  for passes of its loop shorter than 100 ms: a longer pass means its own worker thread stalled
+  (descheduled, paused, a GC), which says nothing about the vCPUs it waits for, and the loop looks at
+  their state again right after it. Those passes are reported apart (`DsbBudget`, parallel.rs), and
+  ten limits of wall time end the wait whatever the passes were. A waited vCPU frozen in `RUN`
+  still ends it after 10 s (tests/hoststall.test.ts).
 - IC operations don't wait: the architecture promises another PE the new code only
   after a context synchronization event *that follows its seeing the change*, which ends the chunk
   here. `maint.c` had its ISB before waiting for the rewrite: parallel mode ran the old code (401),

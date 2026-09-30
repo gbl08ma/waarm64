@@ -144,6 +144,18 @@ UNKNOWN or IMPLEMENTATION DEFINED reset values and must pick addresses unmapped 
 flash covers `0x0`–`0x0800_0000`). **Rebuild all of them together** when one changes (different clangs build different bytes;
 they were last rebuilt together on the M4 VM in M8 loop 8, when only `timer.bin` changed and the others came out identical).
 
+**Host stalls (`tests/hoststall/`, `tests/hoststall.test.ts`, BUG1):** `stall.c` builds four 2-vCPU
+guests (`build.sh`: `stall-run|install|idle|waiter.bin`, committed) that cooperate with a test-only
+hook in a vCPU worker (`BootOptions.stall`, web/vm.ts `Stall`) through a word in RAM: vCPU 1 arms it,
+the hook blocks that worker (`Atomics.wait`), vCPU 0 then runs TLBI IS + DSB. Real workers in Node,
+parallel, JIT, the real 10 s DSB limit (no ABI for lowering it). Stalled in the core's clock import
+(between chunks) or in `jit_install` (mid-chunk), the vCPU is RUN: the wait ends at 10 s with the
+panic report as the error (state 1, applied, retired and PC frozen, the waiter's timing line). Stalled
+after `vm_run_cpu` returned IDLE (OUT), the DSB doesn't wait. With the *waiting* vCPU's worker
+stalled 11 s inside its wait while vCPU 1 is healthy (frozen 13 s), the wait doesn't panic: it counts
+waiting, not its own stalls (`DsbBudget`, unit-tested in `core/src/vm/tests.rs`). ~40 s in all.
+These guests aren't in `tests/baremetal/`, so the generic bare-metal runners and the oracles skip them.
+
 **Realtime windows:** in parallel mode the counter follows the host's clock, so a test can't
 assume the host keeps its vCPU running for any stretch. `timer.c` retries its "not expired yet"
 check (a 1 ms `CNTV_TVAL`, up to 100 times: a host that deschedules the vCPU between the write

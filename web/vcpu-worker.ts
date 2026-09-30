@@ -7,7 +7,7 @@
 // its run (PSCI, UNIMPLEMENTED, STOP) or its error to the coordinator
 // (web/vm.ts `bootVm`). Runs in a browser worker or a Node worker thread.
 import { EV_CONFIG, ring } from './devices.ts';
-import { clockOffset, Exit, instantiateThread, unsigned, withPanic, type ThreadBlock } from './vm.ts';
+import { clockOffset, Exit, instantiateThread, stallHook, unsigned, withPanic, type Stall, type ThreadBlock } from './vm.ts';
 
 export type VcpuJob = {
   module: WebAssembly.Module;
@@ -18,6 +18,8 @@ export type VcpuJob = {
   /** Byte addresses in `memory`: the device doorbell (two i32 words) and the coordinator's word (bumped on TX_FULL). */
   bell: number;
   ctl: number;
+  /** Test only: stalls this worker (web/vm.ts `Stall`). */
+  stall?: Stall[];
 };
 export type VcpuEnd = { type: 'exit'; cpu: number; kind: number; value: bigint; x: bigint[] } | { type: 'error'; cpu: number; message: string };
 /** A clock query to the coordinator (web/vm.ts `clockOffset`) and its answer, `t` its clock. */
@@ -41,7 +43,7 @@ const NONE = 0xffff_ffff_ffff_ffffn;
 const SPIN_MS = 0.05;
 
 function run(j: VcpuJob, clock: number): VcpuEnd {
-  const exports = instantiateThread(j.module, j.memory, j.block, clock).exports;
+  const exports = instantiateThread(j.module, j.memory, j.block, clock, j.stall).exports;
   try {
     return runCpu(j, exports);
   } catch (err) {
@@ -57,6 +59,7 @@ function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
   const bell = new Int32Array(mem.buffer, j.bell, 2);
   const ctl = new Int32Array(mem.buffer, j.ctl, 1);
   const info = ex.vm_exit_cpu(j.vm, j.cpu);
+  const idleStalls = j.stall?.map((s) => stallHook(mem, s)('idle', () => {}));
   for (;;) {
     const kind = ex.vm_run_cpu(j.vm, j.cpu, BUDGET);
     // kind, steps, value, x0-x3, cpu, wake (a fresh view: the memory may have grown).
@@ -65,6 +68,7 @@ function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
       case Exit.BUDGET:
         continue;
       case Exit.IDLE: {
+        idleStalls?.forEach((f) => f()); // test only: a host stall with the vCPU OUT
         // Until its deadline or a wake-up; an off vCPU (no deadline) rechecks every second.
         const ms = e[2] === NONE ? 1000 : Number(e[2]) / 1e6;
         const word = Number(e[8]) | 0;

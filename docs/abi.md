@@ -227,7 +227,8 @@ the first panic's message (thread, location, text; at most 4096 bytes) in a stat
 memory, and `panic_message()` (core/src/diag.rs) returns its address: a u32 length (0 = none)
 then that many UTF-8 bytes. The hosts read it after catching a trap (`web/vm.ts` `panicMessage`,
 `withPanic`; the vCPU worker and the round-robin `run`) and put it in the error. A DSB wait that
-times out (10 s) panics with each waited vCPU's state, queue and progress
+times out (10 s of waiting: passes over 100 ms are the waiter's own thread stalling and don't
+count) panics with each waited vCPU's state, queue and progress, and the waiter's own timing
 (`Vm::dsb_report`, core/src/vm/parallel.rs).
 
 **Broadcast maintenance in parallel mode** ([platform.md](platform.md) "Broadcast

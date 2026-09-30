@@ -34,8 +34,70 @@ const OUT: u32 = 2;
 const QUEUE: usize = 64;
 const QUEUE_IC: usize = 1024;
 
-/// The DSB wait gives up (a deadlock: a bug) after this long.
+/// The DSB wait gives up (a deadlock: a bug) after this long *waiting*: see [`DsbBudget`].
 pub(super) const DSB_LIMIT_NS: u64 = 10_000_000_000;
+/// A pass of the DSB wait loop (a drain, a look at the others, a 1 ms wait) that took
+/// longer than this is a stall of the waiting vCPU's own thread, not a wait.
+pub(super) const DSB_PASS_MAX_NS: u64 = 100_000_000;
+/// A DSB wait gives up after this many limits of wall time whatever the passes were.
+const DSB_WALL_LIMITS: u64 = 10;
+
+/// What a DSB wait counts against its limit. The wait is a deadlock detector, so
+/// it counts the time it actually spent waiting: a pass that took much longer
+/// than a pass does (the waiter's own worker was descheduled, paused by the
+/// browser, or in a GC) says nothing about the vCPUs it waits for, and after it
+/// the loop looks at their state again anyway. Those passes are kept apart
+/// (`stalled`, `longest`) for the report, and a wall-time backstop of
+/// [`DSB_WALL_LIMITS`] limits keeps a waiter that is always stalled from
+/// hanging. A vCPU frozen in RUN (BUG1's deadlock) still ends the wait after
+/// `limit` of ordinary passes.
+#[derive(Debug, Default)]
+pub(super) struct DsbBudget {
+    limit: u64,
+    pass_max: u64,
+    /// Ns of ordinary passes.
+    counted: u64,
+    /// Ns of passes over `pass_max`, and the longest pass.
+    stalled: u64,
+    longest: u64,
+    /// Ns of all passes.
+    wall: u64,
+}
+
+impl DsbBudget {
+    pub(super) fn new(limit: u64, pass_max: u64) -> DsbBudget {
+        DsbBudget {
+            limit,
+            pass_max,
+            ..DsbBudget::default()
+        }
+    }
+
+    /// Accounts a pass of `ns`; whether the wait has run out.
+    pub(super) fn pass(&mut self, ns: u64) -> bool {
+        self.wall += ns;
+        self.longest = self.longest.max(ns);
+        if ns > self.pass_max {
+            self.stalled += ns;
+        } else {
+            self.counted += ns;
+        }
+        self.counted >= self.limit || self.wall >= self.limit.saturating_mul(DSB_WALL_LIMITS)
+    }
+
+    /// The report's line about the waiting vCPU's own timing.
+    pub(super) fn line(&self) -> String {
+        let ms = |ns: u64| ns / 1_000_000;
+        format!(
+            "\n  waiter: {} ms waiting of {} ms wall; passes over {} ms (its own thread stalled): {} ms, longest pass {} ms",
+            ms(self.counted),
+            ms(self.wall),
+            ms(self.pass_max),
+            ms(self.stalled),
+            ms(self.longest)
+        )
+    }
+}
 
 /// A vCPU's parallel-mode words that other vCPUs read or write.
 pub(super) struct CpuPar {
@@ -575,7 +637,9 @@ impl Vm {
         sh.par.waiting.store(true, Ordering::SeqCst);
         let t0 = self.clock.ns();
         let began = self.progress(&own.waits);
+        let mut budget = DsbBudget::new(self.dsb_limit_ns, self.dsb_pass_max_ns);
         loop {
+            let pass = self.clock.ns();
             let wake = sh.wake.load(Ordering::SeqCst);
             // Others may wait for this one meanwhile.
             self.drain(c, v);
@@ -587,8 +651,8 @@ impl Vm {
                 break;
             }
             wait(&sh.wake, wake, 1_000_000);
-            if self.clock.ns() - t0 >= self.dsb_limit_ns {
-                panic!("{}", self.dsb_report(c, own, &began));
+            if budget.pass(self.clock.ns() - pass) {
+                panic!("{}", self.dsb_report(c, own, &began, &budget));
             }
         }
         sh.par.waiting.store(false, Ordering::SeqCst);
@@ -615,7 +679,7 @@ impl Vm {
     /// queue, and its retired count and PC at the wait's start and now (a count
     /// that moved: it runs and something loses a queue entry; one that froze:
     /// it's inside one chunk or blocked, the PC says where it last was).
-    fn dsb_report(&self, c: usize, own: &Own, began: &[(u64, u64)]) -> String {
+    fn dsb_report(&self, c: usize, own: &Own, began: &[(u64, u64)], budget: &DsbBudget) -> String {
         let now = self.progress(&own.waits);
         let mut s = format!("vCPU {c}: DSB waited 10 s for TLBI IS");
         for (i, &(t, seq)) in own.waits.iter().enumerate() {
@@ -639,6 +703,7 @@ impl Vm {
                 n.1,
             );
         }
+        s += &budget.line();
         s += &format!(
             "\n  platform lock {}",
             if self.plat.try_lock().is_some() {

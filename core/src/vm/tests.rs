@@ -284,3 +284,67 @@ fn a_dsb_timeout_reports_the_vcpu_it_waited_for() {
     // SAFETY: this thread is the only one, and runs vCPU 0 only.
     unsafe { t.vm.run_cpu(0, 1000) };
 }
+
+#[test]
+fn a_dsb_budget_counts_waiting_not_the_waiters_own_stalls() {
+    use super::parallel::DsbBudget;
+    const MS: u64 = 1_000_000;
+    // 10 s of 1 ms passes: a deadlock, the wait gives up right at the limit.
+    let mut b = DsbBudget::new(10_000 * MS, 100 * MS);
+    let mut passes = 0;
+    while !b.pass(MS) {
+        passes += 1;
+    }
+    assert_eq!(passes, 9_999);
+    // A waiter whose own thread stalled for 15 s in the middle of a wait: the
+    // pass counts nothing, the wait carries on and can still end normally...
+    let mut b = DsbBudget::new(10_000 * MS, 100 * MS);
+    for _ in 0..500 {
+        assert!(!b.pass(MS));
+    }
+    assert!(
+        !b.pass(15_000 * MS),
+        "a 15 s stalled pass is not 15 s of waiting"
+    );
+    assert!(
+        b.line().contains("waiter: 500 ms waiting of 15500 ms wall"),
+        "{}",
+        b.line()
+    );
+    assert!(
+        b.line().contains("15000 ms, longest pass 15000 ms"),
+        "{}",
+        b.line()
+    );
+    // ...and a deadlock behind it still ends after the rest of the limit.
+    let mut more = 0;
+    while !b.pass(MS) {
+        more += 1;
+    }
+    assert_eq!(more, 9_499);
+    // Always stalled (every pass over the bound): the wall-time backstop, 10 limits.
+    let mut b = DsbBudget::new(10_000 * MS, 100 * MS);
+    let mut n = 0;
+    while !b.pass(200 * MS) {
+        n += 1;
+    }
+    assert_eq!(n, 499); // 500 passes of 200 ms = 100 s
+}
+
+#[test]
+#[should_panic(expected = "waiter: 0 ms waiting of")]
+fn a_dsb_wait_of_stalled_passes_ends_at_the_wall_backstop_with_a_note() {
+    // Every pass counts as a stall of the waiter's own thread (the bound is 1 ns),
+    // so nothing counts as waiting: it ends at 10 limits of wall time, and says so.
+    let cfg = VmConfig {
+        ncpus: 2,
+        smp: 1,
+        ..VmConfig::default()
+    };
+    let mut t = T::new(&[0xd508_831f, 0xd503_3b9f, B_SELF], cfg);
+    t.vm.dsb_limit_ns = 5_000_000;
+    t.vm.dsb_pass_max_ns = 1;
+    t.vm.shared.cpus[1].par.state.store(1, Ordering::SeqCst);
+    // SAFETY: this thread is the only one, and runs vCPU 0 only.
+    unsafe { t.vm.run_cpu(0, 1000) };
+}

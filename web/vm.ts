@@ -40,10 +40,44 @@ type Exports = {
  * `jit_install` (core/src/jit). The JIT works once `jit.bind` has the core's
  * instance; until then `jit_install` fails and the core only interprets.
  */
-export function coreImports(memory: WebAssembly.Memory, clock = performance.timeOrigin) {
+export function coreImports(memory: WebAssembly.Memory, clock = performance.timeOrigin, stall: Stall[] = []) {
   const jit = jitHost(memory);
-  const now_ms = () => clock + performance.now();
-  return { env: { memory, now_ms, jit_install: jit.install }, jit };
+  const hooks = stall.map((s) => stallHook(memory, s));
+  const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
+  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install) }, jit };
+}
+
+/**
+ * A test-only host stall (tests/hoststall.test.ts, BUG1): blocks vCPU `cpu`'s
+ * worker for `ms` at the first `on` call after the guest armed it. `addr` is a
+ * u64 in guest RAM (a byte address in the memory): the guest writes `arm` there
+ * (default `1`, `3` for `idle`), the hook writes `2` (so the guest knows the
+ * worker is about to block; not if `arm` is 2) and blocks, `after` ms after the
+ * first call that found it armed (default at once). `clock` and `install` are the core's imports, called
+ * inside `vm_run_cpu` (the vCPU is RUN: other vCPUs' DSBs wait for it);
+ * `idle` is web/vcpu-worker.ts after `vm_run_cpu` returned IDLE (the vCPU is OUT).
+ */
+export type Stall = { cpu: number; on: 'clock' | 'install' | 'idle'; addr: number; ms: number; arm?: number; after?: number };
+
+/** The stall's hook for one worker: wraps an import (`clock`, `install`), or, for `idle`, returns a function that blocks if armed. */
+export function stallHook(memory: WebAssembly.Memory, s: Stall) {
+  const word = () => new Int32Array(memory.buffer, s.addr, 1);
+  let done = false;
+  let seen: number | undefined;
+  const block = (armed: number) => {
+    armed = s.arm ?? armed;
+    if (done || Atomics.load(word(), 0) !== armed) return;
+    seen ??= performance.now();
+    if (performance.now() - seen < (s.after ?? 0)) return;
+    done = true;
+    if (armed !== 2) Atomics.store(word(), 0, 2);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, s.ms);
+  };
+  return <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F): F => {
+    if (where !== s.on) return f;
+    if (where === 'idle') return (() => { block(3); }) as unknown as F;
+    return ((...a: never[]) => { block(1); return f(...a); }) as F;
+  };
 }
 
 /**
@@ -152,8 +186,8 @@ export function threadAlloc(ex: WebAssembly.Exports): ThreadBlock {
  * instance gets its own stack and TLS from `block`. Its JIT is bound to it.
  * `clock`: see {@link clockOffset}.
  */
-export function instantiateThread(module: WebAssembly.Module, memory: WebAssembly.Memory, block: ThreadBlock, clock?: number) {
-  const imports = coreImports(memory, clock);
+export function instantiateThread(module: WebAssembly.Module, memory: WebAssembly.Memory, block: ThreadBlock, clock?: number, stall?: Stall[]) {
+  const imports = coreImports(memory, clock, stall);
   const instance = new WebAssembly.Instance(module, imports);
   (instance.exports.__stack_pointer as WebAssembly.Global).value = block.stack + THREAD_STACK;
   (instance.exports.__wasm_init_tls as (tls: number) => void)(block.tls);
@@ -238,6 +272,8 @@ export type BootOptions = {
   jit?: 0 | 1 | 2 | 3;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
+  /** Test only: stalls one vCPU's host worker (parallel mode), see {@link Stall}; `addr` here is a guest PA. */
+  stall?: Stall | Stall[];
   /** `VmConfig.ncpus` (ABI 21): vCPUs (default 1), round-robin on this thread unless `parallel`. */
   ncpus?: number;
   /**
@@ -446,7 +482,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
-  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, raise }) : undefined;
+  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, raise, stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })) }) : undefined;
   const RING_HALF = RING / 2;
   const txUsed = () => {
     const u32 = new Uint32Array(memory.buffer);
@@ -601,7 +637,7 @@ const SIGNAL_RX = 2;
  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
  * docs/abi.md).
  */
-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; raise: (bits: number) => void }) {
+function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; raise: (bits: number) => void; stall: Stall[] }) {
   type Handle = { post(m: VcpuJob | VcpuClock): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
@@ -643,7 +679,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
   };
   const start = () => Array.from({ length: c.ncpus }, async (_, cpu) => {
     const h = await spawn();
-    h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl });
+    h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, stall: c.stall.filter((x) => x.cpu === cpu) });
     return h;
   });
   return {
