@@ -11,7 +11,9 @@ pub mod crypto;
 pub mod decode;
 pub mod diag;
 pub mod fdt;
+pub mod flash;
 pub mod fp;
+pub mod fw_cfg;
 pub mod gicv3;
 pub mod interp;
 pub mod jit;
@@ -25,7 +27,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 28;
+pub const ABI_VERSION: u32 = 29;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -272,11 +274,12 @@ pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
 /// `cfg.devices` entry. `cfg.deterministic` = 0 selects realtime mode, where the
 /// core calls its `env.now_ms` import (`performance.now`). Returns null if `cfg`
 /// doesn't match `ram_size`, has more than 32 or invalid device entries
-/// (`virtio::DeviceEntry::valid`), or `ram` isn't 16-byte aligned.
+/// (`virtio::DeviceEntry::valid`), an invalid firmware configuration or
+/// fw_cfg buffer (ABI 29), or `ram` isn't 16-byte aligned.
 ///
 /// # Safety
-/// `cfg` points at a `VmConfig`, and `cfg.devices` at `cfg.ndevices` entries;
-/// `ram..ram + ram_size` is as for [`mem::Mem::new`].
+/// `cfg` points at a `VmConfig`, `cfg.devices` at `cfg.ndevices` entries and
+/// `cfg.fw_cfg` at `cfg.fw_cfg_len` bytes; `ram..ram + ram_size` is as for [`mem::Mem::new`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn vm_new(
     ram: *mut u8,
@@ -291,6 +294,7 @@ pub unsafe extern "C" fn vm_new(
         || cfg.ndevices > virtio::MAX_DEVICES as u64
         || cfg.features & !cpu::FEATURES != 0
         || !cfg.valid_smp()
+        || !cfg.valid_firmware()
         || (cfg.fb_width | cfg.fb_height != 0 && boot::framebuffer(&cfg).is_none())
     {
         return core::ptr::null_mut();
@@ -303,9 +307,39 @@ pub unsafe extern "C" fn vm_new(
     if !devices.iter().all(virtio::DeviceEntry::valid) {
         return core::ptr::null_mut();
     }
+    let buf = match cfg.fw_cfg_len {
+        0 => &[][..],
+        // SAFETY: guaranteed by the caller.
+        n => unsafe { core::slice::from_raw_parts(cfg.fw_cfg as usize as *const u8, n as usize) },
+    };
+    let Some(fw_cfg) = fw_cfg::FwCfg::parse(buf).and_then(fw_cfg::FwCfg::new) else {
+        return core::ptr::null_mut();
+    };
     // SAFETY: guaranteed by the caller, alignment checked above.
     let mem = unsafe { mem::Mem::new(ram, ram_size) };
-    Box::into_raw(Box::new(vm::Vm::with_devices(mem, cfg, devices)))
+    let mut vm = vm::Vm::with_devices(mem, cfg, devices);
+    if cfg.firmware() {
+        vm.plat.get_mut().fw_cfg = Some(fw_cfg);
+    }
+    Box::into_raw(Box::new(vm))
+}
+
+/// The firmware configuration's flash bank (ABI 29): `VmConfig.flash_size`
+/// bytes, erased by `vm_new`, which the host fills with the saved variable
+/// store before the first run and reads back to save it (between runs, or
+/// once the vCPUs stopped); null without one.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_flash(vm: *mut vm::Vm) -> *mut u8 {
+    // SAFETY: guaranteed by the caller.
+    let vm = unsafe { &mut *vm };
+    vm.plat
+        .get_mut()
+        .flash
+        .as_mut()
+        .map_or(core::ptr::null_mut(), |f| f.as_mut_ptr())
 }
 
 /// # Safety

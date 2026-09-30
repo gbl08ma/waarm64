@@ -11,10 +11,12 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
 
 | PA | What |
 |---|---|
+| `0x0400_0000` | CFI flash bank, the firmware configuration's variable store (`flash_size`), firmware only |
 | `0x0800_0000` | GIC distributor (64 KiB) |
 | `0x080a_0000 + 0x2_0000·i` | GICv3 redistributor of CPU *i* (RD_base, then SGI_base) |
 | `0x0900_0000` | PL011 UART (SPI 1, INTID 33) |
-| `0x0901_0000` | PL031 RTC (SPI 2, INTID 34), realtime mode only |
+| `0x0901_0000` | PL031 RTC (SPI 2, INTID 34), realtime mode or the firmware configuration |
+| `0x0902_0000` | fw_cfg (data, selector, no DMA), firmware only |
 | `0x0a00_0000 + 0x200·i` | virtio-mmio transport *i* (≤ 32; SPI 16+i, INTID 48+i) |
 | `0x4000_0000` | RAM (`vm::RAM_BASE`), size from `VmConfig.ram_size` |
 
@@ -33,6 +35,16 @@ Chosen so kvm-unit-tests runs with its defaults and traces line up with the QEMU
   with x0 = DTB (booting.rst). A headerless kernel (kvm-unit-tests' `.flat`) is entered at its
   first byte, as QEMU does. Distro kernels and initrds are extracted from their images and booted
   the same way.
+- **The firmware configuration** (`VmConfig.firmware`, M8 phase B; [abi.md](abi.md) "M8 phase
+  B"): the same boot with EDK2's ArmVirtQemuKernel (`QEMU_EFI.fd`, `images/build.sh edk2`) as
+  the `Image`, at RAM + 512 KiB (its `text_offset`), no initrd, and EDK2 boots the disk's own
+  loader (shim and GRUB, Limine). The DTB stays in the top 2 MiB: EDK2's first act is to copy
+  it into the 32 KiB after its image header, before it allocates anything (`vm_boot` refuses a
+  bigger DTB there). The DT's `/memory` ends at the framebuffer (or the DTB space), so EDK2,
+  which allocates down from `/memory`'s top and ignores `/reserved-memory`, never lands on
+  them, and Linux maps the framebuffer as non-RAM (simplefb or simpledrm bind to it); the DT
+  gains the flash bank (`cfi-flash`, which EDK2 marks disabled for Linux), fw_cfg and the PL031.
+  `tests/dtb/webpc-firmware.dts` is its decompilation.
 - Runner conventions: the Image at RAM + 2 MiB and the initrd at + 128 MiB; raw binaries
   (bare-metal tests) with `kernelOffset: 0`. 256 MiB for Buildroot, 512 MiB for LTP, 1 GiB for the
   distros.
@@ -153,7 +165,13 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   operation at their next boundary. That needs no global entries in the TTBR0 half, which a TLBI
   for any ASID drops: parallel SMP doesn't cache them (`Mmu::miss`; Linux maps nothing global
   there). The issuer fences between the guest's table stores and reading the ASIDs, the target
-  between publishing its ASID and walking. A TTBR write that changes the ASID mid-chunk needs an
+  between publishing its ASID and walking. **Firmware and bootloaders do map global entries
+  there** (EDK2, shim and GRUB run on an identity map in TTBR0): not caching them made every
+  access walk (a third of the steps before Debian's kernel missed the TLB: 70 s from EDK2's boot
+  manager to GRUB's menu in Node, 3 s after). So a vCPU caches them, and while its TLB may hold
+  one (`Tlb::low_global`, until a flush of everything) it publishes `ANY`, and every TLBI IS
+  waits for it; the first such entry publishes `ANY` before the walk it caches, the order a
+  TTBR write's new ASID follows. Planted out (no `ANY`), `maint` fails (262, 263). A TTBR write that changes the ASID mid-chunk needs an
   ISB before the new ASID is promised to translate, and the ISB ends the chunk (and drains). In
   the userspace phases on 4 vCPUs this cut the DSB waits from 92K (8.3 s over the vCPUs) to 3K
   (0.06 s) and process churn by 37% in Chromium (`bench/boot/REPORT.md` "M7 loop 8"): after a
@@ -262,13 +280,31 @@ armed) never does.
 
 ## PL031 RTC (`core/src/pl031.rs`)
 
-Only in realtime mode, when the host passes its wall clock (`VmConfig.rtc`, Unix ms; `web/vm.ts`
+In realtime mode, when the host passes its wall clock (`VmConfig.rtc`, Unix ms; `web/vm.ts`
 passes `Date.now()`): deterministic runs have no node and no device, so their step counts don't
-depend on the date. DR counts that time plus the realtime clock, in seconds; an LR write moves it
+depend on the date. **The firmware configuration always has it** (EDK2's RTC, and Linux's
+`rtc-efi` through EFI `GetTime`); deterministic firmware runs count from a fixed `rtc`
+(2026-09-01) plus virtual time, so they keep one step count. Reads of 1, 2 or 4 bytes see the
+register's bytes (EDK2 reads the IDs with LDRB, as QEMU allows). DR counts that time plus the realtime clock, in seconds; an LR write moves it
 by an offset (so `hwclock --systohc` sticks until the VM is gone). CR reads 1; the match
 interrupt never fires (MR and IMSC are storage only: no RTC alarm). Linux's `rtc-pl031` (built
 into Debian's kernel; our Buildroot and Alpine kernels have no RTC class) sets the system clock
 from it at boot (`hctosys`).
+
+## The firmware configuration's devices (`core/src/flash.rs`, `core/src/fw_cfg.rs`)
+
+- **The flash bank** (`0x0400_0000`, `VmConfig.flash_size`): EDK2's variable store, three
+  256 KiB areas. An MMIO device behaving as QEMU `virt`'s `pflash_cfi01` bank 1 (bank width
+  4, two interleaved x16 chips: commands in both 16-bit halves, status and identifiers read
+  back in both), with the commands [abi.md](abi.md) lists; operations complete at once, and
+  programming stores the data as QEMU does. Every access, array-mode reads included, goes
+  through `vm::Io` (a boot reads the store a few times). The host copies the saved bytes in
+  and out through `vm_flash`. The bare-metal `flash` test checks it on QEMU and hvf too.
+- **fw_cfg** (`0x0902_0000`): QEMU's MMIO interface without DMA: the signature, the ID, the
+  file directory and the host's named files. Linux's `qemu_fw_cfg` shows them under
+  `/sys/firmware/qemu_fw_cfg`, and systemd imports `opt/io.systemd.credentials/*` as
+  credentials (the tests boot Debian unattended that way; the page passes none). With fw_cfg
+  there and no ACPI tables in it, EDK2 passes our DT on to Linux.
 
 ## PSCI (over HVC, in the core)
 

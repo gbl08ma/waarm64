@@ -45,7 +45,13 @@
 #   boots unmodified disk images (M8 phase B, docs/plans/uefi.md): an arm64 Image
 #   entered like a kernel with the DT in x0, without the network stack (no PXE or
 #   HTTP boot). Built natively in Debian's arm64
-#   container (apt from snapshot.debian.org, as images/Containerfile).
+#   container (apt from snapshot.debian.org, as images/Containerfile). Also
+#   shell.img, the firmware tests' disk: a FAT filesystem (no partition table)
+#   whose \EFI\BOOT\BOOTAA64.EFI is the build's UEFI Shell, running
+#   images/edk2/startup.nsh.
+# alpine-uefi: Alpine's published UEFI cloud images (images/alpine-uefi.json,
+#   pinned by SHA512), which the firmware tests boot unmodified: alpine.qcow2
+#   (Limine) and alpine-grub.qcow2 (GRUB). Downloaded on the host, as debian.
 # Outputs go to target/images/<name>/, downloads to target/images/dl/. Output
 # hashes are compared with images/SHA256SUMS (a mismatch warns: reproducibility
 # is best-effort).
@@ -71,14 +77,14 @@ EDK2_TAG=edk2-stable202608
 EDK2_COMMIT=2970e5699ba6267f3384ffab20f96647578aebc8
 EDK2_CONTAINER=docker.io/library/debian@sha256:1808211ab6f37c6fc6a75368651697536f7bf47993f2797befa8908b1254979d # trixie, arm64
 EDK2_SNAPSHOT=20260924T000000Z
-EDK2_TOOLS="build-essential uuid-dev acpica-tools python3 python-is-python3"
+EDK2_TOOLS="build-essential uuid-dev acpica-tools python3 python-is-python3 dosfstools mtools"
 USERLAND_CONTAINER=docker.io/library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 # 3.24, multi-arch
 export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user linux-crypto debian ltp litmus edk2)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user linux-crypto debian ltp litmus edk2 alpine-uefi)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -305,6 +311,19 @@ build_debian() {
   WEBPC_DL=$root/$out/dl node --disable-warning=ExperimentalWarning tools/debian.ts
 }
 
+build_alpine-uefi() {
+  rm -rf "$out/alpine-uefi"
+  mkdir -p "$out/alpine-uefi"
+  WEBPC_DL=$root/$out/dl node --disable-warning=ExperimentalWarning --input-type=module -e '
+    import { linkSync, readFileSync } from "node:fs";
+    const { download } = await import(process.argv[1] + "/tools/debian.ts");
+    const { images } = JSON.parse(readFileSync(process.argv[1] + "/images/alpine-uefi.json", "utf8"));
+    for (const [name, pin] of Object.entries(images)) {
+      const path = await download({ ...pin, label: `Alpine (${pin.loader})`, pinFile: "images/alpine-uefi.json" });
+      linkSync(path, `${process.argv[2]}/${name}.qcow2`);
+    }' "$root" "$root/$out/alpine-uefi"
+}
+
 # EDK2 (pinned by tag, checked against the commit; its submodules pinned by it)
 # into a fresh copy of the tree, built natively in Debian's arm64 container.
 build_edk2() {
@@ -317,6 +336,7 @@ build_edk2() {
   rm -rf "$b" "$dst"
   mkdir -p "$b" "$dst"
   tar -C "$src" --exclude=.git -cf - . | tar -C "$b" -xf -
+  cp images/edk2/startup.nsh "$b/"
   podman run --rm -v "$root:$root:z" -w "$root/$b" -e SOURCE_DATE_EPOCH "$EDK2_CONTAINER" bash -ec '
     export DEBIAN_FRONTEND=noninteractive
     rm -f /etc/apt/sources.list.d/* /etc/apt/sources.list
@@ -333,8 +353,14 @@ build_edk2() {
     python3 -c "import hashlib, json, sys; [json.dump([int.from_bytes(hashlib.sha256(b\"webpc-edk2-%d-%d\" % (b, i)).digest()[:b // 8], \"little\") % ((1 << b) - 1) for i in range(100)], open(sys.argv[1] + \"/StackCookieValues%d.json\" % b, \"w\")) for b in (32, 64)]" $d
     export PYTHONHASHSEED=0
     build -s -a AARCH64 -t GCC -b RELEASE -p ArmVirtPkg/ArmVirtQemuKernel.dsc -D NETWORK_ENABLE=FALSE -n "$(nproc)" > build.log 2>&1 || { tail -30 build.log; exit 1; }
+    # The test disk: 8 MiB of FAT, a fixed volume ID, every timestamp SOURCE_DATE_EPOCH.
+    img=Build/shell.img && rm -f $img
+    cp $d/AARCH64/Shell.efi Build/BOOTAA64.EFI && touch -d @$SOURCE_DATE_EPOCH startup.nsh Build/BOOTAA64.EFI
+    mkfs.fat -C -i 57454250 -n WEBPC $img 8192 >/dev/null
+    mmd -i $img ::/EFI ::/EFI/BOOT
+    mcopy -m -i $img Build/BOOTAA64.EFI ::/EFI/BOOT/ && mcopy -m -i $img startup.nsh ::/
   ' - "$EDK2_SNAPSHOT" "$EDK2_TOOLS"
-  cp "$b/Build/ArmVirtQemuKernel-AArch64/RELEASE_GCC/FV/QEMU_EFI.fd" "$dst/"
+  cp "$b/Build/ArmVirtQemuKernel-AArch64/RELEASE_GCC/FV/QEMU_EFI.fd" "$b/Build/shell.img" "$dst/"
   # The binary goes to users, so its licenses go with it: EDK2's, and those of the
   # submodules linked in (OpenSSL in Hash2DxeCrypto, libfdt).
   { echo "QEMU_EFI.fd: EDK2 $EDK2_TAG ($EDK2_COMMIT), ArmVirtPkg/ArmVirtQemuKernel.dsc, built by webpc's images/build.sh edk2."
@@ -365,7 +391,8 @@ inputs() {
   [ "$1" = alpine-user ] && pins='^USERLAND_' 
   [ "$1" = linux-crypto ] && files+=(images/linux.fragment $(find images/crypto -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
-  [ "$1" = edk2 ] && pins='^EDK2_'
+  [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh) && pins='^EDK2_'
+  [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
   { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto ]]; then declare -f linux_src; fi; } |
     sha256sum | cut -c1-16
@@ -382,7 +409,8 @@ outputs() {
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
     ltp) echo ltp/rootfs.ext4 ;;
     litmus) echo litmus/initramfs.cpio litmus/litmus.tar ;;
-    edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt ;;
+    edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt edk2/shell.img ;;
+    alpine-uefi) echo alpine-uefi/alpine.qcow2 alpine-uefi/alpine-grub.qcow2 ;;
   esac
 }
 
@@ -420,10 +448,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() user= crypto= litmus= kernel= debian= edk2=
+  rest=() user= crypto= litmus= kernel= debian= edk2= alpine_uefi=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; else rest+=("$name"); fi
+    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -436,6 +464,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   # container (alpine-user builds on alpine).
   if [ -n "$kernel" ]; then build linux; fi
   if [ -n "$debian" ]; then build debian; fi # Node on the host (tools/debian.ts)
+  if [ -n "$alpine_uefi" ]; then build alpine-uefi; fi # the same
   if [ -n "$user" ]; then build alpine-user; fi
   if [ -n "$crypto" ]; then build linux-crypto; fi
   if [ -n "$litmus" ]; then build litmus; fi

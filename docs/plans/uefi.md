@@ -1,9 +1,9 @@
 # Booting unmodified images through UEFI (M8 phase B)
 
-A plan, not a description: nothing here exists in the emulator yet. Phase B's brief is
-`M8-PHASEB-KICKOFF.md`; this page holds what loop 0 found on the QEMU oracle and the design that
-follows from it. Update it as loops land, and move what exists into platform.md, devices.md and
-images.md.
+A plan, and the record of its loops. Phase B's brief is `M8-PHASEB-KICKOFF.md`; this page holds
+what loop 0 found on the QEMU oracle, the design that follows from it, and what each loop found.
+What exists is described in platform.md ("Boot", "The firmware configuration's devices"),
+abi.md ("M8 phase B"), testing.md and images.md; update them as loops land.
 
 ## Loop 0: what the oracle showed (2026-09-30)
 
@@ -118,16 +118,49 @@ virtio-pci), keeps AML generation out of the core (backlog "Platform and devices
   larger kernel and initrd); logins at 17 s (Alpine) and 25 s (Debian).
 - `images/alpine-uefi.json` pins the two Alpine images (SHA512).
 
+## Loop 2: the platform (done, 2026-09-30)
+What was built is in platform.md and abi.md (ABI 29: `VmConfig.firmware`, the flash bank,
+fw_cfg, `vm_flash`). What loop 2 found:
+- **The DTB stays in the top 2 MiB.** ArmVirtQemuKernel's entry (`ArmVirtPkg/PrePi/
+  ModuleEntryPoint.S` `DiscoverDramFromDt`) copies the DT into the 32 KiB after its own image
+  header before it allocates anything, so EDK2 can't land on it first (the design below
+  expected to move it low). The firmware goes at RAM + 512 KiB: its header's `text_offset`.
+- **EDK2 needed nothing else** of our machine than the design's list, plus one fix: it reads
+  the PL031's PrimeCell IDs with byte loads, which we aborted (QEMU allows them). With no disk
+  it reaches "BdsDxe: No bootable option or device was found"; with `shell.img` (the UEFI Shell
+  as the removable-media loader) it runs a script, keeps a variable in the flash bank, and
+  powers off through `ResetSystem` (PSCI SYSTEM_OFF): ~540M steps, deterministic, the same in
+  every runner (tests/steps.txt `edk2-shell`).
+- **Firmware and bootloaders map global entries in TTBR0**, which parallel SMP didn't cache
+  (the ASID skip of TLBI IS waits needed none there): every access walked, and Debian took 70 s
+  from EDK2's boot manager to GRUB's menu in Node. They're cached now, with the vCPU waited for
+  by every TLBI IS while it may hold one (platform.md "Broadcast maintenance"): 3 s.
+- **Linux on our EDK2 and our DT** (Debian, both Alpine images, in Node, parallel on 2 vCPUs):
+  `efi: EFI v2.7 by EDK II`, `/memory` as we set it (EDK2's memory map up to `0x7fbf_ffff`, the
+  framebuffer at `0x7fc0_0000` above it), simplefb (Debian) or simpledrm (Alpine) bound to the
+  framebuffer, `rtc-efi` with the right time, fw_cfg under `/sys/firmware/qemu_fw_cfg` with
+  Debian's credentials (no first-boot questions, the timezone set from them), both vCPUs,
+  a clean power-off. Alpine's root unlocked by a CIDATA seed disk that `web/fat.ts` writes (the
+  generator loop 4's page needs too).
+- **Stage times in Node** (one run each, parallel, 2 vCPUs, JIT, realtime; not a benchmark):
+  Debian: boot manager 3.7 s, GRUB's menu 6.6 s (Enter pressed), kernel 9.4 s, login prompt
+  41 s, power-off 50 s. Alpine (Limine or GRUB): 3.8, 3.9, 5.2, 25, 33 s. The UEFI oracle on
+  QEMU TCG: the kernel at 8.4 s (Debian) and 4.2 s (Alpine). Today's direct boot of the same
+  disk, timed the same way: login at 26 s with the page's command line, 32 s with GRUB's (the
+  page masks networkd, resolved and timesyncd and turns AppArmor off). So through the firmware
+  Debian pays ~8.5 s before its kernel (~3 s of it the busy wait in backlog "The firmware
+  configuration") and ~6 s of userspace the page's command line skipped: loop 3's numbers to
+  beat, measured in Chromium with bench/run.ts before any claim.
+
 ## The design for loops 2–3 (follows from loop 0)
 
 This changes the kickoff's suggested loops 1–2 (a code flash at 0, a reset to the flash, the DTB
 at RAM's base) to something smaller:
 - **Firmware: ArmVirtQemuKernel** (loop 1). The page serves `QEMU_EFI.fd` (3 MiB, mostly
   compressed already) with its `LICENSES.txt`.
-- **Boot: the existing direct boot.** The firmware is the `Image` (RAM + 2 MiB); no initrd; the
-  DTB goes low in RAM, not in the top 2 MiB where EDK2 allocates (placement settled in loop 2:
-  EDK2 must not allocate over it before copying it). A new machine configuration for the page;
-  the tests' guests keep direct kernel boot and their step counts.
+- **Boot: the existing direct boot.** The firmware is the `Image` (RAM + 512 KiB); no initrd;
+  the DTB where it always was (loop 2: EDK2 copies it before it allocates). A new machine
+  configuration for the page; the tests' guests keep direct kernel boot and their step counts.
 - **The framebuffer moves out of `/memory`:** `/memory` stops short of it and it sits right
   above, still in the same wasm memory at the same linear offset (so the display and the
   guest's PA-to-host translation don't change), invisible to EDK2's allocator, and Linux maps it

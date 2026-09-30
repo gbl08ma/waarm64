@@ -17,7 +17,7 @@ step wasm build;  scripts/build-wasm.sh -q
 step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit
 step typecheck;   npx tsc --noEmit
 current() { images/build.sh --check "$1" > /dev/null; }
-export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current debian && echo ,debian)}
+export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current debian && echo ,debian)$(current alpine-uefi && echo ,alpine-uefi)}
 # The network tests on Debian (net-guest, page-network, net-tailnet: ~4 min) are scripts/ci-net.sh's.
 # Guest-image tests: run when target/images has the images (a space-separated
 # list) and they're current.
@@ -37,6 +37,7 @@ native() {
   image_test kvm-unit-tests kvm-unit-tests kvm_unit_tests
   image_test 'litmus and stress' 'linux litmus' litmus
   image_test 'LTP and kselftests' 'ltp linux' ltp
+  image_test 'firmware (EDK2)' edk2 firmware
   for d in alpine debian; do
     if [[ $d == debian && ${WEBPC_DEBIAN_NATIVE-} != 1 ]]; then step "debian boot (native): SKIPPED (set WEBPC_DEBIAN_NATIVE=1)"
     elif [[ ",$WEBPC_DISTROS," == *",$d,"* ]]; then image_test "$d boot" $d distros $d; else step "$d boot: SKIPPED (not in WEBPC_DISTROS)"; fi

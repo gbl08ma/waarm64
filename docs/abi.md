@@ -1,4 +1,4 @@
-# Host ABI (version 27)
+# Host ABI (version 29)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -39,7 +39,8 @@ Design notes for an ABI change go in this file before the code.
   `vm_exit_cpu(vm, cpu)` its `ExitInfo`; `vm_cpu_signal(vm, i)` vCPU *i*'s wake word (below).
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
   1056; `Cpu` is 1072 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
-  `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none).
+  `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
+  flash bank's bytes, null without one; ABI 29).
 - **Addresses are u32, but JS sees a wasm `i32` as signed:** past 2 GiB of memory (a guest with
   2 GiB of RAM puts the core's later allocations there) they'd come back negative. `web/vm.ts`
   `unsigned` wraps the exports that return one, and `jit_install` unsigns its `ptr`.
@@ -59,7 +60,10 @@ Design notes for an ABI change go in this file before the code.
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
 | `smp` | 0 round-robin on the calling thread (`vm_run`), 1 parallel: a thread per vCPU (`vm_run_cpu`), realtime only (25) |
-| `rtc` | Unix time in ms at `vm_new`: a PL031 RTC (at 0x0901_0000, SPI 2, in the DT) counts from it; 0 or deterministic mode: none (28) |
+| `rtc` | Unix time in ms at `vm_new`: a PL031 RTC (at 0x0901_0000, SPI 2, in the DT) counts from it; 0 or deterministic mode: none (28), except in the firmware configuration, where it counts virtual time (29) |
+| `firmware` | 1: the firmware configuration (below, "M8 phase B"); 0: direct kernel boot (29) |
+| `flash_size` | the firmware configuration's flash bank, a multiple of 256 KiB from 768 KiB to 64 MiB; 0 otherwise (29) |
+| `fw_cfg`, `fw_cfg_len` | address and length of fw_cfg's files, copied by `vm_new` (firmware only; 0: none) (29) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`;
 the ABI's 0 means none.
@@ -238,6 +242,63 @@ end the chunk (`Exit::Resync`, retired) in both tiers (the JIT calls the helper 
 run loop can apply what other vCPUs queued (context synchronization) and complete this vCPU's
 own TLBI IS broadcasts before anything after its DSB runs.
 
+## M8 phase B: the firmware configuration (design note for ABI 29)
+
+Written before the code ([plans/uefi.md](plans/uefi.md) "The design for loops 2–3"), and it
+describes what was built (loop 2). The page's machine boots EDK2's ArmVirtQemuKernel (`images/build.sh edk2`) the way it boots a kernel today;
+EDK2 then boots the disk's own loader. With `firmware` = 0 nothing below exists and every guest
+is the machine it was (the tests' step counts don't move).
+
+**`VmConfig`** (appended u64 fields):
+
+| Field | Meaning |
+|---|---|
+| `firmware` | 0 direct kernel boot (as before); 1 the firmware configuration, below |
+| `flash_size` | bytes of the variable flash bank (firmware only, required there): a multiple of 256 KiB from 768 KiB to 64 MiB |
+| `fw_cfg`, `fw_cfg_len` | address and length of the host's fw_cfg files (firmware only; 0: none), copied by `vm_new` |
+
+**What `firmware` = 1 changes** (`vm_new` refuses it without `flash_size`, or without `rtc`):
+- **Boot:** unchanged. The host copies `QEMU_EFI.fd` into RAM as the `Image` (its header's
+  `text_offset` is 512 KiB, so at RAM + 512 KiB, where QEMU puts it) and calls `vm_boot` with no
+  initrd and an empty command line. The DTB still goes in the top 2 MiB: EDK2's first act
+  (`ArmVirtPkg/PrePi/ModuleEntryPoint.S` `DiscoverDramFromDt`, before any allocation) is to copy
+  it into the 32 KiB after its own image header, so nothing EDK2 allocates can land on it
+  first. `vm_boot` refuses a DTB over 32 KiB − 64 in this configuration.
+- **The DT:** `/memory` ends at the framebuffer's base (without one, at the DTB space): the
+  framebuffer and the DTB space stay where they are in the same wasm memory (so `vm_framebuffer`,
+  the display and the guest's PA-to-host translation don't change), invisible to EDK2's
+  allocator, which works down from `/memory`'s top. No `/reserved-memory`. New nodes:
+  `flash@4000000` (`cfi-flash`, `bank-width` 4, `reg` = `flash_size`) and `fw-cfg@9020000`
+  (`qemu,fw-cfg-mmio`, `reg` size 0x18 as QEMU's, `dma-coherent`); the PL031 always.
+- **The flash bank** at PA `0x0400_0000` (QEMU `virt`'s bank 1): an MMIO device in the core
+  behaving as QEMU's `pflash_cfi01` with bank width 4 and two interleaved x16 chips (a command is
+  written to both 16-bit halves; status reads return it in both). Array-mode reads are the
+  bytes (any size or alignment); writes are commands: read array (0xFF), read status (0x70),
+  clear status (0x50), block erase (0x20, 0xD0 in the 256 KiB block), word program (0x40 or
+  0x10, then the data), buffered program (0xE8 at the target, the word count − 1, that many
+  32-bit words, 0xD0), block lock/unlock (0x60, then 0x01 or 0xD0: accepted, nothing locks),
+  read identifier (0x90: manufacturer 0x89, device 0x18, lock status 0) and CFI query (0x98:
+  `QRY` at word 0x10). Operations complete at once (status 0x80: ready). Programming stores the
+  data as QEMU does (it doesn't AND it into the old bytes as NOR does). Anything else sets the
+  status's command-sequence error bits (4, 5) and returns to read array.
+- **`vm_flash(vm) -> *mut u8`** (a new export; null without a flash): the bank's `flash_size`
+  bytes in the shared memory, erased (all ones) by `vm_new`. The host copies the saved store
+  in before the first run and reads it back whenever it wants to save it (at power-off, or on
+  `vm.close`); in parallel mode a read while the guest writes can see a half-done update, so a
+  host saves after the vCPUs stopped.
+- **fw_cfg** at PA `0x0902_0000` (QEMU `virt`'s): data at +0 (reads of 1, 2, 4 or 8 bytes return
+  the item's next bytes in order, zeros past its end or for an absent item), the selector at
+  +8 (a 16-bit big-endian write; it rewinds the offset), no DMA (+0x10 reads as 0 and ignores
+  writes; `ID` says so). Items: signature (0x0000, `QEMU`), ID (0x0001, 1: the traditional
+  interface), the file directory (0x0019: a big-endian count, then per file size, select, a
+  reserved u16 and a 56-byte name), and the host's files at 0x0020 upwards in its order. The
+  host's buffer is a sequence of records: a 56-byte NUL-padded name, a u32 LE size, the bytes
+  (`vm_new` refuses a malformed one). Writes to the data register are ignored. The DMA interface
+  (ramfb needs it: plans/uefi.md "Graphics in the firmware") is a later, appended change.
+- **The PL031 in deterministic mode** (firmware only): its time is `rtc` plus virtual time
+  (the counter over CNTFRQ), so firmware boots keep one step count. Hosts pass a fixed `rtc`
+  there (web/vm.ts: 2026-09-01, as the 9p server's timestamps).
+
 ## Version history
 
 | ABI | What changed |
@@ -265,3 +326,4 @@ own TLBI IS broadcasts before anything after its DSB runs.
 | 26 | counter words 91–100: parallel SMP's DSB waits, broadcasts, drains, idles, platform-lock contention, WFEs, time out of the core (M7) |
 | 27 | `panic_message() -> *const u8`: the first panic's message (BUG1) |
 | 28 | `VmConfig.rtc`: a PL031 RTC in realtime mode |
+| 29 | the firmware configuration (M8 phase B): `VmConfig.firmware`, `flash_size`, `fw_cfg`, `fw_cfg_len`; `vm_flash`; the PL031 in deterministic mode there |

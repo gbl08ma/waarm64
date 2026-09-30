@@ -2,24 +2,9 @@
 // in-memory files shaped like OPFS sync access handles.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { overlay, type SyncFile } from '../web/overlay.ts';
+import { memFile, overlay } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
-
-function memFile(): SyncFile & { bytes: () => Uint8Array } {
-  let b = new Uint8Array(0);
-  return {
-    read: (buf, { at }) => { const n = Math.max(0, Math.min(buf.length, b.length - at)); buf.set(b.subarray(at, at + n)); return n; },
-    write: (buf, { at }) => {
-      if (at + buf.length > b.length) { const g = new Uint8Array(at + buf.length); g.set(b); b = g; }
-      b.set(buf, at);
-      return buf.length;
-    },
-    getSize: () => b.length,
-    flush: () => {},
-    bytes: () => b,
-  };
-}
 
 test('overlay reads what was written and the base elsewhere, and reopens', async () => {
   const g = splitmix64(7n);

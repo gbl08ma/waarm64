@@ -12,6 +12,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+use webpc_core::fw_cfg::FwCfg;
 use webpc_core::mem::{Access, Mem};
 use webpc_core::virtio::{DeviceEntry, EV_CONFIG, Request};
 use webpc_core::vm::{
@@ -587,6 +588,8 @@ pub struct Run {
     pub hvc: String,
     /// The framebuffer's bytes at the end, if there was one.
     pub fb: Vec<u8>,
+    /// The flash bank's bytes at the end (the firmware configuration).
+    pub flash: Vec<u8>,
     /// Steps retired (instructions plus exceptions taken).
     pub steps: u64,
     pub summary: String,
@@ -625,6 +628,37 @@ pub struct Boot<'a> {
     /// steps have run (deterministic round-robin only), queued and pumped
     /// as `web/vm.ts` `send` does, so every runner takes the same steps.
     pub input: Option<(u64, &'a [u8])>,
+    /// The firmware configuration (`VmConfig.firmware`, M8 phase B): `kernel`
+    /// is the firmware, loaded at [`FIRMWARE`].
+    pub firmware: Option<Firmware<'a>>,
+}
+
+/// The firmware configuration's host side: the flash bank's size and saved
+/// contents (erased if None), fw_cfg's files, and the PL031's start (Unix ms).
+pub struct Firmware<'a> {
+    pub flash_size: u64,
+    pub flash: Option<&'a [u8]>,
+    pub fw_cfg: &'a [(&'a str, &'a [u8])],
+    pub rtc: u64,
+}
+
+/// Where the firmware goes: RAM + its `Image` header's text_offset (512 KiB), as QEMU puts it.
+pub const FIRMWARE: u64 = webpc_core::vm::RAM_BASE + (512 << 10);
+
+/// The PL031's start in deterministic firmware runs: 2026-09-01 00:00 UTC (web/vm.ts's too).
+pub const FIRMWARE_EPOCH_MS: u64 = 1_788_220_800_000;
+
+/// fw_cfg's files in the host's buffer format (docs/abi.md "M8 phase B").
+pub fn fw_cfg_buffer(files: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut b = vec![];
+    for (name, data) in files {
+        let mut n = [0u8; webpc_core::fw_cfg::NAME];
+        n[..name.len()].copy_from_slice(name.as_bytes());
+        b.extend(n);
+        b.extend((data.len() as u32).to_le_bytes());
+        b.extend(*data);
+    }
+    b
 }
 
 impl<'a> Boot<'a> {
@@ -645,6 +679,7 @@ impl<'a> Boot<'a> {
             ncpus: 1,
             parallel: false,
             input: None,
+            firmware: None,
         }
     }
 }
@@ -664,6 +699,7 @@ pub fn boot(b: &Boot) -> Run {
         ncpus,
         parallel,
         input,
+        ref firmware,
     } = b;
     assert!(
         input.is_none() || !parallel,
@@ -681,9 +717,27 @@ pub fn boot(b: &Boot) -> Run {
         features,
         ncpus,
         smp: parallel as u64,
+        firmware: firmware.is_some() as u64,
+        flash_size: firmware.as_ref().map_or(0, |f| f.flash_size),
+        rtc: firmware.as_ref().map_or(0, |f| f.rtc),
         ..VmConfig::default()
     };
+    assert!(cfg.valid_firmware());
     let mut vm = Vm::with_devices(mem, cfg, &entries);
+    if let Some(f) = firmware {
+        // As `vm_new` does with the host's buffer.
+        let files = FwCfg::parse(&fw_cfg_buffer(f.fw_cfg)).unwrap();
+        let p = vm.plat.get_mut();
+        p.fw_cfg = Some(FwCfg::new(files).unwrap());
+        if let Some(saved) = f.flash {
+            let flash = p.flash.as_mut().unwrap();
+            // SAFETY: the bank is flash_size bytes, and saved is checked to fit.
+            assert_eq!(saved.len() as u64, flash.size());
+            unsafe {
+                std::ptr::copy_nonoverlapping(saved.as_ptr(), flash.as_mut_ptr(), saved.len())
+            };
+        }
+    }
     for (d, c) in vm.shared.devices.iter().zip(&configs) {
         for (k, &b) in c.iter().enumerate() {
             d.config[k].store(b, Ordering::Relaxed);
@@ -695,12 +749,17 @@ pub fn boot(b: &Boot) -> Run {
         // SAFETY: host() checked the range is guest RAM.
         unsafe { std::ptr::copy_nonoverlapping(b.as_ptr(), p, b.len()) };
     };
-    load(&vm, KERNEL, kernel);
+    let kernel_pa = if firmware.is_some() { FIRMWARE } else { KERNEL };
+    load(&vm, kernel_pa, kernel);
     if let Some(rd) = initrd {
         load(&vm, INITRD, rd);
     }
-    vm.boot(KERNEL, initrd.map(|rd| (INITRD, rd.len() as u64)), cmdline)
-        .unwrap();
+    vm.boot(
+        kernel_pa,
+        initrd.map(|rd| (INITRD, rd.len() as u64)),
+        cmdline,
+    )
+    .unwrap();
 
     let t = Instant::now();
     let (mut out, mut steps) = (Vec::new(), 0);
@@ -780,19 +839,29 @@ pub fn boot(b: &Boot) -> Run {
         // SAFETY: host() checked the range is guest RAM.
         unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec()
     });
+    let flash = vm
+        .plat
+        .get_mut()
+        .flash
+        .as_ref()
+        .map_or(vec![], |f| f.bytes().to_vec());
     Run {
         fb,
+        flash,
         steps,
         kind,
         x0,
         console: String::from_utf8_lossy(&out).replace("\r\n", "\n"),
         hvc: String::from_utf8_lossy(&backends.hvc).replace("\r\n", "\n"),
         summary: format!(
-            "{steps} steps, guest time {:.2} s, {secs:.1} s wall, {:.0} MIPS; exit {kind} value {:#x} pc {:#x}",
+            "{steps} steps, guest time {:.2} s, {secs:.1} s wall, {:.0} MIPS; exit {kind} value {:#x} pc {:#x}; ESR_EL1 {:#x} ELR_EL1 {:#x} FAR_EL1 {:#x}",
             vm.now() as f64 / 62.5e6,
             steps as f64 / secs / 1e6,
             vm.exit.value,
-            vm.vcpus[0].cpu.pc
+            vm.vcpus[0].cpu.pc,
+            vm.vcpus[0].cpu.esr_el1,
+            vm.vcpus[0].cpu.elr_el1,
+            vm.vcpus[0].cpu.far_el1,
         ),
     }
 }

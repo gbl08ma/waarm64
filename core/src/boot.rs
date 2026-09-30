@@ -17,6 +17,9 @@ use crate::vm::{GICD, GICR, IRQ_RTC, IRQ_UART, RAM_BASE, RTC, UART, Vm, VmConfig
 
 /// Space reserved for the DTB at the top of RAM (booting.rst's limit is 2 MiB).
 pub const DTB_SPACE: u64 = 2 << 20;
+/// The firmware (ArmVirtQemuKernel) copies the DTB into the 32 KiB after its
+/// 64-byte `Image` header (its FDF's first region).
+const FIRMWARE_DTB_MAX: u64 = (32 << 10) - 64;
 const IMAGE_MAGIC: u32 = 0x644d_5241; // "ARM\x64" at offset 0x38
 const GIC_PHANDLE: u32 = 1;
 const CLK_PHANDLE: u32 = 2;
@@ -36,7 +39,10 @@ pub fn framebuffer(cfg: &VmConfig) -> Option<(u64, u64)> {
 /// The device tree for this VM: QEMU `virt`'s addresses and bindings for the
 /// devices we have, with `virtio` virtio-mmio transports in the first slots.
 /// `initrd` is (start, end) in guest PA; `fb` a framebuffer as (PA, width, height);
-/// `ncpus` the vCPUs; `rtc` whether there's the PL031.
+/// `ncpus` the vCPUs; `rtc` whether there's the PL031; `flash` the flash
+/// bank's size in the firmware configuration (docs/abi.md "M8 phase B"), which
+/// also adds fw_cfg and ends `/memory` below the framebuffer and the DTB space.
+#[allow(clippy::too_many_arguments)]
 pub fn dtb(
     ram_size: u64,
     cmdline: &str,
@@ -45,6 +51,7 @@ pub fn dtb(
     fb: Option<(u64, u64, u64)>,
     ncpus: usize,
     rtc: bool,
+    flash: Option<u64>,
 ) -> Vec<u8> {
     let mut f = Fdt::default();
     f.begin("");
@@ -78,13 +85,23 @@ pub fn dtb(
     }
     f.end();
 
+    // The firmware allocates down from `/memory`'s top and ignores
+    // `/reserved-memory`, so there `/memory` stops short of the framebuffer
+    // and the DTB space (EDK2 copies the DTB before it allocates anything).
+    let memory = match (flash, fb) {
+        (None, _) => ram_size,
+        (Some(_), Some((pa, _, _))) => pa - RAM_BASE,
+        (Some(_), None) => ram_size - DTB_SPACE,
+    };
     f.begin(&format!("memory@{RAM_BASE:x}"));
     f.strs("device_type", &["memory"]);
-    f.cells64("reg", &[RAM_BASE, ram_size]);
+    f.cells64("reg", &[RAM_BASE, memory]);
     f.end();
 
     // The framebuffer's region, out of the kernel's linear map (the driver maps it).
-    if let Some((pa, w, h)) = fb {
+    if let Some((pa, w, h)) = fb
+        && flash.is_none()
+    {
         f.begin("reserved-memory");
         f.cells("#address-cells", &[2]);
         f.cells("#size-cells", &[2]);
@@ -115,6 +132,15 @@ pub fn dtb(
     f.strs("compatible", &["arm,psci-1.0", "arm,psci-0.2"]);
     f.strs("method", &["hvc"]);
     f.end();
+
+    // The variable store (EDK2 disables the node in the DT it hands on).
+    if let Some(size) = flash {
+        f.begin(&format!("flash@{:x}", crate::flash::FLASH));
+        f.strs("compatible", &["cfi-flash"]);
+        f.cells64("reg", &[crate::flash::FLASH, size]);
+        f.cells("bank-width", &[4]);
+        f.end();
+    }
 
     // The GICv3, QEMU `virt`'s map: the distributor, then one region of redistributors.
     f.begin(&format!("intc@{GICD:x}"));
@@ -165,6 +191,15 @@ pub fn dtb(
         f.cells("interrupts", &[0, IRQ_RTC as u32 - 32, 4]);
         f.cells("clocks", &[CLK_PHANDLE]);
         f.strs("clock-names", &["apb_pclk"]);
+        f.end();
+    }
+
+    if flash.is_some() {
+        let pa = crate::fw_cfg::FW_CFG;
+        f.begin(&format!("fw-cfg@{pa:x}"));
+        f.strs("compatible", &["qemu,fw-cfg-mmio"]);
+        f.cells64("reg", &[pa, crate::fw_cfg::SIZE]);
+        f.flag("dma-coherent");
         f.end();
     }
 
@@ -219,9 +254,13 @@ impl Vm {
             fb,
             ncpus,
             self.cfg.has_rtc(),
+            self.cfg.firmware().then_some(self.cfg.flash_size),
         );
         if blob.len() as u64 > DTB_SPACE {
             return Err("DTB too large");
+        }
+        if self.cfg.firmware() && blob.len() as u64 > FIRMWARE_DTB_MAX {
+            return Err("DTB too large for the firmware's copy");
         }
         for (k, b) in blob.iter().enumerate() {
             self.mem
@@ -300,21 +339,32 @@ mod tests {
         assert_eq!(framebuffer(&cfg(u64::MAX, 2)), None);
     }
 
-    /// Our DTB, decompiled by `dtc`, must match the reviewed source
+    /// Our DTB, decompiled by `dtc`, must match the reviewed sources
     /// tests/dtb/webpc.dts (two vCPUs, the RTC; a round trip through the reference
-    /// tool). Set UPDATE_DTS=1 to rewrite it after an intended change.
+    /// tool) and webpc-firmware.dts (the firmware configuration: one vCPU, the
+    /// flash bank, fw_cfg). Set UPDATE_DTS=1 to rewrite them after an intended change.
     #[test]
     fn dtb_round_trips_through_dtc() {
-        {
-            let (name, ncpus) = ("webpc.dts", 2);
-            let blob = dtb(
-                256 << 20,
+        let cases = [
+            (
+                "webpc.dts",
+                2,
                 "console=ttyAMA0 earlycon",
                 Some((0x4800_0000, 0x4810_0000)),
+                None,
+            ),
+            ("webpc-firmware.dts", 1, "", None, Some(1 << 20)),
+        ];
+        for (name, ncpus, cmdline, initrd, flash) in cases {
+            let blob = dtb(
+                256 << 20,
+                cmdline,
+                initrd,
                 2,
                 Some((0x4fc0_0000, 640, 480)),
                 ncpus,
                 true,
+                flash,
             );
             let dir =
                 std::env::temp_dir().join(format!("webpc-dtb-{}-{ncpus}", std::process::id()));

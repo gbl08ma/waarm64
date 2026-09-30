@@ -11,7 +11,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 28);
+  assert.equal(ex.abi_version(), 29);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -66,6 +66,27 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 8)', () => 
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'no GICv2 (ABI 23)');
   new BigUint64Array(mem.buffer, cfg, 13).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 0n, 2n, 0n, 1n]);
   assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'parallel SMP needs realtime (ABI 25)');
+  // The firmware configuration (ABI 29): a valid flash bank and the RTC, or neither of them; a well-formed fw_cfg buffer.
+  const fw = (firmware: bigint, flash: bigint, rtc: bigint, fwCfgLen = 0n) =>
+    new BigUint64Array(mem.buffer, cfg, 18).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 1n, 0n, 0n, rtc, firmware, flash, BigInt(cfg + 1024), fwCfgLen]);
+  fw(1n, 0n, 1n);
+  assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'firmware without a flash bank');
+  fw(1n, 1n << 20n, 0n);
+  assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'firmware without the RTC');
+  fw(1n, (1n << 20n) + 4096n, 1n);
+  assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a flash bank of part of a block');
+  fw(0n, 1n << 20n, 0n);
+  assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a flash bank without the firmware');
+  fw(1n, 1n << 20n, 1n, 10n);
+  assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a truncated fw_cfg buffer');
+  fw(1n, 1n << 20n, 1n);
+  const fwVm = ex.vm_new(ram, BigInt(RAM), cfg);
+  assert.notEqual(fwVm, 0);
+  const flash = ex.vm_flash(fwVm) >>> 0;
+  assert.notEqual(flash, 0);
+  assert.ok(new Uint8Array(mem.buffer, flash, 1 << 20).every((b) => b === 0xff), 'the bank starts erased');
+  ex.vm_free(fwVm);
+  new BigUint64Array(mem.buffer, cfg, 18).fill(0n);
   // …, ncpus 1, the GICv3, round-robin.
   new BigUint64Array(mem.buffer, cfg, 13).set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 640n, 480n, 0n, 0n, 1n, 0n, 0n]);
   const vm = ex.vm_new(ram, BigInt(RAM), cfg);

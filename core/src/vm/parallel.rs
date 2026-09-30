@@ -119,8 +119,16 @@ pub(super) struct CpuPar {
     asid: AtomicU64,
 }
 
-/// `CpuPar::asid` when a TLBI IS must wait for the vCPU whatever its ASID.
+/// `CpuPar::asid` when a TLBI IS must wait for the vCPU whatever its ASID
+/// (`mmu::Tlb::miss` stores it too).
 const ANY: u64 = u64::MAX;
+
+impl CpuPar {
+    /// Its published ASID's word, for its TLB (`Tlb::published`).
+    pub(super) fn asid_word(&self) -> *const AtomicU64 {
+        &self.asid
+    }
+}
 
 impl Default for CpuPar {
     fn default() -> CpuPar {
@@ -361,7 +369,8 @@ impl Vm {
             }
             // Before the chunk translates anything (`broadcast`).
             if self.vcpus.len() > 1 {
-                let asid = if v.cpu.sctlr_el1 & sctlr::M != 0 {
+                // `ANY` too while its TLB may hold global TTBR0-half entries (`Tlb::low_global`).
+                let asid = if v.cpu.sctlr_el1 & sctlr::M != 0 && !v.tlb.low_global {
                     crate::mmu::asid(&v.cpu)
                 } else {
                     ANY
@@ -462,7 +471,13 @@ impl Vm {
                 ..
             }) => {
                 let mut pl = self.plat_of(c);
-                let (r, tx_full, device) = io(v, &self.mem, &mut pl, &self.shared, &self.clock);
+                let (r, tx_full, device) = io(
+                    v,
+                    &self.mem,
+                    &mut pl,
+                    &self.shared,
+                    Time::Clock(&self.clock),
+                );
                 self.refresh(&mut pl);
                 drop(pl);
                 match r {

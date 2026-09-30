@@ -58,6 +58,15 @@ pub struct Tlb {
     ng: [u16; NG_SLOTS],
     ng_len: u32,
     pub stats: TlbStats,
+    /// Parallel SMP: it may hold global entries in the TTBR0 half (since
+    /// the last flush of everything). A vCPU whose TLB may hold them
+    /// publishes `ANY` as its ASID, so every TLBI IS waits for it
+    /// (vm/parallel.rs `broadcast`). Linux maps nothing global there; EDK2,
+    /// shim and GRUB map everything global there (identity maps in TTBR0).
+    pub(crate) low_global: bool,
+    /// Parallel SMP: its vCPU's published ASID (`CpuPar::asid`, in the VM's
+    /// `Shared`, which outlives the vCPU); null otherwise.
+    pub(crate) published: *const core::sync::atomic::AtomicU64,
 }
 
 /// Counted in the slow paths; the VM run loop publishes them (`vm::Counters`).
@@ -80,6 +89,7 @@ impl Tlb {
             a.fill(Entry::default());
         }
         self.ng_len = 0;
+        self.low_global = false;
     }
 
     /// Drops every nG entry: the global ones match any ASID.
@@ -539,16 +549,31 @@ impl<'a> Mmu<'a> {
             .mem
             .host(w.pa, len, access)
             .map_err(|f| Fault { addr: va, ..f })?;
-        // Parallel SMP doesn't cache global entries in the TTBR0 half: then
-        // a vCPU's TLB holds nothing there but its current ASID's, which a
-        // TLBI IS for another ASID lets it skip waiting for (vm/parallel.rs
-        // `broadcast`). Linux maps nothing global there.
-        let skip = !w.ng
+        // In parallel SMP a TLB that holds nothing in the TTBR0 half but its
+        // current ASID's lets a TLBI IS for another ASID skip waiting for its
+        // vCPU (vm/parallel.rs `broadcast`). The first global entry there
+        // ends that: the vCPU publishes `ANY` before the walk whose entry it
+        // caches (the order a TTBR write's new ASID follows), so an issuer
+        // that stored new tables and then read the old ASID can't meet an
+        // entry from the old tables.
+        let low_global = !w.ng
             && va >> 55 & 1 == 0
             && c.features & crate::cpu::FEATURE_PARALLEL != 0
             && c.features & crate::cpu::FEATURE_SMP != 0;
+        if low_global
+            && let Some(t) = &mut self.tlb
+            && !t.low_global
+        {
+            t.low_global = true;
+            // SAFETY: set in parallel mode to the vCPU's word in the VM's
+            // `Shared`, which outlives the vCPU (`Tlb::published`).
+            if let Some(a) = unsafe { t.published.as_ref() } {
+                a.store(u64::MAX, core::sync::atomic::Ordering::SeqCst);
+            }
+            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+            return self.miss(c, va, len, access, u, el);
+        }
         if let Some(t) = &mut self.tlb
-            && !skip
             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
         {
             let addend = (page as usize as u64).wrapping_sub(va & !0xfff);

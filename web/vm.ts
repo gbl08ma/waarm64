@@ -11,7 +11,7 @@ import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 28;
+export const ABI = 29;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -33,6 +33,7 @@ type Exports = {
   vm_signal(vm: number): number;
   vm_device(vm: number, i: number): number;
   vm_framebuffer(vm: number): bigint;
+  vm_flash(vm: number): number;
   panic_message(): number;
 };
 
@@ -107,7 +108,7 @@ export async function clockOffset(ask: () => Promise<number>, rounds = 16) {
  * but JS sees an i32, negative past 2 GiB of memory (a guest with 2 GiB of
  * RAM puts the core's later allocations there, M8 loop 0).
  */
-const POINTERS = ['thread_alloc', 'vm_new', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_counters', 'jit_helper_report', 'panic_message'];
+const POINTERS = ['thread_alloc', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_counters', 'jit_helper_report', 'panic_message'];
 
 /** `exports` with the address-returning functions ({@link POINTERS}) made unsigned. */
 export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
@@ -324,7 +325,42 @@ export type BootOptions = {
    * `runAsync` awaits (parallel mode), at the next `run` otherwise.
    */
   serialIn?: MessagePort;
+  /**
+   * The firmware configuration (`VmConfig.firmware`, ABI 29, docs/abi.md "M8
+   * phase B"): `kernel` is EDK2's `QEMU_EFI.fd` (loaded at RAM + 512 KiB, its
+   * `text_offset`), with no initrd or command line. `flash` is the saved
+   * variable store (erased if absent; `flashSize` bytes, 1 MiB by default),
+   * `fwCfg` fw_cfg's named files. Deterministic runs get a PL031 counting
+   * from {@link FIRMWARE_EPOCH_MS}.
+   */
+  firmware?: Firmware;
 };
+
+export type Firmware = { flash?: Uint8Array; flashSize?: number; fwCfg?: { name: string; data: string | Uint8Array }[] };
+
+/** The PL031's start in deterministic firmware runs: 2026-09-01 00:00 UTC (as core/tests/common's). */
+export const FIRMWARE_EPOCH_MS = 1_788_220_800_000;
+/** Where the firmware goes in RAM: its `Image` header's text_offset, as QEMU puts it. */
+const FIRMWARE_OFFSET = 512 << 10;
+const FLASH_SIZE = 1 << 20;
+/** A fw_cfg file's name field, NUL included (core/src/fw_cfg.rs). */
+const FW_CFG_NAME = 56;
+
+/** fw_cfg's files in the core's buffer format: a NUL-padded name, a u32 LE size, the bytes. */
+export function fwCfgBuffer(files: { name: string; data: string | Uint8Array }[]) {
+  const parts = files.flatMap(({ name, data }) => {
+    const n = new TextEncoder().encode(name);
+    if (!n.length || n.length >= FW_CFG_NAME) throw new Error(`fw_cfg name ${name}: 1 to ${FW_CFG_NAME - 1} bytes`);
+    const d = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+    const head = new Uint8Array(FW_CFG_NAME + 4);
+    head.set(n);
+    new DataView(head.buffer).setUint32(FW_CFG_NAME, d.length, true);
+    return [head, d];
+  });
+  const out = new Uint8Array(parts.reduce((k, p) => k + p.length, 0));
+  parts.reduce((k, p) => (out.set(p, k), k + p.length), 0);
+  return out;
+}
 
 /**
  * The devices the test and benchmark guests expect: the root filesystem at
@@ -388,7 +424,7 @@ export const DISTROS = {
 
 // The scratch page before RAM: VmConfig, device entries, the doorbell, the command line.
 const S_CFG = 0;
-const S_DEVICES = 128;
+const S_DEVICES = 256;
 const S_BELL = 2048;
 /** Parallel mode: the coordinator's word (vCPU workers bump it on TX_FULL). */
 const S_CTL = 2056;
@@ -429,19 +465,32 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // VmConfig: RAM size, deterministic, CNTFRQ and ticks per step (defaults), device entries, framebuffer, JIT.
   const fb = o.framebuffer ?? { width: 0, height: 0 };
   // …, features, CPUs, GIC (ABI 21), parallel (ABI 25).
-  // The last field: a PL031 RTC from the host's wall clock (ABI 28), realtime only.
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 14).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(ncpus), 0n, parallel ? 1n : 0n, deterministic ? 0n : BigInt(Date.now())]);
+  // A PL031 RTC from the host's wall clock (ABI 28), realtime only, or in the firmware configuration from a fixed epoch.
+  // The firmware configuration (ABI 29): the flash bank's size, fw_cfg's files (copied by vm_new).
+  const fw = o.firmware;
+  const rtc = !deterministic ? BigInt(Date.now()) : fw ? BigInt(FIRMWARE_EPOCH_MS) : 0n;
+  const fwCfg = fw?.fwCfg?.length ? fwCfgBuffer(fw.fwCfg) : undefined;
+  const fwCfgAt = fwCfg ? memory.grow(Math.ceil(fwCfg.length / 65536)) * 65536 : 0;
+  if (fwCfg) bytes().set(fwCfg, fwCfgAt);
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 18).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
+    fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0)]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
   // The same placement as core/tests/boot.rs: Image at +2 MiB, initrd at +128 MiB.
-  const kernelOff = o.kernelOffset ?? 2 << 20;
+  const kernelOff = o.kernelOffset ?? (fw ? FIRMWARE_OFFSET : 2 << 20);
   const initrdOff = 128 << 20;
   bytes().set(o.kernel, ram + kernelOff);
   if (o.initrd) bytes().set(o.initrd, ram + initrdOff);
 
   const vm = ex.vm_new(ram, BigInt(o.ramSize), scratch + S_CFG);
   if (!vm) throw new Error('vm_new failed');
+  const flashAt = fw ? ex.vm_flash(vm) : 0;
+  const flashSize = fw?.flashSize ?? FLASH_SIZE;
+  if (fw?.flash) {
+    if (fw.flash.length !== flashSize) throw new Error(`firmware.flash: ${fw.flash.length} bytes, the bank has ${flashSize}`);
+    bytes().set(fw.flash, flashAt);
+  }
   const initrdLen = BigInt(o.initrd?.length ?? 0);
   if (ex.vm_boot(vm, BigInt(RAM_BASE + kernelOff), BigInt(RAM_BASE + initrdOff), initrdLen, scratch + S_CMDLINE, cmd.length)) {
     throw new Error('vm_boot rejected the Image or layout');
@@ -527,6 +576,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     memory,
     /** The framebuffer (web/display.ts): byte address in `memory`, width, height; x8r8g8b8, packed rows. */
     framebuffer: fbPa ? { addr: ram + fbPa - RAM_BASE, ...fb } : undefined,
+    /** A copy of the firmware configuration's flash bank (the variable store), to save once the vCPUs stopped; undefined without one. */
+    flash: () => (flashAt ? bytes().slice(flashAt, flashAt + flashSize) : undefined),
     /** Byte addresses of guest RAM (PA 0x4000_0000) and of the vCPU registers (`cpu::Cpu`) in `memory`. */
     ram,
     cpu: ex.vm_cpu(vm, 0),
@@ -789,7 +840,7 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
     const ms = performance.now() - t0;
     await vm.flush();
     vm.close();
-    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc() };
+    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash() };
   }
 }
 

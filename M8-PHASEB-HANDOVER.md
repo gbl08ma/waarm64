@@ -1,117 +1,79 @@
-**Handover, 2026-09-30: M8 phase B (your own disk). Loops 0 and 1 are done; loop 2 (the
-platform) is next and starts in a fresh session.** The brief is `M8-PHASEB-KICKOFF.md` (confirmed
-by the user 2026-09-30: the outline is OK, **images in scope are Debian and Alpine only**). The
-user asked for loop 2 to start fresh: this file is its kickoff. Phase A's handover is in git
-history; networking has its own (`M8-PHASEC-NETWORKING-HANDOVER.md`).
+**Handover, 2026-09-30: M8 phase B (your own disk). Loops 0–2 are done; loop 3 (Debian
+unmodified on the page) is next.** The brief is `M8-PHASEB-KICKOFF.md` (confirmed by the user
+2026-09-30: the outline is OK, **images in scope are Debian and Alpine only**). Phase A's handover
+is in git history; networking has its own (`M8-PHASEC-NETWORKING-HANDOVER.md`).
 
-**Read, in order:** CLAUDE.md, the kickoff, [docs/plans/uefi.md](docs/plans/uefi.md) (all of it:
-loop 0's findings, DT vs ACPI, loop 1, the design), then `docs/abi.md` (a change needs a design
-note first), `docs/platform.md` ("Memory map", "Boot", "PL031"), `docs/devices.md` (the
-framebuffer, the device worker), `docs/testing.md` ("Step counts", "System-level oracles": the
-UEFI oracle), `core/src/boot.rs`, `core/src/fdt.rs`, `core/src/vm.rs` (`VmConfig`, `Io`),
-`core/src/pl031.rs`, `web/vm.ts` (`BootOptions`), `web/app/machine.ts`.
+**Read, in order:** CLAUDE.md, the kickoff, [docs/plans/uefi.md](docs/plans/uefi.md) (loop 0's
+findings, DT vs ACPI, loops 1–2, the design, **the user's answers for the page**), docs/abi.md
+"M8 phase B" (ABI 29), docs/platform.md ("Boot", "The firmware configuration's devices", "PL031"),
+docs/frontend.md, `web/app/machine.ts`, `web/app/` (the page and its machine worker),
+`tests/uefi.test.ts` (how a UEFI boot is driven over the serial console), `tests/page-debian.test.ts`.
 
 ## Where phase B stands
 | Loop | Commit | What landed |
 |---|---|---|
-| 0 | `21eff2b` | The kickoff; the QEMU oracle study (docs only): ArmVirtQemuKernel through our direct boot, a CFI variable bank, fw_cfg for Debian's credentials, a seed disk for Alpine, the framebuffer out of `/memory`, the DT stays |
-| 1 | (this commit) | `images/build.sh edk2` (reproducible, `LICENSES.txt`, THIRD_PARTY.md row), `tools/uefi-oracle.ts`, `images/alpine-uefi.json`; the KASLR finding (backlog) |
+| 0 | `21eff2b` | The kickoff; the QEMU oracle study (docs only) |
+| 1 | `918a8b8` | `images/build.sh edk2` (ArmVirtQemuKernel, reproducible), `tools/uefi-oracle.ts`, `images/alpine-uefi.json` |
+| 2 | (this commit) | ABI 29, the firmware configuration: `VmConfig.firmware`, a CFI flash bank (`core/src/flash.rs`), fw_cfg (`core/src/fw_cfg.rs`), the PL031 always (virtual time when deterministic), `vm_flash`; `BootOptions.firmware` (web/vm.ts); TTBR0 global TLB entries cached in parallel SMP; `web/fat.ts`; in-memory overlays in Node; `shell.img` and `images/build.sh alpine-uefi`; tests |
 
-Loop 1 in short: ArmVirtQemuKernel RELEASE without the network stack, built natively in Debian's
-arm64 container in ~1 min, reproducible (`QEMU_EFI.fd` `a1e92a5f…`). The oracle boots `debian`,
-`alpine` (Limine) and `alpine-grub` through it on QEMU with a DT like ours, logs in as root and
-powers off: `node tools/uefi-oracle.ts debian alpine alpine-grub` (~30 s). The apparent "DT 1.8×
-slower than ACPI" was QEMU's `kaslr-seed` (KASLR), now dropped from the oracle's DT; it's a
-backlog warning for `rng-seed`/`kaslr-seed` and for RNDR (under UEFI an RNG brings KASLR).
+Loop 2 in short: our machine boots `QEMU_EFI.fd` like a kernel (RAM + 512 KiB; the DTB stays in
+the top 2 MiB, EDK2 copies it first), and EDK2 boots Debian's published qcow2 (shim, GRUB) and
+both Alpine UEFI images (Limine, GRUB) to a root login in Node: Debian's kernel at 9.4 s, login at
+41 s (parallel, 2 vCPUs, JIT). The deterministic test is the UEFI Shell from `shell.img` keeping an
+EFI variable across two boots (`edk2-shell` in tests/steps.txt, native, Node interpreter and JIT).
+The big finding: parallel SMP didn't cache global TLB entries in TTBR0, which firmware and
+bootloaders use everywhere (70 s → 3 s from the boot manager to GRUB).
 
-## Loop 2: the platform (the brief for the next session)
-**Goal:** our machine boots `target/images/edk2/QEMU_EFI.fd` the way the oracle does, in Node
-first: EDK2 runs, finds its variable store, and reaches its boot manager (with no disk, the UEFI
-shell or "no bootable device"); with Debian's or Alpine's disk it gets to GRUB or Limine and on
-into the kernel. The page switch is loop 3, not this one.
+## Loop 3: Debian unmodified, end to end (the kickoff's loop 3)
+**Goal:** the page boots Debian's published qcow2 through EDK2 and GRUB, with no extraction
+(tools/debian.ts only downloads; the page's machine drops its `kernel`/`initrd`). **Check with the
+user first:** the page's Debian switching to UEFI changes what the user sees (firmware and GRUB
+before the kernel, first-boot questions on the serial console): the kickoff lists it.
 
-**What to build** (details and reasons in plans/uefi.md "The design for loops 2–3"):
-1. **ABI design notes first** in docs/abi.md, then `ABI_VERSION` 29: the firmware machine
-   configuration (a `VmConfig` field or a boot flag), the CFI flash bank (its backing buffer and
-   how the host persists it), fw_cfg's files from the host.
-2. **Firmware boot:** the firmware is loaded like an `Image` (RAM + 2 MiB, the existing path; it
-   has the arm64 header), no initrd. **The DTB must not sit in the top 2 MiB** in this
-   configuration (EDK2 allocates from RAM's top down): put it where EDK2 won't allocate before it
-   copies it (e.g. RAM's base, as QEMU does for firmware; check what ArmVirtQemuKernel reserves:
-   `ArmVirtPkg/PrePi`, the "kernel" variant's memory init). Direct kernel boot and every test
-   guest stay exactly as they are (their step counts must not move).
-3. **The framebuffer above `/memory`:** in the firmware configuration `/memory` stops short of
-   the framebuffer, which sits right above at the same linear offset in the same wasm memory (so
-   `vm_framebuffer`, the display and PA-to-host translation don't change). No `/reserved-memory`.
-   Check Linux's simplefb binds (`/dev/fb0`, fbcon on the screen). QEMU can't check this (it
-   rewrites `/memory`), so this is the first thing to verify on our machine.
-4. **A CFI flash bank for variables** (`cfi-flash`, bank-width 4, at `0x0400_0000`; ≥ 768 KiB,
-   1 MiB proposed; QEMU's bank is 64 MiB): an MMIO device in the core (reads in array mode are
-   plain reads; writes are commands). Implement what EDK2's `OvmfPkg/VirtNorFlashDxe` issues:
-   read array (0xFF), read status (0x70), clear status (0x50), block erase (0x20/0xD0), word
-   program (0x40/0x10), buffered program (0xE8 … 0xD0), CFI query (0x98) if probed. QEMU's
-   `hw/block/pflash_cfi01.c` is the behavioral reference (GPL: read it, never copy it). Note
-   that the JIT and interpreter fault non-RAM PAs to `vm::Io`, so array-mode reads go through Io
-   too (fine for a store read a few times a boot; measure if not). Linux must not bind its own
-   driver to it while EFI runtime services own it: EDK2 sets the node's `status` to `disabled`
-   before handing the DT over (checked on the oracle: Debian has no `/proc/mtd`); keep it so.
-5. **A minimal fw_cfg** (`qemu,fw-cfg-mmio` at `0x0902_0000`, as QEMU `virt`): selector (16-bit
-   BE), data (8-bit reads suffice for Linux's `qemu_fw_cfg` and EDK2; DMA only if one of them
-   needs it), items: signature `QEMU`, ID, the file directory, and named files from the host.
-   First files: Debian's systemd credentials for **the tests only**
-   (`opt/io.systemd.credentials/login.noauth`, `firstboot.timezone`, `firstboot.locale`,
-   `passwd.hashed-password.root` empty): **the user decided the release build's Debian boots as
-   on a regular machine** (systemd-firstboot asks), so the page passes none. Leave room for the
-   DMA interface: ramfb (a firmware GOP, plans/uefi.md "Graphics in the firmware") needs it, as a
-   later step. QEMU's `docs/specs/fw_cfg.rst` is the spec (a doc: fine to follow).
-6. **The PL031 in the firmware configuration always** (EDK2's RTC and Linux's `rtc-efi`): in
-   deterministic mode its time from virtual time (a fixed epoch plus the counter), so firmware
-   tests are exact.
-7. Whatever else our machine lacks that EDK2 touches: watch for external aborts at unknown PAs,
-   UNDEFINED system registers (EDK2 at EL1 reads ID registers, `CNTFRQ`, maybe PMU or debug
-   registers), cache maintenance by set/way (NOPs for us: fine). EDK2 uses no RNDR here.
+What to do (the user's answers are in plans/uefi.md "The user's answers for the page"):
+1. `web/app/machine.ts`: Debian's machine becomes `firmware` (the page serves `QEMU_EFI.fd` and
+   its `LICENSES.txt`; `npm start` builds or fetches it: decide how, `images/build.sh edk2` needs
+   Podman and ~1 min, which `npm start` users may not have: ask if a prebuilt download is wanted).
+   The flash bank is kept per disk (OPFS, next to the overlay, keyed like it) and saved at
+   power-off and on `close`.
+2. **No credentials in the release build:** Debian's first boot runs systemd-firstboot on the
+   serial console (no `console=` from GRUB: `/dev/console` is the PL011). The page must make that
+   visible (show the serial view or say where to look). The network credential (`network.network.card`)
+   that phase A put on the command line has to move (fw_cfg is only for tests: ask the user
+   whether the network card's credential may go through fw_cfg, since it isn't a first-boot
+   "hack" but a device setting).
+3. Menus wait for their timeout (GRUB 5 s). Check keys end to end through xterm.js to EDK2's
+   terminal and GRUB (arrows, F-keys, Esc, Ctrl-X).
+4. Measure the page's boot against today's direct boot (bench/run.ts in Chromium, CLAUDE.md
+   "Performance"). Before that, find the busy wait between EDK2's boot manager and GRUB's menu
+   (5.4G steps in ~3 s, backlog "The firmware configuration").
+5. Update tests/page-debian.test.ts, tests/start.test.ts (Debian's kernel/initrd identity check
+   goes), docs/frontend.md, and say what changes for the user.
 
-**Tests** (the kickoff's list, the loop-2 part):
-- A bare-metal CFI test (`tests/baremetal/`, oracle-checked on QEMU with a flash bank: erase,
-  program, status, read back) and native unit tests for the flash and fw_cfg.
-- **EDK2 to its boot manager in Node, deterministic, with a new `tests/steps.txt` entry** (a new
-  test, not a change to an existing guest), e.g. boot with no disk and stop at the shell or the
-  "no bootable option" message; and the same through Chromium if cheap.
-- A variable written by one boot is there on the next (the flash bank's bytes carried over).
-- Planted bugs: a flash write that doesn't stick (the variable test fails), a fw_cfg directory
-  entry off by one (the credentials test or EDK2's probe fails). Restore and rebuild the wasm.
-- Debian and Alpine through our EDK2 to a login in Node under the JIT (realtime), Debian with the
-  credentials over fw_cfg and Alpine with a seed disk: the same result as the oracle. Their
-  boot times against today's direct boot of Debian (bench/run.ts in Chromium only if claiming a
-  number: CLAUDE.md "Performance").
-- `scripts/ci.sh`, and `scripts/ci-long.sh` if the change touches the JIT or the memory model.
-
-**Check with the user first** (from the kickoff): any dependency; any change to an existing test
-guest. For loop 3 the user has answered (plans/uefi.md "The user's answers for the page"):
-menus wait for their timeout for now, the serial console with input is the way into the
-firmware and bootloader, and Debian's first boot runs normally in the release build (its
-questions land on the serial console: the page must show that).
-
-## Gotchas (loops 0–1)
+## Gotchas (loops 0–2)
 - `localhost/webpc-images` (images/Containerfile) is **amd64** under qemu-user here: never build
-  EDK2 in it (and an amd64 build leaves x86 dependency files in the tree: `git clean -fdx` in
-  every submodule).
-- `edksetup.sh` fails under `set -u`, and reads the caller's positional parameters as its own
-  options (`set --` before sourcing it). An apostrophe inside build.sh's single-quoted container
-  scripts ends the script (use none in their comments).
-- `/tmp` is a 6.9 GB tmpfs: don't extract whole partitions there; read files from images with
-  `web/qcow2.ts` + `web/bootfs.ts` in Node, or `mtools` at an offset (`mdir -i img@@<bytes>`).
-- QEMU: `-fw_cfg name=…,string=` rejects an empty value (use `file=` on an empty file); with
-  `-dtb`, QEMU still rewrites `/memory` and `/chosen`; with `acpi=off` its DT gains a PL061 and
-  `gpio-keys`. The oracle removes what our machine lacks; keep it in step with our DT.
-- Menus: Debian's GRUB waits 5 s, Limine 10 s, on the serial console (no GOP on this machine).
-  Limine draws its menu a character at a time between cursor escapes (match on stripped text).
-- EDK2 with no `cfi-flash` node takes a synchronous exception early in DXE.
+  EDK2 in it. `edksetup.sh` fails under `set -u` and eats the positional parameters (`set --`
+  first); an apostrophe inside build.sh's single-quoted container scripts ends the script.
+- `/tmp` is a 6.9 GB tmpfs: don't extract whole partitions there.
+- QEMU: `-fw_cfg name=…,string=` rejects an empty value (use `file=`); with `-dtb` QEMU still
+  rewrites `/memory` and `/chosen`.
+- Menus: Debian's GRUB waits 5 s, Limine 10 s, on the serial console (no GOP). Limine draws its
+  menu a character at a time between cursor escapes (match on stripped text).
+- EDK2 with no `cfi-flash` node takes a synchronous exception early in DXE; with a PL031 that
+  refuses byte reads, as ours did, a data abort in DXE ("Synchronous Exception at …" is all a
+  RELEASE build prints: the native runner's summary has ESR/ELR/FAR).
+- The UEFI Shell is an *application* boot option, which BDS's automatic boot skips: with no
+  disk EDK2 stops at "No bootable option or device was found". `shell.img` makes it the
+  removable-media loader instead.
+- A test that passes credentials must read one back: with fw_cfg's directory planted off by one
+  Debian still logged in (the shifted credentials happened to allow it).
+- `bench/results/local/uefi-node.ts` (untracked) is the ad-hoc driver: `debian`, `alpine`,
+  `alpine-grub`, and direct boots `debian-page` / `debian-grubline` for comparison.
 
 ## Carried over (still true)
-- The Debian page tests take turns (`tests/debian-lock.ts`); every heavy run under `systemd-run
-  --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout N <cmd>`. CI isn't needed for
-  docs-only changes (CLAUDE.md).
+- The Debian page tests take turns (`tests/debian-lock.ts`), so does `tests/uefi.test.ts`'s
+  Debian; every heavy run under `systemd-run --user --scope -q -p MemoryMax=10G -p
+  MemorySwapMax=0 -- timeout N <cmd>`. CI isn't needed for docs-only changes (CLAUDE.md).
 - The dev VM has no `diff` or `cmp`. `../webpc-base` is at `9e0209b` for A/B runs.
 - Looking at the page from the desktop: `ssh -t -L 8080:127.0.0.1:8080 macmini.lan "ssh -t -F
   ~/.lima/dev/ssh.config -L 8080:127.0.0.1:8080 lima-dev 'cd ~/Development/webpc && npm start'"`,

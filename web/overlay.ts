@@ -86,7 +86,28 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
  * synchronous), which lock the files, under the overlay's Web Lock. `close`
  * closes the handles, then releases the lock.
  */
-export type OverlayFiles = { data: FileSystemSyncAccessHandle; map: FileSystemSyncAccessHandle; close(): void };
+export type OverlayFiles = { data: SyncFile; map: SyncFile; close(): void };
+
+/** A {@link SyncFile} in memory (its capacity doubles as it grows). */
+export function memFile(): SyncFile & { bytes: () => Uint8Array } {
+  let b = new Uint8Array(0);
+  let size = 0;
+  return {
+    read: (buf, { at }) => { const n = Math.max(0, Math.min(buf.length, size - at)); buf.set(b.subarray(at, at + n)); return n; },
+    write: (buf, { at }) => {
+      if (at + buf.length > b.length) { const g = new Uint8Array(Math.max(at + buf.length, 2 * b.length)); g.set(b); b = g; }
+      b.set(buf, at);
+      size = Math.max(size, at + buf.length);
+      return buf.length;
+    },
+    getSize: () => size,
+    flush: () => {},
+    bytes: () => b.subarray(0, size),
+  };
+}
+
+/** Node has no OPFS: there an overlay lives in memory for the process's life (tests), by name. */
+const inMemory = new Map<string, { data: SyncFile; map: SyncFile; base: string }>();
 
 /** How long an opener waits for the overlay's previous holder (another machine, closing or in another tab). */
 export const OVERLAY_WAIT_MS = 10_000;
@@ -132,6 +153,13 @@ export async function openOverlay(name: string, url: string, size: number, waitM
     release();
   };
   try {
+    if (typeof navigator.storage === 'undefined') {
+      const want = JSON.stringify({ path: new URL(url).pathname, size });
+      const o = inMemory.get(name) ?? { data: memFile(), map: memFile(), base: want };
+      if (o.base !== want) throw new Error(`overlay ${name} belongs to ${o.base}, not ${want}`);
+      inMemory.set(name, o);
+      return { data: o.data, map: o.map, close: done };
+    }
     const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name, { create: true });
     const open = async (f: string) => {
       const h = await (await dir.getFileHandle(f, { create: true })).createSyncAccessHandle();

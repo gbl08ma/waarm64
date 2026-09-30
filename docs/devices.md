@@ -98,7 +98,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   resolves then): the handles are exclusive, so a new VM on the same overlay waits for the lock,
   which the old one holds until its handles are closed or its worker is gone
   ([frontend.md](frontend.md) "Overlay hand-over").
-  Natively, `Overlay` keeps 512-byte sectors in memory and can be shared by several boots. No
+  Natively, `Overlay` keeps 512-byte sectors in memory and can be shared by several boots; in
+  Node, which has no OPFS, `openOverlay` keeps an overlay in memory for the process's life, by
+  name (the tests' writable disks, e.g. `tests/uefi.test.ts`), under the same Web Lock. No
   DISCARD/WRITE_ZEROES, compaction, quota handling, content check of the base, or export yet
   (backlog). Host API (web/overlay.ts, a page or a worker): `removeOverlay(name)` deletes an
   overlay once no VM has it open (the page's "Reset disk", M8), `overlayBytes(name)` says what it holds.

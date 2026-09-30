@@ -3,8 +3,9 @@
 //! `exit <code>` on the PL011 and powers off through PSCI SYSTEM_OFF with x1 =
 //! the same code, 0 for a pass. A test with `// smp: N` in its source boots N vCPUs;
 //! one with `// input: <text>` gets that line on its serial console once it
-//! waits (round-robin: at its first idle; parallel: once it printed "ready").
-//! `baremetal_parallel` runs them all again with a thread per vCPU (parallel
+//! waits (round-robin: at its first idle; parallel: once it printed "ready");
+//! one with `// flash` runs in the firmware configuration (M8 phase B: the
+//! variable store's flash bank). `baremetal_parallel` runs them all again with a thread per vCPU (parallel
 //! SMP, realtime), several times: those runs aren't reproducible.
 
 mod common;
@@ -17,15 +18,16 @@ const BUDGET: u64 = 50_000_000;
 
 /// Boots `image` and returns the SYSTEM_OFF code and the console output, or why it never got there.
 fn boot(image: &[u8], ncpus: u64) -> Result<(u64, String), String> {
-    boot_mode(image, ncpus, false, None)
+    boot_mode(image, ncpus, false, None, false)
 }
 
-/// [`boot`], round-robin or `parallel`.
+/// [`boot`], round-robin or `parallel`, in the firmware configuration with `flash`.
 fn boot_mode(
     image: &[u8],
     ncpus: u64,
     parallel: bool,
     input: Option<&[u8]>,
+    flash: bool,
 ) -> Result<(u64, String), String> {
     let mut ram = vec![0u128; RAM_SIZE / 16];
     // SAFETY: ram is 16-byte aligned, RAM_SIZE bytes long, and outlives the Vm.
@@ -36,6 +38,9 @@ fn boot_mode(
         ncpus,
         deterministic: !parallel as u64,
         smp: parallel as u64,
+        firmware: flash as u64,
+        flash_size: if flash { 1 << 20 } else { 0 },
+        rtc: if flash { common::FIRMWARE_EPOCH_MS } else { 0 },
         ..VmConfig::default()
     };
     let mut vm = Vm::new(mem, cfg);
@@ -115,6 +120,12 @@ fn input_of(bin: &std::path::Path) -> Option<Vec<u8>> {
         .map(|l| format!("{l}\n").into_bytes())
 }
 
+/// Whether a test asks for the firmware configuration's flash bank (`// flash`).
+fn flash_of(bin: &std::path::Path) -> bool {
+    let src = std::fs::read_to_string(bin.with_extension("c")).unwrap_or_default();
+    src.lines().any(|l| l == "// flash")
+}
+
 /// The vCPUs a test asks for in its source (`// smp: N`), 1 without.
 fn smp_of(bin: &std::path::Path) -> u64 {
     let src = std::fs::read_to_string(bin.with_extension("c")).unwrap_or_default();
@@ -154,6 +165,7 @@ fn run_all(parallel: bool, runs: usize) {
             smp_of(bin),
             parallel,
             input.as_deref(),
+            flash_of(bin),
         ) {
             Ok((code, out)) if !out.ends_with(&format!("exit {code}\n")) => {
                 failed.push(format!("{name}: exit {code}, but the console says {out:?}"))

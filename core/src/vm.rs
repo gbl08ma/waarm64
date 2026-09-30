@@ -34,6 +34,8 @@ use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use crate::cpu::{Cpu, PSTATE_I, sctlr};
+use crate::flash::{FLASH, Flash};
+use crate::fw_cfg::{FW_CFG, FwCfg};
 use crate::gicv3::{self, Gicv3};
 use crate::interp::{self, Exit, platform, sys, take_exception, take_irq};
 use crate::jit;
@@ -101,17 +103,42 @@ pub struct VmConfig {
     /// one thread each through `vm_run_cpu` (realtime only; ABI 25).
     pub smp: u64,
     /// Unix time in ms at `vm_new`: a PL031 RTC counts from it (ABI 28); 0,
-    /// or deterministic mode, has none.
+    /// or deterministic mode outside the firmware configuration, has none.
     pub rtc: u64,
+    /// 1: the firmware configuration (ABI 29, docs/abi.md "M8 phase B"): a
+    /// variable flash bank, fw_cfg, the PL031 always, `/memory` short of the
+    /// framebuffer. 0: direct kernel boot.
+    pub firmware: u64,
+    /// The flash bank's bytes (firmware only; `flash::Flash::valid_size`).
+    pub flash_size: u64,
+    /// Address and length of the host's fw_cfg files (`fw_cfg::FwCfg::parse`), firmware only.
+    pub fw_cfg: u64,
+    pub fw_cfg_len: u64,
 }
 
 impl VmConfig {
-    /// Whether `vm_new` accepts the GIC and CPU fields.
-    /// Whether the VM has the PL031 RTC.
+    /// Whether the VM has the PL031 RTC: in realtime mode when the host
+    /// passed its clock, and always in the firmware configuration.
     pub fn has_rtc(&self) -> bool {
-        self.rtc != 0 && self.deterministic == 0
+        self.rtc != 0 && (self.deterministic == 0 || self.firmware())
     }
 
+    /// Whether this is the firmware configuration (`firmware` = 1).
+    pub fn firmware(&self) -> bool {
+        self.firmware == 1
+    }
+
+    /// Whether `vm_new` accepts the firmware fields: the configuration with a
+    /// valid flash and the RTC, or none of them.
+    pub fn valid_firmware(&self) -> bool {
+        match self.firmware {
+            0 => self.flash_size == 0 && self.fw_cfg_len == 0,
+            1 => crate::flash::Flash::valid_size(self.flash_size) && self.rtc != 0,
+            _ => false,
+        }
+    }
+
+    /// Whether `vm_new` accepts the GIC and CPU fields.
     pub fn valid_smp(&self) -> bool {
         matches!(self.gic, 0 | 3)
             && self.ncpus <= MAX_CPUS
@@ -136,6 +163,10 @@ impl Default for VmConfig {
             gic: 0,
             smp: 0,
             rtc: 0,
+            firmware: 0,
+            flash_size: 0,
+            fw_cfg: 0,
+            fw_cfg_len: 0,
         }
     }
 }
@@ -302,6 +333,9 @@ pub struct Platform {
     pub uart: Pl011,
     pub virtio: Vec<Transport>,
     pub rtc: Option<Pl031>,
+    /// The firmware configuration's variable store and fw_cfg.
+    pub flash: Option<Flash>,
+    pub fw_cfg: Option<FwCfg>,
     /// Parallel mode: PSCI CPU_ON requests (entry, context) that their
     /// target's thread carries out.
     start: Vec<Option<(u64, u64)>>,
@@ -320,8 +354,9 @@ pub struct Slot {
 // that runs it (`Vm::run_cpu`'s contract); `Deref` is for the times when
 // nothing runs it (docs/abi.md: `vm_cpu` between runs).
 unsafe impl Sync for Slot {}
-// SAFETY: as for `Sync`; the raw pointers in `Vcpu` (its `jit.mem`) point at
-// the VM's `Mem`, which is `Send` and `Sync`.
+// SAFETY: as for `Sync`; the raw pointers in `Vcpu` (its `jit.mem`, its
+// `tlb.published`) point at the VM's `Mem` and at an atomic in its `Shared`,
+// which are `Send` and `Sync`.
 unsafe impl Send for Slot {}
 
 impl Slot {
@@ -547,6 +582,17 @@ impl Vm {
         };
         let mut sched = vec![off; n];
         sched[0].power = Power::On;
+        let shared = Arc::new(Shared {
+            cpus: (0..n).map(|i| CpuShared::new(i == 0)).collect(),
+            devices: devices.iter().map(|_| DevShared::default()).collect(),
+            ..Shared::default()
+        });
+        let mut vcpus = vcpus;
+        if parallel {
+            for (v, s) in vcpus.iter_mut().zip(&shared.cpus) {
+                v.tlb.published = s.par.asid_word();
+            }
+        }
         Vm {
             vcpus,
             sched,
@@ -558,13 +604,11 @@ impl Vm {
                 uart: Pl011::default(),
                 virtio: devices.iter().map(|&e| Transport::new(e)).collect(),
                 rtc: cfg.has_rtc().then(|| Pl031::new(cfg.rtc)),
+                flash: cfg.firmware().then(|| Flash::new(cfg.flash_size)),
+                fw_cfg: cfg.firmware().then(|| FwCfg::new(vec![]).unwrap()),
                 start: vec![None; n],
             }),
-            shared: Arc::new(Shared {
-                cpus: (0..n).map(|i| CpuShared::new(i == 0)).collect(),
-                devices: devices.iter().map(|_| DevShared::default()).collect(),
-                ..Shared::default()
-            }),
+            shared,
             exit: ExitInfo::default(),
             cfg: VmConfig {
                 cntfrq: pick(cfg.cntfrq, d.cntfrq),
@@ -946,14 +990,14 @@ impl Vm {
 
     /// Runs the instruction at the PC again through [`Io`], after it hit a non-RAM address.
     fn io(&mut self) -> Option<u32> {
+        // The PL031 counts virtual time in deterministic mode (the firmware configuration).
+        let time = if self.realtime() {
+            Time::Clock(&self.clock)
+        } else {
+            Time::Virtual((self.now() as u128 * 1_000_000_000 / self.cfg.cntfrq as u128) as u64)
+        };
         let vcpu = &mut *self.vcpus[self.cur];
-        let (r, tx_full, device) = io(
-            vcpu,
-            &self.mem,
-            self.plat.get_mut(),
-            &self.shared,
-            &self.clock,
-        );
+        let (r, tx_full, device) = io(vcpu, &self.mem, self.plat.get_mut(), &self.shared, time);
         match r {
             Ok(()) => {
                 self.retire(1);
@@ -1156,14 +1200,16 @@ fn io(
     mem: &Mem,
     p: &mut Platform,
     shared: &Shared,
-    clock: &Clock,
+    time: Time,
 ) -> (Result<(), Exit>, bool, Option<u64>) {
     let mut io = Io {
         mmu: Mmu::new(mem, Some(&mut vcpu.tlb)),
         gic: &mut p.gic,
         uart: &mut p.uart,
         rtc: p.rtc.as_mut(),
-        clock,
+        flash: p.flash.as_mut(),
+        fw_cfg: p.fw_cfg.as_mut(),
+        time,
         console: &shared.console,
         virtio: &mut p.virtio,
         devices: &shared.devices,
@@ -1174,6 +1220,22 @@ fn io(
     (r, io.tx_full, io.device)
 }
 
+/// The PL031's time: the host clock, or (deterministic mode) virtual time in ns.
+#[derive(Clone, Copy)]
+enum Time<'a> {
+    Clock(&'a Clock),
+    Virtual(u64),
+}
+
+impl Time<'_> {
+    fn ns(self) -> u64 {
+        match self {
+            Time::Clock(c) => c.ns(),
+            Time::Virtual(ns) => ns,
+        }
+    }
+}
+
 /// The bus for one instruction that touched a non-RAM physical address: RAM
 /// through the MMU as usual, and device registers where the address is one.
 struct Io<'a> {
@@ -1181,7 +1243,9 @@ struct Io<'a> {
     gic: &'a mut Gicv3,
     uart: &'a mut Pl011,
     rtc: Option<&'a mut Pl031>,
-    clock: &'a Clock,
+    flash: Option<&'a mut Flash>,
+    fw_cfg: Option<&'a mut FwCfg>,
+    time: Time<'a>,
     console: &'a Rings,
     virtio: &'a mut [Transport],
     devices: &'a [DevShared],
@@ -1208,9 +1272,17 @@ impl Io<'_> {
                 let w = self.uart.read(off & !3, self.console) >> (8 * (off & 3));
                 Some(w & (u64::MAX >> (64 - 8 * size)) as u32)
             }
-            RTC..0x0901_1000 if size == 4 && pa & 3 == 0 => {
-                self.rtc.as_ref()?.read(pa - RTC, self.clock.ns())
+            // Sub-word reads see the register's bytes (EDK2 reads the IDs with LDRB).
+            RTC..0x0901_1000 if size <= 4 => {
+                let off = pa - RTC;
+                let w = self.rtc.as_ref()?.read(off & !3, self.time.ns())? >> (8 * (off & 3));
+                Some(w & (u64::MAX >> (64 - 8 * size)) as u32)
             }
+            FLASH..FLASH_END => {
+                let f = self.flash.as_ref()?;
+                return f.read(pa - FLASH, size);
+            }
+            FW_CFG..FW_CFG_END => return self.fw_cfg.as_mut()?.read(pa - FW_CFG, size),
             virtio::MMIO_BASE..VIRTIO_END => {
                 let (i, off) = virtio_slot(pa);
                 return self
@@ -1232,9 +1304,11 @@ impl Io<'_> {
                 (!self.tx_full).then_some(())
             }
             RTC..0x0901_1000 if size == 4 && pa & 3 == 0 => {
-                let ns = self.clock.ns();
+                let ns = self.time.ns();
                 self.rtc.as_mut()?.write(pa - RTC, v as u32, ns)
             }
+            FLASH..FLASH_END => self.flash.as_mut()?.write(pa - FLASH, size, v),
+            FW_CFG..FW_CFG_END => self.fw_cfg.as_mut()?.write(pa - FW_CFG, size, v),
             virtio::MMIO_BASE..VIRTIO_END => {
                 let (i, off) = virtio_slot(pa);
                 let sh = self.devices.get(i)?;
@@ -1253,6 +1327,8 @@ impl Io<'_> {
     }
 }
 
+const FLASH_END: u64 = FLASH + crate::flash::MAX_SIZE;
+const FW_CFG_END: u64 = FW_CFG + crate::fw_cfg::SIZE;
 const VIRTIO_END: u64 = virtio::MMIO_BASE + virtio::MAX_DEVICES as u64 * virtio::MMIO_STRIDE;
 
 /// Transport slot and register offset of a PA in the virtio-mmio window.

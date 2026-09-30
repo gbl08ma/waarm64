@@ -85,6 +85,9 @@ const poweredOff = (r: Run) => {
 const BAREMETAL = new URL('baremetal/', import.meta.url);
 // The vCPUs from its `// smp: N` marker (core/tests/baremetal.rs `smp_of`).
 const smpOf = (f: string) => Number(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ smp: (\d+)$/m)?.[1] ?? 1);
+// Its `// flash` line: the firmware configuration (M8 phase B), for its flash bank.
+const flashOf = (f: string) => /^\/\/ flash$/m.test(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8'));
+const bareMetal = (f: string): BootOptions => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f), firmware: flashOf(f) ? {} : undefined });
 // Its `// input: <text>` line, typed once it waits: at its idle, or once it printed "ready" (parallel).
 const inputOf = (f: string): ConsoleInput | undefined => {
   const text = readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ input: (.*)$/m)?.[1];
@@ -92,7 +95,7 @@ const inputOf = (f: string): ConsoleInput | undefined => {
 };
 for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort()) {
   const input = inputOf(f);
-  guest(`bare-metal ${f}`, () => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f) }), (r) => {
+  guest(`bare-metal ${f}`, () => bareMetal(f), (r) => {
     poweredOff(r);
     assert.equal(r.x[1], 0n, r.console);
     assert.match(r.console, /exit 0\n$/);
@@ -115,7 +118,7 @@ const parallel = async (o: BootOptions, jit: 0 | 1 | 2 | 3, check: (r: Run) => v
 };
 for (const f of readdirSync(BAREMETAL).filter((f) => f.endsWith('.bin')).sort()) {
   for (const [mode, jit] of [['JIT', 1], ['JIT-check', 3]] as const) {
-    test(`parallel: bare-metal ${f} (${mode})`, () => parallel({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f) }, jit, (r) => {
+    test(`parallel: bare-metal ${f} (${mode})`, () => parallel(bareMetal(f), jit, (r) => {
       poweredOff(r);
       assert.equal(r.x[1], 0n, r.console);
     }, inputOf(f)));
@@ -339,6 +342,28 @@ guest('crypto test kernel', () => ({
   assert.deepEqual(totals.map((m) => m[2]), ['0', '0', '0'], 'the sha1, sha224 and sha256 KUnit suites');
   assert.doesNotMatch(r.console, /alg: .*(failed|error)/i);
 }, { skip: !has('linux-crypto/Image') && 'SKIPPED: run images/build.sh linux-crypto', stress: STRESS, max: 60e9, steps: STEPS.crypto, interp: false });
+
+// The firmware configuration (M8 phase B): EDK2 boots the UEFI Shell from the test disk
+// (images/build.sh edk2: shell.img), whose startup.nsh prints a variable, sets it in the
+// flash bank and powers off; a second boot with the same flash bytes prints it.
+const edk2Skip = (!has('edk2/QEMU_EFI.fd') || !has('edk2/shell.img')) && 'SKIPPED: run images/build.sh edk2';
+const edk2 = (flash?: Uint8Array): BootOptions => ({
+  ramSize: 512 << 20, kernel: image('edk2/QEMU_EFI.fd'), cmdline: '', devices: [{ type: 'blk', url: new URL('edk2/shell.img', IMAGES).href }], firmware: { flash },
+});
+guest('EDK2 shell', () => edk2(), (r) => {
+  poweredOff(r);
+  // Without the Shell's colours.
+  assert.match(r.console.replace(/\x1b\[[0-9;=]*[A-Za-z]/g, ''), /UEFI Interactive Shell[^]*webpc: before\r?\nsetvar: Unable to get[^]*webpc: done/);
+}, { skip: edk2Skip, stress: STRESS, steps: STEPS['edk2-shell'] });
+test('EDK2 shell: a variable set by one boot is there on the next (JIT)', { skip: edk2Skip }, async () => {
+  const first = await boot(edk2(), 1);
+  poweredOff(first);
+  const r = await boot(edk2(first.flash), 1);
+  poweredOff(r);
+  // "persisted" in UTF-16LE, as setvar dumps it.
+  assert.match(r.console, /webpc: before\r?\n5B5E1F2A-8C3D-4E6F-9A1B-2C3D4E5F6A7B - WebpcTest - 0012 Bytes\r?\n70 00 65 00 72 00 73 00 69 00 73 00 74 00 65 00 64 00/, r.console);
+  assert.equal(r.steps, STEPS['edk2-shell-again']);
+});
 
 const a = DISTROS.alpine;
 const alpineSkip = !DISTRO_TESTS.includes('alpine') ? 'SKIPPED: set WEBPC_DISTROS=alpine' : !has(a.kernel) && 'SKIPPED: run images/build.sh alpine';

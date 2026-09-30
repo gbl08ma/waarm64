@@ -44,7 +44,7 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   points at the Mac host (`~/.ssh/config`). The `oracle` VM (Debian 13, 4 vCPUs, 8 GiB) shares the
   Mac: `ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>`.
 - Packages from zypper: Node 26, Chromium 153 (`/usr/bin/chromium`), clang/lld/llvm, qemu (user,
-  system, tools), podman (rootless), dtc, capstone, qemu-uefi-aarch64 (EDK2 for the UEFI oracle), mtools, dejavu-fonts (headless Chromium draws no page
+  system, tools), podman (rootless), dtc, capstone, qemu-uefi-aarch64 (EDK2 for the UEFI oracle), mtools, dosfstools, dejavu-fonts (headless Chromium draws no page
   text without a font: screenshots of the page need it); Rust through rustup and `rust-toolchain.toml`.
   Add what's missing with `sudo zypper in`, and note it here.
 - **Go** (from zypper; `net/tailscale/go.mod` pins the toolchain) builds the Tailscale wasm backend, `net/tailscale/build.sh`. The networking tests' headscale and peer run in rootless Podman: `tests/net/tailnet.sh up|down`. Never Docker in scripts or CI.

@@ -62,7 +62,7 @@ when bumping the pin.
 
 | Binary | Source, commit | License | How we use it |
 |---|---|---|---|
-| `target/images/edk2/QEMU_EFI.fd` (`images/build.sh edk2`, M8 phase B) | [EDK2](https://github.com/tianocore/edk2) `edk2-stable202608`, `2970e5699ba6`, `ArmVirtPkg/ArmVirtQemuKernel.dsc` | BSD-2-Clause-Patent; linked in from its submodules: OpenSSL (Apache-2.0, in `Hash2DxeCrypto`) and libfdt (BSD-2-Clause, dual with GPL-2.0) | built unmodified and run as the guest's UEFI firmware; served to users with `LICENSES.txt` (the three texts), as binary redistribution requires. No EDK2 code is copied into webpc |
+| `target/images/edk2/QEMU_EFI.fd`, and the UEFI Shell in `shell.img` (tests only) (`images/build.sh edk2`, M8 phase B) | [EDK2](https://github.com/tianocore/edk2) `edk2-stable202608`, `2970e5699ba6`, `ArmVirtPkg/ArmVirtQemuKernel.dsc` | BSD-2-Clause-Patent; linked in from its submodules: OpenSSL (Apache-2.0, in `Hash2DxeCrypto`) and libfdt (BSD-2-Clause, dual with GPL-2.0) | built unmodified and run as the guest's UEFI firmware; served to users with `LICENSES.txt` (the three texts), as binary redistribution requires. No EDK2 code is copied into webpc |
 
 ## Reference projects: verified licenses
 
