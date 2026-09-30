@@ -3,7 +3,8 @@
 // web/app/worker.ts; this is DOM code only, talking to it through
 // web/app/protocol.ts. `?machine=buildroot` picks the test guest, `?ncpus=N`
 // the vCPU count, `?view=screen|terminal|both` the first view (the last one
-// chosen is remembered), `?params=` extra kernel parameters, `?disk2=<url>` a read-only second disk.
+// chosen is remembered), `?params=` extra kernel parameters (direct-boot machines), `?credential=name:value` a systemd
+// credential over fw_cfg (firmware machines), `?disk2=<url>` a read-only second disk.
 import { Terminal } from '@xterm/xterm';
 import { attachInput, type Input } from '../input.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
@@ -17,6 +18,8 @@ const machine = (params.get('machine') ?? 'debian') as MachineName;
 if (!(machine in MACHINES)) throw new Error(`no machine ${machine}`);
 const ncpus = Number(params.get('ncpus')) || defaultCpus(navigator.hardwareConcurrency || 4);
 const spec: Machine = MACHINES[machine];
+// `?credential=name:value` (repeatable): a systemd credential for a firmware machine, for development and tests.
+const credentials = params.getAll('credential').map((c) => ({ name: c.slice(0, c.indexOf(':')), data: c.slice(c.indexOf(':') + 1) }));
 
 // Settings remembered per browser (the view and the network). Storage can be off or throw: then nothing is remembered.
 type Settings = { view?: View; net?: NetworkSettings };
@@ -46,9 +49,10 @@ const resetDiskBtn = $<HTMLButtonElement>('reset-disk');
 const bootCard = $('boot');
 const bootProgress = $<HTMLProgressElement>('boot-progress');
 const bootLine = $('boot-line');
+const bootSerial = $('boot-serial');
 
-// The serial terminal. The PL011 has no size negotiation: the guest assumes 80×24 unless told (`stty`).
-const term = new Terminal({ cols: 80, rows: 24, convertEol: false, scrollback: 5000, fontFamily: 'ui-monospace, "DejaVu Sans Mono", Menlo, monospace', fontSize: 14, theme: { background: '#0b0d10' } });
+// The serial terminal. The PL011 has no size negotiation: the guest assumes 80×24 unless told (`stty`); the firmware's console is 80×25 (images/build.sh edk2 offers no other mode), so the terminal has 25 rows.
+const term = new Terminal({ cols: 80, rows: 25, convertEol: false, scrollback: 5000, fontFamily: 'ui-monospace, "DejaVu Sans Mono", Menlo, monospace', fontSize: 14, theme: { background: '#0b0d10' } });
 term.open($('terminal'));
 
 // Views: the screen first (M8 decision 2), the terminal, or both.
@@ -122,6 +126,7 @@ function setState(s: PageState, message?: string, actions: Action[] = [], kind: 
   messageEl.hidden = !(message || note);
   restartBtn.textContent = s === 'off' || s === 'idle' ? 'Start' : s === 'failed' ? 'Retry' : 'Restart';
   bootCard.hidden = !(s === 'loading' || s === 'booting') || bootCard.dataset.done === 'true';
+  bootSerial.hidden = !spec.firmware || s !== 'booting';
 }
 
 // What a user can do about each problem (the worker's message says what happened and why).
@@ -194,13 +199,15 @@ function start() {
       const mb = (n: number) => (n / 1e6).toFixed(1);
       bootLine.textContent = m.total ? `Downloading ${mb(m.loaded)} of ${mb(m.total)} MB` : `Downloading ${mb(m.loaded)} MB`;
       if (state === 'loading') stateEl.textContent = m.total ? `Loading ${Math.floor((100 * m.loaded) / m.total)}%` : 'Loading';
-    } else if (m.type === 'screen') {
-      bootCard.dataset.done = 'true'; // the guest's console has the screen: it shows the boot from here
+    } else if (m.type === 'screen' && !spec.firmware) {
+      // The guest's console has the screen: it shows the boot from here. (Through the firmware the
+      // screen stays black until a getty: the boot's output, menus and a first boot's questions are on the serial console.)
+      bootCard.dataset.done = 'true';
       bootCard.hidden = true;
     }
   };
   worker.onerror = (e) => { if (run === r) setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator); };
-  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, disk2: params.get('disk2') ?? undefined, ip } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
+  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
   if (ip) autoconnect();
   renderNetwork();
 }
@@ -269,6 +276,8 @@ async function resetDiskAsked() {
 }
 resetDiskBtn.hidden = !spec.overlay;
 resetDiskBtn.onclick = () => void resetDiskAsked();
+
+$<HTMLButtonElement>('boot-serial-show').onclick = () => { setView(document.body.dataset.view === 'screen' ? 'both' : (document.body.dataset.view as View), false); term.focus(); };
 
 // Keys typed into the terminal go to the PL011 (xterm.js sends what a terminal would: \r for Enter, escape sequences).
 term.onData((d) => run?.serial.postMessage(d));

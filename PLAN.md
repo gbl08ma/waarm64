@@ -16,7 +16,7 @@ the docs and its entry here shrinks to a summary.
 | Privilege | EL0 and EL1 only. No EL2/EL3, no secure state |
 | MMU | Stage 1 only, 4K granule, 48-bit VA, TTBR0/TTBR1, ASIDs, software-managed access flag |
 | Platform | QEMU `virt`'s memory map; **GICv3 (no ITS) since M7** (the GICv2 model was dropped in M7: every guest we run has a GICv3 driver); generic timer, PL011, a PL031 RTC (realtime mode), PSCI over HVC (answered in the core, CPU_ON included; SYSTEM_OFF/RESET exit to the host), virtio-mmio v2, a DTB generated from the VM config ([docs/platform.md](docs/platform.md)) |
-| Boot | Direct kernel boot (arm64 `Image` + initrd + DTB) for the tests' guests. **M8 phase B:** boot conventional arm64 disk images unmodified, through UEFI firmware (our EDK2 build, entered as an `Image`: the firmware configuration, loop 2) and their own bootloader; the page still boots Debian's extracted kernel and initrd until loop 3 |
+| Boot | Direct kernel boot (arm64 `Image` + initrd + DTB) for the tests' guests. **M8 phase B:** boot conventional arm64 disk images unmodified, through UEFI firmware (our EDK2 build, entered as an `Image`: the firmware configuration, loop 2) and their own bootloader; the page boots Debian's published image unmodified that way (loop 3) |
 | Core | Rust compiled to wasm32 (the same crate builds natively for tests); host glue in TypeScript without a build step |
 | Guest memory | **Layout A** (M0.5): one shared wasm32 memory, core state then guest RAM (≤ ~3.5 GiB). One lowering point for guest accesses in generated code; TLB tag bits 3–11 reserved for a memory index ("A + spill memories" as NUMA nodes later) ([docs/architecture.md](docs/architecture.md)) |
 | JIT | Gadget style (inline what pays, helper calls into the interpreter's code for the rest), blocks keyed by guest PA, loop regions with tier-up, exact step accounting ([docs/jit.md](docs/jit.md)) |
@@ -83,7 +83,7 @@ Decisions (the user, 2026-09-28):
 - **One command from a fresh clone** (`npm start`): builds from source on Linux and macOS (Node
   and rustup are the only prerequisites, with the C compiler Rust's build scripts need; it says
   clearly what's missing), builds the wasm core if stale, downloads Debian and extracts its kernel
-  and initrd without host tools beyond Node, serves on localhost and prints the URL. Done in M8
+  and initrd without host tools beyond Node, serves on localhost and prints the URL (since phase B loop 3 it links the disk and builds the UEFI firmware with Podman instead of extracting a kernel). Done in M8
   loop 5 ([docs/frontend.md](docs/frontend.md) "`npm start`").
 - **Frontend stack:** start with plain TypeScript and the DOM (as the rest of `web/`); Chromium
   only. **Not a hard rule:** Svelte is pre-approved if a framework would make a specific part

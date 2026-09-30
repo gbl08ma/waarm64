@@ -7,9 +7,10 @@
 // port straight to the VM, and the keyboard and tablet ports go to the device
 // worker. What stops a machine from starting or running is sorted into a
 // `Problem` with a message a user can act on (docs/frontend.md "Errors").
-import { bootVm, Exit, PSCI_SYSTEM_OFF, type Vm } from '../vm.ts';
+import { bootVm, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, type Vm } from '../vm.ts';
+import { loadFlash, saveFlash } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
-import { MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
+import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
 const post = (m: FromWorker) => self.postMessage(m);
@@ -20,6 +21,8 @@ let vm: Vm | undefined;
 /** The VM being booted: it may hold the overlay before `bootVm` returns it. */
 let booting: Promise<Vm> | undefined;
 let stopping = false;
+/** The machine this worker was started for. */
+let current: Machine | undefined;
 
 self.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
@@ -33,11 +36,31 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     stopping = true;
     void (async () => {
       // A machine still booting is closed once it's there (its device worker may have the overlay open).
-      await (vm ?? (await booting?.catch(() => undefined)))?.close();
+      const v = vm ?? (await booting?.catch(() => undefined));
+      if (v && current) await shutdown(v, current);
       post({ type: 'stopped' });
     })();
   }
 };
+
+/** The variable store as last saved (or loaded): the firmware's boot entries and settings, kept beside the disk's overlay. */
+let savedFlash: Uint8Array | undefined;
+let saving: Promise<void> = Promise.resolve();
+const same = (a: Uint8Array, b?: Uint8Array) => !!b && a.length === b.length && a.every((x, i) => x === b[i]);
+/** Saves the flash bank if it changed since the last save (a save in flight finishes first). */
+function keepFlash(v: Vm, machine: Machine) {
+  const flash = v.flash();
+  if (!flash || !machine.overlay || same(flash, savedFlash)) return saving;
+  savedFlash = flash;
+  return (saving = saving.then(() => saveFlash(machine.overlay!, flash)).catch(() => { savedFlash = undefined; })); // retried at the next change or tick
+}
+
+/** Stops `v` and keeps its variable store (firmware machines); once per machine. */
+let closed: Promise<void> | undefined;
+const shutdown = (v: Vm, machine: Machine) => (closed ??= (async () => {
+  await v.close(); // the vCPUs stop at once; the flash isn't written after that
+  await keepFlash(v, machine);
+})());
 
 /** An error with the problem it means for the user. */
 const failure = (problem: Problem, message: string) => Object.assign(new Error(message), { problem });
@@ -115,15 +138,21 @@ function explain(err: unknown, machine: Machine): [Problem, string] {
 }
 
 async function start(m: Extract<ToWorker, { type: 'start' }>) {
-  const machine: Machine = MACHINES[m.machine];
+  const machine: Machine = current = MACHINES[m.machine];
   state('loading');
   // The disk is read by ranges as the guest needs it (not downloaded): check it's there.
+  const flash = machine.firmware && machine.overlay ? loadFlash(machine.overlay).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
   const disk = fetch(machine.disk, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(machine.disk, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`); });
   const [wasm, kernel, initrd] = await download([CORE, machine.kernel, ...(machine.initrd ? [machine.initrd] : [])], machine);
   await disk;
   if (stopping) return;
+  // The firmware configuration: what the machine's own credentials and the page's (development, tests) say, and the saved variable store.
+  const credentials = [...(m.ip && machine.network ? machine.network.credentials : []), ...(m.credentials ?? [])];
+  savedFlash = await flash;
+  const firmware = machine.firmware ? { flash: savedFlash, fwCfg: credentialFiles(credentials) } : undefined;
+  if (stopping) return;
   booting = bootVm(wasm, {
-    ramSize: machine.ramMiB << 20, kernel, initrd, cmdline: withParams(m.ip && machine.network ? machine.network.cmdline : machine.cmdline, m.params ?? ''), jit: 1, ncpus: m.ncpus, parallel: true, realtime: true,
+    ramSize: machine.ramMiB << 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus: m.ncpus, parallel: true, realtime: true,
     framebuffer: machine.framebuffer, serialIn: m.serial,
     devices: [
       { type: 'rng' },
@@ -162,7 +191,10 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
     }
   };
   // Once a second on a timer, not from the loop: a stuck loop then shows in `loopAgeMs` rather than as silence.
+  let ticks = 0;
   const timer = setInterval(() => {
+    // A tab can close without a shutdown: the variable store is kept as it changes (every 5 s at most).
+    if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!, machine);
     const now = performance.now();
     post({ type: 'status', status: status(vm!, m.ncpus, machine.ramMiB, now - t0, loopMax, now - loopAt) });
     loopMax = 0;
@@ -178,7 +210,7 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
       if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL) continue;
       // Every vCPU has stopped.
       output(vm.drain());
-      await vm.close();
+      await shutdown(vm, machine);
       if (panicked) return; // said
       else if (r.kind === Exit.PSCI) state(r.x[0] === PSCI_SYSTEM_OFF ? 'off' : 'rebooting');
       else state('crashed', `The emulator stopped: ${r.kind === Exit.UNIMPLEMENTED ? `an unimplemented instruction or register at pc 0x${vm.pc().toString(16)}` : `exit ${r.kind}`}.`, 'emulator');

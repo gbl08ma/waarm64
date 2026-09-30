@@ -20,7 +20,7 @@ const ROOT = new URL('..', import.meta.url).pathname;
 const WASM = `${ROOT}target/net/tailscale.wasm`;
 const has = (cmd: string) => spawnSync(cmd, ['--version'], { stdio: 'ignore' }).status === 0;
 const skip = process.env.WEBPC_TAILNET !== '1' ? 'SKIPPED: set WEBPC_TAILNET=1'
-  : !existsSync(`${ROOT}target/images/debian/Image`) ? 'SKIPPED: run tools/debian.ts (or npm start)'
+  : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run npm start (or images/build.sh debian edk2)'
   : !has('podman') ? 'SKIPPED: no podman'
   : !existsSync(WASM) && !has('go') ? 'SKIPPED: no target/net/tailscale.wasm and no Go to build it'
   : undefined;

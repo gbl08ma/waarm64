@@ -13,6 +13,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { MACHINES, readyWatcher } from '../web/app/machine.ts';
+import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 
 // The page's `running` state comes from the serial console's `ready` marker (web/app/worker.ts).
@@ -30,8 +31,9 @@ test("the page's ready marker: Debian's login prompt in any chunk, not a service
 });
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
-const IMAGE = new URL('../target/images/debian/Image', import.meta.url);
-const skip = !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : !existsSync(IMAGE) && 'SKIPPED: run images/build.sh debian (or npm start)';
+const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
+const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
+const skip = !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
 const RUNS = Number(process.env.WEBPC_PAGE_RUNS ?? 1);
 
 let browser: Browser;
@@ -107,7 +109,7 @@ for (let run = 1; run <= RUNS; run++) {
     page.on('pageerror', (e) => errors.push(String(e)));
     const t0 = performance.now();
     const at = () => `${((performance.now() - t0) / 1000).toFixed(1)} s`;
-    await page.goto(`${base}/web/app/?ncpus=2&view=both`);
+    await page.goto(`${base}/web/app/?ncpus=2&view=both&${unattendedQuery()}`);
     await running(page);
     console.log(`# debian page ${run}: running at ${at()}`);
     // The screen shows the guest's console (fbcon), not the boot card.
@@ -144,6 +146,16 @@ for (let run = 1; run <= RUNS; run++) {
     // Persistence: a file written and synced, then a reload (as a user closes the tab: no shutdown).
     await onSerial(page, 'echo webpc-kept-$((6*7)) >/root/webpc-mark && sync && echo sy""nced\n');
     await shows(page, /synced/);
+    // The firmware's variable store is kept beside the overlay as it changes (a closed tab doesn't shut the machine down):
+    // EDK2 wrote its boot variables to the flash bank (an erased bank is all 0xFF) within seconds of the boot.
+    await page.waitForFunction(async () => {
+      try {
+        const f = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('webpc-debian')).getFileHandle('flash')).getFile();
+        return f.size === 1 << 20 && new Uint8Array(await f.arrayBuffer()).some((b) => b !== 0xff);
+      } catch {
+        return false;
+      }
+    }, null, { timeout: 30_000, polling: 500 });
     await page.reload();
     await running(page);
     console.log(`# debian page ${run}: reloaded, running at ${at()}`);

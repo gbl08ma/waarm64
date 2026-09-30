@@ -9,8 +9,14 @@ export type Machine = {
   label: string;
   /** What makes its images, for the page's message when one is missing. */
   prepare: string;
+  /**
+   * The kernel to boot directly, or (with `firmware`) the firmware image: EDK2's QEMU_EFI.fd, loaded
+   * as a kernel is, which boots the disk's own loader (docs/plans/uefi.md).
+   */
   kernel: string;
   initrd?: string;
+  /** Boot through UEFI: `kernel` is the firmware, there's no initrd and no command line (the disk's loader has its own). */
+  firmware?: boolean;
   /** The root disk (virtio-blk over HTTP ranges). */
   disk: string;
   /** The OPFS overlay that makes `disk` writable (web/overlay.ts); read-only without one. */
@@ -18,9 +24,10 @@ export type Machine = {
   cmdline: string;
   /**
    * What the machine changes when it has a network card (a tailnet, docs/frontend.md "Network"):
-   * its command line, which has the guest configure the card itself. Absent: the machine can't have one.
+   * systemd credentials, which have the guest configure the card itself (`firmware` machines get
+   * them over fw_cfg, see {@link credentialFiles}). Absent: the machine can't have one.
    */
-  network?: { cmdline: string };
+  network?: { credentials: Credential[] };
   ramMiB: number;
   framebuffer: { width: number; height: number };
   /**
@@ -31,28 +38,29 @@ export type Machine = {
   ready: RegExp;
 };
 
+/** A systemd credential (`systemd.import-credentials`): its name and contents. */
+export type Credential = { name: string; data: string };
+
+/** A machine's credentials as fw_cfg files, where systemd reads them (docs/platform.md "The firmware configuration's devices"). */
+export const credentialFiles = (credentials: Credential[]) => credentials.map((c) => ({ name: `opt/io.systemd.credentials/${c.name}`, data: c.data }));
+
 const images = (path: string) => new URL(`../../target/images/${path}`, import.meta.url).href;
 
 export const MACHINES = {
-  // The measured configuration (bench/boot/REPORT.md "M8 loop 0", docs/images.md "Debian for interaction").
+  // Debian's published image, unmodified: EDK2 boots its shim and GRUB (docs/plans/uefi.md, docs/images.md "Debian for interaction").
+  // No first-boot answers are passed: its first boot asks on the serial console, as on a regular machine.
   debian: {
     label: 'Debian 13',
-    prepare: '`npm start` (it downloads and prepares Debian)',
-    kernel: images('debian/Image'),
-    initrd: images('debian/initrd.img'),
+    prepare: '`npm start` (it downloads Debian and builds the firmware)',
+    kernel: images('edk2/QEMU_EFI.fd'),
+    firmware: true,
     disk: images('debian/disk.qcow2'),
     overlay: 'webpc-debian',
-    cmdline: 'console=ttyAMA0 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes apparmor=0 ' +
-      ['systemd-networkd.service', 'systemd-networkd.socket', 'systemd-resolved.service', 'systemd-timesyncd.service', 'systemd-network-generator.service'].map((u) => `systemd.mask=${u}`).join(' '),
-    // The units that configure a card are unmasked, and a systemd credential gives networkd a
-    // .network file for it (DHCP from the gateway: its lease is the tailnet address; resolved does
-    // MagicDNS). Not `ip=dhcp`: Debian's initramfs reads that too and waits for a lease before
-    // it boots, and a machine that isn't connected yet has none.
-    network: {
-      cmdline: 'console=ttyAMA0 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes apparmor=0 ' +
-        `systemd.set_credential_binary=network.network.card:${btoa('[Match]\nName=e*\n[Network]\nDHCP=ipv4\n')} ` +
-        ['systemd-timesyncd.service'].map((u) => `systemd.mask=${u}`).join(' '),
-    },
+    cmdline: '',
+    // A systemd credential gives networkd a .network file for the card (DHCP from the gateway: its
+    // lease is the tailnet address; resolved does MagicDNS). Not `ip=dhcp`: Debian's initramfs reads
+    // that too and waits for a lease before it boots, and a machine that isn't connected yet has none.
+    network: { credentials: [{ name: 'network.network.card', data: '[Match]\nName=e*\n[Network]\nDHCP=ipv4\n' }] },
     ramMiB: 1024,
     framebuffer: { width: 1024, height: 768 },
     ready: /(?:^|\n)\S+ login: /, // agetty's prompt ("localhost login: ")

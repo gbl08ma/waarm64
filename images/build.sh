@@ -337,6 +337,12 @@ build_edk2() {
   mkdir -p "$b" "$dst"
   tar -C "$src" --exclude=.git -cf - . | tar -C "$b" -xf -
   cp images/edk2/startup.nsh "$b/"
+  # The serial console offers text modes up to 240x56 and GRUB takes the largest, asking the terminal
+  # to resize itself (xterm's CSI 8;r;c t). The page's terminal is 80 columns, where the menu is lost:
+  # offer the 80x25 mode alone (docs/plans/uefi.md "The serial console's size").
+  # REMOVE this patch if the UEFI ever gets graphical modes (a GOP): GRUB then draws on the screen.
+  sed -i -E '/^  \{ (80, +50|100, 31|128, 40|160, 42|240, 56) \}/d' "$b/MdeModulePkg/Universal/Console/TerminalDxe/Terminal.c"
+  [ "$(grep -c -E '^  \{ [0-9]+, +[0-9]+ \}' "$b/MdeModulePkg/Universal/Console/TerminalDxe/Terminal.c")" = 1 ] || { echo "edk2: the terminal's mode table changed" >&2; exit 1; }
   podman run --rm -v "$root:$root:z" -w "$root/$b" -e SOURCE_DATE_EPOCH "$EDK2_CONTAINER" bash -ec '
     export DEBIAN_FRONTEND=noninteractive
     rm -f /etc/apt/sources.list.d/* /etc/apt/sources.list

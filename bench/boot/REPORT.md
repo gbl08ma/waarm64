@@ -459,3 +459,17 @@ so every closed VM's memory stayed reachable (~10 MB a bare-metal boot, GBs over
 closed VM is garbage-collected" checks it (a WeakRef to the memory, forced GCs). The page wasn't
 affected (a worker per machine, terminated on restart): its tab's memory stayed flat over
 repeated restarts.
+
+## M8 phase B loop 3: the page's Debian through UEFI
+
+Chromium 153.0.8010.52 headless, the M4 VM, 2 vCPUs, first boot on a fresh profile, A/B alternated
+(3 + 3; `results/m8-phaseb-loop3/page-boot.json`). Time from the page load to `running` (the
+login prompt): **direct boot 33.3 s** (32.5, 33.9, 33.3: the kernel and initrd out of the image, the
+page's command line) against **53.4 s through EDK2, shim and GRUB** (52.9, 54.6, 53.4). The
++20 s: EDK2 to the kernel ~9 s (Node's stages: boot manager 3.7 s, GRUB's banner 6.7 s, kernel
+9.3 s), GRUB's 5 s menu timeout, and ~5 s more in userspace, because GRUB's command line has
+neither `apparmor=0` nor the masked units the page's had (docs/frontend.md "Debian through UEFI").
+**The busy wait the loop 2 handover suspected between the boot manager and GRUB's menu isn't one:**
+the 5.4 G steps (~3 s) are an LZMA range decoder (PC samples at one place; its disassembly shows
+the `>> 11` and `>> 5` probability updates), most likely the loader's compressed core image being
+unpacked; no WFE or timer would make it idle.

@@ -342,7 +342,7 @@ export type Firmware = { flash?: Uint8Array; flashSize?: number; fwCfg?: { name:
 export const FIRMWARE_EPOCH_MS = 1_788_220_800_000;
 /** Where the firmware goes in RAM: its `Image` header's text_offset, as QEMU puts it. */
 const FIRMWARE_OFFSET = 512 << 10;
-const FLASH_SIZE = 1 << 20;
+export const FLASH_SIZE = 1 << 20;
 /** A fw_cfg file's name field, NUL included (core/src/fw_cfg.rs). */
 const FW_CFG_NAME = 56;
 

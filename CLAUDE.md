@@ -29,7 +29,7 @@ extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vC
 **Current:** M8, a usable machine (PLAN.md §3). Phase A (the interactive machine: `npm start`, the
 page in `web/app/`, [docs/frontend.md](docs/frontend.md)) is done; phase B (your own disk: booting
 unmodified images through UEFI, disk in and out; `M8-PHASEB-KICKOFF.md`, [docs/plans/uefi.md](docs/plans/uefi.md))
-is under way (`M8-PHASEB-HANDOVER.md`); of
+is under way (loops 0–3 done: the page boots Debian's published image through UEFI; `M8-PHASEB-HANDOVER.md`); of
 the C tracks, networking is under way (`M8-PHASEC-NETWORKING-HANDOVER.md`). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
@@ -87,7 +87,7 @@ tests/baremetal/build.sh && tests/baremetal/oracle.sh [--hvf]  # rebuild the bar
 node tools/uefi-oracle.ts debian alpine alpine-grub          # unmodified images through our EDK2 (images/build.sh edk2) on QEMU
 scripts/testfloat.sh           # FP core vs TestFloat 3e (in ci.sh)
 tests/qcow2/make.sh            # regenerate the qcow2 fixtures with qemu-img
-npm start                      # what a user runs: checks, npm ci, wasm core, Debian (tools/debian.ts), then serves (docs/frontend.md)
+npm start                      # what a user runs: checks, npm ci, wasm core, Debian (tools/debian.ts), the UEFI firmware (images/build.sh edk2, Podman), then serves (docs/frontend.md)
 npm run serve                  # dev server with COOP/COEP on :8080 (PORT overrides); builds the Tailscale client first if missing or stale (needs Go; WEBPC_TAILSCALE=0 skips)
 net/tailscale/build.sh         # the Tailscale client -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)
 WEBPC_DISTROS=debian WEBPC_START_COLD=1 node --test tests/start.test.ts  # npm start on a fresh copy, building its own core

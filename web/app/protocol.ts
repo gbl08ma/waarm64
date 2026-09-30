@@ -1,7 +1,7 @@
 // The page ⇄ machine-worker protocol (docs/frontend.md "The worker protocol").
 // The seed of phase D's embedding API: not frozen. Types only.
 import type { VcpuLiveness } from '../liveness.ts';
-import type { MachineName } from './machine.ts';
+import type { Credential, MachineName } from './machine.ts';
 
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
@@ -33,8 +33,14 @@ export type ToWorker =
     serial: MessagePort;
     /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). */
     screen: OffscreenCanvas;
-    /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). */
+    /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). Not for a `firmware` machine: its bootloader owns the command line. */
     params?: string;
+    /**
+     * Systemd credentials to give a `firmware` machine over fw_cfg beyond its own (the page's
+     * `?credential=name:value`, for development and tests: `login.noauth:yes` and the `firstboot.*`
+     * ones boot Debian unattended). The release page passes none.
+     */
+    credentials?: Credential[];
     /** A second, read-only virtio-blk (the page's `?disk2=<url>`, for tests: /dev/vdb), served over HTTP ranges like the root. */
     disk2?: string;
     /**

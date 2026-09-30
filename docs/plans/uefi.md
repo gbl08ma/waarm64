@@ -196,6 +196,26 @@ the firmware's menus, the EFI setup screen and GRUB's `gfxterm` would appear on 
 Until then the menus are on the serial console, where input already works (the PL011's receive
 path, M8 phase A).
 
+## Loop 3: Debian unmodified on the page (done, 2026-10-01)
+What it found, beyond what frontend.md "Debian through UEFI" says:
+- **The serial console's size.** EDK2's TerminalDxe offers text modes up to 240×56; GRUB takes the
+  largest and sends `CSI 8;56;240 t` (xterm's resize), which xterm.js ignores: on the page's
+  80-column terminal only GRUB's countdown line was visible. Teaching xterm.js the sequence (a CSI
+  handler, which needs `windowOptions.setWinSizeChars`: xterm.js gates custom `t` handlers), scaling
+  the font and shrinking back at the kernel's hand-over worked but was the wrong fix. **The user
+  suggested the right one: configure the firmware.** `images/build.sh edk2` deletes the larger rows
+  of TerminalDxe's mode table, so the only mode is 80×25 and nothing asks for a resize (the page's
+  terminal has 25 rows). **Remove the patch if the UEFI ever gets graphical modes** (backlog).
+- **Keys** (`tests/page-uefi-keys.test.ts`): everything arrives except PageUp/PageDown; a lone Esc
+  takes ~2 s (EDK2 waits to tell it from a sequence); a fast stream of arrows can lose bytes.
+  GRUB's "UEFI Firmware Settings" resets the machine into EDK2's setup: the variable (OsIndications)
+  is kept in the flash bank across the page's restart, which is the flash persistence working.
+  After "Continue", EDK2 shows its boot device menu (ArmVirt's BDS) rather than booting on.
+- **The cost:** 53 s to the login prompt against 33 s direct (bench/boot/REPORT.md); the
+  suspected busy wait between the boot manager and GRUB is an LZMA decoder, not a wait.
+- The flash bank is saved as it changes (a closed tab never runs a shutdown) in
+  `<overlay>/flash`, so Reset disk clears it with the disk.
+
 ## The user's answers for the page (2026-09-30; loop 3)
 - **Menus:** waiting for the loader's timeout is fine for now. The serial console with input is
   the way into the firmware and bootloader (EFI setup, boot entries, editing the command line);

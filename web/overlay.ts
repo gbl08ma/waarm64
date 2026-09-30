@@ -214,3 +214,41 @@ export async function overlayBytes(name: string) {
   for (const f of ['data', 'map']) n += await dir.getFileHandle(f).then((h) => h.getFile()).then((file) => file.size, () => 0);
   return n;
 }
+
+/** Node has no OPFS: the firmware's variable stores live in memory there, by overlay name. */
+const inMemoryFlash = new Map<string, Uint8Array>();
+
+/**
+ * The firmware's variable store (the flash bank, `VmConfig.firmware`) saved beside overlay `name`,
+ * in a file of its directory: it belongs to the disk the overlay makes writable, and goes with it
+ * when the disk is reset (`removeOverlay`). Undefined when none was saved. No lock: one machine
+ * at a time runs on the overlay (`lockOverlay`), and it is that machine's worker that saves.
+ */
+export async function loadFlash(name: string): Promise<Uint8Array | undefined> {
+  if (typeof navigator.storage === 'undefined') return inMemoryFlash.get(name);
+  try {
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
+    const bytes = new Uint8Array(await (await (await dir.getFileHandle('flash')).getFile()).arrayBuffer());
+    return bytes.length ? bytes : undefined;
+  } catch (e) {
+    if ((e as DOMException).name !== 'NotFoundError') throw e;
+    return undefined;
+  }
+}
+
+/** Saves the variable store beside overlay `name` (a dedicated worker: sync access handle, which is exclusive). */
+export async function saveFlash(name: string, bytes: Uint8Array) {
+  if (typeof navigator.storage === 'undefined') {
+    inMemoryFlash.set(name, bytes.slice());
+    return;
+  }
+  const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name, { create: true });
+  const h = await (await dir.getFileHandle('flash', { create: true })).createSyncAccessHandle();
+  try {
+    h.truncate(0);
+    h.write(bytes, { at: 0 });
+    h.flush();
+  } finally {
+    h.close();
+  }
+}

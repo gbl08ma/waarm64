@@ -11,13 +11,15 @@ import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 
-const IMAGE = new URL('../target/images/debian/Image', import.meta.url);
+const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
+const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
 const WASM = new URL('../target/net/tailscale.wasm', import.meta.url);
 const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
   : !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
-  : !existsSync(IMAGE) ? 'SKIPPED: run tools/debian.ts (or npm start)'
+  : !existsSync(IMAGE) || !existsSync(FIRMWARE) ? 'SKIPPED: run npm start (or images/build.sh debian edk2)'
   : !existsSync(WASM) ? 'SKIPPED: build the Tailscale client (net/tailscale/build.sh; needs Go)'
   : undefined;
 
@@ -62,7 +64,7 @@ test('the Network menu: a bad URL is refused; connecting starts the client witho
   const dialogs: string[] = [];
   page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
   try {
-    await page.goto(`${base}/web/app/?ncpus=2&view=both`);
+    await page.goto(`${base}/web/app/?ncpus=2&view=both&${unattendedQuery()}`);
     assert.equal(await page.locator('#network').isVisible(), true, 'Debian can have a card');
     await page.locator('#network summary').click();
     assert.match((await page.locator('#net-status').textContent())!, /Not connected/);

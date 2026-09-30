@@ -14,5 +14,5 @@ buildroot-2cpu 42577681
 buildroot-4cpu 45231514
 litmus-4cpu 879959970
 console-input 36412759
-edk2-shell 541865723
-edk2-shell-again 539004982
+edk2-shell 541770383
+edk2-shell-again 538910055

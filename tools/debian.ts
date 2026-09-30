@@ -1,11 +1,12 @@
 // Prepares the page's Debian (M8 loop 5, docs/images.md): downloads the pinned
 // nocloud qcow2 (images/debian.json) into the download cache if it isn't there,
-// checks its SHA512, and takes the kernel and initrd out of its /boot with
-// web/bootfs.ts and web/ext4.ts over web/qcow2.ts (no qemu-img, sfdisk or
-// debugfs). Output: target/images/debian/{Image,initrd.img,disk.qcow2} (the
-// disk as published: a hard link to the download when it can be, else a copy),
-// byte for byte what images/SHA256SUMS lists. Used by `npm start`
-// (tools/start.ts) and `images/build.sh debian`.
+// checks its SHA512, and links it as target/images/debian/disk.qcow2 (the disk
+// as published: a hard link to the download when it can be, else a copy). The
+// page boots it unmodified through EDK2 (M8 phase B), so that is all `npm start`
+// (tools/start.ts) needs; `images/build.sh debian` also takes the kernel and
+// initrd out of its /boot (Image, initrd.img: the direct boots of the tests and
+// benchmarks) with web/bootfs.ts and web/ext4.ts over web/qcow2.ts (no
+// qemu-img, sfdisk or debugfs), byte for byte what images/SHA256SUMS lists.
 //   node tools/debian.ts [--force]
 // WEBPC_DL overrides the download cache (default target/images/dl), e.g. to
 // share one download between checkouts.
@@ -22,6 +23,8 @@ export type Pin = { version?: string; file: string; url: string; sha512: string;
 export const PIN = JSON.parse(await readFile(join(ROOT, 'images/debian.json'), 'utf8')) as Pin;
 export const OUT = join(ROOT, 'target/images/debian');
 export const OUTPUTS = ['Image', 'initrd.img', 'disk.qcow2'];
+/** What the page needs: the disk alone. */
+export const DISK_ONLY = ['disk.qcow2'];
 export const downloads = () => process.env.WEBPC_DL || join(ROOT, 'target/images/dl');
 const STAMP = '.prepared';
 
@@ -120,26 +123,34 @@ export async function extract(qcow2: string) {
  * target/images/debian, prepared unless it already is (`force`: anyway). Returns what it did.
  * The stamp (.prepared) names the pinned image the outputs came from.
  */
-export async function prepareDebian({ force = false, log = (s: string) => console.log(s) } = {}) {
+export async function prepareDebian({ force = false, extract: boot = true, log = (s: string) => console.log(s) } = {}) {
   const stamp = `${PIN.version} ${PIN.sha512}\n`;
-  const current = !force && OUTPUTS.every((f) => existsSync(join(OUT, f))) &&
+  const current = !force && (boot ? OUTPUTS : DISK_ONLY).every((f) => existsSync(join(OUT, f))) &&
     await readFile(join(OUT, STAMP), 'utf8').then((s) => s === stamp, () => false);
   if (current) return 'current' as const;
   const qcow2 = await download(PIN, log);
-  log('Taking the kernel and initrd out of its /boot…');
   const t0 = performance.now();
-  const { version, kernel, initrd } = await extract(qcow2);
   await mkdir(OUT, { recursive: true });
   await rm(join(OUT, STAMP), { force: true });
-  await writeFile(join(OUT, 'Image.tmp'), kernel);
-  await writeFile(join(OUT, 'initrd.img.tmp'), initrd);
-  await rename(join(OUT, 'Image.tmp'), join(OUT, 'Image'));
-  await rename(join(OUT, 'initrd.img.tmp'), join(OUT, 'initrd.img'));
+  let ready = 'Debian 13 ready';
+  if (boot) {
+    log('Taking the kernel and initrd out of its /boot…');
+    const { version, kernel, initrd } = await extract(qcow2);
+    await writeFile(join(OUT, 'Image.tmp'), kernel);
+    await writeFile(join(OUT, 'initrd.img.tmp'), initrd);
+    await rename(join(OUT, 'Image.tmp'), join(OUT, 'Image'));
+    await rename(join(OUT, 'initrd.img.tmp'), join(OUT, 'initrd.img'));
+    ready += `: kernel ${version} (${mb(kernel.length)}), initrd (${mb(initrd.length)})`;
+  } else {
+    // What a kernel and initrd from an older image would leave must not outlive the stamp that now names the new one.
+    await rm(join(OUT, 'Image'), { force: true });
+    await rm(join(OUT, 'initrd.img'), { force: true });
+  }
   const disk = join(OUT, 'disk.qcow2');
   await rm(disk, { force: true });
   await link(qcow2, disk).catch(() => copyFile(qcow2, disk, constants.COPYFILE_FICLONE)); // FICLONE: a reflink where the filesystem has them
   await writeFile(join(OUT, STAMP), stamp);
-  log(`Debian 13 ready: kernel ${version} (${mb(kernel.length)}), initrd (${mb(initrd.length)}), in ${((performance.now() - t0) / 1000).toFixed(1)} s.`);
+  log(`${ready}, in ${((performance.now() - t0) / 1000).toFixed(1)} s.`);
   return 'prepared' as const;
 }
 

@@ -43,7 +43,7 @@ systemd.run="…" systemd.run_success_action=poweroff systemd.run_failure_action
 systemd.firstboot=off` (systemd-run-generator runs the test as a unit; `firstboot=off` because a
 writable first boot waits on the console forever, on QEMU too). Distros get 1 GiB.
 
-**Debian for interaction** (the page's VM, M8; `bench/boot/REPORT.md` "M8 loop 0"): `console=ttyAMA0
+**Debian for interaction, the direct boot** (M8 phase A; the page now boots the image through UEFI with GRUB's own command line, frontend.md "Debian through UEFI"; this line is what the tests and benchmarks that extract the kernel still use; `bench/boot/REPORT.md` "M8 loop 0"): `console=ttyAMA0
 console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes
 apparmor=0` and `systemd.mask=` for `systemd-networkd.service`, `systemd-networkd.socket`,
 `systemd-resolved.service`, `systemd-timesyncd.service`, `systemd-network-generator.service` (no

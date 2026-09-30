@@ -1,6 +1,6 @@
 // `npm start` (M8 loop 5; docs/frontend.md "npm start"), after tools/start.js
-// checked Node's version: rustup, the npm packages, the wasm core, Debian, then
-// the server on 127.0.0.1 and the URL. Each step is skipped when its output is
+// checked Node's version: rustup, the npm packages, the wasm core, Debian, the
+// UEFI firmware (EDK2, built in Podman: images/build.sh edk2), then the server on 127.0.0.1 and the URL. Each step is skipped when its output is
 // current, so a second start takes about a second (SHA512-free: Debian's stamp).
 //   npm start [-- --host <addr>] [-- --port <n>] [-- --prepare-only]
 // PORT sets the port too (default 8080); WEBPC_DL the download cache.
@@ -54,6 +54,23 @@ export const wasmCurrent = (root = ROOT) => {
   try { return existsSync(wasm) && readFileSync(wasm + '.inputs', 'utf8').trim() === wasmInputs(root); } catch { return false; }
 };
 
+/** The firmware the page's Debian boots through (docs/plans/uefi.md). */
+export const FIRMWARE = 'target/images/edk2/QEMU_EFI.fd';
+
+/** Why the firmware has to be built (missing, or images/build.sh's inputs changed), or undefined if it is current. */
+export function firmwareStale(root = ROOT): string | undefined {
+  if (!existsSync(join(root, FIRMWARE))) return "the UEFI firmware isn't built";
+  const r = spawnSync('bash', ['images/build.sh', '--check', 'edk2'], { cwd: root, encoding: 'utf8' });
+  return r.status === 0 ? undefined : 'the UEFI firmware is out of date';
+}
+
+/** What to do when building the firmware isn't possible here (no rootless Podman), or undefined if it is. */
+export function podmanProblem(env: NodeJS.ProcessEnv = process.env) {
+  if (spawnSync('podman', ['--version'], { stdio: 'ignore', env }).status === 0) return undefined;
+  return "Podman isn't installed. The page boots Debian through UEFI firmware (EDK2), which `npm start` builds in a rootless Podman container (~1 min, once).\n" +
+    'Install Podman (https://podman.io/docs/installation; e.g. `sudo apt install podman`, `sudo dnf install podman`, `sudo zypper in podman`, `brew install podman`), then run `npm start` again.';
+}
+
 const run = (cmd: string, args: string[], env = process.env) => spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', env }).status === 0;
 const has = (cmd: string, args: string[], env = process.env) => spawnSync(cmd, args, { cwd: ROOT, stdio: 'ignore', env }).status === 0;
 
@@ -103,10 +120,16 @@ export async function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({ args: argv, options: { host: { type: 'string', default: '127.0.0.1' }, port: { type: 'string', default: process.env.PORT ?? '8080' }, 'prepare-only': { type: 'boolean', default: false } } });
   const t0 = performance.now();
   const env = rustEnv();
+  const firmware = firmwareStale();
+  if (firmware) { const p = podmanProblem(env); if (p) stop(`${firmware[0].toUpperCase()}${firmware.slice(1)}. ${p}`); }
   installPackages();
   buildCore(env);
   prepareTailscale(); // the Network menu's client: built when Go is there, never fatal (tools/tailscale.ts)
-  await prepareDebian().catch((e: Error) => stop(e.message));
+  await prepareDebian({ extract: false }).catch((e: Error) => stop(e.message)); // the page boots it unmodified: no kernel to extract
+  if (firmware) {
+    console.log(`Building the UEFI firmware (${firmware}; EDK2 in a Podman container: ~1 min, the first time it also pulls the build image)…`);
+    if (!run('bash', ['images/build.sh', 'edk2'], env) || firmwareStale()) stop("The UEFI firmware didn't build (the errors are above).");
+  }
   if (values['prepare-only']) {
     console.log(`Ready in ${((performance.now() - t0) / 1000).toFixed(1)} s (not serving: --prepare-only).`);
     return;

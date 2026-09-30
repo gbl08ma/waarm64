@@ -1,5 +1,5 @@
-**Handover, 2026-09-30: M8 phase B (your own disk). Loops 0–2 are done; loop 3 (Debian
-unmodified on the page) is next.** The brief is `M8-PHASEB-KICKOFF.md` (confirmed by the user
+**Handover, 2026-10-01: M8 phase B (your own disk). Loops 0–3 are done; loop 4 (disk in)
+is next.** The brief is `M8-PHASEB-KICKOFF.md` (confirmed by the user
 2026-09-30: the outline is OK, **images in scope are Debian and Alpine only**). Phase A's handover
 is in git history; networking has its own (`M8-PHASEC-NETWORKING-HANDOVER.md`).
 
@@ -16,6 +16,8 @@ docs/frontend.md, `web/app/machine.ts`, `web/app/` (the page and its machine wor
 | 1 | `918a8b8` | `images/build.sh edk2` (ArmVirtQemuKernel, reproducible), `tools/uefi-oracle.ts`, `images/alpine-uefi.json` |
 | 2 | `bc7bd3a` | ABI 29, the firmware configuration: `VmConfig.firmware`, a CFI flash bank (`core/src/flash.rs`), fw_cfg (`core/src/fw_cfg.rs`), the PL031 always (virtual time when deterministic), `vm_flash`; `BootOptions.firmware` (web/vm.ts); TTBR0 global TLB entries cached in parallel SMP; `web/fat.ts`; in-memory overlays in Node; `shell.img` and `images/build.sh alpine-uefi`; tests |
 
+| 3 | (this commit) | Debian unmodified on the page: `firmware` machine, flash persistence, `npm start` with Podman-built EDK2, 80×25 firmware console, keys test, credentials over fw_cfg |
+
 Loop 2 in short: our machine boots `QEMU_EFI.fd` like a kernel (RAM + 512 KiB; the DTB stays in
 the top 2 MiB, EDK2 copies it first), and EDK2 boots Debian's published qcow2 (shim, GRUB) and
 both Alpine UEFI images (Limine, GRUB) to a root login in Node: Debian's kernel at 9.4 s, login at
@@ -24,41 +26,45 @@ EFI variable across two boots (`edk2-shell` in tests/steps.txt, native, Node int
 The big finding: parallel SMP didn't cache global TLB entries in TTBR0, which firmware and
 bootloaders use everywhere (70 s → 3 s from the boot manager to GRUB).
 
-## Loop 3: Debian unmodified, end to end (the kickoff's loop 3)
-**Goal:** the page boots Debian's published qcow2 through EDK2 and GRUB, with no extraction
-(tools/debian.ts only downloads; the page's machine drops its `kernel`/`initrd`). **The user
-approved the switch (2026-09-30)**, on the condition that users eventually get to supply a disk
-image that has already been through its first-boot configuration (loops 4–6: disk in, and a
-changes file or whole disk out, give them that; don't lose it). Their answers are in
-plans/uefi.md "The user's answers for the page".
+## Loop 4: disk in (the kickoff's loop 4)
+**Goal:** a local disk image (a `File`: qcow2 or raw by magic) as a blk backend next to the HTTP
+range one, and the page's way to boot it. The user's condition for the switch to UEFI still
+stands: users must be able to supply a disk that has been through its first-boot configuration
+(loops 4–6). Read docs/frontend.md "Debian through UEFI" first.
 
-What to do:
-1. `web/app/machine.ts`: Debian's machine becomes `firmware`; the page serves `QEMU_EFI.fd` and
-   its `LICENSES.txt`. **`npm start` builds the firmware with Podman** (`images/build.sh edk2`,
-   ~1 min; the user's answer, "for now"): its checks say so when Podman is missing, and
-   tests/start.test.ts covers the message and the build (the cold-start run too). The flash bank
-   is kept per disk (OPFS, next to the overlay, keyed like it) and saved at power-off and on
-   `close`.
-2. **No first-boot credentials in the release build:** Debian's first boot runs systemd-firstboot
-   on the serial console (no `console=` from GRUB: `/dev/console` is the PL011). The page must make
-   that visible (show the serial view or say where to look).
-3. **The network card's settings go through fw_cfg** (the user's answer): the `.network` file
-   phase A passed on the command line (`systemd.set_credential_binary=network.network.card:…`)
-   becomes the fw_cfg file `opt/io.systemd.credentials/network.network.card`, passed only when the
-   Network menu connects a card (web/app, docs/frontend.md "Network"); `scripts/ci-net.sh` must
-   pass. The page's other command-line settings (the masked units, `apparmor=0`, the console
-   choice) no longer apply: GRUB owns the command line. Say what that costs (loop 2 measured ~6 s
-   of userspace) and what the user's console setting becomes.
-4. Menus wait for their timeout (GRUB 5 s). Check keys end to end through xterm.js to EDK2's
-   terminal and GRUB (arrows, F-keys, Esc, Ctrl-X).
-5. Measure the page's boot against today's direct boot (bench/run.ts in Chromium, CLAUDE.md
-   "Performance"). Before that, find the busy wait between EDK2's boot manager and GRUB's menu
-   (5.4G steps in ~3 s, backlog "The firmware configuration").
-6. Update tests/page-debian.test.ts (it logs in: the tests may pass first-boot credentials over
-   fw_cfg, the release page passes none), tests/start.test.ts (Debian's kernel/initrd identity
-   check goes; the firmware build comes in), docs/frontend.md, and say what changes for the user.
+What loop 3 leaves for it:
+- The page's machine has no disk choice: `MACHINES.debian.disk` is a URL and its overlay is
+  `webpc-debian`. The worker protocol grows a disk (URL or `File`) in `start`; the overlay and the
+  flash (`loadFlash`/`saveFlash`, `<overlay>/flash`) are keyed by the disk's identity, so a user's
+  disk needs its own overlay name (kickoff: "keyed by the base image's identity"; today
+  `openOverlay` checks URL path and size only: a `File` has no path, so hash or name+size+mtime).
+- A `File` goes to the device worker as a transferable/structured clone; `FileReaderSync` reads
+  slices there (web/devices.ts's blk backends, web/qcow2.ts's `openDisk`).
+- **No first-boot credentials in the release page** (the user's answer): the tests pass them with
+  `?credential=` (tests/debian-unattended.ts).
 
-## Gotchas (loops 0–2)
+## Loop 3 (done 2026-10-01): what landed
+`MACHINES.debian` is `firmware: true` (web/app/machine.ts: `kernel` is `QEMU_EFI.fd`, no initrd or
+command line, `network.credentials` instead of a command line); the worker loads and saves the
+flash bank (web/overlay.ts `loadFlash`/`saveFlash`, every 5 s when changed and at shutdown);
+`?credential=name:value` and `StartMessage.credentials` pass fw_cfg credentials; the boot card
+says the menus and the first boot's questions are on the serial console ("Show it"); `npm start`
+links the disk only (`tools/debian.ts` `extract: false`) and builds the firmware with Podman
+(`tools/start.ts` `firmwareStale`, `podmanProblem`); `images/build.sh edk2` patches TerminalDxe's
+mode table to 80×25 (**remove if the UEFI ever gets graphical modes**, backlog), the page's
+terminal is 80×25; `tests/page-uefi-keys.test.ts` drives EDK2 and GRUB through xterm.js;
+`tests/page-debian.test.ts`, `page-network.test.ts`, `net-guest`, `net-tailnet` (via
+`tests/browser/tailnet-worker.ts`) and `start.test.ts` boot/serve the firmware path;
+`tests/debian-unattended.ts` has the test credentials. Numbers: 53 s to the login prompt against
+33 s direct, and the "busy wait" is an LZMA decoder (bench/boot/REPORT.md "M8 phase B loop 3").
+The user's suggestion that fixed the terminal size: configure the firmware rather than teach
+xterm.js to resize.
+
+Open after loop 3: the firmware's `0 MB RAM` in its setup screen (no SMBIOS; cosmetic);
+a lone Esc takes ~2 s and PageUp/PageDown aren't decoded by EDK2's terminal driver
+(frontend.md "The serial terminal"); Debian's GRUB has a 5 s timeout on every boot.
+
+## Gotchas (loops 0–3)
 - `localhost/webpc-images` (images/Containerfile) is **amd64** under qemu-user here: never build
   EDK2 in it. `edksetup.sh` fails under `set -u` and eats the positional parameters (`set --`
   first); an apostrophe inside build.sh's single-quoted container scripts ends the script.
@@ -75,6 +81,8 @@ What to do:
   removable-media loader instead.
 - A test that passes credentials must read one back: with fw_cfg's directory planted off by one
   Debian still logged in (the shifted credentials happened to allow it).
+- xterm.js gates custom `CSI t` handlers behind `windowOptions`; `page.waitForFunction` given a
+  RegExp's `source` loses its flags (`m`); a DOM row's trailing spaces are trimmed (`grub>`).
 - `bench/results/local/uefi-node.ts` (untracked) is the ad-hoc driver: `debian`, `alpine`,
   `alpine-grub`, and direct boots `debian-page` / `debian-grubline` for comparison.
 

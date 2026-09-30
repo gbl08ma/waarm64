@@ -18,7 +18,7 @@ import { loginRoot, run } from './serial-console.ts';
 const ROOT = new URL('..', import.meta.url).pathname;
 const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
   : !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
-  : !existsSync(`${ROOT}target/images/debian/Image`) ? 'SKIPPED: run tools/debian.ts (or npm start)'
+  : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run npm start (or images/build.sh debian edk2)'
   : undefined;
 
 const OVERLAY = 'webpc-net-guest-test';

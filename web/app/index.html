@@ -49,6 +49,8 @@
   #boot[hidden] { display: none; }
   #boot-title { color: var(--text); font-size: 15px; }
   #boot progress { width: min(320px, 80%); height: 6px; accent-color: var(--accent); }
+  #boot-serial { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; pointer-events: auto; }
+  #boot-serial[hidden] { display: none; }
   #boot-line { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: ui-monospace, monospace; font-size: 12px; }
   #terminal-view { min-height: 0; display: flex; justify-content: center; align-items: flex-start; overflow: auto; }
   #terminal { padding: 8px; background: #0b0d10; border: 1px solid var(--line); border-radius: 4px; }
@@ -122,7 +124,7 @@
 </header>
 <div id="message" role="alert" hidden><pre id="message-text"></pre><div id="message-actions"></div></div>
 <main>
-  <div id="screen-view"><div id="screen-frame"><canvas id="screen" tabindex="0" aria-label="Machine screen"></canvas><div id="screen-hint">Click to type</div><div id="boot"><div id="boot-title"></div><progress id="boot-progress"></progress><div id="boot-line"></div></div></div></div>
+  <div id="screen-view"><div id="screen-frame"><canvas id="screen" tabindex="0" aria-label="Machine screen"></canvas><div id="screen-hint">Click to type</div><div id="boot"><div id="boot-title"></div><progress id="boot-progress"></progress><div id="boot-line"></div><div id="boot-serial" hidden><span>The boot menus, and a first boot's questions, are on the serial console.</span><button id="boot-serial-show">Show it</button></div></div></div></div>
   <div id="terminal-view"><div id="terminal"></div></div>
 </main>
 <footer id="status"></footer>

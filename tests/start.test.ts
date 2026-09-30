@@ -1,8 +1,8 @@
 // `npm start` (tools/start.js, tools/start.ts, tools/debian.ts; M8 loop 5): its
 // checks, and a run on a copy of the repository as a fresh clone has it (tracked and
 // untracked files, nothing ignored: no node_modules, no target/), up to the page
-// booting Debian in Chromium (the guest's console on the screen). The copy gets the core built here unless
-// WEBPC_START_COLD=1 (then it builds its own: minutes); Debian comes from this
+// booting Debian in Chromium (the firmware's output). The copy gets the core and the firmware built here unless
+// WEBPC_START_COLD=1 (then it builds its own, the firmware with Podman: minutes); Debian comes from this
 // checkout's download cache (WEBPC_DL), so nothing is downloaded.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { PIN, download, downloads } from '../tools/debian.ts';
 import { ROOT, startServer } from '../tools/serve.ts';
-import { WASM, npmStale, wasmInputs } from '../tools/start.ts';
+import { FIRMWARE, WASM, firmwareStale, npmStale, podmanProblem, wasmInputs } from '../tools/start.ts';
 import { withDebianLock } from './debian-lock.ts';
 
 const tmp = (what: string) => mkdtempSync(join(tmpdir(), `webpc-${what}-`));
@@ -59,6 +59,20 @@ test('wasmInputs: the core rebuilds when its sources change, not when their mtim
   } finally {
     rmSync(d, { recursive: true });
   }
+});
+
+test('the firmware: built when missing or stale, and Podman, which builds it, said with how to get it', () => {
+  const d = tmp('fw');
+  try {
+    assert.equal(firmwareStale(d), "the UEFI firmware isn't built");
+    write(d, FIRMWARE, 'firmware'); // present, but no images/build.sh to say it is current: out of date
+    assert.equal(firmwareStale(d), 'the UEFI firmware is out of date');
+    assert.equal(firmwareStale(), existsSync(join(ROOT, FIRMWARE)) ? undefined : "the UEFI firmware isn't built"); // this checkout: what scripts/ci.sh builds
+  } finally {
+    rmSync(d, { recursive: true });
+  }
+  const none = podmanProblem({ PATH: '' });
+  assert.match(none!, /^Podman isn't installed\. The page boots Debian through UEFI firmware \(EDK2\), which `npm start` builds in a rootless Podman container[^]*Install Podman[^]*then run `npm start` again\.$/);
 });
 
 test('the download: streamed to a .part file, checked against the pin, then kept and checked again', async () => {
@@ -106,12 +120,13 @@ test('the prerequisites: Node 26 and rustup, each said with how to get it', () =
   }
 });
 
-// The run as a user makes it, up to the kernel on the screen (~5 s alone with npm's cache warm), gated like Debian's other page tests.
+// The run as a user makes it, up to the machine's first output on the serial console (~5 s alone with npm's cache warm), gated like Debian's other page tests.
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const cached = existsSync(join(downloads(), PIN.file));
 const cold = process.env.WEBPC_START_COLD === '1';
 test('npm start on a fresh copy of the repository: install, build, prepare Debian, serve; the page boots it', {
-  skip: !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : !cached && 'SKIPPED: no Debian download (run images/build.sh debian)',
+  skip: !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : !cached ? 'SKIPPED: no Debian download (run images/build.sh debian)'
+    : !cold && firmwareStale() && 'SKIPPED: no UEFI firmware (run images/build.sh edk2), or WEBPC_START_COLD=1 to build it in the copy',
   timeout: cold ? 30 * 60_000 : 15 * 60_000, // with the wait for tests/page-debian.test.ts's boots (tests/debian-lock.ts)
 }, () => withDebianLock(async () => {
   const d = tmp('clone');
@@ -127,6 +142,10 @@ test('npm start on a fresh copy of the repository: install, build, prepare Debia
     mkdirSync(dirname(wasm), { recursive: true });
     copyFileSync(WASM, wasm);
     writeFileSync(wasm + '.inputs', wasmInputs(d) + '\n');
+  }
+  if (!cold) { // the firmware comes from this checkout too (its inputs are the same files); cold builds it with Podman
+    mkdirSync(join(d, 'target/images/edk2'), { recursive: true });
+    for (const f of ['QEMU_EFI.fd', 'LICENSES.txt', '.inputs']) copyFileSync(join(ROOT, 'target/images/edk2', f), join(d, 'target/images/edk2', f));
   }
   const env = { ...process.env, PORT: '0', WEBPC_DL: downloads(), WEBPC_TAILSCALE: '0' }; // (no Go build in the copy: tests/tailscale-build.test.ts has it)
   const start = performance.now();
@@ -147,19 +166,21 @@ test('npm start on a fresh copy of the repository: install, build, prepare Debia
     });
     assert.match(out, /Installing the npm packages \(node_modules is missing\): npm ci/);
     assert.match(out, cold ? /Building the emulator core/ : /^(?![^]*emulator core)/);
-    assert.match(out, /Debian 13 ready: kernel 6\.12\.107\+deb13-arm64/);
-    for (const f of ['Image', 'initrd.img', 'disk.qcow2']) assert.ok(existsSync(join(d, 'target/images/debian', f)), f);
-    // The copy's kernel and initrd are this checkout's (current: images/SHA256SUMS), which
-    // tests/page-debian.test.ts boots to a login three times; so here the page only has to start
-    // the copy's machine: its module graph, core and images load and the kernel takes the screen.
-    const sha = (root: string, f: string) => createHash('sha256').update(readFileSync(join(root, 'target/images/debian', f))).digest('hex');
-    for (const f of ['Image', 'initrd.img']) assert.equal(sha(d, f), sha(ROOT, f), f);
+    assert.match(out, /Debian 13 ready, in \d/); // the disk alone: the page boots it unmodified, so no kernel or initrd is taken out
+    assert.match(out, cold ? /Building the UEFI firmware/ : /^(?![^]*Building the UEFI firmware)/);
+    assert.ok(existsSync(join(d, 'target/images/debian/disk.qcow2')) && !existsSync(join(d, 'target/images/debian/Image')));
+    assert.ok(existsSync(join(d, FIRMWARE)) && existsSync(join(d, 'target/images/edk2/LICENSES.txt')));
+    // The copy's firmware is this checkout's (current: images/SHA256SUMS) unless built cold, and
+    // tests/page-debian.test.ts boots Debian to a login three times; so here the page only has to
+    // start the copy's machine: its module graph, core and images load and the firmware (or whatever is further by then) writes to the serial console.
     const page = await browser.newPage();
     await page.goto(url);
-    await page.waitForFunction(() => document.getElementById('boot')?.dataset.done === 'true' || ['failed', 'crashed', 'off'].includes(document.body.dataset.state!), null, { timeout: 120_000, polling: 250 });
+    await page.waitForFunction(() => (document.querySelector('.xterm-rows')?.textContent ?? '').trim() !== '' || ['failed', 'crashed', 'off'].includes(document.body.dataset.state!), null, { timeout: 120_000, polling: 250 })
+      .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('message-text')?.textContent}; ${document.querySelector('.xterm-rows')?.textContent}`)}`); });
     const state = await page.evaluate(() => document.body.dataset.state);
     assert.ok(state === 'booting' || state === 'running', `${state}: ${await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '')}`);
-    console.log(`# npm start${cold ? ' (cold)' : ''}: the URL after ${(served / 1000).toFixed(1)} s, the guest's console on the screen ${((performance.now() - start - served) / 1000).toFixed(1)} s later`);
+    assert.equal(await page.locator('#boot-serial').isVisible(), true, 'the boot card says where the menus are');
+    console.log(`# npm start${cold ? ' (cold)' : ''}: the URL after ${(served / 1000).toFixed(1)} s, the firmware's output ${((performance.now() - start - served) / 1000).toFixed(1)} s later`);
   } finally {
     await browser.close();
     child.kill();

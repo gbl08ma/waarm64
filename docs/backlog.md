@@ -147,8 +147,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   flash bank's array-mode reads go through `vm::Io` one instruction at a time (fine for a store
   read a few times a boot: measure if a guest reads it in a loop); no lock state (every block
   unlocked). Between EDK2's boot manager and GRUB's menu Debian retires 5.4G steps in ~3 s in
-  Node (Alpine: 0.2G): a busy wait (EDK2's `Stall` polls the counter; shim or GRUB waiting?)
-  that a WFE or timer would make idle: find it before loop 3 measures the page's boot.
+  Node (Alpine: 0.2G): **not a busy wait** (loop 3): PC samples sit in one LZMA range decoder, most
+  likely Debian's GRUB unpacking its compressed core image (bench/boot/REPORT.md "M8 phase B
+  loop 3"); nothing to make idle.
+- **EDK2's terminal modes** (loop 3): `images/build.sh edk2` patches TerminalDxe to offer only the
+  80×25 text mode, because GRUB takes the largest (240×56) and asks the terminal to resize with
+  `CSI 8;r;c t`, which xterm.js doesn't do: the menu was lost on the page's 80-column terminal.
+  **Remove the patch if the UEFI ever gets graphical modes** (a GOP, ramfb: "The firmware
+  configuration" above): GRUB then draws on the screen, and the mode table is unrelated to it.
 - **ACPI** (only if an ACPI-only guest comes into scope: Windows, an enterprise distro that won't
   boot from a DT). The DT stays the machine's description (plans/uefi.md "DT or ACPI"); the path
   that keeps AML out of the core is EDK2's DynamicTablesPkg building the tables from our DT, plus

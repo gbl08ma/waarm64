@@ -13,7 +13,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/main.ts` | DOM code only: views, the canvas's scaling, xterm.js, power state, the status line; starts and stops machine workers |
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
 | `web/app/protocol.ts` | the messages between the two (types only) |
-| `web/app/machine.ts` | the machines, in one place: image URLs, command line (and the one with a network card), RAM, screen size, the `ready` marker, the default vCPU count |
+| `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
@@ -22,24 +22,33 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 
 Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot` (the
 default is `debian`), `?ncpus=N`, `?view=screen|terminal|both` (over the remembered view),
-`?params=…` (extra kernel parameters, placed before a `--`: e.g. `init=/bin/bash` for a rescue
-shell, or `init=/nonexistent` to make Buildroot panic, as a test does), `?disk2=<url>` (a second,
+`?params=…` (extra kernel parameters for a direct-boot machine, placed before a `--`: e.g.
+`init=/nonexistent` to make Buildroot panic, as a test does; Debian's bootloader owns its command
+line: edit it in GRUB), `?credential=name:value` (repeatable: a systemd credential over fw_cfg for a
+firmware machine; tests pass `tests/debian-unattended.ts`'s to boot Debian unattended, the page
+passes none), `?disk2=<url>` (a second,
 read-only virtio-blk over HTTP ranges, `/dev/vdb` in the guest, no overlay; for tests: the stress
 test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloads").
 
 ## The machines
 
-- **`debian`**, the page's VM (M8 decision 1): the Debian 13 nocloud image, under the JIT,
+- **`debian`**, the page's VM (M8 decision 1): Debian's published nocloud qcow2, **unmodified,
+  booted through UEFI** (M8 phase B: EDK2's `QEMU_EFI.fd` as the machine's `firmware`, then shim
+  and GRUB from the disk: docs/plans/uefi.md; below, "Debian through UEFI"), under the JIT,
   realtime, a worker per vCPU; 1 GiB; a 1024×768 framebuffer; rng, the disk (virtio-blk over HTTP
   ranges, writable through the OPFS overlay `webpc-debian`), keyboard, tablet. No virtio-console
-  (it would only add an output-only `hvc0` getty) and, by default, no network card: the Network menu (below) adds one. Its command line is
-  [images.md](images.md) "Debian for interaction". vCPUs: `min(4, cores − 2)` (the page and the
+  (it would only add an output-only `hvc0` getty) and, by default, no network card: the Network menu (below) adds one. Its command line is GRUB's
+  (`root=PARTUUID=… ro`; the old direct boot's is in [images.md](images.md) "Debian for interaction"). vCPUs: `min(4, cores − 2)` (the page and the
   device worker keep a core each). `ready` is the serial console's login prompt (`localhost login: `
   at a line's start, anywhere in the output: below, "The end-to-end test"), ~30 s after
-  the page loads (bench/boot/REPORT.md "M8 loop 0"). **Root logs in without a password:** the
-  published image locks root (`root:!unprovisioned`) and has no other user; the credential
-  `login.noauth` on the command line lets `login` accept root on every console without touching
-  the image (the user accepted this; no other user is needed).
+  the page loads (bench/boot/REPORT.md "M8 loop 0"; through UEFI ~53 s, "M8 phase B loop 3").
+  **A first boot runs as on a regular machine:** the published image locks root
+  (`root:!unprovisioned`) and has no other user, and its first boot runs `systemd-firstboot` on
+  `/dev/console`, the serial port (GRUB passes no `console=`, so the kernel takes the device
+  tree's PL011): it asks for a timezone, a locale and a root password on the serial terminal,
+  with the screen waiting. The page passes no credentials (the user's answer); the boot card says
+  where the questions are ("Show it" opens the serial view). Tests pass them over fw_cfg
+  (`tests/debian-unattended.ts`: `login.noauth`, `firstboot.*`, an empty root password).
 - **`buildroot`**, the test guest: `-- /bin/sh` on the serial console, 256 MiB, a 640×480
   framebuffer that stays black (its kernel has no fbcon), the overlay `webpc-buildroot` (mounted
   read-only; it's there so restarts hand an overlay over). Up in under a second.
@@ -53,14 +62,15 @@ The seed of phase D's embedding API; not frozen. One machine per worker: a resta
 worker and starts a new one (fresh memory, fresh ports).
 
 Page → worker:
-- `start {machine, ncpus, keyboard, tablet, serial, screen, params?}`: three transferred `MessagePort`s
+- `start {machine, ncpus, keyboard, tablet, serial, screen, params?, credentials?}`: three transferred `MessagePort`s
   and a transferred `OffscreenCanvas`. The keyboard's and the tablet's ports go to the device
   worker (web/input.ts's `attachInput` sends Linux input events to the other ends; LED changes
   come back on the keyboard's). `serial` is `BootOptions.serialIn`: strings or bytes for the
   PL011, handled on the machine worker's thread while `runAsync` awaits. `screen` is the page's
   canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the machine worker
   draws the framebuffer on it (web/display.ts) on its own animation frames. `params`: extra kernel
-  parameters. `disk2`: a URL for the second disk.
+  parameters (direct-boot machines). `credentials`: systemd credentials over fw_cfg for a firmware
+  machine, beside the machine's own (the network card's). `disk2`: a URL for the second disk.
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
   the overlay) is closed once it's there. The page then terminates the worker (after 3 s without
@@ -97,10 +107,13 @@ The machine runs without `idleLimitMs`: an idle guest may sleep as long as it li
 
 While a machine loads and boots, a card over the screen says what's happening: "Starting
 Debian 13" with a progress bar over the downloads (the state reads "Loading 45%"), then "Booting
-Debian 13" with the kernel's latest serial line, until the machine worker reports `screen` (or the
-machine is `running`). From there **the screen is the boot's progress**: the kernel's console
-(fbcon) replays the boot log from the first line and systemd's status lines follow, so the Screen
-view stays the default (loop 0's finding). On this host (M8 loop 4): the downloads (77.6 MB:
+Debian 13" with the machine's latest serial line, until the machine worker reports `screen` (or the
+machine is `running`). For a direct-boot machine, from there **the screen is the boot's progress**:
+the kernel's console (fbcon) replays the boot log from the first line and systemd's status lines
+follow, so the Screen view stays the default (loop 0's finding). **Through UEFI it isn't**: GRUB
+passes no `console=tty0`, so the screen stays black until tty1's getty, and the firmware's menus
+and the first boot's questions are on the serial console; the card stays until `running` and
+says so, with a "Show it" button for the serial view. On this host (M8 loop 4): the downloads (77.6 MB:
 Debian's kernel, its initrd and the core; the 403 MB disk is read by ranges as the guest needs it)
 take ~0.15 s from localhost, fbcon takes the screen ~2.4 s after the VM starts, and the login
 prompt comes at ~29 s (page load to `running`: 28.6, 29.1, 28.9, 29.0 s; loop 3: 28.6–29.0).
@@ -215,10 +228,22 @@ up to a frame until the next draw.
 
 ## The serial terminal
 
-xterm.js 6 (`@xterm/xterm`, MIT; the only runtime dependency), 80×24: the PL011 has no size
-negotiation, so the guest assumes 80×24 unless `stty` says otherwise. `onData` sends what a
+xterm.js 6 (`@xterm/xterm`, MIT; the only runtime dependency), 80×25: the PL011 has no size
+negotiation, so a Linux guest assumes 80×24 unless `stty` says otherwise, and the firmware's
+console is 80×25 (our EDK2 offers no other text mode: `images/build.sh edk2` patches the
+terminal driver's mode table, because GRUB takes the largest mode and asks the terminal to resize
+itself with `CSI 8;r;c t`, which xterm.js doesn't do; docs/backlog.md "EDK2's terminal modes"). `onData` sends what a
 terminal would (`\r` for Enter, escape sequences) to the `serial` port. No addons. The dev server
-serves exactly two files from `node_modules`, `@xterm/xterm/lib/xterm.mjs` and
+**The firmware and GRUB through it** (`tests/page-uefi-keys.test.ts`, which drives them end to
+end): arrows, Enter, Esc, F2, Ctrl-N/P/E/X, Home/End and typing all arrive. Two things about
+EDK2's terminal driver: a lone Esc is delivered ~2 s late (it waits to tell it from the start of
+a sequence), and PageUp/PageDown (`CSI 6~`) aren't decoded (GRUB's editor shows them as text), so
+use Ctrl-N/Ctrl-P there. A long run of arrow keys sent fast can lose bytes (the PL011's FIFO
+against a guest that polls): a person's typing is slower. The serial terminal, not the screen, is the way into the firmware's
+setup (GRUB's "UEFI Firmware Settings" entry resets into it; the boot device menu's "EFI Firmware
+Setup") and GRUB's editor and command line.
+
+The dev server serves exactly two files from `node_modules`, `@xterm/xterm/lib/xterm.mjs` and
 `@xterm/xterm/css/xterm.css` (`tools/serve.ts` `ALLOWED`); everything else there is refused.
 
 ## Views, settings and the disk
@@ -245,6 +270,29 @@ root) and starts a new
 machine, which boots from the image as published. If the removal fails (another tab holds the
 files), the page says so and offers the reset again.
 
+## Debian through UEFI
+
+The page boots Debian's published image unmodified (M8 phase B loop 3; [plans/uefi.md](plans/uefi.md)):
+the machine's `kernel` is `target/images/edk2/QEMU_EFI.fd` (with `LICENSES.txt` beside it, served
+with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` passes
+`BootOptions.firmware` (the flash bank and the fw_cfg files). What that changes for a user:
+- **The boot takes ~20 s longer** (bench/boot/REPORT.md "M8 phase B loop 3": 53 s to the login
+  prompt against 33 s): EDK2 to the kernel ~9 s, GRUB's 5 s menu timeout (any key stops the
+  countdown), and ~5 s in userspace, because the page's old command line is gone: GRUB owns it
+  (`apparmor=0`, the masked units and `console=tty0` no longer apply; AppArmor loads its profiles,
+  timesyncd, resolved and networkd start). The screen shows nothing until a getty (no fbcon boot
+  log); the serial terminal has the firmware's and the kernel's output.
+- **A first boot asks its questions** on the serial terminal (above), as on a regular machine.
+  The page offers no way yet to skip them; a disk that has been through its first boot comes
+  with loops 4–6 (a disk in, a changes file or whole disk out).
+- **The variable store** (the firmware's boot entries and settings, the flash bank, 1 MiB) is kept
+  per disk in the overlay's OPFS directory (`webpc-debian/flash`, `loadFlash` and `saveFlash` in
+  web/overlay.ts): saved when it changes (checked every 5 s), at power-off, reset and Restart; it
+  goes with Reset disk. It is what lets GRUB's "UEFI Firmware Settings" reach EDK2's setup.
+- **The network card's settings** (`machine.network.credentials`) go over fw_cfg as the
+  credential `opt/io.systemd.credentials/network.network.card`, whenever the machine has a card
+  (always, on this machine); the unmasked networkd and resolved do the rest.
+
 ## Network
 
 The header's **Network** menu (machines with a `network` entry in machine.ts: Debian) connects the
@@ -254,9 +302,9 @@ web/tailscale.ts, the client in its own worker).
 - **The card is always there** (`machine.network`): virtio-net on the Ethernet gateway from the
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
   login, alternating runs, this container: 81.3 s median without it, 79.7 s with it, 3 runs each,
-  noise), and the client isn't loaded until Connect. The command line unmasks networkd and
-  resolved and passes a systemd credential (`network.network.card`) that gives networkd a
-  `.network` file, so the guest asks the gateway for DHCP by itself; the gateway offers nothing
+  noise), and the client isn't loaded until Connect. A systemd credential
+  (`network.network.card`, over fw_cfg since phase B loop 3; on the command line before) gives
+  networkd a `.network` file (Debian's own units are all enabled under UEFI), so the guest asks the gateway for DHCP by itself; the gateway offers nothing
   until a client has an address (the tailnet address, MagicDNS through systemd-resolved). Not
   `ip=dhcp`: Debian's initramfs reads it too and waits for a lease before booting (found by the
   page test: the boot sat at the root mount for minutes). **A lease that arrives after the boot is
@@ -315,14 +363,14 @@ web/tailscale.ts, the client in its own worker).
 `tests/page-debian.test.ts` (M8 loop 6; in `npm test` when `WEBPC_DISTROS` has debian, as
 `scripts/ci.sh` sets it when the image is current) does on the page what a user does, in a fresh
 browser context (an empty OPFS), from this checkout's server (`tests/start.test.ts` covers the
-fresh clone): Debian on 2 parallel vCPUs (`?ncpus=2&view=both`) to `running`; root logs in on the
+fresh clone): Debian (through UEFI, with `tests/debian-unattended.ts`'s credentials) on 2 parallel vCPUs (`?ncpus=2&view=both`) to `running`; the firmware's variable store is saved beside the overlay within seconds; root logs in on the
 serial terminal; from there `until grep -q 'login: ' /dev/vcs1` waits for tty1's getty; root logs
 in on the screen and runs `echo from-$(tty)-$((6*7)) >/dev/ttyAMA0`, which the serial terminal
 shows (`from-/dev/tty1-42`); `/dev/vcs1` read on the serial side shows the screen's prompt and
 command; the canvas isn't black. Then a file written and `sync`ed survives a reload (no shutdown:
 as a closed tab), and Reset disk (the dialog accepted) boots a disk without it. Three Debian boots:
-~111 s alone (running at ~32 s, logged in on both at ~38 s, reloaded and running at ~69 s, reset
-and running at ~106 s); `WEBPC_PAGE_RUNS=N` repeats it. It and the `npm start` test take turns (`tests/debian-lock.ts`, a lock
+~178 s alone (running at ~55 s, logged in on both at ~62 s, reloaded and running at ~112 s, reset
+and running at ~172 s); `WEBPC_PAGE_RUNS=N` repeats it. It and the `npm start` test take turns (`tests/debian-lock.ts`, a lock
 directory in the temp directory): two Debian page boots at once beside the rest of `npm test`
 loaded the host enough to fail a realtime bare-metal test (docs/backlog.md). In CI it takes ~3 min
 (the host is shared with the other test files); `npm test` went from ~253 to ~290 s.
@@ -404,24 +452,31 @@ each step skipped when its output is current:
    touches files without changing them rebuilds nothing, which cargo's mtime fingerprints alone
    wouldn't give (a real rebuild is LTO with one codegen unit: minutes).
 5. **Debian** (`tools/debian.ts`, below): skipped when `target/images/debian/.prepared` names the
-   pinned image and the three outputs exist.
+   pinned image and the disk exists (the page boots it unmodified: no kernel or initrd is taken
+   out, and an older pair is deleted).
+5b. **The UEFI firmware** (`images/build.sh edk2`: EDK2 in a rootless Podman container, ~1 min the
+   first time, which also pulls the build image and clones EDK2; the user's answer "for now"):
+   skipped when `images/build.sh --check edk2` says it's current. Without Podman the start
+   stops *before* the long steps, saying how to install it. `tests/start.test.ts` covers the
+   message and (with `WEBPC_START_COLD=1`) the build in the copy.
 6. **The server** (`tools/serve.ts`) on `127.0.0.1:8080` (`PORT` or `--port`; `--host` for
    another interface, with a warning that a remote browser over plain HTTP gets no cross-origin
    isolation, so forwarding the port is the way), then the URL and the `ssh -L` line. A port in
    use stops it with a message rather than moving to another port: **OPFS is per origin, so the
    saved disk belongs to the port** (another port boots a fresh disk). `--prepare-only` does
-   steps 1–5 and exits.
+   steps 1–5b and exits.
 
 What stops it is said in one message with what to do, and it exits 1. Time on the dev VM (M8 loop
 5, bench/boot/REPORT.md): nothing to do, ~0.1 s to the URL (0.2 s through npm); a fresh clone
 with the download cached, 1.2 s plus the core's build (10–11 s cold; the toolchain's install,
 722 MB, 6 s on this network); the download itself, 7.8 s.
 
-**Debian's preparation** (`tools/debian.ts`, also `images/build.sh debian`; the pin is
+**Debian's preparation** (`tools/debian.ts`; `npm start` links the disk only, `images/build.sh
+debian` also extracts the kernel and initrd for the tests and benchmarks' direct boots; the pin is
 `images/debian.json`): the qcow2 from the download cache (`WEBPC_DL`, default
 `target/images/dl`), or downloaded there with progress (a line rewritten on a terminal, every 10%
-otherwise) through a `.part` file, and checked against the pinned SHA512 either way (~1 s); then
-the kernel and initrd out of its `/boot` with `web/bootfs.ts` and `web/ext4.ts` over
+otherwise) through a `.part` file, and checked against the pinned SHA512 either way (~1 s); with
+`images/build.sh debian`, then the kernel and initrd out of its `/boot` with `web/bootfs.ts` and `web/ext4.ts` over
 `web/qcow2.ts` (~0.4 s: 74 MB read through ~1,200 compressed clusters), the kernel checked for the
 arm64 Image magic, and the disk hard-linked from the cache (a copy, reflinked where it can be, if
 the cache is on another filesystem). The outputs are byte for byte what `images/SHA256SUMS`
