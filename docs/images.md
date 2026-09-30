@@ -95,6 +95,13 @@ futexes, fork/exec. Not part of `images/build.sh` or CI; built on demand.
   GOFLAGS=-mod=mod /mnt/go/bin/go build -o /tmp/web /mnt/work/web` (module cache and the work dir
   must be writable: copy `/mnt/work` to `/tmp`). Debian's `golang-go` package would need the network and
   ~250 MB installed, the overlay's writes included.
+  **Under the stress test** (`node bench/stress/stress.ts --initrd target/images/stress/initrd.img --disk2
+  target/images/stress/goroot.ext4 --guest-cmd ...`, docs/testing.md; `?disk2=` in docs/frontend.md): a cold
+  `go build` of `/work/web` alone takes **349 s** on 4 vCPUs in Chromium (the dev VM), and no build
+  (not even `hello`) finished in 300 s beside the stress test's own 10 background loads plus
+  `gostress`. Size a Go loop for that: a long run's builds take 10 minutes or more each. The
+  `gostress` load and `?disk2=` mount (`/dev/vdb`, ext4, read-only) work under `stress.ts`. The
+  harness logs `GOBUILD rc=<n> <s>s` lines a guest loop echoes as `gobuild` events.
 
 ## Gotchas
 
