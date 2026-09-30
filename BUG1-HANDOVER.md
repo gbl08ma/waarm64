@@ -19,6 +19,37 @@ Error: vCPU 1: RuntimeError: unreachable
     at ended (web/vm.ts:573) ...
 ```
 
+## HIGH PRIORITY NEXT: a long-running stress test in Chromium (the user, 2026-09-30)
+
+The user is no longer convinced SSH matters. A fifth symptom (seen twice): **the VM keeps answering
+over SSH, but the page's display freezes and every metric (MIPS, JIT blocks, IRQ/s, uptime) stops
+updating.** So the vCPU, device and Tailscale workers go on while whatever draws the page and
+polls the counters (the main thread, or web/app's worker) stops for good. Together with BUG1's
+panic, the guest's hard lockup (a vCPU worker stalled 10–20 s), the slowdown beforehand, the steady
+JIT growth and the 6 GB tab, this reads like host-side stalls or starvation that get worse over a
+long session. Hypotheses 3 and 5 above, and docs/backlog.md's JIT-growth and tab-bloat entries.
+
+**The next step is a long-running stress test under headless Chromium**, not more tailnet-specific
+testing. It was planned for the end of an earlier milestone and postponed until the system was
+complete enough; now it is. Scope:
+- The real page (web/app) or the same stack, parallel SMP with 4 vCPUs, the JIT, Debian, for hours.
+- A mixed guest load: compiles (Go if the image can have it, else C), busy loops, fork/exec and
+  mmap churn, disk and console I/O, optionally network.
+- Sampled throughout: every metric the page shows, per-worker liveness (the longest gap between
+  chunks per vCPU; the page's and coordinator's update cadence), JIT blocks, modules and table
+  size, renderer and worker memory (CDP `Performance.getMetrics`, `performance.measureUserAgentSpecificMemory`),
+  and the guest's dmesg (lockup and RCU-stall reports).
+- It must detect and report: a panic (with the dump, see above), a frozen page with a live guest,
+  a stalled vCPU, memory growth, a slowdown. Reuse `bench/results/local/stress-debian.ts` (the
+  first attempt, 500 s) as the start.
+- Bounded runs under CLAUDE.md's rules. A multi-hour run goes in chunks under the tool's cap, or
+  runs detached with a timeout and a log you check.
+
+Uncommitted in the working tree when the tailnet-CI agent stopped (43e3b25 is its last commit;
+NET-CI-HANDOVER.md has its state): changes to tests/net-tailnet.test.ts, tests/net/tailnet.sh and
+tests/browser/tailnet{.html,-worker.ts}, probably the start of an SSH-into-guest test. Finish or drop
+it; lower priority than the stress test.
+
 ## Where the panic is: the DSB deadlock assert (certain)
 
 The release wasm carries DWARF, so the site can be read off the binary that crashed. **llvm-symbolizer
