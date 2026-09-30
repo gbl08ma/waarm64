@@ -12,6 +12,14 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   up Keccak and are plain SIMD128 lowerings). Each needs handlers, corpus groups (the generator
   already knows how to avoid them), the ID fields, a decoder-sweep update, a `VmConfig.features`
   bit, and the rule: advertise only if faster than what guests do without it.
+- **FEAT_RNG (`RNDR`, `RNDRRS`)** (the user, 2026-09-30): two system-register reads, fed in
+  realtime mode from the host's `crypto.getRandomValues()` (a per-vCPU pool refilled by the
+  host, as the console's rings are), and in deterministic mode from a seeded PRNG so step counts
+  stay exact. `ID_AA64ISAR0_EL1.RNDR` = 1, a `VmConfig.features` bit, corpus coverage of the
+  NZCV result (success sets 0000; an empty pool may fail with Z = 1, which guests retry). EDK2
+  uses it when present (`RngDxe`, stack cookies: M8 phase B's QEMU runs log `ARM-RNDR`), and
+  Linux seeds its CRNG from it at boot, before `virtio_rng` loads from the root filesystem (see
+  "No `rng-seed` in the DT" below).
 - **Self-hosted debug:** breakpoints, watchpoints and `MDSCR_EL1.SS` single step raise nothing
   (the registers are RAZ/WI). Needed for in-guest `gdb` hardware breakpoints and `ptrace` single
   step (kvm-unit-tests `debug-*`).
@@ -132,7 +140,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - **Booting conventional arm64 disk images unmodified:** now M8 phase B (PLAN.md §3: through
   UEFI firmware and the image's own bootloader; disk in and out). Until then a distro's kernel
-  and initrd are extracted from its image ahead of time (`tools/debian.ts`).
+  and initrd are extracted from its image ahead of time (`tools/debian.ts`). Loop 0's findings
+  and the design: [plans/uefi.md](plans/uefi.md).
+- **ACPI** (only if an ACPI-only guest comes into scope: Windows, an enterprise distro that won't
+  boot from a DT). The DT stays the machine's description (plans/uefi.md "DT or ACPI"); the path
+  that keeps AML out of the core is EDK2's DynamicTablesPkg building the tables from our DT, plus
+  AML for the virtio-mmio transports (its parser doesn't cover them) or a move to virtio-pci; the
+  screen then needs a firmware GOP.
 - The timer, GIC and PL011 tests have no hardware oracle; a GICv3-free subset of `timer.c`
   (ISTATUS, TVAL, CNTKCTL traps) could run on hvf.
 - virtio-console has no host input path (its receive buffers are held forever), so a guest's

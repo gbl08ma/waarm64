@@ -28,7 +28,8 @@ with virtio devices, Alpine and Debian, a JIT that boots Alpine in ~10 s in Chro
 extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vCPU for users).
 **Current:** M8, a usable machine (PLAN.md §3). Phase A (the interactive machine: `npm start`, the
 page in `web/app/`, [docs/frontend.md](docs/frontend.md)) is done; phase B (your own disk: booting
-unmodified images, disk in and out) waits for its kickoff (`M8-PHASEB-HANDOVER.md` drafts it); of
+unmodified images through UEFI, disk in and out; `M8-PHASEB-KICKOFF.md`, [docs/plans/uefi.md](docs/plans/uefi.md))
+is under way (`M8-PHASEB-HANDOVER.md`); of
 the C tracks, networking is under way (`M8-PHASEC-NETWORKING-HANDOVER.md`). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
@@ -43,7 +44,7 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   points at the Mac host (`~/.ssh/config`). The `oracle` VM (Debian 13, 4 vCPUs, 8 GiB) shares the
   Mac: `ssh macmini.lan /opt/homebrew/bin/limactl shell oracle <cmd>`.
 - Packages from zypper: Node 26, Chromium 153 (`/usr/bin/chromium`), clang/lld/llvm, qemu (user,
-  system, tools), podman (rootless), dtc, capstone, dejavu-fonts (headless Chromium draws no page
+  system, tools), podman (rootless), dtc, capstone, qemu-uefi-aarch64 (EDK2 for the UEFI oracle), mtools, dejavu-fonts (headless Chromium draws no page
   text without a font: screenshots of the page need it); Rust through rustup and `rust-toolchain.toml`.
   Add what's missing with `sudo zypper in`, and note it here.
 - **Go** (from zypper; `net/tailscale/go.mod` pins the toolchain) builds the Tailscale wasm backend, `net/tailscale/build.sh`. The networking tests' headscale and peer run in rootless Podman: `tests/net/tailnet.sh up|down`. Never Docker in scripts or CI.
@@ -98,7 +99,8 @@ node bench/spike/memory/run-all.ts   # M0.5 memory suite
 
 The full benchmark list is in [docs/benchmarking.md](docs/benchmarking.md). **`scripts/ci.sh` must
 pass before any piece of work is considered done** (and `scripts/ci-net.sh` when it touches the network, `scripts/ci-long.sh` when it touches the JIT, SMP
-or the memory model).
+or the memory model). **Exception:** a change that only edits docs (`.md` files or code comments)
+needs no CI run.
 
 ## Conventions
 

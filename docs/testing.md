@@ -1,7 +1,7 @@
 # Testing
 
 Layered, cheapest first; `scripts/ci.sh` runs every layer and must pass before any piece of work
-is done. **`scripts/ci-net.sh`** runs the network tests on Debian (`net-guest`, `page-network`,
+is done (not needed for a change that only edits docs: `.md` files or code comments). **`scripts/ci-net.sh`** runs the network tests on Debian (`net-guest`, `page-network`,
 `net-tailnet`, ~4 min); it must pass too when a change touches the network (the gateway,
 virtio-net, the Tailscale client, the Network menu, Debian's network command line). The rest of
 the network's tests (`network`, `gateway`, `net`, `devices`) are in `ci.sh`. **`scripts/ci-long.sh`**

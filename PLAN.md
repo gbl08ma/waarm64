@@ -114,7 +114,15 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   numbers: `bench/boot/REPORT.md` "M8 loop 0"–"M8 loop 8".
 - **B. Your own disk: boot an unmodified image, take the disk back** (the user, 2026-09-30:
   before snapshots, the basic loop has to be right: load a disk into the VM, boot it, work, shut
-  down, take the modified disk away). Kickoff to confirm; outline in `M8-PHASEB-HANDOVER.md`.
+  down, take the modified disk away). Kickoff confirmed 2026-09-30 (`M8-PHASEB-KICKOFF.md`): **images in scope are Debian and
+  Alpine only** (Alpine's UEFI cloud images). Loop 0 (the QEMU oracle, 2026-09-30) settled the
+  shape ([docs/plans/uefi.md](docs/plans/uefi.md)): **EDK2's ArmVirtQemuKernel** entered like a
+  kernel through our direct boot (no code flash, no reset vector; stock ArmVirtQemu requires
+  fw_cfg), **one CFI flash bank for EFI variables**, the framebuffer moved out of `/memory`
+  (EDK2 ignores `/reserved-memory`), a **minimal fw_cfg** to pass systemd credentials to
+  Debian (its first boot otherwise stops at `systemd-firstboot` and locks root), a generated
+  NoCloud seed disk for Alpine, and **the DT stays** the guests' description (DT and ACPI
+  measured the same on these images; the user asked).
   - **Disk in:** an image by URL (hosted, as the Debian image is now) or a local file, qcow2 or raw,
     over the existing blk backends. The same path takes a disk of changes back in (below).
   - **Boot it unmodified through UEFI** (the user, 2026-09-30): EDK2's ArmVirtQemu firmware
