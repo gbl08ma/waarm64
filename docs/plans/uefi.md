@@ -206,3 +206,10 @@ path, M8 phase A).
   Consequence for loop 3: with a DT and no `console=`, `/dev/console` is the serial port, so
   systemd-firstboot's questions appear on the serial view while the screen waits; the page must
   make that visible (e.g. show the serial view, or say where to look).
+- **The switch (asked after loop 2):** the page's Debian may boot through UEFI, as long as users
+  eventually get to supply a disk image that has already been through its first-boot
+  configuration (loops 4–6 give them that: a disk in, a changes file or whole disk out).
+- **The firmware for `npm start`:** built with Podman (`images/build.sh edk2`), for now.
+- **The network card's settings go through fw_cfg** (a systemd credential with the `.network`
+  file, passed when the Network menu connects a card): a device setting, not a first-boot
+  credential.

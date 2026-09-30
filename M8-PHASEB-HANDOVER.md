@@ -26,29 +26,37 @@ bootloaders use everywhere (70 s → 3 s from the boot manager to GRUB).
 
 ## Loop 3: Debian unmodified, end to end (the kickoff's loop 3)
 **Goal:** the page boots Debian's published qcow2 through EDK2 and GRUB, with no extraction
-(tools/debian.ts only downloads; the page's machine drops its `kernel`/`initrd`). **Check with the
-user first:** the page's Debian switching to UEFI changes what the user sees (firmware and GRUB
-before the kernel, first-boot questions on the serial console): the kickoff lists it.
+(tools/debian.ts only downloads; the page's machine drops its `kernel`/`initrd`). **The user
+approved the switch (2026-09-30)**, on the condition that users eventually get to supply a disk
+image that has already been through its first-boot configuration (loops 4–6: disk in, and a
+changes file or whole disk out, give them that; don't lose it). Their answers are in
+plans/uefi.md "The user's answers for the page".
 
-What to do (the user's answers are in plans/uefi.md "The user's answers for the page"):
-1. `web/app/machine.ts`: Debian's machine becomes `firmware` (the page serves `QEMU_EFI.fd` and
-   its `LICENSES.txt`; `npm start` builds or fetches it: decide how, `images/build.sh edk2` needs
-   Podman and ~1 min, which `npm start` users may not have: ask if a prebuilt download is wanted).
-   The flash bank is kept per disk (OPFS, next to the overlay, keyed like it) and saved at
-   power-off and on `close`.
-2. **No credentials in the release build:** Debian's first boot runs systemd-firstboot on the
-   serial console (no `console=` from GRUB: `/dev/console` is the PL011). The page must make that
-   visible (show the serial view or say where to look). The network credential (`network.network.card`)
-   that phase A put on the command line has to move (fw_cfg is only for tests: ask the user
-   whether the network card's credential may go through fw_cfg, since it isn't a first-boot
-   "hack" but a device setting).
-3. Menus wait for their timeout (GRUB 5 s). Check keys end to end through xterm.js to EDK2's
+What to do:
+1. `web/app/machine.ts`: Debian's machine becomes `firmware`; the page serves `QEMU_EFI.fd` and
+   its `LICENSES.txt`. **`npm start` builds the firmware with Podman** (`images/build.sh edk2`,
+   ~1 min; the user's answer, "for now"): its checks say so when Podman is missing, and
+   tests/start.test.ts covers the message and the build (the cold-start run too). The flash bank
+   is kept per disk (OPFS, next to the overlay, keyed like it) and saved at power-off and on
+   `close`.
+2. **No first-boot credentials in the release build:** Debian's first boot runs systemd-firstboot
+   on the serial console (no `console=` from GRUB: `/dev/console` is the PL011). The page must make
+   that visible (show the serial view or say where to look).
+3. **The network card's settings go through fw_cfg** (the user's answer): the `.network` file
+   phase A passed on the command line (`systemd.set_credential_binary=network.network.card:…`)
+   becomes the fw_cfg file `opt/io.systemd.credentials/network.network.card`, passed only when the
+   Network menu connects a card (web/app, docs/frontend.md "Network"); `scripts/ci-net.sh` must
+   pass. The page's other command-line settings (the masked units, `apparmor=0`, the console
+   choice) no longer apply: GRUB owns the command line. Say what that costs (loop 2 measured ~6 s
+   of userspace) and what the user's console setting becomes.
+4. Menus wait for their timeout (GRUB 5 s). Check keys end to end through xterm.js to EDK2's
    terminal and GRUB (arrows, F-keys, Esc, Ctrl-X).
-4. Measure the page's boot against today's direct boot (bench/run.ts in Chromium, CLAUDE.md
+5. Measure the page's boot against today's direct boot (bench/run.ts in Chromium, CLAUDE.md
    "Performance"). Before that, find the busy wait between EDK2's boot manager and GRUB's menu
    (5.4G steps in ~3 s, backlog "The firmware configuration").
-5. Update tests/page-debian.test.ts, tests/start.test.ts (Debian's kernel/initrd identity check
-   goes), docs/frontend.md, and say what changes for the user.
+6. Update tests/page-debian.test.ts (it logs in: the tests may pass first-boot credentials over
+   fw_cfg, the release page passes none), tests/start.test.ts (Debian's kernel/initrd identity
+   check goes; the firmware build comes in), docs/frontend.md, and say what changes for the user.
 
 ## Gotchas (loops 0–2)
 - `localhost/webpc-images` (images/Containerfile) is **amd64** under qemu-user here: never build
