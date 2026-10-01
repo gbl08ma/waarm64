@@ -137,15 +137,15 @@ export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS): Promise<(
 }
 
 /**
- * Opens (or creates) the overlay directory `name` for the image at `url`,
+ * Opens (or creates) the overlay directory `name` for the image identified by `want`,
  * once its previous holder has closed it (`lockOverlay`: the hand-over between
  * machines, docs/frontend.md "Overlay hand-over"). Its `base` file records the
- * image (URL path and size): an overlay only makes sense over the bytes it was
+ * image's identity `want` (`diskIdentity` in web/devices.ts: a URL's path and the size, or a chosen file's name, size and modification time): an overlay only makes sense over the bytes it was
  * written against, so a mismatch is an error. Dedicated workers only (sync
  * access handles).
  */
-// ponytail: the image is identified by path and size, not content; add a hash if images get replaced in place.
-export async function openOverlay(name: string, url: string, size: number, waitMs = OVERLAY_WAIT_MS): Promise<OverlayFiles> {
+// ponytail: the image is identified by path (or file name) and size, not content; add a hash if images get replaced in place.
+export async function openOverlay(name: string, want: string, waitMs = OVERLAY_WAIT_MS): Promise<OverlayFiles> {
   const release = await lockOverlay(name, waitMs);
   const handles: FileSystemSyncAccessHandle[] = [];
   const done = () => {
@@ -154,7 +154,6 @@ export async function openOverlay(name: string, url: string, size: number, waitM
   };
   try {
     if (typeof navigator.storage === 'undefined') {
-      const want = JSON.stringify({ path: new URL(url).pathname, size });
       const o = inMemory.get(name) ?? { data: memFile(), map: memFile(), base: want };
       if (o.base !== want) throw new Error(`overlay ${name} belongs to ${o.base}, not ${want}`);
       inMemory.set(name, o);
@@ -167,7 +166,6 @@ export async function openOverlay(name: string, url: string, size: number, waitM
       return h;
     };
     const [data, map, base] = [await open('data'), await open('map'), await open('base')];
-    const want = JSON.stringify({ path: new URL(url).pathname, size });
     if (base.getSize() === 0) {
       base.write(new TextEncoder().encode(want), { at: 0 });
       base.flush();

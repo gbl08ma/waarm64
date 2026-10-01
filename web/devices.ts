@@ -16,12 +16,15 @@ import { openDisk, type Disk } from './qcow2.ts';
  * requests; `size` (its virtual size in bytes, a multiple of 512) is filled in
  * by `bootVm` from the file's first bytes if missing. With `overlay` (an OPFS
  * directory name) the disk is writable: writes go to a copy-on-write overlay
- * there (web/overlay.ts), which persists across boots and belongs to that image.
+ * there (web/overlay.ts), which persists across boots and belongs to that image. With `file` (a
+ * `File` the user chose, structured-cloned to the device worker) the disk is that file instead of
+ * `url`, read with `FileReaderSync` (workers only); the overlay then belongs to the file's name,
+ * size and modification time (`diskIdentity`).
  */
 export type DeviceSpec =
   | { type: 'console' }
   | { type: 'rng' }
-  | { type: 'blk'; url: string; size?: number; overlay?: string }
+  | { type: 'blk'; url: string; size?: number; overlay?: string; file?: Blob }
   | NetSpec
   | P9Spec
   | InputSpec;
@@ -373,6 +376,27 @@ function httpSource(url: string): Source {
   };
 }
 
+/** An image the user chose (a `File`): `FileReaderSync`'s synchronous slices, so workers only. */
+function blobSource(file: Blob): Source {
+  const reader = new FileReaderSync();
+  return {
+    size: file.size,
+    read(off, len) {
+      if (off + len > file.size) return undefined;
+      try {
+        const b = reader.readAsArrayBuffer(file.slice(off, off + len));
+        return b.byteLength === len ? new Uint8Array(b) : undefined;
+      } catch {
+        return undefined; // the file changed or went away under us
+      }
+    },
+  };
+}
+
+/** What an overlay over `d`'s image belongs to (web/overlay.ts `openOverlay`): the URL's path, or a chosen file's name, size and modification time; and the virtual size. */
+export const diskIdentity = (d: { url: string; file?: Blob }, size: number) =>
+  JSON.stringify(d.file ? { file: (d.file as File).name, bytes: d.file.size, modified: (d.file as File).lastModified, size } : { path: new URL(d.url, 'http://x').pathname, size });
+
 /** An image in a local file (`file:` URLs, Node only: its boots and the JIT's). */
 export async function fileSource(url: string): Promise<Source> {
   const fs = await import('node:fs');
@@ -492,8 +516,8 @@ export class Devices {
 
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
   static async open(init: DevicesInit, out: (device: number, text: string) => void) {
-    const overlays = await Promise.all(init.specs.map((d) => (d.type === 'blk' && d.overlay ? openOverlay(d.overlay, d.url, d.size ?? 0) : undefined)));
-    const sources = await Promise.all(init.specs.map((d) => (d.type !== 'blk' ? undefined : d.url.startsWith('file:') ? fileSource(d.url) : httpSource(d.url))));
+    const overlays = await Promise.all(init.specs.map((d) => (d.type === 'blk' && d.overlay ? openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)) : undefined)));
+    const sources = await Promise.all(init.specs.map((d) => (d.type !== 'blk' ? undefined : d.file ? blobSource(d.file) : d.url.startsWith('file:') ? fileSource(d.url) : httpSource(d.url))));
     return new Devices(init, overlays, sources, out);
   }
 

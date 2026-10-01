@@ -71,6 +71,7 @@ Page → worker:
   draws the framebuffer on it (web/display.ts) on its own animation frames. `params`: extra kernel
   parameters (direct-boot machines). `credentials`: systemd credentials over fw_cfg for a firmware
   machine, beside the machine's own (the network card's). `disk2`: a URL for the second disk.
+  `disk`: `{url?, file?, overlay}`, the root disk to boot instead of the machine's (below, "Your own disk").
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
   the overlay) is closed once it's there. The page then terminates the worker (after 3 s without
@@ -292,6 +293,29 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
 - **The network card's settings** (`machine.network.credentials`) go over fw_cfg as the
   credential `opt/io.systemd.credentials/network.network.card`, whenever the machine has a card
   (always, on this machine); the unmasked networkd and resolved do the rest.
+
+## Your own disk
+
+A `firmware` machine (Debian) boots a disk of the user's own (M8 phase B loop 4): the header's
+**Open disk…** (a file picker), a file dropped on the page, or `?disk=<url>` (served with HTTP
+range support, like the machine's own). The machine restarts on it (confirmed if it runs); raw or
+qcow2 is told by the file's magic (a qcow2 with a backing file is refused until loop 6).
+- The `File` goes to the machine worker in `start.disk`, then, structured-cloned inside the
+  device spec (`{type: 'blk', file}`), to the device worker, which reads slices with
+  `FileReaderSync` (web/devices.ts `blobSource`); its capacity is the qcow2 header's virtual size or
+  the file's size (web/vm.ts).
+- **Its changes are its own:** the overlay is `webpc-disk-<hash>` (`diskOverlay`, machine.ts: a hash
+  of the file's name, size and modification time, or of the URL's path), with the variable store
+  (`flash`) beside it, and the overlay's `base` file records the same identity
+  (`diskIdentity`, devices.ts), so a mismatch is `disk-mismatch`. Choosing the same file again,
+  later or in another tab, finds its changes. The page doesn't remember the file itself (a `File`
+  can't be kept; a `FileSystemFileHandle` in IndexedDB could, with a permission prompt each
+  session: backlog). **Reset disk** resets the chosen disk's overlay.
+- The disk is identified by name, size and modification time, not by content (a hash of a
+  multi-GB file would block the boot): two different files with all three equal share an overlay.
+- Tests: `tests/page-disk.test.ts` (WEBPC_DISTROS=debian; two Debian boots): a symlink named
+  `mydisk.qcow2` to Debian's image through the picker, a file written, its overlay and flash in
+  OPFS, then the same file chosen again after a reload has the file.
 
 ## Network
 

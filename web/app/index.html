@@ -30,7 +30,7 @@
   button { font: inherit; color: var(--text); background: transparent; border: 0; padding: 4px 12px; cursor: pointer; }
   button:hover { background: #1e232a; }
   .views button[aria-pressed=true] { background: #253044; color: #fff; }
-  #restart, #reset-disk { border: 1px solid var(--line); border-radius: 6px; }
+  #restart, #reset-disk, #open-disk { border: 1px solid var(--line); border-radius: 6px; }
   #message { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; padding: 10px 16px; background: #2a1215; color: #ffb4b6; border-bottom: 1px solid #5c1d22; }
   #message[data-kind=warn] { background: #2a2312; color: #f3d98b; border-color: #5c4b1d; }
   #message[hidden] { display: none; }
@@ -119,6 +119,7 @@
     <div class="fkeys" id="fkeys"></div>
   </div></details>
   <button id="fullscreen" title="Full screen: browser shortcuts (Ctrl+W, Ctrl+T) and Esc go to the machine; hold Esc to leave">Full screen</button>
+  <button id="open-disk" title="Boot a disk image of your own: a qcow2 or raw file (or drop one on the page)">Open disk…</button><input type="file" id="open-disk-input" hidden>
   <button id="reset-disk" title="Delete what the machine wrote to its disk and boot from the image again" hidden>Reset disk</button>
   <button id="restart">Restart</button>
 </header>

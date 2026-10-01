@@ -1,4 +1,4 @@
-**Handover, 2026-10-01: M8 phase B (your own disk). Loops 0–3 are done; loop 4 (disk in)
+**Handover, 2026-10-01: M8 phase B (your own disk). Loops 0–4 are done; loop 5 (disk out)
 is next.** The brief is `M8-PHASEB-KICKOFF.md` (confirmed by the user
 2026-09-30: the outline is OK, **images in scope are Debian and Alpine only**). Phase A's handover
 is in git history; networking has its own (`M8-PHASEC-NETWORKING-HANDOVER.md`).
@@ -16,7 +16,8 @@ docs/frontend.md, `web/app/machine.ts`, `web/app/` (the page and its machine wor
 | 1 | `918a8b8` | `images/build.sh edk2` (ArmVirtQemuKernel, reproducible), `tools/uefi-oracle.ts`, `images/alpine-uefi.json` |
 | 2 | `bc7bd3a` | ABI 29, the firmware configuration: `VmConfig.firmware`, a CFI flash bank (`core/src/flash.rs`), fw_cfg (`core/src/fw_cfg.rs`), the PL031 always (virtual time when deterministic), `vm_flash`; `BootOptions.firmware` (web/vm.ts); TTBR0 global TLB entries cached in parallel SMP; `web/fat.ts`; in-memory overlays in Node; `shell.img` and `images/build.sh alpine-uefi`; tests |
 
-| 3 | (this commit) | Debian unmodified on the page: `firmware` machine, flash persistence, `npm start` with Podman-built EDK2, 80×25 firmware console, keys test, credentials over fw_cfg |
+| 3 | `98de8e9` | Debian unmodified on the page: `firmware` machine, flash persistence, `npm start` with Podman-built EDK2, 80×25 firmware console, keys test, credentials over fw_cfg |
+| 4 | (this commit) | Disk in: `File` blk backend (`blobSource`, FileReaderSync), `diskIdentity`, `diskOverlay`, `start.disk`, Open disk… / drop / `?disk=`, `tests/page-disk.test.ts` |
 
 Loop 2 in short: our machine boots `QEMU_EFI.fd` like a kernel (RAM + 512 KiB; the DTB stays in
 the top 2 MiB, EDK2 copies it first), and EDK2 boots Debian's published qcow2 (shim, GRUB) and
@@ -26,22 +27,15 @@ EFI variable across two boots (`edk2-shell` in tests/steps.txt, native, Node int
 The big finding: parallel SMP didn't cache global TLB entries in TTBR0, which firmware and
 bootloaders use everywhere (70 s → 3 s from the boot manager to GRUB).
 
-## Loop 4: disk in (the kickoff's loop 4)
-**Goal:** a local disk image (a `File`: qcow2 or raw by magic) as a blk backend next to the HTTP
-range one, and the page's way to boot it. The user's condition for the switch to UEFI still
-stands: users must be able to supply a disk that has been through its first-boot configuration
-(loops 4–6). Read docs/frontend.md "Debian through UEFI" first.
-
-What loop 3 leaves for it:
-- The page's machine has no disk choice: `MACHINES.debian.disk` is a URL and its overlay is
-  `webpc-debian`. The worker protocol grows a disk (URL or `File`) in `start`; the overlay and the
-  flash (`loadFlash`/`saveFlash`, `<overlay>/flash`) are keyed by the disk's identity, so a user's
-  disk needs its own overlay name (kickoff: "keyed by the base image's identity"; today
-  `openOverlay` checks URL path and size only: a `File` has no path, so hash or name+size+mtime).
-- A `File` goes to the device worker as a transferable/structured clone; `FileReaderSync` reads
-  slices there (web/devices.ts's blk backends, web/qcow2.ts's `openDisk`).
-- **No first-boot credentials in the release page** (the user's answer): the tests pass them with
-  `?credential=` (tests/debian-unattended.ts).
+## Loop 5: disk out (the kickoff's loop 5), then loop 6
+Loop 4 (done 2026-10-01) is in docs/frontend.md "Your own disk": the page's `chosen` disk
+(`DiskChoice` in machine.ts) carries its overlay name into the worker; the overlay and the flash
+are keyed by it. Start loop 5 from `web/overlay.ts` (the overlay's `data`/`map` files are what the
+changes export reads) and `web/qcow2.ts` (the reader; loop 6 adds backing files). Open from loop 4:
+the chosen file isn't remembered across reloads (backlog); a raw `File` goes through the same
+`openDisk` but only qcow2 is tested on the page; the identity is name+size+mtime, no content hash
+(the kickoff's backing-file hash for loop 5 needs a SHA-256 of the base: streaming it from the
+`File` is the cost to measure there). Still true: **no first-boot credentials in the release page**.
 
 ## Loop 3 (done 2026-10-01): what landed
 `MACHINES.debian` is `firmware: true` (web/app/machine.ts: `kernel` is `QEMU_EFI.fd`, no initrd or

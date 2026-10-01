@@ -62,7 +62,7 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
 - `VmConfig.devices`/`ndevices` point at up to 32 `DeviceEntry`s (device ID, offered features,
   queue count ≤ 8, QueueNumMax ≤ 1024, config length ≤ 256); index = transport slot, one DT node
   each, in slot order (QEMU fills from the top of its window; we fill from slot 0).
-- Host side: `{devices: [{type: 'blk', url, overlay?}, {type: 'net', adapter}, …]}`
+- Host side: `{devices: [{type: 'blk', url, overlay?, file?}, {type: 'net', adapter}, …]}`
   (`web/vm.ts` `DeviceSpec`; `guestDevices` and `testDevices` build the tests' sets).
 
 ## Devices
@@ -91,7 +91,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   compressed clusters cached (1 natively).
 - **Writable disks: a copy-on-write overlay** (`web/overlay.ts`) in an OPFS directory, 4 KiB
   blocks: `data` holds written blocks in first-write order, `map` a u32 per disk block (0 = base,
-  n = slot n − 1), `base` the image's URL path and size (a mismatch refuses to open). A block's
+  n = slot n − 1), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
   slot is written before its map entry, so a crash leaks a slot but never maps garbage. Opened
   with synchronous access handles (so deterministic mode stays exact) under the overlay's Web Lock
   (`openOverlay`), and closed on `close` (the device worker answers `closed`, and `vm.close()`

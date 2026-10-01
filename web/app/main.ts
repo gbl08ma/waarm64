@@ -4,11 +4,12 @@
 // web/app/protocol.ts. `?machine=buildroot` picks the test guest, `?ncpus=N`
 // the vCPU count, `?view=screen|terminal|both` the first view (the last one
 // chosen is remembered), `?params=` extra kernel parameters (direct-boot machines), `?credential=name:value` a systemd
-// credential over fw_cfg (firmware machines), `?disk2=<url>` a read-only second disk.
+// credential over fw_cfg (firmware machines), `?disk2=<url>` a read-only second disk, `?disk=<url>` a root
+// disk of your own (the header's "Open disk…" and a dropped file choose a local one).
 import { Terminal } from '@xterm/xterm';
 import { attachInput, type Input } from '../input.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
-import { defaultCpus, hostMemoryGiB, MACHINES, type Machine, type MachineName } from './machine.ts';
+import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { createNetwork, DEFAULT_SETTINGS, tailscaleBuilt, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
@@ -20,6 +21,14 @@ const ncpus = Number(params.get('ncpus')) || defaultCpus(navigator.hardwareConcu
 const spec: Machine = MACHINES[machine];
 // `?credential=name:value` (repeatable): a systemd credential for a firmware machine, for development and tests.
 const credentials = params.getAll('credential').map((c) => ({ name: c.slice(0, c.indexOf(':')), data: c.slice(c.indexOf(':') + 1) }));
+
+// The root disk: the machine's own, or the one the user chose (a file, or `?disk=<url>`). A chosen disk has its own overlay,
+// so choosing the same file again finds its changes (docs/frontend.md "Your own disk").
+let chosen: DiskChoice | undefined;
+/** The OPFS overlay of the disk the machine boots. */
+const overlayName = () => chosen?.overlay ?? spec.overlay;
+/** What the disk is called on the page. */
+const diskName = () => (chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
 
 // Settings remembered per browser (the view and the network). Storage can be off or throw: then nothing is remembered.
 type Settings = { view?: View; net?: NetworkSettings };
@@ -207,7 +216,7 @@ function start() {
     }
   };
   worker.onerror = (e) => { if (run === r) setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator); };
-  worker.postMessage({ type: 'start', machine, ncpus, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
+  worker.postMessage({ type: 'start', machine, ncpus, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
   if (ip) autoconnect();
   renderNetwork();
 }
@@ -255,11 +264,11 @@ restartBtn.onclick = () => {
 
 // The disk reset (M8 decision 4): stop the machine (its overlay's files are locked while it runs), delete the overlay, start again.
 async function resetDiskAsked() {
-  const name = spec.overlay;
+  const name = overlayName();
   if (!name) return;
   const written = await overlayBytes(name).catch(() => 0);
   const size = !written ? '' : written < 1e6 ? ` (${Math.ceil(written / 1e3)} KB)` : ` (${(written / 1e6).toFixed(0)} MB)`;
-  if (!confirm(`Reset ${spec.label}'s disk? Everything the machine wrote to it${size} is deleted: your files, installed packages and settings. It then boots from the image as published.`)) return;
+  if (!confirm(`Reset ${chosen ? `the disk ${diskName()}` : `${spec.label}'s disk`}? Everything the machine wrote to it${size} is deleted: your files, installed packages and settings. It then boots from the image as published.`)) return;
   await exclusively(async () => {
     await stop();
     term.reset();
@@ -275,7 +284,34 @@ async function resetDiskAsked() {
   });
 }
 resetDiskBtn.hidden = !spec.overlay;
+$('open-disk').hidden = !spec.firmware;
 resetDiskBtn.onclick = () => void resetDiskAsked();
+
+// Your own disk: a local file (raw or qcow2, by its magic), by the picker or dropped on the page. The machine restarts on it; the
+// disk's changes are kept in the browser per file (name, size, modification time), so choosing it again continues where it left off.
+const openDiskInput = $<HTMLInputElement>('open-disk-input');
+async function chooseDisk(choice: { file: File } | { url: string }) {
+  if (!spec.firmware) return; // only a machine that boots through UEFI takes a disk of its own (the test guests' kernels are their own)
+  const next: DiskChoice = { ...choice, overlay: await diskOverlay(choice) };
+  if ((state === 'running' || state === 'booting') && !confirm(`Boot ${next.file?.name ?? next.url}? The machine restarts, like pulling the plug: unsaved work in the guest is lost. Its changes to the current disk are kept.`)) return;
+  chosen = next;
+  $('machine').textContent = `${spec.label} · ${diskName()}`;
+  resetDiskBtn.hidden = false;
+  await restart();
+}
+$<HTMLButtonElement>('open-disk').onclick = () => openDiskInput.click();
+openDiskInput.onchange = () => {
+  const file = openDiskInput.files?.[0];
+  openDiskInput.value = '';
+  if (file) void chooseDisk({ file });
+};
+document.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); });
+document.addEventListener('drop', (e) => {
+  const file = e.dataTransfer?.files[0];
+  if (!file) return;
+  e.preventDefault();
+  void chooseDisk({ file });
+});
 
 $<HTMLButtonElement>('boot-serial-show').onclick = () => { setView(document.body.dataset.view === 'screen' ? 'both' : (document.body.dataset.view as View), false); term.focus(); };
 
@@ -449,4 +485,10 @@ function boot() {
 // Other browsers may work in part; nothing is done for them yet (their pass is in docs/backlog.md).
 const brands = (navigator as Navigator & { userAgentData?: { brands: { brand: string }[] } }).userAgentData?.brands ?? [];
 if (!brands.some((b) => b.brand === 'Chromium')) note = 'webpc is developed and tested in Chromium (and Chrome); in this browser, parts of it may not work.';
+const diskParam = params.get('disk');
+if (diskParam && spec.firmware) {
+  const url = new URL(diskParam, location.href).href;
+  chosen = { url, overlay: await diskOverlay({ url }) };
+  $('machine').textContent = `${spec.label} · ${diskName()}`;
+}
 boot();

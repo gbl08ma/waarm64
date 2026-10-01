@@ -23,6 +23,8 @@ let booting: Promise<Vm> | undefined;
 let stopping = false;
 /** The machine this worker was started for. */
 let current: Machine | undefined;
+/** The OPFS overlay of the disk it boots: the machine's, or the chosen disk's. */
+let overlayName: string | undefined;
 
 self.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
@@ -50,9 +52,9 @@ const same = (a: Uint8Array, b?: Uint8Array) => !!b && a.length === b.length && 
 /** Saves the flash bank if it changed since the last save (a save in flight finishes first). */
 function keepFlash(v: Vm, machine: Machine) {
   const flash = v.flash();
-  if (!flash || !machine.overlay || same(flash, savedFlash)) return saving;
+  if (!flash || !overlayName || same(flash, savedFlash)) return saving;
   savedFlash = flash;
-  return (saving = saving.then(() => saveFlash(machine.overlay!, flash)).catch(() => { savedFlash = undefined; })); // retried at the next change or tick
+  return (saving = saving.then(() => saveFlash(overlayName!, flash)).catch(() => { savedFlash = undefined; })); // retried at the next change or tick
 }
 
 /** Stops `v` and keeps its variable store (firmware machines); once per machine. */
@@ -139,10 +141,12 @@ function explain(err: unknown, machine: Machine): [Problem, string] {
 
 async function start(m: Extract<ToWorker, { type: 'start' }>) {
   const machine: Machine = current = MACHINES[m.machine];
+  overlayName = m.disk?.overlay ?? machine.overlay;
   state('loading');
   // The disk is read by ranges as the guest needs it (not downloaded): check it's there.
-  const flash = machine.firmware && machine.overlay ? loadFlash(machine.overlay).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
-  const disk = fetch(machine.disk, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(machine.disk, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`); });
+  const flash = machine.firmware && overlayName ? loadFlash(overlayName).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
+  const diskUrl = m.disk?.url ?? machine.disk;
+  const disk = m.disk?.file ? Promise.resolve() : fetch(diskUrl, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(diskUrl, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`); });
   const [wasm, kernel, initrd] = await download([CORE, machine.kernel, ...(machine.initrd ? [machine.initrd] : [])], machine);
   await disk;
   if (stopping) return;
@@ -156,7 +160,7 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
     framebuffer: machine.framebuffer, serialIn: m.serial,
     devices: [
       { type: 'rng' },
-      { type: 'blk', url: machine.disk, overlay: machine.overlay },
+      { type: 'blk', url: diskUrl, file: m.disk?.file, overlay: overlayName },
       ...(m.disk2 ? [{ type: 'blk' as const, url: new URL(m.disk2, self.location.href).href }] : []), // no overlay: read-only
       { type: 'input', kind: 'keyboard', port: m.keyboard },
       { type: 'input', kind: 'tablet', port: m.tablet },

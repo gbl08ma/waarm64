@@ -448,6 +448,10 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const specs = await Promise.all((o.devices ?? []).map(async (d) => {
     if (d.type !== 'blk' || d.size !== undefined) return d;
     // The capacity: a qcow2 header's virtual size, or the file size.
+    if (d.file) {
+      const head = new Uint8Array(await d.file.slice(0, 32).arrayBuffer());
+      return { ...d, size: isQcow2(head) ? qcow2Size(head) : d.file.size };
+    }
     if (d.url.startsWith('file:')) {
       const f = await fileSource(d.url);
       const head = f.read(0, 32)!;

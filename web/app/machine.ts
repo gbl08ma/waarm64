@@ -44,6 +44,21 @@ export type Credential = { name: string; data: string };
 /** A machine's credentials as fw_cfg files, where systemd reads them (docs/platform.md "The firmware configuration's devices"). */
 export const credentialFiles = (credentials: Credential[]) => credentials.map((c) => ({ name: `opt/io.systemd.credentials/${c.name}`, data: c.data }));
 
+/** A disk other than the machine's own, chosen on the page: a URL or a local file, with the OPFS overlay (and variable store) that belongs to it. */
+export type DiskChoice = { url?: string; file?: File; overlay: string };
+
+/**
+ * The overlay a chosen disk gets: `webpc-disk-` and a hash of the disk's identity (a file's name,
+ * size and modification time; a URL), so the same disk, chosen again, finds its changes, and a
+ * different one never shares them. The device worker checks the identity again when it opens the
+ * overlay (web/overlay.ts `openOverlay`).
+ */
+export async function diskOverlay(d: { url: string } | { file: File }) {
+  const id = 'file' in d ? `file:${d.file.name}:${d.file.size}:${d.file.lastModified}` : `url:${new URL(d.url, 'http://x').pathname}`;
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id)));
+  return `webpc-disk-${[...hash.subarray(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
 const images = (path: string) => new URL(`../../target/images/${path}`, import.meta.url).href;
 
 export const MACHINES = {

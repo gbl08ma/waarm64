@@ -1,7 +1,7 @@
 // The page ⇄ machine-worker protocol (docs/frontend.md "The worker protocol").
 // The seed of phase D's embedding API: not frozen. Types only.
 import type { VcpuLiveness } from '../liveness.ts';
-import type { Credential, MachineName } from './machine.ts';
+import type { Credential, DiskChoice, MachineName } from './machine.ts';
 
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
@@ -41,6 +41,12 @@ export type ToWorker =
      * ones boot Debian unattended). The release page passes none.
      */
     credentials?: Credential[];
+    /**
+     * The root disk to boot instead of the machine's own (the page's picker, a dropped file or
+     * `?disk=<url>`): a `File` goes to the device worker as is, read in slices. Its `overlay` is the
+     * OPFS directory for what the machine writes and for the variable store.
+     */
+    disk?: DiskChoice;
     /** A second, read-only virtio-blk (the page's `?disk2=<url>`, for tests: /dev/vdb), served over HTTP ranges like the root. */
     disk2?: string;
     /**

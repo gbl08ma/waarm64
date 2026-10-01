@@ -9,7 +9,7 @@ self.onmessage = async (e: MessageEvent<{ type: 'open' | 'close'; name: string; 
   const { type, name, waitMs } = e.data;
   try {
     if (type === 'open') {
-      files = await openOverlay(name, `${location.origin}/disk.img`, 1 << 20, waitMs);
+      files = await openOverlay(name, JSON.stringify({ path: '/disk.img', size: 1 << 20 }), waitMs);
       self.postMessage({ type: 'opened', at: now() });
     } else {
       files?.close();

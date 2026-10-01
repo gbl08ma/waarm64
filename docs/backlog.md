@@ -294,3 +294,5 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - `images/Containerfile` and `images/alpine/user/webpc-user.start` still cite PLAN.md sections
   from before the docs moved; they're image inputs (editing them makes the images stale), so fix
   the comments with their next rebuild.
+
+- **Remember the chosen disk across reloads:** a `File` isn't kept; a `FileSystemFileHandle` in IndexedDB (permission asked each session) would let the page boot the user's disk again without the picker (phase B loop 4).
