@@ -321,6 +321,70 @@ of its own (`org.webpc.agent.0` or similar), a tiny line protocol. Delivery to a
 3. Rejected: writing into the user's disk image (touches their disk behind their back, needs an
    ext4 writer, distro-specific); injecting into an initrd (UEFI images load their own).
 
+## Progress (2026-10-01; loops 0 to 2 done, next: loop 3)
+
+Commits: `c39b6d5` (loops 0 and 1), `9974dda` (loop 2). `scripts/ci.sh` passes at both; `ci-long.sh`
+passed for loop 2. The sections above are as drafted; this one says what happened and what a new
+session should know.
+
+**Loop 0, the oracle** (written up in graphics.md §9). QEMU 11.1.1 needs `sudo zypper in
+qemu-hw-display-virtio-gpu edid-decode` (done in the dev VM, noted in CLAUDE.md);
+`tools/uefi-oracle.ts` gained `--extra=<qemu args>` (use the `=` form). Findings:
+- virtio-gpu binds only on a **modern** mmio transport (`-global virtio-mmio.force-legacy=false`).
+- EDK2's `VirtioGpuDxe` gives a GOP (640×480 first). **GRUB takes it with `gfxterm`: its menu goes
+  to the screen and leaves the serial console**, so anything that pressed Enter at GRUB's serial
+  menu must wait out the timeout instead (the oracle's loader detection saw no menu; kernel at 12.4 s
+  instead of 7.5 s). Not yet decided what the page tests do about it: decide in loop 4.
+- No `efifb` (Blt-only GOP); the screen is dark until udev loads `virtio_gpu` (~10 s into a 21 s
+  QEMU boot), then fbcon takes `fb0`. The driver's first commands: `GET_DISPLAY_INFO`,
+  `RESOURCE_CREATE_2D`, `ATTACH_BACKING`, `SET_SCANOUT`, then `UNREF` of EDK2's resource, then
+  `TRANSFER_TO_HOST_2D` + `RESOURCE_FLUSH` per frame. Features negotiated: EDID only.
+- **fbcon never resizes**: on a display event the guest does `GET_EDID`, `GET_DISPLAY_INFO`,
+  `SET_SCANOUT` res 0, then the *same* resource with a rectangle of the new mode. Bigger than the
+  buffer: clamped to the largest mode that fits (1600×900 asked, 1280×768 got); smaller: the
+  rectangle is smaller than the resource and **the console is cropped**. The host must draw exactly
+  the scanout rectangle. The shrink policy is loop 5's.
+- Not measured (deferred to loop 5 on our machine): GNOME/KDE on Wayland, wlroots, Xorg,
+  simple-framebuffer next to virtio-gpu.
+- A QEMU EDID sample (256 bytes) is in `bench/results/local/qemu.edid` (git-ignored; regenerate it
+  with the oracle: `--cmd` that prints `base64 -w0 /sys/class/drm/card0-Virtual-1/edid`). The
+  RFB `SetDesktopSize` client is `bench/results/local/rfb-resize.ts` (git-ignored, dev-only).
+
+**Loop 1, G0** (`bench/gpu/REPORT.md`, graphics.md §10, JSON in `bench/gpu/results/`).
+- `--enable-unsafe-webgpu` gives an adapter; presenting from a worker on the software adapter also
+  needs `--enable-features=Vulkan --use-angle=swiftshader --use-gl=angle`. `bench/run.ts` takes
+  `--chromium-args`. Real GPU: `bench/gpu/run-mac.sh` (Apple M4, Chrome for Testing 153; a copy in
+  `~/webpc-gpu-bench` on the Mac host).
+- SharedArrayBuffer views are accepted by `writeBuffer`/`writeTexture`/`texSubImage2D` at plain cost.
+- **Decision recorded: canvas 2D for G1, with the swizzle fused into `TRANSFER_TO_HOST_2D`'s
+  gather** (the canvas gets RGBA); WebGPU is the 3D steps' canvas. Real-GPU damaged rectangle
+  0.4 to 1.1 ms with RGBA ready; full frame 1.6 / 3.0 / 5.7 ms at 1080p / 1440p / 4K.
+- Which thread presents is still open (loop 4).
+
+**Loop 2, config changes (ABI 31)** (abi.md "M8 graphics: config changes"). `DevShared.config_gen`
+at offset 20 (odd while the host changes the config), `Devices.changeConfig(i, write)` in
+`web/devices.ts` (`Ctx.changeConfig` for backends), `DevShared::update_config` natively (the caller
+then sets `SIGNAL_DEVICE`). The transport raises INT_CONFIG when it drains the signal and the
+generation is even and new; `ConfigGeneration` (0x0fc) returns unstable values while odd. Snapshots:
+no format change. A guest write still lands in `config` with `EV_CONFIG`; `events_clear`'s
+write-1-to-clear is the gpu backend's to implement on that event. Nothing but unit tests (Rust, a Node
+test) has exercised the interrupt: loop 3's gpu guest is its first real driver.
+
+**Practical notes for the next session**
+- `scripts/ci.sh` takes ~12.5 min when nothing else runs (not the ~5 min the commands list says);
+  run it in the background and wait for the notification, never alongside other Chromium or QEMU
+  work (a contended run was cancelled by a timeout). `cargo fmt --all` first: CI's first step.
+- `tests/browser.test.ts` pins the ABI number; bump it with `ABI_VERSION` if the ABI changes again.
+- `tsc` covers `bench/` including git-ignored files under `bench/results/local/`.
+
+**Next: loop 3, the device** (as the loops section above says): the backend in TypeScript and its
+Rust twin (`core/tests/common/gpu.rs`), the EDID generator (checked with `edid-decode`), `Image-gpu`
+and the gpu test guest with its KMS program (`images/`, own `tests/steps.txt` row), byte-exact
+natively then in Node and Chromium, a command-parser fuzz/random test, planted bugs as listed.
+Suggested order: EDID generator and its test; the command parser/backend with a Node test on
+hand-built queues; the Rust twin; then the image and guest. The first real exercise of the loop-2
+interrupt is the display event in that guest.
+
 ## Check with the user first
 - Any dependency (none is expected: the EDID, the backend and the presentation are ours).
 - Anything on the Mac host beyond G0's measurements (answer 5 covers headless Chromium runs of
