@@ -167,7 +167,11 @@ their code.**
 - **Cap memory on heavy runs** (`npm test`, `scripts/ci.sh`, multi-machine experiments):
   `systemd-run --user --scope -q -p MemoryMax=10G -p MemorySwapMax=0 -- timeout N <cmd>`. A leak
   once grew a Node test process to 7 GB and the VM's OOM kill took the whole Claude session down
-  (M8 loop 8); a capped scope dies alone.
+  (M8 loop 8); a capped scope dies alone. **Subagents cap every `node` and `cargo` run**, small
+  ones too, with caps that sum under the VM's memory (a "pure TypeScript" unit test run uncapped
+  with a planted bug reached 10 GB and killed the snapshots lane's first session), and tests
+  never `assert.deepEqual` large buffers (a mismatch builds a diff of them): compare with
+  `Buffer.compare` and fail with a short message.
 - **Never `pkill -f`/`pgrep -f` a pattern that appears in your own command line**: it kills your
   shell (exit 144) or makes a wait loop wait forever. Find the PID and `kill <pid>`; wait on
   background jobs through their completion notification, not polling loops. Before a benchmark

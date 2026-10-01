@@ -12,7 +12,7 @@ reviews, merges) stay with the orchestrating session.
 | Loop | State |
 |---|---|
 | 0. Plan revisited after phase B, ABI 30 design note | done |
-| 1. Core, round-robin | next (orchestrator) |
+| 1. Core, round-robin | in progress (orchestrator): `core/src/snapshot.rs` and the devices' `save`/`restore` are uncommitted in the main checkout |
 | 2. Core, parallel | |
 | 3. Host, round-robin | |
 | 4. The file and the RAM codec | delegated (worktree), independent of 1 to 3 |
@@ -27,6 +27,18 @@ reviews, merges) stay with the orchestrating session.
 Suspend (a local snapshot in OPFS that stops the machine and resumes on the next load); the
 version policy (a state format version, not the core build's hash); the wall clock after a resume.
 Recommendations are in the plan doc; loops 1 to 7 don't depend on the answers.
+
+## Delegated work (worktrees under `.claude/worktrees/`, one branch each)
+
+| Piece | Worktree and branch | State |
+|---|---|---|
+| The file container (`web/snapshot-file.ts`, its tests) | `agent-a85db6430d0a01228` | written, tests pass; being finished (planted bugs, the tests' big-buffer comparisons) |
+| `pause()`/`resume()` (`web/vm.ts`, `web/vcpu-worker.ts`, `tests/pause.test.ts`) | `agent-a923e0b93b2d75ae3` | written, Node tests pass; the Chromium test, planted bugs and docs left |
+| The LZ codec (`core/src/lz.rs`, committed there as `9c270ee`) and the codec measurement | `agent-a94b900acc0e54167` | codec done; RAM dumps taken (`bench/results/local/` there); the measurement and its report left |
+
+The briefs given to the agents are in `bench/results/local/snapshots-briefs/` (untracked). The
+first session died on 2026-10-01 when an uncapped Node test in a worktree took 10 GB (CLAUDE.md
+"Cap memory"); its agents were restarted in the same worktrees.
 
 ## Notes for the next session
 
