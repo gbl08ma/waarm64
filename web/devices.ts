@@ -115,6 +115,8 @@ type Backend = {
    * backends again, so one that only holds buffers has neither.
    */
   save?(): unknown; restore?(state: unknown): void;
+  /** A writable disk's changes, for a snapshot: the blocks (4 KiB) its overlay holds, and their bytes. */
+  written?(): number[]; blocks?(blocks: number[]): Uint8Array;
 };
 
 function console_(out: (text: string) => void, ctx: Ctx): Backend {
@@ -474,6 +476,16 @@ function blk(ctx: Ctx, src: Source, files?: OverlayFiles): Backend {
       return n + 1;
     },
     reset() {},
+    written: rw && (() => rw.written()),
+    blocks: rw && ((blocks) => {
+      const out = new Uint8Array(blocks.length * 4096);
+      blocks.forEach((b, k) => {
+        const bytes = rw.block(b);
+        if (!bytes) throw new Error(`the disk's changes can't be read from the browser's storage (block ${b})`);
+        out.set(bytes, k * 4096);
+      });
+      return out;
+    }),
     close() {
       src.close?.();
       files?.close();
@@ -543,6 +555,16 @@ export class Devices {
       this.epochs = shared.map((at) => Atomics.load(u32, (at + EPOCH) / 4) & 0xff);
       this.backends.forEach((b, i) => { if (state[i] !== null && state[i] !== undefined) b.restore?.(state[i]); });
     }
+  }
+
+  /** Device `i`'s changed blocks (4 KiB each, ascending) if it is a disk with an overlay, for a snapshot. */
+  written(i: number): number[] | undefined {
+    return this.backends[i]?.written?.();
+  }
+
+  /** The bytes of `blocks` (some of `written(i)`), one after the other. */
+  blocks(i: number, blocks: number[]): Uint8Array {
+    return this.backends[i].blocks!(blocks);
   }
 
   /** Each backend's state for a snapshot (null: none), with the devices quiet (`poll` resolved). */

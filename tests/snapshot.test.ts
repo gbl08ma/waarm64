@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { lzCodec } from '../web/lz.ts';
 import { readSnapshot, runThroughSnapshots, writeSnapshot } from '../web/snapshot.ts';
+import { removeOverlay } from '../web/overlay.ts';
 import { SnapshotError } from '../web/snapshot-file.ts';
 import { STEPS } from './steps.ts';
 import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
@@ -174,6 +175,90 @@ test('a VM started from a snapshot saves the same state: the core\'s bytes and t
   await vm.close();
   assert.deepEqual(after.host, before.host);
   assert.equal(Buffer.compare(after.core, before.core), 0, "the core's state differs");
+});
+
+// The disk in the file (loop 6). /test-rw.sh writes a file to the root filesystem on its first
+// boot (`rw: wrote <hash>`), finds it on the next (`rw: kept <hash>`). Node keeps overlays in memory.
+test('a snapshot carries the disk\'s changes: a restore replaces the overlay with them', { skip }, async () => {
+  const name = 'snapshot-test-rw';
+  await removeOverlay(name);
+  const codec = await lzCodec(WASM);
+  const o = buildroot({ cmdline: `${GUEST_CMDLINE} -- /test-rw.sh`, devices: guestDevices(disk, name) });
+  const line = (c: string, what: string) => c.match(new RegExp(`rw: ${what} (\\S+)`))?.[1];
+  // An unbroken first boot says how long it is (the console's lines come out at its end, so
+  // they can't time the save). Then boot 1 again, saved 400,000 steps before its power-off: the
+  // script has written its file and synced, and the overlay has its blocks.
+  const plain = `${name}-plain`;
+  await removeOverlay(plain);
+  const whole = await runToPowerOff(WASM, { ...o, devices: guestDevices(disk, plain) });
+  await removeOverlay(plain);
+  assert.ok(line(whole.console, 'wrote'), whole.console);
+  let vm = await bootVm(WASM, o);
+  let [out, steps] = ['', 0];
+  const run = async (to: number) => {
+    for (;;) {
+      const r = await vm.runAsync(Math.min(100_000_000, to - steps));
+      steps += r.steps;
+      out += vm.drain();
+      if (r.kind === Exit.DEVICE) await vm.settle();
+      if (r.kind === Exit.PSCI || steps >= to) return r;
+    }
+  };
+  const at = whole.steps - 400_000;
+  assert.equal((await run(at)).kind === Exit.PSCI, false);
+  const parts: Uint8Array[] = [];
+  const w = await writeSnapshot(vm, (b) => { parts.push(b); }, {}, codec);
+  const file = new Blob(parts as BlobPart[]);
+  assert.ok(w.diskBlocks > 0, 'no block of the disk in the file');
+  poweredOff({ ...(await run(Infinity)), console: out });
+  const wrote = line(out, 'wrote');
+  assert.equal(wrote, line(whole.console, 'wrote'));
+  const total = steps;
+  assert.equal(total, whole.steps);
+  await vm.close();
+
+  // The overlay now has all of boot 1. From the file, the machine is back at the save, on the
+  // disk as it was then: it runs the rest again, in the same steps, to the same hash.
+  const again = async () => {
+    const { header, restore } = await readSnapshot(file, codec, codec.snapshotVersion, { devices: o.devices });
+    assert.equal((header.disks as { blocks: number }[])[0].blocks, w.diskBlocks);
+    vm = await bootVm(WASM, { ...o, restore });
+    [out, steps] = ['', at];
+    poweredOff({ ...(await run(Infinity)), console: out });
+    assert.equal(steps, total);
+    await vm.close();
+  };
+  await again();
+  // In a fresh profile (no overlay at all) the file is enough.
+  await removeOverlay(name);
+  await again();
+  // And the next boot finds what that run wrote.
+  const next = await runToPowerOff(WASM, o);
+  assert.equal(line(next.console, 'kept'), wrote, next.console);
+
+  // Refused before the overlay is touched: another disk, a file cut in its disk blocks.
+  const other = { ...o, devices: guestDevices(new URL('alpine/rootfs.ext4', IMAGES).href, name) };
+  await assert.rejects(readSnapshot(file, codec, codec.snapshotVersion, { devices: other.devices }), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-disk' && /taken on another disk/.test(e.message));
+  await assert.rejects(readSnapshot(file.slice(0, file.size - 5000), codec, codec.snapshotVersion, { devices: o.devices }), (e: unknown) => e instanceof SnapshotError && e.problem === 'truncated');
+  const flipped = new Uint8Array(await file.arrayBuffer());
+  flipped[flipped.length - 3000] ^= 1;
+  await assert.rejects(readSnapshot(new Blob([flipped]), codec, codec.snapshotVersion, { devices: o.devices }), (e: unknown) => e instanceof SnapshotError && e.problem === 'corrupt');
+  await assert.rejects(readSnapshot(file, codec, codec.snapshotVersion, { devices: guestDevices(disk) }), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-machine');
+  const still = await runToPowerOff(WASM, o);
+  assert.equal(line(still.console, 'kept'), wrote, 'a refused snapshot touched the overlay');
+  // The same bytes under another name: accepted by the base's hash, where the file has one.
+  const hashed: Uint8Array[] = [];
+  vm = await bootVm(WASM, o);
+  await writeSnapshot(vm, (b) => { hashed.push(b); }, {}, codec, { sha256: () => 'abc123' });
+  await vm.close();
+  const renamed = { devices: [{ type: 'console' }, { type: 'rng' }, { type: 'blk', url: 'file:///elsewhere/copy.ext4', overlay: name }] as BootOptions['devices'] };
+  const hfile = new Blob(hashed as BlobPart[]);
+  await assert.rejects(readSnapshot(hfile, codec, codec.snapshotVersion, { ...renamed, sha256: () => 'def456' }), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-disk');
+  let asked = 0;
+  await readSnapshot(hfile, codec, codec.snapshotVersion, { ...renamed, sha256: () => (asked++, 'abc123') });
+  await readSnapshot(hfile, codec, codec.snapshotVersion, { devices: o.devices, sha256: () => (asked++, 'never') });
+  assert.equal(asked, 1, 'the hash is only asked for when the cheap identity differs');
+  await removeOverlay(name);
 });
 
 test('a machine with a 9p device says it cannot be saved', { skip }, async () => {

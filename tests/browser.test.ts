@@ -193,6 +193,31 @@ test('the root filesystem is writable through an OPFS overlay, and it persists a
   await removeOverlay(name);
 });
 
+// Snapshots carry the disk's changes (web/snapshot.ts): the same first boot through three snapshot
+// files, each restore replacing the OPFS overlay with the file's blocks from the machine's worker
+// (the old VM's device worker has closed it), takes the unbroken boot's steps and writes the same
+// file, which the next boot finds.
+test('a boot that writes its disk goes through snapshot files, and the overlay is the last file\'s plus what followed', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
+  const [plain, name] = ['webpc-test-snap-plain', 'webpc-test-snap-rw'];
+  await removeOverlay(plain);
+  await removeOverlay(name);
+  const whole = await bootPage(`overlay=${plain}&script=/test-rw.sh&jit=1`, 10);
+  assert.equal(whole.error, undefined);
+  const wrote = whole.console.match(/rw: wrote (.*)\n/)?.[1];
+  assert.ok(wrote, whole.console);
+  const at = [8_000_000, 5_000_000, 3_000_000, 1_000_000].map((k) => whole.steps - k);
+  const r = await bootPage(`overlay=${name}&script=/test-rw.sh&jit=1&snapshots=${at.join(',')}`, 10);
+  assert.equal(r.error, undefined);
+  const files = r.files as { bytes: number }[];
+  console.log(`# chromium rw boot through snapshots: files ${files.map((f) => (f.bytes / 2 ** 20).toFixed(1)).join(', ')} MiB`);
+  assert.deepEqual([r.kind, r.x0, r.steps, files.length], [1, '0x84000008', whole.steps, 4], r.console);
+  assert.equal(r.console, whole.console);
+  const next = await bootPage(`overlay=${name}&script=/test-rw.sh&jit=1`, 10);
+  assert.equal(next.console.match(/rw: kept (.*)\n/)?.[1], wrote, next.console);
+  await removeOverlay(plain);
+  await removeOverlay(name);
+});
+
 for (const jit of [0, 1]) test(`net (loopback adapter), 9p and the framebuffer work in the guest, deterministic mode${jit ? ', JIT' : ''}`, { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
   const r = await bootPage(`devices&script=/test-devices.sh&jit=${jit}`, 10);
   assert.equal(r.error, undefined);

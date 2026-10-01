@@ -1,42 +1,101 @@
 // A VM to a snapshot file and back (docs/plans/snapshots.md): web/vm.ts has the machine's state
 // (`snapshot()`, `BootOptions.restore`), web/snapshot-file.ts the container, web/lz.ts its codec.
-// The file: the header (what the machine is), CORE (the core's state), DEVS (the host's: backend
-// state and pending input, JSON), then RAM. Round-robin VMs are saved between runs; a parallel one
-// is paused first (`pause()`), and runs on afterwards.
-import { applyRam, corrupt, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type Sink, type SnapshotHeader } from './snapshot-file.ts';
+// The file: the header (what the machine is, and the writable disks it pins), CORE (the core's
+// state), DEVS (the host's: backend state and pending input, JSON), RAM, then DISK: the blocks the
+// disks' overlays hold (a snapshot is only valid with the disk as it was: the guest's page cache
+// and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
+// paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
+// file's blocks before the new VM's backends open them.
+import { applyRam, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type Sink, type SnapshotHeader } from './snapshot-file.ts';
+import { diskIdentity, type DeviceSpec } from './devices.ts';
 import { lzCodec } from './lz.ts';
+import { openOverlay, overlay, removeOverlay } from './overlay.ts';
 import { ABI, bootVm, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
 
 /** What the caller says the machine is (the header's free fields): a restore checks what it needs of it. */
 export type SnapshotMeta = Record<string, unknown>;
 
 /**
+ * A writable disk a snapshot pins (the header's `disks`): its device slot, what its overlay
+ * belonged to (`diskIdentity`: cheap to compare), its size, how many 4 KiB blocks of it the file
+ * carries, and the base image's SHA-256 where the writer knew it (for a base that is the same
+ * bytes under another name or date).
+ */
+export type SnapshotDisk = { slot: number; identity: string; size: number; blocks: number; sha256?: string };
+
+/** A DISK frame's index: the device slot times this, plus the first block. */
+const SLOT = 2 ** 40;
+const BLOCK = 4096;
+
+/**
  * Writes `vm`'s snapshot to `sink`. No vCPU may be in the core: between `run` calls after
  * `settle()`, or with `pause()` resolved true; the VM is unchanged and may run on once this
- * resolves (RAM must not move while it is written).
+ * resolves (RAM and the disks must not move while it is written). `sha256` gives a disk's base
+ * image's hash, if the caller has it.
  */
-export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, progress?: (done: number, total: number) => void) {
+export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined } = {}) {
   const state = await vm.snapshot();
-  const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize };
+  const disks = await vm.disks();
+  const pinned: SnapshotDisk[] = disks.map((d) => ({ slot: d.slot, identity: d.identity, size: d.size, blocks: d.blocks.length, sha256: opts.sha256?.(d.slot) }));
+  const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize, disks: pinned };
   const w = new SnapshotWriter(sink, header, { codec, concurrency: 1 });
   await w.bytes('CORE', state.core);
   await w.bytes('DEVS', new TextEncoder().encode(JSON.stringify(state.host)));
-  const ram = await w.ram(new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), progress);
+  const ram = await w.ram(new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), opts.progress);
+  for (const d of disks) {
+    await w.disk((async function* () {
+      for (let k = 0; k < d.blocks.length; k += 256) {
+        const part = d.blocks.slice(k, k + 256);
+        const bytes = await vm.diskBlocks(d.slot, part);
+        for (const [i, b] of part.entries()) yield { block: d.slot * SLOT + b, data: bytes.subarray(i * BLOCK, (i + 1) * BLOCK) };
+      }
+    })());
+  }
   const end = await w.end();
-  return { ...end, pages: ram.pages, state: state.core.length };
+  return { ...end, pages: ram.pages, state: state.core.length, diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0) };
 }
 
 /**
  * Opens a snapshot for a restore: its header, and what `bootVm` takes as `restore`. `coreVersion`
- * is the running core's `snapshot_version` (a file of another is refused here, before anything is
- * touched). The file is read as `bootVm` fills the new VM's RAM, so a damaged or truncated one
- * throws its `SnapshotError` from there.
+ * is the running core's `snapshot_version`; `devices` the device specs of the machine it will
+ * start (the `BootOptions.devices`), whose writable disks must be the ones the snapshot pins:
+ * the same identity, or the same SHA-256 (`sha256` hashes a slot's base image: seconds, so only
+ * asked when the identity differs and the file has the hash). Everything that can be refused is
+ * refused here, before anything is touched: another core version, another disk, and for a `Blob`
+ * (which can be read twice) a file that is truncated or fails a checksum anywhere. The file is
+ * then read as `bootVm` fills the new VM: RAM, and the disks' blocks, which **replace the
+ * overlays** of those disks (and the variable stores kept beside them) before the backends open them.
  */
-export async function readSnapshot(source: ReadableStream<Uint8Array> | Blob, codec: Codec, coreVersion: number): Promise<{ header: SnapshotHeader; restore: Restore }> {
+export async function readSnapshot(
+  source: ReadableStream<Uint8Array> | Blob, codec: Codec, coreVersion: number,
+  opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string> } = {},
+): Promise<{ header: SnapshotHeader; restore: Restore }> {
+  if (source instanceof Blob) {
+    // A pass over the whole file first: a restore replaces the disk's changes, so it must not find
+    // the file damaged halfway.
+    const check = await openSnapshot(source, { codecs: [codec], check: true });
+    for await (const _ of check.frames()) void _;
+  }
   const s = await openSnapshot(source, { codecs: [codec] });
   const { header } = s;
   if (header.coreVersion !== coreVersion) {
     throw new SnapshotError('other-version', `This snapshot was made by another version of this page (its machine state is format ${header.coreVersion}; this version reads ${coreVersion}). Open it in the version that made it.`);
+  }
+  const pinned = (header.disks ?? []) as SnapshotDisk[];
+  if (!Array.isArray(pinned) || pinned.some((d) => !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0)) throw corrupt('its list of disks is not readable');
+  // The overlays to replace: name and identity, by slot.
+  const overlays = new Map<number, { name: string; identity: string; size: number }>();
+  for (const d of pinned) {
+    const spec = opts.devices?.[d.slot];
+    if (spec?.type !== 'blk' || !spec.overlay) throw new SnapshotError('other-machine', "This snapshot is of a machine with a writable disk that this machine doesn't have.");
+    const identity = diskIdentity(spec, d.size);
+    if (identity !== d.identity) {
+      const same = d.sha256 !== undefined && opts.sha256 !== undefined && (await opts.sha256(d.slot)) === d.sha256;
+      if (!same) {
+        throw new SnapshotError('other-disk', `This snapshot was taken on another disk (${describe(d.identity)}); the disk here is ${describe(identity)}. A snapshot only continues on the disk it was taken on: open that disk first (Open disk…), then load the snapshot.`);
+      }
+    }
+    overlays.set(d.slot, { name: spec.overlay, identity, size: d.size });
   }
   const frames = s.frames();
   // CORE and DEVS come first, each in index order.
@@ -65,14 +124,45 @@ export async function readSnapshot(source: ReadableStream<Uint8Array> | Blob, co
     host,
     async fill(ram) {
       if (ram.length !== header.ramSize) throw new SnapshotError('other-machine', `This snapshot is of a machine with ${Number(header.ramSize) / 2 ** 20} MiB of memory; this one has ${ram.length / 2 ** 20} MiB.`);
-      for (; !next.done; next = await frames.next()) {
-        const { tag, index, data } = next.value;
-        if (tag !== 'RAM ') throw corrupt('it has parts this page doesn\'t expect');
-        applyRam(ram, index, data);
+      for (; !next.done && next.value.tag === 'RAM '; next = await frames.next()) applyRam(ram, next.value.index, next.value.data);
+      // The disks: each pinned overlay is emptied (a snapshot's blocks are all the disk has
+      // written), then takes the file's blocks.
+      const open = new Map<number, { disk: ReturnType<typeof overlay>; close(): void; size: number }>();
+      try {
+        for (const [slot, o] of overlays) {
+          await removeOverlay(o.name);
+          const files = await openOverlay(o.name, o.identity);
+          // Whole blocks are written, so the base is never read.
+          open.set(slot, { disk: overlay({ size: o.size, format: 'raw', read: async () => undefined }, files.data, files.map), close: files.close, size: o.size });
+        }
+        for (; !next.done; next = await frames.next()) {
+          const { tag, index, data } = next.value;
+          if (tag !== 'DISK') throw corrupt("it has parts this page doesn't expect");
+          const o = open.get(Math.floor(index / SLOT));
+          if (!o) throw corrupt('it has blocks of a disk it doesn\'t list');
+          for (const { block, data: bytes } of diskBlocks(index % SLOT, data)) {
+            const at = block * BLOCK;
+            if (at >= o.size) throw corrupt('it has blocks past the end of its disk');
+            if (!(await o.disk.write(at, bytes.subarray(0, Math.min(BLOCK, o.size - at))))) throw new Error("the disk's changes can't be written to the browser's storage (is it full?)");
+          }
+        }
+        for (const o of open.values()) o.disk.flush();
+      } finally {
+        for (const o of open.values()) o.close();
       }
     },
   };
   return { header, restore };
+}
+
+/** A disk identity (`diskIdentity`'s JSON) in words for a message. */
+function describe(identity: string) {
+  try {
+    const d = JSON.parse(identity) as { file?: string; path?: string; size?: number; modified?: number };
+    return d.file !== undefined ? `the file ${d.file}, modified ${new Date(d.modified ?? 0).toLocaleString()}` : `${d.path}`;
+  } catch {
+    return identity;
+  }
 }
 
 /**
@@ -114,7 +204,7 @@ export async function runThroughSnapshots(wasm: BufferSource | WebAssembly.Modul
       hvc += vm.hvc();
       await vm.close();
       const t1 = performance.now();
-      const { restore } = await readSnapshot(new Blob(parts as BlobPart[]), codec, codec.snapshotVersion);
+      const { restore } = await readSnapshot(new Blob(parts as BlobPart[]), codec, codec.snapshotVersion, { devices: o.devices });
       vm = await bootVm(module, { ...o, ...options?.(files.length), restore });
       files.push({ bytes: w.bytes, pages: w.pages, saveMs, restoreMs: performance.now() - t1 });
     }

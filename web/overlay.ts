@@ -23,6 +23,8 @@ export type WritableDisk = Disk & {
   flush(): void;
   /** The disk blocks (4 KiB) the overlay holds, ascending: what the disk has changed. */
   written(): number[];
+  /** The overlay's own copy of block `b` (one of `written()`), 4 KiB (zeros past the disk's end); undefined on a failed read. */
+  block(b: number): Uint8Array | undefined;
 };
 
 export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): WritableDisk {
@@ -86,7 +88,13 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
     return out;
   };
 
-  return { size: base.size, format: base.format, read, write, written, flush: () => { data.flush(); mapFile.flush(); } };
+  const block = (b: number) => {
+    if (!map[b]) return undefined;
+    const out = new Uint8Array(BLOCK);
+    return data.read(out, { at: (map[b] - 1) * BLOCK }) === BLOCK ? out : undefined;
+  };
+
+  return { size: base.size, format: base.format, read, write, written, block, flush: () => { data.flush(); mapFile.flush(); } };
 }
 
 /**

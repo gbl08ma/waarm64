@@ -23,6 +23,19 @@ self.onmessage = (e: MessageEvent) => {
       self.postMessage({ type: 'saved', error: String(err instanceof Error ? err.message : err) });
     }
   }
+  else if (e.data.type === 'written' || e.data.type === 'blocks') {
+    // A disk's changes for a snapshot: the blocks its overlay holds, then their bytes in batches.
+    const { type, id, device, blocks } = e.data as { type: 'written' | 'blocks'; id: number; device: number; blocks: number[] };
+    try {
+      if (type === 'written') self.postMessage({ type: 'disk', id, written: devices!.written(device) });
+      else {
+        const bytes = devices!.blocks(device, blocks);
+        self.postMessage({ type: 'disk', id, bytes }, { transfer: [bytes.buffer] });
+      }
+    } catch (err) {
+      self.postMessage({ type: 'disk', id, error: String(err instanceof Error ? err.message : err) });
+    }
+  }
   else if (e.data.type === 'close') {
     devices?.close();
     self.postMessage({ type: 'closed' });

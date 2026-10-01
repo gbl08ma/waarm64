@@ -6,7 +6,7 @@
 // Time is deterministic unless `realtime` is set (the host clock, and idle
 // WFIs sleep on the signal word). With `parallel` (M7), every vCPU runs in
 // its own worker (web/vcpu-worker.ts) and this thread coordinates them.
-import { Devices, EV_CONFIG, deviceEntry, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
+import { Devices, EV_CONFIG, deviceEntry, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
@@ -662,6 +662,21 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       }
       throw new Error("the machine can't be saved: its devices never went quiet");
     },
+    /**
+     * The writable disks' changes, for a snapshot (the VM as for `snapshot()`): for each disk with
+     * an overlay its slot, what its overlay belongs to (`diskIdentity`), its size and the blocks
+     * (4 KiB, ascending) the overlay holds; `diskBlocks` reads some of them.
+     */
+    async disks(): Promise<{ slot: number; identity: string; size: number; blocks: number[] }[]> {
+      const out = [];
+      for (const [slot, d] of specs.entries()) {
+        if (d.type !== 'blk' || !d.overlay) continue;
+        const blocks = await devices.written(slot);
+        if (blocks) out.push({ slot, identity: diskIdentity(d, d.size ?? 0), size: d.size ?? 0, blocks });
+      }
+      return out;
+    },
+    diskBlocks: (slot: number, blocks: number[]) => devices.blocks(slot, blocks),
     /** The framebuffer (web/display.ts): byte address in `memory`, width, height; x8r8g8b8, packed rows. */
     framebuffer: fbPa ? { addr: ram + fbPa - RAM_BASE, ...fb } : undefined,
     /** A copy of the firmware configuration's flash bank (the variable store), to save once the vCPUs stopped; undefined without one. */
@@ -1053,6 +1068,8 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       settle: async () => { if (failed) throw failed; },
       quiesce: () => ringAsync(new Int32Array(init.memory.buffer, bellAddr, 2)),
       save: async () => d.save(),
+      written: async (i: number) => d.written(i),
+      blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
       output: () => text, flush: async () => { if (failed) throw failed; }, close: async () => d.close(),
     };
   }
@@ -1069,6 +1086,8 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       settle: async () => { await pending; pending = undefined; },
       quiesce: async () => { await pending; pending = d.poll(); await pending; pending = undefined; },
       save: async () => d.save(),
+      written: async (i: number) => d.written(i),
+      blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
       output: () => text, flush: async () => {}, close: async () => d.close(),
     };
   }
@@ -1076,6 +1095,19 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   let flushed = () => {};
   let closed = () => {};
   let saved = (_m: { state?: unknown[]; error?: string }) => {};
+  // Requests for a disk's changes (`written`, `blocks`), answered by id.
+  type DiskAnswer = { written?: number[]; bytes?: Uint8Array; error?: string };
+  const asked = new Map<number, (m: DiskAnswer) => void>();
+  let askId = 0;
+  const ask = (m: { type: 'written' | 'blocks'; device: number; blocks?: number[] }) => new Promise<DiskAnswer>((resolve, reject) => {
+    const id = askId++;
+    asked.set(id, (a) => {
+      asked.delete(id);
+      if (a.error) reject(new Error(a.error));
+      else resolve(a);
+    });
+    worker.postMessage({ ...m, id });
+  });
   let closing: Promise<void> | undefined;
   const ready = new Promise<void>((resolve, reject) => {
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
@@ -1085,6 +1117,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       else if (e.data.type === 'console') out(e.data.device, e.data.text);
       else if (e.data.type === 'flushed') flushed();
       else if (e.data.type === 'saved') saved(e.data);
+      else if (e.data.type === 'disk') asked.get(e.data.id)?.(e.data);
       else if (e.data.type === 'closed') closed();
     };
   });
@@ -1100,6 +1133,8 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       saved = (m) => (m.state ? resolve(m.state) : reject(new Error(m.error ?? 'the device worker has no state')));
       worker.postMessage({ type: 'save' });
     }),
+    written: async (i: number) => (await ask({ type: 'written', device: i })).written,
+    blocks: async (i: number, blocks: number[]) => (await ask({ type: 'blocks', device: i, blocks })).bytes!,
     kick: (wait: boolean) => ring(bell, wait), // completions come back through SIGNAL_DEVICE
     output: () => text,
     flush: () => new Promise<void>((resolve) => {

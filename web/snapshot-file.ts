@@ -36,11 +36,11 @@ const TAGS = new Set(['CORE', 'DEVS', 'RAM ', 'DISK', 'END ']);
 
 /**
  * Why a snapshot was refused: `not-snapshot`, `newer-format`, `truncated` or `corrupt` (the file),
- * `other-version` or `other-machine` (what it holds isn't for this core or this machine: web/vm.ts,
- * web/snapshot.ts); the message says what to do.
+ * `other-version`, `other-machine` or `other-disk` (what it holds isn't for this core, this machine
+ * or the disk on it: web/vm.ts, web/snapshot.ts); the message says what to do.
  */
 export class SnapshotError extends Error {
-  problem: 'not-snapshot' | 'newer-format' | 'truncated' | 'corrupt' | 'other-version' | 'other-machine';
+  problem: 'not-snapshot' | 'newer-format' | 'truncated' | 'corrupt' | 'other-version' | 'other-machine' | 'other-disk';
   constructor(problem: SnapshotError['problem'], message: string) {
     super(message);
     this.name = 'SnapshotError';
@@ -407,11 +407,12 @@ class Input {
  * before anything else is read), then `frames()` yields each frame, CRC-verified and decompressed,
  * as it arrives. A stream shorter than the magic is `not-snapshot`; a file that ends later without
  * its end marker is `truncated`. `frames()` reads the stream once; the end of the file is checked
- * when it finishes.
+ * when it finishes. With `check`, frames come without their data: their checksums and the file's
+ * structure are verified, nothing is unpacked.
  */
 export async function openSnapshot(
   source: ReadableStream<Uint8Array> | Blob,
-  opts: { codecs?: Codec[] } = {},
+  opts: { codecs?: Codec[]; check?: boolean } = {},
 ): Promise<{ header: SnapshotHeader; frames(): AsyncGenerator<{ tag: string; index: number; data: Uint8Array }> }> {
   const codecs = new Map<number, Codec>([[1, deflateCodec]]);
   for (const c of opts.codecs ?? []) codecs.set(c.id, c);
@@ -476,6 +477,12 @@ export async function openSnapshot(
           const stored = await input.take(storedLen);
           if (!stored) throw truncated();
           if (frameCrc(headBytes, stored) !== crc) throw corrupt('a checksum fails');
+          if (opts.check) {
+            // Checked, not unpacked: a pass over a file before a restore touches anything.
+            count++;
+            yield { tag, index, data: new Uint8Array(0) };
+            continue;
+          }
           let data: Uint8Array;
           if (codec === 0) data = stored.slice();
           else {

@@ -69,10 +69,10 @@ filesystem state are in RAM). So:
   disk does) with the file's blocks, then resumes. The base must be the disk on the page: the
   machine's own, or a disk the user opened first (as for a changes file).
 - **The base's identity:** phase B identifies a chosen file by name, size and modification time,
-  a URL by its path, and a changes file's base by its SHA-256 (`hashSource`, several seconds for
-  Debian's 400 MB). A snapshot records both; which one a restore checks is settled by measurement
-  in loop 6 (a multi-second hash on every restore works against "resumes in seconds"; the options
-  are the cheap identity alone, or a hash cached per overlay).
+  a URL by its path, and a changes file's base by its SHA-256 (`hashSource`: 1.8 s for Debian's
+  384 MiB). A snapshot records the cheap identity always and the hash where the writer has it; a
+  restore accepts the same identity at once, and hashes the base only when the identity differs
+  and the file has a hash (settled in loop 6).
 - The variable store is the flash bank, which is in the core's state; the copy beside the overlay
   is rewritten from it after a restore.
 - The machine is **paused while the file is written** (RAM and the overlay must not move) and
@@ -85,7 +85,7 @@ A user-facing format, streamed both ways (RAM is up to GiBs):
 - Frames: `{tag, index, codec, raw length, stored length, CRC-32 of the stored bytes}` then the
   bytes. Tags: `CORE` (the core's state), `DEVS` (backend state, JSON), `RAM ` (one per non-zero
   1 MiB chunk, `index` = the chunk: a bitmap of its non-zero 4 KiB pages, then those pages),
-  `DISK` (runs of overlay blocks, `index` = the first block), `END ` (the frame count). A file
+  `DISK` (runs of overlay blocks, `index` = the device slot × 2^40 + the first block), `END ` (the frame count). A file
   without its `END ` is truncated.
 - Each frame is compressed on its own, so frames can be produced and consumed by several workers
   on the shared memory. **The codec is the core's LZ** (codec 2: `core/src/lz.rs`, the LZ4 block
@@ -157,7 +157,12 @@ for the loops that touch parallel SMP.
    `tests/browser.test.ts`). The pause is **done** ([platform.md](../platform.md) "Pausing a VM",
    `tests/pause.test.ts`: the coordinator's `pause`/`resume`, the vCPU workers parked). Left: parallel
    round trips in Node and Chromium (Buildroot, litmus and stress on 4).
-6. **The disk in the file.** The overlay's blocks out and in through the device worker's handles,
+6. **The disk in the file: done** ([platform.md](../platform.md) "Snapshots"). The base's
+   identity, measured: the SHA-256 of Debian's 384 MiB image takes 1.8 s (217 MiB/s), so a
+   restore checks the cheap identity and asks for the hash only when that differs and the file
+   has one; the page decides when to compute the hash it writes (loop 7: not while the machine is
+   paused). The flash copy beside the overlay is the page worker's to rewrite after a restore
+   (the restore deletes it with the overlay). The plan was: the overlay's blocks out and in through the device worker's handles,
    the base's identity (measured), the flash copy.
 7. **The page.** Save snapshot, Load snapshot, the drop, the messages; `tests/page-snapshot.test.ts`
    (Buildroot always; Debian: boot, write a file, download the snapshot, then in a **fresh

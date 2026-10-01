@@ -17,8 +17,8 @@ reviews, merges) stay with the orchestrating session.
 | 3. Host, round-robin | done: `vm.snapshot()`, `BootOptions.restore`, `web/snapshot.ts` (`writeSnapshot`, `readSnapshot`, `runThroughSnapshots`), `web/lz.ts`, backend state; exact steps in Node and Chromium |
 | 4. The file and the RAM codec | done: the container, and the codec by measurement (the core's LZ, one worker); wiring the LZ into the writer as codec 2 is loop 3's |
 | 5. Host, parallel: `pause`/`resume` | done: the pause, and parallel round trips in Node (Buildroot, litmus and stress on 4) and Chromium (Buildroot on 4) |
-| 6. The disk in the file | next: DISK frames out of and into the overlay (through the device worker's handles; a restore writes them before the backends open the overlay: `Restore.fill` sees them after RAM), the base's identity (measure the hash against the cheap identity), the flash copy beside the overlay |
-| 7. The page | |
+| 6. The disk in the file | done: DISK frames through the backends, the overlay replaced by a restore (after a checksum pass over a `File` and the disk's identity check), the hash asked for only when the identity differs |
+| 7. The page | next. For it: `writeSnapshot`/`readSnapshot` (`web/snapshot.ts`) do the file; the worker pauses, saves, resumes; a restore needs the previous machine closed (the overlay's lock), `readSnapshot`'s `devices` and `sha256` options, and `saveFlash(overlay, vm.flash())` right after it starts (the restore deleted the copy beside the overlay); decide when the base's SHA-256 is computed for the header (not while paused: cache it beside the overlay) |
 | 8. Suspend | needs the user's OK |
 | 9. Exit | |
 
