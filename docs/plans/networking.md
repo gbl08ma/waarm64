@@ -1,8 +1,11 @@
 # webpc networking plan
 
-**Status:** exploration, drafted 2026-09-27; the networking lane started 2026-09-29 (N1, N2 done; N3's gateway is in, its guest-level tests are pending). It feeds M8's "networking backend API"
-(PLAN.md, M8). When a step here is scheduled, move it into PLAN.md and keep this file as the
-background it came from.
+**Status:** refined 2026-10-01. N1 to N5 are done: the IPv4 gateway, the Tailscale client, the
+Network menu on the page, a kept node, exit-node selection; a VM on the page reaches its tailnet and,
+through an exit node, the internet (checked by hand with a real login). **Open: IPv6 (N6, the main
+item), and the card for Alpine (N7).** It feeds M8's "networking backend
+API" (PLAN.md, M8). What exists is described in [devices.md](devices.md) "net" and
+[frontend.md](frontend.md) "Network"; this file holds the decisions and what's left.
 
 The question: how does a VM in the page reach other networks, the internet included, **without
 the guest knowing how**? Today the guest has virtio-net (`docs/devices.md` "net"):
@@ -71,16 +74,36 @@ them sits a small gateway, in TypeScript, running in the device worker (so a syn
 backend keeps deterministic mode exact, as the loopback adapter does now):
 
 - **Proxy ARP:** it answers every ARP request for an address other than the guest's with one
-  gateway MAC, so the guest can use a wide netmask (e.g. the tailnet's `100.64.0.0/10`) and reach
-  any peer without extra routes.
+  gateway MAC, so the guest can use an all-on-link netmask and reach any peer without extra routes.
 - **DHCP server** (the guest just runs `udhcpc`/`dhclient`/`systemd-networkd`): the backend's
   address for the guest, netmask, router = the gateway, DNS (Tailscale: `100.100.100.100`,
   MagicDNS), and **MTU** (option 26; Tailscale's is 1280, and without it large packets vanish).
   The lease follows the backend: no lease until the backend has an address.
 - **Framing:** strip the Ethernet header on the way out (IPv4/IPv6 only; everything else is
   answered by the gateway or dropped), add it (gateway MAC → guest MAC) on the way in.
-- **IPv6** (Tailscale gives each node an `fd7a:115c:a1e0::/48` address): router advertisements plus
-  a static or DHCPv6 address; after IPv4 works.
+- **IPv6 (N6, not built; the gateway drops IPv6 frames today).** Tailscale gives each node an
+  address in `fd7a:115c:a1e0::/48` (a headscale: its configured prefix), and the client's TUN
+  already passes IPv6 packets untouched. The guest must use *exactly* the node's address (the
+  gateway drops other sources, as for IPv4), which SLAAC can't produce for a /128, so:
+  - **Router advertisements** from a link-local address derived from the gateway's MAC, answered to
+    router solicitations and sent when a lease appears or changes and every few minutes (a timer in
+    the device worker; realtime only: the synchronous echo backend answers solicitations and has no
+    timers, so deterministic mode stays exact). Flags M (managed) and O; **no prefix information**
+    (no SLAAC, nothing on-link), a router lifetime so the guest has a default route via the gateway,
+    the MTU option, RDNSS.
+  - **DHCPv6** (SOLICIT/REQUEST/RENEW/REBIND, stateful IA_NA, the Information-Request too): the
+    node's address as a /128, DNS (option 23: Tailscale's MagicDNS is `fd7a:115c:a1e0::53` as well
+    as `100.100.100.100`) and the search domain (24). No lease, no advertise, as for DHCPv4.
+  - **NDP** only for the gateway's own link-local address (neighbor solicitations for it; all other
+    destinations go through the router, so there is no proxy NDP); duplicate-address-detection
+    probes from `::` ignored, like ARP probes.
+  - **Framing and the rest:** ethertype 0x86dd both ways; sources other than the leased address
+    dropped; ICMPv6 echo to the gateway; Packet Too Big over the MTU (IPv6 doesn't fragment in the
+    network; Tailscale's 1280 is IPv6's minimum, so it's rare); multicast other than NDP and DHCPv6
+    (`ff02::1:2`) dropped; the pseudo-header checksums for ICMPv6 and UDP.
+  - `Lease` gains `address6`, `dns6`; the page's `leaseFrom` takes the netmap's `fd7a` address and
+    the IPv6 resolvers (it keeps only IPv4 ones today). A lease with only one family offers that
+    family.
 - The backend side is an IP-packet port: `{send(packet), receive(packet)}`, one packet per
   message. (Built: the guest's mask is 0.0.0.0 with the gateway at 169.254.0.1 and option 121
   routes, not the tailnet's range; see docs/devices.md.) The device worker and the backend's worker talk directly (a transferred
@@ -183,49 +206,65 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   dialer's HTTPS port), `bench/net/` (Node harness, spike), `tests/net/tailnet.sh` (headscale and a
   peer in rootless Podman). Findings in the report: Go's fetch off in Node, `login()`, custom HTTPS
   ports, DERP needs TLS, the 5 s first-ping mode, logtail dropped.
-- **N3 — The gateway** (§3; the gateway and its byte-level tests are done in `web/gateway.ts`, `tests/gateway.test.ts`, docs/devices.md "net"; the Buildroot boot with exact steps and the Rust twin wait for the user's OK to change the test guest and for the images), IPv4, in the device worker, with a synchronous test backend that
-  echoes at the IP level: Node unit tests for its ARP, DHCP and framing bytes, and a Buildroot
-  boot that takes a DHCP lease and pings through it, deterministic and with exact step counts like
-  `/test-devices.sh` (natively too, with a Rust twin in `core/tests/common`).
-- **N4 — Gateway + Tailscale.** End to end in Chromium without a Tailscale account: Headscale (with
-  its embedded DERP) and a peer (`tailscaled` with userspace networking) in rootless Podman; the
-  guest gets a DHCP lease with its tailnet address, pings the peer, resolves it through MagicDNS,
-  and the peer `ssh`es into the guest. Realtime mode only. Also once by hand against the real
-  Tailscale service.
-  *Done (2026-09-29, cloud session, Chromium 141): the test passes in ~117 s.* The guest gets
-  `100.90.0.2/0` from systemd-networkd (the all-on-link mask and option 121 routes are accepted),
-  a default route via 169.254.0.1, pings the peer (0% loss), resolves `peer.tail.test` and `peer`
-  through MagicDNS, and the peer reaches a server in the guest. Not yet done: the manual run
-  against the real Tailscale service, and the `ssh` variant (no sshd in the image). What's built:
-  `web/tailscale.ts` + `web/tailscale-worker.ts` (the client in its own worker,
-  an IP port to the gateway, the lease from the client's netmap), `tests/browser/tailnet.*` (a
-  page and a Debian machine worker) and `tests/net-tailnet.test.ts` (opt-in, `WEBPC_TAILNET=1`;
-  the peer reaches a Python server in the guest through `tailscale nc` instead of ssh: the guest
-  has no sshd). In Chromium the module loads in ~240 ms and the node is Running ~2.5 s after the
-  start. **Requirement found: the control server must answer `GET /key` with CORS headers**
-  (`Access-Control-Allow-Origin`): the page fetches it cross-origin, and headscale sends none, so
-  behind its reverse proxy (Caddy in the test tailnet) that header has to be added; Tailscale's
-  own control server sends it. Everything else the client does is WebSocket (control, DERP).
-- **N5 — Product surface** (with M8): connect/login UI, persisted node state, exit-node selection,
-  Alpine `apk add` through an exit node as the smoke test; IPv6.
-  *In progress.* Done: the Network menu on the page (connect with a control server, hostname and
-  optional auth key; the login link; status; Disconnect, Log out), the node kept in
-  IndexedDB with automatic reconnect, the card always present (no restart to connect) and surviving machine restarts, the page's Debian
-  configuring the card itself (a networkd credential); docs/frontend.md "Network". Exit-node selection is done (menu, `setExitNode` in the Go client, the
-  choice remembered; the guest reaches an address only the exit node reaches, and DNS goes through
-  the exit node's DoH: docs/frontend.md "Network" says what that took) and a real interactive
-  login was checked by hand. Left: the `apk add` smoke test (needs an Alpine image with a card and a tailnet with an exit node to
-  the internet), IPv6 and Buildroot's N3 boot.
-- Later: §5 (tailscale-rs) and §6 (WebRTC), each behind the same interfaces.
+- **N3 — The gateway (done)**, IPv4, in the device worker, with a synchronous test backend that
+  echoes at the IP level: `web/gateway.ts`, byte-level tests in `tests/gateway.test.ts`, and the
+  guest-level check in `tests/net-guest.test.ts` (the page's Debian takes the lease and pings any
+  address). *Dropped (the user, 2026-10-01):* a Buildroot boot with exact step counts and its Rust
+  twin. It would change the test guest's bytes and add a native copy of a gateway that exists in
+  TypeScript only, for coverage the Debian test and the byte tests already give.
+- **N4 — Gateway + Tailscale (done).** End to end in Chromium without a Tailscale account: Headscale
+  (with its embedded DERP) and a peer (`tailscaled`, userspace networking) in rootless Podman,
+  `tests/net-tailnet.test.ts`: the guest gets a lease with its tailnet address, pings the peer,
+  resolves it through MagicDNS, and the peer reaches a server in the guest (`tailscale nc`; the
+  Debian image has no sshd, so no `ssh` variant). `web/tailscale.ts` + `web/tailscale-worker.ts`
+  hold the client in its own worker. **Requirement found: the control server must answer
+  `GET /key` with CORS headers** (headscale sends none: the test tailnet's Caddy adds it;
+  Tailscale's own control server sends it). Module load ~240 ms, node Running ~2.5 s after start.
+- **N5 — Product surface (done).** The Network menu (connect with a control server, hostname and
+  optional auth key; the login link; status; Disconnect, Log out), the node kept in IndexedDB with
+  automatic reconnect, the card always present, the guest configuring it from a systemd credential
+  over fw_cfg, exit-node selection with DNS through the exit node, and a real interactive login
+  checked by hand. docs/frontend.md "Network". *Dropped (the user, 2026-10-01):* the `apk add`
+  smoke test and any other test that needs a real exit node on the internet.
+- **N6 — IPv6** (§3, the main open item). Tests at the cheapest layer first:
+  1. `tests/gateway.test.ts`: the bytes of RA, NS/NA, DHCPv6 (all four exchanges and the NAK-like
+     status codes), ICMPv6 echo and Packet Too Big, framing, source filtering, "no lease, no
+     advertise", and that IPv4 is unchanged.
+  2. The echo backend answers ICMPv6 echo too (a v6 lease for it), so `tests/net-guest.test.ts`
+     checks the page's Debian gets an address, a default route via the gateway's link-local and
+     `ping -6` works, without a tailnet. The credential's `DHCP=ipv4` becomes `DHCP=yes` (or
+     `ipv6` plus `IPv6AcceptRA`) in `web/app/machine.ts`.
+  3. `tests/net-tailnet.test.ts` (the test tailnet already has `fd7a:115c:a1e0::/48`): the guest
+     has both addresses, pings the peer's `fd7a` address, resolves an AAAA record through MagicDNS,
+     and the peer reaches a guest server over IPv6. No test needs IPv6 to the internet.
+  4. Check what the exit node does with IPv6 (`::/0` is advertised and approved together with
+     `0.0.0.0/0`) by hand once; only by hand, as it needs a v6 internet route.
+  Realtime only; the timer-driven RAs are the one new asynchronous piece, so a late lease (the
+  Network menu connects after the boot) must reach the guest quickly: measure it against IPv4's ~20 s
+  and, if the RA (a prompt one on the lease) beats networkd's retry schedule, say so in the docs.
+- **N7 — The card for other guests (Alpine).** The page offers a card to every machine with a
+  `network` entry, and a disk chosen by the user (Alpine's UEFI cloud images are in scope since phase
+  B) boots under that machine's configuration; but the `.network` credential only works for
+  systemd guests. Find out what Alpine's images do by default with a virtio-net card (tiny-cloud
+  brings `eth0` up with DHCP, to be checked, IPv6 included) and whether the seed disk or the image's
+  own config needs anything. If it needs nothing, the step is a test: `tests/uefi.test.ts`'s Alpine
+  boot gets a card on the echo gateway and pings (cheap: the seed disk is already there); if it does,
+  the page's per-machine `network` entry grows a way to say it (a seed-disk file, not a credential).
+  Not an `apk add`.
+- **N8 — Tests and CI cleanup (done 2026-10-01).** The exit-node phase of `tests/net-tailnet.test.ts`
+  needs the real internet (1.1.1.1, example.com); it guards three fixes found against a real exit
+  node (`ipn.NewPrefs()`, `peerapiclient`, the netstack dialer). It is now opt-in
+  (`WEBPC_TAILNET_INTERNET=1`) and passed once. Exit nodes refuse private, CGNAT and link-local
+  destinations, so no local server can stand in for the internet. Left, only if cheap: the menu's
+  login-URL and approval states in Chromium against headscale. `ci-net.sh` stays separate from
+  `ci.sh` (the user, 2026-09-30: only when a change touches the network).
+- Later: §5 (tailscale-rs, meant to replace the Go client when it is ready) and §6 (WebRTC), and further backends, each behind the same interfaces.
 
 ## 8. Open questions
 
-- Throughput and latency through Tailscale's DERP servers from a browser (N2 measures them); the
-  guest's traffic is all relayed.
-- The `IsTAP` / `tap` layer-2 mode in `wgengine`: could it replace part of the gateway? It's
-  marked experimental and was built for Linux TAP devices; look at it in N2, but don't depend
-  on it.
-- Headscale's embedded DERP over WebSocket from a browser: expected to work (the DERP handler
-  accepts WebSocket upgrades), to confirm in N4.
-- Several VMs in one page: one node each (simplest), or one node with a subnet route? One node
-  each until someone needs otherwise.
+- **Settled by N2/N4:** throughput and latency through DERP ([bench/net/REPORT.md](../../bench/net/REPORT.md):
+  ~33 Mbit/s, 1.6 ms through a local DERP; Tailscale's own relays not measured); headscale's DERP over
+  WebSocket from a browser works.
+- The `IsTAP` / `tap` layer-2 mode in `wgengine`: not looked at, and the gateway has worked; it would
+  not remove the IPv6 work above (RA and DHCPv6 would still be ours). Drop unless something asks.
+- Several VMs in one page: one node each (simplest), until someone needs otherwise.

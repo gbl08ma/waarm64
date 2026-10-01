@@ -127,12 +127,12 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       // The exit node: the peer offers to carry the guest's internet traffic. Tailscale's exit nodes
       // never forward RFC 1918 addresses, the exit node's own LAN included (ipn/ipnlocal's
       // removeFromDefaultRoute: the "guest wifi" rule), so a server on this host's LAN can't stand for the
-      // internet: the phase uses the real one (the host has it: the images and the Go modules came
-      // through it) and is skipped, loudly, when this host can't reach it.
+      // internet: the phase uses the real one, so it is opt-in (WEBPC_TAILNET_INTERNET=1) and is
+      // skipped, loudly, when this host can't reach it.
       const reach = async (url: string) => fetch(url, { signal: AbortSignal.timeout(8000), redirect: 'manual' }).then((r) => r.status, () => 0);
-      const internet = (await reach(`http://${INTERNET_IP}/`)) !== 0 && (await reach(`http://${INTERNET_HOST}/`)) !== 0;
+      const internet = process.env.WEBPC_TAILNET_INTERNET === '1' && (await reach(`http://${INTERNET_IP}/`)) !== 0 && (await reach(`http://${INTERNET_HOST}/`)) !== 0;
       if (!internet) {
-        console.log(`# SKIPPED: the exit-node phase, this host can't reach ${INTERNET_IP} and ${INTERNET_HOST}`);
+        console.log(`# SKIPPED: the exit-node phase (opt-in: WEBPC_TAILNET_INTERNET=1, and this host must reach ${INTERNET_IP} and ${INTERNET_HOST})`);
       } else {
         const offers = (await harness<{ netmap: { exitNode: string; peers: { id: string; name: string; exitNodeOption: boolean }[] } }>(page, 'tailscale()')).netmap;
         const exit = offers.peers.find((p) => p.exitNodeOption);

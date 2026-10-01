@@ -141,10 +141,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   - Leftovers (the chosen file isn't remembered across reloads, the firmware's setup screen, key
     latency, an unused ext4 reader): [docs/backlog.md](docs/backlog.md).
 - **C. Parallel tracks**, each starting from its plan doc (written first where none exists):
-  - Networking ([docs/plans/networking.md](docs/plans/networking.md)): the Ethernet gateway, then
-    a first backend. For a page served by our dev server, a relay to a user-mode NAT in the dev
-    server (no account needed) is the candidate to weigh against the plan's Tailscale-first
-    order, which targets static hosting.
+  - Networking ([docs/plans/networking.md](docs/plans/networking.md)): the Ethernet gateway and the
+    Tailscale backend are built (a VM reaches its tailnet and, through an exit node, the internet);
+    left: **IPv6** (required), the card for Alpine. More backends besides Tailscale are wanted
+    later behind the same gateway, and the Rust Tailscale client (tailscale-rs, plan §5) is meant
+    to replace the Go one once it is ready.
   - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): virtio-gpu 2D first (the screen
     follows the page's size, damage instead of full copies, a cursor), then the software
     baseline and the 3D decision gate.
