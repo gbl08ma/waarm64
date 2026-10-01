@@ -42,7 +42,7 @@ Read docs/plans/networking.md (§3 for the gateway, §7 for the steps) and docs/
 
 ## Smaller things
 - The menu's DOM is lightly tested (`page-network.test.ts`); login-URL and approval states are
-  `viewOf` unit tests only. The auth key field has no reveal. Firefox/Safari: PLAN.md.
+  `viewOf` unit tests only.  The auth key field has a "Show" checkbox (done 2026-10-01). Firefox/Safari: PLAN.md.
 - Buildroot's kernel *does* have virtio-net (`images/linux.fragment`; `test-devices.sh` pings the
   loopback adapter); the page's Buildroot machine just has no `network` entry. An earlier note
   here said the opposite.

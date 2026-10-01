@@ -84,6 +84,11 @@ test('the Network menu: a bad URL is refused; connecting starts the client witho
     // Connect with an auth key: no restart (the card is there from the boot), so no question either.
     await page.fill('#net-hostname', 'testbox');
     await page.fill('#net-authkey', 'tskey-auth-SECRET-1234');
+    assert.equal(await page.getAttribute('#net-authkey', 'type'), 'password');
+    await page.check('#net-reveal');
+    assert.equal(await page.getAttribute('#net-authkey', 'type'), 'text');
+    await page.uncheck('#net-reveal');
+    assert.equal(await page.getAttribute('#net-authkey', 'type'), 'password');
     await page.click('#net-connect');
     await page.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 30_000 });
     assert.equal(await page.locator('#net-form').isVisible(), false, 'the form gives way to the actions while a client runs');

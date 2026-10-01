@@ -383,7 +383,7 @@ web/tailscale.ts, the client in its own worker).
   `{type: 'net', adapter: {ip}}` (docs/devices.md "net"); the page keeps the other end
   (web/app/network.ts) for as long as no client holds it.
 - **Connect** takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
-  `http://` for this computer), a hostname (default `webpc`) and an optional auth key.
+  `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with a "Show the auth key" checkbox).
 - **Login:** without an auth key the client asks the control server for a login and the menu opens
   with a **Log in…** link (a new tab; only `http(s)` URLs are ever offered); the client comes up
   when the login completes. An admin-approval wait is shown as such. With an auth key there's no

@@ -488,6 +488,7 @@ function autoconnect() {
   network.connect({ controlURL: url.url, hostname: 'hostname' in host ? host.hostname : 'webpc', exitNode: s.exitNode });
 }
 
+$<HTMLInputElement>('net-reveal').onchange = (e) => { netEl.key.type = (e.target as HTMLInputElement).checked ? 'text' : 'password'; };
 netEl.form.onsubmit = (e) => {
   e.preventDefault();
   const url = parseControlURL(netEl.control.value);
