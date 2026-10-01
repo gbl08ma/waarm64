@@ -72,10 +72,10 @@ export const MACHINES = {
     disk: images('debian/disk.qcow2'),
     overlay: 'webpc-debian',
     cmdline: '',
-    // A systemd credential gives networkd a .network file for the card (DHCP from the gateway: its
-    // lease is the tailnet address; resolved does MagicDNS). Not `ip=dhcp`: Debian's initramfs reads
+    // A systemd credential gives networkd a .network file for the card (DHCP from the gateway, v4 and v6: its
+    // lease is the tailnet addresses; resolved does MagicDNS). Not `ip=dhcp`: Debian's initramfs reads
     // that too and waits for a lease before it boots, and a machine that isn't connected yet has none.
-    network: { credentials: [{ name: 'network.network.card', data: '[Match]\nName=e*\n[Network]\nDHCP=ipv4\n' }] },
+    network: { credentials: [{ name: 'network.network.card', data: '[Match]\nName=e*\n[Network]\nDHCP=yes\n' }] },
     ramMiB: 1024,
     framebuffer: { width: 1024, height: 768 },
     ready: /(?:^|\n)\S+ login: /, // agetty's prompt ("localhost login: ")

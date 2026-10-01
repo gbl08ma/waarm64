@@ -64,6 +64,19 @@ export type FromTailscale =
   | { type: 'loggedout' }
   | { type: 'error'; error: string };
 
+const ip6 = (s: string) => {
+  if (!s.includes(':') || !/^[0-9a-f:]+$/i.test(s)) return undefined;
+  const [head, tail, extra] = s.split('::');
+  if (extra !== undefined) return undefined;
+  const groups = (h: string) => (h ? h.split(':') : []);
+  const [a, b] = [groups(head), groups(tail ?? '')];
+  if (tail === undefined ? a.length !== 8 : a.length + b.length > 7) return undefined;
+  if (![...a, ...b].every((g) => /^[0-9a-f]{1,4}$/i.test(g))) return undefined;
+  const all = tail === undefined ? a : [...a, ...Array(8 - a.length - b.length).fill('0'), ...b];
+  const bytes = all.flatMap((g) => { const n = parseInt(g, 16); return [n >> 8, n & 255]; });
+  return bytes;
+};
+
 const ip4 = (s: string) => {
   const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(s);
   return m ? m.slice(1).map(Number) : undefined;
@@ -71,14 +84,16 @@ const ip4 = (s: string) => {
 
 /**
  * The guest's lease from a network map: the node's first IPv4 address (taken from what the client
- * reports; no range is assumed), the client's MTU, its DNS resolvers that are IPv4 addresses
- * (MagicDNS's service address first) and its search domains. Null while there's no IPv4 address.
+ * reports; no range is assumed) and its first IPv6 one, the client's MTU, its DNS resolvers that are
+ * IP addresses (MagicDNS's service addresses first) and its search domains. Null while there's no IPv4 address.
  */
 export function leaseFrom(nm: NetMap): Lease | null {
   const address = nm.addresses.map((a) => ip4(a.replace(/\/\d+$/, ''))).find((a) => a);
   if (!address) return null;
   const dns = (nm.dns ?? []).map(ip4).filter((a): a is number[] => !!a);
-  return { address, mtu: nm.mtu, dns, domains: nm.domains ?? [] };
+  const address6 = nm.addresses.map((a) => ip6(a.replace(/\/\d+$/, ''))).find((a) => a);
+  const dns6 = (nm.dns ?? []).map(ip6).filter((a): a is number[] => !!a);
+  return { address, ...(address6 ? { address6, dns6 } : {}), mtu: nm.mtu, dns, domains: nm.domains ?? [] };
 }
 
 export type Tailscale = {

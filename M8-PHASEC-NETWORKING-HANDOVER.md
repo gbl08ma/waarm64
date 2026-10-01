@@ -1,8 +1,8 @@
 **Handover, 2026-10-01: the networking lane (docs/plans/networking.md) has N1 to N5 done: a VM on the
 page connects to a tailnet (login, kept node, reconnect) and reaches the internet through an exit
-node. What's left is IPv6 (N6, the main item) and the card for Alpine (N7).**
+node. IPv6 (N6) is done too. What's left is the card for Alpine (N7).**
 
-Read docs/plans/networking.md (§3 for the IPv6 design, §7 for the steps) and docs/frontend.md
+Read docs/plans/networking.md (§3 for the gateway, §7 for the steps) and docs/frontend.md
 "Network" first; this file is what they don't say.
 
 ## Decisions (the user, 2026-10-01)
@@ -14,11 +14,11 @@ Read docs/plans/networking.md (§3 for the IPv6 design, §7 for the steps) and d
 - `scripts/ci-net.sh` stays apart from `scripts/ci.sh` (only for changes that touch the network).
 
 ## Where things are
-- Gateway: `web/gateway.ts` (IPv4 only), `tests/gateway.test.ts`. Backends: the echo one (same
+- Gateway: `web/gateway.ts` (IPv4 and, with `web/ip6.ts`, IPv6), `tests/gateway.test.ts`. Backends: the echo one (same
   file), the Tailscale one (`web/tailscale.ts`, `web/tailscale-worker.ts`, Go in `net/tailscale/`).
-  `leaseFrom` in `web/tailscale.ts` keeps the first IPv4 address and IPv4 resolvers only.
+  `leaseFrom` in `web/tailscale.ts` takes the first IPv4 and IPv6 address and the IP resolvers.
 - The page: `web/app/network.ts` (controller), `main.ts`, `machine.ts` (Debian's `network` entry:
-  the networkd credential, `DHCP=ipv4`), `worker.ts` adds the `net` device from the IP port.
+  the networkd credential, `DHCP=yes`), `worker.ts` adds the `net` device from the IP port.
 - Tests: `network` (controller, fake client), `gateway`, `net`, `devices` in `ci.sh`;
   `net-guest`, `page-network`, `net-tailnet` in `ci-net.sh` (~4 min; the last needs Podman).
   The test tailnet (`tests/net/tailnet.sh`: headscale behind Caddy for TLS and the CORS header on
@@ -26,13 +26,12 @@ Read docs/plans/networking.md (§3 for the IPv6 design, §7 for the steps) and d
   addresses, so N6's tailnet test needs no new infrastructure.
 
 ## Next, in order
-1. **N6 IPv6**, as laid out in the plan: gateway bytes first (RA with M/O and no prefix, DHCPv6
-   IA_NA /128, ICMPv6, source filtering, timers only in realtime), the echo backend's v6 echo and
-   `net-guest`, then `net-tailnet` (ping6 to the peer, AAAA through MagicDNS, the peer reaching the
-   guest over v6). Things to watch: the checksum pseudo-headers; networkd's `DHCP=yes` vs
-   `ipv6` + `IPv6AcceptRA`; an RA sent when the lease appears, since the card exists before the
-   client connects (IPv4's late lease takes ~20 s); the Packet Too Big rule at the 1280 MTU.
-2. **N7 Alpine's card:** what Alpine's UEFI cloud image does with a virtio-net card by itself; if
+1. **N6 IPv6 (done 2026-10-01)**, see the plan. Things worth knowing: the gateway sends the
+   advertisement when the lease gains an IPv6 address, so a late lease gives the guest its IPv6
+   address in ~2 s (IPv4 ~25 s, networkd's retries); MagicDNS gives peers AAAA only with the
+   `magicdns-aaaa` node attribute; IPv6 to the internet through an exit node is untested (no v6
+   route here); IPv6 router advertisements repeat every 60 s only on a port backend (a timer).
+2. **N7 Alpine's card (next):** what Alpine's UEFI cloud image does with a virtio-net card by itself; if
    nothing is needed, a ping check in `tests/uefi.test.ts`'s Alpine boot on the echo gateway.
    The page offers every machine with a `network` entry a card, and a user-chosen disk (Alpine)
    boots under Debian's entry, whose credential only systemd reads.

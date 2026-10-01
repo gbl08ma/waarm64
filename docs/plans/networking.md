@@ -2,8 +2,7 @@
 
 **Status:** refined 2026-10-01. N1 to N5 are done: the IPv4 gateway, the Tailscale client, the
 Network menu on the page, a kept node, exit-node selection; a VM on the page reaches its tailnet and,
-through an exit node, the internet (checked by hand with a real login). **Open: IPv6 (N6, the main
-item), and the card for Alpine (N7).** It feeds M8's "networking backend
+through an exit node, the internet (checked by hand with a real login). **Open: the card for Alpine (N7)** (IPv6, N6, is done). It feeds M8's "networking backend
 API" (PLAN.md, M8). What exists is described in [devices.md](devices.md) "net" and
 [frontend.md](frontend.md) "Network"; this file holds the decisions and what's left.
 
@@ -81,7 +80,7 @@ backend keeps deterministic mode exact, as the loopback adapter does now):
   The lease follows the backend: no lease until the backend has an address.
 - **Framing:** strip the Ethernet header on the way out (IPv4/IPv6 only; everything else is
   answered by the gateway or dropped), add it (gateway MAC → guest MAC) on the way in.
-- **IPv6 (N6, not built; the gateway drops IPv6 frames today).** Tailscale gives each node an
+- **IPv6 (N6, done 2026-10-01; what's built is in devices.md "net").** Tailscale gives each node an
   address in `fd7a:115c:a1e0::/48` (a headscale: its configured prefix), and the client's TUN
   already passes IPv6 packets untouched. The guest must use *exactly* the node's address (the
   gateway drops other sources, as for IPv4), which SLAAC can't produce for a /128, so:
@@ -102,8 +101,8 @@ backend keeps deterministic mode exact, as the loopback adapter does now):
     network; Tailscale's 1280 is IPv6's minimum, so it's rare); multicast other than NDP and DHCPv6
     (`ff02::1:2`) dropped; the pseudo-header checksums for ICMPv6 and UDP.
   - `Lease` gains `address6`, `dns6`; the page's `leaseFrom` takes the netmap's `fd7a` address and
-    the IPv6 resolvers (it keeps only IPv4 ones today). A lease with only one family offers that
-    family.
+    the IPv6 resolvers (it keeps only IPv4 ones today). A lease needs the IPv4 address; the IPv6 one is optional
+    (without it nothing is advertised and DHCPv6 stays silent).
 - The backend side is an IP-packet port: `{send(packet), receive(packet)}`, one packet per
   message. (Built: the guest's mask is 0.0.0.0 with the gateway at 169.254.0.1 and option 121
   routes, not the tailnet's range; see docs/devices.md.) The device worker and the backend's worker talk directly (a transferred
@@ -226,22 +225,16 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   over fw_cfg, exit-node selection with DNS through the exit node, and a real interactive login
   checked by hand. docs/frontend.md "Network". *Dropped (the user, 2026-10-01):* the `apk add`
   smoke test and any other test that needs a real exit node on the internet.
-- **N6 — IPv6** (§3, the main open item). Tests at the cheapest layer first:
-  1. `tests/gateway.test.ts`: the bytes of RA, NS/NA, DHCPv6 (all four exchanges and the NAK-like
-     status codes), ICMPv6 echo and Packet Too Big, framing, source filtering, "no lease, no
-     advertise", and that IPv4 is unchanged.
-  2. The echo backend answers ICMPv6 echo too (a v6 lease for it), so `tests/net-guest.test.ts`
-     checks the page's Debian gets an address, a default route via the gateway's link-local and
-     `ping -6` works, without a tailnet. The credential's `DHCP=ipv4` becomes `DHCP=yes` (or
-     `ipv6` plus `IPv6AcceptRA`) in `web/app/machine.ts`.
-  3. `tests/net-tailnet.test.ts` (the test tailnet already has `fd7a:115c:a1e0::/48`): the guest
-     has both addresses, pings the peer's `fd7a` address, resolves an AAAA record through MagicDNS,
-     and the peer reaches a guest server over IPv6. No test needs IPv6 to the internet.
-  4. Check what the exit node does with IPv6 (`::/0` is advertised and approved together with
-     `0.0.0.0/0`) by hand once; only by hand, as it needs a v6 internet route.
-  Realtime only; the timer-driven RAs are the one new asynchronous piece, so a late lease (the
-  Network menu connects after the boot) must reach the guest quickly: measure it against IPv4's ~20 s
-  and, if the RA (a prompt one on the lease) beats networkd's retry schedule, say so in the docs.
+- **N6 — IPv6 (done 2026-10-01).** §3 as built: `web/ip6.ts`, the gateway's IPv6 half, `Lease.address6`
+  and `dns6`, Debian's credential `DHCP=yes`, the Go client reporting MagicDNS's IPv6 service address.
+  Tests: `tests/gateway.test.ts` (the bytes), `tests/net.test.ts` (`leaseFrom`), `tests/net-guest.test.ts`
+  (the echo backend answers ICMPv6: the guest has the address, a default route `proto ra`, pings
+  any address and the gateway's link-local, gets the resolver; a late lease brings the IPv6 address
+  in ~2 s, IPv4's takes ~25 s), `tests/net-tailnet.test.ts` (both addresses, ping6 to the peer, the
+  peer reaches a server in the guest over IPv6). *Found:* MagicDNS answers AAAA for peers only when
+  the control server sends the `magicdns-aaaa` node attribute (the client's `magicDNSAddrs`), so
+  headscale's default gives names IPv4 only; the test checks IPv6 by address. Not done: IPv6 to
+  the internet through an exit node (needs a v6 route on the exit node; by hand, once, when one exists).
 - **N7 — The card for other guests (Alpine).** The page offers a card to every machine with a
   `network` entry, and a disk chosen by the user (Alpine's UEFI cloud images are in scope since phase
   B) boots under that machine's configuration; but the `.network` credential only works for

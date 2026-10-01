@@ -124,7 +124,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   header. **The Ethernet gateway** (`web/gateway.ts`, in the device worker) sits between a frame
   adapter and an IP backend (`IpBackend = {lease(), send(packet)}` plus the `deliver` it's made
   with): `{adapter: 'echo'}` is the synchronous test backend (answers ICMP echo for any address;
-  lease 198.18.0.15, MTU 1280), `{adapter: {ip: port}}` a backend behind a `MessagePort` (an
+  lease 198.18.0.15 and `fd00:5eb0::f`, MTU 1280; answers ICMPv6 echo too), `{adapter: {ip: port}}` a backend behind a `MessagePort` (an
   ArrayBuffer is one packet; `{type: 'lease', lease}` from the backend sets the lease: the
   Tailscale worker, N4). What the guest sees: a LAN with one router at 169.254.0.1
   (`02:77:65:62:70:63`). **Proxy ARP** answers every request except for the guest's own address
@@ -134,10 +134,23 @@ mode (and natively in realtime mode: std has no CSPRNG).
   (option 121: the gateway on-link, a default route through it); no lease means no offer and a
   NAK for a request; a renewal is answered unicast. **Framing:** the Ethernet header is cut on the
   way out (padding too) and added on the way in (gateway MAC to the guest's, learned from its first
-  frame). Dropped: IPv6 (later), non-IP ethertypes, multicast and broadcast, packets whose
-  source isn't the leased address, anything before a lease. A packet over the lease's MTU gets ICMP
+  frame). **IPv6** (`web/ip6.ts` builds the packets; the gateway's link-local
+  address is derived from its MAC, `fe80::77:65ff:fe62:7063`): a **router advertisement**
+  (to all nodes; sent to router solicitations, whenever the lease gains or loses an IPv6 address
+  (lifetime 0 when it loses it), and, on a port backend, every 60 s) with the managed and other
+  flags, router lifetime 1800 s, the MTU and the resolvers (RDNSS), and **no prefix**: nothing is
+  on-link and nothing autoconfigures, so the guest's default route is the gateway and no proxy NDP
+  is needed. **DHCPv6** (to `ff02::1:2` or the gateway): SOLICIT/ADVERTISE, REQUEST/RENEW/REBIND/
+  CONFIRM/INFORMATION-REQUEST/REPLY with one IA_NA holding the lease's `address6` as a /128 (T1/T2
+  half and four fifths of the lease, valid = preferred), DNS (23), the first search domain (24),
+  DUID-LL; another address in a renew gets NoBinding, in a confirm NotOnLink; no IPv6 address in the
+  lease, no answer. Neighbor solicitations are answered for the gateway's own address only
+  (duplicate-address probes from `::` and off-link hop limits ignored); ICMPv6 echo to the
+  gateway is answered. Packets from the guest must come from `address6`; over the lease's MTU gets
+  ICMPv6 Packet Too Big. Dropped: non-IP ethertypes, multicast and broadcast beyond that,
+  packets whose source isn't the leased address, anything before a lease. A packet over the lease's MTU gets ICMP
   fragmentation-needed if DF is set and is dropped otherwise (no fragmentation). The gateway
-  answers pings to its own address. Tests: tests/gateway.test.ts (bytes of ARP, DHCP, framing).
+  answers pings to its own address. Tests: tests/gateway.test.ts (bytes of ARP, DHCP, framing, router advertisements, neighbor discovery, DHCPv6).
 
 ### 9p (ID 9)
 - **Our own `9P2000.L` server** (`web/9p.ts`, twin `core/tests/common/p9.rs`), **not a port of

@@ -66,6 +66,21 @@ test('the page\'s Debian with a card takes the gateway\'s lease by itself and pi
       assert.match(other, /3 packets transmitted, 3 received, 0% packet loss/, other);
       const router = await run(page, 'ping -c 1 -W 5 169.254.0.1'); // the gateway itself
       assert.match(router, /1 packets transmitted, 1 received/, router);
+      // IPv6 (N6): the address comes from DHCPv6 after the router advertisement, the default route from the advertisement
+      const v6 = async () => (await run(page, "ip -6 -o addr show scope global | awk '{print $4}'")).match(/fd00:5eb0::f\/128/)?.[0] ?? '';
+      let got6 = await v6();
+      for (let k = 0; k < 30 && !got6; k++) {
+        await page.waitForTimeout(1000);
+        got6 = await v6();
+      }
+      assert.ok(got6, `no IPv6 address after 30 s:\n${await diag()}\n${await run(page, 'ip -6 route; ip -6 -br addr')}`);
+      const routes6 = await run(page, 'ip -6 route');
+      assert.match(routes6, /default (nhid \d+ )?via fe80::77:65ff:fe62:7063 dev e\S+ proto ra/, routes6);
+      const other6 = await run(page, 'ping -6 -c 3 -W 5 fd7a:115c:a1e0::2', 90_000); // the echo backend answers for any address
+      assert.match(other6, /3 packets transmitted, 3 received, 0% packet loss/, other6);
+      const router6 = await run(page, 'ping -6 -c 1 -W 5 fe80::77:65ff:fe62:7063%eth0'); // the gateway itself
+      assert.match(router6, /1 packets transmitted, 1 received/, router6);
+      assert.match(await run(page, 'resolvectl dns 2>&1 | cat'), /fd00:5eb0::53/, 'the DHCPv6 and RA resolver');
       const dns = await run(page, 'resolvectl status 2>&1 | head -20');
       console.log(`# resolved: ${dns.trim().replace(/\n/g, ' | ')}`);
     } finally {
@@ -95,14 +110,20 @@ test('a lease that arrives after the boot is taken by the guest without a restar
       await page.waitForTimeout(20_000);
       await page.evaluate(() => (window as never as { harness: { lease(): void } }).harness.lease());
       const t0 = Date.now();
+      // (both families, one loop: the IPv6 address needs the advertisement the lease triggers)
+      const addr6 = () => run(page, "ip -6 -o addr show scope global | awk '{print $4}'").then((s) => /fd00:5eb0::f\/128/.exec(s)?.[0] ?? '');
       let got = '';
-      while (!got && Date.now() - t0 < 180_000) {
+      let got6 = '';
+      let took6 = 0;
+      while ((!got || !got6) && Date.now() - t0 < 180_000) {
         await page.waitForTimeout(1000);
-        got = await addr();
+        got ||= await addr();
+        if (!got6 && (got6 = await addr6())) took6 = (Date.now() - t0) / 1000;
       }
       const took = (Date.now() - t0) / 1000;
-      console.log(`# the guest took a lease that arrived late after ${took.toFixed(0)} s`);
+      console.log(`# the guest took a lease that arrived late: IPv6 address after ${took6 ? took6.toFixed(0) : 'never'} s, both after ${took.toFixed(0)} s`);
       assert.match(got, /^198\.18\.0\.15\//, `no address ${took.toFixed(0)} s after the lease`);
+      assert.ok(got6, 'the late lease brought an IPv6 address too');
     } finally {
       await removeOverlay();
       await page.context().close();

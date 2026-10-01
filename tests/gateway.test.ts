@@ -2,7 +2,8 @@
 // with a synchronous IP backend, and the same through the device worker's `echo` adapter.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ECHO_LEASE, GATEWAY_IP, GATEWAY_MAC, echoBackend, gateway, type IpBackend, type Lease } from '../web/gateway.ts';
+import { ECHO_LEASE, GATEWAY_IP, GATEWAY_IP6, GATEWAY_MAC, echoBackend, gateway, type IpBackend, type Lease } from '../web/gateway.ts';
+import { ALL_DHCP_AGENTS, ALL_NODES, ALL_ROUTERS, icmp6, ip6, multicastMac, sum6, udp6 } from '../web/ip6.ts';
 import { checksum } from '../web/net.ts';
 
 const GUEST_MAC = [0x52, 0x54, 0x00, 0x12, 0x34, 0x56];
@@ -13,12 +14,14 @@ function rig(lease: Lease | null = ECHO_LEASE, backendSend?: (p: Uint8Array) => 
   const out: Uint8Array[] = []; // frames for the guest
   const sent: Uint8Array[] = []; // packets for the backend
   let deliver!: (p: Uint8Array) => void;
-  const g = gateway((f) => out.push(f), (d) => {
+  let changed!: () => void;
+  const g = gateway((f) => out.push(f), (d, c) => {
     deliver = d;
+    changed = c;
     const inner = echoBackend(lease ?? ECHO_LEASE)(d);
     return { lease: () => lease, send: (p) => { sent.push(p); backendSend?.(p) ?? inner.send(p); } } satisfies IpBackend;
   });
-  return { g, out, sent, deliver: (p: Uint8Array) => deliver(p), setLease: (l: Lease | null) => (lease = l) };
+  return { g, out, sent, deliver: (p: Uint8Array) => deliver(p), setLease: (l: Lease | null) => { lease = l; changed(); } };
 }
 
 function frame(dst: Iterable<number>, src: Iterable<number>, type: number, payload: Iterable<number>) {
@@ -123,6 +126,7 @@ test('DHCP follows the backend: no lease, no offer; a request for another addres
   g.send(dhcpMsg(3, [50, 4, 10, 0, 0, 9]));
   assert.equal(dhcpReply(out.pop()!).type, 6); // NAK: no lease
   setLease(ECHO_LEASE);
+  out.length = 0; // (the lease's IPv6 address was advertised: N6)
   g.send(dhcpMsg(3, [50, 4, 10, 0, 0, 9]));
   const nak = dhcpReply(out.pop()!);
   assert.equal(nak.type, 6);
@@ -202,4 +206,223 @@ test('the gateway answers pings to its own address', () => {
   assert.equal(out[0][34], 0);
   assert.deepEqual(Array.from(out[0].subarray(26, 30)), GATEWAY_IP);
   assert.equal(checksum(out[0].subarray(34)), 0);
+});
+
+// ---- IPv6 (N6) ----
+
+const L6 = ECHO_LEASE.address6!;
+const GUEST_LL = [0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0x50, 0x54, 0x00, 0xff, 0xfe, 0x12, 0x34, 0x56];
+const SOLICITED = [0xff, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0xff, ...GATEWAY_IP6.slice(13)];
+const toGateway = (packet: Uint8Array, dst: Iterable<number> = GATEWAY_MAC) => frame(dst, GUEST_MAC, 0x86dd, packet);
+
+/** An IPv6 frame from the gateway: checks the headers and checksums and returns the parts. */
+function v6(f: Uint8Array) {
+  assert.equal(be16(f, 12), 0x86dd);
+  const p = f.subarray(14);
+  assert.equal(p[0] >> 4, 6);
+  assert.equal(be16(p, 4), p.length - 40, 'payload length');
+  const [src, dst, next] = [p.subarray(8, 24), p.subarray(24, 40), p[6]];
+  const body = p.subarray(40);
+  assert.equal(sum6(src, dst, next, body), 0, `checksum (next header ${next})`);
+  return { dstMac: f.subarray(0, 6), src, dst, next, hop: p[7], body };
+}
+
+function rs() {
+  return toGateway(icmp6(GUEST_LL, ALL_ROUTERS, 133, 0, [0, 0, 0, 0], [1, 1, ...GUEST_MAC], 255), multicastMac(ALL_ROUTERS));
+}
+
+test('a router solicitation is answered with an advertisement: default router, M and O, the MTU, no prefix', () => {
+  const { g, out } = rig();
+  g.send(rs());
+  assert.equal(out.length, 1);
+  const r = v6(out[0]);
+  assert.equal(hex(r.dstMac), hex(multicastMac(ALL_NODES)));
+  assert.deepEqual(Array.from(r.src), GATEWAY_IP6);
+  assert.deepEqual(Array.from(r.dst), ALL_NODES);
+  assert.equal(r.hop, 255);
+  assert.equal(r.body[0], 134);
+  assert.equal(r.body[5] & 0xc0, 0xc0, 'managed and other-config');
+  assert.equal(be16(r.body, 6), 1800, 'router lifetime');
+  // options: source link-layer address, MTU, RDNSS; never a prefix information option (3)
+  const types: number[] = [];
+  const opts = new Map<number, Uint8Array>();
+  for (let k = 16; k < r.body.length; k += r.body[k + 1] * 8) { types.push(r.body[k]); opts.set(r.body[k], r.body.subarray(k + 2, k + r.body[k + 1] * 8)); }
+  assert.deepEqual(types, [1, 5, 25]);
+  assert.equal(hex(opts.get(1)!), hex(GATEWAY_MAC));
+  assert.equal(Buffer.from(opts.get(5)!.subarray(2, 6)).readUInt32BE(0), 1280);
+  assert.deepEqual(Array.from(opts.get(25)!.subarray(6, 22)), ECHO_LEASE.dns6![0]);
+});
+
+test('advertisements follow the lease: none without an IPv6 address, one when it appears, a lifetime-0 one when it goes', () => {
+  const { g, out, setLease } = rig({ ...ECHO_LEASE, address6: undefined });
+  g.send(rs());
+  assert.equal(out.length, 0, 'IPv4 only: nothing to advertise');
+  setLease({ ...ECHO_LEASE, address6: undefined });
+  assert.equal(out.length, 0);
+  setLease(ECHO_LEASE);
+  assert.equal(out.length, 1, 'the lease gained an address: advertised unprompted');
+  assert.equal(be16(v6(out[0]).body, 6), 1800);
+  setLease({ ...ECHO_LEASE, address6: undefined });
+  assert.equal(out.length, 2);
+  assert.equal(be16(v6(out[1]).body, 6), 0, 'the router goes away');
+  setLease(null);
+  assert.equal(out.length, 2, 'once is enough');
+});
+
+test('neighbor discovery: the gateway answers for its own link-local address only; probes are ignored', () => {
+  const { g, out } = rig();
+  const ns = (target: number[], src = GUEST_LL, hop = 255) => toGateway(icmp6(src, SOLICITED, 135, 0, [0, 0, 0, 0], [...target, 1, 1, ...GUEST_MAC], hop), multicastMac(SOLICITED));
+  g.send(ns(GATEWAY_IP6));
+  assert.equal(out.length, 1);
+  const na = v6(out[0]);
+  assert.equal(hex(na.dstMac), hex(GUEST_MAC));
+  assert.deepEqual(Array.from(na.src), GATEWAY_IP6);
+  assert.deepEqual(Array.from(na.dst), GUEST_LL);
+  assert.equal(na.body[0], 136);
+  assert.equal(na.body[4], 0xe0, 'router, solicited, override');
+  assert.deepEqual(Array.from(na.body.subarray(8, 24)), GATEWAY_IP6);
+  assert.deepEqual(Array.from(na.body.subarray(24, 32)), [2, 1, ...GATEWAY_MAC]);
+  g.send(ns(L6)); // the guest's own address, a peer's: not ours
+  g.send(ns(GATEWAY_IP6, new Array(16).fill(0))); // duplicate address detection
+  g.send(ns(GATEWAY_IP6, GUEST_LL, 64)); // not from the link
+  assert.equal(out.length, 1);
+});
+
+test('ICMPv6 echo to the gateway is answered', () => {
+  const { g, out, sent } = rig();
+  g.send(rs()); // the guest's MAC is learned
+  out.length = 0;
+  g.send(toGateway(icmp6(GUEST_LL, GATEWAY_IP6, 128, 0, [0x12, 0x34, 0, 1], [1, 2, 3, 4, 5])));
+  assert.equal(sent.length, 0);
+  const r = v6(out[0]);
+  assert.equal(r.body[0], 129);
+  assert.deepEqual(Array.from(r.body.subarray(4)), [0x12, 0x34, 0, 1, 1, 2, 3, 4, 5]);
+  assert.deepEqual(Array.from(r.dst), GUEST_LL);
+});
+
+const DUID_CLIENT = [0, 3, 0, 1, ...GUEST_MAC];
+const d6opt = (code: number, body: number[]) => [code >> 8, code & 255, body.length >> 8, body.length & 255, ...body];
+const IAID = [0, 0, 0, 1];
+const iaNa = (addr?: number[]) => d6opt(3, [...IAID, 0, 0, 0, 0, 0, 0, 0, 0, ...(addr ? d6opt(5, [...addr, 0, 0, 0, 0, 0, 0, 0, 0]) : [])]);
+const SERVER_ID = [0, 3, 0, 1, ...GATEWAY_MAC];
+
+function dhcp6Msg(type: number, opts: number[], dst: ArrayLike<number> = ALL_DHCP_AGENTS) {
+  const data = Uint8Array.from([type, 0xab, 0xcd, 0xef, ...d6opt(1, DUID_CLIENT), ...opts]);
+  const dstMac = dst === ALL_DHCP_AGENTS ? multicastMac(ALL_DHCP_AGENTS) : GATEWAY_MAC;
+  return toGateway(udp6(GUEST_LL, dst, 546, 547, data), dstMac);
+}
+
+function dhcp6Reply(f: Uint8Array) {
+  const r = v6(f);
+  assert.equal(r.next, 17);
+  assert.equal(be16(r.body, 0), 547);
+  assert.equal(be16(r.body, 2), 546);
+  assert.deepEqual(Array.from(r.dst), GUEST_LL);
+  assert.deepEqual(Array.from(r.src), GATEWAY_IP6);
+  assert.equal(hex(r.dstMac), hex(GUEST_MAC));
+  const m = r.body.subarray(8);
+  const opts = new Map<number, Uint8Array>();
+  for (let k = 4; k < m.length; k += 4 + be16(m, k + 2)) opts.set(be16(m, k), m.subarray(k + 4, k + 4 + be16(m, k + 2)));
+  return { type: m[0], xid: hex(m.subarray(1, 4)), opts };
+}
+
+test('DHCPv6: solicit, advertise, request, reply with the lease\'s address as one IA_NA, resolvers and domain', () => {
+  const { g, out } = rig();
+  g.send(dhcp6Msg(1, iaNa()));
+  const adv = dhcp6Reply(out.pop()!);
+  assert.equal(adv.type, 2);
+  assert.equal(adv.xid, 'abcdef');
+  assert.equal(hex(adv.opts.get(1)!), hex(DUID_CLIENT));
+  assert.equal(hex(adv.opts.get(2)!), hex(SERVER_ID));
+  const ia = adv.opts.get(3)!;
+  assert.equal(hex(ia.subarray(0, 4)), hex(IAID));
+  assert.equal(be16(ia, 12), 5);
+  assert.deepEqual(Array.from(ia.subarray(16, 32)), L6);
+  g.send(dhcp6Msg(3, [...d6opt(2, SERVER_ID), ...iaNa(L6)]));
+  const rep = dhcp6Reply(out.pop()!);
+  assert.equal(rep.type, 7);
+  assert.deepEqual(Array.from(rep.opts.get(3)!.subarray(16, 32)), L6);
+  assert.equal(Buffer.from(rep.opts.get(3)!.subarray(32, 36)).readUInt32BE(0), 3600, 'preferred');
+  assert.deepEqual(Array.from(rep.opts.get(23)!), ECHO_LEASE.dns6!.flat());
+  assert.equal(hex(rep.opts.get(24)!), hex([4, ...Buffer.from('test'), 5, ...Buffer.from('webpc'), 0]));
+});
+
+test('DHCPv6: renew keeps the address, another address has no binding, confirm and information-request', () => {
+  const { g, out } = rig();
+  g.send(dhcp6Msg(5, [...d6opt(2, SERVER_ID), ...iaNa(L6)], GATEWAY_IP6));
+  assert.deepEqual(Array.from(dhcp6Reply(out.pop()!).opts.get(3)!.subarray(16, 32)), L6);
+  const other = L6.slice(0, 15).concat([0x77]);
+  g.send(dhcp6Msg(5, [...d6opt(2, SERVER_ID), ...iaNa(other)], GATEWAY_IP6));
+  const nb = dhcp6Reply(out.pop()!).opts.get(3)!;
+  assert.equal(be16(nb, 12), 13, 'a status code instead of an address');
+  assert.equal(be16(nb, 16), 3, 'NoBinding');
+  g.send(dhcp6Msg(6, iaNa(L6))); // rebind: no server id
+  assert.equal(dhcp6Reply(out.pop()!).type, 7);
+  g.send(dhcp6Msg(4, iaNa(L6)));
+  assert.equal(be16(dhcp6Reply(out.pop()!).opts.get(13)!, 0), 0, 'confirm: success');
+  g.send(dhcp6Msg(4, iaNa(other)));
+  assert.equal(be16(dhcp6Reply(out.pop()!).opts.get(13)!, 0), 4, 'confirm: NotOnLink');
+  g.send(dhcp6Msg(11, []));
+  const info = dhcp6Reply(out.pop()!);
+  assert.equal(info.opts.has(3), false);
+  assert.deepEqual(Array.from(info.opts.get(23)!), ECHO_LEASE.dns6!.flat());
+});
+
+test('DHCPv6 follows the lease: no IPv6 address, no answer; a request for another server is ignored', () => {
+  const { g, out, setLease } = rig({ ...ECHO_LEASE, address6: undefined });
+  g.send(dhcp6Msg(1, iaNa()));
+  assert.equal(out.length, 0);
+  setLease(ECHO_LEASE);
+  out.length = 0;
+  g.send(dhcp6Msg(3, [...d6opt(2, [0, 3, 0, 1, 1, 2, 3, 4, 5, 6]), ...iaNa(L6)]));
+  assert.equal(out.length, 0);
+});
+
+test('IPv6 framing: packets lose their Ethernet header out and gain it in; the echo backend answers any address', () => {
+  const { g, out, sent, deliver } = rig();
+  g.send(rs());
+  out.length = 0;
+  const peer = [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9];
+  const ping = icmp6(L6, peer, 128, 0, [0x77, 0x70, 0, 1], new Array(32).fill(0xab));
+  g.send(toGateway(Uint8Array.from([...ping, 0, 0, 0]))); // padding is cut
+  assert.equal(sent.length, 1);
+  assert.equal(hex(sent[0]), hex(ping));
+  assert.equal(out.length, 1);
+  const r = v6(out[0]);
+  assert.equal(r.body[0], 129);
+  assert.deepEqual(Array.from(r.src), peer);
+  assert.deepEqual(Array.from(r.dst), L6);
+  assert.equal(hex(r.dstMac), hex(GUEST_MAC));
+  out.length = 0;
+  deliver(ping);
+  assert.equal(hex(out[0]), hex(frame(GUEST_MAC, GATEWAY_MAC, 0x86dd, ping)));
+});
+
+test('IPv6 that must not reach the backend is dropped: spoofed sources, multicast, hop-by-hop, no address, a truncated packet', () => {
+  const { g, sent, setLease } = rig();
+  const peer = [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9];
+  const echo = (src: number[], dst: number[]) => toGateway(icmp6(src, dst, 128, 0, [0, 0, 0, 1], [1]));
+  g.send(echo(peer, peer)); // not the guest's address
+  g.send(echo(GUEST_LL, peer)); // link-local sources don't leave the LAN
+  g.send(echo(L6, [0xff, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xfb])); // mDNS and the rest of multicast
+  const hbh = ip6(L6, peer, 0, Uint8Array.from([58, 0, 1, 4, 0, 0, 0, 0]));
+  g.send(toGateway(hbh));
+  g.send(toGateway(ip6(L6, peer, 58, new Uint8Array(8)).subarray(0, 44))); // shorter than its length says
+  setLease({ ...ECHO_LEASE, address6: undefined });
+  g.send(echo(L6, peer));
+  assert.equal(sent.length, 1, 'only the hop-by-hop packet got through the filters, by design: extension headers are the backend\'s to judge');
+  assert.equal(sent[0][6], 0);
+});
+
+test('an IPv6 packet over the MTU: Packet Too Big with the MTU and as much of the packet as fits', () => {
+  const { g, out, sent } = rig();
+  const peer = [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9];
+  g.send(toGateway(udp6(L6, peer, 1000, 2000, new Uint8Array(1300))));
+  assert.equal(sent.length, 0);
+  const r = v6(out[0]);
+  assert.equal(r.body[0], 2);
+  assert.equal(Buffer.from(r.body.subarray(4, 8)).readUInt32BE(0), 1280);
+  assert.deepEqual(Array.from(r.dst), L6);
+  assert.deepEqual(Array.from(r.body.subarray(8, 16)), [0x60, 0, 0, 0, 0x05, 0x1c, 17, 64], 'the quoted header of the guest\'s packet');
+  assert.ok(14 + 40 + r.body.length <= 14 + 1280 + 0, 'the message fits the minimum MTU');
 });

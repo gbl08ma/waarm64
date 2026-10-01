@@ -21,10 +21,22 @@ for (const [name, make] of [['frame', portAdapter], ['IP packet', ipPort]] as co
   });
 }
 
-test('the lease comes from what the client reports: its first IPv4 address, IPv4 resolvers only, no range assumed', async () => {
+test('the lease comes from what the client reports: its first IPv4 and IPv6 address, IP resolvers only, no range assumed', async () => {
   const { leaseFrom } = await import('../web/tailscale.ts');
-  const nm = { name: 'guest.tail.test.', addresses: ['fd7a:115c:a1e0::3/128', '172.16.9.4/32'], peers: [], mtu: 1280, dns: ['100.100.100.100', 'https://dns.example/dns-query', '9.9.9.9', '2620:fe::fe'], domains: ['tail.test'], exitNode: '' };
-  assert.deepEqual(leaseFrom(nm), { address: [172, 16, 9, 4], mtu: 1280, dns: [[100, 100, 100, 100], [9, 9, 9, 9]], domains: ['tail.test'] });
+  const nm = { name: 'guest.tail.test.', addresses: ['fd7a:115c:a1e0::3/128', '172.16.9.4/32'], peers: [], mtu: 1280, dns: ['100.100.100.100', 'fd7a:115c:a1e0::53', 'https://dns.example/dns-query', '9.9.9.9', '2620:fe::fe'], domains: ['tail.test'], exitNode: '' };
+  const b = (...groups: number[]) => groups.flatMap((g) => [g >> 8, g & 255]);
+  assert.deepEqual(leaseFrom(nm), {
+    address: [172, 16, 9, 4],
+    address6: b(0xfd7a, 0x115c, 0xa1e0, 0, 0, 0, 0, 3),
+    dns6: [b(0xfd7a, 0x115c, 0xa1e0, 0, 0, 0, 0, 0x53), b(0x2620, 0xfe, 0, 0, 0, 0, 0, 0xfe)],
+    mtu: 1280,
+    dns: [[100, 100, 100, 100], [9, 9, 9, 9]],
+    domains: ['tail.test'],
+  });
   assert.deepEqual(leaseFrom({ ...nm, dns: null, domains: null })?.dns, []);
+  assert.equal(leaseFrom({ ...nm, addresses: ['172.16.9.4/32'] })?.address6, undefined, 'no IPv6 address, none leased');
+  assert.deepEqual(leaseFrom({ ...nm, addresses: ['1:2:3:4:5:6:7:8/128', '10.0.0.1/32'] })?.address6, b(1, 2, 3, 4, 5, 6, 7, 8));
+  assert.deepEqual(leaseFrom({ ...nm, addresses: ['::1/128', '10.0.0.1/32'] })?.address6, b(0, 0, 0, 0, 0, 0, 0, 1));
+  assert.equal(leaseFrom({ ...nm, addresses: ['fd7a:::3/128', '10.0.0.1/32'] })?.address6, undefined, 'malformed');
   assert.equal(leaseFrom({ ...nm, addresses: ['fd7a:115c:a1e0::3/128'] }), null, 'no IPv4 address, no lease');
 });

@@ -76,6 +76,9 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       const self = ts.netmap.addresses.find((a) => !a.includes(':'))!.replace(/\/\d+$/, '');
       console.log(`# Tailscale in Chromium: module loaded in ${ts.timings.loadMs.toFixed(0)} ms, Running after ${ts.timings.runningMs.toFixed(0)} ms; the guest is ${self}, dns ${ts.netmap.dns}, domains ${ts.netmap.domains}, mtu ${ts.netmap.mtu}`);
       assert.ok(ts.netmap.dns.includes('100.100.100.100'), 'MagicDNS is on');
+      const self6 = ts.netmap.addresses.find((a) => a.includes(':'))?.replace(/\/\d+$/, '');
+      assert.ok(self6 && env.WEBPC_TS_PEER_IP6, `the tailnet has IPv6 addresses (${self6}, the peer's ${env.WEBPC_TS_PEER_IP6})`);
+      assert.ok(ts.netmap.dns.includes('fd7a:115c:a1e0::53'), 'MagicDNS is on over IPv6 too');
       const peer = ts.netmap.peers.find((p) => p.addresses.some((a) => a.replace(/\/\d+$/, '') === env.WEBPC_TS_PEER_IP));
       assert.ok(peer, `the peer ${env.WEBPC_TS_PEER_IP} is in the netmap`);
 
@@ -84,7 +87,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       await loginRoot(page, 240_000, context);
 
       // Networking as a distribution does it: systemd-networkd's DHCP client and systemd-resolved.
-      await run("mkdir -p /run/systemd/network && printf '[Match]\\nName=e*\\n[Network]\\nDHCP=ipv4\\n' > /run/systemd/network/20-eth.network");
+      await run("mkdir -p /run/systemd/network && printf '[Match]\\nName=e*\\n[Network]\\nDHCP=yes\\n' > /run/systemd/network/20-eth.network");
       await run('ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf; systemctl start systemd-resolved systemd-networkd', 120_000);
       let addr = '';
       for (let k = 0; k < 40 && !addr; k++) {
@@ -100,9 +103,22 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       const ping = await run(`ping -c 3 -W 5 ${env.WEBPC_TS_PEER_IP}`, 90_000);
       assert.match(ping, /3 packets transmitted, 3 received, 0% packet loss/, ping);
 
+      // IPv6 (N6): the same lease carries the node's IPv6 address (DHCPv6, after the gateway's router advertisement)
+      let addr6 = '';
+      for (let k = 0; k < 40 && !addr6; k++) {
+        addr6 = (await run("ip -6 -o addr show scope global | awk '{print $4}'")).trim().split('\n')[0];
+        if (!addr6) await page.waitForTimeout(1000);
+      }
+      assert.equal(addr6.split('/')[0], self6, `the IPv6 lease is the address the client reports (${addr6})`);
+      assert.match(await run('ip -6 route'), /default (nhid \d+ )?via fe80::77:65ff:fe62:7063 dev e\S+ proto ra/);
+      const ping6 = await run(`ping -6 -c 3 -W 5 ${env.WEBPC_TS_PEER_IP6}`, 90_000);
+      assert.match(ping6, /3 packets transmitted, 3 received, 0% packet loss/, ping6);
+
       const name = env.WEBPC_TS_PEER_NAME.replace(/\.$/, '');
       const resolved = await run(`getent hosts ${name}`);
       assert.ok(resolved.includes(env.WEBPC_TS_PEER_IP), `MagicDNS: ${name} resolves to the peer (${resolved})`);
+      // (No AAAA check: the client's MagicDNS answers AAAA for peers only when the control server sends the
+      // `magicdns-aaaa` node attribute, which this headscale doesn't. IPv6 reaches peers by address.)
       const short = await run('getent hosts peer');
       assert.ok(short.includes(env.WEBPC_TS_PEER_IP), `the search domain: "peer" resolves (${short})`);
 
@@ -119,6 +135,17 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       if (nc.status !== 0) {
         assert.fail(`the peer couldn't reach the guest's server (${nc.status}): ${nc.stderr}\nguest: ${await run('ip -s link show dev e*; nstat -az TcpInSegs TcpOutSegs TcpInErrs IpInDelivers IpInAddrErrors; ss -tan; cat /tmp/http.log')}`);
       }
+      // ... and over IPv6, to a server listening on :: (the peer dials the guest's IPv6 address)
+      await run('(cd /tmp/www && nohup python3 -m http.server 8081 --bind :: > /tmp/http6.log 2>&1 &)');
+      let local6 = '';
+      for (let k = 0; k < 30 && !local6.includes('hello-from-the-guest'); k++) {
+        local6 = await run(`curl -s -m 5 "http://[${self6}]:8081/"`);
+        if (!local6.includes('hello-from-the-guest')) await page.waitForTimeout(2000);
+      }
+      assert.match(local6, /hello-from-the-guest/, `the guest's IPv6 server didn't come up: ${await run('cat /tmp/http6.log; ss -ltn')}`);
+      const nc6 = spawnSync('podman', ['exec', 'webpc-peer', 'sh', '-c', `(printf 'GET / HTTP/1.0\\r\\n\\r\\n'; sleep 10) | timeout 30 tailscale --socket=/tmp/ts.sock nc ${self6} 8081`], { encoding: 'utf8' });
+      assert.equal(nc6.status, 0, `the peer couldn't reach the guest's IPv6 server: ${nc6.stderr}`);
+      assert.match(nc6.stdout, /hello-from-the-guest/);
       const reply = nc.stdout; // (`tailscale nc` quits when its stdin ends, so the request is followed by a wait for the reply)
       assert.match(reply, /HTTP\/1\.0 200 OK/);
       assert.match(reply, /hello-from-the-guest/);

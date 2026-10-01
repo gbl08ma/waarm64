@@ -373,9 +373,13 @@ web/tailscale.ts, the client in its own worker).
   until a client has an address (the tailnet address, MagicDNS through systemd-resolved). Not
   `ip=dhcp`: Debian's initramfs reads it too and waits for a lease before booting (found by the
   page test: the boot sat at the root mount for minutes). **A lease that arrives after the boot is
-  taken in ~20 s** by networkd's DHCP retries (`tests/net-guest.test.ts`, measured 19 s after the
+  taken in ~20 s** by networkd's DHCP retries (`tests/net-guest.test.ts`, measured 19 to 27 s after the
   lease); nothing on the page speeds it up (a link flap would, but the device's link is always
-  up). The machine worker gets `ip`, the gateway's end of an IP port, and adds
+  up). **IPv6 doesn't wait:** the gateway advertises itself the moment the lease has an IPv6 address,
+  and the guest has its DHCPv6 address ~2 s later. The guest is dual-stack: the tailnet's `fd7a:` address
+  as a /128, the default route from the advertisement. MagicDNS answers AAAA for peers only when the
+  control server sends the `magicdns-aaaa` node attribute (headscale doesn't by default; Tailscale's
+  admin console has the setting): reach peers' IPv6 addresses by address, or turn it on. The machine worker gets `ip`, the gateway's end of an IP port, and adds
   `{type: 'net', adapter: {ip}}` (docs/devices.md "net"); the page keeps the other end
   (web/app/network.ts) for as long as no client holds it.
 - **Connect** takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or

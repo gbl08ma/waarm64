@@ -33,6 +33,7 @@ authkey() { hs preauthkeys create -u 1 --reusable --ephemeral -e 24h -o json | s
 env_() {
 	echo "WEBPC_TS_CONTROL=https://127.0.0.1:$PORT"
 	echo "WEBPC_TS_PEER_IP=$(peerts ip -4)"
+	echo "WEBPC_TS_PEER_IP6=$(peerts ip -6)"
 	echo "WEBPC_TS_PEER_NAME=$(peerts status --json | sed -n 's/.*"DNSName": *"\([^"]*\)".*/\1/p' | head -1)"
 	echo "NODE_EXTRA_CA_CERTS=$DIR/tls/ca.pem"
 }

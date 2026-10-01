@@ -149,7 +149,7 @@ type netMap struct {
 	Addresses []string `json:"addresses"` // our own addresses, as the client reports them
 	Peers     []peer   `json:"peers"`
 	MTU       int      `json:"mtu"`
-	DNS       []string `json:"dns"` // resolvers the client would use (MagicDNS is 100.100.100.100)
+	DNS       []string `json:"dns"` // resolvers the client would use (MagicDNS is 100.100.100.100 and fd7a:115c:a1e0::53)
 	Domains   []string `json:"domains"`
 	ExitNode  string   `json:"exitNode"` // the stable ID of the peer in use as the exit node, or ""
 }
@@ -286,7 +286,7 @@ func newNode(cfg js.Value) map[string]any {
 					// MagicDNS is answered at the service address (netstack); the
 					// client's other resolvers are for the OS to use, so are ours to pass on.
 					if nm.DNS.Proxied {
-						m.DNS = append(m.DNS, tsaddr.TailscaleServiceIPString)
+						m.DNS = append(m.DNS, tsaddr.TailscaleServiceIPString, tsaddr.TailscaleServiceIPv6String)
 					}
 					for _, r := range nm.DNS.Resolvers {
 						m.DNS = append(m.DNS, r.Addr)

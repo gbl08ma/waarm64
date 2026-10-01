@@ -18,6 +18,6 @@
   worker.postMessage({ page: true, serial: serial.port2, overlay: q.get('overlay'), ip: ip?.port2 }, [serial.port2, ...(ip ? [ip.port2] : [])]);
   window.harness = {
     send: (s) => serial.port1.postMessage(s), output: () => output, error: () => error,
-    lease: () => ip.port1.postMessage({ type: 'lease', lease: { address: [198, 18, 0, 15], mtu: 1280, dns: [[198, 18, 0, 53]], domains: ['test.webpc'] } }),
+    lease: () => ip.port1.postMessage({ type: 'lease', lease: { address: [198, 18, 0, 15], address6: [0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f], mtu: 1280, dns: [[198, 18, 0, 53]], dns6: [[0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x53]], domains: ['test.webpc'] } }),
   };
 </script>

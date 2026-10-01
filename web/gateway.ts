@@ -7,15 +7,24 @@
 //     the backend: none, no offer), the router (the gateway), DNS, the MTU and
 //     classless routes; and no address range is assumed;
 //   - framing: Ethernet headers off on the way out, on on the way in.
-// IPv4 only for now (IPv6 frames are dropped). It runs in the device worker,
-// so a synchronous backend keeps deterministic mode exact.
+// IPv6 (N6): router advertisements (a default route via the gateway, no prefix),
+// DHCPv6 for the node's address, neighbor discovery for the gateway itself, ICMPv6
+// echo. It runs in the device worker, so a synchronous backend keeps deterministic
+// mode exact (the timer behind periodic advertisements exists only when asked for).
 import { checksum, type NetAdapter } from './net.ts';
+import { ALL_DHCP_AGENTS, ALL_NODES, domainList, icmp6, linkLocal, multicastMac, neighborAdvert, routerAdvert, sum6, udp6 } from './ip6.ts';
 
-/** What a backend gives the guest. `address` is the guest's own IPv4 address on the network. */
-export type Lease = { address: number[]; mtu: number; dns: number[][]; domains: string[] };
+/**
+ * What a backend gives the guest. `address` is the guest's own IPv4 address on the network;
+ * `address6` (16 bytes) its IPv6 one, if the network has one, with the IPv6 resolvers in `dns6`.
+ */
+export type Lease = { address: number[]; address6?: number[]; mtu: number; dns: number[][]; dns6?: number[][]; domains: string[] };
 
 /** A layer-3 backend: IP packets out through `send`, in through the `deliver` it was made with. */
 export type IpBackend = { lease(): Lease | null; send(packet: Uint8Array): void; close?(): void };
+
+/** What `gateway` gives a backend's maker: where the guest's packets come from, and to tell the gateway its lease changed. */
+export type Deliver = (packet: Uint8Array) => void;
 
 export type GatewayOptions = {
   /** The gateway's MAC and IP (the guest's router). The IP must not be one a peer can have. */
@@ -24,10 +33,14 @@ export type GatewayOptions = {
   /** The mask the lease carries. 0.0.0.0 makes every address on-link, which proxy ARP answers. */
   netmask?: number[];
   leaseSeconds?: number;
+  /** Send unsolicited router advertisements this often (milliseconds; realtime only: a timer). 0: only when asked, and when the lease changes. */
+  advertiseMs?: number;
 };
 
 export const GATEWAY_MAC = [0x02, 0x77, 0x65, 0x62, 0x70, 0x63];
 export const GATEWAY_IP = [169, 254, 0, 1];
+/** The gateway's IPv6 link-local address: the guest's default router. */
+export const GATEWAY_IP6 = linkLocal(GATEWAY_MAC);
 
 const BCAST = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
 const eq = (a: ArrayLike<number>, at: number, b: ArrayLike<number>) => Array.from(b).every((v, k) => a[at + k] === v);
@@ -109,18 +122,33 @@ function dhcpOptions(b: Uint8Array) {
  * The gateway as a virtio-net adapter. `makeBackend` gets the function that
  * hands the backend's packets for the guest to the gateway.
  */
-export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deliver: (packet: Uint8Array) => void) => IpBackend, opts: GatewayOptions = {}): NetAdapter {
+export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deliver: Deliver, leaseChanged: () => void) => IpBackend, opts: GatewayOptions = {}): NetAdapter {
   const mac = opts.mac ?? GATEWAY_MAC;
   const gw = opts.ip ?? GATEWAY_IP;
   const mask = opts.netmask ?? [0, 0, 0, 0];
   const leaseSeconds = opts.leaseSeconds ?? 3600;
+  const gw6 = linkLocal(mac);
   let guestMac: Uint8Array | null = null;
+  let advertised = false;
 
   const backend = makeBackend((packet) => {
-    // IPv4 only; the guest hasn't shown a MAC before its first frame (its DHCP request).
-    if (!guestMac || packet.length < 20 || packet[0] >> 4 !== 4 || packet.length > 1500) return;
-    receive(eth(guestMac, mac, 0x0800, packet));
-  });
+    // The guest hasn't shown a MAC before its first frame (its DHCP request).
+    if (!guestMac || packet.length > 1500) return;
+    const v = packet[0] >> 4;
+    if (v === 4 && packet.length >= 20) receive(eth(guestMac, mac, 0x0800, packet));
+    else if (v === 6 && packet.length >= 40) receive(eth(guestMac, mac, 0x86dd, packet));
+  }, () => advertise());
+
+  /** A router advertisement to all nodes: the gateway is the default router while the lease has an IPv6 address, and isn't once it hasn't. */
+  function advertise() {
+    const lease = backend.lease();
+    const on = !!lease?.address6;
+    if (!on && !advertised) return;
+    advertised = on;
+    const dns = lease?.dns6 ?? [];
+    receive(eth(multicastMac(ALL_NODES), mac, 0x86dd, routerAdvert(gw6, { mac, lifetime: on ? 1800 : 0, mtu: lease?.mtu ?? 1280, dns: on ? dns : [], dnsLifetime: 1800 })));
+  }
+  const timer = opts.advertiseMs ? setInterval(advertise, opts.advertiseMs) : undefined;
 
   function dhcp(f: Uint8Array, at: number, len: number) {
     const b = f.subarray(at, at + len);
@@ -200,11 +228,96 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     receive(eth(guestMac!, mac, 0x0800, ip4(gw, ipPacket.subarray(12, 16), 1, icmp)));
   }
 
+  // DHCPv6 (RFC 8415): stateful, one IA_NA with the lease's address as a /128, the resolvers and the search domain.
+  const duid = [0, 3, 0, 1, ...mac];
+  function dhcp6(f: Uint8Array, srcIp: Uint8Array, data: Uint8Array) {
+    if (data.length < 4) return;
+    const type = data[0];
+    const opts = new Map<number, Uint8Array>();
+    for (let k = 4; k + 4 <= data.length; ) {
+      const len = be16(data, k + 2);
+      if (k + 4 + len > data.length) return;
+      if (!opts.has(be16(data, k))) opts.set(be16(data, k), data.subarray(k + 4, k + 4 + len));
+      k += 4 + len;
+    }
+    const sid = opts.get(2);
+    if (sid && !eq(sid, 0, duid)) return; // another server's
+    const cid = opts.get(1);
+    const lease = backend.lease();
+    if (!cid || !lease?.address6) return; // no client, or no lease: no answer
+    const a6 = lease.address6;
+    const u16 = (n: number) => [n >> 8, n & 255];
+    const u32 = (n: number) => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+    const opt = (code: number, body: ArrayLike<number>) => [...u16(code), ...u16(body.length), ...Array.from(body)];
+    const status = (code: number) => opt(13, u16(code));
+    const ia = opts.get(3);
+    // The addresses an IA_NA names (IA_ADDR options after its 12 bytes).
+    const named: Uint8Array[] = [];
+    for (let k = 12; ia && k + 4 <= ia.length; k += 4 + be16(ia, k + 2)) if (be16(ia, k) === 5 && be16(ia, k + 2) >= 24) named.push(ia.subarray(k + 4, k + 20));
+    const mine = named.some((x) => eq(x, 0, a6));
+    const out = [...opt(1, cid), ...opt(2, duid)];
+    const t = leaseSeconds;
+    const binding = () => opt(3, [...ia!.subarray(0, 4), ...u32(t >> 1), ...u32((t * 4) / 5 | 0), ...opt(5, [...a6, ...u32(t), ...u32(t)])]);
+    let reply = 7; // REPLY
+    if (type === 1) { // SOLICIT: ADVERTISE
+      if (!ia || ia.length < 12) return;
+      reply = 2;
+      out.push(...binding());
+    } else if (type === 3) { // REQUEST
+      if (!sid || !ia || ia.length < 12) return;
+      out.push(...binding());
+    } else if (type === 5 || type === 6) { // RENEW, REBIND: the lease's address is renewed, any other has no binding
+      if (!ia || ia.length < 12 || (type === 5 && !sid)) return;
+      out.push(...(mine ? binding() : opt(3, [...ia.subarray(0, 4), ...u32(0), ...u32(0), ...status(3)])));
+    } else if (type === 4) { // CONFIRM: is the address still right for this link
+      out.push(...status(mine ? 0 : 4));
+    } else if (type !== 11) return; // INFORMATION-REQUEST: only the options below
+    if (type !== 4) {
+      if (lease.dns6?.length) out.push(...opt(23, lease.dns6.flat()));
+      if (lease.domains.length) out.push(...opt(24, domainList(lease.domains)));
+    }
+    const m = Uint8Array.from([reply, ...data.subarray(1, 4), ...out]);
+    receive(eth(f.subarray(6, 12), mac, 0x86dd, udp6(gw6, srcIp, 547, 546, m)));
+  }
+
+  /** The guest's IPv6 frames: neighbor discovery and DHCPv6 are the gateway's; the rest goes to the backend. */
+  function send6(f: Uint8Array) {
+    if (f.length < 54 || f[14] >> 4 !== 6) return;
+    const payload = be16(f, 18);
+    if (40 + payload > f.length - 14) return;
+    const p = f.subarray(14, 14 + 40 + payload);
+    const next = p[6];
+    const src = p.subarray(8, 24);
+    const dst = p.subarray(24, 40);
+    if (dst[0] === 0xff || eq(dst, 0, gw6)) {
+      // multicast and the gateway's own address: neighbor discovery, DHCPv6, echo; nothing else leaves the LAN
+      const body = p.subarray(40);
+      if (next === 58 && body.length >= 8 && sum6(src, dst, 58, body) === 0) {
+        if (body[0] === 133) advertise(); // router solicitation
+        else if (body[0] === 135 && body.length >= 24 && eq(body, 8, gw6) && !isZero(p, 8, 16) && p[7] === 255) receive(eth(f.subarray(6, 12), mac, 0x86dd, neighborAdvert(gw6, src, mac)));
+        else if (body[0] === 128 && eq(dst, 0, gw6)) receive(eth(guestMac!, mac, 0x86dd, icmp6(gw6, src, 129, 0, body.subarray(4, 8), body.subarray(8))));
+      } else if (next === 17 && body.length >= 8 && be16(body, 2) === 547 && (eq(dst, 0, gw6) || eq(dst, 0, ALL_DHCP_AGENTS))) {
+        dhcp6(f, src, body.subarray(8, Math.min(body.length, be16(body, 4))));
+      }
+      return;
+    }
+    const lease = backend.lease();
+    if (!lease?.address6 || !eq(src, 0, lease.address6)) return; // no address yet, or not ours: dropped
+    if (p.length > lease.mtu) {
+      // Packet Too Big (RFC 4443 §3.2): IPv6 isn't fragmented on the way, the guest lowers its path MTU
+      const quoted = p.subarray(0, Math.min(p.length, 1280 - 48));
+      receive(eth(guestMac!, mac, 0x86dd, icmp6(gw6, src, 2, 0, [lease.mtu >>> 24, (lease.mtu >>> 16) & 255, (lease.mtu >>> 8) & 255, lease.mtu & 255], quoted)));
+      return;
+    }
+    backend.send(p.slice());
+  }
+
   return {
     send(f) {
       if (f.length < 14) return;
       if ((f[6] & 1) === 0) guestMac = f.slice(6, 12);
       const type = be16(f, 12);
+      if (type === 0x86dd) return send6(f);
       if (type === 0x0806) {
         // ARP request (not a probe from 0.0.0.0) for anything but the guest's own address.
         if (f.length < 42 || be16(f, 14) !== 1 || be16(f, 16) !== 0x0800 || f[18] !== 6 || f[19] !== 4 || be16(f, 20) !== 1) return;
@@ -240,18 +353,41 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
       }
       backend.send(ipPacket.slice());
     },
-    close: () => backend.close?.(),
+    close: () => {
+      if (timer) clearInterval(timer);
+      backend.close?.();
+    },
   };
 }
 
 /** The test lease of `echoBackend`: an address from the benchmarking range, on purpose not a tailnet's. */
-export const ECHO_LEASE: Lease = { address: [198, 18, 0, 15], mtu: 1280, dns: [[198, 18, 0, 53]], domains: ['test.webpc'] };
+export const ECHO_LEASE: Lease = {
+  address: [198, 18, 0, 15],
+  address6: [0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0f],
+  mtu: 1280,
+  dns: [[198, 18, 0, 53]],
+  dns6: [[0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x53]],
+  domains: ['test.webpc'],
+};
 
-/** A synchronous test backend: answers ICMP echo requests to any address, and drops everything else. */
+/** A synchronous test backend: answers ICMP and ICMPv6 echo requests to any address, and drops everything else. */
 export function echoBackend(lease: Lease = ECHO_LEASE) {
-  return (deliver: (packet: Uint8Array) => void): IpBackend => ({
+  return (deliver: Deliver): IpBackend => ({
     lease: () => lease,
     send(p) {
+      if (p[0] >> 4 === 6) {
+        if (p[6] !== 58 || p.length < 48 || p[40] !== 128) return;
+        const r = p.slice();
+        r.set(p.subarray(24, 40), 8);
+        r.set(p.subarray(8, 24), 24);
+        r[40] = 129;
+        r[42] = r[43] = 0;
+        const c = sum6(r.subarray(8, 24), r.subarray(24, 40), 58, r.subarray(40));
+        r[42] = c >> 8;
+        r[43] = c & 255;
+        deliver(r);
+        return;
+      }
       const ihl = (p[0] & 0xf) * 4;
       if (p[9] !== 1 || p.length < ihl + 8 || p[ihl] !== 8) return;
       const r = p.slice();
@@ -273,11 +409,14 @@ export function echoBackend(lease: Lease = ECHO_LEASE) {
  * (or `lease: null`) from the backend sets the lease.
  */
 export function portBackend(port: MessagePort) {
-  return (deliver: (packet: Uint8Array) => void): IpBackend => {
+  return (deliver: Deliver, leaseChanged: () => void): IpBackend => {
     let lease: Lease | null = null;
     port.onmessage = (e: MessageEvent) => {
       if (e.data instanceof ArrayBuffer) deliver(new Uint8Array(e.data));
-      else if (e.data?.type === 'lease') lease = e.data.lease;
+      else if (e.data?.type === 'lease') {
+        lease = e.data.lease;
+        leaseChanged();
+      }
     };
     return {
       lease: () => lease,

@@ -228,7 +228,7 @@ function net(ctx: Ctx, d: NetSpec): Backend {
     a === 'loopback' ? loopback(receive)
     : a === 'echo' ? gateway(receive, echoBackend())
     : a instanceof MessagePort ? portAdapter(a, receive)
-    : gateway(receive, portBackend(a.ip));
+    : gateway(receive, portBackend(a.ip), { advertiseMs: 60_000 });
   return {
     request(r) {
       if (r.queue === 0) {
