@@ -50,6 +50,33 @@ units import `login.*`), so `root` logs in with no password on every console wit
 image. The kernel has `simplefb` and `fbcon` built in: fbcon draws on the framebuffer from the
 first kernel line.
 
+## Arch Linux ARM for UEFI (`images/archarm/build.sh`)
+
+**On demand only**: not in `images/build.sh`, `SHA256SUMS`, CI or any test. It turns Arch Linux ARM's
+rootfs tarball (no bootloader, no partition table) into a qcow2 that boots through UEFI, for trying
+a distro the project doesn't ship. `images/archarm/build.sh [--out f.qcow2] [--root-mib 7500]
+[--esp-mib 256]` (~3 min, ~6 GiB of disk while it runs; the result is `target/archarm/archlinuxarm-uefi.qcow2`,
+804 MiB, 8 GiB virtual):
+
+- Downloads `ArchLinuxARM-aarch64-latest.tar.gz` (the *latest*, so the result changes over time;
+  checked against the published `.md5`, a cached copy is reused) and imports it into rootless Podman
+  (it runs natively on arm64). The host needs `podman`, `curl`, `sgdisk`, `mkfs.vfat` + mtools, `qemu-img`; no root, no loop devices.
+- **The initramfs is regenerated** in the container: the shipped one is built with `autodetect` and
+  has no `virtio_mmio`/`virtio_blk`, so it can't find our disk. The new one lists `virtio_mmio
+  virtio_blk ext4 vfat` and drops `autodetect`.
+- The container's rootfs is copied into an ext4 image with `mke2fs -d` (ownership and xattrs kept);
+  Podman's injected `/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf` and `/run/.containerenv` are
+  replaced by the tarball's originals.
+- GPT: a 256 MiB FAT32 ESP (mounted at `/boot`) with systemd-boot (the one in the tarball) as
+  `\EFI\BOOT\BOOTAA64.EFI`, the kernel `Image` (an EFI-stub kernel, which systemd-boot starts with
+  the initrd via LoadFile2) and a loader entry, then the ext4 root (type GUID Linux root aarch64).
+  Fixed PARTUUIDs; command line `root=PARTUUID=… rw console=tty0 console=ttyAMA0`.
+- Logins: `root`/`root`, `alarm`/`alarm` (Arch ARM's stock); hostname `alarm`.
+- Checked on QEMU through our EDK2: `node tools/uefi-oracle.ts $PWD/target/archarm/archlinuxarm-uefi.qcow2`
+  (absolute path) reaches `login:` in ~25 s (the tool reports FAIL, since it expects a passwordless
+  root). **Not tried in webpc itself.**
+- It works under `target/archarm/work` (removed at the end), not `/tmp`: the dev VM's `/tmp` is a small tmpfs that the 8 GiB disk overflows.
+
 ## Stress workloads in the Debian guest (`images/stress/`)
 
 **Not usable at the moment:** these tools replace Debian's initrd (`target/images/debian/initrd.img`)
