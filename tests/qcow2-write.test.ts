@@ -68,41 +68,95 @@ async function scenario(size: number, writes: number, seed: bigint) {
 
 const qemu = (...args: string[]) => execFileSync('qemu-img', args, { encoding: 'utf8' });
 
-for (const [name, size, writes] of [['a small disk', 10 * CLUSTER + 1536, 20], ['a disk over several L2 tables and refcount blocks', 40 * 1024 * 1024 + 512, 2500]] as const) {
-  test(`changes over a base (${name}): qemu-img check passes and the base plus the changes is the merged disk`, { skip }, async () => {
-    const { base, merged, rw } = await scenario(size, writes, BigInt(size));
-    writeFileSync(join(dir, 'base.raw'), base);
-    writeFileSync(join(dir, 'merged.raw'), merged);
-    const out = memorySink();
-    const sha256 = new Sha256().update(base).hex();
-    const r = await writeQcow2({ size, clusters: changedClusters(rw), backing: { name: 'base.raw', format: 'raw', sha256 }, sink: out.sink });
-    assert.equal(r.clusters, rw.written().length);
-    assert.equal(out.bytes().length, r.bytes);
-    writeFileSync(join(dir, 'changes.qcow2'), out.bytes());
-    qemu('check', join(dir, 'changes.qcow2'));
-    assert.match(qemu('info', join(dir, 'changes.qcow2')), /backing file: base\.raw/);
-    assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'changes.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
-    // Our header extension carries the base's hash, after the format name.
-    assert.ok(out.bytes().subarray(0, CLUSTER).toString('latin1').includes(sha256));
-  });
-
-  test(`the whole disk (${name}) as qcow2: zero clusters left out, check passes, and qemu-img and our reader see the merged disk`, { skip }, async () => {
-    const { merged, rw } = await scenario(size, writes, BigInt(size));
-    writeFileSync(join(dir, 'merged.raw'), merged);
-    const out = memorySink();
-    const r = await writeQcow2({ size, clusters: nonZeroClusters(rw, 64 * 1024), sink: out.sink });
-    let nonZero = 0;
-    for (let c = 0; c < merged.length; c += CLUSTER) if (merged.subarray(c, c + CLUSTER).some((b) => b)) nonZero++;
-    assert.equal(r.clusters, nonZero);
-    writeFileSync(join(dir, 'whole.qcow2'), out.bytes());
-    qemu('check', join(dir, 'whole.qcow2'));
-    assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'whole.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
-    const bytes = readFileSync(join(dir, 'whole.qcow2'));
-    const d: Disk = openDisk((off, len) => (off + len <= bytes.length ? bytes.subarray(off, off + len) : undefined), bytes.length);
-    assert.equal(d.size, size);
-    assert.deepEqual(await d.read(0, size), merged);
-  });
+/** Clusters of every kind for the compressor: runs of one byte, text-like bytes, and random ones (which don't shrink and are stored as they are). */
+async function mixedScenario(size: number, seed: bigint) {
+  const g = splitmix64(seed);
+  const rand = (n: number) => Number(g.next().value as bigint % BigInt(n));
+  const base = new Uint8Array(size);
+  const disk = openDisk((off, len) => (off + len <= size ? base.slice(off, off + len) : undefined), size);
+  const rw = overlay(disk, memFile(), memFile());
+  const merged = base.slice();
+  for (let c = 0; c * CLUSTER < size; c++) {
+    const kind = rand(8);
+    if (kind < 2) continue; // not written
+    const len = Math.min(CLUSTER, size - c * CLUSTER);
+    const bytes = kind === 2 ? new Uint8Array(len).fill(rand(3)) // zeros too: a changes file holds them
+      : kind < 6 ? Uint8Array.from({ length: len }, (_, i) => 97 + (i * (1 + c % 7)) % (2 + rand(12)))
+      : Uint8Array.from({ length: len }, () => rand(256));
+    assert.ok(await rw.write(c * CLUSTER, bytes));
+    merged.set(bytes, c * CLUSTER);
+  }
+  return { base, merged, rw };
 }
+
+for (const compress of [false, true]) {
+  const how = compress ? ', compressed' : '';
+  for (const [name, size, writes] of [['a small disk', 10 * CLUSTER + 1536, 20], ['a disk over several L2 tables and refcount blocks', 40 * 1024 * 1024 + 512, 2500]] as const) {
+    test(`changes over a base (${name}${how}): qemu-img check passes and the base plus the changes is the merged disk`, { skip }, async () => {
+      const { base, merged, rw } = await scenario(size, writes, BigInt(size));
+      writeFileSync(join(dir, 'base.raw'), base);
+      writeFileSync(join(dir, 'merged.raw'), merged);
+      const out = memorySink();
+      const sha256 = new Sha256().update(base).hex();
+      const r = await writeQcow2({ size, clusters: changedClusters(rw), backing: { name: 'base.raw', format: 'raw', sha256 }, compress, sink: out.sink });
+      assert.equal(r.clusters, rw.written().length);
+      assert.equal(out.bytes().length, r.bytes);
+      writeFileSync(join(dir, 'changes.qcow2'), out.bytes());
+      qemu('check', join(dir, 'changes.qcow2'));
+      assert.match(qemu('info', join(dir, 'changes.qcow2')), /backing file: base\.raw/);
+      assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'changes.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
+      // Our header extension carries the base's hash, after the format name.
+      assert.ok(out.bytes().subarray(0, CLUSTER).toString('latin1').includes(sha256));
+    });
+
+    test(`the whole disk (${name}${how}) as qcow2: zero clusters left out, check passes, and qemu-img and our reader see the merged disk`, { skip }, async () => {
+      const { merged, rw } = await scenario(size, writes, BigInt(size));
+      writeFileSync(join(dir, 'merged.raw'), merged);
+      const out = memorySink();
+      const r = await writeQcow2({ size, clusters: nonZeroClusters(rw, 64 * 1024), compress, sink: out.sink });
+      let nonZero = 0;
+      for (let c = 0; c < merged.length; c += CLUSTER) if (merged.subarray(c, c + CLUSTER).some((b) => b)) nonZero++;
+      assert.equal(r.clusters, nonZero);
+      writeFileSync(join(dir, 'whole.qcow2'), out.bytes());
+      qemu('check', join(dir, 'whole.qcow2'));
+      assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'whole.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
+      await sameAsOurs(readFileSync(join(dir, 'whole.qcow2')), merged);
+    });
+  }
+}
+
+/** Our reader (web/qcow2.ts) sees `merged` in the qcow2 `bytes`. */
+async function sameAsOurs(bytes: Buffer, merged: Uint8Array) {
+  const d: Disk = openDisk((off, len) => (off + len <= bytes.length ? bytes.subarray(off, off + len) : undefined), bytes.length);
+  assert.equal(d.size, merged.length);
+  const got = await d.read(0, merged.length);
+  assert.ok(got && Buffer.compare(got, merged) === 0, 'our reader sees another disk');
+}
+
+test('compressed clusters among ones that do not shrink: a smaller file, check passes (the refcounts of shared host clusters), and qemu-img and our reader see the disk', { skip }, async () => {
+  const size = 9 * 1024 * 1024 + 2048;
+  const { base, merged, rw } = await mixedScenario(size, 11n);
+  writeFileSync(join(dir, 'base.raw'), base);
+  writeFileSync(join(dir, 'merged.raw'), merged);
+  const sizes: number[] = [];
+  for (const compress of [false, true]) {
+    const out = memorySink();
+    const r = await writeQcow2({ size, clusters: nonZeroClusters(rw), compress, sink: out.sink });
+    assert.equal(out.bytes().length, r.bytes);
+    sizes.push(r.bytes);
+    writeFileSync(join(dir, 'mixed.qcow2'), out.bytes());
+    qemu('check', join(dir, 'mixed.qcow2'));
+    assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'mixed.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
+    await sameAsOurs(out.bytes(), merged);
+  }
+  assert.ok(sizes[1] < 0.8 * sizes[0], `compressed ${sizes[1]} bytes, not compressed ${sizes[0]}`);
+  // The changes, compressed: zero clusters are data here.
+  const out = memorySink();
+  await writeQcow2({ size, clusters: changedClusters(rw), backing: { name: 'base.raw', format: 'raw', sha256: new Sha256().update(base).hex() }, compress: true, sink: out.sink });
+  writeFileSync(join(dir, 'mixed-changes.qcow2'), out.bytes());
+  qemu('check', join(dir, 'mixed-changes.qcow2'));
+  assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'mixed-changes.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
+});
 
 test('the writer refuses clusters out of order or of the wrong size', { skip }, async () => {
   const c = (index: number, len = CLUSTER): DataCluster => ({ index, data: new Uint8Array(len) });

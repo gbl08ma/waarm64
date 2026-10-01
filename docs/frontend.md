@@ -422,7 +422,8 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
   multi-GB file would block the boot): two different files with all three equal share an overlay.
 - **Saving the disk** (loop 5): the header's **Save disk** menu (machines with an overlay): *Changes
   only*, a qcow2 holding the blocks the machine wrote with the image as its backing file;
-  *Whole disk* as qcow2 (zero clusters left out) or raw. The file goes where the user picks
+  *Whole disk* as qcow2 (zero clusters left out) or raw; the qcow2s are compressed unless the
+  menu's **Compress the qcow2** is unticked (remembered in the page's settings). The file goes where the user picks
   (`showSaveFilePicker`, called first: it needs the click's activation; a worker streams into the
   handle's writable) or, without a picker, is downloaded (the worker posts 1 MiB chunks, the page
   collects a Blob). **The machine stops while it's written** (confirmed; the overlay's OPFS handles
@@ -431,7 +432,19 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
   was running starts again after. The page: `web/app/export.ts`; the format:
   `web/qcow2-write.ts` (4 KiB clusters = the overlay's blocks; data first, then the L2 tables, L1,
   refcount blocks and table, and the header written last with `sink(bytes, 0)`; qcow2 v3, 16-bit
-  refcounts). A changes file's header names the base by its file name (the backing file; the user
+  refcounts). **Compressed clusters** (`compress`): each 4 KiB cluster goes through
+  `CompressionStream('deflate-raw')` and, when that shrinks it, is stored compressed, packed end to
+  end with the others (the L2 entry has the byte offset and the sector count; a host cluster's
+  refcount is the number of compressed clusters that touch it); one that doesn't shrink is stored
+  as it is at the next cluster boundary. The data leaves in 1 MiB pieces. QEMU inflates with a
+  4 KiB window whatever the cluster size and `CompressionStream` has no window setting, so
+  compression is tied to 4 KiB clusters (a bigger cluster could reach further back than QEMU's
+  window; zstd isn't in `CompressionStream`). Measured in Chromium 153 on the dev VM, the untouched
+  3 GiB Debian disk to a sink that drops the bytes, two runs each: 1043 MB in 22.5 s not
+  compressed, 448 MB in 38 s compressed (reading the disk alone is 21.7 s; Debian's own image, with
+  64 KiB clusters, is 403 MB). Compressing 64 or 512 clusters at once was slower than one at a time
+  (11.4 s and 12.3 s against 8.7 s for the first 512 MiB). What the guest's filesystem has freed
+  is still data to the export (the disk has no discard: backlog). A changes file's header names the base by its file name (the backing file; the user
   keeps it beside the changes) and carries the base file's **SHA-256** in an extension of ours
   (type `WPC1`, ASCII hex: QEMU ignores unknown extensions), computed by `web/sha256.ts` over the
   base's bytes read in 1 MiB slices (loop 6 checks it when a changes file comes in). The whole
@@ -442,7 +455,7 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
   disk: a backing file) puts a changes file onto **the disk on the page** (the machine's own or the
   chosen one). `loadChanges` (web/changes.ts, in `web/app/import-worker.ts`, page side
   `web/app/import.ts`; the machine stops, as for the export): `readChanges` (web/qcow2.ts) parses
-  the file (clusters of 4 KiB or more, zero clusters as zeros, no compressed ones), its virtual size
+  the file (clusters of 4 KiB or more, zero clusters as zeros, compressed ones inflated), its virtual size
   and **SHA-256** (the `WPC1` extension) are checked against the base's (`hashSource`, ~several s
   for Debian's 400 MB), then the overlay and the variable store beside it are **deleted** (the
   changes are the whole of what the disk has written; EDK2 rebuilds its variables, Debian boots
@@ -454,11 +467,11 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
   The fresh-profile round trip works: the page's Debian plus the changes file saved from a disk
   chosen under another name boots with the file written.
 - Tests: `tests/changes.test.ts` (the import in memory: the saved disk comes back, the old overlay
-  is replaced; refusals leave it untouched; a changes file from qemu-img with 64 KiB clusters and a
-  zero cluster), in `tests/page-save.test.ts` (a file loads back, a non-changes file is refused) and
+  is replaced; refusals leave it untouched; a compressed changes file; changes files from qemu-img with 64 KiB clusters, a
+  zero cluster, compressed clusters), in `tests/page-save.test.ts` (a file loads back, a non-changes file is refused) and
   `tests/page-disk.test.ts` (the fresh-profile round trip on Debian), and `tests/qcow2-write.test.ts` (SHA-256 against node:crypto; the writers' output against
-  `qemu-img check`/`compare`/`info`, small and over several L2 tables and refcount blocks; planted:
-  a block left out of the changes fails it), `tests/page-save.test.ts` (Buildroot: raw, qcow2 and
+  `qemu-img check`/`compare`/`info`, small and over several L2 tables and refcount blocks, compressed and not, and compressed clusters among ones that don't shrink; planted:
+  a block left out of the changes fails it), `tests/page-save.test.ts` (Buildroot: raw, qcow2 compressed and not, and
   changes from a running machine, which restarts), `tests/page-disk.test.ts` (WEBPC_DISTROS=debian; two Debian boots): a symlink named
   `mydisk.qcow2` to Debian's image through the picker, a file written, its overlay and flash in
   OPFS, `poweroff`, the changes saved by download and by a picker's handle (an OPFS file: the same

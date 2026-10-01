@@ -7,7 +7,7 @@ import { hashSource } from '../changes.ts';
 import { blobSource, diskIdentity, httpSource, type Source } from '../devices.ts';
 import { openOverlay, overlay } from '../overlay.ts';
 import { openDisk } from '../qcow2.ts';
-import { changedClusters, nonZeroClusters, rawChunks, writeQcow2, type Sink } from '../qcow2-write.ts';
+import { changedClusters, nonZeroClusters, rawChunks, writeQcow2, type DataCluster, type Sink } from '../qcow2-write.ts';
 import type { ExportRequest, ExportResult } from './export.ts';
 
 const post = (m: ExportResult, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
@@ -52,11 +52,11 @@ async function exportDisk(r: ExportRequest) {
       if (r.mode === 'changes') {
         const sha256 = hashSource(src, (done) => progress('Reading the base image', done, src.size));
         backing = { name: r.baseName, format: base.format, sha256 };
-        clusters = changedClusters(disk);
+        clusters = progressOf(changedClusters(disk), disk.written().length, (done, total) => progress('Writing the changes', done, total));
       } else {
         clusters = nonZeroClusters(disk, 1 << 20, (done) => progress('Writing the disk', done, disk.size));
       }
-      const res = await writeQcow2({ size: disk.size, clusters, backing, sink });
+      const res = await writeQcow2({ size: disk.size, clusters, backing, compress: r.compress, sink });
       blocks = res.clusters;
     }
     await out?.close();
@@ -65,5 +65,14 @@ async function exportDisk(r: ExportRequest) {
   } finally {
     await out?.abort().catch(() => {});
     files.close();
+  }
+}
+
+/** `clusters`, with `progress` told every 256 of them. */
+async function* progressOf(clusters: AsyncIterable<DataCluster>, total: number, progress: (done: number, total: number) => void) {
+  let done = 0;
+  for await (const c of clusters) {
+    yield c;
+    if (++done % 256 === 0) progress(done, total);
   }
 }

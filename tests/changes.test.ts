@@ -2,7 +2,7 @@
 // back into an overlay over its base (the disk comes out as it was saved), replacing what the
 // overlay held; a different base, a size mismatch and a qcow2 from another tool are refused before
 // the overlay is touched; and a changes file from qemu-img (64 KiB clusters, zero clusters) reads
-// block by block. In Node the overlay lives in memory. The qemu-img parts skip without it.
+// block by block, compressed ones too. In Node the overlay lives in memory. The qemu-img parts skip without it.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -32,12 +32,12 @@ function randomBase(seed: bigint, size = SIZE) {
 }
 
 /** What Save disk makes: the changes of `writes` (offset, bytes) over `base`, named `base.img`. */
-async function changesFile(base: Uint8Array, writes: [number, Uint8Array][]) {
+async function changesFile(base: Uint8Array, writes: [number, Uint8Array][], compress = false) {
   const rw = overlay(openDisk((o, l) => base.slice(o, o + l), base.length), memFile(), memFile());
   for (const [off, bytes] of writes) assert.ok(await rw.write(off, bytes));
   const parts: Uint8Array[] = [];
   const sink: Sink = (chunk, at) => { if (at === undefined) parts.push(chunk); else parts[0] = chunk; };
-  await writeQcow2({ size: base.length, clusters: changedClusters(rw), backing: { name: 'base.img', format: 'raw', sha256: new Sha256().update(base).hex() }, sink });
+  await writeQcow2({ size: base.length, clusters: changedClusters(rw), backing: { name: 'base.img', format: 'raw', sha256: new Sha256().update(base).hex() }, compress, sink });
   return Buffer.concat(parts);
 }
 
@@ -66,6 +66,22 @@ test('loading a changes file gives the overlay the saved disk, and replaces what
   const r = await load('page', file, base);
   assert.equal(r.blocks, 3);
   assert.deepEqual(await mergedOf('page', base), merged);
+});
+
+test('a compressed changes file loads the same disk, from a smaller file', async () => {
+  const base = randomBase(4n);
+  const g = splitmix64(5n);
+  const noise = Uint8Array.from({ length: 4096 }, () => Number(g.next().value as bigint & 255n)); // stored as it is, among compressed ones
+  const marks: [number, Uint8Array][] = [[0, new Uint8Array(3 * 4096).fill(0x61)], [4096 * 3, noise], [4096 * 4, new Uint8Array(8192)], [4096 * 90 + 17, Uint8Array.of(1, 2, 3)], [SIZE - 700, new Uint8Array(700).fill(9)]];
+  const merged = base.slice();
+  for (const [off, b] of marks) merged.set(b, off);
+  const plain = await changesFile(base, marks);
+  const file = await changesFile(base, marks, true);
+  assert.ok(file.length < plain.length, `compressed ${file.length} bytes, not compressed ${plain.length}`);
+  const r = await load('packed', file, base);
+  assert.equal(r.blocks, 8);
+  const got = await mergedOf('packed', base);
+  assert.ok(got && Buffer.compare(got, merged) === 0, 'the overlay holds another disk');
 });
 
 test('a different base, a different size and a qcow2 without our checksum are refused, the overlay untouched', async () => {
@@ -101,4 +117,24 @@ test('a changes file from qemu-img: 64 KiB clusters, a zero cluster, data and un
   assert.ok(got.get(70000 >> 12)!.subarray(70000 & 4095).every((x) => x === 0xab));
   assert.ok(got.get(64)!.every((x) => x === 0), 'the zero cluster reads as zeros');
   assert.equal(got.size, 32);
+});
+
+test('a compressed changes file from qemu-img (64 KiB clusters) reads block by block', { skip: !have && 'SKIPPED: no qemu-img/qemu-io' }, async () => {
+  const base = Uint8Array.from({ length: 1 << 20 }, (_, i) => 97 + (i * 7 + (i >> 9)) % 23); // it shrinks: qemu-img stores it compressed
+  const merged = base.slice();
+  merged.fill(0x5a, 70000, 75000);
+  merged.fill(0, 262144, 262144 + 65536);
+  writeFileSync(join(dir, 'pb.raw'), base);
+  writeFileSync(join(dir, 'pm.raw'), merged);
+  const r = spawnSync('qemu-img', ['convert', '-c', '-O', 'qcow2', '-B', 'pb.raw', '-F', 'raw', 'pm.raw', 'pc.qcow2'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const bytes = readFileSync(join(dir, 'pc.qcow2'));
+  const c = readChanges((o, l) => (o + l <= bytes.length ? bytes.subarray(o, o + l) : undefined), bytes.length)!;
+  assert.equal(c.backingName, 'pb.raw');
+  const got = base.slice();
+  let blocks = 0;
+  for await (const { block, data } of c.blocks()) { got.set(data, block * 4096); blocks++; }
+  assert.ok(bytes.length < 1 << 19, `${bytes.length} bytes: not compressed`); // convert copies the base's clusters too
+  assert.equal(blocks, 256);
+  assert.ok(Buffer.compare(got, merged) === 0, 'the base plus the blocks is another disk');
 });

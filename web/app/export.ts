@@ -8,6 +8,8 @@ export type ExportMode = 'changes' | 'qcow2' | 'raw';
 /** Page → worker. */
 export type ExportRequest = {
   mode: ExportMode;
+  /** A qcow2's clusters compressed (deflate) where that makes them smaller. */
+  compress?: boolean;
   /** The disk (`url` or `file`) and its overlay. */
   disk: DiskChoice;
   /** The base image's file name, which a changes file records as its backing file. */

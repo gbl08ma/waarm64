@@ -74,19 +74,14 @@ export function openDisk(readAt: ReadAt, fileSize: number): Disk {
     return t;
   };
 
-  // Compressed clusters: bits 0..x-1 the host offset, x..61 the number of 512-byte
-  // sectors after the first; kept decompressed for the few most recent (a guest
-  // reads a 64 KiB cluster a page at a time).
-  const x = BigInt(62 - (clusterBits - 8));
+  // Compressed clusters (bits 0..x-1 the host offset, x..61 the number of 512-byte
+  // sectors after the first, x = 62 - (cluster_bits - 8)), kept decompressed for the
+  // few most recent (a guest reads a 64 KiB cluster a page at a time).
   const recent = new Map<bigint, Uint8Array>();
   const compressed = async (e: bigint) => {
     let data = recent.get(e);
     if (!data) {
-      const off = Number(e & ((1n << x) - 1n));
-      const sectors = Number((e & ((1n << 62n) - 1n)) >> x) + 1;
-      const len = Math.min(sectors * 512 - (off & 511), fileSize - off);
-      const input = len > 0 ? readAt(off, len) : undefined;
-      data = input && (await inflate(input, cs));
+      data = await compressedCluster(readAt, fileSize, e, clusterBits);
       if (!data) return undefined;
       recent.set(e, data);
       if (recent.size > 16) recent.delete(recent.keys().next().value!);
@@ -120,6 +115,16 @@ export function openDisk(readAt: ReadAt, fileSize: number): Disk {
     return out;
   };
   return { size, format: 'qcow2', read };
+}
+
+/** The cluster of the compressed L2 entry `e`, or undefined (a failed read, or bytes that don't unpack to a cluster). */
+async function compressedCluster(readAt: ReadAt, fileSize: number, e: bigint, clusterBits: number) {
+  const x = BigInt(62 - (clusterBits - 8));
+  const off = Number(e & ((1n << x) - 1n));
+  const sectors = Number((e & ((1n << 62n) - 1n)) >> x) + 1;
+  const len = Math.min(sectors * 512 - (off & 511), fileSize - off);
+  const input = len > 0 ? readAt(off, len) : undefined;
+  return input && inflate(input, 2 ** clusterBits);
 }
 
 /**
@@ -181,8 +186,8 @@ export type ChangedBlock = { block: number; data: Uint8Array };
  * A changes file: a qcow2 over a base image, read for what it overrides rather than merged with
  * the base. `blocks` yields every 4 KiB block the file holds, in disk order (a zero cluster as
  * zeros: it overrides the base), the last one possibly shorter than 4 KiB at the virtual size's end.
- * Undefined when the file has no backing file; throws on what we can't read (compressed clusters,
- * clusters under 4 KiB, the features `openDisk` refuses).
+ * Compressed clusters are raw deflate, as in `openDisk`. Undefined when the file has no backing
+ * file; throws on what we can't read (zstd, clusters under 4 KiB, the features `openDisk` refuses).
  */
 export function readChanges(readAt: ReadAt, fileSize: number): (ChangesHeader & { size: number; blocks(): AsyncGenerator<ChangedBlock> }) | undefined {
   const head = readAt(0, Math.min(fileSize, 1 << 16)) ?? readAt(0, Math.min(fileSize, HEADER));
@@ -216,13 +221,14 @@ export function readChanges(readAt: ReadAt, fileSize: number): (ChangesHeader & 
       const l2 = new DataView(t.buffer, t.byteOffset, cs);
       for (let k = 0; k < l2Entries; k++) {
         const e = l2.getBigUint64(k * 8);
-        if (e & COMPRESSED) fail('compressed clusters are not supported in a changes file');
+        const packed = (e & COMPRESSED) !== 0n;
         const off = Number(e & OFFSET_MASK);
-        const zero = version === 3 && (e & ZERO) !== 0n;
-        if (off === 0 && !zero) continue; // unallocated: the base shows through
+        const zero = !packed && version === 3 && (e & ZERO) !== 0n;
+        if (!packed && off === 0 && !zero) continue; // unallocated: the base shows through
         const first = (i * l2Entries + k) * cs;
         if (first >= size) continue;
-        const data = zero ? new Uint8Array(cs) : readAt(off, cs) ?? fail('a data cluster is past the end of the file');
+        const data = packed ? await compressedCluster(readAt, fileSize, e, clusterBits) ?? fail('a compressed cluster does not unpack')
+          : zero ? new Uint8Array(cs) : readAt(off, cs) ?? fail('a data cluster is past the end of the file');
         for (let b = 0; b < perCluster && first + b * 4096 < size; b++) {
           const n = Math.min(4096, size - (first + b * 4096));
           yield { block: first / 4096 + b, data: data.subarray(b * 4096, b * 4096 + n) };

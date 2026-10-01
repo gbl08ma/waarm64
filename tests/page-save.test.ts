@@ -1,11 +1,11 @@
 // Saving the disk from the page (M8 phase B loop 5), on the small Buildroot guest (no Debian): from a
 // running machine (it stops, the file downloads, the machine starts again), the whole disk as raw
-// (the image's bytes) and as qcow2 (`qemu-img compare` says identical), and the changes file (a
+// (the image's bytes) and as qcow2 (`qemu-img compare` says identical; compressed, and not), and the changes file (a
 // valid qcow2 over the image, empty here: the root is mounted read-only). The Debian page test
 // (tests/page-disk.test.ts) saves a disk with real changes. Skipped without qemu-img or the image.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -30,7 +30,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); if (dir) rmSync(dir, { recursive: true }); });
 
-test('the page saves the disk of a running machine: whole disk as raw and as qcow2, and the changes over the image', { skip, timeout: 180_000 }, async () => {
+test('the page saves the disk of a running machine: whole disk as raw and as qcow2 (compressed or not), and the changes over the image', { skip, timeout: 240_000 }, async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // the download path
@@ -59,9 +59,22 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   const raw = await save('raw', 'rootfs.ext4.img');
   assert.ok(readFileSync(raw).equals(readFileSync(image)), 'the raw export is the image, byte for byte');
 
+  // Compressed unless the menu's box is unticked (it is remembered); either way the same disk.
   const whole = await save('qcow2', 'rootfs.ext4.qcow2');
   qemu('check', whole);
   assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', whole, image), /Images are identical/);
+  const packed = statSync(whole).size;
+  await page.locator('#save summary').click();
+  await page.locator('#save-compress').uncheck();
+  await page.locator('#save summary').click();
+  await save('qcow2', 'rootfs.ext4.qcow2');
+  qemu('check', whole);
+  assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', whole, image), /Images are identical/);
+  assert.ok(packed < 0.8 * statSync(whole).size, `compressed ${packed} bytes, not compressed ${statSync(whole).size}`);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webpc.settings')!).compress), false);
+  await page.locator('#save summary').click();
+  await page.locator('#save-compress').check();
+  await page.locator('#save summary').click();
 
   symlinkSync(image, join(dir, 'rootfs.ext4'));
   const changes = await save('changes', 'rootfs.ext4-changes.qcow2');

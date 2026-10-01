@@ -34,8 +34,8 @@ const overlayName = () => chosen?.overlay ?? spec.overlay;
 /** What the disk is called on the page. */
 const diskName = () => (chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
 
-// Settings remembered per browser (the view and the network). Storage can be off or throw: then nothing is remembered.
-type Settings = { view?: View; net?: NetworkSettings };
+// Settings remembered per browser (the view, the network, whether saved disks are compressed). Storage can be off or throw: then nothing is remembered.
+type Settings = { view?: View; net?: NetworkSettings; compress?: boolean };
 const SETTINGS = 'webpc.settings';
 const settings = (): Settings => {
   try {
@@ -411,6 +411,9 @@ const SAVES: Record<ExportMode, { suffix: string; description: string; type: str
 };
 /** The disk's file name: the chosen file's or URL's, or the machine's own image's. */
 const baseName = () => diskName() ?? new URL(spec.disk, location.href).pathname.split('/').pop() ?? 'disk';
+const saveCompress = $<HTMLInputElement>('save-compress');
+saveCompress.checked = settings().compress ?? true;
+saveCompress.onchange = () => remember({ compress: saveCompress.checked });
 async function saveDisk(mode: ExportMode) {
   const overlay = overlayName();
   if (!overlay || busy()) return;
@@ -436,7 +439,7 @@ async function saveDisk(mode: ExportMode) {
     stateEl.textContent = 'Saving the disk';
     const mb = (n: number) => (n / 1e6).toFixed(n < 1e7 ? 1 : 0);
     try {
-      const r = await runExport({ mode, disk: chosen ?? { url: spec.disk, overlay }, baseName: baseName(), handle }, (phase, f) => {
+      const r = await runExport({ mode, compress: mode !== 'raw' && saveCompress.checked, disk: chosen ?? { url: spec.disk, overlay }, baseName: baseName(), handle }, (phase, f) => {
         stateEl.textContent = `${phase} ${Math.floor(100 * f)}%`;
       });
       if (r.blob) {
