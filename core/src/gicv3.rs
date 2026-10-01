@@ -20,6 +20,8 @@
 //! - `GICR_WAKER.ProcessorSleep` is state only: interrupts are forwarded while
 //!   it's set (QEMU does the same; Linux clears it at boot).
 
+use crate::snapshot::{self, Reader, Writer};
+
 pub const NIRQ: usize = 96;
 pub const SPURIOUS: u32 = 1023;
 /// The distributor's frame and each CPU's redistributor frames (RD_base, then SGI_base).
@@ -196,6 +198,85 @@ impl Gicv3 {
     fn retargeted(mut self) -> Gicv3 {
         self.retarget();
         self
+    }
+
+    /// Whether line `irq` of CPU `c` (a PPI) is high.
+    pub fn level(&self, c: usize, irq: usize) -> bool {
+        self.cpus[c].level & 1 << irq != 0
+    }
+
+    /// Saves the distributor, then each CPU's redistributor and CPU interface.
+    pub fn save(&self, w: &mut Writer) {
+        w.u32(self.ctlr);
+        for v in [
+            self.enabled,
+            self.latch,
+            self.level,
+            self.edge,
+            self.active,
+            self.group,
+        ] {
+            w.u128(v);
+        }
+        w.raw(&self.prio);
+        self.route.iter().for_each(|&r| w.u64(r));
+        for c in &self.cpus {
+            for v in [c.enabled, c.latch, c.level, c.edge, c.active, c.group] {
+                w.u32(v);
+            }
+            w.raw(&c.prio);
+            w.bool(c.sleep);
+            w.raw(&[c.pmr, c.bpr0, c.bpr1]);
+            w.u32(c.ctlr);
+            w.bool(c.igrpen0);
+            w.bool(c.igrpen1);
+            w.u32(c.ap[0]);
+            w.u32(c.ap[1]);
+        }
+    }
+
+    /// Restores what [`Gicv3::save`] wrote, for the same number of CPUs.
+    pub fn restore(&mut self, r: &mut Reader) -> snapshot::Result<()> {
+        // What a guest's writes leave: SPI bits only, 5 priority bits, the affinity and IRM of a route.
+        const SPIS: u128 = (1 << NIRQ) - (1 << 32);
+        self.ctlr = r.u32()? & 3;
+        self.enabled = r.u128()? & SPIS;
+        self.latch = r.u128()? & SPIS;
+        self.level = r.u128()? & SPIS;
+        self.edge = r.u128()? & SPIS;
+        self.active = r.u128()? & SPIS;
+        self.group = r.u128()? & SPIS;
+        for (p, &b) in self.prio.iter_mut().zip(r.raw(NIRQ)?) {
+            *p = b & PRIO;
+        }
+        for route in &mut self.route {
+            *route = r.u64()? & 0xff_80ff_ffff;
+        }
+        for c in &mut self.cpus {
+            c.enabled = r.u32()?;
+            c.latch = r.u32()?;
+            c.level = r.u32()?;
+            c.edge = r.u32()? | SGIS;
+            c.active = r.u32()?;
+            c.group = r.u32()?;
+            for (p, &b) in c.prio.iter_mut().zip(r.raw(32)?) {
+                *p = b & PRIO;
+            }
+            c.sleep = r.bool()?;
+            let b = r.raw(3)?;
+            // The binary points index a shift: a guest's writes are clamped the same way.
+            (c.pmr, c.bpr0, c.bpr1) = (
+                b[0] & PRIO,
+                b[1].clamp(BPR0_MIN, 7),
+                b[2].clamp(BPR1_MIN, 7),
+            );
+            c.ctlr = r.u32()? & 3;
+            c.igrpen0 = r.bool()?;
+            c.igrpen1 = r.bool()?;
+            c.ap = [r.u32()?, r.u32()?];
+        }
+        self.retarget();
+        Ok(())
     }
 
     pub fn ncpus(&self) -> usize {

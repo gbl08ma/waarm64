@@ -11,7 +11,7 @@ import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 29;
+export const ABI = 30;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 

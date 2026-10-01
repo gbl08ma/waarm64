@@ -788,6 +788,43 @@ impl Vm {
         None
     }
 
+    /// vCPU `c`'s place in parallel mode, in a snapshot's form: whether it's
+    /// on, whether it waits in WFI, and a CPU_ON request it hasn't taken.
+    /// Every vCPU's thread is out of [`Vm::run_cpu`].
+    pub(super) fn sched_par(&mut self, c: usize) -> (bool, bool, Option<(u64, u64)>) {
+        let on = self.shared.cpus[c].par.state.load(Ordering::SeqCst) != OFF;
+        let wfi = self.vcpus[c].own.get_mut().wfi;
+        (on, on && wfi, self.plat.get_mut().start[c])
+    }
+
+    /// Puts vCPU `c` of a new VM where [`Vm::sched_par`] found it. Its timer
+    /// lines are the GIC's (restored before this), so its first run drives
+    /// only what changed since.
+    pub(super) fn set_sched_par(
+        &mut self,
+        c: usize,
+        on: bool,
+        wfi: bool,
+        start: Option<(u64, u64)>,
+    ) {
+        let state = if on { OUT } else { OFF };
+        self.shared.cpus[c].par.state.store(state, Ordering::SeqCst);
+        let p = self.plat.get_mut();
+        p.start[c] = start;
+        let ppi = (p.gic.level(c, IRQ_VTIMER), p.gic.level(c, IRQ_PTIMER));
+        *self.vcpus[c].own.get_mut() = Own {
+            ppi,
+            wfi,
+            ..Own::default()
+        };
+    }
+
+    /// Publishes every vCPU's IRQ line from the GIC's state (after a restore).
+    pub(super) fn refresh_all(&mut self) {
+        let mut pl = self.plat.lock();
+        self.refresh(&mut pl);
+    }
+
     /// Publishes vCPU `c`'s counts in its counters block.
     fn publish_cpu(&self, c: usize, v: &Vcpu, own: &Own) {
         let k = &self.shared.cpus[c].counters;

@@ -1,6 +1,8 @@
 //! Per-vCPU architectural state. Everything a vCPU owns lives here, behind the
 //! pointer the host hands to the core: no globals.
 
+use crate::snapshot::{self, Reader, Writer};
+
 /// Register files, PC, flags, the local exclusive monitor and the EL1 system
 /// registers. The host reads PC at offset 256 and NZCV at 264; new fields go at the end.
 ///
@@ -171,6 +173,151 @@ impl Cpu {
         }
     }
 
+    /// Saves the registers (a snapshot's form: every field but `features` and
+    /// `mpidr`, which are the VM's).
+    pub fn save(&self, w: &mut Writer) {
+        self.x.iter().for_each(|&x| w.u64(x));
+        w.u64(self.pc);
+        w.u64(self.nzcv);
+        let m = &self.monitor;
+        for v in [m.addr, m.size, m.val[0], m.val[1]] {
+            w.u64(v);
+        }
+        self.v.iter().for_each(|&v| w.u128(v));
+        self.system().into_iter().for_each(|v| w.u64(v));
+    }
+
+    /// The fields after `v`, in order (but `features` and `mpidr`).
+    fn system(&self) -> [u64; 30] {
+        [
+            self.fpcr,
+            self.fpsr,
+            self.pstate,
+            self.sp_other,
+            self.elr_el1,
+            self.spsr_el1,
+            self.esr_el1,
+            self.far_el1,
+            self.vbar_el1,
+            self.sctlr_el1,
+            self.cpacr_el1,
+            self.tcr_el1,
+            self.ttbr0_el1,
+            self.ttbr1_el1,
+            self.mair_el1,
+            self.amair_el1,
+            self.par_el1,
+            self.afsr0_el1,
+            self.afsr1_el1,
+            self.contextidr_el1,
+            self.tpidr_el0,
+            self.tpidrro_el0,
+            self.tpidr_el1,
+            self.mdscr_el1,
+            self.os_lock,
+            self.cntkctl_el1,
+            self.cntp_ctl_el0,
+            self.cntp_cval_el0,
+            self.cntv_ctl_el0,
+            self.cntv_cval_el0,
+        ]
+    }
+
+    /// Restores what [`Cpu::save`] wrote; `features` and `mpidr` stay. A
+    /// snapshot is a file a user chose: a register holds only what a guest's
+    /// write could have left in it (the masks of `interp::sys`), and a PSTATE
+    /// or monitor no instruction leaves behind is refused.
+    pub fn restore(&mut self, r: &mut Reader) -> snapshot::Result<()> {
+        for x in &mut self.x {
+            *x = r.u64()?;
+        }
+        self.pc = r.u64()?;
+        self.nzcv = r.u64()? & 0xf000_0000;
+        self.monitor = Monitor {
+            addr: r.u64()?,
+            size: r.u64()?,
+            val: [r.u64()?, r.u64()?],
+        };
+        for v in &mut self.v {
+            *v = r.u128()?;
+        }
+        let mut s = [0; 30];
+        for v in &mut s {
+            *v = r.u64()?;
+        }
+        let [
+            fpcr,
+            fpsr,
+            pstate,
+            sp_other,
+            elr_el1,
+            spsr_el1,
+            esr_el1,
+            far_el1,
+            vbar_el1,
+            sctlr_el1,
+            cpacr_el1,
+            tcr_el1,
+            ttbr0_el1,
+            ttbr1_el1,
+            mair_el1,
+            amair_el1,
+            par_el1,
+            afsr0_el1,
+            afsr1_el1,
+            contextidr_el1,
+            tpidr_el0,
+            tpidrro_el0,
+            tpidr_el1,
+            mdscr_el1,
+            os_lock,
+            cntkctl_el1,
+            cntp_ctl_el0,
+            cntp_cval_el0,
+            cntv_ctl_el0,
+            cntv_cval_el0,
+        ] = s;
+        if !matches!(pstate & !DAIF, M_EL0T | M_EL1T | M_EL1H)
+            || !matches!(self.monitor.size, 0 | 1 | 2 | 4 | 8 | 16)
+        {
+            return Err(snapshot::Error::Corrupt);
+        }
+        *self = Cpu {
+            fpcr: fpcr & FPCR_MASK,
+            fpsr: fpsr & FPSR_MASK,
+            pstate,
+            sp_other,
+            elr_el1,
+            spsr_el1,
+            esr_el1: esr_el1 as u32 as u64,
+            far_el1,
+            vbar_el1: vbar_el1 & !0x7ff,
+            sctlr_el1: (sctlr_el1 | sctlr::RES1) & !sctlr::ENDIAN,
+            cpacr_el1: cpacr_el1 & 3 << 20,
+            tcr_el1,
+            ttbr0_el1,
+            ttbr1_el1,
+            mair_el1,
+            amair_el1,
+            par_el1,
+            afsr0_el1,
+            afsr1_el1,
+            contextidr_el1: contextidr_el1 as u32 as u64,
+            tpidr_el0,
+            tpidrro_el0,
+            tpidr_el1,
+            mdscr_el1,
+            os_lock: os_lock & 2,
+            cntkctl_el1: cntkctl_el1 & 0x3ff,
+            cntp_ctl_el0: cntp_ctl_el0 & 3,
+            cntp_cval_el0,
+            cntv_ctl_el0: cntv_ctl_el0 & 3,
+            cntv_cval_el0,
+            ..self.clone()
+        };
+        Ok(())
+    }
+
     /// PSTATE.EL.
     #[inline]
     pub fn el(&self) -> u64 {
@@ -237,6 +384,72 @@ mod tests {
         assert_eq!(off(c.v.as_ptr() as *const u8), 304);
         assert_eq!(off(&c.fpcr as *const u64 as *const u8), 816);
         assert_eq!(off(&c.fpsr as *const u64 as *const u8), 824);
+    }
+
+    #[test]
+    fn save_and_restore_keep_every_register_but_the_vms() {
+        // Every byte of the struct distinct, then what a guest couldn't have written fixed up.
+        let mut c = Cpu::reset();
+        // SAFETY: `Cpu` is plain integers without padding (1072 bytes of u64s and u128s).
+        let b = unsafe {
+            core::slice::from_raw_parts_mut(&mut c as *mut Cpu as *mut u8, size_of::<Cpu>())
+        };
+        b.iter_mut()
+            .enumerate()
+            .for_each(|(k, b)| *b = (k * 7 + k / 256) as u8 | 1);
+        c.nzcv &= 0xf000_0000;
+        (c.fpcr, c.fpsr) = (c.fpcr & FPCR_MASK, c.fpsr & FPSR_MASK);
+        c.pstate = M_EL1T | 0x140;
+        c.monitor.size = 8;
+        (c.esr_el1, c.contextidr_el1) = (c.esr_el1 as u32 as u64, c.contextidr_el1 as u32 as u64);
+        c.vbar_el1 &= !0x7ff;
+        c.sctlr_el1 = (c.sctlr_el1 | sctlr::RES1) & !sctlr::ENDIAN;
+        c.cpacr_el1 &= 3 << 20;
+        (c.os_lock, c.cntkctl_el1) = (2, c.cntkctl_el1 & 0x3ff);
+        (c.cntp_ctl_el0, c.cntv_ctl_el0) = (1, 3);
+        let mut w = Writer::default();
+        c.save(&mut w);
+        // 32 X, PC, NZCV, the monitor, 32 V, 30 system registers.
+        assert_eq!(w.0.len(), 8 * (32 + 2 + 4 + 30) + 16 * 32);
+        let mut d = Cpu {
+            features: 5,
+            mpidr: 9,
+            ..Cpu::reset()
+        };
+        let mut r = Reader(&w.0);
+        d.restore(&mut r).unwrap();
+        assert_eq!(r.end(), Ok(()));
+        (c.features, c.mpidr) = (5, 9);
+        assert_eq!(d, c);
+        // What no guest leaves behind is refused or masked, never kept.
+        let refused = |f: &dyn Fn(&mut Cpu)| {
+            let mut bad = c.clone();
+            f(&mut bad);
+            let mut w = Writer::default();
+            bad.save(&mut w);
+            Cpu::reset().restore(&mut Reader(&w.0))
+        };
+        let corrupt = Err(snapshot::Error::Corrupt);
+        assert_eq!(refused(&|c| c.pstate = 0b1001), corrupt, "EL2h");
+        assert_eq!(refused(&|c| c.pstate = 0b0001), corrupt, "EL0h");
+        assert_eq!(refused(&|c| c.pstate = M_EL1H | 1 << 4), corrupt, "AArch32");
+        assert_eq!(refused(&|c| c.pstate = M_EL1H | 1 << 21), corrupt, "SS");
+        assert_eq!(refused(&|c| c.monitor.size = 3), corrupt);
+        assert_eq!(refused(&|c| c.cntv_ctl_el0 = 7), Ok(()));
+        assert_eq!(
+            Cpu::reset().restore(&mut Reader(&w.0[..w.0.len() - 1])),
+            corrupt
+        );
+        let mut bad = c.clone();
+        (bad.cntv_ctl_el0, bad.nzcv, bad.sctlr_el1) = (7, u64::MAX, 0);
+        let mut w = Writer::default();
+        bad.save(&mut w);
+        let mut d = Cpu::reset();
+        d.restore(&mut Reader(&w.0)).unwrap();
+        assert_eq!(
+            (d.cntv_ctl_el0, d.nzcv, d.sctlr_el1),
+            (3, 0xf000_0000, sctlr::RES1)
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-# Host ABI (version 29)
+# Host ABI (version 30)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -41,6 +41,9 @@ Design notes for an ABI change go in this file before the code.
   1056; `Cpu` is 1072 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
   flash bank's bytes, null without one; ABI 29).
+- `vm_snapshot_size(vm)`, `vm_snapshot_save(vm, ptr, len)`, `vm_snapshot_restore(vm, ptr, len)`,
+  `snapshot_version()` (ABI 30): a VM's state without its RAM, out and into a new VM ("M8 phase
+  C: snapshots", below).
 - **Addresses are u32, but JS sees a wasm `i32` as signed:** past 2 GiB of memory (a guest with
   2 GiB of RAM puts the core's later allocations there) they'd come back negative. `web/vm.ts`
   `unsigned` wraps the exports that return one, and `jit_install` unsigns its `ptr`.
@@ -299,53 +302,61 @@ is the machine it was (the tests' step counts don't move).
   (the counter over CNTFRQ), so firmware boots keep one step count. Hosts pass a fixed `rtc`
   there (web/vm.ts: 2026-09-01, as the 9p server's timestamps).
 
-## M8 phase C: snapshots (design note for ABI 30)
+## M8 phase C: snapshots (ABI 30)
 
-Written before the code ([plans/snapshots.md](plans/snapshots.md)). The core saves and restores
-everything a VM is except guest RAM, which the host copies (it owns the memory and the file
-format). A VM that is never snapshotted is the machine it was.
+The design note of [plans/snapshots.md](plans/snapshots.md), as built (`core/src/snapshot.rs`,
+`core/src/vm/state.rs`; what a snapshot is: [platform.md](platform.md) "Snapshots"). The core
+saves and restores everything a VM is except guest RAM, which the host copies (it owns the memory
+and the file format). A VM that is never snapshotted is the machine it was.
 
-**Exports.**
-- `vm_snapshot_size(vm) -> u64`: called with **every vCPU out of the core** (round-robin: between
-  `vm_run` calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not) and the
-  backends done with every request they don't hold (the doorbell served). It takes the completions
-  the backends left into the used rings and clears `SIGNAL_DEVICE`, as the run loop does at its
-  next boundary (so a deterministic machine that runs on takes the steps it would have). Returns
-  the state's size in bytes, or **0 if that posted new requests** (chains that hadn't fit a request
-  ring; `EV_REQUEST` is set): the host serves the doorbell and calls it again.
+**Exports**, each called with **every vCPU out of the core** (round-robin: between `vm_run`
+calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
+- `vm_snapshot_size(vm) -> u64`: gets the VM ready. It takes the completions the backends left
+  into the used rings and clears `SIGNAL_DEVICE`, as the run loop does at its next boundary (so a
+  deterministic machine that runs on takes the steps it would have). Returns the state's size in
+  bytes; **0 while a device isn't quiet** (an event the host hasn't taken, a request it hasn't
+  read, chains that hadn't fit a request ring and were posted now): the host serves the doorbell
+  and calls it again; **`u64::MAX` if the chains the backends hold couldn't be posted again** by a
+  restore (one no longer walks: the guest changed a buffer it had given away; or together they
+  exceed a request ring, which no device of ours reaches): this VM can't be saved now.
 - `vm_snapshot_save(vm, ptr, len) -> u64`: writes the state at `ptr` (in the memory, outside guest
-  RAM) and returns its size; 0 if `len` is too small or a request ring isn't empty. It changes
-  nothing: the VM runs on afterwards.
+  RAM) and returns its size; 0 if `len` is too small or a device isn't quiet. It changes nothing:
+  the VM runs on afterwards.
 - `vm_snapshot_restore(vm, ptr, len) -> u32`, on a VM fresh from `vm_new` (no `vm_boot`, never
-  run): 0, or 1 not a snapshot or another `SNAPSHOT_VERSION`, 2 the VM's configuration differs,
-  3 truncated or inconsistent (a guest address outside RAM, a count past its limit, in-flight
-  chains that don't fit a request ring). After a failure the VM is only good for `vm_free`.
-  Nothing guest-supplied in a snapshot panics the core. The host copies RAM in before or after,
-  writes nothing else (the config spaces and the flash bank come from the snapshot), then
-  **serves the doorbell once** before it runs the VM: the restore posted every in-flight chain to
-  its request ring again (`EV_REQUEST`), which is how the new backends get the buffers the old
-  ones held.
-- `snapshot_version() -> u32`: `SNAPSHOT_VERSION`, for the file's header and the host's refusal
-  message.
+  run) **whose RAM the host has already filled** with the snapshot's (the transports read their
+  in-flight chains from it): 0, or 1 not a state or another `SNAPSHOT_VERSION`, 2 the VM's
+  configuration differs, 3 truncated or inconsistent (a guest address outside RAM, a count past
+  its limit, a PSTATE no instruction leaves, in-flight chains that don't walk or fit). After a
+  failure the VM is only good for `vm_free`. Nothing in a state panics the core: a field holds
+  what a guest's write could have left in it (the registers' write masks are applied), or the
+  state is refused. The host writes nothing else (the config spaces and the flash bank come from
+  the state), then **serves the doorbell once** before it runs the VM: the restore posted every
+  in-flight chain to its request ring again (`EV_REQUEST`), which is how the new backends get the
+  buffers the old ones held. A backend whose `epochs` start at 0 sees the restored epoch as a
+  reset first, which a new backend ignores.
+- `snapshot_version() -> u32`: `snapshot::VERSION`, for the file's header and the host's refusal
+  message. It is bumped when a saved field is added, removed or changes meaning; a unit test
+  pins the bytes of a fixed machine's state, so a layout change without the bump fails.
 
-**What must match** between the snapshot and the `VmConfig` of the VM it is restored into:
+**What must match** between the state and the `VmConfig` of the VM it is restored into:
 `ram_size`, `deterministic`, `cntfrq`, `ticks_per_insn`, the device entries, `fb_width`,
-`fb_height`, `features`, `ncpus`, `gic`, `firmware`, `flash_size`. Free: `jit` (a snapshot is
-the same under either tier), `smp` in realtime mode (the per-vCPU state is saved in one form:
-power, WFI, a pending CPU_ON), `rtc` and the fw_cfg files (the snapshot's files replace the
-VM's: they are part of the machine).
+`fb_height`, `features`, `ncpus`, whether there is an RTC, `firmware`, `flash_size`. Free: `jit`
+(a state is the same under either tier), `smp` in realtime mode (the per-vCPU state is saved in
+one form: power, WFI, a pending CPU_ON), `rtc`'s value and the fw_cfg files (the state's files
+replace the VM's: they are part of the machine).
 
-**The state** (little-endian, `core/src/snapshot.rs`; `WPCS`, `SNAPSHOT_VERSION`, the
-configuration words above, then in a fixed order):
-- Time: deterministic, the steps of all vCPUs and the ticks WFI skipped (with round-robin's
-  current vCPU and the rest of its quantum); realtime, the clock's nanoseconds, from which the
-  restored clock continues (CNTVCT doesn't jump back or forward).
-- Per vCPU: `Cpu` (its 1,072 bytes; `features` and `mpidr` are the new VM's), power, WFI state,
-  the event register, a pending CPU_ON (entry, context).
-- The GICv3 (distributor, redistributors, CPU interfaces), the PL011's registers and the RX
-  ring's unread bytes (the host drains TX before it saves), the PL031 (in realtime mode its
-  base is recomputed from the new VM's `rtc`, so it shows the host's time; deterministic, the
-  saved base), the flash bank (bytes, mode, status), fw_cfg (files, selector, offset).
+**The state** (little-endian; `WPCS`, the version, the configuration words above, then in a
+fixed order):
+- Time: the steps of all vCPUs and the ticks WFI skipped, round-robin's current vCPU and the rest
+  of its quantum, and in realtime mode the clock's nanoseconds, from which the restored clock
+  continues (CNTVCT doesn't jump back or forward).
+- Per vCPU: `Cpu`'s registers field by field (`features` and `mpidr` are the new VM's), power,
+  WFI state, the event register, a pending CPU_ON (entry, context).
+- The GICv3 (distributor, redistributors, CPU interfaces), the PL011's registers and what both
+  console rings hold (RX bytes the guest hasn't read, TX bytes the host hasn't taken), the PL031
+  (in realtime mode its base is recomputed from the new VM's `rtc`, so it shows the host's time;
+  deterministic, the saved base), the flash bank (bytes, mode, status), fw_cfg (files, selector,
+  offset).
 - Per virtio transport: its registers and queues (addresses, sizes, `last_avail`, `used`), the
   **in-flight chains of each queue in the order they were posted**, and its `DevShared` status,
   features, epoch and config space. The rings are empty by the rules above and aren't saved.
@@ -354,8 +365,9 @@ configuration words above, then in a fixed order):
 A restored vCPU's timer lines are taken from the GIC's saved levels; every vCPU's published IRQ
 line is recomputed.
 
-**A transport tracks its in-flight chains** (a list per queue instead of a count): this is the
-only change to a path that runs without snapshots.
+**A transport tracks its in-flight chains** (a list per queue instead of a count; a completion
+is taken only for a chain in the list): this is the only change to a path that runs without
+snapshots.
 
 ## Version history
 
@@ -385,4 +397,4 @@ only change to a path that runs without snapshots.
 | 27 | `panic_message() -> *const u8`: the first panic's message (BUG1) |
 | 28 | `VmConfig.rtc`: a PL031 RTC in realtime mode |
 | 29 | the firmware configuration (M8 phase B): `VmConfig.firmware`, `flash_size`, `fw_cfg`, `fw_cfg_len`; `vm_flash`; the PL031 in deterministic mode there |
-| 30 | snapshots (M8 phase C): `vm_snapshot_size`, `vm_snapshot_save`, `vm_snapshot_restore`, `snapshot_version` (design note above; the header stays at 29 until the code lands) |
+| 30 | snapshots (M8 phase C): `vm_snapshot_size`, `vm_snapshot_save`, `vm_snapshot_restore`, `snapshot_version` (above) |

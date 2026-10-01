@@ -3,6 +3,8 @@
 //! files for the firmware and the guest (Linux's `qemu_fw_cfg` driver, and
 //! systemd's credentials under `opt/io.systemd.credentials/`).
 
+use crate::snapshot::{self, Reader, Writer};
+
 /// The device's PA (QEMU `virt`'s).
 pub const FW_CFG: u64 = 0x0902_0000;
 /// Its registers: data (+0), selector (+8), DMA address (+0x10, absent here).
@@ -68,6 +70,28 @@ impl FwCfg {
             b = &b[NAME + 4 + len..];
         }
         Some(files)
+    }
+
+    /// Saves the files (they are the machine's: a restored one serves the same) and the read position.
+    pub fn save(&self, w: &mut Writer) {
+        w.u32(self.files.len() as u32);
+        self.files.iter().for_each(|f| w.bytes(f));
+        w.bytes(&self.dir);
+        w.u16(self.selector);
+        w.u64(self.offset as u64);
+    }
+
+    /// Restores what [`FwCfg::save`] wrote, replacing the files.
+    pub fn restore(&mut self, r: &mut Reader) -> snapshot::Result<()> {
+        let n = r.count((u16::MAX - FILE_FIRST) as usize)?;
+        self.files = (0..n)
+            .map(|_| r.bytes(usize::MAX).map(<[u8]>::to_vec))
+            .collect::<snapshot::Result<_>>()?;
+        self.dir = r.bytes(4 + n * (8 + NAME))?.to_vec();
+        self.selector = r.u16()?;
+        // Past an item's end reads as zeros: any offset is one a guest can reach, short of overflowing.
+        self.offset = r.u64()?.min(1 << 30) as usize;
+        Ok(())
     }
 
     /// The selected item's bytes (an absent one is empty: it reads as zeros).

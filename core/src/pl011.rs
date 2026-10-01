@@ -5,6 +5,8 @@
 
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
+use crate::snapshot::{self, Reader, Writer};
+
 pub const RING: usize = 4096;
 
 /// A single-producer single-consumer byte ring shared with the host. `head` and
@@ -105,6 +107,47 @@ impl Default for Pl011 {
 }
 
 impl Pl011 {
+    /// Saves the registers and what the rings hold: the bytes the guest hasn't
+    /// read from RX yet and those the host hasn't taken from TX.
+    pub fn save(&self, w: &mut Writer, rings: &Rings) {
+        for v in [
+            self.ilpr, self.ibrd, self.fbrd, self.lcr_h, self.cr, self.ifls, self.imsc, self.dmacr,
+        ] {
+            w.u32(v);
+        }
+        w.bool(self.tx_ris);
+        for ring in [&rings.rx, &rings.tx] {
+            let (head, tail) = (
+                ring.head.load(Ordering::Acquire),
+                ring.tail.load(Ordering::Acquire),
+            );
+            let held: Vec<u8> = (0..head.wrapping_sub(tail))
+                .map(|k| ring.buf[tail.wrapping_add(k) as usize % RING].load(Ordering::Relaxed))
+                .collect();
+            w.bytes(&held);
+        }
+    }
+
+    /// Restores what [`Pl011::save`] wrote; the rings' bytes go into `rings`
+    /// (empty: a new VM's). Registers keep the bits a guest's write would.
+    pub fn restore(&mut self, r: &mut Reader, rings: &Rings) -> snapshot::Result<()> {
+        self.ilpr = r.u32()? & 0xff;
+        self.ibrd = r.u32()? & 0xffff;
+        self.fbrd = r.u32()? & 0x3f;
+        self.lcr_h = r.u32()? & 0xff;
+        self.cr = r.u32()? & 0xff87;
+        self.ifls = r.u32()? & 0x3f;
+        self.imsc = r.u32()? & 0x7ff;
+        self.dmacr = r.u32()? & 7;
+        self.tx_ris = r.bool()?;
+        for ring in [&rings.rx, &rings.tx] {
+            for &b in r.bytes(RING)? {
+                ring.push(b);
+            }
+        }
+        Ok(())
+    }
+
     /// RIS: RX and RX timeout while the RX ring has data, and TX.
     fn ris(&self, rx: &Ring) -> u32 {
         (if rx.is_empty() { 0 } else { RX | RT }) | if self.tx_ris { TX } else { 0 }

@@ -7,6 +7,8 @@
 //! complete at once. Reads in array mode are the bytes; every write is a
 //! command or the data a command asked for.
 
+use crate::snapshot::{self, Reader, Writer};
+
 /// The bank's PA (QEMU `virt`'s second flash bank).
 pub const FLASH: u64 = 0x0400_0000;
 /// The erase block (QEMU's, and EDK2's `QEMU_NOR_BLOCK_SIZE`).
@@ -73,6 +75,48 @@ impl Flash {
 
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// Saves the bank's bytes and the command state.
+    pub fn save(&self, w: &mut Writer) {
+        w.raw(&self.bytes);
+        let (mode, left) = match self.mode {
+            Mode::Array => (0, 0),
+            Mode::Status => (1, 0),
+            Mode::Ident => (2, 0),
+            Mode::Query => (3, 0),
+            Mode::Program => (4, 0),
+            Mode::Erase => (5, 0),
+            Mode::Lock => (6, 0),
+            Mode::Count => (7, 0),
+            Mode::Data(left) => (8, left),
+            Mode::Confirm => (9, 0),
+        };
+        w.u8(mode);
+        w.u64(left);
+        w.u8(self.status);
+    }
+
+    /// Restores what [`Flash::save`] wrote, for a bank of the same size.
+    pub fn restore(&mut self, r: &mut Reader) -> snapshot::Result<()> {
+        let n = self.bytes.len();
+        self.bytes.copy_from_slice(r.raw(n)?);
+        let (mode, left) = (r.u8()?, r.u64()?);
+        self.mode = match mode {
+            0 => Mode::Array,
+            1 => Mode::Status,
+            2 => Mode::Ident,
+            3 => Mode::Query,
+            4 => Mode::Program,
+            5 => Mode::Erase,
+            6 => Mode::Lock,
+            7 => Mode::Count,
+            8 if (1..=BUFFER).contains(&left) => Mode::Data(left),
+            9 => Mode::Confirm,
+            _ => return Err(snapshot::Error::Corrupt),
+        };
+        self.status = r.u8()?;
+        Ok(())
     }
 
     /// Whether `off..off + size` lies in the bank.

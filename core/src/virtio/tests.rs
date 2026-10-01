@@ -381,6 +381,193 @@ fn malformed_rings_need_reset() {
     }
 }
 
+/// A new transport of the same device on the same RAM, restored from `t`'s state.
+fn restored(t: &T, state: &[u8]) -> (snapshot::Result<()>, Transport, Box<DevShared>) {
+    let (mut n, sh) = (Transport::new(entry()), Box::<DevShared>::default());
+    let mut r = Reader(state);
+    let res = n.restore(&mut r, &t.mem, &sh).and_then(|()| r.end());
+    (res, n, sh)
+}
+
+fn saved(t: &T) -> Vec<u8> {
+    let mut w = Writer::default();
+    t.t.save(&mut w, &t.sh);
+    w.0
+}
+
+#[test]
+fn a_restored_transport_posts_the_chains_in_flight_again() {
+    let mut t = T::new();
+    t.up(F_VERSION_1 | F_INDIRECT_DESC);
+    t.wr(0x100, 0x55); // a config byte the driver wrote
+    // Five chains: 6 is a receive buffer, 2 a two-buffer request, 4 indirect.
+    t.desc(DESC, 6, BUF, 64, D_WRITE, 0);
+    t.desc(DESC, 2, BUF + 0x100, 16, D_NEXT, 7);
+    t.desc(DESC, 7, BUF + 0x200, 32, D_WRITE, 0);
+    let table = BUF + 0x1000;
+    t.desc(DESC, 4, table, 32, D_INDIRECT, 0);
+    t.desc(table, 0, BUF + 0x300, 8, D_NEXT, 1);
+    t.desc(table, 1, BUF + 0x400, 8, D_WRITE, 0);
+    t.desc(DESC, 0, BUF + 0x500, 4, 0, 0);
+    t.desc(DESC, 1, BUF + 0x600, 4, 0, 0);
+    assert_eq!(t.offer(&[6, 2, 4, 0, 1]), EV_REQUEST);
+    assert!(!t.t.quiet(&t.sh), "requests the backend hasn't taken");
+    let posted: Vec<Request> = core::iter::from_fn(|| t.sh.req.pop_request()).collect();
+    assert_eq!(posted.len(), 5);
+    // The backend answers 2 and 1 (out of order) and holds 6, 4 and 0.
+    t.complete(2, 5);
+    t.complete(1, 0);
+    assert_eq!((t.used(0), t.used(1)), ((2, 2, 5), (2, 1, 0)));
+    assert!(t.t.quiet(&t.sh) && t.t.repostable(&t.mem));
+    let state = saved(&t);
+
+    let (res, n, sh) = restored(&t, &state);
+    assert_eq!(res, Ok(()));
+    assert_eq!(sh.events.swap(0, Ordering::Relaxed), EV_REQUEST);
+    // The same records, in the order the chains were posted.
+    let again: Vec<Request> = core::iter::from_fn(|| sh.req.pop_request()).collect();
+    let held: Vec<&Request> = [0, 2, 3].iter().map(|&k| &posted[k]).collect();
+    assert_eq!(again.iter().collect::<Vec<_>>(), held);
+    // The registers, the shared block and the interrupt line are as they were:
+    // it saves the same bytes...
+    let mut w = Writer::default();
+    n.save(&mut w, &sh);
+    assert_eq!(w.0, state);
+    (t.t, t.sh) = (n, sh);
+    assert_eq!(t.status(), 1 | 2 | FEATURES_OK | DRIVER_OK);
+    assert_eq!((t.rd(0x044), t.rd(0x060), t.rd(0x100) & 0xff), (1, 1, 0x55));
+    assert!(t.t.irq());
+    assert_eq!(t.sh.features[0].load(Ordering::Relaxed), 1 << 28);
+    // ...and it runs on: a completion goes to the next used entry, a new
+    // chain is posted once (the old ones aren't walked again).
+    t.complete(4, 9);
+    assert_eq!(t.used(2), (3, 4, 9));
+    assert_eq!(t.offer(&[1]), EV_REQUEST);
+    assert_eq!(t.sh.req.pop_request().unwrap().w0, 1);
+    assert!(t.sh.req.pop_request().is_none());
+    // What was never in flight, or completed before the save, doesn't complete.
+    t.complete(2, 1);
+    t.complete(5, 1);
+    assert_eq!(t.used(0).0, 3);
+    assert!(!t.broken());
+}
+
+#[test]
+fn a_state_that_cannot_be_is_refused() {
+    let mut t = T::new();
+    t.up(F_VERSION_1);
+    t.desc(DESC, 3, BUF, 16, D_WRITE, 0);
+    t.desc(DESC, 5, BUF + 0x100, 16, D_WRITE, 0);
+    t.offer(&[3, 5]);
+    while t.sh.req.pop_request().is_some() {}
+    let state = saved(&t);
+    assert_eq!(restored(&t, &state).0, Ok(()));
+    let corrupt = Err(snapshot::Error::Corrupt);
+    // Every strict prefix is truncated.
+    for n in 0..state.len() {
+        assert_eq!(restored(&t, &state[..n]).0, corrupt, "{n} bytes");
+    }
+    // The layout: the registers (32 bytes: the driver's features at 8), then
+    // per queue its size (8), ready (1), three addresses (24), last_avail and
+    // used (4), the chains in flight (a count, 4, and their heads).
+    const Q0: usize = 32;
+    let with = |at: usize, bytes: &[u8]| {
+        let mut s = state.clone();
+        s[at..at + bytes.len()].copy_from_slice(bytes);
+        restored(&t, &s).0
+    };
+    assert_eq!(
+        with(Q0, &16u64.to_le_bytes()),
+        corrupt,
+        "a size past the device's"
+    );
+    assert_eq!(
+        with(Q0, &3u64.to_le_bytes()),
+        corrupt,
+        "a size that is no power of 2"
+    );
+    assert_eq!(
+        with(Q0 + 9, &0u64.to_le_bytes()),
+        corrupt,
+        "descriptors outside RAM"
+    );
+    assert_eq!(
+        with(Q0 + 9, &(DESC + 4).to_le_bytes()),
+        corrupt,
+        "misaligned"
+    );
+    assert_eq!(
+        with(Q0 + 8, &[0]),
+        corrupt,
+        "chains in flight on a queue that isn't ready"
+    );
+    assert_eq!(
+        with(Q0 + 37, &9u32.to_le_bytes()),
+        corrupt,
+        "more chains than the queue holds"
+    );
+    assert_eq!(
+        with(Q0 + 41, &7u16.to_le_bytes()),
+        corrupt,
+        "a head that is no chain's"
+    );
+    assert_eq!(
+        with(8, &(1u64 << 40).to_le_bytes()),
+        corrupt,
+        "a feature never offered"
+    );
+    // A guest that scribbled over a buffer it gave away: the save refuses.
+    t.desc(DESC, 5, 0x1000, 16, D_WRITE, 0);
+    assert!(!t.t.repostable(&t.mem));
+    assert_eq!(restored(&t, &state).0, corrupt);
+}
+
+#[test]
+fn held_chains_past_a_request_ring_cannot_be_saved() {
+    // A queue of 64 whose chains are indirect tables of 40 buffers: 82 words
+    // a record, so 49 of them fit a request ring and 50 don't.
+    const N: u64 = 64;
+    let mut t = T::new();
+    t.t = Transport::new(DeviceEntry {
+        queues: 1,
+        queue_size: N,
+        ..entry()
+    });
+    t.wr(0x070, 1 | 2);
+    t.wr(0x024, 1);
+    t.wr(0x020, (F_VERSION_1 | F_INDIRECT_DESC) >> 32);
+    t.wr(0x024, 0);
+    t.wr(0x020, F_INDIRECT_DESC);
+    t.wr(0x070, 3 | FEATURES_OK as u64);
+    t.wr(0x038, N);
+    for (off, pa) in [(0x080, DESC), (0x090, AVAIL), (0x0a0, USED)] {
+        t.wr(off, pa);
+    }
+    t.wr(0x044, 1);
+    t.wr(0x070, 3 | (FEATURES_OK | DRIVER_OK) as u64);
+    assert_eq!(t.status(), 1 | 2 | FEATURES_OK | DRIVER_OK);
+    let table = BUF + 0x1000;
+    for k in 0..40 {
+        let next = if k < 39 { D_NEXT } else { 0 };
+        t.desc(table, k, BUF, 4, D_WRITE | next, k + 1);
+    }
+    for h in 0..50 {
+        t.desc(DESC, h, table, 40 * 16, D_INDIRECT, 0);
+        t.mem.write(AVAIL + 4 + 2 * h, 2, h).unwrap();
+        t.mem.write(AVAIL + 2, 2, h + 1).unwrap();
+        assert_eq!(t.wr(0x050, 0), EV_REQUEST);
+        assert_eq!(t.sh.req.pop_request().unwrap().write.len(), 40);
+        assert_eq!(t.t.repostable(&t.mem), h < 49, "{} chains held", h + 1);
+    }
+    assert!(t.t.quiet(&t.sh));
+    // One fewer fits: a restore posts them all.
+    t.complete(7, 0);
+    assert!(t.t.repostable(&t.mem));
+    let (mut n, sh) = (Transport::new(*t.t.entry()), Box::<DevShared>::default());
+    assert_eq!(n.restore(&mut Reader(&saved(&t)), &t.mem, &sh), Ok(()));
+    assert_eq!(core::iter::from_fn(|| sh.req.pop_request()).count(), 49);
+}
+
 #[test]
 fn shared_layout() {
     use core::mem::offset_of;

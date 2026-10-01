@@ -21,8 +21,10 @@
 //! records from before a reset are skipped by the backend and dropped here.
 
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
+use std::collections::VecDeque;
 
 use crate::mem::{Access, Mem};
+use crate::snapshot::{self, Reader, Writer};
 use crate::vm::RAM_BASE;
 
 /// QEMU `virt`'s window: 32 transports of 0x200 bytes, SPIs 16–47.
@@ -208,7 +210,7 @@ impl Default for DevShared {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct Queue {
     size: u64,
     ready: bool,
@@ -217,8 +219,26 @@ struct Queue {
     device: u64,
     last_avail: u16,
     used: u16,
-    /// Chains posted and not completed.
-    inflight: u64,
+    /// The heads of the chains posted and not completed, in the order they
+    /// were posted: a backend may hold a chain for as long as it likes (a
+    /// receive buffer), and a restored VM posts them again in this order
+    /// ([`Transport::restore`]).
+    inflight: VecDeque<u16>,
+}
+
+impl Queue {
+    /// Whether its three areas lie in RAM, aligned, for a size the device allows.
+    fn fits(&self, max: u64, mem: &Mem) -> bool {
+        let n = self.size;
+        let fits = |pa: u64, align: u64, len: u64| {
+            pa.is_multiple_of(align) && mem.host(pa, len, Access::Read).is_ok()
+        };
+        n.is_power_of_two()
+            && n <= max
+            && fits(self.desc, 16, 16 * n)
+            && fits(self.driver, 2, 6 + 2 * n)
+            && fits(self.device, 4, 6 + 8 * n)
+    }
 }
 
 /// A guest-supplied value that puts the device in NEEDS_RESET.
@@ -307,13 +327,18 @@ impl Transport {
             drv_features_sel: 0,
             driver_features: 0,
             queue_sel: 0,
-            queues: [Queue::default(); MAX_QUEUES],
+            queues: core::array::from_fn(|_| Queue::default()),
             isr: 0,
             status: 0,
             epoch: 0,
             backlog: false,
             scratch: Vec::new(),
         }
+    }
+
+    /// The device this is the transport of.
+    pub fn entry(&self) -> &DeviceEntry {
+        &self.entry
     }
 
     /// The interrupt line (level): high while InterruptStatus is non-zero.
@@ -344,7 +369,7 @@ impl Transport {
         if size != 4 || off & 3 != 0 {
             return None;
         }
-        let q = self.queue().copied();
+        let q = self.queue().map(|q| q.ready);
         Some(match off {
             0x000 => MAGIC,
             0x004 => 2,
@@ -355,7 +380,7 @@ impl Transport {
                 _ => 0,
             },
             0x034 => q.map_or(0, |_| self.entry.queue_size as u32),
-            0x044 => q.is_some_and(|q| q.ready) as u32,
+            0x044 => q.is_some_and(|ready| ready) as u32,
             0x060 => self.isr,
             0x070 => self.status,
             0x0b0..0x0c0 => u32::MAX, // SHMLen/SHMBase: no shared memory regions
@@ -425,17 +450,9 @@ impl Transport {
             q.ready = false;
             return 0;
         }
-        let n = q.size;
-        let fits = |pa: u64, align: u64, len: u64| {
-            pa.is_multiple_of(align) && mem.host(pa, len, Access::Read).is_ok()
-        };
-        if n.is_power_of_two()
-            && n <= max
-            && fits(q.desc, 16, 16 * n)
-            && fits(q.driver, 2, 6 + 2 * n)
-            && fits(q.device, 4, 6 + 8 * n)
-        {
-            (q.ready, q.last_avail, q.used, q.inflight) = (true, 0, 0, 0);
+        if q.fits(max, mem) {
+            (q.ready, q.last_avail, q.used) = (true, 0, 0);
+            q.inflight.clear();
             0
         } else {
             self.needs_reset(sh)
@@ -519,7 +536,7 @@ impl Transport {
         }
         let mut posted = false;
         while q.last_avail != avail {
-            if q.inflight == q.size {
+            if q.inflight.len() as u64 == q.size {
                 return Err(Bad); // more chains than the queue holds
             }
             let slot = q.last_avail as u64 % q.size;
@@ -534,7 +551,7 @@ impl Transport {
                 break;
             }
             q.last_avail = q.last_avail.wrapping_add(1);
-            q.inflight += 1;
+            q.inflight.push_back(head as u16);
             posted = true;
         }
         Ok(posted)
@@ -553,13 +570,17 @@ impl Transport {
                 continue;
             }
             let q = &mut self.queues[i];
-            if !q.ready || head >= q.size || q.inflight == 0 {
+            if !q.ready {
                 continue;
             }
+            // Only a chain that is in flight completes (the oldest first, as backends mostly answer).
+            let Some(at) = q.inflight.iter().position(|&h| h as u64 == head) else {
+                continue;
+            };
+            q.inflight.remove(at);
             // In RAM: checked when the queue became ready.
             let e = q.device + 4 + 8 * (q.used as u64 % q.size);
             q.used = q.used.wrapping_add(1);
-            q.inflight -= 1;
             let ok = mem.write(e, 4, head).is_ok()
                 && mem.write(e + 4, 4, len as u64).is_ok()
                 && mem.write(q.device + 2, 2, q.used as u64).is_ok();
@@ -572,6 +593,138 @@ impl Transport {
             return 0;
         }
         (0..self.entry.queues as usize).fold(0, |ev, i| ev | self.notify(i, mem, sh))
+    }
+}
+
+impl Transport {
+    /// Whether nothing waits for the host: no event to take, no request to
+    /// read, no completion to drain, no chain waiting for room. A snapshot is
+    /// taken in this state, so the rings and events aren't in it.
+    pub fn quiet(&self, sh: &DevShared) -> bool {
+        let empty = |r: &WordRing| r.head.load(Ordering::Acquire) == r.tail.load(Ordering::Acquire);
+        sh.events.load(Ordering::Acquire) == 0 && empty(&sh.req) && empty(&sh.cpl) && !self.backlog
+    }
+
+    /// Whether a restore could post every in-flight chain again: each still
+    /// walks (a guest must leave the buffers it made available alone) and
+    /// together they fit an empty request ring. The chains of a quiet device
+    /// are the ones its backend holds (receive and event buffers).
+    pub fn repostable(&mut self, mem: &Mem) -> bool {
+        let indirect = self.driver_features & F_INDIRECT_DESC != 0;
+        let mut words = 0;
+        for q in &self.queues[..self.entry.queues as usize] {
+            for &head in &q.inflight {
+                let out = &mut self.scratch;
+                out.clear();
+                if walk_chain(mem, q.desc, q.size, head as u64, indirect, out).is_err() {
+                    return false;
+                }
+                words += 2 + out.len();
+            }
+        }
+        words <= RING_WORDS
+    }
+
+    /// Saves the registers, the queues with their in-flight chains, and the
+    /// shared block's status, features, epoch and config space.
+    pub fn save(&self, w: &mut Writer, sh: &DevShared) {
+        w.u32(self.dev_features_sel);
+        w.u32(self.drv_features_sel);
+        w.u64(self.driver_features);
+        w.u32(self.queue_sel);
+        w.u32(self.isr);
+        w.u32(self.status);
+        w.u32(self.epoch);
+        for q in &self.queues[..self.entry.queues as usize] {
+            w.u64(q.size);
+            w.bool(q.ready);
+            w.u64(q.desc);
+            w.u64(q.driver);
+            w.u64(q.device);
+            w.u16(q.last_avail);
+            w.u16(q.used);
+            w.u32(q.inflight.len() as u32);
+            q.inflight.iter().for_each(|&h| w.u16(h));
+        }
+        w.u32(sh.features[0].load(Ordering::Relaxed));
+        w.u32(sh.features[1].load(Ordering::Relaxed));
+        let config: Vec<u8> = sh
+            .config
+            .iter()
+            .map(|b| b.load(Ordering::Relaxed))
+            .collect();
+        w.raw(&config);
+    }
+
+    /// Restores what [`Transport::save`] wrote into a new transport of the
+    /// same device, with guest RAM already restored: every in-flight chain is
+    /// posted to the request ring again (`EV_REQUEST` in `sh.events`), in its
+    /// queue's order, so the new backend holds the buffers the old one held.
+    /// `Corrupt` for a queue outside RAM, a chain that doesn't walk, or
+    /// chains that don't fit the ring at once (a save checks both:
+    /// [`Transport::repostable`]).
+    pub fn restore(&mut self, r: &mut Reader, mem: &Mem, sh: &DevShared) -> snapshot::Result<()> {
+        const CORRUPT: snapshot::Error = snapshot::Error::Corrupt;
+        self.dev_features_sel = r.u32()?;
+        self.drv_features_sel = r.u32()?;
+        self.driver_features = r.u64()?;
+        self.queue_sel = r.u32()?;
+        self.isr = r.u32()? & (INT_VRING | INT_CONFIG);
+        self.status = r.u32()? & 0xff;
+        self.epoch = r.u32()?;
+        if self.driver_features & !self.offered() != 0 {
+            return Err(CORRUPT);
+        }
+        let max = self.entry.queue_size;
+        for i in 0..self.entry.queues as usize {
+            let mut q = Queue {
+                size: r.u64()?,
+                ready: r.bool()?,
+                desc: r.u64()?,
+                driver: r.u64()?,
+                device: r.u64()?,
+                last_avail: r.u16()?,
+                used: r.u16()?,
+                inflight: VecDeque::new(),
+            };
+            let n = r.count(MAX_QUEUE_SIZE as usize)?;
+            for _ in 0..n {
+                q.inflight.push_back(r.u16()?);
+            }
+            if q.ready && !q.fits(max, mem) || !q.ready && n > 0 || n as u64 > q.size {
+                return Err(CORRUPT);
+            }
+            self.queues[i] = q;
+        }
+        sh.status.store(self.status, Ordering::Release);
+        sh.epoch.store(self.epoch, Ordering::Release);
+        sh.features[0].store(r.u32()?, Ordering::Relaxed);
+        sh.features[1].store(r.u32()?, Ordering::Relaxed);
+        for (c, &b) in sh.config.iter().zip(r.raw(CONFIG_SIZE)?) {
+            c.store(b, Ordering::Relaxed);
+        }
+        // The chains the old backend held (or hadn't answered), for the new one.
+        let indirect = self.driver_features & F_INDIRECT_DESC != 0;
+        let mut posted = false;
+        for (i, q) in self.queues[..self.entry.queues as usize].iter().enumerate() {
+            let w_epoch = (self.epoch & 0xff) << 24 | (i as u32) << 16;
+            for &head in &q.inflight {
+                let out = &mut self.scratch;
+                out.clear();
+                out.extend([w_epoch | head as u32, 0]);
+                let (nr, nw) = walk_chain(mem, q.desc, q.size, head as u64, indirect, out)
+                    .map_err(|Bad| CORRUPT)?;
+                out[1] = nr | nw << 16;
+                if !sh.req.push(out) {
+                    return Err(CORRUPT);
+                }
+                posted = true;
+            }
+        }
+        if posted {
+            sh.events.fetch_or(EV_REQUEST, Ordering::AcqRel);
+        }
+        Ok(())
     }
 }
 

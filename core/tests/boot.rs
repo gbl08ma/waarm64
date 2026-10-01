@@ -231,3 +231,126 @@ fn console_input_reaches_a_shell() {
     assert!(r.console.contains("webpc: test exit 0\n"));
     assert_eq!(r.steps, common::steps("console-input"));
 }
+
+/// M8 phase C: the VM saved, thrown away and restored from its state at each
+/// of `at` (steps) takes the steps of an unbroken boot and prints the same.
+fn boot_through_snapshots(ncpus: u64, name: &str, at: &[u64]) {
+    let kernel = common::image("linux/Image");
+    let devices = common::guest_devices("buildroot/rootfs.ext4", None);
+    let run = |snapshots: &[u64]| {
+        common::boot(&common::Boot {
+            devices: &devices,
+            ncpus,
+            snapshots,
+            ..common::Boot::new(&kernel, common::GUEST_CMDLINE)
+        })
+    };
+    let (whole, r) = (run(&[]), run(at));
+    eprintln!(
+        "[{}] snapshots (bytes, held chains): {:?}",
+        r.summary, r.snapshots
+    );
+    assert_eq!(r.snapshots.len(), at.len(), "every snapshot taken");
+    assert!(r.powered_off(), "no SYSTEM_OFF");
+    assert_eq!(r.steps, common::steps(name));
+    assert_eq!(r.console, whole.console);
+    assert_eq!(r.hvc, whole.hvc);
+}
+
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn linux_boots_through_snapshots() {
+    // In the early boot, around the devices' probes, in userspace, near the end.
+    let at = [
+        1_000_000, 9_000_000, 20_000_000, 25_000_000, 30_000_000, 33_333_333, 38_000_000,
+        40_000_000,
+    ];
+    boot_through_snapshots(1, "buildroot", &at);
+    // Every 2 M steps: 20 of them.
+    let every: Vec<u64> = (1..=20).map(|k| k * 2_000_000).collect();
+    boot_through_snapshots(1, "buildroot", &every);
+}
+
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn linux_boots_through_snapshots_on_2_and_4_vcpus() {
+    // Round-robin's place (the vCPU running, the rest of its quantum, each
+    // vCPU's power and WFI) is in the state.
+    for n in [2, 4] {
+        let total = common::steps(&format!("buildroot-{n}cpu"));
+        let at: Vec<u64> = (1..=12).map(|k| k * total / 13 + k * 7919).collect();
+        boot_through_snapshots(n, &format!("buildroot-{n}cpu"), &at);
+    }
+}
+
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn the_device_test_runs_through_snapshots() {
+    // Net and input buffers are held by the backends when the VM is saved,
+    // and 9p, the rng and the disk are mid-conversation.
+    let kernel = common::image("linux/Image");
+    let devices = common::test_devices("buildroot/rootfs.ext4");
+    let cmdline = format!("{} -- /test-devices.sh", common::GUEST_CMDLINE);
+    let total = common::steps("devices");
+    let at: Vec<u64> = (1..=40).map(|k| k * total / 41).collect();
+    let r = common::boot(&common::Boot {
+        devices: &devices,
+        fb: (640, 480),
+        snapshots: &at,
+        ..common::Boot::new(&kernel, &cmdline)
+    });
+    eprintln!(
+        "[{}] snapshots (bytes, held chains): {:?}",
+        r.summary, r.snapshots
+    );
+    assert!(
+        r.powered_off() && r.console.contains("webpc: test ok\n"),
+        "{}",
+        r.console
+    );
+    assert_eq!(r.snapshots.len(), at.len());
+    assert!(
+        r.snapshots.iter().any(|&(_, held)| held >= 256),
+        "no snapshot with the net card's receive buffers held"
+    );
+    assert_eq!(r.steps, total);
+    for want in [
+        "3 packets transmitted, 3 packets received, 0% packet loss\n",
+        "9p: big 200000 ok\n",
+        "9p: top from-guest hello.txt \n",
+    ] {
+        assert!(r.console.contains(want), "missing {want:?}");
+    }
+}
+
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn console_input_survives_snapshots() {
+    // Around the input: bytes wait in the PL011's RX ring (and behind it, in
+    // the host's queue) when the VM is saved.
+    let kernel = common::image("linux/Image");
+    let devices = common::guest_devices("buildroot/rootfs.ext4", None);
+    let cmdline = format!("{} -- /bin/sh", common::GUEST_CMDLINE);
+    let input = common::console_input();
+    let s = common::CONSOLE_INPUT_STEP;
+    let at = [
+        s - 1_000_000,
+        s,
+        s + 1,
+        s + 20_000,
+        s + 300_000,
+        s + 2_000_000,
+    ];
+    let r = common::boot(&common::Boot {
+        devices: &devices,
+        input: Some((s, &input)),
+        max_steps: 200_000_000,
+        snapshots: &at,
+        ..common::Boot::new(&kernel, &cmdline)
+    });
+    eprintln!("[{}]\n{}", r.summary, r.console);
+    assert!(r.powered_off(), "no SYSTEM_OFF");
+    assert!(r.console.contains(common::CONSOLE_INPUT_WANT), "no echo");
+    assert_eq!(r.snapshots.len(), at.len());
+    assert_eq!(r.steps, common::steps("console-input"));
+}

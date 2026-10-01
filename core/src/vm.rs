@@ -47,6 +47,7 @@ use crate::virtio::{self, DevShared, DeviceEntry, Transport};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 
 mod parallel;
+mod state;
 pub use parallel::{notify, wait};
 
 pub const RAM_BASE: u64 = 0x4000_0000;
@@ -475,6 +476,9 @@ struct Clock {
     t0: f64,
     #[cfg(not(target_arch = "wasm32"))]
     t0: std::time::Instant,
+    /// What it read when the VM was created: 0, or a restored VM's saved time
+    /// (the counter continues from there).
+    base: u64,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -486,24 +490,32 @@ unsafe extern "C" {
 
 impl Clock {
     fn new() -> Clock {
+        Clock::from(0)
+    }
+
+    /// A clock that reads `base` ns now.
+    fn from(base: u64) -> Clock {
         #[cfg(target_arch = "wasm32")]
         // SAFETY: a host function with no preconditions.
         return Clock {
             t0: unsafe { now_ms() },
+            base,
         };
         #[cfg(not(target_arch = "wasm32"))]
         Clock {
             t0: std::time::Instant::now(),
+            base,
         }
     }
 
-    /// Nanoseconds since the VM was created.
+    /// Nanoseconds the VM has run for: since it was created, on top of what
+    /// a restored one had already.
     fn ns(&self) -> u64 {
         #[cfg(target_arch = "wasm32")]
-        // SAFETY: as in `new`.
-        return ((unsafe { now_ms() } - self.t0) * 1e6) as u64;
+        // SAFETY: as in `from`.
+        return self.base + ((unsafe { now_ms() } - self.t0) * 1e6) as u64;
         #[cfg(not(target_arch = "wasm32"))]
-        (self.t0.elapsed().as_nanos() as u64)
+        (self.base + self.t0.elapsed().as_nanos() as u64)
     }
 }
 

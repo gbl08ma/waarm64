@@ -86,3 +86,37 @@ fn alpine_smp() {
 "
     ));
 }
+
+/// M8 phase C: Alpine saved and restored into a new VM at several points of
+/// its boot takes the steps of an unbroken boot.
+#[test]
+#[ignore = "needs target/images/alpine (images/build.sh alpine) and --release"]
+fn alpine_boots_through_snapshots() {
+    let devices = common::test_devices(common::ALPINE.disk);
+    let total = common::steps("alpine");
+    let at: Vec<u64> = (1..=8).map(|k| k * total / 9 + k).collect();
+    let (kernel, initrd) = (
+        common::image(common::ALPINE.kernel),
+        common::image(common::ALPINE.initrd),
+    );
+    let r = common::boot(&Boot {
+        initrd: Some(&initrd),
+        devices: &devices,
+        ram_size: 1 << 30,
+        max_steps: 50_000_000_000,
+        fb: (640, 480),
+        snapshots: &at,
+        ..Boot::new(&kernel, common::ALPINE.cmdline)
+    });
+    eprintln!(
+        "[{}] snapshots (bytes, held chains): {:?}",
+        r.summary, r.snapshots
+    );
+    assert!(r.powered_off(), "no SYSTEM_OFF");
+    let out = &r.console;
+    assert!(out.contains("webpc: test ok\n"), "{out}");
+    assert!(out.contains("1 packets transmitted, 1 packets received"));
+    assert!(out.contains("webpc: 9p hello from the host\n"));
+    assert_eq!(r.snapshots.len(), at.len());
+    assert_eq!(r.steps, total);
+}

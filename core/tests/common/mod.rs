@@ -456,6 +456,20 @@ impl Backends {
         b
     }
 
+    /// The VM was replaced by one restored from its snapshot: the buffers
+    /// held are gone with it (the new VM posts them again). Returns how many
+    /// there were.
+    fn restored(&mut self) -> usize {
+        let n = self.holds();
+        self.held.iter_mut().for_each(|h| h.bufs.clear());
+        n
+    }
+
+    /// The chains the backends hold: receive and event buffers.
+    fn holds(&self) -> usize {
+        self.held.iter().map(|h| h.bufs.len()).sum()
+    }
+
     /// The guest set a keyboard LED: inject the test events.
     fn led(&mut self, vm: &Vm) {
         for i in 0..self.devs.len() {
@@ -501,7 +515,11 @@ impl Backends {
                 let readable =
                     || -> Vec<u8> { r.read.iter().flat_map(|&s| seg(vm, s).to_vec()).collect() };
                 let len = match (self.devs[i], r.queue) {
-                    (Dev::Console, 0) => continue, // a receive buffer
+                    (Dev::Console, 0) => {
+                        // A receive buffer: held for input that never comes.
+                        self.held[i].bufs.push_back(r);
+                        continue;
+                    }
                     (Dev::Console, _) => {
                         self.hvc.extend(readable());
                         0
@@ -583,6 +601,9 @@ pub struct Run {
     pub flash: Vec<u8>,
     /// Steps retired (instructions plus exceptions taken).
     pub steps: u64,
+    /// For each of `Boot::snapshots`: the size of the saved state, and the
+    /// chains the backends held that the restored VM posted again.
+    pub snapshots: Vec<(usize, usize)>,
     pub summary: String,
 }
 
@@ -622,6 +643,11 @@ pub struct Boot<'a> {
     /// The firmware configuration (`VmConfig.firmware`, M8 phase B): `kernel`
     /// is the firmware, loaded at [`FIRMWARE`].
     pub firmware: Option<Firmware<'a>>,
+    /// Step counts (ascending; deterministic round-robin only) at which the
+    /// VM is saved and thrown away, and a new one restored from its state
+    /// and a copy of its RAM runs on (M8 phase C). The guest can't tell: the
+    /// run takes the steps and prints what an unbroken one does.
+    pub snapshots: &'a [u64],
 }
 
 /// The firmware configuration's host side: the flash bank's size and saved
@@ -671,6 +697,7 @@ impl<'a> Boot<'a> {
             parallel: false,
             input: None,
             firmware: None,
+            snapshots: &[],
         }
     }
 }
@@ -691,11 +718,18 @@ pub fn boot(b: &Boot) -> Run {
         parallel,
         input,
         ref firmware,
+        snapshots,
     } = b;
     assert!(
         input.is_none() || !parallel,
         "input at a step: round-robin only"
     );
+    assert!(
+        snapshots.is_empty() || !(parallel || realtime),
+        "snapshots at a step: deterministic only"
+    );
+    let mut snapshots = snapshots.iter().copied().peekable();
+    let mut restored = Vec::new();
     let mut ram = vec![0u128; ram_size as usize / 16];
     // SAFETY: ram is 16-byte aligned, ram_size bytes long, and outlives the Vm.
     let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, ram_size) };
@@ -771,16 +805,25 @@ pub fn boot(b: &Boot) -> Run {
     } else {
         let mut queued: VecDeque<u8> = VecDeque::new();
         let mut input = input;
+        let mut cut = false;
         loop {
             // As web/vm.ts `run`: DEVICE exits are handled within one budget,
-            // which stops at the input's step.
+            // which stops at the input's step (and at a snapshot's).
             let budget = match input {
                 Some((at, _)) if steps < at => (at - steps).min(100_000_000),
                 _ => 100_000_000,
             };
+            // A budget that ends only for a snapshot isn't a boundary of the
+            // unbroken run: the input's next bytes aren't pumped there.
+            let (whole, budget) = match snapshots.peek() {
+                Some(&at) if steps < at => (budget, budget.min(at - steps)),
+                _ => (budget, budget),
+            };
             let mut ran = 0;
             let kind = loop {
-                pump(&vm, &mut queued);
+                if !core::mem::take(&mut cut) {
+                    pump(&vm, &mut queued);
+                }
                 let kind = vm.run(budget - ran);
                 ran += vm.exit.retired;
                 if kind == exit::IDLE && !realtime && !queued.is_empty() {
@@ -815,6 +858,32 @@ pub fn boot(b: &Boot) -> Run {
             if echo {
                 eprint!("{}", String::from_utf8_lossy(&out[start..]));
             }
+            if kind == exit::BUDGET && snapshots.next_if(|&at| steps >= at).is_some() {
+                // Save: once the backends have nothing left to take.
+                let size = loop {
+                    match vm.snapshot_size() {
+                        0 => backends.poll(&vm),
+                        u64::MAX => panic!("held chains don't fit a request ring"),
+                        n => break n,
+                    }
+                };
+                let state = vm.snapshot_save().expect("quiet devices");
+                assert_eq!(state.len() as u64, size);
+                // Restore: a new VM on a copy of RAM, and backends that hold nothing
+                // (what has state keeps it: the rng's position, 9p's tree, queued items).
+                let mut ram2 = ram.clone();
+                // SAFETY: as for `ram` above.
+                let mem = unsafe { Mem::new(ram2.as_mut_ptr() as *mut u8, ram_size) };
+                let mut vm2 = Vm::with_devices(mem, cfg, &entries);
+                vm2.snapshot_restore(&state).expect("a state just saved");
+                vm = vm2;
+                ram = ram2;
+                let held = backends.restored();
+                backends.poll(&vm);
+                assert_eq!(backends.holds(), held, "every held chain posted again");
+                restored.push((state.len(), held));
+                cut = budget < whole;
+            }
             match kind {
                 exit::BUDGET | exit::TX_FULL if steps < max_steps => {}
                 _ => {
@@ -840,6 +909,7 @@ pub fn boot(b: &Boot) -> Run {
         fb,
         flash,
         steps,
+        snapshots: restored,
         kind,
         x0,
         console: String::from_utf8_lossy(&out).replace("\r\n", "\n"),

@@ -21,13 +21,14 @@ pub mod mem;
 pub mod mmu;
 pub mod pl011;
 pub mod pl031;
+pub mod snapshot;
 pub mod virtio;
 pub mod vm;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 29;
+pub const ABI_VERSION: u32 = 30;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -531,6 +532,69 @@ pub unsafe extern "C" fn vm_counters(vm: *const vm::Vm, i: u32) -> *const vm::Co
         .cpus
         .get(i as usize)
         .map_or(core::ptr::null(), |c| &c.counters)
+}
+
+// Snapshots (ABI 30, docs/abi.md "M8 phase C: snapshots"). Each is called
+// with every vCPU out of the core: between `vm_run` calls, or in parallel mode
+// with every vCPU's thread out of `vm_run_cpu`.
+
+/// The format version of a VM's saved state (`snapshot::VERSION`).
+#[unsafe(no_mangle)]
+pub extern "C" fn snapshot_version() -> u32 {
+    snapshot::VERSION
+}
+
+/// Gets the VM ready to be saved: takes the completions the backends left
+/// (clearing `SIGNAL_DEVICE`), as the run loop would at its next boundary.
+/// Returns the size of the state in bytes; 0 if a device has something for
+/// the host (the host serves the doorbell and calls again); `u64::MAX` if the
+/// buffers the backends hold couldn't be posted again by a restore.
+///
+/// # Safety
+/// See the note above [`vm_new`]; no vCPU is in the core.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_snapshot_size(vm: *mut vm::Vm) -> u64 {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &mut *vm }.snapshot_size()
+}
+
+/// Writes the VM's state (everything but guest RAM) at `ptr` and returns its
+/// size; 0 if `len` is too small or a device isn't quiet
+/// ([`vm_snapshot_size`]). The VM is unchanged and runs on afterwards.
+///
+/// # Safety
+/// See the note above [`vm_new`]; no vCPU is in the core; `ptr..ptr + len` is
+/// writable and outside guest RAM.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_snapshot_save(vm: *mut vm::Vm, ptr: *mut u8, len: usize) -> u64 {
+    // SAFETY: guaranteed by the caller.
+    let Some(state) = unsafe { &mut *vm }.snapshot_save() else {
+        return 0;
+    };
+    if state.len() > len {
+        return 0;
+    }
+    // SAFETY: `ptr..ptr + len` is writable (the caller), and the state fits.
+    unsafe { core::ptr::copy_nonoverlapping(state.as_ptr(), ptr, state.len()) };
+    state.len() as u64
+}
+
+/// Restores the state at `ptr..ptr + len` into a VM fresh from [`vm_new`]
+/// (not booted, never run) whose RAM the host has filled with the snapshot's.
+/// Returns 0, or `snapshot::Error`: 1 not a state of this
+/// [`snapshot_version`], 2 taken on another configuration, 3 truncated or
+/// inconsistent. After an error the VM is only good for [`vm_free`]. The
+/// chains the old backends held are in the request rings again
+/// (`EV_REQUEST`): the host serves the doorbell before it runs the VM.
+///
+/// # Safety
+/// See the note above [`vm_new`]; no vCPU is in the core; `ptr..ptr + len` is
+/// readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_snapshot_restore(vm: *mut vm::Vm, ptr: *const u8, len: usize) -> u32 {
+    // SAFETY: guaranteed by the caller.
+    let (vm, state) = unsafe { (&mut *vm, core::slice::from_raw_parts(ptr, len)) };
+    vm.snapshot_restore(state).map_or_else(|e| e as u32, |()| 0)
 }
 
 // JIT plumbing (M5 step 1), for tests/jit.test.ts and bench/jit.

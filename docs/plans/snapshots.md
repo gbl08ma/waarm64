@@ -16,7 +16,7 @@ profile too.
 
 | Part | Who | How |
 |---|---|---|
-| vCPUs, time, GIC, PL011, PL031, flash bank, fw_cfg, virtio transports | the core | `vm_snapshot_save` / `vm_snapshot_restore` (ABI 30, design note in [abi.md](../abi.md)): an explicit little-endian serialization with its own version, not a memory dump |
+| vCPUs, time, GIC, PL011 (with what the console rings hold), PL031, flash bank, fw_cfg, virtio transports | the core | `vm_snapshot_save` / `vm_snapshot_restore` (ABI 30, [abi.md](../abi.md)): an explicit little-endian serialization with its own version, not a memory dump |
 | Guest RAM (the framebuffer and the DTB are in it) | the host | 1 MiB chunks, zero pages left out, each chunk compressed on its own |
 | Backend state | the host | per device, only where a backend has any (the deterministic rng's position; 9p's tree later). The page's devices (rng, blk, input, net) have none: see "Buffers the backends hold" |
 | The disk's changes (the OPFS overlay's blocks) | the host | the same blocks a changes file holds, compressed; the base image is never in the file |
@@ -122,7 +122,12 @@ changes what is saved. A snapshot from another version is refused; migrating is 
 One slice, one commit, a short report each. `scripts/ci.sh` at every commit; `scripts/ci-long.sh`
 for the loops that touch parallel SMP.
 
-1. **Core, round-robin.** `core/src/snapshot.rs` (writer, reader), save and restore of every part
+1. **Core, round-robin: done.** What was built: [platform.md](../platform.md) "Snapshots" and
+   [abi.md](../abi.md) "M8 phase C". Beyond the plan: both console rings are in the state (the
+   host needn't drain TX first), RAM goes in before the restore (the transports read their
+   chains from it), a save is refused while the held chains couldn't be posted again, and the
+   per-vCPU state of both run modes is already saved in one form (loop 2 tests it in parallel).
+   The plan was: `core/src/snapshot.rs` (writer, reader), save and restore of every part
    above, the in-flight lists and the re-post, the clock offset, ABI 30. Tests: unit (a program
    with a timer and a device: saved mid-run and restored into a fresh VM, both run on to the same
    state and steps; refusals; truncations and bit flips never panic; the pinned bytes), natively

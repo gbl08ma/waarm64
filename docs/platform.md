@@ -216,6 +216,37 @@ Two modes, chosen by `VmConfig.deterministic`:
 - Guest-timed benchmarks (`dd`, `fio`, `openssl speed`) are meaningless in deterministic time:
   run them in realtime mode.
 
+## Snapshots (`core/src/snapshot.rs`, `core/src/vm/state.rs`)
+
+The core saves a VM's state without its RAM and restores it into a new VM of the same
+configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"; the lane's plan:
+[plans/snapshots.md](plans/snapshots.md)). The host copies RAM and owns the file.
+
+- **The format** is an explicit little-endian serialization with a version of its own
+  (`snapshot::VERSION`), not a memory dump: each part has a `save` and a `restore` (`Cpu`,
+  `Gicv3`, `Pl011`, `Pl031`, `Flash`, `FwCfg`, `Transport`), and `vm/state.rs` writes the
+  configuration it is tied to, time, each vCPU with its place in the run loop, and the devices.
+- **A state is a file a user chose.** Every read is bounds-checked and every count has a limit; a
+  register is masked as a guest's write to it would be (the `interp::sys` and device write
+  masks), and a value no guest leaves behind (a PSTATE that isn't EL0t, EL1t or EL1h with DAIF,
+  an exclusive monitor of an impossible size, a queue outside RAM) refuses the state. A unit test
+  restores the state of a running machine with every byte changed in turn and runs what was
+  accepted.
+- **When:** with every vCPU out of the core and the devices quiet (no event, request or completion
+  for the other side). `Vm::snapshot_size` takes the completions the backends left, exactly as
+  the run loop would at its next boundary, so a deterministic machine takes the same steps
+  whether it was saved, restored into a new VM, or neither.
+- **Buffers the backends hold** (receive buffers of net and console, input's event buffers) are
+  in flight when the state is saved. Each queue keeps the heads of its in-flight chains in the
+  order they were posted; a restore walks them again in the restored RAM and posts them to the
+  request ring, so new backends hold them as the old ones did and need no state for it.
+- **Time:** deterministic, the step count and skipped ticks continue. Realtime, the clock
+  continues from its saved reading (`Clock::base`), so the counter doesn't jump and timers that
+  were due fire at once; the PL031 is rebased on the new VM's `rtc`, so it shows the host's time.
+- **Run modes:** round-robin's `Sched` and parallel mode's per-vCPU state are saved in one form
+  (on or off, in WFI, a CPU_ON not yet taken), so a realtime state restores under either. A
+  restored VM starts with empty TLBs and code caches.
+
 ## The GIC: a GICv3 (`core/src/gicv3.rs`)
 
 The only interrupt controller since M7. **The GICv2 model was dropped** (M7, the user's call): every

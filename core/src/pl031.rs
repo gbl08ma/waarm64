@@ -4,6 +4,8 @@
 //! realtime clock; a guest's load (LR) moves it by an offset. The match
 //! interrupt never fires (no alarm): RIS stays clear.
 
+use crate::snapshot::{self, Reader, Writer};
+
 const DR: u64 = 0x00;
 const MR: u64 = 0x04;
 const LR: u64 = 0x08;
@@ -40,9 +42,34 @@ impl Pl031 {
         r
     }
 
+    /// Saves the clock's base and the registers.
+    pub fn save(&self, w: &mut Writer) {
+        w.u64(self.base_ms);
+        for v in [self.offset, self.mr, self.lr, self.imsc] {
+            w.u32(v);
+        }
+    }
+
+    /// Restores what [`Pl031::save`] wrote. With `host` (realtime mode: the
+    /// host's Unix time in ms now, and the restored clock's ns now), the
+    /// counter shows the host's time, plus what the guest's loads added;
+    /// without, it continues from the saved base (virtual time).
+    pub fn restore(&mut self, r: &mut Reader, host: Option<(u64, u64)>) -> snapshot::Result<()> {
+        let base_ms = r.u64()?;
+        self.base_ms = match host {
+            Some((now_ms, ns)) => now_ms.saturating_sub(ns / 1_000_000),
+            None => base_ms,
+        };
+        self.offset = r.u32()?;
+        self.mr = r.u32()?;
+        self.lr = r.u32()?;
+        self.imsc = r.u32()? & 1;
+        Ok(())
+    }
+
     /// The counter (DR) when the realtime clock reads `ns`.
     fn now(&self, ns: u64) -> u32 {
-        let s = (self.base_ms + ns / 1_000_000) / 1000;
+        let s = self.base_ms.wrapping_add(ns / 1_000_000) / 1000;
         (s as u32).wrapping_add(self.offset)
     }
 

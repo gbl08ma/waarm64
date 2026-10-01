@@ -31,6 +31,10 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   DMA can on hardware; deterministic mode waits, so it can't happen there.)
 - **Chains that don't fit the request ring** stay available and are posted after the next
   completions.
+- **Chains in flight:** each queue keeps the heads of the chains posted and not completed, in
+  order. A completion is taken only for one of them, and a VM restored from a snapshot posts
+  them again ([platform.md](platform.md) "Snapshots"): a backend that only holds buffers has
+  nothing to save.
 
 ## Threads and determinism
 
