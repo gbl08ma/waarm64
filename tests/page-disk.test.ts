@@ -1,9 +1,12 @@
 // Your own disk on the page (M8 phase B loop 4): a local qcow2 chosen with the picker boots through
 // UEFI, its changes live in an overlay of their own (keyed by the file's name, size and modification
-// time), and choosing the same file again in a fresh page finds them. Two Debian boots, ~2 min
-// alone; opt-in with WEBPC_DISTROS=debian, like the other page tests on Debian.
+// time), is saved from the page (the changes over the base as a qcow2 that `qemu-img` accepts, by a
+// download and by a file picker's handle), and choosing the same file again in a fresh page finds
+// its changes. Two Debian boots, ~2 min alone; opt-in with WEBPC_DISTROS=debian, like the other page tests on Debian.
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -59,6 +62,7 @@ test('a disk chosen on the page boots through UEFI, keeps its changes in its own
   symlinkSync(new URL(IMAGE).pathname, file);
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await context.newPage();
+  await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // headless Chromium's picker would wait for a dialog nobody answers
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('dialog', (d) => void d.accept()); // "Boot mydisk.qcow2? The machine restarts…"
@@ -89,6 +93,41 @@ test('a disk chosen on the page boots through UEFI, keeps its changes in its own
     }
     return false;
   }, null, { timeout: 30_000, polling: 500 });
+
+  // Shut down, then save the changes: by a download (no file picker), then through a picker's handle (a file in OPFS).
+  await onSerial(page, 'poweroff\n');
+  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 60_000, polling: 250 });
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 120_000 }),
+    (async () => { await page.locator('#save summary').click(); await page.locator('[data-save=changes]').click(); })(),
+  ]);
+  assert.equal(download.suggestedFilename(), 'mydisk-changes.qcow2');
+  const downloaded = join(dir, 'mydisk-changes.qcow2');
+  await download.saveAs(downloaded);
+  await page.waitForFunction(() => /^Saved /.test(document.getElementById('message-text')!.textContent!), null, { timeout: 30_000 });
+  await page.evaluate(() => {
+    (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('picked.qcow2', { create: true });
+  });
+  await page.locator('#save summary').click();
+  await page.locator('[data-save=changes]').click();
+  await page.waitForFunction(() => /^Saved picked\.qcow2/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 120_000 });
+  const picked = Buffer.from(await page.evaluate(async () => {
+    const f = await (await (await navigator.storage.getDirectory()).getFileHandle('picked.qcow2')).getFile();
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 1 << 15) s += String.fromCharCode(...bytes.subarray(i, i + (1 << 15)));
+    return btoa(s);
+  }), 'base64');
+  const changes = readFileSync(downloaded);
+  assert.ok(changes.equals(picked), 'the download and the picked file are the same bytes');
+  // qemu-img's verdict: a consistent qcow2 over the image under the name it was chosen by, whose hash the header carries.
+  const qemu = (...args: string[]) => execFileSync('qemu-img', args, { encoding: 'utf8' });
+  qemu('check', downloaded);
+  assert.match(qemu('info', downloaded), /backing file: mydisk\.qcow2/);
+  const sha = createHash('sha256').update(readFileSync(IMAGE)).digest('hex');
+  assert.ok(changes.subarray(0, 4096).toString('latin1').includes(sha), "the header names the base image's SHA-256");
+  const map = JSON.parse(qemu('map', '--output=json', `json:${JSON.stringify({ driver: 'qcow2', file: { driver: 'file', filename: downloaded }, backing: null })}`)) as { data: boolean }[];
+  assert.ok(map.some((e) => e.data), 'the changes file holds the blocks the machine wrote');
 
   // A reload goes back to the machine's own disk (a File isn't remembered); choosing the file again finds its changes.
   await page.reload();

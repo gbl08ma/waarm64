@@ -1,4 +1,4 @@
-**Handover, 2026-10-01: M8 phase B (your own disk). Loops 0–4 are done; loop 5 (disk out)
+**Handover, 2026-10-01: M8 phase B (your own disk). Loops 0–5 are done; loop 6 (changes in)
 is next.** The brief is `M8-PHASEB-KICKOFF.md` (confirmed by the user
 2026-09-30: the outline is OK, **images in scope are Debian and Alpine only**). Phase A's handover
 is in git history; networking has its own (`M8-PHASEC-NETWORKING-HANDOVER.md`).
@@ -17,7 +17,8 @@ docs/frontend.md, `web/app/machine.ts`, `web/app/` (the page and its machine wor
 | 2 | `bc7bd3a` | ABI 29, the firmware configuration: `VmConfig.firmware`, a CFI flash bank (`core/src/flash.rs`), fw_cfg (`core/src/fw_cfg.rs`), the PL031 always (virtual time when deterministic), `vm_flash`; `BootOptions.firmware` (web/vm.ts); TTBR0 global TLB entries cached in parallel SMP; `web/fat.ts`; in-memory overlays in Node; `shell.img` and `images/build.sh alpine-uefi`; tests |
 
 | 3 | `98de8e9` | Debian unmodified on the page: `firmware` machine, flash persistence, `npm start` with Podman-built EDK2, 80×25 firmware console, keys test, credentials over fw_cfg |
-| 4 | (this commit) | Disk in: `File` blk backend (`blobSource`, FileReaderSync), `diskIdentity`, `diskOverlay`, `start.disk`, Open disk… / drop / `?disk=`, `tests/page-disk.test.ts` |
+| 4 | `27c95b3` | Disk in: `File` blk backend (`blobSource`, FileReaderSync), `diskIdentity`, `diskOverlay`, `start.disk`, Open disk… / drop / `?disk=`, `tests/page-disk.test.ts` |
+| 5 | (this commit) | Disk out: `web/qcow2-write.ts`, `web/sha256.ts`, `web/app/export-worker.ts` + `export.ts`, the Save disk menu; tests against `qemu-img` and the pages |
 
 Loop 2 in short: our machine boots `QEMU_EFI.fd` like a kernel (RAM + 512 KiB; the DTB stays in
 the top 2 MiB, EDK2 copies it first), and EDK2 boots Debian's published qcow2 (shim, GRUB) and
@@ -27,15 +28,26 @@ EFI variable across two boots (`edk2-shell` in tests/steps.txt, native, Node int
 The big finding: parallel SMP didn't cache global TLB entries in TTBR0, which firmware and
 bootloaders use everywhere (70 s → 3 s from the boot manager to GRUB).
 
-## Loop 5: disk out (the kickoff's loop 5), then loop 6
-Loop 4 (done 2026-10-01) is in docs/frontend.md "Your own disk": the page's `chosen` disk
-(`DiskChoice` in machine.ts) carries its overlay name into the worker; the overlay and the flash
-are keyed by it. Start loop 5 from `web/overlay.ts` (the overlay's `data`/`map` files are what the
-changes export reads) and `web/qcow2.ts` (the reader; loop 6 adds backing files). Open from loop 4:
-the chosen file isn't remembered across reloads (backlog); a raw `File` goes through the same
-`openDisk` but only qcow2 is tested on the page; the identity is name+size+mtime, no content hash
-(the kickoff's backing-file hash for loop 5 needs a SHA-256 of the base: streaming it from the
-`File` is the cost to measure there). Still true: **no first-boot credentials in the release page**.
+## Loop 6: changes in (the kickoff's loop 6)
+Loop 5 (done 2026-10-01) is in docs/frontend.md "Your own disk" ("Saving the disk"). For loop 6:
+- `web/qcow2.ts` refuses backing files (`openDisk` throws); it must learn them. A changes file is
+  a qcow2 with the base image's **file name** as backing file and its SHA-256 (hex) in header
+  extension type `WPC1` (`EXT_BASE_SHA256`, web/qcow2-write.ts); read it from cluster 0. The
+  uploaded file is checked against the base's SHA-256 (`Sha256` over the base's bytes: `hashSource`
+  in web/app/export-worker.ts reads a `Source` in 1 MiB slices, ~several s for Debian's 400 MB)
+  and becomes the overlay: write its clusters into the overlay's `data`/`map` (the overlay's
+  4 KiB blocks = the changes file's clusters; `overlay().write` does it) under the overlay's Web
+  Lock (the machine stopped, as the export does). A mismatch is refused with a message a user can
+  act on (which base it was made over: the name; the hash differs).
+- A page for it: a "Load changes…" item (picker/drop of a `.qcow2` that isn't a bootable disk is
+  ambiguous with Open disk: tell them apart by the header: backing file + `WPC1` = changes).
+  The fresh-profile round trip is the kickoff's test: base + uploaded changes boots with the file.
+- The base for a changes file chosen in a fresh profile: the page's Debian (URL) or the same file
+  chosen with Open disk. The save test (tests/page-disk.test.ts) already makes a changes file with
+  a marker in it: load it into a fresh context and check `cat /root/own-mark`.
+- Open from loop 4: the chosen file isn't remembered across reloads (backlog); only qcow2 is tested
+  as a chosen `File`. The identity of a disk is name+size+mtime, not content. **No first-boot
+  credentials in the release page.**
 
 ## Loop 3 (done 2026-10-01): what landed
 `MACHINES.debian` is `firmware: true` (web/app/machine.ts: `kernel` is `QEMU_EFI.fd`, no initrd or

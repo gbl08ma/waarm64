@@ -10,6 +10,7 @@ import { Terminal } from '@xterm/xterm';
 import { attachInput, type Input } from '../input.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
 import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
+import { runExport, type ExportMode } from './export.ts';
 import { createNetwork, DEFAULT_SETTINGS, tailscaleBuilt, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
@@ -299,6 +300,65 @@ async function chooseDisk(choice: { file: File } | { url: string }) {
   resetDiskBtn.hidden = false;
   await restart();
 }
+// Your disk out (loop 5): the changes over the image (a qcow2 that names it as its backing file), or the whole disk. The machine
+// stops while it's written (the overlay's files are the writer's); the file goes to where the user picks, or is downloaded.
+const SAVES: Record<ExportMode, { suffix: string; description: string; type: string }> = {
+  changes: { suffix: '-changes.qcow2', description: 'Changes over the base image (qcow2)', type: 'application/x-qcow2' },
+  qcow2: { suffix: '.qcow2', description: 'Whole disk (qcow2)', type: 'application/x-qcow2' },
+  raw: { suffix: '.img', description: 'Whole disk (raw)', type: 'application/octet-stream' },
+};
+/** The disk's file name: the chosen file's or URL's, or the machine's own image's. */
+const baseName = () => diskName() ?? new URL(spec.disk, location.href).pathname.split('/').pop() ?? 'disk';
+async function saveDisk(mode: ExportMode) {
+  const overlay = overlayName();
+  if (!overlay) return;
+  const how = SAVES[mode];
+  const stem = baseName().replace(/\.(qcow2|img|raw)$/i, '');
+  const suggestedName = `${stem}${how.suffix}`;
+  // The picker first: it needs the click's user activation, which the stop below would let expire.
+  let handle: FileSystemFileHandle | undefined;
+  const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
+  if (picker) {
+    try {
+      handle = await picker.call(window, { suggestedName, types: [{ description: how.description, accept: { [how.type]: [how.suffix.slice(how.suffix.lastIndexOf('.'))] } }] });
+    } catch (e) {
+      if ((e as DOMException).name === 'AbortError') return; // cancelled
+      handle = undefined; // the download below
+    }
+  }
+  const running = state === 'running' || state === 'booting';
+  if (running && !confirm('Stop the machine to save its disk? It is stopped like pulling the plug: unsaved work in the guest is lost (shut it down first with poweroff for a clean disk). It starts again afterwards.')) return;
+  await exclusively(async () => {
+    await stop();
+    setState('off');
+    stateEl.textContent = 'Saving the disk';
+    const mb = (n: number) => (n / 1e6).toFixed(n < 1e7 ? 1 : 0);
+    try {
+      const r = await runExport({ mode, disk: chosen ?? { url: spec.disk, overlay }, baseName: baseName(), handle }, (phase, f) => {
+        stateEl.textContent = `${phase} ${Math.floor(100 * f)}%`;
+      });
+      if (r.blob) {
+        const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(r.blob), download: suggestedName });
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+      }
+      setState('off', `Saved ${handle?.name ?? suggestedName} (${mb(r.bytes)} MB${mode === 'changes' ? `, ${r.blocks} changed blocks; keep ${baseName()} beside it` : ''}).`, [], 'warn');
+    } catch (e) {
+      const text = String((e as Error).message ?? e);
+      setState('failed', `The disk couldn't be saved: ${text}\n${/in use/.test(text) ? 'Close other tabs of this page (one of them may have the disk open), then try again.' : ''}`, [retry]);
+      return;
+    }
+    if (running) start();
+  });
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-save]')) {
+  b.onclick = () => {
+    b.closest('details')!.open = false;
+    void saveDisk(b.dataset.save as ExportMode);
+  };
+}
+$('save').hidden = !spec.overlay;
+
 $<HTMLButtonElement>('open-disk').onclick = () => openDiskInput.click();
 openDiskInput.onchange = () => {
   const file = openDiskInput.files?.[0];

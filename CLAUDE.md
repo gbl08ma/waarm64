@@ -29,7 +29,7 @@ extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vC
 **Current:** M8, a usable machine (PLAN.md §3). Phase A (the interactive machine: `npm start`, the
 page in `web/app/`, [docs/frontend.md](docs/frontend.md)) is done; phase B (your own disk: booting
 unmodified images through UEFI, disk in and out; `M8-PHASEB-KICKOFF.md`, [docs/plans/uefi.md](docs/plans/uefi.md))
-is under way (loops 0–4 done: the page boots Debian's published image through UEFI, or a disk of your own; `M8-PHASEB-HANDOVER.md`); of
+is under way (loops 0–5 done: the page boots Debian's published image through UEFI, or a disk of your own, and saves its changes or the whole disk; `M8-PHASEB-HANDOVER.md`); of
 the C tracks, networking is under way (`M8-PHASEC-NETWORKING-HANDOVER.md`). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 

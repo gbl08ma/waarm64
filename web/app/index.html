@@ -84,6 +84,9 @@
   #net-exit-label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
   #net-exit { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
   #net-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  #save .panel { width: 280px; gap: 4px; }
+  #save .panel button { text-align: left; }
+  #save-hint { margin: 4px 8px; color: var(--dim); font-size: 12px; }
   #fullscreen { border: 1px solid var(--line); border-radius: 6px; }
   body[data-view=screen] #terminal-view, body[data-view=terminal] #screen-view { display: none; }
   body[data-view=terminal] #terminal-view { flex: 1; }
@@ -119,6 +122,12 @@
     <div class="fkeys" id="fkeys"></div>
   </div></details>
   <button id="fullscreen" title="Full screen: browser shortcuts (Ctrl+W, Ctrl+T) and Esc go to the machine; hold Esc to leave">Full screen</button>
+  <details class="menu" id="save" hidden><summary title="Take your disk away: the machine stops while the file is written">Save disk</summary><div class="items panel">
+    <button data-save="changes" title="A small qcow2 holding what the machine wrote, with the image you booted as its backing file (kept beside it)">Changes only (qcow2)</button>
+    <button data-save="qcow2" title="The whole disk as a qcow2 (empty space left out)">Whole disk (qcow2)</button>
+    <button data-save="raw" title="The whole disk as a raw image">Whole disk (raw)</button>
+    <p id="save-hint">The machine stops while the file is written, as if its plug were pulled: shut it down first (<code>poweroff</code>) for a clean disk.</p>
+  </div></details>
   <button id="open-disk" title="Boot a disk image of your own: a qcow2 or raw file (or drop one on the page)">Open disk…</button><input type="file" id="open-disk-input" hidden>
   <button id="reset-disk" title="Delete what the machine wrote to its disk and boot from the image again" hidden>Reset disk</button>
   <button id="restart">Restart</button>

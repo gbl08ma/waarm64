@@ -1,0 +1,81 @@
+// The disk-out worker (docs/frontend.md "Your own disk"): writes a disk's changes, or the whole
+// disk, to a file. It runs in a worker because the overlay's OPFS handles and the base image's
+// synchronous reads (a `File`'s slices, HTTP ranges) are worker-only, and it takes the overlay's
+// Web Lock, so the machine must have stopped (the page stops it first). The output goes to a file
+// handle the page got from `showSaveFilePicker`, or, without one, back to the page in chunks.
+import { blobSource, diskIdentity, httpSource, type Source } from '../devices.ts';
+import { openOverlay, overlay } from '../overlay.ts';
+import { openDisk } from '../qcow2.ts';
+import { changedClusters, nonZeroClusters, rawChunks, writeQcow2, type Sink } from '../qcow2-write.ts';
+import { Sha256 } from '../sha256.ts';
+import type { ExportRequest, ExportResult } from './export.ts';
+
+const post = (m: ExportResult, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
+
+self.onmessage = (e: MessageEvent<ExportRequest>) => {
+  exportDisk(e.data).then(
+    (r) => post({ type: 'done', ...r }),
+    (err) => post({ type: 'error', message: String((err as Error).message ?? err) }),
+  );
+};
+
+/** SHA-256 of the base image's file (a changes file names it, so the same base can be told from another). */
+function hashSource(src: Source, progress: (done: number) => void) {
+  const sha = new Sha256();
+  for (let off = 0; off < src.size; off += 1 << 20) {
+    const bytes = src.read(off, Math.min(1 << 20, src.size - off));
+    if (!bytes) throw new Error(`the base image can't be read at ${off}`);
+    sha.update(bytes);
+    progress(off + bytes.length);
+  }
+  return sha.hex();
+}
+
+async function exportDisk(r: ExportRequest) {
+  const d = r.disk;
+  const src = d.file ? blobSource(d.file) : httpSource(d.url!);
+  const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size);
+  const files = await openOverlay(d.overlay, diskIdentity({ url: d.url ?? '', file: d.file }, base.size)); // waits for the machine's worker to let go
+  let out: FileSystemWritableFileStream | undefined;
+  try {
+    const disk = overlay(base, files.data, files.map);
+    out = r.handle ? await r.handle.createWritable() : undefined;
+    let written = 0;
+    const sink: Sink = async (chunk, at) => {
+      if (out) {
+        if (at === undefined) await out.write(chunk as Uint8Array<ArrayBuffer>);
+        else { await out.write({ type: 'write', position: at, data: chunk as Uint8Array<ArrayBuffer> }); await out.seek(written); }
+      } else {
+        const copy = chunk.slice(); // the writer may reuse nothing, but a transferred buffer must be ours alone
+        post({ type: 'chunk', data: copy, at }, [copy.buffer]);
+      }
+      if (at === undefined) written += chunk.length;
+    };
+    const progress = (phase: string, done: number, total: number) => post({ type: 'progress', phase, done, total });
+    let blocks = 0;
+    if (r.mode === 'raw') {
+      for await (const chunk of rawChunks(disk)) {
+        await sink(chunk);
+        progress('Writing the disk', written, disk.size);
+      }
+    } else {
+      let clusters;
+      let backing;
+      if (r.mode === 'changes') {
+        const sha256 = hashSource(src, (done) => progress('Reading the base image', done, src.size));
+        backing = { name: r.baseName, format: base.format, sha256 };
+        clusters = changedClusters(disk);
+      } else {
+        clusters = nonZeroClusters(disk, 1 << 20, (done) => progress('Writing the disk', done, disk.size));
+      }
+      const res = await writeQcow2({ size: disk.size, clusters, backing, sink });
+      blocks = res.clusters;
+    }
+    await out?.close();
+    out = undefined;
+    return { bytes: written, blocks };
+  } finally {
+    await out?.abort().catch(() => {});
+    files.close();
+  }
+}

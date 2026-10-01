@@ -351,11 +351,11 @@ const S_IOERR = 1;
 const S_UNSUPP = 2;
 
 /** A disk image's bytes: synchronous range reads (`undefined` on a short or failed read). */
-type Source = { size: number; read(off: number, len: number): Uint8Array | undefined; close?(): void };
+export type Source = { size: number; read(off: number, len: number): Uint8Array | undefined; close?(): void };
 
 /** An image over HTTP range requests: synchronous XHRs (workers only), so the device worker simply blocks on the network. */
 // ponytail: one request at a time, no cache (the guest's page cache is the cache); batch or cache if an I/O benchmark says so.
-function httpSource(url: string): Source {
+export function httpSource(url: string): Source {
   const xhr = (method: string, range?: string) => {
     const x = new XMLHttpRequest();
     x.open(method, url, false);
@@ -377,7 +377,7 @@ function httpSource(url: string): Source {
 }
 
 /** An image the user chose (a `File`): `FileReaderSync`'s synchronous slices, so workers only. */
-function blobSource(file: Blob): Source {
+export function blobSource(file: Blob): Source {
   const reader = new FileReaderSync();
   return {
     size: file.size,

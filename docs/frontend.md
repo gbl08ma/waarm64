@@ -313,9 +313,31 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is refused until 
   session: backlog). **Reset disk** resets the chosen disk's overlay.
 - The disk is identified by name, size and modification time, not by content (a hash of a
   multi-GB file would block the boot): two different files with all three equal share an overlay.
-- Tests: `tests/page-disk.test.ts` (WEBPC_DISTROS=debian; two Debian boots): a symlink named
+- **Saving the disk** (loop 5): the header's **Save disk** menu (machines with an overlay): *Changes
+  only*, a qcow2 holding the blocks the machine wrote with the image as its backing file;
+  *Whole disk* as qcow2 (zero clusters left out) or raw. The file goes where the user picks
+  (`showSaveFilePicker`, called first: it needs the click's activation; a worker streams into the
+  handle's writable) or, without a picker, is downloaded (the worker posts 1 MiB chunks, the page
+  collects a Blob). **The machine stops while it's written** (confirmed; the overlay's OPFS handles
+  and Web Lock belong to the writer, `web/app/export-worker.ts`, which also does the base image's
+  synchronous reads): like pulling the plug, so the menu says to `poweroff` first; a machine that
+  was running starts again after. The page: `web/app/export.ts`; the format:
+  `web/qcow2-write.ts` (4 KiB clusters = the overlay's blocks; data first, then the L2 tables, L1,
+  refcount blocks and table, and the header written last with `sink(bytes, 0)`; qcow2 v3, 16-bit
+  refcounts). A changes file's header names the base by its file name (the backing file; the user
+  keeps it beside the changes) and carries the base file's **SHA-256** in an extension of ours
+  (type `WPC1`, ASCII hex: QEMU ignores unknown extensions), computed by `web/sha256.ts` over the
+  base's bytes read in 1 MiB slices (loop 6 checks it when a changes file comes in). The whole
+  disk is scanned through the overlay over the base (the cost is reading the base: a 3 GiB Debian
+  disk is the long case). Names: `<disk>-changes.qcow2`, `<disk>.qcow2`, `<disk>.img`.
+- Tests: `tests/qcow2-write.test.ts` (SHA-256 against node:crypto; the writers' output against
+  `qemu-img check`/`compare`/`info`, small and over several L2 tables and refcount blocks; planted:
+  a block left out of the changes fails it), `tests/page-save.test.ts` (Buildroot: raw, qcow2 and
+  changes from a running machine, which restarts), `tests/page-disk.test.ts` (WEBPC_DISTROS=debian; two Debian boots): a symlink named
   `mydisk.qcow2` to Debian's image through the picker, a file written, its overlay and flash in
-  OPFS, then the same file chosen again after a reload has the file.
+  OPFS, `poweroff`, the changes saved by download and by a picker's handle (an OPFS file: the same
+  bytes; `qemu-img check`, its backing file, the base's SHA-256 in the header, data clusters),
+  then the same file chosen again after a reload has the file.
 
 ## Network
 

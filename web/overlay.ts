@@ -21,6 +21,8 @@ export type WritableDisk = Disk & {
   /** Writes `bytes` at `off` (inside the disk); false on a failed write. */
   write(off: number, bytes: Uint8Array): Promise<boolean>;
   flush(): void;
+  /** The disk blocks (4 KiB) the overlay holds, ascending: what the disk has changed. */
+  written(): number[];
 };
 
 export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): WritableDisk {
@@ -78,7 +80,13 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
     return true;
   };
 
-  return { size: base.size, format: base.format, read, write, flush: () => { data.flush(); mapFile.flush(); } };
+  const written = () => {
+    const out: number[] = [];
+    for (let b = 0; b < blocks; b++) if (map[b]) out.push(b);
+    return out;
+  };
+
+  return { size: base.size, format: base.format, read, write, written, flush: () => { data.flush(); mapFile.flush(); } };
 }
 
 /**
