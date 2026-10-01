@@ -261,7 +261,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [frontend.md](frontend.md) "Network")
 
-- IPv6 (N6) and the card for Alpine (N7, it needs nothing) are done. The `apk add` smoke test and Buildroot's N3 boot (with its Rust twin) are dropped (2026-10-01). Order and details: [plans/networking.md](plans/networking.md) §7, M8-PHASEC-NETWORKING-HANDOVER.md.
+- IPv6 (N6) and the card for Alpine (N7, it needs nothing) are done. The `apk add` smoke test and Buildroot's N3 boot (with its Rust twin) are dropped (2026-10-01). Order and details: [plans/networking.md](plans/networking.md) §7.
+- Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); `tests/net/tailnet.sh`'s approval assumes the peer is headscale node 1; IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
 
 ## Tests and tools
