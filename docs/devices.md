@@ -135,7 +135,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   Tailscale worker, N4). What the guest sees: a LAN with one router at 169.254.0.1
   (`02:77:65:62:70:63`). **Proxy ARP** answers every request except for the guest's own address
   (probes from 0.0.0.0 ignored), so no address range is assumed. **DHCP** (DISCOVER/REQUEST
-  only) hands out the backend's address with mask 0.0.0.0 (all on-link), router = the gateway,
+  only) hands out the backend's address with mask 255.255.255.255 (a zero mask makes current systemd-networkd drop the lease: "DHCP error: no netmask"; the routes are option 121's), router = the gateway,
   the backend's DNS, first search domain, MTU (option 26), broadcast and classless routes
   (option 121: the gateway on-link, a default route through it); no lease means no offer and a
   NAK for a request; a renewal is answered unicast. **Framing:** the Ethernet header is cut on the

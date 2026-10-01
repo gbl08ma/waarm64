@@ -30,7 +30,11 @@ export type GatewayOptions = {
   /** The gateway's MAC and IP (the guest's router). The IP must not be one a peer can have. */
   mac?: number[];
   ip?: number[];
-  /** The mask the lease carries. 0.0.0.0 makes every address on-link, which proxy ARP answers. */
+  /**
+   * The mask the lease carries: a /32, with option 121 giving the gateway on-link and the default route through it.
+   * Not 0.0.0.0 (everything on-link): current systemd-networkd takes a zero mask for no mask at all
+   * (`DHCP error: no netmask`) and drops the lease. Arch Linux ARM found it; Debian 13's older systemd didn't mind.
+   */
   netmask?: number[];
   leaseSeconds?: number;
   /** Send unsolicited router advertisements this often (milliseconds; realtime only: a timer). 0: only when asked, and when the lease changes. */
@@ -125,7 +129,7 @@ function dhcpOptions(b: Uint8Array) {
 export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deliver: Deliver, leaseChanged: () => void) => IpBackend, opts: GatewayOptions = {}): NetAdapter {
   const mac = opts.mac ?? GATEWAY_MAC;
   const gw = opts.ip ?? GATEWAY_IP;
-  const mask = opts.netmask ?? [0, 0, 0, 0];
+  const mask = opts.netmask ?? [255, 255, 255, 255];
   const leaseSeconds = opts.leaseSeconds ?? 3600;
   const gw6 = linkLocal(mac);
   let guestMac: Uint8Array | null = null;
@@ -175,7 +179,7 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
       const domain = lease.domains[0]?.replace(/\.$/, '');
       if (domain) opt.push(15, domain.length, ...new TextEncoder().encode(domain));
       opt.push(26, 2, lease.mtu >> 8, lease.mtu & 255);
-      opt.push(28, 4, ...lease.address.map((v, k) => v | (~mask[k] & 255)));
+      opt.push(28, 4, ...(mask.every((v) => v === 255) ? [255, 255, 255, 255] : lease.address.map((v, k) => v | (~mask[k] & 255)))); // a /32 has no subnet broadcast
       // Classless routes: the gateway on-link, everything else through it (a client that
       // understands option 121 ignores option 3).
       opt.push(121, 14, 32, ...gw, 0, 0, 0, 0, 0, ...gw);

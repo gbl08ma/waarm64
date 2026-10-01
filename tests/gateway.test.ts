@@ -109,7 +109,7 @@ test('DHCP: discover, offer, request, ack with the backend\'s address and the op
   assert.equal(ack.type, 5);
   assert.deepEqual(Array.from(ack.yiaddr), ECHO_LEASE.address);
   const o = ack.opts;
-  assert.equal(hex(o.get(1)!), '00000000', 'mask: everything on-link');
+  assert.equal(hex(o.get(1)!), 'ffffffff', 'mask: a /32 (systemd-networkd rejects 0.0.0.0), the routes come from option 121');
   assert.deepEqual(Array.from(o.get(3)!), GATEWAY_IP, 'router');
   assert.deepEqual(Array.from(o.get(6)!), ECHO_LEASE.dns[0], 'dns');
   assert.equal(Buffer.from(o.get(15)!).toString(), 'test.webpc');

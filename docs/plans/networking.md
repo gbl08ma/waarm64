@@ -73,7 +73,7 @@ them sits a small gateway, in TypeScript, running in the device worker (so a syn
 backend keeps deterministic mode exact, as the loopback adapter does now):
 
 - **Proxy ARP:** it answers every ARP request for an address other than the guest's with one
-  gateway MAC, so the guest can use an all-on-link netmask and reach any peer without extra routes.
+  gateway MAC, so the guest reaches any peer through the one default route (its mask is a /32: option 121 gives the gateway on-link; a 0.0.0.0 mask was tried first and current systemd-networkd rejects it as no netmask).
 - **DHCP server** (the guest just runs `udhcpc`/`dhclient`/`systemd-networkd`): the backend's
   address for the guest, netmask, router = the gateway, DNS (Tailscale: `100.100.100.100`,
   MagicDNS), and **MTU** (option 26; Tailscale's is 1280, and without it large packets vanish).
@@ -104,7 +104,7 @@ backend keeps deterministic mode exact, as the loopback adapter does now):
     the IPv6 resolvers (it keeps only IPv4 ones today). A lease needs the IPv4 address; the IPv6 one is optional
     (without it nothing is advertised and DHCPv6 stays silent).
 - The backend side is an IP-packet port: `{send(packet), receive(packet)}`, one packet per
-  message. (Built: the guest's mask is 0.0.0.0 with the gateway at 169.254.0.1 and option 121
+  message. (Built: the guest's mask is 255.255.255.255 with the gateway at 169.254.0.1 and option 121
   routes, not the tailnet's range; see docs/devices.md.) The device worker and the backend's worker talk directly (a transferred
   `MessagePort`), not through the page's main thread.
 
