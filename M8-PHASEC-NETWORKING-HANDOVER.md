@@ -1,6 +1,6 @@
 **Handover, 2026-10-01: the networking lane (docs/plans/networking.md) has N1 to N5 done: a VM on the
 page connects to a tailnet (login, kept node, reconnect) and reaches the internet through an exit
-node. IPv6 (N6) is done too. What's left is the card for Alpine (N7).**
+node. IPv6 (N6) and the card for Alpine (N7) are done too. Only the smaller things below are left.**
 
 Read docs/plans/networking.md (§3 for the gateway, §7 for the steps) and docs/frontend.md
 "Network" first; this file is what they don't say.
@@ -31,10 +31,8 @@ Read docs/plans/networking.md (§3 for the gateway, §7 for the steps) and docs/
    address in ~2 s (IPv4 ~25 s, networkd's retries); MagicDNS gives peers AAAA only with the
    `magicdns-aaaa` node attribute; IPv6 to the internet through an exit node is untested (no v6
    route here); IPv6 router advertisements repeat every 60 s only on a port backend (a timer).
-2. **N7 Alpine's card (next):** what Alpine's UEFI cloud image does with a virtio-net card by itself; if
-   nothing is needed, a ping check in `tests/uefi.test.ts`'s Alpine boot on the echo gateway.
-   The page offers every machine with a `network` entry a card, and a user-chosen disk (Alpine)
-   boots under Debian's entry, whose credential only systemd reads.
+2. **N7 Alpine's card (done 2026-10-01):** Alpine's UEFI images bring `eth0` up by themselves (DHCP, DHCPv6, RA), so
+   nothing was needed: `tests/uefi.test.ts`'s Alpine boots have a card on the echo gateway and ping over IPv4 and IPv6.
 3. **N8 (done):** the exit-node phase of `net-tailnet` is opt-in (`WEBPC_TAILNET_INTERNET=1`) and
    passed once on 2026-10-01. It guards three Go-client fixes (`ipn.NewPrefs()`, `peerapiclient`,
    the netstack dialer); run it when touching the client's DNS or routing. Not tested against a

@@ -21,6 +21,9 @@ const has = (rel: string) => existsSync(new URL(rel, IMAGES));
 const DISTROS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
 const noEdk2 = !has('edk2/QEMU_EFI.fd') && 'SKIPPED: run images/build.sh edk2';
 const CMD = (more = '') => `echo ==begin; cat /sys/class/rtc/rtc0/name; cat /proc/fb; ls -1 /sys/firmware /sys/firmware/qemu_fw_cfg/by_name/opt; nproc; ${more}echo ==end; poweroff`;
+// What the card needs from Alpine: nothing. The image brings eth0 up with DHCP by itself, so the guest
+// waits (up to 60 s) for the echo gateway's lease, then pings an address the echo backend answers for, over IPv4 and IPv6 (DHCPv6 and a router advertisement).
+const NET = `for i in $(seq 60); do ip -4 addr show eth0 | grep -q inet && break; sleep 1; done; ip -4 addr show eth0 | sed -n 's/^ *inet /net: inet /p'; ip -6 addr show eth0 | sed -n 's/^ *inet6 /net: inet6 /p'; ip -4 route | sed -n 's/^default /net: route default /p'; ping -c 3 -W 5 100.64.1.2 >/dev/null && echo net: ping ok; ping -6 -c 3 -W 5 fd7a:115c:a1e0::2 >/dev/null && echo net: ping6 ok; `;
 const LIMIT_MS = 240_000;
 
 type Marks = Record<string, number>;
@@ -86,9 +89,14 @@ describe('Alpine through EDK2', { concurrency: 2 }, () => {
         const seed = join(dir, 'seed.img');
         writeFileSync(seed, fatImage('CIDATA', [{ name: 'meta-data', data: 'instance-id: webpc\nlocal-hostname: webpc\n' }, { name: 'user-data', data: '#!/bin/sh\npasswd -d root\n' }]));
         const r = await drive({
-          ramSize: 1 << 30, kernel: firmware(), cmdline: '', devices: [disk(`alpine-uefi/${name}.qcow2`, `uefi-test-${name}`), { type: 'blk', url: pathToFileURL(seed).href }, { type: 'rng' }], firmware: {},
-        });
-        common(r);
+          ramSize: 1 << 30, kernel: firmware(), cmdline: '', devices: [disk(`alpine-uefi/${name}.qcow2`, `uefi-test-${name}`), { type: 'blk', url: pathToFileURL(seed).href }, { type: 'rng' }, { type: 'net', adapter: 'echo' }], firmware: {},
+        }, NET);
+        const out = common(r);
+        assert.match(out, /^net: inet 198\.18\.0\.15\//m, out);
+        assert.match(out, /^net: ping ok$/m, out);
+        assert.match(out, /^net: inet6 fd00:5eb0::f\//m, out);
+        assert.match(out, /^net: ping6 ok$/m, out);
+        assert.match(out, /^net: route default via /m, out);
         assert.match(r.console, new RegExp(loader === 'GRUB' ? 'GNU GRUB' : 'Limine', 'i'));
       } finally {
         rmSync(dir, { recursive: true });
