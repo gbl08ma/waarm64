@@ -13,6 +13,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/main.ts` | DOM code only: views, the canvas's scaling, xterm.js, power state, the status line; starts and stops machine workers |
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
 | `web/app/protocol.ts` | the messages between the two (types only) |
+| `web/app/index.html`'s Save snapshot and Load snapshot…, `main.ts`'s `saveSnapshot` and `loadSnapshot`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
@@ -72,6 +73,10 @@ Page → worker:
   parameters (direct-boot machines). `credentials`: systemd credentials over fw_cfg for a firmware
   machine, beside the machine's own (the network card's). `disk2`: a URL for the second disk.
   `disk`: `{url?, file?, overlay}`, the root disk to boot instead of the machine's (below, "Your own disk").
+  `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); `ncpus`, the kernel
+  and the command line are then the file's.
+- `snapshot {handle?}`: save a snapshot of the running machine to the file handle's stream, or,
+  without one, back in `snapshot-chunk` messages; answered by `snapshot-done` or `snapshot-error`.
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
   the overlay) is closed once it's there. The page then terminates the worker (after 3 s without
@@ -100,6 +105,11 @@ Worker → page:
   chunk and the longest host-side handling of an exit). The worker posts it from a timer, not from
   its run loop, so a stuck loop shows as a growing `loopAgeMs` instead of silence. The page keeps
   the last status as JSON in the status line's `data-status` (for `bench/stress`).
+- `phase {text}`: what a machine `loading` from a snapshot is doing (it has no download to report).
+- `snapshot-progress {phase, fraction}`, `snapshot-chunk {data}` (transferred; without a handle),
+  `snapshot-done {bytes, pausedMs}` (the file is complete; the ms from the pause request to the
+  resume) and `snapshot-error {message}` (the machine runs on).
+- `serial` also has `replay` for a restored terminal's saved tail.
 - `stopped`.
 
 The machine runs without `idleLimitMs`: an idle guest may sleep as long as it likes.
@@ -149,12 +159,81 @@ From the machine worker, as `problem`:
 | `disk-mismatch` | the overlay's `base` names another image | Reset disk… |
 | `memory` | reserving the guest's RAM throws a `RangeError` | Retry |
 | `panic` | the guest's `Kernel panic - not syncing` line | Show serial log, Copy serial log, Save serial log |
+| `snapshot` | a snapshot was refused (`SnapshotError`: another machine, another disk, damaged or truncated, devices this page can't make; below, "Snapshots") | Start, Load snapshot… |
 | `emulator` | anything else (an exception, an unimplemented exit) | the same three |
 
 Retry and Restart start a new machine worker. The failed states (`failed`) make the header's
 button read Retry. **The serial log** is kept by the page (the last 1–2 MB of the serial console's
 output, beyond xterm.js's 5,000 lines of scrollback) for Copy (the clipboard) and Save (a
 `webpc-<machine>-serial-<time>.log` download); Show serial log switches the Screen view to Both.
+
+## Snapshots
+
+The running machine, RAM and the disk's changes and all, in a file; and back (the format and the
+machinery: [platform.md](platform.md) "Snapshots", [plans/snapshots.md](plans/snapshots.md)).
+
+**Save snapshot** (the header, enabled while the state is `running` or `booting`): the picker first
+(`showSaveFilePicker`, which needs the click's user activation; suggested name
+`<machine>-<yyyy-mm-dd-hhmm>.webpcsnap`), else a Blob download, as Save disk does. No confirmation:
+the machine isn't stopped. The worker pauses it (`vm.pause()`), writes the file with
+`writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
+("Writing the snapshot 40%"); afterwards a note under the header says the file, its size and how
+long the machine was paused (the numbers are also in `#message`'s `data-snapshot`, JSON, for
+tools), and the machine runs as before. Only the writing is between pause and resume: the picked
+file's stream is opened before and closed (flushed) after, and nothing is hashed. One save at a
+time: while it runs Restart, Reset disk and Save snapshot are disabled, and Save disk, Open disk,
+Load changes and Load snapshot say to wait. The run loop is not disturbed by the pause
+(`runAsync` keeps returning `BUDGET`), the status timer and the flash keeper only read.
+
+**Load snapshot…** (a button with a file input), and a snapshot file chosen with Open disk… or
+dropped on the page, told from a disk image by its first 8 bytes (`WEBPCSNP`). The page reads the
+header (`openSnapshot` without a codec) before it asks anything, and refuses at once, with the
+machine running on: a file that isn't a snapshot or whose header is damaged, a snapshot of another
+machine (`?machine=` differs), and one taken on another disk by name (the header's `disk`, for a
+disk opened with Open disk… or `?disk=`; the user opens that disk first). Then a confirmation says
+what the file is (machine, date, size, vCPUs) and that **the machine is stopped, like pulling the
+plug, and replaced by the snapshot's, and what this machine's disk has written (the overlay's size,
+as Reset disk says) is replaced by the snapshot's changes to the disk**. Then, through
+`exclusively`: `stop()`, a new worker with `start.snapshot` (the `File`).
+
+**The worker's start from a snapshot** downloads the core only (no kernel or initrd), compiles it
+once (the same module goes to `bootVm` and to the LZ codec, `lzCodec`), reads the header, and makes
+the devices **as the header says** (`devices`, below) from what the page passed, with `ncpus` from
+the header (the status line shows it, not the page's `?ncpus=`). Then `readSnapshot` checks
+everything that can be refused before anything is touched (the whole file's checksums, the core's
+state version, the disk's identity), and only `bootVm` with `restore` replaces the overlay by the
+file's blocks. For a firmware machine the restored flash bank is written back beside the new
+overlay (the restore deleted the copy) before `running` is posted. The state goes from `loading`
+(with `phase` messages: "Checking the snapshot", "Restoring the machine"; there is no byte
+progress) straight to `running`: the machine is where it was, there is no marker to wait for. The
+saved serial tail is written to the terminal first (`serial` with `replay`: xterm.js answers a
+cursor-position query in it while parsing, and the page doesn't send those answers to the guest, which
+isn't asking now: bash printed them as `;1R;80R`).
+
+**The header's fields** (beside `web/snapshot-file.ts`'s own: `format`, `coreVersion`, `abi`,
+`created`, `ramSize`, `disks`):
+
+| Field | What |
+|---|---|
+| `machine` | the `MachineName` (`debian`, `buildroot`) |
+| `label` | the machine's label, for messages |
+| `ncpus` | vCPUs the machine ran with |
+| `disk` | the display name of the disk it was on when that was a chosen disk (file name, or a URL's last segment); `null` for the machine's own |
+| `devices` | the device kinds in slot order: `rng`, `blk`, `blk-ro` (the `?disk2=` disk), `keyboard`, `tablet`, `net`; a restore makes the same list, and refuses (naming what to open the page with) one it can't: a `blk-ro` without `?disk2=`, a `net` without the machine's IP port |
+| `serial` | the last ~4 KiB of serial output the worker posted, cut at a line start |
+
+**Errors.** `SnapshotError` (`web/snapshot-file.ts`) becomes the `snapshot` problem, whose actions are
+Start (a normal boot) and Load snapshot… again. The message says what was refused and, from
+`readSnapshot`, that nothing was touched ("the machine isn't running and its disk is as it was");
+past that point (`bootVm` has the file) it says the disk may hold part of the snapshot's changes
+and offers Reset disk.
+
+**Limits.** No SHA-256 of the base image is written (hashing takes seconds and nothing caches it
+yet), so `readSnapshot` requires the same disk identity: the machine's own disk, or the same file
+(name, size, modification time) or URL. The network across a snapshot isn't handled: the guest
+keeps its DHCP lease and its connections are gone with the Tailscale client's. The guest's clock
+lags by the time the file sat around until something sets it (the RTC is current). A snapshot is
+for the core version that made it.
 
 ## The screen
 
@@ -463,6 +542,20 @@ How it types, and why:
   `booting` for its whole 4-minute wait, one of the 44 boots of this loop; no line after the prompt was
   seen in the runs checked afterwards, so this is the likely cause rather than a proven one. The
   test now says the page's state, status line and terminal on such a timeout.
+
+`tests/page-snapshot.test.ts` is the same for snapshots ("Snapshots"): on Buildroot (`?machine=buildroot&ncpus=2`, always, ~10 s) a
+shell variable and a file in devtmpfs (the test kernel has no tmpfs) are RAM state; Save snapshot
+by a download and by a picker's handle (a file in OPFS); the machine answers afterwards; the file
+starts with `WEBPCSNP`, its header has the fields above and no hash; in a fresh profile Load
+snapshot restores the terminal's tail, 2 vCPUs (the page asked for 1), the variable and the file,
+with no terminal reply sent to the guest for the replayed output; refusals leave the machine running or the OPFS exactly as it was (a file that isn't a snapshot, a snapshot of
+another machine, one on another disk, one whose machine had a `?disk2=`, a truncated file, which Start
+then recovers from); a snapshot dropped on the page goes the same way. With `WEBPC_DISTROS=debian`, Debian: root logged in on the serial terminal, a
+file written and `sync`ed, a variable; Save snapshot (~175 MB, the machine paused ~1.3 s); in a
+fresh profile the page starts booting, Load snapshot replaces it, and the machine is running 2.1 s after the choice, still logged in with its variable, the
+file read past the page cache (`drop_caches`), the firmware's flash copy written beside the new
+overlay, a new file written and read back, and a reload boots the restored disk with both files. A
+Buildroot snapshot on the Debian page is refused at once.
 
 ## Overlay hand-over
 

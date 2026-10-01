@@ -10,6 +10,7 @@ import { Terminal } from '@xterm/xterm';
 import { attachInput, type Input } from '../input.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
+import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-file.ts';
 import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
@@ -58,6 +59,8 @@ const messageText = $('message-text');
 const messageActions = $('message-actions');
 const restartBtn = $<HTMLButtonElement>('restart');
 const resetDiskBtn = $<HTMLButtonElement>('reset-disk');
+const saveSnapshotBtn = $<HTMLButtonElement>('save-snapshot');
+const loadSnapshotInput = $<HTMLInputElement>('load-snapshot-input');
 const bootCard = $('boot');
 const bootProgress = $<HTMLProgressElement>('boot-progress');
 const bootLine = $('boot-line');
@@ -103,6 +106,14 @@ let run: Run | undefined;
 type PageState = PowerState | 'idle';
 let state: PageState = 'loading';
 let last: { status: Status; at: number } | undefined;
+/** A stop and start in progress (`exclusively`), or a snapshot being written (`saveSnapshot`): the other actions wait. */
+let switching = false;
+let saving = false;
+/** Which buttons can be used now: a snapshot saves from a machine that runs, and none of the actions that stop it overlap a save or a switch. */
+function syncButtons() {
+  restartBtn.disabled = resetDiskBtn.disabled = switching || saving;
+  saveSnapshotBtn.disabled = switching || saving || !(state === 'running' || state === 'booting');
+}
 
 // The serial console's output, kept for the log a user can copy or save (the terminal's scrollback is shorter).
 const LOG_MAX = 1 << 20;
@@ -139,6 +150,7 @@ function setState(s: PageState, message?: string, actions: Action[] = [], kind: 
   restartBtn.textContent = s === 'off' || s === 'idle' ? 'Start' : s === 'failed' ? 'Retry' : 'Restart';
   bootCard.hidden = !(s === 'loading' || s === 'booting') || bootCard.dataset.done === 'true';
   bootSerial.hidden = !spec.firmware || s !== 'booting';
+  syncButtons();
 }
 
 // What a user can do about each problem (the worker's message says what happened and why).
@@ -157,6 +169,8 @@ const saveLog: Action = {
   },
 };
 const resetDisk: Action = { label: 'Reset disk…', run: () => void resetDiskAsked() };
+const startNormally: Action = { label: 'Start', run: () => void restart() };
+const loadAgain: Action = { label: 'Load snapshot…', run: () => loadSnapshotInput.click() };
 const ACTIONS: Record<Problem, Action[]> = {
   'missing-core': [retry],
   'missing-image': [retry],
@@ -164,10 +178,12 @@ const ACTIONS: Record<Problem, Action[]> = {
   'disk-mismatch': [resetDisk],
   memory: [retry],
   panic: [showLog, copyLog, saveLog],
+  snapshot: [startNormally, loadAgain],
   emulator: [showLog, copyLog, saveLog],
 };
 
-function start() {
+/** Starts a machine: booted, or (with `snapshot`) the one the file holds. */
+function start(snapshot?: File) {
   // The machine worker draws the screen (web/display.ts): a canvas hands its drawing over only once.
   const focused = document.activeElement === canvas;
   const fresh = canvas.cloneNode() as HTMLCanvasElement;
@@ -187,7 +203,7 @@ function start() {
   bootCard.dataset.done = 'false';
   bootLine.textContent = '';
   bootProgress.removeAttribute('value'); // indeterminate until the sizes are known
-  $('boot-title').textContent = `Starting ${spec.label}`;
+  $('boot-title').textContent = snapshot ? `Loading ${snapshot.name}` : `Starting ${spec.label}`;
   setState('loading');
   worker.onmessage = (e: MessageEvent<FromWorker>) => {
     if (run !== r) return;
@@ -202,10 +218,27 @@ function start() {
       if (m.state === 'running') bootCard.hidden = true;
       if (m.state === 'rebooting') void restart();
     } else if (m.type === 'serial') {
-      term.write(m.data);
+      if (m.replay) {
+        replaying = true; // xterm.js answers a query in the text (a cursor position request) while it parses it: the guest didn't ask
+        term.write(m.data, () => { replaying = false; });
+      } else {
+        term.write(m.data);
+      }
       addLog(m.data);
     } else if (m.type === 'status') {
       showStatus(m.status);
+    } else if (m.type === 'phase') {
+      bootLine.textContent = m.text;
+      bootProgress.removeAttribute('value');
+      if (state === 'loading') stateEl.textContent = m.text;
+    } else if (m.type === 'snapshot-progress') {
+      snapshotJob?.progress(m.phase, m.fraction);
+    } else if (m.type === 'snapshot-chunk') {
+      snapshotJob?.chunk(m.data);
+    } else if (m.type === 'snapshot-done') {
+      snapshotJob?.done(m.bytes, m.pausedMs);
+    } else if (m.type === 'snapshot-error') {
+      snapshotJob?.error(m.message);
     } else if (m.type === 'progress') {
       if (m.total) bootProgress.value = m.loaded / m.total;
       const mb = (n: number) => (n / 1e6).toFixed(1);
@@ -218,8 +251,12 @@ function start() {
       bootCard.hidden = true;
     }
   };
-  worker.onerror = (e) => { if (run === r) setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator); };
-  worker.postMessage({ type: 'start', machine, ncpus, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
+  worker.onerror = (e) => {
+    if (run !== r) return;
+    snapshotJob?.error(`the machine's worker failed: ${e.message}`);
+    setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator);
+  };
+  worker.postMessage({ type: 'start', machine, ncpus, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
   if (ip) autoconnect();
   renderNetwork();
 }
@@ -242,15 +279,21 @@ async function stop() {
  * Runs `f` (a stop, then maybe a start) unless another is running: a second Restart click, or one
  * during a disk reset, would start a machine beside the one being started, with nothing to stop it.
  */
-let switching = false;
 async function exclusively(f: () => Promise<void>) {
-  if (switching) return;
-  switching = restartBtn.disabled = resetDiskBtn.disabled = true;
+  if (switching || saving) return;
+  switching = true;
+  syncButtons();
   try {
     await f();
   } finally {
-    switching = restartBtn.disabled = resetDiskBtn.disabled = false;
+    switching = false;
+    syncButtons();
   }
+}
+/** True while a snapshot is being written (after saying so) or the machine is being switched: Save disk, Open disk and the like wait for it. */
+function busy() {
+  if (saving) alert('A snapshot is being saved. Try again once it is done.');
+  return switching || saving;
 }
 
 /** Stops the machine and starts a new one. */
@@ -268,7 +311,7 @@ restartBtn.onclick = () => {
 // The disk reset (M8 decision 4): stop the machine (its overlay's files are locked while it runs), delete the overlay, start again.
 async function resetDiskAsked() {
   const name = overlayName();
-  if (!name) return;
+  if (!name || busy()) return;
   const written = await overlayBytes(name).catch(() => 0);
   const size = !written ? '' : written < 1e6 ? ` (${Math.ceil(written / 1e3)} KB)` : ` (${(written / 1e6).toFixed(0)} MB)`;
   if (!confirm(`Reset ${chosen ? `the disk ${diskName()}` : `${spec.label}'s disk`}? Everything the machine wrote to it${size} is deleted: your files, installed packages and settings. It then boots from the image as published.`)) return;
@@ -294,6 +337,8 @@ resetDiskBtn.onclick = () => void resetDiskAsked();
 // disk's changes are kept in the browser per file (name, size, modification time), so choosing it again continues where it left off.
 const openDiskInput = $<HTMLInputElement>('open-disk-input');
 async function chooseDisk(choice: { file: File } | { url: string }) {
+  if ('file' in choice && (await isSnapshot(choice.file))) return loadSnapshot(choice.file); // a snapshot isn't a disk to boot: it replaces the machine
+  if (busy()) return;
   if ('file' in choice && spec.overlay) {
     if (await changesHeader(choice.file)) { // a changes file isn't a disk to boot: it goes onto the disk on the page
       await loadChanges(choice.file);
@@ -313,7 +358,7 @@ async function chooseDisk(choice: { file: File } | { url: string }) {
 const changesHeader = async (file: File) => readChangesHeader(new Uint8Array(await file.slice(0, 1 << 16).arrayBuffer()));
 async function loadChanges(file: File) {
   const overlay = overlayName();
-  if (!overlay) return;
+  if (!overlay || busy()) return;
   const info = await changesHeader(file);
   if (!info) return void alert(`${file.name} isn't a changes file (a qcow2 made by Save disk's "Changes only"). To boot a disk, use Open disk….`);
   if (!info.sha256) return void alert(`${file.name} has a backing file (${info.backingName}) but wasn't made by Save disk, so its base can't be checked: it can't be loaded.`);
@@ -357,7 +402,7 @@ const SAVES: Record<ExportMode, { suffix: string; description: string; type: str
 const baseName = () => diskName() ?? new URL(spec.disk, location.href).pathname.split('/').pop() ?? 'disk';
 async function saveDisk(mode: ExportMode) {
   const overlay = overlayName();
-  if (!overlay) return;
+  if (!overlay || busy()) return;
   const how = SAVES[mode];
   const stem = baseName().replace(/\.(qcow2|img|raw)$/i, '');
   const suggestedName = `${stem}${how.suffix}`;
@@ -405,6 +450,112 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-save]')) {
 }
 $('save').hidden = !spec.overlay;
 
+
+// Snapshots (docs/frontend.md "Snapshots"): the running machine, RAM and disk changes and all, in a file, and back.
+/** The save in progress: the worker's messages for it (the page's `worker.onmessage` forwards them). */
+let snapshotJob: { progress(phase: string, fraction: number): void; chunk(data: Uint8Array): void; done(bytes: number, pausedMs: number): void; error(message: string): void } | undefined;
+const SNAPSHOT_SUFFIX = '.webpcsnap';
+const mb = (n: number) => (n < 1e6 ? `${Math.ceil(n / 1e3)} KB` : `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB`);
+
+async function saveSnapshot() {
+  const r = run;
+  if (!r || saving || switching || !(state === 'running' || state === 'booting')) return;
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  const suggestedName = `${machine}-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${SNAPSHOT_SUFFIX}`;
+  // The picker first, as Save disk does: it needs the click's user activation. The machine isn't stopped, so nothing is asked.
+  let handle: FileSystemFileHandle | undefined;
+  const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
+  if (picker) {
+    try {
+      handle = await picker.call(window, { suggestedName, types: [{ description: 'webpc snapshot', accept: { 'application/octet-stream': [SNAPSHOT_SUFFIX] } }] });
+    } catch (e) {
+      if ((e as DOMException).name === 'AbortError') return; // cancelled
+      handle = undefined; // the download below
+    }
+  }
+  if (run !== r || saving || switching || !(state === 'running' || state === 'booting')) return; // the machine moved on while the picker was open
+  saving = true;
+  syncButtons();
+  const parts: Blob[] = [];
+  try {
+    const result = await new Promise<{ bytes: number; pausedMs: number }>((resolve, reject) => {
+      snapshotJob = {
+        progress: (phase, f) => { stateEl.textContent = f > 0 && f < 1 ? `${phase} ${Math.floor(100 * f)}%` : phase; },
+        chunk: (data) => { parts.push(new Blob([data as Uint8Array<ArrayBuffer>])); },
+        done: (bytes, pausedMs) => resolve({ bytes, pausedMs }),
+        error: (message) => reject(new Error(message)),
+      };
+      r.worker.postMessage({ type: 'snapshot', handle } satisfies ToWorker);
+    });
+    if (!handle) {
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob(parts)), download: suggestedName });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+    }
+    parts.length = 0;
+    $('message').dataset.snapshot = JSON.stringify(result); // for tools: the file's bytes and the pause's ms
+    if (run === r && (state === 'running' || state === 'booting')) {
+      setState(state, `Saved the snapshot ${handle?.name ?? suggestedName} (${mb(result.bytes)}); the machine was paused for ${(result.pausedMs / 1000).toFixed(1)} s and runs on.`, [], 'warn');
+    }
+  } catch (e) {
+    if (run === r) setState(state, `${String((e as Error).message ?? e)}\nThe machine runs on; no file was saved.`, [], 'error');
+  } finally {
+    saving = false;
+    snapshotJob = undefined;
+    syncButtons();
+  }
+}
+saveSnapshotBtn.onclick = () => void saveSnapshot();
+
+/** Whether `file` starts with the snapshot signature (`WEBPCSNP`): how a chosen or dropped file is told from a disk image. */
+const isSnapshot = async (file: File) => new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) === 'WEBPCSNP';
+
+/** What a snapshot's disk is called, for messages. */
+const snapshotDisk = (name: string | null | undefined) => (name ? `the disk ${name}` : `${spec.label}'s own disk`);
+
+/**
+ * Loads a snapshot: the header is read here (no codec needed) to say what the file is and to refuse
+ * at once what can't work (not a snapshot, another machine, another disk by name); then, after the
+ * user confirms, the machine stops and a new one starts from the file. The worker checks the rest
+ * before it touches anything (web/snapshot.ts `readSnapshot`).
+ */
+async function loadSnapshot(file: File) {
+  if (busy()) return;
+  let header: SnapshotHeader;
+  try {
+    header = (await openSnapshot(file)).header;
+  } catch (e) {
+    if (e instanceof SnapshotError) return void alert(`${file.name}: ${e.message}`);
+    throw e;
+  }
+  const label = typeof header.label === 'string' ? header.label : String(header.machine);
+  if (header.machine !== machine) {
+    return void alert(`${file.name} is a snapshot of ${label} (?machine=${String(header.machine)}), and this page runs ${spec.label} (?machine=${machine}). Open the page for that machine to load it.`);
+  }
+  const taken = typeof header.disk === 'string' ? header.disk : null;
+  const open = chosen ? diskName()! : null;
+  if (taken !== open) {
+    return void alert(`${file.name} was taken on ${snapshotDisk(taken)}, and the disk open now is ${snapshotDisk(open)}. A snapshot continues only on the disk it was taken on: ${taken ? 'open that disk first (Open disk…), then load the snapshot' : 'reload the page (it starts with the machine\'s own disk), then load the snapshot'}.`);
+  }
+  const overlay = overlayName();
+  const written = overlay ? await overlayBytes(overlay).catch(() => 0) : 0;
+  const when = new Date(header.created);
+  const running = state === 'running' || state === 'booting';
+  if (!confirm(`Load the snapshot ${file.name}? It holds ${label}${Number.isNaN(when.getTime()) ? '' : ` as it was on ${when.toLocaleString()}`} (${mb(file.size)}${typeof header.ncpus === 'number' ? `, ${header.ncpus} vCPU${header.ncpus > 1 ? 's' : ''}` : ''}). ${running ? 'This machine stops, like pulling the plug, and the' : 'The'} snapshot's machine takes its place, running where it was saved. Everything ${chosen ? `the disk ${diskName()}` : `${spec.label}'s disk`} has written${written ? ` (${mb(written)})` : ''} is replaced by the snapshot's changes to the disk.`)) return;
+  await exclusively(async () => {
+    await stop();
+    term.reset();
+    start(file);
+  });
+}
+$<HTMLButtonElement>('load-snapshot').onclick = () => loadSnapshotInput.click();
+loadSnapshotInput.onchange = () => {
+  const file = loadSnapshotInput.files?.[0];
+  loadSnapshotInput.value = '';
+  if (file) void loadSnapshot(file);
+};
+
 $<HTMLButtonElement>('open-disk').onclick = () => openDiskInput.click();
 openDiskInput.onchange = () => {
   const file = openDiskInput.files?.[0];
@@ -422,7 +573,8 @@ document.addEventListener('drop', (e) => {
 $<HTMLButtonElement>('boot-serial-show').onclick = () => { setView(document.body.dataset.view === 'screen' ? 'both' : (document.body.dataset.view as View), false); term.focus(); };
 
 // Keys typed into the terminal go to the PL011 (xterm.js sends what a terminal would: \r for Enter, escape sequences).
-term.onData((d) => run?.serial.postMessage(d));
+let replaying = false;
+term.onData((d) => { if (!replaying) run?.serial.postMessage(d); });
 
 // Key combinations the browser keeps for itself, to the screen's keyboard (web/input.ts `chord`).
 const keysMenu = $<HTMLDetailsElement>('keys');

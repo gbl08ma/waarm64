@@ -7,13 +7,18 @@
 // port straight to the VM, and the keyboard and tablet ports go to the device
 // worker. What stops a machine from starting or running is sorted into a
 // `Problem` with a message a user can act on (docs/frontend.md "Errors").
-import { bootVm, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, type Vm } from '../vm.ts';
+import { bootVm, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, type Restore, type Vm } from '../vm.ts';
 import { loadFlash, saveFlash } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
+import { lzCodec } from '../lz.ts';
+import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../snapshot-file.ts';
+import { readSnapshot, writeSnapshot } from '../snapshot.ts';
+import type { DeviceSpec } from '../devices.ts';
 import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
+import type { MachineName } from './machine.ts';
 
-const post = (m: FromWorker) => self.postMessage(m);
+const post = (m: FromWorker, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
 const state = (s: PowerState, message?: string, problem?: Problem) => post({ type: 'state', state: s, message, problem });
 const PANIC = 'Kernel panic - not syncing';
 
@@ -34,6 +39,8 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       const [problem, message] = explain(err, MACHINES[m.machine]);
       state(vm ? 'crashed' : 'failed', message, problem);
     });
+  } else if (m.type === 'snapshot') {
+    void saveSnapshot(m.handle);
   } else if (m.type === 'stop') {
     stopping = true;
     void (async () => {
@@ -66,6 +73,64 @@ const shutdown = (v: Vm, machine: Machine) => (closed ??= (async () => {
 
 /** An error with the problem it means for the user. */
 const failure = (problem: Problem, message: string) => Object.assign(new Error(message), { problem });
+
+/** What this machine is, for a snapshot's header (docs/frontend.md "Snapshots"). */
+let session: { name: MachineName; ncpus: number; disk: string | null; kinds: DeviceKind[] } | undefined;
+/** The core, compiled once: `bootVm` and the snapshot codec both take the module. */
+let core: WebAssembly.Module | undefined;
+let codecP: ReturnType<typeof lzCodec> | undefined;
+const codec = () => (codecP ??= lzCodec(core!));
+/** The tail of the serial output posted so far: a snapshot carries it, so a restored terminal isn't empty. */
+const TAIL = 4096;
+let serialTail = '';
+let snapshotting = false;
+/** `bootVm` has the snapshot: the disk's overlay may be replaced. */
+let restoring = false;
+
+/** The devices of a machine in slot order: the kinds a snapshot's header lists, so a restore makes the same. */
+type DeviceKind = 'rng' | 'blk' | 'blk-ro' | 'keyboard' | 'tablet' | 'net';
+const KINDS: DeviceKind[] = ['rng', 'blk', 'blk-ro', 'keyboard', 'tablet', 'net'];
+type StartMessage = Extract<ToWorker, { type: 'start' }>;
+
+/** The device of `kind` for this start, or what the page's options lack to make it. */
+function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: string): DeviceSpec | string {
+  switch (kind) {
+    case 'rng': return { type: 'rng' };
+    case 'blk': return { type: 'blk', url: diskUrl, file: m.disk?.file, overlay: overlayName };
+    case 'blk-ro': return m.disk2 ? { type: 'blk', url: new URL(m.disk2, self.location.href).href } : 'a second disk (?disk2=<url>), and this page was opened without one'; // no overlay: read-only
+    case 'keyboard': return { type: 'input', kind: 'keyboard', port: m.keyboard };
+    case 'tablet': return { type: 'input', kind: 'tablet', port: m.tablet };
+    case 'net': return m.ip && machine.network ? { type: 'net', adapter: { ip: m.ip } } : 'a network card, and this machine has no network port';
+  }
+}
+
+/** The kinds a normal start makes, as the page's options say. */
+const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', 'blk', ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : [])];
+
+/**
+ * The devices and vCPU count a snapshot's header says, made from what the page passed. Refuses (a
+ * `snapshot` problem, with a message for the user) a snapshot of another machine, and one whose
+ * devices can't be made here.
+ */
+function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, diskUrl: string, name: string) {
+  const what = `${name} can't be loaded`;
+  if (h.machine !== m.machine) {
+    const other = typeof h.label === 'string' ? h.label : String(h.machine);
+    throw failure('snapshot', `${what}: it is a snapshot of ${other} (?machine=${String(h.machine)}), and this page runs ${machine.label} (?machine=${m.machine}).\nOpen the page for that machine to load it. Start boots ${machine.label} normally.`);
+  }
+  const kinds = h.devices;
+  if (!Array.isArray(kinds) || !kinds.length || !kinds.every((k): k is DeviceKind => KINDS.includes(k as DeviceKind))) {
+    throw failure('snapshot', `${what}: its list of devices isn't one this page knows (another version made it?).\nStart boots ${machine.label} normally.`);
+  }
+  const ncpus = h.ncpus;
+  if (typeof ncpus !== 'number' || !Number.isInteger(ncpus) || ncpus < 1 || ncpus > 64) throw failure('snapshot', `${what}: its processor count isn't readable.\nStart boots ${machine.label} normally.`);
+  const specs = kinds.map((k) => {
+    const d = device(k, m, machine, diskUrl);
+    if (typeof d === 'string') throw failure('snapshot', `${what}: its machine had ${d}.\nOpen this page as that machine was started (the same ?disk2=…, with its network), or Start ${machine.label} normally.`);
+    return d;
+  });
+  return { specs, kinds, ncpus };
+}
 
 const CORE = new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url).href;
 /** A URL as the user knows it: a path in the repository. */
@@ -124,6 +189,13 @@ async function download(urls: string[], machine: Machine) {
 
 /** An error from starting or running a machine as `[problem, message]` for the page. */
 function explain(err: unknown, machine: Machine): [Problem, string] {
+  // A SnapshotError has a `problem` of its own (why the file was refused): checked before the worker's.
+  if (err instanceof SnapshotError) {
+    // From `readSnapshot` nothing was touched; once `bootVm` has the file, the disk may hold its blocks.
+    return ['snapshot', restoring
+      ? `The snapshot couldn't be restored: ${err.message}\nThe machine didn't start and its disk may hold part of the snapshot's changes. Start boots ${machine.label} normally from what is there; Reset disk starts over from the image.`
+      : `The snapshot couldn't be loaded: ${err.message}\nNothing was changed: the machine isn't running and its disk is as it was. Start boots ${machine.label} normally; Load snapshot… tries another file.`];
+  }
   const e = err as Error & { problem?: Problem };
   if (e.problem) return [e.problem, e.message];
   const text = String(e.message ?? e);
@@ -139,42 +211,54 @@ function explain(err: unknown, machine: Machine): [Problem, string] {
   return ['emulator', `The emulator stopped with an error:\n${e.stack ?? text}`];
 }
 
-async function start(m: Extract<ToWorker, { type: 'start' }>) {
+async function start(m: StartMessage) {
   const machine: Machine = current = MACHINES[m.machine];
   overlayName = m.disk?.overlay ?? machine.overlay;
   state('loading');
   // The disk is read by ranges as the guest needs it (not downloaded): check it's there.
-  const flash = machine.firmware && overlayName ? loadFlash(overlayName).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
+  // A snapshot has the variable store in its RAM (the restore writes it beside the overlay) and needs no kernel.
+  const flash = !m.snapshot && machine.firmware && overlayName ? loadFlash(overlayName).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
   const diskUrl = m.disk?.url ?? machine.disk;
   const disk = m.disk?.file ? Promise.resolve() : fetch(diskUrl, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(diskUrl, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`); });
-  const [wasm, kernel, initrd] = await download([CORE, machine.kernel, ...(machine.initrd ? [machine.initrd] : [])], machine);
+  const [wasm, kernel = new Uint8Array(0), initrd] = await download([CORE, ...(m.snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])])], machine);
   await disk;
   if (stopping) return;
+  core = await WebAssembly.compile(wasm);
   // The firmware configuration: what the machine's own credentials and the page's (development, tests) say, and the saved variable store.
   const credentials = [...(m.ip && machine.network ? machine.network.credentials : []), ...(m.credentials ?? [])];
   savedFlash = await flash;
   const firmware = machine.firmware ? { flash: savedFlash, fwCfg: credentialFiles(credentials) } : undefined;
   if (stopping) return;
-  booting = bootVm(wasm, {
-    ramSize: machine.ramMiB << 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus: m.ncpus, parallel: true, realtime: true,
-    framebuffer: machine.framebuffer, serialIn: m.serial,
-    devices: [
-      { type: 'rng' },
-      { type: 'blk', url: diskUrl, file: m.disk?.file, overlay: overlayName },
-      ...(m.disk2 ? [{ type: 'blk' as const, url: new URL(m.disk2, self.location.href).href }] : []), // no overlay: read-only
-      { type: 'input', kind: 'keyboard', port: m.keyboard },
-      { type: 'input', kind: 'tablet', port: m.tablet },
-      ...(m.ip && machine.network ? [{ type: 'net' as const, adapter: { ip: m.ip } }] : []),
-    ],
+  let ncpus = m.ncpus;
+  let kinds = normalKinds(m, machine);
+  let restore: Restore | undefined;
+  if (m.snapshot) {
+    // Everything that can be refused is, before anything is touched (the overlay is replaced inside `bootVm`).
+    post({ type: 'phase', text: 'Checking the snapshot' });
+    const lz = await codec();
+    const { header } = await openSnapshot(m.snapshot, { codecs: [lz] });
+    const h = fromHeader(header, m, machine, diskUrl, m.snapshot.name);
+    ({ kinds, ncpus } = h);
+    restore = (await readSnapshot(m.snapshot, lz, lz.snapshotVersion, { devices: h.specs })).restore;
+    serialTail = typeof header.serial === 'string' ? header.serial : '';
+    post({ type: 'phase', text: 'Restoring the machine' });
+    if (stopping) return;
+    restoring = true;
+  }
+  const devices = kinds.map((k) => device(k, m, machine, diskUrl) as DeviceSpec);
+  session = { name: m.machine, ncpus, disk: m.disk ? (m.disk.file?.name ?? new URL(m.disk.url!, self.location.href).pathname.split('/').pop() ?? 'disk') : null, kinds };
+  booting = bootVm(core, {
+    ramSize: machine.ramMiB << 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true,
+    framebuffer: machine.framebuffer, serialIn: m.serial, restore, devices,
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });
   vm = await booting;
   if (stopping) return; // `stop` closes it
+  if (restore) await keepFlash(vm, machine); // the restore deleted the copy beside the overlay: the bank the machine has goes back
   if (vm.framebuffer) showFramebuffer(m.screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
-  state('booting');
   const t0 = performance.now();
   const ready = readyWatcher(machine.ready);
-  let running = false;
+  let running = !!restore; // a restored machine is where it was: there's no marker to wait for
   let panicked = ''; // the message
   let tail = ''; // the last output, for markers split across drains
   let loopAt = performance.now(); // the run loop's last iteration
@@ -182,6 +266,7 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
   const output = (text: string) => {
     if (!text) return;
     post({ type: 'serial', data: text });
+    serialTail = (serialTail + text).slice(-TAIL);
     tail = (tail + text).slice(-256);
     if (!running && ready(text)) {
       running = true;
@@ -194,18 +279,24 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
       state('crashed', panicked, 'panic');
     }
   };
+  if (restore) {
+    if (serialTail) post({ type: 'serial', data: serialTail, replay: true }); // what the terminal showed when it was saved
+    state('running');
+  } else {
+    state('booting');
+  }
   // Once a second on a timer, not from the loop: a stuck loop then shows in `loopAgeMs` rather than as silence.
   let ticks = 0;
   const timer = setInterval(() => {
     // A tab can close without a shutdown: the variable store is kept as it changes (every 5 s at most).
     if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!, machine);
     const now = performance.now();
-    post({ type: 'status', status: status(vm!, m.ncpus, machine.ramMiB, now - t0, loopMax, now - loopAt) });
+    post({ type: 'status', status: status(vm!, ncpus, machine.ramMiB, now - t0, loopMax, now - loopAt) });
     loopMax = 0;
   }, 1000);
   try {
     for (;;) {
-      const r = await vm.runAsync(1e9);
+      const r = await vm.runAsync(1e9); // while a snapshot pauses the VM this keeps returning BUDGET
       if (stopping) return;
       output(vm.drain());
       const now = performance.now();
@@ -222,6 +313,61 @@ async function start(m: Extract<ToWorker, { type: 'start' }>) {
     }
   } finally {
     clearInterval(timer);
+  }
+}
+
+/**
+ * Saves a snapshot of the running machine (docs/frontend.md "Snapshots"): the VM is paused, written
+ * to the picked file's stream or sent back in chunks, and resumed, also on an error. Only the
+ * writing is between pause and resume: the file's stream is opened before, and closed (flushed)
+ * after.
+ */
+async function saveSnapshot(handle?: FileSystemFileHandle) {
+  const fail = (message: string) => post({ type: 'snapshot-error', message });
+  const v = vm;
+  const s = session;
+  if (!v || !s || stopping || closed) return fail("The machine isn't running, so there is nothing to save.");
+  if (snapshotting) return fail('A snapshot is already being saved.');
+  snapshotting = true;
+  let out: FileSystemWritableFileStream | undefined;
+  let paused = false;
+  try {
+    const lz = await codec();
+    out = await handle?.createWritable();
+    const sink: Sink = async (chunk) => {
+      if (out) return out.write(chunk as Uint8Array<ArrayBuffer>);
+      const copy = chunk.slice(); // a transferred buffer must be ours alone
+      post({ type: 'snapshot-chunk', data: copy }, [copy.buffer]);
+    };
+    post({ type: 'snapshot-progress', phase: 'Pausing the machine', fraction: 0 });
+    const t0 = performance.now();
+    if (!(await v.pause())) throw new Error('the machine ended before it could be paused');
+    paused = true;
+    // The terminal's tail from a line start: a cut escape sequence would draw garbage in the restored terminal.
+    const cut = serialTail.length >= TAIL ? serialTail.indexOf('\n') + 1 : 0;
+    const meta = { machine: s.name, label: current?.label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, serial: serialTail.slice(cut) };
+    let posted = 0;
+    const w = await writeSnapshot(v, sink, meta, lz, {
+      progress: (done, total) => {
+        const now = performance.now();
+        if (now - posted < 100 && done < total) return;
+        posted = now;
+        post({ type: 'snapshot-progress', phase: 'Writing the snapshot', fraction: total ? done / total : 0 });
+      },
+    });
+    v.resume();
+    paused = false;
+    const pausedMs = performance.now() - t0;
+    post({ type: 'snapshot-progress', phase: 'Finishing the file', fraction: 1 });
+    await out?.close();
+    out = undefined;
+    post({ type: 'snapshot-done', bytes: w.bytes, pausedMs });
+  } catch (err) {
+    fail(`The snapshot couldn't be saved: ${String((err as Error).message ?? err)}`);
+  } finally {
+    if (paused) v.resume();
+    await out?.abort().catch(() => {});
+    snapshotting = false;
   }
 }
 

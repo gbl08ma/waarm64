@@ -29,6 +29,7 @@
   .views { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   button { font: inherit; color: var(--text); background: transparent; border: 0; padding: 4px 12px; cursor: pointer; }
   button:hover { background: #1e232a; }
+  button:disabled { opacity: .45; cursor: default; background: transparent; }
   .views button[aria-pressed=true] { background: #253044; color: #fff; }
   #restart, #reset-disk, #open-disk, #load-changes { border: 1px solid var(--line); border-radius: 6px; }
   #message { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; padding: 10px 16px; background: #2a1215; color: #ffb4b6; border-bottom: 1px solid #5c1d22; }
@@ -129,6 +130,8 @@
     <button data-save="raw" title="The whole disk as a raw image">Whole disk (raw)</button>
     <p id="save-hint">The machine stops while the file is written, as if its plug were pulled: shut it down first (<code>poweroff</code>) for a clean disk.</p>
   </div></details>
+  <button id="save-snapshot" title="Save the running machine as it is, with its disk's changes, to a file: it pauses for a moment, then runs on" disabled>Save snapshot</button>
+  <button id="load-snapshot" title="Replace the machine by a saved snapshot (also: choose or drop the snapshot file with Open disk…)">Load snapshot…</button><input type="file" id="load-snapshot-input" hidden>
   <button id="open-disk" title="Boot a disk image of your own: a qcow2 or raw file (or drop one on the page)">Open disk…</button><input type="file" id="open-disk-input" hidden>
   <button id="load-changes" title="Put the changes of a saved changes file onto this disk (the disk it was made over must be the one on the page)" hidden>Load changes…</button><input type="file" id="load-changes-input" hidden>
   <button id="reset-disk" title="Delete what the machine wrote to its disk and boot from the image again" hidden>Reset disk</button>

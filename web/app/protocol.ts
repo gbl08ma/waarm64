@@ -16,9 +16,10 @@ export type PowerState = 'loading' | 'booting' | 'running' | 'off' | 'rebooting'
  * What went wrong, for the page to offer the right action: `missing-core` (the wasm isn't built),
  * `missing-image` (an image file isn't there), `disk-in-use` (another tab has the disk overlay
  * open), `disk-mismatch` (the overlay was written over another image), `memory` (the guest's RAM
- * couldn't be reserved), `panic` (the guest kernel's panic line), `emulator` (anything else).
+ * couldn't be reserved), `panic` (the guest kernel's panic line), `snapshot` (a snapshot was refused:
+ * its message says why and what to do), `emulator` (anything else).
  */
-export type Problem = 'missing-core' | 'missing-image' | 'disk-in-use' | 'disk-mismatch' | 'memory' | 'panic' | 'emulator';
+export type Problem = 'missing-core' | 'missing-image' | 'disk-in-use' | 'disk-mismatch' | 'memory' | 'panic' | 'snapshot' | 'emulator';
 
 /** Page → worker. One machine per worker: a restart is a new worker (the page's `stop`, then `terminate`). */
 export type ToWorker =
@@ -55,7 +56,19 @@ export type ToWorker =
      * gives it to a Tailscale client (web/app/network.ts). Only for a machine with `network`.
      */
     ip?: MessagePort;
+    /**
+     * Start from this snapshot file (the page's Load snapshot) instead of booting: the machine, its
+     * devices and its vCPU count are the header's (below, docs/frontend.md "Snapshots"), the disk's
+     * overlay is replaced by the file's blocks. `ncpus` is then ignored.
+     */
+    snapshot?: File;
   }
+  /**
+   * Save a snapshot of the running machine (`running` or `booting`): it pauses, the file is written,
+   * it runs on. The bytes go to `handle`'s writable stream (from `showSaveFilePicker`), or, without
+   * one, back in `snapshot-chunk` messages. Answered by `snapshot-done` or `snapshot-error`.
+   */
+  | { type: 'snapshot'; handle?: FileSystemFileHandle }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
   | { type: 'stop' };
 
@@ -66,9 +79,23 @@ export type FromWorker =
   | { type: 'progress'; loaded: number; total: number }
   /** The screen first showed something (the guest's console took it): once per machine. */
   | { type: 'screen' }
-  /** What the guest wrote to its serial console (UTF-8 decoded). */
-  | { type: 'serial'; data: string }
+  /**
+   * What the guest wrote to its serial console (UTF-8 decoded). `replay`: the saved tail of a
+   * snapshot's terminal, shown again: the terminal's answers to queries in it (cursor position)
+   * aren't sent to the guest, which isn't asking now.
+   */
+  | { type: 'serial'; data: string; replay?: boolean }
   | { type: 'status'; status: Status }
+  /** What a `loading` machine started from a snapshot is doing (it has no download to report). */
+  | { type: 'phase'; text: string }
+  /** A save's progress: the phase and the fraction done of it (0 when unknown). */
+  | { type: 'snapshot-progress'; phase: string; fraction: number }
+  /** The next bytes of the file, when the save had no `handle` (transferred, in order). */
+  | { type: 'snapshot-chunk'; data: Uint8Array }
+  /** The file is complete: its size, and ms the machine was paused (from the pause request to the resume). */
+  | { type: 'snapshot-done'; bytes: number; pausedMs: number }
+  /** The save failed (the machine runs on, unless it had ended): a message for the user. */
+  | { type: 'snapshot-error'; message: string }
   | { type: 'stopped' };
 
 /** Once a second while the machine runs. */
