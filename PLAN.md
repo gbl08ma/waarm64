@@ -16,7 +16,7 @@ the docs and its entry here shrinks to a summary.
 | Privilege | EL0 and EL1 only. No EL2/EL3, no secure state |
 | MMU | Stage 1 only, 4K granule, 48-bit VA, TTBR0/TTBR1, ASIDs, software-managed access flag |
 | Platform | QEMU `virt`'s memory map; **GICv3 (no ITS) since M7** (the GICv2 model was dropped in M7: every guest we run has a GICv3 driver); generic timer, PL011, a PL031 RTC (realtime mode), PSCI over HVC (answered in the core, CPU_ON included; SYSTEM_OFF/RESET exit to the host), virtio-mmio v2, a DTB generated from the VM config ([docs/platform.md](docs/platform.md)) |
-| Boot | Direct kernel boot (arm64 `Image` + initrd + DTB) for the tests' guests. **M8 phase B:** boot conventional arm64 disk images unmodified, through UEFI firmware (our EDK2 build, entered as an `Image`: the firmware configuration, loop 2) and their own bootloader; the page boots Debian's published image unmodified that way (loop 3) |
+| Boot | Direct kernel boot (arm64 `Image` + initrd + DTB) for the tests' guests. **M8 phase B:** boot conventional arm64 disk images unmodified, through UEFI firmware (our EDK2 build, entered as an `Image`: the firmware configuration, loop 2) and their own bootloader; the page boots Debian's published image, or a disk of the user's own, unmodified that way (loops 3–4); the disk's changes or the whole disk go out and come back (loops 5–6) |
 | Core | Rust compiled to wasm32 (the same crate builds natively for tests); host glue in TypeScript without a build step |
 | Guest memory | **Layout A** (M0.5): one shared wasm32 memory, core state then guest RAM (≤ ~3.5 GiB). One lowering point for guest accesses in generated code; TLB tag bits 3–11 reserved for a memory index ("A + spill memories" as NUMA nodes later) ([docs/architecture.md](docs/architecture.md)) |
 | JIT | Gadget style (inline what pays, helper calls into the interpreter's code for the rest), blocks keyed by guest PA, loop regions with tier-up, exact step accounting ([docs/jit.md](docs/jit.md)) |
@@ -112,38 +112,35 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   vCPU; Firefox's missing root disk recorded in the backlog. Rough edges the user finds go to
   [docs/backlog.md](docs/backlog.md) "The page". Details: [docs/frontend.md](docs/frontend.md);
   numbers: `bench/boot/REPORT.md` "M8 loop 0"–"M8 loop 8".
-- **B. Your own disk: boot an unmodified image, take the disk back** (the user, 2026-09-30:
-  before snapshots, the basic loop has to be right: load a disk into the VM, boot it, work, shut
-  down, take the modified disk away). Kickoff confirmed 2026-09-30 (`M8-PHASEB-KICKOFF.md`): **images in scope are Debian and
-  Alpine only** (Alpine's UEFI cloud images). Loop 0 (the QEMU oracle, 2026-09-30) settled the
-  shape ([docs/plans/uefi.md](docs/plans/uefi.md)): **EDK2's ArmVirtQemuKernel** entered like a
-  kernel through our direct boot (no code flash, no reset vector; stock ArmVirtQemu requires
-  fw_cfg), **one CFI flash bank for EFI variables**, the framebuffer moved out of `/memory`
-  (EDK2 ignores `/reserved-memory`), a **minimal fw_cfg** (systemd credentials so the tests
-  boot Debian unattended; the release build's Debian runs its first boot as on a regular machine,
-  the user's call; later ramfb, a firmware GOP), a NoCloud seed disk for Alpine's tests, and **the DT stays** the guests' description (DT and ACPI
-  measured the same on these images; the user asked). Loop 1: `images/build.sh edk2`
-  (reproducible) and the UEFI oracle `tools/uefi-oracle.ts`; loop 2 (the platform) is next.
-  - **Disk in:** an image by URL (hosted, as the Debian image is now) or a local file, qcow2 or raw,
-    over the existing blk backends. The same path takes a disk of changes back in (below).
-  - **Boot it unmodified through UEFI** (the user, 2026-09-30): EDK2's ArmVirtQemu firmware
-    (BSD-2-Clause-Patent, built in Podman as a guest workload) runs the image's own bootloader
-    (GRUB, systemd-boot), which loads its kernel through the EFI stub. That's the standard path
-    every arm64 distro image supports, so the user's image boots the way it would on a real
-    machine. It covers any filesystem, GRUB menus, EFI variables and kernel updates in the guest.
-    **Not** a loader in the page that reads `/boot` and guesses the boot entry. That was proposed
-    and rejected: it isn't standardized, would break with each distro's layout, and takes the
-    choice of bootloader away from the user. It needs a CFI flash for the firmware and its
-    variables, and QEMU's DTB handover; the PL031 is there.
-  - **Work and shut down:** the OPFS overlay as today; a clean power-off.
-  - **Disk out,** two ways:
-    - **Just the changes:** a qcow2 holding the overlay's blocks (4 KiB clusters, as the overlay
-      stores them), with the base image as its backing file (named, and identified by its SHA-256).
-      A user of a hosted image keeps only their documents and software, not the whole OS. The same
-      file uploaded onto the same base brings them back; our qcow2 reader learns backing files for it.
-    - **The whole disk:** the base merged with the overlay, as a qcow2 or raw download, for use
-      elsewhere.
-- **C. Parallel tracks**- **C. Parallel tracks**, each starting from its plan doc (written first where none exists):
+- **B. Your own disk: boot an unmodified image, take the disk back** (done 2026-10-01; the
+  user, 2026-09-30: before snapshots, the basic loop has to be right: load a disk into the VM,
+  boot it, work, shut down, take the modified disk away). Images in scope: **Debian and Alpine
+  only** (Alpine's UEFI cloud images). Loops 0–6; the design and what each loop found are in
+  [docs/plans/uefi.md](docs/plans/uefi.md), the page in [docs/frontend.md](docs/frontend.md)
+  "Your own disk", numbers in `bench/boot/REPORT.md` "M8 phase B loop 3". What binds:
+  - **Boot it unmodified through UEFI** (the user, 2026-09-30): **EDK2's ArmVirtQemuKernel**
+    (BSD-2-Clause-Patent, `images/build.sh edk2` in Podman, reproducible) is entered like a kernel
+    through our direct boot (no code flash, no reset vector; stock ArmVirtQemu requires fw_cfg)
+    and runs the image's own bootloader (GRUB, Limine), which loads its kernel through the EFI
+    stub: the standard path every arm64 distro image supports. **Not** a loader in the page that
+    reads `/boot` and guesses the boot entry (rejected: not standardized, breaks with each
+    distro's layout, takes the choice of bootloader away). The platform: **one CFI flash bank for
+    EFI variables** (kept beside the overlay), the framebuffer outside `/memory`, a **minimal
+    fw_cfg** (systemd credentials: the tests boot Debian unattended, the release page's Debian runs
+    its first boot as on a regular machine; a NoCloud seed disk for Alpine's tests), the PL031,
+    and **the DT stays** the guests' description (DT and ACPI measured the same; ACPI is out of
+    scope). Debian boots only this way, in Chromium (docs/testing.md); the direct-kernel Debian
+    boot, its tests and its benchmarks were dropped.
+  - **Disk in:** a local file (the picker, a drop) or `?disk=<url>`, raw or qcow2 by its magic,
+    with an overlay of its own keyed by name, size and modification time.
+  - **Work and shut down:** the OPFS overlay; a clean power-off.
+  - **Disk out,** two ways: **just the changes**, a qcow2 of the overlay's blocks (4 KiB clusters)
+    with the base image as backing file, named and identified by its SHA-256; or **the whole
+    disk** as qcow2 or raw. **Changes in:** the same file loaded onto the same base (checked by its
+    SHA-256) brings them back, in a fresh profile too; it replaces the overlay and the variable store.
+  - Leftovers (the chosen file isn't remembered across reloads, the firmware's setup screen, key
+    latency, an unused ext4 reader): [docs/backlog.md](docs/backlog.md).
+- **C. Parallel tracks**, each starting from its plan doc (written first where none exists):
   - Networking ([docs/plans/networking.md](docs/plans/networking.md)): the Ethernet gateway, then
     a first backend. For a page served by our dev server, a relay to a user-mode NAT in the dev
     server (no account needed) is the candidate to weigh against the plan's Tailscale-first
@@ -156,8 +153,9 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     layouts.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): save and restore CPU, devices
     and compressed RAM, so the page resumes a booted machine in seconds instead of a full boot, as
-    files the user downloads and uploads. After phase B: a snapshot pins the disk it was taken
-    with, and phase B settles what the disk is.
+    files the user downloads and uploads. A snapshot pins the disk it was taken with: phase B's
+    identity of a disk is its name, size and modification time (a chosen file) or its URL's path,
+    and a changes file's is its base's SHA-256.
 - **D. Choosing and shaping machines:** a catalog of hosted images (Debian, Alpine, …) on top of
   phase B's disk in, extra disks, RAM and vCPU settings (default vCPUs from
   `navigator.hardwareConcurrency` minus the device worker and the page, with the P/E-core

@@ -210,39 +210,27 @@ test('input events from the page reach the guest (keyboard LED to the page, keys
 
 // The distros, under the JIT only (interpreted they take minutes: Alpine's
 // interpreter run is native, core/tests/distros.rs). Opt-in with
-// WEBPC_DISTROS=alpine,debian (scripts/ci.sh sets both when their images are current).
-const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
-for (const [distro, expect] of [['alpine', /webpc: alpine 3\.24\.2 6\.18\.53-0-virt\n[^]*\/dev\/vda \/ ext4 ro,[^]*1 packets received[^]*webpc: 9p hello from the host\n[^]*webpc: drm 640x480\nwebpc: test ok\n/], ['debian', /webpc: debian\n13\.[^]*\n6\.12\.107\+deb13-arm64\nrw,[^]*webpc: test ok\n/]] as const) {
-  const img = new URL(`../target/images/${distro}/Image`, import.meta.url);
-  const skip = !DISTRO_TESTS.includes(distro) ? `SKIPPED: set WEBPC_DISTROS=${distro}` : !existsSync(img) && `SKIPPED: run images/build.sh ${distro}`;
-  // Debian's root is writable through an overlay (a fresh one each run); Alpine's is read-only.
-  const overlay = distro === 'debian' ? `webpc-test-${distro}` : undefined;
-  test(`${distro} boots from virtio-blk in a worker, deterministic mode, JIT`, { skip }, async () => {
-    if (overlay) await removeOverlay(overlay);
-    const r = await bootPage(`distro=${distro}${overlay ? `&overlay=${overlay}` : ''}&jit=1`, 10);
-    if (overlay) await removeOverlay(overlay);
+// WEBPC_DISTROS=alpine (scripts/ci.sh sets it when the image is current). Debian boots through UEFI on the page (tests/page-debian.test.ts), not here.
+const alpine = (process.env.WEBPC_DISTROS ?? '').split(',').includes('alpine');
+{
+  const img = new URL('../target/images/alpine/Image', import.meta.url);
+  const skip = !alpine ? 'SKIPPED: set WEBPC_DISTROS=alpine' : !existsSync(img) && 'SKIPPED: run images/build.sh alpine';
+  test('alpine boots from virtio-blk in a worker, deterministic mode, JIT', { skip }, async () => {
+    const r = await bootPage('distro=alpine&jit=1', 10);
     assert.equal(r.error, undefined);
-    console.log(`# chromium ${distro} boot (JIT): ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
+    console.log(`# chromium alpine boot (JIT): ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-    assert.match(r.console, expect);
-    if (distro === 'alpine') assert.equal(r.steps, STEPS.alpine);
+    assert.match(r.console, /webpc: alpine 3\.24\.2 6\.18\.53-0-virt\n[^]*\/dev\/vda \/ ext4 ro,[^]*1 packets received[^]*webpc: 9p hello from the host\n[^]*webpc: drm 640x480\nwebpc: test ok\n/);
+    assert.equal(r.steps, STEPS.alpine);
   });
-}
 
-// Debian on 4 vCPUs in parallel is an occasional check (WEBPC_PARALLEL_DEBIAN=1, ~1 min).
-for (const [distro, want] of [['alpine', /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\n/], ['debian', /smp: Brought up 1 node, 4 CPUs[^]*webpc: debian\n13\.[^]*webpc: test ok\n/]] as const) {
-  const on = distro === 'alpine' ? DISTRO_TESTS.includes('alpine') : DISTRO_TESTS.includes('debian') && process.env.WEBPC_PARALLEL_DEBIAN === '1';
-  const skip = !on && (distro === 'alpine' ? 'SKIPPED: set WEBPC_DISTROS=alpine' : 'SKIPPED: set WEBPC_DISTROS=debian WEBPC_PARALLEL_DEBIAN=1');
-  test(`${distro} boots on 4 vCPUs in parallel (a worker each), JIT`, { skip }, async () => {
-    const overlay = distro === 'debian' ? '&overlay=webpc-test-debian' : '';
-    for (let i = 1; i <= (distro === 'alpine' ? Math.min(RUNS, 2) : 1); i++) {
-      if (overlay) await removeOverlay('webpc-test-debian');
-      const r = await bootPage(`distro=${distro}${overlay}&parallel&ncpus=4&jit=1`, 10);
-      if (overlay) await removeOverlay('webpc-test-debian');
+  test('alpine boots on 4 vCPUs in parallel (a worker each), JIT', { skip }, async () => {
+    for (let i = 1; i <= Math.min(RUNS, 2); i++) {
+      const r = await bootPage('distro=alpine&parallel&ncpus=4&jit=1', 10);
       assert.equal(r.error, undefined, `run ${i}`);
-      console.log(`# chromium ${distro} parallel boot ${i} (4 vCPUs, JIT): ${(r.ms / 1000).toFixed(1)} s`);
+      console.log(`# chromium alpine parallel boot ${i} (4 vCPUs, JIT): ${(r.ms / 1000).toFixed(1)} s`);
       assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-      assert.match(r.console, want);
+      assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\n/);
     }
   });
 }

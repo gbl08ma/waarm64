@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Everything CI runs; works the same locally. CHROMIUM overrides the browser binary.
 # docs/testing.md says which runner covers what. Distro boots: alpine,
-# alpine-user and debian run when their images are current; WEBPC_DISTROS (a
-# comma list: alpine,alpine-user,debian) overrides which ones. Debian's native
-# run is interpreted (~2.5 min), so it needs WEBPC_DEBIAN_NATIVE=1 as well;
-# by default Debian boots only in Chromium under the JIT (~1 min).
+# alpine-user, debian and alpine-uefi run when their images are current;
+# WEBPC_DISTROS (a comma list) overrides which ones. Debian boots only in
+# Chromium, through UEFI under the JIT (~1 min), never natively.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
@@ -38,10 +37,7 @@ native() {
   image_test 'litmus and stress' 'linux litmus' litmus
   image_test 'LTP and kselftests' 'ltp linux' ltp
   image_test 'firmware (EDK2)' edk2 firmware
-  for d in alpine debian; do
-    if [[ $d == debian && ${WEBPC_DEBIAN_NATIVE-} != 1 ]]; then step "debian boot (native): SKIPPED (set WEBPC_DEBIAN_NATIVE=1)"
-    elif [[ ",$WEBPC_DISTROS," == *",$d,"* ]]; then image_test "$d boot" $d distros $d; else step "$d boot: SKIPPED (not in WEBPC_DISTROS)"; fi
-  done
+  if [[ ",$WEBPC_DISTROS," == *",alpine,"* ]]; then image_test "alpine boot" alpine distros alpine; else step "alpine boot: SKIPPED (not in WEBPC_DISTROS)"; fi
 }
 # The native guest-image tests (~130 s) run beside the JS tests, which spend much of their time
 # waiting on realtime guests and the Debian lock; their output follows the JS tests'.

@@ -175,15 +175,6 @@ pub const ALPINE: Distro = Distro {
     cmdline: "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
 };
 
-/// Debian: the stock image; systemd runs the command from the kernel command
-/// line as a unit once the system is up, then powers off (systemd-run-generator).
-pub const DEBIAN: Distro = Distro {
-    kernel: "debian/Image",
-    initrd: "debian/initrd.img",
-    disk: "debian/disk.qcow2",
-    cmdline: "console=ttyAMA0 root=/dev/vda1 ro systemd.run=\"/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; findmnt -no OPTIONS /; echo webpc: test ok'\" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff systemd.firstboot=off",
-};
-
 impl Dev {
     /// web/devices.ts `deviceEntry`: the entry and the initial config space.
     fn entry(self) -> (DeviceEntry, Vec<u8>) {

@@ -2,9 +2,10 @@
 // Debian boots on the page (web/app/, JIT, realtime, 2 parallel vCPUs, a fresh OPFS
 // overlay); root logs in on the serial terminal (xterm.js to the PL011) and on the
 // screen (keys on the canvas through virtio-input to tty1's getty); a command typed on
-// the screen writes a marker to /dev/ttyAMA0 that comes back on the serial side; a file
-// written to the disk is there after a reload and gone after Reset disk. Three Debian
-// boots, ~2 min alone. Realtime: not reproducible, so WEBPC_PAGE_RUNS repeats it (all
+// the screen writes a marker to /dev/ttyAMA0 that comes back on the serial side; the
+// platform the firmware gave Linux (RTC, framebuffer, EFI, both vCPUs, a credential read back
+// from fw_cfg); a file written to the disk is there after a reload (Reset disk is the Buildroot
+// test's, tests/browser.test.ts). Two Debian boots, ~1.5 min alone. Realtime: not reproducible, so WEBPC_PAGE_RUNS repeats it (all
 // must pass). Opt-in with WEBPC_DISTROS=debian, like Debian's other Chromium tests
 // (scripts/ci.sh sets it when the image is current).
 import assert from 'node:assert/strict';
@@ -102,7 +103,7 @@ async function onScreen(page: Page, text: string) {
 }
 
 for (let run = 1; run <= RUNS; run++) {
-  test(`the page runs Debian: root logs in on the screen and on the serial terminal, the disk persists over a reload and resets${RUNS > 1 ? ` (run ${run})` : ''}`, { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
+  test(`the page runs Debian: root logs in on the screen and on the serial terminal, the platform is the firmware's, the disk persists over a reload${RUNS > 1 ? ` (run ${run})` : ''}`, { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
     const context = await browser.newContext({ viewport: { width: 1400, height: 900 } }); // a fresh profile: an empty OPFS
     const page = await context.newPage();
     const errors: string[] = [];
@@ -128,6 +129,9 @@ for (let run = 1; run <= RUNS; run++) {
     await onScreen(page, 'echo from-$(tty)-$((6*7)) >/dev/ttyAMA0\n');
     await shows(page, /from-\/dev\/tty1-42/);
     console.log(`# debian page ${run}: logged in on both consoles at ${at()}`);
+    // What the firmware gave Linux, and a credential read back from fw_cfg (the login above relied on them: a shifted directory can't pass).
+    await onSerial(page, 'clear; echo ==be""gin; cat /sys/class/rtc/rtc0/name; cat /proc/fb; ls -1 /sys/firmware; nproc; cat /sys/firmware/qemu_fw_cfg/by_name/opt/io.systemd.credentials/firstboot.timezone/raw; echo; readlink /etc/localtime; echo ==e""nd\n');
+    await shows(page, /==begin\s*rtc-efi[^]*?0 simple[^]*?efi[^]*?qemu_fw_cfg\s*2\s*Etc\/UTC\s*\S*zoneinfo\/Etc\/UTC\s*==end/);
     // The screen's text as the guest has it: bash's prompt and the command on tty1.
     await onSerial(page, 'clear; tr -s " " </dev/vcs1 | grep -o "root@[a-z]*:~# echo from-" | head -1; echo scr""een-read\n');
     await shows(page, /root@[a-z]+:~# echo from-\s*screen-read/);
@@ -162,18 +166,6 @@ for (let run = 1; run <= RUNS; run++) {
     await serialLogin(page);
     await onSerial(page, 'cat /root/webpc-mark\n');
     await shows(page, /cat \/root\/webpc-mark\s*webpc-kept-42/);
-
-    // Reset disk: confirmed, the machine restarts on the image as published; the file is gone.
-    let asked = '';
-    page.once('dialog', (d) => { asked = d.message(); void d.accept(); });
-    await page.locator('#reset-disk').click();
-    await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 10_000, polling: 50 });
-    await running(page);
-    assert.match(asked, /^Reset Debian 13's disk\? Everything the machine wrote to it \(\d+ [KM]B\) is deleted/);
-    console.log(`# debian page ${run}: disk reset, running at ${at()}`);
-    await serialLogin(page);
-    await onSerial(page, 'cat /root/webpc-mark || echo n""one\n');
-    await shows(page, /No such file or directory\s*none/);
     assert.deepEqual(errors, []);
     await context.close();
     console.log(`# debian page ${run}: done at ${at()}`);

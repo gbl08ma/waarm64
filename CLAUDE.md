@@ -27,10 +27,9 @@ M0–M7 are done (the summary table is in PLAN.md §3): the interpreter, the gol
 with virtio devices, Alpine and Debian, a JIT that boots Alpine in ~10 s in Chromium, the crypto
 extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vCPU for users).
 **Current:** M8, a usable machine (PLAN.md §3). Phase A (the interactive machine: `npm start`, the
-page in `web/app/`, [docs/frontend.md](docs/frontend.md)) is done; phase B (your own disk: booting
-unmodified images through UEFI, disk in and out; `M8-PHASEB-KICKOFF.md`, [docs/plans/uefi.md](docs/plans/uefi.md))
-is under way (loops 0–6 done, the kickoff's last: the page boots Debian's published image through UEFI, or a disk of your own, saves its changes or the whole disk, and loads saved changes back; `M8-PHASEB-HANDOVER.md`); of
-the C tracks, networking is under way (`M8-PHASEC-NETWORKING-HANDOVER.md`). Loose ends go in
+page in `web/app/`, [docs/frontend.md](docs/frontend.md)) and phase B (your own disk: unmodified
+images through UEFI, disk in and out, changes back in; [docs/plans/uefi.md](docs/plans/uefi.md))
+are done; of the C tracks, networking is under way (`M8-PHASEC-NETWORKING-HANDOVER.md`). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment
@@ -73,10 +72,10 @@ npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium; n
 WEBPC_CORPUS=dp_imm,dp_reg node --test tests/corpus-wasm.test.ts   # corpus groups only (fast JIT iteration)
 node --test tests/jit-diff.test.ts                                 # JIT vs interpreter on random words (WEBPC_JIT_DIFF=<n>)
 WEBPC_LOCKSTEP_STEPS=300000000 node --test tests/jit-lockstep.test.ts   # long lockstep (CI runs 20M)
-WEBPC_DISTROS=alpine,alpine-user,debian scripts/ci.sh   # which distro tests run (default: the current alpine images)
+WEBPC_DISTROS=alpine,alpine-user,debian scripts/ci.sh   # which distro tests run (default: the current images)
 WEBPC_INTERP=1 node --test tests/boot-node*.test.ts     # also the long guests' interpreter runs in Node
 WEBPC_JIT_STRESS=1 node --test tests/boot-node*.test.ts # every Node boot under JIT-stress (hours; not routine)
-cargo test --release --test boot -- --ignored --nocapture      # Buildroot natively (also: kvm_unit_tests, ltp, distros [alpine|debian])
+cargo test --release --test boot -- --ignored --nocapture      # Buildroot natively (also: kvm_unit_tests, ltp, distros [alpine])
 images/build.sh [name...]      # guest images in rootless Podman -> target/images/<name>/ (--check <name>); docs/images.md
 node tools/corpus/run.ts [--oracle qemu|m4|both] [group...]    # regenerate golden corpus groups (QEMU / the M4 oracle VM)
 scripts/tsan.sh                # ThreadSanitizer on the native parallel SMP runner (in ci.sh)
@@ -139,7 +138,7 @@ needs no CI run.
   IQR (from the JSON), host and Chromium version; differences under ~5% are noise unless repeated.
 - Commit the result JSON behind any written report; ad-hoc runs go to `bench/results/local/`.
 - Compare A/B in one session, alternating; small guests at eight placements.
-- Rank changes by the long, real workloads (Alpine, Alpine userspace, Debian); don't optimize for
+- Rank changes by the long, real workloads (Alpine, Alpine userspace); don't optimize for
   very short runs (the Buildroot boot is a check, not a target) or fit the design to CoreMark.
 - Peer comparisons (QEMU, native) are rare, one-off tables; **qemu-wasm is dropped for good**.
 
@@ -175,7 +174,7 @@ their code.**
   session, check `ps -eo pcpu,etime,args --sort=-pcpu | head` for leftover experiments.
 - **Don't boot complex guests under the interpreter in Node or Chromium** (minutes each, nothing
   the native interpreter run doesn't test). Iterate on the Buildroot guest and Alpine under the
-  JIT; Debian is an occasional check (~1 min under the JIT in Chromium).
+  JIT; Debian boots only through UEFI in Chromium (the page tests, ~1 min under the JIT), never natively, in Node or directly.
 - Multi-hour JIT-stress runs aren't routine: short stress variants catch what they catch.
 - Remove debug hooks that use `process` (e.g. module dumps in `web/vm.ts`) before any Chromium run.
 - Temporary files go in the job's tmp directory; ad-hoc tools and results in

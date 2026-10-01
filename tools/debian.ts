@@ -2,29 +2,23 @@
 // nocloud qcow2 (images/debian.json) into the download cache if it isn't there,
 // checks its SHA512, and links it as target/images/debian/disk.qcow2 (the disk
 // as published: a hard link to the download when it can be, else a copy). The
-// page boots it unmodified through EDK2 (M8 phase B), so that is all `npm start`
-// (tools/start.ts) needs; `images/build.sh debian` also takes the kernel and
-// initrd out of its /boot (Image, initrd.img: the direct boots of the tests and
-// benchmarks) with web/bootfs.ts and web/ext4.ts over web/qcow2.ts (no
-// qemu-img, sfdisk or debugfs), byte for byte what images/SHA256SUMS lists.
+// page boots it unmodified through EDK2 (M8 phase B), so that is all there is: no
+// kernel or initrd is taken out of it (the direct boot of Debian was dropped).
 //   node tools/debian.ts [--force]
 // WEBPC_DL overrides the download cache (default target/images/dl), e.g. to
 // share one download between checkouts.
 import { createHash } from 'node:crypto';
-import { closeSync, constants, createReadStream, existsSync, fstatSync, openSync, readSync } from 'node:fs';
+import { constants, createReadStream, existsSync } from 'node:fs';
 import { copyFile, link, mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findBootFiles } from '../web/bootfs.ts';
-import { openDisk } from '../web/qcow2.ts';
 
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
 export type Pin = { version?: string; file: string; url: string; sha512: string; label?: string; pinFile?: string };
 export const PIN = JSON.parse(await readFile(join(ROOT, 'images/debian.json'), 'utf8')) as Pin;
 export const OUT = join(ROOT, 'target/images/debian');
-export const OUTPUTS = ['Image', 'initrd.img', 'disk.qcow2'];
 /** What the page needs: the disk alone. */
-export const DISK_ONLY = ['disk.qcow2'];
+export const OUTPUTS = ['disk.qcow2'];
 export const downloads = () => process.env.WEBPC_DL || join(ROOT, 'target/images/dl');
 const STAMP = '.prepared';
 
@@ -100,57 +94,27 @@ export async function download(pin: Pin = PIN, log = (s: string) => console.log(
   return path;
 }
 
-/** The kernel and initrd out of the qcow2's /boot: the arm64 Image and the initrd, with the kernel's version. */
-export async function extract(qcow2: string) {
-  const fd = openSync(qcow2, 'r');
-  try {
-    const disk = openDisk((off, len) => {
-      const b = new Uint8Array(len);
-      return readSync(fd, b, 0, len, off) === len ? b : undefined;
-    }, fstatSync(fd).size);
-    const boot = await findBootFiles(disk.read);
-    if (!boot?.initrd) throw new Error(`${qcow2}: no /boot/vmlinuz-<version> with its initrd.img on any ext4 partition`);
-    const kernel = await boot.fs.readFile(boot.kernel);
-    // An arm64 Image: "ARM\x64" at byte 56 (Documentation/arch/arm64/booting.rst).
-    if (new TextDecoder().decode(kernel.subarray(56, 60)) !== 'ARMd') throw new Error(`${qcow2}: ${boot.kernel} is not an arm64 Image`);
-    return { version: boot.version, kernel, initrd: await boot.fs.readFile(boot.initrd) };
-  } finally {
-    closeSync(fd);
-  }
-}
-
 /**
  * target/images/debian, prepared unless it already is (`force`: anyway). Returns what it did.
  * The stamp (.prepared) names the pinned image the outputs came from.
  */
-export async function prepareDebian({ force = false, extract: boot = true, log = (s: string) => console.log(s) } = {}) {
+export async function prepareDebian({ force = false, log = (s: string) => console.log(s) } = {}) {
   const stamp = `${PIN.version} ${PIN.sha512}\n`;
-  const current = !force && (boot ? OUTPUTS : DISK_ONLY).every((f) => existsSync(join(OUT, f))) &&
+  const current = !force && OUTPUTS.every((f) => existsSync(join(OUT, f))) &&
     await readFile(join(OUT, STAMP), 'utf8').then((s) => s === stamp, () => false);
   if (current) return 'current' as const;
   const qcow2 = await download(PIN, log);
   const t0 = performance.now();
   await mkdir(OUT, { recursive: true });
   await rm(join(OUT, STAMP), { force: true });
-  let ready = 'Debian 13 ready';
-  if (boot) {
-    log('Taking the kernel and initrd out of its /boot…');
-    const { version, kernel, initrd } = await extract(qcow2);
-    await writeFile(join(OUT, 'Image.tmp'), kernel);
-    await writeFile(join(OUT, 'initrd.img.tmp'), initrd);
-    await rename(join(OUT, 'Image.tmp'), join(OUT, 'Image'));
-    await rename(join(OUT, 'initrd.img.tmp'), join(OUT, 'initrd.img'));
-    ready += `: kernel ${version} (${mb(kernel.length)}), initrd (${mb(initrd.length)})`;
-  } else {
-    // What a kernel and initrd from an older image would leave must not outlive the stamp that now names the new one.
-    await rm(join(OUT, 'Image'), { force: true });
-    await rm(join(OUT, 'initrd.img'), { force: true });
-  }
+  // What a kernel and initrd from an older image would leave must not outlive the stamp that now names the new one.
+  await rm(join(OUT, 'Image'), { force: true });
+  await rm(join(OUT, 'initrd.img'), { force: true });
   const disk = join(OUT, 'disk.qcow2');
   await rm(disk, { force: true });
   await link(qcow2, disk).catch(() => copyFile(qcow2, disk, constants.COPYFILE_FICLONE)); // FICLONE: a reflink where the filesystem has them
   await writeFile(join(OUT, STAMP), stamp);
-  log(`${ready}, in ${((performance.now() - t0) / 1000).toFixed(1)} s.`);
+  log(`Debian 13 ready, in ${((performance.now() - t0) / 1000).toFixed(1)} s.`);
   return 'prepared' as const;
 }
 

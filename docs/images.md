@@ -31,25 +31,19 @@ obligations (publish the configs, point to the sources), separate from webpc's M
 | `alpine` | **Alpine 3.24.2**: the pinned aarch64 minirootfs plus `apk add` of pinned `linux-virt` (6.18.53) and `openrc` (0.63.2), in a chroot under `qemu-aarch64-static` registered in a user namespace's own binfmt_misc; runlevels sysinit devfs dmesg, boot modules hostname, shutdown killprocs mount-ro, default local (no device manager: the initramfs loads virtio_mmio, virtio_blk, ext4). The test is `images/alpine/webpc.start` (a local.d script writing to `/dev/console`, then `poweroff`) | the Alpine boot tests and `boot_alpine*` |
 | `alpine-user` | alpine's root plus `xz`, `lua5.4`, `sqlite`, `openssl` (3.5.8) and the workloads (`images/alpine/user/`), with its own local.d script, as `rootfs-user.ext4`; boots alpine's Image and initramfs | `alpine_user_jit`, `alpine_crypto*_jit`, Node |
 | `litmus` | herdtools7 7.58 (CeCILL-B: built and run, never copied) in Alpine's arm64 container: `diyone7` makes each test in `images/litmus/tests.txt` (MP, SB, LB, 2+2W, IRIW, WRC, R, S and coherence shapes, plain and with DMB/DSB, dependencies, acquire/release), `herd7`'s `aarch64.cat` lists each one's allowed final states (`allowed.txt`), `litmus7` makes static C programs (`-mem direct -st 1 -barrier userfence -affinity incr0 -s 5k -r 200`, from herdtools7's Arm configs; the defaults showed the M4 no relaxed outcome at all); `images/litmus/stress.c`, the atomics stress, as `stress-lse` and `stress-llsc` (the build checks each has its atomics: [testing.md](testing.md) "Atomics stress"). Output: `initramfs.cpio` (BusyBox, `images/litmus/init`, the tests; booted with `linux/Image`, `webpc.litmus=<options, commas for spaces>`, `webpc.stress=<options>`) and `litmus.tar` (the same tests with `run.sh`, for the oracle VM) | the memory-model tests and the atomics stress (M7) |
-| `debian` | the official `debian-13-nocloud-arm64` qcow2 (20260914-2601), pinned by build date and SHA512 (`images/debian.json`) and served as published; the kernel (6.12.107) and initrd (`MODULES=most`) taken out of its `/boot` **in Node, on the host** (`tools/debian.ts`: a partition table and ext4 reader over the qcow2 reader, [frontend.md](frontend.md) "The disk reader"; no container, no `qemu-img`, `sfdisk` or `debugfs`), the same code `npm start` runs; ~2 s with the download cached | Debian boot tests, `boot_debian_jit`, the page |
+| `debian` | the official `debian-13-nocloud-arm64` qcow2 (20260914-2601), pinned by build date and SHA512 (`images/debian.json`) and served as published; the kernel (6.12.107) as `target/images/debian/disk.qcow2` (a link to the download: nothing is taken out of it), the same code `npm start` runs | the page's Debian tests |
 | `edk2` | **EDK2 edk2-stable202608** (commit `2970e5699ba6`, submodules as pinned by it): `ArmVirtPkg/ArmVirtQemuKernel.dsc`, RELEASE, GCC, `NETWORK_ENABLE=FALSE`, as `QEMU_EFI.fd` (3 MiB: an arm64 `Image` entered like a kernel with the DT in x0) and `LICENSES.txt` (EDK2's BSD-2-Clause-Patent, OpenSSL's Apache-2.0, libfdt's BSD-2-Clause: the binary is distributed). Built natively in Debian's arm64 container (pinned digest, apt from snapshot.debian.org), ~1 min. **Reproducible:** BaseTools draws a random stack cookie per module into `StackCookieValues{32,64}.json` and picks by `hash(GUID)`; the build writes both lists from a fixed seed and sets `PYTHONHASHSEED=0` (the cookies are public in the binary either way). Also `shell.img`, the firmware tests' disk: 8 MiB of FAT (no partition table; a fixed volume ID, every timestamp `SOURCE_DATE_EPOCH`) with the build's UEFI Shell as `\EFI\BOOT\BOOTAA64.EFI` and `images/edk2/startup.nsh` | `tools/uefi-oracle.ts`; the firmware configuration's tests ([testing.md](testing.md)); M8 phase B's firmware boots ([plans/uefi.md](plans/uefi.md)) |
 | `alpine-uefi` | Alpine's published UEFI cloud images, pinned by SHA512 (`images/alpine-uefi.json`) and served as published: `alpine.qcow2` (3.24.2 tiny, Limine) and `alpine-grub.qcow2` (3.24.1 generic UEFI tiny, GRUB), downloaded **on the host** (Node, `tools/debian.ts`'s downloader), hard links into the download cache | `tests/uefi.test.ts` (`WEBPC_DISTROS=alpine-uefi`) |
 
 Command lines: Buildroot `console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init` (a
 script after `--`: `/test.sh` by default, `/test-devices.sh`, `/test-input.sh`, `/test-rw.sh`,
 `/ltp.sh`, `/bench-*.sh`); Alpine `console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro`
-(`webpc.phase=user|crypto` for alpine-user); Debian `console=ttyAMA0 root=/dev/vda1 ro
-systemd.run="…" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff
-systemd.firstboot=off` (systemd-run-generator runs the test as a unit; `firstboot=off` because a
-writable first boot waits on the console forever, on QEMU too). Distros get 1 GiB.
+(`webpc.phase=user|crypto` for alpine-user). Alpine gets 1 GiB.
 
-**Debian for interaction, the direct boot** (M8 phase A; the page now boots the image through UEFI with GRUB's own command line, frontend.md "Debian through UEFI"; this line is what the tests and benchmarks that extract the kernel still use; `bench/boot/REPORT.md` "M8 loop 0"): `console=ttyAMA0
-console=tty0 root=/dev/vda1 ro systemd.firstboot=off systemd.set_credential=login.noauth:yes
-apparmor=0` and `systemd.mask=` for `systemd-networkd.service`, `systemd-networkd.socket`,
-`systemd-resolved.service`, `systemd-timesyncd.service`, `systemd-network-generator.service` (no
-guest network in M8 phase A: they only cost boot time). The last `console=` gets `/dev/console`,
-so systemd's status lines go to the screen; the kernel log goes to both. systemd's getty generator
-starts `getty@tty1` and `serial-getty@ttyAMA0` (and `serial-getty@hvc0` for the virtio console).
+**Debian for interaction** (the page boots the image through UEFI with GRUB's own command line,
+frontend.md "Debian through UEFI"; the direct boot with an extracted kernel and initrd, its
+`systemd.run=` test line and its benchmarks were dropped when UEFI became the production path:
+git history has them, e.g. `bench/boot/REPORT.md` "M8 loop 0"):
 **The published image locks root** (`root:!unprovisioned` in `/etc/shadow`; the nocloud image has
 no provisioning of its own): `login.noauth` is a credential util-linux's `login` reads (both getty
 units import `login.*`), so `root` logs in with no password on every console without touching the
@@ -57,6 +51,12 @@ image. The kernel has `simplefb` and `fbcon` built in: fbcon draws on the frameb
 first kernel line.
 
 ## Stress workloads in the Debian guest (`images/stress/`)
+
+**Not usable at the moment:** these tools replace Debian's initrd (`target/images/debian/initrd.img`)
+through a page route, which needs the direct boot of an extracted kernel and initrd; the page
+boots Debian through UEFI since M8 phase B loop 3 (the route has no effect) and the extraction
+was dropped with the direct-boot tests. To revive them, put the binaries on a second disk
+(as the Go compiler's below) instead of in the initrd.
 
 A load with the character of a Go compile on 4 vCPUs: many threads, spinning
 Ms (`procyield`, `osyield`), heavy mmap/mprotect/munmap (so many TLBI IS), the GC and scavenger,
@@ -123,7 +123,6 @@ futexes, fork/exec. Not part of `images/build.sh` or CI; built on demand.
 - Debian's published image is 95% compressed qcow2 clusters: it's served as is (deflate in the
   blk backend) rather than converted.
 - Debian isn't built but prepared, so its `.inputs` key covers `images/debian.json` and
-  `build_debian`, not the reader's code (an edit to `web/ext4.ts` shouldn't mark the image stale
-  and skip Debian's tests); the reader is checked by its tests and by `SHA256SUMS` on a rebuild.
+  `build_debian`; `SHA256SUMS` lists the disk.
   `npm start` keeps its own stamp (`target/images/debian/.prepared`: the pin), since it can't run
   `build.sh` (bash 4 syntax; macOS has bash 3.2).

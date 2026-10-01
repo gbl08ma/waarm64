@@ -1,14 +1,13 @@
-//! Boots the distro images (target/images/{alpine,debian}, images/build.sh) on
+//! Boots the distro images (target/images/alpine, images/build.sh) on
 //! 1 GiB of RAM, with their own kernel and initrd and the root filesystem on
-//! virtio-blk (Debian's a compressed qcow2, writable through an in-memory
-//! overlay; Alpine's read-only, with the step 6 devices and a framebuffer
-//! too): each runs a test and powers off.
+//! virtio-blk (read-only, with the step 6 devices and a framebuffer too): each
+//! runs a test and powers off. Debian boots through UEFI on the page, not here.
 //! Ignored by default (they need the images and a release build, and take
 //! minutes); scripts/ci.sh says which of them it runs.
 
 mod common;
 
-use common::{Boot, Dev, Distro, Overlay, Run};
+use common::{Boot, Dev, Distro, Run};
 
 fn boot(d: &Distro, devices: &[Dev], fb: (u64, u64), max_steps: u64) -> Run {
     boot_n(d, devices, fb, max_steps, 1)
@@ -86,16 +85,4 @@ fn alpine_smp() {
         "webpc: alpine 3.24.2 6.18.53-0-virt
 "
     ));
-}
-
-#[test]
-#[ignore = "needs target/images/debian (images/build.sh debian) and --release"]
-fn debian_boots_read_write_and_runs_a_command() {
-    let devices = common::guest_devices(common::DEBIAN.disk, Some(Overlay::new()));
-    let r = boot(&common::DEBIAN, &devices, (0, 0), 500_000_000_000);
-    assert!(r.console.contains("webpc: debian\n13."), "{}", r.console);
-    assert!(
-        r.console.contains("\n6.12.107+deb13-arm64\nrw,"),
-        "root not read-write"
-    );
 }

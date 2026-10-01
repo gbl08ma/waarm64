@@ -1,9 +1,9 @@
 # Booting unmodified images through UEFI (M8 phase B)
 
-A plan, and the record of its loops. Phase B's brief is `M8-PHASEB-KICKOFF.md`; this page holds
+A plan, and the record of its loops. Phase B (done 2026-10-01) had its brief in `M8-PHASEB-KICKOFF.md` (in git history); this page holds
 what loop 0 found on the QEMU oracle, the design that follows from it, and what each loop found.
 What exists is described in platform.md ("Boot", "The firmware configuration's devices"),
-abi.md ("M8 phase B"), testing.md and images.md; update them as loops land.
+abi.md ("M8 phase B"), testing.md and images.md; update them when the area changes.
 
 ## Loop 0: what the oracle showed (2026-09-30)
 
@@ -233,3 +233,27 @@ What it found, beyond what frontend.md "Debian through UEFI" says:
 - **The network card's settings go through fw_cfg** (a systemd credential with the `.network`
   file, passed when the Network menu connects a card): a device setting, not a first-boot
   credential.
+
+## Gotchas (found while building it)
+- `localhost/webpc-images` (images/Containerfile) is **amd64** under qemu-user on the dev VM: never
+  build EDK2 in it. `edksetup.sh` fails under `set -u` and eats the positional parameters (`set --`
+  first); an apostrophe inside `images/build.sh`'s single-quoted container scripts ends the script.
+- `/tmp` is a 6.9 GB tmpfs: don't extract whole partitions there.
+- QEMU: `-fw_cfg name=…,string=` rejects an empty value (use `file=`); with `-dtb` QEMU still
+  rewrites `/memory` and `/chosen`.
+- Menus: Debian's GRUB waits 5 s, Limine 10 s, on the serial console (no GOP). Limine draws its
+  menu a character at a time between cursor escapes (match on stripped text). Debian's GRUB
+  passes `quiet`: the kernel's own command-line echo isn't on the console.
+- EDK2 with no `cfi-flash` node takes a synchronous exception early in DXE; with a PL031 that
+  refuses byte reads, as ours did, a data abort in DXE ("Synchronous Exception at …" is all a
+  RELEASE build prints: the native runner's summary has ESR/ELR/FAR).
+- The UEFI Shell is an *application* boot option, which BDS's automatic boot skips: with no disk
+  EDK2 stops at "No bootable option or device was found". `shell.img` makes it the
+  removable-media loader instead.
+- A test that passes credentials must read one back: with fw_cfg's directory planted off by one
+  Debian still logged in (the shifted credentials happened to allow it).
+- xterm.js gates custom `CSI t` handlers behind `windowOptions`; `page.waitForFunction` given a
+  RegExp's `source` loses its flags (`m`); the DOM renderer's rows are joined with no separator
+  and trailing spaces are trimmed (match `\s*`, not `\s`; `grub>`).
+- Parallel SMP didn't cache global TLB entries in TTBR0, which firmware and bootloaders use
+  everywhere (70 s → 3 s from the boot manager to GRUB; fixed in loop 2).

@@ -410,16 +410,11 @@ export function helperReport(ex: { jit_helper_report(v: number): number }, memor
 export const GUEST_CMDLINE = 'console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init';
 /**
  * Distro images from images/build.sh (paths under target/images) with a command
- * line that runs a test and powers off (core/tests/common `ALPINE`, `DEBIAN`).
- * Alpine: OpenRC's local service runs images/alpine/webpc.start. Debian: the
- * stock image; systemd runs `systemd.run=` as a unit, then powers off.
+ * line that runs a test and powers off (core/tests/common `ALPINE`).
+ * Alpine: OpenRC's local service runs images/alpine/webpc.start.
  */
 export const DISTROS = {
   alpine: { kernel: 'alpine/Image', initrd: 'alpine/initramfs-virt', disk: 'alpine/rootfs.ext4', cmdline: 'console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro' },
-  debian: {
-    kernel: 'debian/Image', initrd: 'debian/initrd.img', disk: 'debian/disk.qcow2',
-    cmdline: `console=ttyAMA0 root=/dev/vda1 ro systemd.run="/bin/sh -c 'exec >/dev/console 2>&1; echo webpc: debian; cat /etc/debian_version; uname -r; findmnt -no OPTIONS /; echo webpc: test ok'" systemd.run_success_action=poweroff systemd.run_failure_action=poweroff systemd.firstboot=off`,
-  },
 } as const;
 
 // The scratch page before RAM: VmConfig, device entries, the doorbell, the command line.

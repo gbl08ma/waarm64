@@ -125,7 +125,7 @@ export async function main(argv = process.argv.slice(2)) {
   installPackages();
   buildCore(env);
   prepareTailscale(); // the Network menu's client: built when Go is there, never fatal (tools/tailscale.ts)
-  await prepareDebian({ extract: false }).catch((e: Error) => stop(e.message)); // the page boots it unmodified: no kernel to extract
+  await prepareDebian().catch((e: Error) => stop(e.message));
   if (firmware) {
     console.log(`Building the UEFI firmware (${firmware}; EDK2 in a Podman container: ~1 min, the first time it also pulls the build image)…`);
     if (!run('bash', ['images/build.sh', 'edk2'], env) || firmwareStale()) stop("The UEFI firmware didn't build (the errors are above).");

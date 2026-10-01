@@ -411,7 +411,7 @@ outputs() {
     alpine) echo alpine/Image alpine/initramfs-virt alpine/rootfs.ext4 ;;
     alpine-user) echo alpine-user/rootfs-user.ext4 ;;
     linux-crypto) echo linux-crypto/Image linux-crypto/initramfs.cpio ;;
-    debian) echo debian/Image debian/initrd.img debian/disk.qcow2 ;;
+    debian) echo debian/disk.qcow2 ;;
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
     ltp) echo ltp/rootfs.ext4 ;;
     litmus) echo litmus/initramfs.cpio litmus/litmus.tar ;;

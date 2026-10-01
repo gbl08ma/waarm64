@@ -18,7 +18,7 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
 | Page | Benchmarks (`--only`) |
 |---|---|
 | `bench/interp/index.html` | `interp_mips`, `interp_fp_mips`, `vm_flat_mips`, `vm_mmu_mips` (interpreter: user-mode integer and FP/NEON guests, the integer guest at EL1 with the MMU off/on), `jit_mips`, `jit_fp_mips`, `vm_jit_flat_mips`, `vm_jit_mmu_mips`, `coremark_mips`, `jit_coremark_mips` (also reported as iterations/s) |
-| `bench/boot/index.html` | `boot`, `boot_defconfig`, `boot_alpine` (interpreter), `boot_jit`, `boot_alpine_jit`, `boot_debian_jit`, `alpine_user_jit` (ms per phase), `coremark_vm_jit` (CoreMark as init, realtime), `alpine_crypto_jit` / `alpine_crypto_ce_jit` (`openssl speed`, extensions off/on, realtime) I/O: `dd`, `fio`, `p9`, `net` (realtime) |
+| `bench/boot/index.html` | `boot`, `boot_defconfig`, `boot_alpine` (interpreter), `boot_jit`, `boot_alpine_jit`, `alpine_user_jit` (ms per phase), `coremark_vm_jit` (CoreMark as init, realtime), `alpine_crypto_jit` / `alpine_crypto_ce_jit` (`openssl speed`, extensions off/on, realtime) I/O: `dd`, `fio`, `p9`, `net` (realtime) |
 | `bench/jit/index.html` | `jit_install`, `jit_first_call` |
 | `bench/spike/index.html` | the M0 spike (`node bench/spike/node.ts` in Node) |
 
@@ -36,7 +36,7 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
   phase takes a thread/process count so M7 can rerun them at N vCPUs. `webpc.phase=crypto` runs
   `openssl speed` instead; `webpc.armcap=X` sets `OPENSSL_armcap`. `7z b` was left out (12 s
   natively for one pass).
-- **SMP (M7):** `smp_alpine_jit`, `smp_user_jit`, `smp_debian_jit` run parallel SMP (a worker
+- **SMP (M7):** `smp_alpine_jit`, `smp_user_jit` run parallel SMP (a worker
   per vCPU, realtime, JIT) at N = 1, 2, 4 vCPUs, the Ns alternated within each round; `…_8` once
   as a check, `smp_user_jit_4` alone for A/B sessions. Boots report the time to the distro's
   local.d script and to power-off (realtime power-off includes busybox init's 2 s of sleeps after
@@ -68,7 +68,7 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
   state.
 - **The small guests run at eight guest-RAM placements** (the placement effect, [v8.md](v8.md)):
   never rank builds on one placement.
-- **Rank tuning by the long, real workloads** (Alpine boot, Alpine userspace, Debian) first.
+- **Rank tuning by the long, real workloads** (Alpine boot, Alpine userspace) first. Debian has no benchmark since M8 phase B (its direct-boot ones timed only a boot and power-off; the page's boot times are in the page tests' logs).
   **Don't optimize for very short runs:** the Buildroot boot (< 1 s) is a check, not a target; a
   change that makes it even ~50% slower but speeds a distro boot up by 5–10% is worth keeping, and
   the synthetic small guests may lose a few percent for such gains. Report the losses with

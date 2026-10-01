@@ -95,7 +95,7 @@ test('the serial terminal\'s keys reach EDK2 and GRUB: menus, forms, the editor,
     await shows(page, /webpc\.keytest=1/, 10_000);
     await press(page, 'Control+x');
 
-    // The edited entry boots; its kernel has the typed parameter.
+    // The edited entry boots; its kernel has the typed parameter (Debian's GRUB passes `quiet`: the kernel's own echo of the line isn't on the console).
     await shows(page, /\S+ login:$/m, 240_000);
     await page.keyboard.type('root\n', { delay: 10 });
     await shows(page, /root@\S+:~#/, 60_000);

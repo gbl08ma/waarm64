@@ -1,6 +1,6 @@
 // Boots a guest on the wasm core in a worker, its root filesystem on virtio-blk
 // over HTTP ranges: target/images/linux (images/build.sh), or with `?distro=`
-// alpine|debian that image (web/vm.ts `DISTROS`) on 1 GiB. `?realtime` in the
+// alpine that image (web/vm.ts `DISTROS`) on 1 GiB. `?realtime` in the
 // page URL selects realtime mode, `?overlay=<name>` makes the root disk
 // writable through that OPFS overlay, and `?script=<path>` runs that script
 // instead of the Buildroot guest's /test.sh; with `?devices` the guest gets the

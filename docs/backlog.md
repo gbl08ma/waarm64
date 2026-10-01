@@ -138,10 +138,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **Booting conventional arm64 disk images unmodified:** now M8 phase B (PLAN.md §3: through
-  UEFI firmware and the image's own bootloader; disk in and out). The machine can (loop 2: the
-  firmware configuration); the page still boots a kernel and initrd extracted ahead of time
-  (`tools/debian.ts`) until loop 3. Findings and the design: [plans/uefi.md](plans/uefi.md).
 - **The firmware configuration** (loop 2): fw_cfg has no DMA interface (ramfb, a firmware GOP,
   needs it: plans/uefi.md "Graphics in the firmware"), no SMBIOS or other standard items; the
   flash bank's array-mode reads go through `vm::Io` one instruction at a time (fine for a store
@@ -296,3 +292,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the comments with their next rebuild.
 
 - **Remember the chosen disk across reloads:** a `File` isn't kept; a `FileSystemFileHandle` in IndexedDB (permission asked each session) would let the page boot the user's disk again without the picker (phase B loop 4).
+- **After phase B (the page's UEFI path):** EDK2's setup screen says `0 MB RAM` (no SMBIOS;
+  cosmetic); a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
+  EDK2's terminal driver (frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
+  boot; loading a changes file also resets the variable store (the file doesn't carry it).
+- **No consumer left:** `web/bootfs.ts` and `web/ext4.ts` (the ext4 reader that took Debian's
+  kernel and initrd out of its disk; only `tests/ext4.test.ts` uses them: remove them or keep them
+  for a later feature); `images/stress/` and `bench/stress`/`bench/mem`'s `GO` path route Debian's
+  initrd, which the page's UEFI boot ignores (docs/images.md: put the binaries on a second disk
+  to revive them).

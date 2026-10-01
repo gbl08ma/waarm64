@@ -536,16 +536,14 @@ What stops it is said in one message with what to do, and it exits 1. Time on th
 with the download cached, 1.2 s plus the core's build (10–11 s cold; the toolchain's install,
 722 MB, 6 s on this network); the download itself, 7.8 s.
 
-**Debian's preparation** (`tools/debian.ts`; `npm start` links the disk only, `images/build.sh
-debian` also extracts the kernel and initrd for the tests and benchmarks' direct boots; the pin is
-`images/debian.json`): the qcow2 from the download cache (`WEBPC_DL`, default
+**Debian's preparation** (`tools/debian.ts`, run by `npm start` and `images/build.sh debian`: it links
+the disk and takes nothing out of it; the pin is `images/debian.json`): the qcow2 from the download cache (`WEBPC_DL`, default
 `target/images/dl`), or downloaded there with progress (a line rewritten on a terminal, every 10%
-otherwise) through a `.part` file, and checked against the pinned SHA512 either way (~1 s); with
-`images/build.sh debian`, then the kernel and initrd out of its `/boot` with `web/bootfs.ts` and `web/ext4.ts` over
-`web/qcow2.ts` (~0.4 s: 74 MB read through ~1,200 compressed clusters), the kernel checked for the
-arm64 Image magic, and the disk hard-linked from the cache (a copy, reflinked where it can be, if
-the cache is on another filesystem). The outputs are byte for byte what `images/SHA256SUMS`
-lists (`images/build.sh debian` checks it).
+otherwise) through a `.part` file, and checked against the pinned SHA512 either way (~1 s); the
+disk is hard-linked from the cache (a copy, reflinked where it can be, if the cache is on another
+filesystem). The output is byte for byte what `images/SHA256SUMS` lists (`images/build.sh debian`
+checks it). The kernel and initrd aren't extracted any more (the direct boot was dropped); the
+disk reader below (`web/bootfs.ts`, `web/ext4.ts`) has no consumer but its tests.
 
 ## The disk reader
 

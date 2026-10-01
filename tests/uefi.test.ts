@@ -1,13 +1,10 @@
-// Unmodified distro images through our EDK2 (M8 phase B, docs/plans/uefi.md):
-// the firmware configuration boots Debian's published qcow2 (shim, GRUB) and
-// Alpine's UEFI cloud images (Limine, GRUB) to a root login on the serial
-// console, which runs a command and powers off, as tools/uefi-oracle.ts does on
-// QEMU. Debian gets systemd credentials over fw_cfg (no first-boot questions,
-// root without a password: tests only, the page passes none), Alpine a NoCloud
-// seed disk (web/fat.ts) that unlocks root. The page's shape: 2 vCPU workers,
-// realtime, the JIT, a framebuffer, a writable overlay (in memory in Node).
-// Debian with WEBPC_DISTROS=debian (taking turns through tests/debian-lock.ts),
-// Alpine with WEBPC_DISTROS=alpine-uefi (images/build.sh alpine-uefi).
+// Alpine's UEFI cloud images through our EDK2 (M8 phase B, docs/plans/uefi.md): the firmware
+// configuration boots them (Limine, GRUB) to a root login on the serial console, which runs a
+// command and powers off, as tools/uefi-oracle.ts does on QEMU. A NoCloud seed disk (web/fat.ts)
+// unlocks root. The page's shape: 2 vCPU workers, realtime, the JIT, a framebuffer, a writable
+// overlay (in memory in Node). Opt-in with WEBPC_DISTROS=alpine-uefi (images/build.sh alpine-uefi).
+// Debian through the same firmware is the page tests' (tests/page-debian.test.ts: Chromium only);
+// the deterministic EDK2 shell test is `edk2-shell` (tests/boot-node*.test.ts).
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -17,7 +14,6 @@ import { pathToFileURL } from 'node:url';
 import { fatImage } from '../web/fat.ts';
 import type { DeviceSpec } from '../web/devices.ts';
 import { Exit, bootVm, type BootOptions } from '../web/vm.ts';
-import { withDebianLock } from './debian-lock.ts';
 
 const WASM = readFileSync(new URL('../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url));
 const IMAGES = new URL('../target/images/', import.meta.url);
@@ -78,19 +74,6 @@ function common(r: { console: string; marks: Marks }) {
 
 const disk = (rel: string, overlay: string): DeviceSpec => ({ type: 'blk', url: new URL(rel, IMAGES).href, overlay });
 const firmware = () => readFileSync(new URL('edk2/QEMU_EFI.fd', IMAGES));
-
-const c = 'opt/io.systemd.credentials';
-test('Debian through EDK2, shim and GRUB to a login', {
-  skip: noEdk2 || (!DISTROS.includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian' : !has('debian/disk.qcow2') && 'SKIPPED: run images/build.sh debian'),
-}, () => withDebianLock(async () => {
-  const r = await drive({
-    ramSize: 1 << 30, kernel: firmware(), cmdline: '', devices: [disk('debian/disk.qcow2', 'uefi-test-debian'), { type: 'rng' }],
-    firmware: { fwCfg: [{ name: `${c}/login.noauth`, data: 'yes' }, { name: `${c}/firstboot.timezone`, data: 'Etc/UTC' }, { name: `${c}/firstboot.locale`, data: 'C.UTF-8' }, { name: `${c}/passwd.hashed-password.root`, data: '' }] },
-  }, `cat /sys/firmware/qemu_fw_cfg/by_name/${c}/firstboot.timezone/raw; echo; readlink /etc/localtime; `);
-  const out = common(r);
-  assert.match(out, /^io\.systemd\.credentials$/m, 'the credentials over fw_cfg');
-  assert.match(out, /^Etc\/UTC\n.*zoneinfo\/Etc\/UTC$/m, "a credential's bytes, and the timezone systemd-firstboot set from it");
-}));
 
 // Side by side: they're independent, and one after the other they set the file's (and CI's) time.
 describe('Alpine through EDK2', { concurrency: 2 }, () => {

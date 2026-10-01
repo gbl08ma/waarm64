@@ -8,7 +8,6 @@
 // `--only boot_alpine`: Alpine (target/images/alpine) as its boot test runs it:
 // 1 GiB, the test devices and a framebuffer; to its local.d script and to power-off.
 // `--only boot_jit`, `--only boot_alpine_jit`: the Buildroot and Alpine boots under the JIT (VmConfig.jit = 1);
-// `--only boot_debian_jit`: Debian 13's (one cold and one warm boot, several minutes; not in the default set);
 // `--only coremark_vm_jit`: CoreMark as init under Buildroot's kernel, realtime mode (its own score);
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
 // `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s, the crypto extensions off (the NEON-only paths);
@@ -61,7 +60,7 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
     console += vm.drain();
     const now = performance.now() - t0;
     const end = console.lastIndexOf('\n') + 1; // whole lines only
-    // Not in the kernel's echo of its command line (Debian's runs `echo webpc: debian`).
+    // Not in the kernel's echo of its command line.
     for (const m of console.slice(scanned, end).replace(/^.*Kernel command line:.*$/gm, '').matchAll(/webpc: ([^\r\n]*)/g)) {
       if (m[1] in marks) continue;
       marks[m[1]] = now;
@@ -234,13 +233,13 @@ const CRYPTO_CHECK = 'crypto: 82a2bffdaeb5d862 0e66434871168f25 9705ef3ce219893e
  * M7's scaling curve (docs/benchmarking.md "SMP"): parallel SMP (a worker per
  * vCPU, realtime) under the JIT on N vCPUs, the Ns alternated within each
  * round so session drift hits them alike. `alpine`: Alpine's boot test to
- * power-off and to its local.d script; `debian`: Debian's; `user`: Alpine's userspace phases with
+ * power-off and to its local.d script; `user`: Alpine's userspace phases with
  * `webpc.threads=N` (N copies of each phase's work), ms per phase. One untimed
  * boot at each N first (the page's caches, V8's code for the core). Per-vCPU
  * counters of the last sample go into the params.
  */
-async function smp(o: Options, what: 'alpine' | 'debian' | 'user', ns: number[], rounds: number): Promise<Sample[]> {
-  const d = what === 'debian' ? DISTROS.debian : DISTROS.alpine;
+async function smp(o: Options, what: 'alpine' | 'user', ns: number[], rounds: number): Promise<Sample[]> {
+  const d = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${d.initrd}`), get(`../../target/images/${d.kernel}`)]);
   const disk = what === 'user' ? '../../target/images/alpine-user/rootfs-user.ext4' : `../../target/images/${d.disk}`;
   const img = { ...base, kernel, initrd, disk: new URL(disk, import.meta.url).href, cmdline: d.cmdline, ramSize: 1 << 30, test: what !== 'user', jit: 1 as const };
@@ -262,22 +261,13 @@ async function smp(o: Options, what: 'alpine' | 'debian' | 'user', ns: number[],
         if (!out.has(name)) out.set(name, { name, unit: 'ms', params: {}, samples: [] });
         const s = out.get(name)!;
         s.samples.push(ms[p]);
-        s.params = { distro: what === 'debian' ? 'debian' : 'alpine', cmdline: d.cmdline, threads: what === 'user' ? n : undefined, ncpus: n, parallel: true, jit: 1, steps: r.stats.steps, counters: r.stats, cpus: r.cpus };
+        s.params = { distro: 'alpine', cmdline: d.cmdline, threads: what === 'user' ? n : undefined, ncpus: n, parallel: true, jit: 1, steps: r.stats.steps, counters: r.stats, cpus: r.cpus };
       }
       const cpus = r.cpus.map((c) => `${(c.steps / 1e6).toFixed(0)}M/${c.jit.blocks}b/${(c.jit.compileNs / 1e6).toFixed(0)}ms`).join(' ');
       o.log?.(`smp_${what} n=${n}: ${phases.map((p) => `${p} ${ms[p].toFixed(0)}`).join(', ')} ms; per vCPU steps/regions/compile: ${cpus}`);
     }
   }
   return [...out.values()];
-}
-
-/** Debian 13 under the JIT to power-off (M6: timed once; long, so one cold and one warm boot). */
-async function bootDebian(o: Options): Promise<Sample[]> {
-  const d = DISTROS.debian;
-  const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${d.initrd}`), get(`../../target/images/${d.kernel}`)]);
-  const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${d.disk}`, import.meta.url).href, cmdline: d.cmdline, ramSize: 1 << 30, test: true, jit: 1 as const };
-  const s = await bootTimes(o, img, 'debian', { distro: 'debian', cmdline: d.cmdline, ramMiB: 1024, devices: 'test', jit: 1 }, { cold: 1, warmup: 0, warm: 1 });
-  return s.map((x) => ({ ...x, name: x.name.replace('boot_init', 'debian_jit_first').replace('boot_total', 'debian_jit_total') }));
 }
 
 /** A newc cpio archive of `[path, mode, data?, [major, minor]?]` entries. */
@@ -400,14 +390,13 @@ async function net(o: Options): Promise<Sample[]> {
 export const suite = {
   boot: runAll, boot_defconfig: (o: Options) => runAll(o, 'Image-defconfig'), boot_alpine: bootAlpine, dd, fio, p9, net,
   // Under the JIT (VmConfig.jit = 1), deterministic.
-  boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), boot_debian_jit: bootDebian, coremark_vm_jit: coremarkVm, alpine_user_jit: alpineUser,
+  boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), coremark_vm_jit: coremarkVm, alpine_user_jit: alpineUser,
   // Realtime (M6.5).
   alpine_crypto_jit: (o: Options) => alpineCrypto(o),
   alpine_crypto_ce_jit: (o: Options) => alpineCrypto(o, '', true), // the crypto extensions on (VmConfig.features)
   // M7: parallel SMP at N = 1, 2, 4 vCPUs, alternated; `…_8` once as a check (N + 2 threads: more than the dev VM's 8).
   smp_alpine_jit: (o: Options) => smp(o, 'alpine', [1, 2, 4], 5),
   smp_user_jit: (o: Options) => smp(o, 'user', [1, 2, 4], 2),
-  smp_debian_jit: (o: Options) => smp(o, 'debian', [1, 2, 4], 1),
   smp_user_jit_4: (o: Options) => smp(o, 'user', [4], 2), // one N, for A/B sessions
   smp_alpine_jit_8: (o: Options) => smp(o, 'alpine', [8], 2),
   smp_user_jit_8: (o: Options) => smp(o, 'user', [8], 1),
