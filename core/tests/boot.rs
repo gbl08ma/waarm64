@@ -354,3 +354,39 @@ fn console_input_survives_snapshots() {
     assert_eq!(r.snapshots.len(), at.len());
     assert_eq!(r.steps, common::steps("console-input"));
 }
+
+/// Parallel SMP through snapshots (M8 phase C loop 2): each stretch runs a
+/// thread per vCPU; between them the VM is saved with every vCPU out of the
+/// core and a new one restored (power states, CPU_ON requests, WFI, the timer
+/// lines and the clock go through the state). Not reproducible:
+/// `WEBPC_PARALLEL_RUNS` boots each (default 2).
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn linux_boots_in_parallel_through_snapshots() {
+    let runs = std::env::var("WEBPC_PARALLEL_RUNS").map_or(2, |v| v.parse().unwrap());
+    let kernel = common::image("linux/Image");
+    let devices = common::guest_devices("buildroot/rootfs.ext4", None);
+    for n in [1, 2, 4] {
+        for run in 0..runs as u64 {
+            // Through the secondaries' CPU_ON, the devices' probes and userspace.
+            let at: Vec<u64> = (1..=30).map(|k| k * 1_500_000 + run * 333_333).collect();
+            let r = common::boot(&common::Boot {
+                devices: &devices,
+                ncpus: n,
+                parallel: true,
+                snapshots: &at,
+                ..common::Boot::new(&kernel, common::GUEST_CMDLINE)
+            });
+            eprintln!("[{n} vCPUs: {}] {} snapshots", r.summary, r.snapshots.len());
+            assert!(r.powered_off(), "{n} vCPUs: no SYSTEM_OFF\n{}", r.console);
+            let out = &r.console;
+            assert!(
+                out.contains(&format!("smp: Brought up 1 node, {n} CPU")),
+                "{out}"
+            );
+            assert!(out.contains("webpc: test ok\n") && out.contains("webpc: test exit 0\n"));
+            assert_eq!(r.hvc, "webpc: hvc0 ok\n");
+            assert!(r.snapshots.len() >= 20, "{} snapshots", r.snapshots.len());
+        }
+    }
+}

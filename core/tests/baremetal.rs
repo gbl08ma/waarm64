@@ -18,16 +18,45 @@ const BUDGET: u64 = 50_000_000;
 
 /// Boots `image` and returns the SYSTEM_OFF code and the console output, or why it never got there.
 fn boot(image: &[u8], ncpus: u64) -> Result<(u64, String), String> {
-    boot_mode(image, ncpus, false, None, false)
+    boot_mode(image, ncpus, false, None, false, false)
 }
 
-/// [`boot`], round-robin or `parallel`, in the firmware configuration with `flash`.
+/// Steps (of all vCPUs) before the `k`th snapshot of a test that runs through
+/// them: close together at first (the tests are short, and set the machine up
+/// at their start), then further apart.
+fn slice(k: u32) -> u64 {
+    (300.0 * 1.3f64.powi(k.min(40) as i32)) as u64
+}
+
+/// Saves `vm` (no vCPU is in the core) and puts in its place a new VM
+/// restored from the state on a copy of its RAM (M8 phase C).
+fn through_snapshot(vm: &mut Vm, ram: &mut Vec<u128>, cfg: VmConfig) {
+    let n = vm.snapshot_size();
+    assert!(n != 0 && n != u64::MAX, "snapshot_size {n:#x}");
+    let state = vm.snapshot_save().unwrap();
+    let mut ram2 = ram.clone();
+    // SAFETY: ram2 is 16-byte aligned, RAM_SIZE bytes long, and outlives the Vm.
+    let mem = unsafe { Mem::new(ram2.as_mut_ptr() as *mut u8, RAM_SIZE as u64) };
+    let mut vm2 = Vm::new(mem, cfg);
+    vm2.snapshot_restore(&state).expect("a state just saved");
+    *vm = vm2;
+    *ram = ram2;
+    SNAPSHOTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Snapshots taken so far (by every test of the process).
+static SNAPSHOTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// [`boot`], round-robin or `parallel`, in the firmware configuration with
+/// `flash`; with `snapshots`, the VM is saved and replaced by one restored
+/// from its state every [`slice`] steps.
 fn boot_mode(
     image: &[u8],
     ncpus: u64,
     parallel: bool,
     input: Option<&[u8]>,
     flash: bool,
+    snapshots: bool,
 ) -> Result<(u64, String), String> {
     let mut ram = vec![0u128; RAM_SIZE / 16];
     // SAFETY: ram is 16-byte aligned, RAM_SIZE bytes long, and outlives the Vm.
@@ -49,8 +78,37 @@ fn boot_mode(
     }
     if parallel {
         let limit = std::time::Duration::from_secs(60);
-        let input = input.map(|i| ("ready\n", i));
-        let r = common::run_parallel(&vm, limit, BUDGET * ncpus, false, &|_| {}, input);
+        let mut input = input;
+        let (mut console, mut steps, mut k) = (Vec::new(), 0, 0);
+        let r = loop {
+            // The marker may have shown as the last stretch ended.
+            let seen = String::from_utf8_lossy(&console).contains("ready\n");
+            let marker = if seen { "" } else { "ready\n" };
+            let budget = if snapshots { slice(k) } else { BUDGET * ncpus };
+            k += 1;
+            let r = common::run_parallel(
+                &vm,
+                limit,
+                budget,
+                false,
+                &|_| {},
+                input.map(|i| (marker, i)),
+            );
+            console.extend(&r.console);
+            steps += r.steps;
+            if r.input_given {
+                input = None;
+            }
+            if r.kind == exit::BUDGET && snapshots && steps < BUDGET * ncpus {
+                through_snapshot(&mut vm, &mut ram, cfg);
+                continue;
+            }
+            break common::ParallelRun {
+                console,
+                steps,
+                ..r
+            };
+        };
         let out = String::from_utf8_lossy(&r.console).into_owned();
         let pcs: Vec<_> = vm
             .vcpus
@@ -68,14 +126,18 @@ fn boot_mode(
     let mut out = Vec::new();
     let mut left = BUDGET;
     let mut input = input;
+    let mut k = 0;
     while left > 0 {
-        let kind = vm.run(left);
+        let budget = if snapshots { left.min(slice(k)) } else { left };
+        k += 1;
+        let kind = vm.run(budget);
         left -= vm.exit.retired;
         while let Some(b) = vm.shared.console.tx.pop() {
             out.push(b);
         }
         let out = || String::from_utf8_lossy(&out).into_owned();
         match kind {
+            exit::BUDGET if left > 0 => through_snapshot(&mut vm, &mut ram, cfg),
             exit::BUDGET => break,
             exit::TX_FULL => {}
             // Waiting with no deadline: the input, then on.
@@ -136,7 +198,21 @@ fn smp_of(bin: &std::path::Path) -> u64 {
 
 #[test]
 fn baremetal() {
-    run_all(false, 1);
+    run_all(false, 1, false);
+}
+
+/// Every test again with the VM saved and restored into a new one every
+/// [`slice`] steps (M8 phase C): round-robin, where the guest can't tell, and
+/// in parallel (`WEBPC_PARALLEL_RUNS` times, default 2).
+#[test]
+fn baremetal_through_snapshots() {
+    run_all(false, 1, true);
+}
+
+#[test]
+fn baremetal_parallel_through_snapshots() {
+    let runs = std::env::var("WEBPC_PARALLEL_RUNS").map_or(2, |v| v.parse().unwrap());
+    run_all(true, runs, true);
 }
 
 /// Every test in parallel SMP (a thread per vCPU), `WEBPC_PARALLEL_RUNS`
@@ -144,10 +220,10 @@ fn baremetal() {
 #[test]
 fn baremetal_parallel() {
     let runs = std::env::var("WEBPC_PARALLEL_RUNS").map_or(5, |v| v.parse().unwrap());
-    run_all(true, runs);
+    run_all(true, runs, false);
 }
 
-fn run_all(parallel: bool, runs: usize) {
+fn run_all(parallel: bool, runs: usize, snapshots: bool) {
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../tests/baremetal");
     let mut bins: Vec<_> = std::fs::read_dir(dir)
         .unwrap()
@@ -166,11 +242,15 @@ fn run_all(parallel: bool, runs: usize) {
             parallel,
             input.as_deref(),
             flash_of(bin),
+            snapshots,
         ) {
             Ok((code, out)) if !out.ends_with(&format!("exit {code}\n")) => {
                 failed.push(format!("{name}: exit {code}, but the console says {out:?}"))
             }
-            Ok((0, _)) => eprintln!("pass {name}"),
+            Ok((0, _)) => eprintln!(
+                "pass {name} ({} snapshots so far)",
+                SNAPSHOTS.load(std::sync::atomic::Ordering::Relaxed)
+            ),
             Ok((code, out)) => failed.push(format!("{name}: check {code} failed; console: {out}")),
             Err(e) => failed.push(format!("{name}: {e}")),
         }

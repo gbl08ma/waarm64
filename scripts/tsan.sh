@@ -2,7 +2,9 @@
 # ThreadSanitizer on the native parallel SMP runner (M7): every bare-metal
 # test in parallel mode, then (with their images) Buildroot on 1, 2 and 4
 # vCPUs, a thread each, and the litmus image's tests and atomics stress on 4
-# (small: ~1 min). Any report fails the run (nothing is suppressed: guest
+# (small: ~1 min), and each of those again through snapshots (the VM saved between
+# runs of its threads and a new one restored: the test names match the same filters).
+# Any report fails the run (nothing is suppressed: guest
 # RAM is accessed with atomics too). Builds std with the sanitizer into target/tsan.
 set -euo pipefail
 cd "$(dirname "$0")/.."

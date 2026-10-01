@@ -136,7 +136,9 @@ for the loops that touch parallel SMP.
    Buildroot (1, 2 and 4 vCPUs), the device test and Alpine restored at several steps with the
    console and total steps of an unbroken run. Planted: a register not saved, a queue index not
    restored, an in-flight chain not posted again.
-2. **Core, parallel.** Save and restore in parallel mode (power states, pending CPU_ON, timer
+2. **Core, parallel: done** (the tests: [testing.md](../testing.md) "Snapshots"; the native
+   runner needs no pause of its own: a run of the vCPU threads ends, the VM is saved, the next
+   run is the restored VM's). The plan was: save and restore in parallel mode (power states, pending CPU_ON, timer
    lines, the published IRQ lines), the native thread runner's pause; the bare-metal SMP tests,
    litmus and the atomics stress continuing in a restored VM; ThreadSanitizer. Planted: the counter
    not rebased.

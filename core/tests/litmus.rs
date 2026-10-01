@@ -10,7 +10,7 @@
 
 mod common;
 
-fn litmus(parallel: bool, litmus: &str, stress: &str) -> common::Run {
+fn litmus(parallel: bool, litmus: &str, stress: &str, snapshots: &[u64]) -> common::Run {
     let kernel = common::image("linux/Image");
     let initrd = common::image("litmus/initramfs.cpio");
     let opt = |var, default: &str| std::env::var(var).unwrap_or(default.into());
@@ -23,6 +23,7 @@ fn litmus(parallel: bool, litmus: &str, stress: &str) -> common::Run {
         initrd: Some(&initrd),
         ncpus: 4,
         parallel,
+        snapshots,
         max_steps: 500_000_000_000,
         ..common::Boot::new(&kernel, &cmdline)
     });
@@ -45,7 +46,7 @@ fn litmus(parallel: bool, litmus: &str, stress: &str) -> common::Run {
 #[test]
 #[ignore = "needs target/images/litmus (images/build.sh linux litmus) and --release"]
 fn litmus_round_robin() {
-    let r = litmus(false, "-s,100,-r,1", "-n,20000");
+    let r = litmus(false, "-s,100,-r,1", "-n,20000", &[]);
     if std::env::var_os("WEBPC_LITMUS").is_none() && std::env::var_os("WEBPC_STRESS").is_none() {
         assert_eq!(r.steps, common::steps("litmus-4cpu"));
     }
@@ -54,5 +55,31 @@ fn litmus_round_robin() {
 #[test]
 #[ignore = "needs target/images/litmus (images/build.sh linux litmus) and --release"]
 fn litmus_parallel() {
-    litmus(true, "-s,1000,-r,10", "-n,100000");
+    litmus(true, "-s,1000,-r,10", "-n,100000", &[]);
+}
+
+/// M8 phase C: the litmus tests and the stress go on in a VM restored from a
+/// snapshot, 12 times in a run. Round-robin, the run takes the unbroken one's
+/// steps; in parallel (a thread per vCPU), the tests' verdicts and the
+/// stress's exact totals hold across the saves (the exclusive monitors, the
+/// vCPUs' power and WFI states, and the clock are in the state).
+#[test]
+#[ignore = "needs target/images/litmus (images/build.sh linux litmus) and --release"]
+fn litmus_round_robin_through_snapshots() {
+    let total = common::steps("litmus-4cpu");
+    let at: Vec<u64> = (1..=12).map(|k| k * total / 13 + k).collect();
+    let r = litmus(false, "-s,100,-r,1", "-n,20000", &at);
+    assert_eq!(r.snapshots.len(), at.len());
+    if std::env::var_os("WEBPC_LITMUS").is_none() && std::env::var_os("WEBPC_STRESS").is_none() {
+        assert_eq!(r.steps, total);
+    }
+}
+
+#[test]
+#[ignore = "needs target/images/litmus (images/build.sh linux litmus) and --release"]
+fn litmus_parallel_through_snapshots() {
+    let at: Vec<u64> = (1..=12).map(|k| k * 60_000_000).collect();
+    let r = litmus(true, "-s,100,-r,1", "-n,20000", &at);
+    eprintln!("{} snapshots in {} steps", r.snapshots.len(), r.steps);
+    assert!(r.snapshots.len() >= 6, "{} snapshots", r.snapshots.len());
 }

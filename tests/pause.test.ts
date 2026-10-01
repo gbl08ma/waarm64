@@ -155,13 +155,14 @@ test('parallel: a pause while every vCPU is idle, then input wakes the guest (4 
     const vm = await bootVm(WASM, parallel(4, true));
     let out = '';
     const t0 = performance.now();
-    const until = async (what: RegExp, ms = 20_000) => {
+    const until = async (what: RegExp, ms = 30_000) => {
+      // By the clock: `runAsync` returns at once while the console has output.
+      const end = Math.min(performance.now() + ms, t0 + 90_000);
       while (!what.test(out)) {
-        assert.ok(performance.now() - t0 < 90_000 && ms > 0, `waiting for ${what}: ${out}`);
+        assert.ok(performance.now() < end, `waiting for ${what}: ${out}`);
         const r = await vm.runAsync(100_000_000);
         out += vm.drain();
         assert.ok(r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL, `the guest ended: ${out}`);
-        ms -= 50;
       }
     };
     try {

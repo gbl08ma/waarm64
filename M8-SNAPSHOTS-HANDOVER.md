@@ -13,8 +13,8 @@ reviews, merges) stay with the orchestrating session.
 |---|---|
 | 0. Plan revisited after phase B, ABI 30 design note | done |
 | 1. Core, round-robin | done (ABI 30: `core/src/snapshot.rs`, `core/src/vm/state.rs`, each device's `save`/`restore`; native round trips with exact steps) |
-| 2. Core, parallel | next (orchestrator): the state already saves both run modes in one form; left are the native thread runner's snapshots, the bare-metal SMP tests, litmus and stress through a restore, ThreadSanitizer, the planted bug |
-| 3. Host, round-robin | |
+| 2. Core, parallel | done (bare-metal, Buildroot, litmus and stress through snapshots in parallel and round-robin, under TSan too) |
+| 3. Host, round-robin | next: `web/vm.ts` `snapshot()` and `bootVm`'s `restore` (RAM in first, then `vm_snapshot_restore`, then serve the doorbell once), the LZ as the file's codec 2 (a core instance's `lz_*`), `Backend.save`/`restore` for the deterministic rng; round trips of Buildroot and Alpine under the JIT in Node and Chromium with exact steps |
 | 4. The file and the RAM codec | done: the container, and the codec by measurement (the core's LZ, one worker); wiring the LZ into the writer as codec 2 is loop 3's |
 | 5. Host, parallel: `pause`/`resume` | the pause is done; the round trips after 2 and 3 |
 | 6. The disk in the file | |

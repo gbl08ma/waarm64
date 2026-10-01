@@ -439,6 +439,11 @@ impl T {
 /// moves the timer on. The device has its driver up and two chains offered:
 /// the backend answered head 1 and holds head 2.
 fn machine() -> T {
+    machine_of(VmConfig::default())
+}
+
+/// [`machine`] under `cfg` (a run mode).
+fn machine_of(cfg: VmConfig) -> T {
     let prog = [
         0x9100_04a5, // add x5, x5, #1
         0x17ff_ffff, // b .-4
@@ -453,7 +458,7 @@ fn machine() -> T {
         0xd518_cc20,    // msr icc_eoir1_el1, x0
         0xd69f_03e0,    // eret
     ];
-    let mut t = T::with_devices(&prog, VmConfig::default(), &[DEV]);
+    let mut t = T::with_devices(&prog, cfg, &[DEV]);
     for (k, w) in handler.iter().enumerate() {
         let pa = VBAR + 0x280 + 4 * k as u64;
         t.vm.mem.write(pa, 4, *w as u64).unwrap();
@@ -760,4 +765,125 @@ fn a_realtime_clock_continues_and_the_rtc_shows_the_hosts_time() {
     // A realtime state restores under either run mode (one saved form).
     let par = VmConfig { smp: 1, ..later };
     assert_eq!(a.restore(&state, par, &[]).1, Ok(()));
+}
+
+/// Parallel mode, realtime, on `ncpus`.
+fn par(ncpus: u64) -> VmConfig {
+    VmConfig {
+        deterministic: 0,
+        ncpus,
+        smp: 1,
+        ..VmConfig::default()
+    }
+}
+
+#[test]
+fn a_parallel_vm_is_saved_with_its_power_states_and_cpu_on_requests() {
+    // vCPU 0 asks for vCPU 1 (CPU_ON), then waits; vCPU 1's thread hasn't taken the request.
+    const ENTRY: u64 = RAM_BASE + 0x100;
+    let mut a = T::new(&[HVC, WFI, B_SELF], par(2));
+    for k in 0..4 {
+        a.vm.mem.write(ENTRY + 4 * k, 4, NOP as u64).unwrap();
+    }
+    let c = a.cpu();
+    (c.x[0], c.x[1], c.x[2], c.x[3]) = (0xc400_0003, 1, ENTRY, 0x77);
+    // SAFETY: this thread is the only one, and runs one vCPU at a time.
+    assert_eq!(unsafe { a.vm.run_cpu(0, 10) }, exit::IDLE);
+    assert_eq!(
+        (a.cpu().x[0], a.cpu().pc),
+        (0, RAM_BASE + 4),
+        "CPU_ON, then the WFI"
+    );
+    let state = a.save();
+    // In parallel: vCPU 1 is still to start, and does when its thread runs; vCPU 0 waits on.
+    let (mut b, r) = a.restore(&state, par(2), &[]);
+    assert_eq!(r, Ok(()));
+    assert_eq!(b.vm.power(1), Power::On, "on, or starting");
+    // SAFETY: as above.
+    unsafe {
+        assert_eq!(b.vm.run_cpu(0, 10), exit::IDLE);
+        assert_eq!(b.vm.run_cpu(1, 2), exit::BUDGET);
+    }
+    let c1 = &b.vm.vcpus[1].cpu;
+    assert_eq!((c1.pc, c1.x[0]), (ENTRY + 8, 0x77));
+    assert_eq!(b.cpu().pc, RAM_BASE + 4, "on its WFI");
+    assert!(b.save() != state, "vCPU 1 is on now");
+    // Round-robin (the same state: realtime saves one form): started within the restore.
+    let rr = VmConfig { smp: 0, ..par(2) };
+    let (mut c, r) = a.restore(&state, rr, &[]);
+    assert_eq!(r, Ok(()));
+    assert_eq!(c.vm.power(1), Power::On);
+    assert_eq!(c.vm.run(2), exit::BUDGET);
+    let c1 = &c.vm.vcpus[1].cpu;
+    assert_eq!(
+        (c1.pc, c1.x[0], c.vm.vcpus[0].cpu.pc),
+        (ENTRY + 8, 0x77, RAM_BASE + 4)
+    );
+    // And back: a round-robin state with vCPU 0 in WFI and vCPU 1 running, in parallel.
+    let state = c.save();
+    let (mut d, r) = c.restore(&state, par(2), &[]);
+    assert_eq!(r, Ok(()));
+    // SAFETY: as above.
+    unsafe {
+        assert_eq!(d.vm.run_cpu(0, 10), exit::IDLE);
+        assert_eq!(d.vm.run_cpu(1, 1), exit::BUDGET);
+    }
+    assert_eq!(
+        (d.cpu().pc, d.vm.vcpus[1].cpu.pc),
+        (RAM_BASE + 4, ENTRY + 12)
+    );
+    // A vCPU that is off stays off.
+    let mut a = T::new(&[B_SELF], par(2));
+    let state = a.save();
+    let (b, _) = a.restore(&state, par(2), &[]);
+    assert_eq!((b.vm.power(0), b.vm.power(1)), (Power::On, Power::Off));
+    // SAFETY: as above.
+    assert_eq!(unsafe { b.vm.run_cpu(1, 10) }, exit::IDLE);
+}
+
+#[test]
+fn a_restored_parallel_vcpu_has_its_timer_and_interrupt_lines() {
+    // The timer fired (IRQs masked): its line is high in the GIC when the VM is saved.
+    let mut a = T::new(&[B_SELF], par(1));
+    a.vtimer_at(0);
+    // SAFETY: this thread is the only one, and runs vCPU 0 only.
+    assert_eq!(unsafe { a.vm.run_cpu(0, 10) }, exit::BUDGET);
+    assert!(a.vm.plat.get_mut().gic.level(0, IRQ_VTIMER));
+    let state = a.save();
+    let (mut b, r) = a.restore(&state, par(1), &[]);
+    assert_eq!(r, Ok(()));
+    assert!(b.vm.plat.get_mut().gic.level(0, IRQ_VTIMER));
+    // The guest disables the timer: the restored vCPU knows the line was high, and lowers it.
+    b.cpu().cntv_ctl_el0 = 0;
+    // SAFETY: as above.
+    assert_eq!(unsafe { b.vm.run_cpu(0, 10) }, exit::BUDGET);
+    assert!(
+        !b.vm.plat.get_mut().gic.level(0, IRQ_VTIMER),
+        "the line is stuck high"
+    );
+
+    // A device's interrupt raised by the save itself (the completion it took):
+    // the restored vCPU's published IRQ line has it, though no timer line changes.
+    let mut a = machine_of(par(1));
+    // SAFETY: as above.
+    unsafe { a.vm.run_cpu(0, 3_000) };
+    a.cpu().cntv_ctl_el0 = 0;
+    // SAFETY: as above.
+    unsafe { a.vm.run_cpu(0, 100) };
+    let taken = a.vm.shared.cpus[0].counters.irqs.load(Ordering::Relaxed);
+    answer(&a);
+    let state = a.save();
+    let (b, r) = a.restore(&state, par(1), &[DEV]);
+    assert_eq!(r, Ok(()));
+    // SAFETY: as above.
+    unsafe {
+        assert_eq!(a.vm.run_cpu(0, 100), exit::BUDGET);
+        assert_eq!(b.vm.run_cpu(0, 100), exit::BUDGET);
+    }
+    let irqs = |t: &T| t.vm.shared.cpus[0].counters.irqs.load(Ordering::Relaxed);
+    assert_eq!(
+        (irqs(&a), irqs(&b)),
+        (taken + 1, 1),
+        "the device's interrupt, in both"
+    );
 }

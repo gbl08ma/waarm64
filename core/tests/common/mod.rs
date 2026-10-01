@@ -725,8 +725,8 @@ pub fn boot(b: &Boot) -> Run {
         "input at a step: round-robin only"
     );
     assert!(
-        snapshots.is_empty() || !(parallel || realtime),
-        "snapshots at a step: deterministic only"
+        snapshots.is_empty() || parallel || !realtime,
+        "snapshots at a step: deterministic, or parallel (about there)"
     );
     let mut snapshots = snapshots.iter().copied().peekable();
     let mut restored = Vec::new();
@@ -790,18 +790,36 @@ pub fn boot(b: &Boot) -> Run {
     let (mut out, mut steps) = (Vec::new(), 0);
     let x0;
     let kind = if parallel {
-        let b = Mutex::new(backends);
-        let r = run_parallel(
-            &vm,
-            PARALLEL_LIMIT,
-            max_steps,
-            echo,
-            &|vm| b.lock().unwrap().poll(vm),
-            None,
-        );
-        backends = b.into_inner().unwrap();
-        (out, steps, x0) = (r.console, r.steps, r.exit.x[0]);
-        r.kind
+        // A run for each stretch between snapshots: when it ends, every vCPU's
+        // thread is out of the core, which is when a parallel VM is saved.
+        loop {
+            let next = snapshots.peek().map_or(max_steps, |&at| at.min(max_steps));
+            let b = Mutex::new(backends);
+            let r = run_parallel(
+                &vm,
+                PARALLEL_LIMIT,
+                next.saturating_sub(steps),
+                echo,
+                &|vm| b.lock().unwrap().poll(vm),
+                None,
+            );
+            backends = b.into_inner().unwrap();
+            out.extend(r.console);
+            steps += r.steps;
+            if r.kind == exit::BUDGET && snapshots.next().is_some() {
+                // The stop that ended the run isn't the new VM's.
+                restored.push(through_snapshot(
+                    &mut vm,
+                    &mut ram,
+                    cfg,
+                    &entries,
+                    &mut backends,
+                ));
+                continue;
+            }
+            x0 = r.exit.x[0];
+            break r.kind;
+        }
     } else {
         let mut queued: VecDeque<u8> = VecDeque::new();
         let mut input = input;
@@ -859,29 +877,13 @@ pub fn boot(b: &Boot) -> Run {
                 eprint!("{}", String::from_utf8_lossy(&out[start..]));
             }
             if kind == exit::BUDGET && snapshots.next_if(|&at| steps >= at).is_some() {
-                // Save: once the backends have nothing left to take.
-                let size = loop {
-                    match vm.snapshot_size() {
-                        0 => backends.poll(&vm),
-                        u64::MAX => panic!("held chains don't fit a request ring"),
-                        n => break n,
-                    }
-                };
-                let state = vm.snapshot_save().expect("quiet devices");
-                assert_eq!(state.len() as u64, size);
-                // Restore: a new VM on a copy of RAM, and backends that hold nothing
-                // (what has state keeps it: the rng's position, 9p's tree, queued items).
-                let mut ram2 = ram.clone();
-                // SAFETY: as for `ram` above.
-                let mem = unsafe { Mem::new(ram2.as_mut_ptr() as *mut u8, ram_size) };
-                let mut vm2 = Vm::with_devices(mem, cfg, &entries);
-                vm2.snapshot_restore(&state).expect("a state just saved");
-                vm = vm2;
-                ram = ram2;
-                let held = backends.restored();
-                backends.poll(&vm);
-                assert_eq!(backends.holds(), held, "every held chain posted again");
-                restored.push((state.len(), held));
+                restored.push(through_snapshot(
+                    &mut vm,
+                    &mut ram,
+                    cfg,
+                    &entries,
+                    &mut backends,
+                ));
                 cut = budget < whole;
             }
             match kind {
@@ -927,6 +929,42 @@ pub fn boot(b: &Boot) -> Run {
     }
 }
 
+/// Saves `vm` (no vCPU is in the core), drops it, and puts in its place a new
+/// VM restored from the state on a copy of its RAM, with backends that hold
+/// nothing (what has state keeps it: the rng's position, 9p's tree, queued
+/// items). Returns the state's size and the chains the backends held, which
+/// the new VM posted again.
+fn through_snapshot(
+    vm: &mut Vm,
+    ram: &mut Vec<u128>,
+    cfg: VmConfig,
+    entries: &[DeviceEntry],
+    backends: &mut Backends,
+) -> (usize, usize) {
+    // Once the backends have nothing left to take.
+    let size = loop {
+        match vm.snapshot_size() {
+            0 => backends.poll(vm),
+            u64::MAX => panic!("held chains can't be posted again"),
+            n => break n,
+        }
+    };
+    let state = vm.snapshot_save().expect("quiet devices");
+    assert_eq!(state.len() as u64, size);
+    let mut ram2 = ram.clone();
+    // SAFETY: ram2 is 16-byte aligned, as long as `ram`, and outlives the Vm
+    // (the caller keeps both together).
+    let mem = unsafe { Mem::new(ram2.as_mut_ptr() as *mut u8, cfg.ram_size) };
+    let mut vm2 = Vm::with_devices(mem, cfg, entries);
+    vm2.snapshot_restore(&state).expect("a state just saved");
+    *vm = vm2;
+    *ram = ram2;
+    let held = backends.restored();
+    backends.poll(vm);
+    assert_eq!(backends.holds(), held, "every held chain posted again");
+    (state.len(), held)
+}
+
 /// Moves queued console input into the PL011's RX ring as far as it has
 /// room, and signals RX if it moved any (`web/vm.ts` `send`'s pump).
 fn pump(vm: &Vm, queued: &mut VecDeque<u8>) {
@@ -953,6 +991,8 @@ pub struct ParallelRun {
     pub exit: ExitInfo,
     pub steps: u64,
     pub console: Vec<u8>,
+    /// Whether `input` went to the console (its marker showed while the vCPUs ran).
+    pub input_given: bool,
 }
 
 /// Runs a parallel VM (`VmConfig.smp` = 1) with a thread per vCPU, as the
@@ -970,6 +1010,7 @@ pub fn run_parallel(
     input: Option<(&str, &[u8])>,
 ) -> ParallelRun {
     let mut input = input;
+    let given_marker = input.is_some();
     let mut queued = VecDeque::new();
     let n = vm.vcpus.len();
     let end: Mutex<Option<(u32, ExitInfo)>> = Mutex::new(None);
@@ -990,13 +1031,19 @@ pub fn run_parallel(
         for c in 0..n {
             let finish = &finish;
             let done = &done;
+            let steps = &steps;
             s.spawn(move || {
                 while !done.load(Ordering::SeqCst) {
                     // SAFETY: this thread is the only one that runs vCPU c.
-                    let kind = unsafe { vm.run_cpu(c, 10_000_000) };
+                    let kind = unsafe { vm.run_cpu(c, max_steps.clamp(1, 10_000_000)) };
                     // SAFETY: this thread's vCPU's exit, written by that call.
                     let e = unsafe { *vm.exit_of(c) };
                     match kind {
+                        // A short run (the stretch before a snapshot) ends here,
+                        // not at the console loop's next millisecond.
+                        exit::BUDGET if steps() >= max_steps => {
+                            finish(exit::BUDGET, ExitInfo::default())
+                        }
                         exit::BUDGET => {}
                         exit::IDLE => {
                             let wake = &vm.shared.cpus[c].wake;
@@ -1040,11 +1087,13 @@ pub fn run_parallel(
         console.push(b);
     }
     let (kind, exit) = end.into_inner().unwrap().expect("an end");
+    let given = given_marker && input.is_none() && queued.is_empty();
     ParallelRun {
         kind,
         exit,
         steps: steps(),
         console,
+        input_given: given,
     }
 }
 
