@@ -70,6 +70,9 @@ docs/plans/uefi.md ("Graphics in the firmware"), docs/testing.md, and `web/displ
    written to the disk).
 4. **The tests get a separate kernel variant**, `Image-gpu` (as `images/crypto` does it), and a new
    test guest with its own row in `tests/steps.txt`; the existing step counts don't move.
+5. **Real-GPU numbers for G0 come from Chromium on the Mac host** (outside the VM: headless
+   through Playwright with a temporary profile, as everywhere; `ssh macmini.lan`). The x86_64
+   desktop stays off limits. Software adapters in the dev VM remain the correctness and CI path.
 
 ## Goal
 
@@ -232,8 +235,11 @@ how to present frames and what WebGPU in Chromium gives the 3D steps.
    - the 2D presentation paths above, per frame, full frame and a 10% damage rectangle, at the
      same sizes: medians and IQR from `bench/run.ts`, JSON committed, a section in a
      `bench/gpu/REPORT.md` (new) or `bench/boot/REPORT.md`.
-   Software-adapter numbers are for correctness and relative costs only. **How real-GPU numbers
-   are taken is the user's decision** (below); propose it in the loop's report.
+   Software-adapter numbers are for correctness and relative costs only. **Real-GPU numbers come
+   from Chromium on the Mac host** (the user's answer 5): the same bench page, headless through
+   Playwright with a temporary profile, served from the dev VM (or a checkout on the host) over
+   `ssh`; record the GPU, macOS and Chromium versions with the JSON, and say in the report what
+   setting it up on the host took (Node, Playwright's Chromium) so later steps can repeat it.
 2. **The core: config changes.** The abi.md design note, then the config-space update API, the
    config-change interrupt, ConfigGeneration, write-1-to-clear for `events_clear`, snapshot state
    if it changes. Unit tests on hand-built rings (the event raised, read, cleared; a generation
@@ -317,9 +323,8 @@ of its own (`org.webpc.agent.0` or similar), a tiny line protocol. Delivery to a
 
 ## Check with the user first
 - Any dependency (none is expected: the EDID, the backend and the presentation are ours).
-- **Real-GPU measurements** (G0): the dev VM has no GPU. Running Chromium on the Mac host
-  (outside the VM) is the user's machine and needs their OK; the x86_64 desktop is off limits.
-  Propose a way in loop 1's report; until then, software adapters only.
+- Anything on the Mac host beyond G0's measurements (answer 5 covers headless Chromium runs of
+  the bench page there, and what installing them needs); the x86_64 desktop is off limits.
 - Changes to the tests' guests or their step counts (`Image-gpu` and the gpu guest are new, not
   changes); changes to the Debian image's bytes (never).
 - Anything the user sees change on the page beyond this brief (the screen's default size policy,
