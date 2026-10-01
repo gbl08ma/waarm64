@@ -39,8 +39,31 @@ try {
   const framebuffer = test ? { width: 640, height: 480 } : undefined;
   const opts = { ramSize: distro ? 1 << 30 : 256 << 20, kernel, initrd, cmdline: img.cmdline, devices, realtime: params.has('realtime'), framebuffer, jit: Number(params.get('jit') ?? 0) as 0 | 1 | 2 | 3, ncpus: Number(params.get('ncpus') ?? 1), parallel: params.has('parallel'), idleLimitMs: params.has('parallel') ? 60_000 : undefined };
   const input = params.has('input') ? { step: CONSOLE_INPUT_STEP, data: CONSOLE_INPUT } : undefined;
-  const r = await runToPowerOff(wasm, opts, input ? 200e6 : 1e12, (vm) => vm.framebuffer && self.postMessage({ memory: vm.memory, framebuffer: vm.framebuffer }), input);
-  self.postMessage({ kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc });
+  // `?pauses=<n>`: pause and resume the VM every ~30 ms while it boots (web/vm.ts `pause`), checking what
+  // a pause promises; `pause` in the result counts them and their latency.
+  const pauser = { n: 0, ms: [] as number[], bad: '', done: false };
+  const pauses = Number(params.get('pauses') ?? 0);
+  const r = await runToPowerOff(wasm, opts, input ? 200e6 : 1e12, (vm) => {
+    if (vm.framebuffer) self.postMessage({ memory: vm.memory, framebuffer: vm.framebuffer });
+    if (!pauses) return;
+    void (async () => {
+      while (!pauser.done) {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        const t = performance.now();
+        if (!(await vm.pause())) break;
+        pauser.ms.push(performance.now() - t);
+        const before = vm.stats().steps;
+        const p = vm.paused();
+        if (!p.held || p.bell[0] !== p.bell[1] || (p.signal & 1)) pauser.bad ||= `bad state ${JSON.stringify(p)}`;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        if (vm.stats().steps !== before) pauser.bad ||= 'a vCPU ran while paused';
+        vm.resume();
+        pauser.n++;
+      }
+    })().catch((e) => { pauser.bad ||= String(e); });
+  }, input);
+  pauser.done = true;
+  self.postMessage({ pause: pauser, kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc });
 } catch (e) {
   self.postMessage({ error: String(e) });
 }

@@ -61,7 +61,7 @@ async function bootPage(query: string, minutes: number) {
   const page = await context.newPage();
   await page.goto(`${base}/tests/browser/boot.html?${query}`);
   const h = await page.waitForFunction(() => (window as never)['result'], null, { timeout: minutes * 60_000, polling: 1000 });
-  const r = (await h.jsonValue()) as { error?: string; kind: number; x0: string; steps: number; ms: number; console: string; hvc: string; pixels?: Record<string, number[]> };
+  const r = (await h.jsonValue()) as { error?: string; kind: number; x0: string; steps: number; ms: number; console: string; hvc: string; pause?: unknown; pixels?: Record<string, number[]> };
   await page.close();
   return { ...r, console: r.console?.replaceAll('\r\n', '\n') };
 }
@@ -113,6 +113,22 @@ test('Linux boots on 4 vCPUs in parallel (a worker each), JIT', { skip: !existsS
     const r = await bootPage('parallel&ncpus=4&jit=1', 10);
     assert.equal(r.error, undefined, `run ${i}`);
     console.log(`# chromium parallel boot ${i} (4 vCPUs, JIT): ${(r.ms / 1000).toFixed(1)} s`);
+    assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\nwebpc: test exit 0\n/);
+  }
+});
+
+// Pause and resume (web/vm.ts `pause`): the same boot paused every ~30 ms by the boot worker (`?pauses`);
+// the device worker serves the doorbell there. It must still reach its end, and nothing runs while paused.
+test('Linux boots on 4 vCPUs in parallel through 10+ pauses and resumes, JIT', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
+  for (let i = 1; i <= RUNS; i++) {
+    const r = await bootPage('parallel&ncpus=4&jit=1&pauses=1', 10);
+    assert.equal(r.error, undefined, `run ${i}`);
+    const p = r.pause as { n: number; ms: number[]; bad: string };
+    assert.equal(p.bad, '');
+    assert.ok(p.n >= 10, `${p.n} pauses in ${r.ms} ms`);
+    const ms = [...p.ms].sort((a, b) => a - b);
+    console.log(`# chromium pauses ${i}: ${p.n} in a ${(r.ms / 1000).toFixed(1)} s boot, latency median ${ms[ms.length >> 1].toFixed(1)} ms, worst ${ms.at(-1)!.toFixed(1)} ms`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
     assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\nwebpc: test exit 0\n/);
   }

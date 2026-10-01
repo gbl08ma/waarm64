@@ -423,6 +423,9 @@ const S_DEVICES = 256;
 const S_BELL = 2048;
 /** Parallel mode: the coordinator's word (vCPU workers bump it on TX_FULL). */
 const S_CTL = 2056;
+/** Parallel mode's pause word (a generation: odd while a pause is requested or held) and, from `S_PARKED`, each vCPU worker's word (the generation it is parked in). */
+const S_PAUSE = 2060;
+const S_PARKED = 3072;
 const S_CMDLINE = 4096;
 
 export type Vm = Awaited<ReturnType<typeof bootVm>>;
@@ -562,7 +565,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
-  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, raise, stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })) }) : undefined;
+  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })) }) : undefined;
   const RING_HALF = RING / 2;
   const txUsed = () => {
     const u32 = new Uint32Array(memory.buffer);
@@ -678,6 +681,26 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /** What the guest wrote to its virtio consoles so far (all of it once `flush` resolves). */
     hvc: () => devices.output(),
     flush: () => devices.flush(),
+    /**
+     * Stops every vCPU at its next chunk boundary and waits until the backends are done with every
+     * request they don't hold (the ones they hold, a receive buffer, wait for the guest to run).
+     * Resolves true once nothing runs guest code and nothing writes guest RAM (until `resume`);
+     * false if the machine ended meanwhile (an exit that ends the run, a closed VM). The workers keep
+     * their core instances and code caches. Twice is the same pause. Round-robin: between `run` calls
+     * the vCPUs are out already, so this only settles the devices.
+     */
+    pause: async (): Promise<boolean> => {
+      if (par) return par.pause();
+      await devices.quiesce();
+      return true;
+    },
+    /** Lets a paused VM run on (nothing without a pause). */
+    resume: () => par?.resume(),
+    /** What a pause leaves: the doorbell's rung and served words, the signal word and whether the vCPUs are held. */
+    paused: () => {
+      const i32 = new Int32Array(memory.buffer);
+      return { bell: [i32[(scratch + S_BELL) / 4], i32[(scratch + S_BELL) / 4 + 1]], signal: i32[signal / 4], held: par?.held() ?? false };
+    },
     /** Stops the vCPUs and releases the backends; resolves once their files are closed. */
     close: () => {
       par?.close();
@@ -721,7 +744,7 @@ const SIGNAL_RX = 2;
  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
  * docs/abi.md).
  */
-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; raise: (bits: number) => void; stall: Stall[] }) {
+function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[] }) {
   type Handle = { post(m: VcpuJob | VcpuClock): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
@@ -730,6 +753,15 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
   let last = { steps: -1, at: performance.now() };
   const live = newLiveness(c.ncpus);
   const ctl = new Int32Array(c.memory.buffer, c.ctl, 1);
+  if (c.ncpus > 128) throw new Error('too many vCPUs for the parked words');
+  // Pause (docs/platform.md "Pausing"): `pword` is odd while a pause is requested or held; each worker
+  // writes the odd value it parked in to its own `parked` word.
+  const pword = new Int32Array(c.memory.buffer, c.pause, 1);
+  const parkedWords = new Int32Array(c.memory.buffer, c.parked, c.ncpus);
+  let state: 'running' | 'pausing' | 'paused' = 'running';
+  let wantResume = false;
+  let closed = false;
+  let pausing: Promise<boolean> | undefined;
   const bump = () => {
     Atomics.add(ctl, 0, 1);
     Atomics.notify(ctl, 0);
@@ -744,7 +776,48 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     if (m.type === 'error') error ??= new Error(`vCPU ${m.cpu}: ${m.message}${panicNote(m.message, c.instance.exports, c.memory)}`);
     else if (m.kind !== Exit.STOP) end ??= { kind: m.kind, value: m.value, x: m.x };
     if (stopped === 1) c.raise(STOP);
+    release();
     bump();
+  };
+  /** Makes the pause word even (the workers leave a pause) and wakes them. */
+  const release = () => {
+    if (Atomics.load(pword, 0) & 1) Atomics.add(pword, 0, 1);
+    Atomics.notify(pword, 0);
+  };
+  const doPause = async (): Promise<boolean> => {
+    workers ??= start();
+    await Promise.all(workers);
+    const gen = Atomics.add(pword, 0, 1) + 1;
+    Atomics.notify(pword, 0);
+    c.raise(STOP);
+    // Each worker parks and bumps `ctl`; nothing here blocks (the backends may be on this thread).
+    for (;;) {
+      if (error) throw error;
+      if (stopped > 0 || closed) return false;
+      const seen = Atomics.load(ctl, 0);
+      if (parkedWords.every((_, i) => Atomics.load(parkedWords, i) === gen)) break;
+      const w = Atomics.waitAsync(ctl, 0, seen, 100);
+      if (w.async) await w.value;
+    }
+    // Every worker waits on the pause word, so none can miss STOP going away.
+    c.clearStop();
+    await c.quiesce();
+    if (error) throw error;
+    if (stopped > 0 || closed) return false;
+    state = 'paused';
+    if (wantResume) resume();
+    return true;
+  };
+  const resume = () => {
+    if (state === 'pausing') {
+      wantResume = true;
+      return;
+    }
+    if (state !== 'paused') return;
+    state = 'running';
+    last = { steps: last.steps, at: performance.now() };
+    Atomics.add(pword, 0, 1);
+    Atomics.notify(pword, 0);
   };
   const spawn = async (): Promise<Handle> => {
     const url = new URL('./vcpu-worker.ts', import.meta.url);
@@ -764,7 +837,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
   };
   const start = () => Array.from({ length: c.ncpus }, async (_, cpu) => {
     const h = await spawn();
-    h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, stall: c.stall.filter((x) => x.cpu === cpu), live });
+    h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, stall: c.stall.filter((x) => x.cpu === cpu), live });
     return h;
   });
   return {
@@ -794,12 +867,32 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     liveness: (): VcpuLiveness[] => readLiveness(live),
     /** When `steps` (all vCPUs) last changed. */
     progress(steps: number) {
-      if (steps !== last.steps) last = { steps, at: performance.now() };
+      // Time paused isn't time without progress.
+      if (steps !== last.steps || state !== 'running') last = { steps, at: performance.now() };
       return last.at;
     },
+    /** See `Vm.pause`. */
+    pause(): Promise<boolean> {
+      if (error) return Promise.reject(error);
+      if (closed || stopped > 0) return Promise.resolve(false);
+      wantResume = false;
+      if (state === 'paused') return Promise.resolve(true);
+      if (state === 'pausing') return pausing!;
+      state = 'pausing';
+      pausing = doPause().finally(() => {
+        if (state === 'pausing') state = 'running'; // it failed or the machine ended
+        pausing = undefined;
+      });
+      return pausing;
+    },
+    resume,
+    held: () => state === 'paused',
     pcs: () => Array.from({ length: c.ncpus }, (_, i) => `0x${new BigUint64Array(c.memory.buffer, (unsigned(c.instance.exports).vm_cpu as (vm: number, i: number) => number)(c.vm, i) + 256, 1)[0].toString(16)}`),
     close() {
+      closed = true;
       c.raise(STOP);
+      release();
+      bump();
       for (const w of workers ?? []) void w.then((h) => h.terminate());
     },
   };
@@ -843,6 +936,17 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
   }
 }
 
+/** `ring` with a wait that yields instead of blocking: resolves once the backends took everything up to this ring. */
+async function ringAsync(bell: Int32Array) {
+  const n = Atomics.add(bell, 0, 1) + 1;
+  Atomics.notify(bell, 0);
+  for (let a; ((a = Atomics.load(bell, 1)) - n | 0) < 0;) {
+    if (a === -1) throw new Error('device backends failed (see their error)');
+    const w = Atomics.waitAsync(bell, 1, a, 100);
+    if (w.async) await w.value;
+  }
+}
+
 /**
  * The backends: in a device worker when this thread can block on it (a
  * worker), inline otherwise. `kick` hands them what a DEVICE exit posted and
@@ -861,6 +965,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       kick: (_wait: boolean) => { throw new Error('parallel: the vCPU workers ring the doorbell'); },
       inFlight: () => false,
       settle: async () => { if (failed) throw failed; },
+      quiesce: () => ringAsync(new Int32Array(init.memory.buffer, bellAddr, 2)),
       output: () => text, flush: async () => { if (failed) throw failed; }, close: async () => d.close(),
     };
   }
@@ -875,6 +980,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       kick: (_wait: boolean) => { pending = d.poll(); },
       inFlight: () => pending !== undefined,
       settle: async () => { await pending; pending = undefined; },
+      quiesce: async () => { await pending; pending = d.poll(); await pending; pending = undefined; },
       output: () => text, flush: async () => {}, close: async () => d.close(),
     };
   }
@@ -898,6 +1004,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   return {
     inFlight: () => false,
     settle: async () => {},
+    quiesce: () => ringAsync(bell),
     kick: (wait: boolean) => ring(bell, wait), // completions come back through SIGNAL_DEVICE
     output: () => text,
     flush: () => new Promise<void>((resolve) => {

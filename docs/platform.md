@@ -122,6 +122,36 @@ indexes of their instance).
   vCPU, parallel mode booted Alpine as fast as round-robin realtime in Node (10.28 vs 10.21 s),
   though the boot runs 584K ISBs and 209K ERETs.
 
+## Pausing a VM (`web/vm.ts` `pause`, `resume`)
+
+A snapshot needs every vCPU out of the core and the backends done with every request they
+don't hold. `pause()` gets there without ending anything: the vCPU workers keep their core
+instances, function tables and JIT code caches. It resolves true once nothing runs guest code and
+nothing writes guest RAM (until `resume()`), false if the machine ended meanwhile (an exit that
+ends the run, a closed VM); `resume()` without a pause does nothing, and a second `pause()` is the
+same pause.
+- **Parallel:** the coordinator makes the pause word (scratch page, `S_PAUSE`) odd, a generation,
+  and raises STOP (which also bumps the wake words, so idle and off vCPUs wake). A worker that
+  gets `STOP` with the word odd writes that generation to its own parked word, bumps the
+  coordinator's `ctl` word and `Atomics.wait`s on the pause word until it changes; with the word
+  even, STOP ends its run as before. The coordinator waits for every parked word to equal the
+  generation (`Atomics.waitAsync` on `ctl`: it never blocks, since the backends may be on its
+  thread), then clears STOP (every worker waits on the pause word, so none can miss it), then rings
+  the doorbell and waits asynchronously until the backends served it (`bell[1]` reaches the
+  rung value). `Devices.serve` awaits every asynchronous request, so what is left in flight is
+  what the backends hold (receive buffers, input events). `resume()` makes the word even and
+  notifies it. A generation instead of a flag and a count means a late or stale parked word of an
+  earlier pause is never mistaken for this one's. A parked worker isn't inside `vm_run_cpu` or
+  handling an exit for the liveness block, so it doesn't look stuck. An exit or error that ends
+  the machine releases the paused workers (the word goes even) and the pause resolves false;
+  `close()` does the same, so a paused or pausing VM ends its workers.
+- **`runAsync` while paused** keeps returning `BUDGET` (the caller's loop stays alive) after a
+  short wait, and the idle limit doesn't count the paused time (the progress clock restarts at
+  `resume()`).
+- **Round-robin:** the vCPUs are out between `run` calls, so `pause()` only settles the devices
+  (a doorbell ring waited on, with a device worker) and `resume()` does nothing. It leaves the
+  step count exact.
+
 ## Broadcast maintenance
 
 Round-robin makes it synchronous: **TLBI … IS** flushes every other

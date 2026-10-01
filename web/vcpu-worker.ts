@@ -19,6 +19,9 @@ export type VcpuJob = {
   /** Byte addresses in `memory`: the device doorbell (two i32 words) and the coordinator's word (bumped on TX_FULL). */
   bell: number;
   ctl: number;
+  /** The pause word and the base of the workers' parked words (web/vm.ts `S_PAUSE`, `S_PARKED`). */
+  pause: number;
+  parked: number;
   /** Test only: stalls this worker (web/vm.ts `Stall`). */
   stall?: Stall[];
   /** The vCPUs' liveness block (web/liveness.ts): this worker writes its slot. */
@@ -61,6 +64,8 @@ function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
   const wake = new Int32Array(mem.buffer, ex.vm_cpu_signal(j.vm, j.cpu), 1);
   const bell = new Int32Array(mem.buffer, j.bell, 2);
   const ctl = new Int32Array(mem.buffer, j.ctl, 1);
+  const pause = new Int32Array(mem.buffer, j.pause, 1);
+  const parked = new Int32Array(mem.buffer, j.parked + 4 * j.cpu, 1);
   const info = ex.vm_exit_cpu(j.vm, j.cpu);
   const idleStalls = j.stall?.map((s) => stallHook(mem, s)('idle', () => {}));
   const live = j.live && livenessWriter(j.live, j.cpu);
@@ -97,6 +102,17 @@ function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
         ring(bell, (Number(e[2] >> 8n) & EV_CONFIG) !== 0);
         live?.handled();
         continue;
+      case Exit.STOP: {
+        // A pause (odd pause word): park here, out of the core, keeping the instance and its code. Not
+        // `handled`: the time parked isn't host work. A STOP with the word even ends the run.
+        const gen = Atomics.load(pause, 0);
+        if (!(gen & 1)) return { type: 'exit', cpu: j.cpu, kind, value: e[2], x: [...e.subarray(3, 7)] };
+        Atomics.store(parked, 0, gen);
+        Atomics.add(ctl, 0, 1);
+        Atomics.notify(ctl, 0);
+        while (Atomics.load(pause, 0) === gen) Atomics.wait(pause, 0, gen);
+        continue;
+      }
       default:
         return { type: 'exit', cpu: j.cpu, kind, value: e[2], x: [...e.subarray(3, 7)] };
     }
