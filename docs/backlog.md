@@ -257,7 +257,46 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **No boot-to-login benchmark case:** the page's time to `running` is measured by ad-hoc
   drivers and the end-to-end test (bench/boot/REPORT.md "M8 loop 6"). Snapshots' resume time needs
   a tracked baseline: add a `page_debian` case (page load to `running`, fresh profile) then.
-- **Boot time is the page's biggest cost** (~30 s to a login): snapshots (a phase C lane, [plans/snapshots.md](plans/snapshots.md)).
+- **Boot time is the page's biggest cost** (~30 s to a login): a snapshot file resumes a machine instead ([plans/snapshots.md](plans/snapshots.md)); nothing resumes by itself yet ("Snapshots" below: Suspend).
+
+## Snapshots (M8 phase C, snapshots lane; [plans/snapshots.md](plans/snapshots.md), [platform.md](platform.md) "Snapshots")
+
+- **9p's state isn't saved** (the server's tree and its fids): a VM with a 9p device refuses a
+  snapshot. The page's machines have none; the device test and Alpine's test image do, so their
+  host round trips run without it (`tests/snapshot.test.ts`). It needs the tree serialized with
+  node identities (fids and unlinked-but-open files point into it).
+- **The base image's SHA-256 is never written by the page**, so a snapshot only loads on a disk of
+  the same identity (a URL's path and size, or a chosen file's name, size and modification time): a
+  copy of the same image with another date is refused. `readSnapshot` already accepts a matching
+  hash when the file has one (`SnapshotDisk.sha256`); what's missing is computing it off the save
+  path (1.8 s for Debian's image; cache it beside the overlay) and hashing the base at a restore
+  whose identity differs.
+- **The network across a snapshot:** the guest keeps its lease and its connections' state; the
+  restored machine's card is on whatever the page connects it to now. A link down/up at restore
+  would make the guest ask for a lease again; open connections are lost either way.
+- **The guest's clock after a restore** is behind by the time the snapshot sat in its file (the
+  RTC shows the host's time, the counter continues): until something sets it (`hwclock -s`,
+  timesyncd over a network). A hint to the guest (an RTC alarm, a virtio device event) could
+  make it resync.
+- **One worker compresses RAM** (the core's LZ): 0.44 s for 304 MB of pages. Four would take it
+  to 0.15 s (`bench/boot/REPORT.md` "M8 phase C loop 4"); chunks must then be dealt out
+  interleaved, not as ranges. And the file's blocks are copied through the codec's own instance
+  (a second copy each way): compressing in place in the VM's memory would save it.
+- **A restore empties the TLBs**, which Linux can tell by its step count (not its behaviour): a
+  test that wants an unbroken run's steps through a snapshot needs a guest that doesn't lean on
+  stale entries, or the count of a run with TLB flushes at the same points
+  (`alpine-user-snapshots`). Saving TLB contents would need entries re-validated against the
+  page tables at restore (they hold host addresses), which is most of a walk.
+- **Suspend** (the snapshot kept in OPFS without the overlay's blocks, the next page load resumes
+  from it; a generation number in the overlay voids it once the disk moved on): proposed in the
+  plan, waiting for the user's decision.
+- **Snapshots between core versions:** a state of another `snapshot::VERSION` is refused; a
+  migration path (or a reader per old version) would keep users' files alive across a format
+  change. Prebuilt snapshots shipped with the repository (a Debian that resumes in seconds for a
+  first-time visitor) need this, or a rebuild at each format change.
+- **A held chain the guest overwrote** (it changed a buffer it had given a device) makes the
+  machine unsaveable until that queue is reset (`vm_snapshot_size` = `u64::MAX`): only a broken
+  guest does it; the page would say so and offer nothing.
 
 ## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [frontend.md](frontend.md) "Network")
 
