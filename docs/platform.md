@@ -264,8 +264,17 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"; the lane's plan
   accepted.
 - **When:** with every vCPU out of the core and the devices quiet (no event, request or completion
   for the other side). `Vm::snapshot_size` takes the completions the backends left, exactly as
-  the run loop would at its next boundary, so a deterministic machine takes the same steps
-  whether it was saved, restored into a new VM, or neither.
+  the run loop would at its next boundary, so a deterministic machine that is saved and runs on
+  takes the steps it would have.
+- **A restored VM is the saved one with its TLBs emptied** (and its code caches, which no guest
+  sees). That is architecturally invisible, and a deterministic guest restored twice runs the
+  same twice; but its step count is the unbroken run's only if the guest never leans on a stale
+  TLB entry. Linux does: it clears a page's access flag without a TLBI and takes the fault once
+  the entry is gone. Buildroot's and Alpine's boots go through snapshots in an unbroken boot's
+  steps; Alpine's userspace benchmark takes 1.1 M fewer of its 10.8 G, exactly the steps of a run
+  whose TLBs are only flushed at the same points (`Vm::flush_tlbs`; `alpine-user-snapshots` in
+  `tests/steps.txt`). Saving the TLBs instead was not tried: their entries hold host addresses,
+  which a file must not supply.
 - **Buffers the backends hold** (receive buffers of net and console, input's event buffers) are
   in flight when the state is saved. Each queue keeps the heads of its in-flight chains in the
   order they were posted; a restore walks them again in the restored RAM and posts them to the
@@ -273,6 +282,14 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"; the lane's plan
 - **Time:** deterministic, the step count and skipped ticks continue. Realtime, the clock
   continues from its saved reading (`Clock::base`), so the counter doesn't jump and timers that
   were due fire at once; the PL031 is rebased on the new VM's `rtc`, so it shows the host's time.
+- **The host's half** (`web/vm.ts` `snapshot()` and `BootOptions.restore`, `web/snapshot.ts`): the
+  file ([frontend.md](frontend.md) has the page's side when it lands) holds the core's state, the
+  backends' (`Backend.save`/`restore` in `web/devices.ts`: the deterministic rng's position; a
+  9p device refuses to be saved for now) with the serial input the guest hadn't been given, and
+  RAM in 1 MiB chunks without their zero pages, compressed by the core's LZ (`web/lz.ts`, an
+  instance of the core of its own). A restore creates the VM without booting it, fills RAM from
+  the file, has the core restore its state, starts the backends with theirs and serves the
+  doorbell once. A parallel VM is paused first ("Pausing a VM").
 - **Run modes:** round-robin's `Sched` and parallel mode's per-vCPU state are saved in one form
   (on or off, in WFI, a CPU_ON not yet taken), so a realtime state restores under either. A
   restored VM starts with empty TLBs and code caches.

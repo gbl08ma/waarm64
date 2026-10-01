@@ -430,5 +430,7 @@ export function p9(ctx: Ctx, files: P9Files, deterministic: boolean) {
       return reply.length;
     },
     reset() {},
+    // The tree and the open fids aren't saved yet (docs/plans/snapshots.md "Later").
+    save(): unknown { throw new Error("a machine with a 9p device can't be saved to a snapshot yet"); },
   };
 }

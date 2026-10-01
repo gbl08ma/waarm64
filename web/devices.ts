@@ -3,7 +3,6 @@
 // to the device's request ring as RAM segments; backends here only speak the
 // device protocol. `Devices` works on the shared memory from any thread: in the
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
-import { splitmix64 } from '../tools/corpus/corpus.ts';
 import { p9, type P9Files } from './9p.ts';
 import { echoBackend, gateway, portBackend } from './gateway.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
@@ -108,7 +107,15 @@ export type Ctx = { ram: () => Uint8Array; complete: (w0: number, len: number) =
  * them: requests complete in order either way), or keeps it and completes it
  * later. `config` runs when the guest wrote the config space.
  */
-type Backend = { request(r: Request): number | Promise<number> | undefined; reset(): void; close?(): void; config?(): void };
+type Backend = {
+  request(r: Request): number | Promise<number> | undefined; reset(): void; close?(): void; config?(): void;
+  /**
+   * A snapshot (docs/plans/snapshots.md): what the backend must keep besides the requests it holds,
+   * as JSON, and the same given to a new backend. The core posts held requests to a restored VM's
+   * backends again, so one that only holds buffers has neither.
+   */
+  save?(): unknown; restore?(state: unknown): void;
+};
 
 function console_(out: (text: string) => void, ctx: Ctx): Backend {
   const decoder = new TextDecoder();
@@ -144,11 +151,20 @@ function rng(ctx: Ctx, deterministic: boolean): Backend {
       reset() {},
     };
   }
-  const g = splitmix64(0n);
+  // splitmix64 seeded 0 (tools/corpus/corpus.ts has the generator), a byte at a time; its
+  // position is the backend's state.
+  const M64 = (1n << 64n) - 1n;
+  let s = 0n;
   let word = 0n;
   let left = 0;
   const byte = () => {
-    if (left === 0) [word, left] = [g.next().value as bigint, 8];
+    if (left === 0) {
+      s = (s + 0x9e3779b97f4a7c15n) & M64;
+      let z = s;
+      z = ((z ^ (z >> 30n)) * 0xbf58476d1ce4e5b9n) & M64;
+      z = ((z ^ (z >> 27n)) * 0x94d049bb133111ebn) & M64;
+      [word, left] = [z ^ (z >> 31n), 8];
+    }
     const b = Number(word & 0xffn);
     word >>= 8n;
     left--;
@@ -165,6 +181,12 @@ function rng(ctx: Ctx, deterministic: boolean): Backend {
       return n;
     },
     reset() {},
+    save: () => ({ s: s.toString(16), word: word.toString(16), left }),
+    restore(state) {
+      const t = state as { s: string; word: string; left: number };
+      if (typeof t?.s !== 'string' || typeof t.word !== 'string' || !(t.left >= 0 && t.left <= 8)) throw new Error('the snapshot has no state for the random number device');
+      [s, word, left] = [BigInt(`0x${t.s}`) & M64, BigInt(`0x${t.word}`) & M64, t.left];
+    },
   };
 }
 
@@ -481,6 +503,8 @@ export type DevicesInit = {
   deterministic: boolean;
   /** Parallel SMP: each vCPU's wake word (`vm_cpu_signal`), bumped and notified after the signal word (docs/abi.md). */
   wakes?: number[];
+  /** A VM restored from a snapshot: each backend's saved state (`Devices.save`), null where it had none. */
+  state?: unknown[];
 };
 
 export class Devices {
@@ -494,7 +518,7 @@ export class Devices {
   private closed = false;
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, signal, specs, deterministic, wakes }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | undefined)[], out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, signal, specs, deterministic, wakes, state }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal, this.wakes] = [memory, shared, signal, wakes ?? []];
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = {
@@ -512,6 +536,18 @@ export class Devices {
       }
     });
     this.epochs = specs.map(() => 0);
+    if (state) {
+      if (state.length !== specs.length) throw new Error('the snapshot is of a machine with other devices');
+      // The devices are as the snapshot left them (their epoch is not a reset), with the backends' state.
+      const u32 = new Uint32Array(memory.buffer);
+      this.epochs = shared.map((at) => Atomics.load(u32, (at + EPOCH) / 4) & 0xff);
+      this.backends.forEach((b, i) => { if (state[i] !== null && state[i] !== undefined) b.restore?.(state[i]); });
+    }
+  }
+
+  /** Each backend's state for a snapshot (null: none), with the devices quiet (`poll` resolved). */
+  save(): unknown[] {
+    return this.backends.map((b) => b.save?.() ?? null);
   }
 
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */

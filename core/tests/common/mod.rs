@@ -646,8 +646,12 @@ pub struct Boot<'a> {
     /// Step counts (ascending; deterministic round-robin only) at which the
     /// VM is saved and thrown away, and a new one restored from its state
     /// and a copy of its RAM runs on (M8 phase C). The guest can't tell: the
-    /// run takes the steps and prints what an unbroken one does.
+    /// run takes the steps and prints what an unbroken one does, unless it
+    /// leans on stale TLB entries (a restored VM's TLBs are empty): then those
+    /// of a run with `flush_only`.
     pub snapshots: &'a [u64],
+    /// At each of `snapshots`, only empty the TLBs (`Vm::flush_tlbs`) instead.
+    pub flush_only: bool,
 }
 
 /// The firmware configuration's host side: the flash bank's size and saved
@@ -698,6 +702,7 @@ impl<'a> Boot<'a> {
             input: None,
             firmware: None,
             snapshots: &[],
+            flush_only: false,
         }
     }
 }
@@ -719,6 +724,7 @@ pub fn boot(b: &Boot) -> Run {
         input,
         ref firmware,
         snapshots,
+        flush_only,
     } = b;
     assert!(
         input.is_none() || !parallel,
@@ -814,6 +820,7 @@ pub fn boot(b: &Boot) -> Run {
                     cfg,
                     &entries,
                     &mut backends,
+                    flush_only,
                 ));
                 continue;
             }
@@ -883,6 +890,7 @@ pub fn boot(b: &Boot) -> Run {
                     cfg,
                     &entries,
                     &mut backends,
+                    flush_only,
                 ));
                 cut = budget < whole;
             }
@@ -940,7 +948,12 @@ fn through_snapshot(
     cfg: VmConfig,
     entries: &[DeviceEntry],
     backends: &mut Backends,
+    flush_only: bool,
 ) -> (usize, usize) {
+    if flush_only {
+        vm.flush_tlbs();
+        return (0, 0);
+    }
     // Once the backends have nothing left to take.
     let size = loop {
         match vm.snapshot_size() {

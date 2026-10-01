@@ -120,3 +120,41 @@ fn alpine_boots_through_snapshots() {
     assert_eq!(r.snapshots.len(), at.len());
     assert_eq!(r.steps, total);
 }
+
+/// What a restore is to a guest: the machine with its TLBs emptied. Alpine's
+/// userspace benchmark (10.8 G steps) is the guest we have that can tell:
+/// through three snapshots it takes 1.1 M fewer steps than unbroken (Linux
+/// clears access flags without a TLBI, and faults once the entry is gone), and
+/// exactly the steps of a run whose TLBs are only flushed at the same points
+/// (`alpine-user-snapshots` in tests/steps.txt; tests/snapshot.test.ts takes
+/// them under the JIT). Two runs, ~4 min: on demand, not in ci.sh.
+#[test]
+#[ignore = "needs target/images/alpine-user (images/build.sh alpine-user) and --release; ~4 min"]
+fn userspace_through_snapshots_is_the_run_with_tlb_flushes() {
+    let total = common::steps("alpine-user");
+    let at = [total / 4, total / 2 + 1, 3 * total / 4 + 2];
+    let (kernel, initrd) = (
+        common::image(common::ALPINE.kernel),
+        common::image(common::ALPINE.initrd),
+    );
+    let devices = common::guest_devices("alpine-user/rootfs-user.ext4", None);
+    let run = |flush_only| {
+        let r = common::boot(&Boot {
+            initrd: Some(&initrd),
+            devices: &devices,
+            ram_size: 1 << 30,
+            max_steps: 50_000_000_000,
+            snapshots: &at,
+            flush_only,
+            ..Boot::new(&kernel, common::ALPINE.cmdline)
+        });
+        assert!(r.powered_off(), "no SYSTEM_OFF");
+        r.steps
+    };
+    let (flushed, restored) = std::thread::scope(|s| {
+        let a = s.spawn(|| run(true));
+        (run(false), a.join().unwrap())
+    });
+    assert_eq!(restored, flushed);
+    assert_eq!(restored, common::steps("alpine-user-snapshots"));
+}

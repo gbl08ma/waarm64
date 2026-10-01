@@ -15,6 +15,14 @@ let devices: Devices | undefined;
 self.onmessage = (e: MessageEvent) => {
   if (e.data.type === 'init') start(e.data as Init).catch((err) => self.postMessage({ type: 'error', message: String(err) }));
   else if (e.data.type === 'flush') self.postMessage({ type: 'flushed' }); // after every earlier message
+  else if (e.data.type === 'save') {
+    // The backends' state for a snapshot (the owner has the devices quiet).
+    try {
+      self.postMessage({ type: 'saved', state: devices!.save() });
+    } catch (err) {
+      self.postMessage({ type: 'saved', error: String(err instanceof Error ? err.message : err) });
+    }
+  }
   else if (e.data.type === 'close') {
     devices?.close();
     self.postMessage({ type: 'closed' });

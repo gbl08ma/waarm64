@@ -34,9 +34,13 @@ const MAX_RAW = CHUNK + BITMAP;
 const MAX_RUN = 256; // blocks in a DISK frame
 const TAGS = new Set(['CORE', 'DEVS', 'RAM ', 'DISK', 'END ']);
 
-/** Why a file was refused: `not-snapshot`, `newer-format`, `truncated` or `corrupt`; the message says what to do. */
+/**
+ * Why a snapshot was refused: `not-snapshot`, `newer-format`, `truncated` or `corrupt` (the file),
+ * `other-version` or `other-machine` (what it holds isn't for this core or this machine: web/vm.ts,
+ * web/snapshot.ts); the message says what to do.
+ */
 export class SnapshotError extends Error {
-  problem: 'not-snapshot' | 'newer-format' | 'truncated' | 'corrupt';
+  problem: 'not-snapshot' | 'newer-format' | 'truncated' | 'corrupt' | 'other-version' | 'other-machine';
   constructor(problem: SnapshotError['problem'], message: string) {
     super(message);
     this.name = 'SnapshotError';
@@ -44,8 +48,8 @@ export class SnapshotError extends Error {
   }
 }
 
-const corrupt = (what: string) => new SnapshotError('corrupt', `This snapshot is damaged (${what}). Download or copy it again; if it keeps failing, save a new one.`);
-const truncated = () => new SnapshotError('truncated', 'This snapshot is incomplete: the file ends before its end marker, so it was cut short while it was written or copied. Download or copy it again.');
+export const corrupt = (what: string) => new SnapshotError('corrupt', `This snapshot is damaged (${what}). Download or copy it again; if it keeps failing, save a new one.`);
+export const truncated = () => new SnapshotError('truncated', 'This snapshot is incomplete: the file ends before its end marker, so it was cut short while it was written or copied. Download or copy it again.');
 
 // ---- CRC-32 (IEEE, as zlib's) ----
 

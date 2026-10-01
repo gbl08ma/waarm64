@@ -10,6 +10,10 @@ ltp 2716704198
 crypto 4398705480
 alpine 2856663287
 alpine-user 10763178470
+# Alpine's userspace benchmark saved and restored into a new VM at a quarter, half (+1) and three
+# quarters (+2) of alpine-user's steps: a restored VM's TLBs are empty, which Linux can tell (it clears
+# access flags without a TLBI). The same count with the TLBs only flushed there (core/tests/distros.rs).
+alpine-user-snapshots 10762077134
 buildroot-2cpu 42577681
 buildroot-4cpu 45231514
 litmus-4cpu 879959970

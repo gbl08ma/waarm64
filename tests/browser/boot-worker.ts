@@ -11,6 +11,9 @@
 // boots the litmus image (images/build.sh litmus) instead, with no devices.
 // `?input` runs the console input test (web/vm.ts `CONSOLE_INPUT`): a shell
 // instead of /test.sh, given the input at its step.
+// `?snapshots=<steps>,…`: the VM is saved to a snapshot file, closed, and a new one started from the
+// file at each of those steps (web/snapshot.ts `runThroughSnapshots`); `files` in the result has them.
+import { runThroughSnapshots } from '../../web/snapshot.ts';
 import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/vm.ts';
 
 const get = async (path: string) => {
@@ -43,6 +46,11 @@ try {
   // a pause promises; `pause` in the result counts them and their latency.
   const pauser = { n: 0, ms: [] as number[], bad: '', done: false };
   const pauses = Number(params.get('pauses') ?? 0);
+  const at = params.get('snapshots')?.split(',').map(Number);
+  if (at) {
+    const r = await runThroughSnapshots(wasm, opts, at, input ? 200e6 : 1e12, input);
+    self.postMessage({ kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc, files: r.files });
+  } else {
   const r = await runToPowerOff(wasm, opts, input ? 200e6 : 1e12, (vm) => {
     if (vm.framebuffer) self.postMessage({ memory: vm.memory, framebuffer: vm.framebuffer });
     if (!pauses) return;
@@ -64,6 +72,7 @@ try {
   }, input);
   pauser.done = true;
   self.postMessage({ pause: pauser, kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc });
+  }
 } catch (e) {
   self.postMessage({ error: String(e) });
 }

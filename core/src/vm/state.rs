@@ -16,6 +16,15 @@ use crate::snapshot::{self, Error, Reader, Writer};
 const TIME_MAX: u64 = 1 << 62;
 
 impl Vm {
+    /// Empties every vCPU's TLB, with no vCPU in the core: what a restore does
+    /// to translations, on a VM that runs on. Architecturally invisible, but
+    /// not to a step count: Linux clears a page's access flag without a TLBI
+    /// and takes the fault only once the entry is gone. The tests compare a
+    /// run through snapshots with a run through these.
+    pub fn flush_tlbs(&mut self) {
+        self.vcpus.iter_mut().for_each(|v| v.tlb.flush_all());
+    }
+
     /// The words of the configuration a snapshot is tied to: a VM restores
     /// only a snapshot taken on the same machine. `jit` is free (the tiers
     /// run the same machine), as are `smp` in realtime mode (one saved form),

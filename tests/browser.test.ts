@@ -61,7 +61,7 @@ async function bootPage(query: string, minutes: number) {
   const page = await context.newPage();
   await page.goto(`${base}/tests/browser/boot.html?${query}`);
   const h = await page.waitForFunction(() => (window as never)['result'], null, { timeout: minutes * 60_000, polling: 1000 });
-  const r = (await h.jsonValue()) as { error?: string; kind: number; x0: string; steps: number; ms: number; console: string; hvc: string; pause?: unknown; pixels?: Record<string, number[]> };
+  const r = (await h.jsonValue()) as { error?: string; kind: number; x0: string; steps: number; ms: number; console: string; hvc: string; pause?: unknown; files?: unknown; pixels?: Record<string, number[]> };
   await page.close();
   return { ...r, console: r.console?.replaceAll('\r\n', '\n') };
 }
@@ -115,6 +115,36 @@ test('Linux boots on 4 vCPUs in parallel (a worker each), JIT', { skip: !existsS
     console.log(`# chromium parallel boot ${i} (4 vCPUs, JIT): ${(r.ms / 1000).toFixed(1)} s`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
     assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\nwebpc: test exit 0\n/);
+  }
+});
+
+// Snapshots (web/snapshot.ts): the VM saved to a file (the device worker gives the backends' state),
+// closed, and a new one started from it, four times in a boot. The steps and the console are the
+// unbroken boot's.
+test('Linux boots under the JIT through 4 snapshot files', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
+  const whole = await bootPage('jit=1', 10);
+  const r = await bootPage('jit=1&snapshots=3000000,14000000,26000000,38000000', 10);
+  assert.equal(r.error, undefined);
+  const files = r.files as { bytes: number; saveMs: number; restoreMs: number }[];
+  console.log(`# chromium snapshots: ${files.map((f) => `${(f.bytes / 2 ** 20).toFixed(1)} MiB, saved in ${f.saveMs.toFixed(0)} ms, started from in ${f.restoreMs.toFixed(0)} ms`).join('; ')}`);
+  assert.equal(files.length, 4);
+  assert.deepEqual([r.kind, r.x0, r.steps], [1, '0x84000008', STEPS.buildroot], r.console);
+  assert.equal(r.console, whole.console);
+  assert.equal(r.hvc, whole.hvc);
+});
+
+// The same on 4 parallel vCPUs: paused, saved, closed (its vCPU workers and device worker end), and a
+// new VM with new workers started from the file.
+test('Linux boots on 4 vCPUs in parallel through snapshot files, JIT', { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
+  for (let i = 1; i <= RUNS; i++) {
+    const r = await bootPage('parallel&ncpus=4&jit=1&snapshots=5000000,11000000,18000000,26000000,35000000', 10);
+    assert.equal(r.error, undefined, `run ${i}`);
+    const files = r.files as { bytes: number; saveMs: number; restoreMs: number }[];
+    console.log(`# chromium parallel snapshots ${i}: ${files.map((f) => `${(f.bytes / 2 ** 20).toFixed(1)} MiB, ${f.saveMs.toFixed(0)} + ${f.restoreMs.toFixed(0)} ms`).join('; ')}`);
+    assert.ok(files.length >= 4, `${files.length} snapshots`);
+    assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+    assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok\nwebpc: test exit 0\n/);
+    assert.equal(r.hvc.replaceAll('\r\n', '\n'), 'webpc: hvc0 ok\n');
   }
 });
 

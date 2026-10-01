@@ -9,6 +9,7 @@
 import { Devices, EV_CONFIG, deviceEntry, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
+import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
 export const ABI = 30;
@@ -35,7 +36,26 @@ type Exports = {
   vm_framebuffer(vm: number): bigint;
   vm_flash(vm: number): number;
   panic_message(): number;
+  thread_alloc(size: number, align: number): number;
+  vm_snapshot_size(vm: number): bigint;
+  vm_snapshot_save(vm: number, ptr: number, len: number): bigint;
+  vm_snapshot_restore(vm: number, ptr: number, len: number): number;
+  snapshot_version(): number;
 };
+
+/**
+ * What a VM is besides its RAM, for a snapshot (docs/plans/snapshots.md): the core's state
+ * (`vm_snapshot_save`, format `version`) and the host's, as JSON: each backend's state (null: none)
+ * and the serial input the guest hasn't been given yet.
+ */
+export type VmState = { version: number; core: Uint8Array; host: { devices: unknown[]; input: number[] } };
+
+/**
+ * A snapshot to start a VM from instead of booting it (`BootOptions.restore`): its {@link VmState}
+ * and `fill`, which writes the snapshot's RAM into the new VM's (zeroed) RAM before the core
+ * restores its state.
+ */
+export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8Array): void | Promise<void> };
 
 /**
  * The core's imports: the shared memory, the host clock for realtime mode, and
@@ -334,6 +354,12 @@ export type BootOptions = {
    * from {@link FIRMWARE_EPOCH_MS}.
    */
   firmware?: Firmware;
+  /**
+   * Start from a snapshot (ABI 30): `kernel`, `initrd`, `cmdline` and the firmware's flash and
+   * files aren't used (RAM and the core's state have what the machine made of them); the rest
+   * must describe the machine the snapshot was taken on, or `bootVm` throws a `SnapshotError`.
+   */
+  restore?: Restore;
 };
 
 export type Firmware = { flash?: Uint8Array; flashSize?: number; fwCfg?: { name: string; data: string | Uint8Array }[] };
@@ -482,26 +508,49 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // The same placement as core/tests/boot.rs: Image at +2 MiB, initrd at +128 MiB.
   const kernelOff = o.kernelOffset ?? (fw ? FIRMWARE_OFFSET : 2 << 20);
   const initrdOff = 128 << 20;
-  bytes().set(o.kernel, ram + kernelOff);
-  if (o.initrd) bytes().set(o.initrd, ram + initrdOff);
+  if (!o.restore) {
+    bytes().set(o.kernel, ram + kernelOff);
+    if (o.initrd) bytes().set(o.initrd, ram + initrdOff);
+  }
 
   const vm = ex.vm_new(ram, BigInt(o.ramSize), scratch + S_CFG);
   if (!vm) throw new Error('vm_new failed');
   const flashAt = fw ? ex.vm_flash(vm) : 0;
   const flashSize = fw?.flashSize ?? FLASH_SIZE;
-  if (fw?.flash) {
-    if (fw.flash.length !== flashSize) throw new Error(`firmware.flash: ${fw.flash.length} bytes, the bank has ${flashSize}`);
-    bytes().set(fw.flash, flashAt);
-  }
-  const initrdLen = BigInt(o.initrd?.length ?? 0);
-  if (ex.vm_boot(vm, BigInt(RAM_BASE + kernelOff), BigInt(RAM_BASE + initrdOff), initrdLen, scratch + S_CMDLINE, cmd.length)) {
-    throw new Error('vm_boot rejected the Image or layout');
-  }
   const shared = specs.map((_, i) => ex.vm_device(vm, i));
-  Devices.writeConfig(memory, shared, specs);
+  if (o.restore) {
+    // RAM first (the transports read the chains their backends held from it), then the core's
+    // state: the registers, the devices, their config spaces, the flash bank.
+    await o.restore.fill(new Uint8Array(memory.buffer, ram, o.ramSize));
+    const { core } = o.restore;
+    const at = ex.thread_alloc(core.length, 16);
+    if (!at) throw new Error('no memory for the snapshot\'s state');
+    bytes().set(core, at);
+    let r: number;
+    try {
+      r = ex.vm_snapshot_restore(vm, at, core.length);
+    } catch (err) {
+      throw withPanic(err, ex, memory);
+    }
+    if (r === 1) throw new SnapshotError('other-version', `This snapshot was made by another version of this page (its machine state isn't format ${ex.snapshot_version()}, the one this version reads). Open it in the version that made it.`);
+    if (r === 2) throw new SnapshotError('other-machine', 'This snapshot is of a machine with other hardware (memory, processors or devices) than this one, so it can\'t continue here.');
+    if (r) throw new SnapshotError('corrupt', 'This snapshot is damaged (its machine state is inconsistent). Download or copy it again; if it keeps failing, save a new one.');
+  } else {
+    if (fw?.flash) {
+      if (fw.flash.length !== flashSize) throw new Error(`firmware.flash: ${fw.flash.length} bytes, the bank has ${flashSize}`);
+      bytes().set(fw.flash, flashAt);
+    }
+    const initrdLen = BigInt(o.initrd?.length ?? 0);
+    if (ex.vm_boot(vm, BigInt(RAM_BASE + kernelOff), BigInt(RAM_BASE + initrdOff), initrdLen, scratch + S_CMDLINE, cmd.length)) {
+      throw new Error('vm_boot rejected the Image or layout');
+    }
+    Devices.writeConfig(memory, shared, specs);
+  }
   const signal = ex.vm_signal(vm);
   const wakes = Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_signal(vm, i));
-  const devices = await deviceHost({ memory, shared, ram, signal, specs, deterministic, wakes }, scratch + S_BELL, parallel);
+  const devices = await deviceHost({ memory, shared, ram, signal, specs, deterministic, wakes, state: o.restore?.host.devices }, scratch + S_BELL, parallel);
+  // The restore posted the chains the old backends held to the request rings: the new ones take them.
+  if (o.restore) await devices.quiesce();
   /** Sets signal-word bits, then bumps and notifies every vCPU's wake word (docs/abi.md). */
   const raise = (bits: number) => {
     const i32 = new Int32Array(memory.buffer);
@@ -560,6 +609,10 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     pump();
   };
   if (o.serialIn) o.serialIn.onmessage = (e: MessageEvent) => send(e.data);
+  // Input the saved machine's host hadn't given the guest yet: at the first run's pump, as there.
+  if (o.restore?.host.input.length) queued.push(Uint8Array.from(o.restore.host.input));
+  /** The buffer `snapshot` has the core write its state to (never freed: kept for the next one). */
+  let stateBuf = { at: 0, len: 0 };
   const blocks = Array.from({ length: ncpus }, (_, i) => ex.vm_counters(vm, i));
   const counters = blocks[0];
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
@@ -576,6 +629,39 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   let seenHead = 0;
   return {
     memory,
+    /** Bytes of guest RAM (at `ram`). */
+    ramSize: o.ramSize,
+    /**
+     * The VM's state for a snapshot, with every vCPU out of the core: between `run` calls after
+     * `settle()`, or once `pause()` resolved true. Guest RAM (`memory` at `ram`, `ramSize` bytes) is
+     * the snapshot's other half: copy it before the VM runs on. The VM is unchanged.
+     */
+    async snapshot(): Promise<VmState> {
+      for (let tries = 0; tries < 1000; tries++) {
+        // Takes the completions the backends left, as the run loop would at its next boundary.
+        const n = ex.vm_snapshot_size(vm);
+        if (n === 0xffff_ffff_ffff_ffffn) throw new Error("the machine can't be saved now: the guest changed buffers it had given to a device");
+        if (n === 0n) {
+          // A device has something for its backend (chains that hadn't fit, an event): serve it.
+          await devices.quiesce();
+          continue;
+        }
+        if (stateBuf.len < Number(n)) {
+          const len = Number(n) + 65536;
+          const at = ex.thread_alloc(len, 16);
+          if (!at) throw new Error("no memory for the machine's state");
+          stateBuf = { at, len };
+        }
+        const got = Number(ex.vm_snapshot_save(vm, stateBuf.at, stateBuf.len));
+        if (!got) continue; // a backend completed something in between
+        return {
+          version: ex.snapshot_version(),
+          core: bytes().slice(stateBuf.at, stateBuf.at + got),
+          host: { devices: await devices.save(), input: queued.flatMap((b) => [...b]) },
+        };
+      }
+      throw new Error("the machine can't be saved: its devices never went quiet");
+    },
     /** The framebuffer (web/display.ts): byte address in `memory`, width, height; x8r8g8b8, packed rows. */
     framebuffer: fbPa ? { addr: ram + fbPa - RAM_BASE, ...fb } : undefined,
     /** A copy of the firmware configuration's flash bank (the variable store), to save once the vCPUs stopped; undefined without one. */
@@ -966,6 +1052,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       inFlight: () => false,
       settle: async () => { if (failed) throw failed; },
       quiesce: () => ringAsync(new Int32Array(init.memory.buffer, bellAddr, 2)),
+      save: async () => d.save(),
       output: () => text, flush: async () => { if (failed) throw failed; }, close: async () => d.close(),
     };
   }
@@ -981,12 +1068,14 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       inFlight: () => pending !== undefined,
       settle: async () => { await pending; pending = undefined; },
       quiesce: async () => { await pending; pending = d.poll(); await pending; pending = undefined; },
+      save: async () => d.save(),
       output: () => text, flush: async () => {}, close: async () => d.close(),
     };
   }
   const worker = new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
   let flushed = () => {};
   let closed = () => {};
+  let saved = (_m: { state?: unknown[]; error?: string }) => {};
   let closing: Promise<void> | undefined;
   const ready = new Promise<void>((resolve, reject) => {
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
@@ -995,6 +1084,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       else if (e.data.type === 'error') reject(new Error(`device worker: ${e.data.message}`));
       else if (e.data.type === 'console') out(e.data.device, e.data.text);
       else if (e.data.type === 'flushed') flushed();
+      else if (e.data.type === 'saved') saved(e.data);
       else if (e.data.type === 'closed') closed();
     };
   });
@@ -1005,6 +1095,11 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     inFlight: () => false,
     settle: async () => {},
     quiesce: () => ringAsync(bell),
+    /** The backends' state for a snapshot (web/devices.ts `Devices.save`). */
+    save: () => new Promise<unknown[]>((resolve, reject) => {
+      saved = (m) => (m.state ? resolve(m.state) : reject(new Error(m.error ?? 'the device worker has no state')));
+      worker.postMessage({ type: 'save' });
+    }),
     kick: (wait: boolean) => ring(bell, wait), // completions come back through SIGNAL_DEVICE
     output: () => text,
     flush: () => new Promise<void>((resolve) => {

@@ -37,7 +37,9 @@ they don't hold**:
   is in no DSB wait, and a pending CPU_ON request is saved as one (no need to wait it out).
 - The core then takes the completions the backends left (`vm_snapshot_size`), exactly as the run
   loop would at its next boundary, so in deterministic mode the machine that continues takes the
-  same steps as one that was never snapshotted.
+  same steps as one that was never snapshotted. (A *restored* machine has empty TLBs, which a
+  guest that leans on stale entries can tell by its step count: [platform.md](../platform.md)
+  "Snapshots".)
 
 ### Buffers the backends hold
 
@@ -142,14 +144,17 @@ for the loops that touch parallel SMP.
    lines, the published IRQ lines), the native thread runner's pause; the bare-metal SMP tests,
    litmus and the atomics stress continuing in a restored VM; ThreadSanitizer. Planted: the counter
    not rebased.
-3. **Host, round-robin.** `web/vm.ts`: `snapshot()` and `bootVm`'s `restore`; backend state
+3. **Host, round-robin: done** ([platform.md](../platform.md) "Snapshots": the host's half, and
+   the finding that a restore is a TLB flush to a guest, which Alpine's userspace benchmark can
+   tell). The plan was: `web/vm.ts`: `snapshot()` and `bootVm`'s `restore`; backend state
    (`Backend.save`/`restore`: the deterministic rng); Buildroot and Alpine round trips under the
    JIT in Node and Chromium with exact steps.
 4. **The file and the RAM codec: done** (the container and the codec; the LZ is wired into
    the writer as codec 2 in loop 3, with the core instance it needs). `web/snapshot-file.ts` and its tests (round trip, every
    refusal, truncation, corruption); the codec measured in Chromium on real RAM images (ratio,
    save and restore throughput, one and several workers); the report in `bench/boot/REPORT.md`.
-5. **Host, parallel.** The pause is **done** ([platform.md](../platform.md) "Pausing a VM",
+5. **Host, parallel: done** (the round trips are in `tests/snapshot.test.ts` and
+   `tests/browser.test.ts`). The pause is **done** ([platform.md](../platform.md) "Pausing a VM",
    `tests/pause.test.ts`: the coordinator's `pause`/`resume`, the vCPU workers parked). Left: parallel
    round trips in Node and Chromium (Buildroot, litmus and stress on 4).
 6. **The disk in the file.** The overlay's blocks out and in through the device worker's handles,

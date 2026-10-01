@@ -34,7 +34,9 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
 - **Chains in flight:** each queue keeps the heads of the chains posted and not completed, in
   order. A completion is taken only for one of them, and a VM restored from a snapshot posts
   them again ([platform.md](platform.md) "Snapshots"): a backend that only holds buffers has
-  nothing to save.
+  nothing to save. One with state of its own gives it as JSON (`Backend.save`) and takes it back
+  in a new VM (`restore`): the deterministic rng's position. 9p's tree and fids aren't saved yet:
+  a VM with a 9p device refuses a snapshot.
 
 ## Threads and determinism
 

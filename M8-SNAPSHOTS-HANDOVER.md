@@ -14,10 +14,10 @@ reviews, merges) stay with the orchestrating session.
 | 0. Plan revisited after phase B, ABI 30 design note | done |
 | 1. Core, round-robin | done (ABI 30: `core/src/snapshot.rs`, `core/src/vm/state.rs`, each device's `save`/`restore`; native round trips with exact steps) |
 | 2. Core, parallel | done (bare-metal, Buildroot, litmus and stress through snapshots in parallel and round-robin, under TSan too) |
-| 3. Host, round-robin | next: `web/vm.ts` `snapshot()` and `bootVm`'s `restore` (RAM in first, then `vm_snapshot_restore`, then serve the doorbell once), the LZ as the file's codec 2 (a core instance's `lz_*`), `Backend.save`/`restore` for the deterministic rng; round trips of Buildroot and Alpine under the JIT in Node and Chromium with exact steps |
+| 3. Host, round-robin | done: `vm.snapshot()`, `BootOptions.restore`, `web/snapshot.ts` (`writeSnapshot`, `readSnapshot`, `runThroughSnapshots`), `web/lz.ts`, backend state; exact steps in Node and Chromium |
 | 4. The file and the RAM codec | done: the container, and the codec by measurement (the core's LZ, one worker); wiring the LZ into the writer as codec 2 is loop 3's |
-| 5. Host, parallel: `pause`/`resume` | the pause is done; the round trips after 2 and 3 |
-| 6. The disk in the file | |
+| 5. Host, parallel: `pause`/`resume` | done: the pause, and parallel round trips in Node (Buildroot, litmus and stress on 4) and Chromium (Buildroot on 4) |
+| 6. The disk in the file | next: DISK frames out of and into the overlay (through the device worker's handles; a restore writes them before the backends open the overlay: `Restore.fill` sees them after RAM), the base's identity (measure the hash against the cheap identity), the flash copy beside the overlay |
 | 7. The page | |
 | 8. Suspend | needs the user's OK |
 | 9. Exit | |
@@ -39,6 +39,13 @@ numbers in `bench/boot/REPORT.md`. The first session died on 2026-10-01 when an 
 in a worktree took 10 GB (CLAUDE.md "Cap memory").
 
 ## Notes for the next session
+
+- **A restore is a TLB flush to the guest.** Step counts through snapshots equal an unbroken run's
+  only for guests that never lean on stale TLB entries (Buildroot, Alpine's boot); Alpine's
+  userspace benchmark has its own count (`alpine-user-snapshots`), equal to a run with TLB flushes
+  at the same steps (docs/platform.md "Snapshots"). A new entry in `tests/steps.txt`, no entry moved.
+- A VM with a 9p device refuses a snapshot (its server's tree and fids aren't saved): the page's
+  machines have none; the device test and Alpine's test image do.
 
 - Delegated work comes back as a branch in a git worktree: review the diff, run `scripts/ci.sh` on
   the merged tree, then commit on `main`.
