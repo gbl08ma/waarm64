@@ -253,7 +253,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await fresh.close();
 });
 
-test('a snapshot of Buildroot on the Debian page is refused at once, before anything stops', { skip: skip || skipDebian, timeout: 5 * 60_000 }, () => withDebianLock(async () => {
+test('a snapshot of Buildroot on the Debian page is refused at once, before anything stops', { skip: skip || skipDebian, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
   // Written by Buildroot's page: only the header matters here.
   const path = await headerOnly('buildroot-header.webpcsnap', { machine: 'buildroot', label: 'Buildroot (test guest)', ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
   const context = await browser.newContext();

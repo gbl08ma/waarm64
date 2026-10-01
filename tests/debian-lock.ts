@@ -19,7 +19,10 @@ const alive = (pid: number) => {
   }
 };
 
-/** Waits for the lock (at most `ms`), runs `f`, releases it. */
+/**
+ * Waits for the lock (at most `ms`), runs `f`, releases it. A test's own `timeout` counts the wait:
+ * give it the wait and its run (25 min: with the snapshot tests the queue outlasted a 10 min one).
+ */
 export async function withDebianLock<T>(f: () => Promise<T>, ms = 15 * 60_000): Promise<T> {
   const until = Date.now() + ms;
   for (;;) {

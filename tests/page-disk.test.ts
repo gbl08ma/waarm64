@@ -56,7 +56,7 @@ const overlays = (page: Page) => page.evaluate(async () => {
   return names;
 });
 
-test('a disk chosen on the page boots through UEFI, keeps its changes in its own overlay, and has them again when chosen again', { skip, timeout: 15 * 60_000 }, () => withDebianLock(async () => {
+test('a disk chosen on the page boots through UEFI, keeps its changes in its own overlay, and has them again when chosen again', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
   // The same bytes under a name of the user's own (the page keys the disk by name, size and modification time).
   const file = join(dir, 'mydisk.qcow2');
   symlinkSync(new URL(IMAGE).pathname, file);

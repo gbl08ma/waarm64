@@ -43,7 +43,7 @@ async function press(page: Page, ...keys: string[]) {
   }
 }
 
-test('the serial terminal\'s keys reach EDK2 and GRUB: menus, forms, the editor, Ctrl-X', { skip, timeout: 10 * 60_000 }, () => withDebianLock(async () => {
+test('the serial terminal\'s keys reach EDK2 and GRUB: menus, forms, the editor, Ctrl-X', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await context.newPage();
   const errors: string[] = [];
