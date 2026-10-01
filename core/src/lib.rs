@@ -17,6 +17,7 @@ pub mod fw_cfg;
 pub mod gicv3;
 pub mod interp;
 pub mod jit;
+pub mod lz;
 pub mod mem;
 pub mod mmu;
 pub mod pl011;
@@ -620,6 +621,59 @@ pub unsafe extern "C" fn jit_call(cpu: *mut cpu::Cpu, idx: u32, k: u32, n: u32) 
         j = if j + 1 == k { 0 } else { j + 1 };
     }
     s
+}
+
+// LZ codec (LZ4 block format) for snapshot RAM chunks.
+
+/// The worst-case compressed size of `len` bytes ([`lz::bound`]).
+#[unsafe(no_mangle)]
+pub extern "C" fn lz_bound(len: usize) -> usize {
+    lz::bound(len)
+}
+
+/// Compresses `len` bytes at `src` into `cap` bytes at `dst`; the compressed size, or 0 if it
+/// doesn't fit (`cap >= lz_bound(len)` always fits).
+///
+/// # Safety
+/// `src` is readable for `len` bytes and `dst` writable for `cap` bytes, not overlapping, and
+/// nothing else accesses them during the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lz_compress(
+    src: *const u8,
+    len: usize,
+    dst: *mut u8,
+    cap: usize,
+) -> usize {
+    // SAFETY: guaranteed by the caller.
+    let (s, d) = unsafe {
+        (
+            core::slice::from_raw_parts(src, len),
+            core::slice::from_raw_parts_mut(dst, cap),
+        )
+    };
+    lz::compress(s, d).unwrap_or(0)
+}
+
+/// Decompresses `len` bytes at `src` into `cap` bytes at `dst`; the decompressed size, or
+/// `usize::MAX` if the input is malformed or doesn't fit.
+///
+/// # Safety
+/// As [`lz_compress`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn lz_decompress(
+    src: *const u8,
+    len: usize,
+    dst: *mut u8,
+    cap: usize,
+) -> usize {
+    // SAFETY: guaranteed by the caller.
+    let (s, d) = unsafe {
+        (
+            core::slice::from_raw_parts(src, len),
+            core::slice::from_raw_parts_mut(dst, cap),
+        )
+    };
+    lz::decompress(s, d).unwrap_or(usize::MAX)
 }
 
 #[cfg(test)]
