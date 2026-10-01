@@ -54,6 +54,7 @@ export const specPorts = (specs: DeviceSpec[]) =>
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
 const EPOCH = 16;
+const CONFIG_GEN = 20;
 const CONFIG = 24;
 const REQ = 280;
 const RING_WORDS = 4096;
@@ -100,7 +101,11 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
 
 export type Segment = { off: number; len: number };
 export type Request = { w0: number; queue: number; read: Segment[]; write: Segment[] };
-export type Ctx = { ram: () => Uint8Array; complete: (w0: number, len: number) => void; config: () => Uint8Array };
+export type Ctx = {
+  ram: () => Uint8Array; complete: (w0: number, len: number) => void; config: () => Uint8Array;
+  /** Changes the config space under a running driver (docs/abi.md, ABI 31): `write` gets it, and the guest gets a config-change interrupt. */
+  changeConfig: (write: (config: Uint8Array) => void) => void;
+};
 
 /**
  * A backend handles a request now (returns bytes written, or a promise of
@@ -537,6 +542,7 @@ export class Devices {
         ram: () => new Uint8Array(this.memory.buffer, ram),
         complete: (w0, len) => this.complete(i, w0, len),
         config: () => new Uint8Array(this.memory.buffer, shared[i] + CONFIG, 256),
+        changeConfig: (write) => this.changeConfig(i, write),
       };
       switch (d.type) {
         case 'console': return console_((t) => out(i, t), ctx);
@@ -635,6 +641,11 @@ export class Devices {
     u32[ring + 2 + (head % RING_WORDS)] = w0;
     u32[ring + 2 + ((head + 1) % RING_WORDS)] = len;
     Atomics.store(u32, ring, (head + 2) >>> 0);
+    this.kick();
+  }
+
+  /** Sets the signal word's device bit and wakes the vCPUs, so the core takes what the backends left. */
+  private kick() {
     const sig = new Int32Array(this.memory.buffer, this.signal, 1);
     Atomics.or(sig, 0, SIGNAL_DEVICE);
     Atomics.notify(sig, 0);
@@ -643,6 +654,19 @@ export class Devices {
       Atomics.add(word, 0, 1);
       Atomics.notify(word, 0);
     }
+  }
+
+  /**
+   * Changes device `i`'s config space under a running driver (docs/abi.md "config changes"): the
+   * generation goes odd, `write` changes the bytes, it goes even, and the core raises the
+   * config-change interrupt when it takes the signal.
+   */
+  changeConfig(i: number, write: (config: Uint8Array) => void) {
+    const gen = new Int32Array(this.memory.buffer, this.shared[i] + CONFIG_GEN, 1);
+    Atomics.add(gen, 0, 1);
+    write(new Uint8Array(this.memory.buffer, this.shared[i] + CONFIG, 256));
+    Atomics.add(gen, 0, 1);
+    this.kick();
   }
 
   /**

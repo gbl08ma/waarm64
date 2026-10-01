@@ -173,8 +173,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   firmware has an RNG (`EFI_RNG_PROTOCOL`: EDK2 gets one from RNDR, above), so RNDR brings KASLR
   with it unless measured and handled (`nokaslr` isn't ours to pass: GRUB's command line).
 - virtio: `EVENT_IDX` not offered (do it when an I/O benchmark shows notify exits or interrupts
-  matter); ConfigGeneration always 0 and no host API to change config space under a running driver
-  (console resize, capacity change, net link state).
+  matter); the host can change config space under a running driver since ABI 31
+  (`Devices.changeConfig`, docs/abi.md), but only virtio-gpu's display events use it: console resize,
+  capacity change and net link state don't yet.
 - virtio-blk over HTTP: one synchronous XHR per request, no cache, merging or concurrency; batch,
   cache or go async when an I/O benchmark says so. qcow2: no merging of contiguous clusters into
   one request.

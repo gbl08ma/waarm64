@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { P9Server } from '../web/9p.ts';
-import { inputConfig } from '../web/devices.ts';
+import { Devices, inputConfig } from '../web/devices.ts';
 import { loopback, PEER_IP, PEER_MAC } from '../web/net.ts';
 
 /** A T-message: size, type, tag 1, then the fields ([bytes, value] or a string). */
@@ -124,4 +124,23 @@ test('virtio-input config answers', () => {
   assert.deepEqual([...new Uint32Array(inputConfig('tablet', 0x12, 1).slice().buffer)], [0, 32767, 0, 0, 0]);
   assert.equal(inputConfig('tablet', 0x12, 2).length, 0);
   assert.equal(inputConfig('keyboard', 0x11, 3).length, 0);
+});
+
+test('changeConfig: the generation goes odd around the write, even after it, and the signal word is set', () => {
+  // The layout (docs/abi.md): config_gen at 20, config at 24; the signal word and a vCPU's wake word elsewhere.
+  const memory = { buffer: new SharedArrayBuffer(4096) };
+  const [shared, signal, wake] = [64, 1024, 1028];
+  const gen = new Int32Array(memory.buffer, shared + 20, 1);
+  const seen: number[] = [];
+  const self = { memory, shared: [shared], signal, wakes: [wake], kick: (Devices.prototype as unknown as { kick(): void }).kick };
+  Atomics.add(gen, 0, 4); // earlier changes
+  (Devices.prototype.changeConfig as (this: unknown, i: number, w: (c: Uint8Array) => void) => void).call(self, 0, (c) => {
+    seen.push(gen[0]); // mid-update
+    c[0] = 9;
+  });
+  assert.deepEqual(seen, [5]);
+  assert.equal(gen[0], 6);
+  assert.equal(new Uint8Array(memory.buffer)[shared + 24], 9);
+  assert.equal(Atomics.load(new Int32Array(memory.buffer, signal, 1), 0), 4, 'SIGNAL_DEVICE');
+  assert.equal(Atomics.load(new Int32Array(memory.buffer, wake, 1), 0), 1, 'the vCPU woken');
 });

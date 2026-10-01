@@ -12,7 +12,7 @@ import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 30;
+export const ABI = 31;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 

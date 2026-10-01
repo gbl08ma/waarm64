@@ -1,4 +1,4 @@
-# Host ABI (version 30)
+# Host ABI (version 31)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -131,7 +131,7 @@ Layouts in `core/src/virtio.rs` and `web/devices.ts`; the behavior is in [device
   (queues × size × 2 ≤ 4096 words).
 - `vm_device(vm, i) -> *const DevShared`: events u32 at 0 (`EV_REQUEST` 1, `EV_CONFIG` 2,
   `EV_STATUS` 4; the host takes them with a swap), device status at 4, negotiated features (two
-  u32s) at 8, reset epoch at 16, config space (256 bytes; the host writes it after `vm_new`, guest
+  u32s) at 8, reset epoch at 16, config generation at 20 (ABI 31, below), config space (256 bytes; the host writes it after `vm_new`, guest
   writes land there with `EV_CONFIG`) at 24, request ring at 280, completion ring at 16672. Each
   ring is SPSC u32 words: head, tail (words written/read, wrapping), 4096 words.
 - **Request record:** `w0` = head | queue << 16 | epoch << 24; `w1` = readable count | writable
@@ -374,6 +374,33 @@ line is recomputed.
 is taken only for a chain in the list): this is the only change to a path that runs without
 snapshots.
 
+## M8 graphics: config changes (design note for ABI 31)
+
+Until now a device's config space never changed under a running driver: `ConfigGeneration` read 0 and
+the only config-change interrupt was the transport's own NEEDS_RESET. virtio-gpu's display events
+(`events_read`, a size change from the page) need a host-initiated change, and so would a console
+resize, a block capacity change or a net link state (backlog "Platform and devices"; none is
+implemented by this step).
+
+- **`DevShared` word 5 (offset 20, the old padding) is `config_gen`**: the host's generation counter.
+  The layout and size are unchanged.
+- **Host protocol** (`web/devices.ts` `Devices.changeConfig(i, write)`, `DevShared::update_config`
+  natively): `config_gen += 1` (odd: an update is in progress), write the config bytes, `config_gen +=
+  1` (even), then set `SIGNAL_DEVICE` like a completion does. The stores are sequentially consistent.
+- **The transport** keeps the generation it last raised an interrupt for. When it drains completions
+  (the `SIGNAL_DEVICE` path, on whichever vCPU thread takes it) and `config_gen` is even and differs,
+  it sets InterruptStatus bit 1 (INT_CONFIG), so the line rises, and remembers it; a reset keeps it,
+  as it keeps the epoch. No `EV_*` event goes to the host.
+- **`ConfigGeneration` (0x0fc)** reads `config_gen` while it is even. While it is odd the transport
+  returns a value that differs at every read, so a driver's "generation, read config, generation"
+  loop (Linux `virtio_cread` on a multi-field struct) retries until the host's update is done, and
+  one that read a stable generation twice read a consistent config in parallel SMP.
+- **Config writes by the guest** still land in `config` with `EV_CONFIG`; write-1-to-clear fields
+  (virtio-gpu's `events_clear`) are the backend's to implement on that event.
+- **Snapshots:** a device with `config_gen` ahead of what the transport raised isn't quiet (the
+  host's change hasn't been taken), so a snapshot waits like it does for other events; nothing new is
+  saved (a restore starts at generation 0, the interrupt state `isr` is saved already).
+
 ## Version history
 
 | ABI | What changed |
@@ -403,3 +430,4 @@ snapshots.
 | 28 | `VmConfig.rtc`: a PL031 RTC in realtime mode |
 | 29 | the firmware configuration (M8 phase B): `VmConfig.firmware`, `flash_size`, `fw_cfg`, `fw_cfg_len`; `vm_flash`; the PL031 in deterministic mode there |
 | 30 | snapshots (M8 phase C): `vm_snapshot_size`, `vm_snapshot_save`, `vm_snapshot_restore`, `snapshot_version` (above); `lz_bound`, `lz_compress`, `lz_decompress` |
+| 31 | config changes (M8 graphics): `DevShared.config_gen`, the config-change interrupt raised from the signal path, `ConfigGeneration` (above) |

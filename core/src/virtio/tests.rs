@@ -575,8 +575,79 @@ fn shared_layout() {
     assert_eq!(offset_of!(DevShared, status), 4);
     assert_eq!(offset_of!(DevShared, features), 8);
     assert_eq!(offset_of!(DevShared, epoch), 16);
+    assert_eq!(offset_of!(DevShared, config_gen), 20);
     assert_eq!(offset_of!(DevShared, config), 24);
     assert_eq!(offset_of!(DevShared, req), 280);
     assert_eq!(offset_of!(DevShared, cpl), 280 + 8 + 4 * RING_WORDS);
     assert_eq!(size_of::<DeviceEntry>(), 40);
+}
+
+/// A host config change the way `web/devices.ts` does it: the bytes, then the signal's drain.
+fn change(t: &mut T, at: usize, v: u8) {
+    t.sh.update_config(|c| c[at].store(v, Ordering::Relaxed));
+    t.t.complete(&t.mem, &t.sh);
+}
+
+#[test]
+fn a_host_config_change_raises_the_config_interrupt() {
+    let mut t = T::new();
+    t.up(F_VERSION_1);
+    assert_eq!(t.rd(0x060), 0);
+    let gen0 = t.rd(0x0fc);
+    change(&mut t, 4, 7);
+    assert_eq!(t.rd(0x060), INT_CONFIG as u64);
+    assert!(t.t.irq());
+    assert_eq!(t.t.read(0x100 + 4, 1, &t.sh), Some(7));
+    assert_eq!(t.rd(0x0fc), gen0 + 2);
+    t.wr(0x064, INT_CONFIG as u64);
+    assert!(!t.t.irq());
+    // Nothing changed since: taking the signal again raises nothing.
+    t.t.complete(&t.mem, &t.sh);
+    assert!(!t.t.irq());
+    // Each change raises it once.
+    change(&mut t, 4, 8);
+    change(&mut t, 4, 9);
+    assert_eq!(t.rd(0x060), INT_CONFIG as u64);
+    assert_eq!(t.rd(0x0fc), gen0 + 6);
+}
+
+#[test]
+fn the_generation_never_agrees_with_itself_while_the_host_changes_the_config() {
+    let mut t = T::new();
+    t.up(F_VERSION_1);
+    t.sh.config_gen.store(1, Ordering::SeqCst); // the host is between its two bumps
+    let reads: Vec<u64> = (0..4).map(|_| t.rd(0x0fc)).collect();
+    for (i, a) in reads.iter().enumerate() {
+        assert!(reads[i + 1..].iter().all(|b| b != a), "{reads:?}");
+    }
+    // The interrupt waits for the end of the update.
+    t.t.complete(&t.mem, &t.sh);
+    assert_eq!(t.rd(0x060), 0);
+    t.sh.config_gen.store(2, Ordering::SeqCst);
+    assert_eq!((t.rd(0x0fc), t.rd(0x0fc)), (2, 2));
+    t.t.complete(&t.mem, &t.sh);
+    assert_eq!(t.rd(0x060), INT_CONFIG as u64);
+}
+
+#[test]
+fn a_reset_does_not_raise_an_old_config_change_again() {
+    let mut t = T::new();
+    t.up(F_VERSION_1);
+    change(&mut t, 0, 1);
+    t.wr(0x064, INT_CONFIG as u64);
+    t.wr(0x070, 0);
+    t.t.complete(&t.mem, &t.sh);
+    assert!(!t.t.irq());
+    assert_eq!(t.rd(0x0fc), 2); // the generation is the host's, not the driver's
+}
+
+#[test]
+fn a_device_with_a_config_change_not_yet_taken_is_not_quiet() {
+    let mut t = T::new();
+    t.up(F_VERSION_1);
+    assert!(t.t.quiet(&t.sh));
+    t.sh.update_config(|c| c[0].store(1, Ordering::Relaxed));
+    assert!(!t.t.quiet(&t.sh));
+    t.t.complete(&t.mem, &t.sh);
+    assert!(t.t.quiet(&t.sh));
 }

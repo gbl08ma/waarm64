@@ -177,7 +177,7 @@ impl WordRing {
 }
 
 /// Per-device state shared with the host (`vm_device`). `repr(C)`: events 0,
-/// status 4, negotiated features 8 (low word, high word), epoch 16, config 24,
+/// status 4, negotiated features 8 (low word, high word), epoch 16, config_gen 20, config 24,
 /// request ring 280, completion ring 280 + 8 + 4·RING_WORDS.
 #[repr(C)]
 pub struct DevShared {
@@ -188,10 +188,25 @@ pub struct DevShared {
     pub features: [AtomicU32; 2],
     /// Device resets so far; records carry its low 8 bits.
     pub epoch: AtomicU32,
-    _pad: AtomicU32,
+    /// The host's config generation (ABI 31): odd while it changes the config space,
+    /// even otherwise; see [`DevShared::update_config`].
+    pub config_gen: AtomicU32,
     pub config: [AtomicU8; CONFIG_SIZE],
     pub req: WordRing,
     pub cpl: WordRing,
+}
+
+impl DevShared {
+    /// The host's way to change the config space under a running driver
+    /// (ABI 31): `write` runs between two bumps of `config_gen`, so a driver
+    /// reading the generation around its config reads sees the change as one.
+    /// The caller then sets `vm::SIGNAL_DEVICE`; the transport raises the
+    /// config-change interrupt when it takes it.
+    pub fn update_config(&self, write: impl FnOnce(&[AtomicU8; CONFIG_SIZE])) {
+        self.config_gen.fetch_add(1, Ordering::SeqCst);
+        write(&self.config);
+        self.config_gen.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 impl Default for DevShared {
@@ -202,7 +217,7 @@ impl Default for DevShared {
             status: z(),
             features: [z(), z()],
             epoch: z(),
-            _pad: z(),
+            config_gen: z(),
             config: [const { AtomicU8::new(0) }; CONFIG_SIZE],
             req: WordRing::default(),
             cpl: WordRing::default(),
@@ -314,6 +329,10 @@ pub struct Transport {
     isr: u32,
     status: u32,
     epoch: u32,
+    /// The `config_gen` an interrupt was last raised for (kept over resets).
+    config_seen: u32,
+    /// Makes `ConfigGeneration` differ at every read while the host changes the config.
+    gen_skew: u32,
     /// A chain didn't fit the request ring; retried after completions.
     backlog: bool,
     scratch: Vec<u32>,
@@ -331,6 +350,8 @@ impl Transport {
             isr: 0,
             status: 0,
             epoch: 0,
+            config_seen: 0,
+            gen_skew: 0,
             backlog: false,
             scratch: Vec::new(),
         }
@@ -384,7 +405,17 @@ impl Transport {
             0x060 => self.isr,
             0x070 => self.status,
             0x0b0..0x0c0 => u32::MAX, // SHMLen/SHMBase: no shared memory regions
-            _ => 0, // write-only registers and ConfigGeneration (config never changes under the driver)
+            0x0fc => {
+                let g = sh.config_gen.load(Ordering::SeqCst);
+                if g & 1 == 0 {
+                    g
+                } else {
+                    // The host is changing the config: no two reads agree, so the driver retries.
+                    self.gen_skew = self.gen_skew.wrapping_add(1);
+                    g ^ self.gen_skew << 1
+                }
+            }
+            _ => 0, // write-only registers
         } as u64)
     }
 
@@ -463,13 +494,15 @@ impl Transport {
         if v == 0 {
             // Reset: everything but the configuration; completions still in
             // the ring (and any posted later for older requests) are dropped.
-            let (entry, epoch, scratch) = (
+            let (entry, epoch, seen, scratch) = (
                 self.entry,
                 self.epoch + 1,
+                self.config_seen,
                 core::mem::take(&mut self.scratch),
             );
             *self = Transport {
                 epoch,
+                config_seen: seen,
                 scratch,
                 ..Transport::new(entry)
             };
@@ -561,6 +594,11 @@ impl Transport {
     /// InterruptStatus unless the driver suppressed it, then retries chains
     /// that didn't fit the request ring. Returns events for the host.
     pub fn complete(&mut self, mem: &Mem, sh: &DevShared) -> u32 {
+        let g = sh.config_gen.load(Ordering::SeqCst);
+        if g & 1 == 0 && g != self.config_seen {
+            self.config_seen = g;
+            self.isr |= INT_CONFIG;
+        }
         while let Some([w0, len]) = sh.cpl.pop::<2>() {
             let (head, i) = ((w0 & 0xffff) as u64, (w0 >> 16 & 0xff) as usize);
             if w0 >> 24 != self.epoch & 0xff
@@ -602,7 +640,11 @@ impl Transport {
     /// taken in this state, so the rings and events aren't in it.
     pub fn quiet(&self, sh: &DevShared) -> bool {
         let empty = |r: &WordRing| r.head.load(Ordering::Acquire) == r.tail.load(Ordering::Acquire);
-        sh.events.load(Ordering::Acquire) == 0 && empty(&sh.req) && empty(&sh.cpl) && !self.backlog
+        sh.events.load(Ordering::Acquire) == 0
+            && sh.config_gen.load(Ordering::SeqCst) == self.config_seen
+            && empty(&sh.req)
+            && empty(&sh.cpl)
+            && !self.backlog
     }
 
     /// Whether a restore could post every in-flight chain again: each still
@@ -672,6 +714,7 @@ impl Transport {
         self.isr = r.u32()? & (INT_VRING | INT_CONFIG);
         self.status = r.u32()? & 0xff;
         self.epoch = r.u32()?;
+        self.config_seen = sh.config_gen.load(Ordering::SeqCst);
         if self.driver_features & !self.offered() != 0 {
             return Err(CORRUPT);
         }

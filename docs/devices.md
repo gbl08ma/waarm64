@@ -9,7 +9,7 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
 - **In the core** (`core/src/virtio.rs`, on the vCPU thread): virtio-mmio v2 transports (magic,
   version 2, device and vendor ID `WBPC`, feature select and negotiation with `FEATURES_OK`
   refused unless `VERSION_1` is accepted and nothing unoffered is, queue select/size/ready/
-  addresses, notify, InterruptStatus/ACK, status and reset, ConfigGeneration 0, SHM regions
+  addresses, notify, InterruptStatus/ACK, status and reset, ConfigGeneration (the host's `config_gen`, with the config-change interrupt: abi.md), SHM regions
   absent, config space 8/16/32/64-bit), and **split virtqueues** with indirect descriptors and
   `VIRTQ_AVAIL_F_NO_INTERRUPT`, no `EVENT_IDX`. Our own split-ring code, not rust-vmm's
   `virtio-queue`.
