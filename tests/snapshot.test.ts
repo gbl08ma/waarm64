@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { lzCodec } from '../web/lz.ts';
 import { readSnapshot, runThroughSnapshots, writeSnapshot } from '../web/snapshot.ts';
-import { removeOverlay } from '../web/overlay.ts';
+import { dropSuspend, removeOverlay, suspended, suspendWriter } from '../web/overlay.ts';
 import { SnapshotError } from '../web/snapshot-file.ts';
 import { STEPS } from './steps.ts';
 import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, type BootOptions } from '../web/vm.ts';
@@ -259,6 +259,61 @@ test('a snapshot carries the disk\'s changes: a restore replaces the overlay wit
   await readSnapshot(hfile, codec, codec.snapshotVersion, { devices: o.devices, sha256: () => (asked++, 'never') });
   assert.equal(asked, 1, 'the hash is only asked for when the cheap identity differs');
   await removeOverlay(name);
+});
+
+// Suspend (loop 8): the snapshot without the disk's blocks, kept beside the overlay; it resumes
+// onto the overlay as the suspended machine left it.
+test('a suspended machine resumes onto its overlay, and its file is no snapshot to load elsewhere', { skip }, async () => {
+  const name = 'snapshot-test-suspend';
+  await removeOverlay(name);
+  const codec = await lzCodec(WASM);
+  const o = buildroot({ cmdline: `${GUEST_CMDLINE} -- /test-rw.sh`, devices: guestDevices(disk, name) });
+  const plain = `${name}-plain`;
+  await removeOverlay(plain);
+  const whole = await runToPowerOff(WASM, { ...o, devices: guestDevices(disk, plain) });
+  await removeOverlay(plain);
+  const wrote = whole.console.match(/rw: wrote (\S+)/)?.[1];
+  assert.ok(wrote, whole.console);
+  let vm = await bootVm(WASM, o);
+  let steps = 0;
+  const run = async (to: number) => {
+    for (;;) {
+      const r = await vm.runAsync(Math.min(100_000_000, to - steps));
+      steps += r.steps;
+      vm.drain();
+      if (r.kind === Exit.DEVICE) await vm.settle();
+      if (r.kind === Exit.PSCI || steps >= to) return r;
+    }
+  };
+  // Suspended after the script wrote its file: the machine is closed, not run on.
+  await run(whole.steps - 400_000);
+  const out = await suspendWriter(name);
+  const w = await writeSnapshot(vm, (b) => out.write(b), {}, codec, { suspend: true });
+  out.close();
+  await vm.close();
+  assert.equal(w.diskBlocks, 0, 'a suspended machine carries no disk block');
+  const file = (await suspended(name))!;
+  assert.equal(file.size, w.bytes);
+  // It is not a snapshot to load: it has no disk. And a snapshot is not a suspended machine.
+  await assert.rejects(readSnapshot(file, codec, codec.snapshotVersion, { devices: o.devices }), (e: unknown) => e instanceof SnapshotError && e.problem === 'other-disk' && /suspended machine/.test(e.message));
+  // Resumed: the overlay is kept, the machine finishes in the unbroken boot's steps.
+  const { header, restore } = await readSnapshot(file, codec, codec.snapshotVersion, { devices: o.devices, resume: true });
+  assert.equal(header.suspend, true);
+  vm = await bootVm(WASM, { ...o, restore });
+  await dropSuspend(name); // before it runs: the disk moves on
+  assert.equal(await suspended(name), undefined);
+  poweredOff({ ...(await run(Infinity)), console: '' });
+  assert.equal(steps, whole.steps);
+  await vm.close();
+  const next = await runToPowerOff(WASM, o);
+  assert.equal(next.console.match(/rw: kept (\S+)/)?.[1], wrote, next.console);
+  // Resetting the disk drops a suspended machine with it.
+  const again = await suspendWriter(name);
+  again.write(new Uint8Array(8));
+  again.close();
+  assert.ok(await suspended(name));
+  await removeOverlay(name);
+  assert.equal(await suspended(name), undefined);
 });
 
 test('a machine with a 9p device says it cannot be saved', { skip }, async () => {

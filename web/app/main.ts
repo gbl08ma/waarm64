@@ -60,6 +60,7 @@ const messageActions = $('message-actions');
 const restartBtn = $<HTMLButtonElement>('restart');
 const resetDiskBtn = $<HTMLButtonElement>('reset-disk');
 const saveSnapshotBtn = $<HTMLButtonElement>('save-snapshot');
+const suspendBtn = $<HTMLButtonElement>('suspend');
 const loadSnapshotInput = $<HTMLInputElement>('load-snapshot-input');
 const bootCard = $('boot');
 const bootProgress = $<HTMLProgressElement>('boot-progress');
@@ -112,7 +113,7 @@ let saving = false;
 /** Which buttons can be used now: a snapshot saves from a machine that runs, and none of the actions that stop it overlap a save or a switch. */
 function syncButtons() {
   restartBtn.disabled = resetDiskBtn.disabled = switching || saving;
-  saveSnapshotBtn.disabled = switching || saving || !(state === 'running' || state === 'booting');
+  saveSnapshotBtn.disabled = suspendBtn.disabled = switching || saving || !(state === 'running' || state === 'booting');
 }
 
 // The serial console's output, kept for the log a user can copy or save (the terminal's scrollback is shorter).
@@ -135,7 +136,7 @@ let note = '';
 
 function setState(s: PageState, message?: string, actions: Action[] = [], kind: 'error' | 'warn' = 'error') {
   state = s;
-  stateEl.textContent = { idle: 'Not started', loading: 'Loading', booting: 'Booting', running: 'Running', off: 'Powered off', rebooting: 'Rebooting', crashed: 'Crashed', failed: "Couldn't start" }[s];
+  stateEl.textContent = { idle: 'Not started', loading: 'Loading', booting: 'Booting', running: 'Running', off: 'Powered off', suspended: 'Suspended', rebooting: 'Rebooting', crashed: 'Crashed', failed: "Couldn't start" }[s];
   stateEl.dataset.state = s;
   document.body.dataset.state = s;
   messageText.textContent = message ?? note;
@@ -147,7 +148,7 @@ function setState(s: PageState, message?: string, actions: Action[] = [], kind: 
     return b;
   }));
   messageEl.hidden = !(message || note);
-  restartBtn.textContent = s === 'off' || s === 'idle' ? 'Start' : s === 'failed' ? 'Retry' : 'Restart';
+  restartBtn.textContent = s === 'off' || s === 'idle' || s === 'suspended' ? 'Start' : s === 'failed' ? 'Retry' : 'Restart';
   bootCard.hidden = !(s === 'loading' || s === 'booting') || bootCard.dataset.done === 'true';
   bootSerial.hidden = !spec.firmware || s !== 'booting';
   syncButtons();
@@ -170,6 +171,8 @@ const saveLog: Action = {
 };
 const resetDisk: Action = { label: 'Reset disk…', run: () => void resetDiskAsked() };
 const startNormally: Action = { label: 'Start', run: () => void restart() };
+const resumeAction: Action = { label: 'Start', run: () => void restart() };
+const bootInstead: Action = { label: 'Boot instead', run: () => { if (confirm('Boot the machine from its disk instead? Its suspended memory is dropped: what the guest had not written to its disk is lost, as after a power cut.')) void restart(false); } };
 const loadAgain: Action = { label: 'Load snapshot…', run: () => loadSnapshotInput.click() };
 const ACTIONS: Record<Problem, Action[]> = {
   'missing-core': [retry],
@@ -182,8 +185,11 @@ const ACTIONS: Record<Problem, Action[]> = {
   emulator: [showLog, copyLog, saveLog],
 };
 
-/** Starts a machine: booted, or (with `snapshot`) the one the file holds. */
-function start(snapshot?: File) {
+/**
+ * Starts a machine: booted, or (with `snapshot`) the one the file holds. A machine suspended on
+ * this disk is resumed instead of booting, unless `resume` is false (it is then dropped).
+ */
+function start(snapshot?: File, resume = true) {
   // The machine worker draws the screen (web/display.ts): a canvas hands its drawing over only once.
   const focused = document.activeElement === canvas;
   const fresh = canvas.cloneNode() as HTMLCanvasElement;
@@ -209,7 +215,12 @@ function start(snapshot?: File) {
     if (run !== r) return;
     const m = e.data;
     if (m.type === 'state') {
-      setState(m.state, m.message, m.problem ? ACTIONS[m.problem] : []);
+      if (m.state === 'suspended') {
+        saving = false;
+        snapshotJob = undefined;
+      }
+      // A message without a problem is a note (resumed, suspended), not an error.
+      setState(m.state, m.message, m.problem ? ACTIONS[m.problem] : m.state === 'suspended' ? [resumeAction, bootInstead] : [], m.problem || m.state === 'crashed' || m.state === 'failed' ? 'error' : 'warn');
       if (m.state === 'booting') {
         $('boot-title').textContent = `Booting ${spec.label}`;
         bootProgress.removeAttribute('value');
@@ -256,7 +267,7 @@ function start(snapshot?: File) {
     snapshotJob?.error(`the machine's worker failed: ${e.message}`);
     setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator);
   };
-  worker.postMessage({ type: 'start', machine, ncpus, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
+  worker.postMessage({ type: 'start', machine, ncpus, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
   if (ip) autoconnect();
   renderNetwork();
 }
@@ -296,11 +307,11 @@ function busy() {
   return switching || saving;
 }
 
-/** Stops the machine and starts a new one. */
-const restart = () => exclusively(async () => {
+/** Stops the machine and starts a new one (which resumes a suspended machine, unless `resume` is false). */
+const restart = (resume = true) => exclusively(async () => {
   await stop();
   term.reset();
-  start();
+  start(undefined, resume);
 });
 
 restartBtn.onclick = () => {
@@ -507,6 +518,29 @@ async function saveSnapshot() {
   }
 }
 saveSnapshotBtn.onclick = () => void saveSnapshot();
+
+// Suspend (docs/frontend.md "Suspend"): the machine stops with its memory kept beside its disk in this
+// browser; the next start (this page opened again, Start) resumes it. Nothing is asked: nothing is lost.
+suspendBtn.hidden = !spec.overlay;
+suspendBtn.onclick = () => {
+  const r = run;
+  if (!r || saving || switching || !(state === 'running' || state === 'booting')) return;
+  saving = true;
+  syncButtons();
+  snapshotJob = {
+    progress: (phase, f) => { stateEl.textContent = f > 0 && f < 1 ? `${phase} ${Math.floor(100 * f)}%` : phase; },
+    chunk: () => {},
+    done: () => {},
+    // It runs on; the `suspended` state ends a suspend that worked (the worker's handler above).
+    error: (message) => {
+      saving = false;
+      snapshotJob = undefined;
+      if (run === r) setState(state, `${message}\nThe machine runs on.`, [], 'error');
+      syncButtons();
+    },
+  };
+  r.worker.postMessage({ type: 'suspend' } satisfies ToWorker);
+};
 
 /** Whether `file` starts with the snapshot signature (`WEBPCSNP`): how a chosen or dropped file is told from a disk image. */
 const isSnapshot = async (file: File) => new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) === 'WEBPCSNP';

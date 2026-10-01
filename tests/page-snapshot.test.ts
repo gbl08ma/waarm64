@@ -253,6 +253,75 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await fresh.close();
 });
 
+test('Suspend keeps the machine in the browser: opening the page again resumes it, once; Boot instead and Reset disk drop it', { skip, timeout: 8 * 60_000 }, async () => {
+  const context = await browser.newContext({ viewport: { width: 1200, height: 800 } });
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=2&view=terminal`);
+  await running(page);
+  const suspendFile = async () => (await opfs(page))['webpc-buildroot']?.suspend;
+  /** The shell's `SUSVAR`, asked under a fresh marker. */
+  let asks = 0;
+  const susvar = async () => {
+    const tag = `ask${++asks}`;
+    await onSerial(page, `echo ${tag}=[$SUSVAR]\n`);
+    await shows(page, new RegExp(`${tag}=\\[[^\\]$]*\\]`));
+    return (await terminal(page)).match(new RegExp(`${tag}=\\[([^\\]$]*)\\]`))![1];
+  };
+  const suspend = async () => {
+    await page.locator('#suspend').click();
+    await page.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 60_000 });
+    assert.match((await message(page))!, /^Suspended: the machine's memory is kept in this browser/);
+    assert.ok((await suspendFile())! > 100_000, 'the suspended machine is beside the overlay');
+    assert.equal(await page.locator('#restart').textContent(), 'Start');
+  };
+  assert.equal(await page.locator('#suspend').isEnabled(), true);
+  await onSerial(page, 'SUSVAR=one\n');
+  assert.equal(await susvar(), 'one');
+
+  // Suspended, then the page opened again: the machine is where it was, and its suspended copy is gone.
+  await suspend();
+  const t0 = performance.now();
+  await page.reload();
+  await running(page);
+  console.log(`# suspend (buildroot): resumed ${((performance.now() - t0) / 1000).toFixed(2)} s after the reload`);
+  assert.match((await message(page))!, /^Resumed the suspended machine/);
+  assert.equal(await suspendFile(), undefined, 'a resumed machine has no suspended copy');
+  assert.equal(await susvar(), 'one');
+  // Opened again without a suspend: it boots (a new shell). The planted bug (the copy kept after a resume) resumes the old one here.
+  await onSerial(page, 'SUSVAR=two\n');
+  assert.equal(await susvar(), 'two');
+  await page.reload();
+  await running(page);
+  assert.doesNotMatch((await message(page)) ?? '', /Resumed/);
+  assert.equal(await susvar(), '');
+
+  // Start resumes too; Boot instead drops the suspended machine and boots; Reset disk drops it with the disk's changes.
+  await onSerial(page, 'SUSVAR=three\n');
+  assert.equal(await susvar(), 'three');
+  await suspend();
+  await page.locator('#restart').click();
+  await running(page);
+  assert.equal(await susvar(), 'three');
+  await suspend();
+  await page.locator('#message-actions button', { hasText: 'Boot instead' }).click();
+  await page.waitForFunction(() => document.body.dataset.state === 'booting', null, { timeout: 30_000, polling: 20 });
+  await running(page);
+  assert.equal(await suspendFile(), undefined);
+  assert.equal(await susvar(), '');
+  await suspend();
+  await page.locator('#reset-disk').click();
+  await page.waitForFunction(() => document.body.dataset.state === 'booting', null, { timeout: 30_000, polling: 20 });
+  await running(page);
+  assert.equal(await suspendFile(), undefined);
+  assert.equal(await susvar(), '');
+  // A snapshot file is still what leaves the browser: a suspended machine's file is not offered anywhere.
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
 test('a snapshot of Buildroot on the Debian page is refused at once, before anything stops', { skip: skip || skipDebian, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
   // Written by Buildroot's page: only the header matters here.
   const path = await headerOnly('buildroot-header.webpcsnap', { machine: 'buildroot', label: 'Buildroot (test guest)', ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
@@ -325,13 +394,32 @@ test('Debian on the page: a snapshot of a logged-in machine with a file on its d
   // And the disk takes writes: a new file, synced, read back from the disk.
   await onSerial(p2, 'echo after-$((6*7)) >/root/after && sync && echo 3 >/proc/sys/vm/drop_caches && cat /root/after && echo wr""itten\n');
   await shows(p2, /after-42[^]*?written/);
-  // A reload boots the machine's disk normally (the overlay the restore wrote, the variable store beside it): both files are there.
+  // Suspend: the machine stops with its memory kept beside the overlay; a reload resumes it, still logged in.
+  await onSerial(p2, 'SUSVAR=suspended-$((6*7)); clear; echo re""ady-to-suspend\n');
+  await shows(p2, /ready-to-suspend/);
+  const t2 = performance.now();
+  await p2.locator('#suspend').click();
+  await p2.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 120_000 });
+  const suspendMs = performance.now() - t2;
+  const kept = (await opfs(p2))['webpc-debian'];
+  assert.ok(kept.suspend > 1 << 20, JSON.stringify(kept));
+  await p2.reload();
+  const t3 = performance.now();
+  await running(p2, 120_000);
+  console.log(`# debian suspend: ${(kept.suspend / 1e6).toFixed(1)} MB kept, suspended in ${(suspendMs / 1000).toFixed(1)} s, resumed ${((performance.now() - t3) / 1000).toFixed(1)} s after the reload`);
+  assert.match((await message(p2))!, /^Resumed the suspended machine/);
+  assert.equal((await opfs(p2))['webpc-debian'].suspend, undefined, 'a resumed machine has no suspended copy');
+  await onSerial(p2, 'clear; echo var=[$SUSVAR]; echo third-$((6*7)) >/root/third && sync && echo 3 >/proc/sys/vm/drop_caches && cat /root/snapmark /root/after /root/third && echo al""l-three\n');
+  await shows(p2, /var=\[suspended-42\][^]*?disk-kept-42\s*after-42\s*third-42\s*all-three/);
+  // A reload now boots the machine's disk normally (the overlay the restore wrote and the resumed machine
+  // wrote on, the variable store beside it): the files are there.
   await p2.reload();
   await running(p2);
+  assert.doesNotMatch((await message(p2)) ?? '', /Resumed/);
   await onSerial(p2, 'root\n');
   await shows(p2, /root@\S+:~# /);
-  await onSerial(p2, 'cat /root/snapmark /root/after\n');
-  await shows(p2, /cat \/root\/snapmark \/root\/after\s*disk-kept-42\s*after-42/);
+  await onSerial(p2, 'cat /root/snapmark /root/after /root/third\n');
+  await shows(p2, /cat \/root\/snapmark \/root\/after \/root\/third\s*disk-kept-42\s*after-42\s*third-42/);
   assert.deepEqual(errors2, []);
   await fresh.close();
 }));

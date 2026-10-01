@@ -33,11 +33,14 @@ const BLOCK = 4096;
  * resolves (RAM and the disks must not move while it is written). `sha256` gives a disk's base
  * image's hash, if the caller has it.
  */
-export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined } = {}) {
+export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean } = {}) {
   const state = await vm.snapshot();
-  const disks = await vm.disks();
-  const pinned: SnapshotDisk[] = disks.map((d) => ({ slot: d.slot, identity: d.identity, size: d.size, blocks: d.blocks.length, sha256: opts.sha256?.(d.slot) }));
-  const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize, disks: pinned };
+  const all = await vm.disks();
+  const pinned: SnapshotDisk[] = all.map((d) => ({ slot: d.slot, identity: d.identity, size: d.size, blocks: opts.suspend ? 0 : d.blocks.length, sha256: opts.sha256?.(d.slot) }));
+  // A suspended machine's file (`suspend`) has no disk blocks: it stays beside the overlays it
+  // pins, and resumes only while they are as it left them (`readSnapshot`'s `resume`).
+  const disks = opts.suspend ? [] : all;
+  const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize, disks: pinned, ...(opts.suspend ? { suspend: true } : {}) };
   const w = new SnapshotWriter(sink, header, { codec, concurrency: 1 });
   await w.bytes('CORE', state.core);
   await w.bytes('DEVS', new TextEncoder().encode(JSON.stringify(state.host)));
@@ -65,10 +68,14 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
  * (which can be read twice) a file that is truncated or fails a checksum anywhere. The file is
  * then read as `bootVm` fills the new VM: RAM, and the disks' blocks, which **replace the
  * overlays** of those disks (and the variable stores kept beside them) before the backends open them.
+ *
+ * `resume`: the file is a suspended machine's (`writeSnapshot`'s `suspend`: no disk blocks) and
+ * the overlays are as that machine left them, which only the caller can know (web/overlay.ts
+ * `suspended`): they are kept. Such a file is refused without `resume`, and any other with it.
  */
 export async function readSnapshot(
   source: ReadableStream<Uint8Array> | Blob, codec: Codec, coreVersion: number,
-  opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string> } = {},
+  opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean } = {},
 ): Promise<{ header: SnapshotHeader; restore: Restore }> {
   if (source instanceof Blob) {
     // A pass over the whole file first: a restore replaces the disk's changes, so it must not find
@@ -80,6 +87,11 @@ export async function readSnapshot(
   const { header } = s;
   if (header.coreVersion !== coreVersion) {
     throw new SnapshotError('other-version', `This snapshot was made by another version of this page (its machine state is format ${header.coreVersion}; this version reads ${coreVersion}). Open it in the version that made it.`);
+  }
+  if (!!header.suspend !== !!opts.resume) {
+    throw header.suspend
+      ? new SnapshotError('other-disk', "This file is a suspended machine's memory without its disk's changes: it only resumes in the browser that suspended it. Use Save snapshot to take a machine elsewhere.")
+      : corrupt('it is not a suspended machine');
   }
   const pinned = (header.disks ?? []) as SnapshotDisk[];
   if (!Array.isArray(pinned) || pinned.some((d) => !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0)) throw corrupt('its list of disks is not readable');
@@ -129,7 +141,7 @@ export async function readSnapshot(
       // written), then takes the file's blocks.
       const open = new Map<number, { disk: ReturnType<typeof overlay>; close(): void; size: number }>();
       try {
-        for (const [slot, o] of overlays) {
+        for (const [slot, o] of opts.resume ? [] : overlays) {
           await removeOverlay(o.name);
           const files = await openOverlay(o.name, o.identity);
           // Whole blocks are written, so the base is never read.

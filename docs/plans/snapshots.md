@@ -1,9 +1,13 @@
-# Snapshots (M8 phase C lane; in progress)
+# Snapshots (M8 phase C lane; done 2026-10-01)
 
-A plan: what is built is marked **done** in "Loops" and described in the topic docs as it lands.
-Revisited on 2026-10-01, after phase B ("your own disk") changed what a disk is. The user decided on
-2026-09-29 that snapshots are **files the user downloads and uploads**. The state between sessions
-is in `M8-SNAPSHOTS-HANDOVER.md` (repo root).
+The lane's plan, kept as the record of its design and of what each loop found; what exists is in
+the topic docs ([platform.md](../platform.md) "Snapshots" and "Pausing a VM",
+[abi.md](../abi.md) "M8 phase C", [frontend.md](../frontend.md) "Snapshots",
+[testing.md](../testing.md)), the numbers in `bench/boot/REPORT.md` ("M8 phase C loop 4" and
+"M8 phase C exit"), the loose ends in [backlog.md](../backlog.md) "Snapshots". Revisited on
+2026-10-01, after phase B ("your own disk") changed what a disk is. The user decided on
+2026-09-29 that snapshots are **files the user downloads and uploads**, and on 2026-10-01 to
+build Suspend too.
 
 **Goal:** the page resumes a booted machine in a few seconds instead of a ~50 s boot, and **the user
 owns their snapshots as files**: the page offers the running machine's snapshot for download, and
@@ -114,11 +118,12 @@ changes what is saved. A snapshot from another version is refused; migrating is 
   terminal showing the saved output's tail.
 - The worker protocol grows `snapshot` (page → worker, with the file handle or none) and
   `start.snapshot` (a `File`); progress and errors as the disk export's.
-- **Suspend** (proposed, the user to confirm): the snapshot kept in OPFS beside the overlay,
+- **Suspend** (the user, 2026-10-01: build it): the snapshot kept in OPFS beside the overlay,
   without the overlay's blocks (they are there already), and the machine stopped; the next page
-  load resumes from it instead of booting. A generation number in the overlay (bumped when a
-  machine opens it for writing) voids a suspended snapshot once the disk moved on; Reset disk
-  drops it. Resuming a machine that kept running after its snapshot would need a copy-on-write
+  load resumes from it instead of booting. As built, an invariant voids it instead of the
+  generation number first proposed: the copy exists only while no machine has written the disk
+  since (dropped before any machine runs on the overlay; [frontend.md](../frontend.md)
+  "Snapshots"); Reset disk drops it. Resuming a machine that kept running after its snapshot would need a copy-on-write
   layer per snapshot: not in this lane.
 
 ## Loops
@@ -164,21 +169,23 @@ for the loops that touch parallel SMP.
    paused). The flash copy beside the overlay is the page worker's to rewrite after a restore
    (the restore deletes it with the overlay). The plan was: the overlay's blocks out and in through the device worker's handles,
    the base's identity (measured), the flash copy.
-7. **The page.** Save snapshot, Load snapshot, the drop, the messages; `tests/page-snapshot.test.ts`
+7. **The page: done** ([frontend.md](../frontend.md) "Snapshots"; Debian: a 175 MB file, the
+   machine paused 1.4 s, loaded in a fresh profile in 2.1 s). The plan was: Save snapshot, Load snapshot, the drop, the messages; `tests/page-snapshot.test.ts`
    (Buildroot always; Debian: boot, write a file, download the snapshot, then in a **fresh
    profile** upload it and find the machine running, logged in, the file there, within N seconds;
    refusals). Planted: the overlay left out of the file.
-8. **Suspend** (if confirmed).
-9. **Exit.** Numbers (the `page_debian` bench case: page load to `running`; time to `running`
+8. **Suspend: done** (Debian: suspended in 1.3 s, resumed 0.8 s after a reload).
+9. **Exit: done.** The numbers are the page tests' own timings (`bench/boot/REPORT.md` "M8 phase
+   C exit"), not a `bench/run.ts` case: the tracked `page_debian` case is still in the backlog.
+   The plan was: numbers (the `page_debian` bench case: page load to `running`; time to `running`
    from a snapshot; file size; save time), docs (abi, platform, devices, frontend, testing), the
    backlog, PLAN.md.
 
-## Open questions
+## Decisions
 
-For the user (none blocks loops 1 to 7):
-- **Suspend** as described above, or no local snapshot at all in this lane?
-- **The version policy** (a state format version, not the core build's hash).
-- **The wall clock after a resume** (the RTC is right, the guest's system time lags until set).
+The user's (2026-10-01): **Suspend** is built; **the version policy** stands (a state format
+version of its own, not the core build's hash); **the wall clock after a resume** is fine as it is
+(the RTC is right, the guest's system time lags until something sets it).
 
 Settled by measurement: the codec (loop 4), the base's identity check (loop 6).
 

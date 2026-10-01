@@ -510,3 +510,26 @@ must be dealt out interleaved (chunk *c* to worker *c* mod *n*): contiguous rang
 four, because the non-zero pages sit at low addresses. The file's frames name their codec, so
 deflate-raw stays readable (codec 1) and can be offered where size matters.
 Not measured: Debian's own RAM, file I/O, the disk's blocks.
+
+## M8 phase C exit: snapshots on the page
+
+2026-10-01, the M4 VM, Chromium 153.0.8010.52 headless, Debian 13 through UEFI on 2 parallel
+vCPUs with 1 GiB, logged in on the serial console. **These are the page tests' own timings**
+(`tests/page-snapshot.test.ts`; two to four runs each, beside other work on the machine), not
+`bench/run.ts` cases with medians and IQR: read them as orders of magnitude. Raw:
+`results/m8-snapshots-exit/page.json`.
+
+| | Debian | Buildroot (256 MiB) |
+|---|---|---|
+| Boot: page load to `running` | 54 to 57 s | |
+| Save snapshot: the file | 170 to 178 MB | 7.8 MB |
+| Save snapshot: the machine paused | 1.3 to 1.4 s | 0.07 to 0.11 s |
+| Load snapshot, fresh profile: the choice to `running` | 2.1 s | 0.14 to 0.42 s |
+| Suspend: the click to `suspended` (the copy kept: 174 MB) | 1.3 s | |
+| Resume: a reload to `running` | 0.8 s | 0.15 s |
+
+A booted Debian is back in 2 s from a file and under 1 s from a suspend, against a 55 s boot.
+The pause of a save is mostly the file's write (the codec alone compresses that RAM in ~0.5 s,
+"M8 phase C loop 4"). In Node, Alpine's userspace benchmark (1 GiB) saves a 40 to 46 MiB file in
+0.3 to 0.5 s and starts from one in 0.13 to 0.24 s (`tests/snapshot.test.ts`'s medians).
+

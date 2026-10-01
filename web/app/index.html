@@ -131,6 +131,7 @@
     <p id="save-hint">The machine stops while the file is written, as if its plug were pulled: shut it down first (<code>poweroff</code>) for a clean disk.</p>
   </div></details>
   <button id="save-snapshot" title="Save the running machine as it is, with its disk's changes, to a file: it pauses for a moment, then runs on" disabled>Save snapshot</button>
+  <button id="suspend" title="Stop the machine and keep its memory in this browser: the next start, or opening this page again, resumes it where it was" disabled hidden>Suspend</button>
   <button id="load-snapshot" title="Replace the machine by a saved snapshot (also: choose or drop the snapshot file with Open disk…)">Load snapshot…</button><input type="file" id="load-snapshot-input" hidden>
   <button id="open-disk" title="Boot a disk image of your own: a qcow2 or raw file (or drop one on the page)">Open disk…</button><input type="file" id="open-disk-input" hidden>
   <button id="load-changes" title="Put the changes of a saved changes file onto this disk (the disk it was made over must be the one on the page)" hidden>Load changes…</button><input type="file" id="load-changes-input" hidden>

@@ -29,7 +29,7 @@ extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vC
 **Current:** M8, a usable machine (PLAN.md §3). Phase A (the interactive machine: `npm start`, the
 page in `web/app/`, [docs/frontend.md](docs/frontend.md)) and phase B (your own disk: unmodified
 images through UEFI, disk in and out, changes back in; [docs/plans/uefi.md](docs/plans/uefi.md))
-are done; of the C tracks, networking is done up to its loose ends ([docs/plans/networking.md](docs/plans/networking.md)) and snapshots are in progress ([docs/plans/snapshots.md](docs/plans/snapshots.md), `M8-SNAPSHOTS-HANDOVER.md`). Loose ends go in
+are done; of the C tracks, networking is done up to its loose ends ([docs/plans/networking.md](docs/plans/networking.md)) and snapshots are done (save and load a machine as a file, Suspend: [docs/plans/snapshots.md](docs/plans/snapshots.md)). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment

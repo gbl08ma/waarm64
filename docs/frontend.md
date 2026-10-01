@@ -77,6 +77,9 @@ Page → worker:
   and the command line are then the file's.
 - `snapshot {handle?}`: save a snapshot of the running machine to the file handle's stream, or,
   without one, back in `snapshot-chunk` messages; answered by `snapshot-done` or `snapshot-error`.
+- `suspend`: stop the machine with its memory kept beside its disk ("Snapshots": Suspend); answered
+  by the state `suspended`, or by `snapshot-error` (the machine runs on). `start.resume` false
+  boots even if a suspended machine is there (it is dropped); otherwise a start resumes one.
 - `stop`: stop the vCPUs and release the backends (the overlay's OPFS handles); answered by
   `stopped`. A machine still booting (`bootVm` not returned: its device worker may already have
   the overlay) is closed once it's there. The page then terminates the worker (after 3 s without
@@ -227,6 +230,31 @@ Start (a normal boot) and Load snapshot… again. The message says what was refu
 `readSnapshot`, that nothing was touched ("the machine isn't running and its disk is as it was");
 past that point (`bootVm` has the file) it says the disk may hold part of the snapshot's changes
 and offers Reset disk.
+
+**Suspend** (the header, for a machine with an overlay; enabled while `running` or `booting`): the
+machine stops and its memory stays in this browser; opening the page again, or Start, resumes it
+where it was. Nothing is asked: nothing is lost. The worker pauses the VM, writes its snapshot
+**without the disk's blocks** (`writeSnapshot`'s `suspend`: they are in the overlay already) to
+the file `suspend` in the overlay's OPFS directory (`suspendWriter` in web/overlay.ts), closes the
+VM without another step, and posts the state `suspended` (its message says the size; the actions
+are Start and Boot instead). A failure before that leaves the machine running.
+- **A start resumes.** The worker looks for a suspended machine beside the disk before it
+  downloads a kernel (`suspended`), and starts from it as from a snapshot file, except that the
+  overlay is kept (`readSnapshot`'s `resume`): `loading` ("Resuming the suspended machine"), then
+  `running` with the note "Resumed the suspended machine." If it can't be resumed (another core
+  version, a damaged file), it is dropped and the machine boots, with a note saying so.
+- **What keeps it safe is an invariant, not a check:** the suspended copy exists only while no
+  machine has written the disk since. The worker drops it (`dropSuspend`) before any machine runs
+  on the overlay: right after a resume's `bootVm`, before the first step; and before a boot the
+  page asked for (`start.resume` false: Boot instead, which confirms that the suspended memory is
+  lost). Reset disk, Load changes and Load snapshot delete it with the overlay (`removeOverlay`).
+  A copy that outlived a write to its disk would resume a guest whose page cache and filesystem
+  state no longer match the disk; a generation counter compared at resume was the plan's first
+  idea, and needs every writer to bump it, which is the same discipline with one more file.
+- A suspended machine's file is not a snapshot to take elsewhere (it has no disk): `readSnapshot`
+  refuses it without `resume`, and Save snapshot is what leaves the browser.
+- With a disk of one's own (Open disk…), the suspended copy is beside that disk's overlay: it
+  resumes when that disk is opened again (the page doesn't remember a chosen file over a reload).
 
 **Limits.** No SHA-256 of the base image is written (hashing takes seconds and nothing caches it
 yet), so `readSnapshot` requires the same disk identity: the machine's own disk, or the same file

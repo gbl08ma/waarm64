@@ -211,6 +211,7 @@ export async function removeOverlay(name: string) {
     if (typeof navigator.storage === 'undefined') {
       inMemory.delete(name);
       inMemoryFlash.delete(name);
+      inMemorySuspend.delete(name);
       return;
     }
     await (await navigator.storage.getDirectory()).removeEntry(name, { recursive: true });
@@ -218,6 +219,73 @@ export async function removeOverlay(name: string) {
     if ((e as DOMException).name !== 'NotFoundError') throw e;
   } finally {
     release();
+  }
+}
+
+/** Node has no OPFS: suspended machines live in memory there, by overlay name. */
+const inMemorySuspend = new Map<string, Uint8Array[]>();
+const SUSPEND = 'suspend';
+
+/**
+ * A suspended machine (docs/frontend.md "Suspend"): its snapshot without the disk's blocks, in a
+ * file of overlay `name`'s directory. **The file exists only while no machine has written the
+ * overlay since it was made**: whoever starts a machine on the overlay takes it (`suspended`) and
+ * drops it (`dropSuspend`) before the machine runs, resumed or booted; it goes with the overlay
+ * when the disk is reset or replaced (`removeOverlay`). That invariant is what makes resuming
+ * safe, with no counter to compare. This writes it: a sink for the bytes, in order, then
+ * `close` (a file that never got there has no end marker, and is refused as truncated) or
+ * `abort` (the file is removed). Dedicated workers only in a browser.
+ */
+export async function suspendWriter(name: string): Promise<{ write(bytes: Uint8Array): void; close(): void; abort(): Promise<void> }> {
+  if (typeof navigator.storage === 'undefined') {
+    const parts: Uint8Array[] = [];
+    inMemorySuspend.delete(name);
+    return { write: (b) => { parts.push(b.slice()); }, close: () => { inMemorySuspend.set(name, parts); }, abort: async () => { inMemorySuspend.delete(name); } };
+  }
+  const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name, { create: true });
+  const h = await (await dir.getFileHandle(SUSPEND, { create: true })).createSyncAccessHandle();
+  h.truncate(0);
+  let at = 0;
+  return {
+    write(b) {
+      if (h.write(b, { at }) !== b.length) throw new Error("the browser's storage is full");
+      at += b.length;
+    },
+    close() {
+      h.flush();
+      h.close();
+    },
+    async abort() {
+      h.close();
+      await dir.removeEntry(SUSPEND).catch(() => {});
+    },
+  };
+}
+
+/** The suspended machine kept beside overlay `name`, if there is one. */
+export async function suspended(name: string): Promise<Blob | undefined> {
+  if (typeof navigator.storage === 'undefined') {
+    const parts = inMemorySuspend.get(name);
+    return parts && new Blob(parts as BlobPart[]);
+  }
+  try {
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
+    const file = await (await dir.getFileHandle(SUSPEND)).getFile();
+    return file.size ? file : undefined;
+  } catch (e) {
+    if ((e as DOMException).name !== 'NotFoundError') throw e;
+    return undefined;
+  }
+}
+
+/** Drops the suspended machine beside overlay `name` (none is fine): before a machine runs on the overlay. */
+export async function dropSuspend(name: string) {
+  if (typeof navigator.storage === 'undefined') return void inMemorySuspend.delete(name);
+  try {
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
+    await dir.removeEntry(SUSPEND);
+  } catch (e) {
+    if ((e as DOMException).name !== 'NotFoundError') throw e;
   }
 }
 

@@ -257,7 +257,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **No boot-to-login benchmark case:** the page's time to `running` is measured by ad-hoc
   drivers and the end-to-end test (bench/boot/REPORT.md "M8 loop 6"). Snapshots' resume time needs
   a tracked baseline: add a `page_debian` case (page load to `running`, fresh profile) then.
-- **Boot time is the page's biggest cost** (~30 s to a login): a snapshot file resumes a machine instead ([plans/snapshots.md](plans/snapshots.md)); nothing resumes by itself yet ("Snapshots" below: Suspend).
+- **Boot time is the page's biggest cost** (~30 s to a login): a snapshot file, or Suspend, resumes a machine instead ([frontend.md](frontend.md) "Snapshots").
 
 ## Snapshots (M8 phase C, snapshots lane; [plans/snapshots.md](plans/snapshots.md), [platform.md](platform.md) "Snapshots")
 
@@ -287,9 +287,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   stale entries, or the count of a run with TLB flushes at the same points
   (`alpine-user-snapshots`). Saving TLB contents would need entries re-validated against the
   page tables at restore (they hold host addresses), which is most of a walk.
-- **Suspend** (the snapshot kept in OPFS without the overlay's blocks, the next page load resumes
-  from it; a generation number in the overlay voids it once the disk moved on): proposed in the
-  plan, waiting for the user's decision.
+- **A tracked benchmark case for the page** (`page_debian`: page load to `running`, a snapshot
+  load to `running`, a suspend and its resume, the file's size and the pause): the lane's numbers
+  are the page tests' own timings, two or three runs each (`bench/boot/REPORT.md` "M8 phase C
+  exit").
+- **Suspend and a chosen disk:** the suspended copy is beside that disk's overlay, and the page
+  forgets a chosen file over a reload, so it resumes only when the user opens the disk again.
+  And nothing tells a second tab that the first resumed the machine (it boots or waits for the
+  disk, as any second tab does).
+- **Save snapshot's pause is the file's write** (1.4 s for Debian's 175 MB through the picked
+  file's stream): writing to memory first and to the file after the resume would shorten it to
+  the compression's ~0.5 s, for the file's size in memory.
 - **Snapshots between core versions:** a state of another `snapshot::VERSION` is refused; a
   migration path (or a reader per old version) would keep users' files alive across a format
   change. Prebuilt snapshots shipped with the repository (a Debian that resumes in seconds for a

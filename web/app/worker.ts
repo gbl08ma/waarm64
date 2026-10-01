@@ -8,7 +8,7 @@
 // worker. What stops a machine from starting or running is sorted into a
 // `Problem` with a message a user can act on (docs/frontend.md "Errors").
 import { bootVm, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, type Restore, type Vm } from '../vm.ts';
-import { loadFlash, saveFlash } from '../overlay.ts';
+import { dropSuspend, loadFlash, saveFlash, suspended, suspendWriter } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
 import { lzCodec } from '../lz.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../snapshot-file.ts';
@@ -41,6 +41,8 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     });
   } else if (m.type === 'snapshot') {
     void saveSnapshot(m.handle);
+  } else if (m.type === 'suspend') {
+    void suspend();
   } else if (m.type === 'stop') {
     stopping = true;
     void (async () => {
@@ -84,6 +86,8 @@ const codec = () => (codecP ??= lzCodec(core!));
 const TAIL = 4096;
 let serialTail = '';
 let snapshotting = false;
+/** The machine was suspended: its run loop ends without a word (the state is `suspended`). */
+let isSuspended = false;
 /** `bootVm` has the snapshot: the disk's overlay may be replaced. */
 let restoring = false;
 
@@ -211,16 +215,32 @@ function explain(err: unknown, machine: Machine): [Problem, string] {
   return ['emulator', `The emulator stopped with an error:\n${e.stack ?? text}`];
 }
 
-async function start(m: StartMessage) {
+async function start(m: StartMessage, note?: string): Promise<void> {
   const machine: Machine = current = MACHINES[m.machine];
   overlayName = m.disk?.overlay ?? machine.overlay;
   state('loading');
+  // A suspended machine kept beside the disk (docs/frontend.md "Suspend") is resumed, unless the
+  // page says boot; either way it is dropped before a machine runs on the disk, which is what
+  // keeps a suspended machine and its disk together.
+  let resume: Blob | undefined;
+  if (overlayName && !m.snapshot) {
+    if (m.resume === false) await dropSuspend(overlayName).catch(() => {});
+    else resume = await suspended(overlayName).catch(() => undefined);
+  }
+  const snapshot: Blob | undefined = m.snapshot ?? resume;
+  const snapshotName = m.snapshot?.name ?? 'The suspended machine';
+  /** A suspended machine that can't be resumed is dropped, and the machine boots. */
+  const bootInstead = async (err: unknown) => {
+    if (overlayName) await dropSuspend(overlayName).catch(() => {});
+    restoring = false;
+    return start({ ...m, resume: false }, `The suspended machine couldn't be resumed (${String((err as Error).message ?? err).split('\n')[0]}), so it was dropped and the machine boots from its disk.`);
+  };
   // The disk is read by ranges as the guest needs it (not downloaded): check it's there.
   // A snapshot has the variable store in its RAM (the restore writes it beside the overlay) and needs no kernel.
-  const flash = !m.snapshot && machine.firmware && overlayName ? loadFlash(overlayName).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
+  const flash = !snapshot && machine.firmware && overlayName ? loadFlash(overlayName).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
   const diskUrl = m.disk?.url ?? machine.disk;
   const disk = m.disk?.file ? Promise.resolve() : fetch(diskUrl, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(diskUrl, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`); });
-  const [wasm, kernel = new Uint8Array(0), initrd] = await download([CORE, ...(m.snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])])], machine);
+  const [wasm, kernel = new Uint8Array(0), initrd] = await download([CORE, ...(snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])])], machine);
   await disk;
   if (stopping) return;
   core = await WebAssembly.compile(wasm);
@@ -232,18 +252,24 @@ async function start(m: StartMessage) {
   let ncpus = m.ncpus;
   let kinds = normalKinds(m, machine);
   let restore: Restore | undefined;
-  if (m.snapshot) {
-    // Everything that can be refused is, before anything is touched (the overlay is replaced inside `bootVm`).
-    post({ type: 'phase', text: 'Checking the snapshot' });
-    const lz = await codec();
-    const { header } = await openSnapshot(m.snapshot, { codecs: [lz] });
-    const h = fromHeader(header, m, machine, diskUrl, m.snapshot.name);
-    ({ kinds, ncpus } = h);
-    restore = (await readSnapshot(m.snapshot, lz, lz.snapshotVersion, { devices: h.specs })).restore;
-    serialTail = typeof header.serial === 'string' ? header.serial : '';
-    post({ type: 'phase', text: 'Restoring the machine' });
+  if (snapshot) {
+    // Everything that can be refused is, before anything is touched (the overlay is replaced inside `bootVm`;
+    // a resume keeps it: it is as the suspended machine left it).
+    post({ type: 'phase', text: resume ? 'Resuming the suspended machine' : 'Checking the snapshot' });
+    try {
+      const lz = await codec();
+      const { header } = await openSnapshot(snapshot, { codecs: [lz] });
+      const h = fromHeader(header, m, machine, diskUrl, snapshotName);
+      ({ kinds, ncpus } = h);
+      restore = (await readSnapshot(snapshot, lz, lz.snapshotVersion, { devices: h.specs, resume: !!resume })).restore;
+      serialTail = typeof header.serial === 'string' ? header.serial : '';
+    } catch (err) {
+      if (resume && !stopping) return bootInstead(err);
+      throw err;
+    }
+    if (!resume) post({ type: 'phase', text: 'Restoring the machine' });
     if (stopping) return;
-    restoring = true;
+    restoring = !resume;
   }
   const devices = kinds.map((k) => device(k, m, machine, diskUrl) as DeviceSpec);
   session = { name: m.machine, ncpus, disk: m.disk ? (m.disk.file?.name ?? new URL(m.disk.url!, self.location.href).pathname.split('/').pop() ?? 'disk') : null, kinds };
@@ -252,8 +278,15 @@ async function start(m: StartMessage) {
     framebuffer: machine.framebuffer, serialIn: m.serial, restore, devices,
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });
-  vm = await booting;
+  try {
+    vm = await booting;
+  } catch (err) {
+    if (resume && !stopping) return bootInstead(err);
+    throw err;
+  }
   if (stopping) return; // `stop` closes it
+  // The resumed machine is about to write its disk: its suspended copy is void from here.
+  if (resume) await dropSuspend(overlayName!);
   if (restore) await keepFlash(vm, machine); // the restore deleted the copy beside the overlay: the bank the machine has goes back
   if (vm.framebuffer) showFramebuffer(m.screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
   const t0 = performance.now();
@@ -281,9 +314,9 @@ async function start(m: StartMessage) {
   };
   if (restore) {
     if (serialTail) post({ type: 'serial', data: serialTail, replay: true }); // what the terminal showed when it was saved
-    state('running');
+    state('running', resume ? 'Resumed the suspended machine.' : undefined);
   } else {
-    state('booting');
+    state('booting', note);
   }
   // Once a second on a timer, not from the loop: a stuck loop then shows in `loopAgeMs` rather than as silence.
   let ticks = 0;
@@ -297,7 +330,7 @@ async function start(m: StartMessage) {
   try {
     for (;;) {
       const r = await vm.runAsync(1e9); // while a snapshot pauses the VM this keeps returning BUDGET
-      if (stopping) return;
+      if (stopping || isSuspended) return;
       output(vm.drain());
       const now = performance.now();
       loopMax = Math.max(loopMax, now - loopAt);
@@ -367,6 +400,59 @@ async function saveSnapshot(handle?: FileSystemFileHandle) {
   } finally {
     if (paused) v.resume();
     await out?.abort().catch(() => {});
+    snapshotting = false;
+  }
+}
+
+/**
+ * Suspends the machine (docs/frontend.md "Suspend"): paused, its snapshot without the disk's blocks
+ * is written beside the overlay, and the machine is closed without running another step, so the
+ * overlay is exactly what the file's RAM expects. A failure before that leaves it running.
+ */
+async function suspend() {
+  const fail = (message: string) => post({ type: 'snapshot-error', message });
+  const v = vm;
+  const s = session;
+  const machine = current;
+  if (!v || !s || !machine || stopping || closed) return fail("The machine isn't running, so there is nothing to suspend.");
+  if (!overlayName) return fail('This machine has no disk of its own to keep a suspended copy beside.');
+  if (snapshotting) return fail('A snapshot is being saved: suspend once it is done.');
+  snapshotting = true;
+  let paused = false;
+  try {
+    const lz = await codec();
+    post({ type: 'snapshot-progress', phase: 'Pausing the machine', fraction: 0 });
+    if (!(await v.pause())) throw new Error('the machine ended before it could be paused');
+    paused = true;
+    const cut = serialTail.length >= TAIL ? serialTail.indexOf('\n') + 1 : 0;
+    const meta = { machine: s.name, label: machine.label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, serial: serialTail.slice(cut) };
+    const out = await suspendWriter(overlayName);
+    let bytes = 0;
+    try {
+      let posted = 0;
+      const w = await writeSnapshot(v, (chunk) => out.write(chunk), meta, lz, {
+        suspend: true,
+        progress: (done, total) => {
+          const now = performance.now();
+          if (now - posted < 100 && done < total) return;
+          posted = now;
+          post({ type: 'snapshot-progress', phase: 'Suspending the machine', fraction: total ? done / total : 0 });
+        },
+      });
+      out.close();
+      bytes = w.bytes;
+    } catch (err) {
+      await out.abort();
+      throw err;
+    }
+    // From here the machine must not run: the file is only good for the disk as it is now.
+    isSuspended = true;
+    await shutdown(v, machine);
+    state('suspended', `Suspended: the machine's memory is kept in this browser (${(bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0)} MB). Start resumes it where it was; Boot instead starts it from its disk, as after a power cut.`);
+  } catch (err) {
+    if (paused && !isSuspended) v.resume();
+    fail(`The machine couldn't be suspended: ${String((err as Error).message ?? err)}`);
+  } finally {
     snapshotting = false;
   }
 }

@@ -6,11 +6,12 @@ import type { Credential, DiskChoice, MachineName } from './machine.ts';
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
  * yet; running: seen; off: powered off; rebooting: the guest asked for a reset (the page starts a
- * new machine); crashed: the guest panicked or the emulator failed; failed: the machine couldn't
+ * new machine); suspended: stopped with its memory kept beside its disk (docs/frontend.md
+ * "Suspend"): the next start resumes it; crashed: the guest panicked or the emulator failed; failed: the machine couldn't
  * start (a missing file, the disk in use, no memory). crashed and failed come with a `message`
  * and a `problem`.
  */
-export type PowerState = 'loading' | 'booting' | 'running' | 'off' | 'rebooting' | 'crashed' | 'failed';
+export type PowerState = 'loading' | 'booting' | 'running' | 'off' | 'suspended' | 'rebooting' | 'crashed' | 'failed';
 
 /**
  * What went wrong, for the page to offer the right action: `missing-core` (the wasm isn't built),
@@ -62,7 +63,18 @@ export type ToWorker =
      * overlay is replaced by the file's blocks. `ncpus` is then ignored.
      */
     snapshot?: File;
+    /**
+     * False: boot even if a suspended machine is kept beside the disk (it is dropped). Otherwise a
+     * start resumes one if there is one (docs/frontend.md "Suspend").
+     */
+    resume?: boolean;
   }
+  /**
+   * Suspend the running machine: it pauses, its snapshot (without the disk's changes, which stay
+   * in the overlay) is written beside the overlay, and it stops: state `suspended`. On a failure it
+   * runs on, with a `snapshot-error`. Progress comes as `snapshot-progress`.
+   */
+  | { type: 'suspend' }
   /**
    * Save a snapshot of the running machine (`running` or `booting`): it pauses, the file is written,
    * it runs on. The bytes go to `handle`'s writable stream (from `showSaveFilePicker`), or, without

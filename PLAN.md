@@ -152,13 +152,17 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   - Audio: virtio-snd to an AudioWorklet over a shared ring (`docs/plans/audio.md`, to write).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
-  - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md), in progress since 2026-10-01): save and restore CPU, devices
-    and compressed RAM, so the page resumes a booted machine in seconds instead of a full boot, as
-    files the user downloads and uploads. A snapshot pins the disk it was taken with: phase B's
-    identity of a disk is its name, size and modification time (a chosen file) or its URL's path,
-    and a changes file's is its base's SHA-256. The file carries the disk's changes, and loading
-    it replaces the local ones; the core's state has a format version of its own (a snapshot
-    survives core changes that don't change what is saved).
+  - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save
+    snapshot writes the running machine to a file the user keeps (Debian: 175 MB, the machine
+    paused 1.4 s) and Load snapshot resumes it, in a fresh profile too, in 2.1 s instead of a 55 s
+    boot; Suspend keeps it in the browser, and the next page load resumes it (0.8 s). The core
+    saves and restores CPUs, devices and time (ABI 30, a state format version of its own: a
+    snapshot survives core changes that don't change what is saved); the host adds RAM (the
+    core's LZ) and the disk's changes, which a load puts in place of the local ones. A snapshot
+    pins the disk it was taken on (phase B's identity: a chosen file's name, size and modification
+    time, or a URL's path). A restored machine has empty TLBs, which Linux can tell by its step
+    count ([docs/platform.md](docs/platform.md) "Snapshots"). Loose ends:
+    [docs/backlog.md](docs/backlog.md) "Snapshots".
 - **D. Choosing and shaping machines:** a catalog of hosted images (Debian, Alpine, …) on top of
   phase B's disk in, extra disks, RAM and vCPU settings (default vCPUs from
   `navigator.hardwareConcurrency` minus the device worker and the page, with the P/E-core

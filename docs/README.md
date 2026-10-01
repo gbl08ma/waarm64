@@ -24,4 +24,4 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
 | [plans/graphics.md](plans/graphics.md) | exploration for a real display and 3D (not scheduled) |
 | [plans/uefi.md](plans/uefi.md) | booting unmodified images through EDK2: loop 0's oracle findings, DT vs ACPI, the design (M8 phase B) |
-| [plans/snapshots.md](plans/snapshots.md) | saving and resuming a machine as a file (M8 phase C lane, in progress) |
+| [plans/snapshots.md](plans/snapshots.md) | saving and resuming a machine as a file, and Suspend (M8 phase C lane, done) |
