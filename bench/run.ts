@@ -1,6 +1,6 @@
 // Runs a benchmark page in a pinned Chromium via Playwright and writes a
 // results JSON (see bench/README.md for the schema).
-//   node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks] [--flags='<more V8 flags>']
+//   node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks] [--flags='<more V8 flags>'] [--chromium-args='<Chromium switches>']
 import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -24,6 +24,7 @@ const { values: args } = parseArgs({
     page: { type: 'string', default: 'bench/spike/index.html' },
     out: { type: 'string' },
     flags: { type: 'string', default: '' },
+    'chromium-args': { type: 'string', default: '' }, // e.g. the WebGPU switches of bench/gpu (docs/benchmarking.md)
   },
 });
 if (CONFIGS[args.config!] === undefined) throw new Error(`unknown --config ${args.config}; one of ${Object.keys(CONFIGS)}`);
@@ -36,7 +37,7 @@ const server = await startServer();
 const port = (server.address() as { port: number }).port;
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
-  args: jsFlags ? [`--js-flags=${jsFlags}`] : [],
+  args: [...(jsFlags ? [`--js-flags=${jsFlags}`] : []), ...args['chromium-args']!.split(' ').filter(Boolean)],
 });
 try {
   const page = await browser.newPage();
@@ -65,6 +66,7 @@ try {
     dirty: Boolean(git('status --porcelain')),
     config: args.config,
     jsFlags,
+    chromiumArgs: args['chromium-args'],
     quick: args.quick,
     host: { platform: os.platform(), arch: os.arch(), cpu: os.cpus()[0]?.model, cores: os.cpus().length, memGiB: Math.round(os.totalmem() / 2 ** 30) },
     browser: { version: browser.version(), userAgent: data.userAgent },

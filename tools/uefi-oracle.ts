@@ -13,6 +13,7 @@
 //     --no-seed      no NoCloud seed disk (Alpine's root stays locked)
 //     --menu-wait    let the loader's menu time out instead of pressing Enter
 //     --cmd '<sh>'   what to run after logging in (default: a summary, then poweroff)
+//     --extra '<qemu args>'  appended to QEMU's command line (split on spaces; e.g. a display device for the graphics oracle)
 //     --smp N --mem MiB --timeout s
 // Debian's image is target/images/debian/disk.qcow2 (images/build.sh debian);
 // Alpine's are downloaded into target/images/dl (images/alpine-uefi.json).
@@ -37,6 +38,7 @@ const { values: opt, positionals } = parseArgs({
     'no-seed': { type: 'boolean', default: false },
     'menu-wait': { type: 'boolean', default: false },
     cmd: { type: 'string' },
+    extra: { type: 'string', default: '' },
     smp: { type: 'string', default: '2' },
     mem: { type: 'string', default: '1024' },
     timeout: { type: 'string', default: '300' },
@@ -130,6 +132,7 @@ async function boot(what: string): Promise<Result> {
     ['firmware', /UEFI firmware/], ['boot manager', /BdsDxe: starting/], ['loader', /GNU GRUB|Limine/i],
     ['kernel', /Linux version/], ['init', /Run \/init|Freeing unused kernel/], ['login prompt', /login: ?$/m], ['power-off', /reboot: Power down/],
   ];
+  if (opt.extra) args.push(...opt.extra.split(' ').filter(Boolean));
   const q = spawn(QEMU[0], args, { stdio: ['pipe', 'pipe', 'pipe'] });
   let all = '', tail = '', logged = false, menu = false;
   const send = (s: string) => setTimeout(() => q.stdin.write(s), 300);

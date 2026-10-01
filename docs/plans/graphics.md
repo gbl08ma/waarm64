@@ -196,7 +196,7 @@ Map what maps, emulate what's cheap, don't advertise the rest:
 
 Each step comes with tests at the cheapest layer that catches it (`docs/testing.md`).
 
-- **G0 — WebGPU environment spike, measured.** Get a WebGPU adapter in headless Chromium in the
+- **G0 — WebGPU environment spike, measured (done: §10).** Get a WebGPU adapter in headless Chromium in the
   dev VM (software), and record the adapter's features and limits. Check `writeBuffer` from a
   `SharedArrayBuffer`-backed view and its cost at scanout sizes. Check `OffscreenCanvas` +
   WebGPU in a worker. Decide how real-GPU numbers are taken (§8).
@@ -238,3 +238,64 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
 - **Security:** the translator parses untrusted guest data, and WebGPU validates everything it's
   given, so the worst case should be a lost device, not a page compromise. Fuzz the Venus decoder
   like the virtqueue parser (`core/fuzz`).
+
+## 9. G1 loop 0: what the oracle showed (2026-10-01)
+
+QEMU 11.1.1 `virtio-gpu-device` (mmio; the dev VM needs `sudo zypper in qemu-hw-display-virtio-gpu
+edid-decode`) under `tools/uefi-oracle.ts --extra='<qemu args>'`, our EDK2, Debian 13's image
+(kernel 6.12.107), QEMU's own VNC server for `SetDesktopSize` (`bench/results/local/rfb-resize.ts`,
+dev-only). Commands traced with `-trace 'virtio_gpu_cmd_*'`.
+
+- **The transport has to be modern.** QEMU's virtio-mmio is legacy by default, and the guest's
+  `virtio_gpu` then stays at status `FAILED` with no message. The oracle needs
+  `-global virtio-mmio.force-legacy=false` (our transport is modern, so we meet this).
+- **EDK2 gives a GOP over virtio-mmio** (`VirtioGpuDxe`: a 640×480 resource created and set as the
+  scanout before the kernel starts). **GRUB takes it:** with a GOP, GRUB's `gfxterm` initialises and
+  the menu goes to the screen, **not to the serial console** (without a GPU: "error: no suitable
+  video mode found" and a serial menu). The oracle's loader detection saw no menu, the 5 s timeout
+  ran out (kernel at 12.4 s instead of 7.5 s). So on a virtio-gpu machine the boot menu is on the
+  screen only, and a test that presses Enter at GRUB's serial menu needs a different way (the page's
+  tests don't press it: they wait for the timeout).
+- **Linux:** no `efifb` (the GOP is Blt-only, as expected), the screen is dark from the kernel's
+  start until udev loads `virtio_gpu` (10.1 s of a 21 s boot to login, after the root mounts), then
+  `[drm] features: -virgl +edid -resource_blob -host_visible`, 1 scanout, 0 capsets, `fb0:
+  virtio_gpudrmfb`. The driver's first sequence: `GET_DISPLAY_INFO`, `RESOURCE_CREATE_2D` 0x2
+  (1280×800: the preferred mode from the EDID), `ATTACH_BACKING`, `SET_SCANOUT`, then
+  `RESOURCE_UNREF` of EDK2's resource 1, then per frame `TRANSFER_TO_HOST_2D` +
+  `RESOURCE_FLUSH`. fbcon takes `fb0` at once (160×50 characters: 8×16 glyphs).
+- **Resizing (display event, fbcon):** the guest reads `GET_EDID` and `GET_DISPLAY_INFO` and issues
+  `SET_SCANOUT` with resource 0 (disable), then the **same 1280×800 resource with a rectangle of
+  the new mode**. The console buffer never changes: `fb0` stays 1280×800 and `tty1` 160×50. A
+  request for 1600×900 gave **1280×768** (the largest mode of the EDID's list that fits the
+  buffer); 800×600 and 1024×768 gave a **rectangle smaller than the resource: fbcon crops**, as
+  predicted. So the host must show exactly the scanout rectangle (never the whole resource), and
+  the policy for shrinking while only the console runs is loop 5's to settle (the console can't be
+  grown or re-fitted by any host action).
+- **QEMU's EDID** (`bench/results/local/qemu.edid`, 256 bytes: base block + CTA extension) decoded
+  by `edid-decode`: EDID 1.4, DisplayPort digital, a preferred detailed timing of the requested
+  size (QEMU puts the size in a private `0xf7` descriptor too), standard timings up to 2048×1152,
+  and the list Linux derives from that is what `modes` showed (5120×2160 down to 640×480). Our
+  generator is checked against `edid-decode`, not against QEMU's bytes.
+- **Not measured here, deferred to loop 5 on our machine** (the same machine they will run on,
+  and a desktop install over QEMU's user network costs hours for what loop 5 measures anyway):
+  GNOME and KDE on Wayland, a wlroots compositor, Xorg; `simple-framebuffer` next to a virtio-gpu
+  (the page's Debian will not have both, so it's academic).
+
+## 10. G0, measured (2026-10-01; `bench/gpu/REPORT.md`)
+
+- **Headless WebGPU works in the dev VM** with `--enable-unsafe-webgpu` (a SwiftShader adapter); to
+  present on an `OffscreenCanvas` from a worker it also needs `--enable-features=Vulkan
+  --use-angle=swiftshader --use-gl=angle`, else `getCurrentTexture` fails with "A valid external
+  Instance reference no longer exists". The Mac host's Chrome for Testing gives a Metal adapter with
+  the first flag alone (the user's answer 5; `bench/gpu/run-mac.sh`, Node 26 and Playwright's
+  Chromium were already there, nothing was installed).
+- **`writeBuffer`, `writeTexture` and WebGL's `texSubImage2D` accept `SharedArrayBuffer` views** in
+  Chromium 153, at the cost of plain ones: a backend can upload from the guest's pages directly.
+- **Presentation of a 2D frame** (real GPU, ms to completion, 1080p / 1440p / 4K full frame; 10%
+  rectangle): canvas 2D with a JS swizzle 3.6 / 5.9 / 12.3 (0.9 / 0.8 / 1.8); with RGBA ready
+  1.6 / 3.0 / 5.7 (0.4 / 0.5 / 1.1); WebGL2 0.8 / 1.9 / 4.3 (0.06 / 0.2 / 0.7); WebGPU 2.2 / 3.5 / 6.2
+  (1.4 / 1.1 / 2.6). **G1 uses canvas 2D, with the swizzle fused into `TRANSFER_TO_HOST_2D`'s
+  gather**; WebGPU is the 3D steps' canvas (a canvas can't change context type: the page swaps
+  canvases when 3D turns on).
+- Still open for G3: `writeBuffer` cost is fine at scanout sizes; the immediates limit (64 bytes)
+  exists on both adapters; subgroups are on both, `shader-f16` only on the real GPU.
