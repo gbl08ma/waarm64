@@ -74,7 +74,11 @@ a distro the project doesn't ship. `images/archarm/build.sh [--out f.qcow2] [--r
 - Logins: `root`/`root`, `alarm`/`alarm` (Arch ARM's stock); hostname `alarm`.
 - Checked on QEMU through our EDK2: `node tools/uefi-oracle.ts $PWD/target/archarm/archlinuxarm-uefi.qcow2`
   (absolute path) reaches `login:` in ~25 s (the tool reports FAIL, since it expects a passwordless
-  root). **Not tried in webpc itself.**
+  root).
+- **In webpc itself (the user, 2026-10-01, at commit `1e0cc58`):** Arch Linux ARM with kernel 7.2.8-1 boots
+  and runs fine in the emulator, networking included. Networking needed the gateway's /32 lease mask:
+  with the earlier 0.0.0.0 mask Arch's systemd-networkd logged `DHCP error: no netmask` and never
+  configured IPv4 (IPv6 worked); see [devices.md](devices.md) "net". Reported by hand, not a test.
 - It works under `target/archarm/work` (removed at the end), not `/tmp`: the dev VM's `/tmp` is a small tmpfs that the 8 GiB disk overflows.
 
 ## Stress workloads in the Debian guest (`images/stress/`)
