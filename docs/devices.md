@@ -84,7 +84,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
 - **qcow2** v2/v3 (`web/qcow2.ts`, `core/tests/common/qcow2.rs`, detected by the magic): L1/L2,
   unallocated and zero-flag clusters as zeros, compressed clusters as raw deflate
   (`DecompressionStream('deflate-raw')`; `miniz_oxide` natively, a dev-dependency). Read-only
-  (refcounts never read). **Refused at open:** encryption, backing files, external data files,
+  (refcounts never read). **Refused at open:** encryption, backing files (a changes file is read by `readChanges`, docs/frontend.md "Your own disk"), external data files,
   extended L2, zstd, unknown incompatible features. Capacity is the virtual size. Debian's
   published image is 95% compressed clusters, which is why deflate is supported rather than
   converting the image. One host read per cluster, all L2 tables kept, the 16 most recent

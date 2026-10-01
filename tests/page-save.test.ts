@@ -34,7 +34,8 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // the download path
-  page.on('dialog', (d) => void d.accept()); // "Stop the machine to save its disk?"
+  const dialogs: string[] = [];
+  page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); }); // "Stop the machine to save its disk?"
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal`);
@@ -67,6 +68,18 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   qemu('check', changes);
   assert.match(qemu('info', changes), /backing file: rootfs\.ext4/);
   assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', changes, image), /Images are identical/);
+
+  // Changes in: the file just saved loads back (no blocks here), the machine restarts on it; a file that isn't a changes file is refused.
+  const loaded = async (file: string) => {
+    await page.evaluate(() => { document.body.dataset.state = 'stale'; });
+    await page.setInputFiles('#load-changes-input', file);
+  };
+  await loaded(changes);
+  await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000 });
+  assert.match(dialogs.at(-1)!, /^Load the changes in rootfs\.ext4-changes\.qcow2\?/);
+  await page.setInputFiles('#load-changes-input', raw);
+  await page.waitForTimeout(500);
+  assert.match(dialogs.at(-1)!, /rootfs\.ext4\.img isn't a changes file/);
   assert.deepEqual(errors, []);
   await context.close();
 });

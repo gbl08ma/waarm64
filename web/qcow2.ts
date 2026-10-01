@@ -2,9 +2,10 @@
 // v2/v3 read through its L1/L2 tables (M4 step 4). Written from the format
 // spec, QEMU's docs/interop/qcow2.txt (no QEMU code). Refcounts are ignored
 // (read-only); unallocated and zero-flag clusters read as zeros; compressed
-// clusters are raw deflate. Refused at open: encryption, backing files,
-// external data files, extended L2 entries, zstd, unknown incompatible
-// features. core/tests/common/qcow2.rs is the native twin.
+// clusters are raw deflate. Refused at open: encryption, backing files (a changes
+// file is read by `readChanges`, not booted), external data files, extended L2
+// entries, zstd, unknown incompatible features. core/tests/common/qcow2.rs is the
+// native twin.
 
 /** Reads exactly `len` bytes of the image file at `off`, or undefined (error, past the end). */
 export type ReadAt = (off: number, len: number) => Uint8Array | undefined;
@@ -40,7 +41,7 @@ export function openDisk(readAt: ReadAt, fileSize: number): Disk {
   const fail = (why: string): never => { throw new Error(`qcow2: ${why}`); };
   const version = h.getUint32(4);
   if (version !== 2 && version !== 3) fail(`version ${version}`);
-  if (h.getBigUint64(8) !== 0n) fail('backing files are not supported');
+  if (h.getBigUint64(8) !== 0n) fail('backing files are not supported: this is a changes file over another image, load it with "Load changes…" over that image, it is not a disk to boot');
   const clusterBits = h.getUint32(20);
   if (clusterBits < 9 || clusterBits > 21) fail(`cluster_bits ${clusterBits}`);
   const size = Number(h.getBigUint64(24));
@@ -144,4 +145,90 @@ async function inflate(input: Uint8Array, size: number) {
   } catch { /* junk after the end */ }
   r.cancel().catch(() => {});
   return n === size ? out : undefined;
+}
+
+/** What a changes file says about itself (web/qcow2-write.ts writes it): the base image's file name and SHA-256. */
+export type ChangesHeader = { backingName: string; sha256?: string };
+
+const EXT_BASE_SHA256 = 0x57504331; // "WPC1" (web/qcow2-write.ts)
+
+/**
+ * The backing file's name and our SHA-256 extension from a qcow2's first bytes (its first cluster:
+ * 64 KiB cover every cluster size), or undefined when it isn't a qcow2 with a backing file.
+ */
+export function changesHeader(head: Uint8Array): ChangesHeader | undefined {
+  if (head.length < HEADER || !isQcow2(head)) return undefined;
+  const h = new DataView(head.buffer, head.byteOffset, head.length);
+  const nameAt = Number(h.getBigUint64(8));
+  const nameLen = h.getUint32(16);
+  if (nameAt === 0 || nameAt + nameLen > head.length) return undefined;
+  const dec = new TextDecoder();
+  let sha256: string | undefined;
+  for (let at = h.getUint32(4) === 2 ? 72 : h.getUint32(100); at + 8 <= head.length;) {
+    const type = h.getUint32(at);
+    const len = h.getUint32(at + 4);
+    if (type === 0 || at + 8 + len > head.length) break;
+    if (type === EXT_BASE_SHA256) sha256 = dec.decode(head.subarray(at + 8, at + 8 + len));
+    at += 8 + Math.ceil(len / 8) * 8;
+  }
+  return { backingName: dec.decode(head.subarray(nameAt, nameAt + nameLen)), sha256 };
+}
+
+/** One 4 KiB block of the disk that a changes file holds (the overlay's block size). */
+export type ChangedBlock = { block: number; data: Uint8Array };
+
+/**
+ * A changes file: a qcow2 over a base image, read for what it overrides rather than merged with
+ * the base. `blocks` yields every 4 KiB block the file holds, in disk order (a zero cluster as
+ * zeros: it overrides the base), the last one possibly shorter than 4 KiB at the virtual size's end.
+ * Undefined when the file has no backing file; throws on what we can't read (compressed clusters,
+ * clusters under 4 KiB, the features `openDisk` refuses).
+ */
+export function readChanges(readAt: ReadAt, fileSize: number): (ChangesHeader & { size: number; blocks(): AsyncGenerator<ChangedBlock> }) | undefined {
+  const head = readAt(0, Math.min(fileSize, 1 << 16)) ?? readAt(0, Math.min(fileSize, HEADER));
+  const info = head && changesHeader(head);
+  if (!head || !info) return undefined;
+  const h = new DataView(head.buffer, head.byteOffset, head.length);
+  const fail = (why: string): never => { throw new Error(`qcow2: ${why}`); };
+  const version = h.getUint32(4);
+  if (version !== 2 && version !== 3) fail(`version ${version}`);
+  const clusterBits = h.getUint32(20);
+  if (clusterBits < 12 || clusterBits > 21) fail(`cluster_bits ${clusterBits} (the changes need clusters of at least 4 KiB)`);
+  if (h.getUint32(32) !== 0) fail('encrypted images are not supported');
+  if (version === 3) {
+    const incompatible = h.getBigUint64(72);
+    if (incompatible & ~KNOWN_INCOMPATIBLE) fail(`unsupported incompatible features 0x${incompatible.toString(16)}`);
+    if (incompatible & 1n << 3n) fail('compressed (zstd) clusters are not supported');
+  }
+  const size = Number(h.getBigUint64(24));
+  const l1Size = h.getUint32(36);
+  const l1Offset = Number(h.getBigUint64(40));
+  const cs = 2 ** clusterBits;
+  const l2Entries = cs / 8;
+  const perCluster = cs / 4096;
+  async function* blocks(): AsyncGenerator<ChangedBlock> {
+    const l1b = readAt(l1Offset, l1Size * 8) ?? fail('L1 table past the end of the file');
+    const l1 = new DataView(l1b.buffer, l1b.byteOffset, l1b.byteLength);
+    for (let i = 0; i < l1Size; i++) {
+      const l2Off = Number(l1.getBigUint64(i * 8) & OFFSET_MASK);
+      if (l2Off === 0) continue;
+      const t = readAt(l2Off, cs) ?? fail('L2 table past the end of the file');
+      const l2 = new DataView(t.buffer, t.byteOffset, cs);
+      for (let k = 0; k < l2Entries; k++) {
+        const e = l2.getBigUint64(k * 8);
+        if (e & COMPRESSED) fail('compressed clusters are not supported in a changes file');
+        const off = Number(e & OFFSET_MASK);
+        const zero = version === 3 && (e & ZERO) !== 0n;
+        if (off === 0 && !zero) continue; // unallocated: the base shows through
+        const first = (i * l2Entries + k) * cs;
+        if (first >= size) continue;
+        const data = zero ? new Uint8Array(cs) : readAt(off, cs) ?? fail('a data cluster is past the end of the file');
+        for (let b = 0; b < perCluster && first + b * 4096 < size; b++) {
+          const n = Math.min(4096, size - (first + b * 4096));
+          yield { block: first / 4096 + b, data: data.subarray(b * 4096, b * 4096 + n) };
+        }
+      }
+    }
+  }
+  return { ...info, size, blocks };
 }

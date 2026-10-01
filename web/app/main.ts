@@ -9,8 +9,10 @@
 import { Terminal } from '@xterm/xterm';
 import { attachInput, type Input } from '../input.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
+import { changesHeader as readChangesHeader } from '../qcow2.ts';
 import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { runExport, type ExportMode } from './export.ts';
+import { runImport } from './import.ts';
 import { createNetwork, DEFAULT_SETTINGS, tailscaleBuilt, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
@@ -292,6 +294,12 @@ resetDiskBtn.onclick = () => void resetDiskAsked();
 // disk's changes are kept in the browser per file (name, size, modification time), so choosing it again continues where it left off.
 const openDiskInput = $<HTMLInputElement>('open-disk-input');
 async function chooseDisk(choice: { file: File } | { url: string }) {
+  if ('file' in choice && spec.overlay) {
+    if (await changesHeader(choice.file)) { // a changes file isn't a disk to boot: it goes onto the disk on the page
+      await loadChanges(choice.file);
+      return;
+    }
+  }
   if (!spec.firmware) return; // only a machine that boots through UEFI takes a disk of its own (the test guests' kernels are their own)
   const next: DiskChoice = { ...choice, overlay: await diskOverlay(choice) };
   if ((state === 'running' || state === 'booting') && !confirm(`Boot ${next.file?.name ?? next.url}? The machine restarts, like pulling the plug: unsaved work in the guest is lost. Its changes to the current disk are kept.`)) return;
@@ -300,6 +308,44 @@ async function chooseDisk(choice: { file: File } | { url: string }) {
   resetDiskBtn.hidden = false;
   await restart();
 }
+// Changes in (loop 6): a changes file (Save disk's "Changes only") replaces what the machine has written to the disk on the page,
+// once the page's disk is checked to be the one it was made over (its SHA-256). The machine stops while it's loaded.
+const changesHeader = async (file: File) => readChangesHeader(new Uint8Array(await file.slice(0, 1 << 16).arrayBuffer()));
+async function loadChanges(file: File) {
+  const overlay = overlayName();
+  if (!overlay) return;
+  const info = await changesHeader(file);
+  if (!info) return void alert(`${file.name} isn't a changes file (a qcow2 made by Save disk's "Changes only"). To boot a disk, use Open disk….`);
+  if (!info.sha256) return void alert(`${file.name} has a backing file (${info.backingName}) but wasn't made by Save disk, so its base can't be checked: it can't be loaded.`);
+  const written = await overlayBytes(overlay).catch(() => 0);
+  const running = state === 'running' || state === 'booting';
+  if (!confirm(`Load the changes in ${file.name}? They replace everything the machine has written to ${chosen ? diskName() : `${spec.label}'s disk`}${written ? ` (${(written / 1e6).toFixed(written < 1e7 ? 1 : 0)} MB)` : ''}, and the firmware's settings. The machine ${running ? 'stops, like pulling the plug, and ' : ''}starts again afterwards.`)) return;
+  await exclusively(async () => {
+    await stop();
+    term.reset();
+    setState('off');
+    stateEl.textContent = 'Loading the changes';
+    try {
+      await runImport({ changes: file, disk: chosen ?? { url: spec.disk, overlay }, label: baseName() }, (phase, f) => {
+        stateEl.textContent = `${phase} ${Math.floor(100 * f)}%`;
+      });
+    } catch (e) {
+      const text = String((e as Error).message ?? e);
+      setState('failed', `The changes couldn't be loaded: ${text}\n${/in use/.test(text) ? 'Close other tabs of this page (one of them may have the disk open), then try again.' : 'The disk is as it was.'}`, [retry]);
+      return;
+    }
+    start();
+  });
+}
+const loadChangesInput = $<HTMLInputElement>('load-changes-input');
+$<HTMLButtonElement>('load-changes').onclick = () => loadChangesInput.click();
+$('load-changes').hidden = !spec.overlay;
+loadChangesInput.onchange = () => {
+  const file = loadChangesInput.files?.[0];
+  loadChangesInput.value = '';
+  if (file) void loadChanges(file);
+};
+
 // Your disk out (loop 5): the changes over the image (a qcow2 that names it as its backing file), or the whole disk. The machine
 // stops while it's written (the overlay's files are the writer's); the file goes to where the user picks, or is downloaded.
 const SAVES: Record<ExportMode, { suffix: string; description: string; type: string }> = {

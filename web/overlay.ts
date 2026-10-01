@@ -200,6 +200,11 @@ export async function openOverlay(name: string, want: string, waitMs = OVERLAY_W
 export async function removeOverlay(name: string) {
   const release = await lockOverlay(name); // after the machine that had it closed it
   try {
+    if (typeof navigator.storage === 'undefined') {
+      inMemory.delete(name);
+      inMemoryFlash.delete(name);
+      return;
+    }
     await (await navigator.storage.getDirectory()).removeEntry(name, { recursive: true });
   } catch (e) {
     if ((e as DOMException).name !== 'NotFoundError') throw e;

@@ -138,4 +138,25 @@ test('a disk chosen on the page boots through UEFI, keeps its changes in its own
   await shows(page, /cat \/root\/own-mark\s*webpc-own-42/);
   assert.deepEqual(errors, []);
   await context.close();
+
+  // Changes in (loop 6): a fresh profile's Debian (the same bytes the changes were made over, under another name) plus the
+  // changes file boots with the file. The overlay of the machine's own disk takes it, the page restarts the machine.
+  const fresh = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page2 = await fresh.newPage();
+  const dialogs: string[] = [];
+  const errors2: string[] = [];
+  page2.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
+  page2.on('pageerror', (e) => errors2.push(String(e)));
+  await page2.goto(`${base}/web/app/?ncpus=2&view=both&${unattendedQuery()}`);
+  await page2.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: BOOT_MS, polling: 250 });
+  await page2.setInputFiles('#load-changes-input', downloaded);
+  await page2.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 60_000, polling: 100 }); // stopped for the load
+  await running(page2, 'off');
+  assert.match(dialogs[0], /^Load the changes in mydisk-changes\.qcow2\?/);
+  await onSerial(page2, 'root\n');
+  await shows(page2, /root@\S+:~# /);
+  await onSerial(page2, 'cat /root/own-mark\n');
+  await shows(page2, /cat \/root\/own-mark\s*webpc-own-42/);
+  assert.deepEqual(errors2, []);
+  await fresh.close();
 }));

@@ -299,7 +299,7 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
 A `firmware` machine (Debian) boots a disk of the user's own (M8 phase B loop 4): the header's
 **Open disk…** (a file picker), a file dropped on the page, or `?disk=<url>` (served with HTTP
 range support, like the machine's own). The machine restarts on it (confirmed if it runs); raw or
-qcow2 is told by the file's magic (a qcow2 with a backing file is refused until loop 6).
+qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file: it is loaded, below, not booted).
 - The `File` goes to the machine worker in `start.disk`, then, structured-cloned inside the
   device spec (`{type: 'blk', file}`), to the device worker, which reads slices with
   `FileReaderSync` (web/devices.ts `blobSource`); its capacity is the qcow2 header's virtual size or
@@ -330,7 +330,26 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is refused until 
   base's bytes read in 1 MiB slices (loop 6 checks it when a changes file comes in). The whole
   disk is scanned through the overlay over the base (the cost is reading the base: a 3 GiB Debian
   disk is the long case). Names: `<disk>-changes.qcow2`, `<disk>.qcow2`, `<disk>.img`.
-- Tests: `tests/qcow2-write.test.ts` (SHA-256 against node:crypto; the writers' output against
+- **Loading changes** (loop 6): the header's **Load changes…** (or a changes file chosen with Open
+  disk or dropped: the first 64 KiB's header, `changesHeader` in web/qcow2.ts, tells it from a
+  disk: a backing file) puts a changes file onto **the disk on the page** (the machine's own or the
+  chosen one). `loadChanges` (web/changes.ts, in `web/app/import-worker.ts`, page side
+  `web/app/import.ts`; the machine stops, as for the export): `readChanges` (web/qcow2.ts) parses
+  the file (clusters of 4 KiB or more, zero clusters as zeros, no compressed ones), its virtual size
+  and **SHA-256** (the `WPC1` extension) are checked against the base's (`hashSource`, ~several s
+  for Debian's 400 MB), then the overlay and the variable store beside it are **deleted** (the
+  changes are the whole of what the disk has written; EDK2 rebuilds its variables, Debian boots
+  by the fallback path) and the blocks are written into a fresh overlay. Refused before anything
+  is touched, with what the user can act on: not a changes file; a qcow2 over a backing file that
+  isn't ours (no checksum to check); another size; another base (names the file it was made over and both
+  hashes' first digits: open that disk first). The file name isn't compared (the base can be
+  renamed), the bytes are. The confirm says what is replaced; afterwards the machine starts again.
+  The fresh-profile round trip works: the page's Debian plus the changes file saved from a disk
+  chosen under another name boots with the file written.
+- Tests: `tests/changes.test.ts` (the import in memory: the saved disk comes back, the old overlay
+  is replaced; refusals leave it untouched; a changes file from qemu-img with 64 KiB clusters and a
+  zero cluster), in `tests/page-save.test.ts` (a file loads back, a non-changes file is refused) and
+  `tests/page-disk.test.ts` (the fresh-profile round trip on Debian), and `tests/qcow2-write.test.ts` (SHA-256 against node:crypto; the writers' output against
   `qemu-img check`/`compare`/`info`, small and over several L2 tables and refcount blocks; planted:
   a block left out of the changes fails it), `tests/page-save.test.ts` (Buildroot: raw, qcow2 and
   changes from a running machine, which restarts), `tests/page-disk.test.ts` (WEBPC_DISTROS=debian; two Debian boots): a symlink named

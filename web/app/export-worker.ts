@@ -3,11 +3,11 @@
 // synchronous reads (a `File`'s slices, HTTP ranges) are worker-only, and it takes the overlay's
 // Web Lock, so the machine must have stopped (the page stops it first). The output goes to a file
 // handle the page got from `showSaveFilePicker`, or, without one, back to the page in chunks.
+import { hashSource } from '../changes.ts';
 import { blobSource, diskIdentity, httpSource, type Source } from '../devices.ts';
 import { openOverlay, overlay } from '../overlay.ts';
 import { openDisk } from '../qcow2.ts';
 import { changedClusters, nonZeroClusters, rawChunks, writeQcow2, type Sink } from '../qcow2-write.ts';
-import { Sha256 } from '../sha256.ts';
 import type { ExportRequest, ExportResult } from './export.ts';
 
 const post = (m: ExportResult, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
@@ -18,18 +18,6 @@ self.onmessage = (e: MessageEvent<ExportRequest>) => {
     (err) => post({ type: 'error', message: String((err as Error).message ?? err) }),
   );
 };
-
-/** SHA-256 of the base image's file (a changes file names it, so the same base can be told from another). */
-function hashSource(src: Source, progress: (done: number) => void) {
-  const sha = new Sha256();
-  for (let off = 0; off < src.size; off += 1 << 20) {
-    const bytes = src.read(off, Math.min(1 << 20, src.size - off));
-    if (!bytes) throw new Error(`the base image can't be read at ${off}`);
-    sha.update(bytes);
-    progress(off + bytes.length);
-  }
-  return sha.hex();
-}
 
 async function exportDisk(r: ExportRequest) {
   const d = r.disk;
