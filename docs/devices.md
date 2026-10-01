@@ -186,6 +186,41 @@ mode (and natively in realtime mode: std has no CSPRNG).
   sends combinations the browser keeps, docs/frontend.md "Input"); they wait for event buffers
   (oldest dropped past 1024). LED status events go to the port. No pointer lock or multitouch.
 
+### virtio-gpu (ID 16), 2D only
+- `{type: 'gpu', width, height, dpi?}` (`web/gpu.ts`; the native twin is `core/tests/common/gpu.rs`
+  and must give the same answers, the same EDID bytes and the same pixels). controlq and cursorq,
+  feature `EDID`, config `events_read`, `events_clear` (write-one-to-clear), `num_scanouts` = 1,
+  `num_capsets` = 0. Commands: `GET_DISPLAY_INFO` (the spec's size), `GET_EDID`, `RESOURCE_CREATE_2D`,
+  `RESOURCE_UNREF`, `SET_SCANOUT`, `RESOURCE_FLUSH`, `TRANSFER_TO_HOST_2D`, `RESOURCE_ATTACH_BACKING`,
+  `RESOURCE_DETACH_BACKING`, `UPDATE_CURSOR`, `MOVE_CURSOR`; everything else `ERR_UNSPEC`, unknown
+  IDs and rectangles outside a resource the spec's errors. The fence flag, id and context are
+  echoed (2D work is synchronous). The cursorq has no responses.
+- **Resources are RGBA bytes in JS memory**, capped at 64 MiB each and 256 MiB together
+  (`ERR_OUT_OF_MEMORY`). `TRANSFER_TO_HOST_2D` gathers the rectangle's rows from the backing pages
+  (the first row at `offset`, rows a resource width apart, as QEMU reads them) and swizzles to
+  RGBA in the same pass, for all eight 32-bit formats. **An X format's unused byte is kept as
+  alpha:** Linux creates every dumb buffer as `B8G8R8X8`, and a cursor that is an ARGB8888
+  framebuffer on one carries its alpha there. The screen ignores alpha.
+- **The backing pages are guest-physical addresses inside the command**, which the core's chain
+  checks don't cover: every entry must lie in RAM (`ERR_INVALID_PARAMETER` otherwise, nothing
+  attached), a transfer reads only through the entries, and the backend never writes guest RAM.
+- **Display size and events:** `Gpu.setSize` changes what `GET_DISPLAY_INFO` and the EDID say and
+  raises `VIRTIO_GPU_EVENT_DISPLAY` through `Ctx.changeConfig` (ABI 31). The EDID (`web/edid.ts`)
+  is ours: one 128-byte block, CVT reduced-blanking timings for the preferred mode (60 Hz, lower
+  for the largest sizes to keep the pixel clock in a detailed timing), physical size from the DPI,
+  sizes from 480×300 to 4095×4095; `edid-decode --check` passes for every size tested.
+- **Where the pixels go** is `GpuHooks` (`scanout`, `damage`, `cursor`): the backend calls them
+  and keeps no presentation of its own; the page wires them in loop 4. Without hooks the state is
+  all there is: `Gpu.state()` (and `Backend.save`, so a snapshot) gives the display, the resources
+  without pixels, hashes of the visible scanout (alpha forced opaque) and of the cursor image, and
+  with `trace` the scanout's hash at every flush (tests). A restore reads every resource again
+  from its backing in the restored RAM and draws the scanout; a guest that wrote its backing
+  without transferring shows the newer pixels until its next flush.
+- A virtio reset drops all resources, the scanout and the cursor. The backend is a pure class
+  (`Gpu`) over RAM and a command buffer, so Node tests drive it without a guest.
+- Guests: Linux's `virtio_gpu` (a module in Debian and Alpine, built in `images/gpu` with
+  `CONFIG_DRM_VIRTIO_GPU_KMS`, without which it says "KMS disabled" and offers no display).
+
 ### Framebuffer (`simple-framebuffer`)
 - `VmConfig.fb_width`/`fb_height` (0: none). x8r8g8b8, packed rows (stride 4 × width), in guest
   RAM in whole 2 MiB units just below the DTB's 2 MiB (`boot::framebuffer`; at most half of RAM).
@@ -194,7 +229,8 @@ mode (and natively in realtime mode: std has no CSPRNG).
 - `web/display.ts` compares the buffer with the frame drawn last on every animation frame and puts
   the rows that changed on a `<canvas>` (or a worker's `OffscreenCanvas`: the page draws in its
   machine worker, docs/frontend.md "The screen") as opaque RGBA; fixed size, no mode setting.
-  virtio-gpu is the next display step ([plans/graphics.md](plans/graphics.md)).
+  virtio-gpu (above) is the display for guests with the driver; the page switches to it in
+  [plans/graphics.md](plans/graphics.md) G1 loop 4.
 - The Buildroot test kernel has no fbcon (drawing the boot log would cost the boot test).
 
 ## Validation and oracles

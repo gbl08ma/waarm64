@@ -1,0 +1,10 @@
+# The virtio-gpu test kernel (M8 graphics G1 loop 3; images/build.sh linux-gpu):
+# allnoconfig + images/linux.fragment + these. DRM with the virtio-gpu driver built in
+# (no fbdev emulation, no fbcon: the test's init is the only DRM master and talks KMS
+# through ioctls, docs/testing.md "the gpu guest"). tmpfs is what GEM's shmem objects
+# live in.
+CONFIG_DRM=y
+CONFIG_DRM_VIRTIO_GPU=y
+CONFIG_SHMEM=y
+CONFIG_TMPFS=y
+CONFIG_DRM_VIRTIO_GPU_KMS=y

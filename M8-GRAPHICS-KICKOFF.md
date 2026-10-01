@@ -321,9 +321,9 @@ of its own (`org.webpc.agent.0` or similar), a tiny line protocol. Delivery to a
 3. Rejected: writing into the user's disk image (touches their disk behind their back, needs an
    ext4 writer, distro-specific); injecting into an initrd (UEFI images load their own).
 
-## Progress (2026-10-01; loops 0 to 2 done, next: loop 3)
+## Progress (2026-10-02; loops 0 to 3 done, next: loop 4)
 
-Commits: `c39b6d5` (loops 0 and 1), `9974dda` (loop 2). `scripts/ci.sh` passes at both; `ci-long.sh`
+Commits: `c39b6d5` (loops 0 and 1), `9974dda` (loop 2), loop 3 below. `scripts/ci.sh` passes at each; `ci-long.sh`
 passed for loop 2. The sections above are as drafted; this one says what happened and what a new
 session should know.
 
@@ -377,13 +377,28 @@ test) has exercised the interrupt: loop 3's gpu guest is its first real driver.
 - `tests/browser.test.ts` pins the ABI number; bump it with `ABI_VERSION` if the ABI changes again.
 - `tsc` covers `bench/` including git-ignored files under `bench/results/local/`.
 
-**Next: loop 3, the device** (as the loops section above says): the backend in TypeScript and its
-Rust twin (`core/tests/common/gpu.rs`), the EDID generator (checked with `edid-decode`), `Image-gpu`
-and the gpu test guest with its KMS program (`images/`, own `tests/steps.txt` row), byte-exact
-natively then in Node and Chromium, a command-parser fuzz/random test, planted bugs as listed.
-Suggested order: EDID generator and its test; the command parser/backend with a Node test on
-hand-built queues; the Rust twin; then the image and guest. The first real exercise of the loop-2
-interrupt is the display event in that guest.
+**Loop 3, the device** (graphics.md §11, devices.md "virtio-gpu", testing.md). `web/gpu.ts` (`Gpu`: a pure class over
+RAM and a command buffer; `gpuBackend` wraps it for `Devices`; `GpuHooks` is where loop 4 plugs the
+page in), `web/edid.ts`, the twin `core/tests/common/gpu.rs` (`Dev::Gpu`), `tests/gpu.test.ts`,
+`core/tests/gpu.rs`, and the gpu guest: `images/build.sh linux-gpu` (`images/gpu/`: fragment and a
+static init doing KMS ioctls), `core/tests/gpu_guest.rs`, a `gpu` row in `tests/steps.txt`
+(37,794,474), `tests/gpu/guest.json` (hashes after each flush, from first principles), a Node
+guest (interpreter, JIT, JIT-stress) and a Chromium one (device worker). Findings, all in
+graphics.md §11: `DRM_VIRTIO_GPU_KMS` is needed; dumb buffers are X-format, so **a cursor's alpha
+is in the X byte and the host keeps it**; the display change is a test hook (`resize.after`
+flushes) on the same `Gpu.setSize` path a page will use. Changes outside the brief's files:
+`Ctx.ramSize`/`DevicesInit.ramSize` (the backing check needs RAM's size), `Vm.deviceState()` and
+`gpu` in `runToPowerOff`'s result, and `KERNEL_TOOLS`' `openssl-dev` pin (3.5.8 left the Alpine
+repository, so no kernel could be built; `linux` and `linux-crypto` were rebuilt, see backlog
+"Alpine's package pins drift").
+
+**Next: loop 4, on the page**: the page's Debian on virtio-gpu (no simple framebuffer; the
+firmware's GOP), the presentation thread by measurement (the device worker blocks in blk's
+synchronous XHR: key-to-glyph and a flush during a disk read, both ways), damage-only drawing,
+the `screen` event with letterboxing and the tablet through it, `GpuHooks` wired to a canvas, the
+cursor left for loop 6. Check on the way that `putImageData` of RGBA with a non-255 alpha into an
+`alpha: false` context draws opaque. GRUB's `gfxterm` takes the GOP and its menu leaves the serial
+console (loop 0): decide what the page tests do.
 
 ## Check with the user first
 - Any dependency (none is expected: the EDID, the backend and the presentation are ours).

@@ -45,7 +45,7 @@ const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
 const boot = (o: BootOptions, jit: 0 | 1 | 2 | 3, max = 20e9, input?: ConsoleInput) => runToPowerOff(WASM, { ...o, jit }, max, undefined, input);
-const summary = (r: Run) => ({ kind: r.kind, x0: r.x[0], x1: r.x[1], steps: r.steps, console: r.console, hvc: r.hvc });
+const summary = (r: Run) => ({ kind: r.kind, x0: r.x[0], x1: r.x[1], steps: r.steps, console: r.console, hvc: r.hvc, gpu: r.gpu });
 
 /**
  * Boots `o` on the interpreter, checks it with `check`, then under the JIT and
@@ -342,6 +342,25 @@ guest('crypto test kernel', () => ({
   assert.deepEqual(totals.map((m) => m[2]), ['0', '0', '0'], 'the sha1, sha224 and sha256 KUnit suites');
   assert.doesNotMatch(r.console, /alg: .*(failed|error)/i);
 }, { skip: !has('linux-crypto/Image') && 'SKIPPED: run images/build.sh linux-crypto', stress: STRESS, max: 60e9, steps: STEPS.crypto, interp: false });
+
+// The gpu test kernel (images/build.sh linux-gpu, images/gpu/init.c; M8 graphics G1): KMS on a
+// virtio-gpu of 640×480 (a mode set, damage, a cursor), then the display event the host raises after
+// the guest's last flush (tests/gpu/guest.json) and a buffer of the new size. The scanout and cursor
+// hashes are the native twin's (core/tests/gpu_guest.rs).
+const GPU_GUEST: { resizeAfter: string; screen: string; cursor: string; trace1: string; trace2: string; trace3: string } = JSON.parse(readFileSync(new URL('gpu/guest.json', import.meta.url), 'utf8'));
+guest('gpu test kernel', () => ({
+  ramSize: 256 << 20, kernel: image('linux-gpu/Image'), initrd: image('linux-gpu/initramfs.cpio'), cmdline: 'console=ttyAMA0 panic=-1',
+  devices: [{ type: 'gpu', width: 640, height: 480, trace: true, resize: { after: Number(GPU_GUEST.resizeAfter), width: 800, height: 600 } }],
+}), (r) => {
+  poweredOff(r);
+  for (const want of ['gpu: 1 crtc 1 connector 1 encoder', 'gpu: connector connected, 1 mode, preferred 640x480@', 'gpu: mode set 640x480 pitch 2560\n', 'gpu: damage sent\n', 'gpu: cursor set and moved\n', 'gpu: preferred now 800x600,', 'gpu: mode set 800x600\n', 'webpc: gpu test ok\n']) {
+    assert.ok(r.console.replaceAll('\r\n', '\n').includes(want), `missing ${JSON.stringify(want)}`);
+  }
+  assert.equal(r.gpu?.width, 800);
+  assert.equal(r.gpu?.screen, GPU_GUEST.screen);
+  assert.deepEqual(r.gpu?.trace, [GPU_GUEST.trace1, GPU_GUEST.trace2, GPU_GUEST.trace3]);
+  assert.equal(r.gpu?.cursor?.hash, GPU_GUEST.cursor);
+}, { skip: !has('linux-gpu/Image') && 'SKIPPED: run images/build.sh linux-gpu', stress: STRESS, steps: STEPS.gpu, max: 5e9 });
 
 // The firmware configuration (M8 phase B): EDK2 boots the UEFI Shell from the test disk
 // (images/build.sh edk2: shell.img), whose startup.nsh prints a variable, sets it in the

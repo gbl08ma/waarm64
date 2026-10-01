@@ -4,6 +4,7 @@
 //! the guest the same bytes at the same steps in deterministic mode).
 #![allow(dead_code)] // each runner uses part of it
 
+pub mod gpu;
 pub mod p9;
 pub mod qcow2;
 
@@ -105,6 +106,10 @@ pub enum Dev {
     /// makes the runner inject `KEY_EVENTS` and `TABLET_EVENTS`, as the
     /// Chromium test page does (tests/browser/boot.html).
     Input(bool),
+    /// virtio-gpu, 2D (web/gpu.ts): the display's width and height, and a test hook: after this
+    /// many flushes the display changes to a size (a display event); with the last, the scanout is
+    /// hashed at every flush.
+    Gpu(u32, u32, Option<(u32, u32, u32)>, bool),
 }
 
 /// What the runners inject when the guest sets a keyboard LED: A pressed and
@@ -214,6 +219,12 @@ impl Dev {
                 e(9, 1, 1, 128, c)
             }
             Dev::Input(_) => e(18, 0, 2, 64, vec![0; 136]),
+            Dev::Gpu(..) => {
+                // EDID; controlq, cursorq; config: events_read, events_clear, num_scanouts = 1, num_capsets = 0.
+                let mut c = vec![0; 16];
+                c[8] = 1;
+                e(16, 1 << 1, 2, 64, c)
+            }
         }
     }
 }
@@ -423,10 +434,14 @@ struct Backends {
     rng: (u64, u64, u32),
     held: Vec<Held>,
     p9: Vec<Option<p9::Server>>,
+    gpu: Vec<Option<gpu::Gpu>>,
+    /// The epoch each gpu last saw: a change is a virtio reset.
+    gpu_epoch: Vec<u32>,
+    ram_size: u64,
 }
 
 impl Backends {
-    fn new(devs: &[Dev]) -> Backends {
+    fn new(devs: &[Dev], ram_size: u64) -> Backends {
         Backends {
             devs: devs.to_vec(),
             hvc: Vec::new(),
@@ -439,6 +454,20 @@ impl Backends {
                     _ => None,
                 })
                 .collect(),
+            gpu: devs
+                .iter()
+                .map(|d| match *d {
+                    Dev::Gpu(width, height, resize, trace) => Some(gpu::Gpu::new(gpu::Options {
+                        width,
+                        height,
+                        resize,
+                        trace,
+                    })),
+                    _ => None,
+                })
+                .collect(),
+            gpu_epoch: vec![0; devs.len()],
+            ram_size,
         }
     }
 
@@ -499,8 +528,33 @@ impl Backends {
                     c[8 + k].store(*a.get(k).unwrap_or(&0), Ordering::Relaxed);
                 }
             }
+            if let Some(g) = &self.gpu[i]
+                && events & EV_CONFIG != 0
+            {
+                // events_clear is write-one-to-clear on events_read (web/gpu.ts `config`).
+                let rd = |at: usize| {
+                    u32::from_le_bytes(std::array::from_fn(|k| {
+                        d.config[at + k].load(Ordering::Relaxed)
+                    }))
+                };
+                let clear = rd(4);
+                if clear != 0 {
+                    let v = (rd(0) & !clear).to_le_bytes();
+                    for k in 0..4 {
+                        d.config[k].store(v[k], Ordering::Relaxed);
+                        d.config[4 + k].store(0, Ordering::Relaxed);
+                    }
+                }
+                let _ = g;
+            }
             // A reset drops old records and whatever the backend held.
             let epoch = d.epoch.load(Ordering::Acquire) & 0xff;
+            if let Some(g) = &mut self.gpu[i]
+                && epoch != self.gpu_epoch[i]
+            {
+                g.reset();
+                self.gpu_epoch[i] = epoch;
+            }
             if self.held[i]
                 .bufs
                 .front()
@@ -562,6 +616,30 @@ impl Backends {
                         }
                         0
                     }
+                    (Dev::Gpu(..), queue) => {
+                        let cmd = readable();
+                        let g = self.gpu[i].as_mut().unwrap();
+                        if queue == 1 {
+                            g.cursor(&cmd);
+                            0
+                        } else {
+                            let room: usize = r.write.iter().map(|s| s.1 as usize).sum();
+                            let p = vm.mem.host(RAM_BASE, self.ram_size, Access::Read).unwrap();
+                            // SAFETY: host() checked the range is guest RAM, which outlives the run.
+                            let ram =
+                                unsafe { std::slice::from_raw_parts(p, self.ram_size as usize) };
+                            let reply = g.control(ram, &cmd, room);
+                            scatter(vm, &r, &reply);
+                            if std::mem::take(&mut g.event) {
+                                // A display event: events_read bit 0, then the config-change interrupt.
+                                d.update_config(|c| {
+                                    c[0].fetch_or(1, Ordering::SeqCst);
+                                });
+                                vm.signal(SIGNAL_DEVICE);
+                            }
+                            reply.len() as u32
+                        }
+                    }
                     (Dev::P9(..), _) => {
                         let m = readable();
                         let room: usize = r.write.iter().map(|s| s.1 as usize).sum();
@@ -605,6 +683,9 @@ pub struct Run {
     /// chains the backends held that the restored VM posted again.
     pub snapshots: Vec<(usize, usize)>,
     pub summary: String,
+    /// The first gpu's state at the end, and its visible scanout as RGBA (width, height, rows).
+    pub gpu: Option<gpu::State>,
+    pub screen: Option<(u32, u32, Vec<u8>)>,
 }
 
 impl Run {
@@ -774,7 +855,7 @@ pub fn boot(b: &Boot) -> Run {
             d.config[k].store(b, Ordering::Relaxed);
         }
     }
-    let mut backends = Backends::new(devices);
+    let mut backends = Backends::new(devices, ram_size);
     let load = |vm: &Vm, pa: u64, b: &[u8]| {
         let p = vm.mem.host(pa, b.len() as u64, Access::Write).unwrap();
         // SAFETY: host() checked the range is guest RAM.
@@ -915,7 +996,10 @@ pub fn boot(b: &Boot) -> Run {
         .flash
         .as_ref()
         .map_or(vec![], |f| f.bytes().to_vec());
+    let first = backends.gpu.iter().flatten().next();
     Run {
+        gpu: first.map(|g| g.state()),
+        screen: first.and_then(|g| g.screen()),
         fb,
         flash,
         steps,

@@ -299,3 +299,35 @@ dev-only). Commands traced with `-trace 'virtio_gpu_cmd_*'`.
   canvases when 3D turns on).
 - Still open for G3: `writeBuffer` cost is fine at scanout sizes; the immediates limit (64 bytes)
   exists on both adapters; subgroups are on both, `shader-f16` only on the real GPU.
+
+## 11. G1 loop 3: the device (2026-10-02)
+
+The backend (`web/gpu.ts`), the EDID (`web/edid.ts`), the native twin (`core/tests/common/gpu.rs`)
+and the gpu test guest (`images/build.sh linux-gpu`) exist; [devices.md](../devices.md) "virtio-gpu"
+says what they do and [testing.md](../testing.md) how they are tested. What the real driver showed:
+
+- **Linux 6.18's `virtio_gpu` needs `CONFIG_DRM_VIRTIO_GPU_KMS=y`**: without it the driver binds,
+  logs "KMS disabled" and offers no connector (`getresources: Not supported`).
+- **Dumb buffers are always `B8G8R8X8` resources**, whatever the framebuffer's format later is. A
+  hardware cursor (an ARGB8888 framebuffer on a dumb buffer) therefore carries its alpha in the
+  X byte, and the host must keep that byte: the first version forced alpha to 255 for X formats
+  and the cursor came out opaque. The resource keeps the raw fourth byte for every format; the
+  screen ignores it (its hash forces it opaque; loop 4 checks that `putImageData` into an
+  `alpha: false` canvas ignores it too).
+- **A mode set is one full transfer and flush; `DIRTYFB` with a clip is a transfer and flush of that
+  rectangle only** (`drm_atomic_helper_damage_merged`), so a write outside the clip stays
+  invisible until the next flush: the test relies on it. A cursor update is a transfer of its
+  64×64 and an `UPDATE_CURSOR` on the cursorq; a legacy `CURSOR` move is `MOVE_CURSOR` only.
+- **The display event is raised by a config change and taken by a work item**: after our
+  `changeConfig` the driver does `GET_DISPLAY_INFO` and `GET_EDID`, and the connector's preferred mode
+  changes (`GETCONNECTOR` polling sees 800×600 with the physical size from the EDID, 210×160 mm
+  at 96 dpi). This is the first real driver on loop 2's interrupt and generation; both worked.
+- **The EDID is read as designed**: 640×480 is "preferred 640x480@59" (CVT-RB's 59.87 Hz), 170×130
+  mm, one mode.
+- **The test's display change is a hook, not an injected event**: after the Nth `RESOURCE_FLUSH`
+  (`resize: {after, width, height}`) the backend changes the size, which is the same path a page
+  resize takes (`Gpu.setSize`) and is exact in deterministic mode with no step to pick.
+- **`edid-decode` rejects pixel clocks under 10 MHz**, so the smallest EDID is 480×300; the page's
+  minimum (640×480) is above it.
+- The guest is an initramfs with a static init and no fbcon or fbdev emulation: it is the only DRM
+  master and the console isn't involved. 37.8M steps (the kernel's boot is most of it).

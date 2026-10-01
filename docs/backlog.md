@@ -335,6 +335,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - `performance.mark`/`measure` around compile, instantiate, device I/O and boot phases.
 - `core/fuzz`: `Mismatch::key` is dead code in the libFuzzer target build (a warning, not in CI).
 - Guest images: `images/build.sh alpine` can't run on the arm64 VM ([images.md](images.md)).
+- **Alpine's package pins drift:** the container is pinned by digest but `apk` reads the live repository,
+  so a pinned version that leaves it breaks the build (2026-10-02: `openssl-dev=3.5.8-r0` had gone, 3.5.9
+  needs the newer libcrypto; `KERNEL_TOOLS` is bumped, `USERLAND_PKGS`' `openssl=3.5.8-r0` for
+  `alpine-user` has the same problem when that image is next built). A mirror of the pinned packages
+  (or `apk` against a dated snapshot) would end it.
 - `images/Containerfile` and `images/alpine/user/webpc-user.start` still cite PLAN.md sections
   from before the docs moved; they're image inputs (editing them makes the images stale), so fix
   the comments with their next rebuild.

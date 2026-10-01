@@ -4,7 +4,7 @@
 // cheaply natively and in Node (docs/testing.md).
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
@@ -167,6 +167,7 @@ test('Linux boots on 4 vCPUs in parallel through 10+ pauses and resumes, JIT', {
 // The litmus image's tests and atomics stress on 4 parallel vCPUs (M7 loop 7;
 // tests/boot-node.test.ts has the rest of its runs).
 const LITMUS = new URL('../target/images/litmus/initramfs.cpio', import.meta.url);
+const GPU_IMAGE = new URL('../target/images/linux-gpu/Image', import.meta.url);
 test('litmus and atomics stress on 4 vCPUs in parallel, JIT', { skip: !existsSync(LITMUS) && 'SKIPPED: run images/build.sh linux litmus' }, async () => {
   const r = await bootPage('litmus=-s,1000,-r,10&stress=-n,100000&parallel&ncpus=4&jit=1', 5);
   assert.equal(r.error, undefined);
@@ -230,6 +231,20 @@ for (const jit of [0, 1]) test(`net (loopback adapter), 9p and the framebuffer w
   }
   // Read back from the page's canvas: row 0 red, row 1 grey, row 2 untouched.
   assert.deepEqual(r.pixels, { '0,0': [255, 0, 0, 255], '639,0': [255, 0, 0, 255], '5,1': [64, 64, 64, 255], '5,2': [0, 0, 0, 255] });
+});
+
+// The gpu test kernel on a virtio-gpu served by the device worker (M8 graphics G1): the same steps, console and
+// scanout and cursor hashes as the native twin and Node (core/tests/gpu_guest.rs, tests/boot-node-suite.ts).
+for (const jit of [0, 1]) test(`the gpu guest draws, sends damage, sets a cursor and follows a display event, deterministic mode${jit ? ', JIT' : ''}`, { skip: !existsSync(GPU_IMAGE) && 'SKIPPED: run images/build.sh linux-gpu' }, async () => {
+  const want = JSON.parse(readFileSync(new URL('./gpu/guest.json', import.meta.url), 'utf8')) as { resizeAfter: string; screen: string; cursor: string; trace1: string; trace2: string; trace3: string };
+  const r = await bootPage(`gpu=${want.resizeAfter}&jit=${jit}`, 10) as Awaited<ReturnType<typeof bootPage>> & { gpu?: { width: number; screen: string; trace: string[]; cursor: { hash: string } } };
+  assert.equal(r.error, undefined);
+  console.log(`# chromium gpu boot${jit ? ' (JIT)' : ''}: ${r.steps} steps`);
+  assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+  assert.ok(r.console.includes('webpc: gpu test ok\n'), r.console);
+  assert.equal(r.steps, STEPS.gpu);
+  assert.deepEqual([r.gpu?.width, r.gpu?.screen, r.gpu?.cursor.hash], [800, want.screen, want.cursor]);
+  assert.deepEqual(r.gpu?.trace, [want.trace1, want.trace2, want.trace3]);
 });
 
 // The overlay's hand-over (M8 loop 8): OPFS sync access handles are exclusive, so a machine

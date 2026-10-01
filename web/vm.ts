@@ -6,6 +6,7 @@
 // Time is deterministic unless `realtime` is set (the host clock, and idle
 // WFIs sleep on the signal word). With `parallel` (M7), every vCPU runs in
 // its own worker (web/vcpu-worker.ts) and this thread coordinates them.
+import type { GpuState } from './gpu.ts';
 import { Devices, EV_CONFIG, deviceEntry, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
@@ -548,7 +549,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   }
   const signal = ex.vm_signal(vm);
   const wakes = Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_signal(vm, i));
-  const devices = await deviceHost({ memory, shared, ram, signal, specs, deterministic, wakes, state: o.restore?.host.devices }, scratch + S_BELL, parallel);
+  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, signal, specs, deterministic, wakes, state: o.restore?.host.devices }, scratch + S_BELL, parallel);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();
   /** Sets signal-word bits, then bumps and notifies every vCPU's wake word (docs/abi.md). */
@@ -677,6 +678,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       return out;
     },
     diskBlocks: (slot: number, blocks: number[]) => devices.blocks(slot, blocks),
+    /** The backends' state (`Devices.save`: for a snapshot; a test reads the display's hashes from it), with the devices quiet. */
+    deviceState: async () => { await devices.quiesce(); return devices.save(); },
     /** The framebuffer (web/display.ts): byte address in `memory`, width, height; x8r8g8b8, packed rows. */
     framebuffer: fbPa ? { addr: ram + fbPa - RAM_BASE, ...fb } : undefined,
     /** A copy of the firmware configuration's flash bank (the variable store), to save once the vCPUs stopped; undefined without one. */
@@ -1032,8 +1035,11 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
     if ((r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) && steps < maxSteps) continue;
     const ms = performance.now() - t0;
     await vm.flush();
+    // The display's state (hashes of the scanout and the cursor), for a machine with a virtio-gpu.
+    const slot = (o.devices ?? []).findIndex((d) => d.type === 'gpu');
+    const gpu = slot >= 0 ? (await vm.deviceState())[slot] as GpuState : undefined;
     vm.close();
-    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash() };
+    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash(), gpu };
   }
 }
 

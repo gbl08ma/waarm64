@@ -5,6 +5,7 @@
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
 import { p9, type P9Files } from './9p.ts';
 import { echoBackend, gateway, portBackend } from './gateway.ts';
+import { gpuBackend, type GpuOptions } from './gpu.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
 import { openDisk, type Disk } from './qcow2.ts';
@@ -26,7 +27,8 @@ export type DeviceSpec =
   | { type: 'blk'; url: string; size?: number; overlay?: string; file?: Blob }
   | NetSpec
   | P9Spec
-  | InputSpec;
+  | InputSpec
+  | GpuSpec;
 
 /**
  * virtio-net (web/net.ts): Ethernet frames to and from an adapter: the
@@ -46,6 +48,12 @@ export type P9Spec = { type: '9p'; tag: string; files?: P9Files };
  * the guest's status events (LEDs) go to it as one [type, code, value] each.
  */
 export type InputSpec = { type: 'input'; kind: 'keyboard' | 'tablet'; port?: MessagePort };
+
+/**
+ * virtio-gpu, 2D (web/gpu.ts): the display's size, the EDID's DPI, and a test hook that changes the
+ * size after some flushes. Where the pixels go is the page's business (`GpuHooks`).
+ */
+export type GpuSpec = { type: 'gpu' } & GpuOptions;
 
 /** The MessagePorts in `specs`, to transfer with them. */
 export const specPorts = (specs: DeviceSpec[]) =>
@@ -96,13 +104,19 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     }
     // eventq, statusq; config: select, subsel, size, 5 reserved, 128 bytes of answer.
     case 'input': return { entry: [18n, 0n, 2n, 64n, 136n], config: new Uint8Array(136) };
+    // Feature EDID (1); controlq and cursorq; config: events_read, events_clear, num_scanouts = 1, num_capsets = 0.
+    case 'gpu': {
+      const config = new Uint8Array(16);
+      new DataView(config.buffer).setUint32(8, 1, true);
+      return { entry: [16n, 1n << 1n, 2n, 64n, 16n], config };
+    }
   }
 }
 
 export type Segment = { off: number; len: number };
 export type Request = { w0: number; queue: number; read: Segment[]; write: Segment[] };
 export type Ctx = {
-  ram: () => Uint8Array; complete: (w0: number, len: number) => void; config: () => Uint8Array;
+  ram: () => Uint8Array; ramSize: number; complete: (w0: number, len: number) => void; config: () => Uint8Array;
   /** Changes the config space under a running driver (docs/abi.md, ABI 31): `write` gets it, and the guest gets a config-change interrupt. */
   changeConfig: (write: (config: Uint8Array) => void) => void;
 };
@@ -515,6 +529,7 @@ export type DevicesInit = {
   /** Addresses in `memory` of each device's `virtio::DevShared`, of guest RAM and of the signal word. */
   shared: number[];
   ram: number;
+  ramSize: number;
   signal: number;
   specs: DeviceSpec[];
   deterministic: boolean;
@@ -535,11 +550,12 @@ export class Devices {
   private closed = false;
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, signal, specs, deterministic, wakes, state }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | undefined)[], out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, ramSize, signal, specs, deterministic, wakes, state }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal, this.wakes] = [memory, shared, signal, wakes ?? []];
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = {
         ram: () => new Uint8Array(this.memory.buffer, ram),
+        ramSize,
         complete: (w0, len) => this.complete(i, w0, len),
         config: () => new Uint8Array(this.memory.buffer, shared[i] + CONFIG, 256),
         changeConfig: (write) => this.changeConfig(i, write),
@@ -551,6 +567,7 @@ export class Devices {
         case 'net': return net(ctx, d);
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
         case 'input': return input(ctx, d);
+        case 'gpu': return gpuBackend(ctx, d);
       }
     });
     this.epochs = specs.map(() => 0);
