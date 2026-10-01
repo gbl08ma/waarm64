@@ -15,8 +15,8 @@ reviews, merges) stay with the orchestrating session.
 | 1. Core, round-robin | done (ABI 30: `core/src/snapshot.rs`, `core/src/vm/state.rs`, each device's `save`/`restore`; native round trips with exact steps) |
 | 2. Core, parallel | next (orchestrator): the state already saves both run modes in one form; left are the native thread runner's snapshots, the bare-metal SMP tests, litmus and stress through a restore, ThreadSanitizer, the planted bug |
 | 3. Host, round-robin | |
-| 4. The file and the RAM codec | delegated (worktree), independent of 1 to 3 |
-| 5. Host, parallel: `pause`/`resume` | the pause itself delegated (worktree); the round trips after 2 and 3 |
+| 4. The file and the RAM codec | done: the container, and the codec by measurement (the core's LZ, one worker); wiring the LZ into the writer as codec 2 is loop 3's |
+| 5. Host, parallel: `pause`/`resume` | the pause is done; the round trips after 2 and 3 |
 | 6. The disk in the file | |
 | 7. The page | |
 | 8. Suspend | needs the user's OK |
@@ -28,17 +28,15 @@ Suspend (a local snapshot in OPFS that stops the machine and resumes on the next
 version policy (a state format version, not the core build's hash); the wall clock after a resume.
 Recommendations are in the plan doc; loops 1 to 7 don't depend on the answers.
 
-## Delegated work (worktrees under `.claude/worktrees/`, one branch each)
+## Delegated work: merged
 
-| Piece | Worktree and branch | State |
-|---|---|---|
-| The file container (`web/snapshot-file.ts`, its tests) | `agent-a85db6430d0a01228` | done there (`461fef4`), reviewed; to merge. One fix to make when merging: the reader's `Input` keeps every consumed chunk until a read ends exactly on a chunk boundary (a GiB file stays in memory): drop consumed chunks as it goes |
-| `pause()`/`resume()` (`web/vm.ts`, `web/vcpu-worker.ts`, `tests/pause.test.ts`) | `agent-a923e0b93b2d75ae3` | done there (`411fb2e`), reviewed; to merge (`web/vm.ts` here only changed `ABI`) |
-| The LZ codec (`core/src/lz.rs`, committed there as `9c270ee`) and the codec measurement | `agent-a94b900acc0e54167` | done: the report and JSON are in `bench/results/local/codec/` (untracked; to go into `bench/boot/REPORT.md` with the JSON committed). **Decision by measurement: the core's LZ, one worker** (save 0.44 s against deflate's 2.78 s on 304 MB of pages, restore 0.20 s against 0.41 s, file 91 MB against 64 MB); deflate stays readable as codec 1. To merge: `9c270ee`, its exports folded into ABI 30 |
-
-The briefs given to the agents are in `bench/results/local/snapshots-briefs/` (untracked). The
-first session died on 2026-10-01 when an uncapped Node test in a worktree took 10 GB (CLAUDE.md
-"Cap memory"); its agents were restarted in the same worktrees.
+The file container (`web/snapshot-file.ts`), the LZ codec (`core/src/lz.rs`) and `pause()`/`resume()`
+(`web/vm.ts`, `web/vcpu-worker.ts`) were written by Sonnet agents in worktrees, reviewed and merged
+(the agents' worktrees `agent-a85db…`, `agent-a923e…`, `agent-a94b9…` under `.claude/worktrees/`
+can go; the last holds the RAM dumps the codec was measured on, 3.3 GiB, in its
+`bench/results/local/`). The codec's tools are in `bench/results/local/codec/` (untracked), its
+numbers in `bench/boot/REPORT.md`. The first session died on 2026-10-01 when an uncapped Node test
+in a worktree took 10 GB (CLAUDE.md "Cap memory").
 
 ## Notes for the next session
 

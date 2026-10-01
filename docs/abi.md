@@ -44,6 +44,11 @@ Design notes for an ABI change go in this file before the code.
 - `vm_snapshot_size(vm)`, `vm_snapshot_save(vm, ptr, len)`, `vm_snapshot_restore(vm, ptr, len)`,
   `snapshot_version()` (ABI 30): a VM's state without its RAM, out and into a new VM ("M8 phase
   C: snapshots", below).
+- `lz_bound(len) -> usize`, `lz_compress(src, len, dst, cap) -> usize` (0: it doesn't fit),
+  `lz_decompress(src, len, dst, cap) -> usize` (`usize::MAX`: malformed) (ABI 30): the LZ4 block
+  format (`core/src/lz.rs`), the snapshot file's codec for RAM and disk blocks. They take no VM:
+  any instance on the memory may call them. The decompressor is for files a user chose: it never
+  reads or writes out of bounds, whatever the bytes.
 - **Addresses are u32, but JS sees a wasm `i32` as signed:** past 2 GiB of memory (a guest with
   2 GiB of RAM puts the core's later allocations there) they'd come back negative. `web/vm.ts`
   `unsigned` wraps the exports that return one, and `jit_install` unsigns its `ptr`.
@@ -397,4 +402,4 @@ snapshots.
 | 27 | `panic_message() -> *const u8`: the first panic's message (BUG1) |
 | 28 | `VmConfig.rtc`: a PL031 RTC in realtime mode |
 | 29 | the firmware configuration (M8 phase B): `VmConfig.firmware`, `flash_size`, `fw_cfg`, `fw_cfg_len`; `vm_flash`; the PL031 in deterministic mode there |
-| 30 | snapshots (M8 phase C): `vm_snapshot_size`, `vm_snapshot_save`, `vm_snapshot_restore`, `snapshot_version` (above) |
+| 30 | snapshots (M8 phase C): `vm_snapshot_size`, `vm_snapshot_save`, `vm_snapshot_restore`, `snapshot_version` (above); `lz_bound`, `lz_compress`, `lz_decompress` |

@@ -86,8 +86,10 @@ A user-facing format, streamed both ways (RAM is up to GiBs):
   `DISK` (runs of overlay blocks, `index` = the first block), `END ` (the frame count). A file
   without its `END ` is truncated.
 - Each frame is compressed on its own, so frames can be produced and consumed by several workers
-  on the shared memory. The codec is settled by measurement in loop 4 (`CompressionStream`'s
-  deflate, zstd if both Chromium and Node have it, or a small LZ in the core).
+  on the shared memory. **The codec is the core's LZ** (codec 2: `core/src/lz.rs`, the LZ4 block
+  format), on one worker, settled by measurement in loop 4 (`bench/boot/REPORT.md` "M8 phase C
+  loop 4": 6 times faster to save than `CompressionStream`'s deflate-raw for a file 1.4 times
+  larger); deflate-raw is codec 1, which the reader also takes.
 - **Refusals** name what the user can do (phase A's problem/action style), before anything is
   touched: not a snapshot; a newer format; a core state version this core doesn't read; another
   machine configuration; another base disk; a checksum that fails; a truncated file.
@@ -141,10 +143,12 @@ for the loops that touch parallel SMP.
 3. **Host, round-robin.** `web/vm.ts`: `snapshot()` and `bootVm`'s `restore`; backend state
    (`Backend.save`/`restore`: the deterministic rng); Buildroot and Alpine round trips under the
    JIT in Node and Chromium with exact steps.
-4. **The file and the RAM codec.** `web/snapshot-file.ts` and its tests (round trip, every
+4. **The file and the RAM codec: done** (the container and the codec; the LZ is wired into
+   the writer as codec 2 in loop 3, with the core instance it needs). `web/snapshot-file.ts` and its tests (round trip, every
    refusal, truncation, corruption); the codec measured in Chromium on real RAM images (ratio,
    save and restore throughput, one and several workers); the report in `bench/boot/REPORT.md`.
-5. **Host, parallel.** The coordinator's `pause`/`resume` and the vCPU workers' pause; parallel
+5. **Host, parallel.** The pause is **done** ([platform.md](../platform.md) "Pausing a VM",
+   `tests/pause.test.ts`: the coordinator's `pause`/`resume`, the vCPU workers parked). Left: parallel
    round trips in Node and Chromium (Buildroot, litmus and stress on 4).
 6. **The disk in the file.** The overlay's blocks out and in through the device worker's handles,
    the base's identity (measured), the flash copy.

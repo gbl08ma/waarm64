@@ -473,3 +473,40 @@ neither `apparmor=0` nor the masked units the page's had (docs/frontend.md "Debi
 the 5.4 G steps (~3 s) are an LZMA range decoder (PC samples at one place; its disassembly shows
 the `>> 11` and `>> 5` probability updates), most likely the loader's compressed core image being
 unpacked; no WFE or timer would make it idle.
+
+## M8 phase C loop 4: the snapshot's RAM codec
+
+2026-10-01, the M4 VM, Chromium 153.0.8010.52 headless (a worker, cross-origin isolated) and
+Node 26.7.0; other work ran on the machine (load 1.6 to 3.6 in the Chromium runs, ~4.9 in
+Node's: the ratios are what to read). Raw: `results/m8-snapshots-loop4/` (every sample, 7 per
+cell, codecs alternated). RAM images of guests at their power-off, cut as the snapshot file
+cuts them (1 MiB chunks, zero 4 KiB pages left out, each chunk compressed alone), every restore
+checksummed against the original. `alpine-user8` is the userspace benchmark with eight
+workloads at once, the heaviest guest short of Debian: 304 MB of non-zero pages, the size the
+page's Debian is assumed to have after a login (its pages are sparser than a page cache's, so
+both codecs do somewhat better on it than they will there).
+
+| image (non-zero pages) | codec | file MB (ratio) | save, 1 worker | save, 4 | restore, 1 worker | restore, 4 |
+|---|---|---|---|---|---|---|
+| alpine (94.7 MB) | deflate-raw | 29.3 (3.2x) | 1.19 s | 0.32 s | 0.15 s | 0.044 s |
+| | the core's LZ | 42.5 (2.2x) | 0.22 s | 0.061 s | 0.073 s | 0.020 s |
+| alpine-user (122.7 MB) | deflate-raw | 37.5 (3.3x) | 1.71 s | 0.47 s | 0.21 s | 0.063 s |
+| | the core's LZ | 54.1 (2.3x) | 0.27 s | 0.081 s | 0.090 s | 0.028 s |
+| alpine-user8 (304.3 MB) | deflate-raw | 64.0 (4.8x) | 2.78 s | 0.93 s | 0.41 s | 0.16 s |
+| | the core's LZ | 91.0 (3.3x) | 0.44 s | 0.149 s | 0.203 s | 0.067 s |
+
+Per thread: `CompressionStream`'s deflate-raw compresses 75 to 115 MB/s and decompresses 600 to
+780 MB/s (in Node 45 to 65 and 165 to 260); the LZ (`core/src/lz.rs`, the LZ4 block format,
+greedy, our own code) 640 to 840 MB/s and 1.4 to 1.7 GB/s, the same in Node (it is the same
+wasm). The zero-page scan alone is 14 to 17 GB/s (0.07 s for 1 GiB). zstd isn't in Node's
+`CompressionStream`, so it wasn't a candidate.
+
+**Decision: the LZ, on one worker.** Save is what the user waits for with the machine paused:
+0.44 s against 2.8 s at Debian's assumed size, for a file 1.4 times larger (91 MB against 64 MB,
+kept locally). It is synchronous, needs no copy out of the shared memory (`CompressionStream`
+refuses shared views), and its bytes and speed don't depend on the host's zlib. Four workers
+would take the save from 0.44 s to 0.15 s: not worth their complexity now. If they come, chunks
+must be dealt out interleaved (chunk *c* to worker *c* mod *n*): contiguous ranges scaled 1.4x on
+four, because the non-zero pages sit at low addresses. The file's frames name their codec, so
+deflate-raw stays readable (codec 1) and can be offered where size matters.
+Not measured: Debian's own RAM, file I/O, the disk's blocks.
