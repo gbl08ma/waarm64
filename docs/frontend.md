@@ -321,6 +321,11 @@ fbcon can't grow its buffer, so the console stays at its born size (a bigger win
 letterboxed), and a smaller window is never allowed to crop it (devices.md "Display size and events").
 `tests/page-resize.test.ts` covers it on Debian.
 
+**The guest's cursor** (virtio-gpu machines) is the canvas's CSS cursor: the presenter sends the 64×64 image and its hotspot when
+they change (not on moves: the tablet is absolute, the host's pointer is the guest's), and the page draws it at the canvas's scale into
+a blob (`image-set(url(…) <dpr>x) hotX hotY, none`; at most 128×128 device pixels), again whenever the scale changes. A cursor the guest
+never set leaves the page's own pointer; one it hid is `none`. docs/plans/graphics.md §14.
+
 ## Input
 
 - **Focus:** the screen takes the keyboard on a click (tabindex 0; the page focuses it on load

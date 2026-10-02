@@ -439,3 +439,24 @@ The page sends its screen box (docs/frontend.md "The screen"); what Debian's ker
   worker, ~5%) runs the guest's DRM commits, which is the core the user saw. The knobs are the page's
   `?gpu=eager|lazy|pace|q<N>` (default `lazy,pace,q16`; the tests' guests stay eager and queue 64, so their bytes
   and step counts don't move).
+
+## 14. G1 loop 6: the cursor (2026-10-02)
+
+The guest's cursor is the canvas's CSS cursor. `UPDATE_CURSOR`'s 64×64 image reaches the page as a `cursor` message on
+the display port (`web/gpu-present.ts`: RGBA copy and hotspot; **sent only when the image or hotspot changes**, never for
+`MOVE_CURSOR`: the tablet is absolute, so the host's pointer is the guest's and moves at the host's rate with no round
+trip). The page (`showCursor` in `web/app/main.ts`) draws it at the canvas's scale (a guest pixel is `scale` device
+pixels; smoothing only when the scale isn't whole, capped at 128×128 device pixels, Chromium's limit for a cursor),
+makes a PNG blob and sets `image-set(url(blob) <dpr>x) hotX hotY, none` with the hotspot scaled the same; it redraws on
+every `fit()` (a resized window or screen menu changes the scale). Three states: **never set** (no guest cursor: the
+page's own pointer, so EDK2's screens and a console with no mouse driver have one), **hidden** (`UPDATE_CURSOR` with
+resource 0: `cursor: none`) and **an image**. A virtio reset goes back to "never set" (`GpuHooks.cursorReset`; a restored
+snapshot sends its cursor again through `cursor`).
+- **No overlay for `MOVE_CURSOR` warps:** the guests in scope (fbcon, KMS compositors) move the cursor plane only to
+  follow the pointer they were given; a guest that warps would show the host's pointer where the user's is anyway. Build the
+  overlay when one is seen.
+- Tests: `tests/gpu-present.test.ts` (the messages: change vs. move, a copy, hidden vs. never set), `tests/page-cursor.test.ts`
+  (the page: a message injected into the display port of Debian's page, the machine's worker stopped so its own resets
+  don't race it: the CSS value, the scaled hotspot, the blob's size and alpha, `none`, back to the default; planted: the
+  hotspot ignored, caught). The guest's own cursor bytes are the gpu guest's (loop 3).
+- Chromium normalizes `-webkit-image-set(...)` to `image-set(...)`; a hotspot is in the image's pixels.

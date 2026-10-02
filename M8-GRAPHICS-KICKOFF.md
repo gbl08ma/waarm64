@@ -321,7 +321,7 @@ of its own (`org.webpc.agent.0` or similar), a tiny line protocol. Delivery to a
 3. Rejected: writing into the user's disk image (touches their disk behind their back, needs an
    ext4 writer, distro-specific); injecting into an initrd (UEFI images load their own).
 
-## Progress (2026-10-02; loops 0 to 5 done, next: loop 6)
+## Progress (2026-10-02; loops 0 to 6 done, next: loop 7)
 
 Commits: `c39b6d5` (loops 0 and 1), `9974dda` (loop 2), `556604f` (loop 3), loop 4 below. `scripts/ci.sh` passes at each; `ci-long.sh`
 passed for loop 2. The sections above are as drafted; this one says what happened and what a new
@@ -434,8 +434,12 @@ letterboxed. `tests/page-resize.test.ts` (Debian, ~70 s; the floor planted out: 
 (DisplayID) beyond the 4088 cap (a cap, decided: nobody asked), a deterministic display event at a fixed step beyond
 the test hook that exists. `scripts/ci.sh` results: see the commit.
 
-**Next: loop 6, cursor** (CSS cursor from `UPDATE_CURSOR`, hiding, scaling by the canvas's scale, an overlay only if a
-guest warps; the gpu guest's cursor bytes exist since loop 3; a page test). Then 7 (snapshots on a gpu machine: the
+**Loop 6, cursor** (graphics.md §14): the CSS cursor from `UPDATE_CURSOR` (`cursor` message only on image/hotspot change, drawn at
+the canvas's scale, `none` when hidden, the page's pointer when never set), no warp overlay (no guest in scope warps);
+`tests/gpu-present.test.ts`, `tests/page-cursor.test.ts` (planted: hotspot ignored). Not checked: a real guest's cursor (needs a
+desktop: G2).
+
+**Next: loop 7** (snapshots on a gpu machine: the
 restore's re-transfer, a restore into another page size: the `running` size message is there for it) and 8 (exit).
 
 ## Check with the user first

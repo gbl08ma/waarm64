@@ -9,6 +9,8 @@ import type { GpuHooks, Rect, ScanoutSource } from './gpu.ts';
 /** Page ⇄ backend over the display port. */
 export type DisplayToPage =
   | { type: 'mode'; width: number; height: number }
+  /** The guest's cursor: its 64×64 RGBA and hotspot, `null` when the guest hid it, `undefined` when it never set one (the page's own pointer). The position isn't sent: the tablet is absolute, the host's pointer is the guest's. */
+  | { type: 'cursor'; image: ArrayBuffer | null | undefined; hotX: number; hotY: number }
   /** With `stats`: once a second, the draws since the last (n) and the ms from the flush that made them to the draw (median, max): bench/gpu. */
   | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number };
@@ -63,7 +65,17 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
     }
     setTimeout(frame, 16);
   };
+  let cursorImage: Uint8Array | null | undefined;
+  let cursorHot = '';
+  const sendCursor = (image: Uint8Array | null | undefined, hotX: number, hotY: number) => {
+    const hot = `${hotX},${hotY}`;
+    if (image === cursorImage && hot === cursorHot) return; // a move: the page's pointer already is the guest's
+    [cursorImage, cursorHot] = [image, hot];
+    port?.postMessage({ type: 'cursor', image: image ? image.slice().buffer : image, hotX, hotY } satisfies DisplayToPage);
+  };
   return {
+    cursor: (image, hotX, hotY) => sendCursor(image, hotX, hotY),
+    cursorReset: () => sendCursor(undefined, 0, 0),
     scanout(width, height, source) {
       src = source;
       img = source ? new ImageData(new Uint8ClampedArray(source.pixels.buffer as ArrayBuffer, source.pixels.byteOffset, source.pixels.length), source.width, source.height) : undefined;

@@ -7,6 +7,7 @@
 // credential over fw_cfg (firmware machines), `?disk2=<url>` a read-only second disk, `?disk=<url>` a root
 // disk of your own (the header's "Open disk…" and a dropped file choose a local one).
 import { Terminal } from '@xterm/xterm';
+import type { DisplayToPage } from '../gpu-present.ts';
 import { attachInput, type Input } from '../input.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
@@ -98,6 +99,38 @@ function fit() {
   canvas.style.height = `${(fb.height * scale) / dpr}px`;
   canvas.style.imageRendering = Number.isInteger(scale) ? 'pixelated' : 'auto';
   canvas.dataset.scale = String(Math.round(scale * 1000) / 1000);
+  showCursor();
+}
+
+// The guest's cursor (virtio-gpu's cursor queue) is the canvas's CSS cursor: the tablet is absolute, so the host's pointer is the
+// guest's and moves at the host's rate. Drawn at the canvas's scale (a guest pixel is `scale` device pixels), crisp when the scale is
+// whole; Chromium takes cursor images up to 128×128 device pixels, so a bigger one is capped. `none` is the guest hiding it.
+type GuestCursor = { image: ArrayBuffer | null | undefined; hotX: number; hotY: number };
+let guestCursor: GuestCursor | undefined;
+let cursorUrl: string | undefined;
+let cursorToken = 0;
+function showCursor() {
+  const token = ++cursorToken;
+  const c = guestCursor;
+  if (!c || c.image === undefined) { canvas.style.cursor = ''; return; }
+  if (c.image === null) { canvas.style.cursor = 'none'; return; }
+  const scale = Number(canvas.dataset.scale) || 1;
+  const size = Math.min(128, Math.max(1, Math.round(64 * scale)));
+  const k = size / 64;
+  const draw = new OffscreenCanvas(64, 64);
+  draw.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(c.image.slice(0)), 64, 64), 0, 0);
+  const out = new OffscreenCanvas(size, size);
+  const ctx = out.getContext('2d')!;
+  ctx.imageSmoothingEnabled = !Number.isInteger(k);
+  ctx.drawImage(draw, 0, 0, size, size);
+  out.convertToBlob().then((blob) => {
+    if (token !== cursorToken) return;
+    const url = URL.createObjectURL(blob);
+    if (cursorUrl) URL.revokeObjectURL(cursorUrl);
+    cursorUrl = url;
+    const hot = (n: number) => Math.min(size - 1, Math.round(n * k));
+    canvas.style.cursor = `-webkit-image-set(url(${url}) ${devicePixelRatio}x) ${hot(c.hotX)} ${hot(c.hotY)}, none`;
+  }, () => {});
 }
 new ResizeObserver(() => { fit(); scheduleSize(); }).observe(screenBox);
 matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', () => { fit(); scheduleSize(); }); // moved to a screen with another density
@@ -236,6 +269,8 @@ function start(snapshot?: File, resume = true) {
   sent = hasGpu ? size : undefined;
   [fb.width, fb.height] = [size.width, size.height];
   const fresh = canvas.cloneNode() as HTMLCanvasElement;
+  fresh.style.cursor = '';
+  guestCursor = undefined;
   [fresh.width, fresh.height] = [fb.width, fb.height];
   canvas.replaceWith(fresh);
   canvas = fresh;
@@ -243,8 +278,9 @@ function start(snapshot?: File, resume = true) {
   fit();
   const screen = canvas.transferControlToOffscreen();
   const display = new MessageChannel();
-  display.port1.onmessage = (e: MessageEvent<{ type: 'mode'; width: number; height: number }>) => {
+  display.port1.onmessage = (e: MessageEvent<DisplayToPage>) => {
     if (run?.display !== display.port1) return;
+    if (e.data.type === 'cursor') { guestCursor = e.data; showCursor(); return; }
     if ((e.data as { type: string }).type === 'draw-stats') ((window as unknown as { __drawStats?: unknown[] }).__drawStats ??= []).push(e.data);
     if (e.data?.type !== 'mode' || !(e.data.width > 0 && e.data.height > 0)) return;
     [fb.width, fb.height] = [e.data.width, e.data.height];

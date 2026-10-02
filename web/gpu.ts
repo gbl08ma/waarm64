@@ -109,6 +109,8 @@ export type GpuHooks = {
   damage?(rect: Rect): void;
   /** The cursor image (64×64 RGBA) or none, its hotspot, and where it is (guest pixels). */
   cursor?(image: Uint8Array | null, hotX: number, hotY: number, x: number, y: number): void;
+  /** A virtio reset: no cursor was ever set (a pointer over the firmware's screens is the host's own), unlike `cursor(null)`, which the guest asked for. */
+  cursorReset?(): void;
 };
 
 /** What `Gpu.state()` says: the display, the resources without their pixels, and the hashes of what is visible. */
@@ -546,7 +548,8 @@ export class Gpu {
     this.cursorImage = null;
     this.cursorState = { hotX: 0, hotY: 0, x: 0, y: 0 };
     this.setScanout(null);
-    this.hooks.cursor?.(null, 0, 0, 0, 0);
+    if (this.hooks.cursorReset) this.hooks.cursorReset();
+    else this.hooks.cursor?.(null, 0, 0, 0, 0);
   }
 
   /** A snapshot's state, JSON: `state` plus the cursor's image. Host pixels come back from the backing at `restore`. */
