@@ -61,8 +61,46 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   (Alpine: 0.66M MSR (register) and 0.15M MSR (immediate) helper calls). The differential test
   can't see an unmasking write done inline (no IRQs in its harness): only a distro boot's steps
   catch it.
-- **CoreMark's gap to TCG (~70%)**: the store bounds checks V8 keeps on Linux arm64, register
-  write-backs at block exits, call/return between small regions. Only for real programs.
+- **User space: what the profile of `alpine_user_jit` says** (2026-10-02, `bench/boot/REPORT.md` "M8: where the
+  userspace benchmark's time goes"; re-profile with `bench/boot/userprof.ts` before and after each of these). In
+  order:
+  1. **Cross-page direct branches never chain in a process** (measured, prototyped, not landed): `block::chain`
+     finds a successor in another page by PA arithmetic, which holds only for physically contiguous pages (the
+     kernel's image), so every `BL`/`B`/`B.cond` to another page of a process returns to the dispatcher: 97 to
+     98.5% of the userspace phases' 150M dispatches, 10 to 18% of their time. The prototype
+     (`bench/boot/results/m8-userprof/chain-by-va-prototype.patch`: such a successor is found by its VA, as an
+     indirect branch's target is) made SQLite 12%, Lua 10% and compression 9% faster in Chromium with the same
+     steps. To land it: a unit test of the emitted link, a differential class with code in two pages that
+     aren't physically contiguous, a planted bug, CI and `ci-long`.
+  2. **Compile units larger than a loop.** A block runs ~5 instructions, and in Lua and SQLite 89 to 98% of
+     block-to-block transfers leave one wasm function for another, each paying a frame, the registers' write-back
+     and reload through the `Cpu`, NZCV and the PC materialized, a budget check and a tail call: over half of the
+     host's instructions in hot code. Half to two thirds of all transfers are **direct and within one guest page**, which
+     loop regions don't take (a region is a loop through its head without calls: 1.5% of Lua's block executions).
+     The shape to try: one function per hot page (or per group of blocks reached from one entry) holding each
+     block once, entered through a `br_table` on the entry PC's offset, same-page edges as `br` with registers and
+     lazy flags in locals (v86's shape). Each block once per unit avoids the duplication that sank "regions of
+     every seen successor" ([jit.md](jit.md) "Tried and not kept"), and the unit must stay behind a tier-up as loop
+     regions are (regions at the first threshold cost the boots 10 to 14%). Unknowns to measure first: V8's
+     compile time and code quality on functions of a page's size (Liftoff zero-initializes every local), the
+     register state at merge points, the `br_table`'s cost against a tail call.
+  3. **Calls and returns** (`RET`: 8 to 17 per 1000 instructions, and as many calls): only after 2, as inlined
+     callees or a return predicted to the call site inside the unit.
+  4. **Indirect transfers** (`BR`, `BLR`, `RET`, and 1's by-VA links: 23 to 56 per 1000 instructions, ~50 host
+     instructions each): two table lookups (the instruction TLB, then the 1 MiB jump cache, whose entry load is
+     where such blocks' samples sit) and `return_call_indirect`. One lookup in a small VA-keyed cache that is
+     flushed with the TLB (QEMU's `tb_jmp_cache`) would replace the two.
+  5. **The fixed-size memory** (below) is 24 of a typical block's ~85 host instructions on this host (a size
+     reload and a bounds check before each write-back), and nothing on macOS or x86_64.
+  - Small: `UQSUB`/`UQADD` (2.0M helper calls in the compression phase, ~7% of it with the interpreter's share)
+    are wasm's `sub_sat`/`add_sat`.
+  - Not levers there: TLB misses (about 1% of a phase at most), the remaining helpers, the core's own compiler (under
+    1% outside the boot).
+  - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the run's 22 s) are a third Liftoff code
+    and 11 to 18% V8's compiles on the vCPU's thread, as the boot was in M6: nothing new found for them (the
+    module-batching entries below are what there is).
+- **CoreMark's gap to TCG (~70%)**: the same transfers between blocks (above) and the store bounds checks V8
+  keeps on Linux arm64. Don't fit the design to it.
 - **Per-module eviction, coldest first,** instead of whole-cache flushes ([jit.md](jit.md)
   "Memory"). A Go build flushes about every 30 s per vCPU today, spending ~6% of CPU compiling.
   - **What it would do:** evict the modules unused for the longest time, unlink what chains to them,

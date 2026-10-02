@@ -1,0 +1,152 @@
+boot: 7.63 s, 2364M steps, 310 MIPS, dispatches 8.38M (1 per 282), interpreted 38.26M, TLB misses 550K, flushes 30611, blocks 42667, tier-ups 475
+init: 0.19 s, 63M steps, 330 MIPS, dispatches 2.18M (1 per 29), interpreted 0.22M, TLB misses 10K, flushes 764, blocks 489, tier-ups 3
+compress: 2.84 s, 2118M steps, 746 MIPS, dispatches 25.03M (1 per 85), interpreted 6.12M, TLB misses 628K, flushes 4364, blocks 2089, tier-ups 75
+lua: 5.17 s, 3206M steps, 620 MIPS, dispatches 66.05M (1 per 49), interpreted 3.44M, TLB misses 44K, flushes 5774, blocks 2275, tier-ups 25
+churn: 1.71 s, 547M steps, 319 MIPS, dispatches 1.78M (1 per 308), interpreted 0.43M, TLB misses 249K, flushes 16469, blocks 667, tier-ups 42
+sqlite: 4.19 s, 2142M steps, 512 MIPS, dispatches 56.61M (1 per 38), interpreted 5.83M, TLB misses 268K, flushes 9560, blocks 3073, tier-ups 38
+shutdown: 1.08 s, 323M steps, 300 MIPS, dispatches 3.30M (1 per 98), interpreted 0.69M, TLB misses 142K, flushes 7622, blocks 1452, tier-ups 21
+
+== boot
+  helper calls: MSR_reg 0.56M, MRS 0.50M, ISB 0.48M, CASP 0.25M, STRx_LDRx_imm_2 0.24M, ERET 0.17M, IC_IVAU 0.14M, MSR_imm 0.11M
+  8.38M dispatches into compiled blocks, by reason:
+    64.4%  EL0 other (a block returned although its successor was ready)
+    17.1%  EL1 start of a run
+     6.2%  EL1 after interpreted steps
+     3.0%  EL1 jump cache: another block, pc == x30
+     2.4%  EL0 after interpreted steps
+     1.5%  EL1 other (a block returned although its successor was ready)
+     1.4%  EL0 start of a run
+     1.4%  EL1 jump cache: another block
+     0.7%  EL1 after interpreted steps, pc == x30
+     0.5%  EL0 instruction TLB: empty
+     0.5%  EL0 jump cache: another block
+     0.4%  EL0 jump cache: another block, pc == x30
+    65.4%  of all: the target isn't at the PA the returning block's static successor was assumed at
+  "other", by the returning block's last instruction: BL          73.2%  (one successor)
+  "other", by the returning block's last instruction: B_uncond    12.9%  (one successor)
+  "other", by the returning block's last instruction: CBNZ         5.4%  (two successors)
+  "other", by the returning block's last instruction: ADD_imm      4.8%  (one successor)
+  "other", by the returning block's last instruction: B_cond       1.8%  (two successors)
+     0.57M  at aaaada8eeacc  EL0 other (a block returned although its successor was ready)
+     0.28M  at 800080cdb2a8  EL1 start of a run
+     0.14M  at 80008004ec74  EL1 start of a run
+     0.13M  at ffffb7eff000  EL0 other (a block returned although its successor was ready)
+
+== init
+  helper calls: MSR_reg 0.01M, MRS 0.01M, ISB 0.01M, ERET 0.00M, STRx_LDRx_imm_2 0.00M, MSR_imm 0.00M, CASP 0.00M, STP_LDP_gen 0.00M
+  2.18M dispatches into compiled blocks, by reason:
+    96.8%  EL0 other (a block returned although its successor was ready)
+     1.4%  EL1 start of a run
+     0.5%  EL0 after interpreted steps
+     0.4%  EL1 other (a block returned although its successor was ready)
+    97.1%  of all: the target isn't at the PA the returning block's static successor was assumed at
+  "other", by the returning block's last instruction: BL          99.5%  (one successor)
+     1.04M  at aaaae4775ef0  EL0 other (a block returned although its successor was ready)
+     1.04M  at aaaae4776ec0  EL0 other (a block returned although its successor was ready)
+     0.01M  at 800080cdb2a8  EL1 start of a run
+     0.00M  at 800080010c00  EL1 start of a run
+
+== compress
+  helper calls: UQSUB_1 1.97M, ISB 0.38M, MRS 0.35M, LDRx_reg 0.26M, STRx_LDRx_imm_2 0.22M, MSR_reg 0.17M, STRx_reg 0.11M, USHL_2 0.09M
+  25.03M dispatches into compiled blocks, by reason:
+    96.9%  EL0 other (a block returned although its successor was ready)
+     2.2%  EL1 start of a run
+     0.4%  EL0 after interpreted steps
+    97.0%  of all: the target isn't at the PA the returning block's static successor was assumed at
+  "other", by the returning block's last instruction: BL          43.1%  (one successor)
+  "other", by the returning block's last instruction: B_uncond    24.2%  (one successor)
+  "other", by the returning block's last instruction: B_cond      20.1%  (two successors)
+  "other", by the returning block's last instruction: TBZ          4.4%  (two successors)
+  "other", by the returning block's last instruction: CBZ          4.3%  (two successors)
+  "other", by the returning block's last instruction: CBNZ         3.1%  (two successors)
+     2.10M  at aaaabd6e5ef0  EL0 other (a block returned although its successor was ready)
+     2.09M  at aaaadcd95ef0  EL0 other (a block returned although its successor was ready)
+     0.90M  at ffffb967eb80  EL0 other (a block returned although its successor was ready)
+     0.90M  at ffffb967ec40  EL0 other (a block returned although its successor was ready)
+
+== lua
+  helper calls: ISB 0.57M, MRS 0.52M, MSR_reg 0.22M, ERET 0.06M, STRx_LDRx_imm_2 0.03M, MSR_imm 0.01M, STP_LDP_gen 0.01M, IC_IVAU 0.01M
+  66.05M dispatches into compiled blocks, by reason:
+    97.4%  EL0 other (a block returned although its successor was ready)
+     1.2%  EL1 start of a run
+     1.0%  EL0 jump cache: another block, pc == x30
+    97.4%  of all: the target isn't at the PA the returning block's static successor was assumed at
+  "other", by the returning block's last instruction: B_uncond    55.0%  (one successor)
+  "other", by the returning block's last instruction: BL          34.8%  (one successor)
+  "other", by the returning block's last instruction: CBZ          3.6%  (two successors)
+  "other", by the returning block's last instruction: CBNZ         3.4%  (two successors)
+  "other", by the returning block's last instruction: B_cond       2.2%  (two successors)
+  "other", by the returning block's last instruction: ORR_shift    1.0%  (one successor)
+    17.40M  at ffffa1adb17c  EL0 other (a block returned although its successor was ready)
+     6.28M  at ffff9e76517c  EL0 other (a block returned although its successor was ready)
+     2.33M  at ffffa5bf617c  EL0 other (a block returned although its successor was ready)
+     2.02M  at ffffab47417c  EL0 other (a block returned although its successor was ready)
+
+== churn
+  helper calls: MSR_reg 0.20M, ISB 0.12M, MRS 0.11M, STRx_LDRx_imm_2 0.11M, CRC32C 0.10M, CASP 0.07M, MSR_imm 0.06M, ERET 0.05M
+  1.78M dispatches into compiled blocks, by reason:
+    45.1%  EL0 other (a block returned although its successor was ready)
+    22.5%  EL1 start of a run
+    16.0%  EL1 other (a block returned although its successor was ready)
+     6.0%  EL1 jump cache: another block, pc == x30
+     2.8%  EL1 jump cache: another block
+     2.3%  EL0 instruction TLB: empty
+     2.1%  EL0 start of a run
+     0.9%  EL0 jump cache: another block, pc == x30
+     0.8%  EL0 jump cache: another block
+     0.5%  EL1 after interpreted steps
+     0.3%  EL0 after interpreted steps
+    59.8%  of all: the target isn't at the PA the returning block's static successor was assumed at
+  "other", by the returning block's last instruction: BL          80.9%  (one successor)
+  "other", by the returning block's last instruction: B_uncond     5.8%  (one successor)
+  "other", by the returning block's last instruction: B_cond       4.2%  (two successors)
+  "other", by the returning block's last instruction: CBNZ         2.2%  (two successors)
+  "other", by the returning block's last instruction: ADD_imm      1.7%  (one successor)
+  "other", by the returning block's last instruction: CBZ          1.5%  (two successors)
+  "other", by the returning block's last instruction: SYS          1.3%  (no static successor)
+     0.07M  at 800080cdb2a8  EL1 start of a run
+     0.06M  at aaaad8ae6f20  EL0 other (a block returned although its successor was ready)
+     0.05M  at 800080ce9234  EL1 start of a run
+     0.04M  at 800080ca0c08  EL1 other (a block returned although its successor was ready)
+
+== sqlite
+  helper calls: ISB 0.39M, MRS 0.35M, STRx_LDRx_imm_2 0.19M, MSR_reg 0.16M, STP_LDP_fpsimd 0.10M, ZIP1 0.08M, ZIP2 0.08M, ERET 0.04M
+  56.61M dispatches into compiled blocks, by reason:
+    98.5%  EL0 other (a block returned although its successor was ready)
+     1.1%  EL1 start of a run
+    98.5%  of all: the target isn't at the PA the returning block's static successor was assumed at
+  "other", by the returning block's last instruction: BL          36.3%  (one successor)
+  "other", by the returning block's last instruction: B_uncond    29.5%  (one successor)
+  "other", by the returning block's last instruction: B_cond      14.8%  (two successors)
+  "other", by the returning block's last instruction: CBZ         11.9%  (two successors)
+  "other", by the returning block's last instruction: TBNZ         2.9%  (two successors)
+  "other", by the returning block's last instruction: TBZ          1.9%  (two successors)
+  "other", by the returning block's last instruction: CBNZ         1.9%  (two successors)
+     6.43M  at aaaad8a70670  EL0 other (a block returned although its successor was ready)
+     3.08M  at aaaad8963420  EL0 other (a block returned although its successor was ready)
+     2.91M  at aaaad899d930  EL0 other (a block returned although its successor was ready)
+     1.72M  at aaaad8a70900  EL0 other (a block returned although its successor was ready)
+
+== shutdown
+  helper calls: MSR_reg 0.11M, STRx_LDRx_imm_2 0.08M, ISB 0.07M, MRS 0.07M, CASP 0.04M, ERET 0.03M, MSR_imm 0.03M, STP_LDP_gen 0.01M
+  3.30M dispatches into compiled blocks, by reason:
+    86.6%  EL0 other (a block returned although its successor was ready)
+     6.8%  EL1 start of a run
+     1.5%  EL1 jump cache: another block, pc == x30
+     1.0%  EL1 other (a block returned although its successor was ready)
+     0.8%  EL0 start of a run
+     0.8%  EL1 jump cache: another block
+     0.7%  EL1 after interpreted steps
+     0.5%  EL0 after interpreted steps
+     0.5%  EL0 instruction TLB: empty
+     0.4%  EL0 jump cache: another block
+    87.2%  of all: the target isn't at the PA the returning block's static successor was assumed at
+  "other", by the returning block's last instruction: BL          66.9%  (one successor)
+  "other", by the returning block's last instruction: B_uncond    16.4%  (one successor)
+  "other", by the returning block's last instruction: CBNZ         6.9%  (two successors)
+  "other", by the returning block's last instruction: ADD_imm      6.6%  (one successor)
+  "other", by the returning block's last instruction: B_cond       1.8%  (two successors)
+     0.04M  at aaaac122edd4  EL0 other (a block returned although its successor was ready)
+     0.04M  at 800080cdb2a8  EL1 start of a run
+     0.04M  at aaaac327edd4  EL0 other (a block returned although its successor was ready)
+     0.04M  at aaaac018edd4  EL0 other (a block returned although its successor was ready)

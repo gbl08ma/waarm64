@@ -1,0 +1,105 @@
+boot: 8.16 s, 2364M steps, 290 MIPS, dispatches 2.90M (1 per 816), interpreted 38.26M, TLB misses 550K, flushes 30611, blocks 42667, tier-ups 475
+init: 0.15 s, 63M steps, 422 MIPS, dispatches 0.06M (1 per 996), interpreted 0.22M, TLB misses 10K, flushes 764, blocks 489, tier-ups 3
+compress: 2.68 s, 2118M steps, 790 MIPS, dispatches 0.76M (1 per 2794), interpreted 6.12M, TLB misses 628K, flushes 4364, blocks 2089, tier-ups 75
+lua: 4.61 s, 3206M steps, 696 MIPS, dispatches 1.72M (1 per 1869), interpreted 3.44M, TLB misses 44K, flushes 5774, blocks 2275, tier-ups 25
+churn: 1.87 s, 547M steps, 293 MIPS, dispatches 0.71M (1 per 767), interpreted 0.43M, TLB misses 249K, flushes 16469, blocks 667, tier-ups 42
+sqlite: 3.69 s, 2142M steps, 580 MIPS, dispatches 0.86M (1 per 2490), interpreted 5.83M, TLB misses 268K, flushes 9560, blocks 3073, tier-ups 38
+shutdown: 1.15 s, 323M steps, 281 MIPS, dispatches 0.42M (1 per 766), interpreted 0.69M, TLB misses 142K, flushes 7622, blocks 1452, tier-ups 21
+
+== boot
+  helper calls: MSR_reg 0.56M, MRS 0.50M, ISB 0.48M, CASP 0.25M, STRx_LDRx_imm_2 0.24M, ERET 0.17M, IC_IVAU 0.14M, MSR_imm 0.11M
+  428M block executions (5.4 instructions each); transfers per 1000 instructions:
+     95.5  direct, same page
+     16.2  direct, next page (physically contiguous)
+      7.5  direct, through the jump cache (successor compiled later)
+      0.9  BR
+      1.2  BLR
+     16.1  RET
+      2.7  direct, another page by its VA
+     21.2  region edge, forward
+     15.1  region back-edge
+      1.2  from the dispatcher
+
+== init
+  helper calls: MSR_reg 0.01M, MRS 0.01M, ISB 0.01M, ERET 0.00M, STRx_LDRx_imm_2 0.00M, MSR_imm 0.00M, CASP 0.00M, STP_LDP_gen 0.00M
+  15M block executions (4.1 instructions each); transfers per 1000 instructions:
+    115.0  direct, same page
+      6.7  direct, next page (physically contiguous)
+      4.1  direct, through the jump cache (successor compiled later)
+     33.5  BR
+      0.7  BLR
+     41.1  RET
+     33.8  direct, another page by its VA
+      2.4  region edge, forward
+      3.0  region back-edge
+      1.0  from the dispatcher
+
+== compress
+  helper calls: UQSUB_1 1.97M, ISB 0.38M, MRS 0.35M, LDRx_reg 0.26M, STRx_LDRx_imm_2 0.22M, MSR_reg 0.17M, STRx_reg 0.11M, USHL_2 0.09M
+  383M block executions (5.5 instructions each); transfers per 1000 instructions:
+     82.7  direct, same page
+      2.1  direct, next page (physically contiguous)
+      8.5  direct, through the jump cache (successor compiled later)
+      2.6  BR
+      0.7  BLR
+      8.4  RET
+     11.5  direct, another page by its VA
+     39.1  region edge, forward
+     15.9  region back-edge
+      0.4  from the dispatcher
+
+== lua
+  helper calls: ISB 0.57M, MRS 0.52M, MSR_reg 0.22M, ERET 0.06M, STRx_LDRx_imm_2 0.03M, MSR_imm 0.01M, STP_LDP_gen 0.01M, IC_IVAU 0.01M
+  654M block executions (4.9 instructions each); transfers per 1000 instructions:
+    132.7  direct, same page
+      2.0  direct, next page (physically contiguous)
+      8.9  direct, through the jump cache (successor compiled later)
+     22.6  BR
+      1.3  BLR
+     11.7  RET
+     20.1  direct, another page by its VA
+      2.0  region edge, forward
+      1.1  region back-edge
+      0.5  from the dispatcher
+
+== churn
+  helper calls: MSR_reg 0.20M, ISB 0.12M, MRS 0.11M, STRx_LDRx_imm_2 0.11M, CRC32C 0.10M, CASP 0.07M, MSR_imm 0.06M, ERET 0.05M
+  107M block executions (5.1 instructions each); transfers per 1000 instructions:
+    107.4  direct, same page
+     18.4  direct, next page (physically contiguous)
+      9.9  direct, through the jump cache (successor compiled later)
+      0.4  BR
+      1.9  BLR
+     22.0  RET
+      2.2  direct, another page by its VA
+     15.0  region edge, forward
+     13.3  region back-edge
+      1.3  from the dispatcher
+
+== sqlite
+  helper calls: ISB 0.39M, MRS 0.35M, STRx_LDRx_imm_2 0.19M, MSR_reg 0.16M, STP_LDP_fpsimd 0.10M, ZIP1 0.08M, ZIP2 0.08M, ERET 0.04M
+  469M block executions (4.6 instructions each); transfers per 1000 instructions:
+    123.0  direct, same page
+      2.5  direct, next page (physically contiguous)
+     11.4  direct, through the jump cache (successor compiled later)
+      7.7  BR
+      4.0  BLR
+     16.7  RET
+     26.2  direct, another page by its VA
+      6.7  region edge, forward
+     16.2  region back-edge
+      0.4  from the dispatcher
+
+== shutdown
+  helper calls: MSR_reg 0.11M, STRx_LDRx_imm_2 0.08M, ISB 0.07M, MRS 0.07M, CASP 0.04M, ERET 0.03M, MSR_imm 0.03M, STP_LDP_gen 0.01M
+  66M block executions (4.9 instructions each); transfers per 1000 instructions:
+    107.6  direct, same page
+     14.6  direct, next page (physically contiguous)
+     10.2  direct, through the jump cache (successor compiled later)
+      2.6  BR
+      1.4  BLR
+     23.7  RET
+      9.2  direct, another page by its VA
+     18.2  region edge, forward
+     14.3  region back-edge
+      1.3  from the dispatcher

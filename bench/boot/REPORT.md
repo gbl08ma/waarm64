@@ -533,3 +533,95 @@ The pause of a save is mostly the file's write (the codec alone compresses that 
 "M8 phase C loop 4"). In Node, Alpine's userspace benchmark (1 GiB) saves a 40 to 46 MiB file in
 0.3 to 0.5 s and starts from one in 0.13 to 0.24 s (`tests/snapshot.test.ts`'s medians).
 
+
+## M8: where the userspace benchmark's time goes (a profile, and a chaining gap)
+
+2026-10-02, the M4 VM, `d43a536`. `alpine_user_jit` (direct kernel boot, deterministic, one vCPU)
+in **Node 26.7** (V8 14.6) under `perf` with `--perf-prof`, split by phase with
+`bench/boot/userprof.ts` and `userprof-perf.ts` (new; docs/benchmarking.md "Profiling"), plus two
+diagnostic builds of the core (`results/m8-userprof/*.patch`: not for commit). The profile is
+Node's; the A/B at the end is `bench/run.ts` in Chromium 153.0.8010.52. Raw:
+`results/m8-userprof/`.
+
+**Per phase** (Node, before any change): boot 7.4 s at 318 MIPS, compress 2.6 s at 823, Lua 4.6 s
+at 694, churn 1.6 s at 338, SQLite 3.6 s at 600, shutdown 1.0 s at 318. For scale: CoreMark in a
+VM runs at ~1,900 MIPS and the EL1 small guest at 4,045.
+
+**Where the main thread's time is** (% of each phase's samples; `base-perf.txt`):
+
+| | boot | compress | Lua | churn | SQLite |
+|---|---|---|---|---|---|
+| guest code, TurboFan | 24.6 | 64.1 | 75.4 | 43.3 | 64.4 |
+| guest code, Liftoff | 35.3 | 7.6 | 3.1 | 37.2 | 5.9 |
+| the dispatcher (`jit::steps`, `Cache::miss`) | 4.8 | 10.2 | **14.8** | 2.1 | **18.2** |
+| V8's own work on this thread (lazy compiles, module creation, builtins) | 18.2 | 5.2 | 2.7 | 11.4 | 4.3 |
+| the interpreter and helper bodies | 10.7 | 7.4 | 2.0 | 2.3 | 4.4 |
+| the core's compiler | 3.0 | 0.8 | 0.3 | 0.4 | 0.6 |
+| TLB misses and walks | 0.2 | 0.9 | 0.0 | 0.6 | 0.1 |
+
+Two regimes. **Compute phases** (compress, Lua, SQLite) run TurboFan code, and spent 10 to 18% in
+the dispatcher. **Cold, kernel-heavy phases** (boot, churn, shutdown: 10 of the run's 22 s) spend
+over a third in Liftoff code and 11 to 18% in V8's compiles, as M6 loop 4 found for the boot.
+Helpers, the TLB and our own compiler are small everywhere (compress's helper share is one
+instruction: `UQSUB`, 2.0M calls).
+
+**Why the dispatcher: cross-page direct branches never chain in a process.** The userspace phases
+return to the dispatcher once per 38 (SQLite), 49 (Lua) and 85 (compress) instructions, against
+once per 282 in the boot: 150M dispatches at ~11 ns each. By reason (`dispatch-reasons.txt`): 97
+to 98.5% of them enter a block that is compiled, in the jump cache and in the instruction TLB,
+from a block that ended in a **direct** branch (`B` 55%, `BL` 35% in Lua; `BL` 36%, `B` 30%,
+`B.cond` 15% in SQLite). The cause: `block::chain` names a successor in another page by PA
+arithmetic (`succ(key, off)`: the block's PA plus the branch offset), which is the successor's PA
+only if the two virtual pages are physically contiguous. The kernel's image is; a process's file
+pages aren't. So the link is to a key that is never compiled (or its `maps_to` guard fails), and
+every call to another page, every `b` to a label in another page and every fall-through at a page
+end returns to the dispatcher, each time. Jump-cache conflicts and instruction-TLB misses, the
+suspects before measuring, are ~1% of dispatches.
+
+**A prototype** (`chain-by-va-prototype.patch`, 20 lines in `block::chain`): a successor in another
+page keeps its guarded direct link when it's compiled at the contiguous PA, and otherwise (or when
+the guard fails) is looked up as an indirect branch's target is, by its VA through the instruction
+TLB and the jump cache (`emit::indirect`). Steps and the phases' check lines are unchanged.
+Dispatches: Lua 66.1M → 1.7M, SQLite 56.6M → 0.9M, compress 25.0M → 0.8M; the dispatcher falls to
+1 to 2% of every phase (`fix-perf.txt`).
+
+| `alpine_user_jit`, Chromium, alternated A, B, A, B; medians (IQR), 3 boots each | A (`d43a536`) | B (prototype) | |
+|---|---|---|---|
+| compress | 2890 (55), 2882 (34) | 2630 (75), 2616 (10) | −9% |
+| Lua | 5178 (80), 5152 (56) | 4688 (64), 4598 (53) | −10% |
+| churn | 2217 (47), 2176 (27) | 2176 (12), 2174 (6) | |
+| SQLite | 4056 (48), 4030 (6) | 3602 (278), 3523 (17) | −12% |
+| total, to power-off | 24,299 (267), 24,101 (172) | 23,187 (191), 22,921 (37) | −4.7% |
+
+Steps 10,763,178,470 in all four; dispatches 163.3M → 7.4M. Node agrees (three alternated pairs,
+`node-ab.txt`: Lua 4.73 to 4.87 → 4.18 to 4.26 s, SQLite 3.61 to 3.72 → 3.26 to 3.30 s, compress
+2.52 to 2.65 → 2.45 to 2.47 s; boot and churn within noise). **Not landed:** it is a prototype
+without its tests (a unit test of the emitted link, a differential class with code in two
+non-contiguous pages, a planted bug, CI and `ci-long`).
+
+**What is left after it: the transfers between blocks** (`transfers.txt`, the prototype plus
+counters in the emitted code). A block executes 4.6 to 5.5 instructions, so there are ~200
+transfers per 1000 instructions, and in Lua and SQLite 89 to 98% of them leave one wasm function
+for another (loop regions cover 1.5% and 11% of their block executions; 30% in compress):
+
+| per 1000 instructions | compress | Lua | SQLite |
+|---|---|---|---|
+| direct, same page (a tail call to another function) | 82.7 | 132.7 | 123.0 |
+| direct, another page by its VA (the prototype's) | 11.5 | 20.1 | 26.2 |
+| direct, through the jump cache or to a contiguous page | 10.6 | 10.9 | 13.9 |
+| `RET` | 8.4 | 11.7 | 16.7 |
+| `BR` / `BLR` | 2.6 / 0.7 | 22.6 / 1.3 | 7.7 / 4.0 |
+| inside a region (forward edges, back-edges) | 55.0 | 3.1 | 22.9 |
+
+What a transfer costs, from V8's code for hot blocks (`perf annotate`): a five-instruction block
+(two loads, a test, a conditional branch) is ~85 host instructions on its hot path, of which ~30
+do the guest's work (two inline TLB lookups) and the rest is the block's frame and stack check
+(9), reloading registers from the `Cpu` (3), four write-backs (the registers, NZCV, the PC) each
+behind a reload of the memory's size and a bounds check (24, **this host only**: [docs/v8.md](../../docs/v8.md)
+"Bounds checks"), materializing NZCV (6), the PC (4) and the budget check and tail call (9). An
+indirect transfer (`BR`, `RET`, the prototype's by-VA link) adds ~50: the instruction TLB lookup,
+the jump-cache probe (the entry's load carries 13 to 32% of such a block's samples: the cache is
+1 MiB) and `return_call_indirect`'s table bounds, signature check and code-pointer load. So in
+hot userspace code more than half of the host's work is moving between blocks, which is what
+separates these phases (600 to 900 MIPS) from guests whose loops are regions (4,000). What follows
+from it is in [docs/backlog.md](../../docs/backlog.md) "JIT".

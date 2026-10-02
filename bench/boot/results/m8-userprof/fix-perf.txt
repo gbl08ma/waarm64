@@ -1,0 +1,19 @@
+46610 samples; % of each phase's main-thread samples (background threads: % of the same base)
+category                                            boot      init  compress       lua     churn    sqlite  shutdown      all
+guest code: turbofan                                24.4      53.2      70.4      88.4      43.5      79.0      47.7     54.9
+guest code: liftoff                                 36.4      23.2       8.3       3.2      37.8       6.6      32.1     21.2
+V8 background (TurboFan)                            23.7       7.7      11.2       3.3      11.2       9.5       9.3     13.8
+V8 native (libnode, kernel, unknown)                16.2      11.4       5.1       2.4       8.8       4.0       9.9      9.1
+core: interpreter and helper bodies                 10.7       4.4       7.5       2.0       2.6       4.8       3.7      6.5
+core: dispatcher (jit::steps, Cache::miss)           4.1       1.3       2.1       1.2       1.1       1.7       1.4      2.5
+V8 builtins (wasm)                                   2.2       1.3       0.9       0.4       2.2       0.9       1.3      1.4
+core: compiling (block, emit)                        2.5       2.0       0.6       0.3       0.4       0.5       0.7      1.2
+core: run loop and devices                           1.0       0.3       1.1       0.8       1.1       0.7       0.7      0.9
+core: helpers' entry                                 0.6       1.0       1.4       0.6       1.1       0.8       0.9      0.8
+core: allocator, std                                 1.2       1.0       0.4       0.4       0.3       0.4       0.5      0.7
+core: TLB miss and walk                              0.2       0.3       1.2       0.1       0.7       0.3       0.9      0.4
+V8 builtins (other)                                  0.4       0.3       0.2       0.2       0.2       0.2       0.2      0.3
+core/JS other                                        0.1       0.0       0.6       0.0       0.0       0.2       0.0      0.1
+other threads                                        0.1       0.0       0.0       0.0       0.0       0.0       0.0      0.0
+main-thread samples                                15207       297      4977      8475      3372      6557      2060
+seconds                                             7.79      0.15      2.51      4.26      1.71      3.30      1.05

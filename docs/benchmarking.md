@@ -136,6 +136,13 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   `/tmp/perf-<pid>.map`) names them. Guest blocks are thousands of symbols that round to 0.00% in
   `perf report`: aggregate `perf script -F tid,time,ip,sym` by guest VA (`<va>_pa<pa>` names) and
   the kernel's System.map (Alpine's is in its rootfs, `/boot/System.map-*`). The VM has no PMU.
+- **The userspace benchmark by phase** (Node): `bench/boot/userprof.ts` runs `alpine_user_jit`'s guest and
+  prints each phase's time, MIPS, dispatches, helper calls and counters, and saves the phase markers'
+  monotonic times; under `perf record -k mono … node --perf-prof` its samples are split by phase and
+  category (guest code by V8 tier, the dispatcher, the interpreter, V8's compiles) with
+  `bench/boot/userprof-perf.ts` (usage in both files' headers). `bench/boot/results/m8-userprof/*.patch`
+  are diagnostic builds of the core (why blocks returned to the dispatcher; transfers between blocks by
+  kind) that the first tool also prints: apply, build, run, and **restore the source and rebuild**.
 - **perf with V8's `--perf-prof`** (dev-only tool): `perf record -k mono -F 2000 -o x.data node
   --perf-prof …; perf inject -j -i x.data -o x.jit.data; perf report -i x.jit.data --no-children
   --sort sym`; `perf annotate -s "JS:<name>-<n>-turbofan"` for machine code with samples. Run from

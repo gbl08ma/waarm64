@@ -103,6 +103,10 @@ the interpreter's own code.
   Successors in the same batch are direct calls; already-compiled ones are imports of module `t`
   by table index. With the MMU on, a successor in another page is chained behind a check that its
   VA hits the instruction TLB of the block's EL and maps to the host address it was compiled for.
+  **That successor is named by PA arithmetic** (the block's PA plus the branch offset), so the link
+  works only between physically contiguous pages: the kernel's image, not a process's file pages,
+  whose cross-page direct branches return to the dispatcher every time (97% of user-space
+  dispatches; [backlog.md](backlog.md) "JIT" has the measured fix).
 - **Through the jump cache:** a successor not compiled yet when its predecessor is (the common
   case: blocks compile in hotness order), and every BR/BLR/RET target (translated through the
   instruction TLB into a key), is probed in the jump cache from wasm and tail-called with

@@ -1,0 +1,170 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 7848905..114dee5 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -545,6 +545,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
+     let mut bad = false;
+     let mut inl = 0;
+     c.local_get(0).i64_load(emit::PC).local_set(1);
++    emit::bump(&mut c, 9);
+     if let (Some(word), Some(hot)) = (r.tier, e.hot) {
+         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
+     }
+@@ -645,6 +646,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
+                 .i32_const((len + jlen) as i32)
+                 .op(0x4f); // i32.ge_u
+             c.hint(true).if_();
++            emit::bump(c, if j == 0 { 8 } else { 7 });
+             let (here, fl) = (c.regs, c.flags);
+             into[j] = into[j].merge(here, 0);
+             let lazy = c.lazy();
+@@ -738,6 +740,11 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
+                 if e.jc != 0 && matches!(op, Some(Op::BR | Op::BLR | Op::RET)) {
+                     let tlb = (b.key & KEY_MMU != 0)
+                         .then(|| (emit::tlb_array(b.key & KEY_EL1, 2), e.base, e.phys));
++                    c.diag = match op {
++                        Some(Op::BR) => 3,
++                        Some(Op::BLR) => 4,
++                        _ => 5,
++                    };
+                     emit::indirect(&mut c, b.key & 3, tlb, e.jc, len, e.bt, e.checker);
+                 }
+             }
+@@ -776,12 +783,29 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
+         let host = e.base.wrapping_add((k & !3) - e.phys);
+         emit::maps_to(c, off, exec, host);
+     };
++    // A successor in another page is where its VA maps, which is `k` only if
++    // the two pages are contiguous physically too (the kernel's image; not a
++    // process's file pages): otherwise it's found as an indirect branch's
++    // target is, through the instruction TLB and the jump cache.
++    let by_va = |c: &mut emit::Func| {
++        c.diag = 6;
++        let exec = emit::tlb_array(b.key & KEY_EL1, 2);
++        emit::indirect(
++            c,
++            b.key & 3,
++            Some((exec, e.base, e.phys)),
++            e.jc,
++            len,
++            e.bt,
++            e.checker,
++        );
++    };
+     let Some(&(f, tlen)) = f else {
+         if guarded {
+-            guard(c);
+-        } else {
+-            c.i32_const(1);
++            return by_va(c);
+         }
++        c.i32_const(1);
++        c.diag = 2;
+         return emit::via_jc(c, Some(k), e.jc, len, e.bt, e.checker);
+     };
+     c.local_get(emit::LEFT)
+@@ -792,6 +816,7 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
+         c.op(0x71); // i32.and
+     }
+     c.hint(true).if_();
++    emit::bump(c, guarded as u32);
+     if let Some(chk) = e.checker {
+         c.local_get(0).i64_const(k as i64).call(chk);
+     }
+@@ -799,6 +824,9 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
+     c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
+     c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
+     c.return_call(f).end();
++    if guarded && e.jc != 0 {
++        by_va(c);
++    }
+ }
+ 
+ #[cfg(test)]
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index c0726c6..bb5693e 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -142,6 +142,8 @@ impl core::ops::AddAssign for Counts {
+ /// where its flags are.
+ #[derive(Default)]
+ pub struct Func {
++    /// DIAGNOSTIC: the kind `via_jc` counts its tail call as.
++    pub diag: u32,
+     pub c: Code,
+     /// Each register's local (0: none yet).
+     local: [u32; 32],
+@@ -990,6 +992,12 @@ pub fn indirect(
+ /// the i64 scratch local). With an i32 condition on the stack, tail-calls the
+ /// block the entry holds if the condition holds, its key matches and `left`
+ /// covers both blocks; otherwise falls through.
++/// DIAGNOSTIC: counts a transfer of kind `i` (`State::xfer`).
++pub fn bump(c: &mut Func, i: u32) {
++    let off = (offset_of!(Vcpu, jit) + offset_of!(super::State, xfer)) as u32 + 8 * i;
++    c.local_get(VCPU).local_get(VCPU).i64_load(off).i64_const(1).i64_add().i64_store(off);
++}
++
+ pub fn via_jc(c: &mut Func, key: Option<u64>, jc: u32, len: u32, ty: u32, check: Option<u32>) {
+     const KEY: u32 = BASE; // i64 scratch
+     const JCE: u32 = HOST; // i32 scratch
+@@ -1020,6 +1028,8 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, jc: u32, len: u32, ty: u32, check:
+         .i32_const(len as i32)
+         .op(ADD);
+     c.op(GE_U).op(AND).hint(true).if_();
++    let d = c.diag;
++    bump(c, d);
+     if let Some(chk) = check {
+         c.local_get(VCPU);
+         match key {
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 75b7c7c..f992ff5 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -37,6 +37,8 @@ pub struct State {
+     /// Instructions the helpers retired (so JIT steps minus these ran inline).
+     pub helper_steps: u64,
+     pub cache: Option<Box<Cache>>,
++    /// DIAGNOSTIC: transfers between blocks taken in JIT code, by kind (`emit::bump`).
++    pub xfer: [u64; 16],
+ }
+ 
+ /// Compile policy (the knobs docs/jit.md "Compile policy" describes).
+@@ -352,7 +354,7 @@ impl Cache {
+ 
+     /// The helper calls so far by instruction class, most frequent first,
+     /// one `<Op> <calls>` per line, NUL-terminated.
+-    pub fn helper_report(&mut self) -> *const u8 {
++    pub fn helper_report(&mut self, xfer: &[u64; 16]) -> *const u8 {
+         let mut ops: Vec<(u64, crate::decode::Op)> = self
+             .helper_ops
+             .iter()
+@@ -362,6 +364,9 @@ impl Cache {
+             .collect();
+         ops.sort_by_key(|a| core::cmp::Reverse(a.0));
+         self.report = ops.iter().map(|(n, op)| format!("{op:?} {n}\n")).collect();
++        for (i, n) in xfer.iter().enumerate() {
++            self.report += &format!("X:{i} {n}\n");
++        }
+         self.report.push('\0');
+         self.report.as_ptr()
+     }
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index d36ed75..a4bb1e7 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -259,11 +259,11 @@ pub unsafe extern "C" fn jit_stats(v: *const mmu::Vcpu) -> *const jit::Stats {
+ #[unsafe(no_mangle)]
+ pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
+     // SAFETY: guaranteed by the caller.
+-    unsafe { &mut *v }
+-        .jit
+-        .cache
++    let j = &mut unsafe { &mut *v }.jit;
++    let x = j.xfer;
++    j.cache
+         .as_deref_mut()
+-        .map_or(core::ptr::null(), |c| c.helper_report())
++        .map_or(core::ptr::null(), |c| c.helper_report(&x))
+ }
+ 
+ // The whole-VM ABI (docs/abi.md). Every `vm` argument
