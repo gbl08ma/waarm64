@@ -82,6 +82,14 @@ mode (and natively in realtime mode: std has no CSPRNG).
 ### blk (ID 2)
 - Features `SEG_MAX` = 126, `RO` (or `FLUSH` with an overlay); one queue of 128. `IN`, `GET_ID`,
   `OUT` and `FLUSH` with an overlay (`IOERR` without), the rest `UNSUPP`.
+- **`DISCARD` and `WRITE_ZEROES`** with an overlay and the spec's `discard` (the page's machines;
+  the tests' guests and the native twin are without it, as their step counts are): the config
+  space goes on to 60 bytes, one segment of at most 2 GiB per request, `discard_sector_alignment`
+  8 (Linux's discard granularity: the overlay's 4 KiB blocks), `write_zeroes_may_unmap`. A discard
+  with the unmap flag, and unknown flags, are `UNSUPP`; a range past the end or too long, and
+  anything but one segment, `IOERR`. Linux takes it as it is (`fstrim` on Buildroot's and Debian's
+  ext4; `tests/trim.test.ts`). The guest has to trim: `fstrim -av`, a `discard` mount option, or
+  the distribution's weekly `fstrim.timer`.
 - **Over HTTP** in the browser: one **synchronous XHR range request** per request (needs a worker:
   no binary sync XHR on a page's main thread, no XHR in Node, where `file:` URLs read with
   `node:fs`). `tools/serve.ts` answers single `Range: bytes=` requests (206/416, `Accept-Ranges`,
@@ -96,9 +104,18 @@ mode (and natively in realtime mode: std has no CSPRNG).
   converting the image. One host read per cluster, all L2 tables kept, the 16 most recent
   compressed clusters cached (1 natively).
 - **Writable disks: a copy-on-write overlay** (`web/overlay.ts`) in an OPFS directory, 4 KiB
-  blocks: `data` holds written blocks in first-write order, `map` a u32 per disk block (0 = base,
-  n = slot n − 1), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
-  slot is written before its map entry, so a crash leaks a slot but never maps garbage. Opened
+  blocks: `data` holds written blocks in slots, `map` a u32 per disk block (0 = base,
+  n = slot n − 1, 0xffffffff = zeros without a slot), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
+  slot is written before its map entry, so a crash leaks a slot but never maps garbage.
+  **What the guest discards leaves the overlay:** the whole blocks of a discard that the overlay
+  holds become zeros without slots (never the base's bytes again: QEMU's qcow2 does the same over
+  a backing file; blocks it doesn't hold stay the base's), a `WRITE_ZEROES`'s whole blocks too,
+  held or not. Slots no block maps (those, and leaked ones) are found at open and taken by the
+  next first writes; free slots at the end of `data` are cut off, and once half of `data` is free
+  the blocks in its highest slots are copied down (copy, then the map entry) and the file shrinks.
+  Measured on Buildroot: an 8 MiB file written and deleted leaves 8.3 MiB of `data`; after
+  `fstrim`, 132 KiB. A changes file carries the zero blocks as zero clusters (no data), and
+  Load changes and a snapshot's restore keep them without slots. Opened
   with synchronous access handles (so deterministic mode stays exact) under the overlay's Web Lock
   (`openOverlay`), and closed on `close` (the device worker answers `closed`, and `vm.close()`
   resolves then): the handles are exclusive, so a new VM on the same overlay waits for the lock,
@@ -106,8 +123,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   ([frontend.md](frontend.md) "Overlay hand-over").
   Natively, `Overlay` keeps 512-byte sectors in memory and can be shared by several boots; in
   Node, which has no OPFS, `openOverlay` keeps an overlay in memory for the process's life, by
-  name (the tests' writable disks, e.g. `tests/uefi.test.ts`), under the same Web Lock. No
-  DISCARD/WRITE_ZEROES, compaction, quota handling, content check of the base, or export yet
+  name (the tests' writable disks, e.g. `tests/uefi.test.ts`), under the same Web Lock. No quota handling or content check of the base
   (backlog). Host API (web/overlay.ts, a page or a worker): `removeOverlay(name)` deletes an
   overlay once no VM has it open (the page's "Reset disk", M8), `overlayBytes(name)` says what it holds.
 

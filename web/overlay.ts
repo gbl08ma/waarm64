@@ -2,9 +2,14 @@
 // browser keeps it on OPFS (web/devices.ts opens the files in the device
 // worker, with synchronous access handles): `data` holds the written blocks in
 // the order they were first written, `map` one little-endian u32 per disk block
-// (0: not written; n: slot n - 1 of `data`). A block is written to its slot
+// (0: not written; n: slot n - 1 of `data`; 0xffffffff: zeros, without a slot:
+// a block the guest discarded or zeroed). A block is written to its slot
 // before its map entry, so a crash can leak a slot but never map a block to
-// garbage. core/tests/common's `Overlay` is the native (in-memory) equivalent.
+// garbage. Slots that no block maps (a discarded block's, a leaked one) are
+// found when the overlay is opened and taken by the next first writes; free
+// slots at the end of `data` are cut off, and once half of it is free the rest
+// is moved down (`compact`). core/tests/common's `Overlay` is the
+// native (in-memory) equivalent (without discard).
 import type { Disk } from './qcow2.ts';
 
 /** The part of `FileSystemSyncAccessHandle` the overlay uses. */
@@ -12,19 +17,35 @@ export type SyncFile = {
   read(buf: Uint8Array, o: { at: number }): number;
   write(buf: Uint8Array, o: { at: number }): number;
   getSize(): number;
+  truncate(size: number): void;
   flush(): void;
 };
 
 const BLOCK = 4096;
+/** A map entry: the block reads as zeros and has no slot. */
+const ZERO = 0xffffffff;
+/** The fewest free slots worth compacting `data` for. */
+const COMPACT_MIN = 64;
 
 export type WritableDisk = Disk & {
   /** Writes `bytes` at `off` (inside the disk); false on a failed write. */
   write(off: number, bytes: Uint8Array): Promise<boolean>;
+  /**
+   * The guest has no use for `len` bytes at `off` (inside the disk): the whole blocks among them
+   * that the overlay holds read as zeros from now on and give their slots back (the base's bytes
+   * must not come back: QEMU's qcow2 does the same over a backing file). Blocks the overlay
+   * doesn't hold, and blocks only partly covered, are left as they are. False on a failed write.
+   */
+  discard(off: number, len: number): boolean;
+  /** Makes `len` bytes at `off` read as zeros: whole blocks without a slot, the partly covered ones at the ends written. False on a failed write. */
+  zero(off: number, len: number): Promise<boolean>;
   flush(): void;
-  /** The disk blocks (4 KiB) the overlay holds, ascending: what the disk has changed. */
+  /** The disk blocks (4 KiB) the overlay holds, ascending: what the disk has changed (the zeroed ones too). */
   written(): number[];
   /** The overlay's own copy of block `b` (one of `written()`), 4 KiB (zeros past the disk's end); undefined on a failed read. */
   block(b: number): Uint8Array | undefined;
+  /** Whether block `b` is one the overlay holds as zeros, without a slot. */
+  zeroed(b: number): boolean;
 };
 
 export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): WritableDisk {
@@ -34,6 +55,54 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
   let slots = Math.floor(data.getSize() / BLOCK);
   const blockLen = (b: number) => Math.min(BLOCK, base.size - b * BLOCK);
 
+  // The slots no block maps. `free` may also hold slots that were cut off or taken since: `isFree` decides.
+  const isFree = new Set<number>();
+  const free: number[] = [];
+  const release = (slot: number) => { isFree.add(slot); free.push(slot); };
+  const take = () => {
+    for (let s = free.pop(); s !== undefined; s = free.pop()) if (isFree.delete(s)) return s;
+    return slots++;
+  };
+  /** Cuts the free slots off the end of `data`. */
+  const shrink = () => {
+    const was = slots;
+    while (slots > 0 && isFree.delete(slots - 1)) slots--;
+    if (slots < was || data.getSize() > slots * BLOCK) data.truncate(slots * BLOCK);
+  };
+  /**
+   * Once half of `data` is free slots, the blocks in its highest slots move into the free ones
+   * below them and the end is cut off: what the guest trimmed goes back to the browser's storage
+   * (the moves are at most as many as the slots freed since the last time). A block is copied
+   * before its map entry points to the copy. False on a failed read or write.
+   */
+  const compact = () => {
+    shrink();
+    if (isFree.size < COMPACT_MIN || isFree.size * 2 < slots) return true;
+    const owner = new Uint32Array(slots);
+    for (let b = 0; b < blocks; b++) if (map[b] && map[b] !== ZERO) owner[map[b] - 1] = b;
+    const buf = new Uint8Array(BLOCK);
+    let top = slots - 1;
+    for (const hole of [...isFree].sort((x, y) => x - y)) {
+      while (top > hole && isFree.has(top)) top--;
+      if (top <= hole) break;
+      const b = owner[top];
+      if (data.read(buf, { at: top * BLOCK }) !== BLOCK || data.write(buf, { at: hole * BLOCK }) !== BLOCK) return false;
+      map[b] = hole + 1;
+      if (mapFile.write(new Uint8Array(map.buffer, b * 4, 4), { at: b * 4 }) !== 4) return false;
+      isFree.delete(hole);
+      isFree.add(top--);
+    }
+    shrink();
+    free.length = 0;
+    for (const s of isFree) free.push(s);
+    return true;
+  };
+  {
+    const used = new Uint8Array(slots);
+    for (let b = 0; b < blocks; b++) if (map[b] && map[b] !== ZERO && map[b] <= slots) used[map[b] - 1] = 1;
+    for (let s = slots - 1; s >= 0; s--) if (!used[s]) release(s); // the lowest are taken first
+  }
+
   const read = async (off: number, len: number) => {
     if (off < 0 || off + len > base.size) return undefined;
     const out = new Uint8Array(len);
@@ -41,7 +110,9 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
     for (let pos = off; pos < off + len;) {
       const b = Math.floor(pos / BLOCK);
       let end = Math.min((b + 1) * BLOCK, off + len);
-      if (map[b]) {
+      if (map[b] === ZERO) {
+        // `out` is zeros there already.
+      } else if (map[b]) {
         const n = end - pos;
         if (data.read(out.subarray(pos - off, pos - off + n), { at: (map[b] - 1) * BLOCK + (pos - b * BLOCK) }) !== n) return undefined;
       } else {
@@ -62,17 +133,18 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
       const b = Math.floor(pos / BLOCK);
       const o = pos - b * BLOCK;
       const n = Math.min(blockLen(b) - o, bytes.length - k);
-      if (!map[b]) {
-        // First write to the block: its slot starts as the base's contents.
+      if (!map[b] || map[b] === ZERO) {
+        // First write to the block: its slot starts as the base's contents (or as the zeros it was).
         const block = new Uint8Array(BLOCK);
-        if (n < blockLen(b)) {
+        if (n < blockLen(b) && !map[b]) {
           const old = await base.read(b * BLOCK, blockLen(b));
           if (!old) return false;
           block.set(old);
         }
         block.set(bytes.subarray(k, k + n), o);
-        if (data.write(block, { at: slots * BLOCK }) !== BLOCK) return false;
-        map[b] = ++slots;
+        const slot = take();
+        if (data.write(block, { at: slot * BLOCK }) !== BLOCK) { release(slot); shrink(); return false; }
+        map[b] = slot + 1;
         if (mapFile.write(new Uint8Array(map.buffer, b * 4, 4), { at: b * 4 }) !== 4) return false;
       } else if (data.write(bytes.subarray(k, k + n), { at: (map[b] - 1) * BLOCK + o }) !== n) {
         return false;
@@ -80,6 +152,35 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
       k += n;
     }
     return true;
+  };
+
+  /** The whole blocks of [off, off + len) (the disk's last block is whole when the range ends with the disk). */
+  const whole = (off: number, len: number) => [Math.ceil(off / BLOCK), off + len === base.size ? blocks : Math.floor((off + len) / BLOCK)];
+  /** Blocks [first, end) become zeros without slots (`held`: only those the overlay holds); the map goes to its file first. */
+  const unmap = (first: number, end: number, held: boolean) => {
+    if (end <= first) return true;
+    const slotsBack: number[] = [];
+    for (let b = first; b < end; b++) {
+      if (held && !map[b]) continue;
+      if (map[b] && map[b] !== ZERO) slotsBack.push(map[b] - 1);
+      map[b] = ZERO;
+    }
+    if (mapFile.write(new Uint8Array(map.buffer, first * 4, (end - first) * 4), { at: first * 4 }) !== (end - first) * 4) return false;
+    for (const s of slotsBack) release(s);
+    return compact();
+  };
+  const inside = (off: number, len: number) => off >= 0 && len >= 0 && off + len <= base.size;
+  const discard = (off: number, len: number) => {
+    if (!inside(off, len)) return false;
+    const [first, end] = whole(off, len);
+    return unmap(first, end, true);
+  };
+  const zero = async (off: number, len: number) => {
+    if (!inside(off, len)) return false;
+    const [first, end] = whole(off, len);
+    if (end <= first) return write(off, new Uint8Array(len));
+    const tail = off + len - end * BLOCK; // none when the range ends with the disk
+    return (await write(off, new Uint8Array(first * BLOCK - off))) && unmap(first, end, false) && (tail <= 0 || (await write(end * BLOCK, new Uint8Array(tail))));
   };
 
   const written = () => {
@@ -91,10 +192,11 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
   const block = (b: number) => {
     if (!map[b]) return undefined;
     const out = new Uint8Array(BLOCK);
+    if (map[b] === ZERO) return out;
     return data.read(out, { at: (map[b] - 1) * BLOCK }) === BLOCK ? out : undefined;
   };
 
-  return { size: base.size, format: base.format, read, write, written, block, flush: () => { data.flush(); mapFile.flush(); } };
+  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => map[b] === ZERO, flush: () => { data.flush(); mapFile.flush(); } };
 }
 
 /**
@@ -117,6 +219,7 @@ export function memFile(): SyncFile & { bytes: () => Uint8Array } {
       return buf.length;
     },
     getSize: () => size,
+    truncate: (n) => { if (n > b.length) { const g = new Uint8Array(n); g.set(b); b = g; } else b.fill(0, n, size); size = n; },
     flush: () => {},
     bytes: () => b.subarray(0, size),
   };

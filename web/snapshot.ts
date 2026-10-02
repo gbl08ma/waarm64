@@ -10,6 +10,7 @@ import { applyRam, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWri
 import { diskIdentity, type DeviceSpec } from './devices.ts';
 import { lzCodec } from './lz.ts';
 import { openOverlay, overlay, removeOverlay } from './overlay.ts';
+import { isZero } from './qcow2-write.ts';
 import { ABI, bootVm, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
 
 /** What the caller says the machine is (the header's free fields): a restore checks what it needs of it. */
@@ -155,7 +156,8 @@ export async function readSnapshot(
           for (const { block, data: bytes } of diskBlocks(index % SLOT, data)) {
             const at = block * BLOCK;
             if (at >= o.size) throw corrupt('it has blocks past the end of its disk');
-            if (!(await o.disk.write(at, bytes.subarray(0, Math.min(BLOCK, o.size - at))))) throw new Error("the disk's changes can't be written to the browser's storage (is it full?)");
+            const part = bytes.subarray(0, Math.min(BLOCK, o.size - at));
+            if (!(isZero(part) ? await o.disk.zero(at, part.length) : await o.disk.write(at, part))) throw new Error("the disk's changes can't be written to the browser's storage (is it full?)");
           }
         }
         for (const o of open.values()) o.disk.flush();

@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { P9Server } from '../web/9p.ts';
-import { Devices, inputConfig } from '../web/devices.ts';
+import { blk, deviceEntry, Devices, inputConfig, type Ctx } from '../web/devices.ts';
+import { memFile } from '../web/overlay.ts';
 import { loopback, PEER_IP, PEER_MAC } from '../web/net.ts';
 
 /** A T-message: size, type, tag 1, then the fields ([bytes, value] or a string). */
@@ -155,4 +156,69 @@ test('terminalBytes: what a terminal sends for the keys that drive EDK2 and GRUB
   assert.equal(k('e', { altKey: true }), '\x1be');
   assert.deepEqual(['Shift', 'Control', 'CapsLock', 'Dead'].map((c) => k(c)), [null, null, null, null]);
   assert.equal(k('a', { metaKey: true }), null);
+});
+
+test('virtio-blk DISCARD and WRITE_ZEROES: offered with `discard` over an overlay, they reach it; bad requests are refused', async () => {
+  // The offer: features 13 and 14 and a 60-byte config, only with an overlay and `discard`.
+  const plain = deviceEntry({ type: 'blk', url: 'x', size: 1 << 20, overlay: 'o' });
+  assert.deepEqual([plain.entry[1], plain.config.length], [1n << 2n | 1n << 9n, 16]);
+  assert.equal(deviceEntry({ type: 'blk', url: 'x', size: 1 << 20, discard: true }).entry[1], 1n << 2n | 1n << 5n);
+  const offered = deviceEntry({ type: 'blk', url: 'x', size: 1 << 20, overlay: 'o', discard: true });
+  assert.equal(offered.entry[1], 1n << 2n | 1n << 9n | 1n << 13n | 1n << 14n);
+  assert.equal(offered.entry[4], 60n);
+  const c = new DataView(offered.config.buffer);
+  assert.deepEqual([c.getUint32(36, true), c.getUint32(40, true), c.getUint32(44, true), c.getUint32(48, true), c.getUint32(52, true), c.getUint8(56)], [1 << 22, 1, 8, 1 << 22, 1, 1]);
+
+  const size = 64 * 4096;
+  const image = new Uint8Array(size).fill(7);
+  const ram = new Uint8Array(1 << 16);
+  const ctx = { ram: () => ram } as unknown as Ctx;
+  const src = { size, read: (off: number, len: number) => image.slice(off, off + len) };
+  const [data, map] = [memFile(), memFile()];
+  const files = { data, map, close() {} };
+  /** A request: the header (type, sector), `body` after it, `room` writable bytes before the status byte; resolves to the status. */
+  const ask = async (b: ReturnType<typeof blk>, type: number, sector: number, body: Uint8Array, room = 0) => {
+    const h = new DataView(ram.buffer, 0, 16);
+    h.setUint32(0, type, true);
+    h.setBigUint64(8, BigInt(sector), true);
+    ram.set(body, 16);
+    ram[8192 + room] = 0xff;
+    const n = await b.request({ w0: 0, queue: 0, read: [{ off: 0, len: 16 }, { off: 16, len: body.length }].filter((s) => s.len), write: [{ off: 8192, len: room + 1 }] });
+    assert.equal(n, (type === 0 && ram[8192 + room] === 0 ? room : 0) + 1);
+    return ram[8192 + room];
+  };
+  const seg = (sector: number, sectors: number, flags = 0) => {
+    const s = new DataView(new ArrayBuffer(16));
+    s.setBigUint64(0, BigInt(sector), true);
+    s.setUint32(8, sectors, true);
+    s.setUint32(12, flags, true);
+    return new Uint8Array(s.buffer);
+  };
+  const [IN, OUT, DISCARD, ZEROES, OK, IOERR, UNSUPP] = [0, 1, 11, 13, 0, 1, 2];
+  const first = async (b: ReturnType<typeof blk>, sector: number) => { assert.equal(await ask(b, IN, sector, new Uint8Array(0), 512), OK); return ram[8192]; };
+
+  const b = blk(ctx, src, files, true);
+  assert.equal(await ask(b, OUT, 0, new Uint8Array(4 * 4096).fill(9)), OK); // blocks 0 to 3
+  assert.equal(data.getSize(), 4 * 4096);
+  assert.equal(await ask(b, DISCARD, 8, seg(8, 16)), OK); // blocks 1 and 2
+  assert.deepEqual([await first(b, 0), await first(b, 8), await first(b, 16), await first(b, 24)], [9, 0, 0, 9]);
+  assert.equal(await ask(b, DISCARD, 0, seg(80, 8)), OK); // a block the overlay doesn't hold: the base stays
+  assert.equal(await first(b, 80), 7);
+  assert.equal(await ask(b, ZEROES, 0, seg(80, 8, 1)), OK); // write zeroes (unmap allowed): zeros
+  assert.equal(await first(b, 80), 0);
+  assert.equal(await ask(b, ZEROES, 0, seg(24, 8)), OK); // block 3: the last slot goes
+  assert.equal(data.getSize(), 1 * 4096);
+  assert.deepEqual(b.written!(), [0, 1, 2, 3, 10]);
+  // Refused: the unmap flag on a discard and unknown flags (UNSUPP), past the end, too long, no or two segments (IOERR).
+  assert.equal(await ask(b, DISCARD, 0, seg(0, 8, 1)), UNSUPP);
+  assert.equal(await ask(b, ZEROES, 0, seg(0, 8, 2)), UNSUPP);
+  assert.equal(await ask(b, DISCARD, 0, seg(size / 512 - 4, 8)), IOERR);
+  assert.equal(await ask(b, DISCARD, 0, seg(0, (1 << 22) + 8)), IOERR);
+  assert.equal(await ask(b, DISCARD, 0, new Uint8Array(0)), IOERR);
+  assert.equal(await ask(b, DISCARD, 0, new Uint8Array([...seg(0, 8), ...seg(8, 8)])), IOERR);
+  assert.equal(await first(b, 0), 9);
+  // Not offered: unsupported, with an overlay or without one.
+  assert.equal(await ask(blk(ctx, src, files), DISCARD, 0, seg(0, 8)), UNSUPP);
+  assert.equal(await ask(blk(ctx, src, undefined, true), ZEROES, 0, seg(0, 8)), UNSUPP);
+  assert.equal(await first(b, 0), 9);
 });

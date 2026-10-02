@@ -187,9 +187,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - virtio-blk over HTTP: one synchronous XHR per request, no cache, merging or concurrency; batch,
   cache or go async when an I/O benchmark says so. qcow2: no merging of contiguous clusters into
   one request.
-- Overlay: no DISCARD/WRITE_ZEROES, no compaction of leaked slots, no quota handling (OPFS errors
-  come back as `IOERR`), the base identified by path and size only, no export or import (M8
-  phase D; the reset is `removeOverlay`).
+- Overlay: no quota handling (OPFS errors come back as `IOERR`), the base identified by path and
+  size only.
+- blk DISCARD/WRITE_ZEROES ([devices.md](devices.md)) is the page's only: offering it to the
+  tests' guests moves every writable guest's step count (the driver reads the longer config) and
+  needs the native twin (`core/tests/common` `Overlay`) to take the requests. One segment per
+  request (`max_discard_seg` 1); a compaction copies synchronously in the device worker (at most
+  the blocks freed, so a trim of GBs can hold the guest's I/O for seconds). The page's Debian
+  doesn't mount with `discard`: the user runs `fstrim`, or waits for `fstrim.timer`.
 - net: no offloads (`CSUM`, `GSO`, `MRG_RXBUF`), no `CTRL_VQ`, one queue pair; frames from a page
   adapter can't be deterministic. The real backends are in [plans/networking.md](plans/networking.md).
 - 9p: an in-memory tree only (OPFS or an HTTP-served tree, as v86's lazy filesystem, are the

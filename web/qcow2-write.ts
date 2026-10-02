@@ -19,6 +19,7 @@ const L2_ENTRIES = CLUSTER / 8;
 const REFS_PER_BLOCK = CLUSTER / 2; // 16-bit refcounts
 const COPIED = 1n << 63n;
 const COMPRESSED = 1n << 62n;
+const ZERO_FLAG = 1n; // a standard cluster's bit 0 (version 3): it reads as zeros
 const CSIZE_SHIFT = 58n; // 62 - (cluster_bits - 8): a compressed cluster's sector count, above its host offset
 const CHUNK = 1 << 20;
 const ZEROS = new Uint8Array(CLUSTER);
@@ -33,8 +34,12 @@ export const EXT_BASE_HASH = 0x57504332; // "WPC2"
 /** Where the stream goes: appended in order, or (the header only) at `at`. */
 export type Sink = (chunk: Uint8Array, at?: number) => void | Promise<void>;
 
-/** A data cluster: its index in the virtual disk and its CLUSTER bytes (the last one padded with zeros). */
-export type DataCluster = { index: number; data: Uint8Array };
+/**
+ * A cluster the file holds: its index in the virtual disk and its CLUSTER bytes (the last one padded
+ * with zeros), or `zero`: it reads as zeros and takes no room in the file (an L2 entry with the zero
+ * flag: over a backing file, that is what keeps the backing file's bytes out).
+ */
+export type DataCluster = { index: number; data: Uint8Array; zero?: undefined } | { index: number; zero: true };
 
 export type Backing = { name: string; format: 'qcow2' | 'raw'; hash: string };
 
@@ -71,13 +76,15 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
     if (host >= refs.length) { const g = new Uint16Array(2 * Math.max(host, refs.length)); g.set(refs); refs = g; }
     refs[host]++;
   };
-  const store = async ({ index, data }: DataCluster, packed?: Uint8Array) => {
+  const store = async (c: DataCluster, packed?: Uint8Array) => {
     if (n === indices.length) {
       const g = new Uint32Array(2 * n); g.set(indices); indices = g;
       const e = new BigUint64Array(2 * n); e.set(entries); entries = e;
     }
-    indices[n] = index;
-    if (packed) {
+    indices[n] = c.index;
+    if (c.zero) {
+      entries[n] = ZERO_FLAG;
+    } else if (packed) {
       // A compressed cluster starts where the last one ended; its entry counts the 512-byte sectors after the first
       // (bits 58 on, with 4 KiB clusters), and every host cluster it touches counts it once.
       const last = pos + packed.length - 1;
@@ -88,14 +95,14 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
       await align();
       entries[n] = BigInt(pos) | COPIED;
       ref(pos / CLUSTER);
-      await emit(data);
+      await emit(c.data);
     }
     n++;
   };
   for await (const c of o.clusters) {
-    if (c.data.length !== CLUSTER) throw new Error(`cluster ${c.index} is ${c.data.length} bytes`);
+    if (!c.zero && c.data.length !== CLUSTER) throw new Error(`cluster ${c.index} is ${c.data.length} bytes`);
     if (n > 0 && c.index <= indices[n - 1]) throw new Error(`cluster ${c.index} out of order`);
-    await store(c, o.compress ? await deflate(c.data) : undefined); // one at a time: several streams at once were slower (docs/frontend.md)
+    await store(c, o.compress && !c.zero ? await deflate(c.data) : undefined); // one at a time: several streams at once were slower (docs/frontend.md)
   }
   await align();
   if (fill) await sink(chunk.subarray(0, fill));
@@ -217,6 +224,7 @@ function header(size: number, l1Size: number, l1At: number, tableAt: number, tab
 /** The overlay's written blocks as clusters, in disk order (the changes over the base). */
 export async function* changedClusters(disk: WritableDisk): AsyncGenerator<DataCluster> {
   for (const index of disk.written()) {
+    if (disk.zeroed(index)) { yield { index, zero: true }; continue; }
     const bytes = await disk.read(index * CLUSTER, Math.min(CLUSTER, disk.size - index * CLUSTER));
     if (!bytes) throw new Error(`block ${index} of the overlay can't be read`);
     yield { index, data: pad(bytes) };
@@ -252,7 +260,7 @@ const pad = (b: Uint8Array) => {
   return out;
 };
 
-function isZero(b: Uint8Array) {
+export function isZero(b: Uint8Array) {
   if (b.byteOffset % 8 === 0 && b.length % 8 === 0) {
     const w = new BigUint64Array(b.buffer, b.byteOffset, b.length / 8);
     for (let i = 0; i < w.length; i++) if (w[i] !== 0n) return false;

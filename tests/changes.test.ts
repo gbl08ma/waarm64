@@ -83,6 +83,34 @@ test('a compressed changes file loads the same disk, from a smaller file', async
   assert.ok(got && Buffer.compare(got, merged) === 0, 'the overlay holds another disk');
 });
 
+test('blocks the guest discarded or zeroed come back as zeros without slots', async () => {
+  const base = randomBase(6n);
+  const rw = overlay(openDisk((o, l) => base.slice(o, o + l), base.length), memFile(), memFile());
+  const merged = base.slice();
+  for (const b of [10, 11, 12]) { assert.ok(await rw.write(b * 4096, new Uint8Array(4096).fill(b))); merged.fill(b, b * 4096, (b + 1) * 4096); }
+  assert.ok(rw.discard(11 * 4096, 4096));
+  merged.fill(0, 11 * 4096, 12 * 4096);
+  assert.ok(await rw.zero(299 * 4096, SIZE - 299 * 4096)); // to the end: the last block isn't whole
+  merged.fill(0, 299 * 4096);
+  for (const compress of [false, true]) {
+    const parts: Uint8Array[] = [];
+    const sink: Sink = (chunk, at) => { if (at === undefined) parts.push(chunk); else parts[0] = chunk; };
+    await writeQcow2({ size: base.length, clusters: changedClusters(rw), backing: { name: 'base.img', format: 'raw', hash: await hashSource(source(base), () => {}) }, compress, sink });
+    const name = `zeros-${compress}`;
+    assert.equal((await load(name, Buffer.concat(parts), base)).blocks, 5);
+    const got = await mergedOf(name, base);
+    assert.ok(got && Buffer.compare(got, merged) === 0, 'the overlay holds another disk');
+    const files = await openOverlay(name, ident(name));
+    try {
+      const d = overlay(openDisk((o, l) => base.slice(o, o + l), base.length), files.data, files.map);
+      assert.deepEqual(d.written().map((b) => [b, d.zeroed(b)]), [[10, false], [11, true], [12, false], [299, true], [300, true]]);
+      assert.equal(files.data.getSize(), 2 * 4096);
+    } finally {
+      files.close();
+    }
+  }
+});
+
 test('a different base, a different size and a qcow2 without our checksum are refused, the overlay untouched', async () => {
   const base = randomBase(2n);
   const file = await changesFile(base, [[100, Uint8Array.of(7)]]);

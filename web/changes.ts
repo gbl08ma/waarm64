@@ -5,6 +5,7 @@
 import type { Source } from './devices.ts';
 import { openOverlay, overlay, removeOverlay } from './overlay.ts';
 import { openDisk, readChanges } from './qcow2.ts';
+import { isZero } from './qcow2-write.ts';
 
 /** The slices of an image's file that `hashSource` digests, and how many digests run at once. */
 export const HASH_SLICE = 4 << 20;
@@ -62,7 +63,7 @@ export async function loadChanges(o: {
     const total = Math.ceil(c.size / 4096);
     let blocks = 0;
     for await (const { block, data } of c.blocks()) {
-      if (!(await disk.write(block * 4096, data))) throw new Error(`block ${block} can't be written to the browser's storage (is the disk full?)`);
+      if (!(isZero(data) ? await disk.zero(block * 4096, data.length) : await disk.write(block * 4096, data))) throw new Error(`block ${block} can't be written to the browser's storage (is the disk full?)`);
       if (++blocks % 256 === 0) progress('Loading the changes', block, total);
     }
     disk.flush();

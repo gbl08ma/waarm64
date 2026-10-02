@@ -20,12 +20,14 @@ import { openDisk, type Disk } from './qcow2.ts';
  * there (web/overlay.ts), which persists across boots and belongs to that image. With `file` (a
  * `File` the user chose, structured-cloned to the device worker) the disk is that file instead of
  * `url`, read with `FileReaderSync` (workers only); the overlay then belongs to the file's name,
- * size and modification time (`diskIdentity`).
+ * size and modification time (`diskIdentity`). With `discard` (and an overlay) the disk takes
+ * DISCARD and WRITE_ZEROES: what the guest trims leaves the overlay (the page's machines; the
+ * tests' guests are without it, as their step counts are).
  */
 export type DeviceSpec =
   | { type: 'console' }
   | { type: 'rng' }
-  | { type: 'blk'; url: string; size?: number; overlay?: string; file?: Blob }
+  | { type: 'blk'; url: string; size?: number; overlay?: string; file?: Blob; discard?: boolean }
   | NetSpec
   | P9Spec
   | InputSpec
@@ -92,11 +94,24 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     case 'blk': {
       // Features SEG_MAX (2), and RO (5) or, with an overlay, FLUSH (9); config:
       // capacity in sectors (u64 at 0), seg_max (u32 at 12) = queue size - 2, as QEMU.
-      const config = new Uint8Array(16);
+      // With `discard`: DISCARD (13) and WRITE_ZEROES (14), and the config goes on to 60 bytes:
+      // max_discard_sectors (u32 at 36), max_discard_seg, discard_sector_alignment (the overlay's
+      // 4 KiB blocks: Linux's discard granularity), max_write_zeroes_sectors, max_write_zeroes_seg,
+      // write_zeroes_may_unmap (u8 at 56).
+      const discard = !!d.overlay && !!d.discard;
+      const config = new Uint8Array(discard ? 60 : 16);
       const v = new DataView(config.buffer);
       v.setBigUint64(0, BigInt(Math.floor((d.size ?? 0) / 512)), true);
       v.setUint32(12, 126, true);
-      return { entry: [2n, 1n << 2n | (d.overlay ? 1n << 9n : 1n << 5n), 1n, 128n, 16n], config };
+      if (discard) {
+        v.setUint32(36, BLK_MAX_UNMAP_SECTORS, true);
+        v.setUint32(40, 1, true);
+        v.setUint32(44, 8, true);
+        v.setUint32(48, BLK_MAX_UNMAP_SECTORS, true);
+        v.setUint32(52, 1, true);
+        v.setUint8(56, 1);
+      }
+      return { entry: [2n, 1n << 2n | (d.overlay ? 1n << 9n : 1n << 5n) | (discard ? 1n << 13n | 1n << 14n : 0n), 1n, 128n, BigInt(config.length)], config };
     }
     case 'net': {
       // Features MAC (5) and STATUS (16); config: mac, status = LINK_UP. receiveq, transmitq.
@@ -400,6 +415,10 @@ const T_IN = 0;
 const T_OUT = 1;
 const T_FLUSH = 4;
 const T_GET_ID = 8;
+const T_DISCARD = 11;
+const T_WRITE_ZEROES = 13;
+/** The most sectors one DISCARD or WRITE_ZEROES segment covers (2 GiB, whole 4 KiB blocks). */
+const BLK_MAX_UNMAP_SECTORS = 1 << 22;
 const S_OK = 0;
 const S_IOERR = 1;
 const S_UNSUPP = 2;
@@ -468,9 +487,10 @@ export async function fileSource(url: string): Promise<Source> {
 /**
  * virtio-blk over a `Source` (HTTP ranges, or a file in Node). Only qcow2's
  * compressed clusters are asynchronous (DecompressionStream). Read-only, or
- * writable through an overlay on OPFS.
+ * writable through an overlay on OPFS; with `discard`, DISCARD and WRITE_ZEROES
+ * reach the overlay (`deviceEntry` offers them).
  */
-function blk(ctx: Ctx, src: Source, files?: OverlayFiles): Backend {
+export function blk(ctx: Ctx, src: Source, files?: OverlayFiles, discard = false): Backend {
   const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size);
   const rw = files && overlay(base, files.data, files.map);
   const disk: Disk = rw ?? base;
@@ -501,6 +521,19 @@ function blk(ctx: Ctx, src: Source, files?: OverlayFiles): Backend {
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_FLUSH && rw) {
         rw.flush();
         status = S_OK;
+      } else if (h.byteLength === 16 && (h.getUint32(0, true) === T_DISCARD || h.getUint32(0, true) === T_WRITE_ZEROES) && rw && discard) {
+        // One segment after the header (max_*_seg is 1): sector (u64), sectors (u32), flags (u32; bit 0: unmap,
+        // which a WRITE_ZEROES may set and we always do, and a DISCARD must not: UNSUPP, as for unknown flags).
+        const zeroes = h.getUint32(0, true) === T_WRITE_ZEROES;
+        const len = r.read.reduce((k, s) => k + s.len, 0);
+        const seg = new DataView(gather(ram, r.read, len).slice(16).buffer);
+        if (seg.byteLength !== 16) status = S_IOERR;
+        else if (seg.getUint32(12, true) & (zeroes ? ~1 : ~0)) status = S_UNSUPP;
+        else {
+          const [off, bytes] = [Number(seg.getBigUint64(0, true)) * 512, seg.getUint32(8, true) * 512];
+          const ok = bytes <= BLK_MAX_UNMAP_SECTORS * 512 && off + bytes <= disk.size && (zeroes ? await rw.zero(off, bytes).catch(() => false) : rw.discard(off, bytes));
+          status = ok ? S_OK : S_IOERR;
+        }
       }
       ram[last.off + last.len - 1] = status;
       return n + 1;
@@ -574,7 +607,7 @@ export class Devices {
       switch (d.type) {
         case 'console': return console_((t) => out(i, t), ctx);
         case 'rng': return rng(ctx, deterministic);
-        case 'blk': return blk(ctx, sources[i]!, overlays[i]);
+        case 'blk': return blk(ctx, sources[i]!, overlays[i], d.discard);
         case 'net': return net(ctx, d);
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
         case 'input': return input(ctx, d);

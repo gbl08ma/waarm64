@@ -100,7 +100,7 @@ type StartMessage = Extract<ToWorker, { type: 'start' }>;
 function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: string): DeviceSpec | string {
   switch (kind) {
     case 'rng': return { type: 'rng' };
-    case 'blk': return { type: 'blk', url: diskUrl, file: m.disk?.file, overlay: overlayName };
+    case 'blk': return { type: 'blk', url: diskUrl, file: m.disk?.file, overlay: overlayName, discard: true }; // what the guest trims leaves the overlay
     case 'blk-ro': return m.disk2 ? { type: 'blk', url: new URL(m.disk2, self.location.href).href } : 'a second disk (?disk2=<url>), and this page was opened without one'; // no overlay: read-only
     case 'keyboard': return { type: 'input', kind: 'keyboard', port: m.keyboard };
     case 'tablet': return { type: 'input', kind: 'tablet', port: m.tablet };

@@ -502,7 +502,8 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
   compressed, 448 MB in 38 s compressed (reading the disk alone is 21.7 s; Debian's own image, with
   64 KiB clusters, is 403 MB). Compressing 64 or 512 clusters at once was slower than one at a time
   (11.4 s and 12.3 s against 8.7 s for the first 512 MiB). What the guest's filesystem has freed
-  is still data to the export (the disk has no discard: backlog). A changes file's header names the base by its file name (the backing file; the user
+  is still data to the export until the guest trims it (`fstrim -av`: the disk takes DISCARD,
+  [devices.md](devices.md) "blk"; trimmed blocks are zero clusters in a changes file and left out of a whole disk). A changes file's header names the base by its file name (the backing file; the user
   keeps it beside the changes) and carries the base file's **hash** in an extension of ours
   (type `WPC2`, ASCII hex: QEMU ignores unknown extensions; qcow2 itself has no checksum of a backing
   file), `hashSource` in `web/changes.ts`: the SHA-256 of the SHA-256 digests, in order, of the

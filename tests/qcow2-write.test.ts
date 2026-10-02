@@ -184,3 +184,26 @@ test('the writer refuses clusters out of order or of the wrong size', { skip }, 
   await assert.rejects(writeQcow2({ size: 1 << 20, clusters: of(c(5), c(3)), sink: () => {} }), /out of order/);
   await assert.rejects(writeQcow2({ size: 1 << 20, clusters: of(c(1, 100)), sink: () => {} }), /is 100 bytes/);
 });
+
+test('blocks the guest discarded or zeroed are zero clusters in a changes file: no data, and qemu-img sees zeros over the base', { skip }, async () => {
+  const size = 600 * CLUSTER + 1536; // two L2 tables
+  const base = new Uint8Array(size).fill(0x42);
+  const rw = overlay(openDisk((off, len) => base.slice(off, off + len), size), memFile(), memFile());
+  const merged = base.slice();
+  for (const b of [3, 4, 5, 6, 520, 521]) { assert.ok(await rw.write(b * CLUSTER, new Uint8Array(CLUSTER).fill(b))); merged.fill(b, b * CLUSTER, (b + 1) * CLUSTER); }
+  assert.ok(rw.discard(4 * CLUSTER, 2 * CLUSTER)); // blocks 4 and 5: written, then trimmed
+  merged.fill(0, 4 * CLUSTER, 6 * CLUSTER);
+  assert.ok(await rw.zero(590 * CLUSTER, size - 590 * CLUSTER)); // zeroed over the base, to the disk's end
+  merged.fill(0, 590 * CLUSTER);
+  writeFileSync(join(dir, 'base.raw'), base);
+  writeFileSync(join(dir, 'merged.raw'), merged);
+  for (const compress of [false, true]) {
+    const out = memorySink();
+    const r = await writeQcow2({ size, clusters: changedClusters(rw), backing: { name: 'base.raw', format: 'raw', hash: await hashed(base) }, compress, sink: out.sink });
+    assert.equal(r.clusters, 6 + 11); // every block the overlay holds has an entry
+    if (!compress) assert.equal(r.bytes, (1 + 4 + 2 + 1 + 1 + 1) * CLUSTER, 'the header, four data clusters, two L2 tables, the L1 table, a refcount block and its table');
+    writeFileSync(join(dir, 'zeros.qcow2'), out.bytes());
+    qemu('check', join(dir, 'zeros.qcow2'));
+    assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'zeros.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
+  }
+});

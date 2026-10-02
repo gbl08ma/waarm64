@@ -80,6 +80,9 @@ test('a disk chosen on the page boots through UEFI, keeps its changes in its own
   await shows(page, /root@\S+:~# /);
   await onSerial(page, 'echo webpc-own-$((6*7)) >/root/own-mark && sync && echo sy""nced\n');
   await shows(page, /synced/);
+  // The page's disk takes DISCARD: Debian's ext4 trims its free space (what the guest frees leaves the overlay).
+  await onSerial(page, 'fstrim -v / && echo tr""immed\n');
+  await shows(page, /\/: [^/]*\(\d+ bytes\) trimmed\s*trimmed/);
   // Its overlay is its own: the default Debian's (`webpc-debian`) wasn't touched by a disk written meanwhile.
   const names = await overlays(page);
   assert.ok(names.some((n) => /^webpc-disk-[0-9a-f]{16}$/.test(n)), `OPFS has ${names}`);
