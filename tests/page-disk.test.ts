@@ -124,8 +124,10 @@ test('a disk chosen on the page boots through UEFI, keeps its changes in its own
   const qemu = (...args: string[]) => execFileSync('qemu-img', args, { encoding: 'utf8' });
   qemu('check', downloaded);
   assert.match(qemu('info', downloaded), /backing file: mydisk\.qcow2/);
-  const sha = createHash('sha256').update(readFileSync(IMAGE)).digest('hex');
-  assert.ok(changes.subarray(0, 4096).toString('latin1').includes(sha), "the header names the base image's SHA-256");
+  const image = readFileSync(IMAGE);
+  const top = createHash('sha256'); // web/changes.ts `hashSource`: the SHA-256 of the 4 MiB slices' SHA-256 digests
+  for (let off = 0; off < image.length; off += 4 << 20) top.update(createHash('sha256').update(image.subarray(off, off + (4 << 20))).digest());
+  assert.ok(changes.subarray(0, 4096).toString('latin1').includes(top.digest('hex')), "the header names the base image's hash");
   const map = JSON.parse(qemu('map', '--output=json', `json:${JSON.stringify({ driver: 'qcow2', file: { driver: 'file', filename: downloaded }, backing: null })}`)) as { data: boolean }[];
   assert.ok(map.some((e) => e.data), 'the changes file holds the blocks the machine wrote');
 

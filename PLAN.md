@@ -135,9 +135,9 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     with an overlay of its own keyed by name, size and modification time.
   - **Work and shut down:** the OPFS overlay; a clean power-off.
   - **Disk out,** two ways: **just the changes**, a qcow2 of the overlay's blocks (4 KiB clusters)
-    with the base image as backing file, named and identified by its SHA-256; or **the whole
+    with the base image as backing file, named and identified by its hash; or **the whole
     disk** as qcow2 or raw. **Changes in:** the same file loaded onto the same base (checked by its
-    SHA-256) brings them back, in a fresh profile too; it replaces the overlay and the variable store.
+    hash) brings them back, in a fresh profile too; it replaces the overlay and the variable store.
   - Leftovers (the chosen file isn't remembered across reloads, the firmware's setup screen, key
     latency, an unused ext4 reader): [docs/backlog.md](docs/backlog.md).
 - **C. Parallel tracks**, each starting from its plan doc (written first where none exists):

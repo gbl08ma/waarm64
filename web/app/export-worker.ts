@@ -50,8 +50,8 @@ async function exportDisk(r: ExportRequest) {
       let clusters;
       let backing;
       if (r.mode === 'changes') {
-        const sha256 = hashSource(src, (done) => progress('Reading the base image', done, src.size));
-        backing = { name: r.baseName, format: base.format, sha256 };
+        const hash = await hashSource(src, (done) => progress('Reading the base image', done, src.size));
+        backing = { name: r.baseName, format: base.format, hash };
         clusters = progressOf(changedClusters(disk), disk.written().length, (done, total) => progress('Writing the changes', done, total));
       } else {
         clusters = nonZeroClusters(disk, 1 << 20, (done) => progress('Writing the disk', done, disk.size));

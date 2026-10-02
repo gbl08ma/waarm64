@@ -293,14 +293,14 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"; the lane's plan
   doorbell once. A parallel VM is paused first ("Pausing a VM").
 - **The disk is in the file** (`web/snapshot.ts`): RAM holds the guest's page cache and filesystem
   state, so a snapshot is only valid on the disk as it was. The header lists each writable disk
-  (its slot, the identity of the image its overlay is over, its size, the base's SHA-256 where the
+  (its slot, the identity of the image its overlay is over, its size, the base's hash where the
   writer knew it) and DISK frames carry the blocks its overlay holds, read through the backends
   (the device worker has the overlay's handles). A restore **replaces the overlay** with them
   before the new VM's backends open it. Everything that can be refused is refused before that: a
   `File` is read once for its checksums and its end first (a damaged file must not half-replace a
   disk), and the disk on the machine must be the snapshot's: the same identity, or, when that
-  differs and the file has a hash, the same SHA-256 (asked for only then: hashing Debian's 384 MiB
-  image takes 1.8 s, which a restore that "resumes in seconds" shouldn't pay every time).
+  differs and the file has a hash, the same hash (asked for only then: a restore that "resumes in seconds"
+  shouldn't read the whole base every time).
 - **Run modes:** round-robin's `Sched` and parallel mode's per-vCPU state are saved in one form
   (on or off, in WFI, a CPU_ON not yet taken), so a realtime state restores under either. A
   restored VM starts with empty TLBs and code caches.

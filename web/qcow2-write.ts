@@ -1,6 +1,6 @@
 // A qcow2 writer for the disk-out exports (M8 phase B loop 5; docs/frontend.md "Your own disk"):
 // the changes over a base image (a qcow2 with the base as its backing file, named in the header
-// with the base's SHA-256 in an extension of ours) or the whole disk (zero clusters left out),
+// with the base's hash in an extension of ours) or the whole disk (zero clusters left out),
 // streamed through a sink, with 4 KiB clusters (the overlay's block size, web/overlay.ts),
 // compressed (raw deflate, cluster by cluster) when asked.
 // Written from the format spec, QEMU's docs/interop/qcow2.txt (no QEMU code); `qemu-img check`
@@ -23,9 +23,12 @@ const CSIZE_SHIFT = 58n; // 62 - (cluster_bits - 8): a compressed cluster's sect
 const CHUNK = 1 << 20;
 const ZEROS = new Uint8Array(CLUSTER);
 const HEADER_LENGTH = 112;
-/** Header extension types: QEMU's backing file format name, and ours: the base image's SHA-256 (hex, ASCII). */
+/**
+ * Header extension types: QEMU's backing file format name, and ours: the base image's hash (web/changes.ts
+ * `hashSource`; hex, ASCII). "WPC1" was the SHA-256 of the whole file, which nothing reads any more.
+ */
 const EXT_BACKING_FORMAT = 0xe2792aca;
-export const EXT_BASE_SHA256 = 0x57504331; // "WPC1"
+export const EXT_BASE_HASH = 0x57504332; // "WPC2"
 
 /** Where the stream goes: appended in order, or (the header only) at `at`. */
 export type Sink = (chunk: Uint8Array, at?: number) => void | Promise<void>;
@@ -33,7 +36,7 @@ export type Sink = (chunk: Uint8Array, at?: number) => void | Promise<void>;
 /** A data cluster: its index in the virtual disk and its CLUSTER bytes (the last one padded with zeros). */
 export type DataCluster = { index: number; data: Uint8Array };
 
-export type Backing = { name: string; format: 'qcow2' | 'raw'; sha256: string };
+export type Backing = { name: string; format: 'qcow2' | 'raw'; hash: string };
 
 /**
  * Writes a qcow2 of virtual size `size` holding `clusters` (ascending by index, none twice) to
@@ -198,7 +201,7 @@ function header(size: number, l1Size: number, l1At: number, tableAt: number, tab
   };
   if (backing) {
     extension(EXT_BACKING_FORMAT, enc.encode(backing.format));
-    extension(EXT_BASE_SHA256, enc.encode(backing.sha256));
+    extension(EXT_BASE_HASH, enc.encode(backing.hash));
   }
   at += 8; // the end-of-extensions marker (type 0, length 0: zeros)
   if (backing) {

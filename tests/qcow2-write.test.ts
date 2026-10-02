@@ -1,4 +1,4 @@
-// The disk-out writers (web/qcow2-write.ts, web/sha256.ts) against QEMU's own tools: the
+// The disk-out writers (web/qcow2-write.ts, and the base's hash, web/changes.ts) against QEMU's own tools: the
 // changes over a base image as a qcow2 with the base as its backing file, and the whole disk as
 // qcow2 (zero clusters left out), checked by `qemu-img check` and `qemu-img compare` against the
 // merged bytes, and read back by our own reader. Skipped without qemu-img.
@@ -10,10 +10,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
+import { HASH_SLICE, hashSource } from '../web/changes.ts';
 import { memFile, overlay } from '../web/overlay.ts';
 import { openDisk, type Disk } from '../web/qcow2.ts';
 import { changedClusters, CLUSTER, nonZeroClusters, writeQcow2, type DataCluster, type Sink } from '../web/qcow2-write.ts';
-import { Sha256 } from '../web/sha256.ts';
 
 const have = spawnSync('qemu-img', ['--version']).status === 0;
 const skip = !have && 'SKIPPED: no qemu-img';
@@ -22,16 +22,36 @@ let dir: string;
 before(() => { dir = mkdtempSync(join(tmpdir(), 'webpc-qcow2w-')); });
 after(() => { if (dir) rmSync(dir, { recursive: true }); });
 
-test('SHA-256 matches node:crypto over odd lengths and split updates', () => {
+/** What `hashSource` is: node:crypto's SHA-256 of the SHA-256 digests of the slices. */
+function hashOf(bytes: Uint8Array, slice = HASH_SLICE) {
+  const top = createHash('sha256');
+  for (let off = 0; off < bytes.length; off += slice) top.update(createHash('sha256').update(bytes.subarray(off, off + slice)).digest());
+  return top.digest('hex');
+}
+const hashed = (bytes: Uint8Array, slice?: number) =>
+  hashSource({ size: bytes.length, read: (off, len) => bytes.subarray(off, off + len) }, () => {}, slice);
+
+test("the base's hash is node:crypto's SHA-256 of the slices' SHA-256 digests, over odd lengths and more slices than run at once", async () => {
   const g = splitmix64(3n);
-  for (const len of [0, 1, 55, 56, 63, 64, 65, 119, 120, 1000, 100_000]) {
+  for (const len of [0, 1, 999, 1000, 1001, 4000, 4001, 12_345]) {
     const bytes = Uint8Array.from({ length: len }, () => Number(g.next().value as bigint & 255n));
-    const want = createHash('sha256').update(bytes).digest('hex');
-    assert.equal(new Sha256().update(bytes).hex(), want, `${len} bytes`);
-    const split = new Sha256();
-    for (let i = 0; i < len; i += 37) split.update(bytes.subarray(i, i + 37));
-    assert.equal(split.hex(), want, `${len} bytes, in pieces of 37`);
+    assert.equal(await hashed(bytes, 1000), hashOf(bytes, 1000), `${len} bytes in slices of 1000`);
   }
+  const big = new Uint8Array(2 * HASH_SLICE + 5);
+  for (let i = 0; i < big.length; i += 4099) big[i] = Number(g.next().value as bigint & 255n);
+  assert.equal(await hashed(big), hashOf(big));
+  // Every byte counts, and a slice's place: one bit, and two slices swapped.
+  const flipped = big.slice();
+  flipped[HASH_SLICE + 7] ^= 1;
+  assert.notEqual(await hashed(flipped), await hashed(big));
+  const swapped = big.slice();
+  swapped.copyWithin(0, HASH_SLICE, 2 * HASH_SLICE);
+  swapped.set(big.subarray(0, HASH_SLICE), HASH_SLICE);
+  assert.notEqual(await hashed(swapped), await hashed(big));
+  let told = 0;
+  await hashSource({ size: big.length, read: (off, len) => big.subarray(off, off + len) }, (done) => { assert.ok(done > told); told = done; });
+  assert.equal(told, big.length);
+  await assert.rejects(hashSource({ size: 10, read: () => undefined }, () => {}), /can't be read at 0/);
 });
 
 /** A sink into memory: the stream, with the header patched in at the start. */
@@ -97,8 +117,8 @@ for (const compress of [false, true]) {
       writeFileSync(join(dir, 'base.raw'), base);
       writeFileSync(join(dir, 'merged.raw'), merged);
       const out = memorySink();
-      const sha256 = new Sha256().update(base).hex();
-      const r = await writeQcow2({ size, clusters: changedClusters(rw), backing: { name: 'base.raw', format: 'raw', sha256 }, compress, sink: out.sink });
+      const hash = await hashed(base);
+      const r = await writeQcow2({ size, clusters: changedClusters(rw), backing: { name: 'base.raw', format: 'raw', hash }, compress, sink: out.sink });
       assert.equal(r.clusters, rw.written().length);
       assert.equal(out.bytes().length, r.bytes);
       writeFileSync(join(dir, 'changes.qcow2'), out.bytes());
@@ -106,7 +126,7 @@ for (const compress of [false, true]) {
       assert.match(qemu('info', join(dir, 'changes.qcow2')), /backing file: base\.raw/);
       assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'changes.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
       // Our header extension carries the base's hash, after the format name.
-      assert.ok(out.bytes().subarray(0, CLUSTER).toString('latin1').includes(sha256));
+      assert.ok(out.bytes().subarray(0, CLUSTER).toString('latin1').includes(`WPC2\0\0\0@${hash}`));
     });
 
     test(`the whole disk (${name}${how}) as qcow2: zero clusters left out, check passes, and qemu-img and our reader see the merged disk`, { skip }, async () => {
@@ -152,7 +172,7 @@ test('compressed clusters among ones that do not shrink: a smaller file, check p
   assert.ok(sizes[1] < 0.8 * sizes[0], `compressed ${sizes[1]} bytes, not compressed ${sizes[0]}`);
   // The changes, compressed: zero clusters are data here.
   const out = memorySink();
-  await writeQcow2({ size, clusters: changedClusters(rw), backing: { name: 'base.raw', format: 'raw', sha256: new Sha256().update(base).hex() }, compress: true, sink: out.sink });
+  await writeQcow2({ size, clusters: changedClusters(rw), backing: { name: 'base.raw', format: 'raw', hash: await hashed(base) }, compress: true, sink: out.sink });
   writeFileSync(join(dir, 'mixed-changes.qcow2'), out.bytes());
   qemu('check', join(dir, 'mixed-changes.qcow2'));
   assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'mixed-changes.qcow2'), join(dir, 'merged.raw')), /Images are identical/);

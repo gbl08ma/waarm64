@@ -73,8 +73,8 @@ filesystem state are in RAM). So:
   disk does) with the file's blocks, then resumes. The base must be the disk on the page: the
   machine's own, or a disk the user opened first (as for a changes file).
 - **The base's identity:** phase B identifies a chosen file by name, size and modification time,
-  a URL by its path, and a changes file's base by its SHA-256 (`hashSource`: 1.8 s for Debian's
-  384 MiB). A snapshot records the cheap identity always and the hash where the writer has it; a
+  a URL by its path, and a changes file's base by its hash (`hashSource`: SHA-256 over 4 MiB slices' digests since,
+  under a second for Debian's 384 MiB). A snapshot records the cheap identity always and the hash where the writer has it; a
   restore accepts the same identity at once, and hashes the base only when the identity differs
   and the file has a hash (settled in loop 6).
 - The variable store is the flash bank, which is in the core's state; the copy beside the overlay
@@ -163,7 +163,7 @@ for the loops that touch parallel SMP.
    `tests/pause.test.ts`: the coordinator's `pause`/`resume`, the vCPU workers parked). Left: parallel
    round trips in Node and Chromium (Buildroot, litmus and stress on 4).
 6. **The disk in the file: done** ([platform.md](../platform.md) "Snapshots"). The base's
-   identity, measured: the SHA-256 of Debian's 384 MiB image takes 1.8 s (217 MiB/s), so a
+   identity, measured: the SHA-256 of Debian's 384 MiB image takes 1.8 s (217 MiB/s; in Node: Chromium ran that JS at 46 MiB/s, and `hashSource` is now `crypto.subtle`'s over slices, [frontend.md](../frontend.md)), so a
    restore checks the cheap identity and asks for the hash only when that differs and the file
    has one; the page decides when to compute the hash it writes (loop 7: not while the machine is
    paused). The flash copy beside the overlay is the page worker's to rewrite after a restore

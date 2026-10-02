@@ -301,11 +301,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   snapshot. The page's machines have none; the device test and Alpine's test image do, so their
   host round trips run without it (`tests/snapshot.test.ts`). It needs the tree serialized with
   node identities (fids and unlinked-but-open files point into it).
-- **The base image's SHA-256 is never written by the page**, so a snapshot only loads on a disk of
+- **The base image's hash is never written by the page**, so a snapshot only loads on a disk of
   the same identity (a URL's path and size, or a chosen file's name, size and modification time): a
   copy of the same image with another date is refused. `readSnapshot` already accepts a matching
   hash when the file has one (`SnapshotDisk.sha256`); what's missing is computing it off the save
-  path (1.8 s for Debian's image; cache it beside the overlay) and hashing the base at a restore
+  path (`hashSource`, web/changes.ts: ~640 MiB/s; cache it beside the overlay) and hashing the base at a restore
   whose identity differs.
 - **The network across a snapshot:** the guest keeps its lease and its connections' state; the
   restored machine's card is on whatever the page connects it to now. A link down/up at restore

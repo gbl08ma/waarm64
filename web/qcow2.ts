@@ -152,13 +152,13 @@ async function inflate(input: Uint8Array, size: number) {
   return n === size ? out : undefined;
 }
 
-/** What a changes file says about itself (web/qcow2-write.ts writes it): the base image's file name and SHA-256. */
-export type ChangesHeader = { backingName: string; sha256?: string };
+/** What a changes file says about itself (web/qcow2-write.ts writes it): the base image's file name and hash (web/changes.ts `hashSource`). */
+export type ChangesHeader = { backingName: string; hash?: string };
 
-const EXT_BASE_SHA256 = 0x57504331; // "WPC1" (web/qcow2-write.ts)
+const EXT_BASE_HASH = 0x57504332; // "WPC2" (web/qcow2-write.ts)
 
 /**
- * The backing file's name and our SHA-256 extension from a qcow2's first bytes (its first cluster:
+ * The backing file's name and our hash extension from a qcow2's first bytes (its first cluster:
  * 64 KiB cover every cluster size), or undefined when it isn't a qcow2 with a backing file.
  */
 export function changesHeader(head: Uint8Array): ChangesHeader | undefined {
@@ -168,15 +168,15 @@ export function changesHeader(head: Uint8Array): ChangesHeader | undefined {
   const nameLen = h.getUint32(16);
   if (nameAt === 0 || nameAt + nameLen > head.length) return undefined;
   const dec = new TextDecoder();
-  let sha256: string | undefined;
+  let hash: string | undefined;
   for (let at = h.getUint32(4) === 2 ? 72 : h.getUint32(100); at + 8 <= head.length;) {
     const type = h.getUint32(at);
     const len = h.getUint32(at + 4);
     if (type === 0 || at + 8 + len > head.length) break;
-    if (type === EXT_BASE_SHA256) sha256 = dec.decode(head.subarray(at + 8, at + 8 + len));
+    if (type === EXT_BASE_HASH) hash = dec.decode(head.subarray(at + 8, at + 8 + len));
     at += 8 + Math.ceil(len / 8) * 8;
   }
-  return { backingName: dec.decode(head.subarray(nameAt, nameAt + nameLen)), sha256 };
+  return { backingName: dec.decode(head.subarray(nameAt, nameAt + nameLen)), hash };
 }
 
 /** One 4 KiB block of the disk that a changes file holds (the overlay's block size). */

@@ -256,7 +256,7 @@ are Start and Boot instead). A failure before that leaves the machine running.
 - With a disk of one's own (Open disk…), the suspended copy is beside that disk's overlay: it
   resumes when that disk is opened again (the page doesn't remember a chosen file over a reload).
 
-**Limits.** No SHA-256 of the base image is written (hashing takes seconds and nothing caches it
+**Limits.** No hash of the base image is written (nothing computes or caches it off the save path
 yet), so `readSnapshot` requires the same disk identity: the machine's own disk, or the same file
 (name, size, modification time) or URL. The network across a snapshot isn't handled: the guest
 keeps its DHCP lease and its connections are gone with the Tailscale client's. The guest's clock
@@ -503,9 +503,17 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
   64 KiB clusters, is 403 MB). Compressing 64 or 512 clusters at once was slower than one at a time
   (11.4 s and 12.3 s against 8.7 s for the first 512 MiB). What the guest's filesystem has freed
   is still data to the export (the disk has no discard: backlog). A changes file's header names the base by its file name (the backing file; the user
-  keeps it beside the changes) and carries the base file's **SHA-256** in an extension of ours
-  (type `WPC1`, ASCII hex: QEMU ignores unknown extensions), computed by `web/sha256.ts` over the
-  base's bytes read in 1 MiB slices (loop 6 checks it when a changes file comes in). The whole
+  keeps it beside the changes) and carries the base file's **hash** in an extension of ours
+  (type `WPC2`, ASCII hex: QEMU ignores unknown extensions; qcow2 itself has no checksum of a backing
+  file), `hashSource` in `web/changes.ts`: the SHA-256 of the SHA-256 digests, in order, of the
+  file's 4 MiB slices, each from `crypto.subtle.digest`, four at once (Load changes checks it).
+  Measured in Chromium 153 on the dev VM over a 2 GiB file: ~640 MiB/s, which is the synchronous
+  file reads (slices of 4, 8 and 16 MiB hash at the same speed); `crypto.subtle` alone does
+  ~2.5 GiB/s whatever the call's size. What lost: one SHA-256 of the whole file, which
+  `crypto.subtle` can't do incrementally and a SHA-256 in JS did at 46 MiB/s in Chromium (233 MiB/s
+  in Node: the number that hid it), minutes for a disk of GBs at every save and load; a hash of
+  sampled blocks (0.14 s) misses a base that differs elsewhere. `WPC1` was that whole-file SHA-256:
+  a file with only it is refused like any qcow2 that isn't ours. The whole
   disk is scanned through the overlay over the base (the cost is reading the base: a 3 GiB Debian
   disk is the long case). Names: `<disk>-changes.qcow2`, `<disk>.qcow2`, `<disk>.img`.
 - **Loading changes** (loop 6): the header's **Load changes…** (or a changes file chosen with Open
@@ -514,7 +522,7 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
   chosen one). `loadChanges` (web/changes.ts, in `web/app/import-worker.ts`, page side
   `web/app/import.ts`; the machine stops, as for the export): `readChanges` (web/qcow2.ts) parses
   the file (clusters of 4 KiB or more, zero clusters as zeros, compressed ones inflated), its virtual size
-  and **SHA-256** (the `WPC1` extension) are checked against the base's (`hashSource`, ~several s
+  and **hash** (the `WPC2` extension) are checked against the base's (`hashSource`, under a second
   for Debian's 400 MB), then the overlay and the variable store beside it are **deleted** (the
   changes are the whole of what the disk has written; EDK2 rebuilds its variables, Debian boots
   by the fallback path) and the blocks are written into a fresh overlay. Refused before anything
@@ -527,13 +535,13 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
 - Tests: `tests/changes.test.ts` (the import in memory: the saved disk comes back, the old overlay
   is replaced; refusals leave it untouched; a compressed changes file; changes files from qemu-img with 64 KiB clusters, a
   zero cluster, compressed clusters), in `tests/page-save.test.ts` (a file loads back, a non-changes file is refused) and
-  `tests/page-disk.test.ts` (the fresh-profile round trip on Debian), and `tests/qcow2-write.test.ts` (SHA-256 against node:crypto; the writers' output against
+  `tests/page-disk.test.ts` (the fresh-profile round trip on Debian), and `tests/qcow2-write.test.ts` (the base's hash against node:crypto; the writers' output against
   `qemu-img check`/`compare`/`info`, small and over several L2 tables and refcount blocks, compressed and not, and compressed clusters among ones that don't shrink; planted:
   a block left out of the changes fails it), `tests/page-save.test.ts` (Buildroot: raw, qcow2 compressed and not, and
   changes from a running machine, which restarts), `tests/page-disk.test.ts` (WEBPC_DISTROS=debian; two Debian boots): a symlink named
   `mydisk.qcow2` to Debian's image through the picker, a file written, its overlay and flash in
   OPFS, `poweroff`, the changes saved by download and by a picker's handle (an OPFS file: the same
-  bytes; `qemu-img check`, its backing file, the base's SHA-256 in the header, data clusters),
+  bytes; `qemu-img check`, its backing file, the base's hash in the header, data clusters),
   then the same file chosen again after a reload has the file.
 
 ## Network

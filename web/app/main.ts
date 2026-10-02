@@ -462,14 +462,14 @@ async function chooseDisk(choice: { file: File } | { url: string }) {
   await restart();
 }
 // Changes in (loop 6): a changes file (Save disk's "Changes only") replaces what the machine has written to the disk on the page,
-// once the page's disk is checked to be the one it was made over (its SHA-256). The machine stops while it's loaded.
+// once the page's disk is checked to be the one it was made over (its hash). The machine stops while it's loaded.
 const changesHeader = async (file: File) => readChangesHeader(new Uint8Array(await file.slice(0, 1 << 16).arrayBuffer()));
 async function loadChanges(file: File) {
   const overlay = overlayName();
   if (!overlay || busy()) return;
   const info = await changesHeader(file);
   if (!info) return void alert(`${file.name} isn't a changes file (a qcow2 made by Save disk's "Changes only"). To boot a disk, use Open disk….`);
-  if (!info.sha256) return void alert(`${file.name} has a backing file (${info.backingName}) but wasn't made by Save disk, so its base can't be checked: it can't be loaded.`);
+  if (!info.hash) return void alert(`${file.name} has a backing file (${info.backingName}) but wasn't made by this page's Save disk, so its base can't be checked: it can't be loaded.`);
   const written = await overlayBytes(overlay).catch(() => 0);
   const running = state === 'running' || state === 'booting';
   if (!confirm(`Load the changes in ${file.name}? They replace everything the machine has written to ${chosen ? diskName() : `${spec.label}'s disk`}${written ? ` (${(written / 1e6).toFixed(written < 1e7 ? 1 : 0)} MB)` : ''}, and the firmware's settings. The machine ${running ? 'stops, like pulling the plug, and ' : ''}starts again afterwards.`)) return;
