@@ -67,17 +67,16 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   1. Done: direct branches to another page of a process chain by the target's VA ([jit.md](jit.md) "Linking";
      SQLite 12%, Lua 10% and compression 9% faster).
   2. Done in part: **forward regions** ([jit.md](jit.md) "Compile policy": a batch's blocks that static edges
-     join are one function, each block once; Lua 17%, process churn 13%, SQLite 10%, Alpine's boot 5.5% and
-     CoreMark 17% faster). Half of the block-to-block transfers now stay inside a function (105 to 118 per 1000
-     instructions; `bench/boot/results/m8-forward/transfers.txt`). **What still leaves one:** 25 to 30 direct
-     transfers within a page per 1000 instructions (calls, and edges into a block that heads another region), 10
-     to 14 to a successor compiled later, and the calls, returns and other pages of 3 and 4. Not tried: regions
-     across batches (a member compiled later can't join the region of a head compiled earlier), a region entered
-     at more than one block (a `br_table` on the entry PC, v86's shape, would save the second copy of blocks
-     with several entries: 8% of Alpine's blocks, 15% of its bytes).
-  3. **Calls and returns** (`RET`: 8 to 17 per 1000 instructions, and as many calls): a return predicted to the
-     call site inside the unit. Taking a call's target into the caller's forward region was tried with 2 and
-     moved nothing.
+     join are one function, each block once, across pages, with calls followed and their returns predicted).
+     Over half of the block-to-block transfers now stay inside a function. **What still leaves one** (per 1000
+     instructions, Lua and SQLite): 27 to 37 direct transfers within a page and 10 to 14 to a successor compiled
+     later (both: into a block that heads another function), 15 to another page by its VA, 10 to 15 returns, 12
+     to 24 other indirect branches. They leave because the target was compiled in **another batch**: a shared
+     callee is hot long before its callers. Not tried: a region entered at more than one block (a `br_table`
+     on the entry PC, v86's shape), so a block compiled earlier could be reached inside a later function without
+     a second copy (blocks compiled twice are 13% of Alpine's).
+  3. **Calls and returns**: done as far as one batch goes (above); copying compiled callees into callers was
+     tried and lost ([jit.md](jit.md) "Tried and not kept"). What is left of them is 4's cost per transfer.
   4. **Indirect transfers** (`BR`, `BLR`, `RET`, and the by-VA links to other pages: 23 to 56 per 1000 instructions, ~50 host
      instructions each): two table lookups (the instruction TLB, then the 1 MiB jump cache, whose entry load is
      where such blocks' samples sit) and `return_call_indirect`. One lookup in a small VA-keyed cache that is

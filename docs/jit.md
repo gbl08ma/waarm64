@@ -77,15 +77,28 @@ the interpreter's own code.
     block of the batch and the batch's other blocks that static edges reach from it, so each block
     of a batch is compiled **once**, as a head or as a member. The edges between members keep
     registers and lazy flags in locals instead of leaving one function for the next (a frame, the
-    write-backs, NZCV and the PC, a tail call). A call's target isn't taken (it heads its own
-    region, or every caller in the page would hold a copy), nor a loop head. **A member has no
+    write-backs, NZCV and the PC, a tail call). A loop head isn't taken. **A member has no
     function of its own:** entered from elsewhere (a branch from outside, a return into it, the
     dispatcher after its region ran out of steps) it is a block not compiled yet, counted from zero
     again and compiled as a head (with what it reaches in *that* batch) at the threshold. So only
-    blocks with several hot entries are compiled more than once (Alpine's boot: 47,200 functions
-    of 49,400 blocks became 28,500 of 53,500, in 27.2 MB of wasm instead of 23.6).
-    JIT-stress compiles a block at a time, so it makes none; JIT-check and the tests' forced
-    mode take any block in reach, as their loop regions do.
+    blocks with several hot entries are compiled more than once.
+    - **Across pages:** a successor in another page is the batch's block that was seen at that VA
+      (with the MMU off, the block at that PA). Members' positions are their VAs relative to the
+      head's, and an edge into a member checks that the member's VA still maps to its page
+      (the instruction TLB, as a chained successor's does: `Region::checked`), unless the member
+      is where its predecessor's page or the head's has it; if the check fails the edge isn't
+      taken and the successor is found by its VA. A region is filed under every page it has a
+      block in, so `IC IVAU` on any of them drops it. A loop that spans two pages is such a
+      region with an edge back to its head.
+    - **Calls and returns:** a call's target is taken like any successor, and a `ret` (of X30) in
+      what the call reaches is predicted to return after that call: the block there is taken
+      too, and the `ret` is an edge to it when X30 holds that address, an indirect branch
+      otherwise (`Region::returns`). Only for callees compiled in the same batch: one already
+      compiled keeps its own function.
+    - Alpine's boot: 47,200 functions of 49,400 blocks became 26,000 of 56,000, in 29.6 MB of
+      wasm instead of 23.6. JIT-stress compiles a block at a time, so it makes none; JIT-check
+      and the tests' forced mode take any block in reach in the head's page (any page with the
+      MMU off), as their loop regions do.
   - **Loop regions** (`block::region`): a hot block and the blocks that lead back to it by static
     edges (its loop; seen by the dispatcher). Without a loop the region is the head alone.
 - **Tier-up:** a loop head is first compiled **alone** with a hot word (one u32 per code-cache
@@ -189,7 +202,8 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
 - `CTR_EL0.DIC = 0`, so guests issue `IC IVAU`/`IC IALLU(IS)`. Those leave the interpreter with
   `Exit::Invalidate(pa)` (`u64::MAX` for IALLU), and the run loop drops the blocks of that
   physical page (a map from page to the keys filed under it, so IVAU on a page without code costs
-  one lookup) or all of them. Invalidation is per 4 KiB page.
+  one lookup) or all of them. Invalidation is per 4 KiB page; a forward region with blocks in
+  several pages is filed under each.
 - **The stale-code checker** (`jit::Config::check`, on in JIT-stress) hashes each block's words
   when it's compiled and again at every entry (chained entries and back-edges call
   `jit_check(vcpu, key)`), and panics (trapping the wasm run) on a mismatch. In parallel SMP each
@@ -345,7 +359,13 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   and it runs in the cold code that is most of a boot (guest code +17 to 20% in both V8 tiers).
   Forming the regions when the batch is compiled needs no prologue, no second compile and no
   redirect, and was faster everywhere (`bench/boot/REPORT.md` "M8: forward regions"). Tried with
-  them and flat within noise: 8 or 32 blocks a region instead of 16, and taking calls' targets.
+  them and flat within noise: 8 or 32 blocks a region instead of 16.
+- **Copies of compiled callees in their callers' regions** (M8, with calls followed): a callee
+  that is already compiled (the usual case: a shared function is hot long before a given caller)
+  copied into the caller's region so the call and its predicted return stay inside. Limited to
+  small leaf functions (every path returns within 4 or 10 blocks, no calls), it changed nothing:
+  few calls qualify. Unlimited, it made 80% more wasm (Alpine's boot 30% slower, churn 20%)
+  and no phase faster. The patch is in `bench/boot/results/m8-xpage/`.
 - **Vector registers in locals** wasn't built: no profile asked for it (the boots and CoreMark use
   little NEON). It's the lever for AES-CBC (latency-bound on the V registers' store and reload
   between instructions) and NEON-heavy code generally.

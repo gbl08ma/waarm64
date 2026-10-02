@@ -154,6 +154,11 @@ pub struct Region {
     /// A loop head compiled alone until it's hot (step 8.3): the address of
     /// its hot word ([`emit::tier_up`]).
     pub tier: Option<u32>,
+    /// Predicted returns ([`forward`]): the key of a member that ends in
+    /// `ret`, reached through a call made in the region, and the VA after
+    /// that call. When X30 holds it, the return is an edge to the member
+    /// there instead of an indirect branch.
+    pub returns: Vec<(u64, u64)>,
 }
 
 impl From<Block> for Region {
@@ -161,14 +166,67 @@ impl From<Block> for Region {
         Region {
             blocks: vec![b],
             tier: None,
+            returns: vec![],
         }
     }
 }
 
 impl Region {
-    /// The member at `key`, if any.
-    fn pos(&self, key: u64) -> Option<usize> {
-        self.blocks.iter().position(|b| b.key == key)
+    fn of(blocks: Vec<Block>) -> Region {
+        Region {
+            blocks,
+            tier: None,
+            returns: vec![],
+        }
+    }
+
+    /// The member a return from member `i` is predicted to go to, with the
+    /// byte offset from `i`'s entry of the VA it returns to: a later member
+    /// (the edge is a forward branch).
+    fn returns_to(&self, i: usize) -> Option<(usize, i64)> {
+        let b = &self.blocks[i];
+        let &(_, va) = self.returns.iter().find(|r| r.0 == b.key)?;
+        let j = self.blocks.iter().position(|m| m.va == va)?;
+        (j > i).then_some((j, va.wrapping_sub(b.va) as i64))
+    }
+
+    /// The member that a static edge of member `i`, to byte offset `off`
+    /// from its entry, goes to: the one at that VA (members' VAs are their
+    /// offsets from the head's, wherever the region runs).
+    fn target(&self, i: usize, off: i64) -> Option<usize> {
+        let va = self.blocks[i].va.wrapping_add(off as u64);
+        self.blocks.iter().position(|m| m.va == va)
+    }
+
+    /// Whether the edge from member `i` to member `j` must check that `j`'s
+    /// VA maps to `j`'s page first (MMU on): not when `j` is where `i`'s own
+    /// page has it (the code running is `i`'s) or where the head's has it
+    /// (what entered the region found the head by its VA, and nothing inside
+    /// a region changes a mapping). A member in another page was only found
+    /// at that VA when the region was formed.
+    fn checked(&self, i: usize, j: usize) -> bool {
+        let (head, from, to) = (&self.blocks[0], &self.blocks[i], &self.blocks[j]);
+        let follows = |a: &Block| {
+            (a.key ^ to.key) >> 12 == 0
+                && (to.key & !3).wrapping_sub(a.key & !3) == to.va.wrapping_sub(a.va)
+        };
+        head.key & KEY_MMU != 0 && !follows(from) && !follows(head)
+    }
+
+    /// The members that member `i`'s static edges go to.
+    fn targets(&self, i: usize) -> impl Iterator<Item = usize> + '_ {
+        offsets(&self.blocks[i].words)
+            .into_iter()
+            .filter_map(move |o| self.target(i, o))
+    }
+}
+
+/// A block's static successors as byte offsets from its entry (the taken side first).
+fn offsets(words: &[u32]) -> Vec<i64> {
+    match next(words) {
+        Next::None => vec![],
+        Next::One(o) => vec![o],
+        Next::Cond(t, n) => vec![t, n],
     }
 }
 
@@ -224,7 +282,7 @@ pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region
     blocks.reverse();
     // No words (the code at `key` changed since it was queued): no region.
     if blocks.is_empty() {
-        return Region { blocks, tier: None };
+        return Region::of(blocks);
     }
     // Only the loop: the blocks from which the head is reachable.
     let mut keep = vec![false; blocks.len()];
@@ -241,53 +299,114 @@ pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region
     }
     let mut k = keep.into_iter();
     blocks.retain(|_| k.next().expect("one per block"));
-    Region { blocks, tier: None }
+    Region::of(blocks)
 }
 
 /// The forward region headed by the block at `key`: the blocks that static
-/// edges within its page reach from it and `member(key)` admits, up to
-/// [`REGION`], in reverse postorder. A call's target isn't followed (it
-/// heads its own unit: every caller in the page would hold a copy
-/// otherwise). Where [`region`] is a loop, compiled once its head is hot,
-/// this is straight-line code and its branches, compiled together the first
-/// time (`Cache::emit`): the edges between its blocks keep registers and
-/// flags in locals instead of leaving one function for the next. Empty if
-/// the head would have no words.
-pub fn forward(mem: &Mem, key: u64, va: u64, member: &dyn Fn(u64) -> bool) -> Region {
-    fn visit(
-        mem: &Mem,
-        b: Block,
-        member: &dyn Fn(u64) -> bool,
-        seen: &mut Vec<u64>,
-        post: &mut Vec<Block>,
-    ) {
-        let call = b.words.last().map(|&w| decode(w)) == Some(Op::BL);
-        for s in succs(b.key, &b.words) {
-            if call
-                || (s ^ b.key) >> 12 != 0
-                || seen.contains(&s)
-                || seen.len() >= REGION
-                || !member(s)
-            {
-                continue;
+/// edges reach from it and `member` admits, up to [`REGION`], in reverse
+/// postorder. `member(va, key)` gets a successor's VA and, when it is in its
+/// predecessor's page, its key; it gives the key of the block to take (for
+/// one in another page: the block it knows at that VA, which the emitted
+/// edge checks is still there, [`Region::checked`]).
+///
+/// **Calls are followed**, and a `ret` (of X30) in what a call reaches is
+/// predicted to return after that call: the block there is taken as the
+/// `ret` block's successor ([`Region::returns`]), so a call and its return
+/// can both stay inside the function. A callee reached from a second call
+/// keeps its first prediction.
+///
+/// Where [`region`] is a loop, compiled once its head is hot, this is
+/// straight-line code, its branches and its calls, compiled together the
+/// first time (`Cache::plan`): the edges between its blocks keep registers
+/// and flags in locals instead of leaving one function for the next. Empty
+/// if the head would have no words.
+pub fn forward(
+    mem: &Mem,
+    key: u64,
+    va: u64,
+    member: &dyn Fn(u64, Option<u64>) -> Option<u64>,
+) -> Region {
+    struct Walk<'a> {
+        mem: &'a Mem,
+        member: &'a dyn Fn(u64, Option<u64>) -> Option<u64>,
+        /// The blocks taken so far: (key, VA).
+        seen: Vec<(u64, u64)>,
+        post: Vec<Block>,
+        returns: Vec<(u64, u64)>,
+    }
+    impl Walk<'_> {
+        /// Takes the block at `va` (`near`: its key, if it's in the page of
+        /// the block that leads to it) unless it or its VA is taken, and
+        /// what it reaches; `calls` are the returns pending: the VA after
+        /// each call on the way here, and its key if it's in the call's page.
+        fn take(&mut self, va: u64, near: Option<u64>, calls: &[(u64, Option<u64>)]) {
+            if self.seen.len() >= REGION {
+                return;
             }
-            let words = form(mem, s & !3);
+            let Some(key) = (self.member)(va, near) else {
+                return;
+            };
+            if self.seen.iter().any(|&(k, v)| k == key || v == va) {
+                return;
+            }
+            let words = form(self.mem, key & !3);
             if !words.is_empty() {
-                seen.push(s);
-                let va = b.va.wrapping_add(s & !3).wrapping_sub(b.key & !3);
-                visit(mem, Block { key: s, va, words }, member, seen, post);
+                self.seen.push((key, va));
+                self.visit(Block { key, va, words }, calls);
             }
         }
-        post.push(b);
+
+        fn visit(&mut self, b: Block, calls: &[(u64, Option<u64>)]) {
+            let last = b.words.last().copied().unwrap_or(0);
+            let after = 4 * b.words.len() as i64;
+            match decode(last) {
+                Op::BL => {
+                    let k = succ(b.key, after);
+                    let near = ((k ^ b.key) >> 12 == 0).then_some(k);
+                    let mut calls = calls.to_vec();
+                    calls.push((b.va.wrapping_add(after as u64), near));
+                    for o in offsets(&b.words) {
+                        self.edge(&b, o, &calls);
+                    }
+                }
+                Op::RET if crate::interp::bits(last, 9, 5) == 30 => {
+                    if let Some((&(va, near), calls)) = calls.split_last() {
+                        self.returns.push((b.key, va));
+                        self.take(va, near, calls);
+                    }
+                }
+                _ => {
+                    for o in offsets(&b.words) {
+                        self.edge(&b, o, calls);
+                    }
+                }
+            }
+            self.post.push(b);
+        }
+
+        fn edge(&mut self, b: &Block, o: i64, calls: &[(u64, Option<u64>)]) {
+            let k = succ(b.key, o);
+            let near = ((k ^ b.key) >> 12 == 0).then_some(k);
+            self.take(b.va.wrapping_add(o as u64), near, calls);
+        }
     }
+    let mut w = Walk {
+        mem,
+        member,
+        seen: vec![(key, va)],
+        post: vec![],
+        returns: vec![],
+    };
     let words = form(mem, key & !3);
-    let mut blocks = vec![];
     if !words.is_empty() {
-        let head = Block { key, va, words };
-        visit(mem, head, member, &mut vec![key], &mut blocks);
+        w.visit(Block { key, va, words }, &[]);
     }
-    blocks.reverse();
-    Region { blocks, tier: None }
+    w.post.reverse();
+    Region {
+        blocks: w.post,
+        tier: None,
+        returns: w.returns,
+    }
 }
 
 impl Region {
@@ -299,11 +418,7 @@ impl Region {
     /// The members (not the head) that no member branches back to: none
     /// heads an inner loop.
     pub fn inner_free(&self) -> Vec<u64> {
-        let back = |j: usize| {
-            self.blocks[j..]
-                .iter()
-                .any(|b| succs(b.key, &b.words).contains(&self.blocks[j].key))
-        };
+        let back = |j: usize| (j..self.blocks.len()).any(|i| self.targets(i).any(|t| t == j));
         (1..self.blocks.len())
             .filter(|&j| !back(j))
             .map(|j| self.blocks[j].key)
@@ -312,15 +427,8 @@ impl Region {
 
     /// The edges back to the head.
     pub fn back_edges(&self) -> usize {
-        let head = self.blocks[0].key;
-        self.blocks
-            .iter()
-            .map(|b| {
-                succs(b.key, &b.words)
-                    .iter()
-                    .filter(|&&s| s == head)
-                    .count()
-            })
+        (0..self.blocks.len())
+            .map(|i| self.targets(i).filter(|&t| t == 0).count())
             .sum()
     }
 }
@@ -527,11 +635,14 @@ pub fn module(
         out.inl.push(n);
         let mut links = vec![];
         for (i, b) in r.blocks.iter().enumerate() {
-            for k in succs(b.key, &b.words) {
-                if r.pos(k).is_none_or(|j| j <= i && j != 0)
-                    && funcs.contains_key(&k)
-                    && !links.contains(&k)
-                {
+            for o in offsets(&b.words) {
+                // What leaves the region for a compiled block, or may (an
+                // edge whose check fails).
+                let k = succ(b.key, o);
+                let stays = r
+                    .target(i, o)
+                    .is_some_and(|j| (j > i || j == 0) && !r.checked(i, j));
+                if !stays && funcs.contains_key(&k) && !links.contains(&k) {
                     links.push(k);
                 }
             }
@@ -584,7 +695,7 @@ struct Emission {
 /// state.
 fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]) -> Emission {
     let n = r.blocks.len();
-    let head = r.blocks[0].key & !3;
+    let head = r.blocks[0].va;
     let mut c = emit::Func::default();
     c.plain = plain;
     let mut into = vec![emit::Regs::default(); n];
@@ -609,7 +720,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
         if i > 0 {
             c.end(); // member i's label
         }
-        c.base = (b.key & !3).wrapping_sub(head) as i64;
+        c.base = b.va.wrapping_sub(head) as i64;
         c.regs = entry[i];
         c.fp_ok = false;
         c.fpa_ok = false;
@@ -618,7 +729,10 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
             _ => None,
         });
         let len = b.words.len() as u32;
-        let internal = |off: i64| r.pos(succ(b.key, off)).filter(|&j| j > i || j == 0);
+        let internal = |off: i64| r.target(i, off).filter(|&j| j > i || j == 0);
+        // A successor that leaves the region: not a member, or one whose
+        // edge has a check that may fail.
+        let leaves = |off: i64| internal(off).is_none_or(|j| r.checked(i, j));
         let succs = next(&b.words);
         // An edge to member `j` with these lazy flags must store NZCV first.
         let store = |j: usize, lazy: Option<(emit::Kind, bool)>| match fin[j] {
@@ -687,11 +801,22 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
         dead[i] = c.touched == Some(false);
         // Edges to later members and back to the head: NZCV stored on the
         // way unless the member's flags are dead or its edges' lazy ones.
-        let mut edge = |c: &mut emit::Func, j: usize, depth: u32| {
-            let jlen = r.blocks[j].words.len() as u32;
+        // `when`: an i32 on the stack that must hold too.
+        let mut edge = |c: &mut emit::Func, j: usize, depth: u32, when: bool| {
+            let to = &r.blocks[j];
+            let jlen = to.words.len() as u32;
             c.local_get(emit::LEFT)
                 .i32_const((len + jlen) as i32)
                 .op(0x4f); // i32.ge_u
+            if when {
+                c.op(0x71); // i32.and
+            }
+            if r.checked(i, j) {
+                let exec = emit::tlb_array(b.key & KEY_EL1, 2);
+                let host = e.base.wrapping_add((to.key & !3) - e.phys);
+                emit::maps_to(c, to.va.wrapping_sub(b.va) as i64, exec, host);
+                c.op(0x71); // i32.and
+            }
             c.hint(true).if_();
             let (here, fl) = (c.regs, c.flags);
             into[j] = into[j].merge(here, 0);
@@ -718,7 +843,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
         match succs {
             Next::One(o) => {
                 if let Some(j) = internal(o) {
-                    edge(&mut c, j, 0);
+                    edge(&mut c, j, 0, false);
                 }
             }
             Next::Cond(t, o) => match (internal(t), internal(o)) {
@@ -729,15 +854,21 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
                         c.op(0x45); // i32.eqz
                     }
                     c.if_();
-                    edge(&mut c, jt.or(jo).expect("one side"), 1);
+                    edge(&mut c, jt.or(jo).expect("one side"), 1, false);
                     if let (Some(_), Some(j)) = (jt, jo) {
                         c.else_();
-                        edge(&mut c, j, 1);
+                        edge(&mut c, j, 1, false);
                     }
                     c.end();
                 }
             },
-            Next::None => {}
+            // A return predicted to its call's site.
+            Next::None => {
+                if let Some((j, off)) = r.returns_to(i) {
+                    emit::returns_to(&mut c, off);
+                    edge(&mut c, j, 0, true);
+                }
+            }
         }
         // The rest leave the region (or stay when `left` doesn't cover them).
         c.flush();
@@ -758,26 +889,26 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
         }
         match succs {
             Next::One(o) => {
-                if internal(o).is_none() {
+                if leaves(o) {
                     chain(e, &mut c, b, o);
                 }
             }
-            Next::Cond(t, o) => match (internal(t), internal(o)) {
-                (None, None) => {
+            Next::Cond(t, o) => match (leaves(t), leaves(o)) {
+                (true, true) => {
                     c.local_get(emit::TAKEN).if_();
                     chain(e, &mut c, b, t);
                     c.else_();
                     chain(e, &mut c, b, o);
                     c.end();
                 }
-                (Some(_), Some(_)) => {}
-                (jt, _) => {
+                (false, false) => {}
+                (lt, _) => {
                     c.local_get(emit::TAKEN);
-                    if jt.is_some() {
+                    if !lt {
                         c.op(0x45); // i32.eqz
                     }
                     c.if_();
-                    chain(e, &mut c, b, if jt.is_some() { o } else { t });
+                    chain(e, &mut c, b, if lt { t } else { o });
                     c.end();
                 }
             },
@@ -1345,7 +1476,7 @@ mod tests {
     }
 
     #[test]
-    fn a_forward_region_is_the_blocks_in_reach_without_calls() {
+    fn a_forward_region_is_the_blocks_in_reach_with_calls_and_their_returns() {
         // 0x100: cbz x1, 0x10c
         // 0x104: add x2, x2, #1; b 0x110
         // 0x10c: add x2, x2, #2
@@ -1358,40 +1489,88 @@ mod tests {
         ];
         let (_r, m) = mem_with(0x100, &words);
         let keys = |r: &Region| r.blocks.iter().map(|b| b.key).collect::<Vec<_>>();
-        // Reverse postorder: the head, its fall-through side and where
-        // that branches, the taken side (a block runs on to its branch: the
-        // one at 0x10c holds 0x110's words too); not the call's target (nor
-        // what follows the call: a return isn't a static edge).
-        let r = forward(&m, 0x100, 0x100, &|_| true);
-        assert_eq!(keys(&r), [0x100, 0x104, 0x110, 0x10c]);
+        // Reverse postorder: the head, its fall-through side and where that
+        // branches, the taken side (a block runs on to its branch: the one
+        // at 0x10c holds 0x110's words too), the function both call, and
+        // the block after the call, where its `ret` is predicted to return.
+        let r = forward(&m, 0x100, 0x100, &|_, k| k);
+        assert_eq!(keys(&r), [0x100, 0x104, 0x110, 0x10c, 0x120, 0x118]);
         assert_eq!(r.blocks[3].words.len(), 3);
+        assert_eq!(r.returns, [(0x120, 0x118)]);
+        assert_eq!(r.returns_to(4), Some((5, -8)));
         assert!(!r.looped());
         // Only the blocks admitted, and what they reach.
-        let only = |f: &dyn Fn(u64) -> bool| keys(&forward(&m, 0x100, 0, f));
-        assert_eq!(only(&|k| k != 0x104), [0x100, 0x10c]);
-        assert_eq!(only(&|k| k == 0x104), [0x100, 0x104]);
-        // One function without a loop. x2 stays in its local from 0x104 into
-        // 0x110: it's stored where a block leaves (the two calls, and 0x104's
-        // own way out when the steps left don't cover 0x110), not on the
-        // edge between them.
-        let e = module(&[r], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES);
-        assert_eq!(e.inl, [8]);
-        assert!(!has(&e.bytes, &[0x03, 0x40]));
-        let stores = |x: u8| {
-            e.bytes
-                .windows(3)
-                .filter(|w| *w == [0x37, 3, 8 * x])
-                .count()
+        let only = |f: &dyn Fn(u64) -> bool| {
+            let r = forward(&m, 0x100, 0, &|_, k| k.filter(|&k| f(k)));
+            (keys(&r), r.returns.len())
         };
-        assert_eq!(stores(2), 3);
+        assert_eq!(only(&|k| k != 0x104), (vec![0x100, 0x10c, 0x120, 0x118], 1));
+        assert_eq!(only(&|k| k == 0x104), (vec![0x100, 0x104], 0));
+        // Without the block after the call the return isn't an edge.
+        let r5 = forward(&m, 0x100, 0x100, &|_, k| k.filter(|&k| k != 0x118));
+        assert_eq!((r5.blocks.len(), r5.returns_to(4)), (5, None));
+        // One function without a loop, every instruction inline. The
+        // callee's return to the block after the call is an edge: taken when
+        // x30 is that address (the entry PC + 0x18) and the steps left cover
+        // both blocks, with the `ret`'s indirect branch behind it.
+        let e = module(
+            &[r],
+            &test_mem(),
+            |_| None,
+            false,
+            0x10_0000,
+            crate::cpu::FEATURES,
+        );
+        assert_eq!(e.inl, [10]);
+        assert!(!has(&e.bytes, &[0x03, 0x40]));
+        #[rustfmt::skip]
+        let predicted = [
+            0x20, 3, 0x42, 0x18, 0x7c, 0x51,          // … == entry PC + 0x18
+            0x20, 2, 0x41, 2, 0x4f, 0x71, 0x04, 0x40, // and left >= 2: if
+        ];
+        let at = e
+            .bytes
+            .windows(predicted.len())
+            .position(|w| w == predicted);
+        let indirect = e.bytes.windows(4).rposition(|w| w == [0x28, 2, 8, 0x13]);
+        assert!(at.is_some() && at < indirect, "{at:?} {indirect:?}");
+        assert_eq!(
+            module(&[r5], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES).inl,
+            [9]
+        );
         // Not past the page, and nothing where the head has no words.
         let (_r, m) = mem_with(0xff8, &[ADD, 0x14000002, ADD, ADD, 0xd65f03c0]);
-        assert_eq!(forward(&m, 0xff8, 0, &|_| true).blocks.len(), 1);
+        assert_eq!(forward(&m, 0xff8, 0xff8, &|_, k| k).blocks.len(), 1);
+        // A block of another page is the one `member` knows at that VA.
+        // With the MMU off that's its PA, and the edge needs no check; with
+        // it on, the edge checks the mapping unless the member is where its
+        // predecessor's page, or the head's, has it.
+        let r = forward(&m, 0xff8, 0xff8, &|va, k| k.or(Some(va)));
+        assert_eq!(keys(&r), [0xff8, 0x1004]);
+        assert!(!r.checked(0, 1));
+        let mmu = |keys: [u64; 3]| Region {
+            blocks: [(keys[0], 0x7000), (keys[1], 0x8000), (keys[2], 0x7100)]
+                .map(|(k, va)| Block {
+                    key: k | KEY_MMU,
+                    va,
+                    words: vec![NOP],
+                })
+                .into(),
+            tier: None,
+            returns: vec![],
+        };
+        // 0x7000 at PA 0x3000, 0x8000 at PA 0x9000, and back in the head's page.
+        let r = mmu([0x3000, 0x9000, 0x3100]);
+        assert!(r.checked(0, 1) && !r.checked(1, 2) && !r.checked(1, 0));
+        // The member at 0x7100 isn't where the head's page has it: checked,
+        // even from the head (a block another address space had at that VA).
+        let r = mmu([0x3000, 0x9000, 0x5100]);
+        assert!(r.checked(0, 2) && r.checked(1, 2));
         let (_r, m) = mem_with(0x100, &[0xd4000001]); // svc #0
-        assert!(forward(&m, 0x100, 0, &|_| true).blocks.is_empty());
+        assert!(forward(&m, 0x100, 0, &|_, k| k).blocks.is_empty());
         // At most REGION blocks: a chain of branches to the next word.
         let (_r, m) = mem_with(0x100, &[0x14000001; 40]);
-        assert_eq!(forward(&m, 0x100, 0, &|_| true).blocks.len(), REGION);
+        assert_eq!(forward(&m, 0x100, 0, &|_, k| k).blocks.len(), REGION);
     }
 
     #[test]
@@ -1455,6 +1634,7 @@ mod tests {
                 words: vec![MOVZ, 0x14000002],
             }],
             tier: Some(0x2000),
+            returns: vec![],
         };
         let e = module(&[r], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES);
         assert!(has(&e.bytes, b"\x07jit_hot"));

@@ -708,3 +708,104 @@ caught: a forward edge that doesn't bring the registers to the member's entry st
 programs differ), a region that takes a block of the next physical page (the cross-page test: the
 decoy's code runs), members left in the batch (compiled twice at once: the plan's unit test and
 the end-to-end function count).
+
+## M8: regions across pages; calls followed, returns predicted
+
+2026-10-02, the M4 VM, on `311d21e` (forward regions). **Where calls and returns go** (Node, a
+diagnostic build; per 1000 instructions): calls to another page 7 to 19 against 1 to 4 within one,
+returns to another page 8 to 20 against 1 to 4, other direct branches to another page 6 to 17. So
+85 to 90% of calls and returns cross a page, where a region ended. Two changes (docs/jit.md
+"Compile policy"):
+
+- **A forward region takes blocks of other pages**: the batch's block seen at the successor's VA,
+  entered through an edge that checks the mapping (unless the member is where its predecessor's
+  page or the head's has it); the region is filed under each of its pages.
+- **Calls are followed, and a `ret` is predicted** to return after the call that led to it: an
+  edge to the block there when X30 says so, the indirect branch otherwise.
+
+**Chromium 153.0.8010.52, alternated A, B, A, B** (A: `311d21e`; B: both changes; medians, IQR;
+`results/m8-xpage/`, `../interp/results/m8-xpage/`):
+
+| | A | B | |
+|---|---|---|---|
+| `alpine_user_jit` compress (ms) | 2463 (122), 2448 (122) | 2389 (8), 2407 (7) | −2% |
+| Lua | 3893 (104), 3890 (25) | 3719 (12), 3734 (16) | −4% |
+| churn | 2056 (54), 1993 (6) | 1954 (18), 1970 (4) | −3% |
+| SQLite | 3202 (41), 3207 (25) | 2940 (17), 2934 (10) | −8% |
+| total, to power-off | 21,138 (347), 20,913 (265) | 20,387 (101), 20,537 (91) | −2.7% |
+| Alpine boot to power-off, warm / cold (one pair) | 9852 (88) / 9874 (173) | 9871 (26) / 9921 (13) | |
+| Buildroot boot to power-off, warm / cold (one pair) | 725 (4) / 754 (17) | 775 (3) / 802 (8) | **+7%, +6%** |
+| CoreMark, user mode (it/s) | 9982 (202), 9874 (273) | 10,088 (72), 10,069 (51) | +1.4% |
+| EL1 guest, MMU on / integer guest (MIPS) | 3960, 3933 / 5135, 5125 | 3891, 3953 / 5141, 5112 | |
+
+Steps unchanged (10,763,178,470; 2,856,663,287; 40,505,789). Alpine's boot: 28,469 functions →
+26,007, wasm 27.2 → 29.6 MB (+9%); the userspace run 31.4 → 34.1 MB. Buildroot's boot loses again
+(it is 15% slower than before forward regions: more wasm compiled while everything is cold). The
+day's three JIT changes together: the userspace benchmark 24.2 → 20.5 s (−15%), Lua −28%, SQLite
+−27%, compress −17%, churn −11%.
+
+**Smaller than the counts promised, and why** (the same diagnostic, before → after, Lua / SQLite):
+calls leaving for another page 8.8 → 6.1 / 11.7 → 7.5, returns to another page 10.0 → 9.2 / 15.7 →
+14.4, other direct branches to another page 13.4 → 10.4 / 17.0 → 8.4. A region takes only blocks
+of **its own batch**, and a shared callee is compiled long before most of its callers: the call
+still leaves, and then nothing predicts the return.
+
+**Tried on top, not kept** (Node; `results/m8-xpage/callee-copies-experiment.patch`): copying an
+already compiled callee into the caller's region (found through the instruction TLB). Only small
+leaf functions (every path returns within 4, or 10, blocks, without calls): no phase moved (Lua
+3.40, 3.43 → 3.47 to 3.54 s). Any callee, up to the region's 16 blocks: wasm +80% (Alpine's boot
+27 → 48 MB, 7.0 → 9.2 s; churn 1.4 → 1.65 s), Lua 3.42 s, SQLite 2.72 → 2.82 s. So what calls and
+returns still cost is not for want of inlining; it is the price of each transfer that leaves
+(docs/backlog.md "JIT": the indirect transfers, and on this host the write-backs' bounds checks).
+
+**Tests:** `block::tests::a_forward_region_is_the_blocks_in_reach_with_calls_and_their_returns`
+(formation, `Region::checked`, the predicted return's bytes); in `tests/jit.test.ts`, two calls of
+one function in one region (one return predicted, one not), and a region across two pages that
+aren't contiguous physically (remapped to a decoy and back; rewritten with `ic ivau` on its second
+page). Planted bugs caught: the edge into another page without its check (the old page's code
+runs after the remap), a region filed under its head's page only (the rewritten page's old code
+runs), a predicted return taken without comparing X30 (x6 66,668 for 200,000).
+
+**The stale-code checker and `maint.bin` without its `IC IVAU`** (`tests/boot-node-suite.ts`): the
+default JIT used to fail the guest's check 401 there (the rewritten function's old code ran, as
+is allowed without the IC). With calls followed, the old code is inside the region of the loop
+that called it, and the checking call, from another block, finds the function not compiled and
+interprets the new code: the test now accepts either under the default JIT, and still requires
+JIT-check's checker to trap (it does). **Tried and not kept:** the checker on every edge inside a
+region, not only at entries and back-edges (a member can be rewritten by code of its own region,
+which the checker then sees only at the region's next entry): JIT-check re-hashes the whole
+region at each edge, and the 4-vCPU litmus test under it took 24 min instead of 71 s.
+
+**A parallel-SMP panic in forward regions, found here and fixed** (it is in `311d21e` too): a batch
+reads each head's words twice (`Cache::plan`: once to find loops, once to form the forward region),
+and on parallel vCPUs another vCPU can rewrite the code in between (Linux patching itself at boot).
+The second read then gives no blocks, and an unguarded `blocks[1..]` panicked in the vCPU's worker:
+a 2-vCPU Buildroot boot "hung" about once in 20 to 200 boots (`trim.test.ts` in CI, `ci-long`).
+After the fix, 500 boots on 2 vCPUs and 200 on 4 in a row (an ad-hoc loop) all powered off.
+
+## M8: the same builds on the Mac host (no explicit bounds checks)
+
+2026-10-02. `alpine_user_jit` in Chromium 153.0.8010.12 (Playwright's Chrome for Testing,
+headless) **on the Mac host itself** (the M4 Mac mini, macOS 26.6, where V8 has its wasm trap
+handler and JIT code carries no explicit bounds checks), through `bench/run-mac.sh` (new: it
+copies the pages, the core and the images there). Medians (IQR) of 3 boots, the builds alternated;
+`results/m8-mac/`. The dev VM's numbers are the sections above (Chromium 153.0.8010.52).
+
+| ms | compress | Lua | churn | SQLite | total |
+|---|---|---|---|---|---|
+| `d43a536` (before the day's JIT changes) | 2254, 2265 | 4460, 4501 | 1268, 1272 | 3307, 3346 | 17,978, 18,123 |
+| `311d21e` (chaining by VA, forward regions) | 1955, 1972 | 3381, 3400 | 1117, 1119 | 2654, 2693 | 15,249, 15,373 |
+| regions across pages, predicted returns | 1836, 1878, 1886 | 3126, 3208, 3226 | 1066, 1100, 1091 | 2304, 2343, 2356 | 14,375, 14,657, 14,691 |
+| the same, `--wasm-enforce-bounds-checks` | 2862, 2875 | 4062, 4068 | 1854, 1791 | 3598, 3589 | 21,616, 21,423 |
+| the same, in the dev VM (above) | 2389, 2407 | 3719, 3734 | 1954, 1970 | 2940, 2934 | 20,387, 20,537 |
+
+- **A macOS user's machine runs the benchmark in 14.6 s where the dev VM takes 20.5 s**, and the
+  difference is the bounds checks: with them enforced, the Mac takes 21.5 s. Explicit checks cost
+  47% of the whole run there (compress +53%, Lua +27%, churn +68%, SQLite +54%), in the core's
+  own code as well as the JIT's. QEMU TCG runs it in 11.2 s.
+- **The day's JIT changes are worth more without the checks:** 18.0 → 14.6 s (−19%; Lua −29%,
+  SQLite −30%, compress −17%, churn −14%) against −15% in the VM. Regions across pages with
+  predicted returns alone: −4.5% (SQLite −13%, Lua −5.5%) against −2.7%.
+- So the VM's profiles overstate what a region's write-backs cost a macOS or x86_64 user (they are
+  what the checks guard), and the fixed-size memory (docs/backlog.md) is a matter for Linux arm64
+  and Android hosts only.

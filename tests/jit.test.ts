@@ -177,7 +177,8 @@ test('a hot loop head compiled alone tiers up to its loop region', () => {
 // link is the right one) and back, with a `tlbi vmalle1` in between.
 const PTE = 0xf03n; // a page: valid, AF, nG, inner shareable, EL1 read/write/execute
 const BODY = (reg: number) => [0x91000400 | reg << 5 | reg, 0xf10004a5, 0x54ffff81, 0xd4200000]; // add reg; subs x5; b.ne .-16; brk
-function crossPage(threshold: number, check: number) {
+/** The two-page guest above on a JIT vCPU (`jit_new`'s arguments); each `run` is `turns` turns of the loop. */
+function twoPages(jit: [number, number, number, number, number], turns: bigint) {
   const { ex, memory } = core(true);
   const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
   const base = memory.grow(2) * 65536;
@@ -186,6 +187,7 @@ function crossPage(threshold: number, check: number) {
   code(0x5000, BODY(1));
   code(0x2000, BODY(2));
   code(0x6000, [0xd508871f, 0xd5033fdf, 0xd4200000]); // tlbi vmalle1; isb; brk
+  code(0x6010, [0xd50b7520, 0xd5033fdf, 0xd4200000]); // ic ivau, x0; isb; brk
   // TTBR0's tables at PA 0x10000: 0x400000–0x403fff through one level 3 table.
   const table = (pa: number) => new BigUint64Array(memory.buffer, base + pa, 512);
   table(0x10000)[0] = 0x11003n;
@@ -194,30 +196,46 @@ function crossPage(threshold: number, check: number) {
   const l3 = table(0x13000);
   [l3[0], l3[1], l3[2], l3[3]] = [0x1000n | PTE, 0x5000n | PTE, 0x6000n | PTE, 0x2000n | PTE];
 
-  const v = e.jit_new(threshold, 1, 64, check, 0) as number;
+  const v = e.jit_new(...jit) as number;
   const x = new BigUint64Array(memory.buffer, v, 134);
   x[832 / 8] = 0x3c5n; // PSTATE: EL1h, DAIF masked
   x[888 / 8] |= 1n; // SCTLR_EL1.M
   x[904 / 8] = 16n | 1n << 23n | 2n << 32n; // TCR_EL1: T0SZ 16, EPD1, a 40-bit IPS
   x[912 / 8] = 0x10000n; // TTBR0_EL1
   const mem = e.mem_new(base, 2n * 65536n), exit = e.vcpu_new() as number;
-  const stats = () => new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 11);
-  const run = (pc: bigint, x5: bigint) => {
+  const stats = () => new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 19);
+  const at = (pc: bigint, x5: bigint) => {
     [x[32], x[5]] = [pc, x5];
     const before = stats()[5];
-    const done = e.jit_run_exit(v, mem, 1_000_000n, exit) as bigint;
+    const done = e.jit_run_exit(v, mem, 100_000_000n, exit) as bigint;
     assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
     return { done, x1: x[1], x2: x[2], x3: x[3], x4: x[4], dispatches: stats()[5] - before };
   };
-  const remap = (pa: bigint) => {
-    l3[1] = pa | PTE;
-    assert.equal(run(0x402000n, 0n).done, 2n);
+  return {
+    code, stats,
+    /** The decoy once, through its own mapping. */
+    decoy: () => at(0x403000n, 1n),
+    run: () => at(0x400ff8n, turns),
+    /** Maps the loop's second page to `pa` and flushes the TLB. */
+    remap: (pa: bigint) => {
+      l3[1] = pa | PTE;
+      assert.equal(at(0x402000n, 0n).done, 2n);
+    },
+    /** `ic ivau` on the loop's second page. */
+    ic: () => {
+      x[0] = 0x401000n;
+      assert.equal(at(0x402010n, 0n).done, 2n);
+    },
   };
-  const out = [run(0x403000n, 1n), run(0x400ff8n, 1000n)];
-  remap(0x2000n);
-  out.push(run(0x400ff8n, 1000n));
-  remap(0x5000n);
-  out.push(run(0x400ff8n, 1000n));
+}
+
+function crossPage(threshold: number, check: number) {
+  const g = twoPages([threshold, 1, 64, check, 0], 1000n);
+  const out = [g.decoy(), g.run()];
+  g.remap(0x2000n);
+  out.push(g.run());
+  g.remap(0x5000n);
+  out.push(g.run());
   return out;
 }
 
@@ -237,40 +255,80 @@ test('with the MMU on, a direct branch to another page goes where its VA maps an
   }
 });
 
+// A forward region across pages (M8): with a threshold of 2 and a batch of 16, the loop's two
+// blocks are pending together and compiled as one function, a loop, whose edge into the second
+// page checks that the page is still mapped there. Remapped to the decoy, the edge isn't taken
+// (the decoy runs, found by its VA); mapped back, it is again. And the region goes with either of
+// its pages: the second page's `add x1, x1, #1` is rewritten to add 2, with an `ic ivau` on it.
+function crossPageRegion(threshold: number) {
+  const g = twoPages([threshold, 16, 64, 0, 1000], 400_000n);
+  const out = [g.decoy(), g.run()];
+  const [regions, blocks] = [g.stats()[0], g.stats()[16]];
+  g.remap(0x2000n);
+  out.push(g.run());
+  g.remap(0x5000n);
+  out.push(g.run());
+  g.code(0x5000, [0x91000821]); // add x1, x1, #2
+  g.ic();
+  out.push(g.run());
+  return { out, regions, blocks };
+}
+
+test('a forward region spans pages behind a check of the mapping, and goes with either page', () => {
+  const n = 400_000n;
+  const want = [
+    { done: 3n, x1: 0n, x2: 1n, x3: 0n, x4: 0n },
+    { done: 5n * n, x1: n, x2: 1n, x3: n, x4: n },
+    { done: 5n * n, x1: n, x2: 1n + n, x3: 2n * n, x4: 2n * n }, // remapped to the decoy
+    { done: 5n * n, x1: 2n * n, x2: 1n + n, x3: 3n * n, x4: 3n * n }, // and back
+    { done: 5n * n, x1: 4n * n, x2: 1n + n, x3: 4n * n, x4: 4n * n }, // the rewritten page
+  ];
+  const strip = (r: ReturnType<typeof crossPageRegion>) => r.out.map(({ dispatches: _, ...rest }) => rest);
+  assert.deepEqual(strip(crossPageRegion(0xffff_ffff)), want, 'interpreted');
+  const r = crossPageRegion(2);
+  assert.deepEqual(strip(r), want, 'JIT');
+  assert.deepEqual([r.regions, r.blocks], [1n, 2n], 'one function for the loop\'s two blocks');
+  for (const i of [1, 3]) assert.ok(r.out[i].dispatches < 20n, `run ${i}: ${r.out[i].dispatches} dispatches for ${r.out[i].done} steps`);
+});
+
 // Forward regions (M8, docs/jit.md "Compile policy"): the blocks of a batch that static edges
-// join are compiled as one function, each block once. A function with two sides and a join,
-// called in a loop (bit 0 of the counter picks the side):
-//   0x1000 L: bl f; subs x5, x5, #1; b.ne L; brk
-//   0x1020 f: tbz x5, #0, 0x102c
-//   0x1024    add x1, x1, #1; b 0x1030
-//   0x102c    add x2, x2, #1 (and on into 0x1030's words)
-//   0x1030    add x3, x3, #1; ret
+// join are compiled as one function, each block once; calls are followed, and a return is
+// predicted to the block after the call that led to it. Two calls of one function, one a turn
+// (bit 0 of the counter picks which):
+//   0x1000 H:  tbz x5, #0, S2
+//   0x1004 S1: bl f
+//   0x1008     add x6, x6, #1; b T
+//   0x1010 S2: bl f
+//   0x1014     add x7, x7, #1 (and on into T's words)
+//   0x1018 T:  subs x5, x5, #1; b.ne H; brk
+//   0x1040 f:  add x3, x3, #1; ret
 // With a threshold of 2 and a batch of 16 every block is pending when the batch is emitted (a
-// million steps after its first): `bl f`, f with its three successors, and what follows the
-// call. The call's target isn't taken into the caller's region, nor is L into the region of
-// the block that branches back to it (it heads its own).
+// million steps after its first). H's region takes both calls and f, whose `ret` is predicted
+// to return after the call at S2 (the side reached first); from S1's call it returns to
+// 0x1008, which only X30 says: a predicted return taken without comparing X30 would count in
+// x7 for both.
 function forwardRegion(threshold: number) {
   const { ex, memory } = core(true);
   const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
   const base = memory.grow(1) * 65536;
-  new Uint32Array(memory.buffer, base + 0x1000, 4).set([0x94000008, 0xf10004a5, 0x54ffffc1, 0xd4200000]);
-  new Uint32Array(memory.buffer, base + 0x1020, 6).set([0x36000065, 0x91000421, 0x14000002, 0x91000442, 0x91000463, 0xd65f03c0]);
+  new Uint32Array(memory.buffer, base + 0x1000, 9).set([0x36000085, 0x9400000f, 0x910004c6, 0x14000003, 0x9400000c, 0x910004e7, 0xf10004a5, 0x54ffff21, 0xd4200000]);
+  new Uint32Array(memory.buffer, base + 0x1040, 2).set([0x91000463, 0xd65f03c0]);
   const v = e.jit_new(threshold, 16, 64, 0, 1000) as number;
   const x = new BigUint64Array(memory.buffer, v, 33);
   [x[5], x[32]] = [400_000n, 0x1000n];
   const exit = e.vcpu_new() as number;
-  const done = e.jit_run_exit(v, e.mem_new(base, 65536n), 10_000_000n, exit) as bigint;
+  const done = e.jit_run_exit(v, e.mem_new(base, 65536n), 100_000_000n, exit) as bigint;
   assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
   const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 19);
-  return { done, x1: x[1], x2: x[2], x3: x[3], regions: st[0], blocks: st[16], dispatches: st[5], jitSteps: st[4] };
+  return { done, x3: x[3], x6: x[6], x7: x[7], regions: st[0], blocks: st[16], dispatches: st[5], jitSteps: st[4] };
 }
 
-test('the blocks of a batch that static edges join are compiled as one forward region', () => {
-  const want = { done: 3_000_000n, x1: 200_000n, x2: 200_000n, x3: 400_000n }; // 8 or 7 steps a turn
+test('the blocks of a batch that static edges join are one forward region, calls and predicted returns included', () => {
+  const want = { done: 3_000_000n, x3: 400_000n, x6: 200_000n, x7: 200_000n }; // 8 or 7 steps a turn
   const { regions: _r, blocks: _b, dispatches: _d, jitSteps: _j, ...interpreted } = forwardRegion(0xffff_ffff);
   assert.deepEqual(interpreted, want);
   const { regions, blocks, dispatches, jitSteps, ...jit } = forwardRegion(2);
   assert.deepEqual(jit, want);
-  assert.deepEqual([regions, blocks], [3n, 6n], 'three functions: the call, f with its three successors, what follows the call');
-  assert.ok(jitSteps > 1_000_000n && dispatches < 20n, `${dispatches} dispatches for ${jitSteps} steps in JIT code`);
+  assert.deepEqual([regions, blocks], [2n, 7n], 'two functions: H with both calls, f and what follows the second; what follows the first');
+  assert.ok(jitSteps > 1_500_000n && dispatches < 20n, `${dispatches} dispatches for ${jitSteps} steps in JIT code`);
 });

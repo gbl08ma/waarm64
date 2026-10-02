@@ -162,10 +162,15 @@ test('bare-metal smp.bin with 2.5 GiB of RAM, round-robin (JIT-check) and parall
 // The stale-code checker across vCPUs (M7 loop 4): maint.bin with its one
 // `IC IVAU` planted out (a NOP), so CPU 0 rewrites code the secondaries have
 // compiled without invalidating it. The interpreter has no code cache and
-// passes; the JIT runs the old code on CPU 1 (allowed without the IC: check
-// 401); JIT-check's checker traps (JIT-stress's 4-region cache has evicted the
+// passes. Under the JIT either is allowed without the IC, and which one runs
+// depends on where the old code was compiled: it failed check 401 (the old
+// code, on CPU 1) while the rewritten function had a wasm function of its own;
+// since calls are followed into forward regions (M8) the old code is inside
+// the region of the loop that called it, and the checking call, from another
+// block, finds the function not compiled and interprets the new code.
+// JIT-check's checker traps (JIT-stress's 4-region cache has evicted the
 // block by then). With the IC, JIT-check passes.
-test('bare-metal maint.bin without its IC IVAU: the JIT keeps the old code, the checker traps', async () => {
+test('bare-metal maint.bin without its IC IVAU: the JIT may keep the old code, the checker traps', async () => {
   const img = new Uint8Array(readFileSync(new URL('maint.bin', BAREMETAL)));
   const words = new Uint32Array(img.buffer);
   const ic = words.findIndex((w) => (w & ~31) >>> 0 === 0xd50b7520);
@@ -174,7 +179,7 @@ test('bare-metal maint.bin without its IC IVAU: the JIT keeps the old code, the 
   assert.equal((await boot({ ...o, kernel: readFileSync(new URL('maint.bin', BAREMETAL)) }, 3, 50e6)).x[1], 0n);
   words[ic] = 0xd503201f;
   assert.equal((await boot(o, 0, 50e6)).x[1], 0n);
-  assert.equal((await boot(o, 1, 50e6)).x[1], 401n);
+  assert.ok([0n, 401n].includes((await boot(o, 1, 50e6)).x[1]));
   await assert.rejects(boot(o, 3, 50e6), WebAssembly.RuntimeError);
 });
 

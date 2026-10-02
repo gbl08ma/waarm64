@@ -76,6 +76,12 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
   numbers.
 - **Don't fit the design to CoreMark:** well-optimized wasm runs 10–30% behind native on
   compute-bound code; CoreMark is at ~70% of QEMU TCG.
+- **The dev VM pays explicit wasm bounds checks that macOS and x86_64 don't** (47% of the userspace
+  benchmark: [v8.md](v8.md)). For what a macOS user gets, and before ranking work by a profile
+  taken here, run the page on the Mac host's Chromium: `bench/run-mac.sh <name> --page
+  bench/boot/index.html --only alpine_user_jit` (it copies the pages, the core and the Alpine and
+  Buildroot images to `~/webpc-bench` there; `WASM=` picks a core; results land in
+  `bench/results/local/mac/`). `--config bounds-checks` there shows the checks' cost on one machine.
 - Benchmarks run in the dev VM on the M4. Keep the `oracle` VM idle, check `ps` for leftover
   experiments first, and don't rebuild or edit served sources while a benchmark runs.
 - **Keep every benchmark command under the Bash tool's ~600 s cap** (fewer boots per call, or
@@ -89,17 +95,17 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
 ## Current numbers
 
 Chromium 153 on the M4 VM, JIT, crypto extensions on. webpc's boots, userspace and CoreMark are
-from 2026-10-02 (`bench/boot/REPORT.md` "M8: forward regions"; before that day's two JIT changes:
+from 2026-10-02 (`bench/boot/REPORT.md` "M8: regions across pages"; before that day's JIT changes:
 674 ms, 9.96 s, 24.1 s, 8602 it/s); the rest and the peers are M6's exit table and M6.5's exit
 (`bench/interp/REPORT.md`):
 
 | | webpc | QEMU TCG (same VM) | native (M4) |
 |---|---|---|---|
-| Buildroot boot to power-off, cold | 755 ms | 0.30 s | 0.10 s (hvf) |
-| Alpine boot to power-off, cold | 9.74 s | 5.4–5.6 s | 2.4 s (hvf) |
-| Alpine userspace | 20.9 s (compress 2.5, Lua 3.9, churn 2.0, SQLite 3.2) | 11.2 s | 2.9 s (hvf) |
+| Buildroot boot to power-off, cold | 802 ms | 0.30 s | 0.10 s (hvf) |
+| Alpine boot to power-off, cold | 9.9 s | 5.4–5.6 s | 2.4 s (hvf) |
+| Alpine userspace | 20.5 s (compress 2.4, Lua 3.7, churn 2.0, SQLite 2.9); **14.6 s on the Mac host** (1.9, 3.2, 1.1, 2.3) | 11.2 s | 2.9 s (hvf) |
 | Debian 13 boot to power-off | 42.2 s | 31.3 s | 2.4 s (hvf) |
-| CoreMark, user mode | 9930 it/s | 12,500 | 61,111 |
+| CoreMark, user mode | 10,080 it/s | 12,500 | 61,111 |
 | integer / FP guest | 5175 / 155 MIPS | | |
 | EL1 guest, MMU off / on | 4932 / 4045 MIPS | | |
 | `openssl speed` 16 KiB: AES-128-GCM / AES-128-CBC / SHA-256 | 232 / 151 / 298 MB/s | | |

@@ -69,6 +69,7 @@ for (const p of phases) {
     console.log(`  ${(blocks / 1e6).toFixed(0)}M block executions (${(st / blocks).toFixed(1)} instructions each); transfers per 1000 instructions:`);
     XFER.forEach((name, i) => console.log(`  ${(1000 * x(i) / st).toFixed(1).padStart(7)}  ${name}`));
     console.log(`  ${(1000 * (p.to.stats.jit.dispatches - p.from.stats.jit.dispatches) / st).toFixed(1).padStart(7)}  from the dispatcher`);
+    if (x(11) + x(12)) console.log(`  leaving a function: calls ${(1000 * x(11) / st).toFixed(1)} to the same page, ${(1000 * x(12) / st).toFixed(1)} to another; returns ${(1000 * x(13) / st).toFixed(1)} within the page, ${(1000 * x(14) / st).toFixed(1)} to another; other direct branches to another page ${(1000 * x(15) / st).toFixed(1)}`);
     if (x(10)) console.log(`  ${(1000 * x(10) / st).toFixed(1).padStart(7)}  through a head compiled alone to its region (a second tail call)`);
   }
   const tot = sum('D');

@@ -471,6 +471,11 @@ impl Cache {
             .zip(&loops)
             .map(|(p, r)| (p.0, if heads_loop(r) { LOOP } else { FREE }))
             .collect();
+        // The batch's blocks by the VA they were seen at (and their regime
+        // bits): how a region finds a successor in another page, whose key
+        // isn't its own plus an offset. Another address space may have
+        // another block at that VA: the edge checks the mapping when it runs.
+        let at: Map<u64> = pending.iter().map(|&(k, va)| (va | k & 3, k)).collect();
         let mut regions = Vec::with_capacity(pending.len());
         for ((key, va), mut r) in pending.into_iter().zip(loops) {
             if batch[&key] == TAKEN {
@@ -483,13 +488,25 @@ impl Cache {
                     r.tier = Some(0); // its word's address once it has a slot
                 }
             } else if !r.blocks.is_empty() && !r.looped() {
-                r = block::forward(mem, key, va, &|k| match batch.get(&k) {
-                    Some(&state) => state == FREE,
-                    // Everything at once (the differential tests): any block
-                    // in reach that heads no loop.
-                    None => all && !heads_loop(&self.region(k, 0, mem)),
+                r = block::forward(mem, key, va, &|va, near| {
+                    // With the MMU off a VA is its PA.
+                    let flat = key & block::KEY_MMU == 0;
+                    let k = match near {
+                        Some(k) => k,
+                        None if flat => va | key & 3,
+                        None => *at.get(&(va | key & 3))?,
+                    };
+                    let free = match batch.get(&k) {
+                        Some(&state) => state == FREE,
+                        // Everything at once (the differential tests): any
+                        // block in reach that heads no loop.
+                        None => all && !heads_loop(&self.region(k, 0, mem)),
+                    };
+                    free.then_some(k)
                 });
-                for b in &r.blocks[1..] {
+                // (No blocks at all if another vCPU rewrote the head's code
+                // since `loops` read it: parallel SMP.)
+                for b in r.blocks.iter().skip(1) {
                     batch.insert(b.key, TAKEN);
                     if let Some(i) = self.map.get_mut(&b.key) {
                         (i.queued, i.hits) = (false, 0);
@@ -633,6 +650,15 @@ impl Cache {
             }
             for t in links {
                 self.linkers.entry(t).or_default().push(key);
+            }
+            // A region goes with any of its pages (`invalidate`).
+            for b in r.blocks.iter().skip(1) {
+                if (b.key ^ key) >> 12 != 0 {
+                    let keys = self.pages.entry(b.key >> 12).or_default();
+                    if !keys.contains(&key) {
+                        keys.push(key);
+                    }
+                }
             }
         }
         Some(idx)

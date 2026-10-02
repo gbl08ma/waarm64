@@ -1034,6 +1034,14 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, jc: u32, len: u32, ty: u32, check:
     c.local_get(JCE).i32_load(8).return_call_indirect(ty).end();
 }
 
+/// Pushes an i32 that is non-zero iff X30 is the entry PC + `off`: a return
+/// that goes where the region predicted (`block::Region::returns`).
+pub fn returns_to(c: &mut Func, off: i64) {
+    c.reg(30);
+    pc_plus(c, off);
+    c.op(EQ + WC);
+}
+
 /// The tier-up prologue of a loop head compiled alone (step 8.3): the hot
 /// word at `word` counts its entries down; the entry that takes it from 1 to
 /// 0 calls `hot(vcpu, key, pc)`, which compiles the head's loop region and
