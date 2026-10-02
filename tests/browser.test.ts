@@ -277,7 +277,16 @@ test("the overlay's hand-over: a second opener waits for the holder to close it,
     const busy = await ask(c, { type: 'open', name, waitMs: 300 });
     holder.terminate();
     c.terminate();
-    await (await navigator.storage.getDirectory()).removeEntry(name, { recursive: true });
+    // The terminated holder's handles are released a moment after `terminate()` returns (under load, later).
+    for (let i = 0; ; i++) {
+      try {
+        await (await navigator.storage.getDirectory()).removeEntry(name, { recursive: true });
+        break;
+      } catch (e) {
+        if (i === 50 || (e as DOMException).name !== 'NoModificationAllowedError') throw e;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
     return { opened: opened.type, second: second.type, waited: second.at >= closed.at, terminated: terminated.filter((t) => t.type !== 'opened').map((t) => t.message), busy: busy.message };
   });
   assert.deepEqual(r, { opened: 'opened', second: 'opened', waited: true, terminated: [], busy: 'Error: overlay webpc-test-handover is in use: another machine held it for 0.3 s' });

@@ -17,7 +17,8 @@ step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || n
 step typecheck;   npx tsc --noEmit
 current() { images/build.sh --check "$1" > /dev/null; }
 export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current debian && echo ,debian)$(current alpine-uefi && echo ,alpine-uefi)}
-# The network tests on Debian (net-guest, page-network, net-tailnet: ~4 min) are scripts/ci-net.sh's.
+# The network tests on Debian (net-guest, page-network, net-tailnet: ~4 min) are scripts/ci-net.sh's;
+# the graphics tests on Debian (page-resize, page-grub-screen, page-cursor: ~100 s alone) are scripts/ci-gfx.sh's.
 # Guest-image tests: run when target/images has the images (a space-separated
 # list) and they're current.
 image_test() {

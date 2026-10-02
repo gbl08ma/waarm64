@@ -13,7 +13,8 @@ import { withDebianLock } from './debian-lock.ts';
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
+const skip = process.env.WEBPC_GFX_TESTS !== '1' ? 'SKIPPED: scripts/ci-gfx.sh runs it (WEBPC_GFX_TESTS=1)'
+  : !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
 
 let browser: Browser;
 let base: string;
@@ -27,7 +28,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-test("the guest's cursor is the canvas's CSS cursor, scaled with it, hidden when the guest hides it", { skip, timeout: 120_000 }, () => withDebianLock(async () => {
+test("the guest's cursor is the canvas's CSS cursor, scaled with it, hidden when the guest hides it", { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => { // the wait for the other Debian page tests' lock is most of it
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await context.newPage();
   const errors: string[] = [];

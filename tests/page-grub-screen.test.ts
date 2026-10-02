@@ -2,7 +2,7 @@
 // keyboard driver but the serial console's, so until the guest has a driver on virtio-input the page sends the
 // screen's keys to the serial console. Pressing `c` (GRUB's command line) on the screen during the menu's 5 s
 // countdown must stop the boot: no "Linux version" on the serial terminal. Debian on the page, ~30 s;
-// opt-in with WEBPC_DISTROS=debian.
+// scripts/ci-gfx.sh runs it (WEBPC_GFX_TESTS=1 with WEBPC_DISTROS=debian).
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -14,7 +14,8 @@ import { withDebianLock } from './debian-lock.ts';
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
+const skip = process.env.WEBPC_GFX_TESTS !== '1' ? 'SKIPPED: scripts/ci-gfx.sh runs it (WEBPC_GFX_TESTS=1)'
+  : !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
 
 let browser: Browser;
 let base: string;

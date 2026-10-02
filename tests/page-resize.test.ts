@@ -2,8 +2,8 @@
 // Chromium. The start size is the screen box's (the console is born at it, no event); a bigger
 // window makes the guest's connector list the new preferred mode; a smaller one is followed by
 // the guest but not by fbcon's buffer (graphics.md §9): the display asks for the whole buffer
-// again, so the canvas keeps the console's size and nothing is cropped. Opt-in with
-// WEBPC_DISTROS=debian, like Debian's other Chromium tests. ~1.5 min.
+// again, so the canvas keeps the console's size and nothing is cropped. scripts/ci-gfx.sh runs it
+// (WEBPC_GFX_TESTS=1 with WEBPC_DISTROS=debian). ~1.5 min.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -15,7 +15,8 @@ import { withDebianLock } from './debian-lock.ts';
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
+const skip = process.env.WEBPC_GFX_TESTS !== '1' ? 'SKIPPED: scripts/ci-gfx.sh runs it (WEBPC_GFX_TESTS=1)'
+  : !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
 
 let browser: Browser;
 let base: string;
