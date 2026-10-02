@@ -101,7 +101,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   (refcounts never read). **Refused at open:** encryption, backing files (a changes file is read by `readChanges`, docs/frontend.md "Your own disk"), external data files,
   extended L2, zstd, unknown incompatible features. Capacity is the virtual size. Debian's
   published image is 95% compressed clusters, which is why deflate is supported rather than
-  converting the image. One host read per cluster, all L2 tables kept, the 16 most recent
+  converting the image. A request's clusters are read from the file in merged host reads (ranges within 64 KiB of each other, up to 8 MiB: an image's clusters mostly follow each other, so a 1 MiB read of Debian's image is one or two HTTP requests, not sixteen; a merged read that fails leaves its ranges to their own reads; one read per cluster natively), all L2 tables kept, the 16 most recent
   compressed clusters cached (1 natively).
 - **Writable disks: a copy-on-write overlay** (`web/overlay.ts`) in an OPFS directory, 4 KiB
   blocks: `data` holds written blocks in slots, `map` a u32 per disk block (0 = base,

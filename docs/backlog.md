@@ -184,9 +184,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   matter); the host can change config space under a running driver since ABI 31
   (`Devices.changeConfig`, docs/abi.md), but only virtio-gpu's display events use it: console resize,
   capacity change and net link state don't yet.
-- virtio-blk over HTTP: one synchronous XHR per request, no cache, merging or concurrency; batch,
-  cache or go async when an I/O benchmark says so. qcow2: no merging of contiguous clusters into
-  one request.
+- virtio-blk over HTTP: synchronous XHRs, no cache or concurrency (a request's qcow2 clusters are
+  read in merged ranges, nothing is merged across requests); batch, cache or go async when an I/O
+  benchmark says so. qcow2's compressed clusters are inflated one at a time on the reading thread.
 - Overlay: no quota handling (OPFS errors come back as `IOERR`), the base identified by path and
   size only.
 - blk DISCARD/WRITE_ZEROES ([devices.md](devices.md)) is the page's only: offering it to the

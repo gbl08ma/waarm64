@@ -13,7 +13,7 @@ import { splitmix64 } from '../tools/corpus/corpus.ts';
 import { HASH_SLICE, hashSource } from '../web/changes.ts';
 import { memFile, overlay } from '../web/overlay.ts';
 import { openDisk, type Disk } from '../web/qcow2.ts';
-import { changedClusters, CLUSTER, nonZeroClusters, writeQcow2, type DataCluster, type Sink } from '../web/qcow2-write.ts';
+import { changedClusters, CLUSTER, deflateEach, nonZeroClusters, writeQcow2, type DataCluster, type Sink } from '../web/qcow2-write.ts';
 
 const have = spawnSync('qemu-img', ['--version']).status === 0;
 const skip = !have && 'SKIPPED: no qemu-img';
@@ -206,4 +206,43 @@ test('blocks the guest discarded or zeroed are zero clusters in a changes file: 
     qemu('check', join(dir, 'zeros.qcow2'));
     assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'zeros.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
   }
+});
+
+test('a packer that answers out of order and several batches at once writes the same file as compressing in place', { skip }, async () => {
+  const size = 9 * 1024 * 1024 + 512; // several batches of 256 clusters
+  const { merged, rw } = await scenario(size, 900, 77n);
+  assert.ok(await rw.zero(40 * CLUSTER, 3 * CLUSTER)); // zero clusters among the batches
+  merged.fill(0, 40 * CLUSTER, 43 * CLUSTER);
+  const plain = memorySink();
+  await writeQcow2({ size, clusters: nonZeroClusters(rw), compress: true, sink: plain.sink });
+  for (const clusters of [() => nonZeroClusters(rw), () => changedClusters(rw)]) {
+    const want = memorySink();
+    await writeQcow2({ size, clusters: clusters(), compress: true, sink: want.sink });
+    const out = memorySink();
+    let [calls, flying, most] = [0, 0, 0];
+    const g = splitmix64(5n);
+    await writeQcow2({
+      size, clusters: clusters(), sink: out.sink,
+      compress: {
+        atOnce: 3,
+        async pack(bytes) {
+          most = Math.max(most, ++flying);
+          await new Promise((r) => setTimeout(r, Number(g.next().value as bigint % 5n)));
+          const packed = await deflateEach(bytes.slice());
+          flying--;
+          calls++;
+          return packed;
+        },
+      },
+    });
+    assert.ok(calls > 3 && most === 3, `${calls} calls, ${most} at once`);
+    assert.ok(out.bytes().equals(want.bytes()), 'another file');
+  }
+  writeFileSync(join(dir, 'merged.raw'), merged);
+  writeFileSync(join(dir, 'packed.qcow2'), plain.bytes());
+  qemu('check', join(dir, 'packed.qcow2'));
+  assert.match(qemu('compare', '-f', 'qcow2', '-F', 'raw', join(dir, 'packed.qcow2'), join(dir, 'merged.raw')), /Images are identical/);
+  // A packer that fails, or answers for fewer clusters, fails the write.
+  await assert.rejects(writeQcow2({ size, clusters: nonZeroClusters(rw), sink: () => {}, compress: { atOnce: 2, pack: async () => { throw new Error('no worker'); } } }), /no worker/);
+  await assert.rejects(writeQcow2({ size, clusters: nonZeroClusters(rw), sink: () => {}, compress: { atOnce: 2, pack: async () => [] } }), /lost clusters/);
 });

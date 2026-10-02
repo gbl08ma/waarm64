@@ -23,6 +23,9 @@ const HEADER = 112; // enough for every field we read
 const OFFSET_MASK = 0x00ff_ffff_ffff_fe00n; // bits 9-55: L1/L2 table and standard cluster offsets
 const COMPRESSED = 1n << 62n;
 const ZERO = 1n; // v3: the cluster reads as zeros
+/** Host ranges of one request this close together are one read, of at most MERGE_MAX bytes (`merged`). */
+const MERGE_GAP = 64 * 1024;
+const MERGE_MAX = 8 << 20;
 const KNOWN_INCOMPATIBLE = 1n << 0n | 1n << 1n | 1n << 3n; // dirty, corrupt (both only matter to writers), compression type
 
 /** Whether the first bytes of a file are a qcow2 header. */
@@ -77,11 +80,20 @@ export function openDisk(readAt: ReadAt, fileSize: number): Disk {
   // Compressed clusters (bits 0..x-1 the host offset, x..61 the number of 512-byte
   // sectors after the first, x = 62 - (cluster_bits - 8)), kept decompressed for the
   // few most recent (a guest reads a 64 KiB cluster a page at a time).
+  const x = BigInt(62 - (clusterBits - 8));
+  /** Where a compressed cluster's bytes are in the file: they run to a sector boundary (or the file's end). */
+  const extent = (e: bigint): [number, number] => {
+    const off = Number(e & ((1n << x) - 1n));
+    const sectors = Number((e & ((1n << 62n) - 1n)) >> x) + 1;
+    return [off, Math.min(sectors * 512 - (off & 511), fileSize - off)];
+  };
   const recent = new Map<bigint, Uint8Array>();
-  const compressed = async (e: bigint) => {
+  const compressed = async (e: bigint, from: ReadAt) => {
     let data = recent.get(e);
     if (!data) {
-      data = await compressedCluster(readAt, fileSize, e, clusterBits);
+      const [off, len] = extent(e);
+      const input = len > 0 ? from(off, len) : undefined;
+      data = input && (await inflate(input, cs));
       if (!data) return undefined;
       recent.set(e, data);
       if (recent.size > 16) recent.delete(recent.keys().next().value!);
@@ -89,10 +101,39 @@ export function openDisk(readAt: ReadAt, fileSize: number): Disk {
     return data;
   };
 
-  // ponytail: one host read per cluster; merge contiguous clusters if the HTTP request count matters.
+  /**
+   * A reader of the file for one request: the host ranges it needs (`ranges`: [start, end)) that
+   * lie close together are read at once (an image's clusters mostly follow each other in the
+   * file, compressed ones end to end), so a request over many clusters is a few host reads (HTTP
+   * requests), not one per cluster. A failed merged read leaves its ranges to their own reads.
+   */
+  const merged = (ranges: [number, number][]): ReadAt => {
+    if (ranges.length < 2) return readAt;
+    ranges.sort((p, q) => p[0] - q[0]);
+    const windows: { at: number; bytes: Uint8Array }[] = [];
+    for (let i = 0; i < ranges.length;) {
+      let [start, end] = ranges[i];
+      let j = i + 1;
+      for (; j < ranges.length && ranges[j][0] - end <= MERGE_GAP && Math.max(end, ranges[j][1]) - start <= MERGE_MAX; j++) end = Math.max(end, ranges[j][1]);
+      if (j - i > 1) {
+        const bytes = readAt(start, end - start);
+        if (bytes) windows.push({ at: start, bytes });
+      }
+      i = j;
+    }
+    return (off, len) => {
+      for (const w of windows) if (off >= w.at && off + len <= w.at + w.bytes.length) return w.bytes.subarray(off - w.at, off - w.at + len);
+      return readAt(off, len);
+    };
+  };
+
   const read = async (off: number, len: number) => {
     if (off < 0 || off + len > size) return undefined;
     const out = new Uint8Array(len);
+    // The request's clusters: what each needs from the file, then the reads, then the bytes.
+    const pieces: { k: number; o: number; n: number; e: bigint }[] = [];
+    const ranges: [number, number][] = [];
+    const wanted = new Set<bigint>();
     for (let k = 0; k < len;) {
       const pos = off + k;
       const c = Math.floor(pos / cs);
@@ -102,15 +143,20 @@ export function openDisk(readAt: ReadAt, fileSize: number): Disk {
       if (!t) return undefined;
       const e = t.getBigUint64((c % l2Entries) * 8);
       if (e & COMPRESSED) {
-        const data = await compressed(e);
-        if (!data) return undefined;
-        out.set(data.subarray(o, o + n), k);
+        const [at, bytes] = extent(e);
+        if (!recent.has(e) && !wanted.has(e) && bytes > 0) { wanted.add(e); ranges.push([at, at + bytes]); }
+        pieces.push({ k, o, n, e });
       } else if (!(version === 3 && e & ZERO) && (e & OFFSET_MASK) !== 0n) {
-        const data = readAt(Number(e & OFFSET_MASK) + o, n);
-        if (!data) return undefined;
-        out.set(data, k);
+        ranges.push([Number(e & OFFSET_MASK) + o, Number(e & OFFSET_MASK) + o + n]);
+        pieces.push({ k, o, n, e });
       } // else unallocated or zero: out is already zeros
       k += n;
+    }
+    const from = merged(ranges);
+    for (const { k, o, n, e } of pieces) {
+      const data = e & COMPRESSED ? (await compressed(e, from))?.subarray(o, o + n) : from(Number(e & OFFSET_MASK) + o, n);
+      if (!data) return undefined;
+      out.set(data, k);
     }
     return out;
   };

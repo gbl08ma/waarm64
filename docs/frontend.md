@@ -497,11 +497,23 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
   as it is at the next cluster boundary. The data leaves in 1 MiB pieces. QEMU inflates with a
   4 KiB window whatever the cluster size and `CompressionStream` has no window setting, so
   compression is tied to 4 KiB clusters (a bigger cluster could reach further back than QEMU's
-  window; zstd isn't in `CompressionStream`). Measured in Chromium 153 on the dev VM, the untouched
-  3 GiB Debian disk to a sink that drops the bytes, two runs each: 1043 MB in 22.5 s not
-  compressed, 448 MB in 38 s compressed (reading the disk alone is 21.7 s; Debian's own image, with
-  64 KiB clusters, is 403 MB). Compressing 64 or 512 clusters at once was slower than one at a time
-  (11.4 s and 12.3 s against 8.7 s for the first 512 MiB). What the guest's filesystem has freed
+  window; zstd isn't in `CompressionStream`). The clusters are compressed
+  **on other threads**: `writeQcow2` hands batches of 256 clusters to a `Packer` and stores them in
+  the order they came, and the disk-out worker's is a pool of up to four workers
+  (`web/app/deflate-pool.ts`, `deflate-worker.ts`; the machine has stopped, its cores are free); the
+  file is byte for byte the one compressing in place writes (`compress: true`, the tests' and Node's).
+  Measured in Chromium 153 on the dev VM, the untouched 3 GiB Debian disk (the page's: a compressed
+  qcow2 over HTTP, 992 MiB of data) to a sink that drops the bytes: 5.9 s not compressed (995 MiB),
+  7.9 s compressed by four workers (428 MiB; 9.2 s by two, 15.8 s by one, 20.8 s in place); written
+  to a file through `FileSystemWritableFileStream` (OPFS), not compressed, 8.7 s. What it was
+  before, and why: 22.9 s not compressed and 38 s compressed, of which **reading the disk was
+  21.7 s** (one synchronous HTTP request and one inflate per 64 KiB cluster: `openDisk` now reads a
+  request's clusters in a few merged host reads, [devices.md](devices.md) "blk": 5.6 s), and deflate
+  on one thread the rest (49 MiB/s of data, close to native zlib's 91 at 4 KiB clusters: the cost is
+  deflate, not the stream per cluster). Compressing 64 or 512 clusters at once *on one thread* was
+  slower than one at a time (11.4 s and 12.3 s against 8.7 s for the first 512 MiB). zstd
+  (`compression_type=zstd`, QEMU 5.1 on) is not written: it needs a compressor compiled to wasm (a
+  dependency), and with deflate on four threads the export is within a third of not compressing. What the guest's filesystem has freed
   is still data to the export until the guest trims it (`fstrim -av`: the disk takes DISCARD,
   [devices.md](devices.md) "blk"; trimmed blocks are zero clusters in a changes file and left out of a whole disk). A changes file's header names the base by its file name (the backing file; the user
   keeps it beside the changes) and carries the base file's **hash** in an extension of ours

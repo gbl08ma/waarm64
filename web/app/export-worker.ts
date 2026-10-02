@@ -8,6 +8,7 @@ import { blobSource, diskIdentity, httpSource, type Source } from '../devices.ts
 import { openOverlay, overlay } from '../overlay.ts';
 import { openDisk } from '../qcow2.ts';
 import { changedClusters, nonZeroClusters, rawChunks, writeQcow2, type DataCluster, type Sink } from '../qcow2-write.ts';
+import { deflatePool } from './deflate-pool.ts';
 import type { ExportRequest, ExportResult } from './export.ts';
 
 const post = (m: ExportResult, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
@@ -56,8 +57,13 @@ async function exportDisk(r: ExportRequest) {
       } else {
         clusters = nonZeroClusters(disk, 1 << 20, (done) => progress('Writing the disk', done, disk.size));
       }
-      const res = await writeQcow2({ size: disk.size, clusters, backing, compress: r.compress, sink });
-      blocks = res.clusters;
+      const pool = r.compress ? deflatePool() : undefined;
+      try {
+        const res = await writeQcow2({ size: disk.size, clusters, backing, compress: pool, sink });
+        blocks = res.clusters;
+      } finally {
+        pool?.close();
+      }
     }
     await out?.close();
     out = undefined;

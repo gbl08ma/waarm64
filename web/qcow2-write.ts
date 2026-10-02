@@ -41,15 +41,27 @@ export type Sink = (chunk: Uint8Array, at?: number) => void | Promise<void>;
  */
 export type DataCluster = { index: number; data: Uint8Array; zero?: undefined } | { index: number; zero: true };
 
+/**
+ * Compresses clusters for `writeQcow2`: `pack` gets whole clusters end to end (the writer's
+ * buffer: it copies what it sends elsewhere) and resolves to each one's raw deflate, or undefined for one that
+ * doesn't shrink; `atOnce` calls run at a time (the clusters are stored in order whatever order
+ * they finish in). The disk-out worker's is a pool of workers (web/app/export-worker.ts).
+ */
+export type Packer = { pack(clusters: Uint8Array): Promise<(Uint8Array | undefined)[]>; atOnce: number };
+
+/** The clusters one `pack` call gets. */
+const PACK_CLUSTERS = 256;
+
 export type Backing = { name: string; format: 'qcow2' | 'raw'; hash: string };
 
 /**
  * Writes a qcow2 of virtual size `size` holding `clusters` (ascending by index, none twice) to
  * `sink`; everything else reads as zeros (or, with `backing`, as the backing file's bytes).
- * With `compress`, a cluster that deflates to less than itself is stored compressed (below).
+ * With `compress`, a cluster that deflates to less than itself is stored compressed (below):
+ * `true` deflates on this thread, a `Packer` wherever it does. The file is the same either way.
  * Resolves to the clusters stored and the file's size.
  */
-export async function writeQcow2(o: { size: number; clusters: AsyncIterable<DataCluster>; backing?: Backing; compress?: boolean; sink: Sink }) {
+export async function writeQcow2(o: { size: number; clusters: AsyncIterable<DataCluster>; backing?: Backing; compress?: boolean | Packer; sink: Sink }) {
   const { size, sink } = o;
   await sink(new Uint8Array(CLUSTER)); // the header's place
   // The data goes out in pieces of CHUNK (a compressed cluster is a small write of its own otherwise).
@@ -99,11 +111,44 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
     }
     n++;
   };
+  // Compressed: the clusters go to the packer in batches (copies: the caller's buffers are its own again once
+  // it is asked for the next cluster), a few batches at a time, and are stored in the order they came.
+  const packer = o.compress === true ? { pack: deflateEach, atOnce: 1 } : o.compress || undefined;
+  type Batch = { clusters: { index: number; zero?: true }[]; bytes: Uint8Array; data: number };
+  const fresh = (): Batch => ({ clusters: [], bytes: new Uint8Array(PACK_CLUSTERS * CLUSTER), data: 0 });
+  const packing: Promise<{ batch: Batch; packed: (Uint8Array | undefined)[] }>[] = [];
+  let batch = fresh();
+  const send = () => {
+    const mine = batch;
+    batch = fresh();
+    const run = packer!.pack(mine.bytes.subarray(0, mine.data * CLUSTER)).then((packed) => ({ batch: mine, packed }));
+    run.catch(() => {}); // awaited in order below: a failure must not go unhandled until then
+    packing.push(run);
+  };
+  const settle = async () => {
+    const { batch, packed } = await packing.shift()!;
+    if (packed.length !== batch.data) throw new Error('the compressor lost clusters');
+    let k = 0;
+    for (const c of batch.clusters) {
+      if (c.zero) await store({ index: c.index, zero: true });
+      else { await store({ index: c.index, data: batch.bytes.subarray(k * CLUSTER, (k + 1) * CLUSTER) }, packed[k]); k++; }
+    }
+  };
+  let last = -1;
   for await (const c of o.clusters) {
     if (!c.zero && c.data.length !== CLUSTER) throw new Error(`cluster ${c.index} is ${c.data.length} bytes`);
-    if (n > 0 && c.index <= indices[n - 1]) throw new Error(`cluster ${c.index} out of order`);
-    await store(c, o.compress && !c.zero ? await deflate(c.data) : undefined); // one at a time: several streams at once were slower (docs/frontend.md)
+    if (c.index <= last) throw new Error(`cluster ${c.index} out of order`);
+    last = c.index;
+    if (!packer) { await store(c); continue; }
+    if (c.zero) batch.clusters.push({ index: c.index, zero: true });
+    else { batch.clusters.push({ index: c.index }); batch.bytes.set(c.data, batch.data++ * CLUSTER); }
+    if (batch.clusters.length === PACK_CLUSTERS) {
+      send();
+      if (packing.length === packer.atOnce) await settle();
+    }
   }
+  if (batch.clusters.length) send();
+  while (packing.length) await settle();
   await align();
   if (fill) await sink(chunk.subarray(0, fill));
 
@@ -162,7 +207,7 @@ export async function writeQcow2(o: { size: number; clusters: AsyncIterable<Data
  * shrink (the cluster is stored as it is). QEMU inflates with a 4 KiB window whatever the cluster
  * size, and `CompressionStream` has no window setting: a 4 KiB cluster can't reach further back.
  */
-async function deflate(data: Uint8Array) {
+export async function deflate(data: Uint8Array) {
   const cs = new CompressionStream('deflate-raw');
   const w = cs.writable.getWriter();
   w.write(data as Uint8Array<ArrayBuffer>).catch(() => {});
@@ -181,6 +226,13 @@ async function deflate(data: Uint8Array) {
   const out = new Uint8Array(n);
   let at = 0;
   for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+}
+
+/** `Packer.pack` on this thread: one cluster at a time (several streams at once on one thread were slower, docs/frontend.md). */
+export async function deflateEach(clusters: Uint8Array) {
+  const out: (Uint8Array | undefined)[] = [];
+  for (let at = 0; at < clusters.length; at += CLUSTER) out.push(await deflate(clusters.subarray(at, at + CLUSTER)));
   return out;
 }
 
