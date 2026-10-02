@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { EDID_MAX, EDID_MIN, edid } from '../web/edid.ts';
-import { Gpu, MAX_RESOURCE, hashRgba, type GpuHooks } from '../web/gpu.ts';
+import { Gpu, MAX_RESOURCE, hashRgba, type GpuHooks, type ScanoutSource } from '../web/gpu.ts';
 
 const RAM_BASE = 0x4000_0000;
 const RAM_SIZE = 1 << 20;
@@ -31,12 +31,13 @@ function cmd(type: number, ...fields: (number | bigint)[]) {
 
 function rig(o: Partial<ConstructorParameters<typeof Gpu>[2]> = {}) {
   const ram = new Uint8Array(RAM_SIZE);
-  const damage: { x: number; y: number; w: number; h: number; first: number[] }[] = [];
+  const damage: { x: number; y: number; w: number; h: number }[] = [];
   const scanouts: number[][] = [];
+  const sources: (ScanoutSource | null)[] = [];
   const cursors: { image: Uint8Array | null; hotX: number; hotY: number; x: number; y: number }[] = [];
   const hooks: GpuHooks = {
-    scanout: (w, h) => scanouts.push([w, h]),
-    damage: (r, px, off) => damage.push({ ...r, first: [...px.subarray(off, off + 4)] }),
+    scanout: (w, h, src) => { scanouts.push([w, h]); sources.push(src); },
+    damage: (r) => damage.push({ ...r }),
     cursor: (image, hotX, hotY, x, y) => cursors.push({ image, hotX, hotY, x, y }),
   };
   const gpu = new Gpu(() => ram, RAM_SIZE, { width: 800, height: 600, ...o });
@@ -62,7 +63,7 @@ function rig(o: Partial<ConstructorParameters<typeof Gpu>[2]> = {}) {
     }
     return c;
   };
-  return { ram, gpu, run, ok, attach, damage, scanouts, cursors, events };
+  return { ram, gpu, run, ok, attach, damage, scanouts, sources, cursors, events };
 }
 
 const px = (r: ReturnType<typeof rig>, id: number, x: number, y: number) => {
@@ -139,17 +140,17 @@ test('gpu: a resource, its backing, a transfer into RGBA, flush and scanout', ()
   assert.deepEqual(r.scanouts, [[4, 3]]);
   r.damage.length = 0;
   r.ok(cmd(T.TRANSFER, 0, 0, 4, 3, 0n, 1, 0));
-  // B,G,R,X bytes 1,2,3,4 are RGBA 3,2,1 and the X byte.
-  assert.deepEqual(px(r, 1, 0, 0), [3, 2, 1, 4]);
-  assert.deepEqual(px(r, 1, 3, 2), [47, 46, 45, 48]);
+  // B,G,R,X bytes 1,2,3,4 are RGBA 3,2,1; the X byte would be alpha, but this resource is on the scanout.
+  assert.deepEqual(px(r, 1, 0, 0), [3, 2, 1, 255], 'on the scanout: opaque');
+  assert.deepEqual(px(r, 1, 3, 2), [47, 46, 45, 255]);
   assert.deepEqual(r.damage.map((d) => [d.x, d.y, d.w, d.h]), [[0, 0, 4, 3]]);
   // A rectangle in the middle: the offset is where its first pixel is in the guest's layout (y*stride + x*4).
   r.ram.fill(0xee, 0x1000, 48);
   r.ram.set([10, 20, 30, 0], 0x1000 + 1 * 16 + 1 * 4); // pixel (1,1)
   r.damage.length = 0;
   r.ok(cmd(T.TRANSFER, 1, 1, 1, 1, BigInt(1 * 16 + 1 * 4), 1, 0));
-  assert.deepEqual(px(r, 1, 1, 1), [30, 20, 10, 0]);
-  assert.deepEqual(px(r, 1, 0, 1), [19, 18, 17, 20], 'a neighbor is untouched');
+  assert.deepEqual(px(r, 1, 1, 1), [30, 20, 10, 255]);
+  assert.deepEqual(px(r, 1, 0, 1), [19, 18, 17, 255], 'a neighbor is untouched');
   assert.deepEqual(r.damage.map((d) => [d.x, d.y, d.w, d.h]), [[1, 1, 1, 1]]);
   // Several rows of a narrower rectangle: the guest's rows are a resource-width apart, not the rectangle's.
   r.ram.fill(0, 0x1000, 48);
@@ -164,6 +165,8 @@ test('gpu: a resource, its backing, a transfer into RGBA, flush and scanout', ()
   // The scanout can show part of a resource: the damage is clipped to it and moved to its origin.
   r.ok(cmd(T.SCANOUT, 1, 1, 2, 2, 0, 1));
   assert.deepEqual(r.scanouts.at(-1), [2, 2]);
+  assert.deepEqual([r.sources.at(-1)!.x, r.sources.at(-1)!.y, r.sources.at(-1)!.width, r.sources.at(-1)!.height], [1, 1, 4, 3]);
+  assert.equal(r.sources.at(-1)!.pixels, r.gpu.resources.get(1)!.pixels, 'the source is the resource itself: no copy');
   r.damage.length = 0;
   r.ok(cmd(T.FLUSH, 0, 0, 4, 3, 1, 0));
   assert.deepEqual(r.damage.map((d) => [d.x, d.y, d.w, d.h]), [[0, 0, 2, 2]]);
@@ -446,4 +449,18 @@ test('the gpu guest: what init.c draws is what tests/gpu/guest.json expects (the
   const want = JSON.parse(readFileSync(new URL('./gpu/guest.json', import.meta.url), 'utf8')) as Record<string, string>;
   const t = guestPictures();
   assert.deepEqual([want.trace1, want.trace2, want.trace3, want.screen, want.cursor], [...t.trace, t.trace[2], t.cursor]);
+});
+
+test('gpu: alpha is the X byte until a resource is shown, then opaque (a canvas takes the pixels as they are)', () => {
+  const r = rig();
+  r.ok(cmd(T.CREATE, 1, B8G8R8X8, 2, 1));
+  r.ok(r.attach(1, 0, 8));
+  r.ram.set([1, 2, 3, 77, 4, 5, 6, 88], 0);
+  r.ok(cmd(T.TRANSFER, 0, 0, 2, 1, 0n, 1, 0));
+  assert.deepEqual([px(r, 1, 0, 0)[3], px(r, 1, 1, 0)[3]], [77, 88], 'a cursor-like resource keeps it');
+  r.ok(cmd(T.SCANOUT, 0, 0, 2, 1, 0, 1));
+  assert.deepEqual([px(r, 1, 0, 0), px(r, 1, 1, 0)], [[3, 2, 1, 255], [6, 5, 4, 255]], 'shown: opaque, colors kept');
+  r.ram.set([9, 9, 9, 5, 9, 9, 9, 5], 0);
+  r.ok(cmd(T.TRANSFER, 0, 0, 2, 1, 0n, 1, 0));
+  assert.equal(px(r, 1, 1, 0)[3], 255);
 });

@@ -331,3 +331,29 @@ says what they do and [testing.md](../testing.md) how they are tested. What the 
   minimum (640×480) is above it.
 - The guest is an initramfs with a static init and no fbcon or fbdev emulation: it is the only DRM
   master and the console isn't involved. 37.8M steps (the kernel's boot is most of it).
+
+## 12. G1 loop 4: on the page (2026-10-02)
+
+Debian's page runs on virtio-gpu ([frontend.md](../frontend.md) "The screen", devices.md): EDK2's graphics
+output, GRUB's menu and "Loading Linux…", then fbcon on `virtio_gpu`; the login on the screen works;
+`tests/page-debian.test.ts` passes (running at 54.8 s, the baseline's 53 s within noise; `/proc/fb` is
+`virtio_gpudrmfb`; the canvas isn't black). What it found:
+
+- **EDK2 writes QueueNum 0** and the transport put the device in NEEDS_RESET: the firmware stopped
+  after its banner with no output at all. QEMU ignores a 0; ours now treats 0 (or never written) as the
+  device's maximum (unit test; the shell test boots with a gpu).
+- **A worker has no `requestAnimationFrame`** for a canvas handed from the machine worker to the device
+  worker ("not supported in this Worker"): the presenter draws at once if the last draw was a frame
+  ago, else on a 16 ms timer.
+- **`getContext('2d', {alpha: false})` didn't make the screen opaque** in that worker: X formats' unused
+  byte (0 for a primary plane) drew as transparent, white over the page. The scanout resource is made
+  opaque when it is shown (loop 3's finding turned around: the cursor keeps raw alpha, the screen
+  never does).
+- **Which thread presents** (the kickoff's open question): measured, and moot. Flush-to-draw is a
+  frame idle (median 16–17 ms) and, with the guest reading its disk, a median of 17–66 ms and a worst
+  case of 89–972 ms, because virtio-blk's synchronous XHRs occupy the device worker and a flush is
+  served only between them; drawing from the machine worker would wait for the same service. The fix
+  is blk off that thread (asynchronous reads; backlog), also what G3's 3D worker will want.
+- **The firmware's keys stay on the serial terminal**: the page's GRUB menu is graphical (`gfxterm`
+  takes the GOP) and appears on the screen only; EDK2 has no virtio-input keyboard. `?display=simple` keeps
+  the old serial menus for tests (page-uefi-keys) and as a fallback.

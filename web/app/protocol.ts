@@ -35,6 +35,12 @@ export type ToWorker =
     serial: MessagePort;
     /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). */
     screen: OffscreenCanvas;
+    /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it. */
+    display: MessagePort;
+    /** Use the `simple-framebuffer` on a machine that has a virtio-gpu (the page's `?display=simple`). */
+    simple?: boolean;
+    /** The display reports its draw latencies (`draw-stats` on the display port, kept in `window.__drawStats`; the page's `?displaystats`, for bench/gpu). */
+    displayStats?: boolean;
     /** Extra kernel parameters (the page's `?params=`, for development: e.g. a rescue shell). Not for a `firmware` machine: its bootloader owns the command line. */
     params?: string;
     /**

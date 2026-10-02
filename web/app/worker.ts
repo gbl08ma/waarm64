@@ -92,8 +92,8 @@ let isSuspended = false;
 let restoring = false;
 
 /** The devices of a machine in slot order: the kinds a snapshot's header lists, so a restore makes the same. */
-type DeviceKind = 'rng' | 'blk' | 'blk-ro' | 'keyboard' | 'tablet' | 'net';
-const KINDS: DeviceKind[] = ['rng', 'blk', 'blk-ro', 'keyboard', 'tablet', 'net'];
+type DeviceKind = 'rng' | 'blk' | 'blk-ro' | 'keyboard' | 'tablet' | 'net' | 'gpu';
+const KINDS: DeviceKind[] = ['rng', 'blk', 'blk-ro', 'keyboard', 'tablet', 'net', 'gpu'];
 type StartMessage = Extract<ToWorker, { type: 'start' }>;
 
 /** The device of `kind` for this start, or what the page's options lack to make it. */
@@ -104,12 +104,15 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
     case 'blk-ro': return m.disk2 ? { type: 'blk', url: new URL(m.disk2, self.location.href).href } : 'a second disk (?disk2=<url>), and this page was opened without one'; // no overlay: read-only
     case 'keyboard': return { type: 'input', kind: 'keyboard', port: m.keyboard };
     case 'tablet': return { type: 'input', kind: 'tablet', port: m.tablet };
+    case 'gpu': return { type: 'gpu', width: machine.framebuffer.width, height: machine.framebuffer.height, canvas: m.screen, port: m.display, stats: m.displayStats };
     case 'net': return m.ip && machine.network ? { type: 'net', adapter: { ip: m.ip } } : 'a network card, and this machine has no network port';
   }
 }
 
 /** The kinds a normal start makes, as the page's options say. */
-const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', 'blk', ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : [])];
+const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', 'blk', ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : []), ...(usesGpu(m, machine) ? ['gpu' as const] : [])];
+/** A machine with a virtio-gpu draws through it, unless the page asked for the framebuffer. */
+const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu' && !m.simple;
 
 /**
  * The devices and vCPU count a snapshot's header says, made from what the page passed. Refuses (a
@@ -275,7 +278,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   session = { name: m.machine, ncpus, disk: m.disk ? (m.disk.file?.name ?? new URL(m.disk.url!, self.location.href).pathname.split('/').pop() ?? 'disk') : null, kinds };
   booting = bootVm(core, {
     ramSize: machine.ramMiB << 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true,
-    framebuffer: machine.framebuffer, serialIn: m.serial, restore, devices,
+    framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices,
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });
   try {

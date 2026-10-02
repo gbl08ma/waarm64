@@ -85,7 +85,8 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-view-button]
 
 // The canvas at an integer multiple of the framebuffer in device pixels when that fits (crisp),
 // scaled down to fit (smooth) otherwise.
-const fb = spec.framebuffer;
+// The screen's size: the machine's to begin with, then what a virtio-gpu scanout says (`mode` on the display port).
+const fb = { ...spec.framebuffer };
 function fit() {
   if (!screenBox.clientWidth) return; // hidden
   const dpr = devicePixelRatio;
@@ -101,7 +102,7 @@ new ResizeObserver(fit).observe(screenBox);
 matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', fit); // moved to a screen with another density
 
 // One machine at a time; a restart stops it and starts a new worker (fresh memory, fresh ports, a fresh canvas).
-type Run = { worker: Worker; input: Input; serial: MessagePort };
+type Run = { worker: Worker; input: Input; serial: MessagePort; display: MessagePort };
 let run: Run | undefined;
 /** The machine's, plus the page's own `idle`: no machine yet (waiting for "Start anyway"). */
 type PageState = PowerState | 'idle';
@@ -192,17 +193,30 @@ const ACTIONS: Record<Problem, Action[]> = {
 function start(snapshot?: File, resume = true) {
   // The machine worker draws the screen (web/display.ts): a canvas hands its drawing over only once.
   const focused = document.activeElement === canvas;
+  [fb.width, fb.height] = [spec.framebuffer.width, spec.framebuffer.height];
   const fresh = canvas.cloneNode() as HTMLCanvasElement;
   [fresh.width, fresh.height] = [fb.width, fb.height];
   canvas.replaceWith(fresh);
   canvas = fresh;
   if (focused) canvas.focus();
+  fit();
   const screen = canvas.transferControlToOffscreen();
+  const display = new MessageChannel();
+  display.port1.onmessage = (e: MessageEvent<{ type: 'mode'; width: number; height: number }>) => {
+    if (run?.display !== display.port1) return;
+    if ((e.data as { type: string }).type === 'draw-stats') ((window as unknown as { __drawStats?: unknown[] }).__drawStats ??= []).push(e.data);
+    if (e.data?.type !== 'mode' || !(e.data.width > 0 && e.data.height > 0)) return;
+    [fb.width, fb.height] = [e.data.width, e.data.height];
+    fit();
+    // The firmware's graphics output is up: its screens are the boot (the card hides, as it does for a console on a simple framebuffer).
+    bootCard.dataset.done = 'true';
+    bootCard.hidden = true;
+  };
   const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
   // A machine that can have a network card has one from the start (it can't be added later without a restart): its end of the IP port.
   const ip = spec.network ? network.port() : undefined;
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
-  const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1), serial: serial.port1 };
+  const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1), serial: serial.port1, display: display.port1 };
   run = r;
   last = undefined;
   log = lastLine = '';
@@ -267,7 +281,7 @@ function start(snapshot?: File, resume = true) {
     snapshotJob?.error(`the machine's worker failed: ${e.message}`);
     setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator);
   };
-  worker.postMessage({ type: 'start', machine, ncpus, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, ...(ip ? [ip] : [])]);
+  worker.postMessage({ type: 'start', machine, ncpus, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, display: display.port2, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, display.port2, ...(ip ? [ip] : [])]);
   if (ip) autoconnect();
   renderNetwork();
 }

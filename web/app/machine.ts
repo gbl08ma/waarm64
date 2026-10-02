@@ -29,7 +29,14 @@ export type Machine = {
    */
   network?: { credentials: Credential[] };
   ramMiB: number;
+  /** The screen's size at the start (a `simple-framebuffer` of it, or the display's first size). */
   framebuffer: { width: number; height: number };
+  /**
+   * `gpu`: a virtio-gpu draws the screen (web/gpu.ts: the guest sets its own mode, the firmware has a
+   * graphics output); absent: the `simple-framebuffer` (guests without the driver). The page's
+   * `?display=simple` makes a `gpu` machine use the framebuffer (the firmware's menus then stay on the serial console).
+   */
+  display?: 'gpu';
   /**
    * Serial output that means the machine is up (a login prompt, a shell's prompt), matched by
    * `readyWatcher` against the output so far: not only at its end, since the kernel may print a
@@ -78,6 +85,7 @@ export const MACHINES = {
     network: { credentials: [{ name: 'network.network.card', data: '[Match]\nName=e*\n[Network]\nDHCP=yes\n' }] },
     ramMiB: 1024,
     framebuffer: { width: 1024, height: 768 },
+    display: 'gpu',
     ready: /(?:^|\n)\S+ login: /, // agetty's prompt ("localhost login: ")
   },
   // A shell on the serial console. No fbcon in its kernel: the screen stays black. The root is

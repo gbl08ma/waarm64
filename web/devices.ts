@@ -6,6 +6,7 @@
 import { p9, type P9Files } from './9p.ts';
 import { echoBackend, gateway, portBackend } from './gateway.ts';
 import { gpuBackend, type GpuOptions } from './gpu.ts';
+import { canvasPresenter, type DisplayFromPage } from './gpu-present.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
 import { openDisk, type Disk } from './qcow2.ts';
@@ -53,11 +54,19 @@ export type InputSpec = { type: 'input'; kind: 'keyboard' | 'tablet'; port?: Mes
  * virtio-gpu, 2D (web/gpu.ts): the display's size, the EDID's DPI, and a test hook that changes the
  * size after some flushes. Where the pixels go is the page's business (`GpuHooks`).
  */
-export type GpuSpec = { type: 'gpu' } & GpuOptions;
+export type GpuSpec = {
+  type: 'gpu';
+  /** The page's screen (a worker's `OffscreenCanvas`, transferred): the scanout is drawn on it (web/gpu-present.ts). */
+  canvas?: OffscreenCanvas;
+  /** The page's end of the display: the backend says `mode` (the scanout's size) and takes `size` (the page's, for the display info and the EDID). */
+  port?: MessagePort;
+  /** Report flush-to-draw latencies on the port once a second (bench/gpu). */
+  stats?: boolean;
+} & GpuOptions;
 
-/** The MessagePorts in `specs`, to transfer with them. */
-export const specPorts = (specs: DeviceSpec[]) =>
-  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : d.type === 'input' && d.port ? [d.port] : []));
+/** The MessagePorts and canvases in `specs`, to transfer with them. */
+export const specPorts = (specs: DeviceSpec[]): Transferable[] =>
+  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : d.type === 'input' && d.port ? [d.port] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : [])] : []));
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
@@ -567,7 +576,11 @@ export class Devices {
         case 'net': return net(ctx, d);
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
         case 'input': return input(ctx, d);
-        case 'gpu': return gpuBackend(ctx, d);
+        case 'gpu': {
+          const b = gpuBackend(ctx, d, d.canvas ? canvasPresenter(d.canvas, d.port, d.stats) : {});
+          if (d.port) d.port.onmessage = (e: MessageEvent<DisplayFromPage>) => { if (e.data?.type === 'size') b.gpu.setSize(e.data.width, e.data.height); };
+          return b;
+        }
       }
     });
     this.epochs = specs.map(() => 0);

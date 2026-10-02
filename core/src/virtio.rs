@@ -449,7 +449,11 @@ impl Transport {
             }
             0x024 => self.drv_features_sel = v,
             0x030 => self.queue_sel = v,
-            0x038 => self.queue_reg(|q| q.size = v as u64),
+            0x038 => self.queue_reg(|q| {
+                if v != 0 {
+                    q.size = v as u64
+                }
+            }),
             0x044 => ev = self.set_ready(v & 1 != 0, mem, sh),
             0x050 => ev = self.notify(v as usize, mem, sh),
             0x064 => self.isr &= !v,
@@ -480,6 +484,11 @@ impl Transport {
         if !on {
             q.ready = false;
             return 0;
+        }
+        // A QueueNum never written, or written 0 (EDK2's virtio-gpu driver does, and QEMU ignores it), is the
+        // device's maximum.
+        if q.size == 0 {
+            q.size = max;
         }
         if q.fits(max, mem) {
             (q.ready, q.last_avail, q.used) = (true, 0, 0);

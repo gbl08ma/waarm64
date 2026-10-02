@@ -372,13 +372,32 @@ fn malformed_rings_need_reset() {
         assert_eq!(t.rd(0x044), 0, "{off:#x}");
         assert!(t.broken());
     }
-    // A queue size that isn't a power of 2, or is past QueueNumMax.
-    for n in [3, 2 * QSIZE, 0] {
+    // A queue size that isn't a power of 2, or is past QueueNumMax (0 is the device's maximum: below).
+    for n in [3, 2 * QSIZE] {
         let mut t = T::new();
         t.wr(0x038, n);
         t.wr(0x044, 1);
         assert!(t.broken(), "size {n}");
     }
+}
+
+/// A QueueNum of 0 (written, or never written) leaves the queue at the device's maximum, as QEMU does:
+/// EDK2's virtio-gpu driver writes 0 and expects the ring it laid out for QueueNumMax to work.
+#[test]
+fn queue_num_zero_is_the_maximum() {
+    let mut t = T::new();
+    t.wr(0x070, 1 | 2);
+    t.wr(0x070, 3 | FEATURES_OK as u64);
+    t.wr(0x030, 0);
+    t.wr(0x038, 0);
+    for (off, pa) in [(0x080, DESC), (0x090, AVAIL), (0x0a0, USED)] {
+        t.wr(off, pa & 0xffff_ffff);
+        t.wr(off + 4, pa >> 32);
+    }
+    t.wr(0x044, 1);
+    assert_eq!(t.rd(0x044), 1);
+    assert!(!t.broken());
+    assert_eq!(t.t.queues[0].size, QSIZE);
 }
 
 /// A new transport of the same device on the same RAM, restored from `t`'s state.

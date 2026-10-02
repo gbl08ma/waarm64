@@ -240,6 +240,8 @@ struct Resource {
     pixels: Vec<u8>,
     /// RAM offsets and lengths of the guest's pages.
     backing: Option<Vec<(u64, u64)>>,
+    /// Shown on the scanout: alpha is 255 (web/gpu.ts `makeOpaque`).
+    opaque: bool,
 }
 
 /// What a runner compares with the Node and Chromium runs.
@@ -413,6 +415,7 @@ impl Gpu {
                         height: h,
                         pixels: vec![0; bytes as usize],
                         backing: None,
+                        opaque: false,
                     },
                 );
                 self.reply(OK_NODATA, cmd, room, None)
@@ -448,6 +451,15 @@ impl Gpu {
                 };
                 if !Self::inside(&r, res) {
                     return err(self, ERR_INVALID_PARAMETER);
+                }
+                let res = self.resources.get_mut(&id).unwrap();
+                if !res.opaque {
+                    res.opaque = true;
+                    res.pixels
+                        .iter_mut()
+                        .skip(3)
+                        .step_by(4)
+                        .for_each(|a| *a = 255);
                 }
                 self.scanout = Some((id, r));
                 self.reply(OK_NODATA, cmd, room, None)
@@ -647,7 +659,7 @@ fn transfer(ram: &[u8], res: &mut Resource, r: &Rect, offset: u64) -> bool {
             res.pixels[d] = px[ri];
             res.pixels[d + 1] = px[gi];
             res.pixels[d + 2] = px[bi];
-            res.pixels[d + 3] = px[ai];
+            res.pixels[d + 3] = if res.opaque { 255 } else { px[ai] };
             d += 4;
         }
     }

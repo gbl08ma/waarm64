@@ -49,7 +49,7 @@ test('the serial terminal\'s keys reach EDK2 and GRUB: menus, forms, the editor,
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   try {
-    await page.goto(`${base}/web/app/?ncpus=2&view=terminal&${unattendedQuery()}`);
+    await page.goto(`${base}/web/app/?ncpus=2&view=terminal&display=simple&${unattendedQuery()}`);
     await page.locator('.xterm').click();
 
     // GRUB's menu: two arrows down to "UEFI Firmware Settings" (its asterisk marks the entry), Enter.

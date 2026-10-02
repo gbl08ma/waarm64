@@ -179,7 +179,7 @@ test('npm start on a fresh copy of the repository: install, build, prepare Debia
       .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('message-text')?.textContent}; ${document.querySelector('.xterm-rows')?.textContent}`)}`); });
     const state = await page.evaluate(() => document.body.dataset.state);
     assert.ok(state === 'booting' || state === 'running', `${state}: ${await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '')}`);
-    assert.equal(await page.locator('#boot-serial').isVisible(), true, 'the boot card says where the menus are');
+    // The boot card hides at the firmware's first graphics mode (the screen has its screens): nothing to assert about it.
     console.log(`# npm start${cold ? ' (cold)' : ''}: the URL after ${(served / 1000).toFixed(1)} s, the firmware's output ${((performance.now() - start - served) / 1000).toFixed(1)} s later`);
   } finally {
     await browser.close();

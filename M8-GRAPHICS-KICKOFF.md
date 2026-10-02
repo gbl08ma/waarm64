@@ -321,9 +321,9 @@ of its own (`org.webpc.agent.0` or similar), a tiny line protocol. Delivery to a
 3. Rejected: writing into the user's disk image (touches their disk behind their back, needs an
    ext4 writer, distro-specific); injecting into an initrd (UEFI images load their own).
 
-## Progress (2026-10-02; loops 0 to 3 done, next: loop 4)
+## Progress (2026-10-02; loops 0 to 4 done, next: loop 5)
 
-Commits: `c39b6d5` (loops 0 and 1), `9974dda` (loop 2), loop 3 below. `scripts/ci.sh` passes at each; `ci-long.sh`
+Commits: `c39b6d5` (loops 0 and 1), `9974dda` (loop 2), `556604f` (loop 3), loop 4 below. `scripts/ci.sh` passes at each; `ci-long.sh`
 passed for loop 2. The sections above are as drafted; this one says what happened and what a new
 session should know.
 
@@ -392,13 +392,37 @@ flushes) on the same `Gpu.setSize` path a page will use. Changes outside the bri
 repository, so no kernel could be built; `linux` and `linux-crypto` were rebuilt, see backlog
 "Alpine's package pins drift").
 
-**Next: loop 4, on the page**: the page's Debian on virtio-gpu (no simple framebuffer; the
-firmware's GOP), the presentation thread by measurement (the device worker blocks in blk's
-synchronous XHR: key-to-glyph and a flush during a disk read, both ways), damage-only drawing,
-the `screen` event with letterboxing and the tablet through it, `GpuHooks` wired to a canvas, the
-cursor left for loop 6. Check on the way that `putImageData` of RGBA with a non-255 alpha into an
-`alpha: false` context draws opaque. GRUB's `gfxterm` takes the GOP and its menu leaves the serial
-console (loop 0): decide what the page tests do.
+**Loop 4, on the page** (graphics.md §12, frontend.md "The screen", devices.md). Debian's page machine has
+`display: 'gpu'`: the worker makes a `gpu` device (kind `'gpu'` in snapshot headers) instead of the
+simple framebuffer; `?display=simple` restores the framebuffer (page-uefi-keys uses it to keep GRUB on the
+serial console). `web/gpu-present.ts` (`canvasPresenter`) is the `GpuHooks` for the page's canvas, which goes
+page → machine worker → **device worker** (`GpuSpec.canvas`/`port`; `specPorts` transfers them): damage
+accumulates and is drawn at once if the last draw was ≥16 ms ago, else on a 16 ms timer (a device worker has no
+`requestAnimationFrame`); the display port (`start.display`) carries `mode {width,height}` to the page, which
+refits (`fb` in main.ts is now the current scanout size; the boot card hides at the first `mode`) and
+`size` back (`Gpu.setSize`: wired but unused until loop 5), and `draw-stats` with `?displaystats`. The hook
+signatures changed (`scanout(w, h, source)`, `damage(rect)`; `ScanoutSource` is the resource itself, no copy).
+Fixes found on the way: **the transport treats QueueNum 0 as the maximum** (EDK2's gpu driver wrote 0 and
+the firmware hung: core change, unit test, no ABI or snapshot change), and **a resource shown on the scanout is
+made opaque** (an `alpha: false` canvas in a worker still drew the X byte as transparency). Results: Debian's
+page runs on virtio-gpu (`tests/page-debian.test.ts`: running at 54.8 s, login on the screen, `/proc/fb` =
+`virtio_gpudrmfb`); EDK2's output and GRUB's menu are on the screen; **the "which thread draws" question is
+moot** (`bench/gpu/draw-latency.ts`, results in `bench/gpu/results/draw-latency-*.json`): flush-to-draw is a
+frame idle, but with the guest reading its disk virtio-blk's synchronous XHRs block the device worker and a flush
+waits behind them (worst case 89–972 ms); the fix is blk off that thread (backlog). Not done from the loop-4
+list: a page test of the letterbox/tablet mapping (the element is sized to the scanout, so the tablet maps
+through it as before: unmeasured on a gpu machine), and key-to-glyph on the **screen** against ~15 ms (the old
+instrument read draws from the machine worker; the serial terminal's path is untouched). The cursor is still
+drawn by the guest into the framebuffer (loop 6). Snapshots of a gpu machine: the backend saves/restores
+(unit-tested) but the page's snapshot tests use Buildroot (loop 7 covers Debian's).
+
+**Next: loop 5, resize**: the page's size to the guest (debounced, the start size, CSS pixels and the HiDPI
+setting, rounding to 8 and caps, full screen, fixed sizes), the fbcon shrink policy, the resize table measured on
+our machine, a page test changing the viewport. The path exists end to end: the page posts `{type:'size',
+width, height}` on the display port (`run.display`), `Gpu.setSize` raises the display event, the guest takes it
+(the gpu guest test proves the kernel side); what is missing is the page measuring its box and the policy. Mind
+`start.display` is the machine's start size (`MACHINES.debian.framebuffer`, 1024×768) until the page sends its
+own at start. Note `?display=simple` machines have no gpu to resize.
 
 ## Check with the user first
 - Any dependency (none is expected: the EDID, the backend and the presentation are ours).

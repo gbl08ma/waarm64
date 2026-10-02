@@ -209,8 +209,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   is ours: one 128-byte block, CVT reduced-blanking timings for the preferred mode (60 Hz, lower
   for the largest sizes to keep the pixel clock in a detailed timing), physical size from the DPI,
   sizes from 480×300 to 4095×4095; `edid-decode --check` passes for every size tested.
+- **A QueueNum of 0 means the device's maximum** (the transport, for every device): EDK2's virtio-gpu driver writes 0 and expects the ring it laid out for QueueNumMax; QEMU ignores the write, and the first version of ours put the device in NEEDS_RESET, so the firmware hung at its first command.
 - **Where the pixels go** is `GpuHooks` (`scanout`, `damage`, `cursor`): the backend calls them
-  and keeps no presentation of its own; the page wires them in loop 4. Without hooks the state is
+  and keeps no presentation of its own; `web/gpu-present.ts` wires them to an `OffscreenCanvas` in the device worker (docs/frontend.md "The screen"). A resource that is set as the scanout loses its alpha (one pass, then every transfer writes 255): a canvas takes the pixels as they are, and `alpha: false` was not enough in a worker (the screen came out transparent). Without hooks the state is
   all there is: `Gpu.state()` (and `Backend.save`, so a snapshot) gives the display, the resources
   without pixels, hashes of the visible scanout (alpha forced opaque) and of the cursor image, and
   with `trace` the scanout's hash at every flush (tests). A restore reads every resource again

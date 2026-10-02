@@ -280,7 +280,27 @@ loop. Without a loop on the page it took ~11 ms (Debian) and ~6 ms (Buildroot). 
 the page instead of the frame loop helped the terminal but cost the screen ~10 ms; drawing in the
 worker kept both.
 
-The canvas keeps the framebuffer's size; CSS scales it to an integer multiple **in device pixels**
+**Debian's screen is a virtio-gpu** (`MACHINES.debian.display = 'gpu'`; docs/devices.md "virtio-gpu"): the
+guest sets its own mode and the firmware has a graphics output, so EDK2's screens and GRUB's menu
+and "Loading Linux…" appear on the screen, then the console (fbcon on `virtio_gpu`, which loads from the
+root filesystem a few seconds into the boot) takes it. **The device worker draws it**: the page's canvas
+goes machine worker → device worker, whose backend puts each flush's damaged rectangle on it
+(`web/gpu-present.ts`: an `ImageData` over the guest's resource, no copy and no scan of guest memory,
+accumulated rectangles, drawn at once if the last draw was a frame ago and otherwise on a 16 ms timer: Chromium
+gives a device worker no animation frames, "requestAnimationFrame not supported in this Worker").
+The page's main thread still has no per-frame work. The canvas takes the scanout's size, and the page
+refits its box when the display port says `mode` (the boot card hides at the first one). **Keys for the
+firmware's menus still go through the serial terminal** (EDK2 has no virtio-input driver), which is why GRUB's
+menu is on the screen only; `?display=simple` gives a gpu machine the simple framebuffer instead (the firmware
+then keeps its serial menus: `tests/page-uefi-keys.test.ts` uses it).
+Flush-to-draw latency (`bench/gpu/draw-latency.ts`, Debian, tty1 changing every 30 ms): median 16–17 ms idle
+(the timer, for a flush within a frame of the last draw), and with the guest reading its disk (virtio-blk's
+synchronous XHRs block the device worker, and a flush is only served between them) a median of 17 to 66 ms and
+a worst case of 89 to 972 ms over two runs (`bench/gpu/results/draw-latency-*.json`): the drawing thread isn't
+the cause, the device worker's serving is, so moving the draw elsewhere wouldn't help; blk would have to leave that
+thread (asynchronous reads: backlog).
+
+The simple-framebuffer's canvas keeps the framebuffer's size; CSS scales it to an integer multiple **in device pixels**
 when one fits the view (`image-rendering: pixelated`: crisp at any `devicePixelRatio`), and
 scales it down smoothly when it doesn't fit at 1:1. A `ResizeObserver` and a `resolution` media
 query refit it.
@@ -388,8 +408,8 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
   prompt against 33 s): EDK2 to the kernel ~9 s, GRUB's 5 s menu timeout (any key stops the
   countdown), and ~5 s in userspace, because the page's old command line is gone: GRUB owns it
   (`apparmor=0`, the masked units and `console=tty0` no longer apply; AppArmor loads its profiles,
-  timesyncd, resolved and networkd start). The screen shows nothing until a getty (no fbcon boot
-  log); the serial terminal has the firmware's and the kernel's output.
+  timesyncd, resolved and networkd start). With the screen on a virtio-gpu it shows the firmware's output and GRUB, then goes dark until `virtio_gpu`
+  loads (udev, after the root mounts) and fbcon takes it; the serial terminal has the firmware's and the kernel's output.
 - **A first boot asks its questions** on the serial terminal (above), as on a regular machine.
   The page offers no way yet to skip them; a disk that has been through its first boot comes
   with loops 4–6 (a disk in, a changes file or whole disk out).

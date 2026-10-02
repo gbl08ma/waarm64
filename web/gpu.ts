@@ -49,13 +49,15 @@ const FORMATS = new Map<number, [number, number, number, number]>([
   [134, [0, 1, 2, 3]], // R8G8B8X8
 ]);
 
-type Rect = { x: number; y: number; w: number; h: number };
+export type Rect = { x: number; y: number; w: number; h: number };
 type Resource = {
   id: number; format: number; width: number; height: number;
   /** RGBA, rows of `width` pixels. */
   pixels: Uint8Array;
   /** The guest's pages, as RAM offsets (`addr` − RAM_BASE) and lengths; null until attached. */
   backing: { off: number; len: number }[] | null;
+  /** Shown on the scanout: its alpha is 255 (a canvas takes the pixels as they are). */
+  opaque?: boolean;
 };
 
 export type GpuOptions = {
@@ -72,12 +74,15 @@ export type GpuOptions = {
   trace?: boolean;
 };
 
+/** Where the scanout's pixels are: a resource's RGBA (rows `width` pixels apart, alpha meaningless) and the scanout's origin in it. */
+export type ScanoutSource = { pixels: Uint8Array; width: number; height: number; x: number; y: number };
+
 /** What the page draws from: the scanout and its damage, and the cursor. All optional (tests read the state). */
 export type GpuHooks = {
-  /** The scanout's size changed (0×0: the scanout is off). */
-  scanout?(width: number, height: number): void;
-  /** A rectangle of the scanout is new: its RGBA rows, `stride` bytes apart, from `pixels` at `offset`. */
-  damage?(rect: Rect, pixels: Uint8Array, offset: number, stride: number): void;
+  /** The scanout's size changed or it was set again (0×0 and no source: the scanout is off). */
+  scanout?(width: number, height: number, source: ScanoutSource | null): void;
+  /** A rectangle of the scanout (its own coordinates) has new pixels in the source. */
+  damage?(rect: Rect): void;
   /** The cursor image (64×64 RGBA) or none, its hotspot, and where it is (guest pixels). */
   cursor?(image: Uint8Array | null, hotX: number, hotY: number, x: number, y: number): void;
 };
@@ -180,6 +185,7 @@ export class Gpu {
         const res = this.resources.get(id);
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         if (!this.inside(r, res)) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        makeOpaque(res);
         this.setScanout({ id, rect: r });
         return this.reply(OK_NODATA, cmd, room);
       }
@@ -271,7 +277,7 @@ export class Gpu {
 
   private setScanout(s: { id: number; rect: Rect } | null) {
     this.scanout = s;
-    this.hooks.scanout?.(s ? s.rect.w : 0, s ? s.rect.h : 0);
+    this.announce();
     if (s) this.draw(this.resources.get(s.id)!, s.rect);
   }
 
@@ -282,7 +288,14 @@ export class Gpu {
     const x0 = Math.max(r.x, s.rect.x), y0 = Math.max(r.y, s.rect.y);
     const x1 = Math.min(r.x + r.w, s.rect.x + s.rect.w), y1 = Math.min(r.y + r.h, s.rect.y + s.rect.h);
     if (x1 <= x0 || y1 <= y0) return;
-    this.hooks.damage?.({ x: x0 - s.rect.x, y: y0 - s.rect.y, w: x1 - x0, h: y1 - y0 }, res.pixels, (y0 * res.width + x0) * 4, res.width * 4);
+    this.hooks.damage?.({ x: x0 - s.rect.x, y: y0 - s.rect.y, w: x1 - x0, h: y1 - y0 });
+  }
+
+  /** Tells the hooks the scanout as it is now. */
+  private announce() {
+    const s = this.scanout;
+    const res = s && this.resources.get(s.id);
+    this.hooks.scanout?.(s ? s.rect.w : 0, s ? s.rect.h : 0, s && res ? { pixels: res.pixels, width: res.width, height: res.height, x: s.rect.x, y: s.rect.y } : null);
   }
 
   private flush(res: Resource, r: Rect) {
@@ -311,7 +324,7 @@ export class Gpu {
         px[d] = row[k + ri];
         px[d + 1] = row[k + gi];
         px[d + 2] = row[k + bi];
-        px[d + 3] = row[k + ai];
+        px[d + 3] = res.opaque ? 255 : row[k + ai];
       }
     }
     this.draw(res, r);
@@ -397,10 +410,18 @@ export class Gpu {
     this.cursorImage = t.cursorImage ? Uint8Array.from(atob(t.cursorImage), (c) => c.charCodeAt(0)) : null;
     this.cursorState = t.cursor ? { hotX: t.cursor.hotX, hotY: t.cursor.hotY, x: t.cursor.x, y: t.cursor.y } : { hotX: 0, hotY: 0, x: 0, y: 0 };
     const s = this.scanout;
-    this.hooks.scanout?.(s ? s.rect.w : 0, s ? s.rect.h : 0);
+    if (s) makeOpaque(this.resources.get(s.id)!);
+    this.announce();
     if (s) this.draw(this.resources.get(s.id)!, s.rect);
     this.hooks.cursor?.(this.cursorImage, this.cursorState.hotX, this.cursorState.hotY, this.cursorState.x, this.cursorState.y);
   }
+}
+
+/** A resource that is on the scanout loses its alpha (an X format's unused byte, `FORMATS`): from now on transfers write 255 too. */
+function makeOpaque(res: Resource) {
+  if (res.opaque) return;
+  res.opaque = true;
+  for (let k = 3; k < res.pixels.length; k += 4) res.pixels[k] = 255;
 }
 
 /** Reads `out.length` bytes at `offset` of the concatenated backing pages. */
