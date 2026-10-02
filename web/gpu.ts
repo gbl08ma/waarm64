@@ -364,6 +364,14 @@ export class Gpu {
     }, 200);
   }
 
+  /**
+   * Copies what lazy transfers noted. The backend calls it before a reply reaches the guest: a guest reuses a
+   * buffer (a compositor draws its next frame into it) as soon as it has the reply, so the copy can't wait past it.
+   */
+  settle() {
+    this.materialize();
+  }
+
   /** Copies what lazy transfers noted (one resource's, or all). */
   private materialize(res?: Resource) {
     if (!this.pending.size) return;
@@ -635,6 +643,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
     lastBatch = performance.now();
     const batch = held;
     held = [];
+    gpu.settle();
     for (const h of batch) ctx.complete(h.w0, h.len);
   };
   return {
@@ -664,6 +673,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         }
         if (display) lastBatch = now;
       }
+      gpu.settle();
       return reply.length;
     },
     // events_clear: write-one-to-clear of events_read; the guest's write is taken and zeroed.

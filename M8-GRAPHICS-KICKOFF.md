@@ -321,7 +321,7 @@ of its own (`org.webpc.agent.0` or similar), a tiny line protocol. Delivery to a
 3. Rejected: writing into the user's disk image (touches their disk behind their back, needs an
    ext4 writer, distro-specific); injecting into an initrd (UEFI images load their own).
 
-## Progress (2026-10-02; loops 0 to 6 done, next: loop 7)
+## Progress (2026-10-02; loops 0 to 7 done, next: loop 8)
 
 Commits: `c39b6d5` (loops 0 and 1), `9974dda` (loop 2), `556604f` (loop 3), loop 4 below. `scripts/ci.sh` passes at each; `ci-long.sh`
 passed for loop 2. The sections above are as drafted; this one says what happened and what a new
@@ -439,8 +439,9 @@ the canvas's scale, `none` when hidden, the page's pointer when never set), no w
 `tests/gpu-present.test.ts`, `tests/page-cursor.test.ts` (planted: hotspot ignored). Not checked: a real guest's cursor (needs a
 desktop: G2).
 
-**Next: loop 7** (snapshots on a gpu machine: the
-restore's re-transfer, a restore into another page size: the `running` size message is there for it) and 8 (exit).
+**Loop 7, snapshots** (graphics.md §15): the page test of Debian restores into another window size (screen drawn, size followed after a probe); planted scanout caught.
+
+**Next: loop 8** (exit).
 
 ## Check with the user first
 - Any dependency (none is expected: the EDID, the backend and the presentation are ours).

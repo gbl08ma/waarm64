@@ -60,6 +60,19 @@ const loadingSnapshot = (page: Page) => page.waitForFunction(() => document.getE
 const message = (page: Page) => page.locator('#message-text').textContent();
 const status = (page: Page) => page.evaluate(() => document.getElementById('status')!.textContent!);
 
+/** The canvas's pixels (the guest's scanout) and whether any is not black: the screen was drawn. */
+const screenOf = (page: Page) => page.evaluate(() => {
+  const src = document.querySelector<HTMLCanvasElement>('#screen')!;
+  const c = document.createElement('canvas');
+  [c.width, c.height] = [src.width, src.height];
+  const ctx = c.getContext('2d')!;
+  ctx.drawImage(src, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  let lit = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] | d[i + 1] | d[i + 2]) lit++;
+  return { size: [src.width, src.height], lit };
+});
+
 /** Clicks Save snapshot (a download: no file picker) and returns the file's path, once the page says it's saved. */
 async function save(page: Page, name: string) {
   const [download] = await Promise.all([
@@ -355,6 +368,8 @@ test('Debian on the page: a snapshot of a logged-in machine with a file on its d
   await shows(page, /logged-in-42/);
   await onSerial(page, 'echo disk-kept-$((6*7)) >/root/snapmark && sync && SNAPVAR=ram-kept-$((6*7)) && echo sy""nced\n');
   await shows(page, /synced/);
+  const shown = await screenOf(page);
+  assert.ok(shown.lit > 0, 'the screen is drawn before the save');
   const saved = await save(page, 'debian.webpcsnap');
   console.log(`# debian snapshot: ${(saved.bytes / 1e6).toFixed(1)} MB, machine paused ${saved.pausedMs.toFixed(0)} ms`);
   assert.equal(await stateOf(page), 'running');
@@ -364,7 +379,8 @@ test('Debian on the page: a snapshot of a logged-in machine with a file on its d
   await context.close();
 
   // A fresh profile: the page starts booting Debian, the snapshot replaces that machine.
-  const fresh = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  // Another window size than the one saved in: the display device is restored (the console's screen drawn again), then told the new size.
+  const fresh = await browser.newContext({ viewport: { width: 1700, height: 1000 } });
   const p2 = await fresh.newPage();
   const errors2: string[] = [];
   p2.on('pageerror', (e) => errors2.push(String(e)));
@@ -377,6 +393,23 @@ test('Debian on the page: a snapshot of a logged-in machine with a file on its d
   const loadMs = performance.now() - t1;
   console.log(`# debian snapshot: load ${(loadMs / 1000).toFixed(1)} s from the choice to running`);
   assert.ok(loadMs < 60_000, `loaded in ${(loadMs / 1000).toFixed(1)} s`);
+  // The display: the restored scanout is drawn at the saved size (fbcon's buffer is that size, and the console is never cropped),
+  // and the guest has the new window's size as its preferred mode (the `size` message sent at `running`).
+  // (The device worker draws on its own timer: poll for the first frame.)
+  await p2.waitForFunction(() => {
+    const src = document.querySelector<HTMLCanvasElement>('#screen')!;
+    const c = document.createElement('canvas');
+    [c.width, c.height] = [src.width, src.height];
+    const ctx = c.getContext('2d')!;
+    ctx.drawImage(src, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    for (let i = 0; i < d.length; i += 4) if (d[i] | d[i + 1] | d[i + 2]) return true;
+    return false;
+  }, null, { timeout: 10_000, polling: 100 }).catch(() => assert.fail('the restored screen is drawn'));
+  const restored = await screenOf(p2);
+  assert.deepEqual(restored.size, shown.size, 'the console keeps its buffer');
+  const want = await p2.evaluate(() => { const b = document.getElementById('screen-view')!; const r = b.getBoundingClientRect(); return [Math.floor(r.width / 8) * 8, Math.floor(r.height)]; });
+  assert.notDeepEqual(want, shown.size, 'the window is another size');
   // The firmware's variable store is back beside the new overlay (the restore deleted the copy): written before `running` is posted.
   const flash = await p2.evaluate(async () => {
     try {
@@ -394,6 +427,11 @@ test('Debian on the page: a snapshot of a logged-in machine with a file on its d
   // And the disk takes writes: a new file, synced, read back from the disk.
   await onSerial(p2, 'echo after-$((6*7)) >/root/after && sync && echo 3 >/proc/sys/vm/drop_caches && cat /root/after && echo wr""itten\n');
   await shows(p2, /after-42[^]*?written/);
+  // The guest's connector lists the new mode after a probe (the restored guest hasn't re-read it until then).
+  await p2.waitForTimeout(2500); // the debounce, the display event
+  await onSerial(p2, 'echo detect >/sys/class/drm/card0-Virtual-1/status; sleep 1; echo ==pre""f $(head -qn1 /sys/class/drm/card*-Virtual-1/modes)\n');
+  await shows(p2, /==pref\s+\d+x\d+/);
+  assert.match(await terminal(p2), new RegExp(`==pref\\s+${want[0]}x${want[1]}`), "the guest's preferred mode is the new window's");
   // Suspend: the machine stops with its memory kept beside the overlay; a reload resumes it, still logged in.
   await onSerial(p2, 'SUSVAR=suspended-$((6*7)); clear; echo re""ady-to-suspend\n');
   await shows(p2, /ready-to-suspend/);

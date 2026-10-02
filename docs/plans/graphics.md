@@ -460,3 +460,31 @@ snapshot sends its cursor again through `cursor`).
   don't race it: the CSS value, the scaled hotspot, the blob's size and alpha, `none`, back to the default; planted: the
   hotspot ignored, caught). The guest's own cursor bytes are the gpu guest's (loop 3).
 - Chromium normalizes `-webkit-image-set(...)` to `image-set(...)`; a hotspot is in the image's pixels.
+
+## 15. G1 loop 7: snapshots on a gpu machine (2026-10-02)
+
+The machinery was there from loop 3 (`Gpu.save`/`restore`: the resource table, the scanout, the cursor; host pixels come back
+from the backing in the restored RAM; the header lists the `gpu` kind) and loop 5 (the `size` message at `running`). Loop 7
+adds the page's proof, in `tests/page-snapshot.test.ts` (Debian: a snapshot of the logged-in machine, loaded in a fresh
+profile **with another window size**):
+- the restored canvas has the saved size (fbcon's buffer: the console is never cropped) and is drawn, not black;
+- the guest then has the new window's size as its connector's preferred mode. **A restored guest lists it only after a
+  probe** (`echo detect >/sys/class/drm/card0-Virtual-1/status`): until then the connector's `modes` file is empty, as the
+  guest never re-read it across the restore; the display event is delivered either way.
+- Planted: the scanout not restored. The unit test (`tests/gpu.test.ts`, restore) and the page test both fail.
+- A guest that wrote a backing without transferring it shows the newer pixels after a restore until its next flush
+  (the restore re-reads every backing): harmless.
+
+### After the user's manual test of sway (2026-10-02)
+
+Debian with sway and foot showed flashes of oddly shaped areas, a typed command's last letter missing or flickering
+(frames that looked out of order), and, after `dmesg`, stray prompts as if Enter were held. **Cause of the first two
+(found by reading, a regression test, no desktop run here): lazy transfers copied later than the guest's reply.** A
+console never rewrites a buffer it flushed, but a compositor draws its next frame into the buffer as soon as it has
+the reply, so the deferred copy (up to a frame later, at the page's draw) read half a frame. Fix: `Gpu.settle()` copies
+what is noted **before a reply reaches the guest** (at once for an immediate reply, at the release for a paced batch),
+so a burst still coalesces; planted (no settle on the immediate path) fails `tests/gpu.test.ts`. **The stray prompts
+are not explained**: a compositor on software rendering saturates the guest's vCPUs, which delays a key's release
+and starts the autorepeat; the old device-worker saturation is the other candidate. If it persists, try
+`?gpu=eager,pace,q16` (and `?gpu=eager,q16`) and `bench/results/local/dmesg-load.ts`; a sway run needs a desktop
+installed in a throwaway overlay (not done).

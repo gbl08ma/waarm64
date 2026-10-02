@@ -537,3 +537,29 @@ test('gpu: paced replies hold a burst to the frame and answer the first at once'
   await new Promise((r) => setTimeout(r, 40));
   assert.deepEqual(done, [3, 4]);
 });
+
+test('gpu: a lazy transfer is copied before its reply reaches the guest (a compositor reuses the buffer at once)', async () => {
+  // sway showed torn frames when the copy waited for the page's draw: the guest had drawn its next frame into the buffer.
+  const { gpuBackend } = await import('../web/gpu.ts');
+  const ram = new Uint8Array(RAM_SIZE);
+  const done: number[] = [];
+  const ctx = { ram: () => ram, ramSize: RAM_SIZE, complete: (w0: number) => done.push(w0), config: () => new Uint8Array(256), changeConfig() {} };
+  for (const pace of [false, true]) {
+    ram.fill(0);
+    const b = gpuBackend(ctx, { width: 800, height: 600, lazyTransfer: true, paceReplies: pace });
+    // The guest's command at RAM 0x100, the response room at 0x800.
+    const send = (c: Uint8Array) => { ram.set(c, 0x100); return b.request({ w0: 1, queue: 0, read: [{ off: 0x100, len: c.length }], write: [{ off: 0x800, len: 512 }] }); };
+    const attach = (() => { const head = cmd(T.ATTACH, 1, 1); const c = new Uint8Array(head.length + 16); c.set(head); const v = new DataView(c.buffer); v.setBigUint64(head.length, BigInt(RAM_BASE + 0x4000), true); v.setUint32(head.length + 8, 64, true); return c; })();
+    send(cmd(T.CREATE, 1, B8G8R8X8, 4, 4));
+    send(attach);
+    send(cmd(T.SCANOUT, 0, 0, 4, 4, 0, 1));
+    ram.fill(0x11, 0x4000, 0x4040);
+    if (pace) await new Promise((r) => setTimeout(r, 40)); // idle: the next reply is at once
+    const answered = send(cmd(T.TRANSFER, 0, 0, 4, 4, 0n, 1, 0));
+    assert.ok(answered !== undefined, 'answered at once');
+    ram.fill(0x99, 0x4000, 0x4040); // the guest's next frame
+    b.gpu.settle();
+    const res = b.gpu.resources.get(1)!;
+    assert.equal(res.pixels[0], 0x11, `the first frame was copied before the reply (pace ${pace})`);
+  }
+});
