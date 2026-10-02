@@ -88,16 +88,18 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
 
 ## Current numbers
 
-Chromium 153 on the M4 VM, JIT, crypto extensions on (M6 exit table and M6.5 exit,
-`bench/interp/REPORT.md`):
+Chromium 153 on the M4 VM, JIT, crypto extensions on. webpc's boots, userspace and CoreMark are
+from 2026-10-02 (`bench/boot/REPORT.md` "M8: forward regions"; before that day's two JIT changes:
+674 ms, 9.96 s, 24.1 s, 8602 it/s); the rest and the peers are M6's exit table and M6.5's exit
+(`bench/interp/REPORT.md`):
 
 | | webpc | QEMU TCG (same VM) | native (M4) |
 |---|---|---|---|
-| Buildroot boot to power-off, cold | 674 ms | 0.30 s | 0.10 s (hvf) |
-| Alpine boot to power-off, cold | 9.96 s | 5.4–5.6 s | 2.4 s (hvf) |
-| Alpine userspace | 24.1 s (compress 2.8, Lua 5.1, churn 2.2, SQLite 4.0) | 11.2 s | 2.9 s (hvf) |
+| Buildroot boot to power-off, cold | 755 ms | 0.30 s | 0.10 s (hvf) |
+| Alpine boot to power-off, cold | 9.74 s | 5.4–5.6 s | 2.4 s (hvf) |
+| Alpine userspace | 20.9 s (compress 2.5, Lua 3.9, churn 2.0, SQLite 3.2) | 11.2 s | 2.9 s (hvf) |
 | Debian 13 boot to power-off | 42.2 s | 31.3 s | 2.4 s (hvf) |
-| CoreMark, user mode | 8602 it/s | 12,500 | 61,111 |
+| CoreMark, user mode | 9930 it/s | 12,500 | 61,111 |
 | integer / FP guest | 5175 / 155 MIPS | | |
 | EL1 guest, MMU off / on | 4932 / 4045 MIPS | | |
 | `openssl speed` 16 KiB: AES-128-GCM / AES-128-CBC / SHA-256 | 232 / 151 / 298 MB/s | | |

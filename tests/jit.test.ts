@@ -236,3 +236,41 @@ test('with the MMU on, a direct branch to another page goes where its VA maps an
     for (const [i, p] of r.slice(1).entries()) assert.ok(p.dispatches < 20n, `run ${i + 1}: ${p.dispatches} dispatches for ${p.done} steps`);
   }
 });
+
+// Forward regions (M8, docs/jit.md "Compile policy"): the blocks of a batch that static edges
+// join are compiled as one function, each block once. A function with two sides and a join,
+// called in a loop (bit 0 of the counter picks the side):
+//   0x1000 L: bl f; subs x5, x5, #1; b.ne L; brk
+//   0x1020 f: tbz x5, #0, 0x102c
+//   0x1024    add x1, x1, #1; b 0x1030
+//   0x102c    add x2, x2, #1 (and on into 0x1030's words)
+//   0x1030    add x3, x3, #1; ret
+// With a threshold of 2 and a batch of 16 every block is pending when the batch is emitted (a
+// million steps after its first): `bl f`, f with its three successors, and what follows the
+// call. The call's target isn't taken into the caller's region, nor is L into the region of
+// the block that branches back to it (it heads its own).
+function forwardRegion(threshold: number) {
+  const { ex, memory } = core(true);
+  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
+  const base = memory.grow(1) * 65536;
+  new Uint32Array(memory.buffer, base + 0x1000, 4).set([0x94000008, 0xf10004a5, 0x54ffffc1, 0xd4200000]);
+  new Uint32Array(memory.buffer, base + 0x1020, 6).set([0x36000065, 0x91000421, 0x14000002, 0x91000442, 0x91000463, 0xd65f03c0]);
+  const v = e.jit_new(threshold, 16, 64, 0, 1000) as number;
+  const x = new BigUint64Array(memory.buffer, v, 33);
+  [x[5], x[32]] = [400_000n, 0x1000n];
+  const exit = e.vcpu_new() as number;
+  const done = e.jit_run_exit(v, e.mem_new(base, 65536n), 10_000_000n, exit) as bigint;
+  assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
+  const st = new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 19);
+  return { done, x1: x[1], x2: x[2], x3: x[3], regions: st[0], blocks: st[16], dispatches: st[5], jitSteps: st[4] };
+}
+
+test('the blocks of a batch that static edges join are compiled as one forward region', () => {
+  const want = { done: 3_000_000n, x1: 200_000n, x2: 200_000n, x3: 400_000n }; // 8 or 7 steps a turn
+  const { regions: _r, blocks: _b, dispatches: _d, jitSteps: _j, ...interpreted } = forwardRegion(0xffff_ffff);
+  assert.deepEqual(interpreted, want);
+  const { regions, blocks, dispatches, jitSteps, ...jit } = forwardRegion(2);
+  assert.deepEqual(jit, want);
+  assert.deepEqual([regions, blocks], [3n, 6n], 'three functions: the call, f with its three successors, what follows the call');
+  assert.ok(jitSteps > 1_000_000n && dispatches < 20n, `${dispatches} dispatches for ${jitSteps} steps in JIT code`);
+});

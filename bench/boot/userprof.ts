@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { bootVm, DISTROS, Exit, guestDevices } from '../../web/vm.ts';
 
-type Stats = { tlbMisses: number; tlbFlushes: number; jit: { steps: number; dispatches: number; blocks: number; tierUps: number } };
+type Stats = { tlbMisses: number; tlbFlushes: number; jit: { steps: number; dispatches: number; blocks: number; tierUps: number; modules: number; bytes: number; compileNs: number; regionBlocks: number } };
 type Mark = { name: string; ms: number; mono: number; steps: number; stats: Stats; report: { op: string; calls: number }[] };
 let marks: Mark[] = [];
 
@@ -46,7 +46,7 @@ const title = (p: { from: Mark; to: Mark }) => (p.from.name === 'begin' ? 'boot'
 for (const p of phases) {
   const d = (f: (s: Stats) => number) => f(p.to.stats) - f(p.from.stats);
   const st = p.to.steps - p.from.steps, ms = p.to.ms - p.from.ms, disp = d((s) => s.jit.dispatches);
-  console.log(`${title(p)}: ${(ms / 1000).toFixed(2)} s, ${(st / 1e6).toFixed(0)}M steps, ${(st / ms / 1000).toFixed(0)} MIPS, dispatches ${(disp / 1e6).toFixed(2)}M (1 per ${(st / disp).toFixed(0)}), interpreted ${((st - d((s) => s.jit.steps)) / 1e6).toFixed(2)}M, TLB misses ${(d((s) => s.tlbMisses) / 1e3).toFixed(0)}K, flushes ${d((s) => s.tlbFlushes)}, blocks ${d((s) => s.jit.blocks)}, tier-ups ${d((s) => s.jit.tierUps)}`);
+  console.log(`${title(p)}: ${(ms / 1000).toFixed(2)} s, ${(st / 1e6).toFixed(0)}M steps, ${(st / ms / 1000).toFixed(0)} MIPS, dispatches ${(disp / 1e6).toFixed(2)}M (1 per ${(st / disp).toFixed(0)}), interpreted ${((st - d((s) => s.jit.steps)) / 1e6).toFixed(2)}M, TLB misses ${(d((s) => s.tlbMisses) / 1e3).toFixed(0)}K, flushes ${d((s) => s.tlbFlushes)}, regions ${d((s) => s.jit.blocks)} (${d((s) => s.jit.regionBlocks)} blocks, ${d((s) => s.jit.tierUps)} tier-ups) in ${d((s) => s.jit.modules)} modules, ${(d((s) => s.jit.bytes) / 1e6).toFixed(1)} MB, ${(d((s) => s.jit.compileNs) / 1e6).toFixed(0)} ms installing`);
 }
 
 // The helper calls per phase, and the diagnostic lines a patched core adds to the report:
@@ -64,11 +64,12 @@ for (const p of phases) {
   console.log(`\n== ${title(p)}`);
   console.log(`  helper calls: ${d.filter(([k]) => !/^[A-Z]:/.test(k)).slice(0, 8).map(([k, n]) => `${k} ${(n / 1e6).toFixed(2)}M`).join(', ')}`);
   if (sum('X')) {
-    const x = (i: number) => b.get(`X:${i}`)! - (a.get(`X:${i}`) ?? 0);
-    const blocks = x(9) + x(7) + x(8);
+    const x = (i: number) => (b.get(`X:${i}`) ?? 0) - (a.get(`X:${i}`) ?? 0);
+    const blocks = x(9) + x(7) + x(8) - (x(10) || 0);
     console.log(`  ${(blocks / 1e6).toFixed(0)}M block executions (${(st / blocks).toFixed(1)} instructions each); transfers per 1000 instructions:`);
     XFER.forEach((name, i) => console.log(`  ${(1000 * x(i) / st).toFixed(1).padStart(7)}  ${name}`));
     console.log(`  ${(1000 * (p.to.stats.jit.dispatches - p.from.stats.jit.dispatches) / st).toFixed(1).padStart(7)}  from the dispatcher`);
+    if (x(10)) console.log(`  ${(1000 * x(10) / st).toFixed(1).padStart(7)}  through a head compiled alone to its region (a second tail call)`);
   }
   const tot = sum('D');
   if (!tot) continue;

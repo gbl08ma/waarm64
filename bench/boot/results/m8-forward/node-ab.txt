@@ -1,0 +1,4 @@
+landed compress: ok 334304 434555 churn: 1069 files sqlite: 199899 9995245378 sqlite: 997 101 sqlite: 85715 2470168 boot 7.68 compress 2.41 lua 4.22 churn 1.67 sqlite 3.30 shutdown 1.07 
+fwd2 compress: ok 334304 434555 churn: 1069 files sqlite: 199899 9995245378 sqlite: 997 101 sqlite: 85715 2470168 boot 7.04 compress 2.29 lua 3.58 churn 1.43 sqlite 2.96 shutdown 0.89 
+landed compress: ok 334304 434555 churn: 1069 files sqlite: 199899 9995245378 sqlite: 997 101 sqlite: 85715 2470168 boot 7.68 compress 2.45 lua 4.39 churn 1.72 sqlite 3.32 shutdown 1.04 
+fwd2 compress: ok 334304 434555 churn: 1069 files sqlite: 199899 9995245378 sqlite: 997 101 sqlite: 85715 2470168 boot 6.94 compress 2.25 lua 3.60 churn 1.42 sqlite 2.94 shutdown 0.89 

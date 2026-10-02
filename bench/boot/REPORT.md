@@ -637,3 +637,74 @@ the jump-cache probe (the entry's load carries 13 to 32% of such a block's sampl
 hot userspace code more than half of the host's work is moving between blocks, which is what
 separates these phases (600 to 900 MIPS) from guests whose loops are regions (4,000). What follows
 from it is in [docs/backlog.md](../../docs/backlog.md) "JIT".
+
+## M8: forward regions (a batch's blocks compiled once each, as functions of several blocks)
+
+2026-10-02, the M4 VM, on `939987b` (the chaining fix above). After that fix, hot userspace code
+still left one wasm function for another at 89 to 98% of its block-to-block transfers, two thirds of
+them direct and within one guest page ("the transfers between blocks" above). **Forward regions**
+(docs/jit.md "Compile policy") make those edges internal: when a batch is compiled, each block takes
+the batch's other blocks that static edges reach from it (same page, at most 16, not a call's
+target, not a loop head), and the group is one function whose edges keep registers and flags in
+locals. A block is compiled once per batch, as a head or as a member; a member entered from
+elsewhere is counted and compiled again as a head. Loop regions and their tier-up are unchanged.
+
+**Chromium 153.0.8010.52, alternated A, B, A, B** (A: `939987b`; B: forward regions; medians, IQR;
+`results/m8-forward/`, `../interp/results/m8-forward/`):
+
+| | A | B | |
+|---|---|---|---|
+| `alpine_user_jit` compress (ms) | 2669 (24), 2611 (11) | 2453 (94), 2539 (114) | −5.5% |
+| Lua | 4713 (41), 4626 (31) | 3859 (15), 3908 (24) | −17% |
+| churn | 2293 (9), 2223 (28) | 1952 (41), 1973 (3) | −13% |
+| SQLite | 3601 (30), 3526 (27) | 3204 (19), 3229 (11) | −10% |
+| total, to power-off | 23,569 (196), 22,828 (100) | 20,652 (135), 21,079 (223) | −10% |
+| Alpine boot to power-off, warm / cold (one pair) | 10,319 (37) / 10,393 (91) | 9754 (39) / 9738 (20) | −5.5% |
+| Buildroot boot to power-off, warm / cold (one pair) | 675 (4) / 709 (7) | 727 (7) / 755 (17) | **+8%, +6.5%** |
+| CoreMark, user mode (it/s) | 8483 (121), 8435 (260) | 9964 (176), 9898 (251) | +17.5% |
+| integer guest (MIPS, eight placements) | 5115 (49), 5054 (157) | 5109 (64), 5105 (39) | |
+| EL1 guest, MMU off / on (MIPS) | 4706, 4717 / 3876, 3880 | 4673, 4785 / 3887, 3899 | |
+| FP guest (MIPS) | 156.0, 155.5 | 156.2, 155.8 | |
+
+Steps unchanged (userspace 10,763,178,470; Alpine 2,856,663,287; Buildroot 40,505,789). Buildroot's
+half-second boot is the loss (a check, not a target: docs/benchmarking.md), from more wasm compiled
+while it is still cold. With the chaining fix, the day's two changes take the userspace benchmark
+from 24.2 to 20.9 s (−14%), Lua from 5.17 to 3.88 s (−25%) and SQLite from 4.04 to 3.22 s (−20%);
+CoreMark is at 79% of QEMU TCG's user mode (it was 69%).
+
+**What was compiled** (Alpine's boot, `boot_alpine_jit-*.json`): 47,215 functions of 49,438 blocks
+became 28,469 of 53,463; wasm 23.6 → 27.2 MB (+15%: the blocks compiled a second time as heads, 8%
+of them, and the edges' code); modules 1820 → 2004; install time 306 → 327 ms; steps interpreted
+40.9M → 43.7M (members waiting to be compiled as heads). **Transfers** (`transfers.txt`, Node, a
+diagnostic build): per 1000 instructions, edges inside a region went from 3 to 105 in Lua, 23 to
+118 in SQLite and 55 to 107 in compress; direct tail calls within a page fell from 133, 123 and 83
+to 30, 24 and 29.
+
+**Tried first, and why it lost** (Node, `bench/boot/userprof.ts`; docs/jit.md "Tried and not kept"):
+forward regions behind a tier-up, as loops are (every block with a same-page successor compiled
+alone with a hot word, its region after N entries). Lua 4.3 → 3.6 to 3.9 s, but boot 7.7 → 8.8 to
+9.1 s and churn 1.7 → 2.0 to 2.1 s at N = 1,000, 10,000 and 50,000 alike: the counting prologue in
+nearly every block (+16% wasm), run by the cold code that is most of a boot (`perf`: guest code
++17 to 20% in both tiers, identical shares otherwise). Batch-time regions need no prologue: in Node
+(`node-ab.txt`, two alternated pairs) boot 7.68 → 6.94 to 7.04 s, compress 2.41 to 2.45 → 2.25 to
+2.29, Lua 4.22 to 4.39 → 3.58 to 3.60, churn 1.67 to 1.72 → 1.42 to 1.43, SQLite 3.30 to 3.32 → 2.94
+to 2.96, shutdown 1.04 to 1.07 → 0.89. Flat within noise on top of them: a cap of 8 or 32 blocks,
+and taking calls' targets into the caller's region.
+
+**Where a hot region's time goes now** (`perf annotate`, Node, a Lua region of three blocks, 14
+guest instructions in ~185 host instructions): its seven guest memory accesses are 11 instructions
+each (the inline TLB), and its exit writes back five values (three registers, NZCV, the PC), each
+behind a reload of the memory's size and a bounds check: 30 instructions carrying ~45% of the
+function's samples. That cost exists only where V8 has no trap handler (this Linux arm64 host;
+docs/v8.md "Bounds checks"), so this VM's numbers overstate what write-backs cost on macOS and
+x86_64, and understate what forward regions gain there relative to it. docs/backlog.md "JIT" has
+what follows.
+
+**Tests:** `block::tests::a_forward_region_is_the_blocks_in_reach_without_calls`,
+`jit::tests::a_batch_is_planned_as_forward_regions_and_loop_heads`, a forward region end to end in
+`tests/jit.test.ts` (three functions for six blocks, results as interpreted, under 20 dispatches);
+the differential test's region class compiles them (2,582 blocks in 1,333 regions). Planted bugs
+caught: a forward edge that doesn't bring the registers to the member's entry state (16 of 1024
+programs differ), a region that takes a block of the next physical page (the cross-page test: the
+decoy's code runs), members left in the batch (compiled twice at once: the plan's unit test and
+the end-to-end function count).

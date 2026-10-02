@@ -66,26 +66,27 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   order:
   1. Done: direct branches to another page of a process chain by the target's VA ([jit.md](jit.md) "Linking";
      SQLite 12%, Lua 10% and compression 9% faster).
-  2. **Compile units larger than a loop.** A block runs ~5 instructions, and in Lua and SQLite 89 to 98% of
-     block-to-block transfers leave one wasm function for another, each paying a frame, the registers' write-back
-     and reload through the `Cpu`, NZCV and the PC materialized, a budget check and a tail call: over half of the
-     host's instructions in hot code. Half to two thirds of all transfers are **direct and within one guest page**, which
-     loop regions don't take (a region is a loop through its head without calls: 1.5% of Lua's block executions).
-     The shape to try: one function per hot page (or per group of blocks reached from one entry) holding each
-     block once, entered through a `br_table` on the entry PC's offset, same-page edges as `br` with registers and
-     lazy flags in locals (v86's shape). Each block once per unit avoids the duplication that sank "regions of
-     every seen successor" ([jit.md](jit.md) "Tried and not kept"), and the unit must stay behind a tier-up as loop
-     regions are (regions at the first threshold cost the boots 10 to 14%). Unknowns to measure first: V8's
-     compile time and code quality on functions of a page's size (Liftoff zero-initializes every local), the
-     register state at merge points, the `br_table`'s cost against a tail call.
-  3. **Calls and returns** (`RET`: 8 to 17 per 1000 instructions, and as many calls): only after 2, as inlined
-     callees or a return predicted to the call site inside the unit.
+  2. Done in part: **forward regions** ([jit.md](jit.md) "Compile policy": a batch's blocks that static edges
+     join are one function, each block once; Lua 17%, process churn 13%, SQLite 10%, Alpine's boot 5.5% and
+     CoreMark 17% faster). Half of the block-to-block transfers now stay inside a function (105 to 118 per 1000
+     instructions; `bench/boot/results/m8-forward/transfers.txt`). **What still leaves one:** 25 to 30 direct
+     transfers within a page per 1000 instructions (calls, and edges into a block that heads another region), 10
+     to 14 to a successor compiled later, and the calls, returns and other pages of 3 and 4. Not tried: regions
+     across batches (a member compiled later can't join the region of a head compiled earlier), a region entered
+     at more than one block (a `br_table` on the entry PC, v86's shape, would save the second copy of blocks
+     with several entries: 8% of Alpine's blocks, 15% of its bytes).
+  3. **Calls and returns** (`RET`: 8 to 17 per 1000 instructions, and as many calls): a return predicted to the
+     call site inside the unit. Taking a call's target into the caller's forward region was tried with 2 and
+     moved nothing.
   4. **Indirect transfers** (`BR`, `BLR`, `RET`, and the by-VA links to other pages: 23 to 56 per 1000 instructions, ~50 host
      instructions each): two table lookups (the instruction TLB, then the 1 MiB jump cache, whose entry load is
      where such blocks' samples sit) and `return_call_indirect`. One lookup in a small VA-keyed cache that is
      flushed with the TLB (QEMU's `tb_jmp_cache`) would replace the two.
   5. **The fixed-size memory** (below) is 24 of a typical block's ~85 host instructions on this host (a size
-     reload and a bounds check before each write-back), and nothing on macOS or x86_64.
+     reload and a bounds check before each write-back), and nothing on macOS or x86_64. With forward regions it
+     is what a region's exits cost: in a hot Lua region ~45% of the samples sit on the size reloads of its five
+     write-backs (`perf annotate`, Node). On this host it is now the largest single cost in hot code; measure on
+     the Mac host's Chromium (guard pages) before ranking anything else by this VM's numbers.
   - Small: `UQSUB`/`UQADD` (2.0M helper calls in the compression phase, ~7% of it with the interpreter's share)
     are wasm's `sub_sat`/`add_sat`.
   - Not levers there: TLB misses (about 1% of a phase at most), the remaining helpers, the core's own compiler (under

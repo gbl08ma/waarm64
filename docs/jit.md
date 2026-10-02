@@ -70,10 +70,24 @@ the interpreter's own code.
 - A key is counted per dispatch; at the **threshold (50)** it joins a pending batch, emitted as
   one module at **512 blocks** or **1M dispatched steps** after the batch's first entry
   (`BATCH_TIMEOUT`), so a lone hot block doesn't wait forever. Fewer, larger modules run faster
-  (chains stay within a module) and cost V8 less per module: Alpine makes ~2,600 modules.
-- **Regions** (the compile unit): a hot block and the blocks that lead back to it by static edges
-  within its guest page (its loop; seen by the dispatcher), up to 16 blocks (`block::REGION`), in
-  reverse postorder, one function. Without a loop the region is the head alone.
+  (chains stay within a module) and cost V8 less per module: Alpine makes ~2,000 modules.
+- **Regions** (the compile unit, one function each) are of two kinds, both within one guest page
+  and of up to 16 blocks (`block::REGION`), in reverse postorder:
+  - **Forward regions** (`block::forward`, formed when a batch is compiled: `Cache::plan`): a
+    block of the batch and the batch's other blocks that static edges reach from it, so each block
+    of a batch is compiled **once**, as a head or as a member. The edges between members keep
+    registers and lazy flags in locals instead of leaving one function for the next (a frame, the
+    write-backs, NZCV and the PC, a tail call). A call's target isn't taken (it heads its own
+    region, or every caller in the page would hold a copy), nor a loop head. **A member has no
+    function of its own:** entered from elsewhere (a branch from outside, a return into it, the
+    dispatcher after its region ran out of steps) it is a block not compiled yet, counted from zero
+    again and compiled as a head (with what it reaches in *that* batch) at the threshold. So only
+    blocks with several hot entries are compiled more than once (Alpine's boot: 47,200 functions
+    of 49,400 blocks became 28,500 of 53,500, in 27.2 MB of wasm instead of 23.6).
+    JIT-stress compiles a block at a time, so it makes none; JIT-check and the tests' forced
+    mode take any block in reach, as their loop regions do.
+  - **Loop regions** (`block::region`): a hot block and the blocks that lead back to it by static
+    edges (its loop; seen by the dispatcher). Without a loop the region is the head alone.
 - **Tier-up:** a loop head is first compiled **alone** with a hot word (one u32 per code-cache
   slot) counting entries down from `region_after` (**1000**); the entry that reaches 0 calls
   `jit_hot(vcpu, key, pc)`, which compiles the loop region in its own module (never with a flush,
@@ -83,7 +97,8 @@ the interpreter's own code.
   (`Config::max_bytes`: 160 MiB of wasm for a VM, divided among the caches of a parallel SMP VM, at
   least 32 MiB each: 40 MiB per vCPU on 4). When either is reached, everything is flushed (slots
   freed, the host's table lets go of the old functions, [Memory](#memory)). Alpine's boot compiles
-  ~22 MiB and Debian's ~73 MiB on one vCPU (~31 MiB per vCPU on 4), so neither flushes. Per-module
+  ~26 MiB and Debian's compiled ~73 MiB on one vCPU (~31 MiB per vCPU on 4) before forward regions
+  (which added 15% to Alpine's bytes; Debian's weren't measured again), so neither flushes. Per-module
   eviction is backlog: coldest first. FIFO was tried, and it collapsed a Go build.
 - **Modes** (`jit::Config`; `VmConfig.jit`): 1 = the default above; 2 = **JIT-stress**: threshold
   0, batch 1, a 4-region cache, `region_after` 1 and the stale-code checker; 3 = **JIT-check**:
@@ -304,7 +319,8 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   The 16-byte entry stays.
 - **Relinking** (recompiling a block once a successor it returned through is compiled): doubled
   the blocks compiled and the flushes on Alpine for 9% fewer dispatches.
-- **Regions of every seen successor** duplicated each block into ~5 regions and cost Buildroot
+- **Regions of every seen successor** (M5, loops; forward regions since M8 hold each block of a
+  batch once, which is what this lacked) duplicated each block into ~5 regions and cost Buildroot
   25–40%; **regions at the first threshold** (no tier-up) cost the boots 10–14% (~930 lukewarm
   loops compiled in Buildroot); **regions from any block in reach** under JIT-stress made it 42×
   slower. Hence: loops only, from seen blocks, after 1000 entries.
@@ -322,6 +338,14 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   instance on the shared memory forms, emits and eagerly compiles, and posts the
   `WebAssembly.Module` to the vCPU worker, which only instantiates it; costs a host ABI, a queue
   and invalidation of in-flight compiles.
+- **Forward regions behind a tier-up** (M8, before the batch-time ones): every block with a
+  same-page successor compiled alone with a hot word, its forward region compiled after 1,000
+  (or 10,000, or 50,000) entries. Lua got 10 to 18% faster, but the boot and process churn 13 to
+  20% slower at every threshold: the counting prologue in nearly every block is 16% more wasm,
+  and it runs in the cold code that is most of a boot (guest code +17 to 20% in both V8 tiers).
+  Forming the regions when the batch is compiled needs no prologue, no second compile and no
+  redirect, and was faster everywhere (`bench/boot/REPORT.md` "M8: forward regions"). Tried with
+  them and flat within noise: 8 or 32 blocks a region instead of 16, and taking calls' targets.
 - **Vector registers in locals** wasn't built: no profile asked for it (the boots and CoreMark use
   little NEON). It's the lever for AES-CBC (latency-bound on the V registers' store and reload
   between instructions) and NEON-heavy code generally.

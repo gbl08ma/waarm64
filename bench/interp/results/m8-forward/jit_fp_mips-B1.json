@@ -1,0 +1,197 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-10-02T20:55:53.999Z",
+ "commit": "939987b58f17",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "jit_fp_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0006,
+     "avgBlock": 778.34,
+     "interpretedPct": 50.692,
+     "blocks": 21,
+     "modules": 4,
+     "bytes": 79623,
+     "compileMs": 2.52,
+     "inlinePct": 89.29,
+     "inlineStepsPct": 95.17,
+     "flagsElided": 0,
+     "flagsStored": 39,
+     "condDirect": 26,
+     "condComputed": 0,
+     "condMemory": 2,
+     "blocksPerRegion": 1.81,
+     "backEdges": 13,
+     "tierUps": 3
+    }
+   },
+   "samples": [
+    20.94569827407833
+   ],
+   "median": 20.94569827407833,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_fp_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0,
+     "avgBlock": 19999994,
+     "interpretedPct": 0,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": 89.16,
+     "inlineStepsPct": 93.73,
+     "flagsElided": 0,
+     "flagsStored": 58,
+     "condDirect": 37,
+     "condComputed": 0,
+     "condMemory": 4,
+     "blocksPerRegion": 1.97,
+     "backEdges": 15,
+     "tierUps": 5,
+     "helpers": [
+      {
+       "op": "FMADD_float",
+       "calls": 6325412
+      },
+      {
+       "op": "FMLA_vec_2",
+       "calls": 2149568
+      },
+      {
+       "op": "FMLA_elt_4",
+       "calls": 1354224
+      },
+      {
+       "op": "FADD_float",
+       "calls": 55400
+      }
+     ]
+    },
+    "placements": [
+     {
+      "pad": 0,
+      "samples": [
+       155.33377345144413,
+       155.5633337251265,
+       155.3398058252427,
+       154.40438511864082,
+       155.20117951747866
+      ]
+     },
+     {
+      "pad": 7424,
+      "samples": [
+       155.9150262671919,
+       156.75209659151176,
+       152.60768378855036,
+       154.6910046924023,
+       155.04476917136856
+      ]
+     },
+     {
+      "pad": 14848,
+      "samples": [
+       156.6784175040873,
+       156.2866297166837,
+       155.18913676042678,
+       156.58028651854278,
+       156.31716754166297
+      ]
+     },
+     {
+      "pad": 22272,
+      "samples": [
+       156.1706945720715,
+       156.58641617224478,
+       156.53126707095254,
+       157.06600701590506,
+       156.59867670025412
+      ]
+     },
+     {
+      "pad": 29696,
+      "samples": [
+       156.17679212578201,
+       156.10365281966625,
+       156.7643831526594,
+       155.6420233463035,
+       156.86889681361615
+      ]
+     },
+     {
+      "pad": 37120,
+      "samples": [
+       155.94541910331384,
+       156.56190065563,
+       156.3293860134231,
+       156.8012543953805,
+       156.35382868815236
+      ]
+     },
+     {
+      "pad": 44544,
+      "samples": [
+       156.23779393398954,
+       157.11536200748387,
+       156.56190065563,
+       156.29273625431304,
+       157.4059499419543
+      ]
+     },
+     {
+      "pad": 51968,
+      "samples": [
+       153.6983669548511,
+       153.54496948855828,
+       151.62427501080697,
+       153.3859958754061,
+       153.3859958754061
+      ]
+     }
+    ]
+   },
+   "samples": [
+    155.33377345144413,
+    155.04476917136856,
+    156.31716754166297,
+    156.58641617224478,
+    156.17679212578201,
+    156.35382868815236,
+    156.56190065563,
+    153.3859958754061
+   ],
+   "median": 156.2469798337225,
+   "iqr": 1.1443242985965298,
+   "n": 8
+  }
+ ]
+}

@@ -142,11 +142,13 @@ pub fn next(words: &[u32]) -> Next {
 /// Blocks per region, at most (step 8).
 pub const REGION: usize = 16;
 
-/// A region (step 8): its head and the blocks of its loop, those reachable
-/// from it by static edges within the head's page that lead back to it, in
-/// reverse postorder (`blocks[0]` is the head), compiled into one function.
-/// Every other member is reached only through the region's own edges.
-/// Without a loop through the head it is the head alone.
+/// A region (step 8): a head and other blocks of its page that static edges
+/// reach from it, in reverse postorder (`blocks[0]` is the head), compiled
+/// into one function. Every other member is reached only through the
+/// region's own edges. Either the head's loop ([`region`]: the blocks that
+/// lead back to it; without a loop through the head, the head alone), or a
+/// forward region ([`forward`]: what the head reaches among the blocks
+/// compiled with it).
 pub struct Region {
     pub blocks: Vec<Block>,
     /// A loop head compiled alone until it's hot (step 8.3): the address of
@@ -239,6 +241,52 @@ pub fn region(mem: &Mem, key: u64, va: u64, hot: &dyn Fn(u64) -> bool) -> Region
     }
     let mut k = keep.into_iter();
     blocks.retain(|_| k.next().expect("one per block"));
+    Region { blocks, tier: None }
+}
+
+/// The forward region headed by the block at `key`: the blocks that static
+/// edges within its page reach from it and `member(key)` admits, up to
+/// [`REGION`], in reverse postorder. A call's target isn't followed (it
+/// heads its own unit: every caller in the page would hold a copy
+/// otherwise). Where [`region`] is a loop, compiled once its head is hot,
+/// this is straight-line code and its branches, compiled together the first
+/// time (`Cache::emit`): the edges between its blocks keep registers and
+/// flags in locals instead of leaving one function for the next. Empty if
+/// the head would have no words.
+pub fn forward(mem: &Mem, key: u64, va: u64, member: &dyn Fn(u64) -> bool) -> Region {
+    fn visit(
+        mem: &Mem,
+        b: Block,
+        member: &dyn Fn(u64) -> bool,
+        seen: &mut Vec<u64>,
+        post: &mut Vec<Block>,
+    ) {
+        let call = b.words.last().map(|&w| decode(w)) == Some(Op::BL);
+        for s in succs(b.key, &b.words) {
+            if call
+                || (s ^ b.key) >> 12 != 0
+                || seen.contains(&s)
+                || seen.len() >= REGION
+                || !member(s)
+            {
+                continue;
+            }
+            let words = form(mem, s & !3);
+            if !words.is_empty() {
+                seen.push(s);
+                let va = b.va.wrapping_add(s & !3).wrapping_sub(b.key & !3);
+                visit(mem, Block { key: s, va, words }, member, seen, post);
+            }
+        }
+        post.push(b);
+    }
+    let words = form(mem, key & !3);
+    let mut blocks = vec![];
+    if !words.is_empty() {
+        let head = Block { key, va, words };
+        visit(mem, head, member, &mut vec![key], &mut blocks);
+    }
+    blocks.reverse();
     Region { blocks, tier: None }
 }
 
@@ -450,7 +498,7 @@ pub fn module(
             (regs, flags)
         };
         let (mut entry, mut flags) = settle(&first);
-        if r.looped() {
+        if n > 1 {
             for _ in 0..4 {
                 let next = settle(&emit_region(&env, r, plain, &entry, &flags));
                 if next == (entry.clone(), flags.clone()) {
@@ -1294,6 +1342,56 @@ mod tests {
         // no region.
         let (_r, m) = mem_with(0x100, &[0xd4000001]); // svc #0
         assert!(region(&m, 0x100, 0, &|_| true).blocks.is_empty());
+    }
+
+    #[test]
+    fn a_forward_region_is_the_blocks_in_reach_without_calls() {
+        // 0x100: cbz x1, 0x10c
+        // 0x104: add x2, x2, #1; b 0x110
+        // 0x10c: add x2, x2, #2
+        // 0x110: add x3, x2, #1; bl 0x120
+        // 0x118: ret
+        // 0x120: ret
+        let words = [
+            0xb4000061, 0x91000442, 0x14000002, 0x91000842, 0x91000443, 0x94000003, 0xd65f03c0, 0,
+            0xd65f03c0,
+        ];
+        let (_r, m) = mem_with(0x100, &words);
+        let keys = |r: &Region| r.blocks.iter().map(|b| b.key).collect::<Vec<_>>();
+        // Reverse postorder: the head, its fall-through side and where
+        // that branches, the taken side (a block runs on to its branch: the
+        // one at 0x10c holds 0x110's words too); not the call's target (nor
+        // what follows the call: a return isn't a static edge).
+        let r = forward(&m, 0x100, 0x100, &|_| true);
+        assert_eq!(keys(&r), [0x100, 0x104, 0x110, 0x10c]);
+        assert_eq!(r.blocks[3].words.len(), 3);
+        assert!(!r.looped());
+        // Only the blocks admitted, and what they reach.
+        let only = |f: &dyn Fn(u64) -> bool| keys(&forward(&m, 0x100, 0, f));
+        assert_eq!(only(&|k| k != 0x104), [0x100, 0x10c]);
+        assert_eq!(only(&|k| k == 0x104), [0x100, 0x104]);
+        // One function without a loop. x2 stays in its local from 0x104 into
+        // 0x110: it's stored where a block leaves (the two calls, and 0x104's
+        // own way out when the steps left don't cover 0x110), not on the
+        // edge between them.
+        let e = module(&[r], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES);
+        assert_eq!(e.inl, [8]);
+        assert!(!has(&e.bytes, &[0x03, 0x40]));
+        let stores = |x: u8| {
+            e.bytes
+                .windows(3)
+                .filter(|w| *w == [0x37, 3, 8 * x])
+                .count()
+        };
+        assert_eq!(stores(2), 3);
+        // Not past the page, and nothing where the head has no words.
+        let (_r, m) = mem_with(0xff8, &[ADD, 0x14000002, ADD, ADD, 0xd65f03c0]);
+        assert_eq!(forward(&m, 0xff8, 0, &|_| true).blocks.len(), 1);
+        let (_r, m) = mem_with(0x100, &[0xd4000001]); // svc #0
+        assert!(forward(&m, 0x100, 0, &|_| true).blocks.is_empty());
+        // At most REGION blocks: a chain of branches to the next word.
+        let (_r, m) = mem_with(0x100, &[0x14000001; 40]);
+        assert_eq!(forward(&m, 0x100, 0, &|_| true).blocks.len(), REGION);
     }
 
     #[test]

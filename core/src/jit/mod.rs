@@ -438,26 +438,72 @@ impl Cache {
         }
     }
 
-    /// Compiles the pending batch into one module and installs it. A head
-    /// whose region is a loop is compiled alone, with a hot word, until it's
-    /// hot ([`Cache::tier_up`]).
+    /// Compiles the pending batch into one module and installs it.
     fn emit(&mut self, mem: &Mem) {
+        let regions = self.plan(mem);
+        self.install(regions, mem);
+    }
+
+    /// The pending batch as regions. A head whose region is a loop is
+    /// compiled alone, with a hot word, until it's hot ([`Cache::tier_up`]).
+    /// The other blocks are grouped into forward regions
+    /// ([`block::forward`]): each takes the batch's blocks that static edges
+    /// reach from it (loop heads apart), so a block is compiled once, as a
+    /// head or as a member. A member has no function of its own: entered
+    /// from elsewhere (a branch from outside its region, a return into it,
+    /// the dispatcher after its region ran out of steps), it is a block not
+    /// compiled yet, counted from zero again and compiled as a head once
+    /// that has happened often enough.
+    fn plan(&mut self, mem: &Mem) -> Vec<block::Region> {
         let pending = core::mem::take(&mut self.pending);
+        let all = self.cfg.threshold == 0 && self.cfg.region_after == 0;
+        let loops: Vec<block::Region> = pending
+            .iter()
+            .map(|&(key, va)| self.region(key, va, mem))
+            .collect();
+        // The batch's keys: a loop head, taken (a head, or a member of an
+        // earlier region), or free to be a member.
+        const FREE: u8 = 0;
+        const LOOP: u8 = 1;
+        const TAKEN: u8 = 2;
+        let mut batch: Map<u8> = pending
+            .iter()
+            .zip(&loops)
+            .map(|(p, r)| (p.0, if heads_loop(r) { LOOP } else { FREE }))
+            .collect();
         let mut regions = Vec::with_capacity(pending.len());
-        for (key, va) in pending {
-            let mut r = self.region(key, va, mem);
+        for ((key, va), mut r) in pending.into_iter().zip(loops) {
+            if batch[&key] == TAKEN {
+                continue;
+            }
+            batch.insert(key, TAKEN);
+            if r.blocks.len() > 1 {
+                if self.cfg.region_after > 0 {
+                    r.blocks.truncate(1);
+                    r.tier = Some(0); // its word's address once it has a slot
+                }
+            } else if !r.blocks.is_empty() && !r.looped() {
+                r = block::forward(mem, key, va, &|k| match batch.get(&k) {
+                    Some(&state) => state == FREE,
+                    // Everything at once (the differential tests): any block
+                    // in reach that heads no loop.
+                    None => all && !heads_loop(&self.region(k, 0, mem)),
+                });
+                for b in &r.blocks[1..] {
+                    batch.insert(b.key, TAKEN);
+                    if let Some(i) = self.map.get_mut(&b.key) {
+                        (i.queued, i.hits) = (false, 0);
+                    }
+                }
+            }
             if let Some(i) = self.map.get_mut(&key) {
                 (i.queued, i.len) = (false, r.blocks.first().map_or(0, |b| b.words.len() as u32));
-            }
-            if r.blocks.len() > 1 && self.cfg.region_after > 0 {
-                r.blocks.truncate(1);
-                r.tier = Some(0); // its word's address once it has a slot
             }
             if !r.blocks.is_empty() {
                 regions.push(r);
             }
         }
-        self.install(regions, mem);
+        regions
     }
 
     /// The region headed by `key`: its members are the blocks the dispatcher
@@ -594,6 +640,12 @@ impl Cache {
 }
 
 type Map<V> = HashMap<u64, V, BuildHasherDefault<KeyHasher>>;
+
+/// Whether the head's region ([`Cache::region`]) is a loop, of several
+/// blocks or of the head onto itself.
+fn heads_loop(r: &block::Region) -> bool {
+    r.blocks.len() > 1 || (r.blocks.len() == 1 && r.looped())
+}
 
 /// `Cache::info`, over the fields it needs.
 fn info<'a>(
@@ -904,6 +956,63 @@ mod tests {
         c.live_bytes = 1000;
         assert_eq!((c.alloc(1), c.stats.flushes), (0, 3));
         assert_eq!(c.live_bytes, 0);
+    }
+
+    /// A batch's blocks are compiled once each: a loop head alone (with its
+    /// hot word), the rest as forward regions over the batch's own blocks.
+    #[test]
+    fn a_batch_is_planned_as_forward_regions_and_loop_heads() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        // 0x100: cbz x1, 0x10c
+        // 0x104: add x2, x2, #1; b 0x110
+        // 0x10c: add x2, x2, #2
+        // 0x110: add x3, x3, #1; cbnz x3, 0x120
+        // 0x118: ret
+        // 0x120: subs x5, x5, #1; cbz x5, 0x12c
+        // 0x128: b 0x120 (a loop of two blocks)
+        // 0x12c: subs x6, x6, #1; b.ne 0x12c (a loop of one); ret
+        #[rustfmt::skip]
+        let words = [
+            0xb4000061u32, 0x91000442, 0x14000002, 0x91000842, 0x91000463, 0xb5000063, 0xd65f03c0, 0,
+            0xf10004a5, 0xb4000045, 0x17fffffe, 0xf10004c6, 0x54ffffe1, 0xd65f03c0,
+        ];
+        for (k, w) in words.into_iter().enumerate() {
+            mem.write(0x100 + 4 * k as u64, 4, w as u64).unwrap();
+        }
+        let mut c = Cache::new(Config::DEFAULT);
+        // Every block was dispatched and is pending, but 0x118 (seen once).
+        for k in [0x110, 0x100, 0x104, 0x10c, 0x120, 0x128, 0x12c, 0x118] {
+            let i = c.info(k, || 1);
+            (i.hits, i.queued) = (51, k != 0x118);
+            if k != 0x118 {
+                c.pending.push((k, k));
+            }
+        }
+        let regions = c.plan(&mem);
+        let keys: Vec<Vec<u64>> = regions
+            .iter()
+            .map(|r| r.blocks.iter().map(|b| b.key).collect())
+            .collect();
+        // 0x110 came first: a head (its successors: a loop head, and a block
+        // that isn't in the batch). 0x100 takes both its sides; 0x104
+        // doesn't take 0x110, which is a head already. The loop's blocks
+        // are heads, alone until they're hot (either may be entered first),
+        // and 0x120 doesn't take its way out, the loop of one, which is
+        // compiled as that at once.
+        #[rustfmt::skip]
+        assert_eq!(keys, [vec![0x110], vec![0x100, 0x104, 0x10c], vec![0x120], vec![0x128], vec![0x12c]]);
+        let tiers: Vec<_> = regions.iter().map(|r| r.tier).collect();
+        assert_eq!(tiers, [None, None, Some(0), Some(0), None]);
+        // The members start counting again, and aren't queued.
+        for k in [0x104, 0x10c] {
+            assert_eq!(
+                (c.map[&k].hits, c.map[&k].queued, c.map[&k].idx),
+                (0, false, 0)
+            );
+        }
+        assert!(c.pending.is_empty() && !c.map[&0x100].queued);
     }
 
     #[test]
