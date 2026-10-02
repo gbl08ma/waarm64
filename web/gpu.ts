@@ -87,6 +87,14 @@ export type GpuOptions = {
    * ran 3× slower than on a framebuffer: graphics.md §13).
    */
   paceReplies?: boolean;
+  /**
+   * Re-read the scanout resource's backing while it is shown and draw what changed (`Gpu.poll`, scheduled by the backend):
+   * a display scans guest memory continuously, and compositors (sway) write into a buffer after its transfer and flush
+   * (a frame's tail, a clock's digit) and expect to see it. Page only: the test guests' hashes are of what was flushed.
+   */
+  scanPoll?: boolean;
+  /** Debug (`?gpu=verify`): when the guest has been quiet, log where the scanout's host copy differs from a fresh copy of its backing (what real hardware would show). */
+  verify?: boolean;
   /** Pixels per inch for the EDID's physical size (default 96). */
   dpi?: number;
   /**
@@ -548,6 +556,63 @@ export class Gpu {
     };
   }
 
+  private scratch = new Uint8Array(0);
+
+  /**
+   * The scanout's host pixels brought up to date with the guest's memory: a fresh copy of the shown rectangle, compared with
+   * the host's, and the changed box copied and drawn. True if anything changed.
+   */
+  poll() {
+    this.settle();
+    const s = this.scanout;
+    const res = s && this.resources.get(s.id);
+    if (!s || !res || !res.backing) return false;
+    if (this.scratch.length !== res.pixels.length) this.scratch = new Uint8Array(res.pixels.length);
+    const fresh: Resource = { ...res, pixels: this.scratch };
+    const { x, y, w, h } = s.rect;
+    if (!this.transfer(fresh, s.rect, y * res.width * 4 + x * 4, true)) return false;
+    const a = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length >> 2);
+    const b = new Uint32Array(this.scratch.buffer, 0, this.scratch.length >> 2);
+    let y0 = -1, y1 = -1, x0 = w, x1 = -1;
+    for (let r = y; r < y + h; r++) {
+      const row = r * res.width;
+      let first = -1, last = -1;
+      for (let c = x; c < x + w; c++) if (a[row + c] !== b[row + c]) { if (first < 0) first = c; last = c; }
+      if (first < 0) continue;
+      if (y0 < 0) y0 = r;
+      y1 = r;
+      x0 = Math.min(x0, first - x);
+      x1 = Math.max(x1, last - x);
+    }
+    if (y0 < 0) return false;
+    for (let r = y0; r <= y1; r++) {
+      const at = r * res.width + x + x0;
+      a.set(b.subarray(at, at + x1 - x0 + 1), at);
+    }
+    this.draw(res, { x: x + x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 });
+    return true;
+  }
+
+  /** The scanout's host pixels against a whole new copy from the guest's backing: the differing pixels' count and box. */
+  verify() {
+    this.settle();
+    const s = this.scanout;
+    const res = s && this.resources.get(s.id);
+    if (!s || !res || !res.backing) return null;
+    const fresh: Resource = { ...res, pixels: new Uint8Array(res.pixels.length), opaque: res.opaque };
+    this.transfer(fresh, { x: 0, y: 0, w: res.width, h: res.height }, 0, true);
+    const a = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length >> 2);
+    const b = new Uint32Array(fresh.pixels.buffer, 0, fresh.pixels.length >> 2);
+    let bad = 0, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1, first = '';
+    for (let y = s.rect.y; y < s.rect.y + s.rect.h; y++) for (let x = s.rect.x; x < s.rect.x + s.rect.w; x++) {
+      if (a[y * res.width + x] === b[y * res.width + x]) continue;
+      if (!bad) first = `${x},${y} host ${a[y * res.width + x].toString(16)} backing ${b[y * res.width + x].toString(16)}`;
+      bad++;
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    }
+    return { bad, box: bad ? [x0, y0, x1 - x0 + 1, y1 - y0 + 1] : null, resource: res.id, first };
+  }
+
   /** A virtio reset: the guest's resources, scanout and cursor are gone. */
   reset() {
     this.pending.clear();
@@ -637,6 +702,17 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   let held: { w0: number; len: number }[] = [];
   let lastBatch = -Infinity;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // `scanPoll`: scan the shown resource's memory every 30 ms while the display is busy (a command in the last 1.5 s, or the last scan found a change), every 250 ms otherwise.
+  let lastCommand = -Infinity, lastChange = -Infinity;
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  const scan = () => {
+    pollTimer = undefined;
+    const t0 = performance.now();
+    if (gpu.poll()) lastChange = t0;
+    busy.transfer += performance.now() - t0;
+    pollTimer = setTimeout(scan, t0 - lastCommand < 1500 || t0 - lastChange < 500 ? 30 : 250);
+  };
+  const vtimers: ReturnType<typeof setTimeout>[] = [];
   const FRAME_MS = 16;
   const release = () => {
     timer = undefined;
@@ -662,6 +738,12 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       scatter(ram, r.write, reply);
       busy.request += performance.now() - t0;
       busy.requests++;
+      lastCommand = performance.now();
+      if (o.scanPoll && pollTimer === undefined) pollTimer = setTimeout(scan, 30);
+      if (o.verify) {
+        vtimers.forEach(clearTimeout);
+        for (const [k, ms] of [[0, 0], [1, 30], [2, 150], [3, 600]]) vtimers[k] = setTimeout(() => { const v = gpu.verify(); if (v?.bad) console.log(`gpu verify@${ms} t=${(performance.now() / 1000).toFixed(3)}: ${v.bad} px differ from the backing, box ${v.box}, resource ${v.resource} first ${v.first}`); else if (ms === 600) console.log(`gpu verify ok t=${(performance.now() / 1000).toFixed(3)}`); }, ms);
+      }
       if (o.paceReplies && cmd.length >= 4) {
         const type = new DataView(cmd.buffer, cmd.byteOffset, Math.min(cmd.length, 4)).getUint32(0, true);
         const now = performance.now();
@@ -687,6 +769,8 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       }
     },
     reset: () => {
+      clearTimeout(pollTimer);
+      pollTimer = undefined;
       clearTimeout(timer);
       timer = undefined;
       held = [];

@@ -111,11 +111,11 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
 
 /** The kinds a normal start makes, as the page's options say. */
 const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', 'blk', ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : []), ...(usesGpu(m, machine) ? ['gpu' as const] : [])];
-/** The display's tuning, from the page's `?gpu=` (an experiment's knobs: `eager`, `lazy`, `pace`, `q16`), else lazy transfers, paced replies and a queue of 16. */
+/** The display's tuning, from the page's `?gpu=` (an experiment's knobs: `eager`, `lazy`, `pace`, `q16`, `nopoll`, `verify`), else lazy transfers, paced replies and a queue of 16. */
 function gpuTuning() {
   const knobs = (new URLSearchParams(self.location.search).get('gpu') ?? 'lazy,pace,q16').split(',');
   const q = knobs.find((k) => /^q\d+$/.test(k));
-  return { lazyTransfer: knobs.includes('lazy'), paceReplies: knobs.includes('pace'), queueSize: q ? Number(q.slice(1)) : 64 };
+  return { lazyTransfer: knobs.includes('lazy'), paceReplies: knobs.includes('pace'), verify: knobs.includes('verify'), scanPoll: !knobs.includes('nopoll'), queueSize: q ? Number(q.slice(1)) : 64 };
 }
 /** A machine with a virtio-gpu draws through it, unless the page asked for the framebuffer. */
 const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu' && !m.simple;

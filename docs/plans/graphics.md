@@ -488,3 +488,19 @@ are not explained**: a compositor on software rendering saturates the guest's vC
 and starts the autorepeat; the old device-worker saturation is the other candidate. If it persists, try
 `?gpu=eager,pace,q16` (and `?gpu=eager,q16`) and `bench/results/local/dmesg-load.ts`; a sway run needs a desktop
 installed in a throwaway overlay (not done).
+
+**Second round (sway on the user's Arch image, in the page, headless: `bench/results/local/sway.ts`, dev-only).** The user
+still saw the same with `?gpu=eager,pace,q16` and `?gpu=eager,q16`, so lazy transfers weren't the (only) cause. A debug
+check (`?gpu=verify`: when the guest goes quiet, compare the scanout's host pixels with a fresh copy of its backing) found
+the real one: **sway writes into the buffer it has just flipped to after the transfer and flush**, with no command to say
+so. Right after a window change the host copy of the new buffer was black (the transfer ran on an empty buffer) and the guest
+filled it in over the next ~600 ms; a clock's digit, a typed glyph, the last stroke of a frame likewise. A display scans guest
+memory continuously, so on hardware the screen follows; our host copy was updated only by transfers and stayed stale until
+the next frame (a title bar black, a last letter missing, then back). **Fix: `Gpu.poll()`**, scheduled by the backend
+(`scanPoll`, the page's machine; `?gpu=nopoll` turns it off): while a resource is shown, re-read its backing (a whole
+rectangle's gather, ~2 ms at 1376×762), compare, copy and draw the changed box; every 30 ms while the display is busy
+(a command in the last 1.5 s, or the last scan found a change), every 250 ms otherwise. The test guests don't poll (their
+hashes are of what was flushed). Measured with the verifier: before, mismatches lasted until the next frame; with
+polling none lasts 600 ms. Unit test in `tests/gpu.test.ts`. Not measured: the polling's cost on the device worker
+during a busy desktop (the verifier's run was fine; the user should say), nor the htop and dmesg symptoms.
+

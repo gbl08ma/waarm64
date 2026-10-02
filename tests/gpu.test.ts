@@ -563,3 +563,22 @@ test('gpu: a lazy transfer is copied before its reply reaches the guest (a compo
     assert.equal(res.pixels[0], 0x11, `the first frame was copied before the reply (pace ${pace})`);
   }
 });
+
+test('gpu: the shown resource is re-read from its backing (a compositor draws after its flush)', () => {
+  // sway rendered into the buffer it had just flipped to; a display scans memory continuously, so the screen has to follow.
+  const r = rig();
+  r.ok(cmd(T.CREATE, 1, B8G8R8X8, 8, 4));
+  r.ok(r.attach(1, 0x2000, 8 * 4 * 4));
+  r.ok(cmd(T.TRANSFER, 0, 0, 8, 4, 0n, 1, 0));
+  r.ok(cmd(T.SCANOUT, 0, 0, 8, 4, 0, 1));
+  r.ok(cmd(T.FLUSH, 0, 0, 8, 4, 1, 0));
+  assert.equal(r.gpu.poll(), false, 'nothing changed');
+  r.damage.length = 0;
+  r.ram.fill(0x77, 0x2000 + 4 * (1 * 8 + 2), 0x2000 + 4 * (1 * 8 + 5)); // row 1, x 2..4: after the flush, no command
+  r.ram.fill(0x55, 0x2000 + 4 * (3 * 8 + 7), 0x2000 + 4 * (3 * 8 + 8)); // row 3, x 7
+  assert.equal(r.gpu.poll(), true);
+  assert.deepEqual(r.damage, [{ x: 2, y: 1, w: 6, h: 3 }], 'the changed box, drawn');
+  assert.deepEqual(px(r, 1, 3, 1), [0x77, 0x77, 0x77, 255]);
+  assert.deepEqual(px(r, 1, 7, 3), [0x55, 0x55, 0x55, 255]);
+  assert.equal(r.gpu.poll(), false, 'and now it is up to date');
+});
