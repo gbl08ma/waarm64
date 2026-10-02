@@ -322,9 +322,12 @@ firmware are born at it, no event), and later changes go to the display port as 
 the size it was saved with). The canvas shows the scanout 1:1 in guest pixels, so with HiDPI off on a
 screen of fractional density (1.25, 1.5) it is one guest pixel per CSS pixel and a little soft; an
 integer density is crisp. A guest that doesn't take the size is letterboxed (the box centres the canvas).
-**What the guest does with a new size** is measured in graphics.md §13: a desktop on Wayland follows;
-fbcon can't grow its buffer, so the console stays at its born size (a bigger window shows it
-letterboxed), and a smaller window is never allowed to crop it (devices.md "Display size and events").
+**What the guest does with a new size** is measured in graphics.md §13 and §17: fbcon can't grow its
+buffer, so the console stays at its born size (a bigger window shows it letterboxed), and a smaller window is
+never allowed to crop it (devices.md "Display size and events"); sway keeps the size it started with
+(wlroots seems to read an output's modes when it connects, not at a display event); GNOME and KDE are expected to
+follow and weren't measured. So today a new size mostly takes effect when the guest's display software
+starts; following live is the agent's job ([plans/agent.md](plans/agent.md)).
 `tests/page-resize.test.ts` covers it on Debian.
 
 **The guest's cursor** (virtio-gpu machines) is the canvas's CSS cursor: the presenter sends the 64×64 image and its hotspot when
@@ -380,6 +383,14 @@ Buildroot on 2, the Both view (bench/boot/REPORT.md "M8 loop 3"):
 On the terminal the rest is the guest (key to echo in the TX ring: ~3 ms on Buildroot, ~7 ms on
 Debian) and the page (~2 ms to xterm.js's DOM). On the screen it's the guest's fbcon drawing plus
 up to a frame until the next draw.
+
+With Debian's screen on virtio-gpu (`node bench/gpu/page.ts`, 2026-10-02, another instrument for the screen: the page
+reads the canvas back, so its numbers compare with each other only; bench/gpu/REPORT.md "G1 exit"): the terminal is
+where it was (10.8 ms; 11.6 with `?display=simple`), the screen takes 52.8 ms against the simple framebuffer's 39.2.
+The device isn't the difference (the guest's flush arrives 12 ms after the key and is drawn within 1 ms); what
+happens to a canvas drawn in the device worker after that is the backlog's item. The first pixel is on the screen
+7.5 s after the page's load (EDK2's graphics output) instead of 18.7 s (the kernel's console), and `running` comes
+at the same ~52 s.
 
 ## The serial terminal
 

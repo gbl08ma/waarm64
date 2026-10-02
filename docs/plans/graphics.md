@@ -1,8 +1,12 @@
 # webpc graphics plan
 
-**Status:** preliminary exploration, drafted 2026-09-27; not scheduled, and nothing here is decided
-until the user confirms it. When a step here is scheduled, move it into PLAN.md and keep this file
-as the background it came from.
+**Status:** drafted 2026-09-27 as an exploration. **G0 and G1 (virtio-gpu 2D) are done (2026-10-02)**:
+what exists is in the topic docs ([devices.md](../devices.md) "virtio-gpu", [frontend.md](../frontend.md)
+"The screen", [abi.md](../abi.md) ABI 31, [testing.md](../testing.md)), the numbers in
+`bench/gpu/REPORT.md`, the loose ends in [backlog.md](../backlog.md); §9 to §17 here are the record of
+what each loop found. **G2 onward is not scheduled**, and nothing about it is decided until the user
+confirms it (§18 is a proposed outline for G2's kickoff). §1 to §8 are the plan as first drafted; where
+G1 found otherwise, the later sections say so.
 
 The question: how does a guest get a real display (mode setting, damage, a cursor) and, later,
 **hardware-accelerated 3D** in a browser page, without the guest knowing it runs in one? Today the
@@ -200,9 +204,9 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   dev VM (software), and record the adapter's features and limits. Check `writeBuffer` from a
   `SharedArrayBuffer`-backed view and its cost at scanout sizes. Check `OffscreenCanvas` +
   WebGPU in a worker. Decide how real-GPU numbers are taken (§8).
-- **G1 — virtio-gpu 2D** (§3): device, backend, `OffscreenCanvas` presentation, resize, cursor,
-  EDID; the Buildroot kernel with `DRM_VIRTIO_GPU`; byte-exact tests natively and in Chromium.
-  Close the M9 framebuffer item.
+- **G1 — virtio-gpu 2D (done: §9, §11 to §17)** (§3): device, backend, `OffscreenCanvas` presentation,
+  resize, cursor, EDID; the Buildroot kernel with `DRM_VIRTIO_GPU`; byte-exact tests natively and in
+  Chromium.
 - **G2 — Software baseline:** llvmpipe/lavapipe in a guest image (Alpine, e.g. `mesa-dri-gallium`,
   `mesa-vulkan-swrast`; a small Wayland compositor such as `cage`), vkcube and glmark2 numbers
   under the M6 JIT. Also the reference images for later tests.
@@ -547,3 +551,82 @@ fast enough to matter, the honest emulation is a display that samples the scanou
 flipped buffer back until it stops changing (complete frames, a frame or two late, a full compare per refresh); it
 is a mode of its own, not built. The guest-side fix is one line: `WLR_RENDERER=pixman` (wlroots' source refuses a
 software EGL device unless `WLR_RENDERER_ALLOW_SOFTWARE` is set; here it took llvmpipe without it, not looked into).
+
+## 17. G1's exit (2026-10-02)
+
+**The goal, against what was built.** The page's Debian draws through virtio-gpu from the firmware's menu (EDK2's GOP,
+GRUB's `gfxterm`) through the console to a desktop; the canvas has the scanout's size, 1:1 in CSS pixels or in device
+pixels with HiDPI; a scanout that doesn't fit is scaled down or letterboxed, never cropped; only flushed rectangles
+are drawn; the guest's cursor is the page's; snapshots keep working (and a restored console no longer blanks, §15);
+2D is byte-exact in deterministic mode natively, in Node and in Chromium (the `gpu` guest's steps and hashes).
+**Not met as written: "resizing tells the guest, and guests that follow it take it".** The guest is told; of the
+guests measured, none takes a new size live:
+
+| Guest software | On a display event, on our machine | Without an agent |
+|---|---|---|
+| fbcon (Debian 13, kernel 6.12) | The buffer has the size it was born with: a bigger mode is refused (the EDID's second mode keeps the console), a smaller one crops and the display bounces it (§13) | The page's size at boot; letterboxed or scaled after |
+| sway 1.12 (wlroots; Arch, kernel 7.2), pixman | The kernel lists the new preferred mode at once (and our fallback after it), but sway keeps its mode (wlroots seems to read an output's modes only when it connects: not checked in its source), so `swaymsg output Virtual-1 mode WxH` falls back silently too. `swaymsg -- output Virtual-1 mode --custom WxH` works: a new resource, the canvas follows 1:1 | The page's size when sway starts |
+| GNOME, KDE on Wayland; Xorg | Not measured (none installed) | Expected: live for the first two, `xrandr --auto` for Xorg |
+
+So live resize is the agent's first job after all ([agent.md](agent.md)), or a desktop's own setting.
+
+**With sway on the screen** (the user's Arch image, `WLR_RENDERER=pixman`; `bench/results/local/sway-exit.ts`, dev-only):
+the guest's cursor arrives as the canvas's CSS cursor (`image-set(...)`: loop 6's check with a real guest), and the
+pointer goes where the user's is (focus follows the mouse between two windows, also with the screen scaled to 0.69).
+
+**Numbers** (bench/gpu/REPORT.md "G1 exit"; headless Chromium 153 on the dev VM):
+- the first pixel 7.5 s after the page's load (the firmware) instead of 18.7 s (the kernel's console); `running` at
+  ~52 s either way: `virtio_gpu` costs the boot nothing measurable;
+- key to glyph on the serial terminal 10.8 ms (unmoved); on the screen 52.8 ms against the simple framebuffer's
+  39.2 with the same instrument: the guest's flush reaches the device 12 ms after the key and is drawn within 1 ms,
+  and the rest is after the draw (the device worker draws outside animation frames: suspected, backlog);
+- the backend: a transfer ~0.7 ms a megapixel (1.5 ms at 1080p, 2.6 at 1440p), a flush with its draw 1.4 and 2.6 ms
+  for a full frame, 0.3 to 0.7 ms for a tenth of it; nothing per frame on the page's main thread;
+- host memory 4 bytes a pixel per resource (8.3 MB at 1080p; capped at 64 MiB each, 256 MiB together);
+- a desktop: §16's table (pixman 46 to 55 frames a second in a scrolling terminal at 4 to 8% a core when idle with
+  htop; llvmpipe 9 and ~54%).
+
+**The user's decisions for G0 and G1** (2026-10-01; the kickoff, `M8-GRAPHICS-KICKOFF.md`, is in git history):
+guest pixels are CSS pixels by default, scaled up crisply, with a HiDPI setting that sends device pixels and the
+physical size in the EDID; G1 is agent-free, and the agent is a later step that starts from the stock agents
+([agent.md](agent.md)); the tests get a kernel variant of their own (`Image-gpu`) and a new guest, so no existing
+step count moved; real-GPU numbers come from headless Chromium on the Mac host, for the bench page only (anything
+else on that host, and the x86_64 desktop, stay off limits). Out of scope then and still: multiple scanouts,
+pointer lock and a relative mouse (the host-integration track), browsers other than Chromium, ACPI.
+
+**What G1 leaves** is in the backlog ("Platform and devices": the key's 13 ms, the transfer's cost at 4K, the
+unmeasured desktops, the letterbox's page test, llvmpipe's stale frames, the firmware's flushes under the pacing; "JIT":
+llvmpipe's speed).
+
+## 18. G2: a proposed outline for its kickoff (not scheduled; the user's to write or change)
+
+G2 was "llvmpipe and lavapipe in a guest image, vkcube and glmark2 numbers under the JIT, the reference images for
+later tests". G1's sway session moved its centre: **software GL under the JIT is roughly ten times too slow to use**
+(§16), so the baseline isn't a number to note on the way to Venus, it is a problem to understand first: Venus's guest
+side is Mesa too, and a desktop's own compositing and every toolkit's fallback run on llvmpipe when 3D is off.
+
+- **Goal:** know what software 3D costs under the JIT and why, fix what is ours, and leave a reproducible desktop
+  guest with reference images. Done when glmark2 and a compositor on llvmpipe have numbers against the same guest on
+  QEMU (TCG, the one-off peer table) with a profile that explains the gap, and the gap that is the JIT's is closed or
+  written down as a decision.
+- **Loop 0, the guest:** an image built in `images/` (Podman): Alpine or Debian with Mesa's llvmpipe and lavapipe,
+  a wlroots compositor (cage or sway), foot, glmark2, vkcube; the same on QEMU for the oracle. Which distro and
+  compositor is a question for the user (Debian is what the page boots; Alpine builds faster).
+- **Loop 1, the numbers:** frames a second and guest CPU for the compositor alone (pixman against llvmpipe), glmark2's
+  scenes, vkcube, on our machine (the page's `?displaystats`) and on QEMU; medians and IQR, JSON committed.
+- **Loop 2, the profile:** PC samples of a guest running llvmpipe, split by where they land (Mesa's own code, the
+  code LLVM generated at run time, the kernel, idle), and the JIT's own counters for the same run (translations,
+  invalidations after `IC IVAU`, helper calls by kind). The suspects, from §16 and the backlog: vector registers
+  kept in memory between instructions, run-time-generated code being retranslated, NEON forms that go through
+  helpers, and four rasterizer threads waking each other across vCPU workers.
+- **Loops 3 onward:** one fix per loop, each by its measurement (CLAUDE.md "Performance": ranked by the long real
+  workloads too, so a NEON fix must not cost the boots).
+- **The display's part:** whether guests that composite with llvmpipe get the sampling display mode (§16 "Open"), and
+  the screen's 13 ms (a device worker with animation frames), which G3's GPU worker would want settled anyway.
+- **Reference images** for the 3D steps (glmark2 scenes and vkcube frames, byte-exact from llvmpipe in deterministic
+  mode if they are, a tolerance if not: find out).
+- **Exit:** the numbers, the decision on G3 (is the guest side of Venus affordable under the JIT at all?), docs.
+- **To ask the user first:** the distro and compositor; whether a JIT change that moves the tests' step counts is
+  acceptable here (it shouldn't: the JIT is not guest-visible); whether the Mac host may be used for real-GPU
+  presentation numbers again (G0's answer covered the bench page only).
+

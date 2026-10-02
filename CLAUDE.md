@@ -29,7 +29,7 @@ extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vC
 **Current:** M8, a usable machine (PLAN.md §3). Phase A (the interactive machine: `npm start`, the
 page in `web/app/`, [docs/frontend.md](docs/frontend.md)) and phase B (your own disk: unmodified
 images through UEFI, disk in and out, changes back in; [docs/plans/uefi.md](docs/plans/uefi.md))
-are done; of the C tracks, networking is done up to its loose ends ([docs/plans/networking.md](docs/plans/networking.md)) and snapshots are done (save and load a machine as a file, Suspend: [docs/plans/snapshots.md](docs/plans/snapshots.md)). Loose ends go in
+are done; of the C tracks, networking is done up to its loose ends ([docs/plans/networking.md](docs/plans/networking.md)) and snapshots are done (save and load a machine as a file, Suspend: [docs/plans/snapshots.md](docs/plans/snapshots.md)), and graphics has its 2D display (virtio-gpu, G0 and G1 of [docs/plans/graphics.md](docs/plans/graphics.md); G2, the software 3D baseline, is next and needs its kickoff). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment
@@ -64,7 +64,7 @@ Playwright's Chromium and sets `NODE_USE_ENV_PROXY=1`. There `systemd-run` doesn
 ## Commands
 
 ```sh
-scripts/ci.sh                  # everything CI runs (~5 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, Node + Chromium tests, image tests
+scripts/ci.sh                  # everything CI runs (~14 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, Node + Chromium tests, image tests
 scripts/ci-net.sh              # the network tests on Debian (~4 min): also when a change touches the network (docs/testing.md)
 scripts/ci-long.sh             # the heaviest multi-vCPU runs (~70 s): also for JIT, SMP and memory-model changes, and at milestone ends
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
@@ -181,6 +181,11 @@ their code.**
   the native interpreter run doesn't test). Iterate on the Buildroot guest and Alpine under the
   JIT; Debian boots only through UEFI in Chromium (the page tests, ~1 min under the JIT), never natively, in Node or directly.
 - Multi-hour JIT-stress runs aren't routine: short stress variants catch what they catch.
+- **`scripts/ci.sh` runs alone, in the background** (it is over the Bash tool's cap): start it, wait for its
+  notification, and run no other Chromium, QEMU or benchmark work beside it (a contended run was cancelled by a
+  timeout; a timing-sensitive unit test failed only under its load). `cargo fmt --all` first: it is CI's first step.
+- `tsc` covers `bench/`, the git-ignored files under `bench/results/local/` too; `tests/browser.test.ts` pins the
+  ABI number.
 - Remove debug hooks that use `process` (e.g. module dumps in `web/vm.ts`) before any Chromium run.
 - Temporary files go in the job's tmp directory; ad-hoc tools and results in
   `bench/results/local/`.

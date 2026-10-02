@@ -1,4 +1,4 @@
-// G0 (docs/plans/graphics.md, M8-GRAPHICS-KICKOFF.md): the WebGPU environment and the ways to put a
+// G0 (docs/plans/graphics.md §10): the WebGPU environment and the ways to put a
 // guest's frame on a canvas, measured in a worker (where the presentation will live).
 //   webgpu_adapter        the adapter's info, features and limits (in the params; one sample of 1)
 //   writebuffer           queue.writeBuffer from a SharedArrayBuffer view against a plain one (ms to return, ms to complete)
@@ -8,10 +8,13 @@
 //     canvas2d_rgba       the same with the source already RGBA (the swizzle's cost excluded)
 //     webgl2              texSubImage2D of the raw bytes, the swizzle in the fragment shader
 //     webgpu              writeTexture into a bgra8unorm texture (no swizzle needed), a textured quad
+//   flush_cost            the virtio-gpu backend itself (web/gpu.ts, web/gpu-present.ts): a transfer and a flush with its draw
 // Samples are ms per frame; "return" is the time until the calls return, "done" until the work completed
 // (WebGPU: onSubmittedWorkDone, WebGL: finish; canvas 2D: a 1-pixel getImageData).
 // Run: node bench/run.ts --page bench/gpu/index.html --chromium-args='--enable-unsafe-webgpu --enable-features=Vulkan --use-angle=swiftshader --use-gl=angle'
 import type { Options, Sample } from '../spike/benchmarks.ts';
+import { Gpu } from '../../web/gpu.ts';
+import { canvasPresenter } from '../../web/gpu-present.ts';
 
 const SIZES: [string, number, number][] = [['1080p', 1920, 1080], ['1440p', 2560, 1440], ['4k', 3840, 2160]];
 const now = () => performance.now();
@@ -223,6 +226,68 @@ async function webgpu(o: Options): Promise<Sample[]> {
   return out;
 }
 
+/**
+ * The device's own cost of a frame (G1's exit numbers): the real backend (web/gpu.ts) over a guest resource whose
+ * backing is 64 KiB chunks of shared memory, drawn by the page's presenter (web/gpu-present.ts) on an OffscreenCanvas.
+ * `transfer` is TRANSFER_TO_HOST_2D (the gather and swizzle into the host's RGBA), `flush` is RESOURCE_FLUSH with its
+ * draw (putImageData of the rectangle) until the call returns, `done` until the canvas has it.
+ */
+async function flushCost(o: Options): Promise<Sample[]> {
+  const out: Sample[] = [];
+  const RAM_BASE = 0x4000_0000, CHUNK = 65536;
+  const cmd = (type: number, ...fields: (number | bigint)[]) => {
+    const b = new Uint8Array(24 + fields.reduce<number>((n, f) => n + (typeof f === 'bigint' ? 8 : 4), 0));
+    const v = new DataView(b.buffer);
+    v.setUint32(0, type, true);
+    let at = 24;
+    for (const f of fields) { if (typeof f === 'bigint') { v.setBigUint64(at, f, true); at += 8; } else { v.setUint32(at, f, true); at += 4; } }
+    return b;
+  };
+  for (const [label, w, h] of SIZES) {
+    const ram = frame(w, h);
+    const canvas = new OffscreenCanvas(w, h);
+    const gpu = new Gpu(() => ram, ram.length, { width: w, height: h });
+    gpu.hooks = canvasPresenter(canvas);
+    const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    const chunks = Math.ceil(ram.length / CHUNK);
+    const attach = new Uint8Array(32 + 16 * chunks);
+    attach.set(cmd(0x106, 1, chunks));
+    for (let k = 0; k < chunks; k++) {
+      new DataView(attach.buffer).setBigUint64(32 + 16 * k, BigInt(RAM_BASE + k * CHUNK), true);
+      new DataView(attach.buffer).setUint32(32 + 16 * k + 8, Math.min(CHUNK, ram.length - k * CHUNK), true);
+    }
+    gpu.control(cmd(0x101, 1, 2, w, h), 64); // RESOURCE_CREATE_2D, B8G8R8X8
+    gpu.control(attach, 64);
+    gpu.control(cmd(0x103, 0, 0, w, h, 0, 1), 64); // SET_SCANOUT
+    for (let i = 0; i < 30; i++) gpu.control(cmd(0x105, 0, 0, w, h, 0n, 1, 0), 64); // the gather's loop optimized before anything is timed
+    for (const [dname, r] of rects(w, h)) {
+      const transfer: number[] = [], flush: number[] = [], done: number[] = [];
+      const n = o.quick ? 5 : 20;
+      // Transfers back to back (a busy guest's), then flushes a frame apart (the presenter draws at once then).
+      for (let i = -3; i < n; i++) {
+        ram[(r.y * w + r.x) * 4] ^= 0xff;
+        const t0 = now();
+        gpu.control(cmd(0x105, r.x, r.y, r.w, r.h, BigInt((r.y * w + r.x) * 4), 1, 0), 64);
+        if (i >= 0) transfer.push(now() - t0);
+      }
+      for (let i = -3; i < n; i++) {
+        await new Promise((ok) => setTimeout(ok, 20));
+        gpu.control(cmd(0x105, r.x, r.y, 1, 1, BigInt((r.y * w + r.x) * 4), 1, 0), 64); // something to show
+        const t1 = now();
+        gpu.control(cmd(0x104, r.x, r.y, r.w, r.h, 1, 0), 64);
+        const t2 = now();
+        ctx.getImageData(0, 0, 1, 1);
+        if (i >= 0) { flush.push(t2 - t1); done.push(now() - t1); }
+      }
+      const params = { size: label, damage: dname, rect: `${r.w}x${r.h}` };
+      out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'transfer' }, samples: transfer });
+      out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'flush' }, samples: flush });
+      out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'done' }, samples: done });
+    }
+  }
+  return out;
+}
+
 export const suite = {
   webgpu_adapter: (_o: Options) => adapterInfo(),
   writebuffer: writeBuffer,
@@ -230,6 +295,7 @@ export const suite = {
   present_canvas2d_rgba: (o: Options) => canvas2d(o, true),
   present_webgl2: webgl2,
   present_webgpu: webgpu,
+  flush_cost: flushCost,
 };
 
 export async function runAll(o: Options): Promise<Sample[]> {

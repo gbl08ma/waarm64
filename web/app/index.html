@@ -123,7 +123,7 @@
   <details class="menu" id="screen-menu" hidden><summary title="The size of the machine's screen">Screen</summary><div class="items panel">
     <label>Size<select id="screen-size"><option value="fit">Fit the window</option><option value="1024x768">1024×768</option><option value="1280x800">1280×800</option><option value="1920x1080">1920×1080</option></select></label>
     <label title="The guest draws in device pixels instead of CSS pixels: sharper on a HiDPI screen, with smaller text unless the desktop scales (its EDID carries the screen's physical size)"><input id="screen-hidpi" type="checkbox"> HiDPI</label>
-    <p class="hint">A text console (fbcon) keeps the size it started with: a new size takes effect at the next boot (Restart), and the console is centred until then. A desktop on Wayland follows at once.</p>
+    <p class="hint">A text console (fbcon) keeps the size it started with: a new size takes effect at the next boot (Restart), and the console is centred until then. A desktop takes it when it starts; whether it follows a change is up to its compositor (sway doesn't).</p>
   </div></details>
   <details class="menu" id="keys"><summary title="Key combinations the browser keeps for itself, sent to the screen's keyboard">Keys</summary><div class="items">
     <button data-chord="ControlLeft AltLeft Delete">Ctrl+Alt+Del</button>

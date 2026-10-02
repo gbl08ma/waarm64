@@ -285,7 +285,8 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"; the lane's plan
 - **The host's half** (`web/vm.ts` `snapshot()` and `BootOptions.restore`, `web/snapshot.ts`): the
   file ([frontend.md](frontend.md) has the page's side when it lands) holds the core's state, the
   backends' (`Backend.save`/`restore` in `web/devices.ts`: the deterministic rng's position; a
-  9p device refuses to be saved for now) with the serial input the guest hadn't been given, and
+  virtio-gpu's resource table, scanout and cursor, whose pixels come back from the restored RAM,
+  [devices.md](devices.md) "virtio-gpu"; a 9p device refuses to be saved for now) with the serial input the guest hadn't been given, and
   RAM in 1 MiB chunks without their zero pages, compressed by the core's LZ (`web/lz.ts`, an
   instance of the core of its own). A restore creates the VM without booting it, fills RAM from
   the file, has the core restore its state, starts the backends with theirs and serves the

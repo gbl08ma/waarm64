@@ -146,9 +146,16 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     left: **IPv6** (required), the card for Alpine. More backends besides Tailscale are wanted
     later behind the same gateway, and the Rust Tailscale client (tailscale-rs, plan §5) is meant
     to replace the Go one once it is ready.
-  - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): virtio-gpu 2D first (the screen
-    follows the page's size, damage instead of full copies, a cursor), then the software
-    baseline and the 3D decision gate.
+  - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): **virtio-gpu 2D is done (G0 and
+    G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
+    first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device
+    pixels with HiDPI), with damage only and the guest's cursor as the page's; snapshots keep
+    working; guests without the driver keep the simple framebuffer. A console keeps the size it
+    was born with (the kernel's fbcon can't resize) and sway takes a new size only when told to
+    from inside (a custom mode), so live resize waits for an agent ([docs/plans/agent.md](docs/plans/agent.md)). A compositor
+    must render with pixman: **llvmpipe under the JIT is about ten times too slow** and draws
+    after its page flip, which is the first thing G2 (the software baseline) has to explain
+    before the 3D decision gate. Next: G2, with its own kickoff (outline in graphics.md §18).
   - Audio: virtio-snd to an AudioWorklet over a shared ring (`docs/plans/audio.md`, to write).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.

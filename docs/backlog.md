@@ -155,8 +155,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **EDK2's terminal modes** (loop 3): `images/build.sh edk2` patches TerminalDxe to offer only the
   80×25 text mode, because GRUB takes the largest (240×56) and asks the terminal to resize with
   `CSI 8;r;c t`, which xterm.js doesn't do: the menu was lost on the page's 80-column terminal.
-  **Remove the patch if the UEFI ever gets graphical modes** (a GOP, ramfb: "The firmware
-  configuration" above): GRUB then draws on the screen, and the mode table is unrelated to it.
+  A virtio-gpu machine has a GOP now and its GRUB draws on the screen (`gfxterm`), so the patch matters only where the
+  firmware has no display: `?display=simple` and the simple-framebuffer machines, whose GRUB menu is still on the
+  serial terminal. **Remove it when no machine boots through UEFI without a virtio-gpu** (not re-checked: what
+  ConSplitter offers the serial terminal next to a GOP without the patch).
 - **ACPI** (only if an ACPI-only guest comes into scope: Windows, an enterprise distro that won't
   boot from a DT). The DT stays the machine's description (plans/uefi.md "DT or ACPI"); the path
   that keeps AML out of the core is EDK2's DynamicTablesPkg building the tables from our DT, plus
@@ -205,9 +207,27 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **virtio-gpu's flush pacing counts a firmware's flushes too**: EDK2's GOP waits for every reply, so its `Blt`s
   complete 60 a second after the first. Not seen to matter (GRUB's menu, the boot's time to `running`); a guest that
   waits needs no pacing, if a way to tell it from one that floods turns up.
-- Framebuffer (the simple-framebuffer machines that remain): a scan of the whole buffer per animation frame to find the changed rows (~0.4 ms
-  at 1024×768, on the machine worker), x8r8g8b8 only, fixed size; virtio-gpu's damage rectangles
-  would replace the scan ([plans/graphics.md](plans/graphics.md)).
+- **A key's glyph is ~13 ms later on the virtio-gpu screen than on the simple framebuffer** (53 against 39 ms in
+  headless Chromium on the dev VM; bench/gpu/REPORT.md "G1 exit"). Not the device: the flush arrives 12 ms after
+  the key and is drawn within 1 ms; the time goes between `putImageData` in the device worker and the page seeing
+  the canvas. The device worker is nested in the machine worker and Chromium gives a nested worker no
+  `requestAnimationFrame`, so it draws outside animation frames (the simple framebuffer is drawn inside the machine
+  worker's): the suspect, not proven (a standalone page shows no penalty). Next: the same measurement on a real GPU
+  (the Mac host; the dev VM composites in software), then a device worker the page creates (a top-level worker has
+  animation frames; moving blk off that thread and G3's GPU worker want the same change) or drawing from the
+  machine worker out of shared memory.
+- **A transfer costs ~0.7 ms a megapixel in Chromium** (`flush_cost`: 1.5 ms at 1080p, 2.6 at 1440p, 5.9 at 4K), all of
+  it the swizzle to RGBA on the device worker: fine for a compositor at 1080p, a quarter of a frame at 4K HiDPI. If
+  that matters: copy the bytes raw (`set`, ~4 times faster) and swizzle in the draw (a WebGL or WebGPU texture
+  upload takes BGRA as it is: bench/gpu/REPORT.md).
+- **virtio-gpu, not built or not measured in G1:** GNOME, KDE and Xorg sessions (sway is: graphics.md §17); a page test
+  of the pointer through a letterboxed screen (checked by hand with sway); an overlay for a guest that warps its
+  cursor (`MOVE_CURSOR` away from the pointer: none seen); sizes beyond 4088 pixels a side (a DisplayID block in the
+  EDID); a display event at a fixed step beyond the test hook (`GpuOptions.resize`).
+- Framebuffer (the simple-framebuffer machines that remain: Buildroot's page, the test guests, `?display=simple`): a
+  scan of the whole buffer per animation frame to find the changed rows (~0.4 ms at 1024×768, on the machine
+  worker), x8r8g8b8 only, fixed size. Guests with the driver use virtio-gpu ([devices.md](devices.md)); nothing
+  is planned for the rest.
 - The TS backends are tested through boots; a Node test with a bare-metal virtio guest would be
   cheaper when they grow (blk).
 

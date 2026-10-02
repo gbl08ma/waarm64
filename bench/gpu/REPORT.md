@@ -1,7 +1,7 @@
 # bench/gpu: G0, the WebGPU environment and the ways to present a 2D frame
 
 **2026-10-01.** The measurements behind G0 of [docs/plans/graphics.md](../../docs/plans/graphics.md) and
-M8-GRAPHICS-KICKOFF.md loop 1. The suite is `bench/gpu/suite.ts` (a worker, like the other suites);
+the G0/G1 kickoff's loop 1 (`M8-GRAPHICS-KICKOFF.md`, in git history since G1's exit). The suite is `bench/gpu/suite.ts` (a worker, like the other suites);
 the JSON is committed in `results/`.
 
 ```sh
@@ -121,3 +121,50 @@ the JS swizzle (canvas 2D, full frame: 1.6 ms at 1080p, 2.9 ms at 1440p, 6.8 ms 
   the others for a full frame, so it earns its place as the 3D path's canvas, not the 2D one's.
 - The numbers say nothing about **which thread** presents: that is loop 4's measurement
   (key-to-glyph, flush during a disk read).
+
+## G1 exit: the device as built (2026-10-02)
+
+Chromium 153.0.8010.52 headless on the dev VM (software compositing), commit `3943483` plus the exit's tools.
+
+**The backend's own cost** (`flush_cost`: `web/gpu.ts` and `web/gpu-present.ts` as the page runs them, a resource whose
+backing is 64 KiB chunks; `results/2026-10-02-vm-flush-cost.json`; ms, median ±IQR of 20):
+
+| | `TRANSFER_TO_HOST_2D` | `RESOURCE_FLUSH` with its draw, to return | until the canvas has it |
+|---|---|---|---|
+| 1080p full | 1.49 ±0.04 | 1.39 ±0.74 | 1.43 ±0.77 |
+| 1080p damage10 | 0.73 ±0.31 | 0.34 ±0.07 | 0.39 ±0.09 |
+| 1440p full | 2.61 ±0.03 | 2.56 ±0.48 | 2.62 ±0.48 |
+| 1440p damage10 | 0.95 ±0.26 | 0.52 ±0.39 | 0.57 ±0.44 |
+| 4k full | 5.88 ±0.04 | 5.84 ±3.36 | 5.91 ±3.36 |
+| 4k damage10 | 1.40 ±0.56 | 1.12 ±0.13 | 1.17 ±0.15 |
+
+A transfer is ~0.7 ms a megapixel (the swizzle to RGBA), a flush's draw about as much again. The page's main thread
+does nothing per frame (the canvas is the device worker's).
+
+**The page's Debian, virtio-gpu against the simple framebuffer** (`node bench/gpu/page.ts`, two boots each,
+alternating, 4 vCPUs, the Both view; `results/2026-10-02-page.json`):
+
+| | virtio-gpu | simple framebuffer |
+|---|---|---|
+| Load to the first lit pixel | 7.6, 7.5 s (EDK2's graphics output) | 18.8, 18.7 s (the kernel's console) |
+| Load to `running` | 52.2, 52.3 s | 53.6, 50.8 s |
+| Key to glyph, serial terminal (ms, median, quartiles) | 10.8 (7.7–13.3, n 80) | 11.6 (10.3–14.1, n 80) |
+| Key to glyph, screen (bash on tty1) | 52.8 (46.1–59.6, n 72) | 39.2 (35.7–42.1, n 74) |
+
+- The terminal didn't move (the 10.5–11.4 ms of M8 loop 3), and `virtio_gpu` costs the boot nothing measurable.
+- **The screen is ~13 ms slower on virtio-gpu, and it isn't the device.** The instrument (a frame loop on the page
+  reading the canvas back) is not the one behind the ~15 ms of M8 loop 3 (draws seen in the worker), so only the two
+  columns compare, and it says when the page's main thread can read the frame, not when it is on the glass. Split
+  with a temporary timestamp in the presenter (40 keys): key to the flush at the device 12.2 ms (quartiles
+  8.6–14.2), drawn 0.5 ms later, and then 43 ms until the probe sees the canvas change. So the time is lost after
+  `putImageData`. **Why isn't settled.** The device worker is nested in the machine worker, where Chromium has no
+  `requestAnimationFrame`, so it draws when the flush arrives, while the simple framebuffer is drawn inside the
+  machine worker's animation frames: the likely cause is a frame drawn outside an animation frame being handed to
+  the page later. A standalone page (three workers filling a canvas: in an animation frame, at once, at once from a
+  nested worker; `bench/results/local/present/`, not committed) reproduces only part of it: all three reach the
+  page in 11–12 ms, so drawing at once gains nothing over waiting for the frame, but loses nothing either. Backlog:
+  measure on a real GPU (the Mac host), then try a device worker with animation frames.
+
+**Host memory:** a resource is 4 bytes a pixel of JS memory: 8.3 MB at 1080p, 66.8 MB at the largest size the EDID
+can say (4088×4088, just under the 64 MiB cap per resource); the 256 MiB total holds a console's buffer and a
+compositor's two at that size, not a third.

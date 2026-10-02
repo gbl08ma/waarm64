@@ -22,6 +22,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [cloud.md](cloud.md) | Claude Code cloud sessions: what differs from the dev VM (x86_64, Node, Chromium, dtc, images) and the setup script |
 | [backlog.md](backlog.md) | open loose ends by area (PLAN.md's M9) |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
-| [plans/graphics.md](plans/graphics.md) | exploration for a real display and 3D (not scheduled) |
+| [plans/graphics.md](plans/graphics.md) | the display and 3D: virtio-gpu 2D (G0 and G1, done: what the oracle and each loop found, the numbers), the plan for the software baseline and Venus on WebGPU (G2 onward, not scheduled) |
+| [plans/agent.md](plans/agent.md) | a guest agent (clipboard, time after a resume, a ready signal, X11 resize): the stock agents first, then a tools disk (not scheduled) |
 | [plans/uefi.md](plans/uefi.md) | booting unmodified images through EDK2: loop 0's oracle findings, DT vs ACPI, the design (M8 phase B) |
 | [plans/snapshots.md](plans/snapshots.md) | saving and resuming a machine as a file, and Suspend (M8 phase C lane, done) |
