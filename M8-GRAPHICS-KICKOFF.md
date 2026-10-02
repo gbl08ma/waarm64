@@ -441,6 +441,18 @@ desktop: G2).
 
 **Loop 7, snapshots** (graphics.md §15): the page test of Debian restores into another window size (screen drawn, size followed after a probe); planted scanout caught.
 
+**After loop 7: the review of the 2D path** (graphics.md §16, devices.md "virtio-gpu"). The user's sway session (flashes,
+a missing last letter, busy cores, then frames out of order) was the guest compositing with **llvmpipe**, whose threads
+draw after the page flip's transfer; with `WLR_RENDERER=pixman` the same session is correct, 4–8% a core instead of ~54%,
+and 46–55 frames a second instead of 9. Removed: lazy transfers, `settle`, the backing poll (`scanPoll`, the cause of the
+out-of-order frames) and `?gpu=verify`. Now: a transfer copies when it arrives, only a flush or a scanout change draws,
+one flush reply per 60 Hz frame (`paceFlushes`, queue 16; `?gpu=nopace,q<N>`), the floor's event re-raised at the guest's
+clear instead of on timers. Found on the way: a console restored from a snapshot into a bigger window blanked (the EDID's
+fallback mode was the new page's size; now the shown resource's, and the page test checks the screen after the event). Dev-only drivers (git-ignored): `bench/results/local/sway-diag.ts <outdir> <knobs>
+<default|pixman|lp0>` (the user's Arch image, `myarch2.qcow2`, with sway and foot) and `fps.ts` (console scrolling).
+**For loop 8 and G2:** llvmpipe's cost under the JIT is the open question (backlog "JIT"), and whether unmodified guests
+that composite with it should get a sampling display mode (backlog "Platform and devices") is the user's call.
+
 **Next: loop 8** (exit).
 
 ## Check with the user first

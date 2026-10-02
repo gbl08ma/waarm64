@@ -46,6 +46,12 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## JIT
 
+- **llvmpipe is far too slow under the JIT** ([plans/graphics.md](plans/graphics.md) §16): sway compositing through
+  Mesa's software GL keeps four vCPUs at ~54% for ~3 frames a second at 1376×762 (pixman: 4–8%), and a terminal
+  scrolling reaches 9 frames a second (pixman: 46–55). Not profiled yet: llvmpipe runs code it generated at run time
+  (LLVM's JIT, NEON) on four threads, so the suspects are our translation of fresh code, vector registers in memory
+  (below) and the threads' wake-ups. It decides whether GL desktops are usable before G3; start with a PC-sampling
+  profile of a guest running `glmark2` or sway on llvmpipe (`bench/boot/profile.ts` is the tool for boots).
 - **Vector registers in locals** (NEON-heavy code; AES-CBC is latency-bound on V register
   stores and reloads).
 - Helpers still on real paths: unmasking MSRs, ISB, CASP, exclusive pairs, LSE min/max,
@@ -192,6 +198,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   anything that types a long string (a test agent, a paste into the screen) must pace itself.
 - **virtio-blk off the device worker's thread** (asynchronous reads instead of synchronous XHRs): with the guest reading its disk the screen's flushes wait behind them (graphics.md §12: worst case ~1 s locally). The device model already lets a backend complete a request later.
 - **A real keyboard driver in EDK2** (instead of the screen's keys going to the serial console): EDK2 has no virtio-input driver (`OvmfPkg` has none; ArmVirt's keyboard is the PL011 console), so on a virtio-gpu machine GRUB's menu, which takes the GOP, would otherwise ignore keys typed on the screen. Today the page works around it: until the guest's virtio-input keyboard has its DRIVER_OK (`Vm.deviceStatus` → `keyboard {live}`), `attachInput`'s `text` option sends the screen's keys to the serial console as a terminal would (`terminalBytes` in web/input.ts; `tests/page-grub-screen.test.ts`; graphics.md §12). The limits: only keys that have a terminal encoding reach the firmware (no key-up, no modifiers alone), and the page must know when the guest takes over. A DXE driver for virtio-input (or USB-HID over a virtio-mmio-less path) in `images/build.sh edk2` would give the firmware the keyboard directly and let that special case go; it needs a driver written for the mmio transport (none to port from OvmfPkg) and an EDK2 rebuild.
+- **Guests that composite with llvmpipe show stale frames on virtio-gpu** (graphics.md §16; devices.md): the
+  rasterizer threads draw after the transfer. `WLR_RENDERER=pixman` in the guest avoids it. A display mode that
+  samples the scanout's memory at each refresh and holds a flipped buffer until it is stable would hide it for
+  unmodified guests: not built (a full compare per refresh; build it if GL compositors become fast enough to use).
+- **virtio-gpu's flush pacing counts a firmware's flushes too**: EDK2's GOP waits for every reply, so its `Blt`s
+  complete 60 a second after the first. Not seen to matter (GRUB's menu, the boot's time to `running`); a guest that
+  waits needs no pacing, if a way to tell it from one that floods turns up.
 - Framebuffer (the simple-framebuffer machines that remain): a scan of the whole buffer per animation frame to find the changed rows (~0.4 ms
   at 1024×768, on the machine worker), x8r8g8b8 only, fixed size; virtio-gpu's damage rectangles
   would replace the scan ([plans/graphics.md](plans/graphics.md)).

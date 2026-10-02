@@ -143,7 +143,7 @@ test('gpu: a resource, its backing, a transfer into RGBA, flush and scanout', ()
   // B,G,R,X bytes 1,2,3,4 are RGBA 3,2,1; the X byte would be alpha, but this resource is on the scanout.
   assert.deepEqual(px(r, 1, 0, 0), [3, 2, 1, 255], 'on the scanout: opaque');
   assert.deepEqual(px(r, 1, 3, 2), [47, 46, 45, 255]);
-  assert.deepEqual(r.damage.map((d) => [d.x, d.y, d.w, d.h]), [[0, 0, 4, 3]]);
+  assert.equal(r.damage.length, 0, 'a transfer alone shows nothing: the flush does');
   // A rectangle in the middle: the offset is where its first pixel is in the guest's layout (y*stride + x*4).
   r.ram.fill(0xee, 0x1000, 48);
   r.ram.set([10, 20, 30, 0], 0x1000 + 1 * 16 + 1 * 4); // pixel (1,1)
@@ -151,7 +151,6 @@ test('gpu: a resource, its backing, a transfer into RGBA, flush and scanout', ()
   r.ok(cmd(T.TRANSFER, 1, 1, 1, 1, BigInt(1 * 16 + 1 * 4), 1, 0));
   assert.deepEqual(px(r, 1, 1, 1), [30, 20, 10, 255]);
   assert.deepEqual(px(r, 1, 0, 1), [19, 18, 17, 255], 'a neighbor is untouched');
-  assert.deepEqual(r.damage.map((d) => [d.x, d.y, d.w, d.h]), [[1, 1, 1, 1]]);
   // Several rows of a narrower rectangle: the guest's rows are a resource-width apart, not the rectangle's.
   r.ram.fill(0, 0x1000, 48);
   for (const [x, y, b] of [[1, 1, 1], [2, 1, 2], [1, 2, 3], [2, 2, 4]]) r.ram.set([b, b, b, 0], 0x1000 + y * 16 + x * 4);
@@ -163,11 +162,17 @@ test('gpu: a resource, its backing, a transfer into RGBA, flush and scanout', ()
   r.ok(cmd(T.FLUSH, 2, 1, 2, 2, 1, 0));
   assert.deepEqual(r.damage.map((d) => [d.x, d.y, d.w, d.h]), [[2, 1, 2, 2]]);
   // The scanout can show part of a resource: the damage is clipped to it and moved to its origin.
+  r.damage.length = 0;
   r.ok(cmd(T.SCANOUT, 1, 1, 2, 2, 0, 1));
   assert.deepEqual(r.scanouts.at(-1), [2, 2]);
   assert.deepEqual([r.sources.at(-1)!.x, r.sources.at(-1)!.y, r.sources.at(-1)!.width, r.sources.at(-1)!.height], [1, 1, 4, 3]);
   assert.equal(r.sources.at(-1)!.pixels, r.gpu.resources.get(1)!.pixels, 'the source is the resource itself: no copy');
+  // The scanout change gave the page the whole picture: a flush with no transfer since has nothing more to show (a page flip's).
+  assert.deepEqual(r.damage.map((d) => [d.x, d.y, d.w, d.h]), [[0, 0, 2, 2]]);
   r.damage.length = 0;
+  r.ok(cmd(T.FLUSH, 0, 0, 4, 3, 1, 0));
+  assert.equal(r.damage.length, 0);
+  r.ok(cmd(T.TRANSFER, 0, 0, 4, 3, 0n, 1, 0));
   r.ok(cmd(T.FLUSH, 0, 0, 4, 3, 1, 0));
   assert.deepEqual(r.damage.map((d) => [d.x, d.y, d.w, d.h]), [[0, 0, 2, 2]]);
   r.damage.length = 0;
@@ -349,6 +354,17 @@ test('gpu: state saved and restored re-reads the pixels from the backing', () =>
   assert.ok(b.damage.length > 0, 'the scanout is drawn again');
   assert.equal(b.cursors.at(-1)!.hotY, 2);
   assert.throws(() => b.gpu.restore({}), /no state for the display/);
+  // A console restored into a page of another size: the EDID's fallback mode is its buffer's size (the resource it shows),
+  // not the size the new page started with, or fbcon finds no mode it can take and blanks the screen.
+  const con = rig({ width: 1024, height: 768, keepConsole: true });
+  con.ok(cmd(T.CREATE, 1, B8G8R8X8, 1024, 768));
+  con.ok(cmd(T.SCANOUT, 0, 0, 1024, 768, 0, 1));
+  const bigger = rig({ width: 1600, height: 900, keepConsole: true });
+  bigger.gpu.restore(JSON.parse(JSON.stringify(con.gpu.save())));
+  bigger.gpu.setSize(1600, 900);
+  const e = bigger.run(cmd(T.EDID, 0, 0)).r.subarray(24 + 8, 24 + 8 + 128);
+  assert.deepEqual([e[56] | (e[58] >> 4) << 8, e[59] | (e[61] >> 4) << 8], [1600, 900], 'the preferred mode is the page\'s');
+  assert.deepEqual([e[74] | (e[76] >> 4) << 8, e[77] | (e[79] >> 4) << 8], [1024, 768], 'the second is the console\'s buffer');
 });
 
 test('gpu: random commands never throw, never write RAM, and answer in the spec', () => {
@@ -478,6 +494,12 @@ test('gpu: a cropped console keeps the display from shrinking below its buffer',
   // fbcon answers with the same resource and a smaller rectangle: the display asks for the whole buffer again.
   b.gpu.control(cmd(T.SCANOUT, 0, 0, 800, 600, 0, 1), 4096);
   assert.deepEqual([b.gpu.size.width, b.gpu.size.height, events], [1024, 768, 2]);
+  // The guest clears the event when it is done with the shrink, and that takes the floor's event with it: raised once more, once.
+  const clear = () => { new DataView(cfg.buffer).setUint32(4, 1, true); b.config(); };
+  clear();
+  assert.deepEqual([new DataView(cfg.buffer).getUint32(0, true), events], [1, 3]);
+  clear();
+  assert.deepEqual([new DataView(cfg.buffer).getUint32(0, true), events], [0, 3]);
   b.gpu.setSize(640, 480);
   assert.deepEqual([b.gpu.size.width, b.gpu.size.height], [1024, 768]);
   b.gpu.setSize(1600, 900); // growing still reaches the guest
@@ -497,88 +519,61 @@ test('gpu: a cropped console keeps the display from shrinking below its buffer',
   assert.deepEqual([c.gpu.size.width, c.gpu.size.height], [800, 600]);
 });
 
-test('gpu: lazy transfers give the pixels eager ones do, when the page draws or anything reads', () => {
-  const eager = rig(), lazy = rig({ lazyTransfer: true });
-  for (const r of [eager, lazy]) {
-    r.ok(cmd(T.CREATE, 1, B8G8R8X8, 4, 3));
-    r.ok(r.attach(1, 0x1000, 48, 20));
-    for (let k = 0; k < 48; k++) r.ram[0x1000 + k] = k + 1;
-    r.ok(cmd(T.SCANOUT, 0, 0, 4, 3, 0, 1));
-    r.ok(cmd(T.TRANSFER, 0, 0, 2, 2, 0n, 1, 0)); // two rectangles whose union is noted
-    r.ok(cmd(T.TRANSFER, 2, 1, 2, 2, BigInt(1 * 16 + 2 * 4), 1, 0));
-  }
-  assert.deepEqual(px(lazy, 1, 3, 2), [0, 0, 0, 255], 'not copied yet');
-  lazy.sources.at(-1)!.sync!(); // the page's draw
-  for (const [x, y] of [[0, 0], [1, 1], [2, 1], [3, 2]]) assert.deepEqual(px(lazy, 1, x, y), px(eager, 1, x, y), `pixel ${x},${y}`);
-  assert.ok(lazy.gpu.state().screen, 'a state read brings it up to date');
-  // The backing going away copies first; an offset that isn't the rectangle's corner is copied at once.
-  lazy.ram.fill(0x55, 0x1000, 0x1030);
-  lazy.ok(cmd(T.TRANSFER, 0, 0, 4, 3, 0n, 1, 0));
-  lazy.ok(cmd(T.DETACH, 1, 0));
-  assert.deepEqual(px(lazy, 1, 1, 1), [0x55, 0x55, 0x55, 255], 'copied before the detach');
-});
-
-test('gpu: paced replies hold a burst to the frame and answer the first at once', async () => {
+test('gpu: one flush is answered per frame, the first at once; what is queued behind a held one keeps its order', async () => {
   const { gpuBackend } = await import('../web/gpu.ts');
   const ram = new Uint8Array(1 << 16);
-  const done: number[] = [];
-  const ctx = { ram: () => ram, ramSize: ram.length, complete: (w0: number) => done.push(w0), config: () => new Uint8Array(256), changeConfig() {} };
-  const b = gpuBackend(ctx, { width: 800, height: 600, paceReplies: true });
+  const done: { w0: number; at: number }[] = [];
+  const ctx = { ram: () => ram, ramSize: ram.length, complete: (w0: number) => done.push({ w0, at: performance.now() }), config: () => new Uint8Array(256), changeConfig() {} };
+  const b = gpuBackend(ctx, { width: 800, height: 600, paceFlushes: true });
   const send = (w0: number, c: Uint8Array) => {
     ram.set(c, 0x100);
-    return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length }], write: [{ off: 0x800, len: 64 }] });
+    return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length }], write: [{ off: 0x800, len: 512 }] });
   };
-  assert.equal(send(1, cmd(T.CREATE, 1, B8G8R8X8, 4, 3)), 24, 'not a display command: at once');
   const flush = cmd(T.FLUSH, 0, 0, 1, 1, 1, 0);
-  assert.equal(send(2, flush), 24, 'the first after idle');
-  assert.equal(send(3, flush), undefined, 'a burst is held');
-  assert.equal(send(4, cmd(T.INFO)), undefined, 'and what follows it, to keep the order');
-  assert.deepEqual(done, []);
-  await new Promise((r) => setTimeout(r, 40));
-  assert.deepEqual(done, [3, 4]);
+  assert.equal(send(1, cmd(T.CREATE, 1, B8G8R8X8, 4, 3)), 24, 'not a flush: at once');
+  assert.equal(send(2, flush), 24, 'the first flush after idle: at once');
+  const t0 = performance.now();
+  assert.equal(send(3, cmd(T.INFO)), 24 + 16 * 24, 'nothing is held: at once');
+  assert.equal(send(4, flush), undefined, 'a second flush in the frame waits for its end');
+  assert.equal(send(5, cmd(T.INFO)), undefined, 'and what follows it, to keep the order');
+  assert.equal(send(6, flush), undefined);
+  assert.equal(send(7, cmd(T.INFO)), undefined);
+  assert.equal(done.length, 0);
+  for (let k = 0; k < 100 && done.length < 4; k++) await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(done.map((d) => d.w0), [4, 5, 6, 7]);
+  assert.ok(done[1].at - done[0].at < 5, 'what was behind the first flush goes with it');
+  // Frames are a 60th of a second after the flush that was answered at once (a late timer doesn't push the next one back).
+  const frame = 1000 / 60, slack = 2;
+  assert.ok(done[0].at - t0 >= frame - slack, `the held flush waits for the frame's end (${(done[0].at - t0).toFixed(1)} ms)`);
+  assert.ok(done[2].at - t0 >= 2 * frame - slack, `the next one a frame more (${(done[2].at - t0).toFixed(1)} ms)`);
+  // Idle again: at once.
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(send(8, flush), 24);
+  // A reset drops what is held (the core drops the requests).
+  assert.equal(send(9, flush), undefined);
+  b.reset();
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(done.length, 4);
 });
 
-test('gpu: a lazy transfer is copied before its reply reaches the guest (a compositor reuses the buffer at once)', async () => {
-  // sway showed torn frames when the copy waited for the page's draw: the guest had drawn its next frame into the buffer.
+test('gpu: a transfer copies when it arrives, also while its reply is held (the guest reuses the buffer without waiting)', async () => {
+  // Linux waits for no reply on a primary plane: a compositor draws its next frames into a buffer whose transfer's
+  // reply is still held, so a copy that waited for the reply (or for the page's draw) showed half-drawn frames.
   const { gpuBackend } = await import('../web/gpu.ts');
   const ram = new Uint8Array(RAM_SIZE);
-  const done: number[] = [];
-  const ctx = { ram: () => ram, ramSize: RAM_SIZE, complete: (w0: number) => done.push(w0), config: () => new Uint8Array(256), changeConfig() {} };
-  for (const pace of [false, true]) {
-    ram.fill(0);
-    const b = gpuBackend(ctx, { width: 800, height: 600, lazyTransfer: true, paceReplies: pace });
-    // The guest's command at RAM 0x100, the response room at 0x800.
-    const send = (c: Uint8Array) => { ram.set(c, 0x100); return b.request({ w0: 1, queue: 0, read: [{ off: 0x100, len: c.length }], write: [{ off: 0x800, len: 512 }] }); };
-    const attach = (() => { const head = cmd(T.ATTACH, 1, 1); const c = new Uint8Array(head.length + 16); c.set(head); const v = new DataView(c.buffer); v.setBigUint64(head.length, BigInt(RAM_BASE + 0x4000), true); v.setUint32(head.length + 8, 64, true); return c; })();
-    send(cmd(T.CREATE, 1, B8G8R8X8, 4, 4));
-    send(attach);
-    send(cmd(T.SCANOUT, 0, 0, 4, 4, 0, 1));
-    ram.fill(0x11, 0x4000, 0x4040);
-    if (pace) await new Promise((r) => setTimeout(r, 40)); // idle: the next reply is at once
-    const answered = send(cmd(T.TRANSFER, 0, 0, 4, 4, 0n, 1, 0));
-    assert.ok(answered !== undefined, 'answered at once');
-    ram.fill(0x99, 0x4000, 0x4040); // the guest's next frame
-    b.gpu.settle();
-    const res = b.gpu.resources.get(1)!;
-    assert.equal(res.pixels[0], 0x11, `the first frame was copied before the reply (pace ${pace})`);
-  }
-});
-
-test('gpu: the shown resource is re-read from its backing (a compositor draws after its flush)', () => {
-  // sway rendered into the buffer it had just flipped to; a display scans memory continuously, so the screen has to follow.
-  const r = rig();
-  r.ok(cmd(T.CREATE, 1, B8G8R8X8, 8, 4));
-  r.ok(r.attach(1, 0x2000, 8 * 4 * 4));
-  r.ok(cmd(T.TRANSFER, 0, 0, 8, 4, 0n, 1, 0));
-  r.ok(cmd(T.SCANOUT, 0, 0, 8, 4, 0, 1));
-  r.ok(cmd(T.FLUSH, 0, 0, 8, 4, 1, 0));
-  assert.equal(r.gpu.poll(), false, 'nothing changed');
-  r.damage.length = 0;
-  r.ram.fill(0x77, 0x2000 + 4 * (1 * 8 + 2), 0x2000 + 4 * (1 * 8 + 5)); // row 1, x 2..4: after the flush, no command
-  r.ram.fill(0x55, 0x2000 + 4 * (3 * 8 + 7), 0x2000 + 4 * (3 * 8 + 8)); // row 3, x 7
-  assert.equal(r.gpu.poll(), true);
-  assert.deepEqual(r.damage, [{ x: 2, y: 1, w: 6, h: 3 }], 'the changed box, drawn');
-  assert.deepEqual(px(r, 1, 3, 1), [0x77, 0x77, 0x77, 255]);
-  assert.deepEqual(px(r, 1, 7, 3), [0x55, 0x55, 0x55, 255]);
-  assert.equal(r.gpu.poll(), false, 'and now it is up to date');
+  const ctx = { ram: () => ram, ramSize: RAM_SIZE, complete() {}, config: () => new Uint8Array(256), changeConfig() {} };
+  const b = gpuBackend(ctx, { width: 800, height: 600, paceFlushes: true });
+  const send = (c: Uint8Array) => { ram.set(c, 0x100); return b.request({ w0: 1, queue: 0, read: [{ off: 0x100, len: c.length }], write: [{ off: 0x800, len: 512 }] }); };
+  const attach = cmd(T.ATTACH, 1, 1, BigInt(RAM_BASE + 0x4000), 64, 0);
+  send(cmd(T.CREATE, 1, B8G8R8X8, 4, 4));
+  send(attach);
+  send(cmd(T.SCANOUT, 0, 0, 4, 4, 0, 1));
+  const flush = cmd(T.FLUSH, 0, 0, 4, 4, 1, 0);
+  send(flush);
+  assert.equal(send(flush), undefined, 'held');
+  ram.fill(0x11, 0x4000, 0x4040);
+  assert.equal(send(cmd(T.TRANSFER, 0, 0, 4, 4, 0n, 1, 0)), undefined, 'the reply waits behind the flush');
+  ram.fill(0x99, 0x4000, 0x4040); // the guest's next frame, into the same buffer
+  assert.equal(b.gpu.resources.get(1)!.pixels[0], 0x11, 'the frame that was transferred');
+  b.reset();
 });

@@ -58,6 +58,8 @@ type Resource = {
   backing: { off: number; len: number }[] | null;
   /** Shown on the scanout: its alpha is 255 (a canvas takes the pixels as they are). */
   opaque?: boolean;
+  /** A transfer changed the pixels since the whole scanout was last given to the page: a flush has something to show. */
+  changed?: boolean;
 };
 
 export type GpuOptions = {
@@ -70,31 +72,16 @@ export type GpuOptions = {
    */
   keepConsole?: boolean;
   /**
-   * Note TRANSFER_TO_HOST_2D rectangles instead of copying them, and copy the union once when the page
-   * draws (`ScanoutSource.sync`), at a state read, a snapshot or before the resource's backing changes.
-   * A console scrolling sends thousands of full-screen transfers a second, of which the page draws ~60:
-   * copying each saturated the device worker and the guest waited for every reply (graphics.md §13). The
-   * copy happens later than the guest asked for, so a guest that rewrites its backing without transferring
-   * can show newer pixels than it flushed (harmless). The page's machine sets it; the test guests stay eager.
+   * Complete at most one RESOURCE_FLUSH per display frame (60 a second), as a display completes a flush at its
+   * refresh: the first after an idle moment is answered at once (a key's glyph isn't delayed), one that
+   * follows within the frame waits for the frame's end, and so does everything queued behind it (replies
+   * stay in order). Why: Linux's driver waits for no reply on a primary plane
+   * (no fence, and before 6.19 no vblank either), so a guest with damage to show commits as fast as it can
+   * and only a full queue stops it. Answered at once, a scrolling console committed ~5,000 times a second,
+   * and the guest spent its CPU on DRM's atomic path (graphics.md §13). The commands themselves are never
+   * delayed: a transfer copies when it arrives. The page's machine sets it; the test guests don't.
    */
-  lazyTransfer?: boolean;
-  /**
-   * Complete TRANSFER_TO_HOST_2D and RESOURCE_FLUSH at most once per display frame (16 ms), as a real
-   * display completes a flush at its refresh. The first after an idle moment is answered at once (a key's
-   * glyph isn't delayed); a burst is held to the frame boundary. Why: Linux's fbdev damage worker commits and
-   * sleeps until the reply, so what arrives while it sleeps is one commit's worth. Answering at once made
-   * a scrolling console commit 5,000 times a second (the guest spent its CPU on DRM's atomic path, `dmesg`
-   * ran 3× slower than on a framebuffer: graphics.md §13).
-   */
-  paceReplies?: boolean;
-  /**
-   * Re-read the scanout resource's backing while it is shown and draw what changed (`Gpu.poll`, scheduled by the backend):
-   * a display scans guest memory continuously, and compositors (sway) write into a buffer after its transfer and flush
-   * (a frame's tail, a clock's digit) and expect to see it. Page only: the test guests' hashes are of what was flushed.
-   */
-  scanPoll?: boolean;
-  /** Debug (`?gpu=verify`): when the guest has been quiet, log where the scanout's host copy differs from a fresh copy of its backing (what real hardware would show). */
-  verify?: boolean;
+  paceFlushes?: boolean;
   /** Pixels per inch for the EDID's physical size (default 96). */
   dpi?: number;
   /**
@@ -107,13 +94,13 @@ export type GpuOptions = {
 };
 
 /** Where the scanout's pixels are: a resource's RGBA (rows `width` pixels apart, alpha meaningless) and the scanout's origin in it. */
-export type ScanoutSource = { pixels: Uint8Array; width: number; height: number; x: number; y: number; /** Brings the pixels up to date (lazy transfers): call before reading them. */ sync?: () => void };
+export type ScanoutSource = { pixels: Uint8Array; width: number; height: number; x: number; y: number };
 
 /** What the page draws from: the scanout and its damage, and the cursor. All optional (tests read the state). */
 export type GpuHooks = {
   /** The scanout's size changed or it was set again (0×0 and no source: the scanout is off). */
   scanout?(width: number, height: number, source: ScanoutSource | null): void;
-  /** A rectangle of the scanout (its own coordinates) has new pixels in the source. */
+  /** RESOURCE_FLUSH: a rectangle of the scanout (its own coordinates) is to be shown as the source has it now. */
   damage?(rect: Rect): void;
   /** The cursor image (64×64 RGBA) or none, its hotspot, and where it is (guest pixels). */
   cursor?(image: Uint8Array | null, hotX: number, hotY: number, x: number, y: number): void;
@@ -160,9 +147,11 @@ export class Gpu {
    * so the display never reports less than this. Zero until a guest does it; a compositor that
    * allocates a resource per mode never trips it, so desktops follow shrinks.
    */
-  /** Lazy transfers: the rectangle (a union) of each resource not yet copied from its backing. */
-  private pending = new Map<number, Rect>();
   private floor = { width: 0, height: 0 };
+  /** The floor raised the display event and the guest hasn't cleared an event since (`eventsCleared`). */
+  private bounce = false;
+  /** The size of the resource last on the scanout (kept while the scanout is off): a mode the guest's buffer holds, for the EDID. */
+  private shown = { width: 0, height: 0 };
   private ram: () => Uint8Array;
   private ramSize: number;
   private o: GpuOptions;
@@ -219,7 +208,6 @@ export class Gpu {
         const res = this.resources.get(u32(0));
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         this.resources.delete(res.id);
-        this.pending.delete(res.id);
         this.total -= res.pixels.length;
         if (this.scanout?.id === res.id) this.setScanout(null);
         return this.reply(OK_NODATA, cmd, room);
@@ -256,21 +244,6 @@ export class Gpu {
         if (!res.backing) return this.reply(ERR_UNSPEC, cmd, room);
         if (!this.inside(r, res)) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         const t0 = performance.now();
-        // The usual rectangle (the driver's offset is its own corner's): noted, copied when drawn.
-        if (this.o.lazyTransfer && offset === r.y * res.width * 4 + r.x * 4 && this.fits(res, r, offset)) {
-          const p = this.pending.get(id);
-          if (!p) this.pending.set(id, { ...r });
-          else {
-            const [x0, y0] = [Math.min(p.x, r.x), Math.min(p.y, r.y)];
-            [p.w, p.h] = [Math.max(p.x + p.w, r.x + r.w) - x0, Math.max(p.y + p.h, r.y + r.h) - y0];
-            [p.x, p.y] = [x0, y0];
-          }
-          this.draw(res, r);
-          busy.transfers++;
-          busy.pixels += r.w * r.h;
-          return this.reply(OK_NODATA, cmd, room);
-        }
-        this.materialize(res);
         const ok = this.transfer(res, r, offset);
         busy.transfer += performance.now() - t0;
         busy.transfers++;
@@ -300,7 +273,6 @@ export class Gpu {
         if (!need(HDR + 8)) return this.reply(ERR_UNSPEC, cmd, room);
         const res = this.resources.get(u32(0));
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
-        this.materialize(res);
         res.backing = null;
         return this.reply(OK_NODATA, cmd, room);
       }
@@ -326,7 +298,6 @@ export class Gpu {
       else {
         const res = this.resources.get(id);
         if (!res || res.width !== CURSOR || res.height !== CURSOR) return; // the guest's mistake: the cursor stays as it was
-        this.materialize(res);
         this.cursorImage = res.pixels.slice();
       }
     }
@@ -341,14 +312,16 @@ export class Gpu {
   }
 
   /**
-   * The modes after the preferred one: the size the console was born at and, if different, its buffer's
-   * (the floor). fbcon refuses a mode wider or taller than its buffer (DRM's `VIRTUAL_X`/`VIRTUAL_Y`)
+   * The modes after the preferred one: the size of the resource the guest last showed (a console's buffer)
+   * and the floor. fbcon refuses a mode wider or taller than its buffer (DRM's `VIRTUAL_X`/`VIRTUAL_Y`)
    * and with no other mode in the list it blanks the screen: a window grown past the buffer would
-   * kill the console. With these the guest falls back to a size its buffer holds.
+   * kill the console. With these the guest falls back to a size its buffer holds. (The size the display
+   * started with is not it: a machine restored from a snapshot starts at the new page's size, and its console
+   * was born in another.)
    */
   private fallbackModes() {
     const modes: { width: number; height: number }[] = [];
-    for (const m of [{ width: clampSize(this.o.width), height: clampSize(this.o.height) }, this.floor]) {
+    for (const m of [this.shown, this.floor]) {
       if (m.width < EDID_MIN.width || m.height < EDID_MIN.height) continue;
       if ((m.width === this.width && m.height === this.height) || modes.some((x) => x.width === m.width && x.height === m.height)) continue;
       modes.push(m);
@@ -357,38 +330,14 @@ export class Gpu {
   }
 
   /**
-   * The guest takes a display event's bit with `events_clear` after it handles it, and our event comes
-   * while it is still handling the shrink that caused it: that clear can take the new event with it
-   * (a lost bounce: the console stayed cropped, seen in CI). Raise again a few times while the crop lasts.
+   * The guest cleared the display event (the backend calls this). It clears the bit after it has handled
+   * the event, and the floor's event comes while it is still handling the shrink that caused it, so that
+   * clear takes the new event with it (the console stayed cropped, seen in CI): raise it once more.
    */
-  private reraise(id: number, left: number) {
-    if (left <= 0) return;
-    setTimeout(() => {
-      const s = this.scanout;
-      const res = s && this.resources.get(s.id);
-      if (!s || !res || s.id !== id || (s.rect.w >= res.width && s.rect.h >= res.height)) return;
-      this.raise?.();
-      this.reraise(id, left - 1);
-    }, 200);
-  }
-
-  /**
-   * Copies what lazy transfers noted. The backend calls it before a reply reaches the guest: a guest reuses a
-   * buffer (a compositor draws its next frame into it) as soon as it has the reply, so the copy can't wait past it.
-   */
-  settle() {
-    this.materialize();
-  }
-
-  /** Copies what lazy transfers noted (one resource's, or all). */
-  private materialize(res?: Resource) {
-    if (!this.pending.size) return;
-    for (const [id, r] of [...this.pending]) {
-      const t = this.resources.get(id);
-      if (!t || (res && t !== res)) continue;
-      this.pending.delete(id);
-      if (t.backing) this.transfer(t, r, r.y * t.width * 4 + r.x * 4, true);
-    }
+  eventsCleared() {
+    if (!this.bounce) return;
+    this.bounce = false;
+    this.raise?.();
   }
 
   /** The reported size from the wanted one and the floor; true if it changed. */
@@ -412,13 +361,15 @@ export class Gpu {
     this.announce();
     const res = s && this.resources.get(s.id);
     if (s && res) {
+      this.shown = { width: res.width, height: res.height };
       this.draw(res, s.rect);
+      res.changed = false;
       if (this.o.keepConsole && s.rect.x === 0 && s.rect.y === 0 && (s.rect.w < res.width || s.rect.h < res.height)) {
         // The console is cropped: ask for its whole buffer again.
         this.floor = { width: Math.max(this.floor.width, res.width), height: Math.max(this.floor.height, res.height) };
         if (this.report()) {
+          this.bounce = true;
           this.raise?.();
-          this.reraise(res.id, 5);
         }
       }
     }
@@ -438,25 +389,27 @@ export class Gpu {
   private announce() {
     const s = this.scanout;
     const res = s && this.resources.get(s.id);
-    this.hooks.scanout?.(s ? s.rect.w : 0, s ? s.rect.h : 0, s && res ? { pixels: res.pixels, width: res.width, height: res.height, x: s.rect.x, y: s.rect.y, sync: () => this.materialize(res) } : null);
+    this.hooks.scanout?.(s ? s.rect.w : 0, s ? s.rect.h : 0, s && res ? { pixels: res.pixels, width: res.width, height: res.height, x: s.rect.x, y: s.rect.y } : null);
   }
 
   private flush(res: Resource, r: Rect) {
-    this.draw(res, r);
+    // A page flip is transfer, SET_SCANOUT, flush: the scanout change has drawn it all, and the flush would draw it again.
+    if (res.changed) this.draw(res, r);
     if (this.o.trace) this.trace.push(this.screenHash() ?? '');
     const t = this.o.resize;
     if (t && ++this.flushes === t.after) this.setSize(t.width, t.height);
   }
 
-  /** TRANSFER_TO_HOST_2D: the rectangle's rows from the backing (the first at `offset`, rows `width`×4 bytes apart) into the host pixels. False if the backing is too short. */
   /** Whether the rows of `r` from `offset` lie inside the backing. */
   private fits(res: Resource, r: Rect, offset: number) {
     const last = offset + res.width * 4 * (r.h - 1) + r.w * 4;
     return Number.isSafeInteger(last) && last <= res.backing!.reduce((n, b) => n + b.len, 0);
   }
 
-  private transfer(res: Resource, r: Rect, offset: number, quiet = false) {
+  /** TRANSFER_TO_HOST_2D: the rectangle's rows from the backing (the first at `offset`, rows `width`×4 bytes apart) into the host pixels. False if the backing is too short. */
+  private transfer(res: Resource, r: Rect, offset: number) {
     if (r.w === 0 || r.h === 0) return true;
+    res.changed = true;
     const stride = res.width * 4;
     const rowLen = r.w * 4;
     const backing = res.backing!;
@@ -491,7 +444,6 @@ export class Gpu {
           if (left > 0) while (at >= segStart + backing[seg].len) segStart += backing[seg++].len;
         }
       }
-      if (!quiet) this.draw(res, r);
       return true;
     }
     const row = new Uint8Array(rowLen);
@@ -506,7 +458,6 @@ export class Gpu {
         px[d + 3] = res.opaque ? 255 : row[k + ai];
       }
     }
-    if (!quiet) this.draw(res, r);
     return true;
   }
 
@@ -533,7 +484,6 @@ export class Gpu {
   private screenHash() {
     const s = this.scanout;
     if (!s) return null;
-    this.materialize();
     const res = this.resources.get(s.id)!;
     const words = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length / 4);
     const rows = [];
@@ -556,66 +506,9 @@ export class Gpu {
     };
   }
 
-  private scratch = new Uint8Array(0);
-
-  /**
-   * The scanout's host pixels brought up to date with the guest's memory: a fresh copy of the shown rectangle, compared with
-   * the host's, and the changed box copied and drawn. True if anything changed.
-   */
-  poll() {
-    this.settle();
-    const s = this.scanout;
-    const res = s && this.resources.get(s.id);
-    if (!s || !res || !res.backing) return false;
-    if (this.scratch.length !== res.pixels.length) this.scratch = new Uint8Array(res.pixels.length);
-    const fresh: Resource = { ...res, pixels: this.scratch };
-    const { x, y, w, h } = s.rect;
-    if (!this.transfer(fresh, s.rect, y * res.width * 4 + x * 4, true)) return false;
-    const a = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length >> 2);
-    const b = new Uint32Array(this.scratch.buffer, 0, this.scratch.length >> 2);
-    let y0 = -1, y1 = -1, x0 = w, x1 = -1;
-    for (let r = y; r < y + h; r++) {
-      const row = r * res.width;
-      let first = -1, last = -1;
-      for (let c = x; c < x + w; c++) if (a[row + c] !== b[row + c]) { if (first < 0) first = c; last = c; }
-      if (first < 0) continue;
-      if (y0 < 0) y0 = r;
-      y1 = r;
-      x0 = Math.min(x0, first - x);
-      x1 = Math.max(x1, last - x);
-    }
-    if (y0 < 0) return false;
-    for (let r = y0; r <= y1; r++) {
-      const at = r * res.width + x + x0;
-      a.set(b.subarray(at, at + x1 - x0 + 1), at);
-    }
-    this.draw(res, { x: x + x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 });
-    return true;
-  }
-
-  /** The scanout's host pixels against a whole new copy from the guest's backing: the differing pixels' count and box. */
-  verify() {
-    this.settle();
-    const s = this.scanout;
-    const res = s && this.resources.get(s.id);
-    if (!s || !res || !res.backing) return null;
-    const fresh: Resource = { ...res, pixels: new Uint8Array(res.pixels.length), opaque: res.opaque };
-    this.transfer(fresh, { x: 0, y: 0, w: res.width, h: res.height }, 0, true);
-    const a = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length >> 2);
-    const b = new Uint32Array(fresh.pixels.buffer, 0, fresh.pixels.length >> 2);
-    let bad = 0, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1, first = '';
-    for (let y = s.rect.y; y < s.rect.y + s.rect.h; y++) for (let x = s.rect.x; x < s.rect.x + s.rect.w; x++) {
-      if (a[y * res.width + x] === b[y * res.width + x]) continue;
-      if (!bad) first = `${x},${y} host ${a[y * res.width + x].toString(16)} backing ${b[y * res.width + x].toString(16)}`;
-      bad++;
-      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
-    }
-    return { bad, box: bad ? [x0, y0, x1 - x0 + 1, y1 - y0 + 1] : null, resource: res.id, first };
-  }
-
   /** A virtio reset: the guest's resources, scanout and cursor are gone. */
   reset() {
-    this.pending.clear();
+    this.shown = { width: 0, height: 0 };
     this.resources.clear();
     this.total = 0;
     this.cursorImage = null;
@@ -627,20 +520,20 @@ export class Gpu {
 
   /** A snapshot's state, JSON: `state` plus the cursor's image. Host pixels come back from the backing at `restore`. */
   save() {
-    return { ...this.state(), cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null };
+    return { ...this.state(), cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null, shown: this.shown };
   }
 
   /** `save`'s state back: the tables, then every resource with a backing read again from the (restored) RAM, and the scanout drawn. */
   restore(state: unknown) {
     const t = state as ReturnType<Gpu['save']>;
     if (!Array.isArray(t?.resources) || !(t.width > 0) || !(t.height > 0)) throw new Error('the snapshot has no state for the display device');
-    this.pending.clear();
     this.resources.clear();
     this.total = 0;
     this.scanout = null;
     [this.width, this.height, this.flushes] = [t.width, t.height, t.flushes];
     this.wanted = { width: t.width, height: t.height };
     this.floor = { width: 0, height: 0 };
+    this.bounce = false;
     this.trace = t.trace ?? [];
     for (const r of t.resources) {
       const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: new Uint8Array(r.width * r.height * 4), backing: r.backing?.map(([off, len]) => ({ off, len })) ?? null };
@@ -654,6 +547,7 @@ export class Gpu {
     const s = this.scanout;
     if (s) makeOpaque(this.resources.get(s.id)!);
     const shown = s && this.resources.get(s.id);
+    this.shown = shown ? { width: shown.width, height: shown.height } : t.shown?.width > 0 && t.shown.height > 0 ? { width: t.shown.width, height: t.shown.height } : { width: 0, height: 0 };
     if (this.o.keepConsole && s && shown && s.rect.x === 0 && s.rect.y === 0 && (s.rect.w < shown.width || s.rect.h < shown.height)) this.floor = { width: shown.width, height: shown.height };
     this.announce();
     if (s) this.draw(this.resources.get(s.id)!, s.rect);
@@ -698,29 +592,20 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
     const v = new DataView(c.buffer, c.byteOffset, 16);
     v.setUint32(0, v.getUint32(0, true) | EVENT_DISPLAY, true);
   });
-  // Replies held to the frame boundary (`paceReplies`), in order.
-  let held: { w0: number; len: number }[] = [];
-  let lastBatch = -Infinity;
+  // `paceFlushes`: the replies not sent yet, in order (the first is a flush's), and when a flush was last answered.
+  let held: { w0: number; len: number; flush: boolean }[] = [];
+  let lastFlush = -Infinity;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // `scanPoll`: scan the shown resource's memory every 30 ms while the display is busy (a command in the last 1.5 s, or the last scan found a change), every 250 ms otherwise.
-  let lastCommand = -Infinity, lastChange = -Infinity;
-  let pollTimer: ReturnType<typeof setTimeout> | undefined;
-  const scan = () => {
-    pollTimer = undefined;
-    const t0 = performance.now();
-    if (gpu.poll()) lastChange = t0;
-    busy.transfer += performance.now() - t0;
-    pollTimer = setTimeout(scan, t0 - lastCommand < 1500 || t0 - lastChange < 500 ? 30 : 250);
-  };
-  const vtimers: ReturnType<typeof setTimeout>[] = [];
-  const FRAME_MS = 16;
+  const FRAME_MS = 1000 / 60;
+  /** A frame ended: the flush that waited for it is answered, with what was queued behind it up to the next flush. */
   const release = () => {
     timer = undefined;
-    lastBatch = performance.now();
-    const batch = held;
-    held = [];
-    gpu.settle();
-    for (const h of batch) ctx.complete(h.w0, h.len);
+    // The frame's end is a frame after the last, not when the timer got to run (timers are late: the rate would sag below 60).
+    const now = performance.now();
+    lastFlush = now - lastFlush < 2 * FRAME_MS ? lastFlush + FRAME_MS : now;
+    const next = held.findIndex((h, k) => k > 0 && h.flush);
+    for (const h of held.splice(0, next < 0 ? held.length : next)) ctx.complete(h.w0, h.len);
+    if (held.length) timer = setTimeout(release, Math.max(0, lastFlush + FRAME_MS - now));
   };
   return {
     gpu,
@@ -738,24 +623,16 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       scatter(ram, r.write, reply);
       busy.request += performance.now() - t0;
       busy.requests++;
-      lastCommand = performance.now();
-      if (o.scanPoll && pollTimer === undefined) pollTimer = setTimeout(scan, 30);
-      if (o.verify) {
-        vtimers.forEach(clearTimeout);
-        for (const [k, ms] of [[0, 0], [1, 30], [2, 150], [3, 600]]) vtimers[k] = setTimeout(() => { const v = gpu.verify(); if (v?.bad) console.log(`gpu verify@${ms} t=${(performance.now() / 1000).toFixed(3)}: ${v.bad} px differ from the backing, box ${v.box}, resource ${v.resource} first ${v.first}`); else if (ms === 600) console.log(`gpu verify ok t=${(performance.now() / 1000).toFixed(3)}`); }, ms);
-      }
-      if (o.paceReplies && cmd.length >= 4) {
-        const type = new DataView(cmd.buffer, cmd.byteOffset, Math.min(cmd.length, 4)).getUint32(0, true);
+      if (o.paceFlushes) {
+        const flush = cmd.length >= 4 && new DataView(cmd.buffer, cmd.byteOffset, 4).getUint32(0, true) === RESOURCE_FLUSH;
         const now = performance.now();
-        const display = type === TRANSFER_TO_HOST_2D || type === RESOURCE_FLUSH;
-        if (held.length || (display && now - lastBatch < FRAME_MS)) {
-          held.push({ w0: r.w0, len: reply.length });
-          timer ??= setTimeout(release, Math.max(0, lastBatch + FRAME_MS - now));
+        if (held.length || (flush && now - lastFlush < FRAME_MS)) {
+          held.push({ w0: r.w0, len: reply.length, flush });
+          timer ??= setTimeout(release, Math.max(0, lastFlush + FRAME_MS - now));
           return undefined;
         }
-        if (display) lastBatch = now;
+        if (flush) lastFlush = now;
       }
-      gpu.settle();
       return reply.length;
     },
     // events_clear: write-one-to-clear of events_read; the guest's write is taken and zeroed.
@@ -766,11 +643,10 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       if (clear) {
         v.setUint32(0, v.getUint32(0, true) & ~clear, true);
         v.setUint32(4, 0, true);
+        if (clear & EVENT_DISPLAY) gpu.eventsCleared();
       }
     },
     reset: () => {
-      clearTimeout(pollTimer);
-      pollTimer = undefined;
       clearTimeout(timer);
       timer = undefined;
       held = [];

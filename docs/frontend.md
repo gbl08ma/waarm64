@@ -300,6 +300,12 @@ a worst case of 89 to 972 ms over two runs (`bench/gpu/results/draw-latency-*.js
 the cause, the device worker's serving is, so moving the draw elsewhere wouldn't help; blk would have to leave that
 thread (asynchronous reads: backlog).
 
+**A desktop on the screen:** a compositor's frames arrive as full-screen transfers at its own rate (a guest kernel
+from 6.19 paces itself at 60 Hz; for older ones the device answers one flush per frame, docs/devices.md), and the page
+draws at most one per frame. **sway should run with `WLR_RENDERER=pixman`** (other wlroots compositors likely too):
+left alone on a display without 3D, Arch's picked Mesa's llvmpipe, which under the JIT costs about ten times the CPU
+and draws on its own threads after the page flip, so the screen shows frames late and in pieces (graphics.md §16).
+
 The simple-framebuffer's canvas keeps the framebuffer's size; CSS scales it to an integer multiple **in device pixels**
 when one fits the view (`image-rendering: pixelated`: crisp at any `devicePixelRatio`), and
 scales it down smoothly when it doesn't fit at 1:1. A `ResizeObserver` and a `resolution` media

@@ -211,16 +211,29 @@ mode (and natively in realtime mode: std has no CSPRNG).
   sizes from 480×300 to 4095×4095; `edid-decode --check` passes for every size tested.
   **Two rules keep fbcon's console whole** (found on Debian's page, graphics.md §13): fbcon's buffer
   is allocated once, and DRM rejects any mode wider or taller than it (`VIRTUAL_X`), so the EDID lists
-  after the preferred mode the size the display started at and the *floor*, or the guest finds no mode
-  and blanks the console. And when a guest answers a smaller mode with a rectangle smaller than the
+  after the preferred mode the size of the resource the guest last showed (the console's buffer; kept in a
+  snapshot) and the *floor*, or the guest finds no mode and blanks the console. And when a guest answers a smaller mode with a rectangle smaller than the
   resource it keeps (a crop, at the origin), the display never reports less than that resource again
   (`floor`) and raises the event once more: the console gets its whole buffer back and the page
   letterboxes it. A compositor that makes a resource per mode never trips either, so desktops follow
   shrinks. Both are the page machine's (`GpuOptions.keepConsole`): the test guests leave them off so their bytes and step counts stay. The page's size and the reported one are separate (`wanted`, `width`/`height`).
-- **The page's tuning** (`GpuOptions.keepConsole`, `lazyTransfer`, `paceReplies`, `GpuSpec.queueSize`): lazy transfers
-  (noted, copied once per drawn frame or when anything reads), replies to transfers and flushes at most once per 16 ms
-  (the first after idle at once) and a queue of 16, all because a scrolling console floods the device (graphics.md §13).
-  Off by default: the test guests stay byte-exact.
+- **A transfer copies when it arrives; a flush shows.** `TRANSFER_TO_HOST_2D` is the guest's only promise about
+  its buffer: Linux waits for no reply on a primary plane (no fence; a 60 Hz vblank timer only since 6.19), so a
+  compositor is already drawing a later frame into the same buffer while earlier replies are outstanding. A copy
+  made any later than the command (at the reply, at the page's draw) reads half-drawn frames, and the host never
+  reads a backing on its own (a guest draws into buffers the host still shows). `RESOURCE_FLUSH` and `SET_SCANOUT`
+  are what damage the screen (`GpuHooks.damage`, `scanout`); a transfer alone shows nothing.
+- **Flush replies are paced on the page** (`GpuOptions.paceFlushes`, `GpuSpec.queueSize` 16; off and 64 for the
+  test guests, whose bytes and step counts must not move): one `RESOURCE_FLUSH` is answered per 16 ms frame, the
+  first after an idle moment at once, and whatever is queued behind a held flush waits with it, in order. It is the
+  only back-pressure a 2D guest takes: with replies instant a scrolling console commits thousands of times a
+  second, and with the queue full it commits once per frame (graphics.md §16 has the numbers). Commands are never
+  delayed, only their replies. `?gpu=nopace,q<N>` on the page changes both, for measurements.
+- **A guest that composites with llvmpipe shows stale frames** (graphics.md §16): Mesa's software GL rasterizes
+  on its own threads after `glFlush`, wlroots flips without waiting, so the transfer copies a buffer that is
+  still being drawn and nothing tells the device when it is done. That is the guest's race (a real display hides it
+  by scanning memory continuously); `WLR_RENDERER=pixman` in the guest removes it, and pixman is also about ten
+  times lighter under the JIT.
 - **A QueueNum of 0 means the device's maximum** (the transport, for every device): EDK2's virtio-gpu driver writes 0 and expects the ring it laid out for QueueNumMax; QEMU ignores the write, and the first version of ours put the device in NEEDS_RESET, so the firmware hung at its first command.
 - **Where the pixels go** is `GpuHooks` (`scanout`, `damage`, `cursor`): the backend calls them
   and keeps no presentation of its own; `web/gpu-present.ts` wires them to an `OffscreenCanvas` in the device worker (docs/frontend.md "The screen"). A resource that is set as the scanout loses its alpha (one pass, then every transfer writes 255): a canvas takes the pixels as they are, and `alpha: false` was not enough in a worker (the screen came out transparent). Without hooks the state is

@@ -432,6 +432,11 @@ test('Debian on the page: a snapshot of a logged-in machine with a file on its d
   await onSerial(p2, 'echo detect >/sys/class/drm/card0-Virtual-1/status; sleep 1; echo ==pre""f $(head -qn1 /sys/class/drm/card*-Virtual-1/modes)\n');
   await shows(p2, /==pref\s+\d+x\d+/);
   assert.match(await terminal(p2), new RegExp(`==pref\\s+${want[0]}x${want[1]}`), "the guest's preferred mode is the new window's");
+  // And the console is still on the screen, whole: the window's mode is wider than fbcon's buffer, so it took the EDID's second mode
+  // (its buffer's size). With no mode it can take, fbcon blanks the screen.
+  const after = await screenOf(p2);
+  assert.ok(after.lit > 0, 'the console is still shown after the display event');
+  assert.deepEqual(after.size, shown.size, 'at its own size');
   // Suspend: the machine stops with its memory kept beside the overlay; a reload resumes it, still logged in.
   await onSerial(p2, 'SUSVAR=suspended-$((6*7)); clear; echo re""ady-to-suspend\n');
   await shows(p2, /ready-to-suspend/);

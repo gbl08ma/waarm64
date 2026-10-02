@@ -1,7 +1,7 @@
 // The virtio-gpu scanout on a canvas (docs/devices.md "virtio-gpu"): `GpuHooks` for a worker's
-// OffscreenCanvas (a 2D context without alpha). The backend's flushes give damaged rectangles; they
-// accumulate into one rectangle and are drawn at most once per animation frame, straight from the
-// guest's resource (an ImageData over its RGBA bytes: no copy, no scan of guest memory). The canvas has
+// OffscreenCanvas (a 2D context without alpha). The backend's transfers and flushes give damaged rectangles;
+// they accumulate into one rectangle and are drawn at most once per frame, straight from the host's copy of
+// the guest's resource (an ImageData over its RGBA bytes: no copy, no scan of guest memory). The canvas has
 // the scanout's size; when it changes the page is told (`mode`) to refit its box.
 import { busy } from './gpu.ts';
 import type { GpuHooks, Rect, ScanoutSource } from './gpu.ts';
@@ -36,6 +36,7 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
       drawMs = 0;
     }, 1000);
   }
+  const FRAME_MS = 15; // under a 60 Hz frame: a flush a frame after the last is drawn at once, not a timer later
   let lastDraw = -Infinity;
   const frame = () => {
     scheduled = false;
@@ -43,14 +44,13 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
     const d = dirty;
     dirty = null;
     const t0 = performance.now();
-    src.sync?.();
     ctx.putImageData(img, -src.x, -src.y, src.x + d.x, src.y + d.y, d.w, d.h);
     lastDraw = performance.now();
     drawMs += lastDraw - t0;
     if (stats) lat.push(performance.now() - since);
   };
   // The device worker has no animation frames (Chromium: "requestAnimationFrame not supported in this Worker"
-  // for a canvas that was handed on from the machine worker): a 16 ms timer then, still at most one draw per tick.
+  // for a canvas that was handed on from the machine worker): a timer for a frame after the last draw then.
   let frames = true;
   const schedule = () => {
     if (scheduled) return;
@@ -63,7 +63,7 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
         frames = false;
       }
     }
-    setTimeout(frame, 16);
+    setTimeout(frame, Math.max(0, lastDraw + FRAME_MS - performance.now()));
   };
   let cursorImage: Uint8Array | null | undefined;
   let cursorHot = '';
@@ -98,7 +98,7 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
         dirty = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
       }
       // At most one draw per frame: at once if the last was a frame ago (a key's echo shows without waiting for a timer), else on the timer.
-      if (performance.now() - lastDraw >= 16) frame();
+      if (performance.now() - lastDraw >= FRAME_MS) frame();
       else schedule();
     },
   };

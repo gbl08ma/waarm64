@@ -436,9 +436,9 @@ The page sends its screen box (docs/frontend.md "The screen"); what Debian's ker
   equal frame rate. **What remains is the guest's own cost of Linux's virtio-gpu fbdev path** (shadow copy + commit
   per damage; a framebuffer has none), which a host can't remove; `?display=simple` gives the old screen on a
   machine that wants the console fast. A held Enter is the same effect at a smaller scale: the vCPU (not the device
-  worker, ~5%) runs the guest's DRM commits, which is the core the user saw. The knobs are the page's
-  `?gpu=eager|lazy|pace|q<N>` (default `lazy,pace,q16`; the tests' guests stay eager and queue 64, so their bytes
-  and step counts don't move).
+  worker, ~5%) runs the guest's DRM commits, which is the core the user saw. The tests' guests stay unpaced with a
+  queue of 64, so their bytes and step counts don't move. **Lazy transfers were removed and the pacing was redone in
+  §16** (a copy later than the command is wrong for a compositor; pacing flushes alone gives the same numbers).
 
 ## 14. G1 loop 6: the cursor (2026-10-02)
 
@@ -468,39 +468,82 @@ from the backing in the restored RAM; the header lists the `gpu` kind) and loop 
 adds the page's proof, in `tests/page-snapshot.test.ts` (Debian: a snapshot of the logged-in machine, loaded in a fresh
 profile **with another window size**):
 - the restored canvas has the saved size (fbcon's buffer: the console is never cropped) and is drawn, not black;
-- the guest then has the new window's size as its connector's preferred mode. **A restored guest lists it only after a
-  probe** (`echo detect >/sys/class/drm/card0-Virtual-1/status`): until then the connector's `modes` file is empty, as the
-  guest never re-read it across the restore; the display event is delivered either way.
+- the guest then has the new window's size as its connector's preferred mode (the test probes the connector,
+  `echo detect >/sys/class/drm/card0-Virtual-1/status`, before it reads `modes`). **The empty `modes` file first seen
+  here was a bug, found in §16's review:** the EDID's fallback mode was the size the display *started* with, which
+  after a restore is the new page's, so a console restored into a bigger window found no mode its buffer holds and
+  blanked the screen (the test passed on one lit frame before that). The fallback is now the size of the resource the
+  guest last showed, kept in the snapshot, and the test checks the console is still shown after the event.
 - Planted: the scanout not restored. The unit test (`tests/gpu.test.ts`, restore) and the page test both fail.
 - A guest that wrote a backing without transferring it shows the newer pixels after a restore until its next flush
   (the restore re-reads every backing): harmless.
 
-### After the user's manual test of sway (2026-10-02)
+## 16. The review after sway (2026-10-02)
 
-Debian with sway and foot showed flashes of oddly shaped areas, a typed command's last letter missing or flickering
-(frames that looked out of order), and, after `dmesg`, stray prompts as if Enter were held. **Cause of the first two
-(found by reading, a regression test, no desktop run here): lazy transfers copied later than the guest's reply.** A
-console never rewrites a buffer it flushed, but a compositor draws its next frame into the buffer as soon as it has
-the reply, so the deferred copy (up to a frame later, at the page's draw) read half a frame. Fix: `Gpu.settle()` copies
-what is noted **before a reply reaches the guest** (at once for an immediate reply, at the release for a paced batch),
-so a burst still coalesces; planted (no settle on the immediate path) fails `tests/gpu.test.ts`. **The stray prompts
-are not explained**: a compositor on software rendering saturates the guest's vCPUs, which delays a key's release
-and starts the autorepeat; the old device-worker saturation is the other candidate. If it persists, try
-`?gpu=eager,pace,q16` (and `?gpu=eager,q16`) and `bench/results/local/dmesg-load.ts`; a sway run needs a desktop
-installed in a throwaway overlay (not done).
+The user ran sway and foot (Debian, then their Arch image) and saw flashes of oddly shaped areas, a typed command's last
+letter missing, all four cores busy, and, after two attempted fixes, the picture flipping between later and earlier frames.
+A review of the whole 2D path followed; the dev-only driver is `bench/results/local/sway-diag.ts` (the Arch image in the
+page, headless, 1376×762, 4 vCPUs; display statistics from `?displaystats`).
 
-**Second round (sway on the user's Arch image, in the page, headless: `bench/results/local/sway.ts`, dev-only).** The user
-still saw the same with `?gpu=eager,pace,q16` and `?gpu=eager,q16`, so lazy transfers weren't the (only) cause. A debug
-check (`?gpu=verify`: when the guest goes quiet, compare the scanout's host pixels with a fresh copy of its backing) found
-the real one: **sway writes into the buffer it has just flipped to after the transfer and flush**, with no command to say
-so. Right after a window change the host copy of the new buffer was black (the transfer ran on an empty buffer) and the guest
-filled it in over the next ~600 ms; a clock's digit, a typed glyph, the last stroke of a frame likewise. A display scans guest
-memory continuously, so on hardware the screen follows; our host copy was updated only by transfers and stayed stale until
-the next frame (a title bar black, a last letter missing, then back). **Fix: `Gpu.poll()`**, scheduled by the backend
-(`scanPoll`, the page's machine; `?gpu=nopoll` turns it off): while a resource is shown, re-read its backing (a whole
-rectangle's gather, ~2 ms at 1376×762), compare, copy and draw the changed box; every 30 ms while the display is busy
-(a command in the last 1.5 s, or the last scan found a change), every 250 ms otherwise. The test guests don't poll (their
-hashes are of what was flushed). Measured with the verifier: before, mismatches lasted until the next frame; with
-polling none lasts 600 ms. Unit test in `tests/gpu.test.ts`. Not measured: the polling's cost on the device worker
-during a busy desktop (the verifier's run was fine; the user should say), nor the htop and dmesg symptoms.
+**What it was: the guest composites with llvmpipe, and llvmpipe is asynchronous.** Stock sway (1.12, Mesa 26.2, kernel
+7.2.8; no `WLR_RENDERER` set) renders through Mesa's software rasterizer (`ps -T` shows `llvmpipe-0…3` inside sway; its
+scanout buffers are 1408×768 for a 1376×762 mode, llvmpipe's 64-pixel tiles). The mechanism, from wlroots' and Linux's
+sources (read, not traced in the guest): wlroots' GLES2 renderer ends a frame with `glFlush`, which hands the scene to
+llvmpipe's rasterizer threads and returns, and then page-flips; Linux's primary-plane update sends `TRANSFER_TO_HOST_2D`
++ `SET_SCANOUT` + `RESOURCE_FLUSH` at once and waits for nothing (`virtgpu_plane.c`: no fence on a primary plane without
+a blob). A GPU's fences make the flip wait for the rendering; llvmpipe has none. So **the transfer copies a buffer the rasterizer
+threads are still filling** (measured: the host's copy equals the backing right after the flush and differs 30 ms later,
+at every flip; a full-window redraw arrives over ~600 ms), and the host shows each buffer as it was two flips ago plus
+whatever tiles were done: the missing last letter, the tile-shaped holes, a clock two seconds behind. A real display hides
+the race by scanning memory continuously; a virtio-gpu host only wins it if its command path is slower than the
+rasterizer (QEMU wasn't measured), and under the JIT the rasterizer is slow and the device is fast, so we always lose it.
 
+| the same session | llvmpipe (sway's default) | `WLR_RENDERER=pixman` |
+|---|---|---|
+| per-core load with htop running (4 vCPUs) | ~54% on each | 4–8% |
+| frames a second, `while true; do date; done` in foot | 9 | 46–55 (the guest's 60 Hz vblank timer) |
+| host copy vs. backing after a flip | differs at every flip | never (0 mismatches in the session) |
+| idle (a clock in the bar) | ~94% idle, 1 frame a second | the same |
+
+**So nothing floods and vsync isn't the problem**: sway idles when nothing changes, and the load is llvmpipe's four
+threads rasterizing (roughly 600 ms of vCPU time a frame). That cost is the JIT's to explain
+(backlog; G2 was going to measure llvmpipe anyway) and decides whether GL desktops are usable at all; a compositor that
+renders with pixman is cheap and correct today.
+
+**What was tried, and why it lost:**
+- *Lazy transfers* (§13: note the rectangle, copy at the page's draw): wrong by the protocol. The guest doesn't wait for
+  replies, so by the time of a deferred copy a compositor is drawing a later frame into the same buffer. Removed.
+- *`settle`* (copy before the reply reaches the guest): the same mistake one step earlier; the reply isn't what the
+  guest waits for. Removed with the above.
+- *`poll`/`scanPoll`* (re-read the shown resource's backing every 30 ms and draw what changed): it made llvmpipe's late
+  pixels appear, and made it worse. At a flip the host shows the new buffer as transferred (frame N−2 with some of N),
+  30 ms later the poll shows what the rasterizer has done since, and the buffer shown before had been polled up to
+  N−1: the screen goes N−1, N−2, N, the flip-flop the user saw. It also read a buffer the guest was drawing into
+  whenever the host was a command behind. Removed, with its `?gpu=verify` debug check.
+- *Paced replies as built* held transfers as well as flushes, so a guest that waits for each reply (EDK2's GOP) got
+  one command per frame.
+
+**What exists now** (devices.md "virtio-gpu"): a transfer copies when it arrives; only `RESOURCE_FLUSH` and `SET_SCANOUT`
+damage the screen (a transfer used to, so a draw could show a transfer before its flush); one flush reply per 60 Hz frame,
+the first after idle at once, the rest of the queue held behind it in order (`paceFlushes`), with a queue of 16. The crop
+floor's event is raised once more when the guest clears the event (it used to be five timers). The EDID's fallback mode
+is the shown resource's size (§15: a restored console blanked). Console scrolling
+(`bench/results/local/fps.ts`: `dmesg` in a loop on tty1, Debian, changed frames a second and `dmesg` runs per 10 s, one
+session, single runs):
+
+| | frames/s | `dmesg` per 10 s |
+|---|---|---|
+| before (lazy transfers, all display replies paced, queue 16), two runs | 60, 60 | 10, 11 |
+| now (eager, flushes paced, queue 16), three runs | 55, 56, 59 | 11, 11, 12 |
+| now, queue 64 | 52 | 12 |
+| now, no pacing | 64 | 7 |
+
+(The first two "now" runs were before the pacing kept a 60 Hz cadence against late timers.) Eager copies cost what lazy
+ones did once the guest commits once a frame: the pacing was what mattered.
+
+**Open, for the user:** a guest that composites with llvmpipe still shows stale frames (monotonic now, two flips late,
+no flip-flop). The device can't know when the rasterizer is done. If such guests must look right before llvmpipe is
+fast enough to matter, the honest emulation is a display that samples the scanout's memory at its refresh and holds a
+flipped buffer back until it stops changing (complete frames, a frame or two late, a full compare per refresh); it
+is a mode of its own, not built. The guest-side fix is one line: `WLR_RENDERER=pixman` (wlroots' source refuses a
+software EGL device unless `WLR_RENDERER_ALLOW_SOFTWARE` is set; here it took llvmpipe without it, not looked into).
