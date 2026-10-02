@@ -104,6 +104,8 @@ matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', f
 // One machine at a time; a restart stops it and starts a new worker (fresh memory, fresh ports, a fresh canvas).
 type Run = { worker: Worker; input: Input; serial: MessagePort; display: MessagePort };
 let run: Run | undefined;
+/** The guest has a driver on its keyboard (else the screen's keys go to the serial console: the firmware, GRUB). Per machine; false until the worker says. */
+let keyboardLive = false;
 /** The machine's, plus the page's own `idle`: no machine yet (waiting for "Start anyway"). */
 type PageState = PowerState | 'idle';
 let state: PageState = 'loading';
@@ -216,8 +218,9 @@ function start(snapshot?: File, resume = true) {
   // A machine that can have a network card has one from the start (it can't be added later without a restart): its end of the IP port.
   const ip = spec.network ? network.port() : undefined;
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
-  const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1), serial: serial.port1, display: display.port1 };
+  const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true) }), serial: serial.port1, display: display.port1 };
   run = r;
+  keyboardLive = false;
   last = undefined;
   log = lastLine = '';
   bootCard.dataset.done = 'false';
@@ -250,6 +253,8 @@ function start(snapshot?: File, resume = true) {
         term.write(m.data);
       }
       addLog(m.data);
+    } else if (m.type === 'keyboard') {
+      keyboardLive = m.live;
     } else if (m.type === 'status') {
       showStatus(m.status);
     } else if (m.type === 'phase') {

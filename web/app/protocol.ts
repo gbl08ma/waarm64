@@ -103,6 +103,8 @@ export type FromWorker =
    * aren't sent to the guest, which isn't asking now.
    */
   | { type: 'serial'; data: string; replay?: boolean }
+  /** The guest has (or no longer has) a driver using the keyboard: while it hasn't, the page sends the screen's keys to the serial console (the firmware's menus, GRUB). */
+  | { type: 'keyboard'; live: boolean }
   | { type: 'status'; status: Status }
   /** What a `loading` machine started from a snapshot is doing (it has no download to report). */
   | { type: 'phase'; text: string }

@@ -679,6 +679,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     },
     diskBlocks: (slot: number, blocks: number[]) => devices.blocks(slot, blocks),
     /** The backends' state (`Devices.save`: for a snapshot; a test reads the display's hashes from it), with the devices quiet. */
+    /** Device `i`'s virtio status register (bit 2 is DRIVER_OK: a guest driver is using it). */
+    deviceStatus: (i: number) => Atomics.load(new Uint32Array(memory.buffer), (shared[i] + 4) / 4),
     deviceState: async () => { await devices.quiesce(); return devices.save(); },
     /** The framebuffer (web/display.ts): byte address in `memory`, width, height; x8r8g8b8, packed rows. */
     framebuffer: fbPa ? { addr: ram + fbPa - RAM_BASE, ...fb } : undefined,

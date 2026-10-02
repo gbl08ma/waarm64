@@ -144,3 +144,15 @@ test('changeConfig: the generation goes odd around the write, even after it, and
   assert.equal(Atomics.load(new Int32Array(memory.buffer, signal, 1), 0), 4, 'SIGNAL_DEVICE');
   assert.equal(Atomics.load(new Int32Array(memory.buffer, wake, 1), 0), 1, 'the vCPU woken');
 });
+
+test('terminalBytes: what a terminal sends for the keys that drive EDK2 and GRUB', async () => {
+  const { terminalBytes } = await import('../web/input.ts');
+  const k = (key: string, m: { ctrlKey?: boolean; altKey?: boolean; metaKey?: boolean } = {}) => terminalBytes({ key, ctrlKey: false, altKey: false, metaKey: false, ...m });
+  assert.deepEqual(['a', 'A', '~', ' '].map((c) => k(c)), ['a', 'A', '~', ' ']);
+  assert.deepEqual(['Enter', 'Escape', 'Backspace', 'Tab'].map((c) => k(c)), ['\r', '\x1b', '\x7f', '\t']);
+  assert.deepEqual(['ArrowUp', 'ArrowDown', 'ArrowRight', 'ArrowLeft', 'Home', 'End', 'Delete', 'F2'].map((c) => k(c)), ['\x1b[A', '\x1b[B', '\x1b[C', '\x1b[D', '\x1b[H', '\x1b[F', '\x1b[3~', '\x1bOQ']);
+  assert.equal(k('x', { ctrlKey: true }), '\x18'); // Ctrl-X boots a GRUB entry
+  assert.equal(k('e', { altKey: true }), '\x1be');
+  assert.deepEqual(['Shift', 'Control', 'CapsLock', 'Dead'].map((c) => k(c)), [null, null, null, null]);
+  assert.equal(k('a', { metaKey: true }), null);
+});

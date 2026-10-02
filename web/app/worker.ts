@@ -330,6 +330,13 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     post({ type: 'status', status: status(vm!, ncpus, machine.ramMiB, now - t0, loopMax, now - loopAt) });
     loopMax = 0;
   }, 1000);
+  // The keyboard's driver: the page sends keys typed on the screen to the serial console until it is up (the firmware's menus, GRUB).
+  const kbd = kinds.indexOf('keyboard');
+  let kbdLive: boolean | undefined;
+  const kbdTimer = kbd >= 0 ? setInterval(() => {
+    const live = (vm!.deviceStatus(kbd) & 4) !== 0;
+    if (live !== kbdLive) post({ type: 'keyboard', live: (kbdLive = live) });
+  }, 200) : undefined;
   try {
     for (;;) {
       const r = await vm.runAsync(1e9); // while a snapshot pauses the VM this keeps returning BUDGET
@@ -349,6 +356,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     }
   } finally {
     clearInterval(timer);
+    clearInterval(kbdTimer);
   }
 }
 

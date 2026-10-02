@@ -416,6 +416,12 @@ instrument read draws from the machine worker; the serial terminal's path is unt
 drawn by the guest into the framebuffer (loop 6). Snapshots of a gpu machine: the backend saves/restores
 (unit-tested) but the page's snapshot tests use Buildroot (loop 7 covers Debian's).
 
+**After the user's manual test of loop 4** (graphics.md "After the user's manual test"): a one-boot console lag
+(not reproducible, not on Arch) led to a faster transfer gather (words); lazy transfers were tried and are slower
+(removed). GRUB's menu now takes keys typed on the screen: until the guest's keyboard driver is up the page sends
+them to the serial console (`attachInput`'s `text` option, `keyboard` message, `Vm.deviceStatus`); a new page
+test covers it. If the lag comes back for the user, `bench/results/local/dmesg-load.ts` (git-ignored) is the repro.
+
 **Next: loop 5, resize**: the page's size to the guest (debounced, the start size, CSS pixels and the HiDPI
 setting, rounding to 8 and caps, full screen, fixed sizes), the fbcon shrink policy, the resize table measured on
 our machine, a page test changing the viewport. The path exists end to end: the page posts `{type:'size',

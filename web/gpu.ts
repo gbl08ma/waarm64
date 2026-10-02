@@ -306,15 +306,51 @@ export class Gpu {
   }
 
   /** TRANSFER_TO_HOST_2D: the rectangle's rows from the backing (the first at `offset`, rows `width`×4 bytes apart) into the host pixels. False if the backing is too short. */
-  private transfer(res: Resource, r: Rect, offset: number) {
+  /** Whether the rows of `r` from `offset` lie inside the backing. */
+  private fits(res: Resource, r: Rect, offset: number) {
+    const last = offset + res.width * 4 * (r.h - 1) + r.w * 4;
+    return Number.isSafeInteger(last) && last <= res.backing!.reduce((n, b) => n + b.len, 0);
+  }
+
+  private transfer(res: Resource, r: Rect, offset: number, quiet = false) {
     if (r.w === 0 || r.h === 0) return true;
     const stride = res.width * 4;
     const rowLen = r.w * 4;
-    const last = offset + stride * (r.h - 1) + rowLen;
     const backing = res.backing!;
-    if (!Number.isSafeInteger(last) || last > backing.reduce((n, b) => n + b.len, 0)) return false;
+    if (!this.fits(res, r, offset)) return false;
     const [ri, gi, bi, ai] = FORMATS.get(res.format)!;
     const ram = this.ram();
+    // The usual case, words: B8G8R8x or R8G8B8x, pages 4-byte aligned (Linux's are): 32-bit loads and stores
+    // with the channels swapped in registers, ~4 times the bytewise loop (a console scrolling at full screen
+    // sends hundreds of these a second, and the guest waits for each).
+    const swap = res.format === 1 || res.format === 2;
+    if ((swap || res.format === 67 || res.format === 134) && ram.byteOffset % 4 === 0 && offset % 4 === 0 && backing.every((b) => b.off % 4 === 0 && b.len % 4 === 0)) {
+      const src = new Uint32Array(ram.buffer, ram.byteOffset, ram.length >> 2);
+      const dst = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length >> 2);
+      const opaque = res.opaque ? 0xff000000 : 0;
+      const words = r.w;
+      let seg = 0, segStart = 0; // the backing page holding the byte at `at`, and where it starts: rows only move forward
+      for (let y = 0; y < r.h; y++) {
+        let at = offset + stride * y;
+        while (at >= segStart + backing[seg].len) segStart += backing[seg++].len;
+        let d = (r.y + y) * res.width + r.x;
+        for (let left = words; left > 0;) {
+          const b = backing[seg];
+          const s0 = (b.off + (at - segStart)) >> 2;
+          const n = Math.min(left, (b.len - (at - segStart)) >> 2);
+          if (swap) for (let k = 0; k < n; k++) {
+            const v = src[s0 + k];
+            dst[d + k] = (v & 0xff00ff00 | v >>> 16 & 0xff | (v & 0xff) << 16 | opaque) >>> 0;
+          } else for (let k = 0; k < n; k++) dst[d + k] = (src[s0 + k] | opaque) >>> 0;
+          d += n;
+          left -= n;
+          at += n * 4;
+          if (left > 0) while (at >= segStart + backing[seg].len) segStart += backing[seg++].len;
+        }
+      }
+      if (!quiet) this.draw(res, r);
+      return true;
+    }
     const row = new Uint8Array(rowLen);
     for (let y = 0; y < r.h; y++) {
       readBacking(ram, backing, offset + stride * y, row);
@@ -327,7 +363,7 @@ export class Gpu {
         px[d + 3] = res.opaque ? 255 : row[k + ai];
       }
     }
-    this.draw(res, r);
+    if (!quiet) this.draw(res, r);
     return true;
   }
 

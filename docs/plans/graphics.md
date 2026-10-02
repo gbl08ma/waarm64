@@ -357,3 +357,21 @@ output, GRUB's menu and "Loading Linux…", then fbcon on `virtio_gpu`; the logi
 - **The firmware's keys stay on the serial terminal**: the page's GRUB menu is graphical (`gfxterm`
   takes the GOP) and appears on the screen only; EDK2 has no virtio-input keyboard. `?display=simple` keeps
   the old serial menus for tests (page-uefi-keys) and as a fallback.
+
+### After the user's manual test (2026-10-02)
+
+- **Console output (`dmesg`, `less`) lagged, sometimes locked, on one boot of Debian; not reproducible on
+  later boots, and not seen on Arch.** What was measured (Debian, `cat` of 2,130 lines to tty1): fbcon's
+  scrolling sends hundreds of full-screen `TRANSFER_TO_HOST_2D`s a second (400–800), each ~2.5 ms of the device
+  worker's time, so that thread was saturated and the guest waits for each reply. Two changes: the transfer's
+  gather works in 32-bit words for the common formats (full 1024×768: 2.9 → 1.6 ms in Node), and the cat takes
+  ~4.7–5.1 s (it was 4.5 s on the one earlier run). **Tried and dropped: lazy transfers** (note the rectangle,
+  copy once per drawn frame): the same cat took ~9 s, so the copy was not the bottleneck once it was fast, and the
+  guest's own work (4+ s of `sys`: fbcon's software scroll under emulation) is. A boot-dependent slow case
+  (host load, a worker placement) is likely; `bench/results/local/dmesg-load.ts` is the repro to try.
+- **GRUB's menu didn't take keys typed on the screen.** EDK2 has no keyboard driver but the serial console's, so
+  until the guest has a driver on virtio-input (the keyboard's DRIVER_OK, polled by the machine worker →
+  `keyboard {live}` to the page) the screen's keys are sent to the serial console as a terminal sends them
+  (`terminalBytes` in web/input.ts); the serial terminal still takes its own keys when it is focused.
+  `tests/page-grub-screen.test.ts` presses `c` on the screen during GRUB's countdown. A real EDK2 keyboard
+  driver would be cleaner (backlog).

@@ -39,7 +39,30 @@ export type Input = {
  * buttons held when `el` loses the focus, the window loses it or the page is
  * hidden are released then (their keyup goes elsewhere: no stuck modifiers).
  */
-export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: MessagePort): Input {
+const CSI: Record<string, string> = {
+  ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowRight: '\x1b[C', ArrowLeft: '\x1b[D', Home: '\x1b[H', End: '\x1b[F',
+  PageUp: '\x1b[5~', PageDown: '\x1b[6~', Insert: '\x1b[2~', Delete: '\x1b[3~',
+  F1: '\x1bOP', F2: '\x1bOQ', F3: '\x1bOR', F4: '\x1bOS', F5: '\x1b[15~', F6: '\x1b[17~', F7: '\x1b[18~', F8: '\x1b[19~', F9: '\x1b[20~', F10: '\x1b[21~', F11: '\x1b[23~', F12: '\x1b[24~',
+};
+
+/** What a terminal sends for a key event (what EDK2's and GRUB's serial console read), or null for one that sends nothing (a modifier, an unknown key). */
+export function terminalBytes(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'metaKey'>): string | null {
+  if (e.metaKey) return null;
+  const special = CSI[e.key] ?? ({ Enter: '\r', Backspace: '\x7f', Tab: '\t', Escape: '\x1b' } as Record<string, string>)[e.key];
+  if (special !== undefined) return e.altKey ? `\x1b${special}` : special;
+  if (e.key.length !== 1) return null;
+  let c = e.key;
+  if (e.ctrlKey) {
+    const k = c.toLowerCase().charCodeAt(0);
+    if (k >= 97 && k <= 122) c = String.fromCharCode(k - 96);
+    else if (c === '[') c = '\x1b';
+    else if (c === ' ') c = '\0';
+    else return null;
+  }
+  return e.altKey ? `\x1b${c}` : c;
+}
+
+export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: MessagePort, text?: { live: () => boolean; send: (bytes: string) => void }): Input {
   const keys = new Set<number>(); // held, as the guest sees it
   const buttons = new Set<number>();
   const on = <T extends EventTarget, E extends Event>(target: T, type: string, f: (e: E) => void) => {
@@ -52,6 +75,15 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     keyboard?.postMessage([[EV_KEY, code, value], [EV_SYN, 0, 0]]);
   };
   const key = (down: number) => (e: KeyboardEvent) => {
+    // No guest driver for the keyboard yet (the firmware, GRUB, the initramfs have none): the keys go to the serial console as a terminal sends them.
+    if (text && !text.live()) {
+      const bytes = terminalBytes(e);
+      if (bytes !== null) {
+        e.preventDefault();
+        if (down) text.send(bytes);
+      }
+      return;
+    }
     const code = KEYS.get(e.code);
     if (!keyboard || code === undefined) return;
     e.preventDefault();
