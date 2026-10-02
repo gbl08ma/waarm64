@@ -375,3 +375,67 @@ output, GRUB's menu and "Loading Linux…", then fbcon on `virtio_gpu`; the logi
   (`terminalBytes` in web/input.ts); the serial terminal still takes its own keys when it is focused.
   `tests/page-grub-screen.test.ts` presses `c` on the screen during GRUB's countdown. A real EDK2 keyboard
   driver would be cleaner (backlog).
+
+## 13. G1 loop 5: resize (2026-10-02)
+
+The page sends its screen box (docs/frontend.md "The screen"); what Debian's kernel does with it, on our machine:
+
+- **fbcon can't grow, and a rejected mode blanks it.** The born size is the console's buffer. A bigger
+  preferred mode is rejected in `drm_client_modeset_probe` (`Rejected mode ... (VIRTUAL_X)`); with no other
+  mode in the EDID the result is "No connectors reported connected with modes", the fbdev client commits an
+  empty mode and **the screen goes dark**. (QEMU's EDID lists standard modes, so it never showed.) Fix: the EDID
+  always lists the born size (and the floor) after the preferred mode. A fresh probe (`echo detect >
+  /sys/class/drm/card0-Virtual-1/status`) lists the new preferred mode, so the guest's connector has it for a
+  desktop that uses it.
+- **A shrink crops the console** (loop 0): fbcon takes the smaller preferred mode on the same resource. The
+  display now notices the crop (`SET_SCANOUT` with a rectangle at the origin smaller than the resource) and
+  asks for the resource's size again (the floor, one more display event): the console is whole, letterboxed.
+  Planted (floor removed): the canvas followed the crop to 640×662, the page test fails.
+- Not measured here, still: GNOME/KDE on Wayland, wlroots, Xorg (G2 picks a compositor by this; the
+  floor and the extra modes are written so that a compositor allocating a resource per mode isn't affected,
+  a unit test checks the logic, not a desktop).
+- The page's `both` view shrinks the screen box (the terminal beside it): the size follows the layout, not
+  only the window; the test uses it.
+
+### After the user's manual test of loop 5 (2026-10-02)
+
+- **The lock-ups were the device worker's event loop starving, not the display.** `Devices.serve` rang through
+  `Atomics.waitAsync`, which returns at once when the word already changed, and `poll` is all microtasks: with the
+  guest ringing continuously (tty1 scrolling under `dmesg`: 70–130 flushes a second, each a ~2 ms transfer) the loop
+  never reached the event loop, so timers and the ports' messages waited, up to ~1.3 s measured. Everything on that thread
+  waited with them: a key's **release** (the guest then autorepeats: the Enter keys that filled the screen with
+  prompts), the page's `size`, the draw timer (the frozen-looking screen). `serve` now yields through a
+  `MessageChannel` after every ~2 ms of work. Measured with the stats' new `lag` (the longest a 4 ms timer was late
+  in the device worker, per second; `bench/results/local/lag.ts`, not committed): idle 2–4 ms; `dmesg` storm
+  1000–1370 → 22–30 ms; storm plus a disk read 1.2–5.6 s → ~110 ms (blk's synchronous XHRs: the backlog item).
+  No unit test: a Node reproduction (a worker ringing the bell, a slow `poll`) did not behave like Chromium
+  (timers starved either way), so the evidence is the Chromium measurement above.
+- **The size select "did nothing" for the console, by the kernel's design**: fbcon's buffer is the born size; a bigger
+  mode is rejected, a smaller one crops (the display bounces it, above). A fixed size therefore applies at the next
+  boot for a text console; the menu says so. Desktops follow at once (not yet measured here).
+- **"Laggier than the framebuffer": measured, and mostly fixed** (`bench/results/local/fps.ts`, `busy.ts`: tty1 scrolling
+  `dmesg` in a loop on Debian, 672×762; changed canvas frames per second and `dmesg` runs per 10 s, same host):
+
+  | | frames/s | `dmesg` per 10 s |
+  |---|---|---|
+  | simple framebuffer (before the gpu) | 63 | 17 |
+  | virtio-gpu as first built | 43 | 8 |
+  | + lazy transfers | 60 | 5 |
+  | + paced replies | 60 | 8–9 |
+  | + queue size 16 | 56 | 12 |
+
+  What it is: fbcon scrolling makes the guest send **~2,400 full-screen `TRANSFER_TO_HOST_2D` a second** (4,800
+  requests with the flushes) while the page draws ~60 frames. Copying each (0.4 ms at this size) kept the device worker
+  ~95% busy (the draw, 5 ms/s, was never the cost): `GpuOptions.lazyTransfer` notes the rectangles and copies the union
+  once per drawn frame (`ScanoutSource.sync`; also at a state read, a detach, a cursor, a snapshot). That fixed the
+  frame rate but not the guest: with replies instant the guest's damage worker (Linux copies the damaged clip from
+  its shadow buffer and does an atomic commit per damage; no fences on 2D) ran flat out, ~5,000 commits a second, and
+  `dmesg` got *slower* (5). `paceReplies` completes transfers and flushes at most once per 16 ms (the first after an idle
+  moment at once: a key's glyph isn't delayed; a burst waits for the frame, as a real flush completes at the refresh)
+  and a queue of 16 makes a flooding guest wait for room. Result: ~70% of the framebuffer's `dmesg` speed at an
+  equal frame rate. **What remains is the guest's own cost of Linux's virtio-gpu fbdev path** (shadow copy + commit
+  per damage; a framebuffer has none), which a host can't remove; `?display=simple` gives the old screen on a
+  machine that wants the console fast. A held Enter is the same effect at a smaller scale: the vCPU (not the device
+  worker, ~5%) runs the guest's DRM commits, which is the core the user saw. The knobs are the page's
+  `?gpu=eager|lazy|pace|q<N>` (default `lazy,pace,q16`; the tests' guests stay eager and queue 64, so their bytes
+  and step counts don't move).

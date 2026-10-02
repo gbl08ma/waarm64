@@ -321,7 +321,7 @@ of its own (`org.webpc.agent.0` or similar), a tiny line protocol. Delivery to a
 3. Rejected: writing into the user's disk image (touches their disk behind their back, needs an
    ext4 writer, distro-specific); injecting into an initrd (UEFI images load their own).
 
-## Progress (2026-10-02; loops 0 to 4 done, next: loop 5)
+## Progress (2026-10-02; loops 0 to 5 done, next: loop 6)
 
 Commits: `c39b6d5` (loops 0 and 1), `9974dda` (loop 2), `556604f` (loop 3), loop 4 below. `scripts/ci.sh` passes at each; `ci-long.sh`
 passed for loop 2. The sections above are as drafted; this one says what happened and what a new
@@ -422,13 +422,21 @@ drawn by the guest into the framebuffer (loop 6). Snapshots of a gpu machine: th
 them to the serial console (`attachInput`'s `text` option, `keyboard` message, `Vm.deviceStatus`); a new page
 test covers it. If the lag comes back for the user, `bench/results/local/dmesg-load.ts` (git-ignored) is the repro.
 
-**Next: loop 5, resize**: the page's size to the guest (debounced, the start size, CSS pixels and the HiDPI
-setting, rounding to 8 and caps, full screen, fixed sizes), the fbcon shrink policy, the resize table measured on
-our machine, a page test changing the viewport. The path exists end to end: the page posts `{type:'size',
-width, height}` on the display port (`run.display`), `Gpu.setSize` raises the display event, the guest takes it
-(the gpu guest test proves the kernel side); what is missing is the page measuring its box and the policy. Mind
-`start.display` is the machine's start size (`MACHINES.debian.framebuffer`, 1024×768) until the page sends its
-own at start. Note `?display=simple` machines have no gpu to resize.
+**Loop 5, resize** (graphics.md §13, frontend.md "The screen", devices.md). The page measures its screen box
+(`wantedSize`: CSS pixels, device pixels with the Screen menu's HiDPI; width to 8, 640×480 to 4088; fixed sizes in
+the menu; both remembered), sends it at the start (`start.size`) and debounced after (`size` on the display port),
+and once more at `running` (a restored machine). `Gpu` keeps `wanted` apart from the reported size; **the findings
+that decided the policy**: fbcon rejects a mode wider than its buffer (`VIRTUAL_X`) and with no other mode **blanks
+the console**, so the EDID lists the born size and the floor as extra modes; and a crop (a smaller rectangle on the
+same resource) sets a floor the display won't go below (one more event), so the console is never cropped, only
+letterboxed. `tests/page-resize.test.ts` (Debian, ~70 s; the floor planted out: caught); unit test in
+`tests/gpu.test.ts`. Not measured: GNOME/KDE, wlroots, Xorg (no desktop installed; G2 picks one). Not done: 5K
+(DisplayID) beyond the 4088 cap (a cap, decided: nobody asked), a deterministic display event at a fixed step beyond
+the test hook that exists. `scripts/ci.sh` results: see the commit.
+
+**Next: loop 6, cursor** (CSS cursor from `UPDATE_CURSOR`, hiding, scaling by the canvas's scale, an overlay only if a
+guest warps; the gpu guest's cursor bytes exist since loop 3; a page test). Then 7 (snapshots on a gpu machine: the
+restore's re-transfer, a restore into another page size: the `running` size message is there for it) and 8 (exit).
 
 ## Check with the user first
 - Any dependency (none is expected: the EDID, the backend and the presentation are ours).

@@ -35,7 +35,7 @@ const overlayName = () => chosen?.overlay ?? spec.overlay;
 const diskName = () => (chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
 
 // Settings remembered per browser (the view, the network, whether saved disks are compressed). Storage can be off or throw: then nothing is remembered.
-type Settings = { view?: View; net?: NetworkSettings; compress?: boolean };
+type Settings = { view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean };
 const SETTINGS = 'webpc.settings';
 const settings = (): Settings => {
   try {
@@ -83,23 +83,60 @@ const setView = (v: View, save = true) => {
 };
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-view-button]')) b.onclick = () => setView(b.dataset.viewButton as View);
 
-// The canvas at an integer multiple of the framebuffer in device pixels when that fits (crisp),
-// scaled down to fit (smooth) otherwise.
 // The screen's size: the machine's to begin with, then what a virtio-gpu scanout says (`mode` on the display port).
 const fb = { ...spec.framebuffer };
+/** The canvas at an integer multiple of the guest's screen in device pixels when that fits (crisp), scaled down to fit (smooth) otherwise. */
 function fit() {
   if (!screenBox.clientWidth) return; // hidden
   const dpr = devicePixelRatio;
   const box = screenBox.getBoundingClientRect();
   const fits = Math.min((box.width * dpr) / fb.width, (box.height * dpr) / fb.height);
-  const scale = fits >= 1 ? Math.floor(fits) : fits;
+  let scale = fits >= 1 ? Math.floor(fits) : fits;
+  // A guest in CSS pixels on a screen of fractional density: one guest pixel is one CSS pixel (a little soft), not a device pixel (a smaller screen).
+  if (!settings().hidpi && !Number.isInteger(dpr) && fits >= dpr && scale < dpr) scale = dpr;
   canvas.style.width = `${(fb.width * scale) / dpr}px`;
   canvas.style.height = `${(fb.height * scale) / dpr}px`;
   canvas.style.imageRendering = Number.isInteger(scale) ? 'pixelated' : 'auto';
   canvas.dataset.scale = String(Math.round(scale * 1000) / 1000);
 }
-new ResizeObserver(fit).observe(screenBox);
-matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', fit); // moved to a screen with another density
+new ResizeObserver(() => { fit(); scheduleSize(); }).observe(screenBox);
+matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', () => { fit(); scheduleSize(); }); // moved to a screen with another density
+
+// The size the guest is asked for (virtio-gpu machines): the screen's box in CSS pixels (device pixels with HiDPI on) or a fixed size,
+// width down to a multiple of 8 (the guest's CVT modes are, and a sliver would show), at least 640×480, at most what the EDID can say.
+const SIZE_MIN = { width: 640, height: 480 };
+const SIZE_MAX = 4088; // 4095 down to a multiple of 8
+const SIZE_DEBOUNCE_MS = 300;
+const hasGpu = spec.display === 'gpu' && params.get('display') !== 'simple';
+let sent: { width: number; height: number } | undefined;
+function wantedSize(): { width: number; height: number } {
+  const fixed = /^(\d+)x(\d+)$/.exec(settings().screen ?? '');
+  if (fixed) return { width: Number(fixed[1]), height: Number(fixed[2]) };
+  if (!screenBox.clientWidth) return sent ?? spec.framebuffer; // hidden: no box to measure
+  const k = settings().hidpi ? devicePixelRatio : 1;
+  const box = screenBox.getBoundingClientRect();
+  const clamp = (n: number, lo: number) => Math.min(SIZE_MAX, Math.max(lo, n));
+  return { width: clamp(Math.floor((box.width * k) / 8) * 8, SIZE_MIN.width), height: clamp(Math.floor(box.height * k), SIZE_MIN.height) };
+}
+let sizeTimer: ReturnType<typeof setTimeout> | undefined;
+/** Tell the guest the screen's size once it has settled (a window drag sends a stream of sizes); `now` also when it is the one already sent (a restored machine has its own). */
+function scheduleSize(now = false) {
+  if (!hasGpu) return;
+  clearTimeout(sizeTimer);
+  sizeTimer = setTimeout(() => {
+    const w = wantedSize();
+    if (!run || (!now && sent && sent.width === w.width && sent.height === w.height)) return;
+    sent = w;
+    run.display.postMessage({ type: 'size', ...w });
+  }, now ? 0 : SIZE_DEBOUNCE_MS);
+}
+const sizeSelect = $<HTMLSelectElement>('screen-size');
+const hidpiBox = $<HTMLInputElement>('screen-hidpi');
+if (hasGpu) $('screen-menu').hidden = false;
+sizeSelect.value = [...sizeSelect.options].some((o) => o.value === settings().screen) ? settings().screen! : 'fit';
+hidpiBox.checked = settings().hidpi ?? false;
+sizeSelect.onchange = () => { remember({ screen: sizeSelect.value }); scheduleSize(); };
+hidpiBox.onchange = () => { remember({ hidpi: hidpiBox.checked }); fit(); scheduleSize(); };
 
 // One machine at a time; a restart stops it and starts a new worker (fresh memory, fresh ports, a fresh canvas).
 type Run = { worker: Worker; input: Input; serial: MessagePort; display: MessagePort };
@@ -195,7 +232,9 @@ const ACTIONS: Record<Problem, Action[]> = {
 function start(snapshot?: File, resume = true) {
   // The machine worker draws the screen (web/display.ts): a canvas hands its drawing over only once.
   const focused = document.activeElement === canvas;
-  [fb.width, fb.height] = [spec.framebuffer.width, spec.framebuffer.height];
+  const size = hasGpu ? wantedSize() : spec.framebuffer;
+  sent = hasGpu ? size : undefined;
+  [fb.width, fb.height] = [size.width, size.height];
   const fresh = canvas.cloneNode() as HTMLCanvasElement;
   [fresh.width, fresh.height] = [fb.width, fb.height];
   canvas.replaceWith(fresh);
@@ -214,7 +253,7 @@ function start(snapshot?: File, resume = true) {
     bootCard.dataset.done = 'true';
     bootCard.hidden = true;
   };
-  const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL(`./worker.ts${location.search}`, import.meta.url), { type: 'module' });
   // A machine that can have a network card has one from the start (it can't be added later without a restart): its end of the IP port.
   const ip = spec.network ? network.port() : undefined;
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
@@ -243,7 +282,10 @@ function start(snapshot?: File, resume = true) {
         bootProgress.removeAttribute('value');
         bootLine.textContent = 'Starting the kernel'; // then its lines, until its console takes the screen (~2 s on Debian)
       }
-      if (m.state === 'running') bootCard.hidden = true;
+      if (m.state === 'running') {
+        bootCard.hidden = true;
+        scheduleSize(true); // a restored machine starts at the size it was saved with
+      }
       if (m.state === 'rebooting') void restart();
     } else if (m.type === 'serial') {
       if (m.replay) {
@@ -286,7 +328,7 @@ function start(snapshot?: File, resume = true) {
     snapshotJob?.error(`the machine's worker failed: ${e.message}`);
     setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator);
   };
-  worker.postMessage({ type: 'start', machine, ncpus, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, display: display.port2, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, display.port2, ...(ip ? [ip] : [])]);
+  worker.postMessage({ type: 'start', machine, ncpus, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, display.port2, ...(ip ? [ip] : [])]);
   if (ip) autoconnect();
   renderNetwork();
 }

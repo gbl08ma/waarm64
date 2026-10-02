@@ -64,6 +64,7 @@
   .menu[open] summary, .menu summary:hover { background: #1e232a; }
   .menu .items { position: absolute; right: 0; top: calc(100% + 4px); z-index: 1; display: flex; flex-direction: column; min-width: 150px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px #0008; }
   .menu .items button { text-align: left; border-radius: 4px; }
+  .menu .items .hint { margin: 6px 8px 4px; max-width: 260px; color: var(--dim); font-size: 12px; }
   .menu .items .label { padding: 6px 8px 2px; color: var(--dim); font-size: 12px; }
   .menu .items .fkeys { display: grid; grid-template-columns: repeat(4, 1fr); }
   .menu .items .fkeys button { text-align: center; padding-left: 4px; padding-right: 4px; }
@@ -118,6 +119,11 @@
     <label id="net-exit-label" hidden>Internet through<select id="net-exit"></select></label>
     <div id="net-actions"><button id="net-disconnect">Disconnect</button><button id="net-logout" title="Remove this machine from the tailnet and forget its keys">Log out</button></div>
     <p id="net-hint"></p>
+  </div></details>
+  <details class="menu" id="screen-menu" hidden><summary title="The size of the machine's screen">Screen</summary><div class="items panel">
+    <label>Size<select id="screen-size"><option value="fit">Fit the window</option><option value="1024x768">1024×768</option><option value="1280x800">1280×800</option><option value="1920x1080">1920×1080</option></select></label>
+    <label title="The guest draws in device pixels instead of CSS pixels: sharper on a HiDPI screen, with smaller text unless the desktop scales (its EDID carries the screen's physical size)"><input id="screen-hidpi" type="checkbox"> HiDPI</label>
+    <p class="hint">A text console (fbcon) keeps the size it started with: a new size takes effect at the next boot (Restart), and the console is centred until then. A desktop on Wayland follows at once.</p>
   </div></details>
   <details class="menu" id="keys"><summary title="Key combinations the browser keeps for itself, sent to the screen's keyboard">Keys</summary><div class="items">
     <button data-chord="ControlLeft AltLeft Delete">Ctrl+Alt+Del</button>

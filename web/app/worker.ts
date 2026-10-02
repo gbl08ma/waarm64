@@ -104,13 +104,19 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
     case 'blk-ro': return m.disk2 ? { type: 'blk', url: new URL(m.disk2, self.location.href).href } : 'a second disk (?disk2=<url>), and this page was opened without one'; // no overlay: read-only
     case 'keyboard': return { type: 'input', kind: 'keyboard', port: m.keyboard };
     case 'tablet': return { type: 'input', kind: 'tablet', port: m.tablet };
-    case 'gpu': return { type: 'gpu', width: machine.framebuffer.width, height: machine.framebuffer.height, canvas: m.screen, port: m.display, stats: m.displayStats };
+    case 'gpu': return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.screen, port: m.display, stats: m.displayStats, keepConsole: true, ...gpuTuning() };
     case 'net': return m.ip && machine.network ? { type: 'net', adapter: { ip: m.ip } } : 'a network card, and this machine has no network port';
   }
 }
 
 /** The kinds a normal start makes, as the page's options say. */
 const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', 'blk', ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : []), ...(usesGpu(m, machine) ? ['gpu' as const] : [])];
+/** The display's tuning, from the page's `?gpu=` (an experiment's knobs: `eager`, `lazy`, `pace`, `q16`), else lazy transfers, paced replies and a queue of 16. */
+function gpuTuning() {
+  const knobs = (new URLSearchParams(self.location.search).get('gpu') ?? 'lazy,pace,q16').split(',');
+  const q = knobs.find((k) => /^q\d+$/.test(k));
+  return { lazyTransfer: knobs.includes('lazy'), paceReplies: knobs.includes('pace'), queueSize: q ? Number(q.slice(1)) : 64 };
+}
 /** A machine with a virtio-gpu draws through it, unless the page asked for the framebuffer. */
 const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu' && !m.simple;
 

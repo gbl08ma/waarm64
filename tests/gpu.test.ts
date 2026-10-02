@@ -464,3 +464,76 @@ test('gpu: alpha is the X byte until a resource is shown, then opaque (a canvas 
   r.ok(cmd(T.TRANSFER, 0, 0, 2, 1, 0n, 1, 0));
   assert.equal(px(r, 1, 1, 0)[3], 255);
 });
+
+test('gpu: a cropped console keeps the display from shrinking below its buffer', async () => {
+  const { gpuBackend } = await import('../web/gpu.ts');
+  const cfg = new Uint8Array(256);
+  let events = 0;
+  const ctx = { ram: () => new Uint8Array(1 << 16), ramSize: 1 << 16, complete() {}, config: () => cfg, changeConfig: (w: (c: Uint8Array) => void) => { events++; w(cfg); } };
+  const b = gpuBackend(ctx, { width: 1024, height: 768, keepConsole: true });
+  b.gpu.control(cmd(T.CREATE, 1, B8G8R8X8, 1024, 768), 4096);
+  b.gpu.control(cmd(T.SCANOUT, 0, 0, 1024, 768, 0, 1), 4096);
+  b.gpu.setSize(800, 600);
+  assert.deepEqual([b.gpu.size.width, b.gpu.size.height, events], [800, 600, 1]);
+  // fbcon answers with the same resource and a smaller rectangle: the display asks for the whole buffer again.
+  b.gpu.control(cmd(T.SCANOUT, 0, 0, 800, 600, 0, 1), 4096);
+  assert.deepEqual([b.gpu.size.width, b.gpu.size.height, events], [1024, 768, 2]);
+  b.gpu.setSize(640, 480);
+  assert.deepEqual([b.gpu.size.width, b.gpu.size.height], [1024, 768]);
+  b.gpu.setSize(1600, 900); // growing still reaches the guest
+  assert.deepEqual([b.gpu.size.width, b.gpu.size.height], [1600, 900]);
+  // The EDID lists the size the console was born at after the preferred mode: fbcon refuses a mode wider than its buffer and blanks the console with no other.
+  const edidAt = (g: typeof b.gpu) => { const r = g.control(cmd(T.EDID, 0, 0), 4096); return r.subarray(24 + 8, 24 + 8 + 128); };
+  const second = (e: Uint8Array) => e[72] | e[73] << 8 ? [e[74] | (e[76] >> 4) << 8, e[77] | (e[79] >> 4) << 8] : null;
+  assert.deepEqual([b.gpu.size.width, b.gpu.size.height], [1600, 900]);
+  assert.deepEqual(second(edidAt(b.gpu)), [1024, 768]);
+  // A compositor makes a new resource per mode: a shrink is followed.
+  const c = gpuBackend(ctx, { width: 1024, height: 768, keepConsole: true });
+  c.gpu.control(cmd(T.CREATE, 1, B8G8R8X8, 1024, 768), 4096);
+  c.gpu.control(cmd(T.SCANOUT, 0, 0, 1024, 768, 0, 1), 4096);
+  c.gpu.setSize(800, 600);
+  c.gpu.control(cmd(T.CREATE, 2, B8G8R8X8, 800, 600), 4096);
+  c.gpu.control(cmd(T.SCANOUT, 0, 0, 800, 600, 0, 2), 4096);
+  assert.deepEqual([c.gpu.size.width, c.gpu.size.height], [800, 600]);
+});
+
+test('gpu: lazy transfers give the pixels eager ones do, when the page draws or anything reads', () => {
+  const eager = rig(), lazy = rig({ lazyTransfer: true });
+  for (const r of [eager, lazy]) {
+    r.ok(cmd(T.CREATE, 1, B8G8R8X8, 4, 3));
+    r.ok(r.attach(1, 0x1000, 48, 20));
+    for (let k = 0; k < 48; k++) r.ram[0x1000 + k] = k + 1;
+    r.ok(cmd(T.SCANOUT, 0, 0, 4, 3, 0, 1));
+    r.ok(cmd(T.TRANSFER, 0, 0, 2, 2, 0n, 1, 0)); // two rectangles whose union is noted
+    r.ok(cmd(T.TRANSFER, 2, 1, 2, 2, BigInt(1 * 16 + 2 * 4), 1, 0));
+  }
+  assert.deepEqual(px(lazy, 1, 3, 2), [0, 0, 0, 255], 'not copied yet');
+  lazy.sources.at(-1)!.sync!(); // the page's draw
+  for (const [x, y] of [[0, 0], [1, 1], [2, 1], [3, 2]]) assert.deepEqual(px(lazy, 1, x, y), px(eager, 1, x, y), `pixel ${x},${y}`);
+  assert.ok(lazy.gpu.state().screen, 'a state read brings it up to date');
+  // The backing going away copies first; an offset that isn't the rectangle's corner is copied at once.
+  lazy.ram.fill(0x55, 0x1000, 0x1030);
+  lazy.ok(cmd(T.TRANSFER, 0, 0, 4, 3, 0n, 1, 0));
+  lazy.ok(cmd(T.DETACH, 1, 0));
+  assert.deepEqual(px(lazy, 1, 1, 1), [0x55, 0x55, 0x55, 255], 'copied before the detach');
+});
+
+test('gpu: paced replies hold a burst to the frame and answer the first at once', async () => {
+  const { gpuBackend } = await import('../web/gpu.ts');
+  const ram = new Uint8Array(1 << 16);
+  const done: number[] = [];
+  const ctx = { ram: () => ram, ramSize: ram.length, complete: (w0: number) => done.push(w0), config: () => new Uint8Array(256), changeConfig() {} };
+  const b = gpuBackend(ctx, { width: 800, height: 600, paceReplies: true });
+  const send = (w0: number, c: Uint8Array) => {
+    ram.set(c, 0x100);
+    return b.request({ w0, queue: 0, read: [{ off: 0x100, len: c.length }], write: [{ off: 0x800, len: 64 }] });
+  };
+  assert.equal(send(1, cmd(T.CREATE, 1, B8G8R8X8, 4, 3)), 24, 'not a display command: at once');
+  const flush = cmd(T.FLUSH, 0, 0, 1, 1, 1, 0);
+  assert.equal(send(2, flush), 24, 'the first after idle');
+  assert.equal(send(3, flush), undefined, 'a burst is held');
+  assert.equal(send(4, cmd(T.INFO)), undefined, 'and what follows it, to keep the order');
+  assert.deepEqual(done, []);
+  await new Promise((r) => setTimeout(r, 40));
+  assert.deepEqual(done, [3, 4]);
+});

@@ -37,6 +37,8 @@ export type ToWorker =
     screen: OffscreenCanvas;
     /** The display port (web/gpu-present.ts): `mode` messages from a virtio-gpu, and the page's `size` to it. */
     display: MessagePort;
+    /** The display's size at the start (the page's screen box, `wantedSize` in main.ts): the console and the firmware get it with no event. Default: the machine's. */
+    size?: { width: number; height: number };
     /** Use the `simple-framebuffer` on a machine that has a virtio-gpu (the page's `?display=simple`). */
     simple?: boolean;
     /** The display reports its draw latencies (`draw-stats` on the display port, kept in `window.__drawStats`; the page's `?displaystats`, for bench/gpu). */

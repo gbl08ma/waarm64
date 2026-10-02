@@ -305,6 +305,22 @@ when one fits the view (`image-rendering: pixelated`: crisp at any `devicePixelR
 scales it down smoothly when it doesn't fit at 1:1. A `ResizeObserver` and a `resolution` media
 query refit it.
 
+**The guest's size follows the page** on a virtio-gpu machine (Debian's page). The page measures the
+screen's box (`wantedSize` in `main.ts`): CSS pixels by default, device pixels with the Screen menu's
+**HiDPI** setting; the width is rounded down to a multiple of 8 (the guest's CVT modes are, and a
+sliver would show), at least 640×480, at most 4088 (what the EDID's detailed timing can say). The
+Screen menu's **Size** picks a fixed size instead (1024×768, 1280×800, 1920×1080); both settings are
+remembered per browser. The start message carries the size (`start.size`: the console and the
+firmware are born at it, no event), and later changes go to the display port as `size`, debounced
+300 ms (a window drag is a stream), once more when the machine is `running` (a restored one starts at
+the size it was saved with). The canvas shows the scanout 1:1 in guest pixels, so with HiDPI off on a
+screen of fractional density (1.25, 1.5) it is one guest pixel per CSS pixel and a little soft; an
+integer density is crisp. A guest that doesn't take the size is letterboxed (the box centres the canvas).
+**What the guest does with a new size** is measured in graphics.md §13: a desktop on Wayland follows;
+fbcon can't grow its buffer, so the console stays at its born size (a bigger window shows it
+letterboxed), and a smaller window is never allowed to crop it (devices.md "Display size and events").
+`tests/page-resize.test.ts` covers it on Debian.
+
 ## Input
 
 - **Focus:** the screen takes the keyboard on a click (tabindex 0; the page focuses it on load

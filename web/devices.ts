@@ -62,6 +62,8 @@ export type GpuSpec = {
   port?: MessagePort;
   /** Report flush-to-draw latencies on the port once a second (bench/gpu). */
   stats?: boolean;
+  /** The queues' size (a power of 2, default 64). A small one is back-pressure: with replies paced to the frame, a guest that floods the display waits for room instead of burning its CPU on commits. */
+  queueSize?: number;
 } & GpuOptions;
 
 /** The MessagePorts and canvases in `specs`, to transfer with them. */
@@ -117,7 +119,7 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     case 'gpu': {
       const config = new Uint8Array(16);
       new DataView(config.buffer).setUint32(8, 1, true);
-      return { entry: [16n, 1n << 1n, 2n, 64n, 16n], config };
+      return { entry: [16n, 1n << 1n, 2n, BigInt(d.queueSize ?? 64), 16n], config };
     }
   }
 }
@@ -707,7 +709,17 @@ export class Devices {
    */
   async serve(bell: Int32Array) {
     this.served = bell;
+    // A guest that rings continuously (tty1 scrolling: hundreds of flushes a second) keeps this loop on microtasks only
+    // (`waitAsync` on a changed word returns at once): timers and the ports' messages (a key's release, the page's size)
+    // starve behind it, for up to a second. Yield to the event loop every few ms of work.
+    const turn = new MessageChannel();
+    const macrotask = () => new Promise<void>((resolve) => { turn.port1.onmessage = () => resolve(); turn.port2.postMessage(0); });
+    let since = performance.now();
     for (let seen = 0; !this.closed;) {
+      if (performance.now() - since > 2) {
+        await macrotask();
+        since = performance.now();
+      }
       const rung = Atomics.load(bell, 0);
       if (rung === seen) {
         const w = Atomics.waitAsync(bell, 0, seen);
@@ -725,5 +737,6 @@ export class Devices {
       Atomics.store(bell, 1, seen);
       Atomics.notify(bell, 1);
     }
+    turn.port1.close();
   }
 }

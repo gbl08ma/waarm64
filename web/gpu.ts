@@ -63,6 +63,30 @@ type Resource = {
 export type GpuOptions = {
   /** The display's size: what GET_DISPLAY_INFO and the EDID say (the page's, `resize` changes it). */
   width: number; height: number;
+  /**
+   * Keep fbcon's console whole under size changes (the EDID's fallback modes, the crop floor: devices.md
+   * "Display size and events"). The page's machine sets it; the test guests leave it off so their bytes
+   * (and step counts) stay what they were.
+   */
+  keepConsole?: boolean;
+  /**
+   * Note TRANSFER_TO_HOST_2D rectangles instead of copying them, and copy the union once when the page
+   * draws (`ScanoutSource.sync`), at a state read, a snapshot or before the resource's backing changes.
+   * A console scrolling sends thousands of full-screen transfers a second, of which the page draws ~60:
+   * copying each saturated the device worker and the guest waited for every reply (graphics.md §13). The
+   * copy happens later than the guest asked for, so a guest that rewrites its backing without transferring
+   * can show newer pixels than it flushed (harmless). The page's machine sets it; the test guests stay eager.
+   */
+  lazyTransfer?: boolean;
+  /**
+   * Complete TRANSFER_TO_HOST_2D and RESOURCE_FLUSH at most once per display frame (16 ms), as a real
+   * display completes a flush at its refresh. The first after an idle moment is answered at once (a key's
+   * glyph isn't delayed); a burst is held to the frame boundary. Why: Linux's fbdev damage worker commits and
+   * sleeps until the reply, so what arrives while it sleeps is one commit's worth. Answering at once made
+   * a scrolling console commit 5,000 times a second (the guest spent its CPU on DRM's atomic path, `dmesg`
+   * ran 3× slower than on a framebuffer: graphics.md §13).
+   */
+  paceReplies?: boolean;
   /** Pixels per inch for the EDID's physical size (default 96). */
   dpi?: number;
   /**
@@ -75,7 +99,7 @@ export type GpuOptions = {
 };
 
 /** Where the scanout's pixels are: a resource's RGBA (rows `width` pixels apart, alpha meaningless) and the scanout's origin in it. */
-export type ScanoutSource = { pixels: Uint8Array; width: number; height: number; x: number; y: number };
+export type ScanoutSource = { pixels: Uint8Array; width: number; height: number; x: number; y: number; /** Brings the pixels up to date (lazy transfers): call before reading them. */ sync?: () => void };
 
 /** What the page draws from: the scanout and its damage, and the cursor. All optional (tests read the state). */
 export type GpuHooks = {
@@ -105,6 +129,9 @@ export function hashRgba(words: Uint32Array[], opaque: boolean) {
   return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0');
 }
 
+/** Time the device worker spent in the backend since the last read (`?displaystats`, bench/gpu): requests, and the transfers inside them. */
+export const busy = { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0 };
+
 export class Gpu {
   readonly resources = new Map<number, Resource>();
   private total = 0;
@@ -113,8 +140,19 @@ export class Gpu {
   private cursorState = { hotX: 0, hotY: 0, x: 0, y: 0 };
   private flushes = 0;
   private trace: string[] = [];
+  /** The size the display reports: the page's (`wanted`), but not below `floor`. */
   private width: number;
   private height: number;
+  private wanted: { width: number; height: number };
+  /**
+   * The size of a resource the guest shows cropped (a rectangle smaller than the resource, from the
+   * origin): fbcon keeps its buffer and crops the console when the mode shrinks (graphics.md §9),
+   * so the display never reports less than this. Zero until a guest does it; a compositor that
+   * allocates a resource per mode never trips it, so desktops follow shrinks.
+   */
+  /** Lazy transfers: the rectangle (a union) of each resource not yet copied from its backing. */
+  private pending = new Map<number, Rect>();
+  private floor = { width: 0, height: 0 };
   private ram: () => Uint8Array;
   private ramSize: number;
   private o: GpuOptions;
@@ -124,7 +162,8 @@ export class Gpu {
 
   constructor(ram: () => Uint8Array, ramSize: number, o: GpuOptions) {
     [this.ram, this.ramSize, this.o] = [ram, ramSize, o];
-    [this.width, this.height] = [clampSize(o.width), clampSize(o.height)];
+    this.wanted = { width: clampSize(o.width), height: clampSize(o.height) };
+    [this.width, this.height] = [this.wanted.width, this.wanted.height];
   }
 
   /** A control command (the whole readable payload) → the response to write (empty: none fits). */
@@ -148,7 +187,7 @@ export class Gpu {
         if (!need(HDR + 8)) return this.reply(ERR_UNSPEC, cmd, room);
         if (u32(0) !== 0) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         const r = new Uint8Array(HDR + 8 + 1024);
-        const e = edid(Math.max(this.width, EDID_MIN.width), Math.max(this.height, EDID_MIN.height), { dpi: this.o.dpi });
+        const e = edid(Math.max(this.width, EDID_MIN.width), Math.max(this.height, EDID_MIN.height), { dpi: this.o.dpi, extra: this.o.keepConsole ? this.fallbackModes() : [] });
         new DataView(r.buffer).setUint32(HDR, e.length, true);
         r.set(e, HDR + 8);
         return this.reply(OK_EDID, cmd, room, r);
@@ -170,6 +209,7 @@ export class Gpu {
         const res = this.resources.get(u32(0));
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         this.resources.delete(res.id);
+        this.pending.delete(res.id);
         this.total -= res.pixels.length;
         if (this.scanout?.id === res.id) this.setScanout(null);
         return this.reply(OK_NODATA, cmd, room);
@@ -205,7 +245,27 @@ export class Gpu {
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         if (!res.backing) return this.reply(ERR_UNSPEC, cmd, room);
         if (!this.inside(r, res)) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
-        return this.reply(this.transfer(res, r, offset) ? OK_NODATA : ERR_INVALID_PARAMETER, cmd, room);
+        const t0 = performance.now();
+        // The usual rectangle (the driver's offset is its own corner's): noted, copied when drawn.
+        if (this.o.lazyTransfer && offset === r.y * res.width * 4 + r.x * 4 && this.fits(res, r, offset)) {
+          const p = this.pending.get(id);
+          if (!p) this.pending.set(id, { ...r });
+          else {
+            const [x0, y0] = [Math.min(p.x, r.x), Math.min(p.y, r.y)];
+            [p.w, p.h] = [Math.max(p.x + p.w, r.x + r.w) - x0, Math.max(p.y + p.h, r.y + r.h) - y0];
+            [p.x, p.y] = [x0, y0];
+          }
+          this.draw(res, r);
+          busy.transfers++;
+          busy.pixels += r.w * r.h;
+          return this.reply(OK_NODATA, cmd, room);
+        }
+        this.materialize(res);
+        const ok = this.transfer(res, r, offset);
+        busy.transfer += performance.now() - t0;
+        busy.transfers++;
+        busy.pixels += r.w * r.h;
+        return this.reply(ok ? OK_NODATA : ERR_INVALID_PARAMETER, cmd, room);
       }
       case RESOURCE_ATTACH_BACKING: {
         if (!need(HDR + 8)) return this.reply(ERR_UNSPEC, cmd, room);
@@ -230,6 +290,7 @@ export class Gpu {
         if (!need(HDR + 8)) return this.reply(ERR_UNSPEC, cmd, room);
         const res = this.resources.get(u32(0));
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
+        this.materialize(res);
         res.backing = null;
         return this.reply(OK_NODATA, cmd, room);
       }
@@ -255,6 +316,7 @@ export class Gpu {
       else {
         const res = this.resources.get(id);
         if (!res || res.width !== CURSOR || res.height !== CURSOR) return; // the guest's mistake: the cursor stays as it was
+        this.materialize(res);
         this.cursorImage = res.pixels.slice();
       }
     }
@@ -263,8 +325,60 @@ export class Gpu {
 
   /** The page's size changed: the next GET_DISPLAY_INFO and EDID say so, and the guest gets a display event. */
   setSize(width: number, height: number) {
-    [this.width, this.height] = [clampSize(width), clampSize(height)];
+    this.wanted = { width: clampSize(width), height: clampSize(height) };
+    this.report();
     this.raise?.();
+  }
+
+  /**
+   * The modes after the preferred one: the size the console was born at and, if different, its buffer's
+   * (the floor). fbcon refuses a mode wider or taller than its buffer (DRM's `VIRTUAL_X`/`VIRTUAL_Y`)
+   * and with no other mode in the list it blanks the screen: a window grown past the buffer would
+   * kill the console. With these the guest falls back to a size its buffer holds.
+   */
+  private fallbackModes() {
+    const modes: { width: number; height: number }[] = [];
+    for (const m of [{ width: clampSize(this.o.width), height: clampSize(this.o.height) }, this.floor]) {
+      if (m.width < EDID_MIN.width || m.height < EDID_MIN.height) continue;
+      if ((m.width === this.width && m.height === this.height) || modes.some((x) => x.width === m.width && x.height === m.height)) continue;
+      modes.push(m);
+    }
+    return modes;
+  }
+
+  /**
+   * The guest takes a display event's bit with `events_clear` after it handles it, and our event comes
+   * while it is still handling the shrink that caused it: that clear can take the new event with it
+   * (a lost bounce: the console stayed cropped, seen in CI). Raise again a few times while the crop lasts.
+   */
+  private reraise(id: number, left: number) {
+    if (left <= 0) return;
+    setTimeout(() => {
+      const s = this.scanout;
+      const res = s && this.resources.get(s.id);
+      if (!s || !res || s.id !== id || (s.rect.w >= res.width && s.rect.h >= res.height)) return;
+      this.raise?.();
+      this.reraise(id, left - 1);
+    }, 200);
+  }
+
+  /** Copies what lazy transfers noted (one resource's, or all). */
+  private materialize(res?: Resource) {
+    if (!this.pending.size) return;
+    for (const [id, r] of [...this.pending]) {
+      const t = this.resources.get(id);
+      if (!t || (res && t !== res)) continue;
+      this.pending.delete(id);
+      if (t.backing) this.transfer(t, r, r.y * t.width * 4 + r.x * 4, true);
+    }
+  }
+
+  /** The reported size from the wanted one and the floor; true if it changed. */
+  private report() {
+    const [w, h] = [Math.max(this.wanted.width, this.floor.width), Math.max(this.wanted.height, this.floor.height)];
+    const changed = w !== this.width || h !== this.height;
+    [this.width, this.height] = [w, h];
+    return changed;
   }
 
   get size() {
@@ -278,7 +392,18 @@ export class Gpu {
   private setScanout(s: { id: number; rect: Rect } | null) {
     this.scanout = s;
     this.announce();
-    if (s) this.draw(this.resources.get(s.id)!, s.rect);
+    const res = s && this.resources.get(s.id);
+    if (s && res) {
+      this.draw(res, s.rect);
+      if (this.o.keepConsole && s.rect.x === 0 && s.rect.y === 0 && (s.rect.w < res.width || s.rect.h < res.height)) {
+        // The console is cropped: ask for its whole buffer again.
+        this.floor = { width: Math.max(this.floor.width, res.width), height: Math.max(this.floor.height, res.height) };
+        if (this.report()) {
+          this.raise?.();
+          this.reraise(res.id, 5);
+        }
+      }
+    }
   }
 
   /** Copies the part of `r` that is on the scanout to the page. */
@@ -295,7 +420,7 @@ export class Gpu {
   private announce() {
     const s = this.scanout;
     const res = s && this.resources.get(s.id);
-    this.hooks.scanout?.(s ? s.rect.w : 0, s ? s.rect.h : 0, s && res ? { pixels: res.pixels, width: res.width, height: res.height, x: s.rect.x, y: s.rect.y } : null);
+    this.hooks.scanout?.(s ? s.rect.w : 0, s ? s.rect.h : 0, s && res ? { pixels: res.pixels, width: res.width, height: res.height, x: s.rect.x, y: s.rect.y, sync: () => this.materialize(res) } : null);
   }
 
   private flush(res: Resource, r: Rect) {
@@ -390,6 +515,7 @@ export class Gpu {
   private screenHash() {
     const s = this.scanout;
     if (!s) return null;
+    this.materialize();
     const res = this.resources.get(s.id)!;
     const words = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length / 4);
     const rows = [];
@@ -414,6 +540,7 @@ export class Gpu {
 
   /** A virtio reset: the guest's resources, scanout and cursor are gone. */
   reset() {
+    this.pending.clear();
     this.resources.clear();
     this.total = 0;
     this.cursorImage = null;
@@ -431,10 +558,13 @@ export class Gpu {
   restore(state: unknown) {
     const t = state as ReturnType<Gpu['save']>;
     if (!Array.isArray(t?.resources) || !(t.width > 0) || !(t.height > 0)) throw new Error('the snapshot has no state for the display device');
+    this.pending.clear();
     this.resources.clear();
     this.total = 0;
     this.scanout = null;
     [this.width, this.height, this.flushes] = [t.width, t.height, t.flushes];
+    this.wanted = { width: t.width, height: t.height };
+    this.floor = { width: 0, height: 0 };
     this.trace = t.trace ?? [];
     for (const r of t.resources) {
       const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: new Uint8Array(r.width * r.height * 4), backing: r.backing?.map(([off, len]) => ({ off, len })) ?? null };
@@ -447,6 +577,8 @@ export class Gpu {
     this.cursorState = t.cursor ? { hotX: t.cursor.hotX, hotY: t.cursor.hotY, x: t.cursor.x, y: t.cursor.y } : { hotX: 0, hotY: 0, x: 0, y: 0 };
     const s = this.scanout;
     if (s) makeOpaque(this.resources.get(s.id)!);
+    const shown = s && this.resources.get(s.id);
+    if (this.o.keepConsole && s && shown && s.rect.x === 0 && s.rect.y === 0 && (s.rect.w < shown.width || s.rect.h < shown.height)) this.floor = { width: shown.width, height: shown.height };
     this.announce();
     if (s) this.draw(this.resources.get(s.id)!, s.rect);
     this.hooks.cursor?.(this.cursorImage, this.cursorState.hotX, this.cursorState.hotY, this.cursorState.x, this.cursorState.y);
@@ -490,6 +622,18 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
     const v = new DataView(c.buffer, c.byteOffset, 16);
     v.setUint32(0, v.getUint32(0, true) | EVENT_DISPLAY, true);
   });
+  // Replies held to the frame boundary (`paceReplies`), in order.
+  let held: { w0: number; len: number }[] = [];
+  let lastBatch = -Infinity;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const FRAME_MS = 16;
+  const release = () => {
+    timer = undefined;
+    lastBatch = performance.now();
+    const batch = held;
+    held = [];
+    for (const h of batch) ctx.complete(h.w0, h.len);
+  };
   return {
     gpu,
     request(r: Request) {
@@ -501,8 +645,22 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         return 0;
       }
       const room = r.write.reduce((n, s) => n + s.len, 0);
+      const t0 = performance.now();
       const reply = gpu.control(cmd, room);
       scatter(ram, r.write, reply);
+      busy.request += performance.now() - t0;
+      busy.requests++;
+      if (o.paceReplies && cmd.length >= 4) {
+        const type = new DataView(cmd.buffer, cmd.byteOffset, Math.min(cmd.length, 4)).getUint32(0, true);
+        const now = performance.now();
+        const display = type === TRANSFER_TO_HOST_2D || type === RESOURCE_FLUSH;
+        if (held.length || (display && now - lastBatch < FRAME_MS)) {
+          held.push({ w0: r.w0, len: reply.length });
+          timer ??= setTimeout(release, Math.max(0, lastBatch + FRAME_MS - now));
+          return undefined;
+        }
+        if (display) lastBatch = now;
+      }
       return reply.length;
     },
     // events_clear: write-one-to-clear of events_read; the guest's write is taken and zeroed.
@@ -515,7 +673,12 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         v.setUint32(4, 0, true);
       }
     },
-    reset: () => gpu.reset(),
+    reset: () => {
+      clearTimeout(timer);
+      timer = undefined;
+      held = [];
+      gpu.reset();
+    },
     save: () => gpu.save(),
     restore: (state: unknown) => gpu.restore(state),
   };

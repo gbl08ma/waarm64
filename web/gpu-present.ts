@@ -3,13 +3,14 @@
 // accumulate into one rectangle and are drawn at most once per animation frame, straight from the
 // guest's resource (an ImageData over its RGBA bytes: no copy, no scan of guest memory). The canvas has
 // the scanout's size; when it changes the page is told (`mode`) to refit its box.
+import { busy } from './gpu.ts';
 import type { GpuHooks, Rect, ScanoutSource } from './gpu.ts';
 
 /** Page ⇄ backend over the display port. */
 export type DisplayToPage =
   | { type: 'mode'; width: number; height: number }
   /** With `stats`: once a second, the draws since the last (n) and the ms from the flush that made them to the draw (median, max): bench/gpu. */
-  | { type: 'draw-stats'; n: number; median: number; max: number };
+  | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number };
 
 export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, stats = false): GpuHooks {
@@ -20,11 +21,17 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
   let scheduled = false;
   let since = 0; // performance.now() of the oldest damage not drawn yet
   const lat: number[] = [];
+  let drawMs = 0;
   if (stats && port) {
+    // The device worker's own event loop: the longest a 4 ms timer was late in the second (what a key's release, a doorbell or a flush waits behind).
+    let lag = 0, tick = performance.now();
+    setInterval(() => { const n = performance.now(); lag = Math.max(lag, n - tick - 4); tick = n; }, 4);
     setInterval(() => {
-      if (!lat.length) return;
       const s = lat.splice(0).sort((a, b) => a - b);
-      port.postMessage({ type: 'draw-stats', n: s.length, median: s[s.length >> 1], max: s[s.length - 1] } satisfies DisplayToPage);
+      port.postMessage({ type: 'draw-stats', n: s.length, median: s[s.length >> 1] ?? 0, max: s[s.length - 1] ?? 0, lag, busy: { ...busy, draw: drawMs } } satisfies DisplayToPage);
+      lag = 0;
+      Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0 });
+      drawMs = 0;
     }, 1000);
   }
   let lastDraw = -Infinity;
@@ -33,8 +40,11 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
     if (!src || !img || !dirty) return;
     const d = dirty;
     dirty = null;
+    const t0 = performance.now();
+    src.sync?.();
     ctx.putImageData(img, -src.x, -src.y, src.x + d.x, src.y + d.y, d.w, d.h);
     lastDraw = performance.now();
+    drawMs += lastDraw - t0;
     if (stats) lat.push(performance.now() - since);
   };
   // The device worker has no animation frames (Chromium: "requestAnimationFrame not supported in this Worker"
