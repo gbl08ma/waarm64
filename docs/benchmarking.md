@@ -142,7 +142,8 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   category (guest code by V8 tier, the dispatcher, the interpreter, V8's compiles) with
   `bench/boot/userprof-perf.ts` (usage in both files' headers). `bench/boot/results/m8-userprof/*.patch`
   are diagnostic builds of the core (why blocks returned to the dispatcher; transfers between blocks by
-  kind) that the first tool also prints: apply, build, run, and **restore the source and rebuild**.
+  kind) that the first tool also prints: apply (they're diffs against the commit their REPORT section names), build,
+  run, and **restore the source and rebuild**.
 - **perf with V8's `--perf-prof`** (dev-only tool): `perf record -k mono -F 2000 -o x.data node
   --perf-prof …; perf inject -j -i x.data -o x.jit.data; perf report -i x.jit.data --no-children
   --sort sym`; `perf annotate -s "JS:<name>-<n>-turbofan"` for machine code with samples. Run from

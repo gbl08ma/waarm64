@@ -760,9 +760,13 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
 
 /// The chaining tail of block `b` to its successor at `off`: a direct tail
 /// call if it's compiled, else (with a jump cache) through the jump cache,
-/// which has it once it's compiled and entered. With the MMU on, one in
-/// another page only if its VA still maps to its PA (the instruction TLB of
-/// the block's EL).
+/// which has it once it's compiled and entered. With the MMU on, a successor
+/// in another page is wherever its VA maps: the block's PA plus `off` (`k`)
+/// only if the two pages are contiguous physically too (the kernel's image,
+/// not a process's file pages). So the direct call to `k` is behind a check
+/// that the VA maps there (the instruction TLB of the block's EL), and
+/// otherwise the successor is found as an indirect branch's target is, by
+/// its VA through that TLB and the jump cache.
 fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
     let k = succ(b.key, off);
     let len = b.words.len() as u32;
@@ -771,24 +775,25 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
         return;
     }
     let guarded = b.key & KEY_MMU != 0 && (k ^ b.key) >> 12 != 0;
-    let guard = |c: &mut emit::Func| {
-        let exec = emit::tlb_array(b.key & KEY_EL1, 2);
-        let host = e.base.wrapping_add((k & !3) - e.phys);
-        emit::maps_to(c, off, exec, host);
+    let exec = emit::tlb_array(b.key & KEY_EL1, 2);
+    // The PC is in the `Cpu` by now: the successor's VA.
+    let by_va = |c: &mut emit::Func| {
+        let tlb = Some((exec, e.base, e.phys));
+        emit::indirect(c, b.key & 3, tlb, e.jc, len, e.bt, e.checker);
     };
     let Some(&(f, tlen)) = f else {
         if guarded {
-            guard(c);
-        } else {
-            c.i32_const(1);
+            return by_va(c);
         }
+        c.i32_const(1);
         return emit::via_jc(c, Some(k), e.jc, len, e.bt, e.checker);
     };
     c.local_get(emit::LEFT)
         .i32_const((len + tlen) as i32)
         .op(0x4f); // i32.ge_u
     if guarded {
-        guard(c);
+        let host = e.base.wrapping_add((k & !3) - e.phys);
+        emit::maps_to(c, off, exec, host);
         c.op(0x71); // i32.and
     }
     c.hint(true).if_();
@@ -799,6 +804,9 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
     c.local_get(emit::ACC).i32_const(len as i32).op(0x6a); // i32.add
     c.local_get(emit::LEFT).i32_const(len as i32).op(0x6b); // i32.sub
     c.return_call(f).end();
+    if guarded && e.jc != 0 {
+        by_va(c);
+    }
 }
 
 #[cfg(test)]
@@ -1152,6 +1160,75 @@ mod tests {
         crate::jit::wasm::uleb(&mut tag, emit::tlb_array(0, 2) as u64);
         assert!(has(&e.bytes, &tag));
         assert!(has(&e.bytes, &[0x12, 2, 0x0b])); // the tail call behind it
+        // No jump cache here (a module built without one), so nothing else.
+        assert!(!has(&e.bytes, &[0x28, 2, 8, 0x13]));
+    }
+
+    /// With the MMU on, a direct branch to another page finds its target by
+    /// the target's VA (the instruction TLB, then the jump cache), since the
+    /// page needn't follow the block's physically: alone if nothing is
+    /// compiled at the PA that would follow, and after the guarded direct
+    /// call if something is.
+    #[test]
+    fn a_successor_in_another_page_is_found_by_its_va() {
+        const JC: u32 = 0x10_0000;
+        let block = || Block {
+            key: 0x4000_0200 | KEY_MMU,
+            va: 0,
+            words: vec![MOVZ, 0x14000400], // b .+0x1000
+        };
+        // The instruction TLB's tag and addend loads (EL0), and the jump
+        // cache's table index behind `return_call_indirect`.
+        let mut tag = vec![0x29, 3];
+        crate::jit::wasm::uleb(&mut tag, emit::tlb_array(0, 2) as u64);
+        let mut addend = vec![0x29, 3];
+        crate::jit::wasm::uleb(&mut addend, emit::tlb_array(0, 2) as u64 + 8);
+        let by_va = |bytes: &[u8]| {
+            has(bytes, &tag) && has(bytes, &addend) && has(bytes, &[0x28, 2, 8, 0x13])
+        };
+        let e = module(
+            &[block().into()],
+            &test_mem(),
+            |_| None,
+            false,
+            JC,
+            crate::cpu::FEATURES,
+        );
+        assert_eq!(e.links, [Vec::<u64>::new()]);
+        assert!(by_va(&e.bytes));
+        assert!(!has(&e.bytes, &[0x12, 2, 0x0b]));
+        // The same block in one page with its successor: the successor's
+        // key is known, so its jump-cache entry is at a constant address and
+        // no TLB is read.
+        let near = Block {
+            key: 0x4000_0200 | KEY_MMU,
+            va: 0,
+            words: vec![MOVZ, 0x14000004], // b .+0x10
+        };
+        let e = module(
+            &[near.into()],
+            &test_mem(),
+            |_| None,
+            false,
+            JC,
+            crate::cpu::FEATURES,
+        );
+        assert!(!has(&e.bytes, &tag) && has(&e.bytes, &[0x28, 2, 8, 0x13]));
+        // Something compiled at the PA that follows: the direct call behind
+        // its check first, then the lookup by VA.
+        let e = module(
+            &[block().into()],
+            &test_mem(),
+            |k| (k == 0x4000_1204 | KEY_MMU).then_some((9, 1)),
+            false,
+            JC,
+            crate::cpu::FEATURES,
+        );
+        assert_eq!(e.links, [vec![0x4000_1204 | KEY_MMU]]);
+        let call = e.bytes.windows(3).position(|w| w == [0x12, 2, 0x0b]);
+        let ind = e.bytes.windows(4).position(|w| w == [0x28, 2, 8, 0x13]);
+        assert!(call.is_some() && call < ind, "{call:?} {ind:?}");
+        assert!(by_va(&e.bytes));
     }
 
     #[test]

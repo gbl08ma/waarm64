@@ -64,14 +64,8 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - **User space: what the profile of `alpine_user_jit` says** (2026-10-02, `bench/boot/REPORT.md` "M8: where the
   userspace benchmark's time goes"; re-profile with `bench/boot/userprof.ts` before and after each of these). In
   order:
-  1. **Cross-page direct branches never chain in a process** (measured, prototyped, not landed): `block::chain`
-     finds a successor in another page by PA arithmetic, which holds only for physically contiguous pages (the
-     kernel's image), so every `BL`/`B`/`B.cond` to another page of a process returns to the dispatcher: 97 to
-     98.5% of the userspace phases' 150M dispatches, 10 to 18% of their time. The prototype
-     (`bench/boot/results/m8-userprof/chain-by-va-prototype.patch`: such a successor is found by its VA, as an
-     indirect branch's target is) made SQLite 12%, Lua 10% and compression 9% faster in Chromium with the same
-     steps. To land it: a unit test of the emitted link, a differential class with code in two pages that
-     aren't physically contiguous, a planted bug, CI and `ci-long`.
+  1. Done: direct branches to another page of a process chain by the target's VA ([jit.md](jit.md) "Linking";
+     SQLite 12%, Lua 10% and compression 9% faster).
   2. **Compile units larger than a loop.** A block runs ~5 instructions, and in Lua and SQLite 89 to 98% of
      block-to-block transfers leave one wasm function for another, each paying a frame, the registers' write-back
      and reload through the `Cpu`, NZCV and the PC materialized, a budget check and a tail call: over half of the
@@ -86,7 +80,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
      register state at merge points, the `br_table`'s cost against a tail call.
   3. **Calls and returns** (`RET`: 8 to 17 per 1000 instructions, and as many calls): only after 2, as inlined
      callees or a return predicted to the call site inside the unit.
-  4. **Indirect transfers** (`BR`, `BLR`, `RET`, and 1's by-VA links: 23 to 56 per 1000 instructions, ~50 host
+  4. **Indirect transfers** (`BR`, `BLR`, `RET`, and the by-VA links to other pages: 23 to 56 per 1000 instructions, ~50 host
      instructions each): two table lookups (the instruction TLB, then the 1 MiB jump cache, whose entry load is
      where such blocks' samples sit) and `return_call_indirect`. One lookup in a small VA-keyed cache that is
      flushed with the TLB (QEMU's `tb_jmp_cache`) would replace the two.

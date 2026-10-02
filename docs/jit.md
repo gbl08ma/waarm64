@@ -101,12 +101,17 @@ the interpreter's own code.
   one, the fall-through after a cap, page end or a chaining system instruction) and compiled
   **tail-calls** it (`return_call`) with `acc + len` and `left − len` when `left` covers both.
   Successors in the same batch are direct calls; already-compiled ones are imports of module `t`
-  by table index. With the MMU on, a successor in another page is chained behind a check that its
-  VA hits the instruction TLB of the block's EL and maps to the host address it was compiled for.
-  **That successor is named by PA arithmetic** (the block's PA plus the branch offset), so the link
-  works only between physically contiguous pages: the kernel's image, not a process's file pages,
-  whose cross-page direct branches return to the dispatcher every time (97% of user-space
-  dispatches; [backlog.md](backlog.md) "JIT" has the measured fix).
+  by table index.
+- **A successor in another page (MMU on) is wherever its VA maps.** The block's PA plus the branch
+  offset is its key only if the two pages are contiguous physically too: the kernel's image is, a
+  process's file pages aren't. So a block compiled at that key is tail-called directly behind a
+  check that the successor's VA hits the instruction TLB of the block's EL and maps to that
+  block's host address, and otherwise (nothing compiled there, or the check fails) the successor
+  is found as an indirect branch's target is, by its VA: the instruction TLB gives its key, the
+  jump cache its function (`block::chain`). Before M8 only the first half existed, and every
+  call, branch and fall-through to another page of a process returned to the dispatcher: 97% of
+  the userspace benchmark's dispatches, 10 to 18% of its compute phases' time
+  (`bench/boot/REPORT.md` "M8: where the userspace benchmark's time goes").
 - **Through the jump cache:** a successor not compiled yet when its predecessor is (the common
   case: blocks compile in hotness order), and every BR/BLR/RET target (translated through the
   instruction TLB into a key), is probed in the jump cache from wasm and tail-called with

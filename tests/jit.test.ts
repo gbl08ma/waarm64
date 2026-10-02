@@ -162,3 +162,77 @@ test('a hot loop head compiled alone tiers up to its loop region', () => {
   assert.equal(st[16] - st[0], 1n, 'one region of two blocks besides the heads compiled alone (the other head stops counting)');
   assert.ok(st[5] < 20n, `${st[5]} dispatches for ${done} steps`);
 });
+
+// Direct branches to another page with the MMU on (M8, bench/boot/REPORT.md "where the userspace
+// benchmark's time goes"): a successor is where its VA maps, which is the block's PA plus the
+// branch offset only if the two pages are physically contiguous. A loop at EL1 over two virtual
+// pages, entering the second by falling through the page end and leaving it by a conditional
+// branch back:
+//   0x400ff8: add x3, x3, #1; add x4, x4, #1
+//   0x401000: add x1, x1, #1; subs x5, x5, #1; b.ne 0x400ff8; brk
+// The first page is at PA 0x1000 and the second at PA 0x5000. At PA 0x2000, where the second
+// would be if it followed the first, is a decoy that counts in x2 instead of x1 (run once
+// through its own mapping at 0x403000 first, so it's compiled when the loop's blocks link). Then
+// the second page is remapped to the decoy (now the loop's pages are contiguous, and the direct
+// link is the right one) and back, with a `tlbi vmalle1` in between.
+const PTE = 0xf03n; // a page: valid, AF, nG, inner shareable, EL1 read/write/execute
+const BODY = (reg: number) => [0x91000400 | reg << 5 | reg, 0xf10004a5, 0x54ffff81, 0xd4200000]; // add reg; subs x5; b.ne .-16; brk
+function crossPage(threshold: number, check: number) {
+  const { ex, memory } = core(true);
+  const e = ex as unknown as Exports & Record<string, (...a: (number | bigint)[]) => number | bigint>;
+  const base = memory.grow(2) * 65536;
+  const code = (pa: number, words: number[]) => new Uint32Array(memory.buffer, base + pa, words.length).set(words);
+  code(0x1ff8, [0x91000463, 0x91000484]);
+  code(0x5000, BODY(1));
+  code(0x2000, BODY(2));
+  code(0x6000, [0xd508871f, 0xd5033fdf, 0xd4200000]); // tlbi vmalle1; isb; brk
+  // TTBR0's tables at PA 0x10000: 0x400000–0x403fff through one level 3 table.
+  const table = (pa: number) => new BigUint64Array(memory.buffer, base + pa, 512);
+  table(0x10000)[0] = 0x11003n;
+  table(0x11000)[0] = 0x12003n;
+  table(0x12000)[2] = 0x13003n;
+  const l3 = table(0x13000);
+  [l3[0], l3[1], l3[2], l3[3]] = [0x1000n | PTE, 0x5000n | PTE, 0x6000n | PTE, 0x2000n | PTE];
+
+  const v = e.jit_new(threshold, 1, 64, check, 0) as number;
+  const x = new BigUint64Array(memory.buffer, v, 134);
+  x[832 / 8] = 0x3c5n; // PSTATE: EL1h, DAIF masked
+  x[888 / 8] |= 1n; // SCTLR_EL1.M
+  x[904 / 8] = 16n | 1n << 23n | 2n << 32n; // TCR_EL1: T0SZ 16, EPD1, a 40-bit IPS
+  x[912 / 8] = 0x10000n; // TTBR0_EL1
+  const mem = e.mem_new(base, 2n * 65536n), exit = e.vcpu_new() as number;
+  const stats = () => new BigUint64Array(memory.buffer, e.jit_stats(v) as number, 11);
+  const run = (pc: bigint, x5: bigint) => {
+    [x[32], x[5]] = [pc, x5];
+    const before = stats()[5];
+    const done = e.jit_run_exit(v, mem, 1_000_000n, exit) as bigint;
+    assert.equal(new BigUint64Array(memory.buffer, exit, 1)[0], 6n); // brk
+    return { done, x1: x[1], x2: x[2], x3: x[3], x4: x[4], dispatches: stats()[5] - before };
+  };
+  const remap = (pa: bigint) => {
+    l3[1] = pa | PTE;
+    assert.equal(run(0x402000n, 0n).done, 2n);
+  };
+  const out = [run(0x403000n, 1n), run(0x400ff8n, 1000n)];
+  remap(0x2000n);
+  out.push(run(0x400ff8n, 1000n));
+  remap(0x5000n);
+  out.push(run(0x400ff8n, 1000n));
+  return out;
+}
+
+test('with the MMU on, a direct branch to another page goes where its VA maps and stays chained', () => {
+  const want = [
+    { done: 3n, x1: 0n, x2: 1n, x3: 0n, x4: 0n },
+    { done: 5000n, x1: 1000n, x2: 1n, x3: 1000n, x4: 1000n }, // the second page isn't the decoy
+    { done: 5000n, x1: 1000n, x2: 1001n, x3: 2000n, x4: 2000n }, // remapped: it is
+    { done: 5000n, x1: 2000n, x2: 1001n, x3: 3000n, x4: 3000n }, // and back
+  ];
+  const strip = (r: ReturnType<typeof crossPage>) => r.map(({ dispatches: _, ...rest }) => rest);
+  assert.deepEqual(strip(crossPage(0xffff_ffff, 0)), want, 'interpreted (nothing reaches the threshold)');
+  for (const check of [0, 1]) {
+    const r = crossPage(0, check);
+    assert.deepEqual(strip(r), want, `JIT${check ? ', with the stale-code checker' : ''}`);
+    for (const [i, p] of r.slice(1).entries()) assert.ok(p.dispatches < 20n, `run ${i + 1}: ${p.dispatches} dispatches for ${p.done} steps`);
+  }
+});

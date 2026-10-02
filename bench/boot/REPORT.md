@@ -595,9 +595,21 @@ Dispatches: Lua 66.1M → 1.7M, SQLite 56.6M → 0.9M, compress 25.0M → 0.8M; 
 
 Steps 10,763,178,470 in all four; dispatches 163.3M → 7.4M. Node agrees (three alternated pairs,
 `node-ab.txt`: Lua 4.73 to 4.87 → 4.18 to 4.26 s, SQLite 3.61 to 3.72 → 3.26 to 3.30 s, compress
-2.52 to 2.65 → 2.45 to 2.47 s; boot and churn within noise). **Not landed:** it is a prototype
-without its tests (a unit test of the emitted link, a differential class with code in two
-non-contiguous pages, a planted bug, CI and `ci-long`).
+2.52 to 2.65 → 2.45 to 2.47 s; boot and churn within noise).
+
+**Landed** (the prototype's code, in `block::chain`; docs/jit.md "Linking"). The kernel's own
+cross-page links are physically contiguous and keep their direct calls; the lookup by VA is their
+fallback, and what a successor not compiled yet gets. Alpine's boot, alternated B, A, B, A in
+Chromium (`boot_alpine_jit-*.json`; warm medians, IQR): A 10,211 (45), 10,303 (24) ms; B 10,249
+(114), 10,631 (23) ms. Not separable from the session's drift at two pairs (+0.4% and +3%; the
+boot is the cold regime, where chaining isn't what costs); steps 2,856,663,287 in all four,
+dispatches 12.3M → 3.5M, wasm 22.5 → 23.6 MB (+5%: the lookup's code at every cross-page edge),
+compile time unchanged (303 to 322 ms). **Tests:** `block::tests::a_successor_in_another_page_is_found_by_its_va`
+(the emitted links), and in `tests/jit.test.ts` a loop over two virtual pages that aren't
+contiguous physically, with other code compiled at the PA that would follow and a remap to it
+and back: results as interpreted, under 20 dispatches for 5000 steps (2000 before). Planted bugs
+caught by it: the direct call without its check (the decoy's code runs), the lookup reading the
+other EL's TLB (2000 dispatches), no lookup after a failed check (1001 dispatches).
 
 **What is left after it: the transfers between blocks** (`transfers.txt`, the prototype plus
 counters in the emitted code). A block executes 4.6 to 5.5 instructions, so there are ~200
