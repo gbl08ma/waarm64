@@ -29,7 +29,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 31;
+pub const ABI_VERSION: u32 = 32;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -45,6 +45,43 @@ pub extern "C" fn thread_alloc(size: usize, align: usize) -> *mut u8 {
         // SAFETY: the layout has a non-zero size.
         Ok(l) => unsafe { std::alloc::alloc_zeroed(l) },
         Err(_) => core::ptr::null_mut(),
+    }
+}
+
+/// Makes the core's heap hold the rest of a memory of `pages` 64 KiB pages
+/// (ABI 32, docs/abi.md "A fixed-size memory"): allocates one block that grows
+/// the memory to within a page or two of `pages`, and frees it. The allocator
+/// keeps freed memory (it can't shrink a wasm memory), so later allocations
+/// come from it and never grow the memory again; the block's pages stay
+/// untouched until used. Returns the memory's pages after, or 0 if `pages`
+/// leaves no room or the allocation fails.
+#[unsafe(no_mangle)]
+pub extern "C" fn heap_reserve(pages: u32) -> u32 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let have = core::arch::wasm32::memory_size(0) as u32;
+        // Two pages short: the allocator rounds its request up to a page with its own overhead.
+        let Some(n) = pages.checked_sub(have + 2).filter(|&n| n > 0) else {
+            return 0;
+        };
+        let Ok(l) = std::alloc::Layout::from_size_align(n as usize * 65536, 16) else {
+            return 0;
+        };
+        // SAFETY: the layout has a non-zero size; the block is freed with it at once.
+        unsafe {
+            // Opaque, or LLVM drops an allocation nothing uses.
+            let p = core::hint::black_box(std::alloc::alloc(l));
+            if p.is_null() {
+                return 0;
+            }
+            std::alloc::dealloc(p, l);
+        }
+        core::arch::wasm32::memory_size(0) as u32
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = pages;
+        0
     }
 }
 
@@ -187,6 +224,7 @@ pub extern "C" fn jit_new(
         max_bytes: u64::MAX,
         check: check != 0,
         region_after,
+        pages: 0,
     })));
     Box::into_raw(v)
 }
@@ -297,6 +335,7 @@ pub unsafe extern "C" fn vm_new(
         || cfg.features & !cpu::FEATURES != 0
         || !cfg.valid_smp()
         || !cfg.valid_firmware()
+        || cfg.mem_pages > 65536
         || (cfg.fb_width | cfg.fb_height != 0 && boot::framebuffer(&cfg).is_none())
     {
         return core::ptr::null_mut();

@@ -59,6 +59,10 @@ pub struct Config {
     /// Entries of a loop head, compiled alone, before its loop region is
     /// (step 8.3; 0: the region at once).
     pub region_after: u32,
+    /// The wasm memory's fixed size in pages (`VmConfig.mem_pages`), which
+    /// modules import as exact limits: V8 then loads its size once per
+    /// function, not after every call (docs/v8.md "Bounds checks"). 0: growable.
+    pub pages: u32,
 }
 
 impl Config {
@@ -77,6 +81,7 @@ impl Config {
         max_bytes: MAX_BYTES,
         check: false,
         region_after: REGION_AFTER,
+        pages: 0,
     };
     /// Compile everything on first sight, one block per module, and flush
     /// constantly: room for 4 regions besides the miss functions.
@@ -87,6 +92,7 @@ impl Config {
         max_bytes: u64::MAX,
         check: true,
         region_after: 1,
+        pages: 0,
     };
     /// JIT-check: compile everything on first sight into a full-size cache,
     /// with the stale-code checker. JIT-stress's 4-region cache evicts most
@@ -604,7 +610,10 @@ impl Cache {
             let slot = self.alloc(MISS_SLOTS);
             assert_eq!(slot, 0, "the miss functions come first");
             let jc = self.jc.as_ptr() as usize as u32;
-            let Some(idx) = install(&block::miss_module(mem, self.cfg.check, jc), slot) else {
+            let Some(idx) = install(
+                &block::miss_module(mem, self.cfg.check, jc, self.cfg.pages),
+                slot,
+            ) else {
                 self.off = true;
                 return None;
             };
@@ -630,7 +639,7 @@ impl Cache {
             &regions,
             mem,
             compiled,
-            self.cfg.check,
+            &self.cfg,
             self.jc.as_ptr() as usize as u32,
             self.features,
             self.xmiss,
@@ -1007,6 +1016,7 @@ mod tests {
             max_bytes: 1000,
             check: false,
             region_after: 0,
+            pages: 0,
         });
         c.map.insert(0x100, Info::default());
         assert_eq!((c.alloc(4), c.alloc(4)), (0, 4));

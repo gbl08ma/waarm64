@@ -25,6 +25,22 @@ Design notes for an ABI change go in this file before the code.
   `tls_probe()` (a thread-local call count) lets tests check the TLS block is the instance's own.
   Tested with three concurrent instances (interpreter, JIT, JIT) in Node's `worker_threads` and in
   Chromium workers (`tests/threads.test.ts`, `tests/browser/threads.html`).
+- **A fixed-size memory** (ABI 32): `bootVm` makes the memory its final size, so that V8 loads its
+  size once per JIT function instead of after every call (Linux arm64 and Android, where wasm
+  accesses are bounds-checked explicitly: [v8.md](v8.md) "Bounds checks"). The memory is created
+  with `maximum` = the scratch page + RAM + fw_cfg's files + `HEAP_RESERVE` (1 GiB, which holds the
+  core's static data and stack too); after the host has grown its parts, `heap_reserve(pages) ->
+  pages` allocates and frees one block that grows the memory to within two pages of `pages`. The
+  allocator keeps what is freed (it can't shrink a wasm memory), so the core's later allocations
+  come from that block and never grow the memory; its pages cost nothing until used. The host
+  grows the last page or two and passes the size in `VmConfig.mem_pages`, and JIT modules import
+  the memory with those exact limits. `heap_reserve` returns 0 if `pages` leaves no room (natively,
+  always). The core module itself still declares 18–65536 pages: exact limits need the memory at
+  its final size before the core is instantiated, so the heap would need its own allocator over a
+  region the host gives it. Running out of the reserve traps (the core's allocations fail); the
+  heap measured ~27 MB through the userspace benchmark and ~150 MB under a heavy 4-vCPU load
+  ([jit.md](jit.md) "Memory"). `fixedMemory: false`, or a RAM size that leaves no room for the
+  reserve in 4 GiB, keeps the growable memory (0 in `mem_pages`).
 
 ## Whole-VM exports
 
@@ -72,6 +88,7 @@ Design notes for an ABI change go in this file before the code.
 | `firmware` | 1: the firmware configuration (below, "M8 phase B"); 0: direct kernel boot (29) |
 | `flash_size` | the firmware configuration's flash bank, a multiple of 256 KiB from 768 KiB to 64 MiB; 0 otherwise (29) |
 | `fw_cfg`, `fw_cfg_len` | address and length of fw_cfg's files, copied by `vm_new` (firmware only; 0: none) (29) |
+| `mem_pages` | the memory's size in 64 KiB pages when the host made it fixed (above, "A fixed-size memory"): JIT modules import it with exact limits; 0: growable; over 65536 is refused (32) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`;
 the ABI's 0 means none.
@@ -152,7 +169,7 @@ puts its functions into the core's table.
   vCPU worker), grows the table if needed, sets exports `f0, f1, …` at `base + slot + k`, and
   returns `base + slot` (−1 before `bind`: the core then only interprets). A module that doesn't
   compile is a JIT bug: the exception propagates and the run fails.
-- **A JIT module's imports:** `env.memory` (limits 0–65536 pages), `env.table`, any core export by
+- **A JIT module's imports:** `env.memory` (limits 0–65536 pages, or exactly `VmConfig.mem_pages`: ABI 32), `env.table`, any core export by
   name (helpers are ordinary exports named `jit_*`, called as wasm imports: no JS in between), and
   module `t`, whose imports are named by table index and resolved with `table.get` (links to
   already-compiled blocks).
@@ -346,7 +363,7 @@ calls; parallel: every vCPU's thread out of `vm_run_cpu`, STOP set or not):
 **What must match** between the state and the `VmConfig` of the VM it is restored into:
 `ram_size`, `deterministic`, `cntfrq`, `ticks_per_insn`, the device entries, `fb_width`,
 `fb_height`, `features`, `ncpus`, whether there is an RTC, `firmware`, `flash_size`. Free: `jit`
-(a state is the same under either tier), `smp` in realtime mode (the per-vCPU state is saved in
+(a state is the same under either tier), `mem_pages`, `smp` in realtime mode (the per-vCPU state is saved in
 one form: power, WFI, a pending CPU_ON), `rtc`'s value and the fw_cfg files (the state's files
 replace the VM's: they are part of the machine).
 
@@ -431,3 +448,4 @@ implemented by this step).
 | 29 | the firmware configuration (M8 phase B): `VmConfig.firmware`, `flash_size`, `fw_cfg`, `fw_cfg_len`; `vm_flash`; the PL031 in deterministic mode there |
 | 30 | snapshots (M8 phase C): `vm_snapshot_size`, `vm_snapshot_save`, `vm_snapshot_restore`, `snapshot_version` (above); `lz_bound`, `lz_compress`, `lz_decompress` |
 | 31 | config changes (M8 graphics): `DevShared.config_gen`, the config-change interrupt raised from the signal path, `ConfigGeneration` (above) |
+| 32 | a fixed-size memory: `VmConfig.mem_pages`, `heap_reserve`; JIT modules import the memory with exact limits (M8 JIT) |

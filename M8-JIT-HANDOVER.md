@@ -1,4 +1,4 @@
-# M8 JIT performance: handover (2026-10-03)
+# M8 JIT performance: handover (2026-10-03, second session)
 
 A side track of M8, asked for by the user: make general user-space work faster under the JIT. Not
 a milestone phase and it has no kickoff; the order of work is docs/backlog.md "JIT", "User space".
@@ -7,7 +7,7 @@ goes" on.
 
 ## Where it stands
 
-Five commits on `main`, pushed, each with CI and `ci-long` green and the same guest steps:
+Six commits on `main`, pushed, each with CI and `ci-long` green and the same guest steps:
 
 | Commit | What | `alpine_user_jit` total (Chromium, dev VM) |
 |---|---|---|
@@ -16,9 +16,12 @@ Five commits on `main`, pushed, each with CI and `ci-long` green and the same gu
 | `939987b` | a direct branch to another page chains by the target's VA | 23.0 s |
 | `311d21e` | forward regions: a batch's blocks that static edges join are one function | 20.9 s |
 | `44dcda9` | regions across pages, calls followed with predicted returns; `bench/run-mac.sh`; a parallel-SMP panic in `311d21e`'s plan fixed | 20.5 s |
-| this one | the transfer cache: indirect transfers by VA in one probe (lever 1 below) | 20.1 → 19.8 s in one session |
+| `e63324b` | the transfer cache: indirect transfers by VA in one probe (lever 1 below) | 20.1 → 19.8 s in one session |
+| this one | the fixed-size memory: JIT modules import exact limits (lever 2 below) | 20.0 → 18.6 s in one session |
 
-On the **Mac host's Chromium** (no explicit bounds checks): 18.0 → 14.6 → 14.3 s. QEMU TCG: 11.2 s.
+On the **Mac host's Chromium** (no explicit bounds checks): 18.0 → 14.6 → 14.3 s (lever 2 changes
+nothing there). QEMU TCG: 11.2 s. The boots: Alpine's 9.95 → 9.23 s and Buildroot's 768 → 725 ms
+with lever 2.
 Lua −28%, SQLite −27% in the VM over the day; CoreMark 8,480 → 10,080 it/s. The cost: Alpine's
 boot compiles 25% more wasm (23.6 → 29.6 MB) and Buildroot's half-second boot is 15% slower.
 
@@ -34,32 +37,31 @@ boot compiles 25% more wasm (23.6 → 29.6 MB) and Buildroot's half-second boot 
 - Forward regions behind a tier-up (a counting prologue in every block) cost the boots 13 to 20%.
   Forming them at batch time is what was kept.
 
-## The two levers (the user asked for both): the first done, the second next
+## The two levers (the user asked for both): both done
 
-**1. Done: the transfer cache** (docs/jit.md "Linking", `bench/boot/REPORT.md` "M8: a VA-keyed
+**1. The transfer cache** (docs/jit.md "Linking", `bench/boot/REPORT.md` "M8: a VA-keyed
 cache for indirect transfers"). `BR`, `BLR`, `RET` and by-VA links probe `Tlb::xc` (16,384
 entries per vCPU), where they probed the instruction TLB and then the jump cache: Lua −9%, SQLite
 −5 to −6%, the userspace total −1.4% (VM) and −2.8% (Mac); Alpine's boot +1% (VM and Mac) and
-Buildroot's +1.5%. What differs from the design the last handover sketched, and why (measured,
-in the report): a miss falls back in wasm to the old lookup and fills the entry (the
-dispatcher-only fill tripled dispatches in churn); the generation is per EL and kept for global
-code across ASID changes, and a TLBI by VA clears only its page (most flushes are by VA); the
-fallback is one shared pair of functions in table slots 0 and 1 (a copy per module stayed in
-Liftoff); 4096 entries were too few.
+Buildroot's +1.5%. A miss falls back in wasm to the old lookup and fills the entry; the generation
+is per EL and kept for global code across ASID changes, and a TLBI by VA clears only its page; the
+fallback is one shared pair of functions in table slots 0 and 1; 4096 entries were too few.
 
-**2. The fixed-size memory** (Linux arm64 and Android hosts only: no gain on the Mac). V8 reloads
-a growable shared memory's size before every checked store; a module that declares
-`initial = maximum` loads it once. The idea to verify first, which avoids writing an allocator:
+**2. The fixed-size memory** (docs/abi.md "A fixed-size memory", `bench/boot/REPORT.md` "M8: a
+fixed-size memory"; ABI 32). `bootVm` creates the memory with `maximum` = RAM + scratch + fw_cfg +
+a 1 GiB heap reserve, grows its parts, calls `heap_reserve(pages)` (one alloc/free that std's
+dlmalloc keeps), grows the last page or two, and passes `VmConfig.mem_pages`; JIT modules import
+`(pages, pages)`. Userspace −6.9%, Alpine's boot −7.2%, Buildroot's −5.6% in the VM; the Mac
+unchanged; no RSS cost. `fixedMemory: false` keeps the growable memory (tested both ways on
+smp.bin). The core module itself still imports a growable memory: exact limits there need an
+allocator of our own (backlog).
 
-- `bootVm` creates the memory with `maximum` = the planned final size, the core reserves its heap
-  (a new export that allocates and frees one big block: std's dlmalloc keeps it and never needs
-  `memory.grow` again), RAM is grown as today, the host grows the rest, and the core is told the
-  page count; JIT modules then import the memory as `(pages, pages)`.
-- **Verify before building on it** that V8 drops the reloads for a module declaring exact limits
-  on a memory that was grown to its maximum (`node tools/v8code.ts`, or count `ldur x, [x7, #39]`
-  in `perf annotate`), and that the heap reserve costs no RSS.
-- If the core's heap outgrows the reserve the VM traps: size it generously and run the snapshot
-  tests in that mode. It is an ABI change (bump `ABI_VERSION`, `tests/browser.test.ts`, docs/abi.md).
+## Next
+
+The backlog's "JIT", "User space" list, in its order. Not yet measured: the core's own share of a
+profile now (what the core's exact limits could still give), and a region entered at more than one
+block (a `br_table` on the entry PC), which would reach blocks compiled in earlier batches without
+copies.
 
 ## How to measure
 
@@ -87,6 +89,14 @@ alternate (A, B, A, B). Also `boot_alpine_jit`, `boot_jit`, and on `bench/interp
 - **Counting in JIT code without new counters:** a measurement-only build that bumps
   `Tlb::stats.misses` / `.flushes` from wasm (an `i64` load, add, store at their `Vcpu` offsets)
   shows up in `userprof.ts`'s TLB columns. How the transfer cache's misses were found.
+- **`tests/trim.test.ts` failed about 1 run in 40 under load, in either memory mode:** it sent
+  each command when the console ended with `# `, and the remount's kernel message sometimes
+  landed after the prompt. It counts prompt lines now (0 failures in 80 loaded runs). A test that
+  waits for a shell should never match the console's end.
+- **LLVM deletes an `alloc`/`dealloc` pair nothing uses** (Rust allocations are elidable): the
+  heap reserve did nothing until its pointer went through `core::hint::black_box`.
+- `memory.buffer.byteLength` and `memory.grow(0)` agree after a grow from wasm in Node; check the
+  memory's size with them rather than trusting an export's return.
 - **`/tmp` is a 6.9 GB tmpfs:** keep `perf record` data out of the scratchpad (a few profiles
   filled it); `bench/results/local/perf/` is on disk. `bench/run.ts --out /dev/null` writes
   `dev/null` in the repo, and `--only` takes one benchmark.

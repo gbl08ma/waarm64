@@ -357,6 +357,15 @@ impl Module {
         uleb(&mut self.imports, max as u64);
     }
 
+    /// Imports the core's memory as `env.memory`: with exact limits when it
+    /// has a fixed size of `pages` (`jit::Config::pages`), else 0 to 65536.
+    pub fn import_core_memory(&mut self, pages: u32) {
+        match pages {
+            0 => self.import_memory("env", "memory", 0, 65536),
+            n => self.import_memory("env", "memory", n, n),
+        }
+    }
+
     /// Defines a mutable i64 global holding 0 (never written); returns its
     /// index. V8 can't fold a mutable global's value, so `x & global` is zero
     /// yet still depends on `x` (the JIT's opaque zero: jit.md "Atomics").

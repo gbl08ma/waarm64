@@ -22,17 +22,16 @@ async function shell(name: string, discard: boolean, script: string[]) {
   const { port1, port2 } = new MessageChannel();
   const vm = await bootVm(readFileSync(WASM), { ramSize: 256 << 20, kernel: readFileSync(new URL('linux/Image', IMAGES)), cmdline: `${GUEST_CMDLINE} -- /bin/sh`, devices, ncpus: 2, parallel: true, jit: 1, idleLimitMs: 30_000, serialIn: port2 });
   let out = '';
-  let [sent, seen] = [0, 0];
+  let sent = 0;
   const t0 = performance.now();
   try {
     for (;;) {
       assert.ok(performance.now() - t0 < 60_000, `no power-off in 60 s: ${out}`);
       const r = await vm.runAsync(50_000_000);
       out += vm.drain();
-      if (sent < script.length && out.slice(seen).endsWith('# ')) {
-        seen = out.length;
-        port1.postMessage(`${script[sent++]}\n`);
-      }
+      // A line per prompt: a kernel message may follow one on its line (the remount's did, and the
+      // console then never ended with the prompt).
+      if (sent < script.length && (out.match(/(?:^|\n)\S* # /g) ?? []).length > sent) port1.postMessage(`${script[sent++]}\n`);
       if (r.kind !== Exit.BUDGET && r.kind !== Exit.TX_FULL) {
         assert.equal(r.kind, Exit.PSCI, out);
         return out.replaceAll('\r\n', '\n');

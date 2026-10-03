@@ -159,6 +159,31 @@ test('bare-metal smp.bin with 2.5 GiB of RAM, round-robin (JIT-check) and parall
   });
 });
 
+// A fixed-size memory (ABI 32): `bootVm` makes the memory its final size with the core's heap
+// reserved in it, and JIT modules import it with exact limits; `fixedMemory: false` keeps the
+// growable one. smp.bin on 4 vCPUs under JIT-check (every block compiled, each in a module of its
+// own) runs the same either way.
+test('bare-metal smp.bin in a fixed and a growable memory (JIT-check): the same run', async () => {
+  const o = { ramSize: 16 << 20, kernel: readFileSync(new URL('smp.bin', BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: 4, jit: 3 as const };
+  const runs = await Promise.all([true, false].map(async (fixedMemory) => {
+    let grows = false;
+    const r = await runToPowerOff(WASM, { ...o, fixedMemory }, 50e6, (vm) => {
+      try {
+        vm.memory.grow(1);
+        grows = true;
+      } catch (e) {
+        assert.ok(e instanceof RangeError, String(e));
+      }
+    });
+    poweredOff(r);
+    assert.equal(r.x[1], 0n, r.console);
+    return { grows, steps: r.steps, console: r.console };
+  }));
+  assert.deepEqual(runs.map((r) => r.grows), [false, true]);
+  assert.equal(runs[0].steps, runs[1].steps);
+  assert.equal(runs[0].console, runs[1].console);
+});
+
 // The stale-code checker across vCPUs (M7 loop 4): maint.bin with its one
 // `IC IVAU` planted out (a NOP), so CPU 0 rewrites code the secondaries have
 // compiled without invalidating it. The interpreter has no code cache and

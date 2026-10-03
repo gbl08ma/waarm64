@@ -13,7 +13,7 @@ import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 31;
+export const ABI = 32;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -38,6 +38,7 @@ type Exports = {
   vm_flash(vm: number): number;
   panic_message(): number;
   thread_alloc(size: number, align: number): number;
+  heap_reserve(pages: number): number;
   vm_snapshot_size(vm: number): bigint;
   vm_snapshot_save(vm: number, ptr: number, len: number): bigint;
   vm_snapshot_restore(vm: number, ptr: number, len: number): number;
@@ -356,6 +357,14 @@ export type BootOptions = {
    */
   firmware?: Firmware;
   /**
+   * A fixed-size memory (`VmConfig.mem_pages`, ABI 32; docs/abi.md "A fixed-size memory"), on
+   * unless false: the memory is made at its final size, {@link HEAP_RESERVE} of it for the core's
+   * heap, and JIT code imports it with exact limits, which spares Linux arm64 hosts a reload of its
+   * size after every call (docs/v8.md "Bounds checks"). Off, or when RAM leaves no room for the
+   * reserve, the memory grows as the core needs it.
+   */
+  fixedMemory?: boolean;
+  /**
    * Start from a snapshot (ABI 30): `kernel`, `initrd`, `cmdline` and the firmware's flash and
    * files aren't used (RAM and the core's state have what the machine made of them); the rest
    * must describe the machine the snapshot was taken on, or `bootVm` throws a `SnapshotError`.
@@ -457,8 +466,19 @@ const S_CMDLINE = 4096;
 
 export type Vm = Awaited<ReturnType<typeof bootVm>>;
 
+/**
+ * The core's heap in a fixed-size memory, its static data and stack included: the JIT's maps and
+ * buffers, the devices', a vCPU worker's stack and TLS (~150 MB under a heavy 4-vCPU load, docs/jit.md
+ * "Memory"). Running out traps the machine, so it is generous: untouched pages cost nothing.
+ */
+export const HEAP_RESERVE = 1 << 30;
+
 export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOptions) {
-  const memory = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
+  const fwCfg = o.firmware?.fwCfg?.length ? fwCfgBuffer(o.firmware.fwCfg) : undefined;
+  // The memory's final size when it is fixed: the heap reserve, the scratch page, RAM, fw_cfg's files.
+  const pages = (HEAP_RESERVE + 65536 + o.ramSize + (fwCfg ? Math.ceil(fwCfg.length / 65536) * 65536 : 0)) / 65536;
+  const fixed = o.fixedMemory !== false && pages <= 65536;
+  const memory = new WebAssembly.Memory({ initial: 32, maximum: fixed ? pages : 65536, shared: true });
   const module = wasm instanceof WebAssembly.Module ? wasm : await WebAssembly.compile(wasm);
   const imports = coreImports(memory);
   const instance = await WebAssembly.instantiate(module, imports);
@@ -496,13 +516,20 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // …, features, CPUs, GIC (ABI 21), parallel (ABI 25).
   // A PL031 RTC from the host's wall clock (ABI 28), realtime only, or in the firmware configuration from a fixed epoch.
   // The firmware configuration (ABI 29): the flash bank's size, fw_cfg's files (copied by vm_new).
+  // A fixed memory's pages (ABI 32), else 0.
   const fw = o.firmware;
   const rtc = !deterministic ? BigInt(Date.now()) : fw ? BigInt(FIRMWARE_EPOCH_MS) : 0n;
-  const fwCfg = fw?.fwCfg?.length ? fwCfgBuffer(fw.fwCfg) : undefined;
   const fwCfgAt = fwCfg ? memory.grow(Math.ceil(fwCfg.length / 65536)) * 65536 : 0;
   if (fwCfg) bytes().set(fwCfg, fwCfgAt);
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 18).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
-    fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0)]);
+  // The rest of a fixed memory goes to the core's heap; the last page or two, which the
+  // allocator's rounding leaves, the host grows itself.
+  if (fixed) {
+    // A RangeError, as a failed grow is (the page's "couldn't reserve" message).
+    if (!ex.heap_reserve(pages)) throw new RangeError(`the core's heap reserve: no memory to grow ${pages} pages into`);
+    memory.grow(pages - memory.buffer.byteLength / 65536);
+  }
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 19).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
+    fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);

@@ -11,7 +11,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 31);
+  assert.equal(ex.abi_version(), 32);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -20,6 +20,26 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const counter = scratch + 64;
   assert.equal(ex.atomic_inc(counter), 0);
   assert.equal(Atomics.load(new Uint32Array(mem.buffer), counter / 4), 1);
+});
+
+// A fixed-size memory (ABI 32, web/vm.ts `bootVm`): the host grows its part, the core's heap takes
+// the rest, and allocations after it never grow the memory (at its maximum, they'd fail).
+test('heap_reserve makes the core\'s heap the rest of a fixed-size memory', () => {
+  const PAGES = 1024;
+  const mem = new WebAssembly.Memory({ initial: 32, maximum: PAGES, shared: true } as WebAssembly.MemoryDescriptor);
+  const ex = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(WASM)), coreImports(mem)).exports as Record<string, (...a: number[]) => number>;
+  mem.grow(100); // the host's part (RAM)
+  assert.equal(ex.heap_reserve(mem.grow(0) + 2), 0, 'no room for a reserve');
+  const pages = ex.heap_reserve(PAGES);
+  assert.ok(pages > PAGES - 3 && pages <= PAGES, `${pages} pages`);
+  mem.grow(PAGES - pages);
+  const end = PAGES * 65536;
+  for (let i = 0; i < 6; i++) {
+    const at = ex.thread_alloc(8 << 20, 16) >>> 0;
+    assert.ok(at && at + (8 << 20) <= end, `allocation ${i} at ${at}`);
+  }
+  assert.equal(mem.buffer.byteLength, end);
+  assert.equal(ex.thread_alloc(64 << 20, 16), 0, 'past the reserve');
 });
 
 test('interpreter runs the integer benchmark guest through the vCPU exports', async () => {

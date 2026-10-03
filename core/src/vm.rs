@@ -115,6 +115,10 @@ pub struct VmConfig {
     /// Address and length of the host's fw_cfg files (`fw_cfg::FwCfg::parse`), firmware only.
     pub fw_cfg: u64,
     pub fw_cfg_len: u64,
+    /// The wasm memory's size in 64 KiB pages when the host has made it fixed
+    /// (grown to its maximum, the core's heap reserved: ABI 32); JIT modules
+    /// then import it with exact limits. 0: growable.
+    pub mem_pages: u64,
 }
 
 impl VmConfig {
@@ -168,6 +172,7 @@ impl Default for VmConfig {
             flash_size: 0,
             fw_cfg: 0,
             fw_cfg_len: 0,
+            mem_pages: 0,
         }
     }
 }
@@ -566,7 +571,11 @@ impl Vm {
             1 => Some(jit::Config::for_vcpus(if parallel { n as u64 } else { 1 })),
             3 => Some(jit::Config::CHECK),
             _ => Some(jit::Config::STRESS),
-        };
+        }
+        .map(|c| jit::Config {
+            pages: cfg.mem_pages as u32,
+            ..c
+        });
         let vcpus: Vec<_> = (0..n)
             .map(|i| {
                 let mut v = Vcpu::new(Cpu {

@@ -82,11 +82,15 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
      the jump cache ([jit.md](jit.md) "Linking"; Lua 9% and SQLite 5 to 6% faster, the Alpine boot ~1% slower).
      Left: a miss in the kernel-heavy phases (boot, churn) costs a call to the shared miss function, and a TLBI
      by VA a 16 KiB scan.
-  5. **The fixed-size memory** (below) is 24 of a typical block's ~85 host instructions on this host (a size
-     reload and a bounds check before each write-back), and nothing on macOS or x86_64. With forward regions it
-     is what a region's exits cost: in a hot Lua region ~45% of the samples sit on the size reloads of its five
-     write-backs (`perf annotate`, Node). On this host it is now the largest single cost in hot code; measure on
-     the Mac host's Chromium (guard pages) before ranking anything else by this VM's numbers.
+  5. Done: **the fixed-size memory** ([abi.md](abi.md) "A fixed-size memory"): JIT modules import exact
+     limits, so V8 loads the memory's size once per function, where it reloaded it before each write-back
+     after a call (24 of a typical block's ~85 host instructions on this host; in a hot Lua region ~45% of
+     the samples). The userspace benchmark 6.9% faster in this VM, the boots 5.6 to 7.2%; nothing on macOS
+     or x86_64 (guard pages). Left: **the core's own code** still imports a growable memory (the dispatcher,
+     the helpers, page walks: ~1% of the userspace benchmark's steps are interpreted, but every exit runs
+     core code). Exact limits there need the memory at its final size before the core is instantiated, so
+     an allocator of our own over a region the host gives the core (std's dlmalloc only grows the memory).
+     Measure what the core's share of a profile is first.
   - Small: `UQSUB`/`UQADD` (2.0M helper calls in the compression phase, ~7% of it with the interpreter's share)
     are wasm's `sub_sat`/`add_sat`.
   - Not levers there: TLB misses (about 1% of a phase at most), the remaining helpers, the core's own compiler (under
@@ -142,10 +146,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   wasn't measured: it needs the headscale test tailnet.
 - **Compiling off the vCPU thread:** measured and not built ([jit.md](jit.md) "Tried and not
   kept"); revisit with a GUI guest in M8 (latency).
-- **A fixed-size memory** so V8 loads the bounds once per function ([v8.md](v8.md)): needs the
-  memory sized at creation, our own allocator over a reserved heap, a host ABI to place RAM, and
-  JIT modules importing exact limits. Worth a placement-averaged Chromium measurement if the
-  bounds-check tax (up to 27% on Linux arm64, none on macOS/x86_64) becomes the lever left.
 - Tier-up regions get a module each (~561 in Alpine); batching them is untried.
 - kvm-unit-tests `timer` runs slower under the JIT than interpreted (short blocks around timer
   polls).

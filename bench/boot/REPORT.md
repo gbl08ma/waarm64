@@ -859,3 +859,40 @@ measurement-only builds; none of these are in the tree):
 What's left: boot pays about 1% (VM and Mac alike) for the misses through the shared function (141
 of boot's 29,500 samples at 4 kHz) and the scans on TLBI by VA (53); the userspace phases'
 transfers missed 0.3 to 2% already at 4096 entries. The table costs 256 KiB per vCPU.
+
+## M8: a fixed-size memory (JIT modules import exact limits)
+
+2026-10-03. On Linux arm64 V8 bounds-checks every wasm store explicitly, and with a growable shared
+memory it reloads the memory's size after any call before the next check (docs/v8.md "Bounds
+checks"). `bootVm` now makes the memory its final size (RAM, the scratch page, fw_cfg's files and
+a 1 GiB heap reserve), and JIT modules import it with `initial = maximum`; V8 then loads the size
+once per function. Verified first on a micro-module (`--print-wasm-code`): on a memory created
+growable to N pages and grown to N, a module declaring (N, N) loads the size once at entry, one
+declaring (0, 65536) after each of its calls. Same steps, same JIT code otherwise. A/B is the same
+core with `bootVm`'s `fixedMemory` default flipped, alternated in one session; JSON in
+`results/m8-fixedmem/` (the Mac's as `mac-*`). Medians of the pooled runs, [quartiles].
+
+| | growable | fixed | |
+|---|---|---|---|
+| **dev VM, Chromium 153.0.8010.52**, `alpine_user_jit` total (n9 each) | 20,027 [19,897–20,188] | 18,638 [18,523–18,789] | −6.9% |
+| compress, Lua | 2334, 3368 | 2217, 3222 | −5.0%, −4.3% |
+| churn, SQLite | 1927, 2800 | 1785, 2596 | −7.3%, −7.3% |
+| `boot_alpine_jit` total (n15, n25) | 9952 [9932–10071] | 9234 [9191–9416] | −7.2% |
+| the same, cold (n9, n15) | 9959 | 9363 | −6.0% |
+| Buildroot `boot_jit` total (n30 each) | 768 [764–772] | 725 [719–733] | −5.6% |
+| **Mac host, Chromium 153.0.8010.12** (guard pages), `alpine_user_jit` total (n6 each) | 14,168 [14,091–14,259] | 14,265 [14,249–14,321] | +0.7% (noise) |
+
+- The first three fixed `boot_alpine_jit` runs had no growable partner (those runs hit a 90 s
+  bound); three more pairs were run alternated, and all five fixed runs are below all three
+  growable ones.
+- **The profile overstated it:** `perf annotate` put ~45% of a hot Lua region's samples on its
+  size reloads, and Lua gained 4.3%. Samples skid onto the load after a store's check; rank by an
+  A/B, not by where a profile's samples sit.
+- **The reserve costs no memory:** the Node process's RSS after the userspace benchmark is 608 MiB
+  fixed and 620–627 MiB growable (the memory is 2048 MiB against 1051). The core's heap grew to
+  ~27 MiB in that run.
+- **One trap on the way:** the reserve is one `alloc` and `dealloc` of a large block; LLVM deleted
+  the unused pair, the memory never grew, and the host then grew it to its maximum, so the first
+  allocation in `vm_new` failed. The pointer goes through `black_box`.
+- The core module still imports a growable memory (its code still reloads); docs/backlog.md
+  "JIT" has what that would take.

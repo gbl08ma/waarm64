@@ -6,6 +6,7 @@
 //! unallocated one, at the end of the 4 KiB page, or at [`CAP`] instructions.
 //! Its words are read at compile time, so the block executes the words it saw.
 
+use super::Config;
 use super::emit;
 use super::wasm::{I32, I64, Module};
 use crate::decode::{Op, decode};
@@ -493,13 +494,14 @@ impl Env<'_> {
 /// page is chained behind an instruction-TLB check (keys are PAs: another
 /// page may map elsewhere). A block that ends on BR, BLR or RET looks its
 /// target up in the jump cache at `jc` (0: never) and tail-calls it through
-/// the table on a hit (`emit::indirect`). With `check`, each chained entry
-/// calls `jit_check` first (the stale-code checker, as the dispatcher runs it).
+/// the table on a hit (`emit::indirect`). With `cfg.check`, each chained entry
+/// calls `jit_check` first (the stale-code checker, as the dispatcher runs it);
+/// the memory is imported as `cfg.pages` says.
 pub fn module(
     regions: &[Region],
     mem: &Mem,
     compiled: impl Fn(u64) -> Option<(u32, u32)>,
-    check: bool,
+    cfg: &Config,
     jc: u32,
     features: u64,
     xmiss: Option<u32>,
@@ -511,7 +513,7 @@ pub fn module(
     let ht = m.ty(&[I32, I32, I64], &[I32]);
     let flat = m.import_func("env", "jit_exec_flat", ht);
     let mmu = m.import_func("env", "jit_exec_mmu", ht);
-    let checker = check.then(|| {
+    let checker = cfg.check.then(|| {
         let ct = m.ty(&[I32, I64], &[]);
         m.import_func("env", "jit_check", ct)
     });
@@ -546,7 +548,7 @@ pub fn module(
             *x = Some(m.import_func("t", &(idx + el as u32).to_string(), bt));
         }
     }
-    m.import_memory("env", "memory", 0, 65536);
+    m.import_core_memory(cfg.pages);
     if parallel {
         let z = m.zero_global();
         debug_assert_eq!(z, emit::ZERO_GLOBAL);
@@ -681,14 +683,14 @@ pub fn module(
 /// module, `f0` for EL0 and `f1` for EL1 (MMU on), with the jump cache at
 /// `jc` and the stale-code checker with `check`. A cache installs it once,
 /// so it gets hot and optimized (a copy in each module stayed in Liftoff).
-pub fn miss_module(mem: &Mem, check: bool, jc: u32) -> Vec<u8> {
+pub fn miss_module(mem: &Mem, check: bool, jc: u32, pages: u32) -> Vec<u8> {
     let mut m = Module::default();
     let bt = m.ty(&[I32, I32, I32], &[I32]);
     let checker = check.then(|| {
         let ct = m.ty(&[I32, I64], &[]);
         m.import_func("env", "jit_check", ct)
     });
-    m.import_memory("env", "memory", 0, 65536);
+    m.import_core_memory(pages);
     m.import_table("env", "table", 0);
     let (base, phys) = mem.base();
     for el in 0..2 {
@@ -1059,7 +1061,7 @@ mod tests {
             &[b.into()],
             &test_mem(),
             |_| None,
-            false,
+            &Config::DEFAULT,
             0,
             crate::cpu::FEATURES,
             None,
@@ -1331,7 +1333,7 @@ mod tests {
             &[b.into()],
             &test_mem(),
             |k| (k == 0x4000_020c).then_some((77, 3)),
-            false,
+            &Config::DEFAULT,
             0,
             crate::cpu::FEATURES,
             None,
@@ -1378,7 +1380,7 @@ mod tests {
             &[b.into()],
             &test_mem(),
             |k| (k == 0x4000_1204 | KEY_MMU).then_some((9, 1)),
-            false,
+            &Config::DEFAULT,
             0,
             crate::cpu::FEATURES,
             None,
@@ -1431,7 +1433,7 @@ mod tests {
             &[block().into()],
             &test_mem(),
             |_| None,
-            false,
+            &Config::DEFAULT,
             JC,
             crate::cpu::FEATURES,
             Some(XMISS),
@@ -1450,7 +1452,7 @@ mod tests {
             &[near.into()],
             &test_mem(),
             |_| None,
-            false,
+            &Config::DEFAULT,
             JC,
             crate::cpu::FEATURES,
             Some(XMISS),
@@ -1462,7 +1464,7 @@ mod tests {
             &[block().into()],
             &test_mem(),
             |k| (k == 0x4000_1204 | KEY_MMU).then_some((9, 1)),
-            false,
+            &Config::DEFAULT,
             JC,
             crate::cpu::FEATURES,
             Some(XMISS),
@@ -1474,11 +1476,50 @@ mod tests {
         assert!(by_va(&e.bytes));
     }
 
+    /// A fixed-size memory (`Config::pages`) is imported with exact limits,
+    /// by region modules and the miss functions alike; else as growable.
+    #[test]
+    fn a_fixed_memory_is_imported_with_exact_limits() {
+        // `memory` (import kind 2), shared with a maximum (3), then the limits.
+        let import = |min: u32, max: u32| {
+            let mut l = b"\x06memory\x02\x03".to_vec();
+            crate::jit::wasm::uleb(&mut l, min as u64);
+            crate::jit::wasm::uleb(&mut l, max as u64);
+            l
+        };
+        let b = || Block {
+            key: 0x4000_0100 | KEY_EL1 | KEY_MMU,
+            va: 0xffff_0100,
+            words: vec![MOVZ, MSR],
+        };
+        for pages in [0, 32_769] {
+            let want = match pages {
+                0 => import(0, 65536),
+                n => import(n, n),
+            };
+            let region = module(
+                &[b().into()],
+                &test_mem(),
+                |_| None,
+                &Config {
+                    pages,
+                    ..Config::DEFAULT
+                },
+                0,
+                crate::cpu::FEATURES,
+                None,
+            );
+            assert!(has(&region.bytes, &want), "region module, {pages} pages");
+            let miss = miss_module(&test_mem(), false, 0x10_0000, pages);
+            assert!(has(&miss, &want), "miss module, {pages} pages");
+        }
+    }
+
     /// The miss functions read the instruction TLB of their EL and fill the
     /// transfer cache.
     #[test]
     fn the_miss_functions_read_the_instruction_tlb_and_fill_the_transfer_cache() {
-        let bytes = miss_module(&test_mem(), false, 0x10_0000);
+        let bytes = miss_module(&test_mem(), false, 0x10_0000, 0);
         let at = |op: u8, o: u64| {
             let mut l = vec![op, 3];
             crate::jit::wasm::uleb(&mut l, o);
@@ -1516,7 +1557,7 @@ mod tests {
             &[r],
             &test_mem(),
             |_| None,
-            false,
+            &Config::DEFAULT,
             0,
             crate::cpu::FEATURES,
             None,
@@ -1608,7 +1649,7 @@ mod tests {
             &[r],
             &test_mem(),
             |_| None,
-            false,
+            &Config::DEFAULT,
             0x10_0000,
             crate::cpu::FEATURES,
             None,
@@ -1631,10 +1672,10 @@ mod tests {
                 &[r5],
                 &test_mem(),
                 |_| None,
-                false,
+                &Config::DEFAULT,
                 0,
                 crate::cpu::FEATURES,
-                None
+                None,
             )
             .inl,
             [9]
@@ -1691,7 +1732,7 @@ mod tests {
             &[r],
             &test_mem(),
             |_| None,
-            false,
+            &Config::DEFAULT,
             0,
             crate::cpu::FEATURES,
             None,
@@ -1749,7 +1790,7 @@ mod tests {
             &[r],
             &test_mem(),
             |_| None,
-            false,
+            &Config::DEFAULT,
             0,
             crate::cpu::FEATURES,
             None,
@@ -1793,7 +1834,7 @@ mod tests {
             &[b.into()],
             &test_mem(),
             |_| None,
-            false,
+            &Config::DEFAULT,
             0x1000,
             crate::cpu::FEATURES,
             Some(40),
@@ -1814,7 +1855,7 @@ mod tests {
             &[b.into()],
             &test_mem(),
             |_| None,
-            false,
+            &Config::DEFAULT,
             0x1000,
             crate::cpu::FEATURES,
             None,
