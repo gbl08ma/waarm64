@@ -174,7 +174,9 @@ test('a hot loop head compiled alone tiers up to its loop region', () => {
 // would be if it followed the first, is a decoy that counts in x2 instead of x1 (run once
 // through its own mapping at 0x403000 first, so it's compiled when the loop's blocks link). Then
 // the second page is remapped to the decoy (now the loop's pages are contiguous, and the direct
-// link is the right one) and back, with a `tlbi vmalle1` in between.
+// link is the right one) and back, with a `tlbi vmalle1` in between. Last, the second page is
+// rewritten to add 2 to x1, with an `ic ivau` on it: the blocks found by their VA (the transfer
+// cache) go with it.
 const PTE = 0xf03n; // a page: valid, AF, nG, inner shareable, EL1 read/write/execute
 const BODY = (reg: number) => [0x91000400 | reg << 5 | reg, 0xf10004a5, 0x54ffff81, 0xd4200000]; // add reg; subs x5; b.ne .-16; brk
 /** The two-page guest above on a JIT vCPU (`jit_new`'s arguments); each `run` is `turns` turns of the loop. */
@@ -212,7 +214,12 @@ function twoPages(jit: [number, number, number, number, number], turns: bigint) 
     return { done, x1: x[1], x2: x[2], x3: x[3], x4: x[4], dispatches: stats()[5] - before };
   };
   return {
-    code, stats,
+    code, stats, x,
+    /** Runs up to `n` steps from `pc`, or from where the vCPU stopped; returns how many retired. */
+    go: (n: bigint, pc?: bigint) => {
+      if (pc !== undefined) x[32] = pc;
+      return e.jit_run_exit(v, mem, n, exit) as bigint;
+    },
     /** The decoy once, through its own mapping. */
     decoy: () => at(0x403000n, 1n),
     run: () => at(0x400ff8n, turns),
@@ -236,6 +243,9 @@ function crossPage(threshold: number, check: number) {
   out.push(g.run());
   g.remap(0x5000n);
   out.push(g.run());
+  g.code(0x5000, [0x91000821]); // add x1, x1, #2
+  g.ic();
+  out.push(g.run());
   return out;
 }
 
@@ -245,6 +255,7 @@ test('with the MMU on, a direct branch to another page goes where its VA maps an
     { done: 5000n, x1: 1000n, x2: 1n, x3: 1000n, x4: 1000n }, // the second page isn't the decoy
     { done: 5000n, x1: 1000n, x2: 1001n, x3: 2000n, x4: 2000n }, // remapped: it is
     { done: 5000n, x1: 2000n, x2: 1001n, x3: 3000n, x4: 3000n }, // and back
+    { done: 5000n, x1: 4000n, x2: 1001n, x3: 4000n, x4: 4000n }, // the second page rewritten, with an `ic ivau`
   ];
   const strip = (r: ReturnType<typeof crossPage>) => r.map(({ dispatches: _, ...rest }) => rest);
   assert.deepEqual(strip(crossPage(0xffff_ffff, 0)), want, 'interpreted (nothing reaches the threshold)');
@@ -253,6 +264,31 @@ test('with the MMU on, a direct branch to another page goes where its VA maps an
     assert.deepEqual(strip(r), want, `JIT${check ? ', with the stale-code checker' : ''}`);
     for (const [i, p] of r.slice(1).entries()) assert.ok(p.dispatches < 20n, `run ${i + 1}: ${p.dispatches} dispatches for ${p.done} steps`);
   }
+});
+
+// The transfer cache (M8, docs/jit.md "Linking"): `blr x7` to f in the next page and f's `ret`
+// find their targets by VA. After a `tlbi vmalle1` its entries are gone and the jump cache still
+// has the blocks, so the miss function refills them; each run of 2 steps must then retire exactly
+// 2 (`blr` and then f's 2 don't fit: the entry's length must say so), and end where the
+// interpreter does.
+//   0x400000: blr x7; subs x5, x5, #1; b.ne 0x400000; brk     0x401000 (f): add x1, x1, #1; ret
+function shortRuns(threshold: number) {
+  const g = twoPages([threshold, 1, 64, 0, 0], 0n);
+  g.code(0x1000, [0xd63f00e0, 0xf10004a5, 0x54ffffc1, 0xd4200000]);
+  g.code(0x5000, [0x91000421, 0xd65f03c0]);
+  [g.x[5], g.x[7]] = [1000n, 0x401000n];
+  const runs = [g.go(50n, 0x400000n)];
+  const pc = g.x[32];
+  runs.push(g.go(100n, 0x402000n)); // tlbi vmalle1; isb; brk
+  runs.push(g.go(10n, pc));
+  for (let i = 0; i < 20; i++) runs.push(g.go(2n));
+  return { runs, x1: g.x[1], x5: g.x[5], pc: g.x[32] };
+}
+
+test('a transfer cache hit runs its target only if the steps left cover it', () => {
+  const want = shortRuns(0xffff_ffff);
+  assert.deepEqual(want.runs, [50n, 2n, 10n, ...Array(20).fill(2n)], 'interpreted');
+  assert.deepEqual(shortRuns(0), want);
 });
 
 // A forward region across pages (M8): with a threshold of 2 and a batch of 16, the loop's two

@@ -33,7 +33,7 @@ use crate::cpu::Cpu;
 use crate::decode::Op;
 use crate::interp::sys::DCZID_BS;
 use crate::interp::{adr_imm, bit, bit_masks, bits, sext, trunc};
-use crate::mmu::{TLB_ENTRIES, Vcpu};
+use crate::mmu::{TLB_ENTRIES, Tlb, Vcpu, XC_ENTRIES};
 
 /// A block function's locals after its parameter (local 0, the vCPU), as
 /// emitted: the entry PC (local 1), scratch (i64 in 2..=5, i32 in 6..=9), the
@@ -940,17 +940,20 @@ pub enum Bus {
     Tlb { read: u32 },
 }
 
-/// The end of a block that branched to a register (BR, BLR, RET; step 7):
-/// its target's block key, from the PC through the instruction TLB of the
-/// block's EL (`tlb`: its array, and RAM's host base and guest PA) or with
-/// the MMU off (`regime`: the key's low bits), looked up in the jump cache at
-/// `jc`. If it's there and `left` covers this block's `len` and its length,
-/// tail-calls it through the table (type `ty`), after `check` (the stale-code
-/// checker) if given. Otherwise falls through (to the block's return).
+/// The end of a block that branched to a register (BR, BLR, RET; step 7), or
+/// a by-VA link: the compiled block for the PC. With the MMU on it's in the
+/// vCPU's transfer cache (`mmu::Tlb::xc`), keyed by the VA and `regime` (the
+/// key's low bits); on a miss, the block tail-calls `miss` (the cache's
+/// [`xmiss`] for the regime, imported) with this block retired. With the MMU off
+/// (`miss` is `None`) it's in the jump cache at `jc`, by its key (the PC and
+/// `regime`). If it's there and `left` covers this block's `len` and its
+/// length, tail-calls it through the table (type `ty`), after `check` (the
+/// stale-code checker) if given. Otherwise falls through (to the block's
+/// return).
 pub fn indirect(
     c: &mut Func,
     regime: u64,
-    tlb: Option<(u32, u64, u64)>,
+    miss: Option<u32>,
     jc: u32,
     len: u32,
     ty: u32,
@@ -959,30 +962,131 @@ pub fn indirect(
     const KEY: u32 = BASE; // i64 scratch
     c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
-    match tlb {
-        Some((arr, base, phys)) => {
-            c.local_get(ADDR).i64_const(8).op(SHR_U + W).i32_wrap_i64();
-            c.i32_const((TLB_ENTRIES as i32 - 1) << 4).op(AND);
-            c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
-            c.local_get(ADDR)
-                .i64_const(0xfff)
-                .op(OR + W)
-                .op(EQ + WC)
-                .op(AND);
-            // PA = host - base + phys, host = addend + VA
-            c.local_get(TLBE)
-                .i64_load(arr + 8)
-                .local_get(ADDR)
-                .i64_add();
-            c.i64_const(phys.wrapping_sub(base) as i64).i64_add();
-        }
-        None => drop(c.local_get(ADDR)),
+    if let Some(miss) = miss {
+        via_xc(c, regime, len, ty, check);
+        c.local_get(VCPU);
+        c.local_get(ACC).i32_const(len as i32).op(ADD);
+        c.local_get(LEFT).i32_const(len as i32).op(SUB);
+        c.return_call(miss);
+        return;
     }
+    c.local_get(ADDR);
     if regime != 0 {
         c.i64_const(regime as i64).op(OR + W);
     }
     c.local_set(KEY);
     via_jc(c, None, jc, len, ty, check);
+}
+
+/// The transfer cache probe of [`indirect`], for the VA in `ADDR` and an i32
+/// condition on the stack: the entry's tag, its generation and its length.
+fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>) {
+    const TO: u32 = BASE; // i64 scratch
+    // The entry, `vcpu + ((va >> 2) & (XC - 1)) * 16`, in one shift and mask.
+    xc_entry(c);
+    c.i64_load(XC);
+    c.local_get(ADDR);
+    if regime != 0 {
+        c.i64_const(regime as i64).op(OR + W);
+    }
+    c.op(EQ + WC).op(AND);
+    c.local_get(TLBE).i64_load(XC + 8).local_tee(TO);
+    c.i64_const(48).op(SHR_U + W);
+    c.local_get(VCPU).i64_load(xgen(regime)).op(EQ + WC).op(AND);
+    // left >= len + its length
+    c.local_get(LEFT);
+    c.local_get(TO).i64_const(32).op(SHR_U + W).i32_wrap_i64();
+    c.i32_const(0xffff).op(AND).i32_const(len as i32).op(ADD);
+    c.op(GE_U).op(AND).hint(true).if_();
+    if let Some(chk) = check {
+        c.local_get(VCPU).i64_const(-1).call(chk);
+    }
+    c.local_get(VCPU);
+    c.local_get(ACC).i32_const(len as i32).op(ADD);
+    c.local_get(LEFT).i32_const(len as i32).op(SUB);
+    c.local_get(TO)
+        .i32_wrap_i64()
+        .return_call_indirect(ty)
+        .end();
+}
+
+/// The transfer cache's offset in the `Vcpu`.
+const XC: u32 = (offset_of!(Vcpu, tlb) + offset_of!(Tlb, xc)) as u32;
+
+/// The `Vcpu` offset of the transfer cache generation of `regime`'s EL.
+fn xgen(regime: u64) -> u32 {
+    (offset_of!(Vcpu, tlb) + offset_of!(Tlb, xgen)) as u32 + 8 * (regime as u32 & 1)
+}
+
+/// Pushes the `Vcpu`-relative address of the VA in `ADDR`'s transfer cache
+/// entry (its offset in the `Vcpu` to add), keeping it in `TLBE`.
+fn xc_entry(c: &mut Func) {
+    c.local_get(ADDR).i32_wrap_i64().i32_const(2).op(SHL);
+    c.i32_const((XC_ENTRIES as i32 - 1) << 4).op(AND);
+    c.local_get(VCPU).op(ADD).local_tee(TLBE);
+}
+
+/// A transfer cache miss in `regime` (MMU on), a function of a block's type
+/// that a JIT cache has one of per regime (`block::miss_module`; [`indirect`]
+/// tail-calls it, with the block retired): finds the PC's
+/// block as the dispatcher would, through the instruction TLB of the
+/// regime's EL (`tlb`: its array, and RAM's host base and guest PA) and the
+/// jump cache at `jc`, and if it's there and `left` covers it, fills the
+/// entry and tail-calls the block (after `check`). Otherwise returns `acc`.
+pub fn xmiss(regime: u64, tlb: (u32, u64, u64), jc: u32, ty: u32, check: Option<u32>) -> Func {
+    const KEY: u32 = BASE; // i64 scratch
+    const JCE: u32 = HOST; // i32 scratch
+    let mut c = Func::default();
+    let (arr, base, phys) = tlb;
+    c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
+    c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
+    c.local_get(ADDR).i64_const(8).op(SHR_U + W).i32_wrap_i64();
+    c.i32_const((TLB_ENTRIES as i32 - 1) << 4).op(AND);
+    c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
+    c.local_get(ADDR)
+        .i64_const(0xfff)
+        .op(OR + W)
+        .op(EQ + WC)
+        .op(AND);
+    // key = host - base + phys | regime, host = addend + VA
+    c.local_get(TLBE)
+        .i64_load(arr + 8)
+        .local_get(ADDR)
+        .i64_add();
+    c.i64_const(phys.wrapping_sub(base) as i64).i64_add();
+    c.i64_const(regime as i64).op(OR + W).local_set(KEY);
+    // The jump cache entry, `jc + ((key >> 2) & (JC - 1)) * 16`.
+    c.local_get(KEY).i32_wrap_i64().i32_const(2).op(SHL);
+    c.i32_const((super::JC as i32 - 1) << 4).op(AND);
+    c.i32_const(jc as i32).op(ADD).local_tee(JCE).i64_load(0);
+    c.local_get(KEY).op(EQ + WC).op(AND);
+    c.local_get(LEFT)
+        .local_get(JCE)
+        .i32_load(12)
+        .op(GE_U)
+        .op(AND);
+    c.hint(true).if_();
+    // The entry: tag, then idx | len << 32 | gen << 48.
+    xc_entry(&mut c);
+    c.local_get(ADDR)
+        .i64_const(regime as i64)
+        .op(OR + W)
+        .i64_store(XC);
+    c.local_get(TLBE);
+    c.local_get(JCE).i64_load(8); // idx, len
+    c.local_get(VCPU)
+        .i64_load(xgen(regime))
+        .i64_const(48)
+        .op(SHL + W)
+        .op(OR + W);
+    c.i64_store(XC + 8);
+    if let Some(chk) = check {
+        c.local_get(VCPU).local_get(KEY).call(chk);
+    }
+    c.local_get(VCPU).local_get(ACC).local_get(LEFT);
+    c.local_get(JCE).i32_load(8).return_call_indirect(ty).end();
+    c.local_get(ACC).end();
+    c
 }
 
 /// The jump-cache tail of [`indirect`], also for a static successor that

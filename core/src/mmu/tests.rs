@@ -426,3 +426,52 @@ fn unprivileged_accesses_use_el0_permissions() {
     );
     assert_eq!(p.r.mem.read(0xb008, 8), Ok(0x5678));
 }
+
+/// The transfer cache's entries carry their EL's generation when they were
+/// filled: flushes start new ones, and one that wraps clears the table.
+/// Dropping the nG entries starts an EL's only if its instruction TLB may
+/// hold some.
+#[test]
+fn transfer_cache_entries_die_with_their_generation() {
+    let mut v = Vcpu::new(cpu());
+    let t = &mut v.tlb;
+    let live = |t: &Tlb, va: u64, regime: u64| {
+        let e = t.xc[(va >> 2) as usize & (XC_ENTRIES - 1)];
+        e.tag == va | regime && e.to >> 48 == t.xgen[regime as usize & 1]
+    };
+    // A zeroed entry never matches, even for VA 0 in regime 0.
+    assert!(t.xgen == [1, 1] && t.xc[0].to >> 48 != t.xgen[0]);
+    t.xc_fill(0x1000, 3, 7, 4);
+    assert!(live(t, 0x1000, 3) && t.xc[0x400].to & 0xffff_ffff_ffff == 4 << 32 | 7);
+    t.xc_fill(0x2000, 2, 7, 4);
+    t.flush_all();
+    assert!(!live(t, 0x1000, 3) && !live(t, 0x2000, 2));
+    // A flush by VA drops its page's entries, whatever their top byte (TBI).
+    t.xc_fill(0x1000, 3, 7, 4);
+    t.xc_fill(0x1ffc, 2, 7, 4);
+    t.xc_fill(0x2000, 2, 7, 4);
+    t.xc_fill(0x5004, 3, 7, 4); // among the page's slots, in another page
+    assert!(live(t, 0x1000, 3) && live(t, 0x1ffc, 2));
+    t.flush_va(0xab00_0000_0000_1234);
+    assert!(!live(t, 0x1000, 3) && !live(t, 0x1ffc, 2));
+    assert!(live(t, 0x2000, 2) && live(t, 0x5004, 3));
+    // An EL1 entry outlives an ASID change while EL1's instruction TLB
+    // holds only global entries; EL0's dies once an nG one was filled there.
+    t.xc_fill(0x1000, 3, 7, 4);
+    t.xc_fill(0x2000, 2, 7, 4);
+    t.fill(Use::Exec as usize, 0x2000, 0, true);
+    t.fill(3 + Use::Read as usize, 0x5000, 0, true);
+    t.flush_ng();
+    assert!(live(t, 0x1000, 3) && !live(t, 0x2000, 2));
+    t.fill(3 + Use::Exec as usize, 0x1000, 0, true);
+    t.flush_ng();
+    assert!(!live(t, 0x1000, 3));
+    // Blocks dropped: all of it.
+    t.xc_fill(0x1000, 3, 7, 4);
+    t.bump();
+    assert!(!live(t, 0x1000, 3));
+    t.xgen = [5, 0xffff];
+    t.xc_fill(0x1000, 3, 7, 4);
+    t.bump();
+    assert_eq!((t.xgen, t.xc[0x400].to), ([1, 1], 0));
+}

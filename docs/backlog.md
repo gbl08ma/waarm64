@@ -77,10 +77,11 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
      a second copy (blocks compiled twice are 13% of Alpine's).
   3. **Calls and returns**: done as far as one batch goes (above); copying compiled callees into callers was
      tried and lost ([jit.md](jit.md) "Tried and not kept"). What is left of them is 4's cost per transfer.
-  4. **Indirect transfers** (`BR`, `BLR`, `RET`, and the by-VA links to other pages: 23 to 56 per 1000 instructions, ~50 host
-     instructions each): two table lookups (the instruction TLB, then the 1 MiB jump cache, whose entry load is
-     where such blocks' samples sit) and `return_call_indirect`. One lookup in a small VA-keyed cache that is
-     flushed with the TLB (QEMU's `tb_jmp_cache`) would replace the two.
+  4. Done: **indirect transfers** (`BR`, `BLR`, `RET`, and the by-VA links to other pages: 23 to 56 per 1000
+     instructions) probe one VA-keyed table, the transfer cache, where they probed the instruction TLB and then
+     the jump cache ([jit.md](jit.md) "Linking"; Lua 9% and SQLite 5 to 6% faster, the Alpine boot ~1% slower).
+     Left: a miss in the kernel-heavy phases (boot, churn) costs a call to the shared miss function, and a TLBI
+     by VA a 16 KiB scan.
   5. **The fixed-size memory** (below) is 24 of a typical block's ~85 host instructions on this host (a size
      reload and a bounds check before each write-back), and nothing on macOS or x86_64. With forward regions it
      is what a region's exits cost: in a hot Lua region ~45% of the samples sit on the size reloads of its five

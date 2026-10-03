@@ -21,6 +21,16 @@
 //! (M6 loop 9: Alpine's boot refilled 3.2M of them after 5,700 whole flushes).
 // ponytail: the nG entries of the previous ASID are dropped, not kept for when
 // it's current again (per-ASID stashes; 0.3M nG refills in Alpine's boot).
+//
+// **The transfer cache** (`Tlb::xc`): JIT blocks find the compiled block an
+// indirect branch (or a by-VA link) goes to by its VA in one probe, without
+// the instruction TLB and the jump cache (docs/jit.md "Linking").
+// It holds no translation of its own, only what one implied: the flushes
+// above drop its entries, by bumping a generation that the entries carry
+// (one per EL), or one page's. Dropping the nG entries drops an EL's only if
+// its instruction TLB may hold nG ones, so Linux's kernel entries (global)
+// survive context switches as its TLB entries do (the user's, nG, don't); a
+// flush by VA (most of Linux's: the user pages it unmaps) drops the page's.
 
 use crate::cpu::{Cpu, sctlr};
 use crate::mem::{self, Access, Fault, FaultKind, Mem};
@@ -31,6 +41,8 @@ const NG_SLOTS: usize = 1024;
 /// Physical address size we advertise (`ID_AA64MMFR0_EL1.PARange` = 40 bits).
 pub const PA_BITS: u32 = 40;
 const OA_MASK: u64 = 0x0000_ffff_ffff_f000;
+/// Transfer cache entries (`Tlb::xc`).
+pub const XC_ENTRIES: usize = 16384;
 
 /// What an access does with the page, for permissions and the TLB array.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,10 +59,32 @@ pub struct Entry {
     pub addend: u64,
 }
 
+/// A transfer cache entry: the block for the VA in `tag` (with the block
+/// key's regime bits), in `to` as `idx | len << 32 | gen << 48`: its table
+/// index, its length and its EL's generation when it was filled. JIT code reads it
+/// (`jit::emit::indirect`), so its layout is fixed.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct Xc {
+    pub tag: u64,
+    pub to: u64,
+}
+
 /// Arrays in order: EL0 read, write, exec, then EL1 read, write, exec.
 #[repr(C)]
 pub struct Tlb {
     pub e: [[Entry; TLB_ENTRIES]; 6],
+    /// The transfer cache, direct-mapped by VA bits 15:2.
+    pub xc: [Xc; XC_ENTRIES],
+    /// The current generations of EL0's and EL1's entries, 1 to `0xffff`:
+    /// an entry of another one (0 in a zeroed entry) never matches.
+    pub xgen: [u64; 2],
+    /// The EL's instruction TLB may hold nG entries: some were filled since
+    /// its nG entries were last dropped.
+    xng: [bool; 2],
+    /// The JIT cache's `drops` when the transfer cache last dropped its
+    /// entries for them (`jit::steps`).
+    pub xdrops: u64,
     /// Slots (`array * TLB_ENTRIES + index`) filled with nG entries since the
     /// last flush, `ng_len` of them; `ng_len` past `NG_SLOTS` means the list
     /// overflowed. A slot may since hold another entry: dropping it then is an
@@ -83,12 +117,41 @@ pub struct TlbStats {
 }
 
 impl Tlb {
+    /// Drops every transfer cache entry (TLB flushes, and the JIT cache's
+    /// dropping blocks).
+    pub fn bump(&mut self) {
+        self.bump_el(0);
+        self.bump_el(1);
+    }
+
+    /// Drops EL `el`'s transfer cache entries.
+    fn bump_el(&mut self, el: usize) {
+        self.xgen[el] += 1;
+        if self.xgen[el] > 0xffff {
+            self.xc.fill(Xc::default());
+            self.xgen = [1, 1];
+        }
+    }
+
+    /// Records that the block for `va` in `regime` (a block key's low bits)
+    /// is at table index `idx`, `len` instructions long (at most a page's).
+    #[inline(always)]
+    pub fn xc_fill(&mut self, va: u64, regime: u64, idx: u32, len: u32) {
+        debug_assert!(len <= 1024);
+        self.xc[(va >> 2) as usize & (XC_ENTRIES - 1)] = Xc {
+            tag: va | regime,
+            to: idx as u64 | (len as u64) << 32 | self.xgen[regime as usize & 1] << 48,
+        };
+    }
+
     pub(crate) fn flush_all(&mut self) {
         self.stats.flushes += 1;
+        self.bump();
         for a in &mut self.e {
             a.fill(Entry::default());
         }
         self.ng_len = 0;
+        self.xng = [false; 2];
         self.low_global = false;
     }
 
@@ -99,6 +162,11 @@ impl Tlb {
             return self.flush_all();
         }
         self.stats.flushes += 1;
+        for el in 0..2 {
+            if core::mem::take(&mut self.xng[el]) {
+                self.bump_el(el);
+            }
+        }
         for &s in &self.ng[..n] {
             self.e[s as usize / TLB_ENTRIES][s as usize % TLB_ENTRIES] = Entry::default();
         }
@@ -111,6 +179,9 @@ impl Tlb {
             addend,
         };
         if ng {
+            if array % 3 == Use::Exec as usize {
+                self.xng[array / 3] = true;
+            }
             let n = self.ng_len as usize;
             if n < NG_SLOTS {
                 self.ng[n] = (array * TLB_ENTRIES + index(va)) as u16;
@@ -122,6 +193,13 @@ impl Tlb {
     /// Drops the page holding `va` from every array, whatever its top byte (TBI).
     pub(crate) fn flush_va(&mut self, va: u64) {
         self.stats.flushes += 1;
+        // The page's VAs fill 1024 consecutive transfer cache slots.
+        let first = (va >> 2) as usize & (XC_ENTRIES - 1) & !1023;
+        for x in &mut self.xc[first..first + 1024] {
+            if (x.tag ^ va) & 0x00ff_ffff_ffff_f000 == 0 {
+                *x = Xc::default();
+            }
+        }
         let i = index(va);
         for a in &mut self.e {
             if (a[i].tag ^ va) & 0x00ff_ffff_ffff_f000 == 0 {
@@ -152,14 +230,15 @@ pub struct Vcpu {
 }
 
 impl Vcpu {
-    /// Boxed: the TLB is 384 KiB.
+    /// Boxed: the TLB is 640 KiB.
     pub fn new(cpu: Cpu) -> Box<Vcpu> {
         let mut v = Box::<Vcpu>::new_zeroed();
         let p = v.as_mut_ptr();
         // SAFETY: `cpu`, `consts` and `jit` are written here; the TLB is plain integers,
-        // valid zeroed (and empty).
+        // valid zeroed (and empty), but for the transfer cache's generation.
         unsafe {
             (&raw mut (*p).cpu).write(cpu);
+            (&raw mut (*p).tlb.xgen).write([1, 1]);
             (&raw mut (*p).consts).write(crate::jit::emit::CONSTS);
             (&raw mut (*p).jit).write(Default::default());
             v.assume_init()

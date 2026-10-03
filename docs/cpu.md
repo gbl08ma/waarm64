@@ -105,6 +105,8 @@ The table is `core/src/interp/sys.rs`.
   (nG) entries, tracked in `Tlb::ng` (up to 1024 slots, else a full flush); a change of
   `SCTLR_EL1.M` flushes everything. (Keeping global entries cut Alpine's boot misses 3.61M →
   1.07M.) Per-ASID stashes of nG entries are a backlog item.
+- The TLB also holds the JIT's **transfer cache** (`Tlb::xc`, VA to compiled block), which every
+  flush above drops its share of ([jit.md](jit.md) "Linking").
 - The interpreter has three copies of `exec` over a `Bus`: flat (MMU off), MMU, and `vm::Io`
   for device MMIO ([platform.md](platform.md)); the choice is made outside the instruction loop.
 - Loose ends (backlog): no Device-memory alignment faults, no address-size fault for VAs past 40

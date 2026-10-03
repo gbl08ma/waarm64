@@ -809,3 +809,53 @@ copies the pages, the core and the images there). Medians (IQR) of 3 boots, the 
 - So the VM's profiles overstate what a region's write-backs cost a macOS or x86_64 user (they are
   what the checks guard), and the fixed-size memory (docs/backlog.md) is a matter for Linux arm64
   and Android hosts only.
+
+## M8: a VA-keyed cache for indirect transfers (the transfer cache)
+
+2026-10-03. `BR`, `BLR`, `RET` and the by-VA links to other pages (25 to 55 per 1000 instructions
+in the userspace benchmark) found their target through two tables: the instruction TLB of the
+block's EL (VA to PA, the key) and then the 1 MiB jump cache (key to function). They now probe one,
+`Tlb::xc`: 16,384 entries of {VA and regime bits, table index | length << 32 | generation << 48},
+per vCPU (docs/jit.md "Indirect transfers"). The A/B is `44dcda9` against the change, alternated in
+one session; JSON in `results/m8-xc/`.
+
+| | base | transfer cache | |
+|---|---|---|---|
+| **dev VM, Chromium 153.0.8010.52**, `alpine_user_jit` total (n9, n6) | 20,088 [20,006–20,161] | 19,810 [19,740–19,895] | −1.4% |
+| Lua | 3721 | 3373 | −9.4% |
+| SQLite | 2927 | 2788 | −4.7% |
+| compress, churn | 2367, 1895 | 2368, 1907 | 0, +0.6% |
+| `boot_alpine_jit` total (n10 each) | 9834 [9645–9863] | 9935 [9891–9964] | +1.0% |
+| the same, cold (n6) | 9828 | 9903 | +0.8% |
+| **Mac host, Chromium 153.0.8010.12** (no bounds checks), `alpine_user_jit` total (n6) | 14,743 [14,702–14,808] | 14,329 [14,265–14,363] | −2.8% |
+| Lua, SQLite | 3219, 2358 | 2916, 2214 | −9.4%, −6.1% |
+| compress, churn | 1886, 1101 | 1831, 1114 | −2.9%, +1.2% |
+| `boot_alpine_jit` total (n10) | 6504 | 6548 | +0.7% |
+| **dev VM**: Buildroot `boot_jit` total (n40) | 756 | 768 | +1.5% |
+| CoreMark, `jit_mips`, `vm_jit_mmu_mips` (MIPS, 8 placements) | 2463, 5128, 3937 | 2456, 5122, 3906 | −0.3%, −0.1%, −0.8% |
+
+What it took to get there (`bench/boot/userprof.ts` in Node, the misses and hits counted by
+measurement-only builds; none of these are in the tree):
+
+- **Filled only by the dispatcher, with one generation that every TLB flush bumped** (the
+  handover's first design), a miss returned to the dispatcher: Lua −9%, but dispatches went from
+  0.71M to 4.67M in the churn phase and from 0.42M to 2.45M at shutdown (+9%, +7% slower). After
+  each of a phase's flushes every hot target is refilled through the dispatcher.
+- **A miss falls back in wasm** to the old lookup (instruction TLB, then jump cache) and fills the
+  entry there: dispatches back to the base's, but boot +6%, churn +7%: 23% of boot's and 30% of
+  churn's transfers missed. Of the flushes, 85 to 99% are by VA (TLBI VAE1 on user pages, which
+  are mostly data), the rest drop the nG entries (ASID changes). So a flush by VA now drops the
+  page's entries (its VAs fill 1024 consecutive slots: a 16 KiB scan), and the generation is per
+  EL, an EL's bumped by dropping the nG entries only if its instruction TLB may hold nG ones: the
+  kernel's (global) entries survive context switches. Boot's misses: 10.6M → 3.55M.
+- **The fallback was a function in every module**, and in each of boot's 1700 modules it stayed in
+  Liftoff (123 of boot's 14,800 samples). It is now one pair per cache in table slots 0 and 1,
+  which every module imports: it gets hot and optimized, and the modules shrink (26.7 → 26.5 MB
+  for Alpine's boot).
+- **4096 entries were too few:** 77% of the remaining misses then found the target in the jump
+  cache (conflicts). 16,384 entries halve boot's misses (3.55M → 1.7M); 65,536 measured the same
+  as 16,384 in Node.
+
+What's left: boot pays about 1% (VM and Mac alike) for the misses through the shared function (141
+of boot's 29,500 samples at 4 kHz) and the scans on TLBI by VA (53); the userspace phases'
+transfers missed 0.3 to 2% already at 4096 entries. The table costs 256 KiB per vCPU.

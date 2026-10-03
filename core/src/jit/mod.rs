@@ -78,11 +78,12 @@ impl Config {
         check: false,
         region_after: REGION_AFTER,
     };
-    /// Compile everything on first sight, one block per module, and flush constantly.
+    /// Compile everything on first sight, one block per module, and flush
+    /// constantly: room for 4 regions besides the miss functions.
     pub const STRESS: Config = Config {
         threshold: 0,
         batch: 1,
-        capacity: 4,
+        capacity: 4 + MISS_SLOTS,
         max_bytes: u64::MAX,
         check: true,
         region_after: 1,
@@ -208,6 +209,9 @@ fn jc_index(key: u64) -> usize {
     (key >> 2) as usize & (JC - 1)
 }
 
+/// The slots of the transfer cache's miss functions.
+const MISS_SLOTS: u32 = 2;
+
 /// Steps after the first block joins a pending batch before it's emitted
 /// anyway, so a lone hot block doesn't wait for a full batch.
 pub const BATCH_TIMEOUT: u64 = 1_000_000;
@@ -255,12 +259,21 @@ pub struct Cache {
     pub tolerant: bool,
     /// The RAM the blocks were compiled for (flat blocks embed its layout).
     ram: Option<(usize, u64, u64)>,
+    /// How many times blocks were dropped. A vCPU's transfer cache
+    /// (`mmu::Tlb::xc`) whose count (`Tlb::xdrops`) differs drops its
+    /// entries ([`steps`], before a block runs): in round-robin SMP one cache
+    /// serves every vCPU, each with its own transfer cache.
+    pub drops: u64,
+    /// The table index of the transfer cache's miss function for EL0 (EL1's
+    /// follows), once installed ([`block::miss_module`]): in slots 0 and 1,
+    /// which flushes keep.
+    xmiss: Option<u32>,
     pub stats: Stats,
 }
 
 impl Cache {
     pub fn new(cfg: Config) -> Cache {
-        assert!(cfg.batch >= 1 && cfg.capacity >= cfg.batch);
+        assert!(cfg.batch >= 1 && cfg.capacity >= cfg.batch + MISS_SLOTS);
         Cache {
             cfg,
             map: HashMap::default(),
@@ -284,6 +297,8 @@ impl Cache {
             off: false,
             tolerant: false,
             ram: None,
+            drops: 1,
+            xmiss: None,
             stats: Stats::default(),
             features: crate::cpu::FEATURES,
         }
@@ -306,6 +321,7 @@ impl Cache {
     }
 
     fn drop_all(&mut self) {
+        self.drops += 1;
         self.map.clear();
         self.pages.clear();
         self.linkers.clear();
@@ -319,7 +335,7 @@ impl Cache {
         }
         self.jc_used.clear();
         self.pending.clear();
-        self.next = 0;
+        self.next = if self.xmiss.is_some() { MISS_SLOTS } else { 0 };
         self.live_bytes = 0;
     }
 
@@ -342,6 +358,7 @@ impl Cache {
         } else {
             return;
         }
+        self.drops += 1;
         self.stats.invalidations += 1;
     }
 
@@ -582,6 +599,17 @@ impl Cache {
         if regions.is_empty() {
             return None;
         }
+        if self.xmiss.is_none() {
+            // The first install: the cache's slots start here.
+            let slot = self.alloc(MISS_SLOTS);
+            assert_eq!(slot, 0, "the miss functions come first");
+            let jc = self.jc.as_ptr() as usize as u32;
+            let Some(idx) = install(&block::miss_module(mem, self.cfg.check, jc), slot) else {
+                self.off = true;
+                return None;
+            };
+            self.xmiss = Some(idx);
+        }
         let n = regions.len() as u32;
         let slot = self.alloc(n);
         for (k, r) in regions.iter_mut().enumerate() {
@@ -605,6 +633,7 @@ impl Cache {
             self.cfg.check,
             self.jc.as_ptr() as usize as u32,
             self.features,
+            self.xmiss,
         );
         let t = now_ns();
         let Some(idx) = install(&bytes, slot) else {
@@ -737,13 +766,21 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
         let (pc, key) = (vr.cpu.pc, key(vr, mem));
         let cache = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
         let r = key.map_or(Err(1), |k| cache.enter(k, pc, mem));
+        if vr.tlb.xdrops != cache.drops {
+            vr.tlb.xdrops = cache.drops;
+            vr.tlb.bump();
+        }
         if let Ok((idx, len)) = r
             && len as u64 <= left
         {
-            if cache.cfg.check && !cache.check(key.expect("compiled"), mem) {
+            let key = key.expect("compiled");
+            if cache.cfg.check && !cache.check(key, mem) {
                 // Tolerated (parallel SMP): drop it and compile the code as it is now.
-                cache.invalidate(key.expect("compiled") & !0xfff);
+                cache.invalidate(key & !0xfff);
                 continue;
+            }
+            if key & block::KEY_MMU != 0 {
+                vr.tlb.xc_fill(pc, key & 3, idx, len);
             }
             let helped = vr.jit.helper_steps;
             // SAFETY: `idx` is a compiled block (the cache drops blocks, and
@@ -866,7 +903,8 @@ fn status(j: &mut State, r: Result<(), Exit>) -> u32 {
 }
 
 /// The stale-code checker at a chained entry into the block at `key` (blocks
-/// compiled with `jit::Config::check` call it before they chain).
+/// compiled with `jit::Config::check` call it before they chain); `u64::MAX`:
+/// the block at the PC (a transfer cache hit, which knows no key).
 ///
 /// # Safety
 /// As for [`jit_exec_flat`].
@@ -874,6 +912,10 @@ fn status(j: &mut State, r: Result<(), Exit>) -> u32 {
 pub unsafe extern "C" fn jit_check(v: *mut Vcpu, key: u64) {
     // SAFETY: guaranteed by the caller.
     let (mem, v) = unsafe { (&*(*v).jit.mem, &mut *v) };
+    let key = match key {
+        u64::MAX => self::key(v, mem).expect("a block's PC"),
+        k => k,
+    };
     // A tolerant cache only counts a stale block here, mid-chain: it's
     // dropped when the run loop next enters it.
     v.jit

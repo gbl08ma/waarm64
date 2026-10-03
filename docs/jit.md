@@ -135,16 +135,38 @@ the interpreter's own code.
   process's file pages aren't. So a block compiled at that key is tail-called directly behind a
   check that the successor's VA hits the instruction TLB of the block's EL and maps to that
   block's host address, and otherwise (nothing compiled there, or the check fails) the successor
-  is found as an indirect branch's target is, by its VA: the instruction TLB gives its key, the
-  jump cache its function (`block::chain`). Before M8 only the first half existed, and every
+  is found as an indirect branch's target is, by its VA in the transfer cache (below;
+  `block::chain`). Before M8 only the first half existed, and every
   call, branch and fall-through to another page of a process returned to the dispatcher: 97% of
   the userspace benchmark's dispatches, 10 to 18% of its compute phases' time
   (`bench/boot/REPORT.md` "M8: where the userspace benchmark's time goes").
 - **Through the jump cache:** a successor not compiled yet when its predecessor is (the common
-  case: blocks compile in hotness order), and every BR/BLR/RET target (translated through the
-  instruction TLB into a key), is probed in the jump cache from wasm and tail-called with
-  `return_call_indirect` on a hit that fits `left`. The jump cache only holds compiled blocks and
-  is cleared by invalidation and flushes, so these links need no bookkeeping.
+  case: blocks compile in hotness order), and with the MMU off every BR/BLR/RET target (its PC is
+  its key), is probed in the jump cache from wasm and tail-called with `return_call_indirect` on a
+  hit that fits `left`. The jump cache only holds compiled blocks and is cleared by invalidation
+  and flushes, so these links need no bookkeeping.
+- **Indirect transfers** (MMU on: BR, BLR, RET and the by-VA links, 25 to 55 per 1000
+  instructions in user space) probe the vCPU's **transfer cache** (`mmu::Tlb::xc`, QEMU's
+  `tb_jmp_cache`): 16,384 direct-mapped entries by VA bits 15:2 of {VA | regime bits, table index
+  | length << 32 | generation << 48}, one probe where the instruction TLB and then the jump cache
+  were two (`emit::indirect`). The dispatcher fills an entry when it enters a block. A miss
+  tail-calls the cache's **miss function** for the EL (`emit::xmiss`, with the block retired),
+  which does the old lookup (instruction TLB, jump cache), fills the entry and tail-calls the
+  target, or returns to the dispatcher. The two miss functions are one module per cache in table
+  slots 0 and 1, installed with the first module and kept by flushes, which every module imports:
+  a copy in each module stayed in Liftoff.
+  - **It holds no translation of its own, only what one implied**, so it drops entries whenever
+    the TLB could have changed or blocks were dropped. An entry carries its EL's generation
+    (`Tlb::xgen`, 1 to 0xffff; a zeroed entry never matches): flushing everything and dropping
+    blocks (`Cache::drops`, which `jit::steps` compares with the vCPU's `Tlb::xdrops` before any
+    block runs: in round-robin SMP one cache serves every vCPU) bump both; dropping
+    the nG entries bumps an EL's only if its instruction TLB may hold nG ones (`Tlb::xng`), so
+    Linux's kernel entries (global) survive context switches; a flush by VA (85 to 99% of Linux's
+    flushes: user pages it unmaps) clears that page's entries (its VAs fill 1024 consecutive
+    slots). Each of these mattered: dropping everything on every flush made boot 6% and process
+    churn 7% slower (bench/boot/REPORT.md "M8: a VA-keyed cache for indirect transfers").
+  - The stale-code checker, which needs the key, is called with `u64::MAX` on a hit
+    (`jit_check` then computes the key from the PC).
 - **Inside a region:** members are nested wasm `block`s; an edge to a later member is a `br`
   taken when `left` covers it; back-edges to the head branch to a wasm `loop` under the same
   budget check (the budget alone: no atomic load, since `left` never exceeds the chunk). Other

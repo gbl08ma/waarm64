@@ -453,9 +453,19 @@ struct Env<'a> {
     jc: u32,
     /// `jit_hot`, for the tier-up prologues.
     hot: Option<u32>,
+    /// The transfer cache's miss functions for EL0 and EL1 with the MMU on
+    /// ([`miss_module`]), imported by a module with a jump cache and such blocks.
+    xmiss: [Option<u32>; 2],
     /// RAM's host base and guest PA.
     base: u64,
     phys: u64,
+}
+
+impl Env<'_> {
+    /// The miss function for a block (with the MMU on) at `key`.
+    fn miss(&self, key: u64) -> u32 {
+        self.xmiss[(key & KEY_EL1) as usize].expect("a miss function for the block's regime")
+    }
 }
 
 /// One module with a function per region, `f(vcpu, acc, left) -> acc +
@@ -492,6 +502,7 @@ pub fn module(
     check: bool,
     jc: u32,
     features: u64,
+    xmiss: Option<u32>,
 ) -> Emitted {
     let crypto = features & crate::cpu::FEATURE_CRYPTO != 0;
     let parallel = features & crate::cpu::FEATURE_PARALLEL != 0;
@@ -525,6 +536,16 @@ pub fn module(
             }
         }
     }
+    // The transfer cache's miss functions for the regimes with the MMU on.
+    let mut misses = [None; 2];
+    for (el, x) in misses.iter_mut().enumerate() {
+        let regime = KEY_MMU | el as u64;
+        if let Some(idx) = xmiss.filter(|_| jc != 0)
+            && regions.iter().any(|r| r.blocks[0].key & 3 == regime)
+        {
+            *x = Some(m.import_func("t", &(idx + el as u32).to_string(), bt));
+        }
+    }
     m.import_memory("env", "memory", 0, 65536);
     if parallel {
         let z = m.zero_global();
@@ -538,6 +559,7 @@ pub fn module(
         let h = &r.blocks[0];
         funcs.insert(h.key, (first + k as u32, h.words.len() as u32));
     }
+
     let mut out = Emitted {
         bytes: vec![],
         inl: Vec::with_capacity(regions.len()),
@@ -573,6 +595,7 @@ pub fn module(
             checker,
             jc,
             hot,
+            xmiss: misses,
             base: base as usize as u64,
             phys,
         };
@@ -652,6 +675,29 @@ pub fn module(
     }
     out.bytes = m.finish();
     out
+}
+
+/// The transfer cache's miss functions (`emit::xmiss`) for a JIT cache: one
+/// module, `f0` for EL0 and `f1` for EL1 (MMU on), with the jump cache at
+/// `jc` and the stale-code checker with `check`. A cache installs it once,
+/// so it gets hot and optimized (a copy in each module stayed in Liftoff).
+pub fn miss_module(mem: &Mem, check: bool, jc: u32) -> Vec<u8> {
+    let mut m = Module::default();
+    let bt = m.ty(&[I32, I32, I32], &[I32]);
+    let checker = check.then(|| {
+        let ct = m.ty(&[I32, I64], &[]);
+        m.import_func("env", "jit_check", ct)
+    });
+    m.import_memory("env", "memory", 0, 65536);
+    m.import_table("env", "table", 0);
+    let (base, phys) = mem.base();
+    for el in 0..2 {
+        let tlb = (emit::tlb_array(el, 2), base as usize as u64, phys);
+        let mut c = emit::xmiss(KEY_MMU | el, tlb, jc, bt, checker);
+        let locals = c.locals();
+        m.func(bt, &locals, &c.c, &format!("xmiss_el{el}"));
+    }
+    m.finish()
 }
 
 /// Where a region member's flags are at its entry (step 8.4): lazy from its
@@ -915,9 +961,8 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
             Next::None => {
                 let op = b.words.last().map(|&w| decode(w));
                 if e.jc != 0 && matches!(op, Some(Op::BR | Op::BLR | Op::RET)) {
-                    let tlb = (b.key & KEY_MMU != 0)
-                        .then(|| (emit::tlb_array(b.key & KEY_EL1, 2), e.base, e.phys));
-                    emit::indirect(&mut c, b.key & 3, tlb, e.jc, len, e.bt, e.checker);
+                    let miss = (b.key & KEY_MMU != 0).then(|| e.miss(b.key));
+                    emit::indirect(&mut c, b.key & 3, miss, e.jc, len, e.bt, e.checker);
                 }
             }
         }
@@ -945,7 +990,7 @@ fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]
 /// not a process's file pages). So the direct call to `k` is behind a check
 /// that the VA maps there (the instruction TLB of the block's EL), and
 /// otherwise the successor is found as an indirect branch's target is, by
-/// its VA through that TLB and the jump cache.
+/// its VA in the transfer cache.
 fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
     let k = succ(b.key, off);
     let len = b.words.len() as u32;
@@ -957,8 +1002,8 @@ fn chain(e: &Env, c: &mut emit::Func, b: &Block, off: i64) {
     let exec = emit::tlb_array(b.key & KEY_EL1, 2);
     // The PC is in the `Cpu` by now: the successor's VA.
     let by_va = |c: &mut emit::Func| {
-        let tlb = Some((exec, e.base, e.phys));
-        emit::indirect(c, b.key & 3, tlb, e.jc, len, e.bt, e.checker);
+        let miss = Some(e.miss(b.key));
+        emit::indirect(c, b.key & 3, miss, e.jc, len, e.bt, e.checker);
     };
     let Some(&(f, tlen)) = f else {
         if guarded {
@@ -1017,6 +1062,7 @@ mod tests {
             false,
             0,
             crate::cpu::FEATURES,
+            None,
         )
     }
 
@@ -1288,6 +1334,7 @@ mod tests {
             false,
             0,
             crate::cpu::FEATURES,
+            None,
         );
         assert_eq!(e.links, [vec![0x4000_020c]]);
         assert!(has(&e.bytes, &[1, b't', 2, b'7', b'7', 0, 0])); // import t.77, type 0
@@ -1334,6 +1381,7 @@ mod tests {
             false,
             0,
             crate::cpu::FEATURES,
+            None,
         );
         let mut tag = vec![0x29, 3];
         crate::jit::wasm::uleb(&mut tag, emit::tlb_array(0, 2) as u64);
@@ -1344,7 +1392,7 @@ mod tests {
     }
 
     /// With the MMU on, a direct branch to another page finds its target by
-    /// the target's VA (the instruction TLB, then the jump cache), since the
+    /// the target's VA (the transfer cache), since the
     /// page needn't follow the block's physically: alone if nothing is
     /// compiled at the PA that would follow, and after the guarded direct
     /// call if something is.
@@ -1356,14 +1404,28 @@ mod tests {
             va: 0,
             words: vec![MOVZ, 0x14000400], // b .+0x1000
         };
-        // The instruction TLB's tag and addend loads (EL0), and the jump
-        // cache's table index behind `return_call_indirect`.
-        let mut tag = vec![0x29, 3];
-        crate::jit::wasm::uleb(&mut tag, emit::tlb_array(0, 2) as u64);
-        let mut addend = vec![0x29, 3];
-        crate::jit::wasm::uleb(&mut addend, emit::tlb_array(0, 2) as u64 + 8);
+        // The transfer cache's tag and target loads, its generation's, and
+        // the target's table index behind `return_call_indirect`.
+        let off = |f: usize| (core::mem::offset_of!(crate::mmu::Vcpu, tlb) + f) as u64;
+        let load = |o: u64| {
+            let mut l = vec![0x29, 3];
+            crate::jit::wasm::uleb(&mut l, o);
+            l
+        };
+        let xc = core::mem::offset_of!(crate::mmu::Tlb, xc);
+        let tag = load(off(xc));
+        let to = load(off(xc) + 8);
+        let xgen = load(off(core::mem::offset_of!(crate::mmu::Tlb, xgen)));
+        let tail = [0xa7, 0x13, 0, 0]; // i32.wrap_i64, return_call_indirect
+        // A miss tail-calls the cache's miss function for EL0, imported by
+        // its table index.
+        const XMISS: u32 = 40;
         let by_va = |bytes: &[u8]| {
-            has(bytes, &tag) && has(bytes, &addend) && has(bytes, &[0x28, 2, 8, 0x13])
+            has(bytes, &tag)
+                && has(bytes, &to)
+                && has(bytes, &xgen)
+                && has(bytes, &tail)
+                && has(bytes, &[1, b't', 2, b'4', b'0', 0])
         };
         let e = module(
             &[block().into()],
@@ -1372,13 +1434,13 @@ mod tests {
             false,
             JC,
             crate::cpu::FEATURES,
+            Some(XMISS),
         );
         assert_eq!(e.links, [Vec::<u64>::new()]);
         assert!(by_va(&e.bytes));
-        assert!(!has(&e.bytes, &[0x12, 2, 0x0b]));
         // The same block in one page with its successor: the successor's
         // key is known, so its jump-cache entry is at a constant address and
-        // no TLB is read.
+        // the transfer cache isn't read.
         let near = Block {
             key: 0x4000_0200 | KEY_MMU,
             va: 0,
@@ -1391,6 +1453,7 @@ mod tests {
             false,
             JC,
             crate::cpu::FEATURES,
+            Some(XMISS),
         );
         assert!(!has(&e.bytes, &tag) && has(&e.bytes, &[0x28, 2, 8, 0x13]));
         // Something compiled at the PA that follows: the direct call behind
@@ -1402,12 +1465,32 @@ mod tests {
             false,
             JC,
             crate::cpu::FEATURES,
+            Some(XMISS),
         );
         assert_eq!(e.links, [vec![0x4000_1204 | KEY_MMU]]);
         let call = e.bytes.windows(3).position(|w| w == [0x12, 2, 0x0b]);
-        let ind = e.bytes.windows(4).position(|w| w == [0x28, 2, 8, 0x13]);
+        let ind = e.bytes.windows(4).position(|w| w == tail);
         assert!(call.is_some() && call < ind, "{call:?} {ind:?}");
         assert!(by_va(&e.bytes));
+    }
+
+    /// The miss functions read the instruction TLB of their EL and fill the
+    /// transfer cache.
+    #[test]
+    fn the_miss_functions_read_the_instruction_tlb_and_fill_the_transfer_cache() {
+        let bytes = miss_module(&test_mem(), false, 0x10_0000);
+        let at = |op: u8, o: u64| {
+            let mut l = vec![op, 3];
+            crate::jit::wasm::uleb(&mut l, o);
+            l
+        };
+        let xc = (core::mem::offset_of!(crate::mmu::Vcpu, tlb)
+            + core::mem::offset_of!(crate::mmu::Tlb, xc)) as u64;
+        for el in 0..2 {
+            assert!(has(&bytes, &at(0x29, emit::tlb_array(el, 2) as u64)));
+        }
+        assert!(has(&bytes, &at(0x37, xc)) && has(&bytes, &at(0x37, xc + 8)));
+        assert!(has(&bytes, b"xmiss_el0") && has(&bytes, b"xmiss_el1"));
     }
 
     #[test]
@@ -1429,7 +1512,15 @@ mod tests {
         assert_eq!(keys, [0x100, 0x108, 0x114, 0x110]);
         assert_eq!(r.blocks[3].words, [0x91000823, 0xb5ffff63]);
         assert_eq!(r.back_edges(), 2);
-        let e = module(&[r], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES);
+        let e = module(
+            &[r],
+            &test_mem(),
+            |_| None,
+            false,
+            0,
+            crate::cpu::FEATURES,
+            None,
+        );
         // The head's edges, both inside the `if TAKEN` (depth 1): to the taken
         // side (member 3, br 4) and the fall-through (member 1, br 2), each
         // when `left` covers the head (2) and the member (2), with acc and
@@ -1520,6 +1611,7 @@ mod tests {
             false,
             0x10_0000,
             crate::cpu::FEATURES,
+            None,
         );
         assert_eq!(e.inl, [10]);
         assert!(!has(&e.bytes, &[0x03, 0x40]));
@@ -1535,7 +1627,16 @@ mod tests {
         let indirect = e.bytes.windows(4).rposition(|w| w == [0x28, 2, 8, 0x13]);
         assert!(at.is_some() && at < indirect, "{at:?} {indirect:?}");
         assert_eq!(
-            module(&[r5], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES).inl,
+            module(
+                &[r5],
+                &test_mem(),
+                |_| None,
+                false,
+                0,
+                crate::cpu::FEATURES,
+                None
+            )
+            .inl,
             [9]
         );
         // Not past the page, and nothing where the head has no words.
@@ -1586,7 +1687,15 @@ mod tests {
         let (_r, m) = mem_with(0x100, &words);
         let r = region(&m, 0x100, 0x100, &|_| true);
         assert_eq!(r.blocks.len(), 2);
-        let e = module(&[r], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES);
+        let e = module(
+            &[r],
+            &test_mem(),
+            |_| None,
+            false,
+            0,
+            crate::cpu::FEATURES,
+            None,
+        );
         assert_eq!((e.counts.cond_direct, e.counts.cond_memory), (1, 0));
         assert!(!has(&e.bytes, &[0x28, 2, 0x88, 2])); // NZCV never loaded
         assert!(has(&e.bytes, &[0x53])); // i64.lt_s
@@ -1636,7 +1745,15 @@ mod tests {
             tier: Some(0x2000),
             returns: vec![],
         };
-        let e = module(&[r], &test_mem(), |_| None, false, 0, crate::cpu::FEATURES);
+        let e = module(
+            &[r],
+            &test_mem(),
+            |_| None,
+            false,
+            0,
+            crate::cpu::FEATURES,
+            None,
+        );
         assert!(has(&e.bytes, b"\x07jit_hot"));
         assert!(has(
             &e.bytes,
@@ -1665,7 +1782,8 @@ mod tests {
     #[test]
     fn indirect_branches_look_up_the_jump_cache() {
         // movz x1, #3; ret with the jump cache at 0x1000: the module imports the
-        // table, and the block ends in return_call_indirect (type 0, table 0).
+        // table, and the block ends in return_call_indirect (type 0, table 0),
+        // with the MMU on of the transfer cache's table index.
         let b = Block {
             key: 0x4000_0200 | KEY_MMU,
             va: 0,
@@ -1678,12 +1796,13 @@ mod tests {
             false,
             0x1000,
             crate::cpu::FEATURES,
+            Some(40),
         );
         assert!(has(
             &e.bytes,
             &[3, b'e', b'n', b'v', 5, b't', b'a', b'b', b'l', b'e', 1]
         ));
-        assert!(has(&e.bytes, &[0x13, 0, 0, 0x0b]));
+        assert!(has(&e.bytes, &[0xa7, 0x13, 0, 0, 0x0b]));
         // A static successor that isn't compiled: probed in the jump cache at
         // its own entry, jc + ((key >> 2) & (JC - 1)) * 16.
         let b = Block {
@@ -1698,6 +1817,7 @@ mod tests {
             false,
             0x1000,
             crate::cpu::FEATURES,
+            None,
         );
         let mut entry = vec![0x41];
         let at = 0x1000 + ((0x4000_020c_u64 >> 2) as u32 & (crate::jit::JC as u32 - 1)) * 16;

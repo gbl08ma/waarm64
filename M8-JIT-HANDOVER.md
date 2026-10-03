@@ -1,4 +1,4 @@
-# M8 JIT performance: handover (2026-10-02)
+# M8 JIT performance: handover (2026-10-03)
 
 A side track of M8, asked for by the user: make general user-space work faster under the JIT. Not
 a milestone phase and it has no kickoff; the order of work is docs/backlog.md "JIT", "User space".
@@ -7,7 +7,7 @@ goes" on.
 
 ## Where it stands
 
-Four commits on `main`, pushed, each with CI and `ci-long` green and the same guest steps:
+Five commits on `main`, pushed, each with CI and `ci-long` green and the same guest steps:
 
 | Commit | What | `alpine_user_jit` total (Chromium, dev VM) |
 |---|---|---|
@@ -15,9 +15,10 @@ Four commits on `main`, pushed, each with CI and `ci-long` green and the same gu
 | `fe10685` | the profile, the tools (`bench/boot/userprof.ts`, `userprof-perf.ts`) | |
 | `939987b` | a direct branch to another page chains by the target's VA | 23.0 s |
 | `311d21e` | forward regions: a batch's blocks that static edges join are one function | 20.9 s |
-| this one | regions across pages, calls followed with predicted returns; `bench/run-mac.sh`; a parallel-SMP panic in `311d21e`'s plan fixed | 20.5 s |
+| `44dcda9` | regions across pages, calls followed with predicted returns; `bench/run-mac.sh`; a parallel-SMP panic in `311d21e`'s plan fixed | 20.5 s |
+| this one | the transfer cache: indirect transfers by VA in one probe (lever 1 below) | 20.1 → 19.8 s in one session |
 
-On the **Mac host's Chromium** (no explicit bounds checks): 18.0 → 14.6 s. QEMU TCG: 11.2 s.
+On the **Mac host's Chromium** (no explicit bounds checks): 18.0 → 14.6 → 14.3 s. QEMU TCG: 11.2 s.
 Lua −28%, SQLite −27% in the VM over the day; CoreMark 8,480 → 10,080 it/s. The cost: Alpine's
 boot compiles 25% more wasm (23.6 → 29.6 MB) and Buildroot's half-second boot is 15% slower.
 
@@ -33,28 +34,18 @@ boot compiles 25% more wasm (23.6 → 29.6 MB) and Buildroot's half-second boot 
 - Forward regions behind a tier-up (a counting prologue in every block) cost the boots 13 to 20%.
   Forming them at batch time is what was kept.
 
-## Next: two levers, in this order (the user asked for both)
+## The two levers (the user asked for both): the first done, the second next
 
-**1. A VA-keyed cache for indirect transfers** (`BR`, `BLR`, `RET`, by-VA links: 25 to 55 per 1000
-instructions, ~50 host instructions each today: the instruction TLB, then the 1 MiB jump cache,
-then `return_call_indirect`). Helps every host. The design worked out, not started:
-
-- In `mmu::Tlb`: 4096 entries of `{tag: pc ^ regime, to: idx | len << 32 | gen << 48}` and a
-  generation `xgen` that starts at 1 and skips 0 (a zeroed entry must never match; clear the
-  table when it wraps).
-- `emit::indirect` with the MMU on becomes one probe: tag, generation, `left`, then
-  `return_call_indirect`. A miss returns to the dispatcher, which fills the entry when it enters a
-  compiled block (`jit::steps`). The flat bus keeps the jump-cache probe.
-- Bump the generation in `Tlb::flush_all`, `flush_ng` and `flush_va`, and when the cache drops
-  blocks: a `dropped` flag set by `invalidate`/`drop_all`, consumed in `steps` right after
-  `cache.enter` (before any block runs).
-- The risk to measure: an ASID switch now drops the kernel's entries too (its global iTLB entries
-  survive today), so churn and the boots may pay refills through the dispatcher. If they regress,
-  fall back in wasm to today's path on a miss and fill from there.
-- Tests to extend: `tests/jit.test.ts`'s cross-page test already remaps with a TLBI (a flush
-  without the bump is caught); add an `ic ivau` phase to it (threshold 0) for the drop flag. The
-  byte patterns in `block::tests` (`a_successor_in_another_page_is_found_by_its_va`,
-  `indirect_branches_look_up_the_jump_cache`, the forward-region test) will change.
+**1. Done: the transfer cache** (docs/jit.md "Linking", `bench/boot/REPORT.md` "M8: a VA-keyed
+cache for indirect transfers"). `BR`, `BLR`, `RET` and by-VA links probe `Tlb::xc` (16,384
+entries per vCPU), where they probed the instruction TLB and then the jump cache: Lua −9%, SQLite
+−5 to −6%, the userspace total −1.4% (VM) and −2.8% (Mac); Alpine's boot +1% (VM and Mac) and
+Buildroot's +1.5%. What differs from the design the last handover sketched, and why (measured,
+in the report): a miss falls back in wasm to the old lookup and fills the entry (the
+dispatcher-only fill tripled dispatches in churn); the generation is per EL and kept for global
+code across ASID changes, and a TLBI by VA clears only its page (most flushes are by VA); the
+fallback is one shared pair of functions in table slots 0 and 1 (a copy per module stayed in
+Liftoff); 4096 entries were too few.
 
 **2. The fixed-size memory** (Linux arm64 and Android hosts only: no gain on the Mac). V8 reloads
 a growable shared memory's size before every checked store; a module that declares
@@ -86,6 +77,21 @@ alternate (A, B, A, B). Also `boot_alpine_jit`, `boot_jit`, and on `bench/interp
 `d43a536` and no longer apply: the counters are a dozen `emit::bump` calls, quick to redo.
 
 ## Learned this session
+
+- **In round-robin SMP one JIT cache serves every vCPU** (it moves between their `jit.cache`,
+  `vm.rs`), while each has its own TLB. State derived from the cache but kept per vCPU must
+  notice the cache's changes per vCPU: a one-shot "dropped" flag was consumed by whichever vCPU ran
+  next, the others ran dropped blocks (CI's `maint.bin` under JIT-stress panicked, and
+  `pause.test.ts` hung for 21 minutes). `Cache::drops` against `Tlb::xdrops` is the fix.
+
+- **Counting in JIT code without new counters:** a measurement-only build that bumps
+  `Tlb::stats.misses` / `.flushes` from wasm (an `i64` load, add, store at their `Vcpu` offsets)
+  shows up in `userprof.ts`'s TLB columns. How the transfer cache's misses were found.
+- **`/tmp` is a 6.9 GB tmpfs:** keep `perf record` data out of the scratchpad (a few profiles
+  filled it); `bench/results/local/perf/` is on disk. `bench/run.ts --out /dev/null` writes
+  `dev/null` in the repo, and `--only` takes one benchmark.
+- Node profiles of the boot vary by a few percent between identical runs (one showed the
+  interpreter 27% slower, the next not at all): confirm a boot difference in Chromium, alternated.
 
 - **`scripts/ci.sh` runs its native guest-image tests and tsan beside the JS tests, from the
   working tree.** Don't edit `core/` (or rebuild the wasm) while it runs; `.md` edits are safe.
