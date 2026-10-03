@@ -4,7 +4,7 @@
 
 export type Vcpu = { cpu: number; chunks: number; runningMs: number; sinceReturnMs: number; maxRunMs: number; maxRunAt: number; maxHostMs: number; maxHostAt: number };
 /** web/app/protocol.ts `Status` as the page's `data-status` carries it. */
-export type PageStatus = { ncpus: number; ramMiB: number; uptime: number; steps: number; jitBlocks: number; jitCompileMs: number; irqs: number; loopMaxMs: number; loopAgeMs: number; vcpus: Vcpu[] };
+export type PageStatus = { ncpus: number; ramMiB: number; uptime: number; steps: number; jitBlocks: number; jitFlushes?: number; jitCompileMs: number; jitSteps?: number; jitBytes?: number; irqs: number; loopMaxMs: number; loopAgeMs: number; vcpus: Vcpu[] };
 export type Proc = { pid: number; type: string; rssMiB: number; cpuTime: number };
 
 export type Sample = {

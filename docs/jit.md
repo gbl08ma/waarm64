@@ -36,8 +36,9 @@ the interpreter's own code.
 
 - The run loop calls `jit::steps` for each chunk. It translates the PC through the instruction
   TLB (a hit costs what the interpreter's fetch does), looks the key up in the **jump cache** (a
-  `#[repr(C)]` direct-mapped array of 65,536 {key u64, table index u32, length u32} at a fixed
-  address; compiled blocks only) in front of a `HashMap` with a multiply-shift hasher, and calls
+  `#[repr(C)]` direct-mapped array of 65,536 {key u64, table index u32, length u32}, one per
+  function table, which blocks reach through the vCPU's `jit::State::jc`; compiled blocks only)
+  in front of the shared cache's `HashMap` (multiply-shift hasher, behind a lock: [Sharing](#sharing)), and calls
   a compiled block if its length fits the steps left; otherwise it interprets the would-be
   block's length (so lookups stay at block starts).
 - **Exact step accounting:** a block knows its instruction count *n* and is entered only if the
@@ -101,18 +102,20 @@ the interpreter's own code.
       MMU off), as their loop regions do.
   - **Loop regions** (`block::region`): a hot block and the blocks that lead back to it by static
     edges (its loop; seen by the dispatcher). Without a loop the region is the head alone.
-- **Tier-up:** a loop head is first compiled **alone** with a hot word (one u32 per code-cache
-  slot) counting entries down from `region_after` (**1000**); the entry that reaches 0 calls
+- **Tier-up:** a loop head is first compiled **alone** with a hot word (one u32 per slot of each
+  function table, which blocks reach through `jit::State::hot`) counting entries down from `region_after` (**1000**); the entry that reaches 0 calls
   `jit_hot(vcpu, key, pc)`, which compiles the loop region in its own module (never with a flush,
   since JIT code is on the stack) and stores `1 << 31 | index` in the word; from then on the head's
-  prologue tail-calls the region, so blocks linked to the head reach it too.
+  prologue tail-calls the region, so blocks linked to the head reach it too. A head that gets hot
+  in another table finds the region compiled (`Cache::tiers`) and redirects its own word.
 - **The code cache holds 262,144 regions** (4 bytes per slot up front) **and a byte budget**
-  (`Config::max_bytes`: 160 MiB of wasm for a VM, divided among the caches of a parallel SMP VM, at
-  least 32 MiB each: 40 MiB per vCPU on 4). When either is reached, everything is flushed (slots
-  freed, the host's table lets go of the old functions, [Memory](#memory)). Alpine's boot compiles
-  ~26 MiB and Debian's compiled ~73 MiB on one vCPU (~31 MiB per vCPU on 4) before forward regions
-  (which added 15% to Alpine's bytes; Debian's weren't measured again), so neither flushes. Per-module
-  eviction is backlog: coldest first. FIFO was tried, and it collapsed a Go build.
+  (`Config::max_bytes`: 160 MiB of wasm for a VM, whose vCPUs share it: [Sharing](#sharing)). When
+  either is reached, everything is flushed (slots freed, the host's table lets go of the old
+  functions, [Memory](#memory)). Alpine's boot compiles ~30 MiB and Debian's ~73 MiB, so neither
+  flushes; a 4-vCPU `go build` loop flushed once in 5 minutes. Per-module eviction is backlog:
+  coldest first. FIFO was tried, and it collapsed a Go build; keeping the flushed hot set warm
+  (compiling a block that was compiled before on first sight after a flush) made a too-small cache
+  worse (more flushes; `bench/boot/REPORT.md` "M8: one code cache for all vCPUs").
 - **Modes** (`jit::Config`; `VmConfig.jit`): 1 = the default above; 2 = **JIT-stress**: threshold
   0, batch 1, a 4-region cache, `region_after` 1 and the stale-code checker; 3 = **JIT-check**:
   the same with the full-size cache and `region_after` 0 (the 4-region cache evicts most blocks
@@ -174,14 +177,59 @@ the interpreter's own code.
 - Dropping a block drops the blocks chained to it, transitively (the cache records who chains to
   whom).
 
+## Sharing
+
+A VM's vCPUs share **one code cache** (`jit::Cache`, behind a lock: the block map, the page index,
+the links, the pending batch, the slot allocator, the byte budget). Each function table is a
+`jit::Table` (a vCPU worker's in parallel SMP, round-robin's one): the modules it has installed,
+its jump cache and hot words, its helper counts and its counters.
+
+- **One compile, one copy of the code:** a module's bytes don't depend on the table. Blocks reach
+  the jump cache and the hot words through the vCPU (`emit::JC_PTR`, `emit::HOT_PTR`: one more
+  load than the constant address they had), and a slot is the same table index in every table
+  (every worker's core instance starts its table at the same length). So every table installs the
+  same bytes at the same slots, and V8's process-wide native-module cache, keyed by the bytes,
+  compiles a module once and shares its machine code between the workers. In Chromium 153 a
+  second worker's first calls of an identical 5 MB module took 3.6 ms against 22.8 ms; different
+  bytes paid in full again (`bench/boot/REPORT.md` "M8: one code cache for all vCPUs").
+- **The log:** the cache keeps the modules compiled since the last flush, in order
+  (`Cache::log`). A table catches up (`Table::sync`, under the lock) by copying the ones it lacks,
+  and installs them in order once the lock is released (a module may import any before it): on a
+  jump-cache miss, when the cache's `drops` moved (an atomic read before each block, without the
+  lock), and in `jit_hot`, always before a block runs that could use them. Bytes every table has
+  taken are freed. **No V8 compile runs under the lock** (only a table's two miss functions, once):
+  a worker stalled in `jit_install` holding it kept the other vCPUs from even reaching their DSB
+  (`tests/hoststall.test.ts`), and in a browser one worker's compile would hold up every vCPU's
+  misses.
+- **Epochs:** a flush or `IC IALLU` starts the slots over. A table moves to the new epoch (jump
+  cache cleared, slots overwritten) only from the dispatcher, never with JIT code on its stack;
+  `jit_hot` in a table an epoch behind leaves the head alone. Its vCPUs' transfer caches drop
+  their entries when the table's `drops` differs from theirs (`Tlb::xdrops`).
+- **Invalidation:** `IC IVAU` drops the page's blocks from the cache at once (on the issuing
+  vCPU); each table drops them from its jump cache when it catches up (`Cache::tables`: the keys
+  dropped since, or all of it past 4,096). The broadcast drains don't touch the JIT any more. Until
+  its table catches up a vCPU may run a dropped block, the window the tolerant cache allowed already.
+- **Tier-up across tables:** a head redirects in each table on its own, when it gets hot there
+  (`Cache::tiers`); a member's hot word that a region quiets keeps its redirect if it has one
+  (another table may replay the enclosing tier-up after its member tiered up: `REDIRECT | 0` sent
+  it to slot 0, a core function; found by `maint.bin` in parallel).
+- **Counters** are per table: each vCPU publishes what it ran and what it compiled, flushed or
+  invalidated, and the host sums them.
+- **Measured** (Debian on 4 vCPUs in Chromium, a cold `go build` loop for 300 s,
+  `bench/stress` with `--guest-cmd`): four caches of 40 MiB: 143–150 s a build, 296 MIPS median,
+  ~76 flushes, 2–6% of the steps interpreted, the renderer at 3.1–3.7 GB; one shared cache of
+  160 MiB: 48–81 s, 755 MIPS, 1 flush, ~0.1%, 3.2–3.5 GB. The benchmarks: `smp_user_jit_4`
+  18.5% faster (churn 39%; its single-threaded Lua and SQLite 4–5% slower), one vCPU 1–2% slower. On one vCPU the same load compiled 227
+  MiB; four private caches compiled ~2.9× that.
+
 ## Memory
 
 What a compiled region costs the host, measured in headless Chromium 153 on the dev VM (Debian, 1 GiB
 guest, 4 vCPUs; `bench/mem/`: `memsample.ts` samples the renderer's smaps by mapping, summaries in `results/summary.json`): **V8 spends ~10× a module's wasm bytes**,
 ~5× in C++ metadata (PartitionAlloc: NativeModule, wire bytes, code tables) and ~4.7× in code
 (~4.7 KB per region at ~480 wasm bytes), and JS objects (Instances, exports) are small (the four
-workers' JS heaps total ~200 MB). **Each vCPU worker compiles its own copy** of the guest's code
-(its own cache, table and instances), so the total is ×ncpus. A 4-vCPU tab under a mixed load grew
+workers' JS heaps total ~200 MB). Until [Sharing](#sharing), **each vCPU worker compiled its own
+copy** of the guest's code (its own cache, table and instances), so the total was ×ncpus. A 4-vCPU tab under a mixed load grew
 from 2.3 GB at login to 5 GB in 8 minutes with nothing flushed (615K regions, 294 MB of wasm) and
 was headed for the cache's 262,144 regions per vCPU: ~4.9 GB of V8 memory, the 6 GB tab. The
 guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions) are not what grows.
@@ -193,11 +241,12 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   make dropping a subset need the unlink walk that invalidation does. FIFO by module is the cheaper
   precise option (backlog); until then a flush is one clear of the maps, and the guest's hot set is
   recompiled in ~1–2 s of one vCPU's time.
-- **What 40 MiB per vCPU is sized against:** the live set of a Debian boot on 4 vCPUs (~31 MiB
-  per vCPU), so booting doesn't flush; a mixed load then flushes about every 3–4 minutes per vCPU,
-  and a Go build (a compiler's working set is larger than the budget) about every 30 s, which cost ~6% of CPU in
-  compiling (113 s of 4 × 480 s; the mixed load: 1.6%, uncapped 0.8%) and showed no guest slowdown
-  (steps per second matched the uncapped runs within the load's variation).
+- **What the budget was sized against** (before [Sharing](#sharing), 40 MiB per vCPU on 4): the
+  live set of a Debian boot on 4 vCPUs (~31 MiB per vCPU), so booting didn't flush; a mixed load
+  then flushed about every 3–4 minutes per vCPU, and a Go build about every 30 s (~6% of CPU in
+  compiling). Steps per second looked unchanged then, but a `go build` loop timed by the guest
+  (2026-10-03) took twice as long as with room for its ~200 MiB working set: after each flush hot
+  code runs in the interpreter and in Liftoff again, which costs far more than the compiling.
 - **A flush must free something on the host:** the host's table keeps the functions (so their
   instances and code) alive until the slots are overwritten, so `web/vm.ts` nulls the slots a flush
   leaves unused. V8 frees the dead code only when its JS GC collects the instances, and a worker's JS
@@ -228,11 +277,11 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   several pages is filed under each.
 - **The stale-code checker** (`jit::Config::check`, on in JIT-stress) hashes each block's words
   when it's compiled and again at every entry (chained entries and back-edges call
-  `jit_check(vcpu, key)`), and panics (trapping the wasm run) on a mismatch. In parallel SMP each
-  vCPU has its own cache, and another vCPU may legally rewrite code before its IC reaches this one:
-  those caches are **tolerant** (`Cache::tolerant`), counting a stale block (`Stats::stale`) and
-  dropping it at the run loop's entry instead ([platform.md](platform.md) "Broadcast
-  maintenance").
+  `jit_check(vcpu, key)`), and panics (trapping the wasm run) on a mismatch. In parallel SMP
+  another vCPU may legally rewrite code before its IC reaches this one: the cache is **tolerant**
+  (`Cache::tolerant`), counting a stale block (`Stats::stale`) and dropping it at the run loop's
+  entry instead ([platform.md](platform.md) "Broadcast maintenance"), and a block another vCPU's
+  IC has dropped from the shared cache passes until this vCPU's table catches up.
 - **Parallel SMP** also compiles DSB as a helper call (the interpreter's DSB ends the chunk under
   `cpu::FEATURE_PARALLEL`, where the run loop completes this vCPU's TLBI IS broadcasts); ISB and
   ERET were helper calls already and end the chunk the same way.

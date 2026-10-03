@@ -21,7 +21,8 @@ Design notes for an ABI change go in this file before the code.
   that's already set up (`web/vm.ts` `threadAlloc`), and set **before any other call**
   (`instantiateThread`: `__stack_pointer` = the stack's top, then `__wasm_init_tls(tls)`); its
   start function finds the memory initialized. Instance 0 keeps the linker's static stack (1 MiB)
-  and TLS. Each instance has its own function table, so each has its own JIT host and code.
+  and TLS. Each instance has its own function table, so each has its own JIT host; the modules it
+  installs are the other instances' bytes, whose machine code V8 shares ([jit.md](jit.md) "Sharing").
   `tls_probe()` (a thread-local call count) lets tests check the TLS block is the instance's own.
   Tested with three concurrent instances (interpreter, JIT, JIT) in Node's `worker_threads` and in
   Chromium workers (`tests/threads.test.ts`, `tests/browser/threads.html`).
@@ -135,7 +136,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 66–69 | TLB hits (not counted: 0), misses, walks, flushes (published once per chunk) |
 | 70 | current PC, published at every chunk end (the PC sampler reads it) |
 | 71–90 | `jit::Stats`: regions compiled, modules, wasm bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes; instructions compiled inline and as helpers, inline steps run; static flag setters stored/elided, conditions direct/computed/from memory; blocks in regions, back-edges, tier-ups; stale blocks tolerated (parallel, 25) |
-| 91–100 | parallel SMP (26): DSBs that waited for TLBI IS, ns waited; TLBI IS and IC operations broadcast; queue drains that applied something; IDLE exits (WFI); platform-lock acquisitions that found it held, ns waited; WFEs (each a yield); ns out of `vm_run_cpu` between runs (idle or in the host) |
+| 91–100 | parallel SMP (26): DSBs that waited for TLBI IS, ns waited; TLBI IS broadcast and IC operations issued (ICs are not broadcast: the code cache is shared, [jit.md](jit.md) "Sharing"); queue drains that applied something; IDLE exits (WFI); platform-lock acquisitions that found it held, ns waited; WFEs (each a yield); ns out of `vm_run_cpu` between runs (idle or in the host) |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -205,9 +206,9 @@ single-CPU machine.
 - *Parallel* (`smp` = 1, realtime only: `vm_new` refuses it with `deterministic`): one thread
   (worker) per vCPU, each with its own core instance on the shared memory. Each worker calls
   `vm_run_cpu(vm, cpu, budget)` for its vCPU, and **vCPU *i* always runs on the same instance**:
-  its code cache (created by `vm_new`, one per vCPU) holds table indexes of that instance.
-  `vm_run` is for round-robin only. (The outline had a `vm_runner(vm)` per worker for the cache;
-  a cache per vCPU made it unnecessary.)
+  its JIT table (`jit::Table`, created by `vm_new`, one per vCPU, on the code cache they share)
+  records what that instance's function table holds. `vm_run` is for round-robin only. (The
+  outline had a `vm_runner(vm)` per worker for the cache; a table per vCPU made it unnecessary.)
 
 **`VmConfig`** (appended u64 fields; 0 keeps today's meaning):
 

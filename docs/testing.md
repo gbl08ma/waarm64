@@ -348,12 +348,13 @@ systemctl --user status webpc-stress; journalctl --user -u webpc-stress   # its 
 
 Flags: `--seconds` (the sampling time; the ~45 s boot and login come before it), `--interval` (sample period, 5), `--probe` (guest console probe period, 15),
 `--ncpus`, `--guest-cmd '<cmd>'` (repeatable: started as `( cmd ) &` after the built-in load, for a
-Go or C churn binary put on the guest), `--no-load`, `--stall-ms` (2000), `--freeze-ms` (10000),
+Go or C churn binary put on the guest), `--no-load` (no built-in load; the `--guest-cmd` ones still start), `--disk2 <repo path>` (a read-only second disk: `images/stress/build-goroot.sh`'s Go toolchain, whose `go build` loop the JIT's cache was measured with: [jit.md](jit.md) "Sharing"), `--stall-ms` (2000), `--freeze-ms` (10000),
 `--warmup` (150 s from the tool's start, left out of the memory and speed trends). Exit code 0 clean, 1 findings, 2 the
 harness failed (no login).
 
-What a sample holds (`type: "sample"`): the page's state and message, the status the page shows
-(`data-status`: uptime, steps, JIT blocks, compile time, IRQs, the run loop's cadence, per-vCPU
+Debian boots with the page tests' unattended credentials (`tests/debian-unattended.ts`), so no
+first-boot questions stop it. What a sample holds (`type: "sample"`): the page's state and message, the status the page shows
+(`data-status`: uptime, steps, JIT blocks, compile time, flushes, JIT steps and bytes compiled, IRQs, the run loop's cadence, per-vCPU
 liveness), how long since a status message reached the page and the longest gap between two, the
 main thread's timer lag, the last `performance.measureUserAgentSpecificMemory()` result (MiB), CDP
 `Performance.getMetrics` (main-thread JS heap) and every browser process's RSS from `/proc`

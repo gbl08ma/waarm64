@@ -101,7 +101,10 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - **CoreMark's gap to TCG (~70%)**: the same transfers between blocks (above) and the store bounds checks V8
   keeps on Linux arm64. Don't fit the design to it.
 - **Per-module eviction, coldest first,** instead of whole-cache flushes ([jit.md](jit.md)
-  "Memory"). A Go build flushes about every 30 s per vCPU today, spending ~6% of CPU compiling.
+  "Memory"). Since the vCPUs share the cache, a 4-vCPU `go build` loop flushes about once in 5
+  minutes (every ~14 s per vCPU with four private 40 MiB caches); a larger working set (a browser
+  in the guest) is where this counts again. A flush also has every table catch up on the new
+  epoch's modules.
   - **What it would do:** evict the modules unused for the longest time, unlink what chains to them,
     null their table slots and reuse them from a free list.
   - **FIFO by install order was built and dropped** (branch `fifo-evict-attempt`, local, not pushed).
@@ -125,12 +128,22 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     - `drop_key` removing the keys that `linkers` drops from `pages` too, which invalidation leaks
       today.
   - **Measure it against the flush under the Go load.**
-- **Share compiled modules across vCPU workers:** each worker compiles its own copy of the guest's
-  code (its own cache, table and instances), ~4× duplication on 4 vCPUs: 615K regions and 294 MB of
-  wasm in total after 8 minutes of a mixed load (~150K and ~72 MB per worker), ~10× that in V8
-  memory. Posted `WebAssembly.Module`s share V8's code between workers; a shared compile cache
-  keyed by physical address and mode would compile each region once. Cross-vCPU invalidation is the
-  hard part.
+- Done (2026-10-03): **one code cache for all vCPUs**, each worker installing the same module bytes,
+  whose code V8 shares ([jit.md](jit.md) "Sharing"). Left from it:
+  - a worker installs every module of the epoch, those its vCPU never runs too (an instance and
+    table entries each: small, not measured);
+  - a module's bytes stay in the core's heap until every table has it, and a vCPU that never runs
+    (offline) holds them until the next flush (at most the 160 MiB budget);
+  - the cache's lock is taken on every jump-cache miss, and held while a batch is planned and
+    emitted (V8 compiles outside it); contention wasn't measured;
+  - **single-threaded phases on 4 parallel vCPUs got 4–5% slower** (`smp_user_jit_4`: Lua 3308 →
+    3436 ms, SQLite 2797 → 2932, n4 each, while churn went 4379 → 2666 and the total 26.8 → 21.9 s;
+    on one vCPU Lua moved 1.1%, so the jump cache's extra load isn't most of it). Not explained by
+    the counters (invalidations are rare, regions as large). Suspects: a process that moves to
+    another vCPU finds that table's jump cache cold and its loop heads counting again to their
+    redirect (each table's hot words are its own), or the lock. Measure per-phase counters.
+  - one vCPU pays 1–2% (Alpine's boot +1.8%, userspace +1.2%): partly each module's bytes copied
+    for the catch-up even when the table is the only one (a lone table could take them instead).
 - **Cut V8's per-region overhead:** ~10× the module's bytes, half of it metadata (~2.4 KB of
   PartitionAlloc per region). Batch the tier-up regions into fewer modules (extend the entry below:
   ~561 modules of one function in Alpine), and check whether superseded or invalidated blocks'
@@ -144,6 +157,15 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   understood and bounded by a byte budget with a flush ([jit.md](jit.md) "Memory"); what's left is
   the items above. The Tailscale client's own memory (a 27 MB wasm Go runtime in its worker)
   wasn't measured: it needs the headscale test tailnet.
+- **`vm_run_cpu` calls of 2 to 4 s under a heavy load** (2026-10-03, the 4-vCPU `go build` loop of
+  `bench/stress` with `--guest-cmd`, Debian, Chromium in the dev VM): every configuration showed
+  them, with the cache flushing every ~14 s per vCPU (40 MiB) and with one flush in 300 s
+  (160 MiB); one vCPU peaked at 0.77 s. A chunk is bounded by its step budget, so a call that long
+  is either a synchronous compile of a very large batch module (V8 on the vCPU's thread), a GC
+  pause (the 256 MiB nudge after a flush can't be all of it: it happens without flushes), or a
+  stall worth fixing (a lock, a DSB wait, an `Atomics.wait`). Find out which: time the compile,
+  the instantiation and the run inside the call (the liveness block has room for it). Expected
+  and harmless, or a latency problem a GUI guest would feel.
 - **Compiling off the vCPU thread:** measured and not built ([jit.md](jit.md) "Tried and not
   kept"); revisit with a GUI guest in M8 (latency).
 - Tier-up regions get a module each (~561 in Alpine); batching them is untried.
@@ -271,11 +293,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
-- **One copy of compiled code for all vCPU workers:** each worker compiles what it runs (~200 ms of
-  compile per vCPU per Alpine boot, ~35 ms in the userspace churn phase: small), but also holds its
-  own machine code, which may matter for kernel-heavy phases' footprint (unmeasured: the VM has no
-  PMU). Sharing needs position-independent links (through the jump cache) so one
-  `WebAssembly.Module` can be instantiated in every worker.
+- Done: **one copy of compiled code for all vCPU workers** ([jit.md](jit.md) "Sharing"; the JIT
+  section above has what's left).
 - **The remaining DSB waits** (~3K per userspace run on 4 vCPUs, 20–60 µs each: same-ASID
   targets, and all-ASID or kernel-range TLBIs) wait for the target's chunk boundary. A 4096-step
   chunk in parallel mode cut the average from 100 to 65 µs and polling before sleeping to 55 µs,

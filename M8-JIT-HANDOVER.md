@@ -1,4 +1,4 @@
-# M8 JIT performance: handover (2026-10-03, second session)
+# M8 JIT performance: handover (2026-10-03, third session)
 
 A side track of M8, asked for by the user: make general user-space work faster under the JIT. Not
 a milestone phase and it has no kickoff; the order of work is docs/backlog.md "JIT", "User space".
@@ -7,7 +7,7 @@ goes" on.
 
 ## Where it stands
 
-Six commits on `main`, pushed, each with CI and `ci-long` green and the same guest steps:
+Seven commits on `main`, pushed, each with CI and `ci-long` green and the same guest steps:
 
 | Commit | What | `alpine_user_jit` total (Chromium, dev VM) |
 |---|---|---|
@@ -17,7 +17,8 @@ Six commits on `main`, pushed, each with CI and `ci-long` green and the same gue
 | `311d21e` | forward regions: a batch's blocks that static edges join are one function | 20.9 s |
 | `44dcda9` | regions across pages, calls followed with predicted returns; `bench/run-mac.sh`; a parallel-SMP panic in `311d21e`'s plan fixed | 20.5 s |
 | `e63324b` | the transfer cache: indirect transfers by VA in one probe (lever 1 below) | 20.1 → 19.8 s in one session |
-| this one | the fixed-size memory: JIT modules import exact limits (lever 2 below) | 20.0 → 18.6 s in one session |
+| `a946760` | the fixed-size memory: JIT modules import exact limits (lever 2 below) | 20.0 → 18.6 s in one session |
+| this one | one code cache for all vCPUs (below) | 18.9 → 19.2 s; on 4 vCPUs 26.8 → 21.9 s |
 
 On the **Mac host's Chromium** (no explicit bounds checks): 18.0 → 14.6 → 14.3 s (lever 2 changes
 nothing there). QEMU TCG: 11.2 s. The boots: Alpine's 9.95 → 9.23 s and Buildroot's 768 → 725 ms
@@ -36,6 +37,26 @@ boot compiles 25% more wasm (23.6 → 29.6 MB) and Buildroot's half-second boot 
   was tried and lost (docs/jit.md "Tried and not kept").
 - Forward regions behind a tier-up (a counting prologue in every block) cost the boots 13 to 20%.
   Forming them at batch time is what was kept.
+
+## One code cache for all vCPUs (third session)
+
+The user saw Firefox in a 4-vCPU guest flush the cache every few seconds at 200–300 MIPS, and
+asked to share compiled code across vCPUs within the existing 160 MiB total. Done:
+`bench/boot/REPORT.md` "M8: one code cache for all vCPUs", docs/jit.md "Sharing". A `go build`
+loop on 4 vCPUs: 143–150 s a build → 48–81 s, 296 → 755 MIPS, ~76 flushes → 1, same tab memory.
+What's left, in docs/backlog.md "JIT": the single-threaded phases on 4 parallel vCPUs 4–5%
+slower (Lua, SQLite in `smp_user_jit_4`; unexplained), one vCPU 1–2% slower, the 2–4 s
+`vm_run_cpu` calls under heavy load, eviction for working sets past 160 MiB (a browser in the
+guest; not measured with sharing).
+
+- **How to load the guest:** `bench/stress/stress.ts` with `--no-load --disk2
+  target/images/stress/goroot.ext4 --guest-cmd '<go build loop>'` (the loop is in
+  `bench/boot/REPORT.md`'s section; the harness's samples print the interpreted share, flushes and
+  compile time). The guest times its builds: steps per second alone hid the flushes' cost.
+- **Debugging a bad table index** (a "function signature mismatch" in a worker): dump, at the
+  trap, every index the vCPU's JIT state can call (jump cache, hot-word redirects, live transfer
+  cache entries) and test each against the worker's table (`table.get(i) === null`). An export
+  and a catch in `web/vcpu-worker.ts` did it in a few lines; it named the hot words at once.
 
 ## The two levers (the user asked for both): both done
 

@@ -8,7 +8,7 @@
 //     [--guest-cmd '<cmd>']...  extra guest commands, each started in the background as `( cmd ) &`
 //     [--initrd <path>]         serve this initrd for Debian's (images/stress/build.sh: /run/stress/gostress in the guest)
 //     [--disk2 <repo path>]     a read-only second disk, /dev/vdb (images/stress/build-goroot.sh: goroot.ext4)
-//     [--no-load]               only the probes
+//     [--no-load]               no built-in load (the --guest-cmd ones still start)
 //     [--stall-ms 2000] [--freeze-ms 10000] [--warmup 90]   thresholds (analyze.ts DEFAULTS)
 //     [--inject freeze-main@60:30]  fault injection, to check the detection (main thread busy for 30 s at t=60)
 //     [--inject drop-status@60:30]  the machine worker's status messages don't reach the page for 30 s
@@ -19,6 +19,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path';
 import { chromium, type CDPSession, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
+import { unattendedQuery } from '../../tests/debian-unattended.ts';
 import { analyze, DEFAULTS, report, type Options, type PageStatus, type Proc, type Rec, type Sample } from './analyze.ts';
 
 const argv = process.argv.slice(2);
@@ -143,7 +144,7 @@ say(`log: ${out}`);
 const initrd = values('--initrd')[0];
 if (initrd) await page.route(`**/target/images/${machine}/initrd.img`, (r) => r.fulfill({ path: initrd }));
 const disk2 = values('--disk2')[0];
-await page.goto(`${base}/web/app/?machine=${machine}&ncpus=${ncpus}&view=terminal${disk2 ? `&disk2=${encodeURIComponent(`/${disk2}`)}` : ''}`);
+await page.goto(`${base}/web/app/?machine=${machine}&ncpus=${ncpus}&view=terminal&${unattendedQuery()}${disk2 ? `&disk2=${encodeURIComponent(`/${disk2}`)}` : ''}`);
 
 /** Races `p` against a timeout (the main thread may be frozen: Playwright waits for it forever). */
 const within = <T>(p: Promise<T>, ms: number): Promise<T | undefined> => Promise.race([p, new Promise<undefined>((r) => setTimeout(r, ms))]);
@@ -212,7 +213,7 @@ if (!(await until(/login: /, 300_000))) {
     say(`boot stall ${i}: ${JSON.stringify(st).slice(0, 1500)}`);
   }
   finish();
-  stop(2, `no login prompt; the console ended: ${JSON.stringify(serial.slice(-400))}`);
+  stop(2, `no login prompt; the console ended: ${JSON.stringify(serial.slice(-3000))}`);
 }
 await type('root');
 if (!(await until(/root@\S+:~# /, 60_000))) {
@@ -241,7 +242,7 @@ const CHURN = [
   ' if os.fork()==0: os._exit(0)',
   ' os.wait()',
 ];
-const load = flag('--no-load') ? [] : [
+const builtin = flag('--no-load') ? [] : [
   'for i in 1 2; do (while :; do :; done) & done',
   '(while :; do /bin/true; /bin/ls / >/dev/null; done) &',
   '(while :; do seq 1 300000 | sort -R | tail -1 >/dev/null; done) &',
@@ -252,12 +253,16 @@ const load = flag('--no-load') ? [] : [
   // console output
   '(while :; do seq 1 200; sleep 1; done) &',
   `printf '%s\\n' ${CHURN.map((l) => `'${l}'`).join(' ')} > /var/tmp/churn.py; (python3 /var/tmp/churn.py 2>&1 | head -5) &`,
-  ...values('--guest-cmd').map((c) => `( ${c} ) &`),
+];
+const extra = values('--guest-cmd');
+const load = builtin.length + extra.length === 0 ? [] : [
+  ...builtin,
+  ...extra.map((c) => `( ${c} ) &`),
   // Output that the terminal's echo of the command can't match: a shell left at a continuation prompt by a garbled line never prints it.
   'echo LOAD-STARTED-$((6*7))',
 ];
 for (const l of load) await type(l);
-if (load.length && !(await until(/LOAD-STARTED-42/, 120_000))) stop(finishAndCode(2), `the load did not start; the console ends ${JSON.stringify(serial.slice(-400))}`);
+if (load.length && !(await until(/LOAD-STARTED-42/, 120_000))) stop(finishAndCode(2), `the load did not start; the console ends ${JSON.stringify(serial.slice(-3000))}`);
 function finishAndCode(c: number) {
   finish();
   return c;
@@ -353,7 +358,12 @@ for (let n = 0; Date.now() - began < seconds * 1000; n++) {
   emit(s);
   const rate = records.filter((r): r is Sample => r.type === 'sample').slice(-2);
   const mips = rate.length === 2 && rate[0].status && rate[1].status && rate[1].status.uptime > rate[0].status.uptime ? ((rate[1].status.steps - rate[0].status.steps) / (rate[1].status.uptime - rate[0].status.uptime) / 1e3).toFixed(0) : '-';
-  lastMips = `${s.state ?? '?'}${s.unresponsive ? ' UNRESPONSIVE' : ''}, ${mips} MIPS, JIT ${s.status?.jitBlocks ?? '-'}, status age ${(s.statusAgeMs ?? NaN).toFixed(0)} ms, renderer ${s.procs?.filter((p) => p.type === 'renderer').reduce((a, p) => a + p.rssMiB, 0).toFixed(0) ?? '-'} MiB, vCPU longest ${Math.max(0, ...(s.status?.vcpus ?? []).map((v) => v.maxRunMs)).toFixed(0)} ms`;
+  const [a, b] = rate.length === 2 ? [rate[0].status, rate[1].status] : [undefined, undefined];
+  // Over the last interval: the share of steps interpreted, flushes, ms of compiling per second.
+  const jit = a && b && b.jitSteps !== undefined && b.steps > a.steps
+    ? `, interp ${((1 - (b.jitSteps - a.jitSteps!) / (b.steps - a.steps)) * 100).toFixed(1)}%, flushes +${b.jitFlushes! - a.jitFlushes!} (${b.jitFlushes}), compiling ${((b.jitCompileMs - a.jitCompileMs) / ((b.uptime - a.uptime) / 1000)).toFixed(0)} ms/s, ${(b.jitBytes! / 1048576).toFixed(0)} MiB compiled`
+    : '';
+  lastMips = `${s.state ?? '?'}${s.unresponsive ? ' UNRESPONSIVE' : ''}, ${mips} MIPS${jit}, JIT ${s.status?.jitBlocks ?? '-'}, status age ${(s.statusAgeMs ?? NaN).toFixed(0)} ms, renderer ${s.procs?.filter((p) => p.type === 'renderer').reduce((a, p) => a + p.rssMiB, 0).toFixed(0) ?? '-'} MiB, vCPU longest ${Math.max(0, ...(s.status?.vcpus ?? []).map((v) => v.maxRunMs)).toFixed(0)} ms`;
   if (n % 6 === 5) say(lastMips);
   if (s.state === 'crashed' || s.state === 'failed') {
     event('state', `${s.state}: ${s.message}`);

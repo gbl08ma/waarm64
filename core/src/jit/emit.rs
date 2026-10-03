@@ -945,7 +945,7 @@ pub enum Bus {
 /// vCPU's transfer cache (`mmu::Tlb::xc`), keyed by the VA and `regime` (the
 /// key's low bits); on a miss, the block tail-calls `miss` (the cache's
 /// [`xmiss`] for the regime, imported) with this block retired. With the MMU off
-/// (`miss` is `None`) it's in the jump cache at `jc`, by its key (the PC and
+/// (`miss` is `None`) it's in the jump cache ([`JC_PTR`]), by its key (the PC and
 /// `regime`). If it's there and `left` covers this block's `len` and its
 /// length, tail-calls it through the table (type `ty`), after `check` (the
 /// stale-code checker) if given. Otherwise falls through (to the block's
@@ -954,7 +954,6 @@ pub fn indirect(
     c: &mut Func,
     regime: u64,
     miss: Option<u32>,
-    jc: u32,
     len: u32,
     ty: u32,
     check: Option<u32>,
@@ -975,7 +974,7 @@ pub fn indirect(
         c.i64_const(regime as i64).op(OR + W);
     }
     c.local_set(KEY);
-    via_jc(c, None, jc, len, ty, check);
+    via_jc(c, None, len, ty, check);
 }
 
 /// The transfer cache probe of [`indirect`], for the VA in `ADDR` and an i32
@@ -1010,6 +1009,12 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>) {
         .end();
 }
 
+/// The `Vcpu` offsets of the pointers to its table's jump cache and hot words
+/// (`jit::State`): a module reads them there, so its bytes are the same for
+/// every table it's installed in (docs/jit.md "Sharing").
+pub const JC_PTR: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, jc)) as u32;
+pub const HOT_PTR: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, hot)) as u32;
+
 /// The transfer cache's offset in the `Vcpu`.
 const XC: u32 = (offset_of!(Vcpu, tlb) + offset_of!(Tlb, xc)) as u32;
 
@@ -1031,9 +1036,9 @@ fn xc_entry(c: &mut Func) {
 /// tail-calls it, with the block retired): finds the PC's
 /// block as the dispatcher would, through the instruction TLB of the
 /// regime's EL (`tlb`: its array, and RAM's host base and guest PA) and the
-/// jump cache at `jc`, and if it's there and `left` covers it, fills the
+/// jump cache ([`JC_PTR`]), and if it's there and `left` covers it, fills the
 /// entry and tail-calls the block (after `check`). Otherwise returns `acc`.
-pub fn xmiss(regime: u64, tlb: (u32, u64, u64), jc: u32, ty: u32, check: Option<u32>) -> Func {
+pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) -> Func {
     const KEY: u32 = BASE; // i64 scratch
     const JCE: u32 = HOST; // i32 scratch
     let mut c = Func::default();
@@ -1058,7 +1063,11 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), jc: u32, ty: u32, check: Option<
     // The jump cache entry, `jc + ((key >> 2) & (JC - 1)) * 16`.
     c.local_get(KEY).i32_wrap_i64().i32_const(2).op(SHL);
     c.i32_const((super::JC as i32 - 1) << 4).op(AND);
-    c.i32_const(jc as i32).op(ADD).local_tee(JCE).i64_load(0);
+    c.local_get(VCPU)
+        .i32_load(JC_PTR)
+        .op(ADD)
+        .local_tee(JCE)
+        .i64_load(0);
     c.local_get(KEY).op(EQ + WC).op(AND);
     c.local_get(LEFT)
         .local_get(JCE)
@@ -1094,7 +1103,7 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), jc: u32, ty: u32, check: Option<
 /// the i64 scratch local). With an i32 condition on the stack, tail-calls the
 /// block the entry holds if the condition holds, its key matches and `left`
 /// covers both blocks; otherwise falls through.
-pub fn via_jc(c: &mut Func, key: Option<u64>, jc: u32, len: u32, ty: u32, check: Option<u32>) {
+pub fn via_jc(c: &mut Func, key: Option<u64>, len: u32, ty: u32, check: Option<u32>) {
     const KEY: u32 = BASE; // i64 scratch
     const JCE: u32 = HOST; // i32 scratch
     match key {
@@ -1102,18 +1111,17 @@ pub fn via_jc(c: &mut Func, key: Option<u64>, jc: u32, len: u32, ty: u32, check:
         None => {
             c.local_get(KEY).i32_wrap_i64().i32_const(2).op(SHL);
             c.i32_const((super::JC as i32 - 1) << 4).op(AND);
-            c.i32_const(jc as i32)
+            c.local_get(VCPU)
+                .i32_load(JC_PTR)
                 .op(ADD)
                 .local_tee(JCE)
                 .i64_load(0)
                 .local_get(KEY);
         }
         Some(k) => {
-            let e = jc + (((k >> 2) as u32) & (super::JC as u32 - 1)) * 16;
-            c.i32_const(e as i32)
-                .local_tee(JCE)
-                .i64_load(0)
-                .i64_const(k as i64);
+            let e = (((k >> 2) as u32) & (super::JC as u32 - 1)) * 16;
+            c.local_get(VCPU).i32_load(JC_PTR).i32_const(e as i32);
+            c.op(ADD).local_tee(JCE).i64_load(0).i64_const(k as i64);
         }
     }
     c.op(EQ + WC).op(AND);
@@ -1146,22 +1154,25 @@ pub fn returns_to(c: &mut Func, off: i64) {
     c.op(EQ + WC);
 }
 
-/// The tier-up prologue of a loop head compiled alone (step 8.3): the hot
-/// word at `word` counts its entries down; the entry that takes it from 1 to
+/// The tier-up prologue of a loop head compiled alone (step 8.3): hot word
+/// `word` (of the vCPU's table, [`HOT_PTR`]) counts its entries down; the entry that takes it from 1 to
 /// 0 calls `hot(vcpu, key, pc)`, which compiles the head's loop region and
 /// then stores `REDIRECT | its table index` in the word; from then on every
 /// entry tail-calls the region (entries through links compiled before it).
 /// 0 stays 0: the region wasn't compiled.
 pub fn tier_up(c: &mut Func, word: u32, key: u64, ty: u32, hot: u32) {
     const V: u32 = 6; // i32 scratch
-    c.i32_const(word as i32).i32_load(0).local_tee(V);
+    const H: u32 = TLBE; // i32 scratch: the hot words
+    let off = 4 * word;
+    c.local_get(VCPU).i32_load(HOT_PTR).local_tee(H);
+    c.i32_load(off).local_tee(V);
     c.i32_const(0).op(LT_S).if_();
     c.local_get(VCPU).local_get(ACC).local_get(LEFT);
     c.local_get(V).i32_const(!REDIRECT as i32).op(AND);
     c.return_call_indirect(ty).end();
     c.local_get(V).if_();
-    c.i32_const(word as i32).local_get(V).i32_const(1).op(SUB);
-    c.memarg(0x36, 2, 0); // i32.store
+    c.local_get(H).local_get(V).i32_const(1).op(SUB);
+    c.memarg(0x36, 2, off); // i32.store
     c.local_get(V).i32_const(1).op(EQ).if_();
     c.local_get(VCPU)
         .i64_const(key as i64)

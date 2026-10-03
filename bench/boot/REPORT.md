@@ -896,3 +896,70 @@ core with `bootVm`'s `fixedMemory` default flipped, alternated in one session; J
   allocation in `vm_new` failed. The pointer goes through `black_box`.
 - The core module still imports a growable memory (its code still reloads); docs/backlog.md
   "JIT" has what that would take.
+
+## M8: one code cache for all vCPUs
+
+2026-10-03. The user saw a heavy guest load (Firefox in the guest, 4 vCPUs) flush the JIT cache
+every few seconds and stay at 200–300 MIPS. Each vCPU worker had its own cache with a quarter of
+the 160 MiB budget, and compiled its own copy of the same code. Now the vCPUs share one cache of
+160 MiB, and every worker installs the same module bytes, whose machine code V8 compiles once and
+shares (docs/jit.md "Sharing"). Dev VM, Chromium 153.0.8010.52; JSON and logs in
+`results/m8-share/`.
+
+**The load:** Debian on 4 vCPUs on the page, a cold `go build` of a small program (`fmt` and its
+dependencies, the stress image's Go toolchain on a second disk) in a loop for 300 s, timed by the
+guest (`bench/stress/stress.ts --no-load --disk2 … --guest-cmd …`, which now prints the share of
+steps interpreted, flushes and compile time per sample). One run each, `results/m8-share/stress/`:
+
+| | build (s) | MIPS median | flushes in ~300 s | steps interpreted | renderer |
+|---|---|---|---|---|---|
+| 4 caches × 40 MiB (before) | 150, 143 | 296 | ~76 | 2–6% | 3.1–3.7 GB |
+| 4 caches × 80 MiB | 107, 91, 98 | 449 | ~16 | 0.5–3% | 3.8–4.6 GB |
+| 4 caches × 160 MiB | 98, 72, 74 | 511 | 1 | ~0.1% | 5.3–6.3 GB |
+| 4 × 40 MiB, the flushed hot set compiled on first sight | 178 | 259 | ~89 | 3–7% | 2.9–3.6 GB |
+| 1 vCPU, 640 MiB (no flush) | 139, 111 | 423 | 0 | ~0% | 3.0–3.5 GB |
+| **one shared cache of 160 MiB** | **81, 51, 48, 69, 53** | **755** | **1** | **~0.1%** | **3.2–3.5 GB** |
+
+- **The flushes cost far more than their compiling** (~5% of CPU): after each, hot code runs in
+  the interpreter (a few percent of the steps, at a fraction of the speed) and in Liftoff again.
+  The steps-per-second check of the earlier memory work missed it; a build timed by the guest
+  doesn't.
+- **The duplication:** the whole load (boot and builds) compiled 227 MiB of wasm on one vCPU,
+  ~650 MiB on four private caches.
+- **Eviction can't fix a cache 5× too small:** compiling a block that was compiled before the
+  flush on its first sight after it (not after 50 dispatches) filled the cache faster: more
+  flushes, slower builds.
+- **V8 shares the code** of identical bytes compiled in another worker (its process-wide
+  native-module cache): `results/m8-share/chromium-test.ts`, a 5 MB module of 3000 functions,
+  first calls of all of them 22.8 ms in the first worker, 3.6 ms in the next two; a module that
+  differs by a custom section, 25.7 ms. Node 26 the same (26 vs 1.6 ms).
+
+**The benchmarks**, before and after alternated twice in one session, pooled medians [quartiles],
+`results/m8-share/ab/`:
+
+| | before | shared | |
+|---|---|---|---|
+| `alpine_user_jit` total (n6) | 18,933 [18,864–19,083] | 19,156 [19,073–19,175] | +1.2% |
+| `boot_alpine_jit` total (n10) | 9447 [9385–9485] | 9618 [9557–9719] | +1.8% |
+| Buildroot `boot_jit` total (n20) | 731 [725–734] | 769 [763–793] | +5.1% |
+| `smp_user_jit_4` total (4 parallel vCPUs, n4) | 26,839 [26,723–26,961] | 21,878 [21,765–21,929] | −18.5% |
+| its churn, compress | 4379, 2356 | 2666, 2213 | −39%, −6.1% |
+| its Lua, SQLite | 3308, 2797 | 3436, 2932 | +3.9%, +4.8% |
+
+- On 4 vCPUs the userspace run compiled 36K regions (39 MB, 0.6 s) where four caches compiled
+  91K (104 MB, 2.0 s): the churn phase, kernel and new processes, is where that shows.
+- One vCPU pays 1–2%: the jump cache and hot words reached through the vCPU (one more load), and
+  each module's bytes copied for the catch-up outside the lock. A first build that installed
+  under the lock measured +1.0% and −1.5% for the two Alpine runs (−16% on 4 vCPUs, Lua and SQLite
+  +6.5%), the same session layout; Buildroot's half-second boot pays 5%, a check rather than a
+  target.
+- **Not explained yet:** the single-threaded phases on 4 vCPUs, 4–5% slower (docs/backlog.md
+  "JIT").
+- **Installs outside the lock:** a worker stalled inside `jit_install` while holding the cache's
+  lock kept the other vCPU from reaching its DSB (`tests/hoststall.test.ts`, in CI); a table now
+  copies what it lacks under the lock and installs it after.
+- **A bug the sharing exposed:** quieting a region member's hot word (`&= REDIRECT`) turned a
+  word that already redirected into `REDIRECT | 0`, a call of table slot 0 (a core function:
+  "function signature mismatch"). With one cache a tiered-up member's word was never quieted;
+  another table replays the enclosing tier-up after its own member tiered up. `maint.bin` in
+  parallel found it about one run in five; a dump of each table's references at the trap named it.

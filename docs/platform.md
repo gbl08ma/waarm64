@@ -65,7 +65,8 @@ realtime only). With one vCPU both are the machine as it was before M7.
 
 **N vCPUs, deterministic round-robin** (`VmConfig.ncpus`, M7): `vm_run` runs every vCPU on the
 calling thread, a **quantum** (`QUANTUM` = `CHUNK` steps) each in index order; a vCPU that's off
-(PSCI) or waiting in WFI is passed over. The code cache lives in vCPU 0's `jit.cache` and moves
+(PSCI) or waiting in WFI is passed over. The JIT (its one function table, on the code cache every
+VM shares among its vCPUs: [jit.md](jit.md) "Sharing") lives in vCPU 0's `jit.cache` and moves
 into whichever vCPU runs a chunk (block code takes the `Vcpu` pointer). Virtual time counts the
 steps of all vCPUs; timer deadlines of every on vCPU cut chunks. A WFI with no interrupt signaled
 waits (PC on it) until one is; when every vCPU waits, deterministic time jumps to the earliest
@@ -156,17 +157,20 @@ same pause.
 
 Round-robin makes it synchronous: **TLBI … IS** flushes every other
 vCPU's TLB in the run loop (`Exit::TlbiIs`) before anything else runs, and `IC IVAU`/`IC
-IALLU(IS)` invalidate the one code cache all vCPUs share. JIT code holds no translation of its
+IALLU(IS)` invalidate the one code cache all vCPUs share (in either mode). JIT code holds no translation of its
 own that a TLBI would have to reach: cross-page chains check the running vCPU's instruction TLB,
 and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor and both ICs across
 4 vCPUs (on QEMU and hvf too). In **parallel mode**:
-- Each vCPU has a queue (TLB operations, and code pages for its cache) under a lock, an atomic
-  pending flag checked at every chunk boundary, and `queued`/`applied` counts. An issuer pushes
-  to every other vCPU's queue: up to 64 TLB operations (then one flush-all), and **distinct code
-  pages**, up to 1024 (then the whole cache). Linux cleans a page with an IC IVAU per 64-byte line,
-  and an idle vCPU collects the pages of every exec page fault elsewhere: queues of 64 addresses,
-  then of 64 pages, collapsed into whole-cache flushes often enough to compile 6×, then 3×, the
-  blocks of a one-vCPU Alpine boot on two vCPUs (now 1.7×: each vCPU compiles what it runs).
+- Each vCPU has a queue of TLB operations under a lock, an atomic pending flag checked at every
+  chunk boundary, and `queued`/`applied` counts. An issuer pushes to every other vCPU's queue: up
+  to 64 TLB operations (then one flush-all).
+- **IC IVAU and IALLU(IS)** drop the blocks from the shared code cache on the issuing vCPU, and
+  every other vCPU's function table catches up before its next block ([jit.md](jit.md)
+  "Sharing"): nothing is queued. Before the cache was shared, each vCPU had its own and a queue of
+  code pages: Linux cleans a page with an IC IVAU per 64-byte line, and an idle vCPU collected the
+  pages of every exec page fault elsewhere, so queues of 64 addresses, then of 64 pages, collapsed
+  into whole-cache flushes often enough to compile 6×, then 3×, the blocks of a one-vCPU Alpine
+  boot on two vCPUs (1.7× with distinct pages, up to 1024: each vCPU compiled what it ran).
 - A vCPU applies its queue at every chunk boundary, and when it enters `vm_run_cpu`, before it
   runs anything.
 - **The issuer's DSB after TLBI IS waits** until each target has applied the operations or isn't
@@ -184,10 +188,10 @@ and blocks are keyed by PA. The bare-metal `maint` test covers every IS flavor a
   after a context synchronization event *that follows its seeing the change*, which ends the chunk
   here. `maint.c` had its ISB before waiting for the rewrite: parallel mode ran the old code (401),
   and the test was fixed (QEMU TCG and hvf pass it either way).
-- **The stale-code checker tolerates** stale blocks in parallel caches (`jit::Cache::tolerant`:
-  code another vCPU rewrote is legal to run until this vCPU drains the IC): it drops the block at
-  the run loop's entry and counts it (`JIT_STALE`, counter word 90), and only counts mid-chain. Only
-  round-robin runs trap.
+- **The stale-code checker tolerates** stale blocks in parallel mode (`jit::Cache::tolerant`:
+  code another vCPU rewrote is legal to run until this vCPU's next context synchronization): it
+  drops the block at the run loop's entry and counts it (`JIT_STALE`, counter word 90), and only
+  counts mid-chain; a block another vCPU's IC already dropped passes. Only round-robin runs trap.
 - **Only vCPUs that may hold the entries are waited for:** TLBI ASIDE1IS, VAE1IS and
   VALE1IS of a TTBR0-half address are for one ASID, and a vCPU's TLB holds nG entries of its
   current ASID only (an ASID change drops them), so the DSB skips targets whose published ASID

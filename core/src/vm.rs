@@ -236,7 +236,7 @@ pub struct Counters {
     /// back-edges; ABI 17: tier-ups; ABI 25: stale blocks tolerated.
     pub jit: [AtomicU64; 20],
     /// Parallel SMP (ABI 26, `PAR_*`): DSBs that waited for TLBI IS and the
-    /// ns they waited, TLBI IS and IC operations broadcast, queue drains that
+    /// ns they waited, TLBI IS broadcast and IC operations issued, queue drains that
     /// applied something, IDLE exits, platform-lock acquisitions that found
     /// it held and the ns they waited, WFEs (each ends the chunk), ns spent
     /// out of `vm_run_cpu` between runs (idle, or in the host).
@@ -445,9 +445,10 @@ struct Sched {
 
 pub struct Vm {
     /// CPU *i* is `vcpus[i]` (MPIDR `gicv3::mpidr(i)`). Round-robin: the
-    /// JIT's code cache lives in vCPU 0's `jit.cache` and moves to another
-    /// vCPU while it runs a chunk (one cache for every vCPU of the thread:
-    /// block code takes the `Vcpu` pointer). Parallel: each has its own.
+    /// JIT (its table) lives in vCPU 0's `jit.cache` and moves to another
+    /// vCPU while it runs a chunk (one table for every vCPU of the thread:
+    /// block code takes the `Vcpu` pointer). Parallel: each has its own
+    /// table, on the cache they share.
     pub vcpus: Vec<Slot>,
     /// Round-robin's scheduling state (parallel mode keeps its own in `Shared`).
     sched: Vec<Sched>,
@@ -568,7 +569,7 @@ impl Vm {
             };
         let jit = match cfg.jit {
             0 => None,
-            1 => Some(jit::Config::for_vcpus(if parallel { n as u64 } else { 1 })),
+            1 => Some(jit::Config::DEFAULT),
             3 => Some(jit::Config::CHECK),
             _ => Some(jit::Config::STRESS),
         }
@@ -576,7 +577,7 @@ impl Vm {
             pages: cfg.mem_pages as u32,
             ..c
         });
-        let vcpus: Vec<_> = (0..n)
+        let mut vcpus: Vec<_> = (0..n)
             .map(|i| {
                 let mut v = Vcpu::new(Cpu {
                     pc: RAM_BASE,
@@ -584,18 +585,24 @@ impl Vm {
                     mpidr: gicv3::mpidr(i),
                     ..Cpu::reset()
                 });
-                // One cache for all (round-robin, in vCPU 0), or one each (parallel).
-                if i == 0 || parallel {
+                // One cache: round-robin's table lives in vCPU 0 (`Vm::chunk`).
+                if i == 0 {
                     v.jit.cache = jit.map(|c| {
                         let mut cache = jit::Cache::new(c);
                         cache.features = features;
                         cache.tolerant = parallel;
-                        Box::new(cache)
+                        Box::new(jit::Jit::new(cache))
                     });
                 }
                 Slot::new(v)
             })
             .collect();
+        // Parallel: a table per vCPU (its worker's) on the same cache.
+        if parallel {
+            for i in 1..n {
+                vcpus[i].jit.cache = vcpus[0].jit.cache.as_ref().map(|j| Box::new(j.join()));
+            }
+        }
         let off = Sched {
             power: Power::Off,
             wait: Wait::No,
@@ -608,7 +615,6 @@ impl Vm {
             devices: devices.iter().map(|_| DevShared::default()).collect(),
             ..Shared::default()
         });
-        let mut vcpus = vcpus;
         if parallel {
             for (v, s) in vcpus.iter_mut().zip(&shared.cpus) {
                 v.tlb.published = s.par.asid_word();
@@ -846,7 +852,7 @@ impl Vm {
         c.tlb_walks.store(walks, Ordering::Relaxed);
         c.tlb_flushes.store(flushes, Ordering::Relaxed);
         if let Some(j) = &self.vcpus[0].jit.cache {
-            publish_jit(c, &j.stats);
+            publish_jit(c, &j.table.stats);
         }
     }
 
@@ -914,7 +920,7 @@ impl Vm {
             Exit::Resync => self.retire(1),
             Exit::Invalidate(pa) => {
                 self.retire(1);
-                // The code cache is home in vCPU 0 between chunks.
+                // The JIT is home in vCPU 0 between chunks.
                 if let Some(j) = &mut self.vcpus[0].jit.cache {
                     j.invalidate(pa);
                 }

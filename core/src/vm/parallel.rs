@@ -27,12 +27,8 @@ const OFF: u32 = 0;
 const RUN: u32 = 1;
 const OUT: u32 = 2;
 
-/// Queued TLB operations, and code pages, before a queue collapses them into
-/// one flush. An idle vCPU collects the pages of every exec page fault
-/// elsewhere until it wakes: 64 pages collapsed often enough to triple the
-/// blocks compiled in an Alpine boot on 2 vCPUs.
+/// Queued TLB operations before a queue collapses them into one flush.
 const QUEUE: usize = 64;
-const QUEUE_IC: usize = 1024;
 
 /// The DSB wait gives up (a deadlock: a bug) after this long *waiting*: see [`DsbBudget`].
 pub(super) const DSB_LIMIT_NS: u64 = 10_000_000_000;
@@ -162,22 +158,17 @@ struct Queue {
     /// rest by VA (as round-robin's `Exit::TlbiIs`).
     tlb: Vec<(u32, u64)>,
     tlb_all: bool,
-    /// The physical pages of IC IVAUs, each once: the code cache drops
-    /// blocks by page, and Linux cleans a page with an IC IVAU per line (64
-    /// of them), which overflowed a queue of addresses into whole-cache
-    /// flushes (6× the blocks compiled in an Alpine boot on 2 vCPUs).
-    ic: Vec<u64>,
-    ic_all: bool,
     /// Operations ever queued (its `applied` catches up at each drain).
     queued: u64,
 }
 
 /// One broadcast operation: a TLBI IS (op2, VA, and the ASID it's
-/// limited to, `ANY` for every ASID), or an IC.
+/// limited to, `ANY` for every ASID). ICs aren't broadcast: the code cache
+/// is shared, and every vCPU's table catches up before its next block
+/// (docs/jit.md "Sharing").
 #[derive(Clone, Copy, Debug)]
 enum Op {
     Tlb(u32, u64, u64),
-    Ic(u64),
 }
 
 /// A vCPU's run state, which only its own thread touches.
@@ -410,7 +401,9 @@ impl Vm {
                 if let Some(j) = &mut v.jit.cache {
                     j.invalidate(pa);
                 }
-                self.broadcast(c, own, Op::Ic(pa));
+                if self.vcpus.len() > 1 {
+                    bump(&self.shared.cpus[c].counters.par[PAR_IC]);
+                }
             }
             // A yield (decision 5 of M7's kickoff): the chunk ended.
             Exit::Wfe => {
@@ -544,14 +537,7 @@ impl Vm {
         if self.vcpus.len() == 1 {
             return;
         }
-        let k = &self.shared.cpus[c].counters.par;
-        bump(
-            &k[if let Op::Tlb(..) = op {
-                PAR_TLBI_IS
-            } else {
-                PAR_IC
-            }],
-        );
+        bump(&self.shared.cpus[c].counters.par[PAR_TLBI_IS]);
         // Orders the guest's page-table stores before the ASID reads below
         // (the target publishes its ASID, then fences, then walks).
         fence(Ordering::SeqCst);
@@ -567,17 +553,6 @@ impl Vm {
                     q.tlb_all = true;
                 }
                 Op::Tlb(kind, va, _) => q.tlb.push((kind, va)),
-                Op::Ic(_) if q.ic_all => {}
-                // The same page as the last (an IC IVAU per line), or queued already.
-                Op::Ic(pa)
-                    if pa != u64::MAX
-                        && (q.ic.last() == Some(&(pa & !0xfff))
-                            || q.ic.contains(&(pa & !0xfff))) => {}
-                Op::Ic(pa) if pa == u64::MAX || q.ic.len() == QUEUE_IC => {
-                    q.ic.clear();
-                    q.ic_all = true;
-                }
-                Op::Ic(pa) => q.ic.push(pa & !0xfff),
             }
             q.queued += 1;
             let seq = q.queued;
@@ -585,10 +560,9 @@ impl Vm {
             drop(q);
             // A vCPU running another ASID holds no entry the operation
             // drops: it applies it at its next chunk boundary, unwaited.
-            if let Op::Tlb(_, _, asid) = op
-                && let theirs = s.par.asid.load(Ordering::SeqCst)
-                && (asid == ANY || theirs == ANY || theirs == asid)
-            {
+            let Op::Tlb(_, _, asid) = op;
+            let theirs = s.par.asid.load(Ordering::SeqCst);
+            if asid == ANY || theirs == ANY || theirs == asid {
                 match own.waits.iter_mut().find(|w| w.0 == t) {
                     Some(w) => w.1 = seq,
                     None => own.waits.push((t, seq)),
@@ -624,13 +598,8 @@ impl Vm {
                 }
             }
         }
-        if let Some(j) = &mut v.jit.cache {
-            if q.ic_all {
-                j.invalidate(u64::MAX);
-            } else {
-                q.ic.iter().for_each(|&pa| j.invalidate(pa));
-            }
-        }
+        // The code cache is shared: the vCPU that issued the IC dropped the
+        // blocks, and this one's table catches up before its next block runs.
         p.applied.store(queued, Ordering::SeqCst);
         bump(&self.shared.cpus[c].counters.par[PAR_DRAINS]);
         for (o, s) in self.shared.cpus.iter().enumerate() {
@@ -699,14 +668,14 @@ impl Vm {
         let mut s = format!("vCPU {c}: DSB waited 10 s for TLBI IS");
         for (i, &(t, seq)) in own.waits.iter().enumerate() {
             let p = &self.shared.cpus[t].par;
-            let (queued, tlb, ic, tlb_all, ic_all) = match p.queue.try_lock() {
-                Ok(q) => (q.queued, q.tlb.len(), q.ic.len(), q.tlb_all, q.ic_all),
-                Err(_) => (u64::MAX, 0, 0, false, false),
+            let (queued, tlb, tlb_all) = match p.queue.try_lock() {
+                Ok(q) => (q.queued, q.tlb.len(), q.tlb_all),
+                Err(_) => (u64::MAX, 0, false),
             };
             let (b, n) = (began.get(i).copied().unwrap_or_default(), now[i]);
             s += &format!(
                 "\n  vCPU {t}: state {} applied {} waited-for {seq} queued {queued} \
-                 (queue: {tlb} tlb, {ic} ic, all {tlb_all}/{ic_all}) pending {} waiting {} \
+                 (queue: {tlb} tlb, all {tlb_all}) pending {} waiting {} \
                  retired {} -> {} pc {:#x} -> {:#x}",
                 p.state.load(Ordering::SeqCst),
                 p.applied.load(Ordering::SeqCst),
@@ -835,7 +804,7 @@ impl Vm {
         k.tlb_walks.store(t.walks, Ordering::Relaxed);
         k.tlb_flushes.store(t.flushes, Ordering::Relaxed);
         if let Some(j) = &v.jit.cache {
-            publish_jit(k, &j.stats);
+            publish_jit(k, &j.table.stats);
         }
     }
 }

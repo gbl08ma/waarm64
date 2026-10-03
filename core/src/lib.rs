@@ -217,7 +217,7 @@ pub extern "C" fn jit_new(
     region_after: u32,
 ) -> *mut mmu::Vcpu {
     let mut v = mmu::Vcpu::new(cpu::Cpu::default());
-    v.jit.cache = Some(Box::new(jit::Cache::new(jit::Config {
+    v.jit.cache = Some(Box::new(jit::Jit::new(jit::Cache::new(jit::Config {
         threshold,
         batch,
         capacity,
@@ -225,7 +225,7 @@ pub extern "C" fn jit_new(
         check: check != 0,
         region_after,
         pages: 0,
-    })));
+    }))));
     Box::into_raw(v)
 }
 
@@ -284,7 +284,7 @@ pub unsafe extern "C" fn jit_stats(v: *const mmu::Vcpu) -> *const jit::Stats {
         .jit
         .cache
         .as_deref()
-        .map_or(core::ptr::null(), |c| &c.stats)
+        .map_or(core::ptr::null(), |j| &j.table.stats)
 }
 
 /// The JIT's helper calls so far by instruction class (ABI 18, M5 step 10):
@@ -301,7 +301,7 @@ pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
         .jit
         .cache
         .as_deref_mut()
-        .map_or(core::ptr::null(), |c| c.helper_report())
+        .map_or(core::ptr::null(), |j| j.table.helper_report())
 }
 
 // The whole-VM ABI (docs/abi.md). Every `vm` argument

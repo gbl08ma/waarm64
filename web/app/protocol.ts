@@ -132,6 +132,9 @@ export type Status = {
   jitBlocks: number;
   jitFlushes: number;
   jitCompileMs: number;
+  /** Instructions retired in JIT code (the rest were interpreted) and the wasm bytes compiled since boot (all vCPUs). */
+  jitSteps: number;
+  jitBytes: number;
   irqs: number;
   /** The worker's run loop: the longest gap between its iterations since the last status (ms), and ms since the last one now (the stress test, bench/stress). */
   loopMaxMs: number;
