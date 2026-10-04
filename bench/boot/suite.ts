@@ -19,6 +19,7 @@
 // `--only p9`: /bench-9p.sh, 9p file operations on the in-memory tree;
 // `--only net`: /bench-net.sh, ping-pong with the loopback adapter.
 import type { Options, Sample } from '../spike/benchmarks.ts';
+import type { DeviceSpec } from '../../web/devices.ts';
 import { bootVm, DISTROS, Exit, GUEST_CMDLINE as CMDLINE, guestDevices, PSCI_SYSTEM_OFF, testDevices } from '../../web/vm.ts';
 
 const CHUNK = 1_000_000; // steps per vm_run, so console markers are timed to ~a chunk
@@ -45,8 +46,8 @@ export async function images(image = 'Image'): Promise<Img & { wasm: Uint8Array<
  * by the text after "webpc: ") and to the end, and the counters. `test`: the
  * device tests' devices and a 640×480 framebuffer (web/vm.ts `testDevices`).
  */
-export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; ncpus?: number; parallel?: boolean; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
-  const devices = img.test ? testDevices(img.disk) : guestDevices(img.disk);
+export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awaited<ReturnType<typeof bootVm>>) => void | Promise<void>, o: { cmdline?: string; realtime?: boolean; crypto?: boolean; ncpus?: number; parallel?: boolean; devices?: DeviceSpec[]; onMark?: (mark: string, vm: Awaited<ReturnType<typeof bootVm>>) => void } = {}) {
+  const devices = o.devices ?? (img.test ? testDevices(img.disk) : guestDevices(img.disk));
   const framebuffer = img.test ? { width: 640, height: 480 } : undefined;
   const vm = await bootVm(module, { ramSize: img.ramSize, kernel: img.kernel, initrd: img.initrd, cmdline: o.cmdline ?? img.cmdline, devices, realtime: o.realtime, framebuffer, jit: img.jit, crypto: o.crypto, ncpus: o.ncpus, parallel: o.parallel, idleLimitMs: 30_000 });
   await onVm?.(vm);
@@ -70,13 +71,13 @@ export async function boot(module: WebAssembly.Module, img: Img, onVm?: (vm: Awa
     if (r.kind === Exit.DEVICE) await vm.settle(); // backends inline (Node)
     if (r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) continue;
     const total = performance.now() - t0;
-    vm.close();
+    const closed = vm.close();
     // The guest's counter read 0 at boot (a vCPU worker's clock behind the VM's; web/vm.ts `clockOffset`).
     if (/Missing cycle counter/.test(console)) throw new Error(`the counter didn't run at boot:\n${console}`);
     if (r.kind !== Exit.PSCI || r.x[0] !== PSCI_SYSTEM_OFF || !/webpc: test (exit 0|ok)/.test(console)) {
       throw new Error(`boot failed: exit ${r.kind} at pc 0x${vm.pc().toString(16)}\n${console}`);
     }
-    return { init: marks['init'], total, marks, console, stats: vm.stats(), cpus: vm.cpuStats(), helpers: vm.helperReport().slice(0, 30) };
+    return { init: marks['init'], total, marks, closed, console, stats: vm.stats(), cpus: vm.cpuStats(), helpers: vm.helperReport().slice(0, 30) };
   }
 }
 

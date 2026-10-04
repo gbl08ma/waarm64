@@ -37,8 +37,9 @@ self.onmessage = (e: MessageEvent) => {
     }
   }
   else if (e.data.type === 'close') {
+    const stats = devices?.stats(); // the blk devices' timers (spec `stats`), before close
     devices?.close();
-    self.postMessage({ type: 'closed' });
+    self.postMessage({ type: 'closed', stats });
     self.close();
   }
 };

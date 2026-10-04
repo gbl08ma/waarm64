@@ -1105,7 +1105,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       save: async () => d.save(),
       written: async (i: number) => d.written(i),
       blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
-      output: () => text, flush: async () => { if (failed) throw failed; }, close: async () => d.close(),
+      output: () => text, flush: async () => { if (failed) throw failed; }, close: async () => (d.close(), d.stats()),
     };
   }
   if (!inWorker || init.specs.length === 0) {
@@ -1123,12 +1123,12 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       save: async () => d.save(),
       written: async (i: number) => d.written(i),
       blocks: async (i: number, blocks: number[]) => d.blocks(i, blocks),
-      output: () => text, flush: async () => {}, close: async () => d.close(),
+      output: () => text, flush: async () => {}, close: async () => (d.close(), d.stats()),
     };
   }
   const worker = new Worker(new URL('./device-worker.ts', import.meta.url), { type: 'module' });
   let flushed = () => {};
-  let closed = () => {};
+  let closed = (_stats?: unknown) => {};
   let saved = (_m: { state?: unknown[]; error?: string }) => {};
   // Requests for a disk's changes (`written`, `blocks`), answered by id.
   type DiskAnswer = { written?: number[]; bytes?: Uint8Array; error?: string };
@@ -1143,7 +1143,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     });
     worker.postMessage({ ...m, id });
   });
-  let closing: Promise<void> | undefined;
+  let closing: Promise<unknown> | undefined;
   const ready = new Promise<void>((resolve, reject) => {
     worker.onerror = (e) => reject(new Error(`device worker: ${e.message}`));
     worker.onmessage = (e: MessageEvent) => {
@@ -1153,7 +1153,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       else if (e.data.type === 'flushed') flushed();
       else if (e.data.type === 'saved') saved(e.data);
       else if (e.data.type === 'disk') asked.get(e.data.id)?.(e.data);
-      else if (e.data.type === 'closed') closed();
+      else if (e.data.type === 'closed') closed(e.data.stats);
     };
   });
   worker.postMessage({ type: 'init', ...init, bell: bellAddr }, specPorts(init.specs));
@@ -1178,9 +1178,10 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
     }),
     /**
      * Resolves once it released its files (so another VM can open the overlay), or after a second
-     * if it doesn't answer (e.g. a sync XHR still waiting); the same promise on a second call.
+     * if it doesn't answer (e.g. a sync XHR still waiting); the same promise on a second call. The value is
+     * the blk timers of devices with `stats` (web/iostats.ts), if any.
      */
-    close: () => (closing ??= new Promise<void>((resolve) => {
+    close: () => (closing ??= new Promise<unknown>((resolve) => {
       closed = resolve;
       setTimeout(resolve, 1000);
       worker.postMessage({ type: 'close' });

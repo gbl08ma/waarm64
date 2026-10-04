@@ -23,6 +23,7 @@ const { values: args } = parseArgs({
     config: { type: 'string', default: 'default' },
     page: { type: 'string', default: 'bench/spike/index.html' },
     out: { type: 'string' },
+    input: { type: 'string' }, // a file for the page's #bench-file input (bench/io)
     flags: { type: 'string', default: '' },
     'chromium-args': { type: 'string', default: '' }, // e.g. the WebGPU switches of bench/gpu (docs/benchmarking.md)
   },
@@ -46,6 +47,7 @@ try {
   if (args.quick) qs.set('quick', '');
   if (args.only) qs.set('only', args.only);
   await page.goto(`http://127.0.0.1:${port}/${args.page}?${qs}`);
+  if (args.input) await page.setInputFiles('#bench-file', args.input);
   let seen = 0;
   const poll = setInterval(async () => {
     const text = await page.locator('#log').textContent().catch(() => '');

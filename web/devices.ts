@@ -8,6 +8,7 @@ import { echoBackend, gateway, portBackend } from './gateway.ts';
 import { gpuBackend, type GpuOptions } from './gpu.ts';
 import { canvasPresenter, type DisplayFromPage } from './gpu-present.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
+import { IoStats } from './iostats.ts';
 import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
 import { openDisk, type Disk } from './qcow2.ts';
 
@@ -27,7 +28,7 @@ import { openDisk, type Disk } from './qcow2.ts';
 export type DeviceSpec =
   | { type: 'console' }
   | { type: 'rng' }
-  | { type: 'blk'; url: string; size?: number; overlay?: string; file?: Blob; discard?: boolean }
+  | { type: 'blk'; url: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean }
   | NetSpec
   | P9Spec
   | InputSpec
@@ -490,11 +491,16 @@ export async function fileSource(url: string): Promise<Source> {
  * writable through an overlay on OPFS; with `discard`, DISCARD and WRITE_ZEROES
  * reach the overlay (`deviceEntry` offers them).
  */
-export function blk(ctx: Ctx, src: Source, files?: OverlayFiles, discard = false): Backend {
+export function blk(ctx: Ctx, src: Source, files?: OverlayFiles, discard = false, st?: IoStats): Backend {
+  if (st) {
+    const read = src.read;
+    src = { ...src, read: (off, len) => st.time('base.read', len, () => read(off, len)) };
+    if (files) files = { ...files, data: st.file('data', files.data), map: st.file('map', files.map) };
+  }
   const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size);
   const rw = files && overlay(base, files.data, files.map);
   const disk: Disk = rw ?? base;
-  return {
+  const backend: Backend = {
     async request(r) {
       const ram = ctx.ram();
       const last = r.write.at(-1);
@@ -503,10 +509,12 @@ export function blk(ctx: Ctx, src: Source, files?: OverlayFiles, discard = false
       const data = [...r.write.slice(0, -1), { off: last.off, len: last.len - 1 }];
       const room = data.reduce((n, s) => n + s.len, 0);
       const h = new DataView(gather(ram, r.read, 16).slice().buffer);
+      const op = h.byteLength === 16 ? h.getUint32(0, true) : -1;
+      if (st) st.size(({ 0: 'read', 1: 'write', 4: 'flush' } as Record<number, string>)[op] ?? `op${op}`, op === T_OUT ? r.read.reduce((k, x) => k + x.len, 0) - 16 : room);
       let [status, n] = [S_UNSUPP, 0];
       if (h.byteLength === 16 && h.getUint32(0, true) === T_IN) {
         const bytes = await disk.read(Number(h.getBigUint64(8, true)) * 512, room);
-        if (bytes) scatter(ram, data, bytes);
+        if (bytes) st ? st.time('scatter', bytes.length, () => scatter(ram, data, bytes)) : scatter(ram, data, bytes);
         [status, n] = bytes ? [S_OK, room] : [S_IOERR, 0];
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_GET_ID) {
         const id = new Uint8Array(20);
@@ -516,10 +524,11 @@ export function blk(ctx: Ctx, src: Source, files?: OverlayFiles, discard = false
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_OUT) {
         // The data follows the header in the readable buffers. Read-only: IOERR.
         const len = r.read.reduce((k, s) => k + s.len, 0);
-        const ok = rw && (await rw.write(Number(h.getBigUint64(8, true)) * 512, gather(ram, r.read, len).subarray(16)).catch(() => false)); // e.g. OPFS over quota
+        const payload = st ? st.time('gather', len, () => gather(ram, r.read, len)) : gather(ram, r.read, len);
+        const ok = rw && (await rw.write(Number(h.getBigUint64(8, true)) * 512, payload.subarray(16)).catch(() => false)); // e.g. OPFS over quota
         status = ok ? S_OK : S_IOERR;
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_FLUSH && rw) {
-        rw.flush();
+        st ? st.time('flush', 0, () => rw.flush()) : rw.flush();
         status = S_OK;
       } else if (h.byteLength === 16 && (h.getUint32(0, true) === T_DISCARD || h.getUint32(0, true) === T_WRITE_ZEROES) && rw && discard) {
         // One segment after the header (max_*_seg is 1): sector (u64), sectors (u32), flags (u32; bit 0: unmap,
@@ -554,6 +563,16 @@ export function blk(ctx: Ctx, src: Source, files?: OverlayFiles, discard = false
       files?.close();
     },
   };
+  if (st) {
+    const request = backend.request;
+    backend.request = async (r) => {
+      const t = performance.now();
+      const n = (await request.call(backend, r)) as number;
+      st.add('request', 0, performance.now() - t);
+      return n;
+    };
+  }
+  return backend;
 }
 
 /** Rings the doorbell; with `wait`, returns once the backends took everything up to this ring. */
@@ -592,6 +611,8 @@ export class Devices {
   private epochs: number[];
   /** Set by `close`: `serve` returns. */
   private closed = false;
+  /** The timers of the blk devices with `stats` (web/iostats.ts), by device. */
+  private ioStats: Record<number, IoStats> = {};
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
   private constructor({ memory, shared, ram, ramSize, signal, specs, deterministic, wakes, state }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | undefined)[], out: (device: number, text: string) => void) {
@@ -607,7 +628,10 @@ export class Devices {
       switch (d.type) {
         case 'console': return console_((t) => out(i, t), ctx);
         case 'rng': return rng(ctx, deterministic);
-        case 'blk': return blk(ctx, sources[i]!, overlays[i], d.discard);
+        case 'blk': {
+          const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;
+          return blk(ctx, sources[i]!, overlays[i], d.discard, st);
+        }
         case 'net': return net(ctx, d);
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
         case 'input': return input(ctx, d);
@@ -648,6 +672,11 @@ export class Devices {
     const overlays = await Promise.all(init.specs.map((d) => (d.type === 'blk' && d.overlay ? openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)) : undefined)));
     const sources = await Promise.all(init.specs.map((d) => (d.type !== 'blk' ? undefined : d.file ? blobSource(d.file) : d.url.startsWith('file:') ? fileSource(d.url) : httpSource(d.url))));
     return new Devices(init, overlays, sources, out);
+  }
+
+  /** The I/O timers of the blk devices that have them (spec `stats`), by device index. */
+  stats() {
+    return Object.fromEntries(Object.entries(this.ioStats).map(([i, st]) => [i, st.json()]));
   }
 
   /** Releases the backends' files (an overlay's handles lock them). */
