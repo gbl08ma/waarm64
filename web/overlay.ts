@@ -103,20 +103,24 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
     for (let s = slots - 1; s >= 0; s--) if (!used[s]) release(s); // the lowest are taken first
   }
 
+  const held = (b: number) => map[b] !== 0 && map[b] !== ZERO;
+
   const read = async (off: number, len: number) => {
     if (off < 0 || off + len > base.size) return undefined;
     const out = new Uint8Array(len);
-    // Runs of blocks that aren't in the overlay go to the base in one read.
-    for (let pos = off; pos < off + len;) {
+    const stop = off + len;
+    for (let pos = off; pos < stop;) {
       const b = Math.floor(pos / BLOCK);
-      let end = Math.min((b + 1) * BLOCK, off + len);
+      let end = Math.min((b + 1) * BLOCK, stop);
       if (map[b] === ZERO) {
         // `out` is zeros there already.
       } else if (map[b]) {
-        const n = end - pos;
-        if (data.read(out.subarray(pos - off, pos - off + n), { at: (map[b] - 1) * BLOCK + (pos - b * BLOCK) }) !== n) return undefined;
+        // Blocks in consecutive slots are one read (an OPFS call costs the same whatever its size).
+        for (let c = b; end < stop && held(c + 1) && map[c + 1] === map[c] + 1; c++) end = Math.min(end + BLOCK, stop);
+        if (data.read(out.subarray(pos - off, end - off), { at: (map[b] - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos) return undefined;
       } else {
-        while (end < off + len && !map[end / BLOCK]) end = Math.min(end + BLOCK, off + len);
+        // Runs of blocks that aren't in the overlay go to the base in one read.
+        while (end < stop && !map[end / BLOCK]) end = Math.min(end + BLOCK, stop);
         const bytes = await base.read(pos, end - pos);
         if (!bytes) return undefined;
         out.set(bytes, pos - off);
@@ -126,30 +130,62 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
     return out;
   };
 
+  /**
+   * Writes in as few OPFS calls as it can (each costs ~0.3 ms whatever its size): blocks the overlay holds in
+   * consecutive slots are one write, and whole blocks it doesn't hold get consecutive slots where `take` has
+   * them and are written from `bytes` as they are, their map entries in one write after their data. Only the
+   * (at most two) blocks a write covers in part are read-modify-write.
+   */
   const write = async (off: number, bytes: Uint8Array) => {
     if (off < 0 || off + bytes.length > base.size) return false;
-    for (let k = 0; k < bytes.length;) {
-      const pos = off + k;
-      const b = Math.floor(pos / BLOCK);
-      const o = pos - b * BLOCK;
-      const n = Math.min(blockLen(b) - o, bytes.length - k);
-      if (!map[b] || map[b] === ZERO) {
-        // First write to the block: its slot starts as the base's contents (or as the zeros it was).
+    if (bytes.length === 0) return true;
+    const stop = off + bytes.length;
+    const last = Math.floor((stop - 1) / BLOCK);
+    const full = (b: number) => off <= b * BLOCK && stop >= (b + 1) * BLOCK; // all BLOCK bytes of block b are in the request
+    for (let b = Math.floor(off / BLOCK); b <= last;) {
+      const pos = Math.max(off, b * BLOCK);
+      if (held(b)) {
+        let c = b;
+        while (c < last && held(c + 1) && map[c + 1] === map[c] + 1) c++;
+        const end = Math.min(stop, (c + 1) * BLOCK);
+        if (data.write(bytes.subarray(pos - off, end - off), { at: (map[b] - 1) * BLOCK + (pos - b * BLOCK) }) !== end - pos) return false;
+        b = c + 1;
+      } else if (!full(b)) {
+        // First write to a block it covers in part: its slot starts as the base's contents (or as the zeros it was).
         const block = new Uint8Array(BLOCK);
-        if (n < blockLen(b) && !map[b]) {
+        if (!map[b]) {
           const old = await base.read(b * BLOCK, blockLen(b));
           if (!old) return false;
           block.set(old);
         }
-        block.set(bytes.subarray(k, k + n), o);
+        const end = Math.min(stop, (b + 1) * BLOCK);
+        block.set(bytes.subarray(pos - off, end - off), pos - b * BLOCK);
         const slot = take();
         if (data.write(block, { at: slot * BLOCK }) !== BLOCK) { release(slot); shrink(); return false; }
         map[b] = slot + 1;
         if (mapFile.write(new Uint8Array(map.buffer, b * 4, 4), { at: b * 4 }) !== 4) return false;
-      } else if (data.write(bytes.subarray(k, k + n), { at: (map[b] - 1) * BLOCK + o }) !== n) {
-        return false;
+        b++;
+      } else {
+        // A run of whole blocks the overlay doesn't hold.
+        let c = b;
+        while (c < last && !held(c + 1) && full(c + 1)) c++;
+        const taken: number[] = [];
+        for (let k = b; k <= c; k++) taken.push(take());
+        for (let i = 0; i < taken.length;) {
+          let j = i;
+          while (j + 1 < taken.length && taken[j + 1] === taken[j] + 1) j++;
+          const [from, to] = [(b + i) * BLOCK - off, (b + j + 1) * BLOCK - off];
+          if (data.write(bytes.subarray(from, to), { at: taken[i] * BLOCK }) !== to - from) {
+            for (const s of taken.slice(i)) release(s);
+            shrink();
+            return false;
+          }
+          for (let k = i; k <= j; k++) map[b + k] = taken[k] + 1;
+          if (mapFile.write(new Uint8Array(map.buffer, (b + i) * 4, (j - i + 1) * 4), { at: (b + i) * 4 }) !== (j - i + 1) * 4) return false;
+          i = j + 1;
+        }
+        b = c + 1;
       }
-      k += n;
     }
     return true;
   };

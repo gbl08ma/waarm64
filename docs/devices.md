@@ -106,7 +106,11 @@ mode (and natively in realtime mode: std has no CSPRNG).
 - **Writable disks: a copy-on-write overlay** (`web/overlay.ts`) in an OPFS directory, 4 KiB
   blocks: `data` holds written blocks in slots, `map` a u32 per disk block (0 = base,
   n = slot n − 1, 0xffffffff = zeros without a slot), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
-  slot is written before its map entry, so a crash leaks a slot but never maps garbage.
+  slot is written before its map entry, so a crash leaks a slot but never maps garbage. **Few OPFS calls:** a sync-handle
+  call costs ~0.3 ms whatever its size (Chromium on Linux, `bench/io/REPORT.md`), so reads and writes go in runs: blocks held in
+  consecutive slots are one read or write, whole blocks not held take consecutive slots where `take` has them and are written
+  from the request's bytes in one write with their map entries in one more; only a block a write covers in part is
+  read-modify-write.
   **What the guest discards leaves the overlay:** the whole blocks of a discard that the overlay
   holds become zeros without slots (never the base's bytes again: QEMU's qcow2 does the same over
   a backing file; blocks it doesn't hold stay the base's), a `WRITE_ZEROES`'s whole blocks too,

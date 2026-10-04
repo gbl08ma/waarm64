@@ -140,3 +140,89 @@ test('once half the data file is free slots, the blocks left move down and the f
   for (let b = 300; b < 300 + (before / 4096 - 60); b++) assert.ok(await again.write(b * 4096, new Uint8Array(4096).fill(1)));
   assert.equal(data.getSize(), before);
 });
+
+/** An in-memory file that logs every write (a copy of what was written) and counts the calls. */
+function logged(name: string, log: { file: string; at: number; bytes: Uint8Array }[], calls: Record<string, number>, failAt = Infinity) {
+  const f = memFile();
+  const n = (k: string) => { calls[`${name}.${k}`] = (calls[`${name}.${k}`] ?? 0) + 1; return calls[`${name}.${k}`]; };
+  return Object.assign(f, {
+    read: ((read) => (buf: Uint8Array, o: { at: number }) => { n('read'); return read(buf, o); })(f.read),
+    write: ((write) => (buf: Uint8Array, o: { at: number }) => {
+      if (n('write') >= failAt) return 0; // a failed write (e.g. over quota)
+      log.push({ file: name, at: o.at, bytes: buf.slice() });
+      return write(buf, o);
+    })(f.write),
+  });
+}
+
+test('a request is a few OPFS calls: consecutive blocks are one read or write, map entries one write', async () => {
+  const size = 8 << 20;
+  const baseBytes = Uint8Array.from({ length: size }, (_, i) => (i * 7 + 1) & 255);
+  const base = openDisk((off, len) => baseBytes.slice(off, off + len), size);
+  const [log, calls]: [{ file: string; at: number; bytes: Uint8Array }[], Record<string, number>] = [[], {}];
+  const d = overlay(base, logged('data', log, calls), logged('map', log, calls));
+  const mib = Uint8Array.from({ length: 1 << 20 }, (_, i) => (i * 13 + 5) & 255);
+  assert.ok(await d.write(1 << 20, mib));
+  assert.deepEqual([calls['data.write'], calls['map.write']], [1, 1], 'a fresh 1 MiB write');
+  assert.ok(await d.write(1 << 20, mib));
+  assert.deepEqual([calls['data.write'], calls['map.write']], [2, 1], 'overwriting it: no map write');
+  assert.equal(Buffer.compare(await d.read(1 << 20, 1 << 20) as Uint8Array, mib), 0);
+  assert.equal(calls['data.read'], 1, 'held blocks in consecutive slots: one read');
+  // Unaligned: partial first and last blocks are read-modify-write, the whole ones between one run.
+  const odd = mib.slice(0, 5 * 4096 + 1000);
+  assert.ok(await d.write(3 * (1 << 20) + 512, odd));
+  assert.equal(calls['data.write'], 2 + 3, 'two edge blocks and one run');
+  const got = (await d.read(3 * (1 << 20) + 512, odd.length)) as Uint8Array;
+  assert.equal(Buffer.compare(got, odd), 0);
+  assert.equal(Buffer.compare((await d.read(3 * (1 << 20), 512)) as Uint8Array, baseBytes.subarray(3 << 20, (3 << 20) + 512)), 0, 'the bytes before the write are the base');
+});
+
+test('random writes, discards and reads of every shape match a model, across reopens', async () => {
+  const g = splitmix64(11n);
+  const rand = (n: number) => Number(g.next().value as bigint % BigInt(n));
+  const size = 300 * 4096 + 1024;
+  const baseBytes = Uint8Array.from({ length: size }, () => rand(256));
+  const base = openDisk((off, len) => baseBytes.slice(off, off + len), size);
+  const [data, map] = [memFile(), memFile()];
+  let d = overlay(base, data, map);
+  const model = baseBytes.slice();
+  for (let i = 0; i < 400; i++) {
+    const off = rand(size / 512) * 512;
+    const len = Math.min(size - off, (rand(rand(3) ? 20 : 400) + 1) * 512);
+    const op = rand(8);
+    if (op < 4) {
+      const bytes = Uint8Array.from({ length: len }, () => rand(256));
+      assert.ok(await d.write(off, bytes));
+      model.set(bytes, off);
+    } else if (op === 4) {
+      assert.ok(d.discard(off, len));
+      for (let b = Math.ceil(off / 4096); b < (off + len === size ? Math.ceil(size / 4096) : Math.floor((off + len) / 4096)); b++) if (d.zeroed(b)) model.fill(0, b * 4096, (b + 1) * 4096);
+    } else {
+      assert.equal(Buffer.compare((await d.read(off, len)) as Uint8Array, model.subarray(off, off + len)), 0, `read ${off}+${len} at step ${i}`);
+    }
+    if (i % 90 === 89) d = overlay(base, data, map);
+  }
+  assert.equal(Buffer.compare((await d.read(0, size)) as Uint8Array, model), 0);
+});
+
+test('a crash after any single OPFS write leaves every block as the base or something the guest wrote', async () => {
+  const size = 64 * 4096;
+  const baseBytes = new Uint8Array(size).fill(0xee);
+  const base = openDisk((off, len) => baseBytes.slice(off, off + len), size);
+  const [log, calls]: [{ file: string; at: number; bytes: Uint8Array }[], Record<string, number>] = [[], {}];
+  const d = overlay(base, logged('data', log, calls), logged('map', log, calls));
+  // Writes of one tag each (1..), over ranges that hit fresh and held blocks, runs and singles.
+  const ranges: [number, number][] = [[0, 8], [4, 8], [20, 1], [30, 16], [10, 3], [2, 40], [50, 6], [21, 2]];
+  for (const [i, [b, n]] of ranges.entries()) assert.ok(await d.write(b * 4096, new Uint8Array(n * 4096).fill(i + 1)));
+  const tags = new Set([0xee, ...ranges.map((_, i) => i + 1)]);
+  for (let k = 0; k <= log.length; k++) {
+    const [data, map] = [memFile(), memFile()];
+    for (const w of log.slice(0, k)) (w.file === 'data' ? data : map).write(w.bytes, { at: w.at });
+    const r = overlay(base, data, map);
+    const all = (await r.read(0, size)) as Uint8Array;
+    for (let b = 0; b < 64; b++) {
+      const blk = all.subarray(b * 4096, (b + 1) * 4096);
+      assert.ok(tags.has(blk[0]) && blk.every((x) => x === blk[0]), `after ${k} of ${log.length} writes, block ${b} is neither the base nor a written block`);
+    }
+  }
+});

@@ -49,3 +49,20 @@ boot-loader case, loop 1 dropped, loop 4's copies dropped, loop 5 and 6 by the r
 Candidate inside loop 3: keep map entries in memory and write them, coalesced, at `FLUSH` (a flushed write still
 survives a crash; unflushed ones may be lost, which the virtio flush contract allows; slot data still goes before
 its map entry).
+
+## Loop 3: coalesced overlay I/O (`results/chromium-linux-arm64-dev-vm-loop3.json`, same session setup, 5 samples)
+
+| workload | before | after |
+|---|---|---|
+| sequential 1 MiB write, first writes | 6.0 MiB/s | **212 ± 1 MiB/s** (35×) |
+| the same with `fsync` after each | 5.9 MiB/s | **188 MiB/s** (32×) |
+| read back of written blocks, 1 MiB | 17 MiB/s | **358 ± 10 MiB/s** (21×) |
+| `dd` write, `conv=fsync` | 4.9 MiB/s | 20.0 ± 0.3 MiB/s (4×) |
+| random 4 KiB write / with `fsync` | 1077 / 769 IOPS | 1075 / 764 (unchanged: one data and one map write each) |
+| every base read, held random 4 KiB read | | unchanged (within IQR) |
+
+Tests (`tests/overlay.test.ts`): call counts for a fresh, overwritten, read-back and unaligned request; a random model test
+(writes, discards, reads, reopens); a crash test replaying every prefix of the logged OPFS writes (each block is the base or
+a written one). Planted bug (map written before data in the run path): the crash test fails; restored.
+
+Left in the overlay: a random first write still pays two ~0.3 ms calls. Deferring map entries to `FLUSH` would halve it.
