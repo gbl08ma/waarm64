@@ -66,3 +66,27 @@ Tests (`tests/overlay.test.ts`): call counts for a fresh, overwritten, read-back
 a written one). Planted bug (map written before data in the run path): the crash test fails; restored.
 
 Left in the overlay: a random first write still pays two ~0.3 ms calls. Deferring map entries to `FLUSH` would halve it.
+
+## The real case: Debian's qcow2, chosen, through UEFI (loops 2, 4, 6, 7 judged)
+
+One boot of `target/images/debian/disk.qcow2` chosen on the page (2 vCPUs, JIT, realtime, fresh overlay), the blk device's
+stage timers on (temporary hooks: `stats` on the page's disk spec and a 2 s log of `Devices.stats()`, not committed):
+`results/chromium-linux-arm64-dev-vm-debian-boot-stats.json`. Kernel's first output at 13.1 s, root prompt at **50.6 s**.
+
+| stage | calls | time | share of the 50.6 s |
+|---|---|---|---|
+| all requests (`request`) | 5261 | 3.13 s | 6.2% |
+| base reads (`FileReaderSync`, after qcow2 mapping) | 2769 (90 MB) | 1.96 s | **3.9%** |
+| overlay writes (data + map) | 366 + 262 | 0.35 s | 0.7% |
+| inflating compressed clusters (request − the rest) | | ~0.8 s | ~1.6% |
+| `scatter` / `gather` / flush | | 0.02 s | <0.1% |
+
+Requests are 4 to 128 KiB (one of 1 MiB, one of 4 MiB): nothing sits at `seg_max`.
+
+- **Loop 2 (chunk cache, readahead): dropped.** Everything the base reads cost is 3.9% of the boot; a cache could save part
+  of it, so under the 5% rule. (The part before the kernel is not split out; it is inside the same 1.96 s.)
+- **Loop 4 (copies): dropped** (as the baseline said). **Loop 6 (limits, `EVENT_IDX`): dropped**: no request is capped, and all
+  requests together are 6% of the boot. **Loop 7 (qcow2 inflate in parallel): dropped**, ~1.6%.
+- **Loop 1: dropped** (flush ~10 µs). **Loop 5 (blk worker): not measured here**; it only matters for the screen stalling
+  behind a long read (H2), which a boot's totals don't show. Left in `docs/backlog.md`'s entry.
+- Shipped: loop 3 (writes and held reads ×4 to ×35). Debian's boot is guest CPU bound, not disk bound.
