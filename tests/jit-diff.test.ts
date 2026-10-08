@@ -69,6 +69,7 @@ const CLASSES: Record<string, [number, number]> = {
   'AdvSIMD three different': [0x9f200c00, 0x0e200000],
   'AdvSIMD across lanes': [0x9f3e0c00, 0x0e300800],
   'AdvSIMD table lookup': [0xbfe08c00, 0x0e000000],
+  'AdvSIMD permute (UZP, TRN, ZIP)': [0xbf208c00, 0x0e000800],
   'FP and general register moves, conversions': [0x7f20fc00, 0x1e200000],
   // Scalar FP (M6 loop 5): special values in the V registers, FPCR and FPSR.IXC random.
   'FP data processing, 1 source': [0xff207c00, 0x1e204000],
@@ -78,6 +79,7 @@ const CLASSES: Record<string, [number, number]> = {
   'AdvSIMD FP three same': [0x9f20c400, 0x0e20c400],
   'AdvSIMD FP by element': [0x9f800400, 0x0f800000],
   'AdvSIMD FP two-register miscellaneous, FCVTL/FCVTN': [0x9f3f0c00, 0x0e210800],
+  'AdvSIMD FCVTL, FCVTN': [0xbfbfec00, 0x0e216800], // their fast paths need every lane on them
   'AdvSIMD scalar FP two-register miscellaneous': [0xdf3f0c00, 0x5e210800], // SCVTF/UCVTF with the integer in Vn
   // The crypto extensions (M6.5): V registers random, or states from the FIPS vectors (CRYPTO_STATES).
   'AES': [0xffffcc00, 0x4e284800], // AESE, AESD, AESMC, AESIMC (size 0; the corpus has the reserved ones)
@@ -116,6 +118,7 @@ const MEMORY: Record<string, [number, number]> = {
   'SIMD&FP load/store pair': [0x3e000000, 0x2c000000],
   'SIMD&FP load literal': [0x3f000000, 0x1c000000],
   'AdvSIMD load/store multiple structures': [0xbf200000, 0x0c000000], // LD1/ST1 inline (M6 loop 7)
+  'AdvSIMD load/store single structure': [0xbf000000, 0x0d000000], // LD1/ST1 of a lane inline
 };
 
 // xorshift64*, seeded: failures reproduce.
@@ -143,7 +146,25 @@ function fpValue(d: boolean): bigint {
   const [sign, e, f] = d ? [1n << 63n, 0x7ffn << 52n, (1n << 52n) - 1n] : [1n << 31n, 0xffn << 23n, (1n << 23n) - 1n];
   const s = rand32() % 2 === 0 ? sign : 0n;
   const one = d ? 0x3ffn << 52n : 0x7fn << 23n;
-  return s | [0n, e, e | (f & r) | (f + 1n) >> 1n, e | ((f >> 1n) & r | 1n), f & r | 1n, (e - (1n << (d ? 52n : 23n))) | f, 1n << (d ? 52n : 23n), one, one | (r & f)][rand32() % 9];
+  // A tie for the next narrower format (half for singles, single for doubles), singles at
+  // exponents around half precision's range.
+  const tie = d ? (one | (r & f) & ~0x1fff_ffffn) | 0x1000_0000n : (BigInt(100 + (rand32() % 46)) << 23n) | (r & f & ~0x1fffn) | 0x1000n;
+  return s | [0n, e, e | (f & r) | (f + 1n) >> 1n, e | ((f >> 1n) & r | 1n), f & r | 1n, (e - (1n << (d ? 52n : 23n))) | f, 1n << (d ? 52n : 23n), one, one | (r & f), tie][rand32() % 10];
+}
+
+/** A normal FP value of moderate exponent (singles around half precision's range), a
+ * zero now and then, sometimes a tie for the next narrower format. */
+function fpPlain(d: boolean): bigint {
+  const r = rand64();
+  const s = rand32() % 2 === 0 ? 0n : d ? 1n << 63n : 1n << 31n;
+  if (rand32() % 16 === 0) return s;
+  const [fb, low, half] = d ? [52n, 0x1fff_ffffn, 0x1000_0000n] : [23n, 0x1fffn, 0x1000n];
+  // A quarter of the singles at half precision's edges: 2^-15, 2^-14, 2^15, 2^16.
+  const e = d ? BigInt(1023 - 40 + (rand32() % 80)) : rand32() % 4 === 0 ? [112n, 113n, 142n, 143n][rand32() % 4] : BigInt(108 + (rand32() % 40));
+  let f = r & ((1n << fb) - 1n);
+  if (rand32() % 8 === 0) f |= ((1n << fb) - 1n) & ~low; // all ones above the next format's rounding bits
+  if (rand32() % 4 === 0) f = (f & ~low) | half;
+  return s | (e << fb) | f;
 }
 
 /** Two thirds of the words get a random bit window cleared or set: zero and all-ones immediates, XZR/SP. */
@@ -247,10 +268,15 @@ for (const [name, [mask, bits], mem] of [
       a[33] = BigInt(rand32() & 0xf) << 28n; // NZCV
       // V0–V31 (offset 304), random; FPSR (824) clear or QC only (it's
       // sticky: a helper's saturation earlier would hide a missing QC).
+      // Half the words: every register as FP lanes of one size, mostly
+      // plain values (a vector instruction's fast path needs all its lanes on it).
       const va = new BigUint64Array(a.buffer, a.byteOffset + 304, 64);
+      const mode = rand32() % 4;
       for (let r = 0; r < 64; r++) {
         const k = rand32() % 4;
-        va[r] = k === 0 ? EDGES[rand32() % EDGES.length] : k === 1 ? fpValue(true) : k === 2 ? fpValue(false) | fpValue(false) << 32n : rand64();
+        const lane = (d: boolean) => (rand32() % 8 === 0 ? fpValue(d) : fpPlain(d));
+        va[r] = mode === 0 ? lane(true) : mode === 1 ? lane(false) | lane(false) << 32n
+          : k === 0 ? EDGES[rand32() % EDGES.length] : k === 1 ? fpValue(true) : k === 2 ? fpValue(false) | fpValue(false) << 32n : rand64();
       }
       if (CRYPTO.has(name)) {
         for (let r = 0; r < 32; r++) {
@@ -259,10 +285,10 @@ for (const [name, [mask, bits], mem] of [
           [va[2 * r], va[2 * r + 1]] = [v & M64, v >> 64n];
         }
       }
-      // FPCR (816): the default half the time, else RMode, FZ and DN random;
+      // FPCR (816): the default half the time, else RMode, FZ, DN and AHP random;
       // FPSR (824): IXC mostly set (the FP fast paths need it), QC sometimes.
       const fp = new BigUint64Array(a.buffer, a.byteOffset + 816, 2);
-      fp[0] = rand32() % 2 === 0 ? 0n : BigInt(rand32() & 0xf) << 22n;
+      fp[0] = rand32() % 2 === 0 ? 0n : BigInt(rand32() & 0x1f) << 22n;
       fp[1] = (rand32() % 4 === 0 ? 0n : 16n) | (rand32() % 4 === 0 ? 1n << 27n : 0n);
       // The exclusive monitor (272: address, size, value), mostly armed for
       // this word's address, size and the value in memory, so STXR stores.

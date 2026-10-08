@@ -355,6 +355,27 @@ mod op {
     pub const CONVERT_I32X4: [u32; 2] = [0xfa, 0xfb];
     pub const DEMOTE: u32 = 0x5e;
     pub const PROMOTE: u32 = 0x5f;
+    pub const I32X4_SHL: u32 = 0xab;
+    pub const I32X4_ADD: u32 = 0xae;
+    pub const I32X4_EQ: u32 = 0x37;
+    pub const I32X4_NE: u32 = 0x38;
+    pub const I32X4_LT_S: u32 = 0x39;
+    pub const I32X4_GE_S: u32 = 0x3f;
+    pub const I32X4_LE_S: u32 = 0x3d;
+    pub const I64X2_LE_S: u32 = 0xda;
+    pub const I64X2_GE_S: u32 = 0xdb;
+    /// i32x4.extend_low/high_i16x8_u.
+    pub const EXTEND_U16: [u32; 2] = [0xa9, 0xaa];
+    pub const BITSELECT: u32 = 0x52;
+    /// eq, lt, gt, le, ge: f32x4, f64x2.
+    pub const CMP: [[u32; 5]; 2] = [
+        [0x41, 0x43, 0x44, 0x45, 0x46],
+        [0x47, 0x49, 0x4a, 0x4b, 0x4c],
+    ];
+    /// abs: f32x4, f64x2.
+    pub const ABS: [u32; 2] = [0xe0, 0xec];
+    /// nearest, floor, ceil, trunc: f32x4, f64x2.
+    pub const ROUND: [[u32; 4]; 2] = [[0x6a, 0x68, 0x67, 0x69], [0x94, 0x75, 0x74, 0x7a]];
 }
 
 /// `x` in every 32-bit (`d` false) or 64-bit lane.
@@ -401,9 +422,55 @@ fn vput(c: &mut Func, rd: u32, q: bool, l: u32) {
     c.simd_mem(11, 0, V + 16 * rd); // v128.store
 }
 
+/// Replaces the v128 on the stack with a lane mask: all ones where the lane is ±0.
+fn zero_lanes(c: &mut Func, d: bool) {
+    let sign = if d { 1u64 << 63 } else { 1 << 31 };
+    c.v128_const(splat(d, !sign)).simd(op::AND).v128_const(0);
+    c.simd(if d { op::I64X2_EQ } else { op::I32X4_EQ });
+}
+
+/// Replaces the v128 on the stack with a lane mask: all ones where the lane is
+/// normal or ±0.
+fn normal_or_zero(c: &mut Func, d: bool) {
+    c.local_tee(VT[3]);
+    lanes_in(c, d, 1);
+    c.local_get(VT[3]);
+    zero_lanes(c, d);
+    c.simd(op::OR);
+}
+
+/// Replaces the v128 on the stack with a lane mask: all ones where the lane is
+/// zero, normal or infinite (no NaN, no denormal: what FZ would flush).
+fn plain_lanes(c: &mut Func, d: bool) {
+    let tt = VT[3];
+    let (sign, min, inf) = if d {
+        (1u64 << 63, 1u64 << 52, 0x7ffu64 << 52)
+    } else {
+        (1 << 31, 1 << 23, 0xff << 23)
+    };
+    let (eq, ge, le) = if d {
+        (op::I64X2_EQ, op::I64X2_GE_S, op::I64X2_LE_S)
+    } else {
+        (op::I32X4_EQ, op::I32X4_GE_S, op::I32X4_LE_S)
+    };
+    c.v128_const(splat(d, !sign)).simd(op::AND).local_tee(tt);
+    c.v128_const(splat(d, min)).simd(ge);
+    c.local_get(tt)
+        .v128_const(splat(d, inf))
+        .simd(le)
+        .simd(op::AND);
+    c.local_get(tt).v128_const(0).simd(eq).simd(op::OR);
+}
+
 /// ANDs lane masks into one i32 with FPOK: every lane of the masks all ones
 /// (with Q = 0, lanes 2 and 3 of 32-bit masks don't count).
 fn all_lanes(c: &mut Func, d: bool, q: bool, masks: usize) {
+    every_lane(c, d, q, masks);
+    c.local_get(FPOK).op(AND);
+}
+
+/// [`all_lanes`] without FPOK, for what neither rounds nor can be inexact.
+fn every_lane(c: &mut Func, d: bool, q: bool, masks: usize) {
     for _ in 1..masks {
         c.simd(op::AND);
     }
@@ -415,7 +482,6 @@ fn all_lanes(c: &mut Func, d: bool, q: bool, masks: usize) {
     } else {
         op::I32X4_ALL_TRUE
     });
-    c.local_get(FPOK).op(AND);
 }
 
 /// Emits vector FP instruction `i` inline if it's one this covers; false
@@ -448,7 +514,9 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     };
     match op {
         // FADD, FSUB (a = 1), FMUL, FDIV, and FMUL by element: the host's
-        // lane operation, normal operands, fast results.
+        // lane operation, normal or zero operands (a normal divisor), and a
+        // fast result or an exact zero: a zero sum is always exact, a zero
+        // product or quotient when an operand is zero.
         FADD_2 | FSUB_2 | FMUL_vec_2 | FDIV_2 | FMUL_elt_4 => {
             if op == FMUL_elt_4 && bit(i, 29) {
                 return false; // FMULX
@@ -465,11 +533,27 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.simd(if d { op::F64X2[kk] } else { op::F32X4[kk] })
                 .local_set(tr);
             vreg(c, rn);
-            lanes_in(c, d, 1);
+            normal_or_zero(c, d);
             factor(c);
-            lanes_in(c, d, 1);
+            if kk == 3 {
+                lanes_in(c, d, 1);
+            } else {
+                normal_or_zero(c, d);
+            }
             c.local_get(tr);
             lanes_in(c, d, 2);
+            if kk < 2 {
+                c.local_get(tr);
+            } else {
+                vreg(c, rn);
+            }
+            zero_lanes(c, d);
+            if kk == 2 {
+                factor(c);
+                zero_lanes(c, d);
+                c.simd(op::OR);
+            }
+            c.simd(op::OR);
             all_lanes(c, d, q, 3);
             guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
         }
@@ -516,15 +600,24 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 if b < 8 { b as u8 } else { 8 + b as u8 }
             }));
             c.local_set(tr);
-            // Normal operands, fast results, then no midpoint.
+            // Normal or zero operands; a fast result, or an exact zero (a zero
+            // product and addend); then no midpoint (a zero t isn't one).
             vreg(c, rn);
-            lanes_in(c, false, 1);
+            normal_or_zero(c, false);
             factor(c);
-            lanes_in(c, false, 1);
+            normal_or_zero(c, false);
             vreg(c, rd);
-            lanes_in(c, false, 1);
+            normal_or_zero(c, false);
             c.local_get(tr);
             lanes_in(c, false, 2);
+            vreg(c, rn);
+            zero_lanes(c, false);
+            factor(c);
+            zero_lanes(c, false);
+            c.simd(op::OR);
+            vreg(c, rd);
+            zero_lanes(c, false);
+            c.simd(op::AND).simd(op::OR);
             all_lanes(c, false, q, 4);
             for &t in &[ta, tb][..halves.len()] {
                 c.local_get(t)
@@ -616,6 +709,158 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.local_set(tr);
                 guarded(c, cx, i, k, 0, |c| vput(c, rd, true, tr));
             }
+        }
+        // Compares: no NaN lanes, no denormal ones (FZ flushes them, raising
+        // IDC); the host's compare gives the all-ones lanes. No rounding, so
+        // no FPOK.
+        FCMEQ_reg_4 | FCMGE_reg_4 | FCMGT_reg_4 | FACGE_4 | FACGT_4 | FCMEQ_zero_4
+        | FCMGE_zero_4 | FCMGT_zero_4 | FCMLE_4 | FCMLT_4 => {
+            let zero = !matches!(
+                op,
+                FCMEQ_reg_4 | FCMGE_reg_4 | FCMGT_reg_4 | FACGE_4 | FACGT_4
+            );
+            let abs = matches!(op, FACGE_4 | FACGT_4);
+            // eq, lt, gt, le, ge
+            let cmp = op::CMP[d as usize][match op {
+                FCMEQ_reg_4 | FCMEQ_zero_4 => 0,
+                FCMLT_4 => 1,
+                FCMGT_reg_4 | FACGT_4 | FCMGT_zero_4 => 2,
+                FCMLE_4 => 3,
+                _ => 4,
+            }];
+            vreg(c, rn);
+            if abs {
+                c.simd(op::ABS[d as usize]);
+            }
+            if zero {
+                c.v128_const(0);
+            } else {
+                vreg(c, rm);
+                if abs {
+                    c.simd(op::ABS[d as usize]);
+                }
+            }
+            c.simd(cmp).local_set(tr);
+            vreg(c, rn);
+            plain_lanes(c, d);
+            if !zero {
+                vreg(c, rm);
+                plain_lanes(c, d);
+            }
+            every_lane(c, d, q, if zero { 1 } else { 2 });
+            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+        }
+        // FRINTN/M/P/Z, and FRINTI/X in the FPCR's mode (round to nearest
+        // even under FPOK; FRINTX's Inexact is set already): no NaN or
+        // denormal lanes. FRINTA (ties away) has no wasm op.
+        FRINTN_2 | FRINTM_2 | FRINTP_2 | FRINTZ_2 | FRINTI_2 | FRINTX_2 => {
+            let k_round = match op {
+                FRINTM_2 => 1,
+                FRINTP_2 => 2,
+                FRINTZ_2 => 3,
+                _ => 0,
+            };
+            let fpcr_mode = matches!(op, FRINTI_2 | FRINTX_2);
+            if fpcr_mode {
+                fpa_guard(c);
+            }
+            vreg(c, rn);
+            c.simd(op::ROUND[d as usize][k_round]).local_set(tr);
+            vreg(c, rn);
+            plain_lanes(c, d);
+            if fpcr_mode {
+                all_lanes(c, d, q, 1);
+            } else {
+                every_lane(c, d, q, 1);
+            }
+            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+        }
+        // FCVTL(2), half to single: exact and without flags but for NaNs (FZ
+        // doesn't apply to half precision); with an all-ones exponent excluded,
+        // FPCR.AHP's format reads the same. The magnitude shifted into a single's fields is the
+        // value × 2^-112 (denormals too), so a multiply by 2^112 converts it.
+        FCVTL if !d => {
+            vreg(c, rn);
+            c.simd(op::EXTEND_U16[q as usize]).local_tee(ta);
+            c.v128_const(splat(false, 0x7fff)).simd(op::AND);
+            c.i32_const(13).simd(op::I32X4_SHL);
+            c.v128_const(splat(false, 0x7780_0000)).simd(op::F32X4[2]); // × 2^112
+            c.local_get(ta)
+                .v128_const(splat(false, 0x8000))
+                .simd(op::AND);
+            c.i32_const(16)
+                .simd(op::I32X4_SHL)
+                .simd(op::OR)
+                .local_set(tr);
+            // No lane with an all-ones exponent (infinities are exact too,
+            // but rare).
+            c.local_get(ta)
+                .v128_const(splat(false, 0x7c00))
+                .simd(op::AND);
+            c.v128_const(splat(false, 0x7c00)).simd(op::I32X4_NE);
+            every_lane(c, false, true, 1);
+            guarded(c, cx, i, k, 0, |c| vput(c, rd, true, tr));
+        }
+        // FCVTN(2), single to half: zero lanes, or normal ones from the half's
+        // smallest normal binade up whose rounded result is finite (so no
+        // Underflow, Overflow or IDC, and AHP's format gives the same bits),
+        // rounded to nearest even in integer arithmetic.
+        FCVTN if !d && !bit(i, 29) => {
+            fpa_guard(c);
+            vreg(c, rn);
+            c.v128_const(splat(false, 0x7fff_ffff))
+                .simd(op::AND)
+                .local_tee(ta);
+            // h = (a + 0xfff + (a >> 13 & 1)) >> 13, rebiased.
+            c.local_get(ta).i32_const(13).simd(op::I32X4_SHR_U);
+            c.v128_const(splat(false, 1))
+                .simd(op::AND)
+                .simd(op::I32X4_ADD);
+            c.v128_const(splat(false, 0xfff)).simd(op::I32X4_ADD);
+            c.i32_const(13).simd(op::I32X4_SHR_U);
+            c.v128_const(splat(false, 112 << 10))
+                .simd(op::I32X4_SUB)
+                .local_set(tb);
+            // r = (a == 0 ? 0 : h) | sign
+            c.v128_const(0).local_get(tb);
+            c.local_get(ta)
+                .v128_const(0)
+                .simd(op::I32X4_EQ)
+                .simd(op::BITSELECT);
+            vreg(c, rn);
+            c.i32_const(16).simd(op::I32X4_SHR_U);
+            c.v128_const(splat(false, 0x8000))
+                .simd(op::AND)
+                .simd(op::OR)
+                .local_set(tr);
+            // valid: a == 0, or a >= 2^-14 and h < 0x7c00 (signed: a's sign is clear).
+            c.local_get(ta)
+                .v128_const(splat(false, 113 << 23))
+                .simd(op::I32X4_GE_S);
+            c.local_get(tb)
+                .v128_const(splat(false, 0x7c00))
+                .simd(op::I32X4_LT_S);
+            c.simd(op::AND);
+            c.local_get(ta)
+                .v128_const(0)
+                .simd(op::I32X4_EQ)
+                .simd(op::OR);
+            all_lanes(c, false, true, 1);
+            // The halves' low 16 bits, into Vd's low half (top cleared) or,
+            // FCVTN2, its top half (the low half kept).
+            let low: [u8; 8] = core::array::from_fn(|b| (b as u8 / 2) * 4 + b as u8 % 2);
+            if q {
+                vreg(c, rd);
+                c.local_get(tr);
+                c.shuffle(core::array::from_fn(|b| {
+                    if b < 8 { b as u8 } else { 16 + low[b - 8] }
+                }));
+            } else {
+                c.local_get(tr).v128_const(0);
+                c.shuffle(core::array::from_fn(|b| if b < 8 { low[b] } else { 16 }));
+            }
+            c.local_set(tr);
+            guarded(c, cx, i, k, 0, |c| vput(c, rd, true, tr));
         }
         _ => return false,
     }

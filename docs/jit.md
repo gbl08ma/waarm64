@@ -333,7 +333,8 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   EL is in the key), tag = `(va + len − 1) | 0xfff`, host = `va + addend`, entry offset
   `(va >> 8) & 0xfff0`; with the MMU off a bounds check against RAM, whose layout the block embeds.
   Every addressing form of LDR/STR, LDP/STP/LDPSW/LDNP/STNP, LDR literal, PRFM, SIMD&FP single and
-  pair, LD1/ST1 multiple, LDTR/STTR (through EL0's TLB arrays). Anything else (a miss, a fault,
+  pair, LD1/ST1 multiple and of one lane (a narrow load into the V register's lane, the others
+  kept), LDTR/STTR (through EL0's TLB arrays). Anything else (a miss, a fault,
   MMIO, a page-crossing access, a misaligned SP base) calls a helper that re-executes the whole
   instruction: the fast path changes nothing before its check, so fault state is exact by
   construction. Every guest RAM access in generated code goes through one lowering function
@@ -360,7 +361,8 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   IRQs leaves through its helper's `Exit::Resync`. SIMD&FP instructions check `CPACR_EL1.FPEN`
   once per block.
 - **NEON → SIMD128** (`emit/simd.rs`): handler by handler after the interpreter's: three-same,
-  shifts, moves and immediates, widening/narrowing, reductions, TBL/TBX (as `i8x16.swizzle`,
+  shifts, moves and immediates, widening/narrowing, reductions, compares against zero, UZP/TRN/ZIP
+  (one shuffle of Vn:Vm built from the interpreter's lane formula), TBL/TBX (as `i8x16.swizzle`,
   never `relaxed_swizzle`, whose out-of-range lanes aren't deterministic), SQADD/UQADD/SQSUB/UQSUB
   on 8- and 16-bit lanes as `add_sat`/`sub_sat` (FPSR.QC from a compare against the wrapping
   result; 32- and 64-bit lanes have no wasm op and stay helpers) and their scalar forms at every
@@ -405,6 +407,23 @@ interpreter's; the helper runs the instruction otherwise.
 - **Conversions:** SCVTF/UCVTF inline (RNE, can't overflow), including the forms with the integer
   in a SIMD&FP register and the vector forms; FCVTZS/FCVTZU inline for in-range non-NaN operands;
   FCVT single↔double with normal operands and a fast result.
+- **Zero operands** (vector FADD/FSUB/FMUL/FDIV/FMLA/FMLS): lanes may also be ±0 where the zero
+  case is exact too. A zero sum or difference of normal-or-zero operands is always exact (a nonzero
+  exact sum rounds to a nonzero result), so a zero result is accepted; a zero product or quotient
+  only with a zero operand (a zero divisor never: Divide by Zero); FMLA's zero result only with a
+  zero product and a zero addend (a cancellation, or an underflow, goes to the helper). llvmpipe's
+  shaders multiply and add zero lanes all the time; with the normal-only rule its FMLAs and FADDs
+  were helper calls.
+- **Compares** (FCMEQ/FCMGE/FCMGT, FACGE/FACGT, the compares against zero) and **FRINTN/M/P/Z**:
+  no rounding and no flags while no lane is a NaN or a denormal (FZ would flush it, raising IDC),
+  so no FPOK; FRINTI/FRINTX round in FPCR's mode (nearest even under FPOK; FRINTX's Inexact is set
+  already). FRINTA (ties away) has no wasm op.
+- **Half precision** (FCVTL/FCVTN with sz = 0, llvmpipe's 16-bit colour paths): FCVTL is exact
+  without flags but for NaNs (FZ doesn't apply to half): the magnitude shifted into a single's
+  fields is the value × 2^-112, denormals too, so an `f32x4.mul` by 2^112 converts it. FCVTN rounds
+  to nearest even in integer arithmetic under FPOK, for zero lanes and lanes from 2^-14 up whose
+  result is finite (no Underflow, Overflow or IDC). Without an all-ones half exponent in or out,
+  FPCR.AHP's format reads and writes the same bits, so AHP isn't checked.
 - FABS, FNEG, FMOV, FCSEL are bit operations without flags: inline without the guard.
 
 ## What still runs through helpers
@@ -412,7 +431,7 @@ interpreter's; the helper runs the instruction otherwise.
 On Alpine's paths (~2.5M helper-retired steps a boot): unmasking MSRs (DAIFClr, an MSR DAIF that
 unmasks), the regime, FP-control, SPSel and NZCV MSRs, ISB, CASP, exclusive pairs, LSE min/max,
 LD2–LD4/ST2–ST4, the load/store fallbacks (TLB misses, MMIO), CRC32, f64 FMA, the 8-bit PMULL;
-in OpenSSL's GCM path scalar `SHL` and `LD1`/`ST1` single structure. `jit_helper_report` has the
+in OpenSSL's GCM path scalar `SHL`. `jit_helper_report` has the
 live histogram. None was worth a loop by itself at M6.5's end.
 
 ## Tried and not kept

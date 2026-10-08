@@ -887,6 +887,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         | LDR_imm_fpsimd_2 | STUR_fpsimd | LDUR_fpsimd | STR_imm_fpsimd_1 | LDR_imm_fpsimd_1
         | STR_reg_fpsimd | LDR_reg_fpsimd => return ldst_fp(c, cx, i, op, k),
         LDx_mult_1 | LDx_mult_2 | STx_mult_1 | STx_mult_2 => return ld1_st1(c, cx, i, k),
+        LD1_sngl_1 | LD1_sngl_2 | ST1_sngl_1 | ST1_sngl_2 => return ld1_st1_lane(c, cx, i, k),
         // The shift amount is Rm modulo the width, as wasm shifts take it.
         LSLV | LSRV | ASRV | RORV => set(c, sf, rd, |c| {
             get(c, sf, rn);
@@ -1757,6 +1758,62 @@ fn ld1_st1(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
             // Post-index: by the bytes transferred, or by Xm.
             if wb && rm == 31 {
                 writeback(c, rn, (n * len) as i64);
+            } else if wb {
+                set_sp(c, true, rn, |c| {
+                    c.local_get(BASE);
+                    get(c, true, rm);
+                    c.i64_add();
+                });
+            }
+        },
+    );
+    true
+}
+
+/// LD1/ST1 (single structure): one lane of Vt, the other lanes kept
+/// (`interp::ldst_fp::single_structure`).
+fn ld1_st1_lane(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
+    let (q, load, s, size) = (bit(i, 30), bit(i, 22), bit(i, 12), bits(i, 11, 10));
+    let q_s = (q as u32) << 1 | s as u32;
+    let (len, index): (u32, u32) = match bits(i, 15, 13) >> 1 {
+        0 => (1, q_s << 2 | size),
+        1 if size & 1 == 0 => (2, q_s << 1 | size >> 1),
+        2 if size == 0 => (4, q_s),
+        2 if size == 1 && !s => (8, q as u32),
+        _ => return false,
+    };
+    if bit(i, 21) || bit(i, 13) {
+        return false; // LD2/LD4, LD3 and the replicating forms
+    }
+    let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let wb = bit(i, 23);
+    let lg = len.trailing_zeros() as usize;
+    let lane = V + 16 * rt + index * len;
+    fp_guard(c, cx, i, k);
+    get_sp(c, true, rn);
+    c.local_tee(BASE).local_set(ADDR);
+    let written = if wb { 1 << rn } else { 0 };
+    access(
+        c,
+        cx,
+        i,
+        4 * k as i64,
+        len,
+        !load,
+        &[Guard::sp(rn)],
+        written,
+        |c, off| {
+            if load {
+                c.local_get(VCPU).local_get(HOST).memarg(LOAD_U[lg], 0, off);
+                c.memarg(STORE[lg], 0, lane);
+            } else {
+                c.local_get(HOST)
+                    .local_get(VCPU)
+                    .memarg(LOAD_U[lg], 0, lane);
+                c.memarg(STORE[lg], 0, off);
+            }
+            if wb && rm == 31 {
+                writeback(c, rn, len as i64);
             } else if wb {
                 set_sp(c, true, rn, |c| {
                     c.local_get(BASE);

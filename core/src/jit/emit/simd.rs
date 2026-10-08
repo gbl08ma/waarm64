@@ -76,7 +76,9 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
             shift_imm(c, i)
         }
         REV16_asimd | REV32_asimd | REV64_asimd | NOT | NEG_2 | ABS_2 | CNT | XTN | SADDLP
-        | UADDLP | SADALP | UADALP | UQXTN_2 => two_misc(c, i, op),
+        | UADDLP | SADALP | UADALP | UQXTN_2 | CMGT_zero_2 | CMGE_zero_2 | CMEQ_zero_2 | CMLE_2
+        | CMLT_2 => two_misc(c, i, op),
+        UZP1 | UZP2 | TRN1 | TRN2 | ZIP1 | ZIP2 => permute(c, i),
         SADDL | UADDL | SSUBL | USUBL | SADDW | UADDW | SSUBW | USUBW | SMULL_vec | UMULL_vec
         | SMLAL_vec | UMLAL_vec | SMLSL_vec | UMLSL_vec => three_diff(c, i),
         ADDV | SADDLV | UADDLV | SMAXV | UMAXV | SMINV | UMINV => across(c, i),
@@ -444,6 +446,25 @@ fn two_misc(c: &mut Func, i: u32, op: Op) -> bool {
         NEG_2 if q128 && !bit(i, 28) => put(c, rd, q, |c| ops(c, &[rn], &[NEG[size]])),
         ABS_2 if q128 && !bit(i, 28) => put(c, rd, q, |c| ops(c, &[rn], &[ABS[size]])),
         XTN if size != 3 => narrow(c, rd, q, size, |c| vreg(c, rn)),
+        // Compares against zero: all-ones lanes where true.
+        CMGT_zero_2 | CMGE_zero_2 | CMEQ_zero_2 | CMLE_2 | CMLT_2 if q128 && !bit(i, 28) => {
+            put(c, rd, q, |c| {
+                // CMLT and CMLE as 0 > x and 0 >= x.
+                let swap = matches!(op, CMLT_2 | CMLE_2);
+                if swap {
+                    c.v128_const(0);
+                }
+                vreg(c, rn);
+                if !swap {
+                    c.v128_const(0);
+                }
+                c.simd(match op {
+                    CMGT_zero_2 | CMLT_2 => GT_S[size],
+                    CMEQ_zero_2 => EQ[size],
+                    _ => GE_S[size],
+                });
+            });
+        }
         // UQXTN(2): unsigned saturation first, FPSR.QC set if a lane saturated.
         // No 64-bit unsigned min in wasm: 64 → 32 stays a helper call.
         UQXTN_2 if size < 2 && !bit(i, 28) => {
@@ -491,6 +512,39 @@ fn two_misc(c: &mut Func, i: u32, op: Op) -> bool {
         }
         _ => return false,
     }
+    true
+}
+
+/// UZP1/UZP2, TRN1/TRN2, ZIP1/ZIP2 as one shuffle of Vn:Vm
+/// (`interp::simd_int::permute`).
+fn permute(c: &mut Func, i: u32) -> bool {
+    let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let (q, size) = (bit(i, 30), bits(i, 23, 22));
+    if size == 3 && !q {
+        return false;
+    }
+    let (eb, opc) = (1u32 << size, bits(i, 14, 12));
+    let n = if q { 16 } else { 8 } / eb;
+    let part = opc >> 2;
+    // Lane e of the result as (from Vm, lane of the source).
+    let src = |e: u32| match opc & 3 {
+        1 => (2 * e + part >= n, (2 * e + part) % n),
+        2 => (e % 2 == 1, e - e % 2 + part),
+        _ => (e % 2 == 1, part * n / 2 + e / 2),
+    };
+    let lanes = core::array::from_fn(|b| {
+        let (b, e) = (b as u32, b as u32 / eb);
+        if e >= n {
+            return 0; // the top half of a 64-bit result, cleared by `put`
+        }
+        let (m, k) = src(e);
+        (16 * m as u32 + k * eb + b % eb) as u8
+    });
+    put(c, rd, q, |c| {
+        vreg(c, rn);
+        vreg(c, rm);
+        c.shuffle(lanes);
+    });
     true
 }
 

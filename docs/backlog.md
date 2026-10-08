@@ -46,14 +46,15 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## JIT
 
-- **llvmpipe is far too slow under the JIT** ([plans/graphics.md](plans/graphics.md) §16): sway
-  compositing through Mesa's software GL keeps four vCPUs at ~54% for ~3 frames a second at
-  1376×762 (pixman: 4–8%), and a terminal scrolling reaches 9 frames a second (pixman: 46–55). Not
-  profiled yet: llvmpipe runs code it generated at run time (LLVM's JIT, NEON) on four threads, so
-  the suspects are our translation of fresh code, vector registers in memory (below) and the
-  threads' wake-ups. It decides whether GL desktops are usable before G3; start with a PC-sampling
-  profile of a guest running `glmark2` or sway on llvmpipe (`bench/boot/profile.ts` is the tool for
-  boots).
+- **llvmpipe under the JIT** ([plans/graphics.md](plans/graphics.md) §16): sway compositing
+  through Mesa's software GL kept four vCPUs at ~54% for ~3 frames a second at 1376×762 (pixman:
+  4–8%). Profiled 2026-10-08 with a compositor-like GLES load (`images/alpine/gl`): ~95% of the
+  rasterizer's time was helper calls for NEON the JIT didn't inline (ZIP/UZP, LD1 of a lane, half
+  precision FCVTL/FCVTN, FP compares, FRINTI, FMLA/FADD with zero lanes); with those inline the
+  rasterizing phase is 16.5× faster in Node (69.7 → 4.2 s for 10 frames, 1 vCPU, one llvmpipe
+  thread) and runs at ~1150 MIPS with almost no helper calls left, still ~16× native. Left: what the
+  inline code costs (vector registers in memory, below), the 4-thread case (wake-ups), and sway
+  itself on the page.
 - **Per-module eviction, coldest first,** instead of whole-cache flushes ([jit.md](jit.md)
   "Memory"). With the shared cache a 4-vCPU `go build` loop flushes about once in 5 minutes; a
   larger working set (a browser in the guest) is where this counts again. A flush also has every
@@ -95,7 +96,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   that profile: TLB misses (~1% of a phase), the remaining helpers, the core's compiler (under 1%
   outside the boot).
 - **Vector registers in locals** (NEON-heavy code: AES-CBC is latency-bound on the V registers'
-  stores and reloads between instructions; a suspect for llvmpipe).
+  stores and reloads between instructions; llvmpipe's shaders, now that their NEON is inline).
 - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a
   third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread. **Compiling off the vCPU
   thread** was measured and not built ([jit.md](jit.md) "Tried and not kept"); revisit with a GUI
@@ -126,7 +127,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   userspace profile"), so a few percent of a phase at most, and only where wasm bounds checks are
   explicit (Linux arm64). Not worth the allocator now.
 - Helpers still on real paths: unmasking MSRs, ISB, CASP, exclusive pairs, LSE min/max,
-  LD2–LD4/ST2–ST4, scalar `SHL`, `LD1`/`ST1` single structure, CRC32, saturating add and subtract
+  LD2–LD4/ST2–ST4, LD1R, scalar `SHL`, CRC32, saturating add and subtract
   on 32- and 64-bit vector lanes, the 8-bit PMULL/PMUL (unused by guests measured). None worth a
   loop alone.
 - MSR left as helpers that end a block: DAIFClr, the regime, FP-control, SPSel and NZCV writes
