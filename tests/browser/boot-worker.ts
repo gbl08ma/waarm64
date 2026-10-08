@@ -45,7 +45,10 @@ try {
   const devices = gpu !== null ? [{ type: 'gpu' as const, width: 640, height: 480, trace: true, resize: { after: Number(gpu), width: 800, height: 600 } }] : litmus !== null ? [] : test ? testDevices(disk, ports.keyboard, ports.tablet) : guestDevices(disk, params.get('overlay') ?? undefined);
   const framebuffer = test ? { width: 640, height: 480 } : undefined;
   const opts = { ramSize: distro ? 1 << 30 : 256 << 20, kernel, initrd, cmdline: img.cmdline, devices, realtime: params.has('realtime'), framebuffer, jit: Number(params.get('jit') ?? 0) as 0 | 1 | 2 | 3, ncpus: Number(params.get('ncpus') ?? 1), parallel: params.has('parallel'), idleLimitMs: params.has('parallel') ? 60_000 : undefined };
-  const input = params.has('input') ? { step: CONSOLE_INPUT_STEP, data: CONSOLE_INPUT } : undefined;
+  // Parallel: once the shell's prompt is up. The vCPUs' summed steps say nothing about how far the
+  // boot is (a vCPU spinning while the other is descheduled counts too): sent at step 30M, the
+  // input once reached the tty before init, and the shell lost the start of its first line.
+  const input = !params.has('input') ? undefined : params.has('parallel') ? { after: '~ # ', data: CONSOLE_INPUT } : { step: CONSOLE_INPUT_STEP, data: CONSOLE_INPUT };
   // `?pauses=<n>`: pause and resume the VM every ~30 ms while it boots (web/vm.ts `pause`), checking what
   // a pause promises; `pause` in the result counts them and their latency.
   const pauser = { n: 0, ms: [] as number[], bad: '', done: false };
@@ -53,7 +56,7 @@ try {
   const at = params.get('snapshots')?.split(',').map(Number);
   if (at) {
     const r = await runThroughSnapshots(wasm, opts, at, input ? 200e6 : 1e12, input);
-    self.postMessage({ kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc, files: r.files });
+    self.postMessage({ kind: r.kind, x0: r.x[0] === undefined ? undefined : `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc, files: r.files });
   } else {
   const r = await runToPowerOff(wasm, opts, input ? 200e6 : 1e12, (vm) => {
     if (vm.framebuffer) self.postMessage({ memory: vm.memory, framebuffer: vm.framebuffer });
@@ -75,7 +78,7 @@ try {
     })().catch((e) => { pauser.bad ||= String(e); });
   }, input);
   pauser.done = true;
-  self.postMessage({ pause: pauser, kind: r.kind, x0: `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc, gpu: r.gpu });
+  self.postMessage({ pause: pauser, pc: r.pc, kind: r.kind, x0: r.x[0] === undefined ? undefined : `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc, gpu: r.gpu });
   }
 } catch (e) {
   self.postMessage({ error: String(e) });

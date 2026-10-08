@@ -99,7 +99,7 @@ for (const [mode, query] of [['deterministic JIT', 'jit=1'], ['parallel JIT, 2 v
   test(`console input reaches a shell in a worker, ${mode}`, { skip: !existsSync(IMAGES) && 'SKIPPED: run images/build.sh' }, async () => {
     const r = await bootPage(`input&${query}`, 5);
     assert.equal(r.error, undefined);
-    assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+    assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], `${r.steps} steps, PCs ${JSON.stringify((r as { pc?: unknown }).pc, (_, v) => (typeof v === 'bigint' ? `0x${v.toString(16)}` : v))}, console:\n${r.console}`);
     assert.ok(r.console.includes(CONSOLE_INPUT_WANT), r.console);
     if (!mode.startsWith('parallel')) assert.equal(r.steps, STEPS['console-input']);
   });
