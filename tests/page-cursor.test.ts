@@ -1,20 +1,18 @@
 // The guest's cursor on the page (M8 graphics G1 loop 6): a cursor message from the display port becomes the canvas's CSS
 // cursor (drawn at the canvas's scale, hotspot scaled with it), `none` when the guest hides it, the page's own pointer when
 // it never set one. The message is injected into the page's display port: what the guest sends is the gpu guest's
-// (tests/gpu.test.ts) and the presenter's (tests/gpu-present.test.ts) to check. Debian's page machine (nothing boots far). ~10 s.
+// (tests/gpu.test.ts) and the presenter's (tests/gpu-present.test.ts) to check. Debian's page machine, stopped within a second
+// (nothing boots, so it takes no Debian lock and needs only the images: scripts/ci.sh runs it). ~10 s.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
-import { withDebianLock } from './debian-lock.ts';
 
-const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = process.env.WEBPC_GFX_TESTS !== '1' ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_GFX_TESTS=1)'
-  : !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
+const skip = (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
 
 let browser: Browser;
 let base: string;
@@ -28,7 +26,7 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-test("the guest's cursor is the canvas's CSS cursor, scaled with it, hidden when the guest hides it", { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => { // the wait for the other Debian page tests' lock is most of it
+test("the guest's cursor is the canvas's CSS cursor, scaled with it, hidden when the guest hides it", { skip, timeout: 120_000 }, async () => {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await context.newPage();
   const errors: string[] = [];
@@ -80,4 +78,4 @@ test("the guest's cursor is the canvas's CSS cursor, scaled with it, hidden when
   await page.waitForFunction(() => document.querySelector<HTMLCanvasElement>('#screen')!.style.cursor === '', null, { timeout: 5000 });
   assert.deepEqual(errors, []);
   await context.close();
-}));
+});

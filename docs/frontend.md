@@ -292,7 +292,7 @@ The page's main thread still has no per-frame work. The canvas takes the scanout
 refits its box when the display port says `mode` (the boot card hides at the first one). **Keys for the
 firmware's menus still go through the serial terminal** (EDK2 has no virtio-input driver), which is why GRUB's
 menu is on the screen only; `?display=simple` gives a gpu machine the simple framebuffer instead (the firmware
-then keeps its serial menus: `tests/page-uefi-keys.test.ts` uses it).
+then keeps its serial menus: `tests/page-disk.test.ts` uses it).
 Flush-to-draw latency (`bench/gpu/draw-latency.ts`, Debian, tty1 changing every 30 ms): median 16–17 ms idle
 (the timer, for a flush within a frame of the last draw), and with the guest reading its disk (virtio-blk's
 synchronous XHRs block the device worker, and a flush is only served between them) a median of 17 to 66 ms and
@@ -328,7 +328,7 @@ never allowed to crop it (devices.md "Display size and events"); sway keeps the 
 (wlroots seems to read an output's modes when it connects, not at a display event); GNOME and KDE are expected to
 follow and weren't measured. So today a new size mostly takes effect when the guest's display software
 starts; following live is the agent's job ([plans/agent.md](plans/agent.md)).
-`tests/page-resize.test.ts` covers it on Debian.
+`tests/page-debian.test.ts` covers it on Debian.
 
 **The guest's cursor** (virtio-gpu machines) is the canvas's CSS cursor: the presenter sends the 64×64 image and its hotspot when
 they change (not on moves: the tablet is absolute, the host's pointer is the guest's), and the page draws it at the canvas's scale into
@@ -400,7 +400,7 @@ console is 80×25 (our EDK2 offers no other text mode: `images/build.sh edk2` pa
 terminal driver's mode table, because GRUB takes the largest mode and asks the terminal to resize
 itself with `CSI 8;r;c t`, which xterm.js doesn't do; docs/backlog.md "EDK2's terminal modes"). `onData` sends what a
 terminal would (`\r` for Enter, escape sequences) to the `serial` port. No addons. The dev server
-**The firmware and GRUB through it** (`tests/page-uefi-keys.test.ts`, which drives them end to
+**The firmware and GRUB through it** (`tests/page-disk.test.ts`, which drives them end to
 end): arrows, Enter, Esc, F2, Ctrl-N/P/E/X, Home/End and typing all arrive. Two things about
 EDK2's terminal driver: a lone Esc is delivered ~2 s late (it waits to tell it from the start of
 a sequence), and PageUp/PageDown (`CSI 6~`) aren't decoded (GRUB's editor shows them as text), so
@@ -551,7 +551,7 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
   `tests/page-disk.test.ts` (the fresh-profile round trip on Debian), and `tests/qcow2-write.test.ts` (the base's hash against node:crypto; the writers' output against
   `qemu-img check`/`compare`/`info`, small and over several L2 tables and refcount blocks, compressed and not, and compressed clusters among ones that don't shrink; planted:
   a block left out of the changes fails it), `tests/page-save.test.ts` (Buildroot: raw, qcow2 compressed and not, and
-  changes from a running machine, which restarts), `tests/page-disk.test.ts` (WEBPC_DISTROS=debian; two Debian boots): a symlink named
+  changes from a running machine, which restarts), `tests/page-disk.test.ts` (`scripts/ci-debian.sh`; three Debian boots): a symlink named
   `mydisk.qcow2` to Debian's image through the picker, a file written, its overlay and flash in
   OPFS, `poweroff`, the changes saved by download and by a picker's handle (an OPFS file: the same
   bytes; `qemu-img check`, its backing file, the base's hash in the header, data clusters),
@@ -628,8 +628,8 @@ web/tailscale.ts, the client in its own worker).
 
 ## The end-to-end test
 
-`tests/page-debian.test.ts` (M8 loop 6; in `npm test` when `WEBPC_DISTROS` has debian, as
-`scripts/ci.sh` sets it when the image is current) does on the page what a user does, in a fresh
+`tests/page-debian.test.ts` (M8 loop 6; `scripts/ci-debian.sh`; with GRUB's key on the screen, the page's size and the
+Debian snapshot on the same boots: [testing.md](testing.md) "Debian boots") does on the page what a user does, in a fresh
 browser context (an empty OPFS), from this checkout's server (`tests/start.test.ts` covers the
 fresh clone): Debian (through UEFI, with `tests/debian-unattended.ts`'s credentials) on 2 parallel vCPUs (`?ncpus=2&view=both`) to `running`; the firmware's variable store is saved beside the overlay within seconds; root logs in on the
 serial terminal; from there `until grep -q 'login: ' /dev/vcs1` waits for tty1's getty; root logs

@@ -1,19 +1,34 @@
-// The page end to end on Debian (M8 loop 6): what a user does, in headless Chromium.
-// Debian boots on the page (web/app/, JIT, realtime, 2 parallel vCPUs, a fresh OPFS
-// overlay); root logs in on the serial terminal (xterm.js to the PL011) and on the
-// screen (keys on the canvas through virtio-input to tty1's getty); a command typed on
-// the screen writes a marker to /dev/ttyAMA0 that comes back on the serial side; the
-// platform the firmware gave Linux (RTC, framebuffer, EFI, both vCPUs, a credential read back
-// from fw_cfg); a file written to the disk is there after a reload (Reset disk is the Buildroot
-// test's, tests/browser.test.ts). Two Debian boots, ~1.5 min alone. Realtime: not reproducible, so WEBPC_PAGE_RUNS repeats it (all
-// must pass). Opt-in with WEBPC_DISTROS=debian, like Debian's other Chromium tests
-// (scripts/ci.sh sets it when the image is current).
+// The page end to end on Debian (M8 loop 6): what a user does, in headless Chromium, on as few
+// Debian boots as the checks allow (a boot is the expensive thing: docs/testing.md "Debian boots").
+// Debian boots on the page (web/app/, JIT, realtime, 2 parallel vCPUs, a fresh OPFS overlay).
+// Three boots, ~4 min alone:
+// 1. A fresh profile: a Buildroot snapshot is refused before anything stops; a key typed on the
+//    screen reaches GRUB (its menu is on the virtio-gpu screen and EDK2 has no keyboard driver but
+//    the serial console's, so the page sends the screen's keys there): `c` stops the countdown and
+//    the kernel doesn't start until GRUB's menu is told to boot. Root logs in on the serial terminal
+//    (xterm.js to the PL011) and on the screen (keys on the canvas through virtio-input to tty1's
+//    getty); a command typed on the screen writes a marker to /dev/ttyAMA0 that comes back on the
+//    serial side; the platform the firmware gave Linux (RTC, framebuffer, EFI, both vCPUs, a
+//    credential read back from fw_cfg); the page's size reaches the guest (the console is born at it,
+//    a bigger window is a new preferred mode, a smaller one never crops the console); a snapshot of
+//    the logged-in machine with a file on its disk (the machine runs on).
+// 2. A reload (as a user closes the tab: no shutdown): the file written in 1 is on the disk.
+//    (Reset disk is the Buildroot test's, tests/browser.test.ts.)
+// 3. Another fresh profile, another window size: the snapshot loads (still logged in, its shell's
+//    variable, the file read past the page cache, the firmware's variable store beside the new
+//    overlay, the screen drawn at its own size and the new window's size as the preferred mode);
+//    Suspend and a reload resume it; a reload after that boots its disk normally with every file.
+// Realtime: not reproducible, so WEBPC_PAGE_RUNS repeats it (all must pass). Opt-in with
+// WEBPC_DISTROS=debian (scripts/ci-debian.sh).
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { MACHINES, readyWatcher } from '../web/app/machine.ts';
+import { SnapshotWriter } from '../web/snapshot-file.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 
@@ -40,21 +55,23 @@ const RUNS = Number(process.env.WEBPC_PAGE_RUNS ?? 1);
 let browser: Browser;
 let base: string;
 let close: () => void;
+let dir: string;
 before(async () => {
   if (skip) return;
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  dir = mkdtempSync(join(tmpdir(), 'webpc-debian-'));
 });
-after(async () => { await browser?.close(); close?.(); });
+after(async () => { await browser?.close(); close?.(); if (dir) rmSync(dir, { recursive: true }); });
 
-// A boot to the login prompt takes ~35 s alone on 2 vCPUs; under `npm test` the other files share the host (twice that).
+// A boot to the login prompt takes ~35 s alone on 2 vCPUs; under load twice that.
 const BOOT_MS = 240_000;
 
 /** Waits until the page settles in `running` (from another state, e.g. after a reload or a reset). */
-async function running(page: Page, from?: string) {
-  await page.waitForFunction((from) => document.body.dataset.state !== from && ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), from, { timeout: BOOT_MS, polling: 250 })
+async function running(page: Page, from?: string, ms = BOOT_MS) {
+  await page.waitForFunction((from) => document.body.dataset.state !== from && ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), from, { timeout: ms, polling: 250 })
     .catch(async (e) => {
       const [state, status] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('status')!.textContent]);
       throw new Error(`${e}; the page is ${state} (${status}); the terminal shows: ${await terminal(page)}`);
@@ -68,6 +85,8 @@ const terminal = (page: Page) => page.evaluate(() => document.querySelector('.xt
 const shows = (page: Page, re: RegExp, ms = 60_000) =>
   page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 100 })
     .catch(async (e) => { throw new Error(`${e}; the terminal shows: ${await terminal(page)}`); });
+const message = (page: Page) => page.locator('#message-text').textContent();
+const stateOf = (page: Page) => page.evaluate(() => document.body.dataset.state!);
 
 /** Types on the serial terminal (xterm.js sends \r for Enter). */
 async function onSerial(page: Page, text: string) {
@@ -102,15 +121,118 @@ async function onScreen(page: Page, text: string) {
   }
 }
 
+/** The canvas's pixels (the guest's scanout) and how many aren't black: the screen was drawn. */
+const screenOf = (page: Page) => page.evaluate(() => {
+  const src = document.querySelector<HTMLCanvasElement>('#screen')!;
+  const c = document.createElement('canvas');
+  [c.width, c.height] = [src.width, src.height];
+  const ctx = c.getContext('2d')!;
+  ctx.drawImage(src, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  let lit = 0;
+  for (let i = 0; i < d.length; i += 4) if (d[i] | d[i + 1] | d[i + 2]) lit++;
+  return { size: [src.width, src.height], lit };
+});
+
+/** The screen box as the page measures it (width down to 8), and the canvas's size (the guest's scanout). */
+const geometry = (page: Page) => page.evaluate(() => {
+  const box = document.getElementById('screen-view')!;
+  const c = document.querySelector<HTMLCanvasElement>('#screen')!;
+  return { want: [Math.floor(box.clientWidth / 8) * 8, box.clientHeight], canvas: [c.width, c.height] };
+});
+/** The first mode the guest's connector lists (the preferred one), read on the serial console. */
+async function preferred(page: Page, tag: string): Promise<[number, number]> {
+  await onSerial(page, `clear; echo ==${tag[0]}""${tag.slice(1)} $(head -qn1 /sys/class/drm/card*-Virtual-1/modes)\n`);
+  const re = new RegExp(`==${tag}\\s+(\\d+)x(\\d+)`);
+  await shows(page, re);
+  const m = re.exec(await terminal(page))!;
+  return [Number(m[1]), Number(m[2])];
+}
+/** The connector's `enabled` (a console with no mode to show is `disabled`). */
+async function connector(page: Page, tag: string) {
+  await onSerial(page, `clear; echo ==${tag[0]}""${tag.slice(1)} $(cat /sys/class/drm/card*-Virtual-1/enabled)\n`);
+  const re = new RegExp(`==${tag}\\s+(enabled|disabled)`);
+  await shows(page, re);
+  return re.exec(await terminal(page))![1];
+}
+
+/** Clicks Save snapshot (a download: no file picker) and returns the file's path, once the page says it's saved. */
+async function save(page: Page, name: string) {
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 120_000 }),
+    page.locator('#save-snapshot').click(),
+  ]);
+  const path = join(dir, name);
+  await download.saveAs(path);
+  await page.waitForFunction(() => /^Saved the snapshot /.test(document.getElementById('message-text')!.textContent!), null, { timeout: 60_000 });
+  const info = JSON.parse(await page.evaluate(() => document.getElementById('message')!.dataset.snapshot!)) as { bytes: number; pausedMs: number };
+  assert.equal(info.bytes, readFileSync(path).length, 'the page counted the bytes the file has');
+  return { path, ...info };
+}
+/** Waits until the page has started loading a snapshot (the boot card's title), so a following `running` is the restored machine's. */
+const loadingSnapshot = (page: Page) => page.waitForFunction(() => document.getElementById('boot-title')!.textContent!.startsWith('Loading '), null, { timeout: 30_000, polling: 20 });
+/** The page's OPFS: each directory's files and their sizes. */
+const opfs = (page: Page) => page.evaluate(async () => {
+  const out: Record<string, Record<string, number>> = {};
+  const root = (await navigator.storage.getDirectory()) as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> };
+  for await (const [name, h] of root.entries()) {
+    if (h.kind !== 'directory') continue;
+    out[name] = {};
+    for await (const [file, f] of (h as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }).entries()) out[name][file] = (await (f as FileSystemFileHandle).getFile()).size;
+  }
+  return out;
+});
+/** A snapshot with nothing in it but a header: what the page checks before it touches anything. */
+async function headerOnly(name: string, header: Record<string, unknown>) {
+  const parts: Uint8Array[] = [];
+  const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { format: 1, coreVersion: 1, abi: 0, created: new Date().toISOString(), ...header });
+  await w.end();
+  const path = join(dir, name);
+  writeFileSync(path, Buffer.concat(parts));
+  return path;
+}
+/** The firmware's variable store beside the default disk's overlay, once EDK2 has written to it (an erased bank is all 0xFF). */
+const flashWritten = (page: Page) => page.waitForFunction(async () => {
+  try {
+    const f = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('webpc-debian')).getFileHandle('flash')).getFile();
+    return f.size === 1 << 20 && new Uint8Array(await f.arrayBuffer()).some((b) => b !== 0xff);
+  } catch {
+    return false;
+  }
+}, null, { timeout: 30_000, polling: 500 });
+
 for (let run = 1; run <= RUNS; run++) {
-  test(`the page runs Debian: root logs in on the screen and on the serial terminal, the platform is the firmware's, the disk persists over a reload${RUNS > 1 ? ` (run ${run})` : ''}`, { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
+  test(`the page runs Debian: a key on the screen stops GRUB; root logs in on the screen and on the serial terminal; the platform is the firmware's; the page's size reaches the guest; the disk persists over a reload; a snapshot loads in a fresh profile, suspends and resumes${RUNS > 1 ? ` (run ${run})` : ''}`, { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
+    const query = `ncpus=2&view=both&${unattendedQuery()}`;
     const context = await browser.newContext({ viewport: { width: 1400, height: 900 } }); // a fresh profile: an empty OPFS
     const page = await context.newPage();
+    await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // headless Chromium's picker would wait for a dialog nobody answers
     const errors: string[] = [];
+    const dialogs: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
+    page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
     const t0 = performance.now();
     const at = () => `${((performance.now() - t0) / 1000).toFixed(1)} s`;
-    await page.goto(`${base}/web/app/?ncpus=2&view=both&${unattendedQuery()}`);
+    await page.goto(`${base}/web/app/?${query}`);
+
+    // A snapshot of another machine is refused at once, before anything stops (written by Buildroot's page: only the header matters).
+    await page.setInputFiles('#load-snapshot-input', await headerOnly('buildroot-header.webpcsnap', { machine: 'buildroot', label: 'Buildroot (test guest)', ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] }));
+    await page.waitForTimeout(1000);
+    assert.match(dialogs.at(-1)!, /^buildroot-header\.webpcsnap is a snapshot of Buildroot \(test guest\) \(\?machine=buildroot\), and this page runs Debian 13 \(\?machine=debian\)/);
+    assert.notEqual(await stateOf(page), 'failed');
+
+    // GRUB's menu counts 5 s from when it starts (~5 s after the boot manager did): `c` on the screen until it is stopped.
+    await shows(page, /BdsDxe: starting/, 120_000);
+    await page.locator('#screen').click();
+    for (const t = performance.now(); performance.now() - t < 25_000;) {
+      await page.keyboard.press('c');
+      await page.waitForTimeout(400);
+    }
+    assert.doesNotMatch(await terminal(page), /Linux version/, "GRUB booted: the screen's key never reached it");
+    // Back to the menu (Esc, which the firmware's terminal tells from a key sequence by waiting), whose entry boots.
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(2500);
+    await page.keyboard.press('Enter');
     await running(page);
     console.log(`# debian page ${run}: running at ${at()}`);
     // The screen shows the guest's console (fbcon), not the boot card.
@@ -136,30 +258,47 @@ for (let run = 1; run <= RUNS; run++) {
     await onSerial(page, 'clear; tr -s " " </dev/vcs1 | grep -o "root@[a-z]*:~# echo from-" | head -1; echo scr""een-read\n');
     await shows(page, /root@[a-z]+:~# echo from-\s*screen-read/);
     // The screen was drawn: the canvas isn't black (fbcon's text).
-    assert.ok(await page.evaluate(() => {
-      const c = document.createElement('canvas');
-      const src = document.querySelector<HTMLCanvasElement>('#screen')!;
-      [c.width, c.height] = [src.width, src.height];
-      const ctx = c.getContext('2d')!;
-      ctx.drawImage(src, 0, 0);
-      const d = ctx.getImageData(0, 0, c.width, c.height).data;
-      for (let i = 0; i < d.length; i += 4) if (d[i] | d[i + 1] | d[i + 2]) return true;
-      return false;
-    }), 'the screen is black');
+    const shown = await screenOf(page);
+    assert.ok(shown.lit > 0, 'the screen is black');
 
-    // Persistence: a file written and synced, then a reload (as a user closes the tab: no shutdown).
-    await onSerial(page, 'echo webpc-kept-$((6*7)) >/root/webpc-mark && sync && echo sy""nced\n');
+    // The page's size reaches the guest (M8 graphics G1 loop 5), checked before anything puts up a message (its bar takes from the
+    // screen box). Born at it: the guest's preferred mode and the canvas are the screen box's.
+    const g0 = await geometry(page);
+    assert.deepEqual(await preferred(page, 'born'), g0.want, 'the preferred mode at the boot is the screen box');
+    assert.deepEqual(g0.canvas, g0.want, 'the console took it');
+    // A bigger window: fbcon's buffer is the old size, so it refuses the new preferred mode (DRM's VIRTUAL_X) and takes the born size
+    // from the EDID's extra modes; without it the console went blank. The new preferred mode is what a fresh probe lists.
+    await page.setViewportSize({ width: 1700, height: 1000 });
+    await page.waitForFunction(([w, h]) => { const b = document.getElementById('screen-view')!; return b.clientWidth > w && b.clientHeight > h; }, g0.want, { timeout: 10_000 });
+    const g1 = await geometry(page);
+    await page.waitForTimeout(2500); // the debounce, the display event, the guest's probe
+    assert.equal(await connector(page, 'grown'), 'enabled', 'the console survives a bigger window');
+    await onSerial(page, 'echo detect >/sys/class/drm/card0-Virtual-1/status; sleep 1\n');
+    assert.deepEqual(await preferred(page, 'listed'), g1.want, 'a probe lists the new preferred mode');
+    assert.deepEqual((await geometry(page)).canvas, g0.canvas, 'the console keeps its buffer');
+    // A smaller one: the guest takes it, fbcon would crop its buffer, and the display asks for the whole buffer again.
+    await page.setViewportSize({ width: 1200, height: 800 });
+    // The guest crops for a moment, then the display gives it its whole buffer back: settled when the canvas is the born size again, and it stays.
+    await page.waitForFunction(() => document.querySelector<HTMLCanvasElement>('#screen')!.width !== 0, null, { timeout: 5000 });
+    await page.waitForTimeout(4000);
+    await page.waitForFunction(([w, h]) => { const c = document.querySelector<HTMLCanvasElement>('#screen')!; return c.width === w && c.height === h; }, g0.canvas, { timeout: 30_000 });
+    await page.waitForTimeout(2500);
+    assert.equal(await connector(page, 'shrunk'), 'enabled');
+    assert.deepEqual((await geometry(page)).canvas, g0.canvas, 'the console is not cropped');
+    // Files on the disk (synced), a variable in the shell, then a snapshot of the running machine, which runs on.
+    await onSerial(page, 'echo webpc-kept-$((6*7)) >/root/webpc-mark && echo disk-kept-$((6*7)) >/root/snapmark && sync && SNAPVAR=ram-kept-$((6*7)) && echo sy""nced\n');
     await shows(page, /synced/);
-    // The firmware's variable store is kept beside the overlay as it changes (a closed tab doesn't shut the machine down):
-    // EDK2 wrote its boot variables to the flash bank (an erased bank is all 0xFF) within seconds of the boot.
-    await page.waitForFunction(async () => {
-      try {
-        const f = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('webpc-debian')).getFileHandle('flash')).getFile();
-        return f.size === 1 << 20 && new Uint8Array(await f.arrayBuffer()).some((b) => b !== 0xff);
-      } catch {
-        return false;
-      }
-    }, null, { timeout: 30_000, polling: 500 });
+    const saved = await save(page, 'debian.webpcsnap');
+    console.log(`# debian snapshot: ${(saved.bytes / 1e6).toFixed(1)} MB, machine paused ${saved.pausedMs.toFixed(0)} ms`);
+    assert.equal(await stateOf(page), 'running');
+    await onSerial(page, 'echo sti""ll-$((6*7))\n');
+    await shows(page, /still-42/);
+
+    console.log(`# debian page ${run}: sizes checked, snapshot saved at ${at()}`);
+
+    // Persistence: a reload (as a user closes the tab: no shutdown). The firmware's variable store is kept beside the overlay as it
+    // changes (a closed tab doesn't shut the machine down): EDK2 wrote its boot variables to the flash bank within seconds of the boot.
+    await flashWritten(page);
     await page.reload();
     await running(page);
     console.log(`# debian page ${run}: reloaded, running at ${at()}`);
@@ -168,6 +307,95 @@ for (let run = 1; run <= RUNS; run++) {
     await shows(page, /cat \/root\/webpc-mark\s*webpc-kept-42/);
     assert.deepEqual(errors, []);
     await context.close();
+
+    // A fresh profile: the page starts booting Debian, the snapshot replaces that machine.
+    // Another window size than the one saved in: the display device is restored (the console's screen drawn again), then told the new size.
+    const fresh = await browser.newContext({ viewport: { width: 1700, height: 1000 } });
+    const p2 = await fresh.newPage();
+    const errors2: string[] = [];
+    p2.on('pageerror', (e) => errors2.push(String(e)));
+    p2.on('dialog', (d) => void d.accept());
+    await p2.goto(`${base}/web/app/?${query}`);
+    const t1 = performance.now();
+    await p2.setInputFiles('#load-snapshot-input', saved.path);
+    await loadingSnapshot(p2);
+    await running(p2, undefined, 120_000);
+    const loadMs = performance.now() - t1;
+    console.log(`# debian snapshot: load ${(loadMs / 1000).toFixed(1)} s from the choice to running`);
+    assert.ok(loadMs < 60_000, `loaded in ${(loadMs / 1000).toFixed(1)} s`);
+    // The display: the restored scanout is drawn at the saved size (fbcon's buffer is that size, and the console is never cropped),
+    // and the guest has the new window's size as its preferred mode (the `size` message sent at `running`).
+    // (The device worker draws on its own timer: poll for the first frame.)
+    await p2.waitForFunction(() => {
+      const src = document.querySelector<HTMLCanvasElement>('#screen')!;
+      const c = document.createElement('canvas');
+      [c.width, c.height] = [src.width, src.height];
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(src, 0, 0);
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      for (let i = 0; i < d.length; i += 4) if (d[i] | d[i + 1] | d[i + 2]) return true;
+      return false;
+    }, null, { timeout: 10_000, polling: 100 }).catch(() => assert.fail('the restored screen is drawn'));
+    const restored = await screenOf(p2);
+    assert.deepEqual(restored.size, shown.size, 'the console keeps its buffer');
+    const want = await p2.evaluate(() => { const b = document.getElementById('screen-view')!; const r = b.getBoundingClientRect(); return [Math.floor(r.width / 8) * 8, Math.floor(r.height)]; });
+    assert.notDeepEqual(want, shown.size, 'the window is another size');
+    // The firmware's variable store is back beside the new overlay (the restore deleted the copy): written before `running` is posted.
+    const flash = await p2.evaluate(async () => {
+      try {
+        const f = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('webpc-debian')).getFileHandle('flash')).getFile();
+        return { size: f.size, written: new Uint8Array(await f.arrayBuffer()).some((b) => b !== 0xff) };
+      } catch (e) {
+        return String(e);
+      }
+    });
+    assert.deepEqual(flash, { size: 1 << 20, written: true }, "the firmware's variable store was written beside the restored overlay");
+    // Still logged in, in the shell it was: the terminal's saved tail (the last command before the save), its variable, and the
+    // file on the disk (read past the page cache).
+    await shows(p2, /sy""nced\s*synced/);
+    await onSerial(p2, 'clear; echo var=[$SNAPVAR]; sync; echo 3 >/proc/sys/vm/drop_caches; cat /root/snapmark; echo re""ad\n');
+    await shows(p2, /var=\[ram-kept-42\][^]*?disk-kept-42\s*read/);
+    // And the disk takes writes: a new file, synced, read back from the disk.
+    await onSerial(p2, 'echo after-$((6*7)) >/root/after && sync && echo 3 >/proc/sys/vm/drop_caches && cat /root/after && echo wr""itten\n');
+    await shows(p2, /after-42[^]*?written/);
+    // The guest's connector lists the new mode after a probe (the restored guest hasn't re-read it until then).
+    await p2.waitForTimeout(2500); // the debounce, the display event
+    await onSerial(p2, 'echo detect >/sys/class/drm/card0-Virtual-1/status; sleep 1; echo ==pre""f $(head -qn1 /sys/class/drm/card*-Virtual-1/modes)\n');
+    await shows(p2, /==pref\s+\d+x\d+/);
+    assert.match(await terminal(p2), new RegExp(`==pref\\s+${want[0]}x${want[1]}`), "the guest's preferred mode is the new window's");
+    // And the console is still on the screen, whole: the window's mode is wider than fbcon's buffer, so it took the EDID's second mode
+    // (its buffer's size). With no mode it can take, fbcon blanks the screen.
+    const later = await screenOf(p2);
+    assert.ok(later.lit > 0, 'the console is still shown after the display event');
+    assert.deepEqual(later.size, shown.size, 'at its own size');
+    // Suspend: the machine stops with its memory kept beside the overlay; a reload resumes it, still logged in.
+    await onSerial(p2, 'SUSVAR=suspended-$((6*7)); clear; echo re""ady-to-suspend\n');
+    await shows(p2, /ready-to-suspend/);
+    const t2 = performance.now();
+    await p2.locator('#suspend').click();
+    await p2.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 120_000 });
+    const suspendMs = performance.now() - t2;
+    const kept = (await opfs(p2))['webpc-debian'];
+    assert.ok(kept.suspend > 1 << 20, JSON.stringify(kept));
+    await p2.reload();
+    const t3 = performance.now();
+    await running(p2, undefined, 120_000);
+    console.log(`# debian suspend: ${(kept.suspend / 1e6).toFixed(1)} MB kept, suspended in ${(suspendMs / 1000).toFixed(1)} s, resumed ${((performance.now() - t3) / 1000).toFixed(1)} s after the reload`);
+    assert.match((await message(p2))!, /^Resumed the suspended machine/);
+    assert.equal((await opfs(p2))['webpc-debian'].suspend, undefined, 'a resumed machine has no suspended copy');
+    await onSerial(p2, 'clear; echo var=[$SUSVAR]; echo third-$((6*7)) >/root/third && sync && echo 3 >/proc/sys/vm/drop_caches && cat /root/snapmark /root/after /root/third && echo al""l-three\n');
+    await shows(p2, /var=\[suspended-42\][^]*?disk-kept-42\s*after-42\s*third-42\s*all-three/);
+    // A reload now boots the machine's disk normally (the overlay the restore wrote and the resumed machine
+    // wrote on, the variable store beside it): the files are there.
+    await p2.reload();
+    await running(p2);
+    assert.doesNotMatch((await message(p2)) ?? '', /Resumed/);
+    await onSerial(p2, 'root\n');
+    await shows(p2, /root@\S+:~# /);
+    await onSerial(p2, 'cat /root/snapmark /root/after /root/third\n');
+    await shows(p2, /cat \/root\/snapmark \/root\/after \/root\/third\s*disk-kept-42\s*after-42\s*third-42/);
+    assert.deepEqual(errors2, []);
+    await fresh.close();
     console.log(`# debian page ${run}: done at ${at()}`);
   }));
 }

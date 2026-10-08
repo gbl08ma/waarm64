@@ -362,7 +362,7 @@ output, GRUB's menu and "Loading Linux…", then fbcon on `virtio_gpu`; the logi
   is its own question.
 - **The firmware's keys stay on the serial terminal**: the page's GRUB menu is graphical (`gfxterm`
   takes the GOP) and appears on the screen only; EDK2 has no virtio-input keyboard. `?display=simple` keeps
-  the old serial menus for tests (page-uefi-keys) and as a fallback.
+  the old serial menus for tests (the key flow in `tests/page-disk.test.ts`) and as a fallback.
 
 ### After the user's manual test (2026-10-02)
 
@@ -379,7 +379,7 @@ output, GRUB's menu and "Loading Linux…", then fbcon on `virtio_gpu`; the logi
   until the guest has a driver on virtio-input (the keyboard's DRIVER_OK, polled by the machine worker →
   `keyboard {live}` to the page) the screen's keys are sent to the serial console as a terminal sends them
   (`terminalBytes` in web/input.ts); the serial terminal still takes its own keys when it is focused.
-  `tests/page-grub-screen.test.ts` presses `c` on the screen during GRUB's countdown. A real EDK2 keyboard
+  `tests/page-debian.test.ts` presses `c` on the screen during GRUB's countdown. A real EDK2 keyboard
   driver would be cleaner (backlog).
 
 ## 13. G1 loop 5: resize (2026-10-02)

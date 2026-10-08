@@ -3,11 +3,9 @@
 // (or a snapshot chosen or dropped like a disk) in a fresh profile, which has no OPFS, starts the
 // machine where it was saved: a shell variable and a file in devtmpfs (RAM; Buildroot's kernel has no tmpfs), the terminal's saved
 // tail, and the refusals (not a snapshot, truncated, another machine, devices this page can't
-// make) with the machine and its disk untouched. Buildroot always (seconds); Debian, opt-in with
-// WEBPC_DISTROS=debian (a boot and a restore, ~3 min alone; takes the Debian lock): a file written
-// to the disk, a variable in RAM, then in a fresh profile the snapshot's machine is running, still
-// logged in, with the file on the disk (read past the page cache) and the firmware's variable
-// store written back beside the new overlay.
+// make) with the machine and its disk untouched. On Buildroot (seconds); Debian's snapshot, its
+// restore in a fresh profile, Suspend and the refusal of another machine's snapshot are on the
+// boots of tests/page-debian.test.ts.
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,15 +14,10 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
-import { unattendedQuery } from './debian-unattended.ts';
-import { withDebianLock } from './debian-lock.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const buildroot = existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES));
 const skip = !buildroot && 'SKIPPED: run images/build.sh';
-const debianOn = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
-const debianImages = existsSync(new URL('debian/disk.qcow2', IMAGES)) && existsSync(new URL('edk2/QEMU_EFI.fd', IMAGES));
-const skipDebian = !debianOn ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : !debianImages && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
 const BOOT_MS = 240_000;
 
 let browser: Browser;
@@ -334,135 +327,3 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   assert.deepEqual(errors, []);
   await context.close();
 });
-
-test('a snapshot of Buildroot on the Debian page is refused at once, before anything stops', { skip: skip || skipDebian, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
-  // Written by Buildroot's page: only the header matters here.
-  const path = await headerOnly('buildroot-header.webpcsnap', { machine: 'buildroot', label: 'Buildroot (test guest)', ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] });
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  const dialogs: string[] = [];
-  page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
-  await page.goto(`${base}/web/app/?ncpus=2&${unattendedQuery()}`);
-  await page.setInputFiles('#load-snapshot-input', path);
-  await page.waitForTimeout(1000);
-  assert.match(dialogs.at(-1)!, /^buildroot-header\.webpcsnap is a snapshot of Buildroot \(test guest\) \(\?machine=buildroot\), and this page runs Debian 13 \(\?machine=debian\)/);
-  assert.notEqual(await stateOf(page), 'failed');
-  await context.close();
-}));
-
-test('Debian on the page: a snapshot of a logged-in machine with a file on its disk, loaded in a fresh profile', { skip: skip || skipDebian, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
-  const query = `ncpus=2&view=both&${unattendedQuery()}`;
-  const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  const page = await context.newPage();
-  await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('dialog', (d) => void d.accept());
-  const t0 = performance.now();
-  await page.goto(`${base}/web/app/?${query}`);
-  await running(page);
-  console.log(`# debian snapshot: first boot running at ${((performance.now() - t0) / 1000).toFixed(1)} s`);
-  await onSerial(page, 'root\n');
-  await shows(page, /root@\S+:~# /);
-  await onSerial(page, 'echo lo""gged-in-$((6*7))\n');
-  await shows(page, /logged-in-42/);
-  await onSerial(page, 'echo disk-kept-$((6*7)) >/root/snapmark && sync && SNAPVAR=ram-kept-$((6*7)) && echo sy""nced\n');
-  await shows(page, /synced/);
-  const shown = await screenOf(page);
-  assert.ok(shown.lit > 0, 'the screen is drawn before the save');
-  const saved = await save(page, 'debian.webpcsnap');
-  console.log(`# debian snapshot: ${(saved.bytes / 1e6).toFixed(1)} MB, machine paused ${saved.pausedMs.toFixed(0)} ms`);
-  assert.equal(await stateOf(page), 'running');
-  await onSerial(page, 'echo sti""ll-$((6*7))\n');
-  await shows(page, /still-42/);
-  assert.deepEqual(errors, []);
-  await context.close();
-
-  // A fresh profile: the page starts booting Debian, the snapshot replaces that machine.
-  // Another window size than the one saved in: the display device is restored (the console's screen drawn again), then told the new size.
-  const fresh = await browser.newContext({ viewport: { width: 1700, height: 1000 } });
-  const p2 = await fresh.newPage();
-  const errors2: string[] = [];
-  p2.on('pageerror', (e) => errors2.push(String(e)));
-  p2.on('dialog', (d) => void d.accept());
-  await p2.goto(`${base}/web/app/?${query}`);
-  const t1 = performance.now();
-  await p2.setInputFiles('#load-snapshot-input', saved.path);
-  await loadingSnapshot(p2);
-  await running(p2, 120_000);
-  const loadMs = performance.now() - t1;
-  console.log(`# debian snapshot: load ${(loadMs / 1000).toFixed(1)} s from the choice to running`);
-  assert.ok(loadMs < 60_000, `loaded in ${(loadMs / 1000).toFixed(1)} s`);
-  // The display: the restored scanout is drawn at the saved size (fbcon's buffer is that size, and the console is never cropped),
-  // and the guest has the new window's size as its preferred mode (the `size` message sent at `running`).
-  // (The device worker draws on its own timer: poll for the first frame.)
-  await p2.waitForFunction(() => {
-    const src = document.querySelector<HTMLCanvasElement>('#screen')!;
-    const c = document.createElement('canvas');
-    [c.width, c.height] = [src.width, src.height];
-    const ctx = c.getContext('2d')!;
-    ctx.drawImage(src, 0, 0);
-    const d = ctx.getImageData(0, 0, c.width, c.height).data;
-    for (let i = 0; i < d.length; i += 4) if (d[i] | d[i + 1] | d[i + 2]) return true;
-    return false;
-  }, null, { timeout: 10_000, polling: 100 }).catch(() => assert.fail('the restored screen is drawn'));
-  const restored = await screenOf(p2);
-  assert.deepEqual(restored.size, shown.size, 'the console keeps its buffer');
-  const want = await p2.evaluate(() => { const b = document.getElementById('screen-view')!; const r = b.getBoundingClientRect(); return [Math.floor(r.width / 8) * 8, Math.floor(r.height)]; });
-  assert.notDeepEqual(want, shown.size, 'the window is another size');
-  // The firmware's variable store is back beside the new overlay (the restore deleted the copy): written before `running` is posted.
-  const flash = await p2.evaluate(async () => {
-    try {
-      const f = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle('webpc-debian')).getFileHandle('flash')).getFile();
-      return { size: f.size, written: new Uint8Array(await f.arrayBuffer()).some((b) => b !== 0xff) };
-    } catch (e) {
-      return String(e);
-    }
-  });
-  assert.deepEqual(flash, { size: 1 << 20, written: true }, "the firmware's variable store was written beside the restored overlay");
-  // Still logged in, in the shell it was: its variable, and the file on the disk (read past the page cache).
-  await shows(p2, /logged-in-42/);
-  await onSerial(p2, 'clear; echo var=[$SNAPVAR]; sync; echo 3 >/proc/sys/vm/drop_caches; cat /root/snapmark; echo re""ad\n');
-  await shows(p2, /var=\[ram-kept-42\][^]*?disk-kept-42\s*read/);
-  // And the disk takes writes: a new file, synced, read back from the disk.
-  await onSerial(p2, 'echo after-$((6*7)) >/root/after && sync && echo 3 >/proc/sys/vm/drop_caches && cat /root/after && echo wr""itten\n');
-  await shows(p2, /after-42[^]*?written/);
-  // The guest's connector lists the new mode after a probe (the restored guest hasn't re-read it until then).
-  await p2.waitForTimeout(2500); // the debounce, the display event
-  await onSerial(p2, 'echo detect >/sys/class/drm/card0-Virtual-1/status; sleep 1; echo ==pre""f $(head -qn1 /sys/class/drm/card*-Virtual-1/modes)\n');
-  await shows(p2, /==pref\s+\d+x\d+/);
-  assert.match(await terminal(p2), new RegExp(`==pref\\s+${want[0]}x${want[1]}`), "the guest's preferred mode is the new window's");
-  // And the console is still on the screen, whole: the window's mode is wider than fbcon's buffer, so it took the EDID's second mode
-  // (its buffer's size). With no mode it can take, fbcon blanks the screen.
-  const after = await screenOf(p2);
-  assert.ok(after.lit > 0, 'the console is still shown after the display event');
-  assert.deepEqual(after.size, shown.size, 'at its own size');
-  // Suspend: the machine stops with its memory kept beside the overlay; a reload resumes it, still logged in.
-  await onSerial(p2, 'SUSVAR=suspended-$((6*7)); clear; echo re""ady-to-suspend\n');
-  await shows(p2, /ready-to-suspend/);
-  const t2 = performance.now();
-  await p2.locator('#suspend').click();
-  await p2.waitForFunction(() => document.body.dataset.state === 'suspended', null, { timeout: 120_000 });
-  const suspendMs = performance.now() - t2;
-  const kept = (await opfs(p2))['webpc-debian'];
-  assert.ok(kept.suspend > 1 << 20, JSON.stringify(kept));
-  await p2.reload();
-  const t3 = performance.now();
-  await running(p2, 120_000);
-  console.log(`# debian suspend: ${(kept.suspend / 1e6).toFixed(1)} MB kept, suspended in ${(suspendMs / 1000).toFixed(1)} s, resumed ${((performance.now() - t3) / 1000).toFixed(1)} s after the reload`);
-  assert.match((await message(p2))!, /^Resumed the suspended machine/);
-  assert.equal((await opfs(p2))['webpc-debian'].suspend, undefined, 'a resumed machine has no suspended copy');
-  await onSerial(p2, 'clear; echo var=[$SUSVAR]; echo third-$((6*7)) >/root/third && sync && echo 3 >/proc/sys/vm/drop_caches && cat /root/snapmark /root/after /root/third && echo al""l-three\n');
-  await shows(p2, /var=\[suspended-42\][^]*?disk-kept-42\s*after-42\s*third-42\s*all-three/);
-  // A reload now boots the machine's disk normally (the overlay the restore wrote and the resumed machine
-  // wrote on, the variable store beside it): the files are there.
-  await p2.reload();
-  await running(p2);
-  assert.doesNotMatch((await message(p2)) ?? '', /Resumed/);
-  await onSerial(p2, 'root\n');
-  await shows(p2, /root@\S+:~# /);
-  await onSerial(p2, 'cat /root/snapmark /root/after /root/third\n');
-  await shows(p2, /cat \/root\/snapmark \/root\/after \/root\/third\s*disk-kept-42\s*after-42\s*third-42/);
-  assert.deepEqual(errors2, []);
-  await fresh.close();
-}));

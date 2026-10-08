@@ -4,11 +4,14 @@
 // `npm test`, they loaded the host enough that realtime tests with 1 ms windows
 // (the parallel bare-metal timer.bin) failed (M8 loop 6). A directory in the temp
 // directory is the lock; its `pid` file lets a waiter take over from a dead holder.
+// WEBPC_DEBIAN_SLOTS lets that many boots run at once (scripts/ci-debian.sh, where nothing else
+// runs beside them): a slot is a directory each.
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const LOCK = join(tmpdir(), 'webpc-debian-page.lock');
+const SLOTS = Math.max(1, Number(process.env.WEBPC_DEBIAN_SLOTS ?? 1));
 
 const alive = (pid: number) => {
   try {
@@ -25,24 +28,31 @@ const alive = (pid: number) => {
  */
 export async function withDebianLock<T>(f: () => Promise<T>, ms = 15 * 60_000): Promise<T> {
   const until = Date.now() + ms;
-  for (;;) {
-    try {
-      mkdirSync(LOCK);
-      writeFileSync(join(LOCK, 'pid'), String(process.pid));
-      break;
-    } catch {
-      let pid = 0;
+  let held = '';
+  while (!held) {
+    const pids: number[] = [];
+    for (let i = 0; i < SLOTS && !held; i++) {
+      const lock = i ? `${LOCK}.${i}` : LOCK;
       try {
-        pid = Number(readFileSync(join(LOCK, 'pid'), 'utf8'));
-      } catch { /* being created or removed */ }
-      if (pid && !alive(pid)) rmSync(LOCK, { recursive: true, force: true });
-      else if (Date.now() > until) throw new Error(`waited ${ms / 1000} s for ${LOCK} (held by pid ${pid})`);
-      else await new Promise((r) => setTimeout(r, 500));
+        mkdirSync(lock);
+        writeFileSync(join(lock, 'pid'), String(process.pid));
+        held = lock;
+      } catch {
+        let pid = 0;
+        try {
+          pid = Number(readFileSync(join(lock, 'pid'), 'utf8'));
+        } catch { /* being created or removed */ }
+        if (pid && !alive(pid)) rmSync(lock, { recursive: true, force: true });
+        pids.push(pid);
+      }
     }
+    if (held) break;
+    if (Date.now() > until) throw new Error(`waited ${ms / 1000} s for ${LOCK} (${SLOTS} slot${SLOTS > 1 ? 's' : ''}, held by pids ${pids})`);
+    await new Promise((r) => setTimeout(r, 500));
   }
   try {
     return await f();
   } finally {
-    rmSync(LOCK, { recursive: true, force: true });
+    rmSync(held, { recursive: true, force: true });
   }
 }

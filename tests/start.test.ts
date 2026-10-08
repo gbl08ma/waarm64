@@ -127,8 +127,8 @@ const cold = process.env.WEBPC_START_COLD === '1';
 test('npm start on a fresh copy of the repository: install, build, prepare Debian, serve; the page boots it', {
   skip: !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : !cached ? 'SKIPPED: no Debian download (run images/build.sh debian)'
     : !cold && firmwareStale() && 'SKIPPED: no UEFI firmware (run images/build.sh edk2), or WEBPC_START_COLD=1 to build it in the copy',
-  timeout: cold ? 30 * 60_000 : 15 * 60_000, // with the wait for tests/page-debian.test.ts's boots (tests/debian-lock.ts)
-}, () => withDebianLock(async () => {
+  timeout: cold ? 30 * 60_000 : 15 * 60_000, // with the wait for the other Debian page tests' boots (tests/debian-lock.ts)
+}, async () => {
   const d = tmp('clone');
   const files = execFileSync('git', ['ls-files', '-z', '-co', '--exclude-standard'], { cwd: ROOT, encoding: 'utf8' }).split('\0')
     .filter((f) => f && !f.startsWith('.claude/') && existsSync(join(ROOT, f)) && statSync(join(ROOT, f)).isFile()); // .claude/: the agent's worktrees
@@ -173,14 +173,19 @@ test('npm start on a fresh copy of the repository: install, build, prepare Debia
     // The copy's firmware is this checkout's (current: images/SHA256SUMS) unless built cold, and
     // tests/page-debian.test.ts boots Debian to a login three times; so here the page only has to
     // start the copy's machine: its module graph, core and images load and the firmware (or whatever is further by then) writes to the serial console.
-    const page = await browser.newPage();
-    await page.goto(url);
-    await page.waitForFunction(() => (document.querySelector('.xterm-rows')?.textContent ?? '').trim() !== '' || ['failed', 'crashed', 'off'].includes(document.body.dataset.state!), null, { timeout: 120_000, polling: 250 })
-      .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('message-text')?.textContent}; ${document.querySelector('.xterm-rows')?.textContent}`)}`); });
-    const state = await page.evaluate(() => document.body.dataset.state);
-    assert.ok(state === 'booting' || state === 'running', `${state}: ${await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '')}`);
-    // The boot card hides at the firmware's first graphics mode (the screen has its screens): nothing to assert about it.
-    console.log(`# npm start${cold ? ' (cold)' : ''}: the URL after ${(served / 1000).toFixed(1)} s, the firmware's output ${((performance.now() - start - served) / 1000).toFixed(1)} s later`);
+    // Only the page takes the Debian lock: the install and the build before it boot nothing.
+    await withDebianLock(async () => {
+      const t0 = performance.now();
+      const page = await browser.newPage();
+      await page.goto(url);
+      await page.waitForFunction(() => (document.querySelector('.xterm-rows')?.textContent ?? '').trim() !== '' || ['failed', 'crashed', 'off'].includes(document.body.dataset.state!), null, { timeout: 120_000, polling: 250 })
+        .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('message-text')?.textContent}; ${document.querySelector('.xterm-rows')?.textContent}`)}`); });
+      const state = await page.evaluate(() => document.body.dataset.state);
+      assert.ok(state === 'booting' || state === 'running', `${state}: ${await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '')}`);
+      // The boot card hides at the firmware's first graphics mode (the screen has its screens): nothing to assert about it.
+      console.log(`# npm start${cold ? ' (cold)' : ''}: the URL after ${(served / 1000).toFixed(1)} s, the firmware's output ${((performance.now() - t0) / 1000).toFixed(1)} s after the page opened`);
+      await page.close();
+    });
   } finally {
     await browser.close();
     child.kill();
@@ -195,4 +200,4 @@ test('npm start on a fresh copy of the repository: install, build, prepare Debia
   console.log(`# npm start again, with nothing to do: ${ms.toFixed(0)} ms`);
   assert.ok(ms < 5000, `${ms} ms`);
   rmSync(d, { recursive: true });
-}));
+});

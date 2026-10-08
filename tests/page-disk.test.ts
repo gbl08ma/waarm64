@@ -1,8 +1,15 @@
-// Your own disk on the page (M8 phase B loop 4): a local qcow2 chosen with the picker boots through
-// UEFI, its changes live in an overlay of their own (keyed by the file's name, size and modification
-// time), is saved from the page (the changes over the base as a qcow2 that `qemu-img` accepts, by a
-// download and by a file picker's handle), and choosing the same file again in a fresh page finds
-// its changes. Two Debian boots, ~2 min alone; opt-in with WEBPC_DISTROS=debian, like the other page tests on Debian.
+// Your own disk on the page (M8 phase B loop 4) and the serial terminal's keys (loop 3), on the
+// same boots: a local qcow2 chosen with the picker boots through UEFI, its changes live in an
+// overlay of their own (keyed by the file's name, size and modification time), are saved from the
+// page (the changes over the base as a qcow2 that `qemu-img` accepts, by a download and by a file
+// picker's handle), and choosing the same file again in a fresh page finds them. Its first boot
+// goes through the keys, end to end through xterm.js (arrows, Enter, Esc, F2, Ctrl-N/E/X): GRUB's
+// menu (arrows) -> "UEFI Firmware Settings" (the guest resets; the chosen disk's flash bank kept
+// the variable that asks for the setup, over the page's restart of the machine) -> EDK2's boot menu
+// and setup forms -> Continue -> the disk's loader again -> GRUB's editor (e, F2's command line,
+// Esc, arrows, typing) -> Ctrl-X boots the edited entry, and the kernel's command line has what
+// was typed. `?display=simple` keeps GRUB's menu on the serial console. Three Debian boots and two
+// firmware starts, ~4 min alone; opt-in with WEBPC_DISTROS=debian (scripts/ci-debian.sh).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -43,6 +50,18 @@ async function onSerial(page: Page, text: string) {
   await page.locator('.xterm').click();
   await page.keyboard.type(text, { delay: 10 });
 }
+/** The terminal's rows, one per line (xterm.js's DOM renderer), trailing spaces trimmed: for the firmware's and GRUB's screens. */
+const rows = (page: Page) => page.evaluate(() => [...document.querySelectorAll('.xterm-rows > div')].map((d) => d.textContent!.replace(/\s+$/, '')).join('\n'));
+const showsRows = (page: Page, re: RegExp, ms = 120_000) =>
+  page.waitForFunction(([src, flags]) => new RegExp(src, flags).test([...document.querySelectorAll('.xterm-rows > div')].map((d) => d.textContent!.replace(/\s+$/, '')).join('\n')), [re.source, re.flags], { timeout: ms, polling: 100 })
+    .catch(async (e) => { throw new Error(`${e}; the terminal shows:\n${await rows(page)}`); });
+/** Presses keys one at a time with a moment between them: the firmware's terminal driver tells a lone Esc from the start of a key sequence by waiting (~2 s). */
+async function press(page: Page, ...keys: string[]) {
+  for (const k of keys) {
+    await page.keyboard.press(k);
+    await page.waitForTimeout(k === 'Escape' ? 2500 : 150);
+  }
+}
 /** Waits for the machine's `running` after the page left `from`. */
 async function running(page: Page, from: string) {
   await page.waitForFunction((from) => document.body.dataset.state !== from && ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), from, { timeout: BOOT_MS, polling: 250 });
@@ -56,7 +75,7 @@ const overlays = (page: Page) => page.evaluate(async () => {
   return names;
 });
 
-test('a disk chosen on the page boots through UEFI, keeps its changes in its own overlay, and has them again when chosen again', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
+test("a disk chosen on the page boots through UEFI (the serial terminal's keys through EDK2's menus and GRUB's editor on the way), keeps its changes in its own overlay, and has them again when chosen again", { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
   // The same bytes under a name of the user's own (the page keys the disk by name, size and modification time).
   const file = join(dir, 'mydisk.qcow2');
   symlinkSync(new URL(IMAGE).pathname, file);
@@ -66,19 +85,73 @@ test('a disk chosen on the page boots through UEFI, keeps its changes in its own
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('dialog', (d) => void d.accept()); // "Boot mydisk.qcow2? The machine restarts…"
+  const pick = async () => {
+    await page.setInputFiles('#open-disk-input', file);
+    await page.waitForFunction(() => document.getElementById('machine')!.textContent!.includes('mydisk.qcow2'), null, { timeout: 10_000 });
+  };
   const choose = async () => {
     const from = await page.evaluate(() => document.body.dataset.state!);
-    await page.setInputFiles('#open-disk-input', file);
-    await page.waitForFunction((t) => document.getElementById('machine')!.textContent!.includes('mydisk.qcow2'), null, { timeout: 10_000 });
+    await pick();
     await running(page, from);
   };
 
-  await page.goto(`${base}/web/app/?ncpus=2&view=both&${unattendedQuery()}`);
-  await choose();
+  // The serial terminal only (the keys test's GRUB menu is on it). The file is chosen at once: the default machine's firmware
+  // hasn't printed anything by then, and the restart clears the terminal.
+  await page.goto(`${base}/web/app/?ncpus=2&view=terminal&display=simple&${unattendedQuery()}`);
+  await pick();
   assert.equal(await page.locator('#machine').textContent(), 'Debian 13 · mydisk.qcow2');
-  await onSerial(page, 'root\n');
-  await shows(page, /root@\S+:~# /);
-  await onSerial(page, 'echo webpc-own-$((6*7)) >/root/own-mark && sync && echo sy""nced\n');
+  await page.locator('.xterm').click();
+  // GRUB's menu: two arrows down to "UEFI Firmware Settings" (its asterisk marks the entry), Enter.
+  await showsRows(page, /Advanced options for Debian/);
+  await press(page, 'ArrowDown', 'ArrowDown');
+  await showsRows(page, /\|\*UEFI Firmware Settings/, 10_000);
+  await press(page, 'Enter');
+
+  // The guest reset itself (the page restarts the machine) into EDK2's boot device menu: the variable that asked for it was kept in the flash bank.
+  await showsRows(page, /Please select boot device/);
+  await page.waitForTimeout(1000);
+  await press(page, 'Enter'); // "EFI Firmware Setup"
+  await showsRows(page, /Select Language\s+<Standard English>/);
+  await press(page, 'ArrowDown', 'ArrowDown', 'Enter'); // Boot Manager
+  await showsRows(page, /Boot Manager Menu/);
+  await press(page, 'Escape');
+  await showsRows(page, /Select Language\s+<Standard English>/, 10_000);
+  await press(page, 'ArrowDown', 'ArrowDown'); // from Boot Manager: Boot Maintenance Manager, Continue
+  await showsRows(page, /<Standard English>\s+Continue/, 10_000); // its help text
+  await press(page, 'Enter');
+  await showsRows(page, /Please select boot device/);
+  await page.waitForTimeout(1000);
+  await press(page, 'ArrowDown', 'Enter'); // "UEFI Misc Device": the disk
+
+  // GRUB's editor: Ctrl-N goes to the last line, the arrows to the `linux` line, Ctrl-E to its end, then F2's command line and Esc.
+  await showsRows(page, /Advanced options for Debian/);
+  await press(page, 'e');
+  await showsRows(page, /Minimum Emacs-like screen editing/);
+  await page.waitForTimeout(2000);
+  for (let i = 0; i < 40; i++) { await page.keyboard.press('Control+n'); await page.waitForTimeout(30); } // the last line (the editor's Emacs keys: plain bytes)
+  await showsRows(page, /initrd\s+\/boot\/initrd\.img/, 10_000);
+  await press(page, 'ArrowUp', 'ArrowUp', 'ArrowUp', 'Control+e'); // the `linux` line (`initrd`, `echo`, `linux`)
+  await page.keyboard.type(' webpc.keytest=1', { delay: 20 });
+  await showsRows(page, /webpc\.keytest=1/, 10_000);
+  // F2 opens GRUB's command line (it runs a command), Esc returns to the editor with the edit kept.
+  await press(page, 'F2');
+  await showsRows(page, /grub>/, 10_000);
+  await page.keyboard.type('echo f2-works', { delay: 20 });
+  await press(page, 'Enter');
+  await showsRows(page, /^f2-works\ngrub>/m, 10_000); // the prompt is back: an Esc before it would interrupt the command
+  await press(page, 'Escape');
+  await showsRows(page, /Minimum Emacs-like screen editing/, 10_000);
+  await showsRows(page, /webpc\.keytest=1/, 10_000);
+  await press(page, 'Control+x');
+
+  // The edited entry boots; its kernel has the typed parameter (Debian's GRUB passes `quiet`: the kernel's own echo of the line isn't on the console).
+  await showsRows(page, /\S+ login:$/m, 240_000);
+  await page.keyboard.type('root\n', { delay: 10 });
+  await showsRows(page, /root@\S+:~#/, 60_000);
+  await page.keyboard.type('tr " " "\\n" </proc/cmdline | grep -x webpc.key""test=1\n', { delay: 10 }); // (the quotes keep the command's echo from matching)
+  await showsRows(page, /^webpc\.keytest=1$/m, 30_000);
+  await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000, polling: 250 });
+  await onSerial(page, 'clear; echo webpc-own-$((6*7)) >/root/own-mark && sync && echo sy""nced\n');
   await shows(page, /synced/);
   // The page's disk takes DISCARD: Debian's ext4 trims its free space (what the guest frees leaves the overlay).
   await onSerial(page, 'fstrim -v / && echo tr""immed\n');

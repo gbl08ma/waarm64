@@ -206,7 +206,7 @@ What it found, beyond what frontend.md "Debian through UEFI" says:
   suggested the right one: configure the firmware.** `images/build.sh edk2` deletes the larger rows
   of TerminalDxe's mode table, so the only mode is 80×25 and nothing asks for a resize (the page's
   terminal has 25 rows). **Remove the patch if the UEFI ever gets graphical modes** (backlog).
-- **Keys** (`tests/page-uefi-keys.test.ts`): everything arrives except PageUp/PageDown; a lone Esc
+- **Keys** (`tests/page-disk.test.ts`): everything arrives except PageUp/PageDown; a lone Esc
   takes ~2 s (EDK2 waits to tell it from a sequence); a fast stream of arrows can lose bytes.
   GRUB's "UEFI Firmware Settings" resets the machine into EDK2's setup: the variable (OsIndications)
   is kept in the flash bank across the page's restart, which is the flash persistence working.
