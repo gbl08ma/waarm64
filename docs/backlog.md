@@ -51,10 +51,10 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   4–8%). Profiled 2026-10-08 with a compositor-like GLES load (`images/alpine/gl`): ~95% of the
   rasterizer's time was helper calls for NEON the JIT didn't inline (ZIP/UZP, LD1 of a lane, half
   precision FCVTL/FCVTN, FP compares, FRINTI, FMLA/FADD with zero lanes); with those inline the
-  rasterizing phase is 16.5× faster in Node (69.7 → 4.2 s for 10 frames, 1 vCPU, one llvmpipe
-  thread) and runs at ~1150 MIPS with almost no helper calls left, still ~16× native. Left: what the
-  inline code costs (vector registers in memory, below), the 4-thread case (wake-ups), and sway
-  itself on the page.
+  frame is 15.6× faster in Chromium on 1 vCPU (6,936 → 445 ms) and 18.6× on 4 (1,859 → 100 ms:
+  10 frames a second), ~17× and ~14× native (`gl_llvmpipe_jit`, `bench/boot/REPORT.md` "M8:
+  llvmpipe"). Left: what the inline code costs (vector registers in memory, below), and sway itself
+  on the page again (the user's manual check).
 - **Per-module eviction, coldest first,** instead of whole-cache flushes ([jit.md](jit.md)
   "Memory"). With the shared cache a 4-vCPU `go build` loop flushes about once in 5 minutes; a
   larger working set (a browser in the guest) is where this counts again. A flush also has every

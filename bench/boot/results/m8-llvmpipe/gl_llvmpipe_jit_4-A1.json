@@ -1,0 +1,168 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-10-08T15:57:19.680Z",
+ "commit": "d659d18cc193",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "gl_llvmpipe_jit_4_frame",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-gl.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.gl=30,3,1376,762",
+    "ramMiB": 1024,
+    "jit": 1,
+    "ncpus": 4,
+    "parallel": true,
+    "realtime": true,
+    "frames": 30,
+    "steps": 19564489537,
+    "counters": {
+     "steps": 19564489537,
+     "irqs": 276379,
+     "exceptions": {
+      "0x0": 6,
+      "0x15": 126150,
+      "0x20": 7857,
+      "0x24": 64267,
+      "0x25": 1844
+     },
+     "tlbMisses": 2110142,
+     "tlbWalks": 2028317,
+     "tlbFlushes": 164217,
+     "jit": {
+      "blocks": 63929,
+      "modules": 1730,
+      "bytes": 83323489,
+      "compileNs": 1966152192,
+      "steps": 19480446232,
+      "dispatches": 14075035,
+      "invalidations": 127,
+      "flushes": 0,
+      "inline": 768204,
+      "helpers": 5946,
+      "inlineSteps": 17411258424,
+      "flagsStored": 94435,
+      "flagsElided": 8947,
+      "condDirect": 65296,
+      "condComputed": 308,
+      "condMemory": 9796,
+      "regionBlocks": 146409,
+      "backEdges": 2860,
+      "tierUps": 1387,
+      "stale": 0
+     },
+     "par": {
+      "dsbWaits": 9474,
+      "dsbWaitNs": 245935281,
+      "tlbiIs": 59998,
+      "ic": 1434023,
+      "drains": 36133,
+      "idles": 17374,
+      "lockContended": 5236,
+      "lockWaitNs": 15121321,
+      "wfes": 270570,
+      "outNs": 45830802612
+     }
+    }
+   },
+   "samples": [
+    1894.2103333334128,
+    1859.059500000005,
+    1848.650166666632
+   ],
+   "median": 1859.059500000005,
+   "iqr": 22.780083333390394,
+   "n": 3
+  },
+  {
+   "name": "gl_llvmpipe_jit_4_warm",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-gl.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro webpc.gl=30,3,1376,762",
+    "ramMiB": 1024,
+    "jit": 1,
+    "ncpus": 4,
+    "parallel": true,
+    "realtime": true,
+    "frames": 30,
+    "steps": 19564489537,
+    "counters": {
+     "steps": 19564489537,
+     "irqs": 276379,
+     "exceptions": {
+      "0x0": 6,
+      "0x15": 126150,
+      "0x20": 7857,
+      "0x24": 64267,
+      "0x25": 1844
+     },
+     "tlbMisses": 2110142,
+     "tlbWalks": 2028317,
+     "tlbFlushes": 164217,
+     "jit": {
+      "blocks": 63929,
+      "modules": 1730,
+      "bytes": 83323489,
+      "compileNs": 1966152192,
+      "steps": 19480446232,
+      "dispatches": 14075035,
+      "invalidations": 127,
+      "flushes": 0,
+      "inline": 768204,
+      "helpers": 5946,
+      "inlineSteps": 17411258424,
+      "flagsStored": 94435,
+      "flagsElided": 8947,
+      "condDirect": 65296,
+      "condComputed": 308,
+      "condMemory": 9796,
+      "regionBlocks": 146409,
+      "backEdges": 2860,
+      "tierUps": 1387,
+      "stale": 0
+     },
+     "par": {
+      "dsbWaits": 9474,
+      "dsbWaitNs": 245935281,
+      "tlbiIs": 59998,
+      "ic": 1434023,
+      "drains": 36133,
+      "idles": 17374,
+      "lockContended": 5236,
+      "lockWaitNs": 15121321,
+      "wfes": 270570,
+      "outNs": 45830802612
+     }
+    }
+   },
+   "samples": [
+    9727.779999997467,
+    9609.004999998957,
+    9471.25
+   ],
+   "median": 9609.004999998957,
+   "iqr": 128.2649999987334,
+   "n": 3
+  }
+ ]
+}

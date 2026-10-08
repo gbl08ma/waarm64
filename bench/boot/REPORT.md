@@ -1138,3 +1138,43 @@ Node agrees (three pairs; per vCPU, private caches interpret about twice the ste
 every region four times). Separately, four concurrent copies of the benchmark slow down by
 themselves on this host: four independent 1-vCPU VMs at once ran Lua 3–6%, SQLite 11–15% and
 compress 22% slower than one alone (Node, one run each), about what 4 vCPUs cost against 1.
+
+## M8: llvmpipe, profiled; its NEON inline
+
+2026-10-08, the dev VM, Chromium 153.0.8010.52; `results/m8-llvmpipe/` (A: `16883ec`, B: `d659d18`,
+the commit that inlines what follows). The backlog's question: why sway compositing on Mesa's
+llvmpipe kept four vCPUs at ~54% for ~3 frames a second ([plans/graphics.md](../../docs/plans/graphics.md) §16).
+The workload is `gl_llvmpipe_jit` (`images/alpine/gl`, docs/benchmarking.md): a compositor's
+frame (a 64-row texture upload, 3 blended quads over 1376×762, a read-back) without a display.
+
+**Where the time went** (Node, `perf` with `--perf-prof`, `bench/boot/userprof-perf.ts`'s
+categories, 1 vCPU, `LP_NUM_THREADS=0`): in the rasterizing phase only ~5% of the samples were
+in compiled guest code; the interpreter's helper bodies were ~50% (`simd_int::permute` and the
+`__ashlti3`/`__lshrti3` 128-bit shifts it calls: 37% between them), "core/JS other" 25%, the helpers'
+entry 7%. 13% of the instructions were helper calls (per 10 frames: ZIP1 149M, LD1 of a lane 90M,
+ZIP2 88M, FCVTL 67M, CMLT #0 38M, FMLA by element 31M, FCMGE and FCMLE #0 30M each, UZP1 30M,
+FCVTN 30M, FRINTI 15M, FADD 8M). A diagnostic core that recorded each helper call's encoding and
+its operand lanes' classes (`helper-classes.patch`, not for commit to the core) showed why the FP ones weren't inline: FCVTL/FCVTN were
+half precision (only single ↔ double was inline), and FMLA and FADD had zero lanes, which the
+fast paths rejected as not normal.
+
+**Built** (docs/jit.md): UZP/TRN/ZIP as one shuffle, the integer compares against zero, LD1/ST1
+of one lane, the vector FP compares, FRINTN/M/P/Z/I/X, FCVTL/FCVTN from and to half precision,
+and zero operands on the vector FP fast paths where the zero case is exact. Node, the rasterizing
+phase of 10 frames: 69.7 s → 31.1 s (the permutes and zero compares) → 9.9 s (LD1, compares,
+FRINT, half precision) → 4.2 s (zero operands), the same 4,837M steps and pixel hash; 69 → 1,147
+MIPS, helper calls 626M → ~5M. Chromium (median (min–max), n3 each):
+
+| | A | B | |
+|---|---|---|---|
+| `gl_llvmpipe_jit`, ms a frame (1 vCPU, rasterizing on the calling thread) | 6,936 (6,835–6,994) | 445 (444–519) | 15.6× |
+| warm (shaders compiled, 3 frames), ms | 24,984 (24,928–25,195) | 5,340 (5,337–5,938) | 4.7× |
+| `gl_llvmpipe_jit_4`, ms a frame (4 vCPUs, 4 rasterizer threads) | 1,859 (1,849–1,894) | 100 (100–101) | 18.6× |
+| warm, ms | 9,609 (9,471–9,728) | 4,408 (4,402–4,447) | 2.2× |
+
+Natively on the dev VM (the same binary in Alpine's container) a frame takes 26.6 ms on one
+thread and 7.4 ms on four: the JIT is now ~17× and ~14× slower there, about the gap it has on
+scalar code; the 4-vCPU case scales 4.4× over the 1-vCPU one, so the rasterizer threads' wake-ups
+aren't a cost worth chasing yet. What's left is the inline code itself (vector registers in memory
+between instructions: the backlog). `alpine_user_jit` (alternated A, B twice, n6): every phase
+within 3% (compress −1.3%, Lua −0.6%, churn −2.8%, SQLite −1.3%), noise.

@@ -18,7 +18,7 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
 | Page | Benchmarks (`--only`) |
 |---|---|
 | `bench/interp/index.html` | `interp_mips`, `interp_fp_mips`, `vm_flat_mips`, `vm_mmu_mips` (interpreter: user-mode integer and FP/NEON guests, the integer guest at EL1 with the MMU off/on), `jit_mips`, `jit_fp_mips`, `vm_jit_flat_mips`, `vm_jit_mmu_mips`, `coremark_mips`, `jit_coremark_mips` (also reported as iterations/s) |
-| `bench/boot/index.html` | `boot`, `boot_defconfig`, `boot_alpine` (interpreter), `boot_jit`, `boot_alpine_jit`, `alpine_user_jit` (ms per phase), `coremark_vm_jit` (CoreMark as init, realtime), `alpine_crypto_jit` / `alpine_crypto_ce_jit` (`openssl speed`, extensions off/on, realtime) I/O: `dd`, `fio`, `p9`, `net` (realtime) |
+| `bench/boot/index.html` | `boot`, `boot_defconfig`, `boot_alpine` (interpreter), `boot_jit`, `boot_alpine_jit`, `alpine_user_jit` (ms per phase), `coremark_vm_jit` (CoreMark as init, realtime), `alpine_crypto_jit` / `alpine_crypto_ce_jit` (`openssl speed`, extensions off/on, realtime), `gl_llvmpipe_jit` / `_4` (ms a frame); I/O: `dd`, `fio`, `p9`, `net` (realtime) |
 | `bench/io/index.html` | `io` (fio and dd on a chosen `File` disk under a fresh OPFS overlay: reads, writes, `fsync`, reads of written data; realtime, a boot per sample; `node bench/run.ts --page bench/io/index.html --input target/bench/io-raw.img`, the input from `head -c 256M /dev/urandom`), `io_stats` (per-stage timers of the blk device, one boot per workload) |
 | `bench/gpu/index.html` | `webgpu_adapter`, `writebuffer`, `present_canvas2d`, `present_canvas2d_rgba`, `present_webgl2`, `present_webgpu` (G0: ms per frame at 1080p/1440p/4K, full and damaged; needs `--chromium-args`, see `bench/gpu/REPORT.md`; `bench/gpu/run-mac.sh` for the Mac host's real GPU), `flush_cost` (the virtio-gpu backend itself: a transfer, a flush with its draw; no flags needed). Beside the page: `node bench/gpu/page.ts` (Debian on the page, virtio-gpu against the simple framebuffer: first pixel, `running`, key to glyph on the screen and the terminal) and `node bench/gpu/draw-latency.ts` |
 | `bench/jit/index.html` | `jit_install`, `jit_first_call` |
@@ -38,6 +38,14 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
   phase takes a thread/process count so M7 can rerun them at N vCPUs. `webpc.phase=crypto` runs
   `openssl speed` instead; `webpc.armcap=X` sets `OPENSSL_armcap`. `7z b` was left out (12 s
   natively for one pass).
+- `gl_llvmpipe_jit`, `gl_llvmpipe_jit_4` (llvmpipe, `images/build.sh alpine-gl`): after Alpine's
+  boot, `glcomp` (`images/alpine/gl`) composites like a Wayland compositor on Mesa's software
+  rasterizer without a display: per frame a 64-row texture upload, 3 blended full-target quads at
+  1376×762 and a read-back that waits for the rasterizer. ms a frame (host-timed) and the warm
+  phase (LLVM compiling the shaders, 3 frames); a pixel hash checked against llvmpipe natively.
+  `gl_llvmpipe_jit`: 1 vCPU, deterministic, `LP_NUM_THREADS=0` (the shaders' code alone, 10
+  frames); `_4`: 4 parallel vCPUs, realtime, Mesa's 4 rasterizer threads (30 frames). Natively on
+  the dev VM: 26.6 ms a frame on one thread, 7.4 on four.
 - **SMP (M7):** `smp_alpine_jit`, `smp_user_jit` run parallel SMP (a worker
   per vCPU, realtime, JIT) at N = 1, 2, 4 vCPUs, the Ns alternated within each round; `…_8` once
   as a check, `smp_user_jit_4` alone for A/B sessions. Boots report the time to the distro's

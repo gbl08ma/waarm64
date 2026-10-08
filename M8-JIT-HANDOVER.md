@@ -14,6 +14,11 @@ shared code cache is 25% faster than a cache per vCPU in every phase (rechecked 
 Mac host's Chromium the userspace benchmark is ~14 s (no explicit bounds checks there: check work
 on the Mac before ranking it by a VM profile, docs/benchmarking.md).
 
+llvmpipe (2026-10-08): profiled with `gl_llvmpipe_jit` (`images/alpine/gl`, a compositor's GLES
+frame without a display); ~95% of its rasterizing was helper calls for NEON the JIT didn't inline.
+With it inline a frame is 15.6× faster on 1 vCPU (6,936 → 445 ms) and 18.6× on 4 (1,859 → 100
+ms), ~14–17× native (`bench/boot/REPORT.md` "M8: llvmpipe").
+
 Measured and closed (don't redo): copies of compiled callees in callers, a region entered at more
 than one block, forward regions behind a tier-up, exact limits for the core's own memory, the
 shared cache's single-threaded phases (docs/jit.md "Tried and not kept", the backlog).
@@ -21,8 +26,9 @@ shared cache's single-threaded phases (docs/jit.md "Tried and not kept", the bac
 ## Next
 
 docs/backlog.md "JIT", top down. The user-space levers left there are small; the larger open items
-are llvmpipe (GL desktops), coldest-first eviction (working sets past 160 MiB) and the 2–4 s
-`vm_run_cpu` calls (latency).
+are coldest-first eviction (working sets past 160 MiB), the 2–4 s `vm_run_cpu` calls (latency) and
+vector registers in locals (llvmpipe's shaders, AES-CBC). sway on llvmpipe on the page wants the
+user's look again.
 
 ## How to measure
 
@@ -32,6 +38,9 @@ WASM=a.wasm node bench/boot/userprof.ts          # another build; alternate two 
 npm run bench -- --page bench/boot/index.html --only alpine_user_jit --out <json>   # Chromium, the number that counts
 bench/run-mac.sh <name> --page bench/boot/index.html --only alpine_user_jit         # the Mac host's Chromium
 ```
+
+For NEON-heavy guests: `--only gl_llvmpipe_jit` (and `_4`); per-encoding helper counts with the
+lanes' FP classes: `bench/boot/results/m8-llvmpipe/helper-classes.patch`.
 
 A/B in Chromium: keep each build's `webpc_core.wasm` aside, copy one into `target/…/release/`, run,
 alternate (A, B, A, B), check `sha256sum` before each run. Also `boot_alpine_jit`, `boot_jit`,

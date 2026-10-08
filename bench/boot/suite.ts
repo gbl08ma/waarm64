@@ -12,6 +12,8 @@
 // `--only alpine_user_jit`: Alpine's userspace phases after its boot (images/alpine/user), ms per phase;
 // `--only alpine_crypto_jit`: `openssl speed` in the same image (webpc.phase=crypto), realtime, MB/s, the crypto extensions off (the NEON-only paths);
 // `--only alpine_crypto_ce_jit`: the same with them on (every other benchmark's default since M6.5 loop 7).
+// `--only gl_llvmpipe_jit`: a compositor's GLES frames on Mesa's llvmpipe (images/alpine/gl), 1 vCPU,
+// rasterizing on the calling thread; `gl_llvmpipe_jit_4`: 4 parallel vCPUs, llvmpipe's 4 threads. ms a frame.
 // I/O, realtime mode, a fresh boot per sample, timed by the host between the
 // guest script's "webpc: … start/end" markers unless fio times itself:
 // `--only dd`: /bench-dd.sh reads all of /dev/vda (sync-XHR block backend);
@@ -227,6 +229,41 @@ async function alpineCrypto(o: Options, extra = '', crypto = false): Promise<Sam
   return [...out.values()].map((s, i) => (i ? s : { ...s, params: { ...s.params, helpers: helpers.slice(0, 30) } }));
 }
 
+/** glcomp's check line by frame count, from llvmpipe natively (the dev VM, any thread count). */
+const GL_CHECK: Record<number, string> = { 10: '285f8eb1', 30: 'a26ac0b1' };
+
+/**
+ * llvmpipe (docs/benchmarking.md): images/alpine/gl's glcomp after Alpine's boot, `frames`
+ * frames of 3 blended quads at 1376×762 plus a 64-row texture upload. One vCPU: deterministic,
+ * LP_NUM_THREADS=0 (the shaders' code alone); N vCPUs: parallel, realtime, Mesa's default of a
+ * rasterizer thread per CPU. ms a frame (host-timed), and the warm phase (LLVM compiling the
+ * shaders, 3 frames).
+ */
+async function glLlvmpipe(o: Options, ncpus: number): Promise<Sample[]> {
+  const a = DISTROS.alpine;
+  const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
+  const frames = ncpus === 1 ? 10 : 30;
+  const cmdline = `${a.cmdline} webpc.gl=${frames},3,1376,762${ncpus === 1 ? ' webpc.lp=0' : ''}`;
+  const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-gl/rootfs-gl.ext4', import.meta.url).href, cmdline, ramSize: 1 << 30, jit: 1 as const };
+  const module = await WebAssembly.compile(img.wasm);
+  const parallel = ncpus > 1;
+  const name = `gl_llvmpipe_jit${parallel ? `_${ncpus}` : ''}`;
+  const out = { frame: [] as number[], warm: [] as number[] };
+  let stats;
+  for (let i = 0; i < (o.quick ? 1 : 3); i++) {
+    fresh();
+    const r = await boot(module, img, undefined, { ncpus, parallel, realtime: parallel });
+    const check = r.console.match(/glcomp: check ([0-9a-f]{8})/)?.[1];
+    if (check !== GL_CHECK[frames]) throw new Error(`glcomp check ${check}, expected ${GL_CHECK[frames]}`);
+    out.frame.push(between(r, 'frames') / frames);
+    out.warm.push(between(r, 'warm'));
+    stats = r.stats;
+    o.log?.(`${name}: ${out.frame.at(-1)!.toFixed(0)} ms a frame, warm ${out.warm.at(-1)!.toFixed(0)} ms, total ${r.total.toFixed(0)} ms`);
+  }
+  const params = { distro: 'alpine', disk: 'rootfs-gl.ext4', cmdline, ramMiB: 1024, jit: 1, ncpus, parallel, realtime: parallel, frames, steps: stats!.steps, counters: stats };
+  return [{ name: `${name}_frame`, unit: 'ms', params, samples: out.frame }, { name: `${name}_warm`, unit: 'ms', params, samples: out.warm }];
+}
+
 /** The crypto phase's check line (SHA-1, SHA-256, AES-128-CBC, AES-256-CTR, AES-128-CBC decrypt), from arm64 hardware. */
 const CRYPTO_CHECK = 'crypto: 82a2bffdaeb5d862 0e66434871168f25 9705ef3ce219893e 5aa8ca270a880d01 63bd397e0cc0e537';
 
@@ -392,6 +429,7 @@ export const suite = {
   boot: runAll, boot_defconfig: (o: Options) => runAll(o, 'Image-defconfig'), boot_alpine: bootAlpine, dd, fio, p9, net,
   // Under the JIT (VmConfig.jit = 1), deterministic.
   boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), coremark_vm_jit: coremarkVm, alpine_user_jit: alpineUser,
+  gl_llvmpipe_jit: (o: Options) => glLlvmpipe(o, 1), gl_llvmpipe_jit_4: (o: Options) => glLlvmpipe(o, 4),
   // Realtime (M6.5).
   alpine_crypto_jit: (o: Options) => alpineCrypto(o),
   alpine_crypto_ce_jit: (o: Options) => alpineCrypto(o, '', true), // the crypto extensions on (VmConfig.features)
