@@ -90,3 +90,20 @@ Requests are 4 to 128 KiB (one of 1 MiB, one of 4 MiB): nothing sits at `seg_max
 - **Loop 1: dropped** (flush ~10 µs). **Loop 5 (blk worker): not measured here**; it only matters for the screen stalling
   behind a long read (H2), which a boot's totals don't show. Left in `docs/backlog.md`'s entry.
 - Shipped: loop 3 (writes and held reads ×4 to ×35). Debian's boot is guest CPU bound, not disk bound.
+
+## Loop 5 judged: the screen no longer stalls behind disk reads (H2)
+
+`node bench/gpu/draw-latency.ts out.json [--chosen]` (Debian on the page, tty1 changing every ~30 ms, then
+`dd bs=1M count=16` at random offsets of `/dev/vda` in a loop after dropping the page cache; flush-to-draw ms from the
+display's own `draw-stats`), alternating the served image over HTTP (localhost) and the same qcow2 chosen as a `File`
+under an overlay, two runs each (`bench/gpu/results/2026-10-08-io-draw-*.json`, Chromium 153, dev VM):
+
+| disk | idle: median of medians / worst | reading: median of medians / worst |
+|---|---|---|
+| HTTP, run 1 / 2 | 4.4 / 16.9 ms; 3.2 / 22.7 ms | 0.2 / 33.2 ms; 1.2 / 28.1 ms |
+| chosen file, run 1 / 2 | 4.4 / 14.7 ms; 6.9 / 15.1 ms | 2.4 / 28.8 ms; 2.6 / 22.4 ms |
+
+Under a continuous disk read the worst flush-to-draw is 22–33 ms, against 89–972 ms in graphics.md §12 (before `serve`
+yielded to the event loop every ~2 ms) and 1.2–5.6 s of device-worker lag with the storm. The blk worker would buy
+nothing visible: **loop 5 dropped.** Caveat: the HTTP source here is localhost; a slow network's synchronous XHRs would still
+hold the device worker for their length (a request is one XHR), which is the HTTP source's matter, not this track's.

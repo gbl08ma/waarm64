@@ -3,8 +3,12 @@
 // flush is served and drawn only between them). Boots Debian on the page (needs `npm start`'s images),
 // logs in on the serial terminal, makes tty1 change every ~30 ms and reads the display's own
 // `draw-stats` (flush-to-draw ms, median and max per second; the page's ?displaystats).
-//   node bench/gpu/draw-latency.ts [out.json]
-import { writeFileSync } from 'node:fs';
+//   node bench/gpu/draw-latency.ts [out.json] [--chosen]
+// With `--chosen` the disk is the same qcow2 chosen through the picker (a `File` under an overlay: FileReaderSync reads),
+// not the served image over HTTP (M8 track IOSPEED, loop 5).
+import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { unattendedQuery } from '../../tests/debian-unattended.ts';
@@ -14,6 +18,16 @@ const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
 const page: Page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
 await page.goto(`${base}/web/app/?ncpus=2&view=both&displaystats&${unattendedQuery()}`);
+const chosen = process.argv.includes('--chosen');
+if (chosen) {
+  const file = join(mkdtempSync(join(tmpdir(), 'draw-')), 'mydisk.qcow2');
+  symlinkSync(new URL('../../target/images/debian/disk.qcow2', import.meta.url).pathname, file);
+  page.on('dialog', (d) => void d.accept());
+  const from = await page.evaluate(() => document.body.dataset.state!);
+  await page.setInputFiles('#open-disk-input', file);
+  await page.waitForFunction(() => document.getElementById('machine')!.textContent!.includes('mydisk.qcow2'), null, { timeout: 10_000 });
+  await page.waitForFunction((from) => document.body.dataset.state !== from, from, { timeout: 30_000, polling: 100 });
+}
 await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 240_000, polling: 250 });
 const shows = (re: RegExp) => page.waitForFunction((s) => new RegExp(s).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: 60_000, polling: 100 });
 const type = async (t: string) => { await page.locator('.xterm').click(); await page.keyboard.type(t, { delay: 10 }); };
@@ -34,8 +48,9 @@ const sum = (xs: { n: number; median: number; max: number }[]) => ({
   seconds: xs.length, draws: xs.reduce((a, x) => a + x.n, 0),
   medianOfMedians: xs.map((x) => x.median).sort((a, b) => a - b)[xs.length >> 1], max: Math.max(...xs.map((x) => x.max)),
 });
-const out = { chromium: browser.version(), idle: sum(idle), disk: sum(loaded), raw: { idle, loaded } };
+const out = { disk: chosen ? 'chosen File + overlay' : 'HTTP', chromium: browser.version(), idle: sum(idle), disk: sum(loaded), raw: { idle, loaded } };
 console.log(JSON.stringify({ idle: out.idle, disk: out.disk }));
-if (process.argv[2]) writeFileSync(process.argv[2], JSON.stringify(out, null, 1) + '\n');
+const outFile = process.argv.slice(2).find((a) => !a.startsWith('--'));
+if (outFile) writeFileSync(outFile, JSON.stringify(out, null, 1) + '\n');
 await browser.close();
 server.close();
