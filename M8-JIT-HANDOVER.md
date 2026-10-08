@@ -86,6 +86,21 @@ allocator of our own (backlog).
   vector 8- and 16-bit lanes only): compress −9.5% in Node, no change measurable in Chromium (the
   host was busy; unexplained). Kept: no cost, no guest-visible change.
 
+## Fifth session (2026-10-08): fewer, larger modules
+
+The user asked whether cutting V8's per-region overhead could reduce memory without costing
+speed. It does both: `bench/boot/REPORT.md` "M8: fewer, larger modules", docs/jit.md "Compile
+policy" and "Memory".
+- **V8 spends ~16 KB per module besides its functions** (Chromium 153: ~8 KB PartitionAlloc,
+  ~8 KB code-space pages); half of the userspace benchmark's 3,860 modules had one function.
+- **A batch is emitted once its blocks have run 50K steps interpreted** (`BATCH_STEPS`), with a
+  64M-step timeout for lukewarm ones (was 1M), and a tier-up takes the pending batch into its
+  module. Modules 3,860 → 970; Chromium: userspace −4.2%, Alpine's boot −10%, Buildroot's −12.5%;
+  Debian on the page under a mixed load 6–9% less renderer memory (~200–330 MB).
+- Tools: `bench/mem/modules.ts` (synthetic cost per module, a capture of a run's modules, its
+  replay in Chromium); `bench/mem/memsample.ts` boots Debian unattended again.
+- A longer timeout alone cut modules too but kept hot blocks in the interpreter (4M: +4%).
+
 ## Next
 
 The backlog's "JIT", "User space" list, in its order. Not yet tried: a region entered at more than
@@ -135,6 +150,10 @@ alternate (A, B, A, B). Also `boot_alpine_jit`, `boot_jit`, and on `bench/interp
 - **`/tmp` is a 6.9 GB tmpfs:** keep `perf record` data out of the scratchpad (a few profiles
   filled it); `bench/results/local/perf/` is on disk. `bench/run.ts --out /dev/null` writes
   `dev/null` in the repo, and `--only` takes one benchmark.
+- **`tsc` checks `bench/results/local/` too:** ad-hoc `.ts` there that isn't strict-clean fails
+  CI; keep such scripts in the scratchpad while CI runs.
+- **A `sed` replacement with `&` in it** (a URL query) inserts the matched text: pass such values
+  through a file or a script, not `sed`.
 - Node profiles of the boot vary by a few percent between identical runs (one showed the
   interpreter 27% slower, the next not at all): confirm a boot difference in Chromium, alternated.
 

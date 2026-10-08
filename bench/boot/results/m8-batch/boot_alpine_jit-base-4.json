@@ -1,0 +1,792 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-10-08T13:36:05.072Z",
+ "commit": "37a123efc80d",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "alpine_jit_script_cold",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 2856663287,
+    "counters": {
+     "steps": 2856663287,
+     "irqs": 44147,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114590,
+      "0x20": 7364,
+      "0x24": 40918,
+      "0x25": 1782
+     },
+     "tlbMisses": 766792,
+     "tlbWalks": 709364,
+     "tlbFlushes": 41614,
+     "jit": {
+      "blocks": 26009,
+      "modules": 2035,
+      "bytes": 29580996,
+      "compileNs": 319367936,
+      "steps": 2811049906,
+      "dispatches": 3558775,
+      "invalidations": 162,
+      "flushes": 0,
+      "inline": 295936,
+      "helpers": 155,
+      "inlineSteps": 2808478525,
+      "flagsStored": 29094,
+      "flagsElided": 1468,
+      "condDirect": 17320,
+      "condComputed": 164,
+      "condMemory": 1289,
+      "regionBlocks": 56002,
+      "backEdges": 1087,
+      "tierUps": 547,
+      "stale": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    },
+    "helpers": [
+     {
+      "op": "MSR_reg",
+      "calls": 694669
+     },
+     {
+      "op": "MRS",
+      "calls": 596783
+     },
+     {
+      "op": "ISB",
+      "calls": 583482
+     },
+     {
+      "op": "STRx_LDRx_imm_2",
+      "calls": 321573
+     },
+     {
+      "op": "CASP",
+      "calls": 303626
+     },
+     {
+      "op": "ERET",
+      "calls": 208482
+     },
+     {
+      "op": "IC_IVAU",
+      "calls": 159076
+     },
+     {
+      "op": "MSR_imm",
+      "calls": 146476
+     },
+     {
+      "op": "STP_LDP_gen",
+      "calls": 61668
+     },
+     {
+      "op": "LDRx_reg",
+      "calls": 61446
+     },
+     {
+      "op": "SYS",
+      "calls": 35444
+     },
+     {
+      "op": "DC_ZVA",
+      "calls": 34477
+     },
+     {
+      "op": "CRC32C",
+      "calls": 22328
+     },
+     {
+      "op": "STURx_LDURx",
+      "calls": 16838
+     },
+     {
+      "op": "STRx_reg",
+      "calls": 11871
+     },
+     {
+      "op": "STRx_LDRx_imm_1",
+      "calls": 9314
+     },
+     {
+      "op": "STP_LDP_fpsimd",
+      "calls": 8681
+     },
+     {
+      "op": "CAS",
+      "calls": 7229
+     },
+     {
+      "op": "LDXP",
+      "calls": 7007
+     },
+     {
+      "op": "STXP",
+      "calls": 6940
+     },
+     {
+      "op": "LDADD",
+      "calls": 5324
+     },
+     {
+      "op": "STTR",
+      "calls": 3793
+     },
+     {
+      "op": "STLXR",
+      "calls": 3788
+     },
+     {
+      "op": "LDTR",
+      "calls": 3327
+     },
+     {
+      "op": "LDSET",
+      "calls": 2853
+     },
+     {
+      "op": "DC_CIVAC",
+      "calls": 2364
+     },
+     {
+      "op": "LDx_mult_2",
+      "calls": 1308
+     },
+     {
+      "op": "SWP",
+      "calls": 974
+     },
+     {
+      "op": "STLR",
+      "calls": 931
+     },
+     {
+      "op": "LDAXR",
+      "calls": 743
+     }
+    ]
+   },
+   "samples": [
+    8188.374999998137,
+    8119.61999999918,
+    8085.535000002012
+   ],
+   "median": 8119.61999999918,
+   "iqr": 51.41999999806285,
+   "n": 3
+  },
+  {
+   "name": "alpine_jit_total_cold",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 2856663287,
+    "counters": {
+     "steps": 2856663287,
+     "irqs": 44147,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114590,
+      "0x20": 7364,
+      "0x24": 40918,
+      "0x25": 1782
+     },
+     "tlbMisses": 766792,
+     "tlbWalks": 709364,
+     "tlbFlushes": 41614,
+     "jit": {
+      "blocks": 26009,
+      "modules": 2035,
+      "bytes": 29580996,
+      "compileNs": 319367936,
+      "steps": 2811049906,
+      "dispatches": 3558775,
+      "invalidations": 162,
+      "flushes": 0,
+      "inline": 295936,
+      "helpers": 155,
+      "inlineSteps": 2808478525,
+      "flagsStored": 29094,
+      "flagsElided": 1468,
+      "condDirect": 17320,
+      "condComputed": 164,
+      "condMemory": 1289,
+      "regionBlocks": 56002,
+      "backEdges": 1087,
+      "tierUps": 547,
+      "stale": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    },
+    "helpers": [
+     {
+      "op": "MSR_reg",
+      "calls": 694669
+     },
+     {
+      "op": "MRS",
+      "calls": 596783
+     },
+     {
+      "op": "ISB",
+      "calls": 583482
+     },
+     {
+      "op": "STRx_LDRx_imm_2",
+      "calls": 321573
+     },
+     {
+      "op": "CASP",
+      "calls": 303626
+     },
+     {
+      "op": "ERET",
+      "calls": 208482
+     },
+     {
+      "op": "IC_IVAU",
+      "calls": 159076
+     },
+     {
+      "op": "MSR_imm",
+      "calls": 146476
+     },
+     {
+      "op": "STP_LDP_gen",
+      "calls": 61668
+     },
+     {
+      "op": "LDRx_reg",
+      "calls": 61446
+     },
+     {
+      "op": "SYS",
+      "calls": 35444
+     },
+     {
+      "op": "DC_ZVA",
+      "calls": 34477
+     },
+     {
+      "op": "CRC32C",
+      "calls": 22328
+     },
+     {
+      "op": "STURx_LDURx",
+      "calls": 16838
+     },
+     {
+      "op": "STRx_reg",
+      "calls": 11871
+     },
+     {
+      "op": "STRx_LDRx_imm_1",
+      "calls": 9314
+     },
+     {
+      "op": "STP_LDP_fpsimd",
+      "calls": 8681
+     },
+     {
+      "op": "CAS",
+      "calls": 7229
+     },
+     {
+      "op": "LDXP",
+      "calls": 7007
+     },
+     {
+      "op": "STXP",
+      "calls": 6940
+     },
+     {
+      "op": "LDADD",
+      "calls": 5324
+     },
+     {
+      "op": "STTR",
+      "calls": 3793
+     },
+     {
+      "op": "STLXR",
+      "calls": 3788
+     },
+     {
+      "op": "LDTR",
+      "calls": 3327
+     },
+     {
+      "op": "LDSET",
+      "calls": 2853
+     },
+     {
+      "op": "DC_CIVAC",
+      "calls": 2364
+     },
+     {
+      "op": "LDx_mult_2",
+      "calls": 1308
+     },
+     {
+      "op": "SWP",
+      "calls": 974
+     },
+     {
+      "op": "STLR",
+      "calls": 931
+     },
+     {
+      "op": "LDAXR",
+      "calls": 743
+     }
+    ]
+   },
+   "samples": [
+    9501.554999999702,
+    9431.24499999918,
+    9423.419999999925
+   ],
+   "median": 9431.24499999918,
+   "iqr": 39.06749999988824,
+   "n": 3
+  },
+  {
+   "name": "alpine_jit_script",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 2856663287,
+    "counters": {
+     "steps": 2856663287,
+     "irqs": 44147,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114590,
+      "0x20": 7364,
+      "0x24": 40918,
+      "0x25": 1782
+     },
+     "tlbMisses": 766792,
+     "tlbWalks": 709364,
+     "tlbFlushes": 41614,
+     "jit": {
+      "blocks": 26009,
+      "modules": 2035,
+      "bytes": 29580996,
+      "compileNs": 319367936,
+      "steps": 2811049906,
+      "dispatches": 3558775,
+      "invalidations": 162,
+      "flushes": 0,
+      "inline": 295936,
+      "helpers": 155,
+      "inlineSteps": 2808478525,
+      "flagsStored": 29094,
+      "flagsElided": 1468,
+      "condDirect": 17320,
+      "condComputed": 164,
+      "condMemory": 1289,
+      "regionBlocks": 56002,
+      "backEdges": 1087,
+      "tierUps": 547,
+      "stale": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    },
+    "helpers": [
+     {
+      "op": "MSR_reg",
+      "calls": 694669
+     },
+     {
+      "op": "MRS",
+      "calls": 596783
+     },
+     {
+      "op": "ISB",
+      "calls": 583482
+     },
+     {
+      "op": "STRx_LDRx_imm_2",
+      "calls": 321573
+     },
+     {
+      "op": "CASP",
+      "calls": 303626
+     },
+     {
+      "op": "ERET",
+      "calls": 208482
+     },
+     {
+      "op": "IC_IVAU",
+      "calls": 159076
+     },
+     {
+      "op": "MSR_imm",
+      "calls": 146476
+     },
+     {
+      "op": "STP_LDP_gen",
+      "calls": 61668
+     },
+     {
+      "op": "LDRx_reg",
+      "calls": 61446
+     },
+     {
+      "op": "SYS",
+      "calls": 35444
+     },
+     {
+      "op": "DC_ZVA",
+      "calls": 34477
+     },
+     {
+      "op": "CRC32C",
+      "calls": 22328
+     },
+     {
+      "op": "STURx_LDURx",
+      "calls": 16838
+     },
+     {
+      "op": "STRx_reg",
+      "calls": 11871
+     },
+     {
+      "op": "STRx_LDRx_imm_1",
+      "calls": 9314
+     },
+     {
+      "op": "STP_LDP_fpsimd",
+      "calls": 8681
+     },
+     {
+      "op": "CAS",
+      "calls": 7229
+     },
+     {
+      "op": "LDXP",
+      "calls": 7007
+     },
+     {
+      "op": "STXP",
+      "calls": 6940
+     },
+     {
+      "op": "LDADD",
+      "calls": 5324
+     },
+     {
+      "op": "STTR",
+      "calls": 3793
+     },
+     {
+      "op": "STLXR",
+      "calls": 3788
+     },
+     {
+      "op": "LDTR",
+      "calls": 3327
+     },
+     {
+      "op": "LDSET",
+      "calls": 2853
+     },
+     {
+      "op": "DC_CIVAC",
+      "calls": 2364
+     },
+     {
+      "op": "LDx_mult_2",
+      "calls": 1308
+     },
+     {
+      "op": "SWP",
+      "calls": 974
+     },
+     {
+      "op": "STLR",
+      "calls": 931
+     },
+     {
+      "op": "LDAXR",
+      "calls": 743
+     }
+    ]
+   },
+   "samples": [
+    8043.379999998957,
+    8011.054999999702,
+    8045.824999999255,
+    8055.395000001416,
+    8041.109999999404
+   ],
+   "median": 8043.379999998957,
+   "iqr": 4.714999999850988,
+   "n": 5
+  },
+  {
+   "name": "alpine_jit_total",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "devices": "test",
+    "jit": 1,
+    "first": "alpine 3.24.2 6.18.53-0-virt",
+    "steps": 2856663287,
+    "counters": {
+     "steps": 2856663287,
+     "irqs": 44147,
+     "exceptions": {
+      "0x0": 9,
+      "0x15": 114590,
+      "0x20": 7364,
+      "0x24": 40918,
+      "0x25": 1782
+     },
+     "tlbMisses": 766792,
+     "tlbWalks": 709364,
+     "tlbFlushes": 41614,
+     "jit": {
+      "blocks": 26009,
+      "modules": 2035,
+      "bytes": 29580996,
+      "compileNs": 319367936,
+      "steps": 2811049906,
+      "dispatches": 3558775,
+      "invalidations": 162,
+      "flushes": 0,
+      "inline": 295936,
+      "helpers": 155,
+      "inlineSteps": 2808478525,
+      "flagsStored": 29094,
+      "flagsElided": 1468,
+      "condDirect": 17320,
+      "condComputed": 164,
+      "condMemory": 1289,
+      "regionBlocks": 56002,
+      "backEdges": 1087,
+      "tierUps": 547,
+      "stale": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    },
+    "helpers": [
+     {
+      "op": "MSR_reg",
+      "calls": 694669
+     },
+     {
+      "op": "MRS",
+      "calls": 596783
+     },
+     {
+      "op": "ISB",
+      "calls": 583482
+     },
+     {
+      "op": "STRx_LDRx_imm_2",
+      "calls": 321573
+     },
+     {
+      "op": "CASP",
+      "calls": 303626
+     },
+     {
+      "op": "ERET",
+      "calls": 208482
+     },
+     {
+      "op": "IC_IVAU",
+      "calls": 159076
+     },
+     {
+      "op": "MSR_imm",
+      "calls": 146476
+     },
+     {
+      "op": "STP_LDP_gen",
+      "calls": 61668
+     },
+     {
+      "op": "LDRx_reg",
+      "calls": 61446
+     },
+     {
+      "op": "SYS",
+      "calls": 35444
+     },
+     {
+      "op": "DC_ZVA",
+      "calls": 34477
+     },
+     {
+      "op": "CRC32C",
+      "calls": 22328
+     },
+     {
+      "op": "STURx_LDURx",
+      "calls": 16838
+     },
+     {
+      "op": "STRx_reg",
+      "calls": 11871
+     },
+     {
+      "op": "STRx_LDRx_imm_1",
+      "calls": 9314
+     },
+     {
+      "op": "STP_LDP_fpsimd",
+      "calls": 8681
+     },
+     {
+      "op": "CAS",
+      "calls": 7229
+     },
+     {
+      "op": "LDXP",
+      "calls": 7007
+     },
+     {
+      "op": "STXP",
+      "calls": 6940
+     },
+     {
+      "op": "LDADD",
+      "calls": 5324
+     },
+     {
+      "op": "STTR",
+      "calls": 3793
+     },
+     {
+      "op": "STLXR",
+      "calls": 3788
+     },
+     {
+      "op": "LDTR",
+      "calls": 3327
+     },
+     {
+      "op": "LDSET",
+      "calls": 2853
+     },
+     {
+      "op": "DC_CIVAC",
+      "calls": 2364
+     },
+     {
+      "op": "LDx_mult_2",
+      "calls": 1308
+     },
+     {
+      "op": "SWP",
+      "calls": 974
+     },
+     {
+      "op": "STLR",
+      "calls": 931
+     },
+     {
+      "op": "LDAXR",
+      "calls": 743
+     }
+    ]
+   },
+   "samples": [
+    9364.865000000224,
+    9331.700000001118,
+    9370.714999999851,
+    9408.895000001416,
+    9370.960000000894
+   ],
+   "median": 9370.714999999851,
+   "iqr": 6.095000000670552,
+   "n": 5
+  }
+ ]
+}

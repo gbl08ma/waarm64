@@ -1009,3 +1009,81 @@ FPSR.QC as in the vector forms; a new differential-test class, three planted bug
   measurable. Node profiles have led Chromium here before; a Node-only gain is not a gain.
 - Kept anyway: no guest-visible change, no cost measured, one fewer helper on a path a common
   guest library takes. `results/m8-sat-scalar/`.
+
+## M8: fewer, larger modules (V8's per-module cost; the batch emitted by interpreted steps)
+
+2026-10-08, the dev VM, Chromium 153.0.8010.52 and Node 26 (V8 14.6); against `37a123e`.
+`bench/mem/modules.ts` (synthetic modules, a capture of every JIT module of a run, its replay in
+Chromium), `bench/mem/memsample.ts` (the page). Results in `results/m8-batch/`.
+
+**What a module costs V8 besides its functions: ~16 KB** in Chromium (~10 KB in Node). The same
+30,720 synthetic functions (~600 wasm bytes each, called once) in modules of K, each module
+importing 5 functions of earlier ones as ours import `t`; renderer RSS per function:
+
+| functions per module | 1 | 4 | 16 | 64 | 512 |
+|---|---|---|---|---|---|
+| total (B) | 24,717 | 11,595 | 9,202 | 8,578 | 8,563 |
+| PartitionAlloc | 10,814 | 4,411 | 2,981 | 2,563 | 2,331 |
+| `[anon:v8]` (code space: the module's jump tables, its code) | 10,149 | 3,964 | 3,179 | 2,582 | 2,468 |
+| `[anon:v8-sandbox]` (V8's heap: instances, exports) | 3,185 | 2,719 | 2,569 | 2,889 | 3,304 |
+
+So ~8 KB of C++ metadata and ~8 KB of code-space pages per module, and the JS objects per function.
+In Node 15 more imports added ~1.8 KB (~0.1 KB each). Identical bytes cost nothing twice (V8's
+native-module cache): a first synthetic set of only 64 distinct modules measured 1.2 KB per module.
+
+**Where the small modules came from:** a batch was emitted at 512 blocks or 1M steps after its
+first entry. Alpine's userspace benchmark made 3,860 modules for 30,394 functions: 1,947 with one
+function (684 tier-ups, the rest batches that timed out alone), median 1.4 KB of wasm. A longer
+timeout made fewer modules by keeping hot blocks in the interpreter (Node, `userprof.ts`, two runs
+each):
+
+| | modules | interpreted steps | total | boot |
+|---|---|---|---|---|
+| 1M steps (before) | 3,859 | 60M | 16.4–16.9 s | 6.65–6.97 s |
+| 4M | 2,228 | 120M | 17.55 s | 7.43 s |
+| 16M | 1,259 | 258M | 20.4 s | 8.6 s |
+| a tier-up takes the pending batch along | 3,641 | 58M | 16.7–16.9 s | 6.9 s |
+
+**Emit when the waiting costs:** each dispatch of a queued block adds its length to the batch's
+interpreted steps; at `BATCH_STEPS` the batch is emitted, and `BATCH_TIMEOUT` only bounds a
+lukewarm batch. Blocks that run are compiled sooner than before, the rest wait for company
+(with a tier-up taking the pending batch along unless noted):
+
+| steps, timeout | modules | interpreted | total | boot |
+|---|---|---|---|---|
+| 2K, 16M | 2,073 | 28M | 16.2–16.4 s | 6.4–6.5 s |
+| 10K, 4M | 2,372 | 31M | 15.9–16.0 s | 6.2–6.3 s |
+| 10K, 16M | 1,517 | 31M | 15.8–16.0 s | 6.2–6.3 s |
+| 50K, 16M | 1,268 | 39M | 15.6–16.0 s | 6.2–6.35 s |
+| 50K, 16M, tier-ups alone | 1,443 | 41M | 15.6 s | 6.2 s |
+| **50K, 64M (kept)** | **970** | 39M | 15.5–15.8 s | 6.2–6.4 s |
+| 200K, 16M | 1,180 | 52M | 16.2–16.3 s | 6.5–6.6 s |
+| 200K, 64M | 870 | 54M | 16.0 s | 6.4–6.5 s |
+
+**Chromium** (`bench/run.ts`, four alternating rounds; median [IQR], ms):
+
+| | before | 50K, 64M | |
+|---|---|---|---|
+| `alpine_user_jit_total` (n12) | 19,138 [385] | 18,329 [449] | −4.2% |
+| compress, Lua, churn, SQLite | 2172, 3295, 1865, 2673 | 2104, 3280, 1813, 2575 | −3.1, −0.4, −2.8, −3.7% |
+| `alpine_jit_total` (Alpine's boot, n20) | 9,543 [187] | 8,592 [64] | −10.0% |
+| `boot_jit_total` (Buildroot, n40) | 762.5 [8.5] | 666.8 [8.1] | −12.5% |
+
+The core's own compile time in the userspace run fell 363 → 201 ms (fewer, larger modules).
+The Mac host wasn't measured.
+
+**Memory:**
+- Alpine's userspace modules installed in Chromium without running (`modules.ts replay`, the same
+  34 MB of wasm, two runs each, within 1 MB): 3,860 modules +160 MB (PartitionAlloc 81, code space
+  22, V8 heap 43), 971 modules +126 MB (63, 8–10, 40). −34 MB, ~11.7 KB per module.
+- The benchmark's peak renderer RSS (shared guest RAM excluded), two runs each: 1,111 and 1,116 MB
+  → 1,083 and 1,081 MB.
+- **Debian on the page, 4 vCPUs, under `memsample.ts`'s mixed load** (many distinct binaries run
+  briefly: many small batches), two runs each, renderer RSS: at login 2,141, 2,140 → 2,125, 2,100
+  MB (login at 46 → 42 s); the median under load 3,478, 3,439 → 3,242, 3,250 MB (−6%); the last
+  five samples' median (160–250 s) 3,621, 3,489 → 3,290, 3,282 MB, the wasm-code mapping ~670 →
+  ~600 MB of it. `results/m8-batch/debian-memsample.json` (per sample, by class).
+- Not measured: the Go load at the 160 MiB budget (its batches are larger; the byte budget
+  bounds what the modules' code costs, so fewer modules make the budget's tab smaller).
+- `memsample.ts` stopped at Debian's first-boot questions since the page stopped passing
+  credentials itself: it passes the tests' (`tests/debian-unattended.ts`) now.

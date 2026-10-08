@@ -1,0 +1,2991 @@
+{
+ "date": "2026-10-08T13:16:25.236Z",
+ "node": "v26.7.0",
+ "marks": [
+  {
+   "name": "begin",
+   "ms": 0.015377999999998337,
+   "mono": 12216.797075953,
+   "steps": 0,
+   "stats": {
+    "steps": 0,
+    "irqs": 0,
+    "exceptions": {},
+    "tlbMisses": 0,
+    "tlbWalks": 0,
+    "tlbFlushes": 0,
+    "jit": {
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileNs": 0,
+     "steps": 0,
+     "dispatches": 0,
+     "invalidations": 0,
+     "flushes": 0,
+     "inline": 0,
+     "helpers": 0,
+     "inlineSteps": 0,
+     "flagsStored": 0,
+     "flagsElided": 0,
+     "condDirect": 0,
+     "condComputed": 0,
+     "condMemory": 0,
+     "regionBlocks": 0,
+     "backEdges": 0,
+     "tierUps": 0,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": []
+  },
+  {
+   "name": "alpine-user 3.24.2 6.18.53-0-virt",
+   "ms": 6567.046053,
+   "mono": 12223.36410828,
+   "steps": 2363938891,
+   "stats": {
+    "steps": 2363938891,
+    "irqs": 36334,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 96786,
+     "0x20": 5253,
+     "0x24": 29876,
+     "0x25": 1279
+    },
+    "tlbMisses": 547830,
+    "tlbWalks": 506169,
+    "tlbFlushes": 30611,
+    "jit": {
+     "blocks": 23030,
+     "modules": 587,
+     "bytes": 26628240,
+     "compileNs": 123009536,
+     "steps": 2329493616,
+     "dispatches": 2990928,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 268190,
+     "helpers": 151,
+     "inlineSteps": 2327438531,
+     "flagsStored": 26614,
+     "flagsElided": 1379,
+     "condDirect": 15723,
+     "condComputed": 150,
+     "condMemory": 1196,
+     "regionBlocks": 50631,
+     "backEdges": 951,
+     "tierUps": 473,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "MSR_reg",
+     "calls": 555510
+    },
+    {
+     "op": "MRS",
+     "calls": 500029
+    },
+    {
+     "op": "ISB",
+     "calls": 480016
+    },
+    {
+     "op": "CASP",
+     "calls": 246148
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 233479
+    },
+    {
+     "op": "ERET",
+     "calls": 169244
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 131934
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 112166
+    },
+    {
+     "op": "CRC32C",
+     "calls": 44682
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 35857
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 31855
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 26117
+    },
+    {
+     "op": "SYS",
+     "calls": 25708
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 11162
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 8904
+    },
+    {
+     "op": "CAS",
+     "calls": 8197
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 7703
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 6396
+    },
+    {
+     "op": "LDADD",
+     "calls": 5154
+    },
+    {
+     "op": "STLXR",
+     "calls": 2956
+    },
+    {
+     "op": "STTR",
+     "calls": 2725
+    },
+    {
+     "op": "LDTR",
+     "calls": 2219
+    },
+    {
+     "op": "LDSET",
+     "calls": 1955
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "LDAXR",
+     "calls": 467
+    },
+    {
+     "op": "LDAR",
+     "calls": 451
+    },
+    {
+     "op": "STLR",
+     "calls": 398
+    },
+    {
+     "op": "SWP",
+     "calls": 288
+    },
+    {
+     "op": "LDCLR",
+     "calls": 222
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 195
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 151
+    },
+    {
+     "op": "STTRH",
+     "calls": 135
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 127
+    },
+    {
+     "op": "LDTRH",
+     "calls": 88
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "STTRB",
+     "calls": 11
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 2
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 2
+    }
+   ]
+  },
+  {
+   "name": "compress start",
+   "ms": 6702.888334,
+   "mono": 12223.499949291,
+   "steps": 2427051123,
+   "stats": {
+    "steps": 2427051123,
+    "irqs": 37351,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 99333,
+     "0x20": 5330,
+     "0x24": 30118,
+     "0x25": 1296
+    },
+    "tlbMisses": 558240,
+    "tlbWalks": 516166,
+    "tlbFlushes": 31375,
+    "jit": {
+     "blocks": 23282,
+     "modules": 591,
+     "bytes": 26943112,
+     "compileNs": 124256256,
+     "steps": 2392045812,
+     "dispatches": 3080219,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 271325,
+     "helpers": 151,
+     "inlineSteps": 2389951392,
+     "flagsStored": 26891,
+     "flagsElided": 1397,
+     "condDirect": 15884,
+     "condComputed": 151,
+     "condMemory": 1212,
+     "regionBlocks": 51228,
+     "backEdges": 956,
+     "tierUps": 476,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "MSR_reg",
+     "calls": 569638
+    },
+    {
+     "op": "MRS",
+     "calls": 512798
+    },
+    {
+     "op": "ISB",
+     "calls": 492724
+    },
+    {
+     "op": "CASP",
+     "calls": 247507
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 236462
+    },
+    {
+     "op": "ERET",
+     "calls": 173144
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 131934
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 114862
+    },
+    {
+     "op": "CRC32C",
+     "calls": 45190
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 36298
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 32789
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 26663
+    },
+    {
+     "op": "SYS",
+     "calls": 25888
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 11445
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 8942
+    },
+    {
+     "op": "CAS",
+     "calls": 8321
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 7785
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 7038
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "LDADD",
+     "calls": 5229
+    },
+    {
+     "op": "STLXR",
+     "calls": 2979
+    },
+    {
+     "op": "STTR",
+     "calls": 2771
+    },
+    {
+     "op": "LDTR",
+     "calls": 2350
+    },
+    {
+     "op": "LDSET",
+     "calls": 1972
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "LDAXR",
+     "calls": 473
+    },
+    {
+     "op": "LDAR",
+     "calls": 459
+    },
+    {
+     "op": "STLR",
+     "calls": 408
+    },
+    {
+     "op": "SWP",
+     "calls": 298
+    },
+    {
+     "op": "LDCLR",
+     "calls": 222
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 200
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 157
+    },
+    {
+     "op": "STTRH",
+     "calls": 135
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 127
+    },
+    {
+     "op": "LDTRH",
+     "calls": 89
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "STTRB",
+     "calls": 12
+    },
+    {
+     "op": "LDEOR",
+     "calls": 4
+    },
+    {
+     "op": "LDTRB",
+     "calls": 2
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 2
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 2
+    }
+   ]
+  },
+  {
+   "name": "compress end",
+   "ms": 8755.541443,
+   "mono": 12225.552602739,
+   "steps": 4545249819,
+   "stats": {
+    "steps": 4545249819,
+    "irqs": 71244,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 105253,
+     "0x20": 5486,
+     "0x24": 32550,
+     "0x25": 1339
+    },
+    "tlbMisses": 1186038,
+    "tlbWalks": 1141177,
+    "tlbFlushes": 35739,
+    "jit": {
+     "blocks": 24992,
+     "modules": 771,
+     "bytes": 28806401,
+     "compileNs": 141916928,
+     "steps": 4505030825,
+     "dispatches": 3879169,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 291800,
+     "helpers": 154,
+     "inlineSteps": 4501727957,
+     "flagsStored": 29834,
+     "flagsElided": 1543,
+     "condDirect": 18054,
+     "condComputed": 151,
+     "condMemory": 1441,
+     "regionBlocks": 54512,
+     "backEdges": 1102,
+     "tierUps": 553,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "ISB",
+     "calls": 873083
+    },
+    {
+     "op": "MRS",
+     "calls": 866557
+    },
+    {
+     "op": "MSR_reg",
+     "calls": 737599
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 458827
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 301099
+    },
+    {
+     "op": "CASP",
+     "calls": 249407
+    },
+    {
+     "op": "ERET",
+     "calls": 215587
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 135966
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 131515
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 122546
+    },
+    {
+     "op": "USHL_2",
+     "calls": 89617
+    },
+    {
+     "op": "CRC32C",
+     "calls": 45358
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 44443
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 35019
+    },
+    {
+     "op": "SYS",
+     "calls": 26904
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 13245
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 10812
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 9155
+    },
+    {
+     "op": "CAS",
+     "calls": 8651
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "LDADD",
+     "calls": 5569
+    },
+    {
+     "op": "STTR",
+     "calls": 4941
+    },
+    {
+     "op": "STLXR",
+     "calls": 3013
+    },
+    {
+     "op": "LDTR",
+     "calls": 2528
+    },
+    {
+     "op": "LDSET",
+     "calls": 2003
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "LDAR",
+     "calls": 486
+    },
+    {
+     "op": "LDAXR",
+     "calls": 482
+    },
+    {
+     "op": "STLR",
+     "calls": 420
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 391
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 325
+    },
+    {
+     "op": "SWP",
+     "calls": 306
+    },
+    {
+     "op": "LDCLR",
+     "calls": 224
+    },
+    {
+     "op": "STTRH",
+     "calls": 158
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 127
+    },
+    {
+     "op": "LDTRH",
+     "calls": 90
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "STTRB",
+     "calls": 12
+    },
+    {
+     "op": "LDEOR",
+     "calls": 4
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 3
+    },
+    {
+     "op": "LDTRB",
+     "calls": 2
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 2
+    }
+   ]
+  },
+  {
+   "name": "lua start",
+   "ms": 8755.628877,
+   "mono": 12225.552685895,
+   "steps": 4545249819,
+   "stats": {
+    "steps": 4545249819,
+    "irqs": 71244,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 105253,
+     "0x20": 5486,
+     "0x24": 32550,
+     "0x25": 1339
+    },
+    "tlbMisses": 1186038,
+    "tlbWalks": 1141177,
+    "tlbFlushes": 35739,
+    "jit": {
+     "blocks": 24992,
+     "modules": 771,
+     "bytes": 28806401,
+     "compileNs": 141916928,
+     "steps": 4505030825,
+     "dispatches": 3879169,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 291800,
+     "helpers": 154,
+     "inlineSteps": 4501727957,
+     "flagsStored": 29834,
+     "flagsElided": 1543,
+     "condDirect": 18054,
+     "condComputed": 151,
+     "condMemory": 1441,
+     "regionBlocks": 54512,
+     "backEdges": 1102,
+     "tierUps": 553,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "ISB",
+     "calls": 873083
+    },
+    {
+     "op": "MRS",
+     "calls": 866557
+    },
+    {
+     "op": "MSR_reg",
+     "calls": 737599
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 458827
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 301099
+    },
+    {
+     "op": "CASP",
+     "calls": 249407
+    },
+    {
+     "op": "ERET",
+     "calls": 215587
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 135966
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 131515
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 122546
+    },
+    {
+     "op": "USHL_2",
+     "calls": 89617
+    },
+    {
+     "op": "CRC32C",
+     "calls": 45358
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 44443
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 35019
+    },
+    {
+     "op": "SYS",
+     "calls": 26904
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 13245
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 10812
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 9155
+    },
+    {
+     "op": "CAS",
+     "calls": 8651
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "LDADD",
+     "calls": 5569
+    },
+    {
+     "op": "STTR",
+     "calls": 4941
+    },
+    {
+     "op": "STLXR",
+     "calls": 3013
+    },
+    {
+     "op": "LDTR",
+     "calls": 2528
+    },
+    {
+     "op": "LDSET",
+     "calls": 2003
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "LDAR",
+     "calls": 486
+    },
+    {
+     "op": "LDAXR",
+     "calls": 482
+    },
+    {
+     "op": "STLR",
+     "calls": 420
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 391
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 325
+    },
+    {
+     "op": "SWP",
+     "calls": 306
+    },
+    {
+     "op": "LDCLR",
+     "calls": 224
+    },
+    {
+     "op": "STTRH",
+     "calls": 158
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 127
+    },
+    {
+     "op": "LDTRH",
+     "calls": 90
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "STTRB",
+     "calls": 12
+    },
+    {
+     "op": "LDEOR",
+     "calls": 4
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 3
+    },
+    {
+     "op": "LDTRB",
+     "calls": 2
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 2
+    }
+   ]
+  },
+  {
+   "name": "lua end",
+   "ms": 11797.183277,
+   "mono": 12228.594244276,
+   "steps": 7751250529,
+   "stats": {
+    "steps": 7751250529,
+    "irqs": 122554,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 106799,
+     "0x20": 5580,
+     "0x24": 38283,
+     "0x25": 1359
+    },
+    "tlbMisses": 1230082,
+    "tlbWalks": 1179280,
+    "tlbFlushes": 41513,
+    "jit": {
+     "blocks": 26720,
+     "modules": 939,
+     "bytes": 30206726,
+     "compileNs": 159085568,
+     "steps": 7707084763,
+     "dispatches": 4973557,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 304626,
+     "helpers": 170,
+     "inlineSteps": 7703063894,
+     "flagsStored": 31456,
+     "flagsElided": 1595,
+     "condDirect": 19143,
+     "condComputed": 154,
+     "condMemory": 1524,
+     "regionBlocks": 57255,
+     "backEdges": 1147,
+     "tierUps": 580,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "ISB",
+     "calls": 1439388
+    },
+    {
+     "op": "MRS",
+     "calls": 1383215
+    },
+    {
+     "op": "MSR_reg",
+     "calls": 960449
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 485127
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 305453
+    },
+    {
+     "op": "ERET",
+     "calls": 274289
+    },
+    {
+     "op": "CASP",
+     "calls": 252678
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 142685
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 142668
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 122958
+    },
+    {
+     "op": "USHL_2",
+     "calls": 89617
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 53145
+    },
+    {
+     "op": "CRC32C",
+     "calls": 46294
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 36099
+    },
+    {
+     "op": "SYS",
+     "calls": 32657
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 16865
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 10912
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 9363
+    },
+    {
+     "op": "CAS",
+     "calls": 8869
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "LDADD",
+     "calls": 5729
+    },
+    {
+     "op": "FADD_float",
+     "calls": 5648
+    },
+    {
+     "op": "STTR",
+     "calls": 4990
+    },
+    {
+     "op": "STLXR",
+     "calls": 3035
+    },
+    {
+     "op": "LDTR",
+     "calls": 2555
+    },
+    {
+     "op": "LDSET",
+     "calls": 2035
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "LDAR",
+     "calls": 497
+    },
+    {
+     "op": "LDAXR",
+     "calls": 489
+    },
+    {
+     "op": "STLR",
+     "calls": 441
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 424
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 331
+    },
+    {
+     "op": "SWP",
+     "calls": 311
+    },
+    {
+     "op": "LDCLR",
+     "calls": 231
+    },
+    {
+     "op": "FCMPE_float",
+     "calls": 166
+    },
+    {
+     "op": "STTRH",
+     "calls": 158
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 127
+    },
+    {
+     "op": "LDTRH",
+     "calls": 90
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "FCMP_float",
+     "calls": 70
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "FMUL_float",
+     "calls": 51
+    },
+    {
+     "op": "FRINTM_float",
+     "calls": 35
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "STTRB",
+     "calls": 12
+    },
+    {
+     "op": "YIELD",
+     "calls": 8
+    },
+    {
+     "op": "FCVTZS_float_int",
+     "calls": 7
+    },
+    {
+     "op": "FDIV_float",
+     "calls": 4
+    },
+    {
+     "op": "LDEOR",
+     "calls": 4
+    },
+    {
+     "op": "SHL_1",
+     "calls": 4
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 3
+    },
+    {
+     "op": "LDTRB",
+     "calls": 2
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 2
+    }
+   ]
+  },
+  {
+   "name": "churn start",
+   "ms": 11797.273846,
+   "mono": 12228.594333278,
+   "steps": 7751250529,
+   "stats": {
+    "steps": 7751250529,
+    "irqs": 122554,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 106799,
+     "0x20": 5580,
+     "0x24": 38283,
+     "0x25": 1359
+    },
+    "tlbMisses": 1230082,
+    "tlbWalks": 1179280,
+    "tlbFlushes": 41513,
+    "jit": {
+     "blocks": 26720,
+     "modules": 939,
+     "bytes": 30206726,
+     "compileNs": 159085568,
+     "steps": 7707084763,
+     "dispatches": 4973557,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 304626,
+     "helpers": 170,
+     "inlineSteps": 7703063894,
+     "flagsStored": 31456,
+     "flagsElided": 1595,
+     "condDirect": 19143,
+     "condComputed": 154,
+     "condMemory": 1524,
+     "regionBlocks": 57255,
+     "backEdges": 1147,
+     "tierUps": 580,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "ISB",
+     "calls": 1439388
+    },
+    {
+     "op": "MRS",
+     "calls": 1383215
+    },
+    {
+     "op": "MSR_reg",
+     "calls": 960449
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 485127
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 305453
+    },
+    {
+     "op": "ERET",
+     "calls": 274289
+    },
+    {
+     "op": "CASP",
+     "calls": 252678
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 142685
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 142668
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 122958
+    },
+    {
+     "op": "USHL_2",
+     "calls": 89617
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 53145
+    },
+    {
+     "op": "CRC32C",
+     "calls": 46294
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 36099
+    },
+    {
+     "op": "SYS",
+     "calls": 32657
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 16865
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 10912
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 9363
+    },
+    {
+     "op": "CAS",
+     "calls": 8869
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "LDADD",
+     "calls": 5729
+    },
+    {
+     "op": "FADD_float",
+     "calls": 5648
+    },
+    {
+     "op": "STTR",
+     "calls": 4990
+    },
+    {
+     "op": "STLXR",
+     "calls": 3035
+    },
+    {
+     "op": "LDTR",
+     "calls": 2555
+    },
+    {
+     "op": "LDSET",
+     "calls": 2035
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "LDAR",
+     "calls": 497
+    },
+    {
+     "op": "LDAXR",
+     "calls": 489
+    },
+    {
+     "op": "STLR",
+     "calls": 441
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 424
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 331
+    },
+    {
+     "op": "SWP",
+     "calls": 311
+    },
+    {
+     "op": "LDCLR",
+     "calls": 231
+    },
+    {
+     "op": "FCMPE_float",
+     "calls": 166
+    },
+    {
+     "op": "STTRH",
+     "calls": 158
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 127
+    },
+    {
+     "op": "LDTRH",
+     "calls": 90
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "FCMP_float",
+     "calls": 70
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "FMUL_float",
+     "calls": 51
+    },
+    {
+     "op": "FRINTM_float",
+     "calls": 35
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "STTRB",
+     "calls": 12
+    },
+    {
+     "op": "YIELD",
+     "calls": 8
+    },
+    {
+     "op": "FCVTZS_float_int",
+     "calls": 7
+    },
+    {
+     "op": "FDIV_float",
+     "calls": 4
+    },
+    {
+     "op": "LDEOR",
+     "calls": 4
+    },
+    {
+     "op": "SHL_1",
+     "calls": 4
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 3
+    },
+    {
+     "op": "LDTRB",
+     "calls": 2
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 2
+    }
+   ]
+  },
+  {
+   "name": "churn end",
+   "ms": 13030.53315,
+   "mono": 12229.827594149,
+   "steps": 8298556422,
+   "stats": {
+    "steps": 8298556422,
+    "irqs": 131581,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 120026,
+     "0x20": 11282,
+     "0x24": 57717,
+     "0x25": 3113
+    },
+    "tlbMisses": 1478402,
+    "tlbWalks": 1395008,
+    "tlbFlushes": 57982,
+    "jit": {
+     "blocks": 27177,
+     "modules": 994,
+     "bytes": 30710877,
+     "compileNs": 168193536,
+     "steps": 8253845954,
+     "dispatches": 5644620,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 309190,
+     "helpers": 170,
+     "inlineSteps": 8249075360,
+     "flagsStored": 32080,
+     "flagsElided": 1622,
+     "condDirect": 19519,
+     "condComputed": 157,
+     "condMemory": 1548,
+     "regionBlocks": 58322,
+     "backEdges": 1196,
+     "tierUps": 621,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "ISB",
+     "calls": 1563288
+    },
+    {
+     "op": "MRS",
+     "calls": 1497993
+    },
+    {
+     "op": "MSR_reg",
+     "calls": 1156892
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 598764
+    },
+    {
+     "op": "CASP",
+     "calls": 326089
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 325958
+    },
+    {
+     "op": "ERET",
+     "calls": 323425
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 201587
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 142685
+    },
+    {
+     "op": "CRC32C",
+     "calls": 141694
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 129712
+    },
+    {
+     "op": "USHL_2",
+     "calls": 89617
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 63361
+    },
+    {
+     "op": "SYS",
+     "calls": 46770
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 38531
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 20340
+    },
+    {
+     "op": "CAS",
+     "calls": 15945
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 12453
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 11770
+    },
+    {
+     "op": "LDADD",
+     "calls": 10585
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STTR",
+     "calls": 8570
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "FADD_float",
+     "calls": 5648
+    },
+    {
+     "op": "LDTR",
+     "calls": 4806
+    },
+    {
+     "op": "STLXR",
+     "calls": 4460
+    },
+    {
+     "op": "LDSET",
+     "calls": 2547
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "STLR",
+     "calls": 1015
+    },
+    {
+     "op": "LDAXR",
+     "calls": 934
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 760
+    },
+    {
+     "op": "SWP",
+     "calls": 705
+    },
+    {
+     "op": "LDAR",
+     "calls": 578
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 437
+    },
+    {
+     "op": "LDCLR",
+     "calls": 235
+    },
+    {
+     "op": "FCMPE_float",
+     "calls": 166
+    },
+    {
+     "op": "STTRH",
+     "calls": 158
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 131
+    },
+    {
+     "op": "LDTRH",
+     "calls": 93
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "FCMP_float",
+     "calls": 70
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "FMUL_float",
+     "calls": 51
+    },
+    {
+     "op": "FRINTM_float",
+     "calls": 35
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "STTRB",
+     "calls": 12
+    },
+    {
+     "op": "YIELD",
+     "calls": 12
+    },
+    {
+     "op": "FCVTZS_float_int",
+     "calls": 7
+    },
+    {
+     "op": "LDTRB",
+     "calls": 7
+    },
+    {
+     "op": "FDIV_float",
+     "calls": 4
+    },
+    {
+     "op": "LDEOR",
+     "calls": 4
+    },
+    {
+     "op": "SHL_1",
+     "calls": 4
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 4
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 3
+    }
+   ]
+  },
+  {
+   "name": "sqlite start",
+   "ms": 13030.613849,
+   "mono": 12229.827670739,
+   "steps": 8298556422,
+   "stats": {
+    "steps": 8298556422,
+    "irqs": 131581,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 120026,
+     "0x20": 11282,
+     "0x24": 57717,
+     "0x25": 3113
+    },
+    "tlbMisses": 1478402,
+    "tlbWalks": 1395008,
+    "tlbFlushes": 57982,
+    "jit": {
+     "blocks": 27177,
+     "modules": 994,
+     "bytes": 30710877,
+     "compileNs": 168193536,
+     "steps": 8253845954,
+     "dispatches": 5644620,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 309190,
+     "helpers": 170,
+     "inlineSteps": 8249075360,
+     "flagsStored": 32080,
+     "flagsElided": 1622,
+     "condDirect": 19519,
+     "condComputed": 157,
+     "condMemory": 1548,
+     "regionBlocks": 58322,
+     "backEdges": 1196,
+     "tierUps": 621,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "ISB",
+     "calls": 1563288
+    },
+    {
+     "op": "MRS",
+     "calls": 1497993
+    },
+    {
+     "op": "MSR_reg",
+     "calls": 1156892
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 598764
+    },
+    {
+     "op": "CASP",
+     "calls": 326089
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 325958
+    },
+    {
+     "op": "ERET",
+     "calls": 323425
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 201587
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 142685
+    },
+    {
+     "op": "CRC32C",
+     "calls": 141694
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 129712
+    },
+    {
+     "op": "USHL_2",
+     "calls": 89617
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 63361
+    },
+    {
+     "op": "SYS",
+     "calls": 46770
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 38531
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 20340
+    },
+    {
+     "op": "CAS",
+     "calls": 15945
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 12453
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 11770
+    },
+    {
+     "op": "LDADD",
+     "calls": 10585
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STTR",
+     "calls": 8570
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "FADD_float",
+     "calls": 5648
+    },
+    {
+     "op": "LDTR",
+     "calls": 4806
+    },
+    {
+     "op": "STLXR",
+     "calls": 4460
+    },
+    {
+     "op": "LDSET",
+     "calls": 2547
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "STLR",
+     "calls": 1015
+    },
+    {
+     "op": "LDAXR",
+     "calls": 934
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 760
+    },
+    {
+     "op": "SWP",
+     "calls": 705
+    },
+    {
+     "op": "LDAR",
+     "calls": 578
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 437
+    },
+    {
+     "op": "LDCLR",
+     "calls": 235
+    },
+    {
+     "op": "FCMPE_float",
+     "calls": 166
+    },
+    {
+     "op": "STTRH",
+     "calls": 158
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 131
+    },
+    {
+     "op": "LDTRH",
+     "calls": 93
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "FCMP_float",
+     "calls": 70
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "FMUL_float",
+     "calls": 51
+    },
+    {
+     "op": "FRINTM_float",
+     "calls": 35
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "STTRB",
+     "calls": 12
+    },
+    {
+     "op": "YIELD",
+     "calls": 12
+    },
+    {
+     "op": "FCVTZS_float_int",
+     "calls": 7
+    },
+    {
+     "op": "LDTRB",
+     "calls": 7
+    },
+    {
+     "op": "FDIV_float",
+     "calls": 4
+    },
+    {
+     "op": "LDEOR",
+     "calls": 4
+    },
+    {
+     "op": "SHL_1",
+     "calls": 4
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 4
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 3
+    }
+   ]
+  },
+  {
+   "name": "sqlite end",
+   "ms": 15521.941073,
+   "mono": 12232.319003216,
+   "steps": 10440255936,
+   "stats": {
+    "steps": 10440255936,
+    "irqs": 165852,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 122597,
+     "0x20": 11341,
+     "0x24": 64653,
+     "0x25": 3123
+    },
+    "tlbMisses": 1746564,
+    "tlbWalks": 1656106,
+    "tlbFlushes": 67542,
+    "jit": {
+     "blocks": 29160,
+     "modules": 1146,
+     "bytes": 33075362,
+     "compileNs": 186395904,
+     "steps": 10388645045,
+     "dispatches": 6624671,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 329998,
+     "helpers": 183,
+     "inlineSteps": 10382814974,
+     "flagsStored": 34749,
+     "flagsElided": 1728,
+     "condDirect": 21208,
+     "condComputed": 162,
+     "condMemory": 1712,
+     "regionBlocks": 62421,
+     "backEdges": 1291,
+     "tierUps": 659,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "ISB",
+     "calls": 1949934
+    },
+    {
+     "op": "MRS",
+     "calls": 1851034
+    },
+    {
+     "op": "MSR_reg",
+     "calls": 1312091
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 786088
+    },
+    {
+     "op": "ERET",
+     "calls": 367271
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 354861
+    },
+    {
+     "op": "CASP",
+     "calls": 328622
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 228514
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 167259
+    },
+    {
+     "op": "CRC32C",
+     "calls": 141992
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 140165
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 113678
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 99293
+    },
+    {
+     "op": "USHL_2",
+     "calls": 89617
+    },
+    {
+     "op": "ZIP1",
+     "calls": 84765
+    },
+    {
+     "op": "ZIP2",
+     "calls": 84765
+    },
+    {
+     "op": "SYS",
+     "calls": 55286
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 46829
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 27314
+    },
+    {
+     "op": "CAS",
+     "calls": 16583
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 11990
+    },
+    {
+     "op": "LDADD",
+     "calls": 10822
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STTR",
+     "calls": 8595
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "FADD_float",
+     "calls": 5648
+    },
+    {
+     "op": "LDTR",
+     "calls": 4818
+    },
+    {
+     "op": "STLXR",
+     "calls": 4667
+    },
+    {
+     "op": "LDSET",
+     "calls": 2590
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 2043
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 1603
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "STLR",
+     "calls": 1029
+    },
+    {
+     "op": "LDAXR",
+     "calls": 937
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 763
+    },
+    {
+     "op": "SWP",
+     "calls": 727
+    },
+    {
+     "op": "LDAR",
+     "calls": 608
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 600
+    },
+    {
+     "op": "LDCLR",
+     "calls": 246
+    },
+    {
+     "op": "FCMPE_float",
+     "calls": 166
+    },
+    {
+     "op": "STTRH",
+     "calls": 158
+    },
+    {
+     "op": "LDTRH",
+     "calls": 93
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "FCMP_float",
+     "calls": 70
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "FMUL_float",
+     "calls": 51
+    },
+    {
+     "op": "FRINTM_float",
+     "calls": 35
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "YIELD",
+     "calls": 29
+    },
+    {
+     "op": "LDx_mult_1",
+     "calls": 15
+    },
+    {
+     "op": "UMAXP",
+     "calls": 15
+    },
+    {
+     "op": "LDR_imm_fpsimd_1",
+     "calls": 14
+    },
+    {
+     "op": "STTRB",
+     "calls": 12
+    },
+    {
+     "op": "FCVTZS_float_int",
+     "calls": 7
+    },
+    {
+     "op": "LDTRB",
+     "calls": 7
+    },
+    {
+     "op": "LDEOR",
+     "calls": 6
+    },
+    {
+     "op": "FDIV_float",
+     "calls": 4
+    },
+    {
+     "op": "SHL_1",
+     "calls": 4
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 3
+    }
+   ]
+  },
+  {
+   "name": "test ok",
+   "ms": 15522.027957,
+   "mono": 12232.319084847,
+   "steps": 10440255936,
+   "stats": {
+    "steps": 10440255936,
+    "irqs": 165852,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 122597,
+     "0x20": 11341,
+     "0x24": 64653,
+     "0x25": 3123
+    },
+    "tlbMisses": 1746564,
+    "tlbWalks": 1656106,
+    "tlbFlushes": 67542,
+    "jit": {
+     "blocks": 29160,
+     "modules": 1146,
+     "bytes": 33075362,
+     "compileNs": 186395904,
+     "steps": 10388645045,
+     "dispatches": 6624671,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 329998,
+     "helpers": 183,
+     "inlineSteps": 10382814974,
+     "flagsStored": 34749,
+     "flagsElided": 1728,
+     "condDirect": 21208,
+     "condComputed": 162,
+     "condMemory": 1712,
+     "regionBlocks": 62421,
+     "backEdges": 1291,
+     "tierUps": 659,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "ISB",
+     "calls": 1949934
+    },
+    {
+     "op": "MRS",
+     "calls": 1851034
+    },
+    {
+     "op": "MSR_reg",
+     "calls": 1312091
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 786088
+    },
+    {
+     "op": "ERET",
+     "calls": 367271
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 354861
+    },
+    {
+     "op": "CASP",
+     "calls": 328622
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 228514
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 167259
+    },
+    {
+     "op": "CRC32C",
+     "calls": 141992
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 140165
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 113678
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 99293
+    },
+    {
+     "op": "USHL_2",
+     "calls": 89617
+    },
+    {
+     "op": "ZIP1",
+     "calls": 84765
+    },
+    {
+     "op": "ZIP2",
+     "calls": 84765
+    },
+    {
+     "op": "SYS",
+     "calls": 55286
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 46829
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 27314
+    },
+    {
+     "op": "CAS",
+     "calls": 16583
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 11990
+    },
+    {
+     "op": "LDADD",
+     "calls": 10822
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STTR",
+     "calls": 8595
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "FADD_float",
+     "calls": 5648
+    },
+    {
+     "op": "LDTR",
+     "calls": 4818
+    },
+    {
+     "op": "STLXR",
+     "calls": 4667
+    },
+    {
+     "op": "LDSET",
+     "calls": 2590
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 2043
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 1603
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "STLR",
+     "calls": 1029
+    },
+    {
+     "op": "LDAXR",
+     "calls": 937
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 763
+    },
+    {
+     "op": "SWP",
+     "calls": 727
+    },
+    {
+     "op": "LDAR",
+     "calls": 608
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 600
+    },
+    {
+     "op": "LDCLR",
+     "calls": 246
+    },
+    {
+     "op": "FCMPE_float",
+     "calls": 166
+    },
+    {
+     "op": "STTRH",
+     "calls": 158
+    },
+    {
+     "op": "LDTRH",
+     "calls": 93
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "FCMP_float",
+     "calls": 70
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "FMUL_float",
+     "calls": 51
+    },
+    {
+     "op": "FRINTM_float",
+     "calls": 35
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "YIELD",
+     "calls": 29
+    },
+    {
+     "op": "LDx_mult_1",
+     "calls": 15
+    },
+    {
+     "op": "UMAXP",
+     "calls": 15
+    },
+    {
+     "op": "LDR_imm_fpsimd_1",
+     "calls": 14
+    },
+    {
+     "op": "STTRB",
+     "calls": 12
+    },
+    {
+     "op": "FCVTZS_float_int",
+     "calls": 7
+    },
+    {
+     "op": "LDTRB",
+     "calls": 7
+    },
+    {
+     "op": "LDEOR",
+     "calls": 6
+    },
+    {
+     "op": "FDIV_float",
+     "calls": 4
+    },
+    {
+     "op": "SHL_1",
+     "calls": 4
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 3
+    }
+   ]
+  },
+  {
+   "name": "power off",
+   "ms": 16277.075730999999,
+   "mono": 12233.074135671,
+   "steps": 10763178470,
+   "stats": {
+    "steps": 10763178470,
+    "irqs": 171077,
+    "exceptions": {
+     "0x0": 6,
+     "0x15": 137776,
+     "0x20": 13174,
+     "0x24": 74470,
+     "0x25": 3605
+    },
+    "tlbMisses": 1888717,
+    "tlbWalks": 1784294,
+    "tlbFlushes": 75164,
+    "jit": {
+     "blocks": 30068,
+     "modules": 1180,
+     "bytes": 33833157,
+     "compileNs": 194210048,
+     "steps": 10710734016,
+     "dispatches": 7027701,
+     "invalidations": 88,
+     "flushes": 0,
+     "inline": 337316,
+     "helpers": 183,
+     "inlineSteps": 10704527264,
+     "flagsStored": 35470,
+     "flagsElided": 1762,
+     "condDirect": 21629,
+     "condComputed": 167,
+     "condMemory": 1743,
+     "regionBlocks": 64061,
+     "backEdges": 1323,
+     "tierUps": 679,
+     "stale": 0
+    },
+    "par": {
+     "dsbWaits": 0,
+     "dsbWaitNs": 0,
+     "tlbiIs": 0,
+     "ic": 0,
+     "drains": 0,
+     "idles": 0,
+     "lockContended": 0,
+     "lockWaitNs": 0,
+     "wfes": 0,
+     "outNs": 0
+    }
+   },
+   "report": [
+    {
+     "op": "ISB",
+     "calls": 2018043
+    },
+    {
+     "op": "MRS",
+     "calls": 1916380
+    },
+    {
+     "op": "MSR_reg",
+     "calls": 1420312
+    },
+    {
+     "op": "STRx_LDRx_imm_2",
+     "calls": 861387
+    },
+    {
+     "op": "ERET",
+     "calls": 399806
+    },
+    {
+     "op": "CASP",
+     "calls": 372038
+    },
+    {
+     "op": "LDRx_reg",
+     "calls": 362069
+    },
+    {
+     "op": "MSR_imm",
+     "calls": 255128
+    },
+    {
+     "op": "IC_IVAU",
+     "calls": 167643
+    },
+    {
+     "op": "CRC32C",
+     "calls": 142374
+    },
+    {
+     "op": "STRx_reg",
+     "calls": 142102
+    },
+    {
+     "op": "STP_LDP_fpsimd",
+     "calls": 116793
+    },
+    {
+     "op": "STP_LDP_gen",
+     "calls": 111779
+    },
+    {
+     "op": "USHL_2",
+     "calls": 89617
+    },
+    {
+     "op": "ZIP1",
+     "calls": 84765
+    },
+    {
+     "op": "ZIP2",
+     "calls": 84765
+    },
+    {
+     "op": "SYS",
+     "calls": 62039
+    },
+    {
+     "op": "DC_ZVA",
+     "calls": 48152
+    },
+    {
+     "op": "STURx_LDURx",
+     "calls": 30896
+    },
+    {
+     "op": "CAS",
+     "calls": 20444
+    },
+    {
+     "op": "LDADD",
+     "calls": 13254
+    },
+    {
+     "op": "STRx_LDRx_imm_1",
+     "calls": 12871
+    },
+    {
+     "op": "DC_CIVAC",
+     "calls": 10248
+    },
+    {
+     "op": "STTR",
+     "calls": 9607
+    },
+    {
+     "op": "LDXP",
+     "calls": 6993
+    },
+    {
+     "op": "STXP",
+     "calls": 6941
+    },
+    {
+     "op": "LDTR",
+     "calls": 5709
+    },
+    {
+     "op": "FADD_float",
+     "calls": 5648
+    },
+    {
+     "op": "STLXR",
+     "calls": 5411
+    },
+    {
+     "op": "LDSET",
+     "calls": 2879
+    },
+    {
+     "op": "STNP_LDNP_gen",
+     "calls": 2049
+    },
+    {
+     "op": "STR_imm_fpsimd_2",
+     "calls": 1762
+    },
+    {
+     "op": "LDAXR",
+     "calls": 1180
+    },
+    {
+     "op": "STLR",
+     "calls": 1068
+    },
+    {
+     "op": "LDx_mult_2",
+     "calls": 1053
+    },
+    {
+     "op": "LDR_imm_fpsimd_2",
+     "calls": 857
+    },
+    {
+     "op": "SWP",
+     "calls": 823
+    },
+    {
+     "op": "LDAR",
+     "calls": 733
+    },
+    {
+     "op": "STUR_fpsimd",
+     "calls": 600
+    },
+    {
+     "op": "LDCLR",
+     "calls": 283
+    },
+    {
+     "op": "STTRH",
+     "calls": 180
+    },
+    {
+     "op": "FCMPE_float",
+     "calls": 166
+    },
+    {
+     "op": "LDTRH",
+     "calls": 94
+    },
+    {
+     "op": "DC_CVAU",
+     "calls": 74
+    },
+    {
+     "op": "FCMP_float",
+     "calls": 70
+    },
+    {
+     "op": "STLXP",
+     "calls": 52
+    },
+    {
+     "op": "FMUL_float",
+     "calls": 51
+    },
+    {
+     "op": "FRINTM_float",
+     "calls": 35
+    },
+    {
+     "op": "YIELD",
+     "calls": 32
+    },
+    {
+     "op": "STXR",
+     "calls": 30
+    },
+    {
+     "op": "STTRB",
+     "calls": 20
+    },
+    {
+     "op": "LDx_mult_1",
+     "calls": 15
+    },
+    {
+     "op": "UMAXP",
+     "calls": 15
+    },
+    {
+     "op": "LDR_imm_fpsimd_1",
+     "calls": 14
+    },
+    {
+     "op": "LDTRB",
+     "calls": 8
+    },
+    {
+     "op": "FCVTZS_float_int",
+     "calls": 7
+    },
+    {
+     "op": "LDEOR",
+     "calls": 6
+    },
+    {
+     "op": "FDIV_float",
+     "calls": 4
+    },
+    {
+     "op": "SHL_1",
+     "calls": 4
+    },
+    {
+     "op": "LDUR_fpsimd",
+     "calls": 3
+    }
+   ]
+  }
+ ]
+}

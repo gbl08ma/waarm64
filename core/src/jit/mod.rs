@@ -217,9 +217,15 @@ fn jc_index(key: u64) -> usize {
 /// The slots of the transfer cache's miss functions.
 const MISS_SLOTS: u32 = 2;
 
+/// Steps the pending batch's blocks have run in the interpreter since they
+/// joined it at which it's emitted: blocks that run often get compiled soon,
+/// and lukewarm ones wait for company, so the modules are fewer and larger
+/// (V8 spends ~16 KB on a module besides its functions: docs/jit.md "Memory").
+pub const BATCH_STEPS: u64 = 50_000;
+
 /// Steps after the first block joins a pending batch before it's emitted
-/// anyway, so a lone hot block doesn't wait for a full batch.
-pub const BATCH_TIMEOUT: u64 = 1_000_000;
+/// anyway, so a lukewarm block doesn't wait forever.
+pub const BATCH_TIMEOUT: u64 = 64_000_000;
 
 /// The code cache a VM's vCPUs share (docs/jit.md "Sharing"): the blocks, the
 /// pending batch, the slot allocator, and the modules installed since the
@@ -243,6 +249,9 @@ pub struct Cache {
     tiers: Map<Tier>,
     /// (key, VA) of blocks waiting to be compiled.
     pending: Vec<(u64, u64)>,
+    /// Steps the pending blocks have been dispatched for since they joined it
+    /// ([`BATCH_STEPS`]).
+    pending_steps: u64,
     /// Pending batches emitted or dropped so far: a table times the wait of
     /// the one pending from when it first saw it ([`Table::since`]).
     batch: u64,
@@ -318,6 +327,7 @@ impl Cache {
             spans: HashMap::default(),
             tiers: HashMap::default(),
             pending: Vec::new(),
+            pending_steps: 0,
             batch: 0,
             next: MISS_SLOTS,
             live_bytes: 0,
@@ -358,6 +368,7 @@ impl Cache {
         self.spans.clear();
         self.tiers.clear();
         self.pending.clear();
+        self.pending_steps = 0;
         self.batch += 1;
         self.next = MISS_SLOTS;
         self.live_bytes = 0;
@@ -437,6 +448,8 @@ impl Cache {
             if info.hits > self.cfg.threshold && !info.queued {
                 info.queued = true;
                 self.pending.push((key, va));
+            } else if info.queued {
+                self.pending_steps += info.len as u64;
             }
             self.emit_if_due(t, mem);
         }
@@ -450,7 +463,8 @@ impl Cache {
         }
     }
 
-    /// Emits the pending batch when it's full or has waited long enough (by
+    /// Emits the pending batch when it's full, its blocks have run
+    /// [`BATCH_STEPS`] interpreted, or it has waited [`BATCH_TIMEOUT`] (by
     /// table `t`'s clock), into `t`.
     fn emit_if_due(&mut self, t: &mut Table, mem: &Mem) {
         if self.pending.is_empty() {
@@ -459,7 +473,10 @@ impl Cache {
         if t.since.0 != self.batch {
             t.since = (self.batch, t.clock);
         }
-        if self.pending.len() >= self.cfg.batch as usize || t.clock - t.since.1 >= BATCH_TIMEOUT {
+        if self.pending.len() >= self.cfg.batch as usize
+            || t.clock - t.since.1 >= BATCH_TIMEOUT
+            || self.pending_steps >= BATCH_STEPS
+        {
             let regions = self.plan(mem);
             self.batch += 1;
             self.install(t, regions, mem);
@@ -478,6 +495,7 @@ impl Cache {
     /// that has happened often enough.
     fn plan(&mut self, mem: &Mem) -> Vec<block::Region> {
         let pending = core::mem::take(&mut self.pending);
+        self.pending_steps = 0;
         let all = self.cfg.threshold == 0 && self.cfg.region_after == 0;
         let loops: Vec<block::Region> = pending
             .iter()
@@ -590,7 +608,16 @@ impl Cache {
             .filter_map(|m| self.map.get(&m).map(|i| i.word).filter(|&w| w != 0))
             .collect();
         quiet.iter().for_each(|&w| t.quiet(w));
-        let Some(idx) = self.install(t, vec![r], mem) else {
+        // The pending batch goes along (a module fewer, V8's per-module cost:
+        // docs/jit.md "Memory"), the region first so `idx` is its index.
+        let mut regions = vec![r];
+        if !self.pending.is_empty()
+            && self.next + 1 + self.pending.len() as u32 <= self.cfg.capacity
+        {
+            regions.extend(self.plan(mem));
+            self.batch += 1;
+        }
+        let Some(idx) = self.install(t, regions, mem) else {
             return;
         };
         t.hot[word as usize - 1] = emit::REDIRECT | idx;

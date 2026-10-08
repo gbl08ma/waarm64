@@ -6,6 +6,7 @@
 import { chromium } from 'playwright-core';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { startServer } from '../../tools/serve.ts';
+import { unattendedQuery } from '../../tests/debian-unattended.ts';
 
 const secs = Number(process.argv[2] ?? 300);
 const out = process.argv[3] ?? 'bench/mem/memsample.json';
@@ -89,7 +90,8 @@ const smaps = (pid: number) => {
 
 // GO=1: the Go compiler on a second disk as the load (images/stress, docs/images.md), through the variant initrd.
 if (process.env.GO) await page.route('**/target/images/debian/initrd.img', (r) => r.fulfill({ path: 'target/images/stress/initrd.img' }));
-await page.goto(`${base}/web/app/?machine=debian&ncpus=4&view=terminal${process.env.GO ? `&disk2=${encodeURIComponent('/target/images/stress/goroot.ext4')}` : ''}${extra}`);
+// The tests' credentials: no first-boot questions, root without a password (tests/debian-unattended.ts).
+await page.goto(`${base}/web/app/?machine=debian&ncpus=4&view=terminal&${unattendedQuery()}${process.env.GO ? `&disk2=${encodeURIComponent('/target/images/stress/goroot.ext4')}` : ''}${extra}`);
 const state = () => page.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')?.textContent] as const);
 const term = () => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
 const t0 = Date.now();

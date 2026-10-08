@@ -148,11 +148,12 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     redirect (each table's hot words are its own), or the lock. Measure per-phase counters.
   - one vCPU pays 1–2% (Alpine's boot +1.8%, userspace +1.2%): partly each module's bytes copied
     for the catch-up even when the table is the only one (a lone table could take them instead).
-- **Cut V8's per-region overhead:** ~10× the module's bytes, half of it metadata (~2.4 KB of
-  PartitionAlloc per region). Batch the tier-up regions into fewer modules (extend the entry below:
-  ~561 modules of one function in Alpine), and check whether superseded or invalidated blocks'
-  modules stay alive through sibling functions (a module's code is freed only with all of its
-  functions' instances).
+- **V8's per-function overhead** (the per-module part is done, 2026-10-08: [jit.md](jit.md)
+  "Memory", ~16 KB a module, modules 3,860 → 970 in the userspace benchmark): ~8.5 KB per
+  synthetic function of ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap
+  (the instance's exports, which every function needs for the table). Left to check: whether
+  superseded or invalidated blocks' modules stay alive through sibling functions (a module's
+  code is freed only with all of its functions' instances), which larger modules make likelier.
 - **Unexplained ~10 GB samples** in the Go-load runs with the flush and the GC nudge (2 of 4 runs,
   one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
   mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s sampling.
@@ -172,7 +173,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   and harmless, or a latency problem a GUI guest would feel.
 - **Compiling off the vCPU thread:** measured and not built ([jit.md](jit.md) "Tried and not
   kept"); revisit with a GUI guest in M8 (latency).
-- Tier-up regions get a module each (~561 in Alpine); batching them is untried.
 - kvm-unit-tests `timer` runs slower under the JIT than interpreted (short blocks around timer
   polls).
 - Buildroot's warm boot under the JIT has a 10× wider IQR than the interpreter's (V8 tiering

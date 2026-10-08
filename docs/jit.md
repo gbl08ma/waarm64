@@ -69,9 +69,13 @@ the interpreter's own code.
 ## Compile policy
 
 - A key is counted per dispatch; at the **threshold (50)** it joins a pending batch, emitted as
-  one module at **512 blocks** or **1M dispatched steps** after the batch's first entry
-  (`BATCH_TIMEOUT`), so a lone hot block doesn't wait forever. Fewer, larger modules run faster
-  (chains stay within a module) and cost V8 less per module: Alpine makes ~2,000 modules.
+  one module at **512 blocks**, once the pending blocks have run **50,000 steps** in the
+  interpreter since they joined it (`BATCH_STEPS`: each dispatch of a queued block adds its
+  length), or **64M steps** after the batch's first entry (`BATCH_TIMEOUT`, for lukewarm blocks).
+  So a block that keeps running is compiled soon, and blocks that rarely run wait for company.
+  Fewer, larger modules run faster (chains stay within a module) and cost V8 ~16 KB less each
+  ([Memory](#memory)): Alpine's userspace benchmark makes 970 modules (3,860 with the 1M-step
+  timeout alone, which emitted half of them with one function).
 - **Regions** (the compile unit, one function each) are of two kinds, both within one guest page
   and of up to 16 blocks (`block::REGION`), in reverse postorder:
   - **Forward regions** (`block::forward`, formed when a batch is compiled: `Cache::plan`): a
@@ -104,7 +108,7 @@ the interpreter's own code.
     edges (its loop; seen by the dispatcher). Without a loop the region is the head alone.
 - **Tier-up:** a loop head is first compiled **alone** with a hot word (one u32 per slot of each
   function table, which blocks reach through `jit::State::hot`) counting entries down from `region_after` (**1000**); the entry that reaches 0 calls
-  `jit_hot(vcpu, key, pc)`, which compiles the loop region in its own module (never with a flush,
+  `jit_hot(vcpu, key, pc)`, which compiles the loop region in a module with the pending batch, if any (never with a flush,
   since JIT code is on the stack) and stores `1 << 31 | index` in the word; from then on the head's
   prologue tail-calls the region, so blocks linked to the head reach it too. A head that gets hot
   in another table finds the region compiled (`Cache::tiers`) and redirects its own word.
@@ -233,6 +237,15 @@ copy** of the guest's code (its own cache, table and instances), so the total wa
 from 2.3 GB at login to 5 GB in 8 minutes with nothing flushed (615K regions, 294 MB of wasm) and
 was headed for the cache's 262,144 regions per vCPU: ~4.9 GB of V8 memory, the 6 GB tab. The
 guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions) are not what grows.
+- **A module costs ~16 KB besides its functions** (Chromium 153: ~8 KB of PartitionAlloc, ~8 KB of
+  V8's code space, its jump tables; Node ~10 KB): synthetic modules of 1 to 512 functions, the same
+  30,720 functions in all, cost 24.7 KB per function in modules of one and 8.6 KB in modules of 64
+  or more. Importing other modules' functions (`t`) adds ~0.1 KB per import. With the 1M-step
+  timeout alone half of Alpine's userspace modules had one function; the step-weighted batch
+  ([Compile policy](#compile-policy)) cut them 3,860 → 970 and V8's metadata for the same 34 MB
+  of wasm 160 → 126 MB (the modules installed without running, so without code), the
+  benchmark's peak renderer memory 1,113 → 1,082 MB (`bench/boot/REPORT.md` "M8: fewer, larger
+  modules").
 - **The byte budget** bounds it: ~10 × 160 MiB + the guest and the core's heap (~1.3 GB) + the browser
   (~0.2 GB) = ~3.2 GB for the 4-vCPU page, flat (the uncapped run kept climbing).
 - **Why a whole-cache flush, not aging or LRU:** compiled code has no per-block use counts (a block
