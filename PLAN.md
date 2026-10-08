@@ -170,6 +170,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     time, or a URL's path). A restored machine has empty TLBs, which Linux can tell by its step
     count ([docs/platform.md](docs/platform.md) "Snapshots"). Loose ends:
     [docs/backlog.md](docs/backlog.md) "Snapshots".
+  - Disk I/O speed (a chosen `File` under an overlay): **done (2026-10-08).** One change shipped: the overlay
+    reads and writes in runs (first writes of 1 MiB 6 → 212 MiB/s, reads of written data 17 → 358 MiB/s, `dd conv=fsync`
+    4.9 → 20 MiB/s). The rest was dropped by measurement: Debian's boot from a chosen qcow2 spends 3.9% in file reads and
+    6% in all requests (no cache, copy, limit or inflate work clears the 5% bar), `flush()` costs ~10 µs, and the screen
+    stays within 22–33 ms of a flush under a continuous disk read, so no blk worker. Numbers: `bench/io/REPORT.md`.
 - **D. Choosing and shaping machines:** a catalog of hosted images (Debian, Alpine, …) on top of
   phase B's disk in, extra disks, RAM and vCPU settings (default vCPUs from
   `navigator.hardwareConcurrency` minus the device worker and the page, with the P/E-core

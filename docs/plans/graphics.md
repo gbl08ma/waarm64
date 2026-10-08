@@ -357,7 +357,9 @@ output, GRUB's menu and "Loading Linux…", then fbcon on `virtio_gpu`; the logi
   frame idle (median 16–17 ms) and, with the guest reading its disk, a median of 17–66 ms and a worst
   case of 89–972 ms, because virtio-blk's synchronous XHRs occupy the device worker and a flush is
   served only between them; drawing from the machine worker would wait for the same service. The fix
-  is blk off that thread (asynchronous reads; backlog), also what G3's 3D worker will want.
+  was blk off that thread. **Superseded (2026-10-08):** once `serve` yielded every ~2 ms the worst flush-to-draw under a
+  continuous disk read is 22–33 ms (`bench/io/REPORT.md` "Loop 5 judged"), so blk stays where it is; G3's 3D worker
+  is its own question.
 - **The firmware's keys stay on the serial terminal**: the page's GRUB menu is graphical (`gfxterm`
   takes the GOP) and appears on the screen only; EDK2 has no virtio-input keyboard. `?display=simple` keeps
   the old serial menus for tests (page-uefi-keys) and as a fallback.
