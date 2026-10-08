@@ -29,14 +29,20 @@ fn boot_smp(image: &str, realtime: bool, ncpus: u64) -> common::Run {
 
 fn boot_mode(image: &str, realtime: bool, ncpus: u64, parallel: bool) -> common::Run {
     let kernel = common::image(image);
-    let devices = common::guest_devices("buildroot/rootfs.ext4", None);
-    let r = common::boot(&common::Boot {
-        devices: &devices,
+    boot_with(common::Boot {
         realtime,
         echo: !parallel,
         ncpus,
         parallel,
         ..common::Boot::new(&kernel, common::GUEST_CMDLINE)
+    })
+}
+
+fn boot_with(b: common::Boot) -> common::Run {
+    let devices = common::guest_devices("buildroot/rootfs.ext4", None);
+    let r = common::boot(&common::Boot {
+        devices: &devices,
+        ..b
     });
     eprintln!("\n[{}]", r.summary);
     assert!(r.powered_off(), "no SYSTEM_OFF");
@@ -80,6 +86,36 @@ fn linux_boots_on_2_and_4_vcpus() {
             "{n} vCPUs"
         );
     }
+}
+
+/// Through the JIT's dispatcher, which natively (no wasm engine) runs
+/// everything in the block interpreter (`interp::block`): the same steps, on
+/// one vCPU and on four, and on four in parallel (a table, and so a cache of
+/// decoded blocks, per vCPU).
+#[test]
+#[ignore = "needs target/images (images/build.sh) and --release"]
+fn linux_boots_through_the_block_interpreter() {
+    let kernel = common::image("linux/Image");
+    for n in [1, 4] {
+        let r = boot_with(common::Boot {
+            ncpus: n,
+            jit: 1,
+            ..common::Boot::new(&kernel, common::GUEST_CMDLINE)
+        });
+        let name = if n == 1 {
+            "buildroot"
+        } else {
+            "buildroot-4cpu"
+        };
+        assert_eq!(r.steps, common::steps(name), "{n} vCPUs");
+    }
+    boot_with(common::Boot {
+        ncpus: 4,
+        parallel: true,
+        realtime: true,
+        jit: 1,
+        ..common::Boot::new(&kernel, common::GUEST_CMDLINE)
+    });
 }
 
 /// Parallel SMP isn't reproducible: `WEBPC_PARALLEL_RUNS` boots each (default 2).

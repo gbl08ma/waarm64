@@ -36,7 +36,8 @@ and the exact-step boots.
 |---|---|---|
 | Unit tests | `cargo test` (native) | decoder, ALU/flags, bitfields, FP core, crypto KATs, MMU walker, GIC, virtio rings, run loop, DTB, the JIT's structure (block formation, liveness, encoder bytes) |
 | TestFloat | `scripts/testfloat.sh` | `fp.rs` against TestFloat 3e, every op and FZ/DN combination (51.2M cases) |
-| Golden corpus | `core/tests/corpus.rs` (native interpreter); `tests/corpus-wasm.test.ts` (wasm: interpreter, JIT forced, JIT stress) | ~50,000 instruction tests with results from the M4 |
+| Golden corpus | `core/tests/corpus.rs` (native interpreter); `tests/corpus-wasm.test.ts` (wasm: interpreter, JIT forced, JIT stress, block interpreter) | ~50,000 instruction tests with results from the M4 |
+| Block interpreter ([cpu.md](cpu.md) "The block interpreter") | `interp::block::tests` (`cargo test`); `core/tests/boot.rs` `linux_boots_through_the_block_interpreter`, `core/tests/distros.rs` `alpine_boots_through_the_block_interpreter` (native: there the dispatcher runs everything in it); `WEBPC_NATIVE_JIT=1` runs every native guest test through it; every JIT run's cold code | random blocks of the classes it has handlers for (and some it runs generically) from random states against `interp::steps`: steps, exit, registers, RAM; Buildroot on 1 and 4 vCPUs and Alpine with `tests/steps.txt`'s counts, Buildroot on 4 parallel vCPUs |
 | JIT differential | `tests/jit-diff.test.ts` | JIT vs interpreter on random words per inlined class, from 8 random states each, plus multi-instruction sequences and region shapes (branches, loops) |
 | Lockstep | `tests/jit-lockstep.test.ts` | the integer and FP guests (user mode) and the integer guest at EL1 (MMU off and on), JIT and JIT-stress vs interpreter, `Cpu` + RAM checksum every chunk; 20M steps per JIT case in CI |
 | Core instances on one memory | `tests/threads.test.ts` (Node workers); `tests/browser.test.ts` (Chromium workers) | three concurrent instances (interpreter, JIT, JIT) with their own stack, TLS and table run the integer guest to the reference's exact state (M7) |
@@ -75,7 +76,8 @@ and the exact-step boots.
 
 Rules behind that matrix:
 - **Interpreter runs of long guests happen natively** (Rust release builds are fast and need no
-  engine): Buildroot, the device test, LTP and Alpine. Node runs the **JIT** on every guest and
+  engine): Buildroot, the device test, LTP and Alpine; natively a JIT mode runs everything in the
+  block interpreter, so Buildroot and Alpine boot through it there too. Node runs the **JIT** on every guest and
   the interpreter only on the short ones (where the JIT run must print exactly the interpreter's
   console). Chromium tests what only a browser has, plus JIT boots of the distros. **Don't boot
   complex guests under the interpreter in Node or Chromium**: it costs minutes and tests nothing

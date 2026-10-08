@@ -40,8 +40,13 @@ pub enum End {
 // SYS, CLREX, the other DC); relax each with a profile that shows it (M6
 // loop 1 did MRS, the barriers and DC ZVA; loop 7 the MSRs above).
 pub fn end(w: u32) -> End {
+    end_op(decode(w), w)
+}
+
+/// [`end`] of `w`, whose class is `op`.
+pub fn end_op(op: Op, w: u32) -> End {
     use Op::*;
-    match decode(w) {
+    match op {
         // DAIF masking and plain registers (M6 loop 7): inline or a helper
         // call that returns mid-block if it leaves.
         MSR_reg | MSR_imm if crate::interp::sys::msr_continues(w) => End::No,
@@ -63,24 +68,30 @@ pub fn end(w: u32) -> End {
 
 /// The words of the block at `pa` (empty if it would have none, or `pa` isn't RAM).
 pub fn form(mem: &Mem, pa: u64) -> Vec<u32> {
-    let mut words = Vec::new();
+    form_with(mem, pa, |w, _| w)
+}
+
+/// [`form`], each word (with its class) mapped through `f`: one decode a word
+/// (the block interpreter's micro-ops).
+pub fn form_with<T>(mem: &Mem, pa: u64, mut f: impl FnMut(u32, Op) -> T) -> Vec<T> {
+    let mut out = Vec::new();
     let mut a = pa;
     while let Ok(w) = mem.read(a, 4) {
-        let w = w as u32;
-        match end(w) {
+        let (w, op) = (w as u32, decode(w as u32));
+        match end_op(op, w) {
             End::Before => break,
             End::After => {
-                words.push(w);
+                out.push(f(w, op));
                 break;
             }
-            End::No => words.push(w),
+            End::No => out.push(f(w, op)),
         }
         a += 4;
-        if a & 0xfff == 0 || words.len() == CAP {
+        if a & 0xfff == 0 || out.len() == CAP {
             break;
         }
     }
-    words
+    out
 }
 
 /// `n` words at `pa` (fewer if they leave RAM).

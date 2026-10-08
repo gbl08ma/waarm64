@@ -80,7 +80,7 @@ Design notes for an ABI change go in this file before the code.
 | `ticks_per_insn` | counter ticks per step, 0 → 1 (5) |
 | `devices`, `ndevices` | address and count (≤ 32) of `DeviceEntry`s (6) |
 | `fb_width`, `fb_height` | a `simple-framebuffer`, 0: none (8) |
-| `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24) |
+| `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24), 4 the dispatcher without compiling: the block interpreter (33) |
 | `features` | bit 0 `FEATURE_CRYPTO`; other bits reserved, and `vm_new` refuses them (19) |
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
@@ -137,6 +137,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 70 | current PC, published at every chunk end (the PC sampler reads it) |
 | 71–90 | `jit::Stats`: regions compiled, modules, wasm bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes; instructions compiled inline and as helpers, inline steps run; static flag setters stored/elided, conditions direct/computed/from memory; blocks in regions, back-edges, tier-ups; stale blocks tolerated (parallel, 25) |
 | 91–100 | parallel SMP (26): DSBs that waited for TLBI IS, ns waited; TLBI IS broadcast and IC operations issued (ICs are not broadcast: the code cache is shared, [jit.md](jit.md) "Sharing"); queue drains that applied something; IDLE exits (WFI); platform-lock acquisitions that found it held, ns waited; WFEs (each a yield); ns out of `vm_run_cpu` between runs (idle or in the host) |
+| 101–103 | the block interpreter (33, [cpu.md](cpu.md) "The block interpreter"): steps it ran, blocks it decoded, times a table's cache of them started over (full) |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -183,7 +184,8 @@ puts its functions into the core's table.
 `vcpu_new`, `mem_new`, `interp_run`, `interp_run_exit` (EL0-style exits, plus trap-to-EL1 and
 HVC kinds and the EL1 state at the end of `Cpu`), and their JIT twins over a per-vCPU JIT state:
 `jit_new(threshold, batch, capacity, check, region_after)`, `jit_run`, `jit_run_exit`,
-`jit_flush` (for hosts that rewrite guest code between runs), `jit_stats`. These vCPUs always
+`jit_flush` (for hosts that rewrite guest code between runs: drops compiled and decoded blocks),
+`jit_stats`. These vCPUs always
 have every optional feature. `jit_add_install`/`jit_call` are the JIT plumbing test.
 
 ## M7 (SMP): design note for ABI 20 onward
@@ -450,3 +452,4 @@ implemented by this step).
 | 30 | snapshots (M8 phase C): `vm_snapshot_size`, `vm_snapshot_save`, `vm_snapshot_restore`, `snapshot_version` (above); `lz_bound`, `lz_compress`, `lz_decompress` |
 | 31 | config changes (M8 graphics): `DevShared.config_gen`, the config-change interrupt raised from the signal path, `ConfigGeneration` (above) |
 | 32 | a fixed-size memory: `VmConfig.mem_pages`, `heap_reserve`; JIT modules import the memory with exact limits (M8 JIT) |
+| 33 | the block interpreter: `VmConfig.jit` 4, counter words 101–103, `jit::Stats` gains three fields (M8) |

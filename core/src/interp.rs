@@ -4,6 +4,7 @@
 //! a user-mode host wants (the golden corpus, the benchmarks); [`run_system`]
 //! takes them into EL1 the way hardware does.
 
+pub(crate) mod block;
 mod float;
 mod ldst;
 mod ldst_fp;
@@ -84,8 +85,9 @@ impl From<Fault> for Exit {
 type R<T = ()> = Result<T, Exit>;
 
 /// Executes one instruction at `cpu.pc`. On `Err`, the PC is unchanged.
-// ponytail: fetch + decode every instruction; add a decoded-block cache if the
-// M1 MIPS baseline says the interpreter matters beyond being the JIT's fallback.
+/// This form fetches and decodes every instruction: the reference. What the
+/// JIT's dispatcher hasn't compiled runs in the block interpreter
+/// ([`block`]), which decodes a block once.
 pub fn step(cpu: &mut Cpu, mem: &Mem) -> R {
     match steps(cpu, mem, None, 1) {
         (_, None | Some(Exit::Resync | Exit::Invalidate(_))) => Ok(()),
@@ -141,14 +143,7 @@ pub(crate) fn step_bus(cpu: &mut Cpu, m: &mut impl Bus) -> R {
 /// The JIT's per-instruction helpers call this too (`jit::jit_exec_flat`).
 #[inline(always)]
 pub(crate) fn exec_at(cpu: &mut Cpu, m: &mut impl Bus, insn: u32, pc: u64) -> R {
-    cpu.pc = pc.wrapping_add(4);
-    let r = exec(cpu, m, insn, pc);
-    if let Err(e) = r
-        && !e.retired()
-    {
-        cpu.pc = pc;
-    }
-    r
+    cpu_pc_then(cpu, pc, |c| exec(c, m, insn, pc))
 }
 
 /// Runs up to `n` instructions; returns how many retired and why it stopped early.
@@ -427,11 +422,37 @@ pub(crate) fn adr_imm(i: u32) -> u64 {
     sext(((bits(i, 23, 5) << 2) | bits(i, 30, 29)) as u64, 21)
 }
 
+#[inline(always)]
 fn exec(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64) -> R {
+    exec_op(c, m, i, pc, decode(i))
+}
+
+/// [`exec_at`] for an instruction already decoded (`op` is `decode(i)`): the
+/// block interpreter's generic micro-op.
+#[inline(never)]
+pub(crate) fn exec_at_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
+    cpu_pc_then(c, pc, |c| exec_op(c, m, i, pc, op))
+}
+
+/// Sets the PC past the instruction at `pc`, runs `f`, and puts the PC back
+/// on it if it didn't retire (as [`exec_at`]).
+#[inline(always)]
+fn cpu_pc_then(c: &mut Cpu, pc: u64, f: impl FnOnce(&mut Cpu) -> R) -> R {
+    c.pc = pc.wrapping_add(4);
+    let r = f(c);
+    if let Err(e) = r
+        && !e.retired()
+    {
+        c.pc = pc;
+    }
+    r
+}
+
+#[inline(always)]
+fn exec_op(c: &mut Cpu, m: &mut impl Bus, i: u32, pc: u64, op: Op) -> R {
     use Op::*;
     let sf = bit(i, 31);
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
-    let op = decode(i);
     match op {
         // PC-relative addressing.
         ADR => c.set_reg(rd, pc.wrapping_add(adr_imm(i))),

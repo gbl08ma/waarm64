@@ -3,7 +3,8 @@
 // native and wasm builds could diverge. Needs the wasm build (scripts/ci.sh).
 // It also runs through the JIT (M5): forced (every block compiled on first
 // sight, one per module) and in stress (the same with a 4-block code cache,
-// so it flushes constantly, and the stale-code checker).
+// so it flushes constantly, and the stale-code checker); and through the
+// dispatcher never compiling, so in the block interpreter (interp::block).
 // `WEBPC_CORPUS=dp_imm,dp_reg` runs only those groups (tests/corpus/<group>.txt).
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -28,7 +29,13 @@ type Exports = {
 };
 
 /** jit_new's threshold, batch, code cache capacity, stale-code check and region_after; none: the interpreter. */
-const MODES: Record<string, [number, number, number, number, number] | undefined> = { interpreter: undefined, 'JIT (forced)': [0, 1, 16384, 0, 0], 'JIT stress': [0, 1, 4, 1, 1] };
+const MODES: Record<string, [number, number, number, number, number] | undefined> = {
+  interpreter: undefined,
+  'JIT (forced)': [0, 1, 16384, 0, 0],
+  'JIT stress': [0, 1, 4, 1, 1],
+  // Never compiles: the dispatcher runs every test in the block interpreter (interp::block).
+  'block interpreter': [0xffff_ffff, 32, 16384, 0, 1000],
+};
 
 /** Byte offset of each REGS slot in cpu::Cpu (x0..x30, sp, then nzcv, fpcr, fpsr, v0..v31). */
 function offset(name: string): number {
@@ -109,7 +116,12 @@ for (const [mode, jit] of Object.entries(MODES)) test(`golden corpus on the wasm
     }
   }
   assert.ok(GROUPS ? total > 0 : total > 30_000, `only ${total} corpus tests`);
-  if (jit) {
+  if (jit && jit[0] === 0xffff_ffff) {
+    // jit::Stats (20: steps in the block interpreter): every test ran there.
+    const decSteps = Number(new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 23)[20]);
+    console.log(`${mode}: ${decSteps} steps in the block interpreter`);
+    assert.ok(decSteps >= compilable, `only ${decSteps} steps in the block interpreter for ${compilable} tests`);
+  } else if (jit) {
     // jit::Stats: blocks, modules, bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes,
     // instructions compiled inline and as helper calls, inline instructions run, (16) blocks in the regions.
     const st = [...new BigUint64Array(memory.buffer, ex.jit_stats(cpu), 17)].map(Number);

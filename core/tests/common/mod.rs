@@ -733,6 +733,11 @@ pub struct Boot<'a> {
     pub snapshots: &'a [u64],
     /// At each of `snapshots`, only empty the TLBs (`Vm::flush_tlbs`) instead.
     pub flush_only: bool,
+    /// `VmConfig.jit`. Natively there's no wasm engine, so any JIT mode runs
+    /// everything through the dispatcher and the block interpreter
+    /// (`interp::block`); 0, the interpreter alone. `WEBPC_NATIVE_JIT` sets
+    /// the default (0).
+    pub jit: u64,
 }
 
 /// The firmware configuration's host side: the flash bank's size and saved
@@ -784,6 +789,7 @@ impl<'a> Boot<'a> {
             firmware: None,
             snapshots: &[],
             flush_only: false,
+            jit: std::env::var("WEBPC_NATIVE_JIT").map_or(0, |v| v.parse().unwrap()),
         }
     }
 }
@@ -806,6 +812,7 @@ pub fn boot(b: &Boot) -> Run {
         ref firmware,
         snapshots,
         flush_only,
+        jit,
     } = b;
     assert!(
         input.is_none() || !parallel,
@@ -832,6 +839,7 @@ pub fn boot(b: &Boot) -> Run {
         firmware: firmware.is_some() as u64,
         flash_size: firmware.as_ref().map_or(0, |f| f.flash_size),
         rtc: firmware.as_ref().map_or(0, |f| f.rtc),
+        jit,
         ..VmConfig::default()
     };
     assert!(cfg.valid_firmware());
@@ -1009,9 +1017,23 @@ pub fn boot(b: &Boot) -> Run {
         console: String::from_utf8_lossy(&out).replace("\r\n", "\n"),
         hvc: String::from_utf8_lossy(&backends.hvc).replace("\r\n", "\n"),
         summary: format!(
-            "{steps} steps, guest time {:.2} s, {secs:.1} s wall, {:.0} MIPS; exit {kind} value {:#x} pc {:#x}; ESR_EL1 {:#x} ELR_EL1 {:#x} FAR_EL1 {:#x}",
+            "{steps} steps, guest time {:.2} s, {secs:.1} s wall, {:.0} MIPS{}; exit {kind} value {:#x} pc {:#x}; ESR_EL1 {:#x} ELR_EL1 {:#x} FAR_EL1 {:#x}",
             vm.now() as f64 / 62.5e6,
             steps as f64 / secs / 1e6,
+            if jit == 0 {
+                String::new()
+            } else {
+                let dec = |i: usize| {
+                    let c = vm.shared.cpus.iter();
+                    c.map(|c| c.counters.dec[i].load(Ordering::Relaxed))
+                        .sum::<u64>()
+                };
+                format!(
+                    ", {:.1}% in the block interpreter ({} blocks decoded)",
+                    dec(0) as f64 * 100.0 / steps as f64,
+                    dec(1)
+                )
+            },
             vm.exit.value,
             vm.vcpus[0].cpu.pc,
             vm.vcpus[0].cpu.esr_el1,

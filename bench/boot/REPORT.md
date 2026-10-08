@@ -1228,3 +1228,30 @@ the NEON paths: AES-CBC and SHA-256's schedule were latency-bound on the V regis
 trips (`bench/interp/REPORT.md` M6.5), SHA-1's scalar rounds weren't. Everything else is within
 noise, Liftoff included: its extra v128 locals (declared only where used) cost nothing measurable.
 Each userspace phase moved under 0.3%.
+
+## M8: the block interpreter, and threshold 500
+
+2026-10-09, the dev VM, Chromium 153.0.8010.52; `results/m8-dec/` (`r1-`, `r2-`: two rounds,
+alternated; `old50`: the block interpreter compiled out, threshold 50, the old path; `dec50`,
+`dec500`: the block interpreter at threshold 50 and 500). Medians of each run, both runs shown:
+
+| ms | old50 | dec50 | dec500 |
+|---|---|---|---|
+| `boot_alpine_jit` total | 8,944, 8,922 | 8,438, 8,855 (−3.2%) | 8,230, 8,042 (−8.9%) |
+| `alpine_user_jit` total | 18,462, 18,774 | 17,859, 17,831 (−4.2%) | 18,088, 18,132 (−2.7%) |
+| compress | 2,125, 2,126 | 2,053, 2,043 | 2,195, 2,175 |
+| lua | 3,309, 3,303 | 3,210, 3,211 | 3,347, 3,362 |
+| churn | 1,838, 1,875 | 1,893, 1,859 | 1,992, 1,985 |
+| sqlite | 2,570, 2,611 | 2,505, 2,521 | 2,638, 2,653 |
+
+- At 500 the hot phases wait longer to be compiled (1.5–6% slower than old50); the boot and the
+  rest of the run gain more. Chromium in Debian gains far more at 500 (`../apps/REPORT.md`), so 500 is
+  the default; a threshold that follows the code cache's pressure is the next try (backlog).
+- **A first version lost:** with dispatches reported 16 at a time, blocks joined the pending batch
+  at scattered dispatches, and forward regions (which take only their batch's blocks) came out 30%
+  more and smaller (Alpine's boot: 33,466 regions of 53,376 blocks against 25,922 of 56,234): the
+  boot 7.8% and the userspace benchmark 6% slower than old50. The dispatch that reaches the
+  threshold now reports itself (`jit::Cache::miss` returns the slot's quota). Those runs are the
+  `nobatchquota-` files (round 2 cut short).
+- This session ran ~6% slower than the previous one (`boot_alpine_jit` 8,419 ms in "M8: vector
+  registers in locals" for the same old path): compare within the table.

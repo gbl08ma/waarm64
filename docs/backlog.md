@@ -36,17 +36,23 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## Interpreter
 
-- No decoded-block cache: each instruction is fetched through `Mem::host` and decoded again
-  (`ponytail:` in `interp::step`); FP runs at a sixth of the integer rate (`FMLA`/`FMADD` always
-  take the software FMA, vector FP goes lane by lane through `u128`); the MMU copy runs 35% slower
-  than the flat one (every fetch through the TLB). **It matters now as the price of compiling less**
-  (`bench/apps/REPORT.md` "M8: Chromium in the guest"): Chromium in Debian on 4 vCPUs compiles
-  200–275 MiB of wasm per render at threshold 50, over the 160 MiB budget, so the cache flushes and
-  every render recompiles; at threshold 500 it compiles 77 MiB once and the warm renders are 35–45%
-  faster, but the cold one 26% slower (5% of its steps interpreted at ~80 MIPS). Candidates: a
-  decoded-block tier (decode once, operand fields pre-extracted, the common forms specialized, an
-  inline TLB path, direct links between blocks; invalidated by the JIT's keys and `IC IVAU`), then
-  a threshold sweep on `bench/apps`; tail-call dispatch (`become`, `+tail-call`) as an A/B on top.
+- **A compile threshold that follows the code cache's pressure** (the user's suggestion, 2026-10-09):
+  500 suits Chromium in Debian (50 overflowed the 160 MiB budget every render) but makes Alpine's
+  hot phases 1.5–6% slower than 50 (`bench/boot/REPORT.md` "M8: the block interpreter, and threshold
+  500"). Start low and raise it as the live wasm bytes near the budget or after a flush, lower it when
+  there's room and much is interpreted; decided where blocks report (`jit::Cache::miss`, under the
+  lock already), so it costs nothing per dispatch; guest steps don't depend on it.
+- **The block interpreter's caches** ([cpu.md](cpu.md) "The block interpreter"): one per table, so
+  four vCPUs decode the same code four times; the 2M micro-op arena starts over when full (6–8
+  times a Chromium render over 4 tables: most of its ~3M decodes, ~1–2% of the time by estimate).
+  Candidates: drop the older half of the arena instead of all of it; one store the tables share.
+- **More micro-op handlers:** FP and SIMD loads and stores (memcpy), exclusives and LSE atomics,
+  EXTR, BFM run generically through `exec`; count the generic ops on a real workload first. FP itself
+  runs at a sixth of the integer rate (`FMLA`/`FMADD` always take the software FMA, vector FP goes
+  lane by lane through `u128`). Tail-call dispatch (`become`, `+tail-call`) as an A/B on top.
+- The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
+  instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
+  tests and benchmarks now.
 - `Mem::rmw` is a generic CAS loop; the JIT does LSE as single wasm ops. Matters again for M7's
   contention.
 
@@ -152,7 +158,8 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   polls).
 - Buildroot's warm boot under the JIT has a 10× wider IQR than the interpreter's (V8 tiering
   hundreds of modules at different points, presumably).
-- Blocks are formed twice (for the cold path's length on first sight, and at compile time).
+- Blocks are formed twice: decoded for the block interpreter on first sight (which gives the cache
+  their length) and again at compile time.
 - Invalidation is per 4 KiB page, and `IC IALLU` drops everything.
 
 ## The core with `simd128`

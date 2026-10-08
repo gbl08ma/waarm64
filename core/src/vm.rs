@@ -91,7 +91,8 @@ pub struct VmConfig {
     pub fb_width: u64,
     pub fb_height: u64,
     /// 0 interpreter only; 1 JIT; 2 JIT-stress (`jit::Config::STRESS`) (ABI 10);
-    /// 3 JIT-check (`jit::Config::CHECK`) (ABI 24).
+    /// 3 JIT-check (`jit::Config::CHECK`) (ABI 24); 4 the JIT's dispatcher
+    /// without compiling, so the block interpreter (`jit::Config::INTERP`, ABI 33).
     pub jit: u64,
     /// Optional CPU features (`cpu::FEATURE_*`; ABI 19); 0, the default, is none.
     pub features: u64,
@@ -241,6 +242,9 @@ pub struct Counters {
     /// it held and the ns they waited, WFEs (each ends the chunk), ns spent
     /// out of `vm_run_cpu` between runs (idle, or in the host).
     pub par: [AtomicU64; 10],
+    /// The block interpreter (ABI 33, `jit::Stats`): instructions it ran,
+    /// blocks it decoded, times its cache started over.
+    pub dec: [AtomicU64; 3],
 }
 
 /// Indexes into [`Counters::par`].
@@ -269,6 +273,7 @@ impl Default for Counters {
             pc: z(),
             jit: [const { AtomicU64::new(0) }; 20],
             par: [const { AtomicU64::new(0) }; 10],
+            dec: [const { AtomicU64::new(0) }; 3],
         }
     }
 }
@@ -571,6 +576,7 @@ impl Vm {
             0 => None,
             1 => Some(jit::Config::DEFAULT),
             3 => Some(jit::Config::CHECK),
+            4 => Some(jit::Config::INTERP),
             _ => Some(jit::Config::STRESS),
         }
         .map(|c| jit::Config {
@@ -1215,6 +1221,9 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
         s.stale,
     ];
     for (a, v) in c.jit.iter().zip(v) {
+        a.store(v, Ordering::Relaxed);
+    }
+    for (a, v) in c.dec.iter().zip([s.dec_steps, s.decoded, s.dec_clears]) {
         a.store(v, Ordering::Relaxed);
     }
 }

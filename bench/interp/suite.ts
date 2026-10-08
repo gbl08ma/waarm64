@@ -38,8 +38,10 @@ type JitCounts = { steps: number; jitSteps: number; dispatches: number; blocks: 
 /** jit_new's arguments: threshold, batch, capacity, stale-code check, entries of a loop head before its region. */
 export type JitConfig = [number, number, number, number, number];
 /** The JIT's default policy (`jit::Config::DEFAULT`) and JIT-stress (`jit::Config::STRESS`). */
-export const JIT_DEFAULT: JitConfig = [50, 32, 16384, 0, 1000];
+export const JIT_DEFAULT: JitConfig = [500, 32, 16384, 0, 1000];
 export const JIT_STRESS: JitConfig = [0, 1, 4, 1, 1];
+/** Never compiles: the dispatcher runs everything in the block interpreter (`jit::Config::INTERP`). */
+export const JIT_INTERP: JitConfig = [0xffff_ffff, 32, 16384, 0, 1000];
 
 /**
  * Instantiates the core, loads a guest into RAM placed after the core's state
@@ -80,7 +82,7 @@ export async function setup(bin = 'guest.bin', jit?: JitConfig, pad = 0) {
 }
 
 /** guest-vm.bin at EL1 in a whole VM, entered through vm-start.bin (at RAM + 2 MiB, as `bootVm` places a kernel). */
-export async function setupVm(mmu: boolean, jit: 0 | 1 | 2 = 0) {
+export async function setupVm(mmu: boolean, jit: 0 | 1 | 2 | 4 = 0) {
   const [wasm, start, guest] = await Promise.all([load('../../target/wasm32-unknown-unknown/release/webpc_core.wasm'), load('vm-start.bin'), load('guest-vm.bin')]);
   const kernel = new Uint8Array(0x10000 + guest.length);
   kernel.set(start);
@@ -177,6 +179,10 @@ const jitMips = async (o: Options) => placed(o, 'jit_mips', 'bench/interp/guest.
 const jitFpMips = async (o: Options) => placed(o, 'jit_fp_mips', 'bench/interp/guest-fp.c', (pad) => setup('guest-fp.bin', JIT_DEFAULT, pad));
 const vmJitFlatMips = async (o: Options) => mipsOf(o, 'vm_jit_flat_mips', 'bench/interp/guest.c EL1 MMU off', await setupVm(false, 1));
 const vmJitMmuMips = async (o: Options) => mipsOf(o, 'vm_jit_mmu_mips', 'bench/interp/guest.c EL1 MMU on', await setupVm(true, 1));
+// The block interpreter (interp::block): the dispatcher, never compiling.
+const decMips = async (o: Options) => placed(o, 'dec_mips', 'bench/interp/guest.c', (pad) => setup('guest.bin', JIT_INTERP, pad));
+const vmDecFlatMips = async (o: Options) => mipsOf(o, 'vm_dec_flat_mips', 'bench/interp/guest.c EL1 MMU off', await setupVm(false, 4));
+const vmDecMmuMips = async (o: Options) => mipsOf(o, 'vm_dec_mmu_mips', 'bench/interp/guest.c EL1 MMU on', await setupVm(true, 4));
 
 /**
  * CoreMark (M5 step 10): target/bench/coremark.bin from bench/interp/build-coremark.sh,
@@ -217,6 +223,7 @@ export const suite = {
   interp_mips: interpMips, interp_fp_mips: interpFpMips, vm_flat_mips: vmFlatMips, vm_mmu_mips: vmMmuMips,
   jit_mips: jitMips, jit_fp_mips: jitFpMips, vm_jit_flat_mips: vmJitFlatMips, vm_jit_mmu_mips: vmJitMmuMips,
   coremark_mips: coremarkInterp, jit_coremark_mips: coremarkJit,
+  dec_mips: decMips, vm_dec_flat_mips: vmDecFlatMips, vm_dec_mmu_mips: vmDecMmuMips,
 };
 export const runAll = async (o: Options) => {
   const out = [];

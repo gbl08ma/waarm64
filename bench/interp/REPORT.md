@@ -765,3 +765,30 @@ The alignment test costs ~5% and the sequentially consistent accesses ~6%; volat
 than atomics and is UB under races all the same, so E keeps one code path on every target. The
 interpreter runs ~1.4% of Alpine's boot (41M of 2,857M steps), and the boot stayed within noise
 (`../boot/REPORT.md` "M7 loop 6"). Raw data: `results/m7-loop6/`.
+
+## M8: the block interpreter
+
+2026-10-09, the dev VM, Chromium 153.0.8010.52, one session; raw data `results/m8-dec/`. The
+interpreter (`VmConfig.jit` 0 / `vcpu_new`) against the block interpreter (the dispatcher never
+compiling: `jit` 4 / `jit_new` with a threshold of `u32::MAX`; [docs/cpu.md](../../docs/cpu.md)
+"The block interpreter"), medians (IQR ≤ 1.1 everywhere):
+
+| guest | interpreter | block interpreter | |
+|---|---|---|---|
+| `vm_mmu_mips` (EL1, MMU on) | 72.6 | 195.6 | 2.69× |
+| `vm_flat_mips` (EL1, MMU off) | 112.2 | 196.6 | 1.75× |
+| `interp_mips` / `dec_mips` (user mode, 8 placements) | 133.5 | 258.2 | 1.93× |
+| cold (the first 2M steps), MMU on | 51.3 | 101.7 | 1.98× |
+
+How it got there (`vm_dec_mmu_mips`, same build otherwise; the interpreter's 70.8 then):
+1. Decoded blocks run from the dispatcher, a dispatch through the JIT cache's lock every block:
+   70.4. A `perf` profile in Node: the dispatcher (lock, two map lookups, `Table::sync`) cost as much
+   as the micro-ops.
+2. Dispatches counted in the block's slot, reported every 16: 106.5.
+3. Blocks chained in the interpreter's own loop (same page: the next key from the block's;
+   another: the instruction TLB) and loads/stores through an inline TLB probe (`Bus::fast`): 207.1.
+   The later fixes for the real workloads (counts that survive eviction, reporting at the threshold,
+   one decode a word) left it at 195.6.
+
+Native, natively everything runs through the dispatcher: Alpine's boot in the block interpreter at
+~190 MIPS (15 s), every step in it, the same 2,856,663,287 steps.

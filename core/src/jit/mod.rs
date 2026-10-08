@@ -13,7 +13,7 @@ pub mod block;
 pub mod emit;
 pub mod wasm;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -77,7 +77,8 @@ pub struct Config {
 
 impl Config {
     pub const DEFAULT: Config = Config {
-        threshold: 50,
+        // 500 since the block interpreter (docs/jit.md "Compile policy").
+        threshold: 500,
         batch: 512,
         capacity: 262_144,
         max_bytes: MAX_BYTES,
@@ -106,6 +107,13 @@ impl Config {
         max_bytes: u64::MAX,
         check: true,
         region_after: 0,
+        ..Config::DEFAULT
+    };
+    /// The dispatcher without compiling: everything in the block interpreter
+    /// (`VmConfig.jit` 4, ABI 33; what the dispatcher does natively, where
+    /// there's no wasm engine).
+    pub const INTERP: Config = Config {
+        threshold: u32::MAX,
         ..Config::DEFAULT
     };
 }
@@ -155,11 +163,19 @@ pub struct Stats {
     /// Stale blocks the checker found in a tolerant cache (ABI 25: parallel
     /// SMP, where another vCPU may rewrite code before its IC reaches this one).
     pub stale: u64,
+    /// Instructions the block interpreter ran (`interp::block`, ABI 33), the
+    /// blocks it decoded, and the times its cache started over (full).
+    pub dec_steps: u64,
+    pub decoded: u64,
+    pub dec_clears: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
 #[derive(Default)]
-struct KeyHasher(u64);
+pub(crate) struct KeyHasher(u64);
+
+/// Maps keyed by block key.
+pub(crate) type KeyBuild = BuildHasherDefault<KeyHasher>;
 
 impl Hasher for KeyHasher {
     fn write(&mut self, _: &[u8]) {
@@ -213,6 +229,12 @@ const JC_EMPTY: Jc = Jc {
 fn jc_index(key: u64) -> usize {
     (key >> 2) as usize & (JC - 1)
 }
+
+/// The invalidated pages the cache keeps for tables to catch up with
+/// (`Cache::ival_log`): Chromium in Debian issues ~3,000 ICs a second, and a
+/// vCPU waiting in WFI doesn't catch up (4,096 entries cleared the tables'
+/// decoded blocks ~35 times a render).
+const IVAL_LOG: usize = 1 << 16;
 
 /// The slots of the transfer cache's miss functions.
 const MISS_SLOTS: u32 = 2;
@@ -273,6 +295,17 @@ pub struct Cache {
     /// round-robin SMP one table serves every vCPU, each with its own
     /// transfer cache. Read without the lock ([`Jit::fresh`]).
     drops: Arc<AtomicU64>,
+    /// The pages `IC IVAU` named (`u64::MAX`: `IC IALLU`) since entry
+    /// `ival_base`, for the tables' decoded blocks (`interp::block`), which
+    /// are dropped by page and not with compiled ones (a decoded block
+    /// doesn't link to others, and it outlives flushes). Every IC is logged,
+    /// since a table may have decoded a page the cache has no keys for; the
+    /// entries every table has seen are dropped, and past [`IVAL_LOG`] the
+    /// oldest (a table that missed one starts over).
+    ival_log: VecDeque<u64>,
+    ival_base: u64,
+    /// `ival_base` + the log's length, read without the lock ([`Jit::fresh`]).
+    ivals: Arc<AtomicU64>,
     /// Flushes (and `IC IALLU`s) so far: each starts the slots over.
     epoch: u64,
     /// The modules installed since then, in order; and how many of them
@@ -305,6 +338,8 @@ struct Seen {
     /// many to list, the whole jump cache).
     dropped: Vec<u64>,
     all: bool,
+    /// The entries of `Cache::ival_log` it has seen (an absolute index).
+    ival: u64,
 }
 
 /// A loop region compiled for a head compiled alone: its table index, the
@@ -335,6 +370,9 @@ impl Cache {
             tolerant: false,
             ram: None,
             drops: Arc::new(AtomicU64::new(1)),
+            ival_log: VecDeque::new(),
+            ival_base: 0,
+            ivals: Arc::new(AtomicU64::new(0)),
             epoch: 0,
             log: Vec::new(),
             freed: 0,
@@ -375,12 +413,25 @@ impl Cache {
         self.epoch += 1;
         self.log.clear();
         self.freed = 0;
-        self.tables.iter_mut().for_each(|t| *t = Seen::default());
+        for t in &mut self.tables {
+            *t = Seen {
+                ival: t.ival,
+                ..Seen::default()
+            };
+        }
     }
 
     /// `IC IVAU` on `pa` drops the blocks of its page; `IC IALLU` (`u64::MAX`)
     /// all of them (counted in `s`).
     pub fn invalidate(&mut self, pa: u64, s: &mut Stats) {
+        self.ival_log
+            .push_back(if pa == u64::MAX { pa } else { pa >> 12 });
+        if self.ival_log.len() > IVAL_LOG {
+            self.ival_log.pop_front();
+            self.ival_base += 1;
+        }
+        let end = self.ival_base + self.ival_log.len() as u64;
+        self.ivals.store(end, Ordering::Relaxed);
         if pa == u64::MAX {
             self.drop_all();
         } else if let Some(mut keys) = self.pages.remove(&(pa >> 12)) {
@@ -438,28 +489,48 @@ impl Cache {
     }
 
     /// Not in table `t`'s jump cache (which has caught up): look it up, count
-    /// a hit, queue it and emit the batch when due.
-    fn miss(&mut self, t: &mut Table, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32), u32> {
+    /// `n` dispatches (the ones its decoded block counted since it last
+    /// reported, and this one), queue it and emit the batch when due. Also
+    /// returns how many dispatches its decoded block may count before it
+    /// reports again: at most [`interp::block::REPORT`], and none past the
+    /// threshold, so the block joins the batch at the dispatch that reaches
+    /// it (as the blocks a forward region takes from the batch did when every
+    /// dispatch reported: counting 16 at a time scattered them over batches,
+    /// and Alpine's boot made 30% more, smaller regions and ran 8% slower).
+    fn miss(
+        &mut self,
+        t: &mut Table,
+        key: u64,
+        va: u64,
+        mem: &Mem,
+        n: u32,
+        len: Option<u32>,
+    ) -> (Result<(u32, u32), u32>, u32) {
         let info = info(&mut self.map, &mut self.pages, key, || {
-            block::form(mem, key & !3).len() as u32
+            len.unwrap_or_else(|| block::form(mem, key & !3).len() as u32)
         });
         if info.idx == 0 && !self.off && info.len > 0 {
-            info.hits += 1;
+            info.hits = info.hits.saturating_add(n);
             if info.hits > self.cfg.threshold && !info.queued {
                 info.queued = true;
                 self.pending.push((key, va));
             } else if info.queued {
-                self.pending_steps += info.len as u64;
+                self.pending_steps += info.len as u64 * n as u64;
             }
             self.emit_if_due(t, mem);
         }
+        let report = interp::block::REPORT;
         match self.map.get(&key) {
             Some(&Info { idx, len, .. }) if idx != 0 => {
                 t.fill(key, idx, len);
-                Ok((idx, len))
+                (Ok((idx, len)), report)
             }
-            Some(i) => Err(i.len.max(1)),
-            None => Err(1), // flushed by the emit
+            Some(i) if !i.queued && !self.off => (
+                Err(i.len.max(1)),
+                report.min(self.cfg.threshold.saturating_sub(i.hits)),
+            ),
+            Some(i) => (Err(i.len.max(1)), report),
+            None => (Err(1), 0), // flushed by the emit
         }
     }
 
@@ -763,12 +834,19 @@ pub struct Table {
     /// What this table's vCPUs ran and what it compiled, flushed and
     /// invalidated (`vm::Counters` sums the tables').
     pub stats: Stats,
+    /// The blocks the dispatcher interprets, decoded (`interp::block`), and
+    /// the entries of `Cache::ival_log` they have caught up with.
+    dec: interp::block::Cache,
+    ivals: u64,
 }
 
 impl Table {
     /// A new table of cache `c`, which it hasn't caught up with yet.
     fn new(c: &mut Cache) -> Table {
-        c.tables.push(Seen::default());
+        c.tables.push(Seen {
+            ival: c.ival_base + c.ival_log.len() as u64,
+            ..Seen::default()
+        });
         Table {
             id: c.tables.len() - 1,
             cfg: c.cfg,
@@ -789,6 +867,8 @@ impl Table {
             clock: 0,
             since: (u64::MAX, 0),
             stats: Stats::default(),
+            dec: interp::block::Cache::default(),
+            ivals: c.ival_base + c.ival_log.len() as u64,
         }
     }
 
@@ -834,6 +914,27 @@ impl Table {
             }
         }
         (seen.all, seen.dropped) = (false, Vec::new());
+        // The decoded blocks of the pages invalidated since (all of them if
+        // the log has dropped some this table hadn't seen).
+        let end = c.ival_base + c.ival_log.len() as u64;
+        if seen.ival < c.ival_base {
+            self.dec.clear();
+        } else {
+            for &p in c.ival_log.range((seen.ival - c.ival_base) as usize..) {
+                if p == u64::MAX {
+                    self.dec.clear();
+                } else {
+                    self.dec.drop_page(p);
+                }
+            }
+        }
+        seen.ival = end;
+        self.ivals = end;
+        let oldest = c.tables.iter().map(|t| t.ival).min().unwrap_or(end);
+        while c.ival_base < oldest {
+            c.ival_log.pop_front();
+            c.ival_base += 1;
+        }
         if self.xmiss {
             for l in &c.log[self.installed..] {
                 self.todo.push((l.slot, l.bytes.clone(), l.tiers.clone()));
@@ -933,19 +1034,21 @@ impl Table {
 pub struct Jit {
     pub table: Table,
     cache: Arc<Lock<Cache>>,
-    /// The cache's `drops`, read without its lock.
+    /// The cache's `drops` and `ivals`, read without its lock.
     drops: Arc<AtomicU64>,
+    ivals: Arc<AtomicU64>,
 }
 
 impl Jit {
     pub fn new(cache: Cache) -> Jit {
-        let drops = cache.drops.clone();
+        let (drops, ivals) = (cache.drops.clone(), cache.ivals.clone());
         let cache = Arc::new(Lock::new(cache));
         let table = Table::new(&mut cache.lock());
         Jit {
             table,
             cache,
             drops,
+            ivals,
         }
     }
 
@@ -955,28 +1058,39 @@ impl Jit {
             table: Table::new(&mut self.cache.lock()),
             cache: self.cache.clone(),
             drops: self.drops.clone(),
+            ivals: self.ivals.clone(),
         }
     }
 
     /// The compiled block for `key` as (table index, length), or else how many
     /// instructions to interpret: the would-be block's length, so the next
-    /// lookup is at a block start again.
+    /// lookup is at a block start again (0: its decoded block, which counted
+    /// this dispatch; the cache hears of it later).
     #[inline(always)]
     fn enter(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32), u32> {
         let j = self.table.jc[jc_index(key)];
         if j.key == key {
             return Ok((j.idx, j.len));
         }
+        if self.table.dec.count(key) {
+            return Err(0);
+        }
         self.miss(key, va, mem)
     }
 
     #[inline(never)]
     fn miss(&mut self, key: u64, va: u64, mem: &Mem) -> Result<(u32, u32), u32> {
+        // A block new to this table is decoded now, outside the lock, and its
+        // length spares the cache forming it (only a block decoded now: one
+        // decoded earlier may be from words an IC has dropped since).
+        let len = self.table.dec.decode(key, mem);
         let mut c = self.cache.lock();
         // The table catches up after the miss, which may have compiled (or
         // flushed): an entry it fills now and a catch-up then clears is only
         // a later miss. What it returns is installed before any block runs.
-        let r = c.miss(&mut self.table, key, va, mem);
+        let n = self.table.dec.counted(key) + 1;
+        let (r, quota) = c.miss(&mut self.table, key, va, mem, n, len);
+        self.table.dec.quota(key, quota);
         self.table.sync(&mut c, mem);
         let base = c.xmiss;
         drop(c);
@@ -991,11 +1105,14 @@ impl Jit {
         }
     }
 
-    /// Catches up with the cache if it dropped blocks since (before a block
-    /// runs, from the dispatcher only: [`Table::sync`]).
+    /// Catches up with the cache if it dropped blocks or an IC invalidated
+    /// a page since (before a block runs, from the dispatcher only:
+    /// [`Table::sync`]).
     #[inline(always)]
     fn fresh(&mut self, mem: &Mem) {
-        if self.drops.load(Ordering::Relaxed) != self.table.drops {
+        if self.drops.load(Ordering::Relaxed) != self.table.drops
+            || self.ivals.load(Ordering::Relaxed) != self.table.ivals
+        {
             self.sync(mem);
         }
     }
@@ -1014,9 +1131,11 @@ impl Jit {
         self.cache.lock().invalidate(pa, &mut self.table.stats);
     }
 
-    /// [`Cache::flush`].
+    /// [`Cache::flush`], and this table's decoded blocks too (the code
+    /// changed: `jit_flush`).
     pub fn flush(&mut self) {
         self.cache.lock().flush(&mut self.table.stats);
+        self.table.dec.clear();
     }
 
     fn check(&mut self, key: u64, mem: &Mem) -> bool {
@@ -1156,12 +1275,22 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
             }
         } else {
             let m = match r {
-                Ok((_, len)) | Err(len) => len as u64,
+                Ok((_, len)) | Err(len) => len.max(1) as u64,
             };
-            let (k, e) = interp::steps(&mut vr.cpu, mem, Some(&mut vr.tlb), m.min(left));
-            if let Some(j) = vr.jit.cache.as_deref_mut() {
-                j.table.clock += k;
-            }
+            let crate::mmu::Vcpu { cpu, tlb, .. } = vr;
+            let t = &mut jit.table;
+            // The block decoded and the ones after it (`interp::block`);
+            // without one (no key, or no instructions there), one instruction
+            // at a time.
+            let r = match key {
+                Some(k) if k & block::KEY_MMU != 0 => {
+                    interpret(cpu, &mut Mmu::new(mem, Some(&mut *tlb)), t, mem, k, left)
+                }
+                Some(k) => interpret(cpu, &mut Flat(mem), t, mem, k, left),
+                None => None,
+            };
+            let (k, e) = r.unwrap_or_else(|| interp::steps(cpu, mem, Some(tlb), m.min(left)));
+            t.clock += k;
             done += k;
             if e.is_some() {
                 return (done, e);
@@ -1169,6 +1298,83 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
         }
     }
     (n, None)
+}
+
+/// The bus a run of decoded blocks goes through, and how it finds the key of
+/// the block at a PC (as [`key`] does; `None`: the dispatcher's to find).
+trait Regime: crate::mmu::Bus {
+    fn key(&mut self, c: &crate::cpu::Cpu, pc: u64) -> Option<u64>;
+}
+
+impl Regime for Flat<'_> {
+    #[inline(always)]
+    fn key(&mut self, c: &crate::cpu::Cpu, pc: u64) -> Option<u64> {
+        (pc & 3 == 0).then_some(pc | c.el() & 1)
+    }
+}
+
+impl Regime for Mmu<'_> {
+    #[inline(always)]
+    fn key(&mut self, c: &crate::cpu::Cpu, pc: u64) -> Option<u64> {
+        if pc & 3 != 0 {
+            return None;
+        }
+        let p = self.fetch_ptr(c, pc).ok()?;
+        Some(self.mem.pa(p) | c.el() & 1 | block::KEY_MMU)
+    }
+}
+
+/// Runs the decoded block at `key` (its dispatch counted: [`Jit::enter`]),
+/// at the PC, and then the blocks after it for as long as each is decoded
+/// already, counts its dispatch without reporting it, isn't compiled, and the
+/// one before it ended on a branch or ran out (not on an instruction run
+/// generically, which may have changed the regime), within `left` steps.
+/// Returns what [`interp::steps`] would for those steps; `None` if the first
+/// block would have no instructions. Blocks in another page are found through
+/// the instruction TLB, as the dispatcher finds them; a block in the same page
+/// as the one before has the same translation (a block ends after any
+/// instruction that could change it).
+#[inline(never)]
+fn interpret<B: Regime>(
+    cpu: &mut crate::cpu::Cpu,
+    m: &mut B,
+    t: &mut Table,
+    mem: &Mem,
+    mut key: u64,
+    left: u64,
+) -> Option<(u64, Option<Exit>)> {
+    let mut done = 0;
+    let r = loop {
+        let pc = cpu.pc;
+        let Some(b) = t.dec.get(key, mem) else {
+            if done == 0 {
+                return None;
+            }
+            break (done, None);
+        };
+        let b = &b[..b.len().min((left - done) as usize)];
+        let chains = b.last().is_some_and(interp::block::Uop::chains);
+        let (k, e) = interp::block::run(cpu, m, b, pc);
+        t.stats.dec_steps += k + e.is_some_and(Exit::retired) as u64;
+        done += k;
+        if e.is_some() || done >= left || !chains {
+            break (done, e);
+        }
+        let next = cpu.pc;
+        key = if (next ^ pc) < 0x1000 && next & 3 == 0 {
+            key & !0xfff | next & 0xffc | key & 3
+        } else {
+            match m.key(cpu, next) {
+                Some(k) => k,
+                None => break (done, None),
+            }
+        };
+        if t.jc[jc_index(key)].key == key || !t.dec.count(key) {
+            break (done, None);
+        }
+    };
+    (t.stats.decoded, t.stats.dec_clears) = (t.dec.decoded, t.dec.clears);
+    Some(r)
 }
 
 /// [`interp::run`] through the JIT, for user-mode hosts (the corpus, the benchmarks).
@@ -1514,6 +1720,88 @@ mod tests {
         assert_eq!((s.invalidations, s.flushes), (2, 0));
         u.sync(&mut c, &mem);
         assert!(jc(&u, 0x1000) == u64::MAX && jc(&u, 0x2000) == u64::MAX && u.epoch == c.epoch);
+    }
+
+    /// Decoded blocks go when an IC names their page, in every table and
+    /// after a flush too (the cache then has no keys there), and not with the
+    /// compiled blocks that linked to a dropped one.
+    #[test]
+    fn decoded_blocks_go_with_their_page() {
+        let mut ram = vec![0u128; 0x4000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x4000) };
+        for pa in [0x1000, 0x2000] {
+            mem.write(pa, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
+            mem.write(pa + 4, 4, 0xd65f_03c0).unwrap(); // ret
+        }
+        let mut c = Cache::new(Config::DEFAULT);
+        let (mut t, mut u) = (Table::new(&mut c), Table::new(&mut c));
+        let s = &mut Stats::default();
+        for x in [&mut t, &mut u] {
+            for k in [0x1000, 0x2000] {
+                assert_eq!(x.dec.get(k, &mem).map(<[_]>::len), Some(2));
+            }
+        }
+        // Compiled 0x2000 links to compiled 0x1000: an IC on page 1 drops both
+        // compiled blocks, and only page 1's decoded one.
+        c.info(0x1000, || 2).idx = 7;
+        c.info(0x2000, || 2).idx = 8;
+        c.linkers.insert(0x1000, vec![0x2000]);
+        c.invalidate(0x1040, s);
+        assert!(c.map.is_empty());
+        t.sync(&mut c, &mem);
+        assert!(!t.dec.has(0x1000) && t.dec.has(0x2000));
+        assert!(u.dec.has(0x1000), "until it catches up");
+        // After a flush the cache knows no keys on page 2; the IC still reaches the tables.
+        c.flush(s);
+        c.invalidate(0x2000, s);
+        for x in [&mut t, &mut u] {
+            x.sync(&mut c, &mem);
+            assert!(!x.dec.has(0x1000) && !x.dec.has(0x2000));
+        }
+        assert!(c.ival_log.is_empty(), "both tables have seen it all");
+        // A table that missed entries the log dropped starts over.
+        t.dec.get(0x1000, &mem);
+        for _ in 0..=IVAL_LOG {
+            c.invalidate(0x3000, s);
+        }
+        t.sync(&mut c, &mem);
+        assert!(!t.dec.has(0x1000));
+        assert_eq!(t.dec.clears, 1);
+    }
+
+    /// A decoded block counts dispatches locally and reports them, but the
+    /// dispatch that reaches the threshold reports itself: the block joins
+    /// the batch at the same dispatch as when every dispatch reported.
+    #[test]
+    fn a_decoded_block_reports_at_the_threshold() {
+        let mut ram = vec![0u128; 0x2000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x2000) };
+        mem.write(0x1000, 4, 0x9100_0400).unwrap(); // add x0, x0, #1
+        mem.write(0x1004, 4, 0xd65f_03c0).unwrap(); // ret
+        let mut c = Cache::new(Config {
+            threshold: 50,
+            ..Config::DEFAULT
+        });
+        let mut t = Table::new(&mut c);
+        let (key, mut reports) = (0x1000, 0);
+        for d in 1..=200 {
+            if t.dec.count(key) {
+                continue;
+            }
+            // Jit::miss, without the lock.
+            let len = t.dec.decode(key, &mem);
+            let n = t.dec.counted(key) + 1;
+            let (r, quota) = c.miss(&mut t, key, 0, &mem, n, len);
+            t.dec.quota(key, quota);
+            assert_eq!(r, Err(2));
+            reports += 1;
+            let i = c.map[&key];
+            assert_eq!(i.hits, d, "every dispatch counted");
+            assert_eq!(i.queued, d > 50, "queued at dispatch 51, not {d}");
+        }
+        assert!(reports < 200 / 8, "{reports} reports for 200 dispatches");
     }
 
     /// A member's hot word stops counting when an enclosing region is

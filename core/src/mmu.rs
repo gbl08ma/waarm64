@@ -420,6 +420,14 @@ pub trait Bus {
         len: u64,
         access: Access,
     ) -> Result<*mut u8, Fault>;
+    /// The host pointer for `size` bytes at `va` with the current EL's `u`
+    /// permission if it's at hand (the TLB's entry, or RAM with the MMU off),
+    /// without a walk or a fault: the block interpreter's fast path, which
+    /// takes `read_el`/`write_el` when this has nothing.
+    #[inline(always)]
+    fn fast(&mut self, _c: &Cpu, _va: u64, _size: u32, _u: Use) -> Option<*mut u8> {
+        None
+    }
     fn flush_all(&mut self) {}
     fn flush_va(&mut self, _va: u64) {}
     /// Drops the non-global entries (ASID changes, `TLBI ASIDE1`).
@@ -533,6 +541,11 @@ impl Bus for Flat<'_> {
 
     fn maint(&mut self, _: &Cpu, va: u64, _: bool) -> Result<u64, Fault> {
         self.0.host(va, 1, Access::Maint).map(|_| va)
+    }
+
+    #[inline(always)]
+    fn fast(&mut self, _: &Cpu, va: u64, size: u32, _: Use) -> Option<*mut u8> {
+        self.0.host(va, size as u64, Access::Read).ok()
     }
 
     #[inline(always)]
@@ -738,6 +751,17 @@ impl Bus for Mmu<'_> {
         let p = self.fetch_ptr(c, pc)?;
         // SAFETY: host() checked 4 bytes of RAM.
         Ok(unsafe { mem::load(p, 4) } as u32)
+    }
+
+    #[inline(always)]
+    fn fast(&mut self, c: &Cpu, va: u64, size: u32, u: Use) -> Option<*mut u8> {
+        // With SCTLR_EL1.A (alignment faults) or the MMU off, the slow path.
+        if c.sctlr_el1 & (sctlr::M | sctlr::A) != sctlr::M {
+            return None;
+        }
+        let e = self.tlb.as_ref()?.e[3 * c.el() as usize + u as usize][index(va)];
+        (e.tag == va.wrapping_add(size as u64 - 1) | 0xfff)
+            .then(|| va.wrapping_add(e.addend) as usize as *mut u8)
     }
 
     fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<u64, Fault> {

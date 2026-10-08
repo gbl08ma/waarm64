@@ -39,8 +39,11 @@ the interpreter's own code.
   `#[repr(C)]` direct-mapped array of 65,536 {key u64, table index u32, length u32}, one per
   function table, which blocks reach through the vCPU's `jit::State::jc`; compiled blocks only)
   in front of the shared cache's `HashMap` (multiply-shift hasher, behind a lock: [Sharing](#sharing)), and calls
-  a compiled block if its length fits the steps left; otherwise it interprets the would-be
-  block's length (so lookups stay at block starts).
+  a compiled block if its length fits the steps left; otherwise it runs the block in the **block
+  interpreter** ([cpu.md](cpu.md) "The block interpreter": decoded once, kept per table, chained
+  to the blocks after it), as much of it as fits, so lookups stay at block starts. A decoded block
+  counts its dispatches itself and reports them to the shared cache every 16, so the lock is
+  taken once per 16 dispatches of a block that isn't compiled, not at every one.
 - **Exact step accounting:** a block knows its instruction count *n* and is entered only if the
   chunk has ≥ *n* steps left; chained successors and region edges are taken only when `left`
   covers them. So the JIT never outruns a chunk, IRQs, the signal word and deadlines are checked
@@ -68,7 +71,9 @@ the interpreter's own code.
 
 ## Compile policy
 
-- A key is counted per dispatch; at the **threshold (50)** it joins a pending batch, emitted as
+- A key is counted per dispatch; at the **threshold (500;** 50 until the block interpreter made
+  the uncompiled path ~2–3× faster, `bench/apps/REPORT.md` "M8: the block interpreter") it joins
+  a pending batch, emitted as
   one module at **512 blocks**, once the pending blocks have run **50,000 steps** in the
   interpreter since they joined it (`BATCH_STEPS`: each dispatch of a queued block adds its
   length), or **64M steps** after the batch's first entry (`BATCH_TIMEOUT`, for lukewarm blocks).
@@ -128,7 +133,12 @@ the interpreter's own code.
   forced mode (threshold 0, batch 1, a big cache, `region_after` 0: regions at once). The
   user-mode `jit_new` takes all five knobs.
 - The sweeps of threshold (2–200), batch size, timeout and `region_after` after M6's chunk change
-  were flat on Alpine: the defaults stand.
+  were flat on Alpine. With the block interpreter (2026-10-09), threshold 50 / 200 / 500 / 1000 on
+  Chromium in Debian (4 vCPUs, three renders): 50 compiled ~150 MiB a render and flushed, 200
+  flushed by the third, 500 compiled 67 MiB once and was fastest (warm renders 28–30 s against
+  41); on Alpine 500 was 9% faster on the boot and 2.7% on the userspace benchmark than the old
+  path at 50, though its hot phases (Lua, SQLite, compress, churn) were 1.5–6% slower than at 50.
+  A threshold that follows the cache's pressure is the next experiment ([backlog.md](backlog.md)).
 
 ## Linking
 
@@ -210,7 +220,9 @@ its jump cache and hot words, its helper counts and its counters.
   `jit_hot` in a table an epoch behind leaves the head alone. Its vCPUs' transfer caches drop
   their entries when the table's `drops` differs from theirs (`Tlb::xdrops`).
 - **Invalidation:** `IC IVAU` drops the page's blocks from the cache at once (on the issuing
-  vCPU); each table drops them from its jump cache when it catches up (`Cache::tables`: the keys
+  vCPU), and logs the page for the tables' decoded blocks (`Cache::ival_log`, every IC, since a
+  flush leaves decoded blocks the cache has no keys for); each table drops them from its jump
+  cache and its decoded blocks when it catches up (`Cache::tables`: the keys
   dropped since, or all of it past 4,096). The broadcast drains don't touch the JIT any more. Until
   its table catches up a vCPU may run a dropped block, the window the tolerant cache allowed already.
 - **Tier-up across tables:** a head redirects in each table on its own, when it gets hot there
@@ -457,7 +469,7 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   loop would act on sooner, since `left` bounds a region to the chunk.
 - **Out-of-line jump-cache probes:** slower. The probes cost nothing measurable at steady state now
   that hot loops are regions.
-- **A lower compile threshold** (2–50): both boots got slower. 50 stays.
+- **A lower compile threshold** (2–50): both boots got slower (before the block interpreter).
 - **The `Cpu` at a constant address** (to save V8's bounds checks at block exits): mixed, −10% to
   +7% by guest and placement ([v8.md](v8.md)).
 - **A compile worker** (compiling off the vCPU thread): measured, not built. Installs take

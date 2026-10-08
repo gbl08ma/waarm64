@@ -198,3 +198,47 @@ AESE/AESD/AESMC/AESIMC, PMULL/PMULL2 (8- and 64-bit), SHA1C/P/M/H/SU0/SU1, SHA25
 - Should-be-one fields are relaxed to match the M4, except in CAS/CASP, where the M4 raises
   UNDEFINED.
 - Checked exhaustively against Capstone 5.0 ([testing.md](testing.md) "Decoder sweep").
+
+## The block interpreter (`core/src/interp/block.rs`)
+
+The interpreter has two forms. `interp::steps` fetches, decodes and runs one instruction at a time:
+the reference, and what `VmConfig.jit` 0 runs. **The block interpreter** runs what the JIT's
+dispatcher hasn't compiled (`jit::steps`; [jit.md](jit.md) "Dispatch"): every block the first
+`threshold` times, and natively everything (no wasm engine), so the native boots with `jit` ≠ 0
+test it against `tests/steps.txt`.
+
+- **A block is the JIT's** (`jit::block::form`, the same key: PA and regime bits), decoded once into
+  16-byte micro-ops with their operand fields pulled out and kept in the vCPU table's cache. The
+  common integer forms (ADD/SUB in all three operand forms, the logical ones, MOV, MOVZ/N/K,
+  UBFM/SBFM, the variable shifts, CSEL & co, CCMP/CCMN, MADD/MSUB, ADR/ADRP), every branch, and
+  the integer loads and stores (single register in every addressing form but the unprivileged
+  one, pairs, literal) have handlers; the rest is a generic micro-op that runs the interpreter's
+  own code with the decoded `Op` (`interp::exec_at_op`). One micro-op is one instruction, so the
+  steps and the exits are `interp::steps`'s for the same instructions.
+- **Loads and stores** try the TLB entry inline (`Bus::fast`) and take the interpreter's path on a
+  miss, so faults are the interpreter's.
+- **Chaining:** after a block that ends on a branch or runs out, the next block is found without
+  going back to the dispatcher (`jit::interpret`): in the same page from the block's own key (a
+  block ends after anything that could change the translation), in another through the
+  instruction TLB. The chain stops at a compiled block, at a block not decoded yet or due to report
+  its dispatches, after a block that ends on an instruction run generically (an MSR, ERET: the
+  regime may have changed), at an exit, or when the chunk's steps run out.
+- **Counting:** a decoded block counts its dispatches in its slot and reports them to the shared
+  cache every 16 (`REPORT`; the cache's lock and map lookup were a third of the time), and the
+  dispatch that reaches the compile threshold reports itself (the cache returns how many may be
+  counted before it), so a block joins the pending batch exactly when it did with every dispatch
+  reported. Without that, blocks of one path joined different batches, and the forward regions,
+  which take only their batch's blocks, came out 30% more and smaller (Alpine's boot 8% slower).
+  A slot's count survives eviction (the map keeps it).
+- **The cache** (per JIT table, so per vCPU in parallel SMP): 16,384 direct-mapped slots, a map,
+  and the micro-ops in one arena of 2M (32 MiB), which starts over when full. **Invalidation is by
+  page:** every `IC IVAU` (and `IC IALLU`) is logged in the shared cache (`Cache::ival_log`, with
+  its own counter, so the transfer caches aren't touched), and a table drops that page's decoded
+  blocks when it catches up, before its vCPU runs another block. Flushes of the code cache and the
+  links between compiled blocks don't touch decoded ones: tying them to the JIT's dropped keys
+  (which follow links transitively) emptied the caches a few dozen times per Chromium render.
+- **Tests:** a native differential test of random blocks against `interp::steps`
+  (`interp::block::tests`), the golden corpus in it on wasm (`tests/corpus-wasm.test.ts`), the
+  native boots through it (`linux_boots_through_the_block_interpreter`,
+  `alpine_boots_through_the_block_interpreter`; `WEBPC_NATIVE_JIT=1` for every native guest test),
+  and every JIT run's cold code with exact steps.

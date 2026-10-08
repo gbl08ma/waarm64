@@ -24,6 +24,12 @@ pub fn decode(insn: u32) -> Op {
     Op::UnallocatedEncoding
 }
 
+/// The patterns, for tests that generate encodings of chosen classes.
+#[cfg(test)]
+pub(crate) fn patterns() -> &'static [(u32, u32, Op)] {
+    &PATTERNS
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

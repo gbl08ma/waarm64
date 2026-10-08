@@ -29,7 +29,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 32;
+pub const ABI_VERSION: u32 = 33;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -257,7 +257,8 @@ pub unsafe extern "C" fn jit_run_exit(
     done
 }
 
-/// Drops every compiled block, for hosts that rewrite guest code between runs.
+/// Drops every compiled and decoded block, for hosts that rewrite guest code
+/// between runs.
 ///
 /// # Safety
 /// As for [`jit_run`].
@@ -273,7 +274,9 @@ pub unsafe extern "C" fn jit_flush(v: *mut mmu::Vcpu) {
 /// steps in JIT code, dispatches, invalidations, flushes, instructions
 /// compiled inline and as helper calls, inline instructions run, then the
 /// static flag counts: setters stored and elided, conditions direct, computed
-/// and from memory).
+/// and from memory; blocks in regions, back-edges, tier-ups, stale blocks
+/// tolerated; steps in the block interpreter, blocks it decoded, times its
+/// cache started over: ABI 33).
 ///
 /// # Safety
 /// As for [`jit_run`].

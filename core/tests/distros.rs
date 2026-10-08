@@ -60,6 +60,28 @@ fn alpine_boots_and_runs_the_test_script() {
     assert_eq!(r.steps, common::steps("alpine"));
 }
 
+/// Alpine's boot through the JIT's dispatcher, natively the block interpreter
+/// (`interp::block`): the same steps as the interpreter's.
+#[test]
+#[ignore = "needs target/images/alpine (images/build.sh alpine) and --release"]
+fn alpine_boots_through_the_block_interpreter() {
+    let d = &common::ALPINE;
+    let (kernel, initrd) = (common::image(d.kernel), common::image(d.initrd));
+    let devices = common::test_devices(d.disk);
+    let r = common::boot(&Boot {
+        initrd: Some(&initrd),
+        devices: &devices,
+        ram_size: 1 << 30,
+        max_steps: 50_000_000_000,
+        fb: (640, 480),
+        jit: 1,
+        ..Boot::new(&kernel, d.cmdline)
+    });
+    eprintln!("\n[{}]", r.summary);
+    assert!(r.console.contains("webpc: test ok\n"), "test failed");
+    assert_eq!(r.steps, common::steps("alpine"));
+}
+
 /// Alpine on `WEBPC_NCPUS` vCPUs (default 2), deterministic round-robin
 /// (M7), or in parallel with `WEBPC_PARALLEL=1` (a thread per vCPU).
 #[test]

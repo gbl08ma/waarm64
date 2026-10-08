@@ -13,7 +13,7 @@ import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 32;
+export const ABI = 33;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -305,7 +305,9 @@ export const Counter = {
   PAR_DSB_WAITS: 91, PAR_DSB_WAIT_NS: 92, PAR_TLBI_IS: 93, PAR_IC: 94, PAR_DRAINS: 95, PAR_IDLES: 96, PAR_LOCK_CONTENDED: 97, PAR_LOCK_WAIT_NS: 98, PAR_WFES: 99,
   // ns out of vm_run_cpu between runs (idle, or in the host).
   PAR_OUT_NS: 100,
-  LEN: 101,
+  // ABI 33: instructions the block interpreter ran, blocks it decoded, times its cache started over.
+  DEC_STEPS: 101, DEC_BLOCKS: 102, DEC_CLEARS: 103,
+  LEN: 104,
 } as const;
 
 /**
@@ -322,8 +324,8 @@ export type BootOptions = {
   framebuffer?: { width: number; height: number };
   /** Where in RAM the kernel goes (default 2 MiB); 0 for the bare-metal tests, linked at the start of RAM. */
   kernelOffset?: number;
-  /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress, 3 JIT-check (ABI 24). */
-  jit?: 0 | 1 | 2 | 3;
+  /** `VmConfig.jit`: 0 interpreter only (the default), 1 JIT, 2 JIT-stress, 3 JIT-check (ABI 24), 4 the block interpreter (the dispatcher without compiling, ABI 33). */
+  jit?: 0 | 1 | 2 | 3 | 4;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
   /** Test only: stalls one vCPU's host worker (parallel mode), see {@link Stall}; `addr` here is a guest PA. */
@@ -859,6 +861,7 @@ function stats(n: (i: number) => number) {
       flagsStored: n(Counter.JIT_FLAGS_STORED), flagsElided: n(Counter.JIT_FLAGS_ELIDED),
       condDirect: n(Counter.JIT_COND_DIRECT), condComputed: n(Counter.JIT_COND_COMPUTED), condMemory: n(Counter.JIT_COND_MEMORY),
       regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS), stale: n(Counter.JIT_STALE),
+      decSteps: n(Counter.DEC_STEPS), decoded: n(Counter.DEC_BLOCKS), decClears: n(Counter.DEC_CLEARS),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),
