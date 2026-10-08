@@ -48,7 +48,7 @@ const sum = (xs: { n: number; median: number; max: number }[]) => ({
   seconds: xs.length, draws: xs.reduce((a, x) => a + x.n, 0),
   medianOfMedians: xs.map((x) => x.median).sort((a, b) => a - b)[xs.length >> 1], max: Math.max(...xs.map((x) => x.max)),
 });
-const out = { disk: chosen ? 'chosen File + overlay' : 'HTTP', chromium: browser.version(), idle: sum(idle), disk: sum(loaded), raw: { idle, loaded } };
+const out = { diskKind: chosen ? 'chosen File + overlay' : 'HTTP', chromium: browser.version(), idle: sum(idle), disk: sum(loaded), raw: { idle, loaded } };
 console.log(JSON.stringify({ idle: out.idle, disk: out.disk }));
 const outFile = process.argv.slice(2).find((a) => !a.startsWith('--'));
 if (outFile) writeFileSync(outFile, JSON.stringify(out, null, 1) + '\n');

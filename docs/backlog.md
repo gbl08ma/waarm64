@@ -91,8 +91,9 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
      core code). Exact limits there need the memory at its final size before the core is instantiated, so
      an allocator of our own over a region the host gives the core (std's dlmalloc only grows the memory).
      Measure what the core's share of a profile is first.
-  - Small: `UQSUB`/`UQADD` (2.0M helper calls in the compression phase, ~7% of it with the interpreter's share)
-    are wasm's `sub_sat`/`add_sat`.
+  - Done: vector `SQADD`/`UQADD`/`SQSUB`/`UQSUB` on 8- and 16-bit lanes are inline (wasm's `add_sat`/`sub_sat`;
+    FPSR.QC from a compare against the wrapped result). The 32- and 64-bit lanes and the scalar forms stay
+    helpers (wasm has no such op).
   - Not levers there: TLB misses (about 1% of a phase at most), the remaining helpers, the core's own compiler (under
     1% outside the boot).
   - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the run's 22 s) are a third Liftoff code

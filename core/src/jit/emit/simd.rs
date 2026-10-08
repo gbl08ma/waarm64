@@ -21,6 +21,9 @@ const EXTRACT_U: [u32; 4] = [0x16, 0x19, 0x1b, 0x1d];
 const REPLACE: [u32; 4] = [0x17, 0x1a, 0x1c, 0x1e];
 const ADD: [u32; 4] = [0x6e, 0x8e, 0xae, 0xce];
 const SUB: [u32; 4] = [0x71, 0x91, 0xb1, 0xd1];
+// add_sat/sub_sat by lane size (8, 16): [signed, unsigned].
+const ADD_SAT: [[u32; 2]; 2] = [[0x6f, 0x70], [0x8f, 0x90]];
+const SUB_SAT: [[u32; 2]; 2] = [[0x72, 0x73], [0x92, 0x93]];
 const MUL: [u32; 4] = [0, 0x95, 0xb5, 0xd5]; // no i8x16.mul
 const SHL: [u32; 4] = [0x6b, 0x8b, 0xab, 0xcb];
 const SHR_S: [u32; 4] = [0x6c, 0x8c, 0xac, 0xcc];
@@ -66,7 +69,8 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
     match op {
         ADD_vector | SUB_2 | AND_asimd | BIC_asimd_reg | ORR_asimd_reg | ORN_asimd | EOR_asimd
         | BSL | BIT | BIF | CMEQ_reg_2 | CMTST_2 | CMGT_reg_2 | CMHI_2 | CMGE_reg_2 | CMHS_2
-        | MUL_vec | MLA_vec | MLS_vec | SMAX | SMIN | UMAX | UMIN => three_same(c, i),
+        | MUL_vec | MLA_vec | MLS_vec | SMAX | SMIN | UMAX | UMIN | SQADD_2 | UQADD_2 | SQSUB_2
+        | UQSUB_2 => three_same(c, i),
         SSHR_2 | USHR_2 | SSRA_2 | USRA_2 | SHL_2 | SLI_2 | SRI_2 | SSHLL | USHLL | SHRN => {
             shift_imm(c, i)
         }
@@ -140,10 +144,33 @@ fn three_same(c: &mut Func, i: u32) -> bool {
         0b10000 | 0b10001 | 0b00110 | 0b00111 => q128,
         0b10010 | 0b10011 => size != 3 && size != 0 && !(opc == 0b10011 && u), // MLA/MLS/MUL; not PMUL, no i8x16.mul
         0b01100 | 0b01101 => size != 3,
+        0b00001 | 0b00101 => size < 2 && q128, // no saturating 32/64-bit lanes in wasm
         _ => false,
     };
     if !ok {
         return false;
+    }
+    if matches!(opc, 0b00001 | 0b00101) {
+        // SQADD/UQADD/SQSUB/UQSUB: FPSR.QC is set if the saturated result
+        // differs from the wrapped one in any lane.
+        let (sat, wrap) = if opc == 0b00001 {
+            (ADD_SAT[size][u as usize], ADD[size])
+        } else {
+            (SUB_SAT[size][u as usize], SUB[size])
+        };
+        ops(c, &[rn, rm], &[sat]);
+        ops(c, &[rn, rm], &[wrap]);
+        c.simd(NE[size]);
+        if !q {
+            c.i64_const(0).simd_lane(REPLACE[3], 1); // the unused top half
+        }
+        c.simd(ANY_TRUE).if_();
+        let fpsr = offset_of!(Cpu, fpsr) as u32;
+        c.local_get(VCPU).local_get(VCPU).i64_load(fpsr);
+        c.i64_const(QC).op(0x84).i64_store(fpsr); // i64.or
+        c.end();
+        put(c, rd, q, |c| ops(c, &[rn, rm], &[sat]));
+        return true;
     }
     put(c, rd, q, |c| match opc {
         0b10000 => ops(c, &[rn, rm], &[if u { SUB[size] } else { ADD[size] }]),
