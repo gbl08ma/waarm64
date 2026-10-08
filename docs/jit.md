@@ -223,7 +223,10 @@ its jump cache and hot words, its helper counts and its counters.
   `bench/stress` with `--guest-cmd`): four caches of 40 MiB: 143–150 s a build, 296 MIPS median,
   ~76 flushes, 2–6% of the steps interpreted, the renderer at 3.1–3.7 GB; one shared cache of
   160 MiB: 48–81 s, 755 MIPS, 1 flush, ~0.1%, 3.2–3.5 GB. The benchmarks: `smp_user_jit_4`
-  18.5% faster (churn 39%; its single-threaded Lua and SQLite 4–5% slower), one vCPU 1–2% slower. On one vCPU the same load compiled 227
+  25% faster than with a cache per vCPU, every phase (Lua 7.5%, SQLite 10%, churn 43%; rechecked
+  after the step-weighted batches, which turned the first measurement's 4–5% loss on Lua and SQLite
+  into a gain: `bench/boot/REPORT.md` "M8: the shared cache's single-threaded phases,
+  rechecked"), one vCPU 1–2% slower. On one vCPU the same load compiled 227
   MiB; four private caches compiled ~2.9× that.
 
 ## Memory
@@ -358,7 +361,10 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   once per block.
 - **NEON → SIMD128** (`emit/simd.rs`): handler by handler after the interpreter's: three-same,
   shifts, moves and immediates, widening/narrowing, reductions, TBL/TBX (as `i8x16.swizzle`,
-  never `relaxed_swizzle`, whose out-of-range lanes aren't deterministic). Our encoder emits the
+  never `relaxed_swizzle`, whose out-of-range lanes aren't deterministic), SQADD/UQADD/SQSUB/UQSUB
+  on 8- and 16-bit lanes as `add_sat`/`sub_sat` (FPSR.QC from a compare against the wrapping
+  result; 32- and 64-bit lanes have no wasm op and stay helpers) and their scalar forms at every
+  size in i64 arithmetic. Our encoder emits the
   SIMD128; the core itself is built without `simd128` ([backlog.md](backlog.md)).
 - **Crypto** (`emit/crypto.rs`): AESE+AESMC and AESD+AESIMC on the same register fused into one
   round; SubBytes by **nested inversion** over GF(2⁴) (Hamburg's formulas, our implementation;

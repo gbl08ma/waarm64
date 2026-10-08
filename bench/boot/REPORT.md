@@ -1117,3 +1117,24 @@ multi-entry doesn't change. Its cost would be an entry parameter on every JIT fu
 call, an entry index in the jump cache and transfer cache entries, and a dispatch at the top of
 each loop region's loop. Not built. The second copies are ~15–30% of each phase's regions; their
 memory is what larger modules already cut.
+
+## M8: the shared cache's single-threaded phases, rechecked
+
+2026-10-08, the dev VM, Chromium 153, against `3e5d184`; `results/m8-share-recheck/` (A: the
+shared cache, B: a build that gives each parallel vCPU a cache of its own, 160 MiB each;
+alternated A, B three times, two rounds each). "M8: one code cache for all vCPUs" had Lua and
+SQLite 4–5% slower with the shared cache; since the step-weighted batches ("M8: fewer, larger
+modules") every phase is faster with it (median [IQR], ms, n6):
+
+| | shared | private | |
+|---|---|---|---|
+| compress | 1,992 [48] | 2,389 [43] | −16.6% |
+| Lua | 3,327 [60] | 3,597 [108] | −7.5% |
+| churn | 2,641 [44] | 4,668 [156] | −43.4% |
+| SQLite | 2,806 [74] | 3,115 [172] | −9.9% |
+| total | 20,694 [127] | 27,750 [203] | −25.4% |
+
+Node agrees (three pairs; per vCPU, private caches interpret about twice the steps and compile
+every region four times). Separately, four concurrent copies of the benchmark slow down by
+themselves on this host: four independent 1-vCPU VMs at once ran Lua 3–6%, SQLite 11–15% and
+compress 22% slower than one alone (Node, one run each), about what 4 vCPUs cost against 1.

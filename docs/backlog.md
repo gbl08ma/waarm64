@@ -46,136 +46,95 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## JIT
 
-- **llvmpipe is far too slow under the JIT** ([plans/graphics.md](plans/graphics.md) §16): sway compositing through
-  Mesa's software GL keeps four vCPUs at ~54% for ~3 frames a second at 1376×762 (pixman: 4–8%), and a terminal
-  scrolling reaches 9 frames a second (pixman: 46–55). Not profiled yet: llvmpipe runs code it generated at run time
-  (LLVM's JIT, NEON) on four threads, so the suspects are our translation of fresh code, vector registers in memory
-  (below) and the threads' wake-ups. It decides whether GL desktops are usable before G3; start with a PC-sampling
-  profile of a guest running `glmark2` or sway on llvmpipe (`bench/boot/profile.ts` is the tool for boots).
-- **Vector registers in locals** (NEON-heavy code; AES-CBC is latency-bound on V register
-  stores and reloads).
-- Helpers still on real paths: unmasking MSRs, ISB, CASP, exclusive pairs, LSE min/max,
-  LD2–LD4/ST2–ST4, scalar `SHL`, `LD1`/`ST1` single structure, CRC32, the 8-bit PMULL/PMUL (unused
-  by guests measured). None worth a loop alone.
-- MSR left as helpers that end a block: DAIFClr, the regime, FP-control, SPSel and NZCV writes
-  (Alpine: 0.66M MSR (register) and 0.15M MSR (immediate) helper calls). The differential test
-  can't see an unmasking write done inline (no IRQs in its harness): only a distro boot's steps
-  catch it.
-- **User space: what the profile of `alpine_user_jit` says** (2026-10-02, `bench/boot/REPORT.md` "M8: where the
-  userspace benchmark's time goes"; re-profile with `bench/boot/userprof.ts` before and after each of these). In
-  order:
-  1. Done: direct branches to another page of a process chain by the target's VA ([jit.md](jit.md) "Linking";
-     SQLite 12%, Lua 10% and compression 9% faster).
-  2. Done in part: **forward regions** ([jit.md](jit.md) "Compile policy": a batch's blocks that static edges
-     join are one function, each block once, across pages, with calls followed and their returns predicted).
-     Over half of the block-to-block transfers now stay inside a function. **What still leaves one** (per 1000
-     instructions, Lua and SQLite): 27 to 37 direct transfers within a page and 10 to 14 to a successor compiled
-     later (both: into a block that heads another function), 15 to another page by its VA, 10 to 15 returns, 12
-     to 24 other indirect branches. They leave because the target was compiled in **another batch**: a shared
-     callee is hot long before its callers. Not tried: a region entered at more than one block (a `br_table`
-     on the entry PC, v86's shape), so a block compiled earlier could be reached inside a later function without
-     a second copy (blocks compiled twice are 13% of Alpine's). Measured and not built (2026-10-08,
-     `bench/boot/REPORT.md` "M8: what a region entered at more than one block could win"): blocks
-     waiting at keys that are members of a compiled region run 0.01–0.04% of a hot phase's steps
-     interpreted, about 1% of its time at most; the transfers that leave a function target heads.
-  3. **Calls and returns**: done as far as one batch goes (above); copying compiled callees into callers was
-     tried and lost ([jit.md](jit.md) "Tried and not kept"). What is left of them is 4's cost per transfer.
-  4. Done: **indirect transfers** (`BR`, `BLR`, `RET`, and the by-VA links to other pages: 23 to 56 per 1000
-     instructions) probe one VA-keyed table, the transfer cache, where they probed the instruction TLB and then
-     the jump cache ([jit.md](jit.md) "Linking"; Lua 9% and SQLite 5 to 6% faster, the Alpine boot ~1% slower).
-     Left: a miss in the kernel-heavy phases (boot, churn) costs a call to the shared miss function, and a TLBI
-     by VA a 16 KiB scan.
-  5. Done: **the fixed-size memory** ([abi.md](abi.md) "A fixed-size memory"): JIT modules import exact
-     limits, so V8 loads the memory's size once per function, where it reloaded it before each write-back
-     after a call (24 of a typical block's ~85 host instructions on this host; in a hot Lua region ~45% of
-     the samples). The userspace benchmark 6.9% faster in this VM, the boots 5.6 to 7.2%; nothing on macOS
-     or x86_64 (guard pages). Left: **the core's own code** still imports a growable memory (the dispatcher,
-     the helpers, page walks: ~1% of the userspace benchmark's steps are interpreted, but every exit runs
-     core code). Exact limits there need the memory at its final size before the core is instantiated, so
-     an allocator of our own over a region the host gives the core (std's dlmalloc only grows the memory).
-     Measured (2026-10-08, `bench/boot/REPORT.md` "M8: the core's share of the userspace profile"): the core's
-     code is 8 to 19% of the hot phases, 19% of the whole run, so exact limits would give a few percent of a
-     phase at most, in this VM only. Not worth the allocator now.
-  - Done: vector `SQADD`/`UQADD`/`SQSUB`/`UQSUB` on 8- and 16-bit lanes are inline (wasm's `add_sat`/`sub_sat`;
-    FPSR.QC from a compare against the wrapped result), and the scalar forms at every size (i64 arithmetic;
-    compress 9.5% faster in Node, no change measurable in Chromium: unexplained). The vector 32- and 64-bit
-    lanes stay helpers (wasm has no such op).
-  - Not levers there: TLB misses (about 1% of a phase at most), the remaining helpers, the core's own compiler (under
-    1% outside the boot).
-  - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the run's 22 s) are a third Liftoff code
-    and 11 to 18% V8's compiles on the vCPU's thread, as the boot was in M6: nothing new found for them (the
-    module-batching entries below are what there is).
-- **CoreMark's gap to TCG (~70%)**: the same transfers between blocks (above) and the store bounds checks V8
-  keeps on Linux arm64. Don't fit the design to it.
+- **llvmpipe is far too slow under the JIT** ([plans/graphics.md](plans/graphics.md) §16): sway
+  compositing through Mesa's software GL keeps four vCPUs at ~54% for ~3 frames a second at
+  1376×762 (pixman: 4–8%), and a terminal scrolling reaches 9 frames a second (pixman: 46–55). Not
+  profiled yet: llvmpipe runs code it generated at run time (LLVM's JIT, NEON) on four threads, so
+  the suspects are our translation of fresh code, vector registers in memory (below) and the
+  threads' wake-ups. It decides whether GL desktops are usable before G3; start with a PC-sampling
+  profile of a guest running `glmark2` or sway on llvmpipe (`bench/boot/profile.ts` is the tool for
+  boots).
 - **Per-module eviction, coldest first,** instead of whole-cache flushes ([jit.md](jit.md)
-  "Memory"). Since the vCPUs share the cache, a 4-vCPU `go build` loop flushes about once in 5
-  minutes (every ~14 s per vCPU with four private 40 MiB caches); a larger working set (a browser
-  in the guest) is where this counts again. A flush also has every table catch up on the new
-  epoch's modules.
+  "Memory"). With the shared cache a 4-vCPU `go build` loop flushes about once in 5 minutes; a
+  larger working set (a browser in the guest) is where this counts again. A flush also has every
+  table catch up on the new epoch's modules.
   - **What it would do:** evict the modules unused for the longest time, unlink what chains to them,
     null their table slots and reuse them from a free list.
-  - **FIFO by install order was built and dropped** (branch `fifo-evict-attempt`, local, not pushed).
-    Under the 4-vCPU Go load of `bench/stress` it collapsed the guest within 3 min:
-    - ~1200 MIPS fell to 4–100;
-    - the guest reported hard and soft lockups (97 s);
-    - single `vm_run_cpu` calls ran up to 112 s;
-    - the renderer grew to 6.8 GB.
-  - **Why FIFO failed:** the oldest code is the hottest (Go's runtime, compiled first). Dropping it
-    cascades through `linkers` to most of the live code, and modules emptied by the cascade kept
-    their bytes until their turn. So the budget stayed full and every install evicted again.
-  - **What a coldest-first design needs:**
-    - a cheap use signal per module, since blocks run inside V8 without telling the core. For
-      example: a word per module that the core or the host sets on dispatch or jump-cache misses and
-      a sweep clears (a second-chance clock), or the sampling profiler's PCs;
-    - modules released as soon as all their regions are dropped;
-    - `drop_key` removals from `pages` and `pending` that don't scan per key.
-  - **Worth keeping from that branch:**
-    - the explicit `env.jit_release(slot, n)` host signal, in place of `web/vm.ts` detecting a
-      flush by slot numbers restarting;
-    - `drop_key` removing the keys that `linkers` drops from `pages` too, which invalidation leaks
-      today.
+  - **FIFO by install order was built and dropped** (branch `fifo-evict-attempt`, local, not
+    pushed). Under the 4-vCPU Go load of `bench/stress` it collapsed the guest within 3 min: ~1200
+    MIPS fell to 4–100, the guest reported hard and soft lockups (97 s), single `vm_run_cpu` calls
+    ran up to 112 s, the renderer grew to 6.8 GB. The oldest code is the hottest (Go's runtime,
+    compiled first): dropping it cascades through `linkers` to most of the live code, and modules
+    emptied by the cascade kept their bytes until their turn, so the budget stayed full and every
+    install evicted again.
+  - **What a coldest-first design needs:** a cheap use signal per module, since blocks run inside
+    V8 without telling the core (a word per module that the core or the host sets on dispatch or
+    jump-cache misses and a sweep clears, a second-chance clock; or the sampling profiler's PCs);
+    modules released as soon as all their regions are dropped; `drop_key` removals from `pages` and
+    `pending` that don't scan per key.
+  - **Worth keeping from that branch:** the explicit `env.jit_release(slot, n)` host signal, in
+    place of `web/vm.ts` detecting a flush by slot numbers restarting; `drop_key` removing the keys
+    that `linkers` drops from `pages` too, which invalidation leaks today.
   - **Measure it against the flush under the Go load.**
-- Done (2026-10-03): **one code cache for all vCPUs**, each worker installing the same module bytes,
-  whose code V8 shares ([jit.md](jit.md) "Sharing"). Left from it:
+- **`vm_run_cpu` calls of 2 to 4 s under a heavy load** (2026-10-03, the 4-vCPU `go build` loop of
+  `bench/stress` with `--guest-cmd`, Debian, Chromium in the dev VM): with the cache flushing every
+  ~14 s per vCPU and with one flush in 300 s alike; one vCPU peaked at 0.77 s. A chunk is bounded
+  by its step budget, so a call that long is a synchronous compile of a very large batch module (V8
+  on the vCPU's thread), a GC pause (the 256 MiB nudge after a flush can't be all of it: it happens
+  without flushes), or a stall worth fixing (a lock, a DSB wait, an `Atomics.wait`). Time the
+  compile, the instantiation and the run inside the call (the liveness block has room for it):
+  harmless, or a latency problem a GUI guest would feel.
+- **Transfers that still leave a function** (the userspace benchmark's remaining lever:
+  `bench/boot/REPORT.md` from "M8: where the userspace benchmark's time goes"; re-profile with
+  `bench/boot/userprof.ts` before and after). Per 1000 instructions in Lua and SQLite: 27 to 37
+  direct transfers within a page and 10 to 14 to a successor compiled later (both into a block that
+  heads another function), 15 to another page by its VA, 10 to 15 returns, 12 to 24 other indirect
+  branches. They leave because the target was compiled in **another batch**: a shared callee is hot
+  long before its callers. Tried: copies of compiled callees in callers (lost), a region entered at
+  more than one block (measured, ~1% at most): [jit.md](jit.md) "Tried and not kept". Not levers in
+  that profile: TLB misses (~1% of a phase), the remaining helpers, the core's compiler (under 1%
+  outside the boot).
+- **Vector registers in locals** (NEON-heavy code: AES-CBC is latency-bound on the V registers'
+  stores and reloads between instructions; a suspect for llvmpipe).
+- **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a
+  third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread. **Compiling off the vCPU
+  thread** was measured and not built ([jit.md](jit.md) "Tried and not kept"); revisit with a GUI
+  guest (latency).
+- **The transfer cache's costs in kernel-heavy phases** ([jit.md](jit.md) "Linking"): a miss costs
+  a call to the shared miss function, a TLBI by VA a 16 KiB scan (the boot ~1% slower with it).
+- **The shared cache's leftovers** ([jit.md](jit.md) "Sharing"):
+  - one vCPU pays 1–2% (Alpine's boot +1.8%, userspace +1.2%): partly each module's bytes copied
+    for the catch-up even when the table is the only one (a lone table could take them instead);
   - a worker installs every module of the epoch, those its vCPU never runs too (an instance and
     table entries each: small, not measured);
   - a module's bytes stay in the core's heap until every table has it, and a vCPU that never runs
     (offline) holds them until the next flush (at most the 160 MiB budget);
-  - the cache's lock is taken on every jump-cache miss, and held while a batch is planned and
-    emitted (V8 compiles outside it); contention wasn't measured;
-  - **single-threaded phases on 4 parallel vCPUs got 4–5% slower** (`smp_user_jit_4`: Lua 3308 →
-    3436 ms, SQLite 2797 → 2932, n4 each, while churn went 4379 → 2666 and the total 26.8 → 21.9 s;
-    on one vCPU Lua moved 1.1%, so the jump cache's extra load isn't most of it). Not explained by
-    the counters (invalidations are rare, regions as large). Suspects: a process that moves to
-    another vCPU finds that table's jump cache cold and its loop heads counting again to their
-    redirect (each table's hot words are its own), or the lock. Measure per-phase counters.
-  - one vCPU pays 1–2% (Alpine's boot +1.8%, userspace +1.2%): partly each module's bytes copied
-    for the catch-up even when the table is the only one (a lone table could take them instead).
-- **V8's per-function overhead** (the per-module part is done, 2026-10-08: [jit.md](jit.md)
-  "Memory", ~16 KB a module, modules 3,860 → 970 in the userspace benchmark): ~8.5 KB per
-  synthetic function of ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap
-  (the instance's exports, which every function needs for the table). Left to check: whether
-  superseded or invalidated blocks' modules stay alive through sibling functions (a module's
-  code is freed only with all of its functions' instances), which larger modules make likelier.
+  - the cache's lock is taken on every jump-cache miss and held while a batch is planned and
+    emitted (V8 compiles outside it); contention wasn't measured.
+- **V8's per-function overhead** ([jit.md](jit.md) "Memory"): ~8.5 KB per synthetic function of
+  ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap (the instance's exports,
+  which every function needs for the table). Left to check: whether superseded or invalidated
+  blocks' modules stay alive through sibling functions (a module's code is freed only with all of
+  its functions' instances), which larger modules make likelier.
 - **Unexplained ~10 GB samples** in the Go-load runs with the flush and the GC nudge (2 of 4 runs,
   one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
-  mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s sampling.
-  Measure with V8's own counters before trusting the median.
-- **JIT memory in long sessions** (the user, 2026-09-30, a Go compile over the tailnet, a 6 GB tab):
-  understood and bounded by a byte budget with a flush ([jit.md](jit.md) "Memory"); what's left is
-  the items above. The Tailscale client's own memory (a 27 MB wasm Go runtime in its worker)
-  wasn't measured: it needs the headscale test tailnet.
-- **`vm_run_cpu` calls of 2 to 4 s under a heavy load** (2026-10-03, the 4-vCPU `go build` loop of
-  `bench/stress` with `--guest-cmd`, Debian, Chromium in the dev VM): every configuration showed
-  them, with the cache flushing every ~14 s per vCPU (40 MiB) and with one flush in 300 s
-  (160 MiB); one vCPU peaked at 0.77 s. A chunk is bounded by its step budget, so a call that long
-  is either a synchronous compile of a very large batch module (V8 on the vCPU's thread), a GC
-  pause (the 256 MiB nudge after a flush can't be all of it: it happens without flushes), or a
-  stall worth fixing (a lock, a DSB wait, an `Atomics.wait`). Find out which: time the compile,
-  the instantiation and the run inside the call (the liveness block has room for it). Expected
-  and harmless, or a latency problem a GUI guest would feel.
-- **Compiling off the vCPU thread:** measured and not built ([jit.md](jit.md) "Tried and not
-  kept"); revisit with a GUI guest in M8 (latency).
+  mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s
+  sampling. Measure with V8's own counters before trusting the median.
+- **The core's own memory is growable** ([abi.md](abi.md) "A fixed-size memory"): exact limits
+  there need an allocator of our own over a region the host gives the core. The core's code is 8 to
+  19% of the userspace benchmark's hot phases (`bench/boot/REPORT.md` "M8: the core's share of the
+  userspace profile"), so a few percent of a phase at most, and only where wasm bounds checks are
+  explicit (Linux arm64). Not worth the allocator now.
+- Helpers still on real paths: unmasking MSRs, ISB, CASP, exclusive pairs, LSE min/max,
+  LD2–LD4/ST2–ST4, scalar `SHL`, `LD1`/`ST1` single structure, CRC32, saturating add and subtract
+  on 32- and 64-bit vector lanes, the 8-bit PMULL/PMUL (unused by guests measured). None worth a
+  loop alone.
+- MSR left as helpers that end a block: DAIFClr, the regime, FP-control, SPSel and NZCV writes
+  (Alpine: 0.66M MSR (register) and 0.15M MSR (immediate) helper calls). The differential test
+  can't see an unmasking write done inline (no IRQs in its harness): only a distro boot's steps
+  catch it.
+- **CoreMark's gap to TCG (~70%)**: the same transfers between blocks (above) and the store bounds
+  checks V8 keeps on Linux arm64. Don't fit the design to it.
 - kvm-unit-tests `timer` runs slower under the JIT than interpreted (short blocks around timer
   polls).
 - Buildroot's warm boot under the JIT has a 10× wider IQR than the interpreter's (V8 tiering
@@ -299,8 +258,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 
-- Done: **one copy of compiled code for all vCPU workers** ([jit.md](jit.md) "Sharing"; the JIT
-  section above has what's left).
 - **The remaining DSB waits** (~3K per userspace run on 4 vCPUs, 20–60 µs each: same-ASID
   targets, and all-ASID or kernel-range TLBIs) wait for the target's chunk boundary. A 4096-step
   chunk in parallel mode cut the average from 100 to 65 µs and polling before sleeping to 55 µs,
@@ -320,43 +277,37 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   vCPU, from one host's RSS) against `navigator.deviceMemory`, which Chromium caps at 8 GB and
   rounds down; it can't see what else the host is running. Revisit with RAM settings (phase D) or
   if a user's tab gets killed.
-- **Snapshots in parallel SMP** (M8): stop every vCPU worker at a chunk boundary (STOP, all
-  `OUT`), with every maintenance queue drained and no CPU_ON request pending, before saving;
-  round-robin needs nothing new.
 - **Hours-long whole-platform stress** (repeated parallel boots and workloads for hours): deferred
   by the user (2026-09-28) to a later milestone, once more virtio devices and integration features
   exist, when such a run is likelier to catch non-obvious platform-wide issues.
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
-- **The user's own pass** (after phase A's exit, 2026-09-29): "I like what I see", with four
-  rough edges, handled in M8 loop 8: the Keys menu had only Ctrl+Alt+F1 and F2 (now F1 to F12); a
-  Restart once failed with "disk in use" (now a Web Lock orders the overlay's hand-over and
-  restarts don't overlap: [frontend.md](frontend.md) "Overlay hand-over"); `timer.bin` failed
-  under load (hardened: [testing.md](testing.md) "Bare-metal tests"); Debian didn't find its root in Firefox (recorded
-  under "Tests and tools", not fixed). Left from it: whether the user's failure was the
-  overlapping restart that loop 8 reproduced or a browser releasing a lock before the handles
-  (a `NoModificationAllowedError` in the message would say the latter; then a short bounded
-  retry after the lock is the fix); the in-use message comes after a 10 s wait now, with the page
-  in Loading meanwhile (a "waiting for the disk" line would say why).
+- **Settings:** vCPUs and RAM come from `?ncpus=` and machine.ts, no UI (phase D, with the image
+  choice and the embedding API).
+- **Remember the chosen disk across reloads:** a `File` isn't kept; a `FileSystemFileHandle` in IndexedDB (permission asked each session) would let the page boot the user's disk again without the picker (phase B loop 4).
 - **Clipboard for the screen:** paste into tty1 (typed through virtio-input, paced: its queue
   drops past 1024 events) and copy from fbcon; only the serial terminal has both (xterm.js).
   Phase C, host integration.
 - **Keyboard layouts** other than US: the page maps `KeyboardEvent.code` as a US PC keyboard and
   Debian's keymap is US; another layout needs the guest's keymap set to match (loadkeys, or
   `vconsole.keymap=` on the command line). Phase C, host integration.
-- **The Keyboard Lock** in full screen is checked by hand only: headless Playwright's keys
-  bypass the browser's shortcuts, so no test sees Ctrl+W reach the guest.
-- **Settings:** vCPUs and RAM come from `?ncpus=` and machine.ts, no UI (phase D, with the image
-  choice and the embedding API).
+- **Restart's "disk in use"** (the user's pass after phase A, 2026-09-29; loop 8 made restarts
+  not overlap and ordered the overlay's hand-over with a Web Lock: [frontend.md](frontend.md)
+  "Overlay hand-over"): whether the user's failure was that overlap or a browser releasing a lock
+  before the handles is open (a `NoModificationAllowedError` in the message would say the latter;
+  then a short bounded retry after the lock is the fix). The in-use message comes after a 10 s
+  wait, with the page in Loading meanwhile: a "waiting for the disk" line would say why.
 - **The ready marker is a per-machine regexp** over the serial output (Debian: agetty's
   `login: ` at a line's start). A guest that prints after its prompt, logs in automatically or
   has no serial getty would need its own; a guest-side signal (a byte on a port the page owns, a
   systemd unit writing to a device) would be exact. Revisit with image selection (phase D).
-- **No boot-to-login benchmark case:** the page's time to `running` is measured by ad-hoc
-  drivers and the end-to-end test (bench/boot/REPORT.md "M8 loop 6"). Snapshots' resume time needs
-  a tracked baseline: add a `page_debian` case (page load to `running`, fresh profile) then.
-- **Boot time is the page's biggest cost** (~30 s to a login): a snapshot file, or Suspend, resumes a machine instead ([frontend.md](frontend.md) "Snapshots").
+- **After phase B (the page's UEFI path):** EDK2's setup screen says `0 MB RAM` (no SMBIOS;
+  cosmetic); a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
+  EDK2's terminal driver (frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
+  boot; loading a changes file also resets the variable store (the file doesn't carry it).
+- **The Keyboard Lock** in full screen is checked by hand only: headless Playwright's keys
+  bypass the browser's shortcuts, so no test sees Ctrl+W reach the guest.
 
 ## Snapshots (M8 phase C, snapshots lane; [plans/snapshots.md](plans/snapshots.md), [platform.md](platform.md) "Snapshots")
 
@@ -386,7 +337,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   stale entries, or the count of a run with TLB flushes at the same points
   (`alpine-user-snapshots`). Saving TLB contents would need entries re-validated against the
   page tables at restore (they hold host addresses), which is most of a walk.
-- **A tracked benchmark case for the page** (`page_debian`: page load to `running`, a snapshot
+- **A tracked benchmark case for the page** (`page_debian`: page load to `running` with a fresh
+  profile, measured today only by ad-hoc drivers and the end-to-end test; a snapshot
   load to `running`, a suspend and its resume, the file's size and the pause): the lane's numbers
   are the page tests' own timings, two or three runs each (`bench/boot/REPORT.md` "M8 phase C
   exit").
@@ -401,15 +353,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   migration path (or a reader per old version) would keep users' files alive across a format
   change. Prebuilt snapshots shipped with the repository (a Debian that resumes in seconds for a
   first-time visitor) need this, or a rebuild at each format change.
+- **Parallel round trips beyond the tests' guests:** save and restore work in parallel SMP
+  ([plans/snapshots.md](plans/snapshots.md) step 5); not yet run through a snapshot on 4 vCPUs:
+  Buildroot, the litmus and the stress guests, in Node and Chromium.
 - **A held chain the guest overwrote** (it changed a buffer it had given a device) makes the
   machine unsaveable until that queue is reset (`vm_snapshot_size` = `u64::MAX`): only a broken
   guest does it; the page would say so and offer nothing.
 
 ## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [frontend.md](frontend.md) "Network")
 
-- IPv6 (N6) and the card for Alpine (N7, it needs nothing) are done. The `apk add` smoke test and Buildroot's N3 boot (with its Rust twin) are dropped (2026-10-01). Order and details: [plans/networking.md](plans/networking.md) §7.
 - Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); `tests/net/tailnet.sh`'s approval assumes the peer is headscale node 1; IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
+- The Tailscale client's own memory (a 27 MB wasm Go runtime in its worker) wasn't measured: it
+  needs the headscale test tailnet.
 
 ## Tests and tools
 
@@ -442,11 +398,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   from before the docs moved; they're image inputs (editing them makes the images stale), so fix
   the comments with their next rebuild.
 
-- **Remember the chosen disk across reloads:** a `File` isn't kept; a `FileSystemFileHandle` in IndexedDB (permission asked each session) would let the page boot the user's disk again without the picker (phase B loop 4).
-- **After phase B (the page's UEFI path):** EDK2's setup screen says `0 MB RAM` (no SMBIOS;
-  cosmetic); a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
-  EDK2's terminal driver (frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
-  boot; loading a changes file also resets the variable store (the file doesn't carry it).
 - **No consumer left:** `web/bootfs.ts` and `web/ext4.ts` (the ext4 reader that took Debian's
   kernel and initrd out of its disk; only `tests/ext4.test.ts` uses them: remove them or keep them
   for a later feature); `images/stress/` and `bench/stress`/`bench/mem`'s `GO` path route Debian's
