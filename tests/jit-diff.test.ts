@@ -61,6 +61,7 @@ const CLASSES: Record<string, [number, number]> = {
   hints: [0xfffff01f, 0xd503201f],
   // AdvSIMD (M6 loop 4), V registers random.
   'AdvSIMD three same': [0x9f200400, 0x0e200400],
+  'AdvSIMD scalar SQADD, UQADD, SQSUB, UQSUB': [0xdf20dc00, 0x5e200c00],
   'AdvSIMD shift by immediate, modified immediate': [0x9f800400, 0x0f000400],
   'AdvSIMD two-register miscellaneous': [0x9f3e0c00, 0x0e200800],
   'AdvSIMD copy (DUP, INS, UMOV, SMOV)': [0x9fe08400, 0x0e000400],

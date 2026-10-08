@@ -71,6 +71,7 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
         | BSL | BIT | BIF | CMEQ_reg_2 | CMTST_2 | CMGT_reg_2 | CMHI_2 | CMGE_reg_2 | CMHS_2
         | MUL_vec | MLA_vec | MLS_vec | SMAX | SMIN | UMAX | UMIN | SQADD_2 | UQADD_2 | SQSUB_2
         | UQSUB_2 => three_same(c, i),
+        SQADD_1 | UQADD_1 | SQSUB_1 | UQSUB_1 => sat_scalar(c, i),
         SSHR_2 | USHR_2 | SSRA_2 | USRA_2 | SHL_2 | SLI_2 | SRI_2 | SSHLL | USHLL | SHRN => {
             shift_imm(c, i)
         }
@@ -215,6 +216,107 @@ fn three_same(c: &mut Func, i: u32) -> bool {
             ops(c, &[rn, rm], &[t[size]]);
         }
     });
+    true
+}
+
+/// Scalar SQADD/UQADD/SQSUB/UQSUB (`interp::simd_int::three_same`, scalar),
+/// in i64 arithmetic: Vd = the saturated element, zero-extended, and FPSR.QC
+/// set if it saturated. Elements under 64 bits are extended to i64, where the
+/// exact result fits and is clamped; 64-bit ones detect the overflow.
+fn sat_scalar(c: &mut Func, i: u32) -> bool {
+    const A: u32 = 2; // i64 scratch
+    const B: u32 = 3;
+    const R: u32 = 4;
+    const OVF: u32 = 8; // i32 scratch
+    let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let (u, size, sub) = (bit(i, 29), bits(i, 23, 22), bits(i, 15, 11) == 0b00101);
+    let esize = 8 << size;
+    let (add_or_sub, xor, and, shl, shr_s) =
+        (if sub { 0x7d } else { 0x7c }, 0x85, 0x83, 0x86, 0x87);
+    for (l, n) in [(A, rn), (B, rm)] {
+        c.local_get(VCPU).i64_load(V + 16 * n);
+        if esize < 64 {
+            if u {
+                c.i64_const(((1u64 << esize) - 1) as i64).op(and);
+            } else {
+                let s = i64::from(64 - esize);
+                c.i64_const(s).op(shl).i64_const(s).op(shr_s);
+            }
+        }
+        c.local_set(l);
+    }
+    c.local_get(A).local_get(B).op(add_or_sub).local_set(R);
+    if esize < 64 {
+        let (lo, hi) = if u {
+            (0, (1i64 << esize) - 1)
+        } else {
+            (-(1i64 << (esize - 1)), (1i64 << (esize - 1)) - 1)
+        };
+        // OVF = r < lo || r > hi; R = the clamped r.
+        c.local_get(R).i64_const(lo).op(0x53); // i64.lt_s
+        c.local_get(R)
+            .i64_const(hi)
+            .op(0x55)
+            .op(0x72)
+            .local_set(OVF); // i64.gt_s, i32.or
+        c.i64_const(hi)
+            .local_get(R)
+            .local_get(R)
+            .i64_const(hi)
+            .op(0x55)
+            .select();
+        c.local_set(R)
+            .i64_const(lo)
+            .local_get(R)
+            .local_get(R)
+            .i64_const(lo)
+            .op(0x53)
+            .select();
+        c.i64_const(((1u64 << esize) - 1) as i64)
+            .op(and)
+            .local_set(R);
+    } else {
+        // The overflow, and the saturated value it gives.
+        match (u, sub) {
+            (true, false) => c.local_get(R).local_get(A).op(0x54), // r < a (lt_u)
+            (true, true) => c.local_get(A).local_get(B).op(0x54),  // a < b (lt_u)
+            // ((a ^ r) & (b ^ r)) < 0, ((a ^ b) & (a ^ r)) < 0
+            (false, false) => c
+                .local_get(A)
+                .local_get(R)
+                .op(xor)
+                .local_get(B)
+                .local_get(R),
+            (false, true) => c
+                .local_get(A)
+                .local_get(B)
+                .op(xor)
+                .local_get(A)
+                .local_get(R),
+        };
+        if !u {
+            c.op(xor).op(and).i64_const(0).op(0x53);
+        }
+        c.local_set(OVF);
+        match (u, sub) {
+            (true, false) => c.i64_const(-1),
+            (true, true) => c.i64_const(0),
+            _ => c
+                .local_get(A)
+                .i64_const(63)
+                .op(shr_s)
+                .i64_const(i64::MAX)
+                .op(xor),
+        };
+        c.local_get(R).local_get(OVF).select().local_set(R);
+    }
+    c.local_get(OVF).if_();
+    let fpsr = offset_of!(Cpu, fpsr) as u32;
+    c.local_get(VCPU).local_get(VCPU).i64_load(fpsr);
+    c.i64_const(QC).op(0x84).i64_store(fpsr); // i64.or
+    c.end();
+    c.local_get(VCPU).local_get(R).i64_store(V + 16 * rd);
+    c.local_get(VCPU).i64_const(0).i64_store(V + 16 * rd + 8);
     true
 }
 

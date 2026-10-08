@@ -963,3 +963,49 @@ steps interpreted, flushes and compile time per sample). One run each, `results/
   "function signature mismatch"). With one cache a tiered-up member's word was never quieted;
   another table replays the enclosing tier-up after its own member tiered up. `maint.bin` in
   parallel found it about one run in five; a dump of each table's references at the trap named it.
+
+## M8: the core's share of the userspace profile; scalar saturating add and subtract inline
+
+2026-10-08, the dev VM, Node 26 (`perf` over `bench/boot/userprof.ts`, `userprof-perf.ts`) and
+Chromium 153.0.8010.52; commit `7bafed9` against it plus scalar `SQADD`/`UQADD`/`SQSUB`/`UQSUB`
+inline.
+
+**The core's own code** (the dispatcher, the compiler, helper bodies, the allocator, the run loop,
+page walks) is 19% of the main thread's samples over the whole run, 8 to 19% in the hot phases
+(Lua 8.5%, SQLite 14.6%, compress 19.3%) and 27% in the boot. Exact memory
+limits for the core (docs/backlog.md "JIT", item 5) would remove only this VM's explicit bounds
+checks from that share: a few percent of a phase at most, nothing on macOS or x86_64. Not worth
+an allocator of our own now.
+
+| % of each phase's main-thread samples | boot | compress | Lua | churn | SQLite | all |
+|---|---|---|---|---|---|---|
+| guest code (TurboFan + Liftoff) | 55.5 | 74.3 | 88.2 | 81.9 | 79.1 | 70.1 |
+| core: interpreter and helper bodies | 13.2 | 9.0 | 2.8 | 3.2 | 6.9 | 8.7 |
+| core: allocator, std | 4.3 | 2.4 | 1.5 | 0.9 | 2.0 | 2.9 |
+| core: compiling | 4.2 | 0.9 | 0.6 | 0.6 | 1.1 | 2.3 |
+| core: dispatcher | 3.2 | 1.7 | 1.4 | 1.2 | 1.8 | 2.2 |
+| core: run loop, helpers' entry, TLB walks, other | 2.2 | 5.3 | 2.2 | 3.7 | 2.8 | 2.9 |
+| V8 native and builtins | 17.3 | 6.2 | 3.2 | 8.7 | 6.2 | 10.9 |
+
+**What compress's helper share was:** 1.97M calls of the scalar `UQSUB` (`UQSUB_1`), ~9% of the
+phase in `interp::exec`, `simd_int::same` and `jit_exec_mmu`. The vector forms were made inline in
+`7bafed9`, the scalar ones still left `three_same` for the helper. They are inline now (all
+element sizes, in i64 arithmetic: elements under 64 bits clamped, 64-bit ones by their overflow;
+FPSR.QC as in the vector forms; a new differential-test class, three planted bugs caught).
+
+| | before | scalar inline | |
+|---|---|---|---|
+| Node `userprof.ts` compress (A, B, A, B) | 2.31, 2.31 s | 2.09, 2.09 s | −9.5% |
+| Chromium `alpine_user_jit` compress (n12 pooled) | 2371 [IQR 118] | 2395 [174] | +1.0% |
+| its Lua, SQLite | 3488, 2839 | 3580, 2914 | +2.6%, +2.6% |
+| its total | 22,041 [1408] | 22,706 [764] | +3.0% |
+
+- Chromium sees **no gain**: the per-run medians alternate (compress A 2364, 2323, 2494, 2377; B
+  2241, 2463, 2456, 2379), so the spread is the session's, not the build's. The Mac host was busy
+  with the user's own apps (load ~3.5), and every total is ~3 s above the same benchmark's 19 s
+  three days ago; B's +3% is in phases with no `UQSUB` at all (churn +14%). Both builds were loaded
+  as intended (B: 2 more inline sites, 2 fewer helper sites, the same guest steps).
+- **Unexplained:** why a helper that costs Node 0.2 s in this phase costs Chromium nothing
+  measurable. Node profiles have led Chromium here before; a Node-only gain is not a gain.
+- Kept anyway: no guest-visible change, no cost measured, one fewer helper on a path a common
+  guest library takes. `results/m8-sat-scalar/`.

@@ -90,10 +90,13 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
      the helpers, page walks: ~1% of the userspace benchmark's steps are interpreted, but every exit runs
      core code). Exact limits there need the memory at its final size before the core is instantiated, so
      an allocator of our own over a region the host gives the core (std's dlmalloc only grows the memory).
-     Measure what the core's share of a profile is first.
+     Measured (2026-10-08, `bench/boot/REPORT.md` "M8: the core's share of the userspace profile"): the core's
+     code is 8 to 19% of the hot phases, 19% of the whole run, so exact limits would give a few percent of a
+     phase at most, in this VM only. Not worth the allocator now.
   - Done: vector `SQADD`/`UQADD`/`SQSUB`/`UQSUB` on 8- and 16-bit lanes are inline (wasm's `add_sat`/`sub_sat`;
-    FPSR.QC from a compare against the wrapped result). The 32- and 64-bit lanes and the scalar forms stay
-    helpers (wasm has no such op).
+    FPSR.QC from a compare against the wrapped result), and the scalar forms at every size (i64 arithmetic;
+    compress 9.5% faster in Node, no change measurable in Chromium: unexplained). The vector 32- and 64-bit
+    lanes stay helpers (wasm has no such op).
   - Not levers there: TLB misses (about 1% of a phase at most), the remaining helpers, the core's own compiler (under
     1% outside the boot).
   - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the run's 22 s) are a third Liftoff code

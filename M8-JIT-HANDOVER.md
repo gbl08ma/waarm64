@@ -77,12 +77,20 @@ unchanged; no RSS cost. `fixedMemory: false` keeps the growable memory (tested b
 smp.bin). The core module itself still imports a growable memory: exact limits there need an
 allocator of our own (backlog).
 
+## Fourth session (2026-10-08)
+
+- **The core's share of the profile is measured:** 8 to 19% of the hot phases, so exact limits for
+  the core's memory are a small, VM-only lever; set aside (`bench/boot/REPORT.md` "M8: the core's
+  share of the userspace profile").
+- **Scalar `SQADD`/`UQADD`/`SQSUB`/`UQSUB` inline** (`simd::sat_scalar`; `7bafed9` had done the
+  vector 8- and 16-bit lanes only): compress −9.5% in Node, no change measurable in Chromium (the
+  host was busy; unexplained). Kept: no cost, no guest-visible change.
+
 ## Next
 
-The backlog's "JIT", "User space" list, in its order. Not yet measured: the core's own share of a
-profile now (what the core's exact limits could still give), and a region entered at more than one
-block (a `br_table` on the entry PC), which would reach blocks compiled in earlier batches without
-copies.
+The backlog's "JIT", "User space" list, in its order. Not yet tried: a region entered at more than
+one block (a `br_table` on the entry PC), which would reach blocks compiled in earlier batches
+without copies.
 
 ## How to measure
 
@@ -100,6 +108,12 @@ alternate (A, B, A, B). Also `boot_alpine_jit`, `boot_jit`, and on `bench/interp
 `d43a536` and no longer apply: the counters are a dozen `emit::bump` calls, quick to redo.
 
 ## Learned this session
+
+- **`../webpc-base/target` is a symlink to this checkout's `target`:** a build there overwrites
+  this checkout's `webpc_core.wasm` (hard-linked). Copy each build's wasm aside and check them with
+  `sha256sum` before an A/B; rebuild here after building there.
+- **A Node gain may not reach Chromium:** scalar `UQSUB` inline took 9.5% off compress in Node in
+  two pairs and nothing measurable in Chromium (n12). Confirm in Chromium before claiming.
 
 - **In round-robin SMP one JIT cache serves every vCPU** (it moves between their `jit.cache`,
   `vm.rs`), while each has its own TLB. State derived from the cache but kept per vCPU must
