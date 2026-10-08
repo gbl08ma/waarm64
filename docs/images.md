@@ -83,6 +83,15 @@ a distro the project doesn't ship. `images/archarm/build.sh [--out f.qcow2] [--r
   configured IPv4 (IPv6 worked); see [devices.md](devices.md) "net". Reported by hand, not a test.
 - It works under `target/archarm/work` (removed at the end), not `/tmp`: the dev VM's `/tmp` is a small tmpfs that the 8 GiB disk overflows.
 
+## Debian with Chromium (`images/debian-chromium/build.sh`)
+
+**On demand only** (not `images/build.sh`, `SHA256SUMS` or CI): the disk of the complex-app benchmark
+(`bench/apps/`, [benchmarking.md](benchmarking.md)). It boots the pinned Debian (`node tools/debian.ts` first)
+in QEMU through our EDK2 (`tools/uefi-oracle.ts`, TCG, 4 vCPUs, 4 GiB, user-mode networking), points apt at
+snapshot.debian.org at `images/Containerfile`'s date, installs `chromium` (153.0.8010.52, no recommends) and
+`fonts-dejavu-core`, and writes the overlay flattened and compressed: `target/images/debian-chromium/disk.qcow2`,
+732 MiB (3 GiB virtual, 1.1 GB free in the guest), in ~2 min. The page boots it with `?disk=`.
+
 ## Stress workloads in the Debian guest (`images/stress/`)
 
 **Not usable at the moment:** these tools replace Debian's initrd (`target/images/debian/initrd.img`)

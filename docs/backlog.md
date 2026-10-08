@@ -39,8 +39,14 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - No decoded-block cache: each instruction is fetched through `Mem::host` and decoded again
   (`ponytail:` in `interp::step`); FP runs at a sixth of the integer rate (`FMLA`/`FMADD` always
   take the software FMA, vector FP goes lane by lane through `u128`); the MMU copy runs 35% slower
-  than the flat one (every fetch through the TLB). None of it matters while the interpreter is the
-  JIT's reference and fallback.
+  than the flat one (every fetch through the TLB). **It matters now as the price of compiling less**
+  (`bench/apps/REPORT.md` "M8: Chromium in the guest"): Chromium in Debian on 4 vCPUs compiles
+  200–275 MiB of wasm per render at threshold 50, over the 160 MiB budget, so the cache flushes and
+  every render recompiles; at threshold 500 it compiles 77 MiB once and the warm renders are 35–45%
+  faster, but the cold one 26% slower (5% of its steps interpreted at ~80 MIPS). Candidates: a
+  decoded-block tier (decode once, operand fields pre-extracted, the common forms specialized, an
+  inline TLB path, direct links between blocks; invalidated by the JIT's keys and `IC IVAU`), then
+  a threshold sweep on `bench/apps`; tail-call dispatch (`become`, `+tail-call`) as an A/B on top.
 - `Mem::rmw` is a generic CAS loop; the JIT does LSE as single wasm ops. Matters again for M7's
   contention.
 

@@ -24,6 +24,17 @@ device worker). **Chromium numbers are the ones that count**; Node is for iterat
 | `bench/jit/index.html` | `jit_install`, `jit_first_call` |
 | `bench/spike/index.html` | the M0 spike (`node bench/spike/node.ts` in Node) |
 
+**A complex application** (`bench/apps/`, beside the harness; results and journal in `bench/apps/REPORT.md`):
+`node bench/apps/chromium.ts [--ncpus 4] [--json f] [--wasm core.wasm] [--perf N] [page...]` boots the page's
+Debian on images/debian-chromium/build.sh's disk (`?disk=`, a fresh overlay), logs in on the serial terminal and
+times `chromium --headless --screenshot <page>` in the guest, three times by default (`chrome://newtab`: the
+guest's headless Chromium 153 serves the new tab page for every `chrome://` URL; `data:` and `file:` load as
+asked). Per run: guest ms, the guest's user/system/iowait share, major faults, steps, MIPS, the interpreted share
+and every counter's difference (the page's status carries `Vm.stats`). `--wasm` serves another core (A/B without
+rebuilding in between), `--probe '<sh>'` runs one guest command and prints the terminal, `--perf N` records the
+page's renderer during run N (`node bench/apps/perf.ts script.txt --map /tmp/perf-<pid>.map`: by category, with
+V8's map resolving what perf leaves `[unknown]`).
+
 - Boot benchmarks time cold (a fresh `WebAssembly.compile` per boot) and warm boots, to the
   guest's markers and power-off, and **force a GC before each boot** ([v8.md](v8.md) "Module
   reuse"). They set `idleLimitMs`, so a lost wake-up throws instead of hanging.
@@ -130,7 +141,7 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
 
 | KPI | Workload |
 |---|---|
-| Mixed / realistic | `7z b`, compiling a C file with GCC in the guest (heavy code churn) |
+| Mixed / realistic | `7z b`, compiling a C file with GCC in the guest (heavy code churn); a browser: `bench/apps/` (above) |
 | Kernel paths | lmbench `lat_syscall`, `lat_pagefault`, `lat_ctx` |
 | JIT behavior | compile latency p50/p99, % time interpreted, code bytes, invalidations |
 | SMP (M7) | parallel `make` (not in the image yet) |

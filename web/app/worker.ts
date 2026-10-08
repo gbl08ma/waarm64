@@ -476,5 +476,5 @@ async function suspend() {
 
 function status(vm: Vm, ncpus: number, ramMiB: number, uptime: number, loopMaxMs: number, loopAgeMs: number): Status {
   const s = vm.stats();
-  return { ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitFlushes: s.jit.flushes, jitCompileMs: s.jit.compileNs / 1e6, jitSteps: s.jit.steps, jitBytes: s.jit.bytes, irqs: s.irqs, loopMaxMs, loopAgeMs, vcpus: vm.liveness() };
+  return { ncpus, ramMiB, uptime, steps: s.steps, jitBlocks: s.jit.blocks, jitFlushes: s.jit.flushes, jitCompileMs: s.jit.compileNs / 1e6, jitSteps: s.jit.steps, jitBytes: s.jit.bytes, irqs: s.irqs, loopMaxMs, loopAgeMs, vcpus: vm.liveness(), stats: s };
 }
