@@ -16,7 +16,7 @@ import { withDebianLock } from './debian-lock.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const has = (rel: string) => existsSync(new URL(`../target/images/${rel}`, import.meta.url));
-const skip = !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : (!has('debian/disk.qcow2') || !has('edk2/QEMU_EFI.fd')) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!has('debian/disk.qcow2') || !has('edk2/QEMU_EFI.fd')) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
 
 let browser: Browser;
 let base: string;

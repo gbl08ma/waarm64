@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Everything CI runs; works the same locally. CHROMIUM overrides the browser binary.
-# docs/testing.md says which runner covers what. Distro boots: alpine,
-# alpine-user, debian and alpine-uefi run when their images are current;
-# WEBPC_DISTROS (a comma list) overrides which ones. Debian boots only in
-# Chromium, through UEFI under the JIT (~1 min), never natively.
+# What every change runs (~6 min); works the same locally. CHROMIUM overrides the browser binary.
+# docs/testing.md says which runner covers what. Distro boots: alpine, alpine-user and
+# alpine-uefi run when their images are current; WEBPC_DISTROS (a comma list) overrides which
+# ones. The Debian page boots are scripts/ci-debian.sh's (they take turns, ~10 min), the network
+# tests on Debian scripts/ci-net.sh's. The heaviest multi-vCPU runs (WEBPC_LONG_TESTS) are on.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
@@ -16,9 +16,8 @@ step wasm build;  scripts/build-wasm.sh -q
 step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit
 step typecheck;   npx tsc --noEmit
 current() { images/build.sh --check "$1" > /dev/null; }
-export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current debian && echo ,debian)$(current alpine-uefi && echo ,alpine-uefi)}
-# The network tests on Debian (net-guest, page-network, net-tailnet: ~4 min) are scripts/ci-net.sh's;
-# the graphics tests on Debian (page-resize, page-grub-screen, page-cursor: ~100 s alone) are scripts/ci-gfx.sh's.
+export WEBPC_DISTROS=${WEBPC_DISTROS-$(current alpine && echo alpine)$(current alpine-user && echo ,alpine-user)$(current alpine-uefi && echo ,alpine-uefi)}
+export WEBPC_LONG_TESTS=${WEBPC_LONG_TESTS-1}
 # Guest-image tests: run when target/images has the images (a space-separated
 # list) and they're current.
 image_test() {

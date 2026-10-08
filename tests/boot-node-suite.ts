@@ -39,8 +39,8 @@ const image = (rel: string) => readFileSync(new URL(rel, IMAGES));
 const has = (rel: string) => existsSync(new URL(rel, IMAGES));
 const STRESS = process.env.WEBPC_JIT_STRESS === '1';
 const INTERP = process.env.WEBPC_INTERP === '1';
-// The heaviest multi-vCPU runs are scripts/ci-long.sh's (for JIT, SMP and memory-model changes, and milestone ends).
-const longSkip = process.env.WEBPC_LONG_TESTS !== '1' && 'SKIPPED: scripts/ci-long.sh runs it (WEBPC_LONG_TESTS=1)';
+// The heaviest multi-vCPU runs need WEBPC_LONG_TESTS=1, which scripts/ci.sh sets (a plain npm test leaves them out).
+const longSkip = process.env.WEBPC_LONG_TESTS !== '1' && 'SKIPPED: scripts/ci.sh runs it (WEBPC_LONG_TESTS=1)';
 const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean);
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
@@ -326,7 +326,7 @@ const litmusOk = (r: Run) => {
 };
 guest('litmus and stress on 4 vCPUs', () => litmus('-s,100,-r,1', '-n,20000'), litmusOk, { skip: litmusSkip, stress: STRESS, steps: STEPS['litmus-4cpu'], interp: false, max: 5e9 });
 // The JIT's litmus at -r 50 caught V8 folding an address dependency (docs/jit.md "Atomics"; -r 10
-// caught it 1 run in 3); ci.sh runs -r 10 for its time, ci-long.sh -r 50.
+// caught it 1 run in 3); scripts/ci.sh runs -r 50, a plain npm test -r 10.
 for (const [mode, jit, l, s] of [['JIT', 1, longSkip ? '-s,1000,-r,10' : '-s,1000,-r,50', '-n,100000'], ['JIT-check', 3, '-s,100,-r,2', '-n,10000']] as const) {
   test(`parallel: litmus and stress on 4 vCPUs (${mode})`, { skip: litmusSkip || (mode === 'JIT-check' && longSkip) }, async () => {
     const r = await boot({ ...litmus(l, s), parallel: true, idleLimitMs: 30_000 }, jit, 1e12);

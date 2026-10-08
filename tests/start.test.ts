@@ -125,7 +125,7 @@ const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const cached = existsSync(join(downloads(), PIN.file));
 const cold = process.env.WEBPC_START_COLD === '1';
 test('npm start on a fresh copy of the repository: install, build, prepare Debian, serve; the page boots it', {
-  skip: !debian ? 'SKIPPED: set WEBPC_DISTROS=debian' : !cached ? 'SKIPPED: no Debian download (run images/build.sh debian)'
+  skip: !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : !cached ? 'SKIPPED: no Debian download (run images/build.sh debian)'
     : !cold && firmwareStale() && 'SKIPPED: no UEFI firmware (run images/build.sh edk2), or WEBPC_START_COLD=1 to build it in the copy',
   timeout: cold ? 30 * 60_000 : 15 * 60_000, // with the wait for tests/page-debian.test.ts's boots (tests/debian-lock.ts)
 }, () => withDebianLock(async () => {

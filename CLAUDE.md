@@ -64,17 +64,16 @@ Playwright's Chromium and sets `NODE_USE_ENV_PROXY=1`. There `systemd-run` doesn
 ## Commands
 
 ```sh
-scripts/ci.sh                  # everything CI runs (~12 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, Node + Chromium tests, image tests
+scripts/ci.sh                  # what every change runs (~6 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, Node + Chromium tests, image tests, the long multi-vCPU runs
 scripts/ci-net.sh              # the network tests on Debian (~4 min): also when a change touches the network (docs/testing.md)
-scripts/ci-gfx.sh              # the graphics tests on Debian (~100 s): also when a change touches the display (docs/testing.md)
-scripts/ci-long.sh             # the heaviest multi-vCPU runs (~70 s): also for JIT, SMP and memory-model changes, and at milestone ends
+scripts/ci-debian.sh           # Debian on the page (~10 min): also for the page, firmware, devices, disks, snapshots, display, guest-visible changes, track ends (docs/testing.md)
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
 cargo test                     # native core tests
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium; needs the wasm build)
 WEBPC_CORPUS=dp_imm,dp_reg node --test tests/corpus-wasm.test.ts   # corpus groups only (fast JIT iteration)
 node --test tests/jit-diff.test.ts                                 # JIT vs interpreter on random words (WEBPC_JIT_DIFF=<n>)
 WEBPC_LOCKSTEP_STEPS=300000000 node --test tests/jit-lockstep.test.ts   # long lockstep (CI runs 20M)
-WEBPC_DISTROS=alpine,alpine-user,debian scripts/ci.sh   # which distro tests run (default: the current images)
+WEBPC_DISTROS=alpine,alpine-user scripts/ci.sh   # which distro tests run (default: the current Alpine images; Debian is ci-debian.sh's)
 WEBPC_INTERP=1 node --test tests/boot-node*.test.ts     # also the long guests' interpreter runs in Node
 WEBPC_JIT_STRESS=1 node --test tests/boot-node*.test.ts # every Node boot under JIT-stress (hours; not routine)
 cargo test --release --test boot -- --ignored --nocapture      # Buildroot natively (also: kvm_unit_tests, ltp, distros [alpine])
@@ -100,8 +99,9 @@ node bench/spike/memory/run-all.ts   # M0.5 memory suite
 ```
 
 The full benchmark list is in [docs/benchmarking.md](docs/benchmarking.md). **`scripts/ci.sh` must
-pass before any piece of work is considered done** (and `scripts/ci-net.sh` when it touches the network, `scripts/ci-gfx.sh` when it touches the display, `scripts/ci-long.sh` when it touches the JIT, SMP
-or the memory model). **Exception:** a change that only edits docs (`.md` files or code comments)
+pass before any piece of work is considered done** (and `scripts/ci-debian.sh` when it touches the page, the firmware, the devices, disks, snapshots or
+the display, for guest-visible changes and at the end of a milestone or a track; `scripts/ci-net.sh`
+when it touches the network). **Exception:** a change that only edits docs (`.md` files or code comments)
 needs no CI run.
 
 ## Conventions
@@ -182,8 +182,8 @@ their code.**
   the native interpreter run doesn't test). Iterate on the Buildroot guest and Alpine under the
   JIT; Debian boots only through UEFI in Chromium (the page tests, ~1 min under the JIT), never natively, in Node or directly.
 - Multi-hour JIT-stress runs aren't routine: short stress variants catch what they catch.
-- **`scripts/ci.sh` runs alone, in the background** (it is over the Bash tool's cap): start it, wait for its
-  notification, and run no other Chromium, QEMU or benchmark work beside it (a contended run was cancelled by a
+- **`scripts/ci.sh` and `scripts/ci-debian.sh` run alone, one at a time, in the background** (each is at or over the
+  Bash tool's cap): start it, wait for its notification, and run no other Chromium, QEMU or benchmark work beside it (a contended run was cancelled by a
   timeout; a timing-sensitive unit test failed only under its load). `cargo fmt --all` first: it is CI's first step.
 - `tsc` covers `bench/`, the git-ignored files under `bench/results/local/` too; `tests/browser.test.ts` pins the
   ABI number.

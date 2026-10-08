@@ -24,7 +24,7 @@ const buildroot = existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && exists
 const skip = !buildroot && 'SKIPPED: run images/build.sh';
 const debianOn = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const debianImages = existsSync(new URL('debian/disk.qcow2', IMAGES)) && existsSync(new URL('edk2/QEMU_EFI.fd', IMAGES));
-const skipDebian = !debianOn ? 'SKIPPED: set WEBPC_DISTROS=debian' : !debianImages && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
+const skipDebian = !debianOn ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : !debianImages && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
 const BOOT_MS = 240_000;
 
 let browser: Browser;
