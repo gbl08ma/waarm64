@@ -74,7 +74,10 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
      to 24 other indirect branches. They leave because the target was compiled in **another batch**: a shared
      callee is hot long before its callers. Not tried: a region entered at more than one block (a `br_table`
      on the entry PC, v86's shape), so a block compiled earlier could be reached inside a later function without
-     a second copy (blocks compiled twice are 13% of Alpine's).
+     a second copy (blocks compiled twice are 13% of Alpine's). Measured and not built (2026-10-08,
+     `bench/boot/REPORT.md` "M8: what a region entered at more than one block could win"): blocks
+     waiting at keys that are members of a compiled region run 0.01–0.04% of a hot phase's steps
+     interpreted, about 1% of its time at most; the transfers that leave a function target heads.
   3. **Calls and returns**: done as far as one batch goes (above); copying compiled callees into callers was
      tried and lost ([jit.md](jit.md) "Tried and not kept"). What is left of them is 4's cost per transfer.
   4. Done: **indirect transfers** (`BR`, `BLR`, `RET`, and the by-VA links to other pages: 23 to 56 per 1000

@@ -450,6 +450,12 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   small leaf functions (every path returns within 4 or 10 blocks, no calls), it changed nothing:
   few calls qualify. Unlimited, it made 80% more wasm (Alpine's boot 30% slower, churn 20%)
   and no phase faster. The patch is in `bench/boot/results/m8-xpage/`.
+- **Regions entered at more than one block** (a `br_table` on an entry index, v86's shape), so a
+  member entered from outside its region runs there instead of waiting in the interpreter to be
+  compiled again as a head: measured, not built. Such blocks run 0.01–0.04% of the userspace
+  phases' steps interpreted (6–16% of their few dispatches), about 1% of a phase at most, and
+  multi-entry would put an entry parameter on every function (`bench/boot/REPORT.md` "M8: what a
+  region entered at more than one block could win").
 - **Vector registers in locals** wasn't built: no profile asked for it (the boots and CoreMark use
   little NEON). It's the lever for AES-CBC (latency-bound on the V registers' store and reload
   between instructions) and NEON-heavy code generally.

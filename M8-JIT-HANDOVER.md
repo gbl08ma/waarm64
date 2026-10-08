@@ -103,9 +103,11 @@ policy" and "Memory".
 
 ## Next
 
-The backlog's "JIT", "User space" list, in its order. Not yet tried: a region entered at more than
-one block (a `br_table` on the entry PC), which would reach blocks compiled in earlier batches
-without copies.
+The backlog's "User space" list is done or measured: a region entered at more than one block was
+measured and not built (sixth session, `bench/boot/REPORT.md` "M8: what a region entered at more
+than one block could win": about 1% of a hot phase at most). Next from the backlog's "JIT" list:
+the single-threaded phases 4–5% slower on 4 parallel vCPUs (the page's default), then the
+2–4 s `vm_run_cpu` calls under load, vector registers in locals, llvmpipe.
 
 ## How to measure
 

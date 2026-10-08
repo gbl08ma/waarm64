@@ -1087,3 +1087,33 @@ The Mac host wasn't measured.
   bounds what the modules' code costs, so fewer modules make the budget's tab smaller).
 - `memsample.ts` stopped at Debian's first-boot questions since the page stopped passing
   credentials itself: it passes the tests' (`tests/debian-unattended.ts`) now.
+
+## M8: what a region entered at more than one block could win (measured, not built)
+
+2026-10-08, the dev VM, Node 26, `userprof.ts` with a diagnostic core (`results/m8-entries/`:
+`member-entries.patch` against `e53f8f3`, the run's marks, `summarize.mjs`). The backlog's last
+untried idea for transfers that leave a function: a region whose function takes an entry index
+(a `br_table` on it), so a block that is a member of a compiled region is entered there instead of
+waiting in the interpreter until it is compiled again as a head.
+
+What that could save is what today's policy spends on such blocks: the steps they run interpreted
+before their threshold, the dispatcher's misses on them, and the second copy. The diagnostic core
+files every compiled region's members and counts those at the dispatcher:
+
+| phase | steps | interpreted at members (share of steps) | misses at members (of all dispatches) | regions headed by a block that was a member |
+|---|---|---|---|---|
+| boot | 2,364M | 3.87M (0.16%) | 652K (22%) | 2,848 of 23,151 |
+| compress | 2,118M | 0.75M (0.04%) | 123K (16%) | 388 of 1,678 |
+| Lua | 3,206M | 0.28M (0.01%) | 60K (6%) | 304 of 1,754 |
+| churn | 547M | 0.10M (0.02%) | 19K (3%) | 138 of 449 |
+| SQLite | 2,142M | 0.73M (0.03%) | 130K (15%) | 611 of 2,005 |
+
+At the dispatcher's cost (~11 ns at a jump-cache hit, a miss plus the interpreted block a few
+hundred) that is about 1% of compress and SQLite and less of the rest, an upper bound: a member
+entered from outside would still leave the caller's function (a tail call into the region's), as
+it does now into its own region once compiled. The transfers that leave a function in the hot
+phases (27 to 37 per 1000 instructions into blocks that head another function) target heads, which
+multi-entry doesn't change. Its cost would be an entry parameter on every JIT function and every
+call, an entry index in the jump cache and transfer cache entries, and a dispatch at the top of
+each loop region's loop. Not built. The second copies are ~15–30% of each phase's regions; their
+memory is what larger modules already cut.
