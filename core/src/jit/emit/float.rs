@@ -4,13 +4,13 @@
 //! and a result that is normal and above the smallest normal binade, the host's
 //! IEEE operation gives the interpreter's result and leaves FPSR as it is.
 //! Anything else runs the helper. FABS and FNEG are bit operations, inline
-//! always. Operands come from the `Cpu`'s V registers (their low 32 or 64
-//! bits), results go back zero-extended. Callers run [`super::fp_guard`] first.
+//! always. Operands are the V registers' low 32 or 64 bits ([`Func::vlane`]),
+//! results go back zero-extended. Callers run [`super::fp_guard`] first.
 
 use core::mem::offset_of;
 
 use super::{
-    AND, Ctx, EQZ, FPOK, Func, LT_U, Regs, SHR_U, SUB, V, VCPU, W, WC, XOR, fallback, get, set,
+    AND, Ctx, EQZ, FPOK, Func, LT_U, Regs, SHR_U, SUB, VCPU, W, WC, XOR, fallback, get, set, vbit,
     xmask,
 };
 use crate::cpu::Cpu;
@@ -56,12 +56,10 @@ impl F {
     }
     /// Pushes Vn's low 32 or 64 bits as an integer.
     fn load(self, c: &mut Func, n: u32) {
-        c.local_get(VCPU);
-        if self.d {
-            c.i64_load(V + 16 * n);
-        } else {
-            c.i32_load(V + 16 * n);
-        }
+        c.vlane(n, self.esize(), 0);
+    }
+    fn esize(self) -> u32 {
+        if self.d { 64 } else { 32 }
     }
     /// Reinterprets the integer on the stack as this format's float, or back.
     fn to_float(self, c: &mut Func) {
@@ -112,17 +110,14 @@ fn exp_in(c: &mut Func, f: F, l: u32, lo: i64) {
 
 /// Vd = the integer in local `r` of format `f`, zero-extended to 128 bits.
 fn put(c: &mut Func, f: F, rd: u32, r: u32) {
-    c.local_get(VCPU).local_get(r);
-    if !f.d {
-        c.op(0xad); // i64.extend_i32_u
-    }
-    c.i64_store(V + 16 * rd);
-    c.local_get(VCPU).i64_const(0).i64_store(V + 16 * rd + 8);
+    c.vset_scalar(rd, f.esize(), |c| {
+        c.local_get(r);
+    });
 }
 
 /// `if cond { fast } else { the helper runs instruction i }`, with `cond` an
 /// i32 already on the stack.
-fn guarded(c: &mut Func, cx: &Ctx, i: u32, k: usize, written: u32, fast: impl FnOnce(&mut Func)) {
+fn guarded(c: &mut Func, cx: &Ctx, i: u32, k: usize, written: u64, fast: impl FnOnce(&mut Func)) {
     c.hint(true).if_();
     let before: Regs = c.regs;
     fast(c);
@@ -203,7 +198,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }
             exp_in(c, f, r, 2);
             c.op(AND);
-            guarded(c, cx, i, k, 0, |c| put(c, f, rd, r));
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         // Single precision: the product is exact in double, t = RN64(p + a),
         // and RN32(t) is the correctly rounded sum unless t is halfway between
@@ -236,7 +231,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             // t's low 29 fraction bits aren't 1 followed by zeros.
             c.local_get(t).i64_const(0x1fff_ffff).op(AND + W);
             c.i64_const(0x1000_0000).op(0x52).op(AND); // i64.ne
-            guarded(c, cx, i, k, 0, |c| put(c, f, rd, r));
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         // SCVTF/UCVTF from a general register: wasm's converts round to nearest
         // even, and an integer's float is never infinite or denormal.
@@ -256,7 +251,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             f.to_int(c);
             c.local_set(r);
             c.local_get(FPOK);
-            guarded(c, cx, i, k, 0, |c| put(c, f, rd, r));
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         // SCVTF/UCVTF (scalar, the integer in Vn): as from a general register,
         // the integer as wide as the float.
@@ -268,7 +263,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             f.to_int(c);
             c.local_set(r);
             c.local_get(FPOK);
-            guarded(c, cx, i, k, 0, |c| put(c, f, rd, r));
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         // FCVTZS/FCVTZU to a general register (toward zero whatever FPCR
         // says): a normal operand whose integer part fits; the saturating
@@ -329,7 +324,6 @@ use super::VT;
 
 /// SIMD opcodes (0xfd-prefixed).
 mod op {
-    pub const LOAD: u32 = 0x00;
     pub const AND: u32 = 0x4e;
     pub const OR: u32 = 0x50;
     pub const XOR: u32 = 0x51;
@@ -410,16 +404,16 @@ fn lanes_in(c: &mut Func, d: bool, lo: u64) {
 
 /// Pushes Vn.
 fn vreg(c: &mut Func, n: u32) {
-    c.local_get(VCPU).simd_mem(op::LOAD as u8, 0, V + 16 * n);
+    c.vget(n);
 }
 
 /// Vd = the v128 in local `l`, its top half cleared unless `q`.
 fn vput(c: &mut Func, rd: u32, q: bool, l: u32) {
-    c.local_get(VCPU).local_get(l);
+    c.local_get(l);
     if !q {
         c.i64_const(0).simd_lane(0x1e, 1); // i64x2.replace_lane 1
     }
-    c.simd_mem(11, 0, V + 16 * rd); // v128.store
+    c.vset(rd);
 }
 
 /// Replaces the v128 on the stack with a lane mask: all ones where the lane is ±0.
@@ -555,7 +549,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }
             c.simd(op::OR);
             all_lanes(c, d, q, 3);
-            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // Fused, single precision (docs/jit.md "Floating point"): each half through f64x2,
         // t = a × b + d, a lane with t halfway between two singles to the helper.
@@ -626,7 +620,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.v128_const(splat(true, 0x1000_0000)).simd(op::I64X2_EQ);
                 c.simd(op::ANY_TRUE).op(EQZ).op(AND);
             }
-            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // SCVTF/UCVTF, 32-bit lanes: wasm's converts round to nearest even.
         SCVTF_int_4 | UCVTF_int_4 if !d => {
@@ -635,7 +629,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.simd(op::CONVERT_I32X4[(op == UCVTF_int_4) as usize])
                 .local_set(tr);
             c.local_get(FPOK);
-            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // FCVTZS/FCVTZU, 32-bit lanes: normal and in range, then truncated.
         FCVTZS_int_4 | FCVTZU_int_4 if !d => {
@@ -656,7 +650,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.f32_const(bound).simd(op::F32X4_SPLAT).simd(cmp);
             }
             all_lanes(c, false, q, 3);
-            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // FABS, FNEG: bit operations, no flags.
         FABS_2 | FNEG_2 => {
@@ -685,7 +679,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.local_get(ta);
                 lanes_in(c, false, 1);
                 all_lanes(c, false, false, 1);
-                guarded(c, cx, i, k, 0, |c| vput(c, rd, true, tr));
+                guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, true, tr));
             } else {
                 vreg(c, rn);
                 c.simd(op::DEMOTE).local_set(ta);
@@ -707,7 +701,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     c.local_get(ta);
                 }
                 c.local_set(tr);
-                guarded(c, cx, i, k, 0, |c| vput(c, rd, true, tr));
+                guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, true, tr));
             }
         }
         // Compares: no NaN lanes, no denormal ones (FZ flushes them, raising
@@ -748,7 +742,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 plain_lanes(c, d);
             }
             every_lane(c, d, q, if zero { 1 } else { 2 });
-            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // FRINTN/M/P/Z, and FRINTI/X in the FPCR's mode (round to nearest
         // even under FPOK; FRINTX's Inexact is set already): no NaN or
@@ -773,7 +767,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             } else {
                 every_lane(c, d, q, 1);
             }
-            guarded(c, cx, i, k, 0, |c| vput(c, rd, q, tr));
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // FCVTL(2), half to single: exact and without flags but for NaNs (FZ
         // doesn't apply to half precision); with an all-ones exponent excluded,
@@ -799,7 +793,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 .simd(op::AND);
             c.v128_const(splat(false, 0x7c00)).simd(op::I32X4_NE);
             every_lane(c, false, true, 1);
-            guarded(c, cx, i, k, 0, |c| vput(c, rd, true, tr));
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, true, tr));
         }
         // FCVTN(2), single to half: zero lanes, or normal ones from the half's
         // smallest normal binade up whose rounded result is finite (so no
@@ -860,7 +854,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.shuffle(core::array::from_fn(|b| if b < 8 { low[b] } else { 16 }));
             }
             c.local_set(tr);
-            guarded(c, cx, i, k, 0, |c| vput(c, rd, true, tr));
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, true, tr));
         }
         _ => return false,
     }

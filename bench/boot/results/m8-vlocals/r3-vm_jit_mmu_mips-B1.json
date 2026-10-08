@@ -1,0 +1,105 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-10-08T18:23:02.597Z",
+ "commit": "9d7f8d6b39a5",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "vm_jit_mmu_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0001,
+     "avgBlock": 9236.37,
+     "interpretedPct": 5.789,
+     "blocks": 20,
+     "modules": 4,
+     "bytes": 39798,
+     "compileMs": 1.36,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 2,
+     "flagsStored": 29,
+     "condDirect": 23,
+     "condComputed": 0,
+     "condMemory": 2,
+     "blocksPerRegion": 1.45,
+     "backEdges": 13,
+     "tierUps": 2
+    }
+   },
+   "samples": [
+    90.99181073518305
+   ],
+   "median": 90.99181073518305,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "vm_jit_mmu_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest.c EL1 MMU on",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0,
+     "avgBlock": 25965.06,
+     "interpretedPct": 0.035,
+     "blocks": 21,
+     "modules": 5,
+     "bytes": 31746,
+     "compileMs": 0.6,
+     "inlinePct": 100,
+     "inlineStepsPct": 100,
+     "flagsElided": 6,
+     "flagsStored": 55,
+     "condDirect": 42,
+     "condComputed": 0,
+     "condMemory": 10,
+     "blocksPerRegion": 1.54,
+     "backEdges": 13,
+     "tierUps": 2,
+     "helpers": []
+    }
+   },
+   "samples": [
+    3103.1807601357923,
+    3952.569171008065,
+    3929.273084594402,
+    3666.3611377737793,
+    4188.481673432045,
+    3937.007875401559,
+    4282.655244612851,
+    4123.7113421066415,
+    4228.329809325537,
+    4362.0501627262865,
+    4145.077720847321,
+    4301.075270195505,
+    4329.004328026947,
+    4362.0501627262865,
+    4268.943437721472
+   ],
+   "median": 4188.481673432045,
+   "iqr": 347.076734199366,
+   "n": 15
+  }
+ ]
+}

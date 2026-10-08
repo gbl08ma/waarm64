@@ -248,7 +248,14 @@ start one target must get ALREADY_ON or ON_PENDING).
   FP with NaNs, denormals, infinities, zeros and FPCR/FPSR states, and crypto with the FIPS
   vectors' states a third of the time. Flat bus only (the MMU path is lockstep's and the boots').
   A new class shifts the shared seed for later classes: a failure elsewhere may be harness state.
-  It caught all three rustc/LLVM `simd128` miscompiles.
+  It caught all three rustc/LLVM `simd128` miscompiles. The V registers live in locals: only
+  sequences (and regions) see a dirty one not written back before a helper or one not dropped
+  after it, so "NEON, FP and V helpers" mixes inline NEON, FP and V loads and stores with
+  helper-only words on the same V registers (FMLA on doubles, LD2/ST2, FMADD on doubles,
+  FRINTA, UQSHL), from whole registers of FP lanes. On the flat bus a load's slow path never
+  returns normally (outside RAM is an abort), so a load that keeps its V destination's stale
+  local after the helper shows only under the MMU: the Alpine userspace boot caught it, lockstep
+  and Buildroot didn't.
 - **Lockstep:** `WEBPC_LOCKSTEP_STEPS=300000000` for the long run, done at the end of every loop
   that touches semantics (stress runs a tenth).
 - **JIT-stress** (threshold 0, batch 1, a 4-region cache, tier-up after one entry, the stale-code

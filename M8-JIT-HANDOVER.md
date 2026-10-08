@@ -1,4 +1,4 @@
-# M8 JIT performance: handover (2026-10-08)
+# M8 JIT performance: handover (2026-10-08, evening)
 
 A side track of M8, asked for by the user: make general user-space work faster under the JIT. Not
 a milestone phase and it has no kickoff. What was built is in docs/jit.md (and docs/abi.md "A
@@ -25,49 +25,25 @@ Measured and closed (don't redo): copies of compiled callees in callers, a regio
 than one block, forward regions behind a tier-up, exact limits for the core's own memory, the
 shared cache's single-threaded phases (docs/jit.md "Tried and not kept", the backlog).
 
-## Next: vector registers in locals
+Vector registers in locals (2026-10-08, the user's choice after llvmpipe): the V registers live in
+v128 locals under the integer registers' rules (docs/jit.md "Registers in locals"). Chromium: a
+llvmpipe frame 440 → 323 ms on 1 vCPU, 98 → 71 ms on 4 (−27%); `openssl speed`'s NEON paths
+AES-128-CBC 41 → 180 MB/s, GCM ~2×, SHA-256 3.3×; the userspace benchmark, the boots, CoreMark
+and Liftoff-only runs within noise (`bench/boot/REPORT.md` "M8: vector registers in locals").
 
-The user's choice for the next session (docs/backlog.md "JIT": "Vector registers in locals";
-docs/jit.md "Tried and not kept" says why it wasn't built before). Today every inline NEON/FP
-instruction loads its operands from `Cpu::v` (`VCPU` + `V + 16 * n`) and stores its result back,
-so a chain of dependent vector instructions pays a store-to-load round trip per instruction.
+## Next
 
-**Start by re-profiling.** No profile was taken after llvmpipe's NEON went inline. Repeat the one
-in `bench/boot/REPORT.md` "M8: llvmpipe" (perf with `--perf-prof` on the guest of
-`gl_llvmpipe_jit`, split with `bench/boot/userprof-perf.ts`; the ad-hoc driver was
-`bench/results/local/llvmpipe/run.ts`, git-ignored: a copy of `userprof.ts`'s loop with
-`target/images/alpine-gl/rootfs-gl.ext4`, `webpc.lp=0 webpc.gl=10,3,1376,762` on the command line).
-The guest code's share of the rasterizing phase should now dominate; if it doesn't, the lever is
-elsewhere. `--print-wasm-code` on one hot shader block shows the V loads and stores directly.
+No choice made yet: ask the user, or take the top of docs/backlog.md "JIT". Candidates:
+- **The vector FP fast paths' lane checks** (the new item): after V in locals, the hot shader's
+  cost is its per-instruction `all_true` checks (~18% of its samples) and the TLB tag loads of its
+  guest accesses (~11%). Re-profile first as below (`bench/results/local/perf/lp3` has the last
+  one: `perf script -F ip,sym,symoff` on one function, then the instruction histogram).
+- Coldest-first eviction (working sets past 160 MiB), the 2–4 s `vm_run_cpu` calls (latency).
 
-**Baselines** (`d659d18`/`f997fa0`, Chromium 153, dev VM): `gl_llvmpipe_jit` 445 ms a frame,
-`gl_llvmpipe_jit_4` 100 ms; Node's rasterizing phase 4.2 s for 10 frames at ~1150 MIPS;
-`alpine_crypto_jit` (AES-CBC, the other workload the backlog names; latency-bound per
-`bench/interp/REPORT.md` M6.5); `alpine_user_jit` ~18 s and the boots must not regress.
-
-**Where the code is:** the integer registers already live in locals; their model is the one to
-extend (docs/jit.md "Emission": `Regs { valid, dirty }` in `emit.rs`, loaded on first use, written
-back before helper calls and returns, dropped after a helper; `fallback()` flushes before the
-helper and reloads the fast path's state after; regions give each member a fixed entry state from
-a first emission). V accesses to route through a new cache: `vreg`/`put` in `emit/simd.rs`,
-`vreg`/`vput` and the scalar `F::load`/`put` in `emit/float.rs`, `emit/crypto.rs` (13 sites),
-`vload`/`vstore` and `ldst_fp` in `emit.rs` (loads and stores of V registers). Helpers read and
-write `Cpu::v` directly, so dirty V locals must be stored before every helper call (including the
-FP fast paths' own fallbacks) and dropped after. Locals: VT 119–122 and VTMP 124 are v128 scratch
-today. **Liftoff zero-initializes every declared local on every call** (`bench/interp/REPORT.md` M5
-step 6: unused locals cost it ~18%): declare only the V locals a function uses (`compact_locals`)
-and keep once-read V registers as plain loads, as for the integer registers; check `jit_mips`
-and the boots under Liftoff as well as TurboFan.
-
-**Tests:** the differential test's NEON, FP and load/store classes and its sequences ("SHA rounds
-and NEON", "AES rounds and NEON": sequences are where register state crosses instructions), the
-golden corpus through the JIT, lockstep, the exact-step boots. Plant: a dirty V register not
-written back before a helper; a V local not dropped after one; a region edge that doesn't conform
-the V state. Single-instruction classes can't see the first two: add sequence classes that mix
-inline NEON with helper-only instructions (e.g. FMLA on doubles, LD2) on the same registers.
-
-**Other open items** (docs/backlog.md "JIT", top down): coldest-first eviction (working sets past
-160 MiB), the 2–4 s `vm_run_cpu` calls (latency).
+Re-profiling llvmpipe: `perf record -k mono -F 2000 -o x.data env LP=0 GL=10,3,1376,762 OUT=marks.json
+node --perf-prof bench/results/local/llvmpipe/run.ts` (git-ignored driver: `userprof.ts`'s loop with
+`target/images/alpine-gl/rootfs-gl.ext4`), then `bench/boot/userprof-perf.ts` as in its header; the
+hot function's code: `objdump -d` the `jitted-*.so` its samples name.
 
 ## How to measure
 
@@ -130,5 +106,13 @@ Diagnostic counters without new ABI: append `<letter>:<n> <count>` lines to
 - **Input timed by steps is wrong in parallel mode**: the vCPUs' summed steps say nothing about
   how far the boot is (the browser console-input test sent its input before init under load; fixed
   in `f997fa0` by waiting for the prompt).
+- **What catches a V-register bug** (planted, 2026-10-08): a dirty V register not written back
+  before a helper, or not dropped after one, only in sequences and regions (the single-word classes
+  start clean); a load's slow path that keeps its V destination's stale local only under the MMU
+  (on the flat bus that path always aborts): the Alpine userspace boot caught it, lockstep,
+  Buildroot and the crypto kernel didn't. An edge's write-back of what the target holds clean is
+  unreachable in the tests for X registers too (entry states are unions of their edges).
+- **Copying rounds of A/B JSON into one directory:** prefix each round, or the second's
+  `<bench>-A1.json` overwrites the first's.
 - JIT-check and the tests' forced mode form forward regions from any block in reach; JIT-stress (a
   block per batch) makes none. The stale-code checker runs at a region's entries and back-edges.

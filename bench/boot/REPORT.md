@@ -1178,3 +1178,53 @@ scalar code; the 4-vCPU case scales 4.4× over the 1-vCPU one, so the rasterizer
 aren't a cost worth chasing yet. What's left is the inline code itself (vector registers in memory
 between instructions: the backlog). `alpine_user_jit` (alternated A, B twice, n6): every phase
 within 3% (compress −1.3%, Lua −0.6%, churn −2.8%, SQLite −1.3%), noise.
+
+## M8: vector registers in locals
+
+2026-10-08, the dev VM, Chromium 153.0.8010.52; `results/m8-vlocals/` (A: `9d7f8d6`, B: the commit
+that keeps the V registers in v128 locals; `r1-`, `r2-`, `r3-` are the rounds, alternated A, B,
+`liftoff-` the `--config liftoff-only` runs).
+
+**The profile first** (Node, `perf` with `--perf-prof`, 1 vCPU, `gl_llvmpipe_jit`'s guest as in
+"M8: llvmpipe"): with llvmpipe's NEON inline, compiled guest code (TurboFan) was 79% of the
+rasterizing phase's samples, the helper bodies 10%; one shader function half of the phase. Its
+code was the store-to-load round trip the backlog named: per NEON instruction `ldr q, [x6, #V+16n]`
+for each operand, the operation, `str q` back, many of the stores behind an explicit bounds check
+(`sub`, `cmp`, `b.cs`: the VM's Chromium has them, docs/benchmarking.md).
+
+**Built** (docs/jit.md "Registers in locals"): the V registers in v128 locals under the integer
+registers' rules, in the same masks (bits 32–63), so write-back before helpers and returns,
+dropping after helpers, region edges and plain once-read registers apply as they are; the fast
+paths' fallbacks drop their V destinations. Node, the rasterizing phase of 10 frames: 4.25 →
+3.13 s, the same 4,837M steps and pixel hash. After it the hot shader's samples are ~2% V loads and
+stores; the rest is the vector FP fast paths' lane checks (`all_true`: `uminv`, a move to a
+general register, a compare; ~18% of its samples land on the move) and the TLB's tag load for its
+guest accesses (~11%): the backlog.
+
+Chromium (each value the median of a run's samples; medians over runs, the runs in parentheses):
+
+| | A | B | |
+|---|---|---|---|
+| `gl_llvmpipe_jit`, ms a frame | 440 (440, 440) | 323 (327, 320) | −26.5% |
+| warm, ms | 5,300 | 4,977 | −6.1% |
+| `gl_llvmpipe_jit_4`, ms a frame | 98.2 (98, 98) | 70.9 (71, 71) | −27.8% |
+| `alpine_crypto_jit` AES-128-CBC, 16 KiB, MB/s | 41.2 (41, 42) | 179.5 (180, 179) | 4.4× |
+| AES-128-GCM, 16 KiB | 57.1 | 113.7 | 2.0× |
+| AES-256-GCM, 16 KiB | 46.4 | 105.5 | 2.3× |
+| SHA-256, 16 KiB | 96.1 | 312.7 | 3.3× |
+| SHA-1, 16 KiB | 533.8 | 538.5 | +0.9% |
+| `alpine_user_jit` total, ms | 17,766 (17,869, 17,663) | 17,703 (17,711, 17,696) | −0.4% |
+| `boot_alpine_jit` total, ms | 8,419 (5 runs: 8,381–8,474) | 8,447 (8,412–8,594) | +0.3% |
+| `boot_jit` total, ms | 668 | 670 | +0.2% |
+| `jit_coremark_mips` | 2,388 | 2,393 | +0.2% |
+| `jit_mips` | 5,369 | 5,330 | −0.7% |
+| `vm_jit_mmu_mips` | 4,171 | 4,115 | −1.3% |
+| Liftoff only: `boot_alpine_jit` total, ms | 12,550 | 12,613 | +0.5% |
+| Liftoff only: `boot_jit` total, ms | 962 | 961 | −0.1% |
+| Liftoff only: `jit_mips` | 2,367 | 2,362 | −0.2% |
+
+The crypto rows are `openssl speed` with the crypto extensions off (`OPENSSL_armcap=0x81`), i.e.
+the NEON paths: AES-CBC and SHA-256's schedule were latency-bound on the V registers' memory round
+trips (`bench/interp/REPORT.md` M6.5), SHA-1's scalar rounds weren't. Everything else is within
+noise, Liftoff included: its extra v128 locals (declared only where used) cost nothing measurable.
+Each userspace phase moved under 0.3%.

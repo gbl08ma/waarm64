@@ -12,6 +12,9 @@
 //! before a helper call and before the block returns ([`Func::flush`]). The PC
 //! (256) stays in memory.
 //!
+//! The V registers likewise (v128 locals; the `Cpu` holds them at `V +
+//! 16n`): in the same masks, bits 32..=63 (see [`Regs`]).
+//!
 //! NZCV (264) is lazy: a flag-setting instruction keeps its operands (or its
 //! result) in the flag locals and records how its flags would be computed
 //! ([`Flags`]); conditions are computed from those directly where the kind
@@ -57,6 +60,15 @@ pub const VTMP: u32 = 124;
 pub const VT: [u32; 4] = [119, 120, 121, 122];
 /// The block's FP guard (i32; `float::fpa_guard`, M6 loop 5).
 pub const FPOK: u32 = 123;
+/// The V registers' v128 locals, in order of first use: 49..=79, then 96
+/// (between the register locals and SHA's, and after SHA's).
+const VREGS: core::ops::RangeInclusive<u32> = 49..=79;
+const VREG_LAST: u32 = 96;
+
+/// Vn's bit in a register mask ([`Regs`]).
+pub fn vbit(n: u32) -> u64 {
+    1 << (32 + n)
+}
 
 /// Offsets in the `Cpu`.
 pub const PC: u32 = 256;
@@ -64,11 +76,12 @@ const NZCV: u32 = 264;
 const PSTATE: usize = offset_of!(Cpu, pstate);
 
 /// Which register locals hold the register's value (`valid`), and which of
-/// those are newer than the `Cpu` (`dirty`); bit 31 is SP.
+/// those are newer than the `Cpu` (`dirty`); bit 31 is SP, bits 32..=63 are
+/// V0..=V31 ([`vbit`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Regs {
-    valid: u32,
-    dirty: u32,
+    valid: u64,
+    dirty: u64,
 }
 
 impl Regs {
@@ -76,7 +89,7 @@ impl Regs {
     /// (step 8): every register valid on either side, dirty if dirty on
     /// either; each edge conforms to it ([`Func::conform`]). Registers in
     /// `plain` never have a local.
-    pub fn merge(self, o: Regs, plain: u32) -> Regs {
+    pub fn merge(self, o: Regs, plain: u64) -> Regs {
         Regs {
             valid: (self.valid | o.valid) & !plain,
             dirty: (self.dirty | o.dirty) & !plain,
@@ -143,9 +156,10 @@ impl core::ops::AddAssign for Counts {
 #[derive(Default)]
 pub struct Func {
     pub c: Code,
-    /// Each register's local (0: none yet).
-    local: [u32; 32],
+    /// Each register's local (0: none yet), the V registers' from 32.
+    local: [[u32; 32]; 2],
     nregs: u32,
+    nvregs: u32,
     pub regs: Regs,
     pub flags: Flags,
     pub counts: Counts,
@@ -155,9 +169,9 @@ pub struct Func {
     /// written are `plain` in the second (a local costs Liftoff more than it
     /// saves them). Bit masks, not counts: rustc nightly-2026-09-24 with
     /// simd128 miscompiles a `[u8; 32]` compared into a u32 mask (docs/backlog.md).
-    pub read: u32,
-    pub reused: u32,
-    pub plain: u32,
+    pub read: u64,
+    pub reused: u64,
+    pub plain: u64,
     /// The block's offset from the function's entry PC (local 1): a region's
     /// blocks (step 8) share the head's.
     pub base: i64,
@@ -211,7 +225,7 @@ impl Func {
                 || crypto::I32_LOCALS.contains(&i)
             {
                 I32
-            } else if i == VTMP || VT.contains(&i) {
+            } else if i == VTMP || VT.contains(&i) || VREGS.contains(&i) || i == VREG_LAST {
                 V128
             } else {
                 I64
@@ -219,41 +233,116 @@ impl Func {
         })
     }
 
-    /// Register `n`'s local (31 is SP).
+    /// Register `n`'s local (31 is SP, 32 + k is Vk).
     fn local(&mut self, n: u32) -> u32 {
-        let l = &mut self.local[n as usize];
+        let l = &mut self.local[n as usize / 32][n as usize % 32];
         if *l == 0 {
-            *l = FIRST_REG + self.nregs;
-            self.nregs += 1;
+            if n < 32 {
+                *l = FIRST_REG + self.nregs;
+                self.nregs += 1;
+            } else {
+                let k = self.nvregs;
+                *l = if k <= VREGS.end() - VREGS.start() {
+                    VREGS.start() + k
+                } else {
+                    VREG_LAST
+                };
+                self.nvregs += 1;
+            }
         }
         *l
+    }
+
+    /// Pushes register `n`'s value in the `Cpu` (an X register, SP or, from
+    /// 32, a V register).
+    fn load_cpu(&mut self, n: u32) {
+        self.c.local_get(VCPU);
+        if n < 32 {
+            self.c.i64_load(8 * n);
+        } else {
+            self.c.simd_mem(V128_LOAD, 0, V + 16 * (n - 32));
+        }
+    }
+
+    /// Stores register `n`'s local to the `Cpu`.
+    fn store_cpu(&mut self, n: u32) {
+        let l = self.local[n as usize / 32][n as usize % 32];
+        self.c.local_get(VCPU).local_get(l);
+        if n < 32 {
+            self.c.i64_store(8 * n);
+        } else {
+            self.c.simd_mem(V128_STORE, 0, V + 16 * (n - 32));
+        }
     }
 
     /// Loads register `n` from the `Cpu` into its local.
     fn load(&mut self, n: u32) -> u32 {
         let l = self.local(n);
-        self.c.local_get(VCPU).i64_load(8 * n).local_set(l);
+        self.load_cpu(n);
+        self.c.local_set(l);
         self.regs.valid |= 1 << n;
         l
     }
 
-    /// Pushes register `n` (31 is SP) as an i64.
+    /// Pushes register `n` (31 is SP) as an i64; from 32, V register n − 32
+    /// as a v128.
     fn reg(&mut self, n: u32) {
         self.reused |= self.read & 1 << n;
         self.read |= 1 << n;
         if self.plain & 1 << n != 0 {
-            self.c.local_get(VCPU).i64_load(8 * n);
+            self.load_cpu(n);
         } else if self.regs.valid & 1 << n != 0 {
-            let l = self.local[n as usize];
+            let l = self.local[n as usize / 32][n as usize % 32];
             self.c.local_get(l);
         } else {
             let l = self.local(n);
-            self.c.local_get(VCPU).i64_load(8 * n).local_tee(l);
+            self.load_cpu(n);
+            self.c.local_tee(l);
             self.regs.valid |= 1 << n;
         }
     }
 
-    /// Pops an i64 into register `n` (31 is SP).
+    /// Pushes Vn.
+    pub fn vget(&mut self, n: u32) {
+        self.reg(32 + n);
+    }
+
+    /// Pushes lane `lane` of Vn's `esize`-bit lanes (32 or 64) as an i32 or
+    /// i64: from its local, or with a scalar load if Vn has none (`plain`).
+    pub fn vlane(&mut self, n: u32, esize: u32, lane: u32) {
+        let b = 32 + n;
+        if self.plain & 1 << b != 0 {
+            self.reused |= self.read & 1 << b;
+            self.read |= 1 << b;
+            let off = V + 16 * n + esize / 8 * lane;
+            self.c.local_get(VCPU);
+            if esize == 64 {
+                self.c.i64_load(off);
+            } else {
+                self.c.i32_load(off);
+            }
+        } else {
+            self.reg(b);
+            let op = if esize == 64 { 0x1d } else { 0x1b }; // i64x2/i32x4.extract_lane
+            self.c.simd_lane(op, lane as u8);
+        }
+    }
+
+    /// Pops a v128 into Vn.
+    pub fn vset(&mut self, n: u32) {
+        self.set_reg(32 + n);
+    }
+
+    /// Vn = the i32 or i64 (`esize` 32 or 64) `value` pushes, zero-extended.
+    pub fn vset_scalar(&mut self, n: u32, esize: u32, value: impl FnOnce(&mut Func)) {
+        self.c.v128_const(0);
+        value(self);
+        // i64x2/i32x4.replace_lane 0
+        self.c.simd_lane(if esize == 64 { 0x1e } else { 0x1c }, 0);
+        self.vset(n);
+    }
+
+    /// Pops an i64 into register `n` (31 is SP; from 32, a v128 into a V register).
     fn set_reg(&mut self, n: u32) {
         self.reused |= 1 << n;
         let l = self.local(n);
@@ -268,15 +357,14 @@ impl Func {
         while d != 0 {
             let n = d.trailing_zeros();
             d &= d - 1;
-            let l = self.local[n as usize];
-            self.c.local_get(VCPU).local_get(l).i64_store(8 * n);
+            self.store_cpu(n);
         }
         self.regs.dirty = 0;
     }
 
     /// Drops the locals of the registers in `mask` (clean: flushed first),
     /// which something else may have written in the `Cpu`.
-    pub fn forget(&mut self, mask: u32) {
+    pub fn forget(&mut self, mask: u64) {
         debug_assert_eq!(self.regs.dirty & mask, 0);
         self.regs.valid &= !mask;
     }
@@ -383,15 +471,14 @@ impl Func {
         while d != 0 {
             let n = d.trailing_zeros();
             d &= d - 1;
-            let l = self.local[n as usize];
-            self.c.local_get(VCPU).local_get(l).i64_store(8 * n);
+            self.store_cpu(n);
         }
         self.regs.dirty &= to.dirty;
         self.reload(to.valid);
     }
 
     /// Loads the registers in `mask` whose locals aren't valid.
-    fn reload(&mut self, mask: u32) {
+    fn reload(&mut self, mask: u64) {
         let mut m = mask & !self.regs.valid;
         while m != 0 {
             let n = m.trailing_zeros();
@@ -1569,8 +1656,7 @@ pub fn fp_guard(c: &mut Func, cx: &Ctx, i: u32, k: usize) {
 }
 
 /// SIMD&FP loads and stores of one register or a pair, every addressing form
-/// (M6 loop 2): the fast path of [`access`] with the V registers read and
-/// written in the `Cpu`, after the block's [`fp_guard`] and, for an SP base,
+/// (M6 loop 2): the fast path of [`access`], after the block's [`fp_guard`] and, for an SP base,
 /// behind SP's alignment. Structure loads and stores (LD1 & co)
 /// stay helper calls.
 fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
@@ -1600,7 +1686,7 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         LDR_lit_fpsimd => {
             pc_plus(c, here + sext((bits(i, 23, 5) << 2) as u64, 21) as i64);
             c.local_set(ADDR);
-            access(c, cx, i, here, len, false, &[], 0, |c, off| {
+            access(c, cx, i, here, len, false, &[], vbit(rt), |c, off| {
                 vload(c, rt, off, len)
             });
         }
@@ -1625,7 +1711,7 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 2 * len,
                 !load,
                 &guards,
-                if wb { 1 << rn } else { 0 },
+                if wb { 1 << rn } else { 0 } | if load { vbit(rt) | vbit(rt2) } else { 0 },
                 |c, o| {
                     for (r, o) in [(rt, o), (rt2, o + len)] {
                         if load {
@@ -1673,7 +1759,7 @@ fn ldst_fp(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 len,
                 !load,
                 &guards,
-                if wb { 1 << rn } else { 0 },
+                if wb { 1 << rn } else { 0 } | if load { vbit(rt) } else { 0 },
                 |c, off| {
                     if load {
                         vload(c, rt, off, len);
@@ -1701,19 +1787,17 @@ const V128_LOAD64_ZERO: u8 = 93;
 
 /// Vt = the `len` bytes at the host address (+ `off`), zero-extended to 128 bits.
 fn vload(c: &mut Func, t: u32, off: u32, len: u32) {
-    let v = V + 16 * t;
-    c.local_get(VCPU).local_get(HOST);
     match len {
         16 | 8 | 4 => {
             let op =
                 [V128_LOAD32_ZERO, V128_LOAD64_ZERO, V128_LOAD][len.trailing_zeros() as usize - 2];
-            c.simd_mem(op, 0, off).simd_mem(V128_STORE, 0, v);
+            c.local_get(HOST).simd_mem(op, 0, off);
+            c.vset(t);
         }
-        _ => {
-            c.memarg(LOAD_U[len.trailing_zeros() as usize], 0, off)
-                .i64_store(v);
-            c.local_get(VCPU).i64_const(0).i64_store(v + 8);
-        }
+        _ => c.vset_scalar(t, 32, |c| {
+            c.local_get(HOST)
+                .memarg(LOAD32_U[len.trailing_zeros() as usize], 0, off);
+        }),
     }
 }
 
@@ -1736,7 +1820,10 @@ fn ld1_st1(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
     fp_guard(c, cx, i, k);
     get_sp(c, true, rn);
     c.local_tee(BASE).local_set(ADDR);
-    let written = if wb { 1 << rn } else { 0 };
+    let mut written = if wb { 1 << rn } else { 0 };
+    if load {
+        written |= (0..n).map(|r| vbit((rt + r) % 32)).fold(0, |a, b| a | b);
+    }
     access(
         c,
         cx,
@@ -1788,11 +1875,11 @@ fn ld1_st1_lane(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
     let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
     let wb = bit(i, 23);
     let lg = len.trailing_zeros() as usize;
-    let lane = V + 16 * rt + index * len;
+    let index = index as u8;
     fp_guard(c, cx, i, k);
     get_sp(c, true, rn);
     c.local_tee(BASE).local_set(ADDR);
-    let written = if wb { 1 << rn } else { 0 };
+    let written = if wb { 1 << rn } else { 0 } | if load { vbit(rt) } else { 0 };
     access(
         c,
         cx,
@@ -1803,14 +1890,25 @@ fn ld1_st1_lane(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
         &[Guard::sp(rn)],
         written,
         |c, off| {
+            // Lane ops by log2 size: i8x16.replace_lane … i64x2.replace_lane,
+            // the extract_lane_u forms.
+            const REPLACE: [u32; 4] = [0x17, 0x1a, 0x1c, 0x1e];
+            const EXTRACT: [u32; 4] = [0x16, 0x19, 0x1b, 0x1d];
             if load {
-                c.local_get(VCPU).local_get(HOST).memarg(LOAD_U[lg], 0, off);
-                c.memarg(STORE[lg], 0, lane);
+                c.vget(rt);
+                c.local_get(HOST);
+                if lg == 3 {
+                    c.i64_load(off);
+                } else {
+                    c.memarg(LOAD32_U[lg], 0, off);
+                }
+                c.simd_lane(REPLACE[lg], index);
+                c.vset(rt);
             } else {
-                c.local_get(HOST)
-                    .local_get(VCPU)
-                    .memarg(LOAD_U[lg], 0, lane);
-                c.memarg(STORE[lg], 0, off);
+                c.local_get(HOST);
+                c.vget(rt);
+                c.simd_lane(EXTRACT[lg], index);
+                c.memarg(if lg == 3 { STORE[3] } else { STORE32[lg] }, 0, off);
             }
             if wb && rm == 31 {
                 writeback(c, rn, len as i64);
@@ -1828,13 +1926,20 @@ fn ld1_st1_lane(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
 
 /// The low `len` bytes of Vt to the host address (+ `off`).
 fn vstore(c: &mut Func, t: u32, off: u32, len: u32) {
-    let v = V + 16 * t;
-    c.local_get(HOST).local_get(VCPU);
-    if len == 16 {
-        c.simd_mem(V128_LOAD, 0, v).simd_mem(V128_STORE, 0, off);
-    } else {
-        c.i64_load(v)
-            .memarg(STORE[len.trailing_zeros() as usize], 0, off);
+    c.local_get(HOST);
+    match len {
+        16 => {
+            c.vget(t);
+            c.simd_mem(V128_STORE, 0, off);
+        }
+        8 => {
+            c.vlane(t, 64, 0);
+            c.memarg(STORE[3], 0, off);
+        }
+        _ => {
+            c.vlane(t, 32, 0);
+            c.memarg(STORE32[len.trailing_zeros() as usize], 0, off);
+        }
     }
 }
 
@@ -1855,6 +1960,9 @@ const RMW_SIZE: [u8; 4] = [4, 5, 6, 1];
 const LOAD_U: [u8; 4] = [0x31, 0x33, 0x35, 0x29];
 const LOAD_S: [u8; 4] = [0x30, 0x32, 0x34, 0x29];
 const STORE: [u8; 4] = [0x3c, 0x3d, 0x3e, 0x37];
+// i32 loads (zero-extending) and stores by log2 size, up to 4 bytes.
+const LOAD32_U: [u8; 3] = [0x2d, 0x2f, 0x28];
+const STORE32: [u8; 3] = [0x3a, 0x3b, 0x36];
 
 /// Loads `len` bytes at the host address (+ `off`) into Xt: zero-extended,
 /// sign-extended to 64 bits, or (`to32`) sign-extended to 32 and zero-extended.
@@ -1879,7 +1987,7 @@ fn writeback(c: &mut Func, rn: u32, imm: i64) {
 }
 
 /// The register-mask bit of Xt, none for XZR.
-fn xmask(rt: u32) -> u32 {
+fn xmask(rt: u32) -> u64 {
     if rt == 31 { 0 } else { 1 << rt }
 }
 
@@ -1921,7 +2029,7 @@ fn access(
     len: u32,
     write: bool,
     guards: &[Guard],
-    written: u32,
+    written: u64,
     body: impl FnOnce(&mut Func, u32),
 ) {
     let off = match cx.bus {
@@ -1998,7 +2106,7 @@ fn guard(c: &mut Func, g: Guard, len: u32) {
 /// the call and, after it, the ones in `written` (the instruction's
 /// destinations) and any the fast arm loaded are reloaded, so both arms leave
 /// the fast arm's register state. Closes the `if`.
-fn fallback(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, written: u32) {
+fn fallback(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, written: u64) {
     let fast = c.regs;
     c.else_();
     c.regs = before;
@@ -2646,6 +2754,14 @@ mod tests {
         inline(&mut c, i, decode(i), k, cx).then_some(c.c.b)
     }
 
+    /// As [`emit`], the registers written back after (as at a block's end).
+    fn emit_flushed(i: u32) -> Vec<u8> {
+        let mut c = Func::default();
+        assert!(inline(&mut c, i, decode(i), 0, &FLAT));
+        c.flush();
+        c.c.b
+    }
+
     /// `needle` occurs in `hay`.
     fn has(hay: &[u8], needle: &[u8]) -> bool {
         hay.windows(needle.len()).any(|w| w == needle)
@@ -2703,62 +2819,69 @@ mod tests {
     #[test]
     fn simd_fp_loads_and_stores() {
         // ldr q1, [x2]: behind CPACR_EL1.FPEN = 11 at EL0 (896, mask 3 << 20);
-        // v128.load from the host address, v128.store to V1 (304 + 16).
-        let b = emit(0x3dc00041, 0).unwrap();
+        // v128.load from the host address into V1's local, written back to
+        // V1 (304 + 16) at the end.
+        let b = emit_flushed(0x3dc00041);
         assert!(has(
             &b,
             &[0x20, 0, 0x29, 3, 0x80, 7, 0x42, 0x80, 0x80, 0xc0, 1, 0x83]
         ));
-        assert!(has(&b, &[0xfd, 0, 0, 0x80, 0x80, 4, 0xfd, 11, 0, 0xc0, 2]));
+        assert!(has(&b, &[0xfd, 0, 0, 0x80, 0x80, 4, 0x21]));
+        assert!(has(&b, &[0xfd, 11, 0, 0xc0, 2]));
         // At EL1 only FPEN bit 20.
         let b = emit_in(0x3dc00041, 0, &Ctx { el1: true, ..FLAT }).unwrap();
         assert!(has(&b, &[0x42, 0x80, 0x80, 0xc0, 0, 0x83]));
         // ldr s1, [x2]: v128.load32_zero; ldr d1: v128.load64_zero (RAM at 0x10000).
         assert!(has(
             &emit(0xbd400041, 0).unwrap(),
-            &[0xfd, 92, 0, 0x80, 0x80, 4, 0xfd, 11]
+            &[0xfd, 92, 0, 0x80, 0x80, 4, 0x21]
         ));
         assert!(has(
             &emit(0xfd400041, 0).unwrap(),
-            &[0xfd, 93, 0, 0x80, 0x80, 4, 0xfd, 11]
+            &[0xfd, 93, 0, 0x80, 0x80, 4, 0x21]
         ));
-        // ldr h1, [x2]: i64.load16_u to V1's low half, 0 to its high half.
+        // ldr h1, [x2]: i32.load16_u into lane 0 of a zero vector.
         let b = emit(0x7d400041, 0).unwrap();
-        assert!(has(&b, &[0x33, 0, 0x80, 0x80, 4, 0x37, 3, 0xc0, 2]));
-        assert!(has(&b, &[0x42, 0, 0x37, 3, 0xc8, 2]));
-        // str d1, [x2]: V1's low half, i64.store; str q1: v128 both ways.
+        assert!(has(&b, &[0x2f, 0, 0x80, 0x80, 4, 0xfd, 0x1c, 0, 0x21]));
+        // str d1, [x2]: V1 (into its local, 49) is its low lane, i64.store;
+        // str q1: v128 both ways.
         assert!(has(
             &emit(0xfd000041, 0).unwrap(),
-            &[0x29, 3, 0xc0, 2, 0x37, 0, 0x80, 0x80, 4]
+            &[
+                0xfd, 0, 0, 0xc0, 2, 0x22, 49, 0xfd, 0x1d, 0, 0x37, 0, 0x80, 0x80, 4
+            ]
         ));
         assert!(has(
             &emit(0x3d800041, 0).unwrap(),
-            &[0xfd, 0, 0, 0xc0, 2, 0xfd, 11, 0, 0x80, 0x80, 4]
+            &[0xfd, 0, 0, 0xc0, 2, 0x22, 49, 0xfd, 11, 0, 0x80, 0x80, 4]
         ));
         // ldp q1, q2, [x3]: the second 16 bytes on.
-        let b = emit(0xad400861, 0).unwrap();
-        assert!(has(&b, &[0xfd, 0, 0, 0x90, 0x80, 4, 0xfd, 11, 0, 0xd0, 2]));
+        let b = emit_flushed(0xad400861);
+        assert!(has(&b, &[0xfd, 0, 0, 0x90, 0x80, 4, 0x21]));
+        assert!(has(&b, &[0xfd, 11, 0, 0xd0, 2]));
         // ldr q1 with size 1 and opc<1> (UNDEFINED): the helper.
         assert_eq!(emit(0x7dc00041, 0), None);
     }
 
     #[test]
     fn advsimd_integer() {
-        // add v0.4s, v1.4s, v2.4s: vcpu; V1, V2 loaded; i32x4.add; v128.store to V0.
-        let b = emit(0x4ea28420, 0).unwrap();
+        // add v0.4s, v1.4s, v2.4s: V1, V2 loaded into their locals (49, 50);
+        // i32x4.add into V0's (51), written back to V0 at the end.
+        let b = emit_flushed(0x4ea28420);
         assert!(has(
             &b,
             &[
-                0xfd, 0, 0, 0xc0, 2, 0x20, 0, 0xfd, 0, 0, 0xd0, 2, 0xfd, 0xae, 1, 0xfd, 11, 0,
-                0xb0, 2
+                0x20, 0, 0xfd, 0, 0, 0xc0, 2, 0x22, 49, 0x20, 0, 0xfd, 0, 0, 0xd0, 2, 0x22, 50,
+                0xfd, 0xae, 1, 0x21, 51
             ]
         ));
+        assert!(has(&b, &[0xfd, 11, 0, 0xb0, 2]));
         // The block's FP check comes first: CPACR_EL1 (896).
         assert!(b.starts_with(&[0x20, 0, 0x29, 3, 0x80, 7]));
         // add v0.2s: the top half cleared (i64.const 0; i64x2.replace_lane 1).
         assert!(has(
             &emit(0x0ea28420, 0).unwrap(),
-            &[0x42, 0, 0xfd, 0x1e, 1, 0xfd, 11]
+            &[0x42, 0, 0xfd, 0x1e, 1, 0x21]
         ));
         // ushr v0.4s, v1.4s, #32: 0 (the lane width, which wasm would take as 0).
         assert!(has(

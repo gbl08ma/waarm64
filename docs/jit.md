@@ -304,15 +304,21 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
 
 ## Emission (`emit.rs`)
 
-- **Registers in locals:** each guest register a block's inline code touches lives in an i64
-  local, loaded on first use and written back before helper calls and returns; after a helper
-  every local is dropped. The load/store slow path writes back before its helper and reloads the
-  instruction's destinations after it, so both arms merge. Only the locals a function uses are
-  declared (`wasm::Code::compact_locals`: Liftoff zero-initializes each one per call); registers
-  read once and never written stay plain loads. In regions, each member starts in a fixed
-  register state (the merge of its incoming edges, found by a first emission) and every edge
-  conforms to it; the head's state is loaded once before the loop.
-  Locals map: i64 scratch 2..=5, i32 6..=9, VT 119–122, FPOK 123, VTMP 124, TAKEN 125.
+- **Registers in locals:** each guest register a block's inline code touches lives in a local
+  (an i64 for X0–X30 and SP, a v128 for V0–V31), loaded on first use and written back before
+  helper calls and returns; after a helper every local is dropped. One pair of masks (`Regs`:
+  valid, dirty; bits 0–31 the X registers and SP, 32–63 the V registers) tracks both kinds, so
+  every rule below holds for both. The slow path of a load/store or of an FP fast path writes
+  back before its helper and drops the instruction's destinations (`written`, V ones included)
+  after it, reloading what the fast arm had loaded, so both arms merge. Only the locals a
+  function uses are declared (`wasm::Code::compact_locals`: Liftoff zero-initializes each one
+  per call); registers read once and never written stay plain loads (for a V register read as a
+  scalar lane, a scalar load: `Func::vlane`). In regions, each member starts in a fixed register
+  state (the merge of its incoming edges, found by a first emission) and every edge conforms to
+  it; the head's state is loaded once before the loop.
+  Locals map: i64 scratch 2..=5, i32 6..=9, the flag locals 10..=16, X registers from 17 (in
+  order of first use), V registers 49..=79 then 96, SHA's i32s 80..=95, PMULL's i64s 100..=112,
+  VT 119–122, FPOK 123, VTMP 124, TAKEN 125.
 - **Lazy NZCV:** ADDS/SUBS, ADCS/SBCS, ANDS/BICS keep their operands (or result) in flag locals
   and record their kind; a setter replaced by the next one emits no flag code. Conditions (B.cond,
   CSEL & co, CCMP, ADC's carry) come straight from the operands where the kind allows (SUBS: EQ,
@@ -481,9 +487,6 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   phases' steps interpreted (6–16% of their few dispatches), about 1% of a phase at most, and
   multi-entry would put an entry parameter on every function (`bench/boot/REPORT.md` "M8: what a
   region entered at more than one block could win").
-- **Vector registers in locals** wasn't built: no profile asked for it (the boots and CoreMark use
-  little NEON). It's the lever for AES-CBC (latency-bound on the V registers' store and reload
-  between instructions) and NEON-heavy code generally.
 
 ## Validation
 

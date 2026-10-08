@@ -1,6 +1,6 @@
 //! AdvSIMD integer instructions and SIMD&FP register moves as wasm SIMD128
-//! (M6 loop 4). Operands come from the `Cpu`'s V registers and results go
-//! back there (vector registers in locals are loop 3). Each emitter mirrors
+//! (M6 loop 4). Operands and results are the V registers' locals
+//! ([`Func::vget`], [`Func::vset`]). Each emitter mirrors
 //! its interpreter handler (`interp::simd`, `interp::simd_int`): the same
 //! encodings are left to the helper (UNDEFINED, or forms not covered here),
 //! and the same lanes are computed; a 64-bit arrangement (Q = 0) clears the
@@ -8,7 +8,7 @@
 
 use core::mem::offset_of;
 
-use super::{Func, V, V128_LOAD, V128_STORE, VCPU, VTMP, get, set};
+use super::{Func, VCPU, VTMP, get, set};
 use crate::cpu::Cpu;
 use crate::decode::Op;
 use crate::interp::simd::{adv_simd_expand_imm, vfp_expand_imm};
@@ -92,17 +92,16 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
 
 /// Pushes Vn.
 fn vreg(c: &mut Func, n: u32) {
-    c.local_get(VCPU).simd_mem(V128_LOAD, 0, V + 16 * n);
+    c.vget(n);
 }
 
 /// Vd = what `value` pushes, its top half cleared unless `q`.
 fn put(c: &mut Func, rd: u32, q: bool, value: impl FnOnce(&mut Func)) {
-    c.local_get(VCPU);
     value(c);
     if !q {
         c.i64_const(0).simd_lane(REPLACE[3], 1);
     }
-    c.simd_mem(V128_STORE, 0, V + 16 * rd);
+    c.vset(rd);
 }
 
 /// `x` (the low `esize` bits) in every `esize`-bit lane of a u128.
@@ -236,7 +235,7 @@ fn sat_scalar(c: &mut Func, i: u32) -> bool {
     let (add_or_sub, xor, and, shl, shr_s) =
         (if sub { 0x7d } else { 0x7c }, 0x85, 0x83, 0x86, 0x87);
     for (l, n) in [(A, rn), (B, rm)] {
-        c.local_get(VCPU).i64_load(V + 16 * n);
+        c.vlane(n, 64, 0);
         if esize < 64 {
             if u {
                 c.i64_const(((1u64 << esize) - 1) as i64).op(and);
@@ -317,8 +316,9 @@ fn sat_scalar(c: &mut Func, i: u32) -> bool {
     c.local_get(VCPU).local_get(VCPU).i64_load(fpsr);
     c.i64_const(QC).op(0x84).i64_store(fpsr); // i64.or
     c.end();
-    c.local_get(VCPU).local_get(R).i64_store(V + 16 * rd);
-    c.local_get(VCPU).i64_const(0).i64_store(V + 16 * rd + 8);
+    c.vset_scalar(rd, 64, |c| {
+        c.local_get(R);
+    });
     true
 }
 

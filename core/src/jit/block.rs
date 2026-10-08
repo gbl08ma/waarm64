@@ -742,7 +742,7 @@ struct Emission {
 /// One emission of region `r` with the registers in `plain` read without a
 /// local, each member starting in its `entry` register state and `fin` flag
 /// state.
-fn emit_region(e: &Env, r: &Region, plain: u32, entry: &[emit::Regs], fin: &[In]) -> Emission {
+fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]) -> Emission {
     let n = r.blocks.len();
     let head = r.blocks[0].va;
     let mut c = emit::Func::default();

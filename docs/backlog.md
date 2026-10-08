@@ -95,8 +95,14 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   more than one block (measured, ~1% at most): [jit.md](jit.md) "Tried and not kept". Not levers in
   that profile: TLB misses (~1% of a phase), the remaining helpers, the core's compiler (under 1%
   outside the boot).
-- **Vector registers in locals** (NEON-heavy code: AES-CBC is latency-bound on the V registers'
-  stores and reloads between instructions; llvmpipe's shaders, now that their NEON is inline).
+- **The vector FP fast paths' lane checks** (llvmpipe's shaders; `bench/boot/REPORT.md` "M8:
+  vector registers in locals"): with the V registers in locals, each inline vector FP
+  instruction's cost is mostly its check that every lane is on the fast path, reduced to an i32
+  per instruction (`all_true`: `uminv`, a move to a general register, a compare before the `if`;
+  ~18% of the hot shader's samples land on the move). Ideas: one check for a run of FP
+  instructions, its fallback re-running the run from saved inputs; cheaper masks (float compares
+  on `|x|` instead of exponent arithmetic). The same shader's guest loads spend ~11% on the TLB's
+  tag load.
 - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a
   third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread. **Compiling off the vCPU
   thread** was measured and not built ([jit.md](jit.md) "Tried and not kept"); revisit with a GUI

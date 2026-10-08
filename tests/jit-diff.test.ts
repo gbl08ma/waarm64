@@ -453,9 +453,22 @@ const HELPERS = [
   (d: number, n: number) => 0x9e670000 | (n << 5) | d, // fmov dd, xn (likewise)
   (d: number, n: number) => 0x9e780000 | (n << 5) | d, // fcvtzs xd, dn (a helper that writes an X register)
 ];
+// Helper-only words on V registers, among inline NEON, FP and V loads and
+// stores on the same few registers: a dirty V local must be written back before
+// each, and dropped after the ones that write V (V registers in locals).
+const VHELPERS = [
+  (d: number, n: number) => 0x4e62cc00 | (n << 16) | (n << 5) | d, // fmla vd.2d, vn.2d, vn.2d
+  (d: number, n: number) => 0x4c408800 | (n << 5) | d, // ld2 {vd.4s, vd+1.4s}, [xn]
+  (d: number, n: number) => 0x4c008800 | (n << 5) | d, // st2 {vd.4s, vd+1.4s}, [xn]
+  (d: number, n: number) => 0x1f420c00 | (n << 16) | (d << 10) | (n << 5) | d, // fmadd dd, dn, dn, dd
+  (d: number, n: number) => 0x6e218800 | (n << 5) | d, // frinta vd.4s, vn.4s
+  (d: number, n: number) => 0x6ea24c00 | (n << 16) | (d << 5) | d, // uqshl vd.4s, vd.4s, vn.4s
+];
+const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 2 sources', 'FP and general register moves, conversions'].map((n) => CLASSES[n]);
+const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
 const ALU = ['add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);
-const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean; aes?: boolean; sha?: boolean }> = {
+const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean; aes?: boolean; sha?: boolean; vec?: boolean }> = {
   'ALU, flags and conditions': { pool: ALU, helpers: false },
   'loads, stores and ALU': { pool: [...ALU, ...Object.values(MEMORY), ...Object.values(MEMORY)], helpers: false },
   'with helper calls': { pool: [...ALU, ...Object.values(MEMORY)], helpers: true },
@@ -464,6 +477,8 @@ const SEQUENCES: Record<string, { pool: [number, number][]; helpers: boolean; ae
   // SHA-256 rounds and schedule (M6.5 loop 6): the fused triple among SHA words and NEON.
   'SHA rounds and NEON': { pool: [CLASSES['SHA three-register'], CLASSES['SHA two-register'], CLASSES['AdvSIMD three same']], helpers: false, sha: true },
   'AES rounds and NEON': { pool: [CLASSES['AES'], CLASSES['AdvSIMD three same'], CLASSES['AdvSIMD copy (DUP, INS, UMOV, SMOV)'], MEMORY['SIMD&FP load/store, unsigned offset']], helpers: false, aes: true },
+  // V registers whole FP lanes of one size most of the time, so the vector fast paths (and their fallbacks) run.
+  'NEON, FP and V helpers': { pool: [...NEON, ...VMEM], helpers: false, vec: true },
 };
 /** mov S, A; sha256h A, E, W; sha256h2 E, S, W (fused by the JIT), one register sometimes off. */
 function shaTriple(): number[] {
@@ -491,7 +506,7 @@ function fewRegs(w: number) {
   return w >>> 0;
 }
 
-for (const [name, { pool, helpers, aes, sha }] of Object.entries(SEQUENCES)) test(`JIT vs interpreter, sequences: ${name}`, () => {
+for (const [name, { pool, helpers, aes, sha, vec }] of Object.entries(SEQUENCES)) test(`JIT vs interpreter, sequences: ${name}`, () => {
   const { ex, jit, ca32, cb32, cpus, run, counts, allocated, data } = setup(4 * SLOT * SEQS);
   /** A random allocated word of a class in `from`, on few registers. */
   const draw = (from: [number, number][]) => {
@@ -506,6 +521,7 @@ for (const [name, { pool, helpers, aes, sha }] of Object.entries(SEQUENCES)) tes
     const words = Array.from({ length: n }, (_, k) => {
       if (k === n - 1 && rand32() % 2 === 0) return draw(LAST);
       if (helpers && rand32() % 5 === 0) return pick(HELPERS)(pick(REGS.slice(0, 5)), pick(REGS)) >>> 0;
+      if (vec && rand32() % 4 === 0) return pick(VHELPERS)(pick(REGS.slice(0, 5)), pick(REGS.slice(0, 5))) >>> 0;
       return draw(pool);
     });
     // Pairs replace words, the length stays n (a slot holds 16 words).
@@ -539,6 +555,14 @@ for (const [name, { pool, helpers, aes, sha }] of Object.entries(SEQUENCES)) tes
           const v = rand32() % 3 === 0 ? CRYPTO_STATES[rand32() % CRYPTO_STATES.length] : rand64() | rand64() << 64n;
           [va[2 * r], va[2 * r + 1]] = [v & M64, v >> 64n];
         }
+      }
+      if (vec) {
+        // FPSR.IXC mostly set and FPCR the default (the FP fast paths need both).
+        const va = new BigUint64Array(a.buffer, a.byteOffset + 304, 66);
+        const mode = rand32() % 3;
+        const lane = (d: boolean) => (rand32() % 8 === 0 ? fpValue(d) : fpPlain(d));
+        for (let r = 0; r < 64; r++) va[r] = mode === 0 ? lane(true) : mode === 1 ? lane(false) | lane(false) << 32n : rand64();
+        [va[64], va[65]] = [rand32() % 4 === 0 ? BigInt(rand32() & 0x1f) << 22n : 0n, rand32() % 4 === 0 ? 0n : 16n];
       }
       new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES)); // all of it: V too (a skipped run may leave V different)
       // Exactly the sequence: a final branch is its last step (where it goes may be data).

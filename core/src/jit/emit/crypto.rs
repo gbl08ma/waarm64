@@ -11,7 +11,7 @@
 
 use core::mem::offset_of;
 
-use super::{Func, V, V128_LOAD, V128_STORE, VCPU, VT};
+use super::{Func, V128_LOAD, VCPU, VT};
 use crate::crypto::{INV_NESTED, NESTED};
 use crate::decode::{Op, decode};
 use crate::interp::bits;
@@ -103,7 +103,6 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
                 && decode(next) == if dec { AESIMC } else { AESMC }
                 && bits(next, 4, 0) == rd
                 && bits(next, 9, 5) == rd;
-            c.local_get(VCPU);
             vreg(c, rd);
             vreg(c, rn);
             c.simd(XOR);
@@ -117,26 +116,25 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
                 }
                 c.fused = true;
             }
-            c.simd_mem(V128_STORE, 0, V + 16 * rd);
+            c.vset(rd);
         }
         AESMC | AESIMC => {
-            c.local_get(VCPU);
             vreg(c, rn);
             if op == AESMC {
                 mix_columns(c);
             } else {
                 inv_mix_columns(c);
             }
-            c.simd_mem(V128_STORE, 0, V + 16 * rd);
+            c.vset(rd);
         }
         PMULL if bits(i, 23, 22) == 3 => pmull64(c, i),
         SHA1C | SHA1P | SHA1M => sha1(c, i, op),
         SHA1H => {
             // The rotation by 30 of Sn, the rest of Vd cleared.
-            c.local_get(VCPU).local_get(VCPU).i32_load(V + 16 * rn);
-            c.i32_const(30).op(I32_ROTL).op(0xad); // i64.extend_i32_u
-            c.i64_store(V + 16 * rd);
-            c.local_get(VCPU).i64_const(0).i64_store(V + 16 * rd + 8);
+            c.vset_scalar(rd, 32, |c| {
+                c.vlane(rn, 32, 0);
+                c.i32_const(30).op(I32_ROTL);
+            });
         }
         SHA1SU0 | SHA1SU1 | SHA256SU0 | SHA256SU1 => schedule(c, i, op),
         SHA256H | SHA256H2 => sha256(c, i, op == SHA256H2),
@@ -174,9 +172,11 @@ const HOLES: [i64; 4] = [
 /// or carry-less multiply, and `i64x2.mul` has no arm64 instruction).
 fn pmull64(c: &mut Func, i: u32) {
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
-    let half = 8 * bits(i, 30, 30);
-    c.local_get(VCPU).i64_load(V + 16 * rn + half).local_set(PA);
-    c.local_get(VCPU).i64_load(V + 16 * rm + half).local_set(PB);
+    let half = bits(i, 30, 30);
+    c.vlane(rn, 64, half);
+    c.local_set(PA);
+    c.vlane(rm, 64, half);
+    c.local_set(PB);
     // lo = a0·b0, hi = a1·b1, mid = (a0 + a1)(b0 + b1) + lo + hi.
     let lo32 = |c: &mut Func, l: u32| {
         c.local_get(l).i64_const(0xffff_ffff).op(I64_AND);
@@ -203,20 +203,19 @@ fn pmull64(c: &mut Func, i: u32) {
         .local_get(PHI)
         .op(I64_XOR)
         .local_set(PMID);
-    c.local_get(VCPU);
     c.local_get(PLO)
         .local_get(PMID)
         .i64_const(32)
         .op(I64_SHL)
         .op(I64_XOR);
-    c.i64_store(V + 16 * rd);
-    c.local_get(VCPU);
+    c.simd(I64X2_SPLAT);
     c.local_get(PHI)
         .local_get(PMID)
         .i64_const(32)
         .op(I64_SHR_U)
         .op(I64_XOR);
-    c.i64_store(V + 16 * rd + 8);
+    c.simd_lane(I64X2_REPLACE, 1);
+    c.vset(rd);
 }
 
 /// The 64-bit carry-less product of the two 32-bit values on the stack (x
@@ -266,19 +265,23 @@ const I32_ROTR: u8 = 0x78;
 const I32X4_SHL: u32 = 0xab;
 const I32X4_SHR_U: u32 = 0xad;
 const I32X4_ADD: u32 = 0xae;
+const I32X4_SPLAT: u32 = 0x11;
+const I32X4_REPLACE: u32 = 0x1c;
+const I64X2_SPLAT: u32 = 0x12;
+const I64X2_REPLACE: u32 = 0x1e;
 
 /// Lane `e` of Vn onto the stack.
 fn lane(c: &mut Func, n: u32, e: u32) {
-    c.local_get(VCPU).i32_load(V + 16 * n + 4 * e);
+    c.vlane(n, 32, e);
 }
 
 /// Vd's four lanes from locals `x`.
 fn store_lanes(c: &mut Func, rd: u32, x: [u32; 4]) {
-    for (e, &l) in x.iter().enumerate() {
-        c.local_get(VCPU)
-            .local_get(l)
-            .i32_store(V + 16 * rd + 4 * e as u32);
+    c.local_get(x[0]).simd(I32X4_SPLAT);
+    for (e, &l) in x.iter().enumerate().skip(1) {
+        c.local_get(l).simd_lane(I32X4_REPLACE, e as u8);
     }
+    c.vset(rd);
 }
 
 /// SHAchoose, SHAparity, SHAmajority of locals x, y, z onto the stack.
@@ -442,7 +445,6 @@ fn schedule(c: &mut Func, i: u32, op: Op) {
     use Op::*;
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
     let (a, b) = (VT[0], VT[1]);
-    c.local_get(VCPU);
     match op {
         SHA1SU0 => {
             // (n.lo : d.hi) ^ d ^ m
@@ -507,12 +509,12 @@ fn schedule(c: &mut Func, i: u32, op: Op) {
             c.shuffle([0, 1, 2, 3, 4, 5, 6, 7, 24, 25, 26, 27, 28, 29, 30, 31]);
         }
     }
-    c.simd_mem(V128_STORE, 0, V + 16 * rd);
+    c.vset(rd);
 }
 
 /// Pushes Vn.
 fn vreg(c: &mut Func, n: u32) {
-    c.local_get(VCPU).simd_mem(V128_LOAD, 0, V + 16 * n);
+    c.vget(n);
 }
 
 /// The vector on the stack with its bytes permuted by constant `k`'s indices.
