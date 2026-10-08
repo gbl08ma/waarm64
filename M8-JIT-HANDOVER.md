@@ -1,49 +1,75 @@
-# M8 JIT performance: handover (2026-10-08, evening)
+# M8 JIT performance: handover (2026-10-09)
 
-A side track of M8, asked for by the user: make general user-space work faster under the JIT. Not
-a milestone phase and it has no kickoff. What was built is in docs/jit.md (and docs/abi.md "A
-fixed-size memory"); the measurements are in `bench/boot/REPORT.md` from "M8: where the userspace
-benchmark's time goes" on; what's open is docs/backlog.md "JIT", most promising first.
+A side track of M8, asked for by the user: make general and "complex app" work faster. Not a
+milestone phase; no kickoff. How things work is in docs/jit.md and docs/cpu.md "The block
+interpreter"; the measurements in `bench/boot/REPORT.md`, `bench/apps/REPORT.md` and
+`bench/interp/REPORT.md` (the M8 sections at their ends); what's open in docs/backlog.md
+"Interpreter" and "JIT", most promising first.
 
 ## Where it stands
 
-`alpine_user_jit` in Chromium on the dev VM went from 24.2 s (`d43a536`) to ~18 s: cross-page
-chaining by VA, forward regions, the transfer cache, the fixed-size memory, then fewer, larger
-modules (−4.2%). The boots: Alpine's ~9.95 → 8.6 s, Buildroot's 768 → 667 ms. On 4 vCPUs the
-shared code cache is 25% faster than a cache per vCPU in every phase (rechecked 2026-10-08). On the
-Mac host's Chromium the userspace benchmark is ~14 s (no explicit bounds checks there: check work
-on the Mac before ranking it by a VM profile, docs/benchmarking.md).
+- **The JIT** (to 2026-10-08): `alpine_user_jit` 24.2 → ~18 s in Chromium on the dev VM; V registers
+  in v128 locals made llvmpipe and openssl's NEON 1.3–4× faster (`bench/boot/REPORT.md`).
+- **The complex-app benchmark** (`c93b0f6`): `bench/apps/chromium.ts` boots the page's Debian with
+  Chromium installed (`images/debian-chromium/build.sh`, `?disk=`) on 4 vCPUs and times three
+  headless renders of `chrome://newtab`; `--wasm <file>` serves another core (the A/B tool),
+  `--perf N` profiles render N (`bench/apps/perf.ts`). ~5 min a run.
+- **The block interpreter** (`9809a85`, `core/src/interp/block.rs`, the dispatcher in
+  `jit::steps`/`jit::interpret`): what the JIT hasn't compiled runs from the JIT's blocks decoded
+  once into micro-ops, chained, counted locally. 2–2.7× the interpreter (`vm_mmu_mips` 72.6 →
+  195.6). With it the compile threshold went 50 → 500 (`jit::Config::DEFAULT`):
 
-llvmpipe (2026-10-08): profiled with `gl_llvmpipe_jit` (`images/alpine/gl`, a compositor's GLES
-frame without a display); ~95% of its rasterizing was helper calls for NEON the JIT didn't inline.
-With it inline a frame is 15.6× faster on 1 vCPU (6,936 → 445 ms) and 18.6× on 4 (1,859 → 100
-ms), ~14–17× native (`bench/boot/REPORT.md` "M8: llvmpipe"). The user confirmed sway on llvmpipe
-is faster on the page; its glitches (frames a flip or two late) remain, a display question for
-another time (plans/graphics.md §16), not the JIT's.
+  | | Chromium renders, s | Alpine boot | Alpine userspace | its hot phases |
+  |---|---|---|---|---|
+  | old path, threshold 50 | 57.4, 53.7, 45.2 | — | — | — |
+  | block interpreter, 50 | 54.2, 40.6, 41.2 | −3.2% | −4.2% | 1–4% faster |
+  | block interpreter, 500 | 48.4, 29.8, 28.2 | −8.9% | −2.7% | 1.5–6% *slower* than at 50 |
 
-Measured and closed (don't redo): copies of compiled callees in callers, a region entered at more
-than one block, forward regions behind a tier-up, exact limits for the core's own memory, the
-shared cache's single-threaded phases (docs/jit.md "Tried and not kept", the backlog).
+  (Alpine against the old path at 50, same session; Chromium's old-path row from an earlier,
+  ~10% slower session: compare the block-interpreter rows with each other.) At 50 Chromium
+  compiles ~150 MiB a render and flushes the 160 MiB cache; 200 flushed by the third render; 500
+  compiles 67 MiB once; 1000 interprets 7.7% of the cold render.
 
-Vector registers in locals (2026-10-08, the user's choice after llvmpipe): the V registers live in
-v128 locals under the integer registers' rules (docs/jit.md "Registers in locals"). Chromium: a
-llvmpipe frame 440 → 323 ms on 1 vCPU, 98 → 71 ms on 4 (−27%); `openssl speed`'s NEON paths
-AES-128-CBC 41 → 180 MB/s, GCM ~2×, SHA-256 3.3×; the userspace benchmark, the boots, CoreMark
-and Liftoff-only runs within noise (`bench/boot/REPORT.md` "M8: vector registers in locals").
+## Next: a compile threshold that follows the code cache's pressure
 
-## Next
+The user's question (2026-10-09): adjust the thresholds dynamically by speed or cache pressure?
+Answered yes, by **pressure**, not MIPS (the status bar's MIPS includes idle and I/O, and depends on
+the mix). They expect this to be the next step. Goal: Alpine's hot phases as at 50, Chromium as at
+500, no flushes where 500 has none.
 
-No choice made yet: ask the user, or take the top of docs/backlog.md "JIT". Candidates:
-- **The vector FP fast paths' lane checks** (the new item): after V in locals, the hot shader's
-  cost is its per-instruction `all_true` checks (~18% of its samples) and the TLB tag loads of its
-  guest accesses (~11%). Re-profile first as below (`bench/results/local/perf/lp3` has the last
-  one: `perf script -F ip,sym,symoff` on one function, then the instruction histogram).
-- Coldest-first eviction (working sets past 160 MiB), the 2–4 s `vm_run_cpu` calls (latency).
+**Where it goes:** `jit::Cache::miss` (core/src/jit/mod.rs), under the cache's lock already, where
+a block's dispatches arrive (each decoded block reports at most every 16 dispatches and at the
+threshold: the quota `miss` returns, `interp::block::Cache::quota`). Replace `self.cfg.threshold`
+there (both the queueing test and the quota) with a `Cache` field the policy moves; keep
+`Config::threshold` as the start, or the fixed value for the forced/stress/check/`INTERP` modes
+(threshold 0 and `u32::MAX` must stay fixed). The compile policy changes no guest step, so
+`tests/steps.txt` holds; `a_decoded_block_reports_at_the_threshold` pins 50 explicitly.
 
-Re-profiling llvmpipe: `perf record -k mono -F 2000 -o x.data env LP=0 GL=10,3,1376,762 OUT=marks.json
-node --perf-prof bench/results/local/llvmpipe/run.ts` (git-ignored driver: `userprof.ts`'s loop with
-`target/images/alpine-gl/rootfs-gl.ext4`), then `bench/boot/userprof-perf.ts` as in its header; the
-hot function's code: `objdump -d` the `jitted-*.so` its samples name.
+**Signals the cache already has:** `live_bytes` against `cfg.max_bytes` (160 MiB; the flush when
+it's reached is in `Cache::alloc`/`install`), flushes (`drop_all`, `Stats::flushes`), and per
+table `stats.steps` (JIT) against `stats.dec_steps` (block interpreter). A first rule to try:
+start at 50 (or 100); after a flush, or when `live_bytes` passes ~half the budget, raise it (×2 up
+to ~1000); when the budget has room again and the interpreted share is high, lower it. Decide at
+batch emission or every N reports, not per dispatch. Note `live_bytes` only grows until a flush
+(no eviction), so "room again" may in practice mean "after a flush": think through the steady
+state for a working set that never fits (a Go build) versus one that fits at 500 (Chromium).
+
+**Measure** (all in Chromium, A/B alternating, the variant cores kept aside):
+- `node bench/apps/chromium.ts --wasm <core> --json <out>`: the target is the 500 row's warm renders
+  (28–30 s) with a cold render no worse; check `flushes` and wasm MiB per render in its output.
+- `boot_alpine_jit` and `alpine_user_jit` (phases): the target is the 50 row's hot phases. The
+  alternating script used last time: `bench/results/local/dec/ab.sh` (git-ignored, on the dev VM
+  only; variants `core-<name>.wasm`,
+  rounds alternated, JSON moved aside per run; `med.ts` beside it prints the medians).
+- Then a long mixed load (`bench/stress` with `--guest-cmd`, a `go build` loop) for pressure that
+  never fits.
+- Reports: `bench/apps/REPORT.md` and `bench/boot/REPORT.md` new sections, JSON in `results/<name>/`;
+  docs/jit.md "Compile policy" (the threshold paragraph and the sweep), the backlog entry out.
+
+**Other open items** (backlog "Interpreter"): the decoded caches are per table and their 2M
+micro-op arena restarts when full (~3M decodes a Chromium render, ~1–2% by estimate: drop the
+older half instead, or share one store); more micro-op handlers (FP/SIMD loads and stores,
+atomics; count the generic ops first); tail-call dispatch as an A/B.
 
 ## How to measure
 
@@ -116,3 +142,22 @@ Diagnostic counters without new ABI: append `<letter>:<n> <count>` lines to
   `<bench>-A1.json` overwrites the first's.
 - JIT-check and the tests' forced mode form forward regions from any block in reach; JIT-stress (a
   block per batch) makes none. The stale-code checker runs at a region's entries and back-edges.
+- **The block interpreter's counts decide the JIT's regions:** forward regions take only the
+  pending batch's blocks, so anything that changes *when* a block joins the batch changes the
+  regions. Reporting dispatches 16 at a time scattered a path's blocks over batches: 30% more,
+  smaller regions, Alpine 8% slower. Check `blocks` against `regionBlocks` in a run's counters
+  whenever the counting changes.
+- **Decoded blocks must not follow the JIT's dropped keys** (those include every compiled block
+  linked to a dropped one, transitively; past 4,096 a table starts over): they're dropped by page
+  from `Cache::ival_log`, which every IC feeds and flushes don't touch. A vCPU idle in WFI falls
+  behind the log: it's 65,536 entries (Chromium's V8 in the guest issues ~3,000 ICs a second).
+- **Direct-mapped counters lose evicted entries' counts** (16,384 slots, ~200K blocks): keep them
+  in the backing map, or the effective threshold silently rises.
+- **The block interpreter natively:** with `jit` ≠ 0 the native dispatcher runs everything in it
+  (no wasm engine), so `WEBPC_NATIVE_JIT=1 cargo test --release --test <t> -- --ignored` checks it
+  on every native guest with exact steps in seconds; the run summaries print its share.
+- **`bench/apps` runs reproduce to ~1% within a session but drift ~10% between sessions**: always
+  run the baseline in the same session (`--wasm` of a core with the change compiled out).
+- **A Python edit that replaces `s[s.index(a):s.index(b)]` with an end marker that occurs earlier
+  replaces the empty string**, i.e. inserts between every character: assert the slice is non-empty
+  (it wrecked `jit/mod.rs` once; restored from git).
