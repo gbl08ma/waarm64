@@ -577,3 +577,148 @@ test('gpu: a transfer copies when it arrives, also while its reply is held (the 
   assert.equal(b.gpu.resources.get(1)!.pixels[0], 0x11, 'the frame that was transferred');
   b.reset();
 });
+
+// ---- virgl on the null renderer (web/gpu.ts `virgl`, web/virgl.ts) ----
+
+const V = { CAPSET_INFO: 0x108, CAPSET: 0x109, CTX_CREATE: 0x200, CTX_DESTROY: 0x201, CTX_ATTACH: 0x202, CTX_DETACH: 0x203, CREATE_3D: 0x204, TO_HOST_3D: 0x205, FROM_HOST_3D: 0x206, SUBMIT_3D: 0x207 };
+const OK_CAPSET_INFO = 0x1102, OK_CAPSET = 0x1103, ERR_CTX = 0x1204;
+
+/** A command in context `ctx` (the header's ctx_id). */
+function ctxCmd(ctx: number, type: number, ...fields: (number | bigint)[]) {
+  const c = cmd(type, ...fields);
+  new DataView(c.buffer).setUint32(16, ctx, true);
+  return c;
+}
+
+/** SUBMIT_3D with `words` as its command buffer. */
+function submit(ctx: number, words: number[]) {
+  const c = ctxCmd(ctx, V.SUBMIT_3D, words.length * 4, 0, ...words);
+  return c;
+}
+
+/** RESOURCE_CREATE_3D: id, target, format, bind, width, height, depth, array_size, last_level, nr_samples, flags, padding. */
+const create3d = (id: number, target: number, w: number, h: number, bind = 2) => cmd(V.CREATE_3D, id, target, R8G8B8A8, bind, w, h, 1, 1, 0, 0, 0, 0);
+
+test('virgl: off by default, the 3D commands are unknown', () => {
+  const r = rig();
+  for (const t of Object.values(V)) assert.equal(r.run(ctxCmd(1, t, 0, 0, 0, 0)).type, ERR_UNSPEC);
+});
+
+test('virgl: the capsets are VIRGL (v1, 308 bytes) and VIRGL2 (v2, 1408 bytes), GLES 3.0-level caps', async () => {
+  const { decodeCaps, virglCaps } = await import('../web/virgl.ts');
+  const r = rig({ virgl: true });
+  const info = (k: number) => {
+    const o = r.run(cmd(V.CAPSET_INFO, k, 0));
+    const v = new DataView(o.r.buffer, o.r.byteOffset);
+    return o.type === OK_CAPSET_INFO ? [v.getUint32(24, true), v.getUint32(28, true), v.getUint32(32, true)] : o.type;
+  };
+  assert.deepEqual([info(0), info(1), info(2)], [[1, 1, 308], [2, 2, 1408], ERR_PARAM]);
+  const blob = r.run(cmd(V.CAPSET, 2, 2));
+  assert.equal(blob.type, OK_CAPSET);
+  assert.equal(Buffer.compare(blob.r.subarray(24), virglCaps(2)), 0);
+  assert.equal(r.run(cmd(V.CAPSET, 2, 3)).type, ERR_PARAM, 'a version above the max');
+  assert.equal(r.run(cmd(V.CAPSET, 3, 1)).type, ERR_PARAM);
+  const v1 = r.run(cmd(V.CAPSET, 1, 1));
+  assert.equal(v1.r.length, 24 + 308);
+  const caps = decodeCaps(blob.r.subarray(24));
+  assert.equal(caps.max_version, 2);
+  assert.equal(caps.glsl_level, 130);
+  assert.equal(caps.renderer, 'webpc');
+  assert.equal(decodeCaps(v1.r.subarray(24)).max_version, 1);
+  // Nothing WebGL2 lacks: no dual-source blending, no fbfetch (VIRGL_CAP_TGSI_FBFETCH), no indep blend.
+  assert.equal(caps.max_dual_source_render_targets, 0);
+  assert.equal((caps.capability_bits as number) & (1 << 10), 0);
+  assert.equal((caps.bset as number) & 3, 0);
+});
+
+test('virgl: caps encode and decode back', async () => {
+  const { decodeCaps, encodeCaps, virglCaps } = await import('../web/virgl.ts');
+  const blob = virglCaps(2);
+  assert.equal(Buffer.compare(encodeCaps(decodeCaps(blob)), blob), 0);
+});
+
+test('virgl: contexts, 3D resources, transfers and submits on the null renderer', () => {
+  const r = rig({ virgl: true });
+  assert.equal(r.run(ctxCmd(0, V.CTX_CREATE, 4, 0)).type, ERR_CTX, 'context 0 is the 2D one');
+  r.ok(ctxCmd(1, V.CTX_CREATE, 4, 0));
+  assert.equal(r.run(ctxCmd(1, V.CTX_CREATE, 4, 0)).type, ERR_CTX, 'twice');
+  // A render target and a buffer, backed, attached to the context.
+  r.ok(create3d(1, 2, 64, 32));
+  r.ok(create3d(2, 0, 4096, 1, 16));
+  assert.equal(r.run(create3d(2, 0, 4096, 1, 16)).type, ERR_RES, 'an id in use');
+  assert.equal(r.run(create3d(3, 9, 1, 1)).type, ERR_PARAM, 'no such target');
+  r.ok(r.attach(1, 0, 64 * 32 * 4));
+  r.ok(r.attach(2, 0x10000, 4096));
+  r.ok(ctxCmd(1, V.CTX_ATTACH, 1, 0));
+  r.ok(ctxCmd(1, V.CTX_ATTACH, 2, 0));
+  assert.equal(r.run(ctxCmd(2, V.CTX_ATTACH, 1, 0)).type, ERR_CTX);
+  assert.equal(r.run(ctxCmd(1, V.CTX_ATTACH, 9, 0)).type, ERR_RES);
+  // TRANSFER_TO_HOST_3D: box x y z w h d, offset (u64), resource, level, stride, layer_stride.
+  r.ok(ctxCmd(1, V.TO_HOST_3D, 0, 0, 0, 64, 32, 1, 0n, 1, 0, 256, 0));
+  r.ok(ctxCmd(1, V.TO_HOST_3D, 0, 0, 0, 1000, 1, 1, 0n, 2, 0, 0, 0));
+  r.ok(ctxCmd(1, V.FROM_HOST_3D, 0, 0, 0, 64, 2, 1, 0n, 1, 0, 256, 0));
+  assert.equal(r.run(ctxCmd(1, V.TO_HOST_3D, 0, 0, 0, 1, 1, 1, 0n, 7, 0, 4, 0)).type, ERR_RES);
+  // A 2D transfer of a 3D resource is refused (its format may not be one 2D knows).
+  assert.equal(r.run(cmd(T.TRANSFER, 0, 0, 1, 1, 0n, 1, 0)).type, ERR_PARAM);
+  // A stream: CREATE_SUB_CTX (cmd 29, 1 dword), SET_SUB_CTX (28), CLEAR (7, 8 dwords), DRAW_VBO (8, 12 dwords).
+  const hdr = (c: number, obj: number, len: number) => c | obj << 8 | len << 16;
+  r.ok(submit(1, [hdr(29, 0, 1), 1, hdr(28, 0, 1), 1, hdr(7, 0, 8), 0, 0, 0, 0, 0, 0, 0, 0, hdr(8, 0, 12), ...new Array(12).fill(0), hdr(8, 0, 12), ...new Array(12).fill(0)]));
+  assert.equal(r.run(submit(1, [hdr(7, 0, 8), 0])).type, ERR_PARAM, 'a length past the end');
+  assert.equal(r.run(submit(2, [])).type, ERR_CTX);
+  const truncated = submit(1, [0, 0]);
+  assert.equal(r.run(truncated.subarray(0, truncated.length - 4)).type, ERR_PARAM, 'size past the payload');
+  const st = r.gpu.state().virgl!;
+  assert.equal(st.contexts, 1);
+  assert.equal(st.toHostBytes, 256 * 32 + 1000);
+  assert.equal(st.fromHostBytes, 256 * 2);
+  assert.deepEqual(st.stream.commands.DRAW_VBO, { n: 2, dwords: 24 });
+  assert.deepEqual([st.stream.submits, st.stream.bad], [2, 1], "the truncated one is refused before it is read");
+  assert.equal(st.commands.SUBMIT_3D, 4);
+  // Shown: black pixels, opaque. Not saved while 3D is in use.
+  r.ok(cmd(T.SCANOUT, 0, 0, 64, 32, 0, 1));
+  assert.deepEqual(px(r, 1, 5, 5), [0, 0, 0, 255]);
+  assert.equal(r.run(cmd(T.SCANOUT, 0, 0, 1, 1, 0, 2)).type, ERR_PARAM, 'a buffer is never shown');
+  assert.match((r.gpu.save() as { unsaveable?: string }).unsaveable ?? '', /3D/, 'the snapshot refuses it (web/vm.ts)');
+  // Unref leaves the context; destroy and reset forget it.
+  r.ok(cmd(T.UNREF, 2, 0));
+  r.ok(ctxCmd(1, V.CTX_DESTROY));
+  assert.equal(r.run(ctxCmd(1, V.CTX_DESTROY)).type, ERR_CTX);
+  r.ok(ctxCmd(3, V.CTX_CREATE, 4, 0));
+  r.gpu.reset();
+  assert.equal(r.gpu.state().virgl!.contexts, 0);
+  assert.equal(r.gpu.resources.size, 0);
+});
+
+test('virgl: random 3D commands never throw, never write RAM, and answer in the spec', () => {
+  let s = 0x1b873593;
+  const rnd = () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 2 ** 32;
+  };
+  const r = rig({ virgl: true });
+  for (let k = 0; k < 256; k++) r.ram[k * 7] = k;
+  const before = r.ram.slice();
+  const types = [...Object.values(V), ...Object.values(T)];
+  const interesting = [0, 1, 2, 3, 4, 8, 63, 64, 0xffff, 0x7fff_ffff, 0x8000_0000, 0xffff_ffff];
+  const answers = new Set([OK, OK_INFO, OK_EDID, OK_CAPSET_INFO, OK_CAPSET, ERR_UNSPEC, ERR_OOM, ERR_SCANOUT, ERR_RES, ERR_CTX, ERR_PARAM]);
+  let oks = 0;
+  for (let k = 0; k < 20000; k++) {
+    const ctx = Math.floor(rnd() * 4);
+    if (rnd() < 0.1) r.run(ctxCmd(ctx, V.CTX_CREATE, 0, 0));
+    if (rnd() < 0.2) r.run(create3d(1 + Math.floor(rnd() * 4), Math.floor(rnd() * 10), 1 + Math.floor(rnd() * 64), 1 + Math.floor(rnd() * 64)));
+    if (rnd() < 0.1) r.run(r.attach(1 + Math.floor(rnd() * 4), Math.floor(rnd() * 4096), Math.floor(rnd() * 3000) + 1, Math.floor(rnd() * 500) + 1));
+    let c: Uint8Array;
+    if (rnd() < 0.3) c = submit(ctx, Array.from({ length: Math.floor(rnd() * 20) }, () => (rnd() < 0.5 ? interesting[Math.floor(rnd() * interesting.length)] : Math.floor(rnd() * 0x40000))));
+    else c = ctxCmd(ctx, types[Math.floor(rnd() * types.length)], ...Array.from({ length: Math.floor(rnd() * 14) }, () => (rnd() < 0.5 ? interesting[Math.floor(rnd() * interesting.length)] : Math.floor(rnd() * 16))));
+    if (rnd() < 0.1) c = c.subarray(0, Math.floor(rnd() * c.length));
+    const out = r.run(c, rnd() < 0.1 ? Math.floor(rnd() * 60) : 4096);
+    if (out.type !== -1) {
+      assert.ok(answers.has(out.type), `answer ${out.type.toString(16)}`);
+      if (out.type === OK) oks++;
+    }
+  }
+  assert.ok(oks > 2000, `the random commands got somewhere (${oks} ok)`);
+  assert.equal(Buffer.compare(before, r.ram), 0, 'guest RAM unchanged');
+});

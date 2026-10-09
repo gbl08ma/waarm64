@@ -8,6 +8,7 @@ copyright/license header in the file.
 | Our file(s) | Source project, file, commit | License |
 |---|---|---|
 | `core/src/a64/a64.inc` | dynarmic, `src/dynarmic/frontend/A64/decoder/a64.inc`, `a41c380246d3` (verbatim, header added). `core/build.rs` follows the match order of dynarmic's `a64.h` | 0BSD |
+| `web/virgl.ts` (G2) | virglrenderer `c8e3fc3b`: the command and object names of `src/virgl_protocol.h` (`enum virgl_context_cmd`, `enum virgl_object_type`) and the field layout of `src/virgl_hw.h` (`struct virgl_caps_v1`/`_v2`) as tables; the caps' base values are virglrenderer's own output on a GLES 3.0 host (graphics.md §19) | MIT |
 | `net/tailscale/main_js.go` (N2) | the engine setup of Tailscale's `cmd/tsconnect/wasm/wasm_js.go` (v1.102.5), with our `Tun` device and JS API instead of the netstack-terminated sockets and ssh; header kept | BSD-3-Clause |
 | `net/tailscale/overlay/controlhttp_client_js.go` (N2) | `tailscale.com/control/controlhttp/client_js.go` (v1.102.5), copied with one marked change (keep the control server's HTTPS port over WebSocket); `net/tailscale/build.sh` builds against a copy of the module with this file replaced | BSD-3-Clause |
 
@@ -57,6 +58,7 @@ when bumping the pin.
 | Workload | Source, commit | License | How we use it |
 |---|---|---|---|
 | CoreMark | [eembc/coremark](https://github.com/eembc/coremark), `1f483d5b8316` | Apache-2.0, plus EEMBC's CoreMark Acceptable Use Agreement (the CoreMark trademark only for results of unmodified sources) | `bench/interp/build-coremark.sh` fetches it into `target/dl/coremark` and builds it unmodified with our own port layer (`bench/interp/coremark/core_portme.{c,h}`, MIT) into `target/bench/` (not committed, not distributed) |
+| Mesa (G2's virgl guest) | [Mesa](https://mesa3d.org) 26.1.6 release tarball (`MESA_SHA256` in `images/build.sh`) | MIT | `images/build.sh alpine-virgl` builds it unmodified (llvmpipe and virgl) in Alpine's container into the benchmark image's `/opt/mesa` (`target/images`, not committed, not distributed) |
 
 ## Firmware we build and distribute (not in the repository)
 
@@ -76,6 +78,7 @@ Re-check at the commit you actually pin before copying anything.
 | [v86](https://github.com/copy/v86) | `5f9a90f2be01` | BSD-2-Clause | JIT architecture (wasmgen, block compilation and batching), 9p and its lazy HTTP filesystem, state save/restore, async HTTP disks; in-browser comparison target (i686) |
 | [TinyEMU](https://bellard.org/tinyemu/) | 2019-12-21 tarball | MIT (per-file headers, `MIT-LICENSE.txt`) | `virtio.c`, `fs*.c` and `riscv_*` are MIT. `slirp/` has its own headers. `aes.c`, `sha256.c`, `fbuf.h`, `ps2.h` lack the MIT header, so check them individually. Compact virtio-mmio and virtio devices in C; JSLinux is an in-browser comparison target (riscv64) |
 | [dynarmic](https://github.com/lioncash/dynarmic) | `a41c380246d3` | 0BSD | Repository **archived** 2024-03. The former upstream (merryhime/dynarmic) is gone. Fine as a read-only reference. The decoder's pattern table; IR design, A64 semantics, JIT techniques |
+| [virglrenderer](https://gitlab.freedesktop.org/virgl/virglrenderer) | `c8e3fc3b` | MIT | The virgl protocol (`src/virgl_protocol.h`, `virgl_hw.h`), the host's command decoder (`src/vrend/vrend_decode.c`) and TGSI → GLSL translator (`vrend_shader.c`): G3's reference, porting allowed with attribution. A debug build with a local capture patch is G2's oracle (`bench/results/local/`, not committed) |
 | [crosvm](https://github.com/google/crosvm) | `501fcaaa701d` | BSD-3-Clause | virtio devices (blk, net, gpu, input, snd), the `p9` crate, arm64 FDT, PSCI; `rutabaga_gfx` for graphics |
 | [Firecracker](https://github.com/firecracker-microvm/firecracker) | `8ff4940e6a72` | Apache-2.0 | Needs NOTICE/attribution if code is copied. Minimal virtio-mmio model, arm64 FDT, direct kernel boot |
 | [rust-vmm/vm-fdt](https://github.com/rust-vmm/vm-fdt) | crate 0.3.0 | Apache-2.0 OR BSD-3-Clause | Not used: `core/src/fdt.rs` is our own writer |

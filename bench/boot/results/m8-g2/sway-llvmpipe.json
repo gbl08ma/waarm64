@@ -1,0 +1,214 @@
+{
+ "mode": "llvmpipe",
+ "info": "7.2.8-1-aarch64-ARCHerror: package 'wlroots0.19' was not found sway 1:1.12-4 mesa 1:26.2.3-1 foot 1.28.0-2 by-path  card0  renderD128[root@alarm ~]#  ",
+ "console": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 1,
+    "user": 0,
+    "sys": 1
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 5,
+    "user": 0,
+    "sys": 4
+   }
+  ],
+  "procs": [],
+  "display": {
+   "seconds": 5,
+   "flushes": 4.8,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 4.8,
+   "Mpx": 5.0328576,
+   "requestMs": 14.241999998688698,
+   "draws": 4.8
+  }
+ },
+ "sway": "sway=413libgallium-26.2.3-arch1.1.solibpixman-1.so.0.46.4      6 /dev/dri/card0      2 /dev/dri/renderD128MESA-EGL: warning: egl: failed to create dri2 screen00:00:02.852 [ERROR] [wlr] [EGL] command: eglInitialize, error: EGL_NOT_INITIALIZED (0x3001), message: \"DRI2: failed to create screen\"MESA-EGL: warning: egl: failed to create dri2 screen00:00:02.892 [ERROR] [wlr] [EGL] command: eglInitialize, error: EGL_NOT_INITIALIZED (0x3001), message: \"DRI2: failed to create screen\"MESA-EGL: warning: NEEDS EXTENSION: falling back to kms_swrast00:00:03.077 [ERROR] [wlr] [EGL] command: eglQueryDeviceStringEXT, error: EGL_BAD_DEVICE_EXT (0x322b), message: \"eglQueryDeviceStringEXT\"00:00:03.089 [ERROR] [wlr] [EGL] command: eglQueryDeviceStringEXT, error: EGL_BAD_DEVICE_EXT (0x322b), message: \"eglQueryDeviceStringEXT\"[root@alarm ~]#  ",
+ "sway-idle": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 2,
+    "user": 0,
+    "sys": 1
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 7,
+    "sysMs": 5
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "flushes": 0.9090909090909091,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 0.9090909090909091,
+   "Mpx": 0.9531927272727273,
+   "requestMs": 1.2986363619565964,
+   "draws": 0.9090909090909091
+  }
+ },
+ "foot-idle": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 4,
+    "user": 1,
+    "sys": 3
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 8,
+    "sysMs": 7
+   },
+   {
+    "proc": "foot",
+    "userMs": 0,
+    "sysMs": 0
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "flushes": 0.9090909090909091,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 0.9090909090909091,
+   "Mpx": 0.9531927272727273,
+   "requestMs": 1.5340909185734661,
+   "draws": 0.9090909090909091
+  }
+ },
+ "date-loop": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 92,
+    "user": 57,
+    "sys": 34
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 91,
+    "user": 54,
+    "sys": 36
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 91,
+    "user": 51,
+    "sys": 39
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 93,
+    "user": 63,
+    "sys": 30
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 92,
+    "user": 61,
+    "sys": 30
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 2098,
+    "sysMs": 172
+   },
+   {
+    "proc": "foot",
+    "userMs": 82,
+    "sysMs": 183
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "flushes": 27.90909090909091,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 27.90909090909091,
+   "Mpx": 29.263016727272728,
+   "requestMs": 44.56727273762226,
+   "draws": 27.90909090909091
+  }
+ },
+ "tail": "1100:00:03.089 [ERROR] [wlr] [EGL] command: eglQueryDeviceStringEXT, error: EGL_BAD_DEVICE_EXT (0x322b), message: \"eglQueryDeviceStringEXT\"00:00:04.456 [ERROR] [sway/config/output.c:1219] failed to execute 'swaybg' (background configuration probably not applied): No such file or directoryEnvironment variable $XDG_CURRENT_DESKTOP not set, ignoring.warn: main.c:495: 'C' is not a UTF-8 locale, falling back to 'C.UTF-8'warn: wayland.c:1888: compositor does not implement the xdg-toplevel-icon protocol[root@alarm ~]#  "
+}

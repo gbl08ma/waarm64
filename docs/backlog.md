@@ -249,6 +249,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   rasterizer threads draw after the transfer. `WLR_RENDERER=pixman` in the guest avoids it. A display mode that
   samples the scanout's memory at each refresh and holds a flipped buffer until it is stable would hide it for
   unmodified guests: not built (a full compare per refresh; build it if GL compositors become fast enough to use).
+- **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in
+  the native runners. The null renderer is G2's measuring device and is tested in Node; extend the twin only if a
+  native, exact-step virgl guest is wanted (the WebGL2 renderer of G3 can't run natively anyway).
 - **virtio-gpu's flush pacing counts a firmware's flushes too**: EDK2's GOP waits for every reply, so its `Blt`s
   complete 60 a second after the first. Not seen to matter (GRUB's menu, the boot's time to `running`); a guest that
   waits needs no pacing, if a way to tell it from one that floods turns up.

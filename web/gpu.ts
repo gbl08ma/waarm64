@@ -11,20 +11,30 @@
 // reads only through those entries.
 import { gather, scatter, type Ctx, type Request } from './devices.ts';
 import { EDID_MAX, EDID_MIN, edid } from './edid.ts';
+import { VirglStats, virglCaps } from './virgl.ts';
 
 const RAM_BASE = 0x4000_0000;
 
 // Command and response types (virtio 1.2 §5.7.6).
 const GET_DISPLAY_INFO = 0x100, RESOURCE_CREATE_2D = 0x101, RESOURCE_UNREF = 0x102, SET_SCANOUT = 0x103;
 const RESOURCE_FLUSH = 0x104, TRANSFER_TO_HOST_2D = 0x105, RESOURCE_ATTACH_BACKING = 0x106;
-const RESOURCE_DETACH_BACKING = 0x107, GET_EDID = 0x10a;
+const RESOURCE_DETACH_BACKING = 0x107, GET_CAPSET_INFO = 0x108, GET_CAPSET = 0x109, GET_EDID = 0x10a;
+const CTX_CREATE = 0x200, CTX_DESTROY = 0x201, CTX_ATTACH_RESOURCE = 0x202, CTX_DETACH_RESOURCE = 0x203;
+const RESOURCE_CREATE_3D = 0x204, TRANSFER_TO_HOST_3D = 0x205, TRANSFER_FROM_HOST_3D = 0x206, SUBMIT_3D = 0x207;
 const UPDATE_CURSOR = 0x300, MOVE_CURSOR = 0x301;
-const OK_NODATA = 0x1100, OK_DISPLAY_INFO = 0x1101, OK_EDID = 0x1104;
+const OK_NODATA = 0x1100, OK_DISPLAY_INFO = 0x1101, OK_CAPSET_INFO = 0x1102, OK_CAPSET = 0x1103, OK_EDID = 0x1104;
 const ERR_UNSPEC = 0x1200, ERR_OUT_OF_MEMORY = 0x1201, ERR_INVALID_SCANOUT_ID = 0x1202;
-const ERR_INVALID_RESOURCE_ID = 0x1203, ERR_INVALID_PARAMETER = 0x1205;
+const ERR_INVALID_RESOURCE_ID = 0x1203, ERR_INVALID_CONTEXT_ID = 0x1204, ERR_INVALID_PARAMETER = 0x1205;
 const FLAG_FENCE = 1;
 const HDR = 24;
 const EVENT_DISPLAY = 1;
+/** The capsets with `virgl` (VIRTIO_GPU_CAPSET_VIRGL, VIRGL2): id, max version, the blob. */
+const CAPSETS = [[1, 1, virglCaps(1)], [2, 2, virglCaps(2)]] as const;
+/** Contexts and 3D resources a guest may hold (a bound for a guest that leaks them: the null renderer keeps no host memory for most). */
+const MAX_CONTEXTS = 1024;
+const MAX_RESOURCES = 65536;
+/** PIPE_TEXTURE_2D: a 3D resource that can be shown on the scanout. */
+const TARGET_2D = 2;
 
 /** Largest resource (bytes of RGBA) and the total a guest may hold: a bigger request is ERR_OUT_OF_MEMORY. */
 export const MAX_RESOURCE = 64 << 20;
@@ -60,6 +70,15 @@ type Resource = {
   opaque?: boolean;
   /** A transfer changed the pixels since the whole scanout was last given to the page: a flush has something to show. */
   changed?: boolean;
+  /** A virgl resource (RESOURCE_CREATE_3D): gallium's target and bind flags. It has `pixels` only once it is shown (black: nothing renders). */
+  three?: { target: number; bind: number; depth: number; arraySize: number; lastLevel: number; samples: number };
+};
+
+/** What the null renderer counted (`state().virgl`): the 3D commands, the bytes each way, and each context's stream. */
+export type VirglCounts = {
+  commands: Record<string, number>;
+  toHostBytes: number; fromHostBytes: number;
+  stream: ReturnType<VirglStats['json']>;
 };
 
 export type GpuOptions = {
@@ -84,6 +103,12 @@ export type GpuOptions = {
   paceFlushes?: boolean;
   /** Pixels per inch for the EDID's physical size (default 96). */
   dpi?: number;
+  /**
+   * 3D through virgl (VIRTIO_GPU_F_VIRGL and the VIRGL capsets: docs/devices.md "virgl"), on a null renderer for
+   * now: the guest's contexts, 3D resources and command streams are checked and counted, nothing is drawn, and
+   * fences signal at once. Off by default, so no guest's bytes or step counts move.
+   */
+  virgl?: boolean;
   /**
    * A test hook: after this many RESOURCE_FLUSHes the display changes to the size given (a
    * display event, as a page resize would raise), so the resize path is exact in deterministic runs.
@@ -127,7 +152,7 @@ export function hashRgba(words: Uint32Array[], opaque: boolean) {
 }
 
 /** Time the device worker spent in the backend since the last read (`?displaystats`, bench/gpu): requests, and the transfers inside them. */
-export const busy = { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0 };
+export const busy = { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0 };
 
 export class Gpu {
   readonly resources = new Map<number, Resource>();
@@ -152,6 +177,12 @@ export class Gpu {
   private bounce = false;
   /** The size of the resource last on the scanout (kept while the scanout is off): a mode the guest's buffer holds, for the EDID. */
   private shown = { width: 0, height: 0 };
+  /** virgl's contexts (`virgl`): id → the resources attached. */
+  private contexts = new Map<number, Set<number>>();
+  private virgl: VirglCounts = { commands: {}, toHostBytes: 0, fromHostBytes: 0, stream: new VirglStats().json() };
+  private stream = new VirglStats();
+  /** Called with every SUBMIT_3D's command words (bench/results/local captures; the G3 renderer's test fixtures). */
+  onSubmit?: (ctx: number, words: Uint32Array) => void;
   private ram: () => Uint8Array;
   private ramSize: number;
   private o: GpuOptions;
@@ -209,6 +240,7 @@ export class Gpu {
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         this.resources.delete(res.id);
         this.total -= res.pixels.length;
+        for (const set of this.contexts.values()) set.delete(res.id);
         if (this.scanout?.id === res.id) this.setScanout(null);
         return this.reply(OK_NODATA, cmd, room);
       }
@@ -223,6 +255,13 @@ export class Gpu {
         const res = this.resources.get(id);
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         if (!this.inside(r, res)) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        if (res.three && !res.pixels.length) {
+          // A virgl resource shown: black pixels for the page (the null renderer draws nothing into it).
+          const bytes = res.width * res.height * 4;
+          if (res.three.target !== TARGET_2D || bytes > MAX_RESOURCE || this.total + bytes > MAX_TOTAL) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+          this.total += bytes;
+          res.pixels = new Uint8Array(bytes);
+        }
         makeOpaque(res);
         this.setScanout({ id, rect: r });
         return this.reply(OK_NODATA, cmd, room);
@@ -242,7 +281,7 @@ export class Gpu {
         const res = this.resources.get(id);
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         if (!res.backing) return this.reply(ERR_UNSPEC, cmd, room);
-        if (!this.inside(r, res)) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        if (res.three || !this.inside(r, res)) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         const t0 = performance.now();
         const ok = this.transfer(res, r, offset);
         busy.transfer += performance.now() - t0;
@@ -277,6 +316,94 @@ export class Gpu {
         return this.reply(OK_NODATA, cmd, room);
       }
       default:
+        return this.o.virgl ? this.control3d(type, cmd, v, room) : this.reply(ERR_UNSPEC, cmd, room);
+    }
+  }
+
+  /** The virgl commands (`virgl`), on the null renderer: checked as virglrenderer checks them, counted, never drawn. */
+  private control3d(type: number, cmd: Uint8Array, v: DataView, room: number): Uint8Array {
+    const need = (n: number) => cmd.length >= n;
+    const u32 = (at: number) => v.getUint32(HDR + at, true);
+    const ctxId = v.getUint32(16, true);
+    const count = (name: string) => { this.virgl.commands[name] = (this.virgl.commands[name] ?? 0) + 1; };
+    switch (type) {
+      case GET_CAPSET_INFO: {
+        count('GET_CAPSET_INFO');
+        if (!need(HDR + 4)) return this.reply(ERR_UNSPEC, cmd, room);
+        const c = CAPSETS[u32(0)];
+        const r = new Uint8Array(HDR + 16);
+        const w = new DataView(r.buffer);
+        if (c) [c[0], c[1], c[2].length].forEach((x, k) => w.setUint32(HDR + 4 * k, x, true));
+        return this.reply(c ? OK_CAPSET_INFO : ERR_INVALID_PARAMETER, cmd, room, c ? r : undefined);
+      }
+      case GET_CAPSET: {
+        count('GET_CAPSET');
+        if (!need(HDR + 8)) return this.reply(ERR_UNSPEC, cmd, room);
+        const c = CAPSETS.find(([id]) => id === u32(0));
+        if (!c || u32(4) > c[1]) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        const r = new Uint8Array(HDR + c[2].length);
+        r.set(c[2], HDR);
+        return this.reply(OK_CAPSET, cmd, room, r);
+      }
+      case CTX_CREATE: {
+        count('CTX_CREATE');
+        if (ctxId === 0 || this.contexts.has(ctxId) || this.contexts.size >= MAX_CONTEXTS) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
+        this.contexts.set(ctxId, new Set());
+        return this.reply(OK_NODATA, cmd, room);
+      }
+      case CTX_DESTROY: {
+        count('CTX_DESTROY');
+        if (!this.contexts.delete(ctxId)) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
+        return this.reply(OK_NODATA, cmd, room);
+      }
+      case CTX_ATTACH_RESOURCE: case CTX_DETACH_RESOURCE: {
+        count(type === CTX_ATTACH_RESOURCE ? 'CTX_ATTACH_RESOURCE' : 'CTX_DETACH_RESOURCE');
+        if (!need(HDR + 4)) return this.reply(ERR_UNSPEC, cmd, room);
+        const set = this.contexts.get(ctxId);
+        if (!set) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
+        if (!this.resources.has(u32(0))) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
+        if (type === CTX_ATTACH_RESOURCE) set.add(u32(0));
+        else set.delete(u32(0));
+        return this.reply(OK_NODATA, cmd, room);
+      }
+      case RESOURCE_CREATE_3D: {
+        count('RESOURCE_CREATE_3D');
+        if (!need(HDR + 44)) return this.reply(ERR_UNSPEC, cmd, room);
+        const [id, target, format, bind, width, height, depth, arraySize, lastLevel, samples] = [0, 4, 8, 12, 16, 20, 24, 28, 32, 36].map(u32);
+        if (id === 0 || this.resources.has(id) || this.resources.size >= MAX_RESOURCES) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
+        if (target > 8 || width === 0 || height === 0 || depth === 0 || arraySize === 0) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        this.resources.set(id, { id, format, width, height, pixels: new Uint8Array(0), backing: null, three: { target, bind, depth, arraySize, lastLevel, samples } });
+        return this.reply(OK_NODATA, cmd, room);
+      }
+      case TRANSFER_TO_HOST_3D: case TRANSFER_FROM_HOST_3D: {
+        const to = type === TRANSFER_TO_HOST_3D;
+        count(to ? 'TRANSFER_TO_HOST_3D' : 'TRANSFER_FROM_HOST_3D');
+        if (!need(HDR + 48)) return this.reply(ERR_UNSPEC, cmd, room);
+        const [w, h, d] = [u32(12), u32(16), u32(20)];
+        const res = this.resources.get(u32(32));
+        if (!res?.three) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
+        if (!res.backing) return this.reply(ERR_UNSPEC, cmd, room);
+        // The bytes the transfer covers: a buffer's box is in bytes; a texture's rows are `stride` apart.
+        const [stride, layerStride] = [u32(40), u32(44)];
+        const bytes = res.three.target === 0 ? w : d > 1 ? layerStride * d : stride * h;
+        if (to) this.virgl.toHostBytes += bytes;
+        else this.virgl.fromHostBytes += bytes;
+        return this.reply(OK_NODATA, cmd, room);
+      }
+      case SUBMIT_3D: {
+        count('SUBMIT_3D');
+        if (!need(HDR + 8)) return this.reply(ERR_UNSPEC, cmd, room);
+        if (!this.contexts.has(ctxId)) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
+        const size = u32(0);
+        if (size % 4 || cmd.length < HDR + 8 + size) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
+        const words = new Uint32Array(cmd.buffer.slice(cmd.byteOffset + HDR + 8, cmd.byteOffset + HDR + 8 + size));
+        const ok = this.stream.count(words) >= 0;
+        busy.submits++;
+        busy.submitBytes += size;
+        this.onSubmit?.(ctxId, words);
+        return this.reply(ok ? OK_NODATA : ERR_INVALID_PARAMETER, cmd, room);
+      }
+      default:
         return this.reply(ERR_UNSPEC, cmd, room);
     }
   }
@@ -297,7 +424,7 @@ export class Gpu {
       if (id === 0) this.cursorImage = null;
       else {
         const res = this.resources.get(id);
-        if (!res || res.width !== CURSOR || res.height !== CURSOR) return; // the guest's mistake: the cursor stays as it was
+        if (!res || res.width !== CURSOR || res.height !== CURSOR || res.three) return; // the guest's mistake: the cursor stays as it was
         this.cursorImage = res.pixels.slice();
       }
     }
@@ -393,6 +520,7 @@ export class Gpu {
   }
 
   private flush(res: Resource, r: Rect) {
+    busy.flushes++;
     // A page flip is transfer, SET_SCANOUT, flush: the scanout change has drawn it all, and the flush would draw it again.
     if (res.changed) this.draw(res, r);
     if (this.o.trace) this.trace.push(this.screenHash() ?? '');
@@ -503,6 +631,7 @@ export class Gpu {
       screen,
       trace: this.trace,
       cursor: c ? { ...this.cursorState, hash: hashRgba([new Uint32Array(c.buffer, c.byteOffset, c.length / 4)], false) } : null,
+      ...(this.o.virgl ? { virgl: { ...this.virgl, contexts: this.contexts.size, stream: this.stream.json() } } : {}),
     };
   }
 
@@ -510,6 +639,7 @@ export class Gpu {
   reset() {
     this.shown = { width: 0, height: 0 };
     this.resources.clear();
+    this.contexts.clear();
     this.total = 0;
     this.cursorImage = null;
     this.cursorState = { hotX: 0, hotY: 0, x: 0, y: 0 };
@@ -520,7 +650,10 @@ export class Gpu {
 
   /** A snapshot's state, JSON: `state` plus the cursor's image. Host pixels come back from the backing at `restore`. */
   save() {
-    return { ...this.state(), cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null, shown: this.shown };
+    // `unsaveable`: virgl's objects live in the renderer, outside guest RAM, so a machine using 3D isn't saved (the
+    // kickoff's choice; the snapshot refuses it, web/vm.ts). A test's state read takes the rest all the same.
+    const unsaveable = this.contexts.size > 0 || [...this.resources.values()].some((r) => r.three) ? 'the machine is using 3D (virgl)' : undefined;
+    return { ...this.state(), cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null, shown: this.shown, ...(unsaveable ? { unsaveable } : {}) };
   }
 
   /** `save`'s state back: the tables, then every resource with a backing read again from the (restored) RAM, and the scanout drawn. */

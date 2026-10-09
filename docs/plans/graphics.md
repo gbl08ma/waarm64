@@ -7,8 +7,9 @@ what exists is in the topic docs ([devices.md](../devices.md) "virtio-gpu", [fro
 what each loop found. **The 3D direction changed on 2026-10-09** (the user, §18): OpenGL ES first, through
 **virgl** (Mesa's upstream guest driver) onto **WebGL2** as the baseline, a WebGPU backend only where the
 browser has one, and Vulkan (Venus, Zink) deferred. §1 and §7 are the plan as revised; §4 (Venus on WebGPU)
-is kept as the deferred Vulkan design. G2 onward is not scheduled until its kickoff
-(`M8-GRAPHICS-HANDOVER.md` carries the proposal).
+is kept as the deferred Vulkan design. **G2 is done (2026-10-09, §19): virgl's guest side measured on a null
+renderer, and the gate passed** (a sway frame costs the guest ~1/12 of llvmpipe's, at 60 frames a second). G3, the
+WebGL2 renderer, needs its kickoff (`M8-GRAPHICS-HANDOVER.md` carries the proposal).
 
 The question: how does a guest get a real display (mode setting, damage, a cursor) and, later,
 **hardware-accelerated 3D** in a browser page, without the guest knowing it runs in one? Today the
@@ -225,7 +226,7 @@ G2 onward is the 2026-10-09 proposal, settled by its kickoff. The proposal in de
 
 - **G0 — WebGPU environment spike, measured (done: §10).**
 - **G1 — virtio-gpu 2D (done: §9, §11 to §17).**
-- **G2 — virgl's guest side, measured (decision gate).** The oracle traces first (QEMU's
+- **G2 — virgl's guest side, measured (decision gate; done: §19, go).** The oracle traces first (QEMU's
   `virtio-gpu-gl` on the dev VM's llvmpipe; virglrenderer's vtest server). Then the device advertises
   `VIRTIO_GPU_F_VIRGL` and the VIRGL/VIRGL2 capsets with caps that a WebGL2 renderer can honour, and
   accepts `CTX_*`, `SUBMIT_3D`, `RESOURCE_CREATE_3D` and the 3D transfers with a **null renderer**:
@@ -245,10 +246,8 @@ G2 onward is the 2026-10-09 proposal, settled by its kickoff. The proposal in de
 
 ## 8. Open questions
 
-- **What virgl costs the guest under the JIT** (G2): Mesa's GL frontend, the virgl encoder, the kernel's
-  `EXECBUFFER` and fence path, and shader compiles (GLSL → NIR → TGSI, in the guest, once per shader, kept in
-  Mesa's disk cache). Natively over vtest it is ~83 µs a glcomp frame (§18). Under the JIT, and with the
-  kernel's part, it's unknown.
+- **What virgl costs the guest under the JIT**: measured (§19). Mesa's frontend and shader compiles are cheap; the
+  kernel's submit path is the remaining cost (~2.2 ms of sys a sway frame over pixman's), to profile in G3.
 - **Which GL our caps can honestly reach on WebGL2.** virglrenderer on GLES 3.0 gives GLES 3.0 and GL 2.1. GL
   3.0 and 3.1 need things WebGL2 lacks or has only as extensions: `gl_ClipDistance`
   (`WEBGL_clip_cull_distance`), depth clamp (`EXT_depth_clamp`), conditional rendering, the sRGB
@@ -663,3 +662,107 @@ WebGL2 as the baseline with WebGPU only where it exists (§1). What was measured
   `/dev/dri`, and its kernel ships neither `vgem` nor `vkms`. So vtest is the protocol's oracle, and the
   guest kernel's 3D command sequence (fences on the plane, whether dumb buffers become 3D resources) comes
   from the kernel's source and from our device's own command log in G2.
+
+## 19. G2: virgl's guest side, measured (2026-10-09)
+
+The kickoff (`M8-GRAPHICS-KICKOFF.md`, in git history after this step): the handover's proposal, with Mesa's virgl
+in unmodified guests, sway on GLES as the first desktop, snapshots refused while 3D is in use, 3D off by default
+behind `?gpu=virgl-null`, and the Mac host not widened.
+
+### Loop 0: the oracle (natively, vtest)
+
+A debug build of virglrenderer `c8e3fc3b` (meson, natively in the dev VM; `bench/results/local/virgl-build`) with a
+local patch that writes every submit, resource creation, transfer and capset to a file (`VTEST_DUMP`), and
+`VREND_DEBUG=shader` for the GLSL it makes; `virgl_test_server --use-gles --use-egl-surfaceless` with
+`MESA_GLES_VERSION_OVERRIDE=3.0` on llvmpipe, the clients on `GALLIUM_DRIVER=virpipe`. Captured (in
+`bench/results/local/g2/`, ad hoc until G3's tests use them): glcomp, and glmark2-es2 under `xvfb-run` (16 scenes:
+build, texture, shading, bump, effect2d, pulsar, desktop, buffer, ideas, jellyfish, terrain, shadow, refract,
+conditionals, function, loop). es2gears doesn't start on Xvfb (EGLUT wants DRI3).
+
+- **The caps** (`decodeCaps` in `web/virgl.ts` reads them): VIRGL is v1's 308 bytes, VIRGL2 the full 1408, max
+  versions 1 and 2. On the GLES 3.0 host: GLSL level 130, `HOST_IS_GLES`, 16,384² textures, 8 samples, 15 uniform
+  blocks; and bits WebGL2 can't back: independent blending, conditional rendering, `start_instance`, timer queries,
+  depth clamp, `textureQueryLod`, sample shading, cull distance, fbfetch, sRGB write control, ASTC, half-z clip, dual-
+  source blending, advanced blend equations. The device's caps (`virglCaps`) are these minus that list, with
+  WebGL2's minimum limits (devices.md "virgl").
+- **The shaders:** 192 shader pairs (TGSI in, GLSL ES 3.00 out). virglrenderer's GLSL needs **`GL_EXT_clip_cull_
+  distance` in every vertex shader and `GL_EXT_blend_func_extended` in 110 of the fragment shaders** (because the host
+  advertised them), and `GL_NV_shader_noperspective_interpolation` in 8: on WebGL2 those are extensions at best, so
+  G3's translator must not emit them unless the adapter has them (clip distances only when the guest writes them;
+  dual-source blending is off in our caps).
+- **The streams:** glcomp is 6 submits, 28 KB and 28 command kinds for 3 frames; glmark2's 16 scenes are 10,638
+  submits, 61 MB and 44 kinds (`VirglStats` names them). Over vtest, uploads and read-backs travel as
+  `TRANSFER3D`/`END_TRANSFERS` in the stream (vtest's own path); over virtio-gpu they don't (below).
+- QEMU's `virtio-gpu-gl` still can't run here (§18), so the guest kernel's sequence came from our device.
+
+### Loop 1: the device on a null renderer
+
+devices.md "virgl" says what exists. What the guests showed:
+- **Alpine's Mesa has no virgl at all**: its APKBUILD's gallium drivers leave it out on every architecture, so
+  `virtio_gpu_dri.so` is a stub and EGL says "virtio_gpu: driver missing" and falls back to llvmpipe (the
+  handover's assumption was wrong). `images/build.sh alpine-virgl` builds Mesa 26.1.6 (Alpine's own version)
+  from source with llvmpipe and virgl into `/opt/mesa` (~6 min), so the two renderers are measured on one build.
+- Linux 6.18 (Alpine) and 7.2 (Arch) take the device as QEMU's: `features: +virgl +edid`, both capsets read,
+  a context per DRM file. Mesa 26.1 reports `virgl (webpc)`, GLES 3.0 (glcomp asks for 2.0).
+- **Mesa moves texture data through staging buffers**: a `glTexSubImage2D` is a copy into a guest-backed
+  `VIRGL_BIND_STAGING` buffer and a `COPY_TRANSFER3D` in the stream, and `glReadPixels` the same in reverse, so
+  glcomp and sway send **no `TRANSFER_TO_HOST_3D`/`FROM_HOST_3D` at all**. G3's renderer reads (and for read-backs
+  writes) the staging buffers' guest pages while it runs the stream: the backing must be resolved per command, not
+  per transfer.
+- The Rust twin wasn't extended: the null renderer is a measuring device, G3 replaces it with one that can't run
+  natively, and the Node tests cover it (backlog, if a native virgl guest is ever wanted).
+
+### Loop 2: the numbers
+
+**glcomp** (`gl_virgl_jit*` against `gl_virgl_llvmpipe_jit*`, the same Mesa build; Chromium 153.0.8010.52, the dev
+VM, one session; medians of 3, IQR; `bench/boot/results/m8-g2/`; steps at the run loop's resolution,
+±0.1M a frame on 1 vCPU):
+
+| a compositor's frame (glcomp, 1376×762) | virgl, null renderer | llvmpipe, same build | Alpine's packaged llvmpipe |
+|---|---|---|---|
+| 1 vCPU, ms a frame | **1.68** ±0.03 | 314.7 ±1.6 | 326.8 ±1.4 |
+| 1 vCPU, guest steps a frame | **0.70M** | 476M | 484M |
+| 4 vCPUs (realtime, parallel), ms a frame | **1.30** ±0.02 | 69.3 ±0.4 | (71: §18) |
+| 4 vCPUs, guest steps a frame (all vCPUs) | **0.62M** | 441M | |
+| warm-up (3 frames, the two shaders compiled), ms | **10.0** / 13.3 | 4,472 / 3,820 | 4,490 |
+
+So the guest does **~190× less work a frame on one vCPU, ~53× less wall time on four** (where llvmpipe has all four
+busy and virgl one), and compiles glcomp's two shaders (GLSL → NIR → TGSI) in well under 10 ms. Of virgl's 0.7M
+steps, about half is glcomp's own client work, which a compositor doesn't do: natively, under `perf` over vtest,
+glcomp's pixel loop is 24% of the client's CPU, its `memcpy` into the staging buffer 23%, Mesa 21%, syscalls ~9%,
+and dynamic linking (once) 13%. 1.68 ms for 0.7M steps (~0.4G steps a second, against llvmpipe's ~1.5G) means the
+rest of the frame is the exits and the device's round trips, not guest code.
+
+**Sway** (the user's Arch image, `bench/results/local/myarch2.qcow2`: kernel 7.2.8, sway 1.12, Mesa 26.2.3; the page
+headless, 4 vCPUs, the screen fixed at 1376×762, foot scrolling `while true; do date; done`; the guest's
+`/proc/stat` and sway's and foot's `/proc/<pid>/stat` over 10 s read on the serial terminal, frames from
+`?displaystats`; the dev-only driver is `bench/results/local/g2/sway-virgl.ts`, the results
+`bench/boot/results/m8-g2/sway-*.json`; one session per mode, a second session gave the same to within 3%):
+
+| foot scrolling | virgl, null renderer (`WLR_RENDERER=gles2`) | pixman | llvmpipe (gles2, no virgl) |
+|---|---|---|---|
+| frames a second | **60** (the pacing's cap) | 60 | 27.9 |
+| all CPUs busy (user / sys) | 52% (9 / 43) | 51% (10 / 40) | 92% (57 / 34) |
+| sway, ms of CPU a second (user + sys) | 102 + 294 | 88 + 162 | 2,098 + 172 |
+| **sway, ms a frame** | **6.6** (1.7 user, 4.9 sys) | 4.2 | **81** |
+| foot, ms a second | 381 | 470 | 265 |
+| the device: submits, stream, transfers a second | 121 submits, 497 KB | 63 Mpx transferred | 29 Mpx |
+| idle (sway alone; foot open) | 3% | 3% | 3% |
+
+- The busy-CPU line is mostly the `date` loop's fork and exec (equal in the three); sway's own time is the
+  compositor's cost. On virgl it is **8% of llvmpipe's** a frame, at more than twice the frame rate.
+- **Mesa isn't the cost:** sway's user time a frame is pixman's (1.7 against 1.5 ms). The cost over pixman is
+  **sys, ~2.2 ms a frame more** (two `SUBMIT_3D`s a frame: the kernel's execbuffer, fence and atomic-commit path
+  under emulation). That is G3's first thing to profile; a GLES passthrough library (§5) would go through the same
+  kernel path, so it isn't indicated.
+- The null renderer answers at once; G3's renderer adds its own latency to the fences, which this doesn't measure.
+
+### The gate: go on to G3
+
+The gate was "a compositor frame costs the guest a small fraction of llvmpipe's". Measured: glcomp's frame is
+~1/190 of llvmpipe's guest work on one vCPU, and sway's is ~1/12 of llvmpipe's guest CPU a frame and keeps 60
+frames a second where llvmpipe makes 28. Mesa's frontend is cheap and its shader compiles take milliseconds. **G3 (the
+WebGL2 renderer) is worth building.** What it starts from: the caps in `virglCaps`; the streams and shader corpus in
+`bench/results/local/g2/` (to become fixtures); staging buffers read and written through their guest pages per
+`COPY_TRANSFER3D`; GLSL without the extensions virglrenderer leans on; the kernel's per-submit cost as the guest's
+remaining overhead.

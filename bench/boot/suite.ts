@@ -14,6 +14,8 @@
 // `--only alpine_crypto_ce_jit`: the same with them on (every other benchmark's default since M6.5 loop 7).
 // `--only gl_llvmpipe_jit`: a compositor's GLES frames on Mesa's llvmpipe (images/alpine/gl), 1 vCPU,
 // rasterizing on the calling thread; `gl_llvmpipe_jit_4`: 4 parallel vCPUs, llvmpipe's 4 threads. ms a frame.
+// `--only gl_virgl_jit`, `gl_virgl_jit_4`: the same frames through virgl (images/alpine-virgl's Mesa) on the
+// device's null renderer (G2: the guest's cost alone); `gl_virgl_llvmpipe_jit[_4]`: llvmpipe from that same build.
 // I/O, realtime mode, a fresh boot per sample, timed by the host between the
 // guest script's "webpc: … start/end" markers unless fio times itself:
 // `--only dd`: /bench-dd.sh reads all of /dev/vda (sync-XHR block backend);
@@ -239,29 +241,37 @@ const GL_CHECK: Record<number, string> = { 10: '285f8eb1', 30: 'a26ac0b1' };
  * rasterizer thread per CPU. ms a frame (host-timed), and the warm phase (LLVM compiling the
  * shaders, 3 frames).
  */
-async function glLlvmpipe(o: Options, ncpus: number): Promise<Sample[]> {
+async function glLlvmpipe(o: Options, ncpus: number, renderer: 'llvmpipe' | 'virgl' | 'virgl-llvmpipe' = 'llvmpipe'): Promise<Sample[]> {
   const a = DISTROS.alpine;
   const [base, initrd, kernel] = await Promise.all([images(), get(`../../target/images/${a.initrd}`), get(`../../target/images/${a.kernel}`)]);
   const frames = ncpus === 1 ? 10 : 30;
-  const cmdline = `${a.cmdline} webpc.gl=${frames},3,1376,762${ncpus === 1 ? ' webpc.lp=0' : ''}`;
-  const img = { ...base, kernel, initrd, disk: new URL('../../target/images/alpine-gl/rootfs-gl.ext4', import.meta.url).href, cmdline, ramSize: 1 << 30, jit: 1 as const };
+  const virgl = renderer === 'virgl';
+  // virgl's client is one thread; llvmpipe on 1 vCPU rasterizes on the calling thread.
+  const cmdline = `${a.cmdline} webpc.gl=${frames},3,1376,762${ncpus === 1 && !virgl ? ' webpc.lp=0' : ''}${virgl ? ' webpc.gpu=1' : ''}`;
+  const disk = renderer === 'llvmpipe' ? 'alpine-gl/rootfs-gl.ext4' : 'alpine-virgl/rootfs-virgl.ext4';
+  const img = { ...base, kernel, initrd, disk: new URL(`../../target/images/${disk}`, import.meta.url).href, cmdline, ramSize: 1 << 30, jit: 1 as const };
+  // The display the page's machine has for the same size (G2: a virtio-gpu with virgl on the null renderer).
+  const devices: DeviceSpec[] | undefined = virgl ? [...guestDevices(img.disk), { type: 'gpu', width: 1376, height: 762, virgl: true }] : undefined;
   const module = await WebAssembly.compile(img.wasm);
   const parallel = ncpus > 1;
-  const name = `gl_llvmpipe_jit${parallel ? `_${ncpus}` : ''}`;
-  const out = { frame: [] as number[], warm: [] as number[] };
-  let stats;
+  const name = `gl_${renderer.replace('-', '_')}_jit${parallel ? `_${ncpus}` : ''}`;
+  const out = { frame: [] as number[], warm: [] as number[], steps: [] as number[] };
+  let stats, check0: string | undefined;
   for (let i = 0; i < (o.quick ? 1 : 3); i++) {
     fresh();
-    const r = await boot(module, img, undefined, { ncpus, parallel, realtime: parallel });
+    const at: Record<string, number> = {};
+    const r = await boot(module, img, undefined, { ncpus, parallel, realtime: parallel, devices, onMark: (m, vm) => { at[m] = vm.stats().steps; } });
     const check = r.console.match(/glcomp: check ([0-9a-f]{8})/)?.[1];
-    if (check !== GL_CHECK[frames]) throw new Error(`glcomp check ${check}, expected ${GL_CHECK[frames]}`);
+    // The null renderer draws nothing, so virgl's read-backs aren't llvmpipe's pixels: the check is only held to itself.
+    if (virgl ? check !== (check0 ??= check) || !/glcomp: virgl/.test(r.console) : check !== GL_CHECK[frames]) throw new Error(`glcomp check ${check}, expected ${virgl ? check0 : GL_CHECK[frames]}\n${r.console}`);
     out.frame.push(between(r, 'frames') / frames);
     out.warm.push(between(r, 'warm'));
+    out.steps.push((at['frames end'] - at['frames start']) / frames);
     stats = r.stats;
-    o.log?.(`${name}: ${out.frame.at(-1)!.toFixed(0)} ms a frame, warm ${out.warm.at(-1)!.toFixed(0)} ms, total ${r.total.toFixed(0)} ms`);
+    o.log?.(`${name}: ${out.frame.at(-1)!.toFixed(1)} ms a frame (${(out.steps.at(-1)! / 1e6).toFixed(2)}M steps), warm ${out.warm.at(-1)!.toFixed(0)} ms, total ${r.total.toFixed(0)} ms`);
   }
-  const params = { distro: 'alpine', disk: 'rootfs-gl.ext4', cmdline, ramMiB: 1024, jit: 1, ncpus, parallel, realtime: parallel, frames, steps: stats!.steps, counters: stats };
-  return [{ name: `${name}_frame`, unit: 'ms', params, samples: out.frame }, { name: `${name}_warm`, unit: 'ms', params, samples: out.warm }];
+  const params = { distro: 'alpine', disk: disk.split('/')[1], cmdline, ramMiB: 1024, jit: 1, ncpus, parallel, realtime: parallel, frames, renderer, check: check0, steps: stats!.steps, counters: stats };
+  return [{ name: `${name}_frame`, unit: 'ms', params, samples: out.frame }, { name: `${name}_warm`, unit: 'ms', params, samples: out.warm }, { name: `${name}_frame_steps`, unit: 'steps', params, samples: out.steps }];
 }
 
 /** The crypto phase's check line (SHA-1, SHA-256, AES-128-CBC, AES-256-CTR, AES-128-CBC decrypt), from arm64 hardware. */
@@ -430,6 +440,8 @@ export const suite = {
   // Under the JIT (VmConfig.jit = 1), deterministic.
   boot_jit: (o: Options) => runAll(o, 'Image', 1), boot_alpine_jit: (o: Options) => bootAlpine(o, 1), coremark_vm_jit: coremarkVm, alpine_user_jit: alpineUser,
   gl_llvmpipe_jit: (o: Options) => glLlvmpipe(o, 1), gl_llvmpipe_jit_4: (o: Options) => glLlvmpipe(o, 4),
+  gl_virgl_jit: (o: Options) => glLlvmpipe(o, 1, 'virgl'), gl_virgl_jit_4: (o: Options) => glLlvmpipe(o, 4, 'virgl'),
+  gl_virgl_llvmpipe_jit: (o: Options) => glLlvmpipe(o, 1, 'virgl-llvmpipe'), gl_virgl_llvmpipe_jit_4: (o: Options) => glLlvmpipe(o, 4, 'virgl-llvmpipe'),
   // Realtime (M6.5).
   alpine_crypto_jit: (o: Options) => alpineCrypto(o),
   alpine_crypto_ce_jit: (o: Options) => alpineCrypto(o, '', true), // the crypto extensions on (VmConfig.features)

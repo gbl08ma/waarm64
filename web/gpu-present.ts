@@ -12,7 +12,7 @@ export type DisplayToPage =
   /** The guest's cursor: its 64×64 RGBA and hotspot, `null` when the guest hid it, `undefined` when it never set one (the page's own pointer). The position isn't sent: the tablet is absolute, the host's pointer is the guest's. */
   | { type: 'cursor'; image: ArrayBuffer | null | undefined; hotX: number; hotY: number }
   /** With `stats`: once a second, the draws since the last (n) and the ms from the flush that made them to the draw (median, max): bench/gpu. */
-  | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number } };
+  | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number };
 
 export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, stats = false): GpuHooks {
@@ -32,7 +32,7 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
       const s = lat.splice(0).sort((a, b) => a - b);
       port.postMessage({ type: 'draw-stats', n: s.length, median: s[s.length >> 1] ?? 0, max: s[s.length - 1] ?? 0, lag, busy: { ...busy, draw: drawMs } } satisfies DisplayToPage);
       lag = 0;
-      Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0 });
+      Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0 });
       drawMs = 0;
     }, 1000);
   }

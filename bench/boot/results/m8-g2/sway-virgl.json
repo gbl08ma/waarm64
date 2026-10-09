@@ -1,0 +1,214 @@
+{
+ "mode": "virgl",
+ "info": "7.2.8-1-aarch64-ARCHerror: package 'wlroots0.19' was not found sway 1:1.12-4 mesa 1:26.2.3-1 foot 1.28.0-2 by-path  card0  renderD128[root@alarm ~]#  ",
+ "console": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 5,
+    "user": 0,
+    "sys": 5
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 2,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 1,
+    "user": 0,
+    "sys": 1
+   }
+  ],
+  "procs": [],
+  "display": {
+   "seconds": 6,
+   "flushes": 4.833333333333333,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 4.833333333333333,
+   "Mpx": 5.067808,
+   "requestMs": 13.843333328763643,
+   "draws": 4.833333333333333
+  }
+ },
+ "sway": "sway=412libgallium-26.2.3-arch1.1.solibpixman-1.so.0.46.4      5 /dev/dri/card0      6 /dev/dri/renderD128[root@alarm ~]#  ",
+ "sway-idle": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 2,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 2,
+    "sysMs": 6
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "flushes": 1,
+   "submits": 2,
+   "submitKB": 8.21875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.2586363635279916,
+   "draws": 1
+  }
+ },
+ "foot-idle": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 2,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 1,
+    "sysMs": 5
+   },
+   {
+    "proc": "foot",
+    "userMs": 0,
+    "sysMs": 0
+   }
+  ],
+  "display": {
+   "seconds": 10,
+   "flushes": 0.9,
+   "submits": 1.8,
+   "submitKB": 7.396875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.25450000166893005,
+   "draws": 0.9
+  }
+ },
+ "date-loop": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 52,
+    "user": 9,
+    "sys": 43
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 46,
+    "user": 6,
+    "sys": 40
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 54,
+    "user": 10,
+    "sys": 43
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 55,
+    "user": 10,
+    "sys": 44
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 55,
+    "user": 9,
+    "sys": 46
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 102,
+    "sysMs": 294
+   },
+   {
+    "proc": "foot",
+    "userMs": 97,
+    "sysMs": 284
+   }
+  ],
+  "display": {
+   "seconds": 10,
+   "flushes": 60,
+   "submits": 120.9,
+   "submitKB": 497.401953125,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 15.406999959051609,
+   "draws": 60
+  }
+ },
+ "tail": "400:00:04.075 [ERROR] [sway/config/output.c:1219] failed to execute 'swaybg' (background configuration probably not applied): No such file or directoryEnvironment variable $XDG_CURRENT_DESKTOP not set, ignoring.warn: main.c:495: 'C' is not a UTF-8 locale, falling back to 'C.UTF-8'warn: wayland.c:1888: compositor does not implement the xdg-toplevel-icon protocol[root@alarm ~]#  "
+}

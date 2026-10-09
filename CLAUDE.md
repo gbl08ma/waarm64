@@ -29,7 +29,7 @@ extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vC
 **Current:** M8, a usable machine (PLAN.md §3). Phase A (the interactive machine: `npm start`, the
 page in `web/app/`, [docs/frontend.md](docs/frontend.md)) and phase B (your own disk: unmodified
 images through UEFI, disk in and out, changes back in; [docs/plans/uefi.md](docs/plans/uefi.md))
-are done; of the C tracks, networking is done up to its loose ends ([docs/plans/networking.md](docs/plans/networking.md)) and snapshots are done (save and load a machine as a file, Suspend: [docs/plans/snapshots.md](docs/plans/snapshots.md)), and graphics has its 2D display (virtio-gpu, G0 and G1 of [docs/plans/graphics.md](docs/plans/graphics.md)); 3D is to come through virgl onto WebGL2 (graphics.md §1), and G2, virgl's guest side measured, is next and needs its kickoff (`M8-GRAPHICS-HANDOVER.md`). Loose ends go in
+are done; of the C tracks, networking is done up to its loose ends ([docs/plans/networking.md](docs/plans/networking.md)) and snapshots are done (save and load a machine as a file, Suspend: [docs/plans/snapshots.md](docs/plans/snapshots.md)), and graphics has its 2D display (virtio-gpu, G0 and G1 of [docs/plans/graphics.md](docs/plans/graphics.md)); 3D comes through virgl onto WebGL2 (graphics.md §1): G2 measured virgl's guest side on a null renderer and passed its gate (§19), and G3, the WebGL2 renderer, is next and needs its kickoff (`M8-GRAPHICS-HANDOVER.md`). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment
@@ -47,7 +47,7 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   text without a font: screenshots of the page need it); Rust through rustup and `rust-toolchain.toml`.
   qemu-hw-display-virtio-gpu (QEMU's virtio-gpu device is a separate package) and edid-decode (graphics oracle);
   for the virgl oracle virglrenderer-test-server (`virgl_test_server`, vtest),
-  Mesa-demo (`eglinfo`, `es2_info`) and Mesa-libGLESv2-devel, Mesa-libEGL-devel, Mesa-KHR-devel (glcomp builds natively); qemu-ui-opengl is installed but QEMU's
+  Mesa-demo (`eglinfo`, `es2_info`) and Mesa-libGLESv2-devel, Mesa-libEGL-devel, Mesa-KHR-devel (glcomp builds natively); glmark2, xvfb-run (glmark2-es2 on virpipe under Xvfb), meson, ninja, libepoxy-devel, libdrm-devel, libgbm-devel (a debug virglrenderer for the oracle, graphics.md §19), sway and foot; qemu-ui-opengl is installed but QEMU's
   `virtio-gpu-gl` can't run (no DRM render node in the VM: graphics.md §18).
   Add what's missing with `sudo zypper in`, and note it here.
 - **Go** (from zypper; `net/tailscale/go.mod` pins the toolchain) builds the Tailscale wasm backend, `net/tailscale/build.sh`. The networking tests' headscale and peer run in rootless Podman: `tests/net/tailnet.sh up|down`. Never Docker in scripts or CI.

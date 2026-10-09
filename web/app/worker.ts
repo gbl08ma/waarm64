@@ -113,11 +113,15 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
 
 /** The kinds a normal start makes, as the page's options say. */
 const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', 'blk', ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : []), ...(usesGpu(m, machine) ? ['gpu' as const] : [])];
-/** The display's tuning: flush replies paced to the frame and a queue of 16 (docs/devices.md "virtio-gpu"); the page's `?gpu=nopace,q<N>` changes them, for measurements. */
+/**
+ * The display's tuning: flush replies paced to the frame and a queue of 16 (docs/devices.md "virtio-gpu"); the page's
+ * `?gpu=nopace,q<N>` changes them, for measurements. `?gpu=virgl-null` turns on virgl on the null renderer (G2: the
+ * guest's 3D commands are counted, nothing is drawn, so a GL desktop's screen stays black).
+ */
 function gpuTuning() {
   const knobs = (new URLSearchParams(self.location.search).get('gpu') ?? '').split(',');
   const q = knobs.find((k) => /^q\d+$/.test(k));
-  return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16 };
+  return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virgl: knobs.includes('virgl-null') };
 }
 /** A machine with a virtio-gpu draws through it, unless the page asked for the framebuffer. */
 const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu' && !m.simple;

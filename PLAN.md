@@ -158,8 +158,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     2026-10-09):** no software rendering or translation layers in the guest; OpenGL ES first,
     through Mesa's upstream **virgl** driver onto **our own virgl renderer on WebGL2** (the
     baseline), a WebGPU backend only where the browser has one, Vulkan (Venus, Zink) deferred
-    (graphics.md §1, §18). Next: G2, virgl's guest side measured on a null renderer (the
-    gate), with its own kickoff (proposal in `M8-GRAPHICS-HANDOVER.md`).
+    (graphics.md §1, §18). **G2 is done (2026-10-09, graphics.md §19): the gate passed.** On a
+    virtio-gpu with virgl and a null renderer, a sway frame costs the guest 6.6 ms of CPU against
+    llvmpipe's 81 (60 frames a second against 28), and glcomp's ~1/190 of llvmpipe's work; Mesa
+    is cheap, the kernel's submit path is what's left. Next: G3, the renderer on WebGL2, with its
+    own kickoff (proposal in `M8-GRAPHICS-HANDOVER.md`).
   - Audio: virtio-snd to an AudioWorklet over a shared ring (`docs/plans/audio.md`, to write).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.

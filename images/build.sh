@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, linux-crypto, debian, ltp, litmus, edk2 (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, debian, ltp, litmus, edk2 (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
 # buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Bootlin's
@@ -23,6 +23,9 @@
 #   Mesa (EGL, GLES, the Gallium drivers: llvmpipe) and glcomp, a compositor's GLES load
 #   compiled in the same container, with its local.d script instead of the boot test's, as
 #   rootfs-gl.ext4 (it boots alpine's Image and initramfs-virt). Built as alpine-user.
+# alpine-virgl: G2's virgl guest (docs/plans/graphics.md §19): alpine-gl's root plus Mesa
+#   $MESA built from source with llvmpipe and virgl in /opt/mesa (Alpine's Mesa has no
+#   virgl on any architecture), so both renderers run the same build; rootfs-virgl.ext4.
 # linux-crypto: the crypto extensions' test kernel (M6.5, images/crypto/):
 #   allnoconfig + linux.fragment + images/crypto/linux.fragment, and an
 #   initramfs whose static init reports the crypto self-tests (Image,
@@ -75,6 +78,9 @@ USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0 openssl=3.5.8-r0"
 USERLAND_TOOLS="e2fsprogs=1.47.4-r0 e2fsprogs-extra=1.47.4-r0"
 GL_PKGS="mesa-egl=26.1.6-r0 mesa-gles=26.1.6-r0 mesa-dri-gallium=26.1.6-r0"
 GL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 mesa-dev=26.1.6-r0"
+MESA=26.1.6
+MESA_SHA256=5296b88a0f1e012e2cb9ada150a2bbadf728ca81e5a4fb2ab43c83a4d2158606
+VIRGL_TOOLS="build-base=0.5-r4 meson=1.11.1-r0 samurai=1.2-r8 python3=3.14.8-r0 py3-mako=1.3.12-r0 py3-yaml=6.0.3-r2 py3-packaging=26.2-r0 llvm22-dev=22.1.3-r0 libdrm-dev=2.4.134-r0 expat-dev=2.8.5-r0 zlib-dev=1.3.2-r1 zstd-dev=1.5.7-r2 bison=3.8.2-r3 flex=2.6.4-r8 linux-headers=7.0.0-r1 elfutils-dev=0.195-r0"
 KERNEL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 bc=1.08.2-r1 flex=2.6.4-r8 bison=3.8.2-r3 perl=5.42.2-r1 linux-headers=7.0.0-r1 diffutils=3.12-r0 findutils=4.10.0-r1 openssl-dev=3.5.9-r0"
 LITMUS_TOOLS="ocaml=4.14.4-r0 dune=3.22.2-r1 ocaml-menhir=20220210-r6 ocaml-menhir-dev=20220210-r6 ocaml-zarith=1.14-r1 ocaml-findlib=1.9.6-r8 gmp-dev=6.3.0-r4 busybox-static=1.37.0-r31 gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 tar=1.35-r5"
 HERDTOOLS_TAG=7.58
@@ -90,7 +96,7 @@ export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl linux-crypto linux-gpu debian ltp litmus edk2 alpine-uefi)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu debian ltp litmus edk2 alpine-uefi)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -258,6 +264,38 @@ build_alpine-gl() {
       -U 77656270-6300-4000-8000-000000000015 -E hash_seed=77656270-6300-4000-8000-000000000016,no_copy_xattrs \
       "$1/alpine-gl/rootfs-gl.ext4" 512M
   ' - "$out" "$GL_PKGS" "$GL_TOOLS" "$USERLAND_TOOLS"
+}
+
+build_alpine-virgl() {
+  local dst=$out/alpine-virgl tar=$out/dl/mesa-$MESA.tar.xz
+  [ -f "$out/alpine-gl/rootfs-gl.ext4" ] || { echo "alpine-virgl needs the alpine-gl image: images/build.sh alpine-gl" >&2; exit 1; }
+  mkdir -p "$out/dl"
+  [ -f "$tar" ] || wget -q -O "$tar" "https://archive.mesa3d.org/mesa-$MESA.tar.xz"
+  echo "$MESA_SHA256  $tar" | sha256sum -c --quiet
+  rm -rf "$dst"
+  mkdir -p "$dst"
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache $3 $4
+    r=/tmp/r
+    mkdir $r
+    debugfs -R "rdump / $r" "$1/alpine-gl/rootfs-gl.ext4" 2>/dev/null
+    tar -xf "$2" -C /tmp
+    cd /tmp/mesa-*
+    meson setup b --prefix=/opt/mesa --libdir=lib -Dbuildtype=release -Db_ndebug=true \
+      -Dgallium-drivers=llvmpipe,virgl -Dvulkan-drivers= -Dplatforms= -Dglx=disabled -Degl=enabled \
+      -Dgles1=disabled -Dgles2=enabled -Dgbm=enabled -Dllvm=enabled -Dshared-llvm=enabled -Dvideo-codecs= \
+      -Dgallium-va=disabled -Dgallium-rusticl=false -Dlmsensors=disabled -Dvalgrind=disabled -Dlibunwind=disabled \
+      -Dxmlconfig=disabled -Dzstd=enabled >/dev/null
+    ninja -C b >/dev/null
+    DESTDIR=$r ninja -C b install >/dev/null
+    rm -rf "$r/opt/mesa/include" "$r/opt/mesa/lib/pkgconfig"
+    cd - >/dev/null
+    install -m 755 images/alpine/gl/webpc-gl.start "$r/etc/local.d/"
+    find "$r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+    E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d "$r" -L alpine-virgl \
+      -U 77656270-6300-4000-8000-000000000017 -E hash_seed=77656270-6300-4000-8000-000000000018,no_copy_xattrs \
+      "$1/alpine-virgl/rootfs-virgl.ext4" 512M
+  ' - "$out" "$tar" "$VIRGL_TOOLS" "$USERLAND_TOOLS"
 }
 
 build_linux-crypto() {
@@ -449,6 +487,7 @@ inputs() {
   [ "$1" = alpine-user ] && files+=($(find images/alpine/user -type f | sort) "$out/alpine/.inputs")
   [ "$1" = alpine-user ] && pins='^USERLAND_' 
   [ "$1" = alpine-gl ] && files+=($(find images/alpine/gl -type f | sort) "$out/alpine/.inputs") && pins='^(GL_|USERLAND_TOOLS|USERLAND_CONTAINER)'
+  [ "$1" = alpine-virgl ] && files+=($(find images/alpine/gl -type f | sort) "$out/alpine-gl/.inputs") && pins='^(MESA|VIRGL_TOOLS|USERLAND_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = linux-crypto ] && files+=(images/linux.fragment $(find images/crypto -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = linux-gpu ] && files+=(images/linux.fragment $(find images/gpu -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
@@ -466,6 +505,7 @@ outputs() {
     alpine) echo alpine/Image alpine/initramfs-virt alpine/rootfs.ext4 ;;
     alpine-user) echo alpine-user/rootfs-user.ext4 ;;
     alpine-gl) echo alpine-gl/rootfs-gl.ext4 ;;
+    alpine-virgl) echo alpine-virgl/rootfs-virgl.ext4 ;;
     linux-crypto) echo linux-crypto/Image linux-crypto/initramfs.cpio ;;
     linux-gpu) echo linux-gpu/Image linux-gpu/initramfs.cpio ;;
     debian) echo debian/disk.qcow2 ;;
@@ -511,10 +551,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() user= gl= crypto= gpu= litmus= kernel= debian= edk2= alpine_uefi=
+  rest=() user= gl= virgl= crypto= gpu= litmus= kernel= debian= edk2= alpine_uefi=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
+    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -530,6 +570,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   if [ -n "$alpine_uefi" ]; then build alpine-uefi; fi # the same
   if [ -n "$user" ]; then build alpine-user; fi
   if [ -n "$gl" ]; then build alpine-gl; fi
+  if [ -n "$virgl" ]; then build alpine-virgl; fi
   if [ -n "$crypto" ]; then build linux-crypto; fi
   if [ -n "$gpu" ]; then build linux-gpu; fi
   if [ -n "$litmus" ]; then build litmus; fi

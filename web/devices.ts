@@ -54,7 +54,7 @@ export type P9Spec = { type: '9p'; tag: string; files?: P9Files };
 export type InputSpec = { type: 'input'; kind: 'keyboard' | 'tablet'; port?: MessagePort };
 
 /**
- * virtio-gpu, 2D (web/gpu.ts): the display's size, the EDID's DPI, and a test hook that changes the
+ * virtio-gpu, 2D and, with `virgl`, 3D on a null renderer (web/gpu.ts): the display's size, the EDID's DPI, and a test hook that changes the
  * size after some flushes. Where the pixels go is the page's business (`GpuHooks`).
  */
 export type GpuSpec = {
@@ -133,9 +133,11 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
     case 'input': return { entry: [18n, 0n, 2n, 64n, 136n], config: new Uint8Array(136) };
     // Feature EDID (1); controlq and cursorq; config: events_read, events_clear, num_scanouts = 1, num_capsets = 0.
     case 'gpu': {
+      // Features EDID (1) and, with `virgl`, VIRGL (0); config: num_scanouts (u32 at 8), num_capsets (at 12: VIRGL, VIRGL2).
       const config = new Uint8Array(16);
       new DataView(config.buffer).setUint32(8, 1, true);
-      return { entry: [16n, 1n << 1n, 2n, BigInt(d.queueSize ?? 64), 16n], config };
+      if (d.virgl) new DataView(config.buffer).setUint32(12, 2, true);
+      return { entry: [16n, d.virgl ? 3n : 1n << 1n, 2n, BigInt(d.queueSize ?? 64), 16n], config };
     }
   }
 }

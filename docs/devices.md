@@ -206,7 +206,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   sends combinations the browser keeps, docs/frontend.md "Input"); they wait for event buffers
   (oldest dropped past 1024). LED status events go to the port. No pointer lock or multitouch.
 
-### virtio-gpu (ID 16), 2D only
+### virtio-gpu (ID 16): 2D, and virgl on a null renderer
 - `{type: 'gpu', width, height, dpi?}` (`web/gpu.ts`; the native twin is `core/tests/common/gpu.rs`
   and must give the same answers, the same EDID bytes and the same pixels). controlq and cursorq,
   feature `EDID`, config `events_read`, `events_clear` (write-one-to-clear), `num_scanouts` = 1,
@@ -266,6 +266,34 @@ mode (and natively in realtime mode: std has no CSPRNG).
   (`Gpu`) over RAM and a command buffer, so Node tests drive it without a guest.
 - Guests: Linux's `virtio_gpu` (a module in Debian and Alpine, built in `images/gpu` with
   `CONFIG_DRM_VIRTIO_GPU_KMS`, without which it says "KMS disabled" and offers no display).
+
+#### virgl (G2: the guest's side, on a null renderer)
+- `{type: 'gpu', …, virgl: true}` (`GpuOptions.virgl`, off by default so no guest's bytes or steps move; the page's
+  `?gpu=virgl-null`). Adds feature `VIRGL` (bit 0) and `num_capsets` = 2, and the 3D commands: `GET_CAPSET_INFO`,
+  `GET_CAPSET`, `CTX_CREATE`/`DESTROY`, `CTX_ATTACH`/`DETACH_RESOURCE`, `RESOURCE_CREATE_3D`, `TRANSFER_TO_HOST_3D`,
+  `TRANSFER_FROM_HOST_3D`, `SUBMIT_3D`. Errors as virglrenderer gives them (`ERR_INVALID_CONTEXT_ID` for an unknown or
+  reused context, context 0 included); at most 1,024 contexts and 65,536 resources.
+- **The capsets** are VIRGL (v1, 308 bytes) and VIRGL2 (v2, 1408 bytes), from `virglCaps` in `web/virgl.ts`:
+  virglrenderer's own caps on a GLES 3.0 host (graphics.md §19), so the guest's Mesa reports **OpenGL ES 3.0** (GLSL
+  level 130), minus what WebGL2 lacks or has only as an extension (independent blending, conditional rendering,
+  dual-source blending, fbfetch, sRGB write control, ASTC, half-z clip, depth clamp, sample shading, cull distance…)
+  and with WebGL2's minimum limits where virglrenderer's were above them. The renderer string is `webpc`. The
+  format masks are virglrenderer's; G3 trims them per adapter.
+- **The null renderer:** a context is a set of attached resource ids; a 3D resource keeps its gallium target and
+  bind flags and no host memory; `SUBMIT_3D` walks the command stream (`walk`: header dword = command, object type,
+  length) and counts each command (`VirglStats`), refusing a length past the end with `ERR_INVALID_PARAMETER` as
+  virglrenderer stops there; 3D transfers are checked and counted (bytes each way) and copy nothing; fences signal
+  at once (the reply). A 3D resource set as the scanout gets black pixels (a `PIPE_TEXTURE_2D` only), so a GL
+  desktop's screen is black. A 2D transfer of a 3D resource is refused. `Gpu.state().virgl` has the counts;
+  `Gpu.onSubmit` sees every stream (captures for G3's fixtures); `?displaystats` reports submits and flushes a
+  second.
+- **What the guest sends** (Mesa 26.1 and 26.2): textures are uploaded and read back through staging buffers
+  (`VIRGL_BIND_STAGING`, `COPY_TRANSFER3D` in the stream, the host reading and writing the buffer's guest pages),
+  so glcomp and sway send no `TRANSFER_*_3D` at all; dumb buffers (fbcon, the cursor, pixman) stay 2D.
+- **Snapshots:** a machine with a context or a 3D resource isn't saved (`save()` marks it `unsaveable`, and
+  `vm.snapshot` refuses with the reason): the renderer's objects aren't in guest RAM. The kickoff's choice.
+- No native twin yet (`core/tests/common/gpu.rs` is 2D): the null renderer is tested in Node (`tests/gpu.test.ts`)
+  and measured with Alpine (`alpine-virgl`) and the user's Arch image (graphics.md §19).
 
 ### Framebuffer (`simple-framebuffer`)
 - `VmConfig.fb_width`/`fb_height` (0: none). x8r8g8b8, packed rows (stride 4 × width), in guest

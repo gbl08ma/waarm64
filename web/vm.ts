@@ -684,10 +684,13 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
         }
         const got = Number(ex.vm_snapshot_save(vm, stateBuf.at, stateBuf.len));
         if (!got) continue; // a backend completed something in between
+        const saved = await devices.save();
+        const why = saved.map((d) => (d as { unsaveable?: string } | null)?.unsaveable).find((x) => x);
+        if (why) throw new Error(`the machine can't be saved: ${why}`);
         return {
           version: ex.snapshot_version(),
           core: bytes().slice(stateBuf.at, stateBuf.at + got),
-          host: { devices: await devices.save(), input: queued.flatMap((b) => [...b]) },
+          host: { devices: saved, input: queued.flatMap((b) => [...b]) },
         };
       }
       throw new Error("the machine can't be saved: its devices never went quiet");
