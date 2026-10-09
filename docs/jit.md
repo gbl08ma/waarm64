@@ -71,13 +71,18 @@ the interpreter's own code.
 
 ## Compile policy
 
-- A key is counted per dispatch; at the **threshold (500;** 50 until the block interpreter made
-  the uncompiled path ~2–3× faster, `bench/apps/REPORT.md` "M8: the block interpreter") it joins
-  a pending batch, emitted as
+- A key is counted per dispatch; past the **threshold** it joins a pending batch, emitted as
   one module at **512 blocks**, once the pending blocks have run **50,000 steps** in the
   interpreter since they joined it (`BATCH_STEPS`: each dispatch of a queued block adds its
   length), or **64M steps** after the batch's first entry (`BATCH_TIMEOUT`, for lukewarm blocks).
   So a block that keeps running is compiled soon, and blocks that rarely run wait for company.
+- **The threshold follows the code cache's pressure** (`Cache::retune`, set where modules are
+  installed and at flushes, so a dispatch only compares): **50** while the live modules are under
+  two eighths of the byte budget (40 MiB), doubled at each further eighth up to **1000**
+  (`Config::threshold`, `threshold_max`, `PRESSURE_KNEE`), and each flush doubles the floor it
+  starts from. Code that fits is compiled early; a working set that doesn't fills the rest of the
+  budget with the code that runs most. JIT-stress, JIT-check, the dispatcher-only mode and the
+  user-mode `jit_new` keep a fixed threshold.
   Fewer, larger modules run faster (chains stay within a module) and cost V8 ~16 KB less each
   ([Memory](#memory)): Alpine's userspace benchmark makes 970 modules (3,860 with the 1M-step
   timeout alone, which emitted half of them with one function).
@@ -133,12 +138,17 @@ the interpreter's own code.
   forced mode (threshold 0, batch 1, a big cache, `region_after` 0: regions at once). The
   user-mode `jit_new` takes all five knobs.
 - The sweeps of threshold (2–200), batch size, timeout and `region_after` after M6's chunk change
-  were flat on Alpine. With the block interpreter (2026-10-09), threshold 50 / 200 / 500 / 1000 on
-  Chromium in Debian (4 vCPUs, three renders): 50 compiled ~150 MiB a render and flushed, 200
-  flushed by the third, 500 compiled 67 MiB once and was fastest (warm renders 28–30 s against
-  41); on Alpine 500 was 9% faster on the boot and 2.7% on the userspace benchmark than the old
-  path at 50, though its hot phases (Lua, SQLite, compress, churn) were 1.5–6% slower than at 50.
-  A threshold that follows the cache's pressure is the next experiment ([backlog.md](backlog.md)).
+  were flat on Alpine. With the block interpreter (2026-10-09), fixed thresholds 50 / 200 / 500 /
+  1000 on Chromium in Debian (4 vCPUs, three renders): 50 compiled ~150 MiB a render and flushed,
+  200 flushed by the third, 500 compiled 67 MiB once (warm renders 28–30 s against 41); on Alpine
+  500 made the hot phases (Lua, SQLite, compress, churn) 1.5–6% slower than 50 and the boot 6–9%
+  faster. The pressure-driven threshold has 50's hot phases and is 4–5% faster than 500 on every
+  Chromium render, 5–8% on a 4-vCPU `go build` loop, without flushes; the Alpine boot keeps 50's
+  cost (+7% against 500: its code runs 50–500 times and not again, so compiling it at 50 doesn't
+  pay back V8's compile; the Debian boot on the page didn't move). Floors of 100 and 200 traded the
+  phases and Chromium for the boot; counts that decay with time and a ×10 threshold for EL1 blocks
+  didn't help the boot (`bench/boot/REPORT.md` "M8: a compile threshold that follows the code
+  cache's pressure").
 
 ## Linking
 

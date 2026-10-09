@@ -1,4 +1,4 @@
-# M8 JIT performance: handover (2026-10-09)
+# M8 JIT performance: handover (2026-10-09, evening)
 
 A side track of M8, asked for by the user: make general and "complex app" work faster. Not a
 milestone phase; no kickoff. How things work is in docs/jit.md and docs/cpu.md "The block
@@ -17,7 +17,7 @@ interpreter"; the measurements in `bench/boot/REPORT.md`, `bench/apps/REPORT.md`
 - **The block interpreter** (`9809a85`, `core/src/interp/block.rs`, the dispatcher in
   `jit::steps`/`jit::interpret`): what the JIT hasn't compiled runs from the JIT's blocks decoded
   once into micro-ops, chained, counted locally. 2–2.7× the interpreter (`vm_mmu_mips` 72.6 →
-  195.6). With it the compile threshold went 50 → 500 (`jit::Config::DEFAULT`):
+  195.6). With it the compile threshold went 50 → 500 (since replaced, below):
 
   | | Chromium renders, s | Alpine boot | Alpine userspace | its hot phases |
   |---|---|---|---|---|
@@ -26,50 +26,25 @@ interpreter"; the measurements in `bench/boot/REPORT.md`, `bench/apps/REPORT.md`
   | block interpreter, 500 | 48.4, 29.8, 28.2 | −8.9% | −2.7% | 1.5–6% *slower* than at 50 |
 
   (Alpine against the old path at 50, same session; Chromium's old-path row from an earlier,
-  ~10% slower session: compare the block-interpreter rows with each other.) At 50 Chromium
-  compiles ~150 MiB a render and flushes the 160 MiB cache; 200 flushed by the third render; 500
-  compiles 67 MiB once; 1000 interprets 7.7% of the cold render.
+  ~10% slower session: compare the block-interpreter rows with each other.)
+- **The pressure-driven threshold** (the user's question, 2026-10-09; `jit::Cache::retune`): 50
+  until the live modules fill 40 MiB of the 160, doubled at each further 20 MiB up to 1000, the
+  floor doubled at each flush. Against a fixed 500: Chromium renders 4–5% faster (46.0/28.5/26.8 s),
+  a `go build` loop 5–8%, no flushes in either; Alpine's hot phases at 50's speed (−3 to −6%), its
+  userspace total −1.2%; **the Alpine boot +7%** (50's cost: run-once code; the Debian boot on the
+  page unchanged). Floors 100/200, decaying counts and an EL1 ×10 threshold were tried and lost
+  (`bench/boot/REPORT.md`, `bench/apps/REPORT.md` "M8: a compile threshold that follows the code
+  cache's pressure"; docs/jit.md "Compile policy").
 
-## Next: a compile threshold that follows the code cache's pressure
+## Next
 
-The user's question (2026-10-09): adjust the thresholds dynamically by speed or cache pressure?
-Answered yes, by **pressure**, not MIPS (the status bar's MIPS includes idle and I/O, and depends on
-the mix). They expect this to be the next step. Goal: Alpine's hot phases as at 50, Chromium as at
-500, no flushes where 500 has none.
-
-**Where it goes:** `jit::Cache::miss` (core/src/jit/mod.rs), under the cache's lock already, where
-a block's dispatches arrive (each decoded block reports at most every 16 dispatches and at the
-threshold: the quota `miss` returns, `interp::block::Cache::quota`). Replace `self.cfg.threshold`
-there (both the queueing test and the quota) with a `Cache` field the policy moves; keep
-`Config::threshold` as the start, or the fixed value for the forced/stress/check/`INTERP` modes
-(threshold 0 and `u32::MAX` must stay fixed). The compile policy changes no guest step, so
-`tests/steps.txt` holds; `a_decoded_block_reports_at_the_threshold` pins 50 explicitly.
-
-**Signals the cache already has:** `live_bytes` against `cfg.max_bytes` (160 MiB; the flush when
-it's reached is in `Cache::alloc`/`install`), flushes (`drop_all`, `Stats::flushes`), and per
-table `stats.steps` (JIT) against `stats.dec_steps` (block interpreter). A first rule to try:
-start at 50 (or 100); after a flush, or when `live_bytes` passes ~half the budget, raise it (×2 up
-to ~1000); when the budget has room again and the interpreted share is high, lower it. Decide at
-batch emission or every N reports, not per dispatch. Note `live_bytes` only grows until a flush
-(no eviction), so "room again" may in practice mean "after a flush": think through the steady
-state for a working set that never fits (a Go build) versus one that fits at 500 (Chromium).
-
-**Measure** (all in Chromium, A/B alternating, the variant cores kept aside):
-- `node bench/apps/chromium.ts --wasm <core> --json <out>`: the target is the 500 row's warm renders
-  (28–30 s) with a cold render no worse; check `flushes` and wasm MiB per render in its output.
-- `boot_alpine_jit` and `alpine_user_jit` (phases): the target is the 50 row's hot phases. The
-  alternating script used last time: `bench/results/local/dec/ab.sh` (git-ignored, on the dev VM
-  only; variants `core-<name>.wasm`,
-  rounds alternated, JSON moved aside per run; `med.ts` beside it prints the medians).
-- Then a long mixed load (`bench/stress` with `--guest-cmd`, a `go build` loop) for pressure that
-  never fits.
-- Reports: `bench/apps/REPORT.md` and `bench/boot/REPORT.md` new sections, JSON in `results/<name>/`;
-  docs/jit.md "Compile policy" (the threshold paragraph and the sweep), the backlog entry out.
-
-**Other open items** (backlog "Interpreter"): the decoded caches are per table and their 2M
-micro-op arena restarts when full (~3M decodes a Chromium render, ~1–2% by estimate: drop the
-older half instead, or share one store); more micro-op handlers (FP/SIMD loads and stores,
-atomics; count the generic ops first); tail-call dispatch as an A/B.
+The backlog's "Interpreter" list, most promising first: the block interpreter's caches (one per
+table, so four vCPUs decode the same code four times; the 2M micro-op arena starts over when full,
+6–8 times a Chromium render: drop the older half instead, or share one store; ~1–2% by estimate,
+so measure the re-decodes first), then more micro-op handlers (FP/SIMD loads and stores, atomics;
+count the generic ops on a real workload first), tail-call dispatch as an A/B. Then the "JIT"
+list. Rank by Alpine userspace and the Chromium renders (`bench/apps/chromium.ts`, A/B with
+`--wasm`).
 
 ## How to measure
 
@@ -158,6 +133,14 @@ Diagnostic counters without new ABI: append `<letter>:<n> <count>` lines to
   on every native guest with exact steps in seconds; the run summaries print its share.
 - **`bench/apps` runs reproduce to ~1% within a session but drift ~10% between sessions**: always
   run the baseline in the same session (`--wasm` of a core with the change compiled out).
+  `chromium.ts` prints the Debian boot to login (`# logged in at`): a free check of the page's boot.
+- **A boot and a hot phase want different thresholds without any cache pressure:** a low one
+  compiles the boot's run-once code (V8's compile not paid back), a high one leaves a phase's new
+  code interpreted for hundreds of dispatches. The cache's fill can't tell them apart.
+- **The A/B scripts of this step** (git-ignored, dev VM only): `bench/results/local/press/ab.sh
+  <round> <bench> <cores…>` (bench/boot, one round; `med.ts` prints the medians), `apps.sh <round>
+  <cores…>` (chromium.ts), `go.sh <round> <core> [hello|web]` (the `go build` loop, 300 s): each
+  under the 600 s cap per call. The boot's spread is ~4% run to run: two rounds at least.
 - **A Python edit that replaces `s[s.index(a):s.index(b)]` with an end marker that occurs earlier
   replaces the empty string**, i.e. inserts between every character: assert the slice is non-empty
   (it wrecked `jit/mod.rs` once; restored from git).

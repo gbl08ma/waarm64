@@ -36,12 +36,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## Interpreter
 
-- **A compile threshold that follows the code cache's pressure** (the user's suggestion, 2026-10-09):
-  500 suits Chromium in Debian (50 overflowed the 160 MiB budget every render) but makes Alpine's
-  hot phases 1.5–6% slower than 50 (`bench/boot/REPORT.md` "M8: the block interpreter, and threshold
-  500"). Start low and raise it as the live wasm bytes near the budget or after a flush, lower it when
-  there's room and much is interpreted; decided where blocks report (`jit::Cache::miss`, under the
-  lock already), so it costs nothing per dispatch; guest steps don't depend on it.
 - **The block interpreter's caches** ([cpu.md](cpu.md) "The block interpreter"): one per table, so
   four vCPUs decode the same code four times; the 2M micro-op arena starts over when full (6–8
   times a Chromium render over 4 tables: most of its ~3M decodes, ~1–2% of the time by estimate).
@@ -53,6 +47,9 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.
+- **Run-once code at threshold 50:** the Alpine boot is 7% slower than at a fixed 500 (its code
+  runs 50–500 times, then never; [jit.md](jit.md) "Compile policy"). Counts that decay with time
+  and a higher EL1 threshold didn't help; the Debian boot on the page doesn't show it.
 - `Mem::rmw` is a generic CAS loop; the JIT does LSE as single wasm ops. Matters again for M7's
   contention.
 

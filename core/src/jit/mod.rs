@@ -52,8 +52,12 @@ pub struct State {
 /// Compile policy (the knobs docs/jit.md "Compile policy" describes).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Config {
-    /// Dispatches of a block key before it joins the pending batch (0: on first sight).
+    /// Dispatches of a block key before it joins the pending batch (0: on first
+    /// sight), while the code cache has room: [`Cache::retune`] raises it
+    /// up to `threshold_max` as the cache fills and after flushes (equal or
+    /// below: fixed).
     pub threshold: u32,
+    pub threshold_max: u32,
     /// Blocks per module.
     pub batch: u32,
     /// Code cache size in blocks (= table slots); everything is flushed when it's full.
@@ -77,8 +81,10 @@ pub struct Config {
 
 impl Config {
     pub const DEFAULT: Config = Config {
-        // 500 since the block interpreter (docs/jit.md "Compile policy").
-        threshold: 500,
+        // Since the block interpreter, raised with the cache's pressure
+        // (docs/jit.md "Compile policy").
+        threshold: 50,
+        threshold_max: 1000,
         batch: 512,
         capacity: 262_144,
         max_bytes: MAX_BYTES,
@@ -90,6 +96,7 @@ impl Config {
     /// constantly: room for 4 regions besides the miss functions.
     pub const STRESS: Config = Config {
         threshold: 0,
+        threshold_max: 0,
         batch: 1,
         capacity: 4 + MISS_SLOTS,
         max_bytes: u64::MAX,
@@ -103,6 +110,7 @@ impl Config {
     /// code rewritten by another vCPU).
     pub const CHECK: Config = Config {
         threshold: 0,
+        threshold_max: 0,
         batch: 1,
         max_bytes: u64::MAX,
         check: true,
@@ -114,6 +122,7 @@ impl Config {
     /// there's no wasm engine).
     pub const INTERP: Config = Config {
         threshold: u32::MAX,
+        threshold_max: u32::MAX,
         ..Config::DEFAULT
     };
 }
@@ -121,6 +130,10 @@ impl Config {
 /// [`Config::DEFAULT`]'s `max_bytes`: the wasm bytes V8 may hold for a whole VM
 /// (~10× that in memory: ~1.6 GiB), whose vCPUs share the code.
 pub const MAX_BYTES: u64 = 160 << 20;
+
+/// The eighths of `Config::max_bytes` the live modules fill before the compile
+/// threshold starts to rise ([`Cache::retune`]).
+pub const PRESSURE_KNEE: u64 = 2;
 
 /// [`Config::DEFAULT`]'s `region_after`.
 pub const REGION_AFTER: u32 = 1000;
@@ -281,6 +294,10 @@ pub struct Cache {
     next: u32,
     /// The bytes of the modules installed since the last flush (`Config::max_bytes`).
     live_bytes: u64,
+    /// The compile threshold now, and the one it starts from after a flush
+    /// ([`Cache::retune`]).
+    threshold: u32,
+    floor: u32,
     /// No JIT host (natively, or before `jit.bind`): interpret everything.
     off: bool,
     /// The stale-code checker counts stale blocks instead of panicking
@@ -366,6 +383,8 @@ impl Cache {
             batch: 0,
             next: MISS_SLOTS,
             live_bytes: 0,
+            threshold: cfg.threshold,
+            floor: cfg.threshold,
             off: false,
             tolerant: false,
             ram: None,
@@ -396,6 +415,26 @@ impl Cache {
     pub fn flush(&mut self, s: &mut Stats) {
         self.drop_all();
         s.flushes += 1;
+        if self.cfg.threshold_max > self.cfg.threshold {
+            self.floor = self.floor.saturating_mul(2).min(self.cfg.threshold_max);
+            self.retune();
+        }
+    }
+
+    /// The compile threshold for the cache's pressure: `floor` (the
+    /// configured threshold, doubled at each flush up to `threshold_max`)
+    /// while the modules' bytes are under [`PRESSURE_KNEE`] eighths of the
+    /// budget, doubled at each eighth past that, up to `threshold_max`. So
+    /// code that fits is compiled early, and a working set that doesn't fit
+    /// fills the budget's rest with code that runs more often.
+    fn retune(&mut self) {
+        let max = self.cfg.threshold_max;
+        if max <= self.cfg.threshold {
+            return;
+        }
+        let eighths = self.live_bytes / (self.cfg.max_bytes / 8).max(1);
+        let shift = eighths.saturating_sub(PRESSURE_KNEE).min(31) as u32;
+        self.threshold = self.floor.checked_shl(shift).unwrap_or(max).min(max);
     }
 
     fn drop_all(&mut self) {
@@ -410,6 +449,7 @@ impl Cache {
         self.batch += 1;
         self.next = MISS_SLOTS;
         self.live_bytes = 0;
+        self.retune();
         self.epoch += 1;
         self.log.clear();
         self.freed = 0;
@@ -511,7 +551,7 @@ impl Cache {
         });
         if info.idx == 0 && !self.off && info.len > 0 {
             info.hits = info.hits.saturating_add(n);
-            if info.hits > self.cfg.threshold && !info.queued {
+            if info.hits > self.threshold && !info.queued {
                 info.queued = true;
                 self.pending.push((key, va));
             } else if info.queued {
@@ -527,7 +567,7 @@ impl Cache {
             }
             Some(i) if !i.queued && !self.off => (
                 Err(i.len.max(1)),
-                report.min(self.cfg.threshold.saturating_sub(i.hits)),
+                report.min(self.threshold.saturating_sub(i.hits)),
             ),
             Some(i) => (Err(i.len.max(1)), report),
             None => (Err(1), 0), // flushed by the emit
@@ -748,6 +788,7 @@ impl Cache {
         self.log.push(Logged { slot, bytes, tiers });
         let idx = xmiss + slot;
         self.live_bytes += len;
+        self.retune();
         let s = &mut t.stats;
         s.flags_stored += counts.flags_stored;
         s.flags_elided += counts.flags_elided;
@@ -1563,6 +1604,7 @@ mod tests {
     fn slots_and_flush() {
         let mut c = Cache::new(Config {
             threshold: 0,
+            threshold_max: 0,
             batch: 4,
             capacity: 10,
             max_bytes: 1000,
@@ -1588,6 +1630,40 @@ mod tests {
         c.live_bytes = 1000;
         assert_eq!((c.alloc(1, s), s.flushes), (2, 3));
         assert_eq!(c.live_bytes, 0);
+    }
+
+    /// The threshold rises with the live modules' bytes past the knee, and
+    /// its floor with each flush; a fixed one stays.
+    #[test]
+    fn the_threshold_follows_the_pressure() {
+        let mut c = Cache::new(Config {
+            max_bytes: 800,
+            ..Config::DEFAULT
+        });
+        let s = &mut Stats::default();
+        let at = |c: &mut Cache, live| {
+            c.live_bytes = live;
+            c.retune();
+            c.threshold
+        };
+        let want = [50, 50, 50, 100, 200, 400, 800, 1000, 1000];
+        for (e, w) in want.into_iter().enumerate() {
+            assert_eq!(at(&mut c, e as u64 * 100 + 99), w, "{e} eighths");
+        }
+        c.flush(s);
+        assert_eq!((c.threshold, at(&mut c, 300)), (100, 200));
+        (0..5).for_each(|_| c.flush(s));
+        assert_eq!((c.threshold, at(&mut c, 300)), (1000, 1000));
+        for t in [0, 500, u32::MAX] {
+            let mut c = Cache::new(Config {
+                threshold: t,
+                threshold_max: t,
+                max_bytes: 800,
+                ..Config::DEFAULT
+            });
+            c.flush(s);
+            assert_eq!(at(&mut c, 799), t);
+        }
     }
 
     /// A batch's blocks are compiled once each: a loop head alone (with its
@@ -1782,6 +1858,7 @@ mod tests {
         mem.write(0x1004, 4, 0xd65f_03c0).unwrap(); // ret
         let mut c = Cache::new(Config {
             threshold: 50,
+            threshold_max: 50,
             ..Config::DEFAULT
         });
         let mut t = Table::new(&mut c);

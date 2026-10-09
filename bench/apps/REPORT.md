@@ -97,3 +97,36 @@ block interpreter").
   ~200K blocks): a hidden, uneven threshold rise. The map keeps them now.
 - What's left: ~3M blocks decoded per render (4 tables), mostly re-decodes after a table's 2M
   micro-op arena fills (6–8 times a render); about 1–2% of the time by estimate (backlog).
+
+## M8: a compile threshold that follows the code cache's pressure
+
+2026-10-09, the dev VM, Chromium 153.0.8010.52; `results/m8-pressure/`. The threshold starts at 50
+and rises with the live wasm bytes, doubling at each eighth of the 160 MiB budget past the second
+(1000 from 120 MiB), and its floor doubles at each flush (docs/jit.md "Compile policy"). Same
+session, alternated (`apps-r<round>-<core>.json`):
+
+| core | render 1 (cold) | 2 | 3 | wasm compiled (MiB) | flushes |
+|---|---|---|---|---|---|
+| fixed 500 (the previous default), r1 | 48.1 | 30.1 | 27.5 | 67, 15, 11 | 0 |
+| fixed 500, r2 | 48.4 | 29.6 | 28.4 | 67, 15, 11 | 0 |
+| **pressure, from 50**, r1 | **46.0** | **28.5** | **26.8** | 60, 12, 7 | 0 |
+| pressure, from 50, r2 | 46.3 | 28.3 | 27.3 | 60, 12, 7 | 0 |
+| pressure, from 200, r2 | 47.2 | 29.9 | 27.6 | 51, 19, 7 | 0 |
+
+- 4–5% faster than 500 on every render, with less wasm and no flushes. The renders compile less
+  than at 500 though they interpret less of the cold render (4.7% of its steps against 5.3%): the
+  Debian boot before them compiles at 50, from the bottom of the budget, so by the renders the
+  threshold has risen (the boot's own bytes aren't recorded; the docs' figure for Debian's boot at
+  50 is ~73 MiB, which puts it at 200–400).
+- The Debian boot to login (UEFI, 4 vCPUs, the `# logged in` line) is 40.1–41.6 s with every core.
+- **The `go build` loop** of `../boot/REPORT.md` "M8: one code cache for all vCPUs" (Debian on 4
+  vCPUs, 300 s, `bench/stress/stress.ts --no-load --disk2 … --guest-cmd …`; `stress/go-*.jsonl`):
+
+  | target | fixed 500: builds (s), compiled | pressure from 50 |
+  |---|---|---|
+  | `hello` (`fmt`) | 77, 60, 59, 58; 134 MB | 73, 57, 54, 54, 54; 164 MB |
+  | `web` (`net/http`) | 168, 139; 137 MB | 158, 132; 165 MB |
+
+  5–8% faster, and neither flushed: at the end the pressure core held ~157 MiB of the 160 with
+  the threshold at 1000, compiling only what runs that often. A load that overflows it still
+  flushes; the floor then starts at 100 (200, …), which no run here reached.

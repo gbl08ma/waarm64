@@ -219,6 +219,7 @@ pub extern "C" fn jit_new(
     let mut v = mmu::Vcpu::new(cpu::Cpu::default());
     v.jit.cache = Some(Box::new(jit::Jit::new(jit::Cache::new(jit::Config {
         threshold,
+        threshold_max: threshold,
         batch,
         capacity,
         max_bytes: u64::MAX,

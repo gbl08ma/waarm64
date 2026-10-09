@@ -1255,3 +1255,36 @@ alternated; `old50`: the block interpreter compiled out, threshold 50, the old p
   `nobatchquota-` files (round 2 cut short).
 - This session ran ~6% slower than the previous one (`boot_alpine_jit` 8,419 ms in "M8: vector
   registers in locals" for the same old path): compare within the table.
+
+## M8: a compile threshold that follows the code cache's pressure
+
+2026-10-09, the dev VM, Chromium 153.0.8010.52; `results/m8-pressure/` (`r1-` to `r3-`: rounds,
+alternated). The threshold starts at 50 and doubles at each eighth of the 160 MiB budget the live
+modules fill past the second (so 50 up to 40 MiB, 1000 from 120 MiB), and its floor doubles at each
+flush (docs/jit.md "Compile policy"). `press` is that policy; `press100`/`press200` the same from 100
+and 200; `fix50`/`fix500` fixed thresholds (`fix500`: the previous default). Medians of each run:
+
+| ms | fix500 | press | press200 | fix50 |
+|---|---|---|---|---|
+| `boot_alpine_jit` total | 7,974, 7,915, 8,001 | 8,764, 8,496 (+7%) | 8,035, 8,336 | 8,524, 8,520 |
+| `alpine_user_jit` total | 17,884, 18,133, 17,991 | 17,726, 17,776, 17,916 (−1.2%) | 17,651, 17,718 | 18,063 |
+| compress | 2,171, 2,191, 2,186 | 2,055, 2,044, 2,047 (−6%) | 2,117, 2,109 | 2,077 |
+| lua | 3,324, 3,353, 3,313 | 3,213, 3,212, 3,207 (−3.3%) | 3,242, 3,275 | 3,264 |
+| churn | 1,947, 1,995, 1,969 | 1,850, 1,861, 1,873 (−5.5%) | 1,892, 1,922 | 1,878 |
+| sqlite | 2,629, 2,656, 2,646 | 2,531, 2,502, 2,517 (−5%) | 2,566, 2,564 | 2,514 |
+
+- Alpine compiles ~30 MiB, under the knee, so `press` compiles exactly what `fix50` does (the same
+  26,664 regions, 29.8 MB): the hot phases are back at 50's speed, and the boot pays what it paid at
+  50. **The boot wants a high threshold without any pressure:** at 500 it compiles half the bytes
+  (14.9 MB); its code runs between 50 and 500 times and not again, so compiling it doesn't pay V8's
+  compile back. The Debian boot to login on the page (4 vCPUs) didn't move: 40.1–41.6 s for every
+  core (`../apps/REPORT.md`).
+- Floors 100 and 200 trade the hot phases for the boot (`press200`: the boot within noise of 500,
+  the phases between); Chromium in Debian lost most of its gain at 200 (`../apps/REPORT.md`), so the
+  floor is 50.
+- **Two tries at the boot's lukewarm code lost** (one round, `r3-`): counts halved every 2^18 or
+  2^20 interpreted dispatches (a block needs its 50 within a window): the boot 8,681 and 8,609 ms,
+  no better than without; the threshold ×10 for EL1 blocks: the boot 8,144 ms, still behind 500, and
+  churn (kernel code) 1,991 ms, as slow as at 500.
+- Run-to-run spread this session: ~4% on the boot (`press200` 8,035 and 8,336), ~1% on the
+  userspace total.
