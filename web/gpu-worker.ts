@@ -43,10 +43,15 @@ self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
     queries = renderer.pollQueries();
     if (queries) pollTimer = setTimeout(poll, 4);
   };
-  port.onmessage = (m: MessageEvent<HostCall | { t: 'fence'; id: number }>) => {
+  port.onmessage = (m: MessageEvent<HostCall | { t: 'fence'; id: number } | { t: 'read'; id: number; res: number }>) => {
     const c = m.data;
     if (c.t === 'fence') {
       port.postMessage({ t: 'fenced', id: c.id });
+      return;
+    }
+    if (c.t === 'read') {
+      const bytes = renderer.readResource(c.res);
+      port.postMessage({ t: 'read', id: c.id, bytes }, bytes ? [bytes.buffer] : []);
       return;
     }
     if (c.t === 'ram') {

@@ -57,6 +57,15 @@ questions for the user are at the end; the kickoff is written from the user's an
 
 ## Proposed G4 kickoff (the user's to settle)
 
+**The user's priority for G4 (2026-10-09): Firefox opens on a 3D machine and uses the WebGL2 acceleration**
+(WebRender on GLES through virgl). Seen once after 3D became the default, then not again: Firefox didn't open, a
+GTK warning "Could not load a pixbuf from icon theme", and `glycin-svg --dbus-fd …` at 100% of a core for good (the
+image here, `myarch2.qcow2`, has no Firefox: the user's own image has it). It then opened, and the user confirmed
+on their image that **Firefox uses the acceleration**: `about:support` shows Compositing "WebRender" and WebGL 1 and 2
+on "Mesa -- virgl (webpc)". **Its performance is underwhelming**: G4 starts by measuring Firefox on the page (an Arch
+image with Firefox; frames a second scrolling a page, the guest's CPU per process, the renderer's time, on SwiftShader
+and the Mac's GPU, as `bench/gpu/sway-load.ts` does for sway) and making it faster; watch for the glycin hang.
+
 **Goal: breadth and correctness.** GLES 3.0 as Mesa's virgl exposes it, correct against a conformance subset, and
 the applications people would run on a 3D machine working on the page.
 
@@ -64,9 +73,8 @@ the applications people would run on a 3D machine working on the page.
   run on the page under the JIT (and on the oracle's vtest for the expected results); a pass list committed, the
   failures sorted by cause.
 - **Loop 1, the failures:** the renderer's and translator's gaps dEQP finds, by how many tests each fixes.
-- **Loop 2, applications:** GTK4 (gtk4-demo, GSK's GL renderer), a browser in the guest (Chromium's GPU process and
-  Firefox's WebRender, on GLES 3.0), a desktop's compositor (KWin or Mutter on GLES); what each needs, fixed or
-  written down.
+- **Loop 2, applications:** Firefox first (the user's priority, above), then GTK4 (gtk4-demo, GSK's GL renderer),
+  Chromium's GPU process, a desktop's compositor (KWin or Mutter on GLES); what each needs, fixed or written down.
 - **Loop 3, cost:** shader compiles (a cache by TGSI and key, `KHR_parallel_shader_compile`), the renderer's time on
   the Mac's GPU per application, and the guest kernel's submit path with a finer instrument (a PC published more often
   than once a chunk, or exits counted by PC).
@@ -74,9 +82,8 @@ the applications people would run on a 3D machine working on the page.
 
 **Questions for the user:**
 
-1. **Which applications matter most** for "a usable 3D machine": GTK4 apps, a browser in the guest, or a full
-   desktop (KDE or GNOME)? And in which distro image (the Arch image, or Debian with a desktop added to
-   `images/debian`)?
+1. **After Firefox** (the priority), which applications matter most: GTK4 apps, Chromium, or a full desktop (KDE or
+   GNOME)? And in which distro image (the Arch image, or Debian with a desktop added to `images/debian`)?
 2. **dEQP:** is a conformance subset as G4's correctness gate wanted, and which: GLES2 only, or GLES3 too (larger,
    and a 3.0 context is what Mesa exposes)?
 3. **Snapshots while 3D is in use** stay refused (today), or should G4 or G5 rebuild them (the resources from their

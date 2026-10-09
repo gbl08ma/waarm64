@@ -138,6 +138,12 @@ await page.waitForTimeout(4000);
 results.sway = await terminal();
 log('sway', results.sway);
 await load('sway-idle');
+// The guest's cursor is the canvas's CSS cursor (docs/frontend.md): sway sets it once the pointer moves over the screen.
+await page.locator('#screen').hover({ position: { x: 300, y: 300 } });
+await page.locator('#screen').hover({ position: { x: 340, y: 320 } });
+await page.waitForTimeout(2000);
+results.cursor = await page.evaluate(() => getComputedStyle(document.querySelector('#screen')!).cursor.slice(0, 60));
+log('cursor', results.cursor);
 // foot (Alt+Enter), then a terminal that scrolls as fast as it can.
 await page.locator('#screen').click();
 await page.keyboard.down('Alt');

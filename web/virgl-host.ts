@@ -29,6 +29,8 @@ export interface VirglHost {
   call(c: HostCall): void;
   /** Resolves when every call before it has run; undefined if they all have already (an in-thread host). */
   fence(): Promise<void> | undefined;
+  /** A resource's bytes as the guest would store them (`VirglRenderer.readResource`), once every call before it has run. */
+  read?(res: number): Promise<Uint8Array | null>;
 }
 
 /** Runs a host call on a renderer and a screen (the GPU worker's loop, or a test's in-thread host). */
@@ -53,14 +55,20 @@ export function runCall(c: HostCall, r: VirglRenderer, screen?: Screen) {
 
 /** A host in this thread: calls run at once. */
 export function localHost(r: VirglRenderer, screen?: Screen): VirglHost {
-  return { call: (c) => void runCall(c, r, screen), fence: () => undefined };
+  return { call: (c) => void runCall(c, r, screen), fence: () => undefined, read: (res) => Promise.resolve(r.readResource(res)) };
 }
 
 /** A host across a port (the device worker's end of the GPU worker). */
 export function portHost(port: MessagePort): VirglHost {
   let next = 1;
   const waiting = new Map<number, () => void>();
-  port.onmessage = (e: MessageEvent<{ t: 'fenced'; id: number }>) => {
+  const reads = new Map<number, (bytes: Uint8Array | null) => void>();
+  port.onmessage = (e: MessageEvent<{ t: 'fenced'; id: number } | { t: 'read'; id: number; bytes: Uint8Array | null }>) => {
+    if (e.data?.t === 'read') {
+      reads.get(e.data.id)?.(e.data.bytes);
+      reads.delete(e.data.id);
+      return;
+    }
     if (e.data?.t !== 'fenced') return;
     // Fences complete in order: this one and every earlier one.
     for (const [id, done] of waiting) {
@@ -78,6 +86,11 @@ export function portHost(port: MessagePort): VirglHost {
       const id = next++;
       port.postMessage({ t: 'fence', id });
       return new Promise<void>((resolve) => waiting.set(id, resolve));
+    },
+    read(res) {
+      const id = next++;
+      port.postMessage({ t: 'read', id, res });
+      return new Promise((resolve) => reads.set(id, resolve));
     },
   };
 }

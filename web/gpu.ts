@@ -170,6 +170,8 @@ export class Gpu {
   private total = 0;
   private scanout: { id: number; rect: Rect } | null = null;
   private cursorImage: Uint8Array | null = null;
+  /** UPDATE_CURSORs so far: a 3D cursor's read-back is shown only if no update came after it. */
+  private cursorSerial = 0;
   private cursorState = { hotX: 0, hotY: 0, x: 0, y: 0 };
   private flushes = 0;
   private trace: string[] = [];
@@ -532,15 +534,35 @@ export class Gpu {
     [c.x, c.y] = [u32(4), u32(8)];
     if (type === UPDATE_CURSOR) {
       const id = u32(16);
+      const serial = ++this.cursorSerial;
       [c.hotX, c.hotY] = [u32(20), u32(24)];
       if (id === 0) this.cursorImage = null;
       else {
         const res = this.resources.get(id);
-        if (!res || res.width !== CURSOR || res.height !== CURSOR || res.three) return; // the guest's mistake: the cursor stays as it was
+        if (!res || res.width !== CURSOR || res.height !== CURSOR) return; // the guest's mistake: the cursor stays as it was
+        if (res.three) return this.readCursor(res, serial);
         this.cursorImage = res.pixels.slice();
       }
     }
     this.hooks.cursor?.(this.cursorImage, c.hotX, c.hotY, c.x, c.y);
+  }
+
+  /**
+   * A 3D cursor (a compositor on virgl draws its cursor with GL, and Linux transfers only dumb buffers): its pixels
+   * are the renderer's, read back as QEMU does (`virgl_renderer_get_cursor_data`), after the guest's commands
+   * before it, and shown unless another update came meanwhile.
+   */
+  private readCursor(res: Resource, serial: number) {
+    const order = FORMATS.get(res.format);
+    if (!order || !this.host?.read || this.off3d) return;
+    void this.host.read(res.id).then((bytes) => {
+      if (serial !== this.cursorSerial || !bytes || bytes.length < CURSOR * CURSOR * 4) return;
+      const img = new Uint8Array(CURSOR * CURSOR * 4);
+      for (let p = 0; p < img.length; p += 4) for (let k = 0; k < 4; k++) img[p + k] = bytes[p + order[k]];
+      this.cursorImage = img;
+      const c = this.cursorState;
+      this.hooks.cursor?.(img, c.hotX, c.hotY, c.x, c.y);
+    });
   }
 
   /** The page's size changed: the next GET_DISPLAY_INFO and EDID say so, and the guest gets a display event. */
@@ -770,6 +792,7 @@ export class Gpu {
     this.host?.call({ t: 'reset' });
     this.total = 0;
     this.cursorImage = null;
+    this.cursorSerial++; // a 3D cursor still being read back is dropped
     this.cursorState = { hotX: 0, hotY: 0, x: 0, y: 0 };
     this.setScanout(null);
     if (this.hooks.cursorReset) this.hooks.cursorReset();
@@ -807,6 +830,7 @@ export class Gpu {
     }
     this.scanout = t.scanout ? { id: t.scanout.id, rect: { x: t.scanout.x, y: t.scanout.y, w: t.scanout.w, h: t.scanout.h } } : null;
     this.cursorImage = t.cursorImage ? Uint8Array.from(atob(t.cursorImage), (c) => c.charCodeAt(0)) : null;
+    this.cursorSerial++;
     this.cursorState = t.cursor ? { hotX: t.cursor.hotX, hotY: t.cursor.hotY, x: t.cursor.x, y: t.cursor.y } : { hotX: 0, hotY: 0, x: 0, y: 0 };
     // 3D: the guest keeps the caps it read at boot. The device gives them again, and if this browser can't back them,
     // 3D is off (a context can't be made; the guest's GL falls back or fails) rather than the machine refused.

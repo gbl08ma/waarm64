@@ -303,11 +303,15 @@ mode (and natively in realtime mode: std has no CSPRNG).
   conditional rendering, user clip planes, multisampled textures sampled, depth read-backs.
 - **What the guest sends** (Mesa 26.1 and 26.2): textures are uploaded and read back through staging buffers
   (`VIRGL_BIND_STAGING`, `COPY_TRANSFER3D` in the stream), vertex data through `TRANSFER3D` in the stream (the
-  buffer's own pages), so glcomp and sway send no `TRANSFER_*_3D` at all; dumb buffers (fbcon, the cursor, pixman)
+  buffer's own pages), so glcomp and sway send no `TRANSFER_*_3D` at all; dumb buffers (fbcon, a console's cursor, pixman)
   stay 2D.
 - **Captures** (`Gpu.onCapture`; `GpuSpec.capture` posts them on the display port; `web/virgl-trace.ts`): the 3D
   control commands and the guest memory they read, the renderer's fixtures (`tests/virgl/`, graphics.md §20).
   `web/virgl-replay.ts` runs one through the device into a host.
+- **A 3D cursor:** a compositor on virgl (sway on GLES) draws its cursor with GL into a 3D resource, and Linux
+  transfers only dumb buffers, so `UPDATE_CURSOR` on a 3D resource reads its pixels back from the renderer
+  (`VirglHost.read`, after the commands before it; QEMU's `virgl_renderer_get_cursor_data`) and shows them, unless
+  another update came meanwhile.
 - **Snapshots** (the G3 kickoff's decision 3: a machine with 3D that isn't using it saves): contexts that never
   submitted (a process holding the render node open: Alpine's initramfs keeps one) are saved and made again in the
   renderer on restore; a context that submitted, or a 3D resource, has objects outside guest RAM, so `save()` marks

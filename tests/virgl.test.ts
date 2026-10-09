@@ -270,3 +270,37 @@ test('virgl snapshots: contexts that never submitted are saved and made again; c
   a.g.control(ctxCmd(0x201, 7), 64);
   assert.equal((a.g.save() as { unsaveable?: string }).unsaveable, undefined);
 });
+
+test('virgl cursor: a 3D resource\'s image is read back from the renderer, in its format, and a later update wins', async () => {
+  const ram = new Uint8Array(1 << 16);
+  const g = new Gpu(() => ram, ram.length, { width: 640, height: 480, virgl: true });
+  // The renderer holds B8G8R8A8 bytes: pixel k is (B, G, R, A) = (k, 1, 2, 200).
+  const stored = new Uint8Array(64 * 64 * 4).map((_, i) => (i % 4 === 0 ? (i / 4) & 0xff : i % 4 === 3 ? 200 : i % 4));
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const reads: number[] = [];
+  g.host = { call: () => undefined, fence: () => undefined, read: async (res) => { reads.push(res); await gate; return stored.slice(); } };
+  const shown: (Uint8Array | null)[] = [];
+  g.hooks = { cursor: (image) => shown.push(image) };
+  const cmd = (type: number, ...fields: number[]) => {
+    const b = new Uint8Array(24 + 4 * Math.max(fields.length, 8));
+    const v = new DataView(b.buffer);
+    v.setUint32(0, type, true);
+    fields.forEach((f, k) => v.setUint32(24 + 4 * k, f, true));
+    return b;
+  };
+  // RESOURCE_CREATE_3D: id 5, a 2D texture, B8G8R8A8, render target and sampler, 64×64.
+  assert.equal(new DataView(g.control(cmd(0x204, 5, 2, 1, 0xa, 64, 64, 1, 1, 0, 0, 0), 64).buffer).getUint32(0, true), 0x1100);
+  // UPDATE_CURSOR: scanout 0 at (10, 20), resource 5, hotspot (3, 4).
+  g.cursor(cmd(0x300, 0, 10, 20, 0, 5, 3, 4, 0));
+  assert.deepEqual(reads, [5]);
+  release();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(shown.length, 1);
+  assert.deepEqual([...shown[0]!.subarray(0, 8)], [2, 1, 0, 200, 2, 1, 1, 200], 'RGBA from B8G8R8A8');
+  // An update (here: hidden) that comes while a read is out wins over the read.
+  g.cursor(cmd(0x300, 0, 10, 20, 0, 5, 3, 4, 0));
+  g.cursor(cmd(0x300, 0, 10, 20, 0, 0, 0, 0, 0));
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(shown.slice(1), [null]);
+});
