@@ -292,7 +292,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   fragment pair and draw-state key) cached by shader and key. Resources: buffers (a GL buffer and a CPU copy, the
   element buffer made from the copy; staging buffers only the guest's pages), textures by target (1D and rectangles
   as 2D, 1D arrays as 2D arrays, cubes, 3D), multisampled and stencil-only ones as renderbuffers; formats from
-  `web/virgl-formats.ts`, stored as their bytes are (no BGRA in WebGL2) and swizzled in the shaders. Uploads read the
+  `web/virgl-formats.ts`, stored as their bytes are (no BGRA in WebGL2) and swizzled in the shaders; an X format's
+  unused byte gets the fragment's alpha when drawn to (blending reads it; sampling an X format reads 1, and its
+  destination alpha is 1 through substituted blend factors). Uploads read the
   guest's pages in place where they are contiguous (`COPY_TRANSFER3D` from a staging buffer, `TRANSFER3D`, the
   virtio transfer, `RESOURCE_INLINE_WRITE`); read-backs (`readPixels`, or the buffer's copy) write them. Clears,
   `CLEAR_SURFACE`, `CLEAR_TEXTURE`, blits (a framebuffer blit for the same stored layout, a draw through both

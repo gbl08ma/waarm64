@@ -8,7 +8,7 @@
 // cubes (each after WARM_S s, 30 by default); with the frames Firefox's own animation ran each second (FFBENCH lines from its stdout). Also Firefox's
 // start time, which processes map Mesa, about:support's screenshot, and the renderer's warnings.
 //   node bench/gpu/firefox-load.ts <virgl|2d|pixman> <image.qcow2> [outdir]
-// PHASES picks the phases (default `still,scroll,webgl,pages,support`; `pages` needs bench/gpu/firefox-pages.sh's disk);
+// GUEST_CMD runs a command in sway's session first (results.cmd). PHASES picks the phases (default `still,scroll,webgl,pages,support`; `pages` needs bench/gpu/firefox-pages.sh's disk);
 // WARM_S, PHASE_S their times.
 // VIRGL_GPU picks the page's `?gpu=` in mode virgl (default `virgl`; `virgl-null` for G2's null renderer).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -26,7 +26,10 @@ const PHASES = (process.env.PHASES ?? 'still,scroll,webgl,pages,support').split(
 const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, disk2: PHASES.includes('pages') ? '/target/ffpages/pages.ext4' : undefined });
 const { page, log, terminal, shows, onSerial, pasteSerial, onScreen, rootShell, load } = s;
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), prefs: process.env.FF_PREFS ?? '' };
-const save = () => writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
+const save = () => {
+  writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
+  if (s.debugLines.length) writeFileSync(`${out}/virgl-debug.txt`, s.debugLines.join('\n') + '\n');
+};
 /** A command's output on the serial terminal, between markers. */
 let n = 0;
 const run = async (cmd: string, ms = 60_000) => {
@@ -62,11 +65,12 @@ await onSerial('clear; chown -R alarm:alarm /home/alarm/ffbench\n');
 for (const [from, to] of [['autoconfig.js', '/usr/lib/firefox/defaults/pref/autoconfig.js'], ['webpc.cfg', '/usr/lib/firefox/webpc.cfg']]) {
   await pasteSerial(`cat > ${to} <<'EOF'\n${readFileSync(new URL(from, dir), 'utf8')}EOF`);
 }
-// Firefox started by sway (as the user), its stdout in /tmp/ff-<tag>.log; `ffwait <tag>` prints the seconds until its
+// Firefox started by sway (as the user; `ffrun <url> <tag> [""]`: in kiosk mode unless a third argument replaces it),
+// its stdout in /tmp/ff-<tag>.log; `ffwait <tag>` prints the seconds until its
 // page says ready (or `timeout`).
 await pasteSerial(String.raw`cat > /root/ff.sh <<'EOF'
 ffkill() { pkill -x firefox; for i in $(seq 60); do pgrep -x firefox >/dev/null || return 0; sleep 1; done; pkill -9 -x firefox; sleep 2; }
-ffrun() { rm -f /tmp/ff-$2.log; date +%s.%N > /tmp/ff-$2.t0; su alarm -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec 'FFBENCH_SUPPORT=/tmp/ff-$2.support firefox --profile /home/alarm/ffbench/profile --kiosk $1 > /tmp/ff-$2.log 2>&1'" >/dev/null; }
+ffrun() { k=--kiosk; [ $# -ge 3 ] && k=$3; rm -f /tmp/ff-$2.log; date +%s.%N > /tmp/ff-$2.t0; su alarm -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec 'FFBENCH_SUPPORT=/tmp/ff-$2.support firefox --profile /home/alarm/ffbench/profile $k $1 > /tmp/ff-$2.log 2>&1'" >/dev/null; }
 ffwait() { for i in $(seq 600); do grep -q "FFBENCH .* ready" /tmp/ff-$1.log 2>/dev/null && { echo "$(date +%s.%N) $(cat /tmp/ff-$1.t0)" | awk '{printf "started %.1f\n", $1-$2}'; return; }; sleep 0.5; done; echo timeout; }
 EOF`);
 results.info = await run('uname -r; pacman -Q firefox sway wlroots0.19 mesa 2>&1 | tr "\\n" " "; free -m | head -2 | tail -1');
@@ -85,6 +89,14 @@ for (let i = 0; i < 60; i++) {
 await page.waitForTimeout(10_000);
 results.sway = await run('grep -i -E "renderer|egl|gles|driver" /tmp/sway.log | head -4');
 log('sway', results.sway);
+
+// GUEST_CMD: a command run as the user in sway's session (its environment), its output kept (results.cmd).
+if (process.env.GUEST_CMD) {
+  await pasteSerial(`cat > /tmp/cmd.sh <<'EOF'\n${process.env.GUEST_CMD}\nEOF`);
+  results.cmd = await runLines('su alarm -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$(ls /run/user/1000/sway-ipc.*.sock); sh /tmp/cmd.sh"', 120_000);
+  log('cmd', (results.cmd as string[]).join('\n'));
+  save();
+}
 
 /** Firefox on `url`, waited for (its page's `ready`, or 5 minutes), measured over a phase. */
 const firefox = async (tag: string, url: string) => {
@@ -136,6 +148,21 @@ if (PHASES.includes('pages')) {
     log(tag, 'fps', JSON.stringify(sorted), 'flushes', r.display.flushes.toFixed(1));
     save();
   }
+}
+if (PHASES.includes('menu')) {
+  // A context menu (a popup with rounded corners and a shadow: translucent at its edges), in a normal window (kiosk
+  // mode has none); the screen shot with the menu open.
+  await run('. /root/ff.sh; ffkill', 120_000);
+  await run(`. /root/ff.sh; ffrun file:///home/alarm/ffbench/scroll.html?still menu ""`);
+  log('menu', await run('. /root/ff.sh; ffwait menu', 330_000));
+  await page.waitForTimeout(WARM_S * 1000);
+  const box = (await page.locator('#screen').boundingBox())!;
+  s.debugLines.push('--- the right click');
+  await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.5, { button: 'right' });
+  await page.waitForTimeout(8000);
+  await page.locator('#screen').screenshot({ path: `${out}/menu.png` });
+  await page.keyboard.press('Escape');
+  save();
 }
 if (PHASES.includes('support')) {
   // about:support, its graphics section.

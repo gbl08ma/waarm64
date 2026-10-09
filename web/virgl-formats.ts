@@ -79,11 +79,20 @@ const RRRR = [0, 0, 0, 0] as const;
 const OOOR = [SW_0, SW_0, SW_0, 0] as const;
 const RRRG = [0, 0, 0, 1] as const;
 
-/** For a stored component, the logical channel the shader writes to it: the inverse of `sample` (X components get -1). */
+/**
+ * For a stored component, the logical channel the shader writes to it: the inverse of `sample` (components no channel
+ * lands in get -1). An X format's unused component gets the logical alpha: its bytes are don't-care (sampling reads 1),
+ * but blending reads the fragment's own alpha, which a constant 1 there would replace (Firefox's menus, translucent at
+ * their edges, blended onto sway's B8G8R8X8 output, came out with black borders).
+ */
 function writeOf(sample: readonly number[], comps: number) {
   const w = Array.from({ length: comps }, () => -1);
   sample.forEach((s, c) => { if (s < 4 && w[s] === -1 && !(c === 3 && sample[3] === SW_1)) w[s] = c; });
   // A luminance or intensity format replicated R: the stored R is the logical R.
+  if (sample[3] === SW_1 && comps === 4 && !w.includes(3)) {
+    const x = w.indexOf(-1);
+    if (x >= 0) w[x] = 3;
+  }
   return w;
 }
 

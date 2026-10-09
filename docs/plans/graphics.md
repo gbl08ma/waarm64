@@ -967,3 +967,20 @@ Only the parent process maps Mesa (WebRender and WebGL run there). One shader fa
   Firefox's Wikipedia and MDN scrolls create and destroy ~15–18 3D resources a second (each an `ATTACH_BACKING` in the
   guest's kernel), and the device holds every reply behind a fenced one (QEMU holds only the fenced reply).
 
+### A correctness fix: translucent surfaces on an X target (2026-10-09)
+
+The user saw a black border around every Firefox menu on a 3D machine (rounded corners and a shadow drawn as an
+opaque rectangle); on a 2D machine they were right. The renderer's trace (`?gpu=virgl,debug`, below) showed the
+menus drawn by Firefox in software into shared memory, uploaded by sway into B8G8R8A8 textures with their alpha
+(transparent corners, a translucent shadow), and blended by sway (`ONE, ONE_MINUS_SRC_ALPHA`) onto its B8G8R8X8
+output. The translator wrote a constant 1 into an X target's unused byte, and GL blends with the fragment's alpha
+as written: the source alpha became 1. The X byte now gets the fragment's alpha (`writeOf` in
+`web/virgl-formats.ts`; tests/virgl.test.ts checks the program, and failed with the old layout); sampling an X
+format still reads 1 and its destination alpha is still substituted. No dEQP had run yet: G4's loop 3 is the gate
+that should find this class of bug.
+
+- **The renderer's trace** (`?gpu=virgl,debug`; the harness writes it to `<out>/virgl-debug.txt`): each distinct
+  resource creation, surface, sampler view, draw (its targets, blend, the views it samples), clear, blit, copy and
+  texture upload (with an alpha histogram for 4-byte formats), once. `GUEST_CMD` in firefox-load.ts runs a command
+  in sway's session (the guest's `eglinfo` configs, for one: Mesa on our caps lists AR30 first, llvmpipe AB30).
+

@@ -153,9 +153,13 @@ export class VirglRenderer {
   private nullFbo?: WebGLFramebuffer;
   private errorsLogged = 0;
 
-  constructor(gl: WebGL2RenderingContext, o: { ram: () => Uint8Array; log?: (m: string) => void }) {
+  /** A trace of what the guest makes and draws with, each line once (`?gpu=virgl,debug`): resources, surfaces, views, draws. */
+  private debug?: (m: string) => void;
+
+  constructor(gl: WebGL2RenderingContext, o: { ram: () => Uint8Array; log?: (m: string) => void; debug?: (m: string) => void }) {
     this.gl = gl;
     this.ram = o.ram;
+    this.debug = o.debug;
     this.log = o.log ?? ((m) => console.warn(`virgl: ${m}`));
     this.fbo = gl.createFramebuffer()!;
     this.readFbo = gl.createFramebuffer()!;
@@ -232,6 +236,7 @@ export class VirglRenderer {
     if (this.resources.has(d.id)) return false;
     const gl = this.gl;
     const res: Res = { ...d, fmt: FORMATS.get(d.format), backing: null, refs: new Set() };
+    this.debug?.(`resource ${d.id} ${res.fmt?.name ?? d.format} ${d.width}x${d.height} target ${d.target} bind ${d.bind.toString(16)}`);
     this.resources.set(d.id, res);
     if (d.target === PIPE_BUFFER) {
       // A staging buffer is only ever the guest's pages.
@@ -409,6 +414,12 @@ export class VirglRenderer {
     const gl = this.gl;
     this.stats.uploads++;
     this.stats.uploadBytes += data.length;
+    if (r.target !== PIPE_BUFFER && this.debug) {
+      // For 4-byte formats: how many texels have alpha (the fourth byte) 0, 255 and in between, and the first texel.
+      let a0 = 0, a255 = 0, mid = 0;
+      if (r.fmt?.bpp === 4) for (let k = 3; k < data.length; k += 4) data[k] === 0 ? a0++ : data[k] === 255 ? a255++ : mid++;
+      this.debug(`upload ${r.id}:${r.fmt?.name} ${box.w}x${box.h}${box.w === r.width && box.h === r.height ? ' (all)' : ''} stride ${stride}${r.fmt?.bpp === 4 ? ` alpha 0:${a0} 255:${a255} other:${mid} first ${[...data.subarray(0, 4)].join(',')}` : ''}`);
+    }
     if (r.target === PIPE_BUFFER) {
       if (!r.shadow) return; // staging: nothing on the host
       if (box.x + box.w > r.shadow.length) return this.error(`upload past the end of buffer ${r.id}`);
@@ -753,6 +764,7 @@ export class VirglRenderer {
         const r = this.lookup(c, p[1]);
         if (!r) return;
         const sw = p[5];
+        this.debug?.(`view res ${p[1]} (${r.fmt?.name}) as ${FORMATS.get(p[2] & 0xffffff)?.name ?? p[2] & 0xffffff} swizzle ${[0, 3, 6, 9].map((b) => (sw >>> b) & 7).join('')}`);
         o = { kind: 'view', v: { res: p[1], format: p[2] & 0xffffff, target: p[2] >>> 24, first: p[3] & 0xffff, last: p[3] >>> 16, firstLevel: p[4] & 0xff, lastLevel: (p[4] >>> 8) & 0xff, swizzle: [sw & 7, (sw >>> 3) & 7, (sw >>> 6) & 7, (sw >>> 9) & 7] } };
         break;
       }
@@ -766,6 +778,7 @@ export class VirglRenderer {
         if (p.length < 5) throw new Error('bad surface');
         const r = this.lookup(c, p[1]);
         if (!r) return;
+        this.debug?.(`surface res ${p[1]} (${r.fmt?.name}) as ${FORMATS.get(p[2])?.name ?? p[2]}`);
         o = { kind: 'surface', v: { res: p[1], format: p[2], level: p[3], firstLayer: p[4] & 0xffff, lastLayer: p[4] >>> 16 } };
         break;
       }
@@ -862,6 +875,7 @@ export class VirglRenderer {
     if (p.length !== 13) throw new Error('bad RESOURCE_COPY_REGION');
     const dst = this.lookup(c, p[0]), src = this.lookup(c, p[5]);
     if (!dst || !src) return;
+    this.debug?.(`copy ctx ${c.id} ${p[5]}:${src.fmt?.name} -> ${p[0]}:${dst.fmt?.name}`);
     const gl = this.gl;
     const [dx, dy, dz] = [p[2], p[3], p[4]];
     const box = { x: p[7], y: p[8], z: p[9], w: p[10], h: p[11], d: p[12] };
@@ -906,6 +920,7 @@ export class VirglRenderer {
     const color = !!(mask & 0xf), zs = mask & 0x30;
     const sf = FORMATS.get(sb.format) ?? src.fmt, df = FORMATS.get(db.format) ?? dst.fmt;
     if (!sf || !df) return this.error('blit: unknown formats');
+    this.debug?.(`blit ctx ${c.id} mask ${mask.toString(16)} ${p[12]}:${sf.name}(${src.fmt?.name}) -> ${p[3]}:${df.name}(${dst.fmt?.name})`);
     for (let z = 0; z < Math.max(1, db.d); z++) {
       const sz = sb.z + Math.floor((z * sb.d) / Math.max(1, db.d));
       if (color) {
@@ -1081,6 +1096,7 @@ void main() {
     const fb = this.bindFramebuffer(c, s);
     if (!fb) return;
     const buffers = p[0];
+    this.debug?.(`clear ctx ${c.id} buffers ${buffers.toString(16)} [${s.fb.cbufs.map((cb) => cb ? `${cb.res}:${FORMATS.get(cb.format)?.name}` : '-').join(' ')}] color ${[1, 2, 3, 4].map((k) => uif(p[k]).toFixed(2)).join(',')}`);
     // Gallium's clear ignores the scissor and the write masks.
     gl.disable(E.SCISSOR_TEST);
     gl.disable(E.RASTERIZER_DISCARD);
@@ -1118,6 +1134,7 @@ void main() {
     const s = c.sub;
     const sf = this.surface(s, p[1]);
     if (!sf) return;
+    this.debug?.(`clear surface ctx ${c.id} ${sf.res}:${FORMATS.get(sf.format)?.name}`);
     const saved = s.fb;
     s.fb = { cbufs: [sf] };
     const gl = this.gl;
@@ -1358,6 +1375,11 @@ void main() {
     }
     const prim = PRIM[mode];
     this.stats.draws++;
+    if (this.debug) {
+      const s = c.sub, rt = s.blend?.rt[0];
+      const fmt = (res: number, f: number) => `${res}:${FORMATS.get(f)?.name ?? f}`;
+      this.debug(`draw ctx ${c.id} into [${s.fb.cbufs.map((cb) => cb ? fmt(cb.res, cb.format) : '-').join(' ')}] blend ${rt?.enable ? `${rt.rgbSrc},${rt.rgbDst},${rt.aSrc},${rt.aDst} mask ${rt.mask}` : 'off'} sampling [${s.views.fs.map((v) => v ? `${fmt(v.res, v.format)}/${v.swizzle.join('')}` : '-').join(' ')}]`);
+    }
     const inst = Math.max(1, instances);
     let drawCount = count, drawInstances = instances, emitted = 0;
     let capture: { plan: SoPlan; vertices: number } | undefined;

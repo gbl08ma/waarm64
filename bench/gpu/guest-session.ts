@@ -48,8 +48,11 @@ export async function openSession(o: SessionOptions) {
   page.on('pageerror', (e) => console.log('pageerror', String(e)));
   /** The renderer's complaints (`virgl: …` warnings from the GPU worker), counted by message. */
   const warnings = new Map<string, number>();
+  /** `?gpu=virgl,debug`'s trace (web/gpu-worker.ts). */
+  const debugLines: string[] = [];
   page.on('console', (m) => {
     const t = m.text();
+    if (t.startsWith('virgl-debug ')) return void debugLines.push(t.slice(12));
     if (t.startsWith('virgl')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1);
   });
   const t0 = performance.now();
@@ -149,5 +152,5 @@ export async function openSession(o: SessionOptions) {
   };
 
   const close = async () => { await browser.close(); server.close(); };
-  return { page, browser, gl, log, warnings, terminal, shows, onSerial, pasteSerial, onScreen, display, vmStats, vmDelta, rootShell, load, close };
+  return { page, browser, gl, log, warnings, debugLines, terminal, shows, onSerial, pasteSerial, onScreen, display, vmStats, vmDelta, rootShell, load, close };
 }

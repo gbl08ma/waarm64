@@ -73,8 +73,10 @@ IMM[0] UINT32 {1065353216, 3, 0, 0}
   5:   MOV OUT[0], IMM[0].xxxx
   6: ENDIF
   7: END`);
-  // A BGRX texture (stored as its bytes: B in .x) and a BGRX render target.
-  const key: ProgramKey = { attribs: ['f'], samplers: { vs: [], fs: [{ type: 'f', swizzle: [2, 1, 0, 5], gl: '2D' }] }, cbufs: [{ type: 'f', write: [2, 1, 0, -1] }] };
+  // A BGRX texture (stored as its bytes: B in .x) and a BGRX render target, its layout from the format table.
+  const bgrx = FORMATS.get(2)!;
+  assert.equal(bgrx.name, 'B8G8R8X8_UNORM');
+  const key: ProgramKey = { attribs: ['f'], samplers: { vs: [], fs: [{ type: 'f', swizzle: [2, 1, 0, 5], gl: '2D' }] }, cbufs: [{ type: 'f', write: [...bgrx.write!] }] };
   const p = generate(vs, fs, key);
   assert.match(p.vs, /uniform uvec4 vc0\[2\];/);
   assert.match(p.vs, /gl_Position.zw = vec2\(\(vec4\(0.0, 0.0, 0.0, 1.0\)\).zw\);/, 'float immediates as literals');
@@ -83,7 +85,8 @@ IMM[0] UINT32 {1065353216, 3, 0, 0}
   assert.match(p.fs, /uniform highp sampler2D fs0;/);
   assert.match(p.fs, /vec4\(tx0.z, tx0.y, tx0.x, 1.0\)/, 'the sampler swizzle');
   assert.match(p.fs, /if \(uvec4\(3u, 3u, 3u, 3u\).x != 0u\) \{|if \(floatBitsToUint\(t1.xxxx\).x != 0u\) \{/);
-  assert.match(p.fs, /o0 = vec4\(col0.z, col0.y, col0.x, 1.0\);/, 'the render target\'s stored order');
+  // The X byte gets the fragment's alpha (blending reads it: a constant 1 made translucent edges opaque).
+  assert.match(p.fs, /o0 = vec4\(col0.z, col0.y, col0.x, col0.w\);/, 'the render target\'s stored order, alpha in the X byte');
   assert.deepEqual(p.attribs, [0]);
   assert.deepEqual(p.samplers.fs, [0]);
 });

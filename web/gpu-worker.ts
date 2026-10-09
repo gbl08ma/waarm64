@@ -9,7 +9,7 @@ import { VirglRenderer } from './virgl-renderer.ts';
 import { Screen } from './virgl-screen.ts';
 
 /** Page → GPU worker. */
-export type ToGpuWorker = { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean };
+export type ToGpuWorker = { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean };
 /** GPU worker → page. */
 export type FromGpuWorker =
   | { type: 'ready'; caps: Uint8Array; renderer: string }
@@ -22,7 +22,7 @@ let ram: Uint8Array = new Uint8Array(0);
 
 self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
   if (e.data?.type !== 'init') return;
-  const { canvas, port, stats } = e.data;
+  const { canvas, port, stats, debug } = e.data;
   const post = (m: FromGpuWorker) => (self as unknown as Worker).postMessage(m);
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' }) as WebGL2RenderingContext | null;
   if (!gl) {
@@ -33,7 +33,9 @@ self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
     ev.preventDefault();
     post({ type: 'lost' });
   });
-  const renderer = new VirglRenderer(gl, { ram: () => ram });
+  // `?gpu=virgl,debug`: the renderer's trace on the console, each line once.
+  const seen = new Set<string>();
+  const renderer = new VirglRenderer(gl, { ram: () => ram, debug: debug ? (m) => { if (!seen.has(m)) { seen.add(m); console.log(`virgl-debug ${m}`); } } : undefined });
   const screen = new Screen(gl, renderer);
   let busyMs = 0, submitMs = 0, queries = 0;
   // How long fences took to reach this worker (its event loop's backlog): count, total and longest ms a second.
