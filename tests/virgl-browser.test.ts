@@ -1,9 +1,11 @@
 // The virgl renderer on Chromium's WebGL2 (headless: SwiftShader; docs/testing.md "virgl"): every program the
 // translator makes from the TGSI corpus compiles and links; glcomp's trace draws what llvmpipe drew (within a
 // tolerance: filtering and blending round differently); sway's trace draws its desktop as it did when it was
-// recorded (a regression reference made by this renderer, tests/virgl/sway-640.scanout.gz).
+// recorded (a regression reference made by this renderer, tests/virgl/sway-640.scanout.gz). And a guest end to end
+// on a 3D machine as the page makes one: alpine-virgl's glcomp with the renderer in the GPU worker, its frame read
+// back by the guest through the renderer.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { gunzipSync } from 'node:zlib';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -11,6 +13,7 @@ import { startServer } from '../tools/serve.ts';
 
 let browser: Browser;
 let page: Page;
+let base: string;
 let close: () => void;
 const fixture = (name: string) => {
   const b = readFileSync(new URL(`virgl/${name}`, import.meta.url));
@@ -20,7 +23,7 @@ const fixture = (name: string) => {
 before(async () => {
   const server = await startServer();
   close = () => server.close();
-  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
   page = await browser.newPage();
   await page.goto(`${base}/tests/browser/virgl.html`);
@@ -72,4 +75,18 @@ test('virgl on WebGL2: sway draws its desktop (foot, a command\'s output) as rec
   assert.deepEqual([r.width, r.height], [640, 480]);
   const c = compare(r.pixels!, fixture('sway-640.scanout.gz'), 2);
   assert.ok(c.max <= 8 && c.off < 0.001, JSON.stringify(c));
+});
+
+const ALPINE_VIRGL = new URL('../target/images/alpine-virgl/rootfs-virgl.ext4', import.meta.url);
+test('virgl on WebGL2: glcomp in a guest, rendered in the GPU worker, reads back what llvmpipe drew', { skip: !existsSync(ALPINE_VIRGL) && 'images/build.sh alpine-gl alpine-virgl' }, async () => {
+  const p = await browser.newPage();
+  await p.goto(`${base}/tests/browser/virgl-boot.html?dump`);
+  const r = await (await p.waitForFunction(() => (window as unknown as { result?: unknown }).result, null, { timeout: 240_000, polling: 250 })).jsonValue() as { error?: string; console: string };
+  await p.close();
+  assert.equal(r.error, undefined);
+  assert.match(r.console, /glcomp: virgl \(webpc\), OpenGL ES 3\.0/);
+  const rows = [...r.console.matchAll(/glcomp: px (\d+) ([0-9a-f]+)/g)];
+  assert.equal(rows.length, 96);
+  const c = compare(new Uint8Array(Buffer.concat(rows.map((m) => Buffer.from(m[2], 'hex')))), fixture('glcomp-128x96.llvmpipe.rgba'), 2);
+  assert.ok(c.max <= 8 && c.mean < 1.5, JSON.stringify(c));
 });

@@ -8,6 +8,7 @@
 // disk of your own (the header's "Open disk…" and a dropped file choose a local one).
 import { Terminal } from '@xterm/xterm';
 import type { DisplayToPage } from '../gpu-present.ts';
+import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
 import { attachInput, type Input } from '../input.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
@@ -177,7 +178,17 @@ sizeSelect.onchange = () => { remember({ screen: sizeSelect.value }); scheduleSi
 hidpiBox.onchange = () => { remember({ hidpi: hidpiBox.checked }); fit(); scheduleSize(); };
 
 // One machine at a time; a restart stops it and starts a new worker (fresh memory, fresh ports, a fresh canvas).
-type Run = { worker: Worker; input: Input; serial: MessagePort; display: MessagePort };
+type Run = { worker: Worker; input: Input; serial: MessagePort; display: MessagePort; gpu?: Worker };
+
+/**
+ * 3D (the page's `?gpu=virgl`, the G3 kickoff's switch): a machine with a virtio-gpu gets virgl, rendered by a GPU worker
+ * that owns the screen as WebGL2 (web/gpu-worker.ts). Off where this browser has no WebGL2 (`no3d` says why), and
+ * then the machine is 2D as without the switch.
+ */
+const want3d = hasGpu && (params.get('gpu') ?? '').split(',').includes('virgl');
+let no3d: string | undefined;
+const hasWebgl2 = () => { try { return !!new OffscreenCanvas(1, 1).getContext('webgl2'); } catch { return false; } };
+if (want3d && !hasWebgl2()) no3d = 'this browser has no WebGL2';
 let run: Run | undefined;
 /** The guest has a driver on its keyboard (else the screen's keys go to the serial console: the firmware, GRUB). Per machine; false until the worker says. */
 let keyboardLive = false;
@@ -370,7 +381,41 @@ function start(snapshot?: File, resume = true) {
     snapshotJob?.error(`the machine's worker failed: ${e.message}`);
     setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator);
   };
-  worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, display.port2, ...(ip ? [ip] : [])]);
+  const begin = (three?: { renderer: MessagePort; caps: Uint8Array }) => {
+    if (run !== r) return;
+    const s = three ? undefined : screen;
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
+  };
+  if (want3d && !no3d) {
+    // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
+    const gpu = new Worker(new URL('../gpu-worker.ts', import.meta.url), { type: 'module' });
+    r.gpu = gpu;
+    const channel = new MessageChannel();
+    gpu.postMessage({ type: 'init', canvas: screen, port: channel.port1, stats: params.has('displaystats') } satisfies ToGpuWorker, [screen, channel.port1]);
+    gpu.onmessage = (e: MessageEvent<FromGpuWorker>) => {
+      if (run !== r) return;
+      const m = e.data;
+      if (m.type === 'ready') {
+        console.info(`webpc: 3D on ${m.renderer}`);
+        begin({ renderer: channel.port2, caps: m.caps });
+      } else if (m.type === 'failed') {
+        // The canvas is the GPU worker's now: a fresh start, without 3D.
+        no3d = m.reason;
+        console.warn(`webpc: no 3D: ${m.reason}`);
+        gpu.terminate();
+        worker.terminate();
+        r.input.detach();
+        run = undefined;
+        start(snapshot, resume);
+      } else if (m.type === 'lost') {
+        setState('crashed', 'The browser lost the WebGL context the screen was drawn with.', ACTIONS.emulator);
+      } else if (m.type === 'render-stats') ((window as unknown as { __renderStats?: unknown[] }).__renderStats ??= []).push(m);
+    };
+    gpu.onerror = (e) => {
+      if (run !== r) return;
+      setState('crashed', `The GPU worker failed: ${e.message}`, ACTIONS.emulator);
+    };
+  } else begin();
   if (ip) autoconnect();
   renderNetwork();
 }
@@ -387,6 +432,7 @@ async function stop() {
     r.worker.postMessage({ type: 'stop' } satisfies ToWorker);
   });
   r.worker.terminate();
+  r.gpu?.terminate();
 }
 
 /**

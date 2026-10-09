@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<canvas id="screen" width="640" height="480"></canvas>
+<script type="module">
+  // A 3D machine as the page makes one (tests/virgl-browser.test.ts): the GPU worker owns the canvas as WebGL2 and
+  // gives the caps; the guest (alpine-virgl, glcomp) boots in a worker whose virtio-gpu sends its 3D work there.
+  // The query goes to the boot worker (virgl-boot-worker.ts). The result lands in window.result.
+  const canvas = document.getElementById('screen');
+  const gpu = new Worker(new URL('../../web/gpu-worker.ts', import.meta.url), { type: 'module' });
+  const channel = new MessageChannel();
+  const offscreen = canvas.transferControlToOffscreen();
+  gpu.postMessage({ type: 'init', canvas: offscreen, port: channel.port1, stats: true }, [offscreen, channel.port1]);
+  window.renderStats = [];
+  gpu.onmessage = (e) => {
+    if (e.data.type === 'render-stats') { window.renderStats.push(e.data); return; }
+    if (e.data.type !== 'ready') { window.result = { error: `gpu worker: ${JSON.stringify(e.data)}` }; return; }
+    window.renderer = e.data.renderer;
+    const boot = new Worker(new URL('./virgl-boot-worker.ts' + location.search, import.meta.url), { type: 'module' });
+    boot.postMessage({ renderer: channel.port2, caps: e.data.caps }, [channel.port2]);
+    boot.onmessage = (m) => { window.result = m.data; };
+    boot.onerror = (m) => { window.result = { error: m.message }; };
+  };
+  gpu.onerror = (e) => { window.result = { error: `gpu worker: ${e.message}` }; };
+</script>

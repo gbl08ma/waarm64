@@ -6,7 +6,8 @@
 import { p9, type P9Files } from './9p.ts';
 import { echoBackend, gateway, portBackend } from './gateway.ts';
 import { gpuBackend, type GpuOptions } from './gpu.ts';
-import { canvasPresenter, type DisplayFromPage } from './gpu-present.ts';
+import { canvasPresenter, pagePresenter, type DisplayFromPage } from './gpu-present.ts';
+import { portHost } from './virgl-host.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { IoStats } from './iostats.ts';
 import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
@@ -54,7 +55,7 @@ export type P9Spec = { type: '9p'; tag: string; files?: P9Files };
 export type InputSpec = { type: 'input'; kind: 'keyboard' | 'tablet'; port?: MessagePort };
 
 /**
- * virtio-gpu, 2D and, with `virgl`, 3D on a null renderer (web/gpu.ts): the display's size, the EDID's DPI, and a test hook that changes the
+ * virtio-gpu, 2D and, with `virgl`, 3D (web/gpu.ts; rendered by `renderer`, or on a null renderer without one): the display's size, the EDID's DPI, and a test hook that changes the
  * size after some flushes. Where the pixels go is the page's business (`GpuHooks`).
  */
 export type GpuSpec = {
@@ -65,6 +66,11 @@ export type GpuSpec = {
   port?: MessagePort;
   /** Report flush-to-draw latencies on the port once a second (bench/gpu). */
   stats?: boolean;
+  /**
+   * A 3D machine's GPU worker (web/gpu-worker.ts): the device's 3D work and its scanouts go there (web/virgl-host.ts),
+   * and `canvas` is unused (the GPU worker has the screen). With `virgl`.
+   */
+  renderer?: MessagePort;
   /** Post a trace of the guest's 3D commands on the port (`{ type: 'capture', record }`, web/virgl-trace.ts): the renderer's fixtures. */
   capture?: boolean;
   /** The queues' size (a power of 2, default 64). A small one is back-pressure: with replies paced to the frame, a guest that floods the display waits for room instead of burning its CPU on commits. */
@@ -73,7 +79,7 @@ export type GpuSpec = {
 
 /** The MessagePorts and canvases in `specs`, to transfer with them. */
 export const specPorts = (specs: DeviceSpec[]): Transferable[] =>
-  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : d.type === 'input' && d.port ? [d.port] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : [])] : []));
+  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : d.type === 'input' && d.port ? [d.port] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])] : []));
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
@@ -640,7 +646,14 @@ export class Devices {
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
         case 'input': return input(ctx, d);
         case 'gpu': {
-          const b = gpuBackend(ctx, d, d.canvas ? canvasPresenter(d.canvas, d.port, d.stats) : {});
+          const b = gpuBackend(ctx, d, d.renderer ? pagePresenter(d.port, d.stats) : d.canvas ? canvasPresenter(d.canvas, d.port, d.stats) : {});
+          if (d.renderer && d.virgl) {
+            // The GPU worker reads and writes guest RAM in place: it gets the shared memory first.
+            const host = portHost(d.renderer);
+            const ram = ctx.ram();
+            host.call({ t: 'ram', buffer: ram.buffer, offset: ram.byteOffset, length: Math.min(ram.length, ctx.ramSize) });
+            b.gpu.host = host;
+          }
           if (d.port) d.port.onmessage = (e: MessageEvent<DisplayFromPage>) => { if (e.data?.type === 'size') b.gpu.setSize(e.data.width, e.data.height); };
           if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;

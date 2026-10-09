@@ -15,6 +15,7 @@ import { VirglStats, virglCaps, walk } from './virgl.ts';
 import { FORMATS as VIRGL_FORMATS, boxBytes } from './virgl-formats.ts';
 import { encodeRecord } from './virgl-trace.ts';
 import type { VirglHost } from './virgl-host.ts';
+import { capsBacked } from './virgl-caps.ts';
 
 const RAM_BASE = 0x4000_0000;
 
@@ -189,6 +190,10 @@ export class Gpu {
   private shown = { width: 0, height: 0 };
   /** virgl's contexts (`virgl`): id → the resources attached. */
   private contexts = new Map<number, Set<number>>();
+  /** Contexts that have submitted work: they have objects in the renderer (a context alone is only an id). */
+  private used = new Set<number>();
+  /** Why 3D is off on this machine (a snapshot restored where the browser can't back the caps its guest was given). */
+  private off3d: string | undefined;
   private virgl: VirglCounts = { commands: {}, toHostBytes: 0, fromHostBytes: 0, stream: new VirglStats().json() };
   private stream = new VirglStats();
   /** Called with every SUBMIT_3D's command words (bench/results/local captures). */
@@ -383,6 +388,7 @@ export class Gpu {
       case CTX_CREATE: {
         count('CTX_CREATE');
         if (ctxId === 0 || this.contexts.has(ctxId) || this.contexts.size >= MAX_CONTEXTS) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
+        if (this.off3d) return this.reply(ERR_UNSPEC, cmd, room);
         this.contexts.set(ctxId, new Set());
         this.host?.call({ t: 'ctx', id: ctxId, create: true });
         return this.reply(OK_NODATA, cmd, room);
@@ -390,6 +396,7 @@ export class Gpu {
       case CTX_DESTROY: {
         count('CTX_DESTROY');
         if (!this.contexts.delete(ctxId)) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
+        this.used.delete(ctxId);
         this.host?.call({ t: 'ctx', id: ctxId, create: false });
         return this.reply(OK_NODATA, cmd, room);
       }
@@ -443,6 +450,7 @@ export class Gpu {
         busy.submits++;
         busy.submitBytes += size;
         this.onSubmit?.(ctxId, words);
+        this.used.add(ctxId);
         if (ok && this.host) {
           this.host.call({ t: 'submit', ctx: ctxId, words });
           this.fenced(cmd);
@@ -752,6 +760,7 @@ export class Gpu {
     this.shown = { width: 0, height: 0 };
     this.resources.clear();
     this.contexts.clear();
+    this.used.clear();
     this.host?.call({ t: 'reset' });
     this.total = 0;
     this.cursorImage = null;
@@ -764,14 +773,17 @@ export class Gpu {
   /** A snapshot's state, JSON: `state` plus the cursor's image. Host pixels come back from the backing at `restore`. */
   save() {
     // `unsaveable`: virgl's objects live in the renderer, outside guest RAM, so a machine using 3D isn't saved (the
+    // kickoff's choice): a 3D resource or a context that has submitted work. Contexts that never did are ids, saved
+    // and made again; the caps the guest was given are kept, for a restore to check (the kickoff's decision 3). (The
     // kickoff's choice; the snapshot refuses it, web/vm.ts). A test's state read takes the rest all the same.
-    const unsaveable = this.contexts.size > 0 || [...this.resources.values()].some((r) => r.three) ? 'the machine is using 3D (virgl)' : undefined;
-    return { ...this.state(), cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null, shown: this.shown, ...(unsaveable ? { unsaveable } : {}) };
+    const unsaveable = this.used.size > 0 || [...this.resources.values()].some((r) => r.three) ? 'the machine is using 3D (virgl): close its GL programs first' : undefined;
+    const three = this.o.virgl ? { contexts: [...this.contexts.keys()], caps: toBase64(this.caps), ...(this.off3d ? { off3d: this.off3d } : {}) } : {};
+    return { ...this.state(), cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null, shown: this.shown, ...three, ...(unsaveable ? { unsaveable } : {}) };
   }
 
   /** `save`'s state back: the tables, then every resource with a backing read again from the (restored) RAM, and the scanout drawn. */
   restore(state: unknown) {
-    const t = state as ReturnType<Gpu['save']>;
+    const t = state as ReturnType<Gpu['save']> & { contexts?: number[]; caps?: string; off3d?: string };
     if (!Array.isArray(t?.resources) || !(t.width > 0) || !(t.height > 0)) throw new Error('the snapshot has no state for the display device');
     this.resources.clear();
     this.total = 0;
@@ -790,6 +802,25 @@ export class Gpu {
     this.scanout = t.scanout ? { id: t.scanout.id, rect: { x: t.scanout.x, y: t.scanout.y, w: t.scanout.w, h: t.scanout.h } } : null;
     this.cursorImage = t.cursorImage ? Uint8Array.from(atob(t.cursorImage), (c) => c.charCodeAt(0)) : null;
     this.cursorState = t.cursor ? { hotX: t.cursor.hotX, hotY: t.cursor.hotY, x: t.cursor.x, y: t.cursor.y } : { hotX: 0, hotY: 0, x: 0, y: 0 };
+    // 3D: the guest keeps the caps it read at boot. The device gives them again, and if this browser can't back them,
+    // 3D is off (a context can't be made; the guest's GL falls back or fails) rather than the machine refused.
+    this.contexts.clear();
+    this.used.clear();
+    this.off3d = t.off3d;
+    if (this.o.virgl && t.caps) {
+      const saved = Uint8Array.from(atob(t.caps), (c) => c.charCodeAt(0));
+      const now = this.caps;
+      if (saved.length !== now.length || saved.some((x, k) => x !== now[k])) {
+        const why = capsBacked(saved, now);
+        this.capsets = capsets(saved);
+        if (why) this.off3d ??= `this browser can't back the 3D the machine was started with (${why})`;
+      }
+    }
+    if (this.off3d) console.warn(`virtio-gpu: 3D is off: ${this.off3d}`);
+    for (const id of t.contexts ?? []) {
+      this.contexts.set(id, new Set());
+      if (!this.off3d) this.host?.call({ t: 'ctx', id, create: true });
+    }
     const s = this.scanout;
     if (s) makeOpaque(this.resources.get(s.id)!);
     const shown = s && this.resources.get(s.id);

@@ -105,3 +105,35 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
     },
   };
 }
+
+/**
+ * The display's hooks on a 3D machine (docs/frontend.md "The screen"): the GPU worker draws the screen (its
+ * scanouts come from the device through the host, web/virgl-host.ts), so these only tell the page the scanout's
+ * size (`mode`) and the cursor, and with `stats` the device's busy counters once a second (`n` is the flushes).
+ */
+export function pagePresenter(port?: MessagePort, stats = false): GpuHooks {
+  let width = 0, height = 0;
+  if (stats && port) {
+    setInterval(() => {
+      port.postMessage({ type: 'draw-stats', n: busy.flushes, median: 0, max: 0, lag: 0, busy: { ...busy, draw: 0 } } satisfies DisplayToPage);
+      Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0 });
+    }, 1000);
+  }
+  let cursorImage: Uint8Array | null | undefined;
+  let cursorHot = '';
+  const sendCursor = (image: Uint8Array | null | undefined, hotX: number, hotY: number) => {
+    const hot = `${hotX},${hotY}`;
+    if (image === cursorImage && hot === cursorHot) return;
+    [cursorImage, cursorHot] = [image, hot];
+    port?.postMessage({ type: 'cursor', image: image ? image.slice().buffer : image, hotX, hotY } satisfies DisplayToPage);
+  };
+  return {
+    cursor: (image, hotX, hotY) => sendCursor(image, hotX, hotY),
+    cursorReset: () => sendCursor(undefined, 0, 0),
+    scanout(w, h) {
+      if (w === width && h === height) return;
+      [width, height] = [w, h];
+      port?.postMessage({ type: 'mode', width: w, height: h } satisfies DisplayToPage);
+    },
+  };
+}

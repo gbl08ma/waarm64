@@ -95,3 +95,18 @@ measurements); docs/devices.md "virtio-gpu" and "virgl"; docs/frontend.md "The s
 - The rules that bite here: cap memory on every `node`/`cargo` run; Playwright headless only (WebGL2 there is
   SwiftShader; the Mac host's Chromium gives a real GPU, `bench/gpu/run-mac.sh` is G0's way there); a guest-visible
   device feature stays an option, off by default, until the kickoff's condition for the default is met.
+
+## G3 progress (2026-10-09, end of session)
+
+Done and committed (74804b6, CI green): loops 0–2 (graphics.md §20). Work in progress (committed after this note,
+**scripts/ci.sh not run on it**): loop 3's wiring. The device's `renderer` port (devices.ts, `pagePresenter`), the
+page's `?gpu=virgl` (main.ts starts web/gpu-worker.ts with the canvas, waits for its caps, falls back to 2D without
+WebGL2), snapshots per decision 3 (contexts that never submitted are saved and remade; the guest's caps saved; a
+restore whose caps this browser can't back turns 3D off). Tests pass: `tests/virgl.test.ts`, `tests/gpu.test.ts`,
+`tests/virgl-browser.test.ts` (including glcomp in a guest with the renderer in the GPU worker, its read-back
+within 7 of llvmpipe).
+Next: (1) `VIRGL_GPU=virgl node bench/gpu/sway-load.ts virgl …myarch2.qcow2`: the run reached the console phase on the
+WebGL2 screen, then stopped, cause not looked at yet (log: bench/results/local/g3/sway-page.log). (2) `scripts/ci.sh`
+and `ci-debian.sh` with these changes, then the page and snapshot tests with `?gpu=virgl`. (3) Stream output is
+advertised (`max_streamout_buffers` 4, GLES 3.0 needs it) and not implemented in the renderer yet. (4) Loop 4's numbers;
+docs (frontend.md "The screen", devices.md for the page path).

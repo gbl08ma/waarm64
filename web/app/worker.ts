@@ -106,7 +106,10 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
     case 'blk-ro': return m.disk2 ? { type: 'blk', url: new URL(m.disk2, self.location.href).href } : 'a second disk (?disk2=<url>), and this page was opened without one'; // no overlay: read-only
     case 'keyboard': return { type: 'input', kind: 'keyboard', port: m.keyboard };
     case 'tablet': return { type: 'input', kind: 'tablet', port: m.tablet };
-    case 'gpu': return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.screen, port: m.display, stats: m.displayStats, keepConsole: true, ...gpuTuning() };
+    case 'gpu': {
+      const tuning = gpuTuning();
+      return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, keepConsole: true, ...tuning, virgl: tuning.virgl || !!m.renderer, renderer: m.renderer, caps: m.caps };
+    }
     case 'net': return m.ip && machine.network ? { type: 'net', adapter: { ip: m.ip } } : 'a network card, and this machine has no network port';
   }
 }
@@ -115,7 +118,8 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
 const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', 'blk', ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : []), ...(usesGpu(m, machine) ? ['gpu' as const] : [])];
 /**
  * The display's tuning: flush replies paced to the frame and a queue of 16 (docs/devices.md "virtio-gpu"); the page's
- * `?gpu=nopace,q<N>` changes them, for measurements. `?gpu=virgl-null` turns on virgl on the null renderer (G2: the
+ * `?gpu=nopace,q<N>` changes them, for measurements. `?gpu=virgl` is the page's (a 3D machine: the start message's
+ * `renderer`). `?gpu=virgl-null` turns on virgl on the null renderer (G2: the
  * guest's 3D commands are counted, nothing is drawn, so a GL desktop's screen stays black); `capture` adds a trace of
  * them on the display port (web/virgl-trace.ts; the page keeps it in `window.__virglCapture` for a test or a tool).
  */
@@ -307,7 +311,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   // The resumed machine is about to write its disk: its suspended copy is void from here.
   if (resume) await dropSuspend(overlayName!);
   if (restore) await keepFlash(vm, machine); // the restore deleted the copy beside the overlay: the bank the machine has goes back
-  if (vm.framebuffer) showFramebuffer(m.screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
+  if (vm.framebuffer && m.screen) showFramebuffer(m.screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
   const t0 = performance.now();
   const ready = readyWatcher(machine.ready);
   let running = !!restore; // a restored machine is where it was: there's no marker to wait for

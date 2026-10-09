@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { gunzipSync } from 'node:zlib';
-import { gpuBackend } from '../web/gpu.ts';
+import { Gpu, gpuBackend } from '../web/gpu.ts';
 import { decodeCaps, virglCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl } from '../web/virgl-caps.ts';
 import { FORMATS } from '../web/virgl-formats.ts';
@@ -213,4 +213,44 @@ test('virgl caps: from the browser\'s WebGL2, formats only where their extension
 
 test('virgl renderer: half floats round to nearest even', () => {
   assert.deepEqual([1, -2, 0.5, 65504, 1e-8, Infinity, 1 + 2 ** -11, 1 + 3 * 2 ** -11].map(toHalf), [0x3c00, 0xc000, 0x3800, 0x7bff, 0, 0x7c00, 0x3c00, 0x3c02]);
+});
+
+test('virgl snapshots: contexts that never submitted are saved and made again; caps this browser can\'t back turn 3D off', () => {
+  const ram = new Uint8Array(1 << 16);
+  const make = (caps?: Uint8Array) => {
+    const calls: HostCall[] = [];
+    const g = new Gpu(() => ram, ram.length, { width: 640, height: 480, virgl: true, caps });
+    g.host = { call: (c) => calls.push(c), fence: () => undefined };
+    return { g, calls };
+  };
+  const ctxCmd = (type: number, ctxId: number, ...fields: number[]) => {
+    const b = new Uint8Array(24 + 4 * fields.length);
+    const v = new DataView(b.buffer);
+    v.setUint32(0, type, true);
+    v.setUint32(16, ctxId, true);
+    fields.forEach((f, k) => v.setUint32(24 + 4 * k, f, true));
+    return b;
+  };
+  const type = (r: Uint8Array) => new DataView(r.buffer, r.byteOffset).getUint32(0, true);
+  const capsA = capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] })), capsB = capsFromGl(mockGl({ extensions: [] }));
+  const a = make(capsA);
+  assert.equal(type(a.g.control(ctxCmd(0x200, 7, 0, 0), 64)), 0x1100);
+  const saved = JSON.parse(JSON.stringify(a.g.save())) as { unsaveable?: string };
+  assert.equal(saved.unsaveable, undefined, 'a context alone (a process that opened the render node) doesn\'t stop a snapshot');
+  // Restored where the same caps are backed: the context is made again in the renderer.
+  const b = make(capsA);
+  b.g.restore(saved);
+  assert.deepEqual(b.calls.filter((c) => c.t === 'ctx'), [{ t: 'ctx', id: 7, create: true }]);
+  assert.equal(type(b.g.control(ctxCmd(0x200, 8, 0, 0), 64)), 0x1100);
+  // Where s3tc is missing: the guest's caps stay the saved ones, and 3D is off.
+  const c = make(capsB);
+  c.g.restore(saved);
+  assert.deepEqual([...c.g.caps], [...capsA]);
+  assert.equal(c.calls.length, 0);
+  assert.equal(type(c.g.control(ctxCmd(0x200, 8, 0, 0), 64)), 0x1200);
+  // A context that submitted has objects in the renderer: not saved, until it's gone.
+  assert.equal(type(a.g.control(ctxCmd(0x207, 7, 4, 0, 0), 64)), 0x1100);
+  assert.match((a.g.save() as { unsaveable?: string }).unsaveable ?? '', /3D/);
+  a.g.control(ctxCmd(0x201, 7), 64);
+  assert.equal((a.g.save() as { unsaveable?: string }).unsaveable, undefined);
 });
