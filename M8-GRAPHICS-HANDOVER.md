@@ -105,8 +105,9 @@ WebGL2), snapshots per decision 3 (contexts that never submitted are saved and r
 restore whose caps this browser can't back turns 3D off). Tests pass: `tests/virgl.test.ts`, `tests/gpu.test.ts`,
 `tests/virgl-browser.test.ts` (including glcomp in a guest with the renderer in the GPU worker, its read-back
 within 7 of llvmpipe).
-Next: (1) `VIRGL_GPU=virgl node bench/gpu/sway-load.ts virgl …myarch2.qcow2`: the run reached the console phase on the
-WebGL2 screen, then stopped, cause not looked at yet (log: bench/results/local/g3/sway-page.log). (2) `scripts/ci.sh`
-and `ci-debian.sh` with these changes, then the page and snapshot tests with `?gpu=virgl`. (3) Stream output is
-advertised (`max_streamout_buffers` 4, GLES 3.0 needs it) and not implemented in the renderer yet. (4) Loop 4's numbers;
-docs (frontend.md "The screen", devices.md for the page path).
+Next: (1) (`scripts/ci.sh` and `ci-debian.sh` pass on 12f6158.) The page and snapshot tests with `?gpu=virgl`.
+(2) Stream output is advertised (`max_streamout_buffers` 4, GLES 3.0 needs it) and not implemented in the renderer
+yet. (3) Loop 4's numbers; docs (frontend.md "The screen", devices.md for the page path).
+Done since: `VIRGL_GPU=virgl node bench/gpu/sway-load.ts virgl …myarch2.qcow2` runs all its phases on the page (the
+earlier "stopped" was a wait that gave up early): sway and foot draw through the renderer onto the WebGL2 screen; one
+rough run on SwiftShader, the date loop at ~35 flushes a second (G2's null renderer: 60), sway 328 ms CPU a second.
