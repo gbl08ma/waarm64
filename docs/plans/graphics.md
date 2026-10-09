@@ -997,7 +997,7 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
 | every 50th case | oracle (vtest, GLES 3.0) | page, first run | page, after the fixes below |
 |---|---|---|---|
 | GLES2 (344) | 342 pass, 2 not supported | 301 pass, 41 fail | **342 pass, 2 not supported** |
-| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s; then 862 (stream output, below), **869 pass, 19 fail, 8 n/s** (depth textures) |
+| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s; then 862 (stream output, below), 869 (depth textures), **875 pass, 13 fail, 8 n/s** (integer blits) |
 
 - **Point size declared twice** in a vertex shader that writes it (`o_psize`: every such program failed to link).
 - **Stencil faces:** WebGL refuses a draw whose front and back stencil reference or masks differ (GLES allows it);
@@ -1024,9 +1024,12 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
   (a depth texture can't be one: the copy failed and the texture stayed empty); and Gallium's Z24_UNORM_S8_UINT
   and Z24X8_UNORM keep depth in a word's low 24 bits where GL's UNSIGNED_INT_24_8 keeps it in the high 24, so
   their uploads are rotated. tests/virgl.test.ts checks both on the recording WebGL2 (each planted back fails it).
-- **GLES3, still failing** (19): integer blits between formats (5), RGB9_E5 (2), two MSAA
+- **Integer formats** (all 641 `fbo.blit` cases: 629 pass, 12 not supported): a blit between integer formats of one
+  signedness goes through GL's blit (the draw that converts formats samples a float texture, which an integer one
+  can't be), and RGB10_A2UI reads back as four integers packed again (it read one 32-bit channel).
+- **GLES3, still failing** (13): RGB9_E5 (2), two MSAA
   derivative cases, a blend equation with constant color, `textureGradOffset` on a shadow array in a vertex shader
   (no GLSL ES overload), a copy from a source that can't be read (a format WebGL can't render to: RGB9_E5), an occlusion
-  query, a buffer mapped as an index array, two fragment outputs (RGB10_A2UI, RGBA4), a shared R16F renderbuffer,
-  MSAA depth32f. Next by count.
+  query, a buffer mapped as an index array, a fragment output to RGBA4, a shared R16F renderbuffer, MSAA depth32f,
+  RGBA8_SNORM 3D filtering, a random fragment-ops case.
 

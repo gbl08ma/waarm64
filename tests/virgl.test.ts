@@ -13,7 +13,7 @@ import { decodeCaps, virglCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl } from '../web/virgl-caps.ts';
 import { FORMATS } from '../web/virgl-formats.ts';
 import { localHost, type HostCall, type VirglHost } from '../web/virgl-host.ts';
-import { VirglRenderer, toHalf } from '../web/virgl-renderer.ts';
+import { VirglRenderer, readbackOf, toHalf } from '../web/virgl-renderer.ts';
 import { replay } from '../web/virgl-replay.ts';
 import { generate, parseTgsi, TgsiError, type ProgramKey } from '../web/virgl-tgsi.ts';
 import { encodeRecord, encodeTrace, readTrace } from '../web/virgl-trace.ts';
@@ -235,6 +235,31 @@ test('virgl renderer: depth textures: Z24S8 goes up with depth in the high bits,
   const at = gl.log.findIndex(([n, a]) => n === 'framebufferTexture2D' && (a as number[])[0] === E.READ_FRAMEBUFFER && (a as number[])[1] === E.DEPTH_STENCIL_ATTACHMENT);
   assert.ok(at >= 0, 'the copy reads the source at its depth-stencil attachment');
   assert.ok(gl.log.slice(at).some(([n, a]) => n === 'blitFramebuffer' && ((a as number[])[8] & E.DEPTH_BUFFER_BIT) !== 0), 'a depth blit');
+});
+
+test('virgl renderer: integer formats blit through GL\'s blit, and RGB10_A2UI reads back packed (dEQP-GLES3 fbo.blit)', () => {
+  const byName = (n: string) => [...FORMATS.values()].find((f) => f.name === n)!;
+  // RGB10_A2UI: four integers read, packed again.
+  const rb = readbackOf(byName('R10G10B10A2_UINT'), false)!;
+  const src = new Uint8Array(new Uint32Array([1023, 512, 3, 2]).buffer), dst = new Uint8Array(4);
+  rb.pack(src, dst, 1);
+  assert.equal(new Uint32Array(dst.buffer)[0], (1023 | 512 << 10 | 3 << 20 | 2 << 30) >>> 0);
+  // RGBA8I to RG8I: a framebuffer blit (an integer texture can't be sampled as a float one).
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  r.createContext(1);
+  const [a8, rg8] = [byName('R8G8B8A8_SINT'), byName('R8G8_SINT')];
+  r.createResource({ id: 1, target: 2, format: a8.id, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.createResource({ id: 2, target: 2, format: rg8.id, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 1);
+  r.attach(1, 2);
+  // BLIT: mask (RGBA), scissor, dst (res, level, format, box), src (res, level, format, box).
+  r.submit(1, new Uint32Array([16 | 21 << 16, 0xf, 0, 0, 2, 0, rg8.id, 0, 0, 0, 4, 4, 1, 1, 0, a8.id, 0, 0, 0, 4, 4, 1]));
+  assert.deepEqual(errors, []);
+  assert.ok(gl.log.some(([n]) => n === 'blitFramebuffer'), 'a framebuffer blit');
+  assert.ok(!gl.log.some(([n]) => n === 'drawArrays'), 'no sampling draw');
 });
 
 test('virgl device: a fenced command\'s reply waits for the host, and replies stay in order', async () => {

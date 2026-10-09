@@ -957,7 +957,11 @@ export class VirglRenderer {
         // Same stored layout (both RGBA-order bytes, or the same format): a framebuffer blit. Otherwise a draw that
         // samples the source through its format's swizzle and writes through the destination's.
         const same = sf.internal === df.internal && sf.sample.join() === df.sample.join() && (sf.kind === 'uint' || sf.kind === 'sint' ? sf.kind === df.kind : true);
-        if (same || src.rb) {
+        // Integer formats of one signedness, stored in GL's channel order: GL's blit converts between them (and an
+        // integer texture can't be sampled as a float one, which the draw below would need).
+        const plain = (f: Format) => f.sample.every((q, k) => q === k || q === SW_0 || q === SW_1);
+        const ints = (sf.kind === 'uint' || sf.kind === 'sint') && sf.kind === df.kind && plain(sf) && plain(df);
+        if (same || ints || src.rb) {
           if (!this.bindForRead(src, sb.level, sz)) return this.error('blit: the source can\'t be read');
           gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
           this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
@@ -1758,7 +1762,7 @@ void main() {
 }
 
 /** How a format's texels are read back: the readPixels format and type, bytes a pixel read, and the packer. */
-function readbackOf(f: Format, floats: boolean): { format: number; type: number; bytes: number; pack: (src: Uint8Array, dst: Uint8Array, w: number) => void } | null {
+export function readbackOf(f: Format, floats: boolean): { format: number; type: number; bytes: number; pack: (src: Uint8Array, dst: Uint8Array, w: number) => void } | null {
   if (f.kind === 'depth' || f.kind === 'depthstencil' || f.kind === 'stencil' || f.block > 1) return null;
   const take = (comps: number[], size: number) => (src: Uint8Array, dst: Uint8Array, w: number) => {
     for (let x = 0; x < w; x++) for (let k = 0; k < comps.length; k++) for (let b = 0; b < size; b++) dst[x * comps.length * size + k * size + b] = src[x * 4 * size + comps[k] * size + b];
@@ -1773,6 +1777,16 @@ function readbackOf(f: Format, floats: boolean): { format: number; type: number;
         const v = (Math.round((s[4 * x] * 31) / 255) << 11) | (Math.round((s[4 * x + 1] * 63) / 255) << 5) | Math.round((s[4 * x + 2] * 31) / 255);
         d[2 * x] = v & 0xff;
         d[2 * x + 1] = v >> 8;
+      }
+    } };
+  }
+  if (f.kind === 'uint' && f.type === E.UNSIGNED_INT_2_10_10_10_REV) {
+    // RGB10_A2UI: read as four integers, packed again into 10, 10, 10 and 2 bits.
+    return { format: E.RGBA_INTEGER, type: E.UNSIGNED_INT, bytes: 16, pack: (s, d, w) => {
+      const sv = new DataView(s.buffer, s.byteOffset, w * 16), dv = new DataView(d.buffer, d.byteOffset, w * 4);
+      for (let x = 0; x < w; x++) {
+        const c = (k: number) => sv.getUint32(x * 16 + k * 4, true);
+        dv.setUint32(x * 4, ((c(0) & 0x3ff) | (c(1) & 0x3ff) << 10 | (c(2) & 0x3ff) << 20 | (c(3) & 3) << 30) >>> 0, true);
       }
     } };
   }

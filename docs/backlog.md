@@ -406,6 +406,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - LTP: only the syscalls subset; the loop-device tests (`getdents01`, `rename01`) and other areas
   need `mkfs` tools, a scratch disk and more RAM. kselftests: not `fp` (minutes of stress) nor the
   generic suites.
+- **The overlay's hand-over test** (`tests/browser.test.ts`) failed once under `scripts/ci.sh`'s load (2026-10-10:
+  `waited: false`, the second opener didn't see the holder's wait), passed alone and on CI's rerun: a timing margin
+  to widen if it recurs.
 - `coremark_vm_jit`: pass a fixed iteration count through init's arguments so a run can't fall
   under CoreMark's 10 s rule.
 - The PC-sampling profiler samples once per chunk (32K steps).
