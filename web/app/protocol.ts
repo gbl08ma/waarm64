@@ -39,7 +39,7 @@ export type ToWorker =
     /** The screen's canvas (`transferControlToOffscreen`, sized as the machine's framebuffer): the worker draws it (web/display.ts). Not on a 3D machine: the GPU worker has it. */
     screen?: OffscreenCanvas;
     /**
-     * A 3D machine (the page's `?gpu=virgl` where WebGL2 is): the GPU worker's port (web/gpu-worker.ts, which has the
+     * A 3D machine (the page's default where WebGL2 is; `?gpu=2d` turns it off): the GPU worker's port (web/gpu-worker.ts, which has the
      * screen) and the caps it gives the guest (web/virgl-caps.ts). The virtio-gpu gets virgl and renders there.
      */
     renderer?: MessagePort;

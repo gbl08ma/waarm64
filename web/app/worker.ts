@@ -132,8 +132,8 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
 const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', 'blk', ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : []), ...(usesGpu(m, machine) ? ['gpu' as const] : [])];
 /**
  * The display's tuning: flush replies paced to the frame and a queue of 16 (docs/devices.md "virtio-gpu"); the page's
- * `?gpu=nopace,q<N>` changes them, for measurements. `?gpu=virgl` is the page's (a 3D machine: the start message's
- * `renderer`). `?gpu=virgl-null` turns on virgl on the null renderer (G2: the
+ * `?gpu=nopace,q<N>` changes them, for measurements. 3D is the page's choice (a 3D machine, the default: the start
+ * message's `renderer`; `?gpu=2d` turns it off). `?gpu=virgl-null` turns on virgl on the null renderer (G2: the
  * guest's 3D commands are counted, nothing is drawn, so a GL desktop's screen stays black); `capture` adds a trace of
  * them on the display port (web/virgl-trace.ts; the page keeps it in `window.__virglCapture` for a test or a tool).
  */

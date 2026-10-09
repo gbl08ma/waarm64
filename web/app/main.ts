@@ -181,17 +181,19 @@ hidpiBox.onchange = () => { remember({ hidpi: hidpiBox.checked }); fit(); schedu
 type Run = { worker: Worker; input: Input; serial: MessagePort; display: MessagePort; gpu?: Worker };
 
 /**
- * 3D (the page's `?gpu=virgl`, the G3 kickoff's switch): a machine with a virtio-gpu gets virgl, rendered by a GPU worker
- * that owns the screen as WebGL2 (web/gpu-worker.ts). Off where this browser has no WebGL2 (`no3d` says why), and
- * then the machine is 2D as without the switch.
- */
-/**
  * Benchmarks' hooks (`?displaystats`, bench/gpu/sway-load.ts): the last status in `window.__status`, and
  * `window.__webpcProfile(on)` starting and stopping the guest PC sampler (the histogram lands in `window.__profile`).
  */
 const benchHooks = params.has('displaystats');
 if (benchHooks) (window as unknown as { __webpcProfile?: (on: boolean) => void }).__webpcProfile = (on) => run?.worker.postMessage({ type: 'profile', on } satisfies ToWorker);
-const want3d = hasGpu && (params.get('gpu') ?? '').split(',').includes('virgl');
+/**
+ * 3D: a machine with a virtio-gpu gets virgl, rendered by a GPU worker that owns the screen as WebGL2
+ * (web/gpu-worker.ts; docs/frontend.md "A 3D machine"). The default since G3 (the kickoff's decision 3: once the page's
+ * Debian and snapshot tests passed with it on); `?gpu=2d` turns it off, as does `?gpu=virgl-null` (G2's null
+ * renderer). Off where this browser has no WebGL2 (`no3d` says why): the machine is 2D then.
+ */
+const gpuKnobs = (params.get('gpu') ?? '').split(',');
+const want3d = hasGpu && !gpuKnobs.includes('2d') && !gpuKnobs.includes('virgl-null');
 let no3d: string | undefined;
 const hasWebgl2 = () => { try { return !!new OffscreenCanvas(1, 1).getContext('webgl2'); } catch { return false; } };
 if (want3d && !hasWebgl2()) no3d = 'this browser has no WebGL2';

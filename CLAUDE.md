@@ -29,7 +29,7 @@ extensions, SMP on a GICv3 (deterministic round-robin for tests, a worker per vC
 **Current:** M8, a usable machine (PLAN.md §3). Phase A (the interactive machine: `npm start`, the
 page in `web/app/`, [docs/frontend.md](docs/frontend.md)) and phase B (your own disk: unmodified
 images through UEFI, disk in and out, changes back in; [docs/plans/uefi.md](docs/plans/uefi.md))
-are done; of the C tracks, networking is done up to its loose ends ([docs/plans/networking.md](docs/plans/networking.md)) and snapshots are done (save and load a machine as a file, Suspend: [docs/plans/snapshots.md](docs/plans/snapshots.md)), and graphics has its 2D display (virtio-gpu, G0 and G1 of [docs/plans/graphics.md](docs/plans/graphics.md)); 3D comes through virgl onto WebGL2 (graphics.md §1): G2 measured virgl's guest side on a null renderer and passed its gate (§19), and G3, the WebGL2 renderer, is next (`M8-GRAPHICS-KICKOFF.md`, notes in `M8-GRAPHICS-HANDOVER.md`). Loose ends go in
+are done; of the C tracks, networking is done up to its loose ends ([docs/plans/networking.md](docs/plans/networking.md)) and snapshots are done (save and load a machine as a file, Suspend: [docs/plans/snapshots.md](docs/plans/snapshots.md)), and graphics has its 2D display (virtio-gpu, G0 and G1 of [docs/plans/graphics.md](docs/plans/graphics.md)); 3D comes through virgl onto WebGL2 (graphics.md §1): G2 measured virgl's guest side (§19), and G3 built the WebGL2 renderer, now the page's default where WebGL2 is (§20); G4 (breadth and correctness) waits for its kickoff (a proposal and questions in `M8-GRAPHICS-HANDOVER.md`). Loose ends go in
 [docs/backlog.md](docs/backlog.md), not in TODOs.
 
 ## Development environment

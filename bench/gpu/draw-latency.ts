@@ -17,7 +17,7 @@ const server = await startServer();
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
 const page: Page = await (await browser.newContext({ viewport: { width: 1400, height: 900 } })).newPage();
-await page.goto(`${base}/web/app/?ncpus=2&view=both&displaystats&${unattendedQuery()}`);
+await page.goto(`${base}/web/app/?ncpus=2&view=both&displaystats&gpu=2d&${unattendedQuery()}`); // the 2D presenter's latency
 const chosen = process.argv.includes('--chosen');
 if (chosen) {
   const file = join(mkdtempSync(join(tmpdir(), 'draw-')), 'mydisk.qcow2');

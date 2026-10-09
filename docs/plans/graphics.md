@@ -8,10 +8,10 @@ what each loop found. **The 3D direction changed on 2026-10-09** (the user, §18
 **virgl** (Mesa's upstream guest driver) onto **WebGL2** as the baseline, a WebGPU backend only where the
 browser has one, and Vulkan (Venus, Zink) deferred. §1 and §7 are the plan as revised; §4 (Venus on WebGPU)
 is kept as the deferred Vulkan design. **G2 is done (2026-10-09, §19): virgl's guest side measured on a null
-renderer, and the gate passed** (a sway frame costs the guest ~1/12 of llvmpipe's, at 60 frames a second). **G3, the
-WebGL2 renderer, is next**: its kickoff is `M8-GRAPHICS-KICKOFF.md` (the user's decisions: caps that follow the
-browser, WebGL2 presentation on 3D machines, 3D behind a switch until the page and snapshot tests pass with it, the
-Mac host for real-GPU numbers), its starting notes `M8-GRAPHICS-HANDOVER.md`.
+renderer, and the gate passed** (a sway frame costs the guest ~1/12 of llvmpipe's, at 60 frames a second). **G3 is done
+(2026-10-09, §20): the WebGL2 renderer**, glcomp and sway on GLES drawing on the page (60 frames a second on a real
+GPU), and 3D the page's default where WebGL2 is. G4 (breadth and correctness) waits for its kickoff: a proposal and
+questions in `M8-GRAPHICS-HANDOVER.md`.
 
 The question: how does a guest get a real display (mode setting, damage, a cursor) and, later,
 **hardware-accelerated 3D** in a browser page, without the guest knowing it runs in one? Today the
@@ -235,15 +235,16 @@ G2 onward is the 2026-10-09 proposal, settled by its kickoff. The proposal in de
   commands parsed and counted, fences signalled at once. Measure guest CPU a frame for glcomp and for sway
   on virgl against llvmpipe and pixman, and which GL and GLES the guest's Mesa reports. Go on if a
   compositor frame costs the guest a small fraction of llvmpipe's.
-- **G3 — The WebGL2 renderer, first frames.** A GPU worker that owns a WebGL2 context on the screen's
+- **G3 — The WebGL2 renderer, first frames (done: §20; 3D is the page's default).** A GPU worker that owns a WebGL2 context on the screen's
   `OffscreenCanvas`; resources as textures and buffers; the virgl decoder; TGSI → GLSL ES 3.00 for what
   glcomp and wlroots' GLES2 renderer send; a scanout shown straight from its texture; fences. Done when
   glcomp's pixels match llvmpipe's (with a tolerance) and sway on GLES draws on the page.
 - **G4 — Breadth:** GTK4, a browser in the guest (Chromium's GPU process, Firefox's WebRender), a full
   desktop (KDE or GNOME); a dEQP-GLES2/GLES3 subset (VK-GL-CTS, Apache-2.0, a guest workload); caps that
   are honest per adapter; the shader cache.
-- **G5 — Performance and the product:** profiles of the renderer and the guest's driver; a 3D on/off
-  switch and the fallback without WebGL2; snapshots with 3D on; real-GPU numbers on the Mac host.
+- **G5 — Performance and the product:** profiles of the renderer and the guest's driver (the kernel's submit
+  path needs a finer instrument than the chunk-end PC sampler: §20); snapshots while 3D is in use. (Done in G3:
+  the switch, `?gpu=2d`, and the fallback without WebGL2; snapshots while 3D is unused; real-GPU numbers.)
 - **Later:** the WebGPU backend for the same protocol (GLES 3.1); Vulkan through Venus on it (§4).
 
 ## 8. Open questions
@@ -259,21 +260,19 @@ G2 onward is the 2026-10-09 proposal, settled by its kickoff. The proposal in de
 - **One WebGL2 context for every guest context.** WebGL contexts share no objects, while virglrenderer gives
   each guest context a GL context in one share group. The renderer keeps each guest context's state and
   rebinds it when the guest switches.
-- **Where the renderer runs.** The device worker is nested in the machine worker and has no
-  `requestAnimationFrame` (§12). A GPU worker started by the page, owning the screen's canvas, is the
-  proposal; the 2D path's presentation could move onto its WebGL2 context too (G0: the fastest presenter).
-  The virtqueues stay in the device worker, which forwards to it.
+- **Where the renderer runs:** settled in G3 (§20): a GPU worker started by the page owns the screen's canvas
+  as WebGL2 and presents every scanout, 2D ones too; the virtqueues stay in the device worker, which forwards.
 - **Fences and readbacks.** WebGL2's `clientWaitSync` takes only a zero timeout in Chromium. Since one
   context runs everything in order, a fence can be signalled when its submit has been issued, and a
   `TRANSFER_FROM_HOST_3D` read synchronously (`readPixels`, `getBufferSubData`) or, if that stalls too
   long, through a pixel-pack buffer polled with `fenceSync`.
-- **Snapshots with 3D on**: the host's GL objects aren't in guest RAM. Options: refuse while a 3D context
-  exists, or rebuild from guest-backed resources (their backings are in RAM) plus a replay of the
-  objects' creation. The policy is the user's.
+- **Snapshots with 3D on**: the host's GL objects aren't in guest RAM. Settled for G3 (the kickoff's decision 3):
+  a machine with 3D that isn't using it saves (unused contexts remade, the caps kept); one using it is refused.
+  Rebuilding a machine in use (guest-backed resources from their backings, objects replayed) is open.
 - **Shader compiles on the host**: ANGLE plus the driver under our GLSL; a cache by TGSI hash, and
   `KHR_parallel_shader_compile`.
-- **Real-GPU measurements**: the Mac host's headless Chromium, as for G0 (the bench page only, unless the
-  user widens it).
+- **Real-GPU measurements**: the Mac host's headless Chromium (widened in G3 to the page:
+  `bench/gpu/sway-mac.sh`).
 - **Security:** the decoder parses untrusted guest data and WebGL validates everything it's given; fuzz the
   decoder like the virtqueue parser.
 - **Venus's assumptions about host-visible memory**, naga or Tint: only if Vulkan (§4) is taken up.
@@ -770,9 +769,9 @@ WebGL2 renderer) is worth building.** What it starts from: the caps in `virglCap
 `COPY_TRANSFER3D`; GLSL without the extensions virglrenderer leans on; the kernel's per-submit cost as the guest's
 remaining overhead.
 
-## 20. G3: the virgl renderer on WebGL2 (2026-10-09, in progress)
+## 20. G3: the virgl renderer on WebGL2 (2026-10-09, done)
 
-The kickoff is `M8-GRAPHICS-KICKOFF.md` (the user's decisions: caps that follow the browser, WebGL2 presentation on 3D
+The kickoff was `M8-GRAPHICS-KICKOFF.md` (in git history; the user's decisions: caps that follow the browser, WebGL2 presentation on 3D
 machines with canvas 2D kept without 3D, 3D behind `?gpu=virgl` until the page and snapshot tests pass with it, the
 Mac host for real-GPU numbers). What exists is in devices.md "virgl"; this is the record.
 
@@ -887,3 +886,24 @@ the Mac host's (`bench/gpu/sway-mac.sh`, decision 4) Chromium 153.0.8010.12 on A
   the last exit, and the date loop's fork and exec (page tables, TLB flushes, ASLR's randomness) is most of the
   kernel's work. Sway's submit path needs a finer instrument (a PC published more often than once a chunk, or
   exits counted by PC) and a load without fork and exec: G4's.
+
+### G3's exit (2026-10-09)
+
+- **Done:** Mesa's virgl driver in an unmodified guest draws through our renderer on WebGL2: glcomp's frame within
+  7 levels a byte of llvmpipe's (also read back by the guest through the renderer, end to end in Chromium), and Arch's
+  sway on GLES with foot as a desktop on the page, at 60 frames a second on the Mac host's GPU (the null renderer's
+  rate and guest CPU) and 55 on SwiftShader. Caps follow the browser (decision 1); a 3D machine's screen is a WebGL2
+  canvas for everything, the 2D path unchanged without 3D (decision 2); the page's Debian, snapshot, cursor and
+  network tests pass with 3D on, so **3D is the page's default where WebGL2 is** (decision 3; `?gpu=2d` for the 2D
+  path, which `WEBPC_PAGE_QUERY=gpu=2d scripts/ci-debian.sh` keeps tested); the Mac host measured the page (decision 4).
+- **What the renderer doesn't do** (none of it advertised, or refused with a reason): indexed or strip stream
+  output (GLES 3.0's limit), conditional rendering, user clip planes, multisampled textures sampled, depth
+  read-backs, indirect draws; images, buffer textures, `IMUL_HI`, cube arrays (TGSI refused). The guest gets
+  GLES 3.0 and GL 2.1.
+- **Not measured yet:** anything beyond glcomp and sway: GTK4, the browsers in the guest, KDE or GNOME, a dEQP subset.
+  The guest kernel's submit path (sway's sys time, ~4–5 ms a frame) is the largest cost and the profile couldn't
+  separate it. Snapshots while 3D is in use are refused.
+- **G4** (proposed in `M8-GRAPHICS-HANDOVER.md`, the kickoff the user's): breadth and correctness. A dEQP-GLES2/GLES3
+  subset as a guest workload, then the applications (GTK4, a browser in the guest, a desktop's compositor), the gaps
+  they hit, and the shader compile cost.
+

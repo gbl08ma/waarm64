@@ -305,6 +305,24 @@ from 6.19 paces itself at 60 Hz; for older ones the device answers one flush per
 draws at most one per frame. **sway should run with `WLR_RENDERER=pixman`** (other wlroots compositors likely too):
 left alone on a display without 3D, Arch's picked Mesa's llvmpipe, which under the JIT costs about ten times the CPU
 and draws on its own threads after the page flip, so the screen shows frames late and in pieces (graphics.md §16).
+On a 3D machine (below) it should run with `WLR_RENDERER=gles2` instead: Mesa's virgl driver, drawn by the host.
+
+**A 3D machine** (graphics.md §20) gives a virtio-gpu machine virgl, rendered on the host by WebGL2: the default
+wherever the browser has WebGL2 (since G3; `?gpu=2d` keeps the 2D path above, `?gpu=virgl-null` G2's null renderer).
+The page starts a **GPU worker** (`web/gpu-worker.ts`, top-level, so it has animation frames) and hands it the
+canvas instead of the machine worker. The GPU worker makes a WebGL2 context on it, builds the caps the guest will
+see from that context (`web/virgl-caps.ts`: limits, extensions, renderable formats; never more than it backs) and
+says `ready`. The machine then starts with those caps and a port to the GPU worker (the gpu spec's `renderer`,
+`web/devices.ts`). The device worker keeps the virtqueues and forwards its 3D work (`web/virgl-host.ts`: contexts,
+resources, backings, transfers, submits; the guest's RAM is shared) and every scanout to the GPU worker. That
+includes 2D ones (the firmware, the console), whose pixels are in shared memory and whose damaged rectangles go up
+to a texture. The GPU worker runs the renderer (`web/virgl-renderer.ts`) and draws the screen
+(`web/virgl-screen.ts`) once per animation frame, however many scanout and damage calls a frame brought. Drawing
+at each call committed up to three canvas frames per guest frame, which Chromium holds to the display's rate, and
+capped sway at 39 frames a second. A fenced command's reply waits until the GPU worker has run everything before it.
+Without WebGL2 (or if the context can't be made: `failed`) the machine starts again as 2D, and a lost context
+crashes the machine with a message. Sway with `WLR_RENDERER=gles2` keeps 60 frames a second on a real GPU,
+the same as with no renderer at all (graphics.md §20 loop 4). Snapshots of a 3D machine: docs/devices.md "virgl".
 
 The simple-framebuffer's canvas keeps the framebuffer's size; CSS scales it to an integer multiple **in device pixels**
 when one fits the view (`image-rendering: pixelated`: crisp at any `devicePixelRatio`), and

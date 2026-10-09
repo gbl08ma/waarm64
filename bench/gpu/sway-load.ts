@@ -1,8 +1,8 @@
 // A compositor's load on the page (graphics.md §19; dev-only, not in tests): sway in a UEFI disk image with sway and
 // foot (the user's Arch image, `images/archarm/build.sh` plus `pacman -S sway foot`; login alarm/alarm on the
 // screen, root/root on the serial console), headless Chromium, 4 vCPUs, the screen fixed at 1376×762. Renderer modes:
-// `virgl` (?gpu=virgl-null, or `?gpu=` + VIRGL_GPU for G3's renderer; WLR_RENDERER=gles2 on Mesa's virgl),
-// `llvmpipe` (no virgl, gles2 on llvmpipe), `pixman`. Phases: sway idle, foot idle, foot scrolling a `date` loop.
+// `virgl` (?gpu=virgl-null, or `?gpu=` + VIRGL_GPU, `virgl` for G3's renderer; WLR_RENDERER=gles2 on Mesa's virgl),
+// `llvmpipe` (?gpu=2d: no virgl, gles2 on llvmpipe), `pixman` (?gpu=2d). Phases: sway idle, foot idle, foot scrolling a `date` loop.
 // Each phase reads /proc/stat and sway's and foot's /proc/<pid>/stat over 10 s on the serial terminal (busy percent
 // per CPU, ms of CPU a second per process) and the display's stats (`?displaystats`: flushes are frames, submits and
 // stream bytes a second). Screenshots and results.json go to <outdir>.
@@ -38,7 +38,7 @@ const at = () => ((performance.now() - t0) / 1000).toFixed(1);
 const log = (...a: unknown[]) => console.log(`[${at()}]`, ...a);
 const results: Record<string, unknown> = { mode };
 
-await page.goto(`${base}/web/app/?ncpus=4&view=both&displaystats${mode === 'virgl' ? `&gpu=${VIRGL_GPU}` : ''}`);
+await page.goto(`${base}/web/app/?ncpus=4&view=both&displaystats&gpu=${mode === 'virgl' ? VIRGL_GPU : '2d'}`);
 results.gl = await page.evaluate(() => {
   const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
   const d = gl?.getExtension('WEBGL_debug_renderer_info');

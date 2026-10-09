@@ -35,7 +35,7 @@ async function run(extra: string) {
       for (let i = 0; i < d.length; i += 4) if (d[i] | d[i + 1] | d[i + 2]) { w.__lit = performance.now(); clearInterval(timer); return; }
     }, 100);
   });
-  await page.goto(`${base}/web/app/?ncpus=4&view=both&${extra}&${unattendedQuery()}`);
+  await page.goto(`${base}/web/app/?ncpus=4&view=both&gpu=2d&${extra}&${unattendedQuery()}`); // virtio-gpu 2D (G1's measurement)
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 240_000, polling: 100 });
   const runningMs = await page.evaluate(() => performance.now());
   const shows = (re: RegExp) => page.waitForFunction((s) => new RegExp(s).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: 60_000, polling: 100 });
