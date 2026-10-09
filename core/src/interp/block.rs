@@ -640,8 +640,19 @@ fn pair(c: &mut Cpu, m: &mut impl Bus, u: &Uop) -> R {
     Ok(())
 }
 
-/// Micro-ops a table's cache holds before it starts over (16 bytes each).
-pub const BUDGET: usize = 1 << 21;
+/// Micro-ops the tables' caches of a VM hold in all (16 bytes each: 256 MiB),
+/// shared out among them up to [`MAX_BUDGET`] a table: each starts over when
+/// its share is full (`jit::Config::decoded`). 2M micro-ops a table, four
+/// tables re-decoded ~3.5M blocks a Chromium render; 4M made the warm renders
+/// 5–7% faster; 8M ran the core's 1 GiB heap out on 4 tables
+/// (bench/apps/REPORT.md).
+pub const BUDGET: usize = 1 << 24;
+pub const MAX_BUDGET: usize = 1 << 23;
+
+/// A table's share of [`BUDGET`] among `tables`.
+pub fn budget(tables: usize) -> usize {
+    (BUDGET / tables.max(1)).min(MAX_BUDGET)
+}
 /// Direct-mapped entries in front of the map.
 const SLOTS: usize = 16384;
 
@@ -685,23 +696,11 @@ pub struct Cache {
     /// The keys in `map` by physical page, for `IC IVAU`.
     pages: HashMap<u64, Vec<u64>, crate::jit::KeyBuild>,
     arena: Vec<Uop>,
+    /// The micro-ops it holds before it starts over.
+    budget: usize,
     /// Blocks decoded, and times the cache started over (`jit::Stats`).
     pub decoded: u64,
     pub clears: u64,
-}
-
-impl Default for Cache {
-    fn default() -> Cache {
-        Cache {
-            slots: vec![EMPTY; SLOTS].into_boxed_slice(),
-            used: Vec::new(),
-            map: HashMap::default(),
-            pages: HashMap::default(),
-            arena: Vec::new(),
-            decoded: 0,
-            clears: 0,
-        }
-    }
 }
 
 #[inline(always)]
@@ -710,6 +709,20 @@ fn slot(key: u64) -> usize {
 }
 
 impl Cache {
+    /// A cache of `budget` micro-ops.
+    pub fn new(budget: usize) -> Cache {
+        Cache {
+            slots: vec![EMPTY; SLOTS].into_boxed_slice(),
+            used: Vec::new(),
+            map: HashMap::default(),
+            pages: HashMap::default(),
+            arena: Vec::new(),
+            budget,
+            decoded: 0,
+            clears: 0,
+        }
+    }
+
     /// The block at `key` (a JIT block key: its PA and regime bits), decoded
     /// from `mem` if new; `None` if it would have no instructions.
     #[inline(always)]
@@ -735,7 +748,7 @@ impl Cache {
                 if uops.is_empty() {
                     return None;
                 }
-                if self.arena.len() + uops.len() > BUDGET {
+                if self.arena.len() + uops.len() > self.budget {
                     self.clear();
                 }
                 let start = self.arena.len() as u32;

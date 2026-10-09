@@ -226,6 +226,7 @@ pub extern "C" fn jit_new(
         check: check != 0,
         region_after,
         pages: 0,
+        decoded: interp::block::MAX_BUDGET as u32,
     }))));
     Box::into_raw(v)
 }

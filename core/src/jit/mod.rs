@@ -77,6 +77,9 @@ pub struct Config {
     /// modules import as exact limits: V8 then loads its size once per
     /// function, not after every call (docs/v8.md "Bounds checks"). 0: growable.
     pub pages: u32,
+    /// Micro-ops each table's decoded blocks hold (`interp::block::BUDGET`
+    /// shared out among a VM's tables).
+    pub decoded: u32,
 }
 
 impl Config {
@@ -91,6 +94,7 @@ impl Config {
         check: false,
         region_after: REGION_AFTER,
         pages: 0,
+        decoded: interp::block::MAX_BUDGET as u32,
     };
     /// Compile everything on first sight, one block per module, and flush
     /// constantly: room for 4 regions besides the miss functions.
@@ -103,6 +107,7 @@ impl Config {
         check: true,
         region_after: 1,
         pages: 0,
+        decoded: interp::block::MAX_BUDGET as u32,
     };
     /// JIT-check: compile everything on first sight into a full-size cache,
     /// with the stale-code checker. JIT-stress's 4-region cache evicts most
@@ -908,7 +913,7 @@ impl Table {
             clock: 0,
             since: (u64::MAX, 0),
             stats: Stats::default(),
-            dec: interp::block::Cache::default(),
+            dec: interp::block::Cache::new(c.cfg.decoded as usize),
             ivals: c.ival_base + c.ival_log.len() as u64,
         }
     }
@@ -1611,6 +1616,7 @@ mod tests {
             check: false,
             region_after: 0,
             pages: 0,
+            decoded: 0,
         });
         let s = &mut Stats::default();
         c.map.insert(0x100, Info::default());

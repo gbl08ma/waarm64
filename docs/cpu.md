@@ -231,7 +231,15 @@ test it against `tests/steps.txt`.
   which take only their batch's blocks, came out 30% more and smaller (Alpine's boot 8% slower).
   A slot's count survives eviction (the map keeps it).
 - **The cache** (per JIT table, so per vCPU in parallel SMP): 16,384 direct-mapped slots, a map,
-  and the micro-ops in one arena of 2M (32 MiB), which starts over when full. **Invalidation is by
+  and the micro-ops in one arena, which starts over when full. **The arenas share 16M micro-ops
+  (256 MiB) among a VM's tables, at most 8M a table** (`interp::block::budget`, through
+  `jit::Config::decoded`): 8M on one or two vCPUs, 4M on four, 2M on eight; they grow as they
+  fill (Alpine decodes ~1M). At 2M a table, Chromium in Debian on 4 vCPUs re-decoded ~3.5M blocks
+  a render; 4M halved that and made the warm renders ~3.5% faster; 8M ran the core's 1 GiB heap
+  out. Evicting instead of starting over (keeping the newer half, or the blocks that ran in the
+  last half of the arena's fill, compacted) won half of that at 2M and nothing at 4M: what fills
+  the arena is code that runs again, not dead blocks (`bench/apps/REPORT.md` "M8: the decoded
+  blocks' arenas"). **Invalidation is by
   page:** every `IC IVAU` (and `IC IALLU`) is logged in the shared cache (`Cache::ival_log`, with
   its own counter, so the transfer caches aren't touched), and a table drops that page's decoded
   blocks when it catches up, before its vCPU runs another block. Flushes of the code cache and the

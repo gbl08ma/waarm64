@@ -581,6 +581,8 @@ impl Vm {
         }
         .map(|c| jit::Config {
             pages: cfg.mem_pages as u32,
+            // A table per vCPU in parallel SMP, one in round-robin.
+            decoded: crate::interp::block::budget(if parallel { n } else { 1 }) as u32,
             ..c
         });
         let mut vcpus: Vec<_> = (0..n)

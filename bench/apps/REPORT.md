@@ -130,3 +130,35 @@ session, alternated (`apps-r<round>-<core>.json`):
   5–8% faster, and neither flushed: at the end the pressure core held ~157 MiB of the 160 with
   the threshold at 1000, compiling only what runs that often. A load that overflows it still
   flushes; the floor then starts at 100 (200, …), which no run here reached.
+
+## M8: the decoded blocks' arenas
+
+2026-10-09, the dev VM, Chromium 153.0.8010.52; `results/m8-dcache/` (`apps-r<round>-<core>.json`).
+Each table's block-interpreter cache held 2M micro-ops (32 MiB) and started over when full: ~3.5M
+blocks re-decoded per render over the 4 tables, 9–15 restarts. Five alternated pairs of the base core
+(`base`) and one with 4M micro-ops a table (`big2`, rounds 1–3; `share`, rounds 4–5: the committed
+budget, 16M micro-ops shared out, which is 4M a table on 4 vCPUs):
+
+| round | base: renders (s) | 4M a table | decodes, base → 4M (M) |
+|---|---|---|---|
+| 1 | 46.7, 29.0, 27.5 | 46.1, 27.7, 25.5 | 4.2, 3.5, 3.6 → 3.1, 2.2, 1.3 |
+| 2 | 51.2, 29.6, 27.3 | 45.2, 28.1, 26.0 | 4.5, 3.7, 3.5 → 3.4, 1.8, 1.8 |
+| 3 | 46.5, 29.3, 27.8 | 45.8, 27.8, 26.4 | 4.1, 3.7, 3.4 → 3.2, 2.0, 1.9 |
+| 4 | 45.7, 28.0, 26.2 | 45.6, 27.6, 26.1 | 4.2, 3.6, 3.3 → 3.0, 1.5, 2.0 |
+| 5 | 45.7, 28.2, 26.5 | 45.5, 27.9, 26.4 | |
+
+- The warm renders' means 28.8 → 27.8 s and 27.1 → 26.1 s (−3.5%), the cold render's median
+  46.5 → 45.6 s; per pair 1–7% (the base runs got faster over the session, the 4M runs didn't move).
+- **8M a table** (128 MiB × 4): the core's 1 GiB heap ran out in the third render (a `hashbrown`
+  rehash in `interp::block::Cache::miss`). The committed budget is 16M micro-ops (256 MiB) shared
+  out among a VM's tables, at most 8M each; before, 123 vCPUs could have asked for 3.9 GiB.
+- **Evicting instead of starting over** (2M a table, round 3): keeping the blocks in the slots and the
+  arena's newer half, compacted: 45.9, 28.7, 26.6 s; keeping those that entered a slot in the last
+  half of the arena's fill: 46.1, 28.6, 26.7 (decodes 3.7, 2.8, 2.7M); with 4M a table: 45.9, 28.2,
+  26.6, no better than 4M alone. A first try that kept the blocks run since the last eviction kept
+  everything decoded since, so it always started over (base's numbers). What fills the arena is
+  code that runs again: capacity, not dead blocks. The eviction is in
+  `results/m8-dcache/evict-lru.patch`.
+- Alpine on 1 vCPU never fills the arena (162K decodes, ~1M micro-ops; its 4 restarts are `IC
+  IALLU` and flushes): `boot_alpine_jit` 8,585, 8,550 → 8,711, 8,539 ms, `alpine_user_jit` 17,835
+  → 17,866 ms (`../boot/results/m8-dcache/`).

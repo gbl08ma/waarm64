@@ -36,10 +36,12 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## Interpreter
 
-- **The block interpreter's caches** ([cpu.md](cpu.md) "The block interpreter"): one per table, so
-  four vCPUs decode the same code four times; the 2M micro-op arena starts over when full (6–8
-  times a Chromium render over 4 tables: most of its ~3M decodes, ~1–2% of the time by estimate).
-  Candidates: drop the older half of the arena instead of all of it; one store the tables share.
+- **One decoded-block store the tables share** ([cpu.md](cpu.md) "The block interpreter"): each
+  vCPU's table decodes the same code again (Chromium in Debian on 4 vCPUs: ~2M decodes a warm
+  render with 4M micro-ops a table, ~1.5M of them re-decodes after a full arena). Sharing would
+  give each table the whole 256 MiB and decode once, but readers run micro-ops while another vCPU
+  appends or starts over (an epoch scheme like the code cache's `drops`). The 2× arena gained
+  ~3.5%; a shared one is worth at most a few percent more.
 - **More micro-op handlers:** FP and SIMD loads and stores (memcpy), exclusives and LSE atomics,
   EXTR, BFM run generically through `exec`; count the generic ops on a real workload first. FP itself
   runs at a sixth of the integer rate (`FMLA`/`FMADD` always take the software FMA, vector FP goes

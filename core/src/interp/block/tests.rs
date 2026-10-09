@@ -247,7 +247,7 @@ fn the_cache_drops_and_starts_over() {
     // add x0, x0, #1; b .-4
     t.mem.write(CODE, 4, 0x9100_0400).unwrap();
     t.mem.write(CODE + 4, 4, 0x17ff_ffff).unwrap();
-    let mut c = Cache::default();
+    let mut c = Cache::new(MAX_BUDGET);
     assert_eq!(c.get(CODE, &t.mem).map(<[Uop]>::len), Some(2));
     // Changed without an IC: the cache keeps the words it decoded.
     t.mem.write(CODE, 4, 0xd503_201f).unwrap();
@@ -260,4 +260,11 @@ fn the_cache_drops_and_starts_over() {
     assert!(c.get(CODE + 8, &t.mem).is_none());
     c.clear();
     assert_eq!(c.get(CODE + 4, &t.mem).map(<[Uop]>::len), Some(1));
+}
+
+#[test]
+fn the_tables_share_the_budget() {
+    let m = |n| budget(n) >> 20;
+    assert_eq!([0, 1, 2, 4, 8, 123].map(m), [8, 8, 8, 4, 2, 0]);
+    assert!(budget(123) * 123 <= BUDGET && budget(123) > 1 << 16);
 }

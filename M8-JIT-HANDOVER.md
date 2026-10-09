@@ -35,16 +35,18 @@ interpreter"; the measurements in `bench/boot/REPORT.md`, `bench/apps/REPORT.md`
   page unchanged). Floors 100/200, decaying counts and an EL1 ×10 threshold were tried and lost
   (`bench/boot/REPORT.md`, `bench/apps/REPORT.md` "M8: a compile threshold that follows the code
   cache's pressure"; docs/jit.md "Compile policy").
+- **The decoded blocks' arenas** (docs/cpu.md "The block interpreter"): 16M micro-ops shared
+  out among a VM's tables, at most 8M each (was 2M each, unbounded in all): Chromium's warm
+  renders ~3.5% faster on 4 vCPUs, decodes −45%. Evicting instead of starting over lost to
+  capacity (`bench/apps/REPORT.md` "M8: the decoded blocks' arenas").
 
 ## Next
 
-The backlog's "Interpreter" list, most promising first: the block interpreter's caches (one per
-table, so four vCPUs decode the same code four times; the 2M micro-op arena starts over when full,
-6–8 times a Chromium render: drop the older half instead, or share one store; ~1–2% by estimate,
-so measure the re-decodes first), then more micro-op handlers (FP/SIMD loads and stores, atomics;
-count the generic ops on a real workload first), tail-call dispatch as an A/B. Then the "JIT"
-list. Rank by Alpine userspace and the Chromium renders (`bench/apps/chromium.ts`, A/B with
-`--wasm`).
+The backlog's "Interpreter" list, most promising first: more micro-op handlers (FP/SIMD loads
+and stores, exclusives and LSE atomics, EXTR, BFM run generically through `exec`; count the
+generic ops on Chromium's renders and Alpine's userspace first), tail-call dispatch as an A/B, a
+decoded-block store the tables share (a few percent at most). Then the "JIT" list. Rank by Alpine
+userspace and the Chromium renders (`bench/apps/chromium.ts`, A/B with `--wasm`).
 
 ## How to measure
 
@@ -137,10 +139,16 @@ Diagnostic counters without new ABI: append `<letter>:<n> <count>` lines to
 - **A boot and a hot phase want different thresholds without any cache pressure:** a low one
   compiles the boot's run-once code (V8's compile not paid back), a high one leaves a phase's new
   code interpreted for hundreds of dispatches. The cache's fill can't tell them apart.
-- **The A/B scripts of this step** (git-ignored, dev VM only): `bench/results/local/press/ab.sh
+- **Chromium renders drift within a session too:** the same base core's warm render went 29.6 →
+  28.0 s over two hours while the variant's held; pair the runs (alternate, ≥4 pairs) and report
+  the pairs, not one round.
+- **The core's heap is 1 GiB** (`HEAP_RESERVE`): per-table structures must be budgeted per VM (four
+  128 MiB arenas ran it out).
+- **The A/B scripts** (git-ignored, dev VM only; copies in `bench/results/local/dcache/`): `bench/results/local/press/ab.sh
   <round> <bench> <cores…>` (bench/boot, one round; `med.ts` prints the medians), `apps.sh <round>
   <cores…>` (chromium.ts), `go.sh <round> <core> [hello|web]` (the `go build` loop, 300 s): each
-  under the 600 s cap per call. The boot's spread is ~4% run to run: two rounds at least.
+  under the 600 s cap per call. The boot's spread is ~4% run to run: two rounds at least. A round
+  number per pass: the same round and core overwrite each other's files.
 - **A Python edit that replaces `s[s.index(a):s.index(b)]` with an end marker that occurs earlier
   replaces the empty string**, i.e. inserts between every character: assert the slice is non-empty
   (it wrecked `jit/mod.rs` once; restored from git).
