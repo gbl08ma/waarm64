@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { PAGE_QUERY } from './page-query.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
@@ -31,7 +32,7 @@ test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('dialog', (d) => void d.accept());
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1`);
   await statusShows(page, /1 vCPU\b.*256 MiB/);
 
   // The menu starts at what runs; applying the same size does nothing.
@@ -44,9 +45,9 @@ test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and
   await statusShows(page, /2 vCPUs.*512 MiB/);
 
   // Remembered: a reload without the query starts the same size; the query wins over it.
-  await page.goto(`${base}/web/app/?machine=buildroot`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot`);
   await statusShows(page, /2 vCPUs.*512 MiB/);
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&ram=1024`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&ram=1024`);
   await statusShows(page, /1 vCPU\b.*1024 MiB/);
   assert.deepEqual(errors, []);
   await context.close();

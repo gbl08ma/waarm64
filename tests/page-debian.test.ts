@@ -31,6 +31,7 @@ import { MACHINES, readyWatcher } from '../web/app/machine.ts';
 import { SnapshotWriter } from '../web/snapshot-file.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { PAGE_QUERY } from './page-query.ts';
 
 // The page's `running` state comes from the serial console's `ready` marker (web/app/worker.ts).
 // Debian's is agetty's prompt: it must be found wherever a drain puts it, also with a kernel line
@@ -213,7 +214,7 @@ for (let run = 1; run <= RUNS; run++) {
     page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
     const t0 = performance.now();
     const at = () => `${((performance.now() - t0) / 1000).toFixed(1)} s`;
-    await page.goto(`${base}/web/app/?${query}`);
+    await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
 
     // A snapshot of another machine is refused at once, before anything stops (written by Buildroot's page: only the header matters).
     await page.setInputFiles('#load-snapshot-input', await headerOnly('buildroot-header.webpcsnap', { machine: 'buildroot', label: 'Buildroot (test guest)', ncpus: 2, disk: null, devices: ['rng', 'blk', 'keyboard', 'tablet'], disks: [] }));
@@ -315,7 +316,7 @@ for (let run = 1; run <= RUNS; run++) {
     const errors2: string[] = [];
     p2.on('pageerror', (e) => errors2.push(String(e)));
     p2.on('dialog', (d) => void d.accept());
-    await p2.goto(`${base}/web/app/?${query}`);
+    await p2.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
     const t1 = performance.now();
     await p2.setInputFiles('#load-snapshot-input', saved.path);
     await loadingSnapshot(p2);

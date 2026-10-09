@@ -9,6 +9,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
+import { PAGE_QUERY } from './page-query.ts';
 
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
@@ -41,7 +42,7 @@ test("the guest's cursor is the canvas's CSS cursor, scaled with it, hidden when
     (window as unknown as { __workers: Worker[] }).__workers = workers;
     window.Worker = class extends RealWorker { constructor(...a: ConstructorParameters<typeof Worker>) { super(...a); workers.push(this); } };
   });
-  await page.goto(`${base}/web/app/?ncpus=2&view=both&${unattendedQuery()}`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
   await page.waitForFunction(() => (window as unknown as { __channels: MessageChannel[] }).__channels.some((c) => String(c.port1.onmessage).includes("'cursor'")), null, { timeout: 30_000 });
   // The machine boots in the background and its own resets would send cursor messages too: stop it, the page keeps its state.
   await page.evaluate(() => (window as unknown as { __workers: Worker[] }).__workers.forEach((w) => w.terminate()));

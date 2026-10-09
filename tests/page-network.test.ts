@@ -13,6 +13,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { PAGE_QUERY } from './page-query.ts';
 
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
@@ -64,7 +65,7 @@ test('the Network menu: a bad URL is refused; connecting starts the client witho
   const dialogs: string[] = [];
   page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
   try {
-    await page.goto(`${base}/web/app/?ncpus=2&view=both&${unattendedQuery()}`);
+    await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
     assert.equal(await page.locator('#network').isVisible(), true, 'Debian can have a card');
     await page.locator('#network summary').click();
     assert.match((await page.locator('#net-status').textContent())!, /Not connected/);

@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { PAGE_QUERY } from './page-query.ts';
 
 const IMAGE = new URL('../target/images/buildroot/rootfs.ext4', import.meta.url);
 const KERNEL = new URL('../target/images/linux/Image', import.meta.url);
@@ -38,7 +39,7 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); }); // "Stop the machine to save its disk?"
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=terminal`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000 });
 
   const save = async (mode: string, name: string) => {

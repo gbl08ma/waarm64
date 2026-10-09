@@ -274,6 +274,12 @@ export type ProgramKey = {
   /** Point sprite coordinates replace these GENERIC/TEXCOORD inputs (bits by index). */
   spriteCoordEnable?: number;
   spriteUpperLeft?: boolean;
+  /**
+   * Stream output: the vertex shader's components captured, in capture order (output register, first component,
+   * count), interleaved into one buffer or each into its own (`soSeparate`).
+   */
+  so?: { reg: number; start: number; comps: number }[];
+  soSeparate?: boolean;
 };
 
 /** What a program's uniforms and attributes are, for the renderer to bind. */
@@ -286,6 +292,8 @@ export type ProgramLayout = {
   ubos: { vs: Map<number, number>; fs: Map<number, number> };
   /** Sampler units used, per stage. */
   samplers: { vs: number[]; fs: number[] };
+  /** The varyings transform feedback captures (`key.so`), for `transformFeedbackVaryings` before the link. */
+  tf?: { varyings: string[]; separate: boolean };
 };
 
 /** The uniform block binding of a stage's constant buffer `k` (k ≥ 1). */
@@ -363,6 +371,7 @@ export function generate(vs: Tgsi, fs: Tgsi, key: ProgramKey): ProgramLayout {
     consts: { vs: v.const0, fs: f.const0 },
     ubos: { vs: v.ubos, fs: f.ubos },
     samplers: { vs: v.samplerList, fs: f.samplerList },
+    ...(key.so?.length ? { tf: { varyings: key.so.map((_, k) => `tf_${k}`), separate: !!key.soSeparate } } : {}),
   };
 }
 
@@ -966,6 +975,11 @@ class Gen {
       if (this.key.points) epilogue.push(this.writesPointSize() ? 'gl_PointSize = o_psize.x;' : 'gl_PointSize = u_psize;');
       if (this.writesPointSize() && !this.key.points) epilogue.push('// point size unused');
       if (this.writesPointSize()) h.push('vec4 o_psize = vec4(1.0);');
+      // Stream output: the components captured, as the shader wrote them (before the position is flipped).
+      (this.key.so ?? []).forEach((o, k) => {
+        h.push(`out highp ${o.comps === 1 ? 'float' : `vec${o.comps}`} tf_${k};`);
+        epilogue.push(`tf_${k} = ${this.vsOutput(o.reg)}.${'xyzw'.slice(o.start, o.start + o.comps)};`);
+      });
       epilogue.push('gl_Position.y *= u_adjy;');
     } else {
       for (const vy of this.varyings.values()) h.push(`${qualifier(vy)}in vec4 ${vy.name};`);

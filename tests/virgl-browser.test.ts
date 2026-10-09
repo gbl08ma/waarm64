@@ -77,6 +77,20 @@ test('virgl on WebGL2: sway draws its desktop (foot, a command\'s output) as rec
   assert.ok(c.max <= 8 && c.off < 0.001, JSON.stringify(c));
 });
 
+test('virgl on WebGL2: stream output captures interleaved and separate, appends, stops at a full buffer, counts what it wrote', async () => {
+  const r = await page.evaluate(() => (window as unknown as { virgl: { streamOut(): { appended: number[]; emitted: number; overflowed: number[]; separate: number[][]; log: string[]; glError: number } } }).virgl.streamOut());
+  assert.deepEqual([r.log, r.glError], [[], 0]);
+  // Vertex k is (4k+1, 4k+2, 4k+3, 4k+4); captured: its position, then its generic's .yz (twice the input's).
+  const pos = (k: number) => [4 * k + 1, 4 * k + 2, 4 * k + 3, 4 * k + 4];
+  const gen = (k: number) => [2 * (4 * k + 2), 2 * (4 * k + 3)];
+  const vertices = (ks: number[]) => ks.flatMap((k) => [...pos(k), ...gen(k)]);
+  const pad = (a: number[], n: number) => [...a, ...new Array(n - a.length).fill(0)];
+  assert.deepEqual(r.appended, pad(vertices([0, 1, 2, 3, 4, 5, 6, 7]), 60), '3 points, 2 appended, a triangle');
+  assert.equal(r.emitted, 6, 'PRIMITIVES_EMITTED');
+  assert.deepEqual(r.overflowed, vertices([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]), 'rebound: written from the start, 10 of 12 fit');
+  assert.deepEqual(r.separate, [pad([...pos(1), ...pos(2)], 16), pad([...gen(1), ...gen(2)], 16)]);
+});
+
 const ALPINE_VIRGL = new URL('../target/images/alpine-virgl/rootfs-virgl.ext4', import.meta.url);
 test('virgl on WebGL2: glcomp in a guest, rendered in the GPU worker, reads back what llvmpipe drew', { skip: !existsSync(ALPINE_VIRGL) && 'images/build.sh alpine-gl alpine-virgl' }, async () => {
   const p = await browser.newPage();

@@ -829,3 +829,21 @@ Mac host for real-GPU numbers). What exists is in devices.md "virgl"; this is th
 through the device into the renderer on Chromium's WebGL2, draws what llvmpipe drew to within 7 levels a byte (mean
 0.76; the blended quads' filtering and rounding differ). sway's trace draws its desktop: the bar, foot's window, the
 prompt and `ls`'s colored output (147 draws, 4 programs, no errors).
+
+- **Stream output** (transform feedback: GLES 3.0 needs it, so it is advertised, `max_streamout_buffers` 4): the
+  vertex shader gets an output per captured range (`tf_<k>`, the components the guest asked for, taken before the
+  position is flipped), given to `transformFeedbackVaryings` before the link. GLES 3.0 has two layouts, everything
+  packed into one buffer or one output to a buffer of its own; Mesa's GLES streams are one of the two, and anything
+  else (gaps, two buffers with several outputs) is refused with a reason. GLES 3.0 also captures only unindexed point,
+  line and triangle lists and refuses a draw that would overflow a buffer, where Gallium stops writing at the end: the
+  draw is cut to the primitives that fit. Each target remembers how far it is written (an append in
+  `SET_STREAMOUT_TARGETS` continues there: pause and resume), the captured bytes are read back into the buffer's CPU
+  copy after the draw, and PRIMITIVES_GENERATED and PRIMITIVES_EMITTED are counted by the draws. A draw with nothing
+  to draw on (capture only) gets a 1×1 framebuffer of its own with the rasterizer off.
+
+**On the page** (`?gpu=virgl`, loop 3): the GPU worker owns the screen as WebGL2 and runs the renderer; the device
+worker forwards its 3D work and the scanout. Arch's sway and foot draw through it (`bench/gpu/sway-load.ts` with
+`VIRGL_GPU=virgl`; one rough run on SwiftShader: the date loop at ~35 flushes a second against the null renderer's
+60, loop 4 measures it). The page's Debian tests pass with 3D on (`WEBPC_PAGE_QUERY=gpu=virgl
+scripts/ci-debian.sh`), the snapshot saved, loaded in a fresh profile, suspended and resumed: the restore tells the
+GPU worker what the scanout shows, which the first run found missing (the restored screen stayed black).

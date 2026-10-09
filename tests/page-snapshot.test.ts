@@ -14,6 +14,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
+import { PAGE_QUERY } from './page-query.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const buildroot = existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES));
@@ -121,7 +122,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('dialog', (d) => void d.accept());
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=2&view=terminal`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`);
   await running(page);
   assert.equal(await page.locator('#save-snapshot').isEnabled(), true);
 
@@ -185,7 +186,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
       return (send as (...a: unknown[]) => void).call(this, m, ...rest);
     };
   });
-  await p2.goto(`${base}/web/app/?machine=buildroot&ncpus=1&view=terminal`);
+  await p2.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=terminal`);
   await running(p2);
   const t0 = performance.now();
   await p2.evaluate(() => { (window as unknown as { escapes: string[] }).escapes.length = 0; });
@@ -265,7 +266,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('dialog', (d) => void d.accept());
-  await page.goto(`${base}/web/app/?machine=buildroot&ncpus=2&view=terminal`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`);
   await running(page);
   const suspendFile = async () => (await opfs(page))['webpc-buildroot']?.suspend;
   /** The shell's `SUSVAR`, asked under a fresh marker. */

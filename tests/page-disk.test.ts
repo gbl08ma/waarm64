@@ -21,6 +21,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { PAGE_QUERY } from './page-query.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -97,7 +98,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
 
   // The serial terminal only (the keys test's GRUB menu is on it). The file is chosen at once: the default machine's firmware
   // hasn't printed anything by then, and the restart clears the terminal.
-  await page.goto(`${base}/web/app/?ncpus=2&view=terminal&display=simple&${unattendedQuery()}`);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=terminal&display=simple&${unattendedQuery()}`);
   await pick();
   assert.equal(await page.locator('#machine').textContent(), 'Debian 13 · mydisk.qcow2');
   await page.locator('.xterm').click();
@@ -225,7 +226,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   const errors2: string[] = [];
   page2.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
   page2.on('pageerror', (e) => errors2.push(String(e)));
-  await page2.goto(`${base}/web/app/?ncpus=2&view=both&${unattendedQuery()}`);
+  await page2.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
   await page2.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: BOOT_MS, polling: 250 });
   await page2.setInputFiles('#load-changes-input', downloaded);
   await page2.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 60_000, polling: 100 }); // stopped for the load

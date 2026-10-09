@@ -55,7 +55,11 @@ type SamplerView = { res: number; format: number; target: number; first: number;
 type SamplerState = { wrap: number[]; minImg: number; minMip: number; magImg: number; compare: boolean; compareFunc: number; maxAniso: number; lodBias: number; minLod: number; maxLod: number; sampler?: WebGLSampler };
 type Surface = { res: number; format: number; level: number; firstLayer: number; lastLayer: number };
 type Query = { type: number; index: number; res: number; offset: number; q?: WebGLQuery; pending?: boolean; result: number };
-type SoTarget = { res: number; offset: number; size: number };
+/** A stream output target: a buffer's range, and the bytes written into it since it was last bound without append. */
+type SoTarget = { res: number; offset: number; size: number; filled: number };
+type SoOutput = NonNullable<Shader['so']>['outputs'][number];
+/** How a draw's stream output goes to WebGL2: the outputs in capture order, and one binding per GL buffer index. */
+type SoPlan = { outputs: SoOutput[]; separate: boolean; bindings: { t: SoTarget; r: Res; bytes: number }[] };
 type Obj =
   | { kind: 'blend'; v: Blend } | { kind: 'dsa'; v: Dsa } | { kind: 'rs'; v: Rasterizer } | { kind: 'shader'; v: Shader }
   | { kind: 've'; v: VertexElements } | { kind: 'view'; v: SamplerView } | { kind: 'sampler'; v: SamplerState }
@@ -106,6 +110,8 @@ const COMPARE = [E.NEVER, E.LESS, E.EQUAL, E.LEQUAL, E.GREATER, E.NOTEQUAL, E.GE
 const STENCIL_OP = [E.KEEP, E.ZERO, E.REPLACE, E.INCR, E.DECR, E.INCR_WRAP, E.DECR_WRAP, E.INVERT];
 const WRAP = [E.REPEAT, E.CLAMP_TO_EDGE, E.CLAMP_TO_EDGE, E.CLAMP_TO_EDGE, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT];
 const PRIM = [E.POINTS, E.LINES, E.LINE_LOOP, E.LINE_STRIP, E.TRIANGLES, E.TRIANGLE_STRIP, E.TRIANGLE_FAN];
+/** The primitives `n` vertices make, per Gallium primitive (PRIM's order). */
+const primitives = (mode: number, n: number) => [n, n >> 1, n >= 2 ? n : 0, Math.max(0, n - 1), Math.floor(n / 3), Math.max(0, n - 2), Math.max(0, n - 2)][mode] ?? 0;
 
 const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
 const uif = (b: number) => { u32[0] = b; return f32[0]; };
@@ -141,6 +147,10 @@ export class VirglRenderer {
   private anisotropy: boolean;
   private colorBufferFloat: boolean;
   private queries: Query[] = [];
+  /** Primitive queries (generated, emitted by stream output) counted by the draws, with their context. */
+  private counting = new Map<Query, number>();
+  /** A framebuffer for draws that only capture (stream output with nothing bound to draw on). */
+  private nullFbo?: WebGLFramebuffer;
   private errorsLogged = 0;
 
   constructor(gl: WebGL2RenderingContext, o: { ram: () => Uint8Array; log?: (m: string) => void }) {
@@ -189,6 +199,7 @@ export class VirglRenderer {
     for (const id of [...this.contexts.keys()]) this.destroyContext(id);
     for (const id of [...this.resources.keys()]) this.unrefResource(id);
     this.queries = [];
+    this.counting.clear();
   }
 
   private newSub(id: number): Sub {
@@ -212,6 +223,7 @@ export class VirglRenderer {
   private destroyObject(o: Obj) {
     if (o.kind === 'sampler' && o.v.sampler) this.gl.deleteSampler(o.v.sampler);
     if (o.kind === 'query' && o.v.q) this.gl.deleteQuery(o.v.q);
+    if (o.kind === 'query') this.counting.delete(o.v);
   }
 
   // --- resources -------------------------------------------------------------------------------------------------
@@ -622,8 +634,13 @@ export class VirglRenderer {
       case 22: s.stipple = p.slice(0, 32); return; // SET_POLYGON_STIPPLE
       case 23: return; // SET_CLIP_STATE: user clip planes need clip distances (not advertised)
       case 24: s.sampleMask = p[0]; return;
-      case 25: { // SET_STREAMOUT_TARGETS: append mask, handles
-        s.so.targets = Array.from(p.subarray(1), (h) => { const o = s.objects.get(h); return o?.kind === 'so' ? o.v : undefined; });
+      case 25: { // SET_STREAMOUT_TARGETS: append mask, handles (a target not appended to is written from its start)
+        s.so.targets = Array.from(p.subarray(1), (h, k) => {
+          const o = s.objects.get(h);
+          if (o?.kind !== 'so') return undefined;
+          if (!((p[0] >>> k) & 1)) o.v.filled = 0;
+          return o.v;
+        });
         return;
       }
       case 26: return; // SET_RENDER_CONDITION: not advertised
@@ -757,7 +774,7 @@ export class VirglRenderer {
       }
       case 10: { // STREAMOUT_TARGET: res, offset, size
         if (p.length !== 4) throw new Error('bad streamout target');
-        o = { kind: 'so', v: { res: p[1], offset: p[2], size: p[3] } };
+        o = { kind: 'so', v: { res: p[1], offset: p[2], size: p[3], filled: 0 } };
         break;
       }
       default: throw new Error(`object type ${type}`);
@@ -991,13 +1008,14 @@ void main() {
     return (this.blitProg = { prog, loc });
   }
 
-  private link(vs: string, fs: string): WebGLProgram | null {
+  private link(vs: string, fs: string, tf?: ProgramLayout['tf']): WebGLProgram | null {
     const gl = this.gl;
     const compile = (type: number, src: string) => { const sh = gl.createShader(type)!; gl.shaderSource(sh, src); gl.compileShader(sh); return sh; };
     const v = compile(E.VERTEX_SHADER, vs), f = compile(E.FRAGMENT_SHADER, fs);
     const prog = gl.createProgram()!;
     gl.attachShader(prog, v);
     gl.attachShader(prog, f);
+    if (tf) gl.transformFeedbackVaryings(prog, tf.varyings, tf.separate ? E.SEPARATE_ATTRIBS : E.INTERLEAVED_ATTRIBS);
     gl.linkProgram(prog);
     const ok = gl.getProgramParameter(prog, E.LINK_STATUS);
     if (!ok) {
@@ -1146,7 +1164,7 @@ void main() {
       return null;
     }
     const gl = this.gl;
-    const prog = this.link(layout.vs, layout.fs);
+    const prog = this.link(layout.vs, layout.fs, layout.tf);
     if (!prog) { this.programs.set(id, null); return null; }
     this.stats.programs++;
     const loc = new Map<string, WebGLUniformLocation | null>();
@@ -1176,7 +1194,12 @@ void main() {
     if (mode >= PRIM.length) return this.error(`primitive ${mode} isn't supported`);
     const { vs, fs } = s.shaders;
     if (!vs?.tgsi || !fs?.tgsi || !s.ve) return;
-    const fb = this.bindFramebuffer(c, s);
+    // Stream output (transform feedback): what the vertex shader writes, captured into the bound targets.
+    const so = vs.so && s.so.targets.some((t) => t) ? this.soPlan(vs.so, s.so.targets) : undefined;
+    let fb = this.bindFramebuffer(c, s);
+    // Nothing to draw on, only captures: a framebuffer of its own (WebGL2 draws on a complete one), rasterizer off.
+    const captureOnly = !fb && !!so;
+    if (captureOnly) fb = this.bindNullFramebuffer();
     if (!fb) return;
     const rs = s.rs, dsa = s.dsa, blend = s.blend;
     // The program for this state.
@@ -1193,6 +1216,7 @@ void main() {
       flatshade: rs?.flatshade, twoSide: rs?.lightTwoSide, clampColor: rs?.clampFragmentColor, stipple: rs?.stipple,
       points: mode === 0, pointSizePerVertex: rs?.pointSizePerVertex,
       spriteCoordEnable: mode === 0 && rs?.pointQuad ? rs.spriteCoordEnable : undefined, spriteUpperLeft: rs?.spriteUpperLeft,
+      ...(so ? { so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })), soSeparate: so.separate } : {}),
     };
     const prog = this.program(vs, fs, key);
     if (!prog) return;
@@ -1259,7 +1283,7 @@ void main() {
     // Gallium's front face is in its y-down window space: the opposite winding of GL's for the same rows.
     gl.frontFace(rs?.frontCcw ? E.CW : E.CCW);
     if (rs?.offsetTri) { gl.enable(E.POLYGON_OFFSET_FILL); gl.polygonOffset(rs.offsetScale, rs.offsetUnits); } else gl.disable(E.POLYGON_OFFSET_FILL);
-    if (rs?.discard) gl.enable(E.RASTERIZER_DISCARD); else gl.disable(E.RASTERIZER_DISCARD);
+    if (rs?.discard || captureOnly) gl.enable(E.RASTERIZER_DISCARD); else gl.disable(E.RASTERIZER_DISCARD);
     gl.disable(E.DITHER);
     // Blend (render target 0's for all: WebGL2 blends all buffers alike), through the first buffer's layout.
     const cb0 = key.cbufs.find((k) => k);
@@ -1332,6 +1356,28 @@ void main() {
     }
     const prim = PRIM[mode];
     this.stats.draws++;
+    const inst = Math.max(1, instances);
+    let drawCount = count, drawInstances = instances, emitted = 0;
+    let capture: { plan: SoPlan; vertices: number } | undefined;
+    if (so) {
+      // WebGL2 (GLES 3.0) captures unindexed point, line and triangle lists only, and refuses a draw that would overflow
+      // a buffer: Gallium stops writing at the end instead, so the draw is cut to the primitives that fit (and what it
+      // draws with them: a draw that overflows its targets is rare and draws partly).
+      const vpp = mode === 0 ? 1 : mode === 1 ? 2 : mode === 4 ? 3 : 0;
+      if (!vpp || indexed) this.error(`stream output from ${indexed ? 'an indexed draw' : `primitive ${mode}`}: WebGL2 captures unindexed lists only`);
+      else {
+        const fit = Math.min(...so.plan.bindings.map((b) => Math.floor(Math.max(0, b.t.size - b.t.filled) / (b.bytes * vpp))));
+        const per = Math.floor(count / vpp);
+        if (inst === 1) emitted = Math.min(per, fit);
+        else { drawInstances = per ? Math.min(inst, Math.floor(fit / per)) : inst; emitted = drawInstances * per; }
+        if (emitted > 0) {
+          if (inst === 1) drawCount = emitted * vpp;
+          capture = { plan: so.plan, vertices: emitted * vpp };
+        } else drawInstances = instances;
+      }
+    }
+    for (const [q, ctx] of this.counting) if (ctx === c.id) q.result += q.type === 6 ? primitives(mode, count) * inst : emitted;
+    if (capture) this.beginCapture(s, capture.plan, capture.vertices, prim);
     if (indexed) {
       const ib = s.ib;
       const r = ib && this.resources.get(ib.res);
@@ -1362,9 +1408,84 @@ void main() {
       gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, ebuf);
       if (instances > 1) gl.drawElementsInstanced(prim, count, type, offset, instances);
       else gl.drawElements(prim, count, type, offset);
-    } else if (instances > 1) gl.drawArraysInstanced(prim, start, count, instances);
-    else gl.drawArrays(prim, start, count);
+    } else if (drawInstances > 1) gl.drawArraysInstanced(prim, start, drawCount, drawInstances);
+    else if (drawInstances === 1 || instances <= 1) gl.drawArrays(prim, start, drawCount);
     gl.bindVertexArray(null);
+    if (capture) this.endCapture(capture.plan, capture.vertices);
+  }
+
+  /**
+   * How a vertex shader's stream outputs (to the targets bound) go to WebGL2, whose GLES 3.0 has two layouts: all of
+   * them interleaved in one buffer, packed in order, or each in a buffer of its own; no gaps (no gl_SkipComponents).
+   */
+  private soPlan(so: NonNullable<Shader['so']>, targets: (SoTarget | undefined)[]): { plan: SoPlan; outputs: SoOutput[]; separate: boolean } | undefined {
+    const outs = so.outputs.filter((o) => targets[o.buffer]);
+    if (!outs.length) return undefined;
+    const target = (buffer: number) => {
+      const t = targets[buffer]!, r = this.resources.get(t.res);
+      if (!r?.buf || !r.shadow) { this.error(`stream output to resource ${t.res}, not a buffer`); return undefined; }
+      if ((t.offset & 3) !== 0) { this.error(`stream output at offset ${t.offset} (not a multiple of 4)`); return undefined; }
+      return { t, r };
+    };
+    const make = (outputs: SoOutput[], separate: boolean, bindings: { buffer: number; bytes: number }[]) => {
+      const bs = bindings.map((b) => { const tr = target(b.buffer); return tr && { ...tr, bytes: b.bytes }; });
+      if (bs.some((b) => !b)) return undefined;
+      const plan: SoPlan = { outputs, separate, bindings: bs as SoPlan['bindings'] };
+      return { plan, outputs, separate };
+    };
+    if (outs.every((o) => o.buffer === outs[0].buffer)) {
+      const sorted = [...outs].sort((a, b) => a.offset - b.offset);
+      let at = 0;
+      const packed = sorted.every((o) => { const ok = o.offset === at; at += o.comps; return ok; });
+      if (packed && so.strides[outs[0].buffer] === at) return make(sorted, false, [{ buffer: outs[0].buffer, bytes: at * 4 }]);
+    }
+    if (new Set(outs.map((o) => o.buffer)).size === outs.length && outs.every((o) => o.offset === 0 && so.strides[o.buffer] === o.comps)) {
+      const sorted = [...outs].sort((a, b) => a.buffer - b.buffer);
+      return make(sorted, true, sorted.map((o) => ({ buffer: o.buffer, bytes: o.comps * 4 })));
+    }
+    this.error(`stream output's layout (${outs.map((o) => `${o.buffer}:${o.offset}+${o.comps}`).join(' ')}, strides ${so.strides.join(' ')}) has no WebGL2 equivalent`);
+    return undefined;
+  }
+
+  private beginCapture(s: Sub, plan: SoPlan, vertices: number, prim: number) {
+    const gl = this.gl;
+    // A buffer bound for transform feedback may be bound nowhere else.
+    for (const t of [E.ARRAY_BUFFER, E.COPY_READ_BUFFER, E.COPY_WRITE_BUFFER, E.PIXEL_PACK_BUFFER, E.PIXEL_UNPACK_BUFFER]) gl.bindBuffer(t, null);
+    s.so.tf ??= gl.createTransformFeedback()!;
+    gl.bindTransformFeedback(E.TRANSFORM_FEEDBACK, s.so.tf);
+    plan.bindings.forEach((b, k) => gl.bindBufferRange(E.TRANSFORM_FEEDBACK_BUFFER, k, b.r.buf!, b.t.offset + b.t.filled, vertices * b.bytes));
+    gl.beginTransformFeedback(prim);
+  }
+
+  private endCapture(plan: SoPlan, vertices: number) {
+    const gl = this.gl;
+    gl.endTransformFeedback();
+    plan.bindings.forEach((_, k) => gl.bindBufferBase(E.TRANSFORM_FEEDBACK_BUFFER, k, null));
+    gl.bindTransformFeedback(E.TRANSFORM_FEEDBACK, null);
+    // The buffer's CPU copy follows (index buffers, constant attributes and read-backs come from it).
+    for (const b of plan.bindings) {
+      const at = b.t.offset + b.t.filled, n = vertices * b.bytes;
+      gl.bindBuffer(E.COPY_READ_BUFFER, b.r.buf!);
+      gl.getBufferSubData(E.COPY_READ_BUFFER, at, b.r.shadow!, at, n);
+      b.r.idirty = true;
+      b.t.filled += n;
+    }
+    gl.bindBuffer(E.COPY_READ_BUFFER, null);
+  }
+
+  private bindNullFramebuffer() {
+    const gl = this.gl;
+    if (!this.nullFbo) {
+      this.nullFbo = gl.createFramebuffer()!;
+      const rb = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(E.RENDERBUFFER, rb);
+      gl.renderbufferStorage(E.RENDERBUFFER, E.RGBA8, 1, 1);
+      gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.nullFbo);
+      gl.framebufferRenderbuffer(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, E.RENDERBUFFER, rb);
+    }
+    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.nullFbo);
+    gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+    return { width: 1, height: 1 };
   }
 
   private scratch?: WebGLBuffer;
@@ -1440,12 +1561,18 @@ void main() {
       q.q ??= gl.createQuery()!;
       gl.beginQuery(E.ANY_SAMPLES_PASSED_CONSERVATIVE, q.q);
     }
+    // PRIMITIVES_GENERATED and PRIMITIVES_EMITTED: the draws count them (they know their primitives and what they captured).
+    if (q.type === 6 || q.type === 7) {
+      q.result = 0;
+      this.counting.set(q, c.id);
+    }
   }
 
   private endQuery(c: Ctx, h: number) {
     const q = this.query(c, h);
     if (!q) return;
     const gl = this.gl;
+    this.counting.delete(q);
     if (q.q) {
       gl.endQuery(E.ANY_SAMPLES_PASSED_CONSERVATIVE);
       q.pending = true;

@@ -105,9 +105,14 @@ WebGL2), snapshots per decision 3 (contexts that never submitted are saved and r
 restore whose caps this browser can't back turns 3D off). Tests pass: `tests/virgl.test.ts`, `tests/gpu.test.ts`,
 `tests/virgl-browser.test.ts` (including glcomp in a guest with the renderer in the GPU worker, its read-back
 within 7 of llvmpipe).
-Next: (1) (`scripts/ci.sh` and `ci-debian.sh` pass on 12f6158.) The page and snapshot tests with `?gpu=virgl`.
-(2) Stream output is advertised (`max_streamout_buffers` 4, GLES 3.0 needs it) and not implemented in the renderer
-yet. (3) Loop 4's numbers; docs (frontend.md "The screen", devices.md for the page path).
-Done since: `VIRGL_GPU=virgl node bench/gpu/sway-load.ts virgl …myarch2.qcow2` runs all its phases on the page (the
-earlier "stopped" was a wait that gave up early): sway and foot draw through the renderer onto the WebGL2 screen; one
-rough run on SwiftShader, the date loop at ~35 flushes a second (G2's null renderer: 60), sway 328 ms CPU a second.
+Next: (1) Loop 4's numbers (sway on the page: frames a second, guest CPU, renderer time a frame, SwiftShader here
+and the Mac host's GPU; the guest kernel's submit path); glcomp's pixels are already checked against llvmpipe's.
+(2) The exit: docs (frontend.md "The screen" for the WebGL2 path), G4's outline, and whether 3D can be the default
+(the kickoff's condition: the page's Debian and snapshot tests pass with it on, which they now do).
+Done since: `scripts/ci.sh` and `ci-debian.sh` pass on 12f6158. `VIRGL_GPU=virgl node bench/gpu/sway-load.ts
+virgl …myarch2.qcow2` runs all its phases on the page (the earlier "stopped" was a wait that gave up early): sway and
+foot draw through the renderer onto the WebGL2 screen; one rough run on SwiftShader, the date loop at ~35 flushes a
+second (G2's null renderer: 60), sway 328 ms CPU a second. `WEBPC_PAGE_QUERY=gpu=virgl scripts/ci-debian.sh`: the
+page's Debian tests on a 3D machine pass, after a fix (a restore didn't tell the GPU worker the scanout: the restored
+screen stayed black). Stream output is in the renderer (graphics.md §20), tested on Chromium from a stream made in
+the test; no guest in the images uses it (glcomp and sway don't).

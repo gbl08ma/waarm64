@@ -119,6 +119,16 @@ test('virgl tgsi: what WebGL2 can\'t do is refused, not miscompiled', () => {
   assert.throws(() => parseTgsi('FRAG\n  0: FOO TEMP[0]%'), TgsiError);
 });
 
+test('virgl tgsi: stream output captures the components asked for, as the shader wrote them', () => {
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END');
+  const fs = parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END');
+  const p = generate(vs, fs, { ...KEY, so: [{ reg: 0, start: 0, comps: 4 }, { reg: 1, start: 1, comps: 2 }, { reg: 1, start: 3, comps: 1 }], soSeparate: true });
+  assert.deepEqual(p.tf, { varyings: ['tf_0', 'tf_1', 'tf_2'], separate: true });
+  for (const l of ['out highp vec4 tf_0;', 'out highp vec2 tf_1;', 'out highp float tf_2;', 'tf_0 = gl_Position.xyzw;', 'tf_1 = o_1.yz;', 'tf_2 = o_1.w;']) assert.ok(p.vs.includes(l), l);
+  assert.ok(p.vs.indexOf('tf_0 = gl_Position') < p.vs.indexOf('gl_Position.y *= u_adjy'), 'captured before the flip');
+  assert.equal(generate(vs, fs, KEY).tf, undefined);
+});
+
 test('virgl trace: records round-trip', () => {
   const t = encodeTrace([encodeRecord({ kind: 'note', text: 'hi' }), encodeRecord({ kind: 'command', bytes: Uint8Array.of(1, 2, 3, 4, 5) }), encodeRecord({ kind: 'data', res: 7, offset: 9, bytes: Uint8Array.of(8, 9) })]);
   const r = [...readTrace(t)];
@@ -235,18 +245,24 @@ test('virgl snapshots: contexts that never submitted are saved and made again; c
   const capsA = capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] })), capsB = capsFromGl(mockGl({ extensions: [] }));
   const a = make(capsA);
   assert.equal(type(a.g.control(ctxCmd(0x200, 7, 0, 0), 64)), 0x1100);
+  // The console on the screen: a 2D resource on the scanout (RESOURCE_CREATE_2D, SET_SCANOUT).
+  assert.equal(type(a.g.control(ctxCmd(0x101, 0, 1, 1, 64, 32), 64)), 0x1100);
+  assert.equal(type(a.g.control(ctxCmd(0x103, 0, 0, 0, 64, 32, 0, 1), 64)), 0x1100);
   const saved = JSON.parse(JSON.stringify(a.g.save())) as { unsaveable?: string };
   assert.equal(saved.unsaveable, undefined, 'a context alone (a process that opened the render node) doesn\'t stop a snapshot');
   // Restored where the same caps are backed: the context is made again in the renderer.
   const b = make(capsA);
   b.g.restore(saved);
   assert.deepEqual(b.calls.filter((c) => c.t === 'ctx'), [{ t: 'ctx', id: 7, create: true }]);
+  // The GPU worker draws the screen: it is told what the restored scanout shows.
+  const shown = b.calls.filter((c) => c.t === 'scanout');
+  assert.deepEqual(shown.map((c) => c.t === 'scanout' && [c.width, c.height, c.pixels?.length, c.rect.w]), [[64, 32, 64 * 32 * 4, 64]]);
   assert.equal(type(b.g.control(ctxCmd(0x200, 8, 0, 0), 64)), 0x1100);
   // Where s3tc is missing: the guest's caps stay the saved ones, and 3D is off.
   const c = make(capsB);
   c.g.restore(saved);
   assert.deepEqual([...c.g.caps], [...capsA]);
-  assert.equal(c.calls.length, 0);
+  assert.equal(c.calls.filter((x) => x.t === 'ctx').length, 0, 'no context is made');
   assert.equal(type(c.g.control(ctxCmd(0x200, 8, 0, 0), 64)), 0x1200);
   // A context that submitted has objects in the renderer: not saved, until it's gone.
   assert.equal(type(a.g.control(ctxCmd(0x207, 7, 4, 0, 0), 64)), 0x1100);

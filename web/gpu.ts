@@ -599,11 +599,7 @@ export class Gpu {
     this.scanout = s;
     this.announce();
     const res = s && this.resources.get(s.id);
-    if (this.host) {
-      if (!s || !res) this.host.call({ t: 'scanout', width: 0, height: 0, rect: { x: 0, y: 0, w: 0, h: 0 } });
-      else if (res.three) this.host.call({ t: 'scanout', res: res.id, width: res.width, height: res.height, rect: { ...s.rect } });
-      else this.host.call({ t: 'scanout', pixels: res.pixels, width: res.width, height: res.height, rect: { ...s.rect } });
-    }
+    this.hostScanout();
     if (s && res) {
       this.shown = { width: res.width, height: res.height };
       this.draw(res, s.rect);
@@ -617,6 +613,16 @@ export class Gpu {
         }
       }
     }
+  }
+
+  /** Tells the host (a 3D machine's GPU worker, which draws the screen) what the scanout shows. */
+  private hostScanout() {
+    if (!this.host) return;
+    const s = this.scanout;
+    const res = s && this.resources.get(s.id);
+    if (!s || !res) this.host.call({ t: 'scanout', width: 0, height: 0, rect: { x: 0, y: 0, w: 0, h: 0 } });
+    else if (res.three) this.host.call({ t: 'scanout', res: res.id, width: res.width, height: res.height, rect: { ...s.rect } });
+    else this.host.call({ t: 'scanout', pixels: res.pixels, width: res.width, height: res.height, rect: { ...s.rect } });
   }
 
   /** Copies the part of `r` that is on the scanout to the page. */
@@ -827,6 +833,7 @@ export class Gpu {
     this.shown = shown ? { width: shown.width, height: shown.height } : t.shown?.width > 0 && t.shown.height > 0 ? { width: t.shown.width, height: t.shown.height } : { width: 0, height: 0 };
     if (this.o.keepConsole && s && shown && s.rect.x === 0 && s.rect.y === 0 && (s.rect.w < shown.width || s.rect.h < shown.height)) this.floor = { width: shown.width, height: shown.height };
     this.announce();
+    this.hostScanout();
     if (s) this.draw(this.resources.get(s.id)!, s.rect);
     this.hooks.cursor?.(this.cursorImage, this.cursorState.hotX, this.cursorState.hotY, this.cursorState.x, this.cursorState.y);
   }
