@@ -296,7 +296,11 @@ mode (and natively in realtime mode: std has no CSPRNG).
   unused byte gets the fragment's alpha when drawn to (blending reads it; sampling an X format reads 1, and its
   destination alpha is 1 through substituted blend factors). Uploads read the
   guest's pages in place where they are contiguous (`COPY_TRANSFER3D` from a staging buffer, `TRANSFER3D`, the
-  virtio transfer, `RESOURCE_INLINE_WRITE`); read-backs (`readPixels`, or the buffer's copy) write them. Clears,
+  virtio transfer, `RESOURCE_INLINE_WRITE`); read-backs (`readPixels`, or the buffer's copy) write them. What WebGL
+  refuses and GLES allows is worked around at the draw: front and back stencil states whose reference or masks
+  differ draw twice (each face's triangles with its own state on both faces, the other face culled); an attribute
+  whose stride or offset isn't a multiple of its type's size, or whose stride is over 255, is repacked from the
+  buffer's copy into a scratch buffer of its slot. Clears,
   `CLEAR_SURFACE`, `CLEAR_TEXTURE`, blits (a framebuffer blit for the same stored layout, a draw through both
   formats' swizzles otherwise), copies between resources, occlusion queries as "any samples passed" (a counter
   reads 0 or 1, written to the query's buffer when WebGL has it), stream output (transform feedback, graphics.md

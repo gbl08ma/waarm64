@@ -957,7 +957,8 @@ class Gen {
       const written = new Set<string>();
       for (const [k, d] of [...this.outputs].sort((a, b) => a[0] - b[0])) {
         const name = this.vsOutput(k);
-        if (name === 'gl_Position') continue;
+        // The point size is declared below, once (with GL's default).
+        if (name === 'gl_Position' || name === 'o_psize') continue;
         if (name.startsWith('v_')) {
           const vy = this.varyings.get(name)!;
           h.push(`${qualifier(vy)}out vec4 ${name};`);

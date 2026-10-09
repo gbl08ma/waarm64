@@ -53,6 +53,17 @@ units import `login.*`), so `root` logs in with no password on every console wit
 image. The kernel has `simplefb` and `fbcon` built in: fbcon draws on the framebuffer from the
 first kernel line.
 
+## dEQP for the Arch image (`images/deqp/build.sh`)
+
+**On demand only**, like the Arch image below: G4's conformance subset (graphics.md §21). VK-GL-CTS
+`opengl-es-cts-3.2.14.1` (Apache-2.0: built and run, nothing copied), `deqp-gles2` and `deqp-gles3` with EGL's
+surfaceless target, built natively for Arch Linux ARM in rootless Podman from Arch's own tarball (the Arch image's
+download, cached in `target/archarm`; `images/deqp/Containerfile`, ~10 min). Results: `target/deqp/deqp.ext4` (113
+MiB: the binaries, their data and the GLES2/GLES3 mustpass lists under `/deqp`), the page's second disk for
+`bench/gpu/deqp-run.ts`; and the image `localhost/webpc-deqp`, which runs the same binaries on Mesa's virpipe against
+the vtest oracle (`tools/virgl-oracle/deqp.sh`). The surfaceless target takes EGL's default display:
+`EGL_PLATFORM=surfaceless` picks it.
+
 ## Arch Linux ARM for UEFI (`images/archarm/build.sh`)
 
 **On demand only**: not in `images/build.sh`, `SHA256SUMS`, CI or any test. It turns Arch Linux ARM's

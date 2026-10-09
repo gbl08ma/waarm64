@@ -24,27 +24,11 @@ const PHASE_S = Number(process.env.PHASE_S ?? 10);
 const WARM_S = Number(process.env.WARM_S ?? 30);
 const PHASES = (process.env.PHASES ?? 'still,scroll,webgl,pages,support').split(',');
 const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, disk2: PHASES.includes('pages') ? '/target/ffpages/pages.ext4' : undefined });
-const { page, log, terminal, shows, onSerial, pasteSerial, onScreen, rootShell, load } = s;
+const { page, log, onSerial, pasteSerial, onScreen, rootShell, load, run, runLines } = s;
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), prefs: process.env.FF_PREFS ?? '' };
 const save = () => {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
   if (s.debugLines.length) writeFileSync(`${out}/virgl-debug.txt`, s.debugLines.join('\n') + '\n');
-};
-/** A command's output on the serial terminal, between markers. */
-let n = 0;
-const run = async (cmd: string, ms = 60_000) => {
-  const m = `R${++n}`;
-  await onSerial(`clear; echo ${m}-be""gin; ${cmd}; echo ${m}-e""nd\n`);
-  await shows(new RegExp(`${m}-end`), ms);
-  const t = await terminal();
-  return t.slice(t.lastIndexOf(`${m}-begin`) + m.length + 6, t.lastIndexOf(`${m}-end`)).trim();
-};
-/** A command's output as lines, however long (the terminal shows a screenful: read 15 lines at a time, each marked). */
-const runLines = async (cmd: string, ms = 60_000) => {
-  const total = Number(await run(`${cmd} > /tmp/run.out 2>&1; wc -l < /tmp/run.out`, ms));
-  const lines: string[] = [];
-  for (let a = 1; a <= total; a += 15) lines.push(...(await run(`sed -n "${a},${a + 14}p" /tmp/run.out | sed "s/^/@@/"`)).split('@@').slice(1).map((l) => l.trim()));
-  return lines;
 };
 
 await rootShell();

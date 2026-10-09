@@ -1334,16 +1334,31 @@ void main() {
     } else gl.disable(E.DEPTH_TEST);
     gl.depthMask(!!dsa?.depth.write && !!dsa.depth.enabled);
     const st0 = dsa?.stencil[0];
+    // WebGL refuses a draw whose front and back stencil reference, value mask or write mask differ (GLES allows it):
+    // such a draw goes twice, each face's triangles with its own state on both faces, the other face culled.
+    let faces: { cull?: number; st: Dsa['stencil'][number]; ref: number }[] = [];
     if (st0?.enabled) {
       gl.enable(E.STENCIL_TEST);
       const back = dsa!.stencil[1].enabled ? dsa!.stencil[1] : st0;
       const refBack = dsa!.stencil[1].enabled ? s.stencilRef[1] : s.stencilRef[0];
-      gl.stencilFuncSeparate(E.FRONT, COMPARE[st0.func], s.stencilRef[0], st0.valueMask);
-      gl.stencilFuncSeparate(E.BACK, COMPARE[back.func], refBack, back.valueMask);
-      gl.stencilOpSeparate(E.FRONT, STENCIL_OP[st0.fail], STENCIL_OP[st0.zfail], STENCIL_OP[st0.zpass]);
-      gl.stencilOpSeparate(E.BACK, STENCIL_OP[back.fail], STENCIL_OP[back.zfail], STENCIL_OP[back.zpass]);
-      gl.stencilMaskSeparate(E.FRONT, st0.writeMask);
-      gl.stencilMaskSeparate(E.BACK, back.writeMask);
+      const stencil = (face: number, st: typeof st0, ref: number) => {
+        gl.stencilFuncSeparate(face, COMPARE[st.func], ref, st.valueMask);
+        gl.stencilOpSeparate(face, STENCIL_OP[st.fail], STENCIL_OP[st.zfail], STENCIL_OP[st.zpass]);
+        gl.stencilMaskSeparate(face, st.writeMask);
+      };
+      const split = s.stencilRef[0] !== refBack || st0.valueMask !== back.valueMask || st0.writeMask !== back.writeMask;
+      if (split) {
+        const cull = rs?.cullFace ?? 0;
+        const tris = mode >= 4 && mode <= 6; // points and lines are front-facing
+        faces = tris ? [
+          ...(cull === 1 || cull === 3 ? [] : [{ cull: E.BACK, st: st0, ref: s.stencilRef[0] }]),
+          ...(cull === 2 || cull === 3 ? [] : [{ cull: E.FRONT, st: back, ref: refBack }]),
+        ] : [{ st: st0, ref: s.stencilRef[0] }];
+        stencil(E.FRONT_AND_BACK, st0, s.stencilRef[0]);
+      } else {
+        stencil(E.FRONT, st0, s.stencilRef[0]);
+        stencil(E.BACK, back, refBack);
+      }
     } else gl.disable(E.STENCIL_TEST);
     // Vertex attributes.
     s.vao ??= gl.createVertexArray()!;
@@ -1367,9 +1382,22 @@ void main() {
         continue;
       }
       gl.enableVertexAttribArray(k);
-      gl.bindBuffer(E.ARRAY_BUFFER, r.buf);
-      if (vf.int) gl.vertexAttribIPointer(k, vf.size, vf.type, vb.stride, vb.offset + e.offset);
-      else gl.vertexAttribPointer(k, vf.size, vf.type, vf.normalized, vb.stride, vb.offset + e.offset);
+      let [stride, at] = [vb.stride, vb.offset + e.offset];
+      const comp = vf.type === E.FLOAT || vf.type === E.INT || vf.type === E.UNSIGNED_INT || vf.type === 0x8368 || vf.type === 0x8d9f ? 4 : vf.type === E.SHORT || vf.type === E.UNSIGNED_SHORT || vf.type === E.HALF_FLOAT ? 2 : 1;
+      if (stride % comp || at % comp || stride > 255) {
+        // WebGL refuses a stride or offset that isn't a multiple of the type's size, and strides over 255 (GLES allows
+        // both): the attribute repacked from the buffer's copy, every element the buffer holds, 4-byte aligned.
+        const n = Math.max(0, Math.floor((r.shadow.length - at - vf.bytes) / stride) + 1);
+        const st = Math.ceil(vf.bytes / 4) * 4;
+        const packed = new Uint8Array(Math.max(4, n * st));
+        for (let i = 0; i < n; i++) packed.set(r.shadow.subarray(at + i * stride, at + i * stride + vf.bytes), i * st);
+        const buf = (this.scratchVb[k] ??= gl.createBuffer()!);
+        gl.bindBuffer(E.ARRAY_BUFFER, buf);
+        gl.bufferData(E.ARRAY_BUFFER, packed, E.STREAM_DRAW);
+        [stride, at] = [st, 0];
+      } else gl.bindBuffer(E.ARRAY_BUFFER, r.buf);
+      if (vf.int) gl.vertexAttribIPointer(k, vf.size, vf.type, stride, at);
+      else gl.vertexAttribPointer(k, vf.size, vf.type, vf.normalized, stride, at);
       gl.vertexAttribDivisor(k, e.divisor);
       maxVertex = Math.max(maxVertex, 0);
     }
@@ -1378,7 +1406,7 @@ void main() {
     if (this.debug) {
       const s = c.sub, rt = s.blend?.rt[0];
       const fmt = (res: number, f: number) => `${res}:${FORMATS.get(f)?.name ?? f}`;
-      this.debug(`draw ctx ${c.id} into [${s.fb.cbufs.map((cb) => cb ? fmt(cb.res, cb.format) : '-').join(' ')}] blend ${rt?.enable ? `${rt.rgbSrc},${rt.rgbDst},${rt.aSrc},${rt.aDst} mask ${rt.mask}` : 'off'} sampling [${s.views.fs.map((v) => v ? `${fmt(v.res, v.format)}/${v.swizzle.join('')}` : '-').join(' ')}]`);
+      this.debug(`draw ctx ${c.id} into [${s.fb.cbufs.map((cb) => cb ? fmt(cb.res, cb.format) : '-').join(' ')}]${s.fb.zs ? ` zs ${fmt(s.fb.zs.res, s.fb.zs.format)}` : ''} vp ${s.viewport.scale[1] < 0 ? '-y' : '+y'} ${s.rs ? `ccw ${+s.rs.frontCcw} cull ${s.rs.cullFace}` : ''}${s.dsa?.stencil[0].enabled ? ` stencil ${JSON.stringify(s.dsa.stencil)}` : ''} blend ${rt?.enable ? `${rt.rgbSrc},${rt.rgbDst},${rt.aSrc},${rt.aDst} mask ${rt.mask}` : 'off'} sampling [${s.views.fs.map((v) => v ? `${fmt(v.res, v.format)}/${v.swizzle.join('')}` : '-').join(' ')}]`);
     }
     const inst = Math.max(1, instances);
     let drawCount = count, drawInstances = instances, emitted = 0;
@@ -1430,12 +1458,27 @@ void main() {
         ebuf = r.ibuf;
       }
       gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, ebuf);
-      if (instances > 1) gl.drawElementsInstanced(prim, count, type, offset, instances);
-      else gl.drawElements(prim, count, type, offset);
-    } else if (drawInstances > 1) gl.drawArraysInstanced(prim, start, drawCount, drawInstances);
-    else if (drawInstances === 1 || instances <= 1) gl.drawArrays(prim, start, drawCount);
+      this.byFace(faces, () => {
+        if (instances > 1) gl.drawElementsInstanced(prim, count, type, offset, instances);
+        else gl.drawElements(prim, count, type, offset);
+      });
+    } else if (drawInstances > 1) this.byFace(faces, () => gl.drawArraysInstanced(prim, start, drawCount, drawInstances));
+    else if (drawInstances === 1 || instances <= 1) this.byFace(faces, () => gl.drawArrays(prim, start, drawCount));
     gl.bindVertexArray(null);
     if (capture) this.endCapture(capture.plan, capture.vertices);
+  }
+
+  /** A draw once, or once a face when the stencil's faces must be split (`faces`: each face's state, the other culled). */
+  private byFace(faces: { cull?: number; st: Dsa['stencil'][number]; ref: number }[], draw: () => void) {
+    if (!faces.length) return draw();
+    const gl = this.gl;
+    for (const f of faces) {
+      gl.stencilFuncSeparate(E.FRONT_AND_BACK, COMPARE[f.st.func], f.ref, f.st.valueMask);
+      gl.stencilOpSeparate(E.FRONT_AND_BACK, STENCIL_OP[f.st.fail], STENCIL_OP[f.st.zfail], STENCIL_OP[f.st.zpass]);
+      gl.stencilMaskSeparate(E.FRONT_AND_BACK, f.st.writeMask);
+      if (f.cull !== undefined) { gl.enable(E.CULL_FACE); gl.cullFace(f.cull); }
+      draw();
+    }
   }
 
   /**
@@ -1513,6 +1556,9 @@ void main() {
   }
 
   private scratch?: WebGLBuffer;
+  /** Repacked vertex attributes, by slot (never element arrays: WebGL keeps the two kinds of buffer apart). */
+  private scratchVb: WebGLBuffer[] = [];
+
   private scratchIndex(data: ArrayBufferView) {
     const gl = this.gl;
     this.scratch ??= gl.createBuffer()!;

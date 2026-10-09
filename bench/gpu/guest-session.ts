@@ -127,6 +127,24 @@ export async function openSession(o: SessionOptions) {
     await pasteSerial(`cat > /root/load.sh <<'EOF'\n${LOAD_SH}EOF`);
   };
 
+  /** A command's output on the serial terminal, between markers (rows run together: one screenful at most). */
+  let runs = 0;
+  const run = async (cmd: string, ms = 60_000) => {
+    const m = `R${++runs}`;
+    await onSerial(`clear; echo ${m}-be""gin; ${cmd}; echo ${m}-e""nd\n`);
+    await shows(new RegExp(`${m}-end`), ms);
+    const t = await terminal();
+    return t.slice(t.lastIndexOf(`${m}-begin`) + m.length + 6, t.lastIndexOf(`${m}-end`)).trim();
+  };
+  /** A command's output as lines, however long: 6 lines a screenful (a long line wraps over several rows), each marked. */
+  const runLines = async (cmd: string, ms = 60_000) => {
+    const total = Number(await run(`${cmd} > /tmp/run.out 2>&1; wc -l < /tmp/run.out`, ms));
+    const lines: string[] = [];
+    for (let a = 1; a <= total; a += 6) lines.push(...(await run(`sed -n "${a},${a + 5}p" /tmp/run.out | cut -c1-400 | sed "s/^/@@/"`)).split('@@').slice(1).map((l) => l.trim()));
+    if (lines.length !== total) console.log(`runLines: ${lines.length} of ${total} lines read`);
+    return lines;
+  };
+
   let mark = 0;
   /** A phase: `secs` of the guest's /proc on the serial side, with the display's, the renderer's and the emulator's
    * stats over the same time; `during` starts and stops something around it (a sampler). Returns the phase's record
@@ -152,5 +170,5 @@ export async function openSession(o: SessionOptions) {
   };
 
   const close = async () => { await browser.close(); server.close(); };
-  return { page, browser, gl, log, warnings, debugLines, terminal, shows, onSerial, pasteSerial, onScreen, display, vmStats, vmDelta, rootShell, load, close };
+  return { page, browser, gl, log, warnings, debugLines, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, close };
 }

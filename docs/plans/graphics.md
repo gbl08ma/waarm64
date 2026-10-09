@@ -984,3 +984,33 @@ that should find this class of bug.
   texture upload (with an alpha histogram for 4-byte formats), once. `GUEST_CMD` in firefox-load.ts runs a command
   in sway's session (the guest's `eglinfo` configs, for one: Mesa on our caps lists AR30 first, llvmpipe AB30).
 
+### Loop 3: dEQP, the correctness gate (2026-10-09)
+
+Moved ahead of Firefox's speed: the menus' black borders (above) were a conformance bug no test had looked for.
+`images/deqp/build.sh` builds dEQP (images.md); `bench/gpu/deqp-run.ts` runs a case list on the page under the JIT
+(the Arch image on a 3D machine, dEQP as its second disk, as root on EGL's surfaceless platform: no compositor):
+every 50th case of the GLES2 and GLES3 mustpass lists (344 and 896 cases), or named cases and `*` patterns
+(`CASES=`), with the renderer's trace (`VIRGL_GPU=virgl,debug`) or a capture (`CAPTURE=`). The oracle,
+`tools/virgl-oracle/deqp.sh`, runs the same binaries on Mesa's virpipe against vtest on llvmpipe's GLES 3.0. A
+subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/results/g4-deqp/`.
+
+| every 50th case | oracle (vtest, GLES 3.0) | page, first run | page, after the fixes below |
+|---|---|---|---|
+| GLES2 (344) | 342 pass, 2 not supported | 301 pass, 41 fail | **342 pass, 2 not supported** |
+| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s |
+
+- **Point size declared twice** in a vertex shader that writes it (`o_psize`: every such program failed to link).
+- **Stencil faces:** WebGL refuses a draw whose front and back stencil reference or masks differ (GLES allows it);
+  such a draw now goes once per face (devices.md "virgl"). The whole GLES2 depth/stencil group passes (621).
+- **Vertex strides:** WebGL refuses strides and offsets that aren't multiples of the type's size, and strides over
+  255; such attributes are repacked. The whole GLES2 vertex-array group passes (571).
+- Failures that came only after other cases (culling, single attributes) went with these: earlier draws broken by
+  them, not state leaking.
+- `tests/virgl.test.ts` replays a capture of two of these cases (`tests/virgl/deqp-gles2-stencil-stride.vglt.gz`) on
+  the recording WebGL2 and checks WebGL's rules at every draw; each fix planted back fails it.
+- **GLES3, still failing** (51): transform feedback (24: stream output's layouts, and its types), shadow samplers
+  (7), integer blits between formats (5), RGB9_E5 (2), two MSAA derivative cases, a blend equation with constant
+  color, `textureGradOffset` on a shadow array in a vertex shader (no GLSL ES overload), a copy from a source that
+  can't be read (49 warnings), an occlusion query, a buffer mapped as an index array, two fragment outputs (RGB10_A2UI,
+  RGBA4). Next by count.
+

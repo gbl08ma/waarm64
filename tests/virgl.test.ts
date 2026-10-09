@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { gunzipSync } from 'node:zlib';
+import { E } from '../web/gl-enums.ts';
 import { Gpu, gpuBackend } from '../web/gpu.ts';
 import { decodeCaps, virglCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl } from '../web/virgl-caps.ts';
@@ -114,6 +115,16 @@ IMM[0] UINT32 {3, 7, 0, 0}
   assert.match(generate(mv, parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END'), KEY).vs, /uintBitsToFloat\(1u\)/);
 });
 
+test('virgl tgsi: a vertex shader that writes the point size declares it once (dEQP-GLES2 points)', () => {
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], PSIZE\nIMM[0] FLT32 {4.0, 0.0, 0.0, 0.0}\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1].x, IMM[0].xxxx\n  2: END');
+  const fs = parseTgsi('FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.0, 0.0, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END');
+  for (const points of [false, true]) {
+    const p = generate(vs, fs, { ...KEY, attribs: ['f'], points });
+    assert.equal(p.vs.match(/vec4 o_psize\b/g)?.length, 1, p.vs);
+    if (points) assert.match(p.vs, /gl_PointSize = o_psize.x;/);
+  }
+});
+
 test('virgl tgsi: what WebGL2 can\'t do is refused, not miscompiled', () => {
   const vs = parseTgsi('VERT\nDCL OUT[0], POSITION\n  0: END');
   for (const body of ['DCL IMAGE[0], 2D, PIPE_FORMAT_R8G8B8A8_UNORM, WR\n  0: END', 'DCL TEMP[0]\n  0: IMUL_HI TEMP[0], TEMP[0], TEMP[0]\n  1: END', 'DCL SAMP[0]\nDCL TEMP[0]\n  0: TEX TEMP[0], TEMP[0], SAMP[0], CUBE_ARRAY\n  1: END']) {
@@ -169,6 +180,35 @@ test('virgl renderer: sway\'s trace (foot starting, a command typed) runs with n
   assert.equal(r.stats.draws, 147);
   assert.ok(r.stats.programs >= 3);
   assert.ok(res.flushes > 100, `${res.flushes} flushes`);
+});
+
+test('virgl renderer: what WebGL refuses and GLES allows is worked around (dEQP-GLES2 stencil faces and strides)', () => {
+  // dEQP-GLES2's stencil_ops.zero_invert_keep (front and back stencil masks differ) and vertex_arrays'
+  // 3_float2_17_float2_32_float2_17 (floats 17 bytes apart), captured in the guest (bench/gpu/deqp-run.ts CAPTURE=).
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const res = replay(fixture('deqp-gles2-stencil-stride.vglt.gz'), (ram) => localHost(new VirglRenderer(gl, { ram, log: (m) => errors.push(m) })));
+  assert.deepEqual(errors, []);
+  assert.deepEqual(new Set(res.replies), new Set([0x1100]));
+  // WebGL's rules at every draw: the faces' stencil reference and masks agree; attributes aligned to their type, strides under 256.
+  const face: Record<number, { ref: number; vmask: number; wmask: number }> = { [E.FRONT]: { ref: 0, vmask: -1, wmask: -1 }, [E.BACK]: { ref: 0, vmask: -1, wmask: -1 } };
+  const set = (f: number, k: 'ref' | 'vmask' | 'wmask', v: number) => { for (const x of f === E.FRONT_AND_BACK ? [E.FRONT, E.BACK] : [f]) face[x][k] = v; };
+  let draws = 0, split = 0;
+  for (const [name, a] of gl.log) {
+    const n = a as number[];
+    if (name === 'stencilFuncSeparate') { set(n[0], 'ref', n[2]); set(n[0], 'vmask', n[3]); if (n[0] === E.FRONT_AND_BACK) split++; }
+    if (name === 'stencilMaskSeparate') set(n[0], 'wmask', n[1]);
+    if (name === 'vertexAttribPointer') {
+      const size = n[2] === E.FLOAT ? 4 : n[2] === E.SHORT || n[2] === E.UNSIGNED_SHORT ? 2 : 1;
+      assert.ok(n[4] % size === 0 && n[5] % size === 0 && n[4] < 256, `attribute ${n[0]}: stride ${n[4]}, offset ${n[5]}`);
+    }
+    if (name.startsWith('draw')) {
+      draws++;
+      assert.deepEqual(face[E.FRONT], face[E.BACK], `draw ${draws}`);
+    }
+  }
+  assert.ok(split >= 2, `${split} stencil states set for both faces (a split draw)`);
 });
 
 test('virgl device: a fenced command\'s reply waits for the host, and replies stay in order', async () => {
