@@ -3,10 +3,12 @@
 **Status:** drafted 2026-09-27 as an exploration. **G0 and G1 (virtio-gpu 2D) are done (2026-10-02)**:
 what exists is in the topic docs ([devices.md](../devices.md) "virtio-gpu", [frontend.md](../frontend.md)
 "The screen", [abi.md](../abi.md) ABI 31, [testing.md](../testing.md)), the numbers in
-`bench/gpu/REPORT.md`, the loose ends in [backlog.md](../backlog.md); §9 to §17 here are the record of
-what each loop found. **G2 onward is not scheduled**, and nothing about it is decided until the user
-confirms it (§18 is a proposed outline for G2's kickoff). §1 to §8 are the plan as first drafted; where
-G1 found otherwise, the later sections say so.
+`bench/gpu/REPORT.md`, the loose ends in [backlog.md](../backlog.md); §9 to §17 are the record of
+what each loop found. **The 3D direction changed on 2026-10-09** (the user, §18): OpenGL ES first, through
+**virgl** (Mesa's upstream guest driver) onto **WebGL2** as the baseline, a WebGPU backend only where the
+browser has one, and Vulkan (Venus, Zink) deferred. §1 and §7 are the plan as revised; §4 (Venus on WebGPU)
+is kept as the deferred Vulkan design. G2 onward is not scheduled until its kickoff
+(`M8-GRAPHICS-HANDOVER.md` carries the proposal).
 
 The question: how does a guest get a real display (mode setting, damage, a cursor) and, later,
 **hardware-accelerated 3D** in a browser page, without the guest knowing it runs in one? Today the
@@ -15,32 +17,42 @@ region in guest RAM that `web/display.ts` copies to a `<canvas>` on every animat
 it changed or not (`docs/backlog.md`, "Framebuffer"). The only 3D a guest can do is Mesa's software
 renderers (llvmpipe, lavapipe) on our emulated CPU.
 
-## 1. Proposed decisions
+## 1. Decisions (revised 2026-10-09)
 
-- **virtio-gpu is the display device**, first 2D, then 3D over the same device. The guest drivers
-  are upstream (`DRM_VIRTIO_GPU` in Linux, Mesa's Venus in userspace), so the guest needs no
-  patches, and 2D alone already fixes today's gaps: mode setting (the canvas size follows the
-  page), damage rectangles, a hardware cursor, EDID. `simple-framebuffer` stays for boot tests and
-  guests without the driver.
-- **3D: Vulkan in the guest, WebGPU in the page, translated on the host side.** The guest runs
-  Mesa's **Venus** driver, which serializes Vulkan calls over virtio-gpu (a "context" of capset
-  Venus). On native hosts, virglrenderer replays that stream on the host's Vulkan. We would write
-  the replay side as a **Venus → WebGPU translator** in its own worker. OpenGL in the guest comes
-  from Mesa's **Zink** (GL on Vulkan) over Venus, so there's one protocol to implement, not two.
-- **Translate on the host, not in the guest.** A Vulkan driver inside the guest that emits
-  WebGPU-shaped commands would run under emulation, at JIT speed. On the host the translator is
-  native wasm, and it can block the guest's fence waits on WebGPU's async completion (§4.4).
-- **Target a small, honest Vulkan**: roughly Vulkan 1.1 with only the features WebGPU can back,
-  non-conformant but never lying in its feature bits (§4.2). Apps that need Vulkan 1.3-class
-  features (DXVK, VKD3D-Proton) are out of scope, and that's accepted.
-- **A software baseline comes before any GPU work** (G2): llvmpipe/lavapipe in the guest on
-  virtio-gpu 2D. It works as soon as 2D works, it's the bar the WebGPU path has to beat, and its
-  images are the reference for tests.
-- **A decision gate after the first frame** (G3): if Venus's memory model makes the translator
-  too slow or too complex, stop and reconsider the alternatives in §2.
-- Chromium only, as everywhere in the project. WebGPU ships in Chromium (Linux, macOS, Windows,
-  ChromeOS). The graphics path doesn't block a later Firefox/Safari pass; a page without WebGPU
-  falls back to 2D plus the software baseline.
+- **virtio-gpu is the display device**, 2D (done) and then 3D over the same device. The guest drivers
+  are upstream, so the guest needs no patches. `simple-framebuffer` stays for boot tests and guests
+  without the driver.
+- **No translation layer and no software rendering in the guest.** The guest's CPU is the scarcest
+  thing the machine has: even after the JIT's NEON rounds llvmpipe takes 323 ms a compositor frame on
+  1 vCPU and 71 ms on 4 (§18), and Zink (GL on Vulkan) would be another layer of Mesa running under
+  emulation. The guest runs a thin driver that serializes; the work happens on the host.
+- **3D: OpenGL ES through virgl, rendered with WebGL2.** The guest runs Mesa's **virgl** Gallium driver
+  (in every distro's Mesa: `virtio_gpu_dri.so`), which sends Gallium state, TGSI shaders and resource
+  transfers over virtio-gpu's VIRGL capset. The host side is **our own virgl renderer on WebGL2**:
+  decode the command stream, translate TGSI to GLSL ES 3.00, issue WebGL2 calls. virglrenderer (MIT) does
+  the same on native GL/GLES hosts and is the reference (port from it with attribution where it helps).
+  On a GLES 3.0 host, which WebGL2 roughly is, virglrenderer gives the guest **OpenGL ES 3.0 and desktop
+  GL 2.1** (§18). That covers wlroots, KWin and GTK4's GLES paths, and the browsers' ANGLE.
+- **WebGL2 is the baseline and WebGPU an optional backend.** WebGL2 is everywhere Chromium is; WebGPU is
+  often missing on Linux. A later WebGPU backend for the same protocol could advertise more (compute and
+  storage buffers: GLES 3.1), only where `navigator.gpu` gives an adapter. A page without WebGL2 doesn't
+  advertise virgl: 2D only, as today.
+- **virgl's resources are guest-backed** (`RESOURCE_CREATE_3D`, `TRANSFER_TO_HOST_3D`/`FROM_HOST_3D`
+  copy between the backing pages and the host object). No `HOSTMEM` window, no blob resources and no
+  coherent-memory tracking are needed: the problem that made Venus hard (§4.3) doesn't arise.
+- **Vulkan is deferred**: Venus → WebGPU (§4) only if Vulkan programs are asked for, and only on the
+  WebGPU backend.
+- **The guest side is measured before the renderer is built** (G2, §7): virgl on a null renderer in our
+  machine, guest CPU a frame against llvmpipe's.
+- Chromium only, as everywhere in the project.
+
+### What the first draft decided, and why it changed
+The 2026-09-27 draft chose Venus on WebGPU for Vulkan and Zink over Venus for GL, so that one protocol
+covered both, and rejected virgl because it means translating TGSI and emulating desktop GL on a GLES-level
+API. Two things changed. G1 and the JIT rounds showed that guest CPU decides everything (§16, §18), and Zink
+is a translation layer in the guest. And the user noted that WebGL2 is far more widely available than
+WebGPU (Chromium on Linux often has no WebGPU). virglrenderer already runs on GLES hosts, so the "desktop GL
+on GLES" emulation is a known, bounded problem, and the guest can only ask for what our caps advertise.
 
 ## 2. What exists elsewhere (findings, 2026-09-27)
 
@@ -60,12 +72,14 @@ renderers (llvmpipe, lavapipe) on our emulated CPU.
   ([Collabora, 2025](https://www.collabora.com/news-and-blog/blog/2025/01/15/the-state-of-gfx-virtualization-using-virglrenderer/)).
 - **virgl** (OpenGL over virtio-gpu, the older path): the guest sends Gallium state and TGSI
   shaders, and the host renders with desktop OpenGL. Mapping that onto WebGL2 or WebGPU means
-  translating TGSI and emulating desktop GL on a GLES-level API. Rejected in favor of Zink on
-  Venus, unless G3 fails.
+  translating TGSI and emulating desktop GL on a GLES-level API. First rejected in favor of Zink on
+  Venus; **chosen on 2026-10-09** (§1, §18). virglrenderer (MIT) supports GLES hosts (`use_gles`: GLSL
+  levels 130 on GLES 3.0, 310 on 3.1).
 - **gfxstream** (Google, Apache-2.0; Android emulator, now also in crosvm and Mesa): serializes
   Vulkan, and also GLES in the Android emulator. Its **GLES** stream against **WebGL2** (≈ GLES
-  3.0) would be a much closer mapping than Vulkan against WebGPU. That makes it the main
-  alternative at the G3 gate. How usable its guest-side GLES is on a Linux guest is unknown (§8).
+  3.0) would be a much closer mapping than Vulkan against WebGPU. Its GLES guest libraries target
+  Android, and Mesa's gfxstream driver is Vulkan only, so for unmodified Linux guests it means shipping our
+  own guest side (§5, "A GLES passthrough library").
 - **Native contexts** (virtio-gpu passing a real GPU's own kernel protocol through: freedreno,
   amdgpu, i915): need a real GPU driver on the host. Not applicable in a browser.
 - **Shader translation:** Venus carries SPIR-V, and WebGPU only accepts WGSL.
@@ -108,7 +122,7 @@ TypeScript in the device worker, like blk and net.
 - The guest side: `DRM_VIRTIO_GPU` in the Buildroot kernel (with fbdev emulation for the test
   script); Alpine's linux-virt has it as a module.
 
-## 4. 3D: Venus on WebGPU
+## 4. 3D: Venus on WebGPU (deferred: the Vulkan design, if Vulkan is asked for)
 
 ### 4.1 Shape
 - **The translator is a separate wasm module in its own worker (the GPU worker)**, not part of the
@@ -169,79 +183,99 @@ Map what maps, emulate what's cheap, don't advertise the rest:
 
 ## 5. Later, and alternatives kept open
 
+- **A GLES passthrough library in the guest** (our own `libEGL`/`libGLESv2` that forwards GLES calls,
+  as the Android emulator's guest libraries do for gfxstream): the closest possible mapping onto WebGL2 and
+  the least guest CPU, since GLSL ES would pass through untouched. Not first, because the guests aren't
+  ours to modify (users bring unmodified images, phase B), and because the library would have to integrate
+  where Mesa already does: GBM and dma-bufs for compositors, EGL on Wayland and X11, GLX for Xwayland, glvnd.
+  Revisit only if G2 shows that Mesa's virgl driver costs the guest too much. gfxstream's own GLES guest side
+  targets Android; Mesa's gfxstream driver is Vulkan only.
 - **WebGPU passthrough for guest programs.** A guest app written against WebGPU (wgpu, Dawn)
   could have its calls forwarded almost 1:1 to the page, since Dawn's wire protocol is already a
   serialized WebGPU. That would need a guest-side client library and our own virtio-gpu context
   type, with no upstream guest support. Interesting for demos; not a general graphics stack.
-- **gfxstream GLES → WebGL2**, if G3 shows that Venus → WebGPU is too costly and GL is what
-  users need most (§2).
-- **Video decode** (virtio-video or VA-API over Venus) via WebCodecs: far later.
-- **Tessellation, geometry shaders, transform feedback** as compute pre-passes, MoltenVK-style,
-  only if Zink's GL version or a real workload requires them.
+- **Video decode** (virtio-video, or virgl's video commands) via WebCodecs: far later.
+- **Geometry shaders, tessellation**: neither WebGL2 nor WebGPU has them, so desktop GL above 3.1 isn't
+  reachable honestly. Compute pre-passes (MoltenVK-style) on the WebGPU backend only if a real workload
+  needs them.
 
 ## 6. Testing (`docs/testing.md`)
 
-- **2D:** byte-exact, deterministic, natively and in Chromium: a guest script draws through KMS
-  (a dumb buffer with damage, a cursor), and the test reads the canvas back, as
-  `/test-devices.sh` does for `/dev/fb0` today.
-- **Translator unit tests natively**: decode recorded Venus streams (captured once from a real
-  guest) into calls on the recording `Gpu` mock; shader translation of a SPIR-V corpus (what Zink
-  and the Vulkan CTS emit) through naga, validated.
-- **In Chromium:** the guest runs a subset of the Vulkan CTS (dEQP-VK, Apache-2.0: a guest
-  workload, not copied code), and images are compared with lavapipe's (G2), with a tolerance,
-  since GPUs aren't bit-exact. The subset grows with the advertised features.
-- **No GPU in the dev VM.** Chromium there needs a software WebGPU adapter (SwiftShader, or Dawn
-  on Mesa's lavapipe): which flags work headless is for G0 to find out. Real-GPU numbers need
-  Chromium on a machine with a GPU (§8).
-- Benchmarks: vkcube, vkmark and glmark2 in the guest, frame times in `bench/`, each against the
-  software baseline.
+- **2D:** byte-exact, deterministic, natively and in Chromium (G1, as built).
+- **The virgl device natively and deterministically:** the device's 3D commands on the null renderer
+  (fences signalled at once) in the Rust twin (`core/tests/common/gpu.rs`), with a gpu guest that runs
+  glcomp on virgl: exact step counts, like the 2D guest.
+- **The renderer's unit tests in Node:** recorded virgl streams (captured from real Mesa clients through a
+  vtest server, or from the device) decoded onto a recording WebGL2 mock; TGSI → GLSL ES on a corpus of the
+  shaders Mesa sends (`VIRGL_DEBUG=tgsi` prints them), each compiled in headless Chromium.
+- **In Chromium:** headless WebGL2 on SwiftShader in the dev VM. Pixels are compared with llvmpipe's
+  with a tolerance, since GPUs aren't bit-exact. Through virglrenderer on llvmpipe, glcomp's pixel hash
+  equals llvmpipe's own (§18), so the reference images can come from the oracle natively.
+- **A guest subset of dEQP-GLES2/GLES3** (VK-GL-CTS: a guest workload, not copied code), growing with the
+  caps.
+- Benchmarks: glcomp (`gl_llvmpipe_jit` gains a virgl twin), glmark2-es2 and a compositor frame rate, each
+  against llvmpipe; the complex-app benchmark (`bench/apps/chromium.ts`) with the guest's GPU process on
+  virgl.
 
 ## 7. Steps
 
-Each step comes with tests at the cheapest layer that catches it (`docs/testing.md`).
+Each step comes with tests at the cheapest layer that catches it (`docs/testing.md`). G0 and G1 are done;
+G2 onward is the 2026-10-09 proposal, settled by its kickoff. The proposal in detail is in
+`M8-GRAPHICS-HANDOVER.md`.
 
-- **G0 — WebGPU environment spike, measured (done: §10).** Get a WebGPU adapter in headless Chromium in the
-  dev VM (software), and record the adapter's features and limits. Check `writeBuffer` from a
-  `SharedArrayBuffer`-backed view and its cost at scanout sizes. Check `OffscreenCanvas` +
-  WebGPU in a worker. Decide how real-GPU numbers are taken (§8).
-- **G1 — virtio-gpu 2D (done: §9, §11 to §17)** (§3): device, backend, `OffscreenCanvas` presentation,
-  resize, cursor, EDID; the Buildroot kernel with `DRM_VIRTIO_GPU`; byte-exact tests natively and in
-  Chromium.
-- **G2 — Software baseline:** llvmpipe/lavapipe in a guest image (Alpine, e.g. `mesa-dri-gallium`,
-  `mesa-vulkan-swrast`; a small Wayland compositor such as `cage`), vkcube and glmark2 numbers
-  under the M6 JIT. Also the reference images for later tests.
-- **G3 — Venus first frame (decision gate).** The virtio-gpu 3D features (`CONTEXT_INIT`,
-  `HOSTMEM`, blob resources, the Venus capset), the `HOSTMEM` window, the GPU worker, and a
-  translator that gets `vulkaninfo` and vkcube's first frame onto the canvas. Measure submit
-  latency and frame time against G2. Then decide: continue (G4), switch to the gfxstream GLES
-  path, or stop at G2.
-- **G4 — Translator breadth:** the §4.2 table filled in, dirty-page tracking for coherent memory
-  (§4.3, measured against uploading everything), pipeline and shader caches, a growing dEQP-VK
-  subset.
-- **G5 — OpenGL through Zink** on Venus; which GL/GLES version Zink reaches on our feature set;
-  glmark2 and a desktop session (a Wayland compositor with a browser or a terminal) as the smoke
-  test.
-- **G6 — Performance** (profiles of the translator and the GPU worker; batching of Venus calls),
-  and the product surface with M8 (a GPU on/off switch, fallback when WebGPU is missing).
+- **G0 — WebGPU environment spike, measured (done: §10).**
+- **G1 — virtio-gpu 2D (done: §9, §11 to §17).**
+- **G2 — virgl's guest side, measured (decision gate).** The oracle traces first (QEMU's
+  `virtio-gpu-gl` on the dev VM's llvmpipe; virglrenderer's vtest server). Then the device advertises
+  `VIRTIO_GPU_F_VIRGL` and the VIRGL/VIRGL2 capsets with caps that a WebGL2 renderer can honour, and
+  accepts `CTX_*`, `SUBMIT_3D`, `RESOURCE_CREATE_3D` and the 3D transfers with a **null renderer**:
+  commands parsed and counted, fences signalled at once. Measure guest CPU a frame for glcomp and for sway
+  on virgl against llvmpipe and pixman, and which GL and GLES the guest's Mesa reports. Go on if a
+  compositor frame costs the guest a small fraction of llvmpipe's.
+- **G3 — The WebGL2 renderer, first frames.** A GPU worker that owns a WebGL2 context on the screen's
+  `OffscreenCanvas`; resources as textures and buffers; the virgl decoder; TGSI → GLSL ES 3.00 for what
+  glcomp and wlroots' GLES2 renderer send; a scanout shown straight from its texture; fences. Done when
+  glcomp's pixels match llvmpipe's (with a tolerance) and sway on GLES draws on the page.
+- **G4 — Breadth:** GTK4, a browser in the guest (Chromium's GPU process, Firefox's WebRender), a full
+  desktop (KDE or GNOME); a dEQP-GLES2/GLES3 subset (VK-GL-CTS, Apache-2.0, a guest workload); caps that
+  are honest per adapter; the shader cache.
+- **G5 — Performance and the product:** profiles of the renderer and the guest's driver; a 3D on/off
+  switch and the fallback without WebGL2; snapshots with 3D on; real-GPU numbers on the Mac host.
+- **Later:** the WebGPU backend for the same protocol (GLES 3.1); Vulkan through Venus on it (§4).
 
 ## 8. Open questions
 
-- **Which GL does Zink reach on what we can advertise?** Transform feedback (GL 3.0) and geometry
-  shaders (3.2) aren't in WebGPU. If Zink needs them for anything above GLES 2/GL 2.1, either
-  the compute pre-passes (§5) move earlier or GL goes through gfxstream/WebGL2.
-- **Venus's assumptions about host-visible memory** (Mesa's docs: "illegal" but relied on): what
-  exactly the renderer expects, and whether our shadow-buffer model (§4.3) satisfies it.
-- **gfxstream's GLES guest side on Linux:** packaged, buildable in `images/`, maintained?
-- **Real-GPU measurements:** the dev VM has no GPU. Options: Chromium on the Mac host (outside
-  the VM; only with the user's OK, since it's their machine), or another machine. Software-adapter
-  numbers from the VM are for correctness only.
-- **naga vs Tint** for SPIR-V → WGSL: naga fits our Rust toolchain; Tint covers more SPIR-V.
-  Decide in G3 on Zink's and vkcube's shaders.
-- **Where virtio-gpu's queues are served** once 3D is on: the device worker forwarding to the GPU
-  worker (proposed), or the GPU worker owning the whole device.
-- **Security:** the translator parses untrusted guest data, and WebGPU validates everything it's
-  given, so the worst case should be a lost device, not a page compromise. Fuzz the Venus decoder
-  like the virtqueue parser (`core/fuzz`).
+- **What virgl costs the guest under the JIT** (G2): Mesa's GL frontend, the virgl encoder, the kernel's
+  `EXECBUFFER` and fence path, and shader compiles (GLSL → NIR → TGSI, in the guest, once per shader, kept in
+  Mesa's disk cache). Natively over vtest it is ~83 µs a glcomp frame (§18). Under the JIT, and with the
+  kernel's part, it's unknown.
+- **Which GL our caps can honestly reach on WebGL2.** virglrenderer on GLES 3.0 gives GLES 3.0 and GL 2.1. GL
+  3.0 and 3.1 need things WebGL2 lacks or has only as extensions: `gl_ClipDistance`
+  (`WEBGL_clip_cull_distance`), depth clamp (`EXT_depth_clamp`), conditional rendering, the sRGB
+  framebuffer switch, texture buffers, texture swizzle (in GLES 3.0, not in WebGL2: done in the generated
+  shader instead), base vertex (`WEBGL_draw_instanced_base_vertex_base_instance`). What Firefox's WebRender
+  needs (GL 3.1 or GLES 3.0) and takes on Linux is to be measured.
+- **One WebGL2 context for every guest context.** WebGL contexts share no objects, while virglrenderer gives
+  each guest context a GL context in one share group. The renderer keeps each guest context's state and
+  rebinds it when the guest switches.
+- **Where the renderer runs.** The device worker is nested in the machine worker and has no
+  `requestAnimationFrame` (§12). A GPU worker started by the page, owning the screen's canvas, is the
+  proposal; the 2D path's presentation could move onto its WebGL2 context too (G0: the fastest presenter).
+  The virtqueues stay in the device worker, which forwards to it.
+- **Fences and readbacks.** WebGL2's `clientWaitSync` takes only a zero timeout in Chromium. Since one
+  context runs everything in order, a fence can be signalled when its submit has been issued, and a
+  `TRANSFER_FROM_HOST_3D` read synchronously (`readPixels`, `getBufferSubData`) or, if that stalls too
+  long, through a pixel-pack buffer polled with `fenceSync`.
+- **Snapshots with 3D on**: the host's GL objects aren't in guest RAM. Options: refuse while a 3D context
+  exists, or rebuild from guest-backed resources (their backings are in RAM) plus a replay of the
+  objects' creation. The policy is the user's.
+- **Shader compiles on the host**: ANGLE plus the driver under our GLSL; a cache by TGSI hash, and
+  `KHR_parallel_shader_compile`.
+- **Real-GPU measurements**: the Mac host's headless Chromium, as for G0 (the bench page only, unless the
+  user widens it).
+- **Security:** the decoder parses untrusted guest data and WebGL validates everything it's given; fuzz the
+  decoder like the virtqueue parser.
+- **Venus's assumptions about host-visible memory**, naga or Tint: only if Vulkan (§4) is taken up.
 
 ## 9. G1 loop 0: what the oracle showed (2026-10-01)
 
@@ -600,35 +634,32 @@ pointer lock and a relative mouse (the host-integration track), browsers other t
 unmeasured desktops, the letterbox's page test, llvmpipe's stale frames, the firmware's flushes under the pacing; "JIT":
 llvmpipe's speed).
 
-## 18. G2: a proposed outline for its kickoff (not scheduled; the user's to write or change)
+## 18. The direction after the JIT rounds (2026-10-09)
 
-G2 was "llvmpipe and lavapipe in a guest image, vkcube and glmark2 numbers under the JIT, the reference images for
-later tests". G1's sway session moved its centre: **software GL under the JIT is roughly ten times too slow to use**
-(§16), so the baseline isn't a number to note on the way to Venus, it is a problem to understand first: Venus's guest
-side is Mesa too, and a desktop's own compositing and every toolkit's fallback run on llvmpipe when 3D is off.
+The user's direction: no software rendering or translation layers in the guest, OpenGL ES ahead of Vulkan,
+WebGL2 as the baseline with WebGPU only where it exists (§1). What was measured for it, on the dev VM:
 
-- **Goal:** know what software 3D costs under the JIT and why, fix what is ours, and leave a reproducible desktop
-  guest with reference images. Done when glmark2 and a compositor on llvmpipe have numbers against the same guest on
-  QEMU (TCG, the one-off peer table) with a profile that explains the gap, and the gap that is the JIT's is closed or
-  written down as a decision.
-- **Loop 0, the guest:** an image built in `images/` (Podman): Alpine or Debian with Mesa's llvmpipe and lavapipe,
-  a wlroots compositor (cage or sway), foot, glmark2, vkcube; the same on QEMU for the oracle. Which distro and
-  compositor is a question for the user (Debian is what the page boots; Alpine builds faster).
-- **Loop 1, the numbers:** frames a second and guest CPU for the compositor alone (pixman against llvmpipe), glmark2's
-  scenes, vkcube, on our machine (the page's `?displaystats`) and on QEMU; medians and IQR, JSON committed.
-- **Loop 2, the profile:** PC samples of a guest running llvmpipe, split by where they land (Mesa's own code, the
-  code LLVM generated at run time, the kernel, idle), and the JIT's own counters for the same run (translations,
-  invalidations after `IC IVAU`, helper calls by kind). The suspects, from §16 and the backlog: vector registers
-  kept in memory between instructions, run-time-generated code being retranslated, NEON forms that go through
-  helpers, and four rasterizer threads waking each other across vCPU workers.
-- **Loops 3 onward:** one fix per loop, each by its measurement (CLAUDE.md "Performance": ranked by the long real
-  workloads too, so a NEON fix must not cost the boots).
-- **The display's part:** whether guests that composite with llvmpipe get the sampling display mode (§16 "Open"), and
-  the screen's 13 ms (a device worker with animation frames), which G3's GPU worker would want settled anyway.
-- **Reference images** for the 3D steps (glmark2 scenes and vkcube frames, byte-exact from llvmpipe in deterministic
-  mode if they are, a tolerance if not: find out).
-- **Exit:** the numbers, the decision on G3 (is the guest side of Venus affordable under the JIT at all?), docs.
-- **To ask the user first:** the distro and compositor; whether a JIT change that moves the tests' step counts is
-  acceptable here (it shouldn't: the JIT is not guest-visible); whether the Mac host may be used for real-GPU
-  presentation numbers again (G0's answer covered the bench page only).
-
+- **llvmpipe after the JIT's NEON work** (`bench/boot/REPORT.md` "M8: llvmpipe", "M8: vector registers in
+  locals"; `gl_llvmpipe_jit`: glcomp, a compositor's GLES2 frame at 1376×762): 6,936 → 445 → 323 ms a frame on
+  1 vCPU and 1,859 → 100 → 71 ms on 4, about 12× native (26.6 and 7.4 ms). That is ~14 frames a second with
+  every vCPU busy: far better, still unusable as a desktop's renderer. The old G2 (the software baseline) is
+  dropped as a step, since these numbers are the baseline.
+- **virgl's guest side, natively** (glcomp built on the VM, Mesa 26.2; `virgl_test_server --use-gles
+  --use-egl-surfaceless` with `MESA_GLES_VERSION_OVERRIDE=3.0`, the client on `GALLIUM_DRIVER=virpipe`):
+  - the client gets **OpenGL ES 3.0 (GLSL ES 3.00) and desktop GL 2.1 compat (GLSL 1.20)**, no core profile;
+    on a GLES 3.2 or a desktop GL host it gets GL 4.3 and GLES 3.2;
+  - glcomp's pixel hash through virgl equals llvmpipe's own (`a26ac0b1`, 30 frames);
+  - **the client's CPU is ~83 µs a frame** (user + sys over 300 frames minus 1, the frames' 4 MB read-backs
+    included) **against 24.6 ms on llvmpipe with one thread**: roughly 300× less, and start-up (EGL, the
+    two shaders compiled) ~26 ms. vtest skips the kernel's virtio-gpu path, and the JIT's factor isn't
+    applied, so G2 measures the real cost in our machine;
+  - `VIRGL_DEBUG=tgsi` on the client prints the TGSI it sends (glcomp's two shaders: 6 and 3 instructions).
+    The distro's virglrenderer is a release build, so `VREND_DEBUG=shader` (TGSI and the GLSL it makes)
+    needs a debug build of it.
+- The oracle tools are installed in the dev VM (CLAUDE.md): `virglrenderer-test-server`, `Mesa-demo`
+  (`eglinfo`, `es2_info`), Mesa's EGL/GLES headers (glcomp builds natively with `clang -O2
+  images/alpine/gl/glcomp.c -lEGL -lGLESv2`), and `qemu-ui-opengl`. **QEMU's `virtio-gpu-gl` doesn't run
+  there:** `egl-headless` needs a DRM render node ("egl: no drm render node available"), the VM has no
+  `/dev/dri`, and its kernel ships neither `vgem` nor `vkms`. So vtest is the protocol's oracle, and the
+  guest kernel's 3D command sequence (fences on the plane, whether dumb buffers become 3D resources) comes
+  from the kernel's source and from our device's own command log in G2.

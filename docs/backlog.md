@@ -64,8 +64,9 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   precision FCVTL/FCVTN, FP compares, FRINTI, FMLA/FADD with zero lanes); with those inline the
   frame is 15.6× faster in Chromium on 1 vCPU (6,936 → 445 ms) and 18.6× on 4 (1,859 → 100 ms:
   10 frames a second), ~17× and ~14× native (`gl_llvmpipe_jit`, `bench/boot/REPORT.md` "M8:
-  llvmpipe"). Left: what the inline code costs (vector registers in memory, below), and sway itself
-  on the page again (the user's manual check).
+  llvmpipe"); with the V registers in locals 323 and 71 ms. Left: the lane checks (below), and sway
+  itself on the page again (the user's manual check). Not on graphics' path any more: 3D goes through
+  virgl (plans/graphics.md §1); llvmpipe stays what guests without 3D fall back to.
 - **Per-module eviction, coldest first,** instead of whole-cache flushes ([jit.md](jit.md)
   "Memory"). With the shared cache a 4-vCPU `go build` loop flushes about once in 5 minutes; a
   larger working set (a browser in the guest) is where this counts again. A flush also has every

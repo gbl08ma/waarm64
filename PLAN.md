@@ -153,9 +153,13 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     working; guests without the driver keep the simple framebuffer. A console keeps the size it
     was born with (the kernel's fbcon can't resize) and sway takes a new size only when told to
     from inside (a custom mode), so live resize waits for an agent ([docs/plans/agent.md](docs/plans/agent.md)). A compositor
-    must render with pixman: **llvmpipe under the JIT is about ten times too slow** and draws
-    after its page flip, which is the first thing G2 (the software baseline) has to explain
-    before the 3D decision gate. Next: G2, with its own kickoff (outline in graphics.md §18).
+    must render with pixman: llvmpipe, even after the JIT's NEON work (71 ms a frame on 4
+    vCPUs, ~12× native), is too slow, and draws after its page flip. **3D direction (the user,
+    2026-10-09):** no software rendering or translation layers in the guest; OpenGL ES first,
+    through Mesa's upstream **virgl** driver onto **our own virgl renderer on WebGL2** (the
+    baseline), a WebGPU backend only where the browser has one, Vulkan (Venus, Zink) deferred
+    (graphics.md §1, §18). Next: G2, virgl's guest side measured on a null renderer (the
+    gate), with its own kickoff (proposal in `M8-GRAPHICS-HANDOVER.md`).
   - Audio: virtio-snd to an AudioWorklet over a shared ring (`docs/plans/audio.md`, to write).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
