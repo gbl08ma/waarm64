@@ -164,7 +164,12 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   instruction class, most frequent first; it says what to inline next.
 - **PC sampling** (`web/sampler-worker.ts`, `node bench/boot/profile.ts`): reads `Counters.pc` every
   20 µs beside the vCPU worker; symbolized with `System.map` (user space as one bucket). The PC is
-  published once per chunk, so its resolution is a chunk (32K steps): coarse under the JIT.
+  published once per chunk, so its resolution is a chunk (32K steps): coarse under the JIT. A chunk also ends
+  at an exit, so a sample names where the current chunk started (the instruction after the last exit: counter
+  reads, IRQ unmasks, syscall entries rank high). On the page (`?displaystats`): `window.__webpcProfile(on)`
+  samples every vCPU's block, the histogram lands in `window.__profile`, and `window.__status` holds the last
+  status (the counters); `PROFILE=1 node bench/gpu/sway-load.ts` uses them and symbolizes in the guest
+  (`/proc/kallsyms`).
 - **perf with parallel SMP:** `--perf-prof`'s jitdump misses the code worker isolates compile (the
   guest's blocks run in the vCPU workers: 73% of samples unknown); `--perf-basic-prof` (a
   `/tmp/perf-<pid>.map`) names them. Guest blocks are thousands of symbols that round to 0.00% in

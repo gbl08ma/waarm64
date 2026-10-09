@@ -7,6 +7,7 @@
 // per CPU, ms of CPU a second per process) and the display's stats (`?displaystats`: flushes are frames, submits and
 // stream bytes a second). Screenshots and results.json go to <outdir>.
 //   node bench/gpu/sway-load.ts <mode> <image.qcow2> [outdir]
+// PROFILE=1 samples the guest's PCs over the date loop and symbolizes the kernel's (results.profile).
 // CAPTURE=<file.vglt> (virgl) keeps a trace of the guest's 3D commands from sway's start to foot's (web/virgl-trace.ts,
 // the renderer's fixtures) and stops there; SCREEN=<w>x<h> changes the screen's size.
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -74,14 +75,27 @@ const display = async () => {
   const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), uploadKB: rper('uploadBytes') / 1024, errors: r.at(-1)!.errors } : undefined;
   return { seconds: s.length, flushes: per('flushes'), submits: per('submits'), submitKB: per('submitBytes') / 1024, transfers: per('transfers'), Mpx: per('pixels') / 1e6, requestMs: per('request'), draws: s.reduce((n, x) => n + x.n, 0) / Math.max(1, s.length), ...(renderer ? { renderer } : {}) };
 };
+type VmStats = { steps: number; irqs: number; exceptions: Record<string, number>; tlbMisses: number; tlbFlushes: number; jit: { flushes: number; invalidations: number; compileNs: number } };
+const vmStats = () => page.evaluate(() => { const s = (window as unknown as { __status?: { uptime: number; stats: unknown } }).__status; return s && { uptime: s.uptime, stats: s.stats }; }) as Promise<{ uptime: number; stats: VmStats } | undefined>;
+/** The emulator's counters a second between two status reads (all vCPUs): guest exceptions by class (0x15 a syscall, 0x24 a data abort), IRQs, TLB, the JIT. */
+const vmDelta = (a?: { uptime: number; stats: VmStats }, b?: { uptime: number; stats: VmStats }) => {
+  if (!a || !b || b.uptime <= a.uptime) return undefined;
+  const per = (x: number, y: number) => Math.round(((y - x) * 1000) / (b.uptime - a.uptime));
+  const exceptions = Object.fromEntries(Object.keys(b.stats.exceptions).map((k) => [k, per(a.stats.exceptions[k] ?? 0, b.stats.exceptions[k])]).filter(([, n]) => n));
+  return { seconds: (b.uptime - a.uptime) / 1000, Msteps: per(a.stats.steps, b.stats.steps) / 1e6, irqs: per(a.stats.irqs, b.stats.irqs), exceptions, tlbMisses: per(a.stats.tlbMisses, b.stats.tlbMisses), tlbFlushes: per(a.stats.tlbFlushes, b.stats.tlbFlushes), jitFlushes: per(a.stats.jit.flushes, b.stats.jit.flushes), jitInvalidations: per(a.stats.jit.invalidations, b.stats.jit.invalidations), jitCompileMs: per(a.stats.jit.compileNs, b.stats.jit.compileNs) / 1e6 };
+};
 let mark = 0;
 /** /proc/stat over `secs` on the serial side: each CPU's busy, user and system percent. */
-const load = async (label: string, secs = 10) => {
+const load = async (label: string, secs = 10, during?: { start(): Promise<void>; stop(): Promise<void> }) => {
   await display();
   const m = `L${++mark}`;
+  const v0 = await vmStats();
+  await during?.start();
   await onSerial(`clear; sh /root/load.sh ${secs} ${m}\n`);
   await shows(new RegExp(`${m}-done`), (secs + 60) * 1000);
-  const d = await display();
+  await during?.stop();
+  const v1 = await vmStats();
+  const d = { ...(await display()), vm: vmDelta(v0, v1) };
   const t = await terminal();
   const cpus = [...t.matchAll(new RegExp(`${m} (cpu\\d?) busy (\\d+) user (\\d+) sys (\\d+)`, 'g'))].map((x) => ({ cpu: x[1], busy: +x[2], user: +x[3], sys: +x[4] }));
   // Per process: ms of CPU a second (clock ticks are 10 ms), user and system.
@@ -154,7 +168,49 @@ if (CAPTURE) {
 await load('foot-idle');
 await onScreen('while true; do date; done\n');
 await page.waitForTimeout(3000);
-await load('date-loop');
+// PROFILE=1: the guest PC sampler over the date loop (web/profiler.ts, every vCPU's last published PC: where its
+// current run chunk started, so a chunk's time goes to its first PC), the kernel's PCs then symbolized in the guest
+// against /proc/kallsyms (the image has no System.map), by function.
+type Hooks = { __webpcProfile?: (on: boolean) => void; __profile?: [string, number][] };
+const sampler = process.env.PROFILE ? {
+  start: () => page.evaluate(() => { const w = window as unknown as Hooks; delete w.__profile; w.__webpcProfile!(true); }),
+  stop: async () => {
+    await page.evaluate(() => (window as unknown as Hooks).__webpcProfile!(false));
+    await page.waitForFunction(() => (window as unknown as Hooks).__profile, null, { timeout: 30_000 });
+  },
+} : undefined;
+await load('date-loop', 10, sampler);
+if (sampler) {
+  const samples = await page.evaluate(() => (window as unknown as Hooks).__profile!);
+  let kernel = 0, user = 0, total = 0;
+  const kpcs: [string, number][] = [];
+  for (const [pc, n] of samples) {
+    total += n;
+    if (BigInt(`0x${pc}`) >= 0xffff000000000000n) { kernel += n; kpcs.push([pc.padStart(16, '0'), n]); } else user += n;
+  }
+  kpcs.sort((a, b) => b[1] - a[1]);
+  const sent = kpcs.slice(0, 4000);
+  const covered = sent.reduce((n, [, k]) => n + k, 0);
+  await onSerial(`cat > /tmp/sym.sh <<'EOF'
+sysctl -qw kernel.kptr_restrict=0
+(awk '$2 ~ /^[tT]$/ {print $1, "A", $3}' /proc/kallsyms; awk '{for (i = 1; i < NF; i += 2) print $i, "B", $(i + 1)}' /tmp/pcs) | sort | awk '$2=="A"{s=$3;next} {c[s]+=$3} END{for(k in c) print c[k], k}' | sort -rn | head -36 | awk 'BEGIN{printf "SY""MS: "} {printf "%s:%s ", $2, $1} END{print "SY""MS-done"}'
+EOF
+clear; cat > /tmp/pcs <<'EOF'
+`);
+  // Pasted (typing 80 KB would take minutes) as lines of pairs under the tty's 4096-byte line, each with an Enter.
+  for (let k = 0; k < sent.length; k += 150) {
+    await page.keyboard.insertText(sent.slice(k, k + 150).map(([pc, n]) => `${pc} ${n}`).join(' '));
+    await page.keyboard.press('Enter');
+  }
+  await onSerial('EOF\nclear; wc -w < /tmp/pcs; sh /tmp/sym.sh\n');
+  await shows(/SYMS-done/, 120_000);
+  const t = await terminal();
+  const lines = /(\d+)\s*SYMS:/.exec(t)?.[1];
+  const body = t.slice(t.lastIndexOf('SYMS: ') + 6, t.lastIndexOf('SYMS-done'));
+  const top = [...body.matchAll(/(\S+):(\d+)/g)].map((x) => ({ sym: x[1], samples: +x[2], pct: +((100 * +x[2]) / total).toFixed(1) }));
+  results.profile = { samples: total, kernelPct: +((100 * kernel) / total).toFixed(1), userPct: +((100 * user) / total).toFixed(1), kernelPcs: kpcs.length, sent: sent.length, received: lines && +lines / 2, coveredPct: +((100 * covered) / Math.max(1, kernel)).toFixed(1), top };
+  log('profile', JSON.stringify(results.profile));
+}
 await page.keyboard.press('Control+KeyC');
 await page.waitForTimeout(2000);
 await onSerial('clear; grep -c . /tmp/sway.log; tail -5 /tmp/sway.log\n');

@@ -723,6 +723,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     cpu: ex.vm_cpu(vm, 0),
     /** Byte address of vCPU 0's `vm::Counters` in `memory` (u64s, read with Atomics.load; its PC word is vCPU 0's). */
     counters,
+    /** Every vCPU's counters block (parallel mode: each publishes its own PC there; round-robin: only block 0 is live). */
+    counterBlocks: blocks,
     /** Sets bits in the signal word and wakes every vCPU (docs/abi.md). */
     signal: raise,
     /** A snapshot of the counters, summed over the vCPUs; exceptions by EC only where non-zero. */

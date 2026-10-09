@@ -1,0 +1,515 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "info": "7.2.8-1-aarch64-ARCHerror: package 'wlroots0.19' was not found sway 1:1.12-4 mesa 1:26.2.3-1 foot 1.28.0-2 by-path  card0  renderD128[root@alarm ~]#  ",
+ "console": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 1,
+    "user": 0,
+    "sys": 1
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 3,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   }
+  ],
+  "procs": [],
+  "display": {
+   "seconds": 6,
+   "flushes": 4.833333333333333,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 4.833333333333333,
+   "Mpx": 5.067808,
+   "requestMs": 10.011666675408682,
+   "draws": 4.833333333333333,
+   "renderer": {
+    "seconds": 6,
+    "busyMs": 3.1841666623950005,
+    "submitMs": 0,
+    "drawMs": 0.2991666719317436,
+    "presents": 4.833333333333333,
+    "glDraws": 0,
+    "uploadKB": 0,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 6.012459999993443,
+    "Msteps": 20.71462,
+    "irqs": 510,
+    "exceptions": {
+     "0x0": 1,
+     "0x15": 1616,
+     "0x20": 60,
+     "0x24": 301,
+     "0x25": 11
+    },
+    "tlbMisses": 8982,
+    "tlbFlushes": 725,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 2.867687
+   }
+  }
+ },
+ "sway": "sway=410libgallium-26.2.3-arch1.1.solibpixman-1.so.0.46.4      5 /dev/dri/card0      6 /dev/dri/renderD128[root@alarm ~]#  ",
+ "sway-idle": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 2,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 1,
+    "sysMs": 6
+   }
+  ],
+  "display": {
+   "seconds": 10,
+   "flushes": 0.9,
+   "submits": 1.8,
+   "submitKB": 7.396875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.157499997317791,
+   "draws": 0.9,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 0.18090909042141654,
+    "submitMs": 0.14772727272727273,
+    "drawMs": 0.025454546917568554,
+    "presents": 0.9090909090909091,
+    "glDraws": 0.9090909090909091,
+    "uploadKB": 122.20170454545455,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 10.000179999992252,
+    "Msteps": 13.781311,
+    "irqs": 391,
+    "exceptions": {
+     "0x0": 2,
+     "0x15": 706,
+     "0x20": 79,
+     "0x24": 271,
+     "0x25": 17
+    },
+    "tlbMisses": 8642,
+    "tlbFlushes": 717,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 3.643992
+   }
+  }
+ },
+ "foot-idle": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 2,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 1,
+    "sysMs": 5
+   },
+   {
+    "proc": "foot",
+    "userMs": 0,
+    "sysMs": 0
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "flushes": 1,
+   "submits": 2,
+   "submitKB": 8.21875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.16590908847071908,
+   "draws": 1,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 0.24863636629147964,
+    "submitMs": 0.21227273074063388,
+    "drawMs": 0.0345454527573152,
+    "presents": 1,
+    "glDraws": 1,
+    "uploadKB": 134.421875,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 11.005010000005365,
+    "Msteps": 17.883159,
+    "irqs": 432,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 1013,
+     "0x20": 105,
+     "0x24": 367,
+     "0x25": 21
+    },
+    "tlbMisses": 10987,
+    "tlbFlushes": 933,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 1.102718
+   }
+  }
+ },
+ "date-loop": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 58,
+    "user": 10,
+    "sys": 47
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 57,
+    "user": 9,
+    "sys": 47
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 57,
+    "user": 8,
+    "sys": 48
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 62,
+    "user": 15,
+    "sys": 47
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 57,
+    "user": 9,
+    "sys": 47
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 150,
+    "sysMs": 239
+   },
+   {
+    "proc": "foot",
+    "userMs": 115,
+    "sysMs": 292
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "flushes": 48.90909090909091,
+   "submits": 98.36363636363636,
+   "submitKB": 404.8068181818182,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 10.649999991059303,
+   "draws": 48.90909090909091,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 57.219545442949645,
+    "submitMs": 56.010909089987926,
+    "drawMs": 1.6949999969113956,
+    "presents": 42.72727272727273,
+    "glDraws": 51.09090909090909,
+    "uploadKB": 181738.8721590909,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 11.00767499999702,
+    "Msteps": 284.70662,
+    "irqs": 4622,
+    "exceptions": {
+     "0x0": 61,
+     "0x15": 10142,
+     "0x20": 1651,
+     "0x24": 7262,
+     "0x25": 385
+    },
+    "tlbMisses": 384531,
+    "tlbFlushes": 26772,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 12.850193
+   }
+  }
+ },
+ "profile": {
+  "samples": 796508,
+  "kernelPct": 84.9,
+  "userPct": 15.1,
+  "kernelPcs": 857,
+  "sent": 857,
+  "received": 857,
+  "coveredPct": 100,
+  "top": [
+   {
+    "sym": "cpu_do_idle",
+    "samples": 291856,
+    "pct": 36.6
+   },
+   {
+    "sym": "arch_counter_get_cntvct",
+    "samples": 93939,
+    "pct": 11.8
+   },
+   {
+    "sym": "_raw_spin_unlock_irqrestore",
+    "samples": 52238,
+    "pct": 6.6
+   },
+   {
+    "sym": "el0_svc",
+    "samples": 51221,
+    "pct": 6.4
+   },
+   {
+    "sym": "_raw_spin_unlock_irq",
+    "samples": 29841,
+    "pct": 3.7
+   },
+   {
+    "sym": "el0_da",
+    "samples": 17195,
+    "pct": 2.2
+   },
+   {
+    "sym": "__flush_tlb_range.isra.0",
+    "samples": 11748,
+    "pct": 1.5
+   },
+   {
+    "sym": "default_idle_call",
+    "samples": 9199,
+    "pct": 1.2
+   },
+   {
+    "sym": "pmd_install",
+    "samples": 6514,
+    "pct": 0.8
+   },
+   {
+    "sym": "get_random_u64",
+    "samples": 6371,
+    "pct": 0.8
+   },
+   {
+    "sym": "gic_ipi_send_mask",
+    "samples": 5864,
+    "pct": 0.7
+   },
+   {
+    "sym": "finish_task_switch.isra.0",
+    "samples": 5825,
+    "pct": 0.7
+   },
+   {
+    "sym": "sched_balance_update_blocked_averages",
+    "samples": 5229,
+    "pct": 0.7
+   },
+   {
+    "sym": "__flush_tlb_page.constprop.0.isra.0",
+    "samples": 5179,
+    "pct": 0.7
+   },
+   {
+    "sym": "el0_ia",
+    "samples": 5063,
+    "pct": 0.6
+   },
+   {
+    "sym": "__call_rcu_common.constprop.0",
+    "samples": 4879,
+    "pct": 0.6
+   },
+   {
+    "sym": "gic_handle_irq",
+    "samples": 4612,
+    "pct": 0.6
+   },
+   {
+    "sym": "rcu_do_batch",
+    "samples": 4403,
+    "pct": 0.6
+   },
+   {
+    "sym": "arch_timer_set_next_event_virt",
+    "samples": 4171,
+    "pct": 0.5
+   },
+   {
+    "sym": "handle_softirqs",
+    "samples": 4016,
+    "pct": 0.5
+   },
+   {
+    "sym": "tick_nohz_idle_exit",
+    "samples": 3986,
+    "pct": 0.5
+   },
+   {
+    "sym": "queued_spin_lock_slowpath",
+    "samples": 3229,
+    "pct": 0.4
+   },
+   {
+    "sym": "__arch_clear_user",
+    "samples": 3168,
+    "pct": 0.4
+   },
+   {
+    "sym": "gic_read_iar",
+    "samples": 3034,
+    "pct": 0.4
+   },
+   {
+    "sym": "arch_timer_handler_virt",
+    "samples": 2998,
+    "pct": 0.4
+   },
+   {
+    "sym": "gic_eoi_irq",
+    "samples": 2898,
+    "pct": 0.4
+   },
+   {
+    "sym": "el1_abort",
+    "samples": 2834,
+    "pct": 0.4
+   },
+   {
+    "sym": "vm_notify",
+    "samples": 2609,
+    "pct": 0.3
+   },
+   {
+    "sym": "exit_to_user_mode_loop",
+    "samples": 2192,
+    "pct": 0.3
+   },
+   {
+    "sym": "__pmd_alloc",
+    "samples": 1736,
+    "pct": 0.2
+   },
+   {
+    "sym": "get_random_u16",
+    "samples": 1703,
+    "pct": 0.2
+   },
+   {
+    "sym": "free_pud_range",
+    "samples": 1563,
+    "pct": 0.2
+   },
+   {
+    "sym": "__flush_tlb_range.constprop.0.isra.0",
+    "samples": 1408,
+    "pct": 0.2
+   },
+   {
+    "sym": "note_gp_changes",
+    "samples": 1405,
+    "pct": 0.2
+   },
+   {
+    "sym": "__switch_to",
+    "samples": 1276,
+    "pct": 0.2
+   },
+   {
+    "sym": "zap_pte_range",
+    "samples": 1232,
+    "pct": 0.2
+   }
+  ]
+ },
+ "tail": "400:00:04.111 [ERROR] [sway/config/output.c:1219] failed to execute 'swaybg' (background configuration probably not applied): No such file or directoryEnvironment variable $XDG_CURRENT_DESKTOP not set, ignoring.warn: main.c:495: 'C' is not a UTF-8 locale, falling back to 'C.UTF-8'warn: wayland.c:1888: compositor does not implement the xdg-toplevel-icon protocol[root@alarm ~]#  "
+}

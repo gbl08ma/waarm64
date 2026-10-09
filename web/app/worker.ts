@@ -14,6 +14,7 @@ import { lzCodec } from '../lz.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../snapshot-file.ts';
 import { readSnapshot, writeSnapshot } from '../snapshot.ts';
 import type { DeviceSpec } from '../devices.ts';
+import { startSampler } from '../profiler.ts';
 import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 import type { MachineName } from './machine.ts';
@@ -43,6 +44,8 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     void saveSnapshot(m.handle);
   } else if (m.type === 'suspend') {
     void suspend();
+  } else if (m.type === 'profile') {
+    void profile(m.on);
   } else if (m.type === 'stop') {
     stopping = true;
     void (async () => {
@@ -53,6 +56,17 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     })();
   }
 };
+
+let stopSampler: (() => Promise<[string, number][]>) | undefined;
+/** The guest PC sampler (web/profiler.ts) over every vCPU's counters block, for benchmarks. */
+async function profile(on: boolean) {
+  if (on && vm && !stopSampler) stopSampler = await startSampler(vm.memory, vm.counterBlocks, 50);
+  else if (!on && stopSampler) {
+    const stop = stopSampler;
+    stopSampler = undefined;
+    post({ type: 'profile', samples: await stop() });
+  }
+}
 
 /** The variable store as last saved (or loaded): the firmware's boot entries and settings, kept beside the disk's overlay. */
 let savedFlash: Uint8Array | undefined;

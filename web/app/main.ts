@@ -185,6 +185,12 @@ type Run = { worker: Worker; input: Input; serial: MessagePort; display: Message
  * that owns the screen as WebGL2 (web/gpu-worker.ts). Off where this browser has no WebGL2 (`no3d` says why), and
  * then the machine is 2D as without the switch.
  */
+/**
+ * Benchmarks' hooks (`?displaystats`, bench/gpu/sway-load.ts): the last status in `window.__status`, and
+ * `window.__webpcProfile(on)` starting and stopping the guest PC sampler (the histogram lands in `window.__profile`).
+ */
+const benchHooks = params.has('displaystats');
+if (benchHooks) (window as unknown as { __webpcProfile?: (on: boolean) => void }).__webpcProfile = (on) => run?.worker.postMessage({ type: 'profile', on } satisfies ToWorker);
 const want3d = hasGpu && (params.get('gpu') ?? '').split(',').includes('virgl');
 let no3d: string | undefined;
 const hasWebgl2 = () => { try { return !!new OffscreenCanvas(1, 1).getContext('webgl2'); } catch { return false; } };
@@ -352,6 +358,9 @@ function start(snapshot?: File, resume = true) {
       keyboardLive = m.live;
     } else if (m.type === 'status') {
       showStatus(m.status);
+      if (benchHooks) (window as unknown as { __status?: Status }).__status = m.status;
+    } else if (m.type === 'profile') {
+      (window as unknown as { __profile?: [string, number][] }).__profile = m.samples;
     } else if (m.type === 'phase') {
       bootLine.textContent = m.text;
       bootProgress.removeAttribute('value');

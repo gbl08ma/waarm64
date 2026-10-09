@@ -99,7 +99,9 @@ export type ToWorker =
    */
   | { type: 'snapshot'; handle?: FileSystemFileHandle }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
-  | { type: 'stop' };
+  | { type: 'stop' }
+  /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile`. */
+  | { type: 'profile'; on: boolean };
 
 /** Worker → page. */
 export type FromWorker =
@@ -127,6 +129,8 @@ export type FromWorker =
   | { type: 'snapshot-done'; bytes: number; pausedMs: number }
   /** The save failed (the machine runs on, unless it had ended): a message for the user. */
   | { type: 'snapshot-error'; message: string }
+  /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */
+  | { type: 'profile'; samples: [string, number][] }
   | { type: 'stopped' };
 
 /** Once a second while the machine runs. */

@@ -875,4 +875,15 @@ the Mac host's (`bench/gpu/sway-mac.sh`, decision 4) Chromium 153.0.8010.12 on A
   55.6 frames a second. (`vm-renderer-1.json` is that first run; `vm-skip-*` the split.)
 - The renderer's own time is ~1 ms a frame even on SwiftShader, most of it the upload of foot's window (3.7 MB a
   frame: a scrolling terminal changes all of it). The guest kernel's submit path (sway's sys time, ~4–5 ms of the
-  frame) is the largest cost on both hosts; it isn't profiled yet (the page has no PC sampler: next).
+  frame) is the largest cost on both hosts.
+- **The guest's kernel, profiled** (`PROFILE=1`: the page's PC sampler over every vCPU, the kernel's PCs symbolized
+  in the guest against `/proc/kallsyms`; with the counters a second, `vm-profile-1.json`; the sampler's busy loop
+  takes a host core, so that run made 37 frames a second). The emulator's counts over the date loop, all vCPUs: 9,300
+  syscalls, 7,100 data and 1,700 instruction aborts from EL0, 4,500 IRQs, **25,700 TLB flushes** and 505,000 TLB
+  misses a second. The profile: 38% idle (`cpu_do_idle`), then exit sites: the counter read
+  (`arch_counter_get_cntvct` 11.8%), spin unlocks that unmask IRQs (10%), syscall entry (6.4%), EL0 aborts (2.8%),
+  TLB range flushes (2.4%); nothing of virtio-gpu or DRM above 0.3%. **What it can't say:** the sampled PC is where a
+  vCPU's current run chunk started (published at each chunk's end), so a chunk's time goes to the instruction after
+  the last exit, and the date loop's fork and exec (page tables, TLB flushes, ASLR's randomness) is most of the
+  kernel's work. Sway's submit path needs a finer instrument (a PC published more often than once a chunk, or
+  exits counted by PC) and a load without fork and exec: G4's.
