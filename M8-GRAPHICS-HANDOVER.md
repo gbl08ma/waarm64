@@ -1,86 +1,97 @@
-# M8 graphics, 3D: handover after G2 (2026-10-09)
+# M8 graphics, 3D: handover for G3 (2026-10-09)
 
-For the session that builds G3, the virgl renderer on WebGL2. The plan is [docs/plans/graphics.md](docs/plans/graphics.md):
-§1 the direction, §7 the steps, §8 the open questions, **§19 what G2 measured**. How the device works is docs/devices.md
-"virtio-gpu" and "virgl". **G3 isn't scheduled until the user writes its kickoff.** Below: where things stand, a
-proposal for the kickoff with the user's answers to its questions (2026-10-09) worked in, and what to know first.
+For the session that builds G3, the virgl renderer on WebGL2. **The brief is `M8-GRAPHICS-KICKOFF.md`** (the user's
+decisions and the loops). This file is what you need to start: where things are, how to run them, and what G2
+learned. Read first: [docs/plans/graphics.md](docs/plans/graphics.md) §1 (direction), §8 (open questions), §19 (G2's
+measurements); docs/devices.md "virtio-gpu" and "virgl"; docs/frontend.md "The screen".
 
-## Where it stands
+## What exists (G2)
 
-- **G2 is done and the gate passed** (graphics.md §19; the G2 kickoff is in git history): `GpuOptions.virgl` (the
-  page's `?gpu=virgl-null`) gives a virtio-gpu with `VIRTIO_GPU_F_VIRGL`, the VIRGL/VIRGL2 capsets (`virglCaps` in
-  `web/virgl.ts`: GLES 3.0, trimmed to what WebGL2 backs) and a **null renderer** (streams walked and counted, fences
-  at once, a 3D scanout black). Off by default; snapshots refused while 3D is in use.
-- **The numbers** (Chromium 153, dev VM):
-  - glcomp, 1 vCPU: **1.68 ms a frame, 0.7M guest steps**, against llvmpipe's 315 ms and 476M (same Mesa build);
-    4 vCPUs 1.30 against 69 ms (`gl_virgl_jit*`, `gl_virgl_llvmpipe_jit*`, `images/build.sh alpine-virgl`).
-  - sway on the user's Arch image with foot scrolling: **60 frames a second, sway 6.6 ms of CPU a frame**; pixman
-    60 and 4.2 ms; llvmpipe 28 and 81 ms. Mesa's user time equals pixman's; the extra is the kernel's submit path
-    (~2.2 ms of sys a frame, two `SUBMIT_3D`s).
-- **Alpine's Mesa has no virgl** (its APKBUILD leaves it out): `alpine-virgl` builds Mesa 26.1.6 into `/opt/mesa`.
-  Debian's and Arch's Mesa have it.
-- **Mesa moves texture data through staging buffers** (`VIRGL_BIND_STAGING` + `COPY_TRANSFER3D` in the stream):
-  glcomp and sway send no `TRANSFER_*_3D`. The renderer reads (uploads) and writes (read-backs) the staging buffers'
-  guest pages while it decodes the stream.
-- **The oracle is ready:** a debug virglrenderer `c8e3fc3b` with a capture patch (`bench/results/local/virgl-build`,
-  `virglrenderer/src/virglrenderer.c`'s `wdump`, `VTEST_DUMP=<file>`), `bench/results/local/g2/dump.ts` (a capture's
-  summary) and `caps.ts`, and captures of glcomp and 16 glmark2-es2 scenes with the TGSI and the GLSL virglrenderer
-  made (192 shaders; `*.server.log`). All local and git-ignored: rebuild with meson as §19 says.
+- **`web/virgl.ts`**: the protocol's names (`CCMD`, `OBJECT`), `walk` (a command buffer: header dword = command in
+  bits 0–7, object type 8–15, payload length in dwords 16–31), `VirglStats`, the caps blob's layout
+  (`CAPS_FIELDS`, `decodeCaps`, `encodeCaps`: `struct virgl_caps_v2`, 352 dwords; capset 1 is its first 77) and
+  `virglCaps(capset)`, the fixed caps advertised today (virglrenderer's on a GLES 3.0 host minus what WebGL2 lacks;
+  the kickoff's decision 1 replaces them with caps from the browser).
+- **`web/gpu.ts`** (`GpuOptions.virgl`): `control3d` handles `GET_CAPSET_INFO`/`GET_CAPSET`, `CTX_*`,
+  `RESOURCE_CREATE_3D` (a `Resource` with `three`: target, bind, depth, array size, levels, samples; no host
+  memory), `TRANSFER_*_3D` (checked, counted, nothing copied), `SUBMIT_3D` (walked, counted, `onSubmit` hook).
+  Fences signal at once (the reply echoes the fence). A 3D scanout gets black pixels. `save()` marks a machine with
+  a context or a 3D resource `unsaveable`, and `vm.snapshot` (web/vm.ts) refuses it with that reason. `busy` counts
+  `flushes`, `submits`, `submitBytes` for `?displaystats`. The device's feature bits and `num_capsets` are in
+  `deviceEntry` (web/devices.ts).
+- **The page:** `?gpu=virgl-null` (web/app/worker.ts `gpuTuning`) turns it on. The screen's canvas goes
+  `transferControlToOffscreen` (web/app/main.ts) → the machine worker (web/app/worker.ts, the gpu spec's `canvas`)
+  → the device worker (web/vm.ts starts it, nested in the machine worker) → `canvasPresenter` (web/gpu-present.ts,
+  canvas 2D). The device worker has no `requestAnimationFrame` (graphics.md §12), which is why the kickoff puts the
+  renderer in a top-level GPU worker started by the page.
+- **Tests:** `tests/gpu.test.ts`, the "virgl:" tests (capsets, contexts, resources, transfers, submits, a 20,000-command
+  fuzz run). No guest in the suites runs virgl, and the Rust twin (`core/tests/common/gpu.rs`) is 2D only (backlog).
+- **Benchmarks:** `gl_virgl_jit`, `gl_virgl_jit_4` (glcomp through virgl), `gl_virgl_llvmpipe_jit[_4]` (llvmpipe, same
+  Mesa build) in `bench/boot/suite.ts`; results in `bench/boot/results/m8-g2/`. They need
+  `images/build.sh alpine-gl alpine-virgl` (~10 min; Alpine's own Mesa has no virgl, so `alpine-virgl` builds Mesa
+  26.1.6 into `/opt/mesa`; the cmdline's `webpc.gpu=1` makes the image's start script load `virtio-gpu`).
+  On the null renderer glcomp's check is `00000000` (the bench holds it only to itself); with a real renderer it
+  should become llvmpipe's (`GL_CHECK` in suite.ts: `285f8eb1` for 10 frames, `a26ac0b1` for 30).
 
-## Proposed G3 kickoff (for the user to confirm or change)
+## Tools
 
-**Goal:** glcomp's frames and sway's desktop drawn by our renderer on WebGL2 in the page, from unmodified guests.
+- **The virgl oracle** (`tools/virgl-oracle/`): `build.sh` clones virglrenderer `c8e3fc3b` into
+  `target/virgl-oracle/`, applies `capture.patch` (writes every submit, resource creation, transfer and capset to
+  `VTEST_DUMP`) and builds it in debug mode (`VREND_DEBUG=shader` prints the TGSI received and the GLSL made).
+  `capture.sh <out> <name> <client…>` runs a client on `GALLIUM_DRIVER=virpipe` against it on a GLES 3.0 host and
+  keeps `<name>.dump`, `.server.log` (TGSI → GLSL pairs), `.client.log`. `dump.ts` summarizes a dump (`--res`,
+  `--caps <prefix>`). Example: glcomp (`clang -O2 images/alpine/gl/glcomp.c -lEGL -lGLESv2`) gives 6 submits,
+  28,088 bytes, 4 shaders for 3 frames; glmark2-es2 runs as `xvfb-run -a glmark2-es2 --off-screen -s 1376x762 -b
+  <scene>:duration=1` (G2 captured 16 scenes: 188 shaders, 61 MB). Dev VM only (CLAUDE.md lists the packages).
+- **A compositor's load on the page** (`bench/gpu/sway-load.ts <virgl|pixman|llvmpipe> <image.qcow2>`): sway and
+  foot in a UEFI image, measured over the serial terminal (§19's table). `VIRGL_GPU=virgl` picks G3's switch instead
+  of `virgl-null`. The image G2 used is the user's Arch (`bench/results/local/myarch2.qcow2` on the dev VM, git-ignored:
+  Arch Linux ARM from `images/archarm/build.sh` plus sway and foot, login alarm/alarm on the screen, root/root on the
+  serial console; its Mesa 26.2 has virgl). With the null renderer the screen is black.
+- **Native client CPU:** `perf record` on a client under `capture.sh`'s setup (paranoid 2: user space only).
 
-- **Loop 0, the fixtures:** the device's `onSubmit` captures real streams (glcomp on alpine-virgl, sway on Arch)
-  with the staging buffers' bytes; a corpus of TGSI from them and from glmark2's captures. Committed as small
-  fixtures (`tests/virgl/`).
-- **Loop 1, the decoder and state** (TypeScript, `web/virgl/`): the commands glcomp and sway send (the 28 kinds of
-  glcomp's stream first; virglrenderer's `vrend_decode.c` is the reference, MIT, attribution), per-context objects,
-  sub-contexts; against a recording WebGL2 mock in Node. **The caps from the browser** (answer 1): `virglCaps` takes
-  the page's WebGL2 limits, extensions and renderable formats (queried once, before the machine starts, and handed
-  to the device worker) and advertises what they back, never more; today's WebGL2 minimums become the floor and
-  the unit tests' fixed input.
-- **Loop 2, TGSI → GLSL ES 3.00** for that corpus, every output compiled in headless Chromium (SwiftShader); no
-  `EXT_clip_cull_distance` or `blend_func_extended` unless the adapter has them.
-- **Loop 3, the GPU worker:** a top-level worker started by the page, owning the screen's `OffscreenCanvas` with
-  one WebGL2 context for every guest context; the device worker forwards the 3D commands (a `MessagePort` first,
-  a shared ring if it measures better); scanout from the texture; the 2D path's presentation moved onto the same
-  context when 3D is on (answer 2: a canvas can't change context type, so a virgl machine presents everything,
-  firmware and console included, through WebGL2; a machine without 3D keeps today's canvas 2D path unchanged);
-  fences signalled once the submit is issued.
-- **Loop 4, the numbers:** glcomp's pixels against llvmpipe's (a tolerance), sway on the page; frame rate, the
-  guest's CPU (as §19) and the renderer's time a frame, in the dev VM (SwiftShader) **and on the Mac host's real GPU**
-  (answer 4); the kernel's submit path profiled in the guest.
-- **Snapshots** (answer 3's condition): a machine with 3D available but unused saves and restores as today. Refused
-  only while a 3D context or 3D resource exists (as G2 built it); G3 adds a test that a virgl machine that never
-  used 3D, and one whose GL client has exited, both save. Because the caps now follow the browser and the guest's
-  kernel reads the capsets once at probe, the snapshot records the caps the guest saw, and a restore in a browser
-  that can't back them refuses with a message (or starts the restored machine with 3D off: the loop decides).
-- **3D's default** (answer 3, "whatever is most convenient"): behind `?gpu=virgl` through G3, so the page's tests and
-  the Debian machine don't change while the renderer is young; on by default where WebGL2 exists once the page's
-  Debian and the snapshot tests pass with it on (G3's exit or G4, whichever reaches that first).
-- **Exit:** sway on GLES draws on the page; docs; G4's outline.
+## What the guests do (G2's findings, for the renderer)
 
-## The user's answers (2026-10-09)
+- **Texture data travels through staging buffers:** Mesa writes uploads into a guest-backed `VIRGL_BIND_STAGING`
+  buffer and puts `COPY_TRANSFER3D` in the stream; read-backs are the reverse (`COPY_TRANSFER_BOTH_DIRECTIONS` is in
+  the caps). glcomp and sway sent **no `TRANSFER_*_3D` at all**. So the renderer reads the staging buffer's guest
+  pages for an upload, and writes them for a read-back before the fence signals, while it decodes the stream. Over
+  vtest the same data travels as `TRANSFER3D`/`END_TRANSFERS` in the stream instead (vtest's path, not virtio's).
+- **glcomp's stream** (3 frames): 28 command kinds, mostly `SET_CONSTANT_BUFFER`, `SET_VERTEX_BUFFERS`, `DRAW_VBO`,
+  `CLEAR`, the object creations and binds, `SET_SUB_CTX`. glmark2's 16 scenes use 44 kinds. **sway** at 60 frames a
+  second: 2 submits a frame, ~500 KB of stream a second; its buffers are 3D resources flipped with `SET_SCANOUT` +
+  `RESOURCE_FLUSH`; dumb buffers (fbcon, the cursor, pixman) stay 2D.
+- **The GLSL virglrenderer makes needs extensions WebGL2 may lack:** `GL_EXT_clip_cull_distance` in every vertex
+  shader, `GL_EXT_blend_func_extended` in 110 of 188 fragment shaders, `GL_NV_shader_noperspective_interpolation` in
+  8, because its host advertised them. Our translator emits them only when the adapter has them (and the caps then
+  say so).
+- **Where the guest's time goes** (§19): Mesa's user-space time a sway frame equals pixman's; the remaining cost is the
+  guest kernel's submit path (~2.2 ms of sys a frame over pixman's). glcomp's warm-up (two shaders compiled
+  GLSL → NIR → TGSI) is ~10 ms.
+- Linux (6.18 and 7.2) reads both capsets at probe and caches them, so the caps a guest saw at boot are what its Mesa
+  uses for the whole session: why a snapshot must record them (the kickoff's decision 3).
 
-1. **Caps follow what the browser provides** (not fixed WebGL2 minimums): per adapter, never more than is backed.
-2. **Presentation:** whatever is most convenient: WebGL2 for every scanout on a 3D machine, canvas 2D kept for
-   machines without 3D (above).
-3. **3D's default:** whatever is most convenient, **as long as snapshots work when 3D isn't being used** (above).
-4. **The Mac host may be used** for real-GPU numbers in G3 (headless Chromium there, as G0 did), beyond the bench
-   page.
+## The renderer's design notes (graphics.md §8)
 
-These settle the questions; the kickoff itself is still the user's to write.
+- **One WebGL2 context for every guest context**: WebGL contexts share no objects; virglrenderer uses a share group.
+  Keep each guest context's state and rebind on a switch.
+- **Fences:** Chromium's `clientWaitSync` takes only a zero timeout. One context runs everything in order, so a fence
+  can signal once its submit is issued. Read-backs: `readPixels`/`getBufferSubData` synchronously, or a pixel-pack
+  buffer polled with `fenceSync` if that stalls.
+- **WebGL2 below GLES 3.0:** no texture swizzle (do it in the shader), no `glMapBufferRange` (shadow copies and
+  `bufferSubData`), no BGRA formats (swizzle on upload or in the shader), fixed-index primitive restart only; base
+  vertex, clip distances, depth clamp and polygon mode are extensions on some adapters only.
+- **Language:** TypeScript (calls WebGL directly, like the other backends). A Rust crate would cross wasm → JS on every
+  GL call.
+- **Licensing:** virglrenderer is MIT (THIRD_PARTY.md has its row: the protocol, `vrend_decode.c`, `vrend_shader.c`):
+  porting with attribution and kept headers is allowed. Mesa (MIT) is a reference for the guest side.
 
 ## Learned (don't re-discover)
 
-- `?gpu=virgl-null` makes a GL desktop's screen black (nothing renders); measure through the serial terminal
-  (`bench/results/local/g2/sway-virgl.ts`: root on ttyAMA0, `/proc/stat` and `/proc/<pid>/stat`, frames from
-  `?displaystats`'s new `flushes`/`submits`). The page's fixed screen size is the `webpc.settings` local-storage
-  key's `screen`.
-- Text typed into a shell through xterm from a TS template literal: `\n` inside an awk string must be `\\n`.
-- `Gpu.save()` is also the tests' state read (`vm.deviceState`): it marks a 3D machine `unsaveable` and
-  `vm.snapshot` refuses it; throwing there broke every state read.
-- glcomp's check is `00000000` on the null renderer (read-backs of nothing); the bench holds it only to itself.
-- The CLAUDE.md rules that bite here: cap memory on every `node`/`cargo` run; no headed Chromium (WebGL2 in headless
-  Chromium is SwiftShader); a new guest-visible device feature stays an option, off by default.
+- `Gpu.save()` is also the tests' state read (`vm.deviceState`): don't throw there; mark and let `vm.snapshot` refuse.
+- `sway-load.ts` sets the page's screen size through the `webpc.settings` local-storage key (`screen: '1376x762'`).
+  Text typed into a guest shell from a TS template literal: an awk `\n` must be written `\\n`.
+- QEMU's `virtio-gpu-gl` can't run in the dev VM (no DRM render node): vtest and our own device are the oracles.
+- The rules that bite here: cap memory on every `node`/`cargo` run; Playwright headless only (WebGL2 there is
+  SwiftShader; the Mac host's Chromium gives a real GPU, `bench/gpu/run-mac.sh` is G0's way there); a guest-visible
+  device feature stays an option, off by default, until the kickoff's condition for the default is met.

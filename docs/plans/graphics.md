@@ -8,8 +8,10 @@ what each loop found. **The 3D direction changed on 2026-10-09** (the user, §18
 **virgl** (Mesa's upstream guest driver) onto **WebGL2** as the baseline, a WebGPU backend only where the
 browser has one, and Vulkan (Venus, Zink) deferred. §1 and §7 are the plan as revised; §4 (Venus on WebGPU)
 is kept as the deferred Vulkan design. **G2 is done (2026-10-09, §19): virgl's guest side measured on a null
-renderer, and the gate passed** (a sway frame costs the guest ~1/12 of llvmpipe's, at 60 frames a second). G3, the
-WebGL2 renderer, needs its kickoff (`M8-GRAPHICS-HANDOVER.md` carries the proposal).
+renderer, and the gate passed** (a sway frame costs the guest ~1/12 of llvmpipe's, at 60 frames a second). **G3, the
+WebGL2 renderer, is next**: its kickoff is `M8-GRAPHICS-KICKOFF.md` (the user's decisions: caps that follow the
+browser, WebGL2 presentation on 3D machines, 3D behind a switch until the page and snapshot tests pass with it, the
+Mac host for real-GPU numbers), its starting notes `M8-GRAPHICS-HANDOVER.md`.
 
 The question: how does a guest get a real display (mode setting, damage, a cursor) and, later,
 **hardware-accelerated 3D** in a browser page, without the guest knowing it runs in one? Today the
@@ -671,8 +673,9 @@ behind `?gpu=virgl-null`, and the Mac host not widened.
 
 ### Loop 0: the oracle (natively, vtest)
 
-A debug build of virglrenderer `c8e3fc3b` (meson, natively in the dev VM; `bench/results/local/virgl-build`) with a
-local patch that writes every submit, resource creation, transfer and capset to a file (`VTEST_DUMP`), and
+A debug build of virglrenderer `c8e3fc3b` (meson, natively in the dev VM; `tools/virgl-oracle/build.sh`) with a
+patch that writes every submit, resource creation, transfer and capset to a file (`VTEST_DUMP`,
+`tools/virgl-oracle/capture.patch`; `capture.sh` runs a client, `dump.ts` reads the file), and
 `VREND_DEBUG=shader` for the GLSL it makes; `virgl_test_server --use-gles --use-egl-surfaceless` with
 `MESA_GLES_VERSION_OVERRIDE=3.0` on llvmpipe, the clients on `GALLIUM_DRIVER=virpipe`. Captured (in
 `bench/results/local/g2/`, ad hoc until G3's tests use them): glcomp, and glmark2-es2 under `xvfb-run` (16 scenes:
@@ -736,7 +739,7 @@ rest of the frame is the exits and the device's round trips, not guest code.
 **Sway** (the user's Arch image, `bench/results/local/myarch2.qcow2`: kernel 7.2.8, sway 1.12, Mesa 26.2.3; the page
 headless, 4 vCPUs, the screen fixed at 1376×762, foot scrolling `while true; do date; done`; the guest's
 `/proc/stat` and sway's and foot's `/proc/<pid>/stat` over 10 s read on the serial terminal, frames from
-`?displaystats`; the dev-only driver is `bench/results/local/g2/sway-virgl.ts`, the results
+`?displaystats`; the dev-only driver is `bench/gpu/sway-load.ts`, the results
 `bench/boot/results/m8-g2/sway-*.json`; one session per mode, a second session gave the same to within 3%):
 
 | foot scrolling | virgl, null renderer (`WLR_RENDERER=gles2`) | pixman | llvmpipe (gles2, no virgl) |
@@ -763,6 +766,6 @@ The gate was "a compositor frame costs the guest a small fraction of llvmpipe's"
 ~1/190 of llvmpipe's guest work on one vCPU, and sway's is ~1/12 of llvmpipe's guest CPU a frame and keeps 60
 frames a second where llvmpipe makes 28. Mesa's frontend is cheap and its shader compiles take milliseconds. **G3 (the
 WebGL2 renderer) is worth building.** What it starts from: the caps in `virglCaps`; the streams and shader corpus in
-`bench/results/local/g2/` (to become fixtures); staging buffers read and written through their guest pages per
+`bench/results/local/g2/` on the dev VM (to become fixtures; `tools/virgl-oracle/capture.sh` makes them again); staging buffers read and written through their guest pages per
 `COPY_TRANSFER3D`; GLSL without the extensions virglrenderer leans on; the kernel's per-submit cost as the guest's
 remaining overhead.
