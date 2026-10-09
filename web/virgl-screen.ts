@@ -100,8 +100,32 @@ export class Screen {
     gl.pixelStorei(E.UNPACK_ROW_LENGTH, 0);
   }
 
-  /** Draws the whole scanout on the canvas (sized to it). */
+  private scheduled = false;
+  private frames = true;
+  private lastDraw = -Infinity;
+
+  /**
+   * Draws at the next animation frame: one frame however many calls a guest's flip took (a scanout change, its
+   * damage). Each task that draws commits a frame of the canvas, and Chromium holds a worker's commits to the
+   * display's rate: three commits a guest frame held the fences behind them and capped sway at ~40 frames a second.
+   */
   present() {
+    if (this.scheduled) return;
+    this.scheduled = true;
+    const frame = () => { this.scheduled = false; this.draw(); };
+    if (this.frames) {
+      try {
+        requestAnimationFrame(frame);
+        return;
+      } catch {
+        this.frames = false;
+      }
+    }
+    setTimeout(frame, Math.max(0, this.lastDraw + 1000 / 60 - performance.now()));
+  }
+
+  /** Draws the whole scanout on the canvas (sized to it). */
+  private draw() {
     const s = this.src;
     if (!s) return;
     const gl = this.gl;
@@ -132,7 +156,8 @@ export class Screen {
     gl.colorMask(true, true, true, true);
     gl.drawArrays(E.TRIANGLE_STRIP, 0, 4);
     this.presents++;
-    this.drawMs += performance.now() - t0;
+    this.lastDraw = performance.now();
+    this.drawMs += this.lastDraw - t0;
     this.onPresent?.();
   }
 }

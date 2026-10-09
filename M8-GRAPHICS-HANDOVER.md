@@ -105,10 +105,13 @@ WebGL2), snapshots per decision 3 (contexts that never submitted are saved and r
 restore whose caps this browser can't back turns 3D off). Tests pass: `tests/virgl.test.ts`, `tests/gpu.test.ts`,
 `tests/virgl-browser.test.ts` (including glcomp in a guest with the renderer in the GPU worker, its read-back
 within 7 of llvmpipe).
-Next: (1) Loop 4's numbers (sway on the page: frames a second, guest CPU, renderer time a frame, SwiftShader here
-and the Mac host's GPU; the guest kernel's submit path); glcomp's pixels are already checked against llvmpipe's.
-(2) The exit: docs (frontend.md "The screen" for the WebGL2 path), G4's outline, and whether 3D can be the default
-(the kickoff's condition: the page's Debian and snapshot tests pass with it on, which they now do).
+Next: (1) Loop 4's last item: the guest kernel's submit path profiled (sway's sys time, ~4–5 ms a frame on both
+hosts, the largest cost; the page has no PC sampler: bench/boot/profile.ts's sampler is its own page, and the Arch
+kernel's symbols come from the guest's /proc/kallsyms). (2) The exit: docs (frontend.md "The screen" for the WebGL2
+path), G4's outline, and whether 3D can be the default (the kickoff's condition: the page's Debian and snapshot
+tests pass with it on, which they now do).
+Loop 4's numbers are in graphics.md §20 (sway at 60 frames a second on the Mac's GPU, as the null renderer; 55 on
+SwiftShader, after the screen began drawing once per animation frame: it was 39).
 Done since: `scripts/ci.sh` and `ci-debian.sh` pass on 12f6158. `VIRGL_GPU=virgl node bench/gpu/sway-load.ts
 virgl …myarch2.qcow2` runs all its phases on the page (the earlier "stopped" was a wait that gave up early): sway and
 foot draw through the renderer onto the WebGL2 screen; one rough run on SwiftShader, the date loop at ~35 flushes a

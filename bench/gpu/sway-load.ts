@@ -38,6 +38,13 @@ const log = (...a: unknown[]) => console.log(`[${at()}]`, ...a);
 const results: Record<string, unknown> = { mode };
 
 await page.goto(`${base}/web/app/?ncpus=4&view=both&displaystats${mode === 'virgl' ? `&gpu=${VIRGL_GPU}` : ''}`);
+results.gl = await page.evaluate(() => {
+  const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
+  const d = gl?.getExtension('WEBGL_debug_renderer_info');
+  return gl ? `${gl.getParameter(d ? d.UNMASKED_RENDERER_WEBGL : gl.RENDERER)}` : 'no WebGL2';
+});
+log('WebGL2:', results.gl, '|', await browser.version());
+results.chromium = browser.version();
 await page.setInputFiles('#open-disk-input', image);
 await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 300_000, polling: 250 });
 log('running');
@@ -60,7 +67,12 @@ type Stat = { n: number; lag: number; busy: Record<string, number> };
 const display = async () => {
   const s = await page.evaluate(() => ((window as unknown as { __drawStats?: unknown[] }).__drawStats ?? []).splice(0)) as Stat[];
   const per = (k: string) => s.reduce((n, x) => n + (x.busy[k] ?? 0), 0) / Math.max(1, s.length);
-  return { seconds: s.length, flushes: per('flushes'), submits: per('submits'), submitKB: per('submitBytes') / 1024, transfers: per('transfers'), Mpx: per('pixels') / 1e6, requestMs: per('request'), draws: s.reduce((n, x) => n + x.n, 0) / Math.max(1, s.length) };
+  // G3's renderer (`VIRGL_GPU=virgl`): the GPU worker's stats a second (web/gpu-worker.ts `render-stats`): its busy
+  // time, of which running submits and presenting, the GL draws and the bytes uploaded.
+  const r = await page.evaluate(() => ((window as unknown as { __renderStats?: unknown[] }).__renderStats ?? []).splice(0)) as Record<string, number>[];
+  const rper = (k: string) => r.reduce((n, x) => n + (x[k] ?? 0), 0) / Math.max(1, r.length);
+  const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), uploadKB: rper('uploadBytes') / 1024, errors: r.at(-1)!.errors } : undefined;
+  return { seconds: s.length, flushes: per('flushes'), submits: per('submits'), submitKB: per('submitBytes') / 1024, transfers: per('transfers'), Mpx: per('pixels') / 1e6, requestMs: per('request'), draws: s.reduce((n, x) => n + x.n, 0) / Math.max(1, s.length), ...(renderer ? { renderer } : {}) };
 };
 let mark = 0;
 /** /proc/stat over `secs` on the serial side: each CPU's busy, user and system percent. */

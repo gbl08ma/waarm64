@@ -847,3 +847,32 @@ worker forwards its 3D work and the scanout. Arch's sway and foot draw through i
 60, loop 4 measures it). The page's Debian tests pass with 3D on (`WEBPC_PAGE_QUERY=gpu=virgl
 scripts/ci-debian.sh`), the snapshot saved, loaded in a fresh profile, suspended and resumed: the restore tells the
 GPU worker what the scanout shows, which the first run found missing (the restored screen stayed black).
+
+### Loop 4: sway on the page with the renderer (2026-10-09)
+
+`bench/gpu/sway-load.ts` (§19's harness: Arch's sway and foot, 4 vCPUs, the screen at 1376×762, foot scrolling
+`while true; do date; done`, 10 s per phase) with `VIRGL_GPU=virgl` against the null renderer, alternating in one
+session; the renderer's own time from the GPU worker's stats. The dev VM's Chromium 153.0.8010.52 on SwiftShader;
+the Mac host's (`bench/gpu/sway-mac.sh`, decision 4) Chromium 153.0.8010.12 on ANGLE over Metal, Apple M4. JSON in
+`bench/gpu/results/g3-sway/`.
+
+| foot scrolling | dev VM, null renderer | dev VM, renderer | Mac, null renderer | Mac, renderer |
+|---|---|---|---|---|
+| frames a second | 59.8, 59.8 | **55.6, 55.0** | 60 | **60** (the pacing's cap) |
+| sway, ms of CPU a frame | 6.7, 6.9 | 7.9, 7.6 | 5.5 | 5.5 |
+| the renderer's time a frame (submits, uploads, the screen) | | 1.07, 1.10 ms | | 0.65 ms |
+| uploads | | 200 MB/s (foot's whole window each frame) | | 220 MB/s |
+| all CPUs busy | 54% | 58% | 48% | 48% |
+
+- **On a real GPU, 3D costs sway nothing measurable** over the null renderer: the same frame rate and the same CPU a
+  frame. On SwiftShader (whose GL runs on the same CPUs as the guest) it is 7% fewer frames and ~0.8 ms of sway's
+  CPU a frame more.
+- **The first run made 38.8 frames a second.** Split with temporary changes (the GPU worker skipping the submits:
+  42.3; skipping them and giving G2's fixed caps: 34.0), neither the renderer's work nor the caps were the cost:
+  the GPU worker drew the screen at every `scanout` and `damage` call, three times a guest frame, and each task that
+  draws commits a frame of the canvas, which Chromium holds to the display's rate, with the fence replies queued
+  behind. The screen now draws in an animation frame, once however many calls came (`web/virgl-screen.ts`):
+  55.6 frames a second. (`vm-renderer-1.json` is that first run; `vm-skip-*` the split.)
+- The renderer's own time is ~1 ms a frame even on SwiftShader, most of it the upload of foot's window (3.7 MB a
+  frame: a scrolling terminal changes all of it). The guest kernel's submit path (sway's sys time, ~4–5 ms of the
+  frame) is the largest cost on both hosts; it isn't profiled yet (the page has no PC sampler: next).

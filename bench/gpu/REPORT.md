@@ -168,3 +168,15 @@ alternating, 4 vCPUs, the Both view; `results/2026-10-02-page.json`):
 **Host memory:** a resource is 4 bytes a pixel of JS memory: 8.3 MB at 1080p, 66.8 MB at the largest size the EDID
 can say (4088×4088, just under the 64 MiB cap per resource); the 256 MiB total holds a console's buffer and a
 compositor's two at that size, not a third.
+
+## G3 loop 4: sway through the WebGL2 renderer (2026-10-09)
+
+`bench/gpu/sway-load.ts` with `VIRGL_GPU=virgl` (G3's renderer in the GPU worker) and `virgl-null` (G2's), the dev
+VM (SwiftShader, Chromium 153.0.8010.52) and the Mac host (`bench/gpu/sway-mac.sh`: ANGLE over Metal, M4, Chromium
+153.0.8010.12); `results/g3-sway/`. Foot scrolling a `date` loop: the null renderer 59.8 frames a second in the VM
+and 60 on the Mac; the renderer 55.6 and 55.0 in the VM, 60 on the Mac, sway's CPU a frame equal to the null
+renderer's on the Mac (5.5 ms) and ~0.8 ms more on SwiftShader; the renderer's own time 1.1 ms a frame in the VM,
+0.65 on the Mac. A first run made 38.8 (`vm-renderer-1.json`): the GPU worker committed a canvas frame at every
+scanout and damage call (three a guest frame), held to the display's rate with the fences behind; drawing in an
+animation frame fixed it (the split runs are `vm-skip-1.json`, the submits skipped, and `vm-skipfloor-1.json`,
+skipped with G2's caps). Details in docs/plans/graphics.md §20.

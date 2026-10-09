@@ -1,0 +1,256 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "info": "7.2.8-1-aarch64-ARCHerror: package 'wlroots0.19' was not found sway 1:1.12-4 mesa 1:26.2.3-1 foot 1.28.0-2 by-path  card0  renderD128[root@alarm ~]#  ",
+ "console": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 4,
+    "user": 0,
+    "sys": 4
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 0,
+    "user": 0,
+    "sys": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   }
+  ],
+  "procs": [],
+  "display": {
+   "seconds": 5,
+   "flushes": 4.8,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 4.8,
+   "Mpx": 5.0328576,
+   "requestMs": 11.424000015854835,
+   "draws": 4.8,
+   "renderer": {
+    "seconds": 6,
+    "busyMs": 3.32416666050752,
+    "submitMs": 0,
+    "drawMs": 0.3058333396911621,
+    "presents": 4.833333333333333,
+    "glDraws": 0,
+    "uploadKB": 0,
+    "errors": 0
+   }
+  }
+ },
+ "sway": "sway=410libgallium-26.2.3-arch1.1.solibpixman-1.so.0.46.4      5 /dev/dri/card0      6 /dev/dri/renderD128[root@alarm ~]#  ",
+ "sway-idle": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 4,
+    "user": 0,
+    "sys": 3
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 2,
+    "user": 0,
+    "sys": 1
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 3,
+    "user": 0,
+    "sys": 3
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 2,
+    "sysMs": 5
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "flushes": 1,
+   "submits": 2,
+   "submitKB": 8.21875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.15590908852490512,
+   "draws": 1,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 0.18590908971699802,
+    "submitMs": 0.1518181792714379,
+    "drawMs": 0.030909091234207153,
+    "presents": 1,
+    "glDraws": 1,
+    "uploadKB": 134.421875,
+    "errors": 0
+   }
+  }
+ },
+ "foot-idle": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 2,
+    "user": 0,
+    "sys": 2
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 4,
+    "user": 0,
+    "sys": 4
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 2,
+    "user": 0,
+    "sys": 1
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 2,
+    "user": 0,
+    "sys": 2
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 1,
+    "sysMs": 5
+   },
+   {
+    "proc": "foot",
+    "userMs": 0,
+    "sysMs": 0
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "flushes": 0.9090909090909091,
+   "submits": 1.8181818181818181,
+   "submitKB": 7.471590909090909,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.15409091114997864,
+   "draws": 0.9090909090909091,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 0.2140909026969563,
+    "submitMs": 0.18181817775422876,
+    "drawMs": 0.032272724942727524,
+    "presents": 0.9090909090909091,
+    "glDraws": 0.9090909090909091,
+    "uploadKB": 122.20170454545455,
+    "errors": 0
+   }
+  }
+ },
+ "date-loop": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 58,
+    "user": 11,
+    "sys": 47
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 56,
+    "user": 10,
+    "sys": 46
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 62,
+    "user": 12,
+    "sys": 49
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 59,
+    "user": 11,
+    "sys": 47
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 57,
+    "user": 10,
+    "sys": 46
+   }
+  ],
+  "procs": [
+   {
+    "proc": "sway",
+    "userMs": 172,
+    "sysMs": 267
+   },
+   {
+    "proc": "foot",
+    "userMs": 111,
+    "sysMs": 310
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "flushes": 55.63636363636363,
+   "submits": 112.18181818181819,
+   "submitKB": 461.57528409090907,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 8.66136361523108,
+   "draws": 55.63636363636363,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 59.732727244496346,
+    "submitMs": 58.779545453461736,
+    "drawMs": 1.3690909214995124,
+    "presents": 42.72727272727273,
+    "glDraws": 57.54545454545455,
+    "uploadKB": 209099.07244318182,
+    "errors": 0
+   }
+  }
+ },
+ "tail": "400:00:04.177 [ERROR] [sway/config/output.c:1219] failed to execute 'swaybg' (background configuration probably not applied): No such file or directoryEnvironment variable $XDG_CURRENT_DESKTOP not set, ignoring.warn: main.c:495: 'C' is not a UTF-8 locale, falling back to 'C.UTF-8'warn: wayland.c:1888: compositor does not implement the xdg-toplevel-icon protocol[root@alarm ~]#  "
+}
