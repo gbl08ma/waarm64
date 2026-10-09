@@ -5,7 +5,7 @@
  "stride": 50,
  "info": "7.2.8-1-aarch64-ARCHmesa 1:26.2.4-1 gles2 gles2-main.txt gles3 gles3-main.txt",
  "cases": 344,
- "seconds": 41.432183933000005,
+ "seconds": 41.386025758,
  "counts": {
   "NotSupported": 2,
   "Pass": 342
@@ -15,17 +15,17 @@
   "dEQP-GLES2.functional.multisample.constancy_both NotSupported"
  ],
  "slowest": [
-  "dEQP-GLES2.functional.vertex_arrays.single_attribute.first.byte_first6_offset1_stride32_quads5 Pass 1",
-  "dEQP-GLES2.functional.vertex_arrays.multiple_attributes.input_types.3_byte2_vec2_byte2_vec2_short2_vec2 Pass 1",
-  "dEQP-GLES2.functional.uniform_api.value.assigned.by_pointer.get_uniform.struct_in_array.int_ivec4_fragment Pass 1",
-  "dEQP-GLES2.functional.texture.specification.basic_copytexsubimage2d.2d_alpha Pass 1",
-  "dEQP-GLES2.functional.texture.size.2d.2048x2048_rgba8888_mipmap Pass 1",
-  "dEQP-GLES2.functional.texture.mipmap.2d.projected.nearest_linear_mirror Pass 1",
-  "dEQP-GLES2.functional.texture.filtering.cube.nearest_nearest_clamp_l8_pot Pass 1",
-  "dEQP-GLES2.functional.shaders.swizzles.vector_swizzles.mediump_bvec4_x_fragment Pass 1",
-  "dEQP-GLES2.functional.shaders.random.comparison_ops.fragment.15 Pass 1",
-  "dEQP-GLES2.functional.shaders.random.basic_expression.combined.15 Pass 1"
+  "dEQP-GLES2.functional.vertex_arrays.single_attribute.offset.buffer_4_8_float2_vec2_dynamic_draw_quads_256 Pass 1",
+  "dEQP-GLES2.functional.vertex_arrays.multiple_attributes.stride.3_float2_17_float2_32_float2_17 Pass 1",
+  "dEQP-GLES2.functional.uniform_api.value.initial.get_uniform.basic_array.bvec4_api_int_both Pass 1",
+  "dEQP-GLES2.functional.uniform_api.random.31 Pass 1",
+  "dEQP-GLES2.functional.texture.wrap.clamp_clamp_linear_npot_rgb888 Pass 1",
+  "dEQP-GLES2.functional.texture.vertex.cube.filtering.nearest_linear_mirror Pass 1",
+  "dEQP-GLES2.functional.texture.specification.basic_texsubimage2d.l8_2d Pass 1",
+  "dEQP-GLES2.functional.texture.filtering.cube.linear_mipmap_nearest_nearest_clamp_etc1 Pass 1",
+  "dEQP-GLES2.functional.shaders.swizzles.vector_swizzles.mediump_ivec4_wzyx_fragment Pass 1",
+  "dEQP-GLES2.functional.shaders.struct.uniform.array_member_fragment Pass 1"
  ],
- "last": "dEQP-GLES2.functional.draw.random.28 Pass 0dEQP-GLES2.functional.default_vertex_attrib.vec2.vertex_attrib_4fv Pass 1dEQP-GLES2.functional.lifetime.bind_no_gen.texture Pass 0",
+ "last": "dEQP-GLES2.functional.draw.random.28 Pass 0dEQP-GLES2.functional.default_vertex_attrib.vec2.vertex_attrib_4fv Pass 0dEQP-GLES2.functional.lifetime.bind_no_gen.texture Pass 0",
  "warnings": {}
 }

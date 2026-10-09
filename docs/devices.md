@@ -300,7 +300,8 @@ mode (and natively in realtime mode: std has no CSPRNG).
   refuses and GLES allows is worked around at the draw: front and back stencil states whose reference or masks
   differ draw twice (each face's triangles with its own state on both faces, the other face culled); an attribute
   whose stride or offset isn't a multiple of its type's size, or whose stride is over 255, is repacked from the
-  buffer's copy into a scratch buffer of its slot. Clears,
+  buffer's copy into a scratch buffer of its slot. Z24_UNORM_S8_UINT and Z24X8_UNORM uploads are rotated (Gallium
+  keeps depth in a word's low 24 bits, GL in its high 24). Clears,
   `CLEAR_SURFACE`, `CLEAR_TEXTURE`, blits (a framebuffer blit for the same stored layout, a draw through both
   formats' swizzles otherwise), copies between resources, occlusion queries as "any samples passed" (a counter
   reads 0 or 1, written to the query's buffer when WebGL has it), stream output (transform feedback, graphics.md

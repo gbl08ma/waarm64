@@ -212,6 +212,31 @@ test('virgl renderer: what WebGL refuses and GLES allows is worked around (dEQP-
   assert.ok(split >= 2, `${split} stencil states set for both faces (a split draw)`);
 });
 
+test('virgl renderer: depth textures: Z24S8 goes up with depth in the high bits, and a copy reads its depth (dEQP-GLES3 shadow)', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  r.createContext(1);
+  for (const id of [1, 2]) {
+    r.createResource({ id, target: 2, format: 19, bind: 8, width: 2, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+    r.attach(1, id);
+  }
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  // Two texels of Z24_UNORM_S8_UINT: depth 0x123456 with stencil 0xab, depth 0xfedcba with stencil 0x01.
+  cmd(9, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, 0xab123456, 0x01fedcba);
+  cmd(17, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2, 1, 1); // RESOURCE_COPY_REGION 1 -> 2
+  r.submit(1, new Uint32Array(words));
+  assert.deepEqual(errors, []);
+  const up = gl.log.find(([n]) => n === 'texSubImage2D')!;
+  const view = (up[1] as unknown[]).find((a) => ArrayBuffer.isView(a)) as Uint8Array;
+  assert.deepEqual([...new Uint32Array(view.buffer, view.byteOffset, 2)].map((w) => w.toString(16)), ['123456ab', 'fedcba01']);
+  const at = gl.log.findIndex(([n, a]) => n === 'framebufferTexture2D' && (a as number[])[0] === E.READ_FRAMEBUFFER && (a as number[])[1] === E.DEPTH_STENCIL_ATTACHMENT);
+  assert.ok(at >= 0, 'the copy reads the source at its depth-stencil attachment');
+  assert.ok(gl.log.slice(at).some(([n, a]) => n === 'blitFramebuffer' && ((a as number[])[8] & E.DEPTH_BUFFER_BIT) !== 0), 'a depth blit');
+});
+
 test('virgl device: a fenced command\'s reply waits for the host, and replies stay in order', async () => {
   const ram = new Uint8Array(1 << 20);
   const done: number[] = [];

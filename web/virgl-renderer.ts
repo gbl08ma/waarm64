@@ -443,6 +443,13 @@ export class VirglRenderer {
     }
     const f = r.fmt;
     if (!f || !r.tex) return this.error(`upload to resource ${r.id} without a texture`);
+    if (f.id === 19 || f.id === 21) {
+      // Z24_UNORM_S8_UINT and Z24X8_UNORM keep depth in a word's low 24 bits; GL's UNSIGNED_INT_24_8 (and a 24-bit
+      // depth as UNSIGNED_INT) in its high 24: each word rotated, the stencil (or X) byte to the bottom.
+      const w = new Uint32Array(data.slice(0, data.length & ~3).buffer);
+      for (let k = 0; k < w.length; k++) w[k] = ((w[k] << 8) | (f.id === 19 ? w[k] >>> 24 : 0)) >>> 0;
+      data = new Uint8Array(w.buffer);
+    }
     const b = f.block;
     const rowBytes = Math.ceil(box.w / b) * f.bpp;
     stride ||= rowBytes;
@@ -906,16 +913,22 @@ export class VirglRenderer {
     }
     // Textures: a raw copy of texels, layer by layer, through a blit (same storage formats: same bytes).
     for (let z = 0; z < box.d; z++) {
-      if (!this.bindForRead(src, p[6], box.z + z)) return this.error('copy region: the source can\'t be read');
-      gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
-      for (let k = 1; k < 8; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
-      this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
       const depth = src.fmt && (src.fmt.kind === 'depth' || src.fmt.kind === 'depthstencil');
       const point = depth ? (src.fmt!.kind === 'depth' ? E.DEPTH_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT) : E.COLOR_ATTACHMENT0;
       if (depth) {
+        // A depth source is read from its depth attachment (as a color one it can't be: Mesa copies its depth
+        // textures' uploads this way, and shadow lookups sampled empty textures).
+        gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
         this.attachTo(E.READ_FRAMEBUFFER, E.COLOR_ATTACHMENT0, undefined, 0, 0);
         this.attachTo(E.READ_FRAMEBUFFER, point, src, p[6], box.z + z);
-      }
+        if (gl.checkFramebufferStatus(E.READ_FRAMEBUFFER) !== E.FRAMEBUFFER_COMPLETE) {
+          this.attachTo(E.READ_FRAMEBUFFER, point, undefined, 0, 0);
+          return this.error('copy region: the depth source can\'t be read');
+        }
+      } else if (!this.bindForRead(src, p[6], box.z + z)) return this.error('copy region: the source can\'t be read');
+      gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+      for (let k = 1; k < 8; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+      this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, depth ? undefined : dst, p[1], dz + z);
       if (depth) this.attachTo(E.DRAW_FRAMEBUFFER, point, dst, p[1], dz + z);
       gl.drawBuffers([depth ? E.NONE : E.COLOR_ATTACHMENT0]);
@@ -1427,7 +1440,7 @@ void main() {
     if (this.debug) {
       const s = c.sub, rt = s.blend?.rt[0];
       const fmt = (res: number, f: number) => `${res}:${FORMATS.get(f)?.name ?? f}`;
-      this.debug(`draw ctx ${c.id} into [${s.fb.cbufs.map((cb) => cb ? fmt(cb.res, cb.format) : '-').join(' ')}]${s.fb.zs ? ` zs ${fmt(s.fb.zs.res, s.fb.zs.format)}` : ''} vp ${s.viewport.scale[1] < 0 ? '-y' : '+y'} ${s.rs ? `ccw ${+s.rs.frontCcw} cull ${s.rs.cullFace}` : ''}${s.dsa?.stencil[0].enabled ? ` stencil ${JSON.stringify(s.dsa.stencil)}` : ''} blend ${rt?.enable ? `${rt.rgbSrc},${rt.rgbDst},${rt.aSrc},${rt.aDst} mask ${rt.mask}` : 'off'} sampling [${s.views.fs.map((v) => v ? `${fmt(v.res, v.format)}/${v.swizzle.join('')}` : '-').join(' ')}]`);
+      this.debug(`draw ctx ${c.id} into [${s.fb.cbufs.map((cb) => cb ? fmt(cb.res, cb.format) : '-').join(' ')}]${s.fb.zs ? ` zs ${fmt(s.fb.zs.res, s.fb.zs.format)}` : ''} vp ${s.viewport.scale[1] < 0 ? '-y' : '+y'} ${s.rs ? `ccw ${+s.rs.frontCcw} cull ${s.rs.cullFace}` : ''}${s.dsa?.stencil[0].enabled ? ` stencil ${JSON.stringify(s.dsa.stencil)}` : ''} blend ${rt?.enable ? `${rt.rgbSrc},${rt.rgbDst},${rt.aSrc},${rt.aDst} mask ${rt.mask}` : 'off'} sampling [${s.views.fs.map((v) => v ? `${fmt(v.res, v.format)}/${v.swizzle.join('')}` : '-').join(' ')}] samplers [${s.samplers.fs.map((x) => (x ? `${x.compare ? `cmp ${x.compareFunc}` : 'nocmp'} min ${x.minImg}/${x.minMip} mag ${x.magImg}` : '-')).join(' ')}]`);
     }
     const inst = Math.max(1, instances);
     let drawCount = count, drawInstances = instances, emitted = 0;

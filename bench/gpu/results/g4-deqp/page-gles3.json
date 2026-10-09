@@ -5,11 +5,11 @@
  "stride": 50,
  "info": "7.2.8-1-aarch64-ARCHmesa 1:26.2.4-1 gles2 gles2-main.txt gles3 gles3-main.txt",
  "cases": 896,
- "seconds": 188.49993985999998,
+ "seconds": 183.256051423,
  "counts": {
-  "Fail": 26,
+  "Fail": 19,
   "NotSupported": 8,
-  "Pass": 862
+  "Pass": 869
  },
  "notPassed": [
   "dEQP-GLES3.functional.buffer.map.write.render_as_index_array.array_full Fail",
@@ -19,13 +19,6 @@
   "dEQP-GLES3.functional.texture.filtering.2d.formats.rgb9_e5_nearest_mipmap_nearest Fail",
   "dEQP-GLES3.functional.texture.filtering.2d.formats.srgb_rg8_nearest_mipmap_linear NotSupported",
   "dEQP-GLES3.functional.texture.filtering.3d.formats.rgba8_snorm_nearest_mipmap_linear Fail",
-  "dEQP-GLES3.functional.texture.shadow.2d.linear_mipmap_linear.less_or_equal_depth_component32f Fail",
-  "dEQP-GLES3.functional.texture.shadow.cube.linear.greater_or_equal_depth_component16 Fail",
-  "dEQP-GLES3.functional.texture.shadow.cube.linear_mipmap_nearest.greater_or_equal_depth24_stencil8 Fail",
-  "dEQP-GLES3.functional.texture.shadow.cube.linear_mipmap_linear.less_depth_component32f Fail",
-  "dEQP-GLES3.functional.texture.shadow.2d_array.linear.greater_depth_component16 Fail",
-  "dEQP-GLES3.functional.texture.shadow.2d_array.linear_mipmap_nearest.greater_depth24_stencil8 Fail",
-  "dEQP-GLES3.functional.texture.shadow.2d_array.linear_mipmap_linear.equal_depth_component32f Fail",
   "dEQP-GLES3.functional.texture.specification.basic_texsubimage2d.rgb9_e5_2d Fail",
   "dEQP-GLES3.functional.fragment_ops.blend.default_framebuffer.equation_src_func_dst_func.subtract_constant_color_constant_alpha Fail",
   "dEQP-GLES3.functional.fragment_ops.random.33 Fail",
@@ -51,17 +44,17 @@
   "dEQP-GLES3.functional.flush_finish.flush_wait Pass 12",
   "dEQP-GLES3.functional.shaders.builtin_functions.precision.tanh.highp_vertex.vec3 Pass 10",
   "dEQP-GLES3.functional.shaders.builtin_functions.precision.length.mediump_fragment.vec3 Pass 6",
-  "dEQP-GLES3.functional.shaders.builtin_functions.precision.reflect.lowp_fragment.vec2 Pass 5",
+  "dEQP-GLES3.functional.shaders.builtin_functions.precision.reflect.lowp_fragment.vec2 Pass 4",
   "dEQP-GLES3.functional.shaders.builtin_functions.precision.sqrt.highp_fragment.vec3 Pass 3",
   "dEQP-GLES3.functional.shaders.builtin_functions.precision.normalize.lowp_vertex.vec2 Pass 3",
+  "dEQP-GLES3.functional.shaders.builtin_functions.precision.matrixcompmult.mediump_vertex.mat2x3 Pass 3",
   "dEQP-GLES3.functional.shaders.builtin_functions.precision.inverse.lowp_fragment.mat2 Pass 3",
-  "dEQP-GLES3.functional.shaders.builtin_functions.precision.degrees.highp_fragment.vec3 Pass 3",
-  "dEQP-GLES3.functional.ubo.single_nested_struct_mixed_matrix_packing.single_buffer.shared_block_column_major_matrix_row_major_matrixarray_column_major_instance_array_both Pass 2",
-  "dEQP-GLES3.functional.texture.shadow.cube.linear_mipmap_nearest.greater_or_equal_depth24_stencil8 Fail 2"
+  "dEQP-GLES3.functional.shaders.builtin_functions.precision.transpose.lowp_fragment.mat2x4 Pass 2",
+  "dEQP-GLES3.functional.shaders.builtin_functions.precision.sub.highp_vertex.vec3 Pass 2"
  ],
  "last": "dEQP-GLES3.functional.lifetime.delete.transform_feedback Pass 0dEQP-GLES3.functional.draw_buffers_indexed.overwrite_common.common_separate_blend_eq_buffer_separate_blend_eq NotSupported 0dEQP-GLES3.functional.draw_buffers_indexed.random.max_implementation_draw_buffers.2 NotSupported 0",
  "warnings": {
-  "virgl: copy region: the source can't be read": 5,
-  "virgl: program: vertex: ERROR: 0:29: 'textureGradOffset' : no matching overloaded function found\n\n#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler3D;\nprecision highp": 1
+  "virgl: program: vertex: ERROR: 0:29: 'textureGradOffset' : no matching overloaded function found\n\n#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler3D;\nprecision highp": 1,
+  "virgl: copy region: the source can't be read": 5
  }
 }
