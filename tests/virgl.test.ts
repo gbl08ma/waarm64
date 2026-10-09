@@ -136,9 +136,10 @@ test('virgl tgsi: what WebGL2 can\'t do is refused, not miscompiled', () => {
 test('virgl tgsi: stream output captures the components asked for, as the shader wrote them', () => {
   const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END');
   const fs = parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END');
-  const p = generate(vs, fs, { ...KEY, so: [{ reg: 0, start: 0, comps: 4 }, { reg: 1, start: 1, comps: 2 }, { reg: 1, start: 3, comps: 1 }], soSeparate: true });
-  assert.deepEqual(p.tf, { varyings: ['tf_0', 'tf_1', 'tf_2'], separate: true });
-  for (const l of ['out highp vec4 tf_0;', 'out highp vec2 tf_1;', 'out highp float tf_2;', 'tf_0 = gl_Position.xyzw;', 'tf_1 = o_1.yz;', 'tf_2 = o_1.w;']) assert.ok(p.vs.includes(l), l);
+  const p = generate(vs, fs, { ...KEY, so: [{ reg: 0, start: 0, comps: 4 }, { reg: 1, start: 1, comps: 2 }, { reg: 1, start: 3, comps: 1 }] });
+  // Interleaved, as bits (the renderer scatters them to their targets).
+  assert.deepEqual(p.tf, { varyings: ['tf_0', 'tf_1', 'tf_2'], separate: false });
+  for (const l of ['flat out highp uvec4 tf_0;', 'flat out highp uvec2 tf_1;', 'flat out highp uint tf_2;', 'tf_0 = floatBitsToUint(gl_Position.xyzw);', 'tf_1 = floatBitsToUint(o_1.yz);', 'tf_2 = floatBitsToUint(o_1.w);']) assert.ok(p.vs.includes(l), l);
   assert.ok(p.vs.indexOf('tf_0 = gl_Position') < p.vs.indexOf('gl_Position.y *= u_adjy'), 'captured before the flip');
   assert.equal(generate(vs, fs, KEY).tf, undefined);
 });

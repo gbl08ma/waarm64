@@ -64,8 +64,8 @@ export function replayTrace(trace: Uint8Array, read?: number) {
 
 /**
  * Stream output on WebGL2, from a stream made here: a vertex shader whose position and a generic's .yz (doubled) are
- * captured, interleaved into one buffer or each into its own; draws appended, rebound, overflowing; the emitted
- * primitives counted by a query. Nothing to draw on (no color buffer): only captures. Returns the buffers' floats.
+ * captured, interleaved into one buffer or each into its own, or mixed (two outputs in one buffer with gaps, which
+ * keep their bytes); draws appended, rebound, overflowing; the emitted primitives counted by a query. Nothing to draw on (no color buffer): only captures. Returns the buffers' floats.
  */
 export function streamOut() {
   const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
@@ -78,6 +78,7 @@ export function streamOut() {
   buffer(2, 60 * 4, 0x800); // interleaved: 10 vertices of 6 floats
   buffer(3, 64, 0x800); buffer(4, 64, 0x800); // separate: 4 vec4s, 8 vec2s
   buffer(5, 64, 0x800); r.attachBacking(5, [{ off: 0, len: 64 }]); // the query's result
+  buffer(6, 64, 0x800); buffer(7, 80, 0x800); // mixed: 4 vec4s; 4 vertices of 5 floats (gaps at 0 and 4)
   const words: number[] = [];
   const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
   const text = (s: string) => { const b = new TextEncoder().encode(s + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
@@ -90,6 +91,7 @@ export function streamOut() {
   cmd(9, 0, 1, 0, 0, 0, 0, 0, 0, 0, 48 * 4, 1, 1, ...Array.from({ length: 48 }, (_, k) => f(k + 1)));
   shader(10, 0, VS, 2, [6, 0, 0, 0, ...so(0, 0, 4, 0, 0), ...so(1, 1, 2, 0, 4)]); // interleaved, stride 6
   shader(11, 0, VS, 2, [4, 2, 0, 0, ...so(0, 0, 4, 0, 0), ...so(1, 1, 2, 1, 0)]); // separate
+  shader(13, 0, VS, 3, [4, 5, 0, 0, ...so(0, 0, 4, 0, 0), ...so(1, 1, 2, 1, 1), ...so(1, 3, 1, 1, 3)]); // mixed
   shader(12, 1, FS);
   cmd(1, 5, 20, 0, 0, 0, 31); // vertex elements: one R32G32B32A32_FLOAT from buffer 0
   cmd(2, 5, 20);
@@ -98,26 +100,32 @@ export function streamOut() {
   cmd(5, 0, 0, 0); // no color buffer, no depth
   cmd(6, 0, 16, 0, 1);
   cmd(31, 0, 12, 1);
-  cmd(1, 10, 30, 2, 0, 60 * 4); cmd(1, 10, 31, 3, 0, 64); cmd(1, 10, 32, 4, 0, 64);
-  cmd(1, 9, 40, 7, 0, 5); // PRIMITIVES_EMITTED, its result in resource 5
+  cmd(1, 10, 30, 2, 0, 60 * 4); cmd(1, 10, 35, 2, 0, 60 * 4); cmd(1, 10, 31, 3, 0, 64); cmd(1, 10, 32, 4, 0, 64); cmd(1, 10, 33, 6, 0, 64); cmd(1, 10, 34, 7, 0, 80);
+  cmd(9, 0, 7, 0, 0, 0, 0, 0, 0, 0, 80, 1, 1, ...Array.from({ length: 20 }, () => f(-1))); // the gaps' bytes
+  cmd(1, 9, 40, 6, 0, 5); // VIRGL_QUERY_PRIMITIVES_EMITTED (6: virgl's numbering), its result in resource 5
   const draw = (start: number, count: number, mode = 0) => cmd(8, 0, start, count, mode, 0, 1, 0, 0, 0, 0, 0, 0, 0);
-  // Interleaved: 3 points, 2 more appended, then a triangle; then rebound (not appended) and 12 points overflow it at 10.
+  // Interleaved: 3 points, 2 more appended (the same target set again: a resume), then a triangle; then a new target
+  // on the same buffer (as Mesa makes at a new Begin) starts over, and 12 points overflow it at 10.
   cmd(31, 0, 10, 0);
   cmd(19, 0, 40);
   cmd(25, 0, 0, 30); draw(0, 3);
-  cmd(25, 0, 1, 30); draw(3, 2); draw(5, 3, 4);
+  cmd(25, 0, 0, 30); draw(3, 2); draw(5, 3, 4); // the append mask Mesa sends: 0
+  cmd(25, 0); draw(0, 2); // paused (no targets): generated, not emitted
   cmd(20, 0, 40);
   const first = () => Array.from(new Float32Array(r.readResource(2)!.slice().buffer));
   r.submit(1, new Uint32Array(words)); words.length = 0;
   const appended = first();
   const emitted = new DataView(ram.buffer).getUint32(8, true);
-  cmd(25, 0, 0, 30); draw(0, 12);
+  cmd(25, 0, 0, 35); draw(0, 12);
   r.submit(1, new Uint32Array(words)); words.length = 0;
   const overflowed = first();
   // Separate: 2 points, position into buffer 3 and the generic's .yz into buffer 4.
   cmd(31, 0, 11, 0);
   cmd(25, 0, 0, 31, 32); draw(1, 2);
+  // Mixed: 2 points, position into buffer 6, the generic's .yz and .w into buffer 7 at words 1 and 3 of 5.
+  cmd(31, 0, 13, 0);
+  cmd(25, 0, 0, 33, 34); draw(1, 2);
   r.submit(1, new Uint32Array(words));
   const floats = (id: number) => Array.from(new Float32Array(r.readResource(id)!.slice().buffer));
-  return { appended, emitted, overflowed, separate: [floats(3), floats(4)], log, glError: gl.getError() };
+  return { appended, emitted, overflowed, separate: [floats(3), floats(4)], mixed: [floats(6), floats(7)], log, glError: gl.getError() };
 }

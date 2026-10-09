@@ -58,8 +58,13 @@ type Query = { type: number; index: number; res: number; offset: number; q?: Web
 /** A stream output target: a buffer's range, and the bytes written into it since it was last bound without append. */
 type SoTarget = { res: number; offset: number; size: number; filled: number };
 type SoOutput = NonNullable<Shader['so']>['outputs'][number];
-/** How a draw's stream output goes to WebGL2: the outputs in capture order, and one binding per GL buffer index. */
-type SoPlan = { outputs: SoOutput[]; separate: boolean; bindings: { t: SoTarget; r: Res; bytes: number }[] };
+/**
+ * How a draw's stream output goes to WebGL2: every output captured interleaved, as bits, into one scratch buffer
+ * (`total` words a vertex, in `outputs`' order), then scattered into its target at its offset (`targets`: each buffer
+ * index used, its stride in words). GLES 3.0's own layouts (one buffer packed, or one output a buffer, a few words
+ * each) can't express Gallium's (several outputs a buffer, several buffers, gaps).
+ */
+type SoPlan = { outputs: SoOutput[]; total: number; targets: { buffer: number; t: SoTarget; r: Res; stride: number }[] };
 type Obj =
   | { kind: 'blend'; v: Blend } | { kind: 'dsa'; v: Dsa } | { kind: 'rs'; v: Rasterizer } | { kind: 'shader'; v: Shader }
   | { kind: 've'; v: VertexElements } | { kind: 'view'; v: SamplerView } | { kind: 'sampler'; v: SamplerState }
@@ -84,7 +89,7 @@ type Sub = {
   blendColor: number[];
   stipple: Uint32Array;
   sampleMask: number;
-  so: { targets: (SoTarget | undefined)[]; tf?: WebGLTransformFeedback };
+  so: { targets: (SoTarget | undefined)[]; tf?: WebGLTransformFeedback; seen: Set<string> };
   vao?: WebGLVertexArrayObject;
   /** A long shader arriving in pieces (VIRGL_OBJ_SHADER_OFFSET_CONT), by stage. */
   longShader: Map<number, { handle: number; shader: Shader }>;
@@ -107,6 +112,8 @@ const BLEND_FACTOR: Record<number, number> = {
 };
 const BLEND_FUNC = [E.FUNC_ADD, E.FUNC_SUBTRACT, E.FUNC_REVERSE_SUBTRACT, E.MIN, E.MAX];
 const COMPARE = [E.NEVER, E.LESS, E.EQUAL, E.LEQUAL, E.GREATER, E.NOTEQUAL, E.GEQUAL, E.ALWAYS];
+/** Query types as virgl numbers them (VIRGL_QUERY_*: not Gallium's PIPE_QUERY_*, whose PRIMITIVES_GENERATED is 6). */
+const Q_OCCLUSION_COUNTER = 0, Q_OCCLUSION_PREDICATE = 1, Q_GENERATED = 5, Q_EMITTED = 6, Q_OCCLUSION_CONSERVATIVE = 11;
 const STENCIL_OP = [E.KEEP, E.ZERO, E.REPLACE, E.INCR, E.DECR, E.INCR_WRAP, E.DECR_WRAP, E.INVERT];
 const WRAP = [E.REPEAT, E.CLAMP_TO_EDGE, E.CLAMP_TO_EDGE, E.CLAMP_TO_EDGE, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT, E.MIRRORED_REPEAT];
 const PRIM = [E.POINTS, E.LINES, E.LINE_LOOP, E.LINE_STRIP, E.TRIANGLES, E.TRIANGLE_STRIP, E.TRIANGLE_FAN];
@@ -152,6 +159,7 @@ export class VirglRenderer {
   /** A framebuffer for draws that only capture (stream output with nothing bound to draw on). */
   private nullFbo?: WebGLFramebuffer;
   private errorsLogged = 0;
+  private errorKinds = new Map<string, number>();
 
   /** A trace of what the guest makes and draws with, each line once (`?gpu=virgl,debug`): resources, surfaces, views, draws. */
   private debug?: (m: string) => void;
@@ -173,9 +181,12 @@ export class VirglRenderer {
     gl.pixelStorei(E.PACK_ALIGNMENT, 1);
   }
 
+  /** Logged: each kind of error (its first 40 characters) 5 times, 200 in all (one noisy kind hid the others). */
   private error(m: string) {
     this.stats.errors++;
-    if (this.errorsLogged++ < 50) this.log(m);
+    const kind = m.slice(0, 40), n = this.errorKinds.get(kind) ?? 0;
+    this.errorKinds.set(kind, n + 1);
+    if (n < 5 && this.errorsLogged++ < 200) this.log(m);
   }
 
   // --- contexts --------------------------------------------------------------------------------------------------
@@ -214,7 +225,7 @@ export class VirglRenderer {
       views: { vs: [], fs: [] }, samplers: { vs: [], fs: [] },
       fb: { cbufs: [] }, viewport: { scale: [1, 1, 1], translate: [0, 0, 0] }, scissor: { minx: 0, miny: 0, maxx: 0, maxy: 0 },
       stencilRef: [0, 0], blendColor: [0, 0, 0, 0], stipple: new Uint32Array(32).fill(0xffffffff), sampleMask: ~0,
-      so: { targets: [] }, longShader: new Map(),
+      so: { targets: [], seen: new Set() }, longShader: new Map(),
     };
   }
 
@@ -549,6 +560,7 @@ export class VirglRenderer {
     } else {
       const data = this.readback(r, level, box, stride, layerStride);
       if (!data) { this.error(`can't read back resource ${r.id} (format ${r.format})`); return false; }
+      if (r.target === PIPE_BUFFER) this.debug?.(`read back ${r.id} [${box.x}, +${box.w}) to its backing at ${offset}: ${[...data.subarray(0, 16)].join(',')}`);
       this.writeBacking(r, offset, data);
     }
     return true;
@@ -647,13 +659,16 @@ export class VirglRenderer {
       case 22: s.stipple = p.slice(0, 32); return; // SET_POLYGON_STIPPLE
       case 23: return; // SET_CLIP_STATE: user clip planes need clip distances (not advertised)
       case 24: s.sampleMask = p[0]; return;
-      case 25: { // SET_STREAMOUT_TARGETS: append mask, handles (a target not appended to is written from its start)
-        s.so.targets = Array.from(p.subarray(1), (h, k) => {
-          const o = s.objects.get(h);
-          if (o?.kind !== 'so') return undefined;
-          if (!((p[0] >>> k) & 1)) o.v.filled = 0;
-          return o.v;
-        });
+      case 25: { // SET_STREAMOUT_TARGETS: append mask (Mesa sends 0; vrend ignores it), handles
+        // As vrend: a set of targets seen before resumes where it stopped (Mesa's resume after a pause sets the same
+        // targets again); a new set starts at its targets' beginnings (Mesa makes new targets at each Begin).
+        const handles = [...p.subarray(1)];
+        s.so.targets = handles.map((h) => { const o = s.objects.get(h); return o?.kind === 'so' ? o.v : undefined; });
+        const key = handles.join();
+        if (handles.length && !s.so.seen.has(key)) {
+          s.so.seen.add(key);
+          for (const t of s.so.targets) if (t) t.filled = 0;
+        }
         return;
       }
       case 26: return; // SET_RENDER_CONDITION: not advertised
@@ -829,6 +844,7 @@ export class VirglRenderer {
   private finishShader(sh: Shader) {
     const nul = sh.text.indexOf('\0');
     if (nul >= 0) sh.text = sh.text.slice(0, nul);
+    if (sh.so) this.debug?.(`shader ${sh.serial} so ${JSON.stringify(sh.so)}: ${sh.text.split('\n').filter((l) => /^DCL (IN|OUT)|^ *[0-9]+: /.test(l)).join(' | ')}`);
     try {
       sh.tgsi = parseTgsi(sh.text);
     } catch (e) {
@@ -863,6 +879,7 @@ export class VirglRenderer {
     if (readBack) {
       const data = this.readback(r, p[1], box, stride, layerStride);
       if (!data) return this.error(`can't read back resource ${r.id} (format ${r.format})`);
+      if (r.target === PIPE_BUFFER) this.debug?.(`read back ${r.id} [${box.x}, +${box.w}) to staging ${staging.id} at ${offset}: ${[...data.subarray(0, 16)].join(',')}`);
       this.writeBacking(staging, offset, data);
     } else {
       const data = this.readBacking(staging, offset, n);
@@ -1219,7 +1236,11 @@ void main() {
     // Nothing to draw on, only captures: a framebuffer of its own (WebGL2 draws on a complete one), rasterizer off.
     const captureOnly = !fb && !!so;
     if (captureOnly) fb = this.bindNullFramebuffer();
-    if (!fb) return;
+    if (!fb) {
+      // Nothing to draw on and nothing captured: only a primitives-generated query sees the draw.
+      for (const [q, ctx] of this.counting) if (ctx === c.id && q.type === Q_GENERATED) q.result += primitives(mode, count) * Math.max(1, instances);
+      return;
+    }
     const rs = s.rs, dsa = s.dsa, blend = s.blend;
     // The program for this state.
     const key: ProgramKey = {
@@ -1235,7 +1256,7 @@ void main() {
       flatshade: rs?.flatshade, twoSide: rs?.lightTwoSide, clampColor: rs?.clampFragmentColor, stipple: rs?.stipple,
       points: mode === 0, pointSizePerVertex: rs?.pointSizePerVertex,
       spriteCoordEnable: mode === 0 && rs?.pointQuad ? rs.spriteCoordEnable : undefined, spriteUpperLeft: rs?.spriteUpperLeft,
-      ...(so ? { so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })), soSeparate: so.separate } : {}),
+      ...(so ? { so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })) } : {}),
     };
     const prog = this.program(vs, fs, key);
     if (!prog) return;
@@ -1418,7 +1439,7 @@ void main() {
       const vpp = mode === 0 ? 1 : mode === 1 ? 2 : mode === 4 ? 3 : 0;
       if (!vpp || indexed) this.error(`stream output from ${indexed ? 'an indexed draw' : `primitive ${mode}`}: WebGL2 captures unindexed lists only`);
       else {
-        const fit = Math.min(...so.plan.bindings.map((b) => Math.floor(Math.max(0, b.t.size - b.t.filled) / (b.bytes * vpp))));
+        const fit = Math.min(...so.plan.targets.map((b) => Math.floor(Math.max(0, b.t.size - b.t.filled) / (b.stride * 4 * vpp))));
         const per = Math.floor(count / vpp);
         if (inst === 1) emitted = Math.min(per, fit);
         else { drawInstances = per ? Math.min(inst, Math.floor(fit / per)) : inst; emitted = drawInstances * per; }
@@ -1428,7 +1449,19 @@ void main() {
         } else drawInstances = instances;
       }
     }
-    for (const [q, ctx] of this.counting) if (ctx === c.id) q.result += q.type === 6 ? primitives(mode, count) * inst : emitted;
+    if (so && this.debug) {
+      // The first vertex's attributes, from the buffers' copies (as words).
+      const attrs = (s.ve ?? []).map((e, k) => {
+        const vb = s.vbs[e.vb], r = vb && this.resources.get(vb.res);
+        if (!r?.shadow) return `${k}:-`;
+        const at = vb.offset + e.offset + start * vb.stride;
+        const dv = new DataView(r.shadow.buffer, r.shadow.byteOffset);
+        return `${k}:res ${vb.res} @${at} stride ${vb.stride} fmt ${e.format} = ${[0, 1, 2, 3].map((q) => at + 4 * q + 4 <= r.shadow!.length ? dv.getUint32(at + 4 * q, true).toString(16) : '?').join(' ')}`;
+      });
+      this.debug(`stream output draw start ${start}: ${attrs.join('; ')}`);
+    }
+    if (so) this.debug?.(`stream output: mode ${mode} count ${count} x${inst}${indexed ? ' indexed' : ''}: ${emitted} primitives captured; targets ${so.plan.targets.map((t) => `${t.t.res}@${t.t.offset}+${t.t.size} filled ${t.t.filled} stride ${t.stride}`).join(', ')}; outputs ${so.outputs.map((o) => `${o.buffer}:${o.offset}+${o.comps}`).join(' ')}`);
+    for (const [q, ctx] of this.counting) if (ctx === c.id) q.result += q.type === Q_GENERATED ? primitives(mode, count) * inst : emitted;
     if (capture) this.beginCapture(s, capture.plan, capture.vertices, prim);
     if (indexed) {
       const ib = s.ib;
@@ -1481,63 +1514,63 @@ void main() {
     }
   }
 
-  /**
-   * How a vertex shader's stream outputs (to the targets bound) go to WebGL2, whose GLES 3.0 has two layouts: all of
-   * them interleaved in one buffer, packed in order, or each in a buffer of its own; no gaps (no gl_SkipComponents).
-   */
-  private soPlan(so: NonNullable<Shader['so']>, targets: (SoTarget | undefined)[]): { plan: SoPlan; outputs: SoOutput[]; separate: boolean } | undefined {
-    const outs = so.outputs.filter((o) => targets[o.buffer]);
-    if (!outs.length) return undefined;
-    const target = (buffer: number) => {
+  /** How a vertex shader's stream outputs (to the targets bound) are captured (`SoPlan`). */
+  private soPlan(so: NonNullable<Shader['so']>, targets: (SoTarget | undefined)[]): { plan: SoPlan; outputs: SoOutput[] } | undefined {
+    const outputs = so.outputs.filter((o) => targets[o.buffer]).sort((a, b) => a.buffer - b.buffer || a.offset - b.offset);
+    if (!outputs.length) return undefined;
+    const plan: SoPlan = { outputs, total: outputs.reduce((n, o) => n + o.comps, 0), targets: [] };
+    if (plan.total > 64) { this.error(`stream output of ${plan.total} words a vertex (WebGL2 captures 64)`); return undefined; }
+    for (const buffer of new Set(outputs.map((o) => o.buffer))) {
       const t = targets[buffer]!, r = this.resources.get(t.res);
       if (!r?.buf || !r.shadow) { this.error(`stream output to resource ${t.res}, not a buffer`); return undefined; }
       if ((t.offset & 3) !== 0) { this.error(`stream output at offset ${t.offset} (not a multiple of 4)`); return undefined; }
-      return { t, r };
-    };
-    const make = (outputs: SoOutput[], separate: boolean, bindings: { buffer: number; bytes: number }[]) => {
-      const bs = bindings.map((b) => { const tr = target(b.buffer); return tr && { ...tr, bytes: b.bytes }; });
-      if (bs.some((b) => !b)) return undefined;
-      const plan: SoPlan = { outputs, separate, bindings: bs as SoPlan['bindings'] };
-      return { plan, outputs, separate };
-    };
-    if (outs.every((o) => o.buffer === outs[0].buffer)) {
-      const sorted = [...outs].sort((a, b) => a.offset - b.offset);
-      let at = 0;
-      const packed = sorted.every((o) => { const ok = o.offset === at; at += o.comps; return ok; });
-      if (packed && so.strides[outs[0].buffer] === at) return make(sorted, false, [{ buffer: outs[0].buffer, bytes: at * 4 }]);
+      const stride = so.strides[buffer] || Math.max(...outputs.filter((o) => o.buffer === buffer).map((o) => o.offset + o.comps));
+      plan.targets.push({ buffer, t, r, stride });
     }
-    if (new Set(outs.map((o) => o.buffer)).size === outs.length && outs.every((o) => o.offset === 0 && so.strides[o.buffer] === o.comps)) {
-      const sorted = [...outs].sort((a, b) => a.buffer - b.buffer);
-      return make(sorted, true, sorted.map((o) => ({ buffer: o.buffer, bytes: o.comps * 4 })));
-    }
-    this.error(`stream output's layout (${outs.map((o) => `${o.buffer}:${o.offset}+${o.comps}`).join(' ')}, strides ${so.strides.join(' ')}) has no WebGL2 equivalent`);
-    return undefined;
+    return { plan, outputs };
   }
 
   private beginCapture(s: Sub, plan: SoPlan, vertices: number, prim: number) {
     const gl = this.gl;
-    // A buffer bound for transform feedback may be bound nowhere else.
-    for (const t of [E.ARRAY_BUFFER, E.COPY_READ_BUFFER, E.COPY_WRITE_BUFFER, E.PIXEL_PACK_BUFFER, E.PIXEL_UNPACK_BUFFER]) gl.bindBuffer(t, null);
     s.so.tf ??= gl.createTransformFeedback()!;
+    this.soScratch ??= gl.createBuffer()!;
+    // The scratch buffer is only ever a transform feedback buffer (WebGL keeps those apart from every other binding).
     gl.bindTransformFeedback(E.TRANSFORM_FEEDBACK, s.so.tf);
-    plan.bindings.forEach((b, k) => gl.bindBufferRange(E.TRANSFORM_FEEDBACK_BUFFER, k, b.r.buf!, b.t.offset + b.t.filled, vertices * b.bytes));
+    gl.bindBuffer(E.TRANSFORM_FEEDBACK_BUFFER, this.soScratch);
+    gl.bufferData(E.TRANSFORM_FEEDBACK_BUFFER, Math.max(4, vertices * plan.total * 4), E.STREAM_READ);
+    gl.bindBufferBase(E.TRANSFORM_FEEDBACK_BUFFER, 0, this.soScratch);
     gl.beginTransformFeedback(prim);
   }
 
   private endCapture(plan: SoPlan, vertices: number) {
     const gl = this.gl;
     gl.endTransformFeedback();
-    plan.bindings.forEach((_, k) => gl.bindBufferBase(E.TRANSFORM_FEEDBACK_BUFFER, k, null));
+    const words = new Uint32Array(vertices * plan.total);
+    gl.bindBuffer(E.TRANSFORM_FEEDBACK_BUFFER, this.soScratch!);
+    gl.getBufferSubData(E.TRANSFORM_FEEDBACK_BUFFER, 0, words);
+    this.debug?.(`captured ${vertices} vertices: ${[...words.subarray(0, 8)].map((w) => w.toString(16)).join(' ')}`);
+    gl.bindBufferBase(E.TRANSFORM_FEEDBACK_BUFFER, 0, null);
     gl.bindTransformFeedback(E.TRANSFORM_FEEDBACK, null);
-    // The buffer's CPU copy follows (index buffers, constant attributes and read-backs come from it).
-    for (const b of plan.bindings) {
-      const at = b.t.offset + b.t.filled, n = vertices * b.bytes;
-      gl.bindBuffer(E.COPY_READ_BUFFER, b.r.buf!);
-      gl.getBufferSubData(E.COPY_READ_BUFFER, at, b.r.shadow!, at, n);
-      b.r.idirty = true;
-      b.t.filled += n;
+    // Each output's words to its target at its offset, in the buffer's CPU copy, then the range written up to its buffer.
+    for (const tg of plan.targets) {
+      const dv = new DataView(tg.r.shadow!.buffer, tg.r.shadow!.byteOffset, tg.r.shadow!.length);
+      const base = tg.t.offset + tg.t.filled;
+      let at = 0;
+      for (const o of plan.outputs) {
+        if (o.buffer === tg.buffer) {
+          for (let v = 0; v < vertices; v++) {
+            for (let c = 0; c < o.comps; c++) dv.setUint32(base + (v * tg.stride + o.offset + c) * 4, words[v * plan.total + at + c], true);
+          }
+        }
+        at += o.comps;
+      }
+      const n = vertices * tg.stride * 4;
+      gl.bindBuffer(E.COPY_WRITE_BUFFER, tg.r.buf!);
+      gl.bufferSubData(E.COPY_WRITE_BUFFER, base, tg.r.shadow!, base, n);
+      tg.r.idirty = true;
+      tg.t.filled += n;
     }
-    gl.bindBuffer(E.COPY_READ_BUFFER, null);
+    gl.bindBuffer(E.COPY_WRITE_BUFFER, null);
   }
 
   private bindNullFramebuffer() {
@@ -1558,6 +1591,8 @@ void main() {
   private scratch?: WebGLBuffer;
   /** Repacked vertex attributes, by slot (never element arrays: WebGL keeps the two kinds of buffer apart). */
   private scratchVb: WebGLBuffer[] = [];
+  /** Transform feedback's scratch buffer (`SoPlan`). */
+  private soScratch?: WebGLBuffer;
 
   private scratchIndex(data: ArrayBufferView) {
     const gl = this.gl;
@@ -1624,15 +1659,16 @@ void main() {
 
   private beginQuery(c: Ctx, h: number) {
     const q = this.query(c, h);
+    this.debug?.(`begin query ${h}: type ${q?.type} index ${q?.index}`);
     if (!q) return;
     const gl = this.gl;
     // Occlusion counters and predicates: WebGL2 has only "any samples passed" (a counter reads 0 or 1).
-    if (q.type === 0 || q.type === 1 || q.type === 2) {
+    if (q.type === Q_OCCLUSION_COUNTER || q.type === Q_OCCLUSION_PREDICATE || q.type === Q_OCCLUSION_CONSERVATIVE) {
       q.q ??= gl.createQuery()!;
       gl.beginQuery(E.ANY_SAMPLES_PASSED_CONSERVATIVE, q.q);
     }
     // PRIMITIVES_GENERATED and PRIMITIVES_EMITTED: the draws count them (they know their primitives and what they captured).
-    if (q.type === 6 || q.type === 7) {
+    if (q.type === Q_GENERATED || q.type === Q_EMITTED) {
       q.result = 0;
       this.counting.set(q, c.id);
     }
@@ -1640,6 +1676,7 @@ void main() {
 
   private endQuery(c: Ctx, h: number) {
     const q = this.query(c, h);
+    this.debug?.(`end query ${h}: type ${q?.type} result ${q?.result}`);
     if (!q) return;
     const gl = this.gl;
     this.counting.delete(q);

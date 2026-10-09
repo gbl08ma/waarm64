@@ -276,10 +276,9 @@ export type ProgramKey = {
   spriteUpperLeft?: boolean;
   /**
    * Stream output: the vertex shader's components captured, in capture order (output register, first component,
-   * count), interleaved into one buffer or each into its own (`soSeparate`).
+   * count), interleaved into one buffer as bits (the renderer scatters them to their targets).
    */
   so?: { reg: number; start: number; comps: number }[];
-  soSeparate?: boolean;
 };
 
 /** What a program's uniforms and attributes are, for the renderer to bind. */
@@ -371,7 +370,7 @@ export function generate(vs: Tgsi, fs: Tgsi, key: ProgramKey): ProgramLayout {
     consts: { vs: v.const0, fs: f.const0 },
     ubos: { vs: v.ubos, fs: f.ubos },
     samplers: { vs: v.samplerList, fs: f.samplerList },
-    ...(key.so?.length ? { tf: { varyings: key.so.map((_, k) => `tf_${k}`), separate: !!key.soSeparate } } : {}),
+    ...(key.so?.length ? { tf: { varyings: key.so.map((_, k) => `tf_${k}`), separate: false } } : {}),
   };
 }
 
@@ -978,8 +977,9 @@ class Gen {
       if (this.writesPointSize()) h.push('vec4 o_psize = vec4(1.0);');
       // Stream output: the components captured, as the shader wrote them (before the position is flipped).
       (this.key.so ?? []).forEach((o, k) => {
-        h.push(`out highp ${o.comps === 1 ? 'float' : `vec${o.comps}`} tf_${k};`);
-        epilogue.push(`tf_${k} = ${this.vsOutput(o.reg)}.${'xyzw'.slice(o.start, o.start + o.comps)};`);
+        // As bits: an integer's survive (a float captured would canonicalize a NaN's pattern).
+        h.push(`flat out highp ${o.comps === 1 ? 'uint' : `uvec${o.comps}`} tf_${k};`);
+        epilogue.push(`tf_${k} = floatBitsToUint(${this.vsOutput(o.reg)}.${'xyzw'.slice(o.start, o.start + o.comps)});`);
       });
       epilogue.push('gl_Position.y *= u_adjy;');
     } else {

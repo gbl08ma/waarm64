@@ -997,7 +997,7 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
 | every 50th case | oracle (vtest, GLES 3.0) | page, first run | page, after the fixes below |
 |---|---|---|---|
 | GLES2 (344) | 342 pass, 2 not supported | 301 pass, 41 fail | **342 pass, 2 not supported** |
-| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s |
+| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s; then **862 pass, 26 fail, 8 n/s** (stream output, below) |
 
 - **Point size declared twice** in a vertex shader that writes it (`o_psize`: every such program failed to link).
 - **Stencil faces:** WebGL refuses a draw whose front and back stencil reference or masks differ (GLES allows it);
@@ -1008,9 +1008,19 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
   them, not state leaking.
 - `tests/virgl.test.ts` replays a capture of two of these cases (`tests/virgl/deqp-gles2-stencil-stride.vglt.gz`) on
   the recording WebGL2 and checks WebGL's rules at every draw; each fix planted back fails it.
-- **GLES3, still failing** (51): transform feedback (24: stream output's layouts, and its types), shadow samplers
-  (7), integer blits between formats (5), RGB9_E5 (2), two MSAA derivative cases, a blend equation with constant
-  color, `textureGradOffset` on a shadow array in a vertex shader (no GLSL ES overload), a copy from a source that
-  can't be read (49 warnings), an occlusion query, a buffer mapped as an index array, two fragment outputs (RGB10_A2UI,
-  RGBA4). Next by count.
+- **Stream output** (all 1,320 transform feedback cases: 0 passed before, 1,212 now, the rest not supported), three
+  bugs: (1) GLES 3.0's two capture layouts can't express Gallium's (several outputs a buffer, several buffers,
+  gaps): every output is now captured interleaved, as bits, into one scratch buffer and scattered to its target in
+  the buffer's copy, then uploaded (`SoPlan`); (2) Mesa never sets the append mask: a resume sets the same targets
+  again, and vrend continues a set of targets it has seen (a new Begin makes new targets), so the renderer did the
+  same instead of restarting at every set; (3) query types are virgl's numbers (`VIRGL_QUERY_*`: 5 primitives
+  generated, 6 emitted, 11 the conservative occlusion predicate), not Gallium's, so "primitives written" counted
+  generated ones. tests/virgl-browser.test.ts's stream output case covers a mixed layout with gaps, a resume as
+  Mesa encodes it and a paused draw inside the query (the old numbering, planted, fails it).
+- **The renderer's error log** is capped per kind of error (5 each, 200 in all): 49 copy-region errors had used up
+  the old cap of 50 and hidden the stream output's.
+- **GLES3, still failing** (26): shadow samplers (7), integer blits between formats (5), RGB9_E5 (2), two MSAA
+  derivative cases, a blend equation with constant color, `textureGradOffset` on a shadow array in a vertex shader
+  (no GLSL ES overload), a copy from a source that can't be read, an occlusion query, a buffer mapped as an index
+  array, two fragment outputs (RGB10_A2UI, RGBA4), a shared R16F renderbuffer, MSAA depth32f. Next by count.
 

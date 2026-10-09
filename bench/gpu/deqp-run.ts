@@ -5,7 +5,7 @@
 // cases a file names (CASES). Writes <out>/results.json: the counts by status and every case that didn't pass, with
 // the time a case took. The renderer's warnings come along (results.warnings).
 //   node bench/gpu/deqp-run.ts <gles2|gles3> <image.qcow2> [outdir]
-// CAPTURE=<file.vglt> keeps the 3D commands (web/virgl-trace.ts: fixtures for tests/virgl.test.ts). STRIDE=<n> (default 50), CASES=<file of case names, `*` wildcards allowed>, VIRGL_GPU=virgl,debug for the renderer's
+// DETAIL=<n> keeps dEQP's messages for the first n cases that didn't pass. CAPTURE=<file.vglt> keeps the 3D commands (web/virgl-trace.ts: fixtures for tests/virgl.test.ts). STRIDE=<n> (default 50), CASES=<file of case names, `*` wildcards allowed>, VIRGL_GPU=virgl,debug for the renderer's
 // trace (<out>/virgl-debug.txt), LIMIT_S=<seconds the guest may run dEQP, default 1500>.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { encodeTrace } from '../../web/virgl-trace.ts';
@@ -61,6 +61,11 @@ log('counts', JSON.stringify(results.counts));
 results.notPassed = await runLines("awk '$2 != \"Pass\" {print $1, $2}' /tmp/deqp.res", 120_000);
 results.slowest = await runLines('sort -k3 -n -r /tmp/deqp.res | head -10');
 results.last = await run('tail -3 /tmp/deqp.res');
+// DETAIL=<n>: dEQP's own messages (its log's Text and Result lines) for the first <n> cases that didn't pass.
+if (process.env.DETAIL) {
+  results.detail = await runLines(`awk '$2 != "Pass" && $2 != "NotSupported" {print $1}' /tmp/deqp.res | head -${Number(process.env.DETAIL)} | while read -r c; do echo "== $c"; awk -v c="$c" '/#beginTestCaseResult/{on = index($0, c) > 0} on && /<Text>|<Result /{gsub(/^[ \t]+/, ""); print}' /tmp/deqp.qpa | grep -v -E "^<Text>(Transform feedback varyings|GL_TRANSFORM_FEEDBACK|v_|Testing|Rendering result comparison)" | head -12; done`, 120_000);
+  log('detail', (results.detail as string[]).join('\n'));
+}
 if (CAPTURE) {
   // The guest's 3D commands with the memory they read, from boot (nothing 3D runs before dEQP) to the end.
   const b64 = await s.page.evaluate(() => {
