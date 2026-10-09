@@ -287,6 +287,7 @@ function start(snapshot?: File, resume = true) {
     if (run?.display !== display.port1) return;
     if (e.data.type === 'cursor') { guestCursor = e.data; showCursor(); return; }
     if ((e.data as { type: string }).type === 'draw-stats') ((window as unknown as { __drawStats?: unknown[] }).__drawStats ??= []).push(e.data);
+    if (e.data.type === 'capture') ((window as unknown as { __virglCapture?: Uint8Array[] }).__virglCapture ??= []).push(e.data.record);
     if (e.data?.type !== 'mode' || !(e.data.width > 0 && e.data.height > 0)) return;
     [fb.width, fb.height] = [e.data.width, e.data.height];
     fit();

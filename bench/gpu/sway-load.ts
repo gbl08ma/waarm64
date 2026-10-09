@@ -7,7 +7,10 @@
 // per CPU, ms of CPU a second per process) and the display's stats (`?displaystats`: flushes are frames, submits and
 // stream bytes a second). Screenshots and results.json go to <outdir>.
 //   node bench/gpu/sway-load.ts <mode> <image.qcow2> [outdir]
+// CAPTURE=<file.vglt> (virgl) keeps a trace of the guest's 3D commands from sway's start to foot's (web/virgl-trace.ts,
+// the renderer's fixtures) and stops there; SCREEN=<w>x<h> changes the screen's size.
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { encodeTrace } from '../../web/virgl-trace.ts';
 import { chromium } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 
@@ -16,7 +19,9 @@ const mode = process.argv[2] ?? 'virgl';
 const image = process.argv[3];
 if (!image) throw new Error('usage: node bench/gpu/sway-load.ts <virgl|pixman|llvmpipe> <image.qcow2> [outdir]');
 const out = process.argv[4] ?? new URL(`../results/local/sway-load/${mode}/`, import.meta.url).pathname;
-const VIRGL_GPU = process.env.VIRGL_GPU ?? 'virgl-null';
+const CAPTURE = process.env.CAPTURE;
+const VIRGL_GPU = (process.env.VIRGL_GPU ?? 'virgl-null') + (CAPTURE ? ',capture' : '');
+const SCREEN = process.env.SCREEN ?? '1376x762';
 mkdirSync(out, { recursive: true });
 const server = await startServer();
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -24,7 +29,7 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? 
 const page = await (await browser.newContext({ viewport: { width: 1400, height: 1300 } })).newPage();
 await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
 // The screen is a fixed 1376×762 (§16's size) whatever the layout: the page's setting, as its Size menu stores it.
-await page.addInitScript((key) => localStorage.setItem(key, JSON.stringify({ screen: '1376x762' })), SETTINGS_KEY);
+await page.addInitScript(([key, screen]) => localStorage.setItem(key, JSON.stringify({ screen })), [SETTINGS_KEY, SCREEN]);
 page.on('dialog', (d) => void d.accept());
 page.on('pageerror', (e) => console.log('pageerror', String(e)));
 const t0 = performance.now();
@@ -115,6 +120,25 @@ await page.keyboard.press('Enter', { delay: 80 });
 await page.waitForTimeout(150);
 await page.keyboard.up('Alt');
 await page.waitForTimeout(20_000);
+if (CAPTURE) {
+  await onScreen('echo hello from foot; ls /\n');
+  await page.waitForTimeout(5000);
+  // The records concatenated, as base64 (a page hands strings back quickly, arrays of numbers slowly).
+  const [n, b64] = await page.evaluate(() => {
+    const rs = (window as unknown as { __virglCapture?: Uint8Array[] }).__virglCapture ?? [];
+    let s = '';
+    for (const r of rs) for (let k = 0; k < r.length; k += 8192) s += String.fromCharCode(...r.subarray(k, k + 8192));
+    return [rs.length, btoa(s)] as const;
+  });
+  const records = { length: n };
+  const trace = encodeTrace([new Uint8Array(Buffer.from(b64, 'base64'))]);
+  writeFileSync(CAPTURE, trace);
+  await page.locator('#screen').screenshot({ path: `${out}/capture.png` });
+  log(`${CAPTURE}: ${records.length} records, ${trace.length} bytes`);
+  await browser.close();
+  server.close();
+  process.exit(0);
+}
 await load('foot-idle');
 await onScreen('while true; do date; done\n');
 await page.waitForTimeout(3000);

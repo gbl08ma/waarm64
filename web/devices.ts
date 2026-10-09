@@ -65,6 +65,8 @@ export type GpuSpec = {
   port?: MessagePort;
   /** Report flush-to-draw latencies on the port once a second (bench/gpu). */
   stats?: boolean;
+  /** Post a trace of the guest's 3D commands on the port (`{ type: 'capture', record }`, web/virgl-trace.ts): the renderer's fixtures. */
+  capture?: boolean;
   /** The queues' size (a power of 2, default 64). A small one is back-pressure: with replies paced to the frame, a guest that floods the display waits for room instead of burning its CPU on commits. */
   queueSize?: number;
 } & GpuOptions;
@@ -640,6 +642,7 @@ export class Devices {
         case 'gpu': {
           const b = gpuBackend(ctx, d, d.canvas ? canvasPresenter(d.canvas, d.port, d.stats) : {});
           if (d.port) d.port.onmessage = (e: MessageEvent<DisplayFromPage>) => { if (e.data?.type === 'size') b.gpu.setSize(e.data.width, e.data.height); };
+          if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;
         }
       }

@@ -12,6 +12,8 @@ export type DisplayToPage =
   /** The guest's cursor: its 64×64 RGBA and hotspot, `null` when the guest hid it, `undefined` when it never set one (the page's own pointer). The position isn't sent: the tablet is absolute, the host's pointer is the guest's. */
   | { type: 'cursor'; image: ArrayBuffer | null | undefined; hotX: number; hotY: number }
   /** With `stats`: once a second, the draws since the last (n) and the ms from the flush that made them to the draw (median, max): bench/gpu. */
+  /** A virgl trace's record (the spec's `capture`, web/virgl-trace.ts). */
+  | { type: 'capture'; record: Uint8Array }
   | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number };
 

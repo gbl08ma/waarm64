@@ -116,12 +116,13 @@ const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng',
 /**
  * The display's tuning: flush replies paced to the frame and a queue of 16 (docs/devices.md "virtio-gpu"); the page's
  * `?gpu=nopace,q<N>` changes them, for measurements. `?gpu=virgl-null` turns on virgl on the null renderer (G2: the
- * guest's 3D commands are counted, nothing is drawn, so a GL desktop's screen stays black).
+ * guest's 3D commands are counted, nothing is drawn, so a GL desktop's screen stays black); `capture` adds a trace of
+ * them on the display port (web/virgl-trace.ts; the page keeps it in `window.__virglCapture` for a test or a tool).
  */
 function gpuTuning() {
   const knobs = (new URLSearchParams(self.location.search).get('gpu') ?? '').split(',');
   const q = knobs.find((k) => /^q\d+$/.test(k));
-  return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virgl: knobs.includes('virgl-null') };
+  return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virgl: knobs.includes('virgl-null'), capture: knobs.includes('capture') };
 }
 /** A machine with a virtio-gpu draws through it, unless the page asked for the framebuffer. */
 const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu' && !m.simple;

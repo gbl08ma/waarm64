@@ -769,3 +769,63 @@ WebGL2 renderer) is worth building.** What it starts from: the caps in `virglCap
 `bench/results/local/g2/` on the dev VM (to become fixtures; `tools/virgl-oracle/capture.sh` makes them again); staging buffers read and written through their guest pages per
 `COPY_TRANSFER3D`; GLSL without the extensions virglrenderer leans on; the kernel's per-submit cost as the guest's
 remaining overhead.
+
+## 20. G3: the virgl renderer on WebGL2 (2026-10-09, in progress)
+
+The kickoff is `M8-GRAPHICS-KICKOFF.md` (the user's decisions: caps that follow the browser, WebGL2 presentation on 3D
+machines with canvas 2D kept without 3D, 3D behind `?gpu=virgl` until the page and snapshot tests pass with it, the
+Mac host for real-GPU numbers). What exists is in devices.md "virgl"; this is the record.
+
+### Loop 0: fixtures
+
+- **The device captures what a guest sends** (`Gpu.onCapture`, `GpuSpec.capture`, the page's `?gpu=…,capture`): a
+  trace (`web/virgl-trace.ts`) of every 3D control command and, before a command that reads guest memory, the bytes
+  it reads. `tools/virgl-capture.ts` runs glcomp on `alpine-virgl` in Node (`--llvmpipe`: on llvmpipe instead, keeping
+  the last frame's pixels from glcomp's new `dump` argument, `webpc.gldump=1`); `bench/gpu/sway-load.ts` with
+  `CAPTURE=` keeps sway's on the page. `tools/virgl-trace.ts` summarizes one.
+- **What reads guest memory** is three commands, not one: `COPY_TRANSFER3D` from a staging buffer (texture uploads),
+  and **`TRANSFER3D` in the stream** (the guest writes a buffer's own pages, vertex data, and the stream names the
+  range: `VIRGL_CAP_TRANSFER`), and the virtio `TRANSFER_TO_HOST_3D` (neither guest sends it). Every submit starts
+  with the queued `TRANSFER3D`s and an `END_TRANSFERS` padded to 1,009 dwords (4 KB of each submit is padding).
+- Committed (`tests/virgl/`): glcomp at 128×96 (3+3 frames, 285 KB) with llvmpipe's last frame (`check d90f3ca3`);
+  sway on the user's Arch image at 640×480 from its start to foot running `echo hello from foot; ls /` (765 records,
+  8.8 MB, 204 KB gzipped); the TGSI corpus (65 distinct shaders: the oracle's 16 glmark2 scenes and the two traces'),
+  `tests/virgl/tgsi-corpus.txt`. One of glcomp's two contexts is the initramfs's `nlplug-findfs`, which opens the
+  render node at boot and never closes it.
+
+### Loops 1 and 2: the renderer and the translator
+
+- **The renderer** (`web/virgl-renderer.ts`, TypeScript on one WebGL2 context) decodes the stream as vrend_decode.c
+  does and keeps vrend's model: contexts with sub-contexts that own the objects, resources attached to contexts, the GL
+  state set from the sub-context at every draw (nothing is assumed bound between draws, so one context serves all the
+  guest's). Buffers keep a CPU copy: WebGL2 forbids a buffer that is both an element array and anything else, and
+  Mesa's upload buffer is both, so the element buffer is made from the copy when an indexed draw needs it; a
+  vertex buffer with a zero stride (a constant) is read from it too, and base-vertex draws rebase their indices there.
+- **No BGRA and no texture swizzle in WebGL2:** a format is stored as its bytes are (`B8G8R8X8` is an RGBA8 texture
+  holding B, G, R, X) and swizzled in the generated shaders, on sampling (the format's swizzle composed with the
+  sampler view's) and on writing (the render target's stored order, the clear color, the blend color and the color
+  mask through it). An upload is then the guest's bytes as they are (no CPU pass), a read-back too, and the scanout
+  is drawn through the format's swizzle. Destination alpha of an X format reads 1 (the blend factors substituted).
+- **The translator** (`web/virgl-tgsi.ts`) parses the TGSI text tgsi_dump writes and generates GLSL ES 3.00 for a
+  vertex and fragment shader *pair* (their varyings must agree in name and interpolation, which only the pair knows):
+  registers are float vec4s holding bits (as vrend), constant buffer 0 a `uvec4` uniform array, the others uniform
+  blocks, immediates literals (bits where a float literal would be a denormal or not finite: small integers moved into
+  float registers must survive flushing). Programs are made at the draw that needs them, keyed by the state the
+  shader can't know (the attributes' integer-ness, each sampler's type and swizzle, each color buffer's type and
+  stored order, alpha test, flat shading, two-sided color, points). What GLES 3.0 lacks is refused with a reason
+  (images, buffers, `IMUL_HI`, cube arrays, multisampled textures); none of it is advertised.
+- **Caps from the browser** (`web/virgl-caps.ts`, decision 1): G2's caps are the floor (GLES 3.0's bits); the limits
+  are the context's, the format masks the table's formats whose extensions are present (`R16_UNORM` with
+  `EXT_texture_norm16`, float render targets with `EXT_color_buffer_float`, the compressed families with theirs),
+  constant buffer 0 the uniform vectors less 16 for the generated shaders' own. `capsBacked` says whether caps a
+  guest was given are still backed (a snapshot restored elsewhere).
+- **Coordinates:** our textures store rows as the guest does (row 0 first), which is Gallium's upper-left origin and
+  GL's own window coordinates, so nothing is flipped except: the front face (Gallium's is in its y-down window space:
+  `front_ccw` inverts, as vrend does for guest resources), a viewport with a negative y scale (the shader flips
+  `gl_Position.y` and the viewport is made positive), a fragment shader asking for a lower-left origin, and the
+  screen, whose top is row 0.
+
+**Results:** the corpus's 37 programs compile and link in Chromium (195 ms, SwiftShader). glcomp's trace, replayed
+through the device into the renderer on Chromium's WebGL2, draws what llvmpipe drew to within 7 levels a byte (mean
+0.76; the blended quads' filtering and rounding differ). sway's trace draws its desktop: the bar, foot's window, the
+prompt and `ls`'s colored output (147 draws, 4 programs, no errors).

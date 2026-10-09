@@ -3,7 +3,8 @@
 # composites like a Wayland compositor on Mesa's software rasterizer, without a display, and
 # prints "webpc: <phase> start/end" for the host to time: warm (the shaders compiled by LLVM,
 # 3 frames), frames (the timed ones). webpc.lp=N sets LP_NUM_THREADS (0: rasterize on the
-# calling thread; Mesa's default is a thread per CPU); webpc.gl=frames,quads,width,height.
+# calling thread; Mesa's default is a thread per CPU); webpc.gl=frames,quads,width,height; webpc.gldump=1 prints
+# the last frame's pixels (the virgl renderer's reference, tests/virgl/).
 # webpc.gpu=1: the machine has a virtio-gpu with virgl (G2): load its driver, so Mesa's EGL finds the
 # render node and draws through virgl instead of llvmpipe. In alpine-virgl, glcomp runs on the Mesa in
 # /opt/mesa (llvmpipe and virgl from one build: images/build.sh).
@@ -18,6 +19,7 @@ if grep -q 'webpc\.gpu=1' /proc/cmdline; then
   n=0; while [ ! -e /dev/dri/renderD128 ] && [ $n -lt 100 ]; do sleep 0.1; n=$((n + 1)); done
   ls /dev/dri
 fi
-/usr/local/bin/glcomp $args
+dump=$(sed -n 's/.*webpc\.gldump=\([0-9]*\).*/\1/p' /proc/cmdline)
+/usr/local/bin/glcomp $args $dump
 echo "webpc: test ok"
 poweroff

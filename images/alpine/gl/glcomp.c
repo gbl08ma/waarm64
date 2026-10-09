@@ -4,7 +4,9 @@
 // over the whole W x H target (wlroots' texture shader, roughly), and a glReadPixels that waits
 // for the rasterizer as a flip would. "webpc: <phase> start/end" lines time the phases for the
 // host; the check line hashes pixels read back (the same on every llvmpipe thread count).
-//   glcomp [frames] [quads] [w] [h]      (30 3 1376 762: sway's frame on the page's display)
+//   glcomp [frames] [quads] [w] [h] [dump]  (30 3 1376 762: sway's frame on the page's display)
+// dump=1 prints the last frame's pixels too ("glcomp: px <row> <hex RGBA>", rows bottom-up as GL reads them): the
+// reference for the virgl renderer's tests (tests/virgl/).
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES2/gl2.h>
@@ -21,7 +23,7 @@ static GLuint sh(GLenum k, const char *s) {
 }
 int main(int argc, char **argv) {
   int frames = argc > 1 ? atoi(argv[1]) : 30, quads = argc > 2 ? atoi(argv[2]) : 3;
-  int w = argc > 3 ? atoi(argv[3]) : 1376, h = argc > 4 ? atoi(argv[4]) : 762;
+  int w = argc > 3 ? atoi(argv[3]) : 1376, h = argc > 4 ? atoi(argv[4]) : 762, dump = argc > 5 ? atoi(argv[5]) : 0;
   PFNEGLGETPLATFORMDISPLAYEXTPROC gpd = (void *)eglGetProcAddress("eglGetPlatformDisplayEXT");
   EGLDisplay d = gpd(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, 0);
   if (!eglInitialize(d, 0, 0)) { fprintf(stderr, "eglInitialize failed\n"); return 1; }
@@ -77,5 +79,14 @@ int main(int argc, char **argv) {
     printf("glcomp: %s: %d frames, %.1f ms a frame, worst %.1f, %.2f frames/s\n", name, n, ms / n, worst, 1e3 * n / ms);
   }
   printf("glcomp: check %08x\n", sum);
+  if (dump) {
+    unsigned char *all = malloc((size_t)w * h * 4);
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, all);
+    for (int y = 0; y < h; y++) {
+      printf("glcomp: px %d ", y);
+      for (int x = 0; x < w * 4; x++) printf("%02x", all[(size_t)y * w * 4 + x]);
+      printf("\n");
+    }
+  }
   return 0;
 }

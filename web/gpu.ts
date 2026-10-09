@@ -11,7 +11,10 @@
 // reads only through those entries.
 import { gather, scatter, type Ctx, type Request } from './devices.ts';
 import { EDID_MAX, EDID_MIN, edid } from './edid.ts';
-import { VirglStats, virglCaps } from './virgl.ts';
+import { VirglStats, virglCaps, walk } from './virgl.ts';
+import { FORMATS as VIRGL_FORMATS, boxBytes } from './virgl-formats.ts';
+import { encodeRecord } from './virgl-trace.ts';
+import type { VirglHost } from './virgl-host.ts';
 
 const RAM_BASE = 0x4000_0000;
 
@@ -28,8 +31,12 @@ const ERR_INVALID_RESOURCE_ID = 0x1203, ERR_INVALID_CONTEXT_ID = 0x1204, ERR_INV
 const FLAG_FENCE = 1;
 const HDR = 24;
 const EVENT_DISPLAY = 1;
-/** The capsets with `virgl` (VIRTIO_GPU_CAPSET_VIRGL, VIRGL2): id, max version, the blob. */
-const CAPSETS = [[1, 1, virglCaps(1)], [2, 2, virglCaps(2)]] as const;
+/** The capsets with `virgl` (VIRTIO_GPU_CAPSET_VIRGL, VIRGL2) from the VIRGL2 blob: id, max version, the blob (VIRGL is its v1 part, max_version 1). */
+function capsets(caps: Uint8Array) {
+  const v1 = caps.slice(0, 77 * 4);
+  new DataView(v1.buffer).setUint32(0, 1, true);
+  return [[1, 1, v1], [2, 2, caps]] as const;
+}
 /** Contexts and 3D resources a guest may hold (a bound for a guest that leaks them: the null renderer keeps no host memory for most). */
 const MAX_CONTEXTS = 1024;
 const MAX_RESOURCES = 65536;
@@ -104,11 +111,14 @@ export type GpuOptions = {
   /** Pixels per inch for the EDID's physical size (default 96). */
   dpi?: number;
   /**
-   * 3D through virgl (VIRTIO_GPU_F_VIRGL and the VIRGL capsets: docs/devices.md "virgl"), on a null renderer for
-   * now: the guest's contexts, 3D resources and command streams are checked and counted, nothing is drawn, and
-   * fences signal at once. Off by default, so no guest's bytes or step counts move.
+   * 3D through virgl (VIRTIO_GPU_F_VIRGL and the VIRGL capsets: docs/devices.md "virgl"). The guest's contexts, 3D
+   * resources and command streams are checked here and run by the renderer (`Gpu.host`: the page's GPU worker, or a
+   * test's); without one, on a null renderer (counted, nothing drawn, fences at once). Off by default, so no guest's
+   * bytes or step counts move.
    */
   virgl?: boolean;
+  /** The VIRGL2 caps blob to advertise (the browser's, web/virgl-caps.ts); default `virglCaps(2)`, WebGL2's minimums. */
+  caps?: Uint8Array;
   /**
    * A test hook: after this many RESOURCE_FLUSHes the display changes to the size given (a
    * display event, as a page resize would raise), so the resize path is exact in deterministic runs.
@@ -181,8 +191,18 @@ export class Gpu {
   private contexts = new Map<number, Set<number>>();
   private virgl: VirglCounts = { commands: {}, toHostBytes: 0, fromHostBytes: 0, stream: new VirglStats().json() };
   private stream = new VirglStats();
-  /** Called with every SUBMIT_3D's command words (bench/results/local captures; the G3 renderer's test fixtures). */
+  /** Called with every SUBMIT_3D's command words (bench/results/local captures). */
   onSubmit?: (ctx: number, words: Uint32Array) => void;
+  /** Called with a trace's records (web/virgl-trace.ts) as the guest's 3D commands arrive: the renderer's fixtures. */
+  onCapture?: (record: Uint8Array) => void;
+  /**
+   * Where the 3D work runs, and on a 3D machine the screen too (web/virgl-host.ts). With a host, 2D resources keep
+   * their pixels in shared memory (the host's screen reads them in place) and every scanout goes to it.
+   */
+  host?: VirglHost;
+  /** A fenced command's wait for the host (taken by the backend, which holds the reply until it resolves). */
+  private wait: Promise<void> | undefined;
+  private capsets: ReturnType<typeof capsets>;
   private ram: () => Uint8Array;
   private ramSize: number;
   private o: GpuOptions;
@@ -194,13 +214,25 @@ export class Gpu {
     [this.ram, this.ramSize, this.o] = [ram, ramSize, o];
     this.wanted = { width: clampSize(o.width), height: clampSize(o.height) };
     [this.width, this.height] = [this.wanted.width, this.wanted.height];
+    this.capsets = capsets(o.caps ?? virglCaps(2));
   }
+
+  /** The wait a fenced command left for the host, if any: its reply waits for it. */
+  takeWait() {
+    const w = this.wait;
+    this.wait = undefined;
+    return w;
+  }
+
+  /** The caps blob the guest is given (VIRGL2). */
+  get caps() { return this.capsets[1][2]; }
 
   /** A control command (the whole readable payload) → the response to write (empty: none fits). */
   control(cmd: Uint8Array, room: number): Uint8Array {
     if (cmd.length < HDR) return this.reply(ERR_UNSPEC, cmd, room);
     const v = new DataView(cmd.buffer, cmd.byteOffset, cmd.length);
     const type = v.getUint32(0, true);
+    if (this.onCapture && this.o.virgl) this.capture(type, cmd, v);
     const need = (n: number) => cmd.length >= n;
     const u32 = (at: number) => v.getUint32(HDR + at, true);
     const rect = (at: number): Rect => ({ x: u32(at), y: u32(at + 4), w: u32(at + 8), h: u32(at + 12) });
@@ -231,7 +263,7 @@ export class Gpu {
         const bytes = width * height * 4; // exact in a double up to 2^53: 2^32 × 2^32 × 4 is not, but is refused all the same
         if (bytes > MAX_RESOURCE || this.total + bytes > MAX_TOTAL) return this.reply(ERR_OUT_OF_MEMORY, cmd, room);
         this.total += bytes;
-        this.resources.set(id, { id, format, width, height, pixels: new Uint8Array(bytes), backing: null });
+        this.resources.set(id, { id, format, width, height, pixels: this.pixels(bytes), backing: null });
         return this.reply(OK_NODATA, cmd, room);
       }
       case RESOURCE_UNREF: {
@@ -242,6 +274,7 @@ export class Gpu {
         this.total -= res.pixels.length;
         for (const set of this.contexts.values()) set.delete(res.id);
         if (this.scanout?.id === res.id) this.setScanout(null);
+        if (res.three) this.host?.call({ t: 'unref', id: res.id });
         return this.reply(OK_NODATA, cmd, room);
       }
       case SET_SCANOUT: {
@@ -255,8 +288,8 @@ export class Gpu {
         const res = this.resources.get(id);
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         if (!this.inside(r, res)) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
-        if (res.three && !res.pixels.length) {
-          // A virgl resource shown: black pixels for the page (the null renderer draws nothing into it).
+        if (res.three && !res.pixels.length && !this.host) {
+          // A virgl resource shown on the null renderer: black pixels for the page.
           const bytes = res.width * res.height * 4;
           if (res.three.target !== TARGET_2D || bytes > MAX_RESOURCE || this.total + bytes > MAX_TOTAL) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
           this.total += bytes;
@@ -306,6 +339,7 @@ export class Gpu {
           backing.push({ off: Number(addr) - RAM_BASE, len: Number(len) });
         }
         res.backing = backing;
+        if (res.three) this.host?.call({ t: 'backing', id, backing });
         return this.reply(OK_NODATA, cmd, room);
       }
       case RESOURCE_DETACH_BACKING: {
@@ -313,6 +347,7 @@ export class Gpu {
         const res = this.resources.get(u32(0));
         if (!res) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         res.backing = null;
+        if (res.three) this.host?.call({ t: 'backing', id: res.id, backing: null });
         return this.reply(OK_NODATA, cmd, room);
       }
       default:
@@ -330,7 +365,7 @@ export class Gpu {
       case GET_CAPSET_INFO: {
         count('GET_CAPSET_INFO');
         if (!need(HDR + 4)) return this.reply(ERR_UNSPEC, cmd, room);
-        const c = CAPSETS[u32(0)];
+        const c = this.capsets[u32(0)];
         const r = new Uint8Array(HDR + 16);
         const w = new DataView(r.buffer);
         if (c) [c[0], c[1], c[2].length].forEach((x, k) => w.setUint32(HDR + 4 * k, x, true));
@@ -339,7 +374,7 @@ export class Gpu {
       case GET_CAPSET: {
         count('GET_CAPSET');
         if (!need(HDR + 8)) return this.reply(ERR_UNSPEC, cmd, room);
-        const c = CAPSETS.find(([id]) => id === u32(0));
+        const c = this.capsets.find(([id]) => id === u32(0));
         if (!c || u32(4) > c[1]) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         const r = new Uint8Array(HDR + c[2].length);
         r.set(c[2], HDR);
@@ -349,11 +384,13 @@ export class Gpu {
         count('CTX_CREATE');
         if (ctxId === 0 || this.contexts.has(ctxId) || this.contexts.size >= MAX_CONTEXTS) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
         this.contexts.set(ctxId, new Set());
+        this.host?.call({ t: 'ctx', id: ctxId, create: true });
         return this.reply(OK_NODATA, cmd, room);
       }
       case CTX_DESTROY: {
         count('CTX_DESTROY');
         if (!this.contexts.delete(ctxId)) return this.reply(ERR_INVALID_CONTEXT_ID, cmd, room);
+        this.host?.call({ t: 'ctx', id: ctxId, create: false });
         return this.reply(OK_NODATA, cmd, room);
       }
       case CTX_ATTACH_RESOURCE: case CTX_DETACH_RESOURCE: {
@@ -364,6 +401,7 @@ export class Gpu {
         if (!this.resources.has(u32(0))) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         if (type === CTX_ATTACH_RESOURCE) set.add(u32(0));
         else set.delete(u32(0));
+        if (this.resources.get(u32(0))?.three) this.host?.call({ t: 'ctxres', ctx: ctxId, res: u32(0), attach: type === CTX_ATTACH_RESOURCE });
         return this.reply(OK_NODATA, cmd, room);
       }
       case RESOURCE_CREATE_3D: {
@@ -373,6 +411,8 @@ export class Gpu {
         if (id === 0 || this.resources.has(id) || this.resources.size >= MAX_RESOURCES) return this.reply(ERR_INVALID_RESOURCE_ID, cmd, room);
         if (target > 8 || width === 0 || height === 0 || depth === 0 || arraySize === 0) return this.reply(ERR_INVALID_PARAMETER, cmd, room);
         this.resources.set(id, { id, format, width, height, pixels: new Uint8Array(0), backing: null, three: { target, bind, depth, arraySize, lastLevel, samples } });
+        this.host?.call({ t: 'res', desc: { id, target, format, bind, width, height, depth, arraySize, lastLevel, samples, flags: u32(40) } });
+        this.fenced(cmd);
         return this.reply(OK_NODATA, cmd, room);
       }
       case TRANSFER_TO_HOST_3D: case TRANSFER_FROM_HOST_3D: {
@@ -388,6 +428,8 @@ export class Gpu {
         const bytes = res.three.target === 0 ? w : d > 1 ? layerStride * d : stride * h;
         if (to) this.virgl.toHostBytes += bytes;
         else this.virgl.fromHostBytes += bytes;
+        this.host?.call({ t: 'transfer', ctx: ctxId, res: res.id, level: u32(36), box: { x: u32(0), y: u32(4), z: u32(8), w, h, d }, offset: Number(v.getBigUint64(HDR + 24, true)), stride, layerStride, toHost: to });
+        this.fenced(cmd);
         return this.reply(OK_NODATA, cmd, room);
       }
       case SUBMIT_3D: {
@@ -401,11 +443,73 @@ export class Gpu {
         busy.submits++;
         busy.submitBytes += size;
         this.onSubmit?.(ctxId, words);
+        if (ok && this.host) {
+          this.host.call({ t: 'submit', ctx: ctxId, words });
+          this.fenced(cmd);
+        }
         return this.reply(ok ? OK_NODATA : ERR_INVALID_PARAMETER, cmd, room);
       }
       default:
         return this.reply(ERR_UNSPEC, cmd, room);
     }
+  }
+
+  /**
+   * `onCapture`: the command if it concerns 3D (and the scanout, which may show a 3D resource), after the guest
+   * memory it will read: the staging bytes a SUBMIT_3D's uploads copy (COPY_TRANSFER3D to the host), the region a
+   * TRANSFER_TO_HOST_3D copies.
+   */
+  private capture(type: number, cmd: Uint8Array, v: DataView) {
+    const u32 = (at: number) => (cmd.length >= HDR + at + 4 ? v.getUint32(HDR + at, true) : 0);
+    const three = (id: number) => this.resources.get(id)?.three !== undefined;
+    const data = (id: number, offset: number, len: number) => {
+      const res = this.resources.get(id);
+      if (!res?.backing || len <= 0) return;
+      const total = res.backing.reduce((n, b) => n + b.len, 0);
+      len = Math.min(len, total - offset);
+      if (len <= 0) return;
+      const bytes = new Uint8Array(len);
+      readBacking(this.ram(), res.backing, offset, bytes);
+      this.onCapture!(encodeRecord({ kind: 'data', res: id, offset, bytes }));
+    };
+    if (type === SUBMIT_3D && cmd.length >= HDR + 8) {
+      const size = u32(0);
+      if (size % 4 === 0 && cmd.length >= HDR + 8 + size) {
+        const words = new Uint32Array(cmd.buffer.slice(cmd.byteOffset + HDR + 8, cmd.byteOffset + HDR + 8 + size));
+        walk(words, (c, _obj, at, len) => {
+          // TRANSFER3D (43) and COPY_TRANSFER3D (45): dst, level, usage, stride, layer stride, box (x y z w h d), then
+          // TRANSFER3D's offset in the resource's own backing and direction (1: to the host), or COPY_TRANSFER3D's
+          // source (a staging buffer), offset in it and flags (2: a read-back).
+          const copy = c === 45 && len === 14 && !(words[at + 13] & 2);
+          if (!copy && !(c === 43 && len >= 13 && words[at + 12] === 1)) return;
+          const dst = this.resources.get(words[at]);
+          if (!dst?.three) return;
+          const [w, h, d] = [words[at + 8], words[at + 9], words[at + 10]];
+          const n = dst.three.target === 0 ? w : boxBytes(VIRGL_FORMATS.get(dst.format), w, h, d, words[at + 3], words[at + 4]);
+          if (copy) data(words[at + 11], words[at + 12], n);
+          else data(dst.id, words[at + 11], n);
+        });
+      }
+    } else if (type === TRANSFER_TO_HOST_3D && cmd.length >= HDR + 48) {
+      const res = this.resources.get(u32(32));
+      if (res?.three) {
+        const [w, h, d] = [u32(12), u32(16), u32(20)];
+        data(res.id, Number(v.getBigUint64(HDR + 24, true)), res.three.target === 0 ? w : boxBytes(VIRGL_FORMATS.get(res.format), w, h, d, u32(40), u32(44)));
+      }
+    }
+    const wanted = (type >= CTX_CREATE && type <= SUBMIT_3D) || type === SET_SCANOUT || type === GET_CAPSET
+      || ((type === RESOURCE_ATTACH_BACKING || type === RESOURCE_DETACH_BACKING || type === RESOURCE_UNREF || type === RESOURCE_FLUSH) && three(u32(type === RESOURCE_FLUSH ? 16 : 0)));
+    if (wanted) this.onCapture!(encodeRecord({ kind: 'command', bytes: cmd.slice() }));
+  }
+
+  /** A command with a fence waits for the host to have run everything before its reply goes. */
+  private fenced(cmd: Uint8Array) {
+    if (this.host && new DataView(cmd.buffer, cmd.byteOffset, 8).getUint32(4, true) & FLAG_FENCE) this.wait = this.host.fence();
+  }
+
+  /** A 2D resource's pixels: in shared memory when a host's screen shows them. */
+  private pixels(bytes: number) {
+    return this.host ? new Uint8Array(new SharedArrayBuffer(bytes)) : new Uint8Array(bytes);
   }
 
   /** A cursor command (UPDATE_CURSOR, MOVE_CURSOR): no response. */
@@ -487,6 +591,11 @@ export class Gpu {
     this.scanout = s;
     this.announce();
     const res = s && this.resources.get(s.id);
+    if (this.host) {
+      if (!s || !res) this.host.call({ t: 'scanout', width: 0, height: 0, rect: { x: 0, y: 0, w: 0, h: 0 } });
+      else if (res.three) this.host.call({ t: 'scanout', res: res.id, width: res.width, height: res.height, rect: { ...s.rect } });
+      else this.host.call({ t: 'scanout', pixels: res.pixels, width: res.width, height: res.height, rect: { ...s.rect } });
+    }
     if (s && res) {
       this.shown = { width: res.width, height: res.height };
       this.draw(res, s.rect);
@@ -509,7 +618,9 @@ export class Gpu {
     const x0 = Math.max(r.x, s.rect.x), y0 = Math.max(r.y, s.rect.y);
     const x1 = Math.min(r.x + r.w, s.rect.x + s.rect.w), y1 = Math.min(r.y + r.h, s.rect.y + s.rect.h);
     if (x1 <= x0 || y1 <= y0) return;
-    this.hooks.damage?.({ x: x0 - s.rect.x, y: y0 - s.rect.y, w: x1 - x0, h: y1 - y0 });
+    const rect = { x: x0 - s.rect.x, y: y0 - s.rect.y, w: x1 - x0, h: y1 - y0 };
+    this.hooks.damage?.(rect);
+    this.host?.call({ t: 'damage', rect });
   }
 
   /** Tells the hooks the scanout as it is now. */
@@ -522,7 +633,8 @@ export class Gpu {
   private flush(res: Resource, r: Rect) {
     busy.flushes++;
     // A page flip is transfer, SET_SCANOUT, flush: the scanout change has drawn it all, and the flush would draw it again.
-    if (res.changed) this.draw(res, r);
+    // A 3D resource changes on the host: every flush shows it.
+    if (res.changed || (res.three && this.host)) this.draw(res, r);
     if (this.o.trace) this.trace.push(this.screenHash() ?? '');
     const t = this.o.resize;
     if (t && ++this.flushes === t.after) this.setSize(t.width, t.height);
@@ -640,6 +752,7 @@ export class Gpu {
     this.shown = { width: 0, height: 0 };
     this.resources.clear();
     this.contexts.clear();
+    this.host?.call({ t: 'reset' });
     this.total = 0;
     this.cursorImage = null;
     this.cursorState = { hotX: 0, hotY: 0, x: 0, y: 0 };
@@ -669,7 +782,7 @@ export class Gpu {
     this.bounce = false;
     this.trace = t.trace ?? [];
     for (const r of t.resources) {
-      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: new Uint8Array(r.width * r.height * 4), backing: r.backing?.map(([off, len]) => ({ off, len })) ?? null };
+      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: this.pixels(r.width * r.height * 4), backing: r.backing?.map(([off, len]) => ({ off, len })) ?? null };
       this.total += res.pixels.length;
       this.resources.set(res.id, res);
       if (res.backing) this.transfer(res, { x: 0, y: 0, w: res.width, h: res.height }, 0);
@@ -725,20 +838,30 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
     const v = new DataView(c.buffer, c.byteOffset, 16);
     v.setUint32(0, v.getUint32(0, true) | EVENT_DISPLAY, true);
   });
-  // `paceFlushes`: the replies not sent yet, in order (the first is a flush's), and when a flush was last answered.
-  let held: { w0: number; len: number; flush: boolean }[] = [];
+  // Replies not sent yet, in order: a fenced command's waits for the host (`ready` once it has run), and with
+  // `paceFlushes` a flush that follows the last within a frame waits for the frame's end, with all behind it.
+  type Held = { w0: number; len: number; flush: boolean; ready: boolean };
+  let held: Held[] = [];
   let lastFlush = -Infinity;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const FRAME_MS = 1000 / 60;
-  /** A frame ended: the flush that waited for it is answered, with what was queued behind it up to the next flush. */
-  const release = () => {
-    timer = undefined;
-    // The frame's end is a frame after the last, not when the timer got to run (timers are late: the rate would sag below 60).
-    const now = performance.now();
-    lastFlush = now - lastFlush < 2 * FRAME_MS ? lastFlush + FRAME_MS : now;
-    const next = held.findIndex((h, k) => k > 0 && h.flush);
-    for (const h of held.splice(0, next < 0 ? held.length : next)) ctx.complete(h.w0, h.len);
-    if (held.length) timer = setTimeout(release, Math.max(0, lastFlush + FRAME_MS - now));
+  const pump = (fromTimer = false) => {
+    while (held.length) {
+      const h = held[0];
+      if (!h.ready) return;
+      if (h.flush && o.paceFlushes) {
+        const now = performance.now();
+        if (!fromTimer && now - lastFlush < FRAME_MS) {
+          timer ??= setTimeout(() => { timer = undefined; pump(true); }, Math.max(0, lastFlush + FRAME_MS - now));
+          return;
+        }
+        // A frame's end is a frame after the last, not when the timer got to run (timers are late: the rate would sag below 60).
+        lastFlush = fromTimer && now - lastFlush < 2 * FRAME_MS ? lastFlush + FRAME_MS : now;
+        fromTimer = false;
+      }
+      held.shift();
+      ctx.complete(h.w0, h.len);
+    }
   };
   return {
     gpu,
@@ -756,16 +879,17 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       scatter(ram, r.write, reply);
       busy.request += performance.now() - t0;
       busy.requests++;
-      if (o.paceFlushes) {
-        const flush = cmd.length >= 4 && new DataView(cmd.buffer, cmd.byteOffset, 4).getUint32(0, true) === RESOURCE_FLUSH;
-        const now = performance.now();
-        if (held.length || (flush && now - lastFlush < FRAME_MS)) {
-          held.push({ w0: r.w0, len: reply.length, flush });
-          timer ??= setTimeout(release, Math.max(0, lastFlush + FRAME_MS - now));
-          return undefined;
-        }
-        if (flush) lastFlush = now;
+      const wait = gpu.takeWait();
+      const flush = !!o.paceFlushes && cmd.length >= 4 && new DataView(cmd.buffer, cmd.byteOffset, 4).getUint32(0, true) === RESOURCE_FLUSH;
+      const now = performance.now();
+      if (held.length || wait || (flush && now - lastFlush < FRAME_MS)) {
+        const h: Held = { w0: r.w0, len: reply.length, flush, ready: !wait };
+        held.push(h);
+        if (wait) void wait.then(() => { h.ready = true; pump(); });
+        else pump();
+        return undefined;
       }
+      if (flush) lastFlush = now;
       return reply.length;
     },
     // events_clear: write-one-to-clear of events_read; the guest's write is taken and zeroed.
