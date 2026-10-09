@@ -421,8 +421,8 @@ export class Gpu {
     // sends hundreds of these a second, and the guest waits for each).
     const swap = res.format === 1 || res.format === 2;
     if ((swap || res.format === 67 || res.format === 134) && ram.byteOffset % 4 === 0 && offset % 4 === 0 && backing.every((b) => b.off % 4 === 0 && b.len % 4 === 0)) {
-      const src = new Uint32Array(ram.buffer, ram.byteOffset, ram.length >> 2);
-      const dst = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length >> 2);
+      const src = new Uint32Array(ram.buffer, ram.byteOffset, ram.length >>> 2);
+      const dst = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length >>> 2);
       const opaque = res.opaque ? 0xff000000 : 0;
       const words = r.w;
       let seg = 0, segStart = 0; // the backing page holding the byte at `at`, and where it starts: rows only move forward
@@ -432,8 +432,8 @@ export class Gpu {
         let d = (r.y + y) * res.width + r.x;
         for (let left = words; left > 0;) {
           const b = backing[seg];
-          const s0 = (b.off + (at - segStart)) >> 2;
-          const n = Math.min(left, (b.len - (at - segStart)) >> 2);
+          const s0 = (b.off + (at - segStart)) >>> 2;
+          const n = Math.min(left, (b.len - (at - segStart)) >>> 2);
           if (swap) for (let k = 0; k < n; k++) {
             const v = src[s0 + k];
             dst[d + k] = (v & 0xff00ff00 | v >>> 16 & 0xff | (v & 0xff) << 16 | opaque) >>> 0;

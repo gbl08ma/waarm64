@@ -22,7 +22,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/bootfs.ts`, `web/ext4.ts` | partition tables, a read-only ext2/3/4 reader, a distribution's kernel and initrd (below, "The disk reader") |
 
 Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot` (the
-default is `debian`), `?ncpus=N`, `?view=screen|terminal|both` (over the remembered view),
+default is `debian`), `?ncpus=N`, `?ram=MiB` (both over the Machine menu's choice), `?view=screen|terminal|both` (over the remembered view),
 `?params=…` (extra kernel parameters for a direct-boot machine, placed before a `--`: e.g.
 `init=/nonexistent` to make Buildroot panic, as a test does; Debian's bootloader owns its command
 line: edit it in GRUB), `?credential=name:value` (repeatable: a systemd credential over fw_cfg for a
@@ -63,7 +63,7 @@ The seed of phase D's embedding API; not frozen. One machine per worker: a resta
 worker and starts a new one (fresh memory, fresh ports).
 
 Page → worker:
-- `start {machine, ncpus, keyboard, tablet, serial, screen, params?, credentials?}`: three transferred `MessagePort`s
+- `start {machine, ncpus, ramMiB, keyboard, tablet, serial, screen, params?, credentials?}`: three transferred `MessagePort`s
   and a transferred `OffscreenCanvas`. The keyboard's and the tablet's ports go to the device
   worker (web/input.ts's `attachInput` sends Linux input events to the other ends; LED changes
   come back on the keyboard's). `serial` is `BootOptions.serialIn`: strings or bytes for the
@@ -73,7 +73,7 @@ Page → worker:
   parameters (direct-boot machines). `credentials`: systemd credentials over fw_cfg for a firmware
   machine, beside the machine's own (the network card's). `disk2`: a URL for the second disk.
   `disk`: `{url?, file?, overlay}`, the root disk to boot instead of the machine's (below, "Your own disk").
-  `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); `ncpus`, the kernel
+  `snapshot`: a `File` to start from instead of booting (below, "Snapshots"); `ncpus` and `ramMiB`, the kernel
   and the command line are then the file's.
 - `snapshot {handle?}`: save a snapshot of the running machine to the file handle's stream, or,
   without one, back in `snapshot-chunk` messages; answered by `snapshot-done` or `snapshot-error`.
@@ -201,8 +201,8 @@ as Reset disk says) is replaced by the snapshot's changes to the disk**. Then, t
 
 **The worker's start from a snapshot** downloads the core only (no kernel or initrd), compiles it
 once (the same module goes to `bootVm` and to the LZ codec, `lzCodec`), reads the header, and makes
-the devices **as the header says** (`devices`, below) from what the page passed, with `ncpus` from
-the header (the status line shows it, not the page's `?ncpus=`). Then `readSnapshot` checks
+the devices **as the header says** (`devices`, below) from what the page passed, with `ncpus` and the RAM size (`ramSize`) from
+the header (the status line shows them, not the page's `?ncpus=` or Machine menu). Then `readSnapshot` checks
 everything that can be refused before anything is touched (the whole file's checksums, the core's
 state version, the disk's identity), and only `bootVm` with `restore` replaces the overlay by the
 file's blocks. For a firmware machine the restored flash bank is written back beside the new
@@ -417,8 +417,12 @@ The dev server serves exactly two files from `node_modules`, `@xterm/xterm/lib/x
 Screen (the default, decision 2), Serial terminal, or Both (side by side; stacked below 1100 px).
 The view chosen last is remembered per browser (`localStorage` `webpc.settings`, JSON; read and
 written in try/catch, so a browser that refuses storage just doesn't remember); `?view=` overrides
-it without being saved. It's the only setting so far; vCPUs and RAM stay defaults (`min(4, cores −
-2)`, 1 GiB) until phase D's settings.
+it without being saved. The **Machine** menu sets the vCPU count (1, 2, 3, 4, 6, 8) and the RAM
+(512 MiB to 2.5 GiB: the wasm memory is the RAM plus the 1 GiB heap reserve and must fit 4 GiB) and
+applies them with a confirmed restart; both are remembered per browser too (`ncpus`, `ramMiB`),
+with `?ncpus=` and `?ram=` over them. Defaults: `min(4, cores − 2)` vCPUs and the machine's RAM
+(1 GiB). The page's memory check (`hostMemoryGiB`) warns in the confirmation when the device
+reports less than the choice needs. A suspended machine resumes with its own size.
 
 Restart asks for a confirmation while the machine is booting or running (it's a power cut); after
 a power off the button reads Start. One restart or disk reset at a time (`exclusively` in

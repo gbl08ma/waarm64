@@ -254,7 +254,7 @@ export class SnapshotWriter {
   async ram(ram: Uint8Array, progress?: (done: number, total: number) => void): Promise<{ pages: number; frames: number }> {
     if (ram.length % PAGE !== 0) throw new RangeError('RAM is a whole number of 4 KiB pages');
     // Scanned where it lies when 4-aligned (the usual case); otherwise a chunk is copied first.
-    const aligned = ram.byteOffset % 4 === 0 ? new Uint32Array(ram.buffer, ram.byteOffset, ram.length >> 2) : null;
+    const aligned = ram.byteOffset % 4 === 0 ? new Uint32Array(ram.buffer, ram.byteOffset, ram.length >>> 2) : null;
     let pages = 0;
     let frames = 0;
     for (let base = 0; base < ram.length; base += CHUNK) {

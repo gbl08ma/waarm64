@@ -77,6 +77,8 @@ const shutdown = (v: Vm, machine: Machine) => (closed ??= (async () => {
 const failure = (problem: Problem, message: string) => Object.assign(new Error(message), { problem });
 
 /** What this machine is, for a snapshot's header (docs/frontend.md "Snapshots"). */
+/** The RAM of the machine being started, MiB (the page's choice, or a snapshot's). */
+let ramMiB = 0;
 let session: { name: MachineName; ncpus: number; disk: string | null; kinds: DeviceKind[] } | undefined;
 /** The core, compiled once: `bootVm` and the snapshot codec both take the module. */
 let core: WebAssembly.Module | undefined;
@@ -142,7 +144,9 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, diskUr
     if (typeof d === 'string') throw failure('snapshot', `${what}: its machine had ${d}.\nOpen this page as that machine was started (the same ?disk2=…, with its network), or Start ${machine.label} normally.`);
     return d;
   });
-  return { specs, kinds, ncpus };
+  const ram = Number(h.ramSize) / 2 ** 20;
+  if (!Number.isInteger(ram) || ram < 64 || ram > 3072) throw failure('snapshot', `${what}: its memory size isn't readable.\nStart boots ${machine.label} normally.`);
+  return { specs, kinds, ncpus, ramMiB: ram };
 }
 
 const CORE = new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url).href;
@@ -219,7 +223,7 @@ function explain(err: unknown, machine: Machine): [Problem, string] {
     return ['disk-mismatch', `${machine.label}'s saved disk was written over a different image than the one served now.\nReset the disk to start over from this image (what the machine wrote is deleted).\n\n${text}`];
   }
   if (e instanceof RangeError && /memory/i.test(text)) {
-    return ['memory', `The browser couldn't reserve ${machine.ramMiB} MiB for the machine's RAM.\nClose other tabs, then Retry.\n\n${text}`];
+    return ['memory', `The browser couldn't reserve ${ramMiB} MiB for the machine's RAM.\nClose other tabs, then Retry.\n\n${text}`];
   }
   return ['emulator', `The emulator stopped with an error:\n${e.stack ?? text}`];
 }
@@ -259,6 +263,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   const firmware = machine.firmware ? { flash: savedFlash, fwCfg: credentialFiles(credentials) } : undefined;
   if (stopping) return;
   let ncpus = m.ncpus;
+  ramMiB = m.ramMiB;
   let kinds = normalKinds(m, machine);
   let restore: Restore | undefined;
   if (snapshot) {
@@ -269,7 +274,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
       const lz = await codec();
       const { header } = await openSnapshot(snapshot, { codecs: [lz] });
       const h = fromHeader(header, m, machine, diskUrl, snapshotName);
-      ({ kinds, ncpus } = h);
+      ({ kinds, ncpus, ramMiB } = h);
       restore = (await readSnapshot(snapshot, lz, lz.snapshotVersion, { devices: h.specs, resume: !!resume })).restore;
       serialTail = typeof header.serial === 'string' ? header.serial : '';
     } catch (err) {
@@ -283,7 +288,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   const devices = kinds.map((k) => device(k, m, machine, diskUrl) as DeviceSpec);
   session = { name: m.machine, ncpus, disk: m.disk ? (m.disk.file?.name ?? new URL(m.disk.url!, self.location.href).pathname.split('/').pop() ?? 'disk') : null, kinds };
   booting = bootVm(core, {
-    ramSize: machine.ramMiB << 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true,
+    ramSize: ramMiB * 2 ** 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true,
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices,
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });
@@ -333,7 +338,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     // A tab can close without a shutdown: the variable store is kept as it changes (every 5 s at most).
     if (machine.firmware && ++ticks % 5 === 0) void keepFlash(vm!, machine);
     const now = performance.now();
-    post({ type: 'status', status: status(vm!, ncpus, machine.ramMiB, now - t0, loopMax, now - loopAt) });
+    post({ type: 'status', status: status(vm!, ncpus, ramMiB, now - t0, loopMax, now - loopAt) });
     loopMax = 0;
   }, 1000);
   // The keyboard's driver: the page sends keys typed on the screen to the serial console until it is up (the firmware's menus, GRUB).

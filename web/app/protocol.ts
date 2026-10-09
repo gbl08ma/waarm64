@@ -29,6 +29,8 @@ export type ToWorker =
     type: 'start';
     machine: MachineName;
     ncpus: number;
+    /** The guest's RAM, MiB (the machine's default, or the page's choice; a snapshot's own size wins). */
+    ramMiB: number;
     /** virtio-input's ports (web/input.ts sends to them; the keyboard's LEDs come back). */
     keyboard: MessagePort;
     tablet: MessagePort;
@@ -69,7 +71,7 @@ export type ToWorker =
     /**
      * Start from this snapshot file (the page's Load snapshot) instead of booting: the machine, its
      * devices and its vCPU count are the header's (below, docs/frontend.md "Snapshots"), the disk's
-     * overlay is replaced by the file's blocks. `ncpus` is then ignored.
+     * overlay is replaced by the file's blocks. `ncpus` and `ramMiB` are then ignored.
      */
     snapshot?: File;
     /**

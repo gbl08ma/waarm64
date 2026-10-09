@@ -21,7 +21,7 @@ self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; page?: boolean; seri
       get(new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url).href), get(m.kernel),
     ]);
     const vm = await bootVm(wasm, {
-      ramSize: m.ramMiB << 20, kernel, cmdline: '', jit: 1, ncpus: 2, parallel: true, realtime: true, serialIn: e.data.serial,
+      ramSize: m.ramMiB * 2 ** 20, kernel, cmdline: '', jit: 1, ncpus: 2, parallel: true, realtime: true, serialIn: e.data.serial,
       firmware: { fwCfg: credentialFiles([...UNATTENDED, ...(e.data.page ? m.network.credentials : [])]) },
       devices: [{ type: 'rng' }, { type: 'blk', url: m.disk, overlay: e.data.overlay }, { type: 'net', adapter: e.data.ip ? { ip: e.data.ip } : 'echo' }],
     });

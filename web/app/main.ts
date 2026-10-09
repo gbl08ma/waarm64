@@ -22,7 +22,6 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const params = new URLSearchParams(location.search);
 const machine = (params.get('machine') ?? 'debian') as MachineName;
 if (!(machine in MACHINES)) throw new Error(`no machine ${machine}`);
-const ncpus = Number(params.get('ncpus')) || defaultCpus(navigator.hardwareConcurrency || 4);
 const spec: Machine = MACHINES[machine];
 // `?credential=name:value` (repeatable): a systemd credential for a firmware machine, for development and tests.
 const credentials = params.getAll('credential').map((c) => ({ name: c.slice(0, c.indexOf(':')), data: c.slice(c.indexOf(':') + 1) }));
@@ -36,7 +35,7 @@ const overlayName = () => chosen?.overlay ?? spec.overlay;
 const diskName = () => (chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
 
 // Settings remembered per browser (the view, the network, whether saved disks are compressed). Storage can be off or throw: then nothing is remembered.
-type Settings = { view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean };
+type Settings = { ncpus?: number; ramMiB?: number; view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean };
 const SETTINGS = 'webpc.settings';
 const settings = (): Settings => {
   try {
@@ -50,6 +49,12 @@ const remember = (s: Settings) => {
     localStorage.setItem(SETTINGS, JSON.stringify({ ...settings(), ...s }));
   } catch { /* not remembered */ }
 };
+
+// The machine's size (the Machine menu): the query's, else the one chosen last in this browser, else the defaults.
+const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
+const RAM_CHOICES = [512, 1024, 1536, 2048, 2560];
+let ncpus = Number(params.get('ncpus')) || (CPU_CHOICES.includes(settings().ncpus!) ? settings().ncpus! : 0) || defaultCpus(navigator.hardwareConcurrency || 4);
+let ramMiB = Number(params.get('ram')) || (RAM_CHOICES.includes(settings().ramMiB!) ? settings().ramMiB! : 0) || spec.ramMiB;
 
 let canvas = $<HTMLCanvasElement>('screen');
 const screenBox = $('screen-view');
@@ -364,7 +369,7 @@ function start(snapshot?: File, resume = true) {
     snapshotJob?.error(`the machine's worker failed: ${e.message}`);
     setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator);
   };
-  worker.postMessage({ type: 'start', machine, ncpus, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, display.port2, ...(ip ? [ip] : [])]);
+  worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, screen, display.port2, ...(ip ? [ip] : [])]);
   if (ip) autoconnect();
   renderNetwork();
 }
@@ -857,6 +862,29 @@ const isView = (v: unknown): v is View => v === 'screen' || v === 'terminal' || 
 const asked = params.get('view');
 setView(isView(asked) ? asked : isView(settings().view) ? settings().view! : 'screen', false);
 
+// The Machine menu: vCPUs and RAM, applied by a restart (a power cut, like the other restarts).
+const cpuSelect = $<HTMLSelectElement>('machine-cpus');
+const ramSelect = $<HTMLSelectElement>('machine-ram');
+const cpuChoices = [...new Set([...CPU_CHOICES, ncpus])].sort((a, b) => a - b);
+const ramChoices = [...new Set([...RAM_CHOICES, ramMiB])].sort((a, b) => a - b);
+cpuSelect.replaceChildren(...cpuChoices.map((n) => new Option(`${n} vCPU${n > 1 ? 's' : ''}`, String(n))));
+ramSelect.replaceChildren(...ramChoices.map((n) => new Option(n >= 1024 && n % 512 === 0 ? `${n / 1024} GiB` : `${n} MiB`, String(n))));
+cpuSelect.value = String(ncpus);
+ramSelect.value = String(ramMiB);
+$<HTMLButtonElement>('machine-apply').onclick = () => {
+  const [n, r] = [Number(cpuSelect.value), Number(ramSelect.value)];
+  if (n === ncpus && r === ramMiB) return;
+  const need = hostMemoryGiB(r, n);
+  const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  const low = has !== undefined && has < need ? `\n\nThis needs about ${need.toFixed(1)} GB of memory and this device reports ${has} GB: if it runs out, the browser closes the tab without warning.` : '';
+  const running = state === 'running' || state === 'booting';
+  if (!confirm(`Restart with ${n} vCPU${n > 1 ? 's' : ''} and ${r} MiB of RAM?${running ? ' Like pulling the plug: unsaved work in the guest is lost.' : ''} A suspended machine is resumed as it was, with its own size.${low}`)) return;
+  [ncpus, ramMiB] = [n, r];
+  remember({ ncpus, ramMiB });
+  $<HTMLDetailsElement>('machine-menu').open = false;
+  void restart();
+};
+
 // Before starting: what the page can tell won't work.
 function boot() {
   // SharedArrayBuffer (the guest's memory, shared by the vCPU workers) needs cross-origin isolation.
@@ -866,11 +894,11 @@ function boot() {
     return;
   }
   // Chromium kills a renderer that runs out of memory without an error to catch (PLAN.md §4): judge up front.
-  const need = hostMemoryGiB(spec.ramMiB, ncpus);
+  const need = hostMemoryGiB(ramMiB, ncpus);
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   if (has !== undefined && has < need) {
-    const fewer = Math.floor((has - hostMemoryGiB(spec.ramMiB, 0)) / (hostMemoryGiB(0, 1) - hostMemoryGiB(0, 0)) + 1e-9);
-    setState('idle', `This machine needs about ${need.toFixed(1)} GB of memory (${spec.ramMiB} MiB of guest RAM plus the emulator, ${ncpus} vCPU${ncpus > 1 ? 's' : ''}), and this device reports ${has} GB.\nIf memory runs out, the browser closes the tab without warning. Close other tabs and apps first${fewer > 0 && fewer < ncpus ? `, or use fewer vCPUs (?ncpus=${fewer} fits)` : ''}.`, [{ label: 'Start anyway', run: () => void restart() }], 'warn');
+    const fewer = Math.floor((has - hostMemoryGiB(ramMiB, 0)) / (hostMemoryGiB(0, 1) - hostMemoryGiB(0, 0)) + 1e-9);
+    setState('idle', `This machine needs about ${need.toFixed(1)} GB of memory (${ramMiB} MiB of guest RAM plus the emulator, ${ncpus} vCPU${ncpus > 1 ? 's' : ''}), and this device reports ${has} GB.\nIf memory runs out, the browser closes the tab without warning. Close other tabs and apps first${fewer > 0 && fewer < ncpus ? `, or use fewer vCPUs (?ncpus=${fewer} fits)` : ''}.`, [{ label: 'Start anyway', run: () => void restart() }], 'warn');
     return;
   }
   start();
