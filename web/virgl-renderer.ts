@@ -27,7 +27,7 @@ export type ResourceDesc = {
 export type Box = { x: number; y: number; z: number; w: number; h: number; d: number };
 
 /** What a renderer does with the device's commands (the device worker calls these through `VirglHost`). */
-export type RendererStats = { submits: number; commands: number; draws: number; errors: number; programs: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number };
+export type RendererStats = { submits: number; commands: number; draws: number; errors: number; programs: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number; compileMs: number };
 
 type Res = ResourceDesc & {
   fmt?: Format;
@@ -36,6 +36,8 @@ type Res = ResourceDesc & {
   buf?: WebGLBuffer; shadow?: Uint8Array; ibuf?: WebGLBuffer; idirty?: boolean;
   /** A texture (or a renderbuffer, multisampled or stencil-only). */
   tex?: WebGLTexture; glTarget?: number; rb?: WebGLRenderbuffer;
+  /** A format WebGL can't render to (so no framebuffer reads it): its uploaded texels by level, for copies from it. */
+  texels?: Map<number, Uint8Array>;
   /** Contexts holding it (unref'd by the guest while attached somewhere: the GL objects live until the last goes). */
   refs: Set<number>;
   dead?: boolean;
@@ -147,7 +149,7 @@ export class VirglRenderer {
   private contexts = new Map<number, Ctx>();
   private programs = new Map<string, Program | null>();
   private serial = 0;
-  readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0 };
+  readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, compileMs: 0 };
   private fbo: WebGLFramebuffer;
   private readFbo: WebGLFramebuffer;
   private blitProg?: { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
@@ -461,6 +463,7 @@ export class VirglRenderer {
       for (let z = 0; z < box.d; z++) for (let y = 0; y < rows; y++) out.set(data.subarray(z * layerStride + y * stride, z * layerStride + y * stride + rowBytes), (z * rows + y) * rowBytes);
       [data, stride, layerStride] = [out, rowBytes, rowBytes * rows];
     }
+    if (!f.write && b === 1 && f.kind !== 'depth' && f.kind !== 'depthstencil' && f.kind !== 'stencil') this.keepTexels(r, level, box, data, stride, layerStride);
     const t = r.glTarget!;
     gl.bindTexture(t, r.tex);
     gl.bindBuffer(E.PIXEL_UNPACK_BUFFER, null);
@@ -557,7 +560,21 @@ export class VirglRenderer {
     return this.transferIov(r, level, box, offset, stride, layerStride, toHost);
   }
 
+  /**
+   * A transfer's strides as vrend reads them: 0 is the level's own row pitch (and image size), the backing laid out
+   * as the whole level, not the box (a sub-rectangle narrower than its level read the wrong rows).
+   */
+  private levelStrides(r: Res, level: number, stride: number, layerStride: number) {
+    const f = r.fmt;
+    if (!f || r.target === PIPE_BUFFER) return [stride, layerStride];
+    const b = f.block, { w, h } = this.levelSize(r, level);
+    stride ||= Math.ceil(w / b) * f.bpp;
+    layerStride ||= stride * (r.target === PIPE_TEXTURE_1D_ARRAY ? 1 : Math.ceil(h / b));
+    return [stride, layerStride];
+  }
+
   private transferIov(r: Res, level: number, box: Box, offset: number, stride: number, layerStride: number, toHost: boolean) {
+    [stride, layerStride] = this.levelStrides(r, level, stride, layerStride);
     const n = r.target === PIPE_BUFFER ? box.w : boxBytes(r.fmt, box.w, box.h, box.d, stride, layerStride);
     if (offset + n > this.backingSize(r)) { this.error(`transfer past resource ${r.id}'s backing`); return false; }
     if (toHost) {
@@ -880,7 +897,7 @@ export class VirglRenderer {
     const r = this.lookup(c, p[0]), staging = this.lookup(c, p[11]);
     if (!r || !staging) return;
     const box = { x: p[5], y: p[6], z: p[7], w: p[8], h: p[9], d: p[10] };
-    const [stride, layerStride, offset] = [p[3], p[4], p[12]];
+    const [stride, layerStride] = this.levelStrides(r, p[1], p[3], p[4]), offset = p[12];
     const n = r.target === PIPE_BUFFER ? box.w : boxBytes(r.fmt, box.w, box.h, box.d, stride, layerStride);
     if (offset + n > this.backingSize(staging)) return this.error(`COPY_TRANSFER3D past staging ${staging.id}`);
     if (readBack) {
@@ -894,12 +911,30 @@ export class VirglRenderer {
     }
   }
 
+  /** A level's size in texels: width, height and depth (or layers). */
+  private levelSize(r: Res, level: number) {
+    return { w: Math.max(1, r.width >> level), h: Math.max(1, r.height >> level), d: r.target === 3 ? Math.max(1, r.depth >> level) : Math.max(1, r.arraySize) };
+  }
+
+  /** Copies an upload into the texture's CPU copy of the level (`Res.texels`). */
+  private keepTexels(r: Res, level: number, box: Box, data: Uint8Array, stride: number, layerStride: number) {
+    const bpp = r.fmt!.bpp, { w, h, d } = this.levelSize(r, level);
+    r.texels ??= new Map();
+    let lv = r.texels.get(level);
+    if (!lv) r.texels.set(level, (lv = new Uint8Array(w * h * d * bpp)));
+    const row = box.w * bpp;
+    for (let z = 0; z < box.d; z++) for (let y = 0; y < box.h; y++) {
+      const at = (((box.z + z) * h + box.y + y) * w + box.x) * bpp;
+      if (at + row <= lv.length) lv.set(data.subarray(z * layerStride + y * stride, z * layerStride + y * stride + row), at);
+    }
+  }
+
   private copyRegion(c: Ctx, p: Uint32Array) {
     // dst, dst level, dst x y z, src, src level, src box
     if (p.length !== 13) throw new Error('bad RESOURCE_COPY_REGION');
     const dst = this.lookup(c, p[0]), src = this.lookup(c, p[5]);
     if (!dst || !src) return;
-    this.debug?.(`copy ctx ${c.id} ${p[5]}:${src.fmt?.name} -> ${p[0]}:${dst.fmt?.name}`);
+    this.debug?.(`copy ctx ${c.id} ${p[5]}:${src.fmt?.name} level ${p[6]} box ${p.slice(7, 13).join(',')} -> ${p[0]}:${dst.fmt?.name} level ${p[1]} at ${p.slice(2, 5).join(',')}`);
     const gl = this.gl;
     const [dx, dy, dz] = [p[2], p[3], p[4]];
     const box = { x: p[7], y: p[8], z: p[9], w: p[10], h: p[11], d: p[12] };
@@ -909,6 +944,15 @@ export class VirglRenderer {
       gl.bindBuffer(E.COPY_WRITE_BUFFER, dst.buf!);
       gl.bufferSubData(E.COPY_WRITE_BUFFER, dx, dst.shadow, dx, box.w);
       dst.idirty = true;
+      return;
+    }
+    // A source no framebuffer can read (a format WebGL can't render to): from its texels' CPU copy, uploaded again.
+    const lv = !src.fmt?.write && src.texels?.get(p[6]);
+    if (lv) {
+      const bpp = src.fmt!.bpp, { w, h } = this.levelSize(src, p[6]), row = box.w * bpp;
+      const out = new Uint8Array(row * box.h * box.d);
+      for (let z = 0; z < box.d; z++) for (let y = 0; y < box.h; y++) out.set(lv.subarray((((box.z + z) * h + box.y + y) * w + box.x) * bpp, (((box.z + z) * h + box.y + y) * w + box.x) * bpp + row), (z * box.h + y) * row);
+      this.upload(dst, p[1], { x: dx, y: dy, z: dz, w: box.w, h: box.h, d: box.d }, out, row, row * box.h);
       return;
     }
     // Textures: a raw copy of texels, layer by layer, through a blit (same storage formats: same bytes).
@@ -1217,7 +1261,9 @@ void main() {
       return null;
     }
     const gl = this.gl;
+    const t0 = performance.now();
     const prog = this.link(layout.vs, layout.fs, layout.tf);
+    this.stats.compileMs += performance.now() - t0; // translating aside: the browser's compile and link (synchronous here)
     if (!prog) { this.programs.set(id, null); return null; }
     this.stats.programs++;
     const loc = new Map<string, WebGLUniformLocation | null>();

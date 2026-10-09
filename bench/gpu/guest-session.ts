@@ -27,12 +27,12 @@ type VmStats = { steps: number; irqs: number; exceptions: Record<string, number>
 type VmStatus = { uptime: number; stats: VmStats };
 
 /** The guest's load script (/root/load.sh <secs> <mark>): /proc/stat's busy, user and system percent per CPU, and each
- * thread's ms of CPU a second (clock ticks are 10 ms) as `<mark> thr <process>/<thread> user <u> sys <s>` (spaces in
+ * thread's ms of CPU a second (clock ticks are 10 ms; and the CPUs' I/O wait) as `<mark> thr <process>/<thread> user <u> sys <s>` (spaces in
  * names as `_`; the threads that used at least 10 ms a second), over `secs`. */
 const LOAD_SH = String.raw`snap() { awk '{c=$0; sub(/^[0-9]+ \(/,"",c); n=c; sub(/\) [^)]*$/,"",n); sub(/^.*\) /,"",c); split(c,f," "); split(FILENAME,p,"/"); gsub(/ /,"_",n); print p[3], p[5], n, f[12], f[13]}' /proc/[0-9]*/task/[0-9]*/stat 2>/dev/null; }
 snap > /tmp/pa; cat /proc/stat > /tmp/a; sleep $1; cat /proc/stat > /tmp/b; snap > /tmp/pb
 awk -v m=$2 -v s=$1 'NR==FNR{u[$2]=$4;k[$2]=$5;next} ($2 in u){t[$2]=$3; if($1==$2) pn[$1]=$3; pid[$2]=$1; du[$2]=($4-u[$2])*10/s; ds[$2]=($5-k[$2])*10/s} END{for(x in du) if(du[x]+ds[x]>=10) printf "%s thr %s/%s user %d sys %d\n",m,pn[pid[x]]?pn[pid[x]]:pid[x],t[x],du[x],ds[x]}' /tmp/pa /tmp/pb
-awk -v m=$2 'NR==FNR&&/^cpu/{for(i=2;i<=9;i++)a[$1,i]=$i;next} /^cpu/{t=0;for(i=2;i<=9;i++){d[i]=$i-a[$1,i];t+=d[i]}; printf "%s %s busy %d user %d sys %d\n",m,$1,100*(t-d[5]-d[6])/t,100*(d[2]+d[3])/t,100*(d[4]+d[7]+d[8])/t}' /tmp/a /tmp/b
+awk -v m=$2 'NR==FNR&&/^cpu/{for(i=2;i<=9;i++)a[$1,i]=$i;next} /^cpu/{t=0;for(i=2;i<=9;i++){d[i]=$i-a[$1,i];t+=d[i]}; printf "%s %s busy %d user %d sys %d iowait %d\n",m,$1,100*(t-d[5]-d[6])/t,100*(d[2]+d[3])/t,100*(d[4]+d[7]+d[8])/t,100*d[6]/t}' /tmp/a /tmp/b
 echo $2-done
 `;
 
@@ -98,7 +98,7 @@ export async function openSession(o: SessionOptions) {
     const per = (k: string) => s.reduce((n, x) => n + (x.busy[k] ?? 0), 0) / Math.max(1, s.length);
     const r = await page.evaluate(() => ((window as unknown as { __renderStats?: unknown[] }).__renderStats ?? []).splice(0)) as Record<string, number>[];
     const rper = (k: string) => r.reduce((n, x) => n + (x[k] ?? 0), 0) / Math.max(1, r.length);
-    const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), commands: rper('commands'), uploadKB: rper('uploadBytes') / 1024, readbacks: rper('readbacks'), readbackKB: rper('readbackBytes') / 1024, programs: r.at(-1)!.programs, errors: r.at(-1)!.errors } : undefined;
+    const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), commands: rper('commands'), uploadKB: rper('uploadBytes') / 1024, readbacks: rper('readbacks'), readbackKB: rper('readbackBytes') / 1024, compileMs: rper('compileMs'), programs: r.at(-1)!.programs, errors: r.at(-1)!.errors } : undefined;
     const commands: Record<string, number> = {};
     for (const x of s) for (const [k, n] of Object.entries(x.busy.commands ?? {})) commands[COMMANDS[k] ?? k] = (commands[COMMANDS[k] ?? k] ?? 0) + n / Math.max(1, s.length);
     // Fenced replies a second, the mean and longest wait for the host; every held reply's time held (ms a second).
@@ -160,7 +160,7 @@ export async function openSession(o: SessionOptions) {
     const v1 = await vmStats();
     const d = { ...(await display()), vm: vmDelta(v0, v1) };
     const t = await terminal();
-    const cpus = [...t.matchAll(new RegExp(`${m} (cpu\\d?) busy (\\d+) user (\\d+) sys (\\d+)`, 'g'))].map((x) => ({ cpu: x[1], busy: +x[2], user: +x[3], sys: +x[4] }));
+    const cpus = [...t.matchAll(new RegExp(`${m} (cpu\\d?) busy (\\d+) user (\\d+) sys (\\d+) iowait (\\d+)`, 'g'))].map((x) => ({ cpu: x[1], busy: +x[2], user: +x[3], sys: +x[4], iowait: +x[5] }));
     const threads = [...t.matchAll(new RegExp(`${m} thr (\\S+) user (\\d+) sys (\\d+)`, 'g'))].map((x) => ({ thread: x[1], userMs: +x[2], sysMs: +x[3] }))
       .sort((a, b) => b.userMs + b.sysMs - a.userMs - a.sysMs);
     const r = { cpus, threads, display: d };

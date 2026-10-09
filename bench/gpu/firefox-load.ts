@@ -8,7 +8,8 @@
 // cubes (each after WARM_S s, 30 by default); with the frames Firefox's own animation ran each second (FFBENCH lines from its stdout). Also Firefox's
 // start time, which processes map Mesa, about:support's screenshot, and the renderer's warnings.
 //   node bench/gpu/firefox-load.ts <virgl|2d|pixman> <image.qcow2> [outdir]
-// GUEST_CMD runs a command in sway's session first (results.cmd). PHASES picks the phases (default `still,scroll,webgl,pages,support`; `pages` needs bench/gpu/firefox-pages.sh's disk);
+// GUEST_CMD runs a command in sway's session first (results.cmd). PHASES picks the phases (default
+// `still,scroll,webgl,pages,support`; `pages` needs bench/gpu/firefox-pages.sh's disk; `startup` measures a launch);
 // WARM_S, PHASE_S their times.
 // VIRGL_GPU picks the page's `?gpu=` in mode virgl (default `virgl`; `virgl-null` for G2's null renderer).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -100,6 +101,17 @@ const firefox = async (tag: string, url: string) => {
 };
 
 if (PHASES.includes('still')) await firefox('still', 'file:///home/alarm/ffbench/scroll.html?still');
+if (PHASES.includes('startup')) {
+  // Firefox's start (a profile it has used): its threads and the renderer from launch, for STARTUP_S seconds.
+  const secs = Number(process.env.STARTUP_S ?? 30);
+  await run('. /root/ff.sh; ffkill', 120_000);
+  await run('. /root/ff.sh; ffrun file:///home/alarm/ffbench/scroll.html?still startup');
+  const r = await load('startup', secs);
+  const started = await run('. /root/ff.sh; ffwait startup', 330_000);
+  results.startup = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), ...r };
+  log('startup', started, 'renderer', JSON.stringify(r.display.renderer ?? {}));
+  save();
+}
 results.mesa = await run('for p in $(pgrep -f firefox); do grep -q libgallium /proc/$p/maps && echo "$p $(cat /proc/$p/comm) $(ls -l /proc/$p/fd 2>/dev/null | grep -c /dev/dri)"; done | tr "\\n" ";"');
 log('mesa', results.mesa);
 if (PHASES.includes('scroll')) await firefox('scroll', 'file:///home/alarm/ffbench/scroll.html');

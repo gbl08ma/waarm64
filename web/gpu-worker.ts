@@ -16,7 +16,7 @@ export type FromGpuWorker =
   | { type: 'failed'; reason: string }
   | { type: 'lost' }
   /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
-  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number };
+  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number };
 
 let ram: Uint8Array = new Uint8Array(0);
 
@@ -81,7 +81,7 @@ self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
     let last = { ...renderer.stats };
     setInterval(() => {
       const s = renderer.stats;
-      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs });
+      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs, compileMs: s.compileMs - last.compileMs });
       fences = fenceMs = fenceMaxMs = 0;
       last = { ...s };
       busyMs = submitMs = 0;

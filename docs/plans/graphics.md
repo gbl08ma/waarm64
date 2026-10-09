@@ -997,7 +997,7 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
 | every 50th case | oracle (vtest, GLES 3.0) | page, first run | page, after the fixes below |
 |---|---|---|---|
 | GLES2 (344) | 342 pass, 2 not supported | 301 pass, 41 fail | **342 pass, 2 not supported** |
-| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s; then 862 (stream output, below), 869 (depth textures), **875 pass, 13 fail, 8 n/s** (integer blits) |
+| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s; then 862 (stream output, below), 869 (depth textures), 875 (integer blits), **878 pass, 10 fail, 8 n/s** (transfer strides) |
 
 - **Point size declared twice** in a vertex shader that writes it (`o_psize`: every such program failed to link).
 - **Stencil faces:** WebGL refuses a draw whose front and back stencil reference or masks differ (GLES allows it);
@@ -1027,9 +1027,24 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
 - **Integer formats** (all 641 `fbo.blit` cases: 629 pass, 12 not supported): a blit between integer formats of one
   signedness goes through GL's blit (the draw that converts formats samples a float texture, which an integer one
   can't be), and RGB10_A2UI reads back as four integers packed again (it read one 32-bit channel).
-- **GLES3, still failing** (13): RGB9_E5 (2), two MSAA
+- **Transfer strides** (`texture.specification.basic_texsubimage2d` and the format filtering groups: all 248
+  supported cases): a transfer's stride (and layer stride) of 0 is its level's own pitch, as vrend reads it (the
+  backing laid out as the whole level), not the box's width; Mesa writes a sub-image into the level's backing that
+  way (`TRANSFER3D`), and every sub-rectangle narrower than its level went up from the wrong rows. Likely beyond
+  dEQP: any partial texture update through the backing. And a texture of a format WebGL can't render to (RGB9_E5,
+  the SNORMs) keeps its uploaded texels on the CPU, so `RESOURCE_COPY_REGION` from it (Mesa moves a level into
+  its final texture that way) copies them (no framebuffer can read it). tests/virgl.test.ts checks the strides.
+- **GLES3, still failing** (10): two MSAA
   derivative cases, a blend equation with constant color, `textureGradOffset` on a shadow array in a vertex shader
-  (no GLSL ES overload), a copy from a source that can't be read (a format WebGL can't render to: RGB9_E5), an occlusion
-  query, a buffer mapped as an index array, a fragment output to RGBA4, a shared R16F renderbuffer, MSAA depth32f,
-  RGBA8_SNORM 3D filtering, a random fragment-ops case.
+  (no GLSL ES overload), an occlusion query, a buffer mapped as an index
+  array, a fragment output to RGBA4, a shared R16F renderbuffer, MSAA depth32f, a random fragment-ops case.
+
+### Loop 1: Firefox's start (2026-10-10)
+
+`PHASES=startup` in firefox-load.ts measures a launch on a profile Firefox has used (the threads from launch, the
+renderer's stats with its compile time). On the Mac's GPU (`bench/gpu/results/g4-firefox/mac-startup.json`): 32 s to
+the page, **one thread busy: Firefox's main thread at about two-thirds of a core** (541 ms user, 128 ms system a
+second), the machine at 43% of its 4 vCPUs, **no I/O wait**; the renderer works 8 ms a second, its shader compiles
+and links 7 ms a second (96 programs). Firefox's start is its main thread's guest CPU: the emulator's speed (the JIT
+track, `M8-JIT-HANDOVER.md`), not the graphics path. Page loads are the same kind of work (§21 loop 0's table).
 

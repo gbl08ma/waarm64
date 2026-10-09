@@ -6,34 +6,33 @@ machine".
 
 ## G4 so far
 
-- **Loop 0 (Firefox measured) is done** (§21): `bench/gpu/firefox-load.ts` on `bench/gpu/guest-session.ts` (shared
+- **Loop 0 (Firefox measured), done** (§21): `bench/gpu/firefox-load.ts` on `bench/gpu/guest-session.ts` (shared
   with sway-load.ts), the pages in `bench/gpu/firefox/`, real sites on a second disk (`bench/gpu/firefox-pages.sh` →
   `target/ffpages/pages.ext4`), `bench/gpu/sway-mac.sh` with `SCRIPT=firefox-load.ts` (and `HEADED=1`: the user
-  allows a visible window on the Mac when they aren't using it). The device and the GPU worker count commands by
-  type, fences' round trips by hop, held replies, read-backs (`?displaystats`). JSON in
-  `bench/gpu/results/g4-firefox/`.
-- **Loop 2 (the menu's Graphics: 3D or 2D) is done**: `web/app/main.ts` (`wants3d`, the query over the menu, the
-  page's `data-graphics`), `tests/page-machine.test.ts`'s Debian test in `scripts/ci-debian.sh`.
-- **What the user said was slow** (2026-10-09): real websites, scrolling, start-up and page loads. On the Mac's GPU,
-  scrolling real sites holds 50–60 frames a second; start-up (18–41 s) and loads (5–17 s) are the guest's CPU
-  (40–60% of 4 vCPUs, a quarter to a half in the kernel). The emulator's CPU speed is the JIT track's
-  (`M8-JIT-HANDOVER.md`); G4's levers are the graphics path's own costs.
-- **Next (loop 1, Firefox faster):** what Firefox's start-up spends (a phase over the first ~30 s after launch, the
-  threads; WebRender compiles its shaders through the guest's Mesa: is Mesa's disk shader cache on for virgl, does
-  `gfx.webrender.program-binary-disk` work with our caps, how long the host's compiles take, a renderer stat to add);
-  the 15–18 3D resources a second created and destroyed while scrolling (who: WebRender's texture cache or Mesa's
-  buffers; each is a guest kernel allocation and `ATTACH_BACKING`); replies held behind fenced ones (QEMU holds
-  only the fenced reply: try letting unfenced replies pass, keeping fenced ones in order). Measure on the Mac
-  (`sway-mac.sh`), A/B in one session.
-- **dEQP (loop 3) is prepared, not built:** `images/deqp/build.sh` and its Containerfile (VK-GL-CTS
-  opengl-es-cts-3.2.14.1, deqp-gles2/3 on EGL surfaceless, built natively in Podman from Arch's tarball, delivered
-  as `target/deqp/deqp.ext4` for `?disk2=`; the same image runs them on virpipe against the vtest oracle). Untested:
-  the data directories' paths in the build tree, whether `fetch_sources.py` is needed for GLES only, a runner
-  (`bench/gpu/deqp-run.ts`) and the subset's size (time a test under the JIT first). Mesa's source for reading:
-  `~/Development/src/mesa` (sparse, mesa-26.2.4).
+  allows a visible window on the Mac when they aren't using it). Phases: still, scroll, webgl, pages, menu,
+  startup, support; `GUEST_CMD`. JSON in `bench/gpu/results/g4-firefox/`.
+- **Loop 1 (Firefox faster): measured, nothing for the graphics path to take.** On the Mac's GPU, scrolling real sites
+  holds 50–60 frames a second; start-up (32 s) is Firefox's main thread alone at ~2/3 of a core, no I/O wait, the
+  renderer 8 ms a second; page loads are the same kind of guest CPU work. The emulator's speed is the JIT track's
+  (`M8-JIT-HANDOVER.md`). Left for the graphics side: the 15–18 3D resources a second created and destroyed while
+  scrolling (each a guest kernel allocation and `ATTACH_BACKING`), and replies held behind fenced ones (QEMU holds
+  only the fenced reply). On SwiftShader (the dev VM) fences wait ~18 ms behind each present: don't judge there.
+- **Loop 2 (the menu's Graphics: 3D or 2D), done**: `web/app/main.ts`, tested in `scripts/ci-debian.sh`.
+- **Loop 3 (dEQP), running** (§21 "Loop 3"): `images/deqp/build.sh` (VK-GL-CTS 3.2.14.1 for Arch, `target/deqp/deqp.ext4`),
+  `bench/gpu/deqp-run.ts` (every 50th mustpass case, or `CASES=` names and `*` patterns; `DETAIL=n` dEQP's
+  messages; `VIRGL_GPU=virgl,debug` the renderer's trace; `CAPTURE=` a fixture), `tools/virgl-oracle/deqp.sh` (the
+  oracle on vtest). Results in `bench/gpu/results/g4-deqp/`. The subsets: GLES2 342/344 (= the oracle), GLES3
+  878/896 (the oracle 884). Fixed along the way: an X target's alpha byte (Firefox's menus' black borders, the
+  user's report), point size declared twice, WebGL's stencil-face and attribute-stride rules, stream output
+  (layouts, resume, virgl's query numbering), depth copies and Z24 layouts, integer blits and RGB10_A2UI read-backs,
+  transfer strides (0 = the level's pitch), copies from non-renderable textures.
+- **Next:** the 10 GLES3 failures left (§21's list); then wider dEQP groups than the 1-in-50 sample (whole groups run
+  in minutes: `CASES=` patterns), and a dEQP pass list as a test (a CI script beside ci-debian.sh, the user's call
+  on its cost); then loop 5 (GTK4 on the Arch image: `gtk4-demo` is installed there).
 - The Arch image's guest-side helpers on the Mac: `~/webpc-arch/` (`start.sh` boots `myarch3.qcow2` under hvf with
   a network, virtio-mmio devices as ours; `vmsh.py <sock> <timeout> <cmd>` runs a command on its serial console as
-  root). The Mac's copy there is the grown image before its recompression.
+  root). Mesa's source for reading: `~/Development/src/mesa` (sparse, mesa-26.2.4); vrend's:
+  `target/virgl-oracle/src/src/vrend`.
 
 ## What exists (G3)
 

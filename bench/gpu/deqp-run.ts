@@ -63,7 +63,7 @@ results.slowest = await runLines('sort -k3 -n -r /tmp/deqp.res | head -10');
 results.last = await run('tail -3 /tmp/deqp.res');
 // DETAIL=<n>: dEQP's own messages (its log's Text and Result lines) for the first <n> cases that didn't pass.
 if (process.env.DETAIL) {
-  results.detail = await runLines(`awk '$2 != "Pass" && $2 != "NotSupported" {print $1}' /tmp/deqp.res | head -${Number(process.env.DETAIL)} | while read -r c; do echo "== $c"; awk -v c="$c" '/#beginTestCaseResult/{on = index($0, c) > 0} on && /<Text>|<Result /{gsub(/^[ \t]+/, ""); print}' /tmp/deqp.qpa | grep -v -E "^<Text>(Transform feedback varyings|GL_TRANSFORM_FEEDBACK|v_|Testing|Rendering result comparison)" | head -12; done`, 120_000);
+  results.detail = await runLines(`awk '$2 != "Pass" && $2 != "NotSupported" {print $1}' /tmp/deqp.res | head -${Number(process.env.DETAIL)} | while read -r c; do echo "== $c"; awk -v c="$c" '/#beginTestCaseResult/{on = index($0, c) > 0} on && /<Text>|<Result /{gsub(/^[ \t]+/, ""); print}' /tmp/deqp.qpa | grep -v -E "^<Text>(Transform feedback varyings|GL_TRANSFORM_FEEDBACK|v_|Testing|Rendering result comparison|gl[A-Z]|//)" | head -12; done`, 120_000);
   log('detail', (results.detail as string[]).join('\n'));
 }
 if (CAPTURE) {

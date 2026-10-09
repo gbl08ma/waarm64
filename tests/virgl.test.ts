@@ -262,6 +262,23 @@ test('virgl renderer: integer formats blit through GL\'s blit, and RGB10_A2UI re
   assert.ok(!gl.log.some(([n]) => n === 'drawArrays'), 'no sampling draw');
 });
 
+test('virgl renderer: a transfer\'s stride 0 is its level\'s pitch, as vrend reads it (dEQP-GLES3 texsubimage)', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const ram = new Uint8Array(64 * 32 * 4);
+  const r = new VirglRenderer(gl, { ram: () => ram, log: (m) => errors.push(m) });
+  r.createContext(1);
+  r.createResource({ id: 1, target: 2, format: 2, bind: 8, width: 64, height: 32, depth: 1, arraySize: 1, lastLevel: 1, samples: 0, flags: 0 });
+  r.attachBacking(1, [{ off: 0, len: ram.length }]);
+  // An 8x4 box at (16, 8) of level 0, and of level 1 (32 wide), from the backing laid out as the whole level.
+  assert.ok(r.transfer(1, 1, 0, { x: 16, y: 8, z: 0, w: 8, h: 4, d: 1 }, (8 * 64 + 16) * 4, 0, 0, true));
+  assert.ok(r.transfer(1, 1, 1, { x: 4, y: 2, z: 0, w: 8, h: 4, d: 1 }, (2 * 32 + 4) * 4, 0, 0, true));
+  assert.deepEqual(errors, []);
+  const rows = gl.log.filter(([n, a]) => n === 'pixelStorei' && (a as number[])[0] === E.UNPACK_ROW_LENGTH && (a as number[])[1]).map(([, a]) => (a as number[])[1]);
+  assert.deepEqual(rows, [64, 32]);
+});
+
 test('virgl device: a fenced command\'s reply waits for the host, and replies stay in order', async () => {
   const ram = new Uint8Array(1 << 20);
   const done: number[] = [];
