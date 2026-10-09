@@ -29,6 +29,10 @@ questions for the user are at the end; the kickoff is written from the user's an
   `bench/results/local/myarch2.qcow2`, git-ignored; `VIRGL_GPU=virgl|virgl-null`, `CAPTURE=`, `PROFILE=1`: the page's
   PC sampler with the kernel's symbols from the guest, and each phase's emulator counters); `bench/gpu/sway-mac.sh`
   (the same on the Mac host's GPU, decision 4).
+- **Images:** `bench/results/local/myarch3.qcow2` (git-ignored, the user's, 2026-10-09) is the Arch image **with
+  Firefox** (7.58 GiB virtual, 3.5 GiB used), beside `myarch2.qcow2` (no Firefox). G4's Firefox work uses it. The
+  user allows growing its disk (`qemu-img resize`, then the partition and filesystem inside) and installing more into
+  it on the oracle side (QEMU with a network connection, `pacman`); keep the untouched download as a copy first.
 
 ## What the guests do
 
@@ -59,8 +63,8 @@ questions for the user are at the end; the kickoff is written from the user's an
 
 **The user's priority for G4 (2026-10-09): Firefox opens on a 3D machine and uses the WebGL2 acceleration**
 (WebRender on GLES through virgl). Seen once after 3D became the default, then not again: Firefox didn't open, a
-GTK warning "Could not load a pixbuf from icon theme", and `glycin-svg --dbus-fd …` at 100% of a core for good (the
-image here, `myarch2.qcow2`, has no Firefox: the user's own image has it). It then opened, and the user confirmed
+GTK warning "Could not load a pixbuf from icon theme", and `glycin-svg --dbus-fd …` at 100% of a core for good (`myarch2.qcow2` has no Firefox;
+`myarch3.qcow2`, the user's, has it). It then opened, and the user confirmed
 on their image that **Firefox uses the acceleration**: `about:support` shows Compositing "WebRender" and WebGL 1 and 2
 on "Mesa -- virgl (webpc)". **Its performance is underwhelming**: G4 starts by measuring Firefox on the page (an Arch
 image with Firefox; frames a second scrolling a page, the guest's CPU per process, the renderer's time, on SwiftShader
