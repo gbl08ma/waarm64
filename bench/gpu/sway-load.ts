@@ -3,122 +3,29 @@
 // screen, root/root on the serial console), headless Chromium, 4 vCPUs, the screen fixed at 1376×762. Renderer modes:
 // `virgl` (?gpu=virgl-null, or `?gpu=` + VIRGL_GPU, `virgl` for G3's renderer; WLR_RENDERER=gles2 on Mesa's virgl),
 // `llvmpipe` (?gpu=2d: no virgl, gles2 on llvmpipe), `pixman` (?gpu=2d). Phases: sway idle, foot idle, foot scrolling a `date` loop.
-// Each phase reads /proc/stat and sway's and foot's /proc/<pid>/stat over 10 s on the serial terminal (busy percent
-// per CPU, ms of CPU a second per process) and the display's stats (`?displaystats`: flushes are frames, submits and
-// stream bytes a second). Screenshots and results.json go to <outdir>.
+// Each phase (bench/gpu/guest-session.ts `load`) reads /proc/stat and every thread's stat over 10 s on the serial
+// terminal (busy percent per CPU, ms of CPU a second per thread) and the display's stats (`?displaystats`: flushes are
+// frames, submits and stream bytes a second). Screenshots and results.json go to <outdir>.
 //   node bench/gpu/sway-load.ts <mode> <image.qcow2> [outdir]
 // PROFILE=1 samples the guest's PCs over the date loop and symbolizes the kernel's (results.profile).
 // CAPTURE=<file.vglt> (virgl) keeps a trace of the guest's 3D commands from sway's start to foot's (web/virgl-trace.ts,
 // the renderer's fixtures) and stops there; SCREEN=<w>x<h> changes the screen's size.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { encodeTrace } from '../../web/virgl-trace.ts';
-import { chromium } from 'playwright-core';
-import { startServer } from '../../tools/serve.ts';
+import { openSession } from './guest-session.ts';
 
-const SETTINGS_KEY = 'webpc.settings';
 const mode = process.argv[2] ?? 'virgl';
 const image = process.argv[3];
 if (!image) throw new Error('usage: node bench/gpu/sway-load.ts <virgl|pixman|llvmpipe> <image.qcow2> [outdir]');
 const out = process.argv[4] ?? new URL(`../results/local/sway-load/${mode}/`, import.meta.url).pathname;
 const CAPTURE = process.env.CAPTURE;
 const VIRGL_GPU = (process.env.VIRGL_GPU ?? 'virgl-null') + (CAPTURE ? ',capture' : '');
-const SCREEN = process.env.SCREEN ?? '1376x762';
 mkdirSync(out, { recursive: true });
-const server = await startServer();
-const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
-const page = await (await browser.newContext({ viewport: { width: 1400, height: 1300 } })).newPage();
-await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
-// The screen is a fixed 1376×762 (§16's size) whatever the layout: the page's setting, as its Size menu stores it.
-await page.addInitScript(([key, screen]) => localStorage.setItem(key, JSON.stringify({ screen })), [SETTINGS_KEY, SCREEN]);
-page.on('dialog', (d) => void d.accept());
-page.on('pageerror', (e) => console.log('pageerror', String(e)));
-const t0 = performance.now();
-const at = () => ((performance.now() - t0) / 1000).toFixed(1);
-const log = (...a: unknown[]) => console.log(`[${at()}]`, ...a);
-const results: Record<string, unknown> = { mode };
+const { page, browser, gl, log, terminal, shows, onSerial, onScreen, rootShell, load: measure, close } = await openSession({ gpu: mode === 'virgl' ? VIRGL_GPU : '2d', image, out, screen: process.env.SCREEN, ramMiB: 1024 });
+const results: Record<string, unknown> = { mode, gl, chromium: browser.version() };
+const load = async (label: string, secs = 10, during?: { start(): Promise<void>; stop(): Promise<void> }) => { results[label] = await measure(label, secs, during); };
 
-await page.goto(`${base}/web/app/?ncpus=4&view=both&displaystats&gpu=${mode === 'virgl' ? VIRGL_GPU : '2d'}`);
-results.gl = await page.evaluate(() => {
-  const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
-  const d = gl?.getExtension('WEBGL_debug_renderer_info');
-  return gl ? `${gl.getParameter(d ? d.UNMASKED_RENDERER_WEBGL : gl.RENDERER)}` : 'no WebGL2';
-});
-log('WebGL2:', results.gl, '|', await browser.version());
-results.chromium = browser.version();
-await page.setInputFiles('#open-disk-input', image);
-await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 300_000, polling: 250 });
-log('running');
-
-const terminal = () => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
-const shows = (re: RegExp, ms = 60_000) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 200 })
-  .catch(async (e) => { await page.screenshot({ path: `${out}/fail.png` }); throw new Error(`${e}; the terminal shows: ${await terminal()}`); });
-const onSerial = async (text: string) => { await page.locator('.xterm').click(); await page.keyboard.type(text, { delay: 5 }); };
-const SHIFTED: Record<string, string> = { '|': 'Backslash', '>': 'Period', '<': 'Comma', _: 'Minus', '"': 'Quote', '&': 'Digit7', '*': 'Digit8', '(': 'Digit9', ')': 'Digit0', $: 'Digit4', ':': 'Semicolon', '?': 'Slash', '~': 'Backquote', '+': 'Equal', '{': 'BracketLeft', '}': 'BracketRight', '!': 'Digit1', '%': 'Digit5', '^': 'Digit6', '#': 'Digit3', '@': 'Digit2' };
-const PLAIN: Record<string, string> = { ' ': 'Space', '\n': 'Enter', '-': 'Minus', '=': 'Equal', '/': 'Slash', '.': 'Period', ',': 'Comma', ';': 'Semicolon', "'": 'Quote', '\\': 'Backslash', '[': 'BracketLeft', ']': 'BracketRight', '`': 'Backquote' };
-const onScreen = async (text: string, gap = 40) => {
-  await page.locator('#screen').click();
-  for (const c of text) {
-    await page.keyboard.press(SHIFTED[c] ? `Shift+${SHIFTED[c]}` : PLAIN[c] ?? (/[A-Z]/.test(c) ? `Shift+Key${c}` : /[a-z]/.test(c) ? `Key${c.toUpperCase()}` : /[0-9]/.test(c) ? `Digit${c}` : c));
-    await page.waitForTimeout(gap);
-  }
-};
-type Stat = { n: number; lag: number; busy: Record<string, number> };
-/** The display's stats since the last call, per second (flushes are the compositor's frames). */
-const display = async () => {
-  const s = await page.evaluate(() => ((window as unknown as { __drawStats?: unknown[] }).__drawStats ?? []).splice(0)) as Stat[];
-  const per = (k: string) => s.reduce((n, x) => n + (x.busy[k] ?? 0), 0) / Math.max(1, s.length);
-  // G3's renderer (`VIRGL_GPU=virgl`): the GPU worker's stats a second (web/gpu-worker.ts `render-stats`): its busy
-  // time, of which running submits and presenting, the GL draws and the bytes uploaded.
-  const r = await page.evaluate(() => ((window as unknown as { __renderStats?: unknown[] }).__renderStats ?? []).splice(0)) as Record<string, number>[];
-  const rper = (k: string) => r.reduce((n, x) => n + (x[k] ?? 0), 0) / Math.max(1, r.length);
-  const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), uploadKB: rper('uploadBytes') / 1024, errors: r.at(-1)!.errors } : undefined;
-  return { seconds: s.length, flushes: per('flushes'), submits: per('submits'), submitKB: per('submitBytes') / 1024, transfers: per('transfers'), Mpx: per('pixels') / 1e6, requestMs: per('request'), draws: s.reduce((n, x) => n + x.n, 0) / Math.max(1, s.length), ...(renderer ? { renderer } : {}) };
-};
-type VmStats = { steps: number; irqs: number; exceptions: Record<string, number>; tlbMisses: number; tlbFlushes: number; jit: { flushes: number; invalidations: number; compileNs: number } };
-const vmStats = () => page.evaluate(() => { const s = (window as unknown as { __status?: { uptime: number; stats: unknown } }).__status; return s && { uptime: s.uptime, stats: s.stats }; }) as Promise<{ uptime: number; stats: VmStats } | undefined>;
-/** The emulator's counters a second between two status reads (all vCPUs): guest exceptions by class (0x15 a syscall, 0x24 a data abort), IRQs, TLB, the JIT. */
-const vmDelta = (a?: { uptime: number; stats: VmStats }, b?: { uptime: number; stats: VmStats }) => {
-  if (!a || !b || b.uptime <= a.uptime) return undefined;
-  const per = (x: number, y: number) => Math.round(((y - x) * 1000) / (b.uptime - a.uptime));
-  const exceptions = Object.fromEntries(Object.keys(b.stats.exceptions).map((k) => [k, per(a.stats.exceptions[k] ?? 0, b.stats.exceptions[k])]).filter(([, n]) => n));
-  return { seconds: (b.uptime - a.uptime) / 1000, Msteps: per(a.stats.steps, b.stats.steps) / 1e6, irqs: per(a.stats.irqs, b.stats.irqs), exceptions, tlbMisses: per(a.stats.tlbMisses, b.stats.tlbMisses), tlbFlushes: per(a.stats.tlbFlushes, b.stats.tlbFlushes), jitFlushes: per(a.stats.jit.flushes, b.stats.jit.flushes), jitInvalidations: per(a.stats.jit.invalidations, b.stats.jit.invalidations), jitCompileMs: per(a.stats.jit.compileNs, b.stats.jit.compileNs) / 1e6 };
-};
-let mark = 0;
-/** /proc/stat over `secs` on the serial side: each CPU's busy, user and system percent. */
-const load = async (label: string, secs = 10, during?: { start(): Promise<void>; stop(): Promise<void> }) => {
-  await display();
-  const m = `L${++mark}`;
-  const v0 = await vmStats();
-  await during?.start();
-  await onSerial(`clear; sh /root/load.sh ${secs} ${m}\n`);
-  await shows(new RegExp(`${m}-done`), (secs + 60) * 1000);
-  await during?.stop();
-  const v1 = await vmStats();
-  const d = { ...(await display()), vm: vmDelta(v0, v1) };
-  const t = await terminal();
-  const cpus = [...t.matchAll(new RegExp(`${m} (cpu\\d?) busy (\\d+) user (\\d+) sys (\\d+)`, 'g'))].map((x) => ({ cpu: x[1], busy: +x[2], user: +x[3], sys: +x[4] }));
-  // Per process: ms of CPU a second (clock ticks are 10 ms), user and system.
-  const procs = [...t.matchAll(new RegExp(`${m} proc \\((\\w+)\\) user (\\d+) sys (\\d+)`, 'g'))].map((x) => ({ proc: x[1], userMs: +x[2], sysMs: +x[3] }));
-  results[label] = { cpus, procs, display: d };
-  log(label, JSON.stringify(cpus.filter((c) => c.cpu === 'cpu')), JSON.stringify(procs), JSON.stringify(d));
-  await page.locator('#screen').screenshot({ path: `${out}/${label}.png` });
-};
-
-// Root on the serial terminal; the load script.
-await shows(/login:\s*$/, 120_000);
-await onSerial('root\n');
-await shows(/Password:\s*$|\]#\s*$/);
-if (/Password:\s*$/.test(await terminal())) await onSerial('root\n');
-await shows(/\]#\s*$/);
-await onSerial(`cat > /root/load.sh <<'EOF'
-ps() { for p in $(pidof sway) $(pidof foot); do echo "$p $(cut -d' ' -f2,14,15 /proc/$p/stat)"; done; }
-ps > /tmp/pa; cat /proc/stat > /tmp/a; sleep $1; cat /proc/stat > /tmp/b; ps > /tmp/pb
-awk -v m=$2 -v s=$1 'NR==FNR{u[$1]=$3;k[$1]=$4;next} ($1 in u){printf "%s proc %s user %d sys %d\\n",m,$2,($3-u[$1])*10/s,($4-k[$1])*10/s}' /tmp/pa /tmp/pb
-awk -v m=$2 'NR==FNR&&/^cpu/{for(i=2;i<=9;i++)a[$1,i]=$i;next} /^cpu/{t=0;for(i=2;i<=9;i++){d[i]=$i-a[$1,i];t+=d[i]}; printf "%s %s busy %d user %d sys %d\\n",m,$1,100*(t-d[5]-d[6])/t,100*(d[2]+d[3])/t,100*(d[4]+d[7]+d[8])/t}' /tmp/a /tmp/b
-echo $2-done
-EOF
-`);
+await rootShell();
 await onSerial('clear; uname -r; pacman -Q sway wlroots0.19 mesa foot 2>&1 | tr "\\n" " "; echo; ls /dev/dri\n');
 await page.waitForTimeout(3000);
 results.info = await terminal();
@@ -167,8 +74,7 @@ if (CAPTURE) {
   writeFileSync(CAPTURE, trace);
   await page.locator('#screen').screenshot({ path: `${out}/capture.png` });
   log(`${CAPTURE}: ${records.length} records, ${trace.length} bytes`);
-  await browser.close();
-  server.close();
+  await close();
   process.exit(0);
 }
 await load('foot-idle');
@@ -224,5 +130,4 @@ await page.waitForTimeout(2000);
 results.tail = await terminal();
 writeFileSync(`${out}/results.json`, JSON.stringify(results, null, 1));
 log('done');
-await browser.close();
-server.close();
+await close();

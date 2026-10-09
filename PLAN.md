@@ -166,8 +166,10 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     from the browser) draws glcomp within 7 levels a byte of llvmpipe, and Arch's sway on GLES at 60
     frames a second on the Mac host's GPU (the null renderer's rate and guest CPU; 55 on SwiftShader).
     The page's tests pass with it; snapshots work while 3D is unused (`?gpu=2d` keeps the 2D path).
-    Next: G4, breadth and correctness (dEQP, GTK4, a browser, a desktop): a proposal and questions in
-    `M8-GRAPHICS-HANDOVER.md`, the kickoff the user's.
+    **Current: G4, breadth and correctness** (`M8-GRAPHICS-KICKOFF.md`, the user's decisions of
+    2026-10-09): Firefox first (measured, then faster), the page's 2D/3D choice in its menu, a
+    dEQP-GLES2/GLES3 subset as the correctness gate, then GTK4 on the Arch image; snapshots while 3D is
+    in use stay G5's (graphics.md §21).
   - Audio: virtio-snd to an AudioWorklet over a shared ring (`docs/plans/audio.md`, to write).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.

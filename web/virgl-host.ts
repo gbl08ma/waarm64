@@ -58,18 +58,27 @@ export function localHost(r: VirglRenderer, screen?: Screen): VirglHost {
   return { call: (c) => void runCall(c, r, screen), fence: () => undefined, read: (res) => Promise.resolve(r.readResource(res)) };
 }
 
+/** How long the device worker took to see the GPU worker's `fenced` answers (bench/gpu's stats): their count, total and longest ms. */
+export const fenceLag = { n: 0, ms: 0, maxMs: 0 };
+/** Now on a clock both workers share (their `performance.now()`s start at different times). */
+export const clock = () => performance.timeOrigin + performance.now();
+
 /** A host across a port (the device worker's end of the GPU worker). */
 export function portHost(port: MessagePort): VirglHost {
   let next = 1;
   const waiting = new Map<number, () => void>();
   const reads = new Map<number, (bytes: Uint8Array | null) => void>();
-  port.onmessage = (e: MessageEvent<{ t: 'fenced'; id: number } | { t: 'read'; id: number; bytes: Uint8Array | null }>) => {
+  port.onmessage = (e: MessageEvent<{ t: 'fenced'; id: number; at: number } | { t: 'read'; id: number; bytes: Uint8Array | null }>) => {
     if (e.data?.t === 'read') {
       reads.get(e.data.id)?.(e.data.bytes);
       reads.delete(e.data.id);
       return;
     }
     if (e.data?.t !== 'fenced') return;
+    const lag = clock() - e.data.at;
+    fenceLag.n++;
+    fenceLag.ms += lag;
+    fenceLag.maxMs = Math.max(fenceLag.maxMs, lag);
     // Fences complete in order: this one and every earlier one.
     for (const [id, done] of waiting) {
       if (id > e.data.id) break;
@@ -84,7 +93,7 @@ export function portHost(port: MessagePort): VirglHost {
     },
     fence() {
       const id = next++;
-      port.postMessage({ t: 'fence', id });
+      port.postMessage({ t: 'fence', id, at: clock() });
       return new Promise<void>((resolve) => waiting.set(id, resolve));
     },
     read(res) {

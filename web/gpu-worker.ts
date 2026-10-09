@@ -4,7 +4,7 @@
 // it runs the device's calls (web/virgl-host.ts) in order: the renderer's (web/virgl-renderer.ts) and the screen's
 // (web/virgl-screen.ts), and answers fences once everything before them has run.
 import { capsFromGl } from './virgl-caps.ts';
-import { runCall, type HostCall } from './virgl-host.ts';
+import { clock, runCall, type HostCall } from './virgl-host.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import { Screen } from './virgl-screen.ts';
 
@@ -16,7 +16,7 @@ export type FromGpuWorker =
   | { type: 'failed'; reason: string }
   | { type: 'lost' }
   /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
-  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; drawMs: number; programs: number; errors: number; uploadBytes: number };
+  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number };
 
 let ram: Uint8Array = new Uint8Array(0);
 
@@ -36,6 +36,8 @@ self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
   const renderer = new VirglRenderer(gl, { ram: () => ram });
   const screen = new Screen(gl, renderer);
   let busyMs = 0, submitMs = 0, queries = 0;
+  // How long fences took to reach this worker (its event loop's backlog): count, total and longest ms a second.
+  let fences = 0, fenceMs = 0, fenceMaxMs = 0;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
   // WebGL's query results come after the task that ended the query: polled while some are pending.
   const poll = () => {
@@ -43,10 +45,14 @@ self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
     queries = renderer.pollQueries();
     if (queries) pollTimer = setTimeout(poll, 4);
   };
-  port.onmessage = (m: MessageEvent<HostCall | { t: 'fence'; id: number } | { t: 'read'; id: number; res: number }>) => {
+  port.onmessage = (m: MessageEvent<HostCall | { t: 'fence'; id: number; at: number } | { t: 'read'; id: number; res: number }>) => {
     const c = m.data;
     if (c.t === 'fence') {
-      port.postMessage({ t: 'fenced', id: c.id });
+      const now = clock();
+      fences++;
+      fenceMs += now - c.at;
+      fenceMaxMs = Math.max(fenceMaxMs, now - c.at);
+      port.postMessage({ t: 'fenced', id: c.id, at: now });
       return;
     }
     if (c.t === 'read') {
@@ -73,7 +79,8 @@ self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
     let last = { ...renderer.stats };
     setInterval(() => {
       const s = renderer.stats;
-      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes });
+      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs });
+      fences = fenceMs = fenceMaxMs = 0;
       last = { ...s };
       busyMs = submitMs = 0;
       screen.presents = 0;

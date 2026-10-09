@@ -1,9 +1,39 @@
-# M8 graphics, 3D: handover for G4 (2026-10-09)
+# M8 graphics, 3D: handover in G4 (2026-10-09, evening)
 
-G3 is done (docs/plans/graphics.md §20 and its exit): Mesa's virgl driver in an unmodified guest draws through our
-renderer on WebGL2, and 3D is the page's default where WebGL2 is. **G4 has no kickoff yet**: a proposal and the
-questions for the user are at the end; the kickoff is written from the user's answers. Read first: graphics.md §1
-(direction), §7 (steps), §8 (open questions), §20 (G3); docs/devices.md "virgl"; docs/frontend.md "A 3D machine".
+G4 is current: the kickoff is `M8-GRAPHICS-KICKOFF.md` (the user's decisions; don't re-ask), the record
+docs/plans/graphics.md §21. Read first: graphics.md §1, §7, §20, §21; docs/devices.md "virgl"; docs/frontend.md "A 3D
+machine".
+
+## G4 so far
+
+- **Loop 0 (Firefox measured) is done** (§21): `bench/gpu/firefox-load.ts` on `bench/gpu/guest-session.ts` (shared
+  with sway-load.ts), the pages in `bench/gpu/firefox/`, real sites on a second disk (`bench/gpu/firefox-pages.sh` →
+  `target/ffpages/pages.ext4`), `bench/gpu/sway-mac.sh` with `SCRIPT=firefox-load.ts` (and `HEADED=1`: the user
+  allows a visible window on the Mac when they aren't using it). The device and the GPU worker count commands by
+  type, fences' round trips by hop, held replies, read-backs (`?displaystats`). JSON in
+  `bench/gpu/results/g4-firefox/`.
+- **Loop 2 (the menu's Graphics: 3D or 2D) is done**: `web/app/main.ts` (`wants3d`, the query over the menu, the
+  page's `data-graphics`), `tests/page-machine.test.ts`'s Debian test in `scripts/ci-debian.sh`.
+- **What the user said was slow** (2026-10-09): real websites, scrolling, start-up and page loads. On the Mac's GPU,
+  scrolling real sites holds 50–60 frames a second; start-up (18–41 s) and loads (5–17 s) are the guest's CPU
+  (40–60% of 4 vCPUs, a quarter to a half in the kernel). The emulator's CPU speed is the JIT track's
+  (`M8-JIT-HANDOVER.md`); G4's levers are the graphics path's own costs.
+- **Next (loop 1, Firefox faster):** what Firefox's start-up spends (a phase over the first ~30 s after launch, the
+  threads; WebRender compiles its shaders through the guest's Mesa: is Mesa's disk shader cache on for virgl, does
+  `gfx.webrender.program-binary-disk` work with our caps, how long the host's compiles take, a renderer stat to add);
+  the 15–18 3D resources a second created and destroyed while scrolling (who: WebRender's texture cache or Mesa's
+  buffers; each is a guest kernel allocation and `ATTACH_BACKING`); replies held behind fenced ones (QEMU holds
+  only the fenced reply: try letting unfenced replies pass, keeping fenced ones in order). Measure on the Mac
+  (`sway-mac.sh`), A/B in one session.
+- **dEQP (loop 3) is prepared, not built:** `images/deqp/build.sh` and its Containerfile (VK-GL-CTS
+  opengl-es-cts-3.2.14.1, deqp-gles2/3 on EGL surfaceless, built natively in Podman from Arch's tarball, delivered
+  as `target/deqp/deqp.ext4` for `?disk2=`; the same image runs them on virpipe against the vtest oracle). Untested:
+  the data directories' paths in the build tree, whether `fetch_sources.py` is needed for GLES only, a runner
+  (`bench/gpu/deqp-run.ts`) and the subset's size (time a test under the JIT first). Mesa's source for reading:
+  `~/Development/src/mesa` (sparse, mesa-26.2.4).
+- The Arch image's guest-side helpers on the Mac: `~/webpc-arch/` (`start.sh` boots `myarch3.qcow2` under hvf with
+  a network, virtio-mmio devices as ours; `vmsh.py <sock> <timeout> <cmd>` runs a command on its serial console as
+  root). The Mac's copy there is the grown image before its recompression.
 
 ## What exists (G3)
 
@@ -46,6 +76,14 @@ questions for the user are at the end; the kickoff is written from the user's an
 
 ## Learned (don't re-discover)
 
+- **On SwiftShader the GPU worker stalls ~33 ms after every present** (the canvas commit waits for the GPU process
+  to draw; fences queue behind it: 18 ms on the way in, WebGL capped at ~34 frames a second). On the Mac's GPU none.
+  `transferToImageBitmap` moved the wait, didn't remove it. Don't judge fence latency on the dev VM.
+- Firefox: a fresh profile's first minute is busy (WebExtensions, settings sync failing offline): warm up 30 s before
+  measuring. Its WebGL runs in the parent (`CanvasRenderer`), presented through DMABUF. G2's null renderer
+  (`?gpu=virgl-null`) can't run Firefox's WebGL page (it never gets ready).
+- The guest's `pacman -Syu` rebuilds the initramfs with `autodetect`: keep `MODULES=(virtio_mmio virtio_blk ext4
+  vfat)` in its mkinitcpio.conf (set in myarch3).
 - **A worker's canvas commits a frame at the end of every task that draws**, and Chromium holds those commits to the
   display's rate: draw in `requestAnimationFrame`, once (three draws a guest frame capped sway at 39 frames a second).
 - The PC sampler names where a vCPU's current chunk started (the PC is published at chunk ends, which exits cause):
@@ -58,39 +96,3 @@ questions for the user are at the end; the kickoff is written from the user's an
 - QEMU's `virtio-gpu-gl` can't run in the dev VM (no DRM render node): vtest and our own device are the oracles.
 - Cap memory on every `node`/`cargo` run; Playwright headless only (WebGL2 there is SwiftShader, whose GL runs on
   the guest's CPUs: real-GPU numbers come from the Mac host).
-
-## Proposed G4 kickoff (the user's to settle)
-
-**The user's priority for G4 (2026-10-09): Firefox opens on a 3D machine and uses the WebGL2 acceleration**
-(WebRender on GLES through virgl). Seen once after 3D became the default, then not again: Firefox didn't open, a
-GTK warning "Could not load a pixbuf from icon theme", and `glycin-svg --dbus-fd …` at 100% of a core for good (`myarch2.qcow2` has no Firefox;
-`myarch3.qcow2`, the user's, has it). It then opened, and the user confirmed
-on their image that **Firefox uses the acceleration**: `about:support` shows Compositing "WebRender" and WebGL 1 and 2
-on "Mesa -- virgl (webpc)". **Its performance is underwhelming**: G4 starts by measuring Firefox on the page (an Arch
-image with Firefox; frames a second scrolling a page, the guest's CPU per process, the renderer's time, on SwiftShader
-and the Mac's GPU, as `bench/gpu/sway-load.ts` does for sway) and making it faster; watch for the glycin hang.
-
-**Goal: breadth and correctness.** GLES 3.0 as Mesa's virgl exposes it, correct against a conformance subset, and
-the applications people would run on a 3D machine working on the page.
-
-- **Loop 0, conformance:** a dEQP-GLES2/GLES3 subset (VK-GL-CTS, Apache-2.0) built into a guest image as a workload,
-  run on the page under the JIT (and on the oracle's vtest for the expected results); a pass list committed, the
-  failures sorted by cause.
-- **Loop 1, the failures:** the renderer's and translator's gaps dEQP finds, by how many tests each fixes.
-- **Loop 2, applications:** Firefox first (the user's priority, above), then GTK4 (gtk4-demo, GSK's GL renderer),
-  Chromium's GPU process, a desktop's compositor (KWin or Mutter on GLES); what each needs, fixed or written down.
-- **Loop 3, cost:** shader compiles (a cache by TGSI and key, `KHR_parallel_shader_compile`), the renderer's time on
-  the Mac's GPU per application, and the guest kernel's submit path with a finer instrument (a PC published more often
-  than once a chunk, or exits counted by PC).
-- **Exit:** the pass rate and the applications that work, in graphics.md; G5's outline.
-
-**Questions for the user:**
-
-1. **After Firefox** (the priority), which applications matter most: GTK4 apps, Chromium, or a full desktop (KDE or
-   GNOME)? And in which distro image (the Arch image, or Debian with a desktop added to `images/debian`)?
-2. **dEQP:** is a conformance subset as G4's correctness gate wanted, and which: GLES2 only, or GLES3 too (larger,
-   and a 3.0 context is what Mesa exposes)?
-3. **Snapshots while 3D is in use** stay refused (today), or should G4 or G5 rebuild them (the resources from their
-   guest backings, the objects replayed)?
-4. **3D by default** (flipped at G3's exit, per decision 3): keep it, or make it an option in the page's menu as
-   well as `?gpu=2d`?

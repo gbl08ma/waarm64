@@ -27,7 +27,7 @@ export type ResourceDesc = {
 export type Box = { x: number; y: number; z: number; w: number; h: number; d: number };
 
 /** What a renderer does with the device's commands (the device worker calls these through `VirglHost`). */
-export type RendererStats = { submits: number; commands: number; draws: number; errors: number; programs: number; uploads: number; uploadBytes: number; readbacks: number };
+export type RendererStats = { submits: number; commands: number; draws: number; errors: number; programs: number; uploads: number; uploadBytes: number; readbacks: number; readbackBytes: number };
 
 type Res = ResourceDesc & {
   fmt?: Format;
@@ -140,7 +140,7 @@ export class VirglRenderer {
   private contexts = new Map<number, Ctx>();
   private programs = new Map<string, Program | null>();
   private serial = 0;
-  readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0 };
+  readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0 };
   private fbo: WebGLFramebuffer;
   private readFbo: WebGLFramebuffer;
   private blitProg?: { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
@@ -480,6 +480,7 @@ export class VirglRenderer {
     this.stats.readbacks++;
     if (r.target === PIPE_BUFFER) {
       if (!r.shadow) return null;
+      this.stats.readbackBytes += box.w;
       return r.shadow.slice(box.x, box.x + box.w);
     }
     const f = r.fmt;
@@ -488,6 +489,7 @@ export class VirglRenderer {
     stride ||= rowBytes;
     layerStride ||= stride * box.h;
     const out = new Uint8Array(boxBytes(f, box.w, box.h, box.d, stride, layerStride));
+    this.stats.readbackBytes += rowBytes * box.h * box.d;
     const reader = readbackOf(f, this.colorBufferFloat);
     if (!reader) return null;
     const tmp = new Uint8Array(box.w * box.h * reader.bytes);

@@ -162,8 +162,8 @@ export function hashRgba(words: Uint32Array[], opaque: boolean) {
   return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0');
 }
 
-/** Time the device worker spent in the backend since the last read (`?displaystats`, bench/gpu): requests, and the transfers inside them. */
-export const busy = { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0 };
+/** Time the device worker spent in the backend since the last read (`?displaystats`, bench/gpu): requests, and the transfers inside them; the control commands by type (hex). */
+export const busy = { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {} as Record<string, number>, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0 };
 
 export class Gpu {
   readonly resources = new Map<number, Resource>();
@@ -239,6 +239,8 @@ export class Gpu {
     if (cmd.length < HDR) return this.reply(ERR_UNSPEC, cmd, room);
     const v = new DataView(cmd.buffer, cmd.byteOffset, cmd.length);
     const type = v.getUint32(0, true);
+    const k = type.toString(16);
+    busy.commands[k] = (busy.commands[k] ?? 0) + 1;
     if (this.onCapture && this.o.virgl) this.capture(type, cmd, v);
     const need = (n: number) => cmd.length >= n;
     const u32 = (at: number) => v.getUint32(HDR + at, true);
@@ -902,7 +904,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
   });
   // Replies not sent yet, in order: a fenced command's waits for the host (`ready` once it has run), and with
   // `paceFlushes` a flush that follows the last within a frame waits for the frame's end, with all behind it.
-  type Held = { w0: number; len: number; flush: boolean; ready: boolean };
+  type Held = { w0: number; len: number; flush: boolean; ready: boolean; at: number };
   let held: Held[] = [];
   let lastFlush = -Infinity;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -922,6 +924,7 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
         fromTimer = false;
       }
       held.shift();
+      busy.heldMs += performance.now() - h.at;
       ctx.complete(h.w0, h.len);
     }
   };
@@ -945,9 +948,18 @@ export function gpuBackend(ctx: Ctx, o: GpuOptions, hooks: GpuHooks = {}) {
       const flush = !!o.paceFlushes && cmd.length >= 4 && new DataView(cmd.buffer, cmd.byteOffset, 4).getUint32(0, true) === RESOURCE_FLUSH;
       const now = performance.now();
       if (held.length || wait || (flush && now - lastFlush < FRAME_MS)) {
-        const h: Held = { w0: r.w0, len: reply.length, flush, ready: !wait };
+        const h: Held = { w0: r.w0, len: reply.length, flush, ready: !wait, at: now };
         held.push(h);
-        if (wait) void wait.then(() => { h.ready = true; pump(); });
+        if (wait) {
+          busy.fences++;
+          void wait.then(() => {
+            const dt = performance.now() - now;
+            busy.fenceMs += dt;
+            busy.fenceMaxMs = Math.max(busy.fenceMaxMs, dt);
+            h.ready = true;
+            pump();
+          });
+        }
         else pump();
         return undefined;
       }

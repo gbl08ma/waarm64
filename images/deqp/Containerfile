@@ -1,0 +1,12 @@
+# dEQP for Arch Linux ARM (images/deqp/build.sh): the archarm-base image is Arch's own tarball, imported.
+FROM localhost/archarm-base
+# pacman's download sandbox doesn't work in a rootless container.
+RUN sed -i -e 's/^#DisableSandbox/DisableSandbox/' -e 's/^DownloadUser/#DownloadUser/' /etc/pacman.conf && \
+    pacman-key --init && pacman-key --populate archlinuxarm && \
+    pacman -Syu --noconfirm --noprogressbar --needed base-devel cmake ninja python git libpng zlib mesa libdrm wayland e2fsprogs && \
+    pacman -Scc --noconfirm
+ARG CTS=opengl-es-cts-3.2.14.1
+RUN git clone -q --depth 1 --branch $CTS https://github.com/KhronosGroup/VK-GL-CTS.git /cts && \
+    cd /cts && python3 external/fetch_sources.py --protocol https > /tmp/fetch.log 2>&1 || (tail -20 /tmp/fetch.log; exit 1)
+RUN cmake -S /cts -B /build -G Ninja -DCMAKE_BUILD_TYPE=Release -DDEQP_TARGET=surfaceless > /tmp/cmake.log 2>&1 || (tail -40 /tmp/cmake.log; exit 1)
+RUN ninja -C /build deqp-gles2 deqp-gles3 > /tmp/ninja.log 2>&1 || (tail -40 /tmp/ninja.log; exit 1)

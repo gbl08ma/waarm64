@@ -3,6 +3,8 @@
 # Chromium, headless, temporary profile) with its GPU, from a copy of what the page needs in ~/webpc-gpu-bench there
 # (as run-mac.sh: Node and playwright-core there; nothing else on the host is touched). The disk image is copied once.
 #   bench/gpu/sway-mac.sh <virgl|pixman|llvmpipe> <image.qcow2> <name>   -> bench/results/local/<name>/ (VIRGL_GPU as sway-load.ts)
+# SCRIPT=firefox-load.ts runs the Firefox harness instead (PHASES, WARM_S passed on); HEADED=1 opens a visible window
+# on the Mac (the user allows it there, when they aren't using it).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
@@ -18,9 +20,12 @@ rsync -a target/wasm32-unknown-unknown/release/webpc_core.wasm "$HOST:$DEST/targ
 rsync -a target/images/edk2 "$HOST:$DEST/target/images/"
 rsync -a target/images/debian/disk.qcow2 "$HOST:$DEST/target/images/debian/"   # the page's own machine, which starts first
 rsync -a "$IMAGE" "$HOST:$DEST/bench/results/local/disk.qcow2"
-ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WEBPC_TAILSCALE=0 VIRGL_GPU=${VIRGL_GPU:-virgl-null} && \
+if [ -f target/ffpages/pages.ext4 ]; then   # firefox-load.ts's real pages (bench/gpu/firefox-pages.sh)
+  ssh "$HOST" "mkdir -p $DEST/target/ffpages" && rsync -a target/ffpages/pages.ext4 "$HOST:$DEST/target/ffpages/"
+fi
+ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH WEBPC_TAILSCALE=0 VIRGL_GPU=${VIRGL_GPU:-virgl-null} PHASES=${PHASES:-} WARM_S=${WARM_S:-30} HEADED=${HEADED:-} && [ -n \"\$PHASES\" ] || unset PHASES; [ -n \"\$HEADED\" ] || unset HEADED; \
   export CHROMIUM=\"\$(ls -d \$HOME/Library/Caches/ms-playwright/chromium-*/chrome-mac-arm64/*.app | sort | tail -1)/Contents/MacOS/Google Chrome for Testing\" && \
-  rm -rf bench/results/local/$NAME && perl -e 'alarm shift; exec @ARGV' 500 node --disable-warning=ExperimentalWarning bench/gpu/sway-load.ts $MODE bench/results/local/disk.qcow2 bench/results/local/$NAME > bench/results/local/$NAME.log 2>&1; \
+  rm -rf bench/results/local/$NAME && perl -e 'alarm shift; exec @ARGV' ${MAC_TIMEOUT:-500} node --disable-warning=ExperimentalWarning bench/gpu/${SCRIPT:-sway-load.ts} $MODE bench/results/local/disk.qcow2 bench/results/local/$NAME > bench/results/local/$NAME.log 2>&1; \
   rc=\$?; sw_vers -productVersion > bench/results/local/$NAME.macos; system_profiler SPDisplaysDataType | grep -E 'Chipset|Metal|Cores' > bench/results/local/$NAME.gpu; exit \$rc"
 mkdir -p bench/results/local
 rsync -a "$HOST:$DEST/bench/results/local/$NAME" "$HOST:$DEST/bench/results/local/$NAME.*" bench/results/local/

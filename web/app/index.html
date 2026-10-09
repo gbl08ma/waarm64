@@ -109,9 +109,10 @@
   <span class="views" role="group" aria-label="View">
     <button data-view-button="screen">Screen</button><button data-view-button="terminal">Serial terminal</button><button data-view-button="both">Both</button>
   </span>
-  <details class="menu" id="machine-menu"><summary title="The number of vCPUs and the size of the RAM: applied by a restart">Machine</summary><div class="items panel">
+  <details class="menu" id="machine-menu"><summary title="The number of vCPUs, the size of the RAM and the graphics: applied by a restart">Machine</summary><div class="items panel">
     <label>Processors<select id="machine-cpus"></select></label>
     <label>Memory<select id="machine-ram"></select></label>
+    <label id="machine-gpu-label" hidden title="3D gives the guest OpenGL ES through the browser's WebGL2 (virgl); 2D is a plain framebuffer">Graphics<select id="machine-gpu"><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
     <button id="machine-apply">Apply and restart</button>
     <p class="hint">Kept in this browser. A suspended machine resumes with the size it had; Boot instead starts it from its disk with this one.</p>
   </div></details>

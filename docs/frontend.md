@@ -308,7 +308,9 @@ and draws on its own threads after the page flip, so the screen shows frames lat
 On a 3D machine (below) it should run with `WLR_RENDERER=gles2` instead: Mesa's virgl driver, drawn by the host.
 
 **A 3D machine** (graphics.md §20) gives a virtio-gpu machine virgl, rendered on the host by WebGL2: the default
-wherever the browser has WebGL2 (since G3; `?gpu=2d` keeps the 2D path above, `?gpu=virgl-null` G2's null renderer).
+wherever the browser has WebGL2 (since G3). The Machine menu's **Graphics** (3D or 2D, kept in the browser's
+settings, applied by a restart) turns it off; the query is over the menu: `?gpu=2d` keeps the 2D path above,
+`?gpu=virgl-null` G2's null renderer, `?gpu=virgl` 3D (the menu's choice is then greyed out, as it is without WebGL2).
 The page starts a **GPU worker** (`web/gpu-worker.ts`, top-level, so it has animation frames) and hands it the
 canvas instead of the machine worker. The GPU worker makes a WebGL2 context on it, builds the caps the guest will
 see from that context (`web/virgl-caps.ts`: limits, extensions, renderable formats; never more than it backs) and

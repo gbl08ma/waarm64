@@ -239,9 +239,10 @@ G2 onward is the 2026-10-09 proposal, settled by its kickoff. The proposal in de
   `OffscreenCanvas`; resources as textures and buffers; the virgl decoder; TGSI → GLSL ES 3.00 for what
   glcomp and wlroots' GLES2 renderer send; a scanout shown straight from its texture; fences. Done when
   glcomp's pixels match llvmpipe's (with a tolerance) and sway on GLES draws on the page.
-- **G4 — Breadth:** GTK4, a browser in the guest (Chromium's GPU process, Firefox's WebRender), a full
-  desktop (KDE or GNOME); a dEQP-GLES2/GLES3 subset (VK-GL-CTS, Apache-2.0, a guest workload); caps that
-  are honest per adapter; the shader cache.
+- **G4 — Breadth and correctness (current: §21; the kickoff is `M8-GRAPHICS-KICKOFF.md`).** Firefox first
+  (measured, then made faster), the page's menu choosing 2D or 3D, a dEQP-GLES2/GLES3 subset (VK-GL-CTS,
+  Apache-2.0, a guest workload) as the correctness gate and its failures, then GTK4 on the Arch image; the
+  shader compile cost. Chromium's GPU process and a full desktop are written down if seen, not targets.
 - **G5 — Performance and the product:** profiles of the renderer and the guest's driver (the kernel's submit
   path needs a finer instrument than the chunk-end PC sampler: §20); snapshots while 3D is in use. (Done in G3:
   the switch, `?gpu=2d`, and the fallback without WebGL2; snapshots while 3D is unused; real-GPU numbers.)
@@ -906,4 +907,63 @@ the Mac host's (`bench/gpu/sway-mac.sh`, decision 4) Chromium 153.0.8010.12 on A
 - **G4** (proposed in `M8-GRAPHICS-HANDOVER.md`, the kickoff the user's): breadth and correctness. A dEQP-GLES2/GLES3
   subset as a guest workload, then the applications (GTK4, a browser in the guest, a desktop's compositor), the gaps
   they hit, and the shader compile cost.
+
+## 21. G4: breadth and correctness (2026-10-09, current)
+
+The kickoff is `M8-GRAPHICS-KICKOFF.md` (the user's decisions: Firefox first, then GTK4 on the Arch image; a
+dEQP-GLES2/GLES3 subset as the gate; snapshots while 3D is in use stay G5's; 3D stays the default, with a 2D/3D
+choice in the page's menu).
+
+### Loop 0: Firefox measured
+
+**The image:** `bench/results/local/myarch3.qcow2` (the user's Arch Linux ARM with Firefox 157; git-ignored), grown
+from 7.6 to 24 GiB and updated under QEMU with hvf on the Mac host with a network (`pacman -Syu`, the kernel held at
+7.2.8; mesa-utils, gtk4-demos, strace, cmake, ninja, git, base-devel, wayland-utils added); its initramfs pinned to
+`virtio_mmio virtio_blk ext4 vfat` (the update rebuilt it with `autodetect`); saved back as the page writes a disk,
+4 KiB compressed clusters. The download is kept as `myarch3-orig.qcow2`.
+
+**The harness:** `bench/gpu/firefox-load.ts` (on `bench/gpu/guest-session.ts`, shared with sway-load.ts: every
+thread's CPU in the guest, the display's and the renderer's stats, the emulator's counters, per phase): sway on GLES,
+then Firefox in kiosk mode with a profile of its own (`bench/gpu/firefox/user.js`) on synthetic pages (a still page,
+a long page scrolled 6 px a frame from JS, WebGL 2 cubes) and on real sites saved with what they load
+(`bench/gpu/firefox-pages.sh`: Wikipedia's Linux article, an MDN page, GitHub's torvalds/linux, BBC News, Hacker
+News, on a second disk) scrolled by the mouse's wheel from the host (Firefox's asynchronous scrolling). Each Firefox
+is waited for (its page's `FFBENCH ready`), left 30 s (a fresh profile's first minute is busy) and measured for 10 s:
+the frames its animation ran a second (`dump` to stdout), the screen's flushes, the threads. An autoconfig
+(`firefox/webpc.cfg`) writes about:support's graphics section. `bench/gpu/sway-mac.sh` runs it on the Mac host
+(`SCRIPT=firefox-load.ts`; `HEADED=1` a visible window). JSON in `bench/gpu/results/g4-firefox/`.
+
+**What Firefox does on virgl** (about:support): WebRender, accelerated, on "virgl (webpc)", GLES 3.0 for WebGL 1 and 2;
+WebGL reaches WebRender through DMABUF (`DMABUF_WEBGL`: no read-backs), accelerated canvas 2D, Mesa's threading on;
+Firefox blocks only its native compositor (`WEBRENDER_COMPOSITOR`, by gfxInfo), video decoding and DMABUF export.
+Only the parent process maps Mesa (WebRender and WebGL run there). One shader fails to compile in the guest
+(`GL_EXT_shader_texture_lod`, which Mesa 26 has for no GLES driver): not ours.
+
+| (frames a second, median of 10; start in s) | dev VM, SwiftShader, 3D | dev VM, 2D (llvmpipe in the guest) | Mac, M4 GPU, 3D |
+|---|---|---|---|
+| still page | 60 | 60 | — |
+| scrolling page (JS) | 53 | 23 | 59 |
+| WebGL 2 cubes | 34 | 2 | 60 |
+| Wikipedia, wheel | 4 (start 69, load 28 s) | | 49 (start 41, load 15 s) |
+| MDN | 17 (44, 14 s) | | 59 (25, 7.5 s) |
+| GitHub | 21 (28, 7 s) | | 59 (19, 4.8 s) |
+| BBC News | 44 (57, 37 s) | | 60 (30, 17 s) |
+| Hacker News | 32 (29, 10 s) | | 60 (23, 5.4 s) |
+
+- **3D is what makes Firefox usable:** on 2D the guest's llvmpipe takes all four vCPUs for sway alone (scrolling 23
+  frames a second, WebGL 2). Headed and headless Chromium on the Mac give the same numbers (the user's question: no
+  headless throttling).
+- **On a real GPU, scrolling holds 50–60 frames a second on the real sites; start-up and loads are slow:** 18–41 s
+  to start (a warm profile) and 5–17 s to load a page, the guest's CPU-bound work (the content process, WebRender's
+  render backend and renderer threads, Firefox's main thread; 40–60% of four vCPUs, a quarter to a half of it in the
+  kernel).
+- **On SwiftShader the GPU worker stalls after every present**: Chromium holds a worker's canvas commit until the GPU
+  process has drawn the frame, ~33 ms with SwiftShader drawing WebGL on the CPU (25 stalls, 850 ms a second; every
+  one after a present, none after a submit alone). A fence waits behind it: 18 ms on the way to the GPU worker,
+  0.2 ms back, against 0.2–0.3 ms on the Mac. Firefox waits on fences several times a frame, so WebGL holds at ~34
+  frames a second there. Presenting through `transferToImageBitmap` instead moved the same wait into the transfer
+  (no gain). SwiftShader is the dev VM's and CI's, not a user's: not pursued.
+- **The device counts its commands** (`?displaystats`: per type, fences' round trip and each hop, replies held):
+  Firefox's Wikipedia and MDN scrolls create and destroy ~15–18 3D resources a second (each an `ATTACH_BACKING` in the
+  guest's kernel), and the device holds every reply behind a fenced one (QEMU holds only the fenced reply).
 

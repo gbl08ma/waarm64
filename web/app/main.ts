@@ -36,7 +36,7 @@ const overlayName = () => chosen?.overlay ?? spec.overlay;
 const diskName = () => (chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
 
 // Settings remembered per browser (the view, the network, whether saved disks are compressed). Storage can be off or throw: then nothing is remembered.
-type Settings = { ncpus?: number; ramMiB?: number; view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean };
+type Settings = { ncpus?: number; ramMiB?: number; view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean; gpu?: '3d' | '2d' };
 const SETTINGS = 'webpc.settings';
 const settings = (): Settings => {
   try {
@@ -189,14 +189,18 @@ if (benchHooks) (window as unknown as { __webpcProfile?: (on: boolean) => void }
 /**
  * 3D: a machine with a virtio-gpu gets virgl, rendered by a GPU worker that owns the screen as WebGL2
  * (web/gpu-worker.ts; docs/frontend.md "A 3D machine"). The default since G3 (the kickoff's decision 3: once the page's
- * Debian and snapshot tests passed with it on); `?gpu=2d` turns it off, as does `?gpu=virgl-null` (G2's null
- * renderer). Off where this browser has no WebGL2 (`no3d` says why): the machine is 2D then.
+ * Debian and snapshot tests passed with it on); the Machine menu's Graphics turns it off (`2d`, kept in this browser),
+ * and the query is over it: `?gpu=2d` (or `virgl-null`, G2's null renderer) off, `?gpu=virgl` on. Off where this
+ * browser has no WebGL2 (`no3d` says why): the machine is 2D then.
  */
 const gpuKnobs = (params.get('gpu') ?? '').split(',');
-const want3d = hasGpu && !gpuKnobs.includes('2d') && !gpuKnobs.includes('virgl-null');
+const gpuAsked = gpuKnobs.includes('2d') || gpuKnobs.includes('virgl-null') ? '2d' : gpuKnobs.includes('virgl') ? '3d' : undefined;
+const wants3d = () => hasGpu && (gpuAsked ?? settings().gpu ?? '3d') === '3d';
+let want3d = wants3d();
 let no3d: string | undefined;
 const hasWebgl2 = () => { try { return !!new OffscreenCanvas(1, 1).getContext('webgl2'); } catch { return false; } };
-if (want3d && !hasWebgl2()) no3d = 'this browser has no WebGL2';
+const webgl2 = hasWebgl2();
+if (want3d && !webgl2) no3d = 'this browser has no WebGL2';
 let run: Run | undefined;
 /** The guest has a driver on its keyboard (else the screen's keys go to the serial console: the firmware, GRUB). Per machine; false until the worker says. */
 let keyboardLive = false;
@@ -395,6 +399,7 @@ function start(snapshot?: File, resume = true) {
   const begin = (three?: { renderer: MessagePort; caps: Uint8Array }) => {
     if (run !== r) return;
     const s = three ? undefined : screen;
+    if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
     worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
   };
   if (want3d && !no3d) {
@@ -929,16 +934,25 @@ cpuSelect.replaceChildren(...cpuChoices.map((n) => new Option(`${n} vCPU${n > 1 
 ramSelect.replaceChildren(...ramChoices.map((n) => new Option(n >= 1024 && n % 512 === 0 ? `${n / 1024} GiB` : `${n} MiB`, String(n))));
 cpuSelect.value = String(ncpus);
 ramSelect.value = String(ramMiB);
+// Graphics (virtio-gpu machines): 3D or 2D, the query's choice over it.
+const gpuSelect = $<HTMLSelectElement>('machine-gpu');
+$('machine-gpu-label').hidden = !hasGpu;
+gpuSelect.value = want3d ? '3d' : '2d';
+if (!webgl2) [gpuSelect.disabled, gpuSelect.title] = [true, 'This browser has no WebGL2: 2D only'];
+else if (gpuAsked) [gpuSelect.disabled, gpuSelect.title] = [true, `Set by the page's address (?gpu=${params.get('gpu')})`];
 $<HTMLButtonElement>('machine-apply').onclick = () => {
   const [n, r] = [Number(cpuSelect.value), Number(ramSelect.value)];
-  if (n === ncpus && r === ramMiB) return;
+  const g = gpuSelect.value as '3d' | '2d';
+  if (n === ncpus && r === ramMiB && g === (want3d ? '3d' : '2d')) return;
   const need = hostMemoryGiB(r, n);
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   const low = has !== undefined && has < need ? `\n\nThis needs about ${need.toFixed(1)} GB of memory and this device reports ${has} GB: if it runs out, the browser closes the tab without warning.` : '';
   const running = state === 'running' || state === 'booting';
-  if (!confirm(`Restart with ${n} vCPU${n > 1 ? 's' : ''} and ${r} MiB of RAM?${running ? ' Like pulling the plug: unsaved work in the guest is lost.' : ''} A suspended machine is resumed as it was, with its own size.${low}`)) return;
+  if (!confirm(`Restart with ${n} vCPU${n > 1 ? 's' : ''}, ${r} MiB of RAM${hasGpu ? ` and ${g === '3d' ? '3D' : '2D'} graphics` : ''}?${running ? ' Like pulling the plug: unsaved work in the guest is lost.' : ''} A suspended machine is resumed as it was, with its own size.${low}`)) return;
   [ncpus, ramMiB] = [n, r];
-  remember({ ncpus, ramMiB });
+  remember({ ncpus, ramMiB, ...(hasGpu && !gpuAsked ? { gpu: g } : {}) });
+  want3d = wants3d();
+  no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
   $<HTMLDetailsElement>('machine-menu').open = false;
   void restart();
 };
