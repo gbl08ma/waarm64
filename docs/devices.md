@@ -60,7 +60,7 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
   inline: `run` returns a `DEVICE` exit while asynchronous requests are in flight and the caller
   awaits `settle()`, so completions still land at the same step. The bench pages run their suites
   in a worker, so they use the device worker.
-- Native twins of every backend live in `core/tests/common` (`p9.rs`, `qcow2.rs`, the overlay,
+- Native twins of every backend live in `core/tests/common` (`p9.rs`, `qcow2.rs`, `gpu.rs`, `snd.rs`, the overlay,
   net loopback, input agent), so native boots give the guest the same bytes.
 
 ## Configuration
@@ -342,6 +342,38 @@ mode (and natively in realtime mode: std has no CSPRNG).
   worker draws the screen on a 3D machine).
 - No native twin (`core/tests/common/gpu.rs` is 2D): the device and renderer are tested in Node (`tests/gpu.test.ts`,
   `tests/virgl.test.ts` on a recording WebGL2) and Chromium (`tests/virgl-browser.test.ts`).
+
+### snd (ID 25)
+- `{type: 'snd'}` (`web/snd.ts`, the native twin `core/tests/common/snd.rs`: the same statuses, completions at the
+  same exits, the same control log). virtio 1.2 §5.14, written from the spec with Linux's `sound/virtio` read for
+  behavior ([plans/audio.md](plans/audio.md)). No features; controlq, eventq, txq, rxq of 64; config jacks 0,
+  streams 1, chmaps 0 (Linux takes zero jacks and channel maps: it builds no jack or channel-map controls). Not yet
+  on the page's machines or any test machine but the snd guest's (audio S2 and S3 decide).
+- **One output stream:** `PCM_INFO` answers hda_fn_nid 0, no stream features, formats S16, S32 and FLOAT, rates
+  8–192 kHz (what every browser's `AudioContext` takes), 1–2 channels. Linux derives its limits from that: periods
+  2–16 of 160–122,880 bytes, a buffer of up to 245,760. `SET_PARAMS` takes those; unoffered features, formats,
+  rates or channel counts are `NOT_SUPP`; a period of no whole frame or a buffer of no whole period, `BAD_MSG`.
+  The state machine is the spec's (§5.14.6.6.1): `SET_PARAMS` from nothing, set, prepared or released;
+  `PREPARE` from set, prepared or released; `START` from prepared or stopped; `STOP` from started; `RELEASE` from
+  prepared or stopped; anything else, a stream id other than 0 or a short request is `BAD_MSG`. Jack and channel
+  map queries for anything are `BAD_MSG` (there are none), `JACK_REMAP` too; unknown codes `NOT_SUPP`. An info
+  query's items must fit the reply's room and be at least the struct's size (a larger size is padded with zeros).
+- **Transmit messages** (`virtio_snd_pcm_xfer`, frames, then a writable `virtio_snd_pcm_status`, written in the
+  last 8 writable bytes): held while the stream is prepared or stopped, given to the **sink** once started, and
+  completed with `OK` when the sink says they were played. `STOP` pauses (Linux sends it for a pause too, and
+  resumes with `START` without posting its messages again), `RELEASE` returns every held message (`OK`, after
+  its own reply), which is what Linux's `sync_stop` waits for. A message on another stream, of no whole frame, or
+  on a stream not prepared is `BAD_MSG` at once. rxq messages are `BAD_MSG` (no input stream); event buffers are
+  held (no events are sent). A virtio reset drops the stream and what's held.
+- **The sink** (`SndSink`): `play(params, frames, done)`, `start`, `stop`, `release`, `tick` (the end of a
+  `DEVICE` exit's requests: `Backend.polled`, which `Devices.poll` runs for every device on every exit). S1 has
+  the **deterministic sink** (`checksumSink`), on every machine for now: it plays (hashes, FNV-1a, and counts) and
+  completes at the end of the exit that posted a message, or START's for those held, **at most a buffer less a
+  period per exit**: Linux counts its position in completions modulo the buffer, so a whole buffer completed
+  before it looks again reads as nothing played and the stream stalls (audio.md §12); the rest completes at the
+  next exit. `toF32` converts a format to the f32 an AudioWorklet takes (S2's ring sink).
+- **Snapshots:** `save` gives the stream's state and parameters, the control log and the sink's counts; the held
+  messages are posted again by the core and play once (the sink hashes at completion).
 
 ### Framebuffer (`simple-framebuffer`)
 - `VmConfig.fb_width`/`fb_height` (0: none). x8r8g8b8, packed rows (stride 4 × width), in guest

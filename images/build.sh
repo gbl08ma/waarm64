@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, debian, ltp, litmus, edk2 (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, debian, ltp, litmus, edk2, alpine-uefi (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
 # buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Bootlin's
@@ -30,6 +30,9 @@
 #   allnoconfig + linux.fragment + images/crypto/linux.fragment, and an
 #   initramfs whose static init reports the crypto self-tests (Image,
 #   initramfs.cpio). Built natively in Alpine's arm64 container, as alpine-user.
+# linux-gpu, linux-snd: the virtio-gpu and virtio-snd test kernels (images/gpu/,
+#   images/snd/), the same way: allnoconfig + linux.fragment + their fragment, and an
+#   initramfs with their static init.
 # litmus: herdtools7's litmus7 tests for the memory model (M7, images/litmus/):
 #   diyone7 makes each test in images/litmus/tests.txt, herd7's aarch64.cat
 #   lists its allowed final states (allowed.txt), litmus7 turns it into a
@@ -96,7 +99,7 @@ export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu debian ltp litmus edk2 alpine-uefi)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd debian ltp litmus edk2 alpine-uefi)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -346,6 +349,30 @@ build_linux-gpu() {
   ' - "$KERNEL_TOOLS" "$out" "$LINUX" "$dst"
 }
 
+build_linux-snd() {
+  local dst=$out/linux-snd
+  rm -rf "$dst" # the kernel tree in build/linux-snd stays: make rebuilds what the config changed
+  mkdir -p "$dst"
+  linux_src
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH -e root="$root" "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache $1
+    src=$root/$2/build/linux-$3 obj=$root/$2/build/linux-snd dst=$root/$4
+    mkdir -p "$obj"
+    cat images/linux.fragment images/snd/linux.fragment > "$obj/allconfig"
+    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc KBUILD_BUILD_VERSION=1" # the version (#1) pinned: a rebuild in the same tree is the same kernel
+    $k KCONFIG_ALLCONFIG="$obj/allconfig" allnoconfig
+    missing=$(grep "^CONFIG_" "$obj/allconfig" | grep -vxFf "$obj/.config" || true)
+    [ -z "$missing" ] || { echo "linux-snd: not applied:" >&2; echo "$missing" >&2; exit 1; }
+    $k -j"$(nproc)" Image
+    gcc -static -Os -o "$obj/webpc-init" images/snd/init.c -lm
+    gcc -O2 -o "$obj/gen_init_cpio" "$src/usr/gen_init_cpio.c"
+    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\nfile /init %s 0755 0 0\n" "$obj/webpc-init" > "$obj/cpio.list"
+    "$obj/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$obj/cpio.list" > "$dst/initramfs.cpio"
+    cp "$obj/arch/arm64/boot/Image" "$dst/Image"
+    cp "$obj/.config" "$dst/config"
+  ' - "$KERNEL_TOOLS" "$out" "$LINUX" "$dst"
+}
+
 build_litmus() {
   local dst=$out/litmus ht=$out/dl/herdtools7-$HERDTOOLS_TAG
   rm -rf "$dst" "$out/build/litmus"
@@ -490,11 +517,12 @@ inputs() {
   [ "$1" = alpine-virgl ] && files+=($(find images/alpine/gl -type f | sort) "$out/alpine-gl/.inputs") && pins='^(MESA|VIRGL_TOOLS|USERLAND_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = linux-crypto ] && files+=(images/linux.fragment $(find images/crypto -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = linux-gpu ] && files+=(images/linux.fragment $(find images/gpu -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
+  [ "$1" = linux-snd ] && files+=(images/linux.fragment $(find images/snd -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu ]]; then declare -f linux_src; fi; } |
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd ]]; then declare -f linux_src; fi; } |
     sha256sum | cut -c1-16
 }
 
@@ -508,6 +536,7 @@ outputs() {
     alpine-virgl) echo alpine-virgl/rootfs-virgl.ext4 ;;
     linux-crypto) echo linux-crypto/Image linux-crypto/initramfs.cpio ;;
     linux-gpu) echo linux-gpu/Image linux-gpu/initramfs.cpio ;;
+    linux-snd) echo linux-snd/Image linux-snd/initramfs.cpio ;;
     debian) echo debian/disk.qcow2 ;;
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
     ltp) echo ltp/rootfs.ext4 ;;
@@ -551,10 +580,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() user= gl= virgl= crypto= gpu= litmus= kernel= debian= edk2= alpine_uefi=
+  rest=() user= gl= virgl= crypto= gpu= snd= litmus= kernel= debian= edk2= alpine_uefi=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
+    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -573,6 +602,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   if [ -n "$virgl" ]; then build alpine-virgl; fi
   if [ -n "$crypto" ]; then build linux-crypto; fi
   if [ -n "$gpu" ]; then build linux-gpu; fi
+  if [ -n "$snd" ]; then build linux-snd; fi
   if [ -n "$litmus" ]; then build litmus; fi
   if [ -n "$edk2" ]; then build edk2; fi
   exit 0

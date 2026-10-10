@@ -7,6 +7,7 @@
 // WFIs sleep on the signal word). With `parallel` (M7), every vCPU runs in
 // its own worker (web/vcpu-worker.ts) and this thread coordinates them.
 import type { GpuState } from './gpu.ts';
+import type { SndState } from './snd.ts';
 import { Devices, EV_CONFIG, deviceEntry, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
@@ -1075,11 +1076,14 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
     if ((r.kind === Exit.BUDGET || r.kind === Exit.TX_FULL || r.kind === Exit.DEVICE) && steps < maxSteps) continue;
     const ms = performance.now() - t0;
     await vm.flush();
-    // The display's state (hashes of the scanout and the cursor), for a machine with a virtio-gpu.
-    const slot = (o.devices ?? []).findIndex((d) => d.type === 'gpu');
-    const gpu = slot >= 0 ? (await vm.deviceState())[slot] as GpuState : undefined;
+    // The display's state (hashes of the scanout and the cursor), for a machine with a virtio-gpu; what a
+    // virtio-snd played (its sink's checksum) and the control requests it took.
+    const slot = (type: string) => (o.devices ?? []).findIndex((d) => d.type === type);
+    const states = slot('gpu') >= 0 || slot('snd') >= 0 ? await vm.deviceState() : [];
+    const gpu = slot('gpu') >= 0 ? states[slot('gpu')] as GpuState : undefined;
+    const snd = slot('snd') >= 0 ? states[slot('snd')] as SndState : undefined;
     vm.close();
-    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash(), gpu };
+    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash(), gpu, snd };
   }
 }
 

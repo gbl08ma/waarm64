@@ -1,0 +1,7 @@
+# The control requests the snd test kernel's driver sends (web/snd.ts `Snd.log`), in order.
+PCM_INFO 0+1 OK
+PCM_SET_PARAMS 2ch S16 48000 16384/4096 OK
+PCM_PREPARE OK
+PCM_START OK
+PCM_STOP OK
+PCM_RELEASE OK

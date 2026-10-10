@@ -1,7 +1,7 @@
 # webpc audio plan
 
-**Status:** S0 done, 2026-10-10 (the guests: §11); no device code yet. The user's decisions are §10; the rest is
-the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
+**Status:** S0 done (the guests: §11) and S1 done (the device, deterministic: §12), 2026-10-10; S2 (the page)
+is next. The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
 
 The question: how does a guest's sound reach the page's speakers (and, maybe, the page's microphone reach the
 guest), **with the guest's own unmodified drivers**, in time with what it shows, without the main thread in the path?
@@ -38,10 +38,11 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
   xrun. Of the stream features (shared-memory periods, polling, period and xrun events) Linux uses messages only.
 - **Linux's driver** (`sound/virtio/`, GPL: read for behavior, nothing copied): one message per period, all of a
   buffer's periods queued at start and each completion re-queued; control requests time out (a module parameter,
-  1 s by default), so the device answers them promptly in every mode; on stop and release it waits for its messages
-  to come back, so **the device returns every held buffer of a stream at `PCM_STOP`/`PCM_RELEASE`**. To check
-  against the source as built (S1): what it does with zero jacks and zero channel maps, how it reports position
-  between completions, its period and buffer limits.
+  1 s by default), so the device answers them promptly in every mode; its `sync_stop` sends `PCM_RELEASE` and
+  waits for every message to come back (the spec: "the device MUST complete all pending I/O messages"), so **the
+  device returns every held message at `PCM_RELEASE`**; `PCM_STOP` is also its pause (resumed with `START`, the
+  messages not posted again), so STOP keeps them (§12). Checked against the source in S1 (§12): zero jacks and
+  channel maps are fine, the position is counted in completions only, the limits come from what `PCM_INFO` offers.
 - **Permissive implementations to read:** crosvm's `devices/src/virtio/snd` (BSD-3) and rust-vmm's
   `vhost-device-sound` (Apache-2.0 or BSD-3): how they pace completions, and which corners of the spec they skip.
   QEMU's `hw/audio/virtio-snd.c` (GPL) is an oracle and a behavioral reference only; QEMU on the dev VM with
@@ -59,11 +60,12 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
 ## 3. The device (`web/snd.ts`, twin `core/tests/common/snd.rs`)
 
 - `{type: 'snd', ring?, capture?}`: one output stream (and one input stream with `capture`), no jacks, no
-  channel maps at first (if Linux needs one, a stereo map), no controls. Queues of 64.
+  channel maps (Linux needs none: §12), no controls. Queues of 64.
 - **Control:** `PCM_INFO` answers formats, rates, channels 1–2; `SET_PARAMS` checks them and the
   buffer/period sizes (a period a whole number of frames, the buffer a whole number of periods) and keeps them;
   `PREPARE` resets the stream's ring position; `START`/`STOP` start and pause consumption; `RELEASE` returns every
-  held message. Malformed or out of order: `BAD_MSG`; unsupported: `NOT_SUPP`, as the spec says.
+  held message (STOP pauses). Malformed or out of order: `BAD_MSG`; unsupported: `NOT_SUPP`, as the spec says.
+  Built in S1 (devices.md "snd"), with the sink as an interface (`SndSink`) the ring implements in S2.
 - **Transmit:** a message's frames are converted to f32 and written into the ring when it has room; the message is
   held until the worklet's read position passes its last frame, then completed with `OK` and `latency_bytes` =
   what's queued ahead of it. A message that doesn't fit the ring yet waits (the guest's buffer is the queue).
@@ -95,8 +97,9 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
 ## 5. Time and determinism
 
 - **Deterministic mode** (tests, native runners) has no wall clock to pace by: the device completes a message at
-  the `DEVICE` exit that posted it (a null sink that keeps a checksum of the frames, or all of them), so a guest
-  plays a file as fast as it can and boots keep exact step counts. The twin in `core/tests/common` does the same.
+  the end of the `DEVICE` exit that posted it (`checksumSink`: FNV-1a of the frames, or the frames themselves), at
+  most a buffer less a period per exit (§12), so a guest plays a file as fast as it can and boots keep exact step
+  counts. The twin in `core/tests/common` does the same. In S1 every machine has this sink.
 - **Realtime mode** paces by the worklet as above. A machine without a page (Node, the bench pages) uses a timer
   sink at the stream's rate.
 
@@ -129,8 +132,8 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
 - **S0, the guests** (no device code; **done**, §11): which kernels have the driver (Debian on our machine with QEMU's device;
   Alpine's `linux-virt`); for Arch, `virtio_snd` built out of tree against `linux-aarch64-headers` in rootless
   Podman (`images/archarm/`), loaded on the Arch image under QEMU's device.
-- **S1, the device, deterministic:** `web/snd.ts`, its twin, the `linux-snd` guest; Node and native tests; the
-  oracle comparison. Exit: the guest's tone arrives byte for byte in every runner.
+- **S1, the device, deterministic** (**done**, §12): `web/snd.ts`, its twin, the `linux-snd` guest; Node and native
+  tests; the oracle comparison. Exit: the guest's tone arrives byte for byte in every runner.
 - **S2, the page:** the ring, the worklet, the pacing, autoplay, mute and volume. Exit: a tone from the `linux-snd`
   guest on the page plays at the right speed with no underrun over a minute; the wake's jitter measured.
 - **S3, real guests:** Debian (ALSA), then the desktop guest (PipeWire under sway, Firefox, with the module from
@@ -210,3 +213,50 @@ then `cat /proc/asound/cards`, `aplay -l` and `speaker-test -D hw:0,0 -t sine -f
   pinned release moves. Without DKMS the alternative is a module package pinned to one `linux-aarch64` release
   (`depends=(linux-aarch64=7.2.9-1)`), rebuilt at every kernel update: more upkeep for the same result. In webpc's own
   images `images/archarm/virtio-snd.sh` stays the simpler path (no toolchain in the image).
+
+## 12. S1 findings (2026-10-10)
+
+What was built: the device (`web/snd.ts`, devices.md "snd"), its native twin (`core/tests/common/snd.rs`), the
+deterministic sink, `{type: 'snd'}` in the device specs (on no machine yet), the `linux-snd` guest (images.md) and
+its tests in every runner (testing.md "virtio-snd"). Nothing was ported from crosvm or vhost-device-sound.
+
+- **The guest:** 49,152 frames (48 periods of 1024, S16 48 kHz stereo, a 440 Hz sine left and 660 Hz right)
+  arrive byte for byte: FNV-1a `5652c745` from the guest, the sink and the waveform made again in JS, in
+  **35,879,381 steps** natively, in Node and in Chromium, interpreter and JIT. The control requests:
+  `PCM_INFO 0+1`, `PCM_SET_PARAMS 2ch S16 48000 16384/4096`, `PCM_PREPARE`, `PCM_START`, `PCM_STOP`,
+  `PCM_RELEASE` (`tests/snd/log.txt`). Linux 6.18 derives its limits from our `PCM_INFO`: periods 2–16 of
+  160–122,880 bytes, a buffer of up to 245,760 (`pcm_period_ms_min` 10 at 8 kHz mono S16; 160 ms and 80 ms at
+  192 kHz stereo 32-bit), formats S16_LE, S32_LE, FLOAT_LE (ALSA mask `0x4404`).
+- **The oracle** (`qemu-system-aarch64` 11.1.1 `-M virt`, `-device virtio-sound-device`, a `wav` audiodev at 48 kHz
+  stereo S16, `-global virtio-mmio.force-legacy=false`, `-trace 'virtio_snd_*'`; the same kernel and init): the
+  same requests in the same order, but `PCM_INFO 0+2` (QEMU's device has an output and an input stream by default,
+  and offers more: ALSA mask `0x5417`, 5,512–384,000 Hz, periods from 50 bytes). The wav's samples are the guest's
+  exactly, from frame 0, for as many as it holds: **QEMU's wav loses the stream's tail** (125 frames short of 49,152
+  in one run, 461 in another), though drain had returned: QEMU completes a message when it's copied into its own
+  mixing buffer, not when it's played, and the backend isn't flushed at power-off. Its drain took 1,024 ms (the
+  sound's length: QEMU paces by its audio timer) with 4096 frames still queued when the init asked.
+- **Linux counts its position in completions, modulo the buffer** (`virtsnd_pcm_msg_complete` adds each message's
+  length to `hw_ptr` and wraps it at the buffer; the pointer callback reports the difference since its last look).
+  A whole buffer completed before ALSA looks again reads as no progress: the first deterministic sink, which
+  completed every message at once, played the four periods queued before `START` (start threshold = the buffer,
+  as `aplay` does) and the guest's next write waited for room until its timeout (`write: I/O error`). **The
+  deterministic sink completes at most a buffer less a period per exit**, at the exit's end (`Backend.polled`); the
+  rest completes at the next exit, which the guest makes as soon as it writes again. In S2 the ring paces
+  completions anyway, but a sink must never return a buffer's worth at once (after a background tab's stall, say).
+- **Linux sends whole periods only:** a message is queued when a period of the buffer is full
+  (`virtsnd_pcm_msg_send`, through the `ack` callback since the driver moved to indirect copies), so a stream's
+  last partial period is never sent. Messages are sent before `START` (the start threshold's worth), so the
+  device holds them while prepared.
+- **ALSA's drain on an already empty stream fails:** `snd_pcm_drain` sets DRAINING and waits for a period to
+  elapse, never looking at the position first; with every message already completed (the deterministic sink
+  empties the buffer within each write) it waits out its timeout (max(100 ms, 1.1 × the buffer's time) of guest
+  time) and returns `EIO`. The init asks `STATUS` first and drops when nothing is queued (QEMU's run drains). A
+  player that always drains (`aplay`) would see `EIO` at its end in deterministic mode; deterministic mode is for
+  the test guests, and the realtime sinks of S2 don't empty the buffer early.
+- **`PCM_STOP` is a pause too** (`SNDRV_PCM_TRIGGER_PAUSE_PUSH` sends it, `PAUSE_RELEASE` sends `START` without
+  re-posting anything), so returning held messages at STOP would skip unplayed sound: STOP keeps them, RELEASE
+  returns them.
+- **The test kernel's build number** (`#N` in the version string) counts up with each rebuild in the same tree, and
+  it moves the step count (469 steps from `#2` to `#1`, strings of the same length; likely because Linux mixes its
+  version string into its early entropy, not verified): `linux-snd` pins it (`KBUILD_BUILD_VERSION=1`).
+  `linux-gpu` doesn't (its image says `#2`), so a rebuild of it in the same tree would move `gpu`'s steps.

@@ -9,7 +9,9 @@ import { readFile } from 'node:fs/promises';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { checkSndGuest } from './snd/guest.ts';
 import { STEPS } from './steps.ts';
+import type { SndState } from '../web/snd.ts';
 import { CONSOLE_INPUT_WANT } from '../web/vm.ts';
 
 let browser: Browser;
@@ -168,6 +170,7 @@ test('Linux boots on 4 vCPUs in parallel through 10+ pauses and resumes, JIT', {
 // tests/boot-node.test.ts has the rest of its runs).
 const LITMUS = new URL('../target/images/litmus/initramfs.cpio', import.meta.url);
 const GPU_IMAGE = new URL('../target/images/linux-gpu/Image', import.meta.url);
+const SND_IMAGE = new URL('../target/images/linux-snd/Image', import.meta.url);
 test('litmus and atomics stress on 4 vCPUs in parallel, JIT', { skip: !existsSync(LITMUS) && 'SKIPPED: run images/build.sh linux litmus' }, async () => {
   const r = await bootPage('litmus=-s,1000,-r,10&stress=-n,100000&parallel&ncpus=4&jit=1', 5);
   assert.equal(r.error, undefined);
@@ -245,6 +248,17 @@ for (const jit of [0, 1]) test(`the gpu guest draws, sends damage, sets a cursor
   assert.equal(r.steps, STEPS.gpu);
   assert.deepEqual([r.gpu?.width, r.gpu?.screen, r.gpu?.cursor.hash], [800, want.screen, want.cursor]);
   assert.deepEqual(r.gpu?.trace, [want.trace1, want.trace2, want.trace3]);
+});
+
+// The snd test kernel on a virtio-snd served by the device worker (audio S1): the same steps, console, sink hash and
+// control requests as the native twin and Node (core/tests/snd_guest.rs, tests/boot-node-suite.ts).
+for (const jit of [0, 1]) test(`the snd guest plays its waveform through the deterministic sink, deterministic mode${jit ? ', JIT' : ''}`, { skip: !existsSync(SND_IMAGE) && 'SKIPPED: run images/build.sh linux-snd' }, async () => {
+  const r = await bootPage(`snd&jit=${jit}`, 10) as Awaited<ReturnType<typeof bootPage>> & { snd?: SndState };
+  assert.equal(r.error, undefined);
+  console.log(`# chromium snd boot${jit ? ' (JIT)' : ''}: ${r.steps} steps`);
+  assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+  checkSndGuest(r.console, r.snd);
+  assert.equal(r.steps, STEPS.snd);
 });
 
 // The overlay's hand-over (M8 loop 8): OPFS sync access handles are exclusive, so a machine

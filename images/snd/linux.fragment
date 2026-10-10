@@ -1,0 +1,8 @@
+# The virtio-snd test kernel (audio S1; images/build.sh linux-snd): allnoconfig +
+# images/linux.fragment + these. ALSA with the virtio sound driver built in (it selects
+# SND_PCM, SND_TIMER and SND_JACK); the test's init talks to /dev/snd through ALSA's ioctls
+# (no alsa-lib: docs/testing.md "the snd guest").
+CONFIG_SOUND=y
+CONFIG_SND=y
+CONFIG_SND_PCM=y
+CONFIG_SND_VIRTIO=y

@@ -38,6 +38,7 @@ native() {
   image_test 'LTP and kselftests' 'ltp linux' ltp
   image_test 'firmware (EDK2)' edk2 firmware
   image_test 'gpu guest' linux-gpu gpu_guest
+  image_test 'snd guest' linux-snd snd_guest
   if [[ ",$WEBPC_DISTROS," == *",alpine,"* ]]; then image_test "alpine boot" alpine distros alpine; else step "alpine boot: SKIPPED (not in WEBPC_DISTROS)"; fi
 }
 # The native guest-image tests (~130 s) run beside the JS tests, which spend much of their time

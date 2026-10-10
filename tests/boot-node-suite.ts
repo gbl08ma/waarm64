@@ -25,6 +25,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test as nodeTest } from 'node:test';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
+import { checkSndGuest } from './snd/guest.ts';
 import { STEPS } from './steps.ts';
 import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, testDevices, type BootOptions, type ConsoleInput } from '../web/vm.ts';
 
@@ -45,7 +46,7 @@ const DISTRO_TESTS = (process.env.WEBPC_DISTROS ?? '').split(',').filter(Boolean
 
 type Run = Awaited<ReturnType<typeof runToPowerOff>>;
 const boot = (o: BootOptions, jit: 0 | 1 | 2 | 3, max = 20e9, input?: ConsoleInput) => runToPowerOff(WASM, { ...o, jit }, max, undefined, input);
-const summary = (r: Run) => ({ kind: r.kind, x0: r.x[0], x1: r.x[1], steps: r.steps, console: r.console, hvc: r.hvc, gpu: r.gpu });
+const summary = (r: Run) => ({ kind: r.kind, x0: r.x[0], x1: r.x[1], steps: r.steps, console: r.console, hvc: r.hvc, gpu: r.gpu, snd: r.snd });
 
 /**
  * Boots `o` on the interpreter, checks it with `check`, then under the JIT and
@@ -391,6 +392,17 @@ guest('gpu test kernel', () => ({
   assert.deepEqual(r.gpu?.trace, [GPU_GUEST.trace1, GPU_GUEST.trace2, GPU_GUEST.trace3]);
   assert.equal(r.gpu?.cursor?.hash, GPU_GUEST.cursor);
 }, { skip: !has('linux-gpu/Image') && 'SKIPPED: run images/build.sh linux-gpu', stress: STRESS, steps: STEPS.gpu, max: 5e9 });
+
+// The snd test kernel (images/build.sh linux-snd, images/snd/init.c; audio S1): ALSA on a virtio-snd
+// plays a known waveform through the deterministic sink, which hashes what it was given: the hash the
+// guest printed for what it wrote, after the control requests of tests/snd/log.txt, in the native
+// twin's steps (core/tests/snd_guest.rs).
+guest('snd test kernel', () => ({
+  ramSize: 256 << 20, kernel: image('linux-snd/Image'), initrd: image('linux-snd/initramfs.cpio'), cmdline: 'console=ttyAMA0 panic=-1', devices: [{ type: 'snd' }],
+}), (r) => {
+  poweredOff(r);
+  checkSndGuest(r.console, r.snd);
+}, { skip: !has('linux-snd/Image') && 'SKIPPED: run images/build.sh linux-snd', stress: STRESS, steps: STEPS.snd, max: 5e9 });
 
 // The firmware configuration (M8 phase B): EDK2 boots the UEFI Shell from the test disk
 // (images/build.sh edk2: shell.img), whose startup.nsh prints a variable, sets it in the

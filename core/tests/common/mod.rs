@@ -7,6 +7,7 @@
 pub mod gpu;
 pub mod p9;
 pub mod qcow2;
+pub mod snd;
 
 use qcow2::Disk;
 use std::collections::{HashMap, VecDeque};
@@ -110,6 +111,8 @@ pub enum Dev {
     /// many flushes the display changes to a size (a display event); with the last, the scanout is
     /// hashed at every flush.
     Gpu(u32, u32, Option<(u32, u32, u32)>, bool),
+    /// virtio-snd (web/snd.ts): one output stream, the deterministic sink.
+    Snd,
 }
 
 /// What the runners inject when the guest sets a keyboard LED: A pressed and
@@ -225,6 +228,8 @@ impl Dev {
                 c[8] = 1;
                 e(16, 1 << 1, 2, 64, c)
             }
+            // No features; controlq, eventq, txq, rxq; jacks 0, streams 1, chmaps 0.
+            Dev::Snd => e(25, 0, 4, 64, snd::CONFIG.to_vec()),
         }
     }
 }
@@ -435,8 +440,9 @@ struct Backends {
     held: Vec<Held>,
     p9: Vec<Option<p9::Server>>,
     gpu: Vec<Option<gpu::Gpu>>,
-    /// The epoch each gpu last saw: a change is a virtio reset.
-    gpu_epoch: Vec<u32>,
+    snd: Vec<Option<snd::Device<Request>>>,
+    /// The epoch each device last saw: a change is a virtio reset.
+    epochs: Vec<u32>,
     ram_size: u64,
 }
 
@@ -466,7 +472,11 @@ impl Backends {
                     _ => None,
                 })
                 .collect(),
-            gpu_epoch: vec![0; devs.len()],
+            snd: devs
+                .iter()
+                .map(|d| matches!(d, Dev::Snd).then(snd::Device::default))
+                .collect(),
+            epochs: vec![0; devs.len()],
             ram_size,
         }
     }
@@ -491,12 +501,14 @@ impl Backends {
     fn restored(&mut self) -> usize {
         let n = self.holds();
         self.held.iter_mut().for_each(|h| h.bufs.clear());
+        self.snd.iter_mut().flatten().for_each(|s| s.restored());
         n
     }
 
     /// The chains the backends hold: receive and event buffers.
     fn holds(&self) -> usize {
-        self.held.iter().map(|h| h.bufs.len()).sum()
+        self.held.iter().map(|h| h.bufs.len()).sum::<usize>()
+            + self.snd.iter().flatten().map(|s| s.holds()).sum::<usize>()
     }
 
     /// The guest set a keyboard LED: inject the test events.
@@ -549,11 +561,14 @@ impl Backends {
             }
             // A reset drops old records and whatever the backend held.
             let epoch = d.epoch.load(Ordering::Acquire) & 0xff;
-            if let Some(g) = &mut self.gpu[i]
-                && epoch != self.gpu_epoch[i]
-            {
-                g.reset();
-                self.gpu_epoch[i] = epoch;
+            if epoch != self.epochs[i] {
+                if let Some(g) = &mut self.gpu[i] {
+                    g.reset();
+                }
+                if let Some(s) = &mut self.snd[i] {
+                    s.reset();
+                }
+                self.epochs[i] = epoch;
             }
             if self.held[i]
                 .bufs
@@ -640,6 +655,37 @@ impl Backends {
                             reply.len() as u32
                         }
                     }
+                    (Dev::Snd, queue) => {
+                        let s = self.snd[i].as_mut().unwrap();
+                        let frames = |r: &Request| -> Vec<u8> {
+                            r.read.iter().flat_map(|&x| seg(vm, x).to_vec()).collect()
+                        };
+                        if queue == snd::EVENTQ {
+                            s.events.push(r);
+                        } else if queue == snd::CONTROLQ {
+                            let room: usize = r.write.iter().map(|s| s.1 as usize).sum();
+                            if room < 4 {
+                                complete(vm, i, r.w0, 0);
+                                continue;
+                            }
+                            let (reply, back) = s.control(&readable(), room, frames);
+                            scatter(vm, &r, &reply);
+                            // The reply first, then the messages a RELEASE returns (web/snd.ts).
+                            complete(vm, i, r.w0, reply.len() as u32);
+                            for t in back {
+                                snd_finish(vm, i, &t, snd::S_OK);
+                            }
+                        } else if queue == snd::TXQ {
+                            let len: usize = r.read.iter().map(|s| s.1 as usize).sum();
+                            let head: Vec<u8> = readable().into_iter().take(4).collect();
+                            if let Some((t, st)) = s.tx(&head, len, r, frames) {
+                                snd_finish(vm, i, &t, st);
+                            }
+                        } else {
+                            snd_finish(vm, i, &r, snd::S_BAD_MSG); // rxq: no input stream
+                        }
+                        continue;
+                    }
                     (Dev::P9(..), _) => {
                         let m = readable();
                         let room: usize = r.write.iter().map(|s| s.1 as usize).sum();
@@ -661,8 +707,40 @@ impl Backends {
                 };
                 complete(vm, i, r.w0, len);
             }
+            // The end of the exit's requests: the sound sink plays what it was given (web/snd.ts `polled`).
+            if let Some(s) = &mut self.snd[i] {
+                for t in s.tick() {
+                    snd_finish(vm, i, &t, snd::S_OK);
+                }
+            }
         }
     }
+}
+
+/// Completes a virtio-snd message with a `virtio_snd_pcm_status` (status, latency_bytes 0) in its
+/// last writable bytes (web/snd.ts `finish`).
+fn snd_finish(vm: &Vm, i: usize, r: &Request, status: u32) {
+    let room: u32 = r.write.iter().map(|s| s.1).sum();
+    if room < 8 {
+        complete(vm, i, r.w0, 0);
+        return;
+    }
+    let mut b = status.to_le_bytes().to_vec();
+    b.extend(0u32.to_le_bytes());
+    let mut skip = room - 8;
+    let mut k = 0;
+    for &s in &r.write {
+        if skip >= s.1 {
+            skip -= s.1;
+            continue;
+        }
+        let buf = seg(vm, s);
+        let n = (s.1 - skip).min(8 - k as u32) as usize;
+        buf[skip as usize..skip as usize + n].copy_from_slice(&b[k..k + n]);
+        k += n;
+        skip = 0;
+    }
+    complete(vm, i, r.w0, 8);
 }
 
 pub struct Run {
@@ -686,6 +764,8 @@ pub struct Run {
     /// The first gpu's state at the end, and its visible scanout as RGBA (width, height, rows).
     pub gpu: Option<gpu::State>,
     pub screen: Option<(u32, u32, Vec<u8>)>,
+    /// The first virtio-snd's sink (what it played) and its control log (web/snd.ts `SndState`).
+    pub snd: Option<(snd::Played, Vec<String>)>,
 }
 
 impl Run {
@@ -1005,7 +1085,9 @@ pub fn boot(b: &Boot) -> Run {
         .as_ref()
         .map_or(vec![], |f| f.bytes().to_vec());
     let first = backends.gpu.iter().flatten().next();
+    let first_snd = backends.snd.iter().flatten().next();
     Run {
+        snd: first_snd.map(|s| (s.played.clone(), s.log.clone())),
         gpu: first.map(|g| g.state()),
         screen: first.and_then(|g| g.screen()),
         fb,

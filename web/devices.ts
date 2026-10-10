@@ -12,6 +12,7 @@ import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { IoStats } from './iostats.ts';
 import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
 import { openDisk, type Disk } from './qcow2.ts';
+import { sndBackend } from './snd.ts';
 
 /**
  * Host-side device configuration, one per virtio-mmio slot (in order). `blk`
@@ -33,7 +34,8 @@ export type DeviceSpec =
   | NetSpec
   | P9Spec
   | InputSpec
-  | GpuSpec;
+  | GpuSpec
+  | SndSpec;
 
 /**
  * virtio-net (web/net.ts): Ethernet frames to and from an adapter: the
@@ -76,6 +78,13 @@ export type GpuSpec = {
   /** The queues' size (a power of 2, default 64). A small one is back-pressure: with replies paced to the frame, a guest that floods the display waits for room instead of burning its CPU on commits. */
   queueSize?: number;
 } & GpuOptions;
+
+/**
+ * virtio-snd (web/snd.ts): one output stream, no jacks or channel maps. Its frames go to the
+ * deterministic sink for now (a checksum; each message completes at the DEVICE exit that posted it):
+ * the page's AudioWorklet ring is audio S2 (docs/plans/audio.md).
+ */
+export type SndSpec = { type: 'snd' };
 
 /** The MessagePorts and canvases in `specs`, to transfer with them. */
 export const specPorts = (specs: DeviceSpec[]): Transferable[] =>
@@ -147,6 +156,8 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
       if (d.virgl) new DataView(config.buffer).setUint32(12, 2, true);
       return { entry: [16n, d.virgl ? 3n : 1n << 1n, 2n, BigInt(d.queueSize ?? 64), 16n], config };
     }
+    // No features; controlq, eventq, txq, rxq; config: jacks 0, streams 1, chmaps 0.
+    case 'snd': return { entry: [25n, 0n, 4n, 64n, 12n], config: new Uint8Array([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]) };
   }
 }
 
@@ -165,6 +176,8 @@ export type Ctx = {
  */
 type Backend = {
   request(r: Request): number | Promise<number> | undefined; reset(): void; close?(): void; config?(): void;
+  /** Runs after the device's requests of a DEVICE exit were taken (every exit, even without any): virtio-snd's deterministic sink completes there. */
+  polled?(): void;
   /**
    * A snapshot (docs/plans/snapshots.md): what the backend must keep besides the requests it holds,
    * as JSON, and the same given to a new backend. The core posts held requests to a restored VM's
@@ -658,6 +671,7 @@ export class Devices {
           if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;
         }
+        case 'snd': return sndBackend(ctx);
       }
     });
     this.epochs = specs.map(() => 0);
@@ -742,6 +756,7 @@ export class Devices {
         const len = b.request(r);
         if (len !== undefined) this.complete(i, w0, typeof len === 'number' ? len : await len);
       }
+      b.polled?.();
     }
   }
 
