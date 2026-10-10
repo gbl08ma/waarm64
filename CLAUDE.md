@@ -70,6 +70,7 @@ Playwright's Chromium and sets `NODE_USE_ENV_PROXY=1`. There `systemd-run` doesn
 scripts/ci.sh                  # what every change runs (~6 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, Node + Chromium tests, image tests, the long multi-vCPU runs
 scripts/ci-net.sh              # the network tests on Debian (~4 min): also when a change touches the network (docs/testing.md)
 scripts/ci-debian.sh           # Debian on the page (~4 min): also for the page, firmware, devices, disks, snapshots, display, guest-visible changes, track ends (docs/testing.md)
+scripts/ci-deqp.sh             # dEQP's pass lists on the page (~6 min): also when a change touches 3D (renderer, translator, caps, GPU worker), graphics track ends; needs images/deqp/build.sh
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
 cargo test                     # native core tests
 npm test                       # JS tests (tests/**/*.test.ts, incl. Chromium; needs the wasm build)
@@ -104,7 +105,7 @@ node bench/spike/memory/run-all.ts   # M0.5 memory suite
 The full benchmark list is in [docs/benchmarking.md](docs/benchmarking.md). **`scripts/ci.sh` must
 pass before any piece of work is considered done** (and `scripts/ci-debian.sh` when it touches the page, the firmware, the devices, disks, snapshots or
 the display, for guest-visible changes and at the end of a milestone or a track; `scripts/ci-net.sh`
-when it touches the network). **Exception:** a change that only edits docs (`.md` files or code comments)
+when it touches the network; `scripts/ci-deqp.sh` when it touches 3D). **Exception:** a change that only edits docs (`.md` files or code comments)
 needs no CI run.
 
 ## Conventions
@@ -185,7 +186,7 @@ their code.**
   the native interpreter run doesn't test). Iterate on the Buildroot guest and Alpine under the
   JIT; Debian boots only through UEFI in Chromium (the page tests, ~1 min under the JIT), never natively, in Node or directly.
 - Multi-hour JIT-stress runs aren't routine: short stress variants catch what they catch.
-- **`scripts/ci.sh` and `scripts/ci-debian.sh` run alone, one at a time, in the background** (each is at or over the
+- **`scripts/ci.sh`, `scripts/ci-debian.sh` and `scripts/ci-deqp.sh` run alone, one at a time, in the background** (each is at or over the
   Bash tool's cap): start it, wait for its notification, and run no other Chromium, QEMU or benchmark work beside it (a contended run was cancelled by a
   timeout; a timing-sensitive unit test failed only under its load). `cargo fmt --all` first: it is CI's first step.
 - `tsc` covers `bench/`, the git-ignored files under `bench/results/local/` too; `tests/browser.test.ts` pins the

@@ -65,11 +65,13 @@ machine".
   filled (both blocked tasks in `virtio_gpu_queue_ctrl_sgs`) and dEQP's watchdog killed it; fixed (`destroyObject`
   drops it; tests/virgl.test.ts). deqp-run.ts: no core dumps, kernel info on the console, `stoppedAt`; a run that
   times out saves the page's whole serial log (`serial.txt`, the `__serialLog` hook).
-- **Next, in order:** (1) the whole GLES2 and GLES3 lists again for the exit's numbers (~4 h on the page, nothing
-  else beside it); (2) a dEQP pass list as a test: **the user's decision: its own script, `scripts/ci-deqp.sh`, run
-  like ci-net.sh** (when a change touches the renderer, translator, caps or virtio-gpu, and at track ends; not
-  inside ci.sh or ci-debian.sh); it needs a repo-built guest image with Mesa (images/archarm plus mesa) instead of
-  the git-ignored myarch3.qcow2; (3) the exit write-up (§21, PLAN.md, G5's outline).
+- **The dEQP test, done** (the user's decision: its own script): `scripts/ci-deqp.sh` (~7 min) runs
+  tests/page-deqp.test.ts, GLES2's and GLES3's pass lists (tests/deqp/: the every-50th subsets, 342 and 889, and for
+  GLES3 the lifetime, occlusion_query and texstorage2d/3d.format groups, 325, which catch today's two regressions
+  where the subset didn't: each planted back fails it, the hang in ~11 min with the serial log kept) on
+  `target/deqp/guest.qcow2`, which images/deqp/build.sh now makes (images/archarm/build.sh --packages "mesa libpng").
+- **Next, in order:** (1) the whole GLES3 list again for the exit's numbers (running: tmp/deqp-gles3.log,
+  bench/results/local/deqp/confirm2-gles3; GLES2's passed whole); (2) the exit write-up (§21, PLAN.md, G5's outline).
 - The Arch image's guest-side helpers on the Mac: `~/webpc-arch/` (`start.sh` boots `myarch3.qcow2` under hvf with
   a network, virtio-mmio devices as ours; `vmsh.py <sock> <timeout> <cmd>` runs a command on its serial console as
   root). Mesa's source for reading: `~/Development/src/mesa` (sparse, mesa-26.2.4); vrend's:

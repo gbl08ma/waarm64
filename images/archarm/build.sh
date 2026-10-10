@@ -2,8 +2,10 @@
 # Arch Linux ARM -> a UEFI-bootable qcow2 (GPT: ESP with systemd-boot + root ext4).
 # On demand only: not part of images/build.sh, CI or any test. See docs/images.md "Arch Linux ARM".
 #
-#   images/archarm/build.sh [--out file.qcow2] [--root-mib 7500] [--esp-mib 256]
+#   images/archarm/build.sh [--out file.qcow2] [--root-mib 7500] [--esp-mib 256] [--packages "p1 p2"]
 #
+# --packages installs Arch packages first (pacman -Syu in the container, from Arch Linux ARM's mirrors; the
+# system is upgraded with them): images/deqp/build.sh's guest takes mesa and libpng.
 # Downloads the latest ArchLinuxARM-aarch64-latest.tar.gz (md5 checked against the published
 # .md5; a cached copy with the same md5 is reused), imports it as a rootless Podman image (the
 # rootfs runs natively on arm64), and inside that container regenerates the initramfs (the
@@ -23,11 +25,13 @@ W=$ROOT/target/archarm
 OUT=$W/archlinuxarm-uefi.qcow2
 ROOT_MIB=7500
 ESP_MIB=256
+PACKAGES=
 while [ $# -gt 0 ]; do
   case $1 in
     --out) OUT=$(realpath -m "$2"); shift 2 ;;
     --root-mib) ROOT_MIB=$2; shift 2 ;;
     --esp-mib) ESP_MIB=$2; shift 2 ;;
+    --packages) PACKAGES=$2; shift 2 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -63,6 +67,16 @@ tar xzf "$TAR" --no-same-owner -C "$WORK/pristine" ./etc/hostname ./etc/hosts 2>
 
 cat > "$WORK/inner.sh" <<'INNER'
 set -eu
+if [ -n "$PACKAGES" ]; then
+  # pacman's download sandbox doesn't work in a rootless container (restored in the image's copy below).
+  cp /etc/pacman.conf /tmp/pacman.conf
+  sed -i -e 's/^#DisableSandbox/DisableSandbox/' -e 's/^DownloadUser/#DownloadUser/' /etc/pacman.conf
+  pacman-key --init >/dev/null 2>&1 && pacman-key --populate archlinuxarm >/dev/null 2>&1
+  pacman -Syu --noconfirm --noprogressbar --needed $PACKAGES >/dev/null 2>&1 || { echo "pacman failed" >&2; exit 1; }
+  pacman -Scc --noconfirm >/dev/null 2>&1
+  cp /tmp/pacman.conf /etc/pacman.conf
+  pacman -Q $PACKAGES linux-aarch64
+fi
 K=$(ls /lib/modules | head -1)
 cat > /tmp/mkinitcpio.conf <<C
 MODULES=(virtio_mmio virtio_blk ext4 vfat)
@@ -91,7 +105,7 @@ e2fsck -fn /out/root.ext4 | tail -1
 INNER
 
 echo "== container: initramfs, rootfs -> ext4"
-podman run --rm -e ESP_PARTUUID=$ESP_PARTUUID -e ROOT_PARTUUID=$ROOT_PARTUUID -e ROOT_MIB=$ROOT_MIB \
+podman run --rm -e PACKAGES="$PACKAGES" -e ESP_PARTUUID=$ESP_PARTUUID -e ROOT_PARTUUID=$ROOT_PARTUUID -e ROOT_MIB=$ROOT_MIB \
   -v "$WORK:/out:Z" -v "$WORK/inner.sh:/inner.sh:ro,Z" "$IMG" bash /inner.sh
 
 echo "== ESP"

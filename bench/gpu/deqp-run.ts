@@ -2,10 +2,10 @@
 // (`bench/results/local/myarch3.qcow2`, Mesa's virgl in the guest) on a 3D machine, dEQP on its second disk
 // (images/deqp/build.sh → target/deqp/deqp.ext4, mounted at /mnt/vdb, the files in /mnt/vdb/deqp), deqp-gles2 or
 // deqp-gles3 run as root on EGL's surfaceless platform (no compositor) over a case list: a slice of a mustpass list
-// (every STRIDE-th case from the OFFSET-th) or the cases a file names (CASES). Writes <out>/results.json: the counts
+// (every STRIDE-th case from the OFFSET-th) or the cases a file names (CASES; `#` lines are comments). Writes <out>/results.json: the counts
 // by status and every case that didn't pass, with the time a case took; the renderer's warnings (results.warnings).
 //   node bench/gpu/deqp-run.ts <gles2|gles3> <image.qcow2> [outdir]
-// STRIDE=<n> (default 50), OFFSET=<k> (0 to n-1, default 0), CASES=<file of case names, `*` patterns allowed>,
+// STRIDE=<n> (default 50), OFFSET=<k> (0 to n-1, default 0), CASES=<file of case names, `*` patterns allowed, `#` lines comments>,
 // DETAIL=<n> (dEQP's messages for the first n cases that didn't pass), VIRGL_GPU=virgl,debug (the renderer's trace,
 // <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
 // LIMIT_S=<seconds the guest may run dEQP, default 1500>.
@@ -36,7 +36,7 @@ results.info = await run('uname -r; pacman -Q mesa | tr "\\n" " "; mkdir -p /mnt
 log('info', results.info);
 // The case list, in the guest.
 if (process.env.CASES) {
-  const cases = readFileSync(process.env.CASES, 'utf8').trim();
+  const cases = readFileSync(process.env.CASES, 'utf8').split('\n').filter((l) => l.trim() && !l.startsWith('#')).join('\n');
   await pasteSerial(`cat > /tmp/patterns.txt <<'EOF'\n${cases}\nEOF`);
   // A name with `*` stands for the mustpass list's cases it matches (dEQP's case lists take no wildcards).
   await run(`while read -r p; do case "$p" in *'*'*) grep -E "^$(echo "$p" | sed 's/[.]/[.]/g; s/[*]/.*/g')$" /mnt/vdb/deqp/${api}-main.txt;; *) echo "$p";; esac; done < /tmp/patterns.txt > /tmp/cases.txt`);

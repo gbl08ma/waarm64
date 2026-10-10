@@ -23,6 +23,11 @@ only edits docs: `.md` files or code comments):
 - **`scripts/ci-net.sh`** (~4 min) runs the network tests on Debian (`net-guest`, `page-network`,
   `net-tailnet`); it must pass too when a change touches the network (the gateway, virtio-net, the
   Tailscale client, the Network menu, Debian's network command line).
+- **`scripts/ci-deqp.sh`** (~6 min) runs dEQP on the page (`page-deqp`: GLES2's and GLES3's pass lists in
+  `tests/deqp/`, every case expected to pass, a guest boot each); it must pass too when a change touches 3D (the
+  virgl renderer, the TGSI translator, the caps, the GPU worker, virtio-gpu's 3D commands), and at the end of a
+  graphics track. It needs `images/deqp/build.sh`'s disk and guest (on demand, ~15 min once). The lists are
+  dEQP's every 50th case plus groups that caught regressions the subset didn't (graphics.md §21).
 
 Until 2026-10-08 `ci.sh` held the Debian boots and the long multi-vCPU runs had a script of
 their own: `ci.sh` took 765 s, of which the Debian queue was ~460. Without the Debian boots it

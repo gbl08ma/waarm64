@@ -6,15 +6,19 @@
 # images/build.sh, SHA256SUMS or CI. Results:
 #   target/deqp/deqp.ext4   the two binaries, their data and the GLES mustpass lists in /deqp (ext4, label deqp): the
 #                           page's second disk (?disk2=), which the guest mounts (bench/gpu/deqp-run.ts)
+#   target/deqp/guest.qcow2 the guest that runs them on the page: Arch Linux ARM with mesa and libpng
+#                           (images/archarm/build.sh --packages; ~4 min more), scripts/ci-deqp.sh's
 #   localhost/webpc-deqp    the build's image: the same binaries on Mesa's virpipe against the vtest oracle
 #                           (tools/virgl-oracle/deqp.sh), for the expected results
-#   images/deqp/build.sh
+#   images/deqp/build.sh [--guest-only]
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 W=$ROOT/target/deqp
 TAR=$ROOT/target/archarm/ArchLinuxARM-aarch64-latest.tar.gz
 URL=http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
 mkdir -p "$W" "$(dirname "$TAR")"
+guest() { "$ROOT/images/archarm/build.sh" --packages "mesa libpng" --out "$W/guest.qcow2"; }
+if [ "${1-}" = --guest-only ]; then guest; exit; fi
 if [ ! -f "$TAR" ]; then
   WANT=$(curl -fsSL "$URL.md5" | cut -d' ' -f1)
   curl -fL --retry 3 -o "$TAR" "$URL"
@@ -38,3 +42,4 @@ podman run --rm -v "$W:/out:Z" localhost/webpc-deqp sh -euc '
   mv /out/deqp.ext4.new /out/deqp.ext4'
 rm -rf "$W/tree" "$W/size"
 ls -l "$W/deqp.ext4"
+guest

@@ -61,16 +61,17 @@ surfaceless target, built natively for Arch Linux ARM in rootless Podman from Ar
 download, cached in `target/archarm`; `images/deqp/Containerfile`, ~10 min). Results: `target/deqp/deqp.ext4` (113
 MiB: the binaries, their data and the GLES2/GLES3 mustpass lists under `/deqp`), the page's second disk for
 `bench/gpu/deqp-run.ts`; and the image `localhost/webpc-deqp`, which runs the same binaries on Mesa's virpipe against
-the vtest oracle (`tools/virgl-oracle/deqp.sh`). A case's capture (`CAPTURE=`) replays on Chromium with
+the vtest oracle (`tools/virgl-oracle/deqp.sh`). It then makes the guest that runs them, `target/deqp/guest.qcow2`
+(`images/archarm/build.sh --packages "mesa libpng"`, ~4 min; `--guest-only` makes it alone), `scripts/ci-deqp.sh`'s. A case's capture (`CAPTURE=`) replays on Chromium with
 `bench/gpu/virgl-pairs.ts`, which diffs each read-back with the next (dEQP's result and its reference). The surfaceless target takes EGL's default display:
 `EGL_PLATFORM=surfaceless` picks it.
 
 ## Arch Linux ARM for UEFI (`images/archarm/build.sh`)
 
-**On demand only**: not in `images/build.sh`, `SHA256SUMS`, CI or any test. It turns Arch Linux ARM's
+**On demand only**: not in `images/build.sh` or `SHA256SUMS` (its `--packages` form makes dEQP's guest, `scripts/ci-deqp.sh`'s). It turns Arch Linux ARM's
 rootfs tarball (no bootloader, no partition table) into a qcow2 that boots through UEFI, for trying
 a distro the project doesn't ship. `images/archarm/build.sh [--out f.qcow2] [--root-mib 7500]
-[--esp-mib 256]` (~3 min, ~6 GiB of disk while it runs; the result is `target/archarm/archlinuxarm-uefi.qcow2`,
+[--esp-mib 256] [--packages "p1 p2"]` (`--packages`: `pacman -Syu` them in the container first, from Arch Linux ARM's mirrors) (~3 min, ~6 GiB of disk while it runs; the result is `target/archarm/archlinuxarm-uefi.qcow2`,
 804 MiB, 8 GiB virtual):
 
 - Downloads `ArchLinuxARM-aarch64-latest.tar.gz` (the *latest*, so the result changes over time;
