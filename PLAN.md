@@ -166,15 +166,20 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     from the browser) draws glcomp within 7 levels a byte of llvmpipe, and Arch's sway on GLES at 60
     frames a second on the Mac host's GPU (the null renderer's rate and guest CPU; 55 on SwiftShader).
     The page's tests pass with it; snapshots work while 3D is unused (`?gpu=2d` keeps the 2D path).
-    **Current: G4, breadth and correctness** (`M8-GRAPHICS-KICKOFF.md`, the user's decisions of
-    2026-10-09): Firefox first (measured, then faster), the page's 2D/3D choice in its menu, a
-    dEQP-GLES2/GLES3 subset as the correctness gate, then GTK4 on the Arch image; snapshots while 3D is
-    in use stay G5's (graphics.md §21).
+    **G4 is done (2026-10-10, graphics.md §21): breadth and correctness.** Firefox runs on 3D (WebRender and WebGL
+    on virgl; scrolling real sites at 50–60 frames a second on the Mac's GPU; its start and page loads are the guest's
+    CPU, the JIT track's), GTK4's GSK GL renderer draws every gtk4-demo demo, and **dEQP-GLES2 and GLES3's whole
+    mustpass lists pass with no failure** (17,027 and 44,398 pass, the rest not supported, on SwiftShader), with a pass
+    list as a test of its own (`scripts/ci-deqp.sh`); the menu has a 2D/3D choice. **Next: G5, proposed in
+    `M8-GRAPHICS-HANDOVER.md`** (snapshots while 3D is in use, dEQP on a real GPU, the guest-side leftovers; the
+    user's kickoff to come).
   - Audio ([docs/plans/audio.md](docs/plans/audio.md), planned 2026-10-10): virtio-snd to an AudioWorklet over a
     shared ring the device worker writes, the guest's period clock paced by the worklet's consumption. **Decisions
     (the user, 2026-10-10):** playback first, capture later; sound on by default (from the first click); Arch Linux
     ARM's kernel lacks the driver, so we build `virtio_snd` out of tree (eventually a PKGBUILD, DKMS if needed;
-    nothing asked upstream); done when a video's sound plays in sync in Firefox on the desktop guest.
+    nothing asked upstream); done when a video's sound plays in sync in Firefox on the desktop guest. **S0 and S1 are
+    done (2026-10-10):** Debian, Alpine and (with our module) Arch play under QEMU's device; our virtio-snd
+    (`web/snd.ts`) plays the `linux-snd` guest's waveform byte for byte in every runner, in the same steps.
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save

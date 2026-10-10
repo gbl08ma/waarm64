@@ -255,6 +255,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   guest-side bug (QEMU with virgl has it too); `GDK_DISABLE=offload` avoids it. Ways out: Mesa reallocating a
   staging-backed texture when it is exported (upstream), or caps without `COPY_TRANSFER_BOTH_DIRECTIONS` (every
   texture then has a guest backing and read-backs go through it: measure Firefox and GTK before choosing).
+- **virgl leftovers from Firefox** (graphics.md §21 loop 0): scrolling Wikipedia or MDN creates and destroys 15–18
+  3D resources a second (each an `ATTACH_BACKING` in the guest's kernel), and the device holds every reply behind a
+  fenced one (QEMU holds only the fenced reply; at most a fence's ~0.3 ms on a real GPU). Measure before changing.
+- **dEQP hasn't run on a real GPU** (graphics.md §21): every whole-list run was on SwiftShader (the dev VM); the
+  Mac's GPU (ANGLE on Metal) is what users have, and its precision, formats and limits differ. G5's proposal.
 - **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in
   the native runners. The null renderer is G2's measuring device and is tested in Node; extend the twin only if a
   native, exact-step virgl guest is wanted (the WebGL2 renderer of G3 can't run natively anyway).
@@ -398,6 +403,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
+- **`linux-gpu`'s build number isn't pinned** (audio S1's finding, plans/audio.md §12): the `#N` in a kernel's version
+  string grows with each rebuild in the same tree and moves its guest's step count (469 steps for `linux-snd` from `#2`
+  to `#1`); `linux-snd` pins `KBUILD_BUILD_VERSION=1`, `linux-gpu` (at `#2`) doesn't, so a rebuild would move `gpu`'s
+  steps. Pin it in the commit that next rebuilds it (with the step change and the user's OK).
 - **Firefox and Safari compatibility pass** (moved out of M8 by the user, 2026-09-28; Chromium
   stays the target): the user checks Firefox by hand (never automated here); WebKit could run
   through Playwright. Matters most once the page is publicly hosted. **Found so far (the user's

@@ -1,83 +1,40 @@
-# M8 graphics, 3D: handover in G4 (2026-10-10)
+# M8 graphics, 3D: handover after G4 (2026-10-10)
 
-G4 is current: the kickoff is `M8-GRAPHICS-KICKOFF.md` (the user's decisions; don't re-ask), the record
-docs/plans/graphics.md §21. Read first: graphics.md §1, §7, §20, §21; docs/devices.md "virgl"; docs/frontend.md "A 3D
-machine".
+G4 is done (docs/plans/graphics.md §21, "G4's exit"); its kickoff is retired (git history has it). **G5 is proposed
+here and waits for the user's kickoff.** Read first: graphics.md §1, §18, §20, §21; docs/devices.md "virgl";
+docs/frontend.md "A 3D machine"; docs/testing.md (`scripts/ci-deqp.sh`).
 
-## G4 so far
+## G5, proposed
 
-- **Loop 0 (Firefox measured), done** (§21): `bench/gpu/firefox-load.ts` on `bench/gpu/guest-session.ts` (shared
-  with sway-load.ts), the pages in `bench/gpu/firefox/`, real sites on a second disk (`bench/gpu/firefox-pages.sh` →
-  `target/ffpages/pages.ext4`), `bench/gpu/sway-mac.sh` with `SCRIPT=firefox-load.ts` (and `HEADED=1`: the user
-  allows a visible window on the Mac when they aren't using it). Phases: still, scroll, webgl, pages, menu,
-  startup, support; `GUEST_CMD`. JSON in `bench/gpu/results/g4-firefox/`.
-- **Loop 1 (Firefox faster): measured, nothing for the graphics path to take.** On the Mac's GPU, scrolling real sites
-  holds 50–60 frames a second; start-up (32 s) is Firefox's main thread alone at ~2/3 of a core, no I/O wait, the
-  renderer 8 ms a second; page loads are the same kind of guest CPU work. The emulator's speed is the JIT track's
-  (`M8-JIT-HANDOVER.md`). Left for the graphics side: the 15–18 3D resources a second created and destroyed while
-  scrolling (each a guest kernel allocation and `ATTACH_BACKING`), and replies held behind fenced ones (QEMU holds
-  only the fenced reply). On SwiftShader (the dev VM) fences wait ~18 ms behind each present: don't judge there.
-- **Loop 2 (the menu's Graphics: 3D or 2D), done**: `web/app/main.ts`, tested in `scripts/ci-debian.sh`.
-- **Loops 3 and 4 (dEQP and its failures), done but for a confirming run** (§21 "Loop 3"): `images/deqp/build.sh` (VK-GL-CTS 3.2.14.1
-  for Arch, `target/deqp/deqp.ext4`, the Podman image `localhost/webpc-deqp`), `bench/gpu/deqp-run.ts` (a slice of a
-  mustpass list: `STRIDE=n OFFSET=k`, default every 50th; or `CASES=` names and `*` patterns; `DETAIL=n` dEQP's own
-  messages; `VIRGL_GPU=virgl,debug` the renderer's trace in `<out>/virgl-debug.txt`; `CAPTURE=` a fixture),
-  `tools/virgl-oracle/deqp.sh` (the same binaries on virpipe against vtest; `OFFSET=` too). Results in
-  `bench/gpu/results/g4-deqp/`. Where it stands:
-  - **GLES2, the whole list** (17,165): 16,979 pass on the first run; its 48 failures are all fixed (the last 12 on
-    2026-10-10: index offsets and restart, alpha on targets without it, `gl_FragCoord.y`; §21). The oracle ran slices
-    0 and 1 only (6 fail of 6,866); slices 2–4 not run (`OFFSET=2..4 tools/virgl-oracle/deqp.sh gles2 <out> 5`,
-    ~10 min each; never beside CI).
-  - **GLES3, the whole list** (44,768, ten slices of ~16 min, one after another in the background: `STRIDE=10
-    OFFSET=$k LIMIT_S=1800 node bench/gpu/deqp-run.ts gles3 bench/results/local/myarch3.qcow2 <out>/$k` under
-    `timeout 2100`, capped): 44,033 pass, 326 fail (§21 "Loop 4": their causes). Fixed since: all but one: occlusion queries (62),
-    fragment outputs (58), texture queries and gradients (18), MSAA (172: `texture_multisample` advertised and
-    backed), DEPTH32F_STENCIL8 uploads (15). **Open:** `negative_api.buffer.read_pixels_fbo_format_mismatch`. The
-    every-50th subset after them: GLES3 889 pass, 0 fail (the oracle 884). A whole-list rerun hasn't been done. The list of cases
-    that didn't pass: `bench/gpu/results/g4-deqp/full-gles3/page-failed.txt` (rerun a group with `CASES=`).
-  - The method that worked: a group with `CASES='dEQP-…group.*'` and `DETAIL=3`, then one case with
-    `VIRGL_GPU=virgl,debug`; compare with vrend (`target/virgl-oracle/src/src/vrend/vrend_renderer.c`) and Mesa's
-    encoder (`~/Development/src/mesa/src/gallium/drivers/virgl/`). Most bugs were WebGL refusing what GLES allows
-    (silently: the draw doesn't happen) or protocol meanings that are vrend's, not Gallium's (query numbers,
-    stride 0, the append mask, the index offset). A pair of read-backs dEQP compares (an indexed draw and its
-    reference) can be replayed from a capture on Chromium and diffed: `bench/gpu/virgl-pairs.ts <capture>`. Each fix gets a cheapest-layer test (tests/virgl.test.ts on the recording mock, or
-    tests/browser/virgl-page.ts on Chromium) and a planted-bug check.
-  - Fixed so far: an X target's alpha byte (the user's black menu borders), point size declared twice, stencil
-    faces, attribute strides, stream output (layouts, resume, query numbering), depth copies and Z24 layouts,
-    integer blits and RGB10_A2UI, transfer strides, copies from non-renderable textures, constant-color/alpha
-    blends, inverted depth ranges.
-- **Loop 5 (GTK4), done** (§21 "Loop 5"): `bench/gpu/gtk4-load.ts` (gtk4-demo's demos one at a time in sway,
-  `DEMOS=`, `RENDERERS=`, `GTK_ENV=`; JSON in `bench/gpu/results/g4-gtk4/`). GSK's GL renderer draws every demo right;
-  3D against 2D: fishbowl 56 against 1 frames a second, gears 31 against 9. A GtkGLArea dies of GTK's graphics
-  offload (a guest-side Mesa bug: a staging-backed texture exported as a dmabuf of a page; `GDK_DISABLE=offload`;
-  backlog).
-- **Loop 6 (cost), done** (§21 "Loop 6"): no shader cache (steady phases compile nothing; Firefox's start ~0.2 s);
-  the PC sampler publishes every 256 steps while it runs (`vm_set_chunk`, ABI 34), `PROFILE=1` in sway-load.ts and
-  gtk4-load.ts (guest-session.ts `sampler`, `symbolize`): the guest kernel's submit path isn't a cost (no virtio-gpu
-  or DRM function in GTK's top 60). Firefox's leftovers (replies held behind a fenced one, at most a fence's ~0.3 ms
-  on a real GPU; 15–18 resources a second, the guest allocating) not pursued.
-- **Confirmation runs (2026-10-10):** GLES2's whole list passes (five slices, no failure). GLES3's found a regression
-  from the drawn DEPTH32F_STENCIL8 upload (6911844): it left UNPACK_ALIGNMENT at 4 where the renderer keeps 1, so
-  every later upload of rows not a multiple of 4 bytes (r8, rg8, r16, rgb565, rgba4, snorm) was skewed: 68 new
-  failures in texture.specification, all passing alone; fixed (tests/virgl.test.ts checks the alignment). Three
-  slices hung (dEQP "Blocked by coredump"): a query destroyed with its result pending stayed pending for good (a
-  deleted WebGL query never has one), so the FenceGate (f481000) held every later fence, the guest's control queue
-  filled (both blocked tasks in `virtio_gpu_queue_ctrl_sgs`) and dEQP's watchdog killed it; fixed (`destroyObject`
-  drops it; tests/virgl.test.ts). deqp-run.ts: no core dumps, kernel info on the console, `stoppedAt`; a run that
-  times out saves the page's whole serial log (`serial.txt`, the `__serialLog` hook).
-- **The dEQP test, done** (the user's decision: its own script): `scripts/ci-deqp.sh` (~7 min) runs
-  tests/page-deqp.test.ts, GLES2's and GLES3's pass lists (tests/deqp/: the every-50th subsets, 342 and 889, and for
-  GLES3 the lifetime, occlusion_query and texstorage2d/3d.format groups, 325, which catch today's two regressions
-  where the subset didn't: each planted back fails it, the hang in ~11 min with the serial log kept) on
-  `target/deqp/guest.qcow2`, which images/deqp/build.sh now makes (images/archarm/build.sh --packages "mesa libpng").
-- **Next, in order:** (1) the whole GLES3 list again for the exit's numbers (running: tmp/deqp-gles3.log,
-  bench/results/local/deqp/confirm2-gles3; GLES2's passed whole); (2) the exit write-up (§21, PLAN.md, G5's outline).
-- The Arch image's guest-side helpers on the Mac: `~/webpc-arch/` (`start.sh` boots `myarch3.qcow2` under hvf with
-  a network, virtio-mmio devices as ours; `vmsh.py <sock> <timeout> <cmd>` runs a command on its serial console as
-  root). Mesa's source for reading: `~/Development/src/mesa` (sparse, mesa-26.2.4); vrend's:
-  `target/virgl-oracle/src/src/vrend`.
+1. **Snapshots while 3D is in use** (G4's decision 4 left it to G5). Today `Gpu.save()` marks a machine whose 3D is
+   in use unsaveable and `vm.snapshot` refuses it; unused contexts are saved and remade. The renderer's state lives
+   in WebGL, so either the device's side keeps what a context created (objects, resource contents read back) and a
+   load rebuilds a fresh renderer from it, or the commands since each context's creation are kept and replayed.
+   Design against what Firefox and sway hold (their resource counts and sizes), measure the save's size and time.
+2. **dEQP on a real GPU:** the whole lists, or the pass lists, on the Mac host's GPU (ANGLE on Metal) through
+   `bench/gpu/sway-mac.sh`'s route (`SCRIPT=`): every G4 run was on SwiftShader. Whatever differs is what users hit.
+3. **The guest-side leftovers**, each measured first (docs/backlog.md): GtkGLArea's graphics offload (caps without
+   `COPY_TRANSFER_BOTH_DIRECTIONS`, every texture then guest-backed, or a Mesa fix), Firefox's 15–18 resources a
+   second, replies held behind a fenced one.
+4. **Breadth, if the user wants it:** KWin or Mutter, Chromium's GPU process in the guest, Xorg. Beyond GLES 3.0
+   (compute, GLES 3.1) is the WebGPU backend, deferred by the 3D decision (§18).
 
-## What exists (G3)
+## Tools G4 left
+
+- `bench/gpu/guest-session.ts` (a page session on a guest image: serial root shell, sway, load phases, the PC
+  sampler `PROFILE=1`, the whole serial log on a timeout), `firefox-load.ts`, `gtk4-load.ts`, `sway-load.ts`,
+  `sway-mac.sh` (the Mac host's GPU; `HEADED=1` allowed when the user isn't using the Mac).
+- dEQP: `images/deqp/build.sh` (`target/deqp/deqp.ext4` and the guest `target/deqp/guest.qcow2`),
+  `bench/gpu/deqp-run.ts` (`STRIDE`/`OFFSET` slices, `CASES=` lists and patterns, `DETAIL=`, `VIRGL_GPU=virgl,debug`,
+  `CAPTURE=`; `stoppedAt`), `tools/virgl-oracle/deqp.sh` (vtest), `bench/gpu/virgl-pairs.ts` (a capture's read-back
+  pairs on Chromium), `scripts/ci-deqp.sh` (the pass lists, `tests/deqp/`). A whole GLES3 list is ten slices of ~17
+  min (`STRIDE=10 OFFSET=$k LIMIT_S=1800` under `timeout 2100`); validation, so other work may run beside it.
+- The method that found G4's bugs: a group with `CASES='dEQP-…group.*'` and `DETAIL=3`, then one case with
+  `VIRGL_GPU=virgl,debug`; compare with vrend (`target/virgl-oracle/src/src/vrend/`) and Mesa's encoder
+  (`~/Development/src/mesa/src/gallium/drivers/virgl/`). Most bugs were WebGL refusing what GLES allows (silently)
+  or protocol meanings that are vrend's, not Gallium's. A hang: the hung tasks' stacks in `serial.txt`.
+
+## What exists (G3, with G4's changes in graphics.md §21)
 
 - **The device** (`web/gpu.ts`, `GpuOptions.virgl`): the VIRGL/VIRGL2 capsets with the caps it is given, contexts,
   3D resources, transfers, `SUBMIT_3D` walked and checked, then handed to a host (`Gpu.host`, `web/virgl-host.ts`:

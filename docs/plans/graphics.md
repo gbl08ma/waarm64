@@ -239,13 +239,14 @@ G2 onward is the 2026-10-09 proposal, settled by its kickoff. The proposal in de
   `OffscreenCanvas`; resources as textures and buffers; the virgl decoder; TGSI → GLSL ES 3.00 for what
   glcomp and wlroots' GLES2 renderer send; a scanout shown straight from its texture; fences. Done when
   glcomp's pixels match llvmpipe's (with a tolerance) and sway on GLES draws on the page.
-- **G4 — Breadth and correctness (current: §21; the kickoff is `M8-GRAPHICS-KICKOFF.md`).** Firefox first
+- **G4 — Breadth and correctness (done 2026-10-10: §21; the kickoff, `M8-GRAPHICS-KICKOFF.md`, is in git history).** Firefox first
   (measured, then made faster), the page's menu choosing 2D or 3D, a dEQP-GLES2/GLES3 subset (VK-GL-CTS,
   Apache-2.0, a guest workload) as the correctness gate and its failures, then GTK4 on the Arch image; the
   shader compile cost. Chromium's GPU process and a full desktop are written down if seen, not targets.
-- **G5 — Performance and the product:** profiles of the renderer and the guest's driver (the kernel's submit
-  path needs a finer instrument than the chunk-end PC sampler: §20); snapshots while 3D is in use. (Done in G3:
-  the switch, `?gpu=2d`, and the fallback without WebGL2; snapshots while 3D is unused; real-GPU numbers.)
+- **G5 — The product (proposed in `M8-GRAPHICS-HANDOVER.md`, §21 "G4's exit"):** snapshots while 3D is in use, dEQP
+  on a real GPU, the guest-side leftovers measured first; a desktop's compositor if wanted. (The finer instrument
+  for the guest's submit path was G4's loop 6: not a cost. Done in G3: the switch, `?gpu=2d`, and the fallback
+  without WebGL2; snapshots while 3D is unused; real-GPU numbers.)
 - **Later:** the WebGPU backend for the same protocol (GLES 3.1); Vulkan through Venus on it (§4).
 
 ## 8. Open questions
@@ -908,9 +909,9 @@ the Mac host's (`bench/gpu/sway-mac.sh`, decision 4) Chromium 153.0.8010.12 on A
   subset as a guest workload, then the applications (GTK4, a browser in the guest, a desktop's compositor), the gaps
   they hit, and the shader compile cost.
 
-## 21. G4: breadth and correctness (2026-10-09, current)
+## 21. G4: breadth and correctness (2026-10-09 to 10-10, done)
 
-The kickoff is `M8-GRAPHICS-KICKOFF.md` (the user's decisions: Firefox first, then GTK4 on the Arch image; a
+The kickoff was `M8-GRAPHICS-KICKOFF.md` (in git history; the user's decisions: Firefox first, then GTK4 on the Arch image; a
 dEQP-GLES2/GLES3 subset as the gate; snapshots while 3D is in use stay G5's; 3D stays the default, with a 2D/3D
 choice in the page's menu).
 
@@ -1182,4 +1183,70 @@ the page, **one thread busy: Firefox's main thread at about two-thirds of a core
 second), the machine at 43% of its 4 vCPUs, **no I/O wait**; the renderer works 8 ms a second, its shader compiles
 and links 7 ms a second (96 programs). Firefox's start is its main thread's guest CPU: the emulator's speed (the JIT
 track, `M8-JIT-HANDOVER.md`), not the graphics path. Page loads are the same kind of work (§21 loop 0's table).
+
+### Confirmation runs and the dEQP test (2026-10-10)
+
+The whole GLES2 and GLES3 lists again, after loop 4's fixes, found two regressions those fixes had made (the
+every-50th subsets had passed with both in):
+- **The drawn DEPTH32F_STENCIL8 upload left `UNPACK_ALIGNMENT` at 4**, where the renderer keeps 1: every later upload
+  of rows not a multiple of 4 bytes (r8, rg8, r16, rgb565, rgba4, snorm) was skewed; 68 `texture.specification`
+  failures, each passing alone. The first after the first depth32f_stencil8 case.
+- **A query destroyed with its result pending stayed pending for good** (a deleted WebGL query never has one), so
+  the `FenceGate` held every later fence: the guest's control queue filled (the hung tasks' stacks were in
+  `virtio_gpu_queue_ctrl_sgs`), dEQP's watchdog killed it, and its exit hung ("Blocked by coredump": the dump waits
+  for every thread). Three of ten GLES3 slices hung; the cases near `lifetime` (objects deleted in use) do it.
+  The harness now keeps what a hang needs: no core dumps in the guest, the kernel's info on the console, the case
+  dEQP stopped at (`stoppedAt`), and the page's whole serial log (`serial.txt`, the `__serialLog` hook) when a run
+  times out.
+
+After both fixes (`8b243ad`), on the dev VM (SwiftShader; `bench/gpu/results/g4-deqp/exit-gles2/`, `exit-gles3/`):
+
+| whole list | pass | fail | not supported | warnings |
+|---|---|---|---|---|
+| GLES2 (17,165) | 17,027 | **0** | 136 | 2 compatibility (`flush_finish`: timing) |
+| GLES3 (44,768) | 44,398 | **0** | 358 | 9 quality (highp `floor`'s precision, one `fbo.completeness.samples`), 3 compatibility (`flush_finish`) |
+
+(GLES2's run was before `8b243ad`; neither fix touches what GLES2 can reach.) Loop 4's open
+`read_pixels_fbo_format_mismatch` passes. GLES3 took 172 minutes in ten slices.
+
+**The test** (the user's decision: a script of its own, as `ci-net.sh`): `scripts/ci-deqp.sh` (~7 min) runs
+`tests/page-deqp.test.ts`, GLES2's and GLES3's pass lists (`tests/deqp/`: the every-50th subsets, 342 and 889 cases,
+and for GLES3 the `lifetime`, `occlusion_query` and `texstorage2d/3d.format` groups, 325, which catch the two
+regressions where the subsets didn't: each planted back fails it, the alignment with 27 cases, the hang in ~11
+minutes with the serial log kept). It must pass when a change touches 3D and at a graphics track's end. Its guest is
+the repo's: `images/deqp/build.sh` makes `target/deqp/guest.qcow2` (Arch Linux ARM with mesa and libpng,
+`images/archarm/build.sh --packages`), so it no longer needs the user's image.
+
+### G4's exit (2026-10-10)
+
+- **Firefox** (decision 1): it opens on a 3D machine with WebRender and WebGL on "virgl (webpc)", GLES 3.0. Scrolling
+  real sites holds 50–60 frames a second on the Mac's GPU, against 4–44 on SwiftShader and 23 (a JS scroll) on 2D;
+  WebGL 2 cubes 60 against 2 on 2D. "Faster" found nothing on the graphics path to take: start-up (32 s) and page
+  loads (5–17 s) are the guest's CPU (Firefox's main thread, content processes), the JIT track's. The one
+  correctness bug the user saw (black menu borders) was fixed in loop 0.
+- **dEQP** (decision 3): GLES2 and GLES3's whole mustpass lists pass with **no failure** (above; from 16,979 and
+  44,033 passing at their first runs, 48 and 326 failing), better than the oracle (vtest on llvmpipe's GLES 3.0,
+  which fails MSAA); a pass list is a test (`scripts/ci-deqp.sh`). The causes, by count: MSAA not advertised (172),
+  occlusion queries before a fence (62), fragment outputs (58), and protocol meanings that are vrend's rather than
+  Gallium's (query numbers, stride 0, index offsets, the append mask), WebGL refusing what GLES allows, and the
+  translator's gaps (loops 3 and 4).
+- **GTK4** (decision 2): every gtk4-demo demo draws right with GSK's GL renderer; 3D against 2D, fishbowl 56 against
+  1 frames a second. GtkGLArea needs `GDK_DISABLE=offload` (a Mesa bug in the guest; backlog).
+- **Snapshots while 3D is in use** stay refused (decision 4: G5's). **3D stays the default**, with the menu's
+  Graphics choice (decision 5, loop 2).
+- **Cost** (loop 6): no shader cache needed (steady phases compile nothing); the PC sampler publishes every 256
+  steps while it runs (ABI 34), which showed the guest kernel's submit path isn't a cost: these applications wait on
+  the emulator's speed.
+- **Not tried:** Chromium's GPU process in the guest, KDE or GNOME (KWin, Mutter), Xorg. **Not measured:** dEQP on a
+  real GPU (every run was on SwiftShader).
+
+**G5, proposed** (for the user's kickoff): (1) **snapshots while 3D is in use** (decision 4): the renderer's state
+lives in WebGL, so a snapshot needs the guest-visible state of each context and resource saved from the device's
+side (resource contents read back, the objects a context created) and rebuilt into a fresh renderer on load, or the
+commands since each context's creation kept and replayed; to be designed against what Firefox and sway hold. (2)
+**dEQP on a real GPU** (the Mac's, ANGLE on Metal), what users run: precision, formats and limits differ from
+SwiftShader's. (3) **The guest-side leftovers**, each measured first: GtkGLArea's offload (caps without
+`COPY_TRANSFER_BOTH_DIRECTIONS`, or a Mesa fix), Firefox's 15–18 resources a second and replies held behind a fenced
+one. (4) **Breadth**, if the user wants it: a desktop's compositor (KWin, Mutter), Chromium in the guest. Beyond
+WebGL2's GLES 3.0 (compute, GLES 3.1) is the WebGPU backend, deferred by the 3D decision (§18).
 
