@@ -24,8 +24,9 @@ export function capsFromGl(gl: WebGL2RenderingContext): Uint8Array {
   caps.vertexbuffer = [...VERTEX_FORMATS.keys()];
   caps.supported_readback_formats = readbackFormats(ext.has('EXT_color_buffer_float')).filter((id) => has(FORMATS.get(id)!.needs));
   caps.scanout = [1, 2, 67, 134].filter((id) => FORMATS.has(id));
-  // Multisampled rendering is renderbuffers (WebGL2 samples no multisampled texture).
-  caps.supported_multisample_formats = formats.filter((f) => f.write && (f.kind === 'unorm' || f.kind === 'float') && has(f.needs) && has(f.renderNeeds)).map((f) => f.id);
+  // Multisampled rendering is renderbuffers (WebGL2 samples no multisampled texture): color formats WebGL renders to
+  // and depth formats. Mesa allows any sample count above 1 only with texture_multisample (below).
+  caps.supported_multisample_formats = formats.filter((f) => (f.write && (f.kind === 'unorm' || f.kind === 'float') && has(f.needs) && has(f.renderNeeds)) || f.kind === 'depth' || f.kind === 'depthstencil').map((f) => f.id);
   const range = (e: number) => Array.from(gl.getParameter(e) as Float32Array);
   const [, pointMax] = range(E.ALIASED_POINT_SIZE_RANGE);
   const [, lineMax] = range(E.ALIASED_LINE_WIDTH_RANGE);
@@ -37,6 +38,9 @@ export function capsFromGl(gl: WebGL2RenderingContext): Uint8Array {
     max_texture_array_layers: p(E.MAX_ARRAY_TEXTURE_LAYERS),
     max_render_targets: Math.min(p(E.MAX_DRAW_BUFFERS), p(E.MAX_COLOR_ATTACHMENTS), 8),
     max_samples: Math.min(p(E.MAX_SAMPLES), 8),
+    // virgl_caps_bool_set1.texture_multisample (bit 14): what lets Mesa make multisampled renderbuffers at all, which
+    // GLES 3.0 requires (4 samples).
+    bset: (caps.bset as number) | (p(E.MAX_SAMPLES) > 1 ? 1 << 14 : 0),
     // Gallium counts constant buffer 0 (our uniforms) among the blocks.
     max_uniform_blocks: blocks + 1,
     max_uniform_block_size: p(E.MAX_UNIFORM_BLOCK_SIZE),

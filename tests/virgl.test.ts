@@ -148,7 +148,7 @@ test('virgl tgsi: a constant blend factor WebGL can\'t pair is applied in the sh
   }
 });
 
-test('virgl tgsi: texture sizes and gradients have the texture\'s dimensions (dEQP-GLES3 texturesize, texturegrad)', () => {
+test('virgl tgsi: texture sizes and gradients have the texture\'s dimensions (dEQP-GLES3 texturesize, texturegrad); a multisampled texture is fetched resolved', () => {
   const s = corpus().find((c) => c.name.startsWith('texture queries'))!;
   const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END');
   const fs = generate(vs, parseTgsi(s.text), { ...KEY, attribs: ['f'] }).fs;
@@ -156,6 +156,10 @@ test('virgl tgsi: texture sizes and gradients have the texture\'s dimensions (dE
   assert.match(fs, /textureGrad\(fs1, v_GENERIC0\.xyz, v_GENERIC0\.xy, v_GENERIC0\.xy\)/, 'a 2D array\'s gradients are 2D');
   assert.match(fs, /textureGrad\(fs2, vec4\(v_GENERIC0\.xyz, v_GENERIC0\.w\), v_GENERIC0\.xy, v_GENERIC0\.xy\)/, 'and a shadow array\'s');
   assert.match(fs, /ivec4\(textureSize\(fs3, [^;]*\)\.xz, 0, 0\)/, 'a 1D array\'s layers come from the 2D array\'s third size');
+  // A multisampled texture is sampled resolved: a 2D texture fetched at level 0, the sample index left out.
+  const ms = generate(vs, parseTgsi('FRAG\nDCL OUT[0], COLOR\nDCL SAMP[0]\nDCL SVIEW[0], 2D_MSAA, FLOAT\nDCL TEMP[0]\nIMM[0] UINT32 {1, 2, 0, 3}\n  0: TXF TEMP[0], IMM[0], SAMP[0], 2D_MSAA\n  1: MOV OUT[0], TEMP[0]\n  2: END'), { ...KEY, attribs: ['f'] }).fs;
+  assert.match(ms, /uniform highp sampler2D fs0;/);
+  assert.match(ms, /texelFetch\(fs0, [^;]*\.xy, 0\)/, ms);
 });
 
 test('virgl tgsi: what WebGL2 can\'t do is refused, not miscompiled', () => {
@@ -330,6 +334,24 @@ test('virgl renderer: depth textures: Z24S8 goes up with depth in the high bits,
   assert.ok(gl.log.slice(at).some(([n, a]) => n === 'blitFramebuffer' && ((a as number[])[8] & E.DEPTH_BUFFER_BIT) !== 0), 'a depth blit');
 });
 
+test('virgl renderer: an upload to DEPTH32F_STENCIL8, which WebGL2 takes no data for, is drawn (dEQP-GLES3 depth32f_stencil8)', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  r.createContext(1);
+  r.createResource({ id: 1, target: 2, format: 126, bind: 8, width: 2, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 1);
+  // Two texels: depth 0.25 with stencil 0x81, depth 1.0 with stencil 0x02 (the depth's float, then the stencil's word).
+  const f = (v: number) => new Uint32Array(new Float32Array([v]).buffer)[0];
+  r.submit(1, new Uint32Array([9 | 15 << 16, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 1, f(0.25), 0x81, f(1), 0x02]));
+  assert.deepEqual(errors, []);
+  assert.ok(!gl.log.some(([n, a]) => n.startsWith('texSubImage') && (a as unknown[]).includes(0x8dad /* FLOAT_32_UNSIGNED_INT_24_8_REV */)), 'no data WebGL refuses');
+  const ups = gl.log.filter(([n]) => n === 'texImage2D').map(([, a]) => Array.from((a as unknown[])[8] as ArrayLike<number>));
+  assert.deepEqual(ups, [[0.25, 1], [0x81, 0x02]]);
+  assert.equal(gl.log.filter(([n]) => n === 'drawArrays').length, 9, 'the depth, then a pass a stencil bit');
+});
+
 test('virgl renderer: integer formats blit through GL\'s blit, and RGB10_A2UI reads back packed (dEQP-GLES3 fbo.blit)', () => {
   const byName = (n: string) => [...FORMATS.values()].find((f) => f.name === n)!;
   // RGB10_A2UI: four integers read, packed again.
@@ -454,6 +476,84 @@ test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GL
   assert.equal(new DataView(ram.buffer).getUint32(0, true), 1, 'the result is written before the fence is answered');
 });
 
+test('virgl renderer: a multisampled source is resolved before a conversion or a flip (dEQP-GLES3 fbo.invalidate unbind_blit_msaa)', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  r.createContext(1);
+  const byName = (n: string) => [...FORMATS.values()].find((f) => f.name === n)!.id;
+  const tex = (id: number, format: string, samples: number, bind = 2) => { r.createResource({ id, target: 2, format: byName(format), bind, width: 8, height: 8, depth: 1, arraySize: 1, lastLevel: 0, samples, flags: 0 }); r.attach(1, id); };
+  tex(1, 'R8G8B8A8_UNORM', 4); tex(2, 'B8G8R8A8_UNORM', 0); tex(3, 'Z24_UNORM_S8_UINT', 4, 1); tex(4, 'Z24_UNORM_S8_UINT', 0, 1); tex(5, 'R8G8B8A8_UNORM', 0);
+  const blit = (mask: number, dst: number, df: string, src: number, sf: string, flip: boolean) =>
+    new Uint32Array([16 | 21 << 16, mask, 0, 0, dst, 0, byName(df), 0, flip ? 8 : 0, 0, 8, flip ? -8 >>> 0 : 8, 1, src, 0, byName(sf), 0, 0, 0, 8, 8, 1]);
+  const calls = (from: number) => gl.log.slice(from).filter(([n]) => n === 'blitFramebuffer' || n === 'drawArrays').map(([n, a]) => (n === 'drawArrays' ? 'draw' : `blit ${(a as number[])[8].toString(16)}`));
+  // RGBA8 x4 onto BGRA: resolved (a blit), then converted (a draw); onto RGBA8 at the same rectangle, GL's resolve alone.
+  let at = gl.log.length;
+  r.submit(1, blit(0xf, 2, 'B8G8R8A8_UNORM', 1, 'R8G8B8A8_UNORM', false));
+  assert.deepEqual(calls(at), ['blit 4000', 'draw']);
+  at = gl.log.length;
+  r.submit(1, blit(0xf, 5, 'R8G8B8A8_UNORM', 1, 'R8G8B8A8_UNORM', false));
+  assert.deepEqual(calls(at), ['blit 4000']);
+  // Depth and stencil onto a flipped rectangle: resolved, then blitted flipped.
+  at = gl.log.length;
+  r.submit(1, blit(0x30, 4, 'Z24_UNORM_S8_UINT', 3, 'Z24_UNORM_S8_UINT', true));
+  assert.deepEqual(calls(at), ['blit 500', 'blit 500']);
+  const flipped = gl.log.filter(([n]) => n === 'blitFramebuffer').at(-1)![1] as number[];
+  assert.ok(flipped[5] > flipped[7], `the second blit is flipped: ${flipped.join(',')}`);
+  assert.deepEqual(errors, []);
+});
+
+test('virgl renderer: the sample mask Mesa makes from glSampleCoverage maps back onto WebGL\'s coverage (dEQP-GLES3 multisample); a multisampled texture is sampled resolved', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  r.createContext(1);
+  r.createResource({ id: 1, target: 0, format: 64, bind: 0x10, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.createResource({ id: 3, target: 2, format: 67, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 4, flags: 0 });
+  r.attach(1, 1); r.attach(1, 3);
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  const text = (src: string) => { const b = new TextEncoder().encode(src + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+  const shader = (h: number, type: number, src: string) => { const [len, ...t] = text(src); cmd(1, 4, h, type, len, 0, 0, ...t); };
+  shader(10, 0, 'VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END\n');
+  shader(11, 1, 'FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.0, 0.0, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END\n');
+  cmd(31, 0, 10, 0); cmd(31, 0, 11, 1);
+  cmd(1, 5, 20, 0, 0, 0, 31); cmd(2, 5, 20);
+  cmd(1, 2, 21, 1 << 1, 0x3f800000, 0, 0, 0x3f800000, 0, 0, 0); cmd(2, 2, 21);
+  cmd(1, 8, 22, 3, 67, 0, 0);
+  cmd(5, 0, 1, 0, 22);
+  cmd(6, 0, 16, 0, 1);
+  for (const m of [0xffffffff, 0b0011, ~0b0011 >>> 0, 0b0101]) { cmd(24, 0, m); cmd(8, 0, 0, 3, 4, 0, 1, 0, 0, 0, 0, 0, 2, 0); }
+  r.submit(1, new Uint32Array(words));
+  assert.deepEqual(errors, []);
+  const seen: string[] = [];
+  let state = '';
+  for (const [n, a] of gl.log) {
+    if (n === 'disable' && a[0] === E.SAMPLE_COVERAGE) state = 'off';
+    if (n === 'sampleCoverage') state = `${a[0]} ${a[1]}`;
+    if (n === 'drawArrays') seen.push(state);
+  }
+  assert.deepEqual(seen, ['off', '0.5 false', '0.5 true', '0.5 false']);
+  // A multisampled texture sampled: resolved into a texture of its own before the draw, which samples that.
+  r.createResource({ id: 4, target: 2, format: 67, bind: 8, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 4, flags: 0 });
+  r.attach(1, 4);
+  words.length = 0;
+  shader(12, 1, 'FRAG\nDCL OUT[0], COLOR\nDCL SAMP[0]\nDCL SVIEW[0], 2D_MSAA, FLOAT\nDCL TEMP[0]\nIMM[0] UINT32 {1, 2, 0, 3}\n  0: TXF TEMP[0], IMM[0], SAMP[0], 2D_MSAA\n  1: MOV OUT[0], TEMP[0]\n  2: END\n');
+  cmd(31, 0, 12, 1);
+  cmd(1, 6, 23, 4, 67, 0, 0, 0 | 1 << 3 | 2 << 6 | 3 << 9);
+  cmd(10, 0, 1, 0, 23);
+  const at = gl.log.length;
+  cmd(8, 0, 0, 3, 4, 0, 1, 0, 0, 0, 0, 0, 2, 0);
+  r.submit(1, new Uint32Array(words));
+  assert.deepEqual(errors, []);
+  const tail = gl.log.slice(at).map(([n]) => n);
+  assert.ok(tail.indexOf('blitFramebuffer') >= 0 && tail.indexOf('blitFramebuffer') < tail.indexOf('drawArrays'), 'resolved before the draw');
+  const made = gl.log.slice(at).find(([n]) => n === 'texStorage2D');
+  assert.ok(made, 'a texture for the resolve');
+});
+
 test('virgl device: a fenced command\'s reply waits for the host, and replies stay in order', async () => {
   const ram = new Uint8Array(1 << 20);
   const done: number[] = [];
@@ -483,7 +583,7 @@ test('virgl device: a fenced command\'s reply waits for the host, and replies st
   assert.deepEqual(done, [4096, 8192]);
 });
 
-test('virgl caps: from the browser\'s WebGL2, formats only where their extensions are; a restore checks them', () => {
+test('virgl caps: from the browser\'s WebGL2, formats only where their extensions are, multisampling where it is; a restore checks them', () => {
   const plain = decodeCaps(capsFromGl(mockGl({ extensions: [] })));
   const rich = decodeCaps(capsFromGl(mockGl({ extensions: ['EXT_texture_norm16', 'EXT_color_buffer_float', 'WEBGL_compressed_texture_s3tc', 'EXT_texture_filter_anisotropic'], params: { [0xd33]: 16384, [0x84ff]: 16 } })));
   const has = (c: Record<string, unknown>, mask: string, name: string) => (c[mask] as number[]).includes([...FORMATS.values()].find((f) => f.name === name)!.id);
@@ -501,6 +601,10 @@ test('virgl caps: from the browser\'s WebGL2, formats only where their extension
   // GLES 3.0's floor (G2's caps) stays: the bits the guest's Mesa needs for GLES 3.0.
   assert.equal(plain.glsl_level, 130);
   assert.equal(plain.capability_bits, decodeCaps(virglCaps(2)).capability_bits);
+  // Multisampled renderbuffers (GLES 3.0's 4 samples): Mesa makes them only with texture_multisample; depth too.
+  assert.ok((plain.bset as number) & (1 << 14));
+  assert.ok(!((decodeCaps(capsFromGl(mockGl({ params: { [E.MAX_SAMPLES]: 1 } }))).bset as number) & (1 << 14)));
+  assert.ok(has(plain, 'supported_multisample_formats', 'R8G8B8A8_UNORM') && has(plain, 'supported_multisample_formats', 'Z24_UNORM_S8_UINT'));
   // A machine saved where s3tc was there doesn't restore its 3D where it isn't.
   assert.equal(capsBacked(capsFromGl(mockGl({ extensions: [] })), capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] }))), null);
   assert.match(capsBacked(capsFromGl(mockGl({ extensions: ['WEBGL_compressed_texture_s3tc'] })), capsFromGl(mockGl({ extensions: [] })))!, /sampler lacks formats/);

@@ -840,7 +840,9 @@ class Gen {
     const viewRet = this.sviews.get(n)?.ret;
     const sty: Ty = k?.type ?? (viewRet === 'SINT' ? 'i' : viewRet === 'UINT' ? 'u' : 'f');
     const gl = k?.gl ?? (target.includes('CUBE') ? 'CUBE' : target === '3D' ? '3D' : target.includes('ARRAY') ? '2D_ARRAY' : '2D');
-    if (['2D_MSAA', '2D_ARRAY_MSAA', 'CUBE_ARRAY', 'SHADOWCUBE_ARRAY', 'BUFFER'].includes(target)) throw new TgsiError(`texture target ${target} isn't supported (GLES 3.0)`);
+    if (['CUBE_ARRAY', 'SHADOWCUBE_ARRAY', 'BUFFER'].includes(target)) throw new TgsiError(`texture target ${target} isn't supported (GLES 3.0)`);
+    // A multisampled texture is sampled resolved (WebGL2 has no sampler2DMS): one value a pixel, whatever the sample.
+    const msaa = target.endsWith('_MSAA');
     const samplerType = `${sty === 'f' ? '' : sty === 'i' ? 'i' : 'u'}sampler${gl === '2D_ARRAY' ? '2DArray' : gl === 'CUBE' ? 'Cube' : gl}${shadow ? 'Shadow' : ''}`;
     const name = this.samplerName(n);
     this.declareSampler(n, samplerType);
@@ -858,7 +860,7 @@ class Gen {
       case 'SHADOW1D_ARRAY': coord = `vec3(${cv}.x, 0.5, ${cv}.y)`; ref = `${cv}.z`; break;
       case '2D': case 'RECT': coord = `${cv}.xy${rectScale}`; break;
       case 'SHADOW2D': case 'SHADOWRECT': coord = `${cv}.xy${rectScale}`; ref = `${cv}.z`; break;
-      case '2D_ARRAY': case '3D': case 'CUBE': coord = `${cv}.xyz`; break;
+      case '2D_ARRAY': case '2D_ARRAY_MSAA': case '3D': case 'CUBE': coord = `${cv}.xyz`; break;
       case 'SHADOW2D_ARRAY': case 'SHADOWCUBE': coord = `${cv}.xyz`; ref = `${cv}.w`; break;
       default: coord = `${cv}.xy`;
     }
@@ -896,7 +898,7 @@ class Gen {
       }
       case 'TXF': case 'TXF_LZ': {
         const ic = target === '1D' ? `ivec2(${c}.x, 0)` : target === '1D_ARRAY' ? `ivec3(${c}.x, 0, ${c}.y)` : dims === 2 ? `${c}.xy` : `${c}.xyz`;
-        const lod = ins.op === 'TXF_LZ' || rect ? '0' : `${c}.w`;
+        const lod = ins.op === 'TXF_LZ' || rect || msaa ? '0' : `${c}.w`;
         call = `${offs ? 'texelFetchOffset' : 'texelFetch'}(${name}, ${ic}, ${lod}${offs ? `, ${offs}` : ''})`;
         break;
       }

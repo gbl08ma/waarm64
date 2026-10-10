@@ -13,7 +13,7 @@
 // texture swizzle, no 1D or rectangle textures (web/virgl-formats.ts, web/virgl-tgsi.ts); no base vertex (indices
 // rebased on the CPU); no border colors (edge clamp); one blend state for all color buffers.
 import { E } from './gl-enums.ts';
-import { FORMATS, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from './virgl-formats.ts';
+import { FORMATS, GL, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from './virgl-formats.ts';
 import { generate, parseTgsi, samplerUnit, uboBinding, type ProgramKey, type ProgramLayout, type SamplerKey, type Tgsi } from './virgl-tgsi.ts';
 
 /** A resource's guest pages: offsets into guest RAM and lengths. */
@@ -38,6 +38,8 @@ type Res = ResourceDesc & {
   imax?: Map<string, boolean>;
   /** A texture (or a renderbuffer, multisampled or stencil-only). */
   tex?: WebGLTexture; glTarget?: number; rb?: WebGLRenderbuffer;
+  /** A multisampled resource sampled: its resolved texture, made again at each draw that samples it. */
+  msResolved?: Res;
   /** A format WebGL can't render to (so no framebuffer reads it): its uploaded texels by level, for copies from it. */
   texels?: Map<number, Uint8Array>;
   /** Contexts holding it (unref'd by the guest while attached somewhere: the GL objects live until the last goes). */
@@ -166,6 +168,7 @@ export class VirglRenderer {
   private blitProg?: { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
   private anisotropy: boolean;
   private colorBufferFloat: boolean;
+  private readonly maxSamples: number;
   private queries: Query[] = [];
   /** Primitive queries (generated, emitted by stream output) counted by the draws, with their context. */
   private counting = new Map<Query, number>();
@@ -186,6 +189,7 @@ export class VirglRenderer {
     this.readFbo = gl.createFramebuffer()!;
     this.anisotropy = !!gl.getExtension('EXT_texture_filter_anisotropic');
     this.colorBufferFloat = !!gl.getExtension('EXT_color_buffer_float');
+    this.maxSamples = gl.getParameter(E.MAX_SAMPLES) as number;
     gl.getExtension('EXT_color_buffer_half_float');
     gl.getExtension('EXT_texture_norm16');
     gl.getExtension('OES_texture_float_linear');
@@ -281,7 +285,7 @@ export class VirglRenderer {
     if (d.samples > 1 || f.kind === 'stencil') {
       res.rb = gl.createRenderbuffer()!;
       gl.bindRenderbuffer(E.RENDERBUFFER, res.rb);
-      if (d.samples > 1) gl.renderbufferStorageMultisample(E.RENDERBUFFER, Math.min(d.samples, gl.getParameter(E.MAX_SAMPLES) as number), f.internal, d.width, d.height);
+      if (d.samples > 1) gl.renderbufferStorageMultisample(E.RENDERBUFFER, Math.min(d.samples, this.maxSamples), f.internal, d.width, d.height);
       else gl.renderbufferStorage(E.RENDERBUFFER, f.internal, d.width, d.height);
       return true;
     }
@@ -333,6 +337,7 @@ export class VirglRenderer {
     const gl = this.gl;
     if (r.buf) gl.deleteBuffer(r.buf);
     if (r.ibuf) gl.deleteBuffer(r.ibuf);
+    if (r.msResolved?.tex) gl.deleteTexture(r.msResolved.tex);
     if (r.tex) gl.deleteTexture(r.tex);
     if (r.rb) gl.deleteRenderbuffer(r.rb);
     this.fbCache.clear();
@@ -456,6 +461,7 @@ export class VirglRenderer {
     }
     const f = r.fmt;
     if (!f || !r.tex) return this.error(`upload to resource ${r.id} without a texture`);
+    if (f.id === 126) return this.drawZ32S8(r, level, box, data, stride, layerStride);
     if (f.id === 19 || f.id === 21) {
       // Z24_UNORM_S8_UINT and Z24X8_UNORM keep depth in a word's low 24 bits; GL's UNSIGNED_INT_24_8 (and a 24-bit
       // depth as UNSIGNED_INT) in its high 24: each word rotated, the stencil (or X) byte to the bottom.
@@ -998,7 +1004,8 @@ export class VirglRenderer {
     if (p.length !== 21) throw new Error('bad BLIT');
     const gl = this.gl;
     const mask = p[0] & 0xff, filter = (p[0] >>> 8) & 3, scissor = !!((p[0] >>> 10) & 1);
-    const dst = this.lookup(c, p[3]), src = this.lookup(c, p[12]);
+    const dst = this.lookup(c, p[3]);
+    let src = this.lookup(c, p[12]);
     if (!dst || !src) return;
     const db = { level: p[4], format: p[5], x: p[6] | 0, y: p[7] | 0, z: p[8], w: p[9] | 0, h: p[10] | 0, d: p[11] };
     const sb = { level: p[13], format: p[14], x: p[15] | 0, y: p[16] | 0, z: p[17], w: p[18] | 0, h: p[19] | 0, d: p[20] };
@@ -1006,16 +1013,24 @@ export class VirglRenderer {
     const sf = FORMATS.get(sb.format) ?? src.fmt, df = FORMATS.get(db.format) ?? dst.fmt;
     if (!sf || !df) return this.error('blit: unknown formats');
     this.debug?.(`blit ctx ${c.id} mask ${mask.toString(16)} ${p[12]}:${sf.name}(${src.fmt?.name}) -> ${p[3]}:${df.name}(${dst.fmt?.name})`);
+    // Same stored layout (both RGBA-order bytes, or the same format): a framebuffer blit. Otherwise a draw that
+    // samples the source through its format's swizzle and writes through the destination's.
+    const same = sf.internal === df.internal && sf.sample.join() === df.sample.join() && (sf.kind === 'uint' || sf.kind === 'sint' ? sf.kind === df.kind : true);
+    // Integer formats of one signedness, stored in GL's channel order: GL's blit converts between them (and an
+    // integer texture can't be sampled as a float one, which the draw below would need).
+    const plain = (f: Format) => f.sample.every((q, k) => q === k || q === SW_0 || q === SW_1);
+    const ints = (sf.kind === 'uint' || sf.kind === 'sint') && sf.kind === df.kind && plain(sf) && plain(df);
+    // A multisampled source resolves only onto the same rectangle and between equal formats (GL copies the bytes:
+    // RGBA8 onto a B8G8R8A8 window swapped red and blue), and Mesa's blits onto a window are flipped: it is resolved
+    // into a texture of its own format first, then blitted or drawn from there.
+    if (src.rb && src.samples > 1 && (sb.x !== db.x || sb.y !== db.y || sb.w !== db.w || sb.h !== db.h || (color && !same && !ints))) {
+      const tmp = this.resolve(src, color ? E.COLOR_BUFFER_BIT : (src.fmt?.kind === 'depth' ? E.DEPTH_BUFFER_BIT : E.DEPTH_BUFFER_BIT | E.STENCIL_BUFFER_BIT));
+      if (!tmp) return this.error('blit: the multisampled source can\'t be resolved');
+      src = tmp;
+    }
     for (let z = 0; z < Math.max(1, db.d); z++) {
       const sz = sb.z + Math.floor((z * sb.d) / Math.max(1, db.d));
       if (color) {
-        // Same stored layout (both RGBA-order bytes, or the same format): a framebuffer blit. Otherwise a draw that
-        // samples the source through its format's swizzle and writes through the destination's.
-        const same = sf.internal === df.internal && sf.sample.join() === df.sample.join() && (sf.kind === 'uint' || sf.kind === 'sint' ? sf.kind === df.kind : true);
-        // Integer formats of one signedness, stored in GL's channel order: GL's blit converts between them (and an
-        // integer texture can't be sampled as a float one, which the draw below would need).
-        const plain = (f: Format) => f.sample.every((q, k) => q === k || q === SW_0 || q === SW_1);
-        const ints = (sf.kind === 'uint' || sf.kind === 'sint') && sf.kind === df.kind && plain(sf) && plain(df);
         if (same || ints || src.rb) {
           if (!this.bindForRead(src, sb.level, sz)) return this.error('blit: the source can\'t be read');
           gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
@@ -1056,6 +1071,47 @@ export class VirglRenderer {
     gl.scissor(x0, y0, x1 - x0, y1 - y0);
   }
 
+  private resolved?: Res;
+  /**
+   * A multisampled resource resolved into a single-sampled texture of its format and size (`bits`: its color, or its
+   * depth and stencil), kept for the next (one texture, remade when the format or size changes).
+   */
+  private resolve(src: Res, bits: number, own = false): Res | undefined {
+    const gl = this.gl, f = src.fmt;
+    if (!f) return undefined;
+    let t = own ? src.msResolved : this.resolved;
+    if (!(t?.fmt?.internal === f.internal && t.width === src.width && t.height === src.height)) {
+      if (t?.tex) gl.deleteTexture(t.tex);
+      const tex = gl.createTexture()!;
+      gl.bindTexture(E.TEXTURE_2D, tex);
+      gl.texStorage2D(E.TEXTURE_2D, 1, f.internal, src.width, src.height);
+      t = { ...src, rb: undefined, msResolved: undefined, samples: 0, lastLevel: 0, tex, glTarget: E.TEXTURE_2D, backing: null, refs: new Set() };
+      if (own) src.msResolved = t;
+      else this.resolved = t;
+    }
+    const color = bits === E.COLOR_BUFFER_BIT;
+    const point = color ? E.COLOR_ATTACHMENT0 : f.kind === 'depth' ? E.DEPTH_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
+    gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.readFbo);
+    for (const pt of [E.COLOR_ATTACHMENT0, E.DEPTH_STENCIL_ATTACHMENT]) this.attachTo(E.READ_FRAMEBUFFER, pt, undefined, 0, 0);
+    this.attachTo(E.READ_FRAMEBUFFER, point, src, 0, 0);
+    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+    for (let k = 0; k < 8; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
+    this.attachTo(E.DRAW_FRAMEBUFFER, point, t, 0, 0);
+    gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
+    gl.drawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
+    gl.disable(E.SCISSOR_TEST);
+    gl.colorMask(true, true, true, true);
+    gl.depthMask(true);
+    gl.stencilMask(0xff);
+    gl.blitFramebuffer(0, 0, src.width, src.height, 0, 0, src.width, src.height, bits, E.NEAREST);
+    this.attachTo(E.READ_FRAMEBUFFER, point, undefined, 0, 0);
+    this.attachTo(E.DRAW_FRAMEBUFFER, point, undefined, 0, 0);
+    gl.readBuffer(E.COLOR_ATTACHMENT0); // the read framebuffer's own state: the other reads expect it
+    this.fbCache.clear();
+    return t;
+  }
+
   /** A blit as a draw: the source sampled through its format's swizzle, written through the destination's. */
   private drawBlit(src: Res, sf: Format, sb: { level: number; x: number; y: number; w: number; h: number }, sz: number, dst: Res, df: Format, db: { level: number; x: number; y: number; w: number; h: number }, dz: number, filter: number, scissor?: Uint32Array) {
     const gl = this.gl;
@@ -1087,6 +1143,100 @@ export class VirglRenderer {
     if (scissor) this.blitScissor(true, scissor); else gl.disable(E.SCISSOR_TEST);
     gl.drawArrays(E.TRIANGLE_STRIP, 0, 4);
     gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_BASE_LEVEL, 0);
+  }
+
+  private zsProg?: { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
+  private zsTex?: [WebGLTexture, WebGLTexture];
+  /**
+   * An upload to Z32_FLOAT_S8X24_UINT (DEPTH32F_STENCIL8), which WebGL2 takes no data for: drawn. The depths go up as
+   * an R32F texture and the stencil bytes as an R8UI one; one pass writes the depth (from `gl_FragDepth`) and clears
+   * the stencil, then a pass a stencil bit sets it where the byte has it (dEQP-GLES3 texture.format.sized and
+   * specification, depth32f_stencil8). Texels are 8 bytes: the depth's float, then the stencil in the low byte.
+   */
+  private drawZ32S8(r: Res, level: number, box: Box, data: Uint8Array, stride: number, layerStride: number) {
+    const gl = this.gl;
+    if (!this.zsProg) {
+      const prog = this.link(`#version 300 es
+void main() { vec2 p = vec2(gl_VertexID & 1, gl_VertexID >> 1); gl_Position = vec4(p * 4.0 - 1.0, 0.0, 1.0); }`, `#version 300 es
+precision highp float;
+uniform highp sampler2D u_d;
+uniform highp usampler2D u_s;
+uniform ivec2 u_org;
+uniform uint u_bit;
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy) - u_org;
+  gl_FragDepth = texelFetch(u_d, p, 0).r;
+  if (u_bit != 0u && (texelFetch(u_s, p, 0).r & u_bit) == 0u) discard;
+}`);
+      if (!prog) return this.error('the depth-stencil upload program doesn\'t compile');
+      const loc = new Map<string, WebGLUniformLocation | null>();
+      for (const n of ['u_d', 'u_s', 'u_org', 'u_bit']) loc.set(n, gl.getUniformLocation(prog, n));
+      this.zsProg = { prog, loc };
+      this.zsTex = [gl.createTexture()!, gl.createTexture()!];
+    }
+    const { prog, loc } = this.zsProg;
+    const [dt, st] = this.zsTex!;
+    const n = box.w * box.h;
+    const depth = new Float32Array(n), sten = new Uint8Array(n);
+    gl.bindVertexArray(null);
+    gl.useProgram(prog);
+    gl.uniform1i(loc.get('u_d')!, 0);
+    gl.uniform1i(loc.get('u_s')!, 1);
+    gl.uniform2i(loc.get('u_org')!, box.x, box.y);
+    gl.bindBuffer(E.PIXEL_UNPACK_BUFFER, null);
+    gl.pixelStorei(E.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(E.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(E.UNPACK_IMAGE_HEIGHT, 0);
+    for (const t of [dt, st]) {
+      gl.bindTexture(E.TEXTURE_2D, t);
+      gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MIN_FILTER, E.NEAREST);
+      gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MAG_FILTER, E.NEAREST);
+    }
+    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+    for (let k = 0; k < 8; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    gl.drawBuffers([E.NONE]);
+    for (const e of [E.BLEND, E.CULL_FACE, E.SCISSOR_TEST, E.POLYGON_OFFSET_FILL, E.RASTERIZER_DISCARD, E.SAMPLE_COVERAGE, E.SAMPLE_ALPHA_TO_COVERAGE]) gl.disable(e);
+    gl.viewport(box.x, box.y, box.w, box.h);
+    gl.enable(E.DEPTH_TEST);
+    gl.depthFunc(E.ALWAYS);
+    gl.enable(E.STENCIL_TEST);
+    gl.stencilOpSeparate(E.FRONT_AND_BACK, E.REPLACE, E.REPLACE, E.REPLACE);
+    for (let z = 0; z < Math.max(1, box.d); z++) {
+      const dv = new DataView(data.buffer, data.byteOffset, data.length);
+      for (let y = 0; y < box.h; y++) for (let x = 0; x < box.w; x++) {
+        const o = z * layerStride + y * stride + x * 8;
+        if (o + 8 > data.length) continue;
+        depth[y * box.w + x] = dv.getFloat32(o, true);
+        sten[y * box.w + x] = data[o + 4];
+      }
+      gl.activeTexture(E.TEXTURE0);
+      gl.bindTexture(E.TEXTURE_2D, dt);
+      gl.texImage2D(E.TEXTURE_2D, 0, GL.R32F, box.w, box.h, 0, GL.RED, E.FLOAT, depth);
+      gl.activeTexture(E.TEXTURE0 + 1);
+      gl.bindTexture(E.TEXTURE_2D, st);
+      gl.texImage2D(E.TEXTURE_2D, 0, GL.R8UI, box.w, box.h, 0, GL.RED_INTEGER, E.UNSIGNED_BYTE, sten);
+      gl.activeTexture(E.TEXTURE0);
+      gl.bindSampler(0, null);
+      gl.bindSampler(1, null);
+      this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, r, level, box.z + z);
+      // The depth, and the stencil cleared to 0; then each stencil bit where the byte has it.
+      gl.depthMask(true);
+      gl.stencilFuncSeparate(E.FRONT_AND_BACK, E.ALWAYS, 0, 0xff);
+      gl.stencilMaskSeparate(E.FRONT_AND_BACK, 0xff);
+      gl.uniform1ui(loc.get('u_bit')!, 0);
+      gl.drawArrays(E.TRIANGLES, 0, 3);
+      gl.depthMask(false);
+      for (let b = 0; b < 8; b++) {
+        gl.stencilFuncSeparate(E.FRONT_AND_BACK, E.ALWAYS, 0xff, 0xff);
+        gl.stencilMaskSeparate(E.FRONT_AND_BACK, 1 << b);
+        gl.uniform1ui(loc.get('u_bit')!, 1 << b);
+        gl.drawArrays(E.TRIANGLES, 0, 3);
+      }
+    }
+    this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
+    gl.depthMask(true);
+    gl.pixelStorei(E.UNPACK_ALIGNMENT, 4);
+    this.fbCache.clear();
   }
 
   private blitProgram() {
@@ -1308,6 +1458,11 @@ void main() {
     if (!vs?.tgsi || !fs?.tgsi || !s.ve) return;
     // Stream output (transform feedback): what the vertex shader writes, captured into the bound targets.
     const so = vs.so && s.so.targets.some((t) => t) ? this.soPlan(vs.so, s.so.targets) : undefined;
+    // Multisampled textures sampled are resolved first (it rebinds the framebuffers).
+    for (const st of ['vs', 'fs'] as const) for (const v of s.views[st]) {
+      const r = v && this.resources.get(v.res);
+      if (r?.rb && r.samples > 1 && r.fmt) this.resolve(r, r.fmt.kind === 'depth' || r.fmt.kind === 'depthstencil' ? E.DEPTH_BUFFER_BIT : E.COLOR_BUFFER_BIT, true);
+    }
     let fb = this.bindFramebuffer(c, s);
     // Nothing to draw on, only captures: a framebuffer of its own (WebGL2 draws on a complete one), rasterizer off.
     const captureOnly = !fb && !!so;
@@ -1362,7 +1517,8 @@ void main() {
       for (const n of prog.layout.samplers[st]) {
         const unit = samplerUnit(st, n, VS_UNIT_BASE);
         const v = s.views[st][n];
-        const r = v && this.resources.get(v.res);
+        const r0 = v && this.resources.get(v.res);
+        const r = r0?.msResolved ?? r0;
         gl.activeTexture(E.TEXTURE0 + unit);
         if (!r?.tex) { gl.bindTexture(E.TEXTURE_2D, null); continue; }
         gl.bindTexture(r.glTarget!, r.tex);
@@ -1435,6 +1591,7 @@ void main() {
     const bit = (q: number) => (wr[q] === undefined || wr[q] < 0 ? true : !!(m & (1 << wr[q])));
     gl.colorMask(bit(0), bit(1), bit(2), bit(3));
     if (blend?.alphaToCoverage) gl.enable(E.SAMPLE_ALPHA_TO_COVERAGE); else gl.disable(E.SAMPLE_ALPHA_TO_COVERAGE);
+    this.sampleMask(c, s);
     // Depth and stencil.
     if (dsa?.depth.enabled) {
       gl.enable(E.DEPTH_TEST);
@@ -1591,6 +1748,30 @@ void main() {
     else if (drawInstances === 1 || instances <= 1) this.byFace(faces, () => gl.drawArrays(prim, start, drawCount));
     gl.bindVertexArray(null);
     if (capture) this.endCapture(capture.plan, capture.vertices);
+  }
+
+  /**
+   * The sample mask (SET_SAMPLE_MASK) as WebGL2's sample coverage, which is all it has: Mesa makes the mask from
+   * glSampleCoverage as the first ⌊value × samples⌋ bits, inverted or not, and those map back exactly; any other mask
+   * is approximated by its count of samples.
+   */
+  private sampleMask(c: Ctx, s: Sub) {
+    const gl = this.gl;
+    let n = 0;
+    for (const sf of [...s.fb.cbufs, s.fb.zs]) {
+      const r = sf && this.lookup(c, sf.res);
+      if (r?.rb && r.samples > 1) n = Math.max(n, Math.min(r.samples, this.maxSamples));
+    }
+    const all = n > 1 ? (1 << n) - 1 : 0;
+    const m = s.sampleMask & all;
+    if (!all || m === all) return gl.disable(E.SAMPLE_COVERAGE);
+    let k = 0;
+    for (let b = m; b; b &= b - 1) k++;
+    gl.enable(E.SAMPLE_COVERAGE);
+    const low = (1 << k) - 1;
+    if (m === low) gl.sampleCoverage(k / n, false);
+    else if (m === (all & ~((1 << (n - k)) - 1))) gl.sampleCoverage((n - k) / n, true);
+    else gl.sampleCoverage(k / n, false);
   }
 
   /** A draw once, or once a face when the stencil's faces must be split (`faces`: each face's state, the other culled). */

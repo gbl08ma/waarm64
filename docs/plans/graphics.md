@@ -997,7 +997,7 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
 | every 50th case | oracle (vtest, GLES 3.0) | page, first run | page, after the fixes below |
 |---|---|---|---|
 | GLES2 (344) | 342 pass, 2 not supported | 301 pass, 41 fail | **342 pass, 2 not supported** |
-| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s; then 862 (stream output, below), 869 (depth textures), 875 (integer blits), 878 (transfer strides), **882 pass, 6 fail, 8 n/s** (index offsets, alpha without an alpha channel) |
+| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s; then 862 (stream output, below), 869 (depth textures), 875 (integer blits), 878 (transfer strides), 882 (index offsets, alpha without an alpha channel), **889 pass, 0 fail, 7 n/s** (loop 4: the whole list's fixes, MSAA) |
 
 - **Point size declared twice** in a vertex shader that writes it (`o_psize`: every such program failed to link).
 - **Stencil faces:** WebGL refuses a draw whose front and back stencil reference or masks differ (GLES allows it);
@@ -1073,11 +1073,11 @@ in `page-failed.txt`). The failures by cause, and what fixed them:
 
 | failures | cause | |
 |---|---|---|
-| 172 | MSAA: derivatives on multisampled framebuffers (120), `fbo.msaa` (36), invalidate after an MSAA blit (8), `multisample`, `state_query` max samples | open |
+| 172 | MSAA: derivatives on multisampled framebuffers (120), `fbo.msaa` (36), invalidate after an MSAA blit (8), `multisample`, `state_query` max samples | fixed: multisampling advertised and backed |
 | 62 | occlusion queries not available after `glFinish` | fixed: a fence waits for them |
 | 58 | fragment outputs | fixed: two bugs |
 | 18 | `textureSize` on cubes, `textureGrad` on 2D arrays | fixed: the translator |
-| 15 | DEPTH32F_STENCIL8 textures | open |
+| 15 | DEPTH32F_STENCIL8 textures | fixed: uploads drawn |
 | 1 | a read-pixels format mismatch (negative API) | open |
 
 - **Occlusion queries** (all 62 failed, "no result after glFinish"): GL's results are ready once a fence signals,
@@ -1095,6 +1095,25 @@ in `page-failed.txt`). The failures by cause, and what fixed them:
 - **The translator:** `TXQ` on a cube made `ivec4(ivec2, int)` (no program), on a 1D array (a 2D array of height 1)
   returned the height where Gallium wants the layers; `TXD` on 2D arrays passed 3D gradients (no program). The shadow
   array `textureGradOffset` case the subset listed as "no GLSL ES overload" was this.
+- **MSAA** (172, the oracle fails the same: vtest on a GLES 3.0 host): Mesa makes a multisampled renderbuffer only
+  with `texture_multisample` in the caps, which vrend sets only on GLES 3.1 (`feat_texture_multisample`), so the
+  guest had no multisampling at all, though GLES 3.0 requires 4 samples and WebGL2 has multisampled renderbuffers.
+  The page's caps now set it where the browser's `MAX_SAMPLES` is above 1, with the depth formats in
+  `supported_multisample_formats`. Three things then needed backing: (1) **a multisampled source is resolved** into
+  a texture of its own format before a blit that converts layouts (GL's resolve copies bytes: RGBA8 onto a B8G8R8A8
+  window swapped red and blue) or whose rectangles differ (Mesa flips onto a window; GLES resolves only onto the
+  same rectangle); (2) **the sample mask** (`SET_SAMPLE_MASK`, which Mesa makes from `glSampleCoverage` as the
+  first ⌊value × samples⌋ bits, inverted or not) maps back onto WebGL's `sampleCoverage`; (3) the bit also gives the
+  guest's desktop GL 2.1 `ARB_texture_multisample`, and WebGL2 samples no multisampled texture, so **a multisampled
+  texture sampled is resolved at the draw** and fetched as a 2D texture (one value a pixel: the samples' average,
+  whatever sample index the shader asks for; a backing that is close, not exact). Beyond dEQP: Firefox's WebGL
+  `antialias` (on by default) gets real multisampling in the guest. The 172 rerun: all pass
+  (`full-gles3/page-msaa-rerun.json`, before the last 11 were fixed; then those 11 pass). The every-50th subsets
+  after it: **GLES3 889 pass, 0 fail, 7 not supported** (the oracle 884 pass), GLES2 342 (= the oracle).
+- **DEPTH32F_STENCIL8** (15): WebGL2 takes no data for `FLOAT_32_UNSIGNED_INT_24_8_REV` (only null), so an upload to
+  Z32_FLOAT_S8X24_UINT is drawn: the depths go up as an R32F texture and the stencil bytes as an R8UI one, one pass
+  writes `gl_FragDepth` and clears the stencil, then one pass a stencil bit sets it where the byte has it (all 17
+  cases of the format pass).
 - Flat varyings now travel as integers (`vf_…`), copied from and into each shader's vec4: an integer's bits in a
   float varying are a denormal or a NaN, which GLSL ES lets the interface flush or canonicalize. SwiftShader keeps
   them (tested), so no dEQP case needed it; a real GPU's driver needn't.

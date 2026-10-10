@@ -310,13 +310,18 @@ mode (and natively in realtime mode: std has no CSPRNG).
   varyings travel as integers. A fence waits for the occlusion queries ended before it (WebGL's results come only
   after the task that ended them; GL's are ready at a fence, so a guest's `glFinish` sees them: `FenceGate`). `gl_FragCoord` is upper-left whatever the
   shader's `FS_COORD_ORIGIN` says: the caps offer no lower-left origin, so Mesa flips y itself. Z24_UNORM_S8_UINT and Z24X8_UNORM uploads are rotated (Gallium
-  keeps depth in a word's low 24 bits, GL in its high 24). Clears,
+  keeps depth in a word's low 24 bits, GL in its high 24); Z32_FLOAT_S8X24_UINT uploads are drawn (WebGL2 takes no data
+  for its type: the depth through `gl_FragDepth`, the stencil a bit a pass). Clears,
   `CLEAR_SURFACE`, `CLEAR_TEXTURE`, blits (a framebuffer blit for the same stored layout, a draw through both
   formats' swizzles otherwise), copies between resources, occlusion queries as "any samples passed" (exact, or
   conservative for virgl's conservative type; a counter reads 0 or 1, written to the query's buffer when WebGL has it), stream output (transform feedback, graphics.md
   §20: interleaved into one buffer or one output a buffer, unindexed lists, cut at a full buffer, read back into the
-  buffer's copy; PRIMITIVES_GENERATED and PRIMITIVES_EMITTED counted by the draws). Not there yet (none advertised):
-  conditional rendering, user clip planes, multisampled textures sampled, depth read-backs.
+  buffer's copy; PRIMITIVES_GENERATED and PRIMITIVES_EMITTED counted by the draws). Multisampled resources are renderbuffers
+  (`texture_multisample` is advertised where the browser multisamples: Mesa makes no multisampled renderbuffer
+  without it); a multisampled source is resolved into a texture of its format before a blit that converts layouts or
+  flips, a multisampled texture sampled is resolved at the draw (one value a pixel, whatever the sample index), and
+  the sample mask is WebGL's sample coverage. Not there yet (none advertised): conditional rendering, user clip
+  planes, depth read-backs.
 - **What the guest sends** (Mesa 26.1 and 26.2): textures are uploaded and read back through staging buffers
   (`VIRGL_BIND_STAGING`, `COPY_TRANSFER3D` in the stream), vertex data through `TRANSFER3D` in the stream (the
   buffer's own pages), so glcomp and sway send no `TRANSFER_*_3D` at all; dumb buffers (fbcon, a console's cursor, pixman)
