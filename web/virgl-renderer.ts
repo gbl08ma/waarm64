@@ -114,6 +114,15 @@ const BLEND_FACTOR: Record<number, number> = {
 };
 const BLEND_FUNC = [E.FUNC_ADD, E.FUNC_SUBTRACT, E.FUNC_REVERSE_SUBTRACT, E.MIN, E.MAX];
 const COMPARE = [E.NEVER, E.LESS, E.EQUAL, E.LEQUAL, E.GREATER, E.NOTEQUAL, E.GEQUAL, E.ALWAYS];
+/** A blend's source RGB factor to fold into the shader (`ProgramKey.blendSrc`): when it and the destination's mix constant color and constant alpha. */
+function foldedBlend(blend?: Blend): number | undefined {
+  const rt = blend?.rt[0];
+  if (!rt?.enable) return undefined;
+  const kind = (g: number) => (g === 7 || g === 0x17 ? 'color' : g === 8 || g === 0x18 ? 'alpha' : undefined);
+  const s = kind(rt.rgbSrc), d = kind(rt.rgbDst);
+  return s && d && s !== d ? rt.rgbSrc : undefined;
+}
+
 /** Query types as virgl numbers them (VIRGL_QUERY_*: not Gallium's PIPE_QUERY_*, whose PRIMITIVES_GENERATED is 6). */
 const Q_OCCLUSION_COUNTER = 0, Q_OCCLUSION_PREDICATE = 1, Q_GENERATED = 5, Q_EMITTED = 6, Q_OCCLUSION_CONSERVATIVE = 11;
 const STENCIL_OP = [E.KEEP, E.ZERO, E.REPLACE, E.INCR, E.DECR, E.INCR_WRAP, E.DECR_WRAP, E.INVERT];
@@ -1267,7 +1276,7 @@ void main() {
     if (!prog) { this.programs.set(id, null); return null; }
     this.stats.programs++;
     const loc = new Map<string, WebGLUniformLocation | null>();
-    const names = ['vc0', 'fc0', 'u_adjy', 'u_fbh', 'u_alpharef', 'u_psize', 'u_stipple', ...layout.samplers.vs.map((n) => `vs${n}`), ...layout.samplers.fs.map((n) => `fs${n}`)];
+    const names = ['vc0', 'fc0', 'u_adjy', 'u_adjz', 'u_fbh', 'u_alpharef', 'u_psize', 'u_stipple', 'u_blendc', ...layout.samplers.vs.map((n) => `vs${n}`), ...layout.samplers.fs.map((n) => `fs${n}`)];
     for (const n of names) loc.set(n, gl.getUniformLocation(prog, n));
     gl.useProgram(prog);
     for (const n of layout.samplers.fs) gl.uniform1i(loc.get(`fs${n}`)!, samplerUnit('fs', n, VS_UNIT_BASE));
@@ -1316,7 +1325,7 @@ void main() {
         return { type: f.kind === 'uint' ? 'u' : f.kind === 'sint' ? 'i' : 'f', write: [...(f.write ?? [0, 1, 2, 3])] };
       }),
       alphaFunc: dsa?.alpha.enabled ? dsa.alpha.func : undefined,
-      flatshade: rs?.flatshade, twoSide: rs?.lightTwoSide, clampColor: rs?.clampFragmentColor, stipple: rs?.stipple,
+      flatshade: rs?.flatshade, twoSide: rs?.lightTwoSide, clampColor: rs?.clampFragmentColor, stipple: rs?.stipple, blendSrc: foldedBlend(blend),
       points: mode === 0, pointSizePerVertex: rs?.pointSizePerVertex,
       spriteCoordEnable: mode === 0 && rs?.pointQuad ? rs.spriteCoordEnable : undefined, spriteUpperLeft: rs?.spriteUpperLeft,
       ...(so ? { so: so.outputs.map(({ reg, start, comps }) => ({ reg, start, comps })) } : {}),
@@ -1336,8 +1345,11 @@ void main() {
     const negative = vp.scale[1] < 0;
     const set1 = (n: string, v: number) => { const l = prog.loc.get(n); if (l) gl.uniform1f(l, v); };
     set1('u_adjy', negative ? -1 : 1);
+    set1('u_adjz', s.viewport.scale[2] < 0 ? -1 : 1);
     set1('u_fbh', fb.height);
     if (dsa) set1('u_alpharef', dsa.alpha.ref);
+    const lbc = prog.loc.get('u_blendc');
+    if (lbc) gl.uniform4fv(lbc, s.blendColor);
     set1('u_psize', rs?.pointSize || 1);
     const stl = prog.loc.get('u_stipple');
     if (stl) gl.uniform1uiv(stl, s.stipple);
@@ -1372,8 +1384,11 @@ void main() {
     const h = Math.abs(vp.scale[1]) * 2;
     const y = negative ? vp.translate[1] - Math.abs(vp.scale[1]) : vp.translate[1] - vp.scale[1];
     gl.viewport(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+    // WebGL refuses a depth range whose near is above its far (GLES allows it): such a range goes the right way round,
+    // with z negated in the vertex shader (u_adjz), which lands every depth where the inverted range would.
     const near = vp.translate[2] - vp.scale[2], far = vp.translate[2] + vp.scale[2];
-    gl.depthRange(Math.min(Math.max(near, 0), 1), Math.min(Math.max(far, 0), 1));
+    const clamp01 = (v: number) => Math.min(Math.max(v, 0), 1);
+    gl.depthRange(clamp01(Math.min(near, far)), clamp01(Math.max(near, far)));
     if (rs?.scissor) {
       gl.enable(E.SCISSOR_TEST);
       gl.scissor(s.scissor.minx, s.scissor.miny, s.scissor.maxx - s.scissor.minx, s.scissor.maxy - s.scissor.miny);
@@ -1400,7 +1415,10 @@ void main() {
         if (noAlpha) v = v === E.DST_ALPHA ? E.ONE : v === E.ONE_MINUS_DST_ALPHA ? E.ZERO : v;
         return v;
       };
-      gl.blendFuncSeparate(fac(rt.rgbSrc), fac(rt.rgbDst), fac(rt.aSrc), fac(rt.aDst));
+      // A constant color and a constant alpha together, which WebGL refuses: the source RGB factor is the shader's
+      // (`ProgramKey.blendSrc`); on alpha, constant color is constant alpha.
+      const asAlpha = (g: number) => (g === 7 ? 8 : g === 0x17 ? 0x18 : g);
+      gl.blendFuncSeparate(key.blendSrc ? E.ONE : fac(rt.rgbSrc), fac(rt.rgbDst), fac(asAlpha(rt.aSrc)), fac(asAlpha(rt.aDst)));
       gl.blendEquationSeparate(BLEND_FUNC[rt.rgbFunc] ?? E.FUNC_ADD, BLEND_FUNC[rt.aFunc] ?? E.FUNC_ADD);
       const bc = s.blendColor, wr = cb0.write;
       gl.blendColor(...([0, 1, 2, 3].map((q) => (wr[q] === undefined || wr[q] < 0 ? 1 : bc[wr[q]])) as [number, number, number, number]));

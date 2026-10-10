@@ -125,6 +125,19 @@ test('virgl tgsi: a vertex shader that writes the point size declares it once (d
   }
 });
 
+test('virgl tgsi: a constant blend factor WebGL can\'t pair is applied in the shader; z flips for an inverted depth range (dEQP blend, depth_range)', () => {
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END');
+  const fs = parseTgsi('FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.5, 0.25, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END');
+  const plain = generate(vs, fs, { ...KEY, attribs: ['f'] });
+  assert.ok(!plain.fs.includes('u_blendc'));
+  assert.ok(plain.vs.includes('gl_Position.z *= u_adjz;'));
+  for (const [f, e] of [[7, 'u_blendc.rgb'], [0x17, '(1.0 - u_blendc.rgb)'], [8, 'vec3(u_blendc.a)'], [0x18, 'vec3(1.0 - u_blendc.a)']] as const) {
+    const p = generate(vs, fs, { ...KEY, attribs: ['f'], blendSrc: f });
+    assert.ok(p.fs.includes('uniform vec4 u_blendc;'), p.fs);
+    assert.ok(p.fs.includes(`vec4(col0.rgb * ${e}, col0.a)`), p.fs);
+  }
+});
+
 test('virgl tgsi: what WebGL2 can\'t do is refused, not miscompiled', () => {
   const vs = parseTgsi('VERT\nDCL OUT[0], POSITION\n  0: END');
   for (const body of ['DCL IMAGE[0], 2D, PIPE_FORMAT_R8G8B8A8_UNORM, WR\n  0: END', 'DCL TEMP[0]\n  0: IMUL_HI TEMP[0], TEMP[0], TEMP[0]\n  1: END', 'DCL SAMP[0]\nDCL TEMP[0]\n  0: TEX TEMP[0], TEMP[0], SAMP[0], CUBE_ARRAY\n  1: END']) {

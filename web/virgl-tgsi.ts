@@ -267,6 +267,12 @@ export type ProgramKey = {
   flatshade?: boolean;
   twoSide?: boolean;
   clampColor?: boolean;
+  /**
+   * The blend's source RGB factor, applied here (Gallium's PIPE_BLENDFACTOR: 7 constant color, 0x17 one minus it, 8
+   * constant alpha, 0x18 one minus it) and blended with ONE: WebGL refuses constant color and constant alpha in one
+   * blend, which GLES allows. `u_blendc` is the blend color.
+   */
+  blendSrc?: number;
   stipple?: boolean;
   /** The draw is of points: the vertex shader must write gl_PointSize (the rasterizer's, if it doesn't). */
   points?: boolean;
@@ -375,7 +381,7 @@ export function generate(vs: Tgsi, fs: Tgsi, key: ProgramKey): ProgramLayout {
 }
 
 /** The uniforms every program has (the renderer sets them by name): see `Gen.emit`. */
-export const SYS_UNIFORMS = ['u_adjy', 'u_fbh', 'u_alpharef', 'u_psize', 'u_stipple'] as const;
+export const SYS_UNIFORMS = ['u_adjy', 'u_adjz', 'u_fbh', 'u_alpharef', 'u_psize', 'u_stipple', 'u_blendc'] as const;
 
 class Gen {
   readonly out: string[] = [];
@@ -934,11 +940,12 @@ class Gen {
     for (const p of ['sampler3D', 'sampler2DArray', 'sampler2DShadow', 'samplerCubeShadow', 'sampler2DArrayShadow', 'isampler2D', 'isampler3D', 'isamplerCube', 'isampler2DArray', 'usampler2D', 'usampler3D', 'usamplerCube', 'usampler2DArray']) h.push(`precision highp ${p};`);
     const st = this.stage[0];
     // System values (the renderer sets them by name: SYS_UNIFORMS).
-    if (this.stage === 'vs') this.needSys.add('u_adjy');
+    if (this.stage === 'vs') { this.needSys.add('u_adjy'); this.needSys.add('u_adjz'); }
     if (this.stage === 'vs' && this.key.points && !this.writesPointSize()) this.needSys.add('u_psize');
     if (this.stage === 'fs' && this.key.alphaFunc !== undefined && this.key.alphaFunc !== 7) this.needSys.add('u_alpharef');
+    if (this.stage === 'fs' && this.key.blendSrc) this.needSys.add('u_blendc');
     if (this.stage === 'fs' && this.key.stipple) { this.needSys.add('u_stipple'); this.needSys.add('u_fbh'); }
-    for (const u of this.needSys) h.push(u === 'u_stipple' ? 'uniform uint u_stipple[32];' : `uniform float ${u};`);
+    for (const u of this.needSys) h.push(u === 'u_stipple' ? 'uniform uint u_stipple[32];' : u === 'u_blendc' ? 'uniform vec4 u_blendc;' : `uniform float ${u};`);
     // Constants: buffer 0 as a uniform array of bits, the others as uniform blocks.
     if (this.const0 > 0) h.push(`uniform uvec4 ${st}c0[${this.const0}];`);
     for (const [k, n] of [...this.ubos].sort((a, b) => a[0] - b[0])) h.push(`layout(std140) uniform ${st.toUpperCase()}B${k} { uvec4 ${st}cb${k}[${n}]; };`);
@@ -982,6 +989,7 @@ class Gen {
         epilogue.push(`tf_${k} = floatBitsToUint(${this.vsOutput(o.reg)}.${'xyzw'.slice(o.start, o.start + o.comps)});`);
       });
       epilogue.push('gl_Position.y *= u_adjy;');
+      epilogue.push('gl_Position.z *= u_adjz;');
     } else {
       for (const vy of this.varyings.values()) h.push(`${qualifier(vy)}in vec4 ${vy.name};`);
       for (const [k, d] of [...this.inputs].sort((a, b) => a[0] - b[0])) {
@@ -1008,6 +1016,10 @@ class Gen {
         }
         let c = `col${src}`;
         if (this.key.clampColor && ty === 'f') c = `clamp(${c}, 0.0, 1.0)`;
+        if (this.key.blendSrc && ty === 'f') {
+          const f = { 7: 'u_blendc.rgb', 0x17: '(1.0 - u_blendc.rgb)', 8: 'vec3(u_blendc.a)', 0x18: 'vec3(1.0 - u_blendc.a)' }[this.key.blendSrc];
+          if (f) c = `vec4(${c}.rgb * ${f}, ${c}.a)`;
+        }
         const comps = cb.write.map((q) => (q < 0 ? (ty === 'f' ? '1.0' : ty === 'i' ? '1' : '1u') : `${cast(c, 'f', ty)}.${COMP[q]}`));
         while (comps.length < 4) comps.push(ty === 'f' ? '0.0' : ty === 'i' ? '0' : '0u');
         epilogue.push(`o${k} = ${VEC[ty]}(${comps.join(', ')});`);

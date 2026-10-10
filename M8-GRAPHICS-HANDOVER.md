@@ -1,4 +1,4 @@
-# M8 graphics, 3D: handover in G4 (2026-10-09, evening)
+# M8 graphics, 3D: handover in G4 (2026-10-10)
 
 G4 is current: the kickoff is `M8-GRAPHICS-KICKOFF.md` (the user's decisions; don't re-ask), the record
 docs/plans/graphics.md §21. Read first: graphics.md §1, §7, §20, §21; docs/devices.md "virgl"; docs/frontend.md "A 3D
@@ -18,17 +18,34 @@ machine".
   scrolling (each a guest kernel allocation and `ATTACH_BACKING`), and replies held behind fenced ones (QEMU holds
   only the fenced reply). On SwiftShader (the dev VM) fences wait ~18 ms behind each present: don't judge there.
 - **Loop 2 (the menu's Graphics: 3D or 2D), done**: `web/app/main.ts`, tested in `scripts/ci-debian.sh`.
-- **Loop 3 (dEQP), running** (§21 "Loop 3"): `images/deqp/build.sh` (VK-GL-CTS 3.2.14.1 for Arch, `target/deqp/deqp.ext4`),
-  `bench/gpu/deqp-run.ts` (every 50th mustpass case, or `CASES=` names and `*` patterns; `DETAIL=n` dEQP's
-  messages; `VIRGL_GPU=virgl,debug` the renderer's trace; `CAPTURE=` a fixture), `tools/virgl-oracle/deqp.sh` (the
-  oracle on vtest). Results in `bench/gpu/results/g4-deqp/`. The subsets: GLES2 342/344 (= the oracle), GLES3
-  878/896 (the oracle 884). Fixed along the way: an X target's alpha byte (Firefox's menus' black borders, the
-  user's report), point size declared twice, WebGL's stencil-face and attribute-stride rules, stream output
-  (layouts, resume, virgl's query numbering), depth copies and Z24 layouts, integer blits and RGB10_A2UI read-backs,
-  transfer strides (0 = the level's pitch), copies from non-renderable textures.
-- **Next:** the 10 GLES3 failures left (§21's list); then wider dEQP groups than the 1-in-50 sample (whole groups run
-  in minutes: `CASES=` patterns), and a dEQP pass list as a test (a CI script beside ci-debian.sh, the user's call
-  on its cost); then loop 5 (GTK4 on the Arch image: `gtk4-demo` is installed there).
+- **Loops 3 and 4 (dEQP and its failures), well along** (§21 "Loop 3"): `images/deqp/build.sh` (VK-GL-CTS 3.2.14.1
+  for Arch, `target/deqp/deqp.ext4`, the Podman image `localhost/webpc-deqp`), `bench/gpu/deqp-run.ts` (a slice of a
+  mustpass list: `STRIDE=n OFFSET=k`, default every 50th; or `CASES=` names and `*` patterns; `DETAIL=n` dEQP's own
+  messages; `VIRGL_GPU=virgl,debug` the renderer's trace in `<out>/virgl-debug.txt`; `CAPTURE=` a fixture),
+  `tools/virgl-oracle/deqp.sh` (the same binaries on virpipe against vtest; `OFFSET=` too). Results in
+  `bench/gpu/results/g4-deqp/`. Where it stands:
+  - **GLES2, the whole list** (17,165): 16,979 pass; the 48 failures rerun on the latest fixes leave **12**
+    (§21: index buffers 4, RGB565 targets blended or shared 7, `fragcoord_xyz` 1; the list in
+    `full-gles2/page-failed-rerun.json`). The oracle ran slices 0 and 1 only (6 fail of 6,866); slices 2–4 not
+    run (`OFFSET=2..4 tools/virgl-oracle/deqp.sh gles2 <out> 5`, ~10 min each; never beside CI).
+  - **GLES3, every 50th case** (896): 878 pass (the oracle 884); the 10 failures in §21. **The whole GLES3 list
+    (44,768) hasn't run**: ~25 min a 1/10 slice on the page (`STRIDE=10 OFFSET=k LIMIT_S=1700`, a timeout of
+    ~2100 s, in the background), then rerun its failures with `CASES=` and `DETAIL=`.
+  - The method that worked: a group with `CASES='dEQP-…group.*'` and `DETAIL=3`, then one case with
+    `VIRGL_GPU=virgl,debug`; compare with vrend (`target/virgl-oracle/src/src/vrend/vrend_renderer.c`) and Mesa's
+    encoder (`~/Development/src/mesa/src/gallium/drivers/virgl/`). Most bugs were WebGL refusing what GLES allows
+    (silently: the draw doesn't happen) or protocol meanings that are vrend's, not Gallium's (query numbers,
+    stride 0, the append mask). Each fix gets a cheapest-layer test (tests/virgl.test.ts on the recording mock, or
+    tests/browser/virgl-page.ts on Chromium) and a planted-bug check.
+  - Fixed so far: an X target's alpha byte (the user's black menu borders), point size declared twice, stencil
+    faces, attribute strides, stream output (layouts, resume, query numbering), depth copies and Z24 layouts,
+    integer blits and RGB10_A2UI, transfer strides, copies from non-renderable textures, constant-color/alpha
+    blends, inverted depth ranges.
+- **Next, in order:** (1) the 12 GLES2 failures; (2) the whole GLES3 list and its failures; (3) a dEQP pass list as
+  a test (a script beside ci-debian.sh running a fixed list on the page: ask the user about its cost); (4) loop 5,
+  GTK4 on the Arch image (`gtk4-demo` is installed; GSK's GL renderer); (5) loop 6, cost (shader cache, the guest
+  kernel's submit path with a finer instrument), and Firefox's leftovers above; (6) the exit write-up (§21, PLAN.md,
+  G5's outline).
 - The Arch image's guest-side helpers on the Mac: `~/webpc-arch/` (`start.sh` boots `myarch3.qcow2` under hvf with
   a network, virtio-mmio devices as ours; `vmsh.py <sock> <timeout> <cmd>` runs a command on its serial console as
   root). Mesa's source for reading: `~/Development/src/mesa` (sparse, mesa-26.2.4); vrend's:

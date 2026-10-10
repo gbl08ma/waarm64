@@ -1039,6 +1039,17 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
   (no GLSL ES overload), an occlusion query, a buffer mapped as an index
   array, a fragment output to RGBA4, a shared R16F renderbuffer, MSAA depth32f, a random fragment-ops case.
 
+- **The whole GLES2 list** (17,165 cases, five slices: `STRIDE=5 OFFSET=0..4`, ~6 min each on the page): 16,979
+  pass, 48 fail, 136 not supported, 2 compatibility warnings (`bench/gpu/results/g4-deqp/full-gles2/`); the oracle,
+  on slices 0 and 1, fails 6 of 6,866. Fixed from it: **blends that pair constant color with constant alpha**
+  (WebGL refuses them; the source RGB factor is now applied in the fragment shader and blended with ONE,
+  `ProgramKey.blendSrc`; on alpha, constant color is constant alpha), and **an inverted depth range** (near above
+  far, which WebGL refuses: the range goes the right way round and the vertex shader negates z, `u_adjz`). The 48
+  failures rerun on these fixes: **12 left** — index buffers (`buffer.write.use.index_array.*`,
+  `draw_elements.indices.buffer.index_byte`/`index_short`), RGB565 render targets blended or shared between
+  framebuffers (`fbo.render.color.blend_*rgb565*`, `fbo.render.shared_colorbuffer.rbo_rgb565*`),
+  `shaders.builtin_variable.fragcoord_xyz` (only green, y, wrong).
+
 ### Loop 1: Firefox's start (2026-10-10)
 
 `PHASES=startup` in firefox-load.ts measures a launch on a profile Firefox has used (the threads from launch, the

@@ -1,12 +1,14 @@
 // dEQP on the page (G4's correctness gate, the kickoff's decision 3; dev-only for now): the user's Arch image
 // (`bench/results/local/myarch3.qcow2`, Mesa's virgl in the guest) on a 3D machine, dEQP on its second disk
 // (images/deqp/build.sh → target/deqp/deqp.ext4, mounted at /mnt/vdb, the files in /mnt/vdb/deqp), deqp-gles2 or
-// deqp-gles3 run as root on EGL's surfaceless platform (no compositor) over a case list: a mustpass list, every <n>th case of it (STRIDE), or the
-// cases a file names (CASES). Writes <out>/results.json: the counts by status and every case that didn't pass, with
-// the time a case took. The renderer's warnings come along (results.warnings).
+// deqp-gles3 run as root on EGL's surfaceless platform (no compositor) over a case list: a slice of a mustpass list
+// (every STRIDE-th case from the OFFSET-th) or the cases a file names (CASES). Writes <out>/results.json: the counts
+// by status and every case that didn't pass, with the time a case took; the renderer's warnings (results.warnings).
 //   node bench/gpu/deqp-run.ts <gles2|gles3> <image.qcow2> [outdir]
-// DETAIL=<n> keeps dEQP's messages for the first n cases that didn't pass. CAPTURE=<file.vglt> keeps the 3D commands (web/virgl-trace.ts: fixtures for tests/virgl.test.ts). STRIDE=<n> (default 50), CASES=<file of case names, `*` wildcards allowed>, VIRGL_GPU=virgl,debug for the renderer's
-// trace (<out>/virgl-debug.txt), LIMIT_S=<seconds the guest may run dEQP, default 1500>.
+// STRIDE=<n> (default 50), OFFSET=<k> (0 to n-1, default 0), CASES=<file of case names, `*` patterns allowed>,
+// DETAIL=<n> (dEQP's messages for the first n cases that didn't pass), VIRGL_GPU=virgl,debug (the renderer's trace,
+// <out>/virgl-debug.txt), CAPTURE=<file.vglt> (the 3D commands, web/virgl-trace.ts: fixtures for tests/virgl.test.ts),
+// LIMIT_S=<seconds the guest may run dEQP, default 1500>.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { encodeTrace } from '../../web/virgl-trace.ts';
 import { openSession } from './guest-session.ts';
@@ -17,11 +19,12 @@ if (!image || !/^gles[23]$/.test(api)) throw new Error('usage: node bench/gpu/de
 const out = process.argv[4] ?? new URL(`../results/local/deqp/${api}/`, import.meta.url).pathname;
 mkdirSync(out, { recursive: true });
 const STRIDE = Number(process.env.STRIDE ?? 50);
+const OFFSET = Number(process.env.OFFSET ?? 0);
 const LIMIT_S = Number(process.env.LIMIT_S ?? 1500);
 const CAPTURE = process.env.CAPTURE;
 const s = await openSession({ gpu: (process.env.VIRGL_GPU ?? 'virgl') + (CAPTURE ? ',capture' : ''), image, out, disk2: '/target/deqp/deqp.ext4' });
 const { log, pasteSerial, rootShell, run, runLines } = s;
-const results: Record<string, unknown> = { api, gl: s.gl, chromium: s.browser.version(), stride: STRIDE };
+const results: Record<string, unknown> = { api, gl: s.gl, chromium: s.browser.version(), stride: STRIDE, offset: OFFSET };
 const save = () => {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
   if (s.debugLines.length) writeFileSync(`${out}/virgl-debug.txt`, s.debugLines.join('\n') + '\n');
@@ -37,7 +40,7 @@ if (process.env.CASES) {
   await pasteSerial(`cat > /tmp/patterns.txt <<'EOF'\n${cases}\nEOF`);
   // A name with `*` stands for the mustpass list's cases it matches (dEQP's case lists take no wildcards).
   await run(`while read -r p; do case "$p" in *'*'*) grep -E "^$(echo "$p" | sed 's/[.]/[.]/g; s/[*]/.*/g')$" /mnt/vdb/deqp/${api}-main.txt;; *) echo "$p";; esac; done < /tmp/patterns.txt > /tmp/cases.txt`);
-} else await run(`awk 'NR % ${STRIDE} == 1' /mnt/vdb/deqp/${api}-main.txt > /tmp/cases.txt`);
+} else await run(`awk 'NR % ${STRIDE} == ${(OFFSET + 1) % STRIDE}' /mnt/vdb/deqp/${api}-main.txt > /tmp/cases.txt`);
 results.cases = Number(await run('wc -l < /tmp/cases.txt'));
 log('cases', results.cases);
 // dEQP writes `Test case '<name>'..` then a status line per case; a status per case, with the seconds it took.

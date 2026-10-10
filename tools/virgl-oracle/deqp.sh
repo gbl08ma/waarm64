@@ -6,7 +6,7 @@
 # (`<case> <status> <seconds>` a line, as deqp-run.ts writes them in the guest) and the server's log. dEQP's
 # surfaceless target takes EGL's default display (EGL_PLATFORM picks it); the socket needs the container unlabelled
 # (SELinux keeps a container from connecting to the host's socket).
-#   tools/virgl-oracle/deqp.sh <gles2|gles3> <out> [stride|cases-file]
+#   tools/virgl-oracle/deqp.sh <gles2|gles3> <out> [stride|cases-file]   (OFFSET=<k>: the stride's k-th slice)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 B=$ROOT/target/virgl-oracle/build
@@ -18,7 +18,7 @@ sock=$out/sock/vtest.sock
 rm -f "$sock"
 if [ -f "$pick" ]; then cp "$pick" "$out/cases.txt"; else
   podman run --rm localhost/webpc-deqp cat /cts/external/openglcts/data/gl_cts/data/mustpass/gles/aosp_mustpass/main/$api-main.txt |
-    awk -v s="$pick" 'NR % s == 1' > "$out/cases.txt"
+    awk -v s="$pick" -v o="${OFFSET:-0}" 'NR % s == (o + 1) % s' > "$out/cases.txt"
 fi
 MESA_GLES_VERSION_OVERRIDE=3.0 LD_LIBRARY_PATH=$B/src \
   timeout 7200 "$B/vtest/virgl_test_server" --use-egl-surfaceless --use-gles --socket-path "$sock" > "$out/server.log" 2>&1 &
