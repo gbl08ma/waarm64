@@ -1,0 +1,1306 @@
+{
+ "mode": "2d",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "warmS": 15,
+ "phaseS": 10,
+ "info": "7.2.8-1-aarch64-ARCHgtk4 1:4.22.5-1 gtk4-demos 1:4.22.5-1 sway 1:1.12-4 mesa 1:26.2.4-1",
+ "sway": "MESA-EGL: warning: egl: failed to create dri2 screen00:00:03.128 [ERROR] [wlr] [EGL] command: eglInitialize, error: EGL_NOT_INITIALIZED (0x3001), message: \"DRI2: failed to create screen\"MESA-EGL: warning: egl: failed to create dri2 screen00:00:03.168 [ERROR] [wlr] [EGL] command: eglInitialize, error: EGL_NOT_INITIALIZED (0x3001), message: \"DRI2: failed to create screen\"",
+ "fishbowl-gl": {
+  "alive": true,
+  "flushes": 1,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 27,
+    "user": 23,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 7,
+    "user": 4,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 96,
+    "user": 89,
+    "sys": 6,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 4,
+    "user": 1,
+    "sys": 2,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "userMs": 953,
+    "sysMs": 22
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 8,
+    "sysMs": 2
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 3,
+   "commands": {
+    "SET_SCANOUT": 1.0000000000000002,
+    "RESOURCE_FLUSH": 1.0000000000000002,
+    "TRANSFER_TO_HOST_2D": 1.0000000000000002
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 1,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 1,
+   "Mpx": 1.048512,
+   "requestMs": 1.0549999881874432,
+   "draws": 1,
+   "vm": {
+    "seconds": 10.994194999992848,
+    "Msteps": 581.468937,
+    "irqs": 1446,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 1141,
+     "0x20": 94,
+     "0x24": 1628,
+     "0x25": 23
+    },
+    "tlbMisses": 179488,
+    "tlbFlushes": 1024,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 41.212172
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "2 MESA-EGL: warning: egl: failed to create dri2 screen",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:490): Gdk-WARNING **: 05:46:41.302: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "frames-gl": {
+  "alive": true,
+  "flushes": 28.7,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 88,
+    "user": 75,
+    "sys": 13,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 89,
+    "user": 74,
+    "sys": 15,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 88,
+    "user": 75,
+    "sys": 13,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 88,
+    "user": 78,
+    "sys": 10,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 88,
+    "user": 73,
+    "sys": 15,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/llvmpipe-2",
+    "userMs": 520,
+    "sysMs": 12
+   },
+   {
+    "thread": "sway/llvmpipe-0",
+    "userMs": 511,
+    "sysMs": 12
+   },
+   {
+    "thread": "sway/llvmpipe-1",
+    "userMs": 507,
+    "sysMs": 15
+   },
+   {
+    "thread": "sway/llvmpipe-3",
+    "userMs": 503,
+    "sysMs": 14
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-0",
+    "userMs": 215,
+    "sysMs": 12
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-3",
+    "userMs": 212,
+    "sysMs": 11
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-2",
+    "userMs": 209,
+    "sysMs": 9
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-1",
+    "userMs": 202,
+    "sysMs": 12
+   },
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "userMs": 126,
+    "sysMs": 82
+   },
+   {
+    "thread": "sway/sway",
+    "userMs": 76,
+    "sysMs": 93
+   },
+   {
+    "thread": "kworker/u16:3-ipv6_addrconf/kworker/u16:3-ipv6_addrconf",
+    "userMs": 0,
+    "sysMs": 11
+   },
+   {
+    "thread": "kworker/u16:0-events_unbound/kworker/u16:0-events_unbound",
+    "userMs": 0,
+    "sysMs": 10
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 7,
+    "sysMs": 3
+   }
+  ],
+  "display": {
+   "seconds": 10,
+   "requests": 86.1,
+   "commands": {
+    "SET_SCANOUT": 28.7,
+    "RESOURCE_FLUSH": 28.7,
+    "TRANSFER_TO_HOST_2D": 28.7
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 28.7,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 28.7,
+   "Mpx": 30.0922944,
+   "requestMs": 59.71600007116795,
+   "draws": 28.7,
+   "vm": {
+    "seconds": 10.001264999985695,
+    "Msteps": 4718.614091,
+    "irqs": 4388,
+    "exceptions": {
+     "0x0": 2,
+     "0x15": 3718,
+     "0x20": 72,
+     "0x24": 254,
+     "0x25": 20
+    },
+    "tlbMisses": 751828,
+    "tlbFlushes": 1453,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 38.218397
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "2 MESA-EGL: warning: egl: failed to create dri2 screen",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:701): Gdk-WARNING **: 05:47:10.026: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "iconscroll-gl": {
+  "alive": true,
+  "flushes": 1.6666666666666667,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 36,
+    "user": 26,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 38,
+    "user": 27,
+    "sys": 10,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 19,
+    "user": 10,
+    "sys": 8,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 19,
+    "user": 10,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 73,
+    "user": 63,
+    "sys": 9,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "userMs": 875,
+    "sysMs": 32
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-1",
+    "userMs": 59,
+    "sysMs": 9
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-0",
+    "userMs": 54,
+    "sysMs": 10
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-3",
+    "userMs": 52,
+    "sysMs": 12
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-2",
+    "userMs": 50,
+    "sysMs": 9
+   },
+   {
+    "thread": "sway/llvmpipe-0",
+    "userMs": 44,
+    "sysMs": 2
+   },
+   {
+    "thread": "sway/llvmpipe-3",
+    "userMs": 33,
+    "sysMs": 2
+   },
+   {
+    "thread": "sway/llvmpipe-1",
+    "userMs": 28,
+    "sysMs": 3
+   },
+   {
+    "thread": "sway/sway",
+    "userMs": 12,
+    "sysMs": 17
+   },
+   {
+    "thread": "sway/llvmpipe-2",
+    "userMs": 28,
+    "sysMs": 1
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 15,
+    "sysMs": 5
+   },
+   {
+    "thread": "sh/sh",
+    "userMs": 1,
+    "sysMs": 12
+   },
+   {
+    "thread": "systemd-resolve/systemd-resolve",
+    "userMs": 4,
+    "sysMs": 7
+   }
+  ],
+  "display": {
+   "seconds": 12,
+   "requests": 5,
+   "commands": {
+    "SET_SCANOUT": 1.6666666666666665,
+    "RESOURCE_FLUSH": 1.6666666666666665,
+    "TRANSFER_TO_HOST_2D": 1.6666666666666665
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 1.6666666666666667,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 1.6666666666666667,
+   "Mpx": 1.74752,
+   "requestMs": 2.276666671037674,
+   "draws": 1.6666666666666667,
+   "vm": {
+    "seconds": 12.00007000002265,
+    "Msteps": 416.075215,
+    "irqs": 1906,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 1928,
+     "0x20": 102,
+     "0x24": 852,
+     "0x25": 24
+    },
+    "tlbMisses": 149294,
+    "tlbFlushes": 1375,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 198.121959
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "2 MESA-EGL: warning: egl: failed to create dri2 screen",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:844): Gdk-WARNING **: 05:47:44.371: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "themes-gl": {
+  "alive": true,
+  "flushes": 0.9090909090909091,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 4,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 5,
+    "user": 0,
+    "sys": 4,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sh/sh",
+    "userMs": 1,
+    "sysMs": 11
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 8,
+    "sysMs": 2
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 2.727272727272727,
+   "commands": {
+    "SET_SCANOUT": 0.9090909090909093,
+    "RESOURCE_FLUSH": 0.9090909090909093,
+    "TRANSFER_TO_HOST_2D": 0.9090909090909093
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 0.9090909090909091,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 0.9090909090909091,
+   "Mpx": 0.9531927272727273,
+   "requestMs": 1.128636365587061,
+   "draws": 0.9090909090909091,
+   "vm": {
+    "seconds": 11.000439999997615,
+    "Msteps": 28.531479,
+    "irqs": 473,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 1018,
+     "0x20": 91,
+     "0x24": 357,
+     "0x25": 22
+    },
+    "tlbMisses": 13068,
+    "tlbFlushes": 891,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 2.849538
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "2 MESA-EGL: warning: egl: failed to create dri2 screen",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:991): Gdk-WARNING **: 05:48:18.519: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "gears-gl": {
+  "alive": true,
+  "flushes": 9.272727272727273,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 95,
+    "user": 87,
+    "sys": 7,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 95,
+    "user": 87,
+    "sys": 7,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 93,
+    "user": 87,
+    "sys": 6,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 97,
+    "user": 86,
+    "sys": 10,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 93,
+    "user": 87,
+    "sys": 6,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/llvmpipe-2",
+    "userMs": 582,
+    "sysMs": 6
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-3",
+    "userMs": 579,
+    "sysMs": 7
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-0",
+    "userMs": 572,
+    "sysMs": 7
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-1",
+    "userMs": 568,
+    "sysMs": 8
+   },
+   {
+    "thread": "sway/llvmpipe-1",
+    "userMs": 288,
+    "sysMs": 5
+   },
+   {
+    "thread": "sway/llvmpipe-2",
+    "userMs": 282,
+    "sysMs": 6
+   },
+   {
+    "thread": "sway/llvmpipe-0",
+    "userMs": 278,
+    "sysMs": 6
+   },
+   {
+    "thread": "sway/llvmpipe-3",
+    "userMs": 277,
+    "sysMs": 7
+   },
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "userMs": 99,
+    "sysMs": 42
+   },
+   {
+    "thread": "sway/sway",
+    "userMs": 29,
+    "sysMs": 27
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 8,
+    "sysMs": 2
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 27.818181818181817,
+   "commands": {
+    "SET_SCANOUT": 9.272727272727272,
+    "RESOURCE_FLUSH": 9.272727272727272,
+    "TRANSFER_TO_HOST_2D": 9.272727272727272
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 9.272727272727273,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 9.272727272727273,
+   "Mpx": 9.722565818181819,
+   "requestMs": 17.144545462998476,
+   "draws": 9.272727272727273,
+   "vm": {
+    "seconds": 11.012215000003577,
+    "Msteps": 2341.999193,
+    "irqs": 4314,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 2347,
+     "0x20": 93,
+     "0x24": 357,
+     "0x25": 23
+    },
+    "tlbMisses": 509856,
+    "tlbFlushes": 1664,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 18.725621
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "2 MESA-EGL: warning: egl: failed to create dri2 screen",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1130): Gdk-WARNING **: 05:48:51.635: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "shadertoy-gl": {
+  "alive": true,
+  "flushes": 1,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 38,
+    "user": 34,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 29,
+    "user": 24,
+    "sys": 4,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 76,
+    "user": 71,
+    "sys": 5,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 28,
+    "user": 24,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 18,
+    "user": 16,
+    "sys": 2,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "userMs": 818,
+    "sysMs": 17
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-2",
+    "userMs": 201,
+    "sysMs": 1
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-3",
+    "userMs": 149,
+    "sysMs": 2
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-0",
+    "userMs": 141,
+    "sysMs": 0
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-1",
+    "userMs": 131,
+    "sysMs": 0
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 9,
+    "sysMs": 2
+   }
+  ],
+  "display": {
+   "seconds": 10,
+   "requests": 3,
+   "commands": {
+    "SET_SCANOUT": 1,
+    "RESOURCE_FLUSH": 1,
+    "TRANSFER_TO_HOST_2D": 1
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 1,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 1,
+   "Mpx": 1.048512,
+   "requestMs": 1.585999995470047,
+   "draws": 1,
+   "vm": {
+    "seconds": 10.00082499998808,
+    "Msteps": 625.918945,
+    "irqs": 1634,
+    "exceptions": {
+     "0x0": 2,
+     "0x15": 980,
+     "0x20": 76,
+     "0x24": 697,
+     "0x25": 18
+    },
+    "tlbMisses": 148195,
+    "tlbFlushes": 1539,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 24.70721
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "2 MESA-EGL: warning: egl: failed to create dri2 screen",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1268): Gdk-WARNING **: 05:49:24.932: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "image_scaling-gl": {
+  "alive": true,
+  "flushes": 1,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 4,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 5,
+    "user": 0,
+    "sys": 4,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sh/sh",
+    "userMs": 2,
+    "sysMs": 12
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 10,
+    "sysMs": 2
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 3,
+   "commands": {
+    "SET_SCANOUT": 1.0000000000000002,
+    "RESOURCE_FLUSH": 1.0000000000000002,
+    "TRANSFER_TO_HOST_2D": 1.0000000000000002
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 1,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 1,
+   "Mpx": 1.048512,
+   "requestMs": 1.433181811462749,
+   "draws": 1,
+   "vm": {
+    "seconds": 11.000594999998809,
+    "Msteps": 28.572002,
+    "irqs": 463,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 936,
+     "0x20": 93,
+     "0x24": 362,
+     "0x25": 22
+    },
+    "tlbMisses": 12919,
+    "tlbFlushes": 918,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.684833
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "2 MESA-EGL: warning: egl: failed to create dri2 screen",
+   "1 Using renderer 'GskGLRenderer' for surface 'GdkWaylandPopup'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1410): Gdk-WARNING **: 05:49:59.514: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "listview_clocks-gl": {
+  "alive": true,
+  "flushes": 1.9,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 16,
+    "user": 12,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 15,
+    "user": 12,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 15,
+    "user": 12,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 19,
+    "user": 15,
+    "sys": 4,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 15,
+    "user": 12,
+    "sys": 3,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/llvmpipe-0",
+    "userMs": 76,
+    "sysMs": 0
+   },
+   {
+    "thread": "sway/llvmpipe-1",
+    "userMs": 73,
+    "sysMs": 0
+   },
+   {
+    "thread": "sway/llvmpipe-3",
+    "userMs": 71,
+    "sysMs": 1
+   },
+   {
+    "thread": "sway/llvmpipe-2",
+    "userMs": 69,
+    "sysMs": 1
+   },
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "userMs": 49,
+    "sysMs": 9
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-1",
+    "userMs": 48,
+    "sysMs": 0
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-3",
+    "userMs": 48,
+    "sysMs": 0
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-0",
+    "userMs": 46,
+    "sysMs": 0
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-2",
+    "userMs": 45,
+    "sysMs": 0
+   },
+   {
+    "thread": "sh/sh",
+    "userMs": 1,
+    "sysMs": 14
+   },
+   {
+    "thread": "sway/sway",
+    "userMs": 6,
+    "sysMs": 7
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 9,
+    "sysMs": 2
+   }
+  ],
+  "display": {
+   "seconds": 10,
+   "requests": 5.7,
+   "commands": {
+    "SET_SCANOUT": 1.9,
+    "RESOURCE_FLUSH": 1.9,
+    "TRANSFER_TO_HOST_2D": 1.9
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 1.9,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 1.9,
+   "Mpx": 1.9921728,
+   "requestMs": 3.7505000084638596,
+   "draws": 1.9,
+   "vm": {
+    "seconds": 10.000715000003577,
+    "Msteps": 267.816896,
+    "irqs": 927,
+    "exceptions": {
+     "0x0": 2,
+     "0x15": 753,
+     "0x20": 78,
+     "0x24": 530,
+     "0x25": 19
+    },
+    "tlbMisses": 64780,
+    "tlbFlushes": 1234,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 3.424395
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "2 MESA-EGL: warning: egl: failed to create dri2 screen",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1548): Gdk-WARNING **: 05:50:32.899: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "mask-gl": {
+  "alive": true,
+  "flushes": 2,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 97,
+    "user": 92,
+    "sys": 4,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 98,
+    "user": 92,
+    "sys": 5,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 97,
+    "user": 93,
+    "sys": 4,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 97,
+    "user": 93,
+    "sys": 4,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 97,
+    "user": 92,
+    "sys": 4,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/llvmpipe-0",
+    "userMs": 871,
+    "sysMs": 3
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-1",
+    "userMs": 868,
+    "sysMs": 3
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-3",
+    "userMs": 862,
+    "sysMs": 2
+   },
+   {
+    "thread": "gtk4-demo/llvmpipe-2",
+    "userMs": 860,
+    "sysMs": 3
+   },
+   {
+    "thread": "sway/llvmpipe-0",
+    "userMs": 76,
+    "sysMs": 1
+   },
+   {
+    "thread": "sway/llvmpipe-2",
+    "userMs": 68,
+    "sysMs": 1
+   },
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "userMs": 51,
+    "sysMs": 13
+   },
+   {
+    "thread": "sway/llvmpipe-1",
+    "userMs": 55,
+    "sysMs": 0
+   },
+   {
+    "thread": "sway/llvmpipe-3",
+    "userMs": 50,
+    "sysMs": 1
+   },
+   {
+    "thread": "sway/sway",
+    "userMs": 7,
+    "sysMs": 6
+   }
+  ],
+  "display": {
+   "seconds": 10,
+   "requests": 6,
+   "commands": {
+    "SET_SCANOUT": 1.9999999999999998,
+    "RESOURCE_FLUSH": 1.9999999999999998,
+    "TRANSFER_TO_HOST_2D": 1.9999999999999998
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 2,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 2,
+   "Mpx": 2.097024,
+   "requestMs": 3.2014999955892565,
+   "draws": 2,
+   "vm": {
+    "seconds": 10.000834999978542,
+    "Msteps": 1986.67594,
+    "irqs": 4167,
+    "exceptions": {
+     "0x0": 2,
+     "0x15": 1104,
+     "0x20": 81,
+     "0x24": 2448,
+     "0x25": 21
+    },
+    "tlbMisses": 218646,
+    "tlbFlushes": 953,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 14.307721
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "2 MESA-EGL: warning: egl: failed to create dri2 screen",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1688): Gdk-WARNING **: 05:51:05.907: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "path_fill-gl": {
+  "alive": true,
+  "flushes": 0.9,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 4,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 4,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 4,
+    "user": 0,
+    "sys": 4,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sh/sh",
+    "userMs": 1,
+    "sysMs": 14
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 10,
+    "sysMs": 3
+   }
+  ],
+  "display": {
+   "seconds": 10,
+   "requests": 2.7,
+   "commands": {
+    "SET_SCANOUT": 0.8999999999999999,
+    "RESOURCE_FLUSH": 0.8999999999999999,
+    "TRANSFER_TO_HOST_2D": 0.8999999999999999
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 0.9,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 0.9,
+   "Mpx": 0.9436608000000001,
+   "requestMs": 1.2289999902248383,
+   "draws": 0.9,
+   "vm": {
+    "seconds": 10.001819999992847,
+    "Msteps": 27.912887,
+    "irqs": 450,
+    "exceptions": {
+     "0x0": 2,
+     "0x15": 1004,
+     "0x20": 75,
+     "0x24": 280,
+     "0x25": 19
+    },
+    "tlbMisses": 12278,
+    "tlbFlushes": 752,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 0.965328
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "2 MESA-EGL: warning: egl: failed to create dri2 screen",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:1833): Gdk-WARNING **: 05:51:40.138: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ]
+ },
+ "warnings": {}
+}

@@ -25,7 +25,7 @@ const PHASE_S = Number(process.env.PHASE_S ?? 10);
 const WARM_S = Number(process.env.WARM_S ?? 30);
 const PHASES = (process.env.PHASES ?? 'still,scroll,webgl,pages,support').split(',');
 const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, disk2: PHASES.includes('pages') ? '/target/ffpages/pages.ext4' : undefined });
-const { page, log, onSerial, pasteSerial, onScreen, rootShell, load, run, runLines } = s;
+const { page, log, onSerial, pasteSerial, rootShell, load, run, runLines } = s;
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), prefs: process.env.FF_PREFS ?? '' };
 const save = () => {
   writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
@@ -62,23 +62,13 @@ results.info = await run('uname -r; pacman -Q firefox sway wlroots0.19 mesa 2>&1
 log('info', results.info);
 
 // The user's session on the screen.
-await onScreen('alarm\n');
-await page.waitForTimeout(3000);
-await onScreen('alarm\n');
-await page.waitForTimeout(6000);
-await onScreen(`${mode === 'pixman' ? 'WLR_RENDERER=pixman' : 'WLR_RENDERER=gles2'} sway 2>/tmp/sway.log\n`);
-for (let i = 0; i < 60; i++) {
-  if ((await run('ls /run/user/1000/ | grep -c sway-ipc')).trim() === '1') break;
-  await page.waitForTimeout(2000);
-}
-await page.waitForTimeout(10_000);
-results.sway = await run('grep -i -E "renderer|egl|gles|driver" /tmp/sway.log | head -4');
+results.sway = await s.startSway(mode === 'pixman' ? 'pixman' : 'gles2');
 log('sway', results.sway);
 
 // GUEST_CMD: a command run as the user in sway's session (its environment), its output kept (results.cmd).
 if (process.env.GUEST_CMD) {
   await pasteSerial(`cat > /tmp/cmd.sh <<'EOF'\n${process.env.GUEST_CMD}\nEOF`);
-  results.cmd = await runLines('su alarm -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$(ls /run/user/1000/sway-ipc.*.sock); sh /tmp/cmd.sh"', 120_000);
+  results.cmd = await runLines(s.asUser('sh /tmp/cmd.sh'), 120_000);
   log('cmd', (results.cmd as string[]).join('\n'));
   save();
 }

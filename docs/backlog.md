@@ -249,6 +249,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   rasterizer threads draw after the transfer. `WLR_RENDERER=pixman` in the guest avoids it. A display mode that
   samples the scanout's memory at each refresh and holds a flipped buffer until it is stable would hide it for
   unmodified guests: not built (a full compare per refresh; build it if GL compositors become fast enough to use).
+- **GTK4's graphics offload kills a GtkGLArea on virgl** (graphics.md §21 loop 5): GTK hands sway the GL area's
+  texture as a dmabuf, and Mesa's virgl backs a texture that isn't shared with a 1-byte staging BO (the host copies
+  transfers both ways), so the dmabuf is smaller than stride × height and the compositor disconnects the client. A
+  guest-side bug (QEMU with virgl has it too); `GDK_DISABLE=offload` avoids it. Ways out: Mesa reallocating a
+  staging-backed texture when it is exported (upstream), or caps without `COPY_TRANSFER_BOTH_DIRECTIONS` (every
+  texture then has a guest backing and read-backs go through it: measure Firefox and GTK before choosing).
 - **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in
   the native runners. The null renderer is G2's measuring device and is tested in Node; extend the twin only if a
   native, exact-step virgl guest is wanted (the WebGL2 renderer of G3 can't run natively anyway).

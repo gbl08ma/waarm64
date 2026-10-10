@@ -1121,6 +1121,38 @@ in `page-failed.txt`). The failures by cause, and what fixed them:
   (`deqp-gles3-fragment-out-int.vglt.gz`), the fence gate, the texture queries in the TGSI corpus; each fix planted
   back fails its test.
 
+### Loop 5: GTK4 (2026-10-10)
+
+`bench/gpu/gtk4-load.ts` runs gtk4-demo's demos (GTK 4.22.5 on the Arch image) one at a time in sway
+(`--run=<demo>`, `GSK_RENDERER=gl`: GSK's GL renderer), each left 15 s and measured for 10 (the compositor's frames,
+every thread's CPU, the renderer's stats), with a screenshot; sway's start-up moved into
+`bench/gpu/guest-session.ts` (`startSway`, `asUser`), shared with firefox-load.ts. GTK tries Vulkan first (the image
+has Mesa's virtio ICD, without venus) and takes GSK's GL renderer on "virgl (webpc)", GLES 3.0. Every demo draws as it
+should (the screenshots: shaders, gradients, masks, text, icons; no renderer errors). Dev VM, SwiftShader
+(`bench/gpu/results/g4-gtk4/`; frames a second, the compositor's, and the threads' guest CPU in ms a second):
+
+| demo | 3D | 2D (llvmpipe in the guest) | 3D: renderer busy ms/s | 3D: busiest threads |
+|---|---|---|---|---|
+| fishbowl (its own counter: 58 fps) | 56 | 1 | 14 | gtk4-demo 461, sway 344 |
+| frames | 60 | 29 | 9 | sway 314, gtk4-demo 299 |
+| iconscroll (its counter: 30 fps) | 31 | 1.7 | 42 | gtk4-demo 831, sway 155 |
+| gears (GtkGLArea; its counter: 32.5) | 31 | 9.3 | 27 | gtk4-demo 333, sway 170 |
+| shadertoy (GtkGLArea) | 15 | 1 | 7 | gtk4-demo 403, sway 134 |
+| mask | 12 | 2 | 5 | gtk4-demo 166, sway 60 |
+
+- **3D is what makes GTK4 usable**, as with Firefox: on 2D the guest's llvmpipe holds fishbowl and shadertoy at one
+  frame a second. On 3D the limits are the guest's CPU (iconscroll's GTK thread at 0.83 of a core; 8,400 GL draws
+  and 57,000 commands a second reach the renderer, which works 42 ms of each second) and, for the GL areas,
+  SwiftShader's wait after each present (§21 loop 0): the Mac's GPU is where to judge them.
+- **GTK's graphics offload kills a GtkGLArea** (shadertoy; sway disconnects it: `zwp_linux_buffer_params_v1`
+  "invalid buffer stride or height for plane 0"). GTK hands the compositor the GL area's texture as a dmabuf, and
+  Mesa's virgl backs a texture that isn't `PIPE_BIND_SHARED` with a 1-byte BO when the host copies transfers both
+  ways (`use_staging`: our caps', and virglrenderer's own on any host), so the exported dmabuf is a page, smaller than
+  its stride × height. A guest-side bug (Mesa exporting a staging-backed texture), not the renderer's; QEMU with
+  virgl gets the same. `GDK_DISABLE=offload` avoids it (shadertoy then runs, 15 frames a second); a fix in Mesa
+  (reallocate on export), or caps without `COPY_TRANSFER_BOTH_DIRECTIONS` (every texture then has a guest backing:
+  to be measured) are the ways out (docs/backlog.md).
+
 ### Loop 1: Firefox's start (2026-10-10)
 
 `PHASES=startup` in firefox-load.ts measures a launch on a profile Firefox has used (the threads from launch, the

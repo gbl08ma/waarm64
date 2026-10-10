@@ -169,6 +169,23 @@ export async function openSession(o: SessionOptions) {
     return r;
   };
 
+  /** The user's session on the screen (alarm/alarm), then sway with `WLR_RENDERER=<renderer>`; returns what sway's log
+   * says of its renderer. `asUser(cmd)` runs a command in that session (its environment) from the root shell. */
+  const startSway = async (renderer: string) => {
+    await onScreen('alarm\n');
+    await page.waitForTimeout(3000);
+    await onScreen('alarm\n');
+    await page.waitForTimeout(6000);
+    await onScreen(`WLR_RENDERER=${renderer} sway 2>/tmp/sway.log\n`);
+    for (let i = 0; i < 60; i++) {
+      if ((await run('ls /run/user/1000/ | grep -c sway-ipc')).trim() === '1') break;
+      await page.waitForTimeout(2000);
+    }
+    await page.waitForTimeout(10_000);
+    return run('grep -i -E "renderer|egl|gles|driver" /tmp/sway.log | head -4');
+  };
+  const asUser = (cmd: string) => `su alarm -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$(ls /run/user/1000/sway-ipc.*.sock); ${cmd}"`;
+
   const close = async () => { await browser.close(); server.close(); };
-  return { page, browser, gl, log, warnings, debugLines, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, close };
+  return { page, browser, gl, log, warnings, debugLines, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, close };
 }

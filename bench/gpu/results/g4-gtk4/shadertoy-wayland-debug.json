@@ -1,0 +1,146 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "warmS": 15,
+ "phaseS": 10,
+ "info": "7.2.8-1-aarch64-ARCHgtk4 1:4.22.5-1 gtk4-demos 1:4.22.5-1 sway 1:1.12-4 mesa 1:26.2.4-1",
+ "sway": "",
+ "shadertoy-gl": {
+  "alive": false,
+  "flushes": 1,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 5,
+    "user": 0,
+    "sys": 4,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 10,
+    "sysMs": 3
+   },
+   {
+    "thread": "sh/sh",
+    "userMs": 2,
+    "sysMs": 11
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 4,
+   "commands": {
+    "SET_SCANOUT": 1.0000000000000002,
+    "RESOURCE_FLUSH": 1.0000000000000002,
+    "SUBMIT_3D": 2.0000000000000004
+   },
+   "fences": {
+    "n": 2,
+    "meanMs": 0.2136363603852012,
+    "maxMs": 0.32500001788139343,
+    "heldMs": 0.43181817639957776,
+    "toGpuMs": 0.1656161221590909,
+    "toGpuMaxMs": 0.280029296875,
+    "backMs": 0.05394398082386364,
+    "backMaxMs": 0.080078125
+   },
+   "flushes": 1,
+   "submits": 2,
+   "submitKB": 8.21875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.17500000379302286,
+   "draws": 1,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 0.21409090811556036,
+    "submitMs": 0.17454545335336166,
+    "drawMs": 0.030909083106301048,
+    "presents": 1,
+    "glDraws": 1,
+    "commands": 13,
+    "uploadKB": 134.421875,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 9,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 11.017185000002383,
+    "Msteps": 25.735046,
+    "irqs": 509,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 1040,
+     "0x20": 93,
+     "0x24": 352,
+     "0x25": 22
+    },
+    "tlbMisses": 11545,
+    "tlbFlushes": 923,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 4.084847
+   }
+  },
+  "stderr": [
+   "3",
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Gdk-Message: 05:39:23.999: Error 71 (Protocol error) dispatching to Wayland display.",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:491): Gdk-WARNING **: 05:39:19.938: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”"
+  ],
+  "last": [
+   "[05:39:23.368854] {Default Queue} wl_registry#62.global(58, \"zwp_primary_selection_device_manager_v1\", 1)",
+   "[05:39:23.368879] {Default Queue} wl_registry#62.global(59, \"wl_output\", 4)",
+   "[05:39:23.368934] xdg_toplevel#56.wm_capabilities(array[4])",
+   "[05:39:23.369104] xdg_toplevel#56.configure(0, 0, array[0])",
+   "[05:39:23.369144] xdg_surface#55.configure(5)",
+   "[05:39:23.369489]  -> xdg_surface#55.ack_configure(5)",
+   "[05:39:23.575894]  -> xdg_toplevel#56.set_min_size(546, 334)",
+   "[05:39:23.576164]  -> xdg_toplevel#56.set_max_size(0, 0)",
+   "[05:39:23.996759] {Default Queue}  -> zwp_linux_dmabuf_v1#5.create_params(new id zwp_linux_buffer_params_v1#63)",
+   "[05:39:23.997074] {Default Queue}  -> zwp_linux_buffer_params_v1#63.add(fd 24, 0, 0, 2664, 0, 0)",
+   "[05:39:23.997229]  -> zwp_linux_buffer_params_v1#63.create(666, 375, 875708993, 0)",
+   "[05:39:23.999094] {Display Queue} wl_display#1.error(zwp_linux_buffer_params_v1#63, 6, \"invalid buffer stride or height for plane 0\")"
+  ],
+  "sway": [
+   "00:00:04.281 [ERROR] [sway/config/output.c:1219] failed to execute 'swaybg' (background configuration probably not applied): No such file or directory",
+   "Environment variable $XDG_CURRENT_DESKTOP not set, ignoring."
+  ]
+ },
+ "warnings": {}
+}

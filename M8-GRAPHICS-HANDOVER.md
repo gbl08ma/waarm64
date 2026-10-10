@@ -18,7 +18,7 @@ machine".
   scrolling (each a guest kernel allocation and `ATTACH_BACKING`), and replies held behind fenced ones (QEMU holds
   only the fenced reply). On SwiftShader (the dev VM) fences wait ~18 ms behind each present: don't judge there.
 - **Loop 2 (the menu's Graphics: 3D or 2D), done**: `web/app/main.ts`, tested in `scripts/ci-debian.sh`.
-- **Loops 3 and 4 (dEQP and its failures), well along** (§21 "Loop 3"): `images/deqp/build.sh` (VK-GL-CTS 3.2.14.1
+- **Loops 3 and 4 (dEQP and its failures), done but for a confirming run** (§21 "Loop 3"): `images/deqp/build.sh` (VK-GL-CTS 3.2.14.1
   for Arch, `target/deqp/deqp.ext4`, the Podman image `localhost/webpc-deqp`), `bench/gpu/deqp-run.ts` (a slice of a
   mustpass list: `STRIDE=n OFFSET=k`, default every 50th; or `CASES=` names and `*` patterns; `DETAIL=n` dEQP's own
   messages; `VIRGL_GPU=virgl,debug` the renderer's trace in `<out>/virgl-debug.txt`; `CAPTURE=` a fixture),
@@ -46,11 +46,15 @@ machine".
     faces, attribute strides, stream output (layouts, resume, query numbering), depth copies and Z24 layouts,
     integer blits and RGB10_A2UI, transfer strides, copies from non-renderable textures, constant-color/alpha
     blends, inverted depth ranges.
-- **Next, in order:** (1) the whole GLES3 list again (to confirm; ~2.7 h); (2) a dEQP pass list as
-  a test (a script beside ci-debian.sh running a fixed list on the page: ask the user about its cost); (3) loop 5,
-  GTK4 on the Arch image (`gtk4-demo` is installed; GSK's GL renderer); (4) loop 6, cost (shader cache, the guest
-  kernel's submit path with a finer instrument), and Firefox's leftovers above; (5) the exit write-up (§21, PLAN.md,
-  G5's outline).
+- **Loop 5 (GTK4), done** (§21 "Loop 5"): `bench/gpu/gtk4-load.ts` (gtk4-demo's demos one at a time in sway,
+  `DEMOS=`, `RENDERERS=`, `GTK_ENV=`; JSON in `bench/gpu/results/g4-gtk4/`). GSK's GL renderer draws every demo right;
+  3D against 2D: fishbowl 56 against 1 frames a second, gears 31 against 9. A GtkGLArea dies of GTK's graphics
+  offload (a guest-side Mesa bug: a staging-backed texture exported as a dmabuf of a page; `GDK_DISABLE=offload`;
+  backlog).
+- **Next, in order:** (1) loop 6, cost (shader cache, the guest kernel's submit path with a finer instrument), and
+  Firefox's leftovers above; (2) a dEQP pass list as a test (a script beside ci-debian.sh running a fixed list on the
+  page: ask the user about its cost); (3) the whole GLES2 and GLES3 lists again for the exit's numbers (~4 h on the
+  page, nothing else beside it); (4) the exit write-up (§21, PLAN.md, G5's outline).
 - The Arch image's guest-side helpers on the Mac: `~/webpc-arch/` (`start.sh` boots `myarch3.qcow2` under hvf with
   a network, virtio-mmio devices as ours; `vmsh.py <sock> <timeout> <cmd>` runs a command on its serial console as
   root). Mesa's source for reading: `~/Development/src/mesa` (sparse, mesa-26.2.4); vrend's:

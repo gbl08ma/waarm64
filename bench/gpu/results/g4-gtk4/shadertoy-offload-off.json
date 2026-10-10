@@ -1,0 +1,147 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "warmS": 15,
+ "phaseS": 10,
+ "info": "7.2.8-1-aarch64-ARCHgtk4 1:4.22.5-1 gtk4-demos 1:4.22.5-1 sway 1:1.12-4 mesa 1:26.2.4-1",
+ "sway": "",
+ "shadertoy-gl": {
+  "alive": true,
+  "flushes": 15.166666666666666,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 20,
+    "user": 6,
+    "sys": 14,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 20,
+    "user": 5,
+    "sys": 14,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 26,
+    "user": 9,
+    "sys": 17,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 18,
+    "user": 4,
+    "sys": 14,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 15,
+    "user": 4,
+    "sys": 11,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "userMs": 237,
+    "sysMs": 266
+   },
+   {
+    "thread": "sway/sway",
+    "userMs": 54,
+    "sysMs": 111
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 13,
+    "sysMs": 5
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "userMs": 0,
+    "sysMs": 11
+   },
+   {
+    "thread": "systemd-resolve/systemd-resolve",
+    "userMs": 4,
+    "sysMs": 7
+   }
+  ],
+  "display": {
+   "seconds": 12,
+   "requests": 273.25,
+   "commands": {
+    "RESOURCE_UNREF": 0.16666666666666666,
+    "SET_SCANOUT": 15.166666666666666,
+    "RESOURCE_FLUSH": 15.166666666666666,
+    "ATTACH_BACKING": 0.16666666666666666,
+    "CTX_ATTACH_RESOURCE": 0.5,
+    "CTX_DETACH_RESOURCE": 0.5,
+    "RESOURCE_CREATE_3D": 0.16666666666666666,
+    "SUBMIT_3D": 241.41666666666666
+   },
+   "fences": {
+    "n": 226.58333333333334,
+    "meanMs": 26.64604817924363,
+    "maxMs": 117.37999999523163,
+    "heldMs": 6306.539999979238,
+    "toGpuMs": 25.93181958944045,
+    "toGpuMaxMs": 101.869873046875,
+    "backMs": 0.21158597616156524,
+    "backMaxMs": 14.0400390625
+   },
+   "flushes": 15.166666666666666,
+   "submits": 241.41666666666666,
+   "submitKB": 1119.8857421875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 7.656250019868215,
+   "draws": 15.166666666666666,
+   "renderer": {
+    "seconds": 12,
+    "busyMs": 8.111249970893065,
+    "submitMs": 7.769166631003221,
+    "drawMs": 0.38791664441426593,
+    "presents": 14.5,
+    "glDraws": 513.8333333333334,
+    "commands": 5460.333333333333,
+    "uploadKB": 280.1158854166667,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 20,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 11.989805000007152,
+    "Msteps": 71.643906,
+    "irqs": 1461,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 3941,
+     "0x20": 92,
+     "0x24": 361,
+     "0x25": 23
+    },
+    "tlbMisses": 56621,
+    "tlbFlushes": 957,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 29.125374
+   }
+  },
+  "stderr": [
+   "3",
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:494): Gdk-WARNING **: 05:44:35.817: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”"
+  ]
+ },
+ "warnings": {}
+}
