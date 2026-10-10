@@ -528,14 +528,14 @@ class Gen {
 
   /**
    * gl_FragCoord as Gallium means it. Our framebuffers' rows are stored as the guest's (row 0 first), which is
-   * Gallium's upper-left origin and GL's own coordinates; a shader asking for a lower-left origin gets y flipped.
+   * Gallium's upper-left origin and GL's own coordinates. The caps offer no lower-left origin (no
+   * fragment_coord_conventions, as vrend on GLES), so Mesa flips y itself and FS_COORD_ORIGIN is only what the GLSL
+   * asked for: ignored, as vrend on GLES does (flipping on it flipped twice: dEQP-GLES2 fragcoord_xyz).
    */
   private fragCoord() {
-    const lower = this.t.props.get('FS_COORD_ORIGIN') === 'LOWER_LEFT';
     const integer = this.t.props.get('FS_COORD_PIXEL_CENTER') === 'INTEGER';
-    const y = lower ? `${this.sys('u_fbh')} - gl_FragCoord.y` : 'gl_FragCoord.y';
     const o = integer ? ' - 0.5' : '';
-    return `vec4(gl_FragCoord.x${o}, ${y}${o}, gl_FragCoord.z, gl_FragCoord.w)`;
+    return `vec4(gl_FragCoord.x${o}, gl_FragCoord.y${o}, gl_FragCoord.z, gl_FragCoord.w)`;
   }
 
   private fsInput(i: number): string {
@@ -1021,7 +1021,10 @@ class Gen {
           if (f) c = `vec4(${c}.rgb * ${f}, ${c}.a)`;
         }
         const comps = cb.write.map((q) => (q < 0 ? (ty === 'f' ? '1.0' : ty === 'i' ? '1' : '1u') : `${cast(c, 'f', ty)}.${COMP[q]}`));
-        while (comps.length < 4) comps.push(ty === 'f' ? '0.0' : ty === 'i' ? '0' : '0u');
+        // Components the format doesn't store: 0, but the fourth gets the logical alpha, which blending reads as the
+        // source alpha (0 there blended SRC_ALPHA onto RGB565 as transparent: dEQP-GLES2 fbo.render.color.blend_*rgb565).
+        while (comps.length < 3) comps.push(ty === 'f' ? '0.0' : ty === 'i' ? '0' : '0u');
+        if (comps.length < 4) comps.push(`${cast(c, 'f', ty)}.w`);
         epilogue.push(`o${k} = ${VEC[ty]}(${comps.join(', ')});`);
       });
       const depth = [...this.outputs.values()].some((d) => d.semantic === 'POSITION');

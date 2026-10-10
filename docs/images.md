@@ -61,7 +61,8 @@ surfaceless target, built natively for Arch Linux ARM in rootless Podman from Ar
 download, cached in `target/archarm`; `images/deqp/Containerfile`, ~10 min). Results: `target/deqp/deqp.ext4` (113
 MiB: the binaries, their data and the GLES2/GLES3 mustpass lists under `/deqp`), the page's second disk for
 `bench/gpu/deqp-run.ts`; and the image `localhost/webpc-deqp`, which runs the same binaries on Mesa's virpipe against
-the vtest oracle (`tools/virgl-oracle/deqp.sh`). The surfaceless target takes EGL's default display:
+the vtest oracle (`tools/virgl-oracle/deqp.sh`). A case's capture (`CAPTURE=`) replays on Chromium with
+`bench/gpu/virgl-pairs.ts`, which diffs each read-back with the next (dEQP's result and its reference). The surfaceless target takes EGL's default display:
 `EGL_PLATFORM=surfaceless` picks it.
 
 ## Arch Linux ARM for UEFI (`images/archarm/build.sh`)

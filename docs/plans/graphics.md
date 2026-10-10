@@ -997,7 +997,7 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
 | every 50th case | oracle (vtest, GLES 3.0) | page, first run | page, after the fixes below |
 |---|---|---|---|
 | GLES2 (344) | 342 pass, 2 not supported | 301 pass, 41 fail | **342 pass, 2 not supported** |
-| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s; then 862 (stream output, below), 869 (depth textures), 875 (integer blits), **878 pass, 10 fail, 8 n/s** (transfer strides) |
+| GLES3 (896) | 884 pass, 6 fail, 4 quality warnings, 2 n/s | 755 pass, 112 fail, 21 q.w., 8 n/s | 837 pass, 51 fail, 8 n/s; then 862 (stream output, below), 869 (depth textures), 875 (integer blits), 878 (transfer strides), **882 pass, 6 fail, 8 n/s** (index offsets, alpha without an alpha channel) |
 
 - **Point size declared twice** in a vertex shader that writes it (`o_psize`: every such program failed to link).
 - **Stencil faces:** WebGL refuses a draw whose front and back stencil reference or masks differ (GLES allows it);
@@ -1034,10 +1034,9 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
   dEQP: any partial texture update through the backing. And a texture of a format WebGL can't render to (RGB9_E5,
   the SNORMs) keeps its uploaded texels on the CPU, so `RESOURCE_COPY_REGION` from it (Mesa moves a level into
   its final texture that way) copies them (no framebuffer can read it). tests/virgl.test.ts checks the strides.
-- **GLES3, still failing** (10): two MSAA
-  derivative cases, a blend equation with constant color, `textureGradOffset` on a shadow array in a vertex shader
-  (no GLSL ES overload), an occlusion query, a buffer mapped as an index
-  array, a fragment output to RGBA4, a shared R16F renderbuffer, MSAA depth32f, a random fragment-ops case.
+- **GLES3, still failing** (6, after the GLES2 fixes below): two MSAA derivative cases (the framebuffer is
+  incomplete), `textureGradOffset` on a shadow array in a vertex shader (no GLSL ES overload), an occlusion query
+  (`conservative_scissor_depth_clear_stencil_write`), a fragment output to RGBA4, MSAA depth32f.
 
 - **The whole GLES2 list** (17,165 cases, five slices: `STRIDE=5 OFFSET=0..4`, ~6 min each on the page): 16,979
   pass, 48 fail, 136 not supported, 2 compatibility warnings (`bench/gpu/results/g4-deqp/full-gles2/`); the oracle,
@@ -1048,7 +1047,22 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
   failures rerun on these fixes: **12 left** — index buffers (`buffer.write.use.index_array.*`,
   `draw_elements.indices.buffer.index_byte`/`index_short`), RGB565 render targets blended or shared between
   framebuffers (`fbo.render.color.blend_*rgb565*`, `fbo.render.shared_colorbuffer.rbo_rgb565*`),
-  `shaders.builtin_variable.fragcoord_xyz` (only green, y, wrong).
+  `shaders.builtin_variable.fragcoord_xyz` (only green, y, wrong). **All 12 fixed** (2026-10-10), three bugs:
+  - **A draw's indices start at the index buffer's offset alone**: Mesa folds the draw's start into that offset
+    (`virgl_draw_vbo`), vrend reads only the offset, and the renderer added the start again, so every indexed draw
+    with a nonzero start read the wrong indices (likely beyond dEQP: any application drawing a mesh in parts). And
+    WebGL2 always restarts primitives at the type's largest index (GLES 2 never does): such indices, with restart
+    off, are widened to the next type; another restart index is mapped onto the largest. tests/virgl.test.ts's
+    index case (each planted back fails it). Found by replaying the case's capture on Chromium and comparing each
+    `drawElements` read-back with dEQP's `drawArrays` reference (`bench/gpu/virgl-pairs.ts`).
+  - **A target without alpha** (RGB565, R8, RG8) had its output's fourth component written 0, which GL blends with as
+    the source alpha: it now gets the fragment's alpha (the X formats' fix, for formats with fewer components).
+  - **`gl_FragCoord.y` flipped twice:** our caps offer no lower-left origin (no `fragment_coord_conventions`, as
+    vrend's on GLES), so Mesa lowers `gl_FragCoord` to upper-left itself (`nir_lower_wpos_ytransform`) and the
+    TGSI's `FS_COORD_ORIGIN LOWER_LEFT` is only what the GLSL asked for; vrend on GLES ignores it, and so does the
+    translator now.
+  The whole GLES2 `fbo` group then passes (618 of 709, the rest not supported). GLES3's every-50th subset: **882 pass,
+  6 fail** (from 878 and 10).
 
 ### Loop 1: Firefox's start (2026-10-10)
 

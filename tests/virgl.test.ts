@@ -92,7 +92,7 @@ IMM[0] UINT32 {1065353216, 3, 0, 0}
   assert.deepEqual(p.samplers.fs, [0]);
 });
 
-test('virgl tgsi: integers keep their bits, the fragment coordinate follows the origin, an alpha test discards', () => {
+test('virgl tgsi: integers keep their bits, the fragment coordinate stays upper-left (Mesa flips it), an alpha test discards', () => {
   const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END');
   const fs = parseTgsi(`FRAG
 PROPERTY FS_COORD_ORIGIN LOWER_LEFT
@@ -108,7 +108,7 @@ IMM[0] UINT32 {3, 7, 0, 0}
   const p = generate(vs, fs, { ...KEY, alphaFunc: 1 });
   assert.match(p.fs, /uintBitsToFloat\(uvec4\(3u, 3u, 3u, 3u\) \+ uvec4\(7u, 7u, 7u, 7u\)\)|uintBitsToFloat\(\(uvec4\(3u, 3u, 3u, 3u\) \+ uvec4\(7u, 7u, 7u, 7u\)\)/);
   assert.match(p.fs, /vec4\(floatBitsToUint\(t0.xxxx\)\)/);
-  assert.match(p.fs, /u_fbh - gl_FragCoord.y - 0.5/);
+  assert.match(p.fs, /vec4\(gl_FragCoord.x - 0.5, gl_FragCoord.y - 0.5,/);
   assert.match(p.fs, /if \(!\(col0.w < u_alpharef\)\) discard;/);
   // Small integers as float immediates stay bits (a float literal would be a denormal, flushed on some GPUs).
   const mv = parseTgsi('VERT\nDCL OUT[0], POSITION\nDCL TEMP[0]\nIMM[0] UINT32 {1, 2, 0, 1065353216}\n  0: MOV TEMP[0], IMM[0]\n  1: MOV OUT[0], TEMP[0]\n  2: END');
@@ -125,7 +125,7 @@ test('virgl tgsi: a vertex shader that writes the point size declares it once (d
   }
 });
 
-test('virgl tgsi: a constant blend factor WebGL can\'t pair is applied in the shader; z flips for an inverted depth range (dEQP blend, depth_range)', () => {
+test('virgl tgsi: a constant blend factor WebGL can\'t pair is applied in the shader; a target without alpha gets the source alpha; z flips for an inverted depth range (dEQP blend, depth_range)', () => {
   const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END');
   const fs = parseTgsi('FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.5, 0.25, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END');
   const plain = generate(vs, fs, { ...KEY, attribs: ['f'] });
@@ -135,6 +135,11 @@ test('virgl tgsi: a constant blend factor WebGL can\'t pair is applied in the sh
     const p = generate(vs, fs, { ...KEY, attribs: ['f'], blendSrc: f });
     assert.ok(p.fs.includes('uniform vec4 u_blendc;'), p.fs);
     assert.ok(p.fs.includes(`vec4(col0.rgb * ${e}, col0.a)`), p.fs);
+  }
+  // A target without alpha (RGB565, R8) still gets the fragment's alpha in the output's fourth component: blending reads it.
+  for (const [write, out] of [[[0, 1, 2], 'o0 = vec4(col0.x, col0.y, col0.z, col0.w);'], [[0], 'o0 = vec4(col0.x, 0.0, 0.0, col0.w);']] as const) {
+    const p = generate(vs, fs, { ...KEY, attribs: ['f'], cbufs: [{ type: 'f', write: [...write] }] });
+    assert.ok(p.fs.includes(out), p.fs);
   }
 });
 
@@ -290,6 +295,58 @@ test('virgl renderer: a transfer\'s stride 0 is its level\'s pitch, as vrend rea
   assert.deepEqual(errors, []);
   const rows = gl.log.filter(([n, a]) => n === 'pixelStorei' && (a as number[])[0] === E.UNPACK_ROW_LENGTH && (a as number[])[1]).map(([, a]) => (a as number[])[1]);
   assert.deepEqual(rows, [64, 32]);
+});
+
+test('virgl renderer: indices start at the index buffer\'s offset, and the largest index restarts only with restart on (dEQP-GLES2 index arrays)', () => {
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => errors.push(m) });
+  r.createContext(1);
+  const buffer = (id: number, width: number, bind: number) => { r.createResource({ id, target: 0, format: 64, bind, width, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 }); r.attach(1, id); };
+  buffer(1, 256 * 16, 0x10);
+  buffer(2, 16, 0x20);
+  const words: number[] = [];
+  const cmd = (c: number, obj: number, ...p: number[]) => words.push(c | obj << 8 | p.length << 16, ...p);
+  const text = (src: string) => { const b = new TextEncoder().encode(src + '\0'); const w = new Uint32Array(Math.ceil(b.length / 4)); new Uint8Array(w.buffer).set(b); return [b.length, ...w]; };
+  const shader = (h: number, type: number, src: string) => { const [len, ...t] = text(src); cmd(1, 4, h, type, len, 0, 0, ...t); };
+  shader(10, 0, 'VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END\n');
+  shader(11, 1, 'FRAG\nDCL OUT[0], COLOR\nIMM[0] FLT32 {1.0, 0.0, 0.0, 1.0}\n  0: MOV OUT[0], IMM[0]\n  1: END\n');
+  cmd(31, 0, 10, 0); cmd(31, 0, 11, 1);
+  cmd(1, 5, 20, 0, 0, 0, 31); cmd(2, 5, 20);
+  cmd(1, 2, 21, 1 << 1, 0x3f800000, 0, 0, 0x3f800000, 0, 0, 0); cmd(2, 2, 21);
+  r.createResource({ id: 3, target: 2, format: 2, bind: 2, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 3);
+  cmd(1, 8, 22, 3, 2, 0, 0); // a surface on it
+  cmd(5, 0, 1, 0, 22);
+  cmd(6, 0, 16, 0, 1);
+  // Bytes 8..11 of the index buffer are the draw's: 4, 5, 255, 6 (Mesa sends the start in the offset, and in start).
+  cmd(9, 0, 2, 0, 0, 0, 0, 0, 0, 0, 16, 1, 1, 0x03020100, 0x09090909, 0x06ff0504, 0x07070707);
+  cmd(11, 0, 2, 1, 8);
+  const draw = (restart: number, index: number) => cmd(8, 0, 8, 4, 3, 1, 1, 0, 0, restart, index, 4, 255, 0);
+  draw(0, 0); // GLES 2: 255 is a vertex
+  draw(1, 255); // restart at 255: WebGL's own
+  draw(1, 5); // restart at 5
+  r.submit(1, new Uint32Array(words));
+  assert.deepEqual(errors, []);
+  // Each element buffer's data, and the one bound at each draw.
+  const data = new Map<unknown, Uint8Array | Uint16Array>();
+  let bound: unknown;
+  const drawn: [number[], number, number][] = [];
+  for (const [n, a] of gl.log) {
+    if (n === 'bindBuffer' && a[0] === E.ELEMENT_ARRAY_BUFFER) bound = a[1];
+    if (n === 'bufferData' && a[0] === E.ELEMENT_ARRAY_BUFFER) data.set(bound, a[1] as Uint8Array);
+    if (n === 'drawElements') {
+      const [, count, type, offset] = a as number[];
+      const v = data.get(bound)!;
+      drawn.push([[...v.subarray(offset / v.BYTES_PER_ELEMENT, offset / v.BYTES_PER_ELEMENT + count)], type, offset]);
+    }
+  }
+  assert.deepEqual(drawn, [
+    [[4, 5, 255, 6], E.UNSIGNED_SHORT, 0],
+    [[4, 5, 255, 6], E.UNSIGNED_BYTE, 8],
+    [[4, 0xffff, 255, 6], E.UNSIGNED_SHORT, 0],
+  ]);
 });
 
 test('virgl device: a fenced command\'s reply waits for the host, and replies stay in order', async () => {

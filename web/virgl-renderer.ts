@@ -34,6 +34,8 @@ type Res = ResourceDesc & {
   backing: Backing | null;
   /** A buffer: its GL buffer (ARRAY_BUFFER and the like), its CPU copy, and an element-array twin made on demand. */
   buf?: WebGLBuffer; shadow?: Uint8Array; ibuf?: WebGLBuffer; idirty?: boolean;
+  /** Whether ranges of an index buffer hold the type's largest index (`holdsMax`), by offset, count and size. */
+  imax?: Map<string, boolean>;
   /** A texture (or a renderbuffer, multisampled or stencil-only). */
   tex?: WebGLTexture; glTarget?: number; rb?: WebGLRenderbuffer;
   /** A format WebGL can't render to (so no framebuffer reads it): its uploaded texels by level, for copies from it. */
@@ -1297,8 +1299,7 @@ void main() {
     if (p.length === 20 && p[14]) return this.error('indirect draws aren\'t supported');
     const gl = this.gl;
     const s = c.sub;
-    const [start, count, mode, indexed, instances, indexBias, , restart] = [p[0], p[1], p[2], p[3], p[4], p[5] | 0, p[6], p[7]];
-    void restart;
+    const [start, count, mode, indexed, instances, indexBias, , restart, restartIndex] = [p[0], p[1], p[2], p[3], p[4], p[5] | 0, p[6], p[7], p[8]];
     if (mode >= PRIM.length) return this.error(`primitive ${mode} isn't supported`);
     const { vs, fs } = s.shaders;
     if (!vs?.tgsi || !fs?.tgsi || !s.ve) return;
@@ -1548,29 +1549,34 @@ void main() {
       const ib = s.ib;
       const r = ib && this.resources.get(ib.res);
       if (!ib || !r?.shadow) return this.error('an indexed draw without an index buffer');
-      const size = ib.size || 2;
-      const type = size === 1 ? E.UNSIGNED_BYTE : size === 2 ? E.UNSIGNED_SHORT : E.UNSIGNED_INT;
-      let offset = ib.offset + start * size;
+      let size = ib.size || 2;
+      // Mesa folds the draw's start into the index buffer's offset (vrend reads only the offset).
+      let offset = ib.offset;
+      if (r.idirty || !r.ibuf) {
+        r.ibuf ??= gl.createBuffer()!;
+        gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, r.ibuf);
+        gl.bufferData(E.ELEMENT_ARRAY_BUFFER, r.shadow, E.DYNAMIC_DRAW);
+        r.idirty = false;
+        r.imax = undefined;
+      }
+      const max = size === 1 ? 0xff : size === 2 ? 0xffff : 0xffffffff;
+      // WebGL2 always restarts primitives at the type's largest index: without restart (GLES 2, or restart off) an
+      // index that large is drawn widened to the next type, and another restart index is mapped onto the largest.
+      const widen = size < 4 && (restart ? restartIndex !== max : this.holdsMax(r, offset, count, size));
       let ebuf: WebGLBuffer;
-      if (indexBias) {
-        // No base vertex in WebGL2: the indices rebased into a scratch buffer.
+      if (indexBias || widen || (restart && restartIndex !== max)) {
+        // No base vertex in WebGL2 either: the indices rebased into a scratch buffer.
         const n = count;
         const src = r.shadow.subarray(offset, offset + n * size);
-        const out = size === 1 ? new Uint8Array(n) : size === 2 ? new Uint16Array(n) : new Uint32Array(n);
         const inp = size === 1 ? src : size === 2 ? new Uint16Array(src.slice().buffer) : new Uint32Array(src.slice().buffer);
-        const max = size === 1 ? 0xff : size === 2 ? 0xffff : 0xffffffff;
-        for (let k = 0; k < n; k++) out[k] = inp[k] === max ? max : inp[k] + indexBias;
+        if (widen) size *= 2;
+        const out = size === 1 ? new Uint8Array(n) : size === 2 ? new Uint16Array(n) : new Uint32Array(n);
+        const outMax = size === 1 ? 0xff : size === 2 ? 0xffff : 0xffffffff;
+        for (let k = 0; k < n; k++) out[k] = restart && inp[k] === restartIndex ? outMax : inp[k] + indexBias;
         ebuf = this.scratchIndex(out);
         offset = 0;
-      } else {
-        if (!r.ibuf || r.idirty) {
-          r.ibuf ??= gl.createBuffer()!;
-          gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, r.ibuf);
-          gl.bufferData(E.ELEMENT_ARRAY_BUFFER, r.shadow, E.DYNAMIC_DRAW);
-          r.idirty = false;
-        }
-        ebuf = r.ibuf;
-      }
+      } else ebuf = r.ibuf;
+      const type = size === 1 ? E.UNSIGNED_BYTE : size === 2 ? E.UNSIGNED_SHORT : E.UNSIGNED_INT;
       gl.bindBuffer(E.ELEMENT_ARRAY_BUFFER, ebuf);
       this.byFace(faces, () => {
         if (instances > 1) gl.drawElementsInstanced(prim, count, type, offset, instances);
@@ -1674,6 +1680,21 @@ void main() {
   private scratchVb: WebGLBuffer[] = [];
   /** Transform feedback's scratch buffer (`SoPlan`). */
   private soScratch?: WebGLBuffer;
+
+  /** Whether an index buffer's range holds its type's largest index (cached until the buffer changes). */
+  private holdsMax(r: Res, offset: number, count: number, size: number) {
+    const key = `${offset}:${count}:${size}`;
+    const hit = r.imax?.get(key);
+    if (hit !== undefined) return hit;
+    const src = r.shadow!.subarray(offset, offset + count * size);
+    const a = size === 1 ? src : size === 2 ? new Uint16Array(src.slice().buffer) : new Uint32Array(src.slice().buffer);
+    const max = size === 1 ? 0xff : size === 2 ? 0xffff : 0xffffffff;
+    const found = a.includes(max);
+    r.imax ??= new Map();
+    if (r.imax.size > 64) r.imax.clear();
+    r.imax.set(key, found);
+    return found;
+  }
 
   private scratchIndex(data: ArrayBufferView) {
     const gl = this.gl;

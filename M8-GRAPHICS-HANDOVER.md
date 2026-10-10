@@ -24,27 +24,28 @@ machine".
   messages; `VIRGL_GPU=virgl,debug` the renderer's trace in `<out>/virgl-debug.txt`; `CAPTURE=` a fixture),
   `tools/virgl-oracle/deqp.sh` (the same binaries on virpipe against vtest; `OFFSET=` too). Results in
   `bench/gpu/results/g4-deqp/`. Where it stands:
-  - **GLES2, the whole list** (17,165): 16,979 pass; the 48 failures rerun on the latest fixes leave **12**
-    (§21: index buffers 4, RGB565 targets blended or shared 7, `fragcoord_xyz` 1; the list in
-    `full-gles2/page-failed-rerun.json`). The oracle ran slices 0 and 1 only (6 fail of 6,866); slices 2–4 not
-    run (`OFFSET=2..4 tools/virgl-oracle/deqp.sh gles2 <out> 5`, ~10 min each; never beside CI).
-  - **GLES3, every 50th case** (896): 878 pass (the oracle 884); the 10 failures in §21. **The whole GLES3 list
+  - **GLES2, the whole list** (17,165): 16,979 pass on the first run; its 48 failures are all fixed (the last 12 on
+    2026-10-10: index offsets and restart, alpha on targets without it, `gl_FragCoord.y`; §21). The oracle ran slices
+    0 and 1 only (6 fail of 6,866); slices 2–4 not run (`OFFSET=2..4 tools/virgl-oracle/deqp.sh gles2 <out> 5`,
+    ~10 min each; never beside CI).
+  - **GLES3, every 50th case** (896): 882 pass (the oracle 884); the 6 failures in §21. **The whole GLES3 list
     (44,768) hasn't run**: ~25 min a 1/10 slice on the page (`STRIDE=10 OFFSET=k LIMIT_S=1700`, a timeout of
     ~2100 s, in the background), then rerun its failures with `CASES=` and `DETAIL=`.
   - The method that worked: a group with `CASES='dEQP-…group.*'` and `DETAIL=3`, then one case with
     `VIRGL_GPU=virgl,debug`; compare with vrend (`target/virgl-oracle/src/src/vrend/vrend_renderer.c`) and Mesa's
     encoder (`~/Development/src/mesa/src/gallium/drivers/virgl/`). Most bugs were WebGL refusing what GLES allows
     (silently: the draw doesn't happen) or protocol meanings that are vrend's, not Gallium's (query numbers,
-    stride 0, the append mask). Each fix gets a cheapest-layer test (tests/virgl.test.ts on the recording mock, or
+    stride 0, the append mask, the index offset). A pair of read-backs dEQP compares (an indexed draw and its
+    reference) can be replayed from a capture on Chromium and diffed: `bench/gpu/virgl-pairs.ts <capture>`. Each fix gets a cheapest-layer test (tests/virgl.test.ts on the recording mock, or
     tests/browser/virgl-page.ts on Chromium) and a planted-bug check.
   - Fixed so far: an X target's alpha byte (the user's black menu borders), point size declared twice, stencil
     faces, attribute strides, stream output (layouts, resume, query numbering), depth copies and Z24 layouts,
     integer blits and RGB10_A2UI, transfer strides, copies from non-renderable textures, constant-color/alpha
     blends, inverted depth ranges.
-- **Next, in order:** (1) the 12 GLES2 failures; (2) the whole GLES3 list and its failures; (3) a dEQP pass list as
-  a test (a script beside ci-debian.sh running a fixed list on the page: ask the user about its cost); (4) loop 5,
-  GTK4 on the Arch image (`gtk4-demo` is installed; GSK's GL renderer); (5) loop 6, cost (shader cache, the guest
-  kernel's submit path with a finer instrument), and Firefox's leftovers above; (6) the exit write-up (§21, PLAN.md,
+- **Next, in order:** (1) the whole GLES3 list and its failures; (2) a dEQP pass list as
+  a test (a script beside ci-debian.sh running a fixed list on the page: ask the user about its cost); (3) loop 5,
+  GTK4 on the Arch image (`gtk4-demo` is installed; GSK's GL renderer); (4) loop 6, cost (shader cache, the guest
+  kernel's submit path with a finer instrument), and Firefox's leftovers above; (5) the exit write-up (§21, PLAN.md,
   G5's outline).
 - The Arch image's guest-side helpers on the Mac: `~/webpc-arch/` (`start.sh` boots `myarch3.qcow2` under hvf with
   a network, virtio-mmio devices as ours; `vmsh.py <sock> <timeout> <cmd>` runs a command on its serial console as

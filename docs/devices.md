@@ -300,7 +300,12 @@ mode (and natively in realtime mode: std has no CSPRNG).
   refuses and GLES allows is worked around at the draw: front and back stencil states whose reference or masks
   differ draw twice (each face's triangles with its own state on both faces, the other face culled); an attribute
   whose stride or offset isn't a multiple of its type's size, or whose stride is over 255, is repacked from the
-  buffer's copy into a scratch buffer of its slot. Z24_UNORM_S8_UINT and Z24X8_UNORM uploads are rotated (Gallium
+  buffer's copy into a scratch buffer of its slot; WebGL2 always restarts primitives at the index type's largest
+  value, so indices that hold it with restart off (GLES 2) are widened to the next type, and another restart index is
+  mapped onto the largest (in a scratch element buffer; a draw's indices start at the index buffer's offset alone:
+  Mesa folds the draw's start into it, as vrend reads it). A color target without alpha (RGB565, R8) gets the
+  fragment's alpha in its output's fourth component (blending reads it). `gl_FragCoord` is upper-left whatever the
+  shader's `FS_COORD_ORIGIN` says: the caps offer no lower-left origin, so Mesa flips y itself. Z24_UNORM_S8_UINT and Z24X8_UNORM uploads are rotated (Gallium
   keeps depth in a word's low 24 bits, GL in its high 24). Clears,
   `CLEAR_SURFACE`, `CLEAR_TEXTURE`, blits (a framebuffer blit for the same stored layout, a draw through both
   formats' swizzles otherwise), copies between resources, occlusion queries as "any samples passed" (a counter
