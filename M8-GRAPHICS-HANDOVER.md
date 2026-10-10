@@ -28,9 +28,13 @@ machine".
     2026-10-10: index offsets and restart, alpha on targets without it, `gl_FragCoord.y`; §21). The oracle ran slices
     0 and 1 only (6 fail of 6,866); slices 2–4 not run (`OFFSET=2..4 tools/virgl-oracle/deqp.sh gles2 <out> 5`,
     ~10 min each; never beside CI).
-  - **GLES3, every 50th case** (896): 882 pass (the oracle 884); the 6 failures in §21. **The whole GLES3 list
-    (44,768) hasn't run**: ~25 min a 1/10 slice on the page (`STRIDE=10 OFFSET=k LIMIT_S=1700`, a timeout of
-    ~2100 s, in the background), then rerun its failures with `CASES=` and `DETAIL=`.
+  - **GLES3, the whole list** (44,768, ten slices of ~16 min, one after another in the background: `STRIDE=10
+    OFFSET=$k LIMIT_S=1800 node bench/gpu/deqp-run.ts gles3 bench/results/local/myarch3.qcow2 <out>/$k` under
+    `timeout 2100`, capped): 44,033 pass, 326 fail (§21 "Loop 4": their causes). Fixed since: occlusion queries (62), fragment
+    outputs (58), texture queries and gradients (18). **Open:** MSAA (172: derivatives on multisampled framebuffers,
+    `fbo.msaa`, invalidate after an MSAA blit, `multisample`, `state_query` max samples), DEPTH32F_STENCIL8 textures
+    (15: WebGL2 takes no data for `FLOAT_32_UNSIGNED_INT_24_8_REV`), a read-pixels negative case. The list of cases
+    that didn't pass: `bench/gpu/results/g4-deqp/full-gles3/page-failed.txt` (rerun a group with `CASES=`).
   - The method that worked: a group with `CASES='dEQP-…group.*'` and `DETAIL=3`, then one case with
     `VIRGL_GPU=virgl,debug`; compare with vrend (`target/virgl-oracle/src/src/vrend/vrend_renderer.c`) and Mesa's
     encoder (`~/Development/src/mesa/src/gallium/drivers/virgl/`). Most bugs were WebGL refusing what GLES allows
@@ -42,7 +46,7 @@ machine".
     faces, attribute strides, stream output (layouts, resume, query numbering), depth copies and Z24 layouts,
     integer blits and RGB10_A2UI, transfer strides, copies from non-renderable textures, constant-color/alpha
     blends, inverted depth ranges.
-- **Next, in order:** (1) the whole GLES3 list and its failures; (2) a dEQP pass list as
+- **Next, in order:** (1) GLES3's open failures (MSAA first); (2) a dEQP pass list as
   a test (a script beside ci-debian.sh running a fixed list on the page: ask the user about its cost); (3) loop 5,
   GTK4 on the Arch image (`gtk4-demo` is installed; GSK's GL renderer); (4) loop 6, cost (shader cache, the guest
   kernel's submit path with a finer instrument), and Firefox's leftovers above; (5) the exit write-up (§21, PLAN.md,

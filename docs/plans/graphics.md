@@ -1064,6 +1064,44 @@ subset takes 40 s (GLES2) and 3 min (GLES3) on the page. Results in `bench/gpu/r
   The whole GLES2 `fbo` group then passes (618 of 709, the rest not supported). GLES3's every-50th subset: **882 pass,
   6 fail** (from 878 and 10).
 
+### Loop 4: the whole GLES3 list (2026-10-10)
+
+dEQP-GLES3's whole mustpass list (44,768 cases) on the page, in ten slices (`STRIDE=10 OFFSET=0..9`, ~16 min each on
+the dev VM): **44,033 pass, 326 fail, 399 not supported**, 8 quality warnings (highp `floor`'s precision) and 2
+compatibility warnings (`flush_finish`: timing) (`bench/gpu/results/g4-deqp/full-gles3/`; the cases that didn't pass
+in `page-failed.txt`). The failures by cause, and what fixed them:
+
+| failures | cause | |
+|---|---|---|
+| 172 | MSAA: derivatives on multisampled framebuffers (120), `fbo.msaa` (36), invalidate after an MSAA blit (8), `multisample`, `state_query` max samples | open |
+| 62 | occlusion queries not available after `glFinish` | fixed: a fence waits for them |
+| 58 | fragment outputs | fixed: two bugs |
+| 18 | `textureSize` on cubes, `textureGrad` on 2D arrays | fixed: the translator |
+| 15 | DEPTH32F_STENCIL8 textures | open |
+| 1 | a read-pixels format mismatch (negative API) | open |
+
+- **Occlusion queries** (all 62 failed, "no result after glFinish"): GL's results are ready once a fence signals,
+  WebGL's only after the task that ended the query, and the GPU worker answered fences at once. A fence is now held
+  until the queries ended before it have their results (`FenceGate` in `web/virgl-host.ts`, released from the
+  worker's query poll); exact queries use `ANY_SAMPLES_PASSED` (only virgl's conservative type the conservative
+  one). Ordinary applications don't pay: a fence waits only behind a pending query.
+- **Fragment outputs:** (1) WebGL2 has one color mask, and the renderer made it from the first target's layout,
+  switching off the components that target doesn't store: an RG target first masked an RGBA one's B and A (dEQP's
+  random output sets); such components now stay on. (2) A blit drawn through two formats' swizzles (Mesa reads an
+  R11F_G11F_B10F or RGBA4 target back by blitting it to RGBA32F or RGBA8 first) reused the draw's framebuffer with
+  only attachment 0 replaced: the next target sampled was still attached, a feedback loop WebGL refuses (the second
+  of three outputs read back empty). Found by replaying the capture on Chromium with every `readPixels` and the GL
+  error at each draw recorded.
+- **The translator:** `TXQ` on a cube made `ivec4(ivec2, int)` (no program), on a 1D array (a 2D array of height 1)
+  returned the height where Gallium wants the layers; `TXD` on 2D arrays passed 3D gradients (no program). The shadow
+  array `textureGradOffset` case the subset listed as "no GLSL ES overload" was this.
+- Flat varyings now travel as integers (`vf_…`), copied from and into each shader's vec4: an integer's bits in a
+  float varying are a denormal or a NaN, which GLSL ES lets the interface flush or canonicalize. SwiftShader keeps
+  them (tested), so no dEQP case needed it; a real GPU's driver needn't.
+- `tests/virgl.test.ts`: a feedback-loop check over every fixture's draws, the color mask at a mixed-width draw
+  (`deqp-gles3-fragment-out-int.vglt.gz`), the fence gate, the texture queries in the TGSI corpus; each fix planted
+  back fails its test.
+
 ### Loop 1: Firefox's start (2026-10-10)
 
 `PHASES=startup` in firefox-load.ts measures a launch on a profile Firefox has used (the threads from launch, the

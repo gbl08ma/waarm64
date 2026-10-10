@@ -12,7 +12,7 @@ import { Gpu, gpuBackend } from '../web/gpu.ts';
 import { decodeCaps, virglCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl } from '../web/virgl-caps.ts';
 import { FORMATS } from '../web/virgl-formats.ts';
-import { localHost, type HostCall, type VirglHost } from '../web/virgl-host.ts';
+import { FenceGate, localHost, type HostCall, type VirglHost } from '../web/virgl-host.ts';
 import { VirglRenderer, readbackOf, toHalf } from '../web/virgl-renderer.ts';
 import { replay } from '../web/virgl-replay.ts';
 import { generate, parseTgsi, TgsiError, type ProgramKey } from '../web/virgl-tgsi.ts';
@@ -92,7 +92,7 @@ IMM[0] UINT32 {1065353216, 3, 0, 0}
   assert.deepEqual(p.samplers.fs, [0]);
 });
 
-test('virgl tgsi: integers keep their bits, the fragment coordinate stays upper-left (Mesa flips it), an alpha test discards', () => {
+test('virgl tgsi: integers keep their bits (flat varyings as integers), the fragment coordinate stays upper-left (Mesa flips it), an alpha test discards', () => {
   const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\n  0: MOV OUT[0], IN[0]\n  1: END');
   const fs = parseTgsi(`FRAG
 PROPERTY FS_COORD_ORIGIN LOWER_LEFT
@@ -110,6 +110,11 @@ IMM[0] UINT32 {3, 7, 0, 0}
   assert.match(p.fs, /vec4\(floatBitsToUint\(t0.xxxx\)\)/);
   assert.match(p.fs, /vec4\(gl_FragCoord.x - 0.5, gl_FragCoord.y - 0.5,/);
   assert.match(p.fs, /if \(!\(col0.w < u_alpharef\)\) discard;/);
+  // A flat varying carries integers between the stages (a float varying may flush or canonicalize their bits).
+  const fv = generate(parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END'),
+    parseTgsi('FRAG\nDCL IN[0], GENERIC[0], CONSTANT\nDCL OUT[0], COLOR\n  0: MOV OUT[0], IN[0]\n  1: END'), { ...KEY, attribs: ['i'] });
+  assert.ok(fv.vs.includes('flat out highp ivec4 vf_GENERIC0;') && fv.vs.includes('vf_GENERIC0 = floatBitsToInt(v_GENERIC0);'), fv.vs);
+  assert.ok(fv.fs.includes('flat in highp ivec4 vf_GENERIC0;') && fv.fs.includes('v_GENERIC0 = intBitsToFloat(vf_GENERIC0);'), fv.fs);
   // Small integers as float immediates stay bits (a float literal would be a denormal, flushed on some GPUs).
   const mv = parseTgsi('VERT\nDCL OUT[0], POSITION\nDCL TEMP[0]\nIMM[0] UINT32 {1, 2, 0, 1065353216}\n  0: MOV TEMP[0], IMM[0]\n  1: MOV OUT[0], TEMP[0]\n  2: END');
   assert.match(generate(mv, parseTgsi('FRAG\nDCL OUT[0], COLOR\n  0: END'), KEY).vs, /uintBitsToFloat\(1u\)/);
@@ -141,6 +146,16 @@ test('virgl tgsi: a constant blend factor WebGL can\'t pair is applied in the sh
     const p = generate(vs, fs, { ...KEY, attribs: ['f'], cbufs: [{ type: 'f', write: [...write] }] });
     assert.ok(p.fs.includes(out), p.fs);
   }
+});
+
+test('virgl tgsi: texture sizes and gradients have the texture\'s dimensions (dEQP-GLES3 texturesize, texturegrad)', () => {
+  const s = corpus().find((c) => c.name.startsWith('texture queries'))!;
+  const vs = parseTgsi('VERT\nDCL IN[0]\nDCL OUT[0], POSITION\nDCL OUT[1], GENERIC[0]\n  0: MOV OUT[0], IN[0]\n  1: MOV OUT[1], IN[0]\n  2: END');
+  const fs = generate(vs, parseTgsi(s.text), { ...KEY, attribs: ['f'] }).fs;
+  assert.match(fs, /ivec4\(textureSize\(fs0, [^;]*\)\.xy, 0, 0\)/, 'a cube\'s size is 2D');
+  assert.match(fs, /textureGrad\(fs1, v_GENERIC0\.xyz, v_GENERIC0\.xy, v_GENERIC0\.xy\)/, 'a 2D array\'s gradients are 2D');
+  assert.match(fs, /textureGrad\(fs2, vec4\(v_GENERIC0\.xyz, v_GENERIC0\.w\), v_GENERIC0\.xy, v_GENERIC0\.xy\)/, 'and a shadow array\'s');
+  assert.match(fs, /ivec4\(textureSize\(fs3, [^;]*\)\.xz, 0, 0\)/, 'a 1D array\'s layers come from the 2D array\'s third size');
 });
 
 test('virgl tgsi: what WebGL2 can\'t do is refused, not miscompiled', () => {
@@ -179,6 +194,66 @@ function replayMock(name: string) {
   const res = replay(fixture(name), (ram) => localHost((r = new VirglRenderer(gl, { ram, log: (m) => errors.push(m) }))));
   return { r, gl, res, errors };
 }
+
+/**
+ * The draws where a texture bound for sampling is attached to the draw framebuffer (a feedback loop: WebGL refuses
+ * the draw). The units counted are those bound since the program was (the renderer binds a draw's textures then).
+ */
+function feedbackLoops(log: [string, unknown[]][]) {
+  const DRAW: number[] = [E.DRAW_FRAMEBUFFER, E.FRAMEBUFFER];
+  const attached = new Map<unknown, Map<number, unknown>>();
+  const units = new Map<number, Map<number, unknown>>();
+  let unit: number = E.TEXTURE0, draw: unknown = null, draws = 0;
+  const loops: string[] = [];
+  const attach = (target: number, point: number, tex: unknown) => {
+    const fb = DRAW.includes(target) ? draw : null;
+    if (!fb) return;
+    if (!attached.has(fb)) attached.set(fb, new Map());
+    attached.get(fb)!.set(point, tex);
+  };
+  for (const [n, a] of log) {
+    if (n === 'activeTexture') unit = a[0] as number;
+    else if (n === 'useProgram') units.clear();
+    else if (n === 'bindTexture') { if (!units.has(unit)) units.set(unit, new Map()); units.get(unit)!.set(a[0] as number, a[1]); }
+    else if (n === 'bindFramebuffer' && DRAW.includes(a[0] as number)) draw = a[1];
+    else if (n === 'framebufferTexture2D') attach(a[0] as number, a[1] as number, a[3]);
+    else if (n === 'framebufferTextureLayer') attach(a[0] as number, a[1] as number, a[2]);
+    else if (n === 'framebufferRenderbuffer') attach(a[0] as number, a[1] as number, null);
+    else if (n.startsWith('draw') && n !== 'drawBuffers') {
+      draws++;
+      const at = [...(attached.get(draw)?.values() ?? [])].filter(Boolean);
+      for (const [u, ts] of units) for (const t of ts.values()) if (t && at.includes(t)) loops.push(`draw ${draws} (${n}) samples unit ${u - E.TEXTURE0}'s texture, attached to its framebuffer`);
+    }
+  }
+  return loops;
+}
+
+test('virgl renderer: no draw samples a texture attached to its framebuffer (dEQP-GLES3 fragment_out: a blit after three targets)', () => {
+  for (const name of ['deqp-gles3-fragment-out-r11f.vglt.gz', 'glcomp-128x96.vglt', 'sway-640.vglt.gz', 'deqp-gles2-stencil-stride.vglt.gz']) {
+    const gl = mockGl();
+    gl.keepLog = true;
+    const errors: string[] = [];
+    replay(fixture(name), (ram) => localHost(new VirglRenderer(gl, { ram, log: (m) => errors.push(m) })));
+    assert.deepEqual(errors, [], name);
+    assert.deepEqual(feedbackLoops(gl.log).slice(0, 3), [], name);
+  }
+});
+
+test('virgl renderer: an RG target first doesn\'t mask an RGBA target\'s B and A (dEQP-GLES3 fragment_out.random)', () => {
+  // RG32I and RGBA32I targets, drawn at once (fragment_out.random.11, captured): WebGL2 has one color mask.
+  const gl = mockGl();
+  gl.keepLog = true;
+  const errors: string[] = [];
+  replay(fixture('deqp-gles3-fragment-out-int.vglt.gz'), (ram) => localHost(new VirglRenderer(gl, { ram, log: (m) => errors.push(m) })));
+  assert.deepEqual(errors, []);
+  let mask: unknown[] = [];
+  const atDraws: unknown[][] = [];
+  for (const [n, a] of gl.log) {
+    if (n === 'colorMask') mask = a;
+    if (n === 'drawElements') atDraws.push(mask);
+  }
+  assert.deepEqual(atDraws, [[true, true, true, true]]);
+});
 
 test('virgl renderer: glcomp\'s trace runs through the device: 18 draws, 6 read-backs, every submit OK', () => {
   const { r, res, errors } = replayMock('glcomp-128x96.vglt');
@@ -347,6 +422,36 @@ test('virgl renderer: indices start at the index buffer\'s offset, and the large
     [[4, 5, 255, 6], E.UNSIGNED_BYTE, 8],
     [[4, 0xffff, 255, 6], E.UNSIGNED_SHORT, 0],
   ]);
+});
+
+test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GLES3 occlusion_query: results after glFinish)', () => {
+  const gl = mockGl();
+  let available = false;
+  (gl as unknown as { getQueryParameter: unknown }).getQueryParameter = (_q: unknown, p: number) => (p === E.QUERY_RESULT_AVAILABLE ? available : 1);
+  const ram = new Uint8Array(64);
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => ram, log: (m) => errors.push(m) });
+  r.createContext(1);
+  r.createResource({ id: 5, target: 0, format: 64, bind: 0x800, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 5);
+  r.attachBacking(5, [{ off: 0, len: 64 }]);
+  const answered: string[] = [];
+  const gate = new FenceGate<string>((f) => answered.push(f));
+  gate.fence('before', r.queriesSettled());
+  // An occlusion predicate (virgl's type 1), its state in resource 5: begun, ended.
+  r.submit(1, new Uint32Array([1 | 9 << 8 | 4 << 16, 40, 1, 0, 5, 19 | 1 << 16, 40, 20 | 1 << 16, 40]));
+  assert.deepEqual(errors, []);
+  assert.equal(new DataView(ram.buffer).getUint32(0, true), 2, 'the guest is told to wait for the host');
+  gate.fence('after', r.queriesSettled());
+  gate.fence('later', r.queriesSettled());
+  r.pollQueries();
+  gate.release();
+  assert.deepEqual(answered, ['before'], 'held while the result is pending');
+  available = true;
+  r.pollQueries();
+  gate.release();
+  assert.deepEqual(answered, ['before', 'after', 'later']);
+  assert.equal(new DataView(ram.buffer).getUint32(0, true), 1, 'the result is written before the fence is answered');
 });
 
 test('virgl device: a fenced command\'s reply waits for the host, and replies stay in order', async () => {

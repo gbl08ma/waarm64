@@ -4,7 +4,7 @@
 // it runs the device's calls (web/virgl-host.ts) in order: the renderer's (web/virgl-renderer.ts) and the screen's
 // (web/virgl-screen.ts), and answers fences once everything before them has run.
 import { capsFromGl } from './virgl-caps.ts';
-import { clock, runCall, type HostCall } from './virgl-host.ts';
+import { clock, FenceGate, runCall, type HostCall } from './virgl-host.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import { Screen } from './virgl-screen.ts';
 
@@ -41,20 +41,26 @@ self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
   // How long fences took to reach this worker (its event loop's backlog): count, total and longest ms a second.
   let fences = 0, fenceMs = 0, fenceMaxMs = 0;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  // A fence waits for the query results before it (FenceGate).
+  const fenced = new FenceGate<{ id: number; at: number }>((c) => {
+    const now = clock();
+    fences++;
+    fenceMs += now - c.at;
+    fenceMaxMs = Math.max(fenceMaxMs, now - c.at);
+    port.postMessage({ t: 'fenced', id: c.id, at: now });
+  });
   // WebGL's query results come after the task that ended the query: polled while some are pending.
   const poll = () => {
     pollTimer = undefined;
     queries = renderer.pollQueries();
+    fenced.release();
     if (queries) pollTimer = setTimeout(poll, 4);
   };
   port.onmessage = (m: MessageEvent<HostCall | { t: 'fence'; id: number; at: number } | { t: 'read'; id: number; res: number }>) => {
     const c = m.data;
     if (c.t === 'fence') {
-      const now = clock();
-      fences++;
-      fenceMs += now - c.at;
-      fenceMaxMs = Math.max(fenceMaxMs, now - c.at);
-      port.postMessage({ t: 'fenced', id: c.id, at: now });
+      fenced.fence(c, renderer.queriesSettled());
+      if (fenced.waiting && !pollTimer) poll();
       return;
     }
     if (c.t === 'read') {

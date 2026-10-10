@@ -58,7 +58,7 @@ type VertexElements = { offset: number; divisor: number; vb: number; format: num
 type SamplerView = { res: number; format: number; target: number; first: number; last: number; firstLevel: number; lastLevel: number; swizzle: number[] };
 type SamplerState = { wrap: number[]; minImg: number; minMip: number; magImg: number; compare: boolean; compareFunc: number; maxAniso: number; lodBias: number; minLod: number; maxLod: number; sampler?: WebGLSampler };
 type Surface = { res: number; format: number; level: number; firstLayer: number; lastLayer: number };
-type Query = { type: number; index: number; res: number; offset: number; q?: WebGLQuery; pending?: boolean; result: number };
+type Query = { type: number; index: number; res: number; offset: number; q?: WebGLQuery; target?: number; pending?: boolean; result: number };
 /** A stream output target: a buffer's range, and the bytes written into it since it was last bound without append. */
 type SoTarget = { res: number; offset: number; size: number; filled: number };
 type SoOutput = NonNullable<Shader['so']>['outputs'][number];
@@ -1062,6 +1062,9 @@ export class VirglRenderer {
     if (!src.tex || src.glTarget !== E.TEXTURE_2D) return this.error('blit: only 2D sources are converted');
     const b = this.blitProgram();
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
+    // Only the destination attached: the source may still be another of the last draw's targets, and sampling an
+    // attached texture is a feedback loop WebGL refuses (dEQP-GLES3 fragment_out: the second of three outputs).
+    for (let k = 1; k < 8; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, dst, db.level, dz);
     gl.drawBuffers([E.COLOR_ATTACHMENT0]);
@@ -1424,10 +1427,12 @@ void main() {
       const bc = s.blendColor, wr = cb0.write;
       gl.blendColor(...([0, 1, 2, 3].map((q) => (wr[q] === undefined || wr[q] < 0 ? 1 : bc[wr[q]])) as [number, number, number, number]));
     } else gl.disable(E.BLEND);
-    // The color mask goes through the stored layout too.
+    // The color mask goes through the stored layout too. A component the first buffer doesn't store stays on: WebGL2
+    // has one mask for all buffers, and another may store it (an RG target first masked an RGBA one's B and A:
+    // dEQP-GLES3 fragment_out.random).
     const m = rt ? rt.mask : 0xf;
     const wr = cb0?.write ?? [0, 1, 2, 3];
-    const bit = (q: number) => (wr[q] === undefined ? false : wr[q] < 0 ? true : !!(m & (1 << wr[q])));
+    const bit = (q: number) => (wr[q] === undefined || wr[q] < 0 ? true : !!(m & (1 << wr[q])));
     gl.colorMask(bit(0), bit(1), bit(2), bit(3));
     if (blend?.alphaToCoverage) gl.enable(E.SAMPLE_ALPHA_TO_COVERAGE); else gl.disable(E.SAMPLE_ALPHA_TO_COVERAGE);
     // Depth and stencil.
@@ -1767,7 +1772,8 @@ void main() {
     // Occlusion counters and predicates: WebGL2 has only "any samples passed" (a counter reads 0 or 1).
     if (q.type === Q_OCCLUSION_COUNTER || q.type === Q_OCCLUSION_PREDICATE || q.type === Q_OCCLUSION_CONSERVATIVE) {
       q.q ??= gl.createQuery()!;
-      gl.beginQuery(E.ANY_SAMPLES_PASSED_CONSERVATIVE, q.q);
+      q.target = q.type === Q_OCCLUSION_CONSERVATIVE ? E.ANY_SAMPLES_PASSED_CONSERVATIVE : E.ANY_SAMPLES_PASSED;
+      gl.beginQuery(q.target, q.q);
     }
     // PRIMITIVES_GENERATED and PRIMITIVES_EMITTED: the draws count them (they know their primitives and what they captured).
     if (q.type === Q_GENERATED || q.type === Q_EMITTED) {
@@ -1783,7 +1789,7 @@ void main() {
     const gl = this.gl;
     this.counting.delete(q);
     if (q.q) {
-      gl.endQuery(E.ANY_SAMPLES_PASSED_CONSERVATIVE);
+      gl.endQuery(q.target ?? E.ANY_SAMPLES_PASSED);
       q.pending = true;
       this.queries.push(q);
     }
@@ -1806,6 +1812,12 @@ void main() {
     v.setBigUint64(8, BigInt(q.result), true);
     this.writeBacking(r, q.offset, b);
     void c;
+  }
+
+  /** Whether the occlusion queries ended so far have their results, as they become available (`FenceGate`). */
+  queriesSettled(): () => boolean {
+    const waiting = this.queries.filter((q) => q.pending);
+    return () => waiting.every((q) => !q.pending);
   }
 
   /** Polls pending queries (the GPU worker calls it between tasks: WebGL results arrive after the task ends). */

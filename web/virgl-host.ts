@@ -53,6 +53,27 @@ export function runCall(c: HostCall, r: VirglRenderer, screen?: Screen) {
   }
 }
 
+/**
+ * Fences in order, each answered once the occlusion queries ended before it have their results: GL's are ready at a
+ * fence (a `glFinish` makes them available), WebGL's only after the task that ended them, so the GPU worker holds a
+ * fence while they're pending and releases it from its query poll (dEQP-GLES3 occlusion_query).
+ */
+export class FenceGate<F> {
+  private held: { f: F; settled: () => boolean }[] = [];
+  private readonly answer: (f: F) => void;
+  constructor(answer: (f: F) => void) { this.answer = answer; }
+  /** A fence after the calls so far; `settled` says whether the queries they ended have their results. */
+  fence(f: F, settled: () => boolean) {
+    if (!this.held.length && settled()) return this.answer(f);
+    this.held.push({ f, settled });
+  }
+  /** Answers the held fences whose queries have settled, in order. */
+  release() {
+    while (this.held.length && this.held[0].settled()) this.answer(this.held.shift()!.f);
+  }
+  get waiting() { return this.held.length; }
+}
+
 /** A host in this thread: calls run at once. */
 export function localHost(r: VirglRenderer, screen?: Screen): VirglHost {
   return { call: (c) => void runCall(c, r, screen), fence: () => undefined, read: (res) => Promise.resolve(r.readResource(res)) };

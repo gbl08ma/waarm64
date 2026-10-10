@@ -361,6 +361,14 @@ const isSprite = (semantic: string, index: number, key: ProgramKey) =>
   !!key.points && !!key.spriteCoordEnable && (semantic === 'GENERIC' || semantic === 'TEXCOORD') && index < 32 && ((key.spriteCoordEnable >>> index) & 1) === 1;
 
 const qualifier = (v: Varying) => `${v.interp === 'CONSTANT' ? 'flat ' : 'smooth '}${v.centroid ? 'centroid ' : ''}`;
+/**
+ * A varying's declaration between the stages. A flat one travels as integers (`vf_…`), copied from and into the
+ * shaders' own vec4 (which holds bits, as every register does): an integer's bits in a float varying are a denormal
+ * or a NaN to the implementation, which GLSL ES lets it flush or canonicalize at the interface (SwiftShader keeps
+ * them; nothing says another GPU does). Flat is where integer varyings are (GLES requires it).
+ */
+const declareVarying = (v: Varying, dir: 'in' | 'out') =>
+  v.interp === 'CONSTANT' ? [`${qualifier(v)}${dir} highp ivec4 vf_${v.name.slice(2)};`, `vec4 ${v.name} = vec4(0.0);`] : [`${qualifier(v)}${dir} vec4 ${v.name};`];
 
 /** Generates the program for a vertex and a fragment shader under `key`. */
 export function generate(vs: Tgsi, fs: Tgsi, key: ProgramKey): ProgramLayout {
@@ -881,7 +889,8 @@ class Gen {
         break;
       }
       case 'TXD': {
-        const sz = gl === '2D' ? 'xy' : 'xyz';
+        // Gradients have the texture's dimensions: a 2D array's are 2D.
+        const sz = gl === '3D' || gl === 'CUBE' ? 'xyz' : 'xy';
         call = `${off('textureGrad')}(${name}, ${withRef(coord)}, ${this.src(ins.src[1], 'f')}.${sz}, ${this.src(ins.src[2], 'f')}.${sz}${offs ? `, ${offs}` : ''})`;
         break;
       }
@@ -894,7 +903,8 @@ class Gen {
       case 'TXQ': {
         const lod = `${this.src(ins.src[0], 'i')}.x`;
         const size = `textureSize(${name}, ${lod})`;
-        const v = target === '1D' ? `ivec4(${size}.x, 0, 0, 0)` : dims === 2 || target === '1D_ARRAY' ? `ivec4(${size}.xy, 0, 0)` : `ivec4(${size}, 0)`;
+        // A cube's size is 2D (its width and height); an array's has its layers last (a 1D array is a 2D one of height 1).
+        const v = target === '1D' || target === 'SHADOW1D' ? `ivec4(${size}.x, 0, 0, 0)` : target.endsWith('1D_ARRAY') ? `ivec4(${size}.xz, 0, 0)` : dims === 2 || gl === 'CUBE' ? `ivec4(${size}.xy, 0, 0)` : `ivec4(${size}, 0)`;
         return this.dst(ins, v, 'i');
       }
       default: throw new TgsiError(`texture opcode ${ins.op}`);
@@ -953,7 +963,7 @@ class Gen {
     this.samplerList = [...this.declared.keys()].sort((a, b) => a - b);
     if (this.immIndirect) h.push(`const uvec4 imm[${this.t.imms.length}] = uvec4[${this.t.imms.length}](${this.t.imms.map((m) => `uvec4(${[0, 1, 2, 3].map((k) => `${(m.bits[k] ?? 0) >>> 0}u`).join(', ')})`).join(', ')});`);
     // Inputs and outputs.
-    const epilogue: string[] = [];
+    const epilogue: string[] = [], prologue: string[] = [];
     if (this.stage === 'vs') {
       for (const [k] of [...this.inputs].sort((a, b) => a[0] - b[0])) {
         const ty = this.key.attribs[k] ?? 'f';
@@ -967,7 +977,7 @@ class Gen {
         if (name === 'gl_Position' || name === 'o_psize') continue;
         if (name.startsWith('v_')) {
           const vy = this.varyings.get(name)!;
-          h.push(`${qualifier(vy)}out vec4 ${name};`);
+          h.push(...declareVarying(vy, 'out'));
           written.add(name);
         } else h.push(`vec4 ${name} = vec4(0.0);`);
         void d;
@@ -975,10 +985,11 @@ class Gen {
       // Varyings the fragment shader reads and this one doesn't write: zero.
       for (const vy of this.varyings.values()) {
         if (written.has(vy.name)) continue;
-        h.push(`${qualifier(vy)}out vec4 ${vy.name};`);
+        h.push(...declareVarying(vy, 'out'));
         epilogue.push(`${vy.name} = ${vy.semantic === 'COLOR' || vy.semantic === 'BCOLOR' ? 'vec4(0.0, 0.0, 0.0, 1.0)' : 'vec4(0.0, 0.0, 0.0, 1.0)'};`);
         // A varying written in the epilogue must not overwrite one written in the body: only unwritten ones get here.
       }
+      for (const vy of this.varyings.values()) if (vy.interp === 'CONSTANT') epilogue.push(`vf_${vy.name.slice(2)} = floatBitsToInt(${vy.name});`);
       if (this.key.points) epilogue.push(this.writesPointSize() ? 'gl_PointSize = o_psize.x;' : 'gl_PointSize = u_psize;');
       if (this.writesPointSize() && !this.key.points) epilogue.push('// point size unused');
       if (this.writesPointSize()) h.push('vec4 o_psize = vec4(1.0);');
@@ -991,7 +1002,10 @@ class Gen {
       epilogue.push('gl_Position.y *= u_adjy;');
       epilogue.push('gl_Position.z *= u_adjz;');
     } else {
-      for (const vy of this.varyings.values()) h.push(`${qualifier(vy)}in vec4 ${vy.name};`);
+      for (const vy of this.varyings.values()) {
+        h.push(...declareVarying(vy, 'in'));
+        if (vy.interp === 'CONSTANT') prologue.push(`${vy.name} = intBitsToFloat(vf_${vy.name.slice(2)});`);
+      }
       for (const [k, d] of [...this.inputs].sort((a, b) => a[0] - b[0])) {
         if (!d.semantic) h.push(`vec4 in_${k} = vec4(0.0);`);
       }
@@ -1039,7 +1053,7 @@ class Gen {
     for (const [id, r] of this.arrays) h.push(`vec4 ta${id}[${r.last - r.first + 1}];`);
     for (const d of this.t.decls) if (d.file === 'ADDR') for (let k = d.first; k <= d.last; k++) h.push(`ivec4 a${k} = ivec4(0);`);
     h.push(...this.head);
-    return [...h, 'void body() {', ...body, '}', 'void main() {', '  body();', ...epilogue.map((l) => `  ${l}`), '}', ''].join('\n');
+    return [...h, 'void body() {', ...body, '}', 'void main() {', ...prologue.map((l) => `  ${l}`), '  body();', ...epilogue.map((l) => `  ${l}`), '}', ''].join('\n');
   }
 
   private writesPointSize() {
