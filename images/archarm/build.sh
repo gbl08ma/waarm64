@@ -2,10 +2,13 @@
 # Arch Linux ARM -> a UEFI-bootable qcow2 (GPT: ESP with systemd-boot + root ext4).
 # On demand only: not part of images/build.sh, CI or any test. See docs/images.md "Arch Linux ARM".
 #
-#   images/archarm/build.sh [--out file.qcow2] [--root-mib 7500] [--esp-mib 256] [--packages "p1 p2"]
+#   images/archarm/build.sh [--out file.qcow2] [--root-mib 7500] [--esp-mib 256] [--packages "p1 p2"] [--modules dir]
 #
 # --packages installs Arch packages first (pacman -Syu in the container, from Arch Linux ARM's mirrors; the
 # system is upgraded with them): images/deqp/build.sh's guest takes mesa and libpng.
+# --modules puts out-of-tree modules (dir/*.ko, e.g. target/archarm/virtio-snd/<uname -r> from
+# images/archarm/virtio-snd.sh) into /usr/lib/modules/<uname -r>/updates and runs depmod; each module's vermagic must
+# be the image's kernel (so --packages, which upgrades the kernel, is what makes them match on the day).
 # Downloads the latest ArchLinuxARM-aarch64-latest.tar.gz (md5 checked against the published
 # .md5; a cached copy with the same md5 is reused), imports it as a rootless Podman image (the
 # rootfs runs natively on arm64), and inside that container regenerates the initramfs (the
@@ -26,12 +29,14 @@ OUT=$W/archlinuxarm-uefi.qcow2
 ROOT_MIB=7500
 ESP_MIB=256
 PACKAGES=
+MODULES=
 while [ $# -gt 0 ]; do
   case $1 in
     --out) OUT=$(realpath -m "$2"); shift 2 ;;
     --root-mib) ROOT_MIB=$2; shift 2 ;;
     --esp-mib) ESP_MIB=$2; shift 2 ;;
     --packages) PACKAGES=$2; shift 2 ;;
+    --modules) MODULES=$(realpath "$2"); shift 2 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -78,6 +83,16 @@ if [ -n "$PACKAGES" ]; then
   pacman -Q $PACKAGES linux-aarch64
 fi
 K=$(ls /lib/modules | head -1)
+if [ -d /mods ]; then
+  mkdir -p /lib/modules/$K/updates
+  for m in /mods/*.ko; do
+    v=$(modinfo -F vermagic "$m" | cut -d' ' -f1)
+    [ "$v" = "$K" ] || { echo "$(basename "$m") is for $v, the image's kernel is $K" >&2; exit 1; }
+    install -m 644 "$m" /lib/modules/$K/updates/
+    echo "module $(basename "$m") ($v)"
+  done
+  depmod "$K"
+fi
 cat > /tmp/mkinitcpio.conf <<C
 MODULES=(virtio_mmio virtio_blk ext4 vfat)
 BINARIES=()
@@ -105,7 +120,12 @@ e2fsck -fn /out/root.ext4 | tail -1
 INNER
 
 echo "== container: initramfs, rootfs -> ext4"
-podman run --rm -e PACKAGES="$PACKAGES" -e ESP_PARTUUID=$ESP_PARTUUID -e ROOT_PARTUUID=$ROOT_PARTUUID -e ROOT_MIB=$ROOT_MIB \
+MOUNT_MODULES=()
+if [ -n "$MODULES" ]; then
+  ls "$MODULES"/*.ko >/dev/null || { echo "no modules in $MODULES" >&2; exit 1; }
+  MOUNT_MODULES=(-v "$MODULES:/mods:ro,Z")
+fi
+podman run --rm "${MOUNT_MODULES[@]}" -e PACKAGES="$PACKAGES" -e ESP_PARTUUID=$ESP_PARTUUID -e ROOT_PARTUUID=$ROOT_PARTUUID -e ROOT_MIB=$ROOT_MIB \
   -v "$WORK:/out:Z" -v "$WORK/inner.sh:/inner.sh:ro,Z" "$IMG" bash /inner.sh
 
 echo "== ESP"

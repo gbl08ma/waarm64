@@ -1,7 +1,7 @@
 # webpc audio plan
 
-**Status:** planned, 2026-10-10. Nothing built. The user's decisions are §10; the rest is the proposal, to be
-settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
+**Status:** S0 done, 2026-10-10 (the guests: §11); no device code yet. The user's decisions are §10; the rest is
+the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
 
 The question: how does a guest's sound reach the page's speakers (and, maybe, the page's microphone reach the
 guest), **with the guest's own unmodified drivers**, in time with what it shows, without the main thread in the path?
@@ -51,9 +51,9 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
 
   | Guest | virtio-snd | Notes |
   |---|---|---|
-  | Debian 13 (6.12) | a module (M8-KICKOFF.md) | to confirm on our machine; the nocloud image has no `alsa-utils` |
-  | Alpine 3.24 `linux-virt` | to check | the boot tests' images |
-  | Arch Linux ARM `linux-aarch64` 7.2.9 | **not built** (no `kernel/sound/virtio`) | the desktop guest (sway, Firefox, GTK4): we build the module (§10) |
+  | Debian 13 (6.12.107+deb13-arm64) | **a module** (`kernel/sound/virtio/virtio_snd.ko.xz`), autoloaded | checked under QEMU's device (§11): binds, plays a 440 Hz tone; the nocloud image has no `alsa-utils` (`apt install` it) |
+  | Alpine 3.24 `linux-virt` | **a module** (`CONFIG_SND_VIRTIO=m`; `snd`, `snd-pcm`, `snd-timer` modules too) | 6.18.53's config read from the boot tests' rootfs; the UEFI cloud image's 6.18.52 binds it under QEMU after `modprobe virtio_snd` (no device manager: nothing autoloads) |
+  | Arch Linux ARM `linux-aarch64` 7.2.9 | **not built** (`# CONFIG_SND_VIRTIO is not set`; `snd`, `snd-pcm` built in) | the desktop guest (sway, Firefox, GTK4): our module, `images/archarm/virtio-snd.sh` (§11), autoloaded, plays under QEMU |
   | Our test kernels (`images/linux*`) | ours to enable | a `linux-snd` like `linux-gpu`: S1 |
 
 ## 3. The device (`web/snd.ts`, twin `core/tests/common/snd.rs`)
@@ -126,7 +126,7 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
 
 ## 8. Phases
 
-- **S0, the guests** (no device code): which kernels have the driver (Debian on our machine with QEMU's device;
+- **S0, the guests** (no device code; **done**, §11): which kernels have the driver (Debian on our machine with QEMU's device;
   Alpine's `linux-virt`); for Arch, `virtio_snd` built out of tree against `linux-aarch64-headers` in rootless
   Podman (`images/archarm/`), loaded on the Arch image under QEMU's device.
 - **S1, the device, deterministic:** `web/snd.ts`, its twin, the `linux-snd` guest; Node and native tests; the
@@ -158,3 +158,55 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
 3. **Sound is on by default:** it starts at the first click or key on the machine; mute in the menu.
 4. **The bar for done:** a video's sound in sync in Firefox on the desktop guest (PipeWire under sway), with
    Debian's ALSA playback covered by ci-debian.
+
+## 11. S0 findings (2026-10-10)
+
+How each guest was checked: booted under `qemu-system-aarch64` 11.1.1 (TCG, through our EDK2 as
+`tools/uefi-oracle.ts` sets the machine up, the image under a qcow2 overlay) with `-device
+virtio-sound-device,audiodev=snd0 -audiodev wav,id=snd0,path=…,out.frequency=48000,out.channels=2,out.format=s16`,
+then `cat /proc/asound/cards`, `aplay -l` and `speaker-test -D hw:0,0 -t sine -f 440 -r 48000 -c 2 -F S16_LE -l 1`.
+
+- **QEMU's virtio-mmio is legacy by default** (`force-legacy=true`), and `virtio_snd` refuses a legacy device
+  (`device does not comply with spec version 1.x`, probe -22); virtio-blk and virtio-net don't care. The oracle needs
+  **`-global virtio-mmio.force-legacy=false`**. Our transport is modern (version 2), so the page has no such issue.
+- **QEMU's `wav` backend leaves the RIFF and `data` lengths at 0** when the guest powers off (it doesn't finalize the
+  header on that exit): read the samples after the 44-byte header, by the file's size.
+- **Debian 13** (6.12.107+deb13-arm64): `virtio_snd` is autoloaded (lsmod: `virtio_snd` 40960, `snd_pcm`, `snd_timer`,
+  `snd`, `soundcore`), card 0 `VirtIO SoundCard`, `pcmC0D0p` and `pcmC0D0c`. With `alsa-utils` (apt, the
+  snapshot.debian.org date of `images/debian-chromium/build.sh`, user networking) the tone played: the wav has
+  287,748 frames at 48 kHz stereo S16 = 5.995 s, left channel 0–3.00 s then right 3.00–5.99 s, 440 Hz (zero
+  crossings), peak 26226. speaker-test's own period count: 12000 frames, buffer 48000 (4 periods of 250 ms).
+- **Alpine:** the boot tests' rootfs (linux-virt 6.18.53) has `CONFIG_SND_VIRTIO=m` with `snd`, `snd-pcm`,
+  `snd-timer` as modules, `virtio_snd.ko.gz` in `kernel/sound/virtio`; module signing on but not forced. The UEFI
+  cloud image (`images/alpine-uefi.json`, 6.18.52) binds it after `modprobe virtio_snd` (card 0, playback and capture
+  PCMs). Not played (no `alsa-utils` there; Debian and Arch cover playback).
+- **Arch Linux ARM:** ALARM's `linux-aarch64` 7.2.9-1 is upstream `linux-7.2` plus kernel.org's `patch-7.2.9` and five
+  ALARM patches (Rockchip and RPi5 device trees, the PL011 RP1 binding, a pps hack), none in `sound/` (its PKGBUILD,
+  archlinuxarm/PKGBUILDs `core/linux-aarch64`). Its config: `# CONFIG_SND_VIRTIO is not set`, `CONFIG_SND=y`,
+  `CONFIG_SND_PCM=y`, `CONFIG_VIRTIO=y`, `CONFIG_SND_JACK=y`; no `MODULE_SIG`, no `MODVERSIONS`, no GCC plugins, no
+  LTO, uncompressed modules. So an out-of-tree module needs only the exact release (vermagic `7.2.9-1-aarch64-ARCH
+  SMP preempt mod_unload aarch64`); every import (65 symbols: `snd_card_*`, `snd_pcm_*`, `snd_jack_*`, `snd_ctl_*`,
+  `virtqueue_*`, `virtio_*`) resolves against the headers' `Module.symvers` at modpost.
+- **The build:** `images/archarm/virtio-snd.sh` (~1 min, plus a 153 MB kernel.org download once): in a container of
+  `localhost/archarm-base`, `pacman -Sy linux-aarch64-headers gcc make` (the mirror's current, 7.2.9-1; gcc 16.1.1,
+  the kernel's own compiler release), `sound/virtio/` (13 files) of `linux-7.2.9.tar.xz` (sha256 against kernel.org's
+  `sha256sums.asc`), `make -C /usr/lib/modules/<release>/build M=… CONFIG_SND_VIRTIO=m modules`. Result
+  `target/archarm/virtio-snd/7.2.9-1-aarch64-ARCH/virtio_snd.ko`, 48,448 bytes (lsmod: 32768). `images/archarm/build.sh
+  --modules <dir>` puts it in `/usr/lib/modules/<release>/updates` and runs `depmod`, after checking the vermagic
+  against the image's kernel (so with `--packages`, which upgrades the kernel on the same day as the headers).
+- **Checked:** `images/archarm/build.sh --packages alsa-utils --modules target/archarm/virtio-snd/7.2.9-1-aarch64-ARCH`
+  (1.3 GB qcow2): udev autoloads the module at boot (`loading out-of-tree module taints kernel`), card 0
+  `VirtIO SoundCard`, and the same tone came out the same: 287,690 frames, 5.994 s at 48 kHz stereo, each channel's
+  3 s of 440 Hz. Shell at ~29 s on 4 TCG vCPUs.
+- **Keeping it current, the PKGBUILD** (§10.2; not built yet): a `virtio-snd-dkms` package is the natural form.
+  `dkms` 3.4.4 is in ALARM's `extra`; its pacman hook rebuilds the module for every installed
+  `linux-aarch64-headers`, so a kernel update doesn't leave the guest without sound. The package would carry
+  `sound/virtio/` (GPL-2.0, fine in a guest package; it's downloaded at `makepkg` time, never in our repo: the
+  PKGBUILD's `source` is kernel.org's tarball of one release, extracting only that directory, or the stable tree's
+  `sound/virtio` files at a tag), a `Makefile` with `obj-m += virtio_snd.o` and the object list, a `dkms.conf`
+  (`BUILT_MODULE_NAME=virtio_snd`, `DEST_MODULE_LOCATION=/updates`, `AUTOINSTALL=yes`), and `depends=(dkms)`
+  (the headers are the user's). The risk is drift: one release's source built against later kernels; the driver
+  changes rarely, and a kernel API change breaks the build loudly (DKMS reports it at upgrade), when the package's
+  pinned release moves. Without DKMS the alternative is a module package pinned to one `linux-aarch64` release
+  (`depends=(linux-aarch64=7.2.9-1)`), rebuilt at every kernel update: more upkeep for the same result. In webpc's own
+  images `images/archarm/virtio-snd.sh` stays the simpler path (no toolchain in the image).

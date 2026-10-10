@@ -71,7 +71,7 @@ the vtest oracle (`tools/virgl-oracle/deqp.sh`). It then makes the guest that ru
 **On demand only**: not in `images/build.sh` or `SHA256SUMS` (its `--packages` form makes dEQP's guest, `scripts/ci-deqp.sh`'s). It turns Arch Linux ARM's
 rootfs tarball (no bootloader, no partition table) into a qcow2 that boots through UEFI, for trying
 a distro the project doesn't ship. `images/archarm/build.sh [--out f.qcow2] [--root-mib 7500]
-[--esp-mib 256] [--packages "p1 p2"]` (`--packages`: `pacman -Syu` them in the container first, from Arch Linux ARM's mirrors) (~3 min, ~6 GiB of disk while it runs; the result is `target/archarm/archlinuxarm-uefi.qcow2`,
+[--esp-mib 256] [--packages "p1 p2"] [--modules dir]` (`--packages`: `pacman -Syu` them in the container first, from Arch Linux ARM's mirrors; `--modules`: out-of-tree `dir/*.ko` into `/usr/lib/modules/<release>/updates`, `depmod`ed, each one's vermagic checked against the image's kernel) (~3 min, ~6 GiB of disk while it runs; the result is `target/archarm/archlinuxarm-uefi.qcow2`,
 804 MiB, 8 GiB virtual):
 
 - Downloads `ArchLinuxARM-aarch64-latest.tar.gz` (the *latest*, so the result changes over time;
@@ -96,6 +96,15 @@ a distro the project doesn't ship. `images/archarm/build.sh [--out f.qcow2] [--r
   with the earlier 0.0.0.0 mask Arch's systemd-networkd logged `DHCP error: no netmask` and never
   configured IPv4 (IPv6 worked); see [devices.md](devices.md) "net". Reported by hand, not a test.
 - It works under `target/archarm/work` (removed at the end), not `/tmp`: the dev VM's `/tmp` is a small tmpfs that the 8 GiB disk overflows.
+- **Sound (`images/archarm/virtio-snd.sh [--kernel 7.2.9-1]`, on demand, ~1 min):** ALARM's `linux-aarch64` doesn't
+  build `CONFIG_SND_VIRTIO`, so this builds `virtio_snd` out of tree in rootless Podman (`localhost/archarm-base`)
+  against the mirror's current `linux-aarch64-headers`, from `sound/virtio/` of the matching kernel.org release
+  (`linux-<X.Y.Z>.tar.xz`, sha256 against kernel.org's `sha256sums.asc`, cached in `target/archarm/`; GPL-2.0 code
+  built for the guest, nothing in the repo). Result: `target/archarm/virtio-snd/<release>/virtio_snd.ko` (48 KB).
+  An image with it and ALSA's tools: `images/archarm/build.sh --packages alsa-utils --modules
+  target/archarm/virtio-snd/7.2.9-1-aarch64-ARCH`; build both the same day (the mirror keeps only the latest kernel,
+  and the module must match the image's exactly). udev loads it when the device is there. Checked under QEMU's
+  `virtio-sound-device` (with `-global virtio-mmio.force-legacy=false`): [plans/audio.md](plans/audio.md) §11.
 
 ## Debian with Chromium (`images/debian-chromium/build.sh`)
 
