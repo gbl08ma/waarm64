@@ -170,7 +170,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     2026-10-09): Firefox first (measured, then faster), the page's 2D/3D choice in its menu, a
     dEQP-GLES2/GLES3 subset as the correctness gate, then GTK4 on the Arch image; snapshots while 3D is
     in use stay G5's (graphics.md §21).
-  - Audio: virtio-snd to an AudioWorklet over a shared ring (`docs/plans/audio.md`, to write).
+  - Audio ([docs/plans/audio.md](docs/plans/audio.md), planned 2026-10-10): virtio-snd to an AudioWorklet over a
+    shared ring the device worker writes, the guest's period clock paced by the worklet's consumption. **Decisions
+    (the user, 2026-10-10):** playback first, capture later; sound on by default (from the first click); Arch Linux
+    ARM's kernel lacks the driver, so we build `virtio_snd` out of tree (eventually a PKGBUILD, DKMS if needed;
+    nothing asked upstream); done when a video's sound plays in sync in Firefox on the desktop guest.
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save
