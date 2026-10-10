@@ -342,6 +342,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   boot; loading a changes file also resets the variable store (the file doesn't carry it).
 - **The Keyboard Lock** in full screen is checked by hand only: headless Playwright's keys
   bypass the browser's shortcuts, so no test sees Ctrl+W reach the guest.
+- **Sound by hand only** (audio S2, [plans/audio.md](plans/audio.md) §13): headless Chromium runs an `AudioContext`
+  without a gesture (even with `--autoplay-policy=user-gesture-required`) and never hides a page, so the real
+  autoplay path ("Sound: click to hear", then a click) and a hidden tab's wake (the worklet's notify, the sink's
+  5 ms timeout) are the user's checks in a headed Chromium. If a hidden tab throttles the device worker, the
+  wait's timeout is the one to look at; the worklet's notify comes from the audio thread.
 
 ## Snapshots (M8 phase C, snapshots lane; [plans/snapshots.md](plans/snapshots.md), [platform.md](platform.md) "Snapshots")
 

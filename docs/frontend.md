@@ -15,13 +15,14 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/protocol.ts` | the messages between the two (types only) |
 | `web/app/index.html`'s Save snapshot and Load snapshot…, `main.ts`'s `saveSnapshot` and `loadSnapshot`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
+| `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
 | `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
 | `tools/debian.ts` | Debian's download and preparation, for `npm start` and `images/build.sh debian` |
 | `web/bootfs.ts`, `web/ext4.ts` | partition tables, a read-only ext2/3/4 reader, a distribution's kernel and initrd (below, "The disk reader") |
 
-Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot` (the
+Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot|snd` (the
 default is `debian`), `?ncpus=N`, `?ram=MiB` (both over the Machine menu's choice), `?view=screen|terminal|both` (over the remembered view),
 `?params=…` (extra kernel parameters for a direct-boot machine, placed before a `--`: e.g.
 `init=/nonexistent` to make Buildroot panic, as a test does; Debian's bootloader owns its command
@@ -29,7 +30,10 @@ line: edit it in GRUB), `?credential=name:value` (repeatable: a systemd credenti
 firmware machine; tests pass `tests/debian-unattended.ts`'s to boot Debian unattended, the page
 passes none), `?disk2=<url>` (a second,
 read-only virtio-blk over HTTP ranges, `/dev/vdb` in the guest, no overlay; for tests: the stress
-test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloads").
+test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloads"), `?snd=stats[,timer]`
+(the sound device's completion timing once a second in `window.__audio.stats`, and the timer instead of the
+worklet's notify; any `?snd=` also exposes `window.__audio`, the serial log and the status, for tests and
+`bench/audio/snd-page.ts`).
 
 ## The machines
 
@@ -37,7 +41,8 @@ test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloa
   booted through UEFI** (M8 phase B: EDK2's `QEMU_EFI.fd` as the machine's `firmware`, then shim
   and GRUB from the disk: docs/plans/uefi.md; below, "Debian through UEFI"), under the JIT,
   realtime, a worker per vCPU; 1 GiB; a 1024×768 framebuffer; rng, the disk (virtio-blk over HTTP
-  ranges, writable through the OPFS overlay `webpc-debian`), keyboard, tablet. No virtio-console
+  ranges, writable through the OPFS overlay `webpc-debian`), keyboard, tablet, the display, a sound card
+  (virtio-snd, below "Sound"; every page machine has one). No virtio-console
   (it would only add an output-only `hvc0` getty) and, by default, no network card: the Network menu (below) adds one. Its command line is GRUB's
   (`root=PARTUUID=… ro`; the old direct boot's is in [images.md](images.md) "Debian for interaction"). vCPUs: `min(4, cores − 2)` (the page and the
   device worker keep a core each). `ready` is the serial console's login prompt (`localhost login: `
@@ -53,6 +58,10 @@ test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloa
 - **`buildroot`**, the test guest: `-- /bin/sh` on the serial console, 256 MiB, a 640×480
   framebuffer that stays black (its kernel has no fbcon), the overlay `webpc-buildroot` (mounted
   read-only; it's there so restarts hand an overlay over). Up in under a second.
+- **`snd`**, the sound test guest (`images/build.sh linux-snd`, audio S2): its init plays a 440/660 Hz tone through
+  virtio-snd for `?params=snd_seconds=N` (1.024 s without) and powers off. No disk (a machine without `disk` has no
+  virtio-blk), a black screen, 256 MiB; `ready` is its hw params line. `tests/audio-browser.test.ts` and
+  `bench/audio/snd-page.ts` run it.
 
 URLs are relative to `machine.ts`, so nothing but the location of `target/` ties the page to the
 dev server (decision 7).
@@ -354,6 +363,29 @@ starts; following live is the agent's job ([plans/agent.md](plans/agent.md)).
 they change (not on moves: the tablet is absolute, the host's pointer is the guest's), and the page draws it at the canvas's scale into
 a blob (`image-set(url(…) <dpr>x) hotX hotY, none`; at most 128×128 device pixels), again whenever the scale changes. A cursor the guest
 never set leaves the page's own pointer; one it hid is `none`. docs/plans/graphics.md §14.
+
+## Sound
+
+Every page machine has a sound card, a virtio-snd ([devices.md](devices.md) "snd", [plans/audio.md](plans/audio.md)),
+on by default (audio decision 3). Each start makes a new **sound ring** and port (`PageAudio.attach` in
+web/audio.ts), passed in the start message (`sound`) to the device worker's realtime sink. When the guest starts a
+stream, the device says so on the port with the stream's rate; the page makes an `AudioContext` at that rate (so the
+browser resamples to the output device; a new rate makes a new context; `latencyHint: 'interactive'`), loads the
+worklet (`web/audio-worklet.ts`) on the ring, and puts a `GainNode` (the volume) before the output. The frames
+never cross the main thread: the worklet reads them from the ring, the device worker writes them. Once a second the
+page writes the context's output latency into the ring's header, and the guest gets it with each completion.
+
+- **The browser's autoplay rule:** a context made before the page had a user gesture starts suspended. The page
+  resumes it at once (that works after any earlier click) and at every click or key anywhere on the page; meanwhile
+  the sink's own clock plays the ring, so the guest's sound keeps time and nothing stalls, and the menu's summary
+  reads **Sound: click to hear** (with an accent border).
+- **The Sound menu:** Sound on (unchecked: muted, the gain at 0; the guest still plays in real time) and Volume
+  (0-100%). Both apply live and are kept in this browser (`muted`, `volume` in `webpc.settings`); the summary reads
+  "Sound (muted)" when off. Not in the Machine menu, whose choices apply by a restart.
+- **Restarts and stops:** the ring is dropped with the machine (`detach`); the context stays (a new machine
+  reuses it at the same rate, without needing another click).
+- Not covered headless (audio.md §13): the real autoplay prompt (headless Chromium runs contexts without a
+  gesture; the test suspends the context instead) and a hidden tab.
 
 ## Input
 

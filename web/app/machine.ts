@@ -17,8 +17,8 @@ export type Machine = {
   initrd?: string;
   /** Boot through UEFI: `kernel` is the firmware, there's no initrd and no command line (the disk's loader has its own). */
   firmware?: boolean;
-  /** The root disk (virtio-blk over HTTP ranges). */
-  disk: string;
+  /** The root disk (virtio-blk over HTTP ranges); none for a guest that lives in its initrd. */
+  disk?: string;
   /** The OPFS overlay that makes `disk` writable (web/overlay.ts); read-only without one. */
   overlay?: string;
   cmdline: string;
@@ -100,6 +100,18 @@ export const MACHINES = {
     ramMiB: 256,
     framebuffer: { width: 640, height: 480 },
     ready: /# $/,
+  },
+  // The sound test guest (images/snd/init.c, audio S2): plays a 440/660 Hz tone through virtio-snd for
+  // `snd_seconds` (?params=snd_seconds=60; 1.024 s without), then powers off. No disk, no screen.
+  snd: {
+    label: 'Sound test guest',
+    prepare: '`images/build.sh linux-snd` (docs/images.md)',
+    kernel: images('linux-snd/Image'),
+    initrd: images('linux-snd/initramfs.cpio'),
+    cmdline: 'console=ttyAMA0 panic=-1',
+    ramMiB: 256,
+    framebuffer: { width: 640, height: 480 },
+    ready: /snd: hw params/,
   },
 } satisfies Record<string, Machine>;
 

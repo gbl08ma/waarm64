@@ -12,7 +12,7 @@ import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { IoStats } from './iostats.ts';
 import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
 import { openDisk, type Disk } from './qcow2.ts';
-import { sndBackend } from './snd.ts';
+import { checksumSink, ringSink, sndBackend, type SndWake } from './snd.ts';
 
 /**
  * Host-side device configuration, one per virtio-mmio slot (in order). `blk`
@@ -80,15 +80,25 @@ export type GpuSpec = {
 } & GpuOptions;
 
 /**
- * virtio-snd (web/snd.ts): one output stream, no jacks or channel maps. Its frames go to the
- * deterministic sink for now (a checksum; each message completes at the DEVICE exit that posted it):
- * the page's AudioWorklet ring is audio S2 (docs/plans/audio.md).
+ * virtio-snd (web/snd.ts): one output stream, no jacks or channel maps. In deterministic mode its frames go to
+ * the checksum sink (each message completes at the DEVICE exit that posted it); in realtime mode to the ring
+ * sink: the page's sound ring (`ring`, played by web/audio.ts's worklet, which says on `port` when a stream starts
+ * and stops), or without one a ring of its own played on the sink's own clock (docs/plans/audio.md).
  */
-export type SndSpec = { type: 'snd' };
+export type SndSpec = {
+  type: 'snd';
+  /** The page's sound ring (web/audio-ring.ts). */
+  ring?: SharedArrayBuffer;
+  /** The page's end: the stream's start (its rate) and stop, and with `stats` the completions' timing once a second. */
+  port?: MessagePort;
+  /** What wakes the sink to complete played messages (default the worklet's notify): measurements. */
+  wake?: SndWake;
+  stats?: boolean;
+};
 
 /** The MessagePorts and canvases in `specs`, to transfer with them. */
 export const specPorts = (specs: DeviceSpec[]): Transferable[] =>
-  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : d.type === 'input' && d.port ? [d.port] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])] : []));
+  specs.flatMap((d) => (d.type === 'net' && typeof d.adapter !== 'string' ? [d.adapter instanceof MessagePort ? d.adapter : d.adapter.ip] : (d.type === 'input' || d.type === 'snd') && d.port ? [d.port] : d.type === 'gpu' ? [...(d.canvas ? [d.canvas] : []), ...(d.port ? [d.port] : []), ...(d.renderer ? [d.renderer] : [])] : []));
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
@@ -671,7 +681,7 @@ export class Devices {
           if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;
         }
-        case 'snd': return sndBackend(ctx);
+        case 'snd': return sndBackend(ctx, deterministic ? checksumSink() : ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats }));
       }
     });
     this.epochs = specs.map(() => 0);

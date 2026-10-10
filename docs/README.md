@@ -26,4 +26,4 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [plans/agent.md](plans/agent.md) | a guest agent (clipboard, time after a resume, a ready signal, X11 resize): the stock agents first, then a tools disk (not scheduled) |
 | [plans/uefi.md](plans/uefi.md) | booting unmodified images through EDK2: loop 0's oracle findings, DT vs ACPI, the design (M8 phase B) |
 | [plans/snapshots.md](plans/snapshots.md) | saving and resuming a machine as a file, and Suspend (M8 phase C lane, done) |
-| [plans/audio.md](plans/audio.md) | sound: virtio-snd to an AudioWorklet over a shared ring, playback first; the user's decisions; S0 (the guests' drivers, Arch's module) and S1 (the device, deterministic) done |
+| [plans/audio.md](plans/audio.md) | sound: virtio-snd to an AudioWorklet over a shared ring, playback first; the user's decisions; S0 (the guests' drivers, Arch's module), S1 (the device, deterministic) and S2 (the page: the ring, the worklet, the Sound menu) done |

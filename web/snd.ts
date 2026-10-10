@@ -6,8 +6,10 @@
 // One output stream, no jacks, no channel maps, no controls; queues controlq, eventq, txq, rxq. A
 // transmit message's frames go to a sink (`SndSink`): the deterministic one here hashes them and
 // completes the messages at the end of the DEVICE exit that posted them (so boots keep exact step
-// counts); the page's AudioWorklet ring is S2's.
+// counts); the realtime one (`ringSink`) writes them into the page's ring (web/audio-ring.ts) and completes
+// them once the AudioWorklet played them.
 import { gather, scatter, type Ctx, type Request } from './devices.ts';
+import { CAPACITY, EPOCH, GAP_FRAMES, LATENCY, QUANTA, RATE, READ, RUN, UNDERRUNS, WAKE, WRITE, newRing, ringViews } from './audio-ring.ts';
 
 /** The queues, in order. */
 export const CONTROLQ = 0;
@@ -53,13 +55,13 @@ export type SndParams = { bufferBytes: number; periodBytes: number; channels: nu
 /**
  * Where a playback stream's frames go. `play` gets a message's frames (raw, in the stream's format: `toF32`
  * converts) and calls `done(latencyBytes)` once they're played, which completes the message; frames come in
- * order. `start` and `stop` start and pause consumption; `release` drops whatever wasn't played (the device
+ * order. `start` (with the stream's parameters) and `stop` start and pause consumption; `release` drops whatever wasn't played (the device
  * returns those messages itself, and a later `done` for them does nothing). `tick` ends a DEVICE exit's
  * requests: a sink that completes at exits does it there.
  */
 export type SndSink = {
   play(p: SndParams, frames: Uint8Array, done: (latencyBytes: number) => void): void;
-  start?(): void;
+  start?(p: SndParams): void;
   stop?(): void;
   release?(): void;
   tick?(): void;
@@ -150,6 +152,217 @@ export function toF32(frames: Uint8Array, format: number, out = new Float32Array
   else if (format === FMT_FLOAT) for (let k = 0; k < n; k++) out[k] = v.getFloat32(4 * k, true);
   else throw new Error(`no conversion from sample format ${format}`);
   return out;
+}
+
+/** What the page hears from a realtime sink on its port (web/audio.ts). */
+export type SndToPage =
+  | { type: 'start'; rate: number }
+  /** `ms`: the time since the stream's START (a stream that ran: what the ring paced, the gaps included). */
+  | { type: 'stop'; ms?: number }
+  /** Once a second with `stats`: the completions' timing (audio.md §13). */
+  | { type: 'stats'; stats: SndStats };
+/**
+ * A second of a realtime sink: messages completed, the spread of the intervals between completions around a
+ * period's length (ms: percentiles of |interval − period|), the pumps run, the ms they took, and how many of those
+ * seconds' completions were on its own clock (no worklet playing).
+ */
+export type SndStats = { completions: number; jitterP50: number; jitterP99: number; jitterMax: number; pumps: number; busyMs: number; ownClock: number; capped: number };
+
+/** How a realtime sink is woken to complete what was played: a timer, or the worklet's `WAKE` notify (with a timer's period as the wait's timeout). */
+export type SndWake = 'timer' | 'worklet';
+
+/** The pump's period, ms (the timer's, and the worklet wait's timeout). */
+const PUMP_MS = 5;
+/** The worklet counts as playing while its heartbeat moved this recently, ms. */
+const LIVE_MS = 50;
+/** After a capped batch, the rest waits for the guest's next message or this long, ms. */
+const CAP_WAIT_MS = 10;
+
+/**
+ * The realtime sink (audio.md §3-§5): a message's frames go into the ring (as f32 stereo) as soon as there's
+ * room, and the message completes once the ring's read index passed its last frame, with `latency_bytes` the
+ * browser's output latency (Linux makes it ALSA's `delay`: what's still to be heard after a period completes,
+ * which is what A/V sync reads). The read index is the worklet's while it plays; else this sink's own clock moves
+ * it at the stream's rate (a machine without a page, a page whose context waits for a click), so a guest never
+ * stalls for want of a listener. Completions are made by `pump`, which runs on a timer or when the worklet notifies
+ * (`wake`), never more than a buffer less a period at once (audio.md §12): the rest waits for the guest's next
+ * message or `CAP_WAIT_MS`. `now` and `schedule: false` are for tests (which call `pump` themselves).
+ */
+export function ringSink(o: { ring?: SharedArrayBuffer; port?: MessagePort; wake?: SndWake; stats?: boolean; now?: () => number; schedule?: boolean } = {}) {
+  const ring = o.ring ?? newRing();
+  const { h, data } = ringViews(ring);
+  const now = o.now ?? (() => performance.now());
+  const post = (m: SndToPage) => o.port?.postMessage(m);
+  /** A message: its frames as f32 stereo, how many are in the ring, and the ring position after its last (once all are). */
+  type Item = { f32: Float32Array; frames: number; at: number; end?: number; bytes: number; done: (latencyBytes: number) => void };
+  let items: Item[] = [];
+  let p: SndParams | undefined;
+  let running = false;
+  /** The own clock: the read index it counts from, and when. */
+  let base = { read: 0, t: 0 };
+  let ownClock = true;
+  /** When the stream started, and the read index then. */
+  let startedAt = 0;
+  let startRead = 0;
+  /** On the own clock, when the ring ran dry: the clock waits for the guest, and that wait is an underrun once sound comes again. */
+  let dryFrom: number | undefined;
+  let lastQuanta = Atomics.load(h, QUANTA);
+  let quantaAt = -Infinity;
+  /** After a capped batch: no completions before this time, unless the guest posts a message. */
+  let holdUntil = 0;
+  // Stats (with `stats`): the second being counted.
+  const st = { completions: 0, pumps: 0, busyMs: 0, ownClock: 0, capped: 0, dev: [] as number[], lastDone: -1 };
+  let statsAt = now();
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let waiting = false;
+
+  const frameBytes = () => p!.channels * SAMPLE_BYTES[p!.format];
+  /** Writes what fits of the messages not yet in the ring. */
+  const fill = () => {
+    let w = Atomics.load(h, WRITE) >>> 0;
+    let room = CAPACITY - ((w - Atomics.load(h, READ)) >>> 0);
+    for (const it of items) {
+      if (it.end !== undefined) continue;
+      const n = Math.min(room, it.frames - it.at);
+      if (n === 0) break;
+      const at = w % CAPACITY;
+      const first = Math.min(n, CAPACITY - at);
+      data.set(it.f32.subarray(2 * it.at, 2 * (it.at + first)), 2 * at);
+      if (first < n) data.set(it.f32.subarray(2 * (it.at + first), 2 * (it.at + n)), 0);
+      it.at += n;
+      w = (w + n) >>> 0;
+      room -= n;
+      if (it.at === it.frames) it.end = w;
+    }
+    Atomics.store(h, WRITE, w | 0);
+  };
+  const pump = () => {
+    const t = now();
+    const t0 = performance.now();
+    if (running && p) {
+      const q = Atomics.load(h, QUANTA);
+      if (q !== lastQuanta) [lastQuanta, quantaAt] = [q, t];
+      const own = t - quantaAt >= LIVE_MS;
+      const r = Atomics.load(h, READ);
+      const avail = (Atomics.load(h, WRITE) - r) >>> 0;
+      if (own) {
+        // Taking over from the worklet: from its last quantum (or the start), so its silence since isn't lost time.
+        if (!ownClock) base = { read: r >>> 0, t: Math.max(quantaAt, startedAt) };
+        else if (avail === 0) {
+          // Dry: the clock waits for the guest from where the ring ran out; counted as the worklet counts a gap.
+          if (r !== startRead && dryFrom === undefined) dryFrom = Math.min(t, base.t + (((r - base.read) | 0) * 1000) / p.rate);
+          base = { read: r >>> 0, t };
+        }
+        const adv = Math.min(avail, Math.max(0, ((base.read + Math.floor(((t - base.t) * p.rate) / 1000)) - r) | 0));
+        if (adv > 0 && Atomics.compareExchange(h, READ, r, (r + adv) | 0) === r && dryFrom !== undefined) {
+          Atomics.add(h, UNDERRUNS, 1);
+          Atomics.add(h, GAP_FRAMES, Math.round(((base.t - dryFrom) * p.rate) / 1000));
+          dryFrom = undefined;
+        }
+      } else dryFrom = undefined; // the worklet counts its own gaps
+      ownClock = own;
+      // Completions: what the read index passed, at most a buffer less a period at once.
+      const read = Atomics.load(h, READ);
+      const latency = own ? 0 : Atomics.load(h, LATENCY) * frameBytes();
+      let burst = 0;
+      while (t >= holdUntil && items.length && items[0].end !== undefined && ((read - items[0].end) | 0) >= 0) {
+        const it = items[0];
+        if (burst > 0 && burst + it.bytes > p.bufferBytes - p.periodBytes) {
+          holdUntil = t + CAP_WAIT_MS;
+          st.capped++;
+          break;
+        }
+        items.shift();
+        burst += it.bytes;
+        if (o.stats) {
+          st.completions++;
+          if (own) st.ownClock++;
+          if (st.lastDone >= 0) st.dev.push(Math.abs(t - st.lastDone - (it.frames * 1000) / p.rate));
+          st.lastDone = t;
+        }
+        it.done(latency);
+      }
+    }
+    fill();
+    if (o.stats) {
+      st.pumps++;
+      st.busyMs += performance.now() - t0;
+      if (t - statsAt >= 1000) {
+        const d = st.dev.sort((a, b) => a - b);
+        const pc = (f: number) => (d.length ? +d[Math.min(d.length - 1, Math.floor(f * d.length))].toFixed(2) : 0);
+        post({ type: 'stats', stats: { completions: st.completions, jitterP50: pc(0.5), jitterP99: pc(0.99), jitterMax: d.length ? +d[d.length - 1].toFixed(2) : 0, pumps: st.pumps, busyMs: +st.busyMs.toFixed(2), ownClock: st.ownClock, capped: st.capped } });
+        Object.assign(st, { completions: 0, pumps: 0, busyMs: 0, ownClock: 0, capped: 0, dev: [] });
+        statsAt = t;
+      }
+    }
+  };
+  /** Pumps while the stream runs: every PUMP_MS, or at the worklet's notify (PUMP_MS at most apart). */
+  const schedule = () => {
+    if (o.schedule === false || !running) return;
+    if ((o.wake ?? 'worklet') === 'timer') {
+      timer ??= setInterval(pump, PUMP_MS);
+      return;
+    }
+    if (waiting) return;
+    waiting = true;
+    void (async () => {
+      while (running) {
+        const w = Atomics.waitAsync(h, WAKE, Atomics.load(h, WAKE), PUMP_MS);
+        if (w.async) await w.value;
+        if (running) pump();
+      }
+      waiting = false;
+    })();
+  };
+  /** Stops consuming; the time since START if the stream ran. */
+  const halt = () => {
+    const ms = running ? now() - startedAt : undefined;
+    running = false;
+    Atomics.store(h, RUN, 0);
+    if (timer !== undefined) clearInterval(timer);
+    timer = undefined;
+    st.lastDone = -1;
+    return ms;
+  };
+  return {
+    ring,
+    pump,
+    play(params: SndParams, frames: Uint8Array, done: (latencyBytes: number) => void) {
+      p = params;
+      let f32 = toF32(frames, params.format);
+      if (params.channels === 1) {
+        const st = new Float32Array(f32.length * 2);
+        for (let k = 0; k < f32.length; k++) st[2 * k] = st[2 * k + 1] = f32[k];
+        f32 = st;
+      }
+      items.push({ f32, frames: f32.length / 2, at: 0, bytes: frames.length, done });
+      holdUntil = 0; // the guest ran: what a capped batch left may complete
+      fill();
+    },
+    start(params: SndParams) {
+      p = params;
+      running = true;
+      Atomics.store(h, RATE, params.rate);
+      Atomics.add(h, EPOCH, 1);
+      Atomics.store(h, RUN, 1);
+      ownClock = false; // the next pump on its own clock starts it afresh, from now
+      startedAt = now();
+      startRead = Atomics.load(h, READ);
+      dryFrom = undefined;
+      post({ type: 'start', rate: params.rate });
+      schedule();
+    },
+    stop() {
+      post({ type: 'stop', ms: halt() });
+    },
+    release() {
+      const ms = halt();
+      items = [];
+      Atomics.store(h, READ, Atomics.load(h, WRITE)); // what the ring held is dropped
+      post({ type: 'stop', ms });
+    },
+    save: () => null,
+  } satisfies SndSink & Record<string, unknown>;
 }
 
 const u32 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset, b.byteLength).getUint32(at, true);
@@ -345,7 +558,7 @@ export function sndBackend(ctx: Ctx, sink: SndSink = checksumSink()) {
         // The reply first: the stream's messages complete after the request that started or released it.
         ctx.complete(r.w0, reply.length);
         if (effect === 'start') {
-          sink.start?.();
+          sink.start?.(snd.params!);
           const now = waiting;
           waiting = [];
           for (const m of now) play(m);
@@ -382,7 +595,7 @@ export function sndBackend(ctx: Ctx, sink: SndSink = checksumSink()) {
       snd.restore(state);
       const s = (state as { sink?: unknown }).sink;
       if (s !== null && s !== undefined) sink.restore?.(s);
-      if (snd.state === 'started') sink.start?.();
+      if (snd.state === 'started') sink.start?.(snd.params!);
     },
   };
 }

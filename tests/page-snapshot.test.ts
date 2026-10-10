@@ -145,7 +145,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   assert.equal(bytes.subarray(0, 8).toString('latin1'), 'WEBPCSNP');
   assert.ok(bytes.length > 100_000 && bytes.length < 120e6, `a plausible size: ${bytes.length}`);
   const header = (await openSnapshot(new Blob([bytes]))).header;
-  assert.deepEqual([header.machine, header.label, header.ncpus, header.disk, header.devices], ['buildroot', 'Buildroot (test guest)', 2, null, ['rng', 'blk', 'keyboard', 'tablet']]);
+  assert.deepEqual([header.machine, header.label, header.ncpus, header.disk, header.devices], ['buildroot', 'Buildroot (test guest)', 2, null, ['rng', 'blk', 'keyboard', 'tablet', 'snd']]);
   assert.match(String(header.serial), /saved-state/);
   assert.equal((header.disks as { sha256?: string }[])[0].sha256, undefined, 'no hash of the base image is written');
   // It was only paused: it answers, and its steps keep counting.

@@ -179,7 +179,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     ARM's kernel lacks the driver, so we build `virtio_snd` out of tree (eventually a PKGBUILD, DKMS if needed;
     nothing asked upstream); done when a video's sound plays in sync in Firefox on the desktop guest. **S0 and S1 are
     done (2026-10-10):** Debian, Alpine and (with our module) Arch play under QEMU's device; our virtio-snd
-    (`web/snd.ts`) plays the `linux-snd` guest's waveform byte for byte in every runner, in the same steps.
+    (`web/snd.ts`) plays the `linux-snd` guest's waveform byte for byte in every runner, in the same steps. **S2 is
+    done (2026-10-10):** every page machine has the device; its frames go through a shared ring to an AudioWorklet
+    that paces the guest, with the browser's output latency as ALSA's delay; a Sound menu (mute, volume); a minute's
+    tone plays in its length with no underrun (audio.md §13). The user tests by hand at S2's end (fixes in an
+    upcoming milestone). Next: S3, real guests (Debian's ALSA, then PipeWire and Firefox on the desktop guest).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save

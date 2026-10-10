@@ -116,8 +116,8 @@ let isSuspended = false;
 let restoring = false;
 
 /** The devices of a machine in slot order: the kinds a snapshot's header lists, so a restore makes the same. */
-type DeviceKind = 'rng' | 'blk' | 'blk-ro' | 'keyboard' | 'tablet' | 'net' | 'gpu';
-const KINDS: DeviceKind[] = ['rng', 'blk', 'blk-ro', 'keyboard', 'tablet', 'net', 'gpu'];
+type DeviceKind = 'rng' | 'blk' | 'blk-ro' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd';
+const KINDS: DeviceKind[] = ['rng', 'blk', 'blk-ro', 'keyboard', 'tablet', 'net', 'gpu', 'snd'];
 type StartMessage = Extract<ToWorker, { type: 'start' }>;
 
 /** The device of `kind` for this start, or what the page's options lack to make it. */
@@ -133,11 +133,21 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
       return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, keepConsole: true, ...tuning, virgl: tuning.virgl || !!m.renderer, renderer: m.renderer, caps: m.caps };
     }
     case 'net': return m.ip && machine.network ? { type: 'net', adapter: { ip: m.ip } } : 'a network card, and this machine has no network port';
+    // Without the page's ring (a page that passed none), the sink plays on its own clock.
+    case 'snd': return { type: 'snd', ring: m.sound?.ring, port: m.sound?.port, ...sndTuning() };
   }
 }
 
 /** The kinds a normal start makes, as the page's options say. */
-const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', 'blk', ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : []), ...(usesGpu(m, machine) ? ['gpu' as const] : [])];
+const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', ...(machine.disk || m.disk ? ['blk' as const] : []), ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : []), ...(usesGpu(m, machine) ? ['gpu' as const] : []), 'snd'];
+/**
+ * The sound's tuning, for measurements (docs/plans/audio.md §13): the page's `?snd=timer` completes played messages
+ * on a timer instead of the worklet's notify, `stats` posts their timing once a second (kept in `window.__sndStats`).
+ */
+function sndTuning() {
+  const knobs = (new URLSearchParams(self.location.search).get('snd') ?? '').split(',');
+  return { wake: knobs.includes('timer') ? 'timer' as const : 'worklet' as const, stats: knobs.includes('stats') };
+}
 /**
  * The display's tuning: flush replies paced to the frame and a queue of 16 (docs/devices.md "virtio-gpu"); the page's
  * `?gpu=nopace,q<N>` changes them, for measurements. 3D is the page's choice (a 3D machine, the default: the start
@@ -282,8 +292,8 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   // The disk is read by ranges as the guest needs it (not downloaded): check it's there.
   // A snapshot has the variable store in its RAM (the restore writes it beside the overlay) and needs no kernel.
   const flash = !snapshot && machine.firmware && overlayName ? loadFlash(overlayName).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
-  const diskUrl = m.disk?.url ?? machine.disk;
-  const disk = m.disk?.file ? Promise.resolve() : fetch(diskUrl, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(diskUrl, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`); });
+  const diskUrl = m.disk?.url ?? machine.disk ?? '';
+  const disk = m.disk?.file || !diskUrl ? Promise.resolve() : fetch(diskUrl, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(diskUrl, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`); });
   const [wasm, kernel = new Uint8Array(0), initrd] = await download([CORE, ...(snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])])], machine);
   await disk;
   if (stopping) return;

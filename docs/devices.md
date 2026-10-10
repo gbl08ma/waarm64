@@ -347,8 +347,8 @@ mode (and natively in realtime mode: std has no CSPRNG).
 - `{type: 'snd'}` (`web/snd.ts`, the native twin `core/tests/common/snd.rs`: the same statuses, completions at the
   same exits, the same control log). virtio 1.2 §5.14, written from the spec with Linux's `sound/virtio` read for
   behavior ([plans/audio.md](plans/audio.md)). No features; controlq, eventq, txq, rxq of 64; config jacks 0,
-  streams 1, chmaps 0 (Linux takes zero jacks and channel maps: it builds no jack or channel-map controls). Not yet
-  on the page's machines or any test machine but the snd guest's (audio S2 and S3 decide).
+  streams 1, chmaps 0 (Linux takes zero jacks and channel maps: it builds no jack or channel-map controls). On every
+  page machine (the last device, so the others keep their slots) and the snd guest's test machines.
 - **One output stream:** `PCM_INFO` answers hda_fn_nid 0, no stream features, formats S16, S32 and FLOAT, rates
   8–192 kHz (what every browser's `AudioContext` takes), 1–2 channels. Linux derives its limits from that: periods
   2–16 of 160–122,880 bytes, a buffer of up to 245,760. `SET_PARAMS` takes those; unoffered features, formats,
@@ -371,9 +371,23 @@ mode (and natively in realtime mode: std has no CSPRNG).
   completes at the end of the exit that posted a message, or START's for those held, **at most a buffer less a
   period per exit**: Linux counts its position in completions modulo the buffer, so a whole buffer completed
   before it looks again reads as nothing played and the stream stalls (audio.md §12); the rest completes at the
-  next exit. `toF32` converts a format to the f32 an AudioWorklet takes (S2's ring sink).
-- **Snapshots:** `save` gives the stream's state and parameters, the control log and the sink's counts; the held
-  messages are posted again by the core and play once (the sink hashes at completion).
+  next exit. `toF32` converts a format to the f32 an AudioWorklet takes.
+- **The realtime sink** (`ringSink`, every realtime machine): a message's frames go into the **sound ring**
+  (`web/audio-ring.ts`: a `SharedArrayBuffer` of 65,536 f32 stereo frames behind an i32 header, Atomics only; a mono
+  stream is written to both channels) as soon as it has room, and the message completes once the ring's read index
+  passed its last frame, with `latency_bytes` the browser's output latency (the page writes it into the header;
+  Linux makes it ALSA's delay). The read index is the page's AudioWorklet's while it plays (its heartbeat moved in
+  the last 50 ms), else the sink's own clock's (the stream's rate by `performance.now()`, from the worklet's last quantum when it
+  takes over; when the ring runs dry it waits for the guest, and counts that wait as the worklet counts a gap): a
+  machine without a page, or a page whose context waits for a click, still plays in real time. Both move
+  it by compare-and-exchange. The sink completes in a pump, at the worklet's notify (every 2 quanta) or after 5 ms
+  (`?snd=timer`: a 5 ms interval instead), at most a buffer less a period at once, the rest after the guest's next
+  message or 10 ms. The spec's `ring` and `port` are the page's (web/audio.ts `attach`; the port says the stream's
+  start, with its rate, and its stop, and with `stats` its completions' timing each second); without them the sink
+  makes a ring nothing plays. [plans/audio.md](plans/audio.md) §4 and §13.
+- **Snapshots:** `save` gives the stream's state and parameters, the control log and the sink's counts (the
+  realtime sink has none); the held messages are posted again by the core and play once (the sink hashes at
+  completion). A started stream's sink is started again at restore. Snapshots while sound plays are audio S4's.
 
 ### Framebuffer (`simple-framebuffer`)
 - `VmConfig.fb_width`/`fb_height` (0: none). x8r8g8b8, packed rows (stride 4 × width), in guest

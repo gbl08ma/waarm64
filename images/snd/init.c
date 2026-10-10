@@ -7,8 +7,9 @@
 //   2. hw params S16_LE, 48 kHz, stereo, periods of 1024 frames, 4 of them; sw params that start
 //      at a full buffer and never stop on an underrun (the deterministic sink plays a message as
 //      soon as it's posted, so the buffer runs dry after every write);
-//   3. FRAMES frames (a whole number of periods: the driver sends whole periods only) of a 440 Hz
-//      sine on the left and a 660 Hz one on the right, written a period at a time, then a drain of
+//   3. 48 periods of frames (or, with `snd_seconds=N` on the kernel's command line, which init gets as an
+//      environment variable, N seconds' worth: the page's realtime runs) of a 440 Hz sine on the left and
+//      a 660 Hz one on the right (a whole number of periods: the driver sends whole periods only), written a period at a time, then a drain of
 //      what's still queued (a drop if nothing is);
 //   4. "snd: wrote <frames> frames fnv1a <hash>": FNV-1a (32-bit) of the bytes written.
 #include <errno.h>
@@ -29,7 +30,6 @@
 #define CHANNELS 2
 #define PERIOD 1024
 #define PERIODS 4
-#define FRAMES (48 * PERIOD)
 
 static void die(const char *what) {
     printf("webpc: snd test failed: %s\n", what);
@@ -140,10 +140,13 @@ int main(void) {
     io(fd, SNDRV_PCM_IOCTL_SW_PARAMS, &sw, "sw params");
     io(fd, SNDRV_PCM_IOCTL_PREPARE, 0, "prepare");
 
+    const char *seconds = getenv("snd_seconds");
+    int frames = seconds ? (int)(atof(seconds) * RATE / PERIOD + 0.5) * PERIOD : 48 * PERIOD;
+    if (frames <= 0) die("snd_seconds");
     static int16_t buf[PERIOD * CHANNELS];
     uint32_t h = 0x811c9dc5u;
     double t0 = now_ms();
-    for (int f = 0; f < FRAMES; f += PERIOD) {
+    for (int f = 0; f < frames; f += PERIOD) {
         for (int k = 0; k < PERIOD; k++) {
             double t = (double)(f + k) / RATE;
             buf[2 * k] = (int16_t)lrint(12000 * sin(2 * M_PI * 440 * t));
@@ -165,7 +168,7 @@ int main(void) {
     double ms = now_ms() - t0;
     printf("snd: %ld frames queued at the end, %s %s after %.0f ms\n", queued, queued > 0 ? "drain" : "drop", ended < 0 ? strerror(err) : "ok", ms);
     close(fd);
-    printf("snd: wrote %d frames fnv1a %08x\n", FRAMES, h);
+    printf("snd: wrote %d frames fnv1a %08x\n", frames, h);
     printf(ended < 0 ? "webpc: snd test failed: drain\n" : "webpc: snd test ok\n");
     reboot(RB_POWER_OFF);
     return 0;

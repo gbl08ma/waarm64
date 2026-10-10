@@ -5,11 +5,13 @@
 // the vCPU count, `?view=screen|terminal|both` the first view (the last one
 // chosen is remembered), `?params=` extra kernel parameters (direct-boot machines), `?credential=name:value` a systemd
 // credential over fw_cfg (firmware machines), `?disk2=<url>` a read-only second disk, `?disk=<url>` a root
-// disk of your own (the header's "Open disk…" and a dropped file choose a local one).
+// disk of your own (the header's "Open disk…" and a dropped file choose a local one), `?machine=snd` the sound
+// test guest and `?snd=stats[,timer]` the sound's measurements (docs/frontend.md "Sound").
 import { Terminal } from '@xterm/xterm';
 import type { DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
 import { attachInput, type Input } from '../input.ts';
+import { PageAudio } from '../audio.ts';
 import { overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-file.ts';
@@ -35,8 +37,8 @@ const overlayName = () => chosen?.overlay ?? spec.overlay;
 /** What the disk is called on the page. */
 const diskName = () => (chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
 
-// Settings remembered per browser (the view, the network, whether saved disks are compressed). Storage can be off or throw: then nothing is remembered.
-type Settings = { ncpus?: number; ramMiB?: number; view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean; gpu?: '3d' | '2d' };
+// Settings remembered per browser (the view, the network, whether saved disks are compressed, the sound's volume). Storage can be off or throw: then nothing is remembered.
+type Settings = { ncpus?: number; ramMiB?: number; view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean; gpu?: '3d' | '2d'; muted?: boolean; volume?: number };
 const SETTINGS = 'webpc.settings';
 const settings = (): Settings => {
   try {
@@ -184,7 +186,7 @@ type Run = { worker: Worker; input: Input; serial: MessagePort; display: Message
  * Benchmarks' hooks (`?displaystats`, bench/gpu/sway-load.ts): the last status in `window.__status`, and
  * `window.__webpcProfile(on)` starting and stopping the guest PC sampler (the histogram lands in `window.__profile`).
  */
-const benchHooks = params.has('displaystats');
+const benchHooks = params.has('displaystats') || params.has('snd'); // ?snd= (sound measurements) wants the serial log and status too
 if (benchHooks) (window as unknown as { __webpcProfile?: (on: boolean) => void }).__webpcProfile = (on) => run?.worker.postMessage({ type: 'profile', on } satisfies ToWorker);
 if (benchHooks) (window as unknown as { __serialLog?: () => string }).__serialLog = () => log;
 /**
@@ -323,6 +325,7 @@ function start(snapshot?: File, resume = true) {
   // A machine that can have a network card has one from the start (it can't be added later without a restart): its end of the IP port.
   const ip = spec.network ? network.port() : undefined;
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
+  const sound = audio.attach();
   const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true) }), serial: serial.port1, display: display.port1 };
   run = r;
   keyboardLive = false;
@@ -401,7 +404,7 @@ function start(snapshot?: File, resume = true) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, snapshot, resume, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, sound, snapshot, resume, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -443,6 +446,7 @@ async function stop() {
   run = undefined;
   if (!r) return;
   r.input.detach();
+  audio.detach();
   await new Promise<void>((resolve) => {
     const t = setTimeout(resolve, 3000);
     r.worker.onmessage = (e: MessageEvent<FromWorker>) => { if (e.data.type === 'stopped') { clearTimeout(t); resolve(); } };
@@ -576,7 +580,7 @@ const SAVES: Record<ExportMode, { suffix: string; description: string; type: str
   raw: { suffix: '.img', description: 'Whole disk (raw)', type: 'application/octet-stream' },
 };
 /** The disk's file name: the chosen file's or URL's, or the machine's own image's. */
-const baseName = () => diskName() ?? new URL(spec.disk, location.href).pathname.split('/').pop() ?? 'disk';
+const baseName = () => diskName() ?? (spec.disk ? new URL(spec.disk, location.href).pathname.split('/').pop() : undefined) ?? 'disk';
 const saveCompress = $<HTMLInputElement>('save-compress');
 saveCompress.checked = settings().compress ?? true;
 saveCompress.onchange = () => remember({ compress: saveCompress.checked });
@@ -957,6 +961,31 @@ $<HTMLButtonElement>('machine-apply').onclick = () => {
   $<HTMLDetailsElement>('machine-menu').open = false;
   void restart();
 };
+
+// Sound (docs/frontend.md "Sound"): on by default; muted and the volume are kept in this browser. Any click or key on
+// the page lets the browser play it (its autoplay rule): until one, the summary says sound is waiting.
+const audio = new PageAudio();
+const soundOn = $<HTMLInputElement>('sound-on');
+const soundVolume = $<HTMLInputElement>('sound-volume');
+const soundMenu = $<HTMLDetailsElement>('sound-menu');
+soundOn.checked = !(settings().muted ?? false);
+soundVolume.value = String(Math.round(100 * Math.min(1, Math.max(0, settings().volume ?? 1))));
+const applySound = () => audio.setVolume(Number(soundVolume.value) / 100, !soundOn.checked);
+applySound();
+soundOn.onchange = soundVolume.oninput = () => {
+  applySound();
+  remember({ muted: !soundOn.checked, volume: Number(soundVolume.value) / 100 });
+};
+audio.onChange = () => {
+  const waiting = audio.waiting();
+  soundMenu.toggleAttribute('data-waiting', waiting);
+  $('sound-summary').textContent = waiting ? 'Sound: click to hear' : soundOn.checked ? 'Sound' : 'Sound (muted)';
+};
+soundOn.addEventListener('change', () => audio.onChange());
+for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => audio.gesture(), { capture: true });
+document.addEventListener('pointerdown', (e) => { if (!soundMenu.contains(e.target as Node)) soundMenu.open = false; });
+if (params.has('snd')) (window as unknown as { __audio?: PageAudio }).__audio = audio; // tests and measurements (?snd=stats)
+audio.onChange();
 
 // Before starting: what the page can tell won't work.
 function boot() {
