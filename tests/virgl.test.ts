@@ -350,6 +350,10 @@ test('virgl renderer: an upload to DEPTH32F_STENCIL8, which WebGL2 takes no data
   const ups = gl.log.filter(([n]) => n === 'texImage2D').map(([, a]) => Array.from((a as unknown[])[8] as ArrayLike<number>));
   assert.deepEqual(ups, [[0.25, 1], [0x81, 0x02]]);
   assert.equal(gl.log.filter(([n]) => n === 'drawArrays').length, 9, 'the depth, then a pass a stencil bit');
+  // The renderer's uploads assume rows packed at 1: the drawn upload leaves it so (one set at 4 skewed every later
+  // upload of rows not a multiple of 4 bytes: r8, rg8, rgb565 in dEQP's texture.specification after a depth32f_stencil8).
+  const aligns = gl.log.filter(([n, a]) => n === 'pixelStorei' && (a as number[])[0] === E.UNPACK_ALIGNMENT).map(([, a]) => (a as number[])[1]);
+  assert.deepEqual(aligns.filter((v) => v !== 1), [], 'UNPACK_ALIGNMENT stays 1');
 });
 
 test('virgl renderer: integer formats blit through GL\'s blit, and RGB10_A2UI reads back packed (dEQP-GLES3 fbo.blit)', () => {
@@ -474,6 +478,29 @@ test('virgl renderer: a fence waits for the occlusion queries before it (dEQP-GL
   gate.release();
   assert.deepEqual(answered, ['before', 'after', 'later']);
   assert.equal(new DataView(ram.buffer).getUint32(0, true), 1, 'the result is written before the fence is answered');
+});
+
+test('virgl renderer: a query destroyed before its result holds no fence (dEQP-GLES3 hung at a context\'s end)', () => {
+  const gl = mockGl();
+  // A deleted query's result never becomes available.
+  (gl as unknown as { getQueryParameter: unknown }).getQueryParameter = (_q: unknown, p: number) => (p === E.QUERY_RESULT_AVAILABLE ? false : null);
+  const ram = new Uint8Array(64);
+  const errors: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => ram, log: (m) => errors.push(m) });
+  r.createContext(1);
+  r.createResource({ id: 5, target: 0, format: 64, bind: 0x800, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+  r.attach(1, 5);
+  r.attachBacking(5, [{ off: 0, len: 64 }]);
+  const answered: string[] = [];
+  const gate = new FenceGate<string>((f) => answered.push(f));
+  // An occlusion predicate begun and ended, then destroyed (DESTROY_OBJECT) with its result pending.
+  r.submit(1, new Uint32Array([1 | 9 << 8 | 4 << 16, 40, 1, 0, 5, 19 | 1 << 16, 40, 20 | 1 << 16, 40, 3 | 9 << 8 | 1 << 16, 40]));
+  assert.deepEqual(errors, []);
+  gate.fence('after', r.queriesSettled());
+  r.pollQueries();
+  gate.release();
+  assert.deepEqual(answered, ['after']);
+  assert.equal(r.pollQueries(), 0, 'nothing left to poll');
 });
 
 test('virgl renderer: a multisampled source is resolved before a conversion or a flip (dEQP-GLES3 fbo.invalidate unbind_blit_msaa)', () => {

@@ -43,9 +43,12 @@ if (process.env.CASES) {
 } else await run(`awk 'NR % ${STRIDE} == ${(OFFSET + 1) % STRIDE}' /mnt/vdb/deqp/${api}-main.txt > /tmp/cases.txt`);
 results.cases = Number(await run('wc -l < /tmp/cases.txt'));
 log('cases', results.cases);
-// dEQP writes `Test case '<name>'..` then a status line per case; a status per case, with the seconds it took.
+// dEQP writes `Test case '<name>'..` then a status line per case; a status per case, with the seconds it took. No core
+// dumps (a dEQP killed while the device hangs never finishes dumping: "Blocked by coredump"), and the kernel's info on
+// the console (a hung task's stack: serial.txt when the run times out).
 await pasteSerial(String.raw`cat > /tmp/deqp.sh <<'EOF'
 cd /mnt/vdb/deqp/API
+echo core > /proc/sys/kernel/core_pattern; ulimit -c 0; dmesg -n 7
 start=$(date +%s)
 EGL_PLATFORM=surfaceless timeout LIMIT ./deqp-API --deqp-caselist-file=/tmp/cases.txt --deqp-surface-type=pbuffer --deqp-gl-config-name=rgba8888d24s8ms0 \
   --deqp-surface-width=256 --deqp-surface-height=256 --deqp-log-filename=/tmp/deqp.qpa --deqp-log-images=disable \
@@ -64,6 +67,12 @@ log('counts', JSON.stringify(results.counts));
 results.notPassed = await runLines("awk '$2 != \"Pass\" {print $1, $2}' /tmp/deqp.res", 120_000);
 results.slowest = await runLines('sort -k3 -n -r /tmp/deqp.res | head -10');
 results.last = await run('tail -3 /tmp/deqp.res');
+// Fewer statuses than cases: dEQP stopped (a crash, or LIMIT_S); the next case is where.
+const done = Object.values(results.counts as Record<string, number>).reduce((a, b) => a + b, 0);
+if (done < (results.cases as number)) {
+  results.stoppedAt = await run(`sed -n '${done + 1}p' /tmp/cases.txt`);
+  log('stopped at', results.stoppedAt);
+}
 // DETAIL=<n>: dEQP's own messages (its log's Text and Result lines) for the first <n> cases that didn't pass.
 if (process.env.DETAIL) {
   results.detail = await runLines(`awk '$2 != "Pass" && $2 != "NotSupported" {print $1}' /tmp/deqp.res | head -${Number(process.env.DETAIL)} | while read -r c; do echo "== $c"; awk -v c="$c" '/#beginTestCaseResult/{on = index($0, c) > 0} on && /<Text>|<Result /{gsub(/^[ \t]+/, ""); print}' /tmp/deqp.qpa | grep -v -E "^<Text>(Transform feedback varyings|GL_TRANSFORM_FEEDBACK|v_|Testing|Rendering result comparison|gl[A-Z]|//)" | head -12; done`, 120_000);

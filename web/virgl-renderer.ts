@@ -255,7 +255,13 @@ export class VirglRenderer {
   private destroyObject(o: Obj) {
     if (o.kind === 'sampler' && o.v.sampler) this.gl.deleteSampler(o.v.sampler);
     if (o.kind === 'query' && o.v.q) this.gl.deleteQuery(o.v.q);
-    if (o.kind === 'query') this.counting.delete(o.v);
+    if (o.kind === 'query') {
+      this.counting.delete(o.v);
+      // A deleted query never has its result: pending, it would hold every later fence (FenceGate) for good, and the
+      // guest's control queue filled behind them (dEQP-GLES3 hung at a context's end).
+      o.v.pending = false;
+      this.queries = this.queries.filter((q) => q !== o.v);
+    }
   }
 
   // --- resources -------------------------------------------------------------------------------------------------
@@ -1235,7 +1241,6 @@ void main() {
     }
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     gl.depthMask(true);
-    gl.pixelStorei(E.UNPACK_ALIGNMENT, 4);
     this.fbCache.clear();
   }
 

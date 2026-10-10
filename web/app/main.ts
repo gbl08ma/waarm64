@@ -186,6 +186,7 @@ type Run = { worker: Worker; input: Input; serial: MessagePort; display: Message
  */
 const benchHooks = params.has('displaystats');
 if (benchHooks) (window as unknown as { __webpcProfile?: (on: boolean) => void }).__webpcProfile = (on) => run?.worker.postMessage({ type: 'profile', on } satisfies ToWorker);
+if (benchHooks) (window as unknown as { __serialLog?: () => string }).__serialLog = () => log;
 /**
  * 3D: a machine with a virtio-gpu gets virgl, rendered by a GPU worker that owns the screen as WebGL2
  * (web/gpu-worker.ts; docs/frontend.md "A 3D machine"). The default since G3 (the kickoff's decision 3: once the page's

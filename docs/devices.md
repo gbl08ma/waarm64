@@ -308,7 +308,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   components the first target doesn't store (another may); a blit drawn through the formats' swizzles has only its
   destination attached (sampling a texture still attached from the last draw is a feedback loop WebGL refuses); flat
   varyings travel as integers. A fence waits for the occlusion queries ended before it (WebGL's results come only
-  after the task that ended them; GL's are ready at a fence, so a guest's `glFinish` sees them: `FenceGate`). `gl_FragCoord` is upper-left whatever the
+  after the task that ended them; GL's are ready at a fence, so a guest's `glFinish` sees them: `FenceGate`); a query destroyed before its result stops counting (a deleted WebGL query never has one). `gl_FragCoord` is upper-left whatever the
   shader's `FS_COORD_ORIGIN` says: the caps offer no lower-left origin, so Mesa flips y itself. Z24_UNORM_S8_UINT and Z24X8_UNORM uploads are rotated (Gallium
   keeps depth in a word's low 24 bits, GL in its high 24); Z32_FLOAT_S8X24_UINT uploads are drawn (WebGL2 takes no data
   for its type: the depth through `gl_FragDepth`, the stencil a bit a pass). Clears,

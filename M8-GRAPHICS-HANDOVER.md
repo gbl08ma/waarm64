@@ -56,9 +56,20 @@ machine".
   gtk4-load.ts (guest-session.ts `sampler`, `symbolize`): the guest kernel's submit path isn't a cost (no virtio-gpu
   or DRM function in GTK's top 60). Firefox's leftovers (replies held behind a fenced one, at most a fence's ~0.3 ms
   on a real GPU; 15–18 resources a second, the guest allocating) not pursued.
-- **Next, in order:** (1) a dEQP pass list as a test (a script beside ci-debian.sh running a fixed list on the
-  page: ask the user about its cost); (2) the whole GLES2 and GLES3 lists again for the exit's numbers (~4 h on the
-  page, nothing else beside it); (3) the exit write-up (§21, PLAN.md, G5's outline).
+- **Confirmation runs (2026-10-10):** GLES2's whole list passes (five slices, no failure). GLES3's found a regression
+  from the drawn DEPTH32F_STENCIL8 upload (6911844): it left UNPACK_ALIGNMENT at 4 where the renderer keeps 1, so
+  every later upload of rows not a multiple of 4 bytes (r8, rg8, r16, rgb565, rgba4, snorm) was skewed: 68 new
+  failures in texture.specification, all passing alone; fixed (tests/virgl.test.ts checks the alignment). Three
+  slices hung (dEQP "Blocked by coredump"): a query destroyed with its result pending stayed pending for good (a
+  deleted WebGL query never has one), so the FenceGate (f481000) held every later fence, the guest's control queue
+  filled (both blocked tasks in `virtio_gpu_queue_ctrl_sgs`) and dEQP's watchdog killed it; fixed (`destroyObject`
+  drops it; tests/virgl.test.ts). deqp-run.ts: no core dumps, kernel info on the console, `stoppedAt`; a run that
+  times out saves the page's whole serial log (`serial.txt`, the `__serialLog` hook).
+- **Next, in order:** (1) the whole GLES2 and GLES3 lists again for the exit's numbers (~4 h on the page, nothing
+  else beside it); (2) a dEQP pass list as a test: **the user's decision: its own script, `scripts/ci-deqp.sh`, run
+  like ci-net.sh** (when a change touches the renderer, translator, caps or virtio-gpu, and at track ends; not
+  inside ci.sh or ci-debian.sh); it needs a repo-built guest image with Mesa (images/archarm plus mesa) instead of
+  the git-ignored myarch3.qcow2; (3) the exit write-up (§21, PLAN.md, G5's outline).
 - The Arch image's guest-side helpers on the Mac: `~/webpc-arch/` (`start.sh` boots `myarch3.qcow2` under hvf with
   a network, virtio-mmio devices as ours; `vmsh.py <sock> <timeout> <cmd>` runs a command on its serial console as
   root). Mesa's source for reading: `~/Development/src/mesa` (sparse, mesa-26.2.4); vrend's:

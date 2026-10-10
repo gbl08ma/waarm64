@@ -2,6 +2,7 @@
 // bench/gpu/firefox-load.ts share. Headless Chromium, the page with `?displaystats`, a disk opened from a file, root
 // on the serial terminal, keys typed on the screen, and `load()`: a phase measured over N s on both sides (the guest's
 // /proc/stat and per-thread CPU, the display's and the renderer's stats, the emulator's counters).
+import { writeFileSync } from 'node:fs';
 import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 
@@ -72,7 +73,12 @@ export async function openSession(o: SessionOptions) {
 
   const terminal = () => page.evaluate(() => document.querySelector('.xterm-rows')?.textContent ?? '');
   const shows = (re: RegExp, ms = 60_000) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 200 })
-    .catch(async (e) => { await page.screenshot({ path: `${o.out}/fail.png` }); throw new Error(`${e}; the terminal shows: ${await terminal()}`); });
+    .catch(async (e) => {
+      await page.screenshot({ path: `${o.out}/fail.png` });
+      // The serial console's whole output (the page's log), for what scrolled off: a hung task's stack, say.
+      writeFileSync(`${o.out}/serial.txt`, await page.evaluate(() => (window as unknown as { __serialLog?: () => string }).__serialLog?.() ?? ''));
+      throw new Error(`${e}; the terminal shows: ${await terminal()} (all of it: ${o.out}/serial.txt)`);
+    });
   const onSerial = async (text: string) => { await page.locator('.xterm').click(); await page.keyboard.type(text, { delay: 5 }); };
   /** Many lines on the serial terminal: pasted (typing kilobytes takes minutes), each line with an Enter (insertText sends none for a `\n`). */
   const pasteSerial = async (text: string) => {
