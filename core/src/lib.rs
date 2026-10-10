@@ -29,7 +29,7 @@ pub mod vm;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 33;
+pub const ABI_VERSION: u32 = 34;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -508,6 +508,18 @@ pub unsafe extern "C" fn vm_exit_cpu(vm: *const vm::Vm, cpu: u32) -> *const vm::
 pub unsafe extern "C" fn vm_console(vm: *const vm::Vm) -> *const pl011::Rings {
     // SAFETY: guaranteed by the caller.
     &unsafe { &*vm }.shared.console
+}
+
+/// Parallel mode's steps between two publications of a vCPU's PC (ABI 34): short while the guest PC sampler runs
+/// (web/profiler.ts), so a sample is at most that many instructions old; 0 restores the default (32768). Round-robin
+/// is unaffected. Any thread.
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_set_chunk(vm: *const vm::Vm, steps: u64) {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &*vm }.shared.chunk.store(steps, Ordering::Relaxed);
 }
 
 /// The signal word (`vm::SIGNAL_STOP`, `vm::SIGNAL_RX`, `vm::SIGNAL_DEVICE`), set from any thread.

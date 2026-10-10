@@ -1,0 +1,685 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "info": "7.2.8-1-aarch64-ARCHerror: package 'wlroots0.19' was not found sway 1:1.12-4 mesa 1:26.2.3-1 foot 1.28.0-2 by-path  card0  renderD128[root@alarm ~]#  ",
+ "console": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 3
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 3,
+    "iowait": 5
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 1,
+    "user": 0,
+    "sys": 1,
+    "iowait": 6
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 4,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "systemd-udevd/systemd-udevd",
+    "userMs": 6,
+    "sysMs": 10
+   }
+  ],
+  "display": {
+   "seconds": 6,
+   "requests": 9.666666666666666,
+   "commands": {
+    "RESOURCE_FLUSH": 4.833333333333333,
+    "TRANSFER_TO_HOST_2D": 4.833333333333333
+   },
+   "fences": {
+    "n": 0,
+    "meanMs": 0,
+    "maxMs": 0,
+    "heldMs": 0,
+    "toGpuMs": 0,
+    "toGpuMaxMs": 0,
+    "backMs": 0,
+    "backMaxMs": 0
+   },
+   "flushes": 4.833333333333333,
+   "submits": 0,
+   "submitKB": 0,
+   "transfers": 4.833333333333333,
+   "Mpx": 5.067808,
+   "requestMs": 10.768333330750465,
+   "draws": 4.833333333333333,
+   "renderer": {
+    "seconds": 6,
+    "busyMs": 3.6858333299557366,
+    "submitMs": 0,
+    "drawMs": 0.3099999924500783,
+    "presents": 4.833333333333333,
+    "glDraws": 0,
+    "commands": 0,
+    "uploadKB": 0,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 0,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 6.0098449999988075,
+    "Msteps": 22.391486,
+    "irqs": 476,
+    "exceptions": {
+     "0x0": 1,
+     "0x15": 1235,
+     "0x20": 54,
+     "0x24": 278,
+     "0x25": 12
+    },
+    "tlbMisses": 11170,
+    "tlbFlushes": 770,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 5.894712
+   }
+  }
+ },
+ "sway": "sway=408libgallium-26.2.3-arch1.1.solibpixman-1.so.0.46.4      5 /dev/dri/card0      6 /dev/dri/renderD128[root@alarm ~]#  ",
+ "sway-idle": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 2,
+    "user": 0,
+    "sys": 1,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 11,
+    "sysMs": 2
+   },
+   {
+    "thread": "sh/sh",
+    "userMs": 1,
+    "sysMs": 12
+   }
+  ],
+  "display": {
+   "seconds": 10,
+   "requests": 3.6,
+   "commands": {
+    "SET_SCANOUT": 0.8999999999999999,
+    "RESOURCE_FLUSH": 0.8999999999999999,
+    "SUBMIT_3D": 1.7999999999999998
+   },
+   "fences": {
+    "n": 1.8,
+    "meanMs": 0.2324999968210856,
+    "maxMs": 0.3149999976158142,
+    "heldMs": 0.42249999940395355,
+    "toGpuMs": 0.1685546875,
+    "toGpuMaxMs": 0.2197265625,
+    "backMs": 0.06742350260416667,
+    "backMaxMs": 0.09521484375
+   },
+   "flushes": 0.9,
+   "submits": 1.8,
+   "submitKB": 7.396875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.19099999964237213,
+   "draws": 0.9,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 0.19181818582794882,
+    "submitMs": 0.15227273106575012,
+    "drawMs": 0.027272717519239945,
+    "presents": 0.9090909090909091,
+    "glDraws": 0.9090909090909091,
+    "commands": 11.818181818181818,
+    "uploadKB": 122.20170454545455,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 3,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 10.000094999998808,
+    "Msteps": 13.969514,
+    "irqs": 322,
+    "exceptions": {
+     "0x0": 2,
+     "0x15": 475,
+     "0x20": 71,
+     "0x24": 243,
+     "0x25": 17
+    },
+    "tlbMisses": 7534,
+    "tlbFlushes": 664,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 1.864481
+   }
+  }
+ },
+ "cursor": "image-set(url(\"blob:http://127.0.0.1:45849/de39c95d-e164-4b6",
+ "foot-idle": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 2,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 3,
+    "user": 0,
+    "sys": 2,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 4,
+    "user": 0,
+    "sys": 3,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sh/sh",
+    "userMs": 2,
+    "sysMs": 13
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 11,
+    "sysMs": 2
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 4,
+   "commands": {
+    "SET_SCANOUT": 1.0000000000000002,
+    "RESOURCE_FLUSH": 1.0000000000000002,
+    "SUBMIT_3D": 2.0000000000000004
+   },
+   "fences": {
+    "n": 2,
+    "meanMs": 0.2627272673628547,
+    "maxMs": 0.4649999737739563,
+    "heldMs": 0.5299999876455828,
+    "toGpuMs": 0.2099942294034091,
+    "toGpuMaxMs": 0.369873046875,
+    "backMs": 0.05907093394886364,
+    "backMaxMs": 0.100341796875
+   },
+   "flushes": 1,
+   "submits": 2,
+   "submitKB": 8.21875,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 0.17909091169183905,
+   "draws": 1,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 0.2645454542203383,
+    "submitMs": 0.22136363658038052,
+    "drawMs": 0.030909083106301048,
+    "presents": 1,
+    "glDraws": 1,
+    "commands": 13,
+    "uploadKB": 134.421875,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 3,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 10.999424999982118,
+    "Msteps": 16.843936,
+    "irqs": 388,
+    "exceptions": {
+     "0x0": 2,
+     "0x15": 645,
+     "0x20": 74,
+     "0x24": 249,
+     "0x25": 18
+    },
+    "tlbMisses": 8500,
+    "tlbFlushes": 691,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 1.981078
+   }
+  }
+ },
+ "date-loop": {
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 59,
+    "user": 13,
+    "sys": 46,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 60,
+    "user": 12,
+    "sys": 48,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 58,
+    "user": 12,
+    "sys": 45,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 58,
+    "user": 13,
+    "sys": 44,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 62,
+    "user": 15,
+    "sys": 46,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "sway/sway",
+    "userMs": 225,
+    "sysMs": 152
+   },
+   {
+    "thread": "foot/foot",
+    "userMs": 55,
+    "sysMs": 190
+   },
+   {
+    "thread": "bash/bash",
+    "userMs": 32,
+    "sysMs": 197
+   },
+   {
+    "thread": "foot/foot:render:1",
+    "userMs": 38,
+    "sysMs": 14
+   },
+   {
+    "thread": "foot/foot:render:2",
+    "userMs": 36,
+    "sysMs": 14
+   },
+   {
+    "thread": "foot/foot:render:4",
+    "userMs": 36,
+    "sysMs": 14
+   },
+   {
+    "thread": "rcu_preempt/rcu_preempt",
+    "userMs": 0,
+    "sysMs": 48
+   },
+   {
+    "thread": "foot/foot:render:3",
+    "userMs": 33,
+    "sysMs": 14
+   },
+   {
+    "thread": "kworker/u16:5-events_unbound/kworker/u16:5-events_unbound",
+    "userMs": 0,
+    "sysMs": 35
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 20,
+    "sysMs": 1
+   },
+   {
+    "thread": "kworker/u16:3-events_unbound/kworker/u16:3-events_unbound",
+    "userMs": 0,
+    "sysMs": 18
+   },
+   {
+    "thread": "sh/sh",
+    "userMs": 2,
+    "sysMs": 9
+   }
+  ],
+  "display": {
+   "seconds": 12,
+   "requests": 155.41666666666666,
+   "commands": {
+    "RESOURCE_UNREF": 1,
+    "SET_SCANOUT": 37.58333333333333,
+    "RESOURCE_FLUSH": 37.58333333333333,
+    "ATTACH_BACKING": 1,
+    "CTX_ATTACH_RESOURCE": 1,
+    "CTX_DETACH_RESOURCE": 1,
+    "RESOURCE_CREATE_3D": 1,
+    "SUBMIT_3D": 75.24999999999999
+   },
+   "fences": {
+    "n": 76.25,
+    "meanMs": 4.154464480948579,
+    "maxMs": 20.694999992847443,
+    "heldMs": 355.0183333481352,
+    "toGpuMs": 4.034016483352644,
+    "toGpuMaxMs": 20.5947265625,
+    "backMs": 0.1121155118681694,
+    "backMaxMs": 2.865234375
+   },
+   "flushes": 37.583333333333336,
+   "submits": 75.25,
+   "submitKB": 309.8440755208333,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 9.339999961356321,
+   "draws": 37.583333333333336,
+   "renderer": {
+    "seconds": 12,
+    "busyMs": 43.468749975164734,
+    "submitMs": 41.77541662504276,
+    "drawMs": 1.280416652560234,
+    "presents": 35.5,
+    "glDraws": 39.583333333333336,
+    "commands": 501.4166666666667,
+    "uploadKB": 138389.73046875,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 0,
+    "programs": 3,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 12.00030000001192,
+    "Msteps": 211.110732,
+    "irqs": 4303,
+    "exceptions": {
+     "0x0": 39,
+     "0x15": 7077,
+     "0x20": 1065,
+     "0x24": 4728,
+     "0x25": 221
+    },
+    "tlbMisses": 263216,
+    "tlbFlushes": 17991,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 28.521868
+   }
+  }
+ },
+ "profile": {
+  "samples": 894880,
+  "kernelPct": 84.2,
+  "userPct": 15.8,
+  "kernelPcs": 21208,
+  "sent": 4000,
+  "received": 4000,
+  "coveredPct": 92.1,
+  "top": [
+   {
+    "sym": "cpu_do_idle",
+    "samples": 296084,
+    "pct": 33.1
+   },
+   {
+    "sym": "arch_counter_get_cntvct",
+    "samples": 39003,
+    "pct": 4.4
+   },
+   {
+    "sym": "arch_stack_walk",
+    "samples": 15242,
+    "pct": 1.7
+   },
+   {
+    "sym": "preempt_count_add",
+    "samples": 12937,
+    "pct": 1.4
+   },
+   {
+    "sym": "_raw_spin_unlock_irqrestore",
+    "samples": 11625,
+    "pct": 1.3
+   },
+   {
+    "sym": "check_preemption_disabled",
+    "samples": 11604,
+    "pct": 1.3
+   },
+   {
+    "sym": "preempt_count_sub",
+    "samples": 9547,
+    "pct": 1.1
+   },
+   {
+    "sym": "_raw_spin_unlock_irq",
+    "samples": 9392,
+    "pct": 1
+   },
+   {
+    "sym": "debug_smp_processor_id",
+    "samples": 7824,
+    "pct": 0.9
+   },
+   {
+    "sym": "el0_svc",
+    "samples": 6980,
+    "pct": 0.8
+   },
+   {
+    "sym": "__flush_tlb_range.isra.0",
+    "samples": 6939,
+    "pct": 0.8
+   },
+   {
+    "sym": "__pi_memset_generic",
+    "samples": 6607,
+    "pct": 0.7
+   },
+   {
+    "sym": "arch_timer_set_next_event_virt",
+    "samples": 4379,
+    "pct": 0.5
+   },
+   {
+    "sym": "gic_ipi_send_mask",
+    "samples": 4225,
+    "pct": 0.5
+   },
+   {
+    "sym": "__update_load_avg_cfs_rq",
+    "samples": 4112,
+    "pct": 0.5
+   },
+   {
+    "sym": "default_idle_call",
+    "samples": 3768,
+    "pct": 0.4
+   },
+   {
+    "sym": "gic_eoi_irq",
+    "samples": 3506,
+    "pct": 0.4
+   },
+   {
+    "sym": "unwind_find_stack.constprop.0",
+    "samples": 3499,
+    "pct": 0.4
+   },
+   {
+    "sym": "finish_task_switch.isra.0",
+    "samples": 3415,
+    "pct": 0.4
+   },
+   {
+    "sym": "arch_timer_handler_virt",
+    "samples": 3401,
+    "pct": 0.4
+   },
+   {
+    "sym": "zap_pte_range",
+    "samples": 3335,
+    "pct": 0.4
+   },
+   {
+    "sym": "zap_present_ptes.constprop.0",
+    "samples": 3282,
+    "pct": 0.4
+   },
+   {
+    "sym": "__mod_memcg_lruvec_state",
+    "samples": 3013,
+    "pct": 0.3
+   },
+   {
+    "sym": "queued_spin_lock_slowpath",
+    "samples": 3005,
+    "pct": 0.3
+   },
+   {
+    "sym": "__update_load_avg_se",
+    "samples": 3005,
+    "pct": 0.3
+   },
+   {
+    "sym": "gic_read_iar",
+    "samples": 2899,
+    "pct": 0.3
+   },
+   {
+    "sym": "folio_add_file_rmap_ptes",
+    "samples": 2855,
+    "pct": 0.3
+   },
+   {
+    "sym": "__this_cpu_preempt_check",
+    "samples": 2795,
+    "pct": 0.3
+   },
+   {
+    "sym": "handle_softirqs",
+    "samples": 2775,
+    "pct": 0.3
+   },
+   {
+    "sym": "next_uptodate_folio",
+    "samples": 2715,
+    "pct": 0.3
+   },
+   {
+    "sym": "gic_handle_irq",
+    "samples": 2610,
+    "pct": 0.3
+   },
+   {
+    "sym": "update_curr",
+    "samples": 2530,
+    "pct": 0.3
+   },
+   {
+    "sym": "in_lock_functions",
+    "samples": 2521,
+    "pct": 0.3
+   },
+   {
+    "sym": "save_return_addr",
+    "samples": 2283,
+    "pct": 0.3
+   },
+   {
+    "sym": "do_handle_IPI",
+    "samples": 2157,
+    "pct": 0.2
+   },
+   {
+    "sym": "mas_walk",
+    "samples": 2083,
+    "pct": 0.2
+   }
+  ]
+ },
+ "tail": "400:00:04.074 [ERROR] [sway/config/output.c:1219] failed to execute 'swaybg' (background configuration probably not applied): No such file or directoryEnvironment variable $XDG_CURRENT_DESKTOP not set, ignoring.warn: main.c:495: 'C' is not a UTF-8 locale, falling back to 'C.UTF-8'warn: wayland.c:1888: compositor does not implement the xdg-toplevel-icon protocol[root@alarm ~]#  "
+}

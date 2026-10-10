@@ -1,0 +1,458 @@
+{
+ "mode": "virgl",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "warmS": 15,
+ "phaseS": 10,
+ "info": "7.2.8-1-aarch64-ARCHgtk4 1:4.22.5-1 gtk4-demos 1:4.22.5-1 sway 1:1.12-4 mesa 1:26.2.4-1",
+ "sway": "",
+ "iconscroll-gl": {
+  "alive": true,
+  "flushes": 15.454545454545455,
+  "cpus": [
+   {
+    "cpu": "cpu",
+    "busy": 21,
+    "user": 13,
+    "sys": 8,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu0",
+    "busy": 18,
+    "user": 9,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu1",
+    "busy": 19,
+    "user": 10,
+    "sys": 9,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu2",
+    "busy": 10,
+    "user": 5,
+    "sys": 5,
+    "iowait": 0
+   },
+   {
+    "cpu": "cpu3",
+    "busy": 36,
+    "user": 28,
+    "sys": 7,
+    "iowait": 0
+   }
+  ],
+  "threads": [
+   {
+    "thread": "gtk4-demo/gtk4-demo",
+    "userMs": 489,
+    "sysMs": 68
+   },
+   {
+    "thread": "sway/sway",
+    "userMs": 40,
+    "sysMs": 68
+   },
+   {
+    "thread": "kworker/u16:3+events_unbound/kworker/u16:3+events_unbound",
+    "userMs": 0,
+    "sysMs": 13
+   },
+   {
+    "thread": "kworker/0:2-events/kworker/0:2-events",
+    "userMs": 0,
+    "sysMs": 12
+   },
+   {
+    "thread": "swaybar/swaybar",
+    "userMs": 9,
+    "sysMs": 3
+   }
+  ],
+  "display": {
+   "seconds": 11,
+   "requests": 130.9090909090909,
+   "commands": {
+    "RESOURCE_UNREF": 1.2727272727272727,
+    "ATTACH_BACKING": 12.000000000000002,
+    "CTX_ATTACH_RESOURCE": 12.727272727272728,
+    "RESOURCE_CREATE_3D": 12.000000000000002,
+    "SUBMIT_3D": 60.18181818181818,
+    "SET_SCANOUT": 15.454545454545453,
+    "RESOURCE_FLUSH": 15.454545454545453,
+    "CTX_DETACH_RESOURCE": 1.8181818181818181
+   },
+   "fences": {
+    "n": 57.63636363636363,
+    "meanMs": 50.57195583596967,
+    "maxMs": 1441.9099999964237,
+    "heldMs": 6641.876818177375,
+    "toGpuMs": -80.63544114480807,
+    "toGpuMaxMs": 1310.8251953125,
+    "backMs": 131.1093215106612,
+    "backMaxMs": 133.544677734375
+   },
+   "flushes": 15.454545454545455,
+   "submits": 60.18181818181818,
+   "submitKB": 1082.278409090909,
+   "transfers": 0,
+   "Mpx": 0,
+   "requestMs": 5.7418182275512,
+   "draws": 15.454545454545455,
+   "renderer": {
+    "seconds": 11,
+    "busyMs": 128.75636359778318,
+    "submitMs": 128.09772725267842,
+    "drawMs": 0.4645454639738256,
+    "presents": 14.909090909090908,
+    "glDraws": 3980.909090909091,
+    "commands": 28085.090909090908,
+    "uploadKB": 1460.4879261363637,
+    "readbacks": 0,
+    "readbackKB": 0,
+    "compileMs": 102.55227273160762,
+    "programs": 45,
+    "errors": 0
+   },
+   "vm": {
+    "seconds": 11.005469999998807,
+    "Msteps": 193.882987,
+    "irqs": 1455,
+    "exceptions": {
+     "0x0": 3,
+     "0x15": 2169,
+     "0x20": 93,
+     "0x24": 469,
+     "0x25": 21
+    },
+    "tlbMisses": 69525,
+    "tlbFlushes": 1165,
+    "jitFlushes": 0,
+    "jitInvalidations": 0,
+    "jitCompileMs": 23.682303
+   }
+  },
+  "stderr": [
+   "2 Using renderer 'GskGLRenderer' for surface 'GdkWaylandToplevel'",
+   "1 Environment variable GSK_RENDERER=gl set, trying GskGLRenderer",
+   "1 (gtk4-demo:494): Gdk-WARNING **: 06:30:34.041: Cannot get portal org.freedesktop.portal.Inhibit version: GDBus.Error:org.freedesktop.DBus.Error.InvalidArgs: No such interface “org.freedesktop.portal.Inhibit”",
+   "1"
+  ],
+  "profile": {
+   "samples": 848468,
+   "kernelPct": 84.7,
+   "userPct": 15.3,
+   "kernelPcs": 324,
+   "sent": 324,
+   "received": 324,
+   "coveredPct": 100,
+   "top": [
+    {
+     "sym": "cpu_do_idle",
+     "samples": 637962,
+     "pct": 75.2
+    },
+    {
+     "sym": "arch_counter_get_cntvct",
+     "samples": 28636,
+     "pct": 3.4
+    },
+    {
+     "sym": "el0_svc",
+     "samples": 11855,
+     "pct": 1.4
+    },
+    {
+     "sym": "_raw_spin_unlock_irqrestore",
+     "samples": 8464,
+     "pct": 1
+    },
+    {
+     "sym": "_raw_spin_unlock_irq",
+     "samples": 4737,
+     "pct": 0.6
+    },
+    {
+     "sym": "default_idle_call",
+     "samples": 4505,
+     "pct": 0.5
+    },
+    {
+     "sym": "gic_ipi_send_mask",
+     "samples": 1889,
+     "pct": 0.2
+    },
+    {
+     "sym": "arch_timer_set_next_event_virt",
+     "samples": 1538,
+     "pct": 0.2
+    },
+    {
+     "sym": "gic_handle_irq",
+     "samples": 1515,
+     "pct": 0.2
+    },
+    {
+     "sym": "el0_da",
+     "samples": 1374,
+     "pct": 0.2
+    },
+    {
+     "sym": "sched_balance_update_blocked_averages",
+     "samples": 1187,
+     "pct": 0.1
+    },
+    {
+     "sym": "finish_task_switch.isra.0",
+     "samples": 1162,
+     "pct": 0.1
+    },
+    {
+     "sym": "tick_nohz_idle_exit",
+     "samples": 1107,
+     "pct": 0.1
+    },
+    {
+     "sym": "handle_softirqs",
+     "samples": 1051,
+     "pct": 0.1
+    },
+    {
+     "sym": "vm_notify",
+     "samples": 998,
+     "pct": 0.1
+    },
+    {
+     "sym": "gic_read_iar",
+     "samples": 917,
+     "pct": 0.1
+    },
+    {
+     "sym": "gic_eoi_irq",
+     "samples": 835,
+     "pct": 0.1
+    },
+    {
+     "sym": "arch_timer_handler_virt",
+     "samples": 827,
+     "pct": 0.1
+    },
+    {
+     "sym": "queued_spin_lock_slowpath",
+     "samples": 812,
+     "pct": 0.1
+    },
+    {
+     "sym": "_nohz_idle_balance.isra.0",
+     "samples": 513,
+     "pct": 0.1
+    },
+    {
+     "sym": "vm_interrupt",
+     "samples": 397,
+     "pct": 0
+    },
+    {
+     "sym": "__flush_tlb_range.isra.0",
+     "samples": 383,
+     "pct": 0
+    },
+    {
+     "sym": "rcu_do_batch",
+     "samples": 376,
+     "pct": 0
+    },
+    {
+     "sym": "queue_work_on",
+     "samples": 350,
+     "pct": 0
+    },
+    {
+     "sym": "get_random_u64",
+     "samples": 334,
+     "pct": 0
+    },
+    {
+     "sym": "__call_rcu_common.constprop.0",
+     "samples": 327,
+     "pct": 0
+    },
+    {
+     "sym": "el0_ia",
+     "samples": 306,
+     "pct": 0
+    },
+    {
+     "sym": "get_random_u32",
+     "samples": 294,
+     "pct": 0
+    },
+    {
+     "sym": "pmd_install",
+     "samples": 286,
+     "pct": 0
+    },
+    {
+     "sym": "__switch_to",
+     "samples": 270,
+     "pct": 0
+    },
+    {
+     "sym": "tick_nohz_idle_enter",
+     "samples": 242,
+     "pct": 0
+    },
+    {
+     "sym": "__flush_tlb_page.constprop.0.isra.0",
+     "samples": 231,
+     "pct": 0
+    },
+    {
+     "sym": "exit_to_user_mode_loop",
+     "samples": 208,
+     "pct": 0
+    },
+    {
+     "sym": "__flush_tlb_range.constprop.0.isra.0",
+     "samples": 195,
+     "pct": 0
+    },
+    {
+     "sym": "preempt_count_add",
+     "samples": 179,
+     "pct": 0
+    },
+    {
+     "sym": "note_gp_changes",
+     "samples": 179,
+     "pct": 0
+    },
+    {
+     "sym": "__arch_clear_user",
+     "samples": 176,
+     "pct": 0
+    },
+    {
+     "sym": "caches_clean_inval_pou",
+     "samples": 161,
+     "pct": 0
+    },
+    {
+     "sym": "el1_abort",
+     "samples": 152,
+     "pct": 0
+    },
+    {
+     "sym": "find_get_block_common",
+     "samples": 124,
+     "pct": 0
+    },
+    {
+     "sym": "__pmd_alloc",
+     "samples": 94,
+     "pct": 0
+    },
+    {
+     "sym": "_raw_write_unlock_irq",
+     "samples": 91,
+     "pct": 0
+    },
+    {
+     "sym": "__mod_zone_page_state",
+     "samples": 87,
+     "pct": 0
+    },
+    {
+     "sym": "get_random_u16",
+     "samples": 83,
+     "pct": 0
+    },
+    {
+     "sym": "__schedule",
+     "samples": 81,
+     "pct": 0
+    },
+    {
+     "sym": "free_pud_range",
+     "samples": 76,
+     "pct": 0
+    },
+    {
+     "sym": "exit_mm",
+     "samples": 76,
+     "pct": 0
+    },
+    {
+     "sym": "flush_tlb_mm",
+     "samples": 69,
+     "pct": 0
+    },
+    {
+     "sym": "tlb_flush",
+     "samples": 66,
+     "pct": 0
+    },
+    {
+     "sym": "__rseq_handle_slowpath",
+     "samples": 66,
+     "pct": 0
+    },
+    {
+     "sym": "pl011_read",
+     "samples": 57,
+     "pct": 0
+    },
+    {
+     "sym": "cpu_do_switch_mm",
+     "samples": 57,
+     "pct": 0
+    },
+    {
+     "sym": "__pud_alloc",
+     "samples": 56,
+     "pct": 0
+    },
+    {
+     "sym": "strnlen_user",
+     "samples": 49,
+     "pct": 0
+    },
+    {
+     "sym": "strncpy_from_user",
+     "samples": 48,
+     "pct": 0
+    },
+    {
+     "sym": "pl011_tx_chars",
+     "samples": 47,
+     "pct": 0
+    },
+    {
+     "sym": "rcu_gp_init",
+     "samples": 45,
+     "pct": 0
+    },
+    {
+     "sym": "acct_update_integrals",
+     "samples": 39,
+     "pct": 0
+    },
+    {
+     "sym": "rcu_core",
+     "samples": 38,
+     "pct": 0
+    },
+    {
+     "sym": "enable_work",
+     "samples": 37,
+     "pct": 0
+    }
+   ]
+  }
+ },
+ "warnings": {}
+}

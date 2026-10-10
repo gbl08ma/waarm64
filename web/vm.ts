@@ -13,7 +13,7 @@ import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 33;
+export const ABI = 34;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -33,6 +33,7 @@ type Exports = {
   vm_cpu_signal(vm: number, i: number): number;
   jit_helper_report(v: number): number;
   vm_signal(vm: number): number;
+  vm_set_chunk(vm: number, steps: bigint): void;
   vm_device(vm: number, i: number): number;
   vm_framebuffer(vm: number): bigint;
   vm_flash(vm: number): number;
@@ -727,6 +728,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     counterBlocks: blocks,
     /** Sets bits in the signal word and wakes every vCPU (docs/abi.md). */
     signal: raise,
+    /** Parallel mode's steps between two publications of a vCPU's PC (0: the default); the PC sampler shortens it. */
+    setChunk: (steps: number) => ex.vm_set_chunk(vm, BigInt(steps)),
     /** A snapshot of the counters, summed over the vCPUs; exceptions by EC only where non-zero. */
     stats: () => stats(counter),
     /** The same for each vCPU's own block (parallel mode; round-robin counts everything in vCPU 0's). */

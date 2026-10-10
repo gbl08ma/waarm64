@@ -1153,6 +1153,27 @@ should (the screenshots: shaders, gradients, masks, text, icons; no renderer err
   (reallocate on export), or caps without `COPY_TRANSFER_BOTH_DIRECTIONS` (every texture then has a guest backing:
   to be measured) are the ways out (docs/backlog.md).
 
+### Loop 6: cost (2026-10-10)
+
+- **Shader compiles: no cache built.** The renderer compiles a program the first time a (shader, draw state) pair is
+  drawn. In every steady phase measured (Firefox's scrolls, WebGL, real pages; GTK's demos) it compiles nothing;
+  Firefox's start compiles 96 programs in 30 s, ~0.2 s of renderer time in a 32 s start that is the guest's CPU
+  (loop 1). A cache by TGSI and key, or `KHR_parallel_shader_compile`, would save at most that.
+- **A finer instrument for the guest:** the page's PC sampler named where a chunk started, so exits ranked high (§20).
+  The vCPUs now publish their PC every 256 steps while it runs (`vm_set_chunk`, ABI 34; parallel mode, the page's:
+  round-robin keeps its chunks, which place its interrupts). Sway's date loop, the same load profiled before and
+  after (`PROFILE=1 node bench/gpu/sway-load.ts`): the counter read 11.8 → 4.4% of the samples, syscall entry 6.4 →
+  0.8%, IRQ-unmasking spin unlocks 10.3 → 2.3%; what shows instead is work: the guest kernel's stack walks and
+  preemption checks (`arch_stack_walk`, `check_preemption_disabled`, `preempt_count_add`, `debug_smp_processor_id`:
+  the Arch kernel is built with preemption debugging), memset, page-table teardown.
+- **The guest kernel's submit path isn't a cost worth chasing:** GTK's fishbowl and iconscroll profiled
+  (`PROFILE=1 node bench/gpu/gtk4-load.ts`): 57–68% of the samples idle, GTK's user space ~20%, and the kernel's
+  largest items the counter read (1.5–3%) and the debug checks above (~2% together); no virtio-gpu or DRM function in
+  the top 60. Sway's ~4–5 ms of system time a frame (loop 0) is spread over the kernel's generic paths (syscalls,
+  scheduling, IRQs), not one function. The machine's speed for these applications is the JIT's (`M8-JIT-HANDOVER.md`).
+  Sampling costs a host core on the dev VM (a sampled demo runs at half speed); the 256-step chunks cost nothing
+  measurable beside it.
+
 ### Loop 1: Firefox's start (2026-10-10)
 
 `PHASES=startup` in firefox-load.ts measures a launch on a profile Firefox has used (the threads from launch, the

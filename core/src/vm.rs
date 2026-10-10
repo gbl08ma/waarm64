@@ -293,6 +293,9 @@ fn add(a: &AtomicU64, n: u64) {
 pub struct Shared {
     pub console: Rings,
     pub signal: AtomicU32,
+    /// Parallel mode's chunk while profiling (`vm_set_chunk`): steps between two publications of a vCPU's PC; 0 is
+    /// `CHUNK`. Round-robin keeps `CHUNK` (its chunks place interrupts, so its step counts would move).
+    pub chunk: AtomicU64,
     /// One per vCPU.
     pub cpus: Vec<CpuShared>,
     /// One per virtio transport.

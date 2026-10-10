@@ -51,10 +51,14 @@ machine".
   3D against 2D: fishbowl 56 against 1 frames a second, gears 31 against 9. A GtkGLArea dies of GTK's graphics
   offload (a guest-side Mesa bug: a staging-backed texture exported as a dmabuf of a page; `GDK_DISABLE=offload`;
   backlog).
-- **Next, in order:** (1) loop 6, cost (shader cache, the guest kernel's submit path with a finer instrument), and
-  Firefox's leftovers above; (2) a dEQP pass list as a test (a script beside ci-debian.sh running a fixed list on the
-  page: ask the user about its cost); (3) the whole GLES2 and GLES3 lists again for the exit's numbers (~4 h on the
-  page, nothing else beside it); (4) the exit write-up (§21, PLAN.md, G5's outline).
+- **Loop 6 (cost), done** (§21 "Loop 6"): no shader cache (steady phases compile nothing; Firefox's start ~0.2 s);
+  the PC sampler publishes every 256 steps while it runs (`vm_set_chunk`, ABI 34), `PROFILE=1` in sway-load.ts and
+  gtk4-load.ts (guest-session.ts `sampler`, `symbolize`): the guest kernel's submit path isn't a cost (no virtio-gpu
+  or DRM function in GTK's top 60). Firefox's leftovers (replies held behind a fenced one, at most a fence's ~0.3 ms
+  on a real GPU; 15–18 resources a second, the guest allocating) not pursued.
+- **Next, in order:** (1) a dEQP pass list as a test (a script beside ci-debian.sh running a fixed list on the
+  page: ask the user about its cost); (2) the whole GLES2 and GLES3 lists again for the exit's numbers (~4 h on the
+  page, nothing else beside it); (3) the exit write-up (§21, PLAN.md, G5's outline).
 - The Arch image's guest-side helpers on the Mac: `~/webpc-arch/` (`start.sh` boots `myarch3.qcow2` under hvf with
   a network, virtio-mmio devices as ours; `vmsh.py <sock> <timeout> <cmd>` runs a command on its serial console as
   root). Mesa's source for reading: `~/Development/src/mesa` (sparse, mesa-26.2.4); vrend's:

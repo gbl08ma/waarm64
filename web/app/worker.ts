@@ -58,12 +58,20 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
 };
 
 let stopSampler: (() => Promise<[string, number][]>) | undefined;
-/** The guest PC sampler (web/profiler.ts) over every vCPU's counters block, for benchmarks. */
+/**
+ * The guest PC sampler (web/profiler.ts) over every vCPU's counters block, for benchmarks. While it runs, a vCPU
+ * publishes its PC every PROFILE_CHUNK steps (`vm_set_chunk`; 32768 otherwise, or at an exit): a sample is then where
+ * the vCPU is, not where its last long chunk ended.
+ */
+const PROFILE_CHUNK = 256;
 async function profile(on: boolean) {
-  if (on && vm && !stopSampler) stopSampler = await startSampler(vm.memory, vm.counterBlocks, 50);
-  else if (!on && stopSampler) {
+  if (on && vm && !stopSampler) {
+    vm.setChunk(PROFILE_CHUNK);
+    stopSampler = await startSampler(vm.memory, vm.counterBlocks, 50);
+  } else if (!on && stopSampler) {
     const stop = stopSampler;
     stopSampler = undefined;
+    vm?.setChunk(0);
     post({ type: 'profile', samples: await stop() });
   }
 }

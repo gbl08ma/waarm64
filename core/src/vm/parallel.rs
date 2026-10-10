@@ -371,7 +371,12 @@ impl Vm {
                 }
                 fence(Ordering::SeqCst);
             }
-            let n = CHUNK.min(budget - (own.steps - start));
+            // Shorter while the PC sampler runs (`Shared::chunk`): the PC is published at each chunk's end.
+            let chunk = match self.shared.chunk.load(Ordering::Relaxed) {
+                0 => CHUNK,
+                k => k.min(CHUNK),
+            };
+            let n = chunk.min(budget - (own.steps - start));
             let (k, e) = if v.jit.cache.is_some() {
                 // SAFETY: `v` is this thread's vCPU, not otherwise referenced during the call.
                 unsafe { jit::steps(v, &self.mem, n) }

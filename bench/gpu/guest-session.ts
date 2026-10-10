@@ -186,6 +186,51 @@ export async function openSession(o: SessionOptions) {
   };
   const asUser = (cmd: string) => `su alarm -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$(ls /run/user/1000/sway-ipc.*.sock); ${cmd}"`;
 
+  /**
+   * The guest PC sampler (web/profiler.ts: every vCPU's published PC, every 50 µs; while it runs the vCPUs publish
+   * their PC every 256 steps, `vm_set_chunk`) as `load`'s `during`; then `symbolize` names the kernel's PCs in the
+   * guest against /proc/kallsyms (the image has no System.map), by function: the top `top`, with the kernel's and
+   * user space's shares.
+   */
+  type Hooks = { __webpcProfile?: (on: boolean) => void; __profile?: [string, number][] };
+  const sampler = {
+    start: async () => { await page.evaluate(() => { const w = window as unknown as Hooks; delete w.__profile; w.__webpcProfile!(true); }); },
+    stop: async () => {
+      await page.evaluate(() => (window as unknown as Hooks).__webpcProfile!(false));
+      await page.waitForFunction(() => (window as unknown as Hooks).__profile, null, { timeout: 30_000 });
+    },
+  };
+  const symbolize = async (top = 60) => {
+    const samples = await page.evaluate(() => (window as unknown as Hooks).__profile!);
+    let kernel = 0, user = 0, total = 0;
+    const kpcs: [string, number][] = [];
+    for (const [pc, n] of samples) {
+      total += n;
+      if (BigInt(`0x${pc}`) >= 0xffff000000000000n) { kernel += n; kpcs.push([pc.padStart(16, '0'), n]); } else user += n;
+    }
+    kpcs.sort((a, b) => b[1] - a[1]);
+    const sent = kpcs.slice(0, 4000);
+    const covered = sent.reduce((n, [, k]) => n + k, 0);
+    await onSerial(`cat > /tmp/sym.sh <<'EOF'
+sysctl -qw kernel.kptr_restrict=0
+(awk '$2 ~ /^[tT]$/ {print $1, "A", $3}' /proc/kallsyms; awk '{for (i = 1; i < NF; i += 2) print $i, "B", $(i + 1)}' /tmp/pcs) | sort | awk '$2=="A"{s=$3;next} {c[s]+=$3} END{for(k in c) print c[k], k}' | sort -rn | head -${top} | awk 'BEGIN{printf "SY""MS: "} {printf "%s:%s ", $2, $1} END{print "SY""MS-done"}'
+EOF
+clear; cat > /tmp/pcs <<'EOF'
+`);
+    // Pasted (typing 80 KB would take minutes) as lines of pairs under the tty's 4096-byte line, each with an Enter.
+    for (let k = 0; k < sent.length; k += 150) {
+      await page.keyboard.insertText(sent.slice(k, k + 150).map(([pc, n]) => `${pc} ${n}`).join(' '));
+      await page.keyboard.press('Enter');
+    }
+    await onSerial('EOF\nclear; wc -w < /tmp/pcs; sh /tmp/sym.sh\n');
+    await shows(/SYMS-done/, 120_000);
+    const t = await terminal();
+    const lines = /(\d+)\s*SYMS:/.exec(t)?.[1];
+    const body = t.slice(t.lastIndexOf('SYMS: ') + 6, t.lastIndexOf('SYMS-done'));
+    const syms = [...body.matchAll(/(\S+):(\d+)/g)].map((x) => ({ sym: x[1], samples: +x[2], pct: +((100 * +x[2]) / total).toFixed(1) }));
+    return { samples: total, kernelPct: +((100 * kernel) / total).toFixed(1), userPct: +((100 * user) / total).toFixed(1), kernelPcs: kpcs.length, sent: sent.length, received: lines && +lines / 2, coveredPct: +((100 * covered) / Math.max(1, kernel)).toFixed(1), top: syms };
+  };
+
   const close = async () => { await browser.close(); server.close(); };
-  return { page, browser, gl, log, warnings, debugLines, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, close };
+  return { page, browser, gl, log, warnings, debugLines, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, sampler, symbolize, close };
 }

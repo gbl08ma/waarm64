@@ -168,8 +168,12 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   at an exit, so a sample names where the current chunk started (the instruction after the last exit: counter
   reads, IRQ unmasks, syscall entries rank high). On the page (`?displaystats`): `window.__webpcProfile(on)`
   samples every vCPU's block, the histogram lands in `window.__profile`, and `window.__status` holds the last
-  status (the counters); `PROFILE=1 node bench/gpu/sway-load.ts` uses them and symbolizes in the guest
-  (`/proc/kallsyms`).
+  status (the counters); while it runs the vCPUs publish their PC every 256 steps (`vm_set_chunk`, parallel
+  mode only), so a sample is where the vCPU is, not the exit that started its chunk (graphics.md §21 loop 6: the
+  exit sites' share fell to a fifth). `PROFILE=1` in `bench/gpu/sway-load.ts` and `bench/gpu/gtk4-load.ts` uses it
+  and symbolizes in the guest (`/proc/kallsyms`; guest-session.ts `sampler`, `symbolize`). The sampler's worker
+  busy-polls and takes a host core: on the dev VM a GTK demo ran at half its speed while sampled (the 256-step
+  chunks cost nothing measurable beside it).
 - **perf with parallel SMP:** `--perf-prof`'s jitdump misses the code worker isolates compile (the
   guest's blocks run in the vCPU workers: 73% of samples unknown); `--perf-basic-prof` (a
   `/tmp/perf-<pid>.map`) names them. Guest blocks are thousands of symbols that round to 0.00% in

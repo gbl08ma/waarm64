@@ -54,6 +54,9 @@ Design notes for an ABI change go in this file before the code.
   wake (ABI 25)}.
 - `vm_run_cpu(vm, cpu, budget) -> u32` (parallel, ABI 25): runs vCPU `cpu` on the calling thread;
   `vm_exit_cpu(vm, cpu)` its `ExitInfo`; `vm_cpu_signal(vm, i)` vCPU *i*'s wake word (below).
+  `vm_set_chunk(vm, steps)` (ABI 34, any thread): the steps between two publications of a vCPU's PC in its counters,
+  32768 by default (0 restores it); the guest PC sampler (web/profiler.ts) shortens it while it runs, so a sample is
+  at most that many instructions old instead of naming the exit that ended a long chunk. Round-robin is unaffected.
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
   1056; `Cpu` is 1072 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
@@ -453,3 +456,4 @@ implemented by this step).
 | 31 | config changes (M8 graphics): `DevShared.config_gen`, the config-change interrupt raised from the signal path, `ConfigGeneration` (above) |
 | 32 | a fixed-size memory: `VmConfig.mem_pages`, `heap_reserve`; JIT modules import the memory with exact limits (M8 JIT) |
 | 33 | the block interpreter: `VmConfig.jit` 4, counter words 101–103, `jit::Stats` gains three fields (M8) |
+| 34 | `vm_set_chunk` (the PC sampler's chunk in parallel mode; M8 graphics G4) |
