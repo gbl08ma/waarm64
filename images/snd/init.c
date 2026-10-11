@@ -11,7 +11,11 @@
 //      environment variable, N seconds' worth: the page's realtime runs) of a 440 Hz sine on the left and
 //      a 660 Hz one on the right (a whole number of periods: the driver sends whole periods only), written a period at a time, then a drain of
 //      what's still queued (a drop if nothing is);
-//   4. "snd: wrote <frames> frames fnv1a <hash>": FNV-1a (32-bit) of the bytes written.
+//   4. "snd: wrote <frames> frames fnv1a <hash>": FNV-1a (32-bit) of the bytes written;
+//   5. the capture PCM (audio S4) with the same parameters: 16 periods read (or `snd_rec_seconds=N`' worth), then
+//      "snd: recorded <frames> frames fnv1a <hash> in <ms> ms, <hz> Hz left, <hz> Hz right": the hash of what it
+//      read, its own time for it, and each channel's frequency by its rising zero crossings (the deterministic
+//      source's 1 and 1.5 kHz triangles; 0 for silence).
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -89,6 +93,74 @@ static double now_ms(void) {
     return t.tv_sec * 1e3 + t.tv_nsec / 1e6;
 }
 
+// The virtio lines of /proc/interrupts (a failure's diagnostic).
+static void irqs(void) {
+    mount("proc", "/proc", "proc", 0, 0);
+    FILE *f = fopen("/proc/interrupts", "r");
+    char line[256];
+    while (f && fgets(line, sizeof line, f))
+        if (strstr(line, "virtio3") || strstr(line, "timer") || strstr(line, "IPI0") || strstr(line, "IPI1")) printf("snd: irq %s", line);
+    if (f) fclose(f);
+}
+
+// hw params S16_LE, RATE, CHANNELS, PERIOD x PERIODS on `fd`; prints them with `what`.
+static void hw(int fd, const char *what) {
+    struct snd_pcm_hw_params p;
+    any(&p);
+    set_mask(&p, SNDRV_PCM_HW_PARAM_ACCESS, SNDRV_PCM_ACCESS_RW_INTERLEAVED);
+    set_mask(&p, SNDRV_PCM_HW_PARAM_FORMAT, SNDRV_PCM_FORMAT_S16_LE);
+    set_mask(&p, SNDRV_PCM_HW_PARAM_SUBFORMAT, SNDRV_PCM_SUBFORMAT_STD);
+    set_interval(&p, SNDRV_PCM_HW_PARAM_CHANNELS, CHANNELS);
+    set_interval(&p, SNDRV_PCM_HW_PARAM_RATE, RATE);
+    set_interval(&p, SNDRV_PCM_HW_PARAM_PERIOD_SIZE, PERIOD);
+    set_interval(&p, SNDRV_PCM_HW_PARAM_PERIODS, PERIODS);
+    io(fd, SNDRV_PCM_IOCTL_HW_PARAMS, &p, "hw params");
+    printf("snd: %s %u Hz, %u channels, period %u frames, buffer %u frames\n", what,
+           interval(&p, SNDRV_PCM_HW_PARAM_RATE)->min, interval(&p, SNDRV_PCM_HW_PARAM_CHANNELS)->min,
+           interval(&p, SNDRV_PCM_HW_PARAM_PERIOD_SIZE)->min, interval(&p, SNDRV_PCM_HW_PARAM_BUFFER_SIZE)->min);
+}
+
+// Records `periods` periods from the capture PCM and prints what it got (5. above).
+static void record(int periods) {
+    int fd = open("/dev/snd/pcmC0D0c", O_RDWR);
+    if (fd < 0) die("no /dev/snd/pcmC0D0c");
+    hw(fd, "capture hw params");
+    struct snd_pcm_sw_params sw = {
+        .tstamp_mode = SNDRV_PCM_TSTAMP_NONE,
+        .period_step = 1,
+        .avail_min = PERIOD,
+        .start_threshold = (snd_pcm_uframes_t)-1 >> 1, // started by the START ioctl below
+        .stop_threshold = (snd_pcm_uframes_t)-1 >> 1, // never: an overrun just loses frames
+        .proto = SNDRV_PCM_VERSION,
+    };
+    io(fd, SNDRV_PCM_IOCTL_SW_PARAMS, &sw, "capture sw params");
+    io(fd, SNDRV_PCM_IOCTL_PREPARE, 0, "capture prepare");
+    io(fd, SNDRV_PCM_IOCTL_START, 0, "capture start");
+    static int16_t buf[PERIOD * CHANNELS];
+    uint32_t h = 0x811c9dc5u;
+    long rising[CHANNELS] = { 0 };
+    int16_t last[CHANNELS] = { 0 };
+    double t0 = now_ms();
+    for (int k = 0; k < periods; k++) {
+        struct snd_xferi x = { .buf = buf, .frames = PERIOD };
+        io(fd, SNDRV_PCM_IOCTL_READI_FRAMES, &x, "read");
+        if (x.result != PERIOD) die("short read");
+        h = fnv(h, (const uint8_t *)buf, sizeof buf);
+        for (int f = 0; f < PERIOD; f++)
+            for (int c = 0; c < CHANNELS; c++) {
+                int16_t v = buf[f * CHANNELS + c];
+                if ((k > 0 || f > 0) && last[c] < 0 && v >= 0) rising[c]++;
+                last[c] = v;
+            }
+    }
+    double ms = now_ms() - t0;
+    io(fd, SNDRV_PCM_IOCTL_DROP, 0, "capture drop");
+    close(fd);
+    long frames = (long)periods * PERIOD;
+    printf("snd: recorded %ld frames fnv1a %08x in %.0f ms, %ld Hz left, %ld Hz right\n", frames, h, ms,
+           rising[0] * RATE / frames, rising[1] * RATE / frames);
+}
+
 int main(void) {
     mount("devtmpfs", "/dev", "devtmpfs", 0, 0);
     setvbuf(stdout, 0, _IOLBF, 0);
@@ -116,18 +188,7 @@ int main(void) {
            mask(&p, SNDRV_PCM_HW_PARAM_FORMAT)->bits[0], r->min, r->max, c->min, c->max, pp->min, pp->max, pb->min, pb->max,
            bb->min, bb->max);
 
-    any(&p);
-    set_mask(&p, SNDRV_PCM_HW_PARAM_ACCESS, SNDRV_PCM_ACCESS_RW_INTERLEAVED);
-    set_mask(&p, SNDRV_PCM_HW_PARAM_FORMAT, SNDRV_PCM_FORMAT_S16_LE);
-    set_mask(&p, SNDRV_PCM_HW_PARAM_SUBFORMAT, SNDRV_PCM_SUBFORMAT_STD);
-    set_interval(&p, SNDRV_PCM_HW_PARAM_CHANNELS, CHANNELS);
-    set_interval(&p, SNDRV_PCM_HW_PARAM_RATE, RATE);
-    set_interval(&p, SNDRV_PCM_HW_PARAM_PERIOD_SIZE, PERIOD);
-    set_interval(&p, SNDRV_PCM_HW_PARAM_PERIODS, PERIODS);
-    io(fd, SNDRV_PCM_IOCTL_HW_PARAMS, &p, "hw params");
-    printf("snd: hw params %u Hz, %u channels, period %u frames, buffer %u frames\n",
-           interval(&p, SNDRV_PCM_HW_PARAM_RATE)->min, interval(&p, SNDRV_PCM_HW_PARAM_CHANNELS)->min,
-           interval(&p, SNDRV_PCM_HW_PARAM_PERIOD_SIZE)->min, interval(&p, SNDRV_PCM_HW_PARAM_BUFFER_SIZE)->min);
+    hw(fd, "hw params");
 
     struct snd_pcm_sw_params sw = {
         .tstamp_mode = SNDRV_PCM_TSTAMP_NONE,
@@ -153,7 +214,24 @@ int main(void) {
             buf[2 * k + 1] = (int16_t)lrint(12000 * sin(2 * M_PI * 660 * t));
         }
         struct snd_xferi x = { .buf = buf, .frames = PERIOD };
-        io(fd, SNDRV_PCM_IOCTL_WRITEI_FRAMES, &x, "write");
+        double tw = now_ms();
+        if (ioctl(fd, SNDRV_PCM_IOCTL_WRITEI_FRAMES, &x) < 0) {
+            // What ALSA saw: how long the write waited, and the stream's positions.
+            int err = errno;
+            struct snd_pcm_status st = { 0 };
+            ioctl(fd, SNDRV_PCM_IOCTL_STATUS, &st);
+            printf("snd: write %d failed after %.0f ms (%s): state %d, hw_ptr %lu, appl_ptr %lu, avail %lu, delay %ld, frame %d\n", f / PERIOD,
+                   now_ms() - tw, strerror(err), (int)st.state, (unsigned long)st.hw_ptr, (unsigned long)st.appl_ptr, (unsigned long)st.avail,
+                   (long)st.delay, f);
+            // And a second later: are the completions only late, or lost? And the device's interrupts meanwhile.
+            irqs();
+            usleep(1000000);
+            irqs();
+            memset(&st, 0, sizeof st);
+            ioctl(fd, SNDRV_PCM_IOCTL_STATUS, &st);
+            printf("snd: a second later: state %d, hw_ptr %lu, avail %lu\n", (int)st.state, (unsigned long)st.hw_ptr, (unsigned long)st.avail);
+            die("write: I/O error");
+        }
         if (x.result != PERIOD) die("short write");
         h = fnv(h, (const uint8_t *)buf, sizeof buf);
     }
@@ -169,7 +247,13 @@ int main(void) {
     printf("snd: %ld frames queued at the end, %s %s after %.0f ms\n", queued, queued > 0 ? "drain" : "drop", ended < 0 ? strerror(err) : "ok", ms);
     close(fd);
     printf("snd: wrote %d frames fnv1a %08x\n", frames, h);
-    printf(ended < 0 ? "webpc: snd test failed: drain\n" : "webpc: snd test ok\n");
+    if (ended < 0) die("drain");
+
+    const char *rec = getenv("snd_rec_seconds");
+    int periods = rec ? (int)(atof(rec) * RATE / PERIOD + 0.5) : 16;
+    if (periods <= 0) die("snd_rec_seconds");
+    record(periods);
+    printf("webpc: snd test ok\n");
     reboot(RB_POWER_OFF);
     return 0;
 }

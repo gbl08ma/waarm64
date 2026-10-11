@@ -1,12 +1,13 @@
 // The virtio-snd backend without a guest (web/snd.ts): control requests and their errors on
-// hand-built buffers, the stream's lifecycle, transmit messages held, played and returned, the
-// deterministic sink's completions and hash, the format conversion, save and restore.
+// hand-built buffers, the streams' lifecycles, transmit messages held, played and returned, the
+// deterministic sink's completions and hash, receive messages filled by the deterministic source and
+// the realtime clock source, the format conversion, save and restore.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { deviceEntry, type Ctx, type Request } from '../web/devices.ts';
 import {
   CONTROLQ, EVENTQ, FMT_FLOAT, FMT_S16, FMT_S32, RATE_BITS, RXQ, R_CHMAP_INFO, R_JACK_INFO, R_JACK_REMAP, R_PCM_INFO, R_PCM_PREPARE, R_PCM_RELEASE,
-  R_PCM_SET_PARAMS, R_PCM_START, R_PCM_STOP, S_BAD_MSG, S_NOT_SUPP, S_OK, TXQ, checksumSink, fnv1a, sndBackend, toF32, type SndState,
+  R_PCM_SET_PARAMS, R_PCM_START, R_PCM_STOP, S_BAD_MSG, S_NOT_SUPP, S_OK, TXQ, checksumSink, clockSource, fnv1a, pattern as wave, patternSource, sndBackend, toF32, type SndParams, type SndState,
 } from '../web/snd.ts';
 
 const RATE_48000 = 7;
@@ -32,11 +33,11 @@ const pcm = (code: number, stream = 0) => bytes(code, stream);
 const query = (code: number, start: number, count: number, size: number) => bytes(code, start, count, size);
 
 /** A device on 1 MiB of RAM; requests are laid out in it one after the other, completions recorded. */
-function rig(sink = checksumSink(1 << 20)) {
+function rig(sink = checksumSink(1 << 20), source = patternSource()) {
   const ram = new Uint8Array(1 << 20);
   const done: { w0: number; len: number }[] = [];
   const ctx: Ctx = { ram: () => ram, ramSize: ram.length, complete: (w0, len) => done.push({ w0, len }), config: () => new Uint8Array(256), changeConfig: () => {}, untaken: () => 0 };
-  const dev = sndBackend(ctx, sink);
+  const dev = sndBackend(ctx, sink, source);
   let free = 0;
   let head = 0;
   /** Posts a chain (readable `read`, then writable buffers of `write` bytes); returns it. */
@@ -79,19 +80,21 @@ function rig(sink = checksumSink(1 << 20)) {
     return w.length >= 8 ? [new DataView(w.buffer).getUint32(w.length - 8, true), new DataView(w.buffer).getUint32(w.length - 4, true)] : [];
   };
   const completed = (r: Request) => done.filter((d) => d.w0 === r.w0);
-  return { ram, done, dev, sink, post, exit, control, status, tx, txStatus, completed };
+  /** A receive message with room for `bytes` of frames and the status (stream 1 unless given). */
+  const rx = (bytes_: number, stream = 1, write = [bytes_, 8]) => post(RXQ, [bytes(stream)], write);
+  return { ram, done, dev, sink, source, post, exit, control, status, tx, txStatus, completed, written, rx };
 }
 
 /** `n` bytes of a recognizable pattern, starting at `seed`. */
 const pattern = (n: number, seed = 0) => Uint8Array.from({ length: n }, (_, k) => (k * 7 + seed) & 0xff);
 
-test('snd: the device entry and config space (jacks 0, streams 1, chmaps 0)', () => {
+test('snd: the device entry and config space (jacks 0, streams 2, chmaps 0)', () => {
   const { entry, config } = deviceEntry({ type: 'snd' });
   assert.deepEqual(entry, [25n, 0n, 4n, 64n, 12n]);
-  assert.deepEqual([...config], [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...config], [0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]);
 });
 
-test('snd: PCM_INFO answers the output stream; info queries out of range, too small or with no room are BAD_MSG', () => {
+test('snd: PCM_INFO answers the output and the input stream; info queries out of range, too small or with no room are BAD_MSG', () => {
   const r = rig();
   const info = r.control(query(R_PCM_INFO, 0, 1, 32), 36);
   assert.equal(info.status, S_OK);
@@ -105,11 +108,18 @@ test('snd: PCM_INFO answers the output stream; info queries out of range, too sm
   assert.equal(big.status, S_OK);
   assert.equal(big.len, 44);
   assert.deepEqual([...big.reply.subarray(4, 36)], [...info.reply.subarray(4, 36)]);
-  assert.equal(r.status(query(R_PCM_INFO, 1, 0, 32)), S_OK); // nothing asked, nothing answered
+  // Both: the input stream is the same but for its direction.
+  const both = r.control(query(R_PCM_INFO, 0, 2, 32), 68);
+  assert.equal(both.status, S_OK);
+  assert.deepEqual([...both.reply.subarray(4, 36)], [...info.reply.subarray(4, 36)]);
+  assert.deepEqual([...both.reply.subarray(36, 68)], [...info.reply.subarray(4, 28), 1, 1, 2, 0, 0, 0, 0, 0]);
+  assert.deepEqual([...r.control(query(R_PCM_INFO, 1, 1, 32), 36).reply.subarray(4)], [...both.reply.subarray(36, 68)]);
+  assert.equal(r.status(query(R_PCM_INFO, 2, 0, 32)), S_OK); // nothing asked, nothing answered
   for (const [cmd, room] of [
-    [query(R_PCM_INFO, 0, 2, 32), 68], // past the streams
-    [query(R_PCM_INFO, 1, 1, 32), 36],
-    [query(R_PCM_INFO, 2, 0, 32), 4],
+    [query(R_PCM_INFO, 0, 3, 32), 100], // past the streams
+    [query(R_PCM_INFO, 2, 1, 32), 36],
+    [query(R_PCM_INFO, 3, 0, 32), 4],
+    [query(R_PCM_INFO, 0, 2, 32), 67], // no room for the second
     [query(R_PCM_INFO, 0xffffffff, 2, 32), 68], // start + count wraps
     [query(R_PCM_INFO, 0, 1, 31), 36], // an item smaller than the struct
     [query(R_PCM_INFO, 0, 1, 32), 35], // no room for it
@@ -136,7 +146,7 @@ test('snd: SET_PARAMS takes the offered formats, rates and channels; NOT_SUPP fo
   for (const p of [{ format: 3 }, { format: 4 }, { format: 6 }, { format: 20 }, { format: 0 }, { rate: 0 }, { rate: 13 }, { rate: 14 }, { rate: 40 }, { rate: 255 }, { channels: 0 }, { channels: 3 }, { features: 1 << 4 }, { features: 1 }]) {
     assert.equal(r.status(setParams(p)), S_NOT_SUPP, JSON.stringify(p));
   }
-  for (const p of [{ period: 0 }, { buffer: 0 }, { period: 4094 }, { buffer: 16000 }, { period: 6, buffer: 12 }, { stream: 1 }]) {
+  for (const p of [{ period: 0 }, { buffer: 0 }, { period: 4094 }, { buffer: 16000 }, { period: 6, buffer: 12 }, { stream: 2 }]) {
     assert.equal(r.status(setParams(p)), S_BAD_MSG, JSON.stringify(p));
   }
   assert.equal(r.status(setParams().subarray(0, 23)), S_BAD_MSG); // short
@@ -147,7 +157,7 @@ test('snd: SET_PARAMS takes the offered formats, rates and channels; NOT_SUPP fo
 test('snd: the stream lifecycle follows the spec; a request out of order is BAD_MSG', () => {
   const r = rig();
   for (const code of [R_PCM_PREPARE, R_PCM_START, R_PCM_STOP, R_PCM_RELEASE]) assert.equal(r.status(pcm(code)), S_BAD_MSG, `${code} before SET_PARAMS`);
-  assert.equal(r.status(pcm(R_PCM_PREPARE, 1)), S_BAD_MSG, 'no stream 1');
+  assert.equal(r.status(pcm(R_PCM_PREPARE, 2)), S_BAD_MSG, 'no stream 2');
   assert.equal(r.status(bytes(R_PCM_PREPARE)), S_BAD_MSG, 'short');
   assert.equal(r.status(setParams()), S_OK);
   for (const code of [R_PCM_START, R_PCM_STOP, R_PCM_RELEASE]) assert.equal(r.status(pcm(code)), S_BAD_MSG, `${code} before PREPARE`);
@@ -249,7 +259,7 @@ test('snd: STOP pauses (messages wait), START resumes, RELEASE returns what is h
   assert.equal(r.sink.played().messages, played.messages + 3);
 });
 
-test('snd: transmit messages that are malformed or out of place are BAD_MSG at once; rxq is BAD_MSG; event buffers are held', () => {
+test('snd: transmit messages that are malformed or out of place are BAD_MSG at once; event buffers are held', () => {
   const r = rig();
   const early = r.tx(pattern(4096));
   assert.deepEqual(r.txStatus(early), [S_BAD_MSG, 0], 'before SET_PARAMS');
@@ -257,7 +267,7 @@ test('snd: transmit messages that are malformed or out of place are BAD_MSG at o
   const unprepared = r.tx(pattern(4096));
   assert.deepEqual(r.txStatus(unprepared), [S_BAD_MSG, 0]);
   r.status(pcm(R_PCM_PREPARE));
-  for (const m of [r.tx(pattern(4096), 1), r.tx(pattern(4095)), r.post(TXQ, [new Uint8Array(3)], [8])]) {
+  for (const m of [r.tx(pattern(4096), 1), r.tx(pattern(4096), 2), r.tx(pattern(4095)), r.post(TXQ, [new Uint8Array(3)], [8])]) {
     assert.deepEqual(r.completed(m), [{ w0: m.w0, len: 8 }]);
     assert.deepEqual(r.txStatus(m), [S_BAD_MSG, 0]);
   }
@@ -266,9 +276,6 @@ test('snd: transmit messages that are malformed or out of place are BAD_MSG at o
   assert.deepEqual(r.completed(noRoom), [], 'held: valid, only its status has no room');
   r.status(pcm(R_PCM_START));
   assert.deepEqual(r.completed(noRoom), [{ w0: noRoom.w0, len: 0 }], 'completed with nothing written');
-  const rx = r.post(RXQ, [bytes(0)], [4096, 8]);
-  assert.deepEqual(r.completed(rx), [{ w0: rx.w0, len: 8 }]);
-  assert.deepEqual(r.txStatus(rx), [S_BAD_MSG, 0]);
   const ev = r.exit(() => r.post(EVENTQ, [], [8]));
   assert.deepEqual(r.completed(ev[0]), []);
 });
@@ -292,7 +299,7 @@ test('snd: save and restore keep the stream, the log and the sink; held messages
   const first = r.exit(...[0, 1, 2, 3].map((k) => () => r.tx(pattern(4096, k))));
   r.status(pcm(R_PCM_START)); // three played, the fourth held
   const state = JSON.parse(JSON.stringify(r.dev.save())) as SndState;
-  assert.equal(state.state, 'started');
+  assert.equal(state.streams[0].state, 'started');
   assert.equal((state.sink as { messages: number }).messages, 3);
   // A new VM: the core posts the held chain again (its bytes are in the restored RAM).
   const s = rig();
@@ -304,9 +311,16 @@ test('snd: save and restore keep the stream, the log and the sink; held messages
   assert.deepEqual(s.sink.played(), { frames: 4096, bytes: 16384, messages: 4, fnv: fnv1a(all).toString(16).padStart(8, '0') });
   assert.deepEqual(s.dev.snd.log, r.dev.snd.log);
   assert.equal(s.status(pcm(R_PCM_STOP)), S_OK, 'still started');
-  for (const bad of [null, {}, { ...state, state: 'playing' }, { ...state, log: 'x' }, { ...state, params: null }, { ...state, sink: { frames: 1 } }]) {
+  const started = state.streams[0];
+  for (const bad of [null, {}, { ...state, streams: [{ ...started, state: 'playing' }] }, { ...state, log: 'x' }, { ...state, streams: [{ ...started, params: null }] }, { ...state, streams: [started, started, started] }, { ...state, sink: { frames: 1 } }, { ...state, source: { frames: 1 } }]) {
     assert.throws(() => rig().dev.restore(bad), /no state for the sound device/, JSON.stringify(bad));
   }
+  // A state from before the input stream (the output's `state` and `params`) loads: the input is new.
+  const old = rig();
+  old.dev.restore({ state: 'started', params: started.params, log: state.log, sink: state.sink });
+  assert.equal(old.dev.snd.streams[0].state, 'started');
+  assert.equal(old.dev.snd.streams[1].state, 'none');
+  assert.equal(old.status(pcm(R_PCM_STOP)), S_OK);
 });
 
 test('snd: toF32 converts S16, S32 and FLOAT', () => {
@@ -322,3 +336,139 @@ test('snd: toF32 converts S16, S32 and FLOAT', () => {
   assert.deepEqual([...toF32(odd.subarray(1), FMT_S16)], [0.5, 32767 / 32768]);
   assert.throws(() => toF32(new Uint8Array(4), 3), /no conversion/);
 });
+
+/** The input stream set up (4 periods of 4096 bytes: S16 stereo 1024 frames) and prepared. */
+function capture(r: ReturnType<typeof rig>) {
+  assert.equal(r.status(setParams({ stream: 1 })), S_OK);
+  assert.equal(r.status(pcm(R_PCM_PREPARE, 1)), S_OK);
+}
+const P_IN: SndParams = { bufferBytes: 16384, periodBytes: 4096, channels: 2, format: FMT_S16, rate: 48000 };
+
+test('snd: the input stream has its own lifecycle; the log names it', () => {
+  const r = rig();
+  r.status(setParams());
+  r.status(pcm(R_PCM_PREPARE));
+  r.status(pcm(R_PCM_START));
+  assert.equal(r.status(pcm(R_PCM_START, 1)), S_BAD_MSG, 'the input has no parameters');
+  capture(r);
+  assert.equal(r.status(pcm(R_PCM_START, 1)), S_OK);
+  assert.equal(r.status(pcm(R_PCM_STOP)), S_OK);
+  assert.deepEqual([r.dev.snd.streams[0].state, r.dev.snd.streams[1].state], ['stopped', 'started']);
+  assert.deepEqual(r.dev.snd.log.slice(-4), ['PCM_SET_PARAMS#1 2ch S16 48000 16384/4096 OK', 'PCM_PREPARE#1 OK', 'PCM_START#1 OK', 'PCM_STOP OK']);
+});
+
+test('snd: receive messages wait for the input\'s START and are filled with the pattern at the end of their exit, a buffer less a period at most', () => {
+  const r = rig();
+  capture(r);
+  const four = r.exit(...[0, 1, 2, 3].map(() => () => r.rx(4096)));
+  assert.deepEqual(four.map(r.completed), [[], [], [], []], 'held while prepared');
+  r.status(pcm(R_PCM_START)); // the output's START (no parameters: BAD_MSG) starts nothing
+  assert.deepEqual(four.map(r.completed), [[], [], [], []]);
+  r.status(pcm(R_PCM_START, 1));
+  assert.deepEqual(four.map((m) => r.completed(m).length), [1, 1, 1, 0], 'three at START');
+  r.exit();
+  assert.deepEqual(four.map((m) => r.completed(m)), four.map((m) => [{ w0: m.w0, len: 4096 + 8 }]), 'the fourth at the next exit; frames and status written');
+  // The frames, then OK and latency 0.
+  const all = new Uint8Array(four.flatMap((m) => [...r.written(m).subarray(0, 4096)]));
+  assert.equal(Buffer.compare(all, wave(P_IN, 0, 16384)), 0);
+  for (const m of four) assert.deepEqual(r.txStatus(m), [S_OK, 0]);
+  // A 1 kHz triangle left (48 frames), 1.5 kHz right (32): -12000 at frame 0, 0 a quarter in, 12000 half-way.
+  const v = new Int16Array(all.buffer, 0, 128);
+  assert.deepEqual([v[0], v[1], v[24], v[2 * 24], v[2 * 16 + 1], v[2 * 47], v[2 * 48]], [-12000, -12000, 0, 12000, 12000, -11000, -12000]);
+  assert.deepEqual(r.source.recorded(), { frames: 4096, bytes: 16384, messages: 4, fnv: fnv1a(all).toString(16).padStart(8, '0') });
+  // Frames split over buffers, the status in the last 8 bytes.
+  const split = r.rx(1024, 1, [1000, 30, 2]);
+  r.dev.polled();
+  assert.deepEqual(r.completed(split), [{ w0: split.w0, len: 1032 }]);
+  assert.equal(Buffer.compare(r.written(split).subarray(0, 1024), wave(P_IN, 4096, 1024)), 0, 'the pattern goes on');
+  assert.deepEqual(r.txStatus(split), [S_OK, 0]);
+});
+
+test('snd: the pattern in each format; a mono stream gets the left', () => {
+  const s32 = new Int32Array(wave({ ...P_IN, format: FMT_S32 }, 12, 16).buffer); // frames 12 and 13
+  assert.deepEqual([...s32], [0, 6000 * 65536, 1000 * 65536, 7500 * 65536]);
+  const f32 = new Float32Array(wave({ ...P_IN, format: FMT_FLOAT, channels: 1 }, 24, 8).buffer); // frames 24 and 25
+  assert.deepEqual([...f32], [12000 / 32768, 11000 / 32768]);
+  assert.deepEqual([...new Int16Array(wave({ ...P_IN, channels: 1 }, 0, 4).buffer)], [-12000, -11000]);
+});
+
+test('snd: receive messages malformed or out of place are BAD_MSG; STOP pauses; RELEASE returns them unfilled', () => {
+  const r = rig();
+  const early = r.rx(4096);
+  assert.deepEqual(r.txStatus(early), [S_BAD_MSG, 0], 'before SET_PARAMS');
+  capture(r);
+  for (const m of [r.rx(4096, 0), r.rx(4096, 2), r.rx(4094), r.rx(0), r.post(RXQ, [new Uint8Array(3)], [4096, 8])]) {
+    assert.deepEqual(r.completed(m), [{ w0: m.w0, len: 8 }]);
+    assert.deepEqual(r.txStatus(m), [S_BAD_MSG, 0]);
+  }
+  r.status(pcm(R_PCM_START, 1));
+  r.exit(() => r.rx(4096));
+  r.status(pcm(R_PCM_STOP, 1));
+  const paused = r.exit(() => r.rx(4096));
+  assert.deepEqual(r.completed(paused[0]), [], 'held while stopped');
+  const recorded = r.source.recorded();
+  const before = r.done.length;
+  r.status(pcm(R_PCM_RELEASE, 1));
+  assert.deepEqual(r.done.slice(before).map((d) => [d.w0 & 0xffff0000, d.len]), [[CONTROLQ << 16, 4], [RXQ << 16, 8]], 'the reply, then the message with only its status');
+  assert.deepEqual(r.source.recorded(), recorded, 'returned, not filled');
+});
+
+test('snd: save and restore keep the input stream and the source; a held receive message posted again is filled once, the pattern going on', () => {
+  const r = rig();
+  capture(r);
+  const first = r.exit(...[0, 1, 2, 3].map(() => () => r.rx(4096)));
+  r.status(pcm(R_PCM_START, 1)); // three filled, the fourth held
+  const state = JSON.parse(JSON.stringify(r.dev.save())) as SndState;
+  assert.equal(state.streams[1].state, 'started');
+  const s = rig();
+  s.ram.set(r.ram);
+  s.dev.restore(state);
+  const again = s.exit(() => s.post(RXQ, first[3].read.map((g) => r.ram.slice(g.off, g.off + g.len)), [4096, 8]));
+  assert.equal(s.completed(again[0]).length, 1);
+  assert.equal(Buffer.compare(s.written(again[0]).subarray(0, 4096), wave(P_IN, 3072, 4096)), 0);
+  assert.equal(s.source.recorded().fnv, fnv1a(wave(P_IN, 0, 16384)).toString(16).padStart(8, '0'));
+});
+
+test('snd: the clock source records silence at the stream\'s rate, a buffer less a period since the guest last posted, paused while stopped', () => {
+  let t = 1000;
+  let untaken = 0;
+  const src = clockSource({ now: () => t, schedule: false, untaken: () => untaken });
+  const got: number[] = [];
+  const ask = (k: number) => src.record(P_IN, 4096, (data) => { assert.ok(data.length === 4096 && data.every((b) => b === 0)); got.push(k); });
+  for (const k of [0, 1, 2, 3]) ask(k);
+  src.start(P_IN);
+  const at = (ms: number) => { t = ms; src.pump(); };
+  at(1021);
+  assert.deepEqual(got, [], '1008 frames: not a period yet');
+  at(1022);
+  assert.deepEqual(got, [0]);
+  untaken = 3;
+  at(1090);
+  assert.deepEqual(got, [0, 1, 2], 'a buffer less a period without a message');
+  at(1200);
+  assert.deepEqual(got, [0, 1, 2], 'and not by time while the core hasn\'t taken them');
+  untaken = 0;
+  at(1201);
+  at(1273);
+  assert.deepEqual(got, [0, 1, 2], 'half a buffer\'s time and 30 ms (72.7 ms) after they were taken: not yet');
+  at(1274);
+  assert.deepEqual(got, [0, 1, 2, 3]);
+  ask(4); // 5 periods given at 1274 ms: 5120 frames of 13,152
+  at(1275);
+  assert.deepEqual(got, [0, 1, 2, 3, 4], 'a message: the guest ran');
+  src.stop();
+  ask(5);
+  at(5000);
+  assert.deepEqual(got.length, 5, 'stopped: the clock stands');
+  src.start(P_IN);
+  at(5001);
+  assert.deepEqual(got.length, 6, 'what it ran before the stop counts');
+  src.release();
+  ask(6);
+  src.start(P_IN);
+  at(5022);
+  assert.deepEqual(got.length, 6, 'released: counted from the next START (at 5001 ms)');
+  at(5023);
+  assert.deepEqual(got.length, 7);
+});
+

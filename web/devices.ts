@@ -12,7 +12,7 @@ import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { IoStats } from './iostats.ts';
 import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
 import { openDisk, type Disk } from './qcow2.ts';
-import { checksumSink, ringSink, sndBackend, type SndWake } from './snd.ts';
+import { checksumSink, clockSource, patternSource, ringSink, sndBackend, type SndWake } from './snd.ts';
 
 /**
  * Host-side device configuration, one per virtio-mmio slot (in order). `blk`
@@ -82,10 +82,11 @@ export type GpuSpec = {
 } & GpuOptions;
 
 /**
- * virtio-snd (web/snd.ts): one output stream, no jacks or channel maps. In deterministic mode its frames go to
- * the checksum sink (each message completes at the DEVICE exit that posted it); in realtime mode to the ring
- * sink: the page's sound ring (`ring`, played by web/audio.ts's worklet, which says on `port` when a stream starts
- * and stops), or without one a ring of its own played on the sink's own clock (docs/plans/audio.md).
+ * virtio-snd (web/snd.ts): an output and an input stream, no jacks or channel maps. In deterministic mode the
+ * output's frames go to the checksum sink and the input's come from the pattern source (each message completes at
+ * the DEVICE exit that posted it); in realtime mode the output goes to the ring sink: the page's sound ring (`ring`,
+ * played by web/audio.ts's worklet, which says on `port` when a stream starts and stops), or without one a ring of
+ * its own played on the sink's own clock; the input records silence on its own clock (docs/plans/audio.md).
  */
 export type SndSpec = {
   type: 'snd';
@@ -169,7 +170,7 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
       return { entry: [16n, d.virgl ? 3n : 1n << 1n, 2n, BigInt(d.queueSize ?? 64), 16n], config };
     }
     // No features; controlq, eventq, txq, rxq; config: jacks 0, streams 1, chmaps 0.
-    case 'snd': return { entry: [25n, 0n, 4n, 64n, 12n], config: new Uint8Array([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]) };
+    case 'snd': return { entry: [25n, 0n, 4n, 64n, 12n], config: new Uint8Array([0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]) }; // jacks 0, streams 2 (out, in), chmaps 0
   }
 }
 
@@ -686,7 +687,7 @@ export class Devices {
           if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;
         }
-        case 'snd': return sndBackend(ctx, deterministic ? checksumSink() : ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats, untaken: () => ctx.untaken() }));
+        case 'snd': return deterministic ? sndBackend(ctx, checksumSink(), patternSource()) : sndBackend(ctx, ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats, untaken: () => ctx.untaken() }), clockSource({ untaken: () => ctx.untaken() }));
       }
     });
     this.epochs = specs.map(() => 0);

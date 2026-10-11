@@ -53,7 +53,9 @@ test('ring sink: frames go into the ring as f32 stereo in order; on its own cloc
   assert.equal(r.done[0].latency, 0); // nothing after the ring on its own clock
   r.at(1000 + 86); // 4128 > 4096: all four played, the ring dry; three complete (a buffer less a period without a message)
   assert.deepEqual(r.ids(), [0, 1, 2]);
-  r.at(1000 + 96); // and the last CAP_WAIT_MS later (the guest has taken them all: the stream's end)
+  r.at(1000 + 86 + 72); // not yet: the wait is half a buffer's time and 30 ms (72.7 ms) from when the core had taken the batch
+  assert.deepEqual(r.ids(), [0, 1, 2]);
+  r.at(1000 + 86 + 73); // the stream's end
   assert.deepEqual(r.ids(), [0, 1, 2, 3]);
   assert.equal(Atomics.load(r.h, READ), 4096);
   // Dry, the clock waits for the guest: frames that come later aren't consumed for the time it waited, and the wait
@@ -95,7 +97,7 @@ test('ring sink: while the worklet plays (its heartbeat moves), its read index c
   r.at(3100);
   assert.equal(Atomics.load(r.h, READ), 4096);
   assert.deepEqual(r.ids(), [0, 1, 2]);
-  r.at(3110);
+  r.at(3133);
   assert.deepEqual(r.ids(), [0, 1, 2, 3]);
   assert.equal(Atomics.load(r.h, UNDERRUNS), 0);
 });
@@ -123,7 +125,13 @@ test('ring sink: at most a buffer less a period completes since the guest last p
   Atomics.add(s.h, QUANTA, 1);
   s.at(1000);
   Atomics.add(s.h, QUANTA, 1);
-  s.at(1011);
+  s.at(1085); // the first pump after the batch's first completion: the core has taken it (no untaken here)
+  assert.deepEqual(s.ids(), [0, 1, 2]);
+  Atomics.add(s.h, QUANTA, 1);
+  s.at(1157);
+  assert.deepEqual(s.ids(), [0, 1, 2]);
+  Atomics.add(s.h, QUANTA, 1);
+  s.at(1158); // 72.7 ms after that
   assert.deepEqual(s.ids(), [0, 1, 2, 3]);
   // Counted across pumps, not per pump: Linux reports progress from a work item that one run serves for any number of
   // completions, so a whole buffer completed before it runs reads as none (audio.md §15).
@@ -153,8 +161,25 @@ test('ring sink: at most a buffer less a period completes since the guest last p
   u.at(1205);
   assert.deepEqual(u.ids(), [0, 1, 2]);
   Atomics.add(u.h, QUANTA, 1);
-  u.at(1215);
+  u.at(1277);
+  assert.deepEqual(u.ids(), [0, 1, 2]);
+  Atomics.add(u.h, QUANTA, 1);
+  u.at(1278);
   assert.deepEqual(u.ids(), [0, 1, 2, 3]);
+  // A restored machine: three held messages posted again, and the restored RAM may hold a completion the guest hasn't
+  // seen (audio.md §16): counted as a whole buffer in flight, two complete, the third after the guest posts.
+  const z = rig();
+  z.sink.start(P);
+  for (let k = 0; k < 3; k++) z.play(z.period(k * 1024));
+  z.sink.restored(P, 3 * 4096);
+  Atomics.store(z.h, READ, 3072);
+  Atomics.add(z.h, QUANTA, 1);
+  z.at(1000);
+  assert.deepEqual(z.ids(), [0, 1]);
+  z.play(z.period(0));
+  Atomics.add(z.h, QUANTA, 1);
+  z.at(1001);
+  assert.deepEqual(z.ids(), [0, 1, 2]);
 });
 
 test('ring sink: messages wait for room; the ring wraps', () => {

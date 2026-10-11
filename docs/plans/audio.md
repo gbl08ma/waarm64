@@ -2,7 +2,8 @@
 
 **Status:** S0 done (the guests: §11), S1 done (the device, deterministic: §12) and S2 done (the page: §13),
 2026-10-10; S3 done (real guests: §14), 2026-10-11 (the user's ear: "good enough", decision 12); S4 (snapshots and
-capture) under way: snapshots while sound plays done (§15), capture next. The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
+capture) under way: snapshots while sound plays done (§15); capture's device done (deterministic, §16), the page's
+microphone next. The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
 
 The question: how does a guest's sound reach the page's speakers (and, maybe, the page's microphone reach the
 guest), **with the guest's own unmodified drivers**, in time with what it shows, without the main thread in the path?
@@ -60,7 +61,7 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
 
 ## 3. The device (`web/snd.ts`, twin `core/tests/common/snd.rs`)
 
-- `{type: 'snd', ring?, capture?}`: one output stream (and one input stream with `capture`), no jacks, no
+- `{type: 'snd', ring?, port?}`: an output stream and an input stream (since S4, always: decision 13), no jacks, no
   channel maps (Linux needs none: §12), no controls. Queues of 64.
 - **Control:** `PCM_INFO` answers formats, rates, channels 1–2; `SET_PARAMS` checks them and the
   buffer/period sizes (a period a whole number of frames, the buffer a whole number of periods) and keeps them;
@@ -73,8 +74,9 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
   the ring's header). Linux makes `latency_bytes` ALSA's `runtime->delay` (`virtsnd_pcm_msg_complete`), the time
   between a period's completion and its sound reaching the ears, which is what a player's A/V sync adds; what's
   still in the ring is already counted, since those messages haven't completed. A message that doesn't fit the ring
-  yet waits (the guest's buffer is the queue). At most a buffer less a period completes at once (§12): the rest
-  after the guest's next message or 10 ms.
+  yet waits (the guest's buffer is the queue). At most a buffer less a period completes since the guest's last
+  message (§12, §15, §16): the rest after its next message or, at a stream's end, half a buffer's time and 30 ms
+  after the batch was taken.
 - **Events:** an xrun when the worklet ran dry while the stream was started (the guest restarts the stream, as on
   hardware), if Linux takes them; otherwise silence fills in.
 - **Snapshots:** the streams' parameters and states are the backend's `save`/`restore` JSON; the ring's content
@@ -441,4 +443,54 @@ failed with EIO** (ALSA's wait for a period: max(100 ms, 1.1 × the buffer), the
   restore with 0, 150 and 400 ms before the first run on 4 vCPUs: six of six play on. Under load (six busy-looping
   processes on the VM's 8 vCPUs beside the test), three of three: the saved machine's pause a counted gap of 1-23 ms,
   the restored one's 136-192 ms while its vCPUs start, then none.
+
+## 16. S4 findings: capture, the device (2026-10-11)
+
+What was built: the input stream (stream 1, `VIRTIO_SND_D_INPUT`, the output's formats, rates and channels; its own
+state machine; receive messages on rxq), the source beside the sink (`SndSource`): the deterministic `patternSource`
+(integer triangles, 1 kHz left and 1.5 kHz right, the same in JS and the twin) and, until the page's microphone, the
+realtime `clockSource` (silence at the stream's rate). The `linux-snd` init records 16 periods after it plays
+(`snd_rec_seconds=N` on the page) and prints the hash, its own time and each channel's frequency; the snd steps moved
+once (decision 15): 35,917,561 to **36,929,057** (with the init's diagnostics for a failed write, below), natively, in Node and in Chromium, interpreter and JIT.
+devices.md "snd", testing.md "virtio-snd", images.md.
+
+- **The oracle:** QEMU 11.1.1's `virtio-sound-device` with the same kernel and init gets the same capture requests in
+  the same order (`PCM_SET_PARAMS`, `PCM_PREPARE`, `PCM_START`, `PCM_STOP`, `PCM_RELEASE` for stream 1). Its `wav`
+  backend has no input (the guest's first read times out with EIO); with the `none` backend it records 16 periods of
+  silence in **342 ms** of the guest's own time, and the page's clock source in 348 ms (§13's machine, Chromium 153).
+- **Linux posts a capture period again before its reader has it.** The driver's messages point into ALSA's own
+  buffer, and the indirect helper's "copy" (`snd_pcm_indirect_capture_transfer` calling `virtsnd_pcm_trans_copy`)
+  only posts the period again, as soon as ALSA counts it. So the device writes the buffer cyclically, as hardware
+  does, and a reader has to keep up. The deterministic source fills each message at the exit after it's posted, far
+  ahead of real time, so **the first buffer is overwritten before the guest's first read**: the guest reads the
+  pattern from frame 4096 (FNV-1a `2b1e136b`; the pattern's 96-frame cycle makes 1024 the same bytes, the counts say
+  4096), and the source filled 24 messages for 16 read. That is deterministic (pinned in both runners) and harmless:
+  the realtime sources go at the stream's rate. One completion per exit instead of three moves nothing.
+- **Capture needs the same bound as playback:** without a buffer less a period per exit the twin's guest stalls in
+  its reads (Linux counts a capture's position in completions modulo the buffer too).
+- **A restore under load, again** (six to ten busy-looping processes beside the Chromium test, and CI): the loaded
+  machine sometimes still failed its next write with EIO. The init now prints, when a write fails, the stream's
+  status, the virtio lines of `/proc/interrupts`, and both again a second later. Two more ways to a whole buffer:
+  - **The fallback's 10 ms was too short:** under load Linux's elapsed-period work ran later than that after the
+    interrupt, so the period released 10 ms after the core took the others made a whole buffer. The wait is now half a
+    buffer's time and 30 ms (two ticks of a 100 Hz guest and one for rounding) after the core was first seen to have
+    taken the batch's first completion (`completionBound`): the guest's clock has then run past what ALSA's jiffies
+    check needs (more than half the buffer's jiffies and one) to take the whole buffer for a wrap. A drain's last
+    period comes about that late anyway: the snd guest's 4 s tone ends 8 ms late, aplay's 500 ms buffer not at all.
+    (A whole buffer's time cost a drain a period, which broke Debian's playback check in ci-debian: 3,251 ms for
+    3,125; and a buffer's time after the *last* batch broke the drain itself, whose wait for a period is 100 ms.)
+  - **The restored RAM can hold a completion the guest hasn't seen:** a snapshot is taken with every completion the
+    core had, so a period completed just before the save is in the used ring but not yet in ALSA's position, and only
+    the messages still in flight are posted again (three, with four in Linux's count). Completing those three made a
+    whole buffer. After a restore the bound now counts as if the guest had a whole buffer in flight (the backend tells
+    the sink and the source the re-posted bytes at the restore's first poll): two of three complete before the guest
+    posts again.
+- **Not explained:** before the last change, under ten busy loops, one run in eight failed with the sound
+  interrupt never taken again after the restore: CPU 0 took its timer interrupts (278 to 380 in a second), the
+  device's line went high (the core took and matched the completions, the guest acknowledged twice), but the
+  interrupt count stayed. With instrumentation in the core it didn't happen in 25 runs, and after the last change
+  none in 26. Backlog ("A restored machine's lost interrupt").
+- **The native runner** (`core/tests/common` `run_parallel`) lost a PSCI SYSTEM_OFF that a vCPU made while a
+  stretch before a snapshot was ending (the first end won); a terminal exit now wins over the budget's, which the
+  parallel snapshot boot hit once in CI.
 

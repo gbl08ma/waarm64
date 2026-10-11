@@ -22,5 +22,6 @@ edk2-shell 541770383
 edk2-shell-again 538910055
 # The gpu test kernel (M8 graphics G1; images/gpu/init.c): KMS on a virtio-gpu, a display event, a new mode.
 gpu 37794474
-# The snd test kernel (audio S1; images/snd/init.c): ALSA on a virtio-snd, a waveform through the deterministic sink.
-snd 35917561
+# The snd test kernel (audio S1; images/snd/init.c): ALSA on a virtio-snd, a waveform through the deterministic sink,
+# then (audio S4) a recording from the deterministic source.
+snd 36929057

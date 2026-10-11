@@ -111,7 +111,7 @@ pub enum Dev {
     /// many flushes the display changes to a size (a display event); with the last, the scanout is
     /// hashed at every flush.
     Gpu(u32, u32, Option<(u32, u32, u32)>, bool),
-    /// virtio-snd (web/snd.ts): one output stream, the deterministic sink.
+    /// virtio-snd (web/snd.ts): an output and an input stream, the deterministic sink and source.
     Snd,
 }
 
@@ -681,8 +681,12 @@ impl Backends {
                             if let Some((t, st)) = s.tx(&head, len, r, frames) {
                                 snd_finish(vm, i, &t, st);
                             }
-                        } else {
-                            snd_finish(vm, i, &r, snd::S_BAD_MSG); // rxq: no input stream
+                        } else if queue == snd::RXQ {
+                            let room: usize = r.write.iter().map(|s| s.1 as usize).sum();
+                            let head: Vec<u8> = readable().into_iter().take(4).collect();
+                            if let Some((t, st)) = s.rx(&head, room, r) {
+                                snd_finish(vm, i, &t, st);
+                            }
                         }
                         continue;
                     }
@@ -709,8 +713,14 @@ impl Backends {
             }
             // The end of the exit's requests: the sound sink plays what it was given (web/snd.ts `polled`).
             if let Some(s) = &mut self.snd[i] {
-                for t in s.tick() {
-                    snd_finish(vm, i, &t, snd::S_OK);
+                for d in s.tick() {
+                    match d {
+                        snd::Done::Tx(t) => snd_finish(vm, i, &t, snd::S_OK),
+                        snd::Done::Rx(t, data) => {
+                            scatter(vm, &t, &data);
+                            snd_finish_after(vm, i, &t, snd::S_OK, data.len() as u32);
+                        }
+                    }
                 }
             }
         }
@@ -720,6 +730,11 @@ impl Backends {
 /// Completes a virtio-snd message with a `virtio_snd_pcm_status` (status, latency_bytes 0) in its
 /// last writable bytes (web/snd.ts `finish`).
 fn snd_finish(vm: &Vm, i: usize, r: &Request, status: u32) {
+    snd_finish_after(vm, i, r, status, 0);
+}
+
+/// As `snd_finish`, after `written` bytes of frames (a receive message's, already written).
+fn snd_finish_after(vm: &Vm, i: usize, r: &Request, status: u32, written: u32) {
     let room: u32 = r.write.iter().map(|s| s.1).sum();
     if room < 8 {
         complete(vm, i, r.w0, 0);
@@ -740,7 +755,7 @@ fn snd_finish(vm: &Vm, i: usize, r: &Request, status: u32) {
         k += n;
         skip = 0;
     }
-    complete(vm, i, r.w0, 8);
+    complete(vm, i, r.w0, written + 8);
 }
 
 pub struct Run {
@@ -764,8 +779,9 @@ pub struct Run {
     /// The first gpu's state at the end, and its visible scanout as RGBA (width, height, rows).
     pub gpu: Option<gpu::State>,
     pub screen: Option<(u32, u32, Vec<u8>)>,
-    /// The first virtio-snd's sink (what it played) and its control log (web/snd.ts `SndState`).
-    pub snd: Option<(snd::Played, Vec<String>)>,
+    /// The first virtio-snd's sink (what it played), source (what it recorded) and control log
+    /// (web/snd.ts `SndState`).
+    pub snd: Option<(snd::Played, snd::Played, Vec<String>)>,
 }
 
 impl Run {
@@ -1087,7 +1103,7 @@ pub fn boot(b: &Boot) -> Run {
     let first = backends.gpu.iter().flatten().next();
     let first_snd = backends.snd.iter().flatten().next();
     Run {
-        snd: first_snd.map(|s| (s.played.clone(), s.log.clone())),
+        snd: first_snd.map(|s| (s.played.clone(), s.recorded.clone(), s.log.clone())),
         gpu: first.map(|g| g.state()),
         screen: first.and_then(|g| g.screen()),
         fb,
@@ -1217,7 +1233,14 @@ pub fn run_parallel(
     let end: Mutex<Option<(u32, ExitInfo)>> = Mutex::new(None);
     let done = AtomicBool::new(false);
     let finish = |kind, e| {
-        end.lock().unwrap().get_or_insert((kind, e));
+        // The first end, but an exit that ends the machine (a PSCI SYSTEM_OFF a vCPU made
+        // before it saw the stop) over the budget's: a snapshot there would resume the guest
+        // past its power-off.
+        let mut end = end.lock().unwrap();
+        if end.is_none_or(|(k, _)| k == exit::BUDGET && kind != exit::BUDGET && kind != exit::STOP)
+        {
+            *end = Some((kind, e));
+        }
         done.store(true, Ordering::SeqCst);
         vm.signal(SIGNAL_STOP);
     };

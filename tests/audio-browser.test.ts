@@ -23,6 +23,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { GAP_FRAMES, LATENCY, QUANTA, READ, UNDERRUNS, WRITE } from '../web/audio-ring.ts';
 import { peaks } from './audio-tap.ts';
+import { fnv1a } from '../web/snd.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !existsSync(new URL('linux-snd/Image', IMAGES)) && 'SKIPPED: run images/build.sh linux-snd';
@@ -42,6 +43,8 @@ type W = { __serialLog: () => string; __audio: { header(): Int32Array; context()
 const serial = (page: Page) => page.evaluate(() => (window as unknown as W).__serialLog?.() ?? '');
 const until = (page: Page, re: RegExp, timeout = 60_000) => page.waitForFunction((src) => new RegExp(src).test((window as unknown as W).__serialLog?.() ?? ''), re.source, { timeout, polling: 100 })
   .catch(async (e) => { throw new Error(`${e}; the serial console:\n${(await serial(page)).slice(-3000)}`); });
+/** How far the stream's time on the device may be from its sound plus its counted gaps, ms (npm test's load). */
+const TOLERANCE_MS = 40;
 const header = (page: Page) => page.evaluate(() => [...(window as unknown as W).__audio.header()]);
 /** Checks the guest's time against the sound's length, and the ring's gaps; prints both. */
 async function inTime(page: Page, what: string) {
@@ -52,7 +55,7 @@ async function inTime(page: Page, what: string) {
   const length = (1000 * r.frames) / 48000;
   const said = `${r.frames} frames (${length.toFixed(0)} ms) ran ${span.toFixed(0)} ms from START to its stop (the guest's time ${r.ms} ms); ${h[UNDERRUNS]} underruns, ${h[GAP_FRAMES]} frames of gaps; the worklet played ${h[QUANTA] * 128}`;
   console.log(`# ${what}: ${said}`);
-  assert.ok(Math.abs(span - length - (1000 * h[GAP_FRAMES]) / 48000) < 40, said);
+  assert.ok(Math.abs(span - length - (1000 * h[GAP_FRAMES]) / 48000) < TOLERANCE_MS, said);
   assert.ok(h[GAP_FRAMES] < 0.1 * r.frames, said);
   assert.equal(h[READ], h[WRITE]);
   assert.equal(h[WRITE], r.frames);
@@ -88,6 +91,12 @@ test('the snd guest plays a tone on the page in real time: its length in its own
   assert.equal(r.end, 'drain');
   assert.ok(h[QUANTA] * 128 > 0.9 * r.frames, `the worklet played ${h[QUANTA] * 128} of ${r.frames} frames`);
   assert.ok(h[LATENCY] > 0, 'no output latency reported');
+  // Then it records 16 periods: with no microphone, silence at the stream's rate (QEMU's `none` backend gives the
+  // same: 342 ms, audio.md §16).
+  const [, hash, ms] = /^snd: recorded 16384 frames fnv1a ([0-9a-f]{8}) in (\d+) ms, 0 Hz left, 0 Hz right$/m.exec((await serial(page)).replaceAll('\r\n', '\n')) ?? [];
+  console.log(`# recorded 16 periods of silence in ${ms} ms of the guest's time`);
+  assert.equal(hash, fnv1a(new Uint8Array(16384 * 4)).toString(16).padStart(8, '0'));
+  assert.ok(Math.abs(Number(ms) - 341) < 40, `${ms} ms`);
   // Remembered: the reload starts muted.
   await page.reload();
   await page.locator('#sound-menu summary').click();
@@ -155,6 +164,8 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     const p2 = await fresh.newPage();
     const errors2: string[] = [];
     p2.on('pageerror', (e) => errors2.push(String(e)));
+    const logs2: string[] = [];
+    p2.on('console', (m) => logs2.push(m.text()));
     p2.on('dialog', (d) => void d.accept());
     await p2.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=60&snd=stats`);
     await p2.mouse.click(5, 5);
@@ -163,6 +174,9 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await p2.waitForFunction(() => document.getElementById('boot-title')!.textContent!.startsWith('Loading '), null, { timeout: 30_000, polling: 20 });
     await p2.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 20 }); // the old machine is gone
     await p2.waitForFunction(() => document.body.dataset.state === 'running' && (window as unknown as W).__audio.playing && (window as unknown as W).__audio.context()?.state === 'running', null, { timeout: 60_000, polling: 100 });
+    // Listened to once the restored stream flows (half a second on the new ring): under load its vCPUs start late.
+    await p2.waitForFunction((at) => (window as unknown as W).__audio.header()[at] >= 24000, READ, { timeout: 30_000, polling: 50 })
+      .catch(async (e) => { throw new Error(`${e}: the ring ${await header(p2)}, the page ${await p2.evaluate(() => document.body.dataset.state)} (${await p2.locator('#message-text').textContent()}); the terminal: ${await p2.evaluate(() => document.querySelector('.xterm-rows')?.textContent?.slice(-2500))}; console: ${logs2.slice(-10).join(' | ')}; kernel: ${(await serial(p2)).split('\n').filter((l) => /virtio|head|range|broken|BUG|WARN|error|nobody|disabl|irq [0-9]+:/i.test(l)).slice(-12).join(' / ')}`); });
     const heard = await peaks(p2);
     assert.ok(Math.abs(heard.hz[0] - 440) < 12 && Math.abs(heard.hz[1] - 660) < 12, `heard ${heard.hz} Hz after the load (the ring ${await header(p2)}; the serial console's end: ${(await serial(p2)).slice(-300)})`);
     await until(p2, /snd test (ok|failed)/, 30_000);
@@ -178,7 +192,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     console.log(`# loaded: ${said}`);
     assert.equal(h[READ], h[WRITE]);
     assert.ok(done % 1024 === 0 && done >= before - 4096 && done <= after, said);
-    assert.ok(Math.abs(span - (1000 * (h[WRITE] + h[GAP_FRAMES])) / 48000) < 40, said);
+    assert.ok(Math.abs(span - (1000 * (h[WRITE] + h[GAP_FRAMES])) / 48000) < TOLERANCE_MS, said);
     // The re-posted buffer plays while the vCPUs start: a gap until the guest writes again, counted.
     assert.ok(h[GAP_FRAMES] < 0.1 * h[WRITE], said);
     assert.deepEqual(errors2, []);

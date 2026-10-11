@@ -378,6 +378,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   as heard; the measurement is the page's draw against the sound's output (-17 to +20 ms after Firefox's first 4 s).
 
 ## Snapshots (M8 phase C, snapshots lane; [plans/snapshots.md](plans/snapshots.md), [platform.md](platform.md) "Snapshots")
+- **A restored machine's lost interrupt** (audio S4, [plans/audio.md](plans/audio.md) §16): under ten busy-looping
+  processes beside the page's snd snapshot test, once in eight runs (before the last bound change; none in 51 runs
+  since, 25 of them with the core instrumented), the restored guest never took the sound device's SPI again: CPU 0 took
+  its timer interrupts, the core matched the completions and raised the line, the guest acknowledged twice, and
+  `/proc/interrupts` stayed at 105. Not reproduced natively or in Node. If it comes back, the snd guest's EIO output
+  has the status and interrupt counts; the next step is the GIC's view of SPI 51 when the line is high (the
+  instrumentation that hid it: `Gicv3::dbg` into the device's spare config bytes).
 
 - **9p's state isn't saved** (the server's tree and its fids): a VM with a 9p device refuses a
   snapshot. The page's machines have none; the device test and Alpine's test image do, so their

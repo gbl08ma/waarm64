@@ -32,6 +32,8 @@ export const RATE = 7;
 export const EPOCH = 8;
 /** Bumped and notified by the worklet every `WAKE_QUANTA` quanta: what the device worker can wait on instead of a timer. */
 export const WAKE = 9;
+/** The device worker's: completions it gave that the core hasn't taken yet, at its last pump (a diagnostic: the core takes them when a vCPU runs). */
+export const UNTAKEN = 10;
 const HEADER_WORDS = 16;
 const HEADER_BYTES = HEADER_WORDS * 4;
 

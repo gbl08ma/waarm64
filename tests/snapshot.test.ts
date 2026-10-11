@@ -73,17 +73,19 @@ test('held receive and event buffers are the new backends\' after a restore', { 
   assert.equal(r.console, whole.console);
 });
 
-test('the snd guest through 4 snapshot files while its tone plays: the steps and the waveform of an unbroken run', { skip: !existsSync(new URL('linux-snd/Image', IMAGES)) && 'SKIPPED: run images/build.sh linux-snd' }, async () => {
-  // Saved with the stream started and messages held (from ~32 M steps on): the restored device starts its sink again and
-  // the core posts the held messages again, which play once (the guest prints the hash of what it wrote, the sink's
-  // own is checked by the boot tests).
+test('the snd guest through 6 snapshot files while its tone plays and while it records: the steps and the console of an unbroken run', { skip: !existsSync(new URL('linux-snd/Image', IMAGES)) && 'SKIPPED: run images/build.sh linux-snd' }, async () => {
+  // Saved with a stream started and messages held (playing from ~32 M steps, recording from ~35.9 M): the restored
+  // device starts its sink or source again and the core posts the held messages again, which play or fill once (the
+  // guest prints the hashes of what it wrote and read).
   const o = { ramSize: 256 << 20, kernel: image('linux-snd/Image'), initrd: image('linux-snd/initramfs.cpio'), cmdline: 'console=ttyAMA0 panic=-1', devices: [{ type: 'snd' }], jit: 1 } satisfies BootOptions;
-  const r = await runThroughSnapshots(WASM, o, [33_000_000, 34_000_000, 35_000_000, 35_500_000]);
+  const whole = await runToPowerOff(WASM, o);
+  const r = await runThroughSnapshots(WASM, o, [33_000_000, 34_000_000, 35_000_000, 35_500_000, 36_200_000, 36_500_000]);
   report('snd', r);
   poweredOff(r);
-  assert.equal(r.files.length, 4);
+  assert.equal(r.files.length, 6);
   assert.equal(r.steps, STEPS.snd);
-  assert.match(r.console, /snd: wrote 49152 frames fnv1a 5652c745\r?\nwebpc: snd test ok/);
+  assert.equal(r.console, whole.console);
+  assert.match(r.console, /snd: wrote 49152 frames fnv1a 5652c745\r?\n[^]*snd: recorded 16384 frames fnv1a [0-9a-f]{8} in \d+ ms, 999 Hz left, 1500 Hz right\r?\nwebpc: snd test ok/);
 });
 
 const user = 'alpine-user/rootfs-user.ext4';

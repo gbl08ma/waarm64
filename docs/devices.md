@@ -347,15 +347,17 @@ mode (and natively in realtime mode: std has no CSPRNG).
 - `{type: 'snd'}` (`web/snd.ts`, the native twin `core/tests/common/snd.rs`: the same statuses, completions at the
   same exits, the same control log). virtio 1.2 §5.14, written from the spec with Linux's `sound/virtio` read for
   behavior ([plans/audio.md](plans/audio.md)). No features; controlq, eventq, txq, rxq of 64; config jacks 0,
-  streams 1, chmaps 0 (Linux takes zero jacks and channel maps: it builds no jack or channel-map controls). On every
+  streams 2, chmaps 0 (Linux takes zero jacks and channel maps: it builds no jack or channel-map controls). On every
   page machine (the last device, so the others keep their slots) and the snd guest's test machines.
-- **One output stream:** `PCM_INFO` answers hda_fn_nid 0, no stream features, formats S16, S32 and FLOAT, rates
-  8–192 kHz (what every browser's `AudioContext` takes), 1–2 channels. Linux derives its limits from that: periods
+- **An output stream (0) and an input stream (1)** (the input since audio S4: older snapshots, with one, still
+  load): `PCM_INFO` answers hda_fn_nid 0, no stream features, formats S16, S32 and FLOAT, rates
+  8–192 kHz (what every browser's `AudioContext` takes), 1–2 channels, and the direction. Each stream has its own
+  state machine and parameters; the control log names stream 1 (`PCM_START#1`). Linux derives its limits from that: periods
   2–16 of 160–122,880 bytes, a buffer of up to 245,760. `SET_PARAMS` takes those; unoffered features, formats,
   rates or channel counts are `NOT_SUPP`; a period of no whole frame or a buffer of no whole period, `BAD_MSG`.
   The state machine is the spec's (§5.14.6.6.1): `SET_PARAMS` from nothing, set, prepared or released;
   `PREPARE` from set, prepared or released; `START` from prepared or stopped; `STOP` from started; `RELEASE` from
-  prepared or stopped; anything else, a stream id other than 0 or a short request is `BAD_MSG`. Jack and channel
+  prepared or stopped; anything else, a stream id past 1 or a short request is `BAD_MSG`. Jack and channel
   map queries for anything are `BAD_MSG` (there are none), `JACK_REMAP` too; unknown codes `NOT_SUPP`. An info
   query's items must fit the reply's room and be at least the struct's size (a larger size is padded with zeros).
 - **Transmit messages** (`virtio_snd_pcm_xfer`, frames, then a writable `virtio_snd_pcm_status`, written in the
@@ -363,8 +365,13 @@ mode (and natively in realtime mode: std has no CSPRNG).
   completed with `OK` when the sink says they were played. `STOP` pauses (Linux sends it for a pause too, and
   resumes with `START` without posting its messages again), `RELEASE` returns every held message (`OK`, after
   its own reply), which is what Linux's `sync_stop` waits for. A message on another stream, of no whole frame, or
-  on a stream not prepared is `BAD_MSG` at once. rxq messages are `BAD_MSG` (no input stream); event buffers are
-  held (no events are sent). A virtio reset drops the stream and what's held.
+  on a stream not prepared is `BAD_MSG` at once. **Receive messages** (rxq: `virtio_snd_pcm_xfer`, then writable
+  room for frames and the status) go to the input stream the same way, given to the **source** once started and
+  completed with the frames it recorded, then `OK` (the used length the frames plus the status's 8); room of no
+  whole frame, or none, is `BAD_MSG`. Linux posts a whole buffer of them at the input's START and posts a period
+  again as soon as ALSA counts it, before its reader has it (audio.md §16): a source that ran ahead of real time
+  would overwrite unread frames. Event buffers are held (no events are sent). A virtio reset drops the streams and
+  what's held.
 - **The sink** (`SndSink`): `play(params, frames, done)`, `start`, `stop`, `release`, `tick` (the end of a
   `DEVICE` exit's requests: `Backend.polled`, which `Devices.poll` runs for every device on every exit). S1 has
   the **deterministic sink** (`checksumSink`), on every machine for now: it plays (hashes, FNV-1a, and counts) and
@@ -372,6 +379,14 @@ mode (and natively in realtime mode: std has no CSPRNG).
   period per exit**: Linux counts its position in completions modulo the buffer, so a whole buffer completed
   before it looks again reads as nothing played and the stream stalls (audio.md §12); the rest completes at the
   next exit. `toF32` converts a format to the f32 an AudioWorklet takes.
+- **The source** (`SndSource`): `record(params, bytes, done)`, and the same `start` to `restore`. The
+  **deterministic source** (`patternSource`) fills at the end of the exit that posted a message, a buffer less a
+  period at most, with `pattern`: integer triangle waves, 1 kHz left and 1.5 kHz right at 48 kHz (48 and 32 frames a
+  cycle, ±12000; S32 shifted, FLOAT over 32768, mono the left), counted in frames since the first, so every runner
+  records the same bytes. In realtime mode, until the page's microphone (audio S4), the **clock source**
+  (`clockSource`) records silence at the stream's rate, under the same bound as the ring sink (a buffer less a period
+  since the guest's last message, the rest after its next one or half a buffer's time and 30 ms after the core took
+  the batch).
 - **The realtime sink** (`ringSink`, every realtime machine): a message's frames go into the **sound ring**
   (`web/audio-ring.ts`: a `SharedArrayBuffer` of 65,536 f32 stereo frames behind an i32 header, Atomics only; a mono
   stream is written to both channels) as soon as it has room, and the message completes once the ring's read index
@@ -384,13 +399,16 @@ mode (and natively in realtime mode: std has no CSPRNG).
   (`?snd=timer`: a 5 ms interval instead), **at most a buffer less a period since the guest's last message** (across
   pumps: Linux reports progress from a work item that one run serves for any number of completions, so a whole
   buffer completed before it runs reads as none, audio.md §15), the rest after the guest's next message, or (a
-  stream's end) 10 ms after the core has taken every completion (`Ctx.untaken`: it takes them when a vCPU runs, so
-  the wait can't run out while the guest doesn't, as when a restored machine's vCPUs are starting). The spec's `ring` and `port` are the page's (web/audio.ts `attach`; the port says the stream's
+  stream's end) half a buffer's time and 30 ms after the core was seen to have taken the batch's first completion
+  (`Ctx.untaken`: it takes them when a vCPU runs), so the guest's clock ran that long and ALSA's jiffies check takes
+  a whole buffer for a wrap even if its work runs late (`completionBound`, audio.md §16). After a restore the bound counts the
+  guest as having had a whole buffer in flight: completions the old device made may be in the restored RAM unseen. The spec's `ring` and `port` are the page's (web/audio.ts `attach`; the port says the stream's
   start, with its rate, and its stop, and with `stats` its completions' timing each second); without them the sink
   makes a ring nothing plays. [plans/audio.md](plans/audio.md) §4 and §13.
-- **Snapshots:** `save` gives the stream's state and parameters, the control log and the sink's counts (the
-  realtime sink has none); the held messages are posted again by the core and play once (the sink hashes at
-  completion). A started stream's sink is started again at restore: the re-posted messages play while the vCPUs
+- **Snapshots:** `save` gives the streams' states and parameters, the control log and the sink's and source's
+  counts (the realtime ones have none); the held messages are posted again by the core and play or fill once (the
+  sink hashes at completion; the source's pattern goes on from its count). A started stream's sink or source is
+  started again at restore: the re-posted messages play while the vCPUs
   start (on the page a gap of 20-35 ms follows, counted as an underrun), and the guest plays on (audio.md §15).
 
 ### Framebuffer (`simple-framebuffer`)

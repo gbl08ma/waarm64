@@ -1,14 +1,18 @@
-//! The native twin of web/snd.ts: virtio-snd with one output stream, no jacks or channel maps,
-//! and the deterministic sink, answering exactly as that backend does (the same statuses, the same
-//! state machine, the same completions at the same exits, the same control log), so the snd test
-//! guest keeps one step count in every runner. `T` is what the runner holds a transmit message as
-//! (a `Request`); the device reads its frames through the runner when it plays it.
+//! The native twin of web/snd.ts: virtio-snd with an output and an input stream, no jacks or channel
+//! maps, the deterministic sink and source, answering exactly as that backend does (the same statuses,
+//! the same state machines, the same completions at the same exits, the same control log, the same
+//! recorded frames), so the snd test guest keeps one step count in every runner. `T` is what the runner
+//! holds an I/O message as (a `Request`); the device reads a transmit message's frames through the
+//! runner when it plays it, and gives a receive message's frames back to it to write.
 
 use std::collections::VecDeque;
 
 pub const CONTROLQ: u32 = 0;
 pub const EVENTQ: u32 = 1;
 pub const TXQ: u32 = 2;
+pub const RXQ: u32 = 3;
+const OUT: usize = 0;
+const IN: usize = 1;
 
 const R_JACK_INFO: u32 = 1;
 const R_JACK_REMAP: u32 = 2;
@@ -34,12 +38,12 @@ const RATES: [u32; 14] = [
 const RATE_BITS: u32 = 0x1ffe;
 const CHANNELS_MAX: u8 = 2;
 const PCM_INFO_SIZE: u32 = 32;
-const STREAMS: u32 = 1;
+const STREAMS: u32 = 2;
 const LOG_MAX: usize = 64;
 const FNV_OFFSET: u32 = 0x811c_9dc5;
 
-/// The configuration space: jacks 0, streams 1, chmaps 0.
-pub const CONFIG: [u8; 12] = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0];
+/// The configuration space: jacks 0, streams 2 (out, in), chmaps 0.
+pub const CONFIG: [u8; 12] = [0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0];
 
 fn sample_bytes(format: u8) -> Option<u32> {
     match format {
@@ -105,13 +109,29 @@ impl Params {
     }
 }
 
-/// What the sink played (web/snd.ts `Played`).
+/// What the sink played, or the source recorded (web/snd.ts `Played`, `Recorded`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Played {
     pub frames: u64,
     pub bytes: u64,
     pub messages: u64,
     pub fnv: u32,
+}
+
+impl Played {
+    fn new() -> Played {
+        Played {
+            fnv: FNV_OFFSET,
+            ..Played::default()
+        }
+    }
+
+    fn add(&mut self, p: &Params, b: &[u8]) {
+        self.frames += (b.len() as u32 / p.frame()) as u64;
+        self.bytes += b.len() as u64;
+        self.messages += 1;
+        self.fnv = fnv1a(b, self.fnv);
+    }
 }
 
 /// FNV-1a (32-bit) of `b`, continuing from `h`.
@@ -122,36 +142,82 @@ pub fn fnv1a(b: &[u8], mut h: u32) -> u32 {
     h
 }
 
-/// The device: the protocol (web/snd.ts `Snd`), the messages held, and the deterministic sink
-/// (`checksumSink`): messages played at the end of an exit (`tick`), at most a buffer less a
-/// period per exit.
-pub struct Device<T> {
+/// A triangle wave of `period` frames between ±12000 (web/snd.ts `triangle`).
+fn triangle(n: u64, period: u64) -> i32 {
+    let ph = (n % period) as i32;
+    let (p, step) = (period as i32, 48000 / period as i32);
+    if ph < p / 2 {
+        -12000 + step * ph
+    } else {
+        36000 - step * ph
+    }
+}
+
+/// The deterministic source's waveform from frame `from` on, `bytes` of it (web/snd.ts `pattern`):
+/// a 1 kHz triangle left, 1.5 kHz right; mono gets the left.
+pub fn pattern(p: &Params, from: u64, bytes: u32) -> Vec<u8> {
+    let size = sample_bytes(p.format).unwrap();
+    let mut out = Vec::with_capacity(bytes as usize);
+    for f in 0..(bytes / p.frame()) as u64 {
+        for c in 0..p.channels {
+            let x = triangle(from + f, if c == 0 { 48 } else { 32 });
+            match size {
+                2 => out.extend((x as i16).to_le_bytes()),
+                _ if p.format == FMT_S32 => out.extend((x * 65536).to_le_bytes()),
+                _ => out.extend((x as f32 / 32768.0).to_le_bytes()),
+            }
+        }
+    }
+    out
+}
+
+/// A stream: its state and parameters.
+#[derive(Clone, Copy, Debug)]
+pub struct Stream {
     pub state: State,
     pub params: Option<Params>,
+}
+
+/// What `tick` completes: a transmit message (status OK), or a receive message with its frames.
+pub enum Done<T> {
+    Tx(T),
+    Rx(T, Vec<u8>),
+}
+
+/// The device: the protocol (web/snd.ts `Snd`), the messages held, the deterministic sink
+/// (`checksumSink`) and source (`patternSource`): messages played or filled at the end of an exit
+/// (`tick`), at most a buffer less a period per exit each.
+pub struct Device<T> {
+    pub streams: [Stream; 2],
     pub log: Vec<String>,
     pub played: Played,
-    /// Transmit messages waiting for START.
-    waiting: VecDeque<T>,
+    pub recorded: Played,
+    /// I/O messages waiting for their stream's START, with the bytes of frames they carry or have room for.
+    waiting: [VecDeque<(T, u32)>; 2],
     /// Given to the sink, not played yet: the stream's parameters and the frames with each.
     queue: VecDeque<(Params, Vec<u8>, T)>,
-    running: bool,
+    /// Given to the source, not filled yet: the parameters and the bytes of frames asked for.
+    asked: VecDeque<(Params, u32, T)>,
+    running: [bool; 2],
     /// Event buffers, held: no events yet.
     pub events: Vec<T>,
 }
 
 impl<T> Default for Device<T> {
     fn default() -> Self {
-        Device {
+        let none = Stream {
             state: State::None,
             params: None,
+        };
+        Device {
+            streams: [none; 2],
             log: Vec::new(),
-            played: Played {
-                fnv: FNV_OFFSET,
-                ..Played::default()
-            },
-            waiting: VecDeque::new(),
+            played: Played::new(),
+            recorded: Played::new(),
+            waiting: [VecDeque::new(), VecDeque::new()],
             queue: VecDeque::new(),
-            running: false,
+            asked: VecDeque::new(),
+            running: [false; 2],
             events: Vec::new(),
         }
     }
@@ -160,58 +226,73 @@ impl<T> Default for Device<T> {
 impl<T> Device<T> {
     /// The chains held (for a snapshot: the restored VM posts them again).
     pub fn holds(&self) -> usize {
-        self.waiting.len() + self.queue.len() + self.events.len()
+        self.waiting.iter().map(VecDeque::len).sum::<usize>()
+            + self.queue.len()
+            + self.asked.len()
+            + self.events.len()
     }
 
     /// The VM was replaced by one restored from its snapshot: what was held goes with it.
     pub fn restored(&mut self) {
-        self.waiting.clear();
+        self.waiting.iter_mut().for_each(VecDeque::clear);
         self.queue.clear();
+        self.asked.clear();
         self.events.clear();
     }
 
     /// A virtio reset.
     pub fn reset(&mut self) {
         self.restored();
-        self.state = State::None;
-        self.params = None;
-        self.running = false;
+        for st in &mut self.streams {
+            (st.state, st.params) = (State::None, None);
+        }
+        self.running = [false; 2];
     }
 
     /// A control request (`room` writable bytes): the reply, and the messages to complete with OK
-    /// now (RELEASE returns them all). `frames` reads a held message's frames when START plays it.
+    /// now (RELEASE returns its stream's). `frames` reads a held message's frames when START plays it.
     pub fn control(
         &mut self,
         cmd: &[u8],
         room: usize,
         frames: impl Fn(&T) -> Vec<u8>,
     ) -> (Vec<u8>, Vec<T>) {
-        let (reply, detail) = self.answer(cmd, room);
+        let (reply, detail, sid) = self.answer(cmd, room);
         if self.log.len() < LOG_MAX && cmd.len() >= 4 {
             let st = match u32_at(&reply, 0) {
                 S_OK => "OK",
                 S_BAD_MSG => "BAD_MSG",
                 _ => "NOT_SUPP",
             };
-            self.log
-                .push(format!("{}{detail} {st}", request_name(u32_at(cmd, 0))));
+            let name = if sid > 0 {
+                format!("#{sid}")
+            } else {
+                String::new()
+            };
+            self.log.push(format!(
+                "{}{name}{detail} {st}",
+                request_name(u32_at(cmd, 0))
+            ));
         }
         let mut back = Vec::new();
         if u32_at(&reply, 0) == S_OK && cmd.len() >= 4 {
             match u32_at(cmd, 0) {
                 R_PCM_START => {
-                    self.running = true;
-                    let p = self.params.unwrap();
-                    while let Some(t) = self.waiting.pop_front() {
-                        let f = frames(&t);
-                        self.queue.push_back((p, f[4..].to_vec(), t));
+                    self.running[sid] = true;
+                    let p = self.streams[sid].params.unwrap();
+                    while let Some((t, n)) = self.waiting[sid].pop_front() {
+                        self.run(sid, p, t, n, &frames);
                     }
                 }
-                R_PCM_STOP => self.running = false,
+                R_PCM_STOP => self.running[sid] = false,
                 R_PCM_RELEASE => {
-                    self.running = false;
-                    back.extend(self.queue.drain(..).map(|(_, _, t)| t));
-                    back.extend(self.waiting.drain(..));
+                    self.running[sid] = false;
+                    if sid == OUT {
+                        back.extend(self.queue.drain(..).map(|(_, _, t)| t));
+                    } else {
+                        back.extend(self.asked.drain(..).map(|(_, _, t)| t));
+                    }
+                    back.extend(self.waiting[sid].drain(..).map(|(t, _)| t));
                 }
                 _ => {}
             }
@@ -219,8 +300,18 @@ impl<T> Device<T> {
         (reply, back)
     }
 
-    fn answer(&mut self, cmd: &[u8], room: usize) -> (Vec<u8>, String) {
-        let bad = || (status(S_BAD_MSG), String::new());
+    /// Gives an I/O message to the sink (its frames read through `frames`) or the source (`n` bytes of frames asked for).
+    fn run(&mut self, sid: usize, p: Params, t: T, n: u32, frames: &impl Fn(&T) -> Vec<u8>) {
+        if sid == OUT {
+            let f = frames(&t);
+            self.queue.push_back((p, f[4..].to_vec(), t));
+        } else {
+            self.asked.push_back((p, n, t));
+        }
+    }
+
+    fn answer(&mut self, cmd: &[u8], room: usize) -> (Vec<u8>, String, usize) {
+        let bad = || (status(S_BAD_MSG), String::new(), 0);
         if cmd.len() < 4 {
             return bad();
         }
@@ -238,20 +329,20 @@ impl<T> Device<T> {
                     || (count > 0
                         && (size < PCM_INFO_SIZE || 4 + count as u64 * size as u64 > room as u64))
                 {
-                    return (status(S_BAD_MSG), detail);
+                    return (status(S_BAD_MSG), detail, 0);
                 }
                 let mut r = status(S_OK);
-                for _ in 0..count {
+                for k in 0..count {
                     let mut item = vec![0u8; size as usize];
                     let formats: u32 = 1 << FMT_S16 | 1 << FMT_S32 | 1 << FMT_FLOAT;
                     item[8..12].copy_from_slice(&formats.to_le_bytes());
                     item[16..20].copy_from_slice(&RATE_BITS.to_le_bytes());
-                    item[24] = 0; // output
+                    item[24] = u8::from((start + k) as usize == IN); // input, output
                     item[25] = 1;
                     item[26] = CHANNELS_MAX;
                     r.extend(item);
                 }
-                (r, detail)
+                (r, detail, 0)
             }
             R_JACK_REMAP => bad(),
             R_PCM_SET_PARAMS | R_PCM_PREPARE | R_PCM_RELEASE | R_PCM_START | R_PCM_STOP => {
@@ -259,7 +350,8 @@ impl<T> Device<T> {
                 if cmd.len() < need || u32_at(cmd, 4) >= STREAMS {
                     return bad();
                 }
-                let s = self.state;
+                let sid = u32_at(cmd, 4) as usize;
+                let s = self.streams[sid].state;
                 if code == R_PCM_SET_PARAMS {
                     let (format, rate) = (cmd[21], cmd[22]);
                     let p = Params {
@@ -283,7 +375,7 @@ impl<T> Device<T> {
                         s,
                         State::None | State::Params | State::Prepared | State::Released
                     ) {
-                        return (status(S_BAD_MSG), detail);
+                        return (status(S_BAD_MSG), detail, sid);
                     }
                     if u32_at(cmd, 16) != 0
                         || sample_bytes(format).is_none()
@@ -291,18 +383,20 @@ impl<T> Device<T> {
                         || RATE_BITS >> rate & 1 == 0
                         || !(1..=CHANNELS_MAX).contains(&p.channels)
                     {
-                        return (status(S_NOT_SUPP), detail);
+                        return (status(S_NOT_SUPP), detail, sid);
                     }
                     if p.period_bytes == 0
                         || !p.period_bytes.is_multiple_of(p.frame())
                         || p.buffer_bytes == 0
                         || !p.buffer_bytes.is_multiple_of(p.period_bytes)
                     {
-                        return (status(S_BAD_MSG), detail);
+                        return (status(S_BAD_MSG), detail, sid);
                     }
-                    self.params = Some(p);
-                    self.state = State::Params;
-                    return (status(S_OK), detail);
+                    self.streams[sid] = Stream {
+                        state: State::Params,
+                        params: Some(p),
+                    };
+                    return (status(S_OK), detail, sid);
                 }
                 let (ok, next) = match code {
                     R_PCM_PREPARE => (
@@ -320,17 +414,53 @@ impl<T> Device<T> {
                     ),
                 };
                 if !ok {
-                    return bad();
+                    return (status(S_BAD_MSG), String::new(), sid);
                 }
-                self.state = next;
-                (status(S_OK), String::new())
+                self.streams[sid].state = next;
+                (status(S_OK), String::new(), sid)
             }
-            _ => (status(S_NOT_SUPP), String::new()),
+            _ => (status(S_NOT_SUPP), String::new(), 0),
         }
     }
 
-    /// A transmit message (`head`: its first readable bytes; `len`: all of them): `Some((t,
-    /// status))` to complete now, or None if it's held (waiting for START, or given to the sink).
+    /// An I/O message on stream `sid` (`head`: its first readable bytes; `frame_bytes`: the frames
+    /// it carries or has room for): `Some((t, status))` to complete now, or None if it's held.
+    fn io(
+        &mut self,
+        sid: usize,
+        head: &[u8],
+        frame_bytes: Option<usize>,
+        t: T,
+        frames: impl Fn(&T) -> Vec<u8>,
+    ) -> Option<(T, u32)> {
+        let Stream { state, params } = self.streams[sid];
+        let Some(p) = params else {
+            return Some((t, S_BAD_MSG));
+        };
+        let Some(n) = frame_bytes else {
+            return Some((t, S_BAD_MSG));
+        };
+        if head.len() < 4
+            || u32_at(head, 0) as usize != sid
+            || (sid == IN && n == 0)
+            || !n.is_multiple_of(p.frame() as usize)
+        {
+            return Some((t, S_BAD_MSG));
+        }
+        match state {
+            State::Started => {
+                self.run(sid, p, t, n as u32, &frames);
+                None
+            }
+            State::Prepared | State::Stopped => {
+                self.waiting[sid].push_back((t, n as u32));
+                None
+            }
+            _ => Some((t, S_BAD_MSG)),
+        }
+    }
+
+    /// A transmit message (`head`: its first readable bytes; `len`: all of them).
     pub fn tx(
         &mut self,
         head: &[u8],
@@ -338,35 +468,21 @@ impl<T> Device<T> {
         t: T,
         frames: impl Fn(&T) -> Vec<u8>,
     ) -> Option<(T, u32)> {
-        let Some(p) = self.params else {
-            return Some((t, S_BAD_MSG));
-        };
-        if len < 4 || head.len() < 4 || u32_at(head, 0) >= STREAMS {
-            return Some((t, S_BAD_MSG));
-        }
-        if !(len - 4).is_multiple_of(p.frame() as usize) {
-            return Some((t, S_BAD_MSG));
-        }
-        match self.state {
-            State::Started => {
-                let f = frames(&t);
-                self.queue.push_back((p, f[4..].to_vec(), t));
-                None
-            }
-            State::Prepared | State::Stopped => {
-                self.waiting.push_back(t);
-                None
-            }
-            _ => Some((t, S_BAD_MSG)),
-        }
+        self.io(OUT, head, len.checked_sub(4), t, frames)
     }
 
-    /// The end of a DEVICE exit's requests: the sink plays what it was given, at most a buffer
-    /// less a period (web/snd.ts `checksumSink` says why). Returns the messages to complete with OK.
-    pub fn tick(&mut self) -> Vec<T> {
+    /// A receive message (`head`: its first readable bytes; `room`: its writable bytes, the frames
+    /// and the status).
+    pub fn rx(&mut self, head: &[u8], room: usize, t: T) -> Option<(T, u32)> {
+        self.io(IN, head, room.checked_sub(8), t, |_| Vec::new())
+    }
+
+    /// The end of a DEVICE exit's requests: the sink plays what it was given and the source fills
+    /// what it was asked for, at most a buffer less a period each (web/snd.ts `checksumSink` says why).
+    pub fn tick(&mut self) -> Vec<Done<T>> {
         let mut done = Vec::new();
         let mut burst = 0u32;
-        while self.running {
+        while self.running[OUT] {
             let Some((p, f, _)) = self.queue.front() else {
                 break;
             };
@@ -376,11 +492,22 @@ impl<T> Device<T> {
             }
             let (p, f, t) = self.queue.pop_front().unwrap();
             burst += n;
-            self.played.frames += (f.len() as u32 / p.frame()) as u64;
-            self.played.bytes += f.len() as u64;
-            self.played.messages += 1;
-            self.played.fnv = fnv1a(&f, self.played.fnv);
-            done.push(t);
+            self.played.add(&p, &f);
+            done.push(Done::Tx(t));
+        }
+        let mut burst = 0u32;
+        while self.running[IN] {
+            let Some(&(p, n, _)) = self.asked.front() else {
+                break;
+            };
+            if burst > 0 && burst + n > p.buffer_bytes - p.period_bytes {
+                break;
+            }
+            let (p, n, t) = self.asked.pop_front().unwrap();
+            burst += n;
+            let data = pattern(&p, self.recorded.frames, n);
+            self.recorded.add(&p, &data);
+            done.push(Done::Rx(t, data));
         }
         done
     }
