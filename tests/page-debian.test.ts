@@ -21,7 +21,7 @@
 // Realtime: not reproducible, so WEBPC_PAGE_RUNS repeats it (all must pass). Opt-in with
 // WEBPC_DISTROS=debian (scripts/ci-debian.sh).
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -32,6 +32,9 @@ import { SnapshotWriter } from '../web/snapshot-file.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { peaks } from './audio-tap.ts';
+import { sndDisk } from './snd-disk.ts';
+import { GAP_FRAMES } from '../web/audio-ring.ts';
 
 // The page's `running` state comes from the serial console's `ready` marker (web/app/worker.ts).
 // Debian's is agetty's prompt: it must be found wherever a drain puts it, also with a kernel line
@@ -50,8 +53,10 @@ test("the page's ready marker: Debian's login prompt in any chunk, not a service
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) ? 'SKIPPED: run npm start (or images/build.sh debian edk2)' : !existsSync(new URL('../target/images/linux-snd/snd-play', import.meta.url)) && 'SKIPPED: run images/build.sh linux-snd (its snd-play)';
 const RUNS = Number(process.env.WEBPC_PAGE_RUNS ?? 1);
+/** The second disk (served from the repo): snd-play and a tone (tests/snd-disk.ts). */
+const SND_DISK = `target/tests/snd-${process.pid}.tar`;
 
 let browser: Browser;
 let base: string;
@@ -64,8 +69,10 @@ before(async () => {
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
   dir = mkdtempSync(join(tmpdir(), 'webpc-debian-'));
+  mkdirSync(new URL('../target/tests', import.meta.url), { recursive: true });
+  writeFileSync(new URL(`../${SND_DISK}`, import.meta.url), sndDisk(3, 44100));
 });
-after(async () => { await browser?.close(); close?.(); if (dir) rmSync(dir, { recursive: true }); });
+after(async () => { await browser?.close(); close?.(); if (dir) rmSync(dir, { recursive: true }); rmSync(new URL(`../${SND_DISK}`, import.meta.url), { force: true }); });
 
 // A boot to the login prompt takes ~35 s alone on 2 vCPUs; under load twice that.
 const BOOT_MS = 240_000;
@@ -204,7 +211,7 @@ const flashWritten = (page: Page) => page.waitForFunction(async () => {
 
 for (let run = 1; run <= RUNS; run++) {
   test(`the page runs Debian: a key on the screen stops GRUB; root logs in on the screen and on the serial terminal; the platform is the firmware's; the page's size reaches the guest; the disk persists over a reload; a snapshot loads in a fresh profile, suspends and resumes${RUNS > 1 ? ` (run ${run})` : ''}`, { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
-    const query = `ncpus=2&view=both&${unattendedQuery()}`;
+    const query = `ncpus=2&view=both&snd=&disk2=/${SND_DISK}&${unattendedQuery()}`;
     const context = await browser.newContext({ viewport: { width: 1400, height: 900 } }); // a fresh profile: an empty OPFS
     const page = await context.newPage();
     await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // headless Chromium's picker would wait for a dialog nobody answers
@@ -255,9 +262,24 @@ for (let run = 1; run <= RUNS; run++) {
     // What the firmware gave Linux, and a credential read back from fw_cfg (the login above relied on them: a shifted directory can't pass).
     await onSerial(page, 'clear; echo ==be""gin; cat /sys/class/rtc/rtc0/name; cat /proc/fb; ls -1 /sys/firmware; nproc; cat /sys/firmware/qemu_fw_cfg/by_name/opt/io.systemd.credentials/firstboot.timezone/raw; echo; readlink /etc/localtime; echo ==e""nd\n');
     await shows(page, /==begin\s*rtc-efi[^]*?0 virtio_gpudrmfb[^]*?efi[^]*?qemu_fw_cfg\s*2\s*Etc\/UTC\s*\S*zoneinfo\/Etc\/UTC\s*==end/);
-    // The page's sound device (audio S2): Debian autoloads virtio_snd for it and has the card (S3 plays through it).
+    // The page's sound device (audio S2): Debian autoloads virtio_snd for it and has the card.
     await onSerial(page, 'clear; cat /proc/asound/cards; echo so""und-read\n');
     await shows(page, /VirtIO SoundCard[^]*sound-read/);
+    // Debian's driver plays a file (audio S3): snd-play (aplay's buffer, 500 ms in 4 periods) from the second disk,
+    // 3 s at 44.1 kHz (the page's context follows the stream's rate); its own clock says the sound's length within a
+    // period, nothing underran, and the page hears 440 and 660 Hz.
+    await onSerial(page, 'clear; mkdir -p /tmp/p && tar -xf /dev/vdb -C /tmp/p && /tmp/p/snd-play /tmp/p/tone.wav; echo pl""ay-done\n');
+    await page.waitForFunction(() => { const c = (window as unknown as { __audio: { context(): AudioContext | undefined } }).__audio.context(); return c?.state === 'running' && c.sampleRate === 44100; }, null, { timeout: 20_000 });
+    const heard = await peaks(page);
+    assert.ok(Math.abs(heard.hz[0] - 440) < 12 && Math.abs(heard.hz[1] - 660) < 12, `heard ${heard.hz} Hz`);
+    await shows(page, /play-done/, 30_000);
+    const playLog = await page.evaluate(() => (window as unknown as { __serialLog(): string }).__serialLog());
+    const [, played, sound, took, xruns] = /snd-play: played (\d+) frames \((\d+) ms of sound\) in (\d+) ms, (\d+) underruns/.exec(playLog) ?? [];
+    assert.ok(played, `snd-play didn't finish: ${playLog.slice(-1500)}`);
+    const gaps = await page.evaluate((i) => (window as unknown as { __audio: { header(): Int32Array } }).__audio.header()[i], GAP_FRAMES);
+    console.log(`# Debian played ${played} frames (${sound} ms) in ${took} ms, ${xruns} underruns; the ring's gaps ${gaps} frames; heard ${heard.hz.map((h) => h.toFixed(0))} Hz; ${/snd-play: delay .*/.exec(playLog)?.[0]}`);
+    assert.equal(Number(xruns), 0);
+    assert.ok(Math.abs(Number(took) - Number(sound)) < 125, `${sound} ms of sound took ${took} ms`);
     // The screen's text as the guest has it: bash's prompt and the command on tty1.
     await onSerial(page, 'clear; tr -s " " </dev/vcs1 | grep -o "root@[a-z]*:~# echo from-" | head -1; echo scr""een-read\n');
     await shows(page, /root@[a-z]+:~# echo from-\s*screen-read/);

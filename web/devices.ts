@@ -68,6 +68,8 @@ export type GpuSpec = {
   port?: MessagePort;
   /** Report flush-to-draw latencies on the port once a second (bench/gpu). */
   stats?: boolean;
+  /** Post `flash` on the port when a draw turns the screen's centre bright (`?avprobe`: A/V sync, bench/audio/avsync.ts); 2D screens (a 3D machine's GPU worker probes its own). */
+  probe?: boolean;
   /**
    * A 3D machine's GPU worker (web/gpu-worker.ts): the device's 3D work and its scanouts go there (web/virgl-host.ts),
    * and `canvas` is unused (the GPU worker has the screen). With `virgl`.
@@ -669,7 +671,7 @@ export class Devices {
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
         case 'input': return input(ctx, d);
         case 'gpu': {
-          const b = gpuBackend(ctx, d, d.renderer ? pagePresenter(d.port, d.stats) : d.canvas ? canvasPresenter(d.canvas, d.port, d.stats) : {});
+          const b = gpuBackend(ctx, d, d.renderer ? pagePresenter(d.port, d.stats) : d.canvas ? canvasPresenter(d.canvas, d.port, d.stats, d.probe) : {});
           if (d.renderer && d.virgl) {
             // The GPU worker reads and writes guest RAM in place: it gets the shared memory first.
             const host = portHost(d.renderer);

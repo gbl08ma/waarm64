@@ -28,7 +28,7 @@ obligations (publish the configs, point to the sources), separate from webpc's M
 | `ltp` | the `linux` root plus Buildroot's LTP (20260529) pruned to the 93 syscall tests in `images/ltp/tests`, and the arm64 kselftests `abi`, `signal`, `tags`; boots `Image-defconfig` on 512 MiB and runs `/ltp.sh` | `core/tests/ltp.rs`, Node |
 | `linux-crypto` | allnoconfig + the fragment + `images/crypto/linux.fragment` (the arm64 CE drivers, NEON and bit-sliced AES, `CRYPTO_SELFTESTS_FULL`, lib/crypto's SHA-1/224/256 KUnit suites autorun), with a static init (`images/crypto/init.c`) that waits for the self-tests and prints each implementation's result | Node (the crypto extensions' kernel test) |
 | `linux-gpu` | allnoconfig + the fragment + `images/gpu/linux.fragment` (`DRM`, `DRM_VIRTIO_GPU` with `DRM_VIRTIO_GPU_KMS`, built in; no fbdev emulation or fbcon), with a static init (`images/gpu/init.c`) that drives KMS through ioctls: connector, mode set, damage, cursor, a display event (the gpu guest, [testing.md](testing.md)). Its kernel tree stays in `target/images/build/linux-gpu` between builds (make rebuilds what the config changed) | `core/tests/gpu_guest.rs`, Node, Chromium |
-| `linux-snd` | allnoconfig + the fragment + `images/snd/linux.fragment` (`SOUND`, `SND`, `SND_PCM`, `SND_VIRTIO`, built in), with a static init (`images/snd/init.c`) that plays a known waveform through ALSA's ioctls (no alsa-lib) and prints its FNV-1a (the snd guest, [testing.md](testing.md)): 48 periods (1.024 s), or `snd_seconds=N` on the command line (an environment variable to init; the page's `snd` machine, frontend.md). Built as `linux-gpu`, with the kernel's build number pinned (`KBUILD_BUILD_VERSION=1`: a rebuild in the same tree is the same kernel, and its steps don't move; linux-gpu's counts up) | `core/tests/snd_guest.rs`, Node, Chromium |
+| `linux-snd` | allnoconfig + the fragment + `images/snd/linux.fragment` (`SOUND`, `SND`, `SND_PCM`, `SND_VIRTIO`, built in), with a static init (`images/snd/init.c`) that plays a known waveform through ALSA's ioctls (no alsa-lib) and prints its FNV-1a (the snd guest, [testing.md](testing.md)): 48 periods (1.024 s), or `snd_seconds=N` on the command line (an environment variable to init; the page's `snd` machine, frontend.md). Also `snd-play` (`images/snd/play.c`, static: a WAV player on the same ioctls with aplay's buffer, for guests without alsa-utils; page-debian's). Built as `linux-gpu`, with the kernel's build number pinned (`KBUILD_BUILD_VERSION=1`: a rebuild in the same tree is the same kernel, and its steps don't move; linux-gpu's counts up) | `core/tests/snd_guest.rs`, Node, Chromium |
 | `kvm-unit-tests` | commit `5a221342a025` (2026-09-08), the arm64 `.flat`s and `unittests.cfg`, built with Debian's `gcc-aarch64-linux-gnu` | `core/tests/kvm_unit_tests.rs`, Node |
 | `alpine` | **Alpine 3.24.2**: the pinned aarch64 minirootfs plus `apk add` of pinned `linux-virt` (6.18.53) and `openrc` (0.63.2), in a chroot under `qemu-aarch64-static` registered in a user namespace's own binfmt_misc; runlevels sysinit devfs dmesg, boot modules hostname, shutdown killprocs mount-ro, default local (no device manager: the initramfs loads virtio_mmio, virtio_blk, ext4). The test is `images/alpine/webpc.start` (a local.d script writing to `/dev/console`, then `poweroff`) | the Alpine boot tests and `boot_alpine*` |
 | `alpine-user` | alpine's root plus `xz`, `lua5.4`, `sqlite`, `openssl` (3.5.8) and the workloads (`images/alpine/user/`), with its own local.d script, as `rootfs-user.ext4`; boots alpine's Image and initramfs | `alpine_user_jit`, `alpine_crypto*_jit`, Node |
@@ -106,6 +106,24 @@ a distro the project doesn't ship. `images/archarm/build.sh [--out f.qcow2] [--r
   target/archarm/virtio-snd/7.2.9-1-aarch64-ARCH`; build both the same day (the mirror keeps only the latest kernel,
   and the module must match the image's exactly). udev loads it when the device is there. Checked under QEMU's
   `virtio-sound-device` (with `-global virtio-mmio.force-legacy=false`): [plans/audio.md](plans/audio.md) §11.
+- **The DKMS package (`images/archarm/virtio-snd-dkms/`, `images/archarm/virtio-snd-dkms.sh`, on demand, ~3 min):**
+  a PKGBUILD for `virtio-snd-dkms` (audio decision 11): one stable release's `sound/virtio` (its `pkgver`, now 7.2.9),
+  fetched file by file from git.kernel.org's `plain` view at `makepkg` time with their sha256s, and a `dkms.conf` that
+  builds it with the upstream Makefile (`CONFIG_SND_VIRTIO=m`); `depends=(dkms)`, the headers are the user's. The
+  script makes and installs it as a user would, in a container of `localhost/archarm-base` upgraded with
+  `base-devel dkms linux-aarch64-headers`: DKMS's pacman hook builds the module for the headers' kernel (checked:
+  `dkms status` installed, the vermagic). Result `target/archarm/pkg/virtio-snd-dkms-<ver>-any.pkg.tar.xz`. Not
+  published anywhere. A user's Arch Linux ARM: `makepkg -si` in that directory (with `linux-aarch64-headers`).
+- **The desktop guest (`images/archarm/desktop.sh [--out f.qcow2]`, on demand, ~15 min; audio S3):** sway, foot,
+  Firefox, PipeWire (WirePlumber, `pipewire-pulse`, `pipewire-alsa`), alsa-utils, mpv, and the DKMS package above
+  installed (so the image carries `dkms`, gcc and the headers: the module is built in the image's container by the
+  package's hook, as on a user's machine); Firefox's policies allow autoplay with sound and skip the first-run pages.
+  `images/archarm/media.sh` makes `/home/alarm/media` in Podman (Alpine's ffmpeg): `avsync.webm` (a white frame and a
+  1 kHz beep each second, VP8/Opus, 60 s), `sintel.webm` and `sintel-silent.webm` (the Sintel trailer, Blender
+  Foundation, CC BY 3.0, downloaded from download.blender.org with its sha256, as VP9/Opus 480p), and `avsync.html`
+  (plays `?v=<clip>`). Built with `build.sh`'s `--files <dir>` (a tree copied onto the root; a user's home made theirs)
+  and `--setup <script>` (`images/archarm/desktop-setup.sh`, run as root in the container). Result
+  `target/archarm/desktop.qcow2`; `bench/audio/avsync.ts` measures on it.
 
 ## Debian with Chromium (`images/debian-chromium/build.sh`)
 

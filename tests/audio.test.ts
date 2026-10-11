@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CAPACITY, GAP_FRAMES, LATENCY, QUANTA, RATE, READ, RUN, UNDERRUNS, WRITE, newRing, ringViews } from '../web/audio-ring.ts';
 import { FMT_FLOAT, FMT_S16, ringSink, type SndParams } from '../web/snd.ts';
+import { flashProbe } from '../web/virgl-screen.ts';
 
 const P: SndParams = { bufferBytes: 4 * 4096, periodBytes: 4096, channels: 2, format: FMT_S16, rate: 48000 };
 
@@ -212,4 +213,12 @@ test('worklet: plays the ring a quantum at a time while started at its rate; a g
   Atomics.compareExchange = ((a: Int32Array, i: number, e: number, v: number) => (Atomics.store(a, READ, r + 10), cas(a, i, e, v))) as typeof cas;
   try { quantum(); } finally { Atomics.compareExchange = cas; }
   assert.deepEqual([Atomics.load(h, READ), out[0][0]], [r + 10, 0]);
+});
+
+test("A/V sync's picture end (?avprobe): a flash is a draw that turns the screen's centre bright, once until it's dark again", () => {
+  const t: number[] = [];
+  const probe = flashProbe((at) => t.push(at));
+  for (const [r, g, b] of [[0, 0, 0], [255, 255, 255], [250, 250, 250], [128, 128, 128], [255, 255, 255], [10, 10, 10], [200, 200, 200], [255, 0, 0], [240, 240, 240]]) probe(r, g, b);
+  assert.equal(t.length, 2); // the white after black, and the light grey after the dark; mid grey and red neither end nor start one
+  assert.ok(t.every((x) => Math.abs(x - (performance.timeOrigin + performance.now())) < 1000));
 });

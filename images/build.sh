@@ -365,6 +365,7 @@ build_linux-snd() {
     [ -z "$missing" ] || { echo "linux-snd: not applied:" >&2; echo "$missing" >&2; exit 1; }
     $k -j"$(nproc)" Image
     gcc -static -Os -o "$obj/webpc-init" images/snd/init.c -lm
+    gcc -static -Os -s -o "$dst/snd-play" images/snd/play.c # a WAV player for guests without alsa-utils (the page'"'"'s Debian test)
     gcc -O2 -o "$obj/gen_init_cpio" "$src/usr/gen_init_cpio.c"
     printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\nfile /init %s 0755 0 0\n" "$obj/webpc-init" > "$obj/cpio.list"
     "$obj/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$obj/cpio.list" > "$dst/initramfs.cpio"
@@ -536,7 +537,7 @@ outputs() {
     alpine-virgl) echo alpine-virgl/rootfs-virgl.ext4 ;;
     linux-crypto) echo linux-crypto/Image linux-crypto/initramfs.cpio ;;
     linux-gpu) echo linux-gpu/Image linux-gpu/initramfs.cpio ;;
-    linux-snd) echo linux-snd/Image linux-snd/initramfs.cpio ;;
+    linux-snd) echo linux-snd/Image linux-snd/initramfs.cpio linux-snd/snd-play ;;
     debian) echo debian/disk.qcow2 ;;
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
     ltp) echo ltp/rootfs.ext4 ;;

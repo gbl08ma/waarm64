@@ -6,7 +6,8 @@
 // chosen is remembered), `?params=` extra kernel parameters (direct-boot machines), `?credential=name:value` a systemd
 // credential over fw_cfg (firmware machines), `?disk2=<url>` a read-only second disk, `?disk=<url>` a root
 // disk of your own (the header's "Open disk…" and a dropped file choose a local one), `?machine=snd` the sound
-// test guest and `?snd=stats[,timer]` the sound's measurements (docs/frontend.md "Sound").
+// test guest and `?snd=stats[,timer]` the sound's measurements (docs/frontend.md "Sound"), `?avprobe` the screen's
+// flashes for A/V sync (bench/audio/avsync.ts).
 import { Terminal } from '@xterm/xterm';
 import type { DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
@@ -189,6 +190,8 @@ type Run = { worker: Worker; input: Input; serial: MessagePort; display: Message
 const benchHooks = params.has('displaystats') || params.has('snd'); // ?snd= (sound measurements) wants the serial log and status too
 if (benchHooks) (window as unknown as { __webpcProfile?: (on: boolean) => void }).__webpcProfile = (on) => run?.worker.postMessage({ type: 'profile', on } satisfies ToWorker);
 if (benchHooks) (window as unknown as { __serialLog?: () => string }).__serialLog = () => log;
+/** `?avprobe`: when the screen's centre turned bright (ms on this page's clock), for bench/audio/avsync.ts. */
+const flashed = (t: number) => ((window as unknown as { __flashes?: number[] }).__flashes ??= []).push(t - performance.timeOrigin);
 /**
  * 3D: a machine with a virtio-gpu gets virgl, rendered by a GPU worker that owns the screen as WebGL2
  * (web/gpu-worker.ts; docs/frontend.md "A 3D machine"). The default since G3 (the kickoff's decision 3: once the page's
@@ -314,6 +317,7 @@ function start(snapshot?: File, resume = true) {
     if (e.data.type === 'cursor') { guestCursor = e.data; showCursor(); return; }
     if ((e.data as { type: string }).type === 'draw-stats') ((window as unknown as { __drawStats?: unknown[] }).__drawStats ??= []).push(e.data);
     if (e.data.type === 'capture') ((window as unknown as { __virglCapture?: Uint8Array[] }).__virglCapture ??= []).push(e.data.record);
+    if (e.data.type === 'flash') return flashed(e.data.t);
     if (e.data?.type !== 'mode' || !(e.data.width > 0 && e.data.height > 0)) return;
     [fb.width, fb.height] = [e.data.width, e.data.height];
     fit();
@@ -404,14 +408,14 @@ function start(snapshot?: File, resume = true) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, sound, snapshot, resume, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, sound, snapshot, resume, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
     const gpu = new Worker(new URL('../gpu-worker.ts', import.meta.url), { type: 'module' });
     r.gpu = gpu;
     const channel = new MessageChannel();
-    gpu.postMessage({ type: 'init', canvas: screen, port: channel.port1, stats: params.has('displaystats'), debug: gpuKnobs.includes('debug') } satisfies ToGpuWorker, [screen, channel.port1]);
+    gpu.postMessage({ type: 'init', canvas: screen, port: channel.port1, stats: params.has('displaystats'), debug: gpuKnobs.includes('debug'), probe: params.has('avprobe') } satisfies ToGpuWorker, [screen, channel.port1]);
     gpu.onmessage = (e: MessageEvent<FromGpuWorker>) => {
       if (run !== r) return;
       const m = e.data;
@@ -430,6 +434,7 @@ function start(snapshot?: File, resume = true) {
       } else if (m.type === 'lost') {
         setState('crashed', 'The browser lost the WebGL context the screen was drawn with.', ACTIONS.emulator);
       } else if (m.type === 'render-stats') ((window as unknown as { __renderStats?: unknown[] }).__renderStats ??= []).push(m);
+      else if (m.type === 'flash') flashed(m.t);
     };
     gpu.onerror = (e) => {
       if (run !== r) return;

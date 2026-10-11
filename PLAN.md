@@ -183,7 +183,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     done (2026-10-10):** every page machine has the device; its frames go through a shared ring to an AudioWorklet
     that paces the guest, with the browser's output latency as ALSA's delay; a Sound menu (mute, volume); a minute's
     tone plays in its length with no underrun (audio.md §13). The user tests by hand at S2's end (fixes in an
-    upcoming milestone). Next: S3, real guests (Debian's ALSA, then PipeWire and Firefox on the desktop guest).
+    upcoming milestone). **S3 is done (2026-10-11)** but for the user's check by ear: Debian's own driver plays a file
+    on the page in its length (ci-debian); the `virtio-snd-dkms` PKGBUILD builds the module through DKMS; a scripted
+    desktop image (sway, Firefox, PipeWire) plays a sync clip in Firefox within -17 to +20 ms of its picture after a
+    4 s start on the Mac's GPU, never underrunning, the sound path under 1% of the guest's CPU; the video's decode is
+    the cost (Firefox drops most frames: backlog). Next: S4, snapshots while sound plays, then capture.
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save

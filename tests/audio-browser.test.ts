@@ -17,6 +17,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { GAP_FRAMES, LATENCY, QUANTA, READ, UNDERRUNS, WRITE } from '../web/audio-ring.ts';
+import { peaks } from './audio-tap.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !existsSync(new URL('linux-snd/Image', IMAGES)) && 'SKIPPED: run images/build.sh linux-snd';
@@ -59,23 +60,6 @@ const report = (log: string) => {
   assert.ok(frames && ms && /webpc: snd test ok/.test(log), `the guest didn't finish:\n${log.slice(-2000)}`);
   return { frames: Number(frames), ms: Number(ms), end };
 };
-
-/** The two loudest peaks of the analyser's spectrum (Hz), averaged over a few reads. */
-const peaks = (page: Page) => page.evaluate(async () => {
-  const a = (window as unknown as W).__audio.tap();
-  const bins = new Float32Array(a.frequencyBinCount);
-  const sum = new Float32Array(a.frequencyBinCount);
-  for (let k = 0; k < 5; k++) {
-    await new Promise((r) => setTimeout(r, 200));
-    a.getFloatFrequencyData(bins);
-    for (let i = 0; i < bins.length; i++) sum[i] += bins[i] / 5;
-  }
-  const hz = (i: number) => (i * a.context.sampleRate) / a.fftSize;
-  const order = [...sum.keys()].sort((x, y) => sum[y] - sum[x]);
-  const top = [order[0]];
-  for (const i of order) if (top.length < 2 && Math.abs(i - top[0]) > 5) top.push(i);
-  return { hz: top.map(hz).sort((x, y) => x - y), db: Math.max(...sum) };
-});
 
 test('the snd guest plays a tone on the page in real time: its length in its own time, no underrun, 440 and 660 Hz heard, mute silences it', { skip }, async () => {
   const context = await browser.newContext();

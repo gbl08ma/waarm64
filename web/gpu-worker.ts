@@ -6,15 +6,17 @@
 import { capsFromGl } from './virgl-caps.ts';
 import { clock, FenceGate, runCall, type HostCall } from './virgl-host.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
-import { Screen } from './virgl-screen.ts';
+import { flashProbe, Screen } from './virgl-screen.ts';
 
 /** Page → GPU worker. */
-export type ToGpuWorker = { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean };
+export type ToGpuWorker = { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean; /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */ probe?: boolean };
 /** GPU worker → page. */
 export type FromGpuWorker =
   | { type: 'ready'; caps: Uint8Array; renderer: string }
   | { type: 'failed'; reason: string }
   | { type: 'lost' }
+  /** With `probe`: a present turned the screen's centre bright, at `t` (ms since the epoch). */
+  | { type: 'flash'; t: number }
   /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
   | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number };
 
@@ -22,7 +24,7 @@ let ram: Uint8Array = new Uint8Array(0);
 
 self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
   if (e.data?.type !== 'init') return;
-  const { canvas, port, stats, debug } = e.data;
+  const { canvas, port, stats, debug, probe } = e.data;
   const post = (m: FromGpuWorker) => (self as unknown as Worker).postMessage(m);
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' }) as WebGL2RenderingContext | null;
   if (!gl) {
@@ -37,6 +39,7 @@ self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
   const seen = new Set<string>();
   const renderer = new VirglRenderer(gl, { ram: () => ram, debug: debug ? (m) => { if (!seen.has(m)) { seen.add(m); console.log(`virgl-debug ${m}`); } } : undefined });
   const screen = new Screen(gl, renderer);
+  if (probe) screen.probe = flashProbe((t) => post({ type: 'flash', t }));
   let busyMs = 0, submitMs = 0, queries = 0;
   // How long fences took to reach this worker (its event loop's backlog): count, total and longest ms a second.
   let fences = 0, fenceMs = 0, fenceMaxMs = 0;

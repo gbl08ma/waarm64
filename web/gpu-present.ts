@@ -5,6 +5,7 @@
 // the scanout's size; when it changes the page is told (`mode`) to refit its box.
 import { busy } from './gpu.ts';
 import { fenceLag } from './virgl-host.ts';
+import { flashProbe } from './virgl-screen.ts';
 import type { GpuHooks, Rect, ScanoutSource } from './gpu.ts';
 
 /** Page ⇄ backend over the display port. */
@@ -15,10 +16,13 @@ export type DisplayToPage =
   /** With `stats`: once a second, the draws since the last (n) and the ms from the flush that made them to the draw (median, max): bench/gpu. */
   /** A virgl trace's record (the spec's `capture`, web/virgl-trace.ts). */
   | { type: 'capture'; record: Uint8Array }
+  /** With `probe` (`?avprobe`): a draw turned the screen's centre bright, at `t` (ms since the epoch: `performance.timeOrigin + now`). */
+  | { type: 'flash'; t: number }
   | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; fenceBack: { n: number; ms: number; maxMs: number } } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number };
 
-export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, stats = false): GpuHooks {
+export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, stats = false, probe = false): GpuHooks {
+  const sample = probe && port ? flashProbe((t) => port.postMessage({ type: 'flash', t } satisfies DisplayToPage)) : undefined;
   const ctx = canvas.getContext('2d', { alpha: false }) as OffscreenCanvasRenderingContext2D;
   let src: ScanoutSource | null = null;
   let img: ImageData | undefined;
@@ -52,6 +56,10 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
     lastDraw = performance.now();
     drawMs += lastDraw - t0;
     if (stats) lat.push(performance.now() - since);
+    if (sample) {
+      const p = 4 * ((src.y + (canvas.height >> 1)) * src.width + src.x + (canvas.width >> 1));
+      sample(src.pixels[p], src.pixels[p + 1], src.pixels[p + 2]);
+    }
   };
   // The device worker has no animation frames (Chromium: "requestAnimationFrame not supported in this Worker"
   // for a canvas that was handed on from the machine worker): a timer for a frame after the last draw then.

@@ -3,12 +3,15 @@
 # On demand only: not part of images/build.sh, CI or any test. See docs/images.md "Arch Linux ARM".
 #
 #   images/archarm/build.sh [--out file.qcow2] [--root-mib 7500] [--esp-mib 256] [--packages "p1 p2"] [--modules dir]
+#                           [--files dir] [--setup script.sh]
 #
 # --packages installs Arch packages first (pacman -Syu in the container, from Arch Linux ARM's mirrors; the
 # system is upgraded with them): images/deqp/build.sh's guest takes mesa and libpng.
 # --modules puts out-of-tree modules (dir/*.ko, e.g. target/archarm/virtio-snd/<uname -r> from
 # images/archarm/virtio-snd.sh) into /usr/lib/modules/<uname -r>/updates and runs depmod; each module's vermagic must
 # be the image's kernel (so --packages, which upgrades the kernel, is what makes them match on the day).
+# --files copies dir's tree onto the root (as root; what's under home/<user> is then that user's), after the modules;
+# --setup runs a bash script as root in the container after that, with the files in place (images/archarm/desktop.sh's).
 # Downloads the latest ArchLinuxARM-aarch64-latest.tar.gz (md5 checked against the published
 # .md5; a cached copy with the same md5 is reused), imports it as a rootless Podman image (the
 # rootfs runs natively on arm64), and inside that container regenerates the initramfs (the
@@ -30,6 +33,8 @@ ROOT_MIB=7500
 ESP_MIB=256
 PACKAGES=
 MODULES=
+FILES=
+SETUP=
 while [ $# -gt 0 ]; do
   case $1 in
     --out) OUT=$(realpath -m "$2"); shift 2 ;;
@@ -37,6 +42,8 @@ while [ $# -gt 0 ]; do
     --esp-mib) ESP_MIB=$2; shift 2 ;;
     --packages) PACKAGES=$2; shift 2 ;;
     --modules) MODULES=$(realpath "$2"); shift 2 ;;
+    --files) FILES=$(realpath "$2"); shift 2 ;;
+    --setup) SETUP=$(realpath "$2"); shift 2 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -93,6 +100,14 @@ if [ -d /mods ]; then
   done
   depmod "$K"
 fi
+if [ -d /files ]; then
+  cp -a --no-preserve=ownership /files/. /
+  for h in /files/home/*/; do [ -d "$h" ] && u=$(basename "$h") && chown -R "$u:$u" "/home/$u" && echo "files for $u"; done
+fi
+if [ -f /setup.sh ]; then
+  echo "== setup"
+  bash -eu /setup.sh
+fi
 cat > /tmp/mkinitcpio.conf <<C
 MODULES=(virtio_mmio virtio_blk ext4 vfat)
 BINARIES=()
@@ -104,7 +119,7 @@ mkinitcpio -c /tmp/mkinitcpio.conf -k "$K" -g /out/initramfs-linux.img >/dev/nul
 cp /boot/Image /usr/lib/systemd/boot/efi/systemd-bootaa64.efi /out/
 
 mkdir /tmp/root
-tar -C / --one-file-system --xattrs --numeric-owner --exclude='./boot/*' --exclude=./out --exclude=./inner.sh \
+tar -C / --one-file-system --xattrs --numeric-owner --exclude='./boot/*' --exclude=./out --exclude=./inner.sh --exclude=./files --exclude=./setup.sh --exclude=./mods \
   -cpf - . 2>/dev/null | tar -C /tmp/root --xattrs --numeric-owner -xpf -
 cd /tmp/root
 rm -rf tmp/* out inner.sh run/.containerenv
@@ -125,6 +140,8 @@ if [ -n "$MODULES" ]; then
   ls "$MODULES"/*.ko >/dev/null || { echo "no modules in $MODULES" >&2; exit 1; }
   MOUNT_MODULES=(-v "$MODULES:/mods:ro,Z")
 fi
+[ -z "$FILES" ] || MOUNT_MODULES+=(-v "$FILES:/files:ro,Z")
+[ -z "$SETUP" ] || MOUNT_MODULES+=(-v "$SETUP:/setup.sh:ro,Z")
 podman run --rm "${MOUNT_MODULES[@]}" -e PACKAGES="$PACKAGES" -e ESP_PARTUUID=$ESP_PARTUUID -e ROOT_PARTUUID=$ROOT_PARTUUID -e ROOT_MIB=$ROOT_MIB \
   -v "$WORK:/out:Z" -v "$WORK/inner.sh:/inner.sh:ro,Z" "$IMG" bash /inner.sh
 

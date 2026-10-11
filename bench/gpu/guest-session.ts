@@ -19,6 +19,8 @@ export type SessionOptions = {
   ramMiB?: number;
   /** The page's `?disk2=` (a read-only second disk, /dev/vdb). */
   disk2?: string;
+  /** More of the page's query (e.g. `snd=&avprobe`: bench/audio/avsync.ts). */
+  query?: string;
 };
 
 type Stat = { n: number; lag: number; busy: Record<string, number> & { commands?: Record<string, number>; fenceBack?: { n: number; ms: number; maxMs: number } } };
@@ -41,7 +43,8 @@ export async function openSession(o: SessionOptions) {
   const server = await startServer();
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   // HEADED=1: a visible window (only on the Mac host, where the user allows it: never on the dev VM).
-  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED });
+  // CHROMIUM_ARGS: extra flags (e.g. `--mute-audio` on the Mac host: its sound still renders and keeps time, unheard).
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED, args: process.env.CHROMIUM_ARGS?.split(' ').filter(Boolean) });
   const page: Page = await (await browser.newContext({ viewport: { width: 1400, height: 1300 } })).newPage();
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
   await page.addInitScript(([key, screen]) => localStorage.setItem(key, JSON.stringify({ screen })), [SETTINGS_KEY, o.screen ?? '1376x762']);
@@ -60,7 +63,7 @@ export async function openSession(o: SessionOptions) {
   const at = () => ((performance.now() - t0) / 1000).toFixed(1);
   const log = (...a: unknown[]) => console.log(`[${at()}]`, ...a);
 
-  await page.goto(`${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}`);
+  await page.goto(`${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}${o.query ? `&${o.query}` : ''}`);
   const gl = await page.evaluate(() => {
     const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
     const d = gl?.getExtension('WEBGL_debug_renderer_info');

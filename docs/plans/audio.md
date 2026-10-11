@@ -1,7 +1,8 @@
 # webpc audio plan
 
 **Status:** S0 done (the guests: §11), S1 done (the device, deterministic: §12) and S2 done (the page: §13),
-2026-10-10; S3 (real guests) is next. The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
+2026-10-10; S3 done (real guests: §14), 2026-10-11, but for the user's check by ear on the desktop guest; S4
+(snapshots and capture) is next. The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
 
 The question: how does a guest's sound reach the page's speakers (and, maybe, the page's microphone reach the
 guest), **with the guest's own unmodified drivers**, in time with what it shows, without the main thread in the path?
@@ -134,8 +135,8 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
   machine plays 4 s of its tone; the guest's own time is the sound's length, an `AnalyserNode` after the volume
   hears 440 and 660 Hz, mute silences it and is remembered; a context that isn't running leaves the guest playing on
   the sink's clock with the page saying so, and a click resumes it.
-- **Debian on the page** (ci-debian.sh): `virtio_snd` binds to the page's device (S2); S3: `aplay` of a file plays
-  its length in real time (± a period) and the page's tap hears it.
+- **Debian on the page** (ci-debian.sh): `virtio_snd` binds to the page's device (S2); S3: a file played (`snd-play`
+  from a second disk, decision 10) plays its length in real time (± a period) and the page's tap hears it.
 
 ## 7. Performance
 
@@ -156,7 +157,7 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
 - **S2, the page** (**done**, §13): the ring, the worklet, the pacing, autoplay, mute and volume. Exit: a tone from
   the `linux-snd` guest on the page plays at the right speed with no underrun over a minute; the wake's jitter
   measured.
-- **S3, real guests:** Debian (ALSA), then the desktop guest (PipeWire under sway, Firefox, with the module from
+- **S3, real guests** (**done**, §14, but for the user's ear): Debian (ALSA), then the desktop guest (PipeWire under sway, Firefox, with the module from
   S0, then its PKGBUILD). **Exit (the user's bar): a video's sound in sync with its picture in Firefox on the
   desktop guest**, by ear and by the reported latency; the decode cost measured; ci-debian covers Debian's ALSA
   playback.
@@ -190,6 +191,20 @@ At S2's start (2026-10-10):
    playback.
 7. **S2's exit is judged by measurement;** the user tests by hand at its end, and fixes from that go into an
    upcoming milestone.
+
+At S3's start (2026-10-11):
+
+8. **The desktop guest is a scripted image** (from `images/archarm/build.sh`: sway, foot, Firefox, PipeWire with
+   WirePlumber, our module, a test clip), on demand like the rest of `images/archarm/`; the user's own images stay
+   untouched.
+9. **A/V sync is measured** as well as heard: a synthetic clip (a white flash and a 1 kHz beep each second, made with
+   ffmpeg in Podman) played by the guest's Firefox, the flash timed on the page's scanout and the beep on an
+   `AnalyserNode` tap (with the output latency accounted), **within ±45 ms** (ITU-R BT.1359's detectability
+   threshold); a real video by ear.
+10. **ci-debian plays through our own static player** (from `linux-snd`'s raw-ALSA init, playing a WAV), handed to
+    the guest without the network; Debian's own driver does the playing.
+11. **The PKGBUILD** (`virtio-snd-dkms`) lives in the repo, is built and installed in a Podman Arch container and in
+    an image, DKMS building the module; it isn't published anywhere.
 
 ## 11. S0 findings (2026-10-10)
 
@@ -330,3 +345,47 @@ machine (the test guest, no disk; `?params=snd_seconds=N`). Tests: `tests/audio.
   Chromium test times the stream on the device, START to its stop (the sink's `stop` message carries it), and asserts
   that is the length plus the counted gaps, within 40 ms (alone: 3,997 ms for 4,011; gaps under 10%: the guest's
   85 ms buffer can underrun there for real). The exit's figures, the guest's own time, come from runs alone. Real players use longer buffers (speaker-test's was 1 s, §11).
+
+## 14. S3 findings (2026-10-11)
+
+What was built: Debian's playback check on the page (`snd-play`, `images/snd/play.c`, on a second disk:
+testing.md "virtio-snd"), the `virtio-snd-dkms` PKGBUILD and its check (`images/archarm/virtio-snd-dkms/`,
+`virtio-snd-dkms.sh`), the desktop image (`images/archarm/desktop.sh`, `media.sh`, `desktop-setup.sh`; `build.sh`'s
+`--files` and `--setup`), the page's `?avprobe` (frontend.md "Sound") and the harness `bench/audio/avsync.ts` (runs
+on the Mac host's GPU through `bench/gpu/sway-mac.sh` with `SCRIPT=../audio/avsync.ts`). JSON in
+`bench/audio/results/s3/`.
+
+- **Debian (ALSA alone):** its own `virtio_snd` plays a 3 s WAV at 44.1 kHz with aplay's buffer (500 ms in 4
+  periods) in 3,110 ms of its own time for 3,125 ms of sound, no underrun, no gap in the ring; the page (a context at
+  44.1 kHz) hears 440 and 660 Hz. ALSA's delay half-way is 23,900 frames: the 22,048-frame buffer plus 1,852 (42 ms,
+  the browser's output latency headless): `latency_bytes` reaches ALSA's delay. Under QEMU's `virtio-sound-device`
+  the same player and file give its WAV the file's samples exactly (the last period's padding silent). The user also
+  played an MP3 with `mpg123` on Debian by hand, start to end, without a glitch.
+- **The PKGBUILD** builds and installs as a user's would: `makepkg` (one stable tag's 12 files from git.kernel.org,
+  sha256 each, 21 KB package), `pacman -U`, and DKMS's hook builds `virtio_snd` for `7.2.9-1-aarch64-ARCH` (vermagic
+  checked). DKMS 3.4 calls a `CLEAN` line deprecated (dropped). In the desktop image the module the hook built is
+  autoloaded by udev at boot (the hook runs `depmod` after `dkms install --no-depmod`).
+- **The desktop guest** (Arch Linux ARM, kernel 7.2.9, sway 1.12, Firefox 157.0.1, PipeWire 1.6.9, WirePlumber 0.5.18):
+  PipeWire drives the card through ALSA in mmap mode, FLOAT_LE 48 kHz stereo, periods of 512 frames, a buffer of 8192
+  (170 ms: WirePlumber's headroom); every Firefox stream goes through `pipewire-pulse`.
+- **A/V sync, on the Mac host's GPU** (headless Chromium 153.0.8010.12, ANGLE on Metal, Apple M4, macOS 26.6.2,
+  `--mute-audio`; the guest on 4 vCPUs, 3D; the output's latency 640 frames, 13 ms), the sync clip in Firefox,
+  sound minus picture at each second (`mac-2.json`, 30 s, 30 of 30 flashes paired): **after a start-up transient of
+  4 s** (-268, -71, -83, -65 ms: the sound first while Firefox's video catches up) **every offset is within -17 to
+  +20 ms**, in two clusters ~17 ms apart (a 60 Hz frame: when the flash is drawn). The first run (`mac-1.json`, 20 s
+  from the 5th second, 17 flashes) converged the same way: -63 ms at first, then -12 to +10. The picture's end is the
+  page's draw; a real display shows it a frame or so later, which moves the offsets toward the sound by that much.
+  **Within ±45 ms** (decision 9) in steady state; the ear's check is the user's (S3's bar).
+- **The sound never broke:** no underrun and no gap frame in the ring in any phase of any run, even with the guest
+  saturated on the dev VM.
+- **The sound path's cost** (mpv on Sintel's sound alone, `--ao=pipewire` against `--ao=null`, 30 s): the guest's 4
+  vCPUs 10% busy against 9%; PipeWire's data loop 34 ms of CPU a second, mpv's own ao thread the rest of the
+  difference; Opus decoding ~150 ms a second either way. **The sound costs the guest under 1% of its CPU.**
+- **The video's decode is the cost:** Firefox's VP9 decoder (two threads in its RDD process) takes **1.7-1.8 s of CPU
+  a second** for the 480p Sintel trailer without sound and still shows ~10% of its frames (656 painted, 6,330
+  dropped in 27 s); the 360p VP8 sync clip drops more than it paints too (1,456 painted, 2,670 dropped in 48 s). With
+  sound, Firefox skips decoding late frames to keep to the audio clock, so its decoder works less (1.2 s a second)
+  and its media threads' wakeups show (system time in its state machine, supervisor, IPC). Smooth video in the guest
+  is a CPU problem beyond audio: the backlog's "Hardware video decoding".
+- **The dev VM's SwiftShader** (`devvm-swiftshader.json`) saturates the guest (88-90% of 4 vCPUs) and Firefox paints
+  too few frames to time: 4 flashes in 20 s (-36 to -148 ms). A/V sync is measured on a real GPU.

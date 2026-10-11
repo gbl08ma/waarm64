@@ -386,6 +386,11 @@ page writes the context's output latency into the ring's header, and the guest g
   reuses it at the same rate, without needing another click).
 - Not covered headless (audio.md §13): the real autoplay prompt (headless Chromium runs contexts without a
   gesture; the test suspends the context instead) and a hidden tab.
+- **Measurement hooks:** `?snd=` exposes the page's `PageAudio` as `window.__audio` (its ring's header, context,
+  output node and an analyser tap; `?snd=stats` adds the device's completion timing); `?avprobe` makes the screen
+  (the device worker's 2D presenter, or the GPU worker's `Screen` on a 3D machine, which reads its centre pixel back
+  after each present) post the time of every draw that turns the screen's centre from dark to bright, kept in
+  `window.__flashes` (ms on the page's clock): A/V sync's picture end (`bench/audio/avsync.ts`).
 
 ## Input
 

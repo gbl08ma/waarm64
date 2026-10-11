@@ -28,6 +28,21 @@ void main() {
   o = vec4(ch(t, u_swz.x), ch(t, u_swz.y), ch(t, u_swz.z), 1.0);
 }`;
 
+/**
+ * A/V sync's video end (`?avprobe`, bench/audio/avsync.ts): fed the screen's centre pixel at each draw, it calls
+ * `flash` with the time (ms since the epoch) of each draw that turned it from dark to bright (a clip's white frame).
+ */
+export function flashProbe(flash: (t: number) => void) {
+  let bright = false;
+  return (r: number, g: number, b: number) => {
+    const y = (r + g + b) / 3;
+    if (!bright && y > 192) {
+      bright = true;
+      flash(performance.timeOrigin + performance.now());
+    } else if (bright && y < 64) bright = false;
+  };
+}
+
 export class Screen {
   private gl: WebGL2RenderingContext;
   private r: VirglRenderer;
@@ -41,6 +56,9 @@ export class Screen {
   drawMs = 0;
   /** Called after a present (a stats hook). */
   onPresent?: () => void;
+  /** `?avprobe` (a `flashProbe`): fed the centre pixel after each present, read back (a stall: measurements only). */
+  probe?: (r: number, g: number, b: number) => void;
+  private px = new Uint8Array(4);
 
   constructor(gl: WebGL2RenderingContext, r: VirglRenderer) {
     this.gl = gl;
@@ -158,6 +176,10 @@ export class Screen {
     this.presents++;
     this.lastDraw = performance.now();
     this.drawMs += this.lastDraw - t0;
+    if (this.probe) {
+      gl.readPixels(s.rect.w >> 1, s.rect.h >> 1, 1, 1, E.RGBA, E.UNSIGNED_BYTE, this.px);
+      this.probe(this.px[0], this.px[1], this.px[2]);
+    }
     this.onPresent?.();
   }
 }

@@ -96,6 +96,11 @@ export class PageAudio {
     return a;
   }
 
+  /** What the page plays, after the volume (measurements connect their own nodes: bench/audio/avsync.ts). */
+  output() {
+    return this.gain;
+  }
+
   private queue(f: () => Promise<void>) {
     this.chain = this.chain.then(f).catch((e) => console.warn(`webpc: no sound: ${e}`));
   }

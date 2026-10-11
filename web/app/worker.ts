@@ -130,7 +130,7 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
     case 'tablet': return { type: 'input', kind: 'tablet', port: m.tablet };
     case 'gpu': {
       const tuning = gpuTuning();
-      return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, keepConsole: true, ...tuning, virgl: tuning.virgl || !!m.renderer, renderer: m.renderer, caps: m.caps };
+      return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, probe: m.avProbe, keepConsole: true, ...tuning, virgl: tuning.virgl || !!m.renderer, renderer: m.renderer, caps: m.caps };
     }
     case 'net': return m.ip && machine.network ? { type: 'net', adapter: { ip: m.ip } } : 'a network card, and this machine has no network port';
     // Without the page's ring (a page that passed none), the sink plays on its own clock.
