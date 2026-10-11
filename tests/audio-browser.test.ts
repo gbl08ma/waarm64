@@ -11,8 +11,13 @@
 // A context that isn't running (the browser's autoplay rule: headless Chromium doesn't apply it, so the test
 // suspends the context itself) leaves the guest playing on the device worker's clock, the page says sound waits
 // for a click, and a click brings it back.
+// A snapshot saved while the tone plays (a 12 s tone, 2 s in; audio S4, audio.md §15) loads in a fresh profile and plays on: the restored
+// device posts its held messages again and the guest writes the rest of its tone (its clock stands still until its
+// vCPUs run, and the sink never completes a whole buffer it hasn't seen).
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
@@ -114,4 +119,71 @@ test('with its context not running, the page says sound waits for a click; the g
   assert.match(await page.locator('#sound-summary').textContent() ?? '', /^Sound$/);
   assert.deepEqual(errors, []);
   await context.close();
+});
+
+test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fresh profile and plays on: heard, in time, to its end', { skip, timeout: 4 * 60_000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'webpc-snd-snap-'));
+  try {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // the download path
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=12&snd=stats`);
+    await page.mouse.click(5, 5);
+    await until(page, /snd: hw params/);
+    await page.waitForFunction(() => (window as unknown as W).__audio.context()?.state === 'running', null, { timeout: 10_000 });
+    await page.waitForTimeout(2000);
+    const before = (await header(page))[READ];
+    // Watched from before the click: the guest's power-off replaces the page's message.
+    const saved = page.waitForFunction(() => /^Saved the snapshot /.test(document.getElementById('message-text')!.textContent!), null, { timeout: 60_000, polling: 20 })
+      .catch(async (e) => { throw new Error(`${e}; the page says: ${await page.locator('#message-text').textContent()}`); });
+    const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.locator('#save-snapshot').click()]);
+    const path = join(dir, 'snd.webpcsnap');
+    await download.saveAs(path);
+    await saved;
+    const after = (await header(page))[READ];
+    // The saved machine plays on through the pause, and ends in time.
+    await until(page, /snd test (ok|failed)/, 30_000);
+    await inTime(page, 'saved while playing');
+    assert.deepEqual(errors, []);
+    await context.close();
+
+    // A fresh profile loads it over its own snd guest: the restored guest's stream starts again where it was (the
+    // messages it had posted, posted again), the page plays it and the guest writes the rest of its tone.
+    const fresh = await browser.newContext();
+    const p2 = await fresh.newPage();
+    const errors2: string[] = [];
+    p2.on('pageerror', (e) => errors2.push(String(e)));
+    p2.on('dialog', (d) => void d.accept());
+    await p2.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=60&snd=stats`);
+    await p2.mouse.click(5, 5);
+    await until(p2, /snd: hw params/);
+    await p2.setInputFiles('#load-snapshot-input', path);
+    await p2.waitForFunction(() => document.getElementById('boot-title')!.textContent!.startsWith('Loading '), null, { timeout: 30_000, polling: 20 });
+    await p2.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 20 }); // the old machine is gone
+    await p2.waitForFunction(() => document.body.dataset.state === 'running' && (window as unknown as W).__audio.playing && (window as unknown as W).__audio.context()?.state === 'running', null, { timeout: 60_000, polling: 100 });
+    const heard = await peaks(p2);
+    assert.ok(Math.abs(heard.hz[0] - 440) < 12 && Math.abs(heard.hz[1] - 660) < 12, `heard ${heard.hz} Hz after the load (the ring ${await header(p2)}; the serial console's end: ${(await serial(p2)).slice(-300)})`);
+    await until(p2, /snd test (ok|failed)/, 30_000);
+    const r = report(await serial(p2));
+    assert.equal(r.end, 'drain');
+    await p2.waitForFunction(() => (window as unknown as W).__audio.spans.length > 0, null, { timeout: 5_000 });
+    const [span] = await p2.evaluate(() => (window as unknown as W).__audio.spans);
+    const h = await header(p2);
+    // The new ring has what the guest hadn't had completed when it was saved: whole periods, the old ring having played
+    // that much (within a buffer: the messages in flight) between the click and the end of the save.
+    const done = r.frames - h[WRITE];
+    const said = `saved with ${done} frames completed (the old ring played ${before} to ${after} around the save); restored, the ring played ${h[WRITE]} in ${span.toFixed(0)} ms, ${h[UNDERRUNS]} underruns, ${h[GAP_FRAMES]} frames of gaps`;
+    console.log(`# loaded: ${said}`);
+    assert.equal(h[READ], h[WRITE]);
+    assert.ok(done % 1024 === 0 && done >= before - 4096 && done <= after, said);
+    assert.ok(Math.abs(span - (1000 * (h[WRITE] + h[GAP_FRAMES])) / 48000) < 40, said);
+    // The re-posted buffer plays while the vCPUs start: a gap until the guest writes again, counted.
+    assert.ok(h[GAP_FRAMES] < 0.1 * h[WRITE], said);
+    assert.deepEqual(errors2, []);
+    await fresh.close();
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
 });

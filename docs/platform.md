@@ -285,7 +285,13 @@ configuration (ABI 30, [abi.md](abi.md) "M8 phase C: snapshots"; the lane's plan
   request ring, so new backends hold them as the old ones did and need no state for it.
 - **Time:** deterministic, the step count and skipped ticks continue. Realtime, the clock
   continues from its saved reading (`Clock::base`), so the counter doesn't jump and timers that
-  were due fire at once; the PL031 is rebased on the new VM's `rtc`, so it shows the host's time.
+  were due fire at once; it **stands at that reading until a vCPU first runs** (`Clock::start`, in
+  `run` and `run_cpu`), and so does the saved VM's from the moment its state is taken (`Clock::hold`)
+  until it runs on, so the saved and every restored machine go on from the same instant. On the page
+  the vCPU workers start ~130 ms after the state is restored and a save pauses the machine for as
+  long as the file takes; a guest waiting with a shorter timeout (ALSA's wait for a sound period,
+  100 ms) found it expired before it ran (audio.md §15). The vCPU workers of a parallel VM start
+  together: each waits on the start word (scratch page, `S_START`) until all are instantiated; the PL031 is rebased on the new VM's `rtc`, so it shows the host's time.
 - **The host's half** (`web/vm.ts` `snapshot()` and `BootOptions.restore`, `web/snapshot.ts`): the
   file ([frontend.md](frontend.md) has the page's side when it lands) holds the core's state, the
   backends' (`Backend.save`/`restore` in `web/devices.ts`: the deterministic rng's position; a

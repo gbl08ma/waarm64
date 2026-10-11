@@ -187,7 +187,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     on the page in its length (ci-debian); the `virtio-snd-dkms` PKGBUILD builds the module through DKMS; a scripted
     desktop image (sway, Firefox, PipeWire) plays a sync clip in Firefox within -17 to +20 ms of its picture after a
     4 s start on the Mac's GPU, never underrunning, the sound path under 1% of the guest's CPU; the video's decode is
-    the cost (Firefox drops most frames: backlog). Next: S4, snapshots while sound plays, then capture.
+    the cost (Firefox drops most frames: backlog). The user judged S3 by ear "good enough" (video decode too slow to judge sync: its own track). **S4 (2026-10-11):** snapshots while sound plays work (a restored clock now stands still until its vCPUs run; the sink never completes a buffer the guest hasn't seen: audio.md §15); capture next (the microphone on the guest's demand, the browser's processing on with a raw choice: decisions 13-16).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save

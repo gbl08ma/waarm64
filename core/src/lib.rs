@@ -617,7 +617,7 @@ pub unsafe extern "C" fn vm_snapshot_size(vm: *mut vm::Vm) -> u64 {
 
 /// Writes the VM's state (everything but guest RAM) at `ptr` and returns its
 /// size; 0 if `len` is too small or a device isn't quiet
-/// ([`vm_snapshot_size`]). The VM is unchanged and runs on afterwards.
+/// ([`vm_snapshot_size`]). The VM runs on afterwards, unchanged but for its realtime clock, which stands at the saved reading until a vCPU runs again.
 ///
 /// # Safety
 /// See the note above [`vm_new`]; no vCPU is in the core; `ptr..ptr + len` is

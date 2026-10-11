@@ -735,6 +735,13 @@ fn a_realtime_clock_continues_and_the_rtc_shows_the_hosts_time() {
     std::thread::sleep(std::time::Duration::from_millis(20));
     let before = a.vm.now();
     let state = a.save();
+    // The saved VM's clock is held at the saved reading until it runs on.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let held = a.vm.now();
+    assert!(
+        held >= before && held - before < 62_500_000 / 100,
+        "{before} -> {held}"
+    );
     // The file sat for an hour (the new host's clock says so); the VM's own clock
     // starts again from 0 underneath.
     std::thread::sleep(std::time::Duration::from_millis(5));
@@ -744,12 +751,15 @@ fn a_realtime_clock_continues_and_the_rtc_shows_the_hosts_time() {
     };
     let (mut b, r) = a.restore(&state, later, &[]);
     assert_eq!(r, Ok(()));
-    // The counter goes on from where it was: no jump back, none forward.
+    // The counter goes on from where it was: no jump back, none forward, and it
+    // stands still until a vCPU runs (the host's setup isn't the guest's time).
     let now = b.vm.now();
     assert!(
         now >= before && now - before < 62_500_000 / 100,
         "{before} -> {now}"
     );
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    assert_eq!(b.vm.now(), now, "the clock moved before the VM ran");
     // The timer is still ~30 ms away: the vCPU idles for that long, then wakes.
     assert_eq!(b.vm.run(10), exit::IDLE);
     let ns = b.vm.exit.value;
@@ -764,7 +774,11 @@ fn a_realtime_clock_continues_and_the_rtc_shows_the_hosts_time() {
     assert!((1_700_003_600..1_700_003_602).contains(&s), "{s}");
     // A realtime state restores under either run mode (one saved form).
     let par = VmConfig { smp: 1, ..later };
-    assert_eq!(a.restore(&state, par, &[]).1, Ok(()));
+    let (c, r) = a.restore(&state, par, &[]);
+    assert_eq!(r, Ok(()));
+    let now = c.vm.now();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(c.vm.now(), now, "the clock moved before a vCPU ran");
 }
 
 /// Parallel mode, realtime, on `ncpus`.

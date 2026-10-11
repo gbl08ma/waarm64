@@ -186,9 +186,14 @@ const CAP_WAIT_MS = 10;
  * it at the stream's rate (a machine without a page, a page whose context waits for a click), so a guest never
  * stalls for want of a listener. Completions are made by `pump`, which runs on a timer or when the worklet notifies
  * (`wake`), never more than a buffer less a period at once (audio.md §12): the rest waits for the guest's next
- * message or `CAP_WAIT_MS`. `now` and `schedule: false` are for tests (which call `pump` themselves).
+ * message or `CAP_WAIT_MS`. The bound counts from the guest's last message, across pumps: Linux reports progress
+ * from a work item that one run serves for any number of completions, so a whole buffer completed before it runs
+ * reads as none (audio.md §15), whether in one pump or over several while the guest doesn't run (a restored machine
+ * whose vCPUs are starting, a paused one). The fallback's `CAP_WAIT_MS` (for a stream's end, where no message comes)
+ * counts from when the core has taken every completion (`untaken`: it takes them when a vCPU runs), so it can't
+ * run out while the guest isn't running. `now` and `schedule: false` are for tests (which call `pump` themselves).
  */
-export function ringSink(o: { ring?: SharedArrayBuffer; port?: MessagePort; wake?: SndWake; stats?: boolean; now?: () => number; schedule?: boolean } = {}) {
+export function ringSink(o: { ring?: SharedArrayBuffer; port?: MessagePort; wake?: SndWake; stats?: boolean; now?: () => number; schedule?: boolean; untaken?: () => number } = {}) {
   const ring = o.ring ?? newRing();
   const { h, data } = ringViews(ring);
   const now = o.now ?? (() => performance.now());
@@ -208,8 +213,10 @@ export function ringSink(o: { ring?: SharedArrayBuffer; port?: MessagePort; wake
   let dryFrom: number | undefined;
   let lastQuanta = Atomics.load(h, QUANTA);
   let quantaAt = -Infinity;
-  /** After a capped batch: no completions before this time, unless the guest posts a message. */
-  let holdUntil = 0;
+  /** Bytes completed since the guest's last message: at most a buffer less a period. */
+  let since = 0;
+  /** At that bound: when the core had taken every completion (Infinity until then), from which `CAP_WAIT_MS` runs. */
+  let heldFrom: number | undefined;
   // Stats (with `stats`): the second being counted.
   const st = { completions: 0, pumps: 0, busyMs: 0, ownClock: 0, capped: 0, dev: [] as number[], lastDone: -1 };
   let statsAt = now();
@@ -264,16 +271,19 @@ export function ringSink(o: { ring?: SharedArrayBuffer; port?: MessagePort; wake
       // Completions: what the read index passed, at most a buffer less a period at once.
       const read = Atomics.load(h, READ);
       const latency = own ? 0 : Atomics.load(h, LATENCY) * frameBytes();
-      let burst = 0;
-      while (t >= holdUntil && items.length && items[0].end !== undefined && ((read - items[0].end) | 0) >= 0) {
+      while (items.length && items[0].end !== undefined && ((read - items[0].end) | 0) >= 0) {
         const it = items[0];
-        if (burst > 0 && burst + it.bytes > p.bufferBytes - p.periodBytes) {
-          holdUntil = t + CAP_WAIT_MS;
-          st.capped++;
-          break;
+        if (since > 0 && since + it.bytes > p.bufferBytes - p.periodBytes) {
+          if (heldFrom === undefined) {
+            heldFrom = Infinity;
+            st.capped++;
+          }
+          if (heldFrom === Infinity && (o.untaken?.() ?? 0) === 0) heldFrom = t;
+          if (t - heldFrom < CAP_WAIT_MS) break;
+          [since, heldFrom] = [0, undefined]; // the guest saw them and posted nothing more: the stream's end
         }
         items.shift();
-        burst += it.bytes;
+        since += it.bytes;
         if (o.stats) {
           st.completions++;
           if (own) st.ownClock++;
@@ -336,7 +346,7 @@ export function ringSink(o: { ring?: SharedArrayBuffer; port?: MessagePort; wake
         f32 = st;
       }
       items.push({ f32, frames: f32.length / 2, at: 0, bytes: frames.length, done });
-      holdUntil = 0; // the guest ran: what a capped batch left may complete
+      [since, heldFrom] = [0, undefined]; // the guest ran: it saw what completed before
       fill();
     },
     start(params: SndParams) {
@@ -358,6 +368,7 @@ export function ringSink(o: { ring?: SharedArrayBuffer; port?: MessagePort; wake
     release() {
       const ms = halt();
       items = [];
+      [since, heldFrom] = [0, undefined];
       Atomics.store(h, READ, Atomics.load(h, WRITE)); // what the ring held is dropped
       post({ type: 'stop', ms });
     },

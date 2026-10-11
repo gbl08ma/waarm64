@@ -1,8 +1,8 @@
 # webpc audio plan
 
 **Status:** S0 done (the guests: §11), S1 done (the device, deterministic: §12) and S2 done (the page: §13),
-2026-10-10; S3 done (real guests: §14), 2026-10-11, but for the user's check by ear on the desktop guest; S4
-(snapshots and capture) is next. The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
+2026-10-10; S3 done (real guests: §14), 2026-10-11 (the user's ear: "good enough", decision 12); S4 (snapshots and
+capture) under way: snapshots while sound plays done (§15), capture next. The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
 
 The question: how does a guest's sound reach the page's speakers (and, maybe, the page's microphone reach the
 guest), **with the guest's own unmodified drivers**, in time with what it shows, without the main thread in the path?
@@ -78,8 +78,8 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
 - **Events:** an xrun when the worklet ran dry while the stream was started (the guest restarts the stream, as on
   hardware), if Linux takes them; otherwise silence fills in.
 - **Snapshots:** the streams' parameters and states are the backend's `save`/`restore` JSON; the ring's content
-  is dropped (a few milliseconds missing on load) and held messages are posted again by the core, as for every
-  device (devices.md "Chains in flight").
+  is dropped and held messages are posted again by the core, as for every device (devices.md "Chains in
+  flight"), so what was in the ring plays again on load (up to a buffer; built in S4, §15).
 
 ## 4. The page and the worklet (`web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts`)
 
@@ -205,6 +205,21 @@ At S3's start (2026-10-11):
     the guest without the network; Debian's own driver does the playing.
 11. **The PKGBUILD** (`virtio-snd-dkms`) lives in the repo, is built and installed in a Podman Arch container and in
     an image, DKMS building the module; it isn't published anywhere.
+
+At S4's start (2026-10-11):
+
+12. **S3's ear check is "good enough":** the video's decode is too slow to judge A/V sync by ear; that waits for
+    hardware video decoding, a track of its own (backlog).
+13. **The microphone opens on the guest's demand:** the device always has an input stream; the page asks for the
+    microphone (`getUserMedia`, the browser's prompt) the first time the guest starts capturing, and the guest records
+    silence, in real time, until it's granted (or if it's denied). A **Microphone** checkbox in the Sound menu turns it
+    off, remembered like mute.
+14. **The browser's processing is on** (echo cancellation, noise suppression, auto gain: the guest's own sound is
+    cancelled out of the microphone in a call), with a **raw** choice in the Sound menu for recording music.
+15. **The input stream moves step counts once,** in its commit.
+16. **Capture's bar:** a known waveform recorded byte for byte in every runner (checked against QEMU's device), a fake
+    microphone heard by the guest at its pitch and in real time in Chromium, Debian's `arecord` in ci-debian, a
+    PipeWire source on the desktop guest; then the user records and plays back by ear.
 
 ## 11. S0 findings (2026-10-10)
 
@@ -389,3 +404,41 @@ on the Mac host's GPU through `bench/gpu/sway-mac.sh` with `SCRIPT=../audio/avsy
   is a CPU problem beyond audio: the backlog's "Hardware video decoding".
 - **The dev VM's SwiftShader** (`devvm-swiftshader.json`) saturates the guest (88-90% of 4 vCPUs) and Firefox paints
   too few frames to time: 4 flashes in 20 s (-36 to -148 ms). A/V sync is measured on a real GPU.
+
+## 15. S4 findings: snapshots while sound plays (2026-10-11)
+
+What was built: nothing new on the device; two fixes, found by a Chromium test that saves the page's `snd` machine 2 s
+into a 12 s tone and loads the file in a fresh profile (`tests/audio-browser.test.ts`), and the snd guest through 4
+snapshot files mid-tone in Node (`tests/snapshot.test.ts`, the unbroken run's steps and hash). Saving was fine from the
+start (the machine plays on, in time, no gap); **the loaded machine played the re-posted buffer and its next `write`
+failed with EIO** (ALSA's wait for a period: max(100 ms, 1.1 × the buffer), then `-EIO`). Two causes, both general:
+
+- **The restored clock ran before the guest did.** A restored VM's clock continued from its saved reading at
+  `vm_snapshot_restore`, but on the page the vCPU workers start (spawned, instantiated, their clocks measured) ~130 ms
+  later (85-128 ms measured), and that time was the guest's: its 100 ms wait had expired by its first instruction.
+  Node didn't show it (the workers start within milliseconds; a 150 ms sleep between the restore and the first run
+  reproduced it there). **The clock now stands at its saved reading until a vCPU first runs** (`Clock::start` in the
+  core's `run`/`run_cpu`; platform.md "Snapshots"). Any guest timeout shorter than the setup was exposed the same way.
+- **A whole buffer completed before the guest looked.** With the clock fixed, the sink still played and completed the
+  four re-posted periods (85 ms) before the first vCPU ran. Linux's driver (`virtsnd_pcm_msg_complete`) adds each
+  completion's period to `hw_ptr` modulo the buffer and only schedules the elapsed-period work, which one run serves
+  for any number of completions; ALSA's `snd_pcm_update_hw_ptr0` then sees the pointer where it was and takes it for a
+  full wrap only if more than half a buffer of jiffies passed, which with the clock frozen they hadn't. (Through a
+  save's pause the clock runs, so the same four completions were recovered by that check.) The sink's bound of a
+  buffer less a period (§12) was per pump; **it now counts from the guest's last message**, across pumps, and the 10 ms
+  fallback for a stream's end starts only once the core has taken every completion (`Ctx.untaken`), i.e. a vCPU runs.
+  A first try, bounding by completions the core hadn't taken, wasn't enough on 4 vCPUs: another vCPU can take them
+  before the one that handles the interrupt has run.
+- **And the save's pause:** under CI's load the *saved* machine failed the same way once: its clock ran through
+  the pause while the file was written, past the guest's 100 ms wait. **Taking the state now holds the clock at the
+  reading it saves** (`Clock::hold`) until a vCPU runs again, so the saved machine and one restored from it go on from
+  the same instant. And under load the restored machine's vCPU workers started up to hundreds of ms apart: one took
+  the completions and started the clock while vCPU 0 (the sound interrupt's) hadn't run; **the workers now start
+  together** (each waits on a start word until all are instantiated).
+- **Result** (the dev VM, headless Chromium 153, three runs): the loaded machine is heard at 440 and 660 Hz and plays
+  to its end with a normal drain; its new ring holds exactly what the guest hadn't had completed at the save (whole
+  periods); one counted underrun of 20-35 ms (1,026-1,664 frames) while the vCPUs start, then none. Node, the same
+  restore with 0, 150 and 400 ms before the first run on 4 vCPUs: six of six play on. Under load (six busy-looping
+  processes on the VM's 8 vCPUs beside the test), three of three: the saved machine's pause a counted gap of 1-23 ms,
+  the restored one's 136-192 ms while its vCPUs start, then none.
+

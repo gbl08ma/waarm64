@@ -35,7 +35,7 @@ const query = (code: number, start: number, count: number, size: number) => byte
 function rig(sink = checksumSink(1 << 20)) {
   const ram = new Uint8Array(1 << 20);
   const done: { w0: number; len: number }[] = [];
-  const ctx: Ctx = { ram: () => ram, ramSize: ram.length, complete: (w0, len) => done.push({ w0, len }), config: () => new Uint8Array(256), changeConfig: () => {} };
+  const ctx: Ctx = { ram: () => ram, ramSize: ram.length, complete: (w0, len) => done.push({ w0, len }), config: () => new Uint8Array(256), changeConfig: () => {}, untaken: () => 0 };
   const dev = sndBackend(ctx, sink);
   let free = 0;
   let head = 0;

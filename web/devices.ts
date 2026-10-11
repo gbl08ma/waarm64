@@ -177,6 +177,8 @@ export type Segment = { off: number; len: number };
 export type Request = { w0: number; queue: number; read: Segment[]; write: Segment[] };
 export type Ctx = {
   ram: () => Uint8Array; ramSize: number; complete: (w0: number, len: number) => void; config: () => Uint8Array;
+  /** Completions given (`complete`) that the core hasn't taken yet: it takes them when a vCPU runs. */
+  untaken: () => number;
   /** Changes the config space under a running driver (docs/abi.md, ABI 31): `write` gets it, and the guest gets a config-change interrupt. */
   changeConfig: (write: (config: Uint8Array) => void) => void;
 };
@@ -657,6 +659,7 @@ export class Devices {
         ram: () => new Uint8Array(this.memory.buffer, ram),
         ramSize,
         complete: (w0, len) => this.complete(i, w0, len),
+        untaken: () => this.untaken(i),
         config: () => new Uint8Array(this.memory.buffer, shared[i] + CONFIG, 256),
         changeConfig: (write) => this.changeConfig(i, write),
       };
@@ -683,7 +686,7 @@ export class Devices {
           if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;
         }
-        case 'snd': return sndBackend(ctx, deterministic ? checksumSink() : ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats }));
+        case 'snd': return sndBackend(ctx, deterministic ? checksumSink() : ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats, untaken: () => ctx.untaken() }));
       }
     });
     this.epochs = specs.map(() => 0);
@@ -770,6 +773,12 @@ export class Devices {
       }
       b.polled?.();
     }
+  }
+
+  private untaken(i: number) {
+    const u32 = new Uint32Array(this.memory.buffer);
+    const ring = (this.shared[i] + CPL) / 4;
+    return ((Atomics.load(u32, ring) - Atomics.load(u32, ring + 1)) >>> 0) / 2;
   }
 
   private complete(i: number, w0: number, len: number) {

@@ -98,7 +98,7 @@ impl Vm {
     }
 
     /// The VM's state, or `None` while a device isn't quiet
-    /// ([`Vm::snapshot_size`] says when it is). Changes nothing.
+    /// ([`Vm::snapshot_size`] says when it is). Changes nothing but the realtime clock, held at the reading it saves until a vCPU runs again.
     pub fn snapshot_save(&mut self) -> Option<Vec<u8>> {
         self.quiet().then(|| self.state())
     }
@@ -120,7 +120,12 @@ impl Vm {
         } else {
             u64::MAX
         });
-        w.u64(if self.realtime() { self.clock.ns() } else { 0 });
+        // Held there: the saved VM runs on from this reading, as one restored from it does.
+        w.u64(if self.realtime() {
+            self.clock.hold()
+        } else {
+            0
+        });
         // The vCPUs.
         for c in 0..self.vcpus.len() {
             self.vcpus[c].cpu.save(&mut w);

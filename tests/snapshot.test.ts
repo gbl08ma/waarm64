@@ -73,6 +73,19 @@ test('held receive and event buffers are the new backends\' after a restore', { 
   assert.equal(r.console, whole.console);
 });
 
+test('the snd guest through 4 snapshot files while its tone plays: the steps and the waveform of an unbroken run', { skip: !existsSync(new URL('linux-snd/Image', IMAGES)) && 'SKIPPED: run images/build.sh linux-snd' }, async () => {
+  // Saved with the stream started and messages held (from ~32 M steps on): the restored device starts its sink again and
+  // the core posts the held messages again, which play once (the guest prints the hash of what it wrote, the sink's
+  // own is checked by the boot tests).
+  const o = { ramSize: 256 << 20, kernel: image('linux-snd/Image'), initrd: image('linux-snd/initramfs.cpio'), cmdline: 'console=ttyAMA0 panic=-1', devices: [{ type: 'snd' }], jit: 1 } satisfies BootOptions;
+  const r = await runThroughSnapshots(WASM, o, [33_000_000, 34_000_000, 35_000_000, 35_500_000]);
+  report('snd', r);
+  poweredOff(r);
+  assert.equal(r.files.length, 4);
+  assert.equal(r.steps, STEPS.snd);
+  assert.match(r.console, /snd: wrote 49152 frames fnv1a 5652c745\r?\nwebpc: snd test ok/);
+});
+
 const user = 'alpine-user/rootfs-user.ext4';
 test('Alpine\'s userspace benchmark (1 GiB) through 3 snapshot files', { skip: !DISTRO_TESTS.includes('alpine-user') ? 'SKIPPED: set WEBPC_DISTROS=alpine-user' : !existsSync(new URL(user, IMAGES)) && 'SKIPPED: run images/build.sh alpine-user' }, async () => {
   const a = DISTROS.alpine;

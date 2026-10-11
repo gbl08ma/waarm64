@@ -484,15 +484,22 @@ pub struct Vm {
 }
 
 /// The host clock for realtime mode: `performance.now()` through the core's
-/// `env.now_ms` import on wasm, `Instant` natively.
+/// `env.now_ms` import on wasm, `Instant` natively. A restored VM's clock
+/// stands at its saved reading until a vCPU first runs (`start`), and so does a
+/// saved VM's from the moment its state is taken (`hold`) until it runs on: the
+/// host's work meanwhile (writing the file, spawning a restored VM's vCPU
+/// workers) isn't the guest's time, and a guest that was waiting with a short
+/// timeout would otherwise find it expired before it ran (ALSA's 100 ms wait for
+/// a sound period: audio.md §15). Both machines go on from the same instant.
 struct Clock {
-    #[cfg(target_arch = "wasm32")]
-    t0: f64,
+    /// When it started counting from `base`: `now_ms` as f64 bits on wasm,
+    /// ns since `anchor` natively; `UNSTARTED` until then.
+    t0: AtomicU64,
     #[cfg(not(target_arch = "wasm32"))]
-    t0: std::time::Instant,
-    /// What it read when the VM was created: 0, or a restored VM's saved time
-    /// (the counter continues from there).
-    base: u64,
+    anchor: std::time::Instant,
+    /// What it read when it last started: 0, a restored VM's saved time, or
+    /// the reading it was held at (the counter continues from there).
+    base: AtomicU64,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -503,33 +510,67 @@ unsafe extern "C" {
 }
 
 impl Clock {
+    const UNSTARTED: u64 = u64::MAX;
+
+    /// A new VM's clock: 0, counting from now.
     fn new() -> Clock {
-        Clock::from(0)
+        let c = Clock::from(0);
+        c.start();
+        c
     }
 
-    /// A clock that reads `base` ns now.
+    /// A restored VM's clock: it reads `base` ns until `start`.
     fn from(base: u64) -> Clock {
-        #[cfg(target_arch = "wasm32")]
-        // SAFETY: a host function with no preconditions.
-        return Clock {
-            t0: unsafe { now_ms() },
-            base,
-        };
-        #[cfg(not(target_arch = "wasm32"))]
         Clock {
-            t0: std::time::Instant::now(),
-            base,
+            t0: AtomicU64::new(Clock::UNSTARTED),
+            #[cfg(not(target_arch = "wasm32"))]
+            anchor: std::time::Instant::now(),
+            base: AtomicU64::new(base),
         }
     }
 
-    /// Nanoseconds the VM has run for: since it was created, on top of what
-    /// a restored one had already.
-    fn ns(&self) -> u64 {
+    /// The host's time now, in `t0`'s form.
+    fn host(&self) -> u64 {
         #[cfg(target_arch = "wasm32")]
-        // SAFETY: as in `from`.
-        return self.base + ((unsafe { now_ms() } - self.t0) * 1e6) as u64;
+        // SAFETY: a host function with no preconditions.
+        return unsafe { now_ms() }.to_bits();
         #[cfg(not(target_arch = "wasm32"))]
-        (self.base + self.t0.elapsed().as_nanos() as u64)
+        (self.anchor.elapsed().as_nanos() as u64)
+    }
+
+    /// Starts counting, if it hasn't yet (the first vCPU to run; the others find it started).
+    fn start(&self) {
+        if self.t0.load(Ordering::Relaxed) == Clock::UNSTARTED {
+            let _ = self.t0.compare_exchange(
+                Clock::UNSTARTED,
+                self.host(),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
+        }
+    }
+
+    /// Stops it at its reading now, which it returns, until the next `start`.
+    /// No vCPU runs meanwhile (a snapshot is taken with every vCPU out of the core).
+    fn hold(&self) -> u64 {
+        let ns = self.ns();
+        self.base.store(ns, Ordering::Relaxed);
+        self.t0.store(Clock::UNSTARTED, Ordering::Release);
+        ns
+    }
+
+    /// Nanoseconds the VM has run for: since it started, on top of what
+    /// it had already.
+    fn ns(&self) -> u64 {
+        let t0 = self.t0.load(Ordering::Acquire);
+        let base = self.base.load(Ordering::Relaxed);
+        if t0 == Clock::UNSTARTED {
+            return base;
+        }
+        #[cfg(target_arch = "wasm32")]
+        return base + ((f64::from_bits(self.host()) - f64::from_bits(t0)) * 1e6) as u64;
+        #[cfg(not(target_arch = "wasm32"))]
+        (base + (self.host() - t0))
     }
 }
 
@@ -699,6 +740,7 @@ impl Vm {
     /// is skipped.
     pub fn run(&mut self, budget: u64) -> u32 {
         assert!(!self.parallel(), "vm_run in parallel mode: vm_run_cpu");
+        self.clock.start();
         let start = self.steps;
         self.exit = ExitInfo::default();
         let kind = loop {

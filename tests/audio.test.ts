@@ -12,9 +12,9 @@ import { flashProbe } from '../web/virgl-screen.ts';
 const P: SndParams = { bufferBytes: 4 * 4096, periodBytes: 4096, channels: 2, format: FMT_S16, rate: 48000 };
 
 /** A sink on a fake clock (ms) that the test pumps itself, and the ring's header and frames. */
-function rig(params = P) {
+function rig(params = P, untaken?: () => number) {
   let t = 1000;
-  const sink = ringSink({ now: () => t, schedule: false });
+  const sink = ringSink({ now: () => t, schedule: false, untaken });
   const { h, data } = ringViews(sink.ring);
   const done: { n: number; latency: number }[] = [];
   let n = 0;
@@ -51,7 +51,9 @@ test('ring sink: frames go into the ring as f32 stereo in order; on its own cloc
   r.at(1000 + 22); // 1056
   assert.deepEqual(r.ids(), [0]);
   assert.equal(r.done[0].latency, 0); // nothing after the ring on its own clock
-  r.at(1000 + 86); // 4128 > 4096: all four, the ring dry
+  r.at(1000 + 86); // 4128 > 4096: all four played, the ring dry; three complete (a buffer less a period without a message)
+  assert.deepEqual(r.ids(), [0, 1, 2]);
+  r.at(1000 + 96); // and the last CAP_WAIT_MS later (the guest has taken them all: the stream's end)
   assert.deepEqual(r.ids(), [0, 1, 2, 3]);
   assert.equal(Atomics.load(r.h, READ), 4096);
   // Dry, the clock waits for the guest: frames that come later aren't consumed for the time it waited, and the wait
@@ -92,11 +94,13 @@ test('ring sink: while the worklet plays (its heartbeat moves), its read index c
   assert.deepEqual(r.ids(), [0, 1, 2]);
   r.at(3100);
   assert.equal(Atomics.load(r.h, READ), 4096);
+  assert.deepEqual(r.ids(), [0, 1, 2]);
+  r.at(3110);
   assert.deepEqual(r.ids(), [0, 1, 2, 3]);
   assert.equal(Atomics.load(r.h, UNDERRUNS), 0);
 });
 
-test('ring sink: a pump completes at most a buffer less a period; the rest after the guest posts again, or after a wait', () => {
+test('ring sink: at most a buffer less a period completes since the guest last posted; the rest after it posts again, or after a wait', () => {
   const r = rig();
   r.sink.start(P);
   for (let k = 0; k < 4; k++) r.play(r.period(k * 1024));
@@ -121,6 +125,36 @@ test('ring sink: a pump completes at most a buffer less a period; the rest after
   Atomics.add(s.h, QUANTA, 1);
   s.at(1011);
   assert.deepEqual(s.ids(), [0, 1, 2, 3]);
+  // Counted across pumps, not per pump: Linux reports progress from a work item that one run serves for any number of
+  // completions, so a whole buffer completed before it runs reads as none (audio.md §15).
+  const c = rig();
+  c.sink.start(P);
+  for (let k = 0; k < 4; k++) c.play(c.period(k * 1024));
+  for (const [read, at, ids] of [[1024, 1000, [0]], [3072, 1001, [0, 1, 2]], [4096, 1002, [0, 1, 2]]] as const) {
+    Atomics.store(c.h, READ, read);
+    Atomics.add(c.h, QUANTA, 1);
+    c.at(at);
+    assert.deepEqual(c.ids(), ids);
+  }
+  // While the core hasn't taken the completions (no vCPU runs: a restored machine starting, a paused one), the wait
+  // doesn't start; it does once they're taken.
+  let untaken = 3;
+  const u = rig(P, () => untaken);
+  u.sink.start(P);
+  for (let k = 0; k < 4; k++) u.play(u.period(k * 1024));
+  Atomics.store(u.h, READ, 4096);
+  for (let t = 1000; t <= 1200; t += 20) {
+    Atomics.add(u.h, QUANTA, 1);
+    u.at(t);
+  }
+  assert.deepEqual(u.ids(), [0, 1, 2]);
+  untaken = 0;
+  Atomics.add(u.h, QUANTA, 1);
+  u.at(1205);
+  assert.deepEqual(u.ids(), [0, 1, 2]);
+  Atomics.add(u.h, QUANTA, 1);
+  u.at(1215);
+  assert.deepEqual(u.ids(), [0, 1, 2, 3]);
 });
 
 test('ring sink: messages wait for room; the ring wraps', () => {

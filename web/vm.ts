@@ -465,6 +465,8 @@ const S_BELL = 2048;
 const S_CTL = 2056;
 /** Parallel mode's pause word (a generation: odd while a pause is requested or held) and, from `S_PARKED`, each vCPU worker's word (the generation it is parked in). */
 const S_PAUSE = 2060;
+/** Parallel mode's start word: the vCPU workers wait there until all are instantiated (web/vcpu-worker.ts). */
+const S_START = 2064;
 const S_PARKED = 3072;
 const S_CMDLINE = 4096;
 
@@ -650,7 +652,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
-  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })) }) : undefined;
+  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })) }) : undefined;
   const RING_HALF = RING / 2;
   const txUsed = () => {
     const u32 = new Uint32Array(memory.buffer);
@@ -666,7 +668,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /**
      * The VM's state for a snapshot, with every vCPU out of the core: between `run` calls after
      * `settle()`, or once `pause()` resolved true. Guest RAM (`memory` at `ram`, `ramSize` bytes) is
-     * the snapshot's other half: copy it before the VM runs on. The VM is unchanged.
+     * the snapshot's other half: copy it before the VM runs on. The VM is unchanged but for its realtime clock, held at the saved reading until a vCPU runs again.
      */
     async snapshot(): Promise<VmState> {
       for (let tries = 0; tries < 1000; tries++) {
@@ -889,7 +891,7 @@ const SIGNAL_RX = 2;
  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
  * docs/abi.md).
  */
-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[] }) {
+function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[] }) {
   type Handle = { post(m: VcpuJob | VcpuClock): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
@@ -982,7 +984,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
   };
   const start = () => Array.from({ length: c.ncpus }, async (_, cpu) => {
     const h = await spawn();
-    h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, stall: c.stall.filter((x) => x.cpu === cpu), live });
+    h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, start: c.start, ncpus: c.ncpus, stall: c.stall.filter((x) => x.cpu === cpu), live });
     return h;
   });
   return {

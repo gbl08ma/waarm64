@@ -381,13 +381,17 @@ mode (and natively in realtime mode: std has no CSPRNG).
   takes over; when the ring runs dry it waits for the guest, and counts that wait as the worklet counts a gap): a
   machine without a page, or a page whose context waits for a click, still plays in real time. Both move
   it by compare-and-exchange. The sink completes in a pump, at the worklet's notify (every 2 quanta) or after 5 ms
-  (`?snd=timer`: a 5 ms interval instead), at most a buffer less a period at once, the rest after the guest's next
-  message or 10 ms. The spec's `ring` and `port` are the page's (web/audio.ts `attach`; the port says the stream's
+  (`?snd=timer`: a 5 ms interval instead), **at most a buffer less a period since the guest's last message** (across
+  pumps: Linux reports progress from a work item that one run serves for any number of completions, so a whole
+  buffer completed before it runs reads as none, audio.md §15), the rest after the guest's next message, or (a
+  stream's end) 10 ms after the core has taken every completion (`Ctx.untaken`: it takes them when a vCPU runs, so
+  the wait can't run out while the guest doesn't, as when a restored machine's vCPUs are starting). The spec's `ring` and `port` are the page's (web/audio.ts `attach`; the port says the stream's
   start, with its rate, and its stop, and with `stats` its completions' timing each second); without them the sink
   makes a ring nothing plays. [plans/audio.md](plans/audio.md) §4 and §13.
 - **Snapshots:** `save` gives the stream's state and parameters, the control log and the sink's counts (the
   realtime sink has none); the held messages are posted again by the core and play once (the sink hashes at
-  completion). A started stream's sink is started again at restore. Snapshots while sound plays are audio S4's.
+  completion). A started stream's sink is started again at restore: the re-posted messages play while the vCPUs
+  start (on the page a gap of 20-35 ms follows, counted as an underrun), and the guest plays on (audio.md §15).
 
 ### Framebuffer (`simple-framebuffer`)
 - `VmConfig.fb_width`/`fb_height` (0: none). x8r8g8b8, packed rows (stride 4 × width), in guest

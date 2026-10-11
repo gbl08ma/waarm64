@@ -22,6 +22,9 @@ export type VcpuJob = {
   /** The pause word and the base of the workers' parked words (web/vm.ts `S_PAUSE`, `S_PARKED`). */
   pause: number;
   parked: number;
+  /** The start word (web/vm.ts `S_START`): each worker bumps it once instantiated and waits until all `ncpus` have. */
+  start: number;
+  ncpus: number;
   /** Test only: stalls this worker (web/vm.ts `Stall`). */
   stall?: Stall[];
   /** The vCPUs' liveness block (web/liveness.ts): this worker writes its slot. */
@@ -50,6 +53,13 @@ const SPIN_MS = 0.05;
 
 function run(j: VcpuJob, clock: number): VcpuEnd {
   const exports = instantiateThread(j.module, j.memory, j.block, clock, j.stall).exports;
+  // The vCPUs start together: one that ran (and started a restored VM's clock, and took device completions) while
+  // another was still instantiating would find a guest whose CPU 0 hadn't run for that long (on a loaded host, over
+  // ALSA's 100 ms wait for a sound period: docs/plans/audio.md §15).
+  const ready = new Int32Array(j.memory.buffer, j.start, 1);
+  Atomics.add(ready, 0, 1);
+  Atomics.notify(ready, 0);
+  for (let v; (v = Atomics.load(ready, 0)) < j.ncpus;) Atomics.wait(ready, 0, v, 1000);
   try {
     return runCpu(j, exports);
   } catch (err) {

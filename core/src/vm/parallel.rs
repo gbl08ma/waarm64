@@ -228,6 +228,7 @@ impl Vm {
     /// else uses the vCPU meanwhile (`vm_cpu`'s registers are for between runs).
     pub unsafe fn run_cpu(&self, c: usize, budget: u64) -> u32 {
         assert!(self.parallel(), "vm_run_cpu in round-robin mode: vm_run");
+        self.clock.start();
         // SAFETY: guaranteed by the caller.
         let (v, own) = unsafe { self.vcpus[c].parts() };
         let p = &self.shared.cpus[c].par;
