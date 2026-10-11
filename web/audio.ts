@@ -5,6 +5,13 @@
 // browser does the resampling to the output device's; a new rate makes a new context. A context made before the
 // page had a user gesture starts suspended (the browser's autoplay rule): `gesture` resumes it, and until then the
 // device worker plays the ring on its own clock, so the guest doesn't stall. The data never crosses this thread.
+//
+// The microphone (audio S4, decisions 13 and 14): each start also makes a microphone ring. When the guest starts
+// recording, the device says so (`capture-start`, with the stream's rate) and the page asks for the microphone
+// (`getUserMedia`: the browser's prompt the first time), with the browser's echo cancellation, noise suppression and
+// gain control unless `raw`; a context at that rate feeds it to the `webpc-mic` worklet, which fills the ring. When
+// recording stops the microphone is closed (the browser's indicator goes off). Turned off, refused, or until it's
+// granted, the guest records silence in real time (the device worker's clock).
 import { LATENCY, newRing, ringViews } from './audio-ring.ts';
 import type { SndStats, SndToPage } from './snd.ts';
 
@@ -15,7 +22,16 @@ export class PageAudio {
   private node?: AudioWorkletNode;
   private gain?: GainNode;
   private ring?: SharedArrayBuffer;
+  private mic?: SharedArrayBuffer;
   private port?: MessagePort;
+  private micCtx?: AudioContext;
+  private micStream?: MediaStream;
+  private micEnabled = true;
+  private micRaw = false;
+  /** The guest is recording, at this rate. */
+  private capture?: number;
+  /** The microphone: not asked for (`idle`), being asked for, open, turned off in the menu, or refused by the browser. */
+  micState: 'idle' | 'asking' | 'on' | 'off' | 'denied' = 'idle';
   /** Context changes, one at a time. */
   private chain = Promise.resolve();
   private latencyTimer?: ReturnType<typeof setInterval>;
@@ -34,7 +50,8 @@ export class PageAudio {
   attach() {
     this.port?.close();
     const channel = new MessageChannel();
-    [this.ring, this.port, this.playing] = [newRing(), channel.port1, false];
+    this.queue(() => this.closeMic());
+    [this.ring, this.mic, this.port, this.playing, this.capture] = [newRing(), newRing(), channel.port1, false, undefined];
     this.node?.disconnect();
     this.node = undefined;
     const port = channel.port1;
@@ -49,28 +66,57 @@ export class PageAudio {
         if (m.ms !== undefined) this.spans.push(m.ms);
       } else if (m.type === 'stats') {
         this.stats.push(m.stats);
+      } else if (m.type === 'capture-start') {
+        this.capture = m.rate;
+        this.queue(() => this.openMic());
+      } else if (m.type === 'capture-stop') {
+        this.capture = undefined;
+        this.queue(() => this.closeMic());
       }
       this.onChange();
     };
-    return { ring: this.ring, port: channel.port2 };
+    return { ring: this.ring, mic: this.mic!, port: channel.port2 };
   }
 
   /** The machine stopped: its ring is no longer played. */
   detach() {
     this.port?.close();
     this.node?.disconnect();
-    [this.port, this.node, this.ring, this.playing] = [undefined, undefined, undefined, false];
+    [this.port, this.node, this.ring, this.mic, this.playing, this.capture] = [undefined, undefined, undefined, undefined, false, undefined];
+    this.queue(() => this.closeMic());
     this.onChange();
   }
 
   /** A click or key on the machine (a user gesture): the context may run now. */
   gesture() {
     if (this.ctx?.state === 'suspended') void this.ctx.resume().then(() => this.onChange(), () => {});
+    if (this.micCtx?.state === 'suspended') void this.micCtx.resume().catch(() => {});
   }
 
   /** Sound is started and the browser waits for a click or key to play it (not while its context is being made). */
   waiting() {
     return this.playing && !!this.ctx && this.ctx.state !== 'running';
+  }
+
+  /** The menu's Microphone and Raw choices: applied at once to a recording guest (the microphone opened again or closed). */
+  setMic(enabled: boolean, raw: boolean) {
+    if (enabled === this.micEnabled && raw === this.micRaw) return;
+    [this.micEnabled, this.micRaw] = [enabled, raw];
+    if (!enabled && this.micState === 'denied') this.micState = 'off';
+    this.queue(async () => {
+      await this.closeMic();
+      if (this.capture !== undefined) await this.openMic();
+    });
+  }
+
+  /** The open microphone's settings as the browser applied them (tests: the processing), or none. */
+  micSettings() {
+    return this.micStream?.getAudioTracks()[0]?.getSettings();
+  }
+
+  /** The microphone's ring's header (tests: what the worklet wrote). */
+  micHeader() {
+    return this.mic ? ringViews(this.mic).h : undefined;
   }
 
   setVolume(volume: number, muted: boolean) {
@@ -103,6 +149,59 @@ export class PageAudio {
 
   private queue(f: () => Promise<void>) {
     this.chain = this.chain.then(f).catch((e) => console.warn(`webpc: no sound: ${e}`));
+  }
+
+  /** Opens the microphone for the recording guest, into the current microphone ring, unless it's turned off. */
+  private async openMic() {
+    const mic = this.mic;
+    const rate = this.capture;
+    if (!mic || rate === undefined || this.micStream) return;
+    if (!this.micEnabled) {
+      this.micState = 'off';
+      this.onChange();
+      return;
+    }
+    this.micState = 'asking';
+    this.onChange();
+    const processing = !this.micRaw;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: processing, noiseSuppression: processing, autoGainControl: processing } });
+    } catch (e) {
+      console.warn(`webpc: no microphone: ${e}`);
+      this.micState = 'denied';
+      this.onChange();
+      return;
+    }
+    if (mic !== this.mic || this.capture === undefined || !this.micEnabled) {
+      for (const t of stream.getTracks()) t.stop(); // the guest stopped recording meanwhile
+      this.micState = this.micEnabled ? 'idle' : 'off';
+      this.onChange();
+      return;
+    }
+    this.micStream = stream;
+    // A context at the stream's rate: the browser resamples the microphone to it.
+    const ctx = new AudioContext({ sampleRate: rate, latencyHint: 'interactive' });
+    this.micCtx = ctx;
+    await ctx.audioWorklet.addModule(WORKLET);
+    if (this.micCtx !== ctx) return; // closed meanwhile
+    const node = new AudioWorkletNode(ctx, 'webpc-mic', { numberOfInputs: 1, numberOfOutputs: 0, processorOptions: { ring: mic } });
+    new MediaStreamAudioSourceNode(ctx, { mediaStream: stream }).connect(node);
+    void ctx.resume().catch(() => {});
+    this.micState = 'on';
+    this.onChange();
+  }
+
+  /** Closes the microphone (the browser's indicator goes off). */
+  private async closeMic() {
+    const [stream, ctx] = [this.micStream, this.micCtx];
+    [this.micStream, this.micCtx] = [undefined, undefined];
+    for (const t of stream?.getTracks() ?? []) t.stop();
+    await ctx?.close().catch(() => {});
+    if (this.micState === 'on' || this.micState === 'asking') {
+      this.micState = 'idle';
+      this.onChange();
+    }
   }
 
   /** Plays the current ring at `rate`: a context at that rate (a new one if the rate changed) and a worklet on the ring. */

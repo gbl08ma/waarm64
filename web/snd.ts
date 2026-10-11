@@ -163,6 +163,9 @@ export function toF32(frames: Uint8Array, format: number, out = new Float32Array
 /** What the page hears from a realtime sink on its port (web/audio.ts). */
 export type SndToPage =
   | { type: 'start'; rate: number }
+  /** The input stream started (the page opens the microphone at `rate`) or stopped (it closes it). */
+  | { type: 'capture-start'; rate: number }
+  | { type: 'capture-stop' }
   /** `ms`: the time since the stream's START (a stream that ran: what the ring paced, the gaps included). */
   | { type: 'stop'; ms?: number }
   /** Once a second with `stats`: the completions' timing (audio.md §13). */
@@ -522,45 +525,103 @@ export function patternSource() {
   } satisfies SndSource & Record<string, unknown>;
 }
 
+/** Interleaved stereo f32 frames as `p`'s frames (a mono stream gets their mean), clamped to the format's range. */
+export function fromF32(f32: Float32Array, p: SndParams) {
+  const frames = f32.length / 2;
+  const size = SAMPLE_BYTES[p.format];
+  const out = new Uint8Array(frames * p.channels * size);
+  const v = new DataView(out.buffer);
+  for (let f = 0; f < frames; f++) {
+    for (let c = 0; c < p.channels; c++) {
+      const x = Math.max(-1, Math.min(1, p.channels === 1 ? (f32[2 * f] + f32[2 * f + 1]) / 2 : f32[2 * f + c]));
+      const at = (f * p.channels + c) * size;
+      if (p.format === FMT_S16) v.setInt16(at, Math.round(x * 32767), true);
+      else if (p.format === FMT_S32) v.setInt32(at, Math.round(x * 2147483647), true);
+      else v.setFloat32(at, x, true);
+    }
+  }
+  return out;
+}
+
 /**
- * A realtime source with no microphone: silence at the stream's rate by the clock (`now`), so a guest that records
- * gets its frames in real time. Messages complete once the stream has run long enough to fill them (paused while
- * stopped), and, as `ringSink`, at most a buffer less a period since the guest's last message, the rest after its next
- * one (`completionBound`). `now` and `schedule: false` are for tests.
+ * The realtime source with the page's microphone (audio S4, docs/plans/audio.md §4): while the page's `webpc-mic` worklet
+ * fills the microphone's ring (its heartbeat moved in the last `LIVE_MS`), a message completes once the ring has its
+ * frames, at most a buffer behind (older frames are skipped: latency, not a backlog, after a stall); otherwise (no
+ * page, no permission yet or refused, the microphone turned off) silence at the stream's rate by the clock (paused
+ * while stopped), the clock starting afresh at each switch and START so neither side makes a burst. Both under `completionBound`.
+ * START and its stop are said on `port` (the page opens and closes the microphone). `now` and `schedule: false` are
+ * for tests.
  */
-export function clockSource(o: { now?: () => number; schedule?: boolean; untaken?: () => number } = {}) {
+export function micSource(o: { ring?: SharedArrayBuffer; port?: MessagePort; now?: () => number; schedule?: boolean; untaken?: () => number } = {}) {
+  const ring = o.ring ?? newRing();
+  const { h, data } = ringViews(ring);
   const now = o.now ?? (() => performance.now());
+  const post = (m: SndToPage) => o.port?.postMessage(m);
   let items: { bytes: number; frames: number; done: (data: Uint8Array, latencyBytes: number) => void }[] = [];
   let p: SndParams | undefined;
   let running = false;
-  /** Frames the stream has run for before its last START, and when that was. */
+  /** The own clock: frames it had counted before `startedAt`, and those given to messages since START. */
   let before = 0;
   let startedAt = 0;
-  /** Frames given to messages so far. */
   let given = 0;
+  let live = false;
+  let lastQuanta = Atomics.load(h, QUANTA);
+  let quantaAt = -Infinity;
   const bound = completionBound(o.untaken);
   let timer: ReturnType<typeof setInterval> | undefined;
-  const ran = (t: number) => before + (running ? Math.floor(((t - startedAt) * p!.rate) / 1000) : 0);
+  const ran = (t: number) => before + Math.floor(((t - startedAt) * p!.rate) / 1000);
   const pump = () => {
     if (!running || !p) return;
     const t = now();
+    const q = Atomics.load(h, QUANTA);
+    if (q !== lastQuanta) [lastQuanta, quantaAt] = [q, t];
+    const nowLive = t - quantaAt < LIVE_MS;
+    if (nowLive !== live) {
+      [live, before, startedAt] = [nowLive, given, t]; // the clock goes on from what was given, from now
+      if (live) Atomics.store(h, READ, Atomics.load(h, WRITE)); // what the ring held from before is stale
+    }
     bound.look(t);
-    while (items.length && given + items[0].frames <= ran(t)) {
-      const it = items[0];
-      if (!bound.allows(t, p, it.bytes)[0]) break;
-      items.shift();
-      given += it.frames;
-      bound.done(it.bytes);
-      it.done(new Uint8Array(it.bytes), 0);
+    const bufferFrames = p.bufferBytes / (p.channels * SAMPLE_BYTES[p.format]);
+    if (live) {
+      const w = Atomics.load(h, WRITE);
+      let r = Atomics.load(h, READ);
+      const behind = (w - r) >>> 0;
+      if (behind > bufferFrames) r = (w - bufferFrames) | 0; // at most a buffer behind
+      while (items.length && ((w - r) >>> 0) >= items[0].frames) {
+        const it = items[0];
+        if (!bound.allows(t, p, it.bytes)[0]) break;
+        items.shift();
+        const f32 = new Float32Array(2 * it.frames);
+        const at = (r >>> 0) % CAPACITY;
+        const first = Math.min(it.frames, CAPACITY - at);
+        f32.set(data.subarray(2 * at, 2 * (at + first)));
+        if (first < it.frames) f32.set(data.subarray(0, 2 * (it.frames - first)), 2 * first);
+        r = (r + it.frames) | 0;
+        given += it.frames;
+        bound.done(it.bytes);
+        it.done(fromF32(f32, p), 0);
+      }
+      Atomics.store(h, READ, r);
+    } else {
+      while (items.length && given + items[0].frames <= ran(t)) {
+        const it = items[0];
+        if (!bound.allows(t, p, it.bytes)[0]) break;
+        items.shift();
+        given += it.frames;
+        bound.done(it.bytes);
+        it.done(new Uint8Array(it.bytes), 0);
+      }
     }
   };
   const halt = () => {
-    if (running) before = ran(now());
+    if (running) post({ type: 'capture-stop' });
     running = false;
+    Atomics.store(h, RUN, 0);
     if (timer !== undefined) clearInterval(timer);
     timer = undefined;
   };
   return {
+    ring,
     pump,
     record(params: SndParams, bytes: number, done: (data: Uint8Array, latencyBytes: number) => void) {
       p = params;
@@ -570,7 +631,10 @@ export function clockSource(o: { now?: () => number; schedule?: boolean; untaken
     start(params: SndParams) {
       p = params;
       running = true;
-      startedAt = now();
+      [before, startedAt, live] = [given, now(), false];
+      Atomics.store(h, RATE, params.rate);
+      Atomics.store(h, RUN, 1);
+      post({ type: 'capture-start', rate: params.rate });
       if (o.schedule !== false) timer ??= setInterval(pump, PUMP_MS);
     },
     stop: halt,
@@ -579,6 +643,7 @@ export function clockSource(o: { now?: () => number; schedule?: boolean; untaken
       halt();
       items = [];
       [before, given] = [0, 0];
+      Atomics.store(h, READ, Atomics.load(h, WRITE));
       bound.posted();
     },
   } satisfies SndSource & Record<string, unknown>;

@@ -2,8 +2,8 @@
 
 **Status:** S0 done (the guests: §11), S1 done (the device, deterministic: §12) and S2 done (the page: §13),
 2026-10-10; S3 done (real guests: §14), 2026-10-11 (the user's ear: "good enough", decision 12); S4 (snapshots and
-capture) under way: snapshots while sound plays done (§15); capture's device done (deterministic, §16), the page's
-microphone next. The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
+capture) under way: snapshots while sound plays done (§15); capture's device (§16) and the page's microphone (§17)
+done; Debian's recording and the desktop guest's source next, then the user's ear. The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
 
 The question: how does a guest's sound reach the page's speakers (and, maybe, the page's microphone reach the
 guest), **with the guest's own unmodified drivers**, in time with what it shows, without the main thread in the path?
@@ -112,6 +112,10 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
   restart), kept with the page's settings (`muted`, `volume`); guest-side controls (`VIRTIO_SND_F_CTLS`) later if
   wanted.
 - **The tab in the background:** not measurable headless (§13): left to the user's manual check.
+- **The microphone** (S4, decisions 13 and 14; frontend.md "Sound"): a second ring of the same layout, which the page's
+  `webpc-mic` worklet fills from `getUserMedia` (through a context at the input stream's rate) while the device asks
+  (`capture-start`, `capture-stop` on the port), and the device worker's `micSource` reads, at most a buffer behind;
+  without it, silence on the source's clock. The Sound menu's Microphone and Raw microphone choices.
 
 ## 5. Time and determinism
 
@@ -493,4 +497,27 @@ devices.md "snd", testing.md "virtio-snd", images.md.
 - **The native runner** (`core/tests/common` `run_parallel`) lost a PSCI SYSTEM_OFF that a vCPU made while a
   stretch before a snapshot was ending (the first end won); a terminal exit now wins over the budget's, which the
   parallel snapshot boot hit once in CI.
+
+## 17. S4 findings: the page's microphone (2026-10-11)
+
+What was built: the microphone ring and the `webpc-mic` worklet (web/audio-worklet.ts), `micSource` in the device worker
+(in place of S4's first `clockSource`: without a live ring it is that), `PageAudio`'s microphone (`getUserMedia` at the
+guest's `capture-start`, closed at `capture-stop`), the Sound menu's Microphone and Raw microphone (frontend.md
+"Sound"). Tests: tests/snd.test.ts (the source on a fake clock and a hand-filled ring), tests/audio-browser.test.ts with
+Chromium's fake capture device (`--use-fake-device-for-media-stream`, `--use-fake-ui-for-media-stream`,
+`--use-file-for-fake-audio-capture` with a 500 Hz WAV): testing.md "virtio-snd".
+
+- **The guest hears it:** with Raw microphone, 3 s recorded (144,384 frames at 48 kHz) at **505 Hz** on both channels by
+  the guest's zero crossings (the tone 500), in 3,033-3,038 ms of its own time; the worklet wrote 145,792 frames and
+  dropped none. With the browser's processing (the default) 495 Hz. The track's settings show the processing on and off
+  as chosen. Chromium resamples the microphone to a capture context at the stream's rate, and a worklet with no
+  outputs is processed (it has an input).
+- **The microphone opens while the guest records:** the first periods come from the clock's silence until the worklet
+  runs, and the switch starts the period in progress again: 16 periods took 343-373 ms of the guest's time (341 ms of
+  sound) on a page whose microphone opened at the recording's start.
+- **Debian records it** (ci-debian, Debian 13's own `virtio_snd`; `snd-rec`, images/snd/rec.c, on the second disk
+  since the nocloud image has no alsa-utils, decision 16's arecord in kind): 3 s at 48 kHz stereo with arecord's
+  buffer, 144,000 frames in 3,020 ms of its own time, no overrun, **497 Hz** on both channels (the processed microphone).
+- Headless Chromium grants the microphone without a prompt (the fake UI flag); the real prompt, the browser's
+  indicator and a real microphone are the user's checks.
 

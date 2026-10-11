@@ -39,7 +39,7 @@ const overlayName = () => chosen?.overlay ?? spec.overlay;
 const diskName = () => (chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
 
 // Settings remembered per browser (the view, the network, whether saved disks are compressed, the sound's volume). Storage can be off or throw: then nothing is remembered.
-type Settings = { ncpus?: number; ramMiB?: number; view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean; gpu?: '3d' | '2d'; muted?: boolean; volume?: number };
+type Settings = { ncpus?: number; ramMiB?: number; view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean; gpu?: '3d' | '2d'; muted?: boolean; volume?: number; mic?: boolean; micRaw?: boolean };
 const SETTINGS = 'webpc.settings';
 const settings = (): Settings => {
   try {
@@ -977,6 +977,17 @@ soundOn.checked = !(settings().muted ?? false);
 soundVolume.value = String(Math.round(100 * Math.min(1, Math.max(0, settings().volume ?? 1))));
 const applySound = () => audio.setVolume(Number(soundVolume.value) / 100, !soundOn.checked);
 applySound();
+// The microphone (audio S4): asked for when the machine records, unless turned off; raw turns off the browser's processing.
+const micOn = $<HTMLInputElement>('mic-on');
+const micRaw = $<HTMLInputElement>('mic-raw');
+micOn.checked = settings().mic ?? true;
+micRaw.checked = settings().micRaw ?? false;
+const applyMic = () => audio.setMic(micOn.checked, micRaw.checked);
+applyMic();
+micOn.onchange = micRaw.onchange = () => {
+  applyMic();
+  remember({ mic: micOn.checked, micRaw: micRaw.checked });
+};
 soundOn.onchange = soundVolume.oninput = () => {
   applySound();
   remember({ muted: !soundOn.checked, volume: Number(soundVolume.value) / 100 });
@@ -984,7 +995,11 @@ soundOn.onchange = soundVolume.oninput = () => {
 audio.onChange = () => {
   const waiting = audio.waiting();
   soundMenu.toggleAttribute('data-waiting', waiting);
-  $('sound-summary').textContent = waiting ? 'Sound: click to hear' : soundOn.checked ? 'Sound' : 'Sound (muted)';
+  const mic = audio.micState;
+  $('sound-summary').textContent = waiting ? 'Sound: click to hear' : `${soundOn.checked ? 'Sound' : 'Sound (muted)'}${mic === 'on' ? ' · mic' : ''}`;
+  const hint = $('mic-hint');
+  hint.hidden = mic !== 'denied' && mic !== 'asking';
+  hint.textContent = mic === 'denied' ? 'The browser refused the microphone: the machine records silence. Allow it in the site\'s settings, then turn Microphone off and on.' : 'The machine is recording: the browser asks for the microphone.';
 };
 soundOn.addEventListener('change', () => audio.onChange());
 for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => audio.gesture(), { capture: true });

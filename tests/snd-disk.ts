@@ -1,6 +1,6 @@
 // A second disk for playing sound on a guest without alsa-utils (audio S3, docs/plans/audio.md §10.10): a tar
 // archive, read straight off the block device (`tar -xf /dev/vdb`), with images/snd/play.c's static `snd-play`
-// (images/build.sh linux-snd) and a WAV of a known tone. tests/page-debian.test.ts hands it to the page's Debian
+// (images/build.sh linux-snd), a WAV of a known tone, and images/snd/rec.c's `snd-rec` (audio S4: the recorder). tests/page-debian.test.ts hands it to the page's Debian
 // as `?disk2=`; the QEMU oracle takes the same file as a raw drive.
 //   node tests/snd-disk.ts out.tar [seconds] [rate]   (the oracle's: a 440/660 Hz tone)
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -53,10 +53,10 @@ export function tar(files: { name: string; data: Buffer; mode?: number }[]) {
   return Buffer.concat([body, Buffer.alloc((10240 - (body.length % 10240)) % 10240)]);
 }
 
-/** The disk: snd-play and tone.wav. */
+/** The disk: snd-play, tone.wav and snd-rec. */
 export function sndDisk(seconds: number, rate: number) {
-  const player = readFileSync(new URL('../target/images/linux-snd/snd-play', import.meta.url));
-  return tar([{ name: 'snd-play', data: player, mode: 0o755 }, { name: 'tone.wav', data: toneWav(seconds, rate) }]);
+  const tool = (name: string) => readFileSync(new URL(`../target/images/linux-snd/${name}`, import.meta.url));
+  return tar([{ name: 'snd-play', data: tool('snd-play'), mode: 0o755 }, { name: 'tone.wav', data: toneWav(seconds, rate) }, { name: 'snd-rec', data: tool('snd-rec'), mode: 0o755 }]);
 }
 
 if (import.meta.main) {

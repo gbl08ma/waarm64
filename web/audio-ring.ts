@@ -4,6 +4,10 @@
 // channels) behind a header of i32 words, read and written with Atomics only. The indices count frames and wrap
 // at 2^32: `(write - read) >>> 0` is what's queued.
 //
+// The microphone's ring (audio S4) is the same the other way round: the page's `webpc-mic` worklet writes what the
+// microphone hears (WRITE, its QUANTA heartbeat) while the device worker asks for it (RUN, at RATE), and the device
+// worker's source reads it (READ); frames the ring had no room for are counted in UNDERRUNS (times) and GAP_FRAMES.
+//
 // Who moves the read index: the worklet while it plays (its `QUANTA` heartbeat moves and its context runs at the
 // stream's rate); else the device worker itself, at the stream's rate by the wall clock (no page, a context not
 // resumed yet). Both move it by compare-and-exchange, so a hand-over can't move it backwards or past `WRITE`.
@@ -45,6 +49,10 @@ export const newRing = () => new SharedArrayBuffer(HEADER_BYTES + CAPACITY * 2 *
 
 /** The header's words and the frames of `ring`. */
 export const ringViews = (ring: SharedArrayBuffer) => ({ h: new Int32Array(ring, 0, HEADER_WORDS), data: new Float32Array(ring, HEADER_BYTES, CAPACITY * 2) });
+
+/** The microphone's ring: times, and frames, the worklet had no room for (the device worker didn't read in time). */
+export const DROPS = UNDERRUNS;
+export const DROPPED = GAP_FRAMES;
 
 /** Frames queued: written and not consumed. */
 export const queued = (h: Int32Array) => (Atomics.load(h, WRITE) - Atomics.load(h, READ)) >>> 0;

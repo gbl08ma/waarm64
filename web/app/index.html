@@ -141,10 +141,13 @@
     <label title="The guest draws in device pixels instead of CSS pixels: sharper on a HiDPI screen, with smaller text unless the desktop scales (its EDID carries the screen's physical size)"><input id="screen-hidpi" type="checkbox"> HiDPI</label>
     <p class="hint">A text console (fbcon) keeps the size it started with: a new size takes effect at the next boot (Restart), and the console is centred until then. A desktop takes it when it starts; whether it follows a change is up to its compositor (sway doesn't).</p>
   </div></details>
-  <details class="menu" id="sound-menu"><summary id="sound-summary" title="The machine's sound: on or muted, and its volume">Sound</summary><div class="items panel">
+  <details class="menu" id="sound-menu"><summary id="sound-summary" title="The machine's sound: on or muted, its volume, and its microphone">Sound</summary><div class="items panel">
     <label class="row"><input id="sound-on" type="checkbox" checked> Sound on</label>
     <label>Volume<input id="sound-volume" type="range" min="0" max="100" step="1" value="100"></label>
+    <label class="row" title="When the machine records, the page asks for the microphone (the browser asks you the first time); off, the machine records silence"><input id="mic-on" type="checkbox" checked> Microphone</label>
+    <label class="row" title="The microphone as it comes: no echo cancellation, noise suppression or gain control (for music; for a call, leave it off)"><input id="mic-raw" type="checkbox"> Raw microphone</label>
     <p class="hint" id="sound-hint">Kept in this browser. The browser plays sound once the page has had a click or a key.</p>
+    <p class="hint" id="mic-hint" hidden></p>
   </div></details>
   <details class="menu" id="keys"><summary title="Key combinations the browser keeps for itself, sent to the screen's keyboard">Keys</summary><div class="items">
     <button data-chord="ControlLeft AltLeft Delete">Ctrl+Alt+Del</button>

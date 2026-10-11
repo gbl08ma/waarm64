@@ -5,9 +5,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { deviceEntry, type Ctx, type Request } from '../web/devices.ts';
+import { CAPACITY, QUANTA, RATE, RUN, WRITE, ringViews } from '../web/audio-ring.ts';
 import {
   CONTROLQ, EVENTQ, FMT_FLOAT, FMT_S16, FMT_S32, RATE_BITS, RXQ, R_CHMAP_INFO, R_JACK_INFO, R_JACK_REMAP, R_PCM_INFO, R_PCM_PREPARE, R_PCM_RELEASE,
-  R_PCM_SET_PARAMS, R_PCM_START, R_PCM_STOP, S_BAD_MSG, S_NOT_SUPP, S_OK, TXQ, checksumSink, clockSource, fnv1a, pattern as wave, patternSource, sndBackend, toF32, type SndParams, type SndState,
+  R_PCM_SET_PARAMS, R_PCM_START, R_PCM_STOP, S_BAD_MSG, S_NOT_SUPP, S_OK, TXQ, checksumSink, fnv1a, fromF32, micSource, pattern as wave, patternSource, sndBackend, toF32, type SndParams, type SndState,
 } from '../web/snd.ts';
 
 const RATE_48000 = 7;
@@ -429,10 +430,10 @@ test('snd: save and restore keep the input stream and the source; a held receive
   assert.equal(s.source.recorded().fnv, fnv1a(wave(P_IN, 0, 16384)).toString(16).padStart(8, '0'));
 });
 
-test('snd: the clock source records silence at the stream\'s rate, a buffer less a period since the guest last posted, paused while stopped', () => {
+test('snd: with no microphone the source records silence at the stream\'s rate, a buffer less a period since the guest last posted, paused while stopped', () => {
   let t = 1000;
   let untaken = 0;
-  const src = clockSource({ now: () => t, schedule: false, untaken: () => untaken });
+  const src = micSource({ now: () => t, schedule: false, untaken: () => untaken });
   const got: number[] = [];
   const ask = (k: number) => src.record(P_IN, 4096, (data) => { assert.ok(data.length === 4096 && data.every((b) => b === 0)); got.push(k); });
   for (const k of [0, 1, 2, 3]) ask(k);
@@ -460,15 +461,58 @@ test('snd: the clock source records silence at the stream\'s rate, a buffer less
   ask(5);
   at(5000);
   assert.deepEqual(got.length, 5, 'stopped: the clock stands');
-  src.start(P_IN);
-  at(5001);
-  assert.deepEqual(got.length, 6, 'what it ran before the stop counts');
-  src.release();
-  ask(6);
-  src.start(P_IN);
+  src.start(P_IN); // counted afresh from here
+  at(5021);
+  assert.deepEqual(got.length, 5);
   at(5022);
-  assert.deepEqual(got.length, 6, 'released: counted from the next START (at 5001 ms)');
-  at(5023);
-  assert.deepEqual(got.length, 7);
+  assert.deepEqual(got.length, 6);
 });
 
+test('snd: the microphone\'s ring: frames in order in the stream\'s format while its worklet fills it, at most a buffer behind; silence by the clock when it stops', () => {
+  let t = 1000;
+  const src = micSource({ now: () => t, schedule: false });
+  const { h, data } = ringViews(src.ring);
+  let written = 0;
+  /** The worklet: `n` frames, left counting up from `written`, right its negative, and a heartbeat. */
+  const quantum = (n: number) => {
+    for (let k = 0; k < n; k++) {
+      const i = 2 * ((written + k) % CAPACITY);
+      data[i] = (written + k) / 65536;
+      data[i + 1] = -(written + k) / 65536;
+    }
+    written += n;
+    Atomics.store(h, WRITE, written);
+    Atomics.add(h, QUANTA, 1);
+  };
+  const got: Uint8Array[] = [];
+  const ask = () => src.record(P_IN, 4096, (d) => got.push(d));
+  for (let k = 0; k < 4; k++) ask();
+  src.start(P_IN);
+  assert.deepEqual([Atomics.load(h, RUN), Atomics.load(h, RATE)], [1, 48000], 'the page is asked for the microphone at the stream\'s rate');
+  const at = (ms: number) => { t = ms; src.pump(); };
+  quantum(512); // from before: stale when the ring goes live
+  at(1001);
+  quantum(1000);
+  at(1002);
+  assert.equal(got.length, 0, 'not a period yet');
+  quantum(100);
+  at(1003);
+  assert.equal(got.length, 1);
+  const s16 = new Int16Array(got[0].buffer);
+  assert.deepEqual([s16[0], s16[1], s16[2], s16[2 * 1023]], [Math.round((512 / 65536) * 32767), -Math.round((512 / 65536) * 32767), Math.round((513 / 65536) * 32767), Math.round((1535 / 65536) * 32767)], 'from the frames written once live');
+  // Mono: the mean of the channels (here 0); FLOAT as it comes, clamped.
+  assert.deepEqual([...new Int16Array(fromF32(new Float32Array([0.5, -0.5, 1, 1]), { ...P_IN, channels: 1 }).buffer)], [0, 32767]);
+  assert.deepEqual([...new Float32Array(fromF32(new Float32Array([2, -0.25]), { ...P_IN, format: FMT_FLOAT }).buffer)], [1, -0.25]);
+  // A stall: 10,000 frames come at once; the next message starts at most a buffer (4096 frames) behind the newest.
+  quantum(10_000);
+  at(1004);
+  const first = Math.round(new Int16Array(got[1].buffer)[0] / 32767 * 65536);
+  assert.ok(Math.abs(first - (written - 4096)) <= 1, `${first} vs ${written - 4096}`);
+  // The worklet stops (no heartbeat for 50 ms): silence by the clock from then.
+  const n = got.length;
+  at(1060);
+  ask();
+  at(1060 + 22);
+  assert.equal(got.length, n + 1);
+  assert.ok(got[n].every((b) => b === 0));
+});

@@ -1,11 +1,11 @@
-// The page's AudioWorklet (docs/plans/audio.md §4): plays the sound ring (web/audio-ring.ts) that the device
+// The page's AudioWorklets (docs/plans/audio.md §4): `webpc-snd` plays the sound ring (web/audio-ring.ts) that the device
 // worker's virtio-snd writes. Each render quantum (128 frames) it copies what the ring has, up to a quantum, and
 // moves the read index (compare-and-exchange: the device worker's own clock may move it too, around a hand-over),
 // plays silence for what's missing, and counts a gap in a started stream's sound as an underrun when the sound
 // comes back (so a stream's end isn't one). It plays only while the stream runs (`RUN`) and its context runs at the
 // stream's rate (`RATE`: the page makes a context per rate); only then does its heartbeat (`QUANTA`) move, which
 // is what tells the device worker that the read index is the worklet's. Nothing is allocated in `process`.
-import { CAPACITY, EPOCH, GAP_FRAMES, QUANTA, RATE, READ, RUN, UNDERRUNS, WAKE, WAKE_QUANTA, WRITE, ringViews } from './audio-ring.ts';
+import { CAPACITY, DROPPED, DROPS, EPOCH, GAP_FRAMES, QUANTA, RATE, READ, RUN, UNDERRUNS, WAKE, WAKE_QUANTA, WRITE, ringViews } from './audio-ring.ts';
 
 // The AudioWorkletGlobalScope's names (not in the DOM's lib).
 declare const sampleRate: number;
@@ -76,3 +76,42 @@ class SndProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('webpc-snd', SndProcessor);
+
+/**
+ * The microphone's worklet (audio S4): writes its input (a MediaStreamAudioSourceNode's, mono to both channels) into the
+ * microphone's ring while the device worker asks for it (`RUN`, at the context's rate), each quantum moving its
+ * heartbeat; what doesn't fit is dropped and counted. Nothing is allocated in `process`.
+ */
+class MicProcessor extends AudioWorkletProcessor {
+  private h: Int32Array;
+  private data: Float32Array;
+
+  constructor(options: { processorOptions: { ring: SharedArrayBuffer } }) {
+    super();
+    ({ h: this.h, data: this.data } = ringViews(options.processorOptions.ring));
+  }
+
+  process(inputs: Float32Array[][]) {
+    const h = this.h;
+    const left = inputs[0]?.[0];
+    if (!left || !Atomics.load(h, RUN) || Atomics.load(h, RATE) !== sampleRate) return true;
+    const right = inputs[0][1] ?? left;
+    const w = Atomics.load(h, WRITE);
+    const n = Math.min(left.length, CAPACITY - ((w - Atomics.load(h, READ)) >>> 0));
+    const at = (w >>> 0) % CAPACITY;
+    for (let k = 0; k < n; k++) {
+      const i = 2 * ((at + k) % CAPACITY);
+      this.data[i] = left[k];
+      this.data[i + 1] = right[k];
+    }
+    Atomics.store(h, WRITE, (w + n) | 0);
+    if (n < left.length) {
+      Atomics.add(h, DROPS, 1);
+      Atomics.add(h, DROPPED, left.length - n);
+    }
+    Atomics.add(h, QUANTA, 1);
+    return true;
+  }
+}
+
+registerProcessor('webpc-mic', MicProcessor);

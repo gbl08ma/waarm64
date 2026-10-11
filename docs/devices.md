@@ -383,10 +383,14 @@ mode (and natively in realtime mode: std has no CSPRNG).
   **deterministic source** (`patternSource`) fills at the end of the exit that posted a message, a buffer less a
   period at most, with `pattern`: integer triangle waves, 1 kHz left and 1.5 kHz right at 48 kHz (48 and 32 frames a
   cycle, ±12000; S32 shifted, FLOAT over 32768, mono the left), counted in frames since the first, so every runner
-  records the same bytes. In realtime mode, until the page's microphone (audio S4), the **clock source**
-  (`clockSource`) records silence at the stream's rate, under the same bound as the ring sink (a buffer less a period
-  since the guest's last message, the rest after its next one or half a buffer's time and 30 ms after the core took
-  the batch).
+  records the same bytes. In realtime mode the **microphone source** (`micSource`): the spec's `mic` is the page's
+  **microphone ring** (the sound ring's layout the other way round: the page's `webpc-mic` worklet writes, the source
+  reads), and the source says on `port` when the input starts (`capture-start`, with its rate: the page opens the
+  microphone) and stops (`capture-stop`). While the worklet's heartbeat moves, a message completes once the ring has
+  its frames (converted from f32 stereo by `fromF32`; mono the mean), at most a buffer behind the newest (older frames
+  are skipped); otherwise (no page, no permission, turned off) silence at the stream's rate by the clock, restarted at
+  each switch; both under the same bound as the ring sink (a buffer less a period since the guest's last message, the
+  rest after its next one or half a buffer's time and 30 ms after the core took the batch).
 - **The realtime sink** (`ringSink`, every realtime machine): a message's frames go into the **sound ring**
   (`web/audio-ring.ts`: a `SharedArrayBuffer` of 65,536 f32 stereo frames behind an i32 header, Atomics only; a mono
   stream is written to both channels) as soon as it has room, and the message completes once the ring's read index

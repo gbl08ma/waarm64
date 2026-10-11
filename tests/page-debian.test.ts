@@ -33,7 +33,7 @@ import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { peaks } from './audio-tap.ts';
-import { sndDisk } from './snd-disk.ts';
+import { sndDisk, toneWav } from './snd-disk.ts';
 import { GAP_FRAMES } from '../web/audio-ring.ts';
 
 // The page's `running` state comes from the serial console's `ready` marker (web/app/worker.ts).
@@ -53,10 +53,12 @@ test("the page's ready marker: Debian's login prompt in any chunk, not a service
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) ? 'SKIPPED: run npm start (or images/build.sh debian edk2)' : !existsSync(new URL('../target/images/linux-snd/snd-play', import.meta.url)) && 'SKIPPED: run images/build.sh linux-snd (its snd-play)';
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) ? 'SKIPPED: run npm start (or images/build.sh debian edk2)' : !existsSync(new URL('../target/images/linux-snd/snd-rec', import.meta.url)) && 'SKIPPED: run images/build.sh linux-snd (its snd-play and snd-rec)';
 const RUNS = Number(process.env.WEBPC_PAGE_RUNS ?? 1);
 /** The second disk (served from the repo): snd-play and a tone (tests/snd-disk.ts). */
 const SND_DISK = `target/tests/snd-${process.pid}.tar`;
+/** The fake microphone's tone, Hz. */
+const MIC_HZ = 500;
 
 let browser: Browser;
 let base: string;
@@ -67,8 +69,13 @@ before(async () => {
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
   dir = mkdtempSync(join(tmpdir(), 'webpc-debian-'));
+  // Chromium's fake microphone plays a 500 Hz tone (the guest records it: audio S4).
+  writeFileSync(join(dir, 'mic.wav'), toneWav(10, 48000, [MIC_HZ, MIC_HZ]));
+  browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
+    args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', `--use-file-for-fake-audio-capture=${join(dir, 'mic.wav')}`],
+  });
   mkdirSync(new URL('../target/tests', import.meta.url), { recursive: true });
   writeFileSync(new URL(`../${SND_DISK}`, import.meta.url), sndDisk(3, 44100));
 });
@@ -280,6 +287,17 @@ for (let run = 1; run <= RUNS; run++) {
     console.log(`# Debian played ${played} frames (${sound} ms) in ${took} ms, ${xruns} underruns; the ring's gaps ${gaps} frames; heard ${heard.hz.map((h) => h.toFixed(0))} Hz; ${/snd-play: delay .*/.exec(playLog)?.[0]}`);
     assert.equal(Number(xruns), 0);
     assert.ok(Math.abs(Number(took) - Number(sound)) < 125, `${sound} ms of sound took ${took} ms`);
+    // And records (audio S4): 3 s from the page's microphone (the browser's fake device, 500 Hz) through Debian's
+    // driver, at its length in its own time, no overrun, the tone on both channels (the browser's processing is on).
+    await onSerial(page, 'clear; /tmp/p/snd-rec 48000 2 3; echo re""c-done\n');
+    await shows(page, /rec-done/, 30_000);
+    const recLog = await page.evaluate(() => (window as unknown as { __serialLog(): string }).__serialLog());
+    const [, rframes, rms, overruns, left, right] = /snd-rec: recorded (\d+) frames in (\d+) ms, (\d+) overruns, (\d+) Hz left, (\d+) Hz right/.exec(recLog) ?? [];
+    assert.ok(rframes, `snd-rec didn't finish: ${recLog.slice(-1500)}`);
+    console.log(`# Debian recorded ${rframes} frames in ${rms} ms, ${overruns} overruns, ${left} and ${right} Hz (the microphone's ${MIC_HZ})`);
+    assert.equal(Number(overruns), 0);
+    assert.ok(Math.abs(Number(rms) - 3000) < 150, `3 s took ${rms} ms`);
+    assert.ok(Math.abs(Number(left) - MIC_HZ) <= 15 && Math.abs(Number(right) - MIC_HZ) <= 15, `${left}, ${right} Hz`);
     // The screen's text as the guest has it: bash's prompt and the command on tty1.
     await onSerial(page, 'clear; tr -s " " </dev/vcs1 | grep -o "root@[a-z]*:~# echo from-" | head -1; echo scr""een-read\n');
     await shows(page, /root@[a-z]+:~# echo from-\s*screen-read/);

@@ -134,7 +134,7 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
     }
     case 'net': return m.ip && machine.network ? { type: 'net', adapter: { ip: m.ip } } : 'a network card, and this machine has no network port';
     // Without the page's ring (a page that passed none), the sink plays on its own clock.
-    case 'snd': return { type: 'snd', ring: m.sound?.ring, port: m.sound?.port, ...sndTuning() };
+    case 'snd': return { type: 'snd', ring: m.sound?.ring, mic: m.sound?.mic, port: m.sound?.port, ...sndTuning() };
   }
 }
 

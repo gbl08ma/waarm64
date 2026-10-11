@@ -12,7 +12,7 @@ import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { IoStats } from './iostats.ts';
 import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
 import { openDisk, type Disk } from './qcow2.ts';
-import { checksumSink, clockSource, patternSource, ringSink, sndBackend, type SndWake } from './snd.ts';
+import { checksumSink, micSource, patternSource, ringSink, sndBackend, type SndWake } from './snd.ts';
 
 /**
  * Host-side device configuration, one per virtio-mmio slot (in order). `blk`
@@ -86,13 +86,16 @@ export type GpuSpec = {
  * output's frames go to the checksum sink and the input's come from the pattern source (each message completes at
  * the DEVICE exit that posted it); in realtime mode the output goes to the ring sink: the page's sound ring (`ring`,
  * played by web/audio.ts's worklet, which says on `port` when a stream starts and stops), or without one a ring of
- * its own played on the sink's own clock; the input records silence on its own clock (docs/plans/audio.md).
+ * its own played on the sink's own clock; the input records from the page's microphone ring (`mic`, filled while the
+ * page has the microphone: it opens it at the input's start), else silence on its own clock (docs/plans/audio.md).
  */
 export type SndSpec = {
   type: 'snd';
   /** The page's sound ring (web/audio-ring.ts). */
   ring?: SharedArrayBuffer;
-  /** The page's end: the stream's start (its rate) and stop, and with `stats` the completions' timing once a second. */
+  /** The page's microphone ring (the same layout, filled by web/audio.ts's `webpc-mic` worklet). */
+  mic?: SharedArrayBuffer;
+  /** The page's end: the streams' starts (their rates) and stops, and with `stats` the completions' timing once a second. */
   port?: MessagePort;
   /** What wakes the sink to complete played messages (default the worklet's notify): measurements. */
   wake?: SndWake;
@@ -687,7 +690,7 @@ export class Devices {
           if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;
         }
-        case 'snd': return deterministic ? sndBackend(ctx, checksumSink(), patternSource()) : sndBackend(ctx, ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats, untaken: () => ctx.untaken() }), clockSource({ untaken: () => ctx.untaken() }));
+        case 'snd': return deterministic ? sndBackend(ctx, checksumSink(), patternSource()) : sndBackend(ctx, ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats, untaken: () => ctx.untaken() }), micSource({ ring: d.mic, port: d.port, untaken: () => ctx.untaken() }));
       }
     });
     this.epochs = specs.map(() => 0);

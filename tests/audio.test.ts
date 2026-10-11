@@ -5,7 +5,7 @@
 // period at once, with the page's output latency; pause, release, mono; the worklet's gaps counted as underruns.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CAPACITY, GAP_FRAMES, LATENCY, QUANTA, RATE, READ, RUN, UNDERRUNS, WRITE, newRing, ringViews } from '../web/audio-ring.ts';
+import { CAPACITY, DROPPED, DROPS, GAP_FRAMES, LATENCY, QUANTA, RATE, READ, RUN, UNDERRUNS, WRITE, newRing, ringViews } from '../web/audio-ring.ts';
 import { FMT_FLOAT, FMT_S16, ringSink, type SndParams } from '../web/snd.ts';
 import { flashProbe } from '../web/virgl-screen.ts';
 
@@ -228,15 +228,16 @@ test('ring sink: a mono stream is written to both channels; FLOAT as it comes', 
   assert.deepEqual([...data.subarray(0, 4)], [0.5, 0.5, -0.25, -0.25]);
 });
 
-/** web/audio-worklet.ts's processor class, under stubs of the AudioWorkletGlobalScope's names. */
-async function processor() {
+type Proc = new (o: unknown) => { process(i: Float32Array[][], o: Float32Array[][]): boolean };
+/** web/audio-worklet.ts's processor classes by name, under stubs of the AudioWorkletGlobalScope's names. */
+const processors = new Map<string, Proc>();
+async function processor(name = 'webpc-snd') {
   const g = globalThis as unknown as Record<string, unknown>;
-  let ctor: (new (o: unknown) => { process(i: unknown, o: Float32Array[][]): boolean }) | undefined;
   g.sampleRate = 48000;
-  g.AudioWorkletProcessor = class {};
-  g.registerProcessor = (_name: string, c: typeof ctor) => { ctor = c; };
+  g.AudioWorkletProcessor ??= class {};
+  g.registerProcessor = (n: string, c: Proc) => { processors.set(n, c); };
   await import('../web/audio-worklet.ts');
-  return ctor!;
+  return processors.get(name)!;
 }
 
 test('worklet: plays the ring a quantum at a time while started at its rate; a gap in the sound is an underrun when it ends', async () => {
@@ -281,3 +282,29 @@ test("A/V sync's picture end (?avprobe): a flash is a draw that turns the screen
   assert.equal(t.length, 2); // the white after black, and the light grey after the dark; mid grey and red neither end nor start one
   assert.ok(t.every((x) => Math.abs(x - (performance.timeOrigin + performance.now())) < 1000));
 });
+
+test('microphone worklet: writes its input into the ring while asked at its rate, mono to both channels; drops and counts what doesn\'t fit', async () => {
+  const Mic = await processor('webpc-mic');
+  const ring = newRing();
+  const { h, data } = ringViews(ring);
+  const m = new Mic({ processorOptions: { ring } });
+  const input = (from: number) => Float32Array.from({ length: 128 }, (_, k) => (from + k) / 1024);
+  m.process([[input(0), input(0).map((x) => -x)]], []);
+  assert.deepEqual([Atomics.load(h, WRITE), Atomics.load(h, QUANTA)], [0, 0], 'not asked: nothing written');
+  Atomics.store(h, RATE, 44100);
+  Atomics.store(h, RUN, 1);
+  m.process([[input(0)]], []);
+  assert.equal(Atomics.load(h, WRITE), 0, 'another rate: nothing written');
+  Atomics.store(h, RATE, 48000);
+  m.process([[input(0), input(0).map((x) => -x)]], []);
+  m.process([[input(128)]], []); // mono
+  m.process([[]], []); // no input yet (the stream not connected): nothing, no heartbeat
+  assert.deepEqual([Atomics.load(h, WRITE), Atomics.load(h, QUANTA)], [256, 2]);
+  assert.deepEqual([data[2], data[3], data[2 * 129], data[2 * 129 + 1]], [1 / 1024, -1 / 1024, 129 / 1024, 129 / 1024]);
+  // Full: the reader is CAPACITY - 64 frames behind; a quantum writes 64 and drops 64.
+  Atomics.store(h, WRITE, CAPACITY - 64);
+  Atomics.store(h, READ, 0);
+  m.process([[input(0)]], []);
+  assert.deepEqual([Atomics.load(h, WRITE), Atomics.load(h, DROPS), Atomics.load(h, DROPPED)], [CAPACITY, 1, 64]);
+});
+

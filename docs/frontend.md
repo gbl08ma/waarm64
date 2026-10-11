@@ -379,15 +379,23 @@ page writes the context's output latency into the ring's header, and the guest g
   resumes it at once (that works after any earlier click) and at every click or key anywhere on the page; meanwhile
   the sink's own clock plays the ring, so the guest's sound keeps time and nothing stalls, and the menu's summary
   reads **Sound: click to hear** (with an accent border).
-- **The Sound menu:** Sound on (unchecked: muted, the gain at 0; the guest still plays in real time) and Volume
-  (0-100%). Both apply live and are kept in this browser (`muted`, `volume` in `webpc.settings`); the summary reads
+- **The Sound menu:** Sound on (unchecked: muted, the gain at 0; the guest still plays in real time), Volume
+  (0-100%), Microphone and Raw microphone (below). Both apply live and are kept in this browser (`muted`, `volume` in `webpc.settings`); the summary reads
   "Sound (muted)" when off. Not in the Machine menu, whose choices apply by a restart.
-- **Restarts and stops:** the ring is dropped with the machine (`detach`); the context stays (a new machine
-  reuses it at the same rate, without needing another click).
+- **The microphone** (audio S4, decisions 13 and 14): each start also makes a **microphone ring**. When the guest
+  starts recording, the device says so on the port with the stream's rate; unless **Microphone** is unchecked, the page
+  asks for the microphone (`getUserMedia`: the browser's prompt the first time) with the browser's echo cancellation,
+  noise suppression and gain control, or none with **Raw microphone** (for music), makes a context at the stream's rate
+  with a `MediaStreamAudioSourceNode` into the `webpc-mic` worklet, which writes the ring, and the summary reads
+  "Sound · mic". When recording stops the microphone and its context are closed (the browser's indicator goes off). Off,
+  refused (the menu's hint says so) or until it's granted, the guest records silence in real time. Both choices apply
+  live (the microphone is opened again) and are kept (`mic`, `micRaw`).
+- **Restarts and stops:** the rings are dropped with the machine (`detach`, the microphone closed); the playback
+  context stays (a new machine reuses it at the same rate, without needing another click).
 - Not covered headless (audio.md §13): the real autoplay prompt (headless Chromium runs contexts without a
   gesture; the test suspends the context instead) and a hidden tab.
 - **Measurement hooks:** `?snd=` exposes the page's `PageAudio` as `window.__audio` (its ring's header, context,
-  output node and an analyser tap; `?snd=stats` adds the device's completion timing); `?avprobe` makes the screen
+  output node and an analyser tap, the microphone's state, ring header and track settings; `?snd=stats` adds the device's completion timing); `?avprobe` makes the screen
   (the device worker's 2D presenter, or the GPU worker's `Screen` on a 3D machine, which reads its centre pixel back
   after each present) post the time of every draw that turns the screen's centre from dark to bright, kept in
   `window.__flashes` (ms on the page's clock): A/V sync's picture end (`bench/audio/avsync.ts`).

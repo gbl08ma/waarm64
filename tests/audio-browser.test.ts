@@ -15,7 +15,7 @@
 // device posts its held messages again and the guest writes the rest of its tone (its clock stands still until its
 // vCPUs run, and the sink never completes a whole buffer it hasn't seen).
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -31,13 +31,42 @@ const skip = !existsSync(new URL('linux-snd/Image', IMAGES)) && 'SKIPPED: run im
 let browser: Browser;
 let base: string;
 let close: () => void;
+let micDir: string;
+/** The fake microphone's tone (Hz): Chromium plays a WAV as its capture device (`--use-file-for-fake-audio-capture`). */
+const MIC_HZ = 500;
 before(async () => {
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  micDir = mkdtempSync(join(tmpdir(), 'webpc-mic-'));
+  const wav = join(micDir, 'tone.wav');
+  writeFileSync(wav, toneWav(MIC_HZ, 48000, 10));
+  browser = await chromium.launch({
+    executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium',
+    args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', `--use-file-for-fake-audio-capture=${wav}`],
+  });
 });
-after(async () => { await browser?.close(); close?.(); });
+after(async () => { await browser?.close(); close?.(); if (micDir) rmSync(micDir, { recursive: true }); });
+
+/** A mono S16 WAV of a sine at half scale. */
+function toneWav(hz: number, rate: number, seconds: number) {
+  const n = rate * seconds;
+  const b = Buffer.alloc(44 + 2 * n);
+  b.write('RIFF', 0, 'latin1');
+  b.writeUInt32LE(36 + 2 * n, 4);
+  b.write('WAVEfmt ', 8, 'latin1');
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(rate, 24);
+  b.writeUInt32LE(2 * rate, 28);
+  b.writeUInt16LE(2, 32);
+  b.writeUInt16LE(16, 34);
+  b.write('data', 36, 'latin1');
+  b.writeUInt32LE(2 * n, 40);
+  for (let k = 0; k < n; k++) b.writeInt16LE(Math.round(16384 * Math.sin((2 * Math.PI * hz * k) / rate)), 44 + 2 * k);
+  return b;
+}
 
 type W = { __serialLog: () => string; __audio: { header(): Int32Array; context(): AudioContext; waiting(): boolean; playing: boolean; tap(): AnalyserNode; stats: unknown[]; spans: number[] } };
 const serial = (page: Page) => page.evaluate(() => (window as unknown as W).__serialLog?.() ?? '');
@@ -91,12 +120,12 @@ test('the snd guest plays a tone on the page in real time: its length in its own
   assert.equal(r.end, 'drain');
   assert.ok(h[QUANTA] * 128 > 0.9 * r.frames, `the worklet played ${h[QUANTA] * 128} of ${r.frames} frames`);
   assert.ok(h[LATENCY] > 0, 'no output latency reported');
-  // Then it records 16 periods: with no microphone, silence at the stream's rate (QEMU's `none` backend gives the
-  // same: 342 ms, audio.md §16).
-  const [, hash, ms] = /^snd: recorded 16384 frames fnv1a ([0-9a-f]{8}) in (\d+) ms, 0 Hz left, 0 Hz right$/m.exec((await serial(page)).replaceAll('\r\n', '\n')) ?? [];
-  console.log(`# recorded 16 periods of silence in ${ms} ms of the guest's time`);
-  assert.equal(hash, fnv1a(new Uint8Array(16384 * 4)).toString(16).padStart(8, '0'));
-  assert.ok(Math.abs(Number(ms) - 341) < 40, `${ms} ms`);
+  // Then it records 16 periods, in real time (this browser has a fake microphone; silence: the Microphone-off test).
+  // The microphone opens while it records: the switch from the clock's silence to the microphone starts the period
+  // in progress again (micSource), up to 21 ms more than the 341.
+  const rec = recorded(await serial(page));
+  console.log(`# recorded 16 periods in ${rec.ms} ms of the guest's time`);
+  assert.ok(rec.ms > 330 && rec.ms < 341 + 60, `${rec.ms} ms`);
   // Remembered: the reload starts muted.
   await page.reload();
   await page.locator('#sound-menu summary').click();
@@ -201,3 +230,85 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     rmSync(dir, { recursive: true });
   }
 });
+
+type Mic = { micState: string; micHeader(): Int32Array | undefined; micSettings(): MediaTrackSettings | undefined };
+/** The open microphone's processing (echo cancellation, noise suppression, gain control). */
+const processing = (page: Page) => page.evaluate(() => { const s = (window as unknown as { __audio: Mic }).__audio.micSettings(); return [s?.echoCancellation, s?.noiseSuppression, s?.autoGainControl]; });
+/** The guest's recording line: frames, hash, its own ms, and each channel's Hz. */
+const recorded = (log: string) => {
+  const [, frames, hash, ms, left, right] = /^snd: recorded (\d+) frames fnv1a ([0-9a-f]{8}) in (\d+) ms, (\d+) Hz left, (\d+) Hz right$/m.exec(log.replaceAll('\r\n', '\n')) ?? [];
+  assert.ok(frames, `no recording: ${log.slice(-1500)}`);
+  return { frames: Number(frames), hash, ms: Number(ms), left: Number(left), right: Number(right) };
+};
+/** A page of the snd machine with these settings kept, its guest playing 0.2 s and then recording (`rec` seconds, or 16 periods). */
+async function micPage(stored: Record<string, unknown>, rec?: number, init?: () => void) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.addInitScript((s) => localStorage.setItem('webpc.settings', JSON.stringify(s)), stored);
+  if (init) await page.addInitScript(init);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  const params = encodeURIComponent(`snd_seconds=0.2${rec ? ` snd_rec_seconds=${rec}` : ''}`);
+  await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=${params}&snd=stats`);
+  await page.mouse.click(5, 5);
+  return { context, page, errors };
+}
+const silence16 = fnv1a(new Uint8Array(16384 * 4)).toString(16).padStart(8, '0');
+
+test('the guest records the page\'s microphone (raw): the tone on both channels, in real time; the microphone closes when it stops', { skip }, async () => {
+  const { context, page, errors } = await micPage({ micRaw: true }, 3);
+  await page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio.micState === 'on', null, { timeout: 60_000 });
+  await page.waitForFunction(() => /· mic/.test(document.getElementById('sound-summary')!.textContent ?? ''), null, { timeout: 5_000 });
+  assert.deepEqual(await processing(page), [false, false, false], 'raw');
+  await until(page, /snd test (ok|failed)/, 30_000);
+  const r = recorded(await serial(page));
+  const h = (await page.evaluate(() => [...(window as unknown as { __audio: Mic }).__audio.micHeader()!]));
+  console.log(`# recorded the microphone: ${r.frames} frames in ${r.ms} ms, ${r.left} and ${r.right} Hz (the tone ${MIC_HZ}); the worklet wrote ${h[WRITE]} frames, dropped ${h[GAP_FRAMES]}`);
+  assert.ok(Math.abs(r.left - MIC_HZ) <= 10 && Math.abs(r.right - MIC_HZ) <= 10, `${r.left}, ${r.right} Hz`);
+  assert.ok(Math.abs(r.ms - (1000 * r.frames) / 48000) < 150, `${r.frames} frames took ${r.ms} ms`);
+  await page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio.micState === 'idle', null, { timeout: 5_000 });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('with the browser\'s processing (the default) the microphone is heard too', { skip }, async () => {
+  const { context, page, errors } = await micPage({}, 2);
+  await page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio.micState === 'on', null, { timeout: 60_000 });
+  assert.deepEqual(await processing(page), [true, true, true]);
+  await until(page, /snd test (ok|failed)/, 60_000);
+  const r = recorded(await serial(page));
+  console.log(`# recorded the processed microphone: ${r.left} and ${r.right} Hz`);
+  assert.notEqual(r.hash, fnv1a(new Uint8Array(r.frames * 4)).toString(16).padStart(8, '0'), 'silence');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('Microphone off: the page never asks for it and the guest records silence in real time; refused: silence, and the menu says so', { skip }, async () => {
+  const counting = () => {
+    const w = window as unknown as { __asked: number };
+    w.__asked = 0;
+    const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = (c) => { w.__asked++; return real(c); };
+  };
+  const off = await micPage({ mic: false }, undefined, counting);
+  await until(off.page, /snd test (ok|failed)/, 60_000);
+  const r = recorded(await serial(off.page));
+  assert.equal(r.hash, silence16);
+  assert.ok(Math.abs(r.ms - 341) < 40, `${r.ms} ms`);
+  assert.equal(await off.page.evaluate(() => (window as unknown as { __asked: number }).__asked), 0);
+  assert.equal(await off.page.evaluate(() => (window as unknown as { __audio: Mic }).__audio.micState), 'off');
+  assert.deepEqual(off.errors, []);
+  await off.context.close();
+
+  const refusing = () => { navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('refused', 'NotAllowedError')); };
+  const no = await micPage({}, undefined, refusing);
+  await no.page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio.micState === 'denied', null, { timeout: 60_000 });
+  await no.page.locator('#sound-menu summary').click();
+  assert.match(await no.page.locator('#mic-hint').textContent() ?? '', /refused the microphone/);
+  assert.equal(await no.page.locator('#mic-hint').isVisible(), true);
+  await until(no.page, /snd test (ok|failed)/, 30_000);
+  assert.equal(recorded(await serial(no.page)).hash, silence16);
+  assert.deepEqual(no.errors, []);
+  await no.context.close();
+});
+
