@@ -2,8 +2,9 @@
 
 **Status:** S0 done (the guests: §11), S1 done (the device, deterministic: §12) and S2 done (the page: §13),
 2026-10-10; S3 done (real guests: §14), 2026-10-11 (the user's ear: "good enough", decision 12); S4 (snapshots and
-capture) under way: snapshots while sound plays done (§15); capture's device (§16) and the page's microphone (§17)
-done; Debian's recording and the desktop guest's source next, then the user's ear. The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
+capture) done, 2026-10-11, but for the user's checks by hand (a real microphone, the browser's prompt and indicator,
+by ear on the desktop guest: backlog "Sound by hand only"): snapshots while sound plays (§15), capture's device (§16),
+the page's microphone, Debian's and the desktop guest's recording (§17). The user's decisions are §10; the rest is the proposal, to be settled by measurement as it's built. It feeds M8's "Audio" item (PLAN.md, M8).
 
 The question: how does a guest's sound reach the page's speakers (and, maybe, the page's microphone reach the
 guest), **with the guest's own unmodified drivers**, in time with what it shows, without the main thread in the path?
@@ -167,7 +168,9 @@ guest), **with the guest's own unmodified drivers**, in time with what it shows,
   S0, then its PKGBUILD). **Exit (the user's bar): a video's sound in sync with its picture in Firefox on the
   desktop guest**, by ear and by the reported latency; the decode cost measured; ci-debian covers Debian's ALSA
   playback.
-- **S4, snapshots and capture:** a snapshot taken while sound plays resumes playing; capture if §10 says so.
+- **S4, snapshots and capture** (**done**, §15-§17, but for the user's checks by hand): a snapshot taken while sound
+  plays resumes playing; capture (decisions 13-16): the device's input stream, the page's microphone on the guest's
+  demand, Debian's and the desktop guest's recording.
 
 ## 9. Risks
 
@@ -518,6 +521,11 @@ Chromium's fake capture device (`--use-fake-device-for-media-stream`, `--use-fak
 - **Debian records it** (ci-debian, Debian 13's own `virtio_snd`; `snd-rec`, images/snd/rec.c, on the second disk
   since the nocloud image has no alsa-utils, decision 16's arecord in kind): 3 s at 48 kHz stereo with arecord's
   buffer, 144,000 frames in 3,020 ms of its own time, no overrun, **497 Hz** on both channels (the processed microphone).
+- **The desktop guest records it through PipeWire** (`bench/audio/mic-desktop.ts`, dev-only, on S3's image with
+  Chromium's fake device at 500 Hz; `bench/audio/results/s4/results.json`): WirePlumber makes the virtio card's capture
+  a source (`alsa_input.platform-a000c00.virtio_mmio.stereo-fallback`; not yet listed right after sway started, there
+  once recording ran), and `pw-record` (48 kHz stereo S16) records it: **491 Hz** on both channels by the guest's zero
+  crossings, peak 16,079 of 32,767, the page's microphone open and nothing dropped (4 runs: 491-493 Hz).
 - Headless Chromium grants the microphone without a prompt (the fake UI flag); the real prompt, the browser's
   indicator and a real microphone are the user's checks.
 

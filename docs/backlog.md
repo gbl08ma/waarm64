@@ -376,6 +376,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   wait's timeout is the one to look at; the worklet's notify comes from the audio thread. And the ear (audio S3, §14):
   a video in Firefox on the desktop guest (`images/archarm/desktop.sh`, e.g. `avsync.html?v=sintel.webm`) in sync
   as heard; the measurement is the page's draw against the sound's output (-17 to +20 ms after Firefox's first 4 s).
+  And the microphone (audio S4, §17): headless Chromium has a fake capture device and grants it without a prompt, so
+  the real prompt at the guest's first recording, the browser's indicator going off when it stops, a refusal's hint,
+  and a real microphone by ear (e.g. on the desktop guest: `pw-record /tmp/a.wav`, then `pw-play /tmp/a.wav`, with and
+  without Raw microphone) are the user's checks.
 
 ## Snapshots (M8 phase C, snapshots lane; [plans/snapshots.md](plans/snapshots.md), [platform.md](platform.md) "Snapshots")
 - **A restored machine's lost interrupt** (audio S4, [plans/audio.md](plans/audio.md) §16): under ten busy-looping
