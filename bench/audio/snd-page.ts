@@ -1,4 +1,4 @@
-// Audio S2's exit measurement (docs/plans/audio.md §13): the snd test guest (images/snd/init.c) plays its tone on
+// Audio S2's exit measurement (docs/audio.md "Measurements"): the snd test guest (images/snd/init.c) plays its tone on
 // the page for `--seconds` in headless Chromium, and the run is written down as JSON: the guest's own report (frames,
 // the time from its first write to the end of its drain), the ring's counters at the end (underruns, their silent
 // frames, the worklet's quanta, the output latency), the page's context, and the sink's stats for each second

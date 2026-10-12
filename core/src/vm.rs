@@ -490,7 +490,7 @@ pub struct Vm {
 /// host's work meanwhile (writing the file, spawning a restored VM's vCPU
 /// workers) isn't the guest's time, and a guest that was waiting with a short
 /// timeout would otherwise find it expired before it ran (ALSA's 100 ms wait for
-/// a sound period: audio.md §15). Both machines go on from the same instant.
+/// a sound period: docs/audio.md "Linux driver behavior"). Both machines go on from the same instant.
 struct Clock {
     /// When it started counting from `base`: `now_ms` as f64 bits on wasm,
     /// ns since `anchor` natively; `UNSTARTED` until then.

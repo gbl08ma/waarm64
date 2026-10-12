@@ -1,4 +1,4 @@
-// The sound ring without a browser (docs/plans/audio.md §4, §6): the realtime sink (web/snd.ts `ringSink`) on a
+// The sound ring without a browser (docs/audio.md "How it fits together"): the realtime sink (web/snd.ts `ringSink`) on a
 // fake clock, with the worklet's side played by hand or by the worklet itself (web/audio-worklet.ts, loaded with the
 // AudioWorkletGlobalScope's names stubbed): frames converted into the ring in order and across its wrap, messages
 // completed when the read index passes them (the worklet's, or the sink's own clock's), at most a buffer less a
@@ -134,7 +134,7 @@ test('ring sink: at most a buffer less a period completes since the guest last p
   s.at(1158); // 72.7 ms after that
   assert.deepEqual(s.ids(), [0, 1, 2, 3]);
   // Counted across pumps, not per pump: Linux reports progress from a work item that one run serves for any number of
-  // completions, so a whole buffer completed before it runs reads as none (audio.md §15).
+  // completions, so a whole buffer completed before it runs reads as none (docs/audio.md "Linux driver behavior").
   const c = rig();
   c.sink.start(P);
   for (let k = 0; k < 4; k++) c.play(c.period(k * 1024));
@@ -167,7 +167,7 @@ test('ring sink: at most a buffer less a period completes since the guest last p
   u.at(1278);
   assert.deepEqual(u.ids(), [0, 1, 2, 3]);
   // A restored machine: three held messages posted again, and the restored RAM may hold a completion the guest hasn't
-  // seen (audio.md §16): counted as a whole buffer in flight, two complete, the third after the guest posts.
+  // seen (docs/audio.md "Linux driver behavior"): counted as a whole buffer in flight, two complete, the third after the guest posts.
   const z = rig();
   z.sink.start(P);
   for (let k = 0; k < 3; k++) z.play(z.period(k * 1024));

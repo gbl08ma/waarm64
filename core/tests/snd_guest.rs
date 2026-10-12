@@ -60,7 +60,7 @@ fn the_snd_guest_plays_its_waveform() {
     // What the guest read: 16 periods of the pattern from frame 4096. Linux's driver posts a capture
     // period again as soon as ALSA counts it, before the reader has it, so a source faster than real
     // time (this one fills a message at the exit after it's posted) overwrites the first buffer
-    // before the first read (docs/plans/audio.md §16); the source filled that buffer, the 16 periods
+    // before the first read (docs/audio.md "Linux driver behavior"); the source filled that buffer, the 16 periods
     // read, and the buffer still posted at the end. (The pattern's 96-frame cycle makes a start at
     // 1024 the same bytes; the counts say 4096.)
     let p = common::snd::Params {

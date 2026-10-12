@@ -87,7 +87,7 @@ export type GpuSpec = {
  * the DEVICE exit that posted it); in realtime mode the output goes to the ring sink: the page's sound ring (`ring`,
  * played by web/audio.ts's worklet, which says on `port` when a stream starts and stops), or without one a ring of
  * its own played on the sink's own clock; the input records from the page's microphone ring (`mic`, filled while the
- * page has the microphone: it opens it at the input's start), else silence on its own clock (docs/plans/audio.md).
+ * page has the microphone: it opens it at the input's start), else silence on its own clock (docs/audio.md).
  */
 export type SndSpec = {
   type: 'snd';

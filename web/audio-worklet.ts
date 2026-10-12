@@ -1,4 +1,4 @@
-// The page's AudioWorklets (docs/plans/audio.md §4): `webpc-snd` plays the sound ring (web/audio-ring.ts) that the device
+// The page's AudioWorklets (docs/audio.md "How it fits together"): `webpc-snd` plays the sound ring (web/audio-ring.ts) that the device
 // worker's virtio-snd writes. Each render quantum (128 frames) it copies what the ring has, up to a quantum, and
 // moves the read index (compare-and-exchange: the device worker's own clock may move it too, around a hand-over),
 // plays silence for what's missing, and counts a gap in a started stream's sound as an underrun when the sound

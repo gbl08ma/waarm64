@@ -1,6 +1,6 @@
-// virtio-snd backend (docs/devices.md "snd (ID 25)", docs/plans/audio.md), written from the virtio 1.2
+// virtio-snd backend (docs/devices.md "snd (ID 25)", docs/audio.md), written from the virtio 1.2
 // specification §5.14, with Linux's sound/virtio read for behavior and QEMU's virtio-sound-device as
-// the oracle for what a guest sends (audio.md §12). core/tests/common/snd.rs is its native twin and
+// the oracle for what a guest sends (docs/audio.md "Linux driver behavior"). core/tests/common/snd.rs is its native twin and
 // must give the same answers and play the same bytes.
 //
 // An output stream (0) and an input stream (1), no jacks, no channel maps, no controls; queues controlq,
@@ -93,7 +93,7 @@ export type Played = { frames: number; bytes: number; messages: number; fnv: str
  * posted them, or those held until START at START's. **At most a buffer less a period per exit:** Linux's
  * driver counts its position in completions modulo the buffer, so a whole buffer completed before it looks
  * again reads as nothing played and the stream stalls (the four periods a player queues before START did
- * exactly that: audio.md §12); what's left completes at the next exit, which the guest makes as soon as it
+ * exactly that: docs/audio.md "Linux driver behavior"); what's left completes at the next exit, which the guest makes as soon as it
  * writes again. At most `keep` bytes of what was played are kept (`kept()`), for tests.
  */
 export function checksumSink(keep = 0) {
@@ -168,7 +168,7 @@ export type SndToPage =
   | { type: 'capture-stop' }
   /** `ms`: the time since the stream's START (a stream that ran: what the ring paced, the gaps included). */
   | { type: 'stop'; ms?: number }
-  /** Once a second with `stats`: the completions' timing (audio.md §13). */
+  /** Once a second with `stats`: the completions' timing (docs/audio.md "Measurements"). */
   | { type: 'stats'; stats: SndStats };
 /**
  * A second of a realtime sink: messages completed, the spread of the intervals between completions around a
@@ -189,7 +189,7 @@ const CAP_WAIT_MS = 10;
 const JIFFY_MARGIN_MS = 30;
 
 /**
- * The bound on a realtime stream's completions (audio.md §12, §15, §16): at most a buffer less a period since the
+ * The bound on a realtime stream's completions (docs/audio.md "Linux driver behavior"): at most a buffer less a period since the
  * guest's last message. Linux's driver adds each completion to its position modulo the buffer and reports progress
  * from a work item that one run serves for any number of completions, so a whole buffer completed before that work
  * runs reads as none; only ALSA's jiffies check takes it for a full wrap, when more than half a buffer of the guest's
@@ -214,7 +214,7 @@ function completionBound(untaken?: () => number) {
     /**
      * A restored machine's stream: its held messages were posted again (`bytes` of them), and completions the old
      * device made may be in the restored RAM, not yet seen by the guest (a snapshot is taken with every completion the
-     * core had: audio.md §16). Counted as if the guest had had a whole buffer in flight.
+     * core had: docs/audio.md "Linux driver behavior"). Counted as if the guest had had a whole buffer in flight.
      */
     restored(p: SndParams, bytes: number) {
       [since, takenAt, held] = [Math.max(0, p.bufferBytes - bytes), undefined, false];
@@ -243,13 +243,13 @@ function completionBound(untaken?: () => number) {
 }
 
 /**
- * The realtime sink (audio.md §3-§5): a message's frames go into the ring (as f32 stereo) as soon as there's
+ * The realtime sink (docs/audio.md "How it fits together"): a message's frames go into the ring (as f32 stereo) as soon as there's
  * room, and the message completes once the ring's read index passed its last frame, with `latency_bytes` the
  * browser's output latency (Linux makes it ALSA's `delay`: what's still to be heard after a period completes,
  * which is what A/V sync reads). The read index is the worklet's while it plays; else this sink's own clock moves
  * it at the stream's rate (a machine without a page, a page whose context waits for a click), so a guest never
  * stalls for want of a listener. Completions are made by `pump`, which runs on a timer or when the worklet notifies
- * (`wake`), never more than a buffer less a period at once (audio.md §12): the rest waits for the guest's next
+ * (`wake`), never more than a buffer less a period at once (docs/audio.md "Linux driver behavior"): the rest waits for the guest's next
  * message (`completionBound`, counted across pumps, with `untaken` the core's completions not taken yet). `now` and
  * `schedule: false` are for tests (which call `pump` themselves).
  */
@@ -544,7 +544,7 @@ export function fromF32(f32: Float32Array, p: SndParams) {
 }
 
 /**
- * The realtime source with the page's microphone (audio S4, docs/plans/audio.md §4): while the page's `webpc-mic` worklet
+ * The realtime source with the page's microphone (audio S4, docs/audio.md "How it fits together"): while the page's `webpc-mic` worklet
  * fills the microphone's ring (its heartbeat moved in the last `LIVE_MS`), a message completes once the ring has its
  * frames, at most a buffer behind (older frames are skipped: latency, not a backlog, after a stall); otherwise (no
  * page, no permission yet or refused, the microphone turned off) silence at the stream's rate by the clock (paused

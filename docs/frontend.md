@@ -366,8 +366,8 @@ never set leaves the page's own pointer; one it hid is `none`. docs/plans/graphi
 
 ## Sound
 
-Every page machine has a sound card, a virtio-snd ([devices.md](devices.md) "snd", [plans/audio.md](plans/audio.md)),
-on by default (audio decision 3). Each start makes a new **sound ring** and port (`PageAudio.attach` in
+Every page machine has a sound card, a virtio-snd ([devices.md](devices.md) "snd", [audio.md](audio.md)),
+on by default ([audio.md](audio.md) "Decisions"). Each start makes a new **sound ring** and port (`PageAudio.attach` in
 web/audio.ts), passed in the start message (`sound`) to the device worker's realtime sink. When the guest starts a
 stream, the device says so on the port with the stream's rate; the page makes an `AudioContext` at that rate (so the
 browser resamples to the output device; a new rate makes a new context; `latencyHint: 'interactive'`), loads the
@@ -382,7 +382,7 @@ page writes the context's output latency into the ring's header, and the guest g
 - **The Sound menu:** Sound on (unchecked: muted, the gain at 0; the guest still plays in real time), Volume
   (0-100%), Microphone and Raw microphone (below). Both apply live and are kept in this browser (`muted`, `volume` in `webpc.settings`); the summary reads
   "Sound (muted)" when off. Not in the Machine menu, whose choices apply by a restart.
-- **The microphone** (audio S4, decisions 13 and 14): each start also makes a **microphone ring**. When the guest
+- **The microphone** (audio S4: [audio.md](audio.md) "Decisions"): each start also makes a **microphone ring**. When the guest
   starts recording, the device says so on the port with the stream's rate; unless **Microphone** is unchecked, the page
   asks for the microphone (`getUserMedia`: the browser's prompt the first time) with the browser's echo cancellation,
   noise suppression and gain control, or none with **Raw microphone** (for music), makes a context at the stream's rate
@@ -392,7 +392,7 @@ page writes the context's output latency into the ring's header, and the guest g
   live (the microphone is opened again) and are kept (`mic`, `micRaw`).
 - **Restarts and stops:** the rings are dropped with the machine (`detach`, the microphone closed); the playback
   context stays (a new machine reuses it at the same rate, without needing another click).
-- Not covered headless (audio.md §13): the real autoplay prompt (headless Chromium runs contexts without a
+- Not covered headless ([audio.md](audio.md) "Measurements"): the real autoplay prompt (headless Chromium runs contexts without a
   gesture; the test suspends the context instead) and a hidden tab.
 - **Measurement hooks:** `?snd=` exposes the page's `PageAudio` as `window.__audio` (its ring's header, context,
   output node and an analyser tap, the microphone's state, ring header and track settings; `?snd=stats` adds the device's completion timing); `?avprobe` makes the screen

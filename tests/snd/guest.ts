@@ -3,7 +3,7 @@
 // native twin reads the same file: core/tests/snd_guest.rs) and a sink that was given exactly what the
 // guest says it wrote, which is init.c's waveform made again here (so the hash isn't merely the guest's word);
 // and what it recorded: the deterministic source's pattern from frame 4096 (Linux posts a capture period again
-// before its reader has it, so a source faster than real time overwrites the first buffer: docs/plans/audio.md §16).
+// before its reader has it, so a source faster than real time overwrites the first buffer: docs/audio.md "Linux driver behavior").
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { FMT_S16, fnv1a, pattern, type Played, type SndState } from '../../web/snd.ts';

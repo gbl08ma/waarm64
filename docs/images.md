@@ -105,9 +105,9 @@ a distro the project doesn't ship. `images/archarm/build.sh [--out f.qcow2] [--r
   An image with it and ALSA's tools: `images/archarm/build.sh --packages alsa-utils --modules
   target/archarm/virtio-snd/7.2.9-1-aarch64-ARCH`; build both the same day (the mirror keeps only the latest kernel,
   and the module must match the image's exactly). udev loads it when the device is there. Checked under QEMU's
-  `virtio-sound-device` (with `-global virtio-mmio.force-legacy=false`): [plans/audio.md](plans/audio.md) §11.
+  `virtio-sound-device` (with `-global virtio-mmio.force-legacy=false`): [audio.md](audio.md) "The guests".
 - **The DKMS package (`images/archarm/virtio-snd-dkms/`, `images/archarm/virtio-snd-dkms.sh`, on demand, ~3 min):**
-  a PKGBUILD for `virtio-snd-dkms` (audio decision 11): one stable release's `sound/virtio` (its `pkgver`, now 7.2.9),
+  a PKGBUILD for `virtio-snd-dkms` ([audio.md](audio.md) "The guests"): one stable release's `sound/virtio` (its `pkgver`, now 7.2.9),
   fetched file by file from git.kernel.org's `plain` view at `makepkg` time with their sha256s, and a `dkms.conf` that
   builds it with the upstream Makefile (`CONFIG_SND_VIRTIO=m`); `depends=(dkms)`, the headers are the user's. The
   script makes and installs it as a user would, in a container of `localhost/archarm-base` upgraded with

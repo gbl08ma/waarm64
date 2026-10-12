@@ -173,21 +173,17 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     list as a test of its own (`scripts/ci-deqp.sh`); the menu has a 2D/3D choice. **Next: G5, proposed in
     `M8-GRAPHICS-HANDOVER.md`** (snapshots while 3D is in use, dEQP on a real GPU, the guest-side leftovers; the
     user's kickoff to come).
-  - Audio ([docs/plans/audio.md](docs/plans/audio.md), planned 2026-10-10): virtio-snd to an AudioWorklet over a
-    shared ring the device worker writes, the guest's period clock paced by the worklet's consumption. **Decisions
-    (the user, 2026-10-10):** playback first, capture later; sound on by default (from the first click); Arch Linux
-    ARM's kernel lacks the driver, so we build `virtio_snd` out of tree (eventually a PKGBUILD, DKMS if needed;
-    nothing asked upstream); done when a video's sound plays in sync in Firefox on the desktop guest. **S0 and S1 are
-    done (2026-10-10):** Debian, Alpine and (with our module) Arch play under QEMU's device; our virtio-snd
-    (`web/snd.ts`) plays the `linux-snd` guest's waveform byte for byte in every runner, in the same steps. **S2 is
-    done (2026-10-10):** every page machine has the device; its frames go through a shared ring to an AudioWorklet
-    that paces the guest, with the browser's output latency as ALSA's delay; a Sound menu (mute, volume); a minute's
-    tone plays in its length with no underrun (audio.md §13). The user tests by hand at S2's end (fixes in an
-    upcoming milestone). **S3 is done (2026-10-11)** but for the user's check by ear: Debian's own driver plays a file
-    on the page in its length (ci-debian); the `virtio-snd-dkms` PKGBUILD builds the module through DKMS; a scripted
-    desktop image (sway, Firefox, PipeWire) plays a sync clip in Firefox within -17 to +20 ms of its picture after a
-    4 s start on the Mac's GPU, never underrunning, the sound path under 1% of the guest's CPU; the video's decode is
-    the cost (Firefox drops most frames: backlog). The user judged S3 by ear "good enough" (video decode too slow to judge sync: its own track). **S4 (2026-10-11):** snapshots while sound plays work (a restored clock now stands still until its vCPUs run; the sink never completes a buffer the guest hasn't seen: audio.md §15); capture (decisions 13-16): virtio-snd's input stream, recorded byte for byte from a deterministic source in every runner and checked against QEMU's device; the page opens the microphone when the guest records (the browser's processing on, Raw microphone off), silence until it's granted; Debian's driver records it in ci-debian, the desktop guest's PipeWire through its own source (audio.md §16-§17). S4 is done but for the user's checks by hand (a real microphone, the prompt, the ear on the desktop guest). Audio's next step is the user's call (hardware video decoding is its own track: backlog).
+  - Audio ([docs/audio.md](docs/audio.md)): **done (2026-10-12).** virtio-snd to an AudioWorklet over a shared ring the
+    device worker writes, the guest's period clock paced by the worklet's consumption (the browser's output latency
+    as ALSA's delay); the page's microphone opened on the guest's demand (`getUserMedia`, the browser's processing on,
+    Raw microphone off). **Decisions (the user):** playback first, then capture; sound on by default (from the first
+    click); Arch Linux ARM's kernel lacks the driver, so we build `virtio_snd` out of tree (a DKMS PKGBUILD in the
+    repo, nothing asked upstream). Debian, Alpine and the desktop guest (sway, Firefox, PipeWire) play under it, and
+    Debian and the desktop guest record; a video's sound keeps time with its picture within -17 to +20 ms on the
+    Mac's GPU, and sound costs the guest under 1% of its CPU. Snapshots taken while sound plays resume playing (a
+    restored clock stands still until its vCPUs run). The user confirmed playback and recording by hand. The video's
+    decode is the cost in the guest, not the sound (backlog: hardware video decoding); other loose ends are in the
+    backlog too.
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save

@@ -1,4 +1,4 @@
-// The microphone on the desktop guest (audio S4, docs/plans/audio.md §10.16; dev-only, not in tests): images/archarm/
+// The microphone on the desktop guest (audio S4, docs/audio.md "Decisions"; dev-only, not in tests): images/archarm/
 // desktop.sh's image on the page with Chromium's fake capture device playing a tone (`MIC_HZ`, default 500), sway
 // started (so PipeWire and WirePlumber run in alarm's session), then: the sources WirePlumber lists (the virtio card's
 // capture must be one), a recording with `pw-record` (PipeWire's own client, at 48 kHz stereo S16), and each channel's

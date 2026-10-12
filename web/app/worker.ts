@@ -141,7 +141,7 @@ function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: st
 /** The kinds a normal start makes, as the page's options say. */
 const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', ...(machine.disk || m.disk ? ['blk' as const] : []), ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : []), ...(usesGpu(m, machine) ? ['gpu' as const] : []), 'snd'];
 /**
- * The sound's tuning, for measurements (docs/plans/audio.md §13): the page's `?snd=timer` completes played messages
+ * The sound's tuning, for measurements (docs/audio.md "Measurements"): the page's `?snd=timer` completes played messages
  * on a timer instead of the worklet's notify, `stats` posts their timing once a second (kept in `window.__sndStats`).
  */
 function sndTuning() {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds and checks the virtio-snd-dkms package (images/archarm/virtio-snd-dkms/PKGBUILD; docs/plans/audio.md §10.11)
+# Builds and checks the virtio-snd-dkms package (images/archarm/virtio-snd-dkms/PKGBUILD; docs/audio.md "Decisions")
 # in rootless Podman, natively on arm64, as a user of Arch Linux ARM would: in a container of localhost/archarm-base
 # (imported from images/archarm/build.sh's download), the system upgraded with base-devel, dkms and
 # linux-aarch64-headers from the mirror, `makepkg` as an unprivileged user, `pacman -U`. DKMS's pacman hook then builds

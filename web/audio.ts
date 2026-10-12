@@ -1,4 +1,4 @@
-// The page's sound (docs/plans/audio.md §4, docs/frontend.md "Sound"): the AudioContext, the worklet that plays
+// The page's sound (docs/audio.md "How it fits together", docs/frontend.md "Sound"): the AudioContext, the worklet that plays
 // the machine's sound ring (web/audio-worklet.ts, web/audio-ring.ts) and the volume. Each machine start gets a new
 // ring and a port (`attach`), which go to the device worker's virtio-snd (web/snd.ts `ringSink`); the device says
 // on the port when its stream starts (and at what rate) and stops. The context is made at the stream's rate, so the

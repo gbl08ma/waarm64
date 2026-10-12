@@ -1,4 +1,4 @@
-// A/V sync and the decode's cost on the desktop guest (audio S3, docs/plans/audio.md §10.9; dev-only, not in tests):
+// A/V sync and the decode's cost on the desktop guest (audio S3, docs/audio.md "Decisions"; dev-only, not in tests):
 // images/archarm/desktop.sh's image (sway, Firefox, PipeWire, virtio-snd-dkms) on the page, 4 vCPUs, the screen at
 // 1376×762 (bench/gpu/guest-session.ts). sway starts (on GLES with 3D, `WLR_RENDERER=pixman` with `2d`), then Firefox
 // in kiosk mode plays each clip of /home/alarm/media (images/archarm/media.sh) through avsync.html, with a profile of

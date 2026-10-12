@@ -1,4 +1,4 @@
-// Sound on the page, realtime (docs/plans/audio.md §6, §13; docs/frontend.md "Sound"): the snd test guest
+// Sound on the page, realtime (docs/audio.md "Tests"; docs/frontend.md "Sound"): the snd test guest
 // (images/snd/init.c) plays its 440/660 Hz tone through virtio-snd, the device worker's ring sink and the page's
 // AudioWorklet. Its writes block on the worklet's pace, so the guest's own clock says the tone took its length;
 // an analyser after the volume hears both frequencies, and mute silences it. The stream's time on the device (START
@@ -6,12 +6,12 @@
 // gaps under 10% of the sound: npm test runs test files side by side, and a guest starved of its vCPU for longer than
 // its 85 ms buffer underruns for real, but no time may go missing uncounted. (The guest's own time, from its first
 // write, also has its computing of the periods before START in it: up to ~100 ms more under that load.) S2's exit
-// (no underrun in a minute, the guest's own time) is measured alone (bench/audio/snd-page.ts, audio.md §13); the
+// (no underrun in a minute, the guest's own time) is measured alone (bench/audio/snd-page.ts, docs/audio.md "Measurements"); the
 // numbers are printed here.
 // A context that isn't running (the browser's autoplay rule: headless Chromium doesn't apply it, so the test
 // suspends the context itself) leaves the guest playing on the device worker's clock, the page says sound waits
 // for a click, and a click brings it back.
-// A snapshot saved while the tone plays (a 12 s tone, 2 s in; audio S4, audio.md §15) loads in a fresh profile and plays on: the restored
+// A snapshot saved while the tone plays (a 12 s tone, 2 s in; audio S4, docs/audio.md "Linux driver behavior") loads in a fresh profile and plays on: the restored
 // device posts its held messages again and the guest writes the rest of its tone (its clock stands still until its
 // vCPUs run, and the sink never completes a whole buffer it hasn't seen).
 import assert from 'node:assert/strict';

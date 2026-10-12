@@ -55,7 +55,7 @@ function run(j: VcpuJob, clock: number): VcpuEnd {
   const exports = instantiateThread(j.module, j.memory, j.block, clock, j.stall).exports;
   // The vCPUs start together: one that ran (and started a restored VM's clock, and took device completions) while
   // another was still instantiating would find a guest whose CPU 0 hadn't run for that long (on a loaded host, over
-  // ALSA's 100 ms wait for a sound period: docs/plans/audio.md §15).
+  // ALSA's 100 ms wait for a sound period: docs/audio.md "Linux driver behavior").
   const ready = new Int32Array(j.memory.buffer, j.start, 1);
   Atomics.add(ready, 0, 1);
   Atomics.notify(ready, 0);

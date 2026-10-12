@@ -1,4 +1,4 @@
-// A second disk for playing sound on a guest without alsa-utils (audio S3, docs/plans/audio.md §10.10): a tar
+// A second disk for playing sound on a guest without alsa-utils (audio S3, docs/audio.md "Decisions"): a tar
 // archive, read straight off the block device (`tar -xf /dev/vdb`), with images/snd/play.c's static `snd-play`
 // (images/build.sh linux-snd), a WAV of a known tone, and images/snd/rec.c's `snd-rec` (audio S4: the recorder). tests/page-debian.test.ts hands it to the page's Debian
 // as `?disk2=`; the QEMU oracle takes the same file as a raw drive.

@@ -290,7 +290,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - The TS backends are tested through boots; a Node test with a bare-metal virtio guest would be
   cheaper when they grow (blk).
 
-- **Hardware video decoding** (audio S3's finding, [plans/audio.md](plans/audio.md) §14): Firefox's VP9 decoder takes
+- **Hardware video decoding** (audio's finding, [audio.md](audio.md) "Measurements"): Firefox's VP9 decoder takes
   1.7-1.8 s of the guest's CPU a second for a 480p trailer and still shows ~10% of its frames (the sound, under 1%,
   keeps time regardless). The browser's WebCodecs `VideoDecoder` decodes in hardware and its `VideoFrame`s go
   straight into the GPU worker's WebGL2 (a virgl resource the guest composites, never copied into guest RAM). Two
@@ -369,20 +369,28 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   boot; loading a changes file also resets the variable store (the file doesn't carry it).
 - **The Keyboard Lock** in full screen is checked by hand only: headless Playwright's keys
   bypass the browser's shortcuts, so no test sees Ctrl+W reach the guest.
-- **Sound by hand only** (audio S2, [plans/audio.md](plans/audio.md) §13): headless Chromium runs an `AudioContext`
-  without a gesture (even with `--autoplay-policy=user-gesture-required`) and never hides a page, so the real
-  autoplay path ("Sound: click to hear", then a click) and a hidden tab's wake (the worklet's notify, the sink's
-  5 ms timeout) are the user's checks in a headed Chromium. If a hidden tab throttles the device worker, the
-  wait's timeout is the one to look at; the worklet's notify comes from the audio thread. And the ear (audio S3, §14):
-  a video in Firefox on the desktop guest (`images/archarm/desktop.sh`, e.g. `avsync.html?v=sintel.webm`) in sync
-  as heard; the measurement is the page's draw against the sound's output (-17 to +20 ms after Firefox's first 4 s).
-  And the microphone (audio S4, §17): headless Chromium has a fake capture device and grants it without a prompt, so
-  the real prompt at the guest's first recording, the browser's indicator going off when it stops, a refusal's hint,
-  and a real microphone by ear (e.g. on the desktop guest: `pw-record /tmp/a.wav`, then `pw-play /tmp/a.wav`, with and
-  without Raw microphone) are the user's checks.
+- **Sound by hand only** ([audio.md](audio.md) "Tests"): the user confirmed playback and recording work (2026-10-12);
+  no test can see the rest, because headless Chromium runs an `AudioContext` without a gesture (even with
+  `--autoplay-policy=user-gesture-required`), never hides a page and grants its fake microphone without a prompt. Still
+  to check in a headed Chromium: the real autoplay path ("Sound: click to hear", then a click); a hidden tab's wake (the
+  worklet's notify, the sink's 5 ms timeout; if a hidden tab throttles the device worker, the wait's timeout is the one
+  to look at, the notify comes from the audio thread); the microphone's prompt at the guest's first recording, the
+  browser's indicator going off when it stops and a refusal's hint (e.g. on the desktop guest `pw-record /tmp/a.wav`,
+  `pw-play /tmp/a.wav`, with and without Raw microphone); a video in Firefox on the desktop guest
+  (`avsync.html?v=sintel.webm`) in sync by ear (the measurement is -17 to +20 ms after Firefox's first 4 s; the guest's
+  decode is too slow to judge by ear: hardware video decoding).
+- **Audio, not built** ([audio.md](audio.md)): guest-side mixer controls (`VIRTIO_SND_F_CTLS`: volume and mute are the
+  page's only), jacks and channel maps (none: Linux needs neither) and the stream events (xrun, period elapsed: none
+  are sent); one output and one input stream (the guest's own sound server mixes), 1 or 2 channels (no surround), S16,
+  S32 and FLOAT only; latency is the ring plus the guest's buffer plus the browser's (~100 ms is fine for video, an
+  interactive use such as music software would want a shorter ring and measurement); Alpine's playback is unexercised
+  (no `alsa-utils` in its image; Debian and Arch cover it); a tab in the background hasn't been measured (above). The
+  `virtio-snd-dkms` PKGBUILD pins one kernel release's `sound/virtio` and isn't published: it has to move when a
+  `linux-aarch64` update changes a kernel API the driver uses (DKMS reports the break at upgrade), and a user outside
+  our images would need it published (AUR) to get sound on Arch.
 
 ## Snapshots (M8 phase C, snapshots lane; [plans/snapshots.md](plans/snapshots.md), [platform.md](platform.md) "Snapshots")
-- **A restored machine's lost interrupt** (audio S4, [plans/audio.md](plans/audio.md) §16): under ten busy-looping
+- **A restored machine's lost interrupt** (audio, [audio.md](audio.md) "Linux driver behavior"): under ten busy-looping
   processes beside the page's snd snapshot test, once in eight runs (before the last bound change; none in 51 runs
   since, 25 of them with the core instrumented), the restored guest never took the sound device's SPI again: CPU 0 took
   its timer interrupts, the core matched the completions and raised the line, the guest acknowledged twice, and
@@ -448,7 +456,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Tests and tools
 
-- **`linux-gpu`'s build number isn't pinned** (audio S1's finding, plans/audio.md §12): the `#N` in a kernel's version
+- **`linux-gpu`'s build number isn't pinned** (audio's finding, [audio.md](audio.md) "Linux driver behavior"): the `#N` in a kernel's version
   string grows with each rebuild in the same tree and moves its guest's step count (469 steps for `linux-snd` from `#2`
   to `#1`); `linux-snd` pins `KBUILD_BUILD_VERSION=1`, `linux-gpu` (at `#2`) doesn't, so a rebuild would move `gpu`'s
   steps. Pin it in the commit that next rebuilds it (with the step change and the user's OK).

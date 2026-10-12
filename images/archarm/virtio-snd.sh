@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# virtio_snd for Arch Linux ARM's linux-aarch64, which doesn't build CONFIG_SND_VIRTIO (docs/plans/audio.md, S0).
+# virtio_snd for Arch Linux ARM's linux-aarch64, which doesn't build CONFIG_SND_VIRTIO (docs/audio.md, S0).
 # On demand only: not part of images/build.sh, CI or any test. See docs/images.md "Arch Linux ARM".
 #
 #   images/archarm/virtio-snd.sh [--kernel 7.2.9-1]

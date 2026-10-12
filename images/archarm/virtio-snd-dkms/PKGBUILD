@@ -1,4 +1,4 @@
-# virtio-snd-dkms (docs/plans/audio.md §10.2, §11): the virtio-snd driver (Linux's sound/virtio, GPL-2.0+) for kernels
+# virtio-snd-dkms (docs/audio.md "Decisions"): the virtio-snd driver (Linux's sound/virtio, GPL-2.0+) for kernels
 # that don't build CONFIG_SND_VIRTIO, as Arch Linux ARM's linux-aarch64 doesn't. DKMS builds it for every kernel whose
 # headers are installed, and again at each kernel update (its pacman hook). The driver's source is one stable release's
 # sound/virtio, fetched file by file from git.kernel.org at makepkg time (nothing of it is in webpc's repo); a kernel

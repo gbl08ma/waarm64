@@ -346,7 +346,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
 ### snd (ID 25)
 - `{type: 'snd'}` (`web/snd.ts`, the native twin `core/tests/common/snd.rs`: the same statuses, completions at the
   same exits, the same control log). virtio 1.2 §5.14, written from the spec with Linux's `sound/virtio` read for
-  behavior ([plans/audio.md](plans/audio.md)). No features; controlq, eventq, txq, rxq of 64; config jacks 0,
+  behavior ([audio.md](audio.md)). No features; controlq, eventq, txq, rxq of 64; config jacks 0,
   streams 2, chmaps 0 (Linux takes zero jacks and channel maps: it builds no jack or channel-map controls). On every
   page machine (the last device, so the others keep their slots) and the snd guest's test machines.
 - **An output stream (0) and an input stream (1)** (the input since audio S4: older snapshots, with one, still
@@ -369,15 +369,15 @@ mode (and natively in realtime mode: std has no CSPRNG).
   room for frames and the status) go to the input stream the same way, given to the **source** once started and
   completed with the frames it recorded, then `OK` (the used length the frames plus the status's 8); room of no
   whole frame, or none, is `BAD_MSG`. Linux posts a whole buffer of them at the input's START and posts a period
-  again as soon as ALSA counts it, before its reader has it (audio.md §16): a source that ran ahead of real time
+  again as soon as ALSA counts it, before its reader has it ([audio.md](audio.md) "Linux driver behavior"): a source that ran ahead of real time
   would overwrite unread frames. Event buffers are held (no events are sent). A virtio reset drops the streams and
   what's held.
 - **The sink** (`SndSink`): `play(params, frames, done)`, `start`, `stop`, `release`, `tick` (the end of a
-  `DEVICE` exit's requests: `Backend.polled`, which `Devices.poll` runs for every device on every exit). S1 has
-  the **deterministic sink** (`checksumSink`), on every machine for now: it plays (hashes, FNV-1a, and counts) and
+  `DEVICE` exit's requests: `Backend.polled`, which `Devices.poll` runs for every device on every exit). In
+  deterministic mode the **deterministic sink** (`checksumSink`) plays (hashes, FNV-1a, and counts) and
   completes at the end of the exit that posted a message, or START's for those held, **at most a buffer less a
   period per exit**: Linux counts its position in completions modulo the buffer, so a whole buffer completed
-  before it looks again reads as nothing played and the stream stalls (audio.md §12); the rest completes at the
+  before it looks again reads as nothing played and the stream stalls ([audio.md](audio.md) "Linux driver behavior"); the rest completes at the
   next exit. `toF32` converts a format to the f32 an AudioWorklet takes.
 - **The source** (`SndSource`): `record(params, bytes, done)`, and the same `start` to `restore`. The
   **deterministic source** (`patternSource`) fills at the end of the exit that posted a message, a buffer less a
@@ -402,18 +402,18 @@ mode (and natively in realtime mode: std has no CSPRNG).
   it by compare-and-exchange. The sink completes in a pump, at the worklet's notify (every 2 quanta) or after 5 ms
   (`?snd=timer`: a 5 ms interval instead), **at most a buffer less a period since the guest's last message** (across
   pumps: Linux reports progress from a work item that one run serves for any number of completions, so a whole
-  buffer completed before it runs reads as none, audio.md §15), the rest after the guest's next message, or (a
+  buffer completed before it runs reads as none, [audio.md](audio.md) "Linux driver behavior"), the rest after the guest's next message, or (a
   stream's end) half a buffer's time and 30 ms after the core was seen to have taken the batch's first completion
   (`Ctx.untaken`: it takes them when a vCPU runs), so the guest's clock ran that long and ALSA's jiffies check takes
-  a whole buffer for a wrap even if its work runs late (`completionBound`, audio.md §16). After a restore the bound counts the
+  a whole buffer for a wrap even if its work runs late (`completionBound`, [audio.md](audio.md) "Linux driver behavior"). After a restore the bound counts the
   guest as having had a whole buffer in flight: completions the old device made may be in the restored RAM unseen. The spec's `ring` and `port` are the page's (web/audio.ts `attach`; the port says the stream's
   start, with its rate, and its stop, and with `stats` its completions' timing each second); without them the sink
-  makes a ring nothing plays. [plans/audio.md](plans/audio.md) §4 and §13.
+  makes a ring nothing plays. [audio.md](audio.md) "How it fits together".
 - **Snapshots:** `save` gives the streams' states and parameters, the control log and the sink's and source's
   counts (the realtime ones have none); the held messages are posted again by the core and play or fill once (the
   sink hashes at completion; the source's pattern goes on from its count). A started stream's sink or source is
   started again at restore: the re-posted messages play while the vCPUs
-  start (on the page a gap of 20-35 ms follows, counted as an underrun), and the guest plays on (audio.md §15).
+  start (on the page a gap of 20-35 ms follows, counted as an underrun), and the guest plays on ([audio.md](audio.md) "Linux driver behavior").
 
 ### Framebuffer (`simple-framebuffer`)
 - `VmConfig.fb_width`/`fb_height` (0: none). x8r8g8b8, packed rows (stride 4 × width), in guest

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The desktop guest's media (audio S3, docs/plans/audio.md §10.9): made with ffmpeg in rootless Podman (Alpine's
+# The desktop guest's media (audio S3, docs/audio.md "Decisions"): made with ffmpeg in rootless Podman (Alpine's
 # container, natively on arm64), WebM (VP8 or VP9 and Opus: Firefox decodes them itself, without the system's ffmpeg).
 # On demand: images/archarm/desktop.sh calls it.
 #   avsync.webm   the A/V sync clip: 640x360 at 30 frames a second, black, the first frame of every second white; a

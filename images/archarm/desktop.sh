@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The desktop guest of audio S3 (docs/plans/audio.md §10.8): Arch Linux ARM with sway, foot, Firefox and PipeWire
+# The desktop guest of audio S3 (docs/audio.md "Decisions"): Arch Linux ARM with sway, foot, Firefox and PipeWire
 # (WirePlumber, its PulseAudio and ALSA ends), sound through our virtio-snd-dkms package (DKMS builds the module in the
 # image for its kernel), and the media of images/archarm/media.sh in /home/alarm/media. On demand only: not part of
 # images/build.sh, CI or any test (~15 min, mostly pacman and the container builds; the mirror's packages of the day).

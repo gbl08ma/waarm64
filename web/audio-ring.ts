@@ -1,4 +1,4 @@
-// The sound ring (docs/plans/audio.md §4, docs/devices.md "snd"): a SharedArrayBuffer that the device worker writes
+// The sound ring (docs/audio.md "How it fits together", docs/devices.md "snd"): a SharedArrayBuffer that the device worker writes
 // a playback stream's frames into and the page's AudioWorklet (web/audio-worklet.ts) plays out of. A
 // single-producer, single-consumer ring of interleaved stereo f32 frames (a mono stream is written to both
 // channels) behind a header of i32 words, read and written with Atomics only. The indices count frames and wrap

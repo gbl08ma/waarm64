@@ -13,6 +13,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [platform.md](platform.md) | memory map, boot and DTB, the run loop (round-robin and parallel SMP), broadcast maintenance, deterministic and realtime time, the GICv3, timer, PL011, PSCI |
 | [frontend.md](frontend.md) | the page (`web/app/`): its machines, the worker protocol, the screen, the serial terminal (xterm.js); `npm start`; the disk reader (partitions, ext4) |
 | [devices.md](devices.md) | virtio transports and queues, the device worker, blk/qcow2/overlay, net, 9p, input, framebuffer |
+| [audio.md](audio.md) | sound: virtio-snd to an AudioWorklet over a shared ring, the microphone, the guests' drivers (Arch's DKMS module), the Linux driver behavior the pacing depends on, measurements |
 | [abi.md](abi.md) | the host ABI (version 28): exports, `VmConfig`, exits, counters, device layouts, the JIT host interface, version history |
 | [jit.md](jit.md) | the JIT: dispatch, blocks, regions, linking, invalidation, emission, FP fast paths, what's still helpers, what was tried and dropped |
 | [v8.md](v8.md) | what V8 makes of our code: costs, bounds checks, the placement effect, spills and branch hints, module reuse |
@@ -26,4 +27,3 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [plans/agent.md](plans/agent.md) | a guest agent (clipboard, time after a resume, a ready signal, X11 resize): the stock agents first, then a tools disk (not scheduled) |
 | [plans/uefi.md](plans/uefi.md) | booting unmodified images through EDK2: loop 0's oracle findings, DT vs ACPI, the design (M8 phase B) |
 | [plans/snapshots.md](plans/snapshots.md) | saving and resuming a machine as a file, and Suspend (M8 phase C lane, done) |
-| [plans/audio.md](plans/audio.md) | sound: virtio-snd to an AudioWorklet over a shared ring, playback first; the user's decisions; S0 (the guests' drivers, Arch's module), S1 (the device, deterministic), S2 (the page: the ring, the worklet, the Sound menu), S3 (Debian on the page, the desktop guest with PipeWire and Firefox in sync, the DKMS package) and S4 (snapshots while sound plays; capture: the input stream, the page's microphone) done |
