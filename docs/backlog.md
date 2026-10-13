@@ -89,6 +89,38 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     place of `web/vm.ts` detecting a flush by slot numbers restarting; `drop_key` removing the keys
     that `linkers` drops from `pages` too, which invalidation leaks today.
   - **Measure it against the flush under the Go load.**
+- **Smaller slow arms of loads and stores** (2026-10-13; memory of the code cache, not speed).
+  Measured on Alpine's userspace benchmark (968 modules, 34 MB of wasm; 49 of them, 2,122
+  functions, compiled eagerly in Node 26 with `--print-wasm-code`, one tier at a time; the
+  scripts were scratch, not committed): V8's machine code is 3.6× the wasm body bytes in Liftoff
+  and 2.4× in TurboFan. By region (a per-op-type fit, 2.5% mean error for Liftoff, 12% for
+  TurboFan): the `else` arm of the TLB check (**the slow arm**) is 31% of Liftoff code and 43% of
+  TurboFan's, the TLB check plus fast path only 7.5% and 5%, exit arms 5%, the prologue 2%. A site
+  is ~22 wasm ops: ~4 write-back stores of dirty registers (`Func::flush` in `fallback`) and one
+  helper call, ~320 B of Liftoff code against ~77 B for the fast path. Calls are 1.4% of the ops
+  and 27% of Liftoff bytes (~50% of TurboFan's); the 118 B (Liftoff) to 210 B (TurboFan) helper
+  call is the next largest item and can't be shared as easily (arguments differ per site). The
+  slow arms almost never run: ~1.7M load/store helper calls in 10.76G steps (0.016%).
+  - **Bound, measured by rewriting the captured modules** (wasm-level, V8 compiled both tiers;
+    size only, the modules don't run): without any slow-arm write-back (30,442 stores, ~40 B of
+    Liftoff each) Liftoff code is −15.3% and TurboFan −11.8%, the wasm body −10.3%; with one
+    store per distinct register per function (24,717 removed, a shared failure epilogue) −12.6%,
+    −9.6%, −8.3%. Machine code is about half of V8's per-region cost, the rest metadata
+    that doesn't move, so the cache's host memory would fall **~5–7%**.
+  - **How it would be built:** the slow arm flushes only the registers the instruction reads
+    before the helper (Rn, Rt, Rt2, Rm, V registers and SP included; the helper reads nothing
+    else, and the run loop takes exceptions after the block returns, so flushing the rest after
+    the call is safe); a failed call branches to a chain of nested-block epilogues, site *k*
+    storing its newly dirty registers and falling through to site *k−1*'s (storing a clean valid
+    local is harmless); the chain restarts at every helper call that drops the locals; each
+    failing site keeps its lazy-flag store and retired count (set in a local before the `br`).
+    Moving the stores into the failure arm without sharing them saves nothing. Risk: a helper
+    that writes a destination and then doesn't retire (the differential test, lockstep and
+    exact-step boots would catch it; plant a bug for the rule).
+  - **Expected CPU:** the fast path is unchanged and a successful slow arm gets cheaper (≤3
+    stores instead of every dirty register), but TurboFan's spill and register allocation around
+    the deferred arms could move the hot path a few percent either way; unmeasured, needs a
+    Chromium A/B. Dropped for now as not worth the emitter complexity for ~6% of the cache.
 - **`vm_run_cpu` calls of 2 to 4 s under a heavy load** (2026-10-03, the 4-vCPU `go build` loop of
   `bench/stress` with `--guest-cmd`, Debian, Chromium in the dev VM): with the cache flushing every
   ~14 s per vCPU and with one flush in 300 s alike; one vCPU peaked at 0.77 s. A chunk is bounded
