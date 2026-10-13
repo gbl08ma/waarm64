@@ -918,12 +918,16 @@ function showStatus(s: Status) {
   const now = performance.now();
   const dt = last ? (now - last.at) / 1000 : 0;
   const mips = last && dt > 0 ? (s.steps - last.status.steps) / dt / 1e6 : undefined;
+  // The share of those steps retired in JIT code (the rest were interpreted).
+  const dSteps = last ? s.steps - last.status.steps : 0;
+  const jitPct = last && dSteps > 0 ? ((s.jitSteps - last.status.jitSteps) / dSteps) * 100 : undefined;
   const irqs = last && dt > 0 ? (s.irqs - last.status.irqs) / dt : undefined;
   last = { status: s, at: now };
   statusEl.dataset.status = JSON.stringify(s); // for tools (bench/stress)
   statusEl.textContent = [
     `${s.ncpus} vCPU${s.ncpus > 1 ? 's' : ''}`, `${s.ramMiB} MiB`, `up ${hms(s.uptime)}`,
     mips === undefined ? '' : `${mips.toFixed(0)} MIPS`,
+    jitPct === undefined ? '' : `${jitPct.toFixed(1)}% in JIT`,
     `JIT ${s.jitBlocks.toLocaleString('en')} blocks compiled${s.jitFlushes ? ` (cache flushed ${s.jitFlushes}×)` : ''}, ${(s.jitCompileMs / 1000).toFixed(1)} s compiling`,
     irqs === undefined ? '' : `${irqs.toFixed(0)} IRQ/s`,
   ].filter(Boolean).join(' · ');
