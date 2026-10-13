@@ -585,6 +585,14 @@ const PSCI_MIGRATE_INFO_TYPE: u32 = 0x8400_0006;
 const PSCI_SYSTEM_OFF: u32 = 0x8400_0008;
 const PSCI_SYSTEM_RESET: u32 = 0x8400_0009;
 const PSCI_FEATURES: u32 = 0x8400_000a;
+// SMCCC 1.1 (same conduit): the version and the vulnerability workarounds.
+const SMCCC_VERSION: u32 = 0x8000_0000;
+const SMCCC_ARCH_FEATURES: u32 = 0x8000_0001;
+const SMCCC_ARCH_WORKAROUND_1: u32 = 0x8000_8000;
+const SMCCC_ARCH_WORKAROUND_2: u32 = 0x8000_7fff;
+const SMCCC_ARCH_WORKAROUND_3: u32 = 0x8000_3fff;
+/// SMCCC_RET_NOT_REQUIRED: the workaround isn't needed on this machine.
+const SMCCC_NOT_REQUIRED: i64 = -2;
 // PSCI return codes.
 const PSCI_SUCCESS: i64 = 0;
 const PSCI_NOT_SUPPORTED: i64 = -1;
@@ -1167,10 +1175,21 @@ fn psci_common(f: u32, x1: u64) -> i64 {
             | PSCI_AFFINITY_INFO_64
             | PSCI_MIGRATE_INFO_TYPE
             | PSCI_SYSTEM_OFF
-            | PSCI_SYSTEM_RESET => PSCI_SUCCESS,
+            | PSCI_SYSTEM_RESET
+            // Linux takes SMCCC 1.1 only if PSCI_FEATURES lists SMCCC_VERSION.
+            | SMCCC_VERSION => PSCI_SUCCESS,
             _ => PSCI_NOT_SUPPORTED,
         },
         PSCI_MIGRATE_INFO_TYPE => 2, // no Trusted OS to migrate
+        SMCCC_VERSION => 0x1_0001,   // 1.1
+        // Nothing speculates (docs/cpu.md): the three Spectre workarounds are not required.
+        SMCCC_ARCH_FEATURES => match x1 as u32 {
+            SMCCC_ARCH_FEATURES => PSCI_SUCCESS,
+            SMCCC_ARCH_WORKAROUND_1 | SMCCC_ARCH_WORKAROUND_2 | SMCCC_ARCH_WORKAROUND_3 => {
+                SMCCC_NOT_REQUIRED
+            }
+            f => psci_common(PSCI_FEATURES, f as u64),
+        },
         _ => PSCI_NOT_SUPPORTED,
     }
 }

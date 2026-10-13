@@ -45,8 +45,12 @@ match it step for step.
 - `CLIDR_EL1` = 0 (no caches, so set/way operations are NOPs).
 - The unnamed part of the ID space reads as zero.
 - Linux derives the hwcaps (and `/proc/cpuinfo`, and userspace's `getauxval`) from these.
-- Spectre reporting: Linux prints "Spectre-v4" and "Spectre-BHB" as "Vulnerable" because MIDR 0
-  is on none of its safe lists; nothing is mitigated (backlog).
+- Spectre reporting: Spectre-v2 is cleared by CSV2 and Spectre-v4 (`spec_store_bypass`) by the core's
+  SMCCC 1.1 answers over the PSCI conduit (`ARCH_FEATURES` says `ARCH_WORKAROUND_1`, `_2` and `_3` are
+  NOT_REQUIRED, [platform.md](platform.md) "PSCI"); v4 has no other way here (no SSBS, MIDR 0 is on no safe
+  list). **Spectre-BHB stays "Vulnerable"**, so `spectre_v2` reads "Mitigation: CSV2, but not BHB": Linux
+  clears BHB only with CSV2_3 (needs `SCXTNUM_ELx`), ECBHB (reads "Mitigated") or a MIDR on its list;
+  an SMCCC answer can't (found by reading `proton-pack.c`, 6.18; backlog).
 
 ## Privilege and exceptions
 

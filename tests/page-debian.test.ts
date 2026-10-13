@@ -269,6 +269,10 @@ for (let run = 1; run <= RUNS; run++) {
     // What the firmware gave Linux, and a credential read back from fw_cfg (the login above relied on them: a shifted directory can't pass).
     await onSerial(page, 'clear; echo ==be""gin; cat /sys/class/rtc/rtc0/name; cat /proc/fb; ls -1 /sys/firmware; nproc; cat /sys/firmware/qemu_fw_cfg/by_name/opt/io.systemd.credentials/firstboot.timezone/raw; echo; readlink /etc/localtime; echo ==e""nd\n');
     await shows(page, /==begin\s*rtc-efi[^]*?0 virtio_gpudrmfb[^]*?efi[^]*?qemu_fw_cfg\s*2\s*Etc\/UTC\s*\S*zoneinfo\/Etc\/UTC\s*==end/);
+    // Nothing speculates, and the core's SMCCC answers say so (docs/cpu.md): Spectre-v4 is not affected. (Spectre-v2 still
+    // reads "Mitigation: CSV2, but not BHB": BHB is only cleared by CSV2_3, backlog "Spectre-BHB".)
+    await onSerial(page, 'clear; echo ==ss""b $(cat /sys/devices/system/cpu/vulnerabilities/spec_store_bypass)\n');
+    await shows(page, /==ssb Not affected/);
     // The page's sound device (audio S2): Debian autoloads virtio_snd for it and has the card.
     await onSerial(page, 'clear; cat /proc/asound/cards; echo so""und-read\n');
     await shows(page, /VirtIO SoundCard[^]*sound-read/);

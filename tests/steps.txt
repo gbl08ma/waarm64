@@ -4,24 +4,24 @@
 # and JIT) and in Chromium (tests/browser.test.ts). A guest-visible change moves
 # them once: record the new counts here in the same commit, and say why in its
 # message (docs/testing.md "Step counts").
-buildroot 40505789
-devices 113312846
-ltp 2716704198
-crypto 4398705480
+buildroot 40230889
+devices 113036171
+ltp 2717785093
+crypto 4420334488
 alpine 2856663287
-alpine-user 10763178470
+alpine-user 10755927881
 # Alpine's userspace benchmark saved and restored into a new VM at a quarter, half (+1) and three
 # quarters (+2) of alpine-user's steps: a restored VM's TLBs are empty, which Linux can tell (it clears
 # access flags without a TLBI). The same count with the TLBs only flushed there (core/tests/distros.rs).
-alpine-user-snapshots 10762077134
-buildroot-2cpu 42577681
-buildroot-4cpu 45231514
-litmus-4cpu 879959970
-console-input 36412759
-edk2-shell 541770383
-edk2-shell-again 538910055
+alpine-user-snapshots 10764047441
+buildroot-2cpu 42233494
+buildroot-4cpu 45245158
+litmus-4cpu 874622946
+console-input 36386565
+edk2-shell 541770453
+edk2-shell-again 538910125
 # The gpu test kernel (M8 graphics G1; images/gpu/init.c): KMS on a virtio-gpu, a display event, a new mode.
-gpu 37794474
+gpu 37777532
 # The snd test kernel (audio S1; images/snd/init.c): ALSA on a virtio-snd, a waveform through the deterministic sink,
 # then (audio S4) a recording from the deterministic source.
-snd 36929057
+snd 36915088

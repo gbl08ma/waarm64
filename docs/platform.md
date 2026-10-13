@@ -412,7 +412,9 @@ reset state, EL1h with DAIF masked and the MMU off, at the entry with x0 = the c
 INVALID_PARAMETERS for no such CPU, ALREADY_ON for an on one), **CPU_OFF** (doesn't return; a
 later CPU_ON restarts the vCPU), **AFFINITY_INFO** (level 0: ON 0 / OFF 1), MIGRATE_INFO_TYPE (2)
 answered in the core; SYSTEM_OFF and SYSTEM_RESET exit to the host (exit kind `PSCI`, PC past the
-HVC, the host writes x0 if it resumes); everything else NOT_SUPPORTED (CPU_SUSPEND included).
+HVC, the host writes x0 if it resumes); SMCCC 1.1 on the same conduit (`SMCCC_VERSION`,
+`SMCCC_ARCH_FEATURES`, which reports `ARCH_WORKAROUND_1/2/3` as NOT_REQUIRED: nothing speculates,
+so Linux says "Not affected" for Spectre-v4, [cpu.md](cpu.md)); everything else NOT_SUPPORTED (CPU_SUSPEND included).
 Only CPU 0 is on at boot. kvm-unit-tests' `psci` passes all five checks, including the concurrent
 cpu-on one QEMU TCG fails. In parallel SMP every vCPU's worker starts at boot and sleeps on its
 wake word (`IDLE`, u64::MAX) until a CPU_ON, which its own thread carries out.

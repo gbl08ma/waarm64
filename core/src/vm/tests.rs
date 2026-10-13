@@ -89,6 +89,22 @@ fn psci_in_the_core_and_system_off() {
 }
 
 #[test]
+fn smccc_says_the_spectre_workarounds_are_not_required() {
+    let mut t = T::new(&[HVC; 6], VmConfig::default());
+    let mut call = |f: u64, a: u64| {
+        (t.cpu().x[0], t.cpu().x[1]) = (f, a);
+        t.vm.run(1);
+        t.cpu().x[0]
+    };
+    assert_eq!(call(0x8000_0000, 0), 0x1_0001); // SMCCC_VERSION: 1.1
+    for w in [0x8000_8000, 0x8000_7fff, 0x8000_3fff] {
+        assert_eq!(call(0x8000_0001, w), -2i64 as u64); // ARCH_FEATURES(ARCH_WORKAROUND_n)
+    }
+    assert_eq!(call(0x8000_0001, 0x8000_0001), 0);
+    assert_eq!(call(0x8000_0001, 0x8000_1234), -1i64 as u64); // an unknown function
+}
+
+#[test]
 fn uart_tx_through_io_and_full_ring() {
     let mut t = T::new(&[STR_W1_X0, B_SELF], VmConfig::default());
     (t.cpu().x[0], t.cpu().x[1]) = (UART, b'A' as u64);
