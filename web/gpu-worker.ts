@@ -11,7 +11,7 @@ import { flashProbe, Screen } from './virgl-screen.ts';
 import { probeVideo, webCodecsDecoder, type VideoStats } from './virgl-video.ts';
 
 /** Page → GPU worker. */
-export type ToGpuWorker = { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean; /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */ probe?: boolean; /** Advertise the browser's video decoders and decode with them (docs/plans/video.md; the page's default, `?gpu=novideo` turns it off). */ video?: boolean; /** `?gpu=swh264`: H.264 offered in software too (it stalls the guest: web/virgl-video.ts `probeVideo`). */ softwareH264?: boolean };
+export type ToGpuWorker = { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean; /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */ probe?: boolean; /** Advertise the browser's video decoders and decode with them (docs/plans/video.md; the page's default, `?gpu=novideo` turns it off). */ video?: boolean; /** `?gpu=swvideo`: every codec decoded in software, H.264 offered (experiments on a host with hardware decoders). */ softwareVideo?: boolean };
 /** GPU worker → page. */
 export type FromGpuWorker =
   | { type: 'ready'; caps: Uint8Array; renderer: string }
@@ -26,7 +26,7 @@ let ram: Uint8Array = new Uint8Array(0);
 
 self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   if (e.data?.type !== 'init') return;
-  const { canvas, port, stats, debug, probe, video, softwareH264 } = e.data;
+  const { canvas, port, stats, debug, probe, video, softwareVideo } = e.data;
   const post = (m: FromGpuWorker) => (self as unknown as Worker).postMessage(m);
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' }) as WebGL2RenderingContext | null;
   if (!gl) {
@@ -38,7 +38,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     post({ type: 'lost' });
   });
   // The decoders first: the caps advertise what they found, and the renderer decodes with them.
-  const decoders = video ? await probeVideo({ softwareH264 }) : undefined;
+  const decoders = video ? await probeVideo({ software: softwareVideo }) : undefined;
   // `?gpu=virgl,debug`: the renderer's trace on the console, each line once.
   const seen = new Set<string>();
   const renderer = new VirglRenderer(gl, {
@@ -102,7 +102,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       stallTimer = undefined;
     }
   };
-  const queue = new CallQueue<WorkerCall>({ run, waiting: () => renderer.videoWaiting, drain: () => renderer.videoDrain(), giveUp: () => renderer.videoGiveUp() });
+  const queue = new CallQueue<WorkerCall>({ run, pending: renderer.videoPending, drain: () => renderer.videoDrain(), giveUp: () => renderer.videoGiveUp() });
   renderer.onVideoSettled = () => {
     // Settled from inside a call (a picture given up or its buffer destroyed): the queue goes on after it.
     queueMicrotask(() => { queue.progress(); watch(); });

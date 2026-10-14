@@ -168,7 +168,7 @@ export class VirglRenderer {
   readonly videoStats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 };
   /** The video decoders (the GPU worker's WebCodecs; none: pictures are only counted) and the profiles decoded in hardware. */
   private video?: { decoders: DecoderFactory; hardware: readonly number[] };
-  /** Called when a picture is written or given up (the GPU worker's queue goes on: `videoWaiting`). */
+  /** Called when a picture is written or given up (the GPU worker's queue goes on: `videoPending`). */
   onVideoSettled?: () => void;
   private fbo: WebGLFramebuffer;
   private readFbo: WebGLFramebuffer;
@@ -822,6 +822,21 @@ export class VirglRenderer {
     let n = 0;
     for (const c of this.contexts.values()) n += c.video?.waiting ?? 0;
     return n;
+  }
+
+  /** What may see a pending picture (the GPU worker's `CallQueue`): a context with one's plane attached, the plane itself. */
+  readonly videoPending = {
+    ctx: (id: number) => {
+      const c = this.contexts.get(id);
+      return !!c && this.pendingPlanes().some((r) => c.attached.has(r));
+    },
+    res: (id: number) => this.pendingPlanes().includes(id),
+  };
+
+  private pendingPlanes() {
+    const out: number[] = [];
+    for (const c of this.contexts.values()) if (c.video?.waiting) out.push(...c.video.pendingPlanes());
+    return out;
   }
 
   /** Has the decoders that hold pictures for reordering output them (`VideoContext.drain`). */

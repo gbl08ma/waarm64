@@ -198,3 +198,51 @@ test('a picture\'s chunk: parameter sets at an IDR and when they change, the sli
   assert.deepEqual(types(st.chunk(desc({ pps: { picInitQpMinus26: 4 } }), header(1, 2)).data), [8, 1]);
   assert.throws(() => st.chunk(desc({ sps: { frameMbsOnly: false } }), header(1, 2)), /interlaced/);
 });
+
+test('a software decoder\'s stream: the SPS says the stream\'s reorder depth, learned from the POCs, from an IDR on', () => {
+  const slice = (type: number) => {
+    const w = new BitWriter();
+    w.ue(0);
+    w.ue(type === 5 ? 7 : 5);
+    w.ue(0);
+    w.u(16, 0xa5a5); // the rest of the header, as far as the parser reads
+    return nal(type, 3, w.finish());
+  };
+  /** A picture's desc with its POC (both fields) and the stream's reference count. */
+  const at = (poc: number, refs = 1) => {
+    const d = desc({ sps: { maxNumRefFrames: refs } });
+    const v = new DataView(d.buffer);
+    v.setInt32(2308, poc, true);
+    v.setInt32(2312, poc, true);
+    return d;
+  };
+  const said = (b: Uint8Array) => {
+    const sps = splitAnnexB(b).find((n) => (n[0] & 0x1f) === 7);
+    return sps && (parseSps(unescape(sps.subarray(1))).reorder as { maxNumReorderFrames?: number } | undefined)?.maxNumReorderFrames;
+  };
+  const st = new H264Stream(864, 480, 31, 'stream');
+  // An IDR: nothing learned yet, so the reference count.
+  const idr = st.chunk(at(0), slice(5));
+  assert.deepEqual([said(idr.data), idr.poc], [1, 0]);
+  // P 6, then B 4 (one picture before it comes after it) and b 2 (two): the SPS stays until the next IDR.
+  for (const poc of [6, 4, 2]) {
+    const c = st.chunk(at(poc), slice(1));
+    assert.deepEqual([said(c.data), c.poc], [undefined, poc]);
+  }
+  assert.equal(said(st.chunk(at(0), slice(5)).data), 2);
+  // More references than the depth: those.
+  assert.equal(said(st.chunk(at(0, 4), slice(5)).data), 4);
+  // What a stream learned carries to the next (a drained decoder's successor), and the SPS never says less within one.
+  assert.equal(st.depth, 2);
+  const next = new H264Stream(864, 480, 31, 'stream', st.depth);
+  assert.equal(said(next.chunk(at(0), slice(5)).data), 2);
+  for (const poc of [8, 6, 4, 2]) next.chunk(at(poc), slice(1));
+  assert.equal(next.depth, 3);
+  assert.equal(said(next.chunk(at(0), slice(5)).data), 3);
+  // A hardware decoder's: 0, whatever the POCs.
+  const hw = new H264Stream(864, 480, 31, 'none');
+  hw.chunk(at(0), slice(5));
+  hw.chunk(at(6), slice(1));
+  hw.chunk(at(2), slice(1));
+  assert.equal(said(hw.chunk(at(0), slice(5)).data), 0);
+});

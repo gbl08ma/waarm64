@@ -1,0 +1,234 @@
+{
+  "mode": "virgl",
+  "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+  "chromium": "153.0.8010.52",
+  "phaseS": 20,
+  "info": "7.2.10-1-aarch64-ARCHfirefox 157.0.1-1 pipewire 1:1.6.9-1 wireplumber 0.5.18-1 virtio-snd-dkms 7.2.9-1 mesa 1:26.2.4-1 webpc-va 1-1 virtio_snd 0 [SoundCard ]: virtio-snd - VirtIO SoundCard VirtIO SoundCard at platform/a000e00.virtio_mmio/virtio7",
+  "sway": "",
+  "pipewire": "├─ Sinks: │  ├─ Sources:-- ├─ Sinks: │  ├─ Sources:",
+  "mpv-sintel_trailer-480p-mp4": {
+    "quality": {
+      "frames": 537,
+      "dropped": 0,
+      "decoderDropped": 0,
+      "hwdec": "vaapi"
+    },
+    "status": [
+      "MPV 78 1 0 vaapi",
+      "MPV 615 1 0 vaapi"
+    ],
+    "log": "Script started on 2026-10-14 20:44:19+00:00 [COMMAND=\"/home/alarm/mpv-run.sh\" <not executed on terminal>][input] No key binding found for key 'Ctrl+`'.● Video  --vid=1  (h264 854x480 24 fps) [default]● Audio  --aid=1  (aac 2ch 48000 Hz 127 kbps) [default]File tags: Artist: Durian Open Movie Team Description: Trailer for the Sintel open movie project Title: Sintel Trailer[vo/gpu] Disabling scaler #0 lanczos (GLSL version too old).[vo/gpu] Disabling scaler #1 hermite (GLSL version too old).[vo/gpu] Disabling linear/sigmoid scaling (GLSL version too old).[vo/gpu] correct-downscaling requires non-bilinear scaler.Using hardware decoding (vaapi).AO: [pipewire] 48000Hz stereo 2ch floatpVO: [gpu] 854x480 vaapi[nv12]",
+    "cpus": [
+      {
+        "cpu": "cpu",
+        "busy": 27,
+        "user": 8,
+        "sys": 19,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu0",
+        "busy": 28,
+        "user": 7,
+        "sys": 21,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu1",
+        "busy": 27,
+        "user": 9,
+        "sys": 18,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu2",
+        "busy": 26,
+        "user": 8,
+        "sys": 18,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu3",
+        "busy": 27,
+        "user": 8,
+        "sys": 18,
+        "iowait": 0
+      }
+    ],
+    "threads": [
+      {
+        "thread": "mpv/vo",
+        "userMs": 89,
+        "sysMs": 121
+      },
+      {
+        "thread": "mpv/mpv",
+        "userMs": 135,
+        "sysMs": 50
+      },
+      {
+        "thread": "sway/sway",
+        "userMs": 37,
+        "sysMs": 124
+      },
+      {
+        "thread": "mpv/lua/osc",
+        "userMs": 32,
+        "sysMs": 24
+      },
+      {
+        "thread": "pipewire/data-loop.0",
+        "userMs": 9,
+        "sysMs": 42
+      },
+      {
+        "thread": "mpv/demux",
+        "userMs": 25,
+        "sysMs": 13
+      },
+      {
+        "thread": "mpv/data-loop.0",
+        "userMs": 14,
+        "sysMs": 21
+      },
+      {
+        "thread": "kworker/0:1-events/kworker/0:1-events",
+        "userMs": 0,
+        "sysMs": 27
+      },
+      {
+        "thread": "kworker/u16:3-events_unbound/kworker/u16:3-events_unbound",
+        "userMs": 0,
+        "sysMs": 16
+      },
+      {
+        "thread": "script/script",
+        "userMs": 4,
+        "sysMs": 8
+      },
+      {
+        "thread": "mpv/av:h264:df1",
+        "userMs": 2,
+        "sysMs": 9
+      },
+      {
+        "thread": "mpv/av:h264:df2",
+        "userMs": 2,
+        "sysMs": 9
+      },
+      {
+        "thread": "mpv/av:h264:df3",
+        "userMs": 2,
+        "sysMs": 9
+      },
+      {
+        "thread": "mpv/av:h264:df0",
+        "userMs": 2,
+        "sysMs": 8
+      }
+    ],
+    "display": {
+      "seconds": 21,
+      "requests": 287.57142857142856,
+      "commands": {
+        "SET_SCANOUT": 23.952380952380945,
+        "RESOURCE_FLUSH": 23.952380952380945,
+        "CTX_ATTACH_RESOURCE": 47.952380952380935,
+        "CTX_DETACH_RESOURCE": 47.90476190476189,
+        "SUBMIT_3D": 143.80952380952382
+      },
+      "fences": {
+        "n": 95.9047619047619,
+        "meanMs": 4.076457300631269,
+        "maxMs": 39.4099999666214,
+        "heldMs": 581.5211907852264,
+        "toGpuMs": 3.9620264350716856,
+        "toGpuMaxMs": 41.880126953125,
+        "backMs": 0.10728331852811569,
+        "backMaxMs": 26.3251953125
+      },
+      "flushes": 23.952380952380953,
+      "submits": 143.8095238095238,
+      "submitKB": 600.163318452381,
+      "transfers": 0,
+      "Mpx": 0,
+      "requestMs": 9.208809432529268,
+      "draws": 23.952380952380953,
+      "renderer": {
+        "seconds": 21,
+        "busyMs": 13.239047691935586,
+        "submitMs": 12.21666669845581,
+        "drawMs": 0.7897619179316929,
+        "presents": 23.952380952380953,
+        "glDraws": 71.9047619047619,
+        "commands": 1557.6666666666667,
+        "uploadKB": 34079.28143601191,
+        "readbacks": 0,
+        "readbackKB": 0,
+        "compileMs": 0,
+        "programs": 7,
+        "errors": 0,
+        "video": {
+          "frames": 23.952380952380953,
+          "decoded": 23.952380952380953,
+          "dropped": 0,
+          "errors": 0,
+          "latencyMs": 129.03288270180553,
+          "latencyMaxMs": 324.38499999046326,
+          "writeMs": 0.04454273850495962,
+          "ahead": 0,
+          "maxWaitMs": 0
+        }
+      },
+      "vm": {
+        "seconds": 20.999740000009538,
+        "Msteps": 81.78642,
+        "irqs": 2955,
+        "exceptions": {
+          "0x0": 2,
+          "0x15": 4633,
+          "0x20": 70,
+          "0x24": 274,
+          "0x25": 16
+        },
+        "tlbMisses": 139170,
+        "tlbFlushes": 981,
+        "jitFlushes": 0,
+        "jitInvalidations": 1,
+        "jitCompileMs": 20.93205
+      }
+    }
+  },
+  "debug": [
+    "video: buffer 3 format 166 128x128 planes 33,34",
+    "video: buffer 6 format 166 128x128 planes 35,36",
+    "video: buffer 10 format 165 128x128 planes 37,38,39",
+    "video: buffer 12 format 326 128x128 planes 40",
+    "video: buffer 16 format 323 128x128 planes 42,43,44",
+    "video: buffer 20 format 445 128x128 planes 45,46,47",
+    "video: buffer 22 format 1 128x128 planes 48",
+    "video: buffer 24 format 67 128x128 planes 49",
+    "video: buffer 26 format 121 128x128 planes 50",
+    "video: buffer 28 format 3 128x128 planes 51",
+    "video: buffer 30 format 2 128x128 planes 52",
+    "video: buffer 32 format 134 128x128 planes 53",
+    "video: buffer 34 format 233 128x128 planes 54",
+    "video: buffer 37 format 166 864x480 planes 55,56",
+    "video: codec 38 profile 11 entrypoint 1 level 30 864x480 refs 5",
+    "video: codec 38: decoder avc1.64001E 864x480 software",
+    "video: buffer 41 format 166 864x480 planes 77,78",
+    "video: buffer 44 format 166 864x480 planes 79,80",
+    "video: buffer 47 format 166 864x480 planes 81,82",
+    "video: buffer 50 format 166 864x480 planes 83,84",
+    "video: buffer 53 format 166 864x480 planes 85,86",
+    "video: buffer 56 format 166 16x16 planes 87,88",
+    "video: codec 38: drained; 6 picture(s) again, reorder depth at most 0",
+    "video: buffer 59 format 166 864x480 planes 89,90",
+    "video: buffer 90 format 166 864x480 planes 102,103",
+    "video: buffer 96 format 166 864x480 planes 104,105",
+    "video: buffer 101 format 166 864x480 planes 106,107",
+    "video: buffer 203 format 166 864x480 planes 110,111",
+    "video: codec 38: drained; 14 picture(s) again, reorder depth at most 0"
+  ],
+  "host": "dev VM (Lima on the M4), OpenH264"
+}

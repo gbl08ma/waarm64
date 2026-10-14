@@ -43,8 +43,8 @@ test('capsBacked: a restore needs every decoder the guest was told of', () => {
   assert.match(capsBacked(withVideo(base, [H264]), withVideo(base, [{ ...H264, maxWidth: 1920 }]))!, /profile 11/);
 });
 
-test('probeVideo: H.264 offered only where the browser decodes it in hardware (software stalls the guest)', async () => {
-  const probe = async (hw: (codec: string) => boolean, o?: { softwareH264?: boolean }) => {
+test('probeVideo: what the browser decodes is offered, and what it decodes in hardware noted', async () => {
+  const probe = async (hw: (codec: string) => boolean, o?: { software?: boolean }) => {
     const g = globalThis as { VideoDecoder?: unknown };
     g.VideoDecoder = { isConfigSupported: async (c: VideoDecoderConfig) => ({ supported: c.hardwareAcceleration !== 'prefer-hardware' || hw(c.codec) }) };
     try {
@@ -55,10 +55,10 @@ test('probeVideo: H.264 offered only where the browser decodes it in hardware (s
     }
   };
   const h264 = [PROFILE.AVC_CONSTRAINED_BASELINE, PROFILE.AVC_MAIN, PROFILE.AVC_HIGH];
-  assert.deepEqual(await probe(() => false), { caps: [PROFILE.VP9_PROFILE0], hardware: [] });
+  assert.deepEqual(await probe(() => false), { caps: [...h264, PROFILE.VP9_PROFILE0], hardware: [] });
   assert.deepEqual(await probe(() => true), { caps: [...h264, PROFILE.VP9_PROFILE0], hardware: [...h264, PROFILE.VP9_PROFILE0] });
   assert.deepEqual(await probe((c) => c.startsWith('avc1')), { caps: [...h264, PROFILE.VP9_PROFILE0], hardware: h264 });
-  assert.deepEqual(await probe(() => false, { softwareH264: true }), { caps: [...h264, PROFILE.VP9_PROFILE0], hardware: [] });
+  assert.deepEqual(await probe(() => true, { software: true }), { caps: [...h264, PROFILE.VP9_PROFILE0], hardware: [] });
 });
 
 test('VideoContext: codecs, buffers and a picture\'s parameters and data, read from the staging buffers', () => {
@@ -94,13 +94,21 @@ test('VideoContext: codecs, buffers and a picture\'s parameters and data, read f
 });
 
 /** A decoder that keeps its chunks; the test outputs pictures (`out`) or fails it (`fail`). */
-type Fake = { config: DecoderConfig; chunks: { data: Uint8Array; key: boolean; ts: number }[]; flushes: number; closed: boolean; out(ts: number): void; fail(m: string): void };
+/** A fake decoder: what it was given; `out` outputs a picture, `fail` errs, `flushed` ends the last flush. */
+type Fake = { config: DecoderConfig; chunks: { data: Uint8Array; key: boolean; ts: number }[]; flushes: number; closed: boolean; out(ts: number): void; fail(m: string): void; flushed?: () => void };
 function fakeDecoders() {
   const made: Fake[] = [];
   const factory: DecoderFactory = (config, output, error) => {
     const f: Fake = { config, chunks: [], flushes: 0, closed: false, out: (ts) => output(ts, picture(ts)), fail: error };
     made.push(f);
-    return { decode: (data, key, ts) => void f.chunks.push({ data: data.slice(), key, ts }), flush: () => void f.flushes++, close: () => void (f.closed = true) };
+    return {
+      decode: (data, key, ts) => void f.chunks.push({ data: data.slice(), key, ts }),
+      flush: () => {
+        f.flushes++;
+        return new Promise<void>((ok) => (f.flushed = ok));
+      },
+      close: () => void (f.closed = true),
+    };
   };
   return { made, factory };
 }
@@ -195,29 +203,84 @@ const h264Desc = () => {
 };
 const idr = new Uint8Array([0, 0, 0, 1, 0x65, 0x88, 0x84, ...new Array(24).fill(0xff)]);
 
-test('VideoContext: H.264 in software is drained when it holds pictures; in hardware it never is', () => {
+test('VideoContext: H.264 in software is drained when it holds pictures, and decoded again from the IDR; in hardware it never is', async () => {
+  /** A picture's desc (4 references) with its POC; a non-IDR picture's slice. */
+  const at = (poc: number) => {
+    const d = h264Desc();
+    d[264 + 1525] = 4;
+    new DataView(d.buffer).setInt32(2308, poc, true);
+    new DataView(d.buffer).setInt32(2312, poc, true);
+    return d;
+  };
+  const slice = new Uint8Array(idr);
+  slice[4] = 0x41;
   const sw = video(PROFILE.AVC_HIGH);
-  sw.frame(h264Desc(), idr);
+  sw.frame(at(0), idr);
   const c = sw.made[0];
   assert.equal(c.config.codec, 'avc1.64001E');
   assert.equal(c.config.hardware, false);
   // The chunk: SPS, PPS, then the slice.
   assert.deepEqual([...c.chunks[0].data.subarray(0, 5)], [0, 0, 0, 1, 0x67]);
   assert.ok(c.chunks[0].key);
+  // Three more; the decoder holds them all, and the guest waits for the first (POC 0).
+  for (const poc of [6, 4, 2]) sw.frame(at(poc), slice);
   sw.v.drain();
   assert.equal(c.flushes, 1);
-  // After a drain the decoder wants a key picture.
-  const p = new Uint8Array(idr);
-  p[4] = 0x41; // a non-IDR slice
-  sw.frame(h264Desc(), p);
-  assert.equal(c.chunks.length, 1);
-  assert.equal(sw.stats.dropped, 1);
+  // A new decoder takes the IDR period again, from the IDR (its parameter sets first).
+  assert.equal(sw.made.length, 2);
+  const d = sw.made[1];
+  assert.deepEqual(d.chunks.map((x) => [x.ts, x.key]), [[0, true], [1, false], [2, false], [3, false]]);
+  assert.deepEqual([...d.chunks[0].data.subarray(0, 5)], [0, 0, 0, 1, 0x67]);
+  // The drained decoder's output still counts; the new one's of a picture already written doesn't; while both output,
+  // nothing is passed over.
+  c.out(0);
+  c.out(3); // the drained decoder ahead of the new one
+  d.out(0);
+  d.out(1);
+  assert.deepEqual(sw.written.map((w) => w.ts), [0, 3, 1]);
+  assert.equal(sw.v.waiting, 1);
+  c.flushed!();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.ok(c.closed);
+  // The next picture goes to the new decoder; nothing was lost.
+  sw.frame(at(8), slice);
+  assert.deepEqual(d.chunks.at(-1)!.ts, 4);
+  assert.equal(sw.stats.dropped, 0);
 
   const hw = video(PROFILE.AVC_HIGH, { hardware: [PROFILE.AVC_HIGH] });
   hw.frame(h264Desc(), idr);
   assert.equal(hw.made[0].config.hardware, true);
   hw.v.drain();
   assert.equal(hw.made[0].flushes, 0);
+});
+
+test('VideoContext: a picture a software H.264 decoder passes over is given up when a later one comes out', () => {
+  /** A picture's desc with its POC; a non-IDR picture's slice. */
+  const at = (poc: number) => {
+    const d = h264Desc();
+    new DataView(d.buffer).setInt32(2308, poc, true);
+    new DataView(d.buffer).setInt32(2312, poc, true);
+    return d;
+  };
+  const slice = new Uint8Array(idr);
+  slice[4] = 0x41;
+  for (const hardware of [false, true]) {
+    const t = video(PROFILE.AVC_HIGH, { hardware: hardware ? [PROFILE.AVC_HIGH] : [] });
+    t.frame(at(0), idr);
+    t.frame(at(6), slice);
+    t.frame(at(4), slice);
+    t.frame(at(2), slice);
+    const c = t.made[0];
+    assert.deepEqual(c.chunks.map((x) => x.ts), [0, 1, 2, 3]);
+    c.out(0);
+    c.out(3); // POC 2: nothing before it pending
+    assert.equal(t.v.waiting, 2);
+    c.out(1); // POC 6 with POC 4 still pending: in software, 4 never comes (in hardware, output is decode order)
+    assert.equal(t.v.waiting, hardware ? 1 : 0);
+    assert.equal(t.stats.dropped, hardware ? 0 : 1);
+    assert.deepEqual(t.written.map((w) => w.ts), [0, 3, 1]);
+  }
 });
 
 test('VideoContext: pending pictures given up, and those of a destroyed buffer or codec dropped', () => {
@@ -241,43 +304,74 @@ test('VideoContext: pending pictures given up, and those of a destroyed buffer o
 const submit = (ctx: number, ...cmds: number[]): WorkerCall => ({ t: 'submit', ctx, words: new Uint32Array(cmds.flatMap((c) => [(1 << 16) | c, 0])) });
 const name = (m: WorkerCall) => m.t === 'submit' ? `${m.ctx}:${[...m.words].filter((_, k) => !(k & 1)).map((w) => w & 0xff).join(',')}` : m.t === 'fence' ? `fence${m.id}` : m.t;
 
-test('CallQueue: calls wait while a picture is pending; video submits run ahead of other contexts\' calls', () => {
-  let waiting = 0;
+test('CallQueue: a call waits only if it could see a pending picture; the rest runs, in order', () => {
+  // The renderer as the queue sees it: the pending pictures' planes, and what each context has attached (as calls ran).
+  const pending = new Set<number>(), attached = new Map<number, Set<number>>();
   const ran: string[] = [];
   let drains = 0, giveUps = 0;
-  const q = new CallQueue<WorkerCall>({ run: (m) => ran.push(name(m)), waiting: () => waiting, drain: () => drains++, giveUp: () => { giveUps++; waiting = 0; } });
-  q.push(submit(1, 57, 59, 61), 0); // a picture: runs, and is pending
-  waiting = 1;
-  q.push(submit(2, 8), 0); // a draw (another context): waits
-  q.push({ t: 'fence', id: 1, at: 0 }, 0);
-  q.push(submit(1, 57, 59, 61), 0); // the next picture: runs ahead
-  q.push(submit(2, 57, 59, 61), 1); // a video submit behind its own context's draw: waits
-  q.push(submit(3, 8, 57), 2); // a draw and a picture: waits
-  q.push(submit(4, 28, 43, 44, 59, 61), 2); // what Mesa's VA driver sends with a picture: runs ahead
-  assert.deepEqual(ran, ['1:57,59,61', '1:57,59,61', '4:28,43,44,59,61']);
+  const run = (m: WorkerCall) => {
+    if (m.t === 'ctxres') {
+      const a = attached.get(m.ctx) ?? new Set<number>();
+      if (m.attach) a.add(m.res);
+      else a.delete(m.res);
+      attached.set(m.ctx, a);
+    }
+    ran.push(m.t === 'ctxres' ? `${m.attach ? 'attach' : 'detach'}${m.ctx}:${m.res}` : m.t === 'transfer' || m.t === 'read' ? `${m.t}${m.res}` : name(m));
+  };
+  const q = new CallQueue<WorkerCall>({
+    run,
+    pending: { ctx: (id) => [...attached.get(id) ?? []].some((r) => pending.has(r)), res: (id) => pending.has(id) },
+    drain: () => drains++,
+    giveUp: () => { giveUps++; pending.clear(); },
+  });
+  const attach = (ctx: number, res: number, on = true): WorkerCall => ({ t: 'ctxres', ctx, res, attach: on });
+  // The decoder's context (1) has a buffer's planes (31, 32) attached; a picture goes into them and is pending.
+  q.push(attach(1, 31), 0);
+  q.push(attach(1, 32), 0);
+  q.push(submit(1, 57, 59, 61), 0);
+  pending.add(31).add(32);
+  q.push(submit(2, 8), 0); // a draw of a context without the planes: runs
+  q.push({ t: 'fence', id: 1, at: 0 }, 0); // nothing waits before it: runs
+  q.push(submit(1, 57, 59, 61), 0); // the next picture: runs
+  q.push(submit(1, 8), 1); // the decoder's context reads its planes (a blit): waits
+  q.push(submit(1, 57, 59, 61), 1); // a picture behind its own context's waiting draw: waits
+  assert.deepEqual(ran, ['attach1:31', 'attach1:32', '1:57,59,61', '2:8', 'fence1', '1:57,59,61']);
+  // The compositor (2) attaches a plane to show it: its draws wait from there on; another context's run ahead.
+  q.push(attach(2, 31), 2);
+  q.push(submit(2, 8), 2);
+  q.push(submit(3, 8), 2);
+  q.push({ t: 'fence', id: 2, at: 2 }, 2); // after waiting calls: waits, and doesn't hold back what follows
+  q.push(submit(3, 9), 2);
+  q.push({ t: 'transfer', ctx: 3, res: 31, level: 0, box: { x: 0, y: 0, z: 0, w: 1, h: 1, d: 1 }, offset: 0, stride: 0, layerStride: 0, toHost: false }, 2); // names a plane: waits
+  q.push({ t: 'transfer', ctx: 4, res: 40, level: 0, box: { x: 0, y: 0, z: 0, w: 1, h: 1, d: 1 }, offset: 0, stride: 0, layerStride: 0, toHost: true }, 2); // another resource: runs
+  q.push(submit(3, 10), 2); // behind its context's waiting transfer: waits
+  q.push({ t: 'read', id: 3, res: 40 }, 2); // a read waits for every waiting call, and nothing passes it
+  q.push(submit(4, 8), 2);
+  assert.deepEqual(ran.slice(6), ['attach2:31', '3:8', '3:9', 'transfer40']);
   assert.ok(q.stalled);
-  assert.equal(q.ahead, 2);
-  waiting = 0;
-  q.progress(5);
-  assert.deepEqual(ran.slice(3), ['2:8', 'fence1', '2:57,59,61', '3:8,57']);
+  assert.equal(q.ahead, 4);
+  // The picture comes out: the rest in order.
+  pending.clear();
+  q.progress(7);
+  assert.deepEqual(ran.slice(10), ['1:8', '1:57,59,61', '2:8', 'fence2', 'transfer31', '3:10', 'read40', '4:8']);
   assert.ok(!q.stalled);
-  assert.equal(q.maxWaitMs, 5);
+  assert.equal(q.maxWaitMs, 6);
 
-  // A new resource, its backing and its attachment run ahead (a decoder's new surfaces and staging buffers); an
-  // unref, or a resource a waiting call names, isn't passed.
-  const res = (id: number): WorkerCall => ({ t: 'res', desc: { id, target: 0, format: 0, bind: 0, width: 1, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 } });
-  waiting = 1;
+  // The compositor lets the plane go (detach): its draws run again while a new picture is pending.
+  q.push(attach(2, 31, false), 10);
+  q.push(submit(1, 57, 59, 61), 10);
+  pending.add(31).add(32);
   q.push(submit(2, 8), 10);
+  assert.deepEqual(ran.slice(18), ['detach2:31', '1:57,59,61', '2:8']);
+  // A new resource, its backing and its attachment run ahead of a waiting call; an unref waits and holds back all after it.
+  const res = (id: number): WorkerCall => ({ t: 'res', desc: { id, target: 0, format: 0, bind: 0, width: 1, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 } });
+  q.push(submit(1, 8), 10);
   q.push(res(9), 10);
   q.push({ t: 'backing', id: 9, backing: [{ off: 0, len: 4 }] }, 10);
-  q.push({ t: 'ctxres', ctx: 1, res: 9, attach: true }, 10);
-  q.push(submit(1, 57, 59, 61), 10);
-  assert.deepEqual(ran.slice(7), ['res', 'backing', 'ctxres', '1:57,59,61']);
-  q.push({ t: 'transfer', ctx: 2, res: 10, level: 0, box: { x: 0, y: 0, z: 0, w: 1, h: 1, d: 1 }, offset: 0, stride: 0, layerStride: 0, toHost: false }, 10);
-  q.push(res(10), 10); // named by the waiting transfer: not passed
+  q.push(attach(5, 9), 10);
   q.push({ t: 'unref', id: 9 }, 10);
-  q.push(submit(1, 57, 59, 61), 10);
-  assert.equal(ran.length, 11);
+  q.push(submit(5, 8), 10);
+  assert.deepEqual(ran.slice(21), ['res', 'backing', 'attach5:9']);
   // Nothing comes out: drained once at 200 ms, given up at 1 s.
   q.tick(209);
   assert.equal(drains, 0);
@@ -287,6 +381,6 @@ test('CallQueue: calls wait while a picture is pending; video submits run ahead 
   assert.equal(giveUps, 0);
   q.tick(1010);
   assert.equal(giveUps, 1);
-  assert.deepEqual(ran.slice(11), ['2:8', 'transfer', 'res', 'unref', '1:57,59,61']);
+  assert.deepEqual(ran.slice(24), ['1:8', 'unref', '5:8']);
   assert.ok(!q.stalled);
 });

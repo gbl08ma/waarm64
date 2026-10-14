@@ -5,7 +5,8 @@
 // host's decoder is exact (VP9 everywhere; H.264 on FFmpeg's or a hardware decoder, not the dev VM's OpenH264). Also
 // the renderer's video totals (pictures decoded, dropped) and the longest a call waited for a picture.
 //   node bench/video/v1.ts <image.qcow2> [outdir]      (default bench/results/local/video/v1/)
-// FRAMES (default 120), CLIPS (default both trailers), HWDEC (default vaapi; FFmpeg's -hwaccel).
+// FRAMES (default 120), CLIPS (default both trailers), HWDEC (default vaapi; FFmpeg's -hwaccel), VIRGL_GPU (the page's
+// `?gpu=`, default virgl; e.g. virgl,swvideo).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
 
@@ -16,7 +17,7 @@ mkdirSync(out, { recursive: true });
 const FRAMES = Number(process.env.FRAMES ?? 120);
 const CLIPS = (process.env.CLIPS ?? 'sintel_trailer-480p.mp4,sintel.webm').split(',');
 
-const s = await openSession({ gpu: 'virgl', image, out, disk2: '/target/video/media.ext4' });
+const s = await openSession({ gpu: process.env.VIRGL_GPU ?? 'virgl', image, out, disk2: '/target/video/media.ext4' });
 const { page, log, rootShell, run } = s;
 const results: Record<string, unknown> = { gl: s.gl, chromium: s.browser.version(), frames: FRAMES };
 const save = () => writeFileSync(`${out}/results.json`, JSON.stringify(results, null, 1));

@@ -8,8 +8,9 @@ the browser decodes what the guest sends, frame for frame equal to the guest's o
 browser has it in hardware. **V2 (Firefox measured on the page) is done (2026-10-14, §6)**: every picture decoded
 within 3 ms, the GPU worker's pause under 10 ms, Sintel's VP9 shown at 87% of its frames against 14% decoded in the
 guest, A/V sync within ±45 ms; what Firefox still drops is the guest's CPU, not the decode path, so nothing changes.
-Next: V3 (§3: robustness), from `M8-VIDEO-HANDOVER.md`, starting with H.264 on browsers that decode it only in
-software (the user's priority). What exists is
+V3 (§3: robustness) started with **H.264 where the browser decodes it only in software** (§7): offered there now,
+Firefox and mpv play it as well as from a hardware decoder. Next: the cost of Firefox's pipeline and its frame pacing
+(the user's), then the rest of V3, from `M8-VIDEO-HANDOVER.md`. What exists is
 in the topic docs ([devices.md](../devices.md) "virgl"); this page keeps the decisions, the findings worth not
 re-discovering, and each loop's record.
 
@@ -48,11 +49,13 @@ with the guest's software unmodified?
   for its own reordering longer than the guest expects would deadlock it (the guest waits on a fence the host can't
   resolve without later input). So the rebuilt SPS says `max_num_reorder_frames = 0` (VUI bitstream restriction):
   every picture comes out as soon as it's decoded, matched to its target surface by the chunk's timestamp. Only
-  Chromium's own H.264 decoder (its hardware paths) honors that; the software decoders don't (§5), so **H.264 is
-  offered only where the browser decodes it in hardware** (V1), and elsewhere the guest decodes it itself.
+  Chromium's own H.264 decoder (its hardware paths) honors that; the software decoders hold pictures (§5). V1 offered
+  H.264 only in hardware; **since V3 it's offered wherever the browser decodes it** (§7, the user's priority: their
+  host is Chromium on Linux): a held picture stalls only the context that shows it, a software decoder is told the
+  stream's depth, and a drain loses nothing.
 - **Codecs:** H.264 (Constrained Baseline, Main, High; 8-bit 4:2:0, progressive) and VP9 profile 0 first: what
-  YouTube and the media test clips use and what every browser decodes. Advertised only where `VideoDecoder.
-  isConfigSupported` says yes. HEVC and AV1 after.
+  YouTube and the media test clips use and what every browser decodes. Advertised where `VideoDecoder.
+  isConfigSupported` says yes, in hardware or not. HEVC and AV1 after.
 - **Correctness is bit-exact:** H.264 and VP9 decoding is exactly specified, so a decoded picture's planes must equal
   FFmpeg's software decode of the same stream byte for byte (where the browser's decoder is FFmpeg's or the
   hardware's: the dev VM's Chromium decodes H.264 with OpenH264, ±1-9 luma off on B-pictures, §5). The first implementation copies the planes out of each
@@ -103,7 +106,8 @@ its cost is the host's stateless-to-stateful step (above).
   written (no fence covers a decode: §4). The VA driver wrapper as a package in the desktop image. Done: §5.
 - **V2, on the page:** Firefox plays the clips through it. Measured: the guest's CPU, the frames shown and dropped,
   A/V sync (`bench/audio/avsync.ts`), on the Mac's GPU; what the GPU worker's pause costs. Done: §6.
-- **V3, robustness and breadth:** seeking and resolution changes (a new codec, a new key frame), errors (a decoder
+- **V3, robustness and breadth:** H.264 where the browser decodes it in software (first, the user's priority: §7);
+  seeking and resolution changes (a new codec, a new key frame), errors (a decoder
   error ends that codec's pictures, the guest falls back), snapshots (a machine with a codec is 3D in use: refused,
   as now), HEVC and AV1 where the browser has them.
 
@@ -229,3 +233,51 @@ vCPUs, 1376×762, 20 s a clip from 5 s after it starts. JSON in `bench/video/res
   the guest, H.264 is median -85 ms (p10 -118, p90 +46, -137..+146): out of sync.
 - **Decided:** V2 changes nothing in the decode path; the remaining drops are the emulator's speed under Firefox's
   multi-process pipeline (PLAN.md's CPU work), not the video track's. Next is V3.
+
+
+## 7. V3: H.264 where the browser decodes it in software (2026-10-14)
+
+The user's priority (their host: Chromium on Linux with an NVIDIA GPU, no hardware decoding, so VP9 was offered and
+H.264 not). Tools: `bench/audio/avsync.ts` (`mpv:<file>` phases: mpv with `--hwdec=vaapi` in sway, its frames and
+drops from its status line), `?gpu=swvideo` (the software decoders where there's hardware: the Mac), `v1.ts` with
+`VIRGL_GPU`, `replay.ts` with `REORDER=<depth>`. JSON in `bench/video/results/v3/` (`mac-*`: Chrome for Testing 153
+on the M4, its software decoders FFmpeg's; `*-devvm`, `mpv-*`: the dev VM's Chromium, OpenH264).
+
+- **Why it stalled was the queue, not only the decoder.** `CallQueue` held every non-decode call while any picture
+  was pending, and a decoder that holds pictures for reordering always has one pending: all rendering (sway's too)
+  waited until the 200 ms drain, whose flush wants a key chunk, so the stream was lost to the next IDR. Now a call
+  waits only if it could see a pending picture: its context has a pending picture's plane attached (the renderer
+  refuses a context a resource it hasn't attached; Firefox's compositor and mpv attach the planes to show a frame,
+  ~2 a frame) or it names one; decode-only submits still pass. With that alone Firefox played H.264 through OpenH264
+  on the dev VM with no call ever waiting, every picture decoded, 117-176 ms from END_FRAME to written.
+- **FFmpeg (Chrome's software decoder) drops what it reorders too late.** Told no depth it guesses, dropping a
+  picture while it learns (V1's replay: 1 of 130); that picture never came out, the compositor waited on it, the
+  drain followed, and the trailer lost 19 pictures a second (`mac-swvideo`). So the SPS says the larger of the
+  stream's reference count and the depth learned from the POCs (the desc's POC, offset 2308; the trailer's depth is
+  2, as its VUI says, and the SPS changes only at an IDR, before the first B-picture shows the depth, hence the
+  reference count). A software decoder outputs in display order, so a pending picture of a lesser POC than one that
+  comes out was dropped by it: given up at once (a one-picture glitch, not a stall).
+- **Drains lose nothing now.** mpv waits to show its first picture before it decodes more, and OpenH264 holds it:
+  the drain came at every start (`mpv-devvm`: 6.7 pictures a second lost). The IDR period's pictures are kept, and a
+  drain flushes the decoder (out come the held pictures, written) and has a new one decode the period again from its
+  IDR (its outputs written only where still pending). mpv: 2 drains at the start, then every picture.
+- **Chrome's FFmpeg holds 3 pictures beyond what the SPS says** (`replay.ts`, `REORDER=2`: lag up to 5; 5: up to 8),
+  its frame threads; OpenH264 ignores the SPS (up to 6). So a player that waits for each picture after fewer later
+  ones (the guest's `ffmpeg -hwaccel vaapi` reading frames back waits after 2) can't be served by the depth: it
+  gets every frame right (`v1.ts` on the Mac, 120 of 120 equal) but each through a drain, 120 frames in 23 s
+  (backlog.md). A depth seen from the guest's waits was tried and dropped: it can't go below Chrome's 3, and mpv's
+  first-picture wait reads as depth 0.
+- **On the Mac** (`?gpu=virgl,swvideo`, 20 s a clip):
+
+| | Software decoder (FFmpeg) | Hardware (V2, `mac-video`) |
+|---|---|---|
+| Firefox, sync clip, H.264 at 30 | 66-97 of 663-667 dropped (10-15%), all 30 a second decoded, sync median -2 to -10 ms | 133 of 662 (20%), -13 ms |
+| Firefox, Sintel, H.264 at 24 | 66-79 of 526-555 (13-15%), all decoded | 55 of 530 (10%) |
+| mpv, Sintel, H.264 | 0 of 527 dropped, the guest 19% busy | (not run) |
+| Firefox, VP9 (sync clip, Sintel) | 101 of 696, 76 of 532: as hardware, under 1 ms a picture | 116 of 694, 69 of 531 |
+
+  END_FRAME to written 130-210 ms in software (the decoder's holding), against ~3 ms in hardware; Firefox and mpv
+  decode far enough ahead not to notice. One Firefox run in five went wrong (the sync clip: 322 of 667 dropped, a
+  drain whose cause the run didn't record); the four with the renderer's log had at most one drain, at a clip's
+  start. **mpv keeps the guest at 19-27% busy where Firefox needs 54-74%** for the same clip, with no frame dropped:
+  the cost left is Firefox's (the next loop).

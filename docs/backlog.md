@@ -328,12 +328,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   over virgl decoded by WebCodecs ([plans/video.md](plans/video.md); the V4L2/virtio-media route and why it lost are
   its §2). Since V2 Firefox shows 87-90% of the trailer's frames; what it drops is the guest's CPU (its media
   pipeline keeps 4 vCPUs 54-73% busy with no decoding: plans/video.md §6), not the decode path.
-- **H.264 on a browser that decodes it only in software** (Chromium on Linux without VA-API, distro builds with
-  OpenH264): not offered to the guest (plans/video.md §5: the decoder holds B-pictures longer than the guest waits,
-  so the guest stalls; `?gpu=swh264` shows it). Ideas, none tried: a filler picture (a non-reference all-skip P slice
-  under a CAVLC PPS of ours) to push held pictures out; rebuilding the SPS with the stream's own reorder depth,
-  learned from the POCs before it's needed (FFmpeg then neither holds nor drops; OpenH264 ignores it). Worth it only
-  if Chrome-on-Linux users matter: there the guest decodes H.264 itself, as before.
+- **A VA-API consumer that waits on each picture, where the browser decodes H.264 in software** (the guest's
+  `ffmpeg -hwaccel vaapi` reading frames back, as in transcoding; plans/video.md §7): every frame right, but ~5 a
+  second (120 frames in 23 s on the Mac: each picture waits for the 200 ms drain). The decoder holds more pictures than
+  the guest sends before it waits (Chrome's FFmpeg 3 beyond the SPS's depth, its frame threads; OpenH264 up to 6,
+  ignoring the SPS), and no SPS can say less than 0. Firefox and mpv decode ahead and aren't affected. Ideas, none
+  tried: a filler picture (a non-reference all-skip P slice under a CAVLC PPS of ours) to push held pictures out; a
+  shorter drain for a codec drained again and again (each drain decodes its IDR period again, so the cost grows with
+  the period). Worth it only if transcoding in the guest matters.
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 

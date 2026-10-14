@@ -69,7 +69,7 @@ async function replayVideo(name: string, orig?: string): Promise<VideoReplay> {
 /** FFmpeg's frames of the original files (bench/video/fixture.ts): SHA-256 of each visible I420, in display order. */
 const videoRef = () => JSON.parse(readFileSync(new URL('virgl/video.json', import.meta.url), 'utf8')) as { width: number; height: number; pictures: number; h264: string[]; vp9: string[] };
 
-test('video on WebGL2: VP9 pictures through the device and WebCodecs into their planes, each FFmpeg\'s frame', async () => {
+test('video on WebGL2: VP9 pictures through the device and WebCodecs into their planes, each FFmpeg\'s frame', { timeout: 180_000 }, async () => {
   const ref = videoRef();
   const r = await replayVideo('video-vp9.vglt.gz');
   assert.deepEqual(r.log, []);
@@ -79,7 +79,7 @@ test('video on WebGL2: VP9 pictures through the device and WebCodecs into their 
   assert.equal(wrong.length, 0, `pictures ${wrong.join(' ')} differ from FFmpeg's`);
 });
 
-test('video on WebGL2: H.264 pictures through the device and WebCodecs into their planes, as the original decodes', async () => {
+test('video on WebGL2: H.264 pictures through the device and WebCodecs into their planes, as the original decodes', { timeout: 180_000 }, async () => {
   const ref = videoRef();
   const r = await replayVideo('video-h264.vglt.gz', 'video-h264-orig.h264.gz');
   const hw = r.hardware.includes(PROFILE.AVC_HIGH);

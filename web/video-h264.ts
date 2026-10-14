@@ -200,13 +200,13 @@ export function codecString(profile: number, level: number) {
  * An SPS (id 0) for these parameters and a coded size in macroblocks. `level` is the codec's (Mesa's VA frontend
  * leaves the SPS's level_idc 0 and creates the codec with a level for the picture size).
  *
- * `reorder` is what the SPS says of output order (docs/plans/video.md §5). `'none'` (a hardware decoder: Chromium's
- * own H.264 decoder honors it) writes max_num_reorder_frames 0, so every picture comes out as soon as it's decoded.
- * `'learn'` (a software decoder: FFmpeg) writes no bitstream restriction: FFmpeg drops the pictures that come after
- * one it has shown in display order when told 0, and without the restriction it learns the reorder depth from the
- * POCs, as the guest's own FFmpeg does, so it holds a picture no longer than the guest waits for it.
+ * `reorder` is what the SPS says of output order (docs/plans/video.md §5, §7). `'none'` (a hardware decoder:
+ * Chromium's own H.264 decoder honors it) writes max_num_reorder_frames 0, so every picture comes out as soon as it's
+ * decoded. A number writes that depth (`H264Stream` gives a software decoder the stream's: FFmpeg drops a picture
+ * that comes after one it has output in display order, so it must be told at least the stream's depth). `'learn'`
+ * writes no bitstream restriction (FFmpeg then guesses the depth from the POCs, and drops a picture while it learns).
  */
-export function buildSps(p: H264Params, mbWidth: number, mbHeight: number, level = 0, reorder: H264Reorder = 'none'): Uint8Array {
+export function buildSps(p: H264Params, mbWidth: number, mbHeight: number, level = 0, reorder: Exclude<H264Reorder, 'stream'> = 'none'): Uint8Array {
   const s = p.sps;
   const [idc, flags] = profileIdc(p.profile);
   const w = new BitWriter();
@@ -249,19 +249,21 @@ export function buildSps(p: H264Params, mbWidth: number, mbHeight: number, level
   w.flag(0); // nal_hrd_parameters_present_flag
   w.flag(0); // vcl_hrd_parameters_present_flag
   w.flag(0); // pic_struct_present_flag
-  w.flag(reorder === 'none'); // bitstream_restriction_flag
+  w.flag(reorder !== 'learn'); // bitstream_restriction_flag
   if (reorder === 'learn') return w.finish();
+  const depth = reorder === 'none' ? 0 : reorder;
   w.flag(1); // motion_vectors_over_pic_boundaries_flag
   w.ue(2); // max_bytes_per_pic_denom
   w.ue(1); // max_bits_per_mb_denom
   w.ue(16); // log2_max_mv_length_horizontal
   w.ue(16); // log2_max_mv_length_vertical
-  w.ue(0); // max_num_reorder_frames: output at once (the guest reorders)
-  w.ue(Math.max(1, s.maxNumRefFrames)); // max_dec_frame_buffering
+  w.ue(depth); // max_num_reorder_frames (0: output at once, the guest reorders)
+  w.ue(Math.max(1, depth, s.maxNumRefFrames)); // max_dec_frame_buffering
   return w.finish();
 }
 
-export type H264Reorder = 'none' | 'learn';
+/** What the SPS says of output order: 0 (`'none'`), a depth, nothing (`'learn'`), or (`H264Stream`) the stream's (`'stream'`). */
+export type H264Reorder = 'none' | 'learn' | 'stream' | number;
 
 const flat = (l: number[]) => l.every((x) => x === 16);
 
@@ -346,7 +348,14 @@ export function sliceRefs(sliceNal: Uint8Array, p: H264Params): { type: number; 
 
 /**
  * A codec's stream as WebCodecs takes it: each picture's slices, after the parameter sets when they've changed (and
- * at every IDR picture, which starts a chunk the decoder can begin at).
+ * at every IDR picture, which starts a chunk the decoder can begin at), with the picture's POC.
+ *
+ * With `reorder` `'stream'` (a software decoder) the SPS's reorder depth is the stream's, as far as it's known: the
+ * desc doesn't carry the stream's VUI, so the depth (how many pictures decoded before one, since the IDR, come after
+ * it in display order) is learned from the POCs, and the SPS, which changes only at an IDR, says at least the
+ * picture's reference count (at most the depth of a stream whose B-pictures aren't references, before any is seen),
+ * raised at the next IDR if a picture needs more. (Saying less doesn't make Chrome's FFmpeg hold less: its frame
+ * threads add 3 pictures to whatever the SPS says, docs/plans/video.md §7.)
  *
  * VA's picture parameters lack the PPS's num_ref_idx_l0/l1_default_active_minus1 (Mesa's desc has 0), which slices
  * without num_ref_idx_active_override_flag use: those slices' active counts (the picture's, in the desc) are the
@@ -360,16 +369,25 @@ export class H264Stream {
   private mbHeight: number;
   private level: number;
   private reorder: H264Reorder;
+  /** `'stream'`: the depth the SPS says, the deepest picture since the stream began, and the POCs since the IDR. */
+  private said = 0;
+  private learned = 0;
+  private pocs: number[] = [];
 
-  constructor(width: number, height: number, level = 0, reorder: H264Reorder = 'none') {
+  /** `learned` (`'stream'`): the depth an earlier stream of the codec learned. */
+  constructor(width: number, height: number, level = 0, reorder: H264Reorder = 'none', learned = 0) {
     this.mbWidth = Math.ceil(width / 16);
     this.mbHeight = Math.ceil(height / 16);
     this.level = level;
     this.reorder = reorder;
+    this.learned = learned;
   }
 
-  /** The chunk for one picture: its desc and its bitstream (Annex B slices). */
-  chunk(desc: Uint8Array, bits: Uint8Array): { data: Uint8Array; key: boolean } {
+  /** The deepest reordering seen. */
+  get depth() { return this.learned; }
+
+  /** The chunk for one picture: its desc and its bitstream (Annex B slices); the picture's POC. */
+  chunk(desc: Uint8Array, bits: Uint8Array): { data: Uint8Array; key: boolean; poc: number } {
     const p = parseH264Desc(desc);
     if (p.fieldPic || !p.sps.frameMbsOnly) throw new Error('H.264: interlaced pictures aren\'t supported');
     const nals = splitAnnexB(bits).filter((n) => n.length > 1);
@@ -377,7 +395,15 @@ export class H264Stream {
     if (!slices.length) throw new Error('H.264: a picture without slices');
     const key = slices.some((n) => (n[0] & 0x1f) === 5);
     const out: Uint8Array[] = [];
-    const sps = buildSps(p, this.mbWidth, this.mbHeight, this.level, this.reorder);
+    // The picture's POC (a frame's: the lesser of its fields'), and how deep it is in its IDR period.
+    const v = new DataView(desc.buffer, desc.byteOffset, desc.length);
+    const poc = Math.min(v.getInt32(2308, true), v.getInt32(2312, true));
+    if (key) this.pocs = [];
+    this.learned = Math.max(this.learned, this.pocs.filter((x) => x > poc).length);
+    this.pocs.push(poc);
+    if (this.pocs.length > 32) this.pocs.shift(); // depths are at most 16
+    if (key) this.said = Math.min(16, Math.max(this.said, this.learned, p.sps.maxNumRefFrames));
+    const sps = buildSps(p, this.mbWidth, this.mbHeight, this.level, this.reorder === 'stream' ? this.said : this.reorder);
     const spsChanged = !this.sps || !same(this.sps, sps);
     if (spsChanged || key) {
       this.sps = sps;
@@ -410,7 +436,7 @@ export class H264Stream {
     const data = new Uint8Array(out.reduce((k, b) => k + b.length, 0));
     let at = 0;
     for (const b of out) { data.set(b, at); at += b.length; }
-    return { data, key };
+    return { data, key, poc };
   }
 }
 

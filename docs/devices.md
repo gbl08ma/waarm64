@@ -348,11 +348,17 @@ mode (and natively in realtime mode: std has no CSPRNG).
   makes a chunk of each END_FRAME (H.264 rebuilt as Annex B with our SPS and PPS by `H264Stream`, `web/video-h264.ts`;
   VP9 as sent) for one `VideoDecoder` per codec (`optimizeForLatency`; recreated at the next key picture after an
   error), and writes each frame's Y and interleaved U/V into the buffer's planes (`VirglRenderer.writePicture`).
-  Mesa's `end_frame` makes no fence, so the GPU worker's `CallQueue` (`web/virgl-host.ts`) holds every later call
-  while a picture is pending, except video submits and resource creation, which run ahead; a picture still out after
-  1 s is given up (logged; the guest sees the old planes). The SPS's reorder depth is 0 for a hardware decoder and
-  left out in software, where FFmpeg learns it and may hold pictures: those are drained after 200 ms idle. VP9
-  frames with `show_frame` 0 give no output and aren't waited for. `renderer.videoStats` (decoded, dropped, errors;
+  Mesa's `end_frame` makes no fence, so the GPU worker's `CallQueue` (`web/virgl-host.ts`) holds a call while it
+  could see a pending picture: a call of a context that has a pending picture's plane attached (unless the submit
+  only decodes) or one naming a plane, and what must follow a held call (its context, its resources; fences, reads,
+  the screen and a resource's end wait for every held call). The rest runs, so a decoder that holds pictures stalls
+  only the context that shows them (Firefox's compositor attaches the planes per frame). The SPS's reorder depth is
+  0 for a hardware decoder; in software (which outputs in display order) the larger of the stream's reference count
+  and the depth learned from the POCs (`H264Stream` `'stream'`): FFmpeg drops a picture that comes after one it has
+  shown, and a pending picture of a lesser POC than one that comes out is given up at once. If calls wait 200 ms and
+  nothing comes out, a software H.264 decoder is drained without loss: flushed, and a new one decodes the IDR period
+  again from its start (kept up to 600 pictures or 32 MiB; else the next IDR); a picture still out after 1 s is given
+  up (logged; the guest sees the old planes). VP9 frames with `show_frame` 0 give no output and aren't waited for. `renderer.videoStats` (decoded, dropped, errors;
   each picture's END_FRAME to written and its write, in ms) and the queue's `ahead` and `maxWaitMs` go out in
   render-stats (`bench/gpu/guest-session.ts` sums them over a phase). Mesa's wire numbers its profiles by its own
   `enum pipe_video_profile` (26.2's in `PROFILE`), which isn't stable across releases. A capture includes

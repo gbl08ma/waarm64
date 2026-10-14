@@ -72,13 +72,16 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
         write(c, planes, pic);
         shots.push(sha256(i420(planes.map((id) => ({ bytes: r.readResource(id)!, width: r.resources.get(id)!.width })), w, h)));
       };
-      q = new CallQueue<HostCall>({ run: (c) => { runCall(c, r); }, waiting: () => r.videoWaiting, drain: () => r.videoDrain(), giveUp: () => r.videoGiveUp() });
+      // `ctx` -1: the guest's read of a picture (below), which only waits.
+      q = new CallQueue<HostCall>({ run: (c) => { if (c.t !== 'transfer' || c.ctx !== -1) runCall(c, r); }, pending: r.videoPending, drain: () => r.videoDrain(), giveUp: () => r.videoGiveUp() });
       r.onVideoSettled = () => queueMicrotask(() => q.progress());
       return { call: (c) => q.push(c), fence: () => undefined };
     }, async () => { if (q.length) await settled(); });
-    // A call after the last picture waits for it, as the guest's read of it would: a decoder that holds pictures for
+    // The guest reads the pictures still out (a read of their planes waits for them): a decoder that holds pictures for
     // reordering is drained then (CallQueue.tick).
-    q.push({ t: 'damage', rect: { x: 0, y: 0, w: 0, h: 0 } });
+    for (const res of (r as unknown as { pendingPlanes(): number[] }).pendingPlanes()) {
+      q.push({ t: 'transfer', ctx: -1, res, level: 0, box: { x: 0, y: 0, z: 0, w: 1, h: 1, d: 1 }, offset: 0, stride: 0, layerStride: 0, toHost: false });
+    }
     await settled();
   } finally {
     clearInterval(timer);

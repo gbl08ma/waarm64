@@ -35,12 +35,11 @@ const MAX_W = 4096, MAX_H = 2304;
 /**
  * The caps entries for what this browser's `VideoDecoder` takes (an empty list without WebCodecs), and the profiles
  * it decodes in hardware (`prefer-hardware` supported): those are decoded there, the rest in software, and the
- * H.264 stream differs (web/video-h264.ts `buildSps`). H.264 is offered only in hardware unless `softwareH264`: the
- * software decoders hold B-pictures longer than the guest waits (OpenH264 ignores the SPS's reorder depth, FFmpeg
- * drops out-of-order pictures when told 0), and the guest stalls on a picture the decoder keeps (docs/plans/video.md
- * §5); the guest then decodes H.264 itself.
+ * H.264 stream differs (web/video-h264.ts `H264Stream`: a software decoder holds pictures for the stream's reorder
+ * depth, docs/plans/video.md §7). `software` decodes every codec in software (experiments on a host with hardware
+ * decoders).
  */
-export async function probeVideo(o: { softwareH264?: boolean } = {}): Promise<{ caps: VideoCap[]; hardware: number[] }> {
+export async function probeVideo(o: { software?: boolean } = {}): Promise<{ caps: VideoCap[]; hardware: number[] }> {
   if (typeof VideoDecoder === 'undefined') return { caps: [], hardware: [] };
   const caps: VideoCap[] = [], hardware: number[] = [];
   const supported = async (codec: string, hardwareAcceleration: HardwareAcceleration) => {
@@ -52,8 +51,7 @@ export async function probeVideo(o: { softwareH264?: boolean } = {}): Promise<{ 
   };
   for (const c of CODECS) {
     if (!await supported(c.codec, 'no-preference')) continue;
-    const hw = await supported(c.codec, 'prefer-hardware');
-    if (isH264(c.profile) && !hw && !o.softwareH264) continue;
+    const hw = !o.software && await supported(c.codec, 'prefer-hardware');
     caps.push({ profile: c.profile, maxLevel: c.maxLevel, maxWidth: MAX_W, maxHeight: MAX_H });
     if (hw) hardware.push(c.profile);
   }
@@ -96,8 +94,8 @@ export type DecodedPicture = { width: number; height: number; y: Uint8Array; uv:
 export type PictureDecoder = {
   /** Decodes a chunk; its picture comes out through the factory's `output`, with this timestamp (or never: a hidden VP9 frame). */
   decode(data: Uint8Array, key: boolean, timestamp: number): void;
-  /** Outputs every picture it holds; the next chunk must then be a key chunk. */
-  flush(): void;
+  /** Outputs every picture it holds, resolving when it has; the next chunk must then be a key chunk. */
+  flush(): Promise<void>;
   close(): void;
 };
 export type DecoderConfig = { codec: string; hardware: boolean; width: number; height: number };
@@ -107,10 +105,17 @@ type Codec = {
   handle: number; profile: number; entrypoint: number; level: number; width: number; height: number; maxRefs: number; target?: number; desc?: Uint8Array; bits: Uint8Array[];
   /** The decoder, made at the first picture and again after an error; until a key chunk reaches it, pictures are dropped. */
   dec?: PictureDecoder; needKey?: boolean; hardware?: boolean; h264?: H264Stream;
+  /** IDR periods sent to the decoder (H.264), for the pictures' order. */
+  epoch: number;
+  /** Software H.264: the pictures since the last IDR (unless too many) and the decoders being drained (`drain`). */
+  history?: { desc: Uint8Array; bits: Uint8Array; ts: number }[]; historyBytes?: number; retired?: Set<PictureDecoder>;
 };
+/** The most of an IDR period kept to decode again after a drain. */
+const HISTORY_PICTURES = 600, HISTORY_BYTES = 32 << 20;
 type Buffer = { handle: number; format: number; width: number; height: number; planes: number[] };
-/** A picture sent to the decoder and not yet written: its codec, target buffer and when it was sent. */
-type Pending = { codec: Codec; target: number; at: number };
+/** A picture sent to the decoder and not yet written: its codec, target buffer and when it was sent; an H.264 picture's
+ * IDR period and POC. */
+type Pending = { codec: Codec; target: number; at: number; epoch?: number; poc?: number };
 
 const isH264 = (profile: number) => profile >= PROFILE.AVC_BASELINE && profile <= PROFILE.AVC_HIGH10;
 const isVp9 = (profile: number) => profile === PROFILE.VP9_PROFILE0;
@@ -164,7 +169,7 @@ export class VideoContext {
       case 53: { // CREATE_VIDEO_CODEC: handle, profile, entrypoint, chroma format, level, width, height[, max refs]
         if (p.length < 7) return this.env.error('short CREATE_VIDEO_CODEC');
         if (this.codecs.has(p[0])) return;
-        this.codecs.set(p[0], { handle: p[0], profile: p[1], entrypoint: p[2], level: p[4], width: p[5], height: p[6], maxRefs: p[7] ?? 0, bits: [] });
+        this.codecs.set(p[0], { handle: p[0], profile: p[1], entrypoint: p[2], level: p[4], width: p[5], height: p[6], maxRefs: p[7] ?? 0, bits: [], epoch: 0 });
         this.stats.codecs++;
         this.env.debug?.(`video: codec ${p[0]} profile ${p[1]} entrypoint ${p[2]} level ${p[4]} ${p[5]}x${p[6]} refs ${p[7] ?? '-'}`);
         return;
@@ -226,17 +231,39 @@ export class VideoContext {
   /** Pictures sent to a decoder and not yet written. */
   get waiting() { return this.pending.size; }
 
+  /** The plane resources of the pending pictures' buffers. */
+  pendingPlanes(): number[] {
+    const out: number[] = [];
+    for (const q of this.pending.values()) out.push(...this.buffers.get(q.target)?.planes ?? []);
+    return out;
+  }
+
   /**
-   * Has the decoders that hold pictures for reordering (software H.264: `buildSps`'s `learn`) output them: the guest
-   * waits for one the decoder holds until later pictures come, and none are coming. Their next chunk must be a key.
+   * Has the decoders that hold pictures for reordering (software H.264) output them: the guest waits for one the
+   * decoder holds until later pictures come, and none are coming (docs/plans/video.md §7). A flushed decoder wants a
+   * key chunk next, so a new one takes the IDR period from its start again (its outputs written only where still
+   * pending). Without the period (too long), the next IDR.
    */
   drain() {
     const codecs = new Set([...this.pending.values()].map((q) => q.codec));
     for (const c of codecs) {
       if (!c.dec || !c.h264 || c.hardware) continue;
-      this.env.debug?.(`video: codec ${c.handle}: drained`);
-      c.dec.flush();
-      c.needKey = true;
+      const old = c.dec;
+      (c.retired ??= new Set()).add(old);
+      void old.flush().finally(() => {
+        c.retired?.delete(old);
+        old.close();
+      });
+      c.dec = undefined;
+      const history = c.history;
+      this.env.debug?.(`video: codec ${c.handle}: drained; ${history ? `${history.length} picture(s) again` : 'from the next IDR'}`);
+      if (!history) continue;
+      this.open(c);
+      for (const h of history) {
+        const { data, key } = c.h264!.chunk(h.desc, h.bits);
+        c.needKey = false;
+        c.dec!.decode(data, key, h.ts);
+      }
     }
   }
 
@@ -260,9 +287,9 @@ export class VideoContext {
     if (!isH264(c.profile) && !isVp9(c.profile)) return this.err(`video: codec ${c.handle}: profile ${c.profile} isn't decoded`);
     if (!c.dec) this.open(c);
     const bits = c.bits.length === 1 ? c.bits[0] : concat(c.bits);
-    let data = bits, key: boolean, shown = true;
+    let data = bits, key: boolean, shown = true, poc: number | undefined;
     try {
-      if (c.h264) ({ data, key } = c.h264.chunk(desc, bits));
+      if (c.h264) ({ data, key, poc } = c.h264.chunk(desc, bits));
       else {
         if (desc.length <= VP9_PIC_FIELDS) throw new Error(`a picture desc of ${desc.length} bytes`);
         key = !(desc[VP9_PIC_FIELDS] & 4);
@@ -278,23 +305,46 @@ export class VideoContext {
       return;
     }
     c.needKey = false;
+    if (key) c.epoch++;
     const ts = this.seq++;
-    if (shown) this.pending.set(ts, { codec: c, target, at: performance.now() });
+    if (c.h264 && !c.hardware) this.remember(c, desc, bits, key, ts);
+    if (shown) this.pending.set(ts, { codec: c, target, at: performance.now(), epoch: c.epoch, poc });
     c.dec!.decode(data, key, ts);
+  }
+
+  /** A software H.264 picture into its IDR period's history (`drain`). */
+  private remember(c: Codec, desc: Uint8Array, bits: Uint8Array, key: boolean, ts: number) {
+    if (key) {
+      c.history = [];
+      c.historyBytes = 0;
+    }
+    if (!c.history) return;
+    c.history.push({ desc: desc.slice(), bits: bits.slice(), ts });
+    c.historyBytes! += desc.length + bits.length;
+    if (c.history.length > HISTORY_PICTURES || c.historyBytes! > HISTORY_BYTES) c.history = undefined;
   }
 
   private open(c: Codec) {
     const vp9 = isVp9(c.profile);
     c.hardware = !!this.env.hardware?.includes(c.profile);
     // A new decoder takes the parameter sets again (H264Stream sends them at a key picture).
-    c.h264 = vp9 ? undefined : new H264Stream(c.width, c.height, c.level, c.hardware ? 'none' : 'learn');
+    c.h264 = vp9 ? undefined : new H264Stream(c.width, c.height, c.level, c.hardware ? 'none' : 'stream', c.h264?.depth);
     const codec = vp9 ? CODECS.find((x) => x.profile === c.profile)!.codec : codecString(c.profile, c.level);
     c.needKey = true;
     const dec: PictureDecoder = this.env.decoders!({ codec, hardware: c.hardware, width: c.width, height: c.height }, (ts, pic) => {
-      if (this.closed || c.dec !== dec) return;
+      // A drained decoder's pictures still count (`drain`).
+      if (this.closed || (c.dec !== dec && !c.retired?.has(dec))) return;
       const q = this.pending.get(ts);
       if (!q) return; // given up, or its buffer is gone
       this.pending.delete(ts);
+      // A software H.264 decoder outputs in display order: an earlier picture still pending (a lesser POC in this IDR
+      // period, or one of an earlier period) never will come (dropped by it), so it's given up now, alone. Not while a
+      // drained decoder and its successor both output.
+      if (!c.hardware && q.poc !== undefined && !c.retired?.size) {
+        const over = (x: Pending) => x.codec === c && x.poc !== undefined && (x.epoch! < q.epoch! || (x.epoch === q.epoch && x.poc < q.poc!));
+        if (this.env.debug) for (const [t, x] of this.pending) if (over(x)) this.env.debug(`video: codec ${c.handle}: picture ${t} (period ${x.epoch}, POC ${x.poc}) passed over by ${ts} (period ${q.epoch}, POC ${q.poc})`);
+        this.drop(over);
+      }
       const b = this.buffers.get(q.target);
       if (b) {
         const t0 = performance.now();
@@ -320,6 +370,9 @@ export class VideoContext {
     const dec = c.dec;
     c.dec = undefined;
     dec?.close();
+    for (const r of c.retired ?? []) r.close();
+    c.retired?.clear();
+    c.history = undefined;
     this.drop((q) => q.codec === c);
   }
 
@@ -389,7 +442,7 @@ export const webCodecsDecoder: DecoderFactory = (config, output, error) => {
         if (!closed) error(String(e));
       }
     },
-    flush() { d.flush().catch(() => {}); },
+    flush() { return d.flush().catch(() => {}); },
     close() {
       closed = true;
       if (d.state !== 'closed') d.close();

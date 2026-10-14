@@ -17,8 +17,10 @@ const [path, index, md5Path, visible, hw] = process.argv.slice(2);
 if (!path || !index || !md5Path) throw new Error('usage: node bench/video/replay.ts <capture.vglt> <codec index> <orig.md5> [visible width] [hw|sw]');
 const c = pictures(new Uint8Array(readFileSync(path)))[Number(index)];
 const vp9 = c.profile === PROFILE.VP9_PROFILE0;
-// The SPS for the decoder: reorder 0 for hardware, learned for software (web/video-h264.ts buildSps); REORDER overrides.
-const stream = new H264Stream(c.width, c.height, c.level, (process.env.REORDER as H264Reorder | undefined) ?? (hw === 'hw' ? 'none' : 'learn'));
+// The SPS for the decoder: reorder 0 for hardware, the stream's for software (web/video-h264.ts H264Stream); REORDER overrides.
+// REORDER: none, learn, stream or a depth.
+const reorder = process.env.REORDER && /^\d+$/.test(process.env.REORDER) ? Number(process.env.REORDER) : process.env.REORDER as H264Reorder | undefined;
+const stream = new H264Stream(c.width, c.height, c.level, reorder ?? (hw === 'hw' ? 'none' : 'stream'));
 const chunks = c.pictures.map((p) => {
   if (vp9) return { data: Buffer.from(p.bits).toString('base64'), key: !(p.desc[332] & 4) };
   const x = stream.chunk(p.desc, p.bits);

@@ -9,6 +9,8 @@
 //                  `getOutputTimestamp`, which includes the output latency): offset = sound - picture, per second.
 //   sintel         a real video (VP9 480p, Opus), and sintel-silent, the same without its sound: the guest's CPU
 //                  (every thread's, bench/gpu/guest-session.ts `load`) and Firefox's dropped frames, with and without.
+//   mpv:<file>     mpv plays a clip of the media in sway with VA-API (`--hwdec=vaapi`): the guest's CPU, mpv's frames,
+//                  its dropped frames (late at the output, and dropped by the decoder) over the phase.
 //   mpv-sound      Sintel's sound alone (`mpv --no-video --ao=pipewire`), and mpv-null, the same decode paced in real
 //                  time with no output (`--ao=null`): what the sound path itself costs (PipeWire, the driver, the device).
 // Each phase also reads the guest's ALSA parameters while it plays (PipeWire's period and buffer), the ring's
@@ -97,6 +99,25 @@ function offsets(flashes: number[], onsets: number[]) {
 }
 const pct = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 
+// mpv:<file>: the video too, in sway (`--hwdec=vaapi`, mpv's default output), its frames and drops from its status.
+for (const name of CLIPS.filter((c) => c.startsWith('mpv:'))) {
+  const file = name.slice(4), clip = `mpv-${file.replace(/\W/g, '-')}`;
+  // Under `script` (mpv prints its status line only to a terminal), from a script (no quoting through su and script).
+  await pasteSerial(`cat > /home/alarm/mpv-run.sh <<'EOF'\n#!/bin/sh\nexec mpv --hwdec=vaapi --fs --ao=pipewire --length=${PHASE_S + WARM_S + 20} --term-status-msg='MPV \${estimated-frame-number} \${frame-drop-count} \${decoder-frame-drop-count} \${hwdec-current}' ${MEDIA}/${file}\nEOF\nchmod 755 /home/alarm/mpv-run.sh`);
+  await run(asUser('script -qfc /home/alarm/mpv-run.sh /tmp/mpv.log >/dev/null 2>&1 &'));
+  await page.waitForTimeout(WARM_S * 1000);
+  const status = async () => (await run(`grep -a -o 'MPV [0-9]* [0-9]* [0-9]* [a-z0-9-]*' /tmp/mpv.log | tail -1`)).trim().split(' ');
+  const s0 = await status();
+  const r = await load(clip, PHASE_S);
+  const s1 = await status();
+  const log1 = await run(`tr '\\r' '\\n' < /tmp/mpv.log | grep -a -v 'MPV [0-9]' | grep -a . | head -20`);
+  await run('pkill -x mpv; sleep 1');
+  const quality = s0.length >= 4 && s1.length >= 4 ? { frames: +s1[1] - +s0[1], dropped: +s1[2] - +s0[2], decoderDropped: +s1[3] - +s0[3], hwdec: s1[4] } : undefined;
+  results[clip] = { quality, status: [s0.join(' '), s1.join(' ')], log: log1, ...r };
+  log(clip, 'phase', JSON.stringify(quality), 'video', JSON.stringify(r.display.renderer?.video), '\n' + log1);
+  save();
+}
+
 for (const clip of CLIPS.filter((c) => c.startsWith('mpv-'))) {
   // As the user in sway's session (PipeWire's socket), for longer than the phase; killed after it.
   const ao = clip === 'mpv-sound' ? 'pipewire' : 'null';
@@ -118,7 +139,7 @@ const quality = async (clip: string) => {
   const m = /frames=(\d+) dropped=(\d+)/.exec(await run(`grep -E "AVSYNC t=" /tmp/ff-${clip}.log | tail -1`));
   return m ? { frames: +m[1], dropped: +m[2] } : undefined;
 };
-for (const name of CLIPS.filter((c) => !c.startsWith('mpv-'))) {
+for (const name of CLIPS.filter((c) => !c.startsWith('mpv-') && !c.startsWith('mpv:'))) {
   const file = name.includes('.') ? name : `${name}.webm`, clip = name.replace(/\W/g, '-');
   if (!/yes/.test(await run(`test -f ${MEDIA}/${file} && echo yes`))) { log(clip, 'not in the image'); continue; }
   await run('. /root/ff.sh; ffkill', 120_000);
@@ -154,5 +175,8 @@ for (const name of CLIPS.filter((c) => !c.startsWith('mpv-'))) {
   save();
 }
 await run('. /root/ff.sh; ffkill', 120_000);
+// `?gpu=virgl,debug`: the renderer's video lines (the first 200).
+if (s.debugLines.length) results.debug = s.debugLines.filter((l) => l.includes('video')).slice(0, 200);
+save();
 await s.close();
 log('done', out);

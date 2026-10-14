@@ -91,19 +91,25 @@ export function decodeOnly(words: Uint32Array) {
 const DECODE_SUBMIT = new Set([1, 28, 29, 30, 43, 44, 46, 53, 54, 55, 56, 57, 58, 59, 60, 61]);
 
 /**
- * The GPU worker's calls in order, with video (docs/plans/video.md §5). The guest expects a picture decoded once its
- * END_FRAME has run (Mesa's virgl makes no fence for it; virglrenderer decodes synchronously), while WebCodecs
- * decodes asynchronously: so while any picture is pending (`waiting`), calls wait here. What decodes doesn't: a
- * submit that only decodes (`decodeOnly`), a resource's creation and backing, a context's creation and a resource's
- * attachment to one run, even ahead of waiting calls, as long as no waiting call is of the same context or names the
- * same resource (a resource's unref or detach, a read and a reset are never passed). So a decoder that holds a
- * picture until later ones come (a software H.264 decoder reordering) gets them. If nothing comes out for `drainMs`,
- * the decoders that hold pictures are drained (`drain`); after `giveUpMs`, the pending pictures are given up
+ * The GPU worker's calls in order, with video (docs/plans/video.md §5, §7). The guest expects a picture decoded once
+ * its END_FRAME has run (Mesa's virgl makes no fence for it; virglrenderer decodes synchronously), while WebCodecs
+ * decodes asynchronously, and a software decoder may hold a picture until later ones come. So a call waits here while
+ * it could see a pending picture: one of a context that has a pending picture's plane attached (the renderer gives a
+ * context only the resources attached to it), unless the submit only decodes (`decodeOnly`: the decoder gets the
+ * later pictures it may be waiting for), and one that names a pending plane. The rest runs, in order: a call that an
+ * earlier waiting one must precede waits too (the same context, the same resource; a fence, a read, the screen and
+ * what ends a resource's life wait for every earlier waiting call). If nothing comes out for `drainMs` while calls
+ * wait, the decoders that hold pictures are drained (`drain`); after `giveUpMs`, the pending pictures are given up
  * (`giveUp`; the guest sees the buffers' old planes rather than hanging).
  */
 export class CallQueue<M extends WorkerCall> {
   private q: M[] = [];
-  private readonly o: { run(m: M): void; waiting(): number; drain(): void; giveUp(): void; drainMs?: number; giveUpMs?: number };
+  private readonly o: {
+    run(m: M): void;
+    /** Whether a pending picture's plane is attached to a context, and whether a resource is one. */
+    pending: { ctx(id: number): boolean; res(id: number): boolean };
+    drain(): void; giveUp(): void; drainMs?: number; giveUpMs?: number;
+  };
   /** Since when nothing has come out while calls wait (undefined: none wait). */
   private since?: number;
   private drained = false;
@@ -122,10 +128,7 @@ export class CallQueue<M extends WorkerCall> {
 
   /** Runs what may run; call it when a picture comes out (`progress`) and from a timer while `stalled` (`tick`). */
   pump(now = performance.now()) {
-    for (;;) {
-      while (this.q.length && !this.o.waiting()) this.o.run(this.q.shift()!);
-      if (!this.q.length || !this.runAhead()) break;
-    }
+    while (this.q.length && this.pass());
     if (this.q.length) this.since ??= now;
     else {
       if (this.since !== undefined) this.maxWaitMs = Math.max(this.maxWaitMs, now - this.since);
@@ -159,52 +162,73 @@ export class CallQueue<M extends WorkerCall> {
     this.pump(now);
   }
 
-  /** While pictures are pending: runs what decodes and no waiting call must precede; whether it ran any. */
-  private runAhead() {
+  /** One pass over the queue in order, running what may run (each call sees what the ones before it did); whether it ran any. */
+  private pass() {
+    const p = this.o.pending;
+    // What the waiting calls so far hold back: their contexts and the resources they name.
     const busy = new Set<number>(), named = new Set<number>();
-    let ran = false;
+    let waits = false, ran = false;
     for (let k = 0; k < this.q.length;) {
       const m = this.q[k];
-      let go = false;
+      let go: boolean;
       switch (m.t) {
         case 'submit':
-          go = !busy.has(m.ctx) && decodeOnly(m.words);
+          go = !busy.has(m.ctx) && (!p.ctx(m.ctx) || decodeOnly(m.words));
           if (!go) busy.add(m.ctx);
           break;
         case 'res':
-          if (named.has(m.desc.id)) return ran;
-          go = true;
-          break;
-        case 'backing':
-          if (!m.backing || named.has(m.id)) return ran;
-          go = true;
+          go = !named.has(m.desc.id);
+          if (!go) named.add(m.desc.id);
           break;
         case 'ctxres':
-          go = m.attach && !busy.has(m.ctx) && !named.has(m.res);
+          go = !busy.has(m.ctx) && !named.has(m.res);
           if (!go) {
             busy.add(m.ctx);
             named.add(m.res);
           }
           break;
         case 'ctx':
-          go = m.create && !busy.has(m.id);
+          go = !busy.has(m.id);
           if (!go) busy.add(m.id);
           break;
         case 'transfer':
-          busy.add(m.ctx);
-          named.add(m.res);
+          go = !busy.has(m.ctx) && !named.has(m.res) && !p.res(m.res);
+          if (!go) {
+            busy.add(m.ctx);
+            named.add(m.res);
+          }
+          break;
+        case 'backing':
+          if (m.backing) {
+            go = !named.has(m.id) && !p.res(m.id);
+            if (!go) named.add(m.id);
+            break;
+          }
+        // falls through: a backing's detach ends what it held
+        case 'unref':
+          // What ends a resource waits for every earlier waiting call (a submit may use it), and nothing passes it.
+          if (waits || p.res(m.id)) return ran;
+          go = true;
+          break;
+        case 'read':
+          if (waits || p.res(m.res)) return ran;
+          go = true;
           break;
         case 'fence': case 'scanout': case 'damage':
+          // After every earlier call (a fence says they've all run; the screen shows what they drew), in order.
+          go = !waits;
           break;
-        default: // unref, reset, ram, read
-          return ran;
+        default: // reset, ram
+          if (waits) return ran;
+          go = true;
       }
       if (!go) {
+        waits = true;
         k++;
         continue;
       }
       this.q.splice(k, 1);
-      if (k) this.ahead++;
+      if (waits) this.ahead++;
       this.o.run(m);
       ran = true;
     }

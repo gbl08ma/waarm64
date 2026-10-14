@@ -1,0 +1,366 @@
+{
+  "mode": "virgl",
+  "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+  "chromium": "153.0.8010.52",
+  "phaseS": 20,
+  "info": "7.2.10-1-aarch64-ARCHfirefox 157.0.1-1 pipewire 1:1.6.9-1 wireplumber 0.5.18-1 virtio-snd-dkms 7.2.9-1 mesa 1:26.2.4-1 webpc-va 1-1 virtio_snd 0 [SoundCard ]: virtio-snd - VirtIO SoundCard VirtIO SoundCard at platform/a000e00.virtio_mmio/virtio7",
+  "sway": "",
+  "pipewire": "├─ Sinks: │  ├─ Sources:-- ├─ Sinks: │  ├─ Sources:",
+  "mpv-sintel_trailer-480p-mp4": {
+    "quality": {
+      "frames": 537,
+      "dropped": 0,
+      "decoderDropped": 0,
+      "hwdec": "vaapi"
+    },
+    "status": [
+      "MPV 75 1 0 vaapi",
+      "MPV 612 1 0 vaapi"
+    ],
+    "log": "Script started on 2026-10-14 20:37:22+00:00 [COMMAND=\"/home/alarm/mpv-run.sh\" <not executed on terminal>][input] No key binding found for key 'Ctrl+`'.● Video  --vid=1  (h264 854x480 24 fps) [default]● Audio  --aid=1  (aac 2ch 48000 Hz 127 kbps) [default]File tags: Artist: Durian Open Movie Team Description: Trailer for the Sintel open movie project Title: Sintel Trailer[vo/gpu] Disabling scaler #0 lanczos (GLSL version too old).[vo/gpu] Disabling scaler #1 hermite (GLSL version too old).[vo/gpu] Disabling linear/sigmoid scaling (GLSL version too old).[vo/gpu] correct-downscaling requires non-bilinear scaler.Using hardware decoding (vaapi).AO: [pipewire] 48000Hz stereo 2ch floatpVO: [gpu] 854x480 vaapi[nv12]",
+    "cpus": [
+      {
+        "cpu": "cpu",
+        "busy": 27,
+        "user": 8,
+        "sys": 18,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu0",
+        "busy": 29,
+        "user": 7,
+        "sys": 22,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu1",
+        "busy": 26,
+        "user": 8,
+        "sys": 17,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu2",
+        "busy": 27,
+        "user": 8,
+        "sys": 18,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu3",
+        "busy": 26,
+        "user": 8,
+        "sys": 17,
+        "iowait": 0
+      }
+    ],
+    "threads": [
+      {
+        "thread": "mpv/vo",
+        "userMs": 89,
+        "sysMs": 118
+      },
+      {
+        "thread": "mpv/mpv",
+        "userMs": 130,
+        "sysMs": 53
+      },
+      {
+        "thread": "sway/sway",
+        "userMs": 36,
+        "sysMs": 124
+      },
+      {
+        "thread": "mpv/lua/osc",
+        "userMs": 32,
+        "sysMs": 22
+      },
+      {
+        "thread": "pipewire/data-loop.0",
+        "userMs": 7,
+        "sysMs": 42
+      },
+      {
+        "thread": "mpv/demux",
+        "userMs": 26,
+        "sysMs": 13
+      },
+      {
+        "thread": "mpv/data-loop.0",
+        "userMs": 16,
+        "sysMs": 20
+      },
+      {
+        "thread": "kworker/u16:2-events_unbound/kworker/u16:2-events_unbound",
+        "userMs": 0,
+        "sysMs": 13
+      },
+      {
+        "thread": "script/script",
+        "userMs": 4,
+        "sysMs": 7
+      },
+      {
+        "thread": "mpv/av:h264:df0",
+        "userMs": 2,
+        "sysMs": 9
+      },
+      {
+        "thread": "mpv/av:h264:df3",
+        "userMs": 2,
+        "sysMs": 9
+      },
+      {
+        "thread": "mpv/av:h264:df1",
+        "userMs": 2,
+        "sysMs": 8
+      },
+      {
+        "thread": "mpv/av:h264:df2",
+        "userMs": 2,
+        "sysMs": 8
+      }
+    ],
+    "display": {
+      "seconds": 21,
+      "requests": 288,
+      "commands": {
+        "SET_SCANOUT": 23.999999999999993,
+        "RESOURCE_FLUSH": 23.999999999999993,
+        "CTX_ATTACH_RESOURCE": 47.999999999999986,
+        "CTX_DETACH_RESOURCE": 47.999999999999986,
+        "SUBMIT_3D": 144.00000000000003
+      },
+      "fences": {
+        "n": 96,
+        "meanMs": 3.9731646826461193,
+        "maxMs": 23.75499999523163,
+        "heldMs": 535.7647618793305,
+        "toGpuMs": 3.9125463092137895,
+        "toGpuMaxMs": 23.699951171875,
+        "backMs": 0.0729046028678111,
+        "backMaxMs": 2.7548828125
+      },
+      "flushes": 24,
+      "submits": 144,
+      "submitKB": 600.9375,
+      "transfers": 0,
+      "Mpx": 0,
+      "requestMs": 8.868571406319028,
+      "draws": 24,
+      "renderer": {
+        "seconds": 21,
+        "busyMs": 12.006666677338737,
+        "submitMs": 11.032618959744772,
+        "drawMs": 0.8083333969116211,
+        "presents": 24,
+        "glDraws": 72,
+        "commands": 1560,
+        "uploadKB": 30010.245535714286,
+        "readbacks": 0,
+        "readbackKB": 0,
+        "compileMs": 0,
+        "programs": 7,
+        "errors": 0,
+        "video": {
+          "frames": 24,
+          "decoded": 17.19047619047619,
+          "dropped": 6.666666666666667,
+          "errors": 0,
+          "latencyMs": 128.19301938878533,
+          "latencyMaxMs": 280.3049999475479,
+          "writeMs": 0.04058171474372251,
+          "ahead": 0,
+          "maxWaitMs": 0
+        }
+      },
+      "vm": {
+        "seconds": 21.00000499999523,
+        "Msteps": 85.4962,
+        "irqs": 2944,
+        "exceptions": {
+          "0x0": 2,
+          "0x15": 4757,
+          "0x20": 68,
+          "0x24": 263,
+          "0x25": 16
+        },
+        "tlbMisses": 145838,
+        "tlbFlushes": 1058,
+        "jitFlushes": 0,
+        "jitInvalidations": 1,
+        "jitCompileMs": 19.465601
+      }
+    }
+  },
+  "mpv-sintel-webm": {
+    "quality": {
+      "frames": 532,
+      "dropped": 0,
+      "decoderDropped": 0,
+      "hwdec": "vaapi"
+    },
+    "status": [
+      "MPV 95 0 0 vaapi",
+      "MPV 627 0 0 vaapi"
+    ],
+    "log": "Script started on 2026-10-14 20:37:55+00:00 [COMMAND=\"/home/alarm/mpv-run.sh\" <not executed on terminal>][input] No key binding found for key 'Ctrl+`'.● Video  --vid=1  (vp9 854x480 24 fps) [default]● Audio  --aid=1  (opus 2ch 48000 Hz) [default]File tags: Artist: Durian Open Movie Team Description: Trailer for the Sintel open movie project Title: Sintel Trailer[vo/gpu] Disabling scaler #0 lanczos (GLSL version too old).[vo/gpu] Disabling scaler #1 hermite (GLSL version too old).[vo/gpu] Disabling linear/sigmoid scaling (GLSL version too old).[vo/gpu] correct-downscaling requires non-bilinear scaler.Using hardware decoding (vaapi).AO: [pipewire] 48000Hz stereo 2ch floatpVO: [gpu] 854x480 vaapi[nv12]",
+    "cpus": [
+      {
+        "cpu": "cpu",
+        "busy": 25,
+        "user": 8,
+        "sys": 17,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu0",
+        "busy": 27,
+        "user": 7,
+        "sys": 20,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu1",
+        "busy": 24,
+        "user": 8,
+        "sys": 16,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu2",
+        "busy": 25,
+        "user": 8,
+        "sys": 16,
+        "iowait": 0
+      },
+      {
+        "cpu": "cpu3",
+        "busy": 24,
+        "user": 8,
+        "sys": 15,
+        "iowait": 0
+      }
+    ],
+    "threads": [
+      {
+        "thread": "mpv/mpv",
+        "userMs": 149,
+        "sysMs": 46
+      },
+      {
+        "thread": "mpv/vo",
+        "userMs": 79,
+        "sysMs": 114
+      },
+      {
+        "thread": "sway/sway",
+        "userMs": 33,
+        "sysMs": 117
+      },
+      {
+        "thread": "pipewire/data-loop.0",
+        "userMs": 7,
+        "sysMs": 40
+      },
+      {
+        "thread": "mpv/lua/osc",
+        "userMs": 28,
+        "sysMs": 18
+      },
+      {
+        "thread": "mpv/data-loop.0",
+        "userMs": 12,
+        "sysMs": 21
+      },
+      {
+        "thread": "mpv/demux",
+        "userMs": 19,
+        "sysMs": 11
+      },
+      {
+        "thread": "kworker/u16:1-events_unbound/kworker/u16:1-events_unbound",
+        "userMs": 0,
+        "sysMs": 14
+      },
+      {
+        "thread": "script/script",
+        "userMs": 3,
+        "sysMs": 8
+      }
+    ],
+    "display": {
+      "seconds": 21,
+      "requests": 287.9047619047619,
+      "commands": {
+        "SET_SCANOUT": 23.999999999999993,
+        "RESOURCE_FLUSH": 23.999999999999993,
+        "CTX_ATTACH_RESOURCE": 47.999999999999986,
+        "CTX_DETACH_RESOURCE": 47.999999999999986,
+        "SUBMIT_3D": 143.9047619047619
+      },
+      "fences": {
+        "n": 95.95238095238095,
+        "meanMs": 4.237578165915704,
+        "maxMs": 19.985000014305115,
+        "heldMs": 573.2966669003168,
+        "toGpuMs": 4.162822420634921,
+        "toGpuMaxMs": 19.89013671875,
+        "backMs": 0.07314659099720844,
+        "backMaxMs": 1.2998046875
+      },
+      "flushes": 24,
+      "submits": 143.9047619047619,
+      "submitKB": 600.5535714285714,
+      "transfers": 0,
+      "Mpx": 0,
+      "requestMs": 7.958809336026509,
+      "draws": 24,
+      "renderer": {
+        "seconds": 21,
+        "busyMs": 13.736904751686822,
+        "submitMs": 12.823571534383865,
+        "drawMs": 0.7821428719021025,
+        "presents": 24,
+        "glDraws": 72,
+        "commands": 1560,
+        "uploadKB": 33750.28125,
+        "readbacks": 0,
+        "readbackKB": 0,
+        "compileMs": 0,
+        "programs": 10,
+        "errors": 6,
+        "video": {
+          "frames": 24,
+          "decoded": 24,
+          "dropped": 0,
+          "errors": 0,
+          "latencyMs": 1.7339583334941713,
+          "latencyMaxMs": 20.66000008583069,
+          "writeMs": 0.03461309865353599,
+          "ahead": 0,
+          "maxWaitMs": 0
+        }
+      },
+      "vm": {
+        "seconds": 20.995419999957086,
+        "Msteps": 93.492633,
+        "irqs": 2896,
+        "exceptions": {
+          "0x0": 2,
+          "0x15": 4784,
+          "0x20": 76,
+          "0x24": 285,
+          "0x25": 17
+        },
+        "tlbMisses": 132462,
+        "tlbFlushes": 1020,
+        "jitFlushes": 0,
+        "jitInvalidations": 1,
+        "jitCompileMs": 8.248449
+      }
+    }
+  },
+  "host": "dev VM (Lima on the M4), OpenH264"
+}
