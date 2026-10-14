@@ -3,7 +3,7 @@
 **Status:** started 2026-10-14 (the backlog's "Hardware video decoding"). The direction is the user's (§1): **VA-API
 over virgl**, decoded by the browser's WebCodecs. **V0 (the gates) passed (2026-10-14, §4)**: the guest's Mesa takes
 the caps, FFmpeg and Firefox decode through VA-API (Firefox once a VA driver wrapper of ours hides the surface
-formats it can't take), and the host's rebuilt streams decode exactly. Next: V1 (§3). What exists will move into the
+formats it can't take), and the host's rebuilt streams decode exactly. Next: V1 (§3), from `M8-VIDEO-HANDOVER.md`. What exists will move into the
 topic docs ([devices.md](../devices.md) "virgl") as it lands; this page keeps the decisions, the findings worth not
 re-discovering, and each loop's record.
 
@@ -22,8 +22,11 @@ with the guest's software unmodified?
   video surfaces besides NV12 (real drivers offer NV12 alone for decoding), FFmpeg's VA-API decoder then picks I420
   for 4:2:0 codecs, and Firefox's VA-API path takes NV12, YV12, P010 and P016 only, so it falls back to software.
   `webpc_drv_video.so` loads Mesa's driver and drops I420 and YV12 from `vaQuerySurfaceAttributes` (libva's stable
-  ABI, ~60 lines; `LIBVA_DRIVER_NAME=webpc`), a package of the desktop image as `virtio-snd-dkms` is. The same change
-  in Mesa's virgl driver would make it unnecessary (not asked upstream yet: the user's call).
+  ABI, ~60 lines; `LIBVA_DRIVER_NAME=webpc`), a package of the desktop image as `virtio-snd-dkms` is. **The user: keep
+  it for now**; the same change in Mesa's virgl driver would make it unnecessary, and it waits in backlog.md
+  "Upstream reports" for the user's round-up.
+- **The dev VM's Chromium reads video frames with SME hidden** (the user, 2026-10-14): `tools/nosme` (a
+  `getauxval` shim) as `LD_PRELOAD` for the tests' and tools' Chromium on aarch64 (§4; V1 wires it in).
 - **The host decodes with WebCodecs** in the GPU worker (where the virgl renderer and its WebGL2 context are), and
   writes each decoded picture into the guest's video buffer: Mesa's `vl_video_buffer`, ordinary virgl textures (NV12
   is an R8 luma plane and an RG8 chroma plane), as virglrenderer does with host VA-API (`vrend_video.c`: decode, then

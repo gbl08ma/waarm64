@@ -508,3 +508,28 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   for a later feature); `images/stress/` and `bench/stress`/`bench/mem`'s `GO` path route Debian's
   initrd, which the page's UEFI boot ignores (docs/images.md: put the binaries on a second disk
   to revive them).
+
+## Upstream reports (to file at the project's end)
+
+Bugs found in other projects, kept here until the user's round-up of upstream reports; each with what's needed to
+report it. Nothing has been filed.
+
+- **Mesa, virgl's VA-API driver offers I420 and YV12 decode surfaces** ([plans/video.md](plans/video.md) §1, §4):
+  `virgl_is_video_format_supported` is `vl_video_buffer_is_format_supported`, which only checks that the planes'
+  formats sample and render, so `vaQuerySurfaceAttributes` lists NV12, YV12 and I420; FFmpeg's
+  `vaapi_decode_find_best_format` then takes I420 for H.264 and VP9 (yuv420p), and Firefox's VA-API path (NV12, YV12,
+  P010, P016 only) falls back to software ("Unsupported VA-API surface format"). Real drivers offer NV12 (and P010/P016)
+  alone for decoding. Fix: virgl answers decode entrypoints with NV12/P010/P016 only. Seen with Mesa 26.2.4, libva
+  2.24.1, FFmpeg 9.0.2, Firefox 157. Our workaround: the `webpc-va` package (`images/archarm/webpc-va/`), which goes
+  away with the fix.
+- **Mesa and virglrenderer disagree on virgl's video profile numbers** ([plans/video.md](plans/video.md) §4,
+  [devices.md](devices.md) "virgl"): the wire carries Mesa's `enum pipe_video_profile`, and Mesa 26.2's has dropped
+  `MPEG4_SIMPLE`/`MPEG4_ADVANCED_SIMPLE` (and added HEVC 4:2:2/4:4:4 profiles) that virglrenderer's copy (`c8e3fc3b`)
+  still has, so every later value (H.264, HEVC, VP9, AV1) means a different profile to each. The protocol needs its
+  own fixed numbering.
+- **Chromium (libyuv's SME kernels) SIGILLs on CPUs with SME but no SVE** (Apple M4 under Linux, e.g. a Lima VM;
+  plans/video.md §4): reading a decoded `VideoFrame` (`copyTo`, a WebGL upload, `createImageBitmap`) faults at `cntd`
+  in the prologue of a locally streaming function compiled with SVE (LLVM saves the vector length with an SVE
+  instruction there). Seen with openSUSE's Chromium 153.0.8010.52 on aarch64; libyuv picks SME from
+  `getauxval(AT_HWCAP2)`. Our workaround: `tools/nosme` as `LD_PRELOAD` for the tests' Chromium.
+
