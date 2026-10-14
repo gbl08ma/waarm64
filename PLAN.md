@@ -184,6 +184,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     restored clock stands still until its vCPUs run). The user confirmed playback and recording by hand. The video's
     decode is the cost in the guest, not the sound (backlog: hardware video decoding); other loose ends are in the
     backlog too.
+  - Video ([docs/plans/video.md](docs/plans/video.md)): **started (2026-10-14).** Hardware video decoding for the guest's
+    players. **Decision (the user):** VA-API over virgl, decoded by the browser's WebCodecs (the V4L2/virtio-media route
+    lost: Firefox's V4L2 path needs DRM PRIME frames no stock FFmpeg gives, plan §2). V0's gates passed: the guest's Mesa
+    takes the caps, FFmpeg and Firefox decode through VA-API (Firefox with a small VA driver wrapper of ours in the
+    desktop image), the host's rebuilt H.264 and VP9 streams decode exactly. Next: V1, the decoders on WebCodecs.
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save

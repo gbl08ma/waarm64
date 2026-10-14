@@ -323,32 +323,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - The TS backends are tested through boots; a Node test with a bare-metal virtio guest would be
   cheaper when they grow (blk).
 
-- **Hardware video decoding** (audio's finding, [audio.md](audio.md) "Measurements"): Firefox's VP9 decoder takes
-  1.7-1.8 s of the guest's CPU a second for a 480p trailer and still shows ~10% of its frames (the sound, under 1%,
-  keeps time regardless). The browser's WebCodecs `VideoDecoder` decodes in hardware and its `VideoFrame`s go
-  straight into the GPU worker's WebGL2 (a virgl resource the guest composites, never copied into guest RAM). Two
-  guest interfaces:
-  - **A stateful V4L2 memory-to-memory decoder over virtio** (virtio-media, Google's V4L2 over virtio, which crosvm
-    implements; or the never-merged virtio-video): the guest hands over the compressed stream and gets frames back,
-    one-to-one with WebCodecs. **The guests' browsers already speak it:** Firefox decodes through V4L2-M2M since 116
-    ([bug 1833354](https://bugzilla.mozilla.org/show_bug.cgi?id=1833354), for the Raspberry Pi 4: stateful M2M only,
-    not the stateless request API; through FFmpeg's V4L2 wrapper decoders, chosen by name, as its VA-API path; built in
-    by default on arm64 (`--enable-v4l2`); H.264 landed, VP8/VP9 through the system FFmpeg with `media.ffvpx.enabled`
-    false (a tester's VP9 worked), no AV1 or HEVC; `media.hardware-video-decoding.force-enabled` to force it,
-    `MOZ_LOG=PlatformDecoderModule:5` to see it). Chromium on (non-ChromeOS) Linux gains it too
-    ([issue 372630272](https://issues.chromium.org/issues/372630272), "Improve V4L2 hardware decoding on Linux",
-    Collabora; its changes merged 2024-25: the stateful decoder on mainline device paths rather than ChromeOS's
-    `/dev/video-dec0`, the V4L2 image processor, AV1 behind the `use_av1_hw_decoder` build flag), a build option rather
-    than distros' default as far as read. To check: virtio-media's guest driver upstream (or out of tree, as our
-    `virtio_snd` is on Arch), and that Firefox finds a virtio-media decoder as it finds the Pi's.
-  - **VA-API over virgl** (Mesa's virgl VA-API frontend, virglrenderer's video commands): Firefox's other Linux
-    path, over the device we have; but stateless, so the host would rebuild each codec's bitstream headers from the
-    picture parameters for WebCodecs.
-
-  The stateful route looks the shorter now that Firefox speaks it. Also: snapshots with a decoder's state (like
-  3D's, graphics G5), codecs that vary by browser and platform (the guest's software decoder stays the fallback).
-  Cheaper first: whether H.264 through FFmpeg costs the guest less than VP9 (the trailer's original MP4), at a lower
-  resolution.
+- **Hardware video decoding** (audio's finding, [audio.md](audio.md) "Measurements": Firefox's VP9 decoder takes
+  1.7-1.8 s of the guest's CPU a second for a 480p trailer and still shows ~10% of its frames): **in progress**, VA-API
+  over virgl decoded by WebCodecs ([plans/video.md](plans/video.md); the V4L2/virtio-media route and why it lost are
+  its §2).
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 

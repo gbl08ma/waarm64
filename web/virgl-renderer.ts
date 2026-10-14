@@ -15,6 +15,7 @@
 import { E } from './gl-enums.ts';
 import { FORMATS, GL, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from './virgl-formats.ts';
 import { generate, parseTgsi, samplerUnit, uboBinding, type ProgramKey, type ProgramLayout, type SamplerKey, type Tgsi } from './virgl-tgsi.ts';
+import { VideoContext, type VideoStats } from './virgl-video.ts';
 
 /** A resource's guest pages: offsets into guest RAM and lengths. */
 export type Backing = { off: number; len: number }[];
@@ -100,7 +101,7 @@ type Sub = {
   /** A long shader arriving in pieces (VIRGL_OBJ_SHADER_OFFSET_CONT), by stage. */
   longShader: Map<number, { handle: number; shader: Shader }>;
 };
-type Ctx = { id: number; subs: Map<number, Sub>; sub: Sub; attached: Set<number> };
+type Ctx = { id: number; subs: Map<number, Sub>; sub: Sub; attached: Set<number>; video?: VideoContext };
 
 type Program = { prog: WebGLProgram; layout: ProgramLayout; loc: Map<string, WebGLUniformLocation | null> };
 
@@ -163,6 +164,8 @@ export class VirglRenderer {
   private programs = new Map<string, Program | null>();
   private serial = 0;
   readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, compileMs: 0 };
+  /** The contexts' video codecs and buffers, and the pictures decoded (web/virgl-video.ts). */
+  readonly videoStats: VideoStats = { codecs: 0, buffers: 0, frames: 0, bitstreamBytes: 0, errors: 0 };
   private fbo: WebGLFramebuffer;
   private readFbo: WebGLFramebuffer;
   private blitProg?: { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
@@ -219,6 +222,7 @@ export class VirglRenderer {
     const c = this.contexts.get(id);
     if (!c) return false;
     for (const s of c.subs.values()) this.destroySub(s);
+    c.video?.destroy();
     for (const r of c.attached) this.detach(id, r);
     this.contexts.delete(id);
     return true;
@@ -761,10 +765,27 @@ export class VirglRenderer {
       case 45: return this.copyTransfer(c, p);
       case 47: return this.clearTexture(c, p);
       case 52: return; // LINK_SHADER: programs are made at the draw that needs them
+      case 53: case 54: case 55: case 56: case 57: case 58: case 59: case 60: case 61:
+        return (c.video ??= this.videoContext(c)).command(cmd, p);
       case 62: return this.clearSurface(c, p);
       default:
         this.error(`ctx ${c.id}: command ${cmd} isn't supported`);
     }
+  }
+
+  private videoContext(c: Ctx) {
+    return new VideoContext({
+      read: (res, len) => {
+        const r = this.lookup(c, res);
+        return r ? this.readBacking(r, 0, len) : null;
+      },
+      size: (res) => {
+        const r = this.lookup(c, res);
+        return r ? this.backingSize(r) : 0;
+      },
+      error: (m) => this.error(`ctx ${c.id}: ${m}`),
+      debug: this.debug,
+    }, this.videoStats);
   }
 
   private stage(shader: number): Stage | undefined {

@@ -6,6 +6,7 @@ import { E } from './gl-enums.ts';
 import { decodeCaps, encodeCaps, virglCaps, type CapsValue } from './virgl.ts';
 import { FORMATS, VERTEX_FORMATS } from './virgl-formats.ts';
 import { readbackFormats } from './virgl-renderer.ts';
+import { decodeVideoCaps, encodeVideoCaps, type VideoCap } from './virgl-video.ts';
 
 /** The uniform vectors the generated shaders keep for themselves (u_adjy, u_fbh, u_alpharef, u_psize, u_stipple's 32 words). */
 const SYS_VECTORS = 16;
@@ -61,6 +62,15 @@ export function capsFromGl(gl: WebGL2RenderingContext): Uint8Array {
   return encodeCaps(caps);
 }
 
+/** `caps` with the video decoders in `video` (web/virgl-video.ts `probeVideo`) advertised. */
+export function withVideo(caps: Uint8Array, video: VideoCap[]): Uint8Array {
+  const v = decodeCaps(caps);
+  v.num_video_caps = Math.min(video.length, 32);
+  v.video_caps = encodeVideoCaps(video);
+  const out = encodeCaps(v);
+  return out.subarray(0, caps.length);
+}
+
 /**
  * Whether caps the guest was given (`saved`) are backed by `now` (a snapshot restored in another browser): every
  * format and capability bit given is still there, and no limit given is above today's.
@@ -69,6 +79,15 @@ export function capsBacked(saved: Uint8Array, now: Uint8Array): string | null {
   const a = decodeCaps(saved), b = decodeCaps(now);
   for (const [k, v] of Object.entries(a)) {
     const w = b[k];
+    if (k === 'num_video_caps') continue;
+    if (k === 'video_caps') {
+      // Every decoder the guest was told of, at no larger a size.
+      const now = decodeVideoCaps(w as number[], b.num_video_caps as number);
+      for (const c of decodeVideoCaps(v as number[], a.num_video_caps as number)) {
+        if (!now.some((d) => d.profile === c.profile && d.maxWidth >= c.maxWidth && d.maxHeight >= c.maxHeight && d.maxLevel >= c.maxLevel)) return `no video decoder for profile ${c.profile}`;
+      }
+      continue;
+    }
     if (Array.isArray(v) && Array.isArray(w)) {
       // Format masks (lists of set formats) and the per-stage limits.
       if (/^(sampler|render|depthstencil|vertexbuffer|supported_readback_formats|scanout|supported_multisample_formats)$/.test(k)) {

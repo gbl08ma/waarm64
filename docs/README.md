@@ -24,6 +24,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [backlog.md](backlog.md) | open loose ends by area (PLAN.md's M9) |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
 | [plans/graphics.md](plans/graphics.md) | the display and 3D: virtio-gpu 2D (G0, G1), virgl's guest side measured (G2), the virgl renderer on WebGL2 (G3), Firefox, GTK4 and dEQP passing (G4): what each loop found, the numbers; G5 proposed |
+| [plans/video.md](plans/video.md) | hardware video decoding: VA-API over virgl decoded by WebCodecs (why not V4L2), the gates (V0), the steps |
 | [plans/agent.md](plans/agent.md) | a guest agent (clipboard, time after a resume, a ready signal, X11 resize): the stock agents first, then a tools disk (not scheduled) |
 | [plans/uefi.md](plans/uefi.md) | booting unmodified images through EDK2: loop 0's oracle findings, DT vs ACPI, the design (M8 phase B) |
 | [plans/snapshots.md](plans/snapshots.md) | saving and resuming a machine as a file, and Suspend (M8 phase C lane, done) |

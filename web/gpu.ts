@@ -492,6 +492,13 @@ export class Gpu {
           // TRANSFER3D (43) and COPY_TRANSFER3D (45): dst, level, usage, stride, layer stride, box (x y z w h d), then
           // TRANSFER3D's offset in the resource's own backing and direction (1: to the host), or COPY_TRANSFER3D's
           // source (a staging buffer), offset in it and flags (2: a read-back).
+          // DECODE_BITSTREAM (59): codec, target, the picture's parameters and its data (staging buffers), the
+          // data's length (docs/plans/video.md).
+          if (c === 59 && len >= 5) {
+            data(words[at + 2], 0, 0x7fffffff);
+            data(words[at + 3], 0, words[at + 4]);
+            return;
+          }
           const copy = c === 45 && len === 14 && !(words[at + 13] & 2);
           if (!copy && !(c === 43 && len >= 13 && words[at + 12] === 1)) return;
           const dst = this.resources.get(words[at]);

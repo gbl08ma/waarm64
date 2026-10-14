@@ -5,6 +5,9 @@ pacman -U --noconfirm --noprogressbar /root/pkg/virtio-snd-dkms-*.pkg.tar.* 2>&1
 K=$(basename "$(dirname /usr/lib/modules/*/build)") # the kernel whose headers are installed: the image's
 dkms status
 dkms status | grep -q "virtio-snd/.*, $K, aarch64: installed" || { echo "virtio-snd isn't installed for $K" >&2; exit 1; }
+# Video: webpc's VA-API driver (Mesa's virgl with NV12 surfaces only; LIBVA_DRIVER_NAME=webpc for every session).
+pacman -U --noconfirm --noprogressbar /root/pkg/webpc-va-*.pkg.tar.* >/dev/null
+pacman -Q webpc-va
 rm -rf /root/pkg
 # PipeWire for every user's session (socket-activated; the packages' presets, made sure of).
 systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service
@@ -17,4 +20,4 @@ cat > /usr/lib/firefox/distribution/policies.json <<'J'
   "UserMessaging": { "WhatsNew": false, "ExtensionRecommendations": false, "FeatureRecommendations": false, "SkipOnboarding": true }
 } }
 J
-echo "desktop: virtio-snd for $K, PipeWire, Firefox's policies"
+echo "desktop: virtio-snd for $K, webpc-va, PipeWire, Firefox's policies"

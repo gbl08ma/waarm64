@@ -104,6 +104,7 @@ export const CAPS_FIELDS: [string, number, number, 'u' | 'i' | 'f' | 's' | 'm'][
   ['supported_readback_formats', 140, 16, 'm'], ['scanout', 156, 16, 'm'], ['capability_bits_v2', 172, 1, 'u'],
   ['max_video_memory', 173, 1, 'u'], ['renderer', 174, 16, 's'], ['max_anisotropy', 190, 1, 'f'], ['max_texture_samplers', 191, 1, 'u'],
   ['supported_multisample_formats', 192, 16, 'm'], ['max_const_buffer_size', 208, 6, 'u'], ['num_video_caps', 214, 1, 'u'],
+  ['video_caps', 215, 128, 'u'],
   ['max_uniform_block_size', 343, 1, 'u'], ['max_tcs_outputs', 344, 1, 'u'], ['max_tes_outputs', 345, 1, 'u'],
   ['max_shader_storage_blocks', 346, 6, 'u'],
 ];

@@ -340,6 +340,14 @@ mode (and natively in realtime mode: std has no CSPRNG).
   saved; a restore in a browser that can't back them (`capsBacked`) keeps them for the guest and turns 3D off (new
   contexts refused) rather than refusing the machine. The restore tells the host what the scanout shows (the GPU
   worker draws the screen on a 3D machine).
+- **Video** ([plans/video.md](plans/video.md); `?gpu=video`, off by default): the caps' `video_caps` list the decoders
+  the browser's `VideoDecoder` takes (H.264 Constrained Baseline, Main and High, VP9 profile 0; `web/virgl-video.ts`
+  `probeVideo`, in the GPU worker before it answers), so the guest's Mesa offers VA-API decoding. The renderer keeps
+  each context's codecs and video buffers (CCMD 53-61: a buffer is its planes' resources) and reads each picture's
+  parameters and data from the guest's staging buffers; the decoder is a null one (pictures counted, planes not
+  written) until V1. Mesa's wire numbers its profiles by its own `enum pipe_video_profile` (26.2's in `PROFILE`),
+  which isn't stable across releases. A capture includes DECODE_BITSTREAM's buffers. `capsBacked` wants every decoder
+  the guest was told of.
 - No native twin (`core/tests/common/gpu.rs` is 2D): the device and renderer are tested in Node (`tests/gpu.test.ts`,
   `tests/virgl.test.ts` on a recording WebGL2) and Chromium (`tests/virgl-browser.test.ts`).
 

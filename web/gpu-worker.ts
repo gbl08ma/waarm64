@@ -3,13 +3,14 @@
 // port for the device worker; it answers with the caps this browser backs (web/virgl-caps.ts), or why it can't. Then
 // it runs the device's calls (web/virgl-host.ts) in order: the renderer's (web/virgl-renderer.ts) and the screen's
 // (web/virgl-screen.ts), and answers fences once everything before them has run.
-import { capsFromGl } from './virgl-caps.ts';
+import { capsFromGl, withVideo } from './virgl-caps.ts';
 import { clock, FenceGate, runCall, type HostCall } from './virgl-host.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import { flashProbe, Screen } from './virgl-screen.ts';
+import { probeVideo } from './virgl-video.ts';
 
 /** Page → GPU worker. */
-export type ToGpuWorker = { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean; /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */ probe?: boolean };
+export type ToGpuWorker = { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean; /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */ probe?: boolean; /** `?gpu=video`: advertise the browser's video decoders (docs/plans/video.md; off while V0's decoder is null). */ video?: boolean };
 /** GPU worker → page. */
 export type FromGpuWorker =
   | { type: 'ready'; caps: Uint8Array; renderer: string }
@@ -18,13 +19,13 @@ export type FromGpuWorker =
   /** With `probe`: a present turned the screen's centre bright, at `t` (ms since the epoch). */
   | { type: 'flash'; t: number }
   /** With `stats`, once a second: what the renderer did and the time it took (bench/gpu, `?displaystats`). */
-  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number };
+  | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`). */ video: { frames: number; bitstreamBytes: number; errors: number; codecs: number; buffers: number } };
 
 let ram: Uint8Array = new Uint8Array(0);
 
-self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
+self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
   if (e.data?.type !== 'init') return;
-  const { canvas, port, stats, debug, probe } = e.data;
+  const { canvas, port, stats, debug, probe, video } = e.data;
   const post = (m: FromGpuWorker) => (self as unknown as Worker).postMessage(m);
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' }) as WebGL2RenderingContext | null;
   if (!gl) {
@@ -90,7 +91,7 @@ self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
     let last = { ...renderer.stats };
     setInterval(() => {
       const s = renderer.stats;
-      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs, compileMs: s.compileMs - last.compileMs });
+      post({ type: 'render-stats', submits: s.submits - last.submits, draws: s.draws - last.draws, commands: s.commands - last.commands, busyMs, submitMs, presents: screen.presents, drawMs: screen.drawMs, programs: s.programs, errors: s.errors, uploadBytes: s.uploadBytes - last.uploadBytes, readbacks: s.readbacks - last.readbacks, readbackBytes: s.readbackBytes - last.readbackBytes, fences, fenceMs, fenceMaxMs, compileMs: s.compileMs - last.compileMs, video: { ...renderer.videoStats } });
       fences = fenceMs = fenceMaxMs = 0;
       last = { ...s };
       busyMs = submitMs = 0;
@@ -101,6 +102,7 @@ self.onmessage = (e: MessageEvent<ToGpuWorker>) => {
   let caps: Uint8Array;
   try {
     caps = capsFromGl(gl);
+    if (video) caps = withVideo(caps, await probeVideo());
   } catch (err) {
     post({ type: 'failed', reason: `the caps couldn't be read: ${err}` });
     return;
