@@ -74,12 +74,12 @@ test('held receive and event buffers are the new backends\' after a restore', { 
 });
 
 test('the snd guest through 6 snapshot files while its tone plays and while it records: the steps and the console of an unbroken run', { skip: !existsSync(new URL('linux-snd/Image', IMAGES)) && 'SKIPPED: run images/build.sh linux-snd' }, async () => {
-  // Saved with a stream started and messages held (playing from ~32 M steps, recording from ~35.9 M): the restored
+  // Saved with a stream started and messages held (playing until ~35.5 M steps, recording from ~35.6 M to ~36.4 M): the restored
   // device starts its sink or source again and the core posts the held messages again, which play or fill once (the
   // guest prints the hashes of what it wrote and read).
   const o = { ramSize: 256 << 20, kernel: image('linux-snd/Image'), initrd: image('linux-snd/initramfs.cpio'), cmdline: 'console=ttyAMA0 panic=-1', devices: [{ type: 'snd' }], jit: 1 } satisfies BootOptions;
   const whole = await runToPowerOff(WASM, o);
-  const r = await runThroughSnapshots(WASM, o, [33_000_000, 34_000_000, 35_000_000, 35_500_000, 36_200_000, 36_500_000]);
+  const r = await runThroughSnapshots(WASM, o, [32_540_000, 33_540_000, 34_540_000, 35_040_000, 35_740_000, 36_040_000]);
   report('snd', r);
   poweredOff(r);
   assert.equal(r.files.length, 6);

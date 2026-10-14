@@ -17,10 +17,11 @@ match it step for step.
   differential tests, `bench/interp`) always have them, since the golden corpus records the M4's
   behavior.
 - **FEAT_RNG** (`RNDR`, `RNDRRS`, at EL0 and EL1) and **FEAT_E0PD** (`TCR_EL1.E0PD0`/`E0PD1`):
-  `VmConfig.features` bits 1 and 2 (`FEATURE_RNG`, `FEATURE_E0PD`, ABI 35). **Off by default** in
-  `bootVm` (`rng: true`, `e0pd: true`) and the native runners, so the test guests' step counts
-  stay as they were; **the page's machines have both** (`web/app/worker.ts`; `?rng=0`, `?e0pd=0`
-  turn one off for an A/B). An `RNDR` read leaves the block (`Exit::Platform`) and the run loop
+  `VmConfig.features` bits 1 and 2 (`FEATURE_RNG`, `FEATURE_E0PD`, ABI 35). **On by default** in
+  `bootVm` (`rng: false`, `e0pd: false` turn them off), the native runners and so the test guests and
+  benchmarks, and on the page's machines (`web/app/worker.ts`; `?rng=0`, `?e0pd=0` turn one off
+  for an A/B; a snapshot keeps its machine's). The bare-metal tests run without them (their
+  `exceptions` test checks the ID registers' values). An `RNDR` read leaves the block (`Exit::Platform`) and the run loop
   answers from the vCPU's ChaCha20 stream (`rng.rs`: keyed by the host's `crypto.getRandomValues`
   in realtime mode, by zeros in deterministic mode, the vCPU's index as the nonce; a snapshot keeps
   each stream's block counter, a restored realtime VM goes on with its own key). It never fails

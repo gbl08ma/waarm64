@@ -96,7 +96,7 @@ Design notes for an ABI change go in this file before the code.
 | `rng_seed` (4 words) | FEAT_RNG's 256-bit ChaCha20 key in realtime mode, from the host's CSPRNG; deterministic mode ignores it and uses zeros (35) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`,
-and bits 1 and 2 only when told `rng: true`, `e0pd: true` (the page's machines are); the ABI's 0 means none.
+and bits 1 and 2 unless told `rng: false`, `e0pd: false` (the bare-metal tests are); the ABI's 0 means none.
 
 ### Exit kinds
 

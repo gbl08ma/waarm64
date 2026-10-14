@@ -88,7 +88,7 @@ const BAREMETAL = new URL('baremetal/', import.meta.url);
 const smpOf = (f: string) => Number(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ smp: (\d+)$/m)?.[1] ?? 1);
 // Its `// flash` line: the firmware configuration (M8 phase B), for its flash bank.
 const flashOf = (f: string) => /^\/\/ flash$/m.test(readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8'));
-const bareMetal = (f: string): BootOptions => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f), firmware: flashOf(f) ? {} : undefined });
+const bareMetal = (f: string): BootOptions => ({ ramSize: 16 << 20, kernel: readFileSync(new URL(f, BAREMETAL)), kernelOffset: 0, cmdline: '', ncpus: smpOf(f), firmware: flashOf(f) ? {} : undefined, rng: false, e0pd: false }); // the ID registers as core/tests/baremetal.rs has them
 // Its `// input: <text>` line, typed once it waits: at its idle, or once it printed "ready" (parallel).
 const inputOf = (f: string): ConsoleInput | undefined => {
   const text = readFileSync(new URL(f.replace(/\.bin$/, '.c'), BAREMETAL), 'utf8').match(/^\/\/ input: (.*)$/m)?.[1];

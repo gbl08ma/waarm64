@@ -331,11 +331,11 @@ export type BootOptions = {
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
   /**
-   * `VmConfig.features` bit 1 (ABI 35): FEAT_RNG (`RNDR`, `RNDRRS`), advertised and implemented; off unless true.
+   * `VmConfig.features` bit 1 (ABI 35): FEAT_RNG (`RNDR`, `RNDRRS`), advertised and implemented; on unless false.
    * Realtime mode keys its streams from `crypto.getRandomValues` (`VmConfig.rng_seed`), deterministic mode with zeros.
    */
   rng?: boolean;
-  /** `VmConfig.features` bit 2 (ABI 35): FEAT_E0PD, which spares a KASLR kernel KPTI; off unless true. */
+  /** `VmConfig.features` bit 2 (ABI 35): FEAT_E0PD, which spares a KASLR kernel KPTI; on unless false. */
   e0pd?: boolean;
   /** Test only: stalls one vCPU's host worker (parallel mode), see {@link Stall}; `addr` here is a guest PA. */
   stall?: Stall | Stall[];
@@ -544,7 +544,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   }
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
-  const features = (o.crypto === false ? 0n : 1n) | (o.rng ? 2n : 0n) | (o.e0pd ? 4n : 0n);
+  const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n);
   new BigUint64Array(memory.buffer, scratch + S_CFG, 23).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
     fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));

@@ -61,7 +61,8 @@ fn boot_mode(
     let mut ram = vec![0u128; RAM_SIZE / 16];
     // SAFETY: ram is 16-byte aligned, RAM_SIZE bytes long, and outlives the Vm.
     let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, RAM_SIZE as u64) };
-    // The crypto extensions, as the hosts give them by default (M6.5 loop 7).
+    // The crypto extensions, as the hosts give them by default (M6.5 loop 7); not FEAT_RNG and
+    // FEAT_E0PD, which the hosts also give: `exceptions` checks the ID registers without them.
     let cfg = VmConfig {
         features: webpc_core::cpu::FEATURE_CRYPTO,
         ncpus,

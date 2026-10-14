@@ -1408,4 +1408,6 @@ prompt, then as root ms for 300 fork+exec of `/bin/true` and `dd` of 300,000 64-
 | 300 fork+exec | 2972 ms (2) | **2086 ms** (76) | −30% |
 | `dd`, 300,000 syscall pairs | 3619 ms (43) | **1155 ms** (44) | 3.1× |
 
-Every run without E0PD logged KPTI forced on, none with it. The page's machines have both features now.
+Every run without E0PD logged KPTI forced on, none with it. The page's machines have both features now, and
+(the same day) `bootVm` and the native runners too, so every benchmark from here on boots with them: Alpine's boot
+test in 2.651G steps against 2.821G, its userspace benchmark in 10.613G against 10.785G (`tests/steps.txt`).

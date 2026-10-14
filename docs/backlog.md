@@ -12,11 +12,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   up Keccak and are plain SIMD128 lowerings). Each needs handlers, corpus groups (the generator
   already knows how to avoid them), the ID fields, a decoder-sweep update, a `VmConfig.features`
   bit, and the rule: advertise only if faster than what guests do without it.
-- **The test guests and the benchmarks run without FEAT_RNG and FEAT_E0PD**, which the page's machines
-  have ([cpu.md](cpu.md)): `bootVm` and the native runners leave them off, so `tests/steps.txt` didn't
-  move. Turning them on there (a step-count change, the user's OK) would boot Alpine in 6% fewer steps
-  (its crng waits for `virtio_rng` without RNDR) and test what users run; the deterministic stream
-  repeats exactly, so it costs the exact-step boots nothing.
 - **Self-hosted debug:** breakpoints, watchpoints and `MDSCR_EL1.SS` single step raise nothing
   (the registers are RAZ/WI). Needed for in-guest `gdb` hardware breakpoints and `ptrace` single
   step (kvm-unit-tests `debug-*`).
