@@ -3,8 +3,9 @@
 // AudioWorklet. Its writes block on the worklet's pace, so the guest's own clock says the tone took its length;
 // an analyser after the volume hears both frequencies, and mute silences it. The stream's time on the device (START
 // to its stop) is the sound's length plus the gaps the ring counted (the worklet's or the sink's), within 40 ms; the
-// gaps under 10% of the sound: npm test runs test files side by side, and a guest starved of its vCPU for longer than
-// its 85 ms buffer underruns for real, but no time may go missing uncounted. (The guest's own time, from its first
+// gaps under 10% of the sound: a guest starved of its vCPU for longer than its 85 ms buffer underruns for real, but no
+// time may go missing uncounted. Realtime and timed, so scripts/ci-audio.sh runs it alone, not npm test beside the
+// other files (under that load it failed now and then: docs/backlog.md). (The guest's own time, from its first
 // write, also has its computing of the periods before START in it: up to ~100 ms more under that load.) S2's exit
 // (no underrun in a minute, the guest's own time) is measured alone (bench/audio/snd-page.ts, docs/audio.md "Measurements"); the
 // numbers are printed here.
@@ -26,7 +27,8 @@ import { peaks } from './audio-tap.ts';
 import { fnv1a } from '../web/snd.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
-const skip = !existsSync(new URL('linux-snd/Image', IMAGES)) && 'SKIPPED: run images/build.sh linux-snd';
+const skip = process.env.WEBPC_AUDIO_TESTS !== '1' ? 'SKIPPED: scripts/ci-audio.sh runs it (WEBPC_AUDIO_TESTS=1)'
+  : !existsSync(new URL('linux-snd/Image', IMAGES)) && 'SKIPPED: run images/build.sh linux-snd';
 
 let browser: Browser;
 let base: string;

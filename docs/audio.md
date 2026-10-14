@@ -196,7 +196,7 @@ stream's lifecycle, each format's conversion, held messages, the sources on a fa
 `tests/audio.test.ts` (the ring sink on a fake clock and the worklet's `process` under stubs); the snd guest
 (`linux-snd`: opens `/dev/snd/pcmC0D0p`, sets parameters through ioctls, plays a known waveform, drains, records 16
 periods, prints the hashes) natively, in Node and in Chromium in the same steps, 49,152 frames arriving byte for byte
-(FNV-1a `5652c745`); `tests/audio-browser.test.ts` (Chromium: the tone heard at 440 and 660 Hz through an
+(FNV-1a `5652c745`); `tests/audio-browser.test.ts` (`scripts/ci-audio.sh`, alone: it times the sound; Chromium: the tone heard at 440 and 660 Hz through an
 `AnalyserNode`, mute, a context that isn't running leaving the guest playing on the sink's clock, a snapshot taken
 mid-tone and loaded in a fresh profile, the fake microphone heard at its pitch); Debian on the page in `ci-debian.sh`
 (`snd-play` and `snd-rec`).

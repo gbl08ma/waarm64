@@ -306,6 +306,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in
   the native runners. The null renderer is G2's measuring device and is tested in Node; extend the twin only if a
   native, exact-step virgl guest is wanted (the WebGL2 renderer of G3 can't run natively anyway).
+- **The sound tests' timing under load** (`tests/audio-browser.test.ts`, now `scripts/ci-audio.sh`'s, alone): beside
+  `npm test`'s other files they failed in two `ci.sh` runs of three on 2026-10-14 and passed alone. The failures: the
+  restored snapshot's stream took 10,237 ms for 10,152 ms of sound and counted gaps (85 ms past the 40 ms tolerance:
+  time missing that no gap counted, about one 85 ms buffer), the saved machine not finishing its tone in time, and
+  the microphone's recording out of its time. Worth a look if sound ever stutters for users under load: the
+  uncounted buffer may be a real gap in what the ring counts (a vCPU starved through the restore), not just the test's.
 - **virtio-gpu's flush pacing counts a firmware's flushes too**: EDK2's GOP waits for every reply, so its `Blt`s
   complete 60 a second after the first. It mattered once: the boot logo's progress bar, a `Blt` per block, cost
   3.4 s until `images/edk2/boot-logo-progress.patch` drew it in one (plans/uefi.md "Graphics in the firmware").
