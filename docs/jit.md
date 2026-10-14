@@ -504,6 +504,15 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   a frame. TurboFan's TLB hit (shift, mask, an L1 load, compare) is cheaper than the memo's
   compares and the extra loop-carried locals. The patch (with two-byte indices for locals from 128
   and bare-metal tests of its rules) is in `bench/boot/results/m8-memo/`.
+- **Invalidation by the IC's line** (M8, `bench/apps/REPORT.md` "M8: invalidation by the IC's line, not
+  its page"):
+  each key filed with the bytes its code covers on each page, and `IC IVAU` dropping only the keys
+  overlapping its 64-byte line. Architecturally sound (an IC names only its line), but the
+  Chromium render saw no difference in time or blocks compiled over three pairs: the page rule's
+  collateral is ~2,000 keys over ~60 ICs a render, and most ICs (3 M in a cold render, mostly
+  the kernel's whole-page walks when it maps code) name pages with nothing compiled. The patch is
+  in `bench/apps/results/m8-icrange/`; it also moves the stale-code checker's tolerated drop from
+  the page's address to the block's, which a finer rule needs.
 - **Relinking** (recompiling a block once a successor it returned through is compiled): doubled
   the blocks compiled and the flushes on Alpine for 9% fewer dispatches.
 - **Regions of every seen successor** (M5, loops; forward regions since M8 hold each block of a

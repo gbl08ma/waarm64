@@ -162,3 +162,41 @@ budget, 16M micro-ops shared out, which is 4M a table on 4 vCPUs):
 - Alpine on 1 vCPU never fills the arena (162K decodes, ~1M micro-ops; its 4 restarts are `IC
   IALLU` and flushes): `boot_alpine_jit` 8,585, 8,550 → 8,711, 8,539 ms, `alpine_user_jit` 17,835
   → 17,866 ms (`../boot/results/m8-dcache/`).
+
+## M8: invalidation by the IC's line, not its page
+
+2026-10-14, the dev VM (8 vCPUs), headless Chromium 153.0.8010.52 on the host and in the guest,
+Debian with Chromium on 4 vCPUs, three renders of `chrome://newtab` per boot; `results/m8-icrange/`
+(`apps-r<round>-<core>.json`, three alternated pairs in one session; the patch: `range.patch`).
+
+**What was built:** `IC IVAU` dropped every compiled block filed under its 4 KiB page (and the
+blocks chained to them). The variant files each key with the bytes its code covers on each page
+(its block, and a forward or loop region's blocks on theirs: one entry a key and page, widened
+when filed again; the word after a block counts, since `block::form` may stop before it) and
+drops only the keys whose bytes overlap the IC's 64-byte line (`CTR_EL0.IminLine`). It needs no
+always-on `spans`: the ranges live in the page's entries. Decoded blocks stay per page. Both cores
+carried the same counters (`jit.stale` = live keys on the IC's page, summed over ICs).
+
+**Guest seconds per render:**
+
+| core | r1 | r2 | r3 |
+|---|---|---|---|
+| page (base) | 51.5, 28.1, 26.1 | 45.4, 27.8, 25.7 | 45.6, 27.6, 26.3 |
+| line | 45.3, 27.3, 25.9 | 46.1, 28.0, 26.4 | 45.4, 27.5, 25.5 |
+
+- **No difference** in time, blocks compiled (cold ~71K, warm 8–19K either way) or the interpreted
+  share (4.7%, 2.1%, 1.6%). The first page run's 51.5 s cold render is the outlier the earlier
+  sections saw too.
+- **What the page rule cost:** ~60 ICs a render dropped anything, ~2,000 live keys between them
+  (and their linkers); under the line rule 0–1 ICs did in the first two renders and 54–108 in the
+  third (V8 reusing code space with something else live in the line). About 3% of the cold render's
+  compiles, recompiled from code the block interpreter runs at speed: below noise.
+- **The ICs themselves:** 3.0–3.1 M in the cold render (~68,000 a second) and 105–135 K in the
+  warm ones (~4,000 a second), against the ~3,000 a second quoted above; almost none name a page
+  with compiled code. The cold render's excess goes with its executable page faults (2,300 major
+  faults; ~0 warm), which is the kernel's whole-page `IC IVAU` walk when it maps code: a line rule
+  can't win there, every line of the page is named.
+- Not kept: an entry list with ranges, entries that outlive their keys until a flush, and an
+  invariant a caller must respect (the stale-code checker's tolerated drop named the page's first
+  address; under the line rule it must name the block's, or the stale block is never dropped and
+  the run loop re-enters it forever).

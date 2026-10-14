@@ -1,0 +1,282 @@
+diff --git a/core/src/interp/sys.rs b/core/src/interp/sys.rs
+index e5aa905..f4a43c1 100644
+--- a/core/src/interp/sys.rs
++++ b/core/src/interp/sys.rs
+@@ -71,6 +71,9 @@ const ID_AA64MMFR0: u64 = 0xf << 24 | 2 << 4 | 2;
+ /// DIC = 0 (guests issue IC IVAU; docs/jit.md), IDC = 1 (no data cache to clean),
+ /// CWG, ERG, DminLine = 64 bytes, PIPT I-cache, IminLine = 64 bytes.
+ const CTR_EL0: u64 = 1 << 31 | 1 << 28 | 4 << 24 | 4 << 20 | 4 << 16 | 3 << 14 | 4;
++
++/// The bytes one `IC IVAU` covers (`CTR_EL0.IminLine`): guests step by it.
++pub const IC_LINE: u64 = 4 << (CTR_EL0 & 0xf);
+ /// DC ZVA block: BS = 4 (64 bytes, as on the M4).
+ pub const DCZID_BS: u64 = 4;
+ /// OSLSR_EL1.OSLM = 0b10: the OS lock is implemented (v8.0 requires it). It
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index 7e72e9e..2bbbba2 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -19,6 +19,7 @@ use std::sync::Arc;
+ use std::sync::atomic::{AtomicU64, Ordering};
+ 
+ use crate::cpu::sctlr;
++use crate::interp::sys::IC_LINE;
+ use crate::interp::{self, Exit};
+ use crate::mem::Mem;
+ use crate::mmu::{Flat, Mmu, Vcpu};
+@@ -225,6 +226,15 @@ struct Info {
+     word: u32,
+ }
+ 
++/// A key's code on a page: the bytes `lo..hi` of it (its words and the one
++/// after, which ended the block if `block::form` stopped before it).
++#[derive(Clone, Copy, Debug)]
++struct Filed {
++    key: u64,
++    lo: u16,
++    hi: u16,
++}
++
+ /// A jump cache entry: the compiled block for a key. Blocks read it too
+ /// (indirect branches, step 7: `emit::indirect`), so its layout is fixed.
+ /// Each table has its own: an entry names a slot of that table.
+@@ -278,8 +288,11 @@ pub struct Cache {
+     /// sets it from its config; user-mode vCPUs have them all).
+     pub features: u64,
+     map: Map<Info>,
+-    /// The keys in `map` by physical page, for `IC IVAU`.
+-    pages: Map<Vec<u64>>,
++    /// Where the keys' code lies, by physical page, for `IC IVAU`: a key's
++    /// own block, and a region's blocks on every page they're on. Entries of
++    /// keys dropped with a linked block or by an IC on another page stay
++    /// until a flush (one per key and page: a key filed again widens its own).
++    pages: Map<Vec<Filed>>,
+     /// The compiled blocks that chain to a key (step 7), dropped with it.
+     linkers: Map<Vec<u64>>,
+     /// Each compiled region's blocks as (PA, length), for the stale-code checker.
+@@ -466,8 +479,8 @@ impl Cache {
+         }
+     }
+ 
+-    /// `IC IVAU` on `pa` drops the blocks of its page; `IC IALLU` (`u64::MAX`)
+-    /// all of them (counted in `s`).
++    /// `IC IVAU` on `pa` drops the blocks whose code overlaps its cache line
++    /// ([`IC_LINE`]); `IC IALLU` (`u64::MAX`) all of them (counted in `s`).
+     pub fn invalidate(&mut self, pa: u64, s: &mut Stats) {
+         self.ival_log
+             .push_back(if pa == u64::MAX { pa } else { pa >> 12 });
+@@ -479,11 +492,36 @@ impl Cache {
+         self.ivals.store(end, Ordering::Relaxed);
+         if pa == u64::MAX {
+             self.drop_all();
+-        } else if let Some(mut keys) = self.pages.remove(&(pa >> 12)) {
++        } else if let Some(filed) = self.pages.get_mut(&(pa >> 12)) {
++            let lo = (pa & 0xfff & !(IC_LINE - 1)) as u16;
++            let hi = lo + IC_LINE as u16;
++            // MEASURE: live keys on the page, and those the line overlaps.
++            for f in filed.iter().filter(|f| self.map.contains_key(&f.key)) {
++                s.stale += 1;
++                s.cond_memory += (f.lo < hi && lo < f.hi) as u64;
++            }
++            let mut keys = Vec::new();
++            filed.retain(|f| {
++                let hit = !RANGE || f.lo < hi && lo < f.hi;
++                if hit {
++                    keys.push(f.key);
++                }
++                !hit
++            });
++            if filed.is_empty() {
++                self.pages.remove(&(pa >> 12));
++            }
++            // (Keys dropped already, filed elsewhere, are skipped.)
++            keys.retain(|k| self.map.contains_key(k));
++            if keys.is_empty() {
++                return;
++            }
+             // With the blocks that chain to them, transitively: their code
+             // calls the dropped functions directly.
+             while let Some(k) = keys.pop() {
+-                self.map.remove(&k);
++                if self.map.remove(&k).is_none() {
++                    continue;
++                }
+                 self.spans.remove(&k);
+                 self.tiers.remove(&k);
+                 for t in self.tables.iter_mut().filter(|t| !t.all) {
+@@ -827,14 +865,9 @@ impl Cache {
+             for t in links {
+                 self.linkers.entry(t).or_default().push(key);
+             }
+-            // A region goes with any of its pages (`invalidate`).
+-            for b in r.blocks.iter().skip(1) {
+-                if (b.key ^ key) >> 12 != 0 {
+-                    let keys = self.pages.entry(b.key >> 12).or_default();
+-                    if !keys.contains(&key) {
+-                        keys.push(key);
+-                    }
+-                }
++            // A region goes with any of its blocks' code (`invalidate`).
++            for b in &r.blocks {
++                file(&mut self.pages, key, b.key & !3, b.words.len() as u32);
+             }
+         }
+         Some(idx)
+@@ -1217,7 +1250,7 @@ fn heads_loop(r: &block::Region) -> bool {
+ /// `Cache::info`, over the fields it needs.
+ fn info<'a>(
+     map: &'a mut Map<Info>,
+-    pages: &mut Map<Vec<u64>>,
++    pages: &mut Map<Vec<Filed>>,
+     key: u64,
+     len: impl FnOnce() -> u32,
+ ) -> &'a mut Info {
+@@ -1225,15 +1258,31 @@ fn info<'a>(
+     match map.entry(key) {
+         Entry::Occupied(e) => e.into_mut(),
+         Entry::Vacant(e) => {
+-            pages.entry(key >> 12).or_default().push(key);
++            let len = len();
++            file(pages, key, key & !3, len);
+             e.insert(Info {
+-                len: len(),
++                len,
+                 ..Info::default()
+             })
+         }
+     }
+ }
+ 
++/// Files `key` under the page of `pa` for the `n` words there (a block never
++/// leaves its page), widening its entry if it has one.
++fn file(pages: &mut Map<Vec<Filed>>, key: u64, pa: u64, n: u32) {
++    let lo = (pa & 0xfff) as u16;
++    let hi = (lo as u32 + 4 * (n + 1)).min(0x1000) as u16;
++    let filed = pages.entry(pa >> 12).or_default();
++    match filed.iter_mut().find(|f| f.key == key) {
++        Some(f) => (f.lo, f.hi) = (f.lo.min(lo), f.hi.max(hi)),
++        None => filed.push(Filed { key, lo, hi }),
++    }
++}
++
++// MEASURE: false is the page rule.
++const RANGE: bool = true;
++
+ fn now_ns() -> u64 {
+     #[cfg(target_arch = "wasm32")]
+     // SAFETY: a host function with no preconditions.
+@@ -1293,7 +1342,7 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+             let key = key.expect("compiled");
+             if jit.table.cfg.check && !jit.check(key, mem) {
+                 // Tolerated (parallel SMP): drop it and compile the code as it is now.
+-                jit.invalidate(key & !0xfff);
++                jit.invalidate(key & !3);
+                 continue;
+             }
+             if key & block::KEY_MMU != 0 {
+@@ -1761,10 +1810,11 @@ mod tests {
+         assert!(cache.off && cache.map.len() == 3); // mov, the loop, brk
+     }
+ 
+-    /// Invalidation drops the blocks from the cache at once, and from each
+-    /// table's jump cache when that table catches up.
++    /// Invalidation drops the blocks whose code the IC's line overlaps from
++    /// the cache at once, and from each table's jump cache when that table
++    /// catches up.
+     #[test]
+-    fn invalidation_by_page_and_all() {
++    fn invalidation_by_line_and_all() {
+         let mut ram = vec![0u128; 0x1000 / 16];
+         // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+         let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+@@ -1776,17 +1826,29 @@ mod tests {
+             t.fill(k, 7, 1);
+             u.fill(k, 7, 1);
+         }
+-        // 0x3000 chains to 0x1000, and 0x4000 to 0x3000: both go with page 1.
++        // 0x3000 chains to 0x1000, and 0x4000 to 0x3000: both go with 0x1000.
+         c.linkers.insert(0x1000, vec![0x3000]);
+         c.linkers.insert(0x3000, vec![0x4000]);
+         c.info(0x1004, || 1).queued = true;
+         c.pending.push((0x1004, 0));
++        // 0x2000's region has a block at 0x5100.
++        file(&mut c.pages, 0x2000, 0x5100, 2);
++        // A block ends before the word that would end it: 0x103c's is in the next line.
++        c.info(0x103c, || 1);
++        c.info(0x1038, || 1);
+         let drops = c.drops.load(Ordering::Relaxed);
+-        c.invalidate(0x1ab0, s); // IC IVAU on page 1
+-        assert_eq!(c.map.keys().copied().collect::<Vec<_>>(), [0x2000]);
+-        assert!(c.linkers.is_empty() && c.drops.load(Ordering::Relaxed) == drops + 1);
++        c.invalidate(0x1ab0, s); // IC IVAU on page 1, no code in its line
++        assert_eq!(c.map.len(), 8);
++        assert_eq!((s.invalidations, c.drops.load(Ordering::Relaxed)), (0, drops));
++        c.invalidate(0x1040, s);
++        assert!(!c.map.contains_key(&0x103c) && c.map.contains_key(&0x1038));
++        c.invalidate(0x1010, s);
++        let mut keys: Vec<u64> = c.map.keys().copied().collect();
++        keys.sort();
++        assert_eq!(keys, [0x1ff8 | block::KEY_EL1, 0x2000]);
++        assert!(c.linkers.is_empty() && c.drops.load(Ordering::Relaxed) == drops + 2);
+         assert_eq!(c.pending, []);
+-        assert_eq!(s.invalidations, 1);
++        assert_eq!(s.invalidations, 2);
+         // A table drops the keys when it catches up.
+         let jc = |t: &Table, k: u64| t.jc[jc_index(k)].key;
+         assert_eq!(jc(&t, 0x1000), 0x1000);
+@@ -1794,16 +1856,42 @@ mod tests {
+         assert!(
+             jc(&t, 0x1000) == u64::MAX && jc(&t, 0x4000) == u64::MAX && jc(&t, 0x2000) == 0x2000
+         );
+-        assert_eq!(t.drops, drops + 1);
+-        c.invalidate(0x5000, s); // no code there
+-        assert_eq!(s.invalidations, 1);
++        assert_eq!(t.drops, drops + 2);
++        c.invalidate(0x510c, s); // the region's other page
++        assert_eq!(c.map.keys().copied().collect::<Vec<_>>(), [0x1ff8 | block::KEY_EL1]);
++        c.invalidate(0x1fc0, s);
++        assert!(c.map.is_empty());
++        assert_eq!(s.invalidations, 4);
++        c.invalidate(0x6000, s); // no code there
++        c.info(0x2000, || 1);
+         c.invalidate(u64::MAX, s); // IC IALLU: a new epoch
+         assert!(c.map.is_empty() && c.pages.is_empty());
+-        assert_eq!((s.invalidations, s.flushes), (2, 0));
++        assert_eq!((s.invalidations, s.flushes), (5, 0));
+         u.sync(&mut c, &mem);
+         assert!(jc(&u, 0x1000) == u64::MAX && jc(&u, 0x2000) == u64::MAX && u.epoch == c.epoch);
+     }
+ 
++    /// A key filed again widens its entry on the page, and a dropped key's
++    /// entry on another page stays until a flush: an IC there skips it.
++    #[test]
++    fn filed_once_a_page() {
++        let mut c = Cache::new(Config::DEFAULT);
++        let s = &mut Stats::default();
++        c.info(0x1100, || 2).idx = 7;
++        file(&mut c.pages, 0x1100, 0x1180, 1);
++        file(&mut c.pages, 0x1100, 0x2000, 1);
++        let at = |c: &Cache, p: u64| c.pages[&p].iter().map(|f| (f.key, f.lo, f.hi)).collect::<Vec<_>>();
++        assert_eq!(at(&c, 1), [(0x1100, 0x100, 0x188)]);
++        c.invalidate(0x1140, s); // between its blocks, so in its entry's span
++        assert!(c.map.is_empty() && !c.pages.contains_key(&1));
++        assert_eq!(at(&c, 2), [(0x1100, 0, 8)]);
++        c.invalidate(0x2000, s);
++        assert_eq!(s.invalidations, 1);
++        c.info(0x1100, || 1);
++        file(&mut c.pages, 0x1100, 0x2000, 3);
++        assert_eq!(at(&c, 2), [(0x1100, 0, 16)]);
++    }
++
+     /// Decoded blocks go when an IC names their page, in every table and
+     /// after a flush too (the cache then has no keys there), and not with the
+     /// compiled blocks that linked to a dropped one.
+@@ -1829,7 +1917,7 @@ mod tests {
+         c.info(0x1000, || 2).idx = 7;
+         c.info(0x2000, || 2).idx = 8;
+         c.linkers.insert(0x1000, vec![0x2000]);
+-        c.invalidate(0x1040, s);
++        c.invalidate(0x1004, s);
+         assert!(c.map.is_empty());
+         t.sync(&mut c, &mem);
+         assert!(!t.dec.has(0x1000) && t.dec.has(0x2000));

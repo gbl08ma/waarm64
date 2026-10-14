@@ -249,7 +249,8 @@ fn jc_index(key: u64) -> usize {
 }
 
 /// The invalidated pages the cache keeps for tables to catch up with
-/// (`Cache::ival_log`): Chromium in Debian issues ~3,000 ICs a second, and a
+/// (`Cache::ival_log`): Chromium in Debian issues ~4,000 ICs a second warm
+/// and ~68,000 in a cold render (bench/apps/REPORT.md), and a
 /// vCPU waiting in WFI doesn't catch up (4,096 entries cleared the tables'
 /// decoded blocks ~35 times a render).
 const IVAL_LOG: usize = 1 << 16;

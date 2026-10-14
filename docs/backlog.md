@@ -196,26 +196,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   hundreds of modules at different points, presumably).
 - Blocks are formed twice: decoded for the block interpreter on first sight (which gives the cache
   their length) and again at compile time.
-- **Invalidation by rewritten range, not by page** (2026-10-14): invalidation is per 4 KiB page
-  ([jit.md](jit.md) "Invalidation"), and `IC IALLU` drops everything. `IC IVAU` carries the guest's
-  exact address (`interp/sys.rs`, `Exit::Invalidate(pa)`), and glibc's `__aarch64_clear_cache` walks
-  the byte range it is given with one `ic ivau` a cache line — the address names the rewritten
-  bytes, not the page (check the aarch64 copy: it is the guest's only `ic ivau` user). Yet
-  `Cache::invalidate` drops every block filed under the page and the blocks chained to them, and a
-  forward region filed under several pages is dropped by an IC on any of them, so a guest JIT's
-  localized patch drops whatever else shares that page. The guest's own V8 issues ~3,000 ICs a
-  second (`bench/apps/REPORT.md` "M8: the block interpreter"). The per-key `(pa, n)` spans the
-  stale-code checker reads (`Cache::check`) are recorded only under `cfg.check`, so a range-based
-  drop needs them always on (or a per-page range list) before it can become an overlap test on the
-  page's keys instead of a `pages.remove`; one `ic ivau` covers its 64-byte cache line, which is
-  the granularity to take. A first cut does the compiled blocks only and keeps the decoded blocks'
-  invalidation per page (`Cache::ival_log`, each table's catch-up). **The safety argument:** the
-  blocks overlapping the rewritten bytes are still dropped, so the invariant is unchanged; what
-  changes is that a block the IC did not name survives, leaning on the same assumption the cache
-  already makes for code changed with no IC at all (the tolerant cache and the checker,
-  [jit.md](jit.md) "Invalidation and the stale-code checker"). **Measure first:** the share of ICs
-  whose range covers less than the page and the blocks dropped per IC, on the Chromium render — a
-  fresh code page's first IC covers the whole page, which is what bounds the win.
 
 ## The core with `simd128`
 
