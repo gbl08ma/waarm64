@@ -6,6 +6,7 @@ import { writeFileSync } from 'node:fs';
 import { chromiumEnv } from '../../tools/nosme.ts';
 import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
+import type { VideoStats } from '../../web/virgl-video.ts';
 
 const SETTINGS_KEY = 'webpc.settings';
 
@@ -27,6 +28,7 @@ export type SessionOptions = {
 type Stat = { n: number; lag: number; busy: Record<string, number> & { commands?: Record<string, number>; fenceBack?: { n: number; ms: number; maxMs: number } } };
 /** virtio-gpu's control commands by type. */
 const COMMANDS: Record<string, string> = { 100: 'GET_DISPLAY_INFO', 101: 'RESOURCE_CREATE_2D', 102: 'RESOURCE_UNREF', 103: 'SET_SCANOUT', 104: 'RESOURCE_FLUSH', 105: 'TRANSFER_TO_HOST_2D', 106: 'ATTACH_BACKING', 107: 'DETACH_BACKING', 108: 'GET_CAPSET_INFO', 109: 'GET_CAPSET', '10a': 'GET_EDID', 200: 'CTX_CREATE', 201: 'CTX_DESTROY', 202: 'CTX_ATTACH_RESOURCE', 203: 'CTX_DETACH_RESOURCE', 204: 'RESOURCE_CREATE_3D', 205: 'TRANSFER_TO_HOST_3D', 206: 'TRANSFER_FROM_HOST_3D', 207: 'SUBMIT_3D' };
+type Video = VideoStats & { ahead: number; maxWaitMs: number };
 type VmStats = { steps: number; irqs: number; exceptions: Record<string, number>; tlbMisses: number; tlbFlushes: number; jit: { flushes: number; invalidations: number; compileNs: number } };
 type VmStatus = { uptime: number; stats: VmStats };
 
@@ -103,13 +105,25 @@ export async function openSession(o: SessionOptions) {
     }
   };
   /** The display's stats since the last call, per second (flushes are the compositor's frames), and the GPU worker's
-   * (web/gpu-worker.ts `render-stats`: its busy time, of which running submits and presenting, the GL draws, the bytes uploaded and read back). */
+   * (web/gpu-worker.ts `render-stats`: its busy time, of which running submits and presenting, the GL draws, the bytes uploaded and read back,
+   * and the video decoded for the guest). */
+  let lastVideo: Video | undefined;
   const display = async () => {
     const s = await page.evaluate(() => ((window as unknown as { __drawStats?: unknown[] }).__drawStats ?? []).splice(0)) as Stat[];
     const per = (k: string) => s.reduce((n, x) => n + (x.busy[k] ?? 0), 0) / Math.max(1, s.length);
     const r = await page.evaluate(() => ((window as unknown as { __renderStats?: unknown[] }).__renderStats ?? []).splice(0)) as Record<string, number>[];
     const rper = (k: string) => r.reduce((n, x) => n + (x[k] ?? 0), 0) / Math.max(1, r.length);
-    const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), commands: rper('commands'), uploadKB: rper('uploadBytes') / 1024, readbacks: rper('readbacks'), readbackKB: rper('readbackBytes') / 1024, compileMs: rper('compileMs'), programs: r.at(-1)!.programs, errors: r.at(-1)!.errors } : undefined;
+    // The video totals (web/gpu-worker.ts): pictures a second over the span, the mean and longest END_FRAME-to-written
+    // and write ms a picture, calls run ahead of waiting ones a second, and the longest wait for a picture.
+    const vs = r.map((x) => (x as unknown as { video?: Video }).video).filter((x): x is Video => !!x);
+    let video;
+    if (vs.length) {
+      const a = lastVideo ?? vs[0], b = vs.at(-1)!, n = b.decoded - a.decoded;
+      lastVideo = b;
+      video = { frames: (b.frames - a.frames) / vs.length, decoded: n / vs.length, dropped: (b.dropped - a.dropped) / vs.length, errors: b.errors - a.errors, latencyMs: n ? (b.latencyMs - a.latencyMs) / n : 0,
+        latencyMaxMs: Math.max(0, ...vs.map((x) => x.latencyMaxMs)), writeMs: n ? (b.writeMs - a.writeMs) / n : 0, ahead: (b.ahead - a.ahead) / vs.length, maxWaitMs: Math.max(0, ...vs.map((x) => x.maxWaitMs)) };
+    }
+    const renderer = r.length ? { seconds: r.length, busyMs: rper('busyMs'), submitMs: rper('submitMs'), drawMs: rper('drawMs'), presents: rper('presents'), glDraws: rper('draws'), commands: rper('commands'), uploadKB: rper('uploadBytes') / 1024, readbacks: rper('readbacks'), readbackKB: rper('readbackBytes') / 1024, compileMs: rper('compileMs'), programs: r.at(-1)!.programs, errors: r.at(-1)!.errors, ...(video ? { video } : {}) } : undefined;
     const commands: Record<string, number> = {};
     for (const x of s) for (const [k, n] of Object.entries(x.busy.commands ?? {})) commands[COMMANDS[k] ?? k] = (commands[COMMANDS[k] ?? k] ?? 0) + n / Math.max(1, s.length);
     // Fenced replies a second, the mean and longest wait for the host; every held reply's time held (ms a second).

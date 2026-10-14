@@ -188,7 +188,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     players. **Decision (the user):** VA-API over virgl, decoded by the browser's WebCodecs (the V4L2/virtio-media route
     lost: Firefox's V4L2 path needs DRM PRIME frames no stock FFmpeg gives, plan §2). V0's gates passed: the guest's Mesa
     takes the caps, FFmpeg and Firefox decode through VA-API (Firefox with a small VA driver wrapper of ours in the
-    desktop image), the host's rebuilt H.264 and VP9 streams decode exactly. Next: V1, the decoders on WebCodecs.
+    desktop image), the host's rebuilt H.264 and VP9 streams decode exactly. V1 decodes on the page (VP9 everywhere,
+    H.264 where the browser has it in hardware), frame for frame the guest's own decode. V2 measured Firefox on it:
+    Sintel's VP9 shown at 87% of its frames against 14% decoded in the guest, A/V sync within ±45 ms, the host's decode
+    path costing under 10 ms of pause; the rest is the guest's CPU. Next: V3, robustness (seeking, resolution
+    changes, decoder errors, snapshots) and breadth (HEVC, AV1).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save

@@ -352,8 +352,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   while a picture is pending, except video submits and resource creation, which run ahead; a picture still out after
   1 s is given up (logged; the guest sees the old planes). The SPS's reorder depth is 0 for a hardware decoder and
   left out in software, where FFmpeg learns it and may hold pictures: those are drained after 200 ms idle. VP9
-  frames with `show_frame` 0 give no output and aren't waited for. `renderer.videoStats` (decoded, dropped, errors)
-  and the queue's `ahead` and `maxWaitMs` go out in render-stats. Mesa's wire numbers its profiles by its own
+  frames with `show_frame` 0 give no output and aren't waited for. `renderer.videoStats` (decoded, dropped, errors;
+  each picture's END_FRAME to written and its write, in ms) and the queue's `ahead` and `maxWaitMs` go out in
+  render-stats (`bench/gpu/guest-session.ts` sums them over a phase). Mesa's wire numbers its profiles by its own
   `enum pipe_video_profile` (26.2's in `PROFILE`), which isn't stable across releases. A capture includes
   DECODE_BITSTREAM's buffers. `capsBacked` wants every decoder the guest was told of. The guest needs our `webpc-va`
   (NV12 surfaces only; plans/video.md §1), in the desktop image.

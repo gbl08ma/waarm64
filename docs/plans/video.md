@@ -5,7 +5,11 @@ over virgl**, decoded by the browser's WebCodecs. **V0 (the gates) passed (2026-
 the caps, FFmpeg and Firefox decode through VA-API (Firefox once a VA driver wrapper of ours hides the surface
 formats it can't take), and the host's rebuilt streams decode exactly. **V1 (the decoders) is done (2026-10-14, §5)**:
 the browser decodes what the guest sends, frame for frame equal to the guest's own decode, H.264 only where the
-browser has it in hardware. Next: V2 (§3: Firefox measured on the page), from `M8-VIDEO-HANDOVER.md`. What exists is
+browser has it in hardware. **V2 (Firefox measured on the page) is done (2026-10-14, §6)**: every picture decoded
+within 3 ms, the GPU worker's pause under 10 ms, Sintel's VP9 shown at 87% of its frames against 14% decoded in the
+guest, A/V sync within ±45 ms; what Firefox still drops is the guest's CPU, not the decode path, so nothing changes.
+Next: V3 (§3: robustness), from `M8-VIDEO-HANDOVER.md`, starting with H.264 on browsers that decode it only in
+software (the user's priority). What exists is
 in the topic docs ([devices.md](../devices.md) "virgl"); this page keeps the decisions, the findings worth not
 re-discovering, and each loop's record.
 
@@ -98,7 +102,7 @@ its cost is the host's stateless-to-stateful step (above).
   renderer writes each picture into the plane textures, and the GPU worker holds what follows a picture until it's
   written (no fence covers a decode: §4). The VA driver wrapper as a package in the desktop image. Done: §5.
 - **V2, on the page:** Firefox plays the clips through it. Measured: the guest's CPU, the frames shown and dropped,
-  A/V sync (`bench/audio/avsync.ts`), on the Mac's GPU; what the GPU worker's pause costs.
+  A/V sync (`bench/audio/avsync.ts`), on the Mac's GPU; what the GPU worker's pause costs. Done: §6.
 - **V3, robustness and breadth:** seeking and resolution changes (a new codec, a new key frame), errors (a decoder
   error ends that codec's pictures, the guest falls back), snapshots (a machine with a codec is 3D in use: refused,
   as now), HEVC and AV1 where the browser has them.
@@ -186,3 +190,42 @@ FFmpeg decoding each clip in software and through VA-API, frames compared by fra
 - **Firefox on the page** (`v0.ts` with `FFMPEG=0`, the Mac, 20 s a clip): both clips decode through VA-API (its log:
   dmabuf NV12 surfaces imported, R8 and GR88 planes) and show the right pictures (the screenshots). It drops 136 of
   481 frames on H.264 and 145 on VP9, against ~90% in software (audio.md "Measurements"); V2 measures it properly.
+
+
+## 6. V2: Firefox on the page, measured (2026-10-14)
+
+Tool: `bench/audio/avsync.ts` with `MEDIA=disk` (the clips of `bench/video/media-disk.sh`, which now has the sync
+clip in VP9 and in H.264 High with B-pictures and AAC besides VP8), Firefox's frames and drops counted over each
+phase (V1's numbers included its start), the renderer's video stats over the phase (`guest-session.ts`: pictures
+decoded, END_FRAME to written, the write, the queue's longest wait) and `PROFILE=1` (the guest's PC sampler). On the
+Mac (`SCRIPT=../audio/avsync.ts VIRGL_GPU=virgl|virgl,novideo MEDIA=disk WARM_S=5 bench/gpu/sway-mac.sh virgl
+<image> <name>`): Chrome for Testing 153 on the M4, macOS 26.6.2, `--mute-audio`, the desktop image with webpc-va, 4
+vCPUs, 1376×762, 20 s a clip from 5 s after it starts. JSON in `bench/video/results/v2/` (`mac-video`, `mac-novideo`,
+`mac-profile`).
+
+| Clip | Decoded on the host: dropped, guest busy | Decoded in the guest (`novideo`): dropped, guest busy |
+|---|---|---|
+| Sync clip, VP9 640×360 at 30 | 116 of 694 (17%), 72% | 104 of 697 (15%), 63% |
+| Sync clip, H.264 640×360 at 30 | 133 of 662 (20%), 73% | 154 of 643 (24%), 73% |
+| Sintel, VP9 854×480 at 24 | **69 of 531 (13%)**, 58% | **454 of 528 (86%)**, 69% |
+| Sintel, H.264 854×480 at 24 | 55 of 530 (10%), 54% | 44 of 445 (10%), 75%: plays slow (445 frames in the window, not 530) |
+
+- **The host's side costs nothing that shows.** Every picture decoded, none dropped or given up; END_FRAME to the
+  planes written 2.9-3.2 ms on average, 9 ms at most; the write into the planes 0.04 ms a picture; the GPU worker's
+  longest wait for a picture 5-9 ms, with 2-3 calls a second run ahead of waiting ones. So **the finer queue rule
+  (handover V2.2) isn't needed, and the copy out of each `VideoFrame` stays** (§1's GPU-only path isn't wanted).
+- **What Firefox still drops is the guest's CPU.** With no decoding in the guest its 4 vCPUs are 54-73% busy, about
+  half of it system time, spread over Firefox's media pipeline (the RDD process, the content process's
+  `MediaDecoderStateMachine`, `RemVidChild`, `ImageBridgeChild`, the IPC threads, the parent's WebRender `Renderer`
+  and `Compositor`); the emulator runs ~430 M guest instructions a second in every phase, decoding or not. The small
+  sync clips drop as many frames whether decoded on the host or not (VP9 at 360p is cheap in software): the drops are
+  the per-frame cost of Firefox's pipeline at 30 frames a second, not the decode. The profile (kernel 45% of samples,
+  flat: the scheduler, preemption counts, IRQs) charges each run chunk to the instruction after the last exit
+  (graphics.md §20's caveat), so `arch_counter_get_cntvct`'s 4% is an exit site, not a measured cost. Arch's kernel
+  has `DEBUG_PREEMPT` on (`debug_smp_processor_id`, `check_preemption_disabled` ~1.5%) and walks stacks
+  (`arch_stack_walk` 1.6%). Sampling slows the guest (273 drops of 558 with it): drop counts only from unsampled runs.
+- **A/V sync, decoded on the host:** the H.264 sync clip median -13 ms (p10 -29, p90 +7, all within -40..+7), VP9
+  median -10 ms (p10 -42, p90 +9, one outlier at -90): inside ±45 ms (ITU-R BT.1359) but for that one. Decoded in
+  the guest, H.264 is median -85 ms (p10 -118, p90 +46, -137..+146): out of sync.
+- **Decided:** V2 changes nothing in the decode path; the remaining drops are the emulator's speed under Firefox's
+  multi-process pipeline (PLAN.md's CPU work), not the video track's. Next is V3.

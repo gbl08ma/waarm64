@@ -7,6 +7,7 @@
 #                 is timed on the screen and the beep on the sound's output (bench/audio/avsync.ts).
 #   sintel.webm   a real video for the ear: the Sintel trailer (Blender Foundation, CC BY 3.0, from download.blender.org),
 #                 854x480 VP9 and Opus; sintel-silent.webm, the same video without its sound (the decode's cost of sound).
+#   avsync-vp9.webm, avsync.mp4   the sync clip again as VP9 (with Opus) and as H.264 High with B-pictures and AAC.
 #   avsync.html   a page that plays a clip (?v=<file>) to its end, full window on black, with sound (its profile allows it).
 #   images/archarm/media.sh [outdir]   (default target/archarm/media)
 set -euo pipefail
@@ -31,9 +32,13 @@ podman run --rm -v "$OUT:/out:Z" "$CONTAINER" sh -euc '
     -f lavfi -i "color=c=black:s=640x360:r=30:d=60,drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable=lt(mod(n\,30)\,1)" \
     -f lavfi -i "aevalsrc=if(lt(mod(t\,1)\,0.04)\,0.5*sin(2*PI*1000*t)\,0):s=48000:d=60" \
     -ac 2 -c:v libvpx -b:v 400k -g 30 -deadline good -c:a libopus -b:a 96k avsync.webm
+  # The same in the codecs the host decodes for the guest (VA-API over virgl, docs/plans/video.md): VP9, and H.264 High
+  # with B-pictures (x264 defaults) and AAC.
+  [ -f avsync-vp9.webm ] || ffmpeg -loglevel error -y -i avsync.webm -c:v libvpx-vp9 -b:v 400k -g 30 -deadline good -cpu-used 4 -c:a copy avsync-vp9.webm
+  [ -f avsync.mp4 ] || ffmpeg -loglevel error -y -i avsync.webm -c:v libx264 -profile:v high -pix_fmt yuv420p -g 30 -crf 23 -c:a aac -b:a 128k -movflags +faststart avsync.mp4
   [ -f sintel.webm ] || ffmpeg -loglevel error -y -i sintel_trailer-480p.mp4 -c:v libvpx-vp9 -crf 34 -b:v 0 -row-mt 1 -deadline good -cpu-used 4 -c:a libopus -b:a 128k sintel.webm
   [ -f sintel-silent.webm ] || ffmpeg -loglevel error -y -i sintel.webm -an -c:v copy sintel-silent.webm
-  for f in avsync.webm sintel.webm sintel-silent.webm; do ffprobe -loglevel error -show_entries stream=codec_name,width,height,sample_rate,channels:format=duration -of compact "$f"; done'
+  for f in avsync.webm avsync-vp9.webm avsync.mp4 sintel.webm sintel-silent.webm; do ffprobe -loglevel error -show_entries stream=codec_name,width,height,sample_rate,channels:format=duration -of compact "$f"; done'
 cat > "$OUT/avsync.html" <<'EOF'
 <!doctype html>
 <meta charset="utf-8">

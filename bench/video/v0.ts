@@ -87,15 +87,13 @@ chmod 755 /home/alarm/ff-launch.sh`);
     await run(`. /root/ff.sh; ffrun file:///mnt/media/avsync.html?v=${clip} ${tag}`);
     const playing = await run(`. /root/ff.sh; ffwait ${tag}`, 330_000);
     log(tag, playing);
-    const before = await video();
     const r = await load(tag, PHASE_S);
-    const after = await video();
     // The first lines about VA-API and dmabufs, in order (each kind once).
     const ff = await run(`grep -i -E "vaapi|va-api|hw ?dec|hardware|dmabuf|v4l2|egl|failed|error" /tmp/ff-${tag}.log | grep -v -E "Tranche|Feedback|format 0x" | sed -e 's/^.*\\]: //' | awk '!seen[$0]++' | head -60`);
     const support = await run(`for i in $(seq 40); do [ -s /tmp/ff-${tag}.support ] && break; sleep 1; done; grep -i -E "video|vaapi|dmabuf|decod|webrender " /tmp/ff-${tag}.support`, 90_000);
     const quality = await run(`grep "AVSYNC t=" /tmp/ff-${tag}.log | tail -1`);
-    results[`firefox ${tag}`] = { playing, load: r, frames: after.frames - before.frames, bytes: after.bytes - before.bytes, errors: after.errors, quality, log: ff, support };
-    log(tag, quality, `frames ${after.frames - before.frames}`, '\n' + ff, '\n' + support);
+    results[`firefox ${tag}`] = { playing, load: r, quality, log: ff, support };
+    log(tag, quality, JSON.stringify(r.display.renderer?.video), '\n' + ff, '\n' + support);
     await page.locator('#screen').screenshot({ path: `${out}/${tag}.png` });
     await run('. /root/ff.sh; ffkill');
     save();

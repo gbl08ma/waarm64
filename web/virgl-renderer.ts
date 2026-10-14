@@ -165,7 +165,7 @@ export class VirglRenderer {
   private serial = 0;
   readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, compileMs: 0 };
   /** The contexts' video codecs and buffers, and the pictures decoded (web/virgl-video.ts). */
-  readonly videoStats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0 };
+  readonly videoStats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 };
   /** The video decoders (the GPU worker's WebCodecs; none: pictures are only counted) and the profiles decoded in hardware. */
   private video?: { decoders: DecoderFactory; hardware: readonly number[] };
   /** Called when a picture is written or given up (the GPU worker's queue goes on: `videoWaiting`). */

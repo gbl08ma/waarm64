@@ -14,8 +14,13 @@
 // Each phase also reads the guest's ALSA parameters while it plays (PipeWire's period and buffer), the ring's
 // underruns and gap frames, and the latency reported to the guest.
 //   node bench/audio/avsync.ts <virgl|2d> <image.qcow2> [outdir]       (default bench/results/local/avsync/<mode>/)
-// CLIPS picks the clips (default avsync,sintel,sintel-silent); PHASE_S the seconds measured (default 20), from
-// WARM_S (default 5) after the clip starts playing. Results: <outdir>/results.json, screenshots.
+// CLIPS picks the clips (default avsync,sintel,sintel-silent; a name without an extension is a .webm); PHASE_S the
+// seconds measured (default 20), from WARM_S (default 5) after the clip starts playing. MEDIA=disk plays them from
+// bench/video/media-disk.sh's disk instead (the page's second disk: the sync clip in VP9 and H.264 too, the trailer's
+// H.264 MP4), for the video track (docs/plans/video.md V2: VIRGL_GPU=virgl decodes VP9 and H.264 on the host, and
+// virgl,novideo in the guest). Firefox's frames and dropped frames are counted over the phase.
+// PROFILE=1 samples the guest's PCs over each clip's phase and symbolizes the kernel's (the clip's `profile`).
+// Results: <outdir>/results.json, screenshots.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { GAP_FRAMES, LATENCY, UNDERRUNS } from '../../web/audio-ring.ts';
 import { openSession } from '../gpu/guest-session.ts';
@@ -29,13 +34,16 @@ const CLIPS = (process.env.CLIPS ?? 'avsync,sintel,sintel-silent,mpv-sound,mpv-n
 const PHASE_S = Number(process.env.PHASE_S ?? 20);
 const WARM_S = Number(process.env.WARM_S ?? 5);
 
-const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, query: 'snd=&avprobe' });
+const disk = process.env.MEDIA === 'disk';
+const MEDIA = disk ? '/mnt/media' : '/home/alarm/media';
+const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, query: 'snd=&avprobe', disk2: disk ? '/target/video/media.ext4' : undefined });
 const { page, log, pasteSerial, rootShell, load, run, asUser } = s;
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), phaseS: PHASE_S };
 const save = () => writeFileSync(`${out}/results.json`, JSON.stringify(results, null, 1));
 
 await rootShell();
-results.info = await run('uname -r; pacman -Q firefox pipewire wireplumber virtio-snd-dkms | tr "\\n" " "; echo; lsmod | grep -o "^virtio_snd"; head -2 /proc/asound/cards | tr -s " "');
+if (disk) await run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media; ls /mnt/media | tr "\\n" " "');
+results.info = await run('uname -r; pacman -Q firefox pipewire wireplumber virtio-snd-dkms mesa webpc-va | tr "\\n" " "; echo; lsmod | grep -o "^virtio_snd"; head -2 /proc/asound/cards | tr -s " "');
 log('info', results.info);
 // Firefox's profile (autoplay, dump, no first-run pages) and its start (`ffrun <url> <tag>`, as the user, by sway).
 await pasteSerial(String.raw`mkdir -p /home/alarm/avprofile; cat > /home/alarm/avprofile/user.js <<'EOF'
@@ -92,7 +100,7 @@ const pct = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - 
 for (const clip of CLIPS.filter((c) => c.startsWith('mpv-'))) {
   // As the user in sway's session (PipeWire's socket), for longer than the phase; killed after it.
   const ao = clip === 'mpv-sound' ? 'pipewire' : 'null';
-  await run(asUser(`mpv --no-video --no-terminal --ao=${ao} --length=${PHASE_S + WARM_S + 20} /home/alarm/media/sintel.webm >/dev/null 2>&1 &`));
+  await run(asUser(`mpv --no-video --no-terminal --ao=${ao} --length=${PHASE_S + WARM_S + 20} ${MEDIA}/sintel.webm >/dev/null 2>&1 &`));
   await page.waitForTimeout(WARM_S * 1000);
   const hw = await run('cat /proc/asound/card0/pcm0p/sub0/hw_params | tr "\\n" " "');
   const quantum = await run(asUser('pw-metadata -n settings 2>/dev/null | grep -o clock.[a-z-]*quantum.*value:.[0-9]*'));
@@ -105,31 +113,43 @@ for (const clip of CLIPS.filter((c) => c.startsWith('mpv-'))) {
   save();
 }
 
-for (const clip of CLIPS.filter((c) => !c.startsWith('mpv-'))) {
-  if (!/yes/.test(await run(`test -f /home/alarm/media/${clip}.webm && echo yes`))) { log(clip, 'not in the image'); continue; }
+/** Firefox's playback quality, its last report (avsync.html, once a second): frames presented and dropped so far. */
+const quality = async (clip: string) => {
+  const m = /frames=(\d+) dropped=(\d+)/.exec(await run(`grep -E "AVSYNC t=" /tmp/ff-${clip}.log | tail -1`));
+  return m ? { frames: +m[1], dropped: +m[2] } : undefined;
+};
+for (const name of CLIPS.filter((c) => !c.startsWith('mpv-'))) {
+  const file = name.includes('.') ? name : `${name}.webm`, clip = name.replace(/\W/g, '-');
+  if (!/yes/.test(await run(`test -f ${MEDIA}/${file} && echo yes`))) { log(clip, 'not in the image'); continue; }
   await run('. /root/ff.sh; ffkill', 120_000);
-  await run(`. /root/ff.sh; ffrun file:///home/alarm/media/avsync.html?v=${clip}.webm ${clip}`);
+  await run(`. /root/ff.sh; ffrun file://${MEDIA}/avsync.html?v=${file} ${clip}`);
   const started = performance.now();
   const playing = await run(`. /root/ff.sh; ffwait ${clip}`, 330_000);
   log(clip, playing, `after ${((performance.now() - started) / 1000).toFixed(1)} s`);
-  if (clip !== 'sintel-silent') await page.waitForFunction(() => (window as unknown as W).__audio.context()?.state === 'running', null, { timeout: 30_000 }).catch(() => log(clip, 'the sound never started on the page'));
+  if (!/silent/.test(clip)) await page.waitForFunction(() => (window as unknown as W).__audio.context()?.state === 'running', null, { timeout: 30_000 }).catch(() => log(clip, 'the sound never started on the page'));
   await listen();
   await page.waitForTimeout(WARM_S * 1000);
   const hw = await run('cat /proc/asound/card0/pcm0p/sub0/hw_params | tr "\\n" " "');
   const r0 = await ring();
+  const q0 = await quality(clip);
   await page.evaluate(() => { const w = window as unknown as W; w.__flashes = []; w.__onsets = []; });
-  const r = await load(clip, PHASE_S);
+  const r = await load(clip, PHASE_S, process.env.PROFILE ? s.sampler : undefined);
+  const q1 = await quality(clip);
+  const profile = process.env.PROFILE ? await s.symbolize(40) : undefined;
   const { flashes, onsets } = await page.evaluate(() => { const w = window as unknown as W; return { flashes: w.__flashes ?? [], onsets: w.__onsets ?? [] }; });
   const r1 = await ring();
   const ff = await run(`grep -E "AVSYNC t=" /tmp/ff-${clip}.log | tail -1; grep -c -E "AVSYNC (waiting|stalled)" /tmp/ff-${clip}.log`);
   const d = offsets(flashes, onsets);
   const rec = {
     hwParams: hw, ring: r1 && r0 ? { underruns: r1.underruns - r0.underruns, gapFrames: r1.gapFrames - r0.gapFrames, latencyFrames: r1.latencyFrames } : undefined, firefox: ff,
+    // Over the phase: what Firefox presented and dropped.
+    quality: q0 && q1 ? { frames: q1.frames - q0.frames, dropped: q1.dropped - q0.dropped } : undefined,
     flashes: flashes.length, onsets: onsets.length, offsetsMs: d.map((x) => +x.toFixed(1)),
     offset: d.length ? { median: +pct(d, 0.5).toFixed(1), p10: +pct(d, 0.1).toFixed(1), p90: +pct(d, 0.9).toFixed(1), min: +Math.min(...d).toFixed(1), max: +Math.max(...d).toFixed(1) } : undefined,
     ...r,
+    ...(profile ? { profile } : {}),
   };
-  log(clip, 'offset', JSON.stringify(rec.offset), 'ring', JSON.stringify(rec.ring), 'firefox', ff, 'hw', hw);
+  log(clip, 'offset', JSON.stringify(rec.offset), 'ring', JSON.stringify(rec.ring), 'firefox', ff, 'phase', JSON.stringify(rec.quality), 'video', JSON.stringify(r.display.renderer?.video), 'hw', hw);
   results[clip] = rec;
   save();
 }

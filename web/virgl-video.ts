@@ -85,7 +85,9 @@ export function decodeVideoCaps(words: number[], n: number): VideoCap[] {
  * `frames` the guest's pictures (END_FRAMEs), `decoded` those written into their buffers, `dropped` those never
  * written: before a key picture (at the start, after a decoder error or a drain) or given up (`VideoContext.giveUp`).
  */
-export type VideoStats = { codecs: number; buffers: number; frames: number; decoded: number; dropped: number; bitstreamBytes: number; errors: number };
+/** The renderer's video totals; of the decoded pictures, the ms from END_FRAME to written (`latencyMs`, and the longest:
+ * `latencyMaxMs`, reset by whoever reads it) and the ms spent writing them into the planes (`writeMs`). */
+export type VideoStats = { codecs: number; buffers: number; frames: number; decoded: number; dropped: number; bitstreamBytes: number; errors: number; latencyMs: number; latencyMaxMs: number; writeMs: number };
 
 /** A decoded picture as the host writes it: luma rows `width` bytes long, and chroma at half size with U and V interleaved (NV12's second plane). */
 export type DecodedPicture = { width: number; height: number; y: Uint8Array; uv: Uint8Array };
@@ -295,8 +297,13 @@ export class VideoContext {
       this.pending.delete(ts);
       const b = this.buffers.get(q.target);
       if (b) {
+        const t0 = performance.now();
         this.env.write?.(b.planes, pic);
+        const t1 = performance.now();
         this.stats.decoded++;
+        this.stats.writeMs += t1 - t0;
+        this.stats.latencyMs += t1 - q.at;
+        this.stats.latencyMaxMs = Math.max(this.stats.latencyMaxMs, t1 - q.at);
       } else this.stats.dropped++;
       this.env.settled?.();
     }, (m) => {

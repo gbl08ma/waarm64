@@ -326,7 +326,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Hardware video decoding** (audio's finding, [audio.md](audio.md) "Measurements": Firefox's VP9 decoder takes
   1.7-1.8 s of the guest's CPU a second for a 480p trailer and still shows ~10% of its frames): **in progress**, VA-API
   over virgl decoded by WebCodecs ([plans/video.md](plans/video.md); the V4L2/virtio-media route and why it lost are
-  its §2).
+  its §2). Since V2 Firefox shows 87-90% of the trailer's frames; what it drops is the guest's CPU (its media
+  pipeline keeps 4 vCPUs 54-73% busy with no decoding: plans/video.md §6), not the decode path.
 - **H.264 on a browser that decodes it only in software** (Chromium on Linux without VA-API, distro builds with
   OpenH264): not offered to the guest (plans/video.md §5: the decoder holds B-pictures longer than the guest waits,
   so the guest stalls; `?gpu=swh264` shows it). Ideas, none tried: a filler picture (a non-reference all-skip P slice
@@ -394,8 +395,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   to look at, the notify comes from the audio thread); the microphone's prompt at the guest's first recording, the
   browser's indicator going off when it stops and a refusal's hint (e.g. on the desktop guest `pw-record /tmp/a.wav`,
   `pw-play /tmp/a.wav`, with and without Raw microphone); a video in Firefox on the desktop guest
-  (`avsync.html?v=sintel.webm`) in sync by ear (the measurement is -17 to +20 ms after Firefox's first 4 s; the guest's
-  decode is too slow to judge by ear: hardware video decoding).
+  (`avsync.html?v=sintel.webm`) in sync by ear (the measurement is -17 to +20 ms after Firefox's first 4 s; decoded on
+  the host since video V2, -10 to -13 ms median: plans/video.md §6).
 - **Audio, not built** ([audio.md](audio.md)): guest-side mixer controls (`VIRTIO_SND_F_CTLS`: volume and mute are the
   page's only), jacks and channel maps (none: Linux needs neither) and the stream events (xrun, period elapsed: none
   are sent); one output and one input stream (the guest's own sound server mixes), 1 or 2 channels (no surround), S16,

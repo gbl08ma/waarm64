@@ -62,7 +62,7 @@ test('probeVideo: H.264 offered only where the browser decodes it in hardware (s
 });
 
 test('VideoContext: codecs, buffers and a picture\'s parameters and data, read from the staging buffers', () => {
-  const stats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0 };
+  const stats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 };
   const errors: string[] = [];
   const staging = new Map([[7, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])], [8, new Uint8Array(32).fill(9)]]);
   const v = new VideoContext({
@@ -73,7 +73,7 @@ test('VideoContext: codecs, buffers and a picture\'s parameters and data, read f
   const cmd = (c: number, ...p: number[]) => v.command(c, new Uint32Array(p));
   cmd(53, 100, PROFILE.AVC_HIGH, 1, 1, 41, 864, 480, 16); // CREATE_VIDEO_CODEC (864: Mesa aligns H.264 to macroblocks)
   cmd(55, 200, FORMAT_NV12, 864, 480, 31, 32); // CREATE_VIDEO_BUFFER: two planes
-  assert.deepEqual(stats, { codecs: 1, buffers: 1, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0 });
+  assert.deepEqual(stats, { codecs: 1, buffers: 1, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 });
   assert.deepEqual(v.buffers.get(200)?.planes, [31, 32]);
   cmd(57, 100, 200); // BEGIN_FRAME
   cmd(59, 100, 200, 8, 7, 5); // DECODE_BITSTREAM: desc in 8, data in 7 (5 bytes)
@@ -109,7 +109,7 @@ const picture = (ts: number): DecodedPicture => ({ width: 4, height: 2, y: new U
 
 /** A context with a fake decoder, one codec (handle 1) and one NV12 buffer (handle 2, planes 31 and 32). */
 function video(profile: number, o: { hardware?: number[] } = {}) {
-  const stats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0 };
+  const stats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 };
   const errors: string[] = [], written: { planes: number[]; ts: number }[] = [];
   let settled = 0;
   const staging = new Map<number, Uint8Array>();
@@ -161,6 +161,7 @@ test('VideoContext: VP9 pictures through the decoder into their planes; a hidden
   assert.deepEqual(t.written, [{ planes: [31, 32], ts: 0 }, { planes: [31, 32], ts: 2 }]);
   assert.equal(t.settledCount(), 2);
   assert.deepEqual({ frames: t.stats.frames, decoded: t.stats.decoded, dropped: t.stats.dropped, errors: t.stats.errors }, { frames: 3, decoded: 2, dropped: 0, errors: 0 });
+  assert.ok(t.stats.latencyMaxMs <= t.stats.latencyMs && t.stats.writeMs <= t.stats.latencyMs, 'the pictures\' times: each within the total, the writes within the wait');
 });
 
 test('VideoContext: a decoder error loses its pictures, and a new decoder starts at the next key picture', () => {
