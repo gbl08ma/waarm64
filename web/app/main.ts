@@ -185,10 +185,12 @@ type Run = { worker: Worker; input: Input; serial: MessagePort; display: Message
 
 /**
  * Benchmarks' hooks (`?displaystats`, bench/gpu/sway-load.ts): the last status in `window.__status`, and
- * `window.__webpcProfile(on)` starting and stopping the guest PC sampler (the histogram lands in `window.__profile`).
+ * `window.__webpcProfile(on)` starting and stopping the guest PC sampler (the histogram lands in `window.__profile`),
+ * `window.__webpcTimeline(on)` the vCPU timeline (in `window.__timeline`).
  */
 const benchHooks = params.has('displaystats') || params.has('snd'); // ?snd= (sound measurements) wants the serial log and status too
 if (benchHooks) (window as unknown as { __webpcProfile?: (on: boolean) => void }).__webpcProfile = (on) => run?.worker.postMessage({ type: 'profile', on } satisfies ToWorker);
+if (benchHooks) (window as unknown as { __webpcTimeline?: (on: boolean) => void }).__webpcTimeline = (on) => run?.worker.postMessage({ type: 'timeline', on } satisfies ToWorker);
 if (benchHooks) (window as unknown as { __serialLog?: () => string }).__serialLog = () => log;
 /** `?avprobe`: when the screen's centre turned bright (ms on this page's clock), for bench/audio/avsync.ts. */
 const flashed = (t: number) => ((window as unknown as { __flashes?: number[] }).__flashes ??= []).push(t - performance.timeOrigin);
@@ -375,6 +377,8 @@ function start(snapshot?: File, resume = true) {
       if (benchHooks) (window as unknown as { __status?: Status }).__status = m.status;
     } else if (m.type === 'profile') {
       (window as unknown as { __profile?: [string, number][] }).__profile = m.samples;
+    } else if (m.type === 'timeline') {
+      (window as unknown as { __timeline?: unknown }).__timeline = m.timeline;
     } else if (m.type === 'phase') {
       bootLine.textContent = m.text;
       bootProgress.removeAttribute('value');

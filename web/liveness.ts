@@ -6,8 +6,8 @@
 // comparable across threads.
 
 /** Doubles per vCPU: chunks, enteredAt, lastReturn, maxRunMs, maxRunAt, maxHostMs, maxHostAt, spare. */
-const SLOTS = 8;
-const CHUNKS = 0, ENTERED = 1, RETURNED = 2, MAX_RUN = 3, MAX_RUN_AT = 4, MAX_HOST = 5, MAX_HOST_AT = 6;
+export const SLOTS = 8;
+export const CHUNKS = 0, ENTERED = 1, RETURNED = 2, MAX_RUN = 3, MAX_RUN_AT = 4, MAX_HOST = 5, MAX_HOST_AT = 6;
 
 export const epochMs = () => performance.timeOrigin + performance.now();
 

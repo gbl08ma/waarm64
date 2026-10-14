@@ -192,9 +192,10 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     H.264 where the browser has it in hardware), frame for frame the guest's own decode. V2 measured Firefox on it:
     Sintel's VP9 shown at 87% of its frames against 14% decoded in the guest, A/V sync within ±45 ms, the host's decode
     path costing under 10 ms of pause; the rest is the guest's CPU. V3 offers H.264 where the browser decodes it only
-    in software too (Firefox and mpv play it as from hardware). Next: Firefox's cost and frame pacing (mpv plays the
-    same clips at a third of the guest's CPU), then the rest of V3: seeking, resolution changes, decoder errors,
-    snapshots, HEVC and AV1.
+    in software too (Firefox and mpv play it as from hardware). Firefox's cost and pacing measured (plan §8): steady
+    playback drops almost nothing (V2's cost was Firefox's start), no pref helps, and the bursts while browsing are the
+    guest's CPU and the host's synchronous JIT installs stopping every vCPU at once (backlog: a compile worker). Next:
+    the rest of V3: seeking, resolution changes, decoder errors, snapshots, HEVC and AV1.
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save

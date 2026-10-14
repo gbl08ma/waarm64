@@ -53,6 +53,20 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## JIT
 
+- **A compile worker: the host's installs stop every vCPU at once** ([plans/video.md](plans/video.md) §8, 2026-10-15).
+  A vCPU installs compiled modules synchronously on its own thread (`jit_install`), and when one compiles a batch the
+  others catch up at their next miss: all four install the same bytes together, each waiting the full time (V8's
+  module cache has them wait on one compile). With Firefox starting and loading pages on the desktop guest: on the dev
+  VM 31 installs of ≥ 20 ms in ~8 minutes, mostly four at once, 20-58 ms for modules of 1-5 KB, up to 739 ms; on the
+  Mac 26-513 ms, 3 a session. The guest's clock runs on (and a vCPU spinning on a lock the stalled one holds stops too):
+  the "bursts" the user sees while browsing. Why V8 takes so long for a few KB is unmeasured (a lock, or `mprotect`
+  against the threads running wasm, are guesses: a Chromium microbenchmark of concurrent same-bytes compiles beside
+  busy wasm threads would say; in Node under CI's concurrent load it's `new WebAssembly.Instance` that took 40-92 ms
+for one-function modules, so not compiling as such). The fix whatever the cause is jit.md's compile worker (compile off the vCPU threads,
+  post the `WebAssembly.Module`, the vCPU only instantiates, interpreting meanwhile). The timeline
+  (`TIMELINE=1`) and the `webpc-slow install` lines measure it; the earlier "`vm_run_cpu` calls of 2 to 4 s under a
+  heavy load" (2026-10-03, a 4-vCPU `go build`) is likely the same.
+
 - **llvmpipe under the JIT** ([plans/graphics.md](plans/graphics.md) §16): sway compositing
   through Mesa's software GL kept four vCPUs at ~54% for ~3 frames a second at 1376×762 (pixman:
   4–8%). Profiled 2026-10-08 with a compositor-like GLES load (`images/alpine/gl`): ~95% of the
@@ -117,14 +131,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     stores instead of every dirty register), but TurboFan's spill and register allocation around
     the deferred arms could move the hot path a few percent either way; unmeasured, needs a
     Chromium A/B. Dropped for now as not worth the emitter complexity for ~6% of the cache.
-- **`vm_run_cpu` calls of 2 to 4 s under a heavy load** (2026-10-03, the 4-vCPU `go build` loop of
-  `bench/stress` with `--guest-cmd`, Debian, Chromium in the dev VM): with the cache flushing every
-  ~14 s per vCPU and with one flush in 300 s alike; one vCPU peaked at 0.77 s. A chunk is bounded
-  by its step budget, so a call that long is a synchronous compile of a very large batch module (V8
-  on the vCPU's thread), a GC pause (the 256 MiB nudge after a flush can't be all of it: it happens
-  without flushes), or a stall worth fixing (a lock, a DSB wait, an `Atomics.wait`). Time the
-  compile, the instantiation and the run inside the call (the liveness block has room for it):
-  harmless, or a latency problem a GUI guest would feel.
 - **Transfers that still leave a function** (the userspace benchmark's remaining lever:
   `bench/boot/REPORT.md` from "M8: where the userspace benchmark's time goes"; re-profile with
   `bench/boot/userprof.ts` before and after). Per 1000 instructions in Lua and SQLite: 27 to 37

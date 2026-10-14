@@ -9,8 +9,10 @@ browser has it in hardware. **V2 (Firefox measured on the page) is done (2026-10
 within 3 ms, the GPU worker's pause under 10 ms, Sintel's VP9 shown at 87% of its frames against 14% decoded in the
 guest, A/V sync within ±45 ms; what Firefox still drops is the guest's CPU, not the decode path, so nothing changes.
 V3 (§3: robustness) started with **H.264 where the browser decodes it only in software** (§7): offered there now,
-Firefox and mpv play it as well as from a hardware decoder. Next: the cost of Firefox's pipeline and its frame pacing
-(the user's), then the rest of V3, from `M8-VIDEO-HANDOVER.md`. What exists is
+Firefox and mpv play it as well as from a hardware decoder. **Firefox's cost and frame pacing were measured (§8)**:
+steady playback drops almost nothing, V2's cost was Firefox's start, no pref helps, and the bursts are the guest's
+CPU saturated and the host stopping every vCPU at once for JIT installs (a compile worker would fix those: backlog.md).
+Next: the rest of V3, from `M8-VIDEO-HANDOVER.md`. What exists is
 in the topic docs ([devices.md](../devices.md) "virgl"); this page keeps the decisions, the findings worth not
 re-discovering, and each loop's record.
 
@@ -281,3 +283,54 @@ on the M4, its software decoders FFmpeg's; `*-devvm`, `mpv-*`: the dev VM's Chro
   drain whose cause the run didn't record); the four with the renderer's log had at most one drain, at a clip's
   start. **mpv keeps the guest at 19-27% busy where Firefox needs 54-74%** for the same clip, with no frame dropped:
   the cost left is Firefox's (the next loop).
+
+
+## 8. V3: Firefox's cost and frame pacing (2026-10-15)
+
+The user's report (decision 7 of the handover): the host's decoding isn't felt in Firefox, and its playback, scrolling
+and browsing come in uneven bursts, at times losing a second or more. Tools, all dev-only (docs/benchmarking.md
+"Guest sessions"): `bench/gpu/guest-session.ts` `load` now records every process (its /proc stat: threads that exited
+count), every thread over 2 ms a second with schedstat's runs and run-queue wait, and with `SYSCALLS=1` the syscalls by
+thread (a kprobe on `do_el0_svc`: Arch's kernel has no syscall tracepoints); `TIMELINE=1` the vCPU timeline (every
+vCPU's counters and liveness every 10 ms, `web/timeline-worker.ts`); `bench/audio/avsync.ts` `VARIANTS`/`ROUNDS` (sets of
+Firefox prefs alternated in one boot, a fresh prefs.js each launch), `NCPUS`, Firefox's frames and drops each second;
+web/vm.ts logs an install of JIT code that took 20 ms or more (`webpc-slow install`, collected into results' `slow`);
+`sway-mac.sh` samples the Mac's `vm_stat` each second. JSON in `bench/video/results/v3c/` (Sintel's H.264 trailer, the
+Mac, Chrome for Testing 153, 4 vCPUs, the desktop image with webpc-va; `pages-devvm`: the dev VM's Chromium 153).
+
+- **V2 and V3's per-thread numbers were incomplete.** `load` read the threads off the serial terminal, and those that
+  scrolled away were lost (Firefox's listed threads were 6-25% of /proc/stat's busy time). Process totals were right.
+- **V2/V3's cost was Firefox's start.** Their phases began 5 s after playback started; Firefox's start-up work goes on
+  ~30 s more, and the drops fell in the first ~6 s of the phase (each second's count: `7,7,10,2,5,17,0,2,...,0`).
+  From 30 s after the start (`ab2`): **0-5 frames of ~500 dropped in 20 s** (one run 20, 18 of them in one second), the
+  guest 32-41% busy at ~200 M instructions a second (V2: 54-74%, ~430 M). mpv on the same file: 0 dropped, 19-20%.
+- **Where Firefox's CPU goes** (steady, ms a second): the parent 500-630 (its main thread, WebRender's `Renderer` and
+  `RenderBackend`, the `Compositor`, `WaylandProxy`, IPC, telemetry's `glean.dispatcher` spinning on `sched_yield`,
+  PulseAudio's `threaded-ml`), the content process 310-400, RDD (the decoder) ~110-140, the audio utility process
+  ~70-85, sway ~170; mpv 450 and sway 145. Syscalls (`sys2`, during the start): Firefox 13.7 k a second (futex 5.4 k,
+  ppoll 1.7 k (1.1 k of them RDD's decoder threads, ~45 a frame), recvmsg and sendmsg 2.1 k, sched_yield 0.7 k),
+  mpv 5 k. No one thread or call dominates: it's the multi-process pipeline's per-frame IPC.
+- **No Firefox switch matters at steady state** (`ab2`, two rounds each): telemetry off (`notel`) 0 and 0 dropped,
+  `media.utility-process.enabled=false` 3 and 5, `media.decoder.skip-to-next-key-frame.enabled=false` 2 and 4, the
+  defaults 20 and 3: all within the noise. `media.rdd-process.enabled=false` never starts playing (frames stay 0);
+  `gfx.webrender.compositor.force-enabled=true` (the native Wayland compositor) says it plays but presents no frame.
+  Nothing becomes the image's default.
+- **Scrolling** (`scroll`, `pages*`: firefox-load.ts, a wheel notch every 100 ms on real pages): ~60 frames a second;
+  the slow frames (100-430 ms, mostly on Wikipedia and BBC as they load) come with the guest 50-85% busy: its own work.
+- **The host stalls the vCPUs at JIT installs.** A vCPU installs compiled modules synchronously on its own thread
+  (`jit_install`: `new WebAssembly.Module`, then the instance), and when one vCPU compiles a batch the others catch up
+  on their next miss: **all four install the same bytes at once, and each waits the full time** (V8's process-wide
+  module cache has the others wait on the one compile). On the dev VM 31 installs of ≥ 20 ms in ~8 minutes of
+  Firefox starts and page loads, most four at once, 20-58 ms for modules of 1-5 KB, the longest **739 ms** (13 KB, 14
+  functions); on the Mac 3 in each session, 26-513 ms. The guest's clock runs on meanwhile; another vCPU spinning on a
+  lock the stalled one holds stops too (the timeline: two vCPUs crawling in lockstep at ~17 instructions a µs through
+  a 270 ms stall of a third). None fell inside the measured windows of scrolling or steady playback. Why V8 takes that
+  long for a few KB is unmeasured (lock or `mprotect` contention with the threads running wasm is a guess). The fix
+  that holds whatever the cause is jit.md's compile worker (compiled off the vCPU threads, the `WebAssembly.Module`
+  posted to them): backlog.md.
+- **The Mac's memory is overcommitted** (7 of 8 GiB of swap used, ~10 GiB compressed; the Lima VMs reserve 22 of its
+  24 GiB): one 270 ms stall had no install in it, and the slowest installs came in seconds with 2-3× the run's p90 of
+  decompressions. Latency measured on the Mac is suspect while both VMs run.
+- **Decided:** nothing changes in the guest or the decode path. Firefox's steady playback is fine where the host keeps
+  up; what the user feels as bursts is the guest's CPU saturated (Firefox's start, page loads) and the host's
+  synchronous JIT installs stopping every vCPU at once.

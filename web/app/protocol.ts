@@ -1,6 +1,7 @@
 // The page ⇄ machine-worker protocol (docs/frontend.md "The worker protocol").
 // The seed of phase D's embedding API: not frozen. Types only.
 import type { VcpuLiveness } from '../liveness.ts';
+import type { Timeline } from '../profiler.ts';
 import type { Vm } from '../vm.ts';
 import type { Credential, DiskChoice, MachineName } from './machine.ts';
 
@@ -110,7 +111,9 @@ export type ToWorker =
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
   | { type: 'stop' }
   /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile`. */
-  | { type: 'profile'; on: boolean };
+  | { type: 'profile'; on: boolean }
+  /** Benchmarks: start or stop the vCPU timeline (web/profiler.ts `startTimeline`); a stop is answered by `timeline`. */
+  | { type: 'timeline'; on: boolean };
 
 /** Worker → page. */
 export type FromWorker =
@@ -140,6 +143,8 @@ export type FromWorker =
   | { type: 'snapshot-error'; message: string }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */
   | { type: 'profile'; samples: [string, number][] }
+  /** The vCPU timeline since `timeline` started it (web/profiler.ts `Timeline`). */
+  | { type: 'timeline'; timeline: Timeline }
   | { type: 'stopped' };
 
 /** Once a second while the machine runs. */

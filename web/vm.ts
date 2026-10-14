@@ -223,6 +223,8 @@ export function instantiateThread(module: WebAssembly.Module, memory: WebAssembl
 
 /** A flush of at least this many slots is worth a {@link collect}. */
 const NUDGE_SLOTS = 4096;
+/** An install this long is logged (`webpc-slow install`). */
+const SLOW_INSTALL_MS = 20;
 
 /**
  * Asks V8 to collect now. The flushed blocks' instances are garbage, and V8 frees their code only when a
@@ -260,26 +262,39 @@ function jitHost(memory: WebAssembly.Memory) {
     },
     install(ptr: number, len: number, slot: number): number {
       if (!table) return -1;
+      const t0 = performance.now();
       const bytes = new Uint8Array(memory.buffer, ptr >>> 0, len).slice(); // a non-shared copy (`ptr` is a u32 the i32 import signs)
       const module = new WebAssembly.Module(bytes);
+      const t1 = performance.now();
       // Blocks it chains to that are already compiled (M5 step 7): `t.<table index>`.
       const t: Record<string, WebAssembly.ExportValue> = {};
       for (const i of WebAssembly.Module.imports(module)) if (i.module === 't') t[i.name] = table.get(Number(i.name));
       const f = new WebAssembly.Instance(module, { ...imports, t }).exports;
       const n = Object.keys(f).length;
       const at = base + slot;
+      const t2 = performance.now();
+      let gc = 0;
+      const restart = slot < lastEnd;
       // The slots start over from 0 when the cache flushes: its old blocks are dead, so the table lets go of
       // the ones this module doesn't overwrite, and V8 can free their instances and code.
-      if (slot < lastEnd) {
+      if (restart) {
         for (let k = slot + n; k < hi; k++) table.set(base + k, null);
         // Only for a big cache (JIT-stress flushes every few blocks).
-        if (hi > NUDGE_SLOTS) collect();
+        if (hi > NUDGE_SLOTS) {
+          gc = performance.now();
+          collect();
+          gc = performance.now() - gc;
+        }
         hi = 0;
       }
       lastEnd = slot + n;
       hi = Math.max(hi, lastEnd);
       if (table.length < at + n) table.grow(at + n - table.length);
       for (let k = 0; k < n; k++) table.set(at + k, f[`f${k}`] as WebAssembly.ExportValue as never);
+      // An install the vCPU felt (it runs on the vCPU's thread, the guest's clock running on): for the benchmarks'
+      // timelines (bench/gpu/guest-session.ts collects `webpc-slow` lines).
+      const ms = performance.now() - t0;
+      if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`);
       return at;
     },
   };
@@ -865,6 +880,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     },
     /** Per-vCPU liveness (parallel mode; empty otherwise): time inside the current chunk, the longest chunk and host-side handling so far. */
     liveness: (): VcpuLiveness[] => par?.liveness() ?? [],
+    /** The liveness block (parallel mode), for web/profiler.ts `startTimeline`. */
+    liveBlock: par?.liveBlock,
     /** vCPU `i`'s PC (published once per chunk while it runs). */
     pc: (i = 0) => new BigUint64Array(memory.buffer, ex.vm_cpu(vm, i) + 256, 1)[0],
   };
@@ -1023,6 +1040,8 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     },
     /** Each vCPU worker's timing of its `vm_run_cpu` calls (web/liveness.ts). */
     liveness: (): VcpuLiveness[] => readLiveness(live),
+    /** The liveness block itself (bench/gpu/guest-session.ts's timeline reads it from a worker). */
+    liveBlock: live,
     /** When `steps` (all vCPUs) last changed. */
     progress(steps: number) {
       // Time paused isn't time without progress.

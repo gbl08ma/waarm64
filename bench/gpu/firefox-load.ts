@@ -11,7 +11,8 @@
 // GUEST_CMD runs a command in sway's session first (results.cmd). PHASES picks the phases (default
 // `still,scroll,webgl,pages,support`; `pages` needs bench/gpu/firefox-pages.sh's disk; `startup` measures a launch);
 // WARM_S, PHASE_S their times.
-// VIRGL_GPU picks the page's `?gpu=` in mode virgl (default `virgl`; `virgl-null` for G2's null renderer).
+// VIRGL_GPU picks the page's `?gpu=` in mode virgl (default `virgl`; `virgl-null` for G2's null renderer). TIMELINE=1
+// records the vCPU timeline over each phase (guest-session.ts `summarizeTimeline`; the rows in <outdir>/<tag>.timeline.json).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { openSession } from './guest-session.ts';
 
@@ -27,8 +28,12 @@ const PHASES = (process.env.PHASES ?? 'still,scroll,webgl,pages,support').split(
 const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, disk2: PHASES.includes('pages') ? '/target/ffpages/pages.ext4' : undefined });
 const { page, log, onSerial, pasteSerial, rootShell, load, run, runLines } = s;
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), prefs: process.env.FF_PREFS ?? '' };
+type During = { start(): Promise<void>; stop(): Promise<void> };
+/** `load`'s `during`: `d` and, with TIMELINE=1, the vCPU timeline around it. */
+const around = (d?: During): During | undefined => (process.env.TIMELINE ? { start: async () => { await s.timeline.start(); await d?.start(); }, stop: async () => { await d?.stop(); await s.timeline.stop(); } } : d);
+const timeline = async (tag: string) => (process.env.TIMELINE ? { timeline: await s.timelineSummary(tag) } : {});
 const save = () => {
-  writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings) }, null, 1));
+  writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, warnings: Object.fromEntries(s.warnings), slow: s.slow }, null, 1));
   if (s.debugLines.length) writeFileSync(`${out}/virgl-debug.txt`, s.debugLines.join('\n') + '\n');
 };
 
@@ -80,11 +85,11 @@ const firefox = async (tag: string, url: string) => {
   const started = await run(`. /root/ff.sh; ffwait ${tag}`, 330_000);
   log(tag, started);
   await page.waitForTimeout(WARM_S * 1000);
-  const r = await load(tag, PHASE_S);
+  const r = await load(tag, PHASE_S, around());
   const ff = await run(`grep FFBENCH /tmp/ff-${tag}.log | grep frames= | tail -${PHASE_S} | sed 's/.*frames=//' | tr "\\n" " "`);
   const fps = [...ff.matchAll(/(\d+) maxms=([\d.]+)/g)].map((x) => ({ frames: +x[1], maxms: +x[2] }));
   const sorted = fps.map((x) => x.frames).sort((a, b) => a - b);
-  const rec = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), fps, medianFps: sorted[sorted.length >> 1], ...r };
+  const rec = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), fps, medianFps: sorted[sorted.length >> 1], ...r, ...(await timeline(tag)) };
   log(tag, 'fps', JSON.stringify(sorted), 'renderer', JSON.stringify(r.display.renderer ?? {}));
   results[tag] = rec;
   save();
@@ -126,11 +131,11 @@ if (PHASES.includes('pages')) {
     const wheel = async () => { while (wheeling) { await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.wheel(0, 120); await page.waitForTimeout(100); } };
     let done: Promise<void> = Promise.resolve();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    const r = await load(tag, PHASE_S, { start: async () => { wheeling = true; done = wheel(); }, stop: async () => { wheeling = false; await done; } });
+    const r = await load(tag, PHASE_S, around({ start: async () => { wheeling = true; done = wheel(); }, stop: async () => { wheeling = false; await done; } }));
     const ff = await run(`grep FFBENCH /tmp/ff-${tag}.log | grep frames= | tail -${PHASE_S} | sed 's/.*frames=//' | tr "\\n" " "`);
     const fps = [...ff.matchAll(/(\d+) maxms=([\d.]+)/g)].map((x) => ({ frames: +x[1], maxms: +x[2] }));
     const sorted = fps.map((x) => x.frames).sort((a, b) => a - b);
-    results[tag] = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), loadMs, fps, medianFps: sorted[sorted.length >> 1], ...r };
+    results[tag] = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), loadMs, fps, medianFps: sorted[sorted.length >> 1], ...r, ...(await timeline(tag)) };
     log(tag, 'fps', JSON.stringify(sorted), 'flushes', r.display.flushes.toFixed(1));
     save();
   }

@@ -530,7 +530,9 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
 - **A compile worker** (compiling off the vCPU thread): measured, not built. Installs take
   ≤ 1.3 ms each; guest progress pauses above 16 ms about once per Alpine boot; the synchronous
   install is ~0.3 s of Alpine's boot and V8's native work ~1.8 s (lazy Liftoff compiles included).
-  Revisit with a GUI guest (latency, not total time, is its value). A design sketch: a second core
+  Revisited with a GUI guest (2026-10-15, plans/video.md §8): with Firefox starting and loading pages the installs
+  stop every vCPU at once (each installs the same module together), 20-58 ms for a few KB and up to 739 ms, dozens in
+  minutes: latency the user feels (backlog.md). A design sketch: a second core
   instance on the shared memory forms, emits and eagerly compiles, and posts the
   `WebAssembly.Module` to the vCPU worker, which only instantiates it; costs a host ABI, a queue
   and invalidation of in-flight compiles.

@@ -1,9 +1,9 @@
-# M8 video: handover after V3's first loop (2026-10-14)
+# M8 video: handover after V3's second loop (2026-10-15)
 
-V0 (the gates), V1 (the decoders on WebCodecs), V2 (Firefox on the page, measured) and V3's first loop (H.264 where
-the browser decodes it in software) are done and committed; **the next loop (Firefox's cost and frame pacing) can
-start from this file.** Read first: `docs/plans/video.md` (all of it: §1 decisions, §2 why not V4L2, §3 steps, §4
-V0's findings, §5 V1's, §6 V2's, §7 V3's first loop),
+V0 (the gates), V1 (the decoders on WebCodecs), V2 (Firefox on the page, measured), V3's first loop (H.264 where
+the browser decodes it in software) and its second (Firefox's cost and frame pacing, measured) are done and
+committed; **the next loop (the rest of V3) can start from this file.** Read first: `docs/plans/video.md` (all of it:
+§1 decisions, §2 why not V4L2, §3 steps, §4 V0's findings, §5 V1's, §6 V2's, §7 V3's first loop, §8 its second),
 docs/devices.md "virgl" (its "Video" bullet), docs/testing.md "Video over virgl", `web/virgl-video.ts`,
 `web/virgl-host.ts` (`CallQueue`), `web/video-h264.ts`, and the tools in `bench/video/`. docs/backlog.md "Upstream
 reports" has the upstream bugs V0 found (filed at the project's end, by the user).
@@ -21,37 +21,20 @@ reports" has the upstream bugs V0 found (filed at the project's end, by the user
 5. Firefox needs **no pref**: with `webpc-va` and video caps it enables VA-API on its own (plan §4).
 6. **H.264 wherever `VideoDecoder` takes it, software included** (2026-10-14, the user, whose host is Chromium on
    Linux with NVIDIA: no hardware decoding there). Done in V3's first loop (plan §7).
-7. **Next: Firefox's cost and its frame pacing** (2026-10-14, the user): the host's decoding isn't felt in Firefox on
+7. **Firefox's cost and its frame pacing** (2026-10-14, the user): the host's decoding isn't felt in Firefox on
    their PC (VP9 included, a plain `<video>` page too), while mpv with `--hwdec=vaapi` plays smoothly; and Firefox's
    playback (and scrolling, browsing generally) comes in uneven bursts, at times losing a second or more of video.
+   Measured in V3's second loop (plan §8): steady playback drops almost nothing on the Mac, V2's cost was Firefox's
+   start, no pref helps; the bursts are the guest's CPU saturated (Firefox's start, page loads) and the host's
+   synchronous JIT installs stopping every vCPU at once. **Open for the user:** a compile worker (backlog.md, JIT) is
+   a JIT change, not the video track's: whether it comes before the rest of V3.
 
 By measurement: V2 (plan §6) kept **the copy out of each `VideoFrame`** (the host decodes a picture in ~3 ms, the
 GPU worker never waited 10 ms in hardware; what Firefox drops is the guest's CPU). V3's first loop (plan §7) made
 `CallQueue` hold only a call that could see a pending picture, a software decoder's SPS say the stream's depth, and a
 drain lossless; `?gpu=swvideo` forces software decoding (`swh264` is gone).
 
-## Next loop: Firefox's cost and frame pacing (decision 7)
-
-Measured so far (plan §6, §7): with the decoding on the host Firefox keeps 4 vCPUs 54-74% busy, more than half of it
-system time, spread over its media pipeline (RDD, the content process's `MediaDecoderStateMachine`, `RemVidChild`,
-`ImageBridgeChild`, IPC, the parent's WebRender `Renderer`/`Compositor`), ~18,000 syscalls a second; mpv on the same
-clip 19-27%, no frame dropped. The guest kernel's profile is flat (scheduler, IRQs, syscall entry; copies under 1%:
-no DMA device would help, the user asked). Steps, cheapest first:
-1. **mpv against Firefox**, numbers: `avsync.ts` `CLIPS=mpv:<file>,<file>` (per-thread CPU, syscalls a second from
-   `vm.exceptions["0x15"]`, drops).
-2. **Firefox's switches**, each measured: `media.decoder.skip-to-next-key-frame.enabled=false` (Firefox skips to
-   the next key frame when decoding falls behind: the user's "a second or more lost" may be that),
-   `media.rdd-process.enabled=false` (decoding in the content process: an IPC hop less a frame), fewer content
-   processes, WebRender's compositor and pacing. A winner can become the desktop image's default (decision 2).
-3. **Syscalls by thread** in the guest (`strace -c -f -p`, or `perf trace -s`), and Firefox's user-space half
-   symbolized (55% of samples; is `memcpy` hot? then the JIT's copy loops, not a device).
-4. **The emulator's pacing**, a timeline at ~10 ms over playback and over scrolling a page: guest instructions per
-   vCPU, JIT compile time and invalidations, each worker's event-loop lag (GC, long tasks), fence round trips, and the
-   frames Firefox presented (scanout). Includes backlog.md "`vm_run_cpu` calls of 2 to 4 s under a heavy load" (the
-   user: maybe related): time inside each call split into compile, instantiation and run, long calls timestamped.
-5. The emulator's cost per syscall, if Firefox stays far from mpv after the switches.
-
-## The rest of V3: robustness and breadth (plan §3)
+## Next loop: the rest of V3, robustness and breadth (plan §3)
 
 On the dev VM where VP9 is enough (`v1.ts`, `avsync.ts` with `MEDIA=disk`), on the Mac for H.264
 (`bench/gpu/sway-mac.sh`):
@@ -81,6 +64,10 @@ CI for video commits: `scripts/ci.sh`, `ci-deqp.sh` (renderer) and `ci-debian.sh
   H.264 drained after 200 ms (flushed, the IDR period decoded again by a new decoder); given up after 1 s.
 - **Tests:** `tests/virgl-video.test.ts` (Node), `tests/virgl-browser.test.ts` (Chromium: 40 pictures a codec from
   fixtures in `tests/virgl/video-*`, made by `bench/video/fixture.ts`).
+- **Measuring Firefox** (plan §8, benchmarking.md "Guest sessions"): `load`'s processes, threads (runs, run-queue
+  wait) and `SYSCALLS=1`; `TIMELINE=1` (the vCPU timeline: host stalls); avsync.ts `VARIANTS`/`ROUNDS` (Firefox prefs
+  A/B in one boot), `NCPUS`, each second's drops (`perSecond`); `webpc-slow install` lines (results' `slow`); the
+  Mac's `vm_stat` (`sway-mac.sh`). JSON: `bench/video/results/v3c/`.
 - **Tools:** `bench/video/v1.ts` (the guest's FFmpeg, software against VA-API, framemd5), `replay.ts` and
   `replay-mac.sh` (a capture's pictures through `VideoDecoder`), `v0.ts` (Firefox on the clips, its log, screenshots),
   `bench/audio/avsync.ts` with `MEDIA=disk` (Firefox on the media disk's clips: frames and drops over the phase, the
@@ -115,5 +102,11 @@ CI for video commits: `scripts/ci.sh`, `ci-deqp.sh` (renderer) and `ci-debian.sh
 - **mpv waits to show its first picture before decoding more**: a drain at its start is normal.
 - **Count Firefox's drops over a phase, not from its start**: its first seconds drop more frames than it presents
   (avsync.ts's `quality`).
+- **Measure Firefox from 30 s after its launch** (`WARM_S=30`): its start-up work runs that long, and a phase that
+  overlaps it measures the start (V2/V3's 54-74% busy was that), not the playback.
+- **`media.rdd-process.enabled=false` never plays; `gfx.webrender.compositor.force-enabled=true` presents nothing**
+  (on virgl, sway).
+- **The Mac's memory is overcommitted** (the Lima VMs reserve 22 of 24 GiB; 7 GiB of swap used): latency there is
+  suspect while both VMs run; `sway-mac.sh` records `vm_stat` to check.
 - **The PC sampler slows the guest** (Firefox's drops doubled): drop counts from unsampled runs only; and it charges
   a chunk to the instruction after the last exit, so exit sites (`arch_counter_get_cntvct`) look hot.

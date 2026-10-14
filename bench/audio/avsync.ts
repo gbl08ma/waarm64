@@ -21,7 +21,13 @@
 // bench/video/media-disk.sh's disk instead (the page's second disk: the sync clip in VP9 and H.264 too, the trailer's
 // H.264 MP4), for the video track (docs/plans/video.md V2: VIRGL_GPU=virgl decodes VP9 and H.264 on the host, and
 // virgl,novideo in the guest). Firefox's frames and dropped frames are counted over the phase.
-// PROFILE=1 samples the guest's PCs over each clip's phase and symbolizes the kernel's (the clip's `profile`).
+// PROFILE=1 samples the guest's PCs over each clip's phase and symbolizes the kernel's (the clip's `profile`); SYSCALLS=1
+// counts the guest's syscalls by thread over it (guest-session.ts `load`: a tracepoint on every syscall, so drops only
+// from runs without it). FF_PREFS=<pref>=<value>;... adds prefs to Firefox's profile (docs/plans/video.md §8);
+// VARIANTS=<label>:<prefs>|<label>:<prefs>... plays each Firefox clip under each set of prefs in turn (FF_PREFS's syntax,
+// added to FF_PREFS; an empty set is Firefox's defaults), ROUNDS times (default 1), alternating, from a fresh prefs.js
+// each launch; their records are <clip>@<label>-r<round>. NCPUS: the machine's vCPUs (default 4). TIMELINE=1 records
+// the vCPU timeline over each phase (guest-session.ts `summarizeTimeline`; the rows in <outdir>/<clip>.timeline.json).
 // Results: <outdir>/results.json, screenshots.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { GAP_FRAMES, LATENCY, UNDERRUNS } from '../../web/audio-ring.ts';
@@ -38,17 +44,27 @@ const WARM_S = Number(process.env.WARM_S ?? 5);
 
 const disk = process.env.MEDIA === 'disk';
 const MEDIA = disk ? '/mnt/media' : '/home/alarm/media';
-const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, query: 'snd=&avprobe', disk2: disk ? '/target/video/media.ext4' : undefined });
+const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, ncpus: Number(process.env.NCPUS ?? 4), query: 'snd=&avprobe', disk2: disk ? '/target/video/media.ext4' : undefined });
 const { page, log, pasteSerial, rootShell, load, run, asUser } = s;
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), phaseS: PHASE_S };
-const save = () => writeFileSync(`${out}/results.json`, JSON.stringify(results, null, 1));
+const save = () => writeFileSync(`${out}/results.json`, JSON.stringify({ ...results, slow: s.slow }, null, 1));
 
 await rootShell();
 if (disk) await run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media; ls /mnt/media | tr "\\n" " "');
 results.info = await run('uname -r; pacman -Q firefox pipewire wireplumber virtio-snd-dkms mesa webpc-va | tr "\\n" " "; echo; lsmod | grep -o "^virtio_snd"; head -2 /proc/asound/cards | tr -s " "');
 log('info', results.info);
-// Firefox's profile (autoplay, dump, no first-run pages) and its start (`ffrun <url> <tag>`, as the user, by sway).
-await pasteSerial(String.raw`mkdir -p /home/alarm/avprofile; cat > /home/alarm/avprofile/user.js <<'EOF'
+const userPrefs = (list: string) => list.split(';').filter(Boolean).map((kv) => {
+  const [k, v] = [kv.slice(0, kv.indexOf('=')), kv.slice(kv.indexOf('=') + 1)];
+  return `user_pref("${k}", ${/^(true|false|-?\d+)$/.test(v) ? v : JSON.stringify(v)});\n`;
+}).join('');
+const prefs = userPrefs(process.env.FF_PREFS ?? '');
+const variants = (process.env.VARIANTS ?? ':').split('|').map((v) => ({ label: v.slice(0, v.indexOf(':')), prefs: v.slice(v.indexOf(':') + 1) }));
+const ROUNDS = Number(process.env.ROUNDS ?? 1);
+results.prefs = process.env.FF_PREFS;
+results.variants = variants;
+// Firefox's profile (autoplay, dump, no first-run pages, FF_PREFS; a variant's prefs on top: `ffprefs <n>`) and its
+// start (`ffrun <url> <tag>`, as the user, by sway).
+await pasteSerial(String.raw`mkdir -p /home/alarm/avprofile; cat > /home/alarm/user-base.js <<'EOF'
 user_pref("browser.dom.window.dump.enabled", true);
 user_pref("media.autoplay.default", 0);
 user_pref("media.autoplay.blocking_policy", 0);
@@ -56,11 +72,13 @@ user_pref("browser.aboutwelcome.enabled", false);
 user_pref("browser.startup.homepage_override.mstone", "ignore");
 user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
 user_pref("browser.shell.checkDefaultBrowser", false);
-EOF`);
+${prefs}EOF`);
+for (const [i, v] of variants.entries()) await pasteSerial(`cat > /home/alarm/user-v${i}.js <<'EOF'\n${userPrefs(v.prefs)}EOF`);
 await pasteSerial(String.raw`cat > /root/ff.sh <<'EOF'
+ffprefs() { cat /home/alarm/user-base.js /home/alarm/user-v$1.js > /home/alarm/avprofile/user.js; rm -f /home/alarm/avprofile/prefs.js; chown alarm:alarm /home/alarm/avprofile/user.js; }
 ffkill() { pkill -x firefox; for i in $(seq 60); do pgrep -x firefox >/dev/null || return 0; sleep 1; done; pkill -9 -x firefox; sleep 2; }
 ffrun() { rm -f /tmp/ff-$2.log; su alarm -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec 'firefox --profile /home/alarm/avprofile --kiosk $1 > /tmp/ff-$2.log 2>&1'" >/dev/null; }
-ffwait() { for i in $(seq 600); do grep -q "AVSYNC playing" /tmp/ff-$1.log 2>/dev/null && { echo playing; return; }; sleep 0.5; done; echo timeout; }
+ffwait() { for i in $(seq 240); do grep -q "AVSYNC playing" /tmp/ff-$1.log 2>/dev/null && { echo playing; return; }; sleep 0.5; done; echo timeout; }
 EOF
 chown -R alarm:alarm /home/alarm/avprofile`);
 results.sway = await s.startSway(mode === 'virgl' ? 'gles2' : 'pixman');
@@ -108,12 +126,13 @@ for (const name of CLIPS.filter((c) => c.startsWith('mpv:'))) {
   await page.waitForTimeout(WARM_S * 1000);
   const status = async () => (await run(`grep -a -o 'MPV [0-9]* [0-9]* [0-9]* [a-z0-9-]*' /tmp/mpv.log | tail -1`)).trim().split(' ');
   const s0 = await status();
-  const r = await load(clip, PHASE_S);
-  const s1 = await status();
+  let s1: string[] = [];
+  const r = await load(clip, PHASE_S, process.env.TIMELINE ? s.timeline : undefined, async () => { s1 = await status(); });
+  const timeline = process.env.TIMELINE ? await s.timelineSummary(clip) : undefined;
   const log1 = await run(`tr '\\r' '\\n' < /tmp/mpv.log | grep -a -v 'MPV [0-9]' | grep -a . | head -20`);
   await run('pkill -x mpv; sleep 1');
   const quality = s0.length >= 4 && s1.length >= 4 ? { frames: +s1[1] - +s0[1], dropped: +s1[2] - +s0[2], decoderDropped: +s1[3] - +s0[3], hwdec: s1[4] } : undefined;
-  results[clip] = { quality, status: [s0.join(' '), s1.join(' ')], log: log1, ...r };
+  results[clip] = { quality, status: [s0.join(' '), s1.join(' ')], log: log1, ...r, ...(timeline ? { timeline } : {}) };
   log(clip, 'phase', JSON.stringify(quality), 'video', JSON.stringify(r.display.renderer?.video), '\n' + log1);
   save();
 }
@@ -139,14 +158,23 @@ const quality = async (clip: string) => {
   const m = /frames=(\d+) dropped=(\d+)/.exec(await run(`grep -E "AVSYNC t=" /tmp/ff-${clip}.log | tail -1`));
   return m ? { frames: +m[1], dropped: +m[2] } : undefined;
 };
-for (const name of CLIPS.filter((c) => !c.startsWith('mpv-') && !c.startsWith('mpv:'))) {
-  const file = name.includes('.') ? name : `${name}.webm`, clip = name.replace(/\W/g, '-');
+const ffClips = CLIPS.filter((c) => !c.startsWith('mpv-') && !c.startsWith('mpv:'));
+const one = variants.length === 1 && ROUNDS === 1;
+for (const [round, vi, name] of Array.from({ length: ROUNDS }, (_, r) => variants.flatMap((_, i) => ffClips.map((c) => [r, i, c] as const))).flat()) {
+  const file = name.includes('.') ? name : `${name}.webm`, clip = name.replace(/\W/g, '-') + (one ? '' : `@${variants[vi].label}-r${round}`);
   if (!/yes/.test(await run(`test -f ${MEDIA}/${file} && echo yes`))) { log(clip, 'not in the image'); continue; }
-  await run('. /root/ff.sh; ffkill', 120_000);
+  await run(`. /root/ff.sh; ffkill; ffprefs ${vi}`, 120_000);
   await run(`. /root/ff.sh; ffrun file://${MEDIA}/avsync.html?v=${file} ${clip}`);
   const started = performance.now();
   const playing = await run(`. /root/ff.sh; ffwait ${clip}`, 330_000);
   log(clip, playing, `after ${((performance.now() - started) / 1000).toFixed(1)} s`);
+  if (!/playing/.test(playing)) {
+    // Never started (a variant Firefox can't play with): what its log ends with, and on to the next.
+    results[clip] = { playing, log: await run(`grep -v -E "Tranche|Feedback|format 0x" /tmp/ff-${clip}.log | tail -8 | cut -c1-200`) };
+    log(clip, results[clip]);
+    save();
+    continue;
+  }
   if (!/silent/.test(clip)) await page.waitForFunction(() => (window as unknown as W).__audio.context()?.state === 'running', null, { timeout: 30_000 }).catch(() => log(clip, 'the sound never started on the page'));
   await listen();
   await page.waitForTimeout(WARM_S * 1000);
@@ -154,8 +182,12 @@ for (const name of CLIPS.filter((c) => !c.startsWith('mpv-') && !c.startsWith('m
   const r0 = await ring();
   const q0 = await quality(clip);
   await page.evaluate(() => { const w = window as unknown as W; w.__flashes = []; w.__onsets = []; });
-  const r = await load(clip, PHASE_S, process.env.PROFILE ? s.sampler : undefined);
-  const q1 = await quality(clip);
+  let q1: Awaited<ReturnType<typeof quality>>;
+  const r = await load(clip, PHASE_S, process.env.PROFILE ? s.sampler : process.env.TIMELINE ? s.timeline : undefined, async () => { q1 = await quality(clip); });
+  const timeline = process.env.TIMELINE ? await s.timelineSummary(clip) : undefined;
+  // Each report over the phase as frames and drops since the one before: when Firefox drops, in bursts or evenly.
+  const series = q0 && q1 ? (await run(`grep -E "AVSYNC t=" /tmp/ff-${clip}.log | awk '{split($3,f,"="); split($4,d,"="); if (f[2]>=${q0.frames} && f[2]<=${q1.frames}) {if (n++) printf "%d:%d ", f[2]-pf, d[2]-pd; pf=f[2]; pd=d[2]}}'`))
+    .split(/\s+/).filter(Boolean).map((x) => x.split(':').map(Number)) : [];
   const profile = process.env.PROFILE ? await s.symbolize(40) : undefined;
   const { flashes, onsets } = await page.evaluate(() => { const w = window as unknown as W; return { flashes: w.__flashes ?? [], onsets: w.__onsets ?? [] }; });
   const r1 = await ring();
@@ -164,11 +196,13 @@ for (const name of CLIPS.filter((c) => !c.startsWith('mpv-') && !c.startsWith('m
   const rec = {
     hwParams: hw, ring: r1 && r0 ? { underruns: r1.underruns - r0.underruns, gapFrames: r1.gapFrames - r0.gapFrames, latencyFrames: r1.latencyFrames } : undefined, firefox: ff,
     // Over the phase: what Firefox presented and dropped.
-    quality: q0 && q1 ? { frames: q1.frames - q0.frames, dropped: q1.dropped - q0.dropped } : undefined,
+    quality: q0 && q1 ? { frames: q1.frames - q0.frames, dropped: q1.dropped - q0.dropped, worstSecond: Math.max(0, ...series.map(([, x]) => x)) } : undefined,
+    perSecond: series,
     flashes: flashes.length, onsets: onsets.length, offsetsMs: d.map((x) => +x.toFixed(1)),
     offset: d.length ? { median: +pct(d, 0.5).toFixed(1), p10: +pct(d, 0.1).toFixed(1), p90: +pct(d, 0.9).toFixed(1), min: +Math.min(...d).toFixed(1), max: +Math.max(...d).toFixed(1) } : undefined,
     ...r,
     ...(profile ? { profile } : {}),
+    ...(timeline ? { timeline } : {}),
   };
   log(clip, 'offset', JSON.stringify(rec.offset), 'ring', JSON.stringify(rec.ring), 'firefox', ff, 'phase', JSON.stringify(rec.quality), 'video', JSON.stringify(r.display.renderer?.video), 'hw', hw);
   results[clip] = rec;

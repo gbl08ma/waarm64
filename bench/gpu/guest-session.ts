@@ -7,6 +7,8 @@ import { chromiumEnv } from '../../tools/nosme.ts';
 import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import type { VideoStats } from '../../web/virgl-video.ts';
+import { SYSCALLS } from './arm64-syscalls.ts';
+import type { Timeline } from '../../web/profiler.ts';
 
 const SETTINGS_KEY = 'webpc.settings';
 
@@ -32,12 +34,45 @@ type Video = VideoStats & { ahead: number; maxWaitMs: number };
 type VmStats = { steps: number; irqs: number; exceptions: Record<string, number>; tlbMisses: number; tlbFlushes: number; jit: { flushes: number; invalidations: number; compileNs: number } };
 type VmStatus = { uptime: number; stats: VmStats };
 
-/** The guest's load script (/root/load.sh <secs> <mark>): /proc/stat's busy, user and system percent per CPU, and each
- * thread's ms of CPU a second (clock ticks are 10 ms; and the CPUs' I/O wait) as `<mark> thr <process>/<thread> user <u> sys <s>` (spaces in
- * names as `_`; the threads that used at least 10 ms a second), over `secs`. */
-const LOAD_SH = String.raw`snap() { awk '{c=$0; sub(/^[0-9]+ \(/,"",c); n=c; sub(/\) [^)]*$/,"",n); sub(/^.*\) /,"",c); split(c,f," "); split(FILENAME,p,"/"); gsub(/ /,"_",n); print p[3], p[5], n, f[12], f[13]}' /proc/[0-9]*/task/[0-9]*/stat 2>/dev/null; }
-snap > /tmp/pa; cat /proc/stat > /tmp/a; sleep $1; cat /proc/stat > /tmp/b; snap > /tmp/pb
-awk -v m=$2 -v s=$1 'NR==FNR{u[$2]=$4;k[$2]=$5;next} ($2 in u){t[$2]=$3; if($1==$2) pn[$1]=$3; pid[$2]=$1; du[$2]=($4-u[$2])*10/s; ds[$2]=($5-k[$2])*10/s} END{for(x in du) if(du[x]+ds[x]>=10) printf "%s thr %s/%s user %d sys %d\n",m,pn[pid[x]]?pn[pid[x]]:pid[x],t[x],du[x],ds[x]}' /tmp/pa /tmp/pb
+/** The guest's load script (/root/load.sh <secs> <mark> [sys]), over `secs`: /proc/stat's busy, user and system percent
+ * per CPU (and the CPUs' I/O wait) on the terminal; in /tmp/load.out, every process's ms of CPU a second (its
+ * /proc/<pid>/stat, so threads that exited count) with its live threads' runs and run-queue wait, and every thread
+ * that used at least 2 ms a second (/proc/<pid>/task/<tid>/stat's user and system ticks of 10 ms; schedstat's ns on
+ * the CPU, ns waiting to run and runs), as
+ *   P <process> cpu <ms> user <ms> sys <ms> threads <n> runs <n> wait <ms>
+ *   T <process>/<thread> cpu <ms> user <ms> sys <ms> runs <n> wait <ms>
+ * (a second each; spaces in names as `_`; read through grep, which goes on past a thread that exits mid-read where
+ * awk stops); with `sys`, the syscalls (Arch's kernel has no syscall tracepoints: a kprobe event on do_el0_svc, the
+ * number from regs[8], into a 16 MiB-a-CPU ring buffer) as `S <process>/<thread> <nr> <n>` (the top 60), `Y <nr> <n>`
+ * and `Q <process> <n>` a second, and `O <events lost>` (the buffer's overruns). */
+const LOAD_SH = String.raw`snap() { grep -H '' /proc/[0-9]*/stat /proc/[0-9]*/task/[0-9]*/stat /proc/[0-9]*/task/[0-9]*/schedstat 2>/dev/null | awk '{i=index($0,":"); split(substr($0,1,i-1),p,"/"); $0=substr($0,i+1); k=p[4]=="task"?(p[6]=="stat"?"T":"R"):"P"}
+k=="R"{print "R", p[5], $1, $2, $3; next}
+{c=$0; sub(/^[0-9]+ \(/,"",c); n=c; sub(/\) [^)]*$/,"",n); sub(/^.*\) /,"",c); split(c,f," "); gsub(/ /,"_",n); print k, k=="T"?p[5]:p[3], p[3], n, f[12], f[13]}'; }
+K=/sys/kernel/tracing
+[ "$3" = sys ] && { echo 'p:webpc/sc do_el0_svc nr=+64(%x0):u32' >> $K/kprobe_events; echo 16384 > $K/buffer_size_kb; echo > $K/trace; }
+snap > /tmp/pa; cat /proc/stat > /tmp/a
+[ "$3" = sys ] && echo 1 > $K/events/webpc/sc/enable
+sleep $1
+[ "$3" = sys ] && echo 0 > $K/events/webpc/sc/enable
+cat /proc/stat > /tmp/b; snap > /tmp/pb
+[ "$3" = sys ] && { cat $K/per_cpu/cpu*/stats | awk '/^overrun/{o+=$2} END{print "O", o}' > /tmp/sc.out; awk '/ sc: /{t=$0; sub(/ +\[[0-9]+\].*/,"",t); sub(/^.*-/,"",t); n=$NF; sub(/^nr=/,"",n); print t, n}' $K/trace >> /tmp/sc.out; echo 1408 > $K/buffer_size_kb; echo '-:webpc/sc' >> $K/kprobe_events; }
+awk -v s=$1 '
+NR==FNR{ if($1=="R"){r0[$2]=$3; w0[$2]=$4; n0[$2]=$5} else {u0[$1,$2]=$5; k0[$1,$2]=$6}; next }
+$1=="P"{ if(($1,$2) in u0){pn[$2]=$4; pu[$2]=($5-u0["P",$2])*10/s; ps[$2]=($6-k0["P",$2])*10/s}; next }
+$1=="T"{ tp[$2]=$3; tn[$2]=$4; if(($1,$2) in u0){tu[$2]=($5-u0["T",$2])*10/s; ts[$2]=($6-k0["T",$2])*10/s}; next }
+$1=="R"{ if($2 in r0){rr[$2]=($3-r0[$2])/1e6/s; rw[$2]=($4-w0[$2])/1e6/s; rn[$2]=($5-n0[$2])/s}; next }
+END{
+  for(t in tp){p=tp[t]; nt[p]++; pr[p]+=rn[t]; pw[p]+=rw[t]}
+  for(p in pn) if(pu[p]+ps[p]>=1) printf "P %s cpu %d user %d sys %d threads %d runs %d wait %d\n", pn[p], pu[p]+ps[p], pu[p], ps[p], nt[p], pr[p], pw[p] | "sort -k4 -rn"
+  close("sort -k4 -rn")
+  for(t in tp) if(rr[t]>=2) printf "T %s/%s cpu %d user %d sys %d runs %d wait %d\n", pn[tp[t]]?pn[tp[t]]:tp[t], tn[t], rr[t], tu[t], ts[t], rn[t], rw[t] | "sort -k4 -rn"
+}' /tmp/pa /tmp/pb > /tmp/load.out
+[ "$3" = sys ] && awk -v s=$1 'NR==FNR{if($1=="T"){tp[$2]=$3; tn[$2]=$4} if($1=="P") pn[$2]=$4; next}
+$1=="O"{print "O", $2; next}
+{ t=$1; c=$2; p=t in tp?(pn[tp[t]]?pn[tp[t]]:tp[t]):"?"; th=t in tn?tn[t]:t; st[p "/" th " " c]+=1/s; sy[c]+=1/s; sp[p]+=1/s }
+END{ for(x in st) printf "S %s %d\n", x, st[x] | "sort -k4 -rn | head -60"; close("sort -k4 -rn | head -60")
+  for(x in sy) if(sy[x]>=1) printf "Y %s %d\n", x, sy[x] | "sort -k3 -rn"; close("sort -k3 -rn")
+  for(x in sp) if(sp[x]>=1) printf "Q %s %d\n", x, sp[x] | "sort -k3 -rn" }' /tmp/pb /tmp/sc.out >> /tmp/load.out
 awk -v m=$2 'NR==FNR&&/^cpu/{for(i=2;i<=9;i++)a[$1,i]=$i;next} /^cpu/{t=0;for(i=2;i<=9;i++){d[i]=$i-a[$1,i];t+=d[i]}; printf "%s %s busy %d user %d sys %d iowait %d\n",m,$1,100*(t-d[5]-d[6])/t,100*(d[2]+d[3])/t,100*(d[4]+d[7]+d[8])/t,100*d[6]/t}' /tmp/a /tmp/b
 echo $2-done
 `;
@@ -58,9 +93,12 @@ export async function openSession(o: SessionOptions) {
   const warnings = new Map<string, number>();
   /** `?gpu=virgl,debug`'s trace (web/gpu-worker.ts). */
   const debugLines: string[] = [];
+  /** The host's slow events (`webpc-slow` lines: web/vm.ts's installs), with their epoch-ms times. */
+  const slow: string[] = [];
   page.on('console', (m) => {
     const t = m.text();
     if (t.startsWith('virgl-debug ')) return void debugLines.push(t.slice(12));
+    if (t.startsWith('webpc-slow ')) return void slow.push(t.slice(11));
     if (t.startsWith('virgl')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1);
   });
   const t0 = performance.now();
@@ -172,24 +210,36 @@ export async function openSession(o: SessionOptions) {
 
   let mark = 0;
   /** A phase: `secs` of the guest's /proc on the serial side, with the display's, the renderer's and the emulator's
-   * stats over the same time; `during` starts and stops something around it (a sampler). Returns the phase's record
+   * stats over the same time; `during` starts and stops something around it (a sampler), and `then` runs as the time ends
+   * (before the guest's file is read back, which takes seconds: what the caller counts over the phase). Returns the phase's record
    * (threads sorted by CPU) and screenshots the screen as <out>/<label>.png. */
-  const load = async (label: string, secs = 10, during?: { start(): Promise<void>; stop(): Promise<void> }) => {
+  const load = async (label: string, secs = 10, during?: { start(): Promise<void>; stop(): Promise<void> }, then?: () => Promise<void>) => {
     await display();
     const m = `L${++mark}`;
     const v0 = await vmStats();
     await during?.start();
-    await onSerial(`clear; sh /root/load.sh ${secs} ${m}\n`);
+    await onSerial(`clear; sh /root/load.sh ${secs} ${m}${process.env.SYSCALLS ? ' sys' : ''}\n`);
     await shows(new RegExp(`${m}-done`), (secs + 60) * 1000);
     await during?.stop();
     const v1 = await vmStats();
     const d = { ...(await display()), vm: vmDelta(v0, v1) };
     const t = await terminal();
+    await then?.();
     const cpus = [...t.matchAll(new RegExp(`${m} (cpu\\d?) busy (\\d+) user (\\d+) sys (\\d+) iowait (\\d+)`, 'g'))].map((x) => ({ cpu: x[1], busy: +x[2], user: +x[3], sys: +x[4], iowait: +x[5] }));
-    const threads = [...t.matchAll(new RegExp(`${m} thr (\\S+) user (\\d+) sys (\\d+)`, 'g'))].map((x) => ({ thread: x[1], userMs: +x[2], sysMs: +x[3] }))
-      .sort((a, b) => b.userMs + b.sysMs - a.userMs - a.sysMs);
-    const r = { cpus, threads, display: d };
-    log(label, JSON.stringify(cpus.filter((c) => c.cpu === 'cpu')), JSON.stringify(threads.slice(0, 8)), JSON.stringify(d));
+    // LOAD_SH's file (a second each): processes, threads, and with SYSCALLS=1 the syscalls by thread, by call, by process.
+    const out = await runLines('cat /tmp/load.out');
+    const fields = (l: string) => { const w = l.split(' '); return Object.fromEntries(w.slice(2).flatMap((x, i, a) => (i % 2 ? [] : [[x, +a[i + 1]]]))); };
+    const processes = out.filter((l) => l.startsWith('P ')).map((l) => ({ process: l.split(' ')[1], ...fields(l) }));
+    const threads = out.filter((l) => l.startsWith('T ')).map((l) => ({ thread: l.split(' ')[1], ...fields(l) }));
+    const name = (nr: string) => SYSCALLS[+nr] ?? nr;
+    const syscalls = process.env.SYSCALLS ? {
+      lost: +(out.find((l) => l.startsWith('O '))?.split(' ')[1] ?? 0),
+      byThread: out.filter((l) => l.startsWith('S ')).map((l) => { const [, thread, nr, n] = l.split(' '); return { thread, call: name(nr), n: +n }; }),
+      byCall: Object.fromEntries(out.filter((l) => l.startsWith('Y ')).map((l) => { const [, nr, n] = l.split(' '); return [name(nr), +n]; })),
+      byProcess: Object.fromEntries(out.filter((l) => l.startsWith('Q ')).map((l) => { const [, p, n] = l.split(' '); return [p, +n]; })),
+    } : undefined;
+    const r = { cpus, processes, threads, ...(syscalls ? { syscalls } : {}), display: d };
+    log(label, JSON.stringify(cpus.filter((c) => c.cpu === 'cpu')), JSON.stringify(processes.slice(0, 8)), JSON.stringify(d));
     await page.locator('#screen').screenshot({ path: `${o.out}/${label}.png` });
     return r;
   };
@@ -225,6 +275,23 @@ export async function openSession(o: SessionOptions) {
       await page.waitForFunction(() => (window as unknown as Hooks).__profile, null, { timeout: 30_000 });
     },
   };
+  /**
+   * The vCPU timeline (web/profiler.ts `startTimeline`: every vCPU's counters and liveness every 10 ms) as `load`'s
+   * `during`; `timelineSummary(label)` then saves its rows as <out>/<label>.timeline.json and returns `summarizeTimeline`'s.
+   */
+  type TimelineHooks = { __webpcTimeline?: (on: boolean) => void; __timeline?: Timeline };
+  const timeline = {
+    start: async () => { await page.evaluate(() => { const w = window as unknown as TimelineHooks; delete w.__timeline; w.__webpcTimeline!(true); }); },
+    stop: async () => {
+      await page.evaluate(() => (window as unknown as TimelineHooks).__webpcTimeline!(false));
+      await page.waitForFunction(() => (window as unknown as TimelineHooks).__timeline, null, { timeout: 30_000 });
+    },
+  };
+  const timelineSummary = async (label: string) => {
+    const t = await page.evaluate(() => (window as unknown as TimelineHooks).__timeline!);
+    writeFileSync(`${o.out}/${label}.timeline.json`, JSON.stringify(t));
+    return summarizeTimeline(t);
+  };
   const symbolize = async (top = 60) => {
     const samples = await page.evaluate(() => (window as unknown as Hooks).__profile!);
     let kernel = 0, user = 0, total = 0;
@@ -257,5 +324,51 @@ clear; cat > /tmp/pcs <<'EOF'
   };
 
   const close = async () => { await browser.close(); server.close(); };
-  return { page, browser, gl, log, warnings, debugLines, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, sampler, symbolize, close };
+  return { page, browser, gl, log, warnings, debugLines, slow, terminal, shows, onSerial, pasteSerial, onScreen, run, runLines, display, vmStats, vmDelta, rootShell, load, startSway, asUser, sampler, symbolize, timeline, timelineSummary, close };
+}
+
+const pctl = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : 0; };
+/**
+ * A vCPU timeline (web/profiler.ts) summed up per vCPU: millions of guest instructions a second (mean, and the 10 ms
+ * bins' p10/p50/p90 while inside `vm_run_cpu`), ms a second outside it (idle or the host's) and compiling, and the
+ * host's **stalls**: bins inside one call that retired nothing (a compile, V8's GC, a lock or a wait on the host:
+ * the guest's clock runs on meanwhile), their ms a second and the longest run of them with the compile time in it;
+ * and the calls longer than 50 ms (their start, ms from the timeline's start, ms, steps, compile ms).
+ */
+export function summarizeTimeline(t: Timeline) {
+  const w = 1 + t.ncpus * t.fields.length, nrows = t.rows.length / w, f = (k: string) => t.fields.indexOf(k);
+  const [S, C, OUT, IN, SYS] = [f('steps'), f('compileNs'), f('outNs'), f('enteredAt'), f('syscalls')];
+  const at = (r: number, c: number, k: number) => t.rows[r * w + 1 + c * t.fields.length + k];
+  const time = (r: number) => t.rows[r * w];
+  const secs = nrows > 1 ? (time(nrows - 1) - time(0)) / 1000 : 0;
+  const cpus = Array.from({ length: t.ncpus }, (_, c) => {
+    const bins: number[] = [];
+    let stallMs = 0, run = 0, runCompile = 0, worst = { ms: 0, compileMs: 0, at: 0 };
+    const calls: { atMs: number; ms: number; Msteps: number; compileMs: number }[] = [];
+    let call = { entered: 0, r: 0 };
+    for (let r = 1; r < nrows; r++) {
+      const dt = time(r) - time(r - 1), ds = at(r, c, S) - at(r - 1, c, S), dc = (at(r, c, C) - at(r - 1, c, C)) / 1e6;
+      const same = at(r, c, IN) !== 0 && at(r, c, IN) === at(r - 1, c, IN);
+      if (same) bins.push((ds / dt) / 1e3);
+      if (same && ds === 0) {
+        stallMs += dt; run += dt; runCompile += dc;
+        if (run > worst.ms) worst = { ms: run, compileMs: runCompile, at: time(r) - run - time(0) };
+      } else { run = 0; runCompile = 0; }
+      // A call ends when its entry time changes (or the vCPU left it): calls seen whole, over 50 ms.
+      if (at(r, c, IN) !== call.entered) {
+        if (call.entered && at(r - 1, c, IN) === call.entered && call.r > 0) {
+          const ms = time(r) - call.entered;
+          if (ms > 50) calls.push({ atMs: Math.round(call.entered - time(0)), ms: Math.round(ms), Msteps: +((at(r, c, S) - at(call.r - 1, c, S)) / 1e6).toFixed(1), compileMs: +((at(r, c, C) - at(call.r - 1, c, C)) / 1e6).toFixed(1) });
+        }
+        call = { entered: at(r, c, IN), r };
+      }
+    }
+    const d = (k: number) => at(nrows - 1, c, k) - at(0, c, k);
+    return {
+      cpu: c, mips: +(d(S) / secs / 1e6).toFixed(1), binMips: { p10: +pctl(bins, 0.1).toFixed(1), p50: +pctl(bins, 0.5).toFixed(1), p90: +pctl(bins, 0.9).toFixed(1) },
+      outMs: +(d(OUT) / 1e6 / secs).toFixed(1), compileMs: +(d(C) / 1e6 / secs).toFixed(1), syscalls: Math.round(d(SYS) / secs),
+      stallMs: +(stallMs / secs).toFixed(1), worstStall: { ms: Math.round(worst.ms), compileMs: +worst.compileMs.toFixed(1), atMs: Math.round(worst.at) }, longCalls: calls.slice(0, 20),
+    };
+  });
+  return { seconds: +secs.toFixed(1), rows: nrows, cpus };
 }

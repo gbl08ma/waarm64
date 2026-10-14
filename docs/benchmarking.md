@@ -174,6 +174,19 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   and symbolizes in the guest (`/proc/kallsyms`; guest-session.ts `sampler`, `symbolize`). The sampler's worker
   busy-polls and takes a host core: on the dev VM a GTK demo ran at half its speed while sampled (the 256-step
   chunks cost nothing measurable beside it).
+- **Guest sessions** (`bench/gpu/guest-session.ts`: sway-load, firefox-load, gtk4-load, avsync; on the Mac through
+  `sway-mac.sh`): a phase (`load`) records the guest's CPUs, every process's CPU (its /proc stat: threads that exited
+  count), every thread over 2 ms a second with schedstat's runs and run-queue wait (read back from a file: the serial
+  terminal holds a screenful), and the display's, renderer's and emulator's counters. `SYSCALLS=1` adds the syscalls
+  by thread (a kprobe event on `do_el0_svc` into a 16 MiB-a-CPU ring buffer: Arch's kernel has no syscall
+  tracepoints; each syscall then traps, so count drops and CPU from runs without it). `TIMELINE=1` records the **vCPU
+  timeline** (`web/timeline-worker.ts`, `window.__webpcTimeline(on)`: every vCPU's counters and liveness slot every 10
+  ms, sleeping between reads; `summarizeTimeline`: MIPS, compile and out-of-call time, and **stalls**, 10 ms bins
+  inside one `vm_run_cpu` call that retired nothing; a vCPU publishes at a chunk's end, so a stall's compile time shows
+  in the bin after it). An install of JIT code over 20 ms logs a `webpc-slow install` line (its compile,
+  instantiation, GC and size), collected into results' `slow`. `sway-mac.sh` samples the Mac's `vm_stat` each second
+  (`<name>.vmstat`): its memory is overcommitted by the Lima VMs (plans/video.md §8), which shows in latency. Firefox's
+  start-up work runs ~30 s past its window: measure steady state at least that long after a launch (`WARM_S`).
 - **perf with parallel SMP:** `--perf-prof`'s jitdump misses the code worker isolates compile (the
   guest's blocks run in the vCPU workers: 73% of samples unknown); `--perf-basic-prof` (a
   `/tmp/perf-<pid>.map`) names them. Guest blocks are thousands of symbols that round to 0.00% in

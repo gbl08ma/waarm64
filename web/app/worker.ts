@@ -14,7 +14,7 @@ import { lzCodec } from '../lz.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../snapshot-file.ts';
 import { readSnapshot, writeSnapshot } from '../snapshot.ts';
 import type { DeviceSpec } from '../devices.ts';
-import { startSampler } from '../profiler.ts';
+import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
 import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 import type { MachineName } from './machine.ts';
@@ -46,6 +46,8 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
     void suspend();
   } else if (m.type === 'profile') {
     void profile(m.on);
+  } else if (m.type === 'timeline') {
+    void timeline(m.on);
   } else if (m.type === 'stop') {
     stopping = true;
     void (async () => {
@@ -73,6 +75,18 @@ async function profile(on: boolean) {
     stopSampler = undefined;
     vm?.setChunk(0);
     post({ type: 'profile', samples: await stop() });
+  }
+}
+
+let stopTimeline: (() => Promise<Timeline>) | undefined;
+/** The vCPU timeline (web/profiler.ts `startTimeline`), for benchmarks. */
+async function timeline(on: boolean) {
+  if (on && vm && !stopTimeline) {
+    stopTimeline = await startTimeline(vm.memory, vm.counterBlocks, vm.liveBlock);
+  } else if (!on && stopTimeline) {
+    const stop = stopTimeline;
+    stopTimeline = undefined;
+    post({ type: 'timeline', timeline: await stop() });
   }
 }
 
