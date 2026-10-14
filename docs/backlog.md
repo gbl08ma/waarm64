@@ -46,7 +46,10 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - **More micro-op handlers:** FP and SIMD loads and stores (memcpy), exclusives and LSE atomics,
   EXTR, BFM run generically through `exec`; count the generic ops on a real workload first. FP itself
   runs at a sixth of the integer rate (`FMLA`/`FMADD` always take the software FMA, vector FP goes
-  lane by lane through `u128`). Tail-call dispatch (`become`, `+tail-call`) as an A/B on top.
+  lane by lane through `u128`). Tail-call dispatch (`become`, `+tail-call`) as an A/B on top. A
+  faster interpreter also moves the compile policy's trade: the interpreter's speed is what
+  compiling less costs (`bench/apps/REPORT.md` "M8: Chromium in the guest"), so a handler or two
+  can show up as a threshold that stays higher, not only as faster cold steps.
 - The reference interpreter (`interp::steps`, `VmConfig.jit` 0) still fetches and decodes each
   instruction; the MMU copy runs 35% slower than the flat one. It only runs the interpreter-only
   tests and benchmarks now.
@@ -148,6 +151,38 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   instructions, its fallback re-running the run from saved inputs; cheaper masks (float compares
   on `|x|` instead of exponent arithmetic). The same shader's guest loads spend ~11% on the TLB's
   tag load.
+- **A TLB translation memo in wasm locals** (2026-10-14). Every access on the TLB bus is a
+  direct-mapped probe: an index shift and mask, a tag load, the page-crossing OR and compare, then
+  the addend load and add — ~11 host instructions (`emit::access`), the "~11% on the TLB's tag
+  load" above and much of a hot region's memory work. Hot code revisits the same page: the stack, a
+  struct, an image row. A block could keep the last (page, addend) in two i64 locals and take them
+  when `(addr ^ cached) < 0x1000`, which is a compare and an add. **Why it is safe:** a `SYS`
+  (every TLBI, every cache and address-translation op) can only be a block's **last** instruction
+  (`End::After`, `block::end_op`), so no translation an access in the block has seen can change
+  before another access runs, and a store to a page table with no TLBI after it is already the
+  exposure the software TLB carries (the architecture's break-before-make rules are what the guest
+  follows). The memo is also more robust than the entry it bypasses: it caches the translation, not
+  the entry, so a conflicting eviction doesn't lose it. MMIO never fills it (only a successful fast
+  path does), and it is dropped at helper calls as the register locals are.
+  **Cost:** the locals pay only in blocks with more than one access (`compact_locals` declares the
+  used ones, and Liftoff zero-initializes each per call), and only on the TLB bus, not the flat
+  one. Bound it by rewriting the userspace benchmark's captured modules as the slow-arm entry above
+  did, then A/B `alpine_user_jit` and `gl_llvmpipe_jit` in Chromium.
+- **Inline double FMA** (2026-10-14). `FMADD`/`FMSUB` double stay helpers "by design"
+  ([jit.md](jit.md) "Floating point": no deterministic wasm FMA, and relaxed-simd's `madd` isn't
+  fused), and they are what the FP guest's helper histogram is left of: 6.35M `FMADD` double, plus
+  2.17M vector `FMLA` and 1.36M by element per window (`bench/interp/REPORT.md` M6 loop 6). FP is
+  the weakest path by a wide margin — the FP guest runs at 155 MIPS against the integer guest's
+  5175 — and audio decoding (Opus, the MDCT) and numerical guests are f64 FMA bound. The exact
+  product is reachable without an FMA: a Veltkamp split of `a` and `b`, the four partial products
+  and their error, a two-sum with `c` and one final rounding, all RNE f64 ops (deterministic: no
+  relaxed-simd, no host `fma`). The halfway and binade-crossing cases fall back to the helper, as
+  the other fast paths do, under the same FPOK guard (with normal inputs and a normal result,
+  Inexact is the only exception FMA can raise). Order: the scalar double form, then single (the
+  current single path rounds through RN64 and gives up at the half-way cases), then the vector
+  forms. **Measure first:** the FP guest's MIPS with the helper and with the fast path, in Node and
+  Chromium; the corpus's FP coverage is thin (cpu.md) and TestFloat's is not fused, so a
+  differential-test class for the fast path's boundary cases is required before it can be trusted.
 - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a
   third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread. **Compiling off the vCPU
   thread** was measured and not built ([jit.md](jit.md) "Tried and not kept"); revisit with a GUI
@@ -193,7 +228,26 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   hundreds of modules at different points, presumably).
 - Blocks are formed twice: decoded for the block interpreter on first sight (which gives the cache
   their length) and again at compile time.
-- Invalidation is per 4 KiB page, and `IC IALLU` drops everything.
+- **Invalidation by rewritten range, not by page** (2026-10-14): invalidation is per 4 KiB page
+  ([jit.md](jit.md) "Invalidation"), and `IC IALLU` drops everything. `IC IVAU` carries the guest's
+  exact address (`interp/sys.rs`, `Exit::Invalidate(pa)`), and glibc's `__aarch64_clear_cache` walks
+  the byte range it is given with one `ic ivau` a cache line — the address names the rewritten
+  bytes, not the page (check the aarch64 copy: it is the guest's only `ic ivau` user). Yet
+  `Cache::invalidate` drops every block filed under the page and the blocks chained to them, and a
+  forward region filed under several pages is dropped by an IC on any of them, so a guest JIT's
+  localized patch drops whatever else shares that page. The guest's own V8 issues ~3,000 ICs a
+  second (`bench/apps/REPORT.md` "M8: the block interpreter"). The per-key `(pa, n)` spans the
+  stale-code checker reads (`Cache::check`) are recorded only under `cfg.check`, so a range-based
+  drop needs them always on (or a per-page range list) before it can become an overlap test on the
+  page's keys instead of a `pages.remove`; one `ic ivau` covers its 64-byte cache line, which is
+  the granularity to take. A first cut does the compiled blocks only and keeps the decoded blocks'
+  invalidation per page (`Cache::ival_log`, each table's catch-up). **The safety argument:** the
+  blocks overlapping the rewritten bytes are still dropped, so the invariant is unchanged; what
+  changes is that a block the IC did not name survives, leaning on the same assumption the cache
+  already makes for code changed with no IC at all (the tolerant cache and the checker,
+  [jit.md](jit.md) "Invalidation and the stale-code checker"). **Measure first:** the share of ICs
+  whose range covers less than the page and the blocks dropped per IC, on the Chromium render — a
+  fresh code page's first IC covers the whole page, which is what bounds the win.
 
 ## The core with `simd128`
 
