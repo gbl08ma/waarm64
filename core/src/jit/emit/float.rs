@@ -124,15 +124,20 @@ fn guarded(c: &mut Func, cx: &Ctx, i: u32, k: usize, written: u64, fast: impl Fn
     fallback(c, cx, i, 4 * k as i64, before, written);
 }
 
-/// Pushes an i32: the float bits in local `l` are a normal number or ±0.
-fn scalar_normal_or_zero(c: &mut Func, f: F, l: u32) {
-    exp_in(c, f, l, 1);
+/// Pushes an i32: the float bits in local `l` are ±0.
+fn is_zero(c: &mut Func, f: F, l: u32) {
     c.local_get(l);
     if f.d {
         c.i64_const(1).op(0x86).op(EQZ + WC); // i64.shl
     } else {
         c.i32_const(1).op(0x74).op(EQZ); // i32.shl
     }
+}
+
+/// Pushes an i32: the float bits in local `l` are a normal number or ±0.
+fn scalar_normal_or_zero(c: &mut Func, f: F, l: u32) {
+    exp_in(c, f, l, 1);
+    is_zero(c, f, l);
     c.op(0x72); // i32.or
 }
 
@@ -230,11 +235,16 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }
             f.to_int(c);
             c.local_set(r);
-            // FPOK, normal operands (a positive one for FSQRT), a fast result.
+            // FPOK, then FSQRT: a normal positive operand and a fast result;
+            // the rest: normal or zero operands, and a fast result or an exact
+            // zero: a zero sum is always exact (a nonzero exact sum rounds to
+            // a nonzero result), a zero product or quotient only with a zero
+            // operand (the dividend). A zero divisor needs no test: x / 0 is
+            // infinite and 0 / 0 a NaN, which the result check rejects.
             c.local_get(FPOK);
-            exp_in(c, f, x, 1);
-            c.op(AND);
             if op == FSQRT_float {
+                exp_in(c, f, x, 1);
+                c.op(AND);
                 // The sign bit clear.
                 c.local_get(x);
                 if f.d {
@@ -242,11 +252,28 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 } else {
                     c.i32_const(0).op(0x4e).op(AND); // i32.ge_s
                 }
+                exp_in(c, f, r, 2);
             } else {
-                exp_in(c, f, y, 1);
+                scalar_normal_or_zero(c, f, x);
                 c.op(AND);
+                scalar_normal_or_zero(c, f, y);
+                c.op(AND);
+                exp_in(c, f, r, 2);
+                is_zero(c, f, r);
+                match op {
+                    FADD_float | FSUB_float => {}
+                    FDIV_float => {
+                        is_zero(c, f, x);
+                        c.op(AND);
+                    }
+                    _ => {
+                        is_zero(c, f, x);
+                        is_zero(c, f, y);
+                        c.op(0x72).op(AND); // i32.or
+                    }
+                }
+                c.op(0x72); // i32.or
             }
-            exp_in(c, f, r, 2);
             c.op(AND);
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }

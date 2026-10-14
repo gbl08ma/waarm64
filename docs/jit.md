@@ -455,13 +455,16 @@ interpreter's; the helper runs the instruction otherwise.
 - **Conversions:** SCVTF/UCVTF inline (RNE, can't overflow), including the forms with the integer
   in a SIMD&FP register and the vector forms; FCVTZS/FCVTZU inline for in-range non-NaN operands;
   FCVT single↔double with normal operands and a fast result.
-- **Zero operands** (vector FADD/FSUB/FMUL/FDIV/FMLA/FMLS): lanes may also be ±0 where the zero
-  case is exact too. A zero sum or difference of normal-or-zero operands is always exact (a nonzero
-  exact sum rounds to a nonzero result), so a zero result is accepted; a zero product or quotient
-  only with a zero operand (a zero divisor never: Divide by Zero); FMLA's zero result only with a
-  zero product and a zero addend (a cancellation, or an underflow, goes to the helper). llvmpipe's
-  shaders multiply and add zero lanes all the time; with the normal-only rule its FMLAs and FADDs
-  were helper calls.
+- **Zero operands** (FADD/FSUB/FMUL/FDIV scalar and vector, FNMUL, the FMA forms): operands
+  (lanes) may also be ±0 where the zero case is exact too. A zero sum or difference of
+  normal-or-zero operands is always exact (a nonzero exact sum rounds to a nonzero result), so a
+  zero result is accepted; a zero product or quotient only with a zero operand (the dividend). A
+  zero divisor never passes: the vector form wants a normal divisor, and the scalar form's result
+  check rejects x / 0 (infinite) and 0 / 0 (a NaN). Vector single FMLA's zero result only with a
+  zero product and a zero addend (a cancellation, or an underflow, goes to the helper); the other
+  FMA forms take no zero result. llvmpipe's shaders multiply and add zero lanes all the time; with
+  the normal-only rule its FMLAs and FADDs were helper calls, as the FP guest's sums started at 0
+  were.
 - **Compares** (FCMEQ/FCMGE/FCMGT, FACGE/FACGT, the compares against zero) and **FRINTN/M/P/Z**:
   no rounding and no flags while no lane is a NaN or a denormal (FZ would flush it, raising IDC),
   so no FPOK; FRINTI/FRINTX round in FPCR's mode (nearest even under FPOK; FRINTX's Inexact is set

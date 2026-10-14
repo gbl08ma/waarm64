@@ -818,3 +818,9 @@ kernel and userspace barely use FP). The algorithm's correctness is argued in ji
 models of both forms against the software FMA (`core/src/fp/tests.rs`) and the differential test's
 FP edge cases; a planted bug in each step (round to odd, Dekker's last product, either TwoSum
 error term, the product bound with and without the sign bits, FMLS's negation) failed them.
+
+**Then scalar zero operands** (2026-10-14, same session; raw data `results/m8-fma/fadd-*.json`): the
+scalar FADD/FSUB/FMUL/FNMUL/FDIV fast path takes ±0 operands and exact zero results as the vector
+one does ([docs/jit.md](../../docs/jit.md) "Zero operands"). The FP guest's last helper, `FADD`
+(0.05M per window, its sums starting at 0), is gone: 100% of its steps retire inline. Its speed is
+within noise: 710.5, 711.8, 711.7 against 711.2, 702.1, 704.9 MIPS.
