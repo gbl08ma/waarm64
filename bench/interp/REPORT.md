@@ -792,3 +792,29 @@ How it got there (`vm_dec_mmu_mips`, same build otherwise; the interpreter's 70.
 
 Native, natively everything runs through the dispatcher: Alpine's boot in the block interpreter at
 ~190 MIPS (15 s), every step in it, the same 2,856,663,287 steps.
+
+## M8: inline FMA
+
+2026-10-14, the dev VM, Chromium 153.0.8010.52, one session, the builds alternated in place of
+the served core (so every JSON's `commit` reads `f2ebe78`, dirty); raw data `results/m8-fma/`
+(and `../boot/results/m8-fma/`). Every FMA form is now inline ([docs/jit.md](../../docs/jit.md)
+"Floating point", FMA): Boldo and Melquiond's emulated FMA for doubles (an exact product from
+Veltkamp's split and Dekker's product, TwoSum, the sum's low part rounded to odd), and for
+singles the double sum rounded to odd before the demote. That's RNE f64 operations only, no
+relaxed-simd and no host `fma`. `jit_fp_mips`, eight placements, medians of the runs (IQR ≤ 14):
+
+| build | FP guest (MIPS) | helper calls per window |
+|---|---|---|
+| base (`f2ebe78`) | 197.3, 197.8, 197.2 | `FMADD` 6.34M, `FMLA` 2D 2.14M, `FMLA` by element 0.17M, `FADD` 0.05M |
+| + scalar double FMA (normal operands) | 262.0, 260.8 | `FMADD` 2.16M (singles: zero factors and midpoints), … |
+| + scalar single rounded to odd, zero factors and addends | 329.7, 329.7 | `FMLA` 2D 2.14M, … |
+| + vector double (f64x2) | 679.5, 676.2, 677.0 | `FMLA` by element 0.17M (single lanes on midpoints), `FADD` |
+| **+ vector single rounded to odd (kept)** | **713.3, 705.3, 706.8** (3.6×) | `FADD` 0.05M |
+
+Real workloads, A/B alternating:
+`gl_llvmpipe_jit` (single-precision FMLA heavy) 321.7, 331.6, 326.6 → 307.8, 308.3, 308.0 ms a
+frame (−6%, the same 484.20M steps a frame); `alpine_user_jit` 17,666 → 17,590 ms (noise: the
+kernel and userspace barely use FP). The algorithm's correctness is argued in jit.md and checked by
+models of both forms against the software FMA (`core/src/fp/tests.rs`) and the differential test's
+FP edge cases; a planted bug in each step (round to odd, Dekker's last product, either TwoSum
+error term, the product bound with and without the sign bits, FMLS's negation) failed them.

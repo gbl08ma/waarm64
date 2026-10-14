@@ -394,6 +394,34 @@ const FP_EDGES: [string, number, bigint[]][] = [
   // 1 + 2^-23 + 2^-24 - 2^-60: t = RN64 lands on the singles' midpoint, ties-to-even would pick 1 + 2^-22.
   ['fmadd s0, s1, s2, s3', 0x1f020c20, [0n, f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18)), f32bits(1 + 2 ** -23)]],
   ['fmsub s0, s1, s2, s3', 0x1f028c20, [0n, f32bits(-(1 + 2 ** -18)), f32bits(2 ** -24 * (1 - 2 ** -18)), f32bits(1 + 2 ** -23)]],
+  // Double FMA (Boldo and Melquiond's emulation): ab = 1 - 2^-60, RN(ab) = 1, c's ulp 2, so
+  // c + RN(ab) is a midpoint and only the round to odd keeps the tie from going up.
+  ['fmadd d0, d1, d2, d3 (midpoint)', 0x1f420c20, [0n, f64bits(1 + 2 ** -30), f64bits(1 - 2 ** -30), f64bits(2 ** 53 + 2)]],
+  ['fmsub d0, d1, d2, d3 (midpoint)', 0x1f428c20, [0n, f64bits(-(1 + 2 ** -30)), f64bits(1 - 2 ** -30), f64bits(2 ** 53 + 2)]],
+  ['fnmadd d0, d1, d2, d3 (midpoint)', 0x1f620c20, [0n, f64bits(1 + 2 ** -30), f64bits(1 - 2 ** -30), f64bits(-(2 ** 53 + 6))]],
+  ['fnmsub d0, d1, d2, d3 (midpoint)', 0x1f628c20, [0n, f64bits(1 + 2 ** -30), f64bits(1 - 2 ** -30), f64bits(-(2 ** 53 + 2))]],
+  // The product's lower bound, 2^-900: on it and just under it, a small addend.
+  ['fmadd d0 (product 2^-900)', 0x1f420c20, [0n, f64bits(2 ** -450 * (1 + 2 ** -30)), f64bits(2 ** -450 * (1 - 2 ** -30)), f64bits(2 ** -847 + 2 ** -899)]],
+  ['fmadd d0 (product 2^-901)', 0x1f420c20, [0n, f64bits(2 ** -451 * (1 + 2 ** -30)), f64bits(2 ** -450 * (1 - 2 ** -30)), f64bits(2 ** -848 + 2 ** -900)]],
+  // A product's error under 2^-1074 deciding a midpoint (ab = -2^-1020 (1 - 2^-60)): the helper's.
+  ['fmadd d0 (product 2^-1020 on a midpoint)', 0x1f420c20, [0n, f64bits(-(2 ** -510) * (1 + 2 ** -30)), f64bits(2 ** -510 * (1 - 2 ** -30)), f64bits(-(2 ** 53 + 2) * 2 ** -1020)]],
+  ['fmadd d0 (denormal factor)', 0x1f420c20, [0n, f64bits(2 ** -1060), f64bits(2 ** 1000), f64bits(1)]],
+  ['fmadd d0 (zero factor)', 0x1f420c20, [0n, 0n, f64bits(1.5), f64bits(1)]],
+  ['fmadd d0 (denormal addend)', 0x1f420c20, [0n, f64bits(1.5), f64bits(1.5), f64bits(2 ** -1060)]],
+  ['fmadd d0 (zero addend)', 0x1f420c20, [0n, f64bits(1 + 2 ** -52), f64bits(1 + 2 ** -52), 1n << 63n]],
+  // Veltkamp's split overflows (a near 2^1000): a NaN z, the helper.
+  ['fmadd d0 (split overflows)', 0x1f420c20, [0n, f64bits(1.5 * 2 ** 1000), f64bits(2 ** -500), f64bits(1)]],
+  ['fmadd d0 (product overflows)', 0x1f420c20, [0n, f64bits(2 ** 1000), f64bits(2 ** 100), f64bits(-1.7976931348623157e308)]],
+  ['fmadd d0 (smallest normal result)', 0x1f420c20, [0n, f64bits(2 ** -500), f64bits(1.5 * 2 ** -400), f64bits(-1.5 * 2 ** -900 + 2 ** -1021)]],
+  ['fmadd d0 (exact zero)', 0x1f420c20, [0n, f64bits(1.5), f64bits(2), f64bits(-3)]],
+  ['fmadd d0 (product 2^-901, a negative factor)', 0x1f420c20, [0n, f64bits(-(2 ** -451) * (1 + 2 ** -30)), f64bits(2 ** -450 * (1 - 2 ** -30)), f64bits(2 ** -848 + 2 ** -900)]],
+  ['fmadd d0 (0 × ∞)', 0x1f420c20, [0n, 0n, f64bits(Infinity), f64bits(1)]],
+  // Singles: the double sum exact on a midpoint (the FP guest's 1 × 0.999 + 0.5), zero and denormal factors.
+  ['fmadd s0 (exact midpoint)', 0x1f020c20, [0n, f32bits(1), f32bits(0.999), f32bits(0.5)]],
+  ['fmadd s0 (tiny addend)', 0x1f020c20, [0n, f32bits(1 + 2 ** -12), f32bits(1 + 2 ** -12), f32bits(2 ** -60)]],
+  ['fmadd s0 (zero factor)', 0x1f020c20, [0n, 1n << 31n, f32bits(0.999), f32bits(0.5)]],
+  ['fmadd s0 (denormal factor)', 0x1f020c20, [0n, 1n, f32bits(2 ** 100), f32bits(1)]],
+  ['fmadd s0 (zero addend)', 0x1f020c20, [0n, f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -23), 0n]],
   ['fcvtzs w0, s1 (2^31)', 0x1e380020, [0n, 0x4f000000n]],
   ['fcvtzs w0, s1 (-2^31)', 0x1e380020, [0n, 0xcf000000n]],
   ['fcvtzs w0, d1 (-2^31 - 0.5)', 0x1e780020, [0n, f64bits(-2147483648.5)]],
@@ -405,7 +433,20 @@ const FP_EDGES: [string, number, bigint[]][] = [
   // The same midpoint case in every lane of a vector FMLA (the values replicated).
   ['v fmla v0.4s, v1.4s, v2.4s', 0x4e22cc20, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
   ['v fmla v0.4s, v1.4s, v2.s[1]', 0x4fa21020, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
+  // (1 + 2^-12)^2 = 1 + 2^-11 + 2^-24, a midpoint, exactly; a tiny addend decides it (TwoSum's error).
+  ['v fmla v0.4s, v1.4s, v2.4s (tiny addend)', 0x4e22cc20, [f32bits(2 ** -60), f32bits(1 + 2 ** -12), f32bits(1 + 2 ** -12)]],
   ['v fmul v0.4s, v1.4s, v2.4s', 0x6e22dc20, [0n, 0x3f7fffffn, 0x00800000n]],
+  // "w …": doubles in both lanes; the double FMA's cases on f64x2.
+  ['w fmla v0.2d, v1.2d, v2.2d (midpoint)', 0x4e62cc20, [f64bits(2 ** 53 + 2), f64bits(1 + 2 ** -30), f64bits(1 - 2 ** -30)]],
+  ['w fmls v0.2d, v1.2d, v2.2d (midpoint)', 0x4ee2cc20, [f64bits(2 ** 53 + 2), f64bits(-(1 + 2 ** -30)), f64bits(1 - 2 ** -30)]],
+  ['w fmla v0.2d, v1.2d, v2.d[1] (midpoint)', 0x4fc21820, [f64bits(2 ** 53 + 2), f64bits(1 + 2 ** -30), f64bits(1 - 2 ** -30)]],
+  ['w fmla v0.2d (product 2^-901, a negative factor)', 0x4e62cc20, [f64bits(2 ** -848 + 2 ** -900), f64bits(-(2 ** -451) * (1 + 2 ** -30)), f64bits(2 ** -450 * (1 - 2 ** -30))]],
+  ['w fmla v0.2d (product 2^-1020 on a midpoint)', 0x4e62cc20, [f64bits(-(2 ** 53 + 2) * 2 ** -1020), f64bits(-(2 ** -510) * (1 + 2 ** -30)), f64bits(2 ** -510 * (1 - 2 ** -30))]],
+  ['w fmla v0.2d (product 2^-900)', 0x4e62cc20, [f64bits(2 ** -847 + 2 ** -899), f64bits(2 ** -450 * (1 + 2 ** -30)), f64bits(2 ** -450 * (1 - 2 ** -30))]],
+  ['w fmla v0.2d (zero factor)', 0x4e62cc20, [f64bits(1), 1n << 63n, f64bits(1.5)]],
+  ['w fmla v0.2d (denormal factor)', 0x4e62cc20, [f64bits(1), f64bits(2 ** -1060), f64bits(2 ** 1000)]],
+  ['w fmla v0.2d (split overflows)', 0x4e62cc20, [f64bits(1), f64bits(1.5 * 2 ** 1000), f64bits(2 ** -500)]],
+  ['w fmla v0.2d (exact zero)', 0x4e62cc20, [f64bits(-3), f64bits(1.5), f64bits(2)]],
 ];
 test('JIT vs interpreter: FP edge cases', () => {
   const { ex, jit, ca32, cb32, cpus, run } = setup(8 * FP_EDGES.length);
@@ -422,9 +463,9 @@ test('JIT vs interpreter: FP edge cases', () => {
         a.fill(0n);
         a[32] = BigInt(8 * k);
         const all = new BigUint64Array(a.buffer, a.byteOffset, CPU_BYTES / 8);
-        // "v …" cases: the 32-bit value in every lane.
+        // "v …" cases: the 32-bit value in every lane; "w …": the 64-bit value in both.
         const rep = (v: bigint) => (name.startsWith('v ') ? v | (v << 32n) : v);
-        vs.forEach((v, r) => { all[38 + 2 * r] = rep(v); all[39 + 2 * r] = name.startsWith('v ') ? rep(v) : 0n; });
+        vs.forEach((v, r) => { all[38 + 2 * r] = rep(v); all[39 + 2 * r] = name.startsWith('v ') || name.startsWith('w ') ? rep(v) : 0n; });
         [all[102], all[103]] = [fpcr, fpsr];
         new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
         const what = run(1n, false);
@@ -457,14 +498,14 @@ const HELPERS = [
 // stores on the same few registers: a dirty V local must be written back before
 // each, and dropped after the ones that write V (V registers in locals).
 const VHELPERS = [
-  (d: number, n: number) => 0x4e62cc00 | (n << 16) | (n << 5) | d, // fmla vd.2d, vn.2d, vn.2d
+  (d: number, n: number) => 0x4e60fc00 | (n << 16) | (n << 5) | d, // frecps vd.2d, vn.2d, vn.2d
   (d: number, n: number) => 0x4c408800 | (n << 5) | d, // ld2 {vd.4s, vd+1.4s}, [xn]
   (d: number, n: number) => 0x4c008800 | (n << 5) | d, // st2 {vd.4s, vd+1.4s}, [xn]
-  (d: number, n: number) => 0x1f420c00 | (n << 16) | (d << 10) | (n << 5) | d, // fmadd dd, dn, dn, dd
+  (d: number, n: number) => 0x1e664000 | (n << 5) | d, // frinta dd, dn
   (d: number, n: number) => 0x6e218800 | (n << 5) | d, // frinta vd.4s, vn.4s
   (d: number, n: number) => 0x6ea24c00 | (n << 16) | (d << 5) | d, // uqshl vd.4s, vd.4s, vn.4s
 ];
-const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 2 sources', 'FP and general register moves, conversions'].map((n) => CLASSES[n]);
+const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions'].map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
 const ALU = ['add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);

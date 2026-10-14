@@ -1,0 +1,197 @@
+{
+ "schema": 1,
+ "page": "bench/interp/index.html",
+ "date": "2026-10-14T10:08:51.855Z",
+ "commit": "f2ebe788ea79",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "jit_fp_mips_cold",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 2000000,
+    "jit": {
+     "dispatchesPerInsn": 0.0014,
+     "avgBlock": 609.28,
+     "interpretedPct": 14.548,
+     "blocks": 20,
+     "modules": 6,
+     "bytes": 63335,
+     "compileMs": 3.45,
+     "inlinePct": 87.23,
+     "inlineStepsPct": 96.83,
+     "flagsElided": 0,
+     "flagsStored": 23,
+     "condDirect": 18,
+     "condComputed": 0,
+     "condMemory": 2,
+     "blocksPerRegion": 1.35,
+     "backEdges": 11,
+     "tierUps": 4
+    }
+   },
+   "samples": [
+    38.651077395220746
+   ],
+   "median": 38.651077395220746,
+   "iqr": 0,
+   "n": 1
+  },
+  {
+   "name": "jit_fp_mips",
+   "unit": "MIPS",
+   "params": {
+    "guest": "bench/interp/guest-fp.c",
+    "chunk": 20000000,
+    "jit": {
+     "dispatchesPerInsn": 0,
+     "avgBlock": 19999994,
+     "interpretedPct": 0,
+     "blocks": 0,
+     "modules": 0,
+     "bytes": 0,
+     "compileMs": 0,
+     "inlinePct": 90.31,
+     "inlineStepsPct": 94.47,
+     "flagsElided": 0,
+     "flagsStored": 49,
+     "condDirect": 32,
+     "condComputed": 0,
+     "condMemory": 3,
+     "blocksPerRegion": 1.79,
+     "backEdges": 11,
+     "tierUps": 4,
+     "helpers": [
+      {
+       "op": "FMADD_float",
+       "calls": 6337405
+      },
+      {
+       "op": "FMLA_vec_2",
+       "calls": 2138764
+      },
+      {
+       "op": "FMLA_elt_4",
+       "calls": 168110
+      },
+      {
+       "op": "FADD_float",
+       "calls": 54577
+      }
+     ]
+    },
+    "placements": [
+     {
+      "pad": 0,
+      "samples": [
+       187.8904598745258,
+       187.96109199919417,
+       186.88095686380555,
+       188.36825992704945,
+       188.38600288190716
+      ]
+     },
+     {
+      "pad": 7424,
+      "samples": [
+       199.65061152503202,
+       199.32230409953058,
+       199.70044937355198,
+       200.2703649736151,
+       199.97000440875323
+      ]
+     },
+     {
+      "pad": 14848,
+      "samples": [
+       196.98611241893562,
+       197.55037532710404,
+       198.51116625310175,
+       198.76764061868616,
+       199.16351332948784
+      ]
+     },
+     {
+      "pad": 22272,
+      "samples": [
+       189.54651000058269,
+       189.21475877252237,
+       189.80734553568308,
+       190.20446974034957,
+       190.17734043887882
+      ]
+     },
+     {
+      "pad": 29696,
+      "samples": [
+       194.59985398239425,
+       197.2483850659521,
+       197.00551619146555,
+       197.10259195928924,
+       197.57964924958594
+      ]
+     },
+     {
+      "pad": 37120,
+      "samples": [
+       197.32622966797751,
+       197.07345921985845,
+       197.34570027484233,
+       197.12201857115886,
+       197.8435057215972
+      ]
+     },
+     {
+      "pad": 44544,
+      "samples": [
+       189.3491124260355,
+       189.3401495872654,
+       189.42084580257168,
+       188.97340203198308,
+       189.05378576371442
+      ]
+     },
+     {
+      "pad": 51968,
+      "samples": [
+       197.75547537337164,
+       198.0394098238573,
+       198.1375074348365,
+       197.8337208183564,
+       198.1964125934208
+      ]
+     }
+    ]
+   },
+   "samples": [
+    187.96109199919417,
+    199.70044937355198,
+    198.51116625310175,
+    189.80734553568308,
+    197.10259195928924,
+    197.32622966797751,
+    189.3401495872654,
+    198.0394098238573
+   ],
+   "median": 197.21441081363338,
+   "iqr": 8.466802382589776,
+   "n": 8
+  }
+ ]
+}

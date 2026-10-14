@@ -228,3 +228,203 @@ fn min_max_compare() {
         (0x3000_0000, IOC)
     );
 }
+
+/// The JIT's inline double FMA (jit/emit/float.rs), op for op: `None` where
+/// its guard sends the instruction to the helper.
+fn fma_inline(c: u64, a: u64, b: u64) -> Option<u64> {
+    let e = |x: u64| (x >> 52) & 0x7ff;
+    let (ea, eb, ec) = (e(a), e(b), e(c));
+    // No denormal operand, a zero factor or a product from 2^-900 up (its
+    // error exact). An overflow anywhere ends in an infinite or NaN z.
+    let noz = |e: u64, x: u64| (e.wrapping_sub(1) < 0x7fe) | (x << 1 == 0);
+    let ok =
+        noz(ea, a) & noz(eb, b) & noz(ec, c) & ((ea + eb >= 1146) | (a << 1 == 0) | (b << 1 == 0));
+    let (a, b, c) = (f64::from_bits(a), f64::from_bits(b), f64::from_bits(c));
+    let split = |x: f64| {
+        let g = 134217729.0 * x;
+        let h = g - (g - x);
+        (h, x - h)
+    };
+    let two_sum = |x: f64, y: f64| {
+        let s = x + y;
+        let bb = s - x;
+        (s, (x - (s - bb)) + (y - bb))
+    };
+    let ((ah, al), (bh, bl)) = (split(a), split(b));
+    let p = a * b;
+    let pl = ((ah * bh - p) + ah * bl + al * bh) + al * bl;
+    let (th, tl) = two_sum(c, p);
+    // v = tl + pl rounded to odd: RN's result, or its other neighbour when
+    // inexact and even (toward the error).
+    let (s, err) = two_sum(tl, pl);
+    let (sb, eb) = (s.to_bits(), err.to_bits());
+    let fix = (eb << 1 != 0) & (sb & 1 == 0);
+    let v = f64::from_bits(if fix {
+        sb.wrapping_add((((sb ^ eb) as i64 >> 63) | 1) as u64)
+    } else {
+        sb
+    });
+    let z = (th + v).to_bits();
+    (ok & (e(z).wrapping_sub(2) < 0x7fd)).then_some(z)
+}
+
+#[test]
+fn inline_fma_is_correctly_rounded() {
+    let mut x = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x
+    };
+    let (mut fast, mut n) = (0, 0);
+    for _ in 0..4_000_000 {
+        let r = next();
+        // Exponents near each other (cancellation, ties), mantissas with few
+        // set bits now and then (exact products, halfway sums).
+        let mant = |r: u64, k: u64| match k % 4 {
+            0 => r & ((1 << 52) - 1),
+            1 => r & 0xffff_f000_0000_0000 >> 12,
+            2 => (r & ((1 << 52) - 1)) | 0xf_ffff_ff00_0000,
+            _ => r & 0x7_ffff_ffff_ffff & !((1 << (r % 52)) - 1),
+        };
+        let base = 1023 + (r % 2200) as i64 - 1100;
+        let ex = |d: u64| ((base + d as i64 % 64 - 32).clamp(0, 0x7ff) as u64) << 52;
+        let (r1, r2, r3) = (next(), next(), next());
+        let a = (r1 & 1 << 63) | ex(r1 >> 40) | mant(r1, r2);
+        let b = (r2 & 1 << 63) | (((1023 + (r3 % 64) as i64 - 32) as u64) << 52) | mant(r2, r3);
+        let mut c = (r3 & 1 << 63) | ex((r3 >> 40).wrapping_add(base as u64)) | mant(r3, r1);
+        match r % 5 {
+            // c near -ab: massive cancellation.
+            0 => c = (-(f64::from_bits(a) * f64::from_bits(b))).to_bits() ^ (r3 & 3),
+            // c = the halfway point above RN(ab)'s neighbours.
+            1 => {
+                c = (f64::from_bits(a) * f64::from_bits(b) * 2f64.powi(54)).to_bits() ^ 1 << 63 & r1
+            }
+            2 => c = 0,
+            4 if r & 32 != 0 => {
+                let (a, b) = if r & 64 != 0 {
+                    (a & 1 << 63, b)
+                } else {
+                    (a, b & 1 << 63)
+                };
+                n += 1;
+                if let Some(z) = fma_inline(c, a, b) {
+                    fast += 1;
+                    assert_eq!(
+                        z,
+                        run(RN, |f| f.muladd(D, c, a, b)).0,
+                        "{a:#x} * {b:#x} + {c:#x}"
+                    );
+                }
+                continue;
+            }
+            // a·b = 2^k (1 - 2^-2m): RN(ab) = 2^k, its error tiny, and c with
+            // ulp 2^(k+1), so c + RN(ab) is a midpoint and a second rounding
+            // breaks the tie the wrong way.
+            3 => {
+                let (m, k) = (27 + r1 % 26, (r2 % 1600) as i64 - 800);
+                let s = |x: u64| x & 1 << 63;
+                let a = s(r1) | (1f64 + 2f64.powi(-(m as i32))).to_bits();
+                let b = s(r2) | ((1.0 - 2f64.powi(-(m as i32))) * 2f64.powi(k as i32)).to_bits();
+                let c = s(r3) | ((1023 + k + 53) as u64) << 52 | r3 & ((1 << 52) - 1);
+                n += 1;
+                if let Some(z) = fma_inline(c, a, b) {
+                    fast += 1;
+                    assert_eq!(
+                        z,
+                        run(RN, |f| f.muladd(D, c, a, b)).0,
+                        "{a:#x} * {b:#x} + {c:#x}"
+                    );
+                }
+                continue;
+            }
+            _ => {}
+        }
+        n += 1;
+        if let Some(z) = fma_inline(c, a, b) {
+            fast += 1;
+            let (want, _) = run(RN, |f| f.muladd(D, c, a, b));
+            assert_eq!(z, want, "{a:#x} * {b:#x} + {c:#x}");
+        }
+    }
+    assert!(fast > n / 3, "{fast} of {n} on the fast path");
+}
+
+/// The JIT's inline single FMA: the product exact in double, the sum rounded
+/// to odd in double, then to single (correct: 53 ≥ 24 + 2 bits).
+fn fma32_inline(c: u32, a: u32, b: u32) -> Option<u32> {
+    let e = |x: u32| (x >> 23) & 0xff;
+    let noz = |x: u32| (e(x).wrapping_sub(1) < 0xfe) | (x << 1 == 0);
+    let ok = noz(a) & noz(b) & noz(c);
+    let f = |x: u32| f32::from_bits(x) as f64;
+    let (p, c) = (f(a) * f(b), f(c));
+    let s = p + c;
+    let bb = s - p;
+    let err = (p - (s - bb)) + (c - bb);
+    let (sb, eb) = (s.to_bits(), err.to_bits());
+    let fix = (eb << 1 != 0) & (sb & 1 == 0);
+    let v = f64::from_bits(if fix {
+        sb.wrapping_add((((sb ^ eb) as i64 >> 63) | 1) as u64)
+    } else {
+        sb
+    });
+    let z = (v as f32).to_bits();
+    (ok & (e(z).wrapping_sub(2) < 0xfd)).then_some(z)
+}
+
+#[test]
+fn inline_fma32_is_correctly_rounded() {
+    let mut x = 0x2545_f491_4f6c_dd1du64;
+    let mut next = || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x
+    };
+    let (mut fast, mut n) = (0, 0);
+    for _ in 0..4_000_000 {
+        let r = next();
+        let few = |r: u64| (r as u32) & 0x7f_ffff & !((1 << (r % 23)) - 1);
+        let (r1, r2, r3) = (next(), next(), next());
+        let ex =
+            |r: u64, d: u64| ((((r >> 32) % 48) as i64 - 24 + d as i64).clamp(0, 255) as u32) << 23;
+        let mut a = (r1 as u32 & 1 << 31) | ex(r1, 127) | few(r1 >> 8);
+        let b = (r2 as u32 & 1 << 31) | ex(r2, 127) | few(r2 >> 8);
+        let mut c = (r3 as u32 & 1 << 31) | ex(r3, 127 + (r % 40)) | few(r3 >> 8);
+        match r % 6 {
+            // Small integers × 0.999 + 0.5 (the FP guest's convert): exact
+            // double sums on single midpoints.
+            0 => {
+                a = ((r1 % 25) as f32 - 12.0).to_bits();
+                c = 0.5f32.to_bits();
+            }
+            // The double-rounding case (jit-diff's FP edge): 1 + 2^-23 + 2^-24 - 2^-60.
+            1 => {
+                a = (1.0 + 2f32.powi(-18)).to_bits() ^ (r1 as u32 & 1 << 31);
+                c = (1.0 + 2f32.powi(-23)).to_bits() ^ (r1 as u32 & 1 << 31);
+                let b = (2f32.powi(-24) * (1.0 - 2f32.powi(-18))).to_bits();
+                check32(&mut n, &mut fast, c, a, b);
+                continue;
+            }
+            2 => c &= 1 << 31,
+            _ => {}
+        }
+        check32(&mut n, &mut fast, c, a, b);
+    }
+    assert!(fast > n / 3, "{fast} of {n} on the fast path");
+}
+
+/// Compares the inline single FMA with the interpreter's where it applies.
+fn check32(n: &mut u32, fast: &mut u32, c: u32, a: u32, b: u32) {
+    *n += 1;
+    if let Some(z) = fma32_inline(c, a, b) {
+        *fast += 1;
+        let (c, a, b) = (c as u64, a as u64, b as u64);
+        assert_eq!(
+            z as u64,
+            run(RN, |f| f.muladd(S, c, a, b)).0,
+            "{a:#x} * {b:#x} + {c:#x}"
+        );
+    }
+}

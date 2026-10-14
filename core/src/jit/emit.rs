@@ -31,7 +31,7 @@ mod simd;
 use core::mem::offset_of;
 use core::ops::{Deref, DerefMut};
 
-use super::wasm::{Code, I32, I64, V128};
+use super::wasm::{Code, F64, I32, I64, V128};
 use crate::cpu::Cpu;
 use crate::decode::Op;
 use crate::interp::sys::DCZID_BS;
@@ -60,6 +60,8 @@ pub const VTMP: u32 = 124;
 pub const VT: [u32; 4] = [119, 120, 121, 122];
 /// The block's FP guard (i32; `float::fpa_guard`, M6 loop 5).
 pub const FPOK: u32 = 123;
+/// f64 scratch locals (the double FMA's exact product and sums).
+pub const FT: [u32; 8] = [97, 98, 99, 113, 114, 115, 116, 117];
 /// The V registers' v128 locals, in order of first use: 49..=79, then 96
 /// (between the register locals and SHA's, and after SHA's).
 const VREGS: core::ops::RangeInclusive<u32> = 49..=79;
@@ -225,6 +227,8 @@ impl Func {
                 || crypto::I32_LOCALS.contains(&i)
             {
                 I32
+            } else if FT.contains(&i) {
+                F64
             } else if i == VTMP || VT.contains(&i) || VREGS.contains(&i) || i == VREG_LAST {
                 V128
             } else {
@@ -2904,8 +2908,10 @@ mod tests {
         assert!(has(&b, &[0x92])); // f32.add
         assert!(has(&b, &[0x20, FPOK as u8])); // local.get FPOK
         assert!(has(&b, &[0x10, 0])); // the helper, on the other arm
-        // fmadd d0: a helper call; fmadd s0: through f64 (mul, add, demote).
-        assert_eq!(emit(0x1f420c20, 0), None);
+        // fmadd d0: Veltkamp's split (f64.const 2^27 + 1), the round to odd's
+        // select; fmadd s0: through f64 (mul, add, demote).
+        let b = emit(0x1f420c20, 0).unwrap();
+        assert!(has(&b, &[0x44, 0, 0, 0, 2, 0, 0, 0xa0, 0x41]) && has(&b, &[0x1b]));
         let b = emit(0x1f020c20, 0).unwrap();
         assert!(has(&b, &[0xa2]) && has(&b, &[0xa0]) && has(&b, &[0xb6]));
         // fneg d0, d1: a bit flip, no guard.
@@ -2928,8 +2934,10 @@ mod tests {
             assert!(has(&b, &op));
         }
         assert!(has(&b, &[0xfd, 0xa3, 1]));
-        // fmla v0.2d: a helper call (no exact f64 FMA in wasm).
-        assert_eq!(emit(0x4e62cc20, 0), None);
+        // fmla v0.2d: the scalar double FMA's algorithm on f64x2: the round to
+        // odd's i64x2.shr_s (0xcc) and f64x2.ne (0x48), i64x2.all_true.
+        let b = emit(0x4e62cc20, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0xcc, 1]) && has(&b, &[0xfd, 0x48]) && has(&b, &[0xfd, 0xc3, 1]));
         // fadd v0.2d: f64x2.add, i64x2.all_true (0xc3).
         let b = emit(0x4e62d420, 0).unwrap();
         assert!(has(&b, &[0xfd, 0xf0, 1]) && has(&b, &[0xfd, 0xc3, 1]));

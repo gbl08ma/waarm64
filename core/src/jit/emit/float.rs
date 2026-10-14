@@ -124,6 +124,56 @@ fn guarded(c: &mut Func, cx: &Ctx, i: u32, k: usize, written: u64, fast: impl Fn
     fallback(c, cx, i, 4 * k as i64, before, written);
 }
 
+/// Pushes an i32: the float bits in local `l` are a normal number or ±0.
+fn scalar_normal_or_zero(c: &mut Func, f: F, l: u32) {
+    exp_in(c, f, l, 1);
+    c.local_get(l);
+    if f.d {
+        c.i64_const(1).op(0x86).op(EQZ + WC); // i64.shl
+    } else {
+        c.i32_const(1).op(0x74).op(EQZ); // i32.shl
+    }
+    c.op(0x72); // i32.or
+}
+
+/// f64 add, sub, mul.
+const F_ADD: u8 = 0xa0;
+const F_SUB: u8 = 0xa1;
+const F_MUL: u8 = 0xa2;
+
+/// TwoSum of f64 locals `u` and `w` (Knuth): s = RN(u + w) into local `s`,
+/// and pushes the error, u + w - s exactly: (u - (s - bb)) + (w - bb), bb = s - u.
+fn two_sum(c: &mut Func, u: u32, w: u32, s: u32, bb: u32) {
+    c.local_get(u).local_get(w).op(F_ADD).local_tee(s);
+    c.local_get(u).op(F_SUB).local_set(bb);
+    c.local_get(u)
+        .local_get(s)
+        .local_get(bb)
+        .op(F_SUB)
+        .op(F_SUB);
+    c.local_get(w).local_get(bb).op(F_SUB).op(F_ADD);
+}
+
+/// Pops the error [`two_sum`] pushed (into f64 local `e`) and pushes the
+/// bits of the sum, in f64 local `s`, rounded to odd (`sb` an i64 scratch):
+/// s, or (inexact and s even) s's other neighbour, toward the error: s's
+/// bits ± 1, + when the signs agree.
+fn to_odd(c: &mut Func, s: u32, e: u32, sb: u32) {
+    c.local_set(e);
+    c.local_get(s).op(0xbd).local_tee(sb); // i64.reinterpret
+    c.local_get(sb).local_get(e).op(0xbd).op(XOR + W);
+    c.i64_const(63).op(0x87).i64_const(1).op(0x84); // i64.shr_s, i64.or
+    c.i64_const(0);
+    c.local_get(e).f64_const(0.0).op(0x62); // f64.ne: inexact
+    c.local_get(sb)
+        .op(0xa7)
+        .i32_const(1)
+        .op(AND)
+        .op(EQZ)
+        .op(AND); // and even
+    c.op(0x1b).op(0x7c); // select, i64.add
+}
+
 /// Emits scalar FP instruction `i` inline if it's one this covers; false
 /// (and nothing emitted) otherwise.
 pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
@@ -200,37 +250,93 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.op(AND);
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
-        // Single precision: the product is exact in double, t = RN64(p + a),
-        // and RN32(t) is the correctly rounded sum unless t is halfway between
-        // two singles. Double precision stays a helper call (docs/jit.md "Floating point").
-        FMADD_float | FMSUB_float | FNMADD_float | FNMSUB_float if !f.d => {
+        // FMA: the exact product, its sum with the addend rounded to odd, then
+        // the final rounding (docs/jit.md "Floating point"). Single precision:
+        // the product is exact in double, and RN32 of the double sum rounded to
+        // odd is correct (53 ≥ 24 + 2 bits). Double precision: Boldo and
+        // Melquiond's emulated FMA, p + pl = a·b exactly (Veltkamp's split,
+        // Dekker's product), th + tl = c + p exactly, z = RN(th + RO(tl + pl)):
+        // exact while the product's error is (a zero factor or a product from
+        // 2^-900 up). Operands normal or zero; an overflow anywhere makes z
+        // infinite or a NaN, which the result check sends to the helper.
+        FMADD_float | FMSUB_float | FNMADD_float | FNMSUB_float => {
             fpa_guard(c);
             // o1 (21) negates the addend, o1 != o0 (15) the first factor.
             let (o1, o0) = (bit(i, 21), bit(i, 15));
-            let sign = 1i32 << 31;
             for (l, n, neg) in [(x, rn, o1 != o0), (y, rm, false), (a, ra, o1)] {
                 f.load(c, n);
                 if neg {
-                    c.i32_const(sign).op(XOR);
+                    if f.d {
+                        c.i64_const(1 << 63).op(XOR + W);
+                    } else {
+                        c.i32_const(1 << 31).op(XOR);
+                    }
                 }
                 c.local_set(l);
             }
-            let t = super::tmp(true, 0);
-            c.local_get(x).op(0xbe).op(0xbb); // f32 → f64
-            c.local_get(y).op(0xbe).op(0xbb).op(0xa2); // f64.mul
-            c.local_get(a).op(0xbe).op(0xbb).op(0xa0); // f64.add
-            c.op(0xbd).local_tee(t); // i64.reinterpret
-            c.op(0xbf).op(0xb6).op(0xbc).local_set(r); // f32.demote, reinterpret
+            let [fa, fb, fc, g, ah, al, bh, bl] = super::FT;
+            if f.d {
+                for (l, d) in [(x, fa), (y, fb), (a, fc)] {
+                    c.local_get(l).op(0xbf).local_set(d); // f64.reinterpret
+                }
+                // Veltkamp: g = (2^27 + 1)·v, h = g - (g - v), l = v - h.
+                for (v, h, l) in [(fa, ah, al), (fb, bh, bl)] {
+                    c.f64_const(134217729.0).local_get(v).op(F_MUL).local_tee(g);
+                    c.local_get(g).local_get(v).op(F_SUB).op(F_SUB).local_tee(h);
+                    c.local_get(v).local_get(h).op(F_SUB).local_set(l);
+                }
+                // p = a·b (into fa), pl = ((ah·bh - p) + ah·bl + al·bh) + al·bl (into fb).
+                let (p, pl) = (fa, fb);
+                c.local_get(fa).local_get(fb).op(F_MUL).local_set(p);
+                c.local_get(ah)
+                    .local_get(bh)
+                    .op(F_MUL)
+                    .local_get(p)
+                    .op(F_SUB);
+                c.local_get(ah).local_get(bl).op(F_MUL).op(F_ADD);
+                c.local_get(al).local_get(bh).op(F_MUL).op(F_ADD);
+                c.local_get(al)
+                    .local_get(bl)
+                    .op(F_MUL)
+                    .op(F_ADD)
+                    .local_set(pl);
+                let (th, tl, s) = (ah, al, bh);
+                two_sum(c, fc, p, th, g);
+                c.local_set(tl);
+                two_sum(c, tl, pl, s, g);
+                to_odd(c, s, g, r);
+                c.op(0xbf).local_get(th).op(F_ADD).op(0xbd).local_set(r); // z = th + v
+            } else {
+                for (l, d) in [(x, fa), (y, fb), (a, fc)] {
+                    c.local_get(l).op(0xbe).op(0xbb).local_set(d); // f32 → f64
+                }
+                c.local_get(fa).local_get(fb).op(F_MUL).local_set(fa);
+                two_sum(c, fa, fc, fb, g);
+                to_odd(c, fb, g, super::tmp(true, 0));
+                c.op(0xbf).op(0xb6).op(0xbc).local_set(r); // f32.demote, reinterpret
+            }
             c.local_get(FPOK);
             for l in [x, y, a] {
-                exp_in(c, f, l, 1);
+                scalar_normal_or_zero(c, f, l);
+                c.op(AND);
+            }
+            if f.d {
+                // The product from 2^-900 (biased exponents ea + eb ≥ 1146) or a zero factor.
+                for l in [x, y] {
+                    c.local_get(l)
+                        .i64_const(1)
+                        .op(0x86)
+                        .i64_const(53)
+                        .op(SHR_U + W); // i64.shl
+                }
+                c.op(0x7c).i64_const(1146).op(0x5a); // i64.add, i64.ge_u
+                for l in [x, y] {
+                    c.local_get(l).i64_const(1).op(0x86).op(EQZ + WC).op(0x72); // i64.shl, i32.or
+                }
                 c.op(AND);
             }
             exp_in(c, f, r, 2);
             c.op(AND);
-            // t's low 29 fraction bits aren't 1 followed by zeros.
-            c.local_get(t).i64_const(0x1fff_ffff).op(AND + W);
-            c.i64_const(0x1000_0000).op(0x52).op(AND); // i64.ne
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         // SCVTF/UCVTF from a general register: wasm's converts round to nearest
@@ -320,14 +426,13 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
 // Vector FP (M6 loop 6): the same rules lane by lane; any lane off the fast
 // path sends the whole instruction to the helper.
 
-use super::VT;
+use super::{VT, VTMP};
 
 /// SIMD opcodes (0xfd-prefixed).
 mod op {
     pub const AND: u32 = 0x4e;
     pub const OR: u32 = 0x50;
     pub const XOR: u32 = 0x51;
-    pub const ANY_TRUE: u32 = 0x53;
     pub const I32X4_ALL_TRUE: u32 = 0xa3;
     pub const I64X2_ALL_TRUE: u32 = 0xc3;
     pub const I32X4_SHR_U: u32 = 0xad;
@@ -337,6 +442,11 @@ mod op {
     pub const I64X2_SUB: u32 = 0xd1;
     pub const I64X2_LT_S: u32 = 0xd8;
     pub const I64X2_EQ: u32 = 0xd6;
+    pub const I64X2_SHL: u32 = 0xcb;
+    pub const I64X2_SHR_S: u32 = 0xcc;
+    pub const I64X2_ADD: u32 = 0xce;
+    pub const F64X2_NEG: u32 = 0xed;
+    pub const F64X2_NE: u32 = 0x48;
     /// f32x4 add, sub, mul, div; f64x2 likewise.
     pub const F32X4: [u32; 4] = [0xe4, 0xe5, 0xe6, 0xe7];
     pub const F64X2: [u32; 4] = [0xf0, 0xf1, 0xf2, 0xf3];
@@ -551,15 +661,128 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             all_lanes(c, d, q, 3);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
-        // Fused, single precision (docs/jit.md "Floating point"): each half through f64x2,
-        // t = a × b + d, a lane with t halfway between two singles to the helper.
-        FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 if !d => {
+        // Fused, double precision: the scalar double FMA's algorithm on f64x2
+        // (Veltkamp, Dekker, TwoSum, round to odd, docs/jit.md "Floating
+        // point"), its guard lane by lane. Five v128 scratch locals: the low
+        // halves of the splits are recomputed from the operands.
+        FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 if d => {
+            fpa_guard(c);
+            let neg = matches!(op, FMLS_vec_2 | FMLS_elt_4);
+            let (p, ah, bh, pl) = (ta, tb, tt, VTMP);
+            let (add, sub, mul) = (op::F64X2[0], op::F64X2[1], op::F64X2[2]);
+            let va = |c: &mut Func| {
+                vreg(c, rn);
+                if neg {
+                    c.simd(op::F64X2_NEG);
+                }
+            };
+            va(c);
+            factor(c);
+            c.simd(mul).local_set(p);
+            // Veltkamp: h = g - (g - v), g = (2^27 + 1)·v; l = v - h on the fly.
+            let k27 = splat(true, 134217729f64.to_bits());
+            for (h, v) in [(ah, &va as &dyn Fn(&mut Func)), (bh, &factor)] {
+                c.v128_const(k27);
+                v(c);
+                c.simd(mul).local_tee(tr).local_get(tr);
+                v(c);
+                c.simd(sub).simd(sub).local_set(h);
+            }
+            let low = |c: &mut Func, h: u32, v: &dyn Fn(&mut Func)| {
+                v(c);
+                c.local_get(h).simd(sub);
+            };
+            // pl = ((ah·bh - p) + ah·bl + al·bh) + al·bl.
+            c.local_get(ah)
+                .local_get(bh)
+                .simd(mul)
+                .local_get(p)
+                .simd(sub);
+            c.local_get(ah);
+            low(c, bh, &factor);
+            c.simd(mul).simd(add);
+            low(c, ah, &va);
+            c.local_get(bh).simd(mul).simd(add);
+            low(c, ah, &va);
+            low(c, bh, &factor);
+            c.simd(mul).simd(add).local_set(pl);
+            // TwoSum(c, p): th (into ah), tl (into tr); bb in bh.
+            let (th, tl, bb) = (ah, tr, bh);
+            vreg(c, rd);
+            c.local_get(p).simd(add).local_tee(th);
+            vreg(c, rd);
+            c.simd(sub).local_set(bb);
+            vreg(c, rd);
+            c.local_get(th).local_get(bb).simd(sub).simd(sub);
+            c.local_get(p)
+                .local_get(bb)
+                .simd(sub)
+                .simd(add)
+                .local_set(tl);
+            // TwoSum(tl, pl): s (into p), the error (into pl).
+            let s = p;
+            c.local_get(tl).local_get(pl).simd(add).local_tee(s);
+            c.local_get(tl).simd(sub).local_set(bb);
+            c.local_get(tl)
+                .local_get(s)
+                .local_get(bb)
+                .simd(sub)
+                .simd(sub);
+            c.local_get(pl)
+                .local_get(bb)
+                .simd(sub)
+                .simd(add)
+                .local_set(pl);
+            // v = s rounded to odd: + (((s ^ e) >> 63) | 1) where inexact and s even.
+            c.local_get(s);
+            c.local_get(s).local_get(pl).simd(op::XOR);
+            c.i32_const(63).simd(op::I64X2_SHR_S);
+            c.v128_const(splat(true, 1)).simd(op::OR);
+            c.local_get(pl).v128_const(0).simd(op::F64X2_NE);
+            c.local_get(s).v128_const(splat(true, 1)).simd(op::AND);
+            c.v128_const(0)
+                .simd(op::I64X2_EQ)
+                .simd(op::AND)
+                .simd(op::AND);
+            c.simd(op::I64X2_ADD);
+            c.local_get(th).simd(add).local_set(tr); // z = th + v
+            // Normal or zero operands, a product from 2^-900 (biased ea + eb
+            // ≥ 1146) or a zero factor, a fast result.
+            vreg(c, rn);
+            normal_or_zero(c, true);
+            factor(c);
+            normal_or_zero(c, true);
+            vreg(c, rd);
+            normal_or_zero(c, true);
+            for v in [&va as &dyn Fn(&mut Func), &factor] {
+                v(c);
+                c.i32_const(1).simd(op::I64X2_SHL);
+                c.i32_const(53).simd(op::I64X2_SHR_U);
+            }
+            c.simd(op::I64X2_ADD);
+            c.v128_const(splat(true, 1146)).simd(op::I64X2_GE_S);
+            vreg(c, rn);
+            zero_lanes(c, true);
+            factor(c);
+            zero_lanes(c, true);
+            c.simd(op::OR).simd(op::OR);
+            c.local_get(tr);
+            lanes_in(c, true, 2);
+            all_lanes(c, true, q, 5);
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
+        }
+        // Fused, single precision (docs/jit.md "Floating point"): each half
+        // through f64x2, the product exact, its sum with the addend rounded to
+        // odd (TwoSum, as the scalar form), then demoted: correct, 53 ≥ 24 + 2.
+        FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 => {
             fpa_guard(c);
             let neg = matches!(op, FMLS_vec_2 | FMLS_elt_4);
             let halves: &[bool] = if q { &[false, true] } else { &[false] };
+            let (add, sub) = (op::F64X2[0], op::F64X2[1]);
+            let (p, a) = (VTMP, tr);
             for (&hi, &t) in halves.iter().zip(&[ta, tb]) {
-                // promote(half of Vn (negated for FMLS)) × promote(half of the
-                // factor) + promote(half of Vd).
+                // p = promote(half of Vn (negated for FMLS)) × promote(half of
+                // the factor), a = promote(half of Vd).
                 for step in 0..3 {
                     match step {
                         0 => vreg(c, rn),
@@ -574,14 +797,38 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                         c.shuffle(core::array::from_fn(|b| 8 + b as u8 % 8));
                     }
                     c.simd(op::PROMOTE);
-                    // × after the factor, + after the addend.
                     match step {
-                        1 => c.simd(op::F64X2[2]),
-                        2 => c.simd(op::F64X2[0]),
+                        1 => c.simd(op::F64X2[2]).local_set(p),
+                        2 => c.local_set(a),
                         _ => c,
                     };
                 }
-                c.local_set(t);
+                // TwoSum: s = p + a (into t), bb = s - p (in tt), the error
+                // (into a) = (p - (s - bb)) + (a - bb).
+                c.local_get(p).local_get(a).simd(add).local_tee(t);
+                c.local_get(p).simd(sub).local_set(tt);
+                c.local_get(p)
+                    .local_get(t)
+                    .local_get(tt)
+                    .simd(sub)
+                    .simd(sub);
+                c.local_get(a)
+                    .local_get(tt)
+                    .simd(sub)
+                    .simd(add)
+                    .local_set(a);
+                // t rounded to odd: + (((s ^ e) >> 63) | 1) where inexact and s even.
+                c.local_get(t);
+                c.local_get(t).local_get(a).simd(op::XOR);
+                c.i32_const(63).simd(op::I64X2_SHR_S);
+                c.v128_const(splat(true, 1)).simd(op::OR);
+                c.local_get(a).v128_const(0).simd(op::F64X2_NE);
+                c.local_get(t).v128_const(splat(true, 1)).simd(op::AND);
+                c.v128_const(0)
+                    .simd(op::I64X2_EQ)
+                    .simd(op::AND)
+                    .simd(op::AND);
+                c.simd(op::I64X2_ADD).local_set(t);
             }
             // r = the demoted halves side by side.
             c.local_get(ta).simd(op::DEMOTE);
@@ -595,7 +842,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }));
             c.local_set(tr);
             // Normal or zero operands; a fast result, or an exact zero (a zero
-            // product and addend); then no midpoint (a zero t isn't one).
+            // product and addend).
             vreg(c, rn);
             normal_or_zero(c, false);
             factor(c);
@@ -613,13 +860,6 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             zero_lanes(c, false);
             c.simd(op::AND).simd(op::OR);
             all_lanes(c, false, q, 4);
-            for &t in &[ta, tb][..halves.len()] {
-                c.local_get(t)
-                    .v128_const(splat(true, 0x1fff_ffff))
-                    .simd(op::AND);
-                c.v128_const(splat(true, 0x1000_0000)).simd(op::I64X2_EQ);
-                c.simd(op::ANY_TRUE).op(EQZ).op(AND);
-            }
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // SCVTF/UCVTF, 32-bit lanes: wasm's converts round to nearest even.

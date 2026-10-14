@@ -168,21 +168,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   used ones, and Liftoff zero-initializes each per call), and only on the TLB bus, not the flat
   one. Bound it by rewriting the userspace benchmark's captured modules as the slow-arm entry above
   did, then A/B `alpine_user_jit` and `gl_llvmpipe_jit` in Chromium.
-- **Inline double FMA** (2026-10-14). `FMADD`/`FMSUB` double stay helpers "by design"
-  ([jit.md](jit.md) "Floating point": no deterministic wasm FMA, and relaxed-simd's `madd` isn't
-  fused), and they are what the FP guest's helper histogram is left of: 6.35M `FMADD` double, plus
-  2.17M vector `FMLA` and 1.36M by element per window (`bench/interp/REPORT.md` M6 loop 6). FP is
-  the weakest path by a wide margin — the FP guest runs at 155 MIPS against the integer guest's
-  5175 — and audio decoding (Opus, the MDCT) and numerical guests are f64 FMA bound. The exact
-  product is reachable without an FMA: a Veltkamp split of `a` and `b`, the four partial products
-  and their error, a two-sum with `c` and one final rounding, all RNE f64 ops (deterministic: no
-  relaxed-simd, no host `fma`). The halfway and binade-crossing cases fall back to the helper, as
-  the other fast paths do, under the same FPOK guard (with normal inputs and a normal result,
-  Inexact is the only exception FMA can raise). Order: the scalar double form, then single (the
-  current single path rounds through RN64 and gives up at the half-way cases), then the vector
-  forms. **Measure first:** the FP guest's MIPS with the helper and with the fast path, in Node and
-  Chromium; the corpus's FP coverage is thin (cpu.md) and TestFloat's is not fused, so a
-  differential-test class for the fast path's boundary cases is required before it can be trusted.
 - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a
   third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread. **Compiling off the vCPU
   thread** was measured and not built ([jit.md](jit.md) "Tried and not kept"); revisit with a GUI

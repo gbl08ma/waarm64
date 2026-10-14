@@ -132,7 +132,7 @@ from 2026-10-02 (`bench/boot/REPORT.md` "M8: regions across pages"; before that 
 | Alpine userspace | 20.5 s (compress 2.4, Lua 3.7, churn 2.0, SQLite 2.9); **14.6 s on the Mac host** (1.9, 3.2, 1.1, 2.3) | 11.2 s | 2.9 s (hvf) |
 | Debian 13 boot to power-off | 42.2 s | 31.3 s | 2.4 s (hvf) |
 | CoreMark, user mode | 10,080 it/s | 12,500 | 61,111 |
-| integer / FP guest | 5175 / 155 MIPS | | |
+| integer / FP guest | 5175 / 155 MIPS; FP guest 707 MIPS from 2026-10-14 (inline FMA, `bench/interp/REPORT.md` "M8: inline FMA") | | |
 | EL1 guest, MMU off / on | 4932 / 4045 MIPS | | |
 | `openssl speed` 16 KiB: AES-128-GCM / AES-128-CBC / SHA-256 | 232 / 151 / 298 MB/s | | |
 

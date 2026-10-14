@@ -266,7 +266,7 @@ start one target must get ALREADY_ON or ON_PENDING).
   It caught all three rustc/LLVM `simd128` miscompiles. The V registers live in locals: only
   sequences (and regions) see a dirty one not written back before a helper or one not dropped
   after it, so "NEON, FP and V helpers" mixes inline NEON, FP and V loads and stores with
-  helper-only words on the same V registers (FMLA on doubles, LD2/ST2, FMADD on doubles,
+  helper-only words on the same V registers (FRECPS on doubles, LD2/ST2, scalar and vector
   FRINTA, UQSHL), from whole registers of FP lanes. On the flat bus a load's slow path never
   returns normally (outside RAM is an abort), so a load that keeps its V destination's stale
   local after the helper shows only under the MMU: the Alpine userspace boot caught it, lockstep

@@ -428,10 +428,30 @@ interpreter's; the helper runs the instruction otherwise.
   operation in RNE gives the ARM result; the result's exponent is checked (above 1, below all
   ones), and a failure sends the instruction to the helper with the operands untouched. Vector
   forms test every lane.
-- **FMA:** single precision computes the exact product in double, t = RN64(p + c), and RN32(t)
-  is correct unless t is exactly halfway between two singles (low 29 fraction bits 1 then zeros),
-  which goes to the helper. **Double FMA stays a helper by design** (no deterministic wasm FMA;
-  relaxed-simd's `madd` isn't one).
+- **FMA** (FMADD/FMSUB/FNMADD/FNMSUB, FMLA/FMLS vector and by element, single and double),
+  in RNE f64 operations only (wasm has no deterministic FMA; relaxed-simd's `madd` may not fuse):
+  the exact product, its sum with the addend rounded to odd, then one final rounding.
+  - *Single:* the product of two singles is exact in double, and RN32 of the double sum rounded
+    to odd is the correctly rounded FMA (53 ≥ 24 + 2 bits). The sum's error comes from TwoSum
+    (Knuth: six ops), and rounding to odd is integer arithmetic on the RNE sum: if the error is
+    nonzero and the sum's last bit is even, its bits step ±1 toward the error (+ when the signs
+    agree), so the result is the odd neighbour.
+  - *Double:* Boldo and Melquiond's emulated FMA ("Emulation of FMA and correctly rounded sums:
+    proved algorithms using rounding to odd", IEEE TC 2008; glibc's soft `fma` does the same with
+    a rounding-mode switch): Veltkamp's split and Dekker's product give p + pl = a·b exactly,
+    TwoSum gives th + tl = c + p, and z = RN(th + RO(tl + pl)). Exact while every partial product
+    is (a·b from 2^-900 up, biased ea + eb ≥ 1146, or a zero factor; the true limit is near
+    2^-970). An overflow anywhere (the split's 2^27 + 1 scaling near 2^996, the product) makes z
+    infinite or a NaN, which the result check sends to the helper, so there's no upper bound to
+    test. The vector form is the same on f64x2 (its five v128 scratch locals don't hold both
+    splits, so the low halves are recomputed from the operands); the scalar form uses eight f64
+    scratch locals (`FT`).
+  - *Guard:* FPOK, operands normal or zero, a fast result (vector single: also an exact zero from a
+    zero product and addend). No midpoint or binade cases fall back.
+  - *Tested* by models of both algorithms against the software FMA (`core/src/fp/tests.rs`, 4M
+    cases each, midpoints by construction) and the differential test's FP edge cases (midpoints,
+    the product bound, an error under 2^-1074 deciding a midpoint, zero, denormal and 0 × ∞
+    operands, split overflow); planted bugs in each step fail them.
 - **Conversions:** SCVTF/UCVTF inline (RNE, can't overflow), including the forms with the integer
   in a SIMD&FP register and the vector forms; FCVTZS/FCVTZU inline for in-range non-NaN operands;
   FCVT single↔double with normal operands and a fast result.
