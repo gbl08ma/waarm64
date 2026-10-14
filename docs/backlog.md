@@ -58,14 +58,28 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   others catch up at their next miss: all four install the same bytes together, each waiting the full time (V8's
   module cache has them wait on one compile). With Firefox starting and loading pages on the desktop guest: on the dev
   VM 31 installs of ≥ 20 ms in ~8 minutes, mostly four at once, 20-58 ms for modules of 1-5 KB, up to 739 ms; on the
-  Mac 26-513 ms, 3 a session. The guest's clock runs on (and a vCPU spinning on a lock the stalled one holds stops too):
-  the "bursts" the user sees while browsing. Why V8 takes so long for a few KB is unmeasured (a lock, or `mprotect`
-  against the threads running wasm, are guesses: a Chromium microbenchmark of concurrent same-bytes compiles beside
-  busy wasm threads would say; in Node under CI's concurrent load it's `new WebAssembly.Instance` that took 40-92 ms
-for one-function modules, so not compiling as such). The fix whatever the cause is jit.md's compile worker (compile off the vCPU threads,
-  post the `WebAssembly.Module`, the vCPU only instantiates, interpreting meanwhile). The timeline
-  (`TIMELINE=1`) and the `webpc-slow install` lines measure it; the earlier "`vm_run_cpu` calls of 2 to 4 s under a
-  heavy load" (2026-10-03, a 4-vCPU `go build`) is likely the same.
+  Mac 26-513 ms, 3 a session. Why V8 takes so long for a few KB is unmeasured (a lock, or `mprotect` against the
+  threads running wasm, are guesses: a Chromium microbenchmark of concurrent same-bytes compiles beside busy wasm
+  threads would say; in Node under CI's concurrent load it's `new WebAssembly.Instance` that took 40-92 ms for
+  one-function modules, so not compiling as such).
+  - **What it costs, video in a browser most of all.** The whole guest stops while its clock runs on, and a vCPU
+    spinning on a lock the stalled one holds stops too (a timeline caught two vCPUs crawling in lockstep through a
+    270 ms stall of a third). Batches come with new guest code, so the installs cluster where a browser runs code it
+    hasn't run yet: its start, a page loading, a site's scripts. On the clip page alone, steady playback had none and
+    dropped 0-5 frames in 20 s; a real video site runs its player, page and ads' scripts beside the video, so its
+    installs land during playback (inferred, not measured: the next measurement is a video page with that activity).
+    Firefox's video goes through four processes and a dozen threads (demuxer, decoder in RDD, the content process's
+    state machine, the parent's compositor and WebRender), so any stopped vCPU stops some stage of every frame, while
+    the sound keeps playing on the host's AudioWorklet from what the guest already queued: at 24-30 frames a second a
+    20-58 ms stop costs a frame or two, the 739 ms one ~20, seen as the video freezing and jumping ahead with the
+    sound running on (the user's "a second or more lost"), and scrolling and input pause alike. The guest's own CPU
+    (saturated through Firefox's start and page loads) is the other half of the bursts; this half is the host's.
+  - **The fix whatever the cause** is jit.md's compile worker (compile off the vCPU threads, post the
+    `WebAssembly.Module`, the vCPU only instantiates, interpreting meanwhile); staggering the catch-up (a vCPU
+    installing a module only when it runs into its blocks) might at least stop the four-at-once, though a module
+    imports earlier ones, so a table can't simply skip ahead. The timeline
+    (`TIMELINE=1`) and the `webpc-slow install` lines measure it; the earlier "`vm_run_cpu` calls of 2 to 4 s under a
+    heavy load" (2026-10-03, a 4-vCPU `go build`) is likely the same.
 
 - **llvmpipe under the JIT** ([plans/graphics.md](plans/graphics.md) §16): sway compositing
   through Mesa's software GL kept four vCPUs at ~54% for ~3 frames a second at 1376×762 (pixman:
