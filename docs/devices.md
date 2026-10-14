@@ -340,14 +340,23 @@ mode (and natively in realtime mode: std has no CSPRNG).
   saved; a restore in a browser that can't back them (`capsBacked`) keeps them for the guest and turns 3D off (new
   contexts refused) rather than refusing the machine. The restore tells the host what the scanout shows (the GPU
   worker draws the screen on a 3D machine).
-- **Video** ([plans/video.md](plans/video.md); `?gpu=video`, off by default): the caps' `video_caps` list the decoders
+- **Video** ([plans/video.md](plans/video.md); on with 3D, `?gpu=novideo` off): the caps' `video_caps` list the decoders
   the browser's `VideoDecoder` takes (H.264 Constrained Baseline, Main and High, VP9 profile 0; `web/virgl-video.ts`
-  `probeVideo`, in the GPU worker before it answers), so the guest's Mesa offers VA-API decoding. The renderer keeps
-  each context's codecs and video buffers (CCMD 53-61: a buffer is its planes' resources) and reads each picture's
-  parameters and data from the guest's staging buffers; the decoder is a null one (pictures counted, planes not
-  written) until V1. Mesa's wire numbers its profiles by its own `enum pipe_video_profile` (26.2's in `PROFILE`),
-  which isn't stable across releases. A capture includes DECODE_BITSTREAM's buffers. `capsBacked` wants every decoder
-  the guest was told of.
+  `probeVideo`, in the GPU worker before it answers, which also notes which are in hardware), so the guest's Mesa offers
+  VA-API decoding. The renderer keeps each context's codecs and video buffers (CCMD 53-61: a buffer is its planes'
+  resources, R8 and RG8) and reads each picture's parameters and data from the guest's staging buffers. `VideoContext`
+  makes a chunk of each END_FRAME (H.264 rebuilt as Annex B with our SPS and PPS by `H264Stream`, `web/video-h264.ts`;
+  VP9 as sent) for one `VideoDecoder` per codec (`optimizeForLatency`; recreated at the next key picture after an
+  error), and writes each frame's Y and interleaved U/V into the buffer's planes (`VirglRenderer.writePicture`).
+  Mesa's `end_frame` makes no fence, so the GPU worker's `CallQueue` (`web/virgl-host.ts`) holds every later call
+  while a picture is pending, except video submits and resource creation, which run ahead; a picture still out after
+  1 s is given up (logged; the guest sees the old planes). The SPS's reorder depth is 0 for a hardware decoder and
+  left out in software, where FFmpeg learns it and may hold pictures: those are drained after 200 ms idle. VP9
+  frames with `show_frame` 0 give no output and aren't waited for. `renderer.videoStats` (decoded, dropped, errors)
+  and the queue's `ahead` and `maxWaitMs` go out in render-stats. Mesa's wire numbers its profiles by its own
+  `enum pipe_video_profile` (26.2's in `PROFILE`), which isn't stable across releases. A capture includes
+  DECODE_BITSTREAM's buffers. `capsBacked` wants every decoder the guest was told of. The guest needs our `webpc-va`
+  (NV12 surfaces only; plans/video.md §1), in the desktop image.
 - No native twin (`core/tests/common/gpu.rs` is 2D): the device and renderer are tested in Node (`tests/gpu.test.ts`,
   `tests/virgl.test.ts` on a recording WebGL2) and Chromium (`tests/virgl-browser.test.ts`).
 

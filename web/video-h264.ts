@@ -199,8 +199,14 @@ export function codecString(profile: number, level: number) {
 /**
  * An SPS (id 0) for these parameters and a coded size in macroblocks. `level` is the codec's (Mesa's VA frontend
  * leaves the SPS's level_idc 0 and creates the codec with a level for the picture size).
+ *
+ * `reorder` is what the SPS says of output order (docs/plans/video.md §5). `'none'` (a hardware decoder: Chromium's
+ * own H.264 decoder honors it) writes max_num_reorder_frames 0, so every picture comes out as soon as it's decoded.
+ * `'learn'` (a software decoder: FFmpeg) writes no bitstream restriction: FFmpeg drops the pictures that come after
+ * one it has shown in display order when told 0, and without the restriction it learns the reorder depth from the
+ * POCs, as the guest's own FFmpeg does, so it holds a picture no longer than the guest waits for it.
  */
-export function buildSps(p: H264Params, mbWidth: number, mbHeight: number, level = 0): Uint8Array {
+export function buildSps(p: H264Params, mbWidth: number, mbHeight: number, level = 0, reorder: H264Reorder = 'none'): Uint8Array {
   const s = p.sps;
   const [idc, flags] = profileIdc(p.profile);
   const w = new BitWriter();
@@ -243,7 +249,8 @@ export function buildSps(p: H264Params, mbWidth: number, mbHeight: number, level
   w.flag(0); // nal_hrd_parameters_present_flag
   w.flag(0); // vcl_hrd_parameters_present_flag
   w.flag(0); // pic_struct_present_flag
-  w.flag(1); // bitstream_restriction_flag
+  w.flag(reorder === 'none'); // bitstream_restriction_flag
+  if (reorder === 'learn') return w.finish();
   w.flag(1); // motion_vectors_over_pic_boundaries_flag
   w.ue(2); // max_bytes_per_pic_denom
   w.ue(1); // max_bits_per_mb_denom
@@ -253,6 +260,8 @@ export function buildSps(p: H264Params, mbWidth: number, mbHeight: number, level
   w.ue(Math.max(1, s.maxNumRefFrames)); // max_dec_frame_buffering
   return w.finish();
 }
+
+export type H264Reorder = 'none' | 'learn';
 
 const flat = (l: number[]) => l.every((x) => x === 16);
 
@@ -350,11 +359,13 @@ export class H264Stream {
   private mbWidth: number;
   private mbHeight: number;
   private level: number;
+  private reorder: H264Reorder;
 
-  constructor(width: number, height: number, level = 0) {
+  constructor(width: number, height: number, level = 0, reorder: H264Reorder = 'none') {
     this.mbWidth = Math.ceil(width / 16);
     this.mbHeight = Math.ceil(height / 16);
     this.level = level;
+    this.reorder = reorder;
   }
 
   /** The chunk for one picture: its desc and its bitstream (Annex B slices). */
@@ -366,7 +377,7 @@ export class H264Stream {
     if (!slices.length) throw new Error('H.264: a picture without slices');
     const key = slices.some((n) => (n[0] & 0x1f) === 5);
     const out: Uint8Array[] = [];
-    const sps = buildSps(p, this.mbWidth, this.mbHeight, this.level);
+    const sps = buildSps(p, this.mbWidth, this.mbHeight, this.level, this.reorder);
     const spsChanged = !this.sps || !same(this.sps, sps);
     if (spsChanged || key) {
       this.sps = sps;

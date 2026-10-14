@@ -29,8 +29,9 @@ export function compileCorpus(corpus: string) {
 }
 
 import { VirglRenderer } from '../../web/virgl-renderer.ts';
-import { localHost } from '../../web/virgl-host.ts';
-import { replay } from '../../web/virgl-replay.ts';
+import { CallQueue, localHost, runCall, type HostCall } from '../../web/virgl-host.ts';
+import { replay, replayAsync } from '../../web/virgl-replay.ts';
+import { probeVideo, webCodecsDecoder, type DecodedPicture } from '../../web/virgl-video.ts';
 
 const fromBase64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 function toBase64(b: Uint8Array) {
@@ -43,6 +44,101 @@ function toBase64(b: Uint8Array) {
 export function replayTrace64(trace: string, read?: number) {
   const r = replayTrace(fromBase64(trace), read);
   return { ...r, pixels: undefined, pixels64: r.pixels ? toBase64(Uint8Array.from(r.pixels)) : null };
+}
+
+/**
+ * A video fixture (bench/video/fixture.ts) replayed through the device into a renderer decoding with WebCodecs, as
+ * the GPU worker does (its CallQueue, timer and all): each picture's planes are read back as it's written and its
+ * visible `w`×`h` hashed as I420 (SHA-256). With `orig` (an H.264 stream's first pictures, Annex B), also the
+ * browser's own decode of it, hashed the same way: what the planes must hold where its decoder isn't FFmpeg's.
+ */
+export async function replayVideo64(trace: string, w: number, h: number, orig?: string) {
+  const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
+  const log: string[] = [];
+  const { hardware } = await probeVideo();
+  const shots: Promise<string>[] = [];
+  let r!: VirglRenderer;
+  let q!: CallQueue<HostCall>;
+  const t0 = performance.now();
+  const timer = setInterval(() => q?.tick(), 20);
+  const settled = async () => { while (q.length || r.videoWaiting) await new Promise((ok) => setTimeout(ok, 5)); };
+  try {
+    await replayAsync(fromBase64(trace), (ram) => {
+      r = new VirglRenderer(gl, { ram, log: (m) => log.push(m), video: { decoders: webCodecsDecoder, hardware } });
+      // Each picture's planes, read back as it's written (the buffers are used again).
+      const p = r as unknown as { writePicture(c: unknown, planes: number[], pic: DecodedPicture): void };
+      const write = p.writePicture.bind(r);
+      p.writePicture = (c, planes, pic) => {
+        write(c, planes, pic);
+        shots.push(sha256(i420(planes.map((id) => ({ bytes: r.readResource(id)!, width: r.resources.get(id)!.width })), w, h)));
+      };
+      q = new CallQueue<HostCall>({ run: (c) => { runCall(c, r); }, waiting: () => r.videoWaiting, drain: () => r.videoDrain(), giveUp: () => r.videoGiveUp() });
+      r.onVideoSettled = () => queueMicrotask(() => q.progress());
+      return { call: (c) => q.push(c), fence: () => undefined };
+    }, async () => { if (q.length) await settled(); });
+    // A call after the last picture waits for it, as the guest's read of it would: a decoder that holds pictures for
+    // reordering is drained then (CallQueue.tick).
+    q.push({ t: 'damage', rect: { x: 0, y: 0, w: 0, h: 0 } });
+    await settled();
+  } finally {
+    clearInterval(timer);
+  }
+  return { hashes: await Promise.all(shots), stats: { ...r.videoStats }, ahead: q.ahead, maxWaitMs: q.maxWaitMs, hardware, log, ms: performance.now() - t0, orig: orig ? await decodeOrig(fromBase64(orig), w, h, hardware) : null };
+}
+
+/** I420 of planes read back (NV12: R8 then RG8; or three R8), the top-left `w`×`h`. */
+function i420(planes: { bytes: Uint8Array; width: number }[], w: number, h: number) {
+  const cw = (w + 1) >> 1, ch = (h + 1) >> 1;
+  const out = new Uint8Array(w * h + 2 * cw * ch);
+  for (let y = 0; y < h; y++) out.set(planes[0].bytes.subarray(y * planes[0].width, y * planes[0].width + w), y * w);
+  let at = w * h;
+  if (planes.length === 2) {
+    const uv = planes[1];
+    for (const c of [0, 1]) for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) out[at++] = uv.bytes[2 * (y * uv.width + x) + c];
+  } else {
+    for (const p of planes.slice(1)) for (let y = 0; y < ch; y++) { out.set(p.bytes.subarray(y * p.width, y * p.width + cw), at); at += cw; }
+  }
+  return out;
+}
+
+async function sha256(b: Uint8Array<ArrayBuffer>) {
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', b))].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+/** The browser's decode of an H.264 stream (a chunk a picture, as the device's decoder is configured), each frame hashed. */
+async function decodeOrig(stream: Uint8Array, w: number, h: number, hardware: number[]) {
+  const { splitAnnexB } = await import('../../web/video-h264.ts');
+  const { PROFILE } = await import('../../web/virgl-video.ts');
+  const pictures: Uint8Array[][] = [];
+  for (const n of splitAnnexB(stream)) {
+    const t = n[0] & 31;
+    if ((t === 1 || t === 5) && n[1] & 0x80 && pictures.at(-1)?.some((m) => (m[0] & 31) === 1 || (m[0] & 31) === 5)) pictures.push([]);
+    (pictures.at(-1) ?? pictures[pictures.push([]) - 1]).push(n);
+  }
+  const hashes: Promise<string>[] = [];
+  const errors: string[] = [];
+  const dec = new VideoDecoder({
+    output: (f) => {
+      const raw = new Uint8Array(f.allocationSize());
+      hashes.push(f.copyTo(raw).then((layout) => {
+        const nv12 = f.format === 'NV12';
+        const planes = layout.map((l, k) => ({ bytes: raw.subarray(l.offset), width: l.stride / (nv12 && k === 1 ? 2 : 1) }));
+        f.close();
+        return sha256(i420(planes, w, h));
+      }));
+    },
+    error: (e) => errors.push(String(e)),
+  });
+  dec.configure({ codec: 'avc1.64001E', optimizeForLatency: true, hardwareAcceleration: hardware.includes(PROFILE.AVC_HIGH) ? 'prefer-hardware' : 'prefer-software' });
+  pictures.forEach((p, k) => {
+    const data = new Uint8Array(p.reduce((n, x) => n + 4 + x.length, 0));
+    let at = 0;
+    for (const x of p) { data.set([0, 0, 0, 1], at); data.set(x, at + 4); at += 4 + x.length; }
+    dec.decode(new EncodedVideoChunk({ type: p.some((x) => (x[0] & 31) === 5) ? 'key' : 'delta', timestamp: k, data }));
+  });
+  await dec.flush();
+  dec.close();
+  return { hashes: await Promise.all(hashes), errors };
 }
 
 /** Replays a trace on WebGL2 and reads back resource `read` (its RGBA as stored, rows top first; -1: the scanout's). */

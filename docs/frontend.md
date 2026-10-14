@@ -322,8 +322,10 @@ On a 3D machine (below) it should run with `WLR_RENDERER=gles2` instead: Mesa's 
 wherever the browser has WebGL2 (since G3). The Machine menu's **Graphics** (3D or 2D, kept in the browser's
 settings, applied by a restart) turns it off; the query is over the menu: `?gpu=2d` keeps the 2D path above,
 `?gpu=virgl-null` G2's null renderer, `?gpu=virgl` 3D (the menu's choice is then greyed out, as it is without WebGL2).
-`?gpu=video` (with 3D) also advertises the browser's video decoders to the guest's VA-API driver ([plans/video.md](plans/video.md); off by
-default while the renderer's decoder is a null one).
+A 3D machine also advertises the browser's video decoders (WebCodecs) to the guest's VA-API driver and decodes with
+them ([devices.md](devices.md) "virgl", [plans/video.md](plans/video.md)): VP9, and H.264 where the browser decodes it in
+hardware (`?gpu=swh264` offers software H.264 too, which stalls the guest: plans/video.md §5); `?gpu=novideo` turns
+that off.
 The page starts a **GPU worker** (`web/gpu-worker.ts`, top-level, so it has animation frames) and hands it the
 canvas instead of the machine worker. The GPU worker makes a WebGL2 context on it, builds the caps the guest will
 see from that context (`web/virgl-caps.ts`: limits, extensions, renderable formats; never more than it backs) and

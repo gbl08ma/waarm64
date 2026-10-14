@@ -9,7 +9,7 @@ cd "$(dirname "$0")/../.."
 HOST=${MAC_HOST:-macmini.lan}
 DEST=webpc-gpu-bench
 rsync -a --delete --exclude results --exclude memory bench/gpu bench/spike bench/run.ts bench/stats.ts "$HOST:$DEST/bench/"
-rsync -a tools/serve.ts tools/tailscale.ts "$HOST:$DEST/tools/"
+rsync -a tools/serve.ts tools/tailscale.ts tools/nosme.ts "$HOST:$DEST/tools/"
 rsync -a --delete --include '*/' --include '*.ts' --exclude '*' web "$HOST:$DEST/"   # flush_cost runs the backend itself (web/gpu.ts and what it imports)
 rsync -a package.json "$HOST:$DEST/"
 ssh "$HOST" "cd $DEST && export PATH=/opt/homebrew/bin:\$PATH && \

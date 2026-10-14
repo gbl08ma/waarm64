@@ -15,7 +15,7 @@
 import { E } from './gl-enums.ts';
 import { FORMATS, GL, VERTEX_FORMATS, boxBytes, type Format, SW_0, SW_1 } from './virgl-formats.ts';
 import { generate, parseTgsi, samplerUnit, uboBinding, type ProgramKey, type ProgramLayout, type SamplerKey, type Tgsi } from './virgl-tgsi.ts';
-import { VideoContext, type VideoStats } from './virgl-video.ts';
+import { VideoContext, type DecodedPicture, type DecoderFactory, type VideoStats } from './virgl-video.ts';
 
 /** A resource's guest pages: offsets into guest RAM and lengths. */
 export type Backing = { off: number; len: number }[];
@@ -165,7 +165,11 @@ export class VirglRenderer {
   private serial = 0;
   readonly stats: RendererStats = { submits: 0, commands: 0, draws: 0, errors: 0, programs: 0, uploads: 0, uploadBytes: 0, readbacks: 0, readbackBytes: 0, compileMs: 0 };
   /** The contexts' video codecs and buffers, and the pictures decoded (web/virgl-video.ts). */
-  readonly videoStats: VideoStats = { codecs: 0, buffers: 0, frames: 0, bitstreamBytes: 0, errors: 0 };
+  readonly videoStats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0 };
+  /** The video decoders (the GPU worker's WebCodecs; none: pictures are only counted) and the profiles decoded in hardware. */
+  private video?: { decoders: DecoderFactory; hardware: readonly number[] };
+  /** Called when a picture is written or given up (the GPU worker's queue goes on: `videoWaiting`). */
+  onVideoSettled?: () => void;
   private fbo: WebGLFramebuffer;
   private readFbo: WebGLFramebuffer;
   private blitProg?: { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
@@ -183,9 +187,10 @@ export class VirglRenderer {
   /** A trace of what the guest makes and draws with, each line once (`?gpu=virgl,debug`): resources, surfaces, views, draws. */
   private debug?: (m: string) => void;
 
-  constructor(gl: WebGL2RenderingContext, o: { ram: () => Uint8Array; log?: (m: string) => void; debug?: (m: string) => void }) {
+  constructor(gl: WebGL2RenderingContext, o: { ram: () => Uint8Array; log?: (m: string) => void; debug?: (m: string) => void; video?: { decoders: DecoderFactory; hardware: readonly number[] } }) {
     this.gl = gl;
     this.ram = o.ram;
+    this.video = o.video;
     this.debug = o.debug;
     this.log = o.log ?? ((m) => console.warn(`virgl: ${m}`));
     this.fbo = gl.createFramebuffer()!;
@@ -785,7 +790,48 @@ export class VirglRenderer {
       },
       error: (m) => this.error(`ctx ${c.id}: ${m}`),
       debug: this.debug,
+      decoders: this.video?.decoders,
+      hardware: this.video?.hardware,
+      write: (planes, pic) => this.writePicture(c, planes, pic),
+      settled: () => this.onVideoSettled?.(),
     }, this.videoStats);
+  }
+
+  /** A decoded picture into a video buffer's planes: NV12's R8 luma and RG8 chroma, or I420's three R8 planes (each clipped to its texture). */
+  private writePicture(c: Ctx, planes: number[], pic: DecodedPicture) {
+    const cw = (pic.width + 1) >> 1, ch = (pic.height + 1) >> 1;
+    const put = (res: number, data: Uint8Array, w: number, h: number, stride: number) => {
+      const r = this.lookup(c, res);
+      if (r) this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(w, r.width), h: Math.min(h, r.height), d: 1 }, data, stride, 0);
+    };
+    put(planes[0], pic.y, pic.width, pic.height, pic.width);
+    if (planes.length === 2) put(planes[1], pic.uv, cw, ch, cw * 2);
+    else if (planes.length === 3) {
+      const u = new Uint8Array(cw * ch), v = new Uint8Array(cw * ch);
+      for (let k = 0; k < u.length; k++) {
+        u[k] = pic.uv[2 * k];
+        v[k] = pic.uv[2 * k + 1];
+      }
+      put(planes[1], u, cw, ch, cw);
+      put(planes[2], v, cw, ch, cw);
+    }
+  }
+
+  /** Pictures sent to a decoder and not yet written (web/virgl-video.ts): the GPU worker holds what follows them. */
+  get videoWaiting() {
+    let n = 0;
+    for (const c of this.contexts.values()) n += c.video?.waiting ?? 0;
+    return n;
+  }
+
+  /** Has the decoders that hold pictures for reordering output them (`VideoContext.drain`). */
+  videoDrain() {
+    for (const c of this.contexts.values()) c.video?.drain();
+  }
+
+  /** Gives up the pending pictures sent before `before` (`VideoContext.giveUp`). */
+  videoGiveUp(before?: number) {
+    for (const c of this.contexts.values()) c.video?.giveUp(before);
   }
 
   private stage(shader: number): Stage | undefined {

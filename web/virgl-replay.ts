@@ -25,7 +25,28 @@ export type ReplayResult = {
  * `until` stops the replay after a command (`lastSubmit`: after the trace's last SUBMIT_3D, before a client's exit
  * frees what it drew).
  */
-export function replay(trace: Uint8Array, host: (ram: () => Uint8Array) => VirglHost | undefined, o: { width?: number; height?: number; caps?: Uint8Array; until?: (r: { submits: number; flushes: number }) => boolean; lastSubmit?: boolean } = {}): ReplayResult {
+export function replay(trace: Uint8Array, host: (ram: () => Uint8Array) => VirglHost | undefined, o: ReplayOptions = {}): ReplayResult {
+  const steps = replaySteps(trace, host, o);
+  for (let s = steps.next(); ; s = steps.next()) if (s.done) return s.value;
+}
+
+/**
+ * `replay` for a host that runs calls later (the GPU worker's queue, web/virgl-host.ts `CallQueue`): before writing
+ * a data record into a backing, `settle` waits until the calls before it have run (as the guest waits for a fence
+ * before it writes a staging buffer again).
+ */
+export async function replayAsync(trace: Uint8Array, host: (ram: () => Uint8Array) => VirglHost | undefined, settle: () => Promise<void>, o: ReplayOptions = {}): Promise<ReplayResult> {
+  const steps = replaySteps(trace, host, o);
+  for (let s = steps.next(); ; s = steps.next()) {
+    if (s.done) return s.value;
+    await settle();
+  }
+}
+
+type ReplayOptions = { width?: number; height?: number; caps?: Uint8Array; until?: (r: { submits: number; flushes: number }) => boolean; lastSubmit?: boolean };
+
+/** The replay, pausing before each data record. */
+function* replaySteps(trace: Uint8Array, host: (ram: () => Uint8Array) => VirglHost | undefined, o: ReplayOptions): Generator<void, ReplayResult> {
   // Pass 1: the RAM the backings need, and the submits.
   let size = 0, total = 0;
   for (const r of readTrace(trace)) {
@@ -45,6 +66,7 @@ export function replay(trace: Uint8Array, host: (ram: () => Uint8Array) => Virgl
   for (const r of readTrace(trace)) {
     if (r.kind === 'note') { notes.push(r.text); continue; }
     if (r.kind === 'data') {
+      yield;
       const g = regions.get(r.res);
       if (g && r.offset + r.bytes.length <= g.len) ram.set(r.bytes, g.off + r.offset);
       continue;

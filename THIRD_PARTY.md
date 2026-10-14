@@ -62,6 +62,12 @@ when bumping the pin.
 | CoreMark | [eembc/coremark](https://github.com/eembc/coremark), `1f483d5b8316` | Apache-2.0, plus EEMBC's CoreMark Acceptable Use Agreement (the CoreMark trademark only for results of unmodified sources) | `bench/interp/build-coremark.sh` fetches it into `target/dl/coremark` and builds it unmodified with our own port layer (`bench/interp/coremark/core_portme.{c,h}`, MIT) into `target/bench/` (not committed, not distributed) |
 | Mesa (G2's virgl guest) | [Mesa](https://mesa3d.org) 26.1.6 release tarball (`MESA_SHA256` in `images/build.sh`) | MIT | `images/build.sh alpine-virgl` builds it unmodified (llvmpipe and virgl) in Alpine's container into the benchmark image's `/opt/mesa` (`target/images`, not committed, not distributed) |
 
+## Media in the repository (test fixtures)
+
+| Our file(s) | Source | License | How we use it |
+|---|---|---|---|
+| `tests/virgl/video-h264.vglt.gz`, `video-vp9.vglt.gz`, `video-h264-orig.h264.gz`, `video.json` (video V1) | The Sintel trailer, © Blender Foundation (durian.blender.org), the 480p H.264 MP4 and a VP9 WebM made from it (`images/archarm/media.sh`) | CC BY 3.0 | The first 40 pictures of each, as the guest's FFmpeg sent them through VA-API (`bench/video/fixture.ts`), the original stream's first pictures and SHA-256 hashes of FFmpeg's decoded frames: the Chromium video tests' input and reference |
+
 ## Firmware we build and distribute (not in the repository)
 
 | Binary | Source, commit | License | How we use it |

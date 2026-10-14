@@ -327,6 +327,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   1.7-1.8 s of the guest's CPU a second for a 480p trailer and still shows ~10% of its frames): **in progress**, VA-API
   over virgl decoded by WebCodecs ([plans/video.md](plans/video.md); the V4L2/virtio-media route and why it lost are
   its §2).
+- **H.264 on a browser that decodes it only in software** (Chromium on Linux without VA-API, distro builds with
+  OpenH264): not offered to the guest (plans/video.md §5: the decoder holds B-pictures longer than the guest waits,
+  so the guest stalls; `?gpu=swh264` shows it). Ideas, none tried: a filler picture (a non-reference all-skip P slice
+  under a CAVLC PPS of ours) to push held pictures out; rebuilding the SPS with the stream's own reorder depth,
+  learned from the POCs before it's needed (FFmpeg then neither holds nor drops; OpenH264 ignores it). Worth it only
+  if Chrome-on-Linux users matter: there the guest decodes H.264 itself, as before.
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 

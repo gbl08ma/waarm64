@@ -7,6 +7,7 @@
 import type { Backing, Box, ResourceDesc } from './virgl-renderer.ts';
 import type { VirglRenderer } from './virgl-renderer.ts';
 import type { Screen } from './virgl-screen.ts';
+import { walk } from './virgl.ts';
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
@@ -72,6 +73,143 @@ export class FenceGate<F> {
     while (this.held.length && this.held[0].settled()) this.answer(this.held.shift()!.f);
   }
   get waiting() { return this.held.length; }
+}
+
+/** What the GPU worker takes from the device worker's port: the calls, fences and reads (`portHost`). */
+export type WorkerCall = HostCall | { t: 'fence'; id: number; at: number } | { t: 'read'; id: number; res: number };
+
+/**
+ * Whether a submit only decodes: video commands (CCMD 53–61: codecs, buffers, a picture's BEGIN/DECODE/END_FRAME)
+ * and what Mesa's VA driver sends with them (its sub-context, its objects, TRANSFER3D into its staging buffers).
+ */
+export function decodeOnly(words: Uint32Array) {
+  let only = true;
+  const n = walk(words, (cmd) => { if (!DECODE_SUBMIT.has(cmd)) only = false; });
+  return n > 0 && only;
+}
+// CREATE_OBJECT, SET_SUB_CTX, CREATE_SUB_CTX, DESTROY_SUB_CTX, TRANSFER3D, END_TRANSFERS, SET_TWEAKS, 53–61.
+const DECODE_SUBMIT = new Set([1, 28, 29, 30, 43, 44, 46, 53, 54, 55, 56, 57, 58, 59, 60, 61]);
+
+/**
+ * The GPU worker's calls in order, with video (docs/plans/video.md §5). The guest expects a picture decoded once its
+ * END_FRAME has run (Mesa's virgl makes no fence for it; virglrenderer decodes synchronously), while WebCodecs
+ * decodes asynchronously: so while any picture is pending (`waiting`), calls wait here. What decodes doesn't: a
+ * submit that only decodes (`decodeOnly`), a resource's creation and backing, a context's creation and a resource's
+ * attachment to one run, even ahead of waiting calls, as long as no waiting call is of the same context or names the
+ * same resource (a resource's unref or detach, a read and a reset are never passed). So a decoder that holds a
+ * picture until later ones come (a software H.264 decoder reordering) gets them. If nothing comes out for `drainMs`,
+ * the decoders that hold pictures are drained (`drain`); after `giveUpMs`, the pending pictures are given up
+ * (`giveUp`; the guest sees the buffers' old planes rather than hanging).
+ */
+export class CallQueue<M extends WorkerCall> {
+  private q: M[] = [];
+  private readonly o: { run(m: M): void; waiting(): number; drain(): void; giveUp(): void; drainMs?: number; giveUpMs?: number };
+  /** Since when nothing has come out while calls wait (undefined: none wait). */
+  private since?: number;
+  private drained = false;
+  /** Calls that ran ahead of waiting ones, and the longest wait (ms), for the stats. */
+  ahead = 0;
+  maxWaitMs = 0;
+
+  constructor(o: CallQueue<M>['o']) { this.o = o; }
+
+  get length() { return this.q.length; }
+
+  push(m: M, now = performance.now()) {
+    this.q.push(m);
+    this.pump(now);
+  }
+
+  /** Runs what may run; call it when a picture comes out (`progress`) and from a timer while `stalled` (`tick`). */
+  pump(now = performance.now()) {
+    for (;;) {
+      while (this.q.length && !this.o.waiting()) this.o.run(this.q.shift()!);
+      if (!this.q.length || !this.runAhead()) break;
+    }
+    if (this.q.length) this.since ??= now;
+    else {
+      if (this.since !== undefined) this.maxWaitMs = Math.max(this.maxWaitMs, now - this.since);
+      this.since = undefined;
+      this.drained = false;
+    }
+  }
+
+  /** Whether calls wait for pictures. */
+  get stalled() { return this.since !== undefined; }
+
+  /** A picture came out (or was given up). */
+  progress(now = performance.now()) {
+    if (this.since !== undefined) {
+      this.maxWaitMs = Math.max(this.maxWaitMs, now - this.since);
+      this.since = now;
+    }
+    this.drained = false;
+    this.pump(now);
+  }
+
+  /** While stalled: drains, then gives up, when nothing has come out for long enough. */
+  tick(now = performance.now()) {
+    if (this.since === undefined) return;
+    const idle = now - this.since;
+    if (idle >= (this.o.drainMs ?? 200) && !this.drained) {
+      this.drained = true;
+      this.o.drain();
+    }
+    if (idle >= (this.o.giveUpMs ?? 1000)) this.o.giveUp();
+    this.pump(now);
+  }
+
+  /** While pictures are pending: runs what decodes and no waiting call must precede; whether it ran any. */
+  private runAhead() {
+    const busy = new Set<number>(), named = new Set<number>();
+    let ran = false;
+    for (let k = 0; k < this.q.length;) {
+      const m = this.q[k];
+      let go = false;
+      switch (m.t) {
+        case 'submit':
+          go = !busy.has(m.ctx) && decodeOnly(m.words);
+          if (!go) busy.add(m.ctx);
+          break;
+        case 'res':
+          if (named.has(m.desc.id)) return ran;
+          go = true;
+          break;
+        case 'backing':
+          if (!m.backing || named.has(m.id)) return ran;
+          go = true;
+          break;
+        case 'ctxres':
+          go = m.attach && !busy.has(m.ctx) && !named.has(m.res);
+          if (!go) {
+            busy.add(m.ctx);
+            named.add(m.res);
+          }
+          break;
+        case 'ctx':
+          go = m.create && !busy.has(m.id);
+          if (!go) busy.add(m.id);
+          break;
+        case 'transfer':
+          busy.add(m.ctx);
+          named.add(m.res);
+          break;
+        case 'fence': case 'scanout': case 'damage':
+          break;
+        default: // unref, reset, ram, read
+          return ran;
+      }
+      if (!go) {
+        k++;
+        continue;
+      }
+      this.q.splice(k, 1);
+      if (k) this.ahead++;
+      this.o.run(m);
+      ran = true;
+    }
+    return ran;
+  }
 }
 
 /** A host in this thread: calls run at once. */

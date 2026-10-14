@@ -3,8 +3,10 @@
 **Status:** started 2026-10-14 (the backlog's "Hardware video decoding"). The direction is the user's (§1): **VA-API
 over virgl**, decoded by the browser's WebCodecs. **V0 (the gates) passed (2026-10-14, §4)**: the guest's Mesa takes
 the caps, FFmpeg and Firefox decode through VA-API (Firefox once a VA driver wrapper of ours hides the surface
-formats it can't take), and the host's rebuilt streams decode exactly. Next: V1 (§3), from `M8-VIDEO-HANDOVER.md`. What exists will move into the
-topic docs ([devices.md](../devices.md) "virgl") as it lands; this page keeps the decisions, the findings worth not
+formats it can't take), and the host's rebuilt streams decode exactly. **V1 (the decoders) is done (2026-10-14, §5)**:
+the browser decodes what the guest sends, frame for frame equal to the guest's own decode, H.264 only where the
+browser has it in hardware. Next: V2 (§3: Firefox measured on the page), from `M8-VIDEO-HANDOVER.md`. What exists is
+in the topic docs ([devices.md](../devices.md) "virgl"); this page keeps the decisions, the findings worth not
 re-discovering, and each loop's record.
 
 The question: a guest's video player decodes on our emulated CPU (Firefox's VP9 decoder takes 1.7-1.8 s of the guest's
@@ -41,12 +43,15 @@ with the guest's software unmodified?
   surface in presentation order after sending the pictures that follow in decode order; a decoder that holds pictures
   for its own reordering longer than the guest expects would deadlock it (the guest waits on a fence the host can't
   resolve without later input). So the rebuilt SPS says `max_num_reorder_frames = 0` (VUI bitstream restriction):
-  every picture comes out as soon as it's decoded, matched to its target surface by the chunk's timestamp.
+  every picture comes out as soon as it's decoded, matched to its target surface by the chunk's timestamp. Only
+  Chromium's own H.264 decoder (its hardware paths) honors that; the software decoders don't (§5), so **H.264 is
+  offered only where the browser decodes it in hardware** (V1), and elsewhere the guest decodes it itself.
 - **Codecs:** H.264 (Constrained Baseline, Main, High; 8-bit 4:2:0, progressive) and VP9 profile 0 first: what
   YouTube and the media test clips use and what every browser decodes. Advertised only where `VideoDecoder.
   isConfigSupported` says yes. HEVC and AV1 after.
 - **Correctness is bit-exact:** H.264 and VP9 decoding is exactly specified, so a decoded picture's planes must equal
-  FFmpeg's software decode of the same stream byte for byte. The first implementation copies the planes out of each
+  FFmpeg's software decode of the same stream byte for byte (where the browser's decoder is FFmpeg's or the
+  hardware's: the dev VM's Chromium decodes H.264 with OpenH264, ±1-9 luma off on B-pictures, §5). The first implementation copies the planes out of each
   `VideoFrame` (`copyTo`, exact) into the plane textures; a GPU-only path (drawing the frame and converting to the
   planes in a shader, not exact) only if the copy costs too much, measured.
 - **Tests at the cheapest layer:** the bitstream rebuilding in Node (our SPS/PPS against the stream's own, parsed
@@ -89,11 +94,11 @@ its cost is the host's stateless-to-stateful step (above).
      and the guest's CPU a second for the Sintel trailer with decoding off its CPU (the ceiling the real decoder
      approaches). A capture of the commands for a clip is V1's fixture.
 - **V1, the decoders:** H.264's SPS/PPS rebuilt (Node tests), VP9's chunks; a replay of V0's captures through
-  `VideoDecoder` into planes in Chromium, equal to FFmpeg's (the dev VM's Chromium needs SME hidden first: §4). The
-  VA driver wrapper as a package in the desktop image.
-- **V2, on the page:** the renderer writes pictures into the plane textures and a fence waits for its decode;
-  Firefox plays the clips through it. Measured: the guest's CPU, the frames shown and dropped, A/V sync
-  (`bench/audio/avsync.ts`).
+  `VideoDecoder` into planes in Chromium, equal to FFmpeg's (the dev VM's Chromium needs SME hidden first: §4); the
+  renderer writes each picture into the plane textures, and the GPU worker holds what follows a picture until it's
+  written (no fence covers a decode: §4). The VA driver wrapper as a package in the desktop image. Done: §5.
+- **V2, on the page:** Firefox plays the clips through it. Measured: the guest's CPU, the frames shown and dropped,
+  A/V sync (`bench/audio/avsync.ts`), on the Mac's GPU; what the GPU worker's pause costs.
 - **V3, robustness and breadth:** seeking and resolution changes (a new codec, a new key frame), errors (a decoder
   error ends that codec's pictures, the guest falls back), snapshots (a machine with a codec is 3D in use: refused,
   as now), HEVC and AV1 where the browser has them.
@@ -143,3 +148,41 @@ Firefox on the clips; `CAPTURE=1` saves the virgl capture), `bench/video/media-d
   imported zero-copy (`EGLImageTargetTexture2D` for the R8 and GR88 planes), no software decoder threads. Its
   `DMABUF_SURFACE_EXPORT` stays "Blocklisted by gfxInfo" (not needed for this path).
 
+
+## 5. V1: the decoders on WebCodecs (2026-10-14)
+
+What exists is in [devices.md](../devices.md) "virgl" ("Video") and [testing.md](../testing.md) ("Video over virgl").
+Tools: `bench/video/replay.ts` (a capture's pictures through `VideoDecoder`; `hw|sw`, `REORDER`; on the Mac,
+`replay-mac.sh`), `bench/video/fixture.ts` (the Chromium tests' fixtures), `bench/video/v1.ts` (the desktop guest's
+FFmpeg decoding each clip in software and through VA-API, frames compared by framemd5; on the Mac,
+`SCRIPT=../video/v1.ts bench/gpu/sway-mac.sh - <image> <name>`).
+
+- **Reading frames on the dev VM** needs `tools/nosme.ts` (§1, §4): with it, plain `VideoFrame.copyTo` works; V0's
+  crashes with `rect` or `format` were all the SIGILL.
+- **The replay (130 H.264 pictures, 127 VP9, V0's capture).** VP9 is exact everywhere (the dev VM's software, the
+  Mac's hardware and software): every frame out in decode order, 0.2-0.6 ms a picture. H.264 depends on the decoder:
+  - Chromium's own decoder (the Mac's VideoToolbox; also its D3D11 and VA-API paths) honors the SPS's
+    `max_num_reorder_frames` 0: 130/130 frames, FFmpeg's exactly, each out before the next chunk goes in.
+  - FFmpeg in software (Chrome for Testing's `prefer-software`) drops every picture that comes after one it has
+    output in display order when told 0 (50 of 130 out). Without a bitstream restriction it learns the depth: 129/130
+    exact, but it holds up to 5 later chunks.
+  - The dev VM's Chromium (openSUSE's) decodes H.264 with **OpenH264**: it ignores the reorder field (the same lag
+    with and without it: up to 6 later chunks, though the stream's own depth is 3), drops nothing, and is not
+    bit-exact with FFmpeg on B-pictures (±1-9 in luma), though identical on our rebuilt stream and the original.
+- **A decoder that holds pictures stalls the guest** (v1.ts on the dev VM with software H.264: 2 of 128 pictures
+  written). The guest's FFmpeg reads a picture after as many later ones as the original stream's depth, and blocks
+  there; the host's decoder holds it longer, waiting for chunks the blocked guest won't send. Flushing the decoder
+  gets the pictures out, but WebCodecs wants a key chunk after `flush()`, so everything to the next IDR is lost.
+  Rewriting the POCs so output order is decode order isn't exact (implicit weighted bi-prediction, which x264 uses,
+  weighs by POC distance). So **H.264 is offered only where the browser decodes it in hardware** (`probeVideo`;
+  `?gpu=swh264` offers it anyway), and the guest decodes it itself elsewhere; VP9 has no reordering and is offered
+  wherever it's decoded. backlog.md has the ideas for software H.264.
+- **The guest end to end** (`v1.ts`, 120 frames a clip, the guest's FFmpeg 9.0.2 with `-hwaccel vaapi` against its
+  software decode): on the Mac (Chrome for Testing 153, H.264 and VP9 in hardware) both clips 120/120 frames equal,
+  no picture dropped, the guest's FFmpeg 0.76 s user + 1.2 s sys for H.264 (V0: 8.9 s of CPU decoding itself) and
+  0.72 + 1.06 s for VP9 (V0: 23.5 s); the longest any call waited for a picture 65 ms. On the dev VM (VP9 only)
+  120/120 equal, 0.93 + 1.46 s, the longest wait 7 ms; H.264 falls back to the guest's decoder ("No support for codec
+  h264 profile 100").
+- **Firefox on the page** (`v0.ts` with `FFMPEG=0`, the Mac, 20 s a clip): both clips decode through VA-API (its log:
+  dmabuf NV12 surfaces imported, R8 and GR88 planes) and show the right pictures (the screenshots). It drops 136 of
+  481 frames on H.264 and 145 on VP9, against ~90% in software (audio.md "Measurements"); V2 measures it properly.
