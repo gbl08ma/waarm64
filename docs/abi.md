@@ -84,7 +84,7 @@ Design notes for an ABI change go in this file before the code.
 | `devices`, `ndevices` | address and count (≤ 32) of `DeviceEntry`s (6) |
 | `fb_width`, `fb_height` | a `simple-framebuffer`, 0: none (8) |
 | `jit` | 0 interpreter only (the ABI default), 1 JIT, 2 JIT-stress (10), 3 JIT-check (24), 4 the dispatcher without compiling: the block interpreter (33) |
-| `features` | bit 0 `FEATURE_CRYPTO`; other bits reserved, and `vm_new` refuses them (19) |
+| `features` | bit 0 `FEATURE_CRYPTO` (19), bit 1 `FEATURE_RNG`: `RNDR`/`RNDRRS`, bit 2 `FEATURE_E0PD` (35); other bits reserved, and `vm_new` refuses them |
 | `ncpus` | vCPUs, 0 or 1 = one; up to `vm::MAX_CPUS` (123) (21; more than one from 22) |
 | `gic` | 0 or 3: the GICv3; `vm_new` refuses others (21; 2, a GICv2, until 23) |
 | `smp` | 0 round-robin on the calling thread (`vm_run`), 1 parallel: a thread per vCPU (`vm_run_cpu`), realtime only (25) |
@@ -93,9 +93,10 @@ Design notes for an ABI change go in this file before the code.
 | `flash_size` | the firmware configuration's flash bank, a multiple of 256 KiB from 768 KiB to 64 MiB; 0 otherwise (29) |
 | `fw_cfg`, `fw_cfg_len` | address and length of fw_cfg's files, copied by `vm_new` (firmware only; 0: none) (29) |
 | `mem_pages` | the memory's size in 64 KiB pages when the host made it fixed (above, "A fixed-size memory"): JIT modules import it with exact limits; 0: growable; over 65536 is refused (32) |
+| `rng_seed` (4 words) | FEAT_RNG's 256-bit ChaCha20 key in realtime mode, from the host's CSPRNG; deterministic mode ignores it and uses zeros (35) |
 
-`bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`;
-the ABI's 0 means none.
+`bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`,
+and bits 1 and 2 only when told `rng: true`, `e0pd: true` (the page's machines are); the ABI's 0 means none.
 
 ### Exit kinds
 
@@ -458,3 +459,4 @@ implemented by this step).
 | 32 | a fixed-size memory: `VmConfig.mem_pages`, `heap_reserve`; JIT modules import the memory with exact limits (M8 JIT) |
 | 33 | the block interpreter: `VmConfig.jit` 4, counter words 101–103, `jit::Stats` gains three fields (M8) |
 | 34 | `vm_set_chunk` (the PC sampler's chunk in parallel mode; M8 graphics G4) |
+| 35 | FEAT_RNG and FEAT_E0PD: `VmConfig.features` bits 1 and 2, `VmConfig.rng_seed`; a snapshot of a VM with FEAT_RNG keeps each vCPU's stream position |

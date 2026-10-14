@@ -16,6 +16,22 @@ match it step for step.
   the ID register says. The user-mode entry points (`vcpu_new`, `jit_new`: the corpus, the
   differential tests, `bench/interp`) always have them, since the golden corpus records the M4's
   behavior.
+- **FEAT_RNG** (`RNDR`, `RNDRRS`, at EL0 and EL1) and **FEAT_E0PD** (`TCR_EL1.E0PD0`/`E0PD1`):
+  `VmConfig.features` bits 1 and 2 (`FEATURE_RNG`, `FEATURE_E0PD`, ABI 35). **Off by default** in
+  `bootVm` (`rng: true`, `e0pd: true`) and the native runners, so the test guests' step counts
+  stay as they were; **the page's machines have both** (`web/app/worker.ts`; `?rng=0`, `?e0pd=0`
+  turn one off for an A/B). An `RNDR` read leaves the block (`Exit::Platform`) and the run loop
+  answers from the vCPU's ChaCha20 stream (`rng.rs`: keyed by the host's `crypto.getRandomValues`
+  in realtime mode, by zeros in deterministic mode, the vCPU's index as the nonce; a snapshot keeps
+  each stream's block counter, a restored realtime VM goes on with its own key). It never fails
+  (NZCV = 0000). Linux then has its crng at once on a direct boot (Alpine: 0 s, against 16.7 s
+  waiting for `virtio_rng`) and on the way takes 6% fewer steps to boot Alpine. E0PD makes an EL0 access to
+  the half it covers a level 0 translation fault before the walk (`mmu::e0pd`, also for `AT
+  S1E0*`, LDTR/STTR and fetches); it is there for Linux's `kaslr_requires_kpti`: **a KASLR kernel
+  forces KPTI on unless the CPU has E0PD**, whatever CSV3 says, and KPTI makes every kernel entry
+  and exit an ASID switch, which drops the TLB's nG entries (and KPTI maps the kernel nG). The
+  page's Debian has KASLR whatever we do (the EFI stub randomizes with EDK2's `EFI_RNG_PROTOCOL`,
+  which comes from the virtio-rng): bench/boot/REPORT.md "M9: FEAT_RNG and FEAT_E0PD".
 - **Left out, unadvertised:** SVE/SME, PAC, BTI, MTE, EL2/EL3, secure state. Their hint-space
   encodings (the PAC and BTI hints, CSDB, …) run as NOPs. Everything else the M4 has beyond v8.0
   (FP16, BF16, FHM, RDM, DotProd, I8MM, FCMA, JSCVT, FRINTTS, LSE2, RCpc, FlagM, SB, DIT, SHA512,
@@ -33,12 +49,15 @@ match it step for step.
 - `MPIDR_EL1`: `Cpu::mpidr`, per vCPU (`gicv3::mpidr`: `1 << 31`, Aff1 = i / 16, Aff0 = i % 16;
   `1 << 31` for one CPU).
 - `ID_AA64PFR0_EL1`: FP and AdvSIMD = 0 (present, no FP16); **CSV2 and CSV3 set** (nothing
-  speculates, which spares the guest Spectre mitigations and KPTI); GIC = 1 in a VM (the GICv3's
+  speculates, which spares the guest Spectre mitigations and KPTI, unless its kernel has KASLR and
+  the CPU no E0PD: above); GIC = 1 in a VM (the GICv3's
   system-register interface, `cpu::FEATURE_GICV3`), 0 for user-mode vCPUs.
 - `ID_AA64ISAR0_EL1` (`interp::sys::isar0`): LSE, CRC32, and with the crypto feature AES = 2,
-  SHA1 = 1, SHA2 = 1 (0x211120 with it on; the bare-metal `exceptions` test checks this value).
+  SHA1 = 1, SHA2 = 1 (0x211120 with it on; the bare-metal `exceptions` test checks this value),
+  and RNDR = 1 with FEAT_RNG.
   `ID_AA64ISAR1_EL1` reports none of RDM, DotProd, FHM, FCMA, JSCVT, FRINTTS, BF16, I8MM; no AFP.
-- `ID_AA64MMFR0_EL1`: 4K granule, 16-bit ASIDs, 40-bit PA.
+- `ID_AA64MMFR0_EL1`: 4K granule, 16-bit ASIDs, 40-bit PA. `ID_AA64MMFR2_EL1` (`interp::sys::mmfr2`):
+  E0PD = 1 with FEAT_E0PD, else 0.
 - `CTR_EL0`: IDC = 1 (no data cache to clean), **DIC = 0**, so guests issue `IC IVAU` after
   writing code, which is what the JIT's invalidation relies on ([jit.md](jit.md)).
 - `DCZID_EL0.BS` = 4: `DC ZVA` zeroes 64 bytes, as on the M4 (QEMU's `max` uses 512).

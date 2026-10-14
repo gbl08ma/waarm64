@@ -232,6 +232,7 @@ isn't asking now: bash printed them as `;1R;80R`).
 | `ncpus` | vCPUs the machine ran with |
 | `disk` | the display name of the disk it was on when that was a chosen disk (file name, or a URL's last segment); `null` for the machine's own |
 | `devices` | the device kinds in slot order: `rng`, `blk`, `blk-ro` (the `?disk2=` disk), `keyboard`, `tablet`, `net`; a restore makes the same list, and refuses (naming what to open the page with) one it can't: a `blk-ro` without `?disk2=`, a `net` without the machine's IP port |
+| `cpu` | the vCPUs' optional features, of `rng` and `e0pd` (docs/cpu.md); a restore gives the machine the same, and a snapshot without the field (before ABI 35) none |
 | `serial` | the last ~4 KiB of serial output the worker posted, cut at a line start |
 
 **Errors.** `SnapshotError` (`web/snapshot-file.ts`) becomes the `snapshot` problem, whose actions are

@@ -53,21 +53,25 @@ pub fn icc(features: u64, key: u32) -> Option<crate::gicv3::Icc> {
 // (breakpoints, watchpoints, MDSCR_EL1.SS); M9 lists it.
 const ID_AA64DFR0: u64 = 1 << 20 | 1 << 12 | 6;
 /// LSE atomics (2) and CRC32; nothing past v8.1. AES (2: with PMULL), SHA1
-/// and SHA2 with `FEATURE_CRYPTO` (`isar0`).
+/// and SHA2 with `FEATURE_CRYPTO`, RNDR with `FEATURE_RNG` (`isar0`).
 const ID_AA64ISAR0: u64 = 2 << 20 | 1 << 16;
 const ISAR0_CRYPTO: u64 = 1 << 12 | 1 << 8 | 2 << 4;
+const ISAR0_RNDR: u64 = 1 << 60;
 
 /// ID_AA64ISAR0_EL1 for a vCPU with `features`.
 pub fn isar0(features: u64) -> u64 {
+    let has = |f: u64, v: u64| if features & f != 0 { v } else { 0 };
     ID_AA64ISAR0
-        | if features & crate::cpu::FEATURE_CRYPTO != 0 {
-            ISAR0_CRYPTO
-        } else {
-            0
-        }
+        | has(crate::cpu::FEATURE_CRYPTO, ISAR0_CRYPTO)
+        | has(crate::cpu::FEATURE_RNG, ISAR0_RNDR)
 }
 /// 4K granule only (TGran64 = 0xf, TGran16 = 0), 16-bit ASIDs, 40-bit PA.
 const ID_AA64MMFR0: u64 = 0xf << 24 | 2 << 4 | 2;
+
+/// ID_AA64MMFR2_EL1 for a vCPU with `features`: E0PD with `FEATURE_E0PD`, else nothing.
+pub fn mmfr2(features: u64) -> u64 {
+    ((features & crate::cpu::FEATURE_E0PD != 0) as u64) << 60
+}
 /// DIC = 0 (guests issue IC IVAU; docs/jit.md), IDC = 1 (no data cache to clean),
 /// CWG, ERG, DminLine = 64 bytes, PIPT I-cache, IminLine = 64 bytes.
 const CTR_EL0: u64 = 1 << 31 | 1 << 28 | 4 << 24 | 4 << 20 | 4 << 16 | 3 << 14 | 4;
@@ -85,6 +89,9 @@ const CTR: u32 = sr(3, 3, 0, 0, 1);
 const DCZID: u32 = sr(3, 3, 0, 0, 7);
 const TPIDR_EL0: u32 = sr(3, 3, 13, 0, 2);
 const TPIDRRO_EL0: u32 = sr(3, 3, 13, 0, 3);
+/// FEAT_RNG: a random number, and one from a reseeded source (ours are one stream).
+const RNDR: u32 = sr(3, 3, 2, 4, 0);
+const RNDRRS: u32 = sr(3, 3, 2, 4, 1);
 const SPSR_EL1: u32 = sr(3, 0, 4, 0, 0);
 const ELR_EL1: u32 = sr(3, 0, 4, 0, 1);
 const SP_EL0: u32 = sr(3, 0, 4, 1, 0);
@@ -113,6 +120,7 @@ const PFR0: u32 = sr(3, 0, 0, 4, 0);
 const DFR0: u32 = sr(3, 0, 0, 5, 0);
 const ISAR0: u32 = sr(3, 0, 0, 6, 0);
 const MMFR0: u32 = sr(3, 0, 0, 7, 0);
+const MMFR2: u32 = sr(3, 0, 0, 7, 2);
 const CCSIDR: u32 = sr(3, 1, 0, 0, 0);
 const CLIDR: u32 = sr(3, 1, 0, 0, 1);
 const AIDR: u32 = sr(3, 1, 0, 0, 7);
@@ -331,6 +339,10 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         DCZID => DCZID_BS | ((el0 && c.sctlr_el1 & sctlr::DZE == 0) as u64) << 4,
         TPIDR_EL0 => c.tpidr_el0,
         TPIDRRO_EL0 => c.tpidrro_el0,
+        // At EL0 too (no EL3 to trap them); the run loop reads the vCPU's stream (`rndr`).
+        RNDR | RNDRRS if c.features & crate::cpu::FEATURE_RNG != 0 => {
+            return Err(Exit::Platform(i));
+        }
         CNTFRQ | CNTPCT | CNTVCT | CNTP_TVAL | CNTP_CTL | CNTP_CVAL | CNTV_TVAL | CNTV_CTL
         | CNTV_CVAL => return timer(c, i, key),
         // EL1 from here on: exec has rejected op1 != 3 at EL0.
@@ -363,6 +375,7 @@ fn read(c: &Cpu, i: u32, key: u32) -> R<u64> {
         ISAR0 => isar0(c.features),
         k if icc(c.features, k).is_some_and(|r| r.readable()) => return Err(Exit::Platform(i)),
         MMFR0 => ID_AA64MMFR0,
+        MMFR2 => mmfr2(c.features),
         // The rest of the ID space (op1 = 0, CRn = 0, CRm = 1..7) is RAZ: the
         // AArch32 ID registers (no AArch32) and everything past v8.0 we don't have.
         k if k >> 7 == MIDR_R >> 7 && (1..=7).contains(&((k >> 3) & 0xf)) => 0,
@@ -582,6 +595,19 @@ fn timer(c: &Cpu, i: u32, key: u32) -> R<u64> {
 /// count has reached the compare value.
 pub fn timer_fires(ctl: u64, cval: u64, now: u64) -> bool {
     ctl & 3 == 1 && now >= cval
+}
+
+/// Whether the [`Exit::Platform`] access `i` is an `RNDR` or `RNDRRS` read,
+/// which the run loop completes with [`rndr`], not [`platform`].
+pub fn is_rndr(i: u32) -> bool {
+    matches!(bits(i, 20, 5), RNDR | RNDRRS)
+}
+
+/// Completes an `RNDR` or `RNDRRS` read (`i`) with `value`: it never fails,
+/// so NZCV is 0000 (a failure would set Z). The caller retires the instruction.
+pub fn rndr(c: &mut Cpu, i: u32, value: u64) {
+    c.set_reg(bits(i, 4, 0), value);
+    c.nzcv = 0;
 }
 
 /// Completes an [`Exit::Platform`] access (the MRS or MSR `i`) at counter value

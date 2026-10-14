@@ -475,3 +475,56 @@ fn transfer_cache_entries_die_with_their_generation() {
     t.bump();
     assert_eq!((t.xgen, t.xc[0x400].to), ([1, 1], 0));
 }
+
+/// FEAT_E0PD: TCR_EL1.E0PD1 (E0PD0) makes every EL0 access to the TTBR1
+/// (TTBR0) half a level 0 translation fault, whatever the tables allow, AT
+/// S1E0* included; EL1 is unaffected. Without the feature the bits do nothing.
+#[test]
+fn e0pd_faults_el0_accesses_to_its_half() {
+    const HI: u64 = 0xffff_0000_0000_1000;
+    let mut p = Pt::new();
+    p.map(HI, 3, 0x9000 | PAGE | AP_EL0_RW);
+    p.map(0x2000, 3, 0xa000 | PAGE | AP_EL0_RW);
+    let tr0 = |addr| {
+        Err(Fault {
+            addr,
+            access: Access::Read,
+            kind: FaultKind::Translation(0),
+        })
+    };
+    for (features, e0pd, hi_faults, lo_faults) in [
+        (crate::cpu::FEATURE_E0PD, 1u64 << 56, true, false),
+        (crate::cpu::FEATURE_E0PD, 1 << 55, false, true),
+        (crate::cpu::FEATURE_E0PD, 0, false, false),
+        (0, 3 << 55, false, false),
+    ] {
+        let mk = || Cpu {
+            features,
+            tcr_el1: cpu().tcr_el1 | e0pd,
+            ..cpu()
+        };
+        let (c, mut v) = (mk(), Vcpu::new(mk()));
+        let mut m = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+        for (va, faults) in [(HI, hi_faults), (0x2000, lo_faults)] {
+            let r = m.read_el(&c, va + 8, 8, 0);
+            assert_eq!(r.is_err(), faults, "{features} {e0pd:#x} {va:#x}");
+            if faults {
+                assert_eq!(r, tr0(va + 8));
+                // Translation fault, level 0 (FSC 0b000100), PAR_EL1.F.
+                assert_eq!(at(&c, &p.r.mem, va, 0, Use::Read), 4 << 1 | 1 << 11 | 1);
+                assert_eq!(
+                    m.fetch(
+                        &Cpu {
+                            pstate: M_EL0T,
+                            ..c
+                        },
+                        va
+                    )
+                    .map_err(|f| f.kind),
+                    Err(FaultKind::Translation(0))
+                );
+            }
+            assert!(m.read_el(&c, va + 8, 8, 1).is_ok(), "EL1 reads {va:#x}");
+        }
+    }
+}

@@ -12,14 +12,11 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   up Keccak and are plain SIMD128 lowerings). Each needs handlers, corpus groups (the generator
   already knows how to avoid them), the ID fields, a decoder-sweep update, a `VmConfig.features`
   bit, and the rule: advertise only if faster than what guests do without it.
-- **FEAT_RNG (`RNDR`, `RNDRRS`)** (the user, 2026-09-30): two system-register reads, fed in
-  realtime mode from the host's `crypto.getRandomValues()` (a per-vCPU pool refilled by the
-  host, as the console's rings are), and in deterministic mode from a seeded PRNG so step counts
-  stay exact. `ID_AA64ISAR0_EL1.RNDR` = 1, a `VmConfig.features` bit, corpus coverage of the
-  NZCV result (success sets 0000; an empty pool may fail with Z = 1, which guests retry). EDK2
-  uses it when present (`RngDxe`, stack cookies: M8 phase B's QEMU runs log `ARM-RNDR`), and
-  Linux seeds its CRNG from it at boot, before `virtio_rng` loads from the root filesystem (see
-  "No `rng-seed` in the DT" below). Under UEFI it also turns on KASLR (same entry: measure it).
+- **The test guests and the benchmarks run without FEAT_RNG and FEAT_E0PD**, which the page's machines
+  have ([cpu.md](cpu.md)): `bootVm` and the native runners leave them off, so `tests/steps.txt` didn't
+  move. Turning them on there (a step-count change, the user's OK) would boot Alpine in 6% fewer steps
+  (its crng waits for `virtio_rng` without RNDR) and test what users run; the deterministic stream
+  repeats exactly, so it costs the exact-step boots nothing.
 - **Self-hosted debug:** breakpoints, watchpoints and `MDSCR_EL1.SS` single step raise nothing
   (the registers are RAZ/WI). Needed for in-guest `gdb` hardware breakpoints and `ptrace` single
   step (kvm-unit-tests `debug-*`).
@@ -254,16 +251,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `hvc0` getty is output only. Console input goes to the PL011 (M8); a `MessagePort` in the
   console's spec, as virtio-input has, is the shape if `hvc0` is ever wanted (it would skip the
   PL011's trap per byte).
-- **No `rng-seed` in the DT:** Linux's crng initializes only once `virtio_rng` loads from the root
-  filesystem (Debian: 26 s into a 31 s boot; `systemd-random-seed` waits for it) and KASLR is off
-  ("lack of seed"). `/chosen/rng-seed` (and `kaslr-seed`) from the host's CSPRNG in realtime mode;
-  deterministic mode would need a fixed seed (a step-count change). **Measure KASLR before
-  turning it on:** on the UEFI oracle (QEMU TCG, M8 phase B loop 1) Debian reached
-  `graphical.target` in 12.3 s without seeds, 10.6 s with `rng-seed` alone, and **22.1 s with
-  `kaslr-seed`** too (kernel and userspace alike). So the RNG seed is a win, and KASLR may cost
-  our JIT and TLB as it cost TCG. Under UEFI the EFI stub randomizes the kernel whenever the
-  firmware has an RNG (`EFI_RNG_PROTOCOL`: EDK2 gets one from RNDR, above), so RNDR brings KASLR
-  with it unless measured and handled (`nokaslr` isn't ours to pass: GRUB's command line).
 - virtio: `EVENT_IDX` not offered (do it when an I/O benchmark shows notify exits or interrupts
   matter); the host can change config space under a running driver since ABI 31
   (`Devices.changeConfig`, docs/abi.md), but only virtio-gpu's display events use it: console resize,

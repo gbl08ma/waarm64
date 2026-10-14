@@ -120,6 +120,10 @@ pub struct VmConfig {
     /// (grown to its maximum, the core's heap reserved: ABI 32); JIT modules
     /// then import it with exact limits. 0: growable.
     pub mem_pages: u64,
+    /// FEAT_RNG's key (`cpu::FEATURE_RNG`, ABI 35): 256 bits from the host's
+    /// CSPRNG in realtime mode; deterministic mode ignores it and uses zeros
+    /// (`rng`), so a run repeats exactly.
+    pub rng_seed: [u64; 4],
 }
 
 impl VmConfig {
@@ -174,6 +178,7 @@ impl Default for VmConfig {
             fw_cfg: 0,
             fw_cfg_len: 0,
             mem_pages: 0,
+            rng_seed: [0; 4],
         }
     }
 }
@@ -645,6 +650,12 @@ impl Vm {
                     mpidr: gicv3::mpidr(i),
                     ..Cpu::reset()
                 });
+                let seed = if cfg.deterministic != 0 {
+                    [0; 4]
+                } else {
+                    cfg.rng_seed
+                };
+                v.rng = crate::rng::Rng::new(seed, i as u32);
                 // One cache: round-robin's table lives in vCPU 0 (`Vm::chunk`).
                 if i == 0 {
                     v.jit.cache = jit.map(|c| {
@@ -1035,6 +1046,10 @@ impl Vm {
                     if read {
                         cpu.set_reg(rt, v);
                     }
+                } else if sys::is_rndr(i) {
+                    let v = &mut self.vcpus[c];
+                    let r = v.rng.draw();
+                    sys::rndr(&mut v.cpu, i, r);
                 } else {
                     let (now, irq) = (self.now(), self.plat.get_mut().gic.irq(c));
                     platform(&mut self.vcpus[c].cpu, i, now, self.cfg.cntfrq, irq);

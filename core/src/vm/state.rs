@@ -16,6 +16,14 @@ use crate::snapshot::{self, Error, Reader, Writer};
 const TIME_MAX: u64 = 1 << 62;
 
 impl Vm {
+    /// Whether the vCPUs have FEAT_RNG, whose streams a snapshot keeps: in
+    /// realtime mode a restored VM goes on with its own key, so a machine
+    /// loaded twice doesn't repeat its numbers; deterministic mode's runs
+    /// through a snapshot repeat the run without one.
+    fn rng(&self) -> bool {
+        self.cfg.features & crate::cpu::FEATURE_RNG != 0
+    }
+
     /// Empties every vCPU's TLB, with no vCPU in the core: what a restore does
     /// to translations, on a VM that runs on. Architecturally invisible, but
     /// not to a step count: Linux clears a page's access flag without a TLBI
@@ -148,6 +156,10 @@ impl Vm {
             w.u64(entry);
             w.u64(context);
         }
+        // Where each vCPU's RNDR stream stands (its key is the restoring VM's).
+        if self.rng() {
+            self.vcpus.iter().for_each(|v| w.u64(v.rng.counter));
+        }
         // The devices.
         let p = self.plat.get_mut();
         p.gic.save(&mut w);
@@ -227,6 +239,11 @@ impl Vm {
                 return Err(Error::Corrupt);
             }
             scheds.push((on, wait, event, start.then_some((entry, context))));
+        }
+        if self.rng() {
+            for v in &mut self.vcpus {
+                v.rng.counter = r.u64()?;
+            }
         }
         // The devices.
         let host = self.realtime().then_some((self.cfg.rtc, self.clock.ns()));

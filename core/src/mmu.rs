@@ -227,6 +227,8 @@ pub struct Vcpu {
     pub consts: crate::jit::emit::Consts,
     pub tlb: Tlb,
     pub jit: crate::jit::State,
+    /// FEAT_RNG's stream (`Vm::with_devices` keys it).
+    pub rng: crate::rng::Rng,
 }
 
 impl Vcpu {
@@ -234,8 +236,8 @@ impl Vcpu {
     pub fn new(cpu: Cpu) -> Box<Vcpu> {
         let mut v = Box::<Vcpu>::new_zeroed();
         let p = v.as_mut_ptr();
-        // SAFETY: `cpu`, `consts` and `jit` are written here; the TLB is plain integers,
-        // valid zeroed (and empty), but for the transfer cache's generation.
+        // SAFETY: `cpu`, `consts` and `jit` are written here; the TLB and `rng` are plain
+        // integers, valid zeroed (the TLB empty), but for the transfer cache's generation.
         unsafe {
             (&raw mut (*p).cpu).write(cpu);
             (&raw mut (*p).tlb.xgen).write([1, 1]);
@@ -360,6 +362,16 @@ pub fn walk(c: &Cpu, mem: &Mem, va: u64) -> Result<Walk, FaultKind> {
     }
 }
 
+/// FEAT_E0PD: whether an EL0 access to `va` faults (a level 0 translation
+/// fault, whatever the tables hold) because TCR_EL1.E0PD0 (bit 55) or E0PD1
+/// (bit 56) covers its half. Checked before the walk, and never on a TLB hit:
+/// an EL0 array only holds pages an EL0 access was allowed to, and Linux
+/// flushes the TLB after setting E0PD1 (`cpu_enable_e0pd`).
+#[inline(always)]
+pub fn e0pd(c: &Cpu, va: u64) -> bool {
+    c.features & crate::cpu::FEATURE_E0PD != 0 && c.tcr_el1 >> (55 + (va >> 55 & 1)) & 1 == 1
+}
+
 /// The ASID TTBR0/TTBR1 holds for the current translations (TCR_EL1.A1, AS).
 pub fn asid(c: &Cpu) -> u64 {
     let ttbr = if c.tcr_el1 >> 22 & 1 == 1 {
@@ -381,7 +393,12 @@ pub fn at(c: &Cpu, mem: &Mem, va: u64, el: u64, u: Use) -> u64 {
         // Flat: Device-nGnRnE (ATTR 0), outer shareable.
         return va & OA_MASK | 2 << 7 | RES1;
     }
-    let r = walk(c, mem, va).and_then(|w| {
+    let r = if el == 0 && e0pd(c, va) {
+        Err(FaultKind::Translation(0))
+    } else {
+        walk(c, mem, va)
+    };
+    let r = r.and_then(|w| {
         if w.allows(el, u) {
             Ok(w)
         } else {
@@ -629,6 +646,9 @@ impl<'a> Mmu<'a> {
         };
         if let Some(t) = &mut self.tlb {
             t.stats.misses += 1;
+        }
+        if el == 0 && e0pd(c, va) {
+            return Err(fault(FaultKind::Translation(0)));
         }
         let w = walk(c, self.mem, va).map_err(fault)?;
         if !w.allows(el, u) {

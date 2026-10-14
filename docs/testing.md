@@ -202,8 +202,8 @@ Realtime runs and the rw-overlay boots aren't step-exact.
   and a power-off, with each stage's time. Dev-only (needs `qemu-system-aarch64`, `dtc`,
   `mkfs.vfat`, `mcopy`), not in CI. `node tools/uefi-oracle.ts debian alpine alpine-grub`: ~30 s
   for all three at once under TCG. **Finding:** QEMU's `kaslr-seed` in `/chosen` made Debian's
-  boot 1.8× slower under TCG (backlog "No `rng-seed` in the DT"), which first looked like DT
-  vs ACPI; without it they're equal.
+  boot 1.8× slower under TCG (KASLR forces KPTI on a CPU without E0PD, as the A57 is: docs/cpu.md,
+  "FEAT_RNG and FEAT_E0PD"), which first looked like DT vs ACPI; without it they're equal.
 
 ## Bare-metal tests (`tests/baremetal/`)
 

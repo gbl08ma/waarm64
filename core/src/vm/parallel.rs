@@ -456,6 +456,8 @@ impl Vm {
                     if read {
                         cpu.set_reg(rt, val);
                     }
+                } else if sys::is_rndr(i) {
+                    sys::rndr(cpu, i, v.rng.draw());
                 } else {
                     let irq = self.shared.cpus[c].par.irq.load(Ordering::SeqCst);
                     platform(cpu, i, self.now(), self.cfg.cntfrq, irq);

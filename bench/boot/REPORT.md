@@ -1373,3 +1373,39 @@ last flush (one run each; ad-hoc tool with a debug log, `results/m8-fw-screen/me
 The boot, against both earlier patches (`firmware-ab.ts`, 4 rounds alternating, `deferred-flush-ab.json`):
 3.69 against 3.85 s to the boot option, 13.37 against 13.47 s to the EFI stub, 40.3 against 40.8 s to the first
 boot's question.
+
+## M9: FEAT_RNG and FEAT_E0PD (2026-10-14)
+
+FEAT_RNG (`RNDR`, `RNDRRS`) from the backlog, and FEAT_E0PD, which its "measure KASLR" turned up (docs/cpu.md).
+
+**What the guests did with RNDR.** Alpine's boot test under the JIT in Node (deterministic, one run each; the
+deterministic stream repeats, two runs with it gave the same PCs): `random: crng init done` at 0.000000 s against
+16.73 s without it (the crng waited for `virtio_rng`), 2.652G steps against 2.821G (−6%), no KASLR on this direct
+boot (the kernel's PCs at the same addresses). Debian on the page (UEFI) had **KASLR and its crng at 0 s already
+without RNDR**: EDK2's `EFI_RNG_PROTOCOL` comes from the virtio-rng (`efi: … RNG=` in the log), and the EFI stub
+randomizes with it. Its dmesg said `kernel page table isolation forced ON by KASLR`: Linux's
+`kaslr_requires_kpti()` turns KPTI on under KASLR unless `ID_AA64MMFR2_EL1.E0PD` says the CPU has E0PD,
+whatever CSV3 says. Under KPTI each kernel entry and exit switches ASID, our TLB drops the nG entries at each
+switch, and the kernel's own mappings are nG. The Debian boot to its first question with RNDR against without
+(`rng=1` against `rng=0`, 3 rounds, an ad-hoc version of `firmware-ab.ts`): 40.89 against 40.34 s, noise.
+
+**What KPTI costs.** Alpine's userspace benchmark under the JIT in Node, `kpti=1` on the command line against
+none (two runs each, ad hoc; ms): compress 2715/2717 against 1993/1952, lua 3645/3553 against 2965/2980, churn
+1892/1877 against 1244/1254, sqlite 2992/2955 against 2250/2291, total 20.3/20.2 s against 15.3/15.2 s:
+**+32%**, the steps the same (10.794G against 10.794G).
+
+**E0PD on the page** (`bench/boot/page-ab.ts`, new: two page queries alternating, Debian unattended with the
+tests' credentials, 2 vCPUs; seconds from the page's load to BdsDxe's boot option, the EFI stub and the login
+prompt, then as root ms for 300 fork+exec of `/bin/true` and `dd` of 300,000 64-byte blocks to `/dev/null`;
+`e0pd=0` against `e0pd=1`, RNDR on in both; 5 rounds; Chromium 153.0.8010.52 headless, the dev VM, linux-arm64,
+8 vCPUs, Node 26.7.0; `results/m9-cpu-features/e0pd-ab.json`), median (IQR):
+
+| | without E0PD (KPTI on) | with E0PD (KPTI off) | |
+|---|---|---|---|
+| to BdsDxe | 3.75 s (0.11) | 3.82 s (0.10) | firmware: the same |
+| to the EFI stub | 13.40 s (0.13) | 13.37 s (0.07) | |
+| to the login prompt | 46.81 s (0.94) | **39.74 s** (0.29) | −15% (the kernel and userspace boot: −21%) |
+| 300 fork+exec | 2972 ms (2) | **2086 ms** (76) | −30% |
+| `dd`, 300,000 syscall pairs | 3619 ms (43) | **1155 ms** (44) | 3.1× |
+
+Every run without E0PD logged KPTI forced on, none with it. The page's machines have both features now.

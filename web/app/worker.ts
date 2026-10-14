@@ -101,7 +101,7 @@ const failure = (problem: Problem, message: string) => Object.assign(new Error(m
 /** What this machine is, for a snapshot's header (docs/frontend.md "Snapshots"). */
 /** The RAM of the machine being started, MiB (the page's choice, or a snapshot's). */
 let ramMiB = 0;
-let session: { name: MachineName; ncpus: number; disk: string | null; kinds: DeviceKind[] } | undefined;
+let session: { name: MachineName; ncpus: number; disk: string | null; kinds: DeviceKind[]; cpu: CpuFeature[] } | undefined;
 /** The core, compiled once: `bootVm` and the snapshot codec both take the module. */
 let core: WebAssembly.Module | undefined;
 let codecP: ReturnType<typeof lzCodec> | undefined;
@@ -118,6 +118,9 @@ let restoring = false;
 /** The devices of a machine in slot order: the kinds a snapshot's header lists, so a restore makes the same. */
 type DeviceKind = 'rng' | 'blk' | 'blk-ro' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd';
 const KINDS: DeviceKind[] = ['rng', 'blk', 'blk-ro', 'keyboard', 'tablet', 'net', 'gpu', 'snd'];
+/** The vCPUs' optional features a machine may have (`BootOptions.rng`, `e0pd`): all, unless the page says otherwise. */
+type CpuFeature = 'rng' | 'e0pd';
+const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd'];
 type StartMessage = Extract<ToWorker, { type: 'start' }>;
 
 /** The device of `kind` for this start, or what the page's options lack to make it. */
@@ -187,7 +190,12 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, diskUr
   });
   const ram = Number(h.ramSize) / 2 ** 20;
   if (!Number.isInteger(ram) || ram < 64 || ram > 3072) throw failure('snapshot', `${what}: its memory size isn't readable.\nStart boots ${machine.label} normally.`);
-  return { specs, kinds, ncpus, ramMiB: ram };
+  // A snapshot from before the header said (ABI 34 and older) had none of them.
+  const cpu = h.cpu ?? [];
+  if (!Array.isArray(cpu) || !cpu.every((f): f is CpuFeature => CPU_FEATURES.includes(f as CpuFeature))) {
+    throw failure('snapshot', `${what}: its processor's features aren't ones this page knows (another version made it?).\nStart boots ${machine.label} normally.`);
+  }
+  return { specs, kinds, ncpus, ramMiB: ram, cpu };
 }
 
 const CORE = new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url).href;
@@ -306,6 +314,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   let ncpus = m.ncpus;
   ramMiB = m.ramMiB;
   let kinds = normalKinds(m, machine);
+  let cpu = CPU_FEATURES.filter((f) => m.cpu?.[f] ?? true);
   let restore: Restore | undefined;
   if (snapshot) {
     // Everything that can be refused is, before anything is touched (the overlay is replaced inside `bootVm`;
@@ -315,7 +324,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
       const lz = await codec();
       const { header } = await openSnapshot(snapshot, { codecs: [lz] });
       const h = fromHeader(header, m, machine, diskUrl, snapshotName);
-      ({ kinds, ncpus, ramMiB } = h);
+      ({ kinds, ncpus, ramMiB, cpu } = h);
       restore = (await readSnapshot(snapshot, lz, lz.snapshotVersion, { devices: h.specs, resume: !!resume })).restore;
       serialTail = typeof header.serial === 'string' ? header.serial : '';
     } catch (err) {
@@ -327,9 +336,9 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     restoring = !resume;
   }
   const devices = kinds.map((k) => device(k, m, machine, diskUrl) as DeviceSpec);
-  session = { name: m.machine, ncpus, disk: m.disk ? (m.disk.file?.name ?? new URL(m.disk.url!, self.location.href).pathname.split('/').pop() ?? 'disk') : null, kinds };
+  session = { name: m.machine, ncpus, disk: m.disk ? (m.disk.file?.name ?? new URL(m.disk.url!, self.location.href).pathname.split('/').pop() ?? 'disk') : null, kinds, cpu };
   booting = bootVm(core, {
-    ramSize: ramMiB * 2 ** 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true,
+    ramSize: ramMiB * 2 ** 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'),
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices,
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });
@@ -441,7 +450,7 @@ async function saveSnapshot(handle?: FileSystemFileHandle) {
     paused = true;
     // The terminal's tail from a line start: a cut escape sequence would draw garbage in the restored terminal.
     const cut = serialTail.length >= TAIL ? serialTail.indexOf('\n') + 1 : 0;
-    const meta = { machine: s.name, label: current?.label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, serial: serialTail.slice(cut) };
+    const meta = { machine: s.name, label: current?.label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, cpu: s.cpu, serial: serialTail.slice(cut) };
     let posted = 0;
     const w = await writeSnapshot(v, sink, meta, lz, {
       progress: (done, total) => {
@@ -488,7 +497,7 @@ async function suspend() {
     if (!(await v.pause())) throw new Error('the machine ended before it could be paused');
     paused = true;
     const cut = serialTail.length >= TAIL ? serialTail.indexOf('\n') + 1 : 0;
-    const meta = { machine: s.name, label: machine.label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, serial: serialTail.slice(cut) };
+    const meta = { machine: s.name, label: machine.label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, cpu: s.cpu, serial: serialTail.slice(cut) };
     const out = await suspendWriter(overlayName);
     let bytes = 0;
     try {

@@ -917,3 +917,108 @@ fn a_restored_parallel_vcpu_has_its_timer_and_interrupt_lines() {
         "the device's interrupt, in both"
     );
 }
+
+const MRS_X0_RNDR: u32 = 0xd53b_2400;
+const MRS_X1_RNDRRS: u32 = 0xd53b_2421;
+const MRS_X2_ISAR0: u32 = 0xd538_0602;
+
+fn rng(cfg: VmConfig) -> VmConfig {
+    VmConfig {
+        features: crate::cpu::FEATURE_RNG,
+        ..cfg
+    }
+}
+
+#[test]
+fn rndr_reads_the_vcpus_stream_at_el0_and_el1() {
+    let prog = [MRS_X0_RNDR, MRS_X1_RNDRRS, MRS_X2_ISAR0];
+    // A deterministic VM keys its streams with zeros, whatever the host passed.
+    let cfg = rng(VmConfig {
+        rng_seed: [1, 2, 3, 4],
+        ..VmConfig::default()
+    });
+    for el0 in [false, true] {
+        let mut s = crate::rng::Rng::new([0; 4], 0);
+        let mut t = T::new(&prog, cfg);
+        if el0 {
+            t.cpu().pstate = crate::cpu::M_EL0T;
+        }
+        t.cpu().nzcv = 0xf000_0000;
+        assert_eq!(t.vm.run(2), exit::BUDGET);
+        assert_eq!(t.cpu().nzcv, 0, "success: NZCV 0000");
+        let (a, b) = (s.draw(), s.draw());
+        assert_eq!((t.cpu().x[0], t.cpu().x[1]), (a, b), "EL0 {el0}");
+        assert_eq!((t.cpu().pc, t.vm.steps), (RAM_BASE + 8, 2));
+        if !el0 {
+            t.vm.run(1);
+            assert_eq!(t.cpu().x[2] >> 60, 1, "ID_AA64ISAR0_EL1.RNDR");
+        }
+    }
+    // A realtime VM's key is the host's.
+    let mut t = T::new(
+        &prog,
+        VmConfig {
+            deterministic: 0,
+            ..cfg
+        },
+    );
+    t.vm.run(1);
+    assert_eq!(t.cpu().x[0], crate::rng::Rng::new([1, 2, 3, 4], 0).draw());
+    // Without FEAT_RNG: UNDEFINED, at EL1 to the current EL's SPx vector, and not advertised.
+    let mut t = T::new(&prog, VmConfig::default());
+    t.vm.run(1);
+    assert_eq!(t.cpu().pc, VBAR + 0x200);
+    assert_eq!(t.cpu().esr_el1 >> 26, 0, "EC 0: unknown");
+    let mut t = T::new(&[MRS_X2_ISAR0], VmConfig::default());
+    t.vm.run(1);
+    assert_eq!(t.cpu().x[2] >> 60, 0);
+}
+
+#[test]
+fn a_restored_vm_goes_on_with_its_rndr_stream() {
+    let prog = [MRS_X0_RNDR, MRS_X0_RNDR, MRS_X1_RNDRRS];
+    for realtime in [false, true] {
+        let cfg = rng(VmConfig {
+            deterministic: !realtime as u64,
+            rng_seed: [5, 6, 7, 8],
+            ..VmConfig::default()
+        });
+        let mut a = T::new(&prog, cfg);
+        a.vm.run(2);
+        let state = a.save();
+        // Restored under the same key (the same deterministic VM), or a new one.
+        let again = VmConfig {
+            rng_seed: [9, 9, 9, 9],
+            ..cfg
+        };
+        let (mut b, r) = a.restore(&state, again, &[]);
+        assert_eq!(r, Ok(()));
+        a.vm.run(1);
+        b.vm.run(1);
+        let key = if realtime { [9; 4] } else { [0; 4] };
+        let mut s = crate::rng::Rng::new(key, 0);
+        s.counter = 2;
+        assert_eq!(b.cpu().x[1], s.draw(), "realtime {realtime}");
+        assert_eq!(a.cpu().x[1] == b.cpu().x[1], !realtime);
+        // A VM without FEAT_RNG is another machine.
+        let other = VmConfig { features: 0, ..cfg };
+        assert_eq!(a.restore(&state, other, &[]).1, Err(Error::Config));
+    }
+}
+
+#[test]
+fn id_aa64mmfr2_says_e0pd_with_the_feature() {
+    const MRS_X2_MMFR2: u32 = 0xd538_0742;
+    for (features, e0pd) in [(0, 0), (crate::cpu::FEATURE_E0PD, 1)] {
+        let mut t = T::new(
+            &[MRS_X2_MMFR2],
+            VmConfig {
+                features,
+                ..VmConfig::default()
+            },
+        );
+        t.cpu().x[2] = !0;
+        t.vm.run(1);
+        assert_eq!(t.cpu().x[2], e0pd << 60);
+    }
+}

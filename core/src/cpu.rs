@@ -71,8 +71,15 @@ pub struct Cpu {
 /// FEAT_AES (with PMULL), FEAT_SHA1 and FEAT_SHA256 (M6.5): advertised in
 /// ID_AA64ISAR0_EL1, and UNDEFINED without it.
 pub const FEATURE_CRYPTO: u64 = 1;
+/// FEAT_RNG (ABI 35): `RNDR` and `RNDRRS`, advertised in ID_AA64ISAR0_EL1 and
+/// UNDEFINED without it. The run loop reads them from the vCPU's stream (`rng`).
+pub const FEATURE_RNG: u64 = 2;
+/// FEAT_E0PD (ABI 35): `TCR_EL1.E0PD0`/`E0PD1` make an EL0 access to that half
+/// of the address space a level 0 translation fault (`mmu::e0pd`), advertised in
+/// ID_AA64MMFR2_EL1. Linux then keeps KPTI off under KASLR (`kaslr_requires_kpti`).
+pub const FEATURE_E0PD: u64 = 4;
 /// Every feature bit the core knows.
-pub const FEATURES: u64 = FEATURE_CRYPTO;
+pub const FEATURES: u64 = FEATURE_CRYPTO | FEATURE_RNG | FEATURE_E0PD;
 /// The GICv3 system-register CPU interface (`ICC_*_EL1`, ID_AA64PFR0_EL1.GIC
 /// = 1). Not a `VmConfig.features` bit: a VM sets it from `VmConfig.gic`; a
 /// user-mode vCPU doesn't have it.

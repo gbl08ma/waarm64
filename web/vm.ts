@@ -14,7 +14,7 @@ import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 
-export const ABI = 34;
+export const ABI = 35;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -330,6 +330,13 @@ export type BootOptions = {
   jit?: 0 | 1 | 2 | 3 | 4;
   /** `VmConfig.features` bit 0 (ABI 19): the crypto extensions (AES, PMULL, SHA1, SHA256), advertised and implemented; on unless false (M6.5 loop 7). */
   crypto?: boolean;
+  /**
+   * `VmConfig.features` bit 1 (ABI 35): FEAT_RNG (`RNDR`, `RNDRRS`), advertised and implemented; off unless true.
+   * Realtime mode keys its streams from `crypto.getRandomValues` (`VmConfig.rng_seed`), deterministic mode with zeros.
+   */
+  rng?: boolean;
+  /** `VmConfig.features` bit 2 (ABI 35): FEAT_E0PD, which spares a KASLR kernel KPTI; off unless true. */
+  e0pd?: boolean;
   /** Test only: stalls one vCPU's host worker (parallel mode), see {@link Stall}; `addr` here is a guest PA. */
   stall?: Stall | Stall[];
   /** `VmConfig.ncpus` (ABI 21): vCPUs (default 1), round-robin on this thread unless `parallel`. */
@@ -523,6 +530,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // A PL031 RTC from the host's wall clock (ABI 28), realtime only, or in the firmware configuration from a fixed epoch.
   // The firmware configuration (ABI 29): the flash bank's size, fw_cfg's files (copied by vm_new).
   // A fixed memory's pages (ABI 32), else 0.
+  // FEAT_RNG's key (ABI 35): the host's CSPRNG in realtime mode (the core ignores it in deterministic mode).
   const fw = o.firmware;
   const rtc = !deterministic ? BigInt(Date.now()) : fw ? BigInt(FIRMWARE_EPOCH_MS) : 0n;
   const fwCfgAt = fwCfg ? memory.grow(Math.ceil(fwCfg.length / 65536)) * 65536 : 0;
@@ -534,8 +542,11 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     if (!ex.heap_reserve(pages)) throw new RangeError(`the core's heap reserve: no memory to grow ${pages} pages into`);
     memory.grow(pages - memory.buffer.byteLength / 65536);
   }
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 19).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), o.crypto === false ? 0n : 1n, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
-    fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n]);
+  // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
+  const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
+  const features = (o.crypto === false ? 0n : 1n) | (o.rng ? 2n : 0n) | (o.e0pd ? 4n : 0n);
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 23).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
+    fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed]);
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
