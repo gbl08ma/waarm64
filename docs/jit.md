@@ -491,6 +491,19 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
 - **TLB entry layouts:** an i32 addend, and split tag/addend arrays (12 bytes an entry): neither
   paid on Alpine's boot trace (the split's index arithmetic costs more than its density saves).
   The 16-byte entry stays.
+- **A TLB translation memo in wasm locals** (M8, `bench/boot/REPORT.md` "M8: a TLB translation
+  memo"): the TLB entry (tag, addend) an access last hit, kept in two i64 locals and checked
+  before the probe. Safe as built: a translation changes only at a TLBI or a regime MSR, which
+  `block::next` gives no successor, so the function returns after them. The check needs two
+  compares, `(va | 0xfff) == tag` and, past one byte, the page offset ≤ 0x1000 − len: the TLB's
+  tag compare is enough only because its index comes from the first byte, and any single range
+  compare has no "empty" value, so zeroed locals would match a page. Lost in all three forms
+  (Chromium, `alpine_user_jit`): one memo per kind (reads, writes) a function, 42–62% of the checks
+  hitting, +13% (wasm +11.7%); one per base register and kind, 74–87% hits, +5.5% (wasm +8.7%);
+  that only in loop regions, wasm +0.8%, still +2.1% (compress +5.8%) and `gl_llvmpipe_jit` +1.9%
+  a frame. TurboFan's TLB hit (shift, mask, an L1 load, compare) is cheaper than the memo's
+  compares and the extra loop-carried locals. The patch (with two-byte indices for locals from 128
+  and bare-metal tests of its rules) is in `bench/boot/results/m8-memo/`.
 - **Relinking** (recompiling a block once a successor it returned through is compiled): doubled
   the blocks compiled and the flushes on Alpine for 9% fewer dispatches.
 - **Regions of every seen successor** (M5, loops; forward regions since M8 hold each block of a

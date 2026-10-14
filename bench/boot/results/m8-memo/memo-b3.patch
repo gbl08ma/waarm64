@@ -1,0 +1,501 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index c425e2f..57229ff 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -123,7 +123,8 @@ pub struct Block {
+ /// can't change the regime (ISB, CLREX, YIELD/SEV, DC: when its
+ /// helper retires, the interpreter would go on to the next instruction in
+ /// the same regime). None after an indirect branch, ERET, MSR, SYS (TLBI, AT),
+-/// IC, WFI/WFE.
++/// IC, WFI/WFE: so a function returns after a TLBI or a regime MSR, which
++/// `emit::access`'s translation memos rely on.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+ pub enum Next {
+     None,
+@@ -625,7 +626,9 @@ pub fn module(
+         // whose flags are dead at entry, and what lazy flags the edges carry.
+         let n = r.blocks.len();
+         let mem = vec![In::Mem; n];
+-        let first = emit_region(&env, r, 0, &vec![emit::Regs::default(); n], &mem);
++        let first = emit_region(&env, r, 0, 0, &vec![emit::Regs::default(); n], &mem);
++        // The first emission counts the accesses that could use a memo.
++        let memo = first.c.plan_memo();
+         let plain = if r.looped() {
+             0
+         } else {
+@@ -645,14 +648,14 @@ pub fn module(
+         let (mut entry, mut flags) = settle(&first);
+         if n > 1 {
+             for _ in 0..4 {
+-                let next = settle(&emit_region(&env, r, plain, &entry, &flags));
++                let next = settle(&emit_region(&env, r, plain, memo, &entry, &flags));
+                 if next == (entry.clone(), flags.clone()) {
+                     break;
+                 }
+                 (entry, flags) = next;
+             }
+         }
+-        let mut x = emit_region(&env, r, plain, &entry, &flags);
++        let mut x = emit_region(&env, r, plain, memo, &entry, &flags);
+         if x.bad {
+             // The lazy states didn't settle: flags in memory on every edge.
+             let dead = |j: usize| if first.dead[j] { In::Dead } else { In::Mem };
+@@ -660,6 +663,7 @@ pub fn module(
+                 &env,
+                 r,
+                 plain,
++                memo,
+                 &entry,
+                 &(0..n).map(dead).collect::<Vec<_>>(),
+             );
+@@ -751,13 +755,22 @@ struct Emission {
+ }
+ 
+ /// One emission of region `r` with the registers in `plain` read without a
+-/// local, each member starting in its `entry` register state and `fin` flag
+-/// state.
+-fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]) -> Emission {
++/// local, translation memos for the access kinds in `memo`, each member
++/// starting in its `entry` register state and `fin` flag state.
++fn emit_region(
++    e: &Env,
++    r: &Region,
++    plain: u64,
++    memo: u128,
++    entry: &[emit::Regs],
++    fin: &[In],
++) -> Emission {
+     let n = r.blocks.len();
+     let head = r.blocks[0].va;
+     let mut c = emit::Func::default();
+     c.plain = plain;
++    c.memo = memo;
++    c.looped = r.looped();
+     let mut into = vec![emit::Regs::default(); n];
+     let mut flags = vec![In::Unset; n];
+     let mut dead = vec![false; n];
+@@ -1256,6 +1269,51 @@ mod tests {
+         assert!(has(&bytes, &after));
+     }
+ 
++    #[test]
++    fn accesses_share_a_translation_memo() {
++        // At EL1 with the MMU: ldr x0, [x1]; ldr x2, [x1, #8]; ldxp x4, x5,
++        // [x6] (a helper); ldr x3, [x1, #16]; str x0, [x1, #24].
++        let b = Block {
++            key: 0x4000_0200 | KEY_MMU | KEY_EL1,
++            va: 0xffff_0000_0000_0200,
++            words: vec![0xf9400020, 0xf9400422, 0xc87f14c4, 0xf9400823, 0xf9000c20],
++        };
++        let Emitted { bytes, .. } = build(b);
++        // The first load fills the read memo from its TLB hit: the tag
++        // into a two-byte local (`t`), declared after the others.
++        let mut fill = vec![0x29, 3];
++        crate::jit::wasm::uleb(&mut fill, emit::tlb_array(1, 0) as u64);
++        fill.push(0x21); // local.set
++        let at = bytes.windows(fill.len()).position(|w| w == fill).unwrap() + fill.len();
++        let t = bytes[at];
++        assert!(t & 0x80 != 0 && bytes[at + 1] == 0);
++        // The others check it first, the helper between them notwithstanding:
++        // (ADDR | 0xfff) == tag, and the access doesn't cross the page.
++        let check = [0x42, 0xff, 0x1f, 0x84, 0x20, t, 0, 0x51];
++        assert_eq!(bytes.windows(8).filter(|w| *w == check).count(), 2);
++        assert!(has(&bytes, &[0x83, 0x42, 0xf8, 0x1f, 0x58, 0x71])); // & 0xfff <= 0x1000 - 8
++        // One store: no write memo (two wide locals in all).
++        let wide = bytes
++            .windows(3)
++            .filter(|w| w[0] == 0x21 && w[1] & 0x80 != 0 && w[2] == 0)
++            .map(|w| w[1])
++            .collect::<std::collections::BTreeSet<_>>();
++        assert_eq!(wide.len(), 2);
++    }
++
++    #[test]
++    fn what_changes_a_translation_ends_the_function() {
++        // The translation memos (`emit::access`) last a function call: a
++        // TLBI, an AT and every MSR that may end a block (TTBR0_EL1,
++        // SCTLR_EL1, TCR_EL1 here) have no successor in it.
++        for w in [
++            0xd508871f, 0xd5088320, 0xd5087800, 0xd5182000, 0xd5181000, 0xd5182040,
++        ] {
++            assert_eq!(end(w), End::After, "{w:#x}");
++            assert_eq!(next(&[w]), Next::None, "{w:#x}");
++        }
++    }
++
+     /// The number of NZCV stores (`i64.store 264`) in `bytes`.
+     fn nzcv_stores(bytes: &[u8]) -> usize {
+         bytes.windows(3).filter(|w| *w == [0x37, 3, 0x88]).count()
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index bcfbde6..075b53a 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -31,7 +31,7 @@ mod simd;
+ use core::mem::offset_of;
+ use core::ops::{Deref, DerefMut};
+ 
+-use super::wasm::{Code, F64, I32, I64, V128};
++use super::wasm::{Code, F64, I32, I64, V128, WIDE};
+ use crate::cpu::Cpu;
+ use crate::decode::Op;
+ use crate::interp::sys::DCZID_BS;
+@@ -200,6 +200,20 @@ pub struct Func {
+     pub prev: u32,
+     pub next: u32,
+     pub fused: bool,
++    /// The TLB translation memos ([`access`]), one per base register (32:
++    /// the PC) and kind (reads, writes), bit `2 × base + write` ([`memo_key`]):
++    /// those the function keeps (`memo`, decided from a first emission's
++    /// `sites`, the accesses that could use each), those a site that fills
++    /// them was emitted for already (`filled`: a later site checks it
++    /// first), and each one's pair of locals once it has one (`slot`, from
++    /// 1). `looped`: the function is a loop, so every site may find its memo
++    /// filled.
++    pub memo: u128,
++    pub sites: Sites,
++    pub filled: u128,
++    pub slot: Slots,
++    pub slots: u8,
++    pub looped: bool,
+ }
+ 
+ impl Deref for Func {
+@@ -481,6 +495,27 @@ impl Func {
+         self.reload(to.valid);
+     }
+ 
++    /// The translation memos the function keeps: those with a site that
++    /// could find it filled (a second site, or any in a loop).
++    pub fn plan_memo(&self) -> u128 {
++        if !self.looped {
++            return 0;
++        }
++        let n = if self.looped { 1 } else { 2 };
++        (0..MEMO_KEYS)
++            .filter(|&m| self.sites.0[m] >= n)
++            .fold(0, |a, m| a | 1 << m)
++    }
++
++    /// Memo `m`'s tag local (its addend's is the next), numbered on first use.
++    fn memo_local(&mut self, m: usize) -> u32 {
++        if self.slot.0[m] == 0 {
++            self.slots += 1;
++            self.slot.0[m] = self.slots;
++        }
++        WIDE + 2 * (self.slot.0[m] as u32 - 1)
++    }
++
+     /// Loads the registers in `mask` whose locals aren't valid.
+     fn reload(&mut self, mask: u64) {
+         let mut m = mask & !self.regs.valid;
+@@ -1306,6 +1341,37 @@ const TLBE: u32 = 7;
+ const HOST: u32 = 6;
+ /// An i64 the access's fast path keeps across a nested `if` (exclusives).
+ const VALUE: u32 = 5;
++/// Translation memos ([`access`]): one per base register (X0–X30, SP, the
++/// PC) and kind, each a pair of i64 locals from [`WIDE`] (two-byte indices):
++/// a TLB entry's tag (0: empty) and addend.
++pub const MEMO_KEYS: usize = 66;
++
++/// Per memo key: access sites, and local pairs (`Func::sites`, `Func::slot`).
++pub struct Sites(pub [u16; MEMO_KEYS]);
++pub struct Slots([u8; MEMO_KEYS]);
++
++impl Default for Sites {
++    fn default() -> Sites {
++        Sites([0; MEMO_KEYS])
++    }
++}
++
++impl Default for Slots {
++    fn default() -> Slots {
++        Slots([0; MEMO_KEYS])
++    }
++}
++
++/// The memo of access `i` (a load or store word) of a kind: its base
++/// register's, the PC's for a literal load.
++fn memo_key(i: u32, write: bool) -> usize {
++    use Op::*;
++    let base = match crate::decode::decode(i) {
++        LDR_lit_gen | LDRSW_lit | LDR_lit_fpsimd => 32,
++        _ => bits(i, 9, 5) as usize,
++    };
++    2 * base + write as usize
++}
+ 
+ /// Loads, stores and pairs, acquire/release, exclusives of one register and
+ /// LSE atomics, whose handlers can't fail for other reasons than the access
+@@ -2024,6 +2090,19 @@ impl Guard {
+ /// didn't retire; the registers are written back before the call, and after
+ /// it the ones in `written` (the instruction's destinations), and any the fast
+ /// path loaded, are reloaded, so both arms leave the fast path's register state.
++///
++/// With the MMU on, a function with more than one access of a kind (reads,
++/// writes; one in a loop) keeps a **translation memo** for it: the TLB entry
++/// (tag and addend) of its last hit, in two locals. An access in the memo's
++/// page takes it without the TLB's index, load and compare; on a miss the
++/// TLB is probed as without it, and a hit fills it. A memo is a TLB entry
++/// held for the length of a function call: a translation changes only at a
++/// TLBI or a regime MSR, and [`block::next`] gives those no successor, so the
++/// function returns after their block (an eviction from the TLB doesn't
++/// matter, and only RAM, whose layout is fixed, fills the TLB). The other
++/// vCPUs' TLBI IS reach this one's TLB in the run loop, between calls.
++///
++/// [`block::next`]: super::block::next
+ #[allow(clippy::too_many_arguments)]
+ fn access(
+     c: &mut Func,
+@@ -2036,6 +2115,7 @@ fn access(
+     written: u64,
+     body: impl FnOnce(&mut Func, u32),
+ ) {
++    let m = memo_key(i, write);
+     let off = match cx.bus {
+         Bus::Flat { base, phys, size } => {
+             c.local_get(ADDR);
+@@ -2049,15 +2129,30 @@ fn access(
+         }
+         Bus::Tlb { read } => {
+             let arr = read + if write { (TLB_ENTRIES * 16) as u32 } else { 0 };
+-            // The entry's offset, index × 16, in one shift and mask.
+-            c.local_get(ADDR).i64_const(8).op(SHR_U + W).i32_wrap_i64();
+-            c.i32_const((TLB_ENTRIES as i32 - 1) << 4).op(AND);
+-            c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
+-            c.local_get(ADDR);
+-            if len > 1 {
+-                c.i64_const(len as i64 - 1).i64_add();
++            // The block's own EL's arrays (not LDTR's at EL1) have a memo.
++            let own = read == tlb_array(cx.el1 as u64, 0);
++            c.sites.0[m] = c.sites.0[m].saturating_add(own as u16);
++            let memo = own && c.memo & 1 << m != 0;
++            if memo && (c.looped || c.filled & 1 << m != 0) {
++                let tag = c.memo_local(m);
++                // The memo's page holds the whole access (a zero tag never
++                // matches; an aligned one can't cross a page), or the TLB's
++                // entry for it does, which fills the memo.
++                c.local_get(ADDR).i64_const(0xfff).op(OR + W);
++                c.local_get(tag).op(EQ + WC);
++                if len > 1 && !guards.contains(&Guard::Aligned) {
++                    c.local_get(ADDR).i64_const(0xfff).i64_and();
++                    c.i64_const(0x1000 - len as i64).op(LE_U + WC).op(AND);
++                }
++                c.hint(true).if_t(I32).i32_const(1).else_();
++                probe(c, arr, len);
++                c.if_t(I32);
++                fill_memo(c, arr, tag);
++                c.i32_const(1).else_().i32_const(0).end();
++                c.end();
++            } else {
++                probe(c, arr, len);
+             }
+-            c.i64_const(0xfff).op(OR + W).op(EQ + WC);
+             0
+         }
+     };
+@@ -2069,11 +2164,19 @@ fn access(
+         Bus::Flat { .. } => c.local_get(OFF).i32_wrap_i64(),
+         Bus::Tlb { read } => {
+             let arr = read + if write { (TLB_ENTRIES * 16) as u32 } else { 0 };
+-            c.local_get(TLBE)
+-                .i64_load(arr + 8)
+-                .local_get(ADDR)
+-                .i64_add()
+-                .i32_wrap_i64()
++            if read == tlb_array(cx.el1 as u64, 0) && c.memo & 1 << m != 0 {
++                let tag = c.memo_local(m);
++                if !(c.looped || c.filled & 1 << m != 0) {
++                    fill_memo(c, arr, tag);
++                }
++                c.filled |= 1 << m;
++                c.local_get(tag + 1)
++            } else {
++                c.local_get(TLBE).i64_load(arr + 8)
++            }
++            .local_get(ADDR)
++            .i64_add()
++            .i32_wrap_i64()
+         }
+     };
+     c.local_set(HOST);
+@@ -2082,6 +2185,27 @@ fn access(
+     fallback(c, cx, i, here, before, written);
+ }
+ 
++/// Pushes whether the TLB entry for the access of `len` bytes at `ADDR` (in
++/// array `arr`) hits, keeping the entry's offset in `TLBE`: its index × 16 in
++/// one shift and mask, and tag = `(va + len − 1) | 0xfff`.
++fn probe(c: &mut Func, arr: u32, len: u32) {
++    c.local_get(ADDR).i64_const(8).op(SHR_U + W).i32_wrap_i64();
++    c.i32_const((TLB_ENTRIES as i32 - 1) << 4).op(AND);
++    c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
++    c.local_get(ADDR);
++    if len > 1 {
++        c.i64_const(len as i64 - 1).i64_add();
++    }
++    c.i64_const(0xfff).op(OR + W).op(EQ + WC);
++}
++
++/// Copies the TLB entry in `TLBE` (array `arr`), a hit, into the memo whose
++/// tag is local `tag` (its addend the next).
++fn fill_memo(c: &mut Func, arr: u32, tag: u32) {
++    c.local_get(TLBE).i64_load(arr).local_set(tag);
++    c.local_get(TLBE).i64_load(arr + 8).local_set(tag + 1);
++}
++
+ /// ANDs the condition of `g` into the i32 on the stack (an access of `len` bytes).
+ fn guard(c: &mut Func, g: Guard, len: u32) {
+     match g {
+diff --git a/core/src/jit/wasm.rs b/core/src/jit/wasm.rs
+index 2cb3707..7367ff4 100644
+--- a/core/src/jit/wasm.rs
++++ b/core/src/jit/wasm.rs
+@@ -48,6 +48,9 @@ fn section(out: &mut Vec<u8>, id: u8, count: usize, body: &[u8]) {
+     out.extend(v);
+ }
+ 
++/// The first local index [`Code`] encodes in two bytes (a padded LEB).
++pub const WIDE: u32 = 128;
++
+ /// A function body under construction: locals, then instructions.
+ #[derive(Default)]
+ pub struct Code {
+@@ -150,11 +153,17 @@ impl Code {
+         self.b.extend_from_slice(&[0xfe, 0x03, 0x00]);
+         self
+     }
++    /// A local's index: one LEB byte below 128; from 128 ([`WIDE`]) two,
++    /// padded, so [`Code::compact_locals`] can renumber it in place.
+     fn local(&mut self, op: u8, i: u32) -> &mut Self {
+-        assert!(i < 128);
++        assert!(i < 256);
+         self.b.push(op);
+         self.locals.push(self.b.len());
+-        self.b.push(i as u8);
++        if i < WIDE {
++            self.b.push(i as u8);
++        } else {
++            self.b.extend_from_slice(&[0x80 | i as u8, (i >> 7) as u8]);
++        }
+         self
+     }
+     pub fn local_get(&mut self, i: u32) -> &mut Self {
+@@ -176,33 +185,50 @@ impl Code {
+     /// `params[k]` (as emitted) becomes parameter `k`, `ty(i)` is local `i`'s
+     /// type, and the other locals are grouped by type in order (every
+     /// declared local costs Liftoff a zero-initialization per call). Returns
+-    /// the declarations.
++    /// the declarations. The wide locals (from [`WIDE`]) come last, so the
++    /// others keep one-byte indices.
+     pub fn compact_locals(&mut self, params: &[u32], ty: impl Fn(u32) -> u8) -> Vec<(u32, u8)> {
+-        let mut used = [false; 128];
++        let index = |b: &[u8], p: usize| {
++            if b[p] & 0x80 == 0 {
++                b[p] as usize
++            } else {
++                (b[p] & 0x7f) as usize | (b[p + 1] as usize) << 7
++            }
++        };
++        let mut used = [false; 256];
+         for &p in &self.locals {
+-            used[self.b[p] as usize] = true;
++            used[index(&self.b, p)] = true;
+         }
+-        let mut map = [0u8; 128];
++        let mut map = [0u32; 256];
+         for (k, &p) in params.iter().enumerate() {
+             used[p as usize] = false;
+-            map[p as usize] = k as u8;
++            map[p as usize] = k as u32;
+         }
+         let mut decls = Vec::new();
+         let mut next = params.len() as u32;
+-        for t in [I64, I32, F64, V128] {
+-            let n = next;
+-            for i in 0..128 {
+-                if used[i as usize] && ty(i) == t {
+-                    map[i as usize] = next as u8;
+-                    next += 1;
++        for range in [0..WIDE, WIDE..256] {
++            for t in [I64, I32, F64, V128] {
++                let n = next;
++                for i in range.clone() {
++                    if used[i as usize] && ty(i) == t {
++                        map[i as usize] = next;
++                        next += 1;
++                    }
++                }
++                if next > n {
++                    decls.push((next - n, t));
+                 }
+-            }
+-            if next > n {
+-                decls.push((next - n, t));
+             }
+         }
+         for &p in &self.locals {
+-            self.b[p] = map[self.b[p] as usize];
++            let m = map[index(&self.b, p)];
++            if self.b[p] & 0x80 == 0 {
++                assert!(m < WIDE);
++                self.b[p] = m as u8;
++            } else {
++                self.b[p] = 0x80 | m as u8;
++                self.b[p + 1] = (m >> 7) as u8;
++            }
+         }
+         decls
+     }
+@@ -512,6 +538,17 @@ mod tests {
+         assert_eq!(c.b, [0x20, 0, 0x20, 3, 0x21, 4, 0x22, 2, 0x20, 3, 0x20, 1]);
+     }
+ 
++    #[test]
++    fn wide_locals_are_declared_last_and_keep_two_bytes() {
++        // Locals 130 and 5 (i64), 7 (i32): 130 comes after both groups.
++        let mut c = Code::default();
++        c.local_get(130).local_set(5).local_get(7).local_get(0);
++        assert_eq!(c.b, [0x20, 0x82, 1, 0x21, 5, 0x20, 7, 0x20, 0]);
++        let decls = c.compact_locals(&[0], |i| if i == 7 { I32 } else { I64 });
++        assert_eq!(decls, [(1, I64), (1, I32), (1, I64)]);
++        assert_eq!(c.b, [0x20, 0x83, 0, 0x21, 1, 0x20, 2, 0x20, 0]);
++    }
++
+     #[test]
+     fn module_bytes() {
+         let mut m = Module::default();
+diff --git a/tests/baremetal/mmu.c b/tests/baremetal/mmu.c
+index ef1d2ab..7f4edd3 100644
+--- a/tests/baremetal/mmu.c
++++ b/tests/baremetal/mmu.c
+@@ -150,6 +150,30 @@ int main(void) {
+   check(((volatile u32 *)pages[1])[1023] == 0x44332211 && ((volatile u32 *)pages[0])[0] == 0x88776655, 30);
+   check(*(volatile u32 *)(TEST_VA + PAGE_SZ - 2) == 0x66554433, 31);
+ 
++  // The same in one block, after a load of the first page (the JIT keeps
++  // that page's translation for the block: the crossing load mustn't use it).
++  for (int i = 0; i < 64; i++) {
++    u64 first, crossing;
++    __asm__ volatile("ldr %0, [%2]; ldr %1, [%2, %3]"
++                     : "=&r"(first), "=&r"(crossing)
++                     : "r"(TEST_VA), "r"(PAGE_SZ - 4)
++                     : "memory");
++    check(first == pages[1][0] && crossing == 0x8877665544332211UL, 35);
++  }
++
++  // A load's translation doesn't serve a store, nor an EL1 one an LDTR: in
++  // one block, a store to a read-only page after loads from it, and an LDTR
++  // of an EL1-only page after loads from it, fault. (Two loads: the first may
++  // miss the TLB, where n_exc's page and the read-only one share an entry.)
++  for (int i = 0; i < 64; i++) {
++    u64 n1 = n_exc, va = TEST_VA + 3 * PAGE_SZ + 8, v = 0;
++    __asm__ volatile("ldr %0, [%1]; ldr %0, [%1]; str %1, [%1]" : "+r"(v) : "r"(va) : "memory");
++    check(n_exc == n1 + 1 && last_esr == DATA_ABORT_EL1(0x0f, 1) && last_far == va, 36);
++    u64 user = 0xdead;
++    __asm__ volatile("ldr %0, [%2]; ldr %0, [%2]; ldtr %1, [%2]" : "=&r"(v), "+r"(user) : "r"(TEST_VA + 8) : "memory");
++    check(n_exc == n1 + 2 && last_esr == DATA_ABORT_EL1(0x0f, 0) && user == 0xdead, 37);
++  }
++
+   // LDTR/STTR at EL1 have EL0's permissions: they fault on EL1-only pages
+   // (permission, level 3) and reach the user stack.
+   n0 = n_exc;

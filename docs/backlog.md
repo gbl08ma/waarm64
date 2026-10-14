@@ -150,24 +150,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   ~18% of the hot shader's samples land on the move). Ideas: one check for a run of FP
   instructions, its fallback re-running the run from saved inputs; cheaper masks (float compares
   on `|x|` instead of exponent arithmetic). The same shader's guest loads spend ~11% on the TLB's
-  tag load.
-- **A TLB translation memo in wasm locals** (2026-10-14). Every access on the TLB bus is a
-  direct-mapped probe: an index shift and mask, a tag load, the page-crossing OR and compare, then
-  the addend load and add — ~11 host instructions (`emit::access`), the "~11% on the TLB's tag
-  load" above and much of a hot region's memory work. Hot code revisits the same page: the stack, a
-  struct, an image row. A block could keep the last (page, addend) in two i64 locals and take them
-  when `(addr ^ cached) < 0x1000`, which is a compare and an add. **Why it is safe:** a `SYS`
-  (every TLBI, every cache and address-translation op) can only be a block's **last** instruction
-  (`End::After`, `block::end_op`), so no translation an access in the block has seen can change
-  before another access runs, and a store to a page table with no TLBI after it is already the
-  exposure the software TLB carries (the architecture's break-before-make rules are what the guest
-  follows). The memo is also more robust than the entry it bypasses: it caches the translation, not
-  the entry, so a conflicting eviction doesn't lose it. MMIO never fills it (only a successful fast
-  path does), and it is dropped at helper calls as the register locals are.
-  **Cost:** the locals pay only in blocks with more than one access (`compact_locals` declares the
-  used ones, and Liftoff zero-initializes each per call), and only on the TLB bus, not the flat
-  one. Bound it by rewriting the userspace benchmark's captured modules as the slow-arm entry above
-  did, then A/B `alpine_user_jit` and `gl_llvmpipe_jit` in Chromium.
+  tag load (a translation memo in locals lost: [jit.md](jit.md) "Tried and not kept").
 - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a
   third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread. **Compiling off the vCPU
   thread** was measured and not built ([jit.md](jit.md) "Tried and not kept"); revisit with a GUI

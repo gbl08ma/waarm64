@@ -1297,3 +1297,41 @@ was gone from Alpine's repository, so `images/build.sh alpine` now takes the rel
 steps (was 2,856,663,287) and the userspace benchmark 10,785,493,578 (was 10,755,927,881); `alpine-gl`
 and `alpine-virgl` were rebuilt on the new root. Compare `boot_alpine*`, `alpine_user_jit`,
 `alpine_crypto*` and `gl_*` only with runs from after this date.
+
+## M8: a TLB translation memo in wasm locals (rejected)
+
+2026-10-14, the dev VM, Chromium 153.0.8010.52; `results/m8-memo/` (A: `8400910`; B, B2, B3 the
+variants below, `memo-b3.patch` the last; `r`, `s`, `t` the three sessions, A and the variant
+alternated twice in each; every run 2 samples, IQRs within 1.1%).
+
+The backlog's idea: an access keeps the last TLB entry it hit in two i64 locals, and a later
+access in that page takes the addend from them, skipping the TLB's index, load and compare. The
+idea's safety argument holds: a TLBI or a regime MSR ends the function, since `block::next`
+gives those no successor (`End::After` alone would only end the block). Its check didn't: `(va ^ page)
+< 0x1000` lets a page-crossing access through, and zeroed locals match page 0. The memo needs
+`(va | 0xfff) == tag` plus a page-offset compare for accesses longer than a byte. Built with
+bare-metal tests (a crossing load after a load of its first page, a store to a read-only page and an
+LDTR of an EL1-only page after loads of them, all in one block); JIT-stress caught each rule planted out.
+
+Hit rates from an instrumented core in Node: one memo per kind (reads, writes) a function
+hit 42% (compress) to 62% (churn) of its checks, since code interleaves pages (stack, heap,
+globals); one per base register and kind, 74% (compress) to 87% (Lua, churn).
+
+`alpine_user_jit`, ms (the medians of each run):
+
+| | A | variant | |
+|---|---|---|---|
+| B, one memo per kind: total | 17,173, 17,367 | 19,555, 19,429 | +12.9% |
+| compress / Lua / churn / SQLite | | | +18.3 / +6.6 / +17.0 / +11.4% |
+| B2, per base register: total | 17,287, 17,405 | 18,474, 18,139 | +5.5% |
+| compress / Lua / churn / SQLite | | | +6.5 / −0.2 / +7.0 / +3.5% |
+| B3, B2 in loop regions only: total | 17,305, 17,556 | 17,775, 17,831 | +2.1% |
+| compress / Lua / churn / SQLite | | | +5.8 / +0.7 / +2.0 / +0.7% |
+
+`gl_llvmpipe_jit` (B3, the shader workload whose profile showed ~11% on the tag load): 309.3,
+309.5 → 314.4, 315.9 ms a frame (+1.9%, IQRs ≤ 2.2 ms); warm 4,482, 4,452 → 4,555, 4,543 ms
+(+1.8%). The JIT's wasm: +11.7% (B), +8.7% (B2), +0.8% (B3) on the userspace run.
+
+B3's small code growth rules out code size as the whole cost: where the memo applies, a hit is
+no cheaper than TurboFan's TLB hit, and misses and the locals carried around loops cost more.
+Rejected; docs/jit.md "Tried and not kept".
