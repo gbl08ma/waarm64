@@ -50,7 +50,7 @@ fn alpine_boots_and_runs_the_test_script() {
     let devices = common::test_devices(common::ALPINE.disk);
     let r = boot(&common::ALPINE, &devices, (640, 480), 50_000_000_000);
     let out = &r.console;
-    assert!(out.contains("webpc: alpine 3.24.2 6.18.53-0-virt\n"));
+    assert!(out.contains("webpc: alpine 3.24.2 6.18.52-0-virt\n"));
     assert!(out.contains("/dev/vda / ext4 ro,"), "root filesystem");
     assert!(out.contains("webpc: modules ext4 virtio_blk virtio_mmio \n"));
     assert!(out.contains("1 packets transmitted, 1 packets received"));
@@ -104,7 +104,7 @@ fn alpine_smp() {
         "not all CPUs up"
     );
     assert!(r.console.contains(
-        "webpc: alpine 3.24.2 6.18.53-0-virt
+        "webpc: alpine 3.24.2 6.18.52-0-virt
 "
     ));
 }

@@ -9,9 +9,10 @@
 #   the same kernel from arm64 defconfig + linux.fragment (the distro-like
 #   candidate, M4 step 4); built natively in Alpine's arm64 container (M7: an
 #   hour under qemu-user in the images container before), as linux-crypto.
-# alpine: Alpine's aarch64 minirootfs plus linux-virt and openrc (apk in a qemu-user
-#   chroot), as an ext4 root (rootfs.ext4); the kernel (Image) and initramfs come
-#   from linux-virt. images/alpine/ has the boot test's local.d script.
+# alpine: Alpine's aarch64 minirootfs plus openrc and linux-virt's modules, as an
+#   ext4 root (rootfs.ext4), with the kernel (Image) and initramfs, all from the
+#   $ALPINE release (its virt ISO), built natively in Alpine's arm64 container as
+#   alpine-user. images/alpine/ has the boot test's local.d script.
 # alpine-user: the userspace benchmark's root (M6, images/alpine/user): alpine's
 #   rootfs.ext4 plus xz, lua5.4, sqlite and openssl (M6.5) and the workloads, with its local.d
 #   script instead of the boot test's, as rootfs-user.ext4 (it boots alpine's
@@ -74,11 +75,16 @@ LINUX_SHA256=9df30b02dd8102bbd0be52556288ef6889ddbe7f1ddb96fbf847d0becf3eacac
 KUT_COMMIT=5a221342a025948fa7d84f0c404748f6ba57f3ad # kvm-unit-tests master, 2026-09-08
 ALPINE=3.24.2
 ALPINE_SHA256=9bf70a7f18ea44094cbb5f70c58f9af129c8214745743db0e68e5502cc2ce773 # minirootfs
-# Alpine keeps only the latest build of each package in its repository, so the
-# pins fail loudly (rather than drift) once these are superseded.
-ALPINE_PKGS="linux-virt=6.18.53-r0 openrc=0.63.2-r0"
-USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0 openssl=3.5.8-r0"
-USERLAND_TOOLS="e2fsprogs=1.47.4-r0 e2fsprogs-extra=1.47.4-r0"
+ALPINE_ISO_SHA256=a57ba668b5f6b17a670fcf8e799d5d7fe43766ed086d6ce2927b0625bf43dbf6 # alpine-virt ISO
+# Alpine's repositories keep only the latest build of each package, so pins on
+# them fail loudly (rather than drift) once superseded. A release's media stay on
+# the mirror for good: alpine comes only from them (the minirootfs, and the virt
+# ISO's kernel, initramfs, modloop and package repository), and the other images
+# take what they can from the ISO's repository (alpine_release) first.
+ALPINE_KERNEL=6.18.52-0-virt # the ISO's
+ALPINE_PKGS="openrc=0.63.2-r0" # from the ISO's repository
+USERLAND_PKGS="xz=5.8.4-r0 lua5.4=5.4.8-r0 sqlite=3.53.4-r0 openssl=3.5.8-r0" # openssl from the ISO's
+USERLAND_TOOLS="e2fsprogs=1.47.4-r0 e2fsprogs-extra=1.47.4-r0" # the ISO's
 GL_PKGS="mesa-egl=26.1.6-r0 mesa-gles=26.1.6-r0 mesa-dri-gallium=26.1.6-r0"
 GL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 mesa-dev=26.1.6-r0"
 MESA=26.1.6
@@ -179,46 +185,65 @@ build_ltp() {
   cp "$bro/images/rootfs.ext2" "$dst/rootfs.ext4"
 }
 
-# binfmt_misc: aarch64 ELF executables run under qemu-user (F: opened now, so it works in the chroot).
-QEMU_AARCH64_BINFMT=':aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-aarch64-static:F'
+# The $ALPINE release's virt ISO, unpacked into $out/dl/alpine-$ALPINE-iso: boot/
+# (the kernel, initramfs and modloop) and apks/ (a package repository: what an
+# installer needs, frozen with the release).
+alpine_release() {
+  local iso=$out/dl/alpine-virt-$ALPINE-aarch64.iso d=$out/dl/alpine-$ALPINE-iso
+  mkdir -p "$out/dl"
+  [ -f "$iso" ] || wget -q -O "$iso" "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE%.*}/releases/aarch64/${iso##*/}"
+  echo "$ALPINE_ISO_SHA256  $iso" | sha256sum -c --quiet
+  [ -d "$d" ] && return
+  rm -rf "$d.tmp" && mkdir "$d.tmp"
+  # bsdtar only reads the pinned ISO: unpinned.
+  podman run --rm -v "$root:$root:z" -w "$root" "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache libarchive-tools
+    bsdtar -xf "$1" -C "$2" apks boot/vmlinuz-virt boot/initramfs-virt boot/modloop-virt
+    chmod -R u+w "$2" # read-only on the ISO
+  ' - "$iso" "$d.tmp"
+  mv "$d.tmp" "$d"
+}
 
 build_alpine() {
-  local dst=$out/alpine r=$out/build/alpine tar=$out/dl/alpine-minirootfs-$ALPINE-aarch64.tar.gz
-  rm -rf "$r" "$dst"
-  mkdir -p "$r" "$dst"
+  local dst=$out/alpine tar=$out/dl/alpine-minirootfs-$ALPINE-aarch64.tar.gz iso=$out/dl/alpine-$ALPINE-iso
+  rm -rf "$dst"
+  mkdir -p "$dst"
   [ -f "$tar" ] || wget -q -O "$tar" "https://dl-cdn.alpinelinux.org/alpine/v${ALPINE%.*}/releases/aarch64/${tar##*/}"
   echo "$ALPINE_SHA256  $tar" | sha256sum -c --quiet
-  # apk runs the packages' scripts (mkinitfs writes the initramfs), so the root
-  # runs aarch64 code: a user namespace with its own binfmt_misc hands it to
-  # qemu-user, and makes us root there for chroot and for mke2fs to record
-  # files as root's. Its one uid maps to us, so /etc/shadow's group is put back.
-  # mkinitfs and mke2fs honor SOURCE_DATE_EPOCH (and mke2fs E2FSPROGS_FAKE_TIME).
-  unshare -rm bash -euo pipefail -c '
-    r=$1 dst=$2 tar=$3 pkgs=$4
-    tar --no-same-owner -xzf "$tar" -C "$r"
-    mkdir -p /tmp/binfmt && mount -t binfmt_misc binfmt_misc /tmp/binfmt
-    echo "$5" > /tmp/binfmt/register
-    cp /etc/resolv.conf "$r/etc/"
-    chroot "$r" apk --no-progress --no-cache -q add $pkgs
-    # Again, with SOURCE_DATE_EPOCH: apk runs its trigger with a scrubbed environment.
-    chroot "$r" mkinitfs -q "$(ls "$r/lib/modules")"
+  alpine_release
+  # As the container's root (owners kept); no network: everything comes from the
+  # release. linux-virt's files are its modules (the modloop) and the ISO's kernel
+  # and initramfs, which loads virtio_mmio, virtio_blk and ext4 itself.
+  # unsquashfs only reads the pinned modloop: unpinned.
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH "$USERLAND_CONTAINER" sh -euc '
+    tar=$1 iso=$2 dst=$3 pkgs=$4 tools=$5 kver=$6
+    apk add -q --no-cache squashfs-tools
+    apk add -q --no-cache --repositories-file /dev/null -X "$iso/apks" $tools
+    r=/tmp/r
+    mkdir $r
+    tar -xpzf "$tar" -C $r
+    cp -r "$iso/apks" $r/tmp/apks
+    touch $r/tmp/none
+    chroot $r apk --no-network --no-progress --no-cache -q --repositories-file /tmp/none -X /tmp/apks add $pkgs
+    rm -rf $r/tmp/apks $r/tmp/none $r/var/log/apk.log # the log is timestamped
+    unsquashfs -q -n -d /tmp/modloop "$iso/boot/modloop-virt"
+    mkdir -p $r/lib/modules
+    mv /tmp/modloop/modules/$kver $r/lib/modules/
     # The boot test: a local.d script, the local service in the default runlevel,
     # and what an installed system runs at sysinit and boot.
-    install -m 755 images/alpine/webpc.start "$r/etc/local.d/"
-    chroot "$r" sh -euc "
+    install -m 755 images/alpine/webpc.start $r/etc/local.d/
+    chroot $r sh -euc "
       for s in devfs dmesg; do rc-update -q add \$s sysinit; done
       for s in modules hostname; do rc-update -q add \$s boot; done
       for s in killprocs mount-ro; do rc-update -q add \$s shutdown; done
       rc-update -q add local default"
-    rm "$r/etc/resolv.conf" "$r/var/log/apk.log" # the log is timestamped
-    find "$r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
-    mke2fs -q -t ext4 -d "$r" -L alpine -U 77656270-6300-4000-8000-000000000011 \
-      -E hash_seed=77656270-6300-4000-8000-000000000012 "$dst/rootfs.ext4" 256M
-    debugfs -w -R "sif /etc/shadow gid 42" "$dst/rootfs.ext4" 2>/dev/null
-  ' - "$r" "$dst" "$tar" "$ALPINE_PKGS" "$QEMU_AARCH64_BINFMT"
-  cp "$r"/boot/initramfs-virt "$dst/initramfs-virt"
+    find $r -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+    E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d $r -L alpine -U 77656270-6300-4000-8000-000000000011 \
+      -E hash_seed=77656270-6300-4000-8000-000000000012,no_copy_xattrs "$dst/rootfs.ext4" 256M
+  ' - "$tar" "$iso" "$dst" "$ALPINE_PKGS" "$USERLAND_TOOLS" "$ALPINE_KERNEL"
+  cp "$iso/boot/initramfs-virt" "$dst/initramfs-virt"
   # vmlinuz-virt is EFI zboot: gzip'd Image at the offset and size in bytes 8-15.
-  local z=$r/boot/vmlinuz-virt
+  local z=$iso/boot/vmlinuz-virt
   tail -c +$(($(od -An -tu4 -j8 -N4 "$z") + 1)) "$z" | head -c "$(od -An -tu4 -j12 -N4 "$z")" | gunzip > "$dst/Image"
 }
 
@@ -227,14 +252,16 @@ build_alpine-user() {
   [ -f "$out/alpine/rootfs.ext4" ] || { echo "alpine-user needs the alpine image: images/build.sh alpine" >&2; exit 1; }
   rm -rf "$dst"
   mkdir -p "$dst"
+  alpine_release
   podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH "$USERLAND_CONTAINER" sh -euc '
-    apk add -q --no-cache $3
+    apk add -q --no-cache -X "$4/apks" $3
     r=/tmp/r
     mkdir $r
     debugfs -R "rdump / $r" "$1/alpine/rootfs.ext4" 2>/dev/null
     cp /etc/resolv.conf "$r/etc/"
-    chroot "$r" apk --no-progress --no-cache -q add $2
-    rm "$r/etc/resolv.conf" "$r/var/log/apk.log" "$r/etc/local.d/webpc.start"
+    cp -r "$4/apks" "$r/tmp/apks"
+    chroot "$r" apk --no-progress --no-cache -q -X /tmp/apks add $2
+    rm -r "$r/etc/resolv.conf" "$r/tmp/apks" "$r/var/log/apk.log" "$r/etc/local.d/webpc.start"
     install -m 755 images/alpine/user/webpc-user.start "$r/etc/local.d/"
     mkdir -p "$r/usr/local/share/webpc"
     install -m 644 images/alpine/user/*.lua images/alpine/user/speed.sql "$r/usr/local/share/webpc/"
@@ -243,7 +270,7 @@ build_alpine-user() {
     E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d "$r" -L alpine-user \
       -U 77656270-6300-4000-8000-000000000013 -E hash_seed=77656270-6300-4000-8000-000000000014,no_copy_xattrs \
       "$1/alpine-user/rootfs-user.ext4" 256M
-  ' - "$out" "$USERLAND_PKGS" "$USERLAND_TOOLS"
+  ' - "$out" "$USERLAND_PKGS" "$USERLAND_TOOLS" "$out/dl/alpine-$ALPINE-iso"
 }
 
 build_alpine-gl() {
@@ -251,8 +278,9 @@ build_alpine-gl() {
   [ -f "$out/alpine/rootfs.ext4" ] || { echo "alpine-gl needs the alpine image: images/build.sh alpine" >&2; exit 1; }
   rm -rf "$dst"
   mkdir -p "$dst"
+  alpine_release
   podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH "$USERLAND_CONTAINER" sh -euc '
-    apk add -q --no-cache $3 $4
+    apk add -q --no-cache -X "$5/apks" $3 $4
     r=/tmp/r
     mkdir $r
     debugfs -R "rdump / $r" "$1/alpine/rootfs.ext4" 2>/dev/null
@@ -266,7 +294,7 @@ build_alpine-gl() {
     E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d "$r" -L alpine-gl \
       -U 77656270-6300-4000-8000-000000000015 -E hash_seed=77656270-6300-4000-8000-000000000016,no_copy_xattrs \
       "$1/alpine-gl/rootfs-gl.ext4" 512M
-  ' - "$out" "$GL_PKGS" "$GL_TOOLS" "$USERLAND_TOOLS"
+  ' - "$out" "$GL_PKGS" "$GL_TOOLS" "$USERLAND_TOOLS" "$out/dl/alpine-$ALPINE-iso"
 }
 
 build_alpine-virgl() {
@@ -277,8 +305,9 @@ build_alpine-virgl() {
   echo "$MESA_SHA256  $tar" | sha256sum -c --quiet
   rm -rf "$dst"
   mkdir -p "$dst"
+  alpine_release
   podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH "$USERLAND_CONTAINER" sh -euc '
-    apk add -q --no-cache $3 $4
+    apk add -q --no-cache -X "$5/apks" $3 $4
     r=/tmp/r
     mkdir $r
     debugfs -R "rdump / $r" "$1/alpine-gl/rootfs-gl.ext4" 2>/dev/null
@@ -298,7 +327,7 @@ build_alpine-virgl() {
     E2FSPROGS_FAKE_TIME=$SOURCE_DATE_EPOCH mke2fs -q -t ext4 -d "$r" -L alpine-virgl \
       -U 77656270-6300-4000-8000-000000000017 -E hash_seed=77656270-6300-4000-8000-000000000018,no_copy_xattrs \
       "$1/alpine-virgl/rootfs-virgl.ext4" 512M
-  ' - "$out" "$tar" "$VIRGL_TOOLS" "$USERLAND_TOOLS"
+  ' - "$out" "$tar" "$VIRGL_TOOLS" "$USERLAND_TOOLS" "$out/dl/alpine-$ALPINE-iso"
 }
 
 build_linux-crypto() {
@@ -512,7 +541,7 @@ inputs() {
   [ "$1" = buildroot ] && files+=(images/buildroot.defconfig $(find images/overlay -type f | sort))
   [ "$1" = linux ] && files+=(images/linux.fragment) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = debian ] && files+=(images/debian.json) && pins='^export SOURCE'
-  [ "$1" = alpine ] && files+=(images/alpine/webpc.start)
+  [ "$1" = alpine ] && files+=(images/alpine/webpc.start) && pins='^(ALPINE|USERLAND_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = alpine-user ] && files+=($(find images/alpine/user -type f | sort) "$out/alpine/.inputs")
   [ "$1" = alpine-user ] && pins='^USERLAND_' 
   [ "$1" = alpine-gl ] && files+=($(find images/alpine/gl -type f | sort) "$out/alpine/.inputs") && pins='^(GL_|USERLAND_TOOLS|USERLAND_CONTAINER)'
@@ -524,7 +553,7 @@ inputs() {
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd ]]; then declare -f linux_src; fi; } |
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; } |
     sha256sum | cut -c1-16
 }
 
@@ -572,7 +601,21 @@ build() {
   if [ "$(cat "$out/$name/.inputs" 2>/dev/null)" = "$key" ]; then
     echo "$name: up to date"
   else
-    "build_$name"
+    # A failed build (a pin gone from Alpine's repositories, say) leaves the
+    # previous image where it was. Out of `if`, so that errexit holds inside.
+    rm -rf "$out/$name.prev"
+    [ ! -e "$out/$name" ] || mv "$out/$name" "$out/$name.prev"
+    set +e
+    (set -e; "build_$name")
+    local status=$?
+    set -e
+    if [ $status -ne 0 ]; then
+      rm -rf "$out/$name"
+      [ ! -e "$out/$name.prev" ] || mv "$out/$name.prev" "$out/$name"
+      echo "$name: build failed; the previous image is unchanged" >&2
+      exit $status
+    fi
+    rm -rf "$out/$name.prev"
     echo "$key" > "$out/$name/.inputs"
   fi
   sums=$(cd "$out" && sha256sum $(outputs "$name"))
@@ -582,10 +625,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() user= gl= virgl= crypto= gpu= snd= litmus= kernel= debian= edk2= alpine_uefi=
+  rest=() alpine= user= gl= virgl= crypto= gpu= snd= litmus= kernel= debian= edk2= alpine_uefi=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
+    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -599,6 +642,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   if [ -n "$kernel" ]; then build linux; fi
   if [ -n "$debian" ]; then build debian; fi # Node on the host (tools/debian.ts)
   if [ -n "$alpine_uefi" ]; then build alpine-uefi; fi # the same
+  if [ -n "$alpine" ]; then build alpine; fi
   if [ -n "$user" ]; then build alpine-user; fi
   if [ -n "$gl" ]; then build alpine-gl; fi
   if [ -n "$virgl" ]; then build alpine-virgl; fi

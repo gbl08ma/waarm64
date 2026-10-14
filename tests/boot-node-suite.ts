@@ -449,7 +449,7 @@ guest('Alpine userspace', () => ({
   ramSize: 1 << 30, kernel: image(a.kernel), initrd: image(a.initrd), cmdline: a.cmdline, devices: guestDevices(new URL('alpine-user/rootfs-user.ext4', IMAGES).href),
 }), (r) => {
   poweredOff(r);
-  for (const l of ['compress: ok 3', 'binarytrees: 649904 8191', 'fannkuch: 1616 22', 'nbody: -0.169075164 -0.169078071', 'spectralnorm: 1.274222587', 'churn: 1069 files', 'sqlite: 85715 2470168', 'webpc: test ok']) {
+  for (const l of ['compress: ok 3', 'binarytrees: 649904 8191', 'fannkuch: 1616 22', 'nbody: -0.169075164 -0.169078071', 'spectralnorm: 1.274222587', 'churn: 1048 files', 'sqlite: 85715 2470168', 'webpc: test ok']) {
     assert.ok(r.console.includes(l), `no "${l}"`);
   }
 }, { skip: userSkip, stress: false, steps: STEPS['alpine-user'], interp: false, max: 50e9 });

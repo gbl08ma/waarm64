@@ -1288,3 +1288,12 @@ and 200; `fix50`/`fix500` fixed thresholds (`fix500`: the previous default). Med
   churn (kernel code) 1,991 ms, as slow as at 500.
 - Run-to-run spread this session: ~4% on the boot (`press200` 8,035 and 8,336), ~1% on the
   userspace total.
+
+## 2026-10-14: the Alpine images rebuilt from the 3.24.2 release media
+
+Not a measurement: a break in the series. The `alpine` image was lost, and its `linux-virt` 6.18.53
+was gone from Alpine's repository, so `images/build.sh alpine` now takes the release's own kernel
+(6.18.52), initramfs and modules from the pinned virt ISO (docs/images.md). The boot is 2,821,209,020
+steps (was 2,856,663,287) and the userspace benchmark 10,785,493,578 (was 10,755,927,881); `alpine-gl`
+and `alpine-virgl` were rebuilt on the new root. Compare `boot_alpine*`, `alpine_user_jit`,
+`alpine_crypto*` and `gl_*` only with runs from after this date.

@@ -329,7 +329,7 @@ const alpine = (process.env.WEBPC_DISTROS ?? '').split(',').includes('alpine');
     assert.equal(r.error, undefined);
     console.log(`# chromium alpine boot (JIT): ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s (${(r.steps / r.ms / 1000).toFixed(1)} MIPS)`);
     assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
-    assert.match(r.console, /webpc: alpine 3\.24\.2 6\.18\.53-0-virt\n[^]*\/dev\/vda \/ ext4 ro,[^]*1 packets received[^]*webpc: 9p hello from the host\n[^]*webpc: drm 640x480\nwebpc: test ok\n/);
+    assert.match(r.console, /webpc: alpine 3\.24\.2 6\.18\.52-0-virt\n[^]*\/dev\/vda \/ ext4 ro,[^]*1 packets received[^]*webpc: 9p hello from the host\n[^]*webpc: drm 640x480\nwebpc: test ok\n/);
     assert.equal(r.steps, STEPS.alpine);
   });
 

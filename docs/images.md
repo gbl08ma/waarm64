@@ -10,12 +10,13 @@ obligations (publish the configs, point to the sources), separate from webpc's M
   `scripts/ci.sh` and the tests skip loudly on stale or missing images.
 - Each image hashes its own inputs (its files, the pins, its build function), so changing one
   doesn't rebuild the others. Outputs are compared with `images/SHA256SUMS`; reproducibility is
-  best-effort (a mismatch warns). `SOURCE_DATE_EPOCH` is 2026-09-01.
+  best-effort (a mismatch warns). `SOURCE_DATE_EPOCH` is 2026-09-01. A failed build leaves the
+  previous image in place (`build` moves it aside first and puts it back).
 - **Two containers:** `images/Containerfile` (Debian 13, pinned by digest, apt on
   `snapshot.debian.org` 20260924T000000Z) is x86_64, because Buildroot uses Bootlin's x86_64-hosted
   toolchains; on the arm64 dev VM it runs under qemu-user, where `unshare` fails. **Prefer the
   native container on the dev VM** (the user, M7: development stays on the M4). The Alpine-based
-  images (`linux`, `alpine-user`, `alpine-gl`, `linux-crypto`, `linux-gpu`, `linux-snd`, `litmus`) build natively in Alpine's own arm64 container
+  images (`linux`, `alpine`, `alpine-user`, `alpine-gl`, `linux-crypto`, `linux-gpu`, `linux-snd`, `litmus`) build natively in Alpine's own arm64 container
   (`USERLAND_CONTAINER`, pinned by digest), as its root, needing neither qemu-user nor unshare.
 - The Mac builds nothing; it gets artifacts by `scp` if it needs them.
 
@@ -30,8 +31,8 @@ obligations (publish the configs, point to the sources), separate from webpc's M
 | `linux-gpu` | allnoconfig + the fragment + `images/gpu/linux.fragment` (`DRM`, `DRM_VIRTIO_GPU` with `DRM_VIRTIO_GPU_KMS`, built in; no fbdev emulation or fbcon), with a static init (`images/gpu/init.c`) that drives KMS through ioctls: connector, mode set, damage, cursor, a display event (the gpu guest, [testing.md](testing.md)). Its kernel tree stays in `target/images/build/linux-gpu` between builds (make rebuilds what the config changed) | `core/tests/gpu_guest.rs`, Node, Chromium |
 | `linux-snd` | allnoconfig + the fragment + `images/snd/linux.fragment` (`SOUND`, `SND`, `SND_PCM`, `SND_VIRTIO`, built in), with a static init (`images/snd/init.c`) that plays a known waveform through ALSA's ioctls (no alsa-lib) and prints its FNV-1a (the snd guest, [testing.md](testing.md)): 48 periods (1.024 s), or `snd_seconds=N` on the command line (an environment variable to init; the page's `snd` machine, frontend.md); then it records from the capture PCM (audio S4): 16 periods, or `snd_rec_seconds=N`, printing the hash, its own time and each channel's frequency by its zero crossings. Also `snd-play` (`images/snd/play.c`, static: a WAV player on the same ioctls with aplay's buffer, for guests without alsa-utils; page-debian's) and `snd-rec` (`images/snd/rec.c`, audio S4: a recorder the same way, arecord's buffer, printing its own time, overruns and each channel's frequency, optionally writing a WAV). Built as `linux-gpu`, with the kernel's build number pinned (`KBUILD_BUILD_VERSION=1`: a rebuild in the same tree is the same kernel, and its steps don't move; linux-gpu's counts up) | `core/tests/snd_guest.rs`, Node, Chromium |
 | `kvm-unit-tests` | commit `5a221342a025` (2026-09-08), the arm64 `.flat`s and `unittests.cfg`, built with Debian's `gcc-aarch64-linux-gnu` | `core/tests/kvm_unit_tests.rs`, Node |
-| `alpine` | **Alpine 3.24.2**: the pinned aarch64 minirootfs plus `apk add` of pinned `linux-virt` (6.18.53) and `openrc` (0.63.2), in a chroot under `qemu-aarch64-static` registered in a user namespace's own binfmt_misc; runlevels sysinit devfs dmesg, boot modules hostname, shutdown killprocs mount-ro, default local (no device manager: the initramfs loads virtio_mmio, virtio_blk, ext4). The test is `images/alpine/webpc.start` (a local.d script writing to `/dev/console`, then `poweroff`) | the Alpine boot tests and `boot_alpine*` |
-| `alpine-user` | alpine's root plus `xz`, `lua5.4`, `sqlite`, `openssl` (3.5.8) and the workloads (`images/alpine/user/`), with its own local.d script, as `rootfs-user.ext4`; boots alpine's Image and initramfs | `alpine_user_jit`, `alpine_crypto*_jit`, Node |
+| `alpine` | **Alpine 3.24.2, from its release media only** (they stay on the mirror for good; the repositories don't: Gotchas): the pinned aarch64 minirootfs plus `openrc` (0.63.2) from the pinned `alpine-virt-3.24.2-aarch64.iso`'s package repository (`apks/`, offline), with that ISO's kernel (`linux-virt` **6.18.52**, `Image` out of its EFI zboot `vmlinuz-virt`), its `initramfs-virt` as published, and its modloop's modules in `/lib/modules` (the files `linux-virt` would install; not `mkinitfs` or `kmod`: BusyBox's `modprobe`). Built natively in Alpine's arm64 container as its root (`alpine_release` unpacks the ISO into `target/images/dl/alpine-3.24.2-iso`; ~10 s); runlevels sysinit devfs dmesg, boot modules hostname, shutdown killprocs mount-ro, default local (no device manager: the initramfs loads virtio_mmio, virtio_blk, ext4). The test is `images/alpine/webpc.start` (a local.d script writing to `/dev/console`, then `poweroff`) | the Alpine boot tests and `boot_alpine*` |
+| `alpine-user` | alpine's root plus `xz`, `lua5.4`, `sqlite`, `openssl` (3.5.8, from the ISO's repository) and the workloads (`images/alpine/user/`), with its own local.d script, as `rootfs-user.ext4`; boots alpine's Image and initramfs | `alpine_user_jit`, `alpine_crypto*_jit`, Node |
 | `alpine-gl` | alpine's root plus Mesa 26.1.6 (EGL, GLES, llvmpipe) and `glcomp` (`images/alpine/gl/`: a compositor's GLES load without a display, compiled in the container), with its own local.d script, as `rootfs-gl.ext4`; boots alpine's Image and initramfs. Not built by default users' paths (`images/build.sh alpine-gl`) | `gl_llvmpipe_jit*` |
 | `alpine-virgl` | alpine-gl's root plus **Mesa 26.1.6 built from source with llvmpipe and virgl** in `/opt/mesa` (Alpine's Mesa has no virgl on any architecture: its APKBUILD leaves it out), so both renderers run one build; the local.d script loads `virtio-gpu` with `webpc.gpu=1` and runs glcomp on `/opt/mesa`; `rootfs-virgl.ext4`. Not built by default users' paths (`images/build.sh alpine-virgl`, after alpine-gl; ~6 min) | `gl_virgl_jit*`, `gl_virgl_llvmpipe_jit*` |
 | `litmus` | herdtools7 7.58 (CeCILL-B: built and run, never copied) in Alpine's arm64 container: `diyone7` makes each test in `images/litmus/tests.txt` (MP, SB, LB, 2+2W, IRIW, WRC, R, S and coherence shapes, plain and with DMB/DSB, dependencies, acquire/release), `herd7`'s `aarch64.cat` lists each one's allowed final states (`allowed.txt`), `litmus7` makes static C programs (`-mem direct -st 1 -barrier userfence -affinity incr0 -s 5k -r 200`, from herdtools7's Arm configs; the defaults showed the M4 no relaxed outcome at all); `images/litmus/stress.c`, the atomics stress, as `stress-lse` and `stress-llsc` (the build checks each has its atomics: [testing.md](testing.md) "Atomics stress"). Output: `initramfs.cpio` (BusyBox, `images/litmus/init`, the tests; booted with `linux/Image`, `webpc.litmus=<options, commas for spaces>`, `webpc.stress=<options>`) and `litmus.tar` (the same tests with `run.sh`, for the oracle VM) | the memory-model tests and the atomics stress (M7) |
@@ -191,14 +192,20 @@ futexes, fork/exec. Not part of `images/build.sh` or CI; built on demand.
 
 ## Gotchas
 
-- **Alpine keeps only the latest build of each package**, so the pins fail loudly once
-  superseded; bump them deliberately (the image's bytes, and so a step count, change).
-- Alpine's image reproducibility needed: mkinitfs re-run with `SOURCE_DATE_EPOCH` (apk scrubs its
-  triggers' environment), apk's timestamped log dropped, mtimes clamped, `/etc/shadow`'s group put
-  back (the user namespace has one uid).
-- The committed `alpine` image came from the x86_64 desktop; `images/build.sh alpine` can't rebuild
-  it on the arm64 VM (qemu-user + unshare). Move it to the Alpine container if it ever needs
-  rebuilding here (its bytes would change: a new step count).
+- **Alpine keeps only the latest build of each package** (there is no snapshot archive), so pins on
+  its repositories fail loudly once superseded; bump them deliberately (the image's bytes, and so a
+  step count, change). A release's media (minirootfs, ISOs, netboot) stay on the mirror for good,
+  so `alpine` comes only from them and the other Alpine images take what they can (`openssl`,
+  `e2fsprogs`) from the virt ISO's repository first (`-X target/images/dl/alpine-3.24.2-iso/apks`).
+  What remains on the live repositories: alpine-user's `xz`, `lua5.4`, `sqlite`, and the build
+  tools of `linux*`, `litmus`, `alpine-gl`, `alpine-virgl`. The ISO's repository is what an
+  installer needs (95 packages: no `mkinitfs`, `kmod`, compilers). The `linux-virt` 6.18.53 image
+  (from the repository, with `mkinitfs`'s initramfs) was lost in October 2026 when 6.18.56 had
+  replaced it; the release's 6.18.52 took its place (steps 2,856,663,287 → 2,821,209,020).
+- Alpine's image reproducibility needs: apk's timestamped log dropped, mtimes clamped, mke2fs with
+  `E2FSPROGS_FAKE_TIME` and `no_copy_xattrs` (the host's SELinux labels would reach the image),
+  owners kept by extracting as the container's root. The ISO's files unpack read-only: made
+  writable, or only `podman unshare rm` removes them.
 - **The kernel is built by `build.sh`, not by Buildroot** (Buildroot's kernel package has no
   allnoconfig base): `make allnoconfig KCONFIG_ALLCONFIG=linux.fragment`, and the build fails if
   any fragment line didn't take effect. The tarball is pinned by sha256. Check Kconfig names
