@@ -183,18 +183,32 @@ at RAM's base) to something smaller:
 - **The PL031 in every firmware configuration** (EDK2's RTC and Linux's `rtc-efi` use it):
   realtime as now; for the deterministic firmware tests, its time from virtual time.
 
-## Graphics in the firmware (the user asked, 2026-09-30)
-Our firmware build already has both drivers that would give EDK2 a graphics output (GOP), so
-the firmware's menus, the EFI setup screen and GRUB's `gfxterm` would appear on the screen:
-- **ramfb** (`OvmfPkg/QemuRamfbDxe`, small): when fw_cfg has an `etc/ramfb` file, the firmware
-  allocates a framebuffer in RAM and writes its address, format and size to that file; the host
-  draws from there. Linux takes the framebuffer over from EFI (`efifb` or `simpledrm` through
-  `screen_info`), so the firmware configuration would need no `simple-framebuffer` node. Needs
-  fw_cfg's **DMA interface** (fw_cfg writes go only through DMA). A step after loop 2's fw_cfg.
-- **virtio-gpu** (`OvmfPkg/VirtioGpuDxe`, over virtio-mmio): the graphics track's virtio-gpu 2D
-  (docs/plans/graphics.md) would give a GOP too, and supersede ramfb.
-Until then the menus are on the serial console, where input already works (the PL011's receive
-path, M8 phase A).
+## Graphics in the firmware (the user asked, 2026-09-30; done 2026-10-14)
+The firmware draws on a virtio-gpu machine's screen from its start, as OVMF does on QEMU: the TianoCore logo,
+the boot timeout's "Start boot option" bar, BdsDxe's lines and anything else on the console (the boot manager,
+the setup screens, the UEFI Shell), then GRUB's menu and "Loading Linux…". Keys still come only from the serial
+terminal (EDK2 has no virtio-input driver). Two patches in `images/edk2/`, applied by `images/build.sh edk2`:
+- **`virtio-gpu-console.patch`** (`OvmfPkg/Library/PlatformBootManagerLibLight`): the boot manager connects
+  display devices before the console exists and puts their GOPs in ConOut, but looks only for PCI ones. Our
+  virtio-gpu is on virtio-mmio, so `VirtioGpuDxe` was bound only by the later connect-all: GRUB found its GOP,
+  but it was never a console and the logo (drawn before it existed) never showed. The patch connects
+  virtio-mmio devices of the GPU type beside PCI displays. A machine without a virtio-gpu (`?display=simple`,
+  the simple-framebuffer machines) is unchanged: its firmware has no GOP.
+- **`boot-logo-progress.patch`** (`MdeModulePkg/Library/BootLogoLib`): the progress bar drew one `Blt` per block,
+  and the boot manager's callback passes 0 as the previous value, so it redraws from the first block each
+  second: 199 `Blt`s of 5×17 pixels in 3 s. Each is a transfer and a flush the driver waits for, and the page
+  answers one flush a frame (devices.md "virtio-gpu"), so the bar cost **3.4 s** to the boot option and to
+  the kernel (median 7.0 s against 3.7 s; with `?gpu=nopace` both 3.8 s). The patch reads the bar's area
+  back (the GOP keeps a copy: no device command), paints the new blocks and writes it in one `Blt`: same
+  picture, 3 flushes. What the screen costs now: 3.85 s against 3.76 s to the boot option, 13.49 against
+  13.39 s to the EFI stub, 41.0 against 40.7 s to the first boot's question (medians of 4, alternating:
+  bench/boot/REPORT.md "M8: the firmware on the screen").
+- **The kernel's first seconds stay dark** (from the EFI stub to `virtio_gpu`'s load, ~20 s of the page's
+  Debian boot): the GOP has no linear framebuffer, so Linux has no `efifb`. **ramfb is not the fix here**: it
+  would give `efifb`/`simpledrm` a framebuffer, but `virtio_gpu` removes a conflicting firmware framebuffer
+  only when it sits on PCI (`virtgpu_drv.c`, `virtio_gpu_pci_quirk`), so on virtio-mmio the firmware's
+  device would stay as card0/fb0 beside it for the whole session, where desktops would pick it. The serial
+  terminal has the kernel's output meanwhile (backlog: "The firmware configuration").
 
 ## Loop 3: Debian unmodified on the page (done, 2026-10-01)
 What it found, beyond what frontend.md "Debian through UEFI" says:

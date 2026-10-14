@@ -290,7 +290,8 @@ the page instead of the frame loop helped the terminal but cost the screen ~10 m
 worker kept both.
 
 **Debian's screen is a virtio-gpu** (`MACHINES.debian.display = 'gpu'`; docs/devices.md "virtio-gpu"): the
-guest sets its own mode and the firmware has a graphics output, so EDK2's screens and GRUB's menu
+guest sets its own mode and the firmware has a graphics output, so EDK2's logo, boot progress bar and screens
+(the GOP is a console beside the serial port: docs/plans/uefi.md "Graphics in the firmware"), GRUB's menu
 and "Loading Linux…" appear on the screen, then the console (fbcon on `virtio_gpu`, which loads from the
 root filesystem a few seconds into the boot) takes it. **The device worker draws it**: the page's canvas
 goes machine worker → device worker, whose backend puts each flush's damaged rectangle on it
@@ -515,7 +516,7 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
   prompt against 33 s): EDK2 to the kernel ~9 s, GRUB's 5 s menu timeout (any key stops the
   countdown), and ~5 s in userspace, because the page's old command line is gone: GRUB owns it
   (`apparmor=0`, the masked units and `console=tty0` no longer apply; AppArmor loads its profiles,
-  timesyncd, resolved and networkd start). With the screen on a virtio-gpu it shows the firmware's output and GRUB, then goes dark until `virtio_gpu`
+  timesyncd, resolved and networkd start). With the screen on a virtio-gpu it shows the firmware's logo and output and GRUB, then goes dark until `virtio_gpu`
   loads (udev, after the root mounts) and fbcon takes it; the serial terminal has the firmware's and the kernel's output.
 - **A first boot asks its questions** on the serial terminal (above), as on a regular machine.
   The page offers no way yet to skip them; a disk that has been through its first boot comes

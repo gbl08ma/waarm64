@@ -325,7 +325,8 @@ is the machine it was (the tests' step counts don't move).
   reserved u16 and a 56-byte name), and the host's files at 0x0020 upwards in its order. The
   host's buffer is a sequence of records: a 56-byte NUL-padded name, a u32 LE size, the bytes
   (`vm_new` refuses a malformed one). Writes to the data register are ignored. The DMA interface
-  (ramfb needs it: plans/uefi.md "Graphics in the firmware") is a later, appended change.
+  (only ramfb would need it, and ramfb isn't wanted: plans/uefi.md "Graphics in the firmware") would be a
+  later, appended change.
 - **The PL031 in deterministic mode** (firmware only): its time is `rtc` plus virtual time
   (the counter over CNTFRQ), so firmware boots keep one step count. Hosts pass a fixed `rtc`
   there (web/vm.ts: 2026-09-01, as the 9p server's timestamps).

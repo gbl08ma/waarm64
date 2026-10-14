@@ -18,8 +18,8 @@ buildroot-2cpu 42233494
 buildroot-4cpu 45245158
 litmus-4cpu 874622946
 console-input 36386565
-edk2-shell 541770453
-edk2-shell-again 538910125
+edk2-shell 541823378
+edk2-shell-again 538925839
 # The gpu test kernel (M8 graphics G1; images/gpu/init.c): KMS on a virtio-gpu, a display event, a new mode.
 gpu 37777532
 # The snd test kernel (audio S1; images/snd/init.c): ALSA on a virtio-snd, a waveform through the deterministic sink,

@@ -59,7 +59,7 @@
 #   container (apt from snapshot.debian.org, as images/Containerfile). Also
 #   shell.img, the firmware tests' disk: a FAT filesystem (no partition table)
 #   whose \EFI\BOOT\BOOTAA64.EFI is the build's UEFI Shell, running
-#   images/edk2/startup.nsh.
+#   images/edk2/startup.nsh. images/edk2/*.patch are applied to the source.
 # alpine-uefi: Alpine's published UEFI cloud images (images/alpine-uefi.json,
 #   pinned by SHA512), which the firmware tests boot unmodified: alpine.qcow2
 #   (Limine) and alpine-grub.qcow2 (GRUB). Downloaded on the host, as debian.
@@ -486,6 +486,11 @@ build_edk2() {
   mkdir -p "$b" "$dst"
   tar -C "$src" --exclude=.git -cf - . | tar -C "$b" -xf -
   cp images/edk2/startup.nsh "$b/"
+  # The firmware on the screen (docs/plans/uefi.md "Graphics in the firmware"): the boot manager connects a
+  # virtio-gpu on virtio-mmio before the console, as it does PCI displays, so its GOP joins ConOut and shows
+  # the logo and the firmware's text (virtio-gpu-console); the boot progress bar draws in one Blt a second,
+  # not one per block (boot-logo-progress).
+  for p in images/edk2/*.patch; do git apply --directory="$b" "$p"; done
   # The serial console offers text modes up to 240x56 and GRUB takes the largest, asking the terminal
   # to resize itself (xterm's CSI 8;r;c t). The page's terminal is 80 columns, where the menu is lost:
   # offer the 80x25 mode alone (docs/plans/uefi.md "The serial console's size").
@@ -550,7 +555,7 @@ inputs() {
   [ "$1" = linux-gpu ] && files+=(images/linux.fragment $(find images/gpu -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = linux-snd ] && files+=(images/linux.fragment $(find images/snd -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
-  [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh) && pins='^EDK2_'
+  [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
   { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; } |

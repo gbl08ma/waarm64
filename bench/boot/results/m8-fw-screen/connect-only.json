@@ -1,0 +1,14 @@
+{
+ "note": "Logged by the ad-hoc first version of bench/boot/firmware-ab.ts (same marks, 'login' = 'ready'); a = the firmware before (images/SHA256SUMS 1bf82eac), b = virtio-gpu-console.patch alone (the progress bar a Blt per block). Copied from its output.",
+ "date": "2026-10-14",
+ "host": "linux-arm64, 8 CPUs",
+ "chromium": "153.0.8010.52",
+ "paced": {
+  "a": [{"bds":3.674,"stub":13.302,"login":41.146},{"bds":3.833,"stub":13.452,"login":40.256},{"bds":3.672,"stub":13.262,"login":40.698},{"bds":3.79,"stub":13.509,"login":40.494}],
+  "b": [{"bds":7.005,"stub":16.663,"login":43.934},{"bds":7.009,"stub":16.833,"login":44.135},{"bds":7.044,"stub":16.726,"login":43.835},{"bds":7.195,"stub":16.866,"login":45.1}]
+ },
+ "query gpu=nopace": {
+  "a": [{"bds":3.868,"stub":13.467,"login":41.172},{"bds":3.818,"stub":13.423,"login":41.636}],
+  "b": [{"bds":3.919,"stub":13.468,"login":40.305},{"bds":3.751,"stub":13.294,"login":40.8}]
+ }
+}

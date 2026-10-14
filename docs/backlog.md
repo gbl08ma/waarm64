@@ -220,18 +220,26 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **The firmware configuration** (loop 2): fw_cfg has no DMA interface (ramfb, a firmware GOP,
-  needs it: plans/uefi.md "Graphics in the firmware"), no SMBIOS or other standard items; the
+- **The firmware configuration** (loop 2): fw_cfg has no DMA interface (nothing needs it: the firmware's
+  screen is the virtio-gpu's, and ramfb would leave a stale framebuffer beside `virtio_gpu` on virtio-mmio,
+  plans/uefi.md "Graphics in the firmware"), no SMBIOS or other standard items; the
   flash bank's array-mode reads go through `vm::Io` one instruction at a time (fine for a store
   read a few times a boot: measure if a guest reads it in a loop); no lock state (every block
   unlocked). Between EDK2's boot manager and GRUB's menu Debian retires 5.4G steps in ~3 s in
   Node (Alpine: 0.2G): **not a busy wait** (loop 3): PC samples sit in one LZMA range decoder, most
   likely Debian's GRUB unpacking its compressed core image (bench/boot/REPORT.md "M8 phase B
   loop 3"); nothing to make idle.
+- **The screen is dark from the EFI stub until `virtio_gpu` loads** (~20 s of the page's Debian boot, after the
+  root mounts; the serial terminal has the kernel's output). The firmware's GOP is `Blt`-only, so Linux has no
+  `efifb`, and ramfb would stay beside `virtio_gpu` on virtio-mmio (plans/uefi.md "Graphics in the firmware").
+  Ways out, none tried: virtio-gpu on a PCI transport (the driver then removes the firmware's framebuffer; ACPI's
+  item below wants virtio-pci too), the page drawing the serial terminal's tail on the canvas while no scanout is
+  set, or a guest whose initramfs carries `virtio_gpu` (the guest's choice, not ours).
 - **EDK2's terminal modes** (loop 3): `images/build.sh edk2` patches TerminalDxe to offer only the
   80×25 text mode, because GRUB takes the largest (240×56) and asks the terminal to resize with
   `CSI 8;r;c t`, which xterm.js doesn't do: the menu was lost on the page's 80-column terminal.
-  A virtio-gpu machine has a GOP now and its GRUB draws on the screen (`gfxterm`), so the patch matters only where the
+  A virtio-gpu machine's GOP is a console too (in ConOut beside the serial port, plans/uefi.md "Graphics in the
+  firmware"), and its GRUB draws on the screen (`gfxterm`), so the patch matters only where the
   firmware has no display: `?display=simple` and the simple-framebuffer machines, whose GRUB menu is still on the
   serial terminal. **Remove it when no machine boots through UEFI without a virtio-gpu** (not re-checked: what
   ConSplitter offers the serial terminal next to a GOP without the patch).
@@ -299,8 +307,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the native runners. The null renderer is G2's measuring device and is tested in Node; extend the twin only if a
   native, exact-step virgl guest is wanted (the WebGL2 renderer of G3 can't run natively anyway).
 - **virtio-gpu's flush pacing counts a firmware's flushes too**: EDK2's GOP waits for every reply, so its `Blt`s
-  complete 60 a second after the first. Not seen to matter (GRUB's menu, the boot's time to `running`); a guest that
-  waits needs no pacing, if a way to tell it from one that floods turns up.
+  complete 60 a second after the first. It mattered once: the boot logo's progress bar, a `Blt` per block, cost
+  3.4 s until `images/edk2/boot-logo-progress.patch` drew it in one (plans/uefi.md "Graphics in the firmware").
+  Not seen elsewhere (GRUB's menu, the boot's time to `running`); a guest that waits needs no pacing, if a way to
+  tell it from one that floods turns up. Fences don't: EDK2 fences none of its flushes, Linux none on our device
+  (it fences a primary plane's flush only for blob resources, which we don't offer).
 - **A key's glyph is ~13 ms later on the virtio-gpu screen than on the simple framebuffer** (53 against 39 ms in
   headless Chromium on the dev VM; bench/gpu/REPORT.md "G1 exit"). Not the device: the flush arrives 12 ms after
   the key and is drawn within 1 ms; the time goes between `putImageData` in the device worker and the page seeing

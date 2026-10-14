@@ -1335,3 +1335,26 @@ globals); one per base register and kind, 74% (compress) to 87% (Lua, churn).
 B3's small code growth rules out code size as the whole cost: where the memo applies, a hit is
 no cheaper than TurboFan's TLB hit, and misses and the locals carried around loops cost more.
 Rejected; docs/jit.md "Tried and not kept".
+
+## M8: the firmware on the screen (2026-10-14)
+
+`images/edk2/virtio-gpu-console.patch` makes the virtio-gpu's GOP a console, so the firmware's logo, its boot
+timeout's progress bar and its text show on the page's screen (docs/plans/uefi.md "Graphics in the firmware").
+Measured with `bench/boot/firmware-ab.ts` (new): the page's Debian, 2 vCPUs, seconds from the page's load to
+BdsDxe loading the boot option, the EFI stub, and the first boot's question; a and b alternate; Chromium
+153.0.8010.52 headless, the dev VM (linux-arm64, 8 vCPUs), Node 26.7.0.
+
+| firmware (a = before, images/SHA256SUMS 1bf82eac) | boot option | EFI stub | first boot's question |
+|---|---|---|---|
+| a, 4 runs | 3.73 | 13.38 | 40.6 |
+| the console patch alone, 4 runs | 7.03 | 16.78 | 44.0 |
+| a, `?gpu=nopace`, 2 runs | 3.84 | 13.45 | 41.4 |
+| the console patch alone, `?gpu=nopace`, 2 runs | 3.84 | 13.38 | 40.6 |
+| a, 4 runs (second session) | 3.76 | 13.39 | 40.7 |
+| **both patches**, 4 runs | **3.85** | **13.49** | **41.0** |
+
+Medians. The console patch alone cost 3.4 s, all of it the page's flush pacing: the progress bar drew 199 `Blt`s
+of one block each (the boot manager redraws from block 0 every second), each a transfer and a flush that EDK2's
+driver waits for, answered one a frame. `boot-logo-progress.patch` draws the new blocks in one `Blt` (3 flushes
+for the bar); what is left, ~0.1 s, is inside the runs' spread. JSON: `results/m8-fw-screen/` (`connect-only.json`
+from the tool's first, ad-hoc version, copied from its output; `firmware-ab.json` from the committed tool).
