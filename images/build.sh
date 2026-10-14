@@ -489,7 +489,8 @@ build_edk2() {
   # The firmware on the screen (docs/plans/uefi.md "Graphics in the firmware"): the boot manager connects a
   # virtio-gpu on virtio-mmio before the console, as it does PCI displays, so its GOP joins ConOut and shows
   # the logo and the firmware's text (virtio-gpu-console); the boot progress bar draws in one Blt a second,
-  # not one per block (boot-logo-progress).
+  # not one per block (boot-logo-progress); and the GOP flushes what its Blts wrote once a frame, not after each
+  # (virtio-gpu-deferred-flush: the page answers a flush a frame, and the menus draw a character per Blt).
   for p in images/edk2/*.patch; do git apply --directory="$b" "$p"; done
   # The serial console offers text modes up to 240x56 and GRUB takes the largest, asking the terminal
   # to resize itself (xterm's CSI 8;r;c t). The page's terminal is 80 columns, where the menu is lost:

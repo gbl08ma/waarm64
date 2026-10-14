@@ -312,12 +312,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   time missing that no gap counted, about one 85 ms buffer), the saved machine not finishing its tone in time, and
   the microphone's recording out of its time. Worth a look if sound ever stutters for users under load: the
   uncounted buffer may be a real gap in what the ring counts (a vCPU starved through the restore), not just the test's.
-- **virtio-gpu's flush pacing counts a firmware's flushes too**: EDK2's GOP waits for every reply, so its `Blt`s
-  complete 60 a second after the first. It mattered once: the boot logo's progress bar, a `Blt` per block, cost
-  3.4 s until `images/edk2/boot-logo-progress.patch` drew it in one (plans/uefi.md "Graphics in the firmware").
-  Not seen elsewhere (GRUB's menu, the boot's time to `running`); a guest that waits needs no pacing, if a way to
-  tell it from one that floods turns up. Fences don't: EDK2 fences none of its flushes, Linux none on our device
-  (it fences a primary plane's flush only for blob resources, which we don't offer).
+- **virtio-gpu's flush pacing slows a guest that waits for every flush** to 60 flushes a second. Our EDK2 no
+  longer is one (it coalesces its flushes a frame at a time: plans/uefi.md "Graphics in the firmware"), so
+  another firmware or OS driver would be the case. The host can't tell such a guest from one that floods:
+  fences don't (EDK2 fences none of its flushes, Linux none on our device: it fences a primary plane's flush
+  only for blob resources, which we don't offer).
 - **A key's glyph is ~13 ms later on the virtio-gpu screen than on the simple framebuffer** (53 against 39 ms in
   headless Chromium on the dev VM; bench/gpu/REPORT.md "G1 exit"). Not the device: the flush arrives 12 ms after
   the key and is drawn within 1 ms; the time goes between `putImageData` in the device worker and the page seeing

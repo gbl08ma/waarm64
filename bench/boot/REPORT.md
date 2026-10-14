@@ -1358,3 +1358,18 @@ of one block each (the boot manager redraws from block 0 every second), each a t
 driver waits for, answered one a frame. `boot-logo-progress.patch` draws the new blocks in one `Blt` (3 flushes
 for the bar); what is left, ~0.1 s, is inside the runs' spread. JSON: `results/m8-fw-screen/` (`connect-only.json`
 from the tool's first, ad-hoc version, copied from its output; `firmware-ab.json` from the committed tool).
+
+**The menus (same day).** The firmware's menus crawled under the pacing: the form browser draws a character or
+a run per `Blt`, and each `Blt` was a transfer and a flush waited for. `images/edk2/virtio-gpu-deferred-flush.patch`
+transfers at once and flushes a frame later, the union of what was written. Seconds from the key to the step's
+last flush (one run each; ad-hoc tool with a debug log, `results/m8-fw-screen/menus.json`):
+
+| step | flush per `Blt`, paced | flush per `Blt`, `?gpu=nopace` | deferred flush, paced |
+|---|---|---|---|
+| Enter into the setup screen | 2.39 (141 flushes) | 0.18 | **0.18** (6 flushes) |
+| an arrow key | 0.70–0.77 (35–38) | 0.04–0.05 | **0.04–0.18** (1; the slower ones wait 0.15 s for their first transfer: the key's way in, not the drawing) |
+| Enter into a submenu | 2.33 (130) | 0.25 | **0.26** (3) |
+
+The boot, against both earlier patches (`firmware-ab.ts`, 4 rounds alternating, `deferred-flush-ab.json`):
+3.69 against 3.85 s to the boot option, 13.37 against 13.47 s to the EFI stub, 40.3 against 40.8 s to the first
+boot's question.

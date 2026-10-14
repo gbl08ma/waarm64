@@ -1,0 +1,10 @@
+{
+ "note": "The firmware's menus on the page's Debian (bench/results/local/fw-menu.ts, ad hoc: F2 at the boot timeout, then Enter into EFI Firmware Setup, three arrow keys, Enter into Boot Maintenance Manager; flushes and transfers from a debug log in web/gpu.ts). Seconds from the key to the step's last flush, and its flushes. One run each, copied from the tool's output.",
+ "date": "2026-10-14",
+ "host": "linux-arm64, 8 CPUs",
+ "chromium": "153.0.8010.52",
+ "before (flush per Blt), paced": {"enter-setup": [2.39, 141], "down": [0.77, 38], "down2": [0.70, 35], "down3": [0.71, 35], "enter-submenu": [2.33, 130]},
+ "before (flush per Blt), gpu=nopace": {"enter-setup": [0.18, 141], "down": [0.04, 38], "down2": [0.04, 35], "down3": [0.05, 35], "enter-submenu": [0.25, 130]},
+ "deferred flush, paced": {"enter-setup": [0.18, 6], "down": [0.04, 1], "down2": [0.17, 1], "down3": [0.18, 1], "enter-submenu": [0.26, 3]},
+ "deferred flush, paced, transfers": {"enter-setup": "141 from 0.02 to 0.16 s", "down": "38 from 0.02 to 0.04 s", "down2": "35 from 0.15 to 0.16 s", "down3": "35 from 0.16 to 0.17 s", "enter-submenu": "130 from 0.20 to 0.25 s"}
+}

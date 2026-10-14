@@ -187,7 +187,7 @@ at RAM's base) to something smaller:
 The firmware draws on a virtio-gpu machine's screen from its start, as OVMF does on QEMU: the TianoCore logo,
 the boot timeout's "Start boot option" bar, BdsDxe's lines and anything else on the console (the boot manager,
 the setup screens, the UEFI Shell), then GRUB's menu and "Loading Linux…". Keys still come only from the serial
-terminal (EDK2 has no virtio-input driver). Two patches in `images/edk2/`, applied by `images/build.sh edk2`:
+terminal (EDK2 has no virtio-input driver). Three patches in `images/edk2/`, applied by `images/build.sh edk2`:
 - **`virtio-gpu-console.patch`** (`OvmfPkg/Library/PlatformBootManagerLibLight`): the boot manager connects
   display devices before the console exists and puts their GOPs in ConOut, but looks only for PCI ones. Our
   virtio-gpu is on virtio-mmio, so `VirtioGpuDxe` was bound only by the later connect-all: GRUB found its GOP,
@@ -203,6 +203,18 @@ terminal (EDK2 has no virtio-input driver). Two patches in `images/edk2/`, appli
   picture, 3 flushes. What the screen costs now: 3.85 s against 3.76 s to the boot option, 13.49 against
   13.39 s to the EFI stub, 41.0 against 40.7 s to the first boot's question (medians of 4, alternating:
   bench/boot/REPORT.md "M8: the firmware on the screen").
+- **`virtio-gpu-deferred-flush.patch`** (`OvmfPkg/VirtioGpuDxe`): the menus (the boot device menu, the setup
+  screens) crawled, a character at a time: the form browser draws through GraphicsConsole a character or a run
+  per `Blt`, and each `Blt` was a transfer and a flush the driver waited for, so under the page's pacing a
+  screen took 130–180 flushes and ~2.4 s, an arrow key ~35 and 0.7 s (`?gpu=nopace`: 0.18 s and 0.04 s). Now a
+  `Blt` transfers at once (transfers aren't paced) and leaves the flush to a timer a frame later (16 ms,
+  `TPL_NOTIFY`), for the union of what was written meanwhile, as Linux's damage worker does: the setup screen
+  takes 0.18 s and 5–6 flushes, an arrow key one flush 10–20 ms after its last transfer, the same as unpaced.
+  `Blt` and `SetMode` raise to the timer's TPL around their requests (the virtqueue is one, unlocked), a mode
+  set flushes what waits first, and after ExitBootServices (the device reset) the timer sends nothing. The
+  boot isn't slower (3.69 against 3.85 s to the boot option, 13.37 against 13.47 s to the EFI stub; GRUB's
+  `gfxterm` draws through the same `Blt`). Measured with an ad-hoc tool and a debug log in `web/gpu.ts`
+  (bench/boot/REPORT.md "M8: the firmware on the screen").
 - **The kernel's first seconds stay dark** (from the EFI stub to `virtio_gpu`'s load, ~20 s of the page's
   Debian boot): the GOP has no linear framebuffer, so Linux has no `efifb`. **ramfb is not the fix here**: it
   would give `efifb`/`simpledrm` a framebuffer, but `virtio_gpu` removes a conflicting firmware framebuffer
