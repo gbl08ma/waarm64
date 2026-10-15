@@ -1,6 +1,6 @@
 # webpc video decoding plan
 
-**Status:** started 2026-10-14 (the backlog's "Hardware video decoding"). The direction is the user's (§1): **VA-API
+**Status:** done 2026-10-15 (started 2026-10-14) (the backlog's "Hardware video decoding"). The direction is the user's (§1): **VA-API
 over virgl**, decoded by the browser's WebCodecs. **V0 (the gates) passed (2026-10-14, §4)**: the guest's Mesa takes
 the caps, FFmpeg and Firefox decode through VA-API (Firefox once a VA driver wrapper of ours hides the surface
 formats it can't take), and the host's rebuilt streams decode exactly. **V1 (the decoders) is done (2026-10-14, §5)**:
@@ -15,8 +15,10 @@ CPU saturated and the host stopping every vCPU at once for JIT installs (since f
 jit.md "Sharing"). **Seeking, size changes, decoder errors and snapshots were checked (§9)**: right pictures after
 every seek once a held picture is written into planes the guest's decoder has let go of (Firefox's at a seek), exact
 frames across size changes, a damaged chunk a decoder error that loses nothing but its codec's pictures, a machine
-with a live codec refused a snapshot that saves once the player exits.
-Next: HEVC and AV1 (V3's breadth), from `M8-VIDEO-HANDOVER.md`. What exists is
+with a live codec refused a snapshot that saves once the player exits. **AV1 is decoded on the host (§10)**: offered
+wherever `VideoDecoder` takes it (the user's Linux Chromium decodes it in software), its headers rebuilt, exact in
+software and in the Mac's hardware, film grain included (webpc-va 2).
+**The track is done (§11): HEVC dropped.** What exists is
 in the topic docs ([devices.md](../devices.md) "virgl"); this page keeps the decisions, the findings worth not
 re-discovering, and each loop's record.
 
@@ -35,7 +37,8 @@ with the guest's software unmodified?
   video surfaces besides NV12 (real drivers offer NV12 alone for decoding), FFmpeg's VA-API decoder then picks I420
   for 4:2:0 codecs, and Firefox's VA-API path takes NV12, YV12, P010 and P016 only, so it falls back to software.
   `webpc_drv_video.so` loads Mesa's driver and drops I420 and YV12 from `vaQuerySurfaceAttributes` (libva's stable
-  ABI, ~60 lines; `LIBVA_DRIVER_NAME=webpc`), a package of the desktop image as `virtio-snd-dkms` is. **The user: keep
+  ABI, ~60 lines; `LIBVA_DRIVER_NAME=webpc`), a package of the desktop image as `virtio-snd-dkms` is (since §10 it
+  also routes AV1 film grain around a Mesa omission: webpc-va 2). **The user: keep
   it for now**; the same change in Mesa's virgl driver would make it unnecessary, and it waits in backlog.md
   "Upstream reports" for the user's round-up.
 - **The dev VM's Chromium reads video frames with SME hidden** (the user, 2026-10-14): `tools/nosme` (a
@@ -61,7 +64,7 @@ with the guest's software unmodified?
   stream's depth, and a drain loses nothing.
 - **Codecs:** H.264 (Constrained Baseline, Main, High; 8-bit 4:2:0, progressive) and VP9 profile 0 first: what
   YouTube and the media test clips use and what every browser decodes. Advertised where `VideoDecoder.
-  isConfigSupported` says yes, in hardware or not. HEVC and AV1 after.
+  isConfigSupported` says yes, in hardware or not. AV1 Main 8-bit since V3 (§10); HEVC after.
 - **Correctness is bit-exact:** H.264 and VP9 decoding is exactly specified, so a decoded picture's planes must equal
   FFmpeg's software decode of the same stream byte for byte (where the browser's decoder is FFmpeg's or the
   hardware's: the dev VM's Chromium decodes H.264 with OpenH264, ±1-9 luma off on B-pictures, §5). The first implementation copies the planes out of each
@@ -115,7 +118,7 @@ its cost is the host's stateless-to-stateful step (above).
 - **V3, robustness and breadth:** H.264 where the browser decodes it in software (first, the user's priority: §7);
   seeking and resolution changes (a new codec, a new key frame), errors (a decoder
   error ends that codec's pictures, the guest falls back), snapshots (a machine with a codec is 3D in use: refused,
-  as now): §9. HEVC and AV1 where the browser has them.
+  as now): §9. AV1 (§10), HEVC where the browser has them.
 
 ## 4. V0: the gates (2026-10-14)
 
@@ -388,3 +391,99 @@ test. JSON in `bench/video/results/v3d/` (the dev VM's Chromium 153; the Mac's C
   without a key frame (reference scaling: libvpx's real-time resizing) wasn't tried.
 - **Decided:** the write and destroy rules above (devices.md "virgl"); nothing else changes. Next: HEVC and AV1.
 
+
+## 10. V3: AV1 (2026-10-15)
+
+AV1 before HEVC: Chromium on Linux has no software HEVC decoder, so the user's host would never be offered HEVC,
+while AV1 decodes in software everywhere (dav1d) and is what YouTube serves. Clips (images/archarm/media.sh): the
+trailer in SVT-AV1 (`sintel-av1.webm`), 10 s in libaom (`sintel-aom.webm`: all eight references, hidden frames), 10 s
+of SVT-AV1 with film grain (`sintel-grain.webm`), 3 s of libaom with more tools on (`sintel-tools.webm`: segmentation,
+2x2 tiles, 128x128 superblocks, quantizer matrices, rotzoom global motion, delta q and lf, loop restoration, film
+grain). JSON in `bench/video/results/v3d/` (`av1-*`, `seek-av1-*`).
+
+- **The stream** (`web/video-av1.ts`): Mesa's `virgl_av1_picture_desc` has the sequence and frame header's fields and
+  the frame's tiles (offsets and sizes into its bitstream buffers, which hold only tile data); the host writes a
+  sequence header and each frame header from them, in explicit forms where the original may have leaned on state
+  (frame sizes, references without short signalling, loop filter deltas, segmentation data and film grain written as
+  updates, which FFmpeg's CBS fills with the effective values; global motion delta-coded against parameters this side
+  keeps per slot), and a tile group of its own. Caps: AV1 Main, 8-bit (`av01.0.13M.08`; 10-bit isn't offered: the
+  video buffers are NV12). Mesa's VA frontend lists `VAProfileAV1Profile0` and Firefox decodes through it.
+- **Mesa doesn't send `refresh_frame_flags`** (its VA frontend writes 1), so the host keeps its own reference slots.
+  AV1's decoding depends only on what the slots hold: a frame goes to a slot holding no picture the guest can still
+  reference (not in its reference map), and its references are the slots holding the pictures the guest's name. With
+  eight distinct pictures in the guest's map (libaom's streams, mostly) none is free; the frame then waits for the next
+  frame, whose map says whether and where the guest stored it. If the guest waits on it instead, `CallQueue` nudges it
+  out after 30 ms stored nowhere, and if a later frame references it, it's decoded again, hidden, into a slot freed by
+  then (exact: the slots haven't changed in between). Decoding again whenever no slot was free (the first version) cost
+  55 of 65 libaom frames, 14 of 64 SVT's and 56 of 77 of the tools clip decoded twice; with the wait, none, for a
+  player that decodes ahead. The guest's FFmpeg reading each picture back waits 30 ms a frame for the nudge.
+- **Hidden frames.** A frame the guest shows later (`show_existing_frame`, which FFmpeg answers without a decode) is
+  written shown, so the decoder outputs it for its surface (an inter frame decodes the same shown or not); a hidden
+  key frame shown later isn't output (not seen in these encoders' streams). A frame with no output goes in the next
+  frame's temporal unit, as encoders put hidden frames: Apple's hardware decoder fails a temporal unit without a shown
+  frame (libaom's from its second frame).
+- **Film grain needs webpc-va 2.** With grain, FFmpeg decodes into a reference surface and shows another (VA's
+  `current_display_picture`), and Mesa sends the frame (DECODE_BITSTREAM, from `vaRenderPicture`) before it sets the
+  film grain target (in `vaEndPicture`), so the host never learns where the grained picture goes: 7 of 60 frames
+  matched (`av1-grain-before-devvm`; virglrenderer would do the same). webpc-va 2 has such a frame decoded into its
+  display surface and names display surfaces in the reference map (FFmpeg keeps a frame's display surface while the
+  frame is a reference); the host's decoder applies the grain (dav1d's and VideoToolbox's equal FFmpeg's). The image
+  is rebuilt with it (Mesa, FFmpeg and the kernel unchanged). Also unsent: `lr_unit_size` (virgl copies the shifts).
+- **Exact.** The guest's FFmpeg against its software decode (framemd5): libaom, SVT-AV1 and film grain 240 of 240,
+  the tools clip 72 of 72, on the dev VM (dav1d) and on the Mac in hardware (VideoToolbox) and software; through jumps
+  and a flush (seek.ts) 345 of 345. Firefox: every paused seek shows its frame, playback resumes after each, nothing
+  dropped on the host (dev VM and the Mac's hardware). Not exercised: superres (libaom through FFmpeg won't take the
+  option), non-uniform tiles, translation and affine global motion, intra block copy, switch frames.
+- **Decided:** AV1 is offered; webpc-va 2 is the image's. Mesa's three omissions go to backlog.md "Upstream reports".
+
+
+## 11. The end: HEVC dropped (2026-10-15)
+
+**The user, 2026-10-15:** HEVC isn't accelerated, and the track ends with H.264, VP9 and AV1. They cover what the web
+serves (YouTube, the media test sites); Chromium on Linux has no HEVC decoder of its own (only a platform's, in
+hardware), so the user's host would never offer it; and it's more work than AV1 was: VA's parameters lose the SPS's
+short-term reference picture sets, so every slice header would be parsed through and rewritten with an explicit set
+(backlog.md has what it would take). HEVC files still play, decoded in the guest. Loose ends are in backlog.md: a
+player that waits on each picture where H.264 decodes in software (§7), an H.264 jump to a non-IDR picture (§9), and
+Mesa's omissions under "Upstream reports".
+
+Learned on the way (from the track's handover; for whoever works on video again):
+
+- **The fixture replay can't find a stall:** it feeds every picture without waiting, as no guest does. A decoder that
+  holds pictures shows only with the guest on the page (`v1.ts`).
+- **The dev VM's Chromium decodes H.264 with OpenH264** (openSUSE's build): it ignores the SPS's reorder field and
+  isn't bit-exact with FFmpeg on B-pictures. Judge H.264 exactness on the Mac.
+- **The page's frame counts can't judge decoding with `?gpu=novideo`**: Firefox then decodes in software.
+- **`sway-mac.sh` takes `-` as the mode** for scripts without one (`v1.ts`, `v0.ts`); it copies the media disk.
+- **sway's `exec` splits at commas**: `MOZ_LOG=a:5,b:5` must go through a script (`v0.ts` writes
+  `/home/alarm/ff-launch.sh`).
+- **Firefox logs to read:** `MOZ_LOG=PlatformDecoderModule:5,FFmpegVideo:5,Dmabuf:5`; filter out `Tranche` /
+  `Feedback` / `format 0x` lines.
+- **The harness's serial `run` truncates long output**; grep in the guest first.
+- **Never run Chromium experiments beside a measuring run or a CI lane**, on the dev VM or the Mac (the VM runs on
+  the Mac's CPUs).
+- Booting the desktop guest on the page takes ~40 s on the dev VM, ~32 s on the Mac; sway ~30 s more.
+- **`sway-mac.sh` defaults to `VIRGL_GPU=virgl-null`**: pass `VIRGL_GPU=virgl` (or `virgl,novideo`, `virgl,swvideo`) for
+  video runs.
+- **Chrome's FFmpeg holds 3 pictures beyond the SPS's depth** (frame threads), OpenH264 up to 6 whatever the SPS says:
+  a player that waits for each picture gets it through a drain (plan §7, backlog.md).
+- **mpv waits to show its first picture before decoding more**: a drain at its start is normal.
+- **Count Firefox's drops over a phase, not from its start**: its first seconds drop more frames than it presents
+  (avsync.ts's `quality`).
+- **Measure Firefox from 30 s after its launch** (`WARM_S=30`): its start-up work runs that long, and a phase that
+  overlaps it measures the start (V2/V3's 54-74% busy was that), not the playback.
+- **`media.rdd-process.enabled=false` never plays; `gfx.webrender.compositor.force-enabled=true` presents nothing**
+  (on virgl, sway).
+- **The Mac's memory is overcommitted** (the Lima VMs reserve 22 of 24 GiB; 7 GiB of swap used): latency there is
+  suspect while both VMs run; `sway-mac.sh` records `vm_stat` to check.
+- **A background FFmpeg on the serial shell needs `-nostdin`** (else it stops on its terminal setup, before opening
+  VA-API), and a page URL through sway's `exec` takes no `&` (it runs through `sh -c`) and no comma.
+- **Firefox's H.264 path makes a new codec at every seek** (its VP9 path keeps it), and lets go of the old surfaces
+  while the compositor still shows them: the host writes into planes, not into a context's attachments (plan §9).
+- **A WebM/MP4 seek lands on a key picture; an MPEG-TS seek doesn't** (no index): use TS only for straight decodes.
+- **What virgl's descs carry isn't what Mesa's pipe descs have**: check `virgl_video.c`'s fill for every field read
+  (AV1's `lr_unit_size` isn't copied), and Mesa's VA frontend for what it fills when (the film grain target comes after
+  the desc is sent).
+- **libaom through FFmpeg takes `-aom-params` keys, not every aomenc option** (`superres-mode` isn't one).
+- **The PC sampler slows the guest** (Firefox's drops doubled): drop counts from unsampled runs only; and it charges
+  a chunk to the instruction after the last exit, so exit sites (`arch_counter_get_cntvct`) look hot.

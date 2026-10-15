@@ -76,7 +76,7 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
         shots.push(sha256(i420(planes.map((id) => ({ bytes: r.readResource(id)!, width: r.resources.get(id)!.width })), w, h)));
       };
       // `ctx` -1: the guest's read of a picture (below), which only waits.
-      q = new CallQueue<HostCall>({ run: (c) => { if (c.t !== 'transfer' || c.ctx !== -1) runCall(c, r); }, pending: r.videoPending, drain: () => r.videoDrain(), giveUp: () => r.videoGiveUp() });
+      q = new CallQueue<HostCall>({ run: (c) => { if (c.t !== 'transfer' || c.ctx !== -1) runCall(c, r); }, pending: r.videoPending, nudge: () => r.videoNudge(), drain: () => r.videoDrain(), giveUp: () => r.videoGiveUp() });
       r.onVideoSettled = () => queueMicrotask(() => q.progress());
       return { call: (c) => q.push(c), fence: () => undefined };
     }, async () => { if (q.length) await settled(); });

@@ -4,6 +4,7 @@
 // staging buffer) and END_FRAME. The host decodes with WebCodecs and writes the picture into the planes, as
 // virglrenderer's vrend_video.c does with a host VA-API (MIT, THIRD_PARTY.md). Layouts are Mesa 26.2's
 // (src/virtio/virtio-gpu/virgl_video_hw.h, virgl_protocol.h, src/gallium/drivers/virgl/virgl_video.c).
+import { av1Frame, Av1Stream } from './video-av1.ts';
 import { codecString, H264Stream } from './video-h264.ts';
 
 /**
@@ -29,6 +30,8 @@ export const CODECS: { profile: number; codec: string; maxLevel: number }[] = [
   { profile: PROFILE.AVC_MAIN, codec: 'avc1.4D4033', maxLevel: 51 },
   { profile: PROFILE.AVC_HIGH, codec: 'avc1.640033', maxLevel: 51 },
   { profile: PROFILE.VP9_PROFILE0, codec: 'vp09.00.51.08', maxLevel: 0 },
+  // Main, level 5.1, 8-bit (10-bit isn't offered: the video buffers are NV12).
+  { profile: PROFILE.AV1_MAIN, codec: 'av01.0.13M.08', maxLevel: 0 },
 ];
 const MAX_W = 4096, MAX_H = 2304;
 
@@ -104,7 +107,7 @@ export type DecoderFactory = (config: DecoderConfig, output: (timestamp: number,
 type Codec = {
   handle: number; profile: number; entrypoint: number; level: number; width: number; height: number; maxRefs: number; target?: number; desc?: Uint8Array; bits: Uint8Array[];
   /** The decoder, made at the first picture and again after an error; until a key chunk reaches it, pictures are dropped. */
-  dec?: PictureDecoder; needKey?: boolean; hardware?: boolean; h264?: H264Stream;
+  dec?: PictureDecoder; needKey?: boolean; hardware?: boolean; h264?: H264Stream; av1?: Av1Stream;
   /** IDR periods sent to the decoder (H.264), for the pictures' order. */
   epoch: number;
   /** Software H.264: the pictures since the last IDR (unless too many) and the decoders being drained (`drain`). */
@@ -119,6 +122,7 @@ type Pending = { codec: Codec; target: number; planes: number[]; at: number; epo
 
 const isH264 = (profile: number) => profile >= PROFILE.AVC_BASELINE && profile <= PROFILE.AVC_HIGH10;
 const isVp9 = (profile: number) => profile === PROFILE.VP9_PROFILE0;
+const isAv1 = (profile: number) => profile === PROFILE.AV1_MAIN;
 /** `virgl_vp9_picture_desc`'s picture fields (Mesa 26.2): bit 2 frame_type (0: key), bit 3 show_frame. */
 const VP9_PIC_FIELDS = 332;
 
@@ -250,6 +254,7 @@ export class VideoContext {
    * pending). Without the period (too long), the next IDR.
    */
   drain() {
+    this.nudge();
     const codecs = new Set([...this.pending.values()].map((q) => q.codec));
     for (const c of codecs) {
       if (!c.dec || !c.h264 || c.hardware) continue;
@@ -289,9 +294,10 @@ export class VideoContext {
 
   /** A picture to its codec's decoder (made now if it has none), pending until written unless the guest never shows it. */
   private decode(c: Codec, target: number, desc: Uint8Array) {
-    if (!isH264(c.profile) && !isVp9(c.profile)) return this.err(`video: codec ${c.handle}: profile ${c.profile} isn't decoded`);
+    if (!isH264(c.profile) && !isVp9(c.profile) && !isAv1(c.profile)) return this.err(`video: codec ${c.handle}: profile ${c.profile} isn't decoded`);
     if (!c.dec) this.open(c);
     const bits = c.bits.length === 1 ? c.bits[0] : concat(c.bits);
+    if (c.av1) return this.decodeAv1(c, target, desc, bits);
     let data = bits, key: boolean, shown = true, poc: number | undefined;
     try {
       if (c.h264) ({ data, key, poc } = c.h264.chunk(desc, bits));
@@ -317,6 +323,39 @@ export class VideoContext {
     c.dec!.decode(data, key, ts);
   }
 
+  /** An AV1 frame: its temporal units (web/video-av1.ts), the one the decoder outputs for it pending. */
+  private decodeAv1(c: Codec, target: number, desc: Uint8Array, bits: Uint8Array) {
+    let f, chunks;
+    const ts = this.seq++;
+    try {
+      f = av1Frame(desc, target);
+      if (c.needKey && !f.key) {
+        this.stats.dropped++;
+        return;
+      }
+      c.needKey = false;
+      // Pending from END_FRAME, whenever its temporal unit goes (it may wait for the next frame: web/video-av1.ts).
+      const planes = f.output ? this.buffers.get(f.shown)?.planes : undefined;
+      if (f.output && !planes) this.env.debug?.(`video: codec ${c.handle}: no buffer ${f.shown} for a frame's output`);
+      if (planes) this.pending.set(ts, { codec: c, target: f.shown, planes, at: performance.now() });
+      chunks = c.av1!.chunks(desc, bits, target, ts);
+    } catch (e) {
+      this.pending.delete(ts);
+      this.stats.dropped++;
+      return this.err(`video: codec ${c.handle}: ${e instanceof Error ? e.message : e}`);
+    }
+    for (const k of chunks) c.dec!.decode(k.data, k.key, k.ts);
+  }
+
+  /** The AV1 frames waiting for the next one's map (web/video-av1.ts `Av1Stream`) to the decoder now: the guest waits on
+   * one (`CallQueue`'s nudge, before a drain). */
+  nudge() {
+    for (const c of this.codecs.values()) {
+      if (!c.av1?.holding || !c.dec) continue;
+      for (const k of c.av1.flush()) c.dec.decode(k.data, k.key, k.ts);
+    }
+  }
+
   /** A software H.264 picture into its IDR period's history (`drain`). */
   private remember(c: Codec, desc: Uint8Array, bits: Uint8Array, key: boolean, ts: number) {
     if (key) {
@@ -330,11 +369,13 @@ export class VideoContext {
   }
 
   private open(c: Codec) {
-    const vp9 = isVp9(c.profile);
+    const h264 = isH264(c.profile);
     c.hardware = !!this.env.hardware?.includes(c.profile);
-    // A new decoder takes the parameter sets again (H264Stream sends them at a key picture).
-    c.h264 = vp9 ? undefined : new H264Stream(c.width, c.height, c.level, c.hardware ? 'none' : 'stream', c.h264?.depth);
-    const codec = vp9 ? CODECS.find((x) => x.profile === c.profile)!.codec : codecString(c.profile, c.level);
+    // A new decoder takes the parameter sets again (H264Stream sends them at a key picture; Av1Stream its sequence
+    // header at a key frame, its reference slots empty).
+    c.h264 = h264 ? new H264Stream(c.width, c.height, c.level, c.hardware ? 'none' : 'stream', c.h264?.depth) : undefined;
+    c.av1 = isAv1(c.profile) ? new Av1Stream() : undefined;
+    const codec = h264 ? codecString(c.profile, c.level) : CODECS.find((x) => x.profile === c.profile)!.codec;
     c.needKey = true;
     const dec: PictureDecoder = this.env.decoders!({ codec, hardware: c.hardware, width: c.width, height: c.height }, (ts, pic) => {
       // A drained decoder's pictures still count (`drain`).
@@ -384,6 +425,8 @@ export class VideoContext {
   private retire(c: Codec) {
     const dec = c.dec;
     if (!dec || ![...this.pending.values()].some((q) => q.codec === c)) return this.closeCodec(c);
+    // An AV1 frame waiting for the next one's map goes first (it won't come).
+    if (c.av1?.holding) for (const k of c.av1.flush()) dec.decode(k.data, k.key, k.ts);
     c.dec = undefined;
     c.history = undefined;
     (c.retired ??= new Set()).add(dec);

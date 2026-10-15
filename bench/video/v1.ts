@@ -6,9 +6,12 @@
 // the renderer's video totals (pictures decoded, dropped) and the longest a call waited for a picture.
 //   node bench/video/v1.ts <image.qcow2> [outdir]      (default bench/results/local/video/v1/)
 // FRAMES (default 120), CLIPS (default both trailers), HWDEC (default vaapi; FFmpeg's -hwaccel), VIRGL_GPU (the page's
-// `?gpu=`, default virgl; e.g. virgl,swvideo). SNAPSHOT=1 then tries Save snapshot while FFmpeg decodes a clip through
+// `?gpu=`, default virgl; e.g. virgl,swvideo). SHIM=1: the media disk's webpc_drv_video.so as the guest's VA driver. SNAPSHOT=1 then tries Save snapshot while FFmpeg decodes a clip through
 // VA-API at its own pace (refused: its codec is 3D in use) and again once FFmpeg has exited (saved, the file dropped).
+// CAPTURE=1 saves the session's virgl capture as <outdir>/capture.vglt (bench/video/pictures.ts makes the host's
+// streams of it).
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { encodeTrace } from '../../web/virgl-trace.ts';
 import { openSession } from '../gpu/guest-session.ts';
 
 const image = process.argv[2];
@@ -18,7 +21,8 @@ mkdirSync(out, { recursive: true });
 const FRAMES = Number(process.env.FRAMES ?? 120);
 const CLIPS = (process.env.CLIPS ?? 'sintel_trailer-480p.mp4,sintel.webm').split(',');
 
-const s = await openSession({ gpu: process.env.VIRGL_GPU ?? 'virgl', image, out, disk2: '/target/video/media.ext4' });
+const capture = !!process.env.CAPTURE;
+const s = await openSession({ gpu: `${process.env.VIRGL_GPU ?? 'virgl'}${capture ? ',capture' : ''}`, image, out, disk2: '/target/video/media.ext4' });
 const { page, log, rootShell, run } = s;
 const results: Record<string, unknown> = { gl: s.gl, chromium: s.browser.version(), frames: FRAMES };
 const save = () => writeFileSync(`${out}/results.json`, JSON.stringify(results, null, 1));
@@ -61,6 +65,8 @@ async function snapshots() {
 try {
   await rootShell();
   await run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media; ls /mnt/media | tr "\\n" " "');
+  // SHIM=1: the VA driver on the media disk (bench/video/media-disk.sh) instead of the image's webpc-va.
+  if (process.env.SHIM === '1') await run('cp /mnt/media/webpc_drv_video.so /usr/lib/dri/');
   results.info = await run('uname -r; pacman -Q mesa libva ffmpeg webpc-va | tr "\\n" " "; echo; grep -h LIBVA /etc/environment.d/*');
   log('info', results.info);
   results.vainfo = await run('vainfo --display drm --device /dev/dri/renderD128 2>&1 | grep -E "driver|VAProfile"', 120_000);
@@ -74,7 +80,7 @@ try {
     const ms = Date.now() - t0;
     await page.waitForTimeout(2500); // the next render-stats
     const after = await video();
-    const cmp = await run(`echo frames $(wc -l < /tmp/hw.md5) of $(wc -l < /tmp/sw.md5), equal $(paste -d' ' /tmp/sw.md5 /tmp/hw.md5 | awk '$1==$2' | wc -l), first differing $(paste -d' ' /tmp/sw.md5 /tmp/hw.md5 | awk '$1!=$2{print NR; exit}'); head -c 300 /tmp/err-hw.txt`);
+    const cmp = await run(`echo frames $(wc -l < /tmp/hw.md5) of $(wc -l < /tmp/sw.md5), equal $(paste -d' ' /tmp/sw.md5 /tmp/hw.md5 | awk '$1==$2' | wc -l), first differing $(paste -d' ' /tmp/sw.md5 /tmp/hw.md5 | awk '$1!=$2{print NR; exit}'); paste -d' ' /tmp/sw.md5 /tmp/hw.md5 | awk '{printf ($1==$2) ? "=" : "x"}' | cut -c1-240; echo; head -c 300 /tmp/err-hw.txt`);
     const r = { compare: cmp, timing, ms, decoded: after.decoded - before.decoded, dropped: after.dropped - before.dropped, errors: after.errors - before.errors, ahead: after.ahead - before.ahead, maxWaitMs: after.maxWaitMs, warnings: [...s.warnings.entries()].slice(0, 10) };
     results[clip] = r;
     log(clip, r);
@@ -83,6 +89,15 @@ try {
   if (process.env.SNAPSHOT === '1') results.snapshot = await snapshots();
   // `?gpu=...,debug`: the renderer's video lines (codecs, buffers, decoders).
   if (s.debugLines.length) results.debug = s.debugLines.filter((l) => l.startsWith('video')).slice(0, 400);
+  if (capture) {
+    // The records concatenated, as base64 (a page hands strings back quickly, arrays of numbers slowly).
+    const b64 = await page.evaluate(() => {
+      let t = '';
+      for (const r of (window as unknown as { __virglCapture?: Uint8Array[] }).__virglCapture ?? []) for (let k = 0; k < r.length; k += 8192) t += String.fromCharCode(...r.subarray(k, k + 8192));
+      return btoa(t);
+    });
+    writeFileSync(`${out}/capture.vglt`, encodeTrace([new Uint8Array(Buffer.from(b64, 'base64'))]));
+  }
 } finally {
   save();
   await s.close?.();

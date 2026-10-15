@@ -341,7 +341,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   contexts refused) rather than refusing the machine. The restore tells the host what the scanout shows (the GPU
   worker draws the screen on a 3D machine).
 - **Video** ([plans/video.md](plans/video.md); on with 3D, `?gpu=novideo` off): the caps' `video_caps` list the decoders
-  the browser's `VideoDecoder` takes (H.264 Constrained Baseline, Main and High, VP9 profile 0; `web/virgl-video.ts`
+  the browser's `VideoDecoder` takes (H.264 Constrained Baseline, Main and High, VP9 profile 0, AV1 Main 8-bit; `web/virgl-video.ts`
   `probeVideo`, in the GPU worker before it answers, which also notes which are in hardware), so the guest's Mesa offers
   VA-API decoding. The renderer keeps each context's codecs and video buffers (CCMD 53-61: a buffer is its planes'
   resources, R8 and RG8) and reads each picture's parameters and data from the guest's staging buffers. `VideoContext`
@@ -365,12 +365,18 @@ mode (and natively in realtime mode: std has no CSPRNG).
   pending picture is still written, and a destroyed codec's decoder is flushed (what it holds written) before it
   closes. A decoder error (WebCodecs reports a damaged chunk; none conceals) closes the decoder and drops the codec's
   pending pictures; a new decoder starts at the next key picture. A seek sends a key picture to the same codec; a size
-  change makes a new codec (plans/video.md §9). `renderer.videoStats` (decoded, dropped, errors;
+  change makes a new codec (plans/video.md §9). AV1 (`web/video-av1.ts` `Av1Stream`, plans/video.md §10): a sequence
+  header and each frame header written from the desc, a tile group of the tiles; the decoder's reference slots are
+  this side's (Mesa sends no refresh_frame_flags): a frame goes to a slot holding nothing the guest's reference map
+  has, or waits for the next frame's map (`nudge`d out after 30 ms of calls waiting: `CallQueue`'s `nudgeMs`, and
+  before a destroyed codec's flush), and one sent stored nowhere is decoded again if a later frame references it; a
+  hidden frame the guest shows later is written shown, and frames with no output go in the next temporal unit. Film
+  grain reaches the shown surface through webpc-va 2 (Mesa sends the film grain target too late). `renderer.videoStats` (decoded, dropped, errors;
   each picture's END_FRAME to written and its write, in ms) and the queue's `ahead` and `maxWaitMs` go out in
   render-stats (`bench/gpu/guest-session.ts` sums them over a phase). Mesa's wire numbers its profiles by its own
   `enum pipe_video_profile` (26.2's in `PROFILE`), which isn't stable across releases. A capture includes
   DECODE_BITSTREAM's buffers. `capsBacked` wants every decoder the guest was told of. The guest needs our `webpc-va`
-  (NV12 surfaces only; plans/video.md §1), in the desktop image.
+  (NV12 surfaces only, plans/video.md §1; AV1 film grain, §10), in the desktop image.
 - No native twin (`core/tests/common/gpu.rs` is 2D): the device and renderer are tested in Node (`tests/gpu.test.ts`,
   `tests/virgl.test.ts` on a recording WebGL2) and Chromium (`tests/virgl-browser.test.ts`).
 

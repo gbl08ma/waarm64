@@ -6,6 +6,9 @@
 // original files (SHA-256 of each frame's visible I420).
 //   node bench/video/fixture.ts <capture.vglt> <ctx> <pictures> <out prefix> <h264 orig.h264> <h264 orig.yuv> <vp9 orig.yuv> <width> <height>
 // writes <prefix>-h264.vglt.gz, <prefix>-vp9.vglt.gz, <prefix>-h264-orig.h264.gz and <prefix>.json.
+//   node bench/video/fixture.ts av1 <capture.vglt> <ctx> <segment> <pictures> <out prefix> <name> <orig.yuv> <width> <height>
+// adds an AV1 codec's trace (the context's <segment>th life with a codec) as <prefix>-<name>.vglt.gz and the original
+// frames' hashes as <prefix>.json's <name>.
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
@@ -93,7 +96,16 @@ export function frameHashes(yuv: Uint8Array, fw: number, fh: number, w: number, 
   return out;
 }
 
-if (import.meta.main) {
+if (import.meta.main && process.argv[2] === 'av1') {
+  const [capture, ctx, segment, n, base, name, yuv, w, h] = process.argv.slice(3);
+  if (!h) throw new Error('usage: node bench/video/fixture.ts av1 <capture.vglt> <ctx> <segment> <pictures> <out prefix> <name> <orig.yuv> <width> <height>');
+  const trace = cutTrace(new Uint8Array(readFileSync(capture)), Number(ctx), Number(n), Number(segment));
+  writeFileSync(`${base}-${name}.vglt.gz`, gzipSync(trace, { level: 9 }));
+  console.log(`${base}-${name}.vglt.gz: ${trace.length} bytes, gzipped ${readFileSync(`${base}-${name}.vglt.gz`).length}`);
+  const json = JSON.parse(readFileSync(`${base}.json`, 'utf8'));
+  json[name] = frameHashes(new Uint8Array(readFileSync(yuv)), Number(w), Number(h), Number(w), Number(h));
+  writeFileSync(`${base}.json`, `${JSON.stringify(json, null, 1)}\n`);
+} else if (import.meta.main) {
   const [capture, ctx, n, base, h264, h264Yuv, vp9Yuv, w, h] = process.argv.slice(2);
   if (!h) throw new Error('usage: node bench/video/fixture.ts <capture.vglt> <ctx> <pictures> <out prefix> <h264 orig.h264> <h264 orig.yuv> <vp9 orig.yuv> <width> <height>');
   const width = Number(w), height = Number(h), pictures = Number(n);

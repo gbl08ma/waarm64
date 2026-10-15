@@ -117,8 +117,8 @@ a distro the project doesn't ship. `images/archarm/build.sh [--out f.qcow2] [--r
   published anywhere. A user's Arch Linux ARM: `makepkg -si` in that directory (with `linux-aarch64-headers`).
 - **The desktop guest (`images/archarm/desktop.sh [--out f.qcow2]`, on demand, ~15 min; audio S3):** sway, foot,
   Firefox, PipeWire (WirePlumber, `pipewire-pulse`, `pipewire-alsa`), alsa-utils, mpv, libva-utils (`vainfo`), our
-  `webpc-va` package (`images/archarm/webpc-va.sh`: webpc's VA-API driver, Mesa's virgl with NV12 decode surfaces only,
-  `LIBVA_DRIVER_NAME=webpc` for every session; [plans/video.md](plans/video.md)), and the DKMS package above
+  `webpc-va` package (`images/archarm/webpc-va.sh`: webpc's VA-API driver, Mesa's virgl with NV12 decode surfaces only
+  and AV1 film grain decoded into the shown surface, `LIBVA_DRIVER_NAME=webpc` for every session; [plans/video.md](plans/video.md)), and the DKMS package above
   installed (so the image carries `dkms`, gcc and the headers: the module is built in the image's container by the
   package's hook, as on a user's machine); Firefox's policies allow autoplay with sound and skip the first-run pages.
   `images/archarm/media.sh` makes `/home/alarm/media` in Podman (Alpine's ffmpeg): `avsync.webm` (a white frame and a

@@ -326,11 +326,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - The TS backends are tested through boots; a Node test with a bare-metal virtio guest would be
   cheaper when they grow (blk).
 
-- **Hardware video decoding** (audio's finding, [audio.md](audio.md) "Measurements": Firefox's VP9 decoder takes
-  1.7-1.8 s of the guest's CPU a second for a 480p trailer and still shows ~10% of its frames): **in progress**, VA-API
-  over virgl decoded by WebCodecs ([plans/video.md](plans/video.md); the V4L2/virtio-media route and why it lost are
-  its §2). Since V2 Firefox shows 87-90% of the trailer's frames; what it drops is the guest's CPU (its media
-  pipeline keeps 4 vCPUs 54-73% busy with no decoding: plans/video.md §6), not the decode path.
+- **HEVC on the host** (dropped with the video track's end, 2026-10-15, the user: H.264, VP9 and AV1 cover what the
+  web serves; Chromium on Linux has no HEVC decoder of its own, so only hosts with hardware HEVC would offer it; HEVC
+  files still play, decoded in the guest). What it would need ([plans/video.md](plans/video.md) §11): VPS, SPS and PPS
+  written from `virgl_h265_picture_desc` (offsets from a C program against Mesa's `virgl_video_hw.h`), and every slice
+  header rewritten, since VA's parameters lose the SPS's short-term reference picture sets (only their count): an
+  explicit set built from the picture's DPB list (`ref[]`, `PicOrderCntVal[]`, the RefPicSetSt*/Lt indices; the rest
+  is foll), and the header parsed through to its end (prediction weights, entry points) to re-align the slice data;
+  long-term pictures from the SPS can't be rebuilt (their POCs aren't sent). Testable only where the browser has
+  HEVC (the Mac's hardware), and offline with FFmpeg in Podman.
 - **A VA-API consumer that waits on each picture, where the browser decodes H.264 in software** (the guest's
   `ffmpeg -hwaccel vaapi` reading frames back, as in transcoding; plans/video.md §7): every frame right, but ~5 a
   second (120 frames in 23 s on the Mac: each picture waits for the 200 ms drain). The decoder holds more pictures than
@@ -546,6 +550,14 @@ report it. Nothing has been filed.
   `MPEG4_SIMPLE`/`MPEG4_ADVANCED_SIMPLE` (and added HEVC 4:2:2/4:4:4 profiles) that virglrenderer's copy (`c8e3fc3b`)
   still has, so every later value (H.264, HEVC, VP9, AV1) means a different profile to each. The protocol needs its
   own fixed numbering.
+- **Mesa's virgl AV1 decode loses three things** ([plans/video.md](plans/video.md) §10; Mesa 26.2.4,
+  `src/gallium/frontends/va/picture_av1.c`, `picture.c`, `src/gallium/drivers/virgl/virgl_video.c`): the VA frontend
+  writes `refresh_frame_flags = 1` whatever the frame refreshes (a stateful host decoder needs it; webpc keeps its own
+  slots instead); it sets `film_grain_target` in `vlVaEndPicture`, after `vaRenderPicture` has sent the frame's desc
+  (virgl's `decode_bitstream`), so a host never learns the surface a grained frame is shown from (virglrenderer's
+  host VA-API path writes the target, the guest shows the other surface; webpc-va 2 works around it); virgl's
+  `fill_av1_picture_desc` doesn't copy `lr_unit_size` (the shifts are copied). Repro: the guest's `ffmpeg -hwaccel
+  vaapi` on an SVT-AV1 clip with `-svtav1-params film-grain=8` against its software decode.
 - **Chromium (libyuv's SME kernels) SIGILLs on CPUs with SME but no SVE** (Apple M4 under Linux, e.g. a Lima VM;
   plans/video.md §4): reading a decoded `VideoFrame` (`copyTo`, a WebGL upload, `createImageBitmap`) faults at `cntd`
   in the prologue of a locally streaming function compiled with SVE (LLVM saves the vector length with an SVE

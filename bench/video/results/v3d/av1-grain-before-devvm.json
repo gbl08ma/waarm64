@@ -1,0 +1,40 @@
+{
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "frames": 60,
+ "info": "7.2.10-1-aarch64-ARCHmesa 1:26.2.4-1 libva 2.24.1-1 ffmpeg 2:9.0.2-2 webpc-va 1-1 LIBVA_DRIVER_NAME=webpc",
+ "vainfo": "vainfo: Driver version: Mesa Gallium driver 26.2.4-arch1.1 for virgl (webpc)      VAProfileH264ConstrainedBaseline: VAEntrypointVLD      VAProfileH264Main               : VAEntrypointVLD      VAProfileH264High               : VAEntrypointVLD      VAProfileVP9Profile0            : VAEntrypointVLD      VAProfileAV1Profile0            : VAEntrypointVLD      VAProfileNone                   : VAEntrypointVideoProc",
+ "sintel-grain.webm": {
+  "compare": "frames 60 of 60, equal 7, first differing 1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=======xxxxxxxxxxxxxxx",
+  "timing": "time 1.454 s user 0.730 s sys 0.886 s",
+  "ms": 4171,
+  "decoded": 64,
+  "dropped": 0,
+  "errors": 0,
+  "ahead": 0,
+  "maxWaitMs": 3.424999952316284,
+  "warnings": []
+ },
+ "debug": [
+  "video: buffer 3 format 166 864x480 planes 3,4",
+  "video: buffer 6 format 166 864x480 planes 5,6",
+  "video: codec 7 profile 26 entrypoint 1 level 0 854x480 refs 0",
+  "video: codec 7: decoder av01.0.13M.08 854x480 software",
+  "video: buffer 10 format 166 864x480 planes 28,29",
+  "video: buffer 13 format 166 864x480 planes 30,31",
+  "video: buffer 16 format 166 864x480 planes 32,33",
+  "video: buffer 19 format 166 864x480 planes 34,35",
+  "video: buffer 22 format 166 864x480 planes 36,37",
+  "video: buffer 25 format 166 864x480 planes 38,39",
+  "video: buffer 28 format 166 864x480 planes 40,41",
+  "video: buffer 31 format 166 864x480 planes 42,43",
+  "video: buffer 34 format 166 864x480 planes 44,45",
+  "video: buffer 37 format 166 864x480 planes 46,47",
+  "video: buffer 40 format 166 864x480 planes 48,49",
+  "video: buffer 43 format 166 864x480 planes 50,51",
+  "video: buffer 46 format 166 864x480 planes 52,53",
+  "video: buffer 49 format 166 864x480 planes 54,55",
+  "video: buffer 52 format 166 864x480 planes 56,57",
+  "video: buffer 55 format 166 864x480 planes 58,59"
+ ]
+}

@@ -1,11 +1,13 @@
 // The video pictures in a virgl capture (web/virgl-trace.ts; bench/video/v0.ts CAPTURE=1), and the streams the host
 // makes of them for WebCodecs (docs/plans/video.md): per codec, each picture's desc and bitstream as the guest sent
-// them. As a tool it writes each codec's stream (H.264 as Annex B with the rebuilt parameter sets, VP9 as IVF) so a
+// them (BEGIN_FRAME to END_FRAME, its bitstream buffers joined). As a tool it writes each codec's stream (H.264 as
+// Annex B with the rebuilt parameter sets, VP9 as IVF, AV1 as the OBUs Av1Stream makes: `ffmpeg -f obu`) so a
 // software decoder can check it against the original file.
 //   node bench/video/pictures.ts <capture.vglt> <outdir>
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { walk } from '../../web/virgl.ts';
 import { readTrace } from '../../web/virgl-trace.ts';
+import { Av1Stream } from '../../web/video-av1.ts';
 import { H264Stream } from '../../web/video-h264.ts';
 import { PROFILE } from '../../web/virgl-video.ts';
 
@@ -18,6 +20,8 @@ export function pictures(trace: Uint8Array): CodecTrace[] {
   const mem = new Map<number, Uint8Array>();
   const codecs: CodecTrace[] = [];
   const live = new Map<string, CodecTrace>();
+  /** The picture being sent, per codec: its target, its desc and its bitstream buffers so far. */
+  const open = new Map<string, { target: number; desc?: Uint8Array; bits: Uint8Array[] }>();
   for (const r of readTrace(trace)) {
     if (r.kind === 'data') {
       let b = mem.get(r.res);
@@ -40,10 +44,19 @@ export function pictures(trace: Uint8Array): CodecTrace[] {
         const c = { ctx, handle: p[0], profile: p[1], level: p[4], width: p[5], height: p[6], pictures: [] };
         codecs.push(c);
         live.set(`${ctx}:${p[0]}`, c);
+      } else if (cmd === 57) {
+        open.set(`${ctx}:${p[0]}`, { target: p[1], bits: [] });
       } else if (cmd === 59) {
-        const c = live.get(`${ctx}:${p[0]}`);
+        const o = open.get(`${ctx}:${p[0]}`);
         const desc = mem.get(p[2]), bits = mem.get(p[3]);
-        if (c && desc && bits) c.pictures.push({ target: p[1], desc: desc.slice(), bits: bits.slice(0, p[4]) });
+        if (o && desc && bits) {
+          o.desc = desc.slice();
+          o.bits.push(bits.slice(0, p[4]));
+        }
+      } else if (cmd === 61) {
+        const c = live.get(`${ctx}:${p[0]}`), o = open.get(`${ctx}:${p[0]}`);
+        open.delete(`${ctx}:${p[0]}`);
+        if (c && o?.desc) c.pictures.push({ target: o.target, desc: o.desc, bits: Buffer.concat(o.bits) });
       }
     });
   }
@@ -83,6 +96,11 @@ if (import.meta.main) {
       writeFileSync(`${name}.ivf`, ivf(c.pictures.map((p) => p.bits), c.width, c.height));
       const hidden = c.pictures.filter((p) => !(p.desc[332] & 8)).length;
       console.log(`  ${hidden} hidden (show_frame 0), ${c.pictures.filter((p) => !(p.desc[332] & 4)).length} key frames`);
+    } else if (c.profile === PROFILE.AV1_MAIN) {
+      const s = new Av1Stream();
+      const chunks = [...c.pictures.flatMap((p, k) => s.chunks(p.desc, p.bits, p.target, k)), ...s.flush()];
+      writeFileSync(`${name}.obu`, Buffer.concat(chunks.map((x) => x.data)));
+      console.log(`  ${chunks.length} temporal units for ${c.pictures.length} frames, ${chunks.filter((x) => x.key).length} key`);
     } else {
       const s = new H264Stream(c.width, c.height, c.level);
       const chunks = c.pictures.map((p) => s.chunk(p.desc, p.bits));

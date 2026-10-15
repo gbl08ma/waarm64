@@ -56,10 +56,11 @@ test('probeVideo: what the browser decodes is offered, and what it decodes in ha
     }
   };
   const h264 = [PROFILE.AVC_CONSTRAINED_BASELINE, PROFILE.AVC_MAIN, PROFILE.AVC_HIGH];
-  assert.deepEqual(await probe(() => false), { caps: [...h264, PROFILE.VP9_PROFILE0], hardware: [] });
-  assert.deepEqual(await probe(() => true), { caps: [...h264, PROFILE.VP9_PROFILE0], hardware: [...h264, PROFILE.VP9_PROFILE0] });
-  assert.deepEqual(await probe((c) => c.startsWith('avc1')), { caps: [...h264, PROFILE.VP9_PROFILE0], hardware: h264 });
-  assert.deepEqual(await probe(() => true, { software: true }), { caps: [...h264, PROFILE.VP9_PROFILE0], hardware: [] });
+  const all = [...h264, PROFILE.VP9_PROFILE0, PROFILE.AV1_MAIN];
+  assert.deepEqual(await probe(() => false), { caps: all, hardware: [] });
+  assert.deepEqual(await probe(() => true), { caps: all, hardware: all });
+  assert.deepEqual(await probe((c) => c.startsWith('avc1')), { caps: all, hardware: h264 });
+  assert.deepEqual(await probe(() => true, { software: true }), { caps: all, hardware: [] });
 });
 
 test('VideoContext: codecs, buffers and a picture\'s parameters and data, read from the staging buffers', () => {
@@ -369,6 +370,61 @@ test('VirglRenderer: a picture is written into its planes after the decoding con
   assert.equal(r.videoStats.decoded, 1);
 });
 
+/** An AV1 desc (Mesa's `virgl_av1_picture_desc`): a 64x64 frame, one 4-byte tile at 0, the guest's reference map. */
+function av1Desc(type: number, map: number[], orderHint: number) {
+  const d = new Uint8Array(5132), v = new DataView(d.buffer);
+  map.forEach((s, k) => v.setUint32(264 + 4 * k, s, true));
+  d[333] = 6; // order_hint_bits_minus_1
+  v.setUint32(336, 1 << 6, true); // enable_order_hint
+  for (const at of [344, 346, 348, 350]) v.setUint16(at, 64, true);
+  d[359] = 7; // primary_ref_frame: none
+  d[360] = orderHint;
+  d[664] = 1; d[665] = 1; // one tile
+  v.setUint16(1188, 1, true); v.setUint16(1316, 1, true);
+  v.setUint32(1448, type | 4 | (1 << 14), true); // shown, uniform tiles
+  d[1469] = 100;
+  v.setUint32(1800, 4, true);
+  v.setUint16(5128, 1, true);
+  return d;
+}
+
+test('VideoContext: an AV1 frame waiting for the next one\'s map goes out when the guest waits on it, or destroys the codec', async () => {
+  const t = video(PROFILE.AV1_MAIN);
+  for (let k = 0; k < 4; k++) t.v.command(55, new Uint32Array([10 + k, FORMAT_NV12, 64, 64, 61 + 2 * k, 62 + 2 * k]));
+  const tile = new Uint8Array([1, 2, 3, 4]);
+  t.frame(av1Desc(0, [], 0), tile, 2); // a key frame into buffer 2
+  const map = [2, 2, 2, 2, 2, 2, 2, 2];
+  for (let k = 1; k <= 7; k++) {
+    t.frame(av1Desc(1, map, k), tile, 2 + k);
+    map[k] = 2 + k;
+  }
+  const dec = t.made[0];
+  assert.equal(dec.chunks.length, 8);
+  // Eight distinct pictures in the guest's map: the next frame (buffer 10) waits, pending.
+  t.frame(av1Desc(1, map, 8), tile, 10);
+  assert.equal(dec.chunks.length, 8);
+  assert.equal(t.v.waiting, 9);
+  for (let k = 0; k < 8; k++) dec.out(dec.chunks[k].ts);
+  assert.equal(t.v.waiting, 1);
+  // The guest waits on it (the queue's nudge): sent, written into buffer 10's planes.
+  t.v.nudge();
+  assert.equal(dec.chunks.length, 9);
+  dec.out(dec.chunks[8].ts);
+  assert.deepEqual(t.written.at(-1)!.planes, [61, 62]);
+  // Another waits (buffer 11); the guest destroys the codec (Firefox at a seek): sent before the flush, still written.
+  t.frame(av1Desc(1, map, 9), tile, 11);
+  assert.equal(dec.chunks.length, 9);
+  t.v.command(54, new Uint32Array([1]));
+  assert.equal(dec.chunks.length, 10);
+  assert.equal(dec.flushes, 1);
+  dec.out(dec.chunks[9].ts);
+  assert.deepEqual(t.written.at(-1)!.planes, [63, 64]);
+  dec.flushed!();
+  await new Promise((ok) => setTimeout(ok, 0));
+  assert.ok(dec.closed);
+  assert.deepEqual({ decoded: t.stats.decoded, dropped: t.stats.dropped, errors: t.stats.errors }, { decoded: 10, dropped: 0, errors: 0 });
+});
+
 /** A submit of `ctx` with these commands (each with one parameter word). */
 const submit = (ctx: number, ...cmds: number[]): WorkerCall => ({ t: 'submit', ctx, words: new Uint32Array(cmds.flatMap((c) => [(1 << 16) | c, 0])) });
 const name = (m: WorkerCall) => m.t === 'submit' ? `${m.ctx}:${[...m.words].filter((_, k) => !(k & 1)).map((w) => w & 0xff).join(',')}` : m.t === 'fence' ? `fence${m.id}` : m.t;
@@ -377,7 +433,7 @@ test('CallQueue: a call waits only if it could see a pending picture; the rest r
   // The renderer as the queue sees it: the pending pictures' planes, and what each context has attached (as calls ran).
   const pending = new Set<number>(), attached = new Map<number, Set<number>>();
   const ran: string[] = [];
-  let drains = 0, giveUps = 0;
+  let drains = 0, giveUps = 0, nudges = 0;
   const run = (m: WorkerCall) => {
     if (m.t === 'ctxres') {
       const a = attached.get(m.ctx) ?? new Set<number>();
@@ -390,6 +446,7 @@ test('CallQueue: a call waits only if it could see a pending picture; the rest r
   const q = new CallQueue<WorkerCall>({
     run,
     pending: { ctx: (id) => [...attached.get(id) ?? []].some((r) => pending.has(r)), res: (id) => pending.has(id) },
+    nudge: () => nudges++,
     drain: () => drains++,
     giveUp: () => { giveUps++; pending.clear(); },
   });
@@ -441,7 +498,12 @@ test('CallQueue: a call waits only if it could see a pending picture; the rest r
   q.push({ t: 'unref', id: 9 }, 10);
   q.push(submit(5, 8), 10);
   assert.deepEqual(ran.slice(21), ['res', 'backing', 'attach5:9']);
-  // Nothing comes out: drained once at 200 ms, given up at 1 s.
+  // Nothing comes out: nudged once at 30 ms (frames held for the next one sent), drained once at 200 ms, given up at 1 s.
+  q.tick(39);
+  assert.equal(nudges, 0);
+  q.tick(40);
+  q.tick(60);
+  assert.equal(nudges, 1);
   q.tick(209);
   assert.equal(drains, 0);
   q.tick(210);
@@ -450,6 +512,7 @@ test('CallQueue: a call waits only if it could see a pending picture; the rest r
   assert.equal(giveUps, 0);
   q.tick(1010);
   assert.equal(giveUps, 1);
+  assert.equal(nudges, 1);
   assert.deepEqual(ran.slice(24), ['1:8', 'unref', '5:8']);
   assert.ok(!q.stalled);
 });

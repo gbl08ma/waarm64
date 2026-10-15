@@ -11,6 +11,10 @@
 #   res-vp9.webm, res-h264.ts   a stream whose size changes (the video track, docs/plans/video.md V3): the trailer from
 #                 20 s to 32 s in three 4 s segments, 854x480, 640x360 and 1280x720, each from a key picture, joined
 #                 without re-encoding (one track); VP9 in WebM (Firefox plays it), H.264 High with B-pictures in MPEG-TS.
+#   sintel-av1.webm, sintel-aom.webm, sintel-grain.webm   AV1 (the video track's V3): the trailer in SVT-AV1 with
+#                 Opus; its first 10 s in libaom (all eight references, hidden frames shown later); 10 s of SVT-AV1 with
+#                 film grain; sintel-tools.webm, 3 s of libaom with more of AV1's tools on (segmentation, 2x2 tiles,
+#                 128x128 superblocks, quantizer matrices, global motion, delta q and lf, film grain).
 #   avsync.html   a page that plays a clip (?v=<file>) to its end, full window on black, with sound (its profile allows it).
 #   images/archarm/media.sh [outdir]   (default target/archarm/media)
 set -euo pipefail
@@ -56,7 +60,11 @@ EOS
     ffmpeg -loglevel error -y -f concat -safe 0 -i /tmp/res.txt -c copy res-vp9.webm
     ffmpeg -loglevel error -y -f concat -safe 0 -i /tmp/res-ts.txt -c copy -f mpegts res-h264.ts
   fi
-  for f in avsync.webm avsync-vp9.webm avsync.mp4 sintel.webm sintel-silent.webm res-vp9.webm res-h264.ts; do ffprobe -loglevel error -show_entries stream=codec_name,width,height,sample_rate,channels:format=duration -of compact "$f"; done'
+  [ -f sintel-av1.webm ] || ffmpeg -loglevel error -y -i sintel_trailer-480p.mp4 -c:v libsvtav1 -preset 8 -crf 40 -c:a libopus -b:a 128k sintel-av1.webm
+  [ -f sintel-aom.webm ] || ffmpeg -loglevel error -y -t 10 -i sintel_trailer-480p.mp4 -an -c:v libaom-av1 -cpu-used 6 -row-mt 1 -crf 40 -b:v 0 sintel-aom.webm
+  [ -f sintel-tools.webm ] || ffmpeg -loglevel error -y -ss 30 -t 3 -i sintel_trailer-480p.mp4 -an -c:v libaom-av1 -cpu-used 4 -row-mt 1 -crf 40 -b:v 0 -aq-mode 1 -tiles 2x2 -aom-params "sb-size=128:enable-qm=1:enable-global-motion=1:deltaq-mode=1:delta-lf-mode=1:denoise-noise-level=10" sintel-tools.webm
+  [ -f sintel-grain.webm ] || ffmpeg -loglevel error -y -ss 20 -t 10 -i sintel_trailer-480p.mp4 -an -c:v libsvtav1 -preset 8 -crf 40 -svtav1-params film-grain=8 sintel-grain.webm
+  for f in avsync.webm avsync-vp9.webm avsync.mp4 sintel.webm sintel-silent.webm res-vp9.webm res-h264.ts sintel-av1.webm sintel-aom.webm sintel-grain.webm sintel-tools.webm; do ffprobe -loglevel error -show_entries stream=codec_name,width,height,sample_rate,channels:format=duration -of compact "$f"; done'
 cat > "$OUT/avsync.html" <<'EOF'
 <!doctype html>
 <meta charset="utf-8">

@@ -68,7 +68,7 @@ async function replayVideo(name: string, orig?: string, fault?: ChunkFault): Pro
     [Buffer.from(fixture(name)).toString('base64'), ref.width, ref.height, orig && Buffer.from(fixture(orig)).toString('base64'), fault] as const);
 }
 /** FFmpeg's frames of the original files (bench/video/fixture.ts): SHA-256 of each visible I420, in display order. */
-const videoRef = () => JSON.parse(readFileSync(new URL('virgl/video.json', import.meta.url), 'utf8')) as { width: number; height: number; pictures: number; h264: string[]; vp9: string[] };
+const videoRef = () => JSON.parse(readFileSync(new URL('virgl/video.json', import.meta.url), 'utf8')) as { width: number; height: number; pictures: number; h264: string[]; vp9: string[]; 'av1-aom': string[]; 'av1-svt': string[]; 'av1-tools': string[] };
 
 test('video on WebGL2: VP9 pictures through the device and WebCodecs into their planes, each FFmpeg\'s frame', { timeout: 180_000 }, async () => {
   const ref = videoRef();
@@ -100,6 +100,26 @@ test('video on WebGL2: H.264 pictures through the device and WebCodecs into thei
   const exact = r.hashes.filter((h) => ffmpeg.has(h)).length;
   if (hw) assert.equal(exact, r.hashes.length);
   console.log(`H.264: ${r.stats.decoded} pictures in ${hw ? 'hardware' : 'software'}, ${exact} FFmpeg's exactly, ${r.ms.toFixed(0)} ms; ${r.ahead} calls ran ahead, the longest wait ${r.maxWaitMs.toFixed(0)} ms`);
+});
+
+test('video on WebGL2: AV1 frames through the device and WebCodecs into their planes, each FFmpeg\'s frame', { timeout: 180_000 }, async () => {
+  const ref = videoRef();
+  // libaom (eight distinct references: frames stored nowhere and decoded again, hidden frames never shown), SVT-AV1
+  // (hidden frames shown later), and libaom with more tools on (segmentation, 2x2 tiles, 128x128 superblocks,
+  // quantizer matrices, rotzoom global motion, delta q and lf, loop restoration, film grain decoded into the shown
+  // surface by webpc-va): the temporal units rebuilt by web/video-av1.ts.
+  for (const name of ['av1-aom', 'av1-svt', 'av1-tools'] as const) {
+    const r = await replayVideo(`video-${name}.vglt.gz`);
+    assert.deepEqual(r.log, [], name);
+    assert.deepEqual({ frames: r.stats.frames, dropped: r.stats.dropped, errors: r.stats.errors }, { frames: ref.pictures, dropped: 0, errors: 0 }, name);
+    // A frame per picture the guest shows (a hidden frame it shows later comes out at its decode): each FFmpeg's frame.
+    assert.ok(r.stats.decoded >= ref.pictures - 5, `${name}: ${r.stats.decoded} written`);
+    assert.equal(r.hashes.length, r.stats.decoded);
+    const frames = new Set(ref[name]);
+    const wrong = r.hashes.flatMap((h, k) => (frames.has(h) ? [] : [k]));
+    assert.equal(wrong.length, 0, `${name}: written pictures ${wrong.join(' ')} aren't FFmpeg's frames`);
+    console.log(`${name}: ${r.stats.decoded} of ${ref.pictures} frames written, ${r.ms.toFixed(0)} ms`);
+  }
 });
 
 test('video on WebGL2: a damaged chunk is a decoder error that ends its codec\'s pictures, and nothing waits for them', { timeout: 180_000 }, async () => {

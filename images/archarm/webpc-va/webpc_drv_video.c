@@ -4,11 +4,20 @@
 // format), and Firefox's VA-API path takes NV12, YV12, P010 and P016 only, so it falls back to software. This driver
 // loads Mesa's, and drops I420 and YV12 from what vaQuerySurfaceAttributes says: decoders then use NV12. Selected with
 // LIBVA_DRIVER_NAME=webpc (the package sets it for every session).
+//
+// And AV1 with film grain decoded into the surface that's shown. A decoder applying grain decodes into a reference
+// surface (VA's current_frame) and shows another (current_display_picture), and Mesa's VA frontend sends the frame to
+// the host before it sets the film grain target (at vaEndPicture), so the host never learns where the grained
+// picture goes (docs/plans/video.md §10). Here such a frame's decode target is its display surface, and the reference
+// map names display surfaces too (a decoder keeps a frame's display surface while the frame is a reference): the
+// host, which keeps the references itself, writes the grained picture where it's shown.
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <stdio.h>
 #include <va/va.h>
 #include <va/va_backend.h>
+#include <va/va_dec_av1.h>
+#include <stdlib.h>
 
 #ifndef MESA_DRIVER
 #define MESA_DRIVER "/usr/lib/dri/virtio_gpu_drv_video.so"
@@ -32,6 +41,126 @@ static VAStatus query_surface_attributes(VADriverContextP ctx, VAConfigID config
   return s;
 }
 
+/** The AV1 decode configs and contexts, and per context: a picture begun (its target, until its parameters come)
+ * and the reference surfaces that stand for display surfaces. */
+#define MAX_AV1 64
+#define MAX_MAP 64
+static VAConfigID av1_configs[MAX_AV1];
+static int n_av1_configs;
+struct av1_context {
+  VAContextID id;
+  int pending;
+  VASurfaceID target;
+  struct { VASurfaceID ref, shown; } map[MAX_MAP];
+  int n;
+};
+static struct av1_context *av1_contexts[MAX_AV1];
+
+static VAStatus (*mesa_create_config)(VADriverContextP, VAProfile, VAEntrypoint, VAConfigAttrib *, int, VAConfigID *);
+static VAStatus (*mesa_create_context)(VADriverContextP, VAConfigID, int, int, int, VASurfaceID *, int, VAContextID *);
+static VAStatus (*mesa_destroy_context)(VADriverContextP, VAContextID);
+static VAStatus (*mesa_begin)(VADriverContextP, VAContextID, VASurfaceID);
+static VAStatus (*mesa_render)(VADriverContextP, VAContextID, VABufferID *, int);
+static VAStatus (*mesa_end)(VADriverContextP, VAContextID);
+
+static struct av1_context *av1_context(VAContextID id) {
+  for (int k = 0; k < MAX_AV1; k++)
+    if (av1_contexts[k] && av1_contexts[k]->id == id) return av1_contexts[k];
+  return NULL;
+}
+
+static VAStatus create_config(VADriverContextP ctx, VAProfile profile, VAEntrypoint entrypoint, VAConfigAttrib *attribs,
+                              int n, VAConfigID *config) {
+  VAStatus s = mesa_create_config(ctx, profile, entrypoint, attribs, n, config);
+  if (s == VA_STATUS_SUCCESS && entrypoint == VAEntrypointVLD && (profile == VAProfileAV1Profile0 || profile == VAProfileAV1Profile1))
+    av1_configs[n_av1_configs++ % MAX_AV1] = *config;
+  return s;
+}
+
+static VAStatus create_context(VADriverContextP ctx, VAConfigID config, int w, int h, int flag, VASurfaceID *targets,
+                               int n, VAContextID *context) {
+  VAStatus s = mesa_create_context(ctx, config, w, h, flag, targets, n, context);
+  if (s != VA_STATUS_SUCCESS) return s;
+  for (int k = 0; k < MAX_AV1 && k < n_av1_configs; k++) {
+    if (av1_configs[k] != config) continue;
+    for (int j = 0; j < MAX_AV1; j++) {
+      if (av1_contexts[j]) continue;
+      av1_contexts[j] = calloc(1, sizeof *av1_contexts[j]);
+      if (av1_contexts[j]) av1_contexts[j]->id = *context;
+      break;
+    }
+    break;
+  }
+  return s;
+}
+
+static VAStatus destroy_context(VADriverContextP ctx, VAContextID context) {
+  for (int k = 0; k < MAX_AV1; k++) {
+    if (av1_contexts[k] && av1_contexts[k]->id == context) {
+      free(av1_contexts[k]);
+      av1_contexts[k] = NULL;
+    }
+  }
+  return mesa_destroy_context(ctx, context);
+}
+
+/** An AV1 picture begins once its parameters say where it goes. */
+static VAStatus begin_picture(VADriverContextP ctx, VAContextID context, VASurfaceID target) {
+  struct av1_context *c = av1_context(context);
+  if (!c) return mesa_begin(ctx, context, target);
+  c->pending = 1;
+  c->target = target;
+  return VA_STATUS_SUCCESS;
+}
+
+static VASurfaceID shown(struct av1_context *c, VASurfaceID s) {
+  for (int k = 0; k < c->n; k++)
+    if (c->map[k].ref == s) return c->map[k].shown;
+  return s;
+}
+
+static VAStatus render_picture(VADriverContextP ctx, VAContextID context, VABufferID *buffers, int n) {
+  struct av1_context *c = av1_context(context);
+  if (!c || !c->pending) return mesa_render(ctx, context, buffers, n);
+  for (int k = 0; k < n; k++) {
+    VABufferType type;
+    unsigned int size, count;
+    void *data;
+    if (ctx->vtable->vaBufferInfo(ctx, buffers[k], &type, &size, &count) != VA_STATUS_SUCCESS || type != VAPictureParameterBufferType ||
+        size < sizeof(VADecPictureParameterBufferAV1) || ctx->vtable->vaMapBuffer(ctx, buffers[k], &data) != VA_STATUS_SUCCESS)
+      continue;
+    VADecPictureParameterBufferAV1 *p = data;
+    for (int r = 0; r < 8; r++) p->ref_frame_map[r] = shown(c, p->ref_frame_map[r]);
+    if (p->film_grain_info.film_grain_info_fields.bits.apply_grain && p->current_display_picture != VA_INVALID_SURFACE &&
+        p->current_display_picture != p->current_frame) {
+      int j = 0;
+      while (j < c->n && c->map[j].ref != p->current_frame) j++;
+      if (j == c->n && c->n < MAX_MAP) c->n++;
+      if (j < MAX_MAP) c->map[j].ref = p->current_frame, c->map[j].shown = p->current_display_picture;
+      if (c->target == p->current_frame) c->target = p->current_display_picture;
+      p->current_frame = p->current_display_picture;
+    } else {
+      // The surface is a reference of its own again: what it stood for is gone.
+      for (int j = 0; j < c->n; j++)
+        if (c->map[j].ref == c->target) c->map[j] = c->map[--c->n];
+    }
+    ctx->vtable->vaUnmapBuffer(ctx, buffers[k]);
+  }
+  c->pending = 0;
+  VAStatus s = mesa_begin(ctx, context, c->target);
+  return s == VA_STATUS_SUCCESS ? mesa_render(ctx, context, buffers, n) : s;
+}
+
+static VAStatus end_picture(VADriverContextP ctx, VAContextID context) {
+  struct av1_context *c = av1_context(context);
+  if (c && c->pending) {
+    c->pending = 0;
+    VAStatus s = mesa_begin(ctx, context, c->target);
+    if (s != VA_STATUS_SUCCESS) return s;
+  }
+  return mesa_end(ctx, context);
+}
+
 #define INIT_NAME(major, minor) __vaDriverInit_##major##_##minor
 #define INIT(major, minor) INIT_NAME(major, minor)
 
@@ -53,9 +182,17 @@ VAStatus INIT(VA_MAJOR_VERSION, VA_MINOR_VERSION)(VADriverContextP ctx) {
     return VA_STATUS_ERROR_UNKNOWN;
   }
   VAStatus s = init(ctx);
-  if (s == VA_STATUS_SUCCESS && ctx->vtable->vaQuerySurfaceAttributes) {
-    mesa_query = ctx->vtable->vaQuerySurfaceAttributes;
-    ctx->vtable->vaQuerySurfaceAttributes = query_surface_attributes;
+  if (s != VA_STATUS_SUCCESS) return s;
+  struct VADriverVTable *v = ctx->vtable;
+  if (v->vaQuerySurfaceAttributes) {
+    mesa_query = v->vaQuerySurfaceAttributes;
+    v->vaQuerySurfaceAttributes = query_surface_attributes;
   }
+  mesa_create_config = v->vaCreateConfig, v->vaCreateConfig = create_config;
+  mesa_create_context = v->vaCreateContext, v->vaCreateContext = create_context;
+  mesa_destroy_context = v->vaDestroyContext, v->vaDestroyContext = destroy_context;
+  mesa_begin = v->vaBeginPicture, v->vaBeginPicture = begin_picture;
+  mesa_render = v->vaRenderPicture, v->vaRenderPicture = render_picture;
+  mesa_end = v->vaEndPicture, v->vaEndPicture = end_picture;
   return s;
 }

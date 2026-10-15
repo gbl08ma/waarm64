@@ -1,5 +1,5 @@
 // V1's check in Chromium (docs/plans/video.md): a capture's pictures (bench/video/pictures.ts) as the host will hand
-// them to WebCodecs, one chunk per picture, each output frame copied out (I420, the visible width) and hashed as
+// them to WebCodecs, one chunk per picture (AV1: per temporal unit, web/video-av1.ts), each output frame copied out (I420, the visible width) and hashed as
 // ffmpeg's framemd5 does (md5 of the planes' rows), against the original file's frames (`<name>.md5`: ffmpeg's
 // framemd5 hashes, one a line). Prints how many frames came out, in what order, how many match, and how long the
 // guest would have waited for each picture (chunk in to its frame out).
@@ -9,24 +9,28 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 import { chromiumEnv } from '../../tools/nosme.ts';
+import { Av1Stream } from '../../web/video-av1.ts';
 import { H264Stream, codecString, type H264Reorder } from '../../web/video-h264.ts';
-import { PROFILE } from '../../web/virgl-video.ts';
+import { CODECS, PROFILE } from '../../web/virgl-video.ts';
 import { pictures } from './pictures.ts';
 
 const [path, index, md5Path, visible, hw] = process.argv.slice(2);
 if (!path || !index || !md5Path) throw new Error('usage: node bench/video/replay.ts <capture.vglt> <codec index> <orig.md5> [visible width] [hw|sw]');
 const c = pictures(new Uint8Array(readFileSync(path)))[Number(index)];
-const vp9 = c.profile === PROFILE.VP9_PROFILE0;
+const vp9 = c.profile === PROFILE.VP9_PROFILE0, av1 = c.profile === PROFILE.AV1_MAIN;
 // The SPS for the decoder: reorder 0 for hardware, the stream's for software (web/video-h264.ts H264Stream); REORDER overrides.
 // REORDER: none, learn, stream or a depth.
 const reorder = process.env.REORDER && /^\d+$/.test(process.env.REORDER) ? Number(process.env.REORDER) : process.env.REORDER as H264Reorder | undefined;
 const stream = new H264Stream(c.width, c.height, c.level, reorder ?? (hw === 'hw' ? 'none' : 'stream'));
-const chunks = c.pictures.map((p) => {
+const av1Stream = new Av1Stream();
+const chunks = c.pictures.flatMap((p) => {
   if (vp9) return { data: Buffer.from(p.bits).toString('base64'), key: !(p.desc[332] & 4) };
+  if (av1) return av1Stream.chunks(p.desc, p.bits, p.target, 0).map((x) => ({ data: Buffer.from(x.data).toString('base64'), key: x.key }));
   const x = stream.chunk(p.desc, p.bits);
   return { data: Buffer.from(x.data).toString('base64'), key: x.key };
 });
-const codec = vp9 ? 'vp09.00.31.08' : codecString(c.profile, c.level);
+if (av1) chunks.push(...av1Stream.flush().map((x) => ({ data: Buffer.from(x.data).toString('base64'), key: x.key })));
+const codec = vp9 ? 'vp09.00.31.08' : av1 ? CODECS.find((x) => x.profile === c.profile)!.codec : codecString(c.profile, c.level);
 const width = Number(visible || c.width);
 const orig = readFileSync(md5Path, 'utf8').trim().split('\n').map((l) => l.trim());
 

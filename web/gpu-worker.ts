@@ -102,7 +102,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
       stallTimer = undefined;
     }
   };
-  const queue = new CallQueue<WorkerCall>({ run, pending: renderer.videoPending, drain: () => renderer.videoDrain(), giveUp: () => renderer.videoGiveUp() });
+  const queue = new CallQueue<WorkerCall>({ run, pending: renderer.videoPending, nudge: () => renderer.videoNudge(), drain: () => renderer.videoDrain(), giveUp: () => renderer.videoGiveUp() });
   renderer.onVideoSettled = () => {
     // Settled from inside a call (a picture given up or its buffer destroyed): the queue goes on after it.
     queueMicrotask(() => { queue.progress(); watch(); });

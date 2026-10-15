@@ -843,6 +843,11 @@ export class VirglRenderer {
     return out;
   }
 
+  /** Sends the AV1 frames that wait for the next one (`VideoContext.nudge`). */
+  videoNudge() {
+    for (const c of this.contexts.values()) c.video?.nudge();
+  }
+
   /** Has the decoders that hold pictures for reordering output them (`VideoContext.drain`). */
   videoDrain() {
     for (const c of this.contexts.values()) c.video?.drain();

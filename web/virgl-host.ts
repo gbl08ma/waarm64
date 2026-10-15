@@ -98,9 +98,10 @@ const DECODE_SUBMIT = new Set([1, 28, 29, 30, 43, 44, 46, 53, 54, 55, 56, 57, 58
  * context only the resources attached to it), unless the submit only decodes (`decodeOnly`: the decoder gets the
  * later pictures it may be waiting for), and one that names a pending plane. The rest runs, in order: a call that an
  * earlier waiting one must precede waits too (the same context, the same resource; a fence, a read, the screen and
- * what ends a resource's life wait for every earlier waiting call). If nothing comes out for `drainMs` while calls
- * wait, the decoders that hold pictures are drained (`drain`); after `giveUpMs`, the pending pictures are given up
- * (`giveUp`; the guest sees the buffers' old planes rather than hanging).
+ * what ends a resource's life wait for every earlier waiting call). If nothing comes out for `nudgeMs` while calls
+ * wait, frames held for the next one are sent (`nudge`: AV1's, web/video-av1.ts); after `drainMs`, the decoders that
+ * hold pictures are drained (`drain`); after `giveUpMs`, the pending pictures are given up (`giveUp`; the guest sees
+ * the buffers' old planes rather than hanging).
  */
 export class CallQueue<M extends WorkerCall> {
   private q: M[] = [];
@@ -108,11 +109,12 @@ export class CallQueue<M extends WorkerCall> {
     run(m: M): void;
     /** Whether a pending picture's plane is attached to a context, and whether a resource is one. */
     pending: { ctx(id: number): boolean; res(id: number): boolean };
-    drain(): void; giveUp(): void; drainMs?: number; giveUpMs?: number;
+    nudge?(): void; drain(): void; giveUp(): void; nudgeMs?: number; drainMs?: number; giveUpMs?: number;
   };
   /** Since when nothing has come out while calls wait (undefined: none wait). */
   private since?: number;
   private drained = false;
+  private nudged = false;
   /** Calls that ran ahead of waiting ones, and the longest wait (ms), for the stats. */
   ahead = 0;
   maxWaitMs = 0;
@@ -133,7 +135,7 @@ export class CallQueue<M extends WorkerCall> {
     else {
       if (this.since !== undefined) this.maxWaitMs = Math.max(this.maxWaitMs, now - this.since);
       this.since = undefined;
-      this.drained = false;
+      this.drained = this.nudged = false;
     }
   }
 
@@ -146,14 +148,18 @@ export class CallQueue<M extends WorkerCall> {
       this.maxWaitMs = Math.max(this.maxWaitMs, now - this.since);
       this.since = now;
     }
-    this.drained = false;
+    this.drained = this.nudged = false;
     this.pump(now);
   }
 
-  /** While stalled: drains, then gives up, when nothing has come out for long enough. */
+  /** While stalled: nudges, drains, then gives up, when nothing has come out for long enough. */
   tick(now = performance.now()) {
     if (this.since === undefined) return;
     const idle = now - this.since;
+    if (idle >= (this.o.nudgeMs ?? 30) && !this.nudged) {
+      this.nudged = true;
+      this.o.nudge?.();
+    }
     if (idle >= (this.o.drainMs ?? 200) && !this.drained) {
       this.drained = true;
       this.o.drain();
