@@ -27,7 +27,9 @@ reports" has the upstream bugs V0 found (filed at the project's end, by the user
    Measured in V3's second loop (plan §8): steady playback drops almost nothing on the Mac, V2's cost was Firefox's
    start, no pref helps; the bursts are the guest's CPU saturated (Firefox's start, page loads) and the host's
    synchronous JIT installs stopping every vCPU at once. **The compile worker stays in backlog.md (JIT), with what it
-   costs video in a browser; the rest of V3 comes first** (2026-10-15, the user).
+   costs video in a browser; the rest of V3 comes first** (2026-10-15, the user). The user then had it built the same
+   day (jit.md "Sharing", `bench/boot/REPORT.md` "M8: the JIT's compile worker"): no install stall of 250 ms or more in
+   Firefox's pages session since.
 
 By measurement: V2 (plan §6) kept **the copy out of each `VideoFrame`** (the host decodes a picture in ~3 ms, the
 GPU worker never waited 10 ms in hardware; what Firefox drops is the guest's CPU). V3's first loop (plan §7) made

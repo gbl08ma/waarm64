@@ -13,6 +13,8 @@
 // WARM_S, PHASE_S their times.
 // VIRGL_GPU picks the page's `?gpu=` in mode virgl (default `virgl`; `virgl-null` for G2's null renderer). TIMELINE=1
 // records the vCPU timeline over each phase (guest-session.ts `summarizeTimeline`; the rows in <outdir>/<tag>.timeline.json).
+// TIMELINE_ALL=1 records it over the whole of `pages` instead (every start and load; <outdir>/pages-all.timeline.json).
+// QUERY adds to the page's query (e.g. `jit=nocw`: the JIT without its compile worker).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { openSession } from './guest-session.ts';
 
@@ -25,7 +27,7 @@ const PHASE_S = Number(process.env.PHASE_S ?? 10);
 /** Seconds between Firefox's page saying ready and the phase (its start-up work settles: a fresh profile's first minute is busy). */
 const WARM_S = Number(process.env.WARM_S ?? 30);
 const PHASES = (process.env.PHASES ?? 'still,scroll,webgl,pages,support').split(',');
-const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, disk2: PHASES.includes('pages') ? '/target/ffpages/pages.ext4' : undefined });
+const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, query: process.env.QUERY, disk2: PHASES.includes('pages') ? '/target/ffpages/pages.ext4' : undefined });
 const { page, log, onSerial, pasteSerial, rootShell, load, run, runLines } = s;
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), prefs: process.env.FF_PREFS ?? '' };
 type During = { start(): Promise<void>; stop(): Promise<void> };
@@ -116,6 +118,7 @@ if (PHASES.includes('pages')) {
   // scrolled by the mouse's wheel as a user does (Firefox's asynchronous scrolling), measured.
   const list = await runLines('mkdir -p /mnt/ffpages; mount -o ro /dev/vdb /mnt/ffpages 2>/dev/null; cat /mnt/ffpages/pages.txt');
   const box = (await page.locator('#screen').boundingBox())!;
+  if (process.env.TIMELINE_ALL) await s.timeline.start();
   for (const line of list.filter(Boolean)) {
     const [name, file] = line.split(' ');
     const tag = `page-${name}`;
@@ -137,6 +140,12 @@ if (PHASES.includes('pages')) {
     const sorted = fps.map((x) => x.frames).sort((a, b) => a - b);
     results[tag] = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), loadMs, fps, medianFps: sorted[sorted.length >> 1], ...r, ...(await timeline(tag)) };
     log(tag, 'fps', JSON.stringify(sorted), 'flushes', r.display.flushes.toFixed(1));
+    save();
+  }
+  if (process.env.TIMELINE_ALL) {
+    await s.timeline.stop();
+    results.timelineAll = await s.timelineSummary('pages-all');
+    results.jit = (await s.vmStats())?.stats.jit;
     save();
   }
 }

@@ -250,6 +250,10 @@ pub struct Counters {
     /// The block interpreter (ABI 33, `jit::Stats`): instructions it ran,
     /// blocks it decoded, times its cache started over.
     pub dec: [AtomicU64; 3],
+    /// The compile worker (ABI 36, `jit::Stats`): modules a table installed
+    /// once the worker had compiled them, and ones it compiled itself after
+    /// waiting [`jit::OVERDUE_NS`] for the worker.
+    pub cw: [AtomicU64; 2],
 }
 
 /// Indexes into [`Counters::par`].
@@ -279,6 +283,7 @@ impl Default for Counters {
             jit: [const { AtomicU64::new(0) }; 20],
             par: [const { AtomicU64::new(0) }; 10],
             dec: [const { AtomicU64::new(0) }; 3],
+            cw: [const { AtomicU64::new(0) }; 2],
         }
     }
 }
@@ -1305,6 +1310,9 @@ fn publish_jit(c: &Counters, s: &jit::Stats) {
         a.store(v, Ordering::Relaxed);
     }
     for (a, v) in c.dec.iter().zip([s.dec_steps, s.decoded, s.dec_clears]) {
+        a.store(v, Ordering::Relaxed);
+    }
+    for (a, v) in c.cw.iter().zip([s.worker_installs, s.overdue]) {
         a.store(v, Ordering::Relaxed);
     }
 }

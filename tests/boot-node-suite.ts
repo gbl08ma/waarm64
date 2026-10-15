@@ -307,6 +307,10 @@ for (const n of [2, 4]) {
   test(`parallel: Buildroot on ${n} vCPUs (JIT)`, { skip: linux }, () => parallel({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: n }, 1, (r) => {
     poweredOff(r);
     assert.match(r.console, new RegExp(`smp: Brought up 1 node, ${n} CPUs[^]*webpc: test ok`));
+    // The modules went through the compile worker (docs/jit.md "Sharing"), every table installing them from
+    // there (a table may not have caught up with the last ones at power-off), none after waiting the backstop's second.
+    const { workerInstalls, overdue, modules } = r.stats.jit;
+    assert.ok(workerInstalls >= modules && overdue === 0, `${workerInstalls} installs from the worker, ${overdue} overdue, ${modules} modules`);
   }));
 }
 

@@ -12,7 +12,7 @@ Design notes for an ABI change go in this file before the code.
   --max-memory=4GiB --export-table --growable-table` (`.cargo/config.toml`). **Layout A:** one
   shared memory holds the core's static data, stack (1 MiB, `__stack_pointer`), heap, and guest
   RAM, which the host places after the heap ([architecture.md](architecture.md)).
-- Imports: `env.memory`, `env.now_ms() -> f64` (the realtime clock), `env.jit_install(ptr, len,
+- Imports: `env.memory`, `env.now_ms() -> f64` (the realtime clock), `env.jit_compile(…)`, `env.jit_install(ptr, len,
   slot) -> i32` (below). `web/vm.ts` `coreImports(memory)` returns `{env, jit}`; after
   instantiating, the host calls `jit.bind(instance)`.
 - **More instances on the same memory** (one per worker, ABI 20): the core exports
@@ -142,6 +142,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 71–90 | `jit::Stats`: regions compiled, modules, wasm bytes, compile ns, steps in JIT code, dispatches, invalidations, flushes; instructions compiled inline and as helpers, inline steps run; static flag setters stored/elided, conditions direct/computed/from memory; blocks in regions, back-edges, tier-ups; stale blocks tolerated (parallel, 25) |
 | 91–100 | parallel SMP (26): DSBs that waited for TLBI IS, ns waited; TLBI IS broadcast and IC operations issued (ICs are not broadcast: the code cache is shared, [jit.md](jit.md) "Sharing"); queue drains that applied something; IDLE exits (WFI); platform-lock acquisitions that found it held, ns waited; WFEs (each a yield); ns out of `vm_run_cpu` between runs (idle or in the host) |
 | 101–103 | the block interpreter (33, [cpu.md](cpu.md) "The block interpreter"): steps it ran, blocks it decoded, times a table's cache of them started over (full) |
+| 104–105 | the compile worker (36, `env.jit_compile` above): modules a table installed once the worker had compiled them; ones it compiled itself after waiting a second for the worker |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -175,6 +176,14 @@ puts its functions into the core's table.
   vCPU worker), grows the table if needed, sets exports `f0, f1, …` at `base + slot + k`, and
   returns `base + slot` (−1 before `bind`: the core then only interprets). A module that doesn't
   compile is a JIT bug: the exception propagates and the run fails.
+- **`env.jit_compile(ptr, len, seq, epoch, ready) -> i32`** (ABI 36): the core hands each module it
+  emits to the host's compile worker first (`web/jit-compile-worker.ts`, parallel SMP), as number
+  `seq` (from 1, by the cache) of code-cache epoch `epoch`. The host posts a copy and returns 1, or
+  returns 0 (no worker: round-robin, or before `bind`), and the core installs that module at once as
+  before. The worker compiles the modules (`new WebAssembly.Module`, which fills V8's module cache)
+  and, when every module up to `seq` is compiled, stores `seq` atomically into the u32 at byte
+  address `ready`. A table installs a module (`jit_install`, then a cache hit) only once `ready`
+  has reached it, interpreting its blocks until then, or after a second without it.
 - **A JIT module's imports:** `env.memory` (limits 0–65536 pages, or exactly `VmConfig.mem_pages`: ABI 32), `env.table`, any core export by
   name (helpers are ordinary exports named `jit_*`, called as wasm imports: no JS in between), and
   module `t`, whose imports are named by table index and resolved with `table.get` (links to
@@ -460,3 +469,4 @@ implemented by this step).
 | 33 | the block interpreter: `VmConfig.jit` 4, counter words 101–103, `jit::Stats` gains three fields (M8) |
 | 34 | `vm_set_chunk` (the PC sampler's chunk in parallel mode; M8 graphics G4) |
 | 35 | FEAT_RNG and FEAT_E0PD: `VmConfig.features` bits 1 and 2, `VmConfig.rng_seed`; a snapshot of a VM with FEAT_RNG keeps each vCPU's stream position |
+| 36 | `env.jit_compile`: the JIT's modules compiled in a worker of their own before the vCPUs install them |

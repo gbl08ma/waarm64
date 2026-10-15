@@ -187,6 +187,11 @@ interpreter era): fio random 4 KiB reads ~1,800 IOPS, 9p ~14–25 MiB/s, ~2,660 
   instantiation, GC and size), collected into results' `slow`. `sway-mac.sh` samples the Mac's `vm_stat` each second
   (`<name>.vmstat`): its memory is overcommitted by the Lima VMs (plans/video.md §8), which shows in latency. Firefox's
   start-up work runs ~30 s past its window: measure steady state at least that long after a launch (`WARM_S`).
+  firefox-load's `TIMELINE_ALL=1` records the timeline over its whole `pages` phase (every Firefox start and load,
+  where the JIT compiles most), and `QUERY` adds to the page's query (`jit=nocw`: the JIT without its compile
+  worker, for A/B). `bench/gpu/stalls.ts` counts a timeline's stalls by length (`--json` for results).
+- **The JIT's compile worker A/B:** `bench/run.ts --query=nocw` turns it off in `bench/boot` (the bench page passes
+  its query to its worker); the page takes `?jit=nocw`.
 - **perf with parallel SMP:** `--perf-prof`'s jitdump misses the code worker isolates compile (the
   guest's blocks run in the vCPU workers: 73% of samples unknown); `--perf-basic-prof` (a
   `/tmp/perf-<pid>.map`) names them. Guest blocks are thousands of symbols that round to 0.00% in

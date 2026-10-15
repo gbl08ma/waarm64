@@ -33,7 +33,8 @@ read-only virtio-blk over HTTP ranges, `/dev/vdb` in the guest, no overlay; for 
 test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloads"), `?snd=stats[,timer]`
 (the sound device's completion timing once a second in `window.__audio.stats`, and the timer instead of the
 worklet's notify; any `?snd=` also exposes `window.__audio`, the serial log and the status, for tests and
-`bench/audio/snd-page.ts`).
+`bench/audio/snd-page.ts`), `?jit=nocw` (the JIT without its compile worker: each vCPU compiles what it installs,
+for A/B measurements; docs/jit.md "Sharing").
 
 ## The machines
 

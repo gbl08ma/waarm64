@@ -13,8 +13,9 @@ import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
+import type { CompileInit, CompileJob } from './jit-compile-worker.ts';
 
-export const ABI = 35;
+export const ABI = 36;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -62,15 +63,16 @@ export type VmState = { version: number; core: Uint8Array; host: { devices: unkn
 export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8Array): void | Promise<void> };
 
 /**
- * The core's imports: the shared memory, the host clock for realtime mode, and
- * `jit_install` (core/src/jit). The JIT works once `jit.bind` has the core's
- * instance; until then `jit_install` fails and the core only interprets.
+ * The core's imports: the shared memory, the host clock for realtime mode,
+ * `jit_install` and `jit_compile` (core/src/jit). The JIT works once `jit.bind` has the core's
+ * instance; until then `jit_install` fails and the core only interprets. `compile`: this vCPU's
+ * port to the compile worker (web/jit-compile-worker.ts; parallel SMP).
  */
-export function coreImports(memory: WebAssembly.Memory, clock = performance.timeOrigin, stall: Stall[] = []) {
-  const jit = jitHost(memory);
+export function coreImports(memory: WebAssembly.Memory, clock = performance.timeOrigin, stall: Stall[] = [], compile?: MessagePort) {
+  const jit = jitHost(memory, compile);
   const hooks = stall.map((s) => stallHook(memory, s));
   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
-  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install) }, jit };
+  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile }, jit };
 }
 
 /**
@@ -212,8 +214,8 @@ export function threadAlloc(ex: WebAssembly.Exports): ThreadBlock {
  * instance gets its own stack and TLS from `block`. Its JIT is bound to it.
  * `clock`: see {@link clockOffset}.
  */
-export function instantiateThread(module: WebAssembly.Module, memory: WebAssembly.Memory, block: ThreadBlock, clock?: number, stall?: Stall[]) {
-  const imports = coreImports(memory, clock, stall);
+export function instantiateThread(module: WebAssembly.Module, memory: WebAssembly.Memory, block: ThreadBlock, clock?: number, stall?: Stall[], compile?: MessagePort) {
+  const imports = coreImports(memory, clock, stall, compile);
   const instance = new WebAssembly.Instance(module, imports);
   (instance.exports.__stack_pointer as WebAssembly.Global).value = block.stack + THREAD_STACK;
   (instance.exports.__wasm_init_tls as (tls: number) => void)(block.tls);
@@ -245,12 +247,16 @@ function collect() {
  * synchronously, and puts its exports f0, f1, … into the core's function table
  * at JIT slot `slot` on (after the core's own entries). The modules import the
  * memory, the table and the core's exports (its helpers) from `env`, and
- * already-installed blocks they chain to from `t`, by table index.
+ * already-installed blocks they chain to from `t`, by table index. With a
+ * port to the compile worker (`compile`), the core hands it each module it
+ * emits first, and installs it once compiled there: a hit in V8's module cache.
  */
-function jitHost(memory: WebAssembly.Memory) {
+function jitHost(memory: WebAssembly.Memory, port?: MessagePort) {
   let table: WebAssembly.Table | undefined;
   let base = 0;
   let imports: WebAssembly.Imports = {};
+  // The bytes are copied out of the shared memory (V8 compiles only unshared ones) into one buffer, reused.
+  let scratch = new ArrayBuffer(0);
   // Slots the last install used up to (its end), and the highest slot end since the cache last flushed.
   let lastEnd = 0;
   let hi = 0;
@@ -263,7 +269,9 @@ function jitHost(memory: WebAssembly.Memory) {
     install(ptr: number, len: number, slot: number): number {
       if (!table) return -1;
       const t0 = performance.now();
-      const bytes = new Uint8Array(memory.buffer, ptr >>> 0, len).slice(); // a non-shared copy (`ptr` is a u32 the i32 import signs)
+      if (scratch.byteLength < len) scratch = new ArrayBuffer(Math.max(len, 2 * scratch.byteLength, 1 << 16));
+      const bytes = new Uint8Array(scratch, 0, len);
+      bytes.set(new Uint8Array(memory.buffer, ptr >>> 0, len)); // `ptr` is a u32 the i32 import signs
       const module = new WebAssembly.Module(bytes);
       const t1 = performance.now();
       // Blocks it chains to that are already compiled (M5 step 7): `t.<table index>`.
@@ -297,6 +305,14 @@ function jitHost(memory: WebAssembly.Memory) {
       if (ms >= SLOW_INSTALL_MS) console.debug(`webpc-slow install ${ms.toFixed(1)} ms at ${(performance.timeOrigin + t0).toFixed(0)}: compile ${(t1 - t0).toFixed(1)} instantiate ${(t2 - t1).toFixed(1)} gc ${gc.toFixed(1)} bytes ${len} functions ${n}${restart ? ' (slots start over)' : ''}`);
       return at;
     },
+    /** `env.jit_compile`: posts a copy of the module to the compile worker; 0 without one. */
+    compile(ptr: number, len: number, seq: number, epoch: number, ready: number): number {
+      if (!port || !table) return 0;
+      const bytes = new Uint8Array(len);
+      bytes.set(new Uint8Array(memory.buffer, ptr >>> 0, len));
+      port.postMessage({ seq: seq >>> 0, epoch: epoch >>> 0, ready: ready >>> 0, bytes: bytes.buffer } satisfies CompileJob, [bytes.buffer]);
+      return 1;
+    },
   };
 }
 
@@ -324,7 +340,9 @@ export const Counter = {
   PAR_OUT_NS: 100,
   // ABI 33: instructions the block interpreter ran, blocks it decoded, times its cache started over.
   DEC_STEPS: 101, DEC_BLOCKS: 102, DEC_CLEARS: 103,
-  LEN: 104,
+  // ABI 36: modules installed from the compile worker, and compiled on the vCPU after waiting for it too long.
+  JIT_WORKER_INSTALLS: 104, JIT_OVERDUE: 105,
+  LEN: 106,
 } as const;
 
 /**
@@ -361,6 +379,12 @@ export type BootOptions = {
    * realtime only (it implies `realtime`). Drive it with `runAsync`.
    */
   parallel?: boolean;
+  /**
+   * Parallel mode: compile the JIT's modules in a worker of their own (web/jit-compile-worker.ts), the vCPUs
+   * interpreting their blocks until then, instead of on the vCPU that emitted them (docs/jit.md "Sharing").
+   * On unless false.
+   */
+  compileWorker?: boolean;
   /**
    * Realtime mode: throw if the vCPU sleeps this long with no timer deadline
    * and nothing signaled (a lost wake-up would otherwise hang the run).
@@ -678,7 +702,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
-  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })) }) : undefined;
+  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false }) : undefined;
   const RING_HALF = RING / 2;
   const txUsed = () => {
     const u32 = new Uint32Array(memory.buffer);
@@ -901,6 +925,7 @@ function stats(n: (i: number) => number) {
       condDirect: n(Counter.JIT_COND_DIRECT), condComputed: n(Counter.JIT_COND_COMPUTED), condMemory: n(Counter.JIT_COND_MEMORY),
       regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS), stale: n(Counter.JIT_STALE),
       decSteps: n(Counter.DEC_STEPS), decoded: n(Counter.DEC_BLOCKS), decClears: n(Counter.DEC_CLEARS),
+      workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),
@@ -919,8 +944,8 @@ const SIGNAL_RX = 2;
  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
  * docs/abi.md).
  */
-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[] }) {
-  type Handle = { post(m: VcpuJob | VcpuClock): void; terminate(): void };
+function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean }) {
+  type Handle = { post(m: VcpuJob | VcpuClock | CompileInit, transfer?: Transferable[]): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
   let error: Error | undefined;
@@ -994,27 +1019,37 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     Atomics.add(pword, 0, 1);
     Atomics.notify(pword, 0);
   };
-  const spawn = async (): Promise<Handle> => {
-    const url = new URL('./vcpu-worker.ts', import.meta.url);
+  const spawn = async (url = new URL('./vcpu-worker.ts', import.meta.url)): Promise<Handle> => {
     if (typeof Worker !== 'undefined') {
       const w = new Worker(url, { type: 'module' });
-      const h: Handle = { post: (m) => w.postMessage(m), terminate: () => w.terminate() };
+      const h: Handle = { post: (m, t) => w.postMessage(m, t ?? []), terminate: () => w.terminate() };
       w.onmessage = (e: MessageEvent<VcpuEnd | VcpuClock>) => heard(h, e.data);
       w.onerror = (e) => ended({ type: 'error', cpu: -1, message: e.message });
       return h;
     }
     const { Worker: NodeWorker } = await import('node:worker_threads');
     const w = new NodeWorker(url);
-    const h: Handle = { post: (m) => w.postMessage(m), terminate: () => void w.terminate() };
+    const h: Handle = { post: (m, t) => w.postMessage(m, t as never), terminate: () => void w.terminate() };
     w.on('message', (m: VcpuEnd | VcpuClock) => heard(h, m));
     w.on('error', (e: Error) => ended({ type: 'error', cpu: -1, message: String(e.stack ?? e) }));
     return h;
   };
-  const start = () => Array.from({ length: c.ncpus }, async (_, cpu) => {
-    const h = await spawn();
-    h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, start: c.start, ncpus: c.ncpus, stall: c.stall.filter((x) => x.cpu === cpu), live });
-    return h;
-  });
+  // The JIT's compile worker, and a port to it for each vCPU worker.
+  let compiler: Promise<Handle> | undefined;
+  const start = () => {
+    const channels = c.compileWorker ? Array.from({ length: c.ncpus }, () => new MessageChannel()) : [];
+    if (channels.length) {
+      compiler = spawn(new URL('./jit-compile-worker.ts', import.meta.url));
+      const ports = channels.map((ch) => ch.port2);
+      void compiler.then((h) => h.post({ memory: c.memory, ports }, ports));
+    }
+    return Array.from({ length: c.ncpus }, async (_, cpu) => {
+      const h = await spawn();
+      const compile = channels[cpu]?.port1;
+      h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, start: c.start, ncpus: c.ncpus, stall: c.stall.filter((x) => x.cpu === cpu), live, compile }, compile ? [compile] : []);
+      return h;
+    });
+  };
   return {
     /**
      * Waits up to `ms` for news, or for the u32 at byte `also.at` to differ
@@ -1071,6 +1106,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
       release();
       bump();
       for (const w of workers ?? []) void w.then((h) => h.terminate());
+      void compiler?.then((h) => h.terminate());
     },
   };
 }
@@ -1115,7 +1151,7 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
     const gpu = slot('gpu') >= 0 ? states[slot('gpu')] as GpuState : undefined;
     const snd = slot('snd') >= 0 ? states[slot('snd')] as SndState : undefined;
     vm.close();
-    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash(), gpu, snd };
+    return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash(), gpu, snd, stats: vm.stats() };
   }
 }
 

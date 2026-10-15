@@ -194,7 +194,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     path costing under 10 ms of pause; the rest is the guest's CPU. V3 offers H.264 where the browser decodes it only
     in software too (Firefox and mpv play it as from hardware). Firefox's cost and pacing measured (plan §8): steady
     playback drops almost nothing (V2's cost was Firefox's start), no pref helps, and the bursts while browsing are the
-    guest's CPU and the host's synchronous JIT installs stopping every vCPU at once (backlog: a compile worker). Next:
+    guest's CPU and the host's synchronous JIT installs stopping every vCPU at once (since taken off the vCPUs by the JIT's compile worker, jit.md "Sharing"). Next:
     the rest of V3: seeking, resolution changes, decoder errors, snapshots, HEVC and AV1.
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts.

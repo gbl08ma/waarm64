@@ -29,6 +29,8 @@ export type VcpuJob = {
   stall?: Stall[];
   /** The vCPUs' liveness block (web/liveness.ts): this worker writes its slot. */
   live?: Float64Array;
+  /** Its port to the JIT's compile worker (web/jit-compile-worker.ts), if the VM has one. */
+  compile?: MessagePort;
 };
 export type VcpuEnd = { type: 'exit'; cpu: number; kind: number; value: bigint; x: bigint[] } | { type: 'error'; cpu: number; message: string };
 /** A clock query to the coordinator (web/vm.ts `clockOffset`) and its answer, `t` its clock. */
@@ -52,7 +54,7 @@ const NONE = 0xffff_ffff_ffff_ffffn;
 const SPIN_MS = 0.05;
 
 function run(j: VcpuJob, clock: number): VcpuEnd {
-  const exports = instantiateThread(j.module, j.memory, j.block, clock, j.stall).exports;
+  const exports = instantiateThread(j.module, j.memory, j.block, clock, j.stall, j.compile).exports;
   // The vCPUs start together: one that ran (and started a restored VM's clock, and took device completions) while
   // another was still instantiating would find a guest whose CPU 0 hadn't run for that long (on a loaded host, over
   // ALSA's 100 ms wait for a sound period: docs/audio.md "Linux driver behavior").

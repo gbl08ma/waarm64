@@ -1,6 +1,6 @@
 // Runs a benchmark page in a pinned Chromium via Playwright and writes a
 // results JSON (see bench/README.md for the schema).
-//   node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks] [--flags='<more V8 flags>'] [--chromium-args='<Chromium switches>']
+//   node bench/run.ts [--quick] [--only <bench>] [--config default|liftoff-only|turbofan-only|bounds-checks] [--flags='<more V8 flags>'] [--chromium-args='<Chromium switches>'] [--query='<more of the page query>']
 import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -26,6 +26,7 @@ const { values: args } = parseArgs({
     input: { type: 'string' }, // a file for the page's #bench-file input (bench/io)
     flags: { type: 'string', default: '' },
     'chromium-args': { type: 'string', default: '' }, // e.g. the WebGPU switches of bench/gpu (docs/benchmarking.md)
+    query: { type: 'string' }, // more of the page's query (e.g. `nocw`: bench/boot without the JIT's compile worker)
   },
 });
 if (CONFIGS[args.config!] === undefined) throw new Error(`unknown --config ${args.config}; one of ${Object.keys(CONFIGS)}`);
@@ -46,6 +47,7 @@ try {
   const qs = new URLSearchParams();
   if (args.quick) qs.set('quick', '');
   if (args.only) qs.set('only', args.only);
+  for (const [k, v] of new URLSearchParams(args.query ?? '')) qs.set(k, v);
   await page.goto(`http://127.0.0.1:${port}/${args.page}?${qs}`);
   if (args.input) await page.setInputFiles('#bench-file', args.input);
   let seen = 0;
@@ -69,6 +71,7 @@ try {
     config: args.config,
     jsFlags,
     chromiumArgs: args['chromium-args'],
+    query: args.query,
     quick: args.quick,
     host: { platform: os.platform(), arch: os.arch(), cpu: os.cpus()[0]?.model, cores: os.cpus().length, memGiB: Math.round(os.totalmem() / 2 ** 30) },
     browser: { version: browser.version(), userAgent: data.userAgent },

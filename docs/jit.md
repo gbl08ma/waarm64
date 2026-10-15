@@ -225,6 +225,29 @@ its jump cache and hot words, its helper counts and its counters.
   a worker stalled in `jit_install` holding it kept the other vCPUs from even reaching their DSB
   (`tests/hoststall.test.ts`), and in a browser one worker's compile would hold up every vCPU's
   misses.
+- **The compile worker** (parallel SMP; `web/jit-compile-worker.ts`, `env.jit_compile` in
+  [abi.md](abi.md)): the vCPU that emits a module hands a copy to one worker of the VM's (number
+  `seq`, under the lock), which compiles it (`new WebAssembly.Module`: V8's process-wide module
+  cache, keyed by the bytes, then holds it) and publishes the number up to which every module is
+  compiled (`Cache::ready`, an atomic word in the core's memory). A table installs a logged module
+  only once `ready` has reached it, in order (a cache hit, ~0.3 ms), and checks for that before
+  each block (`Jit::fresh`) and at misses. Until then its blocks run in the block interpreter:
+  a table dispatches only to indexes below its `limit` (the end of what it has installed), and
+  fills its jump cache only with those; a tier-up's redirect (hot word and jump-cache entry) waits
+  for its region in that table (`Table::redirect`). So no vCPU waits on V8 to compile, and none
+  waits on another's compile of the same bytes (each used to install them together, all four
+  stopped for the one compile). The worker keeps a module until its epoch ends or for 30 s (V8's
+  cache holds one only while something does); a table that comes later compiles it itself, and one
+  that has waited a second for the worker (it died, say) does too (`OVERDUE_NS`, counted). Without
+  a worker (`jit_compile` returns 0: round-robin, Node's deterministic runs, `?jit=nocw` on the
+  page) a module is ready at once and a table installs it as before.
+  - **Why:** what stopped vCPUs at installs wasn't V8 compiling our few KB (0.35 ms on average)
+    but its housekeeping: the wasm code GC holding up `NewNativeModule` (25-58 ms, every vCPU
+    waiting on the one compile of the same bytes) and the JS heap's GC at an allocation (up to a
+    second). With Firefox loading pages on 4 vCPUs, the worker took the stalls of 250 ms and more
+    from 5-8 a session to none (the longest 1054 ms to 224) and the stalled time to a third; the
+    boots and the userspace benchmark moved +0.3 to +2%, within noise (`bench/boot/REPORT.md`
+    "M8: the JIT's compile worker"). V8's GC still stops a vCPU at an instantiation now and then.
 - **Epochs:** a flush or `IC IALLU` starts the slots over. A table moves to the new epoch (jump
   cache cleared, slots overwritten) only from the dispatcher, never with JIT code on its stack;
   `jit_hot` in a table an epoch behind leaves the head alone. Its vCPUs' transfer caches drop
@@ -527,15 +550,12 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
 - **A lower compile threshold** (2–50): both boots got slower (before the block interpreter).
 - **The `Cpu` at a constant address** (to save V8's bounds checks at block exits): mixed, −10% to
   +7% by guest and placement ([v8.md](v8.md)).
-- **A compile worker** (compiling off the vCPU thread): measured, not built. Installs take
-  ≤ 1.3 ms each; guest progress pauses above 16 ms about once per Alpine boot; the synchronous
-  install is ~0.3 s of Alpine's boot and V8's native work ~1.8 s (lazy Liftoff compiles included).
-  Revisited with a GUI guest (2026-10-15, plans/video.md §8): with Firefox starting and loading pages the installs
-  stop every vCPU at once (each installs the same module together), 20-58 ms for a few KB and up to 739 ms, dozens in
-  minutes: latency the user feels (backlog.md). A design sketch: a second core
-  instance on the shared memory forms, emits and eagerly compiles, and posts the
-  `WebAssembly.Module` to the vCPU worker, which only instantiates it; costs a host ABI, a queue
-  and invalidation of in-flight compiles.
+- **Keeping blocks across an `IC` whose words didn't change**, and **a blocklist of pages a guest's
+  own JIT keeps rewriting** (2026-10-15, with Firefox on the desktop guest: `bench/boot/REPORT.md`
+  "M8: the JIT's compile worker"): `IC`s dropped a few hundred compiled regions a page load against
+  22,000-165,000 compiled (16-98% of those with their words unchanged), tens compiled again;
+  regions on pages that had seen four or more `IC`s were 1-6%. Measured, not built: the volume is
+  new code (a browser's first run, and its code again after a budget flush).
 - **Forward regions behind a tier-up** (M8, before the batch-time ones): every block with a
   same-page successor compiled alone with a hot word, its forward region compiled after 1,000
   (or 10,000, or 50,000) entries. Lua got 10 to 18% faster, but the boot and process churn 13 to

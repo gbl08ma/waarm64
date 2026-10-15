@@ -1411,3 +1411,70 @@ prompt, then as root ms for 300 fork+exec of `/bin/true` and `dd` of 300,000 64-
 Every run without E0PD logged KPTI forced on, none with it. The page's machines have both features now, and
 (the same day) `bootVm` and the native runners too, so every benchmark from here on boots with them: Alpine's boot
 test in 2.651G steps against 2.821G, its userspace benchmark in 10.613G against 10.785G (`tests/steps.txt`).
+
+## M8: the JIT's compile worker (2026-10-15)
+
+The backlog's "a compile worker: the host's installs stop every vCPU at once" (plans/video.md §8: with Firefox on the
+desktop guest, installs of 20-58 ms for a few KB, up to 739 ms, most on all four vCPUs at once). All on the dev VM
+(Lima on the M4 Mac mini, 8 vCPUs), headless Chromium 153.0.8010.52, Node 26.7.0; the Firefox sessions are
+`bench/gpu/firefox-load.ts virgl` with `PHASES=pages` (the desktop image, 4 vCPUs, 2.5 GiB; Firefox started on five
+saved sites in turn, each loaded and scrolled: ~400 s).
+
+**Not V8 compiling.** A Chromium microbenchmark of `jitHost`'s install path with Alpine's 971 captured JIT modules
+(ad hoc, `bench/mem/modules.ts`'s capture): 0.12 ms median, 0.9 max on one worker; four workers installing the same
+bytes in lockstep beside four threads spinning in wasm, and 20 rounds of fresh bytes with flushes (~600K functions),
+0.3 ms median, the slowest (~30 ms) modules of 100-270 KB. The stalls didn't reproduce in isolation. A trace of the
+real session (Chromium's `--trace-startup` with `v8.wasm`, `disabled-by-default-v8.wasm.detailed`, `v8` and
+`disabled-by-default-v8.gc`, 485 s, JSON) put each vCPU at ~14,000 `wasm.SyncCompile`s averaging 0.35 ms (~1% of its
+time); the slow ones were V8's housekeeping running into them:
+
+| What | Longest | Where |
+|---|---|---|
+| a major GC's start (`GCIncrementalMarkingStart`, reason "allocation limit") waiting for the last sweep (`GC_HEAP_ENSURE_SWEEPING_COMPLETED`) | 986, 335, 296 ms | a vCPU thread, at whatever allocated: a module object, an instance |
+| a GC's second-pass weak callbacks | 488 ms | a vCPU thread |
+| a cache hit, then nothing traced | 558 ms | a vCPU thread |
+| the wasm code GC (`ReportLiveCodeForGC`, `FreeDeadCode`), 17-38 times a thread | 33-58 ms | every vCPU, between blocks too |
+| `NewNativeModule` blocked while that runs, the other vCPUs waiting on its cache entry (`GetNativeModuleFromCache`) | 25-58 ms | the four-at-once installs |
+
+**What the guest's `IC`s cost** (a diagnostic build, the patch not kept: counters over each page's start and load):
+`IC`s dropped 95-282 compiled regions a page (and 4-22 linked to them) against 22,094-165,003 compiled; 30-98 of
+those still had their words unchanged at the `IC`; 9-57 came back with the same words, 3-22 changed. Regions
+compiled on pages that had seen an `IC` before: 2,602-6,342 a page, 1,216-1,906 on pages with four or more. So
+keeping unchanged blocks across an `IC` would save well under 1% of the compiling, and a blocklist of pages a JIT
+rewrites 1-6%: not built (docs/jit.md "Tried and not kept"). The volume is new code: Firefox's on its first run, all of it again
+after each budget flush (the first page and the last flushed once), 22-28K regions on the pages that reused earlier
+launches' code. 96-99% of the steps ran in JIT code.
+
+**The compile worker** (docs/jit.md "Sharing"): the emitting vCPU posts each module to one worker of the VM's,
+which compiles it (V8's module cache then holds it); a table installs it once the worker says so, interpreting its
+blocks until then. Firefox's pages session, the vCPU timeline over all of it (`TIMELINE_ALL=1`; `bench/gpu/stalls.ts`:
+runs of 10 ms bins in which a vCPU inside `vm_run_cpu` retired nothing), two sessions each, alternating
+(`results/m8-compile-worker/firefox/`):
+
+| | MIPS | stalls ≥ 20 / 50 / 100 / 250 / 500 / 1000 ms | longest | stalled ms a second a vCPU | `webpc-slow` installs |
+|---|---|---|---|---|---|
+| worker | 271, 263 | 8/3/3/0/0/0, 13/6/3/0/0/0 | 182, 224 ms | 0.39, 0.70 | 5, 5 |
+| none (`?jit=nocw`) | 270, 267 | 12/8/8/8/0/0, 14/5/5/5/2/1 | 489, 1054 ms | 2.0, 1.8 | 8, 14 |
+
+No stall reached 250 ms with the worker; the four-at-once installs (two sets of four of 25-31 ms in one session
+without it) are gone, every module installed from the worker, none overdue. What remains is V8's GC on the vCPU
+threads (installs whose cache hit or instantiation took 100-230 ms) and stalls with no install in them at all.
+
+**Throughput** (`bench/run.ts --only smp_alpine_jit` and `--only smp_user_jit_4`, with and without `--query=nocw`,
+alternating; `results/m8-compile-worker/smp_*.json`), median ms (IQR):
+
+| | worker | none | |
+|---|---|---|---|
+| Alpine boot, 1 vCPU | 9925 (88) | 9832 (49) | +0.9% |
+| 2 vCPUs | 9822 (46) | 9759 (119) | +0.6% |
+| 4 vCPUs | 9848 (49) | 9824 (96) | +0.3% |
+| userspace on 4: compress | 1869 (54) | 1832 (39) | +2.0% |
+| lua | 3161 (53) | 3106 (104) | +1.8% |
+| churn | 3012 (143) | 2957 (27) | +1.9% |
+| sqlite | 2487 (99) | 2499 (166) | −0.5% |
+| total | 20069 (414) | 19766 (188) | +1.5% |
+
+All under the 5% that noise allows, but mostly one way: ~1-2% plausibly the blocks interpreted while their module
+waits for the worker. An A/A of the same (both sides with the worker: the bench page's query didn't reach its worker
+then; `results/m8-compile-worker/aa/`) moved sqlite 8% and lua 4%. Kept on: the user's latency over a percent of
+throughput. `?jit=nocw` (the page) and `--query=nocw` (bench/boot) turn it off.

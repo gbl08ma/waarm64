@@ -16,7 +16,7 @@ pub mod wasm;
 use std::collections::{HashMap, VecDeque};
 use std::hash::{BuildHasherDefault, Hasher};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crate::cpu::sctlr;
 use crate::interp::{self, Exit};
@@ -186,6 +186,10 @@ pub struct Stats {
     pub dec_steps: u64,
     pub decoded: u64,
     pub dec_clears: u64,
+    /// Modules installed once the compile worker had compiled them, and
+    /// ones compiled here after [`OVERDUE_NS`] without it (ABI 36).
+    pub worker_installs: u64,
+    pub overdue: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -335,6 +339,13 @@ pub struct Cache {
     /// every table has (their bytes are dropped).
     log: Vec<Logged>,
     freed: usize,
+    /// The next module's number for the host's compile worker (from 1; 0:
+    /// the host took none, so a table installs it at once), and the word
+    /// the worker sets to the number up to which it has compiled them all
+    /// (docs/jit.md "Sharing": a table installs a module only then, from
+    /// V8's cache, and interprets its blocks meanwhile).
+    seq: u32,
+    ready: Arc<AtomicU32>,
     /// Each table's progress, by [`Table::id`].
     tables: Vec<Seen>,
     /// The table index of slot 0 (the transfer cache's miss function for EL0;
@@ -346,6 +357,9 @@ pub struct Cache {
 /// A module installed since the last flush.
 struct Logged {
     slot: u32,
+    /// Its functions, and its number for the compile worker (0: none).
+    n: u32,
+    seq: u32,
     /// Emptied once every table has it.
     bytes: Vec<u8>,
     /// The hot words of its loop heads compiled alone (their slots).
@@ -401,6 +415,8 @@ impl Cache {
             epoch: 0,
             log: Vec::new(),
             freed: 0,
+            seq: 1,
+            ready: Arc::new(AtomicU32::new(0)),
             tables: Vec::new(),
             xmiss: None,
         }
@@ -567,10 +583,8 @@ impl Cache {
         }
         let report = interp::block::REPORT;
         match self.map.get(&key) {
-            Some(&Info { idx, len, .. }) if idx != 0 => {
-                t.fill(key, idx, len);
-                (Ok((idx, len)), report)
-            }
+            // The jump cache gets it once the table has installed it ([`Jit::miss`]).
+            Some(&Info { idx, len, .. }) if idx != 0 => (Ok((idx, len)), report),
             Some(i) if !i.queued && !self.off => (
                 Err(i.len.max(1)),
                 report.min(self.threshold.saturating_sub(i.hits)),
@@ -699,8 +713,7 @@ impl Cache {
     fn tier_up(&mut self, t: &mut Table, key: u64, va: u64, mem: &Mem) {
         if let Some(r) = self.tiers.get(&key) {
             r.quiet.iter().for_each(|&w| t.quiet(w));
-            t.hot[r.word as usize - 1] = emit::REDIRECT | r.idx;
-            t.repoint(key, r.idx);
+            t.redirect(r.word, r.idx, key);
             return;
         }
         let Some(word) = self.map.get(&key).map(|i| i.word).filter(|&w| w != 0) else {
@@ -737,8 +750,7 @@ impl Cache {
         let Some(idx) = self.install(t, regions, mem) else {
             return;
         };
-        t.hot[word as usize - 1] = emit::REDIRECT | idx;
-        t.repoint(key, idx);
+        t.redirect(word, idx, key);
         self.tiers.insert(key, Tier { idx, word, quiet });
         t.stats.tier_ups += 1;
     }
@@ -791,7 +803,20 @@ impl Cache {
             Some(xmiss),
         );
         let len = bytes.len() as u64;
-        self.log.push(Logged { slot, bytes, tiers });
+        let seq = self.seq;
+        let seq = if compile(&bytes, seq, self.epoch as u32, &self.ready) {
+            self.seq = seq.wrapping_add(1).max(1);
+            seq
+        } else {
+            0
+        };
+        self.log.push(Logged {
+            slot,
+            n,
+            seq,
+            bytes,
+            tiers,
+        });
         let idx = xmiss + slot;
         self.live_bytes += len;
         self.retune();
@@ -867,9 +892,20 @@ pub struct Table {
     installed: usize,
     drops: u64,
     xmiss: bool,
+    /// The miss functions' table index (slot 0's), once it has them.
+    base: u32,
     /// Modules taken from the log under the lock and not installed yet
-    /// ([`Jit::install`]): (slot, bytes, hot words of loop heads).
-    todo: Vec<(u32, Vec<u8>, Vec<u32>)>,
+    /// ([`Jit::install`]), in order.
+    todo: Vec<Todo>,
+    /// The table index up to which this epoch's modules are installed: a
+    /// block at or past it is interpreted here until it is ([`Jit::miss`]).
+    limit: u32,
+    /// Tier-up redirects (hot word, region, head) waiting for their region
+    /// to be installed ([`Table::redirect`]).
+    redirects: Vec<(u32, u32, u64)>,
+    /// When the first module of `todo` was found not compiled yet (ns; 0:
+    /// it wasn't).
+    waiting: u64,
     /// Helper calls by instruction class (step 10: the input to M6), and
     /// the last report of them ([`Table::helper_report`]).
     helper_ops: Vec<u64>,
@@ -908,7 +944,11 @@ impl Table {
             installed: 0,
             drops: 0,
             xmiss: false,
+            base: 0,
             todo: Vec::new(),
+            limit: 0,
+            redirects: Vec::new(),
+            waiting: 0,
             helper_ops: vec![0; crate::decode::Op::ALL.len()],
             report: String::new(),
             clock: 0,
@@ -929,7 +969,7 @@ impl Table {
             Some(i) => {
                 let first = *c.xmiss.get_or_insert(i);
                 assert_eq!(first, i, "slot 0 is the same table index in every table");
-                self.xmiss = true;
+                (self.xmiss, self.base) = (true, i);
             }
             None => c.off = true,
         }
@@ -949,7 +989,9 @@ impl Table {
         if self.epoch != c.epoch || seen.all {
             if self.epoch != c.epoch {
                 (self.epoch, self.installed) = (c.epoch, 0);
+                (self.limit, self.waiting) = (0, 0);
                 self.todo.clear();
+                self.redirects.clear();
             }
             self.clear_jc();
         } else {
@@ -984,7 +1026,13 @@ impl Table {
         }
         if self.xmiss {
             for l in &c.log[self.installed..] {
-                self.todo.push((l.slot, l.bytes.clone(), l.tiers.clone()));
+                self.todo.push(Todo {
+                    slot: l.slot,
+                    n: l.n,
+                    seq: l.seq,
+                    bytes: l.bytes.clone(),
+                    tiers: l.tiers.clone(),
+                });
             }
             self.installed = c.log.len();
         }
@@ -998,22 +1046,74 @@ impl Table {
         self.drops = c.drops.load(Ordering::Relaxed);
     }
 
-    /// Installs `todo` (after [`Table::sync`], without the lock), the miss
-    /// functions' table index being `base`.
-    fn install(&mut self, base: u32) {
+    /// Installs the modules of `todo` that the compile worker has compiled
+    /// (`ready`: up to which), in order (after [`Table::sync`], without the
+    /// lock), and the tier-up redirects they complete. One it hasn't, after
+    /// [`OVERDUE_NS`], installs anyway (it compiles here).
+    fn install(&mut self, ready: u32) {
         let ns = now_ns();
-        for (slot, bytes, tiers) in core::mem::take(&mut self.todo) {
-            let at = install(&bytes, slot);
-            assert_eq!(
-                at,
-                Some(base + slot),
-                "a module's slots are the same in every table"
-            );
-            for w in tiers {
-                self.hot[w as usize] = self.cfg.region_after;
+        let mut k = self
+            .todo
+            .iter()
+            .take_while(|m| reached(ready, m.seq))
+            .count();
+        if k < self.todo.len() {
+            if self.waiting == 0 {
+                self.waiting = ns.max(1);
+            } else if ns.saturating_sub(self.waiting) >= OVERDUE_NS {
+                k = self.todo.len();
             }
         }
+        if k == 0 {
+            return;
+        }
+        for m in self.todo.drain(..k) {
+            if m.seq != 0 {
+                if reached(ready, m.seq) {
+                    self.stats.worker_installs += 1;
+                } else {
+                    self.stats.overdue += 1;
+                }
+            }
+            let at = install(&m.bytes, m.slot);
+            assert_eq!(
+                at,
+                Some(self.base + m.slot),
+                "a module's slots are the same in every table"
+            );
+            for w in m.tiers {
+                self.hot[w as usize] = self.cfg.region_after;
+            }
+            self.limit = self.base + m.slot + m.n;
+        }
+        self.waiting = 0;
+        self.redirected();
         self.stats.compile_ns += now_ns() - ns;
+    }
+
+    /// Applies the waiting redirects whose regions are installed now.
+    fn redirected(&mut self) {
+        let (limit, mut redirects) = (self.limit, core::mem::take(&mut self.redirects));
+        redirects.retain(|&(word, idx, key)| {
+            if idx < limit {
+                self.hot[word as usize - 1] = emit::REDIRECT | idx;
+                self.repoint(key, idx);
+            }
+            idx >= limit
+        });
+        self.redirects = redirects;
+    }
+
+    /// Hot word `word - 1` redirects to the region at `idx` (a tier-up of
+    /// head `key`), and the jump cache's entry for the head with it, once
+    /// this table has installed the region.
+    fn redirect(&mut self, word: u32, idx: u32, key: u64) {
+        if idx < self.limit {
+            self.hot[word as usize - 1] = emit::REDIRECT | idx;
+            self.repoint(key, idx);
+        } else {
+            self.redirects.push((word, idx, key));
+        }
     }
 
     fn clear_jc(&mut self) {
@@ -1081,14 +1181,19 @@ impl Table {
 pub struct Jit {
     pub table: Table,
     cache: Arc<Lock<Cache>>,
-    /// The cache's `drops` and `ivals`, read without its lock.
+    /// The cache's `drops`, `ivals` and `ready`, read without its lock.
     drops: Arc<AtomicU64>,
     ivals: Arc<AtomicU64>,
+    ready: Arc<AtomicU32>,
 }
 
 impl Jit {
     pub fn new(cache: Cache) -> Jit {
-        let (drops, ivals) = (cache.drops.clone(), cache.ivals.clone());
+        let (drops, ivals, ready) = (
+            cache.drops.clone(),
+            cache.ivals.clone(),
+            cache.ready.clone(),
+        );
         let cache = Arc::new(Lock::new(cache));
         let table = Table::new(&mut cache.lock());
         Jit {
@@ -1096,6 +1201,7 @@ impl Jit {
             cache,
             drops,
             ivals,
+            ready,
         }
     }
 
@@ -1106,6 +1212,7 @@ impl Jit {
             cache: self.cache.clone(),
             drops: self.drops.clone(),
             ivals: self.ivals.clone(),
+            ready: self.ready.clone(),
         }
     }
 
@@ -1139,16 +1246,24 @@ impl Jit {
         let (r, quota) = c.miss(&mut self.table, key, va, mem, n, len);
         self.table.dec.quota(key, quota);
         self.table.sync(&mut c, mem);
-        let base = c.xmiss;
         drop(c);
-        self.install(base);
-        r
+        self.install();
+        match r {
+            Ok((idx, len)) if idx < self.table.limit => {
+                self.table.fill(key, idx, len);
+                Ok((idx, len))
+            }
+            // Compiled, and not installed here yet: interpreted meanwhile.
+            Ok((_, len)) => Err(len.max(1)),
+            Err(n) => Err(n),
+        }
     }
 
-    /// Installs what the table took from the log, outside the lock.
-    fn install(&mut self, base: Option<u32>) {
-        if let Some(base) = base.filter(|_| !self.table.todo.is_empty()) {
-            self.table.install(base);
+    /// Installs what the table took from the log and the compile worker
+    /// has compiled, outside the lock.
+    fn install(&mut self) {
+        if !self.table.todo.is_empty() {
+            self.table.install(self.ready.load(Ordering::Acquire));
         }
     }
 
@@ -1161,6 +1276,10 @@ impl Jit {
             || self.ivals.load(Ordering::Relaxed) != self.table.ivals
         {
             self.sync(mem);
+        } else if let Some(m) = self.table.todo.first()
+            && reached(self.ready.load(Ordering::Acquire), m.seq)
+        {
+            self.install();
         }
     }
 
@@ -1168,9 +1287,8 @@ impl Jit {
     fn sync(&mut self, mem: &Mem) {
         let mut c = self.cache.lock();
         self.table.sync(&mut c, mem);
-        let base = c.xmiss;
         drop(c);
-        self.install(base);
+        self.install();
     }
 
     /// [`Cache::invalidate`].
@@ -1201,9 +1319,8 @@ impl Jit {
         // with their region installed.
         c.tier_up(&mut self.table, key, va, mem);
         self.table.sync(&mut c, mem);
-        let base = c.xmiss;
         drop(c);
-        self.install(base);
+        self.install();
     }
 }
 
@@ -1553,7 +1670,51 @@ unsafe extern "C" {
     /// exports `f0`, `f1`, … into the core's table from JIT slot `slot` on.
     /// Returns the table index of `f0`, or -1 if the host has no JIT.
     fn jit_install(ptr: *const u8, len: usize, slot: u32) -> i32;
+    /// Hands the module at `ptr..ptr + len` to the host's compile worker as
+    /// number `seq` of epoch `epoch`; the worker stores into the u32 at
+    /// `ready` the number up to which it has compiled every module. Returns
+    /// 0 if the host has no compile worker.
+    fn jit_compile(
+        ptr: *const u8,
+        len: usize,
+        seq: u32,
+        epoch: u32,
+        ready: *const AtomicU32,
+    ) -> i32;
 }
+
+/// [`jit_compile`]: whether the host's compile worker took `module`.
+fn compile(module: &[u8], seq: u32, epoch: u32, ready: &AtomicU32) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    // SAFETY: the host reads `module` and later writes `ready` (atomically),
+    // which the cache keeps alive (an `Arc`) for as long as any table.
+    return unsafe { jit_compile(module.as_ptr(), module.len(), seq, epoch, ready) } != 0;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (module, seq, epoch, ready);
+        false
+    }
+}
+
+/// Whether a module numbered `seq` is compiled when the worker has done
+/// all up to `ready` (0: no worker took it).
+fn reached(ready: u32, seq: u32) -> bool {
+    seq == 0 || ready.wrapping_sub(seq) as i32 >= 0
+}
+
+/// A module of the log that a table takes ([`Table::sync`]) and installs.
+struct Todo {
+    slot: u32,
+    n: u32,
+    seq: u32,
+    bytes: Vec<u8>,
+    /// The hot words of its loop heads compiled alone.
+    tiers: Vec<u32>,
+}
+
+/// How long a table waits for the compile worker before it compiles a
+/// module itself (a backstop: the worker takes milliseconds).
+pub const OVERDUE_NS: u64 = 1_000_000_000;
 
 /// Installs `module`'s functions at JIT table slots `slot..`; returns
 /// function `f0`'s table index, or `None` without a JIT host.
@@ -1899,6 +2060,41 @@ mod tests {
         t.quiet(4);
         t.quiet(5);
         assert_eq!((t.hot[3], t.hot[4]), (0, emit::REDIRECT | 9));
+    }
+
+    /// A tier-up's redirect waits for its region in a table that hasn't
+    /// installed it (the compile worker: docs/jit.md "Sharing"), and its
+    /// jump-cache entry with it.
+    #[test]
+    fn a_redirect_waits_for_its_region() {
+        let mut c = Cache::new(Config::DEFAULT);
+        let mut t = Table::new(&mut c);
+        let key = 0x1000;
+        t.fill(key, 5, 2);
+        t.limit = 10;
+        t.redirect(4, 12, key);
+        assert_eq!(
+            (t.hot[3], t.jc[jc_index(key)].idx),
+            (0, 5),
+            "not installed yet"
+        );
+        t.redirect(6, 8, 0x2000);
+        assert_eq!(t.hot[5], emit::REDIRECT | 8, "installed: at once");
+        t.limit = 13;
+        t.redirected();
+        assert_eq!(
+            (t.hot[3], t.jc[jc_index(key)].idx),
+            (emit::REDIRECT | 12, 12)
+        );
+        assert!(t.redirects.is_empty());
+    }
+
+    /// Module numbers wrap (u32), and 0 is a module the worker didn't take.
+    #[test]
+    fn the_ready_word_compares_with_wrapping() {
+        assert!(reached(0, 0) && reached(5, 5) && reached(5, 1));
+        assert!(!reached(5, 6) && !reached(0, 1));
+        assert!(reached(3, u32::MAX) && !reached(u32::MAX, 3));
     }
 
     #[test]

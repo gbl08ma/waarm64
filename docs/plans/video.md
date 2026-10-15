@@ -11,7 +11,8 @@ guest, A/V sync within ±45 ms; what Firefox still drops is the guest's CPU, not
 V3 (§3: robustness) started with **H.264 where the browser decodes it only in software** (§7): offered there now,
 Firefox and mpv play it as well as from a hardware decoder. **Firefox's cost and frame pacing were measured (§8)**:
 steady playback drops almost nothing, V2's cost was Firefox's start, no pref helps, and the bursts are the guest's
-CPU saturated and the host stopping every vCPU at once for JIT installs (a compile worker would fix those: backlog.md).
+CPU saturated and the host stopping every vCPU at once for JIT installs (since fixed by the JIT's compile worker:
+jit.md "Sharing").
 Next: the rest of V3, from `M8-VIDEO-HANDOVER.md`. What exists is
 in the topic docs ([devices.md](../devices.md) "virgl"); this page keeps the decisions, the findings worth not
 re-discovering, and each loop's record.
@@ -327,7 +328,9 @@ Mac, Chrome for Testing 153, 4 vCPUs, the desktop image with webpc-va; `pages-de
   a 270 ms stall of a third). None fell inside the measured windows of scrolling or steady playback. Why V8 takes that
   long for a few KB is unmeasured (lock or `mprotect` contention with the threads running wasm is a guess). The fix
   that holds whatever the cause is jit.md's compile worker (compiled off the vCPU threads, the `WebAssembly.Module`
-  posted to them): backlog.md.
+  posted to them): backlog.md. **Built the same day** (jit.md "Sharing", `bench/boot/REPORT.md` "M8: the JIT's
+  compile worker"): the cause was V8's GC of code and objects, not compiling; with the worker no stall reached 250 ms
+  in the pages session.
 - **The Mac's memory is overcommitted** (7 of 8 GiB of swap used, ~10 GiB compressed; the Lima VMs reserve 22 of its
   24 GiB): one 270 ms stall had no install in it, and the slowest installs came in seconds with 2-3× the run's p90 of
   decompressions. Latency measured on the Mac is suspect while both VMs run.
