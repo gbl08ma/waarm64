@@ -31,7 +31,7 @@ export function compileCorpus(corpus: string) {
 import { VirglRenderer } from '../../web/virgl-renderer.ts';
 import { CallQueue, localHost, runCall, type HostCall } from '../../web/virgl-host.ts';
 import { replay, replayAsync } from '../../web/virgl-replay.ts';
-import { probeVideo, webCodecsDecoder, type DecodedPicture } from '../../web/virgl-video.ts';
+import { probeVideo, webCodecsDecoder, type DecodedPicture, type DecoderFactory } from '../../web/virgl-video.ts';
 
 const fromBase64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 function toBase64(b: Uint8Array) {
@@ -51,8 +51,11 @@ export function replayTrace64(trace: string, read?: number) {
  * the GPU worker does (its CallQueue, timer and all): each picture's planes are read back as it's written and its
  * visible `w`×`h` hashed as I420 (SHA-256). With `orig` (an H.264 stream's first pictures, Annex B), also the
  * browser's own decode of it, hashed the same way: what the planes must hold where its decoder isn't FFmpeg's.
+ * `fault` damages the chunk of one picture (its index in decode order) before the decoder gets it: `garble` overwrites
+ * its bytes after the first 8 with a pattern, `truncate` keeps its first 8 bytes.
  */
-export async function replayVideo64(trace: string, w: number, h: number, orig?: string) {
+export type ChunkFault = { picture: number; how: 'garble' | 'truncate' };
+export async function replayVideo64(trace: string, w: number, h: number, orig?: string, fault?: ChunkFault) {
   const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
   const log: string[] = [];
   const { hardware } = await probeVideo();
@@ -64,12 +67,12 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
   const settled = async () => { while (q.length || r.videoWaiting) await new Promise((ok) => setTimeout(ok, 5)); };
   try {
     await replayAsync(fromBase64(trace), (ram) => {
-      r = new VirglRenderer(gl, { ram, log: (m) => log.push(m), video: { decoders: webCodecsDecoder, hardware } });
+      r = new VirglRenderer(gl, { ram, log: (m) => log.push(m), video: { decoders: fault ? faulty(fault) : webCodecsDecoder, hardware } });
       // Each picture's planes, read back as it's written (the buffers are used again).
-      const p = r as unknown as { writePicture(c: unknown, planes: number[], pic: DecodedPicture): void };
+      const p = r as unknown as { writePicture(planes: number[], pic: DecodedPicture): void };
       const write = p.writePicture.bind(r);
-      p.writePicture = (c, planes, pic) => {
-        write(c, planes, pic);
+      p.writePicture = (planes, pic) => {
+        write(planes, pic);
         shots.push(sha256(i420(planes.map((id) => ({ bytes: r.readResource(id)!, width: r.resources.get(id)!.width })), w, h)));
       };
       // `ctx` -1: the guest's read of a picture (below), which only waits.
@@ -87,6 +90,24 @@ export async function replayVideo64(trace: string, w: number, h: number, orig?: 
     clearInterval(timer);
   }
   return { hashes: await Promise.all(shots), stats: { ...r.videoStats }, ahead: q.ahead, maxWaitMs: q.maxWaitMs, hardware, log, ms: performance.now() - t0, orig: orig ? await decodeOrig(fromBase64(orig), w, h, hardware) : null };
+}
+
+/** WebCodecs' decoders with one chunk damaged (`ChunkFault`). */
+function faulty(fault: ChunkFault): DecoderFactory {
+  let n = 0;
+  return (config, output, error) => {
+    const d = webCodecsDecoder(config, output, error);
+    return {
+      ...d,
+      decode(data, key, timestamp) {
+        if (n++ === fault.picture) {
+          if (fault.how === 'truncate') data = data.slice(0, 8);
+          else data = data.map((x, k) => (k < 8 ? x : (k * 37 + 11) & 0xff));
+        }
+        d.decode(data, key, timestamp);
+      },
+    };
+  };
 }
 
 /** I420 of planes read back (NV12: R8 then RG8; or three R8), the top-left `w`×`h`. */

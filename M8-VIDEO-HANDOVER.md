@@ -1,9 +1,10 @@
-# M8 video: handover after V3's second loop (2026-10-15)
+# M8 video: handover in V3's third loop (2026-10-15)
 
 V0 (the gates), V1 (the decoders on WebCodecs), V2 (Firefox on the page, measured), V3's first loop (H.264 where
-the browser decodes it in software) and its second (Firefox's cost and frame pacing, measured) are done and
-committed; **the next loop (the rest of V3) can start from this file.** Read first: `docs/plans/video.md` (all of it:
-§1 decisions, §2 why not V4L2, §3 steps, §4 V0's findings, §5 V1's, §6 V2's, §7 V3's first loop, §8 its second),
+the browser decodes it in software), its second (Firefox's cost and frame pacing, measured) and the third's robustness
+half (seeking, size changes, decoder errors, snapshots: plan §9) are done and committed; **what's left of V3 is its
+breadth, HEVC and AV1.** Read first: `docs/plans/video.md` (all of it:
+§1 decisions, §2 why not V4L2, §3 steps, §4 V0's findings, §5 V1's, §6 V2's, §7 V3's first loop, §8 its second, §9 the third's),
 docs/devices.md "virgl" (its "Video" bullet), docs/testing.md "Video over virgl", `web/virgl-video.ts`,
 `web/virgl-host.ts` (`CallQueue`), `web/video-h264.ts`, and the tools in `bench/video/`. docs/backlog.md "Upstream
 reports" has the upstream bugs V0 found (filed at the project's end, by the user).
@@ -36,21 +37,16 @@ GPU worker never waited 10 ms in hardware; what Firefox drops is the guest's CPU
 `CallQueue` hold only a call that could see a pending picture, a software decoder's SPS say the stream's depth, and a
 drain lossless; `?gpu=swvideo` forces software decoding (`swh264` is gone).
 
-## Next loop: the rest of V3, robustness and breadth (plan §3)
+## Next: the rest of V3, breadth (plan §3)
 
-On the dev VM where VP9 is enough (`v1.ts`, `avsync.ts` with `MEDIA=disk`), on the Mac for H.264
-(`bench/gpu/sway-mac.sh`):
-1. **Seeking**: Firefox and the guest's FFmpeg (`-ss`) seek within the clips: what the guest sends (a new key
-   picture; whether Mesa makes a new codec), no picture given up, the right picture after the seek (a screenshot, or
-   framemd5 in `v1.ts`).
-2. **Resolution changes**: a clip that changes size mid-stream (made in Podman with ffmpeg, onto the media disk): a
-   new codec or new buffers from the guest, a decoder reconfigured.
-3. **Decoder errors**: a corrupt chunk (a fault planted in a test, Node and Chromium): that codec's pictures end, a
-   new decoder at the next key picture, the guest not hung (the 1 s give-up is the backstop).
-4. **Snapshots**: a machine with a live codec is 3D in use, refused today (G5 proposes snapshots while 3D is in
-   use: `M8-GRAPHICS-HANDOVER.md`); check that the refusal says so and that a machine whose player has exited saves.
-5. **Breadth**: HEVC and AV1 where the browser decodes them (the Mac's: both in hardware). HEVC is H.264's shape
-   (VPS/SPS/PPS rebuilt); AV1 needs its sequence and frame headers rebuilt (the hardest; plan §1).
+Done in this loop (plan §9): seeking (FFmpeg exact through jumps and a flush; Firefox's pictures right after every
+seek, once a held picture is written into planes the guest's decoder process let go of), size changes (a new codec
+per size, exact), decoder errors (a damaged chunk is a WebCodecs error; the codec's later pictures dropped, nothing
+waits), snapshots (refused while a player decodes, saved once it exits). Left:
+- **Breadth**: HEVC and AV1 where the browser decodes them (the Mac's: both in hardware; the dev VM's Chromium has no
+  HEVC, AV1 in software). HEVC is H.264's shape (VPS/SPS/PPS rebuilt); AV1 needs its sequence and frame headers rebuilt
+  (the hardest; plan §1). Mesa 26.2.4's source is in `~/Development/src/mesa` (`src/gallium/drivers/virgl/virgl_video.c`
+  fills `virgl_hevc_picture_desc` and `virgl_av1_picture_desc`, `src/virtio/virtio-gpu/virgl_video_hw.h` their layouts).
 
 CI for video commits: `scripts/ci.sh`, `ci-deqp.sh` (renderer) and `ci-debian.sh` (page, GPU worker), alone, in turn.
 
@@ -70,14 +66,16 @@ CI for video commits: `scripts/ci.sh`, `ci-deqp.sh` (renderer) and `ci-debian.sh
   wait) and `SYSCALLS=1`; `TIMELINE=1` (the vCPU timeline: host stalls); avsync.ts `VARIANTS`/`ROUNDS` (Firefox prefs
   A/B in one boot), `NCPUS`, each second's drops (`perSecond`); `webpc-slow install` lines (results' `slow`); the
   Mac's `vm_stat` (`sway-mac.sh`). JSON: `bench/video/results/v3c/`.
-- **Tools:** `bench/video/v1.ts` (the guest's FFmpeg, software against VA-API, framemd5), `replay.ts` and
+- **Tools:** `bench/video/v1.ts` (the guest's FFmpeg, software against VA-API, framemd5; `SNAPSHOT=1`), `seek.ts`
+  (seeking and the size-changing clips, plan §9; `CAPTURE=1`), `replay.ts` and
   `replay-mac.sh` (a capture's pictures through `VideoDecoder`), `v0.ts` (Firefox on the clips, its log, screenshots),
   `bench/audio/avsync.ts` with `MEDIA=disk` (Firefox on the media disk's clips: frames and drops over the phase, the
   guest's CPU, A/V sync, the renderer's video stats; `mpv:<file>` phases; `PROFILE=1` samples the guest; with
   `?gpu=...,debug` the renderer's video lines go to the results). V2's JSON: `bench/video/results/v2/`, V3's:
   `.../v3/`.
 - **Local artifacts** (git-ignored): `target/archarm/desktop.qcow2` (with webpc-va; V0's image kept as
-  `desktop-v0.qcow2`), `target/video/media.ext4` (the sync clip in VP8, VP9 and H.264 since V2), V0's capture `bench/results/local/video/v0-ffmpeg/capture.vglt`,
+  `desktop-v0.qcow2`), `target/video/media.ext4` (the sync clip in VP8, VP9 and H.264 since V2; `res-vp9.webm` and
+  `res-h264.ts`, whose size changes, since V3's third loop), V0's capture `bench/results/local/video/v0-ffmpeg/capture.vglt`,
   the streams and hashes in `bench/results/local/video/v0-streams/`, V1's runs in `bench/results/local/video/v1-*`
   and `bench/results/local/v1-mac*`.
 
@@ -110,5 +108,10 @@ CI for video commits: `scripts/ci.sh`, `ci-deqp.sh` (renderer) and `ci-debian.sh
   (on virgl, sway).
 - **The Mac's memory is overcommitted** (the Lima VMs reserve 22 of 24 GiB; 7 GiB of swap used): latency there is
   suspect while both VMs run; `sway-mac.sh` records `vm_stat` to check.
+- **A background FFmpeg on the serial shell needs `-nostdin`** (else it stops on its terminal setup, before opening
+  VA-API), and a page URL through sway's `exec` takes no `&` (it runs through `sh -c`) and no comma.
+- **Firefox's H.264 path makes a new codec at every seek** (its VP9 path keeps it), and lets go of the old surfaces
+  while the compositor still shows them: the host writes into planes, not into a context's attachments (plan §9).
+- **A WebM/MP4 seek lands on a key picture; an MPEG-TS seek doesn't** (no index): use TS only for straight decodes.
 - **The PC sampler slows the guest** (Firefox's drops doubled): drop counts from unsampled runs only; and it charges
   a chunk to the instruction after the last exit, so exit sites (`arch_counter_get_cntvct`) look hot.

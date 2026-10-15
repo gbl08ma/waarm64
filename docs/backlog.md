@@ -339,6 +339,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   tried: a filler picture (a non-reference all-skip P slice under a CAVLC PPS of ours) to push held pictures out; a
   shorter drain for a codec drained again and again (each drain decodes its IDR period again, so the cost grows with
   the period). Worth it only if transcoding in the guest matters.
+- **H.264 that jumps to a picture that isn't an IDR** (plans/video.md §9: the guest's FFmpeg seeking in an MPEG-TS,
+  which has no index, lands mid-GOP; a stream whose key pictures are recovery-point I pictures): the guest's own
+  decoder conceals the missing references, the browser's decoders (VideoToolbox, Chrome's FFmpeg, OpenH264) report a
+  decoding error, and the host drops the codec's pictures until its next IDR (the guest sees a still picture, up to a
+  GOP: ~10 s for x264's defaults). Idea, not tried: after an error, restart the decoder at the next picture whose
+  slices are all I by rewriting it as an IDR (NAL type 5, an `idr_pic_id`, `dec_ref_pic_marking` without MMCO; the
+  slice header re-encoded). Worth it only if TS playback or such streams matter (MP4 and WebM seek to key pictures).
 
 ## Parallel SMP (M7; measurements in `bench/boot/REPORT.md` "M7 loop 8")
 

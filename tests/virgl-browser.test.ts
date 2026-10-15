@@ -13,6 +13,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { chromiumEnv } from '../tools/nosme.ts';
 import { startServer } from '../tools/serve.ts';
 import { PROFILE } from '../web/virgl-video.ts';
+import type { ChunkFault } from './browser/virgl-page.ts';
 
 let browser: Browser;
 let page: Page;
@@ -61,10 +62,10 @@ test('virgl on WebGL2: every program of the TGSI corpus compiles and links', asy
 });
 
 type VideoReplay = { hashes: string[]; stats: { frames: number; decoded: number; dropped: number; errors: number }; ahead: number; maxWaitMs: number; hardware: number[]; log: string[]; ms: number; orig: { hashes: string[]; errors: string[] } | null };
-async function replayVideo(name: string, orig?: string): Promise<VideoReplay> {
+async function replayVideo(name: string, orig?: string, fault?: ChunkFault): Promise<VideoReplay> {
   const ref = videoRef();
-  return page.evaluate(([t, w, h, o]) => (window as unknown as { virgl: { replayVideo64(t: string, w: number, h: number, o?: string): Promise<VideoReplay> } }).virgl.replayVideo64(t, w, h, o),
-    [Buffer.from(fixture(name)).toString('base64'), ref.width, ref.height, orig && Buffer.from(fixture(orig)).toString('base64')] as const);
+  return page.evaluate(([t, w, h, o, f]) => (window as unknown as { virgl: { replayVideo64(t: string, w: number, h: number, o?: string, f?: ChunkFault): Promise<VideoReplay> } }).virgl.replayVideo64(t, w, h, o, f),
+    [Buffer.from(fixture(name)).toString('base64'), ref.width, ref.height, orig && Buffer.from(fixture(orig)).toString('base64'), fault] as const);
 }
 /** FFmpeg's frames of the original files (bench/video/fixture.ts): SHA-256 of each visible I420, in display order. */
 const videoRef = () => JSON.parse(readFileSync(new URL('virgl/video.json', import.meta.url), 'utf8')) as { width: number; height: number; pictures: number; h264: string[]; vp9: string[] };
@@ -99,6 +100,25 @@ test('video on WebGL2: H.264 pictures through the device and WebCodecs into thei
   const exact = r.hashes.filter((h) => ffmpeg.has(h)).length;
   if (hw) assert.equal(exact, r.hashes.length);
   console.log(`H.264: ${r.stats.decoded} pictures in ${hw ? 'hardware' : 'software'}, ${exact} FFmpeg's exactly, ${r.ms.toFixed(0)} ms; ${r.ahead} calls ran ahead, the longest wait ${r.maxWaitMs.toFixed(0)} ms`);
+});
+
+test('video on WebGL2: a damaged chunk is a decoder error that ends its codec\'s pictures, and nothing waits for them', { timeout: 180_000 }, async () => {
+  const ref = videoRef();
+  for (const [name, hashes] of [['video-vp9.vglt.gz', ref.vp9], ['video-h264.vglt.gz', null]] as const) {
+    // The 11th picture's bytes garbled: WebCodecs reports it (no decoder here conceals it), the decoder is closed and
+    // the codec's later pictures, all deltas, are dropped until a key picture (the fixture has none).
+    const r = await replayVideo(name, undefined, { picture: 10, how: 'garble' });
+    assert.equal(r.log.length, 1, r.log.join('\n'));
+    assert.match(r.log[0], /video: codec \d+: .*Decoding error/);
+    assert.equal(r.stats.errors, 1);
+    assert.equal(r.stats.frames, ref.pictures);
+    assert.equal(r.stats.decoded + r.stats.dropped, ref.pictures);
+    // What came out before it is written (a software H.264 decoder may have held one or two for reordering: lost).
+    assert.ok(r.stats.decoded <= 10 && r.stats.decoded >= 8, `${r.stats.decoded} written`);
+    if (hashes) assert.deepEqual(r.hashes, hashes.slice(0, r.hashes.length));
+    // Nothing waited for the dropped pictures (the give-up after 1 s isn't what freed the guest).
+    assert.ok(r.maxWaitMs < 200, `a call waited ${r.maxWaitMs.toFixed(0)} ms`);
+  }
 });
 
 test('virgl on WebGL2: glcomp draws what llvmpipe drew', async () => {

@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { decodeCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl, withVideo } from '../web/virgl-caps.ts';
 import { CallQueue, type WorkerCall } from '../web/virgl-host.ts';
+import { VirglRenderer } from '../web/virgl-renderer.ts';
 import { decodeVideoCaps, encodeVideoCaps, FORMAT_NV12, PROFILE, probeVideo, VideoContext, type DecodedPicture, type DecoderConfig, type DecoderFactory, type VideoStats } from '../web/virgl-video.ts';
 import { mockGl } from './virgl-mock-gl.ts';
 
@@ -115,7 +116,8 @@ function fakeDecoders() {
 /** A 4×2 picture whose bytes say which one it is. */
 const picture = (ts: number): DecodedPicture => ({ width: 4, height: 2, y: new Uint8Array(8).fill(ts), uv: new Uint8Array(4).fill(100 + ts) });
 
-/** A context with a fake decoder, one codec (handle 1) and one NV12 buffer (handle 2, planes 31 and 32). */
+/** A context with a fake decoder, one codec (handle 1) and 8 NV12 buffers (handles 2-9, planes 31 and 32, 33 and 34, …),
+ * used in turn as the guest's surfaces are (a buffer is decoded into again once released). */
 function video(profile: number, o: { hardware?: number[] } = {}) {
   const stats: VideoStats = { codecs: 0, buffers: 0, frames: 0, decoded: 0, dropped: 0, bitstreamBytes: 0, errors: 0, latencyMs: 0, latencyMaxMs: 0, writeMs: 0 };
   const errors: string[] = [], written: { planes: number[]; ts: number }[] = [];
@@ -133,14 +135,16 @@ function video(profile: number, o: { hardware?: number[] } = {}) {
   }, stats);
   const cmd = (c: number, ...p: number[]) => v.command(c, new Uint32Array(p));
   cmd(53, 1, profile, 1, 1, 30, 864, 480, 4);
-  cmd(55, 2, FORMAT_NV12, 864, 480, 31, 32);
-  /** One picture: its desc and data put in staging buffers 7 and 8, then BEGIN_FRAME, DECODE_BITSTREAM, END_FRAME. */
-  const frame = (desc: Uint8Array, bits: Uint8Array) => {
-    staging.set(7, desc);
-    staging.set(8, bits);
-    cmd(57, 1, 2);
-    cmd(59, 1, 2, 7, 8, bits.length);
-    cmd(61, 1, 2);
+  for (let k = 0; k < 8; k++) cmd(55, 2 + k, FORMAT_NV12, 864, 480, 31 + 2 * k, 32 + 2 * k);
+  /** One picture into the next buffer (or `target`): its desc and data put in staging buffers 107 and 108, then
+   * BEGIN_FRAME, DECODE_BITSTREAM, END_FRAME. */
+  let next = 0;
+  const frame = (desc: Uint8Array, bits: Uint8Array, target = 2 + (next++ % 8)) => {
+    staging.set(107, desc);
+    staging.set(108, bits);
+    cmd(57, 1, target);
+    cmd(59, 1, target, 107, 108, bits.length);
+    cmd(61, 1, target);
   };
   return { v, stats, errors, written, made, frame, settledCount: () => settled };
 }
@@ -166,7 +170,7 @@ test('VideoContext: VP9 pictures through the decoder into their planes; a hidden
   assert.equal(t.v.waiting, 1);
   t.made[0].out(2);
   assert.equal(t.v.waiting, 0);
-  assert.deepEqual(t.written, [{ planes: [31, 32], ts: 0 }, { planes: [31, 32], ts: 2 }]);
+  assert.deepEqual(t.written, [{ planes: [31, 32], ts: 0 }, { planes: [35, 36], ts: 2 }]);
   assert.equal(t.settledCount(), 2);
   assert.deepEqual({ frames: t.stats.frames, decoded: t.stats.decoded, dropped: t.stats.dropped, errors: t.stats.errors }, { frames: 3, decoded: 2, dropped: 0, errors: 0 });
   assert.ok(t.stats.latencyMaxMs <= t.stats.latencyMs && t.stats.writeMs <= t.stats.latencyMs, 'the pictures\' times: each within the total, the writes within the wait');
@@ -283,21 +287,86 @@ test('VideoContext: a picture a software H.264 decoder passes over is given up w
   }
 });
 
-test('VideoContext: pending pictures given up, and those of a destroyed buffer or codec dropped', () => {
+test('VideoContext: pending pictures given up; a destroyed buffer\'s still written, a destroyed codec\'s flushed out', async () => {
   const t = video(PROFILE.VP9_PROFILE0);
   t.frame(vp9(true), new Uint8Array([1]));
   t.v.giveUp();
   assert.equal(t.v.waiting, 0);
   assert.match(t.errors[0], /1 picture\(s\) never came out/);
   t.made[0].out(0); // too late: not written
-  assert.deepEqual(t.written, []);
+  assert.equal(t.written.length, 0);
+  // The guest took a picture as decoded at END_FRAME and may show it after letting go of its buffer (Firefox's
+  // decoder process at a seek; the planes live on in the compositor's context): still written, into its planes.
   t.frame(vp9(false), new Uint8Array([2]));
+  t.v.command(56, new Uint32Array([3])); // DESTROY_VIDEO_BUFFER
   assert.equal(t.v.waiting, 1);
-  t.v.command(56, new Uint32Array([2])); // DESTROY_VIDEO_BUFFER
-  assert.equal(t.v.waiting, 0);
+  t.made[0].out(1);
+  assert.deepEqual(t.written, [{ planes: [33, 34], ts: 1 }]);
+  // A destroyed codec: its decoder is flushed and what it holds still written; what never came out is dropped.
+  t.frame(vp9(false), new Uint8Array([3]));
+  t.frame(vp9(false), new Uint8Array([4]));
   t.v.command(54, new Uint32Array([1])); // DESTROY_VIDEO_CODEC
+  assert.equal(t.made[0].flushes, 1);
+  assert.equal(t.made[0].closed, false);
+  t.made[0].out(2);
+  assert.deepEqual(t.written.map((w) => w.ts), [1, 2]);
+  t.made[0].flushed!();
+  await new Promise((ok) => setTimeout(ok, 0));
   assert.ok(t.made[0].closed);
-  assert.equal(t.stats.dropped, 2);
+  assert.equal(t.v.waiting, 0);
+  assert.deepEqual({ decoded: t.stats.decoded, dropped: t.stats.dropped }, { decoded: 2, dropped: 2 });
+});
+
+test('VideoContext: a picture is never written over a later one in the same planes', () => {
+  // Possible when two decoders output (a drained one and its successor, or a destroyed codec's): the guest decoded into
+  // the buffer again, and the older picture's content is gone for it.
+  const t = video(PROFILE.VP9_PROFILE0);
+  t.frame(vp9(true), new Uint8Array([1]), 2);
+  t.frame(vp9(false), new Uint8Array([2]), 2);
+  t.made[0].out(1);
+  t.made[0].out(0);
+  assert.deepEqual(t.written, [{ planes: [31, 32], ts: 1 }]);
+  assert.equal(t.v.waiting, 0);
+  assert.deepEqual({ decoded: t.stats.decoded, dropped: t.stats.dropped }, { decoded: 1, dropped: 1 });
+});
+
+test('VirglRenderer: a picture is written into its planes after the decoding context let go of them', () => {
+  // Firefox's decoder process at a seek: END_FRAME, then its surfaces' resources detached (the compositor still shows
+  // them), and only then does the decoder output the picture (a software one holds it).
+  const gl = mockGl();
+  gl.keepLog = true;
+  const ram = new Uint8Array(4096), errors: string[] = [];
+  const { made, factory } = fakeDecoders();
+  const r = new VirglRenderer(gl, { ram: () => ram, log: (m) => errors.push(m), video: { decoders: factory, hardware: [] } });
+  r.createContext(1);
+  const res = (id: number, format: number, width: number, height: number, target = 2) => {
+    r.createResource({ id, target, format, bind: target ? 0xa : 0x20000, width, height, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 });
+    r.attach(1, id);
+  };
+  res(10, 64, 4, 2); // R8_UNORM luma
+  res(11, 65, 2, 1); // R8G8_UNORM chroma
+  res(7, 64, 400, 1, 0); // the picture's desc
+  res(8, 64, 16, 1, 0); // its data
+  r.attachBacking(7, [{ off: 0, len: 400 }]);
+  r.attachBacking(8, [{ off: 1024, len: 16 }]);
+  ram.set(vp9(true), 0);
+  ram.set([1, 2, 3], 1024);
+  const words: number[] = [];
+  const cmd = (c: number, ...p: number[]) => words.push(c | p.length << 16, ...p);
+  cmd(53, 1, PROFILE.VP9_PROFILE0, 1, 1, 0, 4, 2); // CREATE_VIDEO_CODEC
+  cmd(55, 2, FORMAT_NV12, 4, 2, 10, 11); // CREATE_VIDEO_BUFFER
+  cmd(57, 1, 2);
+  cmd(59, 1, 2, 7, 8, 3);
+  cmd(61, 1, 2);
+  r.submit(1, new Uint32Array(words));
+  assert.deepEqual([...made[0].chunks[0].data], [1, 2, 3]);
+  r.detach(1, 10);
+  r.detach(1, 11);
+  const before = gl.log.filter(([n]) => n === 'texSubImage2D').length;
+  made[0].out(0);
+  assert.deepEqual(errors, []);
+  assert.equal(gl.log.filter(([n]) => n === 'texSubImage2D').length - before, 2, 'both planes uploaded');
+  assert.equal(r.videoStats.decoded, 1);
 });
 
 /** A submit of `ctx` with these commands (each with one parameter word). */

@@ -6,7 +6,8 @@
 // the renderer's video totals (pictures decoded, dropped) and the longest a call waited for a picture.
 //   node bench/video/v1.ts <image.qcow2> [outdir]      (default bench/results/local/video/v1/)
 // FRAMES (default 120), CLIPS (default both trailers), HWDEC (default vaapi; FFmpeg's -hwaccel), VIRGL_GPU (the page's
-// `?gpu=`, default virgl; e.g. virgl,swvideo).
+// `?gpu=`, default virgl; e.g. virgl,swvideo). SNAPSHOT=1 then tries Save snapshot while FFmpeg decodes a clip through
+// VA-API at its own pace (refused: its codec is 3D in use) and again once FFmpeg has exited (saved, the file dropped).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { openSession } from '../gpu/guest-session.ts';
 
@@ -28,6 +29,34 @@ const video = async () => {
   const last = r.at(-1);
   return { frames: last?.frames ?? 0, decoded: last?.decoded ?? 0, dropped: last?.dropped ?? 0, errors: last?.errors ?? 0, ahead: last?.ahead ?? 0, maxWaitMs: Math.max(0, ...r.map((v) => v?.maxWaitMs ?? 0)) };
 };
+
+/** Save snapshot on the page: the message it ends with, and the file's size if one was downloaded (then deleted). */
+async function saveSnapshot() {
+  const before = await page.evaluate(() => document.getElementById('message-text')?.textContent ?? '');
+  const download = page.waitForEvent('download', { timeout: 600_000 }).catch(() => null);
+  await page.locator('#save-snapshot').click();
+  await page.waitForFunction((b) => { const t = document.getElementById('message-text')?.textContent ?? ''; return t !== b && /^Saved the snapshot|no file was saved/.test(t); }, before, { timeout: 600_000, polling: 250 });
+  const message = await page.evaluate(() => document.getElementById('message-text')!.textContent!);
+  let bytes: number | undefined;
+  if (message.startsWith('Saved')) {
+    const d = await download;
+    bytes = d ? (await import('node:fs')).statSync((await d.path())!).size : undefined;
+    await d?.delete();
+  }
+  return { message, bytes };
+}
+
+async function snapshots() {
+  const clip = CLIPS[0];
+  await run(`(ffmpeg -nostdin -hide_banner -loglevel error -re -hwaccel vaapi -hwaccel_device /dev/dri/renderD128 -i /mnt/media/${clip} -t 20 -an -f null - > /tmp/snap-ff.txt 2>&1; echo ffmpeg-exit $? >> /tmp/snap-ff.txt) < /dev/null & true`);
+  await page.waitForTimeout(5000);
+  const during = { ...await saveSnapshot(), decoded: (await video()).decoded };
+  log('snapshot while decoding', during);
+  await run('while pgrep -x ffmpeg > /dev/null; do sleep 1; done; cat /tmp/snap-ff.txt', 120_000);
+  const after = await saveSnapshot();
+  log('snapshot after the player exited', after);
+  return { during, after };
+}
 
 try {
   await rootShell();
@@ -51,6 +80,9 @@ try {
     log(clip, r);
     save();
   }
+  if (process.env.SNAPSHOT === '1') results.snapshot = await snapshots();
+  // `?gpu=...,debug`: the renderer's video lines (codecs, buffers, decoders).
+  if (s.debugLines.length) results.debug = s.debugLines.filter((l) => l.startsWith('video')).slice(0, 400);
 } finally {
   save();
   await s.close?.();

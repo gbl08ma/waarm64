@@ -12,8 +12,11 @@ V3 (§3: robustness) started with **H.264 where the browser decodes it only in s
 Firefox and mpv play it as well as from a hardware decoder. **Firefox's cost and frame pacing were measured (§8)**:
 steady playback drops almost nothing, V2's cost was Firefox's start, no pref helps, and the bursts are the guest's
 CPU saturated and the host stopping every vCPU at once for JIT installs (since fixed by the JIT's compile worker:
-jit.md "Sharing").
-Next: the rest of V3, from `M8-VIDEO-HANDOVER.md`. What exists is
+jit.md "Sharing"). **Seeking, size changes, decoder errors and snapshots were checked (§9)**: right pictures after
+every seek once a held picture is written into planes the guest's decoder has let go of (Firefox's at a seek), exact
+frames across size changes, a damaged chunk a decoder error that loses nothing but its codec's pictures, a machine
+with a live codec refused a snapshot that saves once the player exits.
+Next: HEVC and AV1 (V3's breadth), from `M8-VIDEO-HANDOVER.md`. What exists is
 in the topic docs ([devices.md](../devices.md) "virgl"); this page keeps the decisions, the findings worth not
 re-discovering, and each loop's record.
 
@@ -112,7 +115,7 @@ its cost is the host's stateless-to-stateful step (above).
 - **V3, robustness and breadth:** H.264 where the browser decodes it in software (first, the user's priority: §7);
   seeking and resolution changes (a new codec, a new key frame), errors (a decoder
   error ends that codec's pictures, the guest falls back), snapshots (a machine with a codec is 3D in use: refused,
-  as now), HEVC and AV1 where the browser has them.
+  as now): §9. HEVC and AV1 where the browser has them.
 
 ## 4. V0: the gates (2026-10-14)
 
@@ -337,3 +340,51 @@ Mac, Chrome for Testing 153, 4 vCPUs, the desktop image with webpc-va; `pages-de
 - **Decided:** nothing changes in the guest or the decode path. Firefox's steady playback is fine where the host keeps
   up; what the user feels as bursts is the guest's CPU saturated (Firefox's start, page loads) and the host's
   synchronous JIT installs stopping every vCPU at once.
+
+
+## 9. V3: seeking, size changes, errors, snapshots (2026-10-15)
+
+Tools: `bench/video/seek.ts` (the guest's FFmpeg jumping within one decoder: the concat demuxer's in and out points on
+one file, the list looped once so the loop's seek flushes the decoder, framemd5 against its software decode; Firefox
+seeking a paused video, the picture it shows drawn to a canvas and compared as 16×9 blocks of mean luma with FFmpeg's
+software frames from 0.1 s before to 0.1 s after; Firefox seeking every 2.5 s while playing; `CAPTURE=1`),
+`bench/video/v1.ts` (`SNAPSHOT=1`), the clips `res-vp9.webm` and `res-h264.ts` (images/archarm/media.sh: the trailer
+from 20 s in three 4 s segments at 854×480, 640×360 and 1280×720, joined as one track), `ChunkFault` in the Chromium
+test. JSON in `bench/video/results/v3d/` (the dev VM's Chromium 153; the Mac's Chrome for Testing 153 on the M4).
+
+- **A decoder error** (a chunk's bytes garbled or cut, in Chromium): every damaged chunk, VP9 or H.264 at the 11th
+  picture, is a WebCodecs `EncodingError` (none of Chromium's decoders conceals it; a damaged first, key, chunk is
+  refused at `decode()`). The pictures before it are written, the codec's later ones dropped until a key picture, and
+  no call waits on them (the longest wait 14 ms). Real streams rarely get there, but one did: the guest's FFmpeg
+  seeking in an MPEG-TS (no index) jumps to a P picture with no IDR, which its own decoder conceals and the browser's
+  reject; the host then shows nothing new until the next IDR (`res-ts-jumps-*`; backlog.md).
+- **Snapshots** (`snapshot-devvm`): while the guest's FFmpeg decodes through VA-API, Save snapshot is refused with
+  "the machine is using 3D (virgl): close its GL programs and video players first" (the message now names players);
+  once it exits (its context destroyed), the machine saves (348 MB, paused 2.4 s). Nothing changed in the rule.
+- **Seeking: FFmpeg exact.** Through three jumps and a flush (`seek-*`): VP9 353 of 353 frames equal to the guest's
+  software decode (dev VM); H.264 355 of 355 on the Mac in hardware and in software (the latter at V3's pace for a
+  player that waits on each picture: 168 s, backlog.md). A seek sends a key picture to the same codec.
+- **Seeking in Firefox, a bug found and fixed.** In hardware (the Mac, H.264) and with VP9 on the dev VM every paused
+  seek showed its frame (the best match within a frame of the time at 0.0-2.5 mean luma; where neighbouring frames
+  differ the next is 14 away). With H.264 in software two of seven showed a picture from before the seek (38 and 50
+  away from every frame near the time; `seek-h264-swvideo-mac-before`). Firefox's decoder process tears its decoder
+  down at an H.264 seek (a new codec every seek; its VP9 path keeps the codec) and lets go of the surfaces, detaching
+  them from its context, while the compositor's and the content process's contexts still hold them (dmabuf imports).
+  The software decoder still held the target picture, and when it came out (a drain) the write needed the decoding
+  context's attachment, so it was skipped (`ctx 10: resource N isn't attached`) and the compositor sampled the old
+  planes. virglrenderer writes at END_FRAME, when they're attached; now a picture is written into the planes its
+  buffer had at END_FRAME as long as they exist, a destroyed codec's decoder is flushed rather than dropped, a
+  destroyed buffer's pending picture still written, and a picture never written over a later one in the same planes
+  (two decoders may output out of order). After it (`seek-h264-swvideo-mac`): all seven right, no warning.
+- **Seek times** (from setting `currentTime` to `seeked`, the decode from the key picture before the time): VP9 on
+  the dev VM 0.7-3.8 s paused, 1.0-3.0 s playing, against 0.2-15 s and 3.9-17 s with the guest decoding (`novideo`,
+  most frames then dropped for seconds after each seek); H.264 on the Mac 0.5-1.5 s paused, 0.07-3.6 s playing,
+  the same in software. The host's side: 1.6-3 ms from END_FRAME to written in hardware, no call waiting; the rest is
+  Firefox in the guest. Playback resumes after every seek (2.3-2.5 s played in the 2.5 s after it).
+- **Size changes make a new codec** (FFmpeg and Firefox, VP9 and H.264: the guest's VA context is made for one size),
+  and the host a new decoder: `res-vp9.webm` 288 of 288 frames equal on the dev VM, `res-h264.ts` 288 of 288 on the
+  Mac in hardware and in software (where a codec destroyed with pictures held is flushed out); Firefox on the VP9 clip
+  shows the right frame at every paused seek across the sizes and plays on after each seek. VP9's change of size
+  without a key frame (reference scaling: libvpx's real-time resizing) wasn't tried.
+- **Decided:** the write and destroy rules above (devices.md "virgl"); nothing else changes. Next: HEVC and AV1.
+

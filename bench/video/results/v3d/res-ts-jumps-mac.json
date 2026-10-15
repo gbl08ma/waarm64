@@ -1,0 +1,36 @@
+{
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "153.0.8010.12",
+ "gpu": "virgl,debug",
+ "res-h264.ts": {
+  "keys": "1.48 3.40 5.28 5.48 7.36 8.90 9.48 11.94",
+  "ffmpeg": {
+   "compare": "frames 100 of 100, equal 98, differing 34 84[h264 @ 0xaaaad1bbaab0] co located POCs unavailable[h264 @ 0xaaaad19dbcb0] co located POCs unavailable[h264 @ 0xaaaad1aa3ae0] mmco: unref short failure[h264 @ 0xaaaad19dbcb0] co located POCs unavailable[h264 @ 0xaaaad1b15370] co located POCs unavailable[h264 @ 0xaaaad1b15370] mmco: unref short",
+   "timing": "time 5.672 s user 11.596 s sys 1.766 s",
+   "video": {
+    "frames": 129,
+    "decoded": 100,
+    "dropped": 29,
+    "errors": 3,
+    "latencyMs": 5.3,
+    "latencyMaxMs": 69.1,
+    "maxWaitMs": 58.7
+   },
+   "warnings": [
+    [
+     "virgl: ctx 2: video: codec 57: EncodingError: Decoding error.",
+     1
+    ],
+    [
+     "virgl: ctx 2: video: codec 88: EncodingError: Decoding error.",
+     1
+    ],
+    [
+     "virgl: ctx 2: video: codec 160: EncodingError: Decoding error.",
+     1
+    ]
+   ]
+  }
+ },
+ "slow": []
+}

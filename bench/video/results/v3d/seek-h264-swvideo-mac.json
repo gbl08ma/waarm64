@@ -1,0 +1,228 @@
+{
+ "gl": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+ "chromium": "153.0.8010.12",
+ "gpu": "virgl,swvideo,debug",
+ "sintel_trailer-480p.mp4": {
+  "keys": "0.00 9.33 13.92 16.50 21.92 23.79 25.88 27.42 32.17 42.58 47.50",
+  "paused": {
+   "finished": "finished",
+   "lines": [
+    "loaded 854x480 52.208333",
+    "done"
+   ],
+   "seeks": [
+    {
+     "t": 30.3,
+     "ms": 1172,
+     "currentTime": 30.3,
+     "best": {
+      "pts": 30.291667,
+      "diff": 1.02
+     },
+     "next": {
+      "pts": 30.333333,
+      "diff": 13.97
+     },
+     "refs": 5
+    },
+    {
+     "t": 5.2,
+     "ms": 1440,
+     "currentTime": 5.2,
+     "best": {
+      "pts": 5.125,
+      "diff": 1.52
+     },
+     "next": {
+      "pts": 5.166667,
+      "diff": 1.53
+     },
+     "refs": 5
+    },
+    {
+     "t": 44.7,
+     "ms": 739,
+     "currentTime": 44.7,
+     "best": {
+      "pts": 44.666667,
+      "diff": 0.04
+     },
+     "next": {
+      "pts": 44.75,
+      "diff": 0.04
+     },
+     "refs": 5
+    },
+    {
+     "t": 12.1,
+     "ms": 713,
+     "currentTime": 12.1,
+     "best": {
+      "pts": 12.125,
+      "diff": 0.38
+     },
+     "next": {
+      "pts": 12.083333,
+      "diff": 0.94
+     },
+     "refs": 5
+    },
+    {
+     "t": 30.3,
+     "ms": 576,
+     "currentTime": 30.3,
+     "best": {
+      "pts": 30.291667,
+      "diff": 1.02
+     },
+     "next": {
+      "pts": 30.333333,
+      "diff": 13.97
+     },
+     "refs": 5
+    },
+    {
+     "t": 0.5,
+     "ms": 245,
+     "currentTime": 0.5,
+     "best": {
+      "pts": 0.416667,
+      "diff": 0
+     },
+     "next": {
+      "pts": 0.458333,
+      "diff": 0
+     },
+     "refs": 5
+    },
+    {
+     "t": 50.1,
+     "ms": 553,
+     "currentTime": 50.1,
+     "best": {
+      "pts": 50,
+      "diff": 0.14
+     },
+     "next": {
+      "pts": 50.041667,
+      "diff": 0.14
+     },
+     "refs": 5
+    }
+   ],
+   "video": {
+    "frames": 476,
+    "decoded": 476,
+    "dropped": 0,
+    "errors": 0,
+    "latencyMs": 62.9,
+    "latencyMaxMs": 1700.7,
+    "maxWaitMs": 208.2
+   },
+   "warnings": []
+  },
+  "playing": {
+   "finished": "finished",
+   "lines": [
+    "loaded 854x480 52.208333",
+    "done"
+   ],
+   "seeks": [
+    {
+     "t": 20,
+     "ms": 1632,
+     "after": 2.4,
+     "paused": false,
+     "frames": 51,
+     "dropped": 10
+    },
+    {
+     "t": 8,
+     "ms": 3286,
+     "after": 2.4,
+     "paused": false,
+     "frames": 57,
+     "dropped": 16
+    },
+    {
+     "t": 35,
+     "ms": 1023,
+     "after": 2.4,
+     "paused": false,
+     "frames": 58,
+     "dropped": 28
+    },
+    {
+     "t": 3,
+     "ms": 680,
+     "after": 2.47,
+     "paused": false,
+     "frames": 59,
+     "dropped": 4
+    },
+    {
+     "t": 47,
+     "ms": 1102,
+     "after": 2.42,
+     "paused": false,
+     "frames": 59,
+     "dropped": 4
+    },
+    {
+     "t": 15,
+     "ms": 428,
+     "after": 2.45,
+     "paused": false,
+     "frames": 59,
+     "dropped": 0
+    },
+    {
+     "t": 26,
+     "ms": 69,
+     "after": 2.45,
+     "paused": false,
+     "frames": 59,
+     "dropped": 0
+    },
+    {
+     "t": 40,
+     "ms": 1253,
+     "after": 2.45,
+     "paused": false,
+     "frames": 59,
+     "dropped": 0
+    },
+    {
+     "t": 10,
+     "ms": 147,
+     "after": 2.45,
+     "paused": false,
+     "frames": 59,
+     "dropped": 0
+    },
+    {
+     "t": 30,
+     "ms": 452,
+     "after": 2.46,
+     "paused": false,
+     "frames": 65,
+     "dropped": 12
+    }
+   ],
+   "video": {
+    "frames": 1533,
+    "decoded": 1528,
+    "dropped": 0,
+    "errors": 0,
+    "latencyMs": 127.3,
+    "latencyMaxMs": 2658.4,
+    "maxWaitMs": 203.3
+   },
+   "warnings": []
+  }
+ },
+ "sway": "",
+ "slow": [
+  "install 212.9 ms at 1792061395987: compile 212.8 instantiate 0.1 gc 0.0 bytes 67160 functions 93"
+ ]
+}

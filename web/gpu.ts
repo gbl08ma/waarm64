@@ -814,7 +814,7 @@ export class Gpu {
     // kickoff's choice): a 3D resource or a context that has submitted work. Contexts that never did are ids, saved
     // and made again; the caps the guest was given are kept, for a restore to check (the kickoff's decision 3). (The
     // kickoff's choice; the snapshot refuses it, web/vm.ts). A test's state read takes the rest all the same.
-    const unsaveable = this.used.size > 0 || [...this.resources.values()].some((r) => r.three) ? 'the machine is using 3D (virgl): close its GL programs first' : undefined;
+    const unsaveable = this.used.size > 0 || [...this.resources.values()].some((r) => r.three) ? 'the machine is using 3D (virgl): close its GL programs and video players first' : undefined;
     const three = this.o.virgl ? { contexts: [...this.contexts.keys()], caps: toBase64(this.caps), ...(this.off3d ? { off3d: this.off3d } : {}) } : {};
     return { ...this.state(), cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null, shown: this.shown, ...three, ...(unsaveable ? { unsaveable } : {}) };
   }

@@ -8,6 +8,9 @@
 #   sintel.webm   a real video for the ear: the Sintel trailer (Blender Foundation, CC BY 3.0, from download.blender.org),
 #                 854x480 VP9 and Opus; sintel-silent.webm, the same video without its sound (the decode's cost of sound).
 #   avsync-vp9.webm, avsync.mp4   the sync clip again as VP9 (with Opus) and as H.264 High with B-pictures and AAC.
+#   res-vp9.webm, res-h264.ts   a stream whose size changes (the video track, docs/plans/video.md V3): the trailer from
+#                 20 s to 32 s in three 4 s segments, 854x480, 640x360 and 1280x720, each from a key picture, joined
+#                 without re-encoding (one track); VP9 in WebM (Firefox plays it), H.264 High with B-pictures in MPEG-TS.
 #   avsync.html   a page that plays a clip (?v=<file>) to its end, full window on black, with sound (its profile allows it).
 #   images/archarm/media.sh [outdir]   (default target/archarm/media)
 set -euo pipefail
@@ -38,7 +41,22 @@ podman run --rm -v "$OUT:/out:Z" "$CONTAINER" sh -euc '
   [ -f avsync.mp4 ] || ffmpeg -loglevel error -y -i avsync.webm -c:v libx264 -profile:v high -pix_fmt yuv420p -g 30 -crf 23 -c:a aac -b:a 128k -movflags +faststart avsync.mp4
   [ -f sintel.webm ] || ffmpeg -loglevel error -y -i sintel_trailer-480p.mp4 -c:v libvpx-vp9 -crf 34 -b:v 0 -row-mt 1 -deadline good -cpu-used 4 -c:a libopus -b:a 128k sintel.webm
   [ -f sintel-silent.webm ] || ffmpeg -loglevel error -y -i sintel.webm -an -c:v copy sintel-silent.webm
-  for f in avsync.webm avsync-vp9.webm avsync.mp4 sintel.webm sintel-silent.webm; do ffprobe -loglevel error -show_entries stream=codec_name,width,height,sample_rate,channels:format=duration -of compact "$f"; done'
+  if [ ! -f res-vp9.webm ] || [ ! -f res-h264.ts ]; then
+    k=0
+    for seg in 20:854:480 24:640:360 28:1280:720; do
+      IFS=: read -r at w h <<EOS
+$seg
+EOS
+      ffmpeg -loglevel error -y -ss "$at" -t 4 -i sintel_trailer-480p.mp4 -an -vf "scale=$w:$h" -c:v libvpx-vp9 -crf 34 -b:v 0 -row-mt 1 -deadline good -cpu-used 4 /tmp/res$k.webm
+      ffmpeg -loglevel error -y -ss "$at" -t 4 -i sintel_trailer-480p.mp4 -an -vf "scale=$w:$h" -c:v libx264 -profile:v high -pix_fmt yuv420p -crf 23 -f mpegts /tmp/res$k.ts
+      echo "file /tmp/res$k.webm" >> /tmp/res.txt
+      echo "file /tmp/res$k.ts" >> /tmp/res-ts.txt
+      k=$((k + 1))
+    done
+    ffmpeg -loglevel error -y -f concat -safe 0 -i /tmp/res.txt -c copy res-vp9.webm
+    ffmpeg -loglevel error -y -f concat -safe 0 -i /tmp/res-ts.txt -c copy -f mpegts res-h264.ts
+  fi
+  for f in avsync.webm avsync-vp9.webm avsync.mp4 sintel.webm sintel-silent.webm res-vp9.webm res-h264.ts; do ffprobe -loglevel error -show_entries stream=codec_name,width,height,sample_rate,channels:format=duration -of compact "$f"; done'
 cat > "$OUT/avsync.html" <<'EOF'
 <!doctype html>
 <meta charset="utf-8">

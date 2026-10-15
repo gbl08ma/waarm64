@@ -113,9 +113,9 @@ type Codec = {
 /** The most of an IDR period kept to decode again after a drain. */
 const HISTORY_PICTURES = 600, HISTORY_BYTES = 32 << 20;
 type Buffer = { handle: number; format: number; width: number; height: number; planes: number[] };
-/** A picture sent to the decoder and not yet written: its codec, target buffer and when it was sent; an H.264 picture's
- * IDR period and POC. */
-type Pending = { codec: Codec; target: number; at: number; epoch?: number; poc?: number };
+/** A picture sent to the decoder and not yet written: its codec, target buffer and its planes (as at END_FRAME), when it
+ * was sent; an H.264 picture's IDR period and POC. */
+type Pending = { codec: Codec; target: number; planes: number[]; at: number; epoch?: number; poc?: number };
 
 const isH264 = (profile: number) => profile >= PROFILE.AVC_BASELINE && profile <= PROFILE.AVC_HIGH10;
 const isVp9 = (profile: number) => profile === PROFILE.VP9_PROFILE0;
@@ -134,7 +134,11 @@ export type VideoEnv = {
   decoders?: DecoderFactory;
   /** The profiles decoded in hardware (`probeVideo`). */
   hardware?: readonly number[];
-  /** Writes a picture into a video buffer's planes (`planes`: its plane resources; two for NV12, three for I420). */
+  /**
+   * Writes a picture into a video buffer's planes (`planes`: its plane resources; two for NV12, three for I420) while
+   * they exist, attached to the context or not: the guest may have let go of them since END_FRAME (Firefox's decoder
+   * process does, at a seek), and they live on where they were exported to (the compositor's context).
+   */
   write?(planes: number[], picture: DecodedPicture): void;
   /** A picture was written or given up: what waits for the pictures may go on. */
   settled?(): void;
@@ -152,6 +156,8 @@ export class VideoContext {
   readonly buffers = new Map<number, Buffer>();
   /** Pictures sent and not yet written, by timestamp (one sequence for the context's codecs). */
   private pending = new Map<number, Pending>();
+  /** The picture (timestamp) last written into each set of planes, by its first plane. */
+  private written = new Map<number, number>();
   private seq = 0;
   private closed = false;
 
@@ -177,7 +183,7 @@ export class VideoContext {
       case 54: { // DESTROY_VIDEO_CODEC
         const c = this.codecs.get(p[0]);
         if (!c) return;
-        this.closeCodec(c);
+        this.retire(c);
         this.codecs.delete(p[0]);
         this.stats.codecs--;
         return;
@@ -190,10 +196,9 @@ export class VideoContext {
         this.env.debug?.(`video: buffer ${p[0]} format ${p[1]} ${p[2]}x${p[3]} planes ${[...p.subarray(4)].join(',')}`);
         return;
       }
-      case 56: // DESTROY_VIDEO_BUFFER
+      case 56: // DESTROY_VIDEO_BUFFER: a picture still pending for it stays (its planes may be shown elsewhere: `write`)
         if (!this.buffers.delete(p[0])) return;
         this.stats.buffers--;
-        this.drop((q) => q.target === p[0]);
         return;
       case 57: { // BEGIN_FRAME: codec, target
         const c = this.codec(p[0]);
@@ -234,7 +239,7 @@ export class VideoContext {
   /** The plane resources of the pending pictures' buffers. */
   pendingPlanes(): number[] {
     const out: number[] = [];
-    for (const q of this.pending.values()) out.push(...this.buffers.get(q.target)?.planes ?? []);
+    for (const q of this.pending.values()) out.push(...q.planes);
     return out;
   }
 
@@ -308,7 +313,7 @@ export class VideoContext {
     if (key) c.epoch++;
     const ts = this.seq++;
     if (c.h264 && !c.hardware) this.remember(c, desc, bits, key, ts);
-    if (shown) this.pending.set(ts, { codec: c, target, at: performance.now(), epoch: c.epoch, poc });
+    if (shown) this.pending.set(ts, { codec: c, target, planes: this.buffers.get(target)!.planes, at: performance.now(), epoch: c.epoch, poc });
     c.dec!.decode(data, key, ts);
   }
 
@@ -345,16 +350,22 @@ export class VideoContext {
         if (this.env.debug) for (const [t, x] of this.pending) if (over(x)) this.env.debug(`video: codec ${c.handle}: picture ${t} (period ${x.epoch}, POC ${x.poc}) passed over by ${ts} (period ${q.epoch}, POC ${q.poc})`);
         this.drop(over);
       }
-      const b = this.buffers.get(q.target);
-      if (b) {
+      // Never over a later picture (the guest used the buffer again): a drained decoder and its successor, or a
+      // retired one, may output out of order.
+      const last = this.written.get(q.planes[0]);
+      if (last !== undefined && last > ts) {
+        this.env.debug?.(`video: codec ${c.handle}: picture ${ts} is older than ${last}, in its planes already`);
+        this.stats.dropped++;
+      } else {
+        this.written.set(q.planes[0], ts);
         const t0 = performance.now();
-        this.env.write?.(b.planes, pic);
+        this.env.write?.(q.planes, pic);
         const t1 = performance.now();
         this.stats.decoded++;
         this.stats.writeMs += t1 - t0;
         this.stats.latencyMs += t1 - q.at;
         this.stats.latencyMaxMs = Math.max(this.stats.latencyMaxMs, t1 - q.at);
-      } else this.stats.dropped++;
+      }
       this.env.settled?.();
     }, (m) => {
       if (this.closed || c.dec !== dec) return;
@@ -364,6 +375,24 @@ export class VideoContext {
     });
     c.dec = dec;
     this.env.debug?.(`video: codec ${c.handle}: decoder ${codec} ${c.width}x${c.height} ${c.hardware ? 'hardware' : 'software'}`);
+  }
+
+  /**
+   * A codec the guest destroyed: what its decoder holds still comes out (the guest took those pictures as decoded at
+   * END_FRAME and may show them still: Firefox destroys its decoder at a seek), then the rest is dropped.
+   */
+  private retire(c: Codec) {
+    const dec = c.dec;
+    if (!dec || ![...this.pending.values()].some((q) => q.codec === c)) return this.closeCodec(c);
+    c.dec = undefined;
+    c.history = undefined;
+    (c.retired ??= new Set()).add(dec);
+    this.env.debug?.(`video: codec ${c.handle}: destroyed with pictures pending: flushed`);
+    void dec.flush().finally(() => {
+      c.retired?.delete(dec);
+      dec.close();
+      if (!this.closed) this.drop((q) => q.codec === c);
+    });
   }
 
   private closeCodec(c: Codec) {

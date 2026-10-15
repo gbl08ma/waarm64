@@ -358,7 +358,14 @@ mode (and natively in realtime mode: std has no CSPRNG).
   shown, and a pending picture of a lesser POC than one that comes out is given up at once. If calls wait 200 ms and
   nothing comes out, a software H.264 decoder is drained without loss: flushed, and a new one decodes the IDR period
   again from its start (kept up to 600 pictures or 32 MiB; else the next IDR); a picture still out after 1 s is given
-  up (logged; the guest sees the old planes). VP9 frames with `show_frame` 0 give no output and aren't waited for. `renderer.videoStats` (decoded, dropped, errors;
+  up (logged; the guest sees the old planes). VP9 frames with `show_frame` 0 give no output and aren't waited for.
+  A picture is written into the planes its buffer had at END_FRAME as long as they exist, attached to the decoding
+  context or not (virglrenderer writes at END_FRAME; Firefox's decoder process lets go of its surfaces at a seek while
+  the compositor's context still shows them), never over a later picture in the same planes; a destroyed buffer's
+  pending picture is still written, and a destroyed codec's decoder is flushed (what it holds written) before it
+  closes. A decoder error (WebCodecs reports a damaged chunk; none conceals) closes the decoder and drops the codec's
+  pending pictures; a new decoder starts at the next key picture. A seek sends a key picture to the same codec; a size
+  change makes a new codec (plans/video.md §9). `renderer.videoStats` (decoded, dropped, errors;
   each picture's END_FRAME to written and its write, in ms) and the queue's `ahead` and `maxWaitMs` go out in
   render-stats (`bench/gpu/guest-session.ts` sums them over a phase). Mesa's wire numbers its profiles by its own
   `enum pipe_video_profile` (26.2's in `PROFILE`), which isn't stable across releases. A capture includes

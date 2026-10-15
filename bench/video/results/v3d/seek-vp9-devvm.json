@@ -1,0 +1,319 @@
+{
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+ "chromium": "153.0.8010.52",
+ "gpu": "virgl,debug",
+ "sintel.webm": {
+  "keys": "0.00 5.33 10.67 16.00 21.33 26.67 32.00 37.33 42.67 48.00",
+  "ffmpeg": {
+   "compare": "frames 353 of 353, equal 353, differing",
+   "timing": "time 7.957 s user 2.387 s sys 5.895 s",
+   "video": {
+    "frames": 544,
+    "decoded": 544,
+    "dropped": 0,
+    "errors": 0,
+    "latencyMs": 1.3,
+    "latencyMaxMs": 9.4,
+    "maxWaitMs": 1.4
+   },
+   "warnings": []
+  },
+  "paused": {
+   "finished": "finished",
+   "lines": [
+    "loaded 854x480 52.209",
+    "done"
+   ],
+   "seeks": [
+    {
+     "t": 30.3,
+     "ms": 3313,
+     "currentTime": 30.3,
+     "best": {
+      "pts": 30.292,
+      "diff": 2.5
+     },
+     "next": {
+      "pts": 30.333,
+      "diff": 14.29
+     },
+     "refs": 5
+    },
+    {
+     "t": 5.2,
+     "ms": 3781,
+     "currentTime": 5.2,
+     "best": {
+      "pts": 5.125,
+      "diff": 2.34
+     },
+     "next": {
+      "pts": 5.167,
+      "diff": 2.38
+     },
+     "refs": 5
+    },
+    {
+     "t": 44.7,
+     "ms": 1582,
+     "currentTime": 44.7,
+     "best": {
+      "pts": 44.625,
+      "diff": 1.55
+     },
+     "next": {
+      "pts": 44.667,
+      "diff": 1.55
+     },
+     "refs": 5
+    },
+    {
+     "t": 12.1,
+     "ms": 1740,
+     "currentTime": 12.1,
+     "best": {
+      "pts": 12.125,
+      "diff": 1.38
+     },
+     "next": {
+      "pts": 12.167,
+      "diff": 1.78
+     },
+     "refs": 5
+    },
+    {
+     "t": 30.3,
+     "ms": 2249,
+     "currentTime": 30.3,
+     "best": {
+      "pts": 30.292,
+      "diff": 2.5
+     },
+     "next": {
+      "pts": 30.333,
+      "diff": 14.29
+     },
+     "refs": 5
+    },
+    {
+     "t": 0.5,
+     "ms": 739,
+     "currentTime": 0.5,
+     "best": {
+      "pts": 0.417,
+      "diff": 0.94
+     },
+     "next": {
+      "pts": 0.458,
+      "diff": 0.94
+     },
+     "refs": 5
+    },
+    {
+     "t": 50.1,
+     "ms": 1082,
+     "currentTime": 50.1,
+     "best": {
+      "pts": 50,
+      "diff": 1.58
+     },
+     "next": {
+      "pts": 50.042,
+      "diff": 1.58
+     },
+     "refs": 5
+    }
+   ],
+   "video": {
+    "frames": 450,
+    "decoded": 450,
+    "dropped": 0,
+    "errors": 0,
+    "latencyMs": 1.6,
+    "latencyMaxMs": 13.8,
+    "maxWaitMs": 0
+   },
+   "warnings": []
+  },
+  "playing": {
+   "finished": "finished",
+   "lines": [
+    "loaded 854x480 52.209",
+    "done"
+   ],
+   "seeks": [
+    {
+     "t": 20,
+     "ms": 2989,
+     "after": 2.4,
+     "paused": false,
+     "frames": 57,
+     "dropped": 28
+    },
+    {
+     "t": 8,
+     "ms": 1907,
+     "after": 2.4,
+     "paused": false,
+     "frames": 58,
+     "dropped": 3
+    },
+    {
+     "t": 35,
+     "ms": 2542,
+     "after": 2.37,
+     "paused": false,
+     "frames": 83,
+     "dropped": 42
+    },
+    {
+     "t": 3,
+     "ms": 2396,
+     "after": 2.37,
+     "paused": false,
+     "frames": 33,
+     "dropped": 16
+    },
+    {
+     "t": 47,
+     "ms": 2810,
+     "after": 2.36,
+     "paused": false,
+     "frames": 57,
+     "dropped": 6
+    },
+    {
+     "t": 15,
+     "ms": 2078,
+     "after": 2.34,
+     "paused": false,
+     "frames": 57,
+     "dropped": 3
+    },
+    {
+     "t": 26,
+     "ms": 2477,
+     "after": 2.41,
+     "paused": false,
+     "frames": 58,
+     "dropped": 7
+    },
+    {
+     "t": 40,
+     "ms": 962,
+     "after": 2.41,
+     "paused": false,
+     "frames": 58,
+     "dropped": 0
+    },
+    {
+     "t": 10,
+     "ms": 1556,
+     "after": 2.44,
+     "paused": false,
+     "frames": 59,
+     "dropped": 0
+    },
+    {
+     "t": 30,
+     "ms": 1200,
+     "after": 2.44,
+     "paused": false,
+     "frames": 60,
+     "dropped": 0
+    }
+   ],
+   "video": {
+    "frames": 1568,
+    "decoded": 1568,
+    "dropped": 0,
+    "errors": 0,
+    "latencyMs": 2.6,
+    "latencyMaxMs": 138,
+    "maxWaitMs": 0
+   },
+   "warnings": []
+  }
+ },
+ "sway": "",
+ "debug": [
+  "video: buffer 3 format 166 864x480 planes 3,4",
+  "video: codec 4 profile 24 entrypoint 1 level 0 854x480 refs 8",
+  "video: codec 4: decoder vp09.00.51.08 854x480 software",
+  "video: buffer 7 format 166 864x480 planes 26,27",
+  "video: buffer 10 format 166 864x480 planes 28,29",
+  "video: buffer 13 format 166 864x480 planes 30,31",
+  "video: buffer 16 format 166 864x480 planes 32,33",
+  "video: buffer 19 format 166 864x480 planes 34,35",
+  "video: buffer 22 format 166 864x480 planes 36,37",
+  "video: buffer 25 format 166 864x480 planes 38,39",
+  "video: buffer 3 format 166 864x480 planes 133,134",
+  "video: buffer 7 format 166 864x480 planes 155,156",
+  "video: codec 8 profile 24 entrypoint 1 level 0 854x480 refs 8",
+  "video: codec 8: decoder vp09.00.51.08 854x480 software",
+  "video: buffer 11 format 166 864x480 planes 177,178",
+  "video: buffer 14 format 166 864x480 planes 179,180",
+  "video: buffer 17 format 166 864x480 planes 181,182",
+  "video: buffer 20 format 166 864x480 planes 183,184",
+  "video: buffer 23 format 166 864x480 planes 185,186",
+  "video: buffer 38 format 166 864x480 planes 191,192",
+  "video: codec 39 profile 24 entrypoint 1 level 0 854x480 refs 8",
+  "video: codec 39: decoder vp09.00.51.08 854x480 software",
+  "video: buffer 42 format 166 864x480 planes 213,214",
+  "video: buffer 45 format 166 864x480 planes 215,216",
+  "video: buffer 48 format 166 864x480 planes 217,218",
+  "video: buffer 51 format 166 864x480 planes 219,220",
+  "video: buffer 54 format 166 864x480 planes 221,222",
+  "video: buffer 60 format 166 864x480 planes 224,225",
+  "video: codec 61 profile 24 entrypoint 1 level 0 854x480 refs 8",
+  "video: codec 61: decoder vp09.00.51.08 854x480 software",
+  "video: buffer 64 format 166 864x480 planes 246,247",
+  "video: buffer 67 format 166 864x480 planes 248,249",
+  "video: buffer 70 format 166 864x480 planes 250,251",
+  "video: buffer 73 format 166 864x480 planes 252,253",
+  "video: buffer 76 format 166 864x480 planes 254,255",
+  "video: buffer 82 format 166 864x480 planes 257,258",
+  "video: codec 83 profile 24 entrypoint 1 level 0 854x480 refs 8",
+  "video: codec 83: decoder vp09.00.51.08 854x480 software",
+  "video: buffer 86 format 166 864x480 planes 279,280",
+  "video: buffer 89 format 166 864x480 planes 281,282",
+  "video: buffer 92 format 166 864x480 planes 283,284",
+  "video: buffer 95 format 166 864x480 planes 285,286",
+  "video: buffer 101 format 166 864x480 planes 289,290",
+  "video: codec 102 profile 24 entrypoint 1 level 0 854x480 refs 8",
+  "video: codec 102: decoder vp09.00.51.08 854x480 software",
+  "video: buffer 105 format 166 864x480 planes 311,312",
+  "video: buffer 108 format 166 864x480 planes 313,314",
+  "video: buffer 111 format 166 864x480 planes 315,316",
+  "video: buffer 114 format 166 864x480 planes 317,318",
+  "video: buffer 120 format 166 864x480 planes 320,321",
+  "video: codec 121 profile 24 entrypoint 1 level 0 854x480 refs 8",
+  "video: codec 121: decoder vp09.00.51.08 854x480 software",
+  "video: buffer 124 format 166 864x480 planes 342,343",
+  "video: buffer 127 format 166 864x480 planes 344,345",
+  "video: buffer 130 format 166 864x480 planes 346,347",
+  "video: buffer 136 format 166 864x480 planes 349,350",
+  "video: codec 137 profile 24 entrypoint 1 level 0 854x480 refs 8",
+  "video: codec 137: decoder vp09.00.51.08 854x480 software",
+  "video: buffer 140 format 166 864x480 planes 371,372",
+  "video: buffer 143 format 166 864x480 planes 373,374",
+  "video: buffer 146 format 166 864x480 planes 375,376",
+  "video: buffer 149 format 166 864x480 planes 377,378",
+  "video: buffer 3 format 166 864x480 planes 464,465",
+  "video: buffer 7 format 166 864x480 planes 486,487",
+  "video: buffer 11 format 166 864x480 planes 508,509",
+  "video: buffer 14 format 166 864x480 planes 510,511",
+  "video: buffer 17 format 166 864x480 planes 512,513",
+  "video: buffer 20 format 166 864x480 planes 514,515",
+  "video: buffer 23 format 166 864x480 planes 516,517",
+  "video: buffer 26 format 166 864x480 planes 518,519",
+  "video: buffer 29 format 166 864x480 planes 520,521",
+  "video: buffer 32 format 166 864x480 planes 523,524",
+  "video: buffer 35 format 166 864x480 planes 527,528",
+  "video: buffer 38 format 166 864x480 planes 530,531",
+  "video: buffer 41 format 166 864x480 planes 533,534"
+ ],
+ "slow": [
+  "install 296.6 ms at 1792058989643: compile 296.6 instantiate 0.1 gc 0.0 bytes 1546 functions 1"
+ ]
+}

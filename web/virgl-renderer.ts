@@ -792,16 +792,20 @@ export class VirglRenderer {
       debug: this.debug,
       decoders: this.video?.decoders,
       hardware: this.video?.hardware,
-      write: (planes, pic) => this.writePicture(c, planes, pic),
+      write: (planes, pic) => this.writePicture(planes, pic),
       settled: () => this.onVideoSettled?.(),
     }, this.videoStats);
   }
 
-  /** A decoded picture into a video buffer's planes: NV12's R8 luma and RG8 chroma, or I420's three R8 planes (each clipped to its texture). */
-  private writePicture(c: Ctx, planes: number[], pic: DecodedPicture) {
+  /**
+   * A decoded picture into a video buffer's planes: NV12's R8 luma and RG8 chroma, or I420's three R8 planes (each
+   * clipped to its texture). The planes needn't be attached to the decoding context any more, only exist: they were
+   * at END_FRAME, when virglrenderer writes them (`VideoEnv.write`).
+   */
+  private writePicture(planes: number[], pic: DecodedPicture) {
     const cw = (pic.width + 1) >> 1, ch = (pic.height + 1) >> 1;
     const put = (res: number, data: Uint8Array, w: number, h: number, stride: number) => {
-      const r = this.lookup(c, res);
+      const r = this.resources.get(res);
       if (r) this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(w, r.width), h: Math.min(h, r.height), d: 1 }, data, stride, 0);
     };
     put(planes[0], pic.y, pic.width, pic.height, pic.width);
