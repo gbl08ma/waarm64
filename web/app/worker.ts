@@ -267,6 +267,13 @@ async function download(urls: string[], machine: Machine) {
   return files;
 }
 
+/**
+ * Firefox's engine (its `InternalError`, which V8 lacks). The compile worker only pays off through V8's
+ * process-wide module cache; SpiderMonkey has none, so there it would add a copy of every module, and its
+ * process holds ~16K modules' code at most (it throws "out of memory": docs/backlog.md).
+ */
+const spiderMonkey = 'InternalError' in globalThis;
+
 /** An error from starting or running a machine as `[problem, message]` for the page. */
 function explain(err: unknown, machine: Machine): [Problem, string] {
   // A SnapshotError has a `problem` of its own (why the file was refused): checked before the worker's.
@@ -288,7 +295,8 @@ function explain(err: unknown, machine: Machine): [Problem, string] {
   if (e instanceof RangeError && /memory/i.test(text)) {
     return ['memory', `The browser couldn't reserve ${ramMiB} MiB for the machine's RAM.\nClose other tabs, then Retry.\n\n${text}`];
   }
-  return ['emulator', `The emulator stopped with an error:\n${e.stack ?? text}`];
+  // V8's stack starts with the message; Firefox's is only the frames.
+  return ['emulator', `The emulator stopped with an error:\n${e.stack?.includes(text) ? e.stack : `${text}\n${e.stack ?? ''}`.trim()}`];
 }
 
 async function start(m: StartMessage, note?: string): Promise<void> {
@@ -352,7 +360,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   const devices = kinds.map((k) => device(k, m, machine, diskUrl) as DeviceSpec);
   session = { name: m.machine, ncpus, disk: m.disk ? (m.disk.file?.name ?? new URL(m.disk.url!, self.location.href).pathname.split('/').pop() ?? 'disk') : null, kinds, cpu };
   booting = bootVm(core, {
-    ramSize: ramMiB * 2 ** 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true, compileWorker: new URLSearchParams(self.location.search).get('jit') !== 'nocw', rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'),
+    ramSize: ramMiB * 2 ** 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true, compileWorker: new URLSearchParams(self.location.search).get('jit') !== 'nocw' && !spiderMonkey, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'),
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices,
     // No idleLimitMs: an idle guest may sleep as long as it likes.
   });

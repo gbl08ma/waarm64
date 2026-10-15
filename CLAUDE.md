@@ -153,8 +153,8 @@ needs no CI run.
 dependencies on the host; never Docker ([docs/images.md](docs/images.md)).
 
 **Browsers**: Chromium only, headless through Playwright (`playwright-core`, temporary profile).
-**Never launch, automate or touch Firefox** (the user's daily browser; its incompatibilities are
-never blockers). Never run `/usr/bin/chromium` directly except `--version` (it opens a window on
+**Never touch Firefox outside the dev VM** (the user's daily browser is elsewhere); inside it, headless
+Firefox through Playwright is fine for checks (docs/backlog.md "Firefox"), and its incompatibilities are never blockers. Never run `/usr/bin/chromium` directly except `--version` (it opens a window on
 the user's desktop); for V8 flags use `node --v8-options`. A launcher whose Chromium decodes video passes
 `env: chromiumEnv()` (`tools/nosme.ts`): the M4 under Lima has SME but no SVE, and Chromium's SME kernels fault
 reading a decoded frame without the shim ([docs/testing.md](docs/testing.md), "Video over virgl").

@@ -175,25 +175,40 @@ async function compressedCluster(readAt: ReadAt, fileSize: number, e: bigint, cl
 
 /**
  * Raw deflate of one cluster: exactly `size` bytes out, or undefined. The input
- * runs to a sector boundary, so it usually ends with the next cluster's bytes:
- * the stream reports them as junk after its end, having produced its output.
+ * runs to a sector boundary, so it usually ends with the next cluster's bytes,
+ * which the stream reports as junk after its end. Chromium hands over the output
+ * first; Firefox drops what the write holding the junk produced. So when one
+ * write comes up short, the last sector (where the stream ends) goes in a byte a
+ * write: the write that ends the stream then delivers before the junk arrives
+ * (~3 ms a 64 KiB cluster instead of ~0.4: Firefox only).
  */
 async function inflate(input: Uint8Array, size: number) {
+  const cut = Math.max(0, input.length - 512);
+  return await inflateParts([input], size)
+    ?? (input.length > 1 ? inflateParts([input.subarray(0, cut), ...Array.from({ length: input.length - cut }, (_, i) => input.subarray(cut + i, cut + i + 1))], size) : undefined);
+}
+
+/** `parts` written in turn to one raw-deflate stream, stopping at the first failed write: exactly `size` bytes out, or undefined. */
+async function inflateParts(parts: Uint8Array[], size: number) {
   const ds = new DecompressionStream('deflate-raw');
   const w = ds.writable.getWriter();
-  w.write(input as Uint8Array<ArrayBuffer>).catch(() => {});
-  w.close().catch(() => {});
   const r = ds.readable.getReader();
   const out = new Uint8Array(size);
   let n = 0;
-  try {
+  const reading = (async () => {
     for (;;) {
       const { done, value } = await r.read();
-      if (done || n + value.length > size) break;
+      if (done) return;
+      if (n + value.length > size) return void r.cancel().catch(() => {}); // fails the writes still to come
       out.set(value, n);
       n += value.length;
     }
-  } catch { /* junk after the end */ }
+  })().catch(() => {}); // junk after the end
+  try {
+    for (const p of parts) if (p.length) await w.write(p as Uint8Array<ArrayBuffer>);
+    await w.close();
+  } catch { /* junk after the end, or a cancelled read */ }
+  await reading;
   r.cancel().catch(() => {});
   return n === size ? out : undefined;
 }

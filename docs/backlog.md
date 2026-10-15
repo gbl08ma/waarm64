@@ -378,6 +378,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## The page (M8 phase A; [frontend.md](frontend.md))
 
+- **Firefox** (not a target; 2026-10-15): Debian boots on the page in Firefox 157 (headless, the dev VM)
+  once qcow2's compressed clusters stopped relying on Chromium's DecompressionStream handing over
+  its output before the junk error (`web/qcow2.ts` `inflate`) and SpiderMonkey runs without the
+  compile worker (`web/app/worker.ts`). Open: SpiderMonkey's process holds the code of ~16,350 live wasm modules
+  (64 KiB each, it seems; then `new WebAssembly.Module` throws "out of memory"), every vCPU worker compiles its
+  own copy of each module, and the code cache has no module cap: a long or code-heavy run (the user's Arch
+  desktop, at login, with the compile worker on) dies in `jit_install`. The fix would be a
+  `VmConfig` cap on modules per cache epoch (an ABI change) the host sets on SpiderMonkey only.
+  Private windows have no OPFS (`getDirectory` throws SecurityError): no overlay, so no machine.
+  Unmeasured: SpiderMonkey's speed. Driving it: Playwright's `firefox.launch({ channel:
+  'moz-firefox', executablePath: '/usr/bin/firefox' })` (WebDriver BiDi, zypper's Firefox) with
+  `firefoxUserPrefs: { 'memory.phc.enabled': false }` (PHC's stack walks hit the VM's
+  SME-without-SVE in libgcc's unwinder: SIGILL) and `env: chromiumEnv()`.
 - **Settings:** vCPUs and RAM come from `?ncpus=` and machine.ts, no UI (phase D, with the image
   choice and the embedding API).
 - **Remember the chosen disk across reloads:** a `File` isn't kept; a `FileSystemFileHandle` in IndexedDB (permission asked each session) would let the page boot the user's disk again without the picker (phase B loop 4).

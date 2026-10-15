@@ -121,6 +121,13 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
       notifyBrowseToURL: (url: string) => post({ type: 'login', url }),
     });
   } catch (err) {
-    post({ type: 'error', error: String((err as Error)?.stack ?? err) });
+    post({ type: 'error', error: errorText(err) });
   }
 };
+
+/** An error's message and stack: V8's stack starts with the message, Firefox's is only the frames. */
+function errorText(err: unknown) {
+  const e = err as Error | undefined;
+  const text = String(e?.message ?? err);
+  return e?.stack ? (e.stack.includes(text) ? e.stack : `${text}\n${e.stack}`) : text;
+}
