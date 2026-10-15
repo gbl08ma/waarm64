@@ -197,7 +197,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     guest's CPU and the host's synchronous JIT installs stopping every vCPU at once (since taken off the vCPUs by the JIT's compile worker, jit.md "Sharing"). Next:
     the rest of V3: seeking, resolution changes, decoder errors, snapshots, HEVC and AV1.
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
-    layouts.
+    layouts; USB devices from the user's computer through WebUSB (an xHCI and a
+    passthrough backend: [docs/plans/usb.md](docs/plans/usb.md), proposed, not scheduled).
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save
     snapshot writes the running machine to a file the user keeps (Debian: 175 MB, the machine
     paused 1.4 s) and Load snapshot resumes it, in a fresh profile too, in 2.1 s instead of a 55 s
