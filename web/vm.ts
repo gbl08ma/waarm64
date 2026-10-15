@@ -223,6 +223,12 @@ export function instantiateThread(module: WebAssembly.Module, memory: WebAssembl
   return instance;
 }
 
+/**
+ * How often a vCPU worker returns to its event loop (web/vcpu-worker.ts `yieldMs`): Firefox's pages session went from
+ * 3-6 stalls of 100-808 ms a session to none over 54 ms (bench/boot/REPORT.md "M8: V8's GC on the vCPU threads").
+ */
+export const VCPU_YIELD_MS = 100;
+
 /** A flush of at least this many slots is worth a {@link collect}. */
 const NUDGE_SLOTS = 4096;
 /** An install this long is logged (`webpc-slow install`). */
@@ -385,6 +391,11 @@ export type BootOptions = {
    * On unless false.
    */
   compileWorker?: boolean;
+  /**
+   * Parallel mode: each vCPU worker returns to its event loop this often, in ms (web/vcpu-worker.ts `yieldMs`;
+   * default {@link VCPU_YIELD_MS}, 0: never).
+   */
+  vcpuYieldMs?: number;
   /**
    * Realtime mode: throw if the vCPU sleeps this long with no timer deadline
    * and nothing signaled (a lost wake-up would otherwise hang the run).
@@ -702,7 +713,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
-  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false }) : undefined;
+  const par = parallel ? coordinator({ module, memory, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS }) : undefined;
   const RING_HALF = RING / 2;
   const txUsed = () => {
     const u32 = new Uint32Array(memory.buffer);
@@ -944,7 +955,7 @@ const SIGNAL_RX = 2;
  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
  * docs/abi.md).
  */
-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean }) {
+function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; yieldMs: number }) {
   type Handle = { post(m: VcpuJob | VcpuClock | CompileInit, transfer?: Transferable[]): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
@@ -1046,7 +1057,7 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     return Array.from({ length: c.ncpus }, async (_, cpu) => {
       const h = await spawn();
       const compile = channels[cpu]?.port1;
-      h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, start: c.start, ncpus: c.ncpus, stall: c.stall.filter((x) => x.cpu === cpu), live, compile }, compile ? [compile] : []);
+      h.post({ module: c.module, memory: c.memory, block: threadAlloc(c.instance.exports), vm: c.vm, cpu, bell: c.bell, ctl: c.ctl, pause: c.pause, parked: c.parked, start: c.start, ncpus: c.ncpus, stall: c.stall.filter((x) => x.cpu === cpu), live, compile, yieldMs: c.yieldMs }, compile ? [compile] : []);
       return h;
     });
   };

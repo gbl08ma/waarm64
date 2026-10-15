@@ -59,17 +59,21 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## JIT
 
-- **What V8's GC still stops a vCPU for** (2026-10-15; `bench/boot/REPORT.md` "M8: the JIT's compile worker").
-  The compile worker took the installs' long stalls off the vCPUs (none of 250 ms or more with Firefox loading pages,
-  against 5-8 a session), but V8 still collects on the vCPU threads: a major GC starting at an allocation waits for
-  the last sweep (100-230 ms seen at an instantiation, up to a second before the worker), and the wasm code GC has
-  every isolate report its live code (33-58 ms). What feeds both is what the vCPU workers allocate and the code that
-  dies: an `Instance`, its exports and a module object per install, ~14,000 a vCPU in 8 minutes of Firefox, and
-  Liftoff code TurboFan replaced. Levers to measure first (`bench/gpu/stalls.ts` on the same session): fewer, larger
-  modules for a browser's code; instantiating with less garbage. Also the worker's own cost, ~1-2% on the boots and
-  the userspace benchmark (within noise): a table interprets a module's blocks until the one worker has compiled it;
-  two workers, or the emitter installing its own module at once, would say whether that's the queue.
-
+- **Why a busy vCPU on a desktop runs at ~115 MIPS** (2026-10-15; `bench/boot/REPORT.md` "M8: V8's GC on the vCPU
+  threads", the end). In Firefox's pages session a vCPU is inside `vm_run_cpu` 54-62% of the time and retires 106-127
+  MIPS while there, against 600-800 for the userspace benchmark's phases and 1000+ for hot loops; DSB and lock waits
+  are 0.5%, compiles 2%. Suspects, to rank with a host `perf` profile of the session's vCPU threads split by tier
+  (`bench/apps/perf.ts`; `bench/apps/chromium.ts --perf N` shows how): hot code still in Liftoff (V8 tiers a function
+  when its own budget runs out, and a browser spreads its time over hundreds of thousands of regions); the block
+  interpreter (2.2% of the steps, but ~17× slower: a quarter of the time is possible); exceptions (~2,400 syscalls
+  and ~1,300 IRQs a second a vCPU), TLB refills after context switches, transfers that leave a function.
+- **The wasm code GC stops every vCPU** (what remains of "What V8's GC stops a vCPU for", closed 2026-10-15 by
+  returning the vCPU workers to their event loop: docs/v8.md "Threads that never return to their event loop"). The
+  isolate that frees the dead code spends 43-69 ms of CPU in `FreeDeadCode` while the others wait in
+  `ReportLiveCodeForGC`: 50-75 ms on all vCPUs at once, a few times a session; the longest stalls left with Firefox
+  (54 ms). What dies is Liftoff code TurboFan replaced and flushed modules' code; fewer, larger modules or less
+  tier-up churn would shrink it, neither measured. Also open from that item: which Blink object a vCPU thread's
+  `new WebAssembly.Module` allocates in Oilpan (`CppGC.SweepOnAllocation` inside `wasm.SyncCompile`).
 - **llvmpipe under the JIT** ([plans/graphics.md](plans/graphics.md) §16): sway compositing
   through Mesa's software GL kept four vCPUs at ~54% for ~3 frames a second at 1376×762 (pixman:
   4–8%). Profiled 2026-10-08 with a compositor-like GLES load (`images/alpine/gl`): ~95% of the
@@ -169,7 +173,9 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     emitted (V8 compiles outside it); contention wasn't measured.
 - **V8's per-function overhead** ([jit.md](jit.md) "Memory"): ~8.5 KB per synthetic function of
   ~600 wasm bytes, a third each in PartitionAlloc, code and V8's heap (the instance's exports,
-  which every function needs for the table). Left to check: whether superseded or invalidated
+  which every function needs for the table; writing the table from an active element segment
+  instead still makes V8's ~170 B of objects per table entry and saves ~10% of the V8 heap:
+  `bench/boot/REPORT.md` "M8: V8's GC on the vCPU threads"). Left to check: whether superseded or invalidated
   blocks' modules stay alive through sibling functions (a module's code is freed only with all of
   its functions' instances), which larger modules make likelier.
 - **Unexplained ~10 GB samples** in the Go-load runs with the flush and the GC nudge (2 of 4 runs,

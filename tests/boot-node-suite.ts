@@ -313,6 +313,12 @@ for (const n of [2, 4]) {
     assert.ok(workerInstalls >= modules && overdue === 0, `${workerInstalls} installs from the worker, ${overdue} overdue, ${modules} modules`);
   }));
 }
+// The vCPU workers returning to their event loop at every exit 1 ms apart (web/vcpu-worker.ts `yieldMs`; 100 by
+// default): idle sleeps through Atomics.waitAsync, busy chunks through a wait that times out, thousands a boot.
+test('parallel: Buildroot on 4 vCPUs, the workers yielding every 1 ms (JIT)', { skip: linux }, () => parallel({ ramSize: 256 << 20, kernel: image('linux/Image'), cmdline: GUEST_CMDLINE, devices: guestDevices(disk()), ncpus: 4, vcpuYieldMs: 1 }, 1, (r) => {
+  poweredOff(r);
+  assert.match(r.console, /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok/);
+}));
 
 // The litmus image (images/build.sh litmus, M7): herdtools7's litmus tests,
 // none of which may observe a final state herd7's aarch64.cat forbids, then

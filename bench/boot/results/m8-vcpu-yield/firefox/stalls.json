@@ -1,0 +1,90 @@
+{
+ "y0-1": {
+  "seconds": 406,
+  "mips": 260,
+  "stallsAtLeastMs": {
+   "20": 8,
+   "50": 3,
+   "100": 3,
+   "250": 1,
+   "500": 1,
+   "1000": 0
+  },
+  "longestMs": 808,
+  "stalledMsPerSecondPerVcpu": 0.89,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "y0-2": {
+  "seconds": 400,
+  "mips": 262,
+  "stallsAtLeastMs": {
+   "20": 17,
+   "50": 8,
+   "100": 6,
+   "250": 2,
+   "500": 1,
+   "1000": 0
+  },
+  "longestMs": 526,
+  "stalledMsPerSecondPerVcpu": 1.13,
+  "allVcpuStallsAtLeastMs": {
+   "20": 1,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "y100-1": {
+  "seconds": 413,
+  "mips": 265,
+  "stallsAtLeastMs": {
+   "20": 9,
+   "50": 2,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 54,
+  "stalledMsPerSecondPerVcpu": 0.16,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ },
+ "y100-2": {
+  "seconds": 401,
+  "mips": 271,
+  "stallsAtLeastMs": {
+   "20": 10,
+   "50": 1,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  },
+  "longestMs": 53,
+  "stalledMsPerSecondPerVcpu": 0.18,
+  "allVcpuStallsAtLeastMs": {
+   "20": 0,
+   "50": 0,
+   "100": 0,
+   "250": 0,
+   "500": 0,
+   "1000": 0
+  }
+ }
+}

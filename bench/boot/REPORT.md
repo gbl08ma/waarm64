@@ -1554,3 +1554,68 @@ whose cold code is larger (bench/apps/REPORT.md: 2-5% of its steps interpreted),
 
 **So:** nothing in copies, MMIO or the device worker's round trip is a lever for Firefox's video; what it drops is the
 guest's CPU over its media pipeline, as plans/video.md §6 found.
+
+## M8: V8's GC on the vCPU threads (2026-10-15)
+
+The backlog's "What V8's GC still stops a vCPU for": with the compile worker, Firefox's pages session still had 3-6
+vCPU stalls of 100 ms or more a session (up to 224 ms then, 808 ms in this section's baseline). Same setup as "M8: the
+JIT's compile worker" (dev VM, Chromium 153.0.8010.52, `bench/gpu/firefox-load.ts virgl` with `PHASES=pages
+TIMELINE_ALL=1`, 4 vCPUs, ~400 s); core `eefaad8`.
+
+**Attribution.** Three traced sessions (`--trace-startup` with `v8.wasm`, `v8`, `disabled-by-default-v8.gc`, then
+`cppgc` and `disabled-by-default-cppgc`; JSON needs `--trace-startup-format=json`), each stall of 50 ms or more joined
+with the trace's events on the vCPU threads (ad hoc scripts; the workers' epoch clocks differ by ~400 ms, so the
+join is anchored on one install both sides saw: docs/v8.md "Threads that never return to their event loop"). Every
+long stall is work on the vCPU's own thread (each event's thread CPU time within 1-4% of its wall time):
+
+| What | Seen | Where |
+|---|---|---|
+| a V8 major GC's start (reason "allocation limit") finishing the sweep of **Oilpan**, Blink's C++ heap (`GC_HEAP_ENSURE_SWEEPING_COMPLETED`, "unified heap" > `CppGC.IncrementalSweep` > `CppGC.SweepFinish`) | 73-658 ms, 2-4 a session; three vCPUs within 12 ms once | at whatever allocated: a module object, an instance |
+| the same, inside `new WebAssembly.Module` before V8 decodes anything (no child events in the first traces) | 807 ms | |
+| the wasm code GC: the isolate that frees the dead code (`FreeDeadCode`, 43-69 ms of CPU) | 50-75 ms on every vCPU at once | the others in `ReportLiveCodeForGC` with no CPU, waiting |
+
+V8's own sweep was always done by then (`GC_MC_COMPLETE_SWEEPING` at the next minor GC, 0.0 ms) and its major GCs
+are 2-8 ms. Oilpan's marking took ~1 ms in the whole session, so its live heap is small: the sweep is garbage whose
+finalizers run on the owning thread, and `CppGC.SweepInLowPriorityTask` ran once in the session on a vCPU thread:
+**a vCPU worker never returns to its event loop**, so the tasks that sweep in 5 ms slices never run and V8's next
+major GC does it all. A microbenchmark of the install path in a worker that never yields (`new Module`, instances,
+`table.set`, with and without `jitHost.compile`'s transferring `postMessage`; 38,840 installs) sweeps 94 ms of Oilpan
+with the post and nothing without it; `performance.now()`, `timeOrigin`, `Atomics.wait` and `notify` add nothing,
+and module objects dying in a simulated flush add nothing. The real sessions' Oilpan garbage is larger than the posts
+explain (`CppGC.SweepOnAllocation` inside `wasm.SyncCompile` on the vCPU threads); which Blink object it is wasn't
+found.
+
+**What a vCPU's V8 heap holds** (Node 26, the same install path over Alpine's 971 captured modules, heap snapshots
+at 2 and 6 rounds; at Firefox's ~13,600 instances, 423K functions: 177 MB): ~13.5 KB an instance, of which ~6 KB is
+per table entry (`WasmExportedFunctionData` 88 B, `WasmInternalFunction` 48, `WasmFuncRef` 16, `Cell` 16, the
+dispatch table's ~26, made for every function in a table whether exported or written by an element segment), ~1.7
+KB the exports object (an element segment instead saves ~10% at scale: 177 → 160 MB) and ~2.5 KB the instance and
+its import data. Not the cause of the stalls (the major GCs themselves are short), so the active element segment
+(the handover's lever 2) wasn't built.
+
+**The fix:** each vCPU worker returns to its event loop at the first exit 100 ms after its last return
+(`web/vcpu-worker.ts` `yieldMs`, `VmOptions.vcpuYieldMs`; `?vyield=0` turns it off on the page and in bench/boot):
+idle sleeps wait in `Atomics.waitAsync`, BUDGET and DEVICE exits on a word nothing writes for a µs. Firefox's pages
+session, two each, alternating (`results/m8-vcpu-yield/firefox/`, `stalls.json`):
+
+| | MIPS | vCPU stalls ≥ 20 / 50 / 100 / 250 / 500 ms | longest | stalled ms a second a vCPU |
+|---|---|---|---|---|
+| never (`vyield=0`) | 260, 262 | 8/3/3/1/1, 17/8/6/2/1 | 808, 526 ms | 0.89, 1.1 |
+| every 100 ms | 265, 271 | 9/2/0/0/0, 10/1/0/0/0 | 54, 53 ms | 0.2, 0.2 |
+
+What's left at 50 ms is the wasm code GC. **Throughput** (`bench/run.ts --page bench/boot/index.html`, with and
+without `--query=vyield=0`, alternating, two each; `results/m8-vcpu-yield/*.json`), medians in ms:
+
+| | yield | none | |
+|---|---|---|---|
+| Alpine boot to power-off, 1 vCPU | 10055, 9931 | 9926, 9890 | +0.9% |
+| 2 vCPUs | 9914, 9884 | 9860, 9840 | +0.5% |
+| 4 vCPUs | 9931, 9934 | 9927, 9879 | +0.3% |
+| userspace, 4 vCPUs (compress, Lua, churn, SQLite) | 19813, 19617 | 19975, 19818 | −0.9% |
+
+Within noise.
+
+**Busy vCPUs run slowly** (an aside, from the same timelines' `outNs`): over the pages session a vCPU is inside
+`vm_run_cpu` 54-62% of the time and retires 106-127 MIPS while there, against 600-800 for the userspace benchmark's
+phases on one vCPU; DSB and lock waits are 0.5% of it and compiles 2%. That is the next thing to profile (docs/backlog.md
+"JIT").

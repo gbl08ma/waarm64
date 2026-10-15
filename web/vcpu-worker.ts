@@ -31,6 +31,13 @@ export type VcpuJob = {
   live?: Float64Array;
   /** Its port to the JIT's compile worker (web/jit-compile-worker.ts), if the VM has one. */
   compile?: MessagePort;
+  /**
+   * Returns to the worker's event loop at the first exit this many ms after the last return (0: never). V8 and
+   * Blink post work to it (Oilpan's sweeping in 5 ms slices): on a thread that never returns, it waits for V8's next
+   * major GC, which then does it all at once on the vCPU (hundreds of ms; bench/boot/REPORT.md "M8: V8's GC on
+   * the vCPU threads").
+   */
+  yieldMs?: number;
 };
 export type VcpuEnd = { type: 'exit'; cpu: number; kind: number; value: bigint; x: bigint[] } | { type: 'error'; cpu: number; message: string };
 /** A clock query to the coordinator (web/vm.ts `clockOffset`) and its answer, `t` its clock. */
@@ -53,7 +60,7 @@ const NONE = 0xffff_ffff_ffff_ffffn;
  */
 const SPIN_MS = 0.05;
 
-function run(j: VcpuJob, clock: number): VcpuEnd {
+async function run(j: VcpuJob, clock: number): Promise<VcpuEnd> {
   const exports = instantiateThread(j.module, j.memory, j.block, clock, j.stall, j.compile).exports;
   // The vCPUs start together: one that ran (and started a restored VM's clock, and took device completions) while
   // another was still instantiating would find a guest whose CPU 0 hadn't run for that long (on a loaded host, over
@@ -63,14 +70,14 @@ function run(j: VcpuJob, clock: number): VcpuEnd {
   Atomics.notify(ready, 0);
   for (let v; (v = Atomics.load(ready, 0)) < j.ncpus;) Atomics.wait(ready, 0, v, 1000);
   try {
-    return runCpu(j, exports);
+    return await runCpu(j, exports);
   } catch (err) {
     // A panic in the core: its message is in the memory (ABI 27).
     throw withPanic(err, exports, j.memory);
   }
 }
 
-function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
+async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd> {
   const ex = unsigned(exports) as unknown as Ex;
   const mem = j.memory;
   const wake = new Int32Array(mem.buffer, ex.vm_cpu_signal(j.vm, j.cpu), 1);
@@ -81,6 +88,15 @@ function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
   const info = ex.vm_exit_cpu(j.vm, j.cpu);
   const idleStalls = j.stall?.map((s) => stallHook(mem, s)('idle', () => {}));
   const live = j.live && livenessWriter(j.live, j.cpu);
+  // The yield: a wait on a word nothing writes, resolved by a task once it times out (no timer clamping).
+  const never = new Int32Array(new SharedArrayBuffer(4));
+  let yielded = performance.now();
+  const due = () => j.yieldMs! > 0 && performance.now() - yielded >= j.yieldMs!;
+  const pass = async (word: Int32Array, value: number, ms: number) => {
+    const w = Atomics.waitAsync(word, 0, value, ms);
+    if (w.async) await w.value;
+    yielded = performance.now();
+  };
   for (;;) {
     live?.enter();
     const kind = ex.vm_run_cpu(j.vm, j.cpu, BUDGET);
@@ -90,6 +106,7 @@ function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
     switch (kind) {
       case Exit.BUDGET:
         live?.handled();
+        if (due()) await pass(never, 0, 0.001);
         continue;
       case Exit.IDLE: {
         idleStalls?.forEach((f) => f()); // test only: a host stall with the vCPU OUT
@@ -100,7 +117,9 @@ function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
         const t0 = performance.now();
         const spin = Math.min(ms, SPIN_MS);
         while (Atomics.load(wake, 0) === word && performance.now() - t0 < spin);
-        Atomics.wait(wake, 0, word, ms - (performance.now() - t0));
+        // Asleep in the event loop when a yield is due: its tasks run while the vCPU waits.
+        if (due()) await pass(wake, word, ms - (performance.now() - t0));
+        else Atomics.wait(wake, 0, word, ms - (performance.now() - t0));
         continue;
       }
       case Exit.TX_FULL:
@@ -113,6 +132,7 @@ function runCpu(j: VcpuJob, exports: WebAssembly.Exports): VcpuEnd {
         // A config-space write waits: the driver reads the answer next (virtio-input's select/subsel).
         ring(bell, (Number(e[2] >> 8n) & EV_CONFIG) !== 0);
         live?.handled();
+        if (due()) await pass(never, 0, 0.001);
         continue;
       case Exit.STOP: {
         // A pause (odd pause word): park here, out of the core, keeping the instance and its code. Not
@@ -142,9 +162,9 @@ function serve(post: (m: VcpuEnd | VcpuClock) => void, listen: (on: (m: VcpuJob 
     if ('type' in m) return answer?.(m.t!);
     job = m;
     const ask = () => new Promise<number>((resolve) => { answer = resolve; post({ type: 'clock' }); });
-    void clockOffset(ask).then((clock) => {
+    void clockOffset(ask).then(async (clock) => {
       try {
-        post(run(job!, clock));
+        post(await run(job!, clock));
       } catch (err) {
         post({ type: 'error', cpu: job!.cpu, message: errorText(err) });
       }

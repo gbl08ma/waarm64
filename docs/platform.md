@@ -113,6 +113,11 @@ indexes of their instance).
   a vCPU can't cheaply see the store that clears another's exclusive monitor, which is what
   wakes Linux's LDXR + WFE waits on hardware. Measure before making WFE sleep
   ([backlog.md](backlog.md)).
+- **The worker's event loop:** at the first exit 100 ms after its last return (`VmOptions.vcpuYieldMs`, 0
+  never), a vCPU worker returns to its event loop: a sleep (IDLE) waits with `Atomics.waitAsync` instead, a
+  BUDGET or DEVICE exit waits a µs on a word nothing writes. The tasks V8 and Blink post to the thread run then
+  (Oilpan's sweeping); never returning left them to V8's next major GC, which did them all at once on the vCPU
+  ([v8.md](v8.md) "Threads that never return to their event loop").
 - **CPU_ON:** the caller records the request under the lock and wakes the target; the target's
   own thread applies it (no thread writes another's registers), marking itself on under the same
   lock (between taking the request and marking itself on, a second CPU_ON once saw it off: the
