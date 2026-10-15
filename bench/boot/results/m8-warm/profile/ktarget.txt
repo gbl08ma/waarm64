@@ -1,0 +1,13 @@
+kernel entry stalls: 143357
+ 42.7%  other block, indirect tail
+ 30.3%  return continuation (after BL/BLR), indirect tail
+ 14.4%  a function start, indirect tail
+  5.7%  other block, dispatcher
+  2.6%  other block, other
+  1.8%  return continuation (after BL/BLR), dispatcher
+  1.2%  a function start, dispatcher
+  0.7%  a function start, other
+  0.3%  outside the image (modules, BPF), indirect tail
+  0.1%  return continuation (after BL/BLR), other
+  0.1%  outside the image (modules, BPF), dispatcher
+  0.0%  outside the image (modules, BPF), other

@@ -59,14 +59,29 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## JIT
 
-- **Why a busy vCPU on a desktop runs at ~115 MIPS** (2026-10-15; `bench/boot/REPORT.md` "M8: V8's GC on the vCPU
-  threads", the end). In Firefox's pages session a vCPU is inside `vm_run_cpu` 54-62% of the time and retires 106-127
-  MIPS while there, against 600-800 for the userspace benchmark's phases and 1000+ for hot loops; DSB and lock waits
-  are 0.5%, compiles 2%. Suspects, to rank with a host `perf` profile of the session's vCPU threads split by tier
-  (`bench/apps/perf.ts`; `bench/apps/chromium.ts --perf N` shows how): hot code still in Liftoff (V8 tiers a function
-  when its own budget runs out, and a browser spreads its time over hundreds of thousands of regions); the block
-  interpreter (2.2% of the steps, but ~17× slower: a quarter of the time is possible); exceptions (~2,400 syscalls
-  and ~1,300 IRQs a second a vCPU), TLB refills after context switches, transfers that leave a function.
+- **Indirect transfers into a browser's code** (2026-10-16; `bench/boot/REPORT.md` "M8: where a busy vCPU's time goes
+  in Firefox"). In Firefox's pages session 26% of a busy vCPU's time stalls at a guest function's first instruction,
+  83% of it after a `return_call_indirect` (the code footprint defeats the branch predictor; direct and imported tail
+  calls don't stall). Warm members took the jump-cache tails into warm code away (+18% busy MIPS). What remains:
+  - **Returns** (a third of the kernel's entry stalls, 21 transfer-cache RETs per 1000 instructions): a guest `BL`
+    as a wasm `call` and a matching `RET` as a wasm `return`, so the host's return stack predicts it and the caller's
+    continuation stays in its function. The budget, exits through every frame, a depth limit and returns that don't
+    match (context switches, `longjmp`) make it the largest piece of work here.
+  - **Tails into code that was cold when its predecessor was compiled** (warm members only take what had run 16
+    times): re-emitting a hot region once its jump-cache targets are compiled. A per-site slot in a module-local
+    table, filled on install, measured no cheaper than the jump cache (`chain.mjs` `local`, 35 against 37 ns).
+  - The dispatcher's entries (13% of the stalls) and the signature check's table load (5.3% of the time).
+- **The TLB arrays at a constant offset in every access**: each guest load and store reaches its TLB entry at `Vcpu`
+  offset 0x40540, which V8 builds with `mov`+`movk` twice an access in both tiers. A per-function local `vcpu +
+  array`, or the arrays near the start of `Vcpu`, would take ~4 instructions off every access (code and hot path).
+- **Fewer, larger modules for a browser**: Firefox's session makes ~14,500 modules of ~35 blocks each (V8 ~16 KB a
+  module besides code). Which trigger emits them (`BATCH_STEPS`, the timeout, tier-ups) and a module minimum, against
+  busy MIPS, interpreted steps and RSS; Alpine paid +20% for 16M-step batches.
+- **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
+  Liftoff's samples in Firefox sit in prologues. Fewer declared locals, or i64 locals where i32 ones are zeroed.
+- **A Firefox session that timed out once** with warm members (WARM=32, 1 of 18 sessions that day): Firefox never
+  reported its first page; the guest's kernel and shell were alive. Not seen again in 13 others; if it recurs, rerun
+  that session under JIT-check.
 - **The wasm code GC stops every vCPU** (what remains of "What V8's GC stops a vCPU for", closed 2026-10-15 by
   returning the vCPU workers to their event loop: docs/v8.md "Threads that never return to their event loop"). The
   isolate that frees the dead code spends 43-69 ms of CPU in `FreeDeadCode` while the others wait in

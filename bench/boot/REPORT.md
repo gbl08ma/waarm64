@@ -1619,3 +1619,78 @@ Within noise.
 `vm_run_cpu` 54-62% of the time and retires 106-127 MIPS while there, against 600-800 for the userspace benchmark's
 phases on one vCPU; DSB and lock waits are 0.5% of it and compiles 2%. That is the next thing to profile (docs/backlog.md
 "JIT").
+
+## M8: where a busy vCPU's time goes in Firefox (2026-10-16)
+
+The dev VM, Chromium 153.0.8010.52, against `b71fd82`; Firefox's pages session (`bench/gpu/firefox-load.ts`, the
+desktop guest, 4 vCPUs). The question (backlog, first JIT item): a busy vCPU retires ~115 MIPS there against 600-800
+in the userspace benchmark. Raw data in `results/m8-warm/` (the profiles' summaries, the sessions' results, the gates'
+JSON); the analysis scripts in `results/m8-warm/tools/`.
+
+**Where inside guest code.** V8's `--perf-prof` writes each function's code bytes (a jitdump, 10.8 GB for a session);
+`perf record -k mono` stamps samples with the same clock, so each sample resolves to the code at that address at that
+time (code space is reused after flushes and the code GC). Of the vCPU threads' samples (1,056,815):
+
+| | share |
+|---|---|
+| guest code, **the function's first instruction** (kernel 15.0, user 10.8) | **25.8%** |
+| guest code, a `call_indirect`'s signature check (its table load) | 5.3% |
+| guest code, the rest (kernel TurboFan 11.4, user TurboFan 11.3, user Liftoff 8.8, kernel Liftoff 4.1) | 35.6% |
+| the core: block interpreter 6.1, dispatcher and misses 5.6, helper bodies 2.6, compiles and installs 2.3, other 3.6 | 20.2% |
+| V8's runtime, Chromium, libc, vDSO | 12.4% |
+
+The core's own functions have 0.2-1% of their samples at entry, so the first instruction is no sampling artifact; the
+Mac host's profile (no VM, 16K pages, `sample`) has 33% of guest code at entry too, so it isn't the VM's iTLB.
+**How those functions were entered** (a second session with x16, x17 and LR sampled): 83% after a
+`return_call_indirect` (V8 leaves the signature, 0x08000003, in x16 and the target in x17), 13% from the dispatcher,
+~0 after a direct or imported `return_call`. 192K distinct guest functions were sampled (3.4 KB of machine code each
+on average); a browser's code doesn't fit the caches, and an indirect transfer the branch predictor misses waits for
+the target's code. For the guest kernel (half the guest code; Arch's kernel: HZ=1000, `DEBUG_PREEMPT`, PSI) the
+targets resolve against the image's `System.map` and `Image`: 57% of its entry stalls were static successors (branch
+targets 43%, call targets 14%) reached through the jump cache because they were compiled after their predecessor
+(forward regions are never re-emitted), 32% returns (the transfer cache), 9% dispatches.
+
+**A microbenchmark of the transfers** (`tools/chain.mjs`, Node 26, TurboFan only): N functions in a random order, each a
+few i64 ops and two loads, tail-calling the next. ns an entry:
+
+| | 16 functions | 1,000 | 32,000 |
+|---|---|---|---|
+| `return_call`, one module | 12-14 | 21-24 | 22 |
+| `return_call` of an import (a module each, compiled in a random order) | 13 | 18 | 18-19 |
+| `return_call_indirect`, one table | 15 | 22 | 37-38 |
+| `return_call_indirect` of a constant slot in the module's own table | 15 | | 35 |
+
+So it's the indirect transfer itself, not the jump cache's probe or the table's size: a cheaper probe wins little,
+fewer indirect transfers win.
+
+**The lever built: warm members** (`jit::Config::warm`, docs/jit.md "Compile policy"): a forward region also takes a
+same-page successor that has run 16 dispatches but isn't compiled or in the batch, so the edge into it stays in the
+function. Firefox's pages session, alternating, each line one session (busy: a busy vCPU's MIPS inside `vm_run_cpu`):
+
+| | session | busy MIPS | wasm compiled | flushes |
+|---|---|---|---|---|
+| before | 423, 401, 402, 402 s | 110, 119, 119, 119 | 436-440 MB | 2 |
+| warm 1 | 404, 382 s | 124, 130 | 614-618 MB | 3 |
+| warm 4 | 376, 379 s | 136, 138 | 580-587 MB | 3 |
+| **warm 16** | 375, 363, 364, 371, 370, 375 s | **140, 140, 137, 142, 143, 141** | 506-509 MB | 2 |
+| warm 32 | 369 s (the other run timed out, below) | 142 | 495 MB | 2 |
+| warm 64 | 373, 377 s | 135, 139 | 478-486 MB | 2 |
+| warm 16, a warm member keeps its count | 391, 380 s | 133, 130 | 604-611 MB | 3 |
+
++18% busy MIPS and −8% session time for 16% more wasm, with the same flushes. The pages start as fast or sooner (hn
+36-37 → 16-22 s, github 26 → 22 s, bbc 50 → 44-48 s). A member's count is reset as a batch member's is (it has no
+function of its own until it's hot from elsewhere); keeping it compiled 20% more again and was slower. One warm-32
+session timed out waiting for Firefox's first page (the guest's kernel and shell alive, nothing in the console); the
+other 13 sessions with warm members and the four without ran through.
+
+**The gates** (`bench/run.ts --page bench/boot/index.html`, alternating, three each; medians, ms):
+
+| | before | warm 16 | |
+|---|---|---|---|
+| `smp_alpine_jit` total, 1 / 2 / 4 vCPUs | 9914, 9804, 9824 | 9575, 9271, 9414 | −3.4, −5.4, −4.2% |
+| `smp_user_jit_4` total | 19715 | 19101 | −3.1% |
+| compress, Lua, churn, SQLite | 1871, 3111, 2927, 2477 | 1805, 3137, 2554, 2477 | −3.5, +0.8, −12.8, 0% |
+
+**Left** (backlog): returns (a third of the kernel's entry stalls; the host's own call and return would predict
+them), the dispatcher's entries, the TLB arrays' offsets as constants in every access, fewer modules for a browser
+(~14,500 in a session, ~35 blocks each).

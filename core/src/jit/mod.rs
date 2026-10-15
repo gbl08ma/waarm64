@@ -80,6 +80,11 @@ pub struct Config {
     /// Micro-ops each table's decoded blocks hold (`interp::block::BUDGET`
     /// shared out among a VM's tables).
     pub decoded: u32,
+    /// A forward region also takes a successor in reach that has run this
+    /// many dispatches but isn't compiled or in the batch (0: the batch's
+    /// blocks only), so the edge into it stays in the function instead of a
+    /// jump-cache probe and an indirect call (docs/jit.md "Compile policy").
+    pub warm: u32,
 }
 
 impl Config {
@@ -95,6 +100,7 @@ impl Config {
         region_after: REGION_AFTER,
         pages: 0,
         decoded: interp::block::MAX_BUDGET as u32,
+        warm: WARM,
     };
     /// Compile everything on first sight, one block per module, and flush
     /// constantly: room for 4 regions besides the miss functions.
@@ -108,6 +114,7 @@ impl Config {
         region_after: 1,
         pages: 0,
         decoded: interp::block::MAX_BUDGET as u32,
+        warm: 0,
     };
     /// JIT-check: compile everything on first sight into a full-size cache,
     /// with the stale-code checker. JIT-stress's 4-region cache evicts most
@@ -120,6 +127,7 @@ impl Config {
         max_bytes: u64::MAX,
         check: true,
         region_after: 0,
+        warm: 0,
         ..Config::DEFAULT
     };
     /// The dispatcher without compiling: everything in the block interpreter
@@ -271,6 +279,9 @@ pub const BATCH_STEPS: u64 = 50_000;
 /// Steps after the first block joins a pending batch before it's emitted
 /// anyway, so a lukewarm block doesn't wait forever.
 pub const BATCH_TIMEOUT: u64 = 64_000_000;
+
+/// [`Config::DEFAULT`]'s `warm`.
+pub const WARM: u32 = 16;
 
 /// The code cache a VM's vCPUs share (docs/jit.md "Sharing"): the blocks, the
 /// pending batch, the slot allocator, and the modules installed since the
@@ -671,7 +682,14 @@ impl Cache {
                         Some(&state) => state == FREE,
                         // Everything at once (the differential tests): any
                         // block in reach that heads no loop.
-                        None => all && !heads_loop(&self.region(k, 0, mem)),
+                        None => {
+                            let warm = self.cfg.warm;
+                            (all || warm > 0
+                                && self.map.get(&k).is_some_and(|i| {
+                                    i.idx == 0 && !i.queued && i.len > 0 && i.hits >= warm
+                                }))
+                                && !heads_loop(&self.region(k, 0, mem))
+                        }
                     };
                     free.then_some(k)
                 });
@@ -1779,6 +1797,7 @@ mod tests {
             region_after: 0,
             pages: 0,
             decoded: 0,
+            warm: 0,
         });
         let s = &mut Stats::default();
         c.map.insert(0x100, Info::default());
@@ -1857,8 +1876,11 @@ mod tests {
         for (k, w) in words.into_iter().enumerate() {
             mem.write(0x100 + 4 * k as u64, 4, w as u64).unwrap();
         }
-        let mut c = Cache::new(Config::DEFAULT);
-        // Every block was dispatched and is pending, but 0x118 (seen once).
+        let mut c = Cache::new(Config {
+            warm: 0,
+            ..Config::DEFAULT
+        });
+        // Every block was dispatched and is pending, but 0x118 (not queued).
         for k in [0x110, 0x100, 0x104, 0x10c, 0x120, 0x128, 0x12c, 0x118] {
             let i = c.info(k, || 1);
             (i.hits, i.queued) = (51, k != 0x118);
@@ -1889,6 +1911,50 @@ mod tests {
             );
         }
         assert!(c.pending.is_empty() && !c.map[&0x100].queued);
+    }
+
+    /// A successor that has run `warm` dispatches but isn't in the batch is
+    /// taken as a member; one that ran fewer, a loop head and a compiled
+    /// block aren't.
+    #[test]
+    fn a_forward_region_takes_a_warm_successor() {
+        let mut ram = vec![0u128; 0x1000 / 16];
+        // SAFETY: `ram` outlives `mem` and is 16-byte aligned.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr().cast(), 0x1000) };
+        // 0x100: cbz x1, 0x10c
+        // 0x104: add x2, x2, #1; b 0x114
+        // 0x10c: add x2, x2, #2; ret
+        // 0x114: subs x6, x6, #1; b.ne 0x114 (a loop of one); ret
+        #[rustfmt::skip]
+        let words = [
+            0xb4000061u32, 0x91000442, 0x14000003, 0x91000842, 0xd65f03c0, 0xf10004c6, 0x54ffffe1, 0xd65f03c0,
+        ];
+        for (k, w) in words.into_iter().enumerate() {
+            mem.write(0x100 + 4 * k as u64, 4, w as u64).unwrap();
+        }
+        let plan = |hits: [u32; 3], idx10c: u32| {
+            let mut c = Cache::new(Config::DEFAULT);
+            let i = c.info(0x100, || 1);
+            (i.hits, i.queued) = (51, true);
+            c.pending.push((0x100, 0x100));
+            for (k, h) in [0x104, 0x10c, 0x114].into_iter().zip(hits) {
+                let i = c.info(k, || 1);
+                i.hits = h;
+                if k == 0x10c {
+                    i.idx = idx10c;
+                }
+            }
+            let r = c.plan(&mem);
+            let keys: Vec<u64> = r[0].blocks.iter().map(|b| b.key).collect();
+            (keys, c.map[&0x104].hits, c.map[&0x104].queued)
+        };
+        assert_eq!(plan([WARM - 1, WARM - 1, WARM], 0).0, [0x100]);
+        // 0x114 heads a loop: never a member.
+        assert_eq!(
+            plan([WARM, WARM, WARM], 0),
+            (vec![0x100, 0x104, 0x10c], 0, false)
+        );
+        assert_eq!(plan([WARM, WARM, WARM], 7).0, [0x100, 0x104]);
     }
 
     #[test]

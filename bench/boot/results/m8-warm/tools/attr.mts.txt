@@ -1,0 +1,53 @@
+// Attribution of the vCPU threads' samples: jit.tsv (resolved JIT samples) + samples.txt (all, with dso).
+import { readFileSync } from 'node:fs';
+const [samplesFile, jitFile] = process.argv.slice(2);
+const vcpu = new Set<string>();
+const perTid = new Map<string, number>();
+const dso = new Map<string, Map<string, number>>();
+for (const l of readFileSync(samplesFile, 'utf8').split('\n')) {
+  const m = /^\s*(\d+)\s+\S+\s+([0-9a-f]+)\s+\((.*)\)/.exec(l);
+  if (!m) continue;
+  perTid.set(m[1], (perTid.get(m[1]) ?? 0) + 1);
+  const d = dso.get(m[1]) ?? dso.set(m[1], new Map()).get(m[1])!;
+  d.set(m[3], (d.get(m[3]) ?? 0) + 1);
+}
+const cats = new Map<string, number>();
+const add = (k: string, n = 1) => cats.set(k, (cats.get(k) ?? 0) + n);
+const jitPerTid = new Map<string, number>();
+const rows = readFileSync(jitFile, 'utf8').split('\n').map((l) => l.split('\t')).filter((r) => r.length > 4);
+for (const r of rows) if (/_pa0x/.test(r[1])) vcpu.add(r[0]);
+for (const [tid, name, off, , w0, w1] of rows) {
+  if (!vcpu.has(tid)) continue;
+  jitPerTid.set(tid, (jitPerTid.get(tid) ?? 0) + 1);
+  const m = /^JS:0x([0-9a-f]+)_pa0x[0-9a-f]+-\d+-(\w+)/.exec(name);
+  if (m) {
+    const el = m[1].length === 16 ? 'kernel' : 'user';
+    if (off === '0') add(`guest code: entry (first instruction), ${el}`);
+    else if (w0 === 'a8c147ff' || w1 === 'eb11021f') add('guest code: call_indirect signature check');
+    else add(`guest code: body, ${el} ${m[2]}`);
+  } else if (/webpc_core6interp5block|webpc_core3jit9interpret/.test(name)) add('core: block interpreter');
+  else if (/webpc_core3jit(5steps|NtB\w+_5Cache(4miss|5enter)|3key)|xmiss|Jit4miss/.test(name)) add('core: dispatcher, Jit::miss, xmiss');
+  else if (/Table4sync|Jit7install|webpc_core3jit5block|webpc_core3jit4emit|webpc_core3jit4wasm|Cache(4emit|5flush|10invalidate|6module|4plan)|jit_hot/.test(name)) add('core: compile, install, sync');
+  else if (/jit_exec_|webpc_core3jit5count|jit_(ldst|load|store|sys|msr|mrs)/.test(name)) add("core: helpers' entry");
+  else if (/webpc_core3mmu4walk|Mmu4miss|Tlb\d+(fill|flush|drop)/.test(name)) add('core: TLB miss, walk');
+  else if (/webpc_core/.test(name) && /interp|mmu|mem|fp|crypto|cpu|decode/.test(name)) add('core: interpreter and helper bodies');
+  else if (/webpc_core2vm|virtio|gic|timer|vm_run/.test(name)) add('core: run loop, devices');
+  else if (/dlmalloc|hashbrown|alloc|compiler_builtins|memcpy|memset/.test(name)) add('core: allocator, std');
+  else if (/^Builtin:/.test(name)) add('V8 builtins');
+  else if (/^JS:\*|^JS:~/.test(name)) add('host JS');
+  else add('core/JS other');
+}
+let total = 0;
+for (const t of vcpu) {
+  total += perTid.get(t)!;
+  const rest = perTid.get(t)! - (jitPerTid.get(t) ?? 0);
+  // Non-JIT samples by dso (the [anon:v8] ones the jitdump didn't cover are V8 code spaces: trampolines, stubs).
+  let anon = 0;
+  for (const [d, n] of dso.get(t)!) if (/anon:v8/.test(d)) anon += n;
+  const jit = jitPerTid.get(t) ?? 0;
+  for (const [d, n] of dso.get(t)!) if (!/anon:v8/.test(d)) add(`native: ${d.replace(/.*\//, '')}`, n);
+  add('V8 code space, unresolved', anon - jit);
+  void rest;
+}
+console.log(`vCPU threads ${[...vcpu].join(' ')}: ${total} samples`);
+for (const [k, v] of [...cats].sort((a, b) => b[1] - a[1])) console.log(`${((100 * v) / total).toFixed(1).padStart(5)}%  ${k}`);

@@ -1,62 +1,60 @@
-# M8 JIT: why a busy vCPU runs at ~115 MIPS on a desktop, handover (2026-10-15)
+# M8 JIT: a browser's code in the JIT, handover (2026-10-16)
 
 A side track of M8, asked for by the user: make general and "complex app" work (a browser in the
 guest) faster and smoother. Not a milestone phase; no kickoff. How things work is in docs/jit.md
 ("Compile policy", "Sharing", "Memory"), docs/abi.md ("JIT") and docs/v8.md; the measurements are at the
 ends of `bench/boot/REPORT.md`, `bench/apps/REPORT.md` and `bench/interp/REPORT.md`; what's open is in
 docs/backlog.md "Interpreter" and "JIT". The previous handovers of this track (the block interpreter and
-arenas, 2026-10-09; V8's GC stalls, 2026-10-15) are in git history; their lessons are below.
+arenas, 2026-10-09; V8's GC stalls, 2026-10-15; where a busy vCPU's time goes, 2026-10-15) are in git history;
+their lessons are below.
 
-**Done last (2026-10-15):** the vCPU stalls of 100-800 ms with Firefox were Oilpan's sweep, forced on a
-vCPU thread by V8's next major GC because a vCPU worker never returned to its event loop. Each worker now
-returns every 100 ms (`web/vcpu-worker.ts` `yieldMs`, `?vyield=0` off): no stall of 100 ms or more in
-two pages sessions, the longest 54 ms, throughput within noise (`bench/boot/REPORT.md` "M8: V8's GC on
-the vCPU threads"). What remains there is the wasm code GC (backlog "The wasm code GC stops every vCPU").
+**Done last (2026-10-16):** where a busy vCPU's time goes in Firefox's pages session, and the lever
+(`bench/boot/REPORT.md` "M8: where a busy vCPU's time goes in Firefox", data in `bench/boot/results/m8-warm/`). 26%
+of a busy vCPU stalls on a guest function's first instruction, 83% of it after a `return_call_indirect` (direct and
+imported tail calls don't stall; the code footprint defeats the branch predictor). **Warm members**
+(`jit::Config::warm`, 16; docs/jit.md "Compile policy"): a forward region takes a same-page successor that has run 16
+dispatches but isn't compiled, so the jump-cache tail into it becomes an edge. Firefox: busy MIPS 119 → 141 (+18%),
+the session −8%, 16% more wasm, the same flushes; Alpine boot −3 to −5%, userspace −3%. One warm-32 session timed out
+waiting for Firefox (backlog; not seen in 13 others).
 
-**The task:** the backlog's first JIT item, "Why a busy vCPU on a desktop runs at ~115 MIPS". The user
-sees 300-400 MIPS in desktop use against 1000+ in benchmarks. The timelines say half of that is idle
-time and half is real: inside `vm_run_cpu` a vCPU retires 106-127 MIPS, against 600-800 for the
-userspace benchmark's phases on one vCPU. DSB and lock waits are 0.5%, compiles 2%. Find where a busy
-vCPU's time goes in Firefox's pages session, rank the levers, and build the best one.
+**The task: the user's queue (2026-10-15), in order.**
 
-## Suspects
+1. **The TLB arrays' offsets as constants** (backlog "The TLB arrays at a constant offset in every access"): every
+   load/store reaches its TLB tag and addend at `Vcpu` offset 0x40540 (`mov`+`movk` twice an access in both tiers;
+   see a hot function's disassembly with `bench/boot/results/m8-warm/tools/ann.sh` on a `jit.tsv.hot`). A per-function local `vcpu + array`, or
+   the arrays near the start of `Vcpu` (the lockstep test compares `CPU_BYTES` of `Cpu`, not `Vcpu`). Measure code
+   bytes (the session's `jit.bytes` is wasm; V8's machine code: `--print-wasm-code` on captured modules, as for the
+   slow arms), busy MIPS and the gates.
+2. **Fewer, larger modules for a browser** (backlog): ~14,500 modules of ~35 blocks a session. First split them by
+   what emitted them and by size; then the step budget and a module minimum.
+3. Later (backlog "Indirect transfers into a browser's code"): returns through the host's own call/return, re-emitting
+   hot regions whose jump-cache targets got compiled, smaller slow arms, per-module eviction, Liftoff's zero-fill.
 
-- **Hot code still in Liftoff.** V8 tiers a function up once its own budget runs out; a browser
-  spreads its time over hundreds of thousands of regions (14,079 modules, 503,158 blocks in a
-  session). Pages can't set tiering flags. Indirect levers: fewer, larger modules (the batch
-  thresholds, `BATCH_STEPS`; docs/jit.md "Compile policy"), loop regions (a back-edge spends the
-  budget faster), TurboFan code surviving flushes (V8's cache keeps a module's tiered code while a
-  module with the same bytes lives).
-- **The block interpreter.** 2.2% of the steps but ~17× slower than JIT code (the RAM-load loop
-  26.5 vs 1.5 ns): up to a quarter of the time. "95% in the JIT" on the status bar counts steps.
-- **What a desktop does that benchmarks don't:** ~2,400 syscalls and ~1,300 IRQs a second a vCPU,
-  TLB refills after context switches, transfers that leave a function (returns, indirect branches,
-  a callee in another batch), helpers.
+## How to measure (`tools/`: `bench/boot/results/m8-warm/tools/`)
 
-## How to measure
-
-1. **A host `perf` profile of the session's vCPU threads, split by tier and category**:
-   `bench/apps/perf.ts` (Liftoff, TurboFan, the core's interpreter and helpers, V8's builtins and
-   compiles); `bench/apps/chromium.ts --perf N` shows how it was taken for Chromium in Debian.
-   `perf_event_paranoid` is 2: profile your own processes; V8 needs `--perf-prof` through
-   `--js-flags` (`CHROMIUM_ARGS`). Keep `perf record` data in `bench/results/local/` (`/tmp` is a 6.9 GB tmpfs).
-2. The timelines give a busy vCPU's MIPS: `node bench/gpu/stalls.ts <outdir>/pages-all.timeline.json`
-   (steps over the time inside `vm_run_cpu`; 112-119 in the four sessions of the last A/B).
-3. Counters per phase without new ABI: `Table::helper_report` lines (below, "Learned").
-
-The session: `PHASES=pages TIMELINE_ALL=1 node bench/gpu/firefox-load.ts virgl target/archarm/desktop.qcow2 <outdir>`
-(~400 s plus ~70 s of boot: background, `timeout 900`, under `systemd-run --user --scope -p MemoryMax=10G
--p MemorySwapMax=0`; nothing else Chromium-heavy beside it). A/B as before: two sessions each at least,
-alternating; a host-side switch through `QUERY=` (the page's query), a core through swapped
-`webpc_core.wasm` files (`cmp` before each run). Throughput gates, alternating: `--only smp_alpine_jit`,
-`--only smp_user_jit_4` (`bench/run.ts --page bench/boot/index.html`, `--query=` for switches;
-`bench/results/local/gc/tp.sh` is a ready loop); for a browser's warm code `bench/apps/chromium.ts`.
-
-**Done when:** the busy vCPU's time is attributed (shares that sum to ~100%), the largest lever is built
-or measured and kept in "Tried and not kept", and the pages session's busy MIPS moved with the gates
-within noise.
+- **The session:** `PHASES=pages TIMELINE_ALL=1 node bench/gpu/firefox-load.ts virgl target/archarm/desktop.qcow2
+  <outdir>` (~380 s plus ~70 s of boot: background, `timeout 900`, under `systemd-run --user --scope -p
+  MemoryMax=10G -p MemorySwapMax=0`; nothing else Chromium-heavy beside it); busy MIPS from `node bench/gpu/stalls.ts
+  <outdir>/pages-all.timeline.json`; `results.json`'s `jit` has the wasm bytes, modules, flushes. A/B: core builds
+  swapped (`tools/abw.sh`, `cmp` before each run), two sessions each at least, alternating.
+- **Gates:** `tools/tpw.sh` (`smp_alpine_jit`, `smp_user_jit_4`, alternating, three rounds).
+- **Where inside guest code:** `tools/run-jd.sh` (`--perf-prof`: a 10.8 GB jitdump; `perf record -k mono`), then
+  `perf script -F tid,time,ip,dso --ns` and `jd` (samples resolved by time); `run-regs.sh` and `jdr` add x16/x17/LR at
+  entries. The `--perf-prof` sessions leave V8's isolate logs in the working directory, and busy MIPS fall ~10%.
+- Counters per phase without new ABI: `Table::helper_report` lines (below, "Learned").
 
 ## Learned (this track)
+
+- **Where a sample lands inside JIT code says what stalls**: a timer sample blames the oldest instruction not
+  retired, so a function's first instruction collects the frontend's waits for its code (compare with the core's own
+  functions as a control: 0.2-1% at entry). V8's registers at the entry tell how it was reached (x16 = the signature
+  after a `call_indirect`, x17 = the target of a tail call).
+- **Indirect tail calls cost what direct ones don't in a large footprint** (`chain.mjs`: 37 against 18-22 ns at
+  32,000 functions); a module-local table didn't help (35 ns). Imports of another module's functions are as cheap as
+  direct calls.
+- **A JS `&` is signed**: `(w & 0xfc000000) === 0x94000000` is never true; `>>> 0` first.
+- **The guest kernel's symbols for the desktop image**: `System.map` from `/usr/lib/modules/*/build` (the headers are
+  installed) and `Image` from the ESP (`mcopy -i <raw>@@1048576 ::/image`); the kernel isn't randomized there.
 
 - **A vCPU worker that never returns to its event loop starves Blink's tasks**: Oilpan's sweep then
   lands on the vCPU at V8's next major GC (100-800 ms). Anything else posted to those threads

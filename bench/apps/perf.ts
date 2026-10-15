@@ -31,6 +31,7 @@ const resolve = (ip: number) => {
 const cat = (sym: string) => {
   let m;
   if ((m = /^JS:0x([0-9a-f]+)_pa0x[0-9a-f]+-\d+-(\w+)/.exec(sym))) return `guest code (${BigInt('0x' + m[1]) >> 63n ? 'kernel' : 'user'}): ${m[2]}`;
+  if (/webpc_core6interp5block|webpc_core3jit9interpret/.test(sym)) return 'core: block interpreter';
   if (/webpc_core3jit(5steps|NtB\w+_5Cache(4miss|5enter)|3key)|xmiss/.test(sym)) return 'core: dispatcher (jit::steps, Cache::miss)';
   if (/webpc_core3jit5block|webpc_core3jit4emit|webpc_core3jit4wasm|Cache(4emit|7install|5flush|10invalidate|6module|4plan|4sync)|Table4sync|jit_hot/.test(sym)) return 'core: compiling (block, emit)';
   if (/jit_exec_|webpc_core3jit5count|jit_(ldst|load|store|sys|msr|mrs)/.test(sym)) return 'core: helpers\' entry';

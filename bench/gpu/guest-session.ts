@@ -82,8 +82,9 @@ export async function openSession(o: SessionOptions) {
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   // HEADED=1: a visible window (only on the Mac host, where the user allows it: never on the dev VM).
   // CHROMIUM_ARGS: extra flags (e.g. `--mute-audio` on the Mac host: its sound still renders and keeps time, unheard).
+  // CHROMIUM_JS_FLAGS: V8's flags, spaces and all (`--js-flags`; e.g. `--perf-basic-prof --perf-basic-prof-path=<dir>`).
   // A 3D machine decodes its guest's video with WebCodecs: SME hidden where the CPU needs it (tools/nosme.ts).
-  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED, args: process.env.CHROMIUM_ARGS?.split(' ').filter(Boolean), env: chromiumEnv() });
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium', headless: !process.env.HEADED, args: [...(process.env.CHROMIUM_ARGS?.split(' ').filter(Boolean) ?? []), ...(process.env.CHROMIUM_JS_FLAGS ? [`--js-flags=${process.env.CHROMIUM_JS_FLAGS}`] : [])], env: chromiumEnv() });
   const page: Page = await (await browser.newContext({ viewport: { width: 1400, height: 1300 } })).newPage();
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
   await page.addInitScript(([key, screen]) => localStorage.setItem(key, JSON.stringify({ screen })), [SETTINGS_KEY, o.screen ?? '1376x762']);

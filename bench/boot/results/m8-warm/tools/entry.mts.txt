@@ -1,0 +1,31 @@
+// Share of guest-code samples at a function's first instruction, from perf-script-like lines and a V8 perf map.
+import { readFileSync } from 'node:fs';
+const [script, map] = process.argv.slice(2);
+const entries: { start: number; end: number; name: string; seq: number }[] = [];
+let seq = 0;
+for (const l of readFileSync(map, 'utf8').split('\n')) {
+  const m = /^([0-9a-f]+) ([0-9a-f]+) (.*)$/.exec(l);
+  if (m) { const start = parseInt(m[1], 16); entries.push({ start, end: start + parseInt(m[2], 16), name: m[3], seq: seq++ }); }
+}
+entries.sort((a, b) => a.start - b.start);
+const maxLen = entries.reduce((x, e) => Math.max(x, e.end - e.start), 0);
+const resolve = (ip: number) => {
+  let lo = 0, hi = entries.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (entries[mid].start <= ip) lo = mid + 1; else hi = mid; }
+  let best: (typeof entries)[0] | undefined;
+  for (let i = lo - 1; i >= 0 && entries[i].start > ip - maxLen; i--) if (ip < entries[i].end && (!best || entries[i].seq > best.seq)) best = entries[i];
+  return best;
+};
+const n = new Map<string, [number, number]>();
+for (const l of readFileSync(script, 'utf8').split('\n')) {
+  const m = /^\s*(\S+)\s+(\d+)\s+([0-9a-f]+)\s+(.*)$/.exec(l);
+  if (!m) continue;
+  const ip = parseInt(m[3], 16);
+  const e = resolve(ip);
+  if (!e) continue;
+  const k = /_pa0x/.test(e.name) ? `guest ${/-(\w+)$/.exec(e.name)?.[1]}` : /webpc_core/.test(e.name) ? 'core' : 'other';
+  const v = n.get(k) ?? n.set(k, [0, 0]).get(k)!;
+  v[0]++;
+  if (ip === e.start) v[1]++;
+}
+for (const [k, [a, b]] of n) console.log(`${k}: ${a} samples, ${((100 * b) / a).toFixed(1)}% at entry`);

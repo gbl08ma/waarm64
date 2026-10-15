@@ -97,6 +97,14 @@ the interpreter's own code.
     dispatcher after its region ran out of steps) it is a block not compiled yet, counted from zero
     again and compiled as a head (with what it reaches in *that* batch) at the threshold. So only
     blocks with several hot entries are compiled more than once.
+    - **Warm members** (`Config::warm`, **16**; 0 in JIT-stress, JIT-check and `jit_new`): a
+      region also takes a successor in reach that has run that many dispatches but isn't compiled
+      or in the batch (not a loop head). Without it, a successor that gets hot after its
+      predecessor was compiled is reached through the jump cache forever (regions aren't
+      re-emitted): a `return_call_indirect`, which in a browser's code footprint costs a stall at
+      the target's first instruction (a quarter of a busy vCPU's time in Firefox). With 16,
+      Firefox's busy vCPUs ran 18% faster for 16% more wasm; 1 and 4 cost 41% and 33% more wasm
+      and a flush (`bench/boot/REPORT.md` "M8: where a busy vCPU's time goes in Firefox").
     - **Across pages:** a successor in another page is the batch's block that was seen at that VA
       (with the MMU off, the block at that PA). Members' positions are their VAs relative to the
       head's, and an edge into a member checks that the member's VA still maps to its page
