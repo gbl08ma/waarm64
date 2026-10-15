@@ -545,6 +545,11 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   slower. Hence: loops only, from seen blocks, after 1000 entries.
 - **An atomic load of the signal word on back-edges** (as first planned): adds nothing the run
   loop would act on sooner, since `left` bounds a region to the chunk.
+- **Parallel SMP ending a chunk at the next dispatch** when the signal word is set, another vCPU
+  queued maintenance or an unmasked IRQ is pending (2026-10-15, `bench/boot/REPORT.md` "M8: the
+  device round trip"): a ping to a busy vCPU 17% faster (it waited up to a chunk for its IRQ), the
+  userspace benchmark unchanged, but Firefox playing video no better (drops, guest MIPS, fence
+  latency): a browser's vCPUs are seldom busy when their interrupts come.
 - **Out-of-line jump-cache probes:** slower. The probes cost nothing measurable at steady state now
   that hot loops are regions.
 - **A lower compile threshold** (2–50): both boots got slower (before the block interpreter).

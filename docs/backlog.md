@@ -9,7 +9,9 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 - **Unadvertised extensions the M4 has**, in case real workloads benefit: FP16 (scalar and
   AdvSIMD), DotProd, RDM, FHM, FCMA, JSCVT (JS engines use `FJCVTZS`), FRINTTS, BF16, I8MM, LSE2,
   RCpc, FlagM, SB, DIT, SHA512 and SHA3 (OpenSSL uses both; SHA3's `EOR3`/`RAX1`/`XAR`/`BCAX` speed
-  up Keccak and are plain SIMD128 lowerings). Each needs handlers, corpus groups (the generator
+  up Keccak and are plain SIMD128 lowerings). Not MOPS (`CPYP`/`SETP` & co as a host `memory.copy`):
+  copies run at 7-21 GB/s under the JIT and are under 2% of a browser's profile (`bench/boot/REPORT.md`
+  "M8: the device round trip"). Each needs handlers, corpus groups (the generator
   already knows how to avoid them), the ID fields, a decoder-sweep update, a `VmConfig.features`
   bit, and the rule: advertise only if faster than what guests do without it.
 - **Self-hosted debug:** breakpoints, watchpoints and `MDSCR_EL1.SS` single step raise nothing
@@ -36,7 +38,11 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   appends or starts over (an epoch scheme like the code cache's `drops`). The 2× arena gained
   ~3.5%; a shared one is worth at most a few percent more.
 - **More micro-op handlers:** FP and SIMD loads and stores (memcpy), exclusives and LSE atomics,
-  EXTR, BFM run generically through `exec`; count the generic ops on a real workload first. FP itself
+  EXTR, BFM run generically through `exec`. Counted on Alpine's userspace benchmark (2026-10-15,
+  `bench/boot/REPORT.md` "M8: the device round trip"; `results/m8-devlat/generic-count.patch`): 2.9%
+  of the interpreted steps (MRS 29% of those, EXTR 10%, UMADDL 5%, FP and SIMD loads and stores
+  ~10%), well under 0.1% of the run, though a Q-register copy runs 7× slower there than integer
+  code; count them in the guest's Chromium (more cold code) before building. FP itself
   runs at a sixth of the integer rate (`FMLA`/`FMADD` always take the software FMA, vector FP goes
   lane by lane through `u128`). Tail-call dispatch (`become`, `+tail-call`) as an A/B on top. A
   faster interpreter also moves the compile policy's trade: the interpreter's speed is what

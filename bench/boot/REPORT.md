@@ -1478,3 +1478,79 @@ All under the 5% that noise allows, but mostly one way: ~1-2% plausibly the bloc
 waits for the worker. An A/A of the same (both sides with the worker: the bench page's query didn't reach its worker
 then; `results/m8-compile-worker/aa/`) moved sqlite 8% and lua 4%. Kept on: the user's latency over a percent of
 throughput. `?jit=nocw` (the page) and `--query=nocw` (bench/boot) turn it off.
+
+## M8: the device round trip, MMIO and copies (2026-10-15)
+
+The question (the user's, after the video track): Firefox's video pipeline copies buffers around, to the virtio
+devices too; can copies, MMIO or the vCPUs' traffic with the device worker go faster? Dev VM, Chromium
+153.0.8010.52 headless, Node 26.7.0, at `b4e19e4aa1a9`; raw: `results/m8-devlat/`.
+
+**How much the video case copies:** Firefox's VA-API path never puts a picture in guest RAM (dmabuf planes the host
+writes, plans/video.md §1). What it sends the GPU is ~175-440 KB a second of `SUBMIT_3D` command streams, ~100-280
+requests a second (plans/video.md §6's JSON and this session's runs); the host's write into the planes is 0.04 ms a
+picture. In the guest's kernel profile `__arch_copy_from_user` is 0.3% and `memset` 0.4%; in the guest's Chromium
+(`results/m8-chromium/perf-base-run1.txt`) glibc's `memcpy`, `memmove` and `memset` are under 2% together.
+
+**What a copy and a device access cost** (`devbench.c`, a bare-metal guest with the MMU on, in Node under the JIT;
+`runbm.ts`; natively on the dev VM, `native.c`; best of three rounds):
+
+| | JIT | block interpreter (`jit` 4) | native (M4) |
+|---|---|---|---|
+| loop of a RAM load | 1.5 ns | 26.5 ns | |
+| MMIO read (PL011 FR, GICD_CTLR, virtio-mmio MagicValue) | 219-222 ns | 235-263 ns | |
+| ICC_RPR_EL1 read / ICC_PMR_EL1 write | 137 / 131 ns | 166 / 159 ns | |
+| copy, LDP/STP Q, 64 KiB (glibc's loop shape) | 21.6 GB/s | 0.27 GB/s | 92-104 GB/s (glibc `memcpy` 105-110) |
+| copy, LDP/STP X, 64 KiB | 11.5 GB/s | 0.58 GB/s | 83-94 GB/s |
+| copy, LDTR/STTR X, 64 KiB (the kernel's usercopy) | 6.8 GB/s | 0.16 GB/s | |
+| `DC ZVA`, 64 KiB | 14.1 GB/s | 0.62 GB/s | 149-158 GB/s |
+| copy, LDP/STP Q, 8 MiB | 20.3 GB/s | 0.27 GB/s | 63-64 GB/s |
+
+Copies under the JIT are 3-10× native, no worse than code in general. FEAT_MOPS (`CPYP`/`CPYM`/`CPYE` as a host
+`memory.copy`) would be the lever if copies were a cost; they aren't, so it stays unadvertised. A device access is
+~150 RAM loads (the block leaves for the run loop, which replays the access on the interpreter's `vm::Io` bus), but
+there are few: Firefox's 4,700-5,500 IRQs a second and ~100-280 GPU requests at ~2-5 accesses each are 2-6 ms a
+second of four vCPUs' time, ~0.1%.
+
+**The device round trip** (`--only net --query='jit=1&…'`; `?jit=1`, `?ncpus=N`, `?chunk=N`, `?stats=1`, `?disk=`,
+`?script=` are new to bench/boot's I/O benchmarks: docs/benchmarking.md). Ping's average RTT, medians of 10 boots
+(IQR ≤ 0.009 ms); `bench-netload.sh` (on a copy of the disk: its header) warms up, then 5,000 small pings idle and
+5,000 with every vCPU busy:
+
+| | stock `net`: small / full-size | warm small, idle | warm small, vCPUs busy |
+|---|---|---|---|
+| round-robin (one thread) | 0.109 / 0.220 ms | 0.085 ms | 0.138 ms |
+| a worker per vCPU (the page's), 1 vCPU | 0.100 / 0.205 ms | 0.075 ms | 0.144 ms |
+| the same, chunk 4,096 | | 0.079 ms | 0.132 ms |
+| 2 vCPUs | | 0.085 ms | 0.158 ms |
+
+`?stats=1` splits the phases (`*.log`): an idle round trip is ~81 µs of wall time, ~16,900 guest instructions
+(~68 µs: the virtio-net driver, the stack, ping) and **~12 µs out of the core** (the doorbell, the device worker's
+gateway answering, the vCPU's wake-up). The bare hops (`hop.html`, `hop.ts`: a worker rings, another answers, by how
+each waits; Chromium's timers are 5 µs grains): 10 µs a round trip when the ringing side polls first as the vCPUs do
+(50 µs), 25-35 µs when it sleeps at once; the same from a nested worker, and with the answering thread busy 1 ms in
+every 4. So the host's share is ~15% of an idle round trip, and the device worker's `waitAsync` costs no more than a
+blocking wait. (`dd` and fio's disk path is the backend's own time: bench/io/REPORT.md, which also showed loop 5's
+draw stalls behind disk reads gone.)
+
+**A busy vCPU takes an interrupt late:** the run loop looks at the signal word and its IRQ line only between chunks
+(32,768 steps, ~60 µs at this guest's ~550 MIPS, longer at a browser's 50-100 MIPS per vCPU), so a ping to a busy vCPU
+waits ~60 µs more. A 4,096-step chunk takes 8% off that round trip (its throughput not measured: the next try ends
+a chunk only when something waits, and gained more). **Tried: ending the chunk at the next dispatch** once the signal word is set,
+another vCPU has queued maintenance (a TLBI broadcast its DSB waits for) or an unmasked IRQ is pending (parallel mode
+only: `kick/kick.patch`). The busy round trip went 0.144 → 0.119 ms (1 vCPU, −17%) and 0.158 → 0.142 ms (2), idle
+unchanged, the userspace benchmark on 4 vCPUs +0.6% (19,789 ms (197) → 19,908 (232), 8 runs each over 4 alternating
+rounds, phases −1.2% to +1.3%: noise). But on Firefox playing the Sintel trailer (`bench/audio/avsync.ts virgl`,
+`CLIPS=sintel`, 4 vCPUs, alternating; `kick/firefox/`) it gave nothing: frames dropped 267, 270, 426, 250 (base) against
+321, 303, 270, 205, 492, drop rates median 0.53 against 0.58, the guest at 256 against 249 M steps a second, fences
+completed to the guest in 0.13-0.20 ms either way. **Not kept** (docs/jit.md "Tried and not kept"): the workload it was
+for doesn't move, and a browser's vCPUs are seldom busy when their interrupts come (they idle, and wake in ~10-35 µs).
+
+**The block interpreter's generic path** (the backlog's "FP and SIMD loads and stores (memcpy)"; `generic-count.patch`,
+Alpine's userspace benchmark through `bench/boot/userprof.ts`, `userprof-generic.json`): 1.13M of the 39.4M
+interpreted steps ran generically (2.9%; the interpreted steps are 0.4% of the run's 10.6G): MRS 29%, EXTR 10%,
+UMADDL 5%, FP and SIMD loads and stores ~10% together, STTR 3%, LDADD 3%, DMB 3%. They are 7× slower there than an
+integer load loop (the table above), but at that share they cost well under 0.1% of a run; the guest's Chromium,
+whose cold code is larger (bench/apps/REPORT.md: 2-5% of its steps interpreted), is where to count them again.
+
+**So:** nothing in copies, MMIO or the device worker's round trip is a lever for Firefox's video; what it drops is the
+guest's CPU over its media pipeline, as plans/video.md §6 found.

@@ -372,12 +372,32 @@ async function coremarkVm(o: Options): Promise<Sample[]> {
 
 /** Realtime boots of the Buildroot guest with the test devices running `script`, `n` of them. */
 async function scriptBoots(o: Options, script: string, n: number) {
-  const img = { ...(await images()), test: true };
+  // `?jit=1` on the page boots them under the JIT (the interpreter otherwise, as the early reports measured).
+  // `?ncpus=N`: parallel SMP on N vCPUs (a worker each, as the page runs); `?chunk=N`: its chunk (`vm_set_chunk`);
+  // `?disk=`/`?script=`: another root disk and script (ad hoc experiments).
+  const q = new URLSearchParams(globalThis.location?.search);
+  const jit = q.get('jit') === '1' ? (1 as const) : undefined;
+  const ncpus = q.has('ncpus') ? Number(q.get('ncpus')) : undefined;
+  const chunk = q.has('chunk') ? Number(q.get('chunk')) : undefined;
+  const base = await images();
+  const img = { ...base, test: true, jit, disk: q.has('disk') ? new URL(q.get('disk')!, location.href).href : base.disk };
   const module = await WebAssembly.compile(img.wasm);
-  const cmdline = `${CMDLINE} -- ${script}`;
+  const cmdline = `${CMDLINE} -- ${q.get('script') ?? script}`;
   const runs = [];
-  for (let i = 0; i < (o.quick ? Math.min(n, 2) : n); i++) runs.push(await boot(module, img, undefined, { cmdline, realtime: true }));
-  return { runs, params: { cmdline, realtime: true } };
+  const onVm = chunk ? (vm: Awaited<ReturnType<typeof bootVm>>) => vm.setChunk(chunk) : undefined;
+  // `?stats=1`: the counters between each phase's markers, as what the phase spent in the guest (steps) and out of
+  // it (parallel mode's time out of the core: idle, the host's exits). How bench/boot/REPORT.md split a ping.
+  type Stats = ReturnType<Awaited<ReturnType<typeof bootVm>>['stats']> & { t: number };
+  const at: Record<string, Stats> = {};
+  const onMark = q.has('stats') ? (m: string, vm: Awaited<ReturnType<typeof bootVm>>) => { at[m] = { ...vm.stats(), t: performance.now() }; } : undefined;
+  for (let i = 0; i < (o.quick ? Math.min(n, 2) : n); i++) {
+    runs.push(await boot(module, img, onVm, { cmdline, realtime: true, ncpus, parallel: ncpus ? true : undefined, onMark }));
+    for (const [m, b] of Object.entries(at)) {
+      const a = m.endsWith(' end') && at[m.replace(/ end$/, ' start')];
+      if (a) o.log?.(`${m.slice(0, -4)}: ${(b.t - a.t).toFixed(0)} ms, ${((b.steps - a.steps) / 1e6).toFixed(1)}M steps, out ${((b.par.outNs - a.par.outNs) / 1e6).toFixed(1)} ms, ${b.irqs - a.irqs} IRQs, ${b.par.idles - a.par.idles} idles, ${((b.jit.decSteps - a.jit.decSteps) / 1e6).toFixed(2)}M interpreted`);
+    }
+  }
+  return { runs, params: { cmdline, realtime: true, jit: jit ?? 0, ncpus, chunk } };
 }
 
 /** ms between the markers "<what> start" and "<what> end". */

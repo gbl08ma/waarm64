@@ -1,0 +1,8 @@
+(node:1946865) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+net_big_pps                  {"cmdline":"console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-net.sh","realtime":true,"jit":1,"ncpus":1,"pings":1000,"adapter":"loopback (device worker)","frame":1514}   4268.352 ±55.952 round trips/s
+net_big_mibs                 {"cmdline":"console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-net.sh","realtime":true,"jit":1,"ncpus":1,"pings":1000,"adapter":"loopback (device worker)","frame":1514}      6.163 ±0.081 MiB/s each way
+net_big_rtt                  {"cmdline":"console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-net.sh","realtime":true,"jit":1,"ncpus":1,"pings":1000,"adapter":"loopback (device worker)","frame":1514,"source":"ping's average"}      0.205 ±0.005 ms
+net_small_pps                {"cmdline":"console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-net.sh","realtime":true,"jit":1,"ncpus":1,"pings":1000,"adapter":"loopback (device worker)","frame":98}   8214.576 ±105.057 round trips/s
+net_small_rtt                {"cmdline":"console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-net.sh","realtime":true,"jit":1,"ncpus":1,"pings":1000,"adapter":"loopback (device worker)","frame":98,"source":"ping's average"}      0.100 ±0.004 ms
+wrote bench/results/local/2026-10-15T15-44-38-306Z-default.json

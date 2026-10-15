@@ -1,0 +1,26 @@
+(node:1948541) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+net small: 432 ms, 86.5M steps, out 474.3 ms, 6130 IRQs, 8952 idles, 0.31M interpreted
+net big: 809 ms, 1193.3M steps, out 32.5 ms, 9008 IRQs, 0 idles, 0.68M interpreted
+net small: 470 ms, 91.0M steps, out 519.8 ms, 9914 IRQs, 15544 idles, 0.47M interpreted
+net big: 697 ms, 1002.6M steps, out 36.9 ms, 7230 IRQs, 762 idles, 0.58M interpreted
+net small: 427 ms, 86.8M steps, out 465.1 ms, 5783 IRQs, 9459 idles, 0.43M interpreted
+net big: 709 ms, 783.9M steps, out 38.0 ms, 5815 IRQs, 432 idles, 0.72M interpreted
+net small: 442 ms, 87.3M steps, out 490.6 ms, 6294 IRQs, 10101 idles, 0.46M interpreted
+net big: 808 ms, 1148.6M steps, out 34.6 ms, 8756 IRQs, 4 idles, 1.06M interpreted
+net small: 467 ms, 90.9M steps, out 500.7 ms, 9915 IRQs, 14861 idles, 0.41M interpreted
+net big: 686 ms, 916.6M steps, out 36.0 ms, 6309 IRQs, 779 idles, 0.65M interpreted
+net small: 418 ms, 86.6M steps, out 460.0 ms, 5608 IRQs, 9355 idles, 0.40M interpreted
+net big: 729 ms, 989.2M steps, out 33.7 ms, 8314 IRQs, 526 idles, 1.01M interpreted
+net small: 456 ms, 91.1M steps, out 495.8 ms, 10103 IRQs, 14708 idles, 0.40M interpreted
+net big: 776 ms, 1046.3M steps, out 30.5 ms, 10116 IRQs, 1 idles, 1.12M interpreted
+net small: 420 ms, 86.6M steps, out 456.5 ms, 5622 IRQs, 9234 idles, 0.45M interpreted
+net big: 826 ms, 1119.0M steps, out 31.5 ms, 9305 IRQs, 3 idles, 0.76M interpreted
+net small: 458 ms, 91.2M steps, out 491.9 ms, 10104 IRQs, 14576 idles, 0.34M interpreted
+net big: 794 ms, 1198.3M steps, out 32.1 ms, 8444 IRQs, 0 idles, 0.61M interpreted
+net_big_pps                  {"cmdline":"console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-netload.sh","realtime":true,"jit":1,"ncpus":2,"pings":1000,"adapter":"loopback (device worker)","frame":1514}   1330.142 ±161.479 round trips/s
+net_big_mibs                 {"cmdline":"console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-netload.sh","realtime":true,"jit":1,"ncpus":2,"pings":1000,"adapter":"loopback (device worker)","frame":1514}      1.921 ±0.233 MiB/s each way
+net_big_rtt                  {"cmdline":"console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-netload.sh","realtime":true,"jit":1,"ncpus":2,"pings":1000,"adapter":"loopback (device worker)","frame":1514,"source":"ping's average"}      0.142 ±0.019 ms
+net_small_pps                {"cmdline":"console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-netload.sh","realtime":true,"jit":1,"ncpus":2,"pings":1000,"adapter":"loopback (device worker)","frame":98}   2225.307 ±163.857 round trips/s
+net_small_rtt                {"cmdline":"console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-netload.sh","realtime":true,"jit":1,"ncpus":2,"pings":1000,"adapter":"loopback (device worker)","frame":98,"source":"ping's average"}      0.085 ±0.006 ms
+wrote bench/results/local/2026-10-15T15-49-06-314Z-default.json

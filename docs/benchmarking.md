@@ -40,7 +40,12 @@ V8's map resolving what perf leaves `[unknown]`).
   reuse"). They set `idleLimitMs`, so a lost wake-up throws instead of hanging.
 - **Guest-timed workloads run in realtime mode** (`dd`, `fio`, `openssl speed`, CoreMark in the
   VM); host-timed ones deterministically. I/O benchmarks: one fresh boot per sample, timed by the
-  host between the guest script's markers unless the tool times itself.
+  host between the guest script's markers unless the tool times itself. `fio`, `p9` and `net` boot
+  under the interpreter unless the page's query (`bench/run.ts --query=`) says `jit=1`; `ncpus=N`
+  runs them in parallel SMP (a worker per vCPU, as the page does), `chunk=N` sets its chunk
+  (`vm_set_chunk`), `stats=1` logs each `<x> start`/`<x> end` phase's steps, time out of the core,
+  IRQs and interpreted steps, and `disk=`/`script=` boot another root disk and script (ad hoc:
+  `bench/boot/results/m8-devlat/bench-netload.sh`).
 - `alpine_user_jit` (the Alpine userspace benchmark, `images/build.sh alpine-user`): after the
   boot, phases timed from console markers: compression (`xz -6 -T1` and `gzip -9` of a fixed ~16
   MiB corpus on tmpfs, then decompression), Lua (binary-trees, fannkuch-redux, n-body,

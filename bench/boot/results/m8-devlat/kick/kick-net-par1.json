@@ -1,0 +1,167 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-10-15T15:49:16.317Z",
+ "commit": "b4e19e4aa1a9",
+ "dirty": true,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "query": "jit=1&ncpus=1",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "net_big_pps",
+   "unit": "round trips/s",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-net.sh",
+    "realtime": true,
+    "jit": 1,
+    "ncpus": 1,
+    "pings": 1000,
+    "adapter": "loopback (device worker)",
+    "frame": 1514
+   },
+   "samples": [
+    4101.554490113994,
+    4133.170763090449,
+    4154.808152721358,
+    4201.06286949493,
+    4293.964832603862,
+    4342.162395525073,
+    4230.834320271947,
+    4184.888369438939,
+    4281.738386658828,
+    4139.501189289509
+   ],
+   "median": 4192.975619466934,
+   "iqr": 125.68443991463664,
+   "n": 10
+  },
+  {
+   "name": "net_big_mibs",
+   "unit": "MiB/s each way",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-net.sh",
+    "realtime": true,
+    "jit": 1,
+    "ncpus": 1,
+    "pings": 1000,
+    "adapter": "loopback (device worker)",
+    "frame": 1514
+   },
+   "samples": [
+    5.922082422287547,
+    5.967731986350003,
+    5.998973410816323,
+    6.065758881011318,
+    6.199896580278633,
+    6.269487253975831,
+    6.108744774715164,
+    6.042405120211176,
+    6.182243268395867,
+    5.976872253975217
+   ],
+   "median": 6.054082000611247,
+   "iqr": 0.18147110179019776,
+   "n": 10
+  },
+  {
+   "name": "net_big_rtt",
+   "unit": "ms",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-net.sh",
+    "realtime": true,
+    "jit": 1,
+    "ncpus": 1,
+    "pings": 1000,
+    "adapter": "loopback (device worker)",
+    "frame": 1514,
+    "source": "ping's average"
+   },
+   "samples": [
+    0.221,
+    0.21,
+    0.221,
+    0.213,
+    0.202,
+    0.207,
+    0.205,
+    0.211,
+    0.207,
+    0.212
+   ],
+   "median": 0.2105,
+   "iqr": 0.005750000000000005,
+   "n": 10
+  },
+  {
+   "name": "net_small_pps",
+   "unit": "round trips/s",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-net.sh",
+    "realtime": true,
+    "jit": 1,
+    "ncpus": 1,
+    "pings": 1000,
+    "adapter": "loopback (device worker)",
+    "frame": 98
+   },
+   "samples": [
+    7755.545218557137,
+    7343.491826508188,
+    7966.540531288087,
+    8032.451102146257,
+    7793.321120321572,
+    8029.548741820323,
+    8148.9630501522315,
+    8048.289738430583,
+    7662.835249042146,
+    7949.125599197488
+   ],
+   "median": 7957.833065242787,
+   "iqr": 266.73631806652793,
+   "n": 10
+  },
+  {
+   "name": "net_small_rtt",
+   "unit": "ms",
+   "params": {
+    "cmdline": "console=ttyAMA0 earlycon panic=-1 root=/dev/vda ro init=/init -- /bench-net.sh",
+    "realtime": true,
+    "jit": 1,
+    "ncpus": 1,
+    "pings": 1000,
+    "adapter": "loopback (device worker)",
+    "frame": 98,
+    "source": "ping's average"
+   },
+   "samples": [
+    0.109,
+    0.12,
+    0.106,
+    0.102,
+    0.103,
+    0.109,
+    0.098,
+    0.101,
+    0.115,
+    0.105
+   ],
+   "median": 0.1055,
+   "iqr": 0.006750000000000006,
+   "n": 10
+  }
+ ]
+}
