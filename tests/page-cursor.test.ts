@@ -57,11 +57,14 @@ test("the guest's cursor is the canvas's CSS cursor, scaled with it, hidden when
 
   assert.equal(await cursor(), '', 'no guest cursor yet: the page\'s own pointer');
   await send('red', 3, 4);
-  await page.waitForFunction(() => /^image-set\(url\("?blob:.*"?\) 1x\) \d+ \d+, none$/.test(document.querySelector<HTMLCanvasElement>('#screen')!.style.cursor), null, { timeout: 5000 });
+  await page.waitForFunction(() => /^image-set\(url\("?blob:[^)]*"?\) 1x\) \d+ \d+(, image-set\(url\("?blob:[^)]*"?\) 1x\) \d+ \d+)?, none$/.test(document.querySelector<HTMLCanvasElement>('#screen')!.style.cursor), null, { timeout: 5000 });
   const { style, scale } = await page.evaluate(() => { const c = document.querySelector<HTMLCanvasElement>('#screen')!; return { style: c.style.cursor, scale: Number(c.dataset.scale) }; });
   const size = Math.min(128, Math.round(64 * scale));
   const [hx, hy] = [Math.round((3 * size) / 64), Math.round((4 * size) / 64)];
-  assert.ok(style.endsWith(`) ${hx} ${hy}, none`), `the hotspot is scaled with the cursor: ${style}`);
+  assert.ok(style.includes(`) ${hx} ${hy}`), `the hotspot is scaled with the cursor: ${style}`);
+  // A cursor over 32 CSS pixels has a 32-pixel one after it: Chromium falls back to it where the big one would reach past the page's edge.
+  const dpr = await page.evaluate(() => devicePixelRatio);
+  assert.equal(style.split('image-set(').length - 1, size > Math.floor(32 * dpr) ? 2 : 1, `the fallback cursor: ${style}`);
   // The image is the guest's, at that size, with its alpha.
   const url = /url\("?(blob:[^")]+)/.exec(style)![1];
   const px = await page.evaluate(async (u) => {

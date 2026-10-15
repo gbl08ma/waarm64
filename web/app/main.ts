@@ -116,7 +116,7 @@ function fit() {
 // whole; Chromium takes cursor images up to 128×128 device pixels, so a bigger one is capped. `none` is the guest hiding it.
 type GuestCursor = { image: ArrayBuffer | null | undefined; hotX: number; hotY: number };
 let guestCursor: GuestCursor | undefined;
-let cursorUrl: string | undefined;
+let cursorUrls: string[] = [];
 let cursorToken = 0;
 function showCursor() {
   const token = ++cursorToken;
@@ -124,21 +124,30 @@ function showCursor() {
   if (!c || c.image === undefined) { canvas.style.cursor = ''; return; }
   if (c.image === null) { canvas.style.cursor = 'none'; return; }
   const scale = Number(canvas.dataset.scale) || 1;
-  const size = Math.min(128, Math.max(1, Math.round(64 * scale)));
-  const k = size / 64;
   const draw = new OffscreenCanvas(64, 64);
   draw.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(c.image.slice(0)), 64, 64), 0, 0);
-  const out = new OffscreenCanvas(size, size);
-  const ctx = out.getContext('2d')!;
-  ctx.imageSmoothingEnabled = !Number.isInteger(k);
-  ctx.drawImage(draw, 0, 0, size, size);
-  out.convertToBlob().then((blob) => {
-    if (token !== cursorToken) return;
-    const url = URL.createObjectURL(blob);
-    if (cursorUrl) URL.revokeObjectURL(cursorUrl);
-    cursorUrl = url;
-    const hot = (n: number) => Math.min(size - 1, Math.round(n * k));
-    canvas.style.cursor = `-webkit-image-set(url(${url}) ${devicePixelRatio}x) ${hot(c.hotX)} ${hot(c.hotY)}, none`;
+  const render = (size: number, keep = size) => {
+    const k = size / 64;
+    const out = new OffscreenCanvas(keep, keep);
+    const ctx = out.getContext('2d')!;
+    ctx.imageSmoothingEnabled = !Number.isInteger(k);
+    ctx.drawImage(draw, 0, 0, size, size);
+    return out.convertToBlob().then((blob) => {
+      const hot = (n: number) => Math.min(keep - 1, Math.round(n * k));
+      return { url: URL.createObjectURL(blob), at: `${hot(c.hotX)} ${hot(c.hotY)}` };
+    });
+  };
+  // Chromium drops a cursor over 32×32 CSS pixels for the next one in the list when its image would reach past the page's edge (so
+  // a page can't draw over the browser's UI): the guest's cursor then vanished in the last 64 pixels, so the same cursor cut to its top-left 32 pixels follows it (a cursor's drawing is in the corner by its hotspot).
+  const size = Math.min(128, Math.max(1, Math.round(64 * scale)));
+  const small = Math.floor(32 * devicePixelRatio);
+  Promise.all([render(size), size > small ? render(size, small) : undefined]).then(([big, little]) => {
+    const urls = [big.url, little?.url];
+    if (token !== cursorToken) { for (const u of urls) if (u) URL.revokeObjectURL(u); return; }
+    for (const u of cursorUrls) URL.revokeObjectURL(u);
+    cursorUrls = urls.filter((u) => u !== undefined);
+    const one = (r: { url: string; at: string }) => `-webkit-image-set(url(${r.url}) ${devicePixelRatio}x) ${r.at}`;
+    canvas.style.cursor = [one(big), little && one(little), 'none'].filter(Boolean).join(', ');
   }, () => {});
 }
 new ResizeObserver(() => { fit(); scheduleSize(); }).observe(screenBox);

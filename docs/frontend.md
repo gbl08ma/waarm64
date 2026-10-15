@@ -368,7 +368,7 @@ starts; following live is the agent's job ([plans/agent.md](plans/agent.md)).
 
 **The guest's cursor** (virtio-gpu machines) is the canvas's CSS cursor: the presenter sends the 64×64 image and its hotspot when
 they change (not on moves: the tablet is absolute, the host's pointer is the guest's), and the page draws it at the canvas's scale into
-a blob (`image-set(url(…) <dpr>x) hotX hotY, none`; at most 128×128 device pixels), again whenever the scale changes. A cursor the guest
+a blob (`image-set(url(…) <dpr>x) hotX hotY, none`; at most 128×128 device pixels, followed by the same cursor cut to its top-left 32 CSS pixels: Chromium skips a cursor over 32×32 where its image would reach past the page's edge, which made the guest's cursor vanish in the last 64 pixels), again whenever the scale changes. A cursor the guest
 never set leaves the page's own pointer; one it hid is `none`. docs/plans/graphics.md §14.
 
 ## Sound
