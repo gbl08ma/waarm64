@@ -1,5 +1,5 @@
-// GTK4 applications on the page (G4's loop 5, the kickoff's decision 2; dev-only, not in tests): the user's Arch image
-// (`bench/results/local/myarch3.qcow2`, GTK 4.22 and gtk4-demo) as bench/gpu/firefox-load.ts runs it: sway on GLES,
+// GTK4 applications on the page (G4's loop 5, the kickoff's decision 2; dev-only, not in tests): the desktop guest
+// (`target/arch/desktop.qcow2`, images/arch/desktop.sh: GTK 4.24 and gtk4-demo) as bench/gpu/firefox-load.ts runs it: sway on GLES,
 // then gtk4-demo's demos one at a time (`--run=<name>`) with GSK's renderer picked by GSK_RENDERER (`gl`, GSK's GL
 // renderer, by default; `cairo` its software one). Each demo is left WARM_S seconds, then measured for PHASE_S (the
 // compositor's frames a second, every thread's CPU, the renderer's stats; bench/gpu/guest-session.ts `load`), its
