@@ -1742,3 +1742,63 @@ the hang seen once before with warm 32 (backlog); it isn't counted.
 
 Below the noise, but the same sign on every boot median; nothing regressed. Kept as less code at no cost: the TLB
 grew to 770 KiB a vCPU (two spare slots an index), and a whole flush clears 512 KiB instead of 384.
+
+## M8: the compile worker's modules, posted (2026-10-16)
+
+Queue item 2 was "fewer, larger modules for a browser" (~14,500 a pages session). First, what a module costs the
+vCPUs: every vCPU installs every module (`Table::install`: `env.jit_install` on the vCPU's thread), 57,000 installs a
+session, 20-21 s of vCPU time (`compileNs`), ~2.5% of a busy vCPU's. One session with every install timed
+(`web/vm.ts` instrumented, not kept; `results/m8-posted/install-split.txt`):
+
+| functions | installs | ms each | `new WebAssembly.Module` | `t` imports | instantiate | table sets | KB |
+|---|---|---|---|---|---|---|---|
+| 1 | 10,803 | 0.093 | 0.068 | 0.010 | 0.015 | 0.001 | 3 |
+| 4-7 | 7,495 | 0.198 | 0.154 | 0.016 | 0.024 | 0.003 | 9 |
+| 16-31 | 9,955 | 0.378 | 0.307 | 0.025 | 0.038 | 0.005 | 32 |
+| 64-127 | 4,042 | 0.881 | 0.729 | 0.048 | 0.081 | 0.016 | 114 |
+| 256 up | 372 | 2.657 | 2.277 | 0.112 | 0.199 | 0.057 | 361 |
+| all | 57,377 | 0.368 | 81% | 6% | 10% | 2% | |
+
+Four fifths of an install is `new WebAssembly.Module(bytes)`, though the compile worker has compiled the module (a
+cache hit), and it grows with the bytes (~6 µs a KB): V8 decodes and validates every function body before it looks the
+module up in its cache. Fewer modules would save only the fixed part (~0.08 ms an install, a fifth). Of the modules,
+82% are tier-ups (11,860 of 14,436; the batch triggers make the rest).
+
+**Built:** the compile worker posts each compiled `WebAssembly.Module` to every vCPU's host before it publishes
+`ready`, and `env.jit_install` takes the module's number (ABI 37): the host instantiates the posted module. It arrives
+through the vCPU worker's event loop, which a vCPU visits every 100 ms (`yieldMs`); if it isn't there yet the host
+returns −2, the table parks on it (asks again only after the vCPU has been out of the core) and the run ends at the
+chunk's end with `BUDGET` short of the budget, on which the vCPU worker goes through its event loop at once. 80-85% of
+installs park once; none waited past the second's backstop.
+
+Alternating, Chromium 153, the dev VM. The baseline (`d0`) is the same build with the table always passing 0 (the
+host compiles the bytes, as before). JSON in `results/m8-posted/`. The build measured parked every module when there's no
+worker (seq 0; fixed before the commit), a path neither the gates nor the page take.
+
+**The gates** (three rounds each, pooled medians, ms; the vCPUs' install time from the counters):
+
+| | before | posted | |
+|---|---|---|---|
+| `smp_alpine_jit` total, 1 / 2 / 4 vCPUs | 9600, 9313, 9425 | 9478, 9178, 9276 | −1.3, −1.4, −1.6% |
+| `smp_user_jit_4` total | 18959 | 18325 | −3.3% |
+| compress, Lua, churn, SQLite | 1827, 3067, 2544, 2485 | 1744, 3038, 2448, 2370 | −4.6, −1.0, −3.8, −4.6% |
+| install time, `smp_alpine_jit` 1 vCPU / `smp_user_jit_4` | 155-156 / 1284-1301 ms | 37-38 / 251-254 ms | −76, −80% |
+
+Every round's median moved the same way.
+
+**Firefox's pages session** (one session each; stalls: chunks of a vCPU that took 20 ms or more, `bench/gpu/stalls.ts`):
+
+| | session | busy MIPS | vCPU stalls ≥20 ms | vCPU install time | overdue |
+|---|---|---|---|---|---|
+| before | 373, 378, 377 s | 134, 138, 139 | 5, 7, 9 | 20.2, 21.2, 20.5 s | 0, 60, 0 |
+| **posted** | 370, 367 s | 138, 137 | 0, 3 | 3.7, 3.6 s | 0, 0 |
+
+Install time −82%; busy MIPS even, within the sessions' spread (installs were ~2.5% of a busy vCPU); the 20-45 ms
+stalls mostly gone: those were installs whose `new WebAssembly.Module` waited on V8 (its module cache while the worker
+compiled the same bytes, or the wasm code GC), which no longer runs on a vCPU. The pages load as before. A third
+session (`d-2`, not counted) hung 330 s on Firefox's first page as `a-1` did in the A/B before (backlog), with no
+stall and no overdue install.
+
+**For "fewer, larger modules"**: what a module costs a vCPU now is the fixed part of an install (~0.06 ms, a table
+of four: 0.25 ms of vCPU time) and V8's ~16 KB besides its code; the case for fewer modules rests on memory and the
+wasm code GC, not install time.

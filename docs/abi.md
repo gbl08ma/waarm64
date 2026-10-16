@@ -143,6 +143,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 91–100 | parallel SMP (26): DSBs that waited for TLBI IS, ns waited; TLBI IS broadcast and IC operations issued (ICs are not broadcast: the code cache is shared, [jit.md](jit.md) "Sharing"); queue drains that applied something; IDLE exits (WFI); platform-lock acquisitions that found it held, ns waited; WFEs (each a yield); ns out of `vm_run_cpu` between runs (idle or in the host) |
 | 101–103 | the block interpreter (33, [cpu.md](cpu.md) "The block interpreter"): steps it ran, blocks it decoded, times a table's cache of them started over (full) |
 | 104–105 | the compile worker (36, `env.jit_compile` above): modules a table installed once the worker had compiled them; ones it compiled itself after waiting a second for the worker |
+| 106–107 | (37) times the host didn't have the worker's compiled module yet when a table went to install it; runs that ended early (`BUDGET`) for it to arrive |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -171,11 +172,17 @@ puts its functions into the core's table.
   pointers are indexes into it. `jit.bind(instance)` records `base` = the table's length then. The
   core owns **slot** allocation (slot *s* is table index `base + s`), so eviction reuses slots and
   the table stops growing at the code cache's size.
-- **`env.jit_install(ptr, len, slot) -> i32`:** the host copies the bytes out of shared memory,
-  compiles and instantiates them **synchronously** (`new WebAssembly.Module`/`Instance` in the
-  vCPU worker), grows the table if needed, sets exports `f0, f1, …` at `base + slot + k`, and
-  returns `base + slot` (−1 before `bind`: the core then only interprets). A module that doesn't
-  compile is a JIT bug: the exception propagates and the run fails.
+- **`env.jit_install(ptr, len, slot, seq) -> i32`:** with `seq` 0 the host copies the bytes out of
+  shared memory and compiles them **synchronously** (`new WebAssembly.Module` in the vCPU worker);
+  with `seq` ≠ 0 (ABI 37) it takes instead the module the compile worker compiled as number `seq`
+  (below), which the worker posts to every vCPU's host and which arrives through the vCPU worker's
+  event loop, or returns **−2** if it hasn't arrived yet. Then it instantiates the module, grows
+  the table if needed, sets exports `f0, f1, …` at `base + slot + k`, and returns `base + slot`
+  (−1 before `bind`: the core then only interprets). On −2 the table keeps the module queued
+  (its blocks interpreted), asks again only after its vCPU has been out of the core, and ends the
+  run early with `BUDGET` (fewer steps than the budget): the host's vCPU worker then goes through
+  its event loop before it runs the vCPU again. Past a second it passes `seq` 0. A module that
+  doesn't compile is a JIT bug: the exception propagates and the run fails.
 - **`env.jit_compile(ptr, len, seq, epoch, ready) -> i32`** (ABI 36): the core hands each module it
   emits to the host's compile worker first (`web/jit-compile-worker.ts`, parallel SMP), as number
   `seq` (from 1, by the cache) of code-cache epoch `epoch`. The host posts a copy and returns 1, or
@@ -470,3 +477,4 @@ implemented by this step).
 | 34 | `vm_set_chunk` (the PC sampler's chunk in parallel mode; M8 graphics G4) |
 | 35 | FEAT_RNG and FEAT_E0PD: `VmConfig.features` bits 1 and 2, `VmConfig.rng_seed`; a snapshot of a VM with FEAT_RNG keeps each vCPU's stream position |
 | 36 | `env.jit_compile`: the JIT's modules compiled in a worker of their own before the vCPUs install them |
+| 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

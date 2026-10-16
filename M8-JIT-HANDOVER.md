@@ -8,17 +8,23 @@ docs/backlog.md "Interpreter" and "JIT". The previous handovers of this track (t
 arenas, 2026-10-09; V8's GC stalls, 2026-10-15; where a busy vCPU's time goes, 2026-10-15) are in git history;
 their lessons are below.
 
-**Done last (2026-10-16): the `Vcpu`'s fixed offsets within V8's reach** (queue item 1; `bench/boot/REPORT.md`
-"M8: the `Vcpu`'s fixed offsets within V8's reach", data in `bench/boot/results/m8-tlbc/`; docs/jit.md "Functions",
-"Loads and stores"). The TLB arrays are interleaved by index (`Tlb::e[index].0[array]`, a 128-byte line), `jit::State`
-and the TLB's scalars sit before the arrays, and the transfer cache's index has 0x80000 ORed in: every fixed offset JIT
-code loads is under 0x800 (asserted), where V8 had built 0x10540-0xa0db0 with `mov`+`movk` (2.4% of the hottest
-Firefox functions' instructions). Gates −0.4 to −0.9% (under the noise, same sign everywhere), Firefox even, the core
-62 KB smaller. The audit the user asked for (other state at inconvenient offsets) found only these: the rest of the
-32-bit constants in hot code are `jc + constant` for keys known at compile time (inherent), and RAM's base appears only
-with the MMU off.
+**Done last (2026-10-16): the compile worker's modules, posted** (ABI 37; `bench/boot/REPORT.md` "M8: the compile
+worker's modules, posted", data in `bench/boot/results/m8-posted/`; docs/jit.md "Sharing", docs/abi.md
+`env.jit_install`). Starting queue item 2, a session with every install timed showed that four fifths of a vCPU's
+install time was `new WebAssembly.Module(bytes)`, a cache hit that still decodes and validates every function. Now the
+worker posts each compiled `Module` to every vCPU's host, `jit_install` takes the module's `seq` and instantiates
+it, and returns −2 when it hasn't arrived yet: the table parks (`Table::parked`), the run ends early with `BUDGET`
+short of the budget, and `web/vcpu-worker.ts` goes through its event loop at once. vCPU install time −76 to −82%;
+gates: Alpine boot −1.3 to −1.6%, Alpine userspace −3.3% (compress, SQLite −4.6%); Firefox busy MIPS even, vCPU
+stalls ≥20 ms 5-9 a session → 0-3.
 
-**Before that:** warm members (`jit::Config::warm`, 16; Firefox busy MIPS 119 → 141), after finding that 26% of a busy
+**Before that: the `Vcpu`'s fixed offsets within V8's reach** (queue item 1; `bench/boot/REPORT.md`, data in
+`bench/boot/results/m8-tlbc/`): the TLB arrays interleaved by index, `jit::State` and the TLB's scalars before the
+arrays, the transfer cache's index ORed with 0x80000; every fixed offset JIT code loads is under 0x800 (asserted).
+Gates −0.4 to −0.9%, Firefox even, the core 62 KB smaller. The audit the user asked for (other state at inconvenient
+offsets) found only those; the other 32-bit constants in hot code are `jc + constant` for keys known at compile time.
+
+**Before those:** warm members (`jit::Config::warm`, 16; Firefox busy MIPS 119 → 141), after finding that 26% of a busy
 vCPU stalls on a guest function's first instruction, 83% of it after a `return_call_indirect`.
 
 **The user's view (2026-10-16):** browsing in the desktop guest feels 1.5-2× faster since warm members, the compile
@@ -29,8 +35,9 @@ latency during a page load) if a lever's case rests on it.
 
 **The task: the user's queue (2026-10-15), in order.**
 
-1. **Fewer, larger modules for a browser** (backlog): ~14,500 modules of ~35 blocks a session. First split them by
-   what emitted them and by size; then the step budget and a module minimum.
+1. **Fewer, larger modules for a browser** (backlog, rescoped): 82% of the ~14,500 modules are tier-ups; an install
+   now costs a vCPU ~0.06 ms, so measure what the module count costs in RSS and in the wasm code GC's stops first,
+   and only then try tier-ups that wait for company.
 2. Later (backlog "Indirect transfers into a browser's code"): returns through the host's own call/return, re-emitting
    hot regions whose jump-cache targets got compiled, smaller slow arms, per-module eviction, Liftoff's zero-fill.
 
@@ -140,5 +147,16 @@ latency during a page load) if a lever's case rests on it.
   the session running; run `abw.sh` in the background without one (its own `timeout 900` bounds each session).
 - **The A/B loops leave the last build they copied in `target/`, newer than the sources:** cargo won't rebuild it.
   Copy the build you mean back (and `cmp`) before CI.
+- **`new WebAssembly.Module(bytes)` validates the whole module even on a cache hit** (~6 µs a KB on the M4): pass
+  compiled `Module` objects between workers (postMessage shares the code) rather than bytes for a second compile.
+- **A host change that both builds of an A/B share needs a baseline built against it:** a core of the old ABI under
+  the new host fails (the gates' first run did). Build the baseline from the new source with the mechanism switched
+  off (`d0`: the table always passing seq 0).
+- **The page's paths aren't the only ones:** round-robin, Node's deterministic runs and user-mode vCPUs have no
+  compile worker (every module's `seq` 0). A "parked on seq" check without excluding 0 parked them all for good; the
+  gates and Firefox (always with a worker) couldn't see it, CI's lockstep and bare-metal tests did. Run
+  `tests/jit-lockstep.test.ts` and `tests/jit.test.ts` on any change to installs before measuring.
+- **The Firefox sessions' `slow` lines are a cheap per-install probe:** `SLOW_INSTALL_MS = 0` in `web/vm.ts` logs
+  every install (57,000 a session, 8.8 MB of `results.json`) without perturbing busy MIPS.
 - **A shell `rm` of `$VAR/*` is refused by the harness's safety check:** write `"${VAR:?}"/…` or a
   literal path.

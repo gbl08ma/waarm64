@@ -198,6 +198,11 @@ pub struct Stats {
     /// ones compiled here after [`OVERDUE_NS`] without it (ABI 36).
     pub worker_installs: u64,
     pub overdue: u64,
+    /// Modules the worker had compiled that the host didn't have yet (its
+    /// copy of the compiled module still on the way), and runs ended early
+    /// so that it arrives (ABI 37, [`Table::parked`]).
+    pub parks: u64,
+    pub park_exits: u64,
 }
 
 /// Multiply-shift over the block key: std's SipHash costs too much on every dispatch.
@@ -921,9 +926,15 @@ pub struct Table {
     /// Tier-up redirects (hot word, region, head) waiting for their region
     /// to be installed ([`Table::redirect`]).
     redirects: Vec<(u32, u32, u64)>,
-    /// When the first module of `todo` was found not compiled yet (ns; 0:
-    /// it wasn't).
+    /// When the first module of `todo` was found not compiled yet, or not
+    /// yet in the host (ns; 0: it wasn't).
     waiting: u64,
+    /// The `seq` of the first module of `todo` when the host said it hasn't
+    /// received the worker's compiled module yet (0: it didn't): asked again
+    /// only after the vCPU has been out of the core ([`Jit::unpark`]), whose
+    /// run ends early for it ([`Jit::park_exit`]).
+    parked: u32,
+    park_exit: bool,
     /// Helper calls by instruction class (step 10: the input to M6), and
     /// the last report of them ([`Table::helper_report`]).
     helper_ops: Vec<u64>,
@@ -964,6 +975,8 @@ impl Table {
             xmiss: false,
             base: 0,
             todo: Vec::new(),
+            parked: 0,
+            park_exit: false,
             limit: 0,
             redirects: Vec::new(),
             waiting: 0,
@@ -1075,37 +1088,56 @@ impl Table {
             .iter()
             .take_while(|m| reached(ready, m.seq))
             .count();
-        if k < self.todo.len() {
+        let parked = self.parked != 0 && self.todo.first().is_some_and(|m| m.seq == self.parked);
+        let mut overdue = false;
+        if k < self.todo.len() || parked {
             if self.waiting == 0 {
                 self.waiting = ns.max(1);
             } else if ns.saturating_sub(self.waiting) >= OVERDUE_NS {
-                k = self.todo.len();
+                (k, overdue) = (self.todo.len(), true);
             }
         }
-        if k == 0 {
+        if k == 0 || parked && !overdue {
             return;
         }
-        for m in self.todo.drain(..k) {
+        let mut done = 0;
+        for m in &self.todo[..k] {
+            // The host takes the worker's compiled module, or compiles the
+            // bytes itself (seq 0: no worker, or waited too long).
+            let at = match install_seq(&m.bytes, m.slot, if overdue { 0 } else { m.seq }) {
+                Err(NotYet) => {
+                    self.parked = m.seq;
+                    self.park_exit = true;
+                    self.stats.parks += 1;
+                    break;
+                }
+                Ok(at) => at,
+            };
             if m.seq != 0 {
-                if reached(ready, m.seq) {
+                if reached(ready, m.seq) && !overdue {
                     self.stats.worker_installs += 1;
                 } else {
                     self.stats.overdue += 1;
                 }
             }
-            let at = install(&m.bytes, m.slot);
             assert_eq!(
                 at,
                 Some(self.base + m.slot),
                 "a module's slots are the same in every table"
             );
-            for w in m.tiers {
+            for &w in &m.tiers {
                 self.hot[w as usize] = self.cfg.region_after;
             }
             self.limit = self.base + m.slot + m.n;
+            done += 1;
         }
-        self.waiting = 0;
-        self.redirected();
+        self.todo.drain(..done);
+        if done == k {
+            self.waiting = 0;
+        }
+        if done > 0 {
+            self.redirected();
+        }
         self.stats.compile_ns += now_ns() - ns;
     }
 
@@ -1275,6 +1307,21 @@ impl Jit {
             Ok((_, len)) => Err(len.max(1)),
             Err(n) => Err(n),
         }
+    }
+
+    /// The vCPU has been out of the core (its host's event loop may have
+    /// delivered the module the table is parked on): asks the host again.
+    pub fn unpark(&mut self) {
+        self.table.parked = 0;
+    }
+
+    /// Whether the table parked on a module since this last said so: the
+    /// run returns to the host, which goes through its event loop
+    /// (`web/vcpu-worker.ts`), where the worker's compiled module arrives.
+    pub fn park_exit(&mut self) -> bool {
+        let p = core::mem::take(&mut self.table.park_exit);
+        self.table.stats.park_exits += p as u64;
+        p
     }
 
     /// Installs what the table took from the log and the compile worker
@@ -1687,7 +1734,7 @@ unsafe extern "C" {
     /// Compiles and instantiates the module at `ptr..ptr + len` and puts its
     /// exports `f0`, `f1`, … into the core's table from JIT slot `slot` on.
     /// Returns the table index of `f0`, or -1 if the host has no JIT.
-    fn jit_install(ptr: *const u8, len: usize, slot: u32) -> i32;
+    fn jit_install(ptr: *const u8, len: usize, slot: u32, seq: u32) -> i32;
     /// Hands the module at `ptr..ptr + len` to the host's compile worker as
     /// number `seq` of epoch `epoch`; the worker stores into the u32 at
     /// `ready` the number up to which it has compiled every module. Returns
@@ -1737,15 +1784,30 @@ pub const OVERDUE_NS: u64 = 1_000_000_000;
 /// Installs `module`'s functions at JIT table slots `slot..`; returns
 /// function `f0`'s table index, or `None` without a JIT host.
 pub fn install(module: &[u8], slot: u32) -> Option<u32> {
+    install_seq(module, slot, 0).unwrap_or(None)
+}
+
+/// The host hasn't received the compile worker's copy of module `seq` yet.
+#[derive(Debug)]
+pub struct NotYet;
+
+/// [`install`] of the module the compile worker compiled as number `seq`
+/// (0: compile `module` here): the host instantiates the worker's compiled
+/// module, which it receives through its event loop, without compiling or
+/// even validating the bytes again; [`NotYet`] if it hasn't received it.
+pub fn install_seq(module: &[u8], slot: u32, seq: u32) -> Result<Option<u32>, NotYet> {
     #[cfg(target_arch = "wasm32")]
     // SAFETY: the host reads `module` and touches only its own table.
-    let i = unsafe { jit_install(module.as_ptr(), module.len(), slot) };
+    let i = unsafe { jit_install(module.as_ptr(), module.len(), slot, seq) };
     #[cfg(not(target_arch = "wasm32"))]
     let i = {
-        let _ = (module, slot);
+        let _ = (module, slot, seq);
         -1
     };
-    (i >= 0).then_some(i as u32)
+    match i {
+        -2 => Err(NotYet),
+        i => Ok((i >= 0).then_some(i as u32)),
+    }
 }
 
 /// The block at table index `idx` (from [`install`]).

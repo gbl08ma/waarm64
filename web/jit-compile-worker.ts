@@ -11,12 +11,14 @@
 export type CompileInit = { memory: WebAssembly.Memory; ports: MessagePort[] };
 /** A module from a vCPU (the core's numbers are u32s). */
 export type CompileJob = { seq: number; epoch: number; ready: number; bytes: ArrayBuffer };
+/** The compiled module, to every vCPU (no module: it didn't compile). */
+export type CompiledJob = { seq: number; module?: WebAssembly.Module };
 
 /** How long a compiled module is kept for the tables that haven't installed it yet. */
 const KEEP_MS = 30_000;
 
 /** The compile worker's state: in a function so a test can drive it without a worker. */
-export function compiler(memory: WebAssembly.Memory) {
+export function compiler(memory: WebAssembly.Memory, ports: { postMessage(m: CompiledJob): void }[] = []) {
   let next = 1; // the lowest number not compiled yet
   const done = new Set<number>();
   let epoch = 0;
@@ -39,6 +41,8 @@ export function compiler(memory: WebAssembly.Memory) {
         for (let i = kept.length - 1; i >= 0; i--) if (kept[i].epoch !== epoch) kept.splice(i, 1);
       }
       kept.push({ module, epoch: j.epoch, at: t0 });
+      // To every vCPU before `ready` says it's compiled: a table installs it once it's there (ABI 37).
+      for (const p of ports) p.postMessage({ seq: j.seq, module } satisfies CompiledJob);
       while (kept.length && t0 - kept[0].at > KEEP_MS) kept.shift();
       done.add(j.seq);
       let moved = false;
@@ -55,14 +59,14 @@ export function compiler(memory: WebAssembly.Memory) {
 if ('WorkerGlobalScope' in globalThis) {
   const self = globalThis as unknown as { onmessage: ((e: MessageEvent<CompileInit>) => void) | null };
   self.onmessage = (e) => {
-    const c = compiler(e.data.memory);
+    const c = compiler(e.data.memory, e.data.ports);
     for (const p of e.data.ports) p.onmessage = (m: MessageEvent<CompileJob>) => c.job(m.data);
   };
 } else {
   const { parentPort } = await import('node:worker_threads');
   // (No parent port: imported by a test on Node's main thread.)
   parentPort?.once('message', (init: CompileInit) => {
-    const c = compiler(init.memory);
+    const c = compiler(init.memory, init.ports as never);
     for (const p of init.ports) (p as unknown as import('node:worker_threads').MessagePort).on('message', (m: CompileJob) => c.job(m));
   });
 }

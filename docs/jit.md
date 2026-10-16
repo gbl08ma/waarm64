@@ -241,9 +241,18 @@ its jump cache and hot words, its helper counts and its counters.
   [abi.md](abi.md)): the vCPU that emits a module hands a copy to one worker of the VM's (number
   `seq`, under the lock), which compiles it (`new WebAssembly.Module`: V8's process-wide module
   cache, keyed by the bytes, then holds it) and publishes the number up to which every module is
-  compiled (`Cache::ready`, an atomic word in the core's memory). A table installs a logged module
-  only once `ready` has reached it, in order (a cache hit, ~0.3 ms), and checks for that before
-  each block (`Jit::fresh`) and at misses. Until then its blocks run in the block interpreter:
+  compiled (`Cache::ready`, an atomic word in the core's memory). Before it publishes a module it
+  posts the compiled `WebAssembly.Module` to every vCPU's host, which keeps it by number. A table
+  installs a logged module only once `ready` has reached it, in order, and checks for that before
+  each block (`Jit::fresh`) and at misses. The install instantiates the posted module
+  (`env.jit_install` with its `seq`, ABI 37): `new WebAssembly.Module` from the bytes, even a cache
+  hit, decodes and validates every function again before V8 finds the module in its cache, four
+  fifths of an install's ~0.3 ms (`bench/boot/REPORT.md` "M8: the compile worker's modules,
+  posted"). The posted module arrives through the vCPU worker's event loop, which a vCPU visits
+  only now and then (`yieldMs`): if it isn't there yet the host says so, the table parks on it
+  (`Table::parked`: not asked again until the vCPU has been out of the core) and the run ends at
+  the chunk's end with `BUDGET` short of the budget, on which the vCPU worker goes through its
+  event loop at once. Until then its blocks run in the block interpreter:
   a table dispatches only to indexes below its `limit` (the end of what it has installed), and
   fills its jump cache only with those; a tier-up's redirect (hot word and jump-cache entry) waits
   for its region in that table (`Table::redirect`). So no vCPU waits on V8 to compile, and none

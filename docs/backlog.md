@@ -71,15 +71,18 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     times): re-emitting a hot region once its jump-cache targets are compiled. A per-site slot in a module-local
     table, filled on install, measured no cheaper than the jump cache (`chain.mjs` `local`, 35 against 37 ns).
   - The dispatcher's entries (13% of the stalls) and the signature check's table load (5.3% of the time).
-- **Fewer, larger modules for a browser**: Firefox's session makes ~14,500 modules of ~35 blocks each (V8 ~16 KB a
-  module besides code). Which trigger emits them (`BATCH_STEPS`, the timeout, tier-ups) and a module minimum, against
-  busy MIPS, interpreted steps and RSS; Alpine paid +20% for 16M-step batches.
+- **Fewer, larger modules for a browser**: Firefox's session makes ~14,500 modules of ~35 blocks each, 82% of them
+  tier-ups (a hot loop head's region in a module of its own, with whatever batch is pending). Since the posted modules
+  (`bench/boot/REPORT.md` "M8: the compile worker's modules, posted") a module costs a vCPU ~0.06 ms to install, so
+  the case rests on V8's ~16 KB a module besides code and on the wasm code GC (below): measure RSS and those stops,
+  then try tier-ups that wait a little for company (the head runs alone meanwhile); Alpine paid +20% for 16M-step
+  batches.
 - **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
   Liftoff's samples in Firefox sit in prologues. Fewer declared locals, or i64 locals where i32 ones are zeroed.
 - **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
-  shell are alive. Twice so far: with WARM=32 (1 of 18 sessions, 2026-10-16) and on the default build (warm 16,
-  before the foldable offsets; 1 of the 8 sessions of 2026-10-16's A/B). Next time, rerun that session under
-  JIT-check.
+  shell are alive; the other pages then load normally. Three times in ~35 sessions on 2026-10-16, on three builds
+  (WARM=32; the default before the foldable offsets; the posted modules): always the first page (wiki). Rerun such
+  a session under JIT-check, and look at what Firefox waits for (the guest's `ps`, its console) when it hangs.
 - **The wasm code GC stops every vCPU** (what remains of "What V8's GC stops a vCPU for", closed 2026-10-15 by
   returning the vCPU workers to their event loop: docs/v8.md "Threads that never return to their event loop"). The
   isolate that frees the dead code spends 43-69 ms of CPU in `FreeDeadCode` while the others wait in

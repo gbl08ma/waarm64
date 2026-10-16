@@ -13,9 +13,9 @@ import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
-import type { CompileInit, CompileJob } from './jit-compile-worker.ts';
+import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 
-export const ABI = 36;
+export const ABI = 37;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -229,6 +229,10 @@ export function instantiateThread(module: WebAssembly.Module, memory: WebAssembl
  */
 export const VCPU_YIELD_MS = 100;
 
+/** How long a vCPU's host keeps a compiled module it hasn't installed, and how many at most (web/vm.ts `jitHost`). */
+const RECEIVED_KEEP_MS = 30_000;
+const RECEIVED_MAX = 4096;
+
 /** A flush of at least this many slots is worth a {@link collect}. */
 const NUDGE_SLOTS = 4096;
 /** An install this long is logged (`webpc-slow install`). */
@@ -266,19 +270,42 @@ function jitHost(memory: WebAssembly.Memory, port?: MessagePort) {
   // Slots the last install used up to (its end), and the highest slot end since the cache last flushed.
   let lastEnd = 0;
   let hi = 0;
+  // The compile worker's compiled modules by number, as they arrive through the event loop (ABI 37): installing one
+  // skips V8's decoding and validating the bytes again, which `new WebAssembly.Module` does before it finds them in
+  // its cache (four fifths of an install: bench/boot/REPORT.md "M8: the compile worker's modules, posted").
+  const received = new Map<number, { module?: WebAssembly.Module; at: number }>();
+  if (port) {
+    port.onmessage = (e: MessageEvent<CompiledJob>) => {
+      const now = performance.now();
+      received.set(e.data.seq, { module: e.data.module, at: now });
+      // A table that doesn't install (a vCPU asleep) keeps nothing alive for long.
+      for (const [k, v] of received) if (now - v.at > RECEIVED_KEEP_MS || received.size > RECEIVED_MAX) received.delete(k); else break;
+    };
+    (port as { unref?(): void }).unref?.(); // Node: listening doesn't keep the worker alive
+  }
   return {
     bind(core: WebAssembly.Instance) {
       table = core.exports.__indirect_function_table as WebAssembly.Table;
       base = table.length;
       imports = { env: { ...core.exports, memory, table } };
     },
-    install(ptr: number, len: number, slot: number): number {
+    install(ptr: number, len: number, slot: number, seq: number): number {
       if (!table) return -1;
       const t0 = performance.now();
-      if (scratch.byteLength < len) scratch = new ArrayBuffer(Math.max(len, 2 * scratch.byteLength, 1 << 16));
-      const bytes = new Uint8Array(scratch, 0, len);
-      bytes.set(new Uint8Array(memory.buffer, ptr >>> 0, len)); // `ptr` is a u32 the i32 import signs
-      const module = new WebAssembly.Module(bytes);
+      let module: WebAssembly.Module;
+      // The worker's compiled module (seq 0: none, compile the bytes); -2 if it isn't here yet.
+      const got = seq !== 0 ? received.get(seq >>> 0) : undefined;
+      if (seq !== 0 && !got) return -2;
+      if (got?.module) {
+        module = got.module;
+        for (const k of received.keys()) if (((k - (seq >>> 0)) | 0) <= 0) received.delete(k);
+      } else {
+        // (A module the worker failed to compile: compiled here, to report the error.)
+        if (scratch.byteLength < len) scratch = new ArrayBuffer(Math.max(len, 2 * scratch.byteLength, 1 << 16));
+        const bytes = new Uint8Array(scratch, 0, len);
+        bytes.set(new Uint8Array(memory.buffer, ptr >>> 0, len)); // `ptr` is a u32 the i32 import signs
+        module = new WebAssembly.Module(bytes);
+      }
       const t1 = performance.now();
       // Blocks it chains to that are already compiled (M5 step 7): `t.<table index>`.
       const t: Record<string, WebAssembly.ExportValue> = {};
@@ -348,7 +375,9 @@ export const Counter = {
   DEC_STEPS: 101, DEC_BLOCKS: 102, DEC_CLEARS: 103,
   // ABI 36: modules installed from the compile worker, and compiled on the vCPU after waiting for it too long.
   JIT_WORKER_INSTALLS: 104, JIT_OVERDUE: 105,
-  LEN: 106,
+  // ABI 37: times the worker's compiled module hadn't reached the vCPU yet, and runs ended early for it to arrive.
+  JIT_PARKS: 106, JIT_PARK_EXITS: 107,
+  LEN: 108,
 } as const;
 
 /**
@@ -936,7 +965,7 @@ function stats(n: (i: number) => number) {
       condDirect: n(Counter.JIT_COND_DIRECT), condComputed: n(Counter.JIT_COND_COMPUTED), condMemory: n(Counter.JIT_COND_MEMORY),
       regionBlocks: n(Counter.JIT_REGION_BLOCKS), backEdges: n(Counter.JIT_BACK_EDGES), tierUps: n(Counter.JIT_TIER_UPS), stale: n(Counter.JIT_STALE),
       decSteps: n(Counter.DEC_STEPS), decoded: n(Counter.DEC_BLOCKS), decClears: n(Counter.DEC_CLEARS),
-      workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE),
+      workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE), parks: n(Counter.JIT_PARKS), parkExits: n(Counter.JIT_PARK_EXITS),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),

@@ -106,7 +106,9 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
     switch (kind) {
       case Exit.BUDGET:
         live?.handled();
-        if (due()) await pass(never, 0, 0.001);
+        // Short of the budget: the core wants the event loop now, where a module the JIT's compile worker
+        // compiled arrives (ABI 37, `jit::Jit::park_exit`).
+        if (due() || e[1] < BUDGET) await pass(never, 0, 0.001);
         continue;
       case Exit.IDLE: {
         idleStalls?.forEach((f) => f()); // test only: a host stall with the vCPU OUT

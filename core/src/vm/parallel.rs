@@ -276,6 +276,9 @@ impl Vm {
         let sh = &self.shared.cpus[c];
         let p = &sh.par;
         let start = own.steps;
+        if let Some(j) = &mut v.jit.cache {
+            j.unpark();
+        }
         loop {
             // Read before looking for work (see the module docs).
             let wake = sh.wake.load(Ordering::SeqCst);
@@ -390,6 +393,11 @@ impl Vm {
                 && let Some(kind) = self.handle_par(c, v, own, e)
             {
                 return kind;
+            }
+            // Early, for the host's event loop to deliver a compiled module
+            // (`jit::Jit::park_exit`); the host tells it by the steps.
+            if v.jit.cache.as_mut().is_some_and(|j| j.park_exit()) {
+                return exit::BUDGET;
             }
         }
     }

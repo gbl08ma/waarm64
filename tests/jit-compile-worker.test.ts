@@ -23,3 +23,18 @@ test('compile worker: the ready word counts the modules compiled without a gap',
   assert.equal(ready[0], 5);
   assert.equal(c.stats().kept, 1);
 });
+
+test('compile worker: each compiled module goes to every vCPU before the ready word counts it', () => {
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  const ready = new Uint32Array(memory.buffer, 64, 1);
+  const got: { port: number; seq: number; module: boolean; ready: number }[] = [];
+  const ports = [0, 1].map((port) => ({ postMessage: (m: { seq: number; module?: WebAssembly.Module }) => got.push({ port, seq: m.seq, module: m.module instanceof WebAssembly.Module, ready: ready[0] }) }));
+  const c = compiler(memory, ports);
+  c.job({ seq: 1, epoch: 0, ready: 64, bytes: EMPTY.slice(0) });
+  c.job({ seq: 2, epoch: 0, ready: 64, bytes: new Uint8Array([1, 2, 3]).buffer }); // not wasm: no module, the table compiles it
+  assert.deepEqual(got, [
+    { port: 0, seq: 1, module: true, ready: 0 }, { port: 1, seq: 1, module: true, ready: 0 },
+    { port: 0, seq: 2, module: false, ready: 1 }, { port: 1, seq: 2, module: false, ready: 1 },
+  ]);
+  assert.equal(ready[0], 2);
+});
