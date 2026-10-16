@@ -594,6 +594,14 @@ Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
   Forming the regions when the batch is compiled needs no prologue, no second compile and no
   redirect, and was faster everywhere (`bench/boot/REPORT.md` "M8: forward regions"). Tried with
   them and flat within noise: 8 or 32 blocks a region instead of 16.
+- **Guest calls as host calls** (M8, `bench/boot/REPORT.md` "M8: guest calls as host calls"): a `BL`/`BLR` as a
+  wasm `call` (a depth parameter, at most 64 deep) and a `ret` as a wasm `return`, so the host predicts guest
+  returns. The continuation must be in the caller's function (as its own function, the caller's jump to it stalled
+  as the `ret` had) and an entry of it (every exit unwinds the host frames, and returns then come through the
+  transfer cache; a member without an entry ran interpreted until compiled again: 54% more dispatches in Firefox).
+  Built that way it was even on the boots and the userspace benchmark (churn −11%), but in Firefox the returns'
+  entry stalls only moved into the callers' bodies (guest code 61.3% → 59.6% of samples: the stall is fetching cold
+  code), while 23% more wasm cost a third flush. The patch is in `bench/boot/results/m8-calls/`.
 - **Copies of compiled callees in their callers' regions** (M8, with calls followed): a callee
   that is already compiled (the usual case: a shared function is hot long before a given caller)
   copied into the caller's region so the call and its predicted return stay inside. Limited to

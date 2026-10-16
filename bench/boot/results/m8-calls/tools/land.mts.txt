@@ -1,0 +1,21 @@
+// Guest-code samples of jit.tsv (jdr output: tid, name, off, size, w0..w3[, x16, x17-flag, lr...]) by where they land:
+// a function's first instruction (by how it was entered), the instruction after a host call (bl/blr: a return
+// landing), a call_indirect's signature check, the rest. Shares of all vCPU samples (attr.ts's total).
+import { readFileSync } from 'node:fs';
+const [jit, totalArg] = process.argv.slice(2);
+const total = Number(totalArg);
+const n = new Map<string, number>();
+const add = (k: string) => n.set(k, (n.get(k) ?? 0) + 1);
+for (const l of readFileSync(jit, 'utf8').split('\n')) {
+  const r = l.split('\t');
+  const m = /^JS:0x([0-9a-f]+)_pa0x/.exec(r[1] ?? '');
+  if (!m) continue;
+  const el = m[1].length === 16 ? 'kernel' : 'user';
+  const w1 = parseInt(r[5], 16) >>> 0;
+  const isCall = (w: number) => ((w & 0xfc000000) >>> 0) === 0x94000000 || ((w & 0xfffffc1f) >>> 0) === 0xd63f0000;
+  if (r[2] === '0') add(`${el}: entry, ${r[8] === '8000003' && r[9] === 'x17=pc' ? 'indirect tail' : r[8] === '8000003' ? 'dispatcher or call_indirect' : 'direct'}`);
+  else if (r[4] === 'a8c147ff' || r[5] === 'eb11021f') add(`${el}: signature check`);
+  else if (r[5] !== '-' && isCall(w1)) add(`${el}: after a host call (return landing)`);
+  else add(`${el}: body`);
+}
+for (const [k, v] of [...n].sort((a, b) => b[1] - a[1])) console.log(`${((100 * v) / total).toFixed(1).padStart(5)}%  ${k}`);

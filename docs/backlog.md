@@ -63,12 +63,14 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   in Firefox"). In Firefox's pages session 26% of a busy vCPU's time stalls at a guest function's first instruction,
   83% of it after a `return_call_indirect` (the code footprint defeats the branch predictor; direct and imported tail
   calls don't stall). Warm members took the jump-cache tails into warm code away (+18% busy MIPS). What remains:
-  - **Returns** (a third of the kernel's entry stalls, 21 transfer-cache RETs per 1000 instructions): a guest `BL`
-    as a wasm `call` and a matching `RET` as a wasm `return`, so the host's return stack predicts it and the caller's
-    continuation stays in its function. The budget, exits through every frame, a depth limit and returns that don't
-    match (context switches, `longjmp`) make it the largest piece of work here.
+  - **Returns as host returns: tried, not kept** (2026-10-16, `bench/boot/REPORT.md` "M8: guest calls as host
+    calls"): returns' entry stalls fell from 42.5% of the kernel's to 17.5%, but the time reappeared at the
+    continuation's code (guest code 61.3% → 59.6% of samples) and the code grew 12-32%, a third flush in Firefox.
+    The stall is mostly fetching cold code, not predicting the branch.
   - **Tails into code that was cold when its predecessor was compiled** (warm members only take what had run 16
-    times): re-emitting a hot region once its jump-cache targets are compiled. A per-site slot in a module-local
+    times): re-emitting a hot region once its jump-cache targets are compiled. Likely to move the stall as host
+    returns did (above): first measure whether a direct tail call into code evicted from the caches stalls as much as
+    an indirect one (`chain.mjs` with the targets evicted). A per-site slot in a module-local
     table, filled on install, measured no cheaper than the jump cache (`chain.mjs` `local`, 35 against 37 ns).
   - The dispatcher's entries (13% of the stalls) and the signature check's table load (5.3% of the time).
 - **Fewer, larger modules for a browser**: Firefox's session makes ~14,500 modules of ~35 blocks each, 82% of them
@@ -463,6 +465,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `virtio-snd-dkms` PKGBUILD pins one kernel release's `sound/virtio` and isn't published: it has to move when a
   `linux-aarch64` update changes a kernel API the driver uses (DKMS reports the break at upgrade), and a user outside
   our images would need it published (AUR) to get sound on Arch.
+- **A guest kernel (and distribution) built for the emulator** (2026-10-16, the user): the desktop guest's Arch Linux
+  ARM kernel is configured for real hardware and debugging, and under the JIT that costs more than it would natively
+  (kernel code is half of a busy vCPU's guest code in Firefox's pages session, and its short functions stall at every
+  entry: `bench/boot/REPORT.md` "M8: where a busy vCPU's time goes in Firefox", `results/m8-warm/profile/kbucket.txt`).
+  Of the kernel's samples there: `CONFIG_DEBUG_PREEMPT`'s checks (`debug_smp_processor_id`,
+  `check_preemption_disabled`, `__this_cpu_preempt_check`, preempt count tracking) 3.8%, stack traces (debug) 1.5%,
+  PSI 1.7%, and HZ=1000's tick and timekeeping 13.8%. A kernel without `DEBUG_PREEMPT`, with a lower HZ (or
+  `NO_HZ_FULL`-style idle) and PSI off would recover part of that, and it could carry virtio-snd (above) built in. That
+  means maintaining our own kernel package, and likely more of a distribution of our own (Firefox with VA-API on
+  virgl, `webpc-va`, the sound driver), if we want the most out of the emulator. Besides ALARM, Arch's own aarch64 port
+  (<https://ports.archlinux.page/aarch64/>) is a possible base, though its package selection looks even thinner.
+  Measure first: the same Firefox session on a kernel built without those options.
 
 ## Snapshots (M8 phase C, snapshots lane; [plans/snapshots.md](plans/snapshots.md), [platform.md](platform.md) "Snapshots")
 - **A restored machine's lost interrupt** (audio, [audio.md](audio.md) "Linux driver behavior"): under ten busy-looping

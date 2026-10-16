@@ -1837,3 +1837,59 @@ the rate.
 JIT rule that also needs the host-clock import in every module, the atomic maximum in parallel mode, the CNTKCTL_EL1
 trap check at EL0 and, in deterministic mode, the step count inside the block. The other timer-register exits
 (TVAL, CVAL, CTL: a fifth to half as many) are smaller still.
+
+## M8: guest calls as host calls (2026-10-16; not kept)
+
+The backlog's largest lever after warm members ("Indirect transfers into a browser's code", returns): a guest `BL`/`BLR`
+as a wasm `call` and the callee's `ret` as a wasm `return`, so the host's return stack would predict guest returns
+instead of an indirect tail call through the transfer cache. Built, tested (lockstep, the differential test, a new
+JIT test of leaf calls, recursion past the depth limit and `longjmp`-like returns, with planted bugs caught) and
+measured against `03cb438`; the dev VM, Chromium 153.0.8010.52, Node 26.7. Data, the patch and the tools in
+`results/m8-calls/`.
+
+**The profile at HEAD** (`results/m8-calls/profile/regs0.txt`, the method of "where a busy vCPU's time goes"): after
+warm members, the stall at a guest function's first instruction is 21.4% of the vCPU threads' samples (25.8% before
+them), and returns became the largest part of the kernel's (42.5%, from 30%).
+
+**The design** (`host-calls.patch`): every block function takes a fourth parameter, its host call depth; a call below
+depth 64 is a `call` (the same probes as the tail call: a compiled callee directly, else the jump or transfer cache),
+a `ret` at depth > 0 returns the retired count with bit 31 set, and any other result (exit, budget, a block not
+compiled) unwinds every frame unchanged. After a return the caller continues at the call's continuation if the PC is
+there (else through the transfer cache's miss function). Variants, each measured:
+
+| | continuation | Alpine boot gate (1/2/4 vCPUs) | userspace phases | Firefox busy MIPS | Firefox wasm |
+|---|---|---|---|---|---|
+| baseline | (its own function, reached by the `ret`) | | | 129, 135, 122* | 468-508 MB, 2 flushes |
+| b3 | a member of the caller's region | +5.4, +4.8, +5.6% | −1 to −3% (1 round) | | |
+| b4 | its own function, tail-called by the caller | +2.6, +3.3, +3.2% | Lua +12% (1 round; even in Node) | 136 | 607 MB, 3 flushes |
+| b6 | b3 with a leaner post-call path | | | 122 | 671 MB, 3 flushes, dispatches +54% |
+| **b8** | a member, and an **entry** of the region | −1.1, −0.9, −0.4% | churn −11%, rest even (3 rounds) | 120 | 624 MB, 3 flushes |
+
+\* hung on the first page (the known hang) and ran 663 s. A continuation inside the caller's region is only reached
+from inside while the host frames last; every exit (a syscall, a fault, an interrupt, the chunk's end) unwinds them,
+and the returns after it come through the transfer cache, where a member has no function: b6 ran those in the
+interpreter until each was compiled again as a head. b8 gave regions entries (the entry number in the depth's high
+bits and in the cache's word beside the table index, a prologue that branches to the member), which fixed that and
+the boot's cost.
+
+**Why it doesn't pay** (`profile/regs4.txt`, `regs8.txt`, b4 and b8 in the same session as above):
+
+| share of vCPU samples | HEAD | b4 | b8 |
+|---|---|---|---|
+| guest code at a function's first instruction | 21.4% | 19.3% | 17.0% |
+| guest code, the rest (TurboFan and Liftoff) | 36.0% | 37.7% | 40.0% |
+| guest code in all (with the signature checks) | 61.3% | 59.8% | 59.6% |
+| the kernel's entry stalls at return continuations | 42.5% | 37.2% | 17.5% |
+
+The returns' stalls left the function entries, and the time reappeared in the bodies: at the continuation's code
+inside the caller (b8), or at the continuation's function reached by a direct tail call (b4). Samples at the
+instruction after the host call itself stayed at 0.1-0.2%. So the stall is mostly fetching code that isn't in the
+caches, which a predicted return doesn't fetch any sooner, and the variants' extra code (12% on Alpine, 19-32% in
+Firefox) costs Firefox a third budget flush and 15-30% more interpreted steps. In Node (one vCPU) b4 and b8 matched
+the baseline on every userspace phase but churn. Not kept; the call counters (`call-counters.patch`) showed 90-96% of
+host calls returning to their continuation in the userspace benchmark and the depth limit never reached.
+
+**For the other levers in that backlog item**: re-emitting regions whose jump-cache targets were compiled later (direct
+links instead of indirect ones) attacks the same stall by the same theory (an indirect branch the predictor misses),
+so it would likely move it too; measure the stall's cause first (a direct tail call into a cold target, `chain.mjs`
+with the targets' code evicted) before building either.

@@ -1,4 +1,4 @@
-# M8 JIT: a browser's code in the JIT, handover (2026-10-16, later)
+# M8 JIT: a browser's code in the JIT, handover (2026-10-16, evening)
 
 A side track of M8, asked for by the user: make general and "complex app" work (a browser in the
 guest) faster and smoother. Not a milestone phase; no kickoff. How things work is in docs/jit.md
@@ -8,7 +8,15 @@ docs/backlog.md "Interpreter" and "JIT". The previous handovers of this track (t
 arenas, 2026-10-09; V8's GC stalls, 2026-10-15; where a busy vCPU's time goes, 2026-10-15) are in git history;
 their lessons are below.
 
-**Done last (2026-10-16): the compile worker's modules, posted** (ABI 37; `bench/boot/REPORT.md` "M8: the compile
+**Done last (2026-10-16): guest calls as host calls, measured and not kept** (`bench/boot/REPORT.md` "M8: guest
+calls as host calls", data and the patch in `bench/boot/results/m8-calls/`; docs/jit.md "Tried and not kept"). The
+user moved "Indirect transfers into a browser's code" ahead of "fewer, larger modules" (module installs are cheap
+now). A profile at HEAD put returns at 42.5% of the kernel's entry stalls; BL/BLR as wasm `call`, `ret` as wasm
+`return`, with the continuation an entry of the caller's region, was even on the gates (churn −11%) but in Firefox
+moved the stall into the callers' bodies (guest code 61.3 → 59.6% of samples) for 23% more wasm and a third flush.
+The stall is fetching cold code, not mispredicting: test that theory before re-emitting regions with direct links.
+
+**Before that: the compile worker's modules, posted** (ABI 37; `bench/boot/REPORT.md` "M8: the compile
 worker's modules, posted", data in `bench/boot/results/m8-posted/`; docs/jit.md "Sharing", docs/abi.md
 `env.jit_install`). Starting queue item 2, a session with every install timed showed that four fifths of a vCPU's
 install time was `new WebAssembly.Module(bytes)`, a cache hit that still decodes and validates every function. Now the
@@ -33,15 +41,18 @@ numbers understate interactive gains (they don't measure latency to input or fra
 don't drop a lever only because its busy-MIPS gain is small, and consider a responsiveness measure (input-to-frame
 latency during a page load) if a lever's case rests on it.
 
-**The task: the user's queue (2026-10-15), in order.**
+**The task: the user's queue (2026-10-15; reordered 2026-10-16), in order.**
 
-1. **Fewer, larger modules for a browser** (backlog, rescoped): 82% of the ~14,500 modules are tier-ups; an install
+1. **Indirect transfers into a browser's code** (backlog): returns as host returns tried and not kept (above). Left:
+   whether a direct tail call into cold code stalls as an indirect one does (`chain.mjs` with the targets' code
+   evicted from the caches); only if direct links are clearly cheaper there, re-emitting hot regions whose
+   jump-cache targets got compiled. Smaller slow arms and Liftoff's zero-fill (less code) are the other items.
+2. **Fewer, larger modules for a browser** (backlog, rescoped): 82% of the ~14,500 modules are tier-ups; an install
    now costs a vCPU ~0.06 ms, so measure what the module count costs in RSS and in the wasm code GC's stops first,
    and only then try tier-ups that wait for company. The pages session records no host memory yet (`results.json`'s
    `info` is the guest's `free`): first sample the renderer's `VmRSS` (`/proc/<pid>/status`, the Chromium process
    with `--type=renderer`) through the session, next to `jit.modules`.
-2. Later (backlog "Indirect transfers into a browser's code"): returns through the host's own call/return, re-emitting
-   hot regions whose jump-cache targets got compiled, smaller slow arms, per-module eviction, Liftoff's zero-fill.
+3. Later: per-module eviction.
 
 ## How to measure (`tools/`: `bench/boot/results/m8-warm/tools/`)
 
@@ -162,3 +173,10 @@ latency during a page load) if a lever's case rests on it.
   every install (57,000 a session, 8.8 MB of `results.json`) without perturbing busy MIPS.
 - **A shell `rm` of `$VAR/*` is refused by the harness's safety check:** write `"${VAR:?}"/…` or a
   literal path.
+- **A `--perf-prof` session changes block signatures' ids in V8** (x16 at an entry is the canonical signature id): a core
+  whose block type changed (here a fourth parameter: `0x8000004` for `0x8000003`) needs the tools' constant changed
+  (`ktarget`, `land`), or every entry looks "direct".
+- **A stall that a profile moves isn't a stall removed**: compare the guest code's total share, not only the entry
+  share (host returns took 4 points off the entries and put them in the bodies).
+- **The A/B loops leave their last build in `target/`**: a profiled run that `cmp`s its build first refuses to start
+  rather than measuring the wrong core.

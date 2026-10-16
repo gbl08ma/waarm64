@@ -1,0 +1,11 @@
+// Guest-code samples within 3 instructions after a host call (bl/blr in V8's code): share of all vCPU samples.
+import { readFileSync } from 'node:fs';
+const [jit, total] = process.argv.slice(2);
+const isCall = (h: string) => { if (h === '-' || !h) return false; const w = parseInt(h, 16) >>> 0; return ((w & 0xfc000000) >>> 0) === 0x94000000 || ((w & 0xfffffc1f) >>> 0) === 0xd63f0000; };
+let n = [0, 0, 0];
+for (const l of readFileSync(jit, 'utf8').split('\n')) {
+  const r = l.split('\t');
+  if (!/_pa0x/.test(r[1] ?? '') || r[2] === '0') continue;
+  for (let k = 1; k <= 3; k++) if (isCall(r[4 + k])) { n[k - 1]++; break; }
+}
+console.log(n.map((x, k) => `${k + 1} after: ${((100 * x) / +total).toFixed(2)}%`).join(', '));

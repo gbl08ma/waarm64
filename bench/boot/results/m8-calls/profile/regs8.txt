@@ -1,0 +1,72 @@
+vCPU threads 2121032 2121034 2121033 2121035: 588818 samples
+ 46.6%  native: perf-2120981.map
+ 16.0%  guest code: body, kernel turbofan
+ 14.4%  guest code: body, user turbofan
+ 11.6%  native: chrome
+  9.8%  guest code: entry (first instruction), kernel
+  8.6%  core: block interpreter
+  7.2%  guest code: entry (first instruction), user
+  6.6%  guest code: body, user liftoff
+  5.5%  core: dispatcher, Jit::miss, xmiss
+  3.1%  core: interpreter and helper bodies
+  3.0%  guest code: body, kernel liftoff
+  2.8%  core: compile, install, sync
+  2.6%  guest code: call_indirect signature check
+  1.3%  core: helpers' entry
+  1.2%  native: [vdso]
+  1.1%  core: TLB miss, walk
+  0.8%  core/JS other
+  0.7%  native: libc.so.6
+  0.7%  V8 builtins
+  0.6%  core: allocator, std
+  0.5%  core: run loop, devices
+  0.4%  host JS
+  0.1%  native: libc++.so.1.0
+  0.0%  native: libgcc_s.so.1
+-45.2%  V8 code space, unresolved
+
+ 20.9%  user: body
+ 18.9%  kernel: body
+  9.8%  kernel: entry, direct
+  7.2%  user: entry, direct
+  1.5%  kernel: signature check
+  1.1%  user: signature check
+  0.1%  kernel: after a host call (return landing)
+  0.1%  user: after a host call (return landing)
+
+node:fs:697
+  return binding.open(
+                 ^
+
+Error: ENOENT: no such file or directory, open 'bench/results/local/ind/ffperf/kImage'
+    at Object.openSync (node:fs:697:18)
+    at readFileSync (node:fs:543:35)
+    at file:///tmp/claude-501/-home-gabriel-guest-Development-webpc/b17fa472-3bd1-45dc-909e-f7987da79912/scratchpad/t/ktarget4.ts:4:15
+    at ModuleJob.run (node:internal/modules/esm/module_job:569:25)
+    at async node:internal/modules/esm/loader:650:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'bench/results/local/ind/ffperf/kImage'
+}
+
+Node.js v26.7.0
+node:fs:697
+  return binding.open(
+                 ^
+
+Error: ENOENT: no such file or directory, open 'bench/results/local/ind/ffperf/kImage'
+    at Object.openSync (node:fs:697:18)
+    at readFileSync (node:fs:543:35)
+    at file:///tmp/claude-501/-home-gabriel-guest-Development-webpc/b17fa472-3bd1-45dc-909e-f7987da79912/scratchpad/t/ktarget.ts:4:15
+    at ModuleJob.run (node:internal/modules/esm/module_job:569:25)
+    at async node:internal/modules/esm/loader:650:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'bench/results/local/ind/ffperf/kImage'
+}
+
+Node.js v26.7.0
