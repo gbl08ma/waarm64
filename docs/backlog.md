@@ -71,17 +71,15 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
     times): re-emitting a hot region once its jump-cache targets are compiled. A per-site slot in a module-local
     table, filled on install, measured no cheaper than the jump cache (`chain.mjs` `local`, 35 against 37 ns).
   - The dispatcher's entries (13% of the stalls) and the signature check's table load (5.3% of the time).
-- **The TLB arrays at a constant offset in every access**: each guest load and store reaches its TLB entry at `Vcpu`
-  offset 0x40540, which V8 builds with `mov`+`movk` twice an access in both tiers. A per-function local `vcpu +
-  array`, or the arrays near the start of `Vcpu`, would take ~4 instructions off every access (code and hot path).
 - **Fewer, larger modules for a browser**: Firefox's session makes ~14,500 modules of ~35 blocks each (V8 ~16 KB a
   module besides code). Which trigger emits them (`BATCH_STEPS`, the timeout, tier-ups) and a module minimum, against
   busy MIPS, interpreted steps and RSS; Alpine paid +20% for 16M-step batches.
 - **Liftoff zero-fills its locals at every entry**, 4 bytes at a time (`str wzr, [x16], #4` in a loop): ~5% of
   Liftoff's samples in Firefox sit in prologues. Fewer declared locals, or i64 locals where i32 ones are zeroed.
-- **A Firefox session that timed out once** with warm members (WARM=32, 1 of 18 sessions that day): Firefox never
-  reported its first page; the guest's kernel and shell were alive. Not seen again in 13 others; if it recurs, rerun
-  that session under JIT-check.
+- **A Firefox session whose first page times out**: Firefox never reports its first page; the guest's kernel and
+  shell are alive. Twice so far: with WARM=32 (1 of 18 sessions, 2026-10-16) and on the default build (warm 16,
+  before the foldable offsets; 1 of the 8 sessions of 2026-10-16's A/B). Next time, rerun that session under
+  JIT-check.
 - **The wasm code GC stops every vCPU** (what remains of "What V8's GC stops a vCPU for", closed 2026-10-15 by
   returning the vCPU workers to their event loop: docs/v8.md "Threads that never return to their event loop"). The
   isolate that frees the dead code spends 43-69 ms of CPU in `FreeDeadCode` while the others wait in

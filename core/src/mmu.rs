@@ -7,7 +7,10 @@
 //!
 //! **TLB entry (the shape the M0 spike measured, `bench/spike/REPORT.md` §4):**
 //! direct-mapped, `TLB_ENTRIES` × `{tag, addend}` of 16 bytes, one array per
-//! (EL, read/write/execute), so permissions need no check on a hit. The tag is
+//! (EL, read/write/execute), so permissions need no check on a hit. The arrays
+//! are interleaved by index (`e[index][array]`, a 128-byte line an index): every
+//! array then starts within 0x800 bytes of the `Vcpu`, an offset V8 folds into
+//! the load, where separate arrays took a `mov`+`movk` per tag and addend. The tag is
 //! the page's VA with bits 11:0 all ones; the lookup compares it with
 //! `(va + size - 1) | 0xfff`, so an access that crosses into the next page misses,
 //! and an all-zero entry never matches. Bits 11:3 of the tag are the memory index
@@ -36,6 +39,9 @@ use crate::cpu::{Cpu, sctlr};
 use crate::mem::{self, Access, Fault, FaultKind, Mem};
 
 pub const TLB_ENTRIES: usize = 4096;
+/// Entries an index holds, one per array: six used, a power of two for the
+/// JIT's shift and mask.
+pub const TLB_SLOTS: usize = 8;
 /// Capacity of the nG slot list; past it, dropping the nG entries flushes all.
 const NG_SLOTS: usize = 1024;
 /// Physical address size we advertise (`ID_AA64MMFR0_EL1.PARange` = 40 bits).
@@ -70,12 +76,16 @@ pub struct Xc {
     pub to: u64,
 }
 
-/// Arrays in order: EL0 read, write, exec, then EL1 read, write, exec.
+/// One TLB index's entries, one per array, on a 128-byte line of their own.
+#[repr(C, align(128))]
+#[derive(Clone, Copy, Default)]
+pub struct Slots(pub [Entry; TLB_SLOTS]);
+
+/// The scalars first and the arrays after, so that JIT code reaches the
+/// scalars, the TLB arrays and (through `jit::emit::xc_entry`) the transfer
+/// cache at offsets V8 folds into the load (docs/jit.md "Functions").
 #[repr(C)]
 pub struct Tlb {
-    pub e: [[Entry; TLB_ENTRIES]; 6],
-    /// The transfer cache, direct-mapped by VA bits 15:2.
-    pub xc: [Xc; XC_ENTRIES],
     /// The current generations of EL0's and EL1's entries, 1 to `0xffff`:
     /// an entry of another one (0 in a zeroed entry) never matches.
     pub xgen: [u64; 2],
@@ -85,11 +95,7 @@ pub struct Tlb {
     /// The JIT cache's `drops` when the transfer cache last dropped its
     /// entries for them (`jit::steps`).
     pub xdrops: u64,
-    /// Slots (`array * TLB_ENTRIES + index`) filled with nG entries since the
-    /// last flush, `ng_len` of them; `ng_len` past `NG_SLOTS` means the list
-    /// overflowed. A slot may since hold another entry: dropping it then is an
-    /// over-invalidation, which is always allowed.
-    ng: [u16; NG_SLOTS],
+    /// `ng`'s length; past `NG_SLOTS` the list overflowed.
     ng_len: u32,
     pub stats: TlbStats,
     /// Parallel SMP: it may hold global entries in the TTBR0 half (since
@@ -101,6 +107,15 @@ pub struct Tlb {
     /// Parallel SMP: its vCPU's published ASID (`CpuPar::asid`, in the VM's
     /// `Shared`, which outlives the vCPU); null otherwise.
     pub(crate) published: *const core::sync::atomic::AtomicU64,
+    /// Arrays in order: EL0 read, write, exec, then EL1 read, write, exec;
+    /// interleaved, `e[index].0[array]` (slots 6 and 7 unused).
+    pub e: [Slots; TLB_ENTRIES],
+    /// The transfer cache, direct-mapped by VA bits 15:2.
+    pub xc: [Xc; XC_ENTRIES],
+    /// Slots (`index * TLB_SLOTS + array`) filled with nG entries since the
+    /// last flush, `ng_len` of them. A slot may since hold another entry:
+    /// dropping it then is an over-invalidation, which is always allowed.
+    ng: [u16; NG_SLOTS],
 }
 
 /// Counted in the slow paths; the VM run loop publishes them (`vm::Counters`).
@@ -147,9 +162,7 @@ impl Tlb {
     pub(crate) fn flush_all(&mut self) {
         self.stats.flushes += 1;
         self.bump();
-        for a in &mut self.e {
-            a.fill(Entry::default());
-        }
+        self.e.fill(Slots::default());
         self.ng_len = 0;
         self.xng = [false; 2];
         self.low_global = false;
@@ -168,13 +181,13 @@ impl Tlb {
             }
         }
         for &s in &self.ng[..n] {
-            self.e[s as usize / TLB_ENTRIES][s as usize % TLB_ENTRIES] = Entry::default();
+            self.e[s as usize / TLB_SLOTS].0[s as usize % TLB_SLOTS] = Entry::default();
         }
         self.ng_len = 0;
     }
 
     fn fill(&mut self, array: usize, va: u64, addend: u64, ng: bool) {
-        self.e[array][index(va)] = Entry {
+        self.e[index(va)].0[array] = Entry {
             tag: va | 0xfff,
             addend,
         };
@@ -184,7 +197,7 @@ impl Tlb {
             }
             let n = self.ng_len as usize;
             if n < NG_SLOTS {
-                self.ng[n] = (array * TLB_ENTRIES + index(va)) as u16;
+                self.ng[n] = (index(va) * TLB_SLOTS + array) as u16;
             }
             self.ng_len = (n + 1).min(NG_SLOTS + 1) as u32;
         }
@@ -200,10 +213,9 @@ impl Tlb {
                 *x = Xc::default();
             }
         }
-        let i = index(va);
-        for a in &mut self.e {
-            if (a[i].tag ^ va) & 0x00ff_ffff_ffff_f000 == 0 {
-                a[i] = Entry::default();
+        for e in &mut self.e[index(va)].0 {
+            if (e.tag ^ va) & 0x00ff_ffff_ffff_f000 == 0 {
+                *e = Entry::default();
             }
         }
     }
@@ -214,8 +226,8 @@ fn index(va: u64) -> usize {
     (va >> 12) as usize & (TLB_ENTRIES - 1)
 }
 
-/// A vCPU: architectural state, the JIT's vector constants, then its TLB,
-/// then its JIT state. `repr(C)` with `cpu` first, so a `*mut Vcpu` is also a
+/// A vCPU: architectural state, the JIT's vector constants, its JIT state,
+/// then its TLB (whose arrays come last). `repr(C)` with `cpu` first, so a `*mut Vcpu` is also a
 /// `*mut Cpu` with the host ABI offsets; JIT blocks get this pointer
 /// (docs/jit.md).
 #[repr(C)]
@@ -225,14 +237,14 @@ pub struct Vcpu {
     /// (`jit::emit::crypto`, M6.5): one `ldr q` each, where V8 would build a
     /// `v128.const` from sixteen bytes of immediates every time.
     pub consts: crate::jit::emit::Consts,
-    pub tlb: Tlb,
     pub jit: crate::jit::State,
+    pub tlb: Tlb,
     /// FEAT_RNG's stream (`Vm::with_devices` keys it).
     pub rng: crate::rng::Rng,
 }
 
 impl Vcpu {
-    /// Boxed: the TLB is 640 KiB.
+    /// Boxed: the TLB is 770 KiB.
     pub fn new(cpu: Cpu) -> Box<Vcpu> {
         let mut v = Box::<Vcpu>::new_zeroed();
         let p = v.as_mut_ptr();
@@ -613,7 +625,7 @@ impl<'a> Mmu<'a> {
             return self.mem.host(va, len, access);
         }
         if let Some(t) = &self.tlb {
-            let e = t.e[3 * el as usize + u as usize][index(va)];
+            let e = t.e[index(va)].0[3 * el as usize + u as usize];
             if e.tag == va.wrapping_add(len - 1) | 0xfff {
                 return Ok(va.wrapping_add(e.addend) as usize as *mut u8);
             }
@@ -779,7 +791,7 @@ impl Bus for Mmu<'_> {
         if c.sctlr_el1 & (sctlr::M | sctlr::A) != sctlr::M {
             return None;
         }
-        let e = self.tlb.as_ref()?.e[3 * c.el() as usize + u as usize][index(va)];
+        let e = self.tlb.as_ref()?.e[index(va)].0[3 * c.el() as usize + u as usize];
         (e.tag == va.wrapping_add(size as u64 - 1) | 0xfff)
             .then(|| va.wrapping_add(e.addend) as usize as *mut u8)
     }

@@ -1694,3 +1694,51 @@ other 13 sessions with warm members and the four without ran through.
 **Left** (backlog): returns (a third of the kernel's entry stalls; the host's own call and return would predict
 them), the dispatcher's entries, the TLB arrays' offsets as constants in every access, fewer modules for a browser
 (~14,500 in a session, ~35 blocks each).
+
+## M8: the `Vcpu`'s fixed offsets within V8's reach (2026-10-16)
+
+Every guest load and store reached its TLB entry at a `Vcpu` offset of 0x10540-0x60548 (one array per EL and use,
+64 KiB each, behind `Cpu`), past what an arm64 `ldr` takes as an immediate (32,760 for 8 bytes): V8 built each offset
+with a `mov`+`movk`, for the tag and again for the addend, in both tiers. Counted over the 40 hottest functions of
+Firefox's pages session (the jitdump of "where a busy vCPU's time goes", 44,567 instructions), the pairs built:
+
+| offset | what | pairs |
+|---|---|---|
+| 0x10540-0x60548 | the TLB's tags and addends | 474 |
+| 0xa0db0 | `JC_PTR` (the jump cache's pointer, in `jit::State` behind the TLB) | 75 |
+| 0x60540, 0x60548 | the transfer cache's tag and target | 74 |
+| 0xa0540, 0xa0548 | the transfer cache's generations | 37 |
+
+2.4% of those functions' instructions; none of the profile's samples land on them (they retire at once), so the
+expected gain was small. The rest of the 32-bit constants there are `jc + constant` (a jump cache entry for a key
+known at compile time), inherent. **Built:** (a) the six TLB arrays interleaved by index, `e[index][array]` in a
+128-byte line, so the array's offset is `0x600 + 16 × array` and the entry's `(va >> 5) & 0x7ff80` (as many
+instructions as `(va >> 8) & 0xfff0`); (b) `jit::State` and the TLB's scalars before the arrays; (c) the transfer
+cache at 0x80000 plus a small offset, with 0x80000 ORed into its index (one `orr` against two `mov`+`movk`). Every
+fixed offset JIT code loads is now under 0x800 (a compile-time assert). The core's own wasm shrank 62 KB (its Rust
+TLB lookups take the small offsets too). V8's code for the `el1-mmu` guest (`tools/v8code.ts`): 116 of the TLB's
+pairs and the 15 of `JC_PTR`/`HOT_PTR` gone, 0.6% less code (a guest of few accesses).
+
+Chromium 153, the dev VM (8 vCPUs), alternating. JSON in `results/m8-tlbc/` (`a`: before, `b`: (a) alone, `c`:
+all three).
+
+**Firefox's pages session** (busy: a busy vCPU's MIPS inside `vm_run_cpu`; one session each):
+
+| | session | busy MIPS | wasm compiled | flushes |
+|---|---|---|---|---|
+| before | 376, 375, 372 s | 140, 134, 142 | 507-508 MB | 2 |
+| interleaved TLB | 393 s | 129 | 507 MB | 2 |
+| **all three** | 366, 364, 373 s | 139, 137, 135 | 506-509 MB | 2 |
+
+Even, within the sessions' spread. A fourth session before the change (`a-1`) waited 330 s for Firefox's first page,
+the hang seen once before with warm 32 (backlog); it isn't counted.
+
+**The gates** (`bench/run.ts --page bench/boot/index.html`, three rounds each, pooled medians, ms):
+
+| | before | interleaved TLB | | before | all three | |
+|---|---|---|---|---|---|---|
+| `smp_alpine_jit` total, 1 / 2 / 4 vCPUs | 9659, 9394, 9536 | 9630, 9349, 9471 | −0.3, −0.5, −0.7% | 9706, 9379, 9490 | 9618, 9310, 9416 | −0.9, −0.7, −0.8% |
+| `smp_user_jit_4` total | 18785 | 18691 | −0.5% | 18822 | 18738 | −0.4% |
+
+Below the noise, but the same sign on every boot median; nothing regressed. Kept as less code at no cost: the TLB
+grew to 770 KiB a vCPU (two spare slots an index), and a whole flush clears 512 KiB instead of 384.

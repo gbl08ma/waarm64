@@ -1,4 +1,4 @@
-# M8 JIT: a browser's code in the JIT, handover (2026-10-16)
+# M8 JIT: a browser's code in the JIT, handover (2026-10-16, later)
 
 A side track of M8, asked for by the user: make general and "complex app" work (a browser in the
 guest) faster and smoother. Not a milestone phase; no kickoff. How things work is in docs/jit.md
@@ -8,32 +8,36 @@ docs/backlog.md "Interpreter" and "JIT". The previous handovers of this track (t
 arenas, 2026-10-09; V8's GC stalls, 2026-10-15; where a busy vCPU's time goes, 2026-10-15) are in git history;
 their lessons are below.
 
-**Done last (2026-10-16):** where a busy vCPU's time goes in Firefox's pages session, and the lever
-(`bench/boot/REPORT.md` "M8: where a busy vCPU's time goes in Firefox", data in `bench/boot/results/m8-warm/`). 26%
-of a busy vCPU stalls on a guest function's first instruction, 83% of it after a `return_call_indirect` (direct and
-imported tail calls don't stall; the code footprint defeats the branch predictor). **Warm members**
-(`jit::Config::warm`, 16; docs/jit.md "Compile policy"): a forward region takes a same-page successor that has run 16
-dispatches but isn't compiled, so the jump-cache tail into it becomes an edge. Firefox: busy MIPS 119 → 141 (+18%),
-the session −8%, 16% more wasm, the same flushes; Alpine boot −3 to −5%, userspace −3%. One warm-32 session timed out
-waiting for Firefox (backlog; not seen in 13 others).
+**Done last (2026-10-16): the `Vcpu`'s fixed offsets within V8's reach** (queue item 1; `bench/boot/REPORT.md`
+"M8: the `Vcpu`'s fixed offsets within V8's reach", data in `bench/boot/results/m8-tlbc/`; docs/jit.md "Functions",
+"Loads and stores"). The TLB arrays are interleaved by index (`Tlb::e[index].0[array]`, a 128-byte line), `jit::State`
+and the TLB's scalars sit before the arrays, and the transfer cache's index has 0x80000 ORed in: every fixed offset JIT
+code loads is under 0x800 (asserted), where V8 had built 0x10540-0xa0db0 with `mov`+`movk` (2.4% of the hottest
+Firefox functions' instructions). Gates −0.4 to −0.9% (under the noise, same sign everywhere), Firefox even, the core
+62 KB smaller. The audit the user asked for (other state at inconvenient offsets) found only these: the rest of the
+32-bit constants in hot code are `jc + constant` for keys known at compile time (inherent), and RAM's base appears only
+with the MMU off.
+
+**Before that:** warm members (`jit::Config::warm`, 16; Firefox busy MIPS 119 → 141), after finding that 26% of a busy
+vCPU stalls on a guest function's first instruction, 83% of it after a `return_call_indirect`.
+
+**The user's view (2026-10-16):** browsing in the desktop guest feels 1.5-2× faster since warm members, the compile
+worker and the vCPU workers' return to their event loop, more than busy MIPS and the page loads showed. The session's
+numbers understate interactive gains (they don't measure latency to input or frame pacing while a page is busy):
+don't drop a lever only because its busy-MIPS gain is small, and consider a responsiveness measure (input-to-frame
+latency during a page load) if a lever's case rests on it.
 
 **The task: the user's queue (2026-10-15), in order.**
 
-1. **The TLB arrays' offsets as constants** (backlog "The TLB arrays at a constant offset in every access"): every
-   load/store reaches its TLB tag and addend at `Vcpu` offset 0x40540 (`mov`+`movk` twice an access in both tiers;
-   see a hot function's disassembly with `bench/boot/results/m8-warm/tools/ann.sh` on a `jit.tsv.hot`). A per-function local `vcpu + array`, or
-   the arrays near the start of `Vcpu` (the lockstep test compares `CPU_BYTES` of `Cpu`, not `Vcpu`). Measure code
-   bytes (the session's `jit.bytes` is wasm; V8's machine code: `--print-wasm-code` on captured modules, as for the
-   slow arms), busy MIPS and the gates.
-2. **Fewer, larger modules for a browser** (backlog): ~14,500 modules of ~35 blocks a session. First split them by
+1. **Fewer, larger modules for a browser** (backlog): ~14,500 modules of ~35 blocks a session. First split them by
    what emitted them and by size; then the step budget and a module minimum.
-3. Later (backlog "Indirect transfers into a browser's code"): returns through the host's own call/return, re-emitting
+2. Later (backlog "Indirect transfers into a browser's code"): returns through the host's own call/return, re-emitting
    hot regions whose jump-cache targets got compiled, smaller slow arms, per-module eviction, Liftoff's zero-fill.
 
 ## How to measure (`tools/`: `bench/boot/results/m8-warm/tools/`)
 
 - **The session:** `PHASES=pages TIMELINE_ALL=1 node bench/gpu/firefox-load.ts virgl target/archarm/desktop.qcow2
-  <outdir>` (~380 s plus ~70 s of boot: background, `timeout 900`, under `systemd-run --user --scope -p
+  <outdir>` (~380 s of pages, ~750 s in all with the boot and Firefox's start: background, `timeout 900`, under `systemd-run --user --scope -p
   MemoryMax=10G -p MemorySwapMax=0`; nothing else Chromium-heavy beside it); busy MIPS from `node bench/gpu/stalls.ts
   <outdir>/pages-all.timeline.json`; `results.json`'s `jit` has the wasm bytes, modules, flushes. A/B: core builds
   swapped (`tools/abw.sh`, `cmp` before each run), two sessions each at least, alternating.
@@ -129,5 +133,12 @@ waiting for Firefox (backlog; not seen in 13 others).
 - **A Python edit that replaces `s[s.index(a):s.index(b)]` with an end marker that occurs earlier
   replaces the empty string**, i.e. inserts between every character: assert the slice is non-empty
   (it wrecked `jit/mod.rs` once; restored from git).
+- **An arm64 `ldr` folds offsets up to 32,760 (8 bytes), 65,520 (`q`), 4,095 (a byte):** past that V8 builds the
+  constant with `mov`+`movk` at every use. Count such pairs in a hot function's disassembly (`ann.sh`) by the value
+  they build; a timer profile won't show them (they retire at once).
+- **A Firefox session lasts ~750 s with its boot here:** an outer `timeout` under that kills the A/B loop and leaves
+  the session running; run `abw.sh` in the background without one (its own `timeout 900` bounds each session).
+- **The A/B loops leave the last build they copied in `target/`, newer than the sources:** cargo won't rebuild it.
+  Copy the build you mean back (and `cmp`) before CI.
 - **A shell `rm` of `$VAR/*` is refused by the harness's safety check:** write `"${VAR:?}"/…` or a
   literal path.

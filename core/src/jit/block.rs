@@ -1425,9 +1425,8 @@ mod tests {
             crate::jit::wasm::uleb(&mut l, o);
             l
         };
-        let xc = core::mem::offset_of!(crate::mmu::Tlb, xc);
-        let tag = load(off(xc));
-        let to = load(off(xc) + 8);
+        let tag = load(emit::XC_LO as u64);
+        let to = load(emit::XC_LO as u64 + 8);
         let xgen = load(off(core::mem::offset_of!(crate::mmu::Tlb, xgen)));
         let tail = [0xa7, 0x13, 0, 0]; // i32.wrap_i64, return_call_indirect
         // A miss tail-calls the cache's miss function for EL0, imported by
@@ -1536,8 +1535,7 @@ mod tests {
             crate::jit::wasm::uleb(&mut l, o);
             l
         };
-        let xc = (core::mem::offset_of!(crate::mmu::Vcpu, tlb)
-            + core::mem::offset_of!(crate::mmu::Tlb, xc)) as u64;
+        let xc = emit::XC_LO as u64;
         for el in 0..2 {
             assert!(has(&bytes, &at(0x29, emit::tlb_array(el, 2) as u64)));
         }

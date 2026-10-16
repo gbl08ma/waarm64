@@ -36,7 +36,7 @@ use crate::cpu::Cpu;
 use crate::decode::Op;
 use crate::interp::sys::DCZID_BS;
 use crate::interp::{adr_imm, bit, bit_masks, bits, sext, trunc};
-use crate::mmu::{TLB_ENTRIES, Tlb, Vcpu, XC_ENTRIES};
+use crate::mmu::{TLB_ENTRIES, TLB_SLOTS, Tlb, Vcpu, XC_ENTRIES};
 
 /// A block function's locals after its parameter (local 0, the vCPU), as
 /// emitted: the entry PC (local 1), scratch (i64 in 2..=5, i32 in 6..=9), the
@@ -1073,15 +1073,15 @@ pub fn indirect(
 /// condition on the stack: the entry's tag, its generation and its length.
 fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>) {
     const TO: u32 = BASE; // i64 scratch
-    // The entry, `vcpu + ((va >> 2) & (XC - 1)) * 16`, in one shift and mask.
+    // The entry, `vcpu + XC + ((va >> 2) & (XC_ENTRIES - 1)) * 16`.
     xc_entry(c);
-    c.i64_load(XC);
+    c.i64_load(XC_LO);
     c.local_get(ADDR);
     if regime != 0 {
         c.i64_const(regime as i64).op(OR + W);
     }
     c.op(EQ + WC).op(AND);
-    c.local_get(TLBE).i64_load(XC + 8).local_tee(TO);
+    c.local_get(TLBE).i64_load(XC_LO + 8).local_tee(TO);
     c.i64_const(48).op(SHR_U + W);
     c.local_get(VCPU).i64_load(xgen(regime)).op(EQ + WC).op(AND);
     // left >= len + its length
@@ -1107,8 +1107,13 @@ fn via_xc(c: &mut Func, regime: u64, len: u32, ty: u32, check: Option<u32>) {
 pub const JC_PTR: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, jc)) as u32;
 pub const HOT_PTR: u32 = (offset_of!(Vcpu, jit) + offset_of!(super::State, hot)) as u32;
 
-/// The transfer cache's offset in the `Vcpu`.
+/// The transfer cache's offset in the `Vcpu`, split: [`xc_entry`] ORs the
+/// high part (a multiple of the cache's size) into the entry's index, and its
+/// loads take the low part, small enough for V8 to fold into them.
 const XC: u32 = (offset_of!(Vcpu, tlb) + offset_of!(Tlb, xc)) as u32;
+const XC_SIZE: u32 = (XC_ENTRIES * 16) as u32;
+pub const XC_LO: u32 = XC % XC_SIZE;
+const _: () = assert!(XC_SIZE.is_power_of_two() && XC_LO < 0x1000);
 
 /// The `Vcpu` offset of the transfer cache generation of `regime`'s EL.
 fn xgen(regime: u64) -> u32 {
@@ -1116,10 +1121,11 @@ fn xgen(regime: u64) -> u32 {
 }
 
 /// Pushes the `Vcpu`-relative address of the VA in `ADDR`'s transfer cache
-/// entry (its offset in the `Vcpu` to add), keeping it in `TLBE`.
+/// entry less [`XC_LO`] (the offset its loads take), keeping it in `TLBE`.
 fn xc_entry(c: &mut Func) {
     c.local_get(ADDR).i32_wrap_i64().i32_const(2).op(SHL);
     c.i32_const((XC_ENTRIES as i32 - 1) << 4).op(AND);
+    c.i32_const((XC - XC_LO) as i32).op(OR);
     c.local_get(VCPU).op(ADD).local_tee(TLBE);
 }
 
@@ -1137,9 +1143,9 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) -> 
     let (arr, base, phys) = tlb;
     c.local_get(VCPU).i64_load(PC).local_tee(ADDR);
     c.i64_const(3).op(AND + W).op(EQZ + WC); // aligned
-    c.local_get(ADDR).i64_const(8).op(SHR_U + W).i32_wrap_i64();
-    c.i32_const((TLB_ENTRIES as i32 - 1) << 4).op(AND);
-    c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
+    c.local_get(ADDR);
+    tlb_entry(&mut c);
+    c.i64_load(arr);
     c.local_get(ADDR)
         .i64_const(0xfff)
         .op(OR + W)
@@ -1172,7 +1178,7 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) -> 
     c.local_get(ADDR)
         .i64_const(regime as i64)
         .op(OR + W)
-        .i64_store(XC);
+        .i64_store(XC_LO);
     c.local_get(TLBE);
     c.local_get(JCE).i64_load(8); // idx, len
     c.local_get(VCPU)
@@ -1180,7 +1186,7 @@ pub fn xmiss(regime: u64, tlb: (u32, u64, u64), ty: u32, check: Option<u32>) -> 
         .i64_const(48)
         .op(SHL + W)
         .op(OR + W);
-    c.i64_store(XC + 8);
+    c.i64_store(XC_LO + 8);
     if let Some(chk) = check {
         c.local_get(VCPU).local_get(KEY).call(chk);
     }
@@ -1281,9 +1287,9 @@ pub const REDIRECT: u32 = 1 << 31;
 /// `host` (a successor's page, in another guest page than the block: step 7).
 pub fn maps_to(c: &mut Func, off: i64, arr: u32, host: u64) {
     pc_plus(c, off);
-    c.local_tee(ADDR).i64_const(8).op(SHR_U + W).i32_wrap_i64();
-    c.i32_const((TLB_ENTRIES as i32 - 1) << 4).op(AND);
-    c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
+    c.local_tee(ADDR);
+    tlb_entry(c);
+    c.i64_load(arr);
     c.local_get(ADDR).i64_const(0xfff).op(OR + W).op(EQ + WC);
     c.local_get(TLBE)
         .i64_load(arr + 8)
@@ -1292,9 +1298,26 @@ pub fn maps_to(c: &mut Func, off: i64, arr: u32, host: u64) {
     c.i64_const(host as i64).op(EQ + WC).op(AND);
 }
 
-/// The `Vcpu` offset of TLB array `3 * el + u` (read 0, write 1).
+/// The `Vcpu` offset of TLB array `3 * el + u` (read 0, write 1) at index 0:
+/// the offset its loads take from [`tlb_entry`]'s pointer (`mmu::Tlb`: the
+/// arrays are interleaved, so it's small enough for V8 to fold).
 pub fn tlb_array(el: u64, u: u64) -> u32 {
-    (core::mem::offset_of!(Vcpu, tlb) + (3 * el + u) as usize * TLB_ENTRIES * 16) as u32
+    TLB_E + (3 * el + u) as u32 * 16
+}
+
+const TLB_E: u32 = (offset_of!(Vcpu, tlb) + offset_of!(Tlb, e)) as u32;
+// Every offset JIT code loads from the `Vcpu` at is one V8 folds into the load
+// (docs/jit.md "Functions").
+const _: () = assert!(TLB_E + 6 * 16 <= 0x800 && JC_PTR < 0x800 && HOT_PTR < 0x800);
+const _: () = assert!((offset_of!(Vcpu, tlb) + offset_of!(Tlb, xgen) + 16) <= 0x800);
+
+/// Turns the VA (i64) on the stack into the `Vcpu`-relative pointer to its TLB
+/// index's entries (i32), kept in `TLBE`: index × 128 in one shift and mask.
+fn tlb_entry(c: &mut Func) {
+    const _: () = assert!(TLB_SLOTS * 16 == 1 << 7);
+    c.i64_const(5).op(SHR_U + W).i32_wrap_i64();
+    c.i32_const((TLB_ENTRIES as i32 - 1) << 7).op(AND);
+    c.local_get(VCPU).op(ADD).local_tee(TLBE);
 }
 
 // Load/store scratch: the address and base (i64), the RAM offset or entry
@@ -2048,11 +2071,10 @@ fn access(
             base
         }
         Bus::Tlb { read } => {
-            let arr = read + if write { (TLB_ENTRIES * 16) as u32 } else { 0 };
-            // The entry's offset, index × 16, in one shift and mask.
-            c.local_get(ADDR).i64_const(8).op(SHR_U + W).i32_wrap_i64();
-            c.i32_const((TLB_ENTRIES as i32 - 1) << 4).op(AND);
-            c.local_get(VCPU).op(ADD).local_tee(TLBE).i64_load(arr);
+            let arr = read + if write { 16 } else { 0 };
+            c.local_get(ADDR);
+            tlb_entry(c);
+            c.i64_load(arr);
             c.local_get(ADDR);
             if len > 1 {
                 c.i64_const(len as i64 - 1).i64_add();
@@ -2068,7 +2090,7 @@ fn access(
     match cx.bus {
         Bus::Flat { .. } => c.local_get(OFF).i32_wrap_i64(),
         Bus::Tlb { read } => {
-            let arr = read + if write { (TLB_ENTRIES * 16) as u32 } else { 0 };
+            let arr = read + if write { 16 } else { 0 };
             c.local_get(TLBE)
                 .i64_load(arr + 8)
                 .local_get(ADDR)
@@ -3169,7 +3191,7 @@ mod tests {
         }
         // A store uses the write array; an SP base checks SP's alignment first.
         let mut load = vec![0x29, 3];
-        uleb(&mut load, (read + 0x10000) as u64);
+        uleb(&mut load, tlb_array(1, 1) as u64);
         let b = emit_in(0xf90007e0, 0, &tlb).unwrap(); // str x0, [sp, #8]
         assert!(b.windows(load.len()).any(|w| w == load));
         assert!(

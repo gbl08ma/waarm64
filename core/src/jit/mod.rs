@@ -30,7 +30,7 @@ use crate::vm::Lock;
 /// the one that didn't left its exit in [`State::exit`] and the PC on it.
 pub type Block = unsafe extern "C" fn(*mut Vcpu, u32, u32) -> u32;
 
-/// Per-vCPU JIT state, after the TLB in [`Vcpu`]. The helpers use the first
+/// Per-vCPU JIT state, before the TLB in [`Vcpu`]. The helpers use the first
 /// two fields; the cache exists only while the JIT is on.
 #[repr(C)]
 #[derive(Default)]

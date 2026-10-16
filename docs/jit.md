@@ -25,8 +25,12 @@ the interpreter's own code.
   wasm exception handling. Exits mid-block (MMIO via `vm::Io` after a helper's `Fault(Bus)`,
   timer registers, WFI, HVC, TX full, `DEVICE`) need nothing special.
 - **Functions:** `f(vcpu, acc, left) -> acc + retired`, where `vcpu` points at the `Vcpu` (the
-  `Cpu` at 0, then the TLB, then `State`), `left` is the step budget. Core-internal: its shape can
-  change without an ABI bump.
+  `Cpu` at 0, the crypto constants, `State`, the TLB's scalars, then its arrays and the transfer
+  cache), `left` is the step budget. Whatever JIT code loads at a fixed offset sits within the
+  first 0x800 bytes, where V8 folds the offset into the load (past ~32 KiB it builds it with a
+  `mov`+`movk` every time): the TLB arrays are interleaved (below, "Loads and stores"), and the
+  transfer cache (at 0x80000 plus a small offset) is reached by ORing 0x80000 into its index.
+  Core-internal: its shape can change without an ABI bump.
 - **Where it runs:** in the vCPU worker (Chromium) and in Node, the same code (`jitHost` in
   `web/vm.ts`). Natively there's no wasm engine: `cargo test` covers the translator's structure
   (block formation, liveness, the encoder's bytes), and the JIT's behavior is tested on the wasm
@@ -390,7 +394,10 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   zero-extend. An instruction is inline only if its handler can't fail, decided from the word.
 - **Loads and stores (the TLB fast path):** through the TLB array of the block's EL (static:
   EL is in the key), tag = `(va + len − 1) | 0xfff`, host = `va + addend`, entry offset
-  `(va >> 8) & 0xfff0`; with the MMU off a bounds check against RAM, whose layout the block embeds.
+  `(va >> 5) & 0x7ff80` plus the array's `16 × (3·el + use)`: the six arrays are interleaved by
+  index (`mmu::Tlb`), so every array's offset from the `Vcpu` stays under 0x800 and V8 folds it into
+  the load (separate arrays at 0x30540 and up took a `mov`+`movk` for each tag and addend); with the
+  MMU off a bounds check against RAM, whose layout the block embeds.
   Every addressing form of LDR/STR, LDP/STP/LDPSW/LDNP/STNP, LDR literal, PRFM, SIMD&FP single and
   pair, LD1/ST1 multiple and of one lane (a narrow load into the V register's lane, the others
   kept), LDTR/STTR (through EL0's TLB arrays). Anything else (a miss, a fault,
