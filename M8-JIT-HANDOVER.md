@@ -37,7 +37,9 @@ latency during a page load) if a lever's case rests on it.
 
 1. **Fewer, larger modules for a browser** (backlog, rescoped): 82% of the ~14,500 modules are tier-ups; an install
    now costs a vCPU ~0.06 ms, so measure what the module count costs in RSS and in the wasm code GC's stops first,
-   and only then try tier-ups that wait for company.
+   and only then try tier-ups that wait for company. The pages session records no host memory yet (`results.json`'s
+   `info` is the guest's `free`): first sample the renderer's `VmRSS` (`/proc/<pid>/status`, the Chromium process
+   with `--type=renderer`) through the session, next to `jit.modules`.
 2. Later (backlog "Indirect transfers into a browser's code"): returns through the host's own call/return, re-emitting
    hot regions whose jump-cache targets got compiled, smaller slow arms, per-module eviction, Liftoff's zero-fill.
 
