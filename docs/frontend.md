@@ -673,8 +673,7 @@ web/tailscale.ts, the client in its own worker), or to a tailcat server (below).
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected.
-- **tailcat** (docs/plans/tailnet-client.md §4; T2, being finished: the Debian test is to run on the
-  dev VM): **Connect to** "A tailcat server" swaps the form's fields for a **tailcat address** (a
+- **tailcat** (docs/plans/tailnet-client.md §4, T2): **Connect to** "A tailcat server" swaps the form's fields for a **tailcat address** (a
   password field; a secret, never saved, so nothing reconnects by itself) and a line on what to
   run: `tailcat serve exit-node` on a computer of the user's. The Rust tailnet client
   (web/tailcat.ts, web/tailcat-worker.ts, net/ts) connects through the address's DERP relay; the
@@ -710,7 +709,7 @@ web/tailscale.ts, the client in its own worker), or to a tailcat server (below).
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
   tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
-  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver).
+  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver), tests/page-network.test.ts (the menu: both kinds' form errors, a tailcat server that never answers), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine).
   Not tested: the menu's DOM and a real interactive login (they need a control server that serves
   one; the docs/backlog.md "Network" entry says what's missing).
 

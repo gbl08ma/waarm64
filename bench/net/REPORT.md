@@ -124,7 +124,31 @@ Findings:
   them): a ping from the guest gets no reply. As planned.
 - `Running` takes ~65 ms against a warm server. A server that has just started answers the first
   meows only once its own relay connection is up (~2 s); the client meows every second meanwhile.
-- No IPv6 here: the IPv6 echo (to the exit node's `[::1]`) is skipped; the dev VM runs it.
+- No IPv6 here: the IPv6 echo is skipped; the dev VM runs it (below).
+
+### T1 on the M4 (2026-10-16)
+
+The same harness on the dev VM (Lima `dev`, 8 vCPUs of the M4, Node 26.7.0), against
+`tests/net/tailcat.sh`'s derper (`127.0.0.1:8443`) and exit node on the same VM; `opt-level=3`
+(459,855 bytes). Five runs, JSON in `results/t1/m4/`:
+
+| (5 runs) | min | median | max |
+|---|---|---|---|
+| compile and instantiate (ms) | 1.0 | 1.1 | 1.2 |
+| client created → `Running` (ms) | 31 | 32 | 32 |
+| first echo, IPv4 through the translator (ms) | 1.0 | 1.0 | 1.1 |
+| first echo, **IPv6** untranslated, to `fd00:7e57::1` (ms) | 1.4 | 1.5 | 1.6 |
+| UDP echo RTT, 20 echoes (ms, run medians) | 0.64 | 0.71 | 0.83 |
+| echo throughput, 1,260 B, 32 in flight, 5 s (Mbit/s each way) | 323 | 325 | 329 |
+
+No echo lost; the process at ~107% of a core. **~5 times the cloud container's numbers**, on a
+machine whose cores are much faster and where derper and tailcat have their own cores; still the
+harness's floor, not the client's ceiling. Found: **the exit node doesn't answer IPv6 to its
+`[::1]`** (the first harness's target: every echo timed out, nothing in tailcat's log). A loopback
+destination arriving from the tunnel is dropped by its netstack, while `127.0.0.1` works because it
+arrives as NAT64 `64:ff9b::7f00:1`. The harness now echoes to the machine's own non-link-local IPv6
+address; Lima's VM has none, so the run adds one (`sudo ip -6 addr add fd00:7e57::1/128 dev eth0
+nodad`; on `lo` Node calls it internal and the Debian test wouldn't pick it).
 
 ## Reproduce
 ```sh
@@ -133,8 +157,10 @@ tests/net/tailnet.sh up                      # headscale + a peer in rootless Po
 eval "$(tests/net/tailnet.sh env | sed 's/^/export /')"
 WEBPC_TS_AUTHKEY=$(tests/net/tailnet.sh key) node bench/net/spike.ts $WEBPC_TS_CONTROL $WEBPC_TS_PEER_IP 5
 tests/net/tailnet.sh down
-# T1 (a tailcat exit node on derper; on the dev VM tests/net/tailcat.sh will do this, see
-# M8-TAILNET-CLIENT-HANDOVER.md):
+# T1: a tailcat exit node on derper, both on this machine
 net/ts/build.sh
-node bench/net/tailcat.ts <tc… address> 5   # on the exit node's machine (the echo servers run here)
+tests/net/tailcat.sh up && eval "$(tests/net/tailcat.sh env)"
+sudo ip -6 addr add fd00:7e57::1/128 dev eth0 nodad    # only where the machine has no non-link-local IPv6
+WEBPC_TS_JSON=… NODE_EXTRA_CA_CERTS=$WEBPC_TAILCAT_CA node bench/net/tailcat.ts $WEBPC_TAILCAT_ADDR 5
+tests/net/tailcat.sh down
 ```

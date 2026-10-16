@@ -1,8 +1,7 @@
 # Our own Tailscale client, and tailcat (proposed, not scheduled)
 
-**Status:** accepted 2026-10-16 (the user: all the dependencies it needs are fine). **T1 done**
-(the module and tailcat in Node, measured: §7); **T2 written, half run** (in Chromium without a
-guest; Debian through tailcat waits for the dev VM: `M8-TAILNET-CLIENT-HANDOVER.md`). It continues
+**Status:** accepted 2026-10-16 (the user: all the dependencies it needs are fine). **T1 and T2
+done** (the module and tailcat in Node, measured; tailcat on the page, Debian through it: §7). It continues
 [networking.md](networking.md) (its §5, "Later: tailscale-rs"), which holds the decisions that
 stay: frames at the device, the Ethernet gateway (§3), the IP-packet port, the guest as the node.
 What exists: `net/ts/` (the module), `web/ts-client.ts` and `web/ts-wasi.ts` (its I/O),
@@ -303,8 +302,18 @@ not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s).
   `tests/net/tailcat.sh`. *Run in the cloud session:* `tests/network.test.ts` (the controller),
   `tests/tailcat-browser.test.ts` (Chromium 141, no guest: module loaded in 16 ms, `Running`
   122 ms after start against the Go client's ~2.5 s, 2,000 of 2,000 1,260-byte UDP echoes back).
-  *Not run yet:* `tests/net-tailcat.test.ts` (Debian needs our EDK2, built under Podman on arm64)
-  and `scripts/ci-net.sh`, `scripts/ci-debian.sh`: the handover's list.
+  *Done on the dev VM (2026-10-16):* `tests/tailcat-browser.test.ts` on Chromium 153 (`Running`
+  59 ms after start, 2,000 of 2,000 echoes, 137 Mbit/s each way); **`tests/net-tailcat.test.ts`
+  passed its first run** with no change to the client: networkd takes `192.0.0.2`/32 and the
+  tunnel's `fd7a:…`/128, HTTP and 2 MB over IPv4 (~12 MB/s: the MSS clamp holds) and over IPv6 to
+  this machine, and with `WEBPC_TAILCAT_INTERNET=1` example.com resolved and fetched through the
+  exit node. The menu's tailcat kind is in `tests/page-network.test.ts`. T1's harness on the M4:
+  323–329 Mbit/s each way (bench/net/REPORT.md "T1 on the M4"). *Found:* the exit node doesn't
+  answer IPv6 to its own `[::1]` (the harness's first target; the tests use the machine's
+  non-link-local IPv6 address, which Lima's VM lacks: docs/testing.md); and where the exit node's
+  machine has no IPv6 route out, the guest's IPv6 connections to the internet are accepted by
+  tailcat's netstack and then closed empty, so a client that prefers IPv6 (curl) fails instead of
+  falling back (docs/backlog.md "Network").
 - **T3 — Optional: the VM as a tailcat server.** The module answers meows (accepting clients,
   optionally only `--allow`ed keys), and the page shows the VM's own `tc…` address: anyone with
   the tailcat CLI runs `tailcat ssh tc…` (port 22 of the guest's sshd) or `tailcat tc… 8080`.

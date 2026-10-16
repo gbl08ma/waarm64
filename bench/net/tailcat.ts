@@ -1,12 +1,15 @@
 // T1 (docs/plans/tailnet-client.md): the tailnet client module in Node,
 // against a tailcat exit node: connect, then UDP echoes from a "guest" through
 // the exit node to an echo server on the exit node's machine (IPv4, translated
-// to the tunnel's IPv6, and IPv6), ICMP echo, RTT and echo throughput.
+// to the tunnel's IPv6, and IPv6 to this machine's non-link-local IPv6 address: the exit node's
+// netstack drops packets to [::1], a loopback address arriving from outside), ICMP echo, RTT and
+// echo throughput.
 // Usage: node bench/net/tailcat.ts <tc… address> [seconds] (the echo servers
 // run here, so this must be the exit node's machine; WEBPC_TS_JSON=<file>
 // writes the numbers; NODE_EXTRA_CA_CERTS for a test relay's CA.)
 import { createSocket } from 'node:dgram';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
+import { networkInterfaces } from 'node:os';
 import { TsClient, TsModule, type TsEvent } from '../../web/ts-client.ts';
 import { checksum } from '../../web/net.ts';
 
@@ -15,14 +18,25 @@ const wasm = process.env.WEBPC_TS_WASM ?? 'target/net/ts.wasm';
 const PORT = 7777;
 const GUEST4 = [192, 0, 0, 2];
 
-// Echo servers on the exit node's localhost, both families (where there's IPv6).
-let has6 = true;
-for (const [type, host] of [['udp4', '127.0.0.1'], ['udp6', '::1']] as const) {
+// Echo servers on the exit node's machine: IPv4 on its localhost (127.0.0.1 is reached as NAT64
+// 64:ff9b::7f00:1), IPv6 on an address of its own that isn't loopback or link-local, if it has one.
+const host6 = Object.values(networkInterfaces()).flat()
+  .find((a) => a && a.family === 'IPv6' && !a.internal && !a.address.startsWith('fe80'))?.address;
+let has6 = !!host6;
+const servers: ['udp4' | 'udp6', string][] = [['udp4', '127.0.0.1'], ...(host6 ? [['udp6', host6] as ['udp6', string]] : [])];
+for (const [type, host] of servers) {
   const s = createSocket(type);
   s.on('message', (m, r) => s.send(m, r.port, r.address));
   const bound = await new Promise<boolean>((resolve) => { s.once('error', () => resolve(false)); s.bind(PORT, host, () => resolve(true)); });
   if (!bound) has6 = false;
   s.unref();
+}
+/** An IPv6 address's 16 bytes. */
+function v6bytes(a: string) {
+  const [l, r = ''] = a.split('::');
+  const g = (s: string) => (s ? s.split(':').map((x) => parseInt(x, 16)) : []);
+  const words = a.includes('::') ? [...g(l), ...Array(8 - g(l).length - g(r).length).fill(0), ...g(r)] : g(l);
+  return words.flatMap((w) => [w >> 8, w & 255]);
 }
 
 function sum(b: Uint8Array) {
@@ -112,9 +126,8 @@ const payload = (size: number, s: number) => { const b = new Uint8Array(size); n
 const v4 = (size: number) => (port: number, s: number) => udp4([127, 0, 0, 1], port, payload(size, s));
 const first = await echo(v4(32), 20000, 30000);
 console.log('first echo (IPv4 through the translator)', first.toFixed(1), 'ms');
-const loop6 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
-const v6 = has6 ? await echo((port, s) => udp6(self6, loop6, port, payload(32, s))) : null;
-console.log('IPv6 echo to [::1]', v6 === null ? 'skipped: no IPv6 here' : `${v6.toFixed(1)} ms`);
+const v6 = has6 ? await echo((port, s) => udp6(self6, v6bytes(host6!), port, payload(32, s))) : null;
+console.log(`IPv6 echo to [${host6 ?? ''}]`, v6 === null ? 'skipped: no non-link-local IPv6 address here' : `${v6.toFixed(1)} ms`);
 const icmp = await new Promise<string>((resolve) => {
   const to = setTimeout(() => resolve('no reply (the exit node forwards TCP and UDP only)'), 3000);
   pinged = () => { clearTimeout(to); resolve('replied'); };

@@ -63,6 +63,7 @@ after(async () => {
 
 const harness = <T>(page: Page, f: string) => page.evaluate(`window.harness.${f}`) as Promise<T>;
 
+
 test('the guest gets both leases from the tailcat client and reaches the exit node\'s network over IPv4 and IPv6', { skip, timeout: 900_000 }, async () => {
   const v4 = lan('IPv4');
   assert.ok(v4, 'this machine has a LAN IPv4 address for the exit node to dial');
@@ -103,9 +104,9 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
       const page4 = await run(`curl -s -m 20 http://${v4}:${port}/`, 60_000);
       assert.match(page4, /hello-from-the-exit-nodes-lan/, `the guest reaches ${v4}:${port} through the exit node${await context()}`);
       // 2 MB: full-size segments must fit the tunnel (the MSS clamp; 1,260-byte IPv4 packets).
-      const size = await run(`curl -s -m 60 -o /dev/null -w '%{size_download} %{speed_download}' http://${v4}:${port}/big`, 120_000);
-      console.log(`# 2 MB over IPv4 through tailcat: ${size.trim()} (bytes, bytes/s)`);
-      assert.equal(size.trim().split(' ')[0], String(BIG), `the whole download arrived: ${size}`);
+      const size = (await run(`curl -s -m 60 -o /dev/null -w '%{size_download} %{speed_download}\\n' http://${v4}:${port}/big`, 120_000)).split('\n')[0].trim();
+      console.log(`# 2 MB over IPv4 through tailcat: ${size} (bytes, bytes/s)`);
+      assert.equal(size.split(' ')[0], String(BIG), `the whole download arrived: ${size}`);
 
       // IPv6, untranslated: the guest's own tunnel address to this machine's IPv6 address.
       const v6 = lan('IPv6');
@@ -113,8 +114,8 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
       else {
         const page6 = await run(`curl -s -m 20 "http://[${v6}]:${port}/"`, 60_000);
         assert.match(page6, /hello-from-the-exit-nodes-lan/, `the guest reaches [${v6}]:${port} over IPv6${await context()}`);
-        const size6 = await run(`curl -s -m 60 -o /dev/null -w '%{size_download}' "http://[${v6}]:${port}/big"`, 120_000);
-        assert.equal(size6.trim(), String(BIG), `the whole IPv6 download arrived: ${size6}`);
+        const size6 = (await run(`curl -s -m 60 -o /dev/null -w '%{size_download}\\n' "http://[${v6}]:${port}/big"`, 120_000)).split('\n')[0].trim();
+        assert.equal(size6, String(BIG), `the whole IPv6 download arrived: ${size6}`);
       }
 
       // The internet and DNS through the exit node (the lease's resolver is 1.1.1.1): opt-in.
@@ -123,7 +124,10 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
         let named = '';
         for (let k = 0; k < 6 && !named.includes(' '); k++) named = (await run('getent ahostsv4 example.com | head -1', 60_000)).split('\n')[0].trim();
         assert.match(named, /^\d+\.\d+\.\d+\.\d+ /, 'the guest resolves example.com through the exit node');
-        assert.match(await run("curl -s -m 20 -o /dev/null -w 'status=%{http_code}' http://example.com/", 60_000), /status=[1-5]\d\d/);
+        // Over IPv4: where the exit node's machine has no IPv6 route out (the dev VM), its netstack still accepts
+        // the guest's IPv6 connection and then closes it empty, so curl never falls back (docs/backlog.md "Network").
+        const got = await run("curl -4 -s -m 20 -o /dev/null -w 'status=%{http_code}\\n' http://example.com/", 60_000);
+        if (!/status=[1-5]\d\d/.test(got)) assert.fail(`the guest reaches example.com: ${got}; ${await run('curl -4 -v -m 20 -o /dev/null http://example.com/ 2>&1 | tail -15; getent ahosts example.com', 60_000)}`);
       }
     } finally {
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});

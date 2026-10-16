@@ -1,0 +1,19 @@
+{
+  "wasm": "target/net/ts.wasm",
+  "node": "v26.7.0",
+  "wasmBytes": 459855,
+  "loadMs": 1.1343030000000027,
+  "runningMs": 31.181623000000002,
+  "firstEchoMs": 1.0422339999999934,
+  "v6EchoMs": 1.4637660000000068,
+  "icmp": "no reply (the exit node forwards TCP and UDP only)",
+  "rttMedianMs": 0.7117969999999332,
+  "rttMinMs": 0.47398100000009435,
+  "rttMaxMs": 2.24833099999978,
+  "echoes": 162086,
+  "lost": 0,
+  "echoBytes": 1260,
+  "seconds": 5,
+  "mbitPerSecEachWay": 326.765376,
+  "cpuPercent": 107.43751999999999
+}

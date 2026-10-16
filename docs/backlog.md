@@ -536,10 +536,23 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [frontend.md](frontend.md) "Network")
 
-- Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); `tests/net/tailnet.sh`'s approval assumes the peer is headscale node 1; IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
+- Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
 - The Tailscale client's own memory (a 27 MB wasm Go runtime in its worker) wasn't measured: it
   needs the headscale test tailnet.
+- **tailcat, IPv6 where the exit node's machine has none out** ([plans/tailnet-client.md](plans/tailnet-client.md) T2): the guest gets
+  the tunnel's IPv6 address and a default route, the exit node's netstack accepts each IPv6 TCP connection and then
+  closes it empty when its machine can't dial out over IPv6, so a client that tries IPv6 first (curl, browsers) fails
+  instead of falling back to IPv4 (found on the dev VM, which has no IPv6 route). A fix in the client: probe the exit
+  node's IPv6 reach once Running (a DNS query to `2606:4700:4700::1111` through the tunnel) and lease the guest no IPv6
+  default route if it doesn't answer, keeping the tunnel address for the server's own `fd7a:` services.
+- **tailcat loose ends** (T2): an address that names only a region (tailcat's public relays) fetches
+  `https://tailcat.dev/derpmap.json`, parsed in unit tests but never run against the real map (opt-in by hand:
+  `tailcat serve exit-node` with no `--key` on a machine with the internet); the relay's loss while running is
+  covered natively (`relay_loss_while_running`), not in a browser (kill derper mid-test); a guest spraying UDP flows
+  (a port per packet) slows a tailcat exit node to nothing (bench/net/REPORT.md "T1"), and ICMP isn't forwarded (no
+  `ping` beyond the exit node): say so in frontend.md if users hit them; DF-clear IPv4 over 1,260 bytes is dropped,
+  not fragmented (`nat46.rs`), unchecked with `tcpdump`.
 
 ## Tests and tools
 

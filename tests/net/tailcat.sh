@@ -10,6 +10,10 @@
 #   tests/net/tailcat.sh env    # prints them again
 #   tests/net/tailcat.sh down
 #
+# Shared: tests run concurrently (node --test runs files in parallel), so `up` while the rig runs
+# only counts one more user and prints its environment, and `down` stops it when the last user
+# leaves (`down --force` at once). Both hold a lock.
+#
 # Clients trust the relay's certificate through NODE_EXTRA_CA_CERTS=$WEBPC_TAILCAT_CA (Node) or
 # ignoreHTTPSErrors (Chromium).
 set -eu
@@ -29,6 +33,19 @@ build() {
 	GOBIN=$BIN GOTOOLCHAIN=auto go install "tailscale.com/cmd/derper@$TAILSCALE_VERSION" >&2
 }
 
+stop() {
+	for p in serve derper; do
+		[ -f "$DIR/run/$p.pid" ] && kill "$(cat "$DIR/run/$p.pid")" 2>/dev/null || true
+		rm -f "$DIR/run/$p.pid"
+	done
+}
+
+running() {
+	for p in serve derper; do
+		[ -f "$DIR/run/$p.pid" ] && kill -0 "$(cat "$DIR/run/$p.pid")" 2>/dev/null || return 1
+	done
+}
+
 env_out() {
 	echo "WEBPC_TAILCAT_ADDR=$(cat "$DIR/addr")"
 	echo "WEBPC_TAILCAT_CA=$DIR/certs/127.0.0.1.crt"
@@ -37,13 +54,21 @@ env_out() {
 case ${1:-} in
 up)
 	build
-	"$0" down
+	mkdir -p "$DIR/run"
+	exec 9> "$DIR/run/lock"
+	flock 9
+	if running; then
+		echo $(($(cat "$DIR/run/users" 2>/dev/null || echo 0) + 1)) > "$DIR/run/users"
+		env_out
+		exit 0
+	fi
+	stop
 	mkdir -p "$DIR/certs" "$DIR/run"
 	[ -f "$DIR/certs/127.0.0.1.crt" ] || openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
 		-subj /CN=127.0.0.1 -addext subjectAltName=IP:127.0.0.1 \
 		-keyout "$DIR/certs/127.0.0.1.key" -out "$DIR/certs/127.0.0.1.crt" 2>/dev/null
 	"$BIN/derper" -a "127.0.0.1:$PORT" -certmode manual -certdir "$DIR/certs" -hostname 127.0.0.1 -stun=false \
-		-c "$DIR/run/derper.key" > "$DIR/run/derper.log" 2>&1 &
+		-c "$DIR/run/derper.key" > "$DIR/run/derper.log" 2>&1 9>&- &
 	echo $! > "$DIR/run/derper.pid"
 	# A fresh server key whose region is that relay (an IP, so the address carries its port).
 	rm -f "$DIR/run/server.json"
@@ -58,7 +83,7 @@ for r in k["Public"]["Region"]:
 json.dump(k, open(p, "w"))
 EOF
 	SSL_CERT_FILE=$DIR/certs/127.0.0.1.crt NO_PROXY=127.0.0.1 no_proxy=127.0.0.1 \
-		"$BIN/tailcat" --verbose serve --key="$DIR/run/server.json" exit-node > "$DIR/run/serve.log" 2>&1 &
+		"$BIN/tailcat" --verbose serve --key="$DIR/run/server.json" exit-node > "$DIR/run/serve.log" 2>&1 9>&- &
 	echo $! > "$DIR/run/serve.pid"
 	i=0
 	until grep -q 'Server listening' "$DIR/run/serve.log"; do
@@ -73,14 +98,21 @@ EOF
 		[ $i -lt 60 ] || break
 		sleep 0.5
 	done
+	echo 1 > "$DIR/run/users"
 	env_out
 	;;
 env) env_out ;;
 down)
-	for p in serve derper; do
-		[ -f "$DIR/run/$p.pid" ] && kill "$(cat "$DIR/run/$p.pid")" 2>/dev/null || true
-		rm -f "$DIR/run/$p.pid"
-	done
+	mkdir -p "$DIR/run"
+	exec 9> "$DIR/run/lock"
+	flock 9
+	n=$(($(cat "$DIR/run/users" 2>/dev/null || echo 1) - 1))
+	if [ "${2:-}" = --force ] || [ $n -le 0 ]; then
+		stop
+		rm -f "$DIR/run/users"
+	else
+		echo $n > "$DIR/run/users"
+	fi
 	;;
 *) echo "usage: $0 up|env|down" >&2; exit 2 ;;
 esac

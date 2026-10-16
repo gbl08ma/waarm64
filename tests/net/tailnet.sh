@@ -130,7 +130,15 @@ CADDY
 		hs nodes list-routes 2>/dev/null | grep -q '0\.0\.0\.0/0' && break
 		sleep 0.5
 	done
-	hs nodes approve-routes -i 1 -r 0.0.0.0/0,::/0 >/dev/null
+	# By its ID, looked up by name: the peer isn't always node 1 (a re-registration takes the next), and under load
+	# it can take a while to be listed (both found when scripts/ci-net.sh ran the Debian tests side by side).
+	approved=
+	for _ in $(seq 60); do
+		id=$(hs nodes list -o json 2>/dev/null | python3 -c 'import json, sys; print(next(n["id"] for n in json.load(sys.stdin) if "peer" in (n.get("name"), n.get("given_name"))))' 2>/dev/null) &&
+			hs nodes approve-routes -i "$id" -r 0.0.0.0/0,::/0 >/dev/null 2>&1 && { approved=1; break; }
+		sleep 1
+	done
+	[ -n "$approved" ] || { echo "tailnet: couldn't approve the peer's routes:" >&2; hs nodes list >&2; exit 1; }
 	env_
 	;;
 env) env_ ;;
