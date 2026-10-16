@@ -1,0 +1,26 @@
+{
+ "date": "2026-10-16",
+ "node": "v26.7.0",
+ "host": "dev VM (Lima on M4 mac mini)",
+ "what": "tools/count.ts on a core with count-exits.patch (at be6f4d4), Alpine's userspace benchmark under the JIT, one vCPU (round-robin); transcribed from its output. Per phase: host seconds, steps, CNTVCT/CNTPCT read exits at EL0 and EL1, other timer-register exits (TVAL/CVAL/CTL, CNTFRQ), dispatches.",
+ "realtime": [
+  { "phase": "boot", "s": 4.89, "steps": 1957e6, "cntEl0": 36, "cntEl1": 51110, "otherTimer": 21805, "dispatches": 2036484 },
+  { "phase": "init", "s": 0.09, "steps": 58e6, "cntEl0": 0, "cntEl1": 1267, "otherTimer": 455, "dispatches": 48183 },
+  { "phase": "compress", "s": 1.51, "steps": 2053e6, "cntEl0": 5, "cntEl1": 11112, "otherTimer": 7430, "dispatches": 228104 },
+  { "phase": "lua", "s": 2.49, "steps": 2987e6, "cntEl0": 8, "cntEl1": 17817, "otherTimer": 12375, "dispatches": 248866 },
+  { "phase": "churn", "s": 0.94, "steps": 470e6, "cntEl0": 0, "cntEl1": 13342, "otherTimer": 4675, "dispatches": 417134 },
+  { "phase": "sqlite", "s": 1.95, "steps": 1980e6, "cntEl0": 0, "cntEl1": 13831, "otherTimer": 9625, "dispatches": 333679 },
+  { "phase": "shutdown", "s": 2.62, "steps": 290e6, "cntEl0": 3, "cntEl1": 8354, "otherTimer": 3565, "dispatches": 276178 },
+  { "phase": "total", "s": 14.48, "steps": 9796e6, "cntEl0": 52, "cntEl1": 116833, "otherTimer": 59930, "dispatches": 3588628 }
+ ],
+ "deterministic": [
+  { "phase": "boot", "s": 5.18, "steps": 2114e6, "cntEl0": 40, "cntEl1": 238552, "otherTimer": 164155, "dispatches": 2562689 },
+  { "phase": "init", "s": 0.13, "steps": 67e6, "cntEl0": 0, "cntEl1": 8334, "otherTimer": 5285, "dispatches": 64879 },
+  { "phase": "compress", "s": 1.83, "steps": 2218e6, "cntEl0": 5, "cntEl1": 252288, "otherTimer": 177465, "dispatches": 801161 },
+  { "phase": "lua", "s": 2.80, "steps": 3211e6, "cntEl0": 8, "cntEl1": 361099, "otherTimer": 256860, "dispatches": 1020055 },
+  { "phase": "churn", "s": 1.14, "steps": 546e6, "cntEl0": 0, "cntEl1": 74945, "otherTimer": 43685, "dispatches": 658096 },
+  { "phase": "sqlite", "s": 2.14, "steps": 2134e6, "cntEl0": 0, "cntEl1": 244427, "otherTimer": 170735, "dispatches": 844099 },
+  { "phase": "shutdown", "s": 0.69, "steps": 324e6, "cntEl0": 4, "cntEl1": 43238, "otherTimer": 26332, "dispatches": 396231 },
+  { "phase": "total", "s": 13.91, "steps": 10613e6, "cntEl0": 57, "cntEl1": 1222883, "otherTimer": 844517, "dispatches": 6347210 }
+ ]
+}

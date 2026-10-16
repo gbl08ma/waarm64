@@ -1,0 +1,43 @@
+diff --git a/core/src/interp/sys.rs b/core/src/interp/sys.rs
+index 346cda4..58467d4 100644
+--- a/core/src/interp/sys.rs
++++ b/core/src/interp/sys.rs
+@@ -599,6 +599,14 @@ pub fn timer_fires(ctl: u64, cval: u64, now: u64) -> bool {
+ 
+ /// Whether the [`Exit::Platform`] access `i` is an `RNDR` or `RNDRRS` read,
+ /// which the run loop completes with [`rndr`], not [`platform`].
++pub fn xcount(i: u32, el: u64) -> usize {
++    match bits(i, 20, 5) {
++        CNTPCT | CNTVCT if el == 0 => 0x3f,
++        CNTPCT | CNTVCT => 0x3e,
++        _ => 0x3d,
++    }
++}
++
+ pub fn is_rndr(i: u32) -> bool {
+     matches!(bits(i, 20, 5), RNDR | RNDRRS)
+ }
+diff --git a/core/src/vm.rs b/core/src/vm.rs
+index 3ba4eda..574f09d 100644
+--- a/core/src/vm.rs
++++ b/core/src/vm.rs
+@@ -1058,6 +1058,7 @@ impl Vm {
+                     let r = v.rng.draw();
+                     sys::rndr(&mut v.cpu, i, r);
+                 } else {
++                    bump(&self.shared.cpus[0].counters.exceptions[sys::xcount(i, self.vcpus[c].cpu.el())]);
+                     let (now, irq) = (self.now(), self.plat.get_mut().gic.irq(c));
+                     platform(&mut self.vcpus[c].cpu, i, now, self.cfg.cntfrq, irq);
+                 }
+diff --git a/core/src/vm/parallel.rs b/core/src/vm/parallel.rs
+index 84aa9e6..fc2779e 100644
+--- a/core/src/vm/parallel.rs
++++ b/core/src/vm/parallel.rs
+@@ -467,6 +467,7 @@ impl Vm {
+                 } else if sys::is_rndr(i) {
+                     sys::rndr(cpu, i, v.rng.draw());
+                 } else {
++                    bump(&self.shared.cpus[c].counters.exceptions[sys::xcount(i, cpu.el())]);
+                     let irq = self.shared.cpus[c].par.irq.load(Ordering::SeqCst);
+                     platform(cpu, i, self.now(), self.cfg.cntfrq, irq);
+                 }

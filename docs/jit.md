@@ -23,7 +23,8 @@ the interpreter's own code.
   (`State::exit`) and the generated code stores the statically known PC (an offset from the
   entry PC) and returns; the run loop's `handle` completes it exactly as for the interpreter. No
   wasm exception handling. Exits mid-block (MMIO via `vm::Io` after a helper's `Fault(Bus)`,
-  timer registers, WFI, HVC, TX full, `DEVICE`) need nothing special.
+  timer registers, WFI, HVC, TX full, `DEVICE`) need nothing special. A counter read's exit costs ~180 ns, under 1%
+  of a busy vCPU in every workload counted, so CNTVCT stays an exit (bench/boot/REPORT.md "counter reads, inline or not").
 - **Functions:** `f(vcpu, acc, left) -> acc + retired`, where `vcpu` points at the `Vcpu` (the
   `Cpu` at 0, the crypto constants, `State`, the TLB's scalars, then its arrays and the transfer
   cache), `left` is the step budget. Whatever JIT code loads at a fixed offset sits within the

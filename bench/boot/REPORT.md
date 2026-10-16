@@ -1802,3 +1802,38 @@ stall and no overdue install.
 **For "fewer, larger modules"**: what a module costs a vCPU now is the fixed part of an install (~0.06 ms, a table
 of four: 0.25 ms of vCPU time) and V8's ~16 KB besides its code; the case for fewer modules rests on memory and the
 wasm code GC, not install time.
+
+## M8: counter reads, inline or not (2026-10-16)
+
+The proposal: compute CNTVCT_EL0 inline in JIT code instead of a helper call that returns from the block (the
+platform exit, docs/jit.md "Faults and exits"), quoted at 2-5% on kernel-heavy guests from `arch_counter_get_cntvct`'s
+2.7% in the boot profile above. That share is the PC sampler's: it charges a chunk to the instruction after the last
+exit (graphics.md §20, video.md), so it says where exits are, not what they cost. Counted instead, against
+`be6f4d4`: the dev VM, Node 26.7, Chromium 153.0.8010.52. Raw data and tools in `results/m8-cntvct/`
+(`count-exits.patch` counts the exits by EL in spare exception-class counters; a diagnostic, not for commit).
+
+**What one read costs** (`tools/micro.ts`, bare metal at EL1, realtime, the JIT; a 4-instruction loop around one
+MRS, 2M iterations, five runs each, medians): with `mrs cntvct_el0` 178 ns an iteration, with `mrs tpidr_el1`
+(inline) 1 ns; in parallel mode 198 against 38 (that baseline carries the vCPU worker's start-up). The inline version
+would still read the host's clock, `performance.now()` through `env.now_ms` (33 ns in Node), and in parallel mode
+the atomic maximum: it saves **~150 ns a read** at most.
+
+**How often the guests read it** (realtime, the page's mode; reads a second):
+
+| | reads/s | EL1 / EL0 | steps a read | saved, of busy vCPU time |
+|---|---|---|---|---|
+| Alpine userspace benchmark, whole run (`tools/count.ts`, Node, 1 vCPU) | 8,070 | all but 52 at EL1 | 84,000 | 0.12% |
+| its busiest phase (churn) | 14,200 | all EL1 | 35,000 | 0.21% |
+| Firefox, still page (`bench/gpu/firefox-load.ts`, the desktop guest, 4 vCPUs 11% busy) | 30,800 | 26,200 / 4,600 | 2,600 | 1.0% (of 0.44 busy vCPU-s a second) |
+| Firefox, scrolling (52% busy) | 87,700 | 63,600 / 24,000 | 2,640 | 0.63% |
+| Firefox, WebGL cubes (40% busy) | 56,100 | 47,900 / 8,300 | 2,530 | 0.53% |
+
+The vDSO's reads (EL0) are real in Firefox but a quarter of its reads at most; the kernel's (Arch: HZ=1000, the
+scheduler's clock) are the rest. Deterministic time reads 10× as often in Alpine (1.22M against 117K over the run:
+a counter tick an instruction runs the guest's clock ~19× faster than the host's), so Node's default runs overstate
+the rate.
+
+**Not built:** under 1% of busy time in every workload measured, below what an A/B of the benchmarks resolves, for a
+JIT rule that also needs the host-clock import in every module, the atomic maximum in parallel mode, the CNTKCTL_EL1
+trap check at EL0 and, in deterministic mode, the step count inside the block. The other timer-register exits
+(TVAL, CVAL, CTL: a fifth to half as many) are smaller still.
