@@ -26,7 +26,9 @@ test adapter, or anything on the page behind a `MessagePort`).
 - **The first real backend is Tailscale**, built on the upstream Go client (BSD-3), not a fork and
   not our own implementation (§4). **Go is an accepted build dependency.**
 - **The main cost to fight is the optional download** (§4.4). That's also what makes
-  `tailscale-rs` interesting later (§5).
+  `tailscale-rs` interesting later (§5). *Proposed 2026-10-16:* our own client, a Rust wasm module
+  built from tailscale-rs's sans-I/O crates, speaking tailcat first and then Tailscale, to replace
+  the Go client ([tailnet-client.md](tailnet-client.md)).
 - WebRTC peer-to-peer networks (M8's original idea) stay an experimental backend behind the same
   interface (§6).
 
@@ -58,11 +60,17 @@ test adapter, or anything on the page behind a `MessagePort`).
   implementation by Tailscale, ~30 crates (`ts_control`, `ts_control_noise`, `ts_derp`,
   `ts_tunnel` (WireGuard), `ts_dataplane`, `ts_packetfilter`, `ts_netstack_smoltcp`, …) on tokio.
   All traffic goes through DERP for now (direct connections are a TODO), which is the only mode a
-  browser has anyway. Unaudited, pre-1.0 with no compatibility promises, and requires an
-  `TS_RS_EXPERIMENT` opt-in. No wasm support or plans stated.
+  browser has anyway. Pre-1.0 with no compatibility promises; no wasm support or plans stated.
+  *Since (v0.6.0, 2026-09-17):* its WireGuard crypto (`ts_tunnel`) had a third-party audit and the
+  `TS_RS_EXPERIMENT` opt-in is gone; which crates are sans-I/O is in
+  [tailnet-client.md](tailnet-client.md) §1.
 - **Rolling our own client** would mean the control protocol (Noise IK to the coordination server,
   map polls, capability versions, packet filters), WireGuard, DERP and disco: what `tailscale-rs`
-  needs ~30 crates for, tracking a protocol that isn't a stable public API. Rejected.
+  needs ~30 crates for, tracking a protocol that isn't a stable public API. Rejected (2026-09-27);
+  reopened 2026-10-16 on top of tailscale-rs's protocol crates ([tailnet-client.md](tailnet-client.md)).
+- **[tailcat](https://github.com/tailscale/tailcat)** (BSD-3, found 2026-10-16): Tailscale's data
+  plane without its control plane; `tailcat serve exit-node` on any machine prints an address a
+  client connects to, no account. The basis of [tailnet-client.md](tailnet-client.md) §4.
 - **Direct Sockets API** (Chromium): raw TCP/UDP, but only for Isolated Web Apps. Not a page
   feature; noted, not planned.
 
@@ -165,6 +173,9 @@ loaded only on "connect", but it's still the biggest cost. Levers, each to be me
 
 ## 5. Later: tailscale-rs
 
+*Superseded 2026-10-16 by [tailnet-client.md](tailnet-client.md)* (the user: the Go module is too
+heavy; the audit is no longer a condition). What follows is the original reasoning.
+
 `tailscale-rs` may be the answer to §4.4, and it fits the project: Rust like our core, smoltcp
 instead of gVisor, DERP-first (which is all a browser gets anyway), BSD-3. A Rust wasm module of
 only the crates we need (control, Noise, DERP, WireGuard, packet filter, no netstack) could be a
@@ -251,7 +262,7 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   destinations, so no local server can stand in for the internet. Left, only if cheap: the menu's
   login-URL and approval states in Chromium against headscale. `ci-net.sh` stays separate from
   `ci.sh` (the user, 2026-09-30: only when a change touches the network).
-- Later: §5 (tailscale-rs, meant to replace the Go client when it is ready) and §6 (WebRTC), and further backends, each behind the same interfaces.
+- Later: our own client with tailcat and Tailscale (T1 to T6 in [tailnet-client.md](tailnet-client.md), proposed; it replaces §5) and §6 (WebRTC), and further backends, each behind the same interfaces.
 
 ## 8. Open questions
 
