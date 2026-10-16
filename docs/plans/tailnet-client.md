@@ -1,9 +1,11 @@
 # Our own Tailscale client, and tailcat (proposed, not scheduled)
 
-**Status:** drafted 2026-10-16, for the user's review. It continues
+**Status:** accepted 2026-10-16 (the user: all the dependencies it needs are fine). **T1 done**
+(the module and tailcat in Node, measured: §7); T2 next. It continues
 [networking.md](networking.md) (its §5, "Later: tailscale-rs"), which holds the decisions that
 stay: frames at the device, the Ethernet gateway (§3), the IP-packet port, the guest as the node.
-Nothing here is built.
+What exists: `net/ts/` (the module), `web/ts-client.ts` and `web/ts-wasi.ts` (its I/O),
+`bench/net/tailcat.ts`, `tests/ts-client.test.ts`.
 
 **Why.** The Go client (`net/tailscale/`, N2 to N8) works, but it is heavy: 26.9 MB of wasm
 (4.3 MB Brotli) downloaded on "connect", a Go runtime and heap in its own worker (its memory was
@@ -53,10 +55,11 @@ protocols** over the same pieces:
 
 - **wasm32-unknown-unknown blockers, all small.** `std::time::{Instant, SystemTime}::now()`
   panic on that target, and `ts_tunnel` (TAI64N timestamps in the handshake, `time.rs`),
-  `ts_time` and `ts_dataplane` call them: the host passes the time in (a patch, or a shim crate
-  through `[patch]`). `rand`/`getrandom` (three versions in their lock file) need a backend: the
-  `custom` one calling an imported `crypto.getRandomValues`, so the module needs no
-  wasm-bindgen (our core has none either).
+  `ts_time` and `ts_dataplane` call them; `rand`/`getrandom` need a backend there.
+  *Settled in T1:* the module is built for **`wasm32-wasip1`** instead, where std's clocks and
+  `getrandom` work through WASI; the worker provides the six imports it uses
+  (`web/ts-wasi.ts`: `clock_time_get`, `random_get`, an empty environment, stderr, `proc_exit`).
+  No patch to tailscale-rs, no wasm-bindgen.
 - **The transports a browser needs are known** (the Go js/wasm client uses them today, and
   `net/tailscale/overlay/controlhttp_client_js.go` is a copy of its control dialer): control is
   `wss://<control>/ts2021` with subprotocol `tailscale-control-protocol` and the Noise initiation
@@ -112,17 +115,23 @@ wasm is fast enough for netmaps.
   packets, `fetch` results and timer firings, and carries out what it returns (bytes to send on
   which WebSocket, packets for the guest, events for the page, the next timer). Sans-I/O like
   `ts_tunnel`, so the tests drive it in Node or natively with no network.
-- **tailscale-rs crates as dependencies, not a fork:** pinned to a release tag (git or
-  crates.io), with a minimal `[patch]` for the time and random sources (§1). If the patch grows,
-  vendor the few crates with an attribution row. We write the drivers it has for tokio: the
+- **tailscale-rs crates as dependencies, not a fork:** from crates.io, pinned by `Cargo.lock`;
+  no patches (`wasm32-wasip1`, §1). We write the drivers it has for tokio: the
   control session (§5), the DERP client (§3), the glue. **New crate dependencies need the user's
   OK** (CLAUDE.md): this plan asks for the tailscale-rs crates above and their RustCrypto
   dependencies (`chacha20poly1305`, `blake2`, `x25519-dalek`, `crypto_box`, `hkdf`), `serde`,
-  `serde_json`, and maybe `h2` (§5).
-- **Where:** `net/ts/` (crate `webpc_ts`), a member of the root workspace, built by its own script
-  to `target/net/ts.wasm`. Not shared memory, no atomics, no threads: one worker, like the Go
-  module now. Raw `extern "C"` exports and a TypeScript shim, as the core does. Our pinned
-  nightly; built without `simd128` like the core unless measuring says otherwise.
+  `serde_json`, and maybe `h2` (§5). *Granted 2026-10-16* ("all the dependencies needed").
+- **Where:** `net/ts/` (crate `webpc_ts`), a member of the root workspace (so `cargo test` and
+  clippy cover it), built by `net/ts/build.sh` to `target/net/ts.wasm` for `wasm32-wasip1`. Not
+  shared memory, no atomics, no threads: one worker, like the Go module now. Raw `extern "C"`
+  exports and a TypeScript shim, as the core does (`net/ts/src/wasm.rs` documents the ABI). Our
+  pinned nightly; no `simd128`; `opt-level=3` (T1: ~17% faster than `s` for 16 KB).
+- **IPv6 keeps working (the user, 2026-10-16).** The Go client gives the guest IPv6 on the tailnet
+  (N6), and so must this one. With Tailscale the guest's IPv6 is the node's `fd7a:…` address and
+  its packets go through untranslated, as now; T5 keeps `net-tailnet`'s IPv6 checks. With tailcat
+  the guest's IPv6 address is the tunnel's own, so IPv6 needs no translation either: the exit node
+  proxies IPv6 TCP and UDP flows to wherever its machine reaches over IPv6 (and IPv4 travels as
+  NAT64). Checked where the exit node's machine has IPv6 (the dev VM; the cloud container has none).
 - **One worker, the same messages.** The new worker speaks `web/tailscale.ts`'s `ToTailscale`/
   `FromTailscale` and the gateway's IP port, so the page and the gateway don't change for
   Tailscale. tailcat adds a connect variant (§4).
@@ -137,13 +146,12 @@ wasm is fast enough for netmaps.
 
 ## 3. The module (shared by both protocols)
 
-- **API (sketch).** `create(seed, now) → handle`; `input(handle, kind, conn, bytes, now)` for a
-  WebSocket message, a guest packet or a `fetch` response; `tick(handle, now)` when the deadline
-  it gave passes; `poll(handle) → action` until empty: `ws_open(conn, url, protocol)`,
-  `ws_send(conn, bytes)`, `ws_close(conn)`, `fetch(id, url, method, body)`, `to_guest(packet)`,
-  `event(json)` (state, netmap, login URL, lease), `deadline(t)`, `store(key, bytes)`. Bytes
-  cross through the module's memory, one copy each way; packets in batches when that measures
-  better.
+- **API (built for tailcat, `net/ts/src/wasm.rs`).** `ts_new(config json) → handle`; inputs
+  `ts_ws_message`, `ts_ws_closed`, `ts_fetched`, `ts_guest` (a packet from the guest), `ts_tick`;
+  `ts_deadline` (when to tick next); `ts_poll` returns actions until none is left: open, send on
+  or close a WebSocket, fetch, a packet for the guest, a JSON event (state, lease, self, log).
+  The module reads the clock itself (WASI), so the API has no `now`; natively the tests pass it.
+  Bytes cross through the module's memory, one copy each way. T4 adds `store(key, bytes)`.
 - **DERP client over WebSocket:** the server-key frame, our client info (NaCl box to the
   server's key), send/recv packet, keep-alive, ping/pong, peer-gone, health; reconnect with
   backoff. One connection per region in use: the home region, and each peer's home region when
@@ -152,8 +160,8 @@ wasm is fast enough for netmaps.
   timers go into `deadline`.
 - **Routing:** outbound by destination (BART over each peer's AllowedIPs), inbound checked
   against the sending peer's AllowedIPs, then the packet filter (§5).
-- **Time and randomness** from the host (`now` on every call; `crypto.getRandomValues` through an
-  import). Tests pass a fixed seed and a fake clock, so a whole session replays exactly.
+- **Time and randomness** from WASI (`performance.now`, `crypto.getRandomValues`). The native
+  tests drive the client with their own `Instant`s.
 
 ## 4. tailcat (step T1 to T3)
 
@@ -165,8 +173,8 @@ wasm is fast enough for netmaps.
   client key (in IndexedDB, like the Tailscale node's), so a server can `--allow` it: its public
   key is shown on the page for the server's owner to copy.
 - **The guest's lease.** IPv6: the client's tailcat address, as a /128, through DHCPv6 and the
-  router advertisement as today. IPv4: a fixed private address (`10.0.2.15`, or any: nothing
-  outside sees it) with the gateway as router. DNS: no MagicDNS here; the lease names resolvers
+  router advertisement as today. IPv4: `192.0.0.2`, RFC 7335's address for the IPv4 side of a
+  host's translator (464XLAT's CLAT; nothing outside sees it), with the gateway as router. DNS: no MagicDNS here; the lease names resolvers
   the exit node reaches (`1.1.1.1` and `2606:4700:4700::1111` by default; settable), queried
   over UDP through the tunnel.
 - **NAT46 in the module (tailcat mode only),** so the gateway stays backend-independent:
@@ -268,11 +276,22 @@ not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s).
 
 ## 7. Steps
 
-- **T1 — The module skeleton and tailcat in Node, measured.** `net/ts/` with the tailscale-rs
-  crates and the time/random shim building to wasm32; the DERP client, WireGuard, the tailcat
+- **T1 — The module skeleton and tailcat in Node, measured (done 2026-10-16).** `net/ts/` with the
+  tailscale-rs crates building to wasm32; the DERP client, WireGuard, the tailcat
   handshake and NAT46; a Node harness against `tests/net/tailcat.sh`'s server (UDP and TCP
   echo, ICMP checked). Sizes, startup, throughput against the Go module's N2 numbers. **Gate:**
   if the module's size or throughput isn't clearly better than Go's, stop and report.
+  *Outcome* ([bench/net/REPORT.md](../../bench/net/REPORT.md) "T1"): **458 KB raw, 154 KB Brotli**
+  (Go: 26.9 MB, 4.3 MB); `Running` ~65 ms after start; 1.3 ms echo RTT; **62–71 Mbit/s each way**
+  (`opt-level=s`; `3` ~17% more) with the client, the harness and the echo servers on one core
+  (Go in N2: 33, another peer and relay). The gate passes. Built in a cloud session against a
+  locally built `derper` and `tailcat`; tests: `cargo test -p webpc_ts` (CBOR, the address, DERP
+  against a fake relay, NAT46 checksums, the client against a fake tailcat server with its own
+  `ts_tunnel`), `tests/ts-client.test.ts` (the module's boundary with a stub WebSocket).
+  *Found:* a tailcat exit node slows to nothing under one UDP flow per packet (the first
+  harness's mistake; a guest spraying flows would do the same); ICMP isn't forwarded; TCP and
+  IPv6 through the exit node are untested here (no TCP stack in the harness, no IPv6 in the
+  container): T2's Debian test covers them.
 - **T2 — tailcat on the page.** The worker, the menu's second kind, the leases, the MSS clamp;
   Debian on the page reaches the echo server over IPv4 and IPv6 and resolves names
   (`tests/net-tailcat.test.ts`, in `ci-net.sh`). docs/frontend.md "Network", devices.md if the

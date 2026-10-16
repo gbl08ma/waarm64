@@ -83,6 +83,49 @@ the control server's `/key` is in docs/plans/networking.md (N4).
   assume 100.64.0.0/10.
 - **`IsTAP`** (§8): not looked at; the gateway route (packets on the Tun) works and is enough.
 
+## T1: the Rust tailnet client, tailcat, in Node (2026-10-16)
+
+docs/plans/tailnet-client.md T1: `net/ts` (Rust, tailscale-rs's `ts_tunnel` for WireGuard) built to
+`wasm32-wasip1`, driven by `web/ts-client.ts`; `bench/net/tailcat.ts` against a tailcat exit node.
+**Setup:** a cloud session container (x86_64, 4 vCPUs, Xeon @ 2.80 GHz, Node 26.11.1, no IPv6), not
+the M4 VM; `derper` (from the `tailscale.com` tailcat v0.7.0 pins) on `derp.test:443` with a
+self-signed certificate, and `tailcat serve exit-node` on it, both on the same host as the client.
+The "guest" is the harness: it sends hand-built IP packets and reads the replies. Raw JSON in
+`results/t1/`.
+
+**Size:** 458,412 bytes raw, **153,882 Brotli** (`opt-level=3`, stripped); `opt-level=s`: 402,202 /
+137,255. Against the Go client's 26.9 MB / 4.3 MB: **~28 times smaller on the wire**. Six WASI
+imports (clocks, randomness, environment, stderr, exit).
+
+| (5 runs, `opt-level=s`) | min | median | max |
+|---|---|---|---|
+| compile and instantiate (ms, bytes in hand) | 3.5 | 3.9 | 4.2 |
+| client created → `Running` (ms: relay, meow, WireGuard handshake) | 64 | 67 | 75 |
+| first echo, IPv4 through the translator and the exit node (ms) | 4.0 | 5.0 | 6.3 |
+| UDP echo RTT, 20 echoes (ms, run medians) | 1.09 | 1.34 | 1.42 |
+| echo throughput, 1,260 B, 32 in flight, 5 s (Mbit/s each way) | 62.0 | 64.5 | 71.1 |
+
+**`opt-level` A/B** (`results/t1/opt/`, alternating, 3 pairs): `s` 58.2, 64.7, 66.6; `3` 74.4,
+76.5, 78.6 Mbit/s: **~17% faster for 16 KB more Brotli**; the build uses 3.
+
+The process runs at one core throughout (`cpuPercent`), and it is also the harness (packets built in
+JavaScript) and the echo servers, so the client's own share is less; the tailcat server and derper
+share the same 4 cores. So this is a floor. **Not comparable with N2's 33 Mbit/s** (another peer,
+`tailscaled`, and another relay, headscale's), but both are the same kind of container and both
+measure echoes through a local relay; T6 compares the two clients on one tailnet.
+
+Findings:
+- **One UDP flow per echo starves a tailcat exit node.** The first harness used a new source port
+  per echo: ~15,000 flows per run, each proxied by the server for two minutes, and throughput fell
+  run after run (50, 27, 12, 10, 0.24 Mbit/s, with losses) until the server restarted. A port per
+  in-flight slot (as real traffic is) gives the table above. A guest that sprays UDP flows (a port
+  scan, some games) will hit the same wall: it is the exit node's, not the client's.
+- **ICMP isn't forwarded** by `tailcat serve exit-node` (it terminates TCP and UDP and proxies
+  them): a ping from the guest gets no reply. As planned.
+- `Running` takes ~65 ms against a warm server. A server that has just started answers the first
+  meows only once its own relay connection is up (~2 s); the client meows every second meanwhile.
+- No IPv6 here: the IPv6 echo (to the exit node's `[::1]`) is skipped; the dev VM runs it.
+
 ## Reproduce
 ```sh
 net/tailscale/build.sh                       # target/net/tailscale.wasm, needs Go (go.mod pins the toolchain)
@@ -90,4 +133,8 @@ tests/net/tailnet.sh up                      # headscale + a peer in rootless Po
 eval "$(tests/net/tailnet.sh env | sed 's/^/export /')"
 WEBPC_TS_AUTHKEY=$(tests/net/tailnet.sh key) node bench/net/spike.ts $WEBPC_TS_CONTROL $WEBPC_TS_PEER_IP 5
 tests/net/tailnet.sh down
+# T1 (a tailcat exit node on derper; on the dev VM tests/net/tailcat.sh will do this, see
+# M8-TAILNET-CLIENT-HANDOVER.md):
+net/ts/build.sh
+node bench/net/tailcat.ts <tc… address> 5   # on the exit node's machine (the echo servers run here)
 ```

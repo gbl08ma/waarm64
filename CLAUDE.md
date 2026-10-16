@@ -95,6 +95,8 @@ tests/qcow2/make.sh            # regenerate the qcow2 fixtures with qemu-img
 npm start                      # what a user runs: checks, npm ci, wasm core, Debian (tools/debian.ts), the UEFI firmware (images/build.sh edk2, Podman), then serves (docs/frontend.md)
 npm run serve                  # dev server with COOP/COEP on :8080 (PORT overrides); builds the Tailscale client first if missing or stale (needs Go; WEBPC_TAILSCALE=0 skips)
 net/tailscale/build.sh         # the Tailscale client -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)
+net/ts/build.sh                # the Rust tailnet client (tailcat now, Tailscale next) -> target/net/ts.wasm (wasm32-wasip1; docs/plans/tailnet-client.md)
+node bench/net/tailcat.ts <tc… address> 5   # it against a tailcat exit node on this machine: startup, RTT, echo throughput
 WEBPC_DISTROS=debian WEBPC_START_COLD=1 node --test tests/start.test.ts  # npm start on a fresh copy, building its own core
 npm run bench -- --page bench/interp/index.html [--only jit_mips]       # small guests, CoreMark
 npm run bench -- --page bench/boot/index.html --only boot_alpine_jit    # boots, userspace, openssl, I/O

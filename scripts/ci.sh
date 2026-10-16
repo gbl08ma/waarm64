@@ -13,6 +13,7 @@ step rust clippy; cargo clippy --all-targets -q -- -D warnings
 step rust test;   cargo test -q
 step testfloat;   scripts/testfloat.sh
 step wasm build;  scripts/build-wasm.sh -q
+step tailnet client; net/ts/build.sh
 step npm deps;    [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit
 step typecheck;   npx tsc --noEmit
 current() { images/build.sh --check "$1" > /dev/null; }

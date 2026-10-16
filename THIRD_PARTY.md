@@ -12,6 +12,8 @@ copyright/license header in the file.
 | `web/virgl-video.ts`, `web/video-h264.ts` (video, docs/plans/video.md) | Mesa 26.2.4 (MIT): the video commands' layouts (`src/virtio/virtio-gpu/virgl_protocol.h`), `struct virgl_video_caps` and the picture descs' field offsets (`virgl_video_hw.h`, measured with its compiler), `enum pipe_video_profile`'s values; nothing copied. The H.264 parameter sets are written from ITU-T H.264 §7.3.2 | MIT |
 | `web/virgl-renderer.ts`, `web/virgl-tgsi.ts`, `web/virgl-formats.ts` (G3) | virglrenderer `c8e3fc3b`, rewritten in TypeScript for WebGL2 (no code copied verbatim): the command decoding and payload layouts of `src/vrend/vrend_decode.c` and `virgl_protocol.h`; the state model (contexts, sub-contexts owning the objects, resources attached to contexts, long shaders in pieces) and the GLES-host conventions of `vrend_renderer.c` (the front face inverted for guest resources, a negative viewport's y flip in the shader, BGRA stored as its bytes); the GLSL conventions of `vrend_shader.c` (registers as float vec4s holding bits, constants as `uvec4` bits, the fragment coordinate's origin flip); the GL formats and swizzles of `vrend_formats.c`'s GLES tables. The TGSI text grammar is Mesa's `tgsi_dump.c`/`tgsi_strings.c` as virglrenderer carries them | MIT |
 | `net/tailscale/main_js.go` (N2) | the engine setup of Tailscale's `cmd/tsconnect/wasm/wasm_js.go` (v1.102.5), with our `Tun` device and JS API instead of the netstack-terminated sockets and ssh; header kept | BSD-3-Clause |
+| `net/ts/src/tailcat.rs`, `net/ts/src/client.rs` (T1) | tailcat v0.7.0 (`github.com/tailscale/tailcat`, `52fbad3`): the address format (`wire.go`, `ParseAddr` in `tailcat.go`), the meow handshake (`disco.go`), the tunnel address of a node key (`tcAddrForKey`) and the NAT64 prefix convention; reimplemented in Rust from those files, nothing copied | BSD-3-Clause |
+| `net/ts/src/derp.rs` (T1) | the DERP client handshake and frame types of Tailscale's `derp` package as tailscale-rs's `ts_derp` (v0.6.1) has them (`frame/`, `client.rs` `make_clientinfo`); reimplemented over a byte stream, nothing copied | BSD-3-Clause |
 | `net/tailscale/overlay/controlhttp_client_js.go` (N2) | `tailscale.com/control/controlhttp/client_js.go` (v1.102.5), copied with one marked change (keep the control server's HTTPS port over WebSocket); `net/tailscale/build.sh` builds against a copy of the module with this file replaced | BSD-3-Clause |
 
 ## Techniques from papers and other projects (ideas, no code)
@@ -29,6 +31,16 @@ Reimplemented from the description, nothing copied; credited all the same.
 | Package | Version | License | Use |
 |---|---|---|---|
 | @xterm/xterm | 6.0.0 | MIT | the page's serial terminal (`web/app/`); served from `node_modules` (only `lib/xterm.mjs` and `css/xterm.css`), not vendored |
+
+## Rust dependencies of the tailnet client (`net/ts`, T1)
+
+Built to `target/net/ts.wasm` by `net/ts/build.sh` (docs/plans/tailnet-client.md), loaded only when
+the user connects. Direct dependencies (`Cargo.lock` pins them, with their own; all permissive):
+tailscale-rs's `ts_tunnel` (WireGuard, third-party audited), `ts_keys` and `ts_packet` v0.6.1
+(BSD-3-Clause); `crypto_box` (DERP's NaCl box), `serde`, `serde_json`, `base64`, `getrandom`
+(MIT or Apache-2.0). Through `ts_tunnel`: RustCrypto's `chacha20poly1305`, `blake2`, `hkdf`,
+`x25519-dalek` (MIT or Apache-2.0, BSD-3-Clause for dalek), `tracing` (MIT), `zerocopy`
+(BSD-2-Clause, Apache-2.0 or MIT).
 
 ## Go dependencies of the Tailscale backend (`net/tailscale`, N2)
 
@@ -98,6 +110,8 @@ Re-check at the commit you actually pin before copying anything.
 | Arm A64 machine-readable spec (AARCHMRS JSON) | 2024-12 release | Arm publishes a "BSD license JSON" release, but its release notes defer to the Proprietary Notice inside the package | **Read the notice in the downloaded package before generating code from it.** Until then, dynarmic's 0BSD decoder table is the safe source |
 | [Playwright](https://github.com/microsoft/playwright) | 1.63.0 | Apache-2.0 | |
 | [Tailscale](https://github.com/tailscale/tailscale) | v1.102.5 | BSD-3-Clause | the client the networking backend is built from (above); its `tailscaled` image is the test peer |
+| [tailscale-rs](https://github.com/tailscale/tailscale-rs) | v0.6.1 (`main` at `0d41a6f` read) | BSD-3-Clause | Tailscale's Rust client: `ts_tunnel`, `ts_keys`, `ts_packet` are the tailnet client's dependencies (above); its control, DERP and runtime crates are T4–T5's reference (docs/plans/tailnet-client.md §1) |
+| [tailcat](https://github.com/tailscale/tailcat) | v0.7.0 (`52fbad3`) | BSD-3-Clause | Tailscale's data plane without a control plane; its protocol is reimplemented in `net/ts` (above), its CLI is the test server (`tailcat serve exit-node`), with `derper` from the `tailscale.com` it pins |
 | [headscale](https://github.com/juanfont/headscale) | v0.29.4 | BSD-3-Clause | the control server the networking tests run in rootless Podman (`tests/net/tailnet.sh`); never linked or distributed |
 
 **Copyleft or other: use as oracle, guest workload or behavioral reference only. Never copy code.**

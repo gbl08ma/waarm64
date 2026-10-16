@@ -1,0 +1,19 @@
+{
+  "wasm": "/tmp/claude-0/-home-user-webpc/3f6f9b87-0c59-5c8c-9953-409a2dca990b/scratchpad/ts-3.wasm",
+  "node": "v26.11.1",
+  "wasmBytes": 458412,
+  "loadMs": 4.184646999999984,
+  "runningMs": 56.498963,
+  "firstEchoMs": 3.7111449999999877,
+  "v6EchoMs": null,
+  "icmp": "no reply (the exit node forwards TCP and UDP only)",
+  "rttMedianMs": 1.57444200000009,
+  "rttMinMs": 0.9782949999998891,
+  "rttMaxMs": 4.696378999999979,
+  "echoes": 38986,
+  "lost": 0,
+  "echoBytes": 1260,
+  "seconds": 5,
+  "mbitPerSecEachWay": 78.595776,
+  "cpuPercent": 101.3518
+}

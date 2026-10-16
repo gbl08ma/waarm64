@@ -1,0 +1,21 @@
+[package]
+name = "webpc_ts"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "webpc's tailnet client: tailcat and Tailscale, sans I/O, for a browser worker (docs/plans/tailnet-client.md)"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# tailscale-rs's sans-I/O protocol crates (BSD-3-Clause): WireGuard, keys, packets.
+ts_tunnel = "0.6.1"
+ts_keys = "0.6.1"
+ts_packet = "0.6.1"
+crypto_box = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+getrandom = "0.3"

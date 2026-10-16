@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "bench/spike/memory/rust"]
+members = ["core", "bench/spike/memory/rust", "net/ts"]
 resolver = "3"
 
 [workspace.package]
