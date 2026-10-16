@@ -3,7 +3,7 @@
 # (headscale v0.29.4 with its embedded DERP, a TLS proxy that adds CORS on /key, one peer that is
 # an approved exit node) as native processes. Go builds headscale and tailscale once, at the
 # versions tailnet.sh pins, into target/net/tailnet-bin. The proxy is tests/net/tls-proxy.ts.
-# Same usage and output: up | env | key [lasting] | nodes | peer <tailscale args> | down. The peer's socket is /tmp/ts.sock, so a `podman`
+# Same usage and output: up | env | key [lasting] | nodes | peer <tailscale args> | register <auth ID> | down. The peer's socket is /tmp/ts.sock, so a `podman`
 # shim that turns `podman exec webpc-peer tailscale …` into the native `tailscale …` serves the
 # tests that talk to the peer (tests/net/podman-shim, put first on PATH).
 set -eu
@@ -126,6 +126,7 @@ env) env_ ;;
 key) authkey "${2:-}" ;;
 nodes) hs nodes list -o json ;;
 peer) shift; peerts "$@" ;;
+register) hs auth register --auth-id "$2" --user tailnet ;;
 hs) shift; hs "$@" ;;
 down)
 	for p in peer proxy headscale; do
@@ -134,5 +135,5 @@ down)
 	sleep 0.5
 	rm -rf "$DIR" $SOCK
 	;;
-*) echo "usage: $0 up|env|key [lasting]|nodes|peer <tailscale args>|hs <args>|down" >&2; exit 2 ;;
+*) echo "usage: $0 up|env|key [lasting]|nodes|peer <tailscale args>|register <auth ID>|hs <args>|down" >&2; exit 2 ;;
 esac

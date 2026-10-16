@@ -169,6 +169,11 @@ impl Session {
         s
     }
 
+    /// The node's private key (what WireGuard and DERP use).
+    pub fn node_private(&self) -> [u8; 32] {
+        self.node
+    }
+
     /// The node's public key.
     pub fn node_public(&self) -> [u8; 32] {
         public(&self.node)

@@ -47,7 +47,7 @@ fn fold(s: u32) -> u16 {
 
 /// Rewrites the checksum of the transport segment `seg` (protocol `proto`,
 /// checksum at `at`) for the pseudo-header `pseudo` (empty for ICMPv4).
-fn checksum(seg: &mut [u8], at: usize, pseudo: &[u8]) {
+pub(crate) fn checksum(seg: &mut [u8], at: usize, pseudo: &[u8]) {
     seg[at] = 0;
     seg[at + 1] = 0;
     let mut c = fold(sum(sum(0, pseudo), seg));
@@ -57,11 +57,11 @@ fn checksum(seg: &mut [u8], at: usize, pseudo: &[u8]) {
     seg[at..at + 2].copy_from_slice(&c.to_be_bytes());
 }
 
-fn pseudo6(src: &[u8], dst: &[u8], len: usize, next: u8) -> Vec<u8> {
+pub(crate) fn pseudo6(src: &[u8], dst: &[u8], len: usize, next: u8) -> Vec<u8> {
     [src, dst, &(len as u32).to_be_bytes(), &[0, 0, 0, next]].concat()
 }
 
-fn pseudo4(src: &[u8], dst: &[u8], len: usize, proto: u8) -> Vec<u8> {
+pub(crate) fn pseudo4(src: &[u8], dst: &[u8], len: usize, proto: u8) -> Vec<u8> {
     [src, dst, &[0, proto], &(len as u16).to_be_bytes()].concat()
 }
 
@@ -168,7 +168,7 @@ fn frag_needed(p: &[u8], ihl: usize) -> Vec<u8> {
     ip4(ROUTER4, p[12..16].try_into().unwrap(), ICMP, 64, &icmp)
 }
 
-fn ip4(src: [u8; 4], dst: [u8; 4], proto: u8, ttl: u8, payload: &[u8]) -> Vec<u8> {
+pub(crate) fn ip4(src: [u8; 4], dst: [u8; 4], proto: u8, ttl: u8, payload: &[u8]) -> Vec<u8> {
     let total = 20 + payload.len();
     let mut h = vec![
         0x45,

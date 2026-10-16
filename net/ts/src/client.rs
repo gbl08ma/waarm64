@@ -135,13 +135,13 @@ pub struct Client {
 
 /// Pads a WireGuard plaintext to a multiple of 16 bytes within the MTU, as
 /// wireguard-go does; `ts_tunnel` leaves padding to its caller.
-fn pad(p: &mut Vec<u8>) {
+pub(crate) fn pad(p: &mut Vec<u8>) {
     let n = ((16 - p.len() % 16) % 16).min(TUNNEL_MTU.saturating_sub(p.len()));
     p.resize(p.len() + n, 0);
 }
 
 /// The IP packet in a decrypted, maybe padded, plaintext.
-fn unpad(p: &[u8]) -> Option<&[u8]> {
+pub(crate) fn unpad(p: &[u8]) -> Option<&[u8]> {
     let len = match p.first()? >> 4 {
         4 if p.len() >= 20 => u16::from_be_bytes([p[2], p[3]]) as usize,
         6 if p.len() >= 40 => 40 + u16::from_be_bytes([p[4], p[5]]) as usize,

@@ -90,10 +90,9 @@ pub struct NetMap {
     pub domain: String,
     /// User ID → (login name, display name).
     pub users: BTreeMap<i64, (String, String)>,
-    /// The packet filter's rules as the control server sent them (`PacketFilter`, and the
-    /// named `PacketFilters` merged), JSON; the data plane parses them.
-    pub filter: Option<serde_json::Value>,
-    filters: BTreeMap<String, serde_json::Value>,
+    /// The packet filter: its rulesets by name (`PacketFilter` is "base", `PacketFilters` named),
+    /// tailscale-rs's `ts_packetfilter`. None until the control server sends one: nothing comes in.
+    pub filter: Option<ts_packetfilter::BTreeFilter>,
     /// The last response's sequence number, and whether it changed anything the page shows.
     pub seq: i64,
 }
@@ -118,6 +117,9 @@ pub struct Changed {
     pub keep_alive: bool,
     /// A URL the control server wants the user to visit.
     pub browse: Option<String>,
+    /// The tailnet uses Tailnet Lock, which this client doesn't implement (its peers' keys would
+    /// need checking against the lock's signatures).
+    pub tailnet_lock: bool,
 }
 
 impl NetMap {
@@ -125,11 +127,13 @@ impl NetMap {
     pub fn apply(&mut self, json: &[u8]) -> Result<Changed, String> {
         let r: MapResponse =
             serde_json::from_slice(json).map_err(|e| format!("a map response: {e}"))?;
-        // The filter is kept as JSON: re-read it as values (the typed form borrows the response).
-        let raw: serde_json::Value = serde_json::from_slice(json).unwrap_or_default();
         let mut c = Changed {
             keep_alive: r.keep_alive == Some(true),
             browse: r.pop_browser_url.map(str::to_string),
+            tailnet_lock: r
+                .tka_info
+                .as_ref()
+                .is_some_and(|t| !t.disabled && !t.head.is_empty()),
             ..Changed::default()
         };
         self.seq = r.seq;
@@ -245,33 +249,16 @@ impl NetMap {
                 ),
             );
         }
-        // PacketFilter replaces the unnamed set; PacketFilters names sets (null deletes one,
-        // "*": null clears all), as tailcfg.MapResponse documents.
-        if let Some(f) = raw.get("PacketFilter").filter(|v| !v.is_null()) {
-            self.filters.insert(String::new(), f.clone());
+        // PacketFilter replaces the base set; PacketFilters names sets (null deletes one, "*": null
+        // clears all), as tailcfg.MapResponse documents.
+        if r.packet_filter.is_some() || !r.packet_filters.is_empty() {
+            let f = self.filter.get_or_insert_default();
+            ts_packetfilter_state::convert_and_apply_update(
+                f,
+                r.packet_filter.as_ref(),
+                &r.packet_filters,
+            );
             c.filter = true;
-        }
-        if let Some(fs) = raw.get("PacketFilters").and_then(|v| v.as_object()) {
-            for (name, rules) in fs {
-                if name == "*" && rules.is_null() {
-                    self.filters.clear();
-                } else if rules.is_null() {
-                    self.filters.remove(name);
-                } else {
-                    self.filters.insert(name.clone(), rules.clone());
-                }
-            }
-            c.filter = true;
-        }
-        if c.filter {
-            let all: Vec<serde_json::Value> = self
-                .filters
-                .values()
-                .filter_map(|v| v.as_array())
-                .flatten()
-                .cloned()
-                .collect();
-            self.filter = Some(serde_json::Value::Array(all));
         }
         c.dns |= c.node; // the name and domains follow the node
         Ok(c)
@@ -357,7 +344,7 @@ mod tests {
         assert_eq!(m.dns.resolvers, vec!["9.9.9.9"]);
         assert!(m.dns.routes["tail.test"].is_empty());
         assert_eq!(m.users[&1].0, "tailnet");
-        assert_eq!(m.filter.as_ref().unwrap().as_array().unwrap().len(), 1);
+        assert_eq!(m.filter.as_ref().unwrap()["base"].len(), 1);
         let page = m.page_json(1280, "");
         assert_eq!(
             page["dns"],
@@ -382,12 +369,14 @@ mod tests {
             (m.peers[&1].online, m.peers[&1].home_derp),
             (Some(false), Some(7))
         );
+        let c = m.apply(br#"{"TKAInfo": {"Head": "abc"}}"#).unwrap();
+        assert!(c.tailnet_lock);
         let c = m.apply(br#"{"PeersRemoved": [1]}"#).unwrap();
         assert!(c.peers && m.peers.is_empty());
         // Named filters: one replaced, then all cleared.
-        m.apply(br#"{"PacketFilters": {"base": [{"SrcIPs": ["100.90.0.1"], "DstPorts": [{"IP": "*", "Ports": {"First": 22, "Last": 22}}]}]}}"#).unwrap();
-        assert_eq!(m.filter.as_ref().unwrap().as_array().unwrap().len(), 2);
+        m.apply(br#"{"PacketFilters": {"ssh": [{"SrcIPs": ["100.90.0.1"], "DstPorts": [{"IP": "*", "Ports": {"First": 22, "Last": 22}}]}]}}"#).unwrap();
+        assert_eq!(m.filter.as_ref().unwrap().len(), 2);
         m.apply(br#"{"PacketFilters": {"*": null}}"#).unwrap();
-        assert_eq!(m.filter.as_ref().unwrap().as_array().unwrap().len(), 0);
+        assert_eq!(m.filter.as_ref().unwrap().len(), 0);
     }
 }

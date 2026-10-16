@@ -561,6 +561,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (a port per packet) slows a tailcat exit node to nothing (bench/net/REPORT.md "T1"), and ICMP isn't forwarded (no
   `ping` beyond the exit node): say so in frontend.md if users hit them; DF-clear IPv4 over 1,260 bytes is dropped,
   not fragmented (`nat46.rs`), unchecked with `tcpdump`.
+- **The Rust Tailscale client's loose ends** ([plans/tailnet-client.md](plans/tailnet-client.md) T4, T5): subnet
+  routes aren't installed (only peers' own addresses and the selected exit node's default routes; Go's stored prefs say
+  `RouteAll: false` too, but its `NewPrefs` accepts them: decide with the user); IPv6 extension headers aren't followed
+  by the filter (such a packet is judged by its first next-header); MagicDNS answers A and AAAA only (no PTR for
+  tailnet addresses, no SRV/TXT from extra records; other types forward), asks one resolver at a time with no retry
+  (the guest's resolver retries), and its DNS-over-HTTPS fallback (Cloudflare, Google or Quad9 by `fetch`) is unit-
+  tested only (the cloud has no DNS out); the exit node's DNS goes as UDP to the tailnet's resolvers or 1.1.1.1, not to
+  the exit node's peerapi DoH as Go's does (to check against an exit node that blocks plain DNS); disco answers pings
+  only (no CallMeMaybe, no pings of our own: a browser has no direct path to offer); Tailnet Lock is refused, not
+  supported; the first packet to a fresh peer after the tailnet comes up waits ~4.5 s for a WireGuard retry
+  (later ones 55 ms; the Go client's "5 s first ping" too); headscale answers the first map ~2 s after registration
+  for both clients (not ours to fix); the module's memory in its worker isn't measured (T6, §6).
 
 ## Tests and tools
 

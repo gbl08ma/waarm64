@@ -10,7 +10,7 @@ let mod: Promise<TsModule> | undefined;
 
 export type RustClient = { client: TsClient; running: Promise<NetMap>; netmap(): NetMap | undefined; events: TsEvent[]; stop(): void };
 
-export function startRust(o: { controlURL: string; authKey?: string; hostname: string; state: Map<string, string>; exitNode?: string; packet?: (p: Uint8Array) => void }): Promise<RustClient> {
+export function startRust(o: { controlURL: string; authKey?: string; hostname: string; state: Map<string, string>; exitNode?: string; packet?: (p: Uint8Array) => void; onLogin?: (url: string) => void }): Promise<RustClient> {
   mod ??= TsModule.load(readFileSync(`${ROOT}target/net/ts.wasm`));
   return mod.then((m) => {
     let netmap: NetMap | undefined;
@@ -26,7 +26,7 @@ export function startRust(o: { controlURL: string; authKey?: string; hostname: s
         events.push(e);
         if (e.type === 'store') o.state.set(e.key, e.value);
         else if (e.type === 'netmap') netmap = e.netmap;
-        else if (e.type === 'login') reject(new Error(`the Rust client wants an interactive login: ${e.url}`));
+        else if (e.type === 'login') { if (o.onLogin) o.onLogin(e.url); else reject(new Error(`the Rust client wants an interactive login: ${e.url}`)); }
         else if (e.type === 'state') {
           state = e.state;
           if (e.state === 'Failed') reject(new Error(e.error ?? 'failed'));

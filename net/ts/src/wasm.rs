@@ -340,3 +340,20 @@ pub extern "C" fn ts_logout(h: u32) {
         }
     });
 }
+
+/// Uses the peer with this stable ID (UTF-8 at `ptr`) as a Tailscale node's exit node, or none
+/// when it's empty; answered by an `exitnode` event.
+///
+/// # Safety
+/// `ptr` and `len` as for `take`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_exit_node(h: u32, ptr: *mut u8, len: usize) {
+    // SAFETY: the host passes a buffer from ts_alloc(len).
+    let id = unsafe { take(ptr, len) };
+    let id = String::from_utf8_lossy(&id).into_owned();
+    with(h, |c| {
+        if let Any::Tailnet(t) = c {
+            t.set_exit_node(&id, Instant::now())
+        }
+    });
+}

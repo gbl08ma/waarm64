@@ -24,6 +24,7 @@ type Exports = {
   ts_close(h: number): void;
   ts_free(h: number): void;
   ts_logout(h: number): void;
+  ts_exit_node(h: number, ptr: number, len: number): void;
 };
 
 /** A tailcat server to connect to (`tailcat serve exit-node` printed `addr`), clients to let in (`serve`), or both. */
@@ -64,7 +65,9 @@ export type TsEvent =
   | { type: 'store'; key: string; value: string }
   /** The URL to visit to log the node in. */
   | { type: 'login'; url: string }
-  | { type: 'loggedout' };
+  | { type: 'loggedout' }
+  /** The answer to `setExitNode`: '' when it took, else why not. */
+  | { type: 'exitnode'; error: string };
 
 export type TsHandlers = {
   /** An IP packet for the guest (the array is the client's: keep it). */
@@ -147,6 +150,13 @@ export class TsClient {
   logout() {
     if (this.closed) return;
     this.m.x.ts_logout(this.h);
+    this.pump();
+  }
+
+  /** Tailscale: sends the guest's internet traffic through the peer with this stable ID ('' stops); answered by an `exitnode` event. */
+  setExitNode(id: string) {
+    if (this.closed) return;
+    this.m.x.ts_exit_node(this.h, ...this.m.put(encoder.encode(id)));
     this.pump();
   }
 

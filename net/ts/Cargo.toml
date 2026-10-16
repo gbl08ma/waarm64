@@ -34,3 +34,7 @@ tokio = { version = "1", default-features = false }
 ipnet = "2"
 ed25519-dalek = { version = "3.0.0", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["alloc"] }
+# T5: the tailnet data plane: the packet filter, disco pongs.
+ts_packetfilter = "0.6.1"
+ts_packetfilter_state = "0.6.1"
+ts_disco_protocol = "0.6.1"

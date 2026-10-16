@@ -23,13 +23,28 @@ export type NetMap = {
   serving?: string;
 };
 
+/**
+ * Which client runs the node: Tailscale's Go one built to wasm (net/tailscale, web/tailscale-worker.ts)
+ * or our Rust one (net/ts, web/tailnet-worker.ts; docs/plans/tailnet-client.md). Both speak the same
+ * worker messages and keep the node in the same store. The page's `?tsbackend=go|rust` overrides the
+ * default (the tests use it: WEBPC_TS_BACKEND).
+ */
+export type Backend = 'go' | 'rust';
+export const DEFAULT_BACKEND: Backend = 'go';
+export function tsBackend(): Backend {
+  const q = new URLSearchParams(globalThis.location?.search ?? '').get('tsbackend');
+  return q === 'go' || q === 'rust' ? q : DEFAULT_BACKEND;
+}
+
 export type TailscaleConfig = {
+  /** Default: `tsBackend()`. */
+  backend?: Backend;
   controlURL: string;
   authKey?: string;
   hostname?: string;
   /** A peer's stable ID (an `exitNodeOption` of the netmap): send the guest's internet traffic through it from the start. */
   exitNode?: string;
-  /** Where target/net/tailscale.wasm and wasm_exec.js are served from (default: this checkout's target/net). */
+  /** Where the client's module (target/net/tailscale.wasm and wasm_exec.js, or target/net/ts.wasm) is served from (default: this checkout's target/net). */
   wasm?: string;
   wasmExec?: string;
   /**
@@ -124,12 +139,15 @@ export type Tailscale = {
   close(): void;
 };
 
-/** Whether the server has the client (target/net/tailscale.wasm): the page says so before it restarts a machine for a card. */
-export const tailscaleBuilt = (wasm = new URL('../target/net/tailscale.wasm', import.meta.url).href) =>
+/** Whether the server has the client (target/net/tailscale.wasm, or ts.wasm for the Rust one): the page says so before it restarts a machine for a card. */
+export const tailscaleBuilt = (wasm = new URL(`../target/net/${tsBackend() === 'rust' ? 'ts' : 'tailscale'}.wasm`, import.meta.url).href) =>
   fetch(wasm, { method: 'HEAD' }).then((r) => r.ok, () => false);
 
 export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailscale) => void = () => {}): Tailscale {
-  const worker = new Worker(new URL('./tailscale-worker.ts', import.meta.url), { type: 'module' });
+  const rust = (config.backend ?? tsBackend()) === 'rust';
+  const worker = rust
+    ? new Worker(new URL('./tailnet-worker.ts', import.meta.url), { type: 'module' })
+    : new Worker(new URL('./tailscale-worker.ts', import.meta.url), { type: 'module' });
   const own = config.ip ? undefined : new MessageChannel();
   const port1 = config.ip ?? own!.port1;
   let detached: ((ip?: MessagePort) => void) | undefined;
@@ -162,7 +180,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
   });
   running.catch(() => {}); // the caller decides whether to look
   worker.postMessage(
-    { type: 'start', wasm: config.wasm ?? new URL('tailscale.wasm', base).href, wasmExec: config.wasmExec ?? new URL('wasm_exec.js', base).href, controlURL: config.controlURL, authKey: config.authKey, hostname: config.hostname, exitNode: config.exitNode, ip: port1, persist: config.persist } satisfies ToTailscale,
+    { type: 'start', wasm: config.wasm ?? new URL(rust ? 'ts.wasm' : 'tailscale.wasm', base).href, wasmExec: config.wasmExec ?? new URL('wasm_exec.js', base).href, controlURL: config.controlURL, authKey: config.authKey, hostname: config.hostname, exitNode: config.exitNode, ip: port1, persist: config.persist } satisfies ToTailscale,
     [port1],
   );
   return {

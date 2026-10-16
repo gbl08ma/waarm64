@@ -1,110 +1,119 @@
-# M8 networking: the Rust tailnet client, handover after T3 (2026-10-16)
+# M8 networking: the Rust tailnet client, handover after T5 (2026-10-16, cloud session)
 
-The plan is [docs/plans/tailnet-client.md](docs/plans/tailnet-client.md) (accepted by the user on
-2026-10-16 with every dependency it needs). **T1, T2 and T3 are done** (§7 says what each built,
-measured and found); **T4 is next**, then T5 and T6. Read the plan (§2 the decisions, §5 Tailscale,
-§7 T4 to T6), then [docs/plans/networking.md](docs/plans/networking.md) §3 (the gateway, which
-doesn't change), [docs/frontend.md](docs/frontend.md) "Network" (the wizard and the menu) and
-[bench/net/REPORT.md](bench/net/REPORT.md) "T1" and "T1 on the M4".
+The plan is [docs/plans/tailnet-client.md](docs/plans/tailnet-client.md). **T1 to T3 are done**;
+**T4 (the control session, the kept node) and T5 (the data plane) are written and tested in a cloud
+session** against headscale run natively (§7 says what each built, tested and found). What a cloud
+session can't do is the dev VM's: the guest (Debian on the page) through the Rust client, the Podman
+rig, `scripts/ci-net.sh`, the M4's numbers. Then **T6**, the switch. Read the plan's §2 (the
+decisions; "Import, don't rewrite" is new), §5 and §7 T4 to T6, then this.
 
 ## The user's instructions that bind
 
 - **The kept node carries over:** the Rust client reads and writes the Go client's IndexedDB store
   as it is, so nobody logs in again, and the Go client still works on a store the Rust one wrote
-  (plan §2, §5 "The kept node"; T4's hand-over test).
+  (plan §2, §5; tested both ways, in Node and in Chromium).
 - **IPv6 keeps working** as it does with the Go client: on the tailnet untranslated (T5 keeps
   `net-tailnet`'s IPv6 checks), through tailcat as the tunnel's own address (done).
-- **The page's network UI is a wizard** (the user, 2026-10-16): the Network menu shows only the
-  current connection and what can be done with it; setting a connection up happens in the
-  Network wizard (a dialog: the choice, then the kind's settings), which is also where advanced
-  options go (a custom relay is the first). New Tailscale options (an auth key's tags, Tailnet Lock's
-  refusal, a custom DERP map) belong in the wizard's tailnet step or its Advanced part.
-- Dependencies the plan names are granted (tailscale-rs crates, RustCrypto, serde, `h2` if T4
-  picks it). Anything beyond them: ask.
+- **The page's network UI is a wizard** (the user, 2026-10-16): new Tailscale options (an auth key's
+  tags, Tailnet Lock's refusal, a custom DERP map) belong in the wizard's tailnet step or its
+  Advanced part. The backend choice is internal (`?tsbackend=` only).
+- **Import, don't rewrite** (the user, 2026-10-16, during T4): where a crate does the job, use it as
+  it is, even at some size (`h2`, `ts_control_serde`, `ts_packetfilter`, `ts_disco_protocol` are in;
+  the module is still ~1/10 of Go's). Only what needs sockets or tokio's runtime is ours (plan §2).
+  New dependencies beyond the plan's list still need the user's OK.
 - Go stays until the Rust client passes `scripts/ci-net.sh` (T6).
 
-## What exists (T1 to T3)
+## What exists now (T4, T5)
 
-- `net/ts/` (crate `webpc_ts`, `wasm32-wasip1`, 493 KB raw): `cbor.rs` (read and write), `tailcat.rs`
-  (addresses read and written, relays, meow, tunnel addresses), `derp.rs` (DERP over a byte stream),
-  `nat46.rs`, `client.rs` (the tailcat client: connecting to an exit node, serving tailcat clients,
-  or both; one `ts_tunnel::Endpoint`, peers by `PeerId`), `wasm.rs` (the ABI; its top comment).
-  23 native tests (`cargo test -p webpc_ts`).
-- `web/ts-client.ts` (the I/O: WebSockets, fetch, timers; Node or a worker), `web/ts-wasi.ts`,
-  `web/tailcat.ts` (the `Tailscale` handle, the served identity in IndexedDB `webpc-tailcat`,
-  `nearestRegion`), `web/tailcat-worker.ts`, `web/app/network.ts` (the controller, DOM-free),
-  `web/app/main.ts` and `index.html` (the wizard and the menu).
-- Tests: `tests/ts-client.test.ts`, `tests/network.test.ts` (always); `tests/tailcat-browser.test.ts`,
-  `tests/net-tailcat.test.ts`, `tests/page-network.test.ts`'s tailcat part (`WEBPC_TAILCAT=1`, which
-  `scripts/ci-net.sh` sets when Go is there).
-- Rigs: `tests/net/tailcat.sh up|env|down` (derper on `127.0.0.1:8444` and `tailcat serve exit-node`,
-  native, Go-built once into `target/net/tailcat-test/bin`; **shared** under a lock with a user count,
-  because `node --test` runs files side by side) and `tests/net/tailnet.sh up|env|key|down`
-  (headscale behind Caddy and a `tailscaled` peer that is an exit node, rootless Podman).
+- `net/ts/src/`: `noise.rs` (control's Noise channel: `ts_noise`'s handshake, our record framing),
+  `h2pipe.rs` (`h2` over an in-memory pipe, no runtime), `netmap.rs` (`ts_control_serde`'s map
+  responses into an owned netmap, the filter as `ts_packetfilter`'s), `store.rs` (the Go client's
+  store, read and written), `control.rs` (key fetch, `/ts2021`, register, interactive login,
+  key expiry, map stream, logout), `ip.rs`, `dns.rs` (MagicDNS's messages), `tailnet.rs` (the
+  client: home DERP by probe, a WireGuard peer per netmap peer through its home region, the
+  filter, the exit node, MagicDNS with forwarding, disco pongs, Tailnet Lock refused). `wasm.rs`:
+  `ts_new`'s JSON with `control` makes a Tailscale client; new exports `ts_logout`, `ts_exit_node`.
+  Module: **1.87 MB raw** (448 KB Brotli at T4's 1.68 MB; Go: 26.9 MB, 4.3 MB). 38 native tests.
+- `web/ts-client.ts` (`TailnetConfig`, the new events, `logout`, `setExitNode`),
+  `web/tailnet-worker.ts` (the page's worker for the Rust client, the Go worker's messages),
+  `web/tailscale-state.ts` (the IndexedDB store, shared by both workers), `web/tailscale.ts`
+  (`backend`, `DEFAULT_BACKEND = 'go'`, `?tsbackend=go|rust`).
+- Tests: `tests/ts-tailnet.test.ts` (Node: the hand-over with the Go client run in a Node worker,
+  `tests/net/go-client.ts`; netmap vs the peer's `tailscale status`; interactive login; a stand-in
+  guest of crafted packets, `tests/net/packets.ts`), `tests/tailscale-browser.test.ts` (both clients
+  in Chromium, no guest; kept node through reloads in either client; logout),
+  `tests/net-tailnet.test.ts` with `WEBPC_TS_BACKEND=rust`. `scripts/ci-net.sh` runs all three in a
+  last step, one at a time (they share the rig's ports).
+- Rigs: `tests/net/tailnet.sh` gained `key lasting` (a non-ephemeral key: the hand-over's node must
+  outlive the switch), `nodes` (headscale's, JSON), `peer …` (the peer's `tailscale …`), `register
+  <id>` (approve an interactive login). `tests/net/tailnet-native.sh` is its Podman-free twin for
+  cloud sessions (`WEBPC_TAILNET_SCRIPT=`), with `tests/net/tls-proxy.ts` as its Caddy.
+- `bench/net/tailnet.ts`: the Rust client in Node against a control server, its netmap printed, its
+  store in a JSON file.
 
-## On the dev VM, things to know
+## What the cloud session ran (x86_64, Chromium 141, headscale v0.29.4 and tailscaled v1.102.5 native)
 
-- **IPv6 tests need `sudo ip -6 addr add fd00:7e57::1/128 dev eth0 nodad`** (gone after the VM
-  restarts; on `lo` Node calls it internal). Without it the IPv6 parts say SKIPPED. The VM has no
-  IPv6 route out, which is why the internet checks are IPv4 (docs/backlog.md "Network").
-- **Never run a CLI with `spawnSync` from a page test**: the test process serves the page's disk,
-  and a guest that reads it while the CLI waits on the guest deadlocks until the timeout (T3 lost
-  an hour to it). Use `spawn` and await it (`tailcat()` in `tests/net-tailcat.test.ts`).
-- The xterm rows' `textContent` has no line breaks: match `1READY`, not `\n1\nREADY`.
-- `scripts/ci-net.sh` runs five Debian/Chromium test files side by side (~5 min), so the rigs run
-  at once: **the tailcat rig is on 8444 because the tailnet's proxy is on 8443** (sharing 8443
-  made net-tailnet's setup fail in ways that looked like load: headscale "didn't come up", the
-  peer "no longer existed"). Its waits are long and fail loudly, and its peer's key isn't
-  ephemeral (headscale deleted the peer when it dropped off for a moment).
+| What | Result |
+|---|---|
+| `cargo test -p webpc_ts` (38), clippy, fmt | pass; planted: the filter letting everything in fails `the_filter_lets_in_…` |
+| `tests/ts-tailnet.test.ts` (native rig) | 5 of 5: Go → Rust → Go and Rust → Go → Rust the same node; netmap = peer's view; data plane (pings v4/v6, MagicDNS, UDP, TCP, disco pong, inbound SYN, exit node selection); interactive login |
+| `tests/tailscale-browser.test.ts` (native rig) | 3 of 3; numbers below |
+| `tests/ts-client.test.ts` | pass |
+| `scripts/ci.sh` | to `cargo test`, which fails only on `fp::tests::inline_fma_is_correctly_rounded`, the known x86_64-only failure of the base commit (previous handover); then by hand: `cargo test` skipping it, TestFloat, both wasm builds, tsc pass; `npm test`: 406 pass, 5 fail, the five WebGL2 tests (`virgl-browser`: glcomp, stream output, sway; the two H.264 `video` ones) that fail on the base commit in this container (SwiftShader; previous handover) |
+| `tests/net-tailnet.test.ts` (either backend), `scripts/ci-net.sh`, `scripts/ci-debian.sh` | **not run**: no EDK2 (it needs Podman) and no Podman here |
+| the Podman rig's new subcommands (`nodes`, `peer`, `register`, `key lasting`) | **not run** (written to match the native script, which ran) |
 
-## T4: the control session in Node against headscale
+Cloud numbers (an indication only, not for REPORT.md): Rust loaded in 21 ms (Go 140), Running ~2 s
+for both (headscale's first map), echo RTT 1.4 ms (Go 1.8), 34 Mbit/s each way (Go 17), 2,000 of
+2,000 echoes for both.
 
-The plan's §5 (control session, registration, the kept node, map stream) and §7 T4. In order:
+## To do on the dev VM, in order
 
-1. **Key fetch and Noise.** `GET <control>/key?v=<capver>` by `fetch` (the server's Noise key;
-   headscale's needs CORS on `/key`, `tests/net/tailnet.sh`'s Caddy adds it), then the Noise IK
-   handshake over a WebSocket to `/ts2021` with subprotocol `tailscale-control-protocol` and the
-   initiation in the `X-Tailscale-Handshake` query parameter (a browser can't set headers):
-   `net/tailscale/overlay/controlhttp_client_js.go` is the Go client's version of exactly this.
-   `ts_noise`, `ts_control_noise` (its framing, without the tokio codec) are the reference and,
-   where sans-I/O, dependencies. The machine key is the node's (kept, below).
-2. **HTTP/2 inside Noise.** The `h2` crate over an in-memory pipe, or a minimal client of our
-   own: build `h2` into the module and measure the size first (the plan's gate: "settled by size").
-   Record the choice and the numbers in the plan.
-3. **Registration** with an auth key (`ts_control_serde`'s `RegisterRequest`); interactive login
-   (the `AuthURL` event) can wait for T5 but keep it in the shape of the API.
-4. **The map stream:** `/machine/map` with `Stream: true`, `Compress: ""`, parsed into peers (keys,
-   addresses, AllowedIPs, home DERP), the packet filter, DNS config, DERP map. A Node harness like
-   `bench/net/tailcat.ts` prints the netmap and compares it with `tailscale status --json` on the
-   rig's peer (`tests/net/tailnet.sh`'s `peerts`).
-5. **The kept node:** the module takes and emits store entries (`store(key, bytes)` in, a `store`
-   action out); the worker maps them onto `webpc-tailscale` exactly as `web/tailscale-worker.ts`
-   does for Go (keys `<profile>/<StateKey>`, values the hex of Go's bytes). Field names and
-   encodings checked against the pinned `tailscale.com` (`ipn/prefs.go`, `types/persist`,
-   `types/key`), not assumed. **The hand-over test:** the Go client registers and keeps its node;
-   the Rust client starts on that store and is the same node (headscale's node ID and address
-   unchanged, no new registration); then the Go client starts on the store the Rust one wrote and
-   is still that node. In Node, the store is a file-backed map shared by both.
+1. Pull; `scripts/ci.sh` (all images; it builds `ts.wasm`). `net/tailscale/build.sh` if
+   `target/net/tailscale.wasm` is stale.
+2. `WEBPC_TAILNET=1 node --test tests/ts-tailnet.test.ts`, then `tests/tailscale-browser.test.ts`,
+   on the Podman rig (first runs of its new subcommands: fix them there if they differ).
+3. **The guest on the Rust client:** `WEBPC_TAILNET=1 WEBPC_TS_BACKEND=rust node --test
+   tests/net-tailnet.test.ts` (its first run: DHCP from the netmap, ping v4/v6, MagicDNS by name and
+   by the search domain, the peer's `tailscale nc` to the guest's servers over both). Then once by hand
+   with `WEBPC_TAILNET_INTERNET=1` (the exit node: the internet and DNS through it; our MagicDNS sends
+   plain DNS to 1.1.1.1 through the exit node where Go uses its peerapi DoH: if that fails, it's the
+   first thing to look at).
+4. `scripts/ci-net.sh` whole (~8 min now), and `scripts/ci-debian.sh` (the page's network path).
+5. **T6's measurements** (plan §6) on the M4 in Chromium 153, both clients alternating, into
+   `bench/net/REPORT.md` with the JSON: size (raw, gzip, Brotli), load, time to `Running`, RTT,
+   throughput both ways (tests/tailscale-browser.test.ts prints most; the N2 echo harness for the
+   rest), the worker's memory (not measured yet for either: `performance.measureUserAgentSpecificMemory`
+   needs cross-origin isolation, which the page has) and the worker's CPU per Mbit/s.
+6. **The switch:** `DEFAULT_BACKEND = 'rust'` in `web/tailscale.ts` once 3–5 pass; `web/app/main.ts`'s
+   "isn't built" message and `tools/tailscale.ts` (build Go only for `?tsbackend=go`?) follow; docs
+   (frontend.md "Network", networking.md, PLAN.md, CLAUDE.md). Removing `net/tailscale/`, its build,
+   `wasm_exec.js` and Go after a release with both is the user's call (the hand-over test and the
+   tailcat rig use Go too: the tailcat rig would become a container image, plan §7 T6).
 
-Where the code goes: a `control` module (or a few) in `net/ts/src/`, a second client type beside
-`client::Client` (or a mode of it) behind the same ABI (`ts_new`'s JSON says which), and the I/O
-in `web/ts-client.ts` (it already does WebSockets with a subprotocol, and fetch). The Tailscale
-data plane (DERP to many regions, peers, the filter, MagicDNS) is T5; T4 ends with a registered
-node whose netmap is right and whose store hands over both ways.
+## On the dev VM, things to know (from T1–T3, still true)
 
-## After T4
+- IPv6 tests need `sudo ip -6 addr add fd00:7e57::1/128 dev eth0 nodad`.
+- Never run a CLI with `spawnSync` from a page test (the test serves the page's disk). The Node tests
+  above use `execFile` for the peer's commands for the same reason: the client runs in the test's
+  own event loop.
+- The tailcat rig is on 8444, the tailnet's proxy on 8443.
 
-T5 (the tailnet data plane: home DERP by `/derp/probe` (`nearestRegion` in `web/tailcat.ts` is the
-same probe), peers, the packet filter, the exit node, MagicDNS, disco pongs, interactive login,
-persistence, logout; `tests/net-tailnet.test.ts` against either backend with
-`WEBPC_TS_BACKEND=go|rust`), then T6 (the switch: §6's measurements for both clients, the Rust
-client as the page's default, Go removed after a release with both). The wizard's tailnet step
-stays as it is; the backend choice is internal.
+## Found in T4–T5 (worth not re-discovering)
+
+- Go's `net/http` in js/wasm refuses `fetch` under Node (it checks `process.argv0`); the Go client's
+  test worker replaces `process` with an object whose `argv0` isn't "node". The rig's CA is made at
+  `up`, after Node read `NODE_EXTRA_CA_CERTS`: the tests trust it with `tls.setDefaultCACertificates`
+  (`trust()` in `tests/net/go-client.ts`), in the Go worker too.
+- `ts_control_noise` and `ts_control` need tokio's multi-thread runtime: "Only features
+  sync,macros,io-util,rt,time are supported on wasm".
+- `h2`'s requests are written only when the connection is next polled: `h2pipe` keeps polling while
+  a request starts, else a request made in an event handler waits for the next input.
+- The first packet to a fresh peer right after the rig comes up waits ~4.5 s (WireGuard's retry);
+  later ones 55 ms. The Go client's "5 s first ping" is the same thing (bench/net/REPORT.md).
 
 ## Known gaps (in docs/backlog.md "Network")
 
-tailcat IPv6 where the exit node's machine has none out (a fix is sketched there); T2's loose ends
-(the public map's short addresses never used through the internet, the relay's loss while running
-not tested in a browser, UDP flow spraying, no ICMP); T3's (no `--allow` list, clients never
-dropped, disco pings unanswered so `tailcat ping` gets no pong, `tailcat ssh` itself not run, the
-public relays not used by a client in a test).
+The Rust client's: subnet routes, IPv6 extension headers in the filter, MagicDNS's PTR/SRV/TXT and
+retries, DoH untested against the real services, no disco of our own, Tailnet Lock refused, the
+module's memory. tailcat's, from T2–T3, unchanged.

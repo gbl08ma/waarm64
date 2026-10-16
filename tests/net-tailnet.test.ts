@@ -6,7 +6,8 @@
 // systemd-networkd, pings the peer, resolves it through MagicDNS, and the peer connects to a
 // server in the guest. Realtime, so not exact: one boot, ~2 min alone.
 // Opt-in: WEBPC_TAILNET=1 (needs Podman, the Go wasm build (net/tailscale/build.sh; built here if
-// Go is there) and the Debian image, `npm start` or tools/debian.ts).
+// Go is there) and the Debian image, `npm start` or tools/debian.ts). WEBPC_TS_BACKEND=rust runs the
+// same test on the Rust client (net/ts, target/net/ts.wasm; docs/plans/tailnet-client.md T5).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -17,11 +18,13 @@ import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const WASM = `${ROOT}target/net/tailscale.wasm`;
+const BACKEND = process.env.WEBPC_TS_BACKEND === 'rust' ? 'rust' : 'go';
+const WASM = `${ROOT}target/net/${BACKEND === 'rust' ? 'ts' : 'tailscale'}.wasm`;
 const has = (cmd: string) => spawnSync(cmd, ['--version'], { stdio: 'ignore' }).status === 0;
 const skip = process.env.WEBPC_TAILNET !== '1' ? 'SKIPPED: set WEBPC_TAILNET=1'
   : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run npm start (or images/build.sh debian edk2)'
   : !has('podman') ? 'SKIPPED: no podman'
+  : BACKEND === 'rust' && !existsSync(WASM) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
   : !existsSync(WASM) && !has('go') ? 'SKIPPED: no target/net/tailscale.wasm and no Go to build it'
   : undefined;
 
@@ -37,7 +40,7 @@ let base: string;
 let closeServer: () => void;
 before(async () => {
   if (skip) return;
-  if (!existsSync(WASM)) execFileSync(`${ROOT}net/tailscale/build.sh`, [], { stdio: 'inherit' });
+  if (!existsSync(WASM)) execFileSync(`${ROOT}net/tailscale/build.sh`, [], { stdio: 'inherit' }); // (the Go one: ts.wasm is checked above)
   env = Object.fromEntries(execFileSync(script, ['up'], { encoding: 'utf8', timeout: 240_000 }).trim().split('\n').map((l) => l.split(/=(.*)/s).slice(0, 2) as [string, string]));
   authKey = execFileSync(script, ['key'], { encoding: 'utf8' }).trim();
   const server = await startServer();
@@ -66,7 +69,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
     try {
       await page.goto(`${base}/tests/browser/core.html`); // any page of the origin: a fresh overlay
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest', overlay: OVERLAY })}`);
+      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest', overlay: OVERLAY, tsbackend: BACKEND })}`);
 
       // The client comes up first: the guest's address is what it reports.
       await page.waitForFunction(() => (window as never as { harness: { tailscale(): { state: string } } }).harness.tailscale().state === 'Running', null, { timeout: 120_000, polling: 250 })
@@ -74,7 +77,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       await page.waitForFunction((ip) => (window as never as { harness: { tailscale(): { netmap?: { peers: { addresses: string[] }[] } } } }).harness.tailscale().netmap?.peers.some((p) => p.addresses.some((a) => a.replace(/\/\d+$/, '') === ip)), env.WEBPC_TS_PEER_IP, { timeout: 30_000, polling: 250 });
       const ts = await harness<{ netmap: { addresses: string[]; peers: { name: string; addresses: string[] }[]; dns: string[]; domains: string[]; mtu: number }; timings: { loadMs: number; runningMs: number } }>(page, 'tailscale()');
       const self = ts.netmap.addresses.find((a) => !a.includes(':'))!.replace(/\/\d+$/, '');
-      console.log(`# Tailscale in Chromium: module loaded in ${ts.timings.loadMs.toFixed(0)} ms, Running after ${ts.timings.runningMs.toFixed(0)} ms; the guest is ${self}, dns ${ts.netmap.dns}, domains ${ts.netmap.domains}, mtu ${ts.netmap.mtu}`);
+      console.log(`# Tailscale (${BACKEND}) in Chromium: module loaded in ${ts.timings.loadMs.toFixed(0)} ms, Running after ${ts.timings.runningMs.toFixed(0)} ms; the guest is ${self}, dns ${ts.netmap.dns}, domains ${ts.netmap.domains}, mtu ${ts.netmap.mtu}`);
       assert.ok(ts.netmap.dns.includes('100.100.100.100'), 'MagicDNS is on');
       const self6 = ts.netmap.addresses.find((a) => a.includes(':'))?.replace(/\/\d+$/, '');
       assert.ok(self6 && env.WEBPC_TS_PEER_IP6, `the tailnet has IPv6 addresses (${self6}, the peer's ${env.WEBPC_TS_PEER_IP6})`);

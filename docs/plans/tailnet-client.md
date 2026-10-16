@@ -2,11 +2,16 @@
 
 **Status:** accepted 2026-10-16 (the user: all the dependencies it needs are fine). **T1, T2 and
 T3 done** (the module and tailcat in Node, measured; tailcat on the page, Debian through it; the
-VM as a tailcat server, and the page's Network wizard: §7). **Next: T4** (`M8-TAILNET-CLIENT-HANDOVER.md`). It continues
+VM as a tailcat server, and the page's Network wizard: §7). **T4 and T5 written and tested in a cloud
+session** against a native headscale (the control session, the kept node handed over both ways with
+the Go client, the data plane, both clients in Chromium; §7); **next: their check on the dev VM**
+(Debian on the page through the Rust client, `scripts/ci-net.sh`), then T6, the switch
+(`M8-TAILNET-CLIENT-HANDOVER.md`). It continues
 [networking.md](networking.md) (its §5, "Later: tailscale-rs"), which holds the decisions that
 stay: frames at the device, the Ethernet gateway (§3), the IP-packet port, the guest as the node.
 What exists: `net/ts/` (the module), `web/ts-client.ts` and `web/ts-wasi.ts` (its I/O),
-`bench/net/tailcat.ts`, `tests/ts-client.test.ts`.
+`web/tailcat-worker.ts` and `web/tailnet-worker.ts` (the page's workers for tailcat and Tailscale),
+`bench/net/tailcat.ts`, `bench/net/tailnet.ts`, the tests of §7.
 
 **Why.** The Go client (`net/tailscale/`, N2 to N8) works, but it is heavy: 26.9 MB of wasm
 (4.3 MB Brotli) downloaded on "connect", a Go runtime and heap in its own worker (its memory was
@@ -122,6 +127,15 @@ wasm is fast enough for netmaps.
   OK** (CLAUDE.md): this plan asks for the tailscale-rs crates above and their RustCrypto
   dependencies (`chacha20poly1305`, `blake2`, `x25519-dalek`, `crypto_box`, `hkdf`), `serde`,
   `serde_json`, and maybe `h2` (§5). *Granted 2026-10-16* ("all the dependencies needed").
+- **Import, don't rewrite (the user, 2026-10-16, during T4).** Where a crate does the job it is
+  used as it is, even at some size: `ts_control_serde` for the control protocol's types (+540 KB
+  raw, +144 KB Brotli, most of it `url`'s IDNA tables), `h2` for HTTP/2 (+406 KB raw, ~+100 KB
+  Brotli), `ts_packetfilter` for the filter, `ts_disco_protocol` for pongs, `ed25519-dalek` for
+  the network-lock key. The module is still about a tenth of the Go one (T4/T5: 1.87 MB raw,
+  ~0.5 MB Brotli, against 26.9 MB and 4.3 MB). What isn't imported is what can't run in a browser:
+  `ts_control`, `ts_derp`'s client, `ts_runtime` and `ts_control_noise`'s framing need sockets or
+  tokio's runtime (which doesn't build for wasm), so their few hundred lines of protocol logic are
+  ours over the worker's transports.
 - **Where:** `net/ts/` (crate `webpc_ts`), a member of the root workspace (so `cargo test` and
   clippy cover it), built by `net/ts/build.sh` to `target/net/ts.wasm` for `wasm32-wasip1`. Not
   shared memory, no atomics, no threads: one worker, like the Go module now. Raw `extern "C"`
@@ -349,15 +363,73 @@ not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s).
   starts on that store and is the same node (headscale's node ID and the address unchanged, no
   new registration), then the Go client starts on the store the Rust client wrote and is still
   that node.
+  *Written and passed in a cloud session (2026-10-16)*, against headscale v0.29.4 and a userspace
+  `tailscaled` peer run natively (`tests/net/tailnet-native.sh`, the Podman rig's twin; its TLS
+  proxy `tests/net/tls-proxy.ts`). *Built:* `noise.rs` (the handshake is `ts_noise`'s; the record
+  framing ours: `ts_control_noise` needs tokio's runtime), `h2pipe.rs` (`h2`'s client over an
+  in-memory pipe, polled with a no-op waker after every input: no runtime), `netmap.rs` (map
+  responses parsed by `ts_control_serde`, deltas applied as `controlclient` does), `store.rs` (the
+  kept node), `control.rs` (the session: the early payload skipped, register with the auth key
+  only for a node the server doesn't know, the follow-up long-poll of an interactive login, key
+  expiry, logout as a registration with an expiry in the past, map frames as 32-bit little-endian
+  lengths, a silent stream presumed dead after 150 s, reconnect with backoff). *The store, as the
+  Go client v1.102.5 wrote it (read in Node, not assumed):* `_machinekey` = `privkey:<hex>`,
+  `_current-profile` = `profile-<4 hex>`, `_profiles` = the `LoginProfile` map, and the profile's
+  `ipn.Prefs` whose `Config` (Persist) holds `PrivateNodeKey`, `OldPrivateNodeKey` (zero),
+  `UserProfile`, `NetworkLockKey` (`nlpriv:`, a 64-byte ed25519 key: seed, then public key),
+  `NodeID`. *Tests:* `cargo test` (Noise against `ts_noise`'s responder, HTTP/2 against `h2`'s
+  server with a body past the flow-control window, a full map and its deltas, the store read from
+  Go's and written fresh, the session against a fake control server: register, map, the kept node
+  back without its key, interactive login, logout); `tests/ts-tailnet.test.ts` (the Go client run
+  in a Node worker, `tests/net/go-client.ts`: Go → Rust → Go and Rust → Go → Rust on one store, the
+  same headscale node and addresses each time; the netmap against the peer's `tailscale status
+  --json`; interactive login approved by `headscale auth register`). *Found:* Go's `net/http` in
+  wasm refuses `fetch` under Node (it looks at `process.argv0`; the worker hands Go a `process`
+  whose `argv0` isn't "node"); `ts_control_serde`'s `RegisterResponse` needs every field of the
+  user (read as JSON instead).
 - **T5 — The tailnet data plane.** Home DERP, peers, the packet filter, the exit node, MagicDNS,
   disco pongs, interactive login, persistence and logout; `tests/net-tailnet.test.ts` runs
   against either backend (`WEBPC_TS_BACKEND=go|rust`) and passes with both, the opt-in internet
   phase (N8) once by hand with a real exit node.
+  *Written in the cloud session (2026-10-16); the guest's half (Debian on the page) is the dev
+  VM's.* `tailnet.rs`: the home region is the one answering `/derp/probe` fastest (a `fetch` per
+  region, 3 s at most; the first region otherwise), told to the server in a non-streaming map
+  request; a `ts_tunnel` peer per netmap peer, each reached through its home region (connections to
+  other regions close after 60 s unused); routes by longest prefix over each peer's addresses and,
+  for the selected exit node only, the default routes; what comes in passes `ts_packetfilter`
+  (with the sender's node attributes), except TCP that isn't a new connection (Go's rule) and
+  replies to the guest's own UDP flows and pings (a flow table, 2 min); MagicDNS (`dns.rs`) answers
+  the netmap's names (AAAA only with the `magicdns-aaaa` attribute, as Go), NXDOMAIN inside the
+  tailnet's domains, and forwards the rest: through the tunnel from the node's address when a peer
+  or the exit node reaches the resolver (1.1.1.1 through the exit node when the tailnet names
+  none), else DNS over HTTPS by `fetch` (the resolver's own service when it's a well-known one,
+  Cloudflare's otherwise); disco pings from known peers over DERP get pongs (`ts_disco_protocol`);
+  a tailnet with Tailnet Lock on fails with that reason. The page: `web/tailnet-worker.ts` speaks the
+  Go worker's messages (`ToTailscale`/`FromTailscale`), the store helpers moved to
+  `web/tailscale-state.ts`, `startTailscale` takes `backend` (default `DEFAULT_BACKEND`, `go` until
+  T6; the page's `?tsbackend=go|rust` overrides it). *Tests:* `cargo test` (the filter: allowed
+  and refused new connections, replies to the guest's flows, spoofed sources; the exit node used
+  only when selected; MagicDNS; planted: the filter letting everything in fails them);
+  `tests/ts-tailnet.test.ts` (a stand-in guest of crafted packets, `tests/net/packets.ts`: ping the
+  peer over IPv4 and IPv6, MagicDNS's answer and NXDOMAIN, UDP and TCP to servers behind the peer,
+  the peer's `tailscale ping` answered over DERP, its connection let in by the filter, the exit
+  node selected and cleared); `tests/tailscale-browser.test.ts` (both clients in Chromium, no guest:
+  Running, the lease, 2,000 echoes; a kept node through reloads in Rust, Go and Rust again; logout
+  empties the store and headscale shows the key expired). *Cloud numbers* (Chromium 141 on the
+  cloud's x86_64, not comparable with the M4's: an indication only): Rust loaded in 21 ms (Go
+  140), Running after ~2 s for both (headscale's first map), echo RTT 1.4 ms (Go 1.8), 34 Mbit/s
+  each way (Go 17) through the userspace peer. *Found:* the first packet to the peer after the rig
+  comes up waits ~4.5 s (a WireGuard retry), later clients' first packets 55 ms: the peer's
+  warm-up, the Go client's "5 s first ping" too (bench/net/REPORT.md).
 - **T6 — Switch.** The measurements of §6 for both clients; the Rust client becomes the page's
   default; after a release with both, `net/tailscale/`, its Go build, `wasm_exec.js` and Go as
   a dependency go (the tailcat test server is a container image: no Go left). The kept nodes in
   users' IndexedDB stay as they are: the Rust client already uses them (§5). THIRD_PARTY.md,
   CLAUDE.md, networking.md and PLAN.md follow.
+  *Prepared in the cloud session (2026-10-16):* the backend is a `startTailscale` option
+  (`DEFAULT_BACKEND`, still `go`), both workers share the store (`web/tailscale-state.ts`), and
+  `tests/tailscale-browser.test.ts` runs both clients side by side in one session. The switch waits
+  for the guest's test on the Rust client and `scripts/ci-net.sh` on the dev VM, and the M4's numbers.
 
 ## 8. Risks and open questions
 
@@ -373,7 +445,7 @@ not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s).
   one's own derper. Heavy VM traffic through them is not what they're for.
 - **The `[patch]` for time and random** may be refused by a future tailscale-rs layout; upstreaming
   a host-supplied clock to `ts_tunnel` (it's sans-I/O otherwise) would remove it.
-- `h2` or our own HTTP/2: settled by size in T4.
+- `h2` or our own HTTP/2: settled in T4 (the user: import it; §2).
 - Does the module run in the device worker instead of its own (one worker less, no extra hop)?
   Only if T6's CPU numbers show it costs the device worker little; its own worker first.
 - Tailnet Lock and other features the netmap may require that we don't implement: the client

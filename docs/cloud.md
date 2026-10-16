@@ -37,8 +37,13 @@ and `dockerd` starts (`dockerd &`, root) and pulls Docker Hub images, so the tai
 a cloud session put a shim named `podman` that execs `docker "$@"` first on `PATH`, outside the
 repo. GitHub release downloads (`github.com/.../releases`) are refused by the proxy.
 
-Without a container daemon at all the tailnet also runs natively, which is how the exit-node work was
-tested: `go install github.com/juanfont/headscale/cmd/headscale@v0.29.4` and, from an empty
+Without a container daemon at all the tailnet runs natively: **`tests/net/tailnet-native.sh`**
+(`up|env|key [lasting]|nodes|peer …|register <id>|down`, like `tailnet.sh`; Go builds headscale and
+tailscale once into `target/net/tailnet-bin`, `tests/net/tls-proxy.ts` is its Caddy), and
+`WEBPC_TAILNET_SCRIPT=tests/net/tailnet-native.sh` points the tests at it (the Rust client's T4 and
+T5 were tested that way: `tests/ts-tailnet.test.ts`, `tests/tailscale-browser.test.ts`). The tests
+that call `podman exec webpc-peer` directly (`tests/net-tailnet.test.ts`) still need the shim below.
+Before that script existed the exit-node work was tested by hand the same way: `go install github.com/juanfont/headscale/cmd/headscale@v0.29.4` and, from an empty
 directory, `go install tailscale.com/cmd/tailscaled@v1.102.5 tailscale.com/cmd/tailscale@v1.102.5`
 (the versions `tests/net/tailnet.sh` pins), headscale with the config that script writes (paths
 changed) behind any TLS proxy that adds `Access-Control-Allow-Origin` on `/key` and passes

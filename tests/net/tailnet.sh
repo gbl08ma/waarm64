@@ -10,6 +10,7 @@
 #   tests/net/tailnet.sh key     print a new reusable, ephemeral auth key (`key lasting`: not ephemeral)
 #   tests/net/tailnet.sh nodes   headscale's nodes, JSON
 #   tests/net/tailnet.sh peer …  the peer's `tailscale …`
+#   tests/net/tailnet.sh register <id>   completes an interactive login (the login URL's last part), as user tailnet
 #   tests/net/tailnet.sh down    remove the containers and the state
 # The state lives in $TAILNET_DIR (default target/net/tailnet). The tailnet's
 # IPv4 range is $HEADSCALE_V4 (default 100.90.0.0/16, on purpose not the
@@ -154,9 +155,10 @@ env) env_ ;;
 key) authkey "${2:-}" ;;
 nodes) hs nodes list -o json ;;
 peer) shift; peerts "$@" ;;
+register) hs auth register --auth-id "$2" --user tailnet ;;
 down)
 	podman rm -f "$PEER" "$PROXY" "$HS" >/dev/null 2>&1 || true
 	rm -rf "$DIR"
 	;;
-*) echo "usage: $0 up|env|key [lasting]|nodes|peer <tailscale args>|down" >&2; exit 2 ;;
+*) echo "usage: $0 up|env|key [lasting]|nodes|peer <tailscale args>|register <auth ID>|down" >&2; exit 2 ;;
 esac
