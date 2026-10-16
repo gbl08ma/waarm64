@@ -6,19 +6,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## CPU and ISA
 
-- **Guest memory corruption when Linux runs without KPTI** (found 2026-10-16; `scripts/ci-deqp.sh` fails on it):
-  on the page, `deqp-gles2` over GLES2's pass list dies with glibc's `double free or corruption (out)` after 23 to 80
-  cases, at a different case each run (GLES3's list passes). Bisected on the Arch dEQP guest (`target/deqp/guest.qcow2`,
-  two runs a step): `cca59cc` passes, `c3ae697` (FEAT_RNG and FEAT_E0PD on the page) fails. `?rng=0` still fails,
-  `?e0pd=0` passes; the guest with `kpti=1` passes even with E0PD, and with `nokaslr` under `?e0pd=0` (KPTI off without
-  E0PD) fails: the trigger is KPTI off, which E0PD allows under KASLR. Before `c3ae697` KASLR forced KPTI on the
-  page's guests, and its ASID switch at every kernel entry kept dropping the TLB's nG entries, which hid a stale
-  translation. One vCPU fails too (1 run of 2), so not only cross-vCPU shootdowns. The same binaries and Mesa pass
-  natively on the M4 (3/3) and under `qemu-aarch64 -cpu cortex-a57` (2/2), on virpipe against the vtest oracle.
-  Next: what keeps a user mapping alive past its TLBI (TLBI by VA/ASID, ASID reuse, the JIT's TLB and its regions);
-  `bench/results/local/deqp-run-raw.ts` (git-ignored) kept dEQP's output and took `PAGE_QUERY`/`NCPUS`. Until it's
-  fixed, `?e0pd=0` is the workaround.
-
 - **Unadvertised extensions the M4 has**, in case real workloads benefit: FP16 (scalar and
   AdvSIMD), DotProd, RDM, FHM, FCMA, JSCVT (JS engines use `FJCVTZS`), FRINTTS, BF16, I8MM, LSE2,
   RCpc, FlagM, SB, DIT, SHA512 and SHA3 (OpenSSL uses both; SHA3's `EOR3`/`RAX1`/`XAR`/`BCAX` speed

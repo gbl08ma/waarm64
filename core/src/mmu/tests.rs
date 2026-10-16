@@ -242,6 +242,47 @@ fn bus_translates_faults_and_caches() {
     assert_eq!(nb.read(&c, 0x1010, 8), Ok(0x3344));
 }
 
+/// A TLBI by any VA of a block drops the entries of all its pages (Linux
+/// unmaps a transparent huge page with one, at its start).
+#[test]
+fn flush_by_va_drops_a_whole_block() {
+    const VA: u64 = 0x4000_0000;
+    let mut p = Pt::new();
+    p.map(VA, 2, 0x20_0000 | BLOCK);
+    p.map(0x1000, 3, 0x9000 | PAGE);
+    for (pa, v) in [
+        (0x20_3010, 1),
+        (0x20_5010, 2),
+        (0x3010, 3),
+        (0x5010, 4),
+        (0x9010, 5),
+    ] {
+        p.r.mem.write(pa, 8, v).unwrap();
+    }
+    let c = cpu();
+    let mut v = Vcpu::new(c.clone());
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    let read = |b: &mut Mmu| (b.read(&c, VA + 0x3010, 8), b.read(&c, VA + 0x5010, 8));
+    assert_eq!(read(&mut b), (Ok(1), Ok(2)));
+    assert_eq!(b.read(&c, 0x1010, 8), Ok(5));
+    // Remapped to PA 0: cached until a TLBI, and one at the block's start
+    // drops both pages; a TLBI elsewhere drops none.
+    let l2 = {
+        let l1 = p.r.mem.read(ROOT0, 8).unwrap() & OA_MASK;
+        p.r.mem.read(l1 + 8, 8).unwrap() & OA_MASK
+    };
+    p.r.mem.write(l2, 8, BLOCK).unwrap();
+    b.flush_va(VA + 0x20_0000);
+    b.flush_va(0x1000);
+    assert_eq!(read(&mut b), (Ok(1), Ok(2)));
+    b.flush_va(VA);
+    assert_eq!(read(&mut b), (Ok(3), Ok(4)));
+    // The counts follow entries overwritten and dropped: none left after
+    // dropping the block's again.
+    b.flush_va(VA + 0x1f_f000);
+    assert_eq!(v.tlb.nblk, [0; 4]);
+}
+
 #[test]
 fn page_crossing() {
     let mut p = Pt::new();
@@ -459,11 +500,11 @@ fn transfer_cache_entries_die_with_their_generation() {
     // holds only global entries; EL0's dies once an nG one was filled there.
     t.xc_fill(0x1000, 3, 7, 4);
     t.xc_fill(0x2000, 2, 7, 4);
-    t.fill(Use::Exec as usize, 0x2000, 0, true);
-    t.fill(3 + Use::Read as usize, 0x5000, 0, true);
+    t.fill(Use::Exec as usize, 0x2000, 0, true, 3);
+    t.fill(3 + Use::Read as usize, 0x5000, 0, true, 3);
     t.flush_ng();
     assert!(live(t, 0x1000, 3) && !live(t, 0x2000, 2));
-    t.fill(3 + Use::Exec as usize, 0x1000, 0, true);
+    t.fill(3 + Use::Exec as usize, 0x1000, 0, true, 3);
     t.flush_ng();
     assert!(!live(t, 0x1000, 3));
     // Blocks dropped: all of it.

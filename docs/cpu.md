@@ -129,6 +129,16 @@ The table is `core/src/interp/sys.rs`.
   (nG) entries, tracked in `Tlb::ng` (up to 1024 slots, else a full flush); a change of
   `SCTLR_EL1.M` flushes everything. (Keeping global entries cut Alpine's boot misses 3.61M →
   1.07M.) Per-ASID stashes of nG entries are a backlog item.
+- **Blocks:** a 2 MiB or 1 GiB leaf is cached as entries for the pages it was used through, and
+  a TLBI by VA drops every one of them, not only its own page's: Linux unmaps a transparent huge
+  page with one TLBI for the 2 MiB. `Tlb::blk` marks the slots filled from blocks by class (VA
+  half, level) and `Tlb::nblk` counts them; a flush by VA scans the block's indices (512 for
+  2 MiB, all 4096 for 1 GiB) only for a class the TLB holds, and drops an EL's transfer cache if
+  its instruction TLB filled from a block in that half. Without this, stale pages of a freed THP
+  stayed mapped until the next ASID switch: hidden while KPTI switched ASIDs at every kernel entry,
+  it corrupted glibc's heap in dEQP once FEAT_E0PD let a KASLR kernel run without KPTI
+  (`c3ae697`; bisected and narrowed with `kpti=1`, `nokaslr` and `transparent_hugepage=never`
+  guests).
 - The TLB also holds the JIT's **transfer cache** (`Tlb::xc`, VA to compiled block), which every
   flush above drops its share of ([jit.md](jit.md) "Linking").
 - The interpreter has three copies of `exec` over a `Bus`: flat (MMU off), MMU, and `vm::Io`

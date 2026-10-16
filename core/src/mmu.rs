@@ -22,6 +22,13 @@
 //! the nG entries alone, found through a list of the slots they were filled
 //! into (`Tlb::ng`), so the kernel's global entries survive context switches
 //! (M6 loop 9: Alpine's boot refilled 3.2M of them after 5,700 whole flushes).
+//!
+//! A block (a 2 MiB or 1 GiB leaf) is cached as entries for the pages it was
+//! accessed through, and a TLBI by VA must drop all of them: Linux unmaps a
+//! transparent huge page with one TLBI for the 2 MiB (`__flush_tlb_range`'s
+//! stride). `Tlb::blk` marks the slots filled from blocks, by class (VA half
+//! and level), and a flush by VA scans a block's indices for each class the
+//! TLB holds entries of (`Tlb::nblk`).
 // ponytail: the nG entries of the previous ASID are dropped, not kept for when
 // it's current again (per-ASID stashes; 0.3M nG refills in Alpine's boot).
 //
@@ -116,6 +123,20 @@ pub struct Tlb {
     /// last flush, `ng_len` of them. A slot may since hold another entry:
     /// dropping it then is an over-invalidation, which is always allowed.
     ng: [u16; NG_SLOTS],
+    /// Per slot (`index * TLB_SLOTS + array`): 0 for an entry from a page,
+    /// else its block's class, [`block_class`].
+    blk: [u8; TLB_ENTRIES * TLB_SLOTS],
+    /// Live entries from blocks, by class (minus one).
+    nblk: [u32; 4],
+    /// The EL's instruction TLB filled entries from blocks in a VA half since
+    /// the EL's transfer cache entries were last dropped: a flush by VA
+    /// there drops them all, as the block's other pages may have some.
+    xblk: [[bool; 2]; 2],
+}
+
+/// A block's class, 1 to 4: its VA half and level (1 or 2).
+fn block_class(va: u64, level: u8) -> u8 {
+    1 + 2 * (va >> 55 & 1) as u8 + (level == 1) as u8
 }
 
 /// Counted in the slow paths; the VM run loop publishes them (`vm::Counters`).
@@ -141,6 +162,7 @@ impl Tlb {
 
     /// Drops EL `el`'s transfer cache entries.
     fn bump_el(&mut self, el: usize) {
+        self.xblk[el] = [false; 2];
         self.xgen[el] += 1;
         if self.xgen[el] > 0xffff {
             self.xc.fill(Xc::default());
@@ -163,6 +185,8 @@ impl Tlb {
         self.stats.flushes += 1;
         self.bump();
         self.e.fill(Slots::default());
+        self.blk.fill(0);
+        self.nblk = [0; 4];
         self.ng_len = 0;
         self.xng = [false; 2];
         self.low_global = false;
@@ -180,17 +204,38 @@ impl Tlb {
                 self.bump_el(el);
             }
         }
-        for &s in &self.ng[..n] {
-            self.e[s as usize / TLB_SLOTS].0[s as usize % TLB_SLOTS] = Entry::default();
+        for k in 0..n {
+            self.drop_slot(self.ng[k] as usize);
         }
         self.ng_len = 0;
     }
 
-    fn fill(&mut self, array: usize, va: u64, addend: u64, ng: bool) {
+    /// Empties slot `s` (`index * TLB_SLOTS + array`).
+    fn drop_slot(&mut self, s: usize) {
+        self.e[s / TLB_SLOTS].0[s % TLB_SLOTS] = Entry::default();
+        let k = core::mem::take(&mut self.blk[s]);
+        if k != 0 {
+            self.nblk[k as usize - 1] -= 1;
+        }
+    }
+
+    /// Caches `va`'s page in `array`; `level` is the walk's leaf level (below
+    /// 3: a page of a block).
+    fn fill(&mut self, array: usize, va: u64, addend: u64, ng: bool, level: u8) {
+        let s = index(va) * TLB_SLOTS + array;
+        self.drop_slot(s);
         self.e[index(va)].0[array] = Entry {
             tag: va | 0xfff,
             addend,
         };
+        if level < 3 {
+            let k = block_class(va, level);
+            self.blk[s] = k;
+            self.nblk[k as usize - 1] += 1;
+            if array % 3 == Use::Exec as usize {
+                self.xblk[array / 3][(va >> 55 & 1) as usize] = true;
+            }
+        }
         if ng {
             if array % 3 == Use::Exec as usize {
                 self.xng[array / 3] = true;
@@ -213,9 +258,35 @@ impl Tlb {
                 *x = Xc::default();
             }
         }
-        for e in &mut self.e[index(va)].0 {
-            if (e.tag ^ va) & 0x00ff_ffff_ffff_f000 == 0 {
-                *e = Entry::default();
+        for a in 0..TLB_SLOTS {
+            if (self.e[index(va)].0[a].tag ^ va) & 0x00ff_ffff_ffff_f000 == 0 {
+                self.drop_slot(index(va) * TLB_SLOTS + a);
+            }
+        }
+        // The other pages of a block holding `va`: those of each class the TLB
+        // holds, in the indices the block's pages map to.
+        let hi = (va >> 55 & 1) as usize;
+        for el in 0..2 {
+            if self.xblk[el][hi] {
+                self.bump_el(el);
+            }
+        }
+        for level in [2, 1] {
+            let k = block_class(va, level);
+            if self.nblk[k as usize - 1] == 0 {
+                continue;
+            }
+            let shift = 12 + 9 * (3 - level as u32);
+            let mask = 0x00ff_ffff_ffff_ffff & !((1u64 << shift) - 1);
+            let first = index(va & mask);
+            for i in 0..(1usize << (shift - 12)).min(TLB_ENTRIES) {
+                let x = (first + i) & (TLB_ENTRIES - 1);
+                for a in 0..TLB_SLOTS {
+                    let s = x * TLB_SLOTS + a;
+                    if self.blk[s] == k && (self.e[x].0[a].tag ^ va) & mask == 0 {
+                        self.drop_slot(s);
+                    }
+                }
             }
         }
     }
@@ -701,7 +772,7 @@ impl<'a> Mmu<'a> {
             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
         {
             let addend = (page as usize as u64).wrapping_sub(va & !0xfff);
-            t.fill(3 * el as usize + u as usize, va, addend, w.ng);
+            t.fill(3 * el as usize + u as usize, va, addend, w.ng, w.level);
         }
         Ok(p)
     }

@@ -1893,3 +1893,24 @@ host calls returning to their continuation in the userspace benchmark and the de
 links instead of indirect ones) attacks the same stall by the same theory (an indirect branch the predictor misses),
 so it would likely move it too; measure the stall's cause first (a direct tail call into a cold target, `chain.mjs`
 with the targets' code evicted) before building either.
+
+## M8: TLBI by VA drops whole blocks (2026-10-16)
+
+The fix for the corruption `scripts/ci-deqp.sh` found once FEAT_E0PD let a KASLR kernel run without KPTI (docs/cpu.md
+"Blocks"): our TLB cached a 2 MiB block as entries for the pages used through it, and a TLBI by VA dropped only its own
+page, while Linux unmaps a transparent huge page with one TLBI for the 2 MiB. On the Arch dEQP guest GLES2's list
+passed 2/2 with `transparent_hugepage=never` and passes 2/2 with the fix. Alpine's userspace benchmark is guest-visibly
+different (10,613,406,958 → 10,612,335,608 steps; the run through snapshots, which flushed the TLBs and so the stale
+entries, now comes out at the same count) and takes **21% fewer TLB misses** (2.27M → 1.79M; flushes 70,790 → 71,618).
+
+A/B against `35de718` (A) in one session, alternating (ABBAABBA), four rounds each; the dev VM, Chromium 153.0.8010.52.
+The JSONs (`results/m8-tlbblock/`) all say `35de718`, dirty: the cores were swapped in by file, A then B in each name.
+
+| median ms, per round | A (`35de718`) | B (the fix) |
+|---|---|---|
+| `alpine_user_jit_total` | 16,802 · 16,790 · 16,730 · 16,739 | 16,808 · 16,743 · 17,068 · 17,044 |
+| `alpine_jit_total` | 7,761 · 8,002 · 7,845 · 7,875 | 7,839 · 7,990 · 7,869 · 7,922 |
+
+The boot is within 0.4%; the userspace benchmark is within 1% on the median of rounds (16,765 against 16,926), with
+B's last two rounds 1.8% slower: under the noise threshold, and a fix for corruption is kept whatever it costs at this
+size. The scan a TLBI by VA adds runs only while the TLB holds pages of blocks in that VA half.
