@@ -1,5 +1,5 @@
 // The video track's V1 end check (docs/plans/video.md §5; dev-only, not in tests): the desktop guest
-// (images/archarm/desktop.sh, with webpc-va) on the page, whose 3D machine decodes VA-API with WebCodecs. The guest's
+// (images/arch/desktop.sh, with webpc-va) on the page, whose 3D machine decodes VA-API with WebCodecs. The guest's
 // FFmpeg decodes each clip twice, in software and through VA-API with the pictures downloaded (`vaDeriveImage`: a read
 // of the planes, which waits for the host's decode), and compares the frames' hashes (framemd5): equal where the
 // host's decoder is exact (VP9 everywhere; H.264 on FFmpeg's or a hardware decoder, not the dev VM's OpenH264). Also

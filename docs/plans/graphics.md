@@ -1214,8 +1214,8 @@ After both fixes (`8b243ad`), on the dev VM (SwiftShader; `bench/gpu/results/g4-
 and for GLES3 the `lifetime`, `occlusion_query` and `texstorage2d/3d.format` groups, 325, which catch the two
 regressions where the subsets didn't: each planted back fails it, the alignment with 27 cases, the hang in ~11
 minutes with the serial log kept). It must pass when a change touches 3D and at a graphics track's end. Its guest is
-the repo's: `images/deqp/build.sh` makes `target/deqp/guest.qcow2` (Arch Linux ARM with mesa and libpng,
-`images/archarm/build.sh --packages`), so it no longer needs the user's image.
+the repo's: `images/deqp/build.sh` makes `target/deqp/guest.qcow2` (Arch Linux with mesa and libpng,
+`images/arch/build.sh --packages`; Arch Linux ARM until 2026-10-16), so it no longer needs the user's image.
 
 ### G4's exit (2026-10-10)
 

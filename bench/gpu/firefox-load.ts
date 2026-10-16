@@ -1,5 +1,5 @@
 // Firefox on the page (G4, the kickoff's decision 1; dev-only, not in tests): the user's Arch image with sway and
-// Firefox (`bench/results/local/myarch3.qcow2`: login alarm/alarm on the screen, root/root on the serial console),
+// Firefox (`bench/results/local/myarch3.qcow2`: login arch/arch on the screen, WEBPC_GUEST_USER=alarm for an Arch Linux ARM disk, root/root on the serial console),
 // headless Chromium, 4 vCPUs, 2.5 GiB, the screen fixed at 1376×762, as bench/gpu/sway-load.ts. sway starts on GLES
 // (on Mesa's virgl with 3D, on llvmpipe with `?gpu=2d`, or `WLR_RENDERER=pixman` in mode `pixman`), then Firefox in
 // kiosk mode on the pages in bench/gpu/firefox/ (copied into the guest), a profile of their own (user.js; FF_PREFS adds
@@ -16,7 +16,9 @@
 // TIMELINE_ALL=1 records it over the whole of `pages` instead (every start and load; <outdir>/pages-all.timeline.json).
 // QUERY adds to the page's query (e.g. `jit=nocw`: the JIT without its compile worker).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { openSession } from './guest-session.ts';
+import { GUEST_USER, openSession } from './guest-session.ts';
+
+const HOME = `/home/${GUEST_USER}`;
 
 const mode = process.argv[2] ?? 'virgl';
 const image = process.argv[3];
@@ -47,12 +49,12 @@ const prefs = (process.env.FF_PREFS ?? '').split(',').filter(Boolean).map((p) =>
   return `user_pref("${k}", ${/^(true|false|-?\d+)$/.test(v) ? v : JSON.stringify(v)});`;
 });
 const files: [string, string][] = [['bench.js', 'bench.js'], ['scroll.html', 'scroll.html'], ['webgl.html', 'webgl.html'], ['user.js', 'profile/user.js']];
-await onSerial('clear; rm -rf /home/alarm/ffbench; mkdir -p /home/alarm/ffbench/profile\n');
+await onSerial(`clear; rm -rf ${HOME}/ffbench; mkdir -p ${HOME}/ffbench/profile\n`);
 for (const [from, to] of files) {
   const text = readFileSync(new URL(from, dir), 'utf8') + (from === 'user.js' ? prefs.join('\n') + '\n' : '');
-  await pasteSerial(`cat > /home/alarm/ffbench/${to} <<'EOF'\n${text}EOF`);
+  await pasteSerial(`cat > ${HOME}/ffbench/${to} <<'EOF'\n${text}EOF`);
 }
-await onSerial('clear; chown -R alarm:alarm /home/alarm/ffbench\n');
+await onSerial(`clear; chown -R ${GUEST_USER}:${GUEST_USER} ${HOME}/ffbench\n`);
 // The autoconfig that summarizes about:support's graphics section (FFBENCH_SUPPORT=<file>).
 for (const [from, to] of [['autoconfig.js', '/usr/lib/firefox/defaults/pref/autoconfig.js'], ['webpc.cfg', '/usr/lib/firefox/webpc.cfg']]) {
   await pasteSerial(`cat > ${to} <<'EOF'\n${readFileSync(new URL(from, dir), 'utf8')}EOF`);
@@ -62,7 +64,7 @@ for (const [from, to] of [['autoconfig.js', '/usr/lib/firefox/defaults/pref/auto
 // page says ready (or `timeout`).
 await pasteSerial(String.raw`cat > /root/ff.sh <<'EOF'
 ffkill() { pkill -x firefox; for i in $(seq 60); do pgrep -x firefox >/dev/null || return 0; sleep 1; done; pkill -9 -x firefox; sleep 2; }
-ffrun() { k=--kiosk; [ $# -ge 3 ] && k=$3; rm -f /tmp/ff-$2.log; date +%s.%N > /tmp/ff-$2.t0; su alarm -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec 'FFBENCH_SUPPORT=/tmp/ff-$2.support firefox --profile /home/alarm/ffbench/profile $k $1 > /tmp/ff-$2.log 2>&1'" >/dev/null; }
+ffrun() { k=--kiosk; [ $# -ge 3 ] && k=$3; rm -f /tmp/ff-$2.log; date +%s.%N > /tmp/ff-$2.t0; su ${GUEST_USER} -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec 'FFBENCH_SUPPORT=/tmp/ff-$2.support firefox --profile ${HOME}/ffbench/profile $k $1 > /tmp/ff-$2.log 2>&1'" >/dev/null; }
 ffwait() { for i in $(seq 600); do grep -q "FFBENCH .* ready" /tmp/ff-$1.log 2>/dev/null && { echo "$(date +%s.%N) $(cat /tmp/ff-$1.t0)" | awk '{printf "started %.1f\n", $1-$2}'; return; }; sleep 0.5; done; echo timeout; }
 EOF`);
 results.info = await run('uname -r; pacman -Q firefox sway wlroots0.19 mesa 2>&1 | tr "\\n" " "; free -m | head -2 | tail -1');
@@ -97,12 +99,12 @@ const firefox = async (tag: string, url: string) => {
   save();
 };
 
-if (PHASES.includes('still')) await firefox('still', 'file:///home/alarm/ffbench/scroll.html?still');
+if (PHASES.includes('still')) await firefox('still', `file://${HOME}/ffbench/scroll.html?still`);
 if (PHASES.includes('startup')) {
   // Firefox's start (a profile it has used): its threads and the renderer from launch, for STARTUP_S seconds.
   const secs = Number(process.env.STARTUP_S ?? 30);
   await run('. /root/ff.sh; ffkill', 120_000);
-  await run('. /root/ff.sh; ffrun file:///home/alarm/ffbench/scroll.html?still startup');
+  await run(`. /root/ff.sh; ffrun file://${HOME}/ffbench/scroll.html?still startup`);
   const r = await load('startup', secs);
   const started = await run('. /root/ff.sh; ffwait startup', 330_000);
   results.startup = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), ...r };
@@ -111,8 +113,8 @@ if (PHASES.includes('startup')) {
 }
 results.mesa = await run('for p in $(pgrep -f firefox); do grep -q libgallium /proc/$p/maps && echo "$p $(cat /proc/$p/comm) $(ls -l /proc/$p/fd 2>/dev/null | grep -c /dev/dri)"; done | tr "\\n" ";"');
 log('mesa', results.mesa);
-if (PHASES.includes('scroll')) await firefox('scroll', 'file:///home/alarm/ffbench/scroll.html');
-if (PHASES.includes('webgl')) await firefox('webgl', 'file:///home/alarm/ffbench/webgl.html');
+if (PHASES.includes('scroll')) await firefox('scroll', `file://${HOME}/ffbench/scroll.html`);
+if (PHASES.includes('webgl')) await firefox('webgl', `file://${HOME}/ffbench/webgl.html`);
 if (PHASES.includes('pages')) {
   // Real sites (bench/gpu/firefox-pages.sh): Firefox started on each (its start and the page's load timed), then
   // scrolled by the mouse's wheel as a user does (Firefox's asynchronous scrolling), measured.
@@ -153,7 +155,7 @@ if (PHASES.includes('menu')) {
   // A context menu (a popup with rounded corners and a shadow: translucent at its edges), in a normal window (kiosk
   // mode has none); the screen shot with the menu open.
   await run('. /root/ff.sh; ffkill', 120_000);
-  await run(`. /root/ff.sh; ffrun file:///home/alarm/ffbench/scroll.html?still menu ""`);
+  await run(`. /root/ff.sh; ffrun file://${HOME}/ffbench/scroll.html?still menu ""`);
   log('menu', await run('. /root/ff.sh; ffwait menu', 330_000));
   await page.waitForTimeout(WARM_S * 1000);
   const box = (await page.locator('#screen').boundingBox())!;

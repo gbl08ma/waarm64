@@ -57,7 +57,10 @@ latency during a page load) if a lever's case rests on it.
 ## How to measure (`tools/`: `bench/boot/results/m8-warm/tools/`)
 
 - **The session:** `PHASES=pages TIMELINE_ALL=1 node bench/gpu/firefox-load.ts virgl target/archarm/desktop.qcow2
-  <outdir>` (~380 s of pages, ~750 s in all with the boot and Firefox's start: background, `timeout 900`, under `systemd-run --user --scope -p
+  <outdir>` (that disk is Arch Linux ARM's, every number so far is on it: keep it for A/B. The Arch images moved to
+  arch.bens.haus's port on 2026-10-16, `images/arch/desktop.sh` → `target/arch/desktop.qcow2`, whose kernel lacks
+  `DEBUG_PREEMPT` and whose user is `arch`, not `alarm`: run the session on the old disk with `WEBPC_GUEST_USER=alarm`;
+  re-baseline on the new disk before comparing across it) (~380 s of pages, ~750 s in all with the boot and Firefox's start: background, `timeout 900`, under `systemd-run --user --scope -p
   MemoryMax=10G -p MemorySwapMax=0`; nothing else Chromium-heavy beside it); busy MIPS from `node bench/gpu/stalls.ts
   <outdir>/pages-all.timeline.json`; `results.json`'s `jit` has the wasm bytes, modules, flushes. A/B: core builds
   swapped (`tools/abw.sh`, `cmp` before each run), two sessions each at least, alternating.

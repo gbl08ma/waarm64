@@ -1,30 +1,23 @@
 #!/usr/bin/env bash
 # dEQP for G4's conformance subset (docs/plans/graphics.md; the G4 kickoff's decision 3): VK-GL-CTS
 # opengl-es-cts-3.2.14.1 (Apache-2.0: a workload, built and run, nothing copied), deqp-gles2 and deqp-gles3 on EGL's
-# surfaceless platform, built natively for Arch Linux ARM (the user's guest image's distribution) in rootless Podman
-# from Arch's own tarball (images/archarm/build.sh's download, cached in target/archarm). On demand only: not in
+# surfaceless platform, built natively for Arch Linux (arch.bens.haus's aarch64 port: the desktop guest's
+# distribution) in rootless Podman from localhost/arch-base (images/arch/base.sh). On demand only: not in
 # images/build.sh, SHA256SUMS or CI. Results:
 #   target/deqp/deqp.ext4   the two binaries, their data and the GLES mustpass lists in /deqp (ext4, label deqp): the
 #                           page's second disk (?disk2=), which the guest mounts (bench/gpu/deqp-run.ts)
-#   target/deqp/guest.qcow2 the guest that runs them on the page: Arch Linux ARM with mesa and libpng
-#                           (images/archarm/build.sh --packages; ~4 min more), scripts/ci-deqp.sh's
+#   target/deqp/guest.qcow2 the guest that runs them on the page: Arch Linux with mesa and libpng
+#                           (images/arch/build.sh --packages; ~4 min more), scripts/ci-deqp.sh's
 #   localhost/webpc-deqp    the build's image: the same binaries on Mesa's virpipe against the vtest oracle
 #                           (tools/virgl-oracle/deqp.sh), for the expected results
 #   images/deqp/build.sh [--guest-only]
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 W=$ROOT/target/deqp
-TAR=$ROOT/target/archarm/ArchLinuxARM-aarch64-latest.tar.gz
-URL=http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
-mkdir -p "$W" "$(dirname "$TAR")"
-guest() { "$ROOT/images/archarm/build.sh" --packages "mesa libpng" --out "$W/guest.qcow2"; }
+mkdir -p "$W"
+guest() { "$ROOT/images/arch/build.sh" --packages "mesa libpng" --out "$W/guest.qcow2"; }
 if [ "${1-}" = --guest-only ]; then guest; exit; fi
-if [ ! -f "$TAR" ]; then
-  WANT=$(curl -fsSL "$URL.md5" | cut -d' ' -f1)
-  curl -fL --retry 3 -o "$TAR" "$URL"
-  [ "$(md5sum "$TAR" | cut -d' ' -f1)" = "$WANT" ] || { echo "md5 mismatch" >&2; exit 1; }
-fi
-podman image exists localhost/archarm-base || podman import --os linux --arch arm64 "$TAR" localhost/archarm-base >/dev/null
+"$ROOT/images/arch/base.sh"
 podman build -q -t localhost/webpc-deqp "$ROOT/images/deqp" >/dev/null
 rm -rf "$W/tree"; mkdir -p "$W/tree"
 podman run --rm -v "$W:/out:Z" localhost/webpc-deqp sh -euc '

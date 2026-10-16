@@ -1,5 +1,5 @@
-// dEQP on the page (G4's correctness gate, the kickoff's decision 3; dev-only for now): the user's Arch image
-// (`bench/results/local/myarch3.qcow2`, Mesa's virgl in the guest) on a 3D machine, dEQP on its second disk
+// dEQP on the page (G4's correctness gate, the kickoff's decision 3; dev-only for now): an Arch image
+// (images/deqp/build.sh's target/deqp/guest.qcow2, Mesa's virgl in the guest) on a 3D machine, dEQP on its second disk
 // (images/deqp/build.sh → target/deqp/deqp.ext4, mounted at /mnt/vdb, the files in /mnt/vdb/deqp), deqp-gles2 or
 // deqp-gles3 run as root on EGL's surfaceless platform (no compositor) over a case list: a slice of a mustpass list
 // (every STRIDE-th case from the OFFSET-th) or the cases a file names (CASES; `#` lines are comments). Writes <out>/results.json: the counts

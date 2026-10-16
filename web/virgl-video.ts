@@ -10,7 +10,7 @@ import { codecString, H264Stream } from './video-h264.ts';
 /**
  * `enum pipe_video_profile` as Mesa 26.2 numbers it: the wire carries Mesa's own enum, which isn't stable across
  * releases (virglrenderer's copy has two MPEG-4 profiles Mesa 26.2 dropped, shifting every later value). These are
- * the desktop guest's (Arch Linux ARM's mesa 26.2.4).
+ * the desktop guest's (Arch's mesa 26.2.4).
  */
 export const PROFILE = {
   AVC_BASELINE: 7, AVC_CONSTRAINED_BASELINE: 8, AVC_MAIN: 9, AVC_EXTENDED: 10, AVC_HIGH: 11, AVC_HIGH10: 12,

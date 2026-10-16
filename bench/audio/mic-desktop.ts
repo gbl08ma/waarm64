@@ -1,6 +1,6 @@
-// The microphone on the desktop guest (audio S4, docs/audio.md "Decisions"; dev-only, not in tests): images/archarm/
+// The microphone on the desktop guest (audio S4, docs/audio.md "Decisions"; dev-only, not in tests): images/arch/
 // desktop.sh's image on the page with Chromium's fake capture device playing a tone (`MIC_HZ`, default 500), sway
-// started (so PipeWire and WirePlumber run in alarm's session), then: the sources WirePlumber lists (the virtio card's
+// started (so PipeWire and WirePlumber run in arch's session), then: the sources WirePlumber lists (the virtio card's
 // capture must be one), a recording with `pw-record` (PipeWire's own client, at 48 kHz stereo S16), and each channel's
 // frequency by its rising zero crossings (od and awk in the guest), with the page's microphone state and ring.
 //   node bench/audio/mic-desktop.ts <image.qcow2> [outdir]       (default bench/results/local/mic-desktop/)
@@ -28,7 +28,7 @@ const results: Record<string, unknown> = { chromium: s.browser.version(), micHz:
 const save = () => writeFileSync(`${out}/results.json`, JSON.stringify(results, null, 1));
 try {
   await rootShell();
-  results.info = await run('uname -r; pacman -Q pipewire wireplumber virtio-snd-dkms | tr "\\n" " "; echo; head -2 /proc/asound/cards | tr -s " "; ls /dev/snd | tr "\\n" " "');
+  results.info = await run('uname -r; pacman -Q linux pipewire wireplumber | tr "\\n" " "; echo; head -2 /proc/asound/cards | tr -s " "; ls /dev/snd | tr "\\n" " "');
   log('info', results.info);
   results.sway = await s.startSway('pixman');
   // The default source WirePlumber picked: the virtio card's capture.

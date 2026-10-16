@@ -31,8 +31,10 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
   microphone** turns it off, for music.
 - **No guest-side software.** The guest's own driver and sound stack (ALSA alone, PipeWire, PulseAudio) run unmodified;
   mixing and resampling of several guest streams stay the guest's.
-- **Arch Linux ARM's kernel lacks the driver, so we build it** (out of tree, a DKMS package kept in the repo, not
-  published); nothing is asked of upstream.
+- **The guests' own kernels carry the driver**: Debian's, Alpine's and the desktop guest's Arch (arch.bens.haus's
+  aarch64 port) build `CONFIG_SND_VIRTIO=m`. Arch Linux ARM's `linux-aarch64`, the desktop guest's distribution until
+  2026-10-16, didn't: we built it out of tree then (a DKMS package in the repo, not published, dropped with the move;
+  git history has it).
 - **Step counts moved twice for audio** (the snd guest's tone length, then the input stream), each once in its commit.
 
 ## How it fits together
@@ -80,22 +82,13 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
 |---|---|---|
 | Debian 13 (6.12.107+deb13-arm64) | a module (`virtio_snd.ko.xz`), autoloaded | card 0 `VirtIO SoundCard`, `pcmC0D0p` and `pcmC0D0c`; the nocloud image has no `alsa-utils` (the tests play and record with our static `snd-play` and `snd-rec` from a second disk: `images/snd/`) |
 | Alpine 3.24 `linux-virt` | a module (`CONFIG_SND_VIRTIO=m`, with `snd`, `snd-pcm`, `snd-timer`) | binds after `modprobe virtio_snd` (no device manager: nothing autoloads); playback not exercised (no `alsa-utils`) |
-| Arch Linux ARM `linux-aarch64` 7.2.9 | **not built** (`# CONFIG_SND_VIRTIO is not set`; `snd`, `snd-pcm` built in) | the desktop guest (sway, foot, Firefox, GTK4, PipeWire): our module, below |
+| Arch Linux (arch.bens.haus) `linux` 7.2.9.arch1 | a module (`virtio_snd.ko.zst`, `CONFIG_SND_VIRTIO=m`), autoloaded | the desktop guest (sway, foot, Firefox, PipeWire) |
+| Arch Linux ARM `linux-aarch64` 7.2.9 | **not built** (`# CONFIG_SND_VIRTIO is not set`) | the desktop guest until 2026-10-16, with our DKMS module (since dropped) |
 | Our test kernels | `linux-snd`: allnoconfig + the fragment + `SND_VIRTIO` built in | the snd guest ([images.md](images.md)) |
 
-- **Arch's module.** ALARM's kernel is upstream plus patches none of which touch `sound/`; no `MODULE_SIG`,
-  `MODVERSIONS`, GCC plugins or LTO, so an out-of-tree module needs only the exact release (vermagic) and
-  `linux-aarch64-headers`. `images/archarm/virtio-snd.sh` builds it in rootless Podman from kernel.org's `sound/virtio/`
-  of the matching release (sha256-checked); `images/archarm/build.sh --modules <dir>` installs it in an image, checking
-  the vermagic. Build both the same day (the mirror keeps only the latest kernel).
-- **The DKMS package** (`images/archarm/virtio-snd-dkms/PKGBUILD`, built and checked by `virtio-snd-dkms.sh`): one stable
-  release's twelve `sound/virtio` files (sha256 each, downloaded at `makepkg` time, never in our repo), a Makefile, a
-  `dkms.conf`; `depends=(dkms)`, the headers are the user's. `pacman -U` then DKMS's hook builds the module for every
-  installed `linux-aarch64-headers`, so a kernel update doesn't leave the guest without sound; udev autoloads it. The
-  risk is drift (one release's source against later kernels): a kernel API change breaks the build loudly, when the
-  package's pinned release moves. The desktop image uses this path.
-- **The desktop guest** (`images/archarm/desktop.sh`, `media.sh`, `desktop-setup.sh`; Arch Linux ARM, kernel 7.2.9, sway,
-  Firefox 157, PipeWire 1.6.9, WirePlumber 0.5.18): PipeWire drives the card through ALSA in mmap mode, FLOAT_LE 48 kHz
+- **The desktop guest** (`images/arch/desktop.sh`, `media.sh`, `desktop-setup.sh`; Arch Linux from arch.bens.haus, kernel
+  7.2.9, sway, Firefox 157, PipeWire 1.6.9, WirePlumber 0.5.18; measured on Arch Linux ARM with the same versions):
+  PipeWire drives the card through ALSA in mmap mode, FLOAT_LE 48 kHz
   stereo, periods of 512 frames, a buffer of 8192 (170 ms); every Firefox stream goes through `pipewire-pulse`.
   WirePlumber makes the virtio card's capture a source too.
 - **The oracle:** QEMU (`qemu-system-aarch64`, TCG, through our EDK2 as `tools/uefi-oracle.ts` sets it up) with

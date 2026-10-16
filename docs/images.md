@@ -59,74 +59,67 @@ first kernel line.
 
 **On demand only**, like the Arch image below: G4's conformance subset (graphics.md §21). VK-GL-CTS
 `opengl-es-cts-3.2.14.1` (Apache-2.0: built and run, nothing copied), `deqp-gles2` and `deqp-gles3` with EGL's
-surfaceless target, built natively for Arch Linux ARM in rootless Podman from Arch's own tarball (the Arch image's
-download, cached in `target/archarm`; `images/deqp/Containerfile`, ~10 min). Results: `target/deqp/deqp.ext4` (113
+surfaceless target, built natively for Arch Linux in rootless Podman from `localhost/arch-base` (`images/arch/base.sh`;
+`images/deqp/Containerfile`, ~10 min). Results: `target/deqp/deqp.ext4` (113
 MiB: the binaries, their data and the GLES2/GLES3 mustpass lists under `/deqp`), the page's second disk for
 `bench/gpu/deqp-run.ts`; and the image `localhost/webpc-deqp`, which runs the same binaries on Mesa's virpipe against
 the vtest oracle (`tools/virgl-oracle/deqp.sh`). It then makes the guest that runs them, `target/deqp/guest.qcow2`
-(`images/archarm/build.sh --packages "mesa libpng"`, ~4 min; `--guest-only` makes it alone), `scripts/ci-deqp.sh`'s. A case's capture (`CAPTURE=`) replays on Chromium with
+(`images/arch/build.sh --packages "mesa libpng"`, ~4 min; `--guest-only` makes it alone), `scripts/ci-deqp.sh`'s. A case's capture (`CAPTURE=`) replays on Chromium with
 `bench/gpu/virgl-pairs.ts`, which diffs each read-back with the next (dEQP's result and its reference). The surfaceless target takes EGL's default display:
 `EGL_PLATFORM=surfaceless` picks it.
 
-## Arch Linux ARM for UEFI (`images/archarm/build.sh`)
+## Arch Linux for UEFI (`images/arch/`)
 
-**On demand only**: not in `images/build.sh` or `SHA256SUMS` (its `--packages` form makes dEQP's guest, `scripts/ci-deqp.sh`'s). It turns Arch Linux ARM's
-rootfs tarball (no bootloader, no partition table) into a qcow2 that boots through UEFI, for trying
-a distro the project doesn't ship. `images/archarm/build.sh [--out f.qcow2] [--root-mib 7500]
-[--esp-mib 256] [--packages "p1 p2"] [--modules dir]` (`--packages`: `pacman -Syu` them in the container first, from Arch Linux ARM's mirrors; `--modules`: out-of-tree `dir/*.ko` into `/usr/lib/modules/<release>/updates`, `depmod`ed, each one's vermagic checked against the image's kernel) (~3 min, ~6 GiB of disk while it runs; the result is `target/archarm/archlinuxarm-uefi.qcow2`,
-804 MiB, 8 GiB virtual):
+**On demand only**: not in `images/build.sh` or `SHA256SUMS` (its `--packages` form makes dEQP's guest,
+`scripts/ci-deqp.sh`'s; `desktop.sh` the desktop guest). The distribution is **arch.bens.haus's aarch64 port**
+(<https://arch.bens.haus/>, listed on <https://ports.archlinux.page/aarch64/>): Arch's own PKGBUILDs built for ARMv8.0-A
+and later (our CPU's baseline), mirrored `[core]` and `[extra]`, with Arch's own kernel configuration (`linux`, not a
+board kernel). Until 2026-10-16 it was Arch Linux ARM (archlinuxarm.org); we moved because ALARM's generic
+`linux-aarch64` is built for boards and debugging (`DEBUG_PREEMPT` on, no `SND_VIRTIO`: [backlog.md](backlog.md) "A
+guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and `virtio_snd` as a module.
 
-- Downloads `ArchLinuxARM-aarch64-latest.tar.gz` (the *latest*, so the result changes over time;
-  checked against the published `.md5`, a cached copy is reused) and imports it into rootless Podman
-  (it runs natively on arm64). The host needs `podman`, `curl`, `sgdisk`, `mkfs.vfat` + mtools, `qemu-img`; no root, no loop devices.
-- **The initramfs is regenerated** in the container: the shipped one is built with `autodetect` and
-  has no `virtio_mmio`/`virtio_blk`, so it can't find our disk. The new one lists `virtio_mmio
-  virtio_blk ext4 vfat` and drops `autodetect`.
-- The container's rootfs is copied into an ext4 image with `mke2fs -d` (ownership and xattrs kept);
-  Podman's injected `/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf` and `/run/.containerenv` are
-  replaced by the tarball's originals.
-- GPT: a 256 MiB FAT32 ESP (mounted at `/boot`) with systemd-boot (the one in the tarball) as
-  `\EFI\BOOT\BOOTAA64.EFI`, the kernel `Image` (an EFI-stub kernel, which systemd-boot starts with
-  the initrd via LoadFile2) and a loader entry, then the ext4 root (type GUID Linux root aarch64).
-  Fixed PARTUUIDs; command line `root=PARTUUID=… rw console=tty0 console=ttyAMA0`.
-- Logins: `root`/`root`, `alarm`/`alarm` (Arch ARM's stock); hostname `alarm`.
-- Checked on QEMU through our EDK2: `node tools/uefi-oracle.ts $PWD/target/archarm/archlinuxarm-uefi.qcow2`
-  (absolute path) reaches `login:` in ~25 s (the tool reports FAIL, since it expects a passwordless
-  root).
-- **In webpc itself (the user, 2026-10-01, at commit `1e0cc58`):** Arch Linux ARM with kernel 7.2.8-1 boots
-  and runs fine in the emulator, networking included. Networking needed the gateway's /32 lease mask:
-  with the earlier 0.0.0.0 mask Arch's systemd-networkd logged `DHCP error: no netmask` and never
-  configured IPv4 (IPv6 worked); see [devices.md](devices.md) "net". Reported by hand, not a test.
-- It works under `target/archarm/work` (removed at the end), not `/tmp`: the dev VM's `/tmp` is a small tmpfs that the 8 GiB disk overflows.
-- **Sound (`images/archarm/virtio-snd.sh [--kernel 7.2.9-1]`, on demand, ~1 min):** ALARM's `linux-aarch64` doesn't
-  build `CONFIG_SND_VIRTIO`, so this builds `virtio_snd` out of tree in rootless Podman (`localhost/archarm-base`)
-  against the mirror's current `linux-aarch64-headers`, from `sound/virtio/` of the matching kernel.org release
-  (`linux-<X.Y.Z>.tar.xz`, sha256 against kernel.org's `sha256sums.asc`, cached in `target/archarm/`; GPL-2.0 code
-  built for the guest, nothing in the repo). Result: `target/archarm/virtio-snd/<release>/virtio_snd.ko` (48 KB).
-  An image with it and ALSA's tools: `images/archarm/build.sh --packages alsa-utils --modules
-  target/archarm/virtio-snd/7.2.9-1-aarch64-ARCH`; build both the same day (the mirror keeps only the latest kernel,
-  and the module must match the image's exactly). udev loads it when the device is there. Checked under QEMU's
-  `virtio-sound-device` (with `-global virtio-mmio.force-legacy=false`): [audio.md](audio.md) "The guests".
-- **The DKMS package (`images/archarm/virtio-snd-dkms/`, `images/archarm/virtio-snd-dkms.sh`, on demand, ~3 min):**
-  a PKGBUILD for `virtio-snd-dkms` ([audio.md](audio.md) "The guests"): one stable release's `sound/virtio` (its `pkgver`, now 7.2.9),
-  fetched file by file from git.kernel.org's `plain` view at `makepkg` time with their sha256s, and a `dkms.conf` that
-  builds it with the upstream Makefile (`CONFIG_SND_VIRTIO=m`); `depends=(dkms)`, the headers are the user's. The
-  script makes and installs it as a user would, in a container of `localhost/archarm-base` upgraded with
-  `base-devel dkms linux-aarch64-headers`: DKMS's pacman hook builds the module for the headers' kernel (checked:
-  `dkms status` installed, the vermagic). Result `target/archarm/pkg/virtio-snd-dkms-<ver>-any.pkg.tar.xz`. Not
-  published anywhere. A user's Arch Linux ARM: `makepkg -si` in that directory (with `linux-aarch64-headers`).
-- **The desktop guest (`images/archarm/desktop.sh [--out f.qcow2]`, on demand, ~15 min; audio S3):** sway, foot,
-  Firefox, PipeWire (WirePlumber, `pipewire-pulse`, `pipewire-alsa`), alsa-utils, mpv, libva-utils (`vainfo`), our
-  `webpc-va` package (`images/archarm/webpc-va.sh`: webpc's VA-API driver, Mesa's virgl with NV12 decode surfaces only
-  and AV1 film grain decoded into the shown surface, `LIBVA_DRIVER_NAME=webpc` for every session; [plans/video.md](plans/video.md)), and the DKMS package above
-  installed (so the image carries `dkms`, gcc and the headers: the module is built in the image's container by the
-  package's hook, as on a user's machine); Firefox's policies allow autoplay with sound and skip the first-run pages.
-  `images/archarm/media.sh` makes `/home/alarm/media` in Podman (Alpine's ffmpeg): `avsync.webm` (a white frame and a
-  1 kHz beep each second, VP8/Opus, 60 s), `sintel.webm` and `sintel-silent.webm` (the Sintel trailer, Blender
-  Foundation, CC BY 3.0, downloaded from download.blender.org with its sha256, as VP9/Opus 480p), and `avsync.html`
-  (plays `?v=<clip>`). Built with `build.sh`'s `--files <dir>` (a tree copied onto the root; a user's home made theirs)
-  and `--setup <script>` (`images/archarm/desktop-setup.sh`, run as root in the container). Result
-  `target/archarm/desktop.qcow2`; `bench/audio/avsync.ts` measures on it.
+- **The base container** (`images/arch/base.sh [--rebuild]`, ~3 min once; the others call it): the port's latest
+  bootstrap tarball (named on its home page with its SHA256, which is checked; cached in `target/arch`) imported into
+  rootless Podman as `localhost/arch-base`, with the mirror, pacman's keyring (Arch's keys and the port's own,
+  `images/arch/bens.haus.asc`, fingerprint `C43E3B9B9CE3F35E97AEF93873556FFF735F691D` pinned and locally signed; it signs
+  every `arch=aarch64` package, `arch=any` ones keep Arch's signatures), pacman's download sandbox off (it fails in a
+  rootless container; the images get it back), and **every package reinstalled** from the mirror: the tarball keeps
+  file capabilities as libarchive xattrs, which GNU tar and Podman's import drop (`newuidmap` lost its caps).
+- **The image** (`images/arch/build.sh [--out f.qcow2] [--root-mib 8192] [--esp-mib 512] [--packages "p1 p2"]
+  [--files dir] [--setup script]`, ~2 min; `target/arch/arch-uefi.qcow2`, 687 MiB, 8.5 GiB virtual): in a container
+  of the base, `pacman -Syu` with `base linux e2fsprogs dosfstools sudo` and `--packages` (the mirror's packages of the
+  day), the settings below, `--files` (a tree copied onto the root; a user's home made theirs) and `--setup` (a script
+  run as root). The initramfs has no `autodetect` and lists `virtio_mmio virtio_blk ext4 vfat`
+  (`/etc/mkinitcpio.conf.d/webpc.conf`, so the guest's own kernel updates build the same). The rootfs goes into an
+  ext4 image with `mke2fs -d` (ownership and xattrs kept); the host lays out the GPT, the ESP (mtools) and a compressed
+  qcow2 (the root's free space costs nothing in it). No root, no loop devices; host tools `podman`, `curl`, `sgdisk`,
+  `mkfs.vfat` + mtools, `qemu-img`. Works under `target/arch/work` (not `/tmp`: the dev VM's is a small tmpfs).
+- GPT: a FAT32 ESP mounted at `/boot` with systemd-boot as `\EFI\BOOT\BOOTAA64.EFI` and what Arch's `linux` puts in
+  `/boot`: `vmlinuz-linux` (an EFI zboot kernel: it decompresses itself; systemd-boot starts it with the initrd via
+  LoadFile2) and `initramfs-linux.img`, so **`pacman -Syu` in the guest updates the kernel that boots**; then the ext4
+  root (type GUID Linux root aarch64). Fixed PARTUUIDs; command line `root=PARTUUID=… rw console=tty0 console=ttyAMA0`.
+- Settings: logins `root`/`root` and `arch`/`arch` (in `wheel`, which sudo allows); hostname `archlinux`;
+  `LANG=C.UTF-8`; UTC; systemd-networkd (DHCP on `en*` and `eth*`), -resolved (the stub as `/etc/resolv.conf`) and
+  -timesyncd; `/etc/machine-id` empty, as ALARM's was (a transient id each boot, no first-boot presets).
+- Checked on QEMU through our EDK2: `node tools/uefi-oracle.ts $PWD/target/arch/arch-uefi.qcow2` (absolute path)
+  reaches `login:` in ~23 s with no failed unit (the tool reports FAIL, since it expects a passwordless root).
+- **Networking in webpc** needed the gateway's /32 lease mask: with the earlier 0.0.0.0 mask Arch's systemd-networkd
+  logged `DHCP error: no netmask` and never configured IPv4 (found on ALARM, 2026-10-01); see [devices.md](devices.md) "net".
+- **The `webpc-va` package** (`images/arch/webpc-va/`, built and checked by `images/arch/webpc-va.sh` in a container of
+  the base as a user would: `makepkg`, `pacman -U`; ~1 min): webpc's VA-API driver, Mesa's virgl with NV12 decode
+  surfaces only and AV1 film grain decoded into the shown surface, `LIBVA_DRIVER_NAME=webpc` for every session
+  ([plans/video.md](plans/video.md)). `options=('!debug')`: Arch's `makepkg.conf` makes debug packages by default.
+  Result `target/arch/pkg/webpc-va-<ver>-aarch64.pkg.tar.zst`; not published anywhere.
+- **The desktop guest** (`images/arch/desktop.sh [--out f.qcow2]`, on demand, ~8 min; audio S3): sway, foot, Firefox,
+  htop, PipeWire (WirePlumber, `pipewire-pulse`, `pipewire-alsa`), alsa-utils, mpv, libva-utils (`vainfo`) and
+  `webpc-va`; sound is the kernel's own `virtio_snd` (udev loads it); Firefox's policies allow autoplay with sound and
+  skip the first-run pages. A **20 GiB root**, mostly free, for packages installed by hand. `images/arch/media.sh`
+  makes `/home/arch/media` in Podman (Alpine's ffmpeg): `avsync.webm` (a white frame and a 1 kHz beep each second,
+  VP8/Opus, 60 s), `sintel.webm` and `sintel-silent.webm` (the Sintel trailer, Blender Foundation, CC BY 3.0,
+  downloaded from download.blender.org with its sha256, as VP9/Opus 480p), and `avsync.html` (plays `?v=<clip>`);
+  `desktop-setup.sh` is the `--setup`. Result `target/arch/desktop.qcow2`; `bench/audio/avsync.ts` measures on it, and
+  the page's session scripts (`bench/gpu/guest-session.ts`) log in as `arch` (`WEBPC_GUEST_USER=alarm` for an older
+  Arch Linux ARM disk).
 
 ## Debian with Chromium (`images/debian-chromium/build.sh`)
 

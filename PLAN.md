@@ -177,8 +177,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     device worker writes, the guest's period clock paced by the worklet's consumption (the browser's output latency
     as ALSA's delay); the page's microphone opened on the guest's demand (`getUserMedia`, the browser's processing on,
     Raw microphone off). **Decisions (the user):** playback first, then capture; sound on by default (from the first
-    click); Arch Linux ARM's kernel lacks the driver, so we build `virtio_snd` out of tree (a DKMS PKGBUILD in the
-    repo, nothing asked upstream). Debian, Alpine and the desktop guest (sway, Firefox, PipeWire) play under it, and
+    click); Arch Linux ARM's kernel lacked the driver, so we built `virtio_snd` out of tree (a DKMS PKGBUILD,
+    dropped when the desktop guest moved to arch.bens.haus's port, whose kernel has it). Debian, Alpine and the desktop guest (sway, Firefox, PipeWire) play under it, and
     Debian and the desktop guest record; a video's sound keeps time with its picture within -17 to +20 ms on the
     Mac's GPU, and sound costs the guest under 1% of its CPU. Snapshots taken while sound plays resume playing (a
     restored clock stands still until its vCPUs run). The user confirmed playback and recording by hand. The video's

@@ -1,6 +1,6 @@
 # webpc-va (docs/plans/video.md §1): webpc's VA-API driver, Mesa's virgl driver with only the surface formats real
 # decoders offer, so FFmpeg's VA-API decoders pick NV12 and Firefox decodes through VA-API on webpc. Our own code (MIT),
-# built from the file beside this one. Built and checked by images/archarm/webpc-va.sh; images/archarm/desktop.sh
+# built from the file beside this one. Built and checked by images/arch/webpc-va.sh; images/arch/desktop.sh
 # installs it in the desktop image.
 #   makepkg -s && sudo pacman -U webpc-va-*.pkg.tar.*
 pkgname=webpc-va
@@ -12,6 +12,7 @@ url='https://github.com/gbl08ma/webpc'
 license=('MIT')
 depends=('libva' 'mesa')
 makedepends=('gcc')
+options=('!debug')
 source=(webpc_drv_video.c)
 sha256sums=('SKIP')
 

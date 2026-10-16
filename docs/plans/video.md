@@ -37,7 +37,7 @@ with the guest's software unmodified?
   video surfaces besides NV12 (real drivers offer NV12 alone for decoding), FFmpeg's VA-API decoder then picks I420
   for 4:2:0 codecs, and Firefox's VA-API path takes NV12, YV12, P010 and P016 only, so it falls back to software.
   `webpc_drv_video.so` loads Mesa's driver and drops I420 and YV12 from `vaQuerySurfaceAttributes` (libva's stable
-  ABI, ~60 lines; `LIBVA_DRIVER_NAME=webpc`), a package of the desktop image as `virtio-snd-dkms` is (since §10 it
+  ABI, ~60 lines; `LIBVA_DRIVER_NAME=webpc`), a package of the desktop image as `virtio-snd-dkms` was then (since §10 it
   also routes AV1 film grain around a Mesa omission: webpc-va 2). **The user: keep
   it for now**; the same change in Mesa's virgl driver would make it unnecessary, and it waits in backlog.md
   "Upstream reports" for the user's round-up.
@@ -234,8 +234,8 @@ vCPUs, 1376×762, 20 s a clip from 5 s after it starts. JSON in `bench/video/res
   sync clips drop as many frames whether decoded on the host or not (VP9 at 360p is cheap in software): the drops are
   the per-frame cost of Firefox's pipeline at 30 frames a second, not the decode. The profile (kernel 45% of samples,
   flat: the scheduler, preemption counts, IRQs) charges each run chunk to the instruction after the last exit
-  (graphics.md §20's caveat), so `arch_counter_get_cntvct`'s 4% is an exit site, not a measured cost. Arch's kernel
-  has `DEBUG_PREEMPT` on (`debug_smp_processor_id`, `check_preemption_disabled` ~1.5%) and walks stacks
+  (graphics.md §20's caveat), so `arch_counter_get_cntvct`'s 4% is an exit site, not a measured cost. Arch Linux ARM's
+  kernel has `DEBUG_PREEMPT` on (`debug_smp_processor_id`, `check_preemption_disabled` ~1.5%) and walks stacks
   (`arch_stack_walk` 1.6%). Sampling slows the guest (273 drops of 558 with it): drop counts only from unsampled runs.
 - **A/V sync, decoded on the host:** the H.264 sync clip median -13 ms (p10 -29, p90 +7, all within -40..+7), VP9
   median -10 ms (p10 -42, p90 +9, one outlier at -90): inside ±45 ms (ITU-R BT.1359) but for that one. Decoded in
@@ -351,7 +351,7 @@ Tools: `bench/video/seek.ts` (the guest's FFmpeg jumping within one decoder: the
 one file, the list looped once so the loop's seek flushes the decoder, framemd5 against its software decode; Firefox
 seeking a paused video, the picture it shows drawn to a canvas and compared as 16×9 blocks of mean luma with FFmpeg's
 software frames from 0.1 s before to 0.1 s after; Firefox seeking every 2.5 s while playing; `CAPTURE=1`),
-`bench/video/v1.ts` (`SNAPSHOT=1`), the clips `res-vp9.webm` and `res-h264.ts` (images/archarm/media.sh: the trailer
+`bench/video/v1.ts` (`SNAPSHOT=1`), the clips `res-vp9.webm` and `res-h264.ts` (images/arch/media.sh: the trailer
 from 20 s in three 4 s segments at 854×480, 640×360 and 1280×720, joined as one track), `ChunkFault` in the Chromium
 test. JSON in `bench/video/results/v3d/` (the dev VM's Chromium 153; the Mac's Chrome for Testing 153 on the M4).
 
@@ -395,7 +395,7 @@ test. JSON in `bench/video/results/v3d/` (the dev VM's Chromium 153; the Mac's C
 ## 10. V3: AV1 (2026-10-15)
 
 AV1 before HEVC: Chromium on Linux has no software HEVC decoder, so the user's host would never be offered HEVC,
-while AV1 decodes in software everywhere (dav1d) and is what YouTube serves. Clips (images/archarm/media.sh): the
+while AV1 decodes in software everywhere (dav1d) and is what YouTube serves. Clips (images/arch/media.sh): the
 trailer in SVT-AV1 (`sintel-av1.webm`), 10 s in libaom (`sintel-aom.webm`: all eight references, hidden frames), 10 s
 of SVT-AV1 with film grain (`sintel-grain.webm`), 3 s of libaom with more tools on (`sintel-tools.webm`: segmentation,
 2x2 tiles, 128x128 superblocks, quantizer matrices, rotzoom global motion, delta q and lf, loop restoration, film
@@ -456,7 +456,7 @@ Learned on the way (from the track's handover; for whoever works on video again)
 - **The page's frame counts can't judge decoding with `?gpu=novideo`**: Firefox then decodes in software.
 - **`sway-mac.sh` takes `-` as the mode** for scripts without one (`v1.ts`, `v0.ts`); it copies the media disk.
 - **sway's `exec` splits at commas**: `MOZ_LOG=a:5,b:5` must go through a script (`v0.ts` writes
-  `/home/alarm/ff-launch.sh`).
+  `/home/arch/ff-launch.sh`).
 - **Firefox logs to read:** `MOZ_LOG=PlatformDecoderModule:5,FFmpegVideo:5,Dmabuf:5`; filter out `Tranche` /
   `Feedback` / `format 0x` lines.
 - **The harness's serial `run` truncates long output**; grep in the guest first.

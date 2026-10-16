@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The desktop guest's media (audio S3, docs/audio.md "Decisions"): made with ffmpeg in rootless Podman (Alpine's
 # container, natively on arm64), WebM (VP8 or VP9 and Opus: Firefox decodes them itself, without the system's ffmpeg).
-# On demand: images/archarm/desktop.sh calls it.
+# On demand: images/arch/desktop.sh calls it.
 #   avsync.webm   the A/V sync clip: 640x360 at 30 frames a second, black, the first frame of every second white; a
 #                 1 kHz beep of 40 ms at the start of every second (Opus, 48 kHz stereo); 60 s. On the page, the flash
 #                 is timed on the screen and the beep on the sound's output (bench/audio/avsync.ts).
@@ -16,11 +16,11 @@
 #                 film grain; sintel-tools.webm, 3 s of libaom with more of AV1's tools on (segmentation, 2x2 tiles,
 #                 128x128 superblocks, quantizer matrices, global motion, delta q and lf, film grain).
 #   avsync.html   a page that plays a clip (?v=<file>) to its end, full window on black, with sound (its profile allows it).
-#   images/archarm/media.sh [outdir]   (default target/archarm/media)
+#   images/arch/media.sh [outdir]   (default target/arch/media)
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-OUT=$(realpath -m "${1:-$ROOT/target/archarm/media}")
+OUT=$(realpath -m "${1:-$ROOT/target/arch/media}")
 CONTAINER=$(grep -E '^USERLAND_CONTAINER=' "$ROOT/images/build.sh" | cut -d= -f2 | cut -d' ' -f1)
 SINTEL_URL=https://download.blender.org/durian/trailer/sintel_trailer-480p.mp4
 SINTEL_SHA256=b670602fa00934ca27c4351bb0efe7ea7a07fae57284e44226025eeed7c51254

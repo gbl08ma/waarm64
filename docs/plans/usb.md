@@ -256,7 +256,7 @@ lets go of. In practice that is the developer and maker hardware that people wou
   1. `navigator.usb` in a dedicated worker on the pinned Chromium, and `getDevices()` there after the page's grant.
   2. The dummy_hcd gadget visible to the Playwright Chromium, with permission granted without a prompt.
   3. One WebUSB transfer's round trip and bulk throughput from a worker (to size what a guest can expect).
-  4. Which guest kernels have `xhci-plat-hcd`: Debian (expected, for the DWC3), Arch Linux ARM's desktop image,
+  4. Which guest kernels have `xhci-plat-hcd`: Debian (expected, for the DWC3), the Arch desktop image,
      Alpine's `virt` kernel (unknown), and Buildroot (ours to add).
   5. The QEMU oracle on the same gadget.
 - **U1: the controller.** `core/src/xhci.rs`, the DT node, `VmConfig.xhci`, the ABI bump, snapshot state, and unit

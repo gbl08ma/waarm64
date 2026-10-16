@@ -6,6 +6,19 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## CPU and ISA
 
+- **Guest memory corruption when Linux runs without KPTI** (found 2026-10-16; `scripts/ci-deqp.sh` fails on it):
+  on the page, `deqp-gles2` over GLES2's pass list dies with glibc's `double free or corruption (out)` after 23 to 80
+  cases, at a different case each run (GLES3's list passes). Bisected on the Arch dEQP guest (`target/deqp/guest.qcow2`,
+  two runs a step): `cca59cc` passes, `c3ae697` (FEAT_RNG and FEAT_E0PD on the page) fails. `?rng=0` still fails,
+  `?e0pd=0` passes; the guest with `kpti=1` passes even with E0PD, and with `nokaslr` under `?e0pd=0` (KPTI off without
+  E0PD) fails: the trigger is KPTI off, which E0PD allows under KASLR. Before `c3ae697` KASLR forced KPTI on the
+  page's guests, and its ASID switch at every kernel entry kept dropping the TLB's nG entries, which hid a stale
+  translation. One vCPU fails too (1 run of 2), so not only cross-vCPU shootdowns. The same binaries and Mesa pass
+  natively on the M4 (3/3) and under `qemu-aarch64 -cpu cortex-a57` (2/2), on virpipe against the vtest oracle.
+  Next: what keeps a user mapping alive past its TLBI (TLBI by VA/ASID, ASID reuse, the JIT's TLB and its regions);
+  `bench/results/local/deqp-run-raw.ts` (git-ignored) kept dEQP's output and took `PAGE_QUERY`/`NCPUS`. Until it's
+  fixed, `?e0pd=0` is the workaround.
+
 - **Unadvertised extensions the M4 has**, in case real workloads benefit: FP16 (scalar and
   AdvSIMD), DotProd, RDM, FHM, FCMA, JSCVT (JS engines use `FJCVTZS`), FRINTTS, BF16, I8MM, LSE2,
   RCpc, FlagM, SB, DIT, SHA512 and SHA3 (OpenSSL uses both; SHA3's `EOR3`/`RAX1`/`XAR`/`BCAX` speed
@@ -461,22 +474,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   are sent); one output and one input stream (the guest's own sound server mixes), 1 or 2 channels (no surround), S16,
   S32 and FLOAT only; latency is the ring plus the guest's buffer plus the browser's (~100 ms is fine for video, an
   interactive use such as music software would want a shorter ring and measurement); Alpine's playback is unexercised
-  (no `alsa-utils` in its image; Debian and Arch cover it); a tab in the background hasn't been measured (above). The
-  `virtio-snd-dkms` PKGBUILD pins one kernel release's `sound/virtio` and isn't published: it has to move when a
-  `linux-aarch64` update changes a kernel API the driver uses (DKMS reports the break at upgrade), and a user outside
-  our images would need it published (AUR) to get sound on Arch.
-- **A guest kernel (and distribution) built for the emulator** (2026-10-16, the user): the desktop guest's Arch Linux
-  ARM kernel is configured for real hardware and debugging, and under the JIT that costs more than it would natively
+  (no `alsa-utils` in its image; Debian and Arch cover it); a tab in the background hasn't been measured (above).
+- **A guest kernel (and distribution) built for the emulator** (2026-10-16, the user): the desktop guest's kernel was
+  Arch Linux ARM's, configured for real hardware and debugging, and under the JIT that costs more than it would natively
   (kernel code is half of a busy vCPU's guest code in Firefox's pages session, and its short functions stall at every
   entry: `bench/boot/REPORT.md` "M8: where a busy vCPU's time goes in Firefox", `results/m8-warm/profile/kbucket.txt`).
   Of the kernel's samples there: `CONFIG_DEBUG_PREEMPT`'s checks (`debug_smp_processor_id`,
   `check_preemption_disabled`, `__this_cpu_preempt_check`, preempt count tracking) 3.8%, stack traces (debug) 1.5%,
-  PSI 1.7%, and HZ=1000's tick and timekeeping 13.8%. A kernel without `DEBUG_PREEMPT`, with a lower HZ (or
-  `NO_HZ_FULL`-style idle) and PSI off would recover part of that, and it could carry virtio-snd (above) built in. That
-  means maintaining our own kernel package, and likely more of a distribution of our own (Firefox with VA-API on
-  virgl, `webpc-va`, the sound driver), if we want the most out of the emulator. Besides ALARM, Arch's own aarch64 port
-  (<https://ports.archlinux.page/aarch64/>) is a possible base, though its package selection looks even thinner.
-  Measure first: the same Firefox session on a kernel built without those options.
+  PSI 1.7%, and HZ=1000's tick and timekeeping 13.8%. **First step taken (2026-10-16):** the Arch images moved to
+  arch.bens.haus's aarch64 port (Arch's own packages for ARMv8.0-A; [images.md](images.md) "Arch Linux"), whose
+  `linux` is Arch's x86_64 configuration: no `DEBUG_PREEMPT`, `SND_VIRTIO=m` (no DKMS module of ours any more), still
+  HZ=1000, `NO_HZ_FULL` (idle dynticks unless `nohz_full=` is given) and PSI on (`psi=0` on the command line turns it
+  off without a kernel of our own). Next: the same Firefox session's profile on it (the ALARM numbers above are the
+  baseline), then decide whether a kernel package of our own (lower HZ, PSI off) is worth maintaining; any such guest
+  tuning stays optional, the emulator distro-agnostic.
 
 ## Snapshots (M8 phase C, snapshots lane; [plans/snapshots.md](plans/snapshots.md), [platform.md](platform.md) "Snapshots")
 - **A restored machine's lost interrupt** (audio, [audio.md](audio.md) "Linux driver behavior"): under ten busy-looping
@@ -598,7 +609,7 @@ report it. Nothing has been filed.
   `vaapi_decode_find_best_format` then takes I420 for H.264 and VP9 (yuv420p), and Firefox's VA-API path (NV12, YV12,
   P010, P016 only) falls back to software ("Unsupported VA-API surface format"). Real drivers offer NV12 (and P010/P016)
   alone for decoding. Fix: virgl answers decode entrypoints with NV12/P010/P016 only. Seen with Mesa 26.2.4, libva
-  2.24.1, FFmpeg 9.0.2, Firefox 157. Our workaround: the `webpc-va` package (`images/archarm/webpc-va/`), which goes
+  2.24.1, FFmpeg 9.0.2, Firefox 157. Our workaround: the `webpc-va` package (`images/arch/webpc-va/`), which goes
   away with the fix.
 - **Mesa and virglrenderer disagree on virgl's video profile numbers** ([plans/video.md](plans/video.md) §4,
   [devices.md](devices.md) "virgl"): the wire carries Mesa's `enum pipe_video_profile`, and Mesa 26.2's has dropped

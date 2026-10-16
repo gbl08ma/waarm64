@@ -11,6 +11,8 @@ import { SYSCALLS } from './arm64-syscalls.ts';
 import type { Timeline } from '../../web/profiler.ts';
 
 const SETTINGS_KEY = 'webpc.settings';
+/** The guest's desktop user: images/arch/desktop.sh's `arch` (password the same); `alarm` for an Arch Linux ARM disk. */
+export const GUEST_USER = process.env.WEBPC_GUEST_USER ?? 'arch';
 
 export type SessionOptions = {
   /** The page's `?gpu=` (`virgl`, `virgl-null`, `2d`, with `,capture`). */
@@ -245,12 +247,12 @@ export async function openSession(o: SessionOptions) {
     return r;
   };
 
-  /** The user's session on the screen (alarm/alarm), then sway with `WLR_RENDERER=<renderer>`; returns what sway's log
+  /** The user's session on the screen (GUEST_USER, its password the same), then sway with `WLR_RENDERER=<renderer>`; returns what sway's log
    * says of its renderer. `asUser(cmd)` runs a command in that session (its environment) from the root shell. */
   const startSway = async (renderer: string) => {
-    await onScreen('alarm\n');
+    await onScreen(`${GUEST_USER}\n`);
     await page.waitForTimeout(3000);
-    await onScreen('alarm\n');
+    await onScreen(`${GUEST_USER}\n`);
     await page.waitForTimeout(6000);
     await onScreen(`WLR_RENDERER=${renderer} sway 2>/tmp/sway.log\n`);
     for (let i = 0; i < 60; i++) {
@@ -260,7 +262,7 @@ export async function openSession(o: SessionOptions) {
     await page.waitForTimeout(10_000);
     return run('grep -i -E "renderer|egl|gles|driver" /tmp/sway.log | head -4');
   };
-  const asUser = (cmd: string) => `su alarm -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$(ls /run/user/1000/sway-ipc.*.sock); ${cmd}"`;
+  const asUser = (cmd: string) => `su ${GUEST_USER} -c "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$(ls /run/user/1000/sway-ipc.*.sock); ${cmd}"`;
 
   /**
    * The guest PC sampler (web/profiler.ts: every vCPU's published PC, every 50 µs; while it runs the vCPUs publish

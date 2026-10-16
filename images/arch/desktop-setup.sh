@@ -1,10 +1,8 @@
-# images/archarm/desktop.sh's setup, run as root in the image's container by images/archarm/build.sh --setup (the
-# packages installed, the files in place).
-# Sound: our package; DKMS's pacman hook builds virtio_snd for the image's kernel (its headers are installed).
-pacman -U --noconfirm --noprogressbar /root/pkg/virtio-snd-dkms-*.pkg.tar.* 2>&1 | grep -i -E "dkms|error" || true
-K=$(basename "$(dirname /usr/lib/modules/*/build)") # the kernel whose headers are installed: the image's
-dkms status
-dkms status | grep -q "virtio-snd/.*, $K, aarch64: installed" || { echo "virtio-snd isn't installed for $K" >&2; exit 1; }
+# images/arch/desktop.sh's setup, run as root in the image's container by images/arch/build.sh --setup (the packages
+# installed, the files in place).
+# Sound: the kernel's own module (Arch builds CONFIG_SND_VIRTIO=m; udev loads it when the device is there).
+K=$(ls /usr/lib/modules)
+find /usr/lib/modules/$K -name 'virtio_snd.ko*' | grep -q . || { echo "no virtio_snd in $K" >&2; exit 1; }
 # Video: webpc's VA-API driver (Mesa's virgl with NV12 surfaces only; LIBVA_DRIVER_NAME=webpc for every session).
 pacman -U --noconfirm --noprogressbar /root/pkg/webpc-va-*.pkg.tar.* >/dev/null
 pacman -Q webpc-va
@@ -20,4 +18,4 @@ cat > /usr/lib/firefox/distribution/policies.json <<'J'
   "UserMessaging": { "WhatsNew": false, "ExtensionRecommendations": false, "FeatureRecommendations": false, "SkipOnboarding": true }
 } }
 J
-echo "desktop: virtio-snd for $K, webpc-va, PipeWire, Firefox's policies"
+echo "desktop: virtio_snd in $K, webpc-va, PipeWire, Firefox's policies"

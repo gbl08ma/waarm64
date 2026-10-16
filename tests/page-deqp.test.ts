@@ -1,6 +1,6 @@
 // dEQP on the page (docs/testing.md "dEQP"): GLES2's and GLES3's pass lists (tests/deqp/<api>.txt: cases that pass
 // on the page today, every one expected to pass) through bench/gpu/deqp-run.ts, on the guest images/deqp/build.sh makes
-// (target/deqp/guest.qcow2: Arch Linux ARM with Mesa's virgl driver; dEQP on target/deqp/deqp.ext4). A boot per API,
+// (target/deqp/guest.qcow2: Arch Linux with Mesa's virgl driver; dEQP on target/deqp/deqp.ext4). A boot per API,
 // ~6 min in all. Opt-in with WEBPC_DEQP=1 (scripts/ci-deqp.sh).
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

@@ -1,7 +1,7 @@
 // A/V sync and the decode's cost on the desktop guest (audio S3, docs/audio.md "Decisions"; dev-only, not in tests):
-// images/archarm/desktop.sh's image (sway, Firefox, PipeWire, virtio-snd-dkms) on the page, 4 vCPUs, the screen at
+// images/arch/desktop.sh's image (sway, Firefox, PipeWire, the kernel's virtio_snd) on the page, 4 vCPUs, the screen at
 // 1376×762 (bench/gpu/guest-session.ts). sway starts (on GLES with 3D, `WLR_RENDERER=pixman` with `2d`), then Firefox
-// in kiosk mode plays each clip of /home/alarm/media (images/archarm/media.sh) through avsync.html, with a profile of
+// in kiosk mode plays each clip of /home/arch/media (images/arch/media.sh) through avsync.html, with a profile of
 // its own (autoplay, `dump` on).
 //   avsync         the sync clip: a white frame and a 1 kHz beep at every second. The page times the flash where the
 //                  screen is drawn (`?avprobe`: the draw that turned its centre bright) and the beep where the sound
@@ -43,7 +43,7 @@ const PHASE_S = Number(process.env.PHASE_S ?? 20);
 const WARM_S = Number(process.env.WARM_S ?? 5);
 
 const disk = process.env.MEDIA === 'disk';
-const MEDIA = disk ? '/mnt/media' : '/home/alarm/media';
+const MEDIA = disk ? '/mnt/media' : '/home/arch/media';
 const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, ncpus: Number(process.env.NCPUS ?? 4), query: 'snd=&avprobe', disk2: disk ? '/target/video/media.ext4' : undefined });
 const { page, log, pasteSerial, rootShell, load, run, asUser } = s;
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), phaseS: PHASE_S };
@@ -51,7 +51,7 @@ const save = () => writeFileSync(`${out}/results.json`, JSON.stringify({ ...resu
 
 await rootShell();
 if (disk) await run('mkdir -p /mnt/media && mount -o ro /dev/vdb /mnt/media; ls /mnt/media | tr "\\n" " "');
-results.info = await run('uname -r; pacman -Q firefox pipewire wireplumber virtio-snd-dkms mesa webpc-va | tr "\\n" " "; echo; lsmod | grep -o "^virtio_snd"; head -2 /proc/asound/cards | tr -s " "');
+results.info = await run('uname -r; pacman -Q linux firefox pipewire wireplumber mesa webpc-va | tr "\\n" " "; echo; lsmod | grep -o "^virtio_snd"; head -2 /proc/asound/cards | tr -s " "');
 log('info', results.info);
 const userPrefs = (list: string) => list.split(';').filter(Boolean).map((kv) => {
   const [k, v] = [kv.slice(0, kv.indexOf('=')), kv.slice(kv.indexOf('=') + 1)];
@@ -64,7 +64,7 @@ results.prefs = process.env.FF_PREFS;
 results.variants = variants;
 // Firefox's profile (autoplay, dump, no first-run pages, FF_PREFS; a variant's prefs on top: `ffprefs <n>`) and its
 // start (`ffrun <url> <tag>`, as the user, by sway).
-await pasteSerial(String.raw`mkdir -p /home/alarm/avprofile; cat > /home/alarm/user-base.js <<'EOF'
+await pasteSerial(String.raw`mkdir -p /home/arch/avprofile; cat > /home/arch/user-base.js <<'EOF'
 user_pref("browser.dom.window.dump.enabled", true);
 user_pref("media.autoplay.default", 0);
 user_pref("media.autoplay.blocking_policy", 0);
@@ -73,14 +73,14 @@ user_pref("browser.startup.homepage_override.mstone", "ignore");
 user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
 user_pref("browser.shell.checkDefaultBrowser", false);
 ${prefs}EOF`);
-for (const [i, v] of variants.entries()) await pasteSerial(`cat > /home/alarm/user-v${i}.js <<'EOF'\n${userPrefs(v.prefs)}EOF`);
+for (const [i, v] of variants.entries()) await pasteSerial(`cat > /home/arch/user-v${i}.js <<'EOF'\n${userPrefs(v.prefs)}EOF`);
 await pasteSerial(String.raw`cat > /root/ff.sh <<'EOF'
-ffprefs() { cat /home/alarm/user-base.js /home/alarm/user-v$1.js > /home/alarm/avprofile/user.js; rm -f /home/alarm/avprofile/prefs.js; chown alarm:alarm /home/alarm/avprofile/user.js; }
+ffprefs() { cat /home/arch/user-base.js /home/arch/user-v$1.js > /home/arch/avprofile/user.js; rm -f /home/arch/avprofile/prefs.js; chown arch:arch /home/arch/avprofile/user.js; }
 ffkill() { pkill -x firefox; for i in $(seq 60); do pgrep -x firefox >/dev/null || return 0; sleep 1; done; pkill -9 -x firefox; sleep 2; }
-ffrun() { rm -f /tmp/ff-$2.log; su alarm -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec 'firefox --profile /home/alarm/avprofile --kiosk $1 > /tmp/ff-$2.log 2>&1'" >/dev/null; }
+ffrun() { rm -f /tmp/ff-$2.log; su arch -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec 'firefox --profile /home/arch/avprofile --kiosk $1 > /tmp/ff-$2.log 2>&1'" >/dev/null; }
 ffwait() { for i in $(seq 240); do grep -q "AVSYNC playing" /tmp/ff-$1.log 2>/dev/null && { echo playing; return; }; sleep 0.5; done; echo timeout; }
 EOF
-chown -R alarm:alarm /home/alarm/avprofile`);
+chown -R arch:arch /home/arch/avprofile`);
 results.sway = await s.startSway(mode === 'virgl' ? 'gles2' : 'pixman');
 log('sway', results.sway);
 results.pipewire = await run(asUser('wpctl status 2>/dev/null | grep -A2 Sinks: | tr -s [:blank:]'));
@@ -121,8 +121,8 @@ const pct = (xs: number[], p: number) => { const s = [...xs].sort((a, b) => a - 
 for (const name of CLIPS.filter((c) => c.startsWith('mpv:'))) {
   const file = name.slice(4), clip = `mpv-${file.replace(/\W/g, '-')}`;
   // Under `script` (mpv prints its status line only to a terminal), from a script (no quoting through su and script).
-  await pasteSerial(`cat > /home/alarm/mpv-run.sh <<'EOF'\n#!/bin/sh\nexec mpv --hwdec=vaapi --fs --ao=pipewire --length=${PHASE_S + WARM_S + 20} --term-status-msg='MPV \${estimated-frame-number} \${frame-drop-count} \${decoder-frame-drop-count} \${hwdec-current}' ${MEDIA}/${file}\nEOF\nchmod 755 /home/alarm/mpv-run.sh`);
-  await run(asUser('script -qfc /home/alarm/mpv-run.sh /tmp/mpv.log >/dev/null 2>&1 &'));
+  await pasteSerial(`cat > /home/arch/mpv-run.sh <<'EOF'\n#!/bin/sh\nexec mpv --hwdec=vaapi --fs --ao=pipewire --length=${PHASE_S + WARM_S + 20} --term-status-msg='MPV \${estimated-frame-number} \${frame-drop-count} \${decoder-frame-drop-count} \${hwdec-current}' ${MEDIA}/${file}\nEOF\nchmod 755 /home/arch/mpv-run.sh`);
+  await run(asUser('script -qfc /home/arch/mpv-run.sh /tmp/mpv.log >/dev/null 2>&1 &'));
   await page.waitForTimeout(WARM_S * 1000);
   const status = async () => (await run(`grep -a -o 'MPV [0-9]* [0-9]* [0-9]* [a-z0-9-]*' /tmp/mpv.log | tail -1`)).trim().split(' ');
   const s0 = await status();

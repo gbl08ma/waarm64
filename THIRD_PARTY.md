@@ -66,7 +66,7 @@ when bumping the pin.
 
 | Our file(s) | Source | License | How we use it |
 |---|---|---|---|
-| `tests/virgl/video-h264.vglt.gz`, `video-vp9.vglt.gz`, `video-h264-orig.h264.gz`, `video.json` (video V1) | The Sintel trailer, © Blender Foundation (durian.blender.org), the 480p H.264 MP4 and a VP9 WebM made from it (`images/archarm/media.sh`) | CC BY 3.0 | The first 40 pictures of each, as the guest's FFmpeg sent them through VA-API (`bench/video/fixture.ts`), the original stream's first pictures and SHA-256 hashes of FFmpeg's decoded frames: the Chromium video tests' input and reference |
+| `tests/virgl/video-h264.vglt.gz`, `video-vp9.vglt.gz`, `video-h264-orig.h264.gz`, `video.json` (video V1) | The Sintel trailer, © Blender Foundation (durian.blender.org), the 480p H.264 MP4 and a VP9 WebM made from it (`images/arch/media.sh`) | CC BY 3.0 | The first 40 pictures of each, as the guest's FFmpeg sent them through VA-API (`bench/video/fixture.ts`), the original stream's first pictures and SHA-256 hashes of FFmpeg's decoded frames: the Chromium video tests' input and reference |
 
 ## Firmware we build and distribute (not in the repository)
 

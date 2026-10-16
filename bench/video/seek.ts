@@ -1,5 +1,5 @@
 // Seeking with the host decoding the guest's video (docs/plans/video.md V3; dev-only, not in tests): the desktop guest
-// (images/archarm/desktop.sh, with webpc-va) on the page, the clips on bench/video/media-disk.sh's disk.
+// (images/arch/desktop.sh, with webpc-va) on the page, the clips on bench/video/media-disk.sh's disk.
 //   1. The guest's FFmpeg jumps within one decoder: the concat demuxer's in and out points on the same file (each
 //      segment starts at the key picture before its in point, so the decoder gets a new key picture where the guest's
 //      stream jumps), the list looped once (the loop is a seek to its start, which flushes the decoder). Decoded in
@@ -153,8 +153,8 @@ try {
   if (PHASES.includes('paused') || PHASES.includes('playing')) {
     // FFmpeg's software frames around each paused seek (PNGs, named in order; their times from showinfo) and the list
     // the page reads (seekref.js: REFS[t] = [[pts, file], ...]), per clip.
-    await pasteSerial(`cat > /home/alarm/seek.html <<'EOF'\n${SEEK_HTML}\nEOF`);
-    await pasteSerial(String.raw`mkdir -p /home/alarm/ffseek; cat > /home/alarm/ffseek/user.js <<'EOF'
+    await pasteSerial(`cat > /home/arch/seek.html <<'EOF'\n${SEEK_HTML}\nEOF`);
+    await pasteSerial(String.raw`mkdir -p /home/arch/ffseek; cat > /home/arch/ffseek/user.js <<'EOF'
 user_pref("browser.dom.window.dump.enabled", true);
 user_pref("media.autoplay.default", 0);
 user_pref("media.autoplay.blocking_policy", 0);
@@ -166,26 +166,26 @@ user_pref("browser.shell.checkDefaultBrowser", false);
 EOF
 cat > /root/ff.sh <<'EOF'
 ffkill() { pkill -x firefox; for i in $(seq 60); do pgrep -x firefox >/dev/null || return 0; sleep 1; done; pkill -9 -x firefox; sleep 2; }
-ffrun() { rm -f /tmp/ff-$2.log; su alarm -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec 'firefox --profile /home/alarm/ffseek --kiosk $1 > /tmp/ff-$2.log 2>&1'" >/dev/null; }
+ffrun() { rm -f /tmp/ff-$2.log; su arch -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec 'firefox --profile /home/arch/ffseek --kiosk $1 > /tmp/ff-$2.log 2>&1'" >/dev/null; }
 ffwait() { for i in $(seq 360); do grep -q -E "SEEK (done|error)" /tmp/ff-$1.log 2>/dev/null && { echo finished; return; }; sleep 0.5; done; echo timeout; grep -a -v -E "Tranche|Feedback|format 0x" /tmp/ff-$1.log | tail -5 | cut -c1-200; }
 EOF
-chown -R alarm:alarm /home/alarm/ffseek /home/alarm/seek.html`);
+chown -R arch:arch /home/arch/ffseek /home/arch/seek.html`);
     results.sway = await s.startSway('gles2');
     log('sway', results.sway);
     for (const clip of CLIPS) {
       const refs: string[] = [];
       const { paused: PAUSED, playing: PLAYING } = times(clip);
       for (const t of PAUSED) {
-        const dir = `/home/alarm/ref/${clip}/${t}`;
+        const dir = `/home/arch/ref/${clip}/${t}`;
         await run(`rm -rf ${dir}; mkdir -p ${dir}; ffmpeg -nostdin -v info -copyts -ss ${Math.max(0, t - 1)} -t 1.3 -i /mnt/media/${clip} -an -vf "select='between(t,${t - 0.1},${t + 0.1})',showinfo" -fps_mode passthrough ${dir}/%02d.png 2>&1 | grep -o 'pts_time:[0-9.]*' | cut -d: -f2 > ${dir}/pts; wc -l < ${dir}/pts`, 120_000);
         refs.push(`REFS["${t}"] = [${(await run(`awk '{printf "[%s, \\"file://${dir}/%02d.png\\"], ", $1, NR}' ${dir}/pts`)).trim()}];`);
       }
       const tag = clip.replace(/\W/g, '-');
-      await pasteSerial(`cat > /home/alarm/seekref.js <<'EOF'\nconst REFS = {};\n${refs.join('\n')}\nconst PAUSED_T = ${JSON.stringify(PAUSED)}, PLAYING_T = ${JSON.stringify(PLAYING)};\nEOF\nchown -R alarm:alarm /home/alarm/seekref.js /home/alarm/ref`);
+      await pasteSerial(`cat > /home/arch/seekref.js <<'EOF'\nconst REFS = {};\n${refs.join('\n')}\nconst PAUSED_T = ${JSON.stringify(PAUSED)}, PLAYING_T = ${JSON.stringify(PLAYING)};\nEOF\nchown -R arch:arch /home/arch/seekref.js /home/arch/ref`);
       for (const mode of ['paused', 'playing'].filter((m) => PHASES.includes(m))) {
         await run('. /root/ff.sh; ffkill', 120_000);
         const v0 = await video();
-        await run(`. /root/ff.sh; ffrun "file:///home/alarm/seek.html?${mode}@/mnt/media/${clip}" ${tag}-${mode}`);
+        await run(`. /root/ff.sh; ffrun "file:///home/arch/seek.html?${mode}@/mnt/media/${clip}" ${tag}-${mode}`);
         const finished = await run(`. /root/ff.sh; ffwait ${tag}-${mode}`, 240_000);
         const v1 = await video();
         const lines = (await runLines(`grep -a "^SEEK" /tmp/ff-${tag}-${mode}.log`)).map((l) => l.replace(/^SEEK /, ''));

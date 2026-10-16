@@ -1,5 +1,5 @@
 // A compositor's load on the page (graphics.md §19; dev-only, not in tests): sway in a UEFI disk image with sway and
-// foot (the user's Arch image, `images/archarm/build.sh` plus `pacman -S sway foot`; login alarm/alarm on the
+// foot (the user's Arch image, `images/arch/build.sh` plus `pacman -S sway foot`; login arch/arch on the
 // screen, root/root on the serial console), headless Chromium, 4 vCPUs, the screen fixed at 1376×762. Renderer modes:
 // `virgl` (?gpu=virgl-null, or `?gpu=` + VIRGL_GPU, `virgl` for G3's renderer; WLR_RENDERER=gles2 on Mesa's virgl),
 // `llvmpipe` (?gpu=2d: no virgl, gles2 on llvmpipe), `pixman` (?gpu=2d). Phases: sway idle, foot idle, foot scrolling a `date` loop.
@@ -12,7 +12,7 @@
 // the renderer's fixtures) and stops there; SCREEN=<w>x<h> changes the screen's size.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { encodeTrace } from '../../web/virgl-trace.ts';
-import { openSession } from './guest-session.ts';
+import { GUEST_USER, openSession } from './guest-session.ts';
 
 const mode = process.argv[2] ?? 'virgl';
 const image = process.argv[3];
@@ -33,9 +33,9 @@ results.info = await terminal();
 log('info', results.info);
 
 // The user's session on the screen.
-await onScreen('alarm\n');
+await onScreen(`${GUEST_USER}\n`);
 await page.waitForTimeout(3000);
-await onScreen('alarm\n');
+await onScreen(`${GUEST_USER}\n`);
 await page.waitForTimeout(6000);
 await load('console', 5);
 const env = mode === 'pixman' ? 'WLR_RENDERER=pixman' : mode === 'llvmpipe' ? 'WLR_RENDERER=gles2' : 'WLR_RENDERER=gles2';

@@ -1,5 +1,5 @@
 // The video track's V0 guest gate (docs/plans/video.md §3; dev-only, not in tests): the desktop guest
-// (images/archarm/desktop.sh) on the page with video advertised (`?gpu=virgl,video`) and the renderer's null decoder.
+// (images/arch/desktop.sh) on the page with video advertised (`?gpu=virgl,video`) and the renderer's null decoder.
 // What VA-API the guest's Mesa offers (`vainfo`), whether FFmpeg decodes through it (`-hwaccel vaapi`, the Sintel
 // trailer's H.264 and VP9), and whether Firefox does (its log: `MOZ_LOG=PlatformDecoderModule:5,FFmpegVideo:5`) with
 // the guest's CPU over the playback. The clips are bench/video/media-disk.sh's, on the second disk.
@@ -58,7 +58,7 @@ for (const clip of process.env.FFMPEG === '0' ? [] : ['sintel_trailer-480p.mp4',
 }
 
 if (process.env.FIREFOX !== '0') {
-  await pasteSerial(String.raw`mkdir -p /home/alarm/vprofile; cat > /home/alarm/vprofile/user.js <<'EOF'
+  await pasteSerial(String.raw`mkdir -p /home/arch/vprofile; cat > /home/arch/vprofile/user.js <<'EOF'
 user_pref("browser.dom.window.dump.enabled", true);
 user_pref("media.autoplay.default", 0);
 user_pref("media.autoplay.blocking_policy", 0);
@@ -68,15 +68,15 @@ user_pref("datareporting.policy.dataSubmissionPolicyBypassNotification", true);
 user_pref("browser.shell.checkDefaultBrowser", false);
 ${(process.env.PREFS ?? '').split(',').filter(Boolean).map((kv) => { const [k, v] = kv.split('='); return `user_pref("${k}", ${v});`; }).join('\n')}
 EOF
-chown -R alarm:alarm /home/alarm/vprofile
+chown -R arch:arch /home/arch/vprofile
 cat > /root/ff.sh <<'EOF'
 ffkill() { pkill -x firefox; for i in $(seq 60); do pgrep -x firefox >/dev/null || return 0; sleep 1; done; pkill -9 -x firefox; sleep 2; }
-ffrun() { rm -f /tmp/ff-$2.log; su alarm -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec '/home/alarm/ff-launch.sh $1 $2'" >/dev/null; }
+ffrun() { rm -f /tmp/ff-$2.log; su arch -c "swaymsg -s $(ls /run/user/1000/sway-ipc.*.sock) exec '/home/arch/ff-launch.sh $1 $2'" >/dev/null; }
 ffwait() { for i in $(seq 560); do grep -q "AVSYNC playing" /tmp/ff-$1.log 2>/dev/null && { echo playing; return; }; sleep 0.5; done; echo timeout; tail -15 /tmp/ff-$1.log; }
 EOF
 # sway's exec splits commands at commas: MOZ_LOG's list goes through a script.
-printf '#!/bin/sh\n${vaEnv}FFBENCH_SUPPORT=/tmp/ff-$2.support MOZ_LOG=PlatformDecoderModule:5,FFmpegVideo:5,Dmabuf:5 exec firefox --profile /home/alarm/vprofile --kiosk "$1" > /tmp/ff-$2.log 2>&1\n' > /home/alarm/ff-launch.sh
-chmod 755 /home/alarm/ff-launch.sh`);
+printf '#!/bin/sh\n${vaEnv}FFBENCH_SUPPORT=/tmp/ff-$2.support MOZ_LOG=PlatformDecoderModule:5,FFmpegVideo:5,Dmabuf:5 exec firefox --profile /home/arch/vprofile --kiosk "$1" > /tmp/ff-$2.log 2>&1\n' > /home/arch/ff-launch.sh
+chmod 755 /home/arch/ff-launch.sh`);
   for (const [from, to] of [['autoconfig.js', '/usr/lib/firefox/defaults/pref/autoconfig.js'], ['webpc.cfg', '/usr/lib/firefox/webpc.cfg']]) {
     await pasteSerial(`cat > ${to} <<'EOF'\n${readFileSync(new URL(`../gpu/firefox/${from}`, import.meta.url), 'utf8')}EOF`);
   }
