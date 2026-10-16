@@ -76,18 +76,34 @@
   #network .panel p { margin: 0; }
   #network [hidden] { display: none !important; }
   #net-status { font-weight: 600; }
-  #net-hint, #net-error { color: var(--dim); font-size: 12px; }
-  #net-error { color: #ffb4b6; }
+  #net-hint { color: var(--dim); font-size: 12px; }
+  #net-error, #net-menu-error { color: #ffb4b6; }
   #net-login { display: inline-block; padding: 4px 12px; border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); text-decoration: none; text-align: center; }
-  #net-form { display: flex; flex-direction: column; gap: 8px; }
-  #net-form label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
-  #net-form > div { display: flex; flex-direction: column; gap: 8px; }
-  #net-form .net-note { color: var(--dim); font-size: 12px; }
-  #net-form .net-note a { color: var(--accent); }
-  #net-kind { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
-  #net-form input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
   #network .panel button { border: 1px solid var(--line); border-radius: 6px; text-align: center; }
-  #net-exit-label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
+  #network .panel label, #net-wizard label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
+  #network .panel input, #net-wizard input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+  .net-note { color: var(--dim); font-size: 12px; margin: 0; }
+  .net-note a { color: var(--accent); }
+  .net-row { display: flex; gap: 8px; }
+  /* The Network wizard (docs/frontend.md "Network"): what to connect to, then its settings. */
+  #net-wizard { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  #net-wizard::backdrop { background: rgb(0 0 0 / 0.55); }
+  #net-wizard [hidden] { display: none !important; }
+  #net-form { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+  #net-form h2 { margin: 0; font-size: 16px; }
+  .net-step { display: flex; flex-direction: column; gap: 10px; }
+  .net-choice { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; text-align: left; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .net-choice:hover, .net-choice:focus-visible { border-color: var(--accent); }
+  .net-choice span { color: var(--dim); font-size: 12px; }
+  #net-wizard label.net-check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+  .net-sub { display: flex; flex-direction: column; gap: 8px; margin-left: 24px; }
+  #net-wizard details summary { cursor: pointer; color: var(--dim); font-size: 12px; }
+  #net-wizard details[open] { display: flex; flex-direction: column; gap: 8px; }
+  #net-wizard code { font-size: 12px; }
+  .net-buttons { display: flex; gap: 8px; }
+  .net-buttons .grow { flex: 1; }
+  #net-wizard button:not(.net-choice) { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+  #net-wizard #net-connect { border-color: var(--accent); }
   #machine-menu .panel { width: 240px; gap: 8px; padding: 10px; }
   #machine-menu .panel label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
   #machine-menu .panel button { border: 1px solid var(--line); border-radius: 6px; text-align: center; }
@@ -125,28 +141,55 @@
     <button id="machine-apply">Apply and restart</button>
     <p class="hint">Kept in this browser. A suspended machine resumes with the size it had; Boot instead starts it from its disk with this one.</p>
   </div></details>
-  <details class="menu" id="network" data-phase="off" hidden><summary title="Connect the machine's network card to a Tailscale network or a tailcat server">Network</summary><div class="items panel">
+  <details class="menu" id="network" data-phase="off" hidden><summary title="The machine's network: a tailnet, or tailcat">Network</summary><div class="items panel">
     <p id="net-status"></p>
     <a id="net-login" target="_blank" rel="noopener" hidden>Log in…</a>
+    <label id="net-exit-label" hidden>Internet through<select id="net-exit"></select></label>
+    <div id="net-served" hidden>
+      <label>This machine's tailcat address<input id="net-served-addr" type="password" readonly spellcheck="false"></label>
+      <div class="net-row"><button id="net-served-copy">Copy</button><button id="net-served-show">Show</button></div>
+      <p class="net-note">On another computer: <code>tailcat ssh &lt;address&gt;</code> logs in to the guest's sshd, <code>tailcat &lt;address&gt; &lt;port&gt;</code> reaches any port it listens on. Anyone with the address gets in.</p>
+    </div>
+    <p id="net-menu-error" class="net-note" hidden></p>
+    <div id="net-actions"><button id="net-setup">Connect…</button><button id="net-disconnect" hidden>Disconnect</button><button id="net-logout" title="Remove this machine from the tailnet and forget its keys" hidden>Log out</button></div>
+    <p id="net-hint" class="net-note"></p>
+  </div></details>
+  <dialog id="net-wizard" aria-labelledby="net-title">
     <form id="net-form">
-      <label>Connect to<select id="net-kind"><option value="tailscale">A tailnet (Tailscale or Headscale)</option><option value="tailcat">A tailcat server (no account)</option></select></label>
-      <div id="net-tailnet-fields">
+      <h2 id="net-title">Network</h2>
+      <section id="net-step-kind" class="net-step">
+        <p class="net-note">How should this machine reach a network? Its network card is always there: connecting doesn't restart it.</p>
+        <button type="button" class="net-choice" id="net-pick-tailnet"><b>A tailnet</b><span>Tailscale, or your Headscale: the machine joins as a device of its own, reaches the other devices by name, and the internet through an exit node.</span></button>
+        <button type="button" class="net-choice" id="net-pick-tailcat"><b>tailcat (no account)</b><span>A computer of yours shares its network with the machine, and other computers can reach the machine (ssh, any port) through an address of its own.</span></button>
+      </section>
+      <section id="net-step-tailnet" class="net-step" hidden>
         <label>Control server<input id="net-control" placeholder="Tailscale (default), or a Headscale's URL" autocomplete="off" spellcheck="false"></label>
         <label>Hostname<input id="net-hostname" placeholder="webpc" autocomplete="off" spellcheck="false"></label>
         <label>Auth key (optional, never saved)<input id="net-authkey" type="password" autocomplete="off" spellcheck="false"></label>
-        <label><input id="net-reveal" type="checkbox"> Show the auth key</label>
-      </div>
-      <div id="net-tailcat-fields" hidden>
-        <label>tailcat address (never saved)<input id="net-tailcat" type="password" placeholder="tc…" autocomplete="off" spellcheck="false"></label>
-        <p class="net-note">On a computer of yours, run <code>tailcat serve exit-node</code> (<a href="https://github.com/tailscale/tailcat" target="_blank" rel="noopener">tailcat</a>) and paste the address it prints: the machine gets that computer's network. Keep the address to yourself: it lets anyone in. tailcat's public relays are rate-limited; your own relay isn't.</p>
-      </div>
-      <button id="net-connect" type="submit">Connect</button>
+        <label class="net-check"><input id="net-reveal" type="checkbox"> Show the auth key</label>
+        <p class="net-note">Without an auth key you log in, in a new tab, and the machine stays on the tailnet over reloads. With one there's no login, the key isn't kept and the node is ephemeral. A Headscale must answer <code>/key</code> with CORS headers.</p>
+      </section>
+      <section id="net-step-tailcat" class="net-step" hidden>
+        <label class="net-check"><input id="net-tc-exit" type="checkbox"> Go online through a computer of mine</label>
+        <div id="net-tc-exit-fields" class="net-sub">
+          <label>Its tailcat address (never saved)<input id="net-tailcat" type="password" placeholder="tc…" autocomplete="off" spellcheck="false"></label>
+          <p class="net-note">On that computer run <code>tailcat serve exit-node</code> (<a href="https://github.com/tailscale/tailcat" target="_blank" rel="noopener">tailcat</a>) and paste the address it prints: the machine reaches what that computer reaches, its LAN and the internet. Keep the address to yourself: it lets anyone in.</p>
+        </div>
+        <label class="net-check"><input id="net-tc-serve" type="checkbox"> Let tailcat clients in to this machine</label>
+        <div id="net-tc-serve-fields" class="net-sub">
+          <p class="net-note">The machine gets a tailcat address of its own, kept in this browser. With it another computer runs <code>tailcat ssh &lt;address&gt;</code> to log in to the guest's sshd, or <code>tailcat &lt;address&gt; &lt;port&gt;</code> for any port the guest listens on.</p>
+          <details id="net-tc-advanced"><summary>Advanced</summary>
+            <label>Relay for clients<input id="net-tc-relay" placeholder="tailcat's public relays (the nearest)" autocomplete="off" spellcheck="false"></label>
+            <p class="net-note">Your own <a href="https://github.com/tailscale/tailscale/tree/main/cmd/derper" target="_blank" rel="noopener">derper</a>'s host or host:port: faster than tailcat's public relays, which are rate-limited. Used when the machine doesn't go online through a computer of yours (that computer's relay serves then).</p>
+            <div class="net-row"><button type="button" id="net-tc-forget">New address</button></div>
+            <p class="net-note">Forgets the machine's address: whoever has it can't come in any more.</p>
+          </details>
+        </div>
+      </section>
+      <p id="net-error" class="net-note" hidden></p>
+      <div class="net-buttons"><button type="button" id="net-back" hidden>Back</button><span class="grow"></span><button type="button" id="net-cancel">Cancel</button><button id="net-connect" type="submit" hidden>Connect</button></div>
     </form>
-    <p id="net-error" hidden></p>
-    <label id="net-exit-label" hidden>Internet through<select id="net-exit"></select></label>
-    <div id="net-actions"><button id="net-disconnect">Disconnect</button><button id="net-logout" title="Remove this machine from the tailnet and forget its keys">Log out</button></div>
-    <p id="net-hint"></p>
-  </div></details>
+  </dialog>
   <details class="menu" id="screen-menu" hidden><summary title="The size of the machine's screen">Screen</summary><div class="items panel">
     <label>Size<select id="screen-size"><option value="fit">Fit the window</option><option value="1024x768">1024×768</option><option value="1280x800">1280×800</option><option value="1920x1080">1920×1080</option></select></label>
     <label title="The guest draws in device pixels instead of CSS pixels: sharper on a HiDPI screen, with smaller text unless the desktop scales (its EDID carries the screen's physical size)"><input id="screen-hidpi" type="checkbox"> HiDPI</label>

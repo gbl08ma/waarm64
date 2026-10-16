@@ -24,9 +24,12 @@ type Exports = {
   ts_free(h: number): void;
 };
 
-/** A tailcat server to connect to: `tailcat serve exit-node` printed `addr`. */
+/** A tailcat server to connect to (`tailcat serve exit-node` printed `addr`), clients to let in (`serve`), or both. */
 export type TailcatConfig = {
-  addr: string;
+  addr?: string;
+  /** The VM as a tailcat server (docs/plans/tailnet-client.md T3): the address's pre-shared key (64 hex digits) and,
+   * without `addr`, the relay: one's own derper (`host[:port]`), or a region of the DERP map by ID (0: its first). */
+  serve?: { psk: string; relay?: string; region?: number };
   /** The DERP map for an address that names only a region (default: tailcat's public one). */
   derpMapURL?: string;
   /** The node's private key, 64 hex digits, to be the same client again (a server may `--allow` only it). */
@@ -40,6 +43,8 @@ export type TsEvent =
   | { type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed'; error?: string }
   | { type: 'lease'; lease: Lease }
   | { type: 'self'; key: string; address6: number[] }
+  | { type: 'serving'; addr: string }
+  | { type: 'client'; key: string; address6: number[] }
   | { type: 'log'; msg: string };
 
 export type TsHandlers = {

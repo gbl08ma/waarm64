@@ -19,7 +19,7 @@ import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-fi
 import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
-import { createNetwork, DEFAULT_SETTINGS, tailscaleBuilt, tailcatBuilt, parseControlURL, parseHostname, parseTailcatAddr, type NetworkSettings } from './network.ts';
+import { createNetwork, DEFAULT_SETTINGS, forgetTailcatIdentity, hasTailcatIdentity, tailscaleBuilt, tailcatBuilt, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -819,13 +819,25 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-chord]')) {
 }
 document.addEventListener('pointerdown', (e) => { if (!keysMenu.contains(e.target as Node)) keysMenu.open = false; });
 
-// The network (docs/frontend.md "Network"): a machine with `network` always has a card (it costs no boot time); the
-// Network menu connects and logs in a Tailscale client that gives the card its address, or connects to a tailcat server.
+// The network (docs/frontend.md "Network"): a machine with `network` always has a card (it costs no boot time). The
+// Network wizard (a dialog) picks a tailnet or tailcat and takes its settings; the Network menu shows the connection
+// and what can be done with it (the exit node, the machine's tailcat address, Disconnect, Log out, Change…).
 const netSettings = (): NetworkSettings => ({ ...DEFAULT_SETTINGS, ...settings().net });
 const network = createNetwork(() => renderNetwork());
 const netMenu = $<HTMLDetailsElement>('network');
-const netEl = { status: $('net-status'), login: $<HTMLAnchorElement>('net-login'), form: $<HTMLFormElement>('net-form'), control: $<HTMLInputElement>('net-control'), hostname: $<HTMLInputElement>('net-hostname'), key: $<HTMLInputElement>('net-authkey'), exitLabel: $('net-exit-label'), exit: $<HTMLSelectElement>('net-exit'), error: $('net-error'), hint: $('net-hint'), actions: $('net-actions'), disconnect: $('net-disconnect'), logout: $('net-logout'), kind: $<HTMLSelectElement>('net-kind'), tailnetFields: $('net-tailnet-fields'), tailcatFields: $('net-tailcat-fields'), tailcat: $<HTMLInputElement>('net-tailcat') };
+const wizard = $<HTMLDialogElement>('net-wizard');
+const netEl = {
+  status: $('net-status'), login: $<HTMLAnchorElement>('net-login'), exitLabel: $('net-exit-label'), exit: $<HTMLSelectElement>('net-exit'),
+  served: $('net-served'), servedAddr: $<HTMLInputElement>('net-served-addr'), menuError: $('net-menu-error'), hint: $('net-hint'),
+  setup: $<HTMLButtonElement>('net-setup'), disconnect: $('net-disconnect'), logout: $('net-logout'),
+  form: $<HTMLFormElement>('net-form'), title: $('net-title'), error: $('net-error'), back: $('net-back'), connect: $<HTMLButtonElement>('net-connect'),
+  steps: { kind: $('net-step-kind'), tailscale: $('net-step-tailnet'), tailcat: $('net-step-tailcat') },
+  control: $<HTMLInputElement>('net-control'), hostname: $<HTMLInputElement>('net-hostname'), key: $<HTMLInputElement>('net-authkey'),
+  tcExit: $<HTMLInputElement>('net-tc-exit'), tailcat: $<HTMLInputElement>('net-tailcat'), tcServe: $<HTMLInputElement>('net-tc-serve'),
+  relay: $<HTMLInputElement>('net-tc-relay'), forget: $<HTMLButtonElement>('net-tc-forget'),
+};
 let lastPhase = '';
+let step: 'kind' | 'tailscale' | 'tailcat' = 'kind';
 
 function renderNetwork() {
   const s = netSettings();
@@ -841,13 +853,12 @@ function renderNetwork() {
     netEl.exit.replaceChildren(new Option('Nothing: directly', ''), ...v.exitNodes.map((e) => new Option(e.online ? e.name : `${e.name} (offline)`, e.id)));
     netEl.exit.value = v.exitNodes.find((e) => e.use)?.id ?? '';
   }
-  netEl.form.hidden = active;
-  netEl.actions.hidden = !active;
+  netEl.served.hidden = !v.served;
+  if (v.served && netEl.servedAddr.value !== v.served) netEl.servedAddr.value = v.served;
+  netEl.setup.textContent = active ? 'Change…' : 'Connect…';
   netEl.disconnect.hidden = !active;
   netEl.logout.hidden = !active || s.keyed || s.kind === 'tailcat';
-  netEl.tailnetFields.hidden = s.kind === 'tailcat';
-  netEl.tailcatFields.hidden = s.kind !== 'tailcat';
-  netEl.hint.textContent = !active && s.keyed ? 'An auth key isn\'t kept: enter it again to connect.' : '';
+  netEl.hint.textContent = !active && s.kind === 'tailscale' && s.keyed ? 'An auth key isn\'t kept: enter it again to connect.' : '';
   if (v.phase === 'login' && lastPhase !== 'login') netMenu.open = true; // the user has something to do
   lastPhase = v.phase;
 }
@@ -857,39 +868,111 @@ function formError(message?: string) {
   netEl.error.hidden = !message;
 }
 
-/** Starts the client for the settings the machine started under (a login's node is kept, so no key is needed). */
+function menuError(message?: string) {
+  netEl.menuError.textContent = message ?? '';
+  netEl.menuError.hidden = !message;
+}
+
+/** Shows a step of the wizard: the choice, or a kind's settings. */
+function showStep(to: typeof step) {
+  step = to;
+  formError();
+  for (const [k, el] of Object.entries(netEl.steps)) el.hidden = k !== to;
+  netEl.back.hidden = to === 'kind';
+  netEl.connect.hidden = to === 'kind';
+  netEl.title.textContent = to === 'kind' ? 'Network' : to === 'tailscale' ? 'Network: a tailnet' : 'Network: tailcat';
+  if (to === 'tailcat') renderTailcatStep();
+  (to === 'kind' ? $(`net-pick-${netSettings().kind === 'tailcat' ? 'tailcat' : 'tailnet'}`) : to === 'tailscale' ? netEl.control : netEl.tcExit).focus();
+}
+
+function renderTailcatStep() {
+  $('net-tc-exit-fields').hidden = !netEl.tcExit.checked;
+  $('net-tc-serve-fields').hidden = !netEl.tcServe.checked;
+  netEl.relay.disabled = netEl.tcExit.checked; // that computer's relay serves then
+  void hasTailcatIdentity().then((kept) => { netEl.forget.disabled = !kept; });
+}
+
+/** Opens the wizard with the saved settings: at the choice, or at a kind's step. */
+function openWizard(at: typeof step = 'kind') {
+  const s = netSettings();
+  netEl.control.value = s.controlURL;
+  netEl.hostname.value = s.hostname;
+  netEl.key.value = '';
+  netEl.tcExit.checked = s.tailcatExit;
+  netEl.tcServe.checked = s.tailcatServe;
+  netEl.tailcat.value = '';
+  netEl.relay.value = s.tailcatRelay;
+  $<HTMLDetailsElement>('net-tc-advanced').open = !!s.tailcatRelay;
+  netMenu.open = false;
+  if (!wizard.open) wizard.showModal();
+  showStep(at);
+}
+
+/** Starts the client for the settings the machine started under (a login's node is kept, so is a served machine's address). */
 function autoconnect() {
   const s = netSettings();
-  if (!s.autoconnect || s.kind === 'tailcat' || network.active()) return;
+  if (!s.autoconnect || network.active()) return;
+  if (s.kind === 'tailcat') {
+    // Only a machine that lets clients in without a server: the server's address isn't kept.
+    if (s.tailcatServe && !s.tailcatExit) network.connect({ controlURL: '', hostname: '', tailcatServe: { relay: s.tailcatRelay } });
+    return;
+  }
   const url = parseControlURL(s.controlURL);
   if ('error' in url) return;
   const host = parseHostname(s.hostname);
   network.connect({ controlURL: url.url, hostname: 'hostname' in host ? host.hostname : 'webpc', exitNode: s.exitNode });
 }
 
+/** Connects with the wizard's settings, after the running client (if any) stops; then the menu shows how it goes. */
+function connectWith(c: Parameters<typeof network.connect>[0]) {
+  void (async () => {
+    try {
+      if (network.active()) await network.disconnect();
+      network.connect(c);
+      wizard.close();
+      menuError();
+      netMenu.open = true;
+    } catch (err) {
+      formError(String((err as Error).message ?? err));
+    }
+    renderNetwork();
+  })();
+}
+
+$('net-pick-tailnet').onclick = () => { remember({ net: { ...netSettings(), kind: 'tailscale' } }); showStep('tailscale'); };
+$('net-pick-tailcat').onclick = () => { remember({ net: { ...netSettings(), kind: 'tailcat' } }); showStep('tailcat'); };
+netEl.back.onclick = () => showStep('kind');
+$('net-cancel').onclick = () => wizard.close();
+netEl.tcExit.onchange = renderTailcatStep;
+netEl.tcServe.onchange = renderTailcatStep;
+netEl.forget.onclick = () => {
+  if (!confirm('Forget this machine\'s tailcat address? Whoever has it can\'t come in any more, and the machine gets a new one when it next lets clients in.')) return;
+  void forgetTailcatIdentity().then(renderTailcatStep);
+};
 $<HTMLInputElement>('net-reveal').onchange = (e) => { netEl.key.type = (e.target as HTMLInputElement).checked ? 'text' : 'password'; };
-netEl.kind.onchange = () => {
-  remember({ net: { ...netSettings(), kind: netEl.kind.value === 'tailcat' ? 'tailcat' : 'tailscale' } });
-  formError();
-  renderNetwork();
+netEl.setup.onclick = () => openWizard();
+$('net-served-copy').onclick = () => { void navigator.clipboard.writeText(netEl.servedAddr.value).catch(() => { netEl.servedAddr.type = 'text'; netEl.servedAddr.select(); }); };
+$('net-served-show').onclick = (e) => {
+  const show = netEl.servedAddr.type === 'password';
+  netEl.servedAddr.type = show ? 'text' : 'password';
+  (e.target as HTMLButtonElement).textContent = show ? 'Hide' : 'Show';
 };
 netEl.form.onsubmit = (e) => {
   e.preventDefault();
-  if (netSettings().kind === 'tailcat') {
-    const addr = parseTailcatAddr(netEl.tailcat.value);
+  if (step === 'tailcat') {
+    const exit = netEl.tcExit.checked;
+    const serve = netEl.tcServe.checked;
+    if (!exit && !serve) return formError('Choose at least one: going online through a computer of yours, or letting clients in.');
+    const addr = exit ? parseTailcatAddr(netEl.tailcat.value) : { addr: '' };
     if ('error' in addr) return formError(addr.error);
+    const relay = serve && !exit ? parseRelay(netEl.relay.value) : { relay: '' };
+    if ('error' in relay) return formError(relay.error);
     formError();
     void (async () => {
       if (!(await tailcatBuilt())) return formError("The tailnet client isn't built on this server. Start the page with `npm run serve` or `npm start` (they build it), or run net/ts/build.sh.");
-      // The address is a secret and isn't kept, so nothing reconnects by itself.
-      remember({ net: { ...netSettings(), autoconnect: false } });
-      try {
-        network.connect({ controlURL: '', hostname: '', tailcat: addr.addr });
-        netEl.tailcat.value = '';
-      } catch (err) {
-        formError(String((err as Error).message ?? err));
-      }
-      renderNetwork();
+      // The server's address is a secret and isn't kept; a served machine's own address is, so it reconnects by itself.
+      remember({ net: { ...netSettings(), kind: 'tailcat', tailcatExit: exit, tailcatServe: serve, tailcatRelay: netEl.relay.value.trim(), autoconnect: serve && !exit } });
+      connectWith({ controlURL: '', hostname: '', tailcat: addr.addr || undefined, tailcatServe: serve ? { relay: exit ? '' : relay.relay } : undefined });
     })();
     return;
   }
@@ -901,22 +984,17 @@ netEl.form.onsubmit = (e) => {
   const authKey = netEl.key.value.trim();
   void (async () => {
     if (!(await tailscaleBuilt())) return formError("The Tailscale client isn't built on this server. Start the page with `npm run serve` or `npm start` (they build it; Go is needed), or run net/tailscale/build.sh.");
-    remember({ net: { ...netSettings(), controlURL: netEl.control.value.trim(), hostname: netEl.hostname.value.trim(), autoconnect: !authKey, keyed: !!authKey } });
-    try {
-      network.connect({ controlURL: url.url, hostname: host.hostname, authKey: authKey || undefined, exitNode: netSettings().exitNode });
-      netEl.key.value = '';
-    } catch (err) {
-      formError(String((err as Error).message ?? err));
-    }
-    renderNetwork();
+    remember({ net: { ...netSettings(), kind: 'tailscale', controlURL: netEl.control.value.trim(), hostname: netEl.hostname.value.trim(), autoconnect: !authKey, keyed: !!authKey } });
+    netEl.key.value = '';
+    connectWith({ controlURL: url.url, hostname: host.hostname, authKey: authKey || undefined, exitNode: netSettings().exitNode });
   })();
 };
 netEl.exit.onchange = () => {
   const id = netEl.exit.value;
   netEl.exit.blur();
   network.setExitNode(id).then(
-    () => { remember({ net: { ...netSettings(), exitNode: id } }); formError(); },
-    (err) => { formError(`Couldn't ${id ? 'use that exit node' : 'stop using the exit node'}: ${(err as Error).message ?? err}`); },
+    () => { remember({ net: { ...netSettings(), exitNode: id } }); menuError(); },
+    (err) => { menuError(`Couldn't ${id ? 'use that exit node' : 'stop using the exit node'}: ${(err as Error).message ?? err}`); },
   ).finally(renderNetwork);
 };
 netEl.disconnect.onclick = () => {
@@ -931,9 +1009,6 @@ netEl.logout.onclick = () => {
 document.addEventListener('pointerdown', (e) => { if (!netMenu.contains(e.target as Node)) netMenu.open = false; });
 if (spec.network) {
   netMenu.hidden = false;
-  netEl.kind.value = netSettings().kind;
-  netEl.control.value = netSettings().controlURL;
-  netEl.hostname.value = netSettings().hostname;
   renderNetwork();
 }
 

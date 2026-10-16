@@ -1,6 +1,6 @@
 #!/bin/sh
 # A tailcat exit node for the tailnet client's tests (docs/plans/tailnet-client.md T1, T2):
-# derper on 127.0.0.1:8443 with a self-signed certificate for that address, and
+# derper on 127.0.0.1:8444 with a self-signed certificate for that address, and
 # `tailcat serve exit-node` on it, both native and unprivileged (Go builds them once, at the
 # versions pinned below, into target/net/tailcat-test/bin; derper has no official image).
 # The exit node's machine is this one: what the guest reaches through it is this machine's
@@ -23,7 +23,7 @@ BIN=$DIR/bin
 TAILCAT_VERSION=v0.7.0
 # The tailscale.com tailcat v0.7.0's go.mod pins (derper comes from it).
 TAILSCALE_VERSION=v1.103.0-pre.0.20260929142145-a0e471a35b8f
-PORT=8443
+PORT=8444 # not 8443: tests/net/tailnet.sh's proxy has it, and ci-net runs both side by side
 
 build() {
 	[ -x "$BIN/tailcat" ] && [ -x "$BIN/derper" ] && return

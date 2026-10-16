@@ -16,7 +16,10 @@ use std::{cell::RefCell, time::Instant};
 
 use serde::Deserialize;
 
-use crate::client::{Action, Client, Config, DEFAULT_DERP_MAP, GUEST4};
+use crate::{
+    client::{Action, Client, Config, DEFAULT_DERP_MAP, GUEST4, Serve},
+    tailcat,
+};
 
 thread_local! {
     static CLIENTS: RefCell<Vec<Option<Client>>> = const { RefCell::new(Vec::new()) };
@@ -27,7 +30,11 @@ thread_local! {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JsConfig {
+    /// A tailcat server's address; empty or absent: none (serving only).
+    #[serde(default)]
     addr: String,
+    /// Let tailcat clients in.
+    serve: Option<JsServe>,
     #[serde(rename = "derpMapURL")]
     derp_map_url: Option<String>,
     /// The node's private key, 64 hex digits; a fresh one when absent.
@@ -36,6 +43,19 @@ struct JsConfig {
     dns4: Vec<[u8; 4]>,
     #[serde(default)]
     dns6: Vec<[u8; 16]>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsServe {
+    /// The served address's pre-shared key, 64 hex digits.
+    psk: String,
+    /// The relay without an exit node: `host[:port]` of one's own derper, or empty for a
+    /// region of the DERP map (`region`, default the map's first).
+    #[serde(default)]
+    relay: String,
+    #[serde(default)]
+    region: i64,
 }
 
 fn unhex32(s: &str) -> Result<[u8; 32], String> {
@@ -100,8 +120,23 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
         .map_err(|e| format!("the configuration: {e}"))
         .and_then(|c| {
             let key = c.key.as_deref().map(unhex32).transpose()?;
+            let serve = c
+                .serve
+                .map(|s| -> Result<Serve, String> {
+                    let nodes = match s.relay.trim() {
+                        "" => Vec::new(),
+                        r => vec![tailcat::parse_relay(r)?],
+                    };
+                    Ok(Serve {
+                        psk: unhex32(&s.psk)?,
+                        nodes,
+                        region_id: s.region,
+                    })
+                })
+                .transpose()?;
             let cfg = Config {
                 addr: c.addr,
+                serve,
                 derp_map_url: c.derp_map_url.unwrap_or_else(|| DEFAULT_DERP_MAP.into()),
                 key,
                 guest4: GUEST4,

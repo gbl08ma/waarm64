@@ -1,16 +1,19 @@
-// The page's Network menu (docs/frontend.md "Network") in headless Chromium, on Debian, without a
-// control server that answers: what the page does around the client. Connecting with a bad URL is
-// refused in the form; connecting with an auth key starts the client without restarting the machine (it
-// has its network card from the boot: the guest sees eth0 on its serial console); the client can't
-// reach 127.0.0.1:1, so the menu shows it's connecting or failed, never connected; the settings are
-// kept but never the key, a reload asks for the key again; Disconnect stops the client. What needs a
-// control server (login, the address, peers) is tests/net-tailnet.test.ts's. The tailcat kind
-// (docs/plans/tailnet-client.md T2): the fields swap, a malformed address is refused, and with
-// WEBPC_TAILCAT=1 an address of a server that isn't there (tests/net/tailcat.sh's relay, another
-// key) is waited for, then fails; the address is never kept. Two Debian boots, ~4 min alone.
-// Opt-in with WEBPC_DISTROS=debian, like Debian's other Chromium tests.
+// The page's Network wizard and menu (docs/frontend.md "Network") in headless Chromium, on Debian,
+// without a control server that answers: what the page does around the clients. The wizard opens
+// at the choice (a tailnet or tailcat), and each kind's step refuses what's wrong in the form;
+// connecting with an auth key starts the client without restarting the machine (it has its
+// network card from the boot: the guest sees eth0 on its serial console); the client can't reach
+// 127.0.0.1:1, so the menu shows it's connecting or failed, never connected; the settings are
+// kept but never the key, a reload asks for the key again; Disconnect stops the client. tailcat
+// (docs/plans/tailnet-client.md T2, T3): neither choice, or a malformed address, is refused; with
+// WEBPC_TAILCAT=1 (tests/net/tailcat.sh's relay) an address of a server that isn't there is waited
+// for, then fails, and the machine lets tailcat clients in on that relay: the menu shows its
+// address, the tailcat CLI reaches a web server in the guest through it, the address is the same
+// after a reload (which reconnects by itself) and a new one after New address. What needs a
+// control server (login, the address, peers) is tests/net-tailnet.test.ts's. Two Debian boots,
+// ~4 min alone. Opt-in with WEBPC_DISTROS=debian, like Debian's other Chromium tests.
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
@@ -74,7 +77,40 @@ async function running(page: Page) {
 const phase = (page: Page) => page.evaluate(() => document.getElementById('network')!.dataset.phase);
 const settings = (page: Page) => page.evaluate(() => localStorage.getItem('webpc.settings') ?? '');
 
-test('the Network menu: a bad URL is refused; connecting starts the client without a restart; the key is not kept; Disconnect stops it', { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
+const ROOT = new URL('..', import.meta.url).pathname;
+
+/** The tailcat CLI (tests/net/tailcat.sh built it) as a client, `input` on its stdin; its stdout. Never synchronous: this
+ * process serves the page's disk, and a guest reading it while the CLI waits on the guest would wait for the timeout. */
+async function tailcatCLI(args: string[], input: string): Promise<string> {
+  const child = spawn(`${ROOT}target/net/tailcat-test/bin/tailcat`, args, {
+    env: { ...process.env, SSL_CERT_FILE: `${ROOT}target/net/tailcat-test/certs/127.0.0.1.crt`, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1', HOME: `${ROOT}target/net/tailcat-test/run` },
+  });
+  let out = '';
+  let err = '';
+  child.stdout.setEncoding('utf8').on('data', (d: string) => { out += d; });
+  child.stderr.setEncoding('utf8').on('data', (d: string) => { err += d; });
+  child.stdin.end(input);
+  const timer = setTimeout(() => child.kill(), 60_000);
+  const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
+  clearTimeout(timer);
+  if (code !== 0 && !out) throw new Error(`tailcat ${args[0]}: exit ${code}; ${err.slice(-800)}`);
+  return out;
+}
+
+const visible = (page: Page, sel: string) => page.locator(sel).isVisible();
+const text = async (page: Page, sel: string) => (await page.locator(sel).textContent()) ?? '';
+async function wizard(page: Page) {
+  if (!(await page.evaluate(() => (document.getElementById('network') as HTMLDetailsElement).open))) await page.locator('#network summary').click();
+  await page.click('#net-setup');
+  assert.equal(await visible(page, '#net-wizard'), true, 'the wizard opens');
+  assert.equal(await visible(page, '#net-step-kind'), true, 'at the choice');
+  assert.equal(await visible(page, '#net-connect'), false);
+}
+const statusIs = (page: Page, re: RegExp, ms: number) =>
+  page.waitForFunction((src) => new RegExp(src).test(document.getElementById('net-status')!.textContent!), re.source, { timeout: ms, polling: 100 })
+    .catch(async (e) => { throw new Error(`${e}; the menu said ${await page.evaluate(() => [document.getElementById('network')!.dataset.phase, document.getElementById('net-status')!.textContent, document.getElementById('net-menu-error')!.textContent])}`); });
+
+test('the Network wizard and menu: a tailnet and tailcat, form errors, connecting without a restart, keys never kept, Disconnect; a served machine', { skip, timeout: 20 * 60_000 }, () => withDebianLock(async () => {
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, ignoreHTTPSErrors: true }); // a fresh profile: empty storage; the tailcat rig's relay has a self-signed certificate
   const page = await context.newPage();
   const errors: string[] = [];
@@ -83,20 +119,29 @@ test('the Network menu: a bad URL is refused; connecting starts the client witho
   page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
   try {
     await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
-    assert.equal(await page.locator('#network').isVisible(), true, 'Debian can have a card');
+    assert.equal(await visible(page, '#network'), true, 'Debian can have a card');
     await page.locator('#network summary').click();
-    assert.match((await page.locator('#net-status').textContent())!, /Not connected/);
-    assert.equal(await page.locator('#net-disconnect').isVisible(), false);
+    assert.match(await text(page, '#net-status'), /Not connected/);
+    assert.equal(await text(page, '#net-setup'), 'Connect…');
+    assert.equal(await visible(page, '#net-disconnect'), false);
 
-    // A bad control server is refused in the form: nothing restarts, nothing is saved.
+    // A tailnet: a bad control server or hostname is refused in the form; nothing restarts, nothing of them is saved.
+    await wizard(page);
+    await page.click('#net-pick-tailnet');
+    assert.equal(await visible(page, '#net-step-tailnet'), true);
     await page.fill('#net-control', 'ftp://example.com');
     await page.click('#net-connect');
-    assert.match((await page.locator('#net-error').textContent())!, /https/);
+    assert.match(await text(page, '#net-error'), /https/);
     await page.fill('#net-hostname', 'no good');
     await page.fill('#net-control', 'http://127.0.0.1:1');
     await page.click('#net-connect');
-    assert.match((await page.locator('#net-error').textContent())!, /hostname/i);
-    assert.equal(await settings(page), '', 'nothing saved');
+    assert.match(await text(page, '#net-error'), /hostname/i);
+    assert.equal(JSON.parse(await settings(page)).net.controlURL, '', 'nothing of it saved');
+    // Back to the choice, and forward again: the fields are as they were.
+    await page.click('#net-back');
+    assert.equal(await visible(page, '#net-step-kind'), true);
+    await page.click('#net-pick-tailnet');
+    assert.equal(await page.locator('#net-control').inputValue(), 'http://127.0.0.1:1');
     assert.deepEqual(dialogs, []);
 
     // Connect with an auth key: no restart (the card is there from the boot), so no question either.
@@ -109,13 +154,15 @@ test('the Network menu: a bad URL is refused; connecting starts the client witho
     assert.equal(await page.getAttribute('#net-authkey', 'type'), 'password');
     await page.click('#net-connect');
     await page.waitForFunction(() => document.getElementById('network')!.dataset.phase !== 'off', null, { timeout: 30_000 });
-    assert.equal(await page.locator('#net-form').isVisible(), false, 'the form gives way to the actions while a client runs');
-    assert.equal(await page.locator('#net-logout').isVisible(), false, "an auth key's node can't be logged out of");
-    assert.equal(await page.locator('#net-disconnect').isVisible(), true);
+    assert.equal(await visible(page, '#net-wizard'), false, 'the wizard closes');
+    assert.equal(await visible(page, '#net-status'), true, 'the menu shows how it goes');
+    assert.equal(await visible(page, '#net-logout'), false, "an auth key's node can't be logged out of");
+    assert.equal(await visible(page, '#net-disconnect'), true);
+    assert.equal(await text(page, '#net-setup'), 'Change…');
     assert.ok(['connecting', 'login', 'error'].includes((await phase(page))!), `unreachable control server: ${await phase(page)}`);
     const saved = await settings(page);
     assert.ok(!saved.includes('SECRET'), 'the auth key is never saved');
-    assert.deepEqual(JSON.parse(saved).net, { controlURL: 'http://127.0.0.1:1', hostname: 'testbox', autoconnect: false, keyed: true, exitNode: '', kind: 'tailscale' });
+    assert.deepEqual(JSON.parse(saved).net, { controlURL: 'http://127.0.0.1:1', hostname: 'testbox', autoconnect: false, keyed: true, exitNode: '', kind: 'tailscale', tailcatExit: true, tailcatServe: false, tailcatRelay: '' });
 
     // The machine has the card: its guest sees eth0.
     await running(page);
@@ -124,47 +171,104 @@ test('the Network menu: a bad URL is refused; connecting starts the client witho
     await onSerial(page, 'ls /sys/cla""ss/net | tr "\\n" " "; echo\n');
     await shows(page, /eth0/);
 
-    // Disconnect: the client stops (the port comes back), the form again; the card stays.
+    // Disconnect: the client stops (the port comes back); the card stays.
     await page.locator('#network summary').click();
     await page.click('#net-disconnect');
     await page.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
-    assert.equal(await page.locator('#net-form').isVisible(), true);
+    assert.equal(await text(page, '#net-setup'), 'Connect…');
     assert.equal(await page.locator('#net-remove').count(), 0, 'the card is always there: nothing to remove');
 
-    // The tailcat kind: the fields swap; a malformed address is refused in the form.
-    await page.selectOption('#net-kind', 'tailcat');
-    assert.equal(await page.locator('#net-control').isVisible(), false);
-    assert.equal(await page.locator('#net-tailcat').isVisible(), true);
+    // tailcat: through a computer of the user's by default; neither choice, or a malformed address, is refused.
+    await wizard(page);
+    await page.click('#net-pick-tailcat');
+    assert.equal(await page.isChecked('#net-tc-exit'), true);
+    assert.equal(await page.isChecked('#net-tc-serve'), false);
+    assert.equal(await visible(page, '#net-tailcat'), true);
+    assert.equal(await visible(page, '#net-tc-relay'), false, 'the serving settings show when serving');
     assert.equal(await page.getAttribute('#net-tailcat', 'type'), 'password', 'the address is a secret');
+    await page.uncheck('#net-tc-exit');
+    assert.equal(await visible(page, '#net-tailcat'), false);
+    await page.click('#net-connect');
+    assert.match(await text(page, '#net-error'), /at least one/);
+    await page.check('#net-tc-exit');
     await page.fill('#net-tailcat', 'tcnot-an-address');
     await page.click('#net-connect');
-    assert.match((await page.locator('#net-error').textContent())!, /isn't a tailcat address/);
+    assert.match(await text(page, '#net-error'), /isn't a tailcat address/);
     assert.equal(await phase(page), 'off');
-    // A well-formed address of a server that isn't there (the rig's relay, another server key): the
-    // client meows unanswered, then gives up with an error; Disconnect brings back the form, the kind remembered.
-    if (tailcatRig) {
+    if (!tailcatRig) {
+      console.log('# SKIPPED: the wizard against a tailcat relay, and serving (WEBPC_TAILCAT=1 and net/ts/build.sh)');
+      await page.click('#net-cancel');
+    } else {
+      // A well-formed address of a server that isn't there (the rig's relay, another server key): the client meows
+      // unanswered, then gives up with an error.
       await page.fill('#net-tailcat', otherServer(tailcatRig));
       await page.click('#net-connect');
-      await page.waitForFunction(() => /Waiting for the tailcat server/.test(document.getElementById('net-status')!.textContent!), null, { timeout: 15_000, polling: 100 })
-        .catch(async (e) => { throw new Error(`${e}; the menu said ${await page.evaluate(() => [document.getElementById('network')!.dataset.phase, document.getElementById('net-status')!.textContent, document.getElementById('net-error')!.textContent])}`); });
-      assert.equal(await page.locator('#net-tailcat').inputValue(), '', 'the address leaves the field');
+      await statusIs(page, /Waiting for the tailcat server/, 15_000);
       await page.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'error', null, { timeout: 30_000, polling: 250 });
-      assert.match((await page.locator('#net-status').textContent())!, /Couldn't connect/);
+      assert.match(await text(page, '#net-status'), /Couldn't connect/);
       assert.ok(!(await settings(page)).includes(tailcatRig.slice(2, 30)), 'the address is never saved');
       await page.click('#net-disconnect');
       await page.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
-      assert.equal(await page.locator('#net-kind').inputValue(), 'tailcat');
-      assert.equal(await page.locator('#net-tailcat').isVisible(), true);
-      assert.equal(await page.locator('#net-tailcat').inputValue(), '');
-    } else console.log('# SKIPPED: the menu against a tailcat relay (WEBPC_TAILCAT=1 and net/ts/build.sh)');
-    assert.equal(JSON.parse(await settings(page)).net.kind, 'tailcat', 'the kind is kept');
-    await page.selectOption('#net-kind', 'tailscale');
-    assert.equal(await page.locator('#net-control').isVisible(), true);
 
-    // A reload: the machine boots with the card, the client isn't started (no key to start it with).
+      // Serving only, on the rig's relay (Advanced): the menu shows the machine's address, and a tailcat client
+      // reaches the guest through it.
+      await wizard(page);
+      await page.click('#net-pick-tailcat');
+      assert.equal(await page.locator('#net-tailcat').inputValue(), '', 'the server address is gone');
+      await page.uncheck('#net-tc-exit');
+      await page.check('#net-tc-serve');
+      await page.click('#net-tc-advanced summary');
+      assert.equal(await page.locator('#net-tc-forget').isDisabled(), true, 'no address to forget yet');
+      await page.fill('#net-tc-relay', 'https://nope/');
+      await page.click('#net-connect');
+      assert.match(await text(page, '#net-error'), /host/);
+      await page.fill('#net-tc-relay', '127.0.0.1:8444');
+      await page.click('#net-connect');
+      await statusIs(page, /Letting tailcat clients in/, 30_000);
+      assert.equal(await visible(page, '#net-served'), true);
+      assert.equal(await page.getAttribute('#net-served-addr', 'type'), 'password');
+      await page.click('#net-served-show');
+      assert.equal(await page.getAttribute('#net-served-addr', 'type'), 'text');
+      const served = await page.locator('#net-served-addr').inputValue();
+      const parsed = JSON.parse(await tailcatCLI(['parse', served], ''));
+      assert.deepEqual(parsed.Region[0].Nodes[0], { HostName: '127.0.0.1', DERPPort: 8444 }, 'the relay given');
+      assert.equal(JSON.parse(await settings(page)).net.autoconnect, true, 'a served machine reconnects by itself');
+      // The guest takes the tunnel's IPv6 address (DHCPv6) and serves a page on it.
+      await page.locator('.xterm').click();
+      await onSerial(page, 'cd /tmp; echo served-page > index.html; (python3 -m http.server --bind :: 8080 >/dev/null 2>&1 &); sleep 2; ip -6 -br addr show scope global | grep -c fd7a; echo READY\n');
+      await shows(page, /1READY/, 60_000); // the rows run together: the count (1), then READY
+      const got = await tailcatCLI([served, '8080'], 'GET /index.html HTTP/1.0\r\n\r\n');
+      assert.match(got, /served-page/, `a tailcat client reaches the guest: ${got.slice(0, 300)}`);
+
+      // A reload: the same address, and connected without asking (the identity and the relay are kept).
+      await page.reload();
+      await running(page);
+      await page.locator('#network summary').click();
+      await statusIs(page, /Letting tailcat clients in/, 60_000);
+      await page.click('#net-served-show');
+      assert.equal(await page.locator('#net-served-addr').inputValue(), served, 'the same address after a reload');
+      // New address: the kept one is forgotten, and Connect serves at another.
+      await page.click('#net-setup');
+      await page.click('#net-pick-tailcat');
+      assert.equal(await page.locator('#net-tc-relay').inputValue(), '127.0.0.1:8444');
+      await page.click('#net-tc-forget');
+      await page.click('#net-connect');
+      await statusIs(page, /Letting tailcat clients in/, 30_000);
+      await page.waitForFunction((old) => (document.getElementById('net-served-addr') as HTMLInputElement).value !== old, served, { timeout: 10_000 });
+      await page.click('#net-disconnect');
+      await page.waitForFunction(() => document.getElementById('network')!.dataset.phase === 'off', null, { timeout: 10_000 });
+      assert.deepEqual(dialogs.length, 1, `New address asked first: ${dialogs}`);
+      dialogs.length = 0;
+      await page.locator('#network summary').click();
+      await wizard(page);
+      await page.click('#net-pick-tailnet');
+      await page.click('#net-cancel');
+    }
+
+    // A reload: the machine boots with the card, the tailnet client isn't started (no key to start it with).
     await page.reload();
-    assert.match((await page.locator('#net-hint').textContent())!, /auth key/i);
-    assert.equal(await page.locator('#net-control').inputValue(), 'http://127.0.0.1:1');
+    await page.locator('#network summary').click();
+    assert.match(await text(page, '#net-hint'), /auth key/i);
     assert.equal(await phase(page), 'off');
     await running(page);
     await onSerial(page, 'root\n');

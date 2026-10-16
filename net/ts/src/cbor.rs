@@ -1,6 +1,7 @@
 //! The little CBOR (RFC 8949) a tailcat address needs: definite-length maps,
 //! arrays, byte and text strings, integers and booleans. Anything else is an
 //! error, as are indefinite lengths and nesting deeper than a few levels.
+//! `encode` writes the same subset, with the shortest heads (RFC 8949 §4.2.1).
 
 use std::collections::BTreeMap;
 
@@ -101,6 +102,63 @@ fn item(b: &[u8], at: &mut usize, depth: usize) -> Result<Value, String> {
     }
 }
 
+fn head(out: &mut Vec<u8>, major: u8, n: u64) {
+    let m = major << 5;
+    match n {
+        0..=23 => out.push(m | n as u8),
+        24..=0xff => out.extend_from_slice(&[m | 24, n as u8]),
+        0x100..=0xffff => {
+            out.push(m | 25);
+            out.extend_from_slice(&(n as u16).to_be_bytes());
+        }
+        0x1_0000..=0xffff_ffff => {
+            out.push(m | 26);
+            out.extend_from_slice(&(n as u32).to_be_bytes());
+        }
+        _ => {
+            out.push(m | 27);
+            out.extend_from_slice(&n.to_be_bytes());
+        }
+    }
+}
+
+/// Encodes `v` (map keys in `BTreeMap` order).
+pub fn encode(v: &Value) -> Vec<u8> {
+    let mut out = Vec::new();
+    encode_into(&mut out, v);
+    out
+}
+
+fn encode_into(out: &mut Vec<u8>, v: &Value) {
+    match v {
+        Value::Uint(n) => head(out, 0, *n),
+        Value::Nint(n) => head(out, 1, (-1 - *n) as u64),
+        Value::Bytes(b) => {
+            head(out, 2, b.len() as u64);
+            out.extend_from_slice(b);
+        }
+        Value::Text(t) => {
+            head(out, 3, t.len() as u64);
+            out.extend_from_slice(t.as_bytes());
+        }
+        Value::Array(a) => {
+            head(out, 4, a.len() as u64);
+            for x in a {
+                encode_into(out, x);
+            }
+        }
+        Value::Map(m) => {
+            head(out, 5, m.len() as u64);
+            for (k, x) in m {
+                encode_into(out, &Value::Text(k.clone()));
+                encode_into(out, x);
+            }
+        }
+        Value::Bool(b) => out.push(if *b { 0xf5 } else { 0xf4 }),
+        Value::Null => out.push(0xf6),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +176,18 @@ mod tests {
             m["c"],
             Value::Array(vec![Value::Nint(-1), Value::Bool(true)])
         );
+    }
+
+    #[test]
+    fn encodes_what_it_decodes() {
+        let b = [
+            0xa3, 0x61, b'a', 0x18, 0x64, 0x61, b'b', 0x42, 1, 2, 0x61, b'c', 0x82, 0x20, 0xf5,
+        ];
+        assert_eq!(encode(&decode(&b).unwrap()), b);
+        for n in [0, 23, 24, 255, 256, 65535, 65536, u32::MAX as u64 + 1] {
+            assert_eq!(decode(&encode(&Value::Uint(n))).unwrap(), Value::Uint(n));
+        }
+        assert_eq!(encode(&Value::Uint(500)), [0x19, 1, 0xf4]);
     }
 
     #[test]

@@ -546,6 +546,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   instead of falling back to IPv4 (found on the dev VM, which has no IPv6 route). A fix in the client: probe the exit
   node's IPv6 reach once Running (a DNS query to `2606:4700:4700::1111` through the tunnel) and lease the guest no IPv6
   default route if it doesn't answer, keeping the tunnel address for the server's own `fd7a:` services.
+- **tailcat serving loose ends** (T3): no `--allow` list (any key with the address gets in, as with tailcat's own
+  default; the module would check the meowing key); clients are never dropped (64 WireGuard peers at most, until
+  Disconnect); disco pings aren't answered, so `tailcat ping` gets no pong (the data path works); the public-relay
+  path (`nearestRegion`, the short-form address) is checked by unit tests and by hand against tailcat.dev's map
+  and probes (they answer with CORS), never by a client through the public relays (opt-in by hand: serve with an
+  empty relay, `tailcat ssh` from a machine with the internet); `tailcat ssh` itself wasn't run (the port path it
+  uses is, with a web server in the guest); keeping the client's key when going online through a server (so a
+  server can `--allow` it) isn't offered: serving uses the kept key, going online alone a fresh one.
 - **tailcat loose ends** (T2): an address that names only a region (tailcat's public relays) fetches
   `https://tailcat.dev/derpmap.json`, parsed in unit tests but never run against the real map (opt-in by hand:
   `tailcat serve exit-node` with no `--key` on a machine with the internet); the relay's loss while running is

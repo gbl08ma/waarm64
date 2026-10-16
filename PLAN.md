@@ -145,8 +145,9 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     Tailscale backend are built (a VM reaches its tailnet and, through an exit node, the internet);
     left: **IPv6** (required), the card for Alpine. More backends besides Tailscale are wanted
     later behind the same gateway; our own client (a Rust wasm module on tailscale-rs's protocol
-    crates, tailcat first: [docs/plans/tailnet-client.md](docs/plans/tailnet-client.md), proposed)
-    is meant to replace the Go one.
+    crates, tailcat first: [docs/plans/tailnet-client.md](docs/plans/tailnet-client.md); T1 to T3
+    done: tailcat on the page, the VM as a tailcat server; T4, the control session, next) is meant
+    to replace the Go one.
   - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): **virtio-gpu 2D is done (G0 and
     G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
     first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device

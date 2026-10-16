@@ -262,7 +262,7 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   destinations, so no local server can stand in for the internet. Left, only if cheap: the menu's
   login-URL and approval states in Chromium against headscale. `ci-net.sh` stays separate from
   `ci.sh` (the user, 2026-09-30: only when a change touches the network).
-- Later: our own client with tailcat and Tailscale (T1 to T6 in [tailnet-client.md](tailnet-client.md), proposed; it replaces §5) and §6 (WebRTC), and further backends, each behind the same interfaces.
+- Later: our own client with tailcat and Tailscale (T1 to T6 in [tailnet-client.md](tailnet-client.md), T1 to T3 done; it replaces §5) and §6 (WebRTC), and further backends, each behind the same interfaces.
 
 ## 8. Open questions
 

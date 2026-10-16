@@ -635,9 +635,16 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
 
 ## Network
 
-The header's **Network** menu (machines with a `network` entry in machine.ts: Debian) connects the
-machine's network card to a Tailscale network (docs/plans/networking.md; the backend is
-web/tailscale.ts, the client in its own worker), or to a tailcat server (below).
+The header's **Network** menu (machines with a `network` entry in machine.ts: Debian) shows the
+machine's connection and what can be done with it; its **Connect…** (or, while connected,
+**Change…**) opens the **Network wizard**, a dialog: first the choice, **A tailnet** (a Tailscale
+network, docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker) or
+**tailcat** (below), then that kind's settings, with Back, Cancel (or Esc) and Connect. Form errors
+show in the wizard; Connect closes it (stopping a running client first) and opens the menu, which
+then says how the connection goes. The menu holds only what applies to the current connection:
+the status, **Log in…**, **Internet through** (a tailnet's exit nodes), **This machine's tailcat
+address** (when it lets clients in), **Disconnect**, **Log out**; the wizard has room for options
+to come (a custom relay is the first, under tailcat's **Advanced**).
 
 - **The card is always there** (`machine.network`): virtio-net on the Ethernet gateway from the
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
@@ -657,7 +664,7 @@ web/tailscale.ts, the client in its own worker), or to a tailcat server (below).
   admin console has the setting): reach peers' IPv6 addresses by address, or turn it on. The machine worker gets `ip`, the gateway's end of an IP port, and adds
   `{type: 'net', adapter: {ip}}` (docs/devices.md "net"); the page keeps the other end
   (web/app/network.ts) for as long as no client holds it.
-- **Connect** takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
+- **A tailnet** takes a control server (empty: Tailscale's; a Headscale's `https://` URL, or
   `http://` for this computer), a hostname (default `webpc`) and an optional auth key (a password field with a "Show the auth key" checkbox).
 - **Login:** without an auth key the client asks the control server for a login and the menu opens
   with a **Log in…** link (a new tab; only `http(s)` URLs are ever offered); the client comes up
@@ -673,17 +680,33 @@ web/tailscale.ts, the client in its own worker), or to a tailcat server (below).
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected.
-- **tailcat** (docs/plans/tailnet-client.md §4, T2): **Connect to** "A tailcat server" swaps the form's fields for a **tailcat address** (a
-  password field; a secret, never saved, so nothing reconnects by itself) and a line on what to
-  run: `tailcat serve exit-node` on a computer of the user's. The Rust tailnet client
-  (web/tailcat.ts, web/tailcat-worker.ts, net/ts) connects through the address's DERP relay; the
-  status goes Loading the client, Connecting to the relay, Waiting for the tailcat server, Opening
-  the tunnel, then **Connected through the tailcat server (192.0.0.2)**. The guest's lease: IPv4
-  `192.0.0.2` (translated to the tunnel's IPv6 by the client, NAT64 to the exit node), IPv6 the
-  tunnel's own `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1 and 2606:4700:4700::1111
-  (reached through the exit node). What the guest reaches is TCP and UDP to wherever that computer
-  reaches, its LAN included; no ping beyond it, no inbound connections, no exit-node choice, no
-  Log out (Disconnect forgets the address).
+- **tailcat** (docs/plans/tailnet-client.md §4, T2 and T3) has two choices, either or both:
+  - **Go online through a computer of mine** (the default): a **tailcat address** (a password
+    field; a secret, never saved) and a line on what to run: `tailcat serve exit-node` on a
+    computer of the user's. The Rust tailnet client (web/tailcat.ts, web/tailcat-worker.ts,
+    net/ts) connects through the address's DERP relay; the status goes Loading the client,
+    Connecting to the relay, Waiting for the tailcat server, Opening the tunnel, then **Connected
+    through the tailcat server (192.0.0.2)**. The guest's lease: IPv4 `192.0.0.2` (translated to
+    the tunnel's IPv6 by the client, NAT64 to the exit node), IPv6 the tunnel's own
+    `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1 and 2606:4700:4700::1111 (reached
+    through the exit node). What the guest reaches is TCP and UDP to wherever that computer
+    reaches, its LAN included; no ping beyond it, no exit-node choice, no Log out.
+  - **Let tailcat clients in to this machine** (T3): the machine is a tailcat server. The menu
+    shows **its own tailcat address** (a password field with Show and Copy) and how to use it:
+    on another computer, `tailcat ssh <address>` logs in to the guest's sshd (tailcat runs `ssh`
+    with `tailcat <address> 22` as its ProxyCommand) and `tailcat <address> <port>` reaches any
+    port the guest listens on. Clients reach the guest at its tunnel IPv6 address, untranslated,
+    from their own (the client drops anything else); there's no filter beyond the guest's own.
+    The address is **kept**: the node key and the address's pre-shared key live in this origin's
+    IndexedDB (`webpc-tailcat`, `identity`/`served`), so it's the same after a reload, and a
+    machine that serves without a server to go online through **reconnects by itself** on load
+    (`autoconnect`). **Advanced**: the **relay for clients** when not going online through a
+    computer (that computer's relay serves otherwise): empty for tailcat's public relays, the
+    region with the fastest `/derp/probe` (`nearestRegion`, as tailcat's own server picks; the
+    map's first if none answers), or one's own derper's `host[:port]`; and **New address**, which
+    forgets the kept identity (after a confirmation), so the old address stops working at the
+    next Connect. Serving alone, the guest gets the same lease without resolvers: it reaches only
+    the clients. The status says **Letting tailcat clients in** (or adds it to the exit node's).
 - **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
   `0.0.0.0/0` routes) the menu shows **Internet through** with them and "Nothing: directly". Picking one
   calls the client's `setExitNode(id)` (`ipn.Prefs.ExitNodeID` through `lb.EditPrefs`; the id is the
@@ -701,17 +724,17 @@ web/tailscale.ts, the client in its own worker), or to a tailcat server (below).
   (`dialer.NetstackDialTCP/UDP`, a browser has no OS network) with
   `CheckLocalTransportEndpoints`, so the replies to them, addressed to the node's IP, which is the
   guest's too, go to the netstack and everything else to the guest.
-- Settings (`webpc.settings` `net`): `controlURL`, `hostname`, `autoconnect`,
-  `keyed`, `exitNode`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
+- Settings (`webpc.settings` `net`): `kind` (`tailscale` or `tailcat`), `controlURL`, `hostname`, `autoconnect`,
+  `keyed`, `exitNode`, `tailcatExit`, `tailcatServe`, `tailcatRelay`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
 - **The client is built by the servers:** `npm run serve` and `npm start` run `tools/tailscale.ts` first: it builds `net/tailscale` with `net/tailscale/build.sh` into `target/net/tailscale.wasm` (and `wasm_exec.js`) when they're missing or a hash of `net/tailscale`'s files (stamp `tailscale.wasm.inputs`) changed, ~30 s to ~1 min the first time (Go downloads its toolchain and modules). It never stops the server: without Go, or if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `WEBPC_TAILSCALE=0` skips it. `scripts/ci-net.sh` runs it as a step so the Network menu's and the tailnet's tests find the client.
 - **The control server must answer `GET /key` with CORS headers** (docs/plans/networking.md N4):
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
   tests/net-guest.test.ts (Debian with the card on the echo backend: it configures itself and
-  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver), tests/page-network.test.ts (the menu: both kinds' form errors, a tailcat server that never answers), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine).
-  Not tested: the menu's DOM and a real interactive login (they need a control server that serves
-  one; the docs/backlog.md "Network" entry says what's missing).
+  pings, and takes a lease that arrives after the boot; no tailnet), tests/net-tailnet.test.ts (the same guest on a headscale tailnet, opt-in; its peer is an exit node: the guest reaches a server on the host only through it, and its DNS is answered by the exit node's resolver), tests/page-network.test.ts (the wizard and the menu: both kinds' form errors, a tailcat server that never answers, a served machine on the test relay reached by the tailcat CLI, its address kept over a reload, New address), tests/net-tailcat.test.ts (Debian through a tailcat exit node on this machine, serving at the same time: the CLI fetches a page from the guest).
+  Not tested: a real interactive login and the menu's login states in a browser (they need a
+  control server that serves one; the docs/backlog.md "Network" entry says what's missing).
 
 ## The end-to-end test
 

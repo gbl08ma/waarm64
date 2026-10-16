@@ -28,7 +28,9 @@ PROXY=webpc-proxy
 hs() { podman exec "$HS" headscale "$@"; }
 peerts() { podman exec "$PEER" tailscale --socket=/tmp/ts.sock "$@"; }
 
-authkey() { hs preauthkeys create -u 1 --reusable --ephemeral -e 24h -o json | sed -n 's/.*"key": *"\([^"]*\)".*/\1/p'; }
+# The guest's keys are ephemeral (`key`); the peer's isn't (`authkey lasting`): headscale deletes an ephemeral node
+# that drops off for a moment, and a loaded machine made the peer do that during setup.
+authkey() { hs preauthkeys create -u 1 --reusable $([ "${1:-}" = lasting ] || echo --ephemeral) -e 24h -o json | sed -n 's/.*"key": *"\([^"]*\)".*/\1/p'; }
 
 env_() {
 	echo "WEBPC_TS_CONTROL=https://127.0.0.1:$PORT"
@@ -113,18 +115,23 @@ https://127.0.0.1:$PORT {
 CADDY
 	podman run -d --name "$HS" --network host -v "$DIR/config:/etc/headscale" -v "$DIR/lib:/var/lib/headscale" "$HS_IMAGE" serve >/dev/null
 	podman run -d --name "$PROXY" --network host -v "$DIR/config/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$DIR/config/tls:/etc/caddy/tls:ro" "$CADDY_IMAGE" >/dev/null
-	for _ in $(seq 40); do
-		curl -sf --cacert "$DIR/config/tls/ca.pem" "https://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break
+	# Generous waits, each failing loudly: scripts/ci-net.sh starts this beside Debian boots, and under that load a
+	# 20 s wait passed silently with headscale not up, so the user, the key and the peer never were.
+	healthy=
+	for _ in $(seq 120); do
+		curl -sf --cacert "$DIR/config/tls/ca.pem" "https://127.0.0.1:$PORT/health" >/dev/null 2>&1 && { healthy=1; break; }
 		sleep 0.5
 	done
-	hs users create tailnet >/dev/null
+	[ -n "$healthy" ] || { echo "tailnet: headscale didn't come up:" >&2; podman logs --tail 20 "$HS" >&2; exit 1; }
+	for _ in $(seq 20); do hs users create tailnet >/dev/null 2>&1 && break; sleep 1; done
 	podman run -d --name "$PEER" --network host -v "$DIR/config/tls/ca.pem:/ca.pem:ro" -e SSL_CERT_FILE=/ca.pem \
-		-e TS_AUTHKEY="$(authkey)" -e TS_HOSTNAME=peer -e TS_USERSPACE=true -e TS_STATE_DIR=/var/lib/tailscale \
+		-e TS_AUTHKEY="$(authkey lasting)" -e TS_HOSTNAME=peer -e TS_USERSPACE=true -e TS_STATE_DIR=/var/lib/tailscale \
 		-e TS_SOCKET=/tmp/ts.sock -e TS_EXTRA_ARGS="--login-server=https://127.0.0.1:$PORT --advertise-exit-node" "$TS_IMAGE" >/dev/null
-	for _ in $(seq 60); do
+	for _ in $(seq 180); do
 		peerts ip -4 >/dev/null 2>&1 && break
 		sleep 0.5
 	done
+	peerts ip -4 >/dev/null 2>&1 || { echo "tailnet: the peer didn't join:" >&2; podman logs --tail 20 "$PEER" >&2; exit 1; }
 	# The peer is the tailnet's exit node once an admin approves the routes it advertises.
 	for _ in $(seq 30); do
 		hs nodes list-routes 2>/dev/null | grep -q '0\.0\.0\.0/0' && break

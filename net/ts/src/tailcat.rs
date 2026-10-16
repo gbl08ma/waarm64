@@ -24,9 +24,14 @@ impl DerpNode {
     /// The WebSocket URL of the node's DERP service (Go's derphttp client in
     /// js/wasm uses the same: https on the node's port, path /derp).
     pub fn url(&self) -> String {
+        let host = if self.host_name.contains(':') {
+            format!("[{}]", self.host_name)
+        } else {
+            self.host_name.clone()
+        };
         match self.derp_port {
-            0 | 443 => format!("wss://{}/derp", self.host_name),
-            p => format!("wss://{}:{p}/derp", self.host_name),
+            0 | 443 => format!("wss://{host}/derp"),
+            p => format!("wss://{host}:{p}/derp"),
         }
     }
 
@@ -126,6 +131,69 @@ pub fn parse_addr(addr: &str) -> Result<ConnInfo, String> {
     })
 }
 
+/// The `tc…` address of a server with these keys and relay (what `tailcat serve` prints):
+/// the region's nodes when there are any, its ID in the public map otherwise.
+pub fn encode_addr(ci: &ConnInfo) -> String {
+    let b = |k: &[u8; 32]| Value::Bytes(k.to_vec());
+    let mut m = BTreeMap::new();
+    m.insert("p".to_string(), b(&ci.server));
+    if let Some(k) = &ci.server_disco {
+        m.insert("k".into(), b(k));
+    }
+    if let Some(k) = &ci.psk {
+        m.insert("q".into(), b(k));
+    }
+    if ci.nodes.is_empty() {
+        m.insert("i".into(), Value::Uint(ci.region_id.max(0) as u64));
+    } else {
+        let nodes = ci
+            .nodes
+            .iter()
+            .map(|n| {
+                let mut w = BTreeMap::new();
+                w.insert("h".to_string(), Value::Text(n.host_name.clone()));
+                if !n.cert_name.is_empty() {
+                    w.insert("t".into(), Value::Text(n.cert_name.clone()));
+                }
+                if n.derp_port != 0 {
+                    w.insert("d".into(), Value::Uint(n.derp_port as u64));
+                }
+                Value::Map(w)
+            })
+            .collect();
+        // No region ID: an inline region needs none (`tailcat genkey --region=<host>` writes none).
+        let mut r = BTreeMap::new();
+        r.insert("N".to_string(), Value::Array(nodes));
+        m.insert("r".into(), Value::Array(vec![Value::Map(r)]));
+    }
+    format!(
+        "tc{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(cbor::encode(&Value::Map(m)))
+    )
+}
+
+/// A relay as the user types it: `host` or `host:port` (IPv6 in brackets).
+pub fn parse_relay(s: &str) -> Result<DerpNode, String> {
+    let s = s.trim();
+    let (host, port) = match s.rsplit_once(':') {
+        Some((h, p)) if !h.ends_with(':') && !p.contains(']') => (
+            h,
+            p.parse::<u16>()
+                .map_err(|_| format!("{s}: the port isn't a number"))?,
+        ),
+        _ => (s, 443),
+    };
+    let host = host.trim_start_matches('[').trim_end_matches(']');
+    if host.is_empty() || host.contains(['/', ' ', '@']) {
+        return Err(format!("{s}: not a host name or host:port"));
+    }
+    Ok(DerpNode {
+        host_name: host.into(),
+        cert_name: String::new(),
+        derp_port: if port == 443 { 0 } else { port },
+    })
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct DerpMapJson {
@@ -152,10 +220,20 @@ struct NodeJson {
     stun_only: bool,
 }
 
-/// The nodes of region `id` in a DERP map (Tailscale's JSON `tailcfg.DERPMap`).
-pub fn region_nodes(derp_map: &[u8], id: i64) -> Result<Vec<DerpNode>, String> {
+/// The nodes of region `id` in a DERP map (Tailscale's JSON `tailcfg.DERPMap`); id 0 is the
+/// region with the lowest ID, whose ID comes back too.
+pub fn region_nodes(derp_map: &[u8], id: i64) -> Result<(i64, Vec<DerpNode>), String> {
     let dm: DerpMapJson =
         serde_json::from_slice(derp_map).map_err(|e| format!("the DERP map: {e}"))?;
+    let id = match id {
+        0 => dm
+            .regions
+            .keys()
+            .filter_map(|k| k.parse::<i64>().ok())
+            .min()
+            .ok_or("the DERP map has no regions")?,
+        id => id,
+    };
     let r = dm
         .regions
         .get(&id.to_string())
@@ -173,7 +251,7 @@ pub fn region_nodes(derp_map: &[u8], id: i64) -> Result<Vec<DerpNode>, String> {
     if nodes.is_empty() {
         return Err(format!("region {id} of the DERP map has no DERP nodes"));
     }
-    Ok(nodes)
+    Ok((id, nodes))
 }
 
 /// The tunnel address of a node key: Tailscale's ULA prefix and the key's first 80 bits.
@@ -201,6 +279,9 @@ pub fn meow_ping(node: &[u8; 32], disco: &[u8; 32]) -> Vec<u8> {
     b.extend_from_slice(disco);
     b
 }
+
+/// The server's answer to a hello.
+pub const MEOWED: &[u8] = b"meow\x02";
 
 pub fn is_meowed(p: &[u8]) -> bool {
     p.len() >= 5 && is_meow(p) && p[4] == MEOW_PONG
@@ -282,15 +363,53 @@ mod tests {
     #[test]
     fn reads_a_region_from_a_derp_map() {
         let dm = br#"{"Regions":{"7":{"RegionID":7,"Nodes":[{"Name":"7s","HostName":"stun.x","STUNOnly":true},{"Name":"7a","HostName":"d.x","DERPPort":8443}]}}}"#;
-        assert_eq!(
-            region_nodes(dm, 7).unwrap(),
-            vec![DerpNode {
-                host_name: "d.x".into(),
-                cert_name: String::new(),
-                derp_port: 8443
-            }]
-        );
+        let d = vec![DerpNode {
+            host_name: "d.x".into(),
+            cert_name: String::new(),
+            derp_port: 8443,
+        }];
+        assert_eq!(region_nodes(dm, 7).unwrap(), (7, d.clone()));
         assert!(region_nodes(dm, 8).is_err());
+        let two = br#"{"Regions":{"12":{"Nodes":[{"HostName":"e.x"}]},"7":{"Nodes":[{"HostName":"d.x","DERPPort":8443}]}}}"#;
+        assert_eq!(
+            region_nodes(two, 0).unwrap(),
+            (7, d),
+            "the lowest ID, not the first key"
+        );
+    }
+
+    #[test]
+    fn encodes_addresses_that_parse_back() {
+        let mut ci = parse_addr(ADDR).unwrap();
+        assert_eq!(parse_addr(&encode_addr(&ci)).unwrap(), ci);
+        ci.nodes[0].derp_port = 8443;
+        assert_eq!(parse_addr(&encode_addr(&ci)).unwrap(), ci);
+        // The short form: a region of the public map.
+        ci.nodes.clear();
+        ci.region_id = 2;
+        ci.psk = None;
+        let short = encode_addr(&ci);
+        assert_eq!(parse_addr(&short).unwrap(), ci);
+    }
+
+    #[test]
+    fn parses_relays() {
+        let n = |h: &str, p| DerpNode {
+            host_name: h.into(),
+            cert_name: String::new(),
+            derp_port: p,
+        };
+        assert_eq!(
+            parse_relay("derp.example.com").unwrap(),
+            n("derp.example.com", 0)
+        );
+        assert_eq!(parse_relay("127.0.0.1:8443").unwrap(), n("127.0.0.1", 8443));
+        assert_eq!(parse_relay("d.x:443").unwrap(), n("d.x", 0));
+        assert_eq!(parse_relay("[::1]:8443").unwrap(), n("::1", 8443));
+        assert_eq!(n("::1", 8443).url(), "wss://[::1]:8443/derp");
+        assert!(parse_relay("").is_err());
+        assert!(parse_relay("https://d.x/").is_err());
+        assert!(parse_relay("d.x:port").is_err());
     }
 
     #[test]

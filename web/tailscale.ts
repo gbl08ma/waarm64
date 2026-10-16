@@ -18,6 +18,9 @@ export type NetMap = {
   exitNode: string;
   /** Not a tailnet: the guest's network goes through a tailcat server (web/tailcat.ts). */
   via?: 'tailcat';
+  /** tailcat: whether an exit node carries the guest's traffic, and the machine's own address when it lets clients in. */
+  tailcatExit?: boolean;
+  serving?: string;
 };
 
 export type TailscaleConfig = {

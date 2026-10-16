@@ -204,3 +204,45 @@ test('a tailcat connection: the address goes to the tailcat client, not the Tail
   ts.clients[0].setState('Starting');
   assert.equal(net.view().text, 'Connecting…');
 });
+
+test('a served machine (tailcat T3): serving alone or beside a tailcat server; the view shows its address', async () => {
+  const { netmapOf } = await import('../web/tailcat.ts');
+  const ts = fake();
+  const cats: { config: { addr: string; serve?: { relay: string } }; setState(s: string, nm?: NetMap): void }[] = [];
+  const startCat = (config: { addr: string; serve?: { relay: string }; ip?: MessagePort }, onEvent: (m: FromTailscale) => void): Tailscale => {
+    let state = '';
+    let nm: NetMap | undefined;
+    let held = config.ip;
+    cats.push({ config: { addr: config.addr, serve: config.serve }, setState(s, n) { state = s; nm = n; onEvent({ type: 'state', state: s }); } });
+    return {
+      state: () => state, netmap: () => nm, loginURL: () => undefined, running: new Promise<NetMap>(() => {}), timings: () => ({}),
+      attach: (ip) => { held = ip; }, detach: async () => { const h = held; held = undefined; return h; },
+      setExitNode: async () => { throw new Error('no'); }, logout: async () => {}, close: () => {},
+    };
+  };
+  const net = createNetwork(() => {}, ts.start, startCat);
+  net.port();
+  const lease = { address: [192, 0, 0, 2], address6: [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mtu: 1280, dns: [], dns6: [], domains: [] };
+  // Serving only: no address to connect to; the relay goes to the client.
+  net.connect({ controlURL: '', hostname: '', tailcatServe: { relay: '127.0.0.1:8443' } });
+  assert.deepEqual(ts.log, []);
+  assert.deepEqual(cats[0].config, { addr: '', serve: { relay: '127.0.0.1:8443' } });
+  cats[0].setState('Running', netmapOf(lease, 'tcSERVED', false));
+  assert.deepEqual(net.view(), { phase: 'connected', exitNodes: [], text: 'Letting tailcat clients in', served: 'tcSERVED' });
+  await net.disconnect();
+  assert.equal(net.view().served, undefined);
+  // Beside a tailcat server: both said.
+  net.connect({ controlURL: '', hostname: '', tailcat: 'tcEXIT', tailcatServe: { relay: '' } });
+  assert.deepEqual(cats[1].config, { addr: 'tcEXIT', serve: { relay: '' } });
+  cats[1].setState('Running', netmapOf(lease, 'tcSERVED'));
+  assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], text: 'Connected through the tailcat server (192.0.0.2), letting tailcat clients in', served: 'tcSERVED' });
+});
+
+test('relays: a host or host:port, nothing that looks like a URL', async () => {
+  const { parseRelay } = await import('../web/app/network.ts');
+  assert.deepEqual(parseRelay(''), { relay: '' });
+  assert.deepEqual(parseRelay(' derp.example.com '), { relay: 'derp.example.com' });
+  assert.deepEqual(parseRelay('127.0.0.1:8443'), { relay: '127.0.0.1:8443' });
+  assert.deepEqual(parseRelay('[fd00::1]:8443'), { relay: '[fd00::1]:8443' });
+  for (const bad of ['https://derp.example.com', 'derp.example.com/derp', 'a b', 'host:port']) assert.ok('error' in parseRelay(bad), bad);
+});

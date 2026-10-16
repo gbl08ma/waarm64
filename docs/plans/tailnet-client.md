@@ -1,7 +1,8 @@
 # Our own Tailscale client, and tailcat (proposed, not scheduled)
 
-**Status:** accepted 2026-10-16 (the user: all the dependencies it needs are fine). **T1 and T2
-done** (the module and tailcat in Node, measured; tailcat on the page, Debian through it: §7). It continues
+**Status:** accepted 2026-10-16 (the user: all the dependencies it needs are fine). **T1, T2 and
+T3 done** (the module and tailcat in Node, measured; tailcat on the page, Debian through it; the
+VM as a tailcat server, and the page's Network wizard: §7). **Next: T4** (`M8-TAILNET-CLIENT-HANDOVER.md`). It continues
 [networking.md](networking.md) (its §5, "Later: tailscale-rs"), which holds the decisions that
 stay: frames at the device, the Ethernet gateway (§3), the IP-packet port, the guest as the node.
 What exists: `net/ts/` (the module), `web/ts-client.ts` and `web/ts-wasi.ts` (its I/O),
@@ -196,7 +197,7 @@ wasm is fast enough for netmaps.
   short how-to (`tailcat serve exit-node` on a machine of yours; your own derper for speed), and
   the same status lines.
 - **Tests, without the internet:** `tests/net/tailcat.sh up|env|down` runs `derper` on
-  `127.0.0.1:8443` (a self-signed certificate for the address) and `tailcat serve exit-node` on it,
+  `127.0.0.1:8444` (a self-signed certificate for the address) and `tailcat serve exit-node` on it,
   both native: Go builds them once at pinned versions (derper has no official image, and native
   binaries run in a cloud session too). The relay is an IP so the address carries its port (the
   key file's region is edited; `--region=` takes a dotted host name only). The servers the guest
@@ -314,12 +315,32 @@ not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s).
   machine has no IPv6 route out, the guest's IPv6 connections to the internet are accepted by
   tailcat's netstack and then closed empty, so a client that prefers IPv6 (curl) fails instead of
   falling back (docs/backlog.md "Network").
-- **T3 — Optional: the VM as a tailcat server.** The module answers meows (accepting clients,
-  optionally only `--allow`ed keys), and the page shows the VM's own `tc…` address: anyone with
-  the tailcat CLI runs `tailcat ssh tc…` (port 22 of the guest's sshd) or `tailcat tc… 8080`.
-  The guest's IPv6 address *is* the server address, so packets go straight in; the filter
-  admits only connections to the guest from clients. Small once T1 exists; do it if the user
-  wants it.
+- **T3 — The VM as a tailcat server (done 2026-10-16; the user wanted it).** The module answers
+  meows and the page shows the VM's own `tc…` address: anyone with the tailcat CLI runs
+  `tailcat ssh tc…` (port 22 of the guest's sshd) or `tailcat tc… 8080`. The guest's IPv6
+  address *is* the server address, so packets go straight in. *Built:* `Config.serve` (the
+  address's pre-shared key; the relay without an exit node: nodes, or a region of the map by ID)
+  in `client.rs`: a meowing key becomes a WireGuard peer (up to 64), its packets reach the guest
+  only from its own tunnel address, the guest's IPv6 to a client's address goes to that client
+  and anything else to the exit node (or nowhere, serving alone); the disco key is derived from
+  the node key (BLAKE2s), so a kept key is a kept address; `tailcat::encode_addr` writes the
+  address (inline nodes for one's own relay, the short region form for the public map),
+  `parse_relay` reads `host[:port]`. Serving works alone (the machine reaches only its clients)
+  or beside an exit node (on its relay). The page keeps the identity in IndexedDB
+  (`webpc-tailcat`) and picks the public map's nearest region by timing each relay's
+  `/derp/probe` (it sends CORS headers, as the map does). **The Network wizard** came with it
+  (the user's request): the menu's form had outgrown a popup, so a dialog picks a tailnet or
+  tailcat and takes the settings, and the menu keeps only the current connection
+  (frontend.md "Network"). *Tests:* `cargo test` (a fake tailcat client meows, handshakes and
+  reaches the guest; spoofed sources, unknown destinations and keys that never meowed get
+  nothing through; beside an exit node; a kept key keeps the address; addresses round-trip;
+  planted: the source check removed fails it), `tests/net-tailcat.test.ts` (the real tailcat
+  CLI parses the VM's address and fetches a page from a server in the guest, the VM online
+  through the exit node at the same time), `tests/page-network.test.ts` (serving alone on the
+  test relay from the wizard, the CLI reaching the guest, the same address after a reload,
+  New address). *Found:* a test must never run the CLI with `spawnSync`: the test process
+  serves the page's disk, and the guest's server read it lazily while the CLI waited on the
+  guest (a 60 s timeout that looked like a routing bug). Module: 493 KB raw (from 460).
 - **T4 — The control session in Node against headscale.** Key fetch, Noise over WebSocket,
   HTTP/2 (the `h2` question settled by size), registration with an auth key, the map stream
   parsed into peers, routes and the filter, the kept node's store read and written. Tests: the

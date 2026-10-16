@@ -1,16 +1,20 @@
 // The tailcat backend from the page's side (docs/plans/tailnet-client.md §4):
 // the guest's network through a tailcat server (`tailcat serve exit-node` on a
 // computer of the user's) instead of a tailnet, by the Rust tailnet client
-// (net/ts) in its own worker (web/tailcat-worker.ts). The handle is the Go
-// Tailscale client's (`Tailscale`, web/tailscale.ts), so the page's network
-// controller drives either; what a tailcat server doesn't have (exit nodes,
-// logging out) is refused.
+// (net/ts) in its own worker (web/tailcat-worker.ts); and the VM as a tailcat
+// server (T3): clients with its address (`tailcat ssh tc…`) reach the guest.
+// The handle is the Go Tailscale client's (`Tailscale`, web/tailscale.ts), so
+// the page's network controller drives either; what a tailcat server doesn't
+// have (exit nodes, logging out) is refused.
 import type { Lease } from './gateway.ts';
 import type { FromTailscale, NetMap, Tailscale } from './tailscale.ts';
 
 export type TailcatConfig = {
-  /** The `tc…` address the server printed: a secret (it lets anyone who has it in). */
+  /** The `tc…` address the server printed: a secret (it lets anyone who has it in). Empty: serve only. */
   addr: string;
+  /** Let tailcat clients in to the guest; `relay`, when there's no `addr`: one's own derper (`host[:port]`), or empty
+   * for tailcat's public relays (the nearest region). The machine's address is kept (`webpc-tailcat` in IndexedDB). */
+  serve?: { relay: string };
   /** The DERP map for an address that names only a region (default: tailcat's public map). */
   derpMapURL?: string;
   /** Where target/net/ts.wasm is served from (default: this checkout's target/net). */
@@ -21,7 +25,7 @@ export type TailcatConfig = {
 
 /** Messages to the worker. */
 export type ToTailcat =
-  | { type: 'start'; wasm: string; addr: string; derpMapURL?: string; ip: MessagePort }
+  | { type: 'start'; wasm: string; addr: string; serve?: { relay: string }; derpMapURL?: string; ip: MessagePort }
   | { type: 'attach'; ip: MessagePort }
   | { type: 'detach' };
 
@@ -47,10 +51,77 @@ const v6text = (b: number[]) => {
   return `${groups.slice(0, best[0]).join(':')}::${groups.slice(best[0] + best[1]).join(':')}`;
 };
 
+/** A relay as typed: `host` or `host:port`, or an error to show (the module checks it again). */
+export function parseRelay(input: string): { relay: string } | { error: string } {
+  const s = input.trim();
+  if (!s) return { relay: '' };
+  if (!/^(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9.-]+)(:\d{1,5})?$/.test(s)) return { error: 'A relay is a host name, or host:port (your derper; no https://).' };
+  return { relay: s };
+}
+
+/** The served machine's kept identity: its node key and the address's pre-shared key (hex), in this origin's IndexedDB. */
+export type TailcatIdentity = { key: string; psk: string };
+const IDB = 'webpc-tailcat';
+
+function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open(IDB, 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('identity');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const r = f(db.transaction('identity', mode).objectStore('identity'));
+      r.onsuccess = () => { db.close(); resolve(r.result); };
+      r.onerror = () => { db.close(); reject(r.error); };
+    };
+  });
+}
+
+const hex32 = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
+
+/** The kept identity, made the first time. */
+export async function tailcatIdentity(): Promise<TailcatIdentity> {
+  const kept = await idb<TailcatIdentity | undefined>('readonly', (s) => s.get('served'));
+  if (kept) return kept;
+  const made = { key: hex32(), psk: hex32() };
+  await idb('readwrite', (s) => s.put(made, 'served'));
+  return made;
+}
+
+/** Whether there's a kept identity (an address to forget). */
+export const hasTailcatIdentity = () => idb<number>('readonly', (s) => s.count('served')).then((n) => n > 0, () => false);
+
+/** Forgets the identity: the next serve has a new address, and the old one stops working. */
+export const forgetTailcatIdentity = () => idb('readwrite', (s) => s.delete('served')).then(() => {});
+
+/** The region of a DERP map with the fastest `/derp/probe` (what tailcat's own server picks by), or 0 if none answers. */
+export async function nearestRegion(derpMapURL: string, timeoutMs = 3000): Promise<number> {
+  type Node = { HostName: string; DERPPort?: number; STUNOnly?: boolean };
+  const map = await (await fetch(derpMapURL)).json() as { Regions: Record<string, { Nodes?: Node[] }> };
+  const timed = await Promise.all(Object.entries(map.Regions).map(async ([id, r]) => {
+    const n = r.Nodes?.find((x) => !x.STUNOnly && x.HostName);
+    if (!n) return [Number(id), Infinity] as const;
+    const url = `https://${n.HostName}${n.DERPPort && n.DERPPort !== 443 ? `:${n.DERPPort}` : ''}/derp/probe`;
+    let best = Infinity;
+    for (let k = 0; k < 3; k++) {
+      const t = performance.now();
+      try {
+        await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
+        best = Math.min(best, performance.now() - t);
+      } catch {
+        break;
+      }
+    }
+    return [Number(id), best] as const;
+  }));
+  const [id, ms] = timed.reduce((a, b) => (b[1] < a[1] ? b : a), [0, Infinity] as const);
+  return ms < Infinity ? id : 0;
+}
+
 /** What the menu shows of a tailcat connection: the guest's addresses and resolvers, no peers. */
-export function netmapOf(lease: Lease): NetMap {
+export function netmapOf(lease: Lease, serving?: string, exit = true): NetMap {
   return {
-    name: '', via: 'tailcat', peers: [], mtu: lease.mtu, exitNode: '', domains: [],
+    name: '', via: 'tailcat', peers: [], mtu: lease.mtu, exitNode: '', domains: [], serving, tailcatExit: exit,
     addresses: [`${lease.address.join('.')}/32`, ...(lease.address6 ? [`${v6text(lease.address6)}/128`] : [])],
     dns: [...lease.dns.map((d) => d.join('.')), ...(lease.dns6 ?? []).map(v6text)],
   };
@@ -87,7 +158,7 @@ export function startTailcat(config: TailcatConfig, onEvent: (m: FromTailscale) 
   });
   running.catch(() => {});
   const wasm = config.wasm ?? new URL('../target/net/ts.wasm', import.meta.url).href;
-  worker.postMessage({ type: 'start', wasm, addr: config.addr, derpMapURL: config.derpMapURL, ip: port1 } satisfies ToTailcat, [port1]);
+  worker.postMessage({ type: 'start', wasm, addr: config.addr, serve: config.serve, derpMapURL: config.derpMapURL, ip: port1 } satisfies ToTailcat, [port1]);
   return {
     ip: own?.port2, state: () => state, netmap: () => netmap, loginURL: () => undefined, running, timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToTailcat, [ip]),

@@ -5,14 +5,15 @@
   // The networking tests' page (tests/net-tailnet.test.ts, tests/net-tailcat.test.ts): starts
   // the Tailscale backend (web/tailscale.ts), or with `tailcat=<address>` the tailcat one
   // (web/tailcat.ts), and a Debian machine (tailnet-worker.ts) whose virtio-net is the Ethernet
-  // gateway on that backend's IP port. The test drives the guest's serial console through
-  // window.harness.
+  // gateway on that backend's IP port. With `serve` (and `relay=<host:port>` without a tailcat
+  // address) the machine also lets tailcat clients in. The test drives the guest's serial console
+  // through window.harness.
   import { startTailscale } from '../../web/tailscale.ts';
   import { startTailcat } from '../../web/tailcat.ts';
   const q = new URLSearchParams(location.search);
   const events = [];
-  const ts = q.get('tailcat')
-    ? startTailcat({ addr: q.get('tailcat') }, (m) => events.push(m))
+  const ts = q.get('tailcat') || q.has('serve')
+    ? startTailcat({ addr: q.get('tailcat') ?? '', serve: q.has('serve') ? { relay: q.get('relay') ?? '' } : undefined }, (m) => events.push(m))
     : startTailscale({ controlURL: q.get('control'), authKey: q.get('authkey') ?? undefined, hostname: q.get('hostname') ?? 'guest' }, (m) => events.push(m));
   const worker = new Worker(new URL('./tailnet-worker.ts', import.meta.url), { type: 'module' });
   const serial = new MessageChannel();

@@ -726,6 +726,7 @@ name = "webpc_ts"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "blake2",
  "crypto_box",
  "getrandom 0.3.4",
  "serde",

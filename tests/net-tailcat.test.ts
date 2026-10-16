@@ -7,10 +7,12 @@
 // clamp and the 1,260-byte IPv4 path), then over IPv6 when this machine has a non-link-local IPv6
 // address. A tailcat exit node does forward private addresses, so no internet is needed; the
 // internet and DNS (the lease's 1.1.1.1 through the exit node) are opt-in, WEBPC_TAILCAT_INTERNET=1.
+// The machine also lets tailcat clients in (T3): the real tailcat CLI parses the machine's address,
+// then fetches a page from a web server in the guest through it.
 // Realtime: one boot, ~2 min alone. Opt-in: WEBPC_TAILCAT=1 (needs Go for tailcat.sh, the
 // Debian image and target/net/ts.wasm).
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { networkInterfaces } from 'node:os';
@@ -63,8 +65,25 @@ after(async () => {
 
 const harness = <T>(page: Page, f: string) => page.evaluate(`window.harness.${f}`) as Promise<T>;
 
+/** The tailcat CLI (tests/net/tailcat.sh built it) as a client, `input` on its stdin; its stdout. Never synchronous: this
+ * process serves the page's disk, and a guest reading it while the CLI waits on the guest would wait for the timeout. */
+async function tailcat(args: string[], input: string): Promise<string> {
+  const child = spawn(`${ROOT}target/net/tailcat-test/bin/tailcat`, args, {
+    env: { ...process.env, SSL_CERT_FILE: `${ROOT}target/net/tailcat-test/certs/127.0.0.1.crt`, NO_PROXY: '127.0.0.1', no_proxy: '127.0.0.1', HOME: `${ROOT}target/net/tailcat-test/run` },
+  });
+  let out = '';
+  let err = '';
+  child.stdout.setEncoding('utf8').on('data', (d: string) => { out += d; });
+  child.stderr.setEncoding('utf8').on('data', (d: string) => { err += d; });
+  child.stdin.end(input);
+  const timer = setTimeout(() => child.kill(), 60_000);
+  const code = await new Promise<number | null>((resolve) => child.on('close', resolve));
+  clearTimeout(timer);
+  if (code !== 0 && !out) throw new Error(`tailcat ${args[0]}: exit ${code}; ${err.slice(-800)}`);
+  return out;
+}
 
-test('the guest gets both leases from the tailcat client and reaches the exit node\'s network over IPv4 and IPv6', { skip, timeout: 900_000 }, async () => {
+test('the guest gets both leases from the tailcat client and reaches the exit node\'s network over IPv4 and IPv6, and lets tailcat clients in', { skip, timeout: 900_000 }, async () => {
   const v4 = lan('IPv4');
   assert.ok(v4, 'this machine has a LAN IPv4 address for the exit node to dial');
   await withDebianLock(async () => {
@@ -74,10 +93,10 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
     try {
       await page.goto(`${base}/tests/browser/core.html`);
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: addr, overlay: OVERLAY })}`);
+      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ tailcat: addr, serve: '', overlay: OVERLAY })}`);
       await page.waitForFunction('window.harness?.tailscale().state === "Running" && window.harness.tailscale().netmap', null, { timeout: 60_000, polling: 250 })
         .catch(async (e) => { throw new Error(`${e}; ${JSON.stringify(await harness(page, 'tailscale()'))}; events ${JSON.stringify(await harness(page, 'events()'))}`); });
-      const ts = await harness<{ netmap: { addresses: string[] }; timings: { loadMs: number; runningMs: number } }>(page, 'tailscale()');
+      const ts = await harness<{ netmap: { addresses: string[]; serving?: string }; timings: { loadMs: number; runningMs: number } }>(page, 'tailscale()');
       const self6 = ts.netmap.addresses.find((a) => a.includes(':'))!.replace(/\/\d+$/, '');
       console.log(`# tailcat in Chromium: loaded in ${ts.timings.loadMs.toFixed(0)} ms, Running after ${ts.timings.runningMs.toFixed(0)} ms; ${ts.netmap.addresses.join(', ')}`);
 
@@ -117,6 +136,25 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
         const size6 = (await run(`curl -s -m 60 -o /dev/null -w '%{size_download}\\n' "http://[${v6}]:${port}/big"`, 120_000)).split('\n')[0].trim();
         assert.equal(size6, String(BIG), `the whole IPv6 download arrived: ${size6}`);
       }
+
+      // The machine as a tailcat server: its address is one tailcat reads (the exit node's relay), and the CLI
+      // reaches a port the guest listens on (as `tailcat ssh` reaches port 22).
+      const served = ts.netmap.serving ?? '';
+      assert.ok(served.startsWith('tc'), `the machine serves at an address of its own: ${JSON.stringify(ts.netmap)}`);
+      const parsed = JSON.parse(await tailcat(['parse', served], ''));
+      assert.equal(parsed.Region[0].Nodes[0].HostName, '127.0.0.1', `the exit node's relay: ${JSON.stringify(parsed)}`);
+      console.log(`# the machine's tailcat address: ${served.length} characters, ${JSON.stringify(parsed.Region)}`);
+      assert.match(await run('command -v python3'), /python3/, 'the guest has a web server to offer');
+      await run('cd /tmp && echo hello-from-the-guest > index.html && (python3 -m http.server --bind :: 8080 > /dev/null 2>&1 &) && sleep 1');
+      let got = '';
+      try {
+        got = await tailcat([served, '8080'], 'GET /index.html HTTP/1.0\r\n\r\n');
+      } catch (e) {
+        throw new Error(`${e}; the guest: ${await run("ss -ltn | grep 8080; ip -6 route; nstat -az 2>/dev/null | grep -E 'Ip6In(NoRoutes|AddrErrors|Discards|Receives)|TcpInSegs|TcpOutSegs|ListenDrops' ; cat /proc/net/snmp6 | grep -E 'Ip6InReceives|Ip6InNoRoutes|Ip6InAddrErrors|Ip6InDiscards|Ip6OutRequests'")}${await context()}`);
+      }
+      assert.match(got, /hello-from-the-guest/, `a tailcat client reaches the guest's port 8080: ${got.slice(0, 500)}`);
+      const entered = (await harness<{ type: string }[]>(page, 'events()')).length;
+      console.log(`# tailcat client to the guest's web server: ${got.split('\n')[0].trim()} (${entered} events)`);
 
       // The internet and DNS through the exit node (the lease's resolver is 1.1.1.1): opt-in.
       if (process.env.WEBPC_TAILCAT_INTERNET !== '1') console.log('# SKIPPED: the internet through the exit node (opt-in: WEBPC_TAILCAT_INTERNET=1)');
