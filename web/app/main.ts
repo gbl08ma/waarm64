@@ -19,7 +19,7 @@ import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-fi
 import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
-import { createNetwork, DEFAULT_SETTINGS, tailscaleBuilt, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
+import { createNetwork, DEFAULT_SETTINGS, tailscaleBuilt, tailcatBuilt, parseControlURL, parseHostname, parseTailcatAddr, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -820,11 +820,11 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-chord]')) {
 document.addEventListener('pointerdown', (e) => { if (!keysMenu.contains(e.target as Node)) keysMenu.open = false; });
 
 // The network (docs/frontend.md "Network"): a machine with `network` always has a card (it costs no boot time); the
-// Network menu connects and logs in a Tailscale client that gives the card its address.
+// Network menu connects and logs in a Tailscale client that gives the card its address, or connects to a tailcat server.
 const netSettings = (): NetworkSettings => ({ ...DEFAULT_SETTINGS, ...settings().net });
 const network = createNetwork(() => renderNetwork());
 const netMenu = $<HTMLDetailsElement>('network');
-const netEl = { status: $('net-status'), login: $<HTMLAnchorElement>('net-login'), form: $<HTMLFormElement>('net-form'), control: $<HTMLInputElement>('net-control'), hostname: $<HTMLInputElement>('net-hostname'), key: $<HTMLInputElement>('net-authkey'), exitLabel: $('net-exit-label'), exit: $<HTMLSelectElement>('net-exit'), error: $('net-error'), hint: $('net-hint'), actions: $('net-actions'), disconnect: $('net-disconnect'), logout: $('net-logout') };
+const netEl = { status: $('net-status'), login: $<HTMLAnchorElement>('net-login'), form: $<HTMLFormElement>('net-form'), control: $<HTMLInputElement>('net-control'), hostname: $<HTMLInputElement>('net-hostname'), key: $<HTMLInputElement>('net-authkey'), exitLabel: $('net-exit-label'), exit: $<HTMLSelectElement>('net-exit'), error: $('net-error'), hint: $('net-hint'), actions: $('net-actions'), disconnect: $('net-disconnect'), logout: $('net-logout'), kind: $<HTMLSelectElement>('net-kind'), tailnetFields: $('net-tailnet-fields'), tailcatFields: $('net-tailcat-fields'), tailcat: $<HTMLInputElement>('net-tailcat') };
 let lastPhase = '';
 
 function renderNetwork() {
@@ -844,7 +844,9 @@ function renderNetwork() {
   netEl.form.hidden = active;
   netEl.actions.hidden = !active;
   netEl.disconnect.hidden = !active;
-  netEl.logout.hidden = !active || s.keyed;
+  netEl.logout.hidden = !active || s.keyed || s.kind === 'tailcat';
+  netEl.tailnetFields.hidden = s.kind === 'tailcat';
+  netEl.tailcatFields.hidden = s.kind !== 'tailcat';
   netEl.hint.textContent = !active && s.keyed ? 'An auth key isn\'t kept: enter it again to connect.' : '';
   if (v.phase === 'login' && lastPhase !== 'login') netMenu.open = true; // the user has something to do
   lastPhase = v.phase;
@@ -858,7 +860,7 @@ function formError(message?: string) {
 /** Starts the client for the settings the machine started under (a login's node is kept, so no key is needed). */
 function autoconnect() {
   const s = netSettings();
-  if (!s.autoconnect || network.active()) return;
+  if (!s.autoconnect || s.kind === 'tailcat' || network.active()) return;
   const url = parseControlURL(s.controlURL);
   if ('error' in url) return;
   const host = parseHostname(s.hostname);
@@ -866,8 +868,31 @@ function autoconnect() {
 }
 
 $<HTMLInputElement>('net-reveal').onchange = (e) => { netEl.key.type = (e.target as HTMLInputElement).checked ? 'text' : 'password'; };
+netEl.kind.onchange = () => {
+  remember({ net: { ...netSettings(), kind: netEl.kind.value === 'tailcat' ? 'tailcat' : 'tailscale' } });
+  formError();
+  renderNetwork();
+};
 netEl.form.onsubmit = (e) => {
   e.preventDefault();
+  if (netSettings().kind === 'tailcat') {
+    const addr = parseTailcatAddr(netEl.tailcat.value);
+    if ('error' in addr) return formError(addr.error);
+    formError();
+    void (async () => {
+      if (!(await tailcatBuilt())) return formError("The tailnet client isn't built on this server. Start the page with `npm run serve` or `npm start` (they build it), or run net/ts/build.sh.");
+      // The address is a secret and isn't kept, so nothing reconnects by itself.
+      remember({ net: { ...netSettings(), autoconnect: false } });
+      try {
+        network.connect({ controlURL: '', hostname: '', tailcat: addr.addr });
+        netEl.tailcat.value = '';
+      } catch (err) {
+        formError(String((err as Error).message ?? err));
+      }
+      renderNetwork();
+    })();
+    return;
+  }
   const url = parseControlURL(netEl.control.value);
   const host = parseHostname(netEl.hostname.value);
   if ('error' in url) return formError(url.error);
@@ -906,6 +931,7 @@ netEl.logout.onclick = () => {
 document.addEventListener('pointerdown', (e) => { if (!netMenu.contains(e.target as Node)) netMenu.open = false; });
 if (spec.network) {
   netMenu.hidden = false;
+  netEl.kind.value = netSettings().kind;
   netEl.control.value = netSettings().controlURL;
   netEl.hostname.value = netSettings().hostname;
   renderNetwork();

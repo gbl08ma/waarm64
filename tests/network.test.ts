@@ -157,3 +157,50 @@ test('exit nodes: the menu lists the approved ones and the one in use; the choic
   await assert.rejects(net.setExitNode('bad'), /nope/);
   assert.deepEqual(f.log.slice(1), ['exit nB', 'exit -', 'exit bad']);
 });
+
+test('tailcat addresses: tc and base64url, nothing else', async () => {
+  const { parseTailcatAddr } = await import('../web/app/network.ts');
+  const addr = `tc${'A'.repeat(100)}_-x`;
+  assert.deepEqual(parseTailcatAddr(`  ${addr}\n`), { addr });
+  assert.ok('error' in parseTailcatAddr(''));
+  assert.ok('error' in parseTailcatAddr('https://tailcat.dev'));
+  assert.ok('error' in parseTailcatAddr(`tc${'A'.repeat(100)}=`));
+});
+
+test('a tailcat connection: the address goes to the tailcat client, not the Tailscale one; the view says where it is', async () => {
+  const { netmapOf } = await import('../web/tailcat.ts');
+  const ts = fake();
+  const cats: { addr: string; emit(m: FromTailscale): void; setState(s: string, nm?: NetMap): void }[] = [];
+  const startCat = (config: { addr: string; ip?: MessagePort }, onEvent: (m: FromTailscale) => void): Tailscale => {
+    let state = '';
+    let nm: NetMap | undefined;
+    let held = config.ip;
+    cats.push({ addr: config.addr, emit: onEvent, setState(s, n) { state = s; nm = n; onEvent({ type: 'state', state: s }); } });
+    return {
+      state: () => state, netmap: () => nm, loginURL: () => undefined, running: new Promise<NetMap>(() => {}), timings: () => ({}),
+      attach: (ip) => { held = ip; }, detach: async () => { const h = held; held = undefined; return h; },
+      setExitNode: async () => { throw new Error('no'); }, logout: async () => {}, close: () => {},
+    };
+  };
+  const net = createNetwork(() => {}, ts.start, startCat);
+  net.port();
+  net.connect({ controlURL: '', hostname: '', tailcat: 'tcADDRESS' });
+  assert.deepEqual(ts.log, []);
+  assert.deepEqual(cats.map((c) => c.addr), ['tcADDRESS']);
+  assert.deepEqual(net.view(), { phase: 'connecting', text: 'Loading the client…', exitNodes: [] });
+  cats[0].setState('Meowing');
+  assert.equal(net.view().text, 'Waiting for the tailcat server…');
+  const nm = netmapOf({ address: [192, 0, 0, 2], address6: [0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], mtu: 1280, dns: [[1, 1, 1, 1]], dns6: [[0x26, 0x06, 0x47, 0, 0x47, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11]], domains: [] });
+  assert.deepEqual(nm.addresses, ['192.0.0.2/32', 'fd7a:115c:a1e0:102:304:506:708:90a/128']);
+  assert.deepEqual(nm.dns, ['1.1.1.1', '2606:4700:4700::1111']);
+  cats[0].setState('Running', nm);
+  assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], text: 'Connected through the tailcat server (192.0.0.2)' });
+  cats[0].emit({ type: 'error', error: 'the tailcat server didn\'t answer' });
+  assert.equal(net.view().phase, 'error');
+  await net.disconnect();
+  // The next connection is a tailnet's again.
+  net.connect({ controlURL: 'https://c.example', hostname: 'h' });
+  assert.equal(ts.log.length, 1);
+  ts.clients[0].setState('Starting');
+  assert.equal(net.view().text, 'Connecting…');
+});

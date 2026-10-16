@@ -1,0 +1,58 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<script type="module">
+  // The tailcat backend in Chromium with no guest (tests/tailcat-browser.test.ts): starts
+  // web/tailcat.ts on `?addr=` and plays the guest on the gateway's side of its IP port,
+  // sending UDP to `?port=` on the exit node's 127.0.0.1 and counting what comes back.
+  import { startTailcat } from '../../web/tailcat.ts';
+  import { checksum } from '../../web/net.ts';
+  const q = new URLSearchParams(location.search);
+  const events = [];
+  const ts = startTailcat({ addr: q.get('addr') }, (m) => events.push(m));
+  const port = Number(q.get('port'));
+  let lease = null;
+  const waiting = new Map();
+  ts.ip.onmessage = (e) => {
+    if (!(e.data instanceof ArrayBuffer)) { if (e.data?.type === 'lease') lease = e.data.lease; return; }
+    const p = new Uint8Array(e.data);
+    if (p[0] >> 4 === 4 && p[9] === 17 && p.length >= 32) waiting.get(new DataView(p.buffer).getUint32(28))?.(p);
+  };
+  /** An IPv4 UDP packet from the lease's address to 127.0.0.1:port with `seq` first in its payload. */
+  function udp(seq, size) {
+    const p = new Uint8Array(28 + size);
+    const src = lease.address, dst = [127, 0, 0, 1];
+    p.set([0x45, 0, p.length >> 8, p.length & 255, 0, 0, 0x40, 0, 64, 17, 0, 0, ...src, ...dst]);
+    const c = checksum(p.subarray(0, 20));
+    p.set([c >> 8, c & 255], 10);
+    p.set([0x4e, 0x20, port >> 8, port & 255, (8 + size) >> 8, (8 + size) & 255], 20);
+    new DataView(p.buffer).setUint32(28, seq);
+    const pseudo = new Uint8Array(20 + size);
+    pseudo.set([...src, ...dst, 0, 17, (8 + size) >> 8, (8 + size) & 255]);
+    pseudo.set(p.subarray(20), 12);
+    const u = checksum(pseudo) || 0xffff;
+    p.set([u >> 8, u & 255], 26);
+    return p;
+  }
+  let seq = 0;
+  /** Sends `n` echoes of `size` bytes, `window` at a time; resolves with how many came back and the time. */
+  async function echoes(n, size, window = 16) {
+    let back = 0;
+    const t = performance.now();
+    const one = () => new Promise((resolve) => {
+      const s = ++seq;
+      const to = setTimeout(() => { waiting.delete(s); resolve(); }, 3000);
+      waiting.set(s, () => { clearTimeout(to); waiting.delete(s); back++; resolve(); });
+      const b = udp(s, size).buffer;
+      ts.ip.postMessage(b, [b]);
+    });
+    let sent = 0;
+    await Promise.all(Array.from({ length: window }, async () => { while (sent < n) { sent++; await one(); } }));
+    return { back, ms: performance.now() - t };
+  }
+  window.harness = {
+    tailcat: () => ({ state: ts.state(), netmap: ts.netmap(), timings: ts.timings(), lease }),
+    events: () => events,
+    echoes,
+  };
+</script>

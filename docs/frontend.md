@@ -637,7 +637,7 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
 
 The header's **Network** menu (machines with a `network` entry in machine.ts: Debian) connects the
 machine's network card to a Tailscale network (docs/plans/networking.md; the backend is
-web/tailscale.ts, the client in its own worker).
+web/tailscale.ts, the client in its own worker), or to a tailcat server (below).
 
 - **The card is always there** (`machine.network`): virtio-net on the Ethernet gateway from the
   boot, so connecting later never restarts the machine. The card costs no boot time (Debian to
@@ -673,6 +673,18 @@ web/tailscale.ts, the client in its own worker).
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected.
+- **tailcat** (docs/plans/tailnet-client.md §4; T2, being finished: the Debian test is to run on the
+  dev VM): **Connect to** "A tailcat server" swaps the form's fields for a **tailcat address** (a
+  password field; a secret, never saved, so nothing reconnects by itself) and a line on what to
+  run: `tailcat serve exit-node` on a computer of the user's. The Rust tailnet client
+  (web/tailcat.ts, web/tailcat-worker.ts, net/ts) connects through the address's DERP relay; the
+  status goes Loading the client, Connecting to the relay, Waiting for the tailcat server, Opening
+  the tunnel, then **Connected through the tailcat server (192.0.0.2)**. The guest's lease: IPv4
+  `192.0.0.2` (translated to the tunnel's IPv6 by the client, NAT64 to the exit node), IPv6 the
+  tunnel's own `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1 and 2606:4700:4700::1111
+  (reached through the exit node). What the guest reaches is TCP and UDP to wherever that computer
+  reaches, its LAN included; no ping beyond it, no inbound connections, no exit-node choice, no
+  Log out (Disconnect forgets the address).
 - **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
   `0.0.0.0/0` routes) the menu shows **Internet through** with them and "Nothing: directly". Picking one
   calls the client's `setExitNode(id)` (`ipn.Prefs.ExitNodeID` through `lb.EditPrefs`; the id is the

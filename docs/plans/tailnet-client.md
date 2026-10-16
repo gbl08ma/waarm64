@@ -1,7 +1,8 @@
 # Our own Tailscale client, and tailcat (proposed, not scheduled)
 
 **Status:** accepted 2026-10-16 (the user: all the dependencies it needs are fine). **T1 done**
-(the module and tailcat in Node, measured: §7); T2 next. It continues
+(the module and tailcat in Node, measured: §7); **T2 written, half run** (in Chromium without a
+guest; Debian through tailcat waits for the dev VM: `M8-TAILNET-CLIENT-HANDOVER.md`). It continues
 [networking.md](networking.md) (its §5, "Later: tailscale-rs"), which holds the decisions that
 stay: frames at the device, the Ethernet gateway (§3), the IP-packet port, the guest as the node.
 What exists: `net/ts/` (the module), `web/ts-client.ts` and `web/ts-wasi.ts` (its I/O),
@@ -195,11 +196,12 @@ wasm is fast enough for netmaps.
   address is a secret: never in a URL, kept only if the user asks, like the node state), a
   short how-to (`tailcat serve exit-node` on a machine of yours; your own derper for speed), and
   the same status lines.
-- **Tests, without the internet:** the `ghcr.io/tailscale/tailcat` image in rootless Podman
-  (`tests/net/tailcat.sh up|down`, beside `tailnet.sh`), serving `exit-node`, on the test
-  tailnet's existing DERP (the server is generated with `--region=<that host>` and trusts the
-  test CA through `SSL_CERT_FILE`), and a small TCP/UDP echo server in another container on a
-  private address. **Because a tailcat exit node does reach private addresses, a local server
+- **Tests, without the internet:** `tests/net/tailcat.sh up|env|down` runs `derper` on
+  `127.0.0.1:8443` (a self-signed certificate for the address) and `tailcat serve exit-node` on it,
+  both native: Go builds them once at pinned versions (derper has no official image, and native
+  binaries run in a cloud session too). The relay is an IP so the address carries its port (the
+  key file's region is edited; `--region=` takes a dotted host name only). The servers the guest
+  reaches are on this machine (its LAN address: the guest's 127.0.0.1 is its own). **Because a tailcat exit node does reach private addresses, a local server
   stands in for the internet**: the exit-node test that Tailscale's exit nodes forced into
   opt-in (N8) is routine here. Layers: the CBOR parser and NAT46 by bytes
   (`tests/ts-*.test.ts`, Node); the module against the container in Node (connect, UDP echo, a
@@ -295,7 +297,14 @@ not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s).
 - **T2 — tailcat on the page.** The worker, the menu's second kind, the leases, the MSS clamp;
   Debian on the page reaches the echo server over IPv4 and IPv6 and resolves names
   (`tests/net-tailcat.test.ts`, in `ci-net.sh`). docs/frontend.md "Network", devices.md if the
-  lease changes.
+  lease changes. *Written 2026-10-16:* `web/tailcat.ts` (the `Tailscale` handle, so
+  `web/app/network.ts` drives either backend), `web/tailcat-worker.ts`, the menu's **Connect to**
+  choice, `tools/tailscale.ts` building `ts.wasm` for `npm run serve`/`npm start`,
+  `tests/net/tailcat.sh`. *Run in the cloud session:* `tests/network.test.ts` (the controller),
+  `tests/tailcat-browser.test.ts` (Chromium 141, no guest: module loaded in 16 ms, `Running`
+  122 ms after start against the Go client's ~2.5 s, 2,000 of 2,000 1,260-byte UDP echoes back).
+  *Not run yet:* `tests/net-tailcat.test.ts` (Debian needs our EDK2, built under Podman on arm64)
+  and `scripts/ci-net.sh`, `scripts/ci-debian.sh`: the handover's list.
 - **T3 — Optional: the VM as a tailcat server.** The module answers meows (accepting clients,
   optionally only `--allow`ed keys), and the page shows the VM's own `tc…` address: anyone with
   the tailcat CLI runs `tailcat ssh tc…` (port 22 of the guest's sshd) or `tailcat tc… 8080`.

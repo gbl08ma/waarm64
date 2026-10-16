@@ -9,7 +9,7 @@ import { open, readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { prepareTailscale } from './tailscale.ts';
+import { prepareTailnetClient, prepareTailscale } from './tailscale.ts';
 
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -90,7 +90,8 @@ export function parseRange(h: string | undefined, size: number): [number, number
 }
 
 if (import.meta.main) {
-  prepareTailscale(); // the Network menu's client (tools/tailscale.ts): built if missing or stale, never fatal
+  prepareTailscale(); // the Network menu's clients (tools/tailscale.ts): built if missing or stale, never fatal
+  prepareTailnetClient();
   const server = await startServer(Number(process.env.PORT ?? 8080));
   const addr = server.address();
   if (addr && typeof addr === 'object') console.log(`serving ${ROOT} at http://127.0.0.1:${addr.port}/ (the page: http://127.0.0.1:${addr.port}${APP})`);

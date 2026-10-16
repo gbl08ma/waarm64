@@ -526,6 +526,8 @@ mod tests {
         /// Decrypted packets the server got.
         got: Vec<Vec<u8>>,
         meows: usize,
+        /// The client's current WebSocket.
+        conn: u32,
     }
 
     impl Server {
@@ -539,6 +541,7 @@ mod tests {
                 wg: Endpoint::new(pair),
                 got: Vec::new(),
                 meows: 0,
+                conn: 0,
             }
         }
 
@@ -554,6 +557,7 @@ mod tests {
                         protocol,
                     } => {
                         assert_eq!((url.as_str(), protocol), ("wss://derp.test/derp", "derp"));
+                        self.conn = conn;
                         c.ws_message(conn, &self.relay.hello(), now);
                     }
                     Action::WsSend { conn, data } => {
@@ -602,7 +606,11 @@ mod tests {
             pad(&mut p);
             let r = self.wg.send(now, [(PeerId(2), vec![PacketMut::from(p)])]);
             for p in r.to_peers.into_values().flatten() {
-                c.ws_message(1, &self.relay.deliver(&self.public, p.as_ref()), now);
+                c.ws_message(
+                    self.conn,
+                    &self.relay.deliver(&self.public, p.as_ref()),
+                    now,
+                );
             }
             self.run(c, now)
         }
@@ -656,6 +664,64 @@ mod tests {
         native[8..24].copy_from_slice(&tailcat::addr_for_key(&s.public));
         native[24..40].copy_from_slice(&c.tc6);
         assert_eq!(s.send(&mut c, native.clone(), now), vec![native]);
+    }
+
+    /// A UDP packet from the guest's IPv4 address to 1.1.1.1:53 carrying `payload`.
+    fn udp(payload: &[u8]) -> Vec<u8> {
+        let n = payload.len() as u8;
+        let mut p = vec![
+            0x45,
+            0,
+            0,
+            28 + n,
+            0,
+            0,
+            0x40,
+            0,
+            64,
+            17,
+            0,
+            0,
+            192,
+            0,
+            0,
+            2,
+            1,
+            1,
+            1,
+            1,
+        ];
+        p.extend_from_slice(&[0x30, 0x39, 0, 53, 0, 8 + n, 0, 0]);
+        p.extend_from_slice(payload);
+        p
+    }
+
+    #[test]
+    fn relay_loss_while_running() {
+        let mut now = Instant::now();
+        let mut s = Server::new();
+        let mut c = Client::new(config(address(&s.public, &s.psk)), now).unwrap();
+        s.run(&mut c, now);
+        assert_eq!(c.state, State::Running);
+        let first = s.conn;
+        // The relay goes away: the client stays Running (the guest keeps its
+        // lease) and comes back after a backoff.
+        c.ws_closed(first, now);
+        assert_eq!(c.state, State::Running);
+        let at = c.deadline().unwrap();
+        assert!(
+            at > now && at <= now + Duration::from_secs(2),
+            "a short backoff first"
+        );
+        now = at;
+        c.tick(now);
+        s.run(&mut c, now);
+        assert_ne!(s.conn, first, "a new connection");
+        assert_eq!(s.meows, 2, "it said hello again");
+        // Traffic flows on the same WireGuard session.
+        c.guest_packet(&udp(b"again"), now);
+        s.run(&mut c, now);
+        assert_eq!(&s.got.pop().expect("the server got it")[48..], b"again");
     }
 
     #[test]

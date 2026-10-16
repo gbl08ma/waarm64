@@ -1,15 +1,17 @@
 // The page's network (docs/frontend.md "Network"): a machine with a network card (always there)
 // (virtio-net on the Ethernet gateway, web/gateway.ts) whose IP packets go to a Tailscale
 // client (web/tailscale.ts), which the user connects and logs in from the header's Network
-// menu. DOM-free, so it's tested in Node (tests/network.test.ts).
+// menu, or to a tailcat server (web/tailcat.ts) through the Rust tailnet client. DOM-free, so
+// it's tested in Node (tests/network.test.ts).
 //
 // The machine holds one end of an IP port for as long as it runs; this keeps the other. The
 // client, when there is one, has it (`attach`); a restarted machine brings a new port, and
 // a disconnected client hands it back (`detach`), so a machine can be connected, disconnected and
 // connected again without a restart.
 import { startTailscale, tailscaleBuilt, type FromTailscale, type NetMap, type Tailscale, type TailscaleConfig } from '../tailscale.ts';
+import { parseTailcatAddr, startTailcat, tailcatBuilt, type TailcatConfig } from '../tailcat.ts';
 
-export { tailscaleBuilt };
+export { tailscaleBuilt, tailcatBuilt, parseTailcatAddr };
 
 export const DEFAULT_CONTROL = 'https://controlplane.tailscale.com';
 
@@ -24,9 +26,11 @@ export type NetworkSettings = {
   keyed: boolean;
   /** The exit node in use (a peer's stable ID), applied again on the next connection; empty: none. */
   exitNode: string;
+  /** What the menu connects to: a tailnet, or a tailcat server (whose address, a secret, isn't kept). */
+  kind: 'tailscale' | 'tailcat';
 };
 
-export const DEFAULT_SETTINGS: NetworkSettings = { controlURL: '', hostname: '', autoconnect: false, keyed: false, exitNode: '' };
+export const DEFAULT_SETTINGS: NetworkSettings = { controlURL: '', hostname: '', autoconnect: false, keyed: false, exitNode: '', kind: 'tailscale' };
 
 /** A control server's URL as the client takes it: https (http only for this computer), or an error to show. */
 export function parseControlURL(input: string): { url: string } | { error: string } {
@@ -74,7 +78,7 @@ export type NetworkView = {
 };
 
 /** What a `Tailscale` client reports, as far as the view needs it. */
-export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: string };
+export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: string; tailcat?: boolean };
 
 const web = (s: string | undefined) => {
   try {
@@ -90,6 +94,14 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
   if (!c) return { phase: 'off', text: 'Not connected', exitNodes: [] };
   if (c.error) return { phase: 'error', text: `Couldn't connect: ${c.error.split('\n')[0]}`, exitNodes: [] };
   const loginURL = web(c.loginURL);
+  if (c.netmap?.via === 'tailcat' || c.tailcat) {
+    if (c.state === 'Running' && c.netmap) {
+      const address = c.netmap.addresses.find((a) => !a.includes(':'))?.replace(/\/\d+$/, '');
+      return { phase: 'connected', address, exitNodes: [], text: `Connected through the tailcat server${address ? ` (${address})` : ''}` };
+    }
+    const doing: Record<string, string> = { FetchingMap: 'Looking up the relay…', Meowing: 'Waiting for the tailcat server…', Handshaking: 'Opening the tunnel…' };
+    return { phase: 'connecting', text: doing[c.state] ?? (c.state === '' ? 'Loading the client…' : 'Connecting to the relay…'), exitNodes: [] };
+  }
   switch (c.state) {
     case 'Running': {
       const address = c.netmap?.addresses.find((a) => !a.includes(':'))?.replace(/\/\d+$/, '');
@@ -109,7 +121,8 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
   }
 }
 
-export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string };
+/** A tailnet (`controlURL`, …), or a tailcat server when `tailcat` (its address) is given. */
+export type Connect = { controlURL: string; hostname: string; authKey?: string; exitNode?: string; tailcat?: string };
 
 export type Network = {
   /** A new machine's end of the IP port (its device's `{ip: port}`; transfer it). Any client gets the other end. */
@@ -127,13 +140,18 @@ export type Network = {
   active(): boolean;
 };
 
-export function createNetwork(onChange: () => void, start: (config: TailscaleConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailscale): Network {
+export function createNetwork(
+  onChange: () => void,
+  start: (config: TailscaleConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailscale,
+  startCat: (config: TailcatConfig, onEvent: (m: FromTailscale) => void) => Tailscale = startTailcat,
+): Network {
   /** The page's end of the machine's port, while no client has it. */
   let free: MessagePort | undefined;
   let client: Tailscale | undefined;
   let error: string | undefined;
+  let tailcat = false;
 
-  const report = (): ClientReport | undefined => (client ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error } : undefined);
+  const report = (): ClientReport | undefined => (client ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error, tailcat } : undefined);
 
   async function disconnect() {
     const t = client;
@@ -161,12 +179,16 @@ export function createNetwork(onChange: () => void, start: (config: TailscaleCon
       error = undefined;
       const ip = free;
       free = undefined;
-      // An auth key's node is ephemeral and not kept; the login's node is (under its control server's name).
-      const t = start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, ip, persist: c.authKey ? undefined : c.controlURL }, (m) => {
+      const onEvent = (m: FromTailscale) => {
         if (m.type === 'error') error = m.error;
         else if (m.type === 'state' && m.state === 'Running') error = undefined;
         onChange();
-      });
+      };
+      tailcat = !!c.tailcat;
+      // An auth key's node is ephemeral and not kept; the login's node is (under its control server's name).
+      const t = c.tailcat
+        ? startCat({ addr: c.tailcat, ip }, onEvent)
+        : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, ip, persist: c.authKey ? undefined : c.controlURL }, onEvent);
       client = t;
       t.running.catch((e) => { error = String(e?.message ?? e); onChange(); });
       onChange();
