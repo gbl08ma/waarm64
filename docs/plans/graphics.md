@@ -921,7 +921,8 @@ choice in the page's menu).
 from 7.6 to 24 GiB and updated under QEMU with hvf on the Mac host with a network (`pacman -Syu`, the kernel held at
 7.2.8; mesa-utils, gtk4-demos, strace, cmake, ninja, git, base-devel, wayland-utils added); its initramfs pinned to
 `virtio_mmio virtio_blk ext4 vfat` (the update rebuilt it with `autodetect`); saved back as the page writes a disk,
-4 KiB compressed clusters. The download is kept as `myarch3-orig.qcow2`.
+4 KiB compressed clusters. (Both of the user's images were deleted on 2026-10-16: `images/arch/desktop.sh` builds the
+desktop guest that replaces them, docs/images.md.)
 
 **The harness:** `bench/gpu/firefox-load.ts` (on `bench/gpu/guest-session.ts`, shared with sway-load.ts: every
 thread's CPU in the guest, the display's and the renderer's stats, the emulator's counters, per phase): sway on GLES,

@@ -54,14 +54,14 @@ docs/frontend.md "A 3D machine"; docs/testing.md (`scripts/ci-deqp.sh`).
   a guest end to end), `tests/gpu.test.ts` (the device). Fixtures in `tests/virgl/`. The page's tests run 3D by
   default; `WEBPC_PAGE_QUERY=gpu=2d scripts/ci-debian.sh` runs them on the 2D path (docs/testing.md).
 - **Tools:** the virgl oracle (`tools/virgl-oracle/`: virglrenderer c8e3fc3b with a capture patch, vtest on the dev
-  VM's GLES); `tools/virgl-capture.ts`; `bench/gpu/sway-load.ts` (sway and foot on the user's Arch image,
-  `bench/results/local/myarch2.qcow2`, git-ignored; `VIRGL_GPU=virgl|virgl-null`, `CAPTURE=`, `PROFILE=1`: the page's
+  VM's GLES); `tools/virgl-capture.ts`; `bench/gpu/sway-load.ts` (sway and foot on the desktop guest,
+  `target/arch/desktop.qcow2` from `images/arch/desktop.sh`; `VIRGL_GPU=virgl|virgl-null`, `CAPTURE=`, `PROFILE=1`: the page's
   PC sampler with the kernel's symbols from the guest, and each phase's emulator counters); `bench/gpu/sway-mac.sh`
   (the same on the Mac host's GPU, decision 4).
-- **Images:** `bench/results/local/myarch3.qcow2` (git-ignored, the user's, 2026-10-09) is the Arch image **with
-  Firefox** (7.58 GiB virtual, 3.5 GiB used), beside `myarch2.qcow2` (no Firefox). G4's Firefox work uses it. The
-  user allows growing its disk (`qemu-img resize`, then the partition and filesystem inside) and installing more into
-  it on the oracle side (QEMU with a network connection, `pacman`); keep the untouched download as a copy first.
+- **Images:** the desktop guest, `images/arch/desktop.sh` → `target/arch/desktop.qcow2` (Arch from arch.bens.haus's
+  port: sway, foot, Firefox, gtk4-demo, mesa-utils, a 20 GiB root mostly free; docs/images.md), replaced the user's
+  hand-made images (`myarch2`/`myarch3`, Arch Linux ARM, deleted 2026-10-16) that G2 to G4 measured on. More packages:
+  add them to its `PACKAGES`, or `pacman` in a copy under QEMU with a network connection.
 
 ## What the guests do
 
@@ -82,7 +82,7 @@ docs/frontend.md "A 3D machine"; docs/testing.md (`scripts/ci-deqp.sh`).
   measuring. Its WebGL runs in the parent (`CanvasRenderer`), presented through DMABUF. G2's null renderer
   (`?gpu=virgl-null`) can't run Firefox's WebGL page (it never gets ready).
 - The guest's `pacman -Syu` rebuilds the initramfs with `autodetect`: keep `MODULES=(virtio_mmio virtio_blk ext4
-  vfat)` in its mkinitcpio.conf (set in myarch3).
+  vfat)` in its mkinitcpio.conf (images/arch/build.sh sets it in `/etc/mkinitcpio.conf.d/webpc.conf`).
 - **A worker's canvas commits a frame at the end of every task that draws**, and Chromium holds those commits to the
   display's rate: draw in `requestAnimationFrame`, once (three draws a guest frame capped sway at 39 frames a second).
 - The PC sampler names where a vCPU's current chunk started (the PC is published at chunk ends, which exits cause):

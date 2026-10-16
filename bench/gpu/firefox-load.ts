@@ -1,5 +1,5 @@
 // Firefox on the page (G4, the kickoff's decision 1; dev-only, not in tests): the user's Arch image with sway and
-// Firefox (`bench/results/local/myarch3.qcow2`: login arch/arch on the screen, WEBPC_GUEST_USER=alarm for an Arch Linux ARM disk, root/root on the serial console),
+// Firefox (`target/arch/desktop.qcow2`, images/arch/desktop.sh: login arch/arch on the screen, WEBPC_GUEST_USER=alarm for an Arch Linux ARM disk, root/root on the serial console),
 // headless Chromium, 4 vCPUs, 2.5 GiB, the screen fixed at 1376×762, as bench/gpu/sway-load.ts. sway starts on GLES
 // (on Mesa's virgl with 3D, on llvmpipe with `?gpu=2d`, or `WLR_RENDERER=pixman` in mode `pixman`), then Firefox in
 // kiosk mode on the pages in bench/gpu/firefox/ (copied into the guest), a profile of their own (user.js; FF_PREFS adds
