@@ -671,9 +671,10 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
   when the login completes. An admin-approval wait is shown as such. With an auth key there's no
   login; the key is never saved and its node is ephemeral (the control server drops it once it's
   been away).
-- **Two clients, one node** (docs/plans/tailnet-client.md): Tailscale's Go client built to wasm
-  (`web/tailscale-worker.ts`, the default until T6) or our Rust one (`net/ts`, `web/tailnet-worker.ts`);
+- **Two clients, one node** (docs/plans/tailnet-client.md): our Rust one (`net/ts`, `web/tailnet-worker.ts`,
+  the default since T6) or Tailscale's Go client built to wasm (`web/tailscale-worker.ts`);
   `startTailscale`'s `backend` picks it, and the page's `?tsbackend=go|rust` overrides the default.
+  `npm start` and `npm run serve` build the Rust one; the Go one only where Go is installed.
   Both speak the same worker messages and keep the node in the same store, so switching is invisible.
 - **The node is kept:** a login's node (its keys, a secret) lives in this origin's IndexedDB
   (`webpc-tailscale`, one profile per control server, in the Go client's own format: `web/tailscale-state.ts`), so a reload is the same node with the same

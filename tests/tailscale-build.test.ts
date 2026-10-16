@@ -29,7 +29,7 @@ test('the client is built when missing, left alone when current, rebuilt when it
     const log = (s: string) => said.push(s);
     assert.equal(tailscaleCurrent(t.root), false);
     assert.equal(prepareTailscale(t.root, t.env, log), 'built');
-    assert.match(said[0], /^Building the Tailscale client/);
+    assert.match(said[0], /^Building the Go Tailscale client/);
     assert.equal(tailscaleCurrent(t.root), true);
     assert.equal(prepareTailscale(t.root, t.env, log), 'current');
     assert.equal(said.length, 1, 'nothing said when current');
@@ -60,12 +60,12 @@ test('inputs are the contents of net/tailscale, including subdirectories', () =>
   }
 });
 
-test('without Go, with WEBPC_TAILSCALE=0, or without the sources: skipped, and the server goes on', () => {
+test('without Go (quietly), with WEBPC_TAILSCALE=0, or without the sources: skipped, and the server goes on', () => {
   const t = tree();
   try {
     const said: string[] = [];
     assert.equal(prepareTailscale(t.root, t.noGo, (s) => said.push(s)), 'skipped');
-    assert.match(said[0], /Go isn't installed/);
+    assert.equal(said.length, 0, `nothing said without Go: only ?tsbackend=go needs this client (${said})`);
     assert.equal(existsSync(join(t.root, 'target/net/tailscale.wasm')), false);
     said.length = 0;
     assert.equal(prepareTailscale(t.root, { ...t.env, WEBPC_TAILSCALE: '0' }, (s) => said.push(s)), 'skipped');

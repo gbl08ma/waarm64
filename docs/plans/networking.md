@@ -28,7 +28,8 @@ test adapter, or anything on the page behind a `MessagePort`).
 - **The main cost to fight is the optional download** (§4.4). That's also what makes
   `tailscale-rs` interesting later (§5). *Proposed 2026-10-16:* our own client, a Rust wasm module
   built from tailscale-rs's sans-I/O crates, speaking tailcat first and then Tailscale, to replace
-  the Go client ([tailnet-client.md](tailnet-client.md)).
+  the Go client ([tailnet-client.md](tailnet-client.md)). *Done 2026-10-16 (T6):* the Rust client is
+  the page's Tailscale client; the Go one stays behind `?tsbackend=go` until the user removes it.
 - WebRTC peer-to-peer networks (M8's original idea) stay an experimental backend behind the same
   interface (§6).
 
@@ -262,7 +263,7 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   destinations, so no local server can stand in for the internet. Left, only if cheap: the menu's
   login-URL and approval states in Chromium against headscale. `ci-net.sh` stays separate from
   `ci.sh` (the user, 2026-09-30: only when a change touches the network).
-- Later: our own client with tailcat and Tailscale (T1 to T6 in [tailnet-client.md](tailnet-client.md), T1 to T3 done; it replaces §5) and §6 (WebRTC), and further backends, each behind the same interfaces.
+- Later: our own client with tailcat and Tailscale (T1 to T6 in [tailnet-client.md](tailnet-client.md), done: it replaces §5's Go client as the default) and §6 (WebRTC), and further backends, each behind the same interfaces.
 
 ## 8. Open questions
 

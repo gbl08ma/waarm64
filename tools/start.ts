@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 import { delimiter, join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
 import { prepareDebian } from './debian.ts';
-import { prepareTailscale } from './tailscale.ts';
+import { prepareTailnetClient, prepareTailscale } from './tailscale.ts';
 import { APP, ROOT, startServer } from './serve.ts';
 
 export const WASM = join(ROOT, 'target/wasm32-unknown-unknown/release/webpc_core.wasm');
@@ -124,7 +124,8 @@ export async function main(argv = process.argv.slice(2)) {
   if (firmware) { const p = podmanProblem(env); if (p) stop(`${firmware[0].toUpperCase()}${firmware.slice(1)}. ${p}`); }
   installPackages();
   buildCore(env);
-  prepareTailscale(); // the Network menu's client: built when Go is there, never fatal (tools/tailscale.ts)
+  prepareTailnetClient(); // the Network menu's clients, never fatal (tools/tailscale.ts): the Rust one (tailcat, Tailscale)
+  prepareTailscale(); // and the Go one (`?tsbackend=go`), when Go is there
   await prepareDebian().catch((e: Error) => stop(e.message));
   if (firmware) {
     console.log(`Building the UEFI firmware (${firmware}; EDK2 in a Podman container: ~1 min, the first time it also pulls the build image)…`);

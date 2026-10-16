@@ -26,11 +26,11 @@ export type NetMap = {
 /**
  * Which client runs the node: Tailscale's Go one built to wasm (net/tailscale, web/tailscale-worker.ts)
  * or our Rust one (net/ts, web/tailnet-worker.ts; docs/plans/tailnet-client.md). Both speak the same
- * worker messages and keep the node in the same store. The page's `?tsbackend=go|rust` overrides the
- * default (the tests use it: WEBPC_TS_BACKEND).
+ * worker messages and keep the node in the same store. Rust is the default (T6: lighter and faster,
+ * bench/net/REPORT.md); the page's `?tsbackend=go|rust` overrides it (the tests use it: WEBPC_TS_BACKEND).
  */
 export type Backend = 'go' | 'rust';
-export const DEFAULT_BACKEND: Backend = 'go';
+export const DEFAULT_BACKEND: Backend = 'rust';
 export function tsBackend(): Backend {
   const q = new URLSearchParams(globalThis.location?.search ?? '').get('tsbackend');
   return q === 'go' || q === 'rust' ? q : DEFAULT_BACKEND;

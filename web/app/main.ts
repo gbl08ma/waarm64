@@ -19,7 +19,7 @@ import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-fi
 import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
-import { createNetwork, DEFAULT_SETTINGS, forgetTailcatIdentity, hasTailcatIdentity, tailscaleBuilt, tailcatBuilt, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, type NetworkSettings } from './network.ts';
+import { createNetwork, DEFAULT_SETTINGS, forgetTailcatIdentity, hasTailcatIdentity, tailscaleBuilt, tailcatBuilt, tsBackend, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -983,7 +983,7 @@ netEl.form.onsubmit = (e) => {
   formError();
   const authKey = netEl.key.value.trim();
   void (async () => {
-    if (!(await tailscaleBuilt())) return formError("The Tailscale client isn't built on this server. Start the page with `npm run serve` or `npm start` (they build it; Go is needed), or run net/tailscale/build.sh.");
+    if (!(await tailscaleBuilt())) return formError(`The Tailscale client isn't built on this server. Start the page with \`npm run serve\` or \`npm start\` (they build it), or run ${tsBackend() === 'go' ? 'net/tailscale/build.sh (Go is needed)' : 'net/ts/build.sh'}.`);
     remember({ net: { ...netSettings(), kind: 'tailscale', controlURL: netEl.control.value.trim(), hostname: netEl.hostname.value.trim(), autoconnect: !authKey, keyed: !!authKey } });
     netEl.key.value = '';
     connectWith({ controlURL: url.url, hostname: host.hostname, authKey: authKey || undefined, exitNode: netSettings().exitNode });

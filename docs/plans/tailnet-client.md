@@ -1,12 +1,11 @@
 # Our own Tailscale client, and tailcat (proposed, not scheduled)
 
-**Status:** accepted 2026-10-16 (the user: all the dependencies it needs are fine). **T1, T2 and
-T3 done** (the module and tailcat in Node, measured; tailcat on the page, Debian through it; the
-VM as a tailcat server, and the page's Network wizard: §7). **T4 and T5 written and tested in a cloud
-session** against a native headscale (the control session, the kept node handed over both ways with
-the Go client, the data plane, both clients in Chromium; §7); **next: their check on the dev VM**
-(Debian on the page through the Rust client, `scripts/ci-net.sh`), then T6, the switch
-(`M8-TAILNET-CLIENT-HANDOVER.md`). It continues
+**Status:** accepted 2026-10-16 (the user: all the dependencies it needs are fine). **T1 to T6
+done** (2026-10-16): the module and tailcat in Node, measured; tailcat on the page, Debian through
+it; the VM as a tailcat server, and the page's Network wizard; the Tailscale control session, the
+kept node handed over both ways with the Go client, the data plane; and the switch: **the Rust
+client is the page's Tailscale client** (§7). Left: removing the Go client after a release with
+both (the user's call), and the loose ends in [backlog.md](../backlog.md) "Network". It continues
 [networking.md](networking.md) (its §5, "Later: tailscale-rs"), which holds the decisions that
 stay: frames at the device, the Ethernet gateway (§3), the IP-packet port, the guest as the node.
 What exists: `net/ts/` (the module), `web/ts-client.ts` and `web/ts-wasi.ts` (its I/O),
@@ -288,7 +287,8 @@ the module's size (raw, gzip, Brotli), load and instantiate time, time to `Runni
 worker's memory (`performance.measureUserAgentSpecificMemory` or the heap snapshot sizes),
 ping RTT, throughput both ways (the N2 echo harness), and **the worker's CPU per Mbit/s**.
 Expected, to be checked: well under 1 MB Brotli, and throughput limited by the guest and DERP,
-not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s).
+not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s). *Measured (T6):*
+492 KB Brotli; 138 Mbit/s each way with the worker at 0.86 of a core (Go: 62 at a full core).
 
 ## 7. Steps
 
@@ -421,6 +421,12 @@ not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s).
   each way (Go 17) through the userspace peer. *Found:* the first packet to the peer after the rig
   comes up waits ~4.5 s (a WireGuard retry), later clients' first packets 55 ms: the peer's
   warm-up, the Go client's "5 s first ping" too (bench/net/REPORT.md).
+  *Checked on the dev VM (2026-10-16):* on the Podman rig, `tests/ts-tailnet.test.ts` (5 of 5; the
+  rig's new subcommands' first runs) and `tests/tailscale-browser.test.ts` (3 of 3); Debian on the
+  page through the Rust client, `tests/net-tailnet.test.ts` with `WEBPC_TS_BACKEND=rust`: the lease,
+  ping and MagicDNS over IPv4 and IPv6, the peer reaching the guest's servers over both, and the
+  opt-in internet phase (1.1.1.1 and example.com through the exit node: our plain DNS through it
+  works where Go uses the exit node's DoH); `scripts/ci-net.sh` and `scripts/ci-debian.sh` whole.
 - **T6 — Switch.** The measurements of §6 for both clients; the Rust client becomes the page's
   default; after a release with both, `net/tailscale/`, its Go build, `wasm_exec.js` and Go as
   a dependency go (the tailcat test server is a container image: no Go left). The kept nodes in
@@ -430,6 +436,15 @@ not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s).
   (`DEFAULT_BACKEND`, still `go`), both workers share the store (`web/tailscale-state.ts`), and
   `tests/tailscale-browser.test.ts` runs both clients side by side in one session. The switch waits
   for the guest's test on the Rust client and `scripts/ci-net.sh` on the dev VM, and the M4's numbers.
+  *Done on the dev VM (2026-10-16).* The numbers (`bench/net/clients.ts`, Chromium 153, five runs
+  each alternating; [bench/net/REPORT.md](../../bench/net/REPORT.md) "T6"): Rust 492 KB Brotli
+  (Go 4.5 MB), loaded in 6 ms (34), `Running` after 1.7 s (2.1: headscale's first map), RTT 0.49 ms
+  (0.63), 138 Mbit/s each way (62) at 3.1 core-ms of the worker per Mbit (7.9), the worker's memory
+  2.1 MB (20 to 26). `DEFAULT_BACKEND` is `rust`; the Go client stays behind `?tsbackend=go`, and
+  `scripts/ci-net.sh` runs the guest's test on both. `npm start` now builds `target/net/ts.wasm`
+  (it never did: tailcat from a fresh `npm start` said the client wasn't built since T2), and the Go
+  client only where Go is installed, without a word otherwise. Removing the Go client is the user's
+  call (THIRD_PARTY.md and the rest follow then).
 
 ## 8. Risks and open questions
 

@@ -1,0 +1,160 @@
+{
+  "date": "2026-10-16T22:43:40.088Z",
+  "chromium": "153.0.8010.52",
+  "runs": 5,
+  "echoes": 20000,
+  "size": {
+    "go": {
+      "raw": 27654473,
+      "gzip": 6367615,
+      "brotli": 4528207
+    },
+    "rust": {
+      "raw": 1874287,
+      "gzip": 665467,
+      "brotli": 491832
+    }
+  },
+  "results": [
+    {
+      "backend": "go",
+      "run": 0,
+      "loadMs": 42.824999928474426,
+      "runningMs": 2087.8700000047684,
+      "rttMs": 0.6369499998092651,
+      "echoesBack": 20000,
+      "echoes": 20000,
+      "mbpsEachWay": 62.395302570141645,
+      "workerCores": 0.9781022593446472,
+      "workerCoreMsPerMbit": 7.837947882736157,
+      "workerMemRunning": 19458414,
+      "workerMemAfter": 28428627
+    },
+    {
+      "backend": "rust",
+      "run": 0,
+      "loadMs": 5.429999947547913,
+      "runningMs": 1664.304999947548,
+      "rttMs": 0.5029199998378754,
+      "echoesBack": 20000,
+      "echoes": 20000,
+      "mbpsEachWay": 140.87768922105505,
+      "workerCores": 0.8819195731977693,
+      "workerCoreMsPerMbit": 3.130089576547231,
+      "workerMemRunning": 2085067,
+      "workerMemAfter": 2147891
+    },
+    {
+      "backend": "rust",
+      "run": 1,
+      "loadMs": 5.610000014305115,
+      "runningMs": 2101.8099999427795,
+      "rttMs": 0.487460000038147,
+      "echoesBack": 20000,
+      "echoes": 20000,
+      "mbpsEachWay": 134.87974572354153,
+      "workerCores": 0.8649657960691283,
+      "workerCoreMsPerMbit": 3.2064332247557,
+      "workerMemRunning": 2085067,
+      "workerMemAfter": 2150115
+    },
+    {
+      "backend": "go",
+      "run": 1,
+      "loadMs": 43.174999952316284,
+      "runningMs": 2045.0699999332428,
+      "rttMs": 0.6377300000190735,
+      "echoesBack": 20000,
+      "echoes": 20000,
+      "mbpsEachWay": 61.61198373134203,
+      "workerCores": 0.9720946130250422,
+      "workerCoreMsPerMbit": 7.88884364820847,
+      "workerMemRunning": 19459640,
+      "workerMemAfter": 24648017
+    },
+    {
+      "backend": "go",
+      "run": 2,
+      "loadMs": 32.81499993801117,
+      "runningMs": 2224.1299999952316,
+      "rttMs": 0.6239400000572205,
+      "echoesBack": 20000,
+      "echoes": 20000,
+      "mbpsEachWay": 62.17150957505806,
+      "workerCores": 0.9714298371102822,
+      "workerCoreMsPerMbit": 7.8125,
+      "workerMemRunning": 19979331,
+      "workerMemAfter": 26420853
+    },
+    {
+      "backend": "rust",
+      "run": 2,
+      "loadMs": 6.340000033378601,
+      "runningMs": 1733.1000000238419,
+      "rttMs": 0.49942000007629395,
+      "echoesBack": 20000,
+      "echoes": 20000,
+      "mbpsEachWay": 137.65031859050833,
+      "workerCores": 0.8617156548571113,
+      "workerCoreMsPerMbit": 3.1300895765472307,
+      "workerMemRunning": 2085055,
+      "workerMemAfter": 2149159
+    },
+    {
+      "backend": "rust",
+      "run": 3,
+      "loadMs": 5.814999938011169,
+      "runningMs": 2069.579999923706,
+      "rttMs": 0.48524000000953676,
+      "echoesBack": 20000,
+      "echoes": 20000,
+      "mbpsEachWay": 139.00936020228815,
+      "workerCores": 0.8631485110280515,
+      "workerCoreMsPerMbit": 3.104641693811075,
+      "workerMemRunning": 2085067,
+      "workerMemAfter": 2150115
+    },
+    {
+      "backend": "go",
+      "run": 3,
+      "loadMs": 33.55499994754791,
+      "runningMs": 2148.6200000047684,
+      "rttMs": 0.6285,
+      "echoesBack": 20000,
+      "echoes": 20000,
+      "mbpsEachWay": 61.792575959974414,
+      "workerCores": 0.9717989602825782,
+      "workerCoreMsPerMbit": 7.863395765472314,
+      "workerMemRunning": 19985162,
+      "workerMemAfter": 25320922
+    },
+    {
+      "backend": "go",
+      "run": 4,
+      "loadMs": 33.37999999523163,
+      "runningMs": 2231.435000061989,
+      "rttMs": 0.6303300001621246,
+      "echoesBack": 20000,
+      "echoes": 20000,
+      "mbpsEachWay": 61.70176017037352,
+      "workerCores": 0.9735110776066669,
+      "workerCoreMsPerMbit": 7.888843648208469,
+      "workerMemRunning": 19985563,
+      "workerMemAfter": 26507102
+    },
+    {
+      "backend": "rust",
+      "run": 4,
+      "loadMs": 5.979999899864197,
+      "runningMs": 1693.1500000953674,
+      "rttMs": 0.47879999995231626,
+      "echoesBack": 20000,
+      "echoes": 20000,
+      "mbpsEachWay": 135.74591856374408,
+      "workerCores": 0.8567026619454533,
+      "workerCoreMsPerMbit": 3.1555374592833876,
+      "workerMemRunning": 2085115,
+      "workerMemAfter": 2146831
+    }
+  ]
+}

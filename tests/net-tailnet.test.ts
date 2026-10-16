@@ -1,13 +1,13 @@
 // The guest on a tailnet, end to end in headless Chromium (docs/plans/networking.md N4): the page's
 // Debian with virtio-net on the Ethernet gateway (web/gateway.ts) behind the Tailscale client
-// (net/tailscale, the Go wasm build, in its own worker), against a headscale and a peer that
+// (net/ts, the Rust client, in its own worker), against a headscale and a peer that
 // `tests/net/tailnet.sh` starts in rootless Podman (its range is not the default 100.64.0.0/10:
 // the guest's address is whatever the client reports). The guest takes a DHCP lease from
 // systemd-networkd, pings the peer, resolves it through MagicDNS, and the peer connects to a
 // server in the guest. Realtime, so not exact: one boot, ~2 min alone.
-// Opt-in: WEBPC_TAILNET=1 (needs Podman, the Go wasm build (net/tailscale/build.sh; built here if
-// Go is there) and the Debian image, `npm start` or tools/debian.ts). WEBPC_TS_BACKEND=rust runs the
-// same test on the Rust client (net/ts, target/net/ts.wasm; docs/plans/tailnet-client.md T5).
+// Opt-in: WEBPC_TAILNET=1 (needs Podman, target/net/ts.wasm (net/ts/build.sh) and the Debian image,
+// `npm start` or tools/debian.ts). WEBPC_TS_BACKEND=go runs the same test on the Go client
+// (net/tailscale, target/net/tailscale.wasm, built here if Go is there).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -18,7 +18,7 @@ import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const BACKEND = process.env.WEBPC_TS_BACKEND === 'rust' ? 'rust' : 'go';
+const BACKEND = process.env.WEBPC_TS_BACKEND === 'go' ? 'go' : 'rust';
 const WASM = `${ROOT}target/net/${BACKEND === 'rust' ? 'ts' : 'tailscale'}.wasm`;
 const has = (cmd: string) => spawnSync(cmd, ['--version'], { stdio: 'ignore' }).status === 0;
 const skip = process.env.WEBPC_TAILNET !== '1' ? 'SKIPPED: set WEBPC_TAILNET=1'

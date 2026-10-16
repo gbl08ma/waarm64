@@ -150,6 +150,43 @@ arrives as NAT64 `64:ff9b::7f00:1`. The harness now echoes to the machine's own 
 address; Lima's VM has none, so the run adds one (`sudo ip -6 addr add fd00:7e57::1/128 dev eth0
 nodad`; on `lo` Node calls it internal and the Debian test wouldn't pick it).
 
+## T6: the Go and Rust Tailscale clients in Chromium (2026-10-16)
+
+`bench/net/clients.ts` on the dev VM (Lima `dev`, 8 vCPUs of the M4), Chromium 153.0.8010.52
+headless, against `tests/net/tailnet.sh` (headscale v0.29.4 with its embedded DERP, a userspace
+`tailscaled` v1.102.5 peer, both in Podman on the same VM). No guest: the page
+`tests/browser/tailscale.html` plays it, UDP echoes to a Node echo server behind the peer. Five
+runs per client, alternating (Go first in even runs), a fresh browser context each; Go is
+`net/tailscale` at Tailscale v1.102.5, Rust `net/ts` at `1d8b184`. JSON in
+`results/t6/clients-m4.json`.
+
+| (5 runs: min / median / max) | Go | Rust |
+|---|---|---|
+| module, raw | 27,654,473 B | 1,874,287 B |
+| gzip -9 | 6,367,615 B | 665,467 B |
+| Brotli 11 | 4,528,207 B | **491,832 B** |
+| load and instantiate (ms) | 33 / 34 / 43 | 5.4 / 5.8 / 6.3 |
+| client started → `Running` (ms) | 2045 / 2149 / 2231 | 1664 / 1733 / 2102 |
+| UDP echo RTT, 500 one at a time (ms) | 0.62 / 0.63 / 0.64 | 0.48 / 0.49 / 0.50 |
+| 20,000 echoes of 1,228 B, 32 in flight (Mbit/s each way) | 61.6 / 61.8 / 62.4 | **134.9 / 137.7 / 140.9** |
+| the worker thread's CPU during it (cores) | 0.97 / 0.97 / 0.98 | 0.86 / 0.86 / 0.88 |
+| worker CPU per Mbit carried, both ways (core-ms) | 7.81 / 7.86 / 7.89 | **3.10 / 3.13 / 3.21** |
+| worker memory at `Running` (MB) | 19.5 / 20.0 / 20.0 | 2.09 / 2.09 / 2.09 |
+| worker memory after the echoes (MB) | 24.6 / 26.4 / 28.4 | 2.15 / 2.15 / 2.15 |
+
+No echo lost by either. The Rust client: **a ninth of the download**, **2.2 times the
+throughput at 2.5 times less CPU per Mbit**, a tenth of the memory, and it doesn't grow under
+traffic; `Running` is headscale's first map (~2 s after registration) for both, Rust's ~0.4 s
+sooner (not broken down). Go's worker is pinned at a core, so its 62 Mbit/s is
+its ceiling here; Rust's isn't quite, and what else limits it (the page's echo loop, the peer, the
+DERP) wasn't separated. *How:* memory is `performance.measureUserAgentSpecificMemory()`
+(Chromium run with `--enable-blink-features=ForceEagerMeasureMemory`), the breakdown entries
+attributed to the `DedicatedWorkerGlobalScope`; checked to include a worker's wasm linear memory
+(a 100 MiB `WebAssembly.Memory` reported as 105 MB). CPU is the `utime + stime` of the renderer's
+`DedicatedWorker` threads from `/proc` around the throughput run (the harness checks that there's
+exactly one). The cloud session's indications (x86_64, Chromium 141: 34 vs 17 Mbit/s) had the
+same ratio.
+
 ## Reproduce
 ```sh
 net/tailscale/build.sh                       # target/net/tailscale.wasm, needs Go (go.mod pins the toolchain)
@@ -163,4 +200,7 @@ tests/net/tailcat.sh up && eval "$(tests/net/tailcat.sh env)"
 sudo ip -6 addr add fd00:7e57::1/128 dev eth0 nodad    # only where the machine has no non-link-local IPv6
 WEBPC_TS_JSON=… NODE_EXTRA_CA_CERTS=$WEBPC_TAILCAT_CA node bench/net/tailcat.ts $WEBPC_TAILCAT_ADDR 5
 tests/net/tailcat.sh down
+# T6: both Tailscale clients in Chromium (brings the Podman tailnet up and down itself; the only Chromium running)
+net/tailscale/build.sh && net/ts/build.sh
+WEBPC_TS_JSON=bench/net/results/t6/clients-m4.json node bench/net/clients.ts 5 20000
 ```

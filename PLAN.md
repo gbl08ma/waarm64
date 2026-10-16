@@ -147,8 +147,9 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     later behind the same gateway; our own client (a Rust wasm module on tailscale-rs's protocol
     crates, tailcat first: [docs/plans/tailnet-client.md](docs/plans/tailnet-client.md); T1 to T3
     done: tailcat on the page, the VM as a tailcat server; T4 and T5, the Tailscale control session
-    and data plane, written and tested in a cloud session, their guest check on the dev VM next,
-    then T6, the switch) is meant to replace the Go one.
+    and data plane; T6, the switch, 2026-10-16) is the page's Tailscale client: 0.49 MB Brotli to
+    Go's 4.5, 2.2 times the throughput at 2.5 times less CPU per Mbit. The Go one stays behind
+    `?tsbackend=go`; removing it (and Go) after a release with both is the user's call.
   - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): **virtio-gpu 2D is done (G0 and
     G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
     first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device

@@ -572,7 +572,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   only (no CallMeMaybe, no pings of our own: a browser has no direct path to offer); Tailnet Lock is refused, not
   supported; the first packet to a fresh peer after the tailnet comes up waits ~4.5 s for a WireGuard retry
   (later ones 55 ms; the Go client's "5 s first ping" too); headscale answers the first map ~2 s after registration
-  for both clients (not ours to fix); the module's memory in its worker isn't measured (T6, §6).
+  for both clients (not ours to fix).
+- **Removing the Go Tailscale client** (the user's call, after a release with both: tailnet-client.md T6):
+  `net/tailscale/`, its build, `wasm_exec.js`, `web/tailscale-worker.ts`; Go stays for the tailcat rig and the
+  hand-over test (`tests/net/go-client.ts`) until the rig is a container image.
 
 ## Tests and tools
 
