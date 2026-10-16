@@ -5,9 +5,15 @@
 
 pub mod cbor;
 pub mod client;
+pub mod control;
 pub mod derp;
+pub mod h2pipe;
 pub mod nat46;
+pub mod netmap;
+pub mod noise;
+pub mod store;
 pub mod tailcat;
+pub mod tailnet;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm;

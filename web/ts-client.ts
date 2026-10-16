@@ -5,6 +5,7 @@
 // a worker or in Node alike: WebSocket, fetch and crypto are all it needs.
 import type { Lease } from './gateway.ts';
 import { wasi } from './ts-wasi.ts';
+import type { NetMap } from './tailscale.ts';
 
 type Exports = {
   memory: WebAssembly.Memory;
@@ -22,6 +23,7 @@ type Exports = {
   ts_deadline(h: number): number;
   ts_close(h: number): void;
   ts_free(h: number): void;
+  ts_logout(h: number): void;
 };
 
 /** A tailcat server to connect to (`tailcat serve exit-node` printed `addr`), clients to let in (`serve`), or both. */
@@ -39,13 +41,30 @@ export type TailcatConfig = {
   dns6?: number[][];
 };
 
+/** A Tailscale node (docs/plans/tailnet-client.md §5): its control server and the kept node's store. */
+export type TailnetConfig = {
+  control: { url: string; authKey?: string; hostname?: string; ephemeral?: boolean };
+  /** The node's store as the Go client keeps it (web/tailscale-worker.ts): `<StateKey>` → hex of the bytes. */
+  state?: Record<string, string>;
+  /** A peer's stable ID to send the guest's internet traffic through ('' for none). */
+  exitNode?: string;
+};
+
 export type TsEvent =
   | { type: 'state'; state: 'FetchingMap' | 'Connecting' | 'Meowing' | 'Handshaking' | 'Running' | 'Failed'; error?: string }
   | { type: 'lease'; lease: Lease }
   | { type: 'self'; key: string; address6: number[] }
   | { type: 'serving'; addr: string }
   | { type: 'client'; key: string; address6: number[] }
-  | { type: 'log'; msg: string };
+  | { type: 'log'; msg: string }
+  /** Tailscale: Go's state names (`Starting`, `NeedsLogin`, `Running`), or `Failed` with why. */
+  | { type: 'state'; state: 'Starting' | 'NeedsLogin' | 'Running'; error?: string }
+  | { type: 'netmap'; netmap: NetMap }
+  /** Write this entry of the node's store (hex, as the Go client's store keeps it). */
+  | { type: 'store'; key: string; value: string }
+  /** The URL to visit to log the node in. */
+  | { type: 'login'; url: string }
+  | { type: 'loggedout' };
 
 export type TsHandlers = {
   /** An IP packet for the guest (the array is the client's: keep it). */
@@ -92,7 +111,7 @@ export class TsModule {
   }
 }
 
-/** A tailcat client: the guest's network through a tailcat server. */
+/** A client of the module: tailcat (the guest's network through a tailcat server) or, with `control`, Tailscale. */
 export class TsClient {
   private readonly m: TsModule;
   private readonly h: number;
@@ -101,7 +120,7 @@ export class TsClient {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private closed = false;
 
-  constructor(m: TsModule, config: TailcatConfig, on: TsHandlers) {
+  constructor(m: TsModule, config: TailcatConfig | TailnetConfig, on: TsHandlers) {
     this.m = m;
     this.on = on;
     const json = encoder.encode(JSON.stringify({ dns4: DNS4, dns6: DNS6, ...config }));
@@ -121,6 +140,13 @@ export class TsClient {
   guest(p: Uint8Array) {
     if (this.closed) return;
     this.m.x.ts_guest(this.h, ...this.m.put(p));
+    this.pump();
+  }
+
+  /** Tailscale: logs the node out (`loggedout` follows) and tells the store to forget it. */
+  logout() {
+    if (this.closed) return;
+    this.m.x.ts_logout(this.h);
     this.pump();
   }
 

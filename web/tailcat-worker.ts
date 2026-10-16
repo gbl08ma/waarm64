@@ -71,6 +71,7 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
           post({ type: 'netmap', netmap: netmapOf(lease, serving, exit) });
           return;
         }
+        if (ev.type !== 'state') return; // the Tailscale client's events
         if (ev.state === 'Failed') return post({ type: 'error', error: ev.error ?? 'the connection failed' });
         post({ type: 'state', state: ev.state });
       },

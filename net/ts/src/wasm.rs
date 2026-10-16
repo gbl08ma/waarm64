@@ -11,18 +11,36 @@
 //! | 4 fetch | id | URL |
 //! | 5 packet for the guest | 0 | the IP packet |
 //! | 6 event | 0 | JSON |
+//!
+//! `ts_new`'s JSON makes a tailcat client (`addr`, `serve`) or, with `control`, a Tailscale one
+//! (tailnet.rs) on the kept node `state` (the store's entries as the page keeps them: hex).
 
-use std::{cell::RefCell, time::Instant};
+use std::{cell::RefCell, collections::BTreeMap, time::Instant};
 
 use serde::Deserialize;
 
 use crate::{
     client::{Action, Client, Config, DEFAULT_DERP_MAP, GUEST4, Serve},
-    tailcat,
+    control, tailcat, tailnet,
 };
 
+/// Either kind of client, behind one set of exports.
+enum Any {
+    Tailcat(Client),
+    Tailnet(Box<tailnet::Client>),
+}
+
+macro_rules! each {
+    ($c:expr, $x:ident => $e:expr) => {
+        match $c {
+            Any::Tailcat($x) => $e,
+            Any::Tailnet($x) => $e,
+        }
+    };
+}
+
 thread_local! {
-    static CLIENTS: RefCell<Vec<Option<Client>>> = const { RefCell::new(Vec::new()) };
+    static CLIENTS: RefCell<Vec<Option<Any>>> = const { RefCell::new(Vec::new()) };
     static BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -43,6 +61,33 @@ struct JsConfig {
     dns4: Vec<[u8; 4]>,
     #[serde(default)]
     dns6: Vec<[u8; 16]>,
+    /// A Tailscale client of this control server.
+    control: Option<JsControl>,
+    /// The kept node's store: `<StateKey>` → hex of the bytes.
+    #[serde(default)]
+    state: BTreeMap<String, String>,
+    #[serde(default)]
+    exit_node: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct JsControl {
+    url: String,
+    auth_key: Option<String>,
+    #[serde(default)]
+    hostname: String,
+    #[serde(default)]
+    ephemeral: bool,
+}
+
+fn unhex(s: &str) -> Result<Vec<u8>, String> {
+    (0..s.len() / 2)
+        .map(|i| {
+            u8::from_str_radix(&s[2 * i..2 * i + 2], 16)
+                .map_err(|_| "a stored value isn't hex".to_string())
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -82,7 +127,7 @@ unsafe fn take(ptr: *mut u8, len: usize) -> Vec<u8> {
     unsafe { Vec::from_raw_parts(ptr, len, len) }
 }
 
-fn with<R>(h: u32, f: impl FnOnce(&mut Client) -> R) -> Option<R> {
+fn with<R>(h: u32, f: impl FnOnce(&mut Any) -> R) -> Option<R> {
     CLIENTS.with_borrow_mut(|cs| cs.get_mut(h.wrapping_sub(1) as usize)?.as_mut().map(f))
 }
 
@@ -118,7 +163,30 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
     let json = unsafe { take(ptr, len) };
     let made = serde_json::from_slice::<JsConfig>(&json)
         .map_err(|e| format!("the configuration: {e}"))
-        .and_then(|c| {
+        .and_then(|c| -> Result<Any, String> {
+            if let Some(ctl) = c.control {
+                let state = c
+                    .state
+                    .iter()
+                    .map(|(k, v)| Ok((k.clone(), unhex(v)?)))
+                    .collect::<Result<_, String>>()?;
+                let cfg = tailnet::Config {
+                    control: control::Config {
+                        url: ctl.url,
+                        auth_key: ctl.auth_key,
+                        hostname: if ctl.hostname.is_empty() {
+                            "webpc".into()
+                        } else {
+                            ctl.hostname
+                        },
+                        ephemeral: ctl.ephemeral,
+                    },
+                    state,
+                    exit_node: c.exit_node,
+                };
+                return tailnet::Client::new(cfg, Instant::now())
+                    .map(|t| Any::Tailnet(Box::new(t)));
+            }
             let key = c.key.as_deref().map(unhex32).transpose()?;
             let serve = c
                 .serve
@@ -143,7 +211,7 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
                 dns4: c.dns4,
                 dns6: c.dns6,
             };
-            Client::new(cfg, Instant::now())
+            Client::new(cfg, Instant::now()).map(Any::Tailcat)
         });
     match made {
         Ok(c) => CLIENTS.with_borrow_mut(|cs| {
@@ -157,13 +225,17 @@ pub unsafe extern "C" fn ts_new(ptr: *mut u8, len: usize) -> i32 {
 /// The client's private key, 32 bytes in `ts_buf()` (to keep it).
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_private_key(h: u32) -> u32 {
-    with(h, |c| set_buf(c.private_key().to_vec())).unwrap_or(0)
+    with(h, |c| match c {
+        Any::Tailcat(c) => set_buf(c.private_key().to_vec()),
+        Any::Tailnet(_) => 0,
+    })
+    .unwrap_or(0)
 }
 
 /// The next action's length in `ts_buf()`, 0 when there's none.
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_poll(h: u32) -> u32 {
-    let Some(Some(a)) = with(h, |c| c.poll()) else {
+    let Some(Some(a)) = with(h, |c| each!(c, x => x.poll())) else {
         return 0;
     };
     let (kind, n, rest): (u8, u32, Vec<u8>) = match a {
@@ -195,12 +267,15 @@ pub extern "C" fn ts_poll(h: u32) -> u32 {
 pub unsafe extern "C" fn ts_ws_message(h: u32, conn: u32, ptr: *mut u8, len: usize) {
     // SAFETY: the host passes a buffer from ts_alloc(len).
     let data = unsafe { take(ptr, len) };
-    with(h, |c| c.ws_message(conn, &data, Instant::now()));
+    with(
+        h,
+        |c| each!(c, x => x.ws_message(conn, &data, Instant::now())),
+    );
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_ws_closed(h: u32, conn: u32) {
-    with(h, |c| c.ws_closed(conn, Instant::now()));
+    with(h, |c| each!(c, x => x.ws_closed(conn, Instant::now())));
 }
 
 /// # Safety
@@ -209,7 +284,10 @@ pub extern "C" fn ts_ws_closed(h: u32, conn: u32) {
 pub unsafe extern "C" fn ts_fetched(h: u32, id: u32, ok: u32, ptr: *mut u8, len: usize) {
     // SAFETY: the host passes a buffer from ts_alloc(len).
     let body = unsafe { take(ptr, len) };
-    with(h, |c| c.fetched(id, ok != 0, &body, Instant::now()));
+    with(
+        h,
+        |c| each!(c, x => x.fetched(id, ok != 0, &body, Instant::now())),
+    );
 }
 
 /// # Safety
@@ -218,27 +296,29 @@ pub unsafe extern "C" fn ts_fetched(h: u32, id: u32, ok: u32, ptr: *mut u8, len:
 pub unsafe extern "C" fn ts_guest(h: u32, ptr: *mut u8, len: usize) {
     // SAFETY: the host passes a buffer from ts_alloc(len).
     let p = unsafe { take(ptr, len) };
-    with(h, |c| c.guest_packet(&p, Instant::now()));
+    with(h, |c| each!(c, x => x.guest_packet(&p, Instant::now())));
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_tick(h: u32) {
-    with(h, |c| c.tick(Instant::now()));
+    with(h, |c| each!(c, x => x.tick(Instant::now())));
 }
 
 /// Milliseconds until `ts_tick` must run, or -1 for never.
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_deadline(h: u32) -> f64 {
     let now = Instant::now();
-    with(h, |c| c.deadline()).flatten().map_or(-1.0, |t| {
-        t.saturating_duration_since(now).as_secs_f64() * 1000.0
-    })
+    with(h, |c| each!(c, x => x.deadline()))
+        .flatten()
+        .map_or(-1.0, |t| {
+            t.saturating_duration_since(now).as_secs_f64() * 1000.0
+        })
 }
 
 /// Closes the client (its WebSocket close actions are still to poll) and frees it after.
 #[unsafe(no_mangle)]
 pub extern "C" fn ts_close(h: u32) {
-    with(h, |c| c.close());
+    with(h, |c| each!(c, x => x.close()));
 }
 
 /// Frees a closed client once its actions are polled.
@@ -247,6 +327,16 @@ pub extern "C" fn ts_free(h: u32) {
     CLIENTS.with_borrow_mut(|cs| {
         if let Some(c) = cs.get_mut(h.wrapping_sub(1) as usize) {
             *c = None;
+        }
+    });
+}
+
+/// Logs a Tailscale node out (its key expired at the control server, the store told to forget it).
+#[unsafe(no_mangle)]
+pub extern "C" fn ts_logout(h: u32) {
+    with(h, |c| {
+        if let Any::Tailnet(t) = c {
+            t.logout(Instant::now())
         }
     });
 }
