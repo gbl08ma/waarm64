@@ -41,7 +41,7 @@ dev VM. The user's instructions that bind it:
 | `tests/tailcat-browser.test.ts` (Chromium 141) | passed: loaded 16 ms, `Running` 122 ms, 2,000/2,000 echoes | to run (Chromium 153) |
 | `tests/net-tailcat.test.ts` (Debian through tailcat) | **never run** (no EDK2 here) | **to run: its first run** |
 | `scripts/ci-net.sh`, `scripts/ci-debian.sh` | not run | **to run** (network and page changes) |
-| `scripts/ci.sh` | ran to its `cargo test`, which fails on `fp::tests::inline_fma_is_correctly_rounded` **on the base commit too** (x86_64 only, it seems; unrelated); the remaining steps were run by hand (see the commit) | must pass |
+| `scripts/ci.sh` | its steps by hand: fmt, clippy, `cargo test` (all pass but `fp::tests::inline_fma_is_correctly_rounded`), TestFloat, both wasm builds, tsc pass; `npm test` passes but five WebGL2 tests (`virgl-browser`: glcomp, stream output, sway; the H.264 `video` ones). **All six failures fail identically on the base commit `53c603b` in the same container** (x86_64, Chromium 141 on SwiftShader): not this work's | must pass |
 
 ## To do on the dev VM, in order
 
