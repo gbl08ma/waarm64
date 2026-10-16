@@ -4,8 +4,8 @@
 done** (2026-10-16): the module and tailcat in Node, measured; tailcat on the page, Debian through
 it; the VM as a tailcat server, and the page's Network wizard; the Tailscale control session, the
 kept node handed over both ways with the Go client, the data plane; and the switch: **the Rust
-client is the page's Tailscale client** (§7). Left: removing the Go client after a release with
-both (the user's call), and the loose ends in [backlog.md](../backlog.md) "Network". It continues
+client is the page's Tailscale client** (§7). Left: removing the Go client from the page, on the
+user's OK after their manual test (Go stays for development and CI), and the loose ends in [backlog.md](../backlog.md) "Network". It continues
 [networking.md](networking.md) (its §5, "Later: tailscale-rs"), which holds the decisions that
 stay: frames at the device, the Ethernet gateway (§3), the IP-packet port, the guest as the node.
 What exists: `net/ts/` (the module), `web/ts-client.ts` and `web/ts-wasi.ts` (its I/O),
@@ -443,8 +443,9 @@ not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s). *M
   2.1 MB (20 to 26). `DEFAULT_BACKEND` is `rust`; the Go client stays behind `?tsbackend=go`, and
   `scripts/ci-net.sh` runs the guest's test on both. `npm start` now builds `target/net/ts.wasm`
   (it never did: tailcat from a fresh `npm start` said the client wasn't built since T2), and the Go
-  client only where Go is installed, without a word otherwise. Removing the Go client is the user's
-  call (THIRD_PARTY.md and the rest follow then).
+  client only where Go is installed, without a word otherwise. Removing the Go client from the page
+  follows the user's manual test and OK (2026-10-17: no release with both, there are no other users
+  yet); Go stays for development and CI (the tailcat rig, the hand-over test).
 
 ## 8. Risks and open questions
 
