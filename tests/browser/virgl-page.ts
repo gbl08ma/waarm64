@@ -31,6 +31,8 @@ export function compileCorpus(corpus: string) {
 import { VirglRenderer } from '../../web/virgl-renderer.ts';
 import { CallQueue, localHost, runCall, type HostCall } from '../../web/virgl-host.ts';
 import { replay, replayAsync } from '../../web/virgl-replay.ts';
+import { Gpu } from '../../web/gpu.ts';
+import { Screen } from '../../web/virgl-screen.ts';
 import { probeVideo, webCodecsDecoder, type DecodedPicture, type DecoderFactory } from '../../web/virgl-video.ts';
 
 const fromBase64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -248,4 +250,32 @@ export function streamOut() {
   r.submit(1, new Uint32Array(words));
   const floats = (id: number) => Array.from(new Float32Array(r.readResource(id)!.slice().buffer));
   return { appended, emitted, overflowed, separate: [floats(3), floats(4)], mixed: [floats(6), floats(7)], log, glError: gl.getError() };
+}
+
+/**
+ * A 3D machine's 2D scanout on the screen: the device (web/gpu.ts) with a host whose screen draws on WebGL2, a 4×4
+ * resource of `format` filled with the guest's bytes `px`, transferred and shown. Returns the screen's centre pixel.
+ */
+export async function screen2d(format: number, px: number[]) {
+  const gl = new OffscreenCanvas(4, 4).getContext('webgl2')!;
+  const ram = new Uint8Array(4096);
+  for (let k = 0; k < 64; k += 4) ram.set(px, k);
+  const r = new VirglRenderer(gl, { ram: () => ram });
+  const screen = new Screen(gl, r);
+  const seen = new Promise<number[]>((ok) => (screen.probe = (...rgb) => ok(rgb)));
+  const gpu = new Gpu(() => ram, ram.length, { width: 4, height: 4 });
+  gpu.host = localHost(r, screen);
+  const cmd = (type: number, ...fields: (number | bigint)[]) => {
+    const b = new Uint8Array(24 + fields.reduce<number>((n, f) => n + (typeof f === 'bigint' ? 8 : 4), 0));
+    const v = new DataView(b.buffer);
+    v.setUint32(0, type, true);
+    let at = 24;
+    for (const f of fields) { if (typeof f === 'bigint') { v.setBigUint64(at, f, true); at += 8; } else { v.setUint32(at, f, true); at += 4; } }
+    return gpu.control(b, 64);
+  };
+  cmd(0x101, 1, format, 4, 4); // RESOURCE_CREATE_2D
+  cmd(0x106, 1, 1, 0x4000_0000n, 64, 0); // RESOURCE_ATTACH_BACKING: one entry
+  cmd(0x105, 0, 0, 4, 4, 0n, 1, 0); // TRANSFER_TO_HOST_2D
+  cmd(0x103, 0, 0, 4, 4, 0, 1); // SET_SCANOUT
+  return seen;
 }

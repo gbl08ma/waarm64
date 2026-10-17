@@ -273,7 +273,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   (the first row at `offset`, rows a resource width apart, as QEMU reads them) and swizzles to
   RGBA in the same pass, for all eight 32-bit formats. **An X format's unused byte is kept as
   alpha:** Linux creates every dumb buffer as `B8G8R8X8`, and a cursor that is an ARGB8888
-  framebuffer on one carries its alpha there. The screen ignores alpha.
+  framebuffer on one carries its alpha there. The screen ignores alpha. **With a host** (a 3D
+  machine) a resource keeps the guest's bytes as they are (a plain copy, 3 to 4 times faster than
+  the swizzle) and the host's screen swizzles in its draw; the hashes and the cursor are RGBA all the same.
 - **The backing pages are guest-physical addresses inside the command**, which the core's chain
   checks don't cover: every entry must lie in RAM (`ERR_INVALID_PARAMETER` otherwise, nothing
   attached), a transfer reads only through the entries, and the backend never writes guest RAM.
@@ -334,7 +336,8 @@ mode (and natively in realtime mode: std has no CSPRNG).
 - **The device checks, the host runs** (`web/virgl-host.ts`): the device validates every command and keeps its tables
   (contexts, resources and their backings) as for the null renderer, and hands the work to `Gpu.host`: contexts,
   3D resources, backings, attachments, transfers and submits, and with a host every scanout too (a 2D resource's
-  RGBA then lives in shared memory and the host's screen reads it in place). Calls are ordered and answer nothing.
+  pixels then live in shared memory, in the guest's format, and the host's screen reads them in place and draws them
+  through the format's swizzle). Calls are ordered and answer nothing.
   **A command with the fence flag** has its reply held until the host's fence resolves (everything before it has
   run: uploads read, read-backs written), and every reply behind it waits in order (the flush pacing is the same
   queue). Without a host it is the null renderer: streams walked and counted (`VirglStats`), 3D transfers counted,

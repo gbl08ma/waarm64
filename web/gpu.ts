@@ -5,7 +5,9 @@
 // give the same answers and the same pixels.
 //
 // A host resource is RGBA bytes in JS memory (what a canvas takes: the swizzle from the guest's
-// format is fused into TRANSFER_TO_HOST_2D's gather, docs/plans/graphics.md §10). The guest's
+// format is fused into TRANSFER_TO_HOST_2D's gather, docs/plans/graphics.md §10); on a 3D machine it is
+// the guest's bytes as they are (a plain copy, ~4 times faster), and the host's screen swizzles in its
+// draw (web/virgl-screen.ts). The guest's
 // backing pages are guest-physical addresses inside the command's payload, which the core's chain
 // checks don't cover: every entry is checked to lie in RAM before it is kept, and a transfer
 // reads only through those entries.
@@ -70,8 +72,10 @@ const FORMATS = new Map<number, [number, number, number, number]>([
 export type Rect = { x: number; y: number; w: number; h: number };
 type Resource = {
   id: number; format: number; width: number; height: number;
-  /** RGBA, rows of `width` pixels. */
+  /** RGBA, rows of `width` pixels; with `raw`, the guest's bytes in its format. */
   pixels: Uint8Array;
+  /** Made with a host: `pixels` are copied as they are, for its screen, which swizzles them in its draw. */
+  raw?: boolean;
   /** The guest's pages, as RAM offsets (`addr` − RAM_BASE) and lengths; null until attached. */
   backing: { off: number; len: number }[] | null;
   /** Shown on the scanout: its alpha is 255 (a canvas takes the pixels as they are). */
@@ -129,7 +133,7 @@ export type GpuOptions = {
   trace?: boolean;
 };
 
-/** Where the scanout's pixels are: a resource's RGBA (rows `width` pixels apart, alpha meaningless) and the scanout's origin in it. */
+/** Where the scanout's pixels are: a resource's RGBA (rows `width` pixels apart, alpha meaningless; the guest's format with a host) and the scanout's origin in it. */
 export type ScanoutSource = { pixels: Uint8Array; width: number; height: number; x: number; y: number };
 
 /** What the page draws from: the scanout and its damage, and the cursor. All optional (tests read the state). */
@@ -272,7 +276,7 @@ export class Gpu {
         const bytes = width * height * 4; // exact in a double up to 2^53: 2^32 × 2^32 × 4 is not, but is refused all the same
         if (bytes > MAX_RESOURCE || this.total + bytes > MAX_TOTAL) return this.reply(ERR_OUT_OF_MEMORY, cmd, room);
         this.total += bytes;
-        this.resources.set(id, { id, format, width, height, pixels: this.pixels(bytes), backing: null });
+        this.resources.set(id, { id, format, width, height, pixels: this.pixels(bytes), backing: null, raw: !!this.host });
         return this.reply(OK_NODATA, cmd, room);
       }
       case RESOURCE_UNREF: {
@@ -550,7 +554,7 @@ export class Gpu {
         const res = this.resources.get(id);
         if (!res || res.width !== CURSOR || res.height !== CURSOR) return; // the guest's mistake: the cursor stays as it was
         if (res.three) return this.readCursor(res, serial);
-        this.cursorImage = res.pixels.slice();
+        this.cursorImage = res.raw ? rgba(res, 0, CURSOR * CURSOR) : res.pixels.slice();
       }
     }
     this.hooks.cursor?.(this.cursorImage, c.hotX, c.hotY, c.x, c.y);
@@ -653,7 +657,7 @@ export class Gpu {
     const res = s && this.resources.get(s.id);
     if (!s || !res) this.host.call({ t: 'scanout', width: 0, height: 0, rect: { x: 0, y: 0, w: 0, h: 0 } });
     else if (res.three) this.host.call({ t: 'scanout', res: res.id, width: res.width, height: res.height, rect: { ...s.rect } });
-    else this.host.call({ t: 'scanout', pixels: res.pixels, width: res.width, height: res.height, rect: { ...s.rect } });
+    else this.host.call({ t: 'scanout', pixels: res.pixels, swizzle: res.raw ? FORMATS.get(res.format)!.slice(0, 3) : undefined, width: res.width, height: res.height, rect: { ...s.rect } });
   }
 
   /** Copies the part of `r` that is on the scanout to the page. */
@@ -701,6 +705,26 @@ export class Gpu {
     if (!this.fits(res, r, offset)) return false;
     const [ri, gi, bi, ai] = FORMATS.get(res.format)!;
     const ram = this.ram();
+    if (res.raw) {
+      // For the host's screen: the bytes as they are, a backing page's run at a time.
+      const px = res.pixels;
+      let seg = 0, segStart = 0;
+      for (let y = 0; y < r.h; y++) {
+        let at = offset + stride * y;
+        let d = ((r.y + y) * res.width + r.x) * 4;
+        for (let left = rowLen; left > 0;) {
+          while (at >= segStart + backing[seg].len) segStart += backing[seg++].len;
+          const b = backing[seg];
+          const s0 = b.off + (at - segStart);
+          const n = Math.min(left, b.len - (at - segStart));
+          px.set(ram.subarray(s0, s0 + n), d);
+          d += n;
+          left -= n;
+          at += n;
+        }
+      }
+      return true;
+    }
     // The usual case, words: B8G8R8x or R8G8B8x, pages 4-byte aligned (Linux's are): 32-bit loads and stores
     // with the channels swapped in registers, ~4 times the bytewise loop (a console scrolling at full screen
     // sends hundreds of these a second, and the guest waits for each).
@@ -772,7 +796,10 @@ export class Gpu {
     const res = this.resources.get(s.id)!;
     const words = new Uint32Array(res.pixels.buffer, res.pixels.byteOffset, res.pixels.length / 4);
     const rows = [];
-    for (let y = 0; y < s.rect.h; y++) rows.push(words.subarray((s.rect.y + y) * res.width + s.rect.x, (s.rect.y + y) * res.width + s.rect.x + s.rect.w));
+    for (let y = 0; y < s.rect.h; y++) {
+      const at = (s.rect.y + y) * res.width + s.rect.x;
+      rows.push(res.raw ? new Uint32Array(rgba(res, at, s.rect.w).buffer) : words.subarray(at, at + s.rect.w));
+    }
     return hashRgba(rows, true);
   }
 
@@ -832,7 +859,7 @@ export class Gpu {
     this.bounce = false;
     this.trace = t.trace ?? [];
     for (const r of t.resources) {
-      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: this.pixels(r.width * r.height * 4), backing: r.backing?.map(([off, len]) => ({ off, len })) ?? null };
+      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: this.pixels(r.width * r.height * 4), backing: r.backing?.map(([off, len]) => ({ off, len })) ?? null, raw: !!this.host };
       this.total += res.pixels.length;
       this.resources.set(res.id, res);
       if (res.backing) this.transfer(res, { x: 0, y: 0, w: res.width, h: res.height }, 0);
@@ -872,11 +899,19 @@ export class Gpu {
   }
 }
 
-/** A resource that is on the scanout loses its alpha (an X format's unused byte, `FORMATS`): from now on transfers write 255 too. */
+/** A resource that is on the scanout loses its alpha (an X format's unused byte, `FORMATS`): from now on transfers write 255 too. A raw one keeps its bytes (the host's screen ignores alpha). */
 function makeOpaque(res: Resource) {
-  if (res.opaque) return;
+  if (res.opaque || res.raw) return;
   res.opaque = true;
   for (let k = 3; k < res.pixels.length; k += 4) res.pixels[k] = 255;
+}
+
+/** `n` pixels of a raw resource from pixel `at`, as RGBA. */
+function rgba(res: Resource, at: number, n: number) {
+  const [ri, gi, bi, ai] = FORMATS.get(res.format)!;
+  const px = res.pixels, out = new Uint8Array(n * 4);
+  for (let k = 0, s = at * 4; k < out.length; k += 4, s += 4) [out[k], out[k + 1], out[k + 2], out[k + 3]] = [px[s + ri], px[s + gi], px[s + bi], px[s + ai]];
+  return out;
 }
 
 /** Reads `out.length` bytes at `offset` of the concatenated backing pages. */
