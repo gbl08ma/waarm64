@@ -581,6 +581,7 @@ pub fn module(
         counts: emit::Counts::default(),
     };
     let (base, phys) = mem.base();
+    let pair_locks = mem.pair_locks() as usize as u32;
     for r in regions {
         let head = &r.blocks[0];
         let cx = if head.key & KEY_MMU != 0 {
@@ -591,6 +592,7 @@ pub fn module(
                 el1: head.key & KEY_EL1 != 0,
                 crypto,
                 parallel,
+                pair_locks,
             }
         } else {
             let (base, size) = (base as usize as u32, mem.size());
@@ -600,6 +602,7 @@ pub fn module(
                 el1: head.key & KEY_EL1 != 0,
                 crypto,
                 parallel,
+                pair_locks,
             }
         };
         let env = Env {

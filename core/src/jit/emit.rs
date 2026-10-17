@@ -36,6 +36,7 @@ use crate::cpu::Cpu;
 use crate::decode::Op;
 use crate::interp::sys::DCZID_BS;
 use crate::interp::{adr_imm, bit, bit_masks, bits, sext, trunc};
+use crate::mem::{PAIR_LOCK_SIZE, PAIR_LOCKS};
 use crate::mmu::{TLB_ENTRIES, TLB_SLOTS, Tlb, Vcpu, XC_ENTRIES};
 
 /// A block function's locals after its parameter (local 0, the vCPU), as
@@ -971,7 +972,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         | LDAR | STLR | DC_ZVA | STTRB | LDTRB | LDTRSB | STTRH | LDTRH | LDTRSH | STTR | LDTR
         | LDTRSW | LDXR | LDAXR | STXR | STLXR | CAS | CASB | CASH | LDADDB | LDCLRB | LDEORB
         | LDSETB | SWPB | LDADDH | LDCLRH | LDEORH | LDSETH | SWPH | LDADD | LDCLR | LDEOR
-        | LDSET | SWP => {
+        | LDSET | SWP | CASP => {
             return ldst(c, cx, i, op, k);
         }
         LDR_lit_fpsimd | STP_LDP_fpsimd | STNP_LDNP_fpsimd | STR_imm_fpsimd_2
@@ -1020,6 +1021,9 @@ pub struct Ctx {
     /// Parallel SMP (`cpu::FEATURE_PARALLEL`): DSB is the helper's, which
     /// ends the chunk there.
     pub parallel: bool,
+    /// The wasm address of the RAM's pair locks ([`crate::mem::Mem::pair_locks`]),
+    /// which CASP takes in parallel SMP.
+    pub pair_locks: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1331,8 +1335,8 @@ const HOST: u32 = 6;
 const VALUE: u32 = 5;
 
 /// Loads, stores and pairs, acquire/release, exclusives of one register and
-/// LSE atomics, whose handlers can't fail for other reasons than the access
-/// itself. Exclusive pairs, CASP, LSE min/max, unprivileged and FP accesses
+/// LSE atomics with CASP, whose handlers can't fail for other reasons than the
+/// access itself. Exclusive pairs, LSE min/max, unprivileged and FP accesses
 /// stay helper calls (FP ones: [`ldst_fp`]).
 fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     use Op::*;
@@ -1578,7 +1582,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // masked expected value, every size and ordering (wasm atomics are
         // sequentially consistent). Rt (CAS: Rs) = the old value,
         // zero-extended; with XZR the result is dropped (ST<op>). Signed and
-        // unsigned min/max have no wasm op and stay helper calls, as CASP does.
+        // unsigned min/max have no wasm op and stay helper calls.
         CAS | CASB | CASH | LDADDB | LDCLRB | LDEORB | LDSETB | SWPB | LDADDH | LDCLRH | LDEORH
         | LDSETH | SWPH | LDADD | LDCLR | LDEOR | LDSET | SWP => {
             let cas = matches!(op, CAS | CASB | CASH);
@@ -1628,6 +1632,103 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     }
                 },
             );
+        }
+        // CASP (M8): the W pair is one 64-bit cmpxchg of Ws:Ws+1 (low half
+        // first) against Wt:Wt+1. The X pair is `Mem::cas_pair`'s protocol
+        // inline: under the 16 bytes' pair lock (parallel SMP only: on one
+        // thread nothing else runs a pair op meanwhile), read both halves
+        // (again while the low half changed under the read); if they're Xs:Xs+1,
+        // a cmpxchg of each half against what was read, the low half's failing
+        // starting over. Xs:Xs+1 = the old pair either way. Odd registers are
+        // UNDEFINED (the helper's).
+        CASP => {
+            let rs = bits(i, 20, 16);
+            if rs & 1 == 1 || rt & 1 == 1 {
+                return false;
+            }
+            let x = bit(i, 30);
+            let len = if x { 16 } else { 8 };
+            base(c);
+            c.local_get(BASE).local_set(ADDR);
+            let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
+            let written = xmask(rs) | xmask(rs + 1);
+            let locks = cx.pair_locks;
+            let parallel = cx.parallel;
+            access(c, cx, i, here, len, true, &[guard], written, |c, off| {
+                if !x {
+                    // VALUE = the old pair.
+                    let join = |c: &mut Func, r: u32| {
+                        get(c, true, r);
+                        c.i64_const(u32::MAX as i64).i64_and();
+                        get(c, true, r + 1);
+                        c.i64_const(32).op(SHL + W).op(OR + W);
+                    };
+                    c.local_get(HOST);
+                    join(c, rs);
+                    join(c, rt);
+                    c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off).local_set(VALUE);
+                    set(c, true, rs, |c| {
+                        c.local_get(VALUE).i64_const(u32::MAX as i64).i64_and();
+                    });
+                    set(c, true, rs + 1, |c| {
+                        c.local_get(VALUE).i64_const(32).op(SHR_U + W);
+                    });
+                    return;
+                }
+                // The operands' locals, loaded before the loop: a register's
+                // first read in a branch would leave it unloaded on the others.
+                for r in [rs, rs + 1, rt, rt + 1] {
+                    get(c, true, r);
+                    c.op(DROP);
+                }
+                if parallel {
+                    // TLBE = the lock's offset from `locks`.
+                    c.local_get(HOST);
+                    if off != 0 {
+                        c.i32_const(off as i32).op(ADD);
+                    }
+                    c.i32_const(4).op(SHR_U);
+                    c.i32_const(PAIR_LOCKS as i32 - 1).op(AND);
+                    c.i32_const(PAIR_LOCK_SIZE.trailing_zeros() as i32)
+                        .op(SHL)
+                        .local_set(TLBE);
+                    c.loop_().local_get(TLBE).i32_const(1);
+                    c.atomic(RMW_XCHG, 2, locks).hint(false).br_if(0).end();
+                }
+                // VALUE:BASE = the old pair.
+                c.block().loop_();
+                c.local_get(HOST)
+                    .atomic(ATOMIC_LOAD[3], 3, off)
+                    .local_set(VALUE);
+                c.local_get(HOST)
+                    .atomic(ATOMIC_LOAD[3], 3, off + 8)
+                    .local_set(BASE);
+                c.local_get(HOST).atomic(ATOMIC_LOAD[3], 3, off);
+                c.local_get(VALUE).op(NE + WC).hint(false).br_if(0);
+                c.local_get(VALUE);
+                get(c, true, rs);
+                c.op(NE + WC).local_get(BASE);
+                get(c, true, rs + 1);
+                c.op(NE + WC).op(OR).br_if(1);
+                c.local_get(HOST).local_get(VALUE);
+                get(c, true, rt);
+                c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off);
+                c.local_get(VALUE).op(NE + WC).hint(false).br_if(0);
+                c.local_get(HOST).local_get(BASE);
+                get(c, true, rt + 1);
+                c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off + 8).op(DROP);
+                c.end().end();
+                if parallel {
+                    c.local_get(TLBE).i32_const(0);
+                    c.atomic(I32_ATOMIC_STORE, 2, locks);
+                }
+                set(c, true, rs, |c| {
+                    c.local_get(VALUE);
+                });
+                set(c, true, rs + 1, |c| {
+                    c.local_get(BASE);
+                });
+            });
         }
         // Zeroes the aligned 64 bytes (DCZID_EL0's block) at Xt; from EL0 only
         // while SCTLR_EL1.DZE allows it (else the helper traps).
@@ -1982,6 +2083,7 @@ const RMW_XOR: u8 = 0x3a;
 const RMW_XCHG: u8 = 0x41;
 const RMW_CMPXCHG: u8 = 0x48;
 const RMW_SIZE: [u8; 4] = [4, 5, 6, 1];
+const I32_ATOMIC_STORE: u8 = 0x17;
 
 // i64 loads by log2 size, zero- and sign-extending, and i64 stores.
 const LOAD_U: [u8; 4] = [0x31, 0x33, 0x35, 0x29];
@@ -2769,6 +2871,7 @@ mod tests {
         el1: false,
         crypto: true,
         parallel: false,
+        pair_locks: 0x100,
     };
 
     fn emit(i: u32, k: usize) -> Option<Vec<u8>> {
@@ -2822,6 +2925,29 @@ mod tests {
         assert_eq!(emit_in(0xd5033bbf, 0, &par).unwrap(), [0xfe, 3, 0]); // dmb ish
         assert_eq!(emit_in(0xd50339bf, 0, &par).unwrap(), [0xfe, 3, 0]); // dmb ishld
         assert_eq!(emit_in(0xd5033f9f, 0, &par), None); // dsb sy
+    }
+
+    #[test]
+    fn casp_inline() {
+        // The pair lock's xchg (i32.atomic.rmw.xchg, align 2, offset 0x100).
+        let xchg = [0xfe, RMW_XCHG, 2, 0x80, 2];
+        let par = Ctx {
+            parallel: true,
+            ..FLAT
+        };
+        // casp x0, x1, x2, x3, [x4]: under the lock in parallel SMP only.
+        let b = emit(0x48207c82, 0).unwrap();
+        assert!(!b.windows(5).any(|w| w == xchg));
+        let b = emit_in(0x48207c82, 0, &par).unwrap();
+        assert!(b.windows(5).any(|w| w == xchg));
+        // casp w0, w1, w2, w3, [x4]: one 64-bit cmpxchg, no lock.
+        let b = emit_in(0x08207c82, 0, &par).unwrap();
+        assert!(!b.windows(5).any(|w| w == xchg));
+        let cmpxchg = [0xfe, RMW_CMPXCHG + RMW_SIZE[3], 3];
+        assert_eq!(b.windows(3).filter(|w| *w == cmpxchg).count(), 1);
+        // Odd registers are UNDEFINED: the helper's.
+        assert_eq!(emit(0x48217c82, 0), None); // Rs = x1
+        assert_eq!(emit(0x48207c83, 0), None); // Rt = x3
     }
 
     #[test]
@@ -3184,6 +3310,7 @@ mod tests {
             el1: true,
             crypto: true,
             parallel: false,
+            pair_locks: 0x100,
         };
         let b = emit_in(insn, 0, &tlb).unwrap();
         for off in [read, read + 8] {

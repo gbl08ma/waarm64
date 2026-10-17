@@ -64,11 +64,16 @@ pub struct Mem {
     phys: u64,
     /// Serializes the 128-bit atomics (CASP, LDXP/STXP of two X registers)
     /// on the same 16 bytes: wasm has no 128-bit compare-and-swap. Hashed by
-    /// address, a cache line each, so per-CPU pairs don't contend.
-    pair_locks: [PairLock; PAIR_LOCKS],
+    /// address, a cache line each, so per-CPU pairs don't contend. Boxed: JIT
+    /// code takes them at their address ([`Mem::pair_locks`]), which moving
+    /// the `Mem` mustn't change.
+    pair_locks: Box<[PairLock; PAIR_LOCKS]>,
 }
 
-const PAIR_LOCKS: usize = 16;
+pub(crate) const PAIR_LOCKS: usize = 16;
+
+/// A pair lock's size (and stride): 0 free, 1 taken.
+pub(crate) const PAIR_LOCK_SIZE: usize = 128;
 
 #[repr(align(128))]
 struct PairLock(AtomicU32);
@@ -91,7 +96,7 @@ impl Mem {
             base,
             size,
             phys: 0,
-            pair_locks: [const { PairLock(AtomicU32::new(0)) }; PAIR_LOCKS],
+            pair_locks: Box::new([const { PairLock(AtomicU32::new(0)) }; PAIR_LOCKS]),
         }
     }
 
@@ -102,6 +107,13 @@ impl Mem {
 
     pub fn size(&self) -> u64 {
         self.size
+    }
+
+    /// The host address of the pair locks: the one for the 16 bytes at host
+    /// address `p` is at `(p >> 4) % PAIR_LOCKS * PAIR_LOCK_SIZE` from it (the
+    /// JIT's inline CASP).
+    pub fn pair_locks(&self) -> *const u8 {
+        self.pair_locks.as_ptr() as *const u8
     }
 
     /// The host address of the first RAM byte, and its guest PA (the JIT's flat fast path).

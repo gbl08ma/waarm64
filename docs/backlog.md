@@ -423,9 +423,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   chunk in parallel mode cut the average from 100 to 65 µs and polling before sleeping to 55 µs,
   before the ASID filter made both moot; ending a target's chunk from outside would need a memory
   check in the JIT's hot path.
-- **Pair atomics:** CASP is the 5th most called helper even on one vCPU (SLUB's `cmpxchg128`,
-  ~300K per Alpine boot, ~30 ms); the LSE stack stress takes 2.65 s against 0.4 s on the M4.
-  Inline it if a workload shows it.
+- **Pair atomics:** CASP is inline (docs/jit.md "Atomics"); its gain on Alpine's boot (it was the
+  5th most called helper even on one vCPU: SLUB's `cmpxchg128`, ~300K per boot, ~30 ms) and on the
+  LSE stack stress (2.65 s against 0.4 s on the M4) is unmeasured, since the cloud session that
+  inlined it has no Alpine image. LDXP/STXP of two X registers still run through the helper.
 - **WFE sleeping:** WFE yields (120K per vCPU in 7 s of churn on 4 vCPUs, ~0.1 s); sleep on the
   event word only if a workload shows yields costing.
 - **Parallel `make`** as a scaling workload (the image has no toolchain yet).

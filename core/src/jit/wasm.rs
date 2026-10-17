@@ -240,6 +240,12 @@ impl Code {
         uleb(&mut self.b, depth as u64);
         self
     }
+    /// `br_if` to the label `depth` levels out.
+    pub fn br_if(&mut self, depth: u32) -> &mut Self {
+        self.b.push(0x0d);
+        uleb(&mut self.b, depth as u64);
+        self
+    }
     /// `if` with no result type; closed by [`Code::end`].
     pub fn if_(&mut self) -> &mut Self {
         self.b.extend([0x04, 0x40]);
