@@ -571,7 +571,8 @@ The dev server serves exactly two files from `node_modules`, `@xterm/xterm/lib/x
 
 ## Views, settings and the disk
 
-Screen (the default, decision 2), Serial terminal, or Both (side by side; stacked below 1100 px).
+Screen (the default, decision 2; edge to edge between the header and the status line, no padding,
+black around the canvas), Serial terminal, or Both (side by side; stacked below 1100 px).
 The view chosen last is remembered per browser (`localStorage` `webpc.settings`, JSON; read and
 written in try/catch, so a browser that refuses storage just doesn't remember); `?view=` overrides
 it without being saved. The **Machine** menu sets the vCPU count (1, 2, 3, 4, 6, 8) and the RAM
