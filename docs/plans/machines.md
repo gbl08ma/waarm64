@@ -325,6 +325,7 @@ sections above, or settled what they left open:
 - **Decided by the user (2026-10-17, in the dev VM's pass):** Save snapshot on a stored machine is a two-choice menu
   in the header (Keep in this browser…, Save to a file…), as §5.2 has it; a 3D machine on a browser without WebGL2
   runs 2D, another shape, so its 3D snapshots show as orphaned there (the guest really sees other devices); the
-  transient machines' overlays keep their single names.
+  transient machines' overlays keep their single names; snapshot files from before the new device order are
+  refused (no mapping of the old order).
 - **Not built** (backlog "Machines as the unit, loose ends"): the quota message, a stored disk's background hash,
   `svelte-check`.

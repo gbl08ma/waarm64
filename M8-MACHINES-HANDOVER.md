@@ -100,9 +100,8 @@ steps were run by hand. **Worth a look in the dev VM** (does the case reproduce 
     context: `page-definitions` uses on-disk profiles; backlog entry (it would hit Incognito users).
   - `page-snapshot`'s expectations moved to the new device order; `browser.test.ts` waits for the view (the
     module awaits the store before setting it).
-- **For the user:** snapshot files saved before this work are refused on the page now (their `devices` list has
-  `blk` second; the new order puts the disks last), with "its machine had other devices". Options: accept it (the
-  machines' snapshots start here), or have the worker map the old order onto the new one when loading.
+- **Decided by the user:** snapshot files saved before this work are refused on the page (their `devices` list has
+  `blk` second; the disks now come last), with "its machine had other devices". No compatibility with them.
 - Still to run: `scripts/ci-debian.sh`, `ci-audio.sh`, `ci-net.sh`, then the rest of the list above.
 
 ## Decisions the cloud session left open: settled (2026-10-17)
