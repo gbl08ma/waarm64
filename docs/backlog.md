@@ -245,6 +245,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
+- **More guest RAM** (the user, 2026-10-17). The page offers up to 2.5 GiB (`web/app/machine.ts` `RAM_CHOICES`):
+  more leaves no room for `bootVm`'s flat 1 GiB heap reserve in wasm32's 4 GiB, so the machine runs on a growable
+  memory, −6–7% on Linux arm64 (bench/boot/REPORT.md "M8: a fixed-size memory"; nothing on macOS or x86_64).
+  - **3 GiB at full speed:** size the reserve as what's left under 4 GiB (with a floor, e.g. 256 MiB) instead of a
+    flat 1 GiB: a 3 GiB machine keeps a fixed-size memory with ~1 GiB of heap. The heap peaked at ~27 MB in the
+    userspace benchmark and ~150 MB under a heavy 4-vCPU load (docs/jit.md "Memory"); running out traps the machine,
+    so measure a heavy run at the floor first, then offer 3 GiB.
+  - **Past ~3.5 GiB: spill memories as NUMA nodes** (docs/architecture.md "Guest memory: layout A", PLAN.md §4
+    "Guest RAM ceiling"): extra wasm32 memories the guest sees as CPU-less NUMA nodes, memory 0 keeping its fast path
+    (TLB tag bits 3–11 are reserved for the memory index). Open: whether distro kernels enable `CONFIG_NUMA`, tiering
+    to DT-described CPU-less nodes, NUMA balancing off. A second memory for all of RAM measured +12–40% (M0.5's
+    layout B), which is why it's only for the pages past memory 0.
 - **A full 8 GB ramdisk locked the machine up** (the user, 2026-10-17, by hand on the page: an ext4-formatted 8 GB
   ramdisk filled to the brim; the machine stopped responding once it was full, with nothing in the console or on the
   page). Not known whether it's the guest or us. First lead: `web/ramdisk.ts` makes a 1 MiB `SharedArrayBuffer` per
