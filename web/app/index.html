@@ -5,7 +5,7 @@
 <title>webpc</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
-<script type="importmap">{ "imports": { "@xterm/xterm": "../../node_modules/@xterm/xterm/lib/xterm.mjs" } }</script>
+<script type="importmap">{"imports":{"@xterm/xterm":"../../node_modules/@xterm/xterm/lib/xterm.mjs","svelte":"../../node_modules/svelte/src/index-client.js","svelte/internal/client":"../../node_modules/svelte/src/internal/client/index.js","svelte/internal/disclose-version":"../../node_modules/svelte/src/internal/disclose-version.js","#client/constants":"../../node_modules/svelte/src/internal/client/constants.js","esm-env":"../../node_modules/esm-env/index.js","esm-env/browser":"../../node_modules/esm-env/true.js","esm-env/development":"../../node_modules/esm-env/false.js","esm-env/node":"../../node_modules/esm-env/false.js","clsx":"../../node_modules/clsx/dist/clsx.mjs"}}</script>
 <style>
   :root {
     color-scheme: dark;
@@ -87,6 +87,9 @@
   .net-row { display: flex; gap: 8px; }
   /* The Network wizard (docs/frontend.md "Network"): what to connect to, then its settings. */
   #net-wizard { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  #machines-dialog { width: min(980px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  #machines-dialog::backdrop { background: rgb(0 0 0 / 0.55); }
+  #machines-dialog button, #machines-dialog input, #machines-dialog select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
   #net-wizard::backdrop { background: rgb(0 0 0 / 0.55); }
   #net-wizard [hidden] { display: none !important; }
   #net-form { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
@@ -129,6 +132,7 @@
 <header>
   <h1>webpc</h1>
   <span id="machine"></span>
+  <button id="machines-open" title="The machines kept in this browser: their disks, overlays and snapshots">Machines…</button>
   <span id="state" data-state="loading">Loading</span>
   <span class="spacer"></span>
   <span class="views" role="group" aria-label="View">
@@ -154,6 +158,7 @@
     <div id="net-actions"><button id="net-setup">Connect…</button><button id="net-disconnect" hidden>Disconnect</button><button id="net-logout" title="Remove this machine from the tailnet and forget its keys" hidden>Log out</button></div>
     <p id="net-hint" class="net-note"></p>
   </div></details>
+  <dialog id="machines-dialog" aria-label="Machines"></dialog>
   <dialog id="net-wizard" aria-labelledby="net-title">
     <form id="net-form">
       <h2 id="net-title">Network</h2>

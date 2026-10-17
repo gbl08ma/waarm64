@@ -7,7 +7,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import type { Store, OverlayRecord } from './store.ts';
-  import type { DiskRecord, MachineRecord } from './shape.ts';
+  import type { DiskRecord, MachineRecord, Shape } from './shape.ts';
   import { MAX_DISKS } from './shape.ts';
   import { askPersist, attach, bytesText, createDisk, createMachine, deleteMachine, duplicateMachine, editAttachment, isRunning, storageReport, updateMachine } from './machines.ts';
   import { createOverlay, deleteOverlay, diskRef, estimateStored, importStored, mergeCosts, mergeIntoDisk, renameOverlay, switchOverlay } from './disks.ts';
@@ -24,8 +24,14 @@
     /** Powers this page's machine off (resolves once it is off). */
     powerOff(): Promise<void>;
     close(): void;
+    /** A machine's shape as it would run on this page, and its hash (its snapshots are checked against it). */
+    shapeNow(m: MachineRecord): Promise<{ shape: Shape; hash: string }>;
+    /** Restore kept snapshot `id`, apply a file, save a snapshot to a file: on this page's machine (web/app/main.ts). */
+    restore(id: string): void;
+    apply(file: File): void;
+    saveToFile(whole: boolean): void;
   };
-  let { store, current, open, powerOff, close }: Props = $props();
+  let { store, current, open, powerOff, close, shapeNow, restore, apply, saveToFile }: Props = $props();
 
   let machines = $state<MachineRecord[]>([]);
   let disks = $state<Map<string, DiskRecord>>(new Map());
@@ -69,6 +75,8 @@
   }
 
   const choose = (id: string) => { selected = id; void reread(); };
+  /** A machine as a plain object (the modal's draft is reactive state, which IndexedDB can't clone). */
+  const plain = (m: MachineRecord) => $state.snapshot(m) as MachineRecord;
   const isOn = (id: string) => running.has(id);
   const kindText: Record<string, string> = { url: 'URL', file: 'file', stored: 'stored in the browser', blank: 'blank', ramdisk: 'ramdisk' };
 
@@ -141,7 +149,7 @@
       } else {
         d = await createDisk(store, { kind: source, size: sizeMiB * 2 ** 20 });
       }
-      await attach(store, m, d, { readOnly: source === 'blank' || source === 'ramdisk' ? false : readOnly });
+      await attach(store, plain(m), d, { readOnly: source === 'blank' || source === 'ramdisk' ? false : readOnly });
       picked = undefined;
       url = '';
       urlCheck = undefined;
@@ -156,13 +164,13 @@
     await act('Making the overlay', async () => {
       if (!(await offFirst(m))) return;
       const o = await createOverlay(store, disk, name);
-      await switchOverlay(store, m, attachment, o.id);
+      await switchOverlay(store, plain(m), attachment, o.id);
     });
   }
   async function switchTo(m: MachineRecord, attachment: string, overlay: string) {
     await act('Switching', async () => {
       if (!(await offFirst(m))) return;
-      await switchOverlay(store, m, attachment, overlay);
+      await switchOverlay(store, plain(m), attachment, overlay);
     });
   }
   async function rename(o: OverlayRecord) {
@@ -175,7 +183,8 @@
   }
   async function merge(o: OverlayRecord, disk: DiskRecord) {
     const others = await mergeCosts(store, o.id);
-    const snaps = (await store.all('snapshots')).filter((s) => s.pins.some((p) => p.disk === disk.id || others.some((x) => x.id === p.overlay) || p.overlay === o.id));
+    const pinned = new Set([`disks/${disk.id}`, `overlays/${o.id}`, ...others.map((x) => `overlays/${x.id}`)]);
+    const snaps = (await store.all('snapshots')).filter((s) => s.pins.some((p) => p.overlay && pinned.has(p.overlay)));
     if (!confirm(`Merge ${o.name} into ${disk.name}? Its changes become the disk's own.${others.length ? `\nThese overlays of the disk are deleted (they were made over its old bytes): ${others.map((x) => `${x.name} (${bytesText(x.bytes)})`).join(', ')}.` : ''}${snaps.length ? `\n${snaps.length} snapshot${snaps.length > 1 ? 's' : ''} pinning them can no longer restore onto the disk without their own copy of it.` : ''}`)) return;
     await act('Merging', () => mergeIntoDisk(store, o.id));
   }
@@ -240,13 +249,13 @@
                 <div class="row">
                   <strong>{d?.name ?? 'missing disk'}</strong>
                   <span class="meta">{d ? `${kindText[d.kind]}, ${bytesText(d.size)}` : ''} · vd{String.fromCharCode(97 + i)}</span>
-                  <label><input type="checkbox" checked={a.readOnly} disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'} onchange={(e) => act('Changing', async () => { if (await offFirst(m)) await editAttachment(store, m, a.id, { readOnly: e.currentTarget.checked }); })}> read-only</label>
+                  <label><input type="checkbox" checked={a.readOnly} disabled={d?.kind === 'blank' || d?.kind === 'ramdisk'} onchange={(e) => act('Changing', async () => { if (await offFirst(m)) await editAttachment(store, plain(m), a.id, { readOnly: e.currentTarget.checked }); })}> read-only</label>
                   {#if d?.kind === 'stored' && !a.readOnly}
-                    <label title="The guest's writes go into the stored disk itself: no overlay, no variants, and snapshots can't fork it."><input type="checkbox" checked={!!a.inPlace} onchange={(e) => act('Changing', async () => { if (await offFirst(m)) await editAttachment(store, m, a.id, { inPlace: e.currentTarget.checked }); })}> write in place</label>
+                    <label title="The guest's writes go into the stored disk itself: no overlay, no variants, and snapshots can't fork it."><input type="checkbox" checked={!!a.inPlace} onchange={(e) => act('Changing', async () => { if (await offFirst(m)) await editAttachment(store, plain(m), a.id, { inPlace: e.currentTarget.checked }); })}> write in place</label>
                   {/if}
-                  <button onclick={() => act('Moving', () => editAttachment(store, m, a.id, { move: -1 }))} disabled={i === 0} aria-label="Up">↑</button>
-                  <button onclick={() => act('Moving', () => editAttachment(store, m, a.id, { move: 1 }))} disabled={i === m.attachments.length - 1} aria-label="Down">↓</button>
-                  <button onclick={() => act('Detaching', async () => { if (await offFirst(m)) await editAttachment(store, m, a.id, { detach: true }); })}>Detach</button>
+                  <button onclick={() => act('Moving', () => editAttachment(store, plain(m), a.id, { move: -1 }))} disabled={i === 0} aria-label="Up">↑</button>
+                  <button onclick={() => act('Moving', () => editAttachment(store, plain(m), a.id, { move: 1 }))} disabled={i === m.attachments.length - 1} aria-label="Down">↓</button>
+                  <button onclick={() => act('Detaching', async () => { if (await offFirst(m)) await editAttachment(store, plain(m), a.id, { detach: true }); })}>Detach</button>
                 </div>
                 {#if d?.kind === 'url'}<p class="note">{URL_SLOW}</p>{/if}
                 {#if d && !a.readOnly && d.kind !== 'ramdisk' && !a.inPlace}
@@ -312,7 +321,7 @@
           {/if}
         </fieldset>
 
-        <Snapshots {store} machine={m} {disks} {overlays} {current} running={isOn(m.id)} {act} />
+        <Snapshots {store} machine={m} {disks} {overlays} {current} running={isOn(m.id)} {act} {shapeNow} {restore} {apply} {saveToFile} {choose} />
       </section>
     {:else}
       <section class="machine empty"><p>Choose a machine, or make a new one.</p></section>

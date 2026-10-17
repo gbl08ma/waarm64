@@ -208,7 +208,13 @@ test('virtio-blk DISCARD and WRITE_ZEROES: offered with `discard` over an overla
   assert.equal(await first(b, 80), 0);
   assert.equal(await ask(b, ZEROES, 0, seg(24, 8)), OK); // block 3: the last slot goes
   assert.equal(data.getSize(), 1 * 4096);
-  assert.deepEqual(b.written!(), [0, 1, 2, 3, 10]);
+  // A snapshot's `written` pins the generation (1: this opening's first change moved it) and sets the next change to
+  // move it again (docs/plans/machines.md §3.3): writes after a snapshot are another generation.
+  const pinned = b.written!();
+  assert.deepEqual(pinned, { blocks: [0, 1, 2, 3, 10], generation: 1 });
+  assert.equal(await ask(b, OUT, 0, new Uint8Array(512).fill(9)), OK);
+  assert.equal(b.written!().generation, 2, 'a write after the snapshot moved the generation');
+  assert.equal(b.written!().generation, 2, 'reading it alone moves nothing');
   // Refused: the unmap flag on a discard and unknown flags (UNSUPP), past the end, too long, no or two segments (IOERR).
   assert.equal(await ask(b, DISCARD, 0, seg(0, 8, 1)), UNSUPP);
   assert.equal(await ask(b, ZEROES, 0, seg(0, 8, 2)), UNSUPP);

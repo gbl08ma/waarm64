@@ -8,11 +8,11 @@
 // worker. What stops a machine from starting or running is sorted into a
 // `Problem` with a message a user can act on (docs/frontend.md "Errors").
 import { bootVm, Exit, FLASH_SIZE, PSCI_SYSTEM_OFF, type Restore, type Vm } from '../vm.ts';
-import { dropSuspend, loadFlash, saveFlash, suspended, suspendWriter } from '../overlay.ts';
+import { dropSuspend, fileWriter, loadFlash, overlayMeta, saveFlash, suspended, suspendWriter } from '../overlay.ts';
 import { showFramebuffer } from '../display.ts';
 import { lzCodec } from '../lz.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader, type Sink } from '../snapshot-file.ts';
-import { readSnapshot, writeSnapshot } from '../snapshot.ts';
+import { readSnapshot, writeSnapshot, type SnapshotDisk } from '../snapshot.ts';
 import type { DeviceSpec } from '../devices.ts';
 import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
 import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
@@ -42,7 +42,7 @@ self.onmessage = (e: MessageEvent<ToWorker>) => {
       state(vm ? 'crashed' : 'failed', message, problem);
     });
   } else if (m.type === 'snapshot') {
-    void saveSnapshot(m.handle);
+    void saveSnapshot(m.handle, m.keep, m.whole);
   } else if (m.type === 'suspend') {
     void suspend();
   } else if (m.type === 'profile') {
@@ -116,7 +116,7 @@ const failure = (problem: Problem, message: string) => Object.assign(new Error(m
 /** What this machine is, for a snapshot's header (docs/frontend.md "Snapshots"). */
 /** The RAM of the machine being started, MiB (the page's choice, or a snapshot's). */
 let ramMiB = 0;
-let session: { name: MachineName; ncpus: number; disk: string | null; kinds: DeviceKind[]; cpu: CpuFeature[]; ramdisk: boolean } | undefined;
+let session: { name: MachineName; ncpus: number; disk: string | null; kinds: DeviceKind[]; cpu: CpuFeature[]; about?: StartMessage['about'] } | undefined;
 /** The core, compiled once: `bootVm` and the snapshot codec both take the module. */
 let core: WebAssembly.Module | undefined;
 let codecP: ReturnType<typeof lzCodec> | undefined;
@@ -192,6 +192,11 @@ const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu'
  */
 function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: string) {
   const what = `${name} can't be loaded`;
+  // A stored machine's snapshot is checked by its shape (docs/plans/machines.md §5.1): the page checked it first and
+  // offers to make a machine like it; here it is refused before anything is touched.
+  if (m.about && typeof h.shapeHash === 'string' && h.shapeHash !== m.about.shapeHash) {
+    throw failure('snapshot', `${what}: it is a snapshot of a machine with other settings or disks than ${m.about.name} has now.\nIts machine can be made again from it in Machines… (Make a machine like it).`);
+  }
   if (h.machine !== m.machine) {
     const other = typeof h.label === 'string' ? h.label : String(h.machine);
     throw failure('snapshot', `${what}: it is a snapshot of ${other} (?machine=${String(h.machine)}), and this page runs ${machine.label} (?machine=${m.machine}).\nOpen the page for that machine to load it. Start boots ${machine.label} normally.`);
@@ -343,6 +348,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   const kinds = layout(m, machine).map((s) => s.kind);
   let cpu = CPU_FEATURES.filter((f) => m.cpu?.[f] ?? true);
   let restore: Restore | undefined;
+  let specs: DeviceSpec[] | undefined;
   if (snapshot) {
     // Everything that can be refused is, before anything is touched (the overlay is replaced inside `bootVm`;
     // a resume keeps it: it is as the suspended machine left it).
@@ -352,7 +358,17 @@ async function start(m: StartMessage, note?: string): Promise<void> {
       const { header } = await openSnapshot(snapshot, { codecs: [lz] });
       const h = fromHeader(header, m, machine, snapshotName);
       ({ ncpus, ramMiB, cpu } = h);
-      restore = (await readSnapshot(snapshot, lz, lz.snapshotVersion, { devices: h.specs, resume: !!resume })).restore;
+      // A suspended machine resumes only onto its overlays as it left them: the same ones, at the generations it pinned
+      // (docs/plans/machines.md §5.3; a switch, a reset, a merge or a boot since moved them on).
+      if (resume) {
+        for (const d of (header.disks ?? []) as SnapshotDisk[]) {
+          if (d.ram || !d.overlay) continue;
+          const spec = h.specs[d.slot];
+          if (spec?.type !== 'blk' || spec.overlay !== d.overlay || (await overlayMeta(d.overlay)).generation !== d.generation) throw new Error('its disk has changed since it was suspended');
+        }
+      }
+      restore = (await readSnapshot(snapshot, lz, lz.snapshotVersion, { devices: h.specs, resume: !!resume, plan: m.plan })).restore;
+      specs = h.specs; // the restore hands ramdisks their chunks through these
       serialTail = typeof header.serial === 'string' ? header.serial : '';
     } catch (err) {
       if (resume && !stopping) return bootInstead(err);
@@ -362,8 +378,8 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     if (stopping) return;
     restoring = !resume;
   }
-  const devices = layout(m, machine).map((s) => device(s, m, machine));
-  session = { name: m.machine, ncpus, disk: m.disks[0]?.name ?? null, kinds, cpu, ramdisk: m.disks.some((d) => 'ramdisk' in d.source) };
+  const devices = liveSpecs = specs ?? layout(m, machine).map((s) => device(s, m, machine));
+  session = { name: m.machine, ncpus, disk: m.disks[0]?.name ?? null, kinds, cpu, about: m.about };
   booting = bootVm(core, {
     ramSize: ramMiB * 2 ** 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true, compileWorker: new URLSearchParams(self.location.search).get('jit') !== 'nocw' && !spiderMonkey, vcpuYieldMs: new URLSearchParams(self.location.search).has('vyield') ? Number(new URLSearchParams(self.location.search).get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'),
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices,
@@ -451,26 +467,38 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   }
 }
 
+/** A snapshot's header fields (beside the core's): what the machine is, its shape for a stored one, the terminal's tail from `cut`. */
+function header(s: NonNullable<typeof session>, cut: number) {
+  const about = s.about ? { name: s.about.name, shape: s.about.shape, shapeHash: s.about.shapeHash, urls: s.about.urls, format: 2 } : {};
+  return { machine: s.name, label: current?.label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, cpu: s.cpu, serial: serialTail.slice(cut), ...about };
+}
+/** Whether the disk in `slot` is a stored disk written in place (its overlay is its store: `disks/<id>`). */
+const inPlace = (slot: number) => { const d = liveSpecs[slot]; return d?.type === 'blk' && !!d.overlay?.startsWith('disks/'); };
+/** The running machine's device specs, by slot. */
+let liveSpecs: DeviceSpec[] = [];
+
 /**
  * Saves a snapshot of the running machine (docs/frontend.md "Snapshots"): the VM is paused, written
  * to the picked file's stream or sent back in chunks, and resumed, also on an error. Only the
  * writing is between pause and resume: the file's stream is opened before, and closed (flushed)
  * after.
  */
-async function saveSnapshot(handle?: FileSystemFileHandle) {
+async function saveSnapshot(handle?: FileSystemFileHandle, keep?: string, whole = false) {
   const fail = (message: string) => post({ type: 'snapshot-error', message });
   const v = vm;
   const s = session;
   if (!v || !s || stopping || closed) return fail("The machine isn't running, so there is nothing to save.");
   if (snapshotting) return fail('A snapshot is already being saved.');
-  if (s.ramdisk) return fail("A machine with a ramdisk can't be saved in a snapshot yet: the ramdisk's contents aren't in the file.");
   snapshotting = true;
   let out: FileSystemWritableFileStream | undefined;
+  let kept: Awaited<ReturnType<typeof fileWriter>> | undefined;
   let paused = false;
   try {
     const lz = await codec();
     out = await handle?.createWritable();
+    kept = keep ? await fileWriter(keep) : undefined;
     const sink: Sink = async (chunk) => {
+      if (kept) return kept.write(chunk);
       if (out) return out.write(chunk as Uint8Array<ArrayBuffer>);
       const copy = chunk.slice(); // a transferred buffer must be ours alone
       post({ type: 'snapshot-chunk', data: copy }, [copy.buffer]);
@@ -481,9 +509,10 @@ async function saveSnapshot(handle?: FileSystemFileHandle) {
     paused = true;
     // The terminal's tail from a line start: a cut escape sequence would draw garbage in the restored terminal.
     const cut = serialTail.length >= TAIL ? serialTail.indexOf('\n') + 1 : 0;
-    const meta = { machine: s.name, label: current?.label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, cpu: s.cpu, serial: serialTail.slice(cut) };
+    const meta = header(s, cut);
     let posted = 0;
     const w = await writeSnapshot(v, sink, meta, lz, {
+      omit: (slot) => !whole && inPlace(slot),
       progress: (done, total) => {
         const now = performance.now();
         if (now - posted < 100 && done < total) return;
@@ -497,12 +526,15 @@ async function saveSnapshot(handle?: FileSystemFileHandle) {
     post({ type: 'snapshot-progress', phase: 'Finishing the file', fraction: 1 });
     await out?.close();
     out = undefined;
-    post({ type: 'snapshot-done', bytes: w.bytes, pausedMs });
+    kept?.close();
+    kept = undefined;
+    post({ type: 'snapshot-done', bytes: w.bytes, pausedMs, pins: w.pins });
   } catch (err) {
     fail(`The snapshot couldn't be saved: ${String((err as Error).message ?? err)}`);
   } finally {
     if (paused) v.resume();
     await out?.abort().catch(() => {});
+    await kept?.abort().catch(() => {});
     snapshotting = false;
   }
 }
@@ -520,7 +552,6 @@ async function suspend() {
   if (!v || !s || !machine || stopping || closed) return fail("The machine isn't running, so there is nothing to suspend.");
   if (!home) return fail('This machine has no disk of its own to keep a suspended copy beside.');
   if (snapshotting) return fail('A snapshot is being saved: suspend once it is done.');
-  if (s.ramdisk) return fail("A machine with a ramdisk can't be suspended yet: the ramdisk's contents would be lost.");
   snapshotting = true;
   let paused = false;
   try {
@@ -529,7 +560,7 @@ async function suspend() {
     if (!(await v.pause())) throw new Error('the machine ended before it could be paused');
     paused = true;
     const cut = serialTail.length >= TAIL ? serialTail.indexOf('\n') + 1 : 0;
-    const meta = { machine: s.name, label: machine.label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, cpu: s.cpu, serial: serialTail.slice(cut) };
+    const meta = header(s, cut);
     const out = await suspendWriter(home);
     let bytes = 0;
     try {

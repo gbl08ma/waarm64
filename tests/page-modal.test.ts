@@ -59,6 +59,9 @@ test('the URL check: what a disk server needs, said when it lacks it', async () 
 });
 
 const modal = (page: Page) => page.locator('.machines');
+/** Waits for the machine's `n`-th disk in the modal; on a timeout, says the modal's error. */
+const disk = (page: Page, n: number) => page.locator('.machines section.machine [data-attachment]').nth(n).waitFor({ timeout: 30_000 })
+  .catch(async (e) => { throw new Error(`${e}; the modal says: ${await page.locator('.machines').textContent()}`); });
 
 test('the modal makes a machine, sets it, gives it disks from several sources, keeps it across a reload and opens it', async () => {
   const context = await browser.newContext();
@@ -84,15 +87,15 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await modal(page).locator('.error', { hasText: 'CORS' }).waitFor();
   await m.locator('[data-field=url]').fill(`${base}/tests/qcow2/deflate.qcow2`);
   await m.locator('[data-action=add-disk]').click();
-  await m.locator('[data-attachment]').nth(0).waitFor();
+  await disk(page, 0);
   await m.locator('[data-field=source]').selectOption('blank');
   await m.locator('[data-field=size]').fill('64');
   await m.locator('[data-action=add-disk]').click();
-  await m.locator('[data-attachment]').nth(1).waitFor();
+  await disk(page, 1);
   await m.locator('[data-field=source]').selectOption('ramdisk');
   await m.locator('[data-field=size]').fill('32');
   await m.locator('[data-action=add-disk]').click();
-  await m.locator('[data-attachment]').nth(2).waitFor();
+  await disk(page, 2);
 
   const record = () => page.evaluate(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);

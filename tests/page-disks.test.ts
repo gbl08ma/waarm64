@@ -114,3 +114,63 @@ test("a disk's overlays are named variants: new, rename, switch, delete (a machi
   assert.deepEqual(r, { names: ['Changes'], switched: true, refused: "that overlay isn't one of this disk's", busy: true, running: 'a machine is running on it: power it off first', left: null, files: [] });
   await context.close();
 });
+
+test("a restore's plan: keep where the pin matches, fork where it moved on, reuse an unmoved fork, replace when asked; written in place, only at its generation or with the whole disk", async () => {
+  const { context, page } = await fresh();
+  const r = await page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { planRestore } = await import('/web/app/snapshots.ts' as string);
+    const { createOverlay } = await import('/web/app/disks.ts' as string);
+    const store = await Store.open();
+    /** Sets overlay or store `path`'s generation, as machines would have left it. */
+    const setGen = async (path: string, generation: number) => {
+      const w = new Worker('/tests/browser/overlay-worker.ts', { type: 'module' });
+      await new Promise<void>((resolve) => { w.onmessage = () => resolve(); w.postMessage({ type: 'meta', name: path, generation }); });
+      w.terminate();
+    };
+    const d = { id: 'd0000000000b', kind: 'url', name: 'disk.img', size: 1 << 20, url: '/x', identity: { kind: 'url', path: '/x', bytes: 1 << 20 }, created: 0 };
+    const s = { id: 'd0000000000c', kind: 'stored', name: 'stored.img', size: 1 << 20, identity: { kind: 'stored', id: 'd0000000000c', bytes: 0 }, created: 0 };
+    await store.put('disks', d);
+    await store.put('disks', s);
+    const a = await createOverlay(store, d, 'Changes');
+    const m = { id: 'aaaaaaaaaaac', name: 'M', ncpus: 1, ramMiB: 512, display: '2d', network: false, created: 0, modified: 0, attachments: [{ id: 'a0000000000b', disk: d.id, readOnly: false, overlay: a.id }, { id: 'a0000000000c', disk: s.id, readOnly: false, inPlace: true }] };
+    await store.put('machines', m);
+    const disks = new Map<string, unknown>([[d.id, d], [s.id, s]]);
+    // Slots: rng, keyboard, tablet, gpu, snd, then the disks (5 and 6).
+    const pins = (g: number, sg: number, whole = 0) => [{ slot: 5, overlay: `overlays/${a.id}`, generation: g, blocks: 3 }, { slot: 6, overlay: `disks/${s.id}`, generation: sg, blocks: whole }];
+    await setGen(`overlays/${a.id}`, 4);
+    await setGen(`disks/${s.id}`, 7);
+    const out: Record<string, unknown> = {};
+    const plan = async (p: unknown[], key = 'snap-1') => planRestore(store, structuredClone(m), disks, { name: 'snap', key, pins: p });
+    // Everything as pinned: nothing written.
+    const same = await plan(pins(4, 7));
+    out.same = { kept: same.kept, forks: same.forks.length, plan: await same.commit(false) };
+    // The overlay moved on: a fork, attached; the old overlay stays.
+    const moved = await plan(pins(3, 7));
+    const forkPlan = await moved.commit(false);
+    const after = await store.get('machines', m.id);
+    out.moved = { forks: moved.forks.map((f: { reused: boolean; replaceable?: { name: string } }) => [f.reused, f.replaceable?.name]), plan: forkPlan.map((p: { action: string; overlay?: string }) => [p.action, p.overlay === `overlays/${a.id}`]), attached: after.attachments[0].overlay !== a.id };
+    const fork = after.attachments[0].overlay;
+    // The fork hasn't moved since (its generation is still the restore's, 1): the same snapshot again reuses it.
+    await setGen(`overlays/${fork}`, 1);
+    const again = await planRestore(store, structuredClone({ ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] }), disks, { name: 'snap', key: 'snap-1', pins: pins(3, 7) });
+    out.reused = { forks: again.forks.map((f: { reused: boolean }) => f.reused), plan: (await again.commit(false)).map((p: { action: string }) => p.action) };
+    // Once it moved, it isn't reused; replace writes into the attached overlay instead of forking.
+    await setGen(`overlays/${fork}`, 2);
+    const replace = await planRestore(store, structuredClone({ ...m, attachments: [{ ...m.attachments[0], overlay: a.id }, m.attachments[1]] }), disks, { name: 'snap', key: 'snap-1', pins: pins(3, 7) });
+    out.replace = { reused: replace.forks.map((f: { reused: boolean }) => f.reused), plan: (await replace.commit(true)).map((p: { action: string; overlay?: string }) => [p.action, p.overlay === `overlays/${a.id}`]) };
+    // Written in place and moved on: refused without the whole disk, forked into an overlay with it.
+    out.refused = (await plan(pins(4, 6))).refused ?? null;
+    const whole = await plan(pins(4, 6, 256));
+    out.whole = (await whole.commit(false)).map((p: { action: string; whole?: boolean }) => [p.action, !!p.whole]);
+    store.close();
+    return out;
+  });
+  assert.deepEqual(r.same, { kept: ['disk.img', 'stored.img'], forks: 0, plan: [{ slot: 5, action: 'keep' }, { slot: 6, action: 'keep' }] });
+  assert.deepEqual(r.moved, { forks: [[false, 'Changes']], plan: [['keep', false], ['write', false]], attached: true });
+  assert.deepEqual(r.reused, { forks: [true], plan: ['keep', 'keep'] });
+  assert.deepEqual(r.replace, { reused: [false], plan: [['keep', false], ['write', true]] });
+  assert.match(String(r.refused), /written in place since this snapshot was taken/);
+  assert.deepEqual(r.whole, [['keep', false], ['write', true]]);
+  await context.close();
+});

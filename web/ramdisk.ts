@@ -12,8 +12,9 @@ const BLOCK = 4096;
 const BLOCKS_PER_CHUNK = RAM_CHUNK / BLOCK;
 
 /** A ramdisk of `size` bytes (a multiple of 512), empty. `chunks()` says how many are held (tests: the memory given back). */
-export function ramDisk(size: number): WritableDisk & { chunks(): number } {
-  const chunks = new Map<number, Uint8Array>();
+export function ramDisk(size: number, init: [number, SharedArrayBuffer][] = []): WritableDisk & { chunks(): number; chunkList(): [number, SharedArrayBuffer][] } {
+  // `init`: a restored ramdisk's chunks (a snapshot's blocks, written by web/snapshot.ts into another ramDisk: shared memory, not copied).
+  const chunks = new Map<number, Uint8Array>(init.map(([c, b]) => [c, new Uint8Array(b)]));
   const inside = (off: number, len: number) => Number.isSafeInteger(off) && off >= 0 && len >= 0 && off + len <= size;
   /** Calls `f` for each chunk [off, off + len) touches: its index, the range's start in it, and its length there. */
   const each = (off: number, len: number, f: (c: number, at: number, n: number, pos: number) => void) => {
@@ -83,5 +84,6 @@ export function ramDisk(size: number): WritableDisk & { chunks(): number } {
     },
     zeroed: () => false,
     chunks: () => chunks.size,
+    chunkList: () => [...chunks].map(([c, k]) => [c, k.buffer as SharedArrayBuffer]),
   };
 }

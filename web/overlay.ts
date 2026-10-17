@@ -48,6 +48,9 @@ export type WritableDisk = Disk & {
   block(b: number): Uint8Array | undefined;
   /** Whether block `b` is one the overlay holds as zeros, without a slot. */
   zeroed(b: number): boolean;
+  /** The overlay's generation, and `epoch` (both: overlays with a `meta`; a ramdisk has neither). */
+  generation?(): number;
+  epoch?(): void;
 };
 
 /** An overlay's `meta` file: its generation (u64 LE at 0) and, for a stored disk, the overlay being merged into it (`merging`: its id, or empty). */
@@ -76,9 +79,10 @@ export function writeMeta(f: SyncFile, m: Meta) {
 
 /**
  * The overlay over `base` in `data` and `mapFile`. With `meta`, its generation is bumped before the first change
- * (a write, a discard or a zeroing) this opening makes; `generation()` says it.
+ * (a write, a discard or a zeroing) this opening makes; `generation()` says it. `epoch()` makes the next change bump it
+ * again: a snapshot pins the generation it saw, so a change after it must move it (web/snapshot.ts).
  */
-export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: SyncFile): WritableDisk & { generation(): number } {
+export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: SyncFile): WritableDisk & { generation(): number; epoch(): void } {
   const blocks = Math.ceil(base.size / BLOCK);
   const map = new Uint32Array(blocks);
   mapFile.read(new Uint8Array(map.buffer, 0, Math.min(mapFile.getSize(), blocks * 4)), { at: 0 }); // the host is little-endian, as the file
@@ -274,7 +278,7 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: Sy
     return data.read(out, { at: (map[b] - 1) * BLOCK }) === BLOCK ? out : undefined;
   };
 
-  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => map[b] === ZERO, flush: () => { data.flush(); mapFile.flush(); }, generation: () => gen.generation };
+  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => map[b] === ZERO, flush: () => { data.flush(); mapFile.flush(); }, generation: () => gen.generation, epoch: () => { bumped = false; } };
 }
 
 /**
@@ -410,7 +414,7 @@ export async function removeOverlay(name: string) {
     if (typeof navigator.storage === 'undefined') {
       inMemory.delete(name);
       inMemoryFlash.delete(name);
-      inMemorySuspend.delete(name);
+      inMemoryFiles.delete(`${name}/${SUSPEND}`);
       return;
     }
     const parts = name.split('/');
@@ -422,28 +426,33 @@ export async function removeOverlay(name: string) {
   }
 }
 
-/** Node has no OPFS: suspended machines live in memory there, by overlay name. */
-const inMemorySuspend = new Map<string, Uint8Array[]>();
+/** Node has no OPFS: files written by `fileWriter` (suspended machines) live in memory there, by path. */
+const inMemoryFiles = new Map<string, Uint8Array[]>();
 const SUSPEND = 'suspend';
 
 /**
- * A suspended machine (docs/frontend.md "Suspend"): its snapshot without the disk's blocks, in a
- * file of overlay `name`'s directory. **The file exists only while no machine has written the
- * overlay since it was made**: whoever starts a machine on the overlay takes it (`suspended`) and
- * drops it (`dropSuspend`) before the machine runs, resumed or booted; it goes with the overlay
- * when the disk is reset or replaced (`removeOverlay`). That invariant is what makes resuming
- * safe, with no counter to compare. This writes it: a sink for the bytes, in order, then
- * `close` (a file that never got there has no end marker, and is refused as truncated) or
- * `abort` (the file is removed). Dedicated workers only in a browser.
+ * A suspended machine (docs/frontend.md "Suspend"): its snapshot without the overlays' blocks (they stay in OPFS), in
+ * the `suspend` file of the machine's directory `name` (a stored machine's `machines/<id>`, a transient one's overlay).
+ * It pins each overlay's generation (docs/plans/machines.md §5.3): a start resumes it only while every pin matches, and
+ * drops it (`dropSuspend`) before the machine runs, resumed or booted. This writes it (`fileWriter`).
  */
-export async function suspendWriter(name: string): Promise<{ write(bytes: Uint8Array): void; close(): void; abort(): Promise<void> }> {
+export const suspendWriter = (name: string) => fileWriter(`${name}/${SUSPEND}`);
+
+/**
+ * Writes the OPFS file at `path` (made with its directories; a kept snapshot's, a suspended machine's): a sink for the
+ * bytes, in order, then `close` (a file that never got there has no end marker, and a snapshot's is refused as
+ * truncated) or `abort` (the file is removed). Dedicated workers only in a browser (a sync access handle).
+ */
+export async function fileWriter(path: string): Promise<{ write(bytes: Uint8Array): void; close(): void; abort(): Promise<void> }> {
   if (typeof navigator.storage === 'undefined') {
     const parts: Uint8Array[] = [];
-    inMemorySuspend.delete(name);
-    return { write: (b) => { parts.push(b.slice()); }, close: () => { inMemorySuspend.set(name, parts); }, abort: async () => { inMemorySuspend.delete(name); } };
+    inMemoryFiles.delete(path);
+    return { write: (b) => { parts.push(b.slice()); }, close: () => { inMemoryFiles.set(path, parts); }, abort: async () => { inMemoryFiles.delete(path); } };
   }
-  const dir = await opfsDir(name, true);
-  const h = await (await dir.getFileHandle(SUSPEND, { create: true })).createSyncAccessHandle();
+  const parts = path.split('/');
+  const file = parts.pop()!;
+  const dir = await opfsDir(parts.join('/'), true);
+  const h = await (await dir.getFileHandle(file, { create: true })).createSyncAccessHandle();
   h.truncate(0);
   let at = 0;
   return {
@@ -457,7 +466,7 @@ export async function suspendWriter(name: string): Promise<{ write(bytes: Uint8A
     },
     async abort() {
       h.close();
-      await dir.removeEntry(SUSPEND).catch(() => {});
+      await dir.removeEntry(file).catch(() => {});
     },
   };
 }
@@ -465,7 +474,7 @@ export async function suspendWriter(name: string): Promise<{ write(bytes: Uint8A
 /** The suspended machine kept beside overlay `name`, if there is one. */
 export async function suspended(name: string): Promise<Blob | undefined> {
   if (typeof navigator.storage === 'undefined') {
-    const parts = inMemorySuspend.get(name);
+    const parts = inMemoryFiles.get(`${name}/${SUSPEND}`);
     return parts && new Blob(parts as BlobPart[]);
   }
   try {
@@ -480,7 +489,7 @@ export async function suspended(name: string): Promise<Blob | undefined> {
 
 /** Drops the suspended machine beside overlay `name` (none is fine): before a machine runs on the overlay. */
 export async function dropSuspend(name: string) {
-  if (typeof navigator.storage === 'undefined') return void inMemorySuspend.delete(name);
+  if (typeof navigator.storage === 'undefined') return void inMemoryFiles.delete(`${name}/${SUSPEND}`);
   try {
     const dir = await opfsDir(name);
     await dir.removeEntry(SUSPEND);

@@ -13,7 +13,7 @@ import type { DisplayToPage } from '../gpu-present.ts';
 import type { FromGpuWorker, ToGpuWorker } from '../gpu-worker.ts';
 import { attachInput, type Input } from '../input.ts';
 import { PageAudio } from '../audio.ts';
-import { overlayBytes, removeOverlay } from '../overlay.ts';
+import { opfsDir, overlayBytes, removeOverlay } from '../overlay.ts';
 import { changesHeader as readChangesHeader } from '../qcow2.ts';
 import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-file.ts';
 import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
@@ -21,9 +21,12 @@ import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
 import { createNetwork, DEFAULT_SETTINGS, forgetTailcatIdentity, hasTailcatIdentity, tailscaleBuilt, tailcatBuilt, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
-import { newId, serialOf, type DiskRecord, type MachineRecord } from './shape.ts';
-import { diskDir, overlayDir, machineDir, Store } from './store.ts';
-import { diskSource, identityOf, refreshOverlay, refreshStored } from './disks.ts';
+import { CPU_FEATURES, newId, serialOf, shapeDiff, type DiskRecord, type MachineRecord, type Shape } from './shape.ts';
+import { currentShape, planRestore } from './snapshots.ts';
+import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
+import { diskDir, overlayDir, machineDir, snapshotPath, Store } from './store.ts';
+import { deleteOverlay, diskSource, identityOf, loadChangesInto, refreshOverlay, refreshStored, switchOverlay } from './disks.ts';
+import { askPersist, attach, createDisk, createMachine, machineLock, updateMachine } from './machines.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -31,7 +34,11 @@ const params = new URLSearchParams(location.search);
 // vCPUs, RAM, display and disks. Without one the machine is transient, made from the query (the tests' `?machine=`).
 const store = await Store.open();
 let storedError = '';
-const stored = params.get('m') ? await loadStored(params.get('m')!).catch((e) => { storedError = String((e as Error).message ?? e); return undefined; }) : undefined;
+/** The machine last opened on this page (in this browser): opened again by a page without a query. */
+const LAST = 'webpc.machine';
+const lastMachine = () => { try { return localStorage.getItem(LAST) ?? undefined; } catch { return undefined; } };
+const chosenId = params.get('m') ?? (location.search ? undefined : lastMachine());
+let stored = chosenId ? await loadStored(chosenId).catch((e) => { if (params.get('m')) storedError = String((e as Error).message ?? e); return undefined; }) : undefined;
 const machine = stored ? 'uefi' : (params.get('machine') ?? 'uefi') as MachineName;
 if (!(machine in MACHINES)) throw new Error(`no machine ${machine}`);
 const spec: Machine = MACHINES[machine];
@@ -42,9 +49,32 @@ const credentials = params.getAll('credential').map((c) => ({ name: c.slice(0, c
 // so choosing the same file again finds its changes (docs/frontend.md "Your own disk").
 let chosen: DiskChoice | undefined;
 /** The OPFS overlay of the disk the machine boots. */
-const overlayName = () => chosen?.overlay ?? spec.overlay;
+const overlayName = () => {
+  const a = bootAttachment();
+  return stored ? a && (a.overlay ? overlayDir(a.overlay) : NO_OVERLAY_YET) : chosen?.overlay ?? spec.overlay;
+};
+/** A stored machine's boot disk has no overlay before its first start (the start makes one): nothing written yet. */
+const NO_OVERLAY_YET = 'overlays/none';
+/**
+ * A stored machine's boot disk: its first writable attachment that takes an overlay (the header's Save disk, Reset disk
+ * and Load changes act on it; the modal has every disk's).
+ */
+function bootAttachment() {
+  const s = stored;
+  return s?.record.attachments.find((a) => !a.readOnly && !a.inPlace && s.disks.get(a.disk)?.kind !== 'ramdisk');
+}
+const bootDisk = () => { const a = bootAttachment(); return a && stored!.disks.get(a.disk); };
 /** What the disk is called on the page. */
-const diskName = () => (chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
+const diskName = () => (stored ? bootDisk()?.name : chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
+/** The page's disk as a job reads it (Save disk, Load changes): its source, overlay and identity. */
+async function pageDisk() {
+  const d = bootDisk();
+  if (d) {
+    const picked = pickedFiles.get(d.id);
+    return { source: picked ? { file: picked } : await diskSource(d), identity: identityOf(d), file: picked };
+  }
+  return { source: chosen?.file ? { file: chosen.file } : { url: chosen?.url ?? spec.disk! }, identity: undefined, file: chosen?.file };
+}
 /** A machine that boots the user's disk and has none yet (the page's own, until a disk is opened): it waits. */
 const needsDisk = () => !!spec.firmware && !spec.disk && !chosen && !stored?.record.attachments.length;
 /** What the header calls the machine: its name and the disk's. */
@@ -61,6 +91,58 @@ async function loadStored(id: string) {
     disks.set(d.id, d);
   }
   return { record, disks };
+}
+
+/** Remembers `id` as the machine this page opens without a query. */
+const rememberMachine = (id: string) => { try { localStorage.setItem(LAST, id); } catch { /* not remembered */ } };
+if (stored) rememberMachine(stored.record.id);
+
+/** Files picked in this session for file disks without a usable handle, by disk id. */
+const pickedFiles = new Map<string, File>();
+/** A file disk whose file the page can't read without the user: no handle (picked again), or a handle without permission (granted again by a click). */
+class NeedsUser extends Error {
+  readonly disks: DiskRecord[];
+  constructor(disks: DiskRecord[]) {
+    super(`${disks.map((d) => d.name).join(', ')} need${disks.length === 1 ? 's' : ''} your permission (or picking again) in this session`);
+    this.disks = disks;
+  }
+}
+/** The stored machine's file disks that need the user before it can start (machines.md §3.2). */
+async function filesNeedingUser(s: { record: MachineRecord; disks: Map<string, DiskRecord> }) {
+  const out: DiskRecord[] = [];
+  for (const a of s.record.attachments) {
+    const d = s.disks.get(a.disk)!;
+    if (d.kind !== 'file' || pickedFiles.has(d.id)) continue;
+    const h = d.handle as (FileSystemFileHandle & { queryPermission?(o: object): Promise<PermissionState> }) | undefined;
+    if (!h || (h.queryPermission && (await h.queryPermission({ mode: 'read' })) !== 'granted')) out.push(d);
+  }
+  return out;
+}
+/** Asks for read permission on every file disk that needs it, from a click; files without a handle are picked again (by identity: name, size, date). */
+async function grantFiles(disks: DiskRecord[]) {
+  for (const d of disks) {
+    const h = d.handle as (FileSystemFileHandle & { requestPermission?(o: object): Promise<PermissionState> }) | undefined;
+    if (h?.requestPermission) {
+      if ((await h.requestPermission({ mode: 'read' })) === 'granted') continue;
+    }
+    const file = await pickFile(`Pick ${d.name} again`);
+    if (!file) return false;
+    const want = d.identity as { name?: string; bytes?: number; modified?: number };
+    if (file.name !== want.name || file.size !== want.bytes || file.lastModified !== want.modified) {
+      if (!confirm(`${file.name} isn't the file this disk was made from (${want.name}, ${want.bytes} bytes, modified ${new Date(want.modified ?? 0).toLocaleString()}). Use it anyway? Its overlays were written over the other file's bytes and may not make sense over this one.`)) return false;
+    }
+    pickedFiles.set(d.id, file);
+  }
+  return true;
+}
+/** One file from the user (the hidden input), or undefined if they cancel. */
+function pickFile(title: string) {
+  return new Promise<File | undefined>((resolve) => {
+    const input = Object.assign(document.createElement('input'), { type: 'file', title });
+    input.onchange = () => resolve(input.files?.[0]);
+    input.oncancel = () => resolve(undefined);
+    input.click();
+  });
 }
 
 /**
@@ -85,16 +167,18 @@ async function ensureOverlays(s: { record: MachineRecord; disks: Map<string, Dis
  * suspended copy). A transient machine's: its image or the chosen disk, its overlay as home, and `?disk2=` read-only.
  */
 async function startDisks(): Promise<{ disks: StartDisk[]; home?: string }> {
-  if (stored) {
-    await ensureOverlays(stored);
-    const disks = await Promise.all(stored.record.attachments.map(async (a): Promise<StartDisk> => {
-      const d = stored.disks.get(a.disk)!;
+  const s = stored;
+  if (s) {
+    await ensureOverlays(s);
+    const disks = await Promise.all(s.record.attachments.map(async (a): Promise<StartDisk> => {
+      const d = s.disks.get(a.disk)!;
       const base = { name: d.name, serial: serialOf(a.id), identity: identityOf(d) };
       // A stored disk written in place is its own overlay, over zeros (web/stored.ts).
       if (d.kind === 'stored' && a.inPlace && !a.readOnly) return { ...base, source: { blank: d.size }, overlay: diskDir(d.id) };
-      return { ...base, source: await diskSource(d), overlay: a.readOnly || d.kind === 'ramdisk' || !a.overlay ? undefined : overlayDir(a.overlay) };
+      const picked = pickedFiles.get(d.id);
+      return { ...base, source: picked ? { file: picked } : await diskSource(d), overlay: a.readOnly || d.kind === 'ramdisk' || !a.overlay ? undefined : overlayDir(a.overlay) };
     }));
-    return { disks, home: machineDir(stored.record.id) };
+    return { disks, home: machineDir(s.record.id) };
   }
   const disks: StartDisk[] = [];
   const own: { url?: string; file?: File; overlay?: string } | undefined = chosen ?? (spec.disk ? { url: spec.disk, overlay: spec.overlay } : undefined);
@@ -111,8 +195,30 @@ async function refreshRecords() {
     else if (a.overlay) await refreshOverlay(store, a.overlay).catch(() => {});
   }
 }
+/** The page's CPU features (`?rng=0`, `?e0pd=0` turn one off: development). */
+const cpuFeatures = () => CPU_FEATURES.filter((f) => params.get(f) !== '0');
+/**
+ * A stored machine as its snapshots describe it (protocol.ts `about`): its shape as it runs now (`three`: with 3D) and
+ * its URL disks' URLs by slot.
+ */
+async function aboutMachine(three = want3d && !no3d) {
+  const s = stored;
+  if (!s) return undefined;
+  const display = params.get('display') === 'simple' ? 'none' : three ? '3d' : '2d';
+  const { shape, hash } = await currentShape(s.record, (id) => s.disks.get(id), { display, cpu: cpuFeatures() });
+  const urls: Record<number, string> = {};
+  for (const d of shape.disks) {
+    const a = s.record.attachments.find((x) => serialOf(x.id) === d.serial)!;
+    const rec = s.disks.get(a.disk)!;
+    if (rec.kind === 'url') urls[d.slot] = rec.url!;
+  }
+  return { name: s.record.name, shape, shapeHash: hash, urls };
+}
 /** The ramdisks' size, MiB: host memory the machine may take beside its RAM. */
-const ramdiskMiB = () => (stored ? stored.record.attachments.reduce((n, a) => n + (stored.disks.get(a.disk)!.kind === 'ramdisk' ? stored.disks.get(a.disk)!.size / 2 ** 20 : 0), 0) : 0);
+const ramdiskMiB = () => {
+  const s = stored;
+  return s ? s.record.attachments.reduce((n, a) => n + (s.disks.get(a.disk)!.kind === 'ramdisk' ? s.disks.get(a.disk)!.size / 2 ** 20 : 0), 0) : 0;
+};
 
 // Settings remembered per browser (the view, the network, whether saved disks are compressed, the sound's volume). Storage can be off or throw: then nothing is remembered.
 type Settings = { ncpus?: number; ramMiB?: number; view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean; gpu?: '3d' | '2d'; muted?: boolean; volume?: number; mic?: boolean; micRaw?: boolean };
@@ -383,7 +489,7 @@ const ACTIONS: Record<Problem, Action[]> = {
  * Starts a machine: booted, or (with `snapshot`) the one the file holds. A machine suspended on
  * this disk is resumed instead of booting, unless `resume` is false (it is then dropped).
  */
-function start(snapshot?: File, resume = true) {
+function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   // The machine worker draws the screen (web/display.ts): a canvas hands its drawing over only once.
   const focused = document.activeElement === canvas;
   const size = hasGpu ? wantedSize() : spec.framebuffer;
@@ -447,7 +553,10 @@ function start(snapshot?: File, resume = true) {
         scheduleSize(true); // a restored machine starts at the size it was saved with
       }
       if (m.state === 'rebooting') void restart();
-      if (m.state === 'off' || m.state === 'crashed' || m.state === 'suspended') void refreshRecords();
+      if (m.state === 'off' || m.state === 'crashed' || m.state === 'suspended' || m.state === 'failed') {
+        dropLock();
+        void refreshRecords();
+      }
     } else if (m.type === 'serial') {
       if (m.replay) {
         replaying = true; // xterm.js answers a query in the text (a cursor position request) while it parses it: the guest didn't ask
@@ -474,7 +583,7 @@ function start(snapshot?: File, resume = true) {
     } else if (m.type === 'snapshot-chunk') {
       snapshotJob?.chunk(m.data);
     } else if (m.type === 'snapshot-done') {
-      snapshotJob?.done(m.bytes, m.pausedMs);
+      snapshotJob?.done(m.bytes, m.pausedMs, m.pins);
     } else if (m.type === 'snapshot-error') {
       snapshotJob?.error(m.message);
     } else if (m.type === 'progress') {
@@ -498,16 +607,25 @@ function start(snapshot?: File, resume = true) {
     if (run !== r) return;
     let disks: StartDisk[];
     let home: string | undefined;
+    let about: Awaited<ReturnType<typeof aboutMachine>>;
     try {
+      const needs = stored ? await filesNeedingUser(stored) : [];
+      if (needs.length) throw new NeedsUser(needs);
       ({ disks, home } = await startDisks());
+      about = await aboutMachine(!!three);
     } catch (e) {
-      if (run === r) setState('failed', `The machine's disks couldn't be opened: ${String((e as Error).message ?? e)}`, [retry]);
+      if (run !== r) return;
+      if (e instanceof NeedsUser) {
+        const needs = e.disks;
+        setState('idle', `${e.message}: the browser lets a page read a file only after you say so.`, [{ label: needs.some((d) => d.handle) ? 'Allow and start' : 'Pick and start', run: () => void grantFiles(needs).then((ok) => { if (ok) void restart(); }) }], 'warn');
+      } else setState('failed', `The machine's disks couldn't be opened: ${String((e as Error).message ?? e)}`, [retry]);
       return;
     }
+    holdLock();
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, ip, sound, snapshot, resume, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, ip, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -529,7 +647,7 @@ function start(snapshot?: File, resume = true) {
         worker.terminate();
         r.input.detach();
         run = undefined;
-        start(snapshot, resume);
+        start(snapshot, resume, plan);
       } else if (m.type === 'lost') {
         setState('crashed', 'The browser lost the WebGL context the screen was drawn with.', ACTIONS.emulator);
       } else if (m.type === 'render-stats') ((window as unknown as { __renderStats?: unknown[] }).__renderStats ??= []).push(m);
@@ -542,6 +660,18 @@ function start(snapshot?: File, resume = true) {
   } else void begin();
   if (ip) autoconnect();
   renderNetwork();
+}
+
+/** While a stored machine runs on this page, its Web Lock is held (machines.ts `machineLock`): the modal, in any tab, sees it running. */
+let releaseLock: (() => void) | undefined;
+function holdLock() {
+  if (!stored || releaseLock) return;
+  const held = new Promise<void>((resolve) => { releaseLock = resolve; });
+  void navigator.locks.request(machineLock(stored.record.id), () => held);
+}
+function dropLock() {
+  releaseLock?.();
+  releaseLock = undefined;
 }
 
 /** Stops the machine, if any: its worker releases the disk overlay first (or gets 3 s to). */
@@ -558,6 +688,7 @@ async function stop() {
   });
   r.worker.terminate();
   r.gpu?.terminate();
+  dropLock();
   await refreshRecords();
 }
 
@@ -600,6 +731,7 @@ function syncDiskButtons() {
 }
 /** No disk yet: say how to bring one, and start nothing. */
 function waitForDisk() {
+  if (stored) return setState('idle', `${stored.record.name} has no disks yet: add one in Machines….`, [{ label: 'Machines…', run: () => void openMachines() }], 'warn');
   setState('idle', 'Open a disk image to start the machine: an arm64 Linux image that boots through UEFI, as qcow2, raw or an installer or live ISO (Open disk…, or drop the file on the page). What the machine writes to it is kept in this browser, per file.', [{ label: 'Open disk…', run: () => openDiskInput.click() }], 'warn');
 }
 
@@ -609,14 +741,18 @@ async function resetDiskAsked() {
   if (!name || busy()) return;
   const written = await overlayBytes(name).catch(() => 0);
   const size = !written ? '' : written < 1e6 ? ` (${Math.ceil(written / 1e3)} KB)` : ` (${(written / 1e6).toFixed(0)} MB)`;
-  if (!confirm(`Reset ${chosen ? `the disk ${diskName()}` : `${spec.label}'s disk`}? Everything the machine wrote to it${size} is deleted: your files, installed packages and settings. It then boots from the image as published.`)) return;
+  if (!confirm(`Reset ${chosen || stored ? `the disk ${diskName()}` : `${spec.label}'s disk`}? Everything the machine wrote to it${size} is deleted: your files, installed packages and settings. It then boots from the image as published.`)) return;
   await exclusively(async () => {
     await stop();
     term.reset();
     setState('loading');
     stateEl.textContent = 'Resetting the disk';
     try {
-      await removeOverlay(name); // once the machine's device worker has closed it
+      const a = bootAttachment();
+      if (stored && a?.overlay) {
+        await deleteOverlay(store, a.overlay); // its record, then its files: the next start makes an empty one
+        stored.record = (await store.get('machines', stored.record.id)) ?? stored.record;
+      } else if (!stored) await removeOverlay(name); // once the machine's device worker has closed it
     } catch (e) {
       setState('failed', `The disk couldn't be reset: ${String(e)}\nClose other tabs of this page (one of them may have the disk open), then try again.`, [resetDisk, retry]);
       return;
@@ -630,7 +766,58 @@ resetDiskBtn.onclick = () => void resetDiskAsked();
 // Your own disk: a local file (raw or qcow2, by its magic), by the picker or dropped on the page. The machine restarts on it; the
 // disk's changes are kept in the browser per file (name, size, modification time), so choosing it again continues where it left off.
 const openDiskInput = $<HTMLInputElement>('open-disk-input');
-async function chooseDisk(choice: { file: File } | { url: string }) {
+
+/**
+ * The machine for a disk file opened or dropped on the page (machines.md §2: "opening a disk the old way stays"): the
+ * one that already attaches it (the same name, size and date), or a new one named after it. Its handle, when the
+ * browser gave one, is kept; the file itself is used for this session either way.
+ */
+async function machineForFile(file: File, handle?: FileSystemFileHandle) {
+  const same = (d: DiskRecord) => d.kind === 'file' && d.identity.kind === 'file' && d.identity.name === file.name && d.identity.bytes === file.size && d.identity.modified === file.lastModified;
+  const known = (await store.all('disks')).find(same);
+  let id = known && (await store.machinesWith(known.id))[0]?.id;
+  if (!id) {
+    const head = new Uint8Array(await file.slice(0, 32).arrayBuffer());
+    const qcow2 = head.length >= 32 && new DataView(head.buffer).getUint32(0) === 0x514649fb;
+    const d = known ?? await createDisk(store, { kind: 'file', file, handle, size: qcow2 ? Number(new DataView(head.buffer).getBigUint64(24)) : file.size });
+    const m = await createMachine(store, { name: file.name.replace(/\.(qcow2|img|raw|iso)$/i, ''), ncpus, ramMiB });
+    await attach(store, m, d, { readOnly: /\.iso$/i.test(file.name) });
+    id = m.id;
+    pickedFiles.set(d.id, file);
+  } else pickedFiles.set(known!.id, file);
+  await switchMachine(id);
+}
+
+/**
+ * Opens stored machine `id` on this page: the one running stops (after asking), and it starts. From a transient
+ * machine's page (a test's `?machine=`) the page is reloaded as the machine's.
+ */
+async function switchMachine(id: string) {
+  if (machine !== 'uefi' || params.has('machine')) return void (location.search = `?m=${id}`);
+  if ((state === 'running' || state === 'booting') && stored?.record.id !== id && !confirm('Open the other machine? This one stops, like pulling the plug: unsaved work in the guest is lost.')) return;
+  await exclusively(async () => {
+    await stop();
+    const next = await loadStored(id);
+    stored = next;
+    storedError = '';
+    chosen = undefined;
+    [ncpus, ramMiB] = [next.record.ncpus, next.record.ramMiB];
+    want3d = wants3d();
+    no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
+    const q = new URLSearchParams(location.search);
+    for (const k of ['m', 'disk', 'ncpus', 'ram']) q.delete(k);
+    q.set('m', id);
+    history.replaceState(null, '', `?${q}`);
+    rememberMachine(id);
+    $('machine').textContent = machineTitle();
+    syncDiskButtons();
+    syncMachineMenu();
+    term.reset();
+    if (needsDisk()) waitForDisk();
+    else start();
+  });
+}
+async function chooseDisk(choice: { file: File; handle?: FileSystemFileHandle } | { url: string }) {
   if ('file' in choice && (await isSnapshot(choice.file))) return loadSnapshot(choice.file); // a snapshot isn't a disk to boot: it replaces the machine
   if (busy()) return;
   if ('file' in choice && (await changesHeader(choice.file))) { // a changes file isn't a disk to boot: it goes onto the disk on the page
@@ -639,6 +826,8 @@ async function chooseDisk(choice: { file: File } | { url: string }) {
     return;
   }
   if (!spec.firmware) return; // only a machine that boots through UEFI takes a disk of its own (the test guests' kernels are their own)
+  // The page's own machine: a file opened or dropped is a machine of its own, kept in this browser (machines.md §2).
+  if ('file' in choice && machine === 'uefi' && !params.has('machine')) return machineForFile(choice.file, choice.handle);
   const next: DiskChoice = { ...choice, overlay: await diskOverlay(choice) };
   if ((state === 'running' || state === 'booting') && !confirm(`Boot ${next.file?.name ?? next.url}? The machine restarts, like pulling the plug: unsaved work in the guest is lost. Its changes to the current disk are kept.`)) return;
   chosen = next;
@@ -657,16 +846,21 @@ async function loadChanges(file: File) {
   if (!info.hash) return void alert(`${file.name} has a backing file (${info.backingName}) but wasn't made by this page's Save disk, so its base can't be checked: it can't be loaded.`);
   const written = await overlayBytes(overlay).catch(() => 0);
   const running = state === 'running' || state === 'booting';
-  if (!confirm(`Load the changes in ${file.name}? They replace everything the machine has written to ${chosen ? diskName() : `${spec.label}'s disk`}${written ? ` (${(written / 1e6).toFixed(written < 1e7 ? 1 : 0)} MB)` : ''}, and the firmware's settings. The machine ${running ? 'stops, like pulling the plug, and ' : ''}starts again afterwards.`)) return;
+  const into = stored ? `They go into a new overlay of ${diskName()}, which the machine switches to (the one it has now is kept).` : `They replace everything the machine has written to ${chosen ? diskName() : `${spec.label}'s disk`}${written ? ` (${(written / 1e6).toFixed(written < 1e7 ? 1 : 0)} MB)` : ''}, and the firmware's settings.`;
+  if (!confirm(`Load the changes in ${file.name}? ${into} The machine ${running ? 'stops, like pulling the plug, and ' : ''}starts again afterwards.`)) return;
   await exclusively(async () => {
     await stop();
     term.reset();
     setState('off');
     stateEl.textContent = 'Loading the changes';
     try {
-      await runImport({ changes: file, disk: { source: chosen?.file ? { file: chosen.file } : { url: chosen?.url ?? spec.disk! }, overlay }, label: baseName() }, (phase, f) => {
-        stateEl.textContent = `${phase} ${Math.floor(100 * f)}%`;
-      });
+      const progress = (phase: string, f: number) => { stateEl.textContent = `${phase} ${Math.floor(100 * f)}%`; };
+      const s = stored;
+      const a = bootAttachment();
+      if (s && a) {
+        const o = await loadChangesInto(store, s.disks.get(a.disk)!, file, progress, (await pageDisk()).source);
+        await switchOverlay(store, s.record, a.id, o.id);
+      } else await runImport({ changes: file, disk: { source: (await pageDisk()).source, overlay }, label: baseName() }, progress);
     } catch (e) {
       const text = String((e as Error).message ?? e);
       setState('failed', `The changes couldn't be loaded: ${text}\n${/in use/.test(text) ? 'Close other tabs of this page (one of them may have the disk open), then try again.' : 'The disk is as it was.'}`, [retry]);
@@ -717,7 +911,8 @@ async function saveDisk(mode: ExportMode) {
   }
   // A file chosen as the disk is read in place: if the dialog's file was that one, it's gone already (its File no longer
   // reads); say so and write nothing, before the machine is stopped.
-  if (handle && chosen?.file && !(await chosen.file.slice(0, 1).arrayBuffer().then(() => true, () => false))) {
+  const ownFile = (await pageDisk()).file;
+  if (handle && ownFile && !(await ownFile.slice(0, 1).arrayBuffer().then(() => true, () => false))) {
     setState(state, `${handle.name} was the disk this machine runs from: the save dialog emptied it, so nothing was saved. The machine can't read its disk any more. Save to a different file next time.`, [], 'error');
     return;
   }
@@ -729,7 +924,9 @@ async function saveDisk(mode: ExportMode) {
     stateEl.textContent = 'Saving the disk';
     const mb = (n: number) => (n / 1e6).toFixed(n < 1e7 ? 1 : 0);
     try {
-      const r = await runExport({ mode, compress: mode !== 'raw' && saveCompress.checked, disk: { source: chosen?.file ? { file: chosen.file } : { url: chosen?.url ?? spec.disk! }, overlay }, baseName: baseName(), handle }, (phase, f) => {
+      if (overlay === NO_OVERLAY_YET) throw new Error('the machine has written nothing to it yet');
+      const { source, identity } = await pageDisk();
+      const r = await runExport({ mode, compress: mode !== 'raw' && saveCompress.checked, disk: { source, overlay, identity }, baseName: baseName(), handle }, (phase, f) => {
         stateEl.textContent = `${phase} ${Math.floor(100 * f)}%`;
       });
       if (r.blob) {
@@ -756,16 +953,27 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-save]')) {
 
 // Snapshots (docs/frontend.md "Snapshots"): the running machine, RAM and disk changes and all, in a file, and back.
 /** The save in progress: the worker's messages for it (the page's `worker.onmessage` forwards them). */
-let snapshotJob: { progress(phase: string, fraction: number): void; chunk(data: Uint8Array): void; done(bytes: number, pausedMs: number): void; error(message: string): void } | undefined;
+let snapshotJob: { progress(phase: string, fraction: number): void; chunk(data: Uint8Array): void; done(bytes: number, pausedMs: number, pins?: SnapshotDisk[]): void; error(message: string): void } | undefined;
 const SNAPSHOT_SUFFIX = '.webpcsnap';
 const mb = (n: number) => (n < 1e6 ? `${Math.ceil(n / 1e3)} KB` : `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB`);
 
-async function saveSnapshot() {
+/**
+ * Saves a snapshot of the running machine: to a file (the picker, or a download), or, for a stored machine by default,
+ * kept in the browser under a name (docs/plans/machines.md §5.2). `whole`: a disk written in place goes into the file
+ * whole (§4.4; a kept snapshot pins its generation instead).
+ */
+async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
   const r = run;
   if (!r || saving || switching || !(state === 'running' || state === 'booting')) return;
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, '0');
-  const suggestedName = `${machine}-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${SNAPSHOT_SUFFIX}`;
+  const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+  const suggestedName = `${stored ? stored.record.name.replace(/[^\w.-]+/g, '-') : machine}-${stamp}${SNAPSHOT_SUFFIX}`;
+  if (stored && !o.toFile) {
+    const name = prompt('Keep the snapshot in this browser, named:', `${stored.record.name} ${d.toLocaleString()}`);
+    if (name) await keepSnapshot(name.trim() || stamp);
+    return;
+  }
   // The picker first, as Save disk does: it needs the click's user activation. The machine isn't stopped, so nothing is asked.
   let handle: FileSystemFileHandle | undefined;
   const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
@@ -789,7 +997,7 @@ async function saveSnapshot() {
         done: (bytes, pausedMs) => resolve({ bytes, pausedMs }),
         error: (message) => reject(new Error(message)),
       };
-      r.worker.postMessage({ type: 'snapshot', handle } satisfies ToWorker);
+      r.worker.postMessage({ type: 'snapshot', handle, whole: o.whole } satisfies ToWorker);
     });
     if (!handle) {
       const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob(parts)), download: suggestedName });
@@ -810,6 +1018,41 @@ async function saveSnapshot() {
   }
 }
 saveSnapshotBtn.onclick = () => void saveSnapshot();
+
+/** Keeps a snapshot of the running stored machine in the browser (its file in OPFS first, then its record). */
+async function keepSnapshot(name: string) {
+  const r = run;
+  const s = stored;
+  if (!r || !s || saving || switching || !(state === 'running' || state === 'booting')) return;
+  saving = true;
+  syncButtons();
+  const id = newId();
+  try {
+    const about = (await aboutMachine())!;
+    await askPersist();
+    const result = await store.writing(async () => {
+      const done = await new Promise<{ bytes: number; pausedMs: number; pins: SnapshotDisk[] }>((resolve, reject) => {
+        snapshotJob = {
+          progress: (phase, f) => { stateEl.textContent = f > 0 && f < 1 ? `${phase} ${Math.floor(100 * f)}%` : phase; },
+          chunk: () => {},
+          done: (bytes, pausedMs, pins) => resolve({ bytes, pausedMs, pins: pins ?? [] }),
+          error: (message) => reject(new Error(message)),
+        };
+        r.worker.postMessage({ type: 'snapshot', keep: snapshotPath(s.record.id, id) } satisfies ToWorker);
+      });
+      await store.put('snapshots', { id, machine: s.record.id, name, created: Date.now(), bytes: done.bytes, shape: about.shape, shapeHash: about.shapeHash, urls: about.urls, pins: done.pins.map((p) => ({ slot: p.slot, overlay: p.overlay, generation: p.generation, blocks: p.blocks, ram: p.ram })) });
+      return done;
+    });
+    $('message').dataset.snapshot = JSON.stringify({ bytes: result.bytes, pausedMs: result.pausedMs, id });
+    if (run === r && (state === 'running' || state === 'booting')) setState(state, `Kept the snapshot ${name} in this browser (${mb(result.bytes)}); the machine was paused for ${(result.pausedMs / 1000).toFixed(1)} s and runs on.`, [], 'warn');
+  } catch (e) {
+    if (run === r) setState(state, `${String((e as Error).message ?? e)}\nThe machine runs on; nothing was kept.`, [], 'error');
+  } finally {
+    saving = false;
+    snapshotJob = undefined;
+    syncButtons();
+  }
+}
 
 // Suspend (docs/frontend.md "Suspend"): the machine stops with its memory kept beside its disk in this
 // browser; the next start (this page opened again, Start) resumes it. Nothing is asked: nothing is lost.
@@ -836,6 +1079,60 @@ suspendBtn.onclick = () => {
 /** Whether `file` starts with the snapshot signature (`WEBPCSNP`): how a chosen or dropped file is told from a disk image. */
 const isSnapshot = async (file: File) => new TextDecoder().decode(await file.slice(0, 8).arrayBuffer()) === 'WEBPCSNP';
 
+/**
+ * Restores a snapshot onto the stored machine (docs/plans/machines.md §5.2): refused when its shape isn't the machine's
+ * (it says what differs); else each writable disk keeps its overlay where it is as the snapshot pinned it, and forks
+ * (or, if the user says, is replaced) where it moved on. `key` identifies the snapshot for reusing an earlier fork.
+ */
+async function restoreSnapshot(file: File, header: SnapshotHeader, key: string, name: string) {
+  const s = stored!;
+  const now = await aboutMachine();
+  if (header.shapeHash !== now!.shapeHash) {
+    const why = header.shape ? shapeDiff(header.shape as Shape, now!.shape) : ['it was made by another version of this page'];
+    return void alert(`${name} is a snapshot of a machine other than ${s.record.name} as it is now: ${why.join('; ')}.\nMachines… can make a machine like it.`);
+  }
+  let plan: Awaited<ReturnType<typeof planRestore>>;
+  try {
+    plan = await planRestore(store, s.record, s.disks, { name: name.replace(/\.webpcsnap$/, ''), key, pins: (header.disks ?? []) as SnapshotDisk[] }, now!.shape.display);
+  } catch (e) {
+    return void alert(`${name} can't be restored: ${String((e as Error).message ?? e)}`);
+  }
+  if (plan.refused) return void alert(`${name} can't be restored: ${plan.refused}`);
+  const when = new Date(header.created);
+  const running = state === 'running' || state === 'booting';
+  const forks = plan.forks.map((f) => (f.reused ? `${f.disk}: its earlier fork of this snapshot, attached again` : `${f.disk}: changed since, so the snapshot's state goes into a new overlay, attached now (the one it has stays as it is)`));
+  if (!confirm(`Restore ${name}${Number.isNaN(when.getTime()) ? '' : `, taken ${when.toLocaleString()}`}? ${running ? 'The machine stops, like pulling the plug, and' : 'The machine'} runs on from where the snapshot was taken.${plan.kept.length ? `\nAs the snapshot left them: ${plan.kept.join(', ')}.` : ''}${forks.length ? `\n${forks.join('\n')}` : ''}`)) return;
+  const replaceable = plan.forks.filter((f) => !f.reused && f.replaceable);
+  const replace = replaceable.length > 0 && !confirm(`Keep ${replaceable.map((f) => `${f.replaceable!.name} (${mb(f.replaceable!.bytes)})`).join(', ')} as ${replaceable.length > 1 ? 'they are' : 'it is'} and restore into a new overlay (OK)? Cancel replaces ${replaceable.length > 1 ? 'them' : 'it'} instead: what the machine wrote since the snapshot is lost.`);
+  await exclusively(async () => {
+    await stop();
+    let disks: DiskPlan[];
+    try {
+      disks = await plan.commit(replace);
+    } catch (e) {
+      setState('failed', `${name} can't be restored: ${String((e as Error).message ?? e)}`, [retry]);
+      return;
+    }
+    term.reset();
+    start(file, true, disks);
+  });
+}
+
+/** Restores the kept snapshot `id` of the stored machine. */
+async function restoreKept(id: string) {
+  const rec = await store.get('snapshots', id);
+  if (!rec || !stored || rec.machine !== stored.record.id) return;
+  const file = await (await opfsFile(snapshotPath(rec.machine, id))).getFile();
+  const { header } = await openSnapshot(file);
+  await restoreSnapshot(new File([file], `${rec.name}.webpcsnap`), header, id, rec.name);
+}
+/** The OPFS file at `path`. */
+async function opfsFile(path: string) {
+  const parts = path.split('/');
+  const name = parts.pop()!;
+  return (await opfsDir(parts.join('/'))).getFileHandle(name);
+}
+
 /** What a snapshot's disk is called, for messages. */
 const snapshotDisk = (name: string | null | undefined) => (name ? `the disk ${name}` : `${spec.label}'s own disk`);
 
@@ -854,6 +1151,7 @@ async function loadSnapshot(file: File) {
     if (e instanceof SnapshotError) return void alert(`${file.name}: ${e.message}`);
     throw e;
   }
+  if (stored) return restoreSnapshot(file, header, `file:${String(header.created)}`, file.name);
   const label = typeof header.label === 'string' ? header.label : String(header.machine);
   if (header.machine !== machine) {
     return void alert(`${file.name} is a snapshot of ${label} (?machine=${String(header.machine)}), and this page runs ${spec.label} (?machine=${machine}). Open the page for that machine to load it.`);
@@ -892,7 +1190,13 @@ document.addEventListener('drop', (e) => {
   const file = e.dataTransfer?.files[0];
   if (!file) return;
   e.preventDefault();
-  void chooseDisk({ file });
+  // The item's handle (Chromium), so the machine made for it can read it in later sessions too (machines.md §3.2).
+  const item = e.dataTransfer?.items[0] as (DataTransferItem & { getAsFileSystemHandle?(): Promise<FileSystemHandle | null> }) | undefined;
+  const handle = item?.getAsFileSystemHandle?.().catch(() => null);
+  void (async () => {
+    const h = await handle;
+    void chooseDisk({ file, handle: h?.kind === 'file' ? h as FileSystemFileHandle : undefined });
+  })();
 });
 
 $<HTMLButtonElement>('boot-serial-show').onclick = () => { setView(document.body.dataset.view === 'screen' ? 'both' : (document.body.dataset.view as View), false); term.focus(); };
@@ -1161,6 +1465,14 @@ const cpuChoices = [...new Set([...CPU_CHOICES, ncpus])].sort((a, b) => a - b);
 const ramChoices = [...new Set([...RAM_CHOICES, ramMiB])].sort((a, b) => a - b);
 cpuSelect.replaceChildren(...cpuChoices.map((n) => new Option(`${n} vCPU${n > 1 ? 's' : ''}`, String(n))));
 ramSelect.replaceChildren(...ramChoices.map((n) => new Option(n >= 1024 && n % 512 === 0 ? `${n / 1024} GiB` : `${n} MiB`, String(n))));
+/** The Machine menu shows what runs (a stored machine's own settings after a switch). */
+function syncMachineMenu() {
+  for (const [sel, n] of [[cpuSelect, ncpus], [ramSelect, ramMiB]] as const) {
+    if (![...sel.options].some((o) => o.value === String(n))) sel.add(new Option(String(n), String(n)));
+    sel.value = String(n);
+  }
+  gpuSelect.value = want3d ? '3d' : '2d';
+}
 cpuSelect.value = String(ncpus);
 ramSelect.value = String(ramMiB);
 // Graphics (virtio-gpu machines): 3D or 2D, the query's choice over it.
@@ -1179,12 +1491,59 @@ $<HTMLButtonElement>('machine-apply').onclick = () => {
   const running = state === 'running' || state === 'booting';
   if (!confirm(`Restart with ${n} vCPU${n > 1 ? 's' : ''}, ${r} MiB of RAM${hasGpu ? ` and ${g === '3d' ? '3D' : '2D'} graphics` : ''}?${running ? ' Like pulling the plug: unsaved work in the guest is lost.' : ''} A suspended machine is resumed as it was, with its own size.${low}`)) return;
   [ncpus, ramMiB] = [n, r];
+  $<HTMLDetailsElement>('machine-menu').open = false;
+  const s = stored;
+  if (s) {
+    // A stored machine's settings are its record's (its snapshots of the old shape are orphaned: they stay, marked).
+    void exclusively(async () => {
+      await stop();
+      s.record = await updateMachine(store, { ...s.record, ncpus: n, ramMiB: r, display: hasGpu && !gpuAsked ? g : s.record.display });
+      want3d = wants3d();
+      no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
+      term.reset();
+      start();
+    });
+    return;
+  }
   remember({ ncpus, ramMiB, ...(hasGpu && !gpuAsked ? { gpu: g } : {}) });
   want3d = wants3d();
   no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
-  $<HTMLDetailsElement>('machine-menu').open = false;
   void restart();
 };
+
+// The Machines modal (docs/plans/machines.md §7; web/app/Machines.svelte, compiled when served): the machines kept in this
+// browser, their disks, overlays and snapshots. Loaded when first opened.
+const machinesDialog = $<HTMLDialogElement>('machines-dialog');
+let modal: { close(): void } | undefined;
+async function openMachines() {
+  if (modal) return void machinesDialog.showModal();
+  const [{ mount, unmount }, { default: Machines }] = await Promise.all([import('svelte'), import('./Machines.svelte')]);
+  const close = () => {
+    machinesDialog.close();
+  };
+  const component = mount(Machines, {
+    target: machinesDialog,
+    props: {
+      store,
+      current: stored?.record.id,
+      open: (id: string) => { close(); void switchMachine(id); },
+      powerOff: () => exclusively(async () => { await stop(); setState('off'); }),
+      close,
+      shapeNow: async (m: MachineRecord) => {
+        const disks = new Map((await store.all('disks')).map((d) => [d.id, d]));
+        const display = params.get('display') === 'simple' ? 'none' : m.display === '3d' && (!webgl2 || no3d || gpuAsked === '2d') ? '2d' : m.display;
+        return currentShape(m, (id) => disks.get(id), { display, cpu: cpuFeatures() });
+      },
+      restore: (id: string) => { close(); void restoreKept(id); },
+      apply: (file: File) => { close(); void loadSnapshot(file); },
+      saveToFile: (whole: boolean) => { close(); void saveSnapshot({ toFile: true, whole }); },
+    },
+  });
+  modal = { close: () => { void unmount(component); modal = undefined; } };
+  machinesDialog.addEventListener('close', () => modal?.close(), { once: true });
+  machinesDialog.showModal();
+}
+$<HTMLButtonElement>('machines-open').onclick = () => void openMachines();
 
 // Sound (docs/frontend.md "Sound"): on by default; muted and the volume are kept in this browser. Any click or key on
 // the page lets the browser play it (its autoplay rule): until one, the summary says sound is waiting.

@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { chromium, type Browser, type Page } from 'playwright-core';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
@@ -188,14 +188,23 @@ const inStore = <T, A>(page: Page, f: (s: { store: never; disks: never; a: A }) 
   }
 }, { src: f.toString(), a }) as Promise<T>;
 
-test("a disk stored in the browser: imported, its overlays as variants (changes loaded into a new one, switched), one merged into it, then written in place", { skip, timeout: 40 * 60_000 }, () => withDebianLock(async () => {
-  // A fresh profile on disk, as a user's: an off-the-record context's storage is in memory, with a quota (~1 GB here)
-  // that Debian stored in the browser (~1 GB) doesn't fit.
+/**
+ * The stored disk's two steps share a profile (the disk stored in the first): a fresh one on disk, as a user's (an
+ * off-the-record context's storage is in memory, with a quota, ~1 GB here, that Debian stored, ~1 GB, doesn't fit).
+ * Each step stays under 10 minutes in a cloud session.
+ */
+let storedRun: { profile: string; context: BrowserContext; page: Page; id: string; errors: string[] } | undefined;
+after(async () => {
+  await storedRun?.context.close();
+  if (storedRun) rmSync(storedRun.profile, { recursive: true, force: true });
+});
+
+test("a disk stored in the browser (1): imported, its overlays as variants (changes loaded into a new one, switched)", { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
   const profile = mkdtempSync(join(tmpdir(), 'webpc-profile-'));
   const context = await chromium.launchPersistentContext(profile, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
-  try {
   const page = context.pages()[0] ?? await context.newPage();
   const errors: string[] = [];
+  storedRun = { profile, context, page, id: '', errors };
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('dialog', (d) => void d.accept());
   await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
@@ -214,6 +223,7 @@ test("a disk stored in the browser: imported, its overlays as variants (changes 
   console.log(`# imported Debian in ${((Date.now() - t0) / 1000).toFixed(0)} s: ${(imported.bytes / 1e6).toFixed(0)} MB stored, ${(imported.estimate / 1e6).toFixed(0)} MB estimated`);
   assert.ok(imported.bytes <= imported.estimate * 1.01 + (1 << 20), 'the estimate covers what it takes');
   const { id } = imported;
+  storedRun.id = id;
 
   // 1. Its first overlay ("Changes", made at the start) takes a file; its generation moves.
   await boot(page, id, 'over its first overlay');
@@ -242,7 +252,12 @@ test("a disk stored in the browser: imported, its overlays as variants (changes 
   assert.equal(await ok(page, 'cat /root/one'), 'one');
   await ok(page, 'echo two > /root/two && sync');
   await powerOff(page);
+  assert.deepEqual(errors, []);
+}));
 
+test('a disk stored in the browser (2): an overlay merged into it, then written in place, then under an overlay again', { skip, timeout: 25 * 60_000 }, () => withDebianLock(async () => {
+  if (!storedRun?.id) throw new Error('step 1 failed: nothing to merge');
+  const { page, id, errors } = storedRun;
   // 3. Merged into the disk: the other overlays are deleted, the disk's generation moves; then written in place.
   const merged = await inStore(page, async ({ store, disks, a }: any) => {
     const m = await store.get('machines', a);
@@ -278,10 +293,6 @@ test("a disk stored in the browser: imported, its overlays as variants (changes 
   assert.equal(await ok(page, 'cat /root/one /root/two /root/three'), 'one two three');
   await powerOff(page);
   assert.deepEqual(errors, []);
-  } finally {
-    await context.close();
-    rmSync(profile, { recursive: true, force: true });
-  }
 }));
 
 // The installer flow (docs/plans/machines.md §4.1): an installer ISO read-only and a blank disk; the guest installs

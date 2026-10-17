@@ -793,15 +793,17 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     },
     /**
      * The writable disks' changes, for a snapshot (the VM as for `snapshot()`): for each disk with
-     * an overlay its slot, what its overlay belongs to (`diskIdentity`), its size and the blocks
-     * (4 KiB, ascending) the overlay holds; `diskBlocks` reads some of them.
+     * an overlay, and each ramdisk, its slot, what its overlay belongs to (`diskIdentity`), its size, the blocks
+     * (4 KiB, ascending) the overlay (or the ramdisk) holds, and the overlay's path and generation
+     * (docs/plans/machines.md §5.1: what the snapshot pins; asking moves the next change's generation on);
+     * `diskBlocks` reads some of them.
      */
-    async disks(): Promise<{ slot: number; identity: string; size: number; blocks: number[] }[]> {
+    async disks(): Promise<{ slot: number; identity: string; size: number; blocks: number[]; overlay?: string; generation?: number; ram?: boolean }[]> {
       const out = [];
       for (const [slot, d] of specs.entries()) {
-        if (d.type !== 'blk' || !d.overlay) continue;
-        const blocks = await devices.written(slot);
-        if (blocks) out.push({ slot, identity: diskIdentity(d, d.size ?? 0), size: d.size ?? 0, blocks });
+        if (d.type !== 'blk' || !(d.overlay || d.source === 'ram')) continue;
+        const w = await devices.written(slot);
+        if (w) out.push({ slot, identity: diskIdentity(d, d.size ?? 0), size: d.size ?? 0, blocks: w.blocks, overlay: d.overlay, generation: w.generation, ...(d.source === 'ram' ? { ram: true } : {}) });
       }
       return out;
     },
@@ -1256,7 +1258,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
   let closed = (_stats?: unknown) => {};
   let saved = (_m: { state?: unknown[]; error?: string }) => {};
   // Requests for a disk's changes (`written`, `blocks`), answered by id.
-  type DiskAnswer = { written?: number[]; bytes?: Uint8Array; error?: string };
+  type DiskAnswer = { written?: { blocks: number[]; generation?: number }; bytes?: Uint8Array; error?: string };
   const asked = new Map<number, (m: DiskAnswer) => void>();
   let askId = 0;
   const ask = (m: { type: 'written' | 'blocks'; device: number; blocks?: number[] }) => new Promise<DiskAnswer>((resolve, reject) => {

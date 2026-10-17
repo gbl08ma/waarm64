@@ -44,7 +44,7 @@ export type DeviceSpec =
   | GpuSpec
   | SndSpec;
 
-export type BlkSpec = { type: 'blk'; url?: string; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string };
+export type BlkSpec = { type: 'blk'; url?: string; source?: 'zero' | 'ram'; stored?: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string; ramInit?: [number, SharedArrayBuffer][] };
 
 /** Whether a disk takes the guest's writes: through an overlay, or a ramdisk. */
 export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
@@ -215,7 +215,7 @@ type Backend = {
    */
   save?(): unknown; restore?(state: unknown): void;
   /** A writable disk's changes, for a snapshot: the blocks (4 KiB) its overlay holds, and their bytes. */
-  written?(): number[]; blocks?(blocks: number[]): Uint8Array;
+  written?(): { blocks: number[]; generation?: number }; blocks?(blocks: number[]): Uint8Array;
 };
 
 function console_(out: (text: string) => void, ctx: Ctx): Backend {
@@ -615,7 +615,12 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       return n + 1;
     },
     reset() {},
-    written: rw && (() => rw.written()),
+    // For a snapshot, the VM paused: the blocks, and the generation it pins, with the next change set to move it on.
+    written: rw && (() => {
+      const generation = rw.generation?.();
+      rw.epoch?.();
+      return { blocks: rw.written(), generation };
+    }),
     blocks: rw && ((blocks) => {
       const out = new Uint8Array(blocks.length * 4096);
       blocks.forEach((b, k) => {
@@ -730,7 +735,7 @@ export class Devices {
   }
 
   /** Device `i`'s changed blocks (4 KiB each, ascending) if it is a disk with an overlay, for a snapshot. */
-  written(i: number): number[] | undefined {
+  written(i: number): { blocks: number[]; generation?: number } | undefined {
     return this.backends[i]?.written?.();
   }
 
@@ -752,7 +757,7 @@ export class Devices {
       if (d.type !== 'blk') return undefined;
       if (d.source) {
         if (!d.size) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : 'blank disk'} needs a size`);
-        return d.source === 'ram' ? ramDisk(d.size) : zeroSource(d.size);
+        return d.source === 'ram' ? ramDisk(d.size, d.ramInit) : zeroSource(d.size);
       }
       if (d.stored) return openStored(d.stored, d.size ?? 0);
       if (d.file) return blobSource(d.file);

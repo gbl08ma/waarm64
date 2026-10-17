@@ -279,15 +279,47 @@ isn't asking now: bash printed them as `;1R;80R`).
 | `label` | the machine's label, for messages |
 | `ncpus` | vCPUs the machine ran with |
 | `disk` | the display name of the disk it was on when that was a chosen disk (file name, or a URL's last segment); `null` for the machine's own |
-| `devices` | the device kinds in slot order: `rng`, `blk`, `blk-ro` (the `?disk2=` disk), `keyboard`, `tablet`, `net`; a restore makes the same list, and refuses (naming what to open the page with) one it can't: a `blk-ro` without `?disk2=`, a `net` without the machine's IP port |
+| `devices` | the device kinds in slot order (`shape.ts` `slots`: `rng`, `keyboard`, `tablet`, `net`, `gpu`, `snd`, then a `blk` per disk); a restore refuses one whose list isn't the machine's now, naming both |
 | `cpu` | the vCPUs' optional features, of `rng` and `e0pd` (docs/cpu.md); a restore gives the machine the same, and a snapshot without the field (before ABI 35) none |
 | `serial` | the last ~4 KiB of serial output the worker posted, cut at a line start |
+| `name`, `shape`, `shapeHash`, `urls` | a stored machine's (format 2): its name, its shape and the shape's hash (a restore onto a machine whose hash is another is refused), and its URL disks' URLs by slot (a machine like it can be made again) |
+
+`disks` (`SnapshotDisk`, web/snapshot.ts) pins each writable disk: its slot, identity, size, the blocks the file
+carries, the overlay's path and its **generation** when the snapshot was taken (the device worker reports it while
+the machine is paused, and sets the next write to move it on: writes after a snapshot are another generation), and
+`ram` for a ramdisk.
 
 **Errors.** `SnapshotError` (`web/snapshot-file.ts`) becomes the `snapshot` problem, whose actions are
 Start (a normal boot) and Load snapshot… again. The message says what was refused and, from
 `readSnapshot`, that nothing was touched ("the machine isn't running and its disk is as it was");
 past that point (`bootVm` has the file) it says the disk may hold part of the snapshot's changes
 and offers Reset disk.
+
+### A stored machine's snapshots
+
+docs/plans/machines.md §5. **Save snapshot** on a stored machine asks for a name and **keeps** it in the browser: the
+worker writes the file to OPFS `machines/<id>/snapshots/<id>` (`start`'s `snapshot.keep`), then the page writes its
+record (its pins, the shape) inside `Store.writing`. Kept snapshots are listed in the Machines modal, newest first:
+**Restore** (on the page's machine), **Download** (the file as kept), **Delete**; **Import a file…** copies a file
+into them (one of another shape is kept, orphaned), **Apply a file…** restores one at once, and **Save a snapshot to a
+file** writes one out (with the whole of a disk written in place, if the user says so, §4.4).
+- **Orphaned:** a kept snapshot whose shape hash isn't the machine's now (its RAM, vCPUs, display, disks…). It is
+  struck through, with what differs (`shapeDiff`: "memory: 1024 MiB then, 2048 MiB now"), and offers **Make a machine
+  like it** (`machineLike`: the settings and disks from the shape, the disks the browser has attached again by
+  identity, blank disks and ramdisks made again under their ids, the attachments under the snapshot's serials; the
+  snapshot moves to it). **Delete orphaned snapshots** deletes them all after one confirmation with their total size.
+  Saving changed settings warns that they orphan the snapshots.
+- **A restore never destroys a disk's state** (`planRestore`, web/app/snapshots.ts): per writable disk, an overlay
+  that is the snapshot's pinned one at its pinned generation is **kept** (nothing written: the restore is RAM and
+  state); one that moved on **forks**: a new overlay named after the snapshot gets its blocks and is attached, the old
+  one stays as it was; an earlier fork of the same snapshot that hasn't moved since (its generation is still the
+  restore's, 1) is attached again instead of forking once more. The confirmation says which disks fork, and a second
+  one offers to **replace** instead (the attached overlay takes the blocks; what was written since is lost). A
+  replaced overlay's generation goes on from its old one, never back to one a snapshot pinned. A disk written in place
+  keeps only at its pinned generation; else a file with the whole disk forks it into an overlay (zeroed first, so the
+  moved store under it doesn't matter), and one without is refused with the reason. A ramdisk takes the file's blocks
+  (its new chunks are handed to the device: `BlkSpec.ramInit`). The page passes the worker the plan
+  (`start.plan`); transient machines (the tests') have none, and a restore replaces their overlays as before.
 
 **Suspend** (the header, for a machine with an overlay; enabled while `running` or `booting`): the
 machine stops and its memory stays in this browser; opening the page again, or Start, resumes it
@@ -301,14 +333,12 @@ are Start and Boot instead). A failure before that leaves the machine running.
   overlay is kept (`readSnapshot`'s `resume`): `loading` ("Resuming the suspended machine"), then
   `running` with the note "Resumed the suspended machine." If it can't be resumed (another core
   version, a damaged file), it is dropped and the machine boots, with a note saying so.
-- **What keeps it safe is an invariant, not a check:** the suspended copy exists only while no
-  machine has written the disk since. The worker drops it (`dropSuspend`) before any machine runs
-  on the overlay: right after a resume's `bootVm`, before the first step; and before a boot the
-  page asked for (`start.resume` false: Boot instead, which confirms that the suspended memory is
-  lost). Reset disk, Load changes and Load snapshot delete it with the overlay (`removeOverlay`).
-  A copy that outlived a write to its disk would resume a guest whose page cache and filesystem
-  state no longer match the disk; a generation counter compared at resume was the plan's first
-  idea, and needs every writer to bump it, which is the same discipline with one more file.
+- **It resumes only onto its disks as it left them:** the file pins each overlay's path and generation, and the
+  worker compares them (`overlayMeta`) before resuming: a switched overlay, a reset, a merge or a boot since moved
+  them on, and the copy is dropped with a note ("its disk has changed since it was suspended"). The worker also still
+  drops it (`dropSuspend`) right after a resume's `bootVm` and before a boot the page asked for (`start.resume`
+  false: Boot instead). A ramdisk's blocks are in the file (they are nowhere else). A stored machine's copy is
+  `machines/<id>/suspend`; a transient one's is beside its overlay.
 - A suspended machine's file is not a snapshot to take elsewhere (it has no disk): `readSnapshot`
   refuses it without `resume`, and Save snapshot is what leaves the browser.
 - With a disk of one's own (Open disk…), the suspended copy is beside that disk's overlay: it

@@ -28,8 +28,12 @@ export type OverlayRecord = {
   fork?: { snapshot: string; generation: number };
 };
 
-/** What a snapshot needs of a writable disk (machines.md §5.1): the overlay, or the disk written in place, at a generation. */
-export type Pin = { slot: number; overlay?: string; disk?: string; generation: number };
+/**
+ * What a snapshot needs of a writable disk (machines.md §5.1; web/snapshot.ts `SnapshotDisk`): by slot, the overlay's
+ * path (`overlays/<id>`, or `disks/<id>` for a disk written in place) at a generation, the blocks the file carries for
+ * it, and whether it is a ramdisk (whose blocks are always in the file).
+ */
+export type Pin = { slot: number; overlay?: string; generation?: number; blocks: number; ram?: boolean };
 
 /** A snapshot kept in the browser (`machines/<machine>/snapshots/<id>`, the WEBPCSNP file). */
 export type SnapshotRecord = {
@@ -42,6 +46,8 @@ export type SnapshotRecord = {
   shape: Shape;
   shapeHash: string;
   pins: Pin[];
+  /** Its URL disks' URLs by slot (from the file's header): a machine like it can be made again. */
+  urls?: Record<number, string>;
 };
 
 export type Kinds = { machines: MachineRecord; disks: DiskRecord; overlays: OverlayRecord; snapshots: SnapshotRecord };

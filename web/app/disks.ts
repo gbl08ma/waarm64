@@ -97,11 +97,11 @@ export async function refreshStored(store: Store, id: string) {
 }
 
 /** Loads a changes file (Save disk's "changes only") into a new overlay of `d`, named after the file. */
-export async function loadChangesInto(store: Store, d: DiskRecord, file: File, progress: (phase: string, fraction: number) => void) {
+export async function loadChangesInto(store: Store, d: DiskRecord, file: File, progress: (phase: string, fraction: number) => void, source?: DiskRef['source']) {
   const id = newId();
   return store.writing(async () => {
     try {
-      await runImport({ changes: file, disk: { ...(await diskRef(d)), overlay: overlayDir(id) }, label: d.name }, progress);
+      await runImport({ changes: file, disk: { ...(await diskRef(d)), ...(source ? { source } : {}), overlay: overlayDir(id) }, label: d.name }, progress);
     } catch (e) {
       await removeOverlay(overlayDir(id)).catch(() => {});
       throw e;

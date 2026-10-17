@@ -4,6 +4,8 @@ import type { VcpuLiveness } from '../liveness.ts';
 import type { Timeline } from '../profiler.ts';
 import type { Vm } from '../vm.ts';
 import type { Credential, MachineName } from './machine.ts';
+import type { Shape } from './shape.ts';
+import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
@@ -92,9 +94,17 @@ export type ToWorker =
     snapshot?: File;
     /**
      * False: boot even if a suspended machine is kept beside the disk (it is dropped). Otherwise a
-     * start resumes one if there is one (docs/frontend.md "Suspend").
+     * start resumes one if there is one and its pins match (docs/frontend.md "Suspend").
      */
     resume?: boolean;
+    /**
+     * The machine as its snapshots describe it (docs/plans/machines.md §5.1): its name, shape and the shape's hash, and
+     * the URLs of its URL disks by slot (a file restored elsewhere can make its machine). A snapshot whose shape hash
+     * isn't this one is refused. Transient machines (the tests') have none: their snapshots are checked by devices.
+     */
+    about?: { name: string; shape: Shape; shapeHash: string; urls: Record<number, string> };
+    /** What a restore does with each writable disk the snapshot pins (web/snapshot.ts `DiskPlan`); none: replace each. */
+    plan?: DiskPlan[];
   }
   /**
    * Suspend the running machine: it pauses, its snapshot (without the disk's changes, which stay
@@ -105,9 +115,11 @@ export type ToWorker =
   /**
    * Save a snapshot of the running machine (`running` or `booting`): it pauses, the file is written,
    * it runs on. The bytes go to `handle`'s writable stream (from `showSaveFilePicker`), or, without
-   * one, back in `snapshot-chunk` messages. Answered by `snapshot-done` or `snapshot-error`.
+   * one, back in `snapshot-chunk` messages, or, with `keep`, to that OPFS file (a kept snapshot: docs/plans/machines.md
+   * §5.2). A disk written in place has its blocks in the file only with `whole` (its whole store). Answered by
+   * `snapshot-done` or `snapshot-error`.
    */
-  | { type: 'snapshot'; handle?: FileSystemFileHandle }
+  | { type: 'snapshot'; handle?: FileSystemFileHandle; keep?: string; whole?: boolean }
   /** Stop the vCPUs and release the disk overlay; answered by `stopped`. */
   | { type: 'stop' }
   /** Benchmarks (`?displaystats`, bench/gpu/sway-load.ts): start or stop the guest PC sampler over every vCPU; a stop is answered by `profile`. */
@@ -166,8 +178,8 @@ export type FromWorker =
   | { type: 'snapshot-progress'; phase: string; fraction: number }
   /** The next bytes of the file, when the save had no `handle` (transferred, in order). */
   | { type: 'snapshot-chunk'; data: Uint8Array }
-  /** The file is complete: its size, and ms the machine was paused (from the pause request to the resume). */
-  | { type: 'snapshot-done'; bytes: number; pausedMs: number }
+  /** The file is complete: its size, ms the machine was paused (from the pause request to the resume), and the disks it pins. */
+  | { type: 'snapshot-done'; bytes: number; pausedMs: number; pins: SnapshotDisk[] }
   /** The save failed (the machine runs on, unless it had ended): a message for the user. */
   | { type: 'snapshot-error'; message: string }
   /** The PC sampler's histogram since `profile` started it: [pc in hex, samples] (any vCPU). */

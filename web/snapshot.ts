@@ -7,9 +7,10 @@
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
 import { applyRam, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type Sink, type SnapshotHeader } from './snapshot-file.ts';
-import { diskIdentity, type DeviceSpec } from './devices.ts';
+import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
+import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
-import { openOverlay, overlay, removeOverlay } from './overlay.ts';
+import { openOverlay, overlay, overlayMeta, removeOverlay, writeMeta, type WritableDisk } from './overlay.ts';
 import { isZero } from './qcow2-write.ts';
 import { ABI, bootVm, Exit, type BootOptions, type ConsoleInput, type Restore, type Vm, type VmState } from './vm.ts';
 
@@ -22,7 +23,16 @@ export type SnapshotMeta = Record<string, unknown>;
  * carries, and the base image's SHA-256 where the writer knew it (for a base that is the same
  * bytes under another name or date).
  */
-export type SnapshotDisk = { slot: number; identity: string; size: number; blocks: number; sha256?: string };
+export type SnapshotDisk = { slot: number; identity: string; size: number; blocks: number; sha256?: string; overlay?: string; generation?: number; ram?: boolean };
+
+/**
+ * What a restore does with a writable disk the file pins (docs/plans/machines.md §5.2): `keep` its overlay as it is
+ * (it is at the pinned generation: the file's blocks for it are skipped), or `write` the file's blocks into overlay
+ * `overlay` (emptied first: a fork into a new overlay, or a replace), with `whole` the disk's every block made zeros
+ * first (a stored disk written in place, forked over its moved store: the file has the whole disk). A ramdisk's
+ * blocks always go to its new chunks.
+ */
+export type DiskPlan = { slot: number; action: 'keep' } | { slot: number; action: 'write'; overlay: string; identity: string; size: number; whole?: boolean };
 
 /** A DISK frame's index: the device slot times this, plus the first block. */
 const SLOT = 2 ** 40;
@@ -34,13 +44,15 @@ const BLOCK = 4096;
  * resolves (RAM and the disks must not move while it is written). `sha256` gives a disk's base
  * image's hash, if the caller has it.
  */
-export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean } = {}) {
+export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, codec: Codec, opts: { progress?: (done: number, total: number) => void; sha256?: (slot: number) => string | undefined; suspend?: boolean; omit?: (slot: number) => boolean } = {}) {
   const state = await vm.snapshot();
   const all = await vm.disks();
-  const pinned: SnapshotDisk[] = all.map((d) => ({ slot: d.slot, identity: d.identity, size: d.size, blocks: opts.suspend ? 0 : d.blocks.length, sha256: opts.sha256?.(d.slot) }));
-  // A suspended machine's file (`suspend`) has no disk blocks: it stays beside the overlays it
-  // pins, and resumes only while they are as it left them (`readSnapshot`'s `resume`).
-  const disks = opts.suspend ? [] : all;
+  // A suspended machine's file (`suspend`) has no overlay's blocks: it stays beside the overlays it pins, and resumes
+  // only while they are as it left them (`readSnapshot`'s `resume`). A ramdisk's are always in the file (they are
+  // nowhere else). `omit`: disks whose blocks the caller leaves out (a stored disk written in place: its whole store).
+  const carried = (d: (typeof all)[number]) => d.ram || (!opts.suspend && !opts.omit?.(d.slot));
+  const pinned: SnapshotDisk[] = all.map((d) => ({ slot: d.slot, identity: d.identity, size: d.size, blocks: carried(d) ? d.blocks.length : 0, sha256: opts.sha256?.(d.slot), overlay: d.overlay, generation: d.generation, ...(d.ram ? { ram: true } : {}) }));
+  const disks = all.filter(carried);
   const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize, disks: pinned, ...(opts.suspend ? { suspend: true } : {}) };
   const w = new SnapshotWriter(sink, header, { codec, concurrency: 1 });
   await w.bytes('CORE', state.core);
@@ -56,7 +68,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
     })());
   }
   const end = await w.end();
-  return { ...end, pages: ram.pages, state: state.core.length, diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0) };
+  return { ...end, pages: ram.pages, state: state.core.length, diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned };
 }
 
 /**
@@ -76,7 +88,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
  */
 export async function readSnapshot(
   source: ReadableStream<Uint8Array> | Blob, codec: Codec, coreVersion: number,
-  opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean } = {},
+  opts: { devices?: DeviceSpec[]; sha256?: (slot: number) => string | Promise<string>; resume?: boolean; plan?: DiskPlan[] } = {},
 ): Promise<{ header: SnapshotHeader; restore: Restore }> {
   if (source instanceof Blob) {
     // A pass over the whole file first: a restore replaces the disk's changes, so it must not find
@@ -96,10 +108,17 @@ export async function readSnapshot(
   }
   const pinned = (header.disks ?? []) as SnapshotDisk[];
   if (!Array.isArray(pinned) || pinned.some((d) => !Number.isInteger(d?.slot) || typeof d.identity !== 'string' || !Number.isSafeInteger(d.size) || d.size < 0)) throw corrupt('its list of disks is not readable');
-  // The overlays to replace: name and identity, by slot.
-  const overlays = new Map<number, { name: string; identity: string; size: number }>();
+  // What each pinned disk's blocks do, by slot: an overlay written (emptied first), skipped (the overlay is kept as it
+  // is), or a ramdisk's chunks (handed to its new device: `BlkSpec.ramInit`).
+  type Target = { kind: 'overlay'; name: string; identity: string; size: number; whole?: boolean } | { kind: 'skip' } | { kind: 'ram'; spec: BlkSpec; size: number };
+  const targets = new Map<number, Target>();
   for (const d of pinned) {
     const spec = opts.devices?.[d.slot];
+    if (d.ram) {
+      if (spec?.type !== 'blk' || spec.source !== 'ram' || spec.size !== d.size) throw new SnapshotError('other-machine', "This snapshot is of a machine with a ramdisk that this machine doesn't have.");
+      targets.set(d.slot, { kind: 'ram', spec, size: d.size });
+      continue;
+    }
     if (spec?.type !== 'blk' || !spec.overlay) throw new SnapshotError('other-machine', "This snapshot is of a machine with a writable disk that this machine doesn't have.");
     const identity = diskIdentity(spec, d.size);
     if (identity !== d.identity) {
@@ -108,7 +127,8 @@ export async function readSnapshot(
         throw new SnapshotError('other-disk', `This snapshot was taken on another disk (${describe(d.identity)}); the disk here is ${describe(identity)}. A snapshot only continues on the disk it was taken on: open that disk first (Open disk…), then load the snapshot.`);
       }
     }
-    overlays.set(d.slot, { name: spec.overlay, identity, size: d.size });
+    const plan = opts.plan?.find((p) => p.slot === d.slot);
+    targets.set(d.slot, opts.resume || plan?.action === 'keep' ? { kind: 'skip' } : plan?.action === 'write' ? { kind: 'overlay', name: plan.overlay, identity: plan.identity, size: plan.size, whole: plan.whole } : { kind: 'overlay', name: spec.overlay, identity, size: d.size });
   }
   const frames = s.frames();
   // CORE and DEVS come first, each in index order.
@@ -138,21 +158,36 @@ export async function readSnapshot(
     async fill(ram) {
       if (ram.length !== header.ramSize) throw new SnapshotError('other-machine', `This snapshot is of a machine with ${Number(header.ramSize) / 2 ** 20} MiB of memory; this one has ${ram.length / 2 ** 20} MiB.`);
       for (; !next.done && next.value.tag === 'RAM '; next = await frames.next()) applyRam(ram, next.value.index, next.value.data);
-      // The disks: each pinned overlay is emptied (a snapshot's blocks are all the disk has
-      // written), then takes the file's blocks.
-      const open = new Map<number, { disk: ReturnType<typeof overlay>; close(): void; size: number }>();
+      // The disks: each overlay written is emptied (a snapshot's blocks are all the disk has written; with `whole`, all
+      // the disk has), then takes the file's blocks; a ramdisk's go into chunks for its device.
+      const open = new Map<number, { disk: WritableDisk; close(): void; size: number } | 'skip'>();
+      const rams: { spec: BlkSpec; disk: ReturnType<typeof ramDisk> }[] = [];
       try {
-        for (const [slot, o] of opts.resume ? [] : overlays) {
-          await removeOverlay(o.name);
-          const files = await openOverlay(o.name, o.identity);
-          // Whole blocks are written, so the base is never read.
-          open.set(slot, { disk: overlay({ size: o.size, format: 'raw', read: async () => undefined }, files.data, files.map, files.meta), close: files.close, size: o.size });
+        for (const [slot, t] of targets) {
+          if (t.kind === 'skip') { open.set(slot, 'skip'); continue; }
+          if (t.kind === 'ram') {
+            const disk = ramDisk(t.size);
+            rams.push({ spec: t.spec, disk });
+            open.set(slot, { disk, close() {}, size: t.size });
+            continue;
+          }
+          // Its generation goes on from where it was (a replace never takes an overlay back to a generation an older
+          // snapshot pinned): emptied, it starts one past its old one, and the writes below move nothing further.
+          const was = (await overlayMeta(t.name)).generation;
+          await removeOverlay(t.name);
+          const files = await openOverlay(t.name, t.identity);
+          if (!writeMeta(files.meta, { generation: was + 1, merging: '' })) throw new Error("the disk's changes can't be written to the browser's storage (is it full?)");
+          // Whole blocks are written, so the base is never read; no meta: its generation is set.
+          const disk = overlay({ size: t.size, format: 'raw', read: async () => undefined }, files.data, files.map);
+          open.set(slot, { disk, close: files.close, size: t.size });
+          if (t.whole && !(await disk.zero(0, t.size))) throw new Error("the disk can't be written to the browser's storage (is it full?)");
         }
         for (; !next.done; next = await frames.next()) {
           const { tag, index, data } = next.value;
           if (tag !== 'DISK') throw corrupt("it has parts this page doesn't expect");
           const o = open.get(Math.floor(index / SLOT));
           if (!o) throw corrupt('it has blocks of a disk it doesn\'t list');
+          if (o === 'skip') continue;
           for (const { block, data: bytes } of diskBlocks(index % SLOT, data)) {
             const at = block * BLOCK;
             if (at >= o.size) throw corrupt('it has blocks past the end of its disk');
@@ -160,9 +195,10 @@ export async function readSnapshot(
             if (!(isZero(part) ? await o.disk.zero(at, part.length) : await o.disk.write(at, part))) throw new Error("the disk's changes can't be written to the browser's storage (is it full?)");
           }
         }
-        for (const o of open.values()) o.disk.flush();
+        for (const o of open.values()) if (o !== 'skip') o.disk.flush();
+        for (const r of rams) r.spec.ramInit = r.disk.chunkList();
       } finally {
-        for (const o of open.values()) o.close();
+        for (const o of open.values()) if (o !== 'skip') o.close();
       }
     },
   };

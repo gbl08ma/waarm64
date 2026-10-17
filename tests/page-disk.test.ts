@@ -88,7 +88,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   page.on('dialog', (d) => void d.accept()); // "Boot mydisk.qcow2? The machine restarts…"
   const pick = async () => {
     await page.setInputFiles('#open-disk-input', file);
-    await page.waitForFunction(() => document.getElementById('machine')!.textContent!.includes('mydisk.qcow2'), null, { timeout: 10_000 });
+    await page.waitForFunction(() => document.getElementById('machine')!.textContent === 'mydisk', null, { timeout: 10_000 });
   };
   const choose = async () => {
     const from = await page.evaluate(() => document.body.dataset.state!);
@@ -106,7 +106,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await page.locator('#restart').click(); // Start: still waiting for a disk
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'idle');
   await pick();
-  assert.equal(await page.locator('#machine').textContent(), 'AArch64 machine · mydisk.qcow2');
+  assert.equal(await page.locator('#machine').textContent(), 'mydisk', 'a machine made for the file, named after it');
   await page.locator('.xterm').click();
   // GRUB's menu: two arrows down to "UEFI Firmware Settings" (its asterisk marks the entry), Enter.
   await showsRows(page, /Advanced options for Debian/);
@@ -163,14 +163,15 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   // The page's disk takes DISCARD: Debian's ext4 trims its free space (what the guest frees leaves the overlay).
   await onSerial(page, 'fstrim -v / && echo tr""immed\n');
   await shows(page, /\/: [^/]*\(\d+ bytes\) trimmed\s*trimmed/);
-  // Its overlay is its own, keyed by the file.
+  // A machine kept in the browser for it (docs/plans/machines.md): the disk's changes in an overlay of their own, the
+  // firmware's variable store in the machine's directory.
   const names = await overlays(page);
-  assert.ok(names.some((n) => /^webpc-disk-[0-9a-f]{16}$/.test(n)), `OPFS has ${names}`);
+  assert.deepEqual(names.sort(), ['machines', 'overlays'], `OPFS has ${names}`);
   await page.waitForFunction(async () => {
-    for await (const [name, h] of (await navigator.storage.getDirectory() as unknown as { entries(): AsyncIterable<[string, FileSystemDirectoryHandle]> }).entries()) {
-      if (!name.startsWith('webpc-disk-')) continue;
+    const root = await navigator.storage.getDirectory();
+    for await (const [, h] of ((await root.getDirectoryHandle('machines')) as unknown as { entries(): AsyncIterable<[string, FileSystemDirectoryHandle]> }).entries()) {
       try {
-        const f = await (await h.getFileHandle('flash')).getFile(); // the variable store is kept beside it
+        const f = await (await h.getFileHandle('flash')).getFile();
         return f.size === 1 << 20 && new Uint8Array(await f.arrayBuffer()).some((b) => b !== 0xff);
       } catch { /* not yet */ }
     }
@@ -214,8 +215,10 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   const map = JSON.parse(qemu('map', '--output=json', `json:${JSON.stringify({ driver: 'qcow2', file: { driver: 'file', filename: downloaded }, backing: null })}`)) as { data: boolean }[];
   assert.ok(map.some((e) => e.data), 'the changes file holds the blocks the machine wrote');
 
-  // A reload goes back to the machine's own disk (a File isn't remembered); choosing the file again finds its changes.
+  // A reload opens the machine again, which asks for its file (a File picked without a handle isn't remembered);
+  // choosing the file again finds its machine and its changes.
   await page.reload();
+  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /picking again/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 30_000 });
   await choose();
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
