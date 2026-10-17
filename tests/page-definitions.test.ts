@@ -7,10 +7,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { chromium, type Browser } from 'playwright-core';
+import { chromium } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 
-let browser: Browser;
 let base: string;
 let close: () => void;
 let dir: string;
@@ -18,16 +17,21 @@ before(async () => {
   const server = await startServer();
   close = () => server.close();
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
   dir = mkdtempSync(join(tmpdir(), 'webpc-def-'));
 });
-after(async () => { await browser?.close(); close?.(); if (dir) rmSync(dir, { recursive: true }); });
+after(async () => { close?.(); if (dir) rmSync(dir, { recursive: true }); });
+
+/**
+ * A fresh profile on disk: Chromium 153 crashes (SIGTRAP) reading a file handle back from IndexedDB in an
+ * off-the-record context (docs/backlog.md), and the store keeps file disks' handles.
+ */
+const profile = () => chromium.launchPersistentContext(mkdtempSync(join(dir, 'profile-')), { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
 
 const FIXTURE = new URL('qcow2/data.raw', import.meta.url).pathname;
 
 test('a definition exported from one profile and imported into another: the same shape, file disks picked again (by hash when the date differs)', async () => {
   // Profile A: the machine, its file disk a file in OPFS (a handle the page keeps, as a picked file's).
-  const a = await browser.newContext();
+  const a = await profile();
   const pa = await a.newPage();
   await pa.goto(`${base}/tests/browser/core.html`);
   const out = await pa.evaluate(async () => {
@@ -63,7 +67,7 @@ test('a definition exported from one profile and imported into another: the same
   assert.equal(readFileSync(defFile, 'utf8').includes('handle'), false, 'no handle in the file');
 
   // Profile B: imported through the modal; the same shape.
-  const b = await browser.newContext();
+  const b = await profile();
   const pb = await b.newPage();
   const dialogs: string[] = [];
   const errors: string[] = [];

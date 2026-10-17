@@ -189,7 +189,7 @@ async function startDisks(): Promise<{ disks: StartDisk[]; home?: string }> {
   }
   const disks: StartDisk[] = [];
   const own: { url?: string; file?: File; overlay?: string } | undefined = chosen ?? (spec.disk ? { url: spec.disk, overlay: spec.overlay } : undefined);
-  if (own) disks.push({ name: baseName(), source: own.file ? { file: own.file } : { url: own.url! }, overlay: own.overlay });
+  if (own) disks.push({ name: baseName(), source: own.file ? { file: own.file } : { url: own.url! }, overlay: own.overlay, own: chosen ? undefined : true });
   const disk2 = params.get('disk2');
   if (disk2) disks.push({ name: new URL(disk2, location.href).pathname.split('/').pop() ?? 'disk2', source: { url: disk2 } });
   return { disks, home: own?.overlay };
@@ -271,6 +271,17 @@ const bootSerial = $('boot-serial');
 // The serial terminal. The PL011 has no size negotiation: the guest assumes 80×24 unless told (`stty`); the firmware's console is 80×25 (images/build.sh edk2 offers no other mode), so the terminal has 25 rows.
 const term = new Terminal({ cols: 80, rows: 25, convertEol: false, scrollback: 5000, fontFamily: 'ui-monospace, "DejaVu Sans Mono", Menlo, monospace', fontSize: 14, theme: { background: '#0b0d10' } });
 term.open($('terminal'));
+
+// A header menu's panel opens under its right edge, unless that puts it past the window's left edge (the header
+// wraps on a narrow window, and a menu can start its row): then under its left edge.
+for (const menu of document.querySelectorAll<HTMLDetailsElement>('header details.menu')) {
+  menu.addEventListener('toggle', () => {
+    const items = menu.querySelector<HTMLElement>('.items');
+    if (!menu.open || !items) return;
+    items.style.right = items.style.left = '';
+    if (items.getBoundingClientRect().left < 0) [items.style.left, items.style.right] = ['0', 'auto'];
+  });
+}
 
 // Views: the screen first (M8 decision 2), the terminal, or both.
 type View = 'screen' | 'terminal' | 'both';

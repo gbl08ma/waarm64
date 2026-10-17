@@ -151,6 +151,8 @@ export type StartDisk = {
   identity?: string;
   /** What the guest's GET_ID gets (default `webpc-blk`). */
   serial?: string;
+  /** The machine's own image (`MachineSpec.disk`): a snapshot's header names no disk for it (`disk: null`). */
+  own?: true;
 };
 
 /** A disk for the disk jobs (export, changes in): its source, the overlay of its changes and what that overlay belongs to (default `diskIdentity`'s). */

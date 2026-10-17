@@ -379,7 +379,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     restoring = !resume;
   }
   const devices = liveSpecs = specs ?? layout(m, machine).map((s) => device(s, m, machine));
-  session = { name: m.machine, ncpus, disk: m.disks[0]?.name ?? null, kinds, cpu, about: m.about };
+  session = { name: m.machine, ncpus, disk: m.disks[0] && !m.disks[0].own ? m.disks[0].name : null, kinds, cpu, about: m.about };
   booting = bootVm(core, {
     ramSize: ramMiB * 2 ** 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true, compileWorker: new URLSearchParams(self.location.search).get('jit') !== 'nocw' && !spiderMonkey, vcpuYieldMs: new URLSearchParams(self.location.search).has('vyield') ? Number(new URLSearchParams(self.location.search).get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'),
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices,

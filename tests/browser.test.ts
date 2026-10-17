@@ -510,6 +510,8 @@ test('the page restarts over and over while the guest writes to its disk, also d
 type Page = import('playwright-core').Page;
 /** The page's state once it settles, with its message and the message's actions. */
 /** (`from`: a state it's leaving, e.g. after a click on Retry.) */
+/** The page's view once its module has set it (it awaits the store first, so a load can come before). */
+const viewOf = async (page: Page) => (await page.waitForFunction(() => document.body.dataset.view, null, { timeout: 30_000 })).jsonValue();
 const settled = (page: Page, ms = 30_000, from?: string) =>
   page.waitForFunction((from) => document.body.dataset.state !== from && ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), from, { timeout: ms, polling: 50 })
     .then(() => page.evaluate(() => ({ state: document.body.dataset.state, text: document.getElementById('message-text')!.textContent, actions: [...document.querySelectorAll('#message-actions button')].map((b) => b.textContent) })));
@@ -613,7 +615,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   // The view chosen last is remembered (the panic's "Show serial log" doesn't count); ?view= overrides it.
   page = await ctx.newPage();
   await page.goto(`${base}/web/app/?machine=buildroot&ncpus=1`);
-  assert.equal(await page.evaluate(() => document.body.dataset.view), 'screen');
+  assert.equal(await viewOf(page), 'screen');
   await page.getByText('Serial terminal').click();
   assert.equal((await settled(page)).state, 'running');
   // The disk: a file written (the root remounted read-write for it), kept over a restart.
@@ -622,7 +624,7 @@ test('the page: a panic with its serial log, the disk in use elsewhere, the disk
   await shows(page, /written/);
   const second = await ctx.newPage(); // another tab: the disk is the first one's
   await second.goto(`${base}/web/app/?machine=buildroot&ncpus=1`);
-  assert.equal(await second.evaluate(() => document.body.dataset.view), 'terminal');
+  assert.equal(await viewOf(second), 'terminal');
   r = await settled(second);
   assert.equal(r.state, 'failed', r.text!);
   assert.match(r.text!, /^Buildroot \(test guest\)'s disk is in use: another tab/);

@@ -89,6 +89,22 @@ steps were run by hand. **Worth a look in the dev VM** (does the case reproduce 
   is full" (a short write in `fileWriter`, `web/overlay.ts`), after 420 s waiting: not reproduced since. If
   `scripts/ci-debian.sh` hits it again, log `navigator.storage.estimate()` at the failure.
 
+- `scripts/ci.sh` passes (372 s, Chromium 153; `tests/steps.txt` unmoved; `cargo test` whole, the FMA case above
+  included, passes on arm64). Its first runs failed four page tests the cloud couldn't run, fixed:
+  - **A bug:** a transient machine's snapshot named its own image as the disk (`disk: 'rootfs.ext4'` for
+    Buildroot), so loading it was refused ("taken on the disk rootfs.ext4"). The page now marks the machine's own
+    image (`StartDisk.own`) and the header says `null` again.
+  - The header wraps to two rows at 1280 px (the Machines button), and Save disk's panel opened past the window's
+    left edge: a header menu's panel now opens under its left edge when the right one doesn't fit.
+  - Chromium 153 crashes (the browser, SIGTRAP) reading a file handle back from IndexedDB in an off-the-record
+    context: `page-definitions` uses on-disk profiles; backlog entry (it would hit Incognito users).
+  - `page-snapshot`'s expectations moved to the new device order; `browser.test.ts` waits for the view (the
+    module awaits the store before setting it).
+- **For the user:** snapshot files saved before this work are refused on the page now (their `devices` list has
+  `blk` second; the new order puts the disks last), with "its machine had other devices". Options: accept it (the
+  machines' snapshots start here), or have the worker map the old order onto the new one when loading.
+- Still to run: `scripts/ci-debian.sh`, `ci-audio.sh`, `ci-net.sh`, then the rest of the list above.
+
 ## Decisions the cloud session left open: settled (2026-10-17)
 
 The user took the three recommendations: Save snapshot on a stored machine is a two-choice menu in the header (built:
