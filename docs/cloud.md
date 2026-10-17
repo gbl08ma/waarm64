@@ -63,6 +63,13 @@ Alpine boots), which it already skips with a message when `images/build.sh --che
 that needs those (Buildroot/Alpine step counts, kernel changes) belongs in the local VM; a done
 milestone loop still needs a local `scripts/ci.sh` with all images.
 
+**The UEFI firmware** (`images/build.sh edk2`, Podman on arm64) can't be built here either, but its
+build is pinned and reproducible, so `scripts/cloud-setup.sh` fetches the deployed page's
+`QEMU_EFI.fd` and `LICENSES.txt` from `https://vm.tny.im/target/images/edk2/`, keeps them only if
+both match `images/SHA256SUMS`, and writes `images/build.sh --inputs edk2`'s key to `.inputs` (so
+`--check edk2` passes). With it, Debian boots on the page (`?machine=debian`). `shell.img` (the Node
+firmware test's disk) isn't deployed: that test skips.
+
 ## What was measured in a fresh session
 
 Toolchain install (`rustup` fetching the pinned nightly): ~1 min. `scripts/build-wasm.sh` from

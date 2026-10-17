@@ -44,3 +44,18 @@ PATH=$NODE_DIR/bin:$PATH
 [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-fund --no-audit >/dev/null
 # Pre-fetch the pinned nightly and its std sources (the first cargo call would otherwise do it).
 rustc --version >/dev/null
+# The UEFI firmware (EDK2) is built in Podman on arm64, which the cloud can't do; the build is
+# pinned and reproducible, so the deployed page's copy is fetched instead and kept only if both
+# files match images/SHA256SUMS (the guest's firmware is never one whose hash doesn't match).
+# shell.img (the Node firmware test's disk) isn't deployed: that test skips here.
+fw=target/images/edk2
+if ! images/build.sh --check edk2 >/dev/null 2>&1; then
+  mkdir -p "$fw"
+  ok=1
+  for f in QEMU_EFI.fd LICENSES.txt; do
+    want=$(grep " edk2/$f\$" images/SHA256SUMS | cut -d' ' -f1)
+    curl -fsSL -o "$fw/$f.part" "https://vm.tny.im/target/images/edk2/$f" || { ok=0; break; }
+    if [ "$(sha256sum "$fw/$f.part" | cut -d' ' -f1)" = "$want" ]; then mv "$fw/$f.part" "$fw/$f"; else echo "edk2/$f from vm.tny.im doesn't match images/SHA256SUMS: not used" >&2; rm -f "$fw/$f.part"; ok=0; break; fi
+  done
+  if [ $ok = 1 ]; then images/build.sh --inputs edk2 > "$fw/.inputs"; fi
+fi

@@ -1,0 +1,211 @@
+// Machines as the unit (docs/plans/machines.md §2, §5.1): what a machine, a disk and an attachment
+// are, the slots a machine's devices take, and the shape: a canonical description of what the guest
+// sees, whose SHA-256 a snapshot is checked against. DOM-free: the page, the workers and Node's
+// tests use it alike. web/app/store.ts keeps these records.
+
+/** The most disks a machine has (docs/plans/machines.md §4.1: room left of the core's 32 transports for devices to come). */
+export const MAX_DISKS = 16;
+/** The shape's format: a new one orphans every snapshot made under the old (none is expected soon). */
+export const SHAPE_VERSION = 1;
+
+/** Where a base disk's bytes come from (machines.md §4.2). */
+export type DiskKind = 'url' | 'file' | 'stored' | 'blank' | 'ramdisk';
+
+/**
+ * A base disk's cheap identity (machines.md §3.1): what decides whether an overlay belongs to it and
+ * a snapshot was made over it. A URL's path (not its host: the same image moved keeps its changes)
+ * and size, with the server's validator where it sent one; a file's name, size and modification
+ * time; the id of a disk that exists only in this browser (stored, blank) and its size; a ramdisk's
+ * id and size (it starts empty: there's nothing else to tell).
+ */
+export type DiskIdentity =
+  | { kind: 'url'; path: string; bytes: number; etag?: string; lastModified?: string }
+  | { kind: 'file'; name: string; bytes: number; modified: number }
+  | { kind: 'stored' | 'blank' | 'ramdisk'; id: string; bytes: number };
+
+/** A base disk (IndexedDB `disks`). */
+export type DiskRecord = {
+  id: string;
+  kind: DiskKind;
+  /** Its name on the page (a file's, a URL's last part, or the user's). */
+  name: string;
+  /** What the guest sees, bytes (a qcow2's virtual size; a multiple of 512). */
+  size: number;
+  /** The image's format where it has one (a stored, blank or ramdisk disk is the block store's own). */
+  format?: 'raw' | 'qcow2' | 'iso';
+  identity: DiskIdentity;
+  /** `url`: the image's URL. */
+  url?: string;
+  /** `file`: the file's handle, kept so the file needn't be picked again (a read permission is asked for in each session). */
+  handle?: FileSystemFileHandle;
+  /** The image's SHA-256 (hex) where it was computed (machines.md §3.1: only where one is needed). */
+  sha256?: string;
+  created: number;
+};
+
+/**
+ * A disk in a machine's slot list. `readOnly`: the guest can't write it; otherwise it writes into
+ * the overlay `overlay` (an id in IndexedDB `overlays`, machines.md §2), or, with `inPlace`, into
+ * the disk itself (a stored disk only: §4.4), or, for a ramdisk, into memory.
+ */
+export type Attachment = { id: string; disk: string; readOnly: boolean; inPlace?: boolean; overlay?: string };
+
+/** The machine's display: a virtio-gpu, 2D or with virgl (3D, rendered with WebGL2): the guest sees different devices. */
+export type Display = '2d' | '3d';
+
+/** A machine (IndexedDB `machines`). */
+export type MachineRecord = {
+  id: string;
+  name: string;
+  ncpus: number;
+  ramMiB: number;
+  display: Display;
+  /** A network card (virtio-net) from the start: the page gives it to its Tailscale client. Several adapters are later. */
+  network: boolean;
+  /** In slot order (the guest's vda, vdb…). */
+  attachments: Attachment[];
+  created: number;
+  modified: number;
+};
+
+/** The device kinds a machine's transports have, in slot order (`slots`). */
+export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'blk';
+/** The vCPUs' optional features (`BootOptions.rng`, `e0pd`). */
+export type CpuFeature = 'rng' | 'e0pd';
+export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd'];
+
+/**
+ * The machine's transports in slot order: the other devices first, in a fixed order, then the disks
+ * (machines.md §4.1), so that a device kind added later is appended after them only on machines
+ * that have it. `attachment` is the disk's index in the machine's list.
+ */
+export function slots(m: { network: boolean; display?: Display | 'none'; attachments: unknown[] }): { kind: DeviceKind; attachment?: number }[] {
+  return [
+    { kind: 'rng' }, { kind: 'keyboard' }, { kind: 'tablet' },
+    ...(m.network ? [{ kind: 'net' as const }] : []),
+    ...(m.display === 'none' ? [] : [{ kind: 'gpu' as const }]),
+    { kind: 'snd' },
+    ...m.attachments.map((_, i) => ({ kind: 'blk' as const, attachment: i })),
+  ];
+}
+
+/** The serial a disk's guest sees (virtio-blk GET_ID, at most 20 bytes; Linux's /dev/disk/by-id/virtio-<serial>): the attachment's, so it survives a reorder. */
+export const serialOf = (attachment: string) => `webpc-${attachment}`.slice(0, 20);
+
+/** One disk of a shape: what the guest sees of it. */
+export type ShapeDisk = { slot: number; size: number; readOnly: boolean; serial: string; identity: DiskIdentity };
+
+/** What the guest sees of a machine (machines.md §5.1): a snapshot made on one shape restores only on the same shape. */
+export type Shape = {
+  version: number;
+  ncpus: number;
+  ramMiB: number;
+  display: Display | 'none';
+  cpu: CpuFeature[];
+  devices: DeviceKind[];
+  disks: ShapeDisk[];
+};
+
+/**
+ * A machine's shape, from its record and its disks' (by id). `cpu`: the vCPUs' features (all,
+ * unless the page turned one off for development). `display`: what the machine runs with when it
+ * differs from its record's (a 3D machine on a browser without WebGL2 runs 2D; `none`: the page's
+ * `?display=simple`).
+ */
+export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | undefined, opts: { cpu?: CpuFeature[]; display?: Display | 'none' } = {}): Shape {
+  const display = opts.display ?? m.display;
+  const list = slots({ ...m, display });
+  return {
+    version: SHAPE_VERSION,
+    ncpus: m.ncpus,
+    ramMiB: m.ramMiB,
+    display,
+    cpu: CPU_FEATURES.filter((f) => (opts.cpu ?? CPU_FEATURES).includes(f)),
+    devices: list.map((s) => s.kind),
+    disks: list.flatMap((s, slot) => {
+      if (s.attachment === undefined) return [];
+      const a = m.attachments[s.attachment];
+      const d = disks(a.disk);
+      if (!d) throw new Error(`machine ${m.name} has a disk that isn't in this browser (${a.disk})`);
+      return [{ slot, size: d.size, readOnly: a.readOnly, serial: serialOf(a.id), identity: d.identity }];
+    }),
+  };
+}
+
+/** `v` as JSON with every object's keys sorted and undefined members left out: the same value, the same text. */
+export function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map((x) => (x === undefined ? 'null' : canonical(x))).join(',')}]`;
+  if (v && typeof v === 'object') {
+    const keys = Object.keys(v).filter((k) => (v as Record<string, unknown>)[k] !== undefined).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v);
+}
+
+/** The shape's SHA-256 (hex) of its canonical JSON. */
+export async function shapeHash(s: Shape): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical(s)));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** What differs between two shapes, in words for the snapshots view (an orphaned snapshot's reason): empty when they're the same. */
+export function shapeDiff(was: Shape, now: Shape): string[] {
+  const out: string[] = [];
+  if (was.version !== now.version) return ['it was made by another version of this page'];
+  if (was.ncpus !== now.ncpus) out.push(`processors: ${was.ncpus} then, ${now.ncpus} now`);
+  if (was.ramMiB !== now.ramMiB) out.push(`memory: ${was.ramMiB} MiB then, ${now.ramMiB} MiB now`);
+  if (was.display !== now.display) out.push(`display: ${was.display} then, ${now.display} now`);
+  if (canonical(was.cpu) !== canonical(now.cpu)) out.push(`processor features: ${was.cpu.join(', ') || 'none'} then, ${now.cpu.join(', ') || 'none'} now`);
+  if (was.devices.includes('net') !== now.devices.includes('net')) out.push(was.devices.includes('net') ? 'it had a network card' : 'it had no network card');
+  if (was.disks.length !== now.disks.length) out.push(`disks: ${was.disks.length} then, ${now.disks.length} now`);
+  for (let i = 0; i < Math.min(was.disks.length, now.disks.length); i++) {
+    const [a, b] = [was.disks[i], now.disks[i]];
+    const what = `disk ${i + 1}`;
+    if (canonical(a.identity) !== canonical(b.identity)) out.push(`${what}: another disk (${describeIdentity(a.identity)} then, ${describeIdentity(b.identity)} now)`);
+    else if (a.size !== b.size) out.push(`${what}: ${a.size} bytes then, ${b.size} now`);
+    if (a.readOnly !== b.readOnly) out.push(`${what}: ${a.readOnly ? 'read-only' : 'writable'} then, ${b.readOnly ? 'read-only' : 'writable'} now`);
+    if (a.serial !== b.serial) out.push(`${what}: attached anew (its serial changed)`);
+  }
+  if (!out.length && canonical(was) !== canonical(now)) out.push('its devices are in another order');
+  return out;
+}
+
+/** A disk identity in words. */
+export function describeIdentity(d: DiskIdentity): string {
+  switch (d.kind) {
+    case 'url': return d.path.split('/').pop() || d.path;
+    case 'file': return `the file ${d.name}`;
+    case 'stored': return 'a disk stored in this browser';
+    case 'blank': return 'a blank disk';
+    case 'ramdisk': return 'a ramdisk';
+  }
+}
+
+/** A new record id: 12 hex digits (48 random bits). Records' files are named by it (machines.md §2). */
+export function newId(): string {
+  const b = crypto.getRandomValues(new Uint8Array(6));
+  return [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+/** Whether `s` is an id `newId` makes: the store's sweep touches only such files (a transient machine's are named otherwise). */
+export const isId = (s: string) => /^[0-9a-f]{12}$/.test(s);
+
+const ADJECTIVES = ['Amber', 'Brisk', 'Calm', 'Clever', 'Cobalt', 'Dusky', 'Eager', 'Fern', 'Gentle', 'Hazel', 'Ivory', 'Jade', 'Keen', 'Lucid', 'Mellow', 'Nimble', 'Olive', 'Plucky', 'Quiet', 'Rusty', 'Sable', 'Tidy', 'Umber', 'Vivid', 'Wry', 'Zesty'];
+const NOUNS = ['Heron', 'Otter', 'Lynx', 'Wren', 'Badger', 'Falcon', 'Marten', 'Puffin', 'Stoat', 'Ibis', 'Koala', 'Gecko', 'Raven', 'Bison', 'Crane', 'Dingo', 'Egret', 'Ferret', 'Lemur', 'Newt', 'Osprey', 'Panda', 'Quail', 'Tapir', 'Vole', 'Yak'];
+
+/** A machine's generated name (machines.md §1: named by default), not one of `taken`. */
+export function generateName(taken: Iterable<string>, random: () => number = Math.random): string {
+  const used = new Set(taken);
+  for (let i = 0; i < 50; i++) {
+    const name = `${ADJECTIVES[Math.floor(random() * ADJECTIVES.length)]} ${NOUNS[Math.floor(random() * NOUNS.length)]}`;
+    if (!used.has(name)) return name;
+  }
+  return uniqueName('Machine', used);
+}
+
+/** `name`, or `name (2)`, `name (3)`… : the first that isn't in `taken` (an imported machine's name, a copy's). */
+export function uniqueName(name: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  if (!used.has(name)) return name;
+  const stem = name.replace(/ \(\d+\)$/, '');
+  for (let k = 2; ; k++) if (!used.has(`${stem} (${k})`)) return `${stem} (${k})`;
+}

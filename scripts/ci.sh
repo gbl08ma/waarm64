@@ -37,7 +37,8 @@ native() {
   image_test kvm-unit-tests kvm-unit-tests kvm_unit_tests
   image_test 'litmus and stress' 'linux litmus' litmus
   image_test 'LTP and kselftests' 'ltp linux' ltp
-  image_test 'firmware (EDK2)' edk2 firmware
+  # A cloud session fetches the firmware but not shell.img (docs/cloud.md): no disk, no test.
+  if [ -f target/images/edk2/shell.img ]; then image_test 'firmware (EDK2)' edk2 firmware; else step 'firmware (EDK2)'; printf '\n**************** SKIPPED: no edk2/shell.img: run images/build.sh edk2 ****************\n'; fi
   image_test 'gpu guest' linux-gpu gpu_guest
   image_test 'snd guest' linux-snd snd_guest
   if [[ ",$WEBPC_DISTROS," == *",alpine,"* ]]; then image_test "alpine boot" alpine distros alpine; else step "alpine boot: SKIPPED (not in WEBPC_DISTROS)"; fi
