@@ -105,7 +105,9 @@ steps were run by hand. **Worth a look in the dev VM** (does the case reproduce 
 - `scripts/ci-debian.sh`: everything passed (6 min 46 s, budgeted in docs/testing.md) but `start`, fixed and rerun alone: `npm start` on a fresh
   clone imported `tools/serve.ts`, which imports the Svelte compiler, before its `npm ci` installed it
   (`tools/start.ts` now imports it after).
-- Still to run: `ci-audio.sh`, `ci-net.sh`, then the rest of the list above.
+- `scripts/ci-audio.sh` passes (44 s) once its waits allow `window.__audio` not set yet (the page's module awaits the
+  store first: a race, as `browser.test.ts`'s view was).
+- Still to run: `ci-net.sh`, then the rest of the list above.
 
 ## Decisions the cloud session left open: settled (2026-10-17)
 

@@ -81,7 +81,7 @@ const header = (page: Page) => page.evaluate(() => [...(window as unknown as W).
 async function inTime(page: Page, what: string) {
   const r = report(await serial(page));
   const h = await header(page);
-  await page.waitForFunction(() => (window as unknown as W).__audio.spans.length > 0, null, { timeout: 5_000 });
+  await page.waitForFunction(() => (window as unknown as W).__audio?.spans.length > 0, null, { timeout: 5_000 });
   const [span] = await page.evaluate(() => (window as unknown as W).__audio.spans);
   const length = (1000 * r.frames) / 48000;
   const said = `${r.frames} frames (${length.toFixed(0)} ms) ran ${span.toFixed(0)} ms from START to its stop (the guest's time ${r.ms} ms); ${h[UNDERRUNS]} underruns, ${h[GAP_FRAMES]} frames of gaps; the worklet played ${h[QUANTA] * 128}`;
@@ -108,7 +108,7 @@ test('the snd guest plays a tone on the page in real time: its length in its own
   await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=4&snd=stats`);
   await page.mouse.click(5, 5);
   await until(page, /snd: hw params/);
-  await page.waitForFunction(() => (window as unknown as W).__audio.context()?.state === 'running', null, { timeout: 10_000 });
+  await page.waitForFunction(() => (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 10_000 });
   const heard = await peaks(page);
   assert.ok(Math.abs(heard.hz[0] - 440) < 12 && Math.abs(heard.hz[1] - 660) < 12, `heard ${heard.hz} Hz`);
   await page.locator('#sound-menu summary').click();
@@ -143,16 +143,16 @@ test('with its context not running, the page says sound waits for a click; the g
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=4&snd=stats`);
-  await page.waitForFunction(() => (window as unknown as W).__audio.context()?.state === 'running', null, { timeout: 60_000 });
+  await page.waitForFunction(() => (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 60_000 });
   await page.evaluate(() => (window as unknown as W).__audio.context().suspend());
-  await page.waitForFunction(() => (window as unknown as W).__audio.waiting() && /click/.test(document.getElementById('sound-summary')!.textContent ?? ''), null, { timeout: 5_000 });
+  await page.waitForFunction(() => (window as unknown as W).__audio?.waiting() && /click/.test(document.getElementById('sound-summary')!.textContent ?? ''), null, { timeout: 5_000 });
   const quanta = (await header(page))[QUANTA];
   await page.waitForTimeout(1500);
   const h = await header(page);
   assert.equal(h[QUANTA], quanta, 'the worklet played while suspended');
   assert.ok(h[READ] > 0 && !/snd test/.test(await serial(page)), 'the guest should be playing on the device worker clock');
   await page.mouse.click(5, 5);
-  await page.waitForFunction(() => !(window as unknown as W).__audio.waiting() && (window as unknown as W).__audio.context().state === 'running', null, { timeout: 5_000 });
+  await page.waitForFunction(() => !(window as unknown as W).__audio?.waiting() && (window as unknown as W).__audio?.context().state === 'running', null, { timeout: 5_000 });
   await until(page, /snd test (ok|failed)/, 30_000);
   await inTime(page, 'suspended, then resumed');
   assert.ok((await header(page))[QUANTA] > quanta, 'the worklet played again after the click');
@@ -172,7 +172,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await page.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=12&snd=stats`);
     await page.mouse.click(5, 5);
     await until(page, /snd: hw params/);
-    await page.waitForFunction(() => (window as unknown as W).__audio.context()?.state === 'running', null, { timeout: 10_000 });
+    await page.waitForFunction(() => (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 10_000 });
     await page.waitForTimeout(2000);
     const before = (await header(page))[READ];
     // Watched from before the click: the guest's power-off replaces the page's message.
@@ -204,16 +204,16 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await p2.setInputFiles('#load-snapshot-input', path);
     await p2.waitForFunction(() => document.getElementById('boot-title')!.textContent!.startsWith('Loading '), null, { timeout: 30_000, polling: 20 });
     await p2.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 20 }); // the old machine is gone
-    await p2.waitForFunction(() => document.body.dataset.state === 'running' && (window as unknown as W).__audio.playing && (window as unknown as W).__audio.context()?.state === 'running', null, { timeout: 60_000, polling: 100 });
+    await p2.waitForFunction(() => document.body.dataset.state === 'running' && (window as unknown as W).__audio?.playing && (window as unknown as W).__audio?.context()?.state === 'running', null, { timeout: 60_000, polling: 100 });
     // Listened to once the restored stream flows (half a second on the new ring): under load its vCPUs start late.
-    await p2.waitForFunction((at) => (window as unknown as W).__audio.header()[at] >= 24000, READ, { timeout: 30_000, polling: 50 })
+    await p2.waitForFunction((at) => (window as unknown as W).__audio?.header()[at] >= 24000, READ, { timeout: 30_000, polling: 50 })
       .catch(async (e) => { throw new Error(`${e}: the ring ${await header(p2)}, the page ${await p2.evaluate(() => document.body.dataset.state)} (${await p2.locator('#message-text').textContent()}); the terminal: ${await p2.evaluate(() => document.querySelector('.xterm-rows')?.textContent?.slice(-2500))}; console: ${logs2.slice(-10).join(' | ')}; kernel: ${(await serial(p2)).split('\n').filter((l) => /virtio|head|range|broken|BUG|WARN|error|nobody|disabl|irq [0-9]+:/i.test(l)).slice(-12).join(' / ')}`); });
     const heard = await peaks(p2);
     assert.ok(Math.abs(heard.hz[0] - 440) < 12 && Math.abs(heard.hz[1] - 660) < 12, `heard ${heard.hz} Hz after the load (the ring ${await header(p2)}; the serial console's end: ${(await serial(p2)).slice(-300)})`);
     await until(p2, /snd test (ok|failed)/, 30_000);
     const r = report(await serial(p2));
     assert.equal(r.end, 'drain');
-    await p2.waitForFunction(() => (window as unknown as W).__audio.spans.length > 0, null, { timeout: 5_000 });
+    await p2.waitForFunction(() => (window as unknown as W).__audio?.spans.length > 0, null, { timeout: 5_000 });
     const [span] = await p2.evaluate(() => (window as unknown as W).__audio.spans);
     const h = await header(p2);
     // The new ring has what the guest hadn't had completed when it was saved: whole periods, the old ring having played
@@ -259,7 +259,7 @@ const silence16 = fnv1a(new Uint8Array(16384 * 4)).toString(16).padStart(8, '0')
 
 test('the guest records the page\'s microphone (raw): the tone on both channels, in real time; the microphone closes when it stops', { skip }, async () => {
   const { context, page, errors } = await micPage({ micRaw: true }, 3);
-  await page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio.micState === 'on', null, { timeout: 60_000 });
+  await page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio?.micState === 'on', null, { timeout: 60_000 });
   await page.waitForFunction(() => /· mic/.test(document.getElementById('sound-summary')!.textContent ?? ''), null, { timeout: 5_000 });
   assert.deepEqual(await processing(page), [false, false, false], 'raw');
   await until(page, /snd test (ok|failed)/, 30_000);
@@ -268,14 +268,14 @@ test('the guest records the page\'s microphone (raw): the tone on both channels,
   console.log(`# recorded the microphone: ${r.frames} frames in ${r.ms} ms, ${r.left} and ${r.right} Hz (the tone ${MIC_HZ}); the worklet wrote ${h[WRITE]} frames, dropped ${h[GAP_FRAMES]}`);
   assert.ok(Math.abs(r.left - MIC_HZ) <= 10 && Math.abs(r.right - MIC_HZ) <= 10, `${r.left}, ${r.right} Hz`);
   assert.ok(Math.abs(r.ms - (1000 * r.frames) / 48000) < 150, `${r.frames} frames took ${r.ms} ms`);
-  await page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio.micState === 'idle', null, { timeout: 5_000 });
+  await page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio?.micState === 'idle', null, { timeout: 5_000 });
   assert.deepEqual(errors, []);
   await context.close();
 });
 
 test('with the browser\'s processing (the default) the microphone is heard too', { skip }, async () => {
   const { context, page, errors } = await micPage({}, 2);
-  await page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio.micState === 'on', null, { timeout: 60_000 });
+  await page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio?.micState === 'on', null, { timeout: 60_000 });
   assert.deepEqual(await processing(page), [true, true, true]);
   await until(page, /snd test (ok|failed)/, 60_000);
   const r = recorded(await serial(page));
@@ -304,7 +304,7 @@ test('Microphone off: the page never asks for it and the guest records silence i
 
   const refusing = () => { navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('refused', 'NotAllowedError')); };
   const no = await micPage({}, undefined, refusing);
-  await no.page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio.micState === 'denied', null, { timeout: 60_000 });
+  await no.page.waitForFunction(() => (window as unknown as { __audio: Mic }).__audio?.micState === 'denied', null, { timeout: 60_000 });
   await no.page.locator('#sound-menu summary').click();
   assert.match(await no.page.locator('#mic-hint').textContent() ?? '', /refused the microphone/);
   assert.equal(await no.page.locator('#mic-hint').isVisible(), true);
