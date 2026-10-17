@@ -186,7 +186,10 @@ mode (and natively in realtime mode: std has no CSPRNG).
   This frame port is the adapter API (no v86 compatibility: [plans/networking.md](plans/networking.md)).
   Layer-3 backends use the **IP-packet port**, `IpPort = {send(packet), close?()}` (`ipPort(port,
   receive)` over a `MessagePort`): one IPv4 or IPv6 packet per transferred `ArrayBuffer`, no Ethernet
-  header. **The Ethernet gateway** (`web/gateway.ts`, in the device worker) sits between a frame
+  header, or a **batch**, an array of them (`packetsOf` reads either). Both ends send with `batchSender`
+  (web/net.ts): what one task sends is posted in one message from a microtask, so a batch waits for no
+  timer: the segments of one TSO packet from the device, everything one relay message brought from the
+  tailnet worker (the relay writes ~4 KB at a time, so 2–4 packets of a download). **The Ethernet gateway** (`web/gateway.ts`, in the device worker) sits between a frame
   adapter and an IP backend (`IpBackend = {lease(), send(packet)}` plus the `deliver` it's made
   with): `{adapter: 'echo'}` is the synchronous test backend (answers ICMP echo for any address;
   lease 198.18.0.15 and `fd00:5eb0::f`, MTU 1280; answers ICMPv6 echo too), `{adapter: {ip: port}}` a backend behind a `MessagePort` (an

@@ -168,7 +168,12 @@ wasm is fast enough for netmaps.
   Bytes cross through the module's memory, one copy each way. T4 adds `store(key, bytes)`.
 - **DERP client over WebSocket:** the server-key frame, our client info (NaCl box to the
   server's key), send/recv packet, keep-alive, ping/pong, peer-gone, health; reconnect with
-  backoff. One connection per region in use: the home region, and each peer's home region when
+  backoff. The server reads the WebSocket as a byte stream (frames may straddle messages, as its own
+  4 KB writes do), so frames queued before the host takes the actions (an IP-port batch: `ts_guest`
+  for each packet, then one `pump`) are joined into messages of up to 4 KiB (`queue_frames`): about
+  three packets, never bursts past what the relay sends us. **Not larger:** a relay queues 32 packets
+  per destination and drops the oldest, so 64 KiB messages (a TSO packet's ~48 segments at once)
+  dropped an upload through tailcat from 86 to under 1 Mbit/s (bench/net/REPORT.md "Batches"). One connection per region in use: the home region, and each peer's home region when
   we send to a peer (as Tailscale's clients do), closed when idle.
 - **WireGuard:** `ts_tunnel`'s `Endpoint`, a peer per node, PSK where tailcat gives one; its
   timers go into `deadline`.

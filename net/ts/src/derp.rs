@@ -78,7 +78,7 @@ impl Conn {
         self.ready
     }
 
-    /// Bytes to send to the server, one frame per message.
+    /// Frames to send to the server (the caller may join them: the server reads a stream).
     pub fn take_output(&mut self) -> Vec<Vec<u8>> {
         std::mem::take(&mut self.out)
     }

@@ -1,7 +1,7 @@
 // The frame and IP-packet ports of web/net.ts (docs/devices.md "net").
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ipPort, portAdapter } from '../web/net.ts';
+import { batchSender, ipPort, packetsOf, portAdapter } from '../web/net.ts';
 
 for (const [name, make] of [['frame', portAdapter], ['IP packet', ipPort]] as const) {
   test(`the ${name} port carries one ArrayBuffer per message both ways`, async () => {
@@ -20,6 +20,28 @@ for (const [name, make] of [['frame', portAdapter], ['IP packet', ipPort]] as co
     b.close!();
   });
 }
+
+test('an IP port batch: what one task sends is one message, a single packet stays a bare ArrayBuffer, and both read back', async () => {
+  const { port1, port2 } = new MessageChannel();
+  const messages: unknown[] = [];
+  let wake!: () => void;
+  port2.onmessage = (e) => { messages.push(e.data); if (messages.length === 2) wake(); };
+  const two = new Promise<void>((r) => (wake = r));
+  const send = batchSender(port1);
+  send(new Uint8Array([1]));
+  send(new Uint8Array([9, 2, 3]).subarray(1)); // a view: only its bytes cross
+  send(new Uint8Array([4]));
+  await new Promise((r) => setTimeout(r, 0)); // the next task: a message of its own
+  send(new Uint8Array([5]));
+  await two;
+  assert.ok(Array.isArray(messages[0]) && messages[0].length === 3, 'the first task\'s three packets in one message');
+  assert.ok(messages[1] instanceof ArrayBuffer, 'one packet alone is a bare ArrayBuffer');
+  assert.deepEqual(messages.map((m) => packetsOf(m)?.map((p) => [...p])), [[[1], [2, 3], [4]], [[5]]]);
+  assert.equal(packetsOf({ type: 'lease', lease: null }), undefined);
+  assert.equal(packetsOf([]), undefined);
+  port1.close();
+  port2.close();
+});
 
 test('the lease comes from what the client reports: its first IPv4 and IPv6 address, IP resolvers only, no range assumed', async () => {
   const { leaseFrom } = await import('../web/tailscale.ts');

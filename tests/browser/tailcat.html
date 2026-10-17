@@ -6,7 +6,7 @@
   // web/tailcat.ts on `?addr=` and plays the guest on the gateway's side of its IP port,
   // sending UDP to `?port=` on the exit node's 127.0.0.1 and counting what comes back.
   import { startTailcat } from '../../web/tailcat.ts';
-  import { checksum } from '../../web/net.ts';
+  import { checksum, packetsOf } from '../../web/net.ts';
   const q = new URLSearchParams(location.search);
   const events = [];
   const ts = startTailcat({ addr: q.get('addr') }, (m) => events.push(m));
@@ -14,9 +14,9 @@
   let lease = null;
   const waiting = new Map();
   ts.ip.onmessage = (e) => {
-    if (!(e.data instanceof ArrayBuffer)) { if (e.data?.type === 'lease') lease = e.data.lease; return; }
-    const p = new Uint8Array(e.data);
-    if (p[0] >> 4 === 4 && p[9] === 17 && p.length >= 32) waiting.get(new DataView(p.buffer).getUint32(28))?.(p);
+    const packets = packetsOf(e.data);
+    if (!packets) { if (e.data?.type === 'lease') lease = e.data.lease; return; }
+    for (const p of packets) if (p[0] >> 4 === 4 && p[9] === 17 && p.length >= 32) waiting.get(new DataView(p.buffer).getUint32(28))?.(p);
   };
   /** An IPv4 UDP packet from the lease's address to 127.0.0.1:port with `seq` first in its payload. */
   function udp(seq, size) {

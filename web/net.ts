@@ -79,7 +79,8 @@ export function portAdapter(port: MessagePort, receive: (frame: Uint8Array) => v
 /**
  * The IP-packet port of layer-3 backends (Tailscale, docs/plans/networking.md):
  * the same shape as a frame port, but each message is one IPv4 or IPv6 packet
- * with no Ethernet header. The Ethernet gateway (N3) sits between a frame
+ * with no Ethernet header, or a batch of them (an array of ArrayBuffers: what
+ * one task sent, `batchSender`). The Ethernet gateway (N3) sits between a frame
  * adapter and one of these.
  */
 export type IpPort = { send(packet: Uint8Array): void; close?(): void };
@@ -87,4 +88,30 @@ export type IpPort = { send(packet: Uint8Array): void; close?(): void };
 /** Packets cross `port` as ArrayBuffers (transferred), like frames in `portAdapter`. */
 export function ipPort(port: MessagePort, receive: (packet: Uint8Array) => void): IpPort {
   return portAdapter(port, receive);
+}
+
+/** The packets in an IP-port message (one ArrayBuffer, or an array of them); undefined for other messages. */
+export function packetsOf(data: unknown): Uint8Array[] | undefined {
+  if (data instanceof ArrayBuffer) return [new Uint8Array(data)];
+  if (Array.isArray(data) && data.length && data.every((d) => d instanceof ArrayBuffer)) return data.map((d) => new Uint8Array(d));
+  return undefined;
+}
+
+/**
+ * Sends packets on an IP port, those of one task as one message: they wait for the task's end (a microtask),
+ * never for a timer, so batching adds no latency. A batch keeps its packets together for the other side
+ * (the tailnet client joins their relay frames into one WebSocket message; virtio-net merges TCP segments).
+ */
+export function batchSender(port: MessagePort): (packet: Uint8Array) => void {
+  let batch: ArrayBuffer[] = [];
+  const flush = () => {
+    const b = batch;
+    batch = [];
+    if (b.length === 1) port.postMessage(b[0], b);
+    else port.postMessage(b, b);
+  };
+  return (p) => {
+    if (!batch.length) queueMicrotask(flush);
+    batch.push((p.buffer.byteLength === p.length && p.byteOffset === 0 ? p.buffer : p.slice().buffer) as ArrayBuffer);
+  };
 }

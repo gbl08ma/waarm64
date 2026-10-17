@@ -11,7 +11,7 @@
 // DHCPv6 for the node's address, neighbor discovery for the gateway itself, ICMPv6
 // echo. It runs in the device worker, so a synchronous backend keeps deterministic
 // mode exact (the timer behind periodic advertisements exists only when asked for).
-import { checksum, type NetAdapter } from './net.ts';
+import { batchSender, checksum, packetsOf, type NetAdapter } from './net.ts';
 import { ALL_DHCP_AGENTS, ALL_NODES, domainList, icmp6, linkLocal, multicastMac, neighborAdvert, routerAdvert, sum6, udp6 } from './ip6.ts';
 
 /**
@@ -453,14 +453,17 @@ export function echoBackend(lease: Lease = ECHO_LEASE) {
 
 /**
  * A backend on the other end of a MessagePort (the Tailscale worker): an
- * ArrayBuffer is one IP packet in either direction, `{type: 'lease', lease}`
- * (or `lease: null`) from the backend sets the lease.
+ * ArrayBuffer is one IP packet in either direction, an array of them a batch
+ * (web/net.ts `batchSender`), `{type: 'lease', lease}` (or `lease: null`) from
+ * the backend sets the lease.
  */
 export function portBackend(port: MessagePort) {
   return (deliver: Deliver, leaseChanged: () => void): IpBackend => {
     let lease: Lease | null = null;
+    const send = batchSender(port);
     port.onmessage = (e: MessageEvent) => {
-      if (e.data instanceof ArrayBuffer) deliver(new Uint8Array(e.data));
+      const packets = packetsOf(e.data);
+      if (packets) for (const p of packets) deliver(p);
       else if (e.data?.type === 'lease') {
         lease = e.data.lease;
         leaseChanged();
@@ -468,10 +471,7 @@ export function portBackend(port: MessagePort) {
     };
     return {
       lease: () => lease,
-      send(p) {
-        const b = p.buffer.byteLength === p.length ? p.buffer : p.slice().buffer;
-        port.postMessage(b, [b as ArrayBuffer]);
-      },
+      send,
       close: () => port.close(),
     };
   };

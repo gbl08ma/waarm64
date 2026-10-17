@@ -139,10 +139,10 @@ export class TsClient {
     return Array.from(this.m.buf(n), (b) => b.toString(16).padStart(2, '0')).join('');
   }
 
-  /** An IP packet from the guest. */
-  guest(p: Uint8Array) {
+  /** IP packets from the guest (one IP-port message): all in, then the actions they caused, so their relay frames leave together. */
+  guest(...ps: Uint8Array[]) {
     if (this.closed) return;
-    this.m.x.ts_guest(this.h, ...this.m.put(p));
+    for (const p of ps) this.m.x.ts_guest(this.h, ...this.m.put(p));
     this.pump();
   }
 
@@ -247,3 +247,4 @@ export class TsClient {
     this.pump();
   }
 }
+

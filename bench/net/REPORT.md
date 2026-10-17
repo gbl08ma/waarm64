@@ -188,6 +188,42 @@ attributed to the `DedicatedWorkerGlobalScope`; checked to include a worker's wa
 exactly one). The cloud session's indications (x86_64, Chromium 141: 34 vs 17 Mbit/s) had the
 same ratio.
 
+## Batches: what one relay message carries, both ways (2026-10-17)
+
+`bench/net/transfer.ts` on the dev VM (Lima `dev`, 8 vCPUs of the M4), Chromium 153.0.8010.52 headless: the page's
+Debian through `tests/net/tailcat.sh`'s exit node and derper (both on the VM), 8 MB down and 8 MB up over IPv4 (the
+client's NAT46), two rounds per boot, one boot per row; virtio-net's offloads on (TSO hands the device up to 64 KB at
+a time). Batch sizes came from temporary console counters, not in the tree: packets for the guest and WebSocket sends
+per `pump` of the tailnet worker (`web/ts-client.ts`), frames per delivery of virtio-net (`web/devices.ts`). JSON in
+`results/batches/`.
+
+**What the relay already batches.** derper writes a client's queued packets into a 4 KB buffered writer and flushes
+when its queue is empty (`derpserver.go`'s `sendLoop`; `bufio.NewWriter` over the WebSocket in `websocket.go`), and
+each write is one WebSocket message. In a download a pump gave the guest 1 packet 2,095–2,666 times, 2 packets
+1,681–2,257 times, 3 packets 2–569 times, 4 up to 31 times: ~1.7 per message, 60–70% of packets with others (the ACKs of an
+upload: up to 17 per message). Before batching, the worker posted each packet on its own and virtio-net delivered
+one frame at a time, always (7,186–7,256 deliveries for ~7,200 packets).
+
+**The upload: one relay message per segment.** Each TSO packet's ~48 segments crossed the IP port one per message,
+and each became its own WebSocket message: 6,979 and 6,995 for 8 MB (~9,000 a second). With the IP port's batches
+(`batchSender`) a TSO packet's segments reach the client in one message and their frames are joined:
+
+| relay message cap (8 MB up, 2 rounds) | WebSocket messages | Mbit/s | guest CPU (s) | JSON |
+|---|---|---|---|---|
+| none (one frame each) | 6,979 / 6,995 | 86 / 87 | 0.43 / 0.37 | `1-none.json` |
+| 64 KiB | (stalled) | 0.67 / 0.67 (100 s timeouts) | | `2-64k.json` |
+| **4 KiB** (built) | 2,682 / 2,641 | 86 / 131 | 0.36 / 0.28 | `3-4k.json` |
+| 16 KiB | 1,185 / 1,108 | 86 / 131 | 0.37 / 0.43 | `4-16k.json` |
+
+**The 64 KiB collapse:** derper queues at most 32 packets per destination client and drops the oldest past that
+(`perClientSendQueueDepth`, `dropReasonQueueHead`); a whole TSO packet in one message lands ~48 at once, so every
+burst lost packets and TCP backed off to nothing. 4 KiB (about three packets) is the size of the relay's own writes,
+so we never send it bigger bursts than it sends us; 16 KiB (twelve) worked here, but a real relay shares that queue
+with every other sender to the same exit node, which this rig can't show, so the cap stays at 4 KiB. Downloads
+didn't change (the first download after a boot ran at ~65 Mbit/s in three of the four runs and 86 in the first;
+not separated). Throughput here is the rig's (exit node, relay and browser on one VM), not the guest's: the guest's
+CPU stays under its wall time.
+
 ## Reproduce
 ```sh
 # T1: a tailcat exit node on derper, both on this machine
@@ -196,6 +232,8 @@ tests/net/tailcat.sh up && eval "$(tests/net/tailcat.sh env)"
 sudo ip -6 addr add fd00:7e57::1/128 dev eth0 nodad    # only where the machine has no non-link-local IPv6
 WEBPC_TS_JSON=… NODE_EXTRA_CA_CERTS=$WEBPC_TAILCAT_CA node bench/net/tailcat.ts $WEBPC_TAILCAT_ADDR 5
 tests/net/tailcat.sh down
+# Batches: 8 MB down and up through tailcat (the batch histograms need the counters described above)
+node bench/net/transfer.ts <label> bench/results/local/<label>.json    # brings tests/net/tailcat.sh's rig up and down itself
 # T6: the Tailscale client in Chromium (brings the Podman tailnet up and down itself; the only Chromium running;
 # the Go column came from the same harness before the Go client left the page: git show 762cadc:bench/net/clients.ts)
 net/ts/build.sh

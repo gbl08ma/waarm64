@@ -27,7 +27,7 @@ use ts_packetfilter::{FilterExt, IpProto, PacketInfo};
 use ts_tunnel::{Endpoint, PeerConfig, PeerId};
 
 use crate::{
-    client::{Action, pad, unpad},
+    client::{Action, pad, queue_frames, unpad},
     control::{self, Phase, Session, Update},
     derp, dns, ip,
     netmap::Node,
@@ -356,10 +356,7 @@ impl Client {
 
     fn flush_relay(&mut self, region: u32) {
         if let Some(r) = self.relays.get_mut(&region) {
-            let conn = r.conn;
-            for data in r.d.take_output() {
-                self.actions.push_back(Action::WsSend { conn, data });
-            }
+            queue_frames(&mut self.actions, r.conn, r.d.take_output());
         }
     }
 

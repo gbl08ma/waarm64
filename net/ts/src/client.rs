@@ -45,6 +45,31 @@ pub enum Action {
     Event(String),
 }
 
+/// The most a relay message carries when frames are joined (see [`queue_frames`]): about three
+/// 1,280-byte packets, the size of the relay's own writes to us (derper's WebSocket writer buffers
+/// 4 KiB). A relay queues at most 32 packets per destination and drops the oldest past that
+/// (derpserver's `perClientSendQueueDepth`), so big joined messages land bursts it drops: at 64 KiB
+/// (a whole TSO packet's ~48 segments) an upload through tailcat fell from 86 to under 1 Mbit/s.
+/// 16 KiB worked on a local relay, but a real one shares that queue with every other sender.
+const MAX_RELAY_MESSAGE: usize = 4 << 10;
+
+/// Queues DERP frames for the relay on `conn`. A relay reads its WebSocket as a byte stream, so frames
+/// queued before the host takes the actions (a batch of the guest's packets, the segments of one large
+/// packet) are joined into messages of up to [`MAX_RELAY_MESSAGE`]: a message each costs the browser and
+/// the relay more than the bytes do.
+pub(crate) fn queue_frames(actions: &mut VecDeque<Action>, conn: u32, frames: Vec<Vec<u8>>) {
+    for f in frames {
+        match actions.back_mut() {
+            Some(Action::WsSend { conn: c, data })
+                if *c == conn && data.len() + f.len() <= MAX_RELAY_MESSAGE =>
+            {
+                data.extend_from_slice(&f)
+            }
+            _ => actions.push_back(Action::WsSend { conn, data: f }),
+        }
+    }
+}
+
 pub struct Config {
     /// A tailcat server's `tc…` address to connect to (its exit node); empty: none, serving only.
     pub addr: String,
@@ -395,10 +420,7 @@ impl Client {
 
     fn flush_derp(&mut self) {
         if let Some((conn, d)) = self.derp.as_mut() {
-            let conn = *conn;
-            for data in d.take_output() {
-                self.actions.push_back(Action::WsSend { conn, data });
-            }
+            queue_frames(&mut self.actions, *conn, d.take_output());
         }
     }
 
@@ -465,11 +487,8 @@ impl Client {
                 self.event(json!({ "type": "client", "key": format!("nodekey:{}", hex(&src)), "address6": addr }));
             }
             if let Some((conn, d)) = self.derp.as_mut() {
-                let conn = *conn;
                 d.send(&src, tailcat::MEOWED);
-                for data in d.take_output() {
-                    self.actions.push_back(Action::WsSend { conn, data });
-                }
+                queue_frames(&mut self.actions, *conn, d.take_output());
             }
             return;
         }
@@ -538,9 +557,7 @@ impl Client {
                 d.send(&key, p.as_ref());
             }
         }
-        for data in d.take_output() {
-            self.actions.push_back(Action::WsSend { conn, data });
-        }
+        queue_frames(&mut self.actions, conn, d.take_output());
     }
 
     fn on_tunnel_packet(&mut self, from: PeerId, plaintext: &[u8]) {
@@ -823,6 +840,55 @@ mod tests {
         native[8..24].copy_from_slice(&tailcat::addr_for_key(&s.public));
         native[24..40].copy_from_slice(&c.tc6);
         assert_eq!(s.send(&mut c, native.clone(), now), vec![native]);
+    }
+
+    #[test]
+    fn packets_queued_together_leave_in_one_relay_message() {
+        let now = Instant::now();
+        let mut s = Server::new();
+        let mut c = Client::new(config(address(&s.public, &s.psk)), now).unwrap();
+        s.run(&mut c, now);
+        for k in 0..3u8 {
+            c.guest_packet(&udp(&[k; 100]), now);
+        }
+        let sends: Vec<_> = std::iter::from_fn(|| c.poll()).collect();
+        assert_eq!(sends.len(), 1, "one message: {sends:?}");
+        let Action::WsSend { conn, data } = &sends[0] else {
+            panic!("{sends:?}")
+        };
+        let mut sent = Vec::new();
+        s.relay.input(data, &mut sent);
+        assert_eq!(sent.len(), 3, "the relay reads three frames out of it");
+        for (_, p) in sent {
+            s.on_client_packet(p, now);
+        }
+        let got: Vec<_> = s.got.iter().map(|p| p[48]).collect();
+        assert_eq!(got, [0, 1, 2], "in order");
+        assert_eq!(*conn, s.conn);
+    }
+
+    #[test]
+    fn frames_join_only_on_one_connection_and_up_to_the_cap() {
+        let mut a = VecDeque::new();
+        queue_frames(&mut a, 1, vec![vec![1; 10], vec![2; 10]]);
+        queue_frames(&mut a, 2, vec![vec![3; 10]]);
+        a.push_back(Action::ToGuest(vec![]));
+        queue_frames(
+            &mut a,
+            2,
+            vec![vec![4; MAX_RELAY_MESSAGE - 10], vec![5; 10], vec![6; 1]],
+        );
+        let sizes: Vec<_> = a
+            .iter()
+            .map(|x| match x {
+                Action::WsSend { conn, data } => (*conn, data.len()),
+                _ => (0, 0),
+            })
+            .collect();
+        assert_eq!(
+            sizes,
+            [(1, 20), (2, 10), (0, 0), (2, MAX_RELAY_MESSAGE), (2, 1)]
+        );
     }
 
     /// A UDP packet from the guest's IPv4 address to 1.1.1.1:53 carrying `payload`.

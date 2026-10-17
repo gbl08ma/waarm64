@@ -2,6 +2,7 @@
 // target/net/ts.wasm) logged in to a control server, its packets on the gateway's IP port
 // (web/tailscale.ts `ToTailscale`, `FromTailscale`). With `persist`, the node is kept in the Go
 // client's store format (web/tailscale-state.ts), so a node the Go client made before is the same node.
+import { batchSender, packetsOf } from './net.ts';
 import { TsClient, TsModule } from './ts-client.ts';
 import { leaseFrom, type FromTailscale, type ToTailscale } from './tailscale.ts';
 import { openState } from './tailscale-state.ts';
@@ -10,6 +11,7 @@ import type { Lease } from './gateway.ts';
 const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessage(m, transfer);
 
 let ip: MessagePort | undefined;
+let send: ((packet: Uint8Array) => void) | undefined;
 let lease: Lease | null = null;
 let client: TsClient | undefined;
 let state: Awaited<ReturnType<typeof openState>> | undefined;
@@ -17,7 +19,11 @@ let state: Awaited<ReturnType<typeof openState>> | undefined;
 function attach(port: MessagePort) {
   if (ip) { ip.onmessage = null; ip.close(); }
   ip = port;
-  port.onmessage = (ev: MessageEvent) => { if (ev.data instanceof ArrayBuffer) client?.guest(new Uint8Array(ev.data)); };
+  send = batchSender(port);
+  port.onmessage = (ev: MessageEvent) => {
+    const packets = packetsOf(ev.data);
+    if (packets) client?.guest(...packets);
+  };
   port.postMessage({ type: 'lease', lease });
 }
 
@@ -30,6 +36,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
     if (ip) ip.onmessage = null;
     post({ type: 'detached', ip }, ip ? [ip] : []);
     ip = undefined;
+    send = undefined;
     return;
   }
   if (m.type === 'exitnode') {
@@ -52,11 +59,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
       state: state?.entries() ?? {},
       exitNode: m.exitNode ?? '',
     }, {
-      packet(p) {
-        if (!ip) return;
-        const b = p.buffer.byteLength === p.length ? p.buffer : p.slice().buffer;
-        ip.postMessage(b, [b]);
-      },
+      packet: (p) => send?.(p),
       event(ev) {
         switch (ev.type) {
           case 'log': return console.log('tailnet:', ev.msg);
