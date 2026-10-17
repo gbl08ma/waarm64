@@ -231,7 +231,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     4.9 → 20 MiB/s). The rest was dropped by measurement: Debian's boot from a chosen qcow2 spends 3.9% in file reads and
     6% in all requests (no cache, copy, limit or inflate work clears the 5% bar), `flush()` costs ~10 µs, and the screen
     stays within 22–33 ms of a flush under a continuous disk read, so no blk worker. Numbers: `bench/io/REPORT.md`.
-- **D. Choosing and shaping machines:** **starts with machines as the unit (proposed 2026-10-17,
+- **D. Choosing and shaping machines:** **starts with machines as the unit (confirmed 2026-10-17, `M8-MACHINES-KICKOFF.md`, a cloud session first;
   [docs/plans/machines.md](docs/plans/machines.md))**: named machines stored in the browser (vCPUs, RAM, any number of
   disks, up to 16, read-only or read-write), managed in a modal (Svelte); overlays per base disk as named variants;
   disk sources from a URL, a file (remembered), a copy in OPFS (which can take an overlay in place or be written in

@@ -1,18 +1,18 @@
-**Draft, 2026-10-17, for the user's review** (a kickoff's content is the user's: nothing here binds until they
-confirm it). Covers the start of **phase D** of M8: machines as the unit. The plan is
-[docs/plans/machines.md](docs/plans/machines.md); this brief points at it and doesn't repeat it.
+**Confirmed by the user on 2026-10-17.** Covers the start of **phase D** of M8: machines as the unit. The plan is
+[docs/plans/machines.md](docs/plans/machines.md); this brief points at it and doesn't repeat it. **It runs in a
+Claude Code cloud session** (below, "Where this runs"): do as much of every loop as the cloud allows, then write
+`M8-MACHINES-HANDOVER.md` for what only the local dev VM can do.
 
 Start M8 phase D with **machines as the unit**. Today the page runs one machine on one disk the user opens each
 session; its changes live in the one overlay that disk has, and a snapshot is pinned to that disk. Phase D's first part
 ends when I can keep several machines in the browser, each with its vCPUs, RAM and up to 16 disks from any source, with
 named variants of each disk's changes and several snapshots per machine, all managed in one modal, and nothing I do
-there destroys a disk's state without saying so first. Read docs/plans/machines.md first, then PLAN.md §3 M8 (phase D),
-docs/frontend.md ("Snapshots", "Views, settings and the disk", "Your own disk", "Overlay hand-over"), docs/devices.md
-("blk"), docs/plans/snapshots.md, docs/plans/remote-disks.md §1 and §3, and `web/app/machine.ts`, `worker.ts`,
-`protocol.ts`, `main.ts`, `web/overlay.ts`, `web/snapshot.ts`, `web/devices.ts` (`blk`, the sources). CLAUDE.md's
-conventions and working rules apply; `scripts/ci.sh` and `scripts/ci-debian.sh` pass at every commit that touches the
-page, disks or snapshots. Work in short loops (one slice, one commit, a short report each) and continue unless
-something needs my decision.
+there destroys a disk's state without saying so first. Read docs/plans/machines.md first, then docs/cloud.md, PLAN.md
+§3 M8 (phase D), docs/frontend.md ("Snapshots", "Views, settings and the disk", "Your own disk", "Overlay
+hand-over"), docs/devices.md ("blk"), docs/plans/snapshots.md, docs/plans/remote-disks.md §1 and §3, and
+`web/app/machine.ts`, `worker.ts`, `protocol.ts`, `main.ts`, `web/overlay.ts`, `web/snapshot.ts`, `web/devices.ts`
+(`blk`, the sources). CLAUDE.md's conventions and working rules apply, with docs/cloud.md's differences. Work in short
+loops (one slice, one commit, pushed, a short report each) and continue unless something needs my decision.
 
 ## What exists (2026-10-17)
 
@@ -36,10 +36,12 @@ something needs my decision.
    switch, delete, export (changes only, or whole disk; compressed or not, as today).
 3. **Sources:** URL (with a check of the server and its requirements stated), a file (its handle remembered), a copy
    stored in OPFS (the user told it duplicates their file in storage they can't easily see), blank, ramdisk.
-4. **Stored disks** can take an overlay in place (**merge**, deleting the disk's other overlays, which the
-   confirmation lists) and can be **written in place** with no overlay, an option per attachment.
+4. **Stored disks are kept in the overlay's sparse block format**, converted at import (a qcow2's compressed clusters
+   inflated: Debian's 400 MB image takes ~1 GB; the confirmation says the size). They can take an overlay in place
+   (**merge**, deleting the disk's other overlays, which the confirmation lists) and can be **written in place** with
+   no overlay, an option per attachment.
 5. **The ramdisk** is empty at every boot, the guest's reboot included; its memory is allocated lazily (known for
-   Chromium on Linux: don't measure that); chunks give memory back when the guest trims. Snapshots hold it.
+   Chromium on Linux: don't measure that); 1 MiB chunks give memory back when the guest trims. Snapshots hold it.
 6. **Snapshots belong to a machine and are checked by its shape**; several kept in OPFS or downloaded; a file
    imported or applied at once; editing a machine orphans what it invalidates, shown as such, with one action to
    delete all orphaned ones and one to make a machine like an orphaned snapshot's.
@@ -47,24 +49,19 @@ something needs my decision.
    snapshot's blocks into a new overlay), one that didn't is left alone; detected by a **generation counter**, never
    a hash of a large file. The confirmation offers to replace instead; an earlier unmoved fork of the same snapshot is
    reused rather than forking again.
-8. **The EFI variable store is the machine's.** The installer flow (an ISO read-only, a blank disk, install, detach
+8. **A disk written in place** has no earlier state to fork from: a kept snapshot restores only while the disk's
+   generation matches; **a downloaded snapshot offers the whole disk in the file, or none** (then it restores only
+   onto that disk at that generation).
+9. **The EFI variable store is the machine's.** The installer flow (an ISO read-only, a blank disk, install, detach
    the ISO) works.
-9. **Machine definitions** export and import (files re-picked, checked by identity, then hash); the bundle with
-   overlays and snapshots ("export a machine") is later, and named apart in the UI.
-10. **Svelte** for the modal, compiled in `tools/serve.ts` and `tools/dist.ts` (no build step).
-11. **Remote disks stay their own track** (`M8-REMOTEDISK-HANDOVER.md`); here only the URL check and the warning
+10. **Machine definitions** export and import (files re-picked, checked by identity, then hash); the bundle with
+    overlays and snapshots ("export a machine") is later, and named apart in the UI.
+11. **Svelte** for the modal, compiled in `tools/serve.ts` and `tools/dist.ts` (no build step).
+12. **Remote disks stay their own track** (`M8-REMOTEDISK-HANDOVER.md`); here only the URL check and the warning
     that a URL disk is slow.
-12. **No compatibility** with today's overlays, Suspend files or snapshot files.
-13. The tests' query parameters keep working (a transient machine); dropping a disk on the page still boots it (a
+13. **No compatibility** with today's overlays, Suspend files or snapshot files.
+14. The tests' query parameters keep working (a transient machine); dropping a disk on the page still boots it (a
     machine made for it).
-
-## To confirm before L2 (proposed in the plan, §4.4)
-
-- **Stored disks are kept in the overlay's sparse block format**, converted at import (a qcow2's compressed clusters
-  inflated: Debian's 400 MB image takes ~1 GB), rather than as the file was. It's what makes merging and writing in
-  place possible (our qcow2 code doesn't allocate clusters in a file).
-- **A downloaded snapshot of a machine with a disk written in place** offers the whole disk in the file, or none (the
-  file then restores only onto that disk at that generation).
 
 ## Goal
 
@@ -74,12 +71,69 @@ the newer state forked rather than lost; change the RAM and see the snapshots or
 import a disk into the browser, merge an overlay into it, and write it in place; export the machine's definition and
 import it in a fresh profile, re-picking the file disks.
 
+## Where this runs: a cloud session
+
+docs/cloud.md has the machine (x86_64, 4 vCPUs, 15 GiB, Playwright's Chromium 141, Node 26 and dtc from
+`scripts/cloud-setup.sh`) and what differs. For this work:
+
+- **Debian on the page works.** `node tools/debian.ts` (or `images/build.sh debian`, Node only) gives the image. The
+  firmware is built in Podman on arm64, which the cloud can't do, but it's reproducible and pinned: fetch
+  `https://vm.tny.im/target/images/edk2/QEMU_EFI.fd` and `LICENSES.txt` into `target/images/edk2/`, check both
+  against `images/SHA256SUMS` (checked 2026-10-17: the deployed `QEMU_EFI.fd` matches), and write
+  `images/build.sh --inputs edk2`'s key to its `.inputs`. Put that in `scripts/cloud-setup.sh` (a no-op locally, as
+  the rest of it) and say so in docs/cloud.md. Never use a firmware whose hash doesn't match.
+- **Not available:** Buildroot, Alpine, linux-snd (Podman on arm64). So `tests/page-debian.test.ts` (it needs
+  linux-snd's `snd-play`) and the Buildroot page tests (`tests/browser.test.ts`'s page tests, `page-save`, parts of
+  `page-snapshot`) skip, and `scripts/ci-debian.sh` refuses to start (its image check). Run its other files directly
+  (`WEBPC_DISTROS=debian node --test tests/page-disk.test.ts tests/page-machine.test.ts …`) and the new ones. **Write
+  the new page tests on Debian** (or on no guest where the page alone is tested: the store, the modal, the URL check),
+  never on Buildroot, so the cloud runs them; keep each test file under the 10-minute command cap (a Debian page boot
+  is ~2.5 min here) or run it in the background with a `timeout`.
+- **`scripts/ci.sh`** runs everything but the image-based native tests (it skips them with a message): it is the
+  gate here, in the background, alone, under `timeout` (no `systemd-run`: watch memory yourself; tests never
+  `assert.deepEqual` large buffers).
+- **No benchmark numbers** (an x86_64 runner of unknown hardware): measure nothing for the record; the exit's
+  numbers are the handover's. Timings in test logs are fine for budgeting.
+- **Dependencies:** Svelte (and its compiler) through npm (the registry is reachable through the proxy). Ask before
+  anything else.
+- Commit and push at the end of every loop (the container is reclaimed when idle).
+
 ## Loops
 
-The plan's §9: **L0** the model (store, shape, no UI), **L1** many disks, blank and the ramdisk (and the installer
-flow), **L2** overlays and stored disks (generation, variants, Load changes into a new overlay, the flash store by
-machine, import, merge, in place), **L3** Svelte and the modal, **L4** snapshots (keep, download, import, apply,
-orphaned, fork-or-nothing, Suspend on the pins), **L5** definitions in and out, **L6** exit.
+The plan's §9, in order, each as far as the cloud allows:
+
+- **L0** the model (store, shape; no UI): fully in the cloud.
+- **L1** many disks, blank and the ramdisk: in the cloud, Debian with three disks. **The installer flow** (an ISO
+  read-only, a blank disk, install, detach, boot it) needs a guest install at ~2.5 times the dev VM's time: try it
+  with the Debian or Alpine installer ISO (downloads, if the proxy allows them) under the command cap; if it can't
+  finish, write the test, leave it skipped without a variable that enables it, and hand it over.
+- **L2** overlays and stored disks (generation, variants, Load changes into a new overlay, the flash store by machine,
+  import, merge, in place); exports checked with `qemu-img` (apt's `qemu-utils`, from cloud-setup): in the cloud.
+- **L3** Svelte and the modal: in the cloud (the compile step in `tools/serve.ts` and `tools/dist.ts`,
+  `tests/dist.test.ts`).
+- **L4** snapshots (keep, download, import, apply, orphaned, fork-or-nothing, Suspend on the pins, disks written in
+  place): in the cloud on Debian; moving the Buildroot page snapshot tests over is written here, run locally.
+- **L5** definitions in and out, in a fresh profile: in the cloud.
+- **L6** exit: the docs (frontend, devices, platform's snapshot notes, testing, cloud, the plan's record), the backlog
+  and PLAN.md in the cloud; the numbers, the full CI and my pass go to the handover.
+
+## The handover
+
+When every loop is as far as the cloud takes it, write **`M8-MACHINES-HANDOVER.md`** (tracked, committed with the work)
+for the session in the dev VM: what was done and verified where (cloud test runs, with Chromium 141); then, as a list
+to work through, what only the dev VM can do:
+- `scripts/ci.sh` with every image, and `scripts/ci-debian.sh`, `scripts/ci-audio.sh` and `scripts/ci-net.sh`
+  (snapshots and the device list touch sound and the network's card), each alone; anything that fails, with what the
+  cloud runs suggested.
+- The Buildroot and Alpine tests written but not run here (named), and the installer flow if it couldn't finish.
+- Step counts: none should move (the tests' guests keep their devices); if `tests/steps.txt` moves anywhere, that's
+  a finding to report to me before anything else.
+- The exit's numbers in Chromium 153 (`bench/boot/REPORT.md`): a restore with matching pins against a fork, a stored
+  disk's import, a merge, a snapshot's size and save time against today's, the ramdisk's fio against one buffer.
+- What needs me: my pass over the modal by hand, deploying the page (only when I ask), and any decision the cloud
+  session left open (each with the options and its recommendation).
+The handover stands on its own: the dev VM session works from it, the plan and this kickoff's decisions, not from
+the cloud instructions above.
 
 ## What needs my OK
 
@@ -88,12 +142,12 @@ A dependency besides Svelte (and its compiler); a core or ABI change (none is ex
 
 ## Validation
 
-At every loop, `scripts/ci.sh` and (from L1) `scripts/ci-debian.sh`. Page tests in fresh profiles for each flow in the
-goal; planted bugs where the plan names them (the generation bump left out, a fork skipped, an interrupted merge not
-resumed). Exports checked with `qemu-img check` and `compare`.
+At every loop, `scripts/ci.sh` (as above) and the Debian page tests that run here. Page tests in fresh profiles for
+each flow in the goal; planted bugs where the plan names them (the generation bump left out, a fork skipped, an
+interrupted merge not resumed), restored and the wasm rebuilt after. Exports checked with `qemu-img check` and
+`compare`.
 
 ## Exit
 
-The goal's flows pass as page tests; docs (frontend, devices, platform's snapshot notes, testing, the plan's record),
-the backlog and PLAN.md updated; numbers for a restore with matching pins against a fork, a stored disk's import, a
-merge, and a snapshot's size and save time against today's (bench/boot/REPORT.md).
+In the cloud: the goal's flows pass as Debian page tests, the docs and PLAN.md are updated, and the handover is
+written. The phase's part is done when the handover's list is worked through in the dev VM.
