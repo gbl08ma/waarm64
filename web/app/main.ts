@@ -23,6 +23,7 @@ import { createNetwork, DEFAULT_SETTINGS, forgetTailcatIdentity, hasTailcatIdent
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { CPU_FEATURES, newId, serialOf, shapeDiff, type DiskRecord, type MachineRecord, type Shape } from './shape.ts';
 import { currentShape, planRestore } from './snapshots.ts';
+import { hashFile } from './definitions.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
 import { diskDir, overlayDir, machineDir, snapshotPath, Store } from './store.ts';
 import { deleteOverlay, diskSource, identityOf, loadChangesInto, refreshOverlay, refreshStored, switchOverlay } from './disks.ts';
@@ -128,7 +129,13 @@ async function grantFiles(disks: DiskRecord[]) {
     const file = await pickFile(`Pick ${d.name} again`);
     if (!file) return false;
     const want = d.identity as { name?: string; bytes?: number; modified?: number };
-    if (file.name !== want.name || file.size !== want.bytes || file.lastModified !== want.modified) {
+    // Another name, size or date: the same bytes by the hash, where the disk has one (a definition's: machines.md §6).
+    const differs = file.name !== want.name || file.size !== want.bytes || file.lastModified !== want.modified;
+    if (differs && d.sha256 && file.size === want.bytes && (await hashFile(file)) === d.sha256) {
+      pickedFiles.set(d.id, file);
+      continue;
+    }
+    if (differs) {
       if (!confirm(`${file.name} isn't the file this disk was made from (${want.name}, ${want.bytes} bytes, modified ${new Date(want.modified ?? 0).toLocaleString()}). Use it anyway? Its overlays were written over the other file's bytes and may not make sense over this one.`)) return false;
     }
     pickedFiles.set(d.id, file);

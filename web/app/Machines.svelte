@@ -14,6 +14,7 @@
   import { checkUrl, URL_SLOW, type UrlCheck } from './urlcheck.ts';
   import { runExport, type ExportMode } from './export.ts';
   import Snapshots from './Snapshots.svelte';
+  import { exportDefinition, importDefinition, parseDefinition } from './definitions.ts';
 
   type Props = {
     store: Store;
@@ -198,6 +199,26 @@
     });
   }
   let compress = $state(true);
+
+  // Definitions in and out (§6): the machine's shape as a small file; disks that are files are picked again at its first start.
+  async function exportDef(m: MachineRecord) {
+    await act('Exporting', async () => {
+      const def = await exportDefinition(store, m.id);
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([JSON.stringify(def, null, 2)], { type: 'application/json' })), download: `${m.name.replace(/[^\w.-]+/g, '-')}.webpc-machine.json` });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+    });
+  }
+  let defInput: HTMLInputElement;
+  const importDef = () => {
+    const f = defInput.files?.[0];
+    defInput.value = '';
+    if (f) void act('Importing', async () => {
+      const r = await importDefinition(store, parseDefinition(await f.text()));
+      selected = r.machine.id;
+      if (r.toPick.length) error = `${r.machine.name} is made. Its files are picked when it first starts: ${r.toPick.join(', ')}.`;
+    });
+  };
 </script>
 
 <div class="machines" data-busy={busy || undefined}>
@@ -220,6 +241,8 @@
         {/each}
       </ul>
       <button onclick={() => act('Making a machine', async () => { selected = (await createMachine(store)).id; })} data-action="new-machine">New machine</button>
+      <button onclick={() => defInput.click()} title="A machine definition (.webpc-machine.json): its settings and disks, without their contents">Import a definition…</button>
+      <input type="file" accept=".json,application/json" hidden bind:this={defInput} onchange={importDef} data-field="import-definition">
     </nav>
 
     {#if draft}
@@ -228,6 +251,7 @@
         <div class="row">
           <button onclick={() => open(m.id)} data-action="open" disabled={m.id === current}>{m.id === current ? 'On this page' : 'Open on this page'}</button>
           <button onclick={() => act('Copying', async () => { selected = (await duplicateMachine(store, m.id)).id; })}>Duplicate</button>
+          <button onclick={() => exportDef(m)} title="The machine's settings and disks (which files, which URLs), without their contents, overlays or snapshots">Export the definition</button>
           <button onclick={() => { if (confirm(`Delete ${m.name}? Its snapshots and firmware settings are deleted; its disks and their overlays stay.`)) void act('Deleting', () => deleteMachine(store, m.id)); }}>Delete</button>
         </div>
         <fieldset>

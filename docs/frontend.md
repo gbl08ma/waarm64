@@ -113,6 +113,12 @@ docs/plans/machines.md is the plan (M8 phase D's start); this is what exists.
   rename, switch, delete (refused while a machine has it open: its Web Lock), save (changes only, or the whole
   disk), Load changes into a new one. A stored disk can take one **in place** (merge: the disk's other overlays are
   deleted, the modal lists them first) and can be **written in place** (no overlay; its own generation moves).
+- **Definitions** (`web/app/definitions.ts`): Export the definition writes `<name>.webpc-machine.json` (`webpc-machine`,
+  version 1: the settings, and per attachment the disk's kind, name, size, identity, URL, hash where known, read-only,
+  in place, serial; no handles, overlays, snapshots or contents). Import a definition… makes a new machine (the name
+  made unique, the same shape): a disk the browser has by identity is attached again, URL, blank and ramdisk disks
+  come back, and file disks (and stored disks the browser doesn't have, as files) are picked at its first start:
+  taken when the name, size and date match, or when the hash does (the definition's), else asked about.
 
 ## The worker protocol
 
