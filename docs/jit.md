@@ -489,9 +489,11 @@ interpreter's; the helper runs the instruction otherwise.
     a rounding-mode switch): Veltkamp's split and Dekker's product give p + pl = a·b exactly,
     TwoSum gives th + tl = c + p, and z = RN(th + RO(tl + pl)). Exact while every partial product
     is (a·b from 2^-900 up, biased ea + eb ≥ 1146, or a zero factor; the true limit is near
-    2^-970). An overflow anywhere (the split's 2^27 + 1 scaling near 2^996, the product) makes z
-    infinite or a NaN, which the result check sends to the helper, so there's no upper bound to
-    test. The vector form is the same on f64x2 (its five v128 scratch locals don't hold both
+    2^-970). An overflow anywhere (the split's 2^27 + 1 scaling near 2^996, the product, Dekker's
+    partial products) makes z infinite or a NaN, which the result check sends to the helper, so
+    there's no upper bound to test. That needs the round to odd's inexact test to be |e| > 0, not
+    e ≠ 0: an infinite sum has a NaN error, and stepping ∞'s bits toward a NaN's sign (the host's:
+    negative on x86-64) gave the largest finite double. The vector form is the same on f64x2 (its five v128 scratch locals don't hold both
     splits, so the low halves are recomputed from the operands); the scalar form uses eight f64
     scratch locals (`FT`).
   - *Guard:* FPOK, operands normal or zero, a fast result (vector single: also an exact zero from a

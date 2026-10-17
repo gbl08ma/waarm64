@@ -2957,9 +2957,11 @@ mod tests {
         }
         assert!(has(&b, &[0xfd, 0xa3, 1]));
         // fmla v0.2d: the scalar double FMA's algorithm on f64x2: the round to
-        // odd's i64x2.shr_s (0xcc) and f64x2.ne (0x48), i64x2.all_true.
+        // odd's i64x2.shr_s (0xcc), f64x2.abs (0xec) and f64x2.gt (0x4a),
+        // i64x2.all_true.
         let b = emit(0x4e62cc20, 0).unwrap();
-        assert!(has(&b, &[0xfd, 0xcc, 1]) && has(&b, &[0xfd, 0x48]) && has(&b, &[0xfd, 0xc3, 1]));
+        assert!(has(&b, &[0xfd, 0xcc, 1]) && has(&b, &[0xfd, 0xec, 1]) && has(&b, &[0xfd, 0x4a]));
+        assert!(has(&b, &[0xfd, 0xc3, 1]));
         // fadd v0.2d: f64x2.add, i64x2.all_true (0xc3).
         let b = emit(0x4e62d420, 0).unwrap();
         assert!(has(&b, &[0xfd, 0xf0, 1]) && has(&b, &[0xfd, 0xc3, 1]));

@@ -257,10 +257,10 @@ fn fma_inline(c: u64, a: u64, b: u64) -> Option<u64> {
     // v = tl + pl rounded to odd: RN's result, or its other neighbour when
     // inexact and even (toward the error).
     let (s, err) = two_sum(tl, pl);
-    let (sb, eb) = (s.to_bits(), err.to_bits());
-    let fix = (eb << 1 != 0) & (sb & 1 == 0);
+    let sb = s.to_bits();
+    let fix = (err.abs() > 0.0) & (sb & 1 == 0);
     let v = f64::from_bits(if fix {
-        sb.wrapping_add((((sb ^ eb) as i64 >> 63) | 1) as u64)
+        sb.wrapping_add((((sb ^ err.to_bits()) as i64 >> 63) | 1) as u64)
     } else {
         sb
     });
@@ -362,10 +362,10 @@ fn fma32_inline(c: u32, a: u32, b: u32) -> Option<u32> {
     let s = p + c;
     let bb = s - p;
     let err = (p - (s - bb)) + (c - bb);
-    let (sb, eb) = (s.to_bits(), err.to_bits());
-    let fix = (eb << 1 != 0) & (sb & 1 == 0);
+    let sb = s.to_bits();
+    let fix = (err.abs() > 0.0) & (sb & 1 == 0);
     let v = f64::from_bits(if fix {
-        sb.wrapping_add((((sb ^ eb) as i64 >> 63) | 1) as u64)
+        sb.wrapping_add((((sb ^ err.to_bits()) as i64 >> 63) | 1) as u64)
     } else {
         sb
     });

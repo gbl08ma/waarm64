@@ -411,6 +411,10 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['fmadd d0 (zero addend)', 0x1f420c20, [0n, f64bits(1 + 2 ** -52), f64bits(1 + 2 ** -52), 1n << 63n]],
   // Veltkamp's split overflows (a near 2^1000): a NaN z, the helper.
   ['fmadd d0 (split overflows)', 0x1f420c20, [0n, f64bits(1.5 * 2 ** 1000), f64bits(2 ** -500), f64bits(1)]],
+  // Dekker's product overflows (ah·bh = 2^1024) with p = RN(ab) finite and c cancelling it: an
+  // infinite sum and a NaN error, whose sign is the host's (negative on x86-64), mustn't step the
+  // sum to the largest finite double. The exact result is 2^962.
+  ['fmadd d0 (Dekker product overflows)', 0x1f420c20, [0n, f64bits((2 - 2 ** -30) * 2 ** 992), f64bits((2 - 2 ** -30) * 2 ** 30), f64bits(-(2 ** 30 - 1) * 2 ** 994)]],
   ['fmadd d0 (product overflows)', 0x1f420c20, [0n, f64bits(2 ** 1000), f64bits(2 ** 100), f64bits(-1.7976931348623157e308)]],
   ['fmadd d0 (smallest normal result)', 0x1f420c20, [0n, f64bits(2 ** -500), f64bits(1.5 * 2 ** -400), f64bits(-1.5 * 2 ** -900 + 2 ** -1021)]],
   ['fmadd d0 (exact zero)', 0x1f420c20, [0n, f64bits(1.5), f64bits(2), f64bits(-3)]],
@@ -459,6 +463,7 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['w fmla v0.2d (zero factor)', 0x4e62cc20, [f64bits(1), 1n << 63n, f64bits(1.5)]],
   ['w fmla v0.2d (denormal factor)', 0x4e62cc20, [f64bits(1), f64bits(2 ** -1060), f64bits(2 ** 1000)]],
   ['w fmla v0.2d (split overflows)', 0x4e62cc20, [f64bits(1), f64bits(1.5 * 2 ** 1000), f64bits(2 ** -500)]],
+  ['w fmla v0.2d (Dekker product overflows)', 0x4e62cc20, [f64bits(-(2 ** 30 - 1) * 2 ** 994), f64bits((2 - 2 ** -30) * 2 ** 992), f64bits((2 - 2 ** -30) * 2 ** 30)]],
   ['w fmla v0.2d (exact zero)', 0x4e62cc20, [f64bits(-3), f64bits(1.5), f64bits(2)]],
 ];
 test('JIT vs interpreter: FP edge cases', () => {

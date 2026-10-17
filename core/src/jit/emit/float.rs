@@ -169,7 +169,10 @@ fn to_odd(c: &mut Func, s: u32, e: u32, sb: u32) {
     c.local_get(sb).local_get(e).op(0xbd).op(XOR + W);
     c.i64_const(63).op(0x87).i64_const(1).op(0x84); // i64.shr_s, i64.or
     c.i64_const(0);
-    c.local_get(e).f64_const(0.0).op(0x62); // f64.ne: inexact
+    // f64.abs, f64.gt: inexact (false for a NaN error, an overflowed sum's:
+    // s infinite, which stepping toward a NaN's host-dependent sign could
+    // turn into the largest finite double).
+    c.local_get(e).op(0x99).f64_const(0.0).op(0x64);
     c.local_get(sb)
         .op(0xa7)
         .i32_const(1)
@@ -474,6 +477,8 @@ mod op {
     pub const I64X2_ADD: u32 = 0xce;
     pub const F64X2_NEG: u32 = 0xed;
     pub const F64X2_NE: u32 = 0x48;
+    pub const F64X2_GT: u32 = 0x4a;
+    pub const F64X2_ABS: u32 = 0xec;
     /// f32x4 add, sub, mul, div; f64x2 likewise.
     pub const F32X4: [u32; 4] = [0xe4, 0xe5, 0xe6, 0xe7];
     pub const F64X2: [u32; 4] = [0xf0, 0xf1, 0xf2, 0xf3];
@@ -765,7 +770,9 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_get(s).local_get(pl).simd(op::XOR);
             c.i32_const(63).simd(op::I64X2_SHR_S);
             c.v128_const(splat(true, 1)).simd(op::OR);
-            c.local_get(pl).v128_const(0).simd(op::F64X2_NE);
+            // Inexact: |e| > 0, false for a NaN error (as the scalar to_odd).
+            c.local_get(pl).simd(op::F64X2_ABS);
+            c.v128_const(0).simd(op::F64X2_GT);
             c.local_get(s).v128_const(splat(true, 1)).simd(op::AND);
             c.v128_const(0)
                 .simd(op::I64X2_EQ)
