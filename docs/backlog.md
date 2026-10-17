@@ -286,6 +286,18 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - virtio-blk over HTTP: synchronous XHRs, no cache or concurrency (a request's qcow2 clusters are
   read in merged ranges, nothing is merged across requests); batch, cache or go async when an I/O
   benchmark says so: for remote servers, [plans/remote-disks.md](plans/remote-disks.md). qcow2's compressed clusters are inflated one at a time on the reading thread.
+- **A public demo that resumes instead of booting** (the user's, 2026-10-17; with remote disks above and PLAN.md
+  phase D's preloaded image and snapshot): the deployed page opens a hosted image by resuming a snapshot taken just
+  before a first-boot script, which then gives this copy its own identity and per-machine setup. Every visitor resumes
+  the same memory, so what must differ per visitor: SSH host keys, `/etc/machine-id` (and what derives from it: DHCP
+  DUID/IAID, journal), systemd's random seed, the hostname if it has one, the network card's MAC (a page-side choice),
+  any tailnet node key (the page's, host-side). **The kernel's RNG is the subtle one:** a resumed CRNG is the same in
+  every copy until reseeded; Linux reseeds on a VM generation ID change (`microsoft,vmgenid`, a device-tree binding
+  the kernel supports), so the snapshot's restore should give a new generation ID, and virtio-rng should feed fresh
+  entropy at once. The trigger: the script waits in the snapshot (on the serial console, a fw_cfg credential, or the
+  guest agent of [plans/agent.md](plans/agent.md), which also covers the clock's jump after a resume) and runs when the
+  page signals the resume. The snapshot pins its disk's identity (a URL's path today), so the image's URL must not
+  change under it (plans/remote-disks.md §4.1's content identity would make that check exact).
 - Overlay: no quota handling (OPFS errors come back as `IOERR`), the base identified by path and
   size only.
 - blk DISCARD/WRITE_ZEROES ([devices.md](devices.md)) is the page's only: offering it to the
