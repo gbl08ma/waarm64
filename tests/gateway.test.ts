@@ -426,3 +426,55 @@ test('an IPv6 packet over the MTU: Packet Too Big with the MTU and as much of th
   assert.deepEqual(Array.from(r.body.subarray(8, 16)), [0x60, 0, 0, 0, 0x05, 0x1c, 17, 64], 'the quoted header of the guest\'s packet');
   assert.ok(14 + 40 + r.body.length <= 14 + 1280 + 0, 'the message fits the minimum MTU');
 });
+
+/** A TCP segment from `src` to `dst` (4 or 16 bytes each) with these flags and options, its checksum set. */
+function tcp(src: number[], dst: number[], flags: number, options: number[]) {
+  const t = new Uint8Array(20 + options.length);
+  t.set([0xc0, 0x01, 0x01, 0xbb, 0, 0, 0, 1, 0, 0, 0, 0, ((20 + options.length) / 4) << 4, flags, 0xff, 0xff]);
+  t.set(options, 20);
+  const c = tcpSum(src, dst, t);
+  t[16] = c >> 8;
+  t[17] = c & 255;
+  return t;
+}
+/** TCP's checksum over its pseudo-header: 0 for a segment whose checksum is right. */
+function tcpSum(src: number[], dst: number[], t: Uint8Array) {
+  if (src.length === 16) return sum6(src, dst, 6, t);
+  return checksum(Uint8Array.from([...src, ...dst, 0, 6, t.length >> 8, t.length & 255, ...t]));
+}
+// MSS 1460, SACK permitted, a NOP, window scale 7: what Linux sends from a 1500-byte link.
+const SYN_OPTIONS = [2, 4, 0x05, 0xb4, 4, 2, 1, 3, 3, 7];
+
+test('TCP SYNs both ways get an MSS that fits the lease\'s MTU (1240 over IPv4, 1220 over IPv6), checksums patched', () => {
+  const { g, sent, out, deliver } = rig();
+  g.send(dhcpMsg(1));
+  g.send(rs());
+  out.length = 0;
+  const peer4 = [89, 144, 30, 89];
+  const peer6 = [0x2a, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x89];
+  const mssOf = (t: Uint8Array) => be16(t, 22);
+  // The guest's SYN, out.
+  g.send(frame(GATEWAY_MAC, GUEST_MAC, 0x0800, ipv4(ECHO_LEASE.address, peer4, 6, Array.from(tcp(ECHO_LEASE.address, peer4, 0x02, SYN_OPTIONS)))));
+  let t = sent.at(-1)!.subarray(20);
+  assert.equal(mssOf(t), 1240);
+  assert.equal(tcpSum(ECHO_LEASE.address, peer4, t), 0, 'the TCP checksum still holds');
+  assert.equal(checksum(sent.at(-1)!.subarray(0, 20)), 0, 'the IP header is untouched');
+  assert.deepEqual(Array.from(t.subarray(24, 30)), SYN_OPTIONS.slice(4), 'the other options are untouched');
+  // The server's SYN-ACK, in.
+  deliver(ipv4(peer4, ECHO_LEASE.address, 6, Array.from(tcp(peer4, ECHO_LEASE.address, 0x12, SYN_OPTIONS))));
+  t = out.at(-1)!.subarray(14 + 20);
+  assert.equal(mssOf(t), 1240);
+  assert.equal(tcpSum(peer4, ECHO_LEASE.address, t), 0);
+  // IPv6: 1220.
+  g.send(toGateway(ip6(L6, peer6, 6, tcp(L6, peer6, 0x02, SYN_OPTIONS))));
+  t = sent.at(-1)!.subarray(40);
+  assert.equal(mssOf(t), 1220);
+  assert.equal(tcpSum(L6, peer6, t), 0);
+  // Left alone: an MSS already under it, and segments that aren't SYNs.
+  const small = [2, 4, 0x04, 0xb0]; // 1200
+  g.send(frame(GATEWAY_MAC, GUEST_MAC, 0x0800, ipv4(ECHO_LEASE.address, peer4, 6, Array.from(tcp(ECHO_LEASE.address, peer4, 0x02, small)))));
+  assert.equal(mssOf(sent.at(-1)!.subarray(20)), 1200);
+  const ack = ipv4(ECHO_LEASE.address, peer4, 6, Array.from(tcp(ECHO_LEASE.address, peer4, 0x10, SYN_OPTIONS)));
+  g.send(frame(GATEWAY_MAC, GUEST_MAC, 0x0800, ack));
+  assert.equal(hex(sent.at(-1)!), hex(ack));
+});

@@ -98,6 +98,8 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       const routes = await run('ip -4 route');
       console.log(`# guest: ${addr}; routes: ${routes.trim().replace(/\n/g, ' | ')}`);
       assert.match(routes, /default via 169\.254\.0\.1/);
+      // The lease's MTU on the link (UseMTU in the page's credential): 1280, the tunnel's, not virtio-net's 1500.
+      assert.equal((await run("cat /sys/class/net/e*/mtu")).trim().split('\n')[0], '1280', 'the link takes the lease\'s MTU');
 
       const ping = await run(`ping -c 3 -W 5 ${env.WEBPC_TS_PEER_IP}`, 90_000);
       assert.match(ping, /3 packets transmitted, 3 received, 0% packet loss/, ping);

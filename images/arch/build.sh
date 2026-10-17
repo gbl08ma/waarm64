@@ -17,7 +17,7 @@
 # The ESP holds what Arch's linux package puts in /boot (vmlinuz-linux, an EFI zboot kernel, and
 # initramfs-linux.img), so `pacman -Syu` in the guest updates the kernel that boots.
 # Settings: logins root/root and arch/arch (in wheel, which sudo allows), hostname archlinux, LANG=C.UTF-8, UTC,
-# systemd-networkd (DHCP on en* and eth*, the lease's search domain taken), -resolved and -timesyncd; /etc/machine-id empty, as Arch Linux ARM's was
+# systemd-networkd (DHCP on en* and eth*, the lease's search domain and MTU taken), -resolved and -timesyncd; /etc/machine-id empty, as Arch Linux ARM's was
 # (a transient id each boot, no first-boot presets).
 # Host tools: podman, curl, sgdisk, mkfs.vfat + mtools, qemu-img. No root, no loop devices.
 # Result: target/arch/arch-uefi.qcow2. Checked on QEMU through our EDK2 with `node tools/uefi-oracle.ts
@@ -73,8 +73,9 @@ echo KEYMAP=us > /etc/vconsole.conf
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 : > /etc/machine-id
 for n in en eth; do
-  # UseDomains: the lease's search domain (a tailnet's MagicDNS domain) goes to resolved; networkd leaves it out by default
-  printf '[Match]\nName=%s*\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nUseDomains=yes\n\n[DHCPv6]\nUseDomains=yes\n' $n > /etc/systemd/network/20-$n.network
+  # UseDomains: the lease's search domain (a tailnet's MagicDNS domain) goes to resolved; UseMTU: the lease's MTU (the
+  # tunnel's 1280) on the link. networkd leaves both out by default
+  printf '[Match]\nName=%s*\n\n[Network]\nDHCP=yes\n\n[DHCPv4]\nUseDomains=yes\nUseMTU=yes\n\n[DHCPv6]\nUseDomains=yes\n' $n > /etc/systemd/network/20-$n.network
 done
 systemctl enable -q systemd-networkd systemd-resolved systemd-timesyncd
 echo root:root | chpasswd

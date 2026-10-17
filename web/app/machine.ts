@@ -73,9 +73,10 @@ const images = (path: string) => new URL(`../../target/images/${path}`, import.m
  * What a firmware machine with a card gives the guest: a systemd credential with a .network file for networkd (DHCP from
  * the gateway, v4 and v6: its lease is the tailnet addresses; resolved does MagicDNS). Not `ip=dhcp`: an initramfs that
  * reads it waits for a lease before it boots, and a machine that isn't connected yet has none. UseDomains: the lease's
- * search domain (MagicDNS's) for resolved; networkd's default leaves it out (Arch's does).
+ * search domain (MagicDNS's) for resolved; UseMTU: its MTU (the tunnel's 1280) on the link, for UDP too (the gateway
+ * clamps TCP's MSS anyway). networkd's defaults leave both out (Arch's does).
  */
-const NETWORKD = { credentials: [{ name: 'network.network.card', data: '[Match]\nName=e*\n[Network]\nDHCP=yes\n[DHCPv4]\nUseDomains=yes\n[DHCPv6]\nUseDomains=yes\n' }] };
+const NETWORKD = { credentials: [{ name: 'network.network.card', data: '[Match]\nName=e*\n[Network]\nDHCP=yes\n[DHCPv4]\nUseDomains=yes\nUseMTU=yes\n[DHCPv6]\nUseDomains=yes\n' }] };
 
 export const MACHINES = {
   // The page's machine (docs/frontend.md): EDK2 and no disk of its own. It waits for the user's disk (Open disk, a drop,

@@ -736,8 +736,13 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
   sends the rest as plain DNS through the exit node, to the tailnet's resolvers or 1.1.1.1
   (docs/plans/tailnet-client.md T5; the Go client used the exit node's DoH service instead).
   **The guest must take the lease's search domain** (MagicDNS's, e.g. `tail1234.ts.net`): with
-  systemd-networkd that's `UseDomains=yes` under `[DHCPv4]` and `[DHCPv6]`, which the page's Debian
-  credential and the Arch image set. networkd leaves it out by default, and without it resolved
+  systemd-networkd that's `UseDomains=yes` under `[DHCPv4]` and `[DHCPv6]`, which the page's
+  credential and the Arch image set, with `UseMTU=yes` (the lease's 1280 on the link; IPv6 takes
+  it from the router advertisement anyway). **The gateway clamps TCP's MSS** in SYNs both ways to
+  what fits the lease's MTU (1240 over IPv4, 1220 over IPv6; `clampMss`, `web/gateway.ts`), so a
+  guest left at 1500 still works: before, it asked servers for 1460-byte segments, and where a
+  server ignored the exit node's "fragmentation needed", TLS handshakes to it hung over IPv4
+  (Firefox and `curl -4` alike; IPv6 worked; the user's finding, 2026-10-17). networkd leaves it out by default, and without it resolved
   sends short names only to LLMNR and a `.local` MagicDNS domain only to mDNS ("Temporary failure in
   name resolution").
 - Settings (`webpc.settings` `net`): `kind` (`tailscale` or `tailcat`), `controlURL`, `hostname`, `autoconnect`,

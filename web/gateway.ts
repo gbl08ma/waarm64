@@ -123,6 +123,42 @@ function dhcpOptions(b: Uint8Array) {
 }
 
 /**
+ * Lowers the MSS option of a TCP SYN in the IP packet `p` (IPv4, or IPv6 without extension headers) to what fits `mtu`,
+ * in place, with the TCP checksum patched (RFC 1624). A guest whose link MTU is 1500 (one that ignores DHCP's MTU, as
+ * networkd does without UseMTU) would otherwise ask servers for 1460-byte segments, and those don't fit a 1280-byte
+ * tunnel: where the server ignores the exit node's "fragmentation needed", its large packets are lost for good (TLS
+ * handshakes that hang on some hosts, found 2026-10-17). Both directions: the guest's SYN and the SYN-ACK to it.
+ */
+export function clampMss(p: Uint8Array, mtu: number) {
+  const v6 = p[0] >> 4 === 6;
+  const at = v6 ? 40 : (p[0] & 0xf) * 4;
+  if ((v6 ? p[6] : p[9]) !== 6 || (!v6 && (be16(p, 6) & 0x1fff) !== 0) || p.length < at + 20) return; // TCP, not a later fragment
+  if ((p[at + 13] & 0x02) === 0) return; // SYN
+  const mss = mtu - at - 20;
+  const end = Math.min(p.length, at + (p[at + 12] >> 4) * 4);
+  for (let o = at + 20; o < end;) {
+    const kind = p[o];
+    if (kind === 0) return;
+    if (kind === 1) { o++; continue; }
+    const len = p[o + 1];
+    if (len < 2 || o + len > end) return;
+    if (kind === 2 && len === 4) {
+      const old = be16(p, o + 2);
+      if (old <= mss) return;
+      p[o + 2] = mss >> 8;
+      p[o + 3] = mss & 255;
+      let sum = (~be16(p, at + 16) & 0xffff) + (~old & 0xffff) + mss;
+      while (sum > 0xffff) sum = (sum & 0xffff) + (sum >>> 16);
+      const c = ~sum & 0xffff;
+      p[at + 16] = c >> 8;
+      p[at + 17] = c & 255;
+      return;
+    }
+    o += len;
+  }
+}
+
+/**
  * The gateway as a virtio-net adapter. `makeBackend` gets the function that
  * hands the backend's packets for the guest to the gateway.
  */
@@ -135,13 +171,17 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
   let guestMac: Uint8Array | null = null;
   let advertised = false;
 
+  let leaseNow = (): Lease | null | undefined => undefined; // the backend's, once it exists
   const backend = makeBackend((packet) => {
     // The guest hasn't shown a MAC before its first frame (its DHCP request).
     if (!guestMac || packet.length > 1500) return;
     const v = packet[0] >> 4;
+    const lease = leaseNow();
+    if (lease) clampMss(packet, lease.mtu);
     if (v === 4 && packet.length >= 20) receive(eth(guestMac, mac, 0x0800, packet));
     else if (v === 6 && packet.length >= 40) receive(eth(guestMac, mac, 0x86dd, packet));
   }, () => advertise());
+  leaseNow = () => backend.lease();
 
   /** A router advertisement to all nodes: the gateway is the default router while the lease has an IPv6 address, and isn't once it hasn't. */
   function advertise() {
@@ -313,7 +353,9 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
       receive(eth(guestMac!, mac, 0x86dd, icmp6(gw6, src, 2, 0, [lease.mtu >>> 24, (lease.mtu >>> 16) & 255, (lease.mtu >>> 8) & 255, lease.mtu & 255], quoted)));
       return;
     }
-    backend.send(p.slice());
+    const out = p.slice();
+    clampMss(out, lease.mtu);
+    backend.send(out);
   }
 
   return {
@@ -355,7 +397,9 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
         if (ipPacket[6] & 0x40) tooBig(ipPacket, lease.mtu);
         return;
       }
-      backend.send(ipPacket.slice());
+      const out = ipPacket.slice();
+      clampMss(out, lease.mtu);
+      backend.send(out);
     },
     close: () => {
       if (timer) clearInterval(timer);
