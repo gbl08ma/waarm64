@@ -159,7 +159,8 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
     }
     case 'net': return { type: 'net', adapter: { ip: m.ip! } };
     // Without the page's ring (a page that passed none), the sink plays on its own clock.
-    case 'snd': return { type: 'snd', ring: m.sound?.ring, mic: m.sound?.mic, port: m.sound?.port, ...sndTuning() };
+    // With the page's sound, its volume and mute are the device's controls (the guest's Master).
+    case 'snd': return { type: 'snd', ring: m.sound?.ring, mic: m.sound?.mic, port: m.sound?.port, mixer: m.sound && { level: m.sound.level, muted: m.sound.muted }, ...sndTuning() };
   }
 }
 

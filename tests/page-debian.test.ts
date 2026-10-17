@@ -35,6 +35,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { peaks } from './audio-tap.ts';
 import { sndDisk, toneWav } from './snd-disk.ts';
 import { GAP_FRAMES } from '../web/audio-ring.ts';
+import { levelToValue } from '../web/snd.ts';
 import { answerAsks } from './page-ask.ts';
 
 // The page's `running` state comes from the serial console's `ready` marker (web/app/worker.ts).
@@ -281,6 +282,31 @@ for (let run = 1; run <= RUNS; run++) {
     // The page's sound device (audio S2): Debian autoloads virtio_snd for it and has the card.
     await onSerial(page, 'clear; cat /proc/asound/cards; echo so""und-read\n');
     await shows(page, /VirtIO SoundCard[^]*sound-read/);
+    // Its Master volume and switch are the Sound menu's (VIRTIO_SND_F_CTLS): read and written with perl's ioctls
+    // (no alsa-utils in the image; snd_ctl_elem_value is 1,224 bytes, its values at 72), the guest's writes move the
+    // menu, and the menu's reach the guest with a notification (SUBSCRIBE_EVENTS, then a 72-byte snd_ctl_event each).
+    const ctl = `open(F,"+<","/dev/snd/controlC0") or die $!; $v=pack("LlLLa44L",0,2,0,0,$ARGV[0],0)."\\0"x1160; if(@ARGV>1){substr($v,72,8)=pack("q",$ARGV[1]); ioctl(F,0xc4c85513,$v) or die "w $!";} ioctl(F,0xc4c85512,$v) or die "r $!"; print "val=",unpack("q",substr($v,72,8)),";\\n";`;
+    const events = `open(F,"+<","/dev/snd/controlC0") or die $!; $s=pack("l",1); ioctl(F,0xc0045516,$s) or die "s $!"; for(1..2){sysread(F,$e,72); ($t,$m,$n,$i,$d,$sd,$name)=unpack("lLLlLLZ44",$e); print "ev mask=$m $name;\\n";}`;
+    await onSerial(page, `clear; cat > /tmp/ctl.pl <<'E'\n${ctl}\nE\ncat > /tmp/ev.pl <<'E'\n${events}\nE\n`);
+    const menu = () => page.evaluate(() => [(document.getElementById('sound-volume') as HTMLInputElement).value, (document.getElementById('sound-on') as HTMLInputElement).checked]);
+    const [level] = await menu();
+    await onSerial(page, `clear; perl /tmp/ctl.pl 'Master Playback Volume'; perl /tmp/ctl.pl 'Master Playback Switch' 0; perl /tmp/ctl.pl 'Master Playback Volume' 200; echo mi""xer-set\n`);
+    await shows(page, new RegExp(`val=${levelToValue(Number(level) / 100)};\\s*val=0;\\s*val=200;\\s*mixer-set`));
+    await page.waitForFunction(() => (document.getElementById('sound-volume') as HTMLInputElement).value === '15', null, { timeout: 5000 });
+    assert.deepEqual(await menu(), ['15', false], "the guest's Master moves the menu");
+    await onSerial(page, 'clear; (perl /tmp/ev.pl > /tmp/ev.txt &); sleep 1; echo li""stening\n');
+    await shows(page, /listening/);
+    await page.evaluate(() => {
+      const [v, on] = [document.getElementById('sound-volume') as HTMLInputElement, document.getElementById('sound-on') as HTMLInputElement];
+      v.value = '80';
+      v.dispatchEvent(new Event('input', { bubbles: true }));
+      on.checked = true;
+      on.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await onSerial(page, `clear; sleep 1; perl /tmp/ctl.pl 'Master Playback Volume'; perl /tmp/ctl.pl 'Master Playback Switch'; cat /tmp/ev.txt; echo mi""xer-read\n`);
+    await shows(page, new RegExp(`val=${levelToValue(0.8)};\\s*val=1;\\s*ev mask=1 Master Playback Volume;\\s*ev mask=1 Master Playback Switch;\\s*mixer-read`));
+    // Back to the level the test started at, for what it plays next.
+    await page.evaluate((l) => { const v = document.getElementById('sound-volume') as HTMLInputElement; v.value = l; v.dispatchEvent(new Event('input', { bubbles: true })); }, String(level));
     // Debian's driver plays a file (audio S3): snd-play (aplay's buffer, 500 ms in 4 periods) from the second disk,
     // 3 s at 44.1 kHz (the page's context follows the stream's rate); its own clock says the sound's length within a
     // period, nothing underran, and the page hears 440 and 660 Hz.

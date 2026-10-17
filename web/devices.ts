@@ -18,7 +18,7 @@ import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './ov
 import { ramDisk } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
 import { openDisk, type Disk } from './qcow2.ts';
-import { checksumSink, micSource, patternSource, ringSink, sndBackend, type SndWake } from './snd.ts';
+import { checksumSink, micSource, patternSource, ringSink, sndBackend, type SndMixer, type SndWake } from './snd.ts';
 
 /**
  * Host-side device configuration, one per virtio-mmio slot (in order). `blk`
@@ -103,7 +103,9 @@ export type GpuSpec = {
  * the DEVICE exit that posted it); in realtime mode the output goes to the ring sink: the page's sound ring (`ring`,
  * played by web/audio.ts's worklet, which says on `port` when a stream starts and stops), or without one a ring of
  * its own played on the sink's own clock; the input records from the page's microphone ring (`mic`, filled while the
- * page has the microphone: it opens it at the input's start), else silence on its own clock (docs/audio.md).
+ * page has the microphone: it opens it at the input's start), else silence on its own clock (docs/audio.md). With
+ * `mixer` (the page's machines) it offers `VIRTIO_SND_F_CTLS`: a Master volume and switch that are the page's Sound
+ * menu, both ways, on `port`; without (the test guests, as QEMU's device, the oracle) no controls.
  */
 export type SndSpec = {
   type: 'snd';
@@ -116,6 +118,8 @@ export type SndSpec = {
   /** What wakes the sink to complete played messages (default the worklet's notify): measurements. */
   wake?: SndWake;
   stats?: boolean;
+  /** The page's volume and mute when the machine starts: the device has controls (`VIRTIO_SND_F_CTLS`) for them. */
+  mixer?: SndMixer;
 };
 
 /** The MessagePorts and canvases in `specs`, to transfer with them. */
@@ -189,8 +193,11 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
       if (d.virgl) new DataView(config.buffer).setUint32(12, 2, true);
       return { entry: [16n, d.virgl ? 3n : 1n << 1n, 2n, BigInt(d.queueSize ?? 64), 16n], config };
     }
-    // No features; controlq, eventq, txq, rxq; config: jacks 0, streams 1, chmaps 0.
-    case 'snd': return { entry: [25n, 0n, 4n, 64n, 12n], config: new Uint8Array([0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]) }; // jacks 0, streams 2 (out, in), chmaps 0
+    // No features, or with `mixer` CTLS (0); controlq, eventq, txq, rxq; config: jacks 0, streams 2 (out, in), chmaps 0,
+    // and with CTLS controls 2 (the Master volume and switch).
+    case 'snd': return d.mixer
+      ? { entry: [25n, 1n, 4n, 64n, 16n], config: new Uint8Array([0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0]) }
+      : { entry: [25n, 0n, 4n, 64n, 12n], config: new Uint8Array([0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]) };
   }
 }
 
@@ -764,7 +771,10 @@ export class Devices {
           if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;
         }
-        case 'snd': return deterministic ? sndBackend(ctx, checksumSink(), patternSource()) : sndBackend(ctx, ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats, untaken: () => ctx.untaken() }), micSource({ ring: d.mic, port: d.port, untaken: () => ctx.untaken() }));
+        case 'snd': {
+          const mixer = d.mixer && { ...d.mixer, port: d.port };
+          return deterministic ? sndBackend(ctx, checksumSink(), patternSource(), mixer) : sndBackend(ctx, ringSink({ ring: d.ring, port: d.port, wake: d.wake, stats: d.stats, untaken: () => ctx.untaken() }), micSource({ ring: d.mic, port: d.port, untaken: () => ctx.untaken() }), mixer);
+        }
       }
     });
     this.epochs = specs.map(() => 0);

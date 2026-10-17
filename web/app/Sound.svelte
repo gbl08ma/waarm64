@@ -1,7 +1,8 @@
 <!--
   Sound (docs/frontend.md "Sound"): on by default; muted, the volume and the microphone's choices are kept in this
   browser. Any click or key on the page lets the browser play it (its autoplay rule): until one, the menu says sound is
-  waiting.
+  waiting. A guest that has the sound device's Master volume and switch (web/audio.ts) moves the volume and Sound on
+  here, and they move its.
 -->
 <script lang="ts">
   import Menu from './Menu.svelte';
@@ -17,13 +18,18 @@
   // The audio's own state (waiting for a gesture, the microphone's), redrawn when it says it changed.
   let tick = $state(0);
   $effect(() => { audio.onChange = () => tick++; });
+  // The guest's own changes: shown, not kept (the next machine starts at what the user chose).
+  $effect(() => { audio.onMixer = (level, muted) => { [volume, on] = [Math.round(100 * level), !muted]; }; });
   const waiting = $derived((tick, audio.waiting()));
   const micState = $derived((tick, audio.micState));
   const summary = $derived(waiting ? 'Sound: click to hear' : `${on ? 'Sound' : 'Sound (muted)'}${micState === 'on' ? ' · mic' : ''}`);
 
   $effect(() => { audio.setVolume(volume / 100, !on); });
   $effect(() => { audio.setMic(mic, micRaw); });
-  const keepSound = () => remember({ muted: !on, volume: volume / 100 });
+  const keepSound = () => {
+    remember({ muted: !on, volume: volume / 100 });
+    audio.setVolume(volume / 100, !on, true);
+  };
   const keepMic = () => remember({ mic, micRaw });
 </script>
 

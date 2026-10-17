@@ -9,6 +9,7 @@ import { CAPACITY, QUANTA, RATE, RUN, WRITE, ringViews } from '../web/audio-ring
 import {
   CONTROLQ, EVENTQ, FMT_FLOAT, FMT_S16, FMT_S32, RATE_BITS, RXQ, R_CHMAP_INFO, R_JACK_INFO, R_JACK_REMAP, R_PCM_INFO, R_PCM_PREPARE, R_PCM_RELEASE,
   R_PCM_SET_PARAMS, R_PCM_START, R_PCM_STOP, S_BAD_MSG, S_NOT_SUPP, S_OK, TXQ, checksumSink, fnv1a, fromF32, micSource, pattern as wave, patternSource, sndBackend, toF32, type SndParams, type SndState,
+  EVT_CTL_NOTIFY, F_CTLS, R_CTL_ENUM_ITEMS, R_CTL_INFO, R_CTL_READ, R_CTL_TLV_READ, R_CTL_TLV_WRITE, R_CTL_WRITE, VOLUME_MAX, levelToValue, valueToLevel, type SndMixer, type SndToPage,
 } from '../web/snd.ts';
 
 const RATE_48000 = 7;
@@ -34,11 +35,14 @@ const pcm = (code: number, stream = 0) => bytes(code, stream);
 const query = (code: number, start: number, count: number, size: number) => bytes(code, start, count, size);
 
 /** A device on 1 MiB of RAM; requests are laid out in it one after the other, completions recorded. */
-function rig(sink = checksumSink(1 << 20), source = patternSource()) {
+function rig(sink = checksumSink(1 << 20), source = patternSource(), o: { mixer?: SndMixer; features?: bigint } = {}) {
   const ram = new Uint8Array(1 << 20);
   const done: { w0: number; len: number }[] = [];
-  const ctx: Ctx = { ram: () => ram, ramSize: ram.length, complete: (w0, len) => done.push({ w0, len }), config: () => new Uint8Array(256), changeConfig: () => {}, untaken: () => 0, features: () => 0n };
-  const dev = sndBackend(ctx, sink, source);
+  const ctx: Ctx = { ram: () => ram, ramSize: ram.length, complete: (w0, len) => done.push({ w0, len }), config: () => new Uint8Array(256), changeConfig: () => {}, untaken: () => 0, features: () => o.features ?? 0n };
+  /** What the device said to the page on its port. */
+  const said: SndToPage[] = [];
+  const port = { postMessage: (m: SndToPage) => said.push(m) } as unknown as MessagePort;
+  const dev = sndBackend(ctx, sink, source, o.mixer && { ...o.mixer, port });
   let free = 0;
   let head = 0;
   /** Posts a chain (readable `read`, then writable buffers of `write` bytes); returns it. */
@@ -83,7 +87,7 @@ function rig(sink = checksumSink(1 << 20), source = patternSource()) {
   const completed = (r: Request) => done.filter((d) => d.w0 === r.w0);
   /** A receive message with room for `bytes` of frames and the status (stream 1 unless given). */
   const rx = (bytes_: number, stream = 1, write = [bytes_, 8]) => post(RXQ, [bytes(stream)], write);
-  return { ram, done, dev, sink, source, post, exit, control, status, tx, txStatus, completed, written, rx };
+  return { ram, done, dev, sink, source, post, exit, control, status, tx, txStatus, completed, written, rx, said };
 }
 
 /** `n` bytes of a recognizable pattern, starting at `seed`. */
@@ -93,6 +97,102 @@ test('snd: the device entry and config space (jacks 0, streams 2, chmaps 0)', ()
   const { entry, config } = deviceEntry({ type: 'snd' });
   assert.deepEqual(entry, [25n, 0n, 4n, 64n, 12n]);
   assert.deepEqual([...config], [0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]);
+});
+
+test('snd: with a mixer the device offers VIRTIO_SND_F_CTLS and two controls', () => {
+  const { entry, config } = deviceEntry({ type: 'snd', mixer: { level: 1, muted: false } });
+  assert.deepEqual(entry, [25n, F_CTLS, 4n, 64n, 16n]);
+  assert.deepEqual([...config], [0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0]);
+});
+
+/** A control request on a control (`virtio_snd_ctl_hdr`), then u32s. */
+const ctl = (code: number, id: number, ...values: number[]) => bytes(code, id, ...values);
+const MIXER = { mixer: { level: 0.5, muted: false }, features: F_CTLS };
+
+test('snd: the controls: the Master volume (0.25 dB steps from -100 dB, a TLV) and switch; their info, reads and writes', () => {
+  const r = rig(undefined, undefined, MIXER);
+  const info = r.control(query(R_CTL_INFO, 0, 2, 96), 4 + 2 * 96);
+  assert.equal(info.status, S_OK);
+  const v = new DataView(info.reply.buffer, info.reply.byteOffset);
+  const name = (at: number) => new TextDecoder().decode(info.reply.subarray(at, at + 44)).replace(/\0+$/, '');
+  // role, type, access, count, index; the name; the integer's min, max, step.
+  assert.deepEqual([1, 2, 3, 4, 5].map((k) => v.getUint32(4 + 4 * k, true)), [1, 1, 0x13, 1, 0]);
+  assert.equal(name(4 + 24), 'Master Playback Volume');
+  assert.deepEqual([0, 1, 2].map((k) => v.getUint32(4 + 72 + 4 * k, true)), [0, VOLUME_MAX, 1]);
+  assert.deepEqual([1, 2, 3, 4, 5].map((k) => v.getUint32(100 + 4 * k, true)), [2, 0, 3, 1, 0]);
+  assert.equal(name(100 + 24), 'Master Playback Switch');
+  for (const [cmd, room] of [[query(R_CTL_INFO, 0, 3, 96), 400], [query(R_CTL_INFO, 0, 1, 95), 100], [query(R_CTL_INFO, 0, 2, 96), 195]] as const) assert.equal(r.status(cmd, room), S_BAD_MSG);
+  // The volume starts at the page's level, the switch on.
+  const read = (id: number) => {
+    const c = r.control(ctl(R_CTL_READ, id), 4 + 512);
+    assert.equal(c.status, S_OK);
+    return new DataView(c.reply.buffer, c.reply.byteOffset).getUint32(4, true);
+  };
+  assert.equal(read(0), levelToValue(0.5));
+  assert.equal(read(1), 1);
+  assert.equal(r.status(ctl(R_CTL_READ, 0), 4 + 511), S_BAD_MSG);
+  assert.equal(r.status(ctl(R_CTL_READ, 2), 4 + 512), S_BAD_MSG);
+  const tlv = r.control(ctl(R_CTL_TLV_READ, 0), 4 + 64);
+  assert.equal(tlv.status, S_OK);
+  assert.deepEqual([0, 1, 2, 3].map((k) => new DataView(tlv.reply.buffer, tlv.reply.byteOffset).getInt32(4 + 4 * k, true)), [1, 8, -10000, 25 | 0x10000]);
+  assert.equal(r.status(ctl(R_CTL_TLV_READ, 1), 4 + 64), S_BAD_MSG, 'the switch has no TLV');
+  assert.equal(r.status(ctl(R_CTL_TLV_WRITE, 0), 4), S_NOT_SUPP);
+  assert.equal(r.status(ctl(R_CTL_ENUM_ITEMS, 0), 4 + 64), S_BAD_MSG);
+  // The guest's writes: the page is told (once per change), what's out of range is BAD_MSG.
+  assert.equal(r.status(ctl(R_CTL_WRITE, 0, 304, ...new Array(127).fill(0))), S_OK);
+  assert.equal(r.status(ctl(R_CTL_WRITE, 0, 304)), S_OK);
+  assert.equal(r.status(ctl(R_CTL_WRITE, 1, 0)), S_OK);
+  assert.equal(r.status(ctl(R_CTL_WRITE, 0, VOLUME_MAX + 1)), S_BAD_MSG);
+  assert.equal(r.status(ctl(R_CTL_WRITE, 1, 2)), S_BAD_MSG);
+  assert.equal(r.status(ctl(R_CTL_WRITE, 0)), S_BAD_MSG, 'no value');
+  assert.equal(read(0), 304);
+  assert.deepEqual(r.said, [{ type: 'mixer', level: valueToLevel(304), muted: false }, { type: 'mixer', level: valueToLevel(304), muted: true }]);
+  // WirePlumber's default sink volume (0.064, its "40%") is about the page's 40%.
+  assert.equal(Math.round(100 * valueToLevel(levelToValue(Math.cbrt(0.064)))), 40);
+  assert.ok(r.dev.snd.log.includes('CTL_WRITE 0=304 OK'), r.dev.snd.log.join());
+  // Without a mixer the control requests aren't supported.
+  assert.equal(rig().status(query(R_CTL_INFO, 0, 1, 96), 100), S_NOT_SUPP);
+});
+
+test('snd: the level and the volume\'s value round-trip at every percent; 0 and the lowest levels are silent', () => {
+  for (let p = 3; p <= 100; p++) assert.equal(Math.round(100 * valueToLevel(levelToValue(p / 100))), p, `${p}%`);
+  assert.deepEqual([levelToValue(0), levelToValue(0.02), levelToValue(1), levelToValue(2), valueToLevel(0)], [0, 0, VOLUME_MAX, VOLUME_MAX, 0]);
+});
+
+test('snd: the page\'s changes notify the guest on the event queue, as buffers come, only if its driver took the controls', () => {
+  const r = rig(undefined, undefined, MIXER);
+  r.dev.mixer({ level: 0.5, muted: false });
+  const [ev] = r.exit(() => r.post(EVENTQ, [], [8]));
+  assert.deepEqual(r.completed(ev), [], 'nothing changed');
+  r.dev.mixer({ level: 1, muted: true });
+  assert.deepEqual(r.completed(ev), [{ w0: ev.w0, len: 8 }]);
+  const event = (e: Request) => { const w = new DataView(r.written(e).buffer); return [w.getUint32(0, true), w.getUint16(4, true), w.getUint16(6, true)]; };
+  assert.deepEqual(event(ev), [EVT_CTL_NOTIFY, 0, 1]);
+  const [ev2] = r.exit(() => r.post(EVENTQ, [], [8]));
+  assert.deepEqual(event(ev2), [EVT_CTL_NOTIFY, 1, 1], 'the switch, held until a buffer came');
+  const c = r.control(ctl(R_CTL_READ, 0), 4 + 512);
+  assert.equal(new DataView(c.reply.buffer, c.reply.byteOffset).getUint32(4, true), VOLUME_MAX);
+  assert.deepEqual(r.said, [], 'the page is not told its own change');
+  // A driver without the controls (an older kernel) hears nothing; the values still follow the page.
+  const old = rig(undefined, undefined, { ...MIXER, features: 0n });
+  const [held] = old.exit(() => old.post(EVENTQ, [], [8]));
+  old.dev.mixer({ level: 0.1, muted: true });
+  assert.deepEqual(old.completed(held), []);
+  assert.deepEqual(old.dev.snd.values, [levelToValue(0.1), 0]);
+});
+
+test('snd: save and restore keep the controls, and tell the page; a state from before them keeps the page\'s', () => {
+  const r = rig(undefined, undefined, MIXER);
+  r.status(ctl(R_CTL_WRITE, 0, 200));
+  const state = JSON.parse(JSON.stringify(r.dev.save())) as SndState;
+  const s = rig(undefined, undefined, { ...MIXER, mixer: { level: 1, muted: true } });
+  s.dev.restore(state);
+  assert.deepEqual(s.dev.snd.values, [200, 1]);
+  assert.deepEqual(s.said, [{ type: 'mixer', level: valueToLevel(200), muted: false }]);
+  const { controls: _, ...before } = state as SndState & { controls?: number[] };
+  const t = rig(undefined, undefined, MIXER);
+  t.dev.restore(before);
+  assert.deepEqual(t.dev.snd.values, [levelToValue(0.5), 1]);
 });
 
 test('snd: PCM_INFO answers the output and the input stream; info queries out of range, too small or with no room are BAD_MSG', () => {

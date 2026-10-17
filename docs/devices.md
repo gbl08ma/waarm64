@@ -436,9 +436,24 @@ mode (and natively in realtime mode: std has no CSPRNG).
 ### snd (ID 25)
 - `{type: 'snd'}` (`web/snd.ts`, the native twin `core/tests/common/snd.rs`: the same statuses, completions at the
   same exits, the same control log). virtio 1.2 §5.14, written from the spec with Linux's `sound/virtio` read for
-  behavior ([audio.md](audio.md)). No features; controlq, eventq, txq, rxq of 64; config jacks 0,
-  streams 2, chmaps 0 (Linux takes zero jacks and channel maps: it builds no jack or channel-map controls). On every
-  page machine (the last device, so the others keep their slots) and the snd guest's test machines.
+  behavior ([audio.md](audio.md)). No features, or with the spec's `mixer` `VIRTIO_SND_F_CTLS` (below); controlq,
+  eventq, txq, rxq of 64; config jacks 0, streams 2, chmaps 0 (Linux takes zero jacks and channel maps: it builds no
+  jack or channel-map controls), and with the controls `controls` 2 (16 bytes). On every page machine (the last
+  device, so the others keep their slots) and the snd guest's test machines.
+- **Controls** (virtio 1.3 §5.14.6.11, `VIRTIO_SND_F_CTLS`; Linux has the driver's side, `virtio_kctl.c`, since 6.7):
+  only with `mixer` (the page's machines: `{level, muted}`, the Sound menu's at the start), so the test guests and
+  their twin stay as QEMU's device, the oracle, which has none. Control 0 is `Master Playback Volume` (role VOLUME,
+  INTEGER, one member, 0–400, read, write and TLV read; its TLV a `DB_SCALE` from -100 dB in 0.25 dB steps, 0 silent),
+  1 is `Master Playback Switch` (role MUTE, BOOLEAN, 1 plays). `CTL_INFO` answers them as the other info queries
+  (items of at least the 96-byte struct); `CTL_READ` needs room for a whole `virtio_snd_ctl_value` (512 bytes);
+  `CTL_WRITE` of a value out of range, a control past 1 or a TLV read of the switch is `BAD_MSG`, `CTL_ENUM_ITEMS`
+  (none enumerated) too; TLV writes and commands `NOT_SUPP`; without `mixer` every control request is `NOT_SUPP`. The
+  page's level is the slider's fraction and the gain its cube (PipeWire's and PulseAudio's law), the value
+  `round(4 × (60 log10 level + 100))`: the guest's mixer shows the page's percentage. A guest's write that changes a
+  value is said on `port` (`mixer`: the page's menu follows); the page's changes there (`SndFromPage`) set the values
+  and, if the driver took the feature, notify it with `VIRTIO_SND_EVT_CTL_NOTIFY` (mask VALUE) on an event buffer,
+  held until one comes. The values survive a virtio reset and are in the snapshot (`controls`; one from before them
+  keeps the page's), and a restore says them on `port`.
 - **An output stream (0) and an input stream (1)** (the input since audio S4: older snapshots, with one, still
   load): `PCM_INFO` answers hda_fn_nid 0, no stream features, formats S16, S32 and FLOAT, rates
   8–192 kHz (what every browser's `AudioContext` takes), 1–2 channels, and the direction. Each stream has its own
@@ -460,8 +475,8 @@ mode (and natively in realtime mode: std has no CSPRNG).
   completed with the frames it recorded, then `OK` (the used length the frames plus the status's 8); room of no
   whole frame, or none, is `BAD_MSG`. Linux posts a whole buffer of them at the input's START and posts a period
   again as soon as ALSA counts it, before its reader has it ([audio.md](audio.md) "Linux driver behavior"): a source that ran ahead of real time
-  would overwrite unread frames. Event buffers are held (no events are sent). A virtio reset drops the streams and
-  what's held.
+  would overwrite unread frames. Event buffers are held for the controls' notifications (no stream events are sent).
+  A virtio reset drops the streams and what's held.
 - **The sink** (`SndSink`): `play(params, frames, done)`, `start`, `stop`, `release`, `tick` (the end of a
   `DEVICE` exit's requests: `Backend.polled`, which `Devices.poll` runs for every device on every exit). In
   deterministic mode the **deterministic sink** (`checksumSink`) plays (hashes, FNV-1a, and counts) and
@@ -499,7 +514,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   guest as having had a whole buffer in flight: completions the old device made may be in the restored RAM unseen. The spec's `ring` and `port` are the page's (web/audio.ts `attach`; the port says the stream's
   start, with its rate, and its stop, and with `stats` its completions' timing each second); without them the sink
   makes a ring nothing plays. [audio.md](audio.md) "How it fits together".
-- **Snapshots:** `save` gives the streams' states and parameters, the control log and the sink's and source's
+- **Snapshots:** `save` gives the streams' states and parameters, the control log, the controls' values and the sink's and source's
   counts (the realtime ones have none); the held messages are posted again by the core and play or fill once (the
   sink hashes at completion; the source's pattern goes on from its count). A started stream's sink or source is
   started again at restore: the re-posted messages play while the vCPUs

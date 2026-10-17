@@ -509,8 +509,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `pw-play /tmp/a.wav`, with and without Raw microphone); a video in Firefox on the desktop guest
   (`avsync.html?v=sintel.webm`) in sync by ear (the measurement is -17 to +20 ms after Firefox's first 4 s; decoded on
   the host since video V2, -10 to -13 ms median: plans/video.md §6).
-- **Audio, not built** ([audio.md](audio.md)): guest-side mixer controls (`VIRTIO_SND_F_CTLS`: volume and mute are the
-  page's only), jacks and channel maps (none: Linux needs neither) and the stream events (xrun, period elapsed: none
+- **Audio, not built** ([audio.md](audio.md)): capture controls (the controls are the output's Master volume and
+  switch; the microphone has the browser's gain only), controls in the native twin and the snd guest (the page's
+  machines have them, the test guests not: QEMU's device has none), the desktop guest's PipeWire on the controls
+  checked in the dev VM (WirePlumber's 40% on the slider, the slider in `wpctl get-volume`; Debian's ALSA was checked
+  in a cloud session, 2026-10-17), jacks and channel maps (none: Linux needs neither) and the stream events (xrun, period elapsed: none
   are sent); one output and one input stream (the guest's own sound server mixes), 1 or 2 channels (no surround), S16,
   S32 and FLOAT only; latency is the ring plus the guest's buffer plus the browser's (~100 ms is fine for video, an
   interactive use such as music software would want a shorter ring and measurement); Alpine's playback is unexercised

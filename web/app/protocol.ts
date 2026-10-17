@@ -34,8 +34,8 @@ export type ToWorker =
     ncpus: number;
     /** The guest's RAM, MiB (the machine's default, or the page's choice; a snapshot's own size wins). */
     ramMiB: number;
-    /** The page's sound (web/audio.ts `attach`): the ring the virtio-snd plays into, the microphone's ring it records from, and the port it says its streams' starts and stops on. */
-    sound?: { ring: SharedArrayBuffer; mic: SharedArrayBuffer; port: MessagePort };
+    /** The page's sound (web/audio.ts `attach`): the ring the virtio-snd plays into, the microphone's ring it records from, the port it says its streams' starts and stops on (and the volume, both ways), and the volume level and mute it starts with. */
+    sound?: { ring: SharedArrayBuffer; mic: SharedArrayBuffer; port: MessagePort; level: number; muted: boolean };
     /** virtio-input's ports (web/input.ts sends to them; the keyboard's LEDs come back). */
     keyboard: MessagePort;
     tablet: MessagePort;

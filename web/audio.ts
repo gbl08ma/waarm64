@@ -12,8 +12,13 @@
 // gain control unless `raw`; a context at that rate feeds it to the `webpc-mic` worklet, which fills the ring. When
 // recording stops the microphone is closed (the browser's indicator goes off). Turned off, refused, or until it's
 // granted, the guest records silence in real time (the device worker's clock).
+//
+// The volume is a level (the menu's slider, 0 to 1) and the gain its cube, as PipeWire's and PulseAudio's sliders. A
+// guest whose driver takes the device's controls (`VIRTIO_SND_F_CTLS`) has them as its card's Master volume and
+// switch: the device says on the port when the guest changes them (`onMixer`: the menu follows), and the menu's
+// changes are said to the device (`setVolume(…, true)`), which tells the guest.
 import { LATENCY, newRing, ringViews } from './audio-ring.ts';
-import type { SndStats, SndToPage } from './snd.ts';
+import type { SndFromPage, SndStats, SndToPage } from './snd.ts';
 
 const WORKLET = new URL('./audio-worklet.ts', import.meta.url);
 
@@ -36,7 +41,8 @@ export class PageAudio {
   private chain = Promise.resolve();
   private latencyTimer?: ReturnType<typeof setInterval>;
   private muted = false;
-  private volume = 1;
+  /** The volume level (the gain is its cube). */
+  private level = 1;
   /** A stream is started on the current ring. */
   playing = false;
   /** The device's stats (`stats` on its spec), latest last, for measurements. */
@@ -45,6 +51,8 @@ export class PageAudio {
   spans: number[] = [];
   /** Called when `waiting()` may have changed (a stream started or stopped, the context resumed). */
   onChange = () => {};
+  /** Called when the guest set its volume or mute (the device's controls), or a snapshot loaded them. */
+  onMixer = (_level: number, _muted: boolean) => {};
 
   /** A new ring and port for a machine that starts: they go in its start message (the device spec's `ring` and `port`). */
   attach() {
@@ -72,10 +80,13 @@ export class PageAudio {
       } else if (m.type === 'capture-stop') {
         this.capture = undefined;
         this.queue(() => this.closeMic());
+      } else if (m.type === 'mixer') {
+        this.apply(m.level, m.muted);
+        this.onMixer(m.level, m.muted);
       }
       this.onChange();
     };
-    return { ring: this.ring, mic: this.mic!, port: channel.port2 };
+    return { ring: this.ring, mic: this.mic!, port: channel.port2, level: this.level, muted: this.muted };
   }
 
   /** The machine stopped: its ring is no longer played. */
@@ -119,9 +130,19 @@ export class PageAudio {
     return this.mic ? ringViews(this.mic).h : undefined;
   }
 
-  setVolume(volume: number, muted: boolean) {
-    [this.volume, this.muted] = [volume, muted];
-    if (this.gain) this.gain.gain.value = muted ? 0 : volume;
+  /** The volume level (0 to 1) and mute; `tell`: the user changed them, and the machine's guest is told. */
+  setVolume(level: number, muted: boolean, tell = false) {
+    this.apply(level, muted);
+    if (tell) this.port?.postMessage({ type: 'mixer', level, muted } satisfies SndFromPage);
+  }
+
+  private apply(level: number, muted: boolean) {
+    [this.level, this.muted] = [level, muted];
+    if (this.gain) this.gain.gain.value = this.gainOf();
+  }
+
+  private gainOf() {
+    return this.muted ? 0 : this.level ** 3;
   }
 
   /** The ring's header (tests and measurements: underruns, the read index). */
@@ -215,7 +236,7 @@ export class PageAudio {
       const ctx = new AudioContext({ sampleRate: rate, latencyHint: 'interactive' });
       ctx.onstatechange = () => this.onChange();
       await ctx.audioWorklet.addModule(WORKLET);
-      this.gain = new GainNode(ctx, { gain: this.muted ? 0 : this.volume });
+      this.gain = new GainNode(ctx, { gain: this.gainOf() });
       this.gain.connect(ctx.destination);
       this.ctx = ctx;
     }

@@ -558,8 +558,12 @@ page writes the context's output latency into the ring's header, and the guest g
   the sink's own clock plays the ring, so the guest's sound keeps time and nothing stalls, and the menu's summary
   reads **Sound: click to hear** (with an accent border).
 - **The Sound menu:** Sound on (unchecked: muted, the gain at 0; the guest still plays in real time), Volume
-  (0-100%), Microphone and Raw microphone (below). Both apply live and are kept in this browser (`muted`, `volume` in `webpc.settings`); the summary reads
+  (0-100%: the gain is its cube, as PipeWire's and PulseAudio's sliders), Microphone and Raw microphone (below). Both apply live and are kept in this browser (`muted`, `volume` in `webpc.settings`); the summary reads
   "Sound (muted)" when off. Not in the Machine menu, whose choices apply by a restart.
+- **The guest's mixer:** Volume and Sound on are the guest's `Master Playback Volume` and `Switch` (the sound
+  device's controls, [devices.md](devices.md) "snd"), where its kernel has them (Linux 6.7 and later): a machine
+  starts at the menu's, the guest's changes move the menu (WirePlumber puts a new output at 40%; shown, not kept
+  in the browser), and the menu's changes reach the guest (`PageAudio.setVolume(…, true)`, the device notifies it).
 - **The microphone** (audio S4: [audio.md](audio.md) "Decisions"): each start also makes a **microphone ring**. When the guest
   starts recording, the device says so on the port with the stream's rate; unless **Microphone** is unchecked, the page
   asks for the microphone (`getUserMedia`: the browser's prompt the first time) with the browser's echo cancellation,

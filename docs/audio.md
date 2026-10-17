@@ -24,6 +24,15 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
   changes). Formats S16_LE, S32_LE and FLOAT_LE (converted to f32 in the device worker), 1 or 2 channels.
 - **Sound is on by default:** every page machine has the device; sound starts at the first click or key on the page
   (the browser's autoplay rule); mute and volume are in the page's Sound menu.
+- **The page's volume is the guest's Master** (2026-10-17, the user): on the page's machines the device offers
+  `VIRTIO_SND_F_CTLS` with a `Master Playback Volume` (with a dB scale) and `Master Playback Switch`, which the guest's
+  ALSA (and PipeWire's ACP, the card's hardware volume) sees as the card's, and they are the Sound menu's volume and
+  Sound on, both ways. **The guest is followed** (the user's choice): WirePlumber gives every new output its
+  `device.routes.default-sink-volume`, 0.064 (shown as 40%), whatever the hardware is at, so a fresh disk starts at
+  40% and the slider shows it; raised once, WirePlumber keeps the level on that disk. The page doesn't override the
+  guest's setting, and doesn't keep the guest's changes (the next machine starts at what the user chose). The slider's
+  gain is its cube, as PipeWire's and PulseAudio's sliders, so the two show the same percentage. The test guests'
+  machines have no controls (QEMU's device, the oracle, has none).
 - **The microphone opens on the guest's demand:** the device always has an input stream; the page asks for the
   microphone (`getUserMedia`, the browser's prompt) the first time the guest starts capturing, and the guest records
   silence, in real time, until it's granted (or if it's denied or turned off). The browser's processing (echo
@@ -40,7 +49,9 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
 ## How it fits together
 
 - **Device** (`web/snd.ts`, native twin `core/tests/common/snd.rs`): an output stream (0) and an input stream (1), no
-  jacks, no channel maps, no controls (`VIRTIO_SND_F_CTLS` is not offered), no events sent; four queues of 64. Control
+  jacks, no channel maps, no stream events; on the page's machines the Master volume and switch (`VIRTIO_SND_F_CTLS`,
+  the spec's `mixer`; the twin has none), their changes said on the port both ways and the guest notified on the
+  event queue; four queues of 64. Control
   requests are answered promptly in every mode (Linux's time out after 1 s). The **sink** (`SndSink`) takes a
   transmit message's frames and completes it when they were played; the **source** (`SndSource`) fills receive
   messages. Both are interfaces with a deterministic and a realtime implementation each (below). Details:
@@ -80,7 +91,7 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
 
 | Guest | virtio-snd | Notes |
 |---|---|---|
-| Debian 13 (6.12.107+deb13-arm64) | a module (`virtio_snd.ko.xz`), autoloaded | card 0 `VirtIO SoundCard`, `pcmC0D0p` and `pcmC0D0c`; the nocloud image has no `alsa-utils` (the tests play and record with our static `snd-play` and `snd-rec` from a second disk: `images/snd/`) |
+| Debian 13 (6.12.107+deb13-arm64) | a module (`virtio_snd.ko.xz`), autoloaded | card 0 `VirtIO SoundCard`, `pcmC0D0p` and `pcmC0D0c`, the Master volume and switch (read, written and notified, checked with perl's `ioctl`s: the page test); the nocloud image has no `alsa-utils` (the tests play and record with our static `snd-play` and `snd-rec` from a second disk: `images/snd/`) |
 | Alpine 3.24 `linux-virt` | a module (`CONFIG_SND_VIRTIO=m`, with `snd`, `snd-pcm`, `snd-timer`) | binds after `modprobe virtio_snd` (no device manager: nothing autoloads); playback not exercised (no `alsa-utils`) |
 | Arch Linux (arch.bens.haus) `linux` 7.2.9.arch1 | a module (`virtio_snd.ko.zst`, `CONFIG_SND_VIRTIO=m`), autoloaded | the desktop guest (sway, foot, Firefox, PipeWire) |
 | Arch Linux ARM `linux-aarch64` 7.2.9 | **not built** (`# CONFIG_SND_VIRTIO is not set`) | the desktop guest until 2026-10-16, with our DKMS module (since dropped) |
