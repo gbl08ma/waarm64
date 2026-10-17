@@ -230,8 +230,10 @@ async function webgpu(o: Options): Promise<Sample[]> {
  * The device's own cost of a frame (G1's exit numbers): the real backend (web/gpu.ts) over a guest resource whose
  * backing is 64 KiB chunks of shared memory, drawn by the page's presenter (web/gpu-present.ts) on an OffscreenCanvas.
  * `transfer` is TRANSFER_TO_HOST_2D (the gather and swizzle into the host's RGBA), `flush` is RESOURCE_FLUSH with its
- * draw (putImageData of the rectangle) until the call returns, `done` until the canvas has it. `transfer_raw` is the
- * transfer on a 3D machine (a host's: the bytes copied as they are, its screen swizzles them in its draw).
+ * draw (putImageData of the rectangle) until the call returns, `done` until the canvas has it: the canvas 2D screen
+ * (`?gpu=canvas2d`, or no WebGL2). `transfer_raw`, `flush_webgl2` and `done_webgl2` are the same on a WebGL2 screen (a
+ * 2D machine's where the canvas gives WebGL2, and a 3D machine's transfer): the bytes copied as they are, the
+ * rectangle uploaded to a texture and the scanout drawn through the format's swizzle.
  */
 async function flushCost(o: Options): Promise<Sample[]> {
   const out: Sample[] = [];
@@ -248,10 +250,14 @@ async function flushCost(o: Options): Promise<Sample[]> {
     const ram = frame(w, h);
     const canvas = new OffscreenCanvas(w, h);
     const gpu = new Gpu(() => ram, ram.length, { width: w, height: h });
-    gpu.hooks = canvasPresenter(canvas);
+    gpu.hooks = canvasPresenter(canvas, undefined, false, false, 'canvas2d');
+    const glCanvas = new OffscreenCanvas(w, h);
     const hosted = new Gpu(() => ram, ram.length, { width: w, height: h });
-    hosted.host = { call: () => undefined, fence: () => undefined };
+    hosted.hooks = canvasPresenter(glCanvas, undefined, false, false, 'webgl2');
+    if (!hosted.hooks.raw) throw new Error('flush_cost: no WebGL2 on an OffscreenCanvas here');
     const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
+    const gl = glCanvas.getContext('webgl2')!;
+    const px = new Uint8Array(4);
     const chunks = Math.ceil(ram.length / CHUNK);
     const attach = new Uint8Array(32 + 16 * chunks);
     attach.set(cmd(0x106, 1, chunks));
@@ -266,7 +272,7 @@ async function flushCost(o: Options): Promise<Sample[]> {
       for (let i = 0; i < 30; i++) g.control(cmd(0x105, 0, 0, w, h, 0n, 1, 0), 64); // the gather's loop optimized before anything is timed
     }
     for (const [dname, r] of rects(w, h)) {
-      const transfer: number[] = [], raw: number[] = [], flush: number[] = [], done: number[] = [];
+      const transfer: number[] = [], raw: number[] = [], flush: number[] = [], done: number[] = [], flushGl: number[] = [], doneGl: number[] = [];
       const n = o.quick ? 5 : 20;
       // Transfers back to back (a busy guest's), then flushes a frame apart (the presenter draws at once then).
       for (let i = -3; i < n; i++) {
@@ -286,12 +292,21 @@ async function flushCost(o: Options): Promise<Sample[]> {
         const t2 = now();
         ctx.getImageData(0, 0, 1, 1);
         if (i >= 0) { flush.push(t2 - t1); done.push(now() - t1); }
+        hosted.control(cmd(0x105, r.x, r.y, 1, 1, BigInt((r.y * w + r.x) * 4), 1, 0), 64);
+        await new Promise((ok) => setTimeout(ok, 20));
+        const t3 = now();
+        hosted.control(cmd(0x104, r.x, r.y, r.w, r.h, 1, 0), 64);
+        const t4 = now();
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        if (i >= 0) { flushGl.push(t4 - t3); doneGl.push(now() - t3); }
       }
       const params = { size: label, damage: dname, rect: `${r.w}x${r.h}` };
       out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'transfer' }, samples: transfer });
       out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'transfer_raw' }, samples: raw });
       out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'flush' }, samples: flush });
       out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'done' }, samples: done });
+      out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'flush_webgl2' }, samples: flushGl });
+      out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'done_webgl2' }, samples: doneGl });
     }
   }
   return out;

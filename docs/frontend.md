@@ -468,9 +468,13 @@ guest sets its own mode and the firmware has a graphics output, so EDK2's logo, 
 and "Loading Linux…" appear on the screen, then the console (fbcon on `virtio_gpu`, which loads from the
 root filesystem a few seconds into the boot) takes it. **The device worker draws it**: the page's canvas
 goes machine worker → device worker, whose backend puts each flush's damaged rectangle on it
-(`web/gpu-present.ts`: an `ImageData` over the guest's resource, no copy and no scan of guest memory,
-accumulated rectangles, drawn at once if the last draw was a frame ago and otherwise on a 16 ms timer: Chromium
-gives a device worker no animation frames, "requestAnimationFrame not supported in this Worker").
+(`web/gpu-present.ts`: no scan of guest memory, accumulated rectangles, drawn at once if the last draw was a frame
+ago and otherwise on a 16 ms timer: Chromium gives a device worker no animation frames, "requestAnimationFrame not
+supported in this Worker"). **Where the browser has WebGL2 on a GPU** the rectangle is the guest's bytes uploaded to
+a texture and the scanout is drawn through the format's swizzle (the 3D machine's `Screen`, `web/virgl-screen.ts`; a
+lost context is drawn again when it comes back); elsewhere, software WebGL included (SwiftShader: every present on
+the CPU), it is an `ImageData` over the device's RGBA copy on a 2D context (bench/gpu/REPORT.md "A 2D machine on
+WebGL2"). The console says which (`webpc: the 2D screen on WebGL2`); `?gpu=gl2d` and `?gpu=canvas2d` choose.
 The page's main thread still has no per-frame work. The canvas takes the scanout's size, and the page
 refits its box when the display port says `mode` (the boot card hides at the first one). **Keys for the
 firmware's menus still go through the serial terminal** (EDK2 has no virtio-input driver), which is why GRUB's

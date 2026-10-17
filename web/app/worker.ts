@@ -174,7 +174,7 @@ function sndTuning() {
 }
 /**
  * The display's tuning: flush replies paced to the frame and a queue of 16 (docs/devices.md "virtio-gpu"); the page's
- * `?gpu=nopace,q<N>` changes them, for measurements. 3D is the page's choice (a 3D machine, the default: the start
+ * `?gpu=nopace,q<N>` changes them, for measurements; `canvas2d` and `gl2d` choose a 2D machine's screen (web/gpu-present.ts: by default WebGL2 on a GPU, a 2D context elsewhere). 3D is the page's choice (a 3D machine, the default: the start
  * message's `renderer`; `?gpu=2d` turns it off). `?gpu=virgl-null` turns on virgl on the null renderer (G2: the
  * guest's 3D commands are counted, nothing is drawn, so a GL desktop's screen stays black); `capture` adds a trace of
  * them on the display port (web/virgl-trace.ts; the page keeps it in `window.__virglCapture` for a test or a tool).
@@ -182,7 +182,7 @@ function sndTuning() {
 function gpuTuning() {
   const knobs = (new URLSearchParams(self.location.search).get('gpu') ?? '').split(',');
   const q = knobs.find((k) => /^q\d+$/.test(k));
-  return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virgl: knobs.includes('virgl-null'), capture: knobs.includes('capture') };
+  return { paceFlushes: !knobs.includes('nopace'), queueSize: q ? Number(q.slice(1)) : 16, virgl: knobs.includes('virgl-null'), capture: knobs.includes('capture'), screen2d: knobs.includes('canvas2d') ? 'canvas2d' as const : knobs.includes('gl2d') ? 'webgl2' as const : 'auto' as const };
 }
 /** A machine with a virtio-gpu draws through it, unless the page asked for the framebuffer. */
 const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu' && !m.simple;

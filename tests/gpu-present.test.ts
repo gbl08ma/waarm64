@@ -6,7 +6,7 @@ import { canvasPresenter, type DisplayToPage } from '../web/gpu-present.ts';
 function rig() {
   const sent: DisplayToPage[] = [];
   const ctx = { putImageData() {}, fillRect() {} };
-  const canvas = { width: 0, height: 0, getContext: () => ctx } as unknown as OffscreenCanvas;
+  const canvas = { width: 0, height: 0, getContext: (type: string) => (type === '2d' ? ctx : null) } as unknown as OffscreenCanvas;
   const port = { postMessage: (m: DisplayToPage) => sent.push(m) } as unknown as MessagePort;
   return { hooks: canvasPresenter(canvas, port), sent };
 }

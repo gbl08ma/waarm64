@@ -32,6 +32,7 @@ import { VirglRenderer } from '../../web/virgl-renderer.ts';
 import { CallQueue, localHost, runCall, type HostCall } from '../../web/virgl-host.ts';
 import { replay, replayAsync } from '../../web/virgl-replay.ts';
 import { Gpu } from '../../web/gpu.ts';
+import { canvasPresenter } from '../../web/gpu-present.ts';
 import { Screen } from '../../web/virgl-screen.ts';
 import { probeVideo, webCodecsDecoder, type DecodedPicture, type DecoderFactory } from '../../web/virgl-video.ts';
 
@@ -278,4 +279,55 @@ export async function screen2d(format: number, px: number[]) {
   cmd(0x105, 0, 0, 4, 4, 0n, 1, 0); // TRANSFER_TO_HOST_2D
   cmd(0x103, 0, 0, 4, 4, 0, 1); // SET_SCANOUT
   return seen;
+}
+
+/**
+ * A 2D machine's screen (web/gpu-present.ts) on a 4×4 OffscreenCanvas: WebGL2 (even SwiftShader, which `auto` would
+ * leave to a 2D context), or the canvas 2D one with `canvas2d`.
+ * A resource of `format` filled with the guest's bytes `px`, transferred, shown and flushed; returns whether the
+ * device kept the guest's bytes, the screen's centre pixel, and with `lose` the centre pixel again after the
+ * context was lost and restored, with nothing flushed since (the restore's own draw).
+ */
+export async function presenter2d(format: number, px: number[], canvas2d: boolean, lose: boolean) {
+  const canvas = new OffscreenCanvas(4, 4);
+  const hooks = canvasPresenter(canvas, undefined, false, false, canvas2d ? 'canvas2d' : 'webgl2');
+  const ram = new Uint8Array(4096);
+  for (let k = 0; k < 64; k += 4) ram.set(px, k);
+  const gpu = new Gpu(() => ram, ram.length, { width: 4, height: 4 });
+  gpu.hooks = hooks;
+  const cmd = (type: number, ...fields: (number | bigint)[]) => {
+    const b = new Uint8Array(24 + fields.reduce<number>((n, f) => n + (typeof f === 'bigint' ? 8 : 4), 0));
+    const v = new DataView(b.buffer);
+    v.setUint32(0, type, true);
+    let at = 24;
+    for (const f of fields) { if (typeof f === 'bigint') { v.setBigUint64(at, f, true); at += 8; } else { v.setUint32(at, f, true); at += 4; } }
+    return gpu.control(b, 64);
+  };
+  const gl = canvas2d ? null : canvas.getContext('webgl2');
+  const centre = () => {
+    const p = new Uint8Array(4);
+    if (gl) gl.readPixels(2, 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, p);
+    else p.set((canvas.getContext('2d') as OffscreenCanvasRenderingContext2D).getImageData(2, 2, 1, 1).data);
+    return Array.from(p.subarray(0, 3));
+  };
+  cmd(0x101, 1, format, 4, 4); // RESOURCE_CREATE_2D
+  cmd(0x106, 1, 1, 0x4000_0000n, 64, 0); // RESOURCE_ATTACH_BACKING: one entry
+  cmd(0x105, 0, 0, 4, 4, 0n, 1, 0); // TRANSFER_TO_HOST_2D
+  cmd(0x103, 0, 0, 4, 4, 0, 1); // SET_SCANOUT
+  cmd(0x104, 0, 0, 4, 4, 1, 0); // RESOURCE_FLUSH: drawn at once (no draw a frame before it)
+  const raw = !!hooks.raw && gpu.resources.get(1)!.pixels.every((b, k) => b === ram[k]);
+  const first = centre();
+  if (!lose || !gl) return { raw, first };
+  const ext = gl.getExtension('WEBGL_lose_context')!;
+  const event = (name: string) => new Promise((ok) => canvas.addEventListener(name, ok, { once: true }));
+  const gone = event('webglcontextlost');
+  ext.loseContext();
+  await gone;
+  await new Promise((ok) => setTimeout(ok, 0)); // out of the event's dispatch: restoring inside it isn't allowed yet
+  const back = event('webglcontextrestored');
+  ext.restoreContext();
+  await back;
+  // The presenter's draw is on the next animation frame, asked for before this one's: read in the same frame.
+  const restored = await new Promise<number[]>((ok) => requestAnimationFrame(() => ok(centre())));
+  return { raw, first, restored };
 }

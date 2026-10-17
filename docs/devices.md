@@ -273,9 +273,10 @@ mode (and natively in realtime mode: std has no CSPRNG).
   (the first row at `offset`, rows a resource width apart, as QEMU reads them) and swizzles to
   RGBA in the same pass, for all eight 32-bit formats. **An X format's unused byte is kept as
   alpha:** Linux creates every dumb buffer as `B8G8R8X8`, and a cursor that is an ARGB8888
-  framebuffer on one carries its alpha there. The screen ignores alpha. **With a host** (a 3D
-  machine) a resource keeps the guest's bytes as they are (a plain copy, 3 to 4 times faster than
-  the swizzle) and the host's screen swizzles in its draw; the hashes and the cursor are RGBA all the same.
+  framebuffer on one carries its alpha there. The screen ignores alpha. **Where the screen is
+  WebGL2** (a 3D machine's host, and a 2D machine's presenter on a GPU: `GpuHooks.raw`) a resource
+  keeps the guest's bytes as they are (a plain copy, 3 to 4 times faster than the swizzle) and the
+  screen swizzles in its draw; the hashes and the cursor are RGBA all the same.
 - **The backing pages are guest-physical addresses inside the command**, which the core's chain
   checks don't cover: every entry must lie in RAM (`ERR_INVALID_PARAMETER` otherwise, nothing
   attached), a transfer reads only through the entries, and the backend never writes guest RAM.
@@ -311,7 +312,7 @@ mode (and natively in realtime mode: std has no CSPRNG).
   times lighter under the JIT.
 - **A QueueNum of 0 means the device's maximum** (the transport, for every device): EDK2's virtio-gpu driver writes 0 and expects the ring it laid out for QueueNumMax; QEMU ignores the write, and the first version of ours put the device in NEEDS_RESET, so the firmware hung at its first command.
 - **Where the pixels go** is `GpuHooks` (`scanout`, `damage`, `cursor`): the backend calls them
-  and keeps no presentation of its own; `web/gpu-present.ts` wires them to an `OffscreenCanvas` in the device worker (docs/frontend.md "The screen"). A resource that is set as the scanout loses its alpha (one pass, then every transfer writes 255): a canvas takes the pixels as they are, and `alpha: false` was not enough in a worker (the screen came out transparent). Without hooks the state is
+  and keeps no presentation of its own; `web/gpu-present.ts` wires them to an `OffscreenCanvas` in the device worker (docs/frontend.md "The screen"): WebGL2 where the browser has it on a GPU, else a 2D context. For the 2D context a resource that is set as the scanout loses its alpha (one pass, then every transfer writes 255): a canvas takes the pixels as they are, and `alpha: false` was not enough in a worker (the screen came out transparent). Without hooks the state is
   all there is: `Gpu.state()` (and `Backend.save`, so a snapshot) gives the display, the resources
   without pixels, hashes of the visible scanout (alpha forced opaque) and of the cursor image, and
   with `trace` the scanout's hash at every flush (tests). A restore reads every resource again

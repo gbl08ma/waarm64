@@ -370,10 +370,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   (the Mac host; the dev VM composites in software), then a device worker the page creates (a top-level worker has
   animation frames; moving blk off that thread and G3's GPU worker want the same change) or drawing from the
   machine worker out of shared memory.
-- **A 2D machine's transfer costs ~0.7 ms a megapixel in Chromium** (`flush_cost`'s `transfer`: 1.5 ms at 1080p, 2.6
-  at 1440p, 5.9 at 4K), all of it the swizzle to RGBA on the device worker, which the canvas 2D's `putImageData`
-  needs. A 3D machine's (the page's default where WebGL2 is) copies the bytes as they are and its screen swizzles in
-  the draw (`transfer_raw`, 3 to 4 times faster); the canvas 2D screen would need a WebGL one to do the same.
 - **virtio-gpu, not built or not measured in G1:** GNOME, KDE and Xorg sessions (sway is: graphics.md §17); a page test
   of the pointer through a letterboxed screen (checked by hand with sway); an overlay for a guest that warps its
   cursor (`MOVE_CURSOR` away from the pointer: none seen); sizes beyond 4088 pixels a side (a DisplayID block in the

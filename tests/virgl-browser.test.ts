@@ -176,6 +176,19 @@ test('virgl on WebGL2: a 2D scanout is drawn from the guest\'s bytes through its
   }
 });
 
+test('a 2D machine\'s screen: WebGL2 gets the guest\'s bytes and swizzles them, the canvas 2D one RGBA; a lost context comes back drawn', async () => {
+  const cases: [number, number[]][] = [[1, [90, 60, 30, 0]], [2, [90, 60, 30, 0]], [3, [0, 30, 60, 90]], [4, [0, 30, 60, 90]], [67, [30, 60, 90, 0]], [68, [0, 90, 60, 30]], [121, [0, 90, 60, 30]], [134, [30, 60, 90, 0]]];
+  type Shown = { raw: boolean; first: number[]; restored?: number[] };
+  for (const canvas2d of [false, true]) {
+    for (const [format, px] of cases) {
+      const r = await page.evaluate(([f, p, c]) => (window as unknown as { virgl: { presenter2d(f: number, p: number[], c: boolean, l: boolean): Promise<Shown> } }).virgl.presenter2d(f, p, c, false), [format, px, canvas2d] as const);
+      assert.deepEqual(r, { raw: !canvas2d, first: [30, 60, 90] }, `format ${format}${canvas2d ? ', canvas 2D' : ''}`);
+    }
+  }
+  const r = await page.evaluate(() => (window as unknown as { virgl: { presenter2d(f: number, p: number[], c: boolean, l: boolean): Promise<Shown> } }).virgl.presenter2d(1, [90, 60, 30, 0], false, true));
+  assert.deepEqual(r, { raw: true, first: [30, 60, 90], restored: [30, 60, 90] });
+});
+
 test('virgl on WebGL2: stream output captures interleaved, separate and mixed, appends, stops at a full buffer, counts what it wrote', async () => {
   const r = await page.evaluate(() => (window as unknown as { virgl: { streamOut(): { appended: number[]; emitted: number; overflowed: number[]; separate: number[][]; mixed: number[][]; log: string[]; glError: number } } }).virgl.streamOut());
   assert.deepEqual([r.log, r.glError], [[], 0]);

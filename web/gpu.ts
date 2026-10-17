@@ -5,9 +5,9 @@
 // give the same answers and the same pixels.
 //
 // A host resource is RGBA bytes in JS memory (what a canvas takes: the swizzle from the guest's
-// format is fused into TRANSFER_TO_HOST_2D's gather, docs/plans/graphics.md §10); on a 3D machine it is
-// the guest's bytes as they are (a plain copy, ~4 times faster), and the host's screen swizzles in its
-// draw (web/virgl-screen.ts). The guest's
+// format is fused into TRANSFER_TO_HOST_2D's gather, docs/plans/graphics.md §10); where the screen is
+// WebGL2 (a 3D machine's, and a 2D machine's where the canvas gives WebGL2) it is the guest's bytes as
+// they are (a plain copy, ~4 times faster), and the screen swizzles in its draw (web/virgl-screen.ts). The guest's
 // backing pages are guest-physical addresses inside the command's payload, which the core's chain
 // checks don't cover: every entry is checked to lie in RAM before it is kept, and a transfer
 // reads only through those entries.
@@ -74,7 +74,7 @@ type Resource = {
   id: number; format: number; width: number; height: number;
   /** RGBA, rows of `width` pixels; with `raw`, the guest's bytes in its format. */
   pixels: Uint8Array;
-  /** Made with a host: `pixels` are copied as they are, for its screen, which swizzles them in its draw. */
+  /** Made with a host or `GpuHooks.raw`: `pixels` are copied as they are, for a screen that swizzles them in its draw. */
   raw?: boolean;
   /** The guest's pages, as RAM offsets (`addr` − RAM_BASE) and lengths; null until attached. */
   backing: { off: number; len: number }[] | null;
@@ -133,11 +133,16 @@ export type GpuOptions = {
   trace?: boolean;
 };
 
-/** Where the scanout's pixels are: a resource's RGBA (rows `width` pixels apart, alpha meaningless; the guest's format with a host) and the scanout's origin in it. */
-export type ScanoutSource = { pixels: Uint8Array; width: number; height: number; x: number; y: number };
+/**
+ * Where the scanout's pixels are: a resource's RGBA (rows `width` pixels apart, alpha meaningless) and the scanout's
+ * origin in it; with `swizzle` (`GpuHooks.raw`) the guest's bytes, R, G and B at those byte positions of a pixel.
+ */
+export type ScanoutSource = { pixels: Uint8Array; width: number; height: number; x: number; y: number; swizzle?: number[] };
 
 /** What the page draws from: the scanout and its damage, and the cursor. All optional (tests read the state). */
 export type GpuHooks = {
+  /** The page swizzles in its draw: resources keep the guest's bytes (read once, when a resource is made). */
+  raw?: boolean;
   /** The scanout's size changed or it was set again (0×0 and no source: the scanout is off). */
   scanout?(width: number, height: number, source: ScanoutSource | null): void;
   /** RESOURCE_FLUSH: a rectangle of the scanout (its own coordinates) is to be shown as the source has it now. */
@@ -235,6 +240,9 @@ export class Gpu {
     return w;
   }
 
+  /** New resources keep the guest's bytes: their screen swizzles them (a host's, or the page's: `GpuHooks.raw`). */
+  private get raw() { return !!this.host || !!this.hooks.raw; }
+
   /** The caps blob the guest is given (VIRGL2). */
   get caps() { return this.capsets[1][2]; }
 
@@ -276,7 +284,7 @@ export class Gpu {
         const bytes = width * height * 4; // exact in a double up to 2^53: 2^32 × 2^32 × 4 is not, but is refused all the same
         if (bytes > MAX_RESOURCE || this.total + bytes > MAX_TOTAL) return this.reply(ERR_OUT_OF_MEMORY, cmd, room);
         this.total += bytes;
-        this.resources.set(id, { id, format, width, height, pixels: this.pixels(bytes), backing: null, raw: !!this.host });
+        this.resources.set(id, { id, format, width, height, pixels: this.pixels(bytes), backing: null, raw: this.raw });
         return this.reply(OK_NODATA, cmd, room);
       }
       case RESOURCE_UNREF: {
@@ -676,7 +684,7 @@ export class Gpu {
   private announce() {
     const s = this.scanout;
     const res = s && this.resources.get(s.id);
-    this.hooks.scanout?.(s ? s.rect.w : 0, s ? s.rect.h : 0, s && res ? { pixels: res.pixels, width: res.width, height: res.height, x: s.rect.x, y: s.rect.y } : null);
+    this.hooks.scanout?.(s ? s.rect.w : 0, s ? s.rect.h : 0, s && res ? { pixels: res.pixels, width: res.width, height: res.height, x: s.rect.x, y: s.rect.y, swizzle: res.raw ? FORMATS.get(res.format)!.slice(0, 3) : undefined } : null);
   }
 
   private flush(res: Resource, r: Rect) {
@@ -859,7 +867,7 @@ export class Gpu {
     this.bounce = false;
     this.trace = t.trace ?? [];
     for (const r of t.resources) {
-      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: this.pixels(r.width * r.height * 4), backing: r.backing?.map(([off, len]) => ({ off, len })) ?? null, raw: !!this.host };
+      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: this.pixels(r.width * r.height * 4), backing: r.backing?.map(([off, len]) => ({ off, len })) ?? null, raw: this.raw };
       this.total += res.pixels.length;
       this.resources.set(res.id, res);
       if (res.backing) this.transfer(res, { x: 0, y: 0, w: res.width, h: res.height }, 0);
@@ -899,7 +907,7 @@ export class Gpu {
   }
 }
 
-/** A resource that is on the scanout loses its alpha (an X format's unused byte, `FORMATS`): from now on transfers write 255 too. A raw one keeps its bytes (the host's screen ignores alpha). */
+/** A resource that is on the scanout loses its alpha (an X format's unused byte, `FORMATS`): from now on transfers write 255 too. A raw one keeps its bytes (its screen ignores alpha). */
 function makeOpaque(res: Resource) {
   if (res.opaque || res.raw) return;
   res.opaque = true;

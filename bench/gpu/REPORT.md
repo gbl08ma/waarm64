@@ -180,3 +180,34 @@ renderer's on the Mac (5.5 ms) and ~0.8 ms more on SwiftShader; the renderer's o
 scanout and damage call (three a guest frame), held to the display's rate with the fences behind; drawing in an
 animation frame fixed it (the split runs are `vm-skip-1.json`, the submits skipped, and `vm-skipfloor-1.json`,
 skipped with G2's caps). Details in docs/plans/graphics.md §20.
+
+## A 2D machine on WebGL2 (2026-10-18)
+
+A 2D machine's screen draws through WebGL2 where the browser has it on a GPU (`web/gpu-present.ts`): the device copies
+the guest's bytes as they are (`transfer_raw`) and the 3D machine's `Screen` uploads the damaged rectangle and draws
+the scanout through the format's swizzle, as the 3D machine already did for its 2D scanouts. `flush_cost` runs both
+screens side by side (commit `3bf4473` plus this change; ms, median of 20). The device worker's own time is the
+transfer plus the flush until it returns (the draw is in it: the presenter draws at once a frame after the last).
+
+| Mac host (M4, Metal; Chrome for Testing 153.0.8010.12, macOS 26.6.2) | transfer + flush, canvas 2D | transfer + flush, WebGL2 |
+|---|---|---|
+| 1080p full | 1.35 + 1.14 = 2.49 | 0.34 + 1.34 = 1.68 |
+| 1080p damage10 | 0.53 + 0.39 = 0.92 | 0.18 + 0.48 = 0.66 |
+| 1440p full | 2.40 + 1.95 = 4.35 | 0.66 + 2.05 = 2.71 |
+| 1440p damage10 | 0.81 + 0.65 = 1.46 | 0.47 + 0.67 = 1.14 |
+| 4k full | 5.39 + 4.22 = 9.61 | 1.44 + 9.20 = 10.64 |
+| 4k damage10 | 0.95 + 1.40 = 2.35 | 0.25 + 1.15 = 1.40 |
+
+`results/2026-10-18-mac-flush-cost.json`. A quarter to a third less everywhere but a full 4K frame, about even there
+(+10%). **A full 4K upload costs 8–9 ms after an idle gap** of 20 ms or more and 2.3–4.7 ms back to back (an ad-hoc
+`texSubImage2D` loop, 10 per variant): the same whatever selects the rectangle (whole view, `srcOffset`,
+`UNPACK_ROW_LENGTH`, a shared buffer) and no better in strips of 16 to 540 rows. Not pursued: a guest redrawing a 4K
+screen whole at every frame pays the same either way. "Until the canvas has it" (a 1-pixel read) is 1 to 6 ms
+longer on WebGL2 than canvas 2D's; that read waits for the GPU process, which a real present doesn't.
+
+**Software WebGL loses** (the dev VM, SwiftShader; `results/2026-10-18-vm-flush-cost.json`): the device worker's time
+falls at the larger sizes (4K full 6.77 → 4.22, 4K damage10 1.04 → 0.55; 1080p full even, 1.81 → 1.89), but every present draws the
+whole scanout on the CPU: 7 to 18 ms until the canvas has it, against 0.2 to 1 ms for canvas 2D. So `auto` keeps
+canvas 2D where the renderer is software (SwiftShader, llvmpipe, Windows' Basic Render Driver), and the page tests,
+which run on SwiftShader, keep testing that screen; `?gpu=gl2d` forces WebGL2 (`WEBPC_PAGE_QUERY=gpu=2d,gl2d` runs the
+page tests on it), `?gpu=canvas2d` canvas 2D.

@@ -6,7 +6,7 @@
 import { p9, type P9Files } from './9p.ts';
 import { echoBackend, gateway, portBackend } from './gateway.ts';
 import { gpuBackend, type GpuOptions } from './gpu.ts';
-import { canvasPresenter, pagePresenter, type DisplayFromPage } from './gpu-present.ts';
+import { canvasPresenter, pagePresenter, type DisplayFromPage, type Screen2d } from './gpu-present.ts';
 import { portHost } from './virgl-host.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { F_GUEST_CSUM, F_GUEST_TSO4, F_GUEST_TSO6, F_MRG_RXBUF, MAX_GSO_FRAME, NET_HDR, OFFLOADS, receive, transmit, type RxFrame } from './offload.ts';
@@ -80,6 +80,8 @@ export type GpuSpec = {
   type: 'gpu';
   /** The page's screen (a worker's `OffscreenCanvas`, transferred): the scanout is drawn on it (web/gpu-present.ts). */
   canvas?: OffscreenCanvas;
+  /** Which screen draws it (web/gpu-present.ts `Screen2d`; the page's `?gpu=canvas2d` or `gl2d`). Default `auto`. */
+  screen2d?: Screen2d;
   /** The page's end of the display: the backend says `mode` (the scanout's size) and takes `size` (the page's, for the display info and the EDID). */
   port?: MessagePort;
   /** Report flush-to-draw latencies on the port once a second (bench/gpu). */
@@ -759,7 +761,7 @@ export class Devices {
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
         case 'input': return input(ctx, d);
         case 'gpu': {
-          const b = gpuBackend(ctx, d, d.renderer ? pagePresenter(d.port, d.stats) : d.canvas ? canvasPresenter(d.canvas, d.port, d.stats, d.probe) : {});
+          const b = gpuBackend(ctx, d, d.renderer ? pagePresenter(d.port, d.stats) : d.canvas ? canvasPresenter(d.canvas, d.port, d.stats, d.probe, d.screen2d) : {});
           if (d.renderer && d.virgl) {
             // The GPU worker reads and writes guest RAM in place: it gets the shared memory first.
             const host = portHost(d.renderer);
@@ -767,6 +769,7 @@ export class Devices {
             host.call({ t: 'ram', buffer: ram.buffer, offset: ram.byteOffset, length: Math.min(ram.length, ctx.ramSize) });
             b.gpu.host = host;
           }
+          if (!d.renderer && d.canvas) console.info(`webpc: the 2D screen on ${b.gpu.hooks.raw ? 'WebGL2' : 'a 2D canvas'}`);
           if (d.port) d.port.onmessage = (e: MessageEvent<DisplayFromPage>) => { if (e.data?.type === 'size') b.gpu.setSize(e.data.width, e.data.height); };
           if (d.capture && d.port) b.gpu.onCapture = (record) => d.port!.postMessage({ type: 'capture', record }, [record.buffer]);
           return b;

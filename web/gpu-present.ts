@@ -1,11 +1,15 @@
 // The virtio-gpu scanout on a canvas (docs/devices.md "virtio-gpu"): `GpuHooks` for a worker's
-// OffscreenCanvas (a 2D context without alpha). The backend's transfers and flushes give damaged rectangles;
-// they accumulate into one rectangle and are drawn at most once per frame, straight from the host's copy of
-// the guest's resource (an ImageData over its RGBA bytes: no copy, no scan of guest memory). The canvas has
-// the scanout's size; when it changes the page is told (`mode`) to refit its box.
+// OffscreenCanvas. The backend's transfers and flushes give damaged rectangles; they accumulate into one rectangle
+// and are drawn at most once per frame, straight from the host's copy of the guest's resource (no scan of guest
+// memory). Where the browser has WebGL2 on a GPU that copy is the guest's bytes as they are (`GpuHooks.raw`),
+// uploaded to a texture and drawn through the format's swizzle (the 3D machine's `Screen`, web/virgl-screen.ts);
+// elsewhere it is RGBA, put on a 2D context without alpha (an ImageData over the bytes: no copy). Software WebGL
+// (SwiftShader) gets the 2D context: it rasterizes every present on the CPU, 7 to 18 ms against ~1 for canvas 2D
+// (bench/gpu/REPORT.md, "A 2D machine on WebGL2"). The canvas has the scanout's size; when it changes the page is
+// told (`mode`) to refit its box.
 import { busy } from './gpu.ts';
 import { fenceLag } from './virgl-host.ts';
-import { flashProbe } from './virgl-screen.ts';
+import { flashProbe, Screen } from './virgl-screen.ts';
 import type { GpuHooks, Rect, ScanoutSource } from './gpu.ts';
 
 /** Page ⇄ backend over the display port. */
@@ -21,9 +25,24 @@ export type DisplayToPage =
   | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; behindMs: number; fullMs: number; heldMax: number; fenceBack: { n: number; ms: number; maxMs: number } } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number };
 
-export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, stats = false, probe = false): GpuHooks {
+/** Which screen a 2D machine gets: WebGL2 unless it is software (`auto`), or the one named (the page's `?gpu=canvas2d` or `gl2d`: tests and measurements). */
+export type Screen2d = 'auto' | 'canvas2d' | 'webgl2';
+
+/** This browser's WebGL2 renders on the CPU (or there is none): asked of a context of its own, since a canvas keeps the first context type it gives. */
+export function softwareGl() {
+  const gl = typeof OffscreenCanvas === 'undefined' ? null : new OffscreenCanvas(1, 1).getContext('webgl2');
+  if (!gl) return true;
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  const renderer = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+  return /SwiftShader|llvmpipe|softpipe|Basic Render Driver/i.test(renderer);
+}
+
+export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, stats = false, probe = false, which: Screen2d = 'auto'): GpuHooks {
   const sample = probe && port ? flashProbe((t) => port.postMessage({ type: 'flash', t } satisfies DisplayToPage)) : undefined;
-  const ctx = canvas.getContext('2d', { alpha: false }) as OffscreenCanvasRenderingContext2D;
+  const gl = which === 'canvas2d' || (which === 'auto' && softwareGl()) ? null : canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false }) as WebGL2RenderingContext | null;
+  let screen = gl ? new Screen(gl) : undefined;
+  const ctx = gl ? undefined : canvas.getContext('2d', { alpha: false }) as OffscreenCanvasRenderingContext2D;
   let src: ScanoutSource | null = null;
   let img: ImageData | undefined;
   let dirty: Rect | null = null;
@@ -48,19 +67,42 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
   let lastDraw = -Infinity;
   const frame = () => {
     scheduled = false;
-    if (!src || !img || !dirty) return;
+    if (!src || (!img && !screen) || !dirty) return;
     const d = dirty;
     dirty = null;
     const t0 = performance.now();
-    ctx.putImageData(img, -src.x, -src.y, src.x + d.x, src.y + d.y, d.w, d.h);
+    if (screen) {
+      if (lost) return;
+      screen.upload(d);
+      screen.draw();
+    } else ctx!.putImageData(img!, -src.x, -src.y, src.x + d.x, src.y + d.y, d.w, d.h);
     lastDraw = performance.now();
     drawMs += lastDraw - t0;
     if (stats) lat.push(performance.now() - since);
     if (sample) {
       const p = 4 * ((src.y + (canvas.height >> 1)) * src.width + src.x + (canvas.width >> 1));
-      sample(src.pixels[p], src.pixels[p + 1], src.pixels[p + 2]);
+      const [ri, gi, bi] = src.swizzle ?? [0, 1, 2];
+      sample(src.pixels[p + ri], src.pixels[p + gi], src.pixels[p + bi]);
     }
   };
+  // A lost context (the GPU process restarted, a driver reset) comes back when the browser can: a new screen
+  // with the whole scanout on it. Until then nothing is drawn.
+  let lost = false;
+  if (gl) {
+    canvas.addEventListener('webglcontextlost', (ev) => {
+      ev.preventDefault();
+      lost = true;
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      lost = false;
+      screen = new Screen(gl);
+      if (!src) return screen.clear();
+      screen.set({ pixels: src.pixels, swizzle: src.swizzle, width: src.width, height: src.height, rect: { x: src.x, y: src.y, w: canvas.width, h: canvas.height } });
+      dirty = { x: 0, y: 0, w: canvas.width, h: canvas.height };
+      since = performance.now();
+      schedule();
+    });
+  }
   // The device worker has no animation frames (Chromium: "requestAnimationFrame not supported in this Worker"
   // for a canvas that was handed on from the machine worker): a timer for a frame after the last draw then.
   let frames = true;
@@ -86,19 +128,24 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
     port?.postMessage({ type: 'cursor', image: image ? image.slice().buffer : image, hotX, hotY } satisfies DisplayToPage);
   };
   return {
+    raw: !!gl,
     cursor: (image, hotX, hotY) => sendCursor(image, hotX, hotY),
     cursorReset: () => sendCursor(undefined, 0, 0),
     scanout(width, height, source) {
       src = source;
-      img = source ? new ImageData(new Uint8ClampedArray(source.pixels.buffer as ArrayBuffer, source.pixels.byteOffset, source.pixels.length), source.width, source.height) : undefined;
+      img = source && !gl ? new ImageData(new Uint8ClampedArray(source.pixels.buffer as ArrayBuffer, source.pixels.byteOffset, source.pixels.length), source.width, source.height) : undefined;
       if (canvas.width !== width || canvas.height !== height) {
         // A canvas resized is cleared; the mode goes to the page so it refits its box.
         if (width && height) [canvas.width, canvas.height] = [width, height];
         port?.postMessage({ type: 'mode', width, height } satisfies DisplayToPage);
       }
       dirty = src ? { x: 0, y: 0, w: width, h: height } : null;
-      if (!src) ctx.fillRect(0, 0, canvas.width, canvas.height);
-      else schedule();
+      if (screen && source) screen.set({ pixels: source.pixels, swizzle: source.swizzle, width: source.width, height: source.height, rect: { x: source.x, y: source.y, w: width, h: height } });
+      if (!src) {
+        if (screen) {
+          if (!lost) screen.clear();
+        } else ctx!.fillRect(0, 0, canvas.width, canvas.height);
+      } else schedule();
     },
     damage(r) {
       if (!dirty) {

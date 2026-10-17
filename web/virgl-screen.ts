@@ -1,8 +1,10 @@
 // The screen of a 3D machine (docs/frontend.md "The screen"): the canvas's WebGL2 default framebuffer, showing the
-// scanout. A 2D scanout is the device's copy of the guest's resource, its bytes as they are (in shared memory: the
-// damaged rectangles are uploaded to a texture, drawn through the format's swizzle); a 3D scanout is the renderer's texture of the resource, drawn through its format's
-// swizzle (B8G8R8X8, the usual one, is stored as its bytes are). The drawing buffer isn't preserved, so every present
-// draws the whole scanout, with alpha ignored; rows go top first, as the guest's are.
+// scanout; a 2D machine's too where the browser has WebGL2 on a GPU (web/gpu-present.ts, without a renderer: 2D
+// scanouts only). A 2D scanout is the device's copy of the guest's resource, its bytes as they are (in shared memory
+// on a 3D machine: the damaged rectangles are uploaded to a texture, drawn through the format's swizzle); a 3D
+// scanout is the renderer's texture of the resource, drawn through its format's swizzle (B8G8R8X8, the usual one, is
+// stored as its bytes are). The drawing buffer isn't preserved, so every present draws the whole scanout, with alpha
+// ignored; rows go top first, as the guest's are.
 import { E } from './gl-enums.ts';
 import { SW_0, SW_1 } from './virgl-formats.ts';
 import type { HostCall, Rect } from './virgl-host.ts';
@@ -45,7 +47,7 @@ export function flashProbe(flash: (t: number) => void) {
 
 export class Screen {
   private gl: WebGL2RenderingContext;
-  private r: VirglRenderer;
+  private r: VirglRenderer | undefined;
   private prog: WebGLProgram;
   private loc: { src: WebGLUniformLocation | null; swz: WebGLUniformLocation | null; s: WebGLUniformLocation | null };
   private tex2d: WebGLTexture;
@@ -60,7 +62,7 @@ export class Screen {
   probe?: (r: number, g: number, b: number) => void;
   private px = new Uint8Array(4);
 
-  constructor(gl: WebGL2RenderingContext, r: VirglRenderer) {
+  constructor(gl: WebGL2RenderingContext, r?: VirglRenderer) {
     this.gl = gl;
     this.r = r;
     const sh = (type: number, src: string) => { const s = gl.createShader(type)!; gl.shaderSource(s, src); gl.compileShader(s); return s; };
@@ -79,9 +81,14 @@ export class Screen {
       this.clear();
       return;
     }
-    this.src = { pixels: c.pixels, swizzle: c.swizzle, res: c.res, width: c.width, height: c.height, rect };
+    this.set(c);
     if (c.pixels) this.upload({ x: 0, y: 0, w: rect.w, h: rect.h });
     this.present();
+  }
+
+  /** What the screen shows from now on, nothing uploaded or drawn (the 2D presenter's, which draws on its own frames: `upload`, `draw`). */
+  set(c: Omit<Extract<HostCall, { t: 'scanout' }>, 't'>) {
+    this.src = { pixels: c.pixels, swizzle: c.swizzle, res: c.res, width: c.width, height: c.height, rect: c.rect };
   }
 
   damage(rect: Rect) {
@@ -90,7 +97,7 @@ export class Screen {
     this.present();
   }
 
-  private clear() {
+  clear() {
     const gl = this.gl;
     gl.bindFramebuffer(E.FRAMEBUFFER, null);
     gl.clearColor(0, 0, 0, 1);
@@ -100,7 +107,7 @@ export class Screen {
   }
 
   /** Copies a rectangle of the 2D scanout (scanout coordinates) into the texture. */
-  private upload(r: Rect) {
+  upload(r: Rect) {
     const gl = this.gl, s = this.src!;
     gl.activeTexture(E.TEXTURE0);
     gl.bindTexture(E.TEXTURE_2D, this.tex2d);
@@ -143,7 +150,7 @@ export class Screen {
   }
 
   /** Draws the whole scanout on the canvas (sized to it). */
-  private draw() {
+  draw() {
     const s = this.src;
     if (!s) return;
     const gl = this.gl;
@@ -155,7 +162,7 @@ export class Screen {
       tex = this.tex2d;
       swz = s.swizzle ?? swz;
     } else {
-      const src = this.r.scanoutSource(s.res!);
+      const src = this.r?.scanoutSource(s.res!);
       if (!src) return this.clear();
       tex = src.tex;
       swz = src.fmt.sample.slice(0, 3);
