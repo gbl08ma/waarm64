@@ -584,7 +584,7 @@ test('virgl renderer: the sample mask Mesa makes from glSampleCoverage maps back
 test('virgl device: a fenced command\'s reply waits for the host, and replies stay in order', async () => {
   const ram = new Uint8Array(1 << 20);
   const done: number[] = [];
-  const ctx = { ram: () => ram, ramSize: ram.length, complete: (w0: number) => done.push(w0), config: () => new Uint8Array(16), changeConfig: () => {}, untaken: () => 0 };
+  const ctx = { ram: () => ram, ramSize: ram.length, complete: (w0: number) => done.push(w0), config: () => new Uint8Array(16), changeConfig: () => {}, untaken: () => 0, features: () => 0n };
   let release!: () => void;
   const calls: HostCall[] = [];
   const host: VirglHost = { call: (c) => calls.push(c), fence: () => new Promise<void>((r) => { release = r; }) };

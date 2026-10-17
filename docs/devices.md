@@ -156,11 +156,27 @@ mode (and natively in realtime mode: std has no CSPRNG).
 
 ### net (ID 1)
 - **The host sees Ethernet frames only**; IP, DHCP, NAT and the rest live in the adapter, never in
-  the emulator. Features `MAC` and `STATUS`, a receiveq and a transmitq of 256; MAC
-  `52:54:00:12:34:56` by default, link always up. Each transmitted chain is one frame with the
-  12-byte `virtio_net_hdr_v1` stripped (≤ 12 bytes, or over 12 + 1518, dropped). Frames for the
-  guest wait for receive buffers (the oldest dropped past 256; one larger than the next buffer
-  dropped) and get a zero header with `num_buffers` 1. No offloads, no `CTRL_VQ`, one queue pair.
+  the emulator. Features `MAC`, `STATUS` and the offloads below, a receiveq and a transmitq of 256; MAC
+  `52:54:00:12:34:56` by default, link always up. Each transmitted chain is a frame with the
+  12-byte `virtio_net_hdr_v1` stripped (≤ 12 bytes, over 12 + 1518 without GSO, or past an IPv6
+  packet's largest, dropped). Frames for the guest wait for receive buffers (the oldest dropped past
+  256; one larger than the next buffer dropped) and get a header with `num_buffers` 1. No `CTRL_VQ`,
+  one queue pair.
+- **Offloads** (`web/offload.ts`; byte tests in `tests/offload.test.ts`): what the guest's stack would
+  run as guest code runs in the device worker, and adapters still see ordinary frames. `CSUM`: a
+  `NEEDS_CSUM` frame gets its checksum finished (from `csum_start` to the end, at `csum_offset`).
+  `HOST_TSO4`, `HOST_TSO6` (with `HOST_ECN`) and `HOST_USO`: a packet of up to 64 KB is cut into
+  `gso_size` payloads, each with the headers, its IPv4 total length (or IPv6 payload length), an IPv4
+  ID counting up from the packet's (its header checksum redone), the TCP sequence number moved on
+  (FIN and PSH on the last segment only, CWR on the first) or the UDP length, and the transport
+  checksum over its pseudo-header; the transport header is where `csum_start` says, so IPv6
+  extension headers pass. A packet the guest got wrong (no `gso_size`, the wrong family for its
+  `gso_type`, an IPv4 fragment) is dropped; UFO (`gso_type` 3) isn't offered. `GUEST_CSUM`: a frame for the
+  guest whose TCP or UDP checksum the device found right (IPv4, or IPv6 without extension headers; not a
+  fragment; padding left out) is marked `DATA_VALID`, and the guest doesn't check it again; anything else
+  is left to the guest. The guest's MSS follows the lease's MTU (DHCP option 26, and the gateway's MSS
+  clamp), so segments fit the tunnel. The loopback adapter's ARP and ICMP are neither offloaded nor
+  marked. No receive coalescing (`GUEST_TSO4`/`6`, `MRG_RXBUF`): docs/backlog.md "net".
 - **Adapters** (`web/net.ts`): `NetAdapter = {send(frame), close?()}`, made with the
   `receive(frame)` it calls. `{adapter: 'loopback'}` runs the **loopback test adapter** in the
   device worker: it plays 10.0.2.2 at `52:55:0a:00:02:02` and answers ARP and ICMP echo

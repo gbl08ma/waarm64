@@ -308,7 +308,7 @@ test('gpu: a display change raises the event, the guest clears it', async () => 
   const cfg = new Uint8Array(256);
   const calls: string[] = [];
   const ctx = {
-    ram: () => new Uint8Array(1 << 16), ramSize: 1 << 16, complete() {}, config: () => cfg, untaken: () => 0,
+    ram: () => new Uint8Array(1 << 16), ramSize: 1 << 16, complete() {}, config: () => cfg, untaken: () => 0, features: () => 0n,
     changeConfig: (w: (c: Uint8Array) => void) => { calls.push('change'); w(cfg); },
   };
   const b = gpuBackend(ctx, { width: 800, height: 600, resize: { after: 2, width: 1000, height: 700 } });
@@ -485,7 +485,7 @@ test('gpu: a cropped console keeps the display from shrinking below its buffer',
   const { gpuBackend } = await import('../web/gpu.ts');
   const cfg = new Uint8Array(256);
   let events = 0;
-  const ctx = { ram: () => new Uint8Array(1 << 16), ramSize: 1 << 16, complete() {}, config: () => cfg, untaken: () => 0, changeConfig: (w: (c: Uint8Array) => void) => { events++; w(cfg); } };
+  const ctx = { ram: () => new Uint8Array(1 << 16), ramSize: 1 << 16, complete() {}, config: () => cfg, untaken: () => 0, features: () => 0n, changeConfig: (w: (c: Uint8Array) => void) => { events++; w(cfg); } };
   const b = gpuBackend(ctx, { width: 1024, height: 768, keepConsole: true });
   b.gpu.control(cmd(T.CREATE, 1, B8G8R8X8, 1024, 768), 4096);
   b.gpu.control(cmd(T.SCANOUT, 0, 0, 1024, 768, 0, 1), 4096);
@@ -523,7 +523,7 @@ test('gpu: one flush is answered per frame, the first at once; what is queued be
   const { gpuBackend } = await import('../web/gpu.ts');
   const ram = new Uint8Array(1 << 16);
   const done: { w0: number; at: number }[] = [];
-  const ctx = { ram: () => ram, ramSize: ram.length, complete: (w0: number) => done.push({ w0, at: performance.now() }), config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0 };
+  const ctx = { ram: () => ram, ramSize: ram.length, complete: (w0: number) => done.push({ w0, at: performance.now() }), config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
   const b = gpuBackend(ctx, { width: 800, height: 600, paceFlushes: true });
   const send = (w0: number, c: Uint8Array) => {
     ram.set(c, 0x100);
@@ -561,7 +561,7 @@ test('gpu: a transfer copies when it arrives, also while its reply is held (the 
   // reply is still held, so a copy that waited for the reply (or for the page's draw) showed half-drawn frames.
   const { gpuBackend } = await import('../web/gpu.ts');
   const ram = new Uint8Array(RAM_SIZE);
-  const ctx = { ram: () => ram, ramSize: RAM_SIZE, complete() {}, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0 };
+  const ctx = { ram: () => ram, ramSize: RAM_SIZE, complete() {}, config: () => new Uint8Array(256), changeConfig() {}, untaken: () => 0, features: () => 0n };
   const b = gpuBackend(ctx, { width: 800, height: 600, paceFlushes: true });
   const send = (c: Uint8Array) => { ram.set(c, 0x100); return b.request({ w0: 1, queue: 0, read: [{ off: 0x100, len: c.length }], write: [{ off: 0x800, len: 512 }] }); };
   const attach = cmd(T.ATTACH, 1, 1, BigInt(RAM_BASE + 0x4000), 64, 0);

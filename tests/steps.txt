@@ -5,7 +5,8 @@
 # them once: record the new counts here in the same commit, and say why in its
 # message (docs/testing.md "Step counts").
 buildroot 40210538
-devices 113052945
+# devices: virtio-net offers its offloads (web/offload.ts), which the guest's driver negotiates.
+devices 112885960
 ltp 2726162809
 crypto 4356687472
 alpine 2650732286

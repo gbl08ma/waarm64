@@ -4,7 +4,8 @@
 // native, on this machine). The guest takes both leases from systemd-networkd (IPv4 192.0.0.2,
 // translated to the tunnel's IPv6 by the client; IPv6 the tunnel's own address), and reaches an
 // HTTP server on this machine's LAN address through the exit node: a page, then 2 MB (the MSS
-// clamp and the 1,260-byte IPv4 path), then over IPv6 when this machine has a non-link-local IPv6
+// clamp and the 1,260-byte IPv4 path) and 2 MB up (virtio-net's TSO: the device cuts the guest's
+// large packets, web/offload.ts), then over IPv6 when this machine has a non-link-local IPv6
 // address. A tailcat exit node does forward private addresses, so no internet is needed; the
 // internet and DNS (the lease's 1.1.1.1 through the exit node) are opt-in, WEBPC_TAILCAT_INTERNET=1.
 // The machine also lets tailcat clients in (T3): the real tailcat CLI parses the machine's address,
@@ -13,6 +14,7 @@
 // Debian image and target/net/ts.wasm).
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { networkInterfaces } from 'node:os';
@@ -48,7 +50,14 @@ before(async () => {
   const env = Object.fromEntries(execFileSync(script, ['up'], { encoding: 'utf8', timeout: 300_000 }).trim().split('\n').map((l) => l.split(/=(.*)/s).slice(0, 2)));
   addr = env.WEBPC_TAILCAT_ADDR;
   const big = Buffer.alloc(BIG, 'x');
-  http = createServer((req, res) => res.end(req.url === '/big' ? big : 'hello-from-the-exit-nodes-lan\n'));
+  http = createServer((req, res) => {
+    if (req.url !== '/up') return res.end(req.url === '/big' ? big : 'hello-from-the-exit-nodes-lan\n');
+    // An upload: its size and SHA-256.
+    const h = createHash('sha256');
+    let n = 0;
+    req.on('data', (d: Buffer) => { h.update(d); n += d.length; });
+    req.on('end', () => res.end(`${n} ${h.digest('hex')}\n`));
+  });
   await new Promise<void>((resolve) => http.listen(0, '::', resolve)); // both families
   port = (http.address() as { port: number }).port;
   const server = await startServer();
@@ -126,6 +135,20 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
       const size = (await run(`curl -s -m 60 -o /dev/null -w '%{size_download} %{speed_download}\\n' http://${v4}:${port}/big`, 120_000)).split('\n')[0].trim();
       console.log(`# 2 MB over IPv4 through tailcat: ${size} (bytes, bytes/s)`);
       assert.equal(size.split(' ')[0], String(BIG), `the whole download arrived: ${size}`);
+      // 2 MB up: the guest's stack hands the device packets of up to 64 KB, cut here into 1,228-byte segments (TSO), so
+      // the interface counts far fewer packets than the ~1,700 segments that reach the server.
+      const sum = (await run(`head -c ${BIG} /dev/urandom > /tmp/up && sha256sum /tmp/up`)).trim().split(/\s+/)[0];
+      const upload = async (url: string, family: string) => {
+        const tx = async () => Number((await run('cat /sys/class/net/eth0/statistics/tx_packets')).split('\n')[0]);
+        const before = await tx();
+        const t0 = performance.now();
+        const got = (await run(`curl -s -m 60 --data-binary @/tmp/up -H 'Content-Type: application/octet-stream' ${url}`, 120_000)).split('\n')[0].trim();
+        const packets = (await tx()) - before;
+        console.log(`# 2 MB up over ${family} through tailcat: ${got.split(' ')[0]} bytes in ${((performance.now() - t0) / 1000).toFixed(1)} s, ${packets} packets from the guest's interface`);
+        assert.equal(got, `${BIG} ${sum}`, `the whole upload arrived over ${family}`);
+        assert.ok(packets < 1000, `the guest's stack sent large packets (TSO): ${packets} for 2 MB${await context()}`);
+      };
+      await upload(`http://${v4}:${port}/up`, 'IPv4');
 
       // IPv6, untranslated: the guest's own tunnel address to this machine's IPv6 address.
       const v6 = lan('IPv6');
@@ -135,6 +158,7 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
         assert.match(page6, /hello-from-the-exit-nodes-lan/, `the guest reaches [${v6}]:${port} over IPv6${await context()}`);
         const size6 = (await run(`curl -s -m 60 -o /dev/null -w '%{size_download}\\n' "http://[${v6}]:${port}/big"`, 120_000)).split('\n')[0].trim();
         assert.equal(size6, String(BIG), `the whole IPv6 download arrived: ${size6}`);
+        await upload(`"http://[${v6}]:${port}/up"`, 'IPv6');
       }
 
       // The machine as a tailcat server: its address is one tailcat reads (the exit node's relay), and the CLI

@@ -9,6 +9,7 @@ import { gpuBackend, type GpuOptions } from './gpu.ts';
 import { canvasPresenter, pagePresenter, type DisplayFromPage } from './gpu-present.ts';
 import { portHost } from './virgl-host.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
+import { checksumValid, DATA_VALID, F_GUEST_CSUM, MAX_GSO_FRAME, NET_HDR, OFFLOADS, transmit } from './offload.ts';
 import { IoStats } from './iostats.ts';
 import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import { ramDisk } from './ramdisk.ts';
@@ -120,6 +121,7 @@ export const specPorts = (specs: DeviceSpec[]): Transferable[] =>
 
 // virtio::DevShared layout (core/src/virtio.rs).
 const EVENTS = 0;
+const FEATURES = 8;
 const EPOCH = 16;
 const CONFIG_GEN = 20;
 const CONFIG = 24;
@@ -160,11 +162,11 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
       return { entry: [2n, 1n << 2n | (writable(d) ? 1n << 9n : 1n << 5n) | (discard ? 1n << 13n | 1n << 14n : 0n), 1n, 128n, BigInt(config.length)], config };
     }
     case 'net': {
-      // Features MAC (5) and STATUS (16); config: mac, status = LINK_UP. receiveq, transmitq.
+      // Features MAC (5), STATUS (16) and the offloads (web/offload.ts); config: mac, status = LINK_UP. receiveq, transmitq.
       const config = new Uint8Array(8);
       config.set((d.mac ?? '52:54:00:12:34:56').split(':').map((h) => parseInt(h, 16)));
       config[6] = 1;
-      return { entry: [1n, 1n << 5n | 1n << 16n, 2n, 256n, 8n], config };
+      return { entry: [1n, 1n << 5n | 1n << 16n | OFFLOADS, 2n, 256n, 8n], config };
     }
     case '9p': {
       // Feature MOUNT_TAG (0); config: tag length (u16), tag. One request queue.
@@ -197,6 +199,8 @@ export type Ctx = {
   untaken: () => number;
   /** Changes the config space under a running driver (docs/abi.md, ABI 31): `write` gets it, and the guest gets a config-change interrupt. */
   changeConfig: (write: (config: Uint8Array) => void) => void;
+  /** The features the driver negotiated (0 before FEATURES_OK). */
+  features: () => bigint;
 };
 
 /**
@@ -315,14 +319,14 @@ export function scatter(ram: Uint8Array, segs: Segment[], data: Uint8Array) {
   }
 }
 
-const NET_HDR = 12; // virtio_net_hdr_v1: no offloads, so all zeros but num_buffers
-const MAX_FRAME = 1518; // a 1500-byte MTU, the Ethernet header and a VLAN tag
 const RX_QUEUE = 256; // frames held while the guest has posted no receive buffer
 
 /**
- * virtio-net: each transmitted chain is one frame for the adapter (header
- * stripped); frames from the adapter wait for receive buffers, the oldest
- * dropped past RX_QUEUE, as a NIC drops. Guest bugs (short or oversized
+ * virtio-net: each transmitted chain is a frame for the adapter (header
+ * stripped, its checksum finished) or, a large TCP or UDP packet, its segments
+ * (web/offload.ts); frames from the adapter wait for receive buffers, the
+ * oldest dropped past RX_QUEUE, as a NIC drops, and those whose TCP or UDP
+ * checksum is right are marked so. Guest bugs (short, oversized or malformed
  * chains) drop the frame.
  */
 function net(ctx: Ctx, d: NetSpec): Backend {
@@ -335,6 +339,7 @@ function net(ctx: Ctx, d: NetSpec): Backend {
       if (NET_HDR + f.length > room(rx[0])) continue; // the guest's buffers are too small: dropped
       const r = rx.shift()!;
       const b = new Uint8Array(NET_HDR + f.length);
+      if (ctx.features() & F_GUEST_CSUM && checksumValid(f)) b[0] = DATA_VALID;
       b[10] = 1; // num_buffers
       b.set(f, NET_HDR);
       scatter(ctx.ram(), r.write, b);
@@ -360,7 +365,7 @@ function net(ctx: Ctx, d: NetSpec): Backend {
         return undefined;
       }
       const len = r.read.reduce((n, s) => n + s.len, 0);
-      if (len > NET_HDR && len <= NET_HDR + MAX_FRAME) adapter.send(gather(ctx.ram(), r.read, len).subarray(NET_HDR));
+      if (len > NET_HDR && len <= NET_HDR + MAX_GSO_FRAME) for (const f of transmit(gather(ctx.ram(), r.read, len))) adapter.send(f);
       return 0;
     },
     reset() {
@@ -697,6 +702,10 @@ export class Devices {
         untaken: () => this.untaken(i),
         config: () => new Uint8Array(this.memory.buffer, shared[i] + CONFIG, 256),
         changeConfig: (write) => this.changeConfig(i, write),
+        features: () => {
+          const f = new Uint32Array(this.memory.buffer, shared[i] + FEATURES, 2);
+          return BigInt(Atomics.load(f, 0)) | BigInt(Atomics.load(f, 1)) << 32n;
+        },
       };
       switch (d.type) {
         case 'console': return console_((t) => out(i, t), ctx);

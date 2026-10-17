@@ -37,7 +37,7 @@ const query = (code: number, start: number, count: number, size: number) => byte
 function rig(sink = checksumSink(1 << 20), source = patternSource()) {
   const ram = new Uint8Array(1 << 20);
   const done: { w0: number; len: number }[] = [];
-  const ctx: Ctx = { ram: () => ram, ramSize: ram.length, complete: (w0, len) => done.push({ w0, len }), config: () => new Uint8Array(256), changeConfig: () => {}, untaken: () => 0 };
+  const ctx: Ctx = { ram: () => ram, ramSize: ram.length, complete: (w0, len) => done.push({ w0, len }), config: () => new Uint8Array(256), changeConfig: () => {}, untaken: () => 0, features: () => 0n };
   const dev = sndBackend(ctx, sink, source);
   let free = 0;
   let head = 0;

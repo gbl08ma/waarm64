@@ -328,8 +328,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   request (`max_discard_seg` 1); a compaction copies synchronously in the device worker (at most
   the blocks freed, so a trim of GBs can hold the guest's I/O for seconds). The page's Debian
   doesn't mount with `discard`: the user runs `fstrim`, or waits for `fstrim.timer`.
-- net: no offloads (`CSUM`, `GSO`, `MRG_RXBUF`), no `CTRL_VQ`, one queue pair; frames from a page
-  adapter can't be deterministic. The real backends are in [plans/networking.md](plans/networking.md).
+- net: no receive coalescing (`GUEST_TSO4`/`6` with `MRG_RXBUF`; the transmit offloads and `GUEST_CSUM` are
+  built, [devices.md](devices.md) "net"): the guest's GRO still takes a download one 1,280-byte packet at a time.
+  Coalescing in the device needs packets that arrive together, and the IP port carries one per message (each its
+  own task in the device worker), so it would need batches from the tailnet worker or a hold that adds latency;
+  measure a download's guest CPU first. No `CTRL_VQ` (nothing asks for it: it would only let the guest switch the receive
+  offload off with `ethtool`), one queue pair (one device worker).
 - 9p: an in-memory tree only (OPFS or an HTTP-served tree, as v86's lazy filesystem, are the
   candidates); no xattrs/ACLs; `qid.version` 0 (only `cache=none` coherent); readdir offsets are
   entry indices; whole-second timestamps.
