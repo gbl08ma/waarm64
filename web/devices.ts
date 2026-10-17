@@ -9,7 +9,10 @@ import { gpuBackend, type GpuOptions } from './gpu.ts';
 import { canvasPresenter, pagePresenter, type DisplayFromPage } from './gpu-present.ts';
 import { portHost } from './virgl-host.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
-import { checksumValid, DATA_VALID, F_GUEST_CSUM, MAX_GSO_FRAME, NET_HDR, OFFLOADS, transmit } from './offload.ts';
+import { F_GUEST_CSUM, F_GUEST_TSO4, F_GUEST_TSO6, F_MRG_RXBUF, MAX_GSO_FRAME, NET_HDR, OFFLOADS, receive, transmit, type RxFrame } from './offload.ts';
+
+/** The largest frame for the guest: a merged packet, IPv6's largest, behind Ethernet and a VLAN tag. */
+const MAX_RX = NET_HDR + 18 + 40 + 65_535;
 import { IoStats } from './iostats.ts';
 import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import { ramDisk } from './ramdisk.ts';
@@ -325,38 +328,68 @@ const RX_QUEUE = 256; // frames held while the guest has posted no receive buffe
  * virtio-net: each transmitted chain is a frame for the adapter (header
  * stripped, its checksum finished) or, a large TCP or UDP packet, its segments
  * (web/offload.ts); frames from the adapter wait for receive buffers, the
- * oldest dropped past RX_QUEUE, as a NIC drops, and those whose TCP or UDP
- * checksum is right are marked so. Guest bugs (short, oversized or malformed
- * chains) drop the frame.
+ * oldest dropped past RX_QUEUE, as a NIC drops. Those from a port arrive in
+ * batches (the frames of one task, delivered at its end: a microtask, no
+ * timer), and `receive` merges a batch's TCP segments and marks valid
+ * checksums; the test adapters' frames go at once, so deterministic mode
+ * stays exact. With MRG_RXBUF a frame fills as many buffers as it needs.
+ * Guest bugs (short, oversized or malformed chains) drop the frame.
  */
-function net(ctx: Ctx, d: NetSpec): Backend {
+export function net(ctx: Ctx, d: NetSpec): Backend {
   const rx: Request[] = [];
-  const frames: Uint8Array[] = [];
+  const frames: Uint8Array[] = []; // not yet through `receive`
+  const ready: RxFrame[] = []; // waiting for buffers
+  let scheduled = false;
   const room = (r: Request) => r.write.reduce((n, s) => n + s.len, 0);
   const deliver = () => {
-    while (rx.length && frames.length) {
-      const f = frames.shift()!;
-      if (NET_HDR + f.length > room(rx[0])) continue; // the guest's buffers are too small: dropped
-      const r = rx.shift()!;
-      const b = new Uint8Array(NET_HDR + f.length);
-      if (ctx.features() & F_GUEST_CSUM && checksumValid(f)) b[0] = DATA_VALID;
-      b[10] = 1; // num_buffers
-      b.set(f, NET_HDR);
-      scatter(ctx.ram(), r.write, b);
-      ctx.complete(r.w0, b.length);
+    scheduled = false;
+    const f = ctx.features();
+    const mrg = (f & F_MRG_RXBUF) !== 0n;
+    if (frames.length) {
+      ready.push(...receive(frames.splice(0), { csum: (f & F_GUEST_CSUM) !== 0n, merge4: mrg && (f & F_GUEST_TSO4) !== 0n, merge6: mrg && (f & F_GUEST_TSO6) !== 0n }));
+      if (ready.length > RX_QUEUE) ready.splice(0, ready.length - RX_QUEUE);
+    }
+    while (rx.length && ready.length) {
+      const { hdr, frame } = ready[0];
+      const total = NET_HDR + frame.length;
+      let n = 1;
+      for (let have = room(rx[0]); have < total; n++) {
+        if (!mrg || n === rx.length) break;
+        have += room(rx[n]);
+      }
+      const fits = rx.slice(0, n).reduce((k, r) => k + room(r), 0) >= total;
+      if (!fits && mrg && n === rx.length && total <= MAX_RX) break; // more buffers to come
+      ready.shift();
+      if (!fits) continue; // larger than the guest's buffers can hold: dropped
+      hdr[10] = n & 255; // num_buffers
+      hdr[11] = n >> 8;
+      const b = new Uint8Array(total);
+      b.set(hdr);
+      b.set(frame, NET_HDR);
+      for (let k = 0, at = 0; k < n; k++) {
+        const r = rx.shift()!;
+        const len = Math.min(room(r), total - at);
+        scatter(ctx.ram(), r.write, b.subarray(at, at + len));
+        ctx.complete(r.w0, len);
+        at += len;
+      }
     }
   };
-  const receive = (f: Uint8Array) => {
+  const sync = d.adapter === 'loopback' || d.adapter === 'echo';
+  const receiveFrame = (f: Uint8Array) => {
     frames.push(f);
-    if (frames.length > RX_QUEUE) frames.shift();
-    deliver();
+    if (sync) deliver();
+    else if (!scheduled) {
+      scheduled = true;
+      queueMicrotask(deliver);
+    }
   };
   const a = d.adapter;
   const adapter: NetAdapter =
-    a === 'loopback' ? loopback(receive)
-    : a === 'echo' ? gateway(receive, echoBackend())
-    : a instanceof MessagePort ? portAdapter(a, receive)
-    : gateway(receive, portBackend(a.ip), { advertiseMs: 60_000 });
+    a === 'loopback' ? loopback(receiveFrame)
+    : a === 'echo' ? gateway(receiveFrame, echoBackend())
+    : a instanceof MessagePort ? portAdapter(a, receiveFrame)
+    : gateway(receiveFrame, portBackend(a.ip), { advertiseMs: 60_000 });
   return {
     request(r) {
       if (r.queue === 0) {
@@ -371,6 +404,7 @@ function net(ctx: Ctx, d: NetSpec): Backend {
     reset() {
       rx.length = 0;
       frames.length = 0;
+      ready.length = 0;
     },
     close: () => adapter.close?.(),
   };

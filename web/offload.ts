@@ -2,7 +2,9 @@
 // so that work runs here, at host speed, and not as guest code in the JIT's cache. On the way out the device
 // finishes partial checksums (`CSUM`) and cuts large TCP and UDP packets into segments (`HOST_TSO4`,
 // `HOST_TSO6` with `HOST_ECN`, `HOST_USO`); on the way in it checks TCP and UDP checksums and marks the
-// valid ones (`GUEST_CSUM`), so the guest doesn't check them again. Adapters see ordinary frames either way.
+// valid ones (`GUEST_CSUM`), so the guest doesn't check them again, and merges the consecutive TCP segments
+// of a batch into one large packet (`GUEST_TSO4`, `GUEST_TSO6` over `MRG_RXBUF`'s buffers), so the guest's
+// stack takes them once. Adapters see ordinary frames either way.
 
 /** The 12-byte `virtio_net_hdr_v1` before every frame (virtio 1.2 §5.1.6). */
 export const NET_HDR = 12;
@@ -18,7 +20,10 @@ export const F_HOST_TSO4 = 1n << 11n;
 export const F_HOST_TSO6 = 1n << 12n;
 export const F_HOST_ECN = 1n << 13n;
 export const F_HOST_USO = 1n << 56n;
-export const OFFLOADS = F_CSUM | F_GUEST_CSUM | F_HOST_TSO4 | F_HOST_TSO6 | F_HOST_ECN | F_HOST_USO;
+export const F_GUEST_TSO4 = 1n << 7n;
+export const F_GUEST_TSO6 = 1n << 8n;
+export const F_MRG_RXBUF = 1n << 15n;
+export const OFFLOADS = F_CSUM | F_GUEST_CSUM | F_HOST_TSO4 | F_HOST_TSO6 | F_HOST_ECN | F_HOST_USO | F_GUEST_TSO4 | F_GUEST_TSO6 | F_MRG_RXBUF;
 
 const NEEDS_CSUM = 1; // header flags
 export const DATA_VALID = 2;
@@ -164,4 +169,109 @@ export function checksumValid(f: Uint8Array): boolean {
   if ((proto !== 6 && proto !== 17) || end > f.length || l4 + (proto === 6 ? 20 : 8) > end) return false;
   if (proto === 17 && !v6 && be16(f, l4 + 6) === 0) return false; // no checksum: nothing to vouch for
   return fold(sum(f, l4, end, pseudo(f, l3, v6, proto, end - l4))) === 0xffff;
+}
+
+/** A frame for the guest with its `virtio_net_hdr_v1` (`num_buffers` left for the device to fill). */
+export type RxFrame = { hdr: Uint8Array; frame: Uint8Array };
+
+/** What a TCP segment is for merging: where its parts are, its sequence number and payload. */
+type Segment = { f: Uint8Array; l3: number; v6: boolean; l4: number; hl: number; end: number; seq: number; len: number };
+
+/**
+ * A segment that may be merged: a valid TCP checksum (`checksumValid`), IPv4 without options or IPv6 without
+ * extension headers, a payload, and no flags but ACK and PSH. Undefined for anything else.
+ */
+function mergeable(f: Uint8Array): Segment | undefined {
+  if (!checksumValid(f)) return undefined;
+  const { l3, v6 } = l3Of(f)!;
+  if (v6 ? f[l3 + 6] !== 6 : f[l3 + 9] !== 6 || f[l3] !== 0x45) return undefined;
+  const l4 = l3 + (v6 ? 40 : 20);
+  const hl = l4 + (f[l4 + 12] >> 4) * 4;
+  const end = v6 ? l4 + be16(f, l3 + 4) : l3 + be16(f, l3 + 2);
+  if (hl < l4 + 20 || hl >= end || (f[l4 + 13] & ~0x08) !== 0x10) return undefined; // ACK, maybe PSH; nothing else
+  const seq = ((f[l4 + 4] << 24) | (f[l4 + 5] << 16) | (f[l4 + 6] << 8) | f[l4 + 7]) >>> 0;
+  return { f, l3, v6, l4, hl, end, seq, len: end - hl };
+}
+
+/**
+ * Whether `b` may follow `a` in a merged packet (the rules of Linux's GRO): the same headers byte for byte but
+ * for the lengths, the IPv4 ID and checksums, the sequence number and PSH; contiguous sequence numbers; `a`
+ * without PSH and as long as the run's first payload (`mss`), `b` no longer.
+ */
+function follows(a: Segment, b: Segment, mss: number) {
+  if (b.v6 !== a.v6 || b.hl !== a.hl || b.l4 !== a.l4 || a.len !== mss || b.len > mss || a.f[a.l4 + 13] & 0x08) return false;
+  if (b.seq !== ((a.seq + a.len) >>> 0)) return false;
+  const skip = a.v6 ? [a.l3 + 4, a.l3 + 5] : [a.l3 + 2, a.l3 + 3, a.l3 + 4, a.l3 + 5, a.l3 + 10, a.l3 + 11];
+  skip.push(a.l4 + 4, a.l4 + 5, a.l4 + 6, a.l4 + 7, a.l4 + 13, a.l4 + 16, a.l4 + 17);
+  for (let k = 0; k < a.hl; k++) if (a.f[k] !== b.f[k] && !skip.includes(k)) return false;
+  return (b.f[b.l4 + 13] & ~0x08) === (a.f[a.l4 + 13] & ~0x08);
+}
+
+/** The largest merged IP packet: an IPv4 total length or IPv6 payload length. */
+const MAX_IP = 65_535;
+
+/**
+ * The frames of a batch as the guest gets them. With `merge4`/`merge6` (`GUEST_TSO4`/`6` and `MRG_RXBUF`
+ * negotiated), runs of consecutive segments of one TCP stream become one packet: the first segment's headers
+ * with the lengths and IPv4 checksum redone, PSH from the last, `gso_type` TCPv4 or TCPv6 and `gso_size` the
+ * first payload's length, and `NEEDS_CSUM` with the pseudo-header's sum in the checksum (the guest's stack
+ * treats a partial checksum as checked; each segment's was). With `csum` (`GUEST_CSUM`) any other frame whose
+ * TCP or UDP checksum is right is marked `DATA_VALID`.
+ */
+export function receive(frames: Uint8Array[], o: { csum: boolean; merge4: boolean; merge6: boolean }): RxFrame[] {
+  const out: RxFrame[] = [];
+  for (let i = 0; i < frames.length;) {
+    const first = o.merge4 || o.merge6 ? mergeable(frames[i]) : undefined;
+    const run = first && (first.v6 ? o.merge6 : o.merge4) ? [first] : [];
+    if (first && run.length) {
+      let size = first.end - first.l3 - (first.v6 ? 40 : 0);
+      for (let j = i + 1; j < frames.length; j++) {
+        const next = mergeable(frames[j]);
+        if (!next || !follows(run[run.length - 1], next, first.len) || size + next.len > MAX_IP) break;
+        run.push(next);
+        size += next.len;
+      }
+    }
+    if (run.length < 2) {
+      const hdr = new Uint8Array(NET_HDR);
+      if (o.csum && checksumValid(frames[i])) hdr[0] = DATA_VALID;
+      out.push({ hdr, frame: frames[i] });
+      i++;
+      continue;
+    }
+    out.push(merge(run));
+    i += run.length;
+  }
+  return out;
+}
+
+function merge(run: Segment[]): RxFrame {
+  const a = run[0];
+  const last = run[run.length - 1];
+  const payload = run.reduce((n, s) => n + s.len, 0);
+  const f = new Uint8Array(a.hl + payload);
+  f.set(a.f.subarray(0, a.hl));
+  let at = a.hl;
+  for (const s of run) {
+    f.set(s.f.subarray(s.hl, s.end), at);
+    at += s.len;
+  }
+  const { l3, l4, hl, v6 } = a;
+  if (v6) put16(f, l3 + 4, f.length - l3 - 40);
+  else {
+    put16(f, l3 + 2, f.length - l3);
+    put16(f, l3 + 10, 0);
+    put16(f, l3 + 10, ~fold(sum(f, l3, l4)) & 0xffff);
+  }
+  f[l4 + 13] |= last.f[last.l4 + 13] & 0x08; // PSH
+  put16(f, l4 + 16, fold(pseudo(f, l3, v6, 6, f.length - l4))); // a partial checksum: the pseudo-header's sum
+  const hdr = new Uint8Array(NET_HDR);
+  hdr[0] = NEEDS_CSUM;
+  hdr[1] = v6 ? GSO_TCPV6 : GSO_TCPV4;
+  const le = (at: number, v: number) => { hdr[at] = v & 255; hdr[at + 1] = v >> 8; };
+  le(2, hl);
+  le(4, a.len);
+  le(6, l4);
+  le(8, 16);
+  return { hdr, frame: f };
 }

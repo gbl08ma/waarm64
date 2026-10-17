@@ -160,8 +160,10 @@ mode (and natively in realtime mode: std has no CSPRNG).
   `52:54:00:12:34:56` by default, link always up. Each transmitted chain is a frame with the
   12-byte `virtio_net_hdr_v1` stripped (≤ 12 bytes, over 12 + 1518 without GSO, or past an IPv6
   packet's largest, dropped). Frames for the guest wait for receive buffers (the oldest dropped past
-  256; one larger than the next buffer dropped) and get a header with `num_buffers` 1. No `CTRL_VQ`,
-  one queue pair.
+  256) and fill as many as they need (`MRG_RXBUF`: the header's `num_buffers`; without it, one larger
+  than the next buffer is dropped). Frames from a port (a page adapter or a port backend) are delivered
+  in batches: those one task brought, at its end (a microtask, so no timer); the test adapters' at once,
+  so deterministic mode stays exact. No `CTRL_VQ`, one queue pair.
 - **Offloads** (`web/offload.ts`; byte tests in `tests/offload.test.ts`): what the guest's stack would
   run as guest code runs in the device worker, and adapters still see ordinary frames. `CSUM`: a
   `NEEDS_CSUM` frame gets its checksum finished (from `csum_start` to the end, at `csum_offset`).
@@ -175,8 +177,17 @@ mode (and natively in realtime mode: std has no CSPRNG).
   guest whose TCP or UDP checksum the device found right (IPv4, or IPv6 without extension headers; not a
   fragment; padding left out) is marked `DATA_VALID`, and the guest doesn't check it again; anything else
   is left to the guest. The guest's MSS follows the lease's MTU (DHCP option 26, and the gateway's MSS
-  clamp), so segments fit the tunnel. The loopback adapter's ARP and ICMP are neither offloaded nor
-  marked. No receive coalescing (`GUEST_TSO4`/`6`, `MRG_RXBUF`): docs/backlog.md "net".
+  clamp), so segments fit the tunnel. `GUEST_TSO4`, `GUEST_TSO6` (only with `MRG_RXBUF`: without it
+  Linux posts a 64 KB chain per buffer): within a batch, consecutive segments of one TCP stream become
+  one packet, by the rules of Linux's GRO: each with a right checksum, IPv4 without options or IPv6
+  without extension headers, the same headers byte for byte but for the lengths, IPv4 ID, checksums,
+  sequence number and PSH; contiguous sequence numbers; only ACK, and PSH on the last; every payload as
+  long as the first but the last; up to 65,535 bytes of IP. The packet has the first segment's headers
+  with the lengths and IPv4 checksum redone and PSH from the last, `gso_type` TCPv4 or TCPv6, `gso_size`
+  the first payload's length, and `NEEDS_CSUM` with the pseudo-header's sum in the checksum (the spec
+  asks for it with GSO; the guest takes a partial checksum as checked). The relay's messages carry 2 to
+  4 packets of a download (bench/net/REPORT.md "Batches"), so a download reaches the guest's stack as
+  ~1.5 times fewer packets. The loopback adapter's ARP and ICMP are neither offloaded, marked nor merged.
 - **Adapters** (`web/net.ts`): `NetAdapter = {send(frame), close?()}`, made with the
   `receive(frame)` it calls. `{adapter: 'loopback'}` runs the **loopback test adapter** in the
   device worker: it plays 10.0.2.2 at `52:55:0a:00:02:02` and answers ARP and ICMP echo

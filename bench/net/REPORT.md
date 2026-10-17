@@ -224,6 +224,20 @@ didn't change (the first download after a boot ran at ~65 Mbit/s in three of the
 not separated). Throughput here is the rig's (exit node, relay and browser on one VM), not the guest's: the guest's
 CPU stays under its wall time.
 
+**The download: merged into the guest.** With the batches kept to the device, virtio-net merges each batch's
+consecutive TCP segments into one packet (`GUEST_TSO4`/`6` over `MRG_RXBUF`, web/offload.ts `receive`). The guest's
+interface counts a merged packet once:
+
+| (8 MB down, 2 rounds) | packets into the guest (`rx_packets`) | Mbit/s | guest CPU (s) | JSON |
+|---|---|---|---|---|
+| before (the 4 boots above) | 7,181–7,256 | 65–87 | 0.41–0.69 | `1-none.json` to `4-16k.json` |
+| merged (3 boots) | 4,578–5,186 | 13.7 (once), 65 / 65, 86–88 | 0.37–0.84 | `5-merge-1.json` to `5-merge-3.json` |
+
+About 1.5 times fewer packets through the guest's stack (its driver, GRO, IP and TCP). Throughput didn't change
+(the rig's limit), and the guest's CPU time is too noisy at this size to show a difference. One first download
+after a boot took 4.9 s (13.7 Mbit/s); the other two first downloads ran at 65 Mbit/s like every earlier run's but
+one; not explained from these runs.
+
 ## Reproduce
 ```sh
 # T1: a tailcat exit node on derper, both on this machine

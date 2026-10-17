@@ -2,7 +2,7 @@
 // cut into segments, received checksums vouched for. Checksums are checked with web/net.ts's own `checksum`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checksumValid, MAX_FRAME, NET_HDR, transmit } from '../web/offload.ts';
+import { checksumValid, MAX_FRAME, NET_HDR, receive, transmit } from '../web/offload.ts';
 import { checksum } from '../web/net.ts';
 
 const be16 = (b: Uint8Array, at: number) => (b[at] << 8) | b[at + 1];
@@ -175,4 +175,135 @@ test('checksumValid: right TCP and UDP checksums only, padding left out; not ICM
   const ext = u6.slice(); ext[ETH + 6] = 0; // a hop-by-hop header first
   assert.ok(!checksumValid(ext), 'IPv6 with an extension header is left to the guest');
   assert.ok(!checksumValid(Uint8Array.from([1, 2, 3])));
+});
+
+/** The received segments of one TCP stream: a guest-style large packet cut by `transmit` (all valid). */
+function stream(v6: boolean, payload: number, mss = 1228, flags = 0x18) {
+  return transmit(guestPacket({ v6, proto: TCP, payload, gso: v6 ? 4 : 1, mss, flags }).b);
+}
+
+/** A merged packet finished as the guest's stack would check it: the partial checksum completed. */
+function finished(f: Uint8Array, hdr: Uint8Array) {
+  const start = hdr[6] | (hdr[7] << 8);
+  const at = start + (hdr[8] | (hdr[9] << 8));
+  const g = f.slice();
+  put16(g, at, checksum(g.subarray(start)));
+  return g;
+}
+
+const ALL = { csum: true, merge4: true, merge6: true };
+
+for (const v6 of [false, true]) {
+  test(`receive, TCP over IPv${v6 ? 6 : 4}: a batch's consecutive segments become one packet with GSO, a partial checksum and PSH from the last`, () => {
+    const mss = 1228;
+    const segs = stream(v6, 3 * mss + 100, mss);
+    const l4 = ETH + (v6 ? 40 : 20);
+    const hl = l4 + 32;
+    const [m, ...rest] = receive(segs, ALL);
+    assert.equal(rest.length, 0, 'one packet');
+    const { hdr, frame } = m;
+    assert.deepEqual([...hdr.subarray(0, 10)], [1, v6 ? 4 : 1, hl & 255, hl >> 8, mss & 255, mss >> 8, l4, 0, 16, 0], 'NEEDS_CSUM, TCPv4/6, hdr_len, gso_size, csum_start, csum_offset');
+    assert.equal(frame.length, hl + 3 * mss + 100);
+    const data = Buffer.concat(segs.map((s) => s.subarray(hl)));
+    assert.equal(Buffer.compare(frame.subarray(hl), data), 0, 'the payloads in order');
+    assert.equal(be32(frame, l4 + 4), be32(segs[0], l4 + 4), 'the first sequence number');
+    assert.equal(frame[l4 + 13], 0x18, 'ACK, and PSH from the last');
+    if (v6) assert.equal(be16(frame, ETH + 4), frame.length - ETH - 40);
+    else {
+      assert.equal(be16(frame, ETH + 2), frame.length - ETH);
+      assert.equal(checksum(frame.subarray(ETH, ETH + 20)), 0, 'the IPv4 header checksum');
+    }
+    assert.ok(checksumValid(finished(frame, hdr)), 'the partial checksum completes to a right one');
+    const off = receive(segs, { csum: true, merge4: v6, merge6: !v6 });
+    assert.equal(off.length, 4, 'not merged where the guest didn\'t negotiate it');
+    assert.ok(off.every((r) => r.hdr[0] === 2 && r.hdr[1] === 0), 'each DATA_VALID');
+  });
+}
+
+test('receive: what Linux\'s GRO wouldn\'t merge stays apart (gaps, other ACKs, PSH, other flags, bad checksums, short segments, the size cap)', () => {
+  const runs = (frames: Uint8Array[]) => receive(frames, ALL).map((r) => (r.hdr[1] ? `m${(r.frame.length - 66) / 1228 | 0}` : r.hdr[0] === 2 ? 'v' : '-'));
+  const segs = () => stream(false, 4 * 1228);
+  const s = segs();
+  assert.deepEqual(runs([s[0], s[2], s[3]]), ['v', 'm2'], 'a gap');
+  const ack = segs(); ack[2][ETH + 20 + 11] ^= 1; // the ACK number
+  fixTcp(ack[2]);
+  assert.deepEqual(runs(ack), ['m2', 'v', 'v'], 'another ACK number: apart from both neighbors');
+  const push = segs(); push[1][ETH + 20 + 13] |= 0x08;
+  fixTcp(push[1]);
+  assert.deepEqual(runs(push), ['m2', 'm2'], 'PSH ends a run');
+  const fin = stream(false, 4 * 1228, 1228, 0x19);
+  assert.deepEqual(runs(fin), ['m3', 'v'], 'a FIN isn\'t merged');
+  const bad = segs(); bad[1][bad[1].length - 1] ^= 1;
+  assert.deepEqual(runs(bad), ['v', '-', 'm2'], 'a bad checksum: neither merged nor marked');
+  const short = stream(false, 1228 + 1000, 1228, 0x10); // a full segment, then a short one
+  const after = short[0].slice(); // then a full one again, continuing the stream
+  const q = (be32(after, ETH + 24) + 2228) >>> 0;
+  after.set([q >>> 24, (q >> 16) & 255, (q >> 8) & 255, q & 255], ETH + 24);
+  fixTcp(after);
+  assert.deepEqual(runs([...short, after]), ['m1', 'v'], 'a short segment ends a run');
+  const big = stream(false, 50 * 1228, 1228, 0x10); // ACK only: no PSH to end the run
+  for (let k = 0; k < 10; k++) { // 10 more segments that continue the stream: 60 × 1,228 bytes is past IPv4's 65,535
+    const c = big[big.length - 1].slice();
+    const at = ETH + 20 + 4;
+    const q = (be32(c, at) + 1228) >>> 0;
+    c.set([q >>> 24, (q >> 16) & 255, (q >> 8) & 255, q & 255], at);
+    fixTcp(c);
+    big.push(c);
+  }
+  const merged = receive(big, ALL);
+  assert.ok(merged.length === 2 && merged.every((r) => r.frame.length - ETH <= 65_535), `IPv4's length cap: ${merged.map((r) => r.frame.length)}`);
+  assert.deepEqual(runs([Uint8Array.from([1, 2, 3])]), ['-']);
+});
+
+/** Redoes a hand-changed TCP segment's checksum (IPv4, 20-byte IP header). */
+function fixTcp(f: Uint8Array) {
+  const l4 = ETH + 20;
+  put16(f, l4 + 16, 0);
+  const msg = f.subarray(l4);
+  const p = pseudo(false, TCP, msg.length);
+  const all = new Uint8Array(p.length + msg.length);
+  all.set(p);
+  all.set(msg, p.length);
+  put16(f, l4 + 16, checksum(all));
+}
+
+test('virtio-net on a port backend: a batch\'s segments reach the guest as one packet across mergeable buffers; one at a time without MRG_RXBUF', async () => {
+  const { net } = await import('../web/devices.ts');
+  const { F_GUEST_CSUM, F_GUEST_TSO4, F_MRG_RXBUF } = await import('../web/offload.ts');
+  for (const features of [F_GUEST_CSUM | F_GUEST_TSO4 | F_MRG_RXBUF, F_GUEST_CSUM]) {
+    const ram = new Uint8Array(1 << 20);
+    const done: { w0: number; len: number }[] = [];
+    const ctx = { ram: () => ram, ramSize: ram.length, complete: (w0: number, len: number) => done.push({ w0, len }), config: () => new Uint8Array(256), untaken: () => 0, changeConfig() {}, features: () => features };
+    const { port1, port2 } = new MessageChannel();
+    const dev = net(ctx, { type: 'net', adapter: { ip: port1 } });
+    try {
+    const tick = () => new Promise((r) => setTimeout(r, 5));
+    port2.postMessage({ type: 'lease', lease: { address: DST4, mtu: 1500, dns: [], domains: [] } });
+    await tick();
+    // The guest sends a frame first (the gateway learns its MAC), then posts 40 receive buffers of 2 KiB.
+    const tx = guestPacket({ v6: false, proto: UDP, payload: 10, gso: 0, mss: 0 }).b;
+    ram.set(tx, 0);
+    dev.request({ w0: 999, queue: 1, read: [{ off: 0, len: tx.length }], write: [] });
+    for (let k = 0; k < 40; k++) dev.request({ w0: k, queue: 0, read: [], write: [{ off: 0x10000 + k * 2048, len: 2048 }] });
+    // One message from the backend: 4 segments of a stream, as IP packets.
+    const segs = stream(false, 3 * 1228 + 100).map((s) => s.slice(ETH).buffer);
+    port2.postMessage(segs, segs);
+    await tick();
+    const hl = ETH + 20 + 32;
+    if (features & F_MRG_RXBUF) {
+      const total = NET_HDR + hl + 3 * 1228 + 100;
+      const n = Math.ceil(total / 2048);
+      assert.deepEqual(done.map((d) => d.w0), Array.from({ length: n }, (_, k) => k), `one packet in the first ${n} buffers, in order`);
+      assert.equal(done.reduce((k, d) => k + d.len, 0), total);
+      const h = ram.subarray(0x10000, 0x10000 + NET_HDR);
+      assert.deepEqual([h[0], h[1], h[10] | (h[11] << 8)], [1, 1, n], 'NEEDS_CSUM, TCPv4, num_buffers');
+    } else {
+      assert.equal(done.length, 4, 'four frames, a buffer each');
+      assert.ok([0, 1, 2, 3].every((k) => ram[0x10000 + k * 2048] === 2 && ram[0x10000 + k * 2048 + 10] === 1), 'each DATA_VALID, num_buffers 1');
+    }
+    } finally {
+      dev.close?.();
+      port2.close();
+    }
+  }
 });

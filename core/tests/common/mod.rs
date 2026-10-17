@@ -208,12 +208,23 @@ impl Dev {
                 let rw = if overlay.is_some() { 1 << 9 } else { 1 << 5 };
                 e(2, 1 << 2 | rw, 1, 128, c)
             }
-            // MAC, STATUS and the offloads (web/offload.ts: CSUM, GUEST_CSUM, HOST_TSO4, HOST_TSO6,
-            // HOST_ECN, HOST_USO); the default MAC, LINK_UP. The loopback adapter answers ARP and ICMP
-            // only, which the guest neither offloads nor gets marked, so the twin's frames don't change.
+            // MAC, STATUS and the offloads (web/offload.ts: CSUM, GUEST_CSUM, GUEST_TSO4, GUEST_TSO6,
+            // HOST_TSO4, HOST_TSO6, HOST_ECN, MRG_RXBUF, HOST_USO); the default MAC, LINK_UP. The
+            // loopback adapter answers ARP and ICMP only, which the guest doesn't offload and which
+            // aren't marked or merged, and each reply fits one buffer: the twin's frames don't change.
             Dev::Net => e(
                 1,
-                1 << 5 | 1 << 16 | 1 | 1 << 1 | 1 << 11 | 1 << 12 | 1 << 13 | 1 << 56,
+                1 << 5
+                    | 1 << 16
+                    | 1
+                    | 1 << 1
+                    | 1 << 7
+                    | 1 << 8
+                    | 1 << 11
+                    | 1 << 12
+                    | 1 << 13
+                    | 1 << 15
+                    | 1 << 56,
                 2,
                 256,
                 vec![0x52, 0x54, 0, 0x12, 0x34, 0x56, 1, 0],

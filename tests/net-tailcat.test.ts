@@ -131,10 +131,16 @@ test('the guest gets both leases from the tailcat client and reaches the exit no
       // TCP over IPv4: translated to IPv6 by the client, proxied by the exit node to this machine's LAN address.
       const page4 = await run(`curl -s -m 20 http://${v4}:${port}/`, 60_000);
       assert.match(page4, /hello-from-the-exit-nodes-lan/, `the guest reaches ${v4}:${port} through the exit node${await context()}`);
-      // 2 MB: full-size segments must fit the tunnel (the MSS clamp; 1,260-byte IPv4 packets).
+      // 2 MB: full-size segments must fit the tunnel (the MSS clamp; 1,260-byte IPv4 packets). The relay's messages
+      // carry 2 to 4 of them, which virtio-net merges (web/offload.ts `receive`): the guest takes fewer packets than
+      // the ~1,700 segments.
+      const rxPackets = async () => Number((await run('cat /sys/class/net/eth0/statistics/rx_packets')).split('\n')[0]);
+      const rx0 = await rxPackets();
       const size = (await run(`curl -s -m 60 -o /dev/null -w '%{size_download} %{speed_download}\\n' http://${v4}:${port}/big`, 120_000)).split('\n')[0].trim();
-      console.log(`# 2 MB over IPv4 through tailcat: ${size} (bytes, bytes/s)`);
+      const received = (await rxPackets()) - rx0;
+      console.log(`# 2 MB over IPv4 through tailcat: ${size} (bytes, bytes/s), ${received} packets into the guest's interface`);
       assert.equal(size.split(' ')[0], String(BIG), `the whole download arrived: ${size}`);
+      assert.ok(received < 1600, `segments were merged on the way in: ${received} packets for 2 MB${await context()}`);
       // 2 MB up: the guest's stack hands the device packets of up to 64 KB, cut here into 1,228-byte segments (TSO), so
       // the interface counts far fewer packets than the ~1,700 segments that reach the server.
       const sum = (await run(`head -c ${BIG} /dev/urandom > /tmp/up && sha256sum /tmp/up`)).trim().split(/\s+/)[0];
