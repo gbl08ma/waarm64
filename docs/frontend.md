@@ -14,6 +14,10 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
 | `web/app/protocol.ts` | the messages between the two (types only) |
 | `web/app/index.html`'s Save snapshot and Load snapshot…, `main.ts`'s `saveSnapshot` and `loadSnapshot`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
+| `web/app/shape.ts`, `web/app/store.ts` | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
+| `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts` | what the Machines modal does: machines and attachments; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
+| `web/app/Machines.svelte`, `web/app/Snapshots.svelte` | the Machines modal (Svelte, compiled by `tools/svelte.ts` when served and in the static copy) |
+| `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
 | `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
@@ -75,6 +79,40 @@ for A/B measurements; docs/jit.md "Sharing").
 
 URLs are relative to `machine.ts`, so nothing but the location of `target/` ties the page to the
 dev server (decision 7).
+
+## Machines in the browser
+
+docs/plans/machines.md is the plan (M8 phase D's start); this is what exists.
+- **Records** (`web/app/store.ts`): IndexedDB `webpc` has `machines`, `disks`, `overlays` and `snapshots`, keyed by
+  a 12-hex-digit id; their bytes are in OPFS: `overlays/<id>/` (`data`, `map`, `meta`, `base`), `disks/<id>/` (a
+  stored disk, the same block store), `machines/<id>/` (`flash`, the firmware's variable store: the machine's,
+  so an install's boot entries stay with it; `suspend`; `snapshots/<id>`). A record is written after its bytes and
+  deleted before them; `Store.sweep` removes bytes without a record (only id-named ones: a transient machine's
+  overlays are named otherwise) and waits for writers (`Store.writing`, a shared Web Lock). Other tabs hear every
+  change (`onChange`, a BroadcastChannel).
+- **A machine** has a name (generated: "Brisk Heron"), vCPUs, RAM, the display (2D or 3D), a network card, and up
+  to 16 attachments in slot order: a disk, read-only or not, the overlay chosen, written in place (a stored disk).
+  Its transports are the other devices first (rng, keyboard, tablet, net, gpu, snd), then the disks
+  (`shape.ts` `slots`); a disk's serial is its attachment's (`webpc-<id>`: `/dev/disk/by-id/virtio-webpc-…`).
+- **The shape** (`shapeOf`, `shapeHash`): what the guest sees (vCPUs, RAM, display, CPU features, devices, each
+  disk's size, read-only flag, serial and base identity), canonical JSON hashed with SHA-256; names, the overlay
+  chosen and writing in place aren't in it.
+- **Opening one:** `?m=<id>` opens a stored machine on the page (its record and its disks'; a missing one is a
+  `failed` page that says so). A writable attachment without an overlay gets an empty one ("Changes") at the
+  start; each start's disks go to the worker resolved (`StartDisk`: a URL, a `File` from the remembered handle, a
+  blank or ramdisk size, a stored disk's directory). After it stops the page reads each overlay's (and in-place
+  disk's) generation and size from its files into the records. Without `?m=` the machine is transient, made from
+  the query as before (`?machine=`, `?disk=`, `?disk2=`): its overlays keep their old single names.
+- **Disks:** a URL (checked when added: `urlcheck.ts`, what fails and what the server needs; a URL disk is slow and
+  the modal says so), a file (its `FileSystemFileHandle` kept in the record), a file **stored in the browser**
+  (converted into the block store, `web/stored.ts`; the confirmation says what it takes and that it duplicates the
+  file), **blank** (zeros, always writable through its overlay) or a **ramdisk** (`web/ramdisk.ts`: empty at every
+  boot, the guest's reboot too; its memory counts in the page's memory check). The ramdisk can't be in a snapshot
+  or a suspended machine yet (refused with a message: L4).
+- **Overlays are the base disk's**, named variants any machine attaching it can choose (`disks.ts`): new empty,
+  rename, switch, delete (refused while a machine has it open: its Web Lock), save (changes only, or the whole
+  disk), Load changes into a new one. A stored disk can take one **in place** (merge: the disk's other overlays are
+  deleted, the modal lists them first) and can be **written in place** (no overlay; its own generation moves).
 
 ## The worker protocol
 

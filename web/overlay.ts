@@ -8,8 +8,10 @@
 // garbage. Slots that no block maps (a discarded block's, a leaked one) are
 // found when the overlay is opened and taken by the next first writes; free
 // slots at the end of `data` are cut off, and once half of it is free the rest
-// is moved down (`compact`). core/tests/common's `Overlay` is the
-// native (in-memory) equivalent (without discard).
+// is moved down (`compact`). `meta` holds the overlay's generation (docs/plans/machines.md §3.3):
+// bumped, durably, before the first change of each opening, so "the overlay is as it was at
+// generation g" is a comparison of two integers. core/tests/common's `Overlay` is the native
+// (in-memory) equivalent (without discard or a generation).
 import type { Disk } from './qcow2.ts';
 
 /** The part of `FileSystemSyncAccessHandle` the overlay uses. */
@@ -48,7 +50,35 @@ export type WritableDisk = Disk & {
   zeroed(b: number): boolean;
 };
 
-export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): WritableDisk {
+/** An overlay's `meta` file: its generation (u64 LE at 0) and, for a stored disk, the overlay being merged into it (`merging`: its id, or empty). */
+export type Meta = { generation: number; merging: string };
+const META_SIZE = 32;
+
+/** Reads a `meta` file (an empty one is generation 0, nothing merging). */
+export function readMeta(f: SyncFile): Meta {
+  const b = new Uint8Array(META_SIZE);
+  const n = f.read(b, { at: 0 });
+  if (n < 8) return { generation: 0, merging: '' };
+  const v = new DataView(b.buffer);
+  const merging = new TextDecoder().decode(b.subarray(8, 8 + Math.min(24, Math.max(0, n - 8)))).replace(/\0+$/, '');
+  return { generation: Number(v.getBigUint64(0, true)), merging };
+}
+
+/** Writes a `meta` file, durably (flushed). False on a failed write. */
+export function writeMeta(f: SyncFile, m: Meta) {
+  const b = new Uint8Array(META_SIZE);
+  new DataView(b.buffer).setBigUint64(0, BigInt(m.generation), true);
+  b.set(new TextEncoder().encode(m.merging).subarray(0, 24), 8);
+  if (f.write(b, { at: 0 }) !== META_SIZE) return false;
+  f.flush();
+  return true;
+}
+
+/**
+ * The overlay over `base` in `data` and `mapFile`. With `meta`, its generation is bumped before the first change
+ * (a write, a discard or a zeroing) this opening makes; `generation()` says it.
+ */
+export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile, meta?: SyncFile): WritableDisk & { generation(): number } {
   const blocks = Math.ceil(base.size / BLOCK);
   const map = new Uint32Array(blocks);
   mapFile.read(new Uint8Array(map.buffer, 0, Math.min(mapFile.getSize(), blocks * 4)), { at: 0 }); // the host is little-endian, as the file
@@ -105,6 +135,17 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
 
   const held = (b: number) => map[b] !== 0 && map[b] !== ZERO;
 
+  let gen = meta ? readMeta(meta) : { generation: 0, merging: '' };
+  let bumped = false;
+  /** Before the first change: the generation moves on, on disk, so a snapshot pinning the old one knows. */
+  const bump = () => {
+    if (bumped || !meta) return true;
+    const next = { ...readMeta(meta), generation: gen.generation + 1 };
+    if (!writeMeta(meta, next)) return false;
+    gen = next;
+    return (bumped = true);
+  };
+
   const read = async (off: number, len: number) => {
     if (off < 0 || off + len > base.size) return undefined;
     const out = new Uint8Array(len);
@@ -139,6 +180,7 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
   const write = async (off: number, bytes: Uint8Array) => {
     if (off < 0 || off + bytes.length > base.size) return false;
     if (bytes.length === 0) return true;
+    if (!bump()) return false;
     const stop = off + bytes.length;
     const last = Math.floor((stop - 1) / BLOCK);
     const full = (b: number) => off <= b * BLOCK && stop >= (b + 1) * BLOCK; // all BLOCK bytes of block b are in the request
@@ -207,12 +249,12 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
   };
   const inside = (off: number, len: number) => off >= 0 && len >= 0 && off + len <= base.size;
   const discard = (off: number, len: number) => {
-    if (!inside(off, len)) return false;
+    if (!inside(off, len) || !bump()) return false;
     const [first, end] = whole(off, len);
     return unmap(first, end, true);
   };
   const zero = async (off: number, len: number) => {
-    if (!inside(off, len)) return false;
+    if (!inside(off, len) || !bump()) return false;
     const [first, end] = whole(off, len);
     if (end <= first) return write(off, new Uint8Array(len));
     const tail = off + len - end * BLOCK; // none when the range ends with the disk
@@ -232,7 +274,7 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
     return data.read(out, { at: (map[b] - 1) * BLOCK }) === BLOCK ? out : undefined;
   };
 
-  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => map[b] === ZERO, flush: () => { data.flush(); mapFile.flush(); } };
+  return { size: base.size, format: base.format, read, write, discard, zero, written, block, zeroed: (b) => map[b] === ZERO, flush: () => { data.flush(); mapFile.flush(); }, generation: () => gen.generation };
 }
 
 /**
@@ -240,7 +282,7 @@ export function overlay(base: Disk, data: SyncFile, mapFile: SyncFile): Writable
  * synchronous), which lock the files, under the overlay's Web Lock. `close`
  * closes the handles, then releases the lock.
  */
-export type OverlayFiles = { data: SyncFile; map: SyncFile; close(): void };
+export type OverlayFiles = { data: SyncFile; map: SyncFile; meta: SyncFile; close(): void };
 
 /** A {@link SyncFile} in memory (its capacity doubles as it grows). */
 export function memFile(): SyncFile & { bytes: () => Uint8Array } {
@@ -272,7 +314,9 @@ export async function opfsDir(path: string, create = false): Promise<FileSystemD
 }
 
 /** Node has no OPFS: there an overlay lives in memory for the process's life (tests), by name. */
-const inMemory = new Map<string, { data: SyncFile; map: SyncFile; base: string }>();
+const inMemory = new Map<string, { data: SyncFile; map: SyncFile; meta: SyncFile; base: string }>();
+
+type LockMode = 'exclusive' | 'shared';
 
 /** How long an opener waits for the overlay's previous holder (another machine, closing or in another tab). */
 export const OVERLAY_WAIT_MS = 10_000;
@@ -284,12 +328,12 @@ export const OVERLAY_WAIT_MS = 10_000;
  * closed tab) drops its locks with its files. Waits up to `ms` for the
  * previous holder, then rejects with "overlay <name> is in use".
  */
-export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS): Promise<() => void> {
+export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS, mode: LockMode = 'exclusive'): Promise<() => void> {
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   try {
     await new Promise<void>((granted, reject) => {
-      navigator.locks.request(`webpc-overlay:${name}`, { signal: AbortSignal.timeout(ms) }, () => {
+      navigator.locks.request(`webpc-overlay:${name}`, { mode, signal: AbortSignal.timeout(ms) }, () => {
         granted();
         return held;
       }).catch(reject);
@@ -306,12 +350,14 @@ export async function lockOverlay(name: string, ms = OVERLAY_WAIT_MS): Promise<(
  * once its previous holder has closed it (`lockOverlay`: the hand-over between
  * machines, docs/frontend.md "Overlay hand-over"). Its `base` file records the
  * image's identity `want` (`diskIdentity` in web/devices.ts: a URL's path and the size, or a chosen file's name, size and modification time): an overlay only makes sense over the bytes it was
- * written against, so a mismatch is an error. Dedicated workers only (sync
- * access handles).
+ * written against, so a mismatch is an error (`want` undefined: not checked, as a merge does). `readOnly`: an
+ * existing directory, opened with read-only handles under a shared lock (several readers: a stored disk under
+ * its machines' overlays, docs/plans/machines.md §4.4; a writer waits for them all). Dedicated workers only
+ * (sync access handles).
  */
 // ponytail: the image is identified by path (or file name) and size, not content; add a hash if images get replaced in place.
-export async function openOverlay(name: string, want: string, waitMs = OVERLAY_WAIT_MS): Promise<OverlayFiles> {
-  const release = await lockOverlay(name, waitMs);
+export async function openOverlay(name: string, want: string | undefined, waitMs = OVERLAY_WAIT_MS, opts: { readOnly?: boolean } = {}): Promise<OverlayFiles> {
+  const release = await lockOverlay(name, waitMs, opts.readOnly ? 'shared' : 'exclusive');
   const handles: FileSystemSyncAccessHandle[] = [];
   const done = () => {
     for (const h of handles) h.close();
@@ -319,29 +365,33 @@ export async function openOverlay(name: string, want: string, waitMs = OVERLAY_W
   };
   try {
     if (typeof navigator.storage === 'undefined') {
-      const o = inMemory.get(name) ?? { data: memFile(), map: memFile(), base: want };
-      if (o.base !== want) throw new Error(`overlay ${name} belongs to ${o.base}, not ${want}`);
+      if (opts.readOnly && !inMemory.has(name)) throw new DOMException(`no overlay ${name}`, 'NotFoundError');
+      const o = inMemory.get(name) ?? { data: memFile(), map: memFile(), meta: memFile(), base: want ?? '' };
+      if (o.base === '' && want !== undefined && !opts.readOnly) o.base = want;
+      if (want !== undefined && o.base !== want) throw new Error(`overlay ${name} belongs to ${o.base}, not ${want}`);
       inMemory.set(name, o);
-      return { data: o.data, map: o.map, close: done };
+      return { data: o.data, map: o.map, meta: o.meta, close: done };
     }
-    const dir = await opfsDir(name, true);
+    const dir = await opfsDir(name, !opts.readOnly);
     const open = async (f: string) => {
-      const h = await (await dir.getFileHandle(f, { create: true })).createSyncAccessHandle();
+      // Read-only handles may be open in several workers at once (machines reading a stored disk under their overlays).
+      const file = await dir.getFileHandle(f, { create: !opts.readOnly });
+      const h = await (opts.readOnly ? (file.createSyncAccessHandle as (o: object) => Promise<FileSystemSyncAccessHandle>).call(file, { mode: 'read-only' }) : file.createSyncAccessHandle());
       handles.push(h);
       return h;
     };
-    const [data, map, base] = [await open('data'), await open('map'), await open('base')];
-    if (base.getSize() === 0) {
+    const [data, map, meta, base] = [await open('data'), await open('map'), await open('meta'), await open('base')];
+    if (base.getSize() === 0 && want !== undefined && !opts.readOnly) {
       base.write(new TextEncoder().encode(want), { at: 0 });
       base.flush();
     }
     const bytes = new Uint8Array(base.getSize());
     base.read(bytes, { at: 0 });
     const got = new TextDecoder().decode(bytes);
-    if (got !== want) throw new Error(`overlay ${name} belongs to ${got}, not ${want}`);
+    if (want !== undefined && got !== want) throw new Error(`overlay ${name} belongs to ${got}, not ${want}`);
     base.close();
     handles.pop();
-    return { data, map, close: done };
+    return { data, map, meta, close: done };
   } catch (e) {
     done();
     throw e;
@@ -436,6 +486,22 @@ export async function dropSuspend(name: string) {
     await dir.removeEntry(SUSPEND);
   } catch (e) {
     if ((e as DOMException).name !== 'NotFoundError') throw e;
+  }
+}
+
+/** Overlay `name`'s meta (generation, merging), read from a page or a worker without opening it; zeros without one. */
+export async function overlayMeta(name: string): Promise<Meta> {
+  if (typeof navigator.storage === 'undefined') {
+    const o = inMemory.get(name);
+    return o ? readMeta(o.meta) : { generation: 0, merging: '' };
+  }
+  try {
+    const file = await (await (await opfsDir(name)).getFileHandle('meta')).getFile();
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    return readMeta({ read: (buf, { at }) => { const n = Math.max(0, Math.min(buf.length, bytes.length - at)); buf.set(bytes.subarray(at, at + n)); return n; }, write: () => 0, getSize: () => bytes.length, truncate() {}, flush() {} });
+  } catch (e) {
+    if ((e as DOMException).name !== 'NotFoundError') throw e;
+    return { generation: 0, merging: '' };
   }
 }
 

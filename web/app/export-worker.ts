@@ -4,12 +4,13 @@
 // Web Lock, so the machine must have stopped (the page stops it first). The output goes to a file
 // handle the page got from `showSaveFilePicker`, or, without one, back to the page in chunks.
 import { hashSource } from '../changes.ts';
-import { blobSource, diskIdentity, httpSource, type Source } from '../devices.ts';
+import { diskIdentity } from '../devices.ts';
 import { openOverlay, overlay } from '../overlay.ts';
 import { openDisk } from '../qcow2.ts';
 import { changedClusters, nonZeroClusters, rawChunks, writeQcow2, type DataCluster, type Sink } from '../qcow2-write.ts';
 import { deflatePool } from './deflate-pool.ts';
 import type { ExportRequest, ExportResult } from './export.ts';
+import { openSource } from './sources.ts';
 
 const post = (m: ExportResult, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
 
@@ -22,12 +23,13 @@ self.onmessage = (e: MessageEvent<ExportRequest>) => {
 
 async function exportDisk(r: ExportRequest) {
   const d = r.disk;
-  const src = d.file ? blobSource(d.file) : httpSource(d.url!);
+  const src = await openSource(d.source);
   const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size);
-  const files = await openOverlay(d.overlay, diskIdentity({ url: d.url ?? '', file: d.file }, base.size)); // waits for the machine's worker to let go
+  // Waits for the machine's worker to let go of the overlay. A disk without one is exported as it is (a stored disk).
+  const files = d.overlay ? await openOverlay(d.overlay, d.identity ?? diskIdentity({ ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) }, base.size)).catch((e) => { src.close?.(); throw e; }) : undefined;
   let out: FileSystemWritableFileStream | undefined;
   try {
-    const disk = overlay(base, files.data, files.map);
+    const disk = files ? overlay(base, files.data, files.map) : undefined;
     out = r.handle ? await r.handle.createWritable() : undefined;
     let written = 0;
     const sink: Sink = async (chunk, at) => {
@@ -42,10 +44,12 @@ async function exportDisk(r: ExportRequest) {
     };
     const progress = (phase: string, done: number, total: number) => post({ type: 'progress', phase, done, total });
     let blocks = 0;
+    if (r.mode === 'changes' && !disk) throw new Error('this disk has no changes over an image to save');
+    const whole = disk ?? base;
     if (r.mode === 'raw') {
-      for await (const chunk of rawChunks(disk)) {
+      for await (const chunk of rawChunks(whole)) {
         await sink(chunk);
-        progress('Writing the disk', written, disk.size);
+        progress('Writing the disk', written, whole.size);
       }
     } else {
       let clusters;
@@ -53,13 +57,13 @@ async function exportDisk(r: ExportRequest) {
       if (r.mode === 'changes') {
         const hash = await hashSource(src, (done) => progress('Reading the base image', done, src.size));
         backing = { name: r.baseName, format: base.format, hash };
-        clusters = progressOf(changedClusters(disk), disk.written().length, (done, total) => progress('Writing the changes', done, total));
+        clusters = progressOf(changedClusters(disk!), disk!.written().length, (done, total) => progress('Writing the changes', done, total));
       } else {
-        clusters = nonZeroClusters(disk, 1 << 20, (done) => progress('Writing the disk', done, disk.size));
+        clusters = nonZeroClusters(whole, 1 << 20, (done) => progress('Writing the disk', done, whole.size));
       }
       const pool = r.compress ? deflatePool() : undefined;
       try {
-        const res = await writeQcow2({ size: disk.size, clusters, backing, compress: pool, sink });
+        const res = await writeQcow2({ size: whole.size, clusters, backing, compress: pool, sink });
         blocks = res.clusters;
       } finally {
         pool?.close();
@@ -70,7 +74,8 @@ async function exportDisk(r: ExportRequest) {
     return { bytes: written, blocks };
   } finally {
     await out?.abort().catch(() => {});
-    files.close();
+    files?.close();
+    src.close?.();
   }
 }
 

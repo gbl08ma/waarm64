@@ -59,7 +59,7 @@ export async function loadChanges(o: {
   await removeOverlay(o.overlay);
   const files = await openOverlay(o.overlay, o.identity);
   try {
-    const disk = overlay(base, files.data, files.map);
+    const disk = overlay(base, files.data, files.map, files.meta);
     const total = Math.ceil(c.size / 4096);
     let blocks = 0;
     for await (const { block, data } of c.blocks()) {

@@ -2,7 +2,7 @@
 // in-memory files shaped like OPFS sync access handles.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { memFile, overlay } from '../web/overlay.ts';
+import { memFile, overlay, readMeta, writeMeta } from '../web/overlay.ts';
 import { openDisk } from '../web/qcow2.ts';
 import { splitmix64 } from '../tools/corpus/corpus.ts';
 
@@ -225,4 +225,34 @@ test('a crash after any single OPFS write leaves every block as the base or some
       assert.ok(tags.has(blk[0]) && blk.every((x) => x === blk[0]), `after ${k} of ${log.length} writes, block ${b} is neither the base nor a written block`);
     }
   }
+});
+
+test("the overlay's generation moves once per opening, before its first change, and not for an opening that only reads", async () => {
+  const size = 16 * 4096;
+  const base = openDisk((off, len) => new Uint8Array(len), size);
+  const [data, map, meta] = [memFile(), memFile(), memFile()];
+  let d = overlay(base, data, map, meta);
+  assert.equal(d.generation(), 0);
+  await d.read(0, 4096);
+  assert.equal(readMeta(meta).generation, 0, 'reads change nothing');
+  assert.ok(await d.write(0, new Uint8Array(4096).fill(1)));
+  assert.equal(readMeta(meta).generation, 1, 'on disk before the write returns');
+  assert.ok(await d.write(4096, new Uint8Array(4096).fill(2)));
+  assert.ok(d.discard(0, 4096));
+  assert.equal(d.generation(), 1, 'once per opening');
+  d = overlay(base, data, map, meta); // the next boot
+  assert.equal(d.generation(), 1);
+  await d.read(0, size);
+  d = overlay(base, data, map, meta);
+  assert.ok(await d.zero(0, 8192));
+  assert.equal(readMeta(meta).generation, 2, 'a zeroing is a change');
+  d = overlay(base, data, map, meta);
+  assert.ok(d.discard(8192, 4096));
+  assert.equal(readMeta(meta).generation, 3, 'a discard is a change');
+  // The merging marker shares the file and survives a bump.
+  assert.ok(writeMeta(meta, { generation: 3, merging: 'c00000000001' }));
+  d = overlay(base, data, map, meta);
+  assert.ok(await d.write(0, new Uint8Array(512)));
+  assert.deepEqual(readMeta(meta), { generation: 4, merging: 'c00000000001' });
+  assert.deepEqual(readMeta(memFile()), { generation: 0, merging: '' });
 });

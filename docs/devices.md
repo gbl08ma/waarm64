@@ -114,7 +114,10 @@ mode (and natively in realtime mode: std has no CSPRNG).
   compressed clusters cached (1 natively).
 - **Writable disks: a copy-on-write overlay** (`web/overlay.ts`) in an OPFS directory, 4 KiB
   blocks: `data` holds written blocks in slots, `map` a u32 per disk block (0 = base,
-  n = slot n − 1, 0xffffffff = zeros without a slot), `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
+  n = slot n − 1, 0xffffffff = zeros without a slot), `meta` its **generation** (a u64, bumped and flushed before
+  the first change of each opening: a write, a discard or a zeroing; an opening that only reads leaves it, so "the
+  overlay is as it was at generation g" is two integers compared: docs/plans/machines.md §3.3) and, for a stored
+  disk, the overlay being merged into it, `base` the image's identity (`diskIdentity`: a URL's path and the size, or a chosen `File`'s name, size and modification time; a mismatch refuses to open). A block's
   slot is written before its map entry, so a crash leaks a slot but never maps garbage. **Few OPFS calls:** a sync-handle
   call costs ~0.3 ms whatever its size (Chromium on Linux, `bench/io/REPORT.md`), so reads and writes go in runs: blocks held in
   consecutive slots are one read or write, whole blocks not held take consecutive slots where `take` has them and are written
@@ -139,6 +142,17 @@ mode (and natively in realtime mode: std has no CSPRNG).
   name (the tests' writable disks, e.g. `tests/uefi.test.ts`), under the same Web Lock. No quota handling or content check of the base
   (backlog). Host API (web/overlay.ts, a page or a worker): `removeOverlay(name)` deletes an
   overlay once no VM has it open (the page's "Reset disk", M8), `overlayBytes(name)` says what it holds.
+  Overlay names are OPFS paths: a stored machine's are `overlays/<id>` (docs/plans/machines.md §2), a transient one's
+  (the tests' `?machine=`) are single names as before; `overlayMeta(name)` reads the generation without opening it.
+- **Stored disks** (`web/stored.ts`, docs/plans/machines.md §4.4): an image copied into the browser is the same
+  block store over nothing, in `disks/<id>/` (`importImage`: a qcow2's virtual bytes, compressed clusters inflated,
+  or a raw file's, zero blocks left out; `storedEstimate` bounds what it takes from a qcow2's allocated clusters).
+  Under an overlay it is the base (`BlkSpec.stored`: `openStored` reads it with read-only handles under a shared
+  lock, so several machines can); written in place it is its own overlay over zeros (exclusive, as any overlay).
+  `mergeOverlay` writes an overlay's blocks in (its zero blocks as zeros) and deletes it, with the store's
+  generation bumped and its `meta` naming the overlay first, so an interrupted merge is finished at the store's next
+  opening (`resumeMerge`), before anything reads it (`tests/stored.test.ts`, with the resume left out as the planted
+  bug).
 
 ### net (ID 1)
 - **The host sees Ethernet frames only**; IP, DHCP, NAT and the rest live in the adapter, never in

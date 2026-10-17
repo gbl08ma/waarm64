@@ -5,7 +5,9 @@
 // boot is ~1 min in the dev VM, ~2.5 in a cloud session.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
@@ -71,7 +73,7 @@ const ok = async (page: Page, cmd: string, ms?: number) => {
 async function login(page: Page) {
   await shows(page, /login: /, BOOT_MS);
   await type(page, 'root\n');
-  await shows(page, /root@\S+:~# /);
+  await shows(page, /(?:root@\S+|\S+):~# /); // Debian's prompt, Alpine's
 }
 
 /** Makes a machine's records in the page's store (as the modal does); returns its id. */
@@ -156,6 +158,179 @@ test('a machine with four disks: Debian from a URL, a blank disk formatted and k
   assert.deepEqual(stored.overlays, [true, true, false, false]);
   assert.deepEqual(stored.files, ['flash']);
   assert.ok(stored.sizes.every((n) => n > 0), `overlay sizes ${stored.sizes}`);
+  assert.deepEqual(errors, []);
+  await context.close();
+}));
+
+/** Boots stored machine `id` on a fresh page load, logs root in on the serial terminal; says how long it took. */
+async function boot(page: Page, id: string, what = '') {
+  const t = Date.now();
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple&${credentialsQuery()}`);
+  await running(page);
+  await login(page);
+  console.log(`# ${what} booted in ${((Date.now() - t) / 1000).toFixed(0)} s`);
+}
+/** Powers the guest off and waits for the page to say so (its records are refreshed then). */
+async function powerOff(page: Page) {
+  await type(page, 'poweroff\n');
+  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 180_000 });
+  await page.waitForTimeout(500);
+}
+/** Runs `f` in the page with the store and web/app/disks.ts. */
+const inStore = <T, A>(page: Page, f: (s: { store: never; disks: never; a: A }) => Promise<T>, a: A) => page.evaluate(async ({ src, a }) => {
+  const { Store } = await import('/web/app/store.ts' as string);
+  const disks = await import('/web/app/disks.ts' as string);
+  const store = await Store.open();
+  try {
+    return await (new Function(`return (${src})`)())({ store, disks, a });
+  } finally {
+    store.close();
+  }
+}, { src: f.toString(), a }) as Promise<T>;
+
+test("a disk stored in the browser: imported, its overlays as variants (changes loaded into a new one, switched), one merged into it, then written in place", { skip, timeout: 40 * 60_000 }, () => withDebianLock(async () => {
+  // A fresh profile on disk, as a user's: an off-the-record context's storage is in memory, with a quota (~1 GB here)
+  // that Debian stored in the browser (~1 GB) doesn't fit.
+  const profile = mkdtempSync(join(tmpdir(), 'webpc-profile-'));
+  const context = await chromium.launchPersistentContext(profile, { executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+  try {
+  const page = context.pages()[0] ?? await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+  // The import: Debian's qcow2 (95% compressed clusters) inflated into the block store.
+  const t0 = Date.now();
+  const imported = await inStore(page, async ({ store, disks }: any) => {
+    const file = new File([await (await fetch('/target/images/debian/disk.qcow2')).blob()], 'debian.qcow2');
+    const estimate = await disks.estimateStored(file);
+    const d = await disks.importStored(store, file);
+    const { newId } = await import('/web/app/shape.ts' as string);
+    const now = Date.now();
+    const id = newId();
+    await store.put('machines', { id, name: 'Stored', ncpus: 2, ramMiB: 1024, display: '2d', network: true, attachments: [{ id: newId(), disk: d.id, readOnly: false }], created: now, modified: now });
+    return { id, disk: d.id, size: d.size, estimate: estimate.estimate, bytes: await store.files.size(`disks/${d.id}`) };
+  }, null);
+  console.log(`# imported Debian in ${((Date.now() - t0) / 1000).toFixed(0)} s: ${(imported.bytes / 1e6).toFixed(0)} MB stored, ${(imported.estimate / 1e6).toFixed(0)} MB estimated`);
+  assert.ok(imported.bytes <= imported.estimate * 1.01 + (1 << 20), 'the estimate covers what it takes');
+  const { id } = imported;
+
+  // 1. Its first overlay ("Changes", made at the start) takes a file; its generation moves.
+  await boot(page, id, 'over its first overlay');
+  await ok(page, 'echo one > /root/one && sync');
+  await powerOff(page);
+  const first = await inStore(page, async ({ store, a }: any) => {
+    const m = await store.get('machines', a);
+    return store.get('overlays', m.attachments[0].overlay);
+  }, id);
+  assert.equal(first.name, 'Changes');
+  assert.ok(first.generation >= 1 && first.bytes > 0, `generation ${first.generation}, ${first.bytes} bytes`);
+
+  // 2. Its changes saved and loaded into a new overlay; an empty one beside them; the machine switched to the loaded one.
+  const variants = await inStore(page, async ({ store, disks, a }: any) => {
+    const { runExport } = await import('/web/app/export.ts' as string);
+    const m = await store.get('machines', a);
+    const d = await store.get('disks', m.attachments[0].disk);
+    const r = await runExport({ mode: 'changes', compress: true, disk: await disks.diskRef(d, m.attachments[0].overlay), baseName: d.name }, () => {});
+    const loaded = await disks.loadChangesInto(store, d, new File([r.blob], 'saved-changes.qcow2'), () => {});
+    const empty = await disks.createOverlay(store, d, 'Fresh');
+    await disks.switchOverlay(store, m, m.attachments[0].id, loaded.id);
+    return { loaded: loaded.name, empty: empty.id, names: (await store.overlaysOf(d.id)).map((o: { name: string }) => o.name).sort() };
+  }, id);
+  assert.deepEqual(variants.names, ['Changes', 'Fresh', 'saved-changes']);
+  await boot(page, id, 'over the loaded changes');
+  assert.equal(await ok(page, 'cat /root/one'), 'one');
+  await ok(page, 'echo two > /root/two && sync');
+  await powerOff(page);
+
+  // 3. Merged into the disk: the other overlays are deleted, the disk's generation moves; then written in place.
+  const merged = await inStore(page, async ({ store, disks, a }: any) => {
+    const m = await store.get('machines', a);
+    const o = m.attachments[0].overlay;
+    const costs = (await disks.mergeCosts(store, o)).map((x: { name: string }) => x.name).sort();
+    const before = (await store.get('disks', m.attachments[0].disk)).generation;
+    const blocks = await disks.mergeIntoDisk(store, o);
+    const m2 = await store.get('machines', a);
+    m2.attachments[0].inPlace = true;
+    await store.put('machines', m2);
+    return { costs, blocks, before, after: (await store.get('disks', m.attachments[0].disk)).generation, overlays: (await store.overlaysOf(m.attachments[0].disk)).length, files: await store.files.list('overlays') };
+  }, id);
+  assert.deepEqual(merged.costs, ['Changes', 'Fresh']);
+  assert.ok(merged.blocks > 0 && merged.after === merged.before + 1, JSON.stringify(merged));
+  assert.equal(merged.overlays, 0);
+  assert.deepEqual(merged.files, []);
+  await boot(page, id, 'in place');
+  assert.equal(await ok(page, 'cat /root/one /root/two'), 'one two');
+  await ok(page, 'echo three > /root/three && sync');
+  await powerOff(page);
+  const inPlace = await inStore(page, async ({ store, a }: any) => {
+    const m = await store.get('machines', a);
+    const d = await store.get('disks', m.attachments[0].disk);
+    m.attachments[0].inPlace = false; // back to an overlay: a new empty one is made at the start
+    await store.put('machines', m);
+    return { generation: d.generation, overlays: (await store.overlaysOf(d.id)).length };
+  }, id);
+  assert.equal(inPlace.generation, merged.after + 1, 'writing in place moved the disk on');
+  assert.equal(inPlace.overlays, 0, 'in place, no overlay');
+
+  // 4. Over an overlay again: the disk has what was written in place.
+  await boot(page, id, 'over a new overlay');
+  assert.equal(await ok(page, 'cat /root/one /root/two /root/three'), 'one two three');
+  await powerOff(page);
+  assert.deepEqual(errors, []);
+  } finally {
+    await context.close();
+    rmSync(profile, { recursive: true, force: true });
+  }
+}));
+
+// The installer flow (docs/plans/machines.md §4.1): an installer ISO read-only and a blank disk; the guest installs
+// itself onto the blank disk (its bootloader and an EFI boot entry, kept in the machine's variable store); the ISO is
+// detached and the machine boots what was installed. Alpine's virt ISO installs offline (its packages are on it).
+// The ISO: `mkdir -p target/iso && curl -o target/iso/alpine-virt-3.24.2-aarch64.iso
+// https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-virt-3.24.2-aarch64.iso` (its SHA-256 is
+// images/build.sh's ALPINE_ISO_SHA256).
+const ISO = new URL('../target/iso/alpine-virt-3.24.2-aarch64.iso', import.meta.url);
+const skipInstall = skip || (!existsSync(ISO) && 'SKIPPED: fetch the Alpine virt ISO into target/iso (tests/page-machines.test.ts says how)');
+test('the installer flow: an ISO read-only and a blank disk, an install, the ISO detached, the installed disk boots', { skip: skipInstall, timeout: 40 * 60_000 }, () => withDebianLock(async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('dialog', (d) => void d.accept());
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
+  const iso = readFileSync(ISO).length;
+  const { id, serials } = await makeMachine(page, {
+    ncpus: 2, ramMiB: 1024,
+    disks: [
+      { kind: 'url', name: 'alpine-virt.iso', size: iso, url: '/target/iso/alpine-virt-3.24.2-aarch64.iso', readOnly: true, identity: { kind: 'url', path: '/target/iso/alpine-virt-3.24.2-aarch64.iso', bytes: iso } },
+      { kind: 'blank', name: 'System', size: 2048 * MiB, identity: null },
+    ],
+  });
+  const target = `/dev/disk/by-id/virtio-${serials[1]}`;
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple`);
+  await running(page);
+  await login(page);
+  // The live system's packages are the ISO's: setup-disk installs from them (no network).
+  const disk = (await ok(page, `readlink -f ${target}`)).trim();
+  await ok(page, `ERASE_DISKS=${disk} setup-disk -m sys -s 0 ${disk} > /tmp/setup.log 2>&1 || { tail -20 /tmp/setup.log; false; }`, 1_500_000);
+  await ok(page, 'efibootmgr 2>/dev/null | head -5; true');
+  await type(page, 'poweroff\n');
+  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 180_000 });
+
+  // The ISO detached (the machine is off); the installed disk boots on its own.
+  await page.evaluate(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const { editAttachment } = await import('/web/app/machines.ts' as string);
+    const store = await Store.open();
+    const m = await store.get('machines', id);
+    await editAttachment(store, m, m.attachments[0].id, { detach: true });
+    store.close();
+  }, id);
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}m=${id}&view=terminal&display=simple`);
+  await running(page);
+  await login(page);
+  assert.match(await ok(page, 'cat /etc/alpine-release; findmnt -no SOURCE /'), /^3\.24\.2 \/dev\/vda/);
   assert.deepEqual(errors, []);
   await context.close();
 }));

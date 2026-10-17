@@ -1,8 +1,8 @@
 // The page's side of the changes-in worker (web/app/import-worker.ts).
-import type { DiskChoice } from './machine.ts';
+import type { DiskRef } from './protocol.ts';
 
 /** Page → worker: the changes file, and the disk (`url` or `file`, with its overlay) it goes onto; `label` names the disk in messages. */
-export type ImportRequest = { changes: File; disk: DiskChoice; label: string };
+export type ImportRequest = { changes: File; disk: DiskRef & { overlay: string }; label: string };
 
 /** Worker → page. */
 export type ImportResult =

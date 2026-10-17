@@ -40,6 +40,8 @@ export type DiskRecord = {
   handle?: FileSystemFileHandle;
   /** The image's SHA-256 (hex) where it was computed (machines.md §3.1: only where one is needed). */
   sha256?: string;
+  /** `stored`: the store's generation (its `meta`, as the page last read it): written in place or merged into, it moves (§4.4). */
+  generation?: number;
   created: number;
 };
 

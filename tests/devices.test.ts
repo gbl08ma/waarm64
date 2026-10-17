@@ -175,7 +175,7 @@ test('virtio-blk DISCARD and WRITE_ZEROES: offered with `discard` over an overla
   const ctx = { ram: () => ram } as unknown as Ctx;
   const src = { size, read: (off: number, len: number) => image.slice(off, off + len) };
   const [data, map] = [memFile(), memFile()];
-  const files = { data, map, close() {} };
+  const files = { data, map, meta: memFile(), close() {} };
   /** A request: the header (type, sector), `body` after it, `room` writable bytes before the status byte; resolves to the status. */
   const ask = async (b: ReturnType<typeof blk>, type: number, sector: number, body: Uint8Array, room = 0) => {
     const h = new DataView(ram.buffer, 0, 16);

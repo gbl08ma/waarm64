@@ -3,7 +3,9 @@
 // core, the tailnet client, the UEFI firmware), then writes `target/dist/`:
 //   web/app/index.html, web/**/*.js   the page's modules, from web/'s TypeScript: types stripped, `.ts` specifiers `.js`
 //                                     (only the modules the page reaches: its imports, workers and worklet)
+//   web/**/*.svelte.js                the page's Svelte components, compiled (tools/svelte.ts)
 //   vendor/xterm/                     xterm.js and its CSS (node_modules/@xterm/xterm), the page's import map points there
+//   vendor/svelte/, vendor/esm-env/, vendor/clsx/   Svelte's runtime (the same files serve.ts serves), with their licenses
 //   target/…                          the core (webpc_core.wasm), the tailnet client (net/ts.wasm), EDK2 (images/edk2)
 //   index.html                        a redirect to web/app/
 //   _headers, .htaccess, .nojekyll    cross-origin isolation for hosts that read them (below)
@@ -20,6 +22,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { APP, ROOT, startServer } from './serve.ts';
 import { FIRMWARE, main as prepare, Stop, WASM } from './start.ts';
+import { compileSvelte, RUNTIME_LICENSES, runtimeFiles } from './svelte.ts';
 
 export const OUT = join(ROOT, 'target/dist');
 
@@ -31,13 +34,20 @@ export const BINARIES = [relative(ROOT, WASM), 'target/net/ts.wasm', FIRMWARE, '
 
 /** Relative module specifiers and URLs ending in `.ts` in a module's source: `'./x.ts'`, `"../y.ts"`, `` `./w.ts${…}` ``. */
 const SPECIFIER = /(['"`])(\.{1,2}\/[\w./-]*?)\.ts(?=['"`]|\$\{)/g;
+/** Relative specifiers of Svelte components: `'./Machines.svelte'`. */
+const COMPONENT = /(['"])(\.{1,2}\/[\w./-]*?)\.svelte(?=['"])/g;
 
-/** A module of web/ as the browser gets it: types stripped, `.ts` specifiers renamed `.js`; and the modules it names. */
-export function compileModule(source: string) {
-  const js = stripTypeScriptTypes(source, { mode: 'strip' });
-  const deps = [...js.matchAll(SPECIFIER)].map((m) => `${m[2]}.ts`);
-  return { js: js.replace(SPECIFIER, '$1$2.js'), deps };
+/**
+ * A module of web/ as the browser gets it: types stripped (a component compiled), `.ts` specifiers renamed `.js`,
+ * components' `.svelte.js`; and the modules it names.
+ */
+export function compileModule(source: string, path = 'module.ts') {
+  const js = path.endsWith('.svelte') ? compileSvelte(source, path) : stripTypeScriptTypes(source, { mode: 'strip' });
+  const deps = [...[...js.matchAll(SPECIFIER)].map((m) => `${m[2]}.ts`), ...[...js.matchAll(COMPONENT)].map((m) => `${m[2]}.svelte`)];
+  return { js: js.replace(SPECIFIER, '$1$2.js').replace(COMPONENT, '$1$2.svelte.js'), deps };
 }
+/** Where a module of web/ goes in the copy. */
+const outPath = (path: string) => (path.endsWith('.svelte') ? `${path}.js` : path.replace(/\.ts$/, '.js'));
 
 const HEADERS = `/*
   Cross-Origin-Opener-Policy: same-origin
@@ -81,14 +91,15 @@ export function writeDist(out = OUT) {
   // The page and every module it reaches, from its entry (index.html's main.ts).
   const html = readFileSync(join(ROOT, 'web/app/index.html'), 'utf8');
   if (!html.includes('src="./main.ts"') || !html.includes('../../node_modules/@xterm/xterm/')) throw new Error('web/app/index.html no longer loads ./main.ts and xterm from node_modules: update tools/dist.ts');
-  write('web/app/index.html', html.replace('src="./main.ts"', 'src="./main.js"').replaceAll('../../node_modules/@xterm/xterm/lib/', '../../vendor/xterm/').replaceAll('../../node_modules/@xterm/xterm/css/', '../../vendor/xterm/'));
+  // The import map's node_modules paths (xterm's, and Svelte's runtime: tools/svelte.ts) become vendor/'s.
+  write('web/app/index.html', html.replace('src="./main.ts"', 'src="./main.js"').replaceAll('../../node_modules/@xterm/xterm/lib/', '../../vendor/xterm/').replaceAll('../../node_modules/@xterm/xterm/css/', '../../vendor/xterm/').replaceAll('../../node_modules/', '../../vendor/'));
   const queue = ['web/app/main.ts'];
   const seen = new Set(queue);
   while (queue.length) {
     const path = queue.pop()!;
     if (!existsSync(join(ROOT, path))) throw new Error(`a module names ${path}, which doesn't exist`);
-    const { js, deps } = compileModule(readFileSync(join(ROOT, path), 'utf8'));
-    write(path.replace(/\.ts$/, '.js'), js);
+    const { js, deps } = compileModule(readFileSync(join(ROOT, path), 'utf8'), path);
+    write(outPath(path), js);
     for (const d of deps) {
       const p = relative(ROOT, resolve(ROOT, dirname(path), d)).split(sep).join('/');
       if (!seen.has(p)) { seen.add(p); queue.push(p); }
@@ -99,6 +110,7 @@ export function writeDist(out = OUT) {
   copy(`${xterm}/lib/xterm.mjs`, 'vendor/xterm/xterm.mjs');
   copy(`${xterm}/css/xterm.css`, 'vendor/xterm/xterm.css');
   copy(`${xterm}/LICENSE`, 'vendor/xterm/LICENSE');
+  for (const f of [...runtimeFiles(), ...RUNTIME_LICENSES]) copy(f, f.replace(/^node_modules\//, 'vendor/'));
   for (const f of BINARIES) copy(f);
   copy('LICENSE');
 

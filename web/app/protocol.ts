@@ -116,6 +116,14 @@ export type ToWorker =
   | { type: 'timeline'; on: boolean };
 
 /**
+ * Where a disk's bytes come from: an image by URL (read by ranges) or as a `File` (read in slices), a blank disk of
+ * `blank` bytes (zeros), a ramdisk of `ramdisk` bytes, or a disk stored in the browser (its OPFS directory,
+ * `disks/<id>`, and size: web/stored.ts). A stored disk written in place is a blank source with the store as its
+ * overlay.
+ */
+export type DiskSource = { url: string } | { file: File } | { blank: number } | { ramdisk: number } | { stored: string; size: number };
+
+/**
  * A disk of the machine being started (docs/plans/machines.md §4.2): where its bytes come from (a URL read by
  * ranges, a `File` read in slices in the device worker, a blank disk of `blank` bytes reading as zeros, a ramdisk
  * of `ramdisk` bytes, empty at every start), and the OPFS overlay its writes go to. Without an overlay a disk is
@@ -124,7 +132,7 @@ export type ToWorker =
 export type StartDisk = {
   /** Its name in messages (a file's, a URL's last part). */
   name: string;
-  source: { url: string } | { file: File } | { blank: number } | { ramdisk: number };
+  source: DiskSource;
   /** The OPFS directory of its changes (web/overlay.ts). */
   overlay?: string;
   /** What the overlay belongs to (default: the source's, web/devices.ts `diskIdentity`). */
@@ -132,6 +140,9 @@ export type StartDisk = {
   /** What the guest's GET_ID gets (default `webpc-blk`). */
   serial?: string;
 };
+
+/** A disk for the disk jobs (export, changes in): its source, the overlay of its changes and what that overlay belongs to (default `diskIdentity`'s). */
+export type DiskRef = { source: DiskSource; overlay?: string; identity?: string };
 
 /** Worker → page. */
 export type FromWorker =

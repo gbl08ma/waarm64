@@ -1,6 +1,6 @@
 // The page's side of the disk-out worker (web/app/export-worker.ts): what to write, where the
 // bytes go (a file the user picked, or a Blob for a download), and the progress.
-import type { DiskChoice } from './machine.ts';
+import type { DiskRef } from './protocol.ts';
 
 /** `changes`: a qcow2 with the base image as its backing file; `qcow2`/`raw`: the whole disk. */
 export type ExportMode = 'changes' | 'qcow2' | 'raw';
@@ -10,8 +10,8 @@ export type ExportRequest = {
   mode: ExportMode;
   /** A qcow2's clusters compressed (deflate) where that makes them smaller. */
   compress?: boolean;
-  /** The disk (`url` or `file`) and its overlay. */
-  disk: DiskChoice;
+  /** The disk, and the overlay of its changes (none: the disk as it is, a stored disk's whole). */
+  disk: DiskRef;
   /** The base image's file name, which a changes file records as its backing file. */
   baseName: string;
   /** Where to write (from `showSaveFilePicker`); without one the worker sends the bytes back in chunks. */

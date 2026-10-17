@@ -141,7 +141,7 @@ const layout = (m: StartMessage, machine: Machine): Slot[] =>
 /** A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back). */
 function blkSpec(d: StartDisk): DeviceSpec {
   const s = d.source;
-  const source = 'url' in s ? { url: new URL(s.url, self.location.href).href } : 'file' in s ? { file: s.file } : 'blank' in s ? { source: 'zero' as const, size: s.blank } : { source: 'ram' as const, size: s.ramdisk };
+  const source = 'url' in s ? { url: new URL(s.url, self.location.href).href } : 'file' in s ? { file: s.file } : 'blank' in s ? { source: 'zero' as const, size: s.blank } : 'stored' in s ? { stored: s.stored, size: s.size } : { source: 'ram' as const, size: s.ramdisk };
   return { type: 'blk', ...source, overlay: 'ramdisk' in s ? undefined : d.overlay, identity: d.identity, serial: d.serial, discard: true };
 }
 

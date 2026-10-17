@@ -146,7 +146,7 @@ export async function readSnapshot(
           await removeOverlay(o.name);
           const files = await openOverlay(o.name, o.identity);
           // Whole blocks are written, so the base is never read.
-          open.set(slot, { disk: overlay({ size: o.size, format: 'raw', read: async () => undefined }, files.data, files.map), close: files.close, size: o.size });
+          open.set(slot, { disk: overlay({ size: o.size, format: 'raw', read: async () => undefined }, files.data, files.map, files.meta), close: files.close, size: o.size });
         }
         for (; !next.done; next = await frames.next()) {
           const { tag, index, data } = next.value;

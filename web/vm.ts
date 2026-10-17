@@ -584,7 +584,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const bytes = () => new Uint8Array(memory.buffer);
   const specs = await Promise.all((o.devices ?? []).map(async (d) => {
     if (d.type !== 'blk' || d.size !== undefined) return d;
-    if (d.source) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : 'blank disk'} needs a size`);
+    if (d.source || d.stored) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : d.stored ? 'stored disk' : 'blank disk'} needs a size`);
     if (!d.url && !d.file) throw new Error('a disk with no image (url, file or source)');
     // The capacity: a qcow2 header's virtual size, or the file size.
     if (d.file) {

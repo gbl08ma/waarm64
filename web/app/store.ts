@@ -138,6 +138,12 @@ export class Store {
   /** The machines that attach disk `id`. */
   machinesWith(disk: string) { return this.all('machines').then((all) => all.filter((m) => m.attachments.some((a) => a.disk === disk))); }
 
+  /** Deletes a record only: its bytes are deleted after, by whoever owns them (a merge's worker, after its copy). */
+  async forget(kind: Kind, id: string) {
+    await this.records.delete(kind, id);
+    this.said({ kind, id, deleted: true });
+  }
+
   /** Deletes a snapshot: its record, then its file. */
   async deleteSnapshot(id: string) {
     const s = await this.get('snapshots', id);

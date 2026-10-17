@@ -1,15 +1,16 @@
 // Dev/test server: serves the repo root on 127.0.0.1 with cross-origin
 // isolation headers (needed for SharedArrayBuffer and fine-grained timers).
-// .ts files are served as JavaScript with types stripped. Other files honor a
+// .ts files are served as JavaScript with types stripped, .svelte files compiled (tools/svelte.ts). Other files honor a
 // single `Range: bytes=` request (206 / 416), which the virtio-blk HTTP backend uses.
 // `/` redirects to the page (web/app/), a directory serves its index.html, and
-// nothing under node_modules is served except the files the page imports (`ALLOWED`).
+// nothing under node_modules is served except the files the page imports (`ALLOWED`, and Svelte's runtime).
 import { createServer, type Server } from 'node:http';
 import { open, readFile } from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prepareTailnetClient } from './tailscale.ts';
+import { compileSvelte, runtimeFiles } from './svelte.ts';
 
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -18,6 +19,7 @@ const TYPES: Record<string, string> = {
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.ts': 'text/javascript; charset=utf-8',
+  '.svelte': 'text/javascript; charset=utf-8',
   '.json': 'application/json',
   '.wasm': 'application/wasm',
   '.css': 'text/css; charset=utf-8',
@@ -35,7 +37,7 @@ const ALLOWED = ['node_modules/@xterm/xterm/lib/xterm.mjs', 'node_modules/@xterm
  */
 export function startServer(port = 0, host = '127.0.0.1', root = ROOT): Promise<Server> {
   if (!root.endsWith(sep)) root += sep;
-  const allowed = new Set(ALLOWED.map((p) => join(root, p)));
+  const allowed = new Set([...ALLOWED, ...(root === ROOT ? runtimeFiles() : [])].map((p) => join(root, p)));
   const server = createServer(async (req, res) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
@@ -55,6 +57,16 @@ export function startServer(port = 0, host = '127.0.0.1', root = ROOT): Promise<
     try {
       if (ext === '.ts') {
         res.writeHead(200, type).end(stripTypeScriptTypes((await readFile(path)).toString(), { mode: 'strip' }));
+        return;
+      }
+      if (ext === '.svelte') {
+        const source = (await readFile(path)).toString();
+        try {
+          res.writeHead(200, type).end(compileSvelte(source, path));
+        } catch (e) {
+          // A component that doesn't compile: the page's module fails to load, with the reason in the console.
+          res.writeHead(200, type).end(`throw new Error(${JSON.stringify(`${url}: ${String((e as Error).message ?? e)}`)});`);
+        }
         return;
       }
       const f = await open(path);

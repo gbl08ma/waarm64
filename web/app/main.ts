@@ -21,8 +21,9 @@ import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
 import { createNetwork, DEFAULT_SETTINGS, forgetTailcatIdentity, hasTailcatIdentity, tailscaleBuilt, tailcatBuilt, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
-import { canonical, newId, serialOf, type DiskRecord, type MachineRecord } from './shape.ts';
-import { overlayDir, machineDir, Store } from './store.ts';
+import { newId, serialOf, type DiskRecord, type MachineRecord } from './shape.ts';
+import { diskDir, overlayDir, machineDir, Store } from './store.ts';
+import { diskSource, identityOf, refreshOverlay, refreshStored } from './disks.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -70,7 +71,7 @@ async function ensureOverlays(s: { record: MachineRecord; disks: Map<string, Dis
   let changed = false;
   for (const a of s.record.attachments) {
     const d = s.disks.get(a.disk)!;
-    if (a.readOnly || d.kind === 'ramdisk' || a.overlay) continue;
+    if (a.readOnly || d.kind === 'ramdisk' || a.inPlace || a.overlay) continue;
     const now = Date.now();
     a.overlay = newId();
     await store.put('overlays', { id: a.overlay, name: 'Changes', disk: d.id, identity: d.identity, generation: 0, bytes: 0, created: now, modified: now });
@@ -88,14 +89,10 @@ async function startDisks(): Promise<{ disks: StartDisk[]; home?: string }> {
     await ensureOverlays(stored);
     const disks = await Promise.all(stored.record.attachments.map(async (a): Promise<StartDisk> => {
       const d = stored.disks.get(a.disk)!;
-      const base = { name: d.name, serial: serialOf(a.id), identity: canonical(d.identity), overlay: a.readOnly || !a.overlay ? undefined : overlayDir(a.overlay) };
-      switch (d.kind) {
-        case 'url': return { ...base, source: { url: d.url! } };
-        case 'file': return { ...base, source: { file: await d.handle!.getFile() } };
-        case 'blank': return { ...base, source: { blank: d.size } };
-        case 'ramdisk': return { ...base, overlay: undefined, source: { ramdisk: d.size } };
-        case 'stored': throw new Error(`${d.name} is stored in the browser, which this page can't attach yet`);
-      }
+      const base = { name: d.name, serial: serialOf(a.id), identity: identityOf(d) };
+      // A stored disk written in place is its own overlay, over zeros (web/stored.ts).
+      if (d.kind === 'stored' && a.inPlace && !a.readOnly) return { ...base, source: { blank: d.size }, overlay: diskDir(d.id) };
+      return { ...base, source: await diskSource(d), overlay: a.readOnly || d.kind === 'ramdisk' || !a.overlay ? undefined : overlayDir(a.overlay) };
     }));
     return { disks, home: machineDir(stored.record.id) };
   }
@@ -105,6 +102,14 @@ async function startDisks(): Promise<{ disks: StartDisk[]; home?: string }> {
   const disk2 = params.get('disk2');
   if (disk2) disks.push({ name: new URL(disk2, location.href).pathname.split('/').pop() ?? 'disk2', source: { url: disk2 } });
   return { disks, home: own?.overlay };
+}
+/** After a stored machine ran: its overlays' and in-place disks' generations and sizes from their files into their records (§3.3). */
+async function refreshRecords() {
+  if (!stored) return;
+  for (const a of stored.record.attachments) {
+    if (a.inPlace) await refreshStored(store, a.disk).catch(() => {});
+    else if (a.overlay) await refreshOverlay(store, a.overlay).catch(() => {});
+  }
 }
 /** The ramdisks' size, MiB: host memory the machine may take beside its RAM. */
 const ramdiskMiB = () => (stored ? stored.record.attachments.reduce((n, a) => n + (stored.disks.get(a.disk)!.kind === 'ramdisk' ? stored.disks.get(a.disk)!.size / 2 ** 20 : 0), 0) : 0);
@@ -442,6 +447,7 @@ function start(snapshot?: File, resume = true) {
         scheduleSize(true); // a restored machine starts at the size it was saved with
       }
       if (m.state === 'rebooting') void restart();
+      if (m.state === 'off' || m.state === 'crashed' || m.state === 'suspended') void refreshRecords();
     } else if (m.type === 'serial') {
       if (m.replay) {
         replaying = true; // xterm.js answers a query in the text (a cursor position request) while it parses it: the guest didn't ask
@@ -552,6 +558,7 @@ async function stop() {
   });
   r.worker.terminate();
   r.gpu?.terminate();
+  await refreshRecords();
 }
 
 /**
@@ -657,7 +664,7 @@ async function loadChanges(file: File) {
     setState('off');
     stateEl.textContent = 'Loading the changes';
     try {
-      await runImport({ changes: file, disk: chosen ?? { url: spec.disk, overlay }, label: baseName() }, (phase, f) => {
+      await runImport({ changes: file, disk: { source: chosen?.file ? { file: chosen.file } : { url: chosen?.url ?? spec.disk! }, overlay }, label: baseName() }, (phase, f) => {
         stateEl.textContent = `${phase} ${Math.floor(100 * f)}%`;
       });
     } catch (e) {
@@ -722,7 +729,7 @@ async function saveDisk(mode: ExportMode) {
     stateEl.textContent = 'Saving the disk';
     const mb = (n: number) => (n / 1e6).toFixed(n < 1e7 ? 1 : 0);
     try {
-      const r = await runExport({ mode, compress: mode !== 'raw' && saveCompress.checked, disk: chosen ?? { url: spec.disk, overlay }, baseName: baseName(), handle }, (phase, f) => {
+      const r = await runExport({ mode, compress: mode !== 'raw' && saveCompress.checked, disk: { source: chosen?.file ? { file: chosen.file } : { url: chosen?.url ?? spec.disk! }, overlay }, baseName: baseName(), handle }, (phase, f) => {
         stateEl.textContent = `${phase} ${Math.floor(100 * f)}%`;
       });
       if (r.blob) {
