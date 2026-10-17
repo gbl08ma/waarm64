@@ -18,6 +18,7 @@ import type { ChunkFault } from './browser/virgl-page.ts';
 let browser: Browser;
 let page: Page;
 let base: string;
+let h264 = true;
 let close: () => void;
 const fixture = (name: string) => {
   const b = readFileSync(new URL(`virgl/${name}`, import.meta.url));
@@ -33,6 +34,8 @@ before(async () => {
   page = await browser.newPage();
   await page.goto(`${base}/tests/browser/virgl.html`);
   await page.waitForFunction(() => (window as unknown as { ready?: boolean }).ready, null, { timeout: 30_000 });
+  // Chromium builds without proprietary codecs (Playwright's, in a cloud session) decode no H.264 at all.
+  h264 = await page.evaluate(async () => !!(await VideoDecoder.isConfigSupported({ codec: 'avc1.640033', codedWidth: 1920, codedHeight: 1080 })).supported);
 });
 after(async () => { await browser?.close(); close?.(); });
 
@@ -80,7 +83,8 @@ test('video on WebGL2: VP9 pictures through the device and WebCodecs into their 
   assert.equal(wrong.length, 0, `pictures ${wrong.join(' ')} differ from FFmpeg's`);
 });
 
-test('video on WebGL2: H.264 pictures through the device and WebCodecs into their planes, as the original decodes', { timeout: 180_000 }, async () => {
+test('video on WebGL2: H.264 pictures through the device and WebCodecs into their planes, as the original decodes', { timeout: 180_000 }, async (t) => {
+  if (!h264) return t.skip('this Chromium decodes no H.264');
   const ref = videoRef();
   const r = await replayVideo('video-h264.vglt.gz', 'video-h264-orig.h264.gz');
   const hw = r.hardware.includes(PROFILE.AVC_HIGH);
@@ -125,6 +129,7 @@ test('video on WebGL2: AV1 frames through the device and WebCodecs into their pl
 test('video on WebGL2: a damaged chunk is a decoder error that ends its codec\'s pictures, and nothing waits for them', { timeout: 180_000 }, async () => {
   const ref = videoRef();
   for (const [name, hashes] of [['video-vp9.vglt.gz', ref.vp9], ['video-h264.vglt.gz', null]] as const) {
+    if (name === 'video-h264.vglt.gz' && !h264) { console.log('# H.264 not checked: this Chromium decodes no H.264'); continue; }
     // The 11th picture's bytes garbled: WebCodecs reports it (no decoder here conceals it), the decoder is closed and
     // the codec's later pictures, all deltas, are dropped until a key picture (the fixture has none).
     const r = await replayVideo(name, undefined, { picture: 10, how: 'garble' });

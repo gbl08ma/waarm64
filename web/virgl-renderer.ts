@@ -176,6 +176,8 @@ export class VirglRenderer {
   private anisotropy: boolean;
   private colorBufferFloat: boolean;
   private readonly maxSamples: number;
+  /** The color attachments the context has, up to the 8 the caps offer (WebGL2 promises 4; SwiftShader's Vulkan has 6). */
+  private readonly colorAttachments: number;
   private queries: Query[] = [];
   /** Primitive queries (generated, emitted by stream output) counted by the draws, with their context. */
   private counting = new Map<Query, number>();
@@ -200,6 +202,7 @@ export class VirglRenderer {
     this.anisotropy = !!gl.getExtension('EXT_texture_filter_anisotropic');
     this.colorBufferFloat = !!gl.getExtension('EXT_color_buffer_float');
     this.maxSamples = gl.getParameter(E.MAX_SAMPLES) as number;
+    this.colorAttachments = Math.min(gl.getParameter(E.MAX_COLOR_ATTACHMENTS) as number, 8);
     gl.getExtension('EXT_color_buffer_half_float');
     gl.getExtension('EXT_texture_norm16');
     gl.getExtension('OES_texture_float_linear');
@@ -1097,7 +1100,7 @@ export class VirglRenderer {
         }
       } else if (!this.bindForRead(src, p[6], box.z + z)) return this.error('copy region: the source can\'t be read');
       gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
-      for (let k = 1; k < 8; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+      for (let k = 1; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, depth ? undefined : dst, p[1], dz + z);
       if (depth) this.attachTo(E.DRAW_FRAMEBUFFER, point, dst, p[1], dz + z);
@@ -1204,7 +1207,7 @@ export class VirglRenderer {
     for (const pt of [E.COLOR_ATTACHMENT0, E.DEPTH_STENCIL_ATTACHMENT]) this.attachTo(E.READ_FRAMEBUFFER, pt, undefined, 0, 0);
     this.attachTo(E.READ_FRAMEBUFFER, point, src, 0, 0);
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
-    for (let k = 0; k < 8; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    for (let k = 0; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, point, t, 0, 0);
     gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
@@ -1229,7 +1232,7 @@ export class VirglRenderer {
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
     // Only the destination attached: the source may still be another of the last draw's targets, and sampling an
     // attached texture is a feedback loop WebGL refuses (dEQP-GLES3 fragment_out: the second of three outputs).
-    for (let k = 1; k < 8; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    for (let k = 1; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, dst, db.level, dz);
     gl.drawBuffers([E.COLOR_ATTACHMENT0]);
@@ -1302,7 +1305,7 @@ void main() {
       gl.texParameteri(E.TEXTURE_2D, E.TEXTURE_MAG_FILTER, E.NEAREST);
     }
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
-    for (let k = 0; k < 8; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    for (let k = 0; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
     gl.drawBuffers([E.NONE]);
     for (const e of [E.BLEND, E.CULL_FACE, E.SCISSOR_TEST, E.POLYGON_OFFSET_FILL, E.RASTERIZER_DISCARD, E.SAMPLE_COVERAGE, E.SAMPLE_ALPHA_TO_COVERAGE]) gl.disable(e);
     gl.viewport(box.x, box.y, box.w, box.h);
@@ -1417,7 +1420,7 @@ void main() {
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
     let width = 0, height = 0;
     const bufs: number[] = [];
-    for (let k = 0; k < 8; k++) {
+    for (let k = 0; k < this.colorAttachments; k++) {
       const sf = s.fb.cbufs[k];
       const r = sf && this.lookup(c, sf.res);
       this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, r, sf?.level ?? 0, sf?.firstLayer ?? 0);

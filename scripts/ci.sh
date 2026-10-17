@@ -24,7 +24,7 @@ export WEBPC_LONG_TESTS=${WEBPC_LONG_TESTS-1}
 image_test() {
   step "$1"
   local msg= name
-  for name in $2; do msg=$msg$(images/build.sh --check "$name"); done
+  for name in $2; do msg=$msg$(images/build.sh --check "$name" || true); done
   if [ -z "$msg" ]; then
     cargo test -q --release --test "$3" -- --ignored "${@:4}"
   else
