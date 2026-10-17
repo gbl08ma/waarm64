@@ -326,6 +326,7 @@ sections above, or settled what they left open:
   in the header (Keep in this browser…, Save to a file…), as §5.2 has it; a 3D machine on a browser without WebGL2
   runs 2D, another shape, so its 3D snapshots show as orphaned there (the guest really sees other devices); the
   transient machines' overlays keep their single names; snapshot files from before the new device order are
-  refused (no mapping of the old order).
+  refused (no mapping of the old order); no installer flow is tested (L1's), at least not with Alpine's ISOs, which
+  lack the UEFI bootloader's packages (`grub-efi`, `dosfstools`) and would need the network or a package disk.
 - **Not built** (backlog "Machines as the unit, loose ends"): the quota message, a stored disk's background hash,
   `svelte-check`.
