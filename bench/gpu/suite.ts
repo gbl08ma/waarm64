@@ -230,7 +230,8 @@ async function webgpu(o: Options): Promise<Sample[]> {
  * The device's own cost of a frame (G1's exit numbers): the real backend (web/gpu.ts) over a guest resource whose
  * backing is 64 KiB chunks of shared memory, drawn by the page's presenter (web/gpu-present.ts) on an OffscreenCanvas.
  * `transfer` is TRANSFER_TO_HOST_2D (the gather and swizzle into the host's RGBA), `flush` is RESOURCE_FLUSH with its
- * draw (putImageData of the rectangle) until the call returns, `done` until the canvas has it.
+ * draw (putImageData of the rectangle) until the call returns, `done` until the canvas has it. `transfer_raw` is the
+ * transfer on a 3D machine (a host's: the bytes copied as they are, its screen swizzles them in its draw).
  */
 async function flushCost(o: Options): Promise<Sample[]> {
   const out: Sample[] = [];
@@ -248,6 +249,8 @@ async function flushCost(o: Options): Promise<Sample[]> {
     const canvas = new OffscreenCanvas(w, h);
     const gpu = new Gpu(() => ram, ram.length, { width: w, height: h });
     gpu.hooks = canvasPresenter(canvas);
+    const hosted = new Gpu(() => ram, ram.length, { width: w, height: h });
+    hosted.host = { call: () => undefined, fence: () => undefined };
     const ctx = canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
     const chunks = Math.ceil(ram.length / CHUNK);
     const attach = new Uint8Array(32 + 16 * chunks);
@@ -256,12 +259,14 @@ async function flushCost(o: Options): Promise<Sample[]> {
       new DataView(attach.buffer).setBigUint64(32 + 16 * k, BigInt(RAM_BASE + k * CHUNK), true);
       new DataView(attach.buffer).setUint32(32 + 16 * k + 8, Math.min(CHUNK, ram.length - k * CHUNK), true);
     }
-    gpu.control(cmd(0x101, 1, 2, w, h), 64); // RESOURCE_CREATE_2D, B8G8R8X8
-    gpu.control(attach, 64);
-    gpu.control(cmd(0x103, 0, 0, w, h, 0, 1), 64); // SET_SCANOUT
-    for (let i = 0; i < 30; i++) gpu.control(cmd(0x105, 0, 0, w, h, 0n, 1, 0), 64); // the gather's loop optimized before anything is timed
+    for (const g of [gpu, hosted]) {
+      g.control(cmd(0x101, 1, 2, w, h), 64); // RESOURCE_CREATE_2D, B8G8R8X8
+      g.control(attach, 64);
+      g.control(cmd(0x103, 0, 0, w, h, 0, 1), 64); // SET_SCANOUT
+      for (let i = 0; i < 30; i++) g.control(cmd(0x105, 0, 0, w, h, 0n, 1, 0), 64); // the gather's loop optimized before anything is timed
+    }
     for (const [dname, r] of rects(w, h)) {
-      const transfer: number[] = [], flush: number[] = [], done: number[] = [];
+      const transfer: number[] = [], raw: number[] = [], flush: number[] = [], done: number[] = [];
       const n = o.quick ? 5 : 20;
       // Transfers back to back (a busy guest's), then flushes a frame apart (the presenter draws at once then).
       for (let i = -3; i < n; i++) {
@@ -269,6 +274,9 @@ async function flushCost(o: Options): Promise<Sample[]> {
         const t0 = now();
         gpu.control(cmd(0x105, r.x, r.y, r.w, r.h, BigInt((r.y * w + r.x) * 4), 1, 0), 64);
         if (i >= 0) transfer.push(now() - t0);
+        const t1 = now();
+        hosted.control(cmd(0x105, r.x, r.y, r.w, r.h, BigInt((r.y * w + r.x) * 4), 1, 0), 64);
+        if (i >= 0) raw.push(now() - t1);
       }
       for (let i = -3; i < n; i++) {
         await new Promise((ok) => setTimeout(ok, 20));
@@ -281,6 +289,7 @@ async function flushCost(o: Options): Promise<Sample[]> {
       }
       const params = { size: label, damage: dname, rect: `${r.w}x${r.h}` };
       out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'transfer' }, samples: transfer });
+      out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'transfer_raw' }, samples: raw });
       out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'flush' }, samples: flush });
       out.push({ name: 'flush_cost', unit: 'ms', params: { ...params, phase: 'done' }, samples: done });
     }

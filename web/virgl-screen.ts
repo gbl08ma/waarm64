@@ -1,6 +1,6 @@
 // The screen of a 3D machine (docs/frontend.md "The screen"): the canvas's WebGL2 default framebuffer, showing the
-// scanout. A 2D scanout is the device's RGBA copy of the guest's resource (in shared memory: the damaged rectangles
-// are uploaded to a texture); a 3D scanout is the renderer's texture of the resource, drawn through its format's
+// scanout. A 2D scanout is the device's copy of the guest's resource, its bytes as they are (in shared memory: the
+// damaged rectangles are uploaded to a texture, drawn through the format's swizzle); a 3D scanout is the renderer's texture of the resource, drawn through its format's
 // swizzle (B8G8R8X8, the usual one, is stored as its bytes are). The drawing buffer isn't preserved, so every present
 // draws the whole scanout, with alpha ignored; rows go top first, as the guest's are.
 import { E } from './gl-enums.ts';
@@ -50,7 +50,7 @@ export class Screen {
   private loc: { src: WebGLUniformLocation | null; swz: WebGLUniformLocation | null; s: WebGLUniformLocation | null };
   private tex2d: WebGLTexture;
   private size2d = { width: 0, height: 0 };
-  private src: { pixels?: Uint8Array; res?: number; width: number; height: number; rect: Rect } | null = null;
+  private src: { pixels?: Uint8Array; swizzle?: number[]; res?: number; width: number; height: number; rect: Rect } | null = null;
   /** Presents since the last read (`?displaystats`), and the time spent drawing them. */
   presents = 0;
   drawMs = 0;
@@ -79,7 +79,7 @@ export class Screen {
       this.clear();
       return;
     }
-    this.src = { pixels: c.pixels, res: c.res, width: c.width, height: c.height, rect };
+    this.src = { pixels: c.pixels, swizzle: c.swizzle, res: c.res, width: c.width, height: c.height, rect };
     if (c.pixels) this.upload({ x: 0, y: 0, w: rect.w, h: rect.h });
     this.present();
   }
@@ -151,8 +151,10 @@ export class Screen {
     const canvas = gl.canvas as OffscreenCanvas;
     if (canvas.width !== s.rect.w || canvas.height !== s.rect.h) [canvas.width, canvas.height] = [s.rect.w, s.rect.h];
     let tex: WebGLTexture, swz = [0, 1, 2], tw = s.width, th = s.height;
-    if (s.pixels) tex = this.tex2d;
-    else {
+    if (s.pixels) {
+      tex = this.tex2d;
+      swz = s.swizzle ?? swz;
+    } else {
       const src = this.r.scanoutSource(s.res!);
       if (!src) return this.clear();
       tex = src.tex;

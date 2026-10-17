@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { EDID_MAX, EDID_MIN, edid } from '../web/edid.ts';
 import { Gpu, MAX_RESOURCE, hashRgba, type GpuHooks, type ScanoutSource } from '../web/gpu.ts';
+import type { HostCall } from '../web/virgl-host.ts';
 
 const RAM_BASE = 0x4000_0000;
 const RAM_SIZE = 1 << 20;
@@ -417,20 +418,29 @@ test('edid: the bytes the native twin (core/tests/gpu.rs) is held to', () => {
 });
 
 /** The script core/tests/gpu.rs runs too: its screen and cursor hashes must be the same. */
-test('gpu: the conformance script gives the hashes the native twin gives', () => {
-  const r = rig();
-  for (let k = 0; k < 8 * 8 * 4; k++) r.ram[0x3000 + k] = (k * 7 + 3) & 0xff;
-  for (let k = 0; k < 64 * 64 * 4; k++) r.ram[0x8000 + k] = (k * 13 + k / 64) & 0xff;
-  r.ok(cmd(T.CREATE, 1, B8G8R8X8, 8, 8));
-  r.ok(r.attach(1, 0x3000, 256, 100));
-  r.ok(cmd(T.TRANSFER, 0, 0, 8, 8, 0n, 1, 0));
-  r.ok(cmd(T.SCANOUT, 1, 1, 6, 5, 0, 1));
-  r.ok(cmd(T.CREATE, 2, B8G8R8A8, 64, 64));
-  r.ok(r.attach(2, 0x8000, 64 * 64 * 4, 4096));
-  r.ok(cmd(T.TRANSFER, 0, 0, 64, 64, 0n, 2, 0));
-  r.gpu.cursor(cmd(T.UPDATE_CURSOR, 0, 11, 12, 0, 2, 5, 6, 0));
-  const s = r.gpu.state();
-  assert.deepEqual([s.screen, s.cursor?.hash], ['7270f777c2f4c1c5', 'e3974fc5495011dc']);
+test('gpu: the conformance script gives the hashes the native twin gives, with a host too (its resources keep the guest\'s bytes)', () => {
+  for (const hosted of [false, true]) {
+    const r = rig();
+    const calls: HostCall[] = [];
+    if (hosted) r.gpu.host = { call: (c) => calls.push(c), fence: () => undefined };
+    for (let k = 0; k < 8 * 8 * 4; k++) r.ram[0x3000 + k] = (k * 7 + 3) & 0xff;
+    for (let k = 0; k < 64 * 64 * 4; k++) r.ram[0x8000 + k] = (k * 13 + k / 64) & 0xff;
+    r.ok(cmd(T.CREATE, 1, B8G8R8X8, 8, 8));
+    r.ok(r.attach(1, 0x3000, 256, 100));
+    r.ok(cmd(T.TRANSFER, 0, 0, 8, 8, 0n, 1, 0));
+    r.ok(cmd(T.SCANOUT, 1, 1, 6, 5, 0, 1));
+    r.ok(cmd(T.CREATE, 2, B8G8R8A8, 64, 64));
+    r.ok(r.attach(2, 0x8000, 64 * 64 * 4, 4096));
+    r.ok(cmd(T.TRANSFER, 0, 0, 64, 64, 0n, 2, 0));
+    r.gpu.cursor(cmd(T.UPDATE_CURSOR, 0, 11, 12, 0, 2, 5, 6, 0));
+    const s = r.gpu.state();
+    assert.deepEqual([s.screen, s.cursor?.hash], ['7270f777c2f4c1c5', 'e3974fc5495011dc']);
+    if (!hosted) continue;
+    // The host's screen gets the bytes as the guest wrote them, and where R, G and B are in them.
+    assert.equal(Buffer.compare(r.gpu.resources.get(1)!.pixels, r.ram.subarray(0x3000, 0x3100)), 0, 'the guest\'s bytes');
+    const shown = calls.filter((c) => c.t === 'scanout').at(-1);
+    assert.deepEqual(shown?.t === 'scanout' && shown.swizzle, [2, 1, 0]);
+  }
 });
 
 /** The pictures the gpu guest (images/gpu/init.c) draws, computed here from its code: what the host must show after each flush. */

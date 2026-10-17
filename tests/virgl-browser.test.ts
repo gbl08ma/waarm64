@@ -167,6 +167,15 @@ test('virgl on WebGL2: sway draws its desktop (foot, a command\'s output) as rec
   assert.ok(c.max <= 8 && c.off < 0.001, JSON.stringify(c));
 });
 
+test('virgl on WebGL2: a 2D scanout is drawn from the guest\'s bytes through its format\'s swizzle', async () => {
+  // The guest's bytes of a pixel whose R, G, B are 30, 60, 90, in each of the eight formats' memory orders.
+  const cases: [number, number[]][] = [[1, [90, 60, 30, 0]], [2, [90, 60, 30, 0]], [3, [0, 30, 60, 90]], [4, [0, 30, 60, 90]], [67, [30, 60, 90, 0]], [68, [0, 90, 60, 30]], [121, [0, 90, 60, 30]], [134, [30, 60, 90, 0]]];
+  for (const [format, px] of cases) {
+    const rgb = await page.evaluate(([f, p]) => (window as unknown as { virgl: { screen2d(f: number, p: number[]): Promise<number[]> } }).virgl.screen2d(f, p), [format, px] as const);
+    assert.deepEqual(rgb, [30, 60, 90], `format ${format}`);
+  }
+});
+
 test('virgl on WebGL2: stream output captures interleaved, separate and mixed, appends, stops at a full buffer, counts what it wrote', async () => {
   const r = await page.evaluate(() => (window as unknown as { virgl: { streamOut(): { appended: number[]; emitted: number; overflowed: number[]; separate: number[][]; mixed: number[][]; log: string[]; glError: number } } }).virgl.streamOut());
   assert.deepEqual([r.log, r.glError], [[], 0]);

@@ -20,8 +20,11 @@ export type HostCall =
   | { t: 'ctxres'; ctx: number; res: number; attach: boolean }
   | { t: 'transfer'; ctx: number; res: number; level: number; box: Box; offset: number; stride: number; layerStride: number; toHost: boolean }
   | { t: 'submit'; ctx: number; words: Uint32Array }
-  /** The screen shows a 2D resource's RGBA (rows `width` pixels apart, in shared memory) or a 3D resource; `rect` is the part shown. Neither: the screen is off. */
-  | { t: 'scanout'; pixels?: Uint8Array; res?: number; width: number; height: number; rect: Rect }
+  /**
+   * The screen shows a 2D resource's pixels (rows `width` pixels apart, in shared memory: the guest's bytes, with the
+   * byte positions of R, G and B in `swizzle`; RGBA without it) or a 3D resource; `rect` is the part shown. Neither: the screen is off.
+   */
+  | { t: 'scanout'; pixels?: Uint8Array; swizzle?: number[]; res?: number; width: number; height: number; rect: Rect }
   /** The scanout's rectangle changed (scanout coordinates): show it. */
   | { t: 'damage'; rect: Rect }
   | { t: 'reset' };
