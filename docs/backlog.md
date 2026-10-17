@@ -433,9 +433,19 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   'moz-firefox', executablePath: '/usr/bin/firefox' })` (WebDriver BiDi, zypper's Firefox) with
   `firefoxUserPrefs: { 'memory.phc.enabled': false }` (PHC's stack walks hit the VM's
   SME-without-SVE in libgcc's unwinder: SIGILL) and `env: chromiumEnv()`.
-- **Settings:** vCPUs and RAM come from `?ncpus=` and machine.ts, no UI (phase D, with the image
-  choice and the embedding API).
-- **Remember the chosen disk across reloads:** a `File` isn't kept; a `FileSystemFileHandle` in IndexedDB (permission asked each session) would let the page boot the user's disk again without the picker (phase B loop 4).
+- **Machines as the unit, loose ends** (docs/plans/machines.md §11):
+  - A full quota still reaches the guest as `IOERR` (and an import or a kept snapshot fails with "is it full?"): the
+    page should say so where it happens, with the storage view's numbers.
+  - A stored disk's SHA-256 isn't computed in the background (§3.1), and a definition carries a file's hash only
+    where the record has one: a definition's file is checked by name, size and date unless something hashed it.
+  - Save snapshot on a stored machine always keeps (a prompt for the name); downloading the running machine is the
+    modal's "Save a snapshot to a file". A two-choice control in the header would be plainer.
+  - `svelte-check` (another dependency) isn't used: tsc doesn't read the components; their compile is checked
+    (tools/svelte.ts, tests/dist.test.ts) but not their types.
+  - The machine list doesn't show a suspended machine as suspended (it reads "off").
+  - Several file disks re-granted at a start ask once each (`requestPermission` per handle).
+  - The shape counts the display a machine runs with (3D, 2D, none), so a 3D machine's snapshots are orphaned on a
+    browser without WebGL2 (where it runs 2D), and `?display=simple` runs (the tests') are another shape.
 - **Clipboard for the screen:** paste into tty1 (typed through virtio-input, paced: its queue
   drops past 1024 events) and copy from fbcon; only the serial terminal has both (xterm.js).
   Phase C, host integration.

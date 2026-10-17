@@ -294,3 +294,33 @@ the page, disks or snapshots (all of them from L1).
 - **The embedding API**'s VM configuration starts from the machine definition and its shape.
 - **Network adapters** join the machine and the shape (several: a later milestone); today's single card is one
   attachment of a kind `net`.
+
+## 11. Record: the cloud session (2026-10-17)
+
+Built in a Claude Code cloud session (x86_64, 4 vCPUs, Playwright's Chromium 141), loops L0–L5 in order, each pushed;
+the dev VM's pass (full CI, Chromium 153, the numbers) is `M8-MACHINES-HANDOVER.md`. Where the build differs from the
+sections above, or settled what they left open:
+- **The slots** (§4.1) are the other devices first in a fixed order (rng, keyboard, tablet, net, gpu, snd), then the
+  disks; the tests' transient machines take the same order (their guests find their root by UUID or by `vda`, the
+  first disk, either way). The snapshot header's `devices` lists the kinds that way.
+- **Overlay paths:** a stored machine's are `overlays/<id>`; a transient one's keep their single names
+  (`webpc-debian`, `webpc-buildroot`, `webpc-disk-<hash>` for `?disk=`), and the sweep touches only id-named files.
+- **The generation's epoch** (§3.3 left it implicit): writes after a snapshot in the same session must move the
+  generation, or a restore would keep an overlay that changed after the snapshot. The device reports the generation
+  while the machine is paused for the snapshot and sets its next change to bump again. A restore that writes an
+  overlay (a fork or a replace) sets its generation one past the old one, never back to a pinned one; a fork's is 1.
+- **Pins are paths** (`overlays/<id>`, or `disks/<id>` for a disk written in place) with the generation, the blocks
+  the file carries and a ramdisk flag (`SnapshotDisk`); the page maps them to records.
+- **A suspended copy** is checked against its pins (the worker compares each overlay's generation) and the old
+  drop-before-run discipline is kept besides.
+- **Reads of a stored disk under overlays** use read-only sync access handles under a shared Web Lock (several
+  machines at once); writing it in place or merging takes it exclusively. Stored Debian is 1,043 MB (estimated 1,212
+  from the qcow2's allocated clusters), imported in ~140 s here.
+- **The test profile:** an off-the-record Playwright context keeps OPFS in memory with a ~1 GB quota; stored Debian
+  doesn't fit, so that test uses a fresh on-disk profile (`launchPersistentContext`).
+- **A dropped or opened disk** on the page's own machine makes a machine for it (named after the file) or opens the
+  one that attaches it; `?disk=<url>` stays transient (the tests').
+- **Definitions** re-pick files at the machine's first start (the same flow as a handle without permission), not at
+  import.
+- **Not built** (backlog "Machines as the unit, loose ends"): the quota message, a stored disk's background hash,
+  `svelte-check`.

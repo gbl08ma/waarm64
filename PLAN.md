@@ -238,7 +238,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   place), blank, or a ramdisk emptied at every boot; several
   snapshots per machine kept in OPFS or downloaded, checked against the machine's shape (orphaned when the machine
   changes) and restored without destroying a disk's state (an overlay that moved on is forked, detected by a
-  generation counter, not a hash); machine definitions exported and imported. Then a preloaded image and snapshot
+  generation counter, not a hash); machine definitions exported and imported. **Built and tested in a cloud session
+  (2026-10-17, loops L0–L5, machines.md §11); the dev VM's pass is `M8-MACHINES-HANDOVER.md`.** Then a preloaded image and snapshot
   loaded with the page (likely the Arch desktop guest, decision 1: a built-in machine, after remote disks' content
   identity), a catalog of hosted images (machine definitions) on top of phase B's disk in, and **the stable
   embedding API**, extracted from what the page ended up using (VM config to DTB and devices,
