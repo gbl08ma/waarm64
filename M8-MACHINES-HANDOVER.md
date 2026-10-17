@@ -60,8 +60,17 @@ steps were run by hand. **Worth a look in the dev VM** (does the case reproduce 
    Buildroot test,
    `dist`'s Buildroot boot, `start`. `page-debian` (needs linux-snd's `snd-play`) runs Debian's transient-machine
    snapshot and Suspend: it must still pass.
-3. **The installer flow** (`tests/page-machines.test.ts`, Alpine's virt ISO into `target/iso/`, the command in the
-   test's comment): (filled in at the exit: whether it ran here).
+3. **The installer flow** (`tests/page-machines.test.ts`, skipped with no variable to enable it): written, not
+   finished. With Alpine's virt ISO (read-only) and a blank 2 GiB disk, the live system boots on the page in about a
+   minute, root logs in, and `setup-disk -m sys` starts, then stops: **neither the virt nor the standard ISO carries
+   `grub-efi` or `dosfstools`** (only e2fsprogs; checked in the images' file lists), and the tests' guest has no network.
+   To finish it: give the guest the internet (the tailnet of `scripts/ci-net.sh`, or the tailcat exit node) so
+   `setup-disk` fetches them, or a third read-only disk with those packages and their APKINDEX (`web/fat.ts` makes
+   FAT images in Node). Then: install, power off, detach the ISO (`editAttachment`), boot the disk (EDK2 finds its
+   boot entry in the machine's own variable store). Debian's netinst needs the network too.
+   **It found a page bug, fixed:** busybox's getty writes `\n\r` before `localhost login: `, which the page's ready
+   marker didn't take, so an Alpine machine never showed `running` (`web/app/machine.ts`, a unit case in
+   `tests/page-debian.test.ts`'s always-run marker test).
 4. **Step counts:** none should move (the tests' Node and native guests build their own device lists; only the page's
    order changed). If `tests/steps.txt` moves anywhere, report it to the user before anything else.
 5. **The exit's numbers** in Chromium 153 (`bench/boot/REPORT.md`, committed JSON): a restore whose pins match (RAM

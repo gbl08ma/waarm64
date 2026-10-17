@@ -91,7 +91,7 @@ export const MACHINES = {
     ramMiB: 2048,
     framebuffer: { width: 1024, height: 768 },
     display: 'gpu',
-    ready: /(?:^|\n)\S+ login: /, // agetty's prompt
+    ready: /(?:^|\n)\r*\S+ login: /, // agetty's prompt; busybox's getty (Alpine) puts a \r before it
   },
   // The tests' and benchmarks' guest (`?machine=debian`, tests/debian-unattended.ts): Debian's published image, unmodified: EDK2 boots its shim and GRUB (docs/plans/uefi.md, docs/images.md "Debian for interaction").
   // No first-boot answers are passed: its first boot asks on the serial console, as on a regular machine.

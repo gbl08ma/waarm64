@@ -46,6 +46,10 @@ test("the page's ready marker: Debian's login prompt in any chunk, not a service
   assert.deepEqual(debian('\r\nlocalhost login: [   31.2] random: crng init done\r\n'), [true]);
   assert.deepEqual(debian('ttyAMA0\r\n\r\nlocalhost lo', 'gin: ', 'more'), [false, true, true]);
   assert.deepEqual(debian('Starting systemd-logind.service - User Login Management...\r\n', 'login: failure\r\n'), [false, false]);
+  // The page's own machine (any guest): busybox's getty (Alpine's live ISO) writes `\n\r` before its prompt.
+  const uefi = (...chunks: string[]) => { const w = readyWatcher(MACHINES.uefi.ready); return chunks.map(w); };
+  assert.deepEqual(uefi('(/dev/ttyAMA0)\r\n\r\r\n\rlocalhost login: '), [true]);
+  assert.deepEqual(uefi('\r\nlocalhost login: '), [true]);
   const buildroot = readyWatcher(MACHINES.buildroot.ready);
   assert.deepEqual(['Run /init as init process\r\n', '# '].map(buildroot), [false, true]);
 });
