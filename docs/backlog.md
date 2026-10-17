@@ -470,6 +470,15 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   - `svelte-check` (another dependency) isn't used: tsc doesn't read the components; their compile is checked
     (tools/svelte.ts, tests/dist.test.ts) but not their types.
   - The machine list doesn't show a suspended machine as suspended (it reads "off").
+  - **Open disk… keeps no handle:** the first-run message's button and the Machines page's From a disk image… are a
+    plain `<input type=file>` (main.ts
+    `openDiskInput`), so the machine it makes has a file disk without a handle, and after a reload its suspended copy
+    resumes only once the file is picked again ("Pick and start", checked by name, size and date). A drop and the Add
+    disk wizard (`showOpenFilePicker`) keep one, and a reload resumes after one click ("Allow and start"); the
+    button could use the picker too.
+  - **A second tab of a running machine** (the page opens the last machine by default) starts a worker, waits out the
+    overlay's lock (10 s, `OVERLAY_WAIT_MS`) and fails with `disk-in-use`, naming the disk. Checking the machine's
+    lock first (`isRunning`) would say at once that it runs in another tab, without a worker.
   - Several file disks re-granted at a start ask once each (`requestPermission` per handle).
   - `?display=simple` runs (the tests') are another shape than the same machine on the page, so their snapshots show
     as orphaned there (a 3D machine on a browser without WebGL2 is another shape too: decided, §11).
@@ -565,10 +574,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   load to `running`, a suspend and its resume, the file's size and the pause): the lane's numbers
   are the page tests' own timings, two or three runs each (`bench/boot/REPORT.md` "M8 phase C
   exit").
-- **Suspend and a chosen disk:** the suspended copy is beside that disk's overlay, and the page
-  forgets a chosen file over a reload, so it resumes only when the user opens the disk again.
-  And nothing tells a second tab that the first resumed the machine (it boots or waits for the
-  disk, as any second tab does).
 - **Save snapshot's pause is the file's write** (1.4 s for Debian's 175 MB through the picked
   file's stream): writing to memory first and to the file after the resume would shorten it to
   the compression's ~0.5 s, for the file's size in memory.

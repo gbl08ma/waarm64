@@ -434,8 +434,9 @@ are Start and Boot instead). A failure before that leaves the machine running.
   `machines/<id>/suspend`; a transient one's is beside its overlay.
 - A suspended machine's file is not a snapshot to take elsewhere (it has no disk): `readSnapshot`
   refuses it without `resume`, and Save snapshot is what leaves the browser.
-- With a disk of one's own (Open disk…), the suspended copy is beside that disk's overlay: it
-  resumes when that disk is opened again (the page doesn't remember a chosen file over a reload).
+- A disk of one's own (Open disk…, a drop) is a stored machine's, so its suspended copy is the machine's and the page
+  reopens it after a reload (the last machine): a file disk needs the user's click first ("Allow and start", or
+  "Pick and start" without a handle), then it resumes.
 
 **Limits.** No hash of the base image is written (nothing computes or caches it off the save path
 yet), so `readSnapshot` requires the same disk identity: the machine's own disk, or the same file
