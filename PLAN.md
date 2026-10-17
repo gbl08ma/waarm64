@@ -233,8 +233,9 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     stays within 22–33 ms of a flush under a continuous disk read, so no blk worker. Numbers: `bench/io/REPORT.md`.
 - **D. Choosing and shaping machines:** **starts with machines as the unit (proposed 2026-10-17,
   [docs/plans/machines.md](docs/plans/machines.md))**: named machines stored in the browser (vCPUs, RAM, any number of
-  disks, read-only or read-write), managed in a modal (Svelte); overlays per base disk as named variants; disk sources
-  from a URL, a file (remembered), a copy in OPFS, blank, or a ramdisk that survives the guest's reboot; several
+  disks, up to 16, read-only or read-write), managed in a modal (Svelte); overlays per base disk as named variants;
+  disk sources from a URL, a file (remembered), a copy in OPFS (which can take an overlay in place or be written in
+  place), blank, or a ramdisk emptied at every boot; several
   snapshots per machine kept in OPFS or downloaded, checked against the machine's shape (orphaned when the machine
   changes) and restored without destroying a disk's state (an overlay that moved on is forked, detected by a
   generation counter, not a hash); machine definitions exported and imported. Then a preloaded image and snapshot
