@@ -285,7 +285,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   capacity change and net link state don't yet.
 - virtio-blk over HTTP: synchronous XHRs, no cache or concurrency (a request's qcow2 clusters are
   read in merged ranges, nothing is merged across requests); batch, cache or go async when an I/O
-  benchmark says so. qcow2's compressed clusters are inflated one at a time on the reading thread.
+  benchmark says so: for remote servers, [plans/remote-disks.md](plans/remote-disks.md). qcow2's compressed clusters are inflated one at a time on the reading thread.
 - Overlay: no quota handling (OPFS errors come back as `IOERR`), the base identified by path and
   size only.
 - blk DISCARD/WRITE_ZEROES ([devices.md](devices.md)) is the page's only: offering it to the

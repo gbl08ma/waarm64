@@ -918,6 +918,42 @@ localhost). GitHub Pages can't set headers. `npm run dist -- --serve` previews t
 saved changes stay with the site they were made on. `tests/dist.test.ts` serves a copy so and boots Buildroot from
 it (its images linked in).
 
+### Deployed at vm.tny.im
+
+The user's public copy (since 2026-10-17): `https://vm.tny.im`, a classic **Cloudflare Pages** project `webpc`
+(`webpc.pages.dev`) on the user's account, uploaded from the dev VM by direct upload. **Deploying is outward-facing:
+only when the user asks.** Redeploy (the copy is rebuilt first; a deploy is atomic and replaces the site):
+
+```sh
+set -a; . ~/.config/cloudflare/webpc.env; set +a
+npm run dist && wrangler pages deploy target/dist --project-name webpc --branch main \
+  --commit-hash "$(git rev-parse HEAD)" --commit-message "$(git log -1 --format=%s)"
+```
+
+then check it from Chromium (`bench/results/local/live-pages.ts <origin>` boots Debian from a local file on the
+deployed page; untracked). How it was set up, once:
+
+- **wrangler** (Cloudflare's CLI) in the dev VM, outside the repo (not a dependency): `npm i -g --prefix ~/.local
+  wrangler@4.151.1` (in `~/.local/bin`; npm skips `workerd`'s postinstall, which only `wrangler dev` needs).
+- **Credentials:** an API token (custom: Account → Cloudflare Pages → Edit; Zone → DNS → Edit on `tny.im`) and the
+  account ID in `~/.config/cloudflare/webpc.env` (`CLOUDFLARE_API_TOKEN=`, `CLOUDFLARE_ACCOUNT_ID=`; mode 600), written
+  by the user on the VM. Source it; never print it. `wrangler login` doesn't suit the VM (its OAuth callback is on the
+  VM's localhost), and `wrangler whoami` fails with this token (it has no user-level permission): verify it with
+  `GET /client/v4/user/tokens/verify` instead.
+- **The project:** `wrangler pages project create webpc --production-branch main --force`. `--force` only that once:
+  wrangler 4.151 otherwise creates the new Workers-based kind of Pages project, which needs Workers permissions; the
+  project, once there, is classic Pages for every later command.
+- **The domain:** `vm.tny.im` added to the project (Pages API `POST …/pages/projects/webpc/domains`) and one proxied
+  DNS record `vm CNAME webpc.pages.dev` in the `tny.im` zone (DNS API). **Every other record in that zone is the
+  user's: leave them exactly as they are** (`tny.im` itself is another Pages project). The certificate took a few
+  minutes ("pending" until then, Cloudflare's timeout page meanwhile).
+
+What Pages gives: `_headers` applies (COOP, COEP on every file), `.wasm` is `application/wasm`, `.js`
+`application/javascript`; **no range requests** (a `Range` gets 200 and the whole file: the page fetches the firmware
+whole, so it doesn't matter here, but disks shouldn't be hosted on Pages as one file: [plans/remote-disks.md](plans/remote-disks.md) §3).
+25 MiB a file, 20,000 files. The dev VM's resolver may cache a new name's absence for a while after a DNS change:
+Chromium's `--host-resolver-rules=MAP vm.tny.im <ip>` (the script's `MAP=`) checks the real site meanwhile.
+
 ## The disk reader
 
 `web/bootfs.ts` and `web/ext4.ts`: no Node APIs, all I/O through `read(off, len)` (a qcow2

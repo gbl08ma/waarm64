@@ -93,7 +93,9 @@ Decisions (the user, 2026-09-28):
   only. **Not a hard rule:** Svelte is pre-approved if a framework would make a specific part
   easier. It needs compiling, so it would come with a compile step in `tools/serve.ts` (as type
   stripping is) rather than a separate build.
-- **No public hosting in M8** (others clone the repo); **no guest network in the first phase.**
+- **Public hosting:** M8 started without it (others clone the repo); since 2026-10-17 `npm run dist` makes a static
+  copy and the user deploys it at `https://vm.tny.im` (Cloudflare Pages; docs/frontend.md "A static copy"). **No guest
+  network in the first phase.**
 - The Firefox and Safari pass left M8 for the backlog (the user checks Firefox by hand later).
 
 Phases (A first; after A, the tracks in C can run in parallel, one agent each):
@@ -221,6 +223,9 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     time, or a URL's path). A restored machine has empty TLBs, which Linux can tell by its step
     count ([docs/platform.md](docs/platform.md) "Snapshots"). Loose ends:
     [docs/backlog.md](docs/backlog.md) "Snapshots".
+  - Remote disks (proposed, `M8-REMOTEDISK-HANDOVER.md`, [docs/plans/remote-disks.md](docs/plans/remote-disks.md)): a
+    disk from another server read fast (a cache, a chunked image format hosted on Cloudflare R2 or Pages or any static
+    host, OPFS persistence, concurrent reads, a boot's read trace), measured first (R0).
   - Disk I/O speed (a chosen `File` under an overlay): **done (2026-10-08).** One change shipped: the overlay
     reads and writes in runs (first writes of 1 MiB 6 → 212 MiB/s, reads of written data 17 → 358 MiB/s, `dd conv=fsync`
     4.9 → 20 MiB/s). The rest was dropped by measurement: Debian's boot from a chosen qcow2 spends 3.9% in file reads and
