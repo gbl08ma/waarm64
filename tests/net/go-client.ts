@@ -1,5 +1,5 @@
 // The Go client in Node (tests/net/go-client-worker.ts), for the tailnet client's hand-over test
-// (docs/plans/tailnet-client.md T4): it runs on a store given as a map of the page's IndexedDB
+// (docs/tailnet.md "Tailscale"): it runs on a store given as a map of the page's IndexedDB
 // values (`<StateKey>` → hex) and writes back into that map. `stop()` terminates its worker, so
 // nothing of it stays connected.
 import { readFileSync } from 'node:fs';

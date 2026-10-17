@@ -1,4 +1,4 @@
-//! The Tailscale client (docs/plans/tailnet-client.md §5), sans I/O like the tailcat one
+//! The Tailscale client (docs/tailnet.md "Tailscale"), sans I/O like the tailcat one
 //! (client.rs), whose actions it shares: the control session (control.rs) and, on the netmap
 //! it keeps, the data plane. A browser is DERP-only: every peer is a WireGuard peer
 //! (`ts_tunnel`) reached through its home DERP region; ours is the region that answers

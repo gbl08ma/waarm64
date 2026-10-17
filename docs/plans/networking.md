@@ -3,8 +3,8 @@
 **Status:** refined 2026-10-01. N1 to N5 are done: the IPv4 gateway, the Tailscale client, the
 Network menu on the page, a kept node, exit-node selection; a VM on the page reaches its tailnet and,
 through an exit node, the internet (checked by hand with a real login). IPv6 (N6) and the card for Alpine (N7, it needs nothing) are done. It feeds M8's "networking backend
-API" (PLAN.md, M8). What exists is described in [devices.md](devices.md) "net" and
-[frontend.md](frontend.md) "Network"; this file holds the decisions and what's left.
+API" (PLAN.md, M8). What exists is described in [devices.md](../devices.md) "net",
+[tailnet.md](../tailnet.md) and [frontend.md](../frontend.md) "Network"; this file holds the decisions and what's left.
 
 The question: how does a VM in the page reach other networks, the internet included, **without
 the guest knowing how**? Today the guest has virtio-net (`docs/devices.md` "net"):
@@ -28,9 +28,9 @@ test adapter, or anything on the page behind a `MessagePort`).
 - **The main cost to fight is the optional download** (§4.4). That's also what makes
   `tailscale-rs` interesting later (§5). *Proposed 2026-10-16:* our own client, a Rust wasm module
   built from tailscale-rs's sans-I/O crates, speaking tailcat first and then Tailscale, to replace
-  the Go client ([tailnet-client.md](tailnet-client.md)). *Done 2026-10-16 (T6):* the Rust client is
+  the Go client. *Done 2026-10-16:* the Rust client ([tailnet.md](../tailnet.md)) is
   the page's Tailscale client, and the Go one left the page (2026-10-17; `net/tailscale` stays as a
-  test fixture: tailnet-client.md T6).
+  test fixture).
 - WebRTC peer-to-peer networks (M8's original idea) stay an experimental backend behind the same
   interface (§6).
 
@@ -64,15 +64,15 @@ test adapter, or anything on the page behind a `MessagePort`).
   All traffic goes through DERP for now (direct connections are a TODO), which is the only mode a
   browser has anyway. Pre-1.0 with no compatibility promises; no wasm support or plans stated.
   *Since (v0.6.0, 2026-09-17):* its WireGuard crypto (`ts_tunnel`) had a third-party audit and the
-  `TS_RS_EXPERIMENT` opt-in is gone; which crates are sans-I/O is in
-  [tailnet-client.md](tailnet-client.md) §1.
+  `TS_RS_EXPERIMENT` opt-in is gone; which of its crates we use, and why not the rest, is in
+  [tailnet.md](../tailnet.md) "The module".
 - **Rolling our own client** would mean the control protocol (Noise IK to the coordination server,
   map polls, capability versions, packet filters), WireGuard, DERP and disco: what `tailscale-rs`
   needs ~30 crates for, tracking a protocol that isn't a stable public API. Rejected (2026-09-27);
-  reopened 2026-10-16 on top of tailscale-rs's protocol crates ([tailnet-client.md](tailnet-client.md)).
+  reopened 2026-10-16 on top of tailscale-rs's protocol crates ([tailnet.md](../tailnet.md)).
 - **[tailcat](https://github.com/tailscale/tailcat)** (BSD-3, found 2026-10-16): Tailscale's data
   plane without its control plane; `tailcat serve exit-node` on any machine prints an address a
-  client connects to, no account. The basis of [tailnet-client.md](tailnet-client.md) §4.
+  client connects to, no account. The basis of [tailnet.md](../tailnet.md) "tailcat".
 - **Direct Sockets API** (Chromium): raw TCP/UDP, but only for Isolated Web Apps. Not a page
   feature; noted, not planned.
 
@@ -175,7 +175,7 @@ loaded only on "connect", but it's still the biggest cost. Levers, each to be me
 
 ## 5. Later: tailscale-rs
 
-*Superseded 2026-10-16 by [tailnet-client.md](tailnet-client.md)* (the user: the Go module is too
+*Superseded 2026-10-16 by [tailnet.md](../tailnet.md)* (the user: the Go module is too
 heavy; the audit is no longer a condition). What follows is the original reasoning.
 
 `tailscale-rs` may be the answer to §4.4, and it fits the project: Rust like our core, smoltcp
@@ -264,7 +264,7 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   destinations, so no local server can stand in for the internet. Left, only if cheap: the menu's
   login-URL and approval states in Chromium against headscale. `ci-net.sh` stays separate from
   `ci.sh` (the user, 2026-09-30: only when a change touches the network).
-- Later: our own client with tailcat and Tailscale (T1 to T6 in [tailnet-client.md](tailnet-client.md), done: it replaces §5's Go client as the default) and §6 (WebRTC), and further backends, each behind the same interfaces.
+- Later: our own client with tailcat and Tailscale ([tailnet.md](../tailnet.md), done: it replaced §5's Go client as the default) and §6 (WebRTC), and further backends, each behind the same interfaces.
 
 ## 8. Open questions
 

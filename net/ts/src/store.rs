@@ -1,8 +1,8 @@
-//! The kept node (docs/plans/tailnet-client.md §5): the Go client's `ipn.StateStore` as the page
+//! The kept node (docs/tailnet.md "Tailscale"): the Go client's `ipn.StateStore` as the page
 //! keeps it, read and written in Go's own format, so a node made by either client is the same
 //! node in the other. Checked against tailscale.com v1.102.5 (`ipn/store.go`, `ipn/prefs.go`,
 //! `ipn/ipnlocal/profiles.go`, `types/persist`, `types/key`) and against what that client wrote
-//! (tests/ts-handover.test.ts):
+//! (tests/ts-tailnet.test.ts):
 //!
 //! - `_machinekey`: text, `privkey:<hex>`.
 //! - `_current-profile`: the current profile's state key, `profile-<4 hex>`.

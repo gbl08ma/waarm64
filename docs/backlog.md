@@ -589,19 +589,17 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   machine unsaveable until that queue is reset (`vm_snapshot_size` = `u64::MAX`): only a broken
   guest does it; the page would say so and offer nothing.
 
-## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [frontend.md](frontend.md) "Network")
+## Network (M8 phase C, networking lane; [plans/networking.md](plans/networking.md), [tailnet.md](tailnet.md), [frontend.md](frontend.md) "Network")
 
 - Loose ends: the menu's login-URL and approval states are `viewOf` unit tests only (no Chromium test against headscale); the page's Buildroot machine has no `network` entry (its kernel has virtio-net, but nothing brings the interface up); IPv6 to the internet through an exit node, and a real Tailscale exit node with its own nameservers, are untested; router advertisements repeat every 60 s only on a port backend; the network tests ran in cloud sessions (Chromium 141) as well as here (153), so recheck with `scripts/ci-net.sh` in the dev VM after a change.
 - The Debian tests (`net-guest`, `page-network`, `net-tailnet`) take ~4 min: they run in `scripts/ci-net.sh`, not `scripts/ci.sh`.
-- The Tailscale client's own memory (a 27 MB wasm Go runtime in its worker) wasn't measured: it
-  needs the headscale test tailnet.
-- **tailcat, IPv6 where the exit node's machine has none out** ([plans/tailnet-client.md](plans/tailnet-client.md) T2): the guest gets
+- **tailcat, IPv6 where the exit node's machine has none out** ([tailnet.md](tailnet.md) "tailcat"): the guest gets
   the tunnel's IPv6 address and a default route, the exit node's netstack accepts each IPv6 TCP connection and then
   closes it empty when its machine can't dial out over IPv6, so a client that tries IPv6 first (curl, browsers) fails
   instead of falling back to IPv4 (found on the dev VM, which has no IPv6 route). A fix in the client: probe the exit
   node's IPv6 reach once Running (a DNS query to `2606:4700:4700::1111` through the tunnel) and lease the guest no IPv6
   default route if it doesn't answer, keeping the tunnel address for the server's own `fd7a:` services.
-- **tailcat serving loose ends** (T3): no `--allow` list (any key with the address gets in, as with tailcat's own
+- **tailcat serving loose ends**: no `--allow` list (any key with the address gets in, as with tailcat's own
   default; the module would check the meowing key); clients are never dropped (64 WireGuard peers at most, until
   Disconnect); disco pings aren't answered, so `tailcat ping` gets no pong (the data path works); the public-relay
   path (`nearestRegion`, the short-form address) is checked by unit tests and by hand against tailcat.dev's map
@@ -609,25 +607,33 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   empty relay, `tailcat ssh` from a machine with the internet); `tailcat ssh` itself wasn't run (the port path it
   uses is, with a web server in the guest); keeping the client's key when going online through a server (so a
   server can `--allow` it) isn't offered: serving uses the kept key, going online alone a fresh one.
-- **tailcat loose ends** (T2): an address that names only a region (tailcat's public relays) fetches
+- **tailcat loose ends**: an address that names only a region (tailcat's public relays) fetches
   `https://tailcat.dev/derpmap.json`, parsed in unit tests but never run against the real map (opt-in by hand:
   `tailcat serve exit-node` with no `--key` on a machine with the internet); the relay's loss while running is
   covered natively (`relay_loss_while_running`), not in a browser (kill derper mid-test); a guest spraying UDP flows
   (a port per packet) slows a tailcat exit node to nothing (bench/net/REPORT.md "T1"), and ICMP isn't forwarded (no
   `ping` beyond the exit node): say so in frontend.md if users hit them; DF-clear IPv4 over 1,260 bytes is dropped,
   not fragmented (`nat46.rs`), unchecked with `tcpdump`.
-- **The Rust Tailscale client's loose ends** ([plans/tailnet-client.md](plans/tailnet-client.md) T4, T5): subnet
-  routes aren't installed (only peers' own addresses and the selected exit node's default routes; Go's stored prefs say
-  `RouteAll: false` too, but its `NewPrefs` accepts them: decide with the user); IPv6 extension headers aren't followed
-  by the filter (such a packet is judged by its first next-header); MagicDNS answers A and AAAA only (no PTR for
-  tailnet addresses, no SRV/TXT from extra records; other types forward), asks one resolver at a time with no retry
-  (the guest's resolver retries), and its DNS-over-HTTPS fallback (Cloudflare, Google or Quad9 by `fetch`) is unit-
-  tested only (the cloud has no DNS out); the exit node's DNS goes as UDP to the tailnet's resolvers or 1.1.1.1, not to
-  the exit node's peerapi DoH as Go's does (to check against an exit node that blocks plain DNS); disco answers pings
-  only (no CallMeMaybe, no pings of our own: a browser has no direct path to offer); Tailnet Lock is refused, not
-  supported; the first packet to a fresh peer after the tailnet comes up waits ~4.5 s for a WireGuard retry
-  (later ones 55 ms; the Go client's "5 s first ping" too); headscale answers the first map ~2 s after registration
-  for both clients (not ours to fix).
+- **The Rust Tailscale client's loose ends** ([tailnet.md](tailnet.md) "Tailscale"):
+  - Subnet routes aren't installed (only peers' own addresses and the selected exit node's default routes); Go's
+    stored prefs say `RouteAll: false` too, but its `NewPrefs` accepts them: decide with the user.
+  - IPv6 extension headers aren't followed by the filter (such a packet is judged by its first next-header).
+  - MagicDNS answers A and AAAA only (no PTR for tailnet addresses, no SRV/TXT from extra records; other types
+    forward), over UDP only, and asks one resolver at a time with no retry (the guest's resolver retries); its
+    DNS-over-HTTPS fallback (Cloudflare, Google or Quad9 by `fetch`) is unit-tested only (the cloud has no DNS out).
+  - The exit node's DNS goes as UDP to the tailnet's resolvers or 1.1.1.1, not to the exit node's peerapi DoH as Go's
+    does (it would need a TCP client in the module): check against an exit node that blocks plain DNS.
+  - Disco answers pings only (no CallMeMaybe, no pings of our own: a browser has no direct path to offer); Tailnet
+    Lock is refused, not supported.
+  - The first packet to a fresh peer after the tailnet comes up waits ~4.5 s for a WireGuard retry (later ones 55 ms;
+    the Go client's "5 s first ping" too); headscale answers the first map ~2 s after registration for both clients
+    (not ours to fix).
+  - The module in the device worker instead of its own (one worker and one hop less): only if its cost there is
+    small; the worker spends 3.1 core-ms per Mbit/s (bench/net/REPORT.md "T6"), unmeasured inside the device worker.
+  - Go is left only for test fixtures: the Go client (`net/tailscale`) for `tests/ts-tailnet.test.ts`'s hand-over of
+    a node it kept, and the tailcat rig's `derper` and `tailcat`. Dropping the hand-over test and building those two
+    in a container image would remove Go from development and CI; the user kept Go (2026-10-17), so not before the
+    Go client's store format stops mattering.
 
 ## Tests and tools
 

@@ -1,5 +1,5 @@
 // The tailcat backend (web/tailcat.ts, the Rust tailnet client net/ts in its worker) in headless
-// Chromium, with no guest (docs/plans/tailnet-client.md T2): the page loads the module from the
+// Chromium, with no guest (docs/tailnet.md "tailcat"): the page loads the module from the
 // dev server under COEP, opens the relay's WebSocket, reaches `Running`, hands the gateway's
 // port a lease, and carries UDP to an echo server on the exit node's machine and back. The
 // guest's side is tests/net-tailcat.test.ts's.

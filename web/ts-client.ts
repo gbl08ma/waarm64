@@ -1,4 +1,4 @@
-// The tailnet client's I/O (docs/plans/tailnet-client.md): the module
+// The tailnet client's I/O (docs/tailnet.md): the module
 // (net/ts, target/net/ts.wasm) holds the protocols' state and never waits;
 // this carries out what it asks (WebSockets to DERP relays, fetches, timers)
 // and feeds it what comes back, the guest's packets and the time. It runs in
@@ -30,7 +30,7 @@ type Exports = {
 /** A tailcat server to connect to (`tailcat serve exit-node` printed `addr`), clients to let in (`serve`), or both. */
 export type TailcatConfig = {
   addr?: string;
-  /** The VM as a tailcat server (docs/plans/tailnet-client.md T3): the address's pre-shared key (64 hex digits) and,
+  /** The VM as a tailcat server (docs/tailnet.md "tailcat"): the address's pre-shared key (64 hex digits) and,
    * without `addr`, the relay: one's own derper (`host[:port]`), or a region of the DERP map by ID (0: its first). */
   serve?: { psk: string; relay?: string; region?: number };
   /** The DERP map for an address that names only a region (default: tailcat's public one). */
@@ -42,7 +42,7 @@ export type TailcatConfig = {
   dns6?: number[][];
 };
 
-/** A Tailscale node (docs/plans/tailnet-client.md §5): its control server and the kept node's store. */
+/** A Tailscale node (docs/tailnet.md "Tailscale"): its control server and the kept node's store. */
 export type TailnetConfig = {
   control: { url: string; authKey?: string; hostname?: string; ephemeral?: boolean };
   /** The node's store as the Go client keeps it (web/tailscale-state.ts): `<StateKey>` → hex of the bytes. */

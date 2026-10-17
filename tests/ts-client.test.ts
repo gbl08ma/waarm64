@@ -2,7 +2,7 @@
 // with no network: a stub WebSocket stands in for the relay. The protocols
 // are covered natively (`cargo test -p webpc_ts`, a fake tailcat server
 // included); a real tailcat server is bench/net/tailcat.ts's and
-// tests/net/tailcat.sh's (docs/plans/tailnet-client.md).
+// tests/net/tailcat.sh's (docs/tailnet.md).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';

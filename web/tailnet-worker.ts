@@ -1,4 +1,4 @@
-// The Tailscale backend's worker (docs/plans/tailnet-client.md §5): the tailnet client (net/ts,
+// The Tailscale backend's worker (docs/tailnet.md "Tailscale"): the tailnet client (net/ts,
 // target/net/ts.wasm) logged in to a control server, its packets on the gateway's IP port
 // (web/tailscale.ts `ToTailscale`, `FromTailscale`). With `persist`, the node is kept in the Go
 // client's store format (web/tailscale-state.ts), so a node the Go client made before is the same node.

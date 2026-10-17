@@ -1,5 +1,5 @@
-// T4 (docs/plans/tailnet-client.md): the Rust Tailscale client in Node, against a control server:
-// it registers (or comes back as the kept node) and prints its netmap (tests/ts-handover.test.ts
+// T4 (docs/tailnet.md): the Rust Tailscale client in Node, against a control server:
+// it registers (or comes back as the kept node) and prints its netmap (tests/ts-tailnet.test.ts
 // compares it with the rig's peer's `tailscale status --json`). The node's store is a JSON file (`<StateKey>` → hex, as the page's IndexedDB keeps it).
 // Usage: node bench/net/tailnet.ts <control URL> <auth key> [store.json] [hostname]
 // (NODE_EXTRA_CA_CERTS for a test CA; WEBPC_TS_WASM for another module.)

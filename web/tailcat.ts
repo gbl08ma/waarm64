@@ -1,9 +1,9 @@
-// The tailcat backend from the page's side (docs/plans/tailnet-client.md §4):
+// The tailcat backend from the page's side (docs/tailnet.md "tailcat"):
 // the guest's network through a tailcat server (`tailcat serve exit-node` on a
 // computer of the user's) instead of a tailnet, by the Rust tailnet client
 // (net/ts) in its own worker (web/tailcat-worker.ts); and the VM as a tailcat
-// server (T3): clients with its address (`tailcat ssh tc…`) reach the guest.
-// The handle is the Go Tailscale client's (`Tailscale`, web/tailscale.ts), so
+// server: clients with its address (`tailcat ssh tc…`) reach the guest.
+// The handle is the Tailscale backend's (`Tailscale`, web/tailscale.ts), so
 // the page's network controller drives either; what a tailcat server doesn't
 // have (exit nodes, logging out) is refused.
 import type { Lease } from './gateway.ts';

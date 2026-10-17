@@ -851,10 +851,9 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
   when the login completes. An admin-approval wait is shown as such. With an auth key there's no
   login; the key is never saved and its node is ephemeral (the control server drops it once it's
   been away).
-- **The client** is our tailnet client (`net/ts`, `web/tailnet-worker.ts`; docs/plans/tailnet-client.md),
-  the page's since T6 (until then Tailscale's Go client built to wasm). It keeps the node in the Go
-  client's store format, so a node kept before T6 is still the same node.
-  Both speak the same worker messages and keep the node in the same store, so switching is invisible.
+- **The client** is our tailnet client (`net/ts`, `web/tailnet-worker.ts`; docs/tailnet.md),
+  the page's since 2026-10-16 (until then Tailscale's Go client built to wasm). It keeps the node in
+  the Go client's store format, so a node kept by the Go client is still the same node.
 - **The node is kept:** a login's node (its keys, a secret) lives in this origin's IndexedDB
   (`webpc-tailscale`, one profile per control server, in the Go client's own format: `web/tailscale-state.ts`), so a reload is the same node with the same
   address and no new login: **Connect on load is automatic** (`autoconnect`) until Disconnect. An
@@ -864,7 +863,7 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
   keys. A machine restart (Restart, a guest
   reboot, Reset disk) hands the new machine's port to the running client (`attach`): it stays
   connected.
-- **tailcat** (docs/plans/tailnet-client.md §4, T2 and T3) has two choices, either or both:
+- **tailcat** (docs/tailnet.md "tailcat") has two choices, either or both:
   - **Go online through a computer of mine** (the default): a **tailcat address** (a password
     field; a secret, never saved) and a line on what to run: `tailcat serve exit-node` on a
     computer of the user's. The Rust tailnet client (web/tailcat.ts, web/tailcat-worker.ts,
@@ -875,7 +874,7 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
     `fd7a:115c:a1e0:…` address, MTU 1280, resolvers 1.1.1.1 and 2606:4700:4700::1111 (reached
     through the exit node). What the guest reaches is TCP and UDP to wherever that computer
     reaches, its LAN included; no ping beyond it, no exit-node choice, no Log out.
-  - **Let tailcat clients in to this machine** (T3): the machine is a tailcat server. The menu
+  - **Let tailcat clients in to this machine**: the machine is a tailcat server. The menu
     shows **its own tailcat address** (a password field with Show and Copy) and how to use it:
     on another computer, `tailcat ssh <address>` logs in to the guest's sshd (tailcat runs `ssh`
     with `tailcat <address> 22` as its ProxyCommand) and `tailcat <address> <port>` reaches any
@@ -900,7 +899,7 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
   and the client's routing decides between the tailnet and the exit node. **DNS follows the exit
   node**: MagicDNS (100.100.100.100, which the lease gives first) answers the tailnet's names and
   sends the rest as plain DNS through the exit node, to the tailnet's resolvers or 1.1.1.1
-  (docs/plans/tailnet-client.md T5; the Go client used the exit node's DoH service instead).
+  (docs/tailnet.md "Tailscale"; the Go client used the exit node's DoH service instead).
   **The guest must take the lease's search domain** (MagicDNS's, e.g. `tail1234.ts.net`): with
   systemd-networkd that's `UseDomains=yes` under `[DHCPv4]` and `[DHCPv6]`, which the page's
   credential and the Arch image set, with `UseMTU=yes` (the lease's 1280 on the link; IPv6 takes

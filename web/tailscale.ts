@@ -1,5 +1,5 @@
 // The Tailscale backend from the page's side (docs/plans/networking.md §4):
-// starts the tailnet client (net/ts, docs/plans/tailnet-client.md) in its own worker (web/tailnet-worker.ts) and
+// starts the tailnet client (net/ts, docs/tailnet.md) in its own worker (web/tailnet-worker.ts) and
 // hands back the end of an IP-packet port for virtio-net's gateway
 // (`{type: 'net', adapter: {ip: port}}`, web/gateway.ts `portBackend`). The
 // worker sends `{type: 'lease', lease}` on that port whenever the node's address

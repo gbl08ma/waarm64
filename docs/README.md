@@ -13,6 +13,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [platform.md](platform.md) | memory map, boot and DTB, the run loop (round-robin and parallel SMP), broadcast maintenance, deterministic and realtime time, the GICv3, timer, PL011, PSCI |
 | [frontend.md](frontend.md) | the page (`web/app/`): its machines, the worker protocol, the screen, the serial terminal (xterm.js); `npm start`; `npm run dist` and the deployment at vm.tny.im; the disk reader (partitions, ext4) |
 | [devices.md](devices.md) | virtio transports and queues, the device worker, blk/qcow2/overlay, net, 9p, input, framebuffer |
+| [tailnet.md](tailnet.md) | the network backends: our tailnet client (`net/ts`, Rust wasm on tailscale-rs's crates, sans I/O) for tailcat (online through a computer of yours, the VM as a tailcat server) and Tailscale (control session, the kept node, filter, exit nodes, MagicDNS), its numbers and findings |
 | [audio.md](audio.md) | sound: virtio-snd to an AudioWorklet over a shared ring, the microphone, the guests' drivers (Arch's DKMS module), the Linux driver behavior the pacing depends on, measurements |
 | [abi.md](abi.md) | the host ABI (version 28): exports, `VmConfig`, exits, counters, device layouts, the JIT host interface, version history |
 | [jit.md](jit.md) | the JIT: dispatch, blocks, regions, linking, invalidation, emission, FP fast paths, what's still helpers, what was tried and dropped |
@@ -23,7 +24,6 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [cloud.md](cloud.md) | Claude Code cloud sessions: what differs from the dev VM (x86_64, Node, Chromium, dtc, images) and the setup script |
 | [backlog.md](backlog.md) | open loose ends by area (PLAN.md's M9) |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
-| [plans/tailnet-client.md](plans/tailnet-client.md) | our own Tailscale client in Rust wasm on tailscale-rs's crates, and tailcat (a network with no tailnet) to replace the Go module (proposed, not scheduled) |
 | [plans/graphics.md](plans/graphics.md) | the display and 3D: virtio-gpu 2D (G0, G1), virgl's guest side measured (G2), the virgl renderer on WebGL2 (G3), Firefox, GTK4 and dEQP passing (G4): what each loop found, the numbers; G5 proposed |
 | [plans/video.md](plans/video.md) | hardware video decoding (done): VA-API over virgl decoded by WebCodecs (why not V4L2), H.264, VP9 and AV1, each loop's record |
 | [plans/agent.md](plans/agent.md) | a guest agent (clipboard, time after a resume, a ready signal, X11 resize): the stock agents first, then a tools disk (not scheduled) |

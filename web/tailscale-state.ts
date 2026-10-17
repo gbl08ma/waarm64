@@ -1,4 +1,4 @@
-// The kept Tailscale node's state (docs/plans/networking.md §4, docs/plans/tailnet-client.md §5): the
+// The kept Tailscale node's state (docs/plans/networking.md §4, docs/tailnet.md "Tailscale"): the
 // Go client's `ipn.StateStore` in this origin's IndexedDB, database `webpc-tailscale`, object store
 // `state`, keys `<profile>/<StateKey>`, values the hex of the bytes the client wrote. The Rust client
 // (web/tailnet-worker.ts) uses it as it is, so a node the Go client made (the page's client until

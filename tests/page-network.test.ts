@@ -5,7 +5,7 @@
 // network card from the boot: the guest sees eth0 on its serial console); the client can't reach
 // 127.0.0.1:1, so the menu shows it's connecting or failed, never connected; the settings are
 // kept but never the key, a reload asks for the key again; Disconnect stops the client. tailcat
-// (docs/plans/tailnet-client.md T2, T3): neither choice, or a malformed address, is refused; with
+// (docs/tailnet.md "tailcat"): neither choice, or a malformed address, is refused; with
 // WEBPC_TAILCAT=1 (tests/net/tailcat.sh's relay) an address of a server that isn't there is waited
 // for, then fails, and the machine lets tailcat clients in on that relay: the menu shows its
 // address, the tailcat CLI reaches a web server in the guest through it, the address is the same

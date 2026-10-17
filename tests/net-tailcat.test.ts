@@ -1,4 +1,4 @@
-// The guest through a tailcat server, end to end in headless Chromium (docs/plans/tailnet-client.md
+// The guest through a tailcat server, end to end in headless Chromium (docs/tailnet.md
 // T2): the page's Debian with virtio-net on the Ethernet gateway behind the Rust tailnet client
 // (net/ts, web/tailcat.ts), against `tests/net/tailcat.sh`'s exit node (tailcat and derper,
 // native, on this machine). The guest takes both leases from systemd-networkd (IPv4 192.0.0.2,

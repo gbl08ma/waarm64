@@ -1,4 +1,4 @@
-// The tailcat backend's worker (web/tailcat.ts, docs/plans/tailnet-client.md
+// The tailcat backend's worker (web/tailcat.ts, docs/tailnet.md
 // §4): the Rust tailnet client (net/ts) connected to a tailcat server, its
 // packets on the gateway's IP port. It speaks the Go client's worker protocol
 // (web/tailscale.ts `ToTailscale`, `FromTailscale`) as far as tailcat has the

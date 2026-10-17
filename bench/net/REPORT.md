@@ -86,7 +86,7 @@ the control server's `/key` is in docs/plans/networking.md (N4).
 
 ## T1: the Rust tailnet client, tailcat, in Node (2026-10-16)
 
-docs/plans/tailnet-client.md T1: `net/ts` (Rust, tailscale-rs's `ts_tunnel` for WireGuard) built to
+The tailnet client's T1 (docs/tailnet.md): `net/ts` (Rust, tailscale-rs's `ts_tunnel` for WireGuard) built to
 `wasm32-wasip1`, driven by `web/ts-client.ts`; `bench/net/tailcat.ts` against a tailcat exit node.
 **Setup:** a cloud session container (x86_64, 4 vCPUs, Xeon @ 2.80 GHz, Node 26.11.1, no IPv6), not
 the M4 VM; `derper` (from the `tailscale.com` tailcat v0.7.0 pins) on `derp.test:443` with a
