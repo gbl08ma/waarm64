@@ -18,7 +18,7 @@ export type DisplayToPage =
   | { type: 'capture'; record: Uint8Array }
   /** With `probe` (`?avprobe`): a draw turned the screen's centre bright, at `t` (ms since the epoch: `performance.timeOrigin + now`). */
   | { type: 'flash'; t: number }
-  | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; fenceBack: { n: number; ms: number; maxMs: number } } };
+  | { type: 'draw-stats'; n: number; median: number; max: number; lag: number; busy: { request: number; transfer: number; draw: number; requests: number; transfers: number; pixels: number; flushes: number; submits: number; submitBytes: number; commands: Record<string, number>; fences: number; fenceMs: number; fenceMaxMs: number; heldMs: number; behindMs: number; fullMs: number; heldMax: number; fenceBack: { n: number; ms: number; maxMs: number } } };
 export type DisplayFromPage = { type: 'size'; width: number; height: number };
 
 export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, stats = false, probe = false): GpuHooks {
@@ -39,7 +39,7 @@ export function canvasPresenter(canvas: OffscreenCanvas, port?: MessagePort, sta
       const s = lat.splice(0).sort((a, b) => a - b);
       port.postMessage({ type: 'draw-stats', n: s.length, median: s[s.length >> 1] ?? 0, max: s[s.length - 1] ?? 0, lag, busy: { ...busy, commands: { ...busy.commands }, fenceBack: { ...fenceLag }, draw: drawMs } } satisfies DisplayToPage);
       lag = 0;
-      Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {}, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0 });
+      Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {}, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0, behindMs: 0, fullMs: 0, heldMax: 0 });
       Object.assign(fenceLag, { n: 0, ms: 0, maxMs: 0 });
       drawMs = 0;
     }, 1000);
@@ -126,7 +126,7 @@ export function pagePresenter(port?: MessagePort, stats = false): GpuHooks {
   if (stats && port) {
     setInterval(() => {
       port.postMessage({ type: 'draw-stats', n: busy.flushes, median: 0, max: 0, lag: 0, busy: { ...busy, commands: { ...busy.commands }, fenceBack: { ...fenceLag }, draw: 0 } } satisfies DisplayToPage);
-      Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {}, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0 });
+      Object.assign(busy, { request: 0, transfer: 0, requests: 0, transfers: 0, pixels: 0, flushes: 0, submits: 0, submitBytes: 0, commands: {}, fences: 0, fenceMs: 0, fenceMaxMs: 0, heldMs: 0, behindMs: 0, fullMs: 0, heldMax: 0 });
       Object.assign(fenceLag, { n: 0, ms: 0, maxMs: 0 });
     }, 1000);
   }

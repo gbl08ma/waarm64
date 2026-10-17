@@ -3,6 +3,7 @@
 // on the serial terminal, keys typed on the screen, and `load()`: a phase measured over N s on both sides (the guest's
 // /proc/stat and per-thread CPU, the display's and the renderer's stats, the emulator's counters).
 import { writeFileSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
 import { chromiumEnv } from '../../tools/nosme.ts';
 import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
@@ -24,7 +25,7 @@ export type SessionOptions = {
   screen?: string;
   ncpus?: number;
   ramMiB?: number;
-  /** The page's `?disk2=` (a read-only second disk, /dev/vdb). */
+  /** The page's `?disk2=` (a read-only second disk, /dev/vdb); the image is then opened by its URL (`?disk=`): a file opened makes a stored machine, which has no `?disk2=`. */
   disk2?: string;
   /** More of the page's query (e.g. `snd=&avprobe`: bench/audio/avsync.ts). */
   query?: string;
@@ -109,14 +110,18 @@ export async function openSession(o: SessionOptions) {
   const at = () => ((performance.now() - t0) / 1000).toFixed(1);
   const log = (...a: unknown[]) => console.log(`[${at()}]`, ...a);
 
-  await page.goto(`${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}${o.query ? `&${o.query}` : ''}`);
+  // The image under the repository, as the server serves it.
+  const served = relative(resolve(new URL('../..', import.meta.url).pathname), resolve(o.image));
+  const byUrl = !!o.disk2;
+  if (byUrl && served.startsWith('..')) throw new Error(`a second disk needs the image under the repository (${o.image})`);
+  await page.goto(`${base}/web/app/?ncpus=${o.ncpus ?? 4}&ram=${o.ramMiB ?? 2560}&view=both&displaystats&gpu=${o.gpu}${byUrl ? `&disk=/${served}` : ''}${o.disk2 ? `&disk2=${encodeURIComponent(o.disk2)}` : ''}${o.query ? `&${o.query}` : ''}`);
   const gl = await page.evaluate(() => {
     const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
     const d = gl?.getExtension('WEBGL_debug_renderer_info');
     return gl ? `${gl.getParameter(d ? d.UNMASKED_RENDERER_WEBGL : gl.RENDERER)}` : 'no WebGL2';
   });
   log('WebGL2:', gl, '|', browser.version());
-  await page.setInputFiles('#open-disk-input', o.image);
+  if (!byUrl) await page.setInputFiles('#open-disk-input', o.image);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 300_000, polling: 250 });
   log('running');
 
@@ -169,7 +174,7 @@ export async function openSession(o: SessionOptions) {
     const commands: Record<string, number> = {};
     for (const x of s) for (const [k, n] of Object.entries(x.busy.commands ?? {})) commands[COMMANDS[k] ?? k] = (commands[COMMANDS[k] ?? k] ?? 0) + n / Math.max(1, s.length);
     // Fenced replies a second, the mean and longest wait for the host; every held reply's time held (ms a second).
-    const fences = { n: per('fences'), meanMs: per('fenceMs') / Math.max(1e-9, per('fences')), maxMs: Math.max(0, ...s.map((x) => x.busy.fenceMaxMs ?? 0)), heldMs: per('heldMs'),
+    const fences = { n: per('fences'), meanMs: per('fenceMs') / Math.max(1e-9, per('fences')), maxMs: Math.max(0, ...s.map((x) => x.busy.fenceMaxMs ?? 0)), heldMs: per('heldMs'), behindMs: per('behindMs'), fullMs: per('fullMs'), heldMax: Math.max(0, ...s.map((x) => x.busy.heldMax ?? 0)),
       // Of a fence's round trip: to the GPU worker (its event loop's backlog) and back to the device worker.
       toGpuMs: rper('fenceMs') / Math.max(1e-9, rper('fences')), toGpuMaxMs: Math.max(0, ...r.map((x) => x.fenceMaxMs ?? 0)),
       backMs: s.reduce((n, x) => n + (x.busy.fenceBack?.ms ?? 0), 0) / Math.max(1, s.reduce((n, x) => n + (x.busy.fenceBack?.n ?? 0), 0)), backMaxMs: Math.max(0, ...s.map((x) => x.busy.fenceBack?.maxMs ?? 0)) };
@@ -296,7 +301,7 @@ export async function openSession(o: SessionOptions) {
     writeFileSync(`${o.out}/${label}.timeline.json`, JSON.stringify(t));
     return summarizeTimeline(t);
   };
-  const symbolize = async (top = 60) => {
+  const symbolize = async (top = 60, groups?: Record<string, string>) => {
     const samples = await page.evaluate(() => (window as unknown as Hooks).__profile!);
     let kernel = 0, user = 0, total = 0;
     const kpcs: [string, number][] = [];
@@ -324,7 +329,28 @@ clear; cat > /tmp/pcs <<'EOF'
     const lines = /(\d+)\s*SYMS:/.exec(t)?.[1];
     const body = t.slice(t.lastIndexOf('SYMS: ') + 6, t.lastIndexOf('SYMS-done'));
     const syms = [...body.matchAll(/(\S+):(\d+)/g)].map((x) => ({ sym: x[1], samples: +x[2], pct: +((100 * +x[2]) / total).toFixed(1) }));
-    return { samples: total, kernelPct: +((100 * kernel) / total).toFixed(1), userPct: +((100 * user) / total).toFixed(1), kernelPcs: kpcs.length, sent: sent.length, received: lines && +lines / 2, coveredPct: +((100 * covered) / Math.max(1, kernel)).toFixed(1), top: syms };
+    return { samples: total, kernelPct: +((100 * kernel) / total).toFixed(1), userPct: +((100 * user) / total).toFixed(1), kernelPcs: kpcs.length, sent: sent.length, received: lines && +lines / 2, coveredPct: +((100 * covered) / Math.max(1, kernel)).toFixed(1), top: syms, ...(groups ? { groups: await symbolGroups(kpcs, total, groups) } : {}) };
+  };
+  /**
+   * Every kernel sample (not only the top PCs `symbolize` sends) summed by group: `groups` names awk regexes on a
+   * symbol's name and module (`name [module]`; the first that matches counts); the guest prints each group's address ranges (runs of adjacent
+   * symbols that match it, few: a driver's or a file's functions sit together), the host sums the samples in them.
+   */
+  const symbolGroups = async (kpcs: [string, number][], total: number, groups: Record<string, string>) => {
+    const names = Object.keys(groups);
+    const match = names.map((g, i) => `if (g < 0 && $0 ~ /${groups[g]}/) g = ${i};`).join(' ');
+    await pasteSerial(`cat > /tmp/groups.sh <<'EOF'
+awk '$2 ~ /^[tT]$/ {print $1, $3, $4}' /proc/kallsyms | sort | awk 'BEGIN { cur = -1 } { a = $1; $0 = $2 " " $3; g = -1; ${match} if (g != cur) { if (cur >= 0) print "G", cur, start, a; cur = g; start = a } }'
+EOF`);
+    const lines = await runLines('sh /tmp/groups.sh', 120_000);
+    const ranges = lines.filter((l) => l.startsWith('G ')).map((l) => { const [, g, a, b] = l.split(' '); return { g: +g, a: BigInt(`0x${a}`), b: BigInt(`0x${b}`) }; });
+    const sums = names.map(() => 0);
+    for (const [pc, n] of kpcs) {
+      const x = BigInt(`0x${pc}`);
+      const r = ranges.find((r) => x >= r.a && x < r.b);
+      if (r) sums[r.g] += n;
+    }
+    return Object.fromEntries(names.map((g, i) => [g, { samples: sums[i], pct: +((100 * sums[i]) / total).toFixed(2), ranges: ranges.filter((r) => r.g === i).length }]));
   };
 
   const close = async () => { await browser.close(); server.close(); };

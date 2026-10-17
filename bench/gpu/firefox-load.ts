@@ -10,10 +10,11 @@
 //   node bench/gpu/firefox-load.ts <virgl|2d|pixman> <image.qcow2> [outdir]
 // GUEST_CMD runs a command in sway's session first (results.cmd). PHASES picks the phases (default
 // `still,scroll,webgl,pages,support`; `pages` needs bench/gpu/firefox-pages.sh's disk; `startup` measures a launch);
-// WARM_S, PHASE_S their times.
+// WARM_S, PHASE_S their times; PAGES picks the sites of `pages` by name (e.g. `wiki,mdn`).
 // VIRGL_GPU picks the page's `?gpu=` in mode virgl (default `virgl`; `virgl-null` for G2's null renderer). TIMELINE=1
 // records the vCPU timeline over each phase (guest-session.ts `summarizeTimeline`; the rows in <outdir>/<tag>.timeline.json).
 // TIMELINE_ALL=1 records it over the whole of `pages` instead (every start and load; <outdir>/pages-all.timeline.json).
+// PROFILE=1 samples the guest's PCs over each site's scroll (guest-session.ts `sampler`; the kernel's functions in results.json); SYSCALLS=1 counts syscalls (`load`).
 // QUERY adds to the page's query (e.g. `jit=nocw`: the JIT without its compile worker).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { GUEST_USER, openSession } from './guest-session.ts';
@@ -32,6 +33,8 @@ const PHASES = (process.env.PHASES ?? 'still,scroll,webgl,pages,support').split(
 const s = await openSession({ gpu: mode === 'virgl' ? process.env.VIRGL_GPU ?? 'virgl' : '2d', image, out, screen: process.env.SCREEN, query: process.env.QUERY, disk2: PHASES.includes('pages') ? '/target/ffpages/pages.ext4' : undefined });
 const { page, log, onSerial, pasteSerial, rootShell, load, run, runLines } = s;
 const results: Record<string, unknown> = { mode, gl: s.gl, chromium: s.browser.version(), prefs: process.env.FF_PREFS ?? '' };
+/** PROFILE's kernel groups (guest-session.ts `symbolGroups`): the 3D driver's paths in the guest's kernel. */
+const KERNEL_GROUPS = { virtio_gpu: 'virtio_gpu', virtqueue: 'virtqueue|vring', drm: '^(__)?drm_|\\[drm', shmem: 'shmem', dma: 'dma_resv|dma_fence|dma_buf' };
 type During = { start(): Promise<void>; stop(): Promise<void> };
 /** `load`'s `during`: `d` and, with TIMELINE=1, the vCPU timeline around it. */
 const around = (d?: During): During | undefined => (process.env.TIMELINE ? { start: async () => { await s.timeline.start(); await d?.start(); }, stop: async () => { await d?.stop(); await s.timeline.stop(); } } : d);
@@ -123,6 +126,7 @@ if (PHASES.includes('pages')) {
   if (process.env.TIMELINE_ALL) await s.timeline.start();
   for (const line of list.filter(Boolean)) {
     const [name, file] = line.split(' ');
+    if (process.env.PAGES && !process.env.PAGES.split(',').includes(name)) continue;
     const tag = `page-${name}`;
     await run('. /root/ff.sh; ffkill', 120_000);
     await run(`. /root/ff.sh; ffrun file:///mnt/ffpages/${file} ${tag}`);
@@ -136,11 +140,12 @@ if (PHASES.includes('pages')) {
     const wheel = async () => { while (wheeling) { await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.wheel(0, 120); await page.waitForTimeout(100); } };
     let done: Promise<void> = Promise.resolve();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    const r = await load(tag, PHASE_S, around({ start: async () => { wheeling = true; done = wheel(); }, stop: async () => { wheeling = false; await done; } }));
+    const r = await load(tag, PHASE_S, around({ start: async () => { if (process.env.PROFILE) await s.sampler.start(); wheeling = true; done = wheel(); }, stop: async () => { wheeling = false; await done; if (process.env.PROFILE) await s.sampler.stop(); } }));
+    const profile = process.env.PROFILE ? { profile: await s.symbolize(60, KERNEL_GROUPS) } : {};
     const ff = await run(`grep FFBENCH /tmp/ff-${tag}.log | grep frames= | tail -${PHASE_S} | sed 's/.*frames=//' | tr "\\n" " "`);
     const fps = [...ff.matchAll(/(\d+) maxms=([\d.]+)/g)].map((x) => ({ frames: +x[1], maxms: +x[2] }));
     const sorted = fps.map((x) => x.frames).sort((a, b) => a - b);
-    results[tag] = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), loadMs, fps, medianFps: sorted[sorted.length >> 1], ...r, ...(await timeline(tag)) };
+    results[tag] = { started: +(/started ([\d.]+)/.exec(started)?.[1] ?? NaN), loadMs, fps, medianFps: sorted[sorted.length >> 1], ...r, ...profile, ...(await timeline(tag)) };
     log(tag, 'fps', JSON.stringify(sorted), 'flushes', r.display.flushes.toFixed(1));
     save();
   }

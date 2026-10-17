@@ -351,9 +351,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   guest-side bug (QEMU with virgl has it too); `GDK_DISABLE=offload` avoids it. Ways out: Mesa reallocating a
   staging-backed texture when it is exported (upstream), or caps without `COPY_TRANSFER_BOTH_DIRECTIONS` (every
   texture then has a guest backing and read-backs go through it: measure Firefox and GTK before choosing).
-- **virgl leftovers from Firefox** (graphics.md §21 loop 0): scrolling Wikipedia or MDN creates and destroys 15–18
-  3D resources a second (each an `ATTACH_BACKING` in the guest's kernel), and the device holds every reply behind a
-  fenced one (QEMU holds only the fenced reply; at most a fence's ~0.3 ms on a real GPU). Measure before changing.
 - **dEQP hasn't run on a real GPU** (graphics.md §21): every whole-list run was on SwiftShader (the dev VM); the
   Mac's GPU (ANGLE on Metal) is what users have, and its precision, formats and limits differ. G5's proposal.
 - **virgl has no native twin** (devices.md "virgl"): `core/tests/common/gpu.rs` is 2D only, so a virgl guest can't run in

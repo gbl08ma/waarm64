@@ -186,6 +186,8 @@ export class VirglRenderer {
 
   /** A trace of what the guest makes and draws with, each line once (`?gpu=virgl,debug`): resources, surfaces, views, draws. */
   private debug?: (m: string) => void;
+  /** With `debug`: each resource's creation time and what passed through it, for its `life` line at its unref. */
+  private life = new Map<number, { t0: number; uploads: number; bytes: number; staged: number }>();
 
   constructor(gl: WebGL2RenderingContext, o: { ram: () => Uint8Array; log?: (m: string) => void; debug?: (m: string) => void; video?: { decoders: DecoderFactory; hardware: readonly number[] } }) {
     this.gl = gl;
@@ -281,6 +283,7 @@ export class VirglRenderer {
     const res: Res = { ...d, fmt: FORMATS.get(d.format), backing: null, refs: new Set() };
     this.debug?.(`resource ${d.id} ${res.fmt?.name ?? d.format} ${d.width}x${d.height} target ${d.target} bind ${d.bind.toString(16)}`);
     this.resources.set(d.id, res);
+    if (this.debug) this.life.set(d.id, { t0: performance.now(), uploads: 0, bytes: 0, staged: 0 });
     if (d.target === PIPE_BUFFER) {
       // A staging buffer is only ever the guest's pages.
       if (d.bind & BIND_STAGING) return true;
@@ -343,6 +346,11 @@ export class VirglRenderer {
     if (!r) return false;
     this.resources.delete(id);
     r.dead = true;
+    const l = this.life.get(id);
+    if (l) {
+      this.life.delete(id);
+      this.debug?.(`life ${id} ${r.fmt?.name ?? r.format} ${r.width}x${r.height} target ${r.target} bind ${r.bind.toString(16)}: ${(performance.now() - l.t0).toFixed(0)} ms, ${l.uploads} uploads of ${l.bytes} bytes, ${l.staged} bytes staged`);
+    }
     for (const c of r.refs) this.contexts.get(c)?.attached.delete(id);
     this.freeResource(r);
     return true;
@@ -458,6 +466,8 @@ export class VirglRenderer {
     const gl = this.gl;
     this.stats.uploads++;
     this.stats.uploadBytes += data.length;
+    const l = this.life.get(r.id);
+    if (l) { l.uploads++; l.bytes += data.length; }
     if (r.target !== PIPE_BUFFER && this.debug) {
       // For 4-byte formats: how many texels have alpha (the fourth byte) 0, 255 and in between, and the first texel.
       let a0 = 0, a255 = 0, mid = 0;
@@ -1014,6 +1024,8 @@ export class VirglRenderer {
     const [stride, layerStride] = this.levelStrides(r, p[1], p[3], p[4]), offset = p[12];
     const n = r.target === PIPE_BUFFER ? box.w : boxBytes(r.fmt, box.w, box.h, box.d, stride, layerStride);
     if (offset + n > this.backingSize(staging)) return this.error(`COPY_TRANSFER3D past staging ${staging.id}`);
+    const l = this.life.get(staging.id);
+    if (l) l.staged += n;
     if (readBack) {
       const data = this.readback(r, p[1], box, stride, layerStride);
       if (!data) return this.error(`can't read back resource ${r.id} (format ${r.format})`);

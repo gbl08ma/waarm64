@@ -967,7 +967,8 @@ Only the parent process maps Mesa (WebRender and WebGL run there). One shader fa
   (no gain). SwiftShader is the dev VM's and CI's, not a user's: not pursued.
 - **The device counts its commands** (`?displaystats`: per type, fences' round trip and each hop, replies held):
   Firefox's Wikipedia and MDN scrolls create and destroy ~15–18 3D resources a second (each an `ATTACH_BACKING` in the
-  guest's kernel), and the device holds every reply behind a fenced one (QEMU holds only the fenced reply).
+  guest's kernel), and the device holds every reply behind a fenced one (QEMU holds only the fenced reply). Both
+  measured later and left as they are: "Firefox's resources and held replies", below.
 
 ### A correctness fix: translucent surfaces on an X target (2026-10-09)
 
@@ -1247,7 +1248,42 @@ side (resource contents read back, the objects a context created) and rebuilt in
 commands since each context's creation kept and replayed; to be designed against what Firefox and sway hold. (2)
 **dEQP on a real GPU** (the Mac's, ANGLE on Metal), what users run: precision, formats and limits differ from
 SwiftShader's. (3) **The guest-side leftovers**, each measured first: GtkGLArea's offload (caps without
-`COPY_TRANSFER_BOTH_DIRECTIONS`, or a Mesa fix), Firefox's 15–18 resources a second and replies held behind a fenced
-one. (4) **Breadth**, if the user wants it: a desktop's compositor (KWin, Mutter), Chromium in the guest. Beyond
+`COPY_TRANSFER_BOTH_DIRECTIONS`, or a Mesa fix); Firefox's resources a second and the replies held behind a fenced
+one were measured and cost nothing worth taking (below). (4) **Breadth**, if the user wants it: a desktop's compositor (KWin, Mutter), Chromium in the guest. Beyond
 WebGL2's GLES 3.0 (compute, GLES 3.1) is the WebGPU backend, deferred by the 3D decision (§18).
 
+### Firefox's resources and held replies, measured (2026-10-17)
+
+The backlog's item from loop 0: Firefox scrolling Wikipedia and MDN made 15–18 3D resources a second, and the
+device holds every reply behind a fenced one. Measured with `bench/gpu/firefox-load.ts` (`PHASES=pages
+PAGES=wiki,mdn`, Firefox 158, Mesa 26.2.4) on the dev VM (SwiftShader) and on the Mac host's GPU (`sway-mac.sh`, ANGLE
+on Metal, Apple M4), 13 s of wheel scrolling a site; JSON in `bench/gpu/results/firefox-churn/`. **Neither is worth
+changing:**
+
+| (a second, over the scroll) | VM wiki | VM MDN | Mac wiki | Mac MDN |
+|---|---|---|---|---|
+| resources created | 10–14 | 13–25 | 7.4 | 15.9 |
+| guest kernel in virtio_gpu, virtqueue, drm, shmem, dma-buf (% of all samples) | 0.94 | 1.00 | 1.51 | 1.14 |
+| fence round trip, mean (max), ms | 15.6 (450) | 8.6 (299) | 0.5 (12.5) | 0.7 (18.4) |
+| replies held: all, ms (of it unfenced, held only behind another) | 799 (393) | 297 (154) | 672 (26) | 686 (52) |
+| control queue full (16 held), ms | 37 | 12 | 0.2 | 1.0 |
+
+- **What is made:** the renderer's trace (`?gpu=virgl,debug`) now writes a `life` line at each resource's unref (its
+  age, uploads, bytes staged; `vm-lives.txt`). Of 980 resources over two sites, 784 were small vertex buffers (16 to
+  a few hundred bytes, written whole once or twice by inline writes, living 1.3 s / 3.2 s / 21 s at p10 / p50 / p90),
+  most likely WebRender's per-frame vertex and instance data. The rest: 1 MiB staging buffers (Mesa's staging
+  manager starts a new one when one fills), WebRender's 1024×512 texture-cache pages, sway's and Firefox's window
+  buffers. The guest's Mesa makes a new resource whenever `glBufferData` changes a buffer's size (`bufferobj_data`),
+  or rewrites a busy one (virgl reallocates it); its winsys keeps a released buffer for 1 s and reuses it only if it
+  is idle and between the requested size and twice it. That's the guest's behavior: the device can't change it, and
+  it isn't a cost.
+- **What it costs:** the PC sampler (`PROFILE=1`, with the kernel's samples summed by group: `symbolGroups` in
+  `guest-session.ts`) puts the whole 3D driver stack in the guest's kernel at 1–1.5% of the vCPUs' samples. Most of
+  that is ioctl dispatch for every 3D call, not resource creation: no virtio_gpu function reaches the profile's
+  top 60 (0.1% each). On the device, every control command together takes 3–6 ms a second (`requestMs`).
+- **Held replies:** most of the held time is the paced flushes (devices.md "Flush replies are paced", by design).
+  Unfenced replies held only behind a fenced one add 26–52 ms a second on the Mac, and the guest's 16-entry control
+  queue is full for 0.2–1 ms a second. On SwiftShader it fills for 12–37 ms a second, inside the GPU worker's
+  present stalls (300–450 ms, above), when the commands behind it would wait for the same worker anyway. Answering
+  unfenced replies at once (QEMU's way) would win nothing on a real GPU. The display stats now count it
+  (`fences.behindMs`, `fullMs`, `heldMax`).

@@ -14,8 +14,8 @@ docs/frontend.md "A 3D machine"; docs/testing.md (`scripts/ci-deqp.sh`).
 2. **dEQP on a real GPU:** the whole lists, or the pass lists, on the Mac host's GPU (ANGLE on Metal) through
    `bench/gpu/sway-mac.sh`'s route (`SCRIPT=`): every G4 run was on SwiftShader. Whatever differs is what users hit.
 3. **The guest-side leftovers**, each measured first (docs/backlog.md): GtkGLArea's graphics offload (caps without
-   `COPY_TRANSFER_BOTH_DIRECTIONS`, every texture then guest-backed, or a Mesa fix), Firefox's 15–18 resources a
-   second, replies held behind a fenced one.
+   `COPY_TRANSFER_BOTH_DIRECTIONS`, every texture then guest-backed, or a Mesa fix). Firefox's resources a second and
+   the replies held behind a fenced one were measured and left as they are (graphics.md §21, 2026-10-17).
 4. **Breadth, if the user wants it:** KWin or Mutter, Chromium's GPU process in the guest, Xorg. Beyond GLES 3.0
    (compute, GLES 3.1) is the WebGPU backend, deferred by the 3D decision (§18).
 
