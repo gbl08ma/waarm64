@@ -9,7 +9,8 @@ buildroot 40210538
 devices 112885960
 ltp 2726162809
 crypto 4356687472
-alpine 2650732286
+# alpine: its test devices have virtio-net, whose offloads (web/offload.ts) the guest's driver negotiates.
+alpine 2652761895
 alpine-user 10612335608
 # Alpine's userspace benchmark saved and restored into a new VM at a quarter, half (+1) and three
 # quarters (+2) of alpine-user's steps: a restored VM's TLBs are empty, which Linux can tell (it clears
