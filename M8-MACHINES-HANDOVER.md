@@ -80,14 +80,18 @@ steps were run by hand. **Worth a look in the dev VM** (does the case reproduce 
    and state only) against one that forks; a stored disk's import (Debian); a merge; a kept snapshot's size and save
    time against a downloaded one's from before this work; the ramdisk's fio against one buffer (§4.3: kept if within
    noise).
-6. **What needs the user:** a pass over the modal by hand; deploying the page (only when asked); the decisions below.
+6. **What needs the user:** a pass over the modal by hand; deploying the page (only when asked) (the decisions are settled, below).
 
-## Decisions the cloud session left open (each with a recommendation)
+## The dev VM's pass so far
 
-- **Save snapshot on a stored machine** keeps it in the browser after a name prompt; downloading the running machine
-  is in the modal. Options: a two-choice menu in the header (recommended), or as is.
-- **A 3D machine on a browser without WebGL2** runs 2D, which is another shape: its 3D snapshots show as orphaned
-  there. Options: as is (recommended: the guest really sees other devices), or the shape ignores 2D/3D and the
-  restore refuses instead.
-- **Transient machines' overlay names** (`webpc-debian`, `webpc-disk-<hash>`) stay as they were for the tests;
-  options: leave them (recommended), or move them under `overlays/` too.
+- `tests/page-snapshots.test.ts` (with the header menu): passed 4 times in a row (~66 s each, ~550 MB in OPFS against a
+  ~3.7 GB quota; three kept snapshots ~170 MB each). Its first run failed once at Suspend with "the browser's storage
+  is full" (a short write in `fileWriter`, `web/overlay.ts`), after 420 s waiting: not reproduced since. If
+  `scripts/ci-debian.sh` hits it again, log `navigator.storage.estimate()` at the failure.
+
+## Decisions the cloud session left open: settled (2026-10-17)
+
+The user took the three recommendations: Save snapshot on a stored machine is a two-choice menu in the header (built:
+`#snapshot-menu`, Keep in this browser… or Save to a file…); a 3D machine on a browser without WebGL2 stays another
+shape (its 3D snapshots orphaned there); the transient machines' overlay names stay. Recorded in docs/plans/machines.md
+§11.

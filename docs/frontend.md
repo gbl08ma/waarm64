@@ -303,7 +303,9 @@ and offers Reset disk.
 
 ### A stored machine's snapshots
 
-docs/plans/machines.md §5. **Save snapshot** on a stored machine asks for a name and **keeps** it in the browser: the
+docs/plans/machines.md §5. **Save snapshot** on a stored machine is a menu (`#snapshot-menu`; a transient machine's is
+the one button): **Keep in this browser…** asks for a name and **keeps** it, **Save to a file…** is the transient
+machine's save (asking first, when a disk is written in place, whether the whole disk goes in). Keeping: the
 worker writes the file to OPFS `machines/<id>/snapshots/<id>` (`start`'s `snapshot.keep`), then the page writes its
 record (its pins, the shape) inside `Store.writing`. Kept snapshots are listed in the Machines modal, newest first:
 **Restore** (on the page's machine), **Download** (the file as kept), **Delete**; **Import a file…** copies a file

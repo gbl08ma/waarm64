@@ -259,6 +259,8 @@ const messageActions = $('message-actions');
 const restartBtn = $<HTMLButtonElement>('restart');
 const resetDiskBtn = $<HTMLButtonElement>('reset-disk');
 const saveSnapshotBtn = $<HTMLButtonElement>('save-snapshot');
+/** Save snapshot on a stored machine: keep it in the browser or save it to a file (the button is a transient machine's). */
+const snapshotMenu = $<HTMLDetailsElement>('snapshot-menu');
 const suspendBtn = $<HTMLButtonElement>('suspend');
 const loadSnapshotInput = $<HTMLInputElement>('load-snapshot-input');
 const bootCard = $('boot');
@@ -421,6 +423,11 @@ let saving = false;
 function syncButtons() {
   restartBtn.disabled = resetDiskBtn.disabled = switching || saving;
   saveSnapshotBtn.disabled = suspendBtn.disabled = switching || saving || !(state === 'running' || state === 'booting');
+  saveSnapshotBtn.hidden = !!stored;
+  snapshotMenu.hidden = !stored;
+  snapshotMenu.toggleAttribute('data-disabled', saveSnapshotBtn.disabled);
+  if (saveSnapshotBtn.disabled) snapshotMenu.open = false;
+  for (const b of snapshotMenu.querySelectorAll('button')) b.disabled = saveSnapshotBtn.disabled;
 }
 
 // The serial console's output, kept for the log a user can copy or save (the terminal's scrollback is shorter).
@@ -1025,6 +1032,16 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
   }
 }
 saveSnapshotBtn.onclick = () => void saveSnapshot();
+for (const b of snapshotMenu.querySelectorAll<HTMLButtonElement>('[data-snapshot]')) {
+  b.onclick = () => {
+    snapshotMenu.open = false;
+    if (b.dataset.snapshot === 'keep') return void saveSnapshot();
+    // As the Machines modal's Save to a file: a disk written in place goes in whole only if asked.
+    const inPlace = stored?.record.attachments.some((a) => a.inPlace && !a.readOnly);
+    void saveSnapshot({ toFile: true, whole: inPlace && confirm('A disk of this machine is written in place: put the whole disk in the file (OK)? Without it (Cancel), the file restores only onto that disk as it is now.') });
+  };
+}
+document.addEventListener('pointerdown', (e) => { if (!snapshotMenu.contains(e.target as Node)) snapshotMenu.open = false; });
 
 /** Keeps a snapshot of the running stored machine in the browser (its file in OPFS first, then its record). */
 async function keepSnapshot(name: string) {

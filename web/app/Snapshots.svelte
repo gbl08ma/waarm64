@@ -79,7 +79,7 @@
 
 <fieldset class="snapshots">
   <legend>Snapshots</legend>
-  {#if !kept.length}<p class="note">None kept in this browser. Save snapshot (in the header, while the machine runs) keeps one.</p>{/if}
+  {#if !kept.length}<p class="note">None kept in this browser. Save snapshot › Keep in this browser (in the header, while the machine runs) keeps one.</p>{/if}
   <ul>
     {#each kept as s (s.id)}
       <li data-snapshot={s.id} class:orphaned={orphaned(s)}>

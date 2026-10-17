@@ -322,5 +322,9 @@ sections above, or settled what they left open:
   one that attaches it; `?disk=<url>` stays transient (the tests').
 - **Definitions** re-pick files at the machine's first start (the same flow as a handle without permission), not at
   import.
+- **Decided by the user (2026-10-17, in the dev VM's pass):** Save snapshot on a stored machine is a two-choice menu
+  in the header (Keep in this browser…, Save to a file…), as §5.2 has it; a 3D machine on a browser without WebGL2
+  runs 2D, another shape, so its 3D snapshots show as orphaned there (the guest really sees other devices); the
+  transient machines' overlays keep their single names.
 - **Not built** (backlog "Machines as the unit, loose ends"): the quota message, a stored disk's background hash,
   `svelte-check`.

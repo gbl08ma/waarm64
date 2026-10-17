@@ -93,7 +93,8 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   /** Keeps a snapshot named `name` (Save snapshot's prompt), waiting for the page to say so. */
   const keep = async (name: string) => {
     keepAs = name;
-    await page.locator('#save-snapshot').click();
+    await page.locator('#snapshot-menu summary').click();
+    await page.locator('[data-snapshot=keep]').click();
     await page.waitForFunction((n) => document.getElementById('message-text')!.textContent!.startsWith(`Kept the snapshot ${n}`), name, { timeout: 120_000 });
   };
   await ok(page, 'echo a > /root/f && echo r-one > /mnt/r/x && sync');
