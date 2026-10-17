@@ -1,9 +1,9 @@
-// What the Machines modal does to machines (docs/plans/machines.md §1, §4, §7): make, copy, delete, edit, and attach,
+// What the Machines page does to machines (docs/plans/machines.md §1, §4, §7): make, copy, delete, edit, and attach,
 // detach, reorder or flip disks, through web/app/store.ts. A running machine holds the Web Lock `webpc-machine:<id>`
 // (the page that runs it, in any tab), and edits that need it off are refused while it's held. Nothing here asks the
-// user; the modal confirms first.
+// user; the Machines page confirms first.
 import { defaultCpus } from './machine.ts';
-import { generateName, MAX_DISKS, newId, uniqueName, type Attachment, type DiskIdentity, type DiskRecord, type MachineRecord } from './shape.ts';
+import { canonical, generateName, MAX_DISKS, newId, uniqueName, type Attachment, type DiskIdentity, type DiskRecord, type MachineRecord } from './shape.ts';
 import { machineDir, type Store } from './store.ts';
 
 /** The lock a page holds while it runs machine `id`. */
@@ -74,6 +74,24 @@ export type NewDisk =
   | { kind: 'file'; file: File; handle?: FileSystemFileHandle; size: number }
   | { kind: 'blank' | 'ramdisk'; size: number; name?: string };
 
+/** A file's or URL's identity (machines.md §3.1): what makes it the same disk when it's added again. */
+function identityFor(d: NewDisk & { kind: 'url' | 'file' }): DiskIdentity {
+  if (d.kind === 'file') return { kind: 'file', name: d.file.name, bytes: d.file.size, modified: d.file.lastModified };
+  const u = new URL(d.url, globalThis.location?.href);
+  return { kind: 'url', path: u.pathname, bytes: d.bytes, ...(d.etag ? { etag: d.etag } : d.lastModified ? { lastModified: d.lastModified } : {}) };
+}
+
+/**
+ * The disk record the browser already has for a file or URL (the same identity), so that one added again (or opened,
+ * or dropped) is the same disk, with its overlays; undefined for one it doesn't have, and for blank disks and ramdisks
+ * (each is a disk of its own).
+ */
+export async function knownDisk(store: Store, d: NewDisk): Promise<DiskRecord | undefined> {
+  if (d.kind !== 'url' && d.kind !== 'file') return undefined;
+  const want = canonical(identityFor(d));
+  return (await store.all('disks')).find((x) => x.kind === d.kind && canonical(x.identity) === want);
+}
+
 /** A disk record for `d` (a stored disk is made by `importStored` instead: its bytes first). */
 export async function createDisk(store: Store, d: NewDisk): Promise<DiskRecord> {
   const id = newId();
@@ -81,10 +99,9 @@ export async function createDisk(store: Store, d: NewDisk): Promise<DiskRecord> 
   let r: DiskRecord;
   if (d.kind === 'url') {
     const u = new URL(d.url, globalThis.location?.href);
-    const identity: DiskIdentity = { kind: 'url', path: u.pathname, bytes: d.bytes, ...(d.etag ? { etag: d.etag } : d.lastModified ? { lastModified: d.lastModified } : {}) };
-    r = { id, kind: 'url', name: d.name ?? (u.pathname.split('/').pop() || u.hostname), size: d.size, format: u.pathname.endsWith('.iso') ? 'iso' : undefined, url: u.href, identity, created: now };
+    r = { id, kind: 'url', name: d.name ?? (u.pathname.split('/').pop() || u.hostname), size: d.size, format: u.pathname.endsWith('.iso') ? 'iso' : undefined, url: u.href, identity: identityFor(d), created: now };
   } else if (d.kind === 'file') {
-    r = { id, kind: 'file', name: d.file.name, size: d.size, handle: d.handle, identity: { kind: 'file', name: d.file.name, bytes: d.file.size, modified: d.file.lastModified }, created: now };
+    r = { id, kind: 'file', name: d.file.name, size: d.size, handle: d.handle, identity: identityFor(d), created: now };
   } else {
     if (!Number.isSafeInteger(d.size) || d.size <= 0 || d.size % 4096) throw new Error('a size in whole 4 KiB blocks');
     r = { id, kind: d.kind, name: d.name ?? (d.kind === 'blank' ? 'Blank disk' : 'Ramdisk'), size: d.size, identity: { kind: d.kind, id, bytes: d.size }, created: now };
@@ -128,7 +145,7 @@ export async function editAttachment(store: Store, m: MachineRecord, id: string,
   await store.put('machines', m);
 }
 
-/** What the browser's storage holds for the modal (§2 "Storage"): the estimate, persistence, and each big item's bytes. */
+/** What the browser's storage holds for the Machines page (§2 "Storage"): the estimate, persistence, and each big item's bytes. */
 export async function storageReport(store: Store) {
   const est = await navigator.storage.estimate();
   const persisted = await navigator.storage.persisted();
@@ -152,4 +169,4 @@ export async function askPersist() {
 }
 
 /** Bytes in words. */
-export const bytesText = (n: number) => (n < 1e6 ? `${Math.ceil(n / 1e3)} KB` : n < 1e9 ? `${(n / 1e6).toFixed(n < 1e7 ? 1 : 0)} MB` : `${(n / 1e9).toFixed(n < 1e10 ? 2 : 1)} GB`);
+export { bytesText } from './bytes.ts';

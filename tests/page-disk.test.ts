@@ -22,6 +22,7 @@ import { startServer } from '../tools/serve.ts';
 import { credentialsQuery, unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { answerAsks } from './page-ask.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -66,7 +67,7 @@ async function press(page: Page, ...keys: string[]) {
 /** Waits for the machine's `running` after the page left `from`. */
 async function running(page: Page, from: string) {
   await page.waitForFunction((from) => document.body.dataset.state !== from && ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), from, { timeout: BOOT_MS, polling: 250 });
-  const [state, message] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')!.textContent]);
+  const [state, message] = await page.evaluate(() => [document.body.dataset.state, (document.getElementById('message-text')?.textContent ?? '')]);
   assert.equal(state, 'running', `${message}; the terminal shows: ${await terminal(page)}`);
 }
 /** The names of the OPFS directories. */
@@ -85,10 +86,18 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // headless Chromium's picker would wait for a dialog nobody answers
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('dialog', (d) => void d.accept()); // "Boot mydisk.qcow2? The machine restarts…"
+  await answerAsks(page); // "Boot mydisk.qcow2? The machine restarts…"
+  /** Export › `mode` of the machine's disk (its Disks tab on the Machines page), then back to the machine. */
+  const exportDisk = async (mode: string) => {
+    await page.locator('#machines-open').click();
+    await page.locator('.machines [data-tab=disks]').click();
+    await page.locator('.machines [id^=export-] summary').click();
+    await page.locator(`.machines [data-save=${mode}]`).click();
+  };
+  const back = () => page.locator('[data-action=back]').click();
   const pick = async () => {
     await page.setInputFiles('#open-disk-input', file);
-    await page.waitForFunction(() => document.getElementById('machine')!.textContent === 'mydisk', null, { timeout: 10_000 });
+    await page.waitForFunction(() => (document.getElementById('machine')?.textContent ?? '') === 'mydisk', null, { timeout: 10_000 });
   };
   const choose = async () => {
     const from = await page.evaluate(() => document.body.dataset.state!);
@@ -99,10 +108,9 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   // The page's own machine (no `machine=`) has no disk: it starts nothing, says how to bring one, and names no distribution.
   // The serial terminal only (the keys test's GRUB menu is on it); Debian's credentials, for its unattended first boot.
   await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=terminal&display=simple&${credentialsQuery()}`);
-  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 10_000 });
+  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 10_000 });
   assert.equal(await page.locator('#machine').textContent(), 'AArch64 machine · no disk');
   assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /debian/i);
-  assert.equal(await page.locator('#save').isVisible(), false, 'no disk, nothing to save');
   await page.locator('#restart').click(); // Start: still waiting for a disk
   assert.equal(await page.evaluate(() => document.body.dataset.state), 'idle');
   await pick();
@@ -183,18 +191,19 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 60_000, polling: 250 });
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 120_000 }),
-    (async () => { await page.locator('#save summary').click(); await page.locator('[data-save=changes]').click(); })(),
+    exportDisk('changes'),
   ]);
   assert.equal(download.suggestedFilename(), 'mydisk-changes.qcow2');
   const downloaded = join(dir, 'mydisk-changes.qcow2');
   await download.saveAs(downloaded);
-  await page.waitForFunction(() => /^Saved /.test(document.getElementById('message-text')!.textContent!), null, { timeout: 30_000 });
+  await page.waitForFunction(() => /^Saved /.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000 });
   await page.evaluate(() => {
     (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('picked.qcow2', { create: true });
   });
-  await page.locator('#save summary').click();
-  await page.locator('[data-save=changes]').click();
-  await page.waitForFunction(() => /^Saved picked\.qcow2/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 120_000 });
+  await page.locator('.machines [id^=export-] summary').click();
+  await page.locator('.machines [data-save=changes]').click();
+  await page.waitForFunction(() => /^Saved picked\.qcow2/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 120_000 });
+  await back();
   const picked = Buffer.from(await page.evaluate(async () => {
     const f = await (await (await navigator.storage.getDirectory()).getFileHandle('picked.qcow2')).getFile();
     const bytes = new Uint8Array(await f.arrayBuffer());
@@ -218,7 +227,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   // A reload opens the machine again, which asks for its file (a File picked without a handle isn't remembered);
   // choosing the file again finds its machine and its changes.
   await page.reload();
-  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /picking again/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 30_000 });
+  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /picking again/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000 });
   await choose();
   await onSerial(page, 'root\n');
   await shows(page, /root@\S+:~# /);
@@ -239,11 +248,11 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
     };
   });
   try {
-    await page.locator('#save summary').click();
-    await page.locator('[data-save=qcow2]').click();
-    await page.waitForFunction(() => /was the disk this machine runs from/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 30_000 });
+    await exportDisk('qcow2');
+    await page.waitForFunction(() => /was the disk this machine runs from/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000 });
     assert.equal(await page.evaluate(() => (window as unknown as { suggested: string }).suggested), 'mydisk-saved.qcow2');
     assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', 'the machine wasn\'t stopped for it');
+    await back();
   } finally {
     unlinkSync(file);
     symlinkSync(new URL(IMAGE).pathname, file);
@@ -257,7 +266,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   const page2 = await fresh.newPage();
   const dialogs: string[] = [];
   const errors2: string[] = [];
-  page2.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
+  await answerAsks(page2, (q) => { dialogs.push(q.text); });
   page2.on('pageerror', (e) => errors2.push(String(e)));
   await page2.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
   await page2.waitForFunction(() => ['booting', 'running'].includes(document.body.dataset.state!), null, { timeout: BOOT_MS, polling: 250 });

@@ -17,6 +17,7 @@ copyright/license header in the file.
 | `net/ts/src/control.rs`, `net/ts/src/netmap.rs`, `net/ts/src/tailnet.rs` (T4, T5) | the control session, map stream and data plane follow tailscale-rs's `ts_control` (`client/register.rs`, `client/map_stream.rs`, `map_request_builder.rs`) and Tailscale's `controlclient`, `magicsock` and `filter` (v1.102.5): what's sent and how responses apply; reimplemented over the worker's transports, nothing copied | BSD-3-Clause |
 | `net/ts/src/derp.rs` (T1) | the DERP client handshake and frame types of Tailscale's `derp` package as tailscale-rs's `ts_derp` (v0.6.1) has them (`frame/`, `client.rs` `make_clientinfo`); reimplemented over a byte stream, nothing copied | BSD-3-Clause |
 | `net/tailscale/overlay/controlhttp_client_js.go` (N2) | `tailscale.com/control/controlhttp/client_js.go` (v1.102.5), copied with one marked change (keep the control server's HTTPS port over WebSocket); `net/tailscale/build.sh` builds against a copy of the module with this file replaced | BSD-3-Clause |
+| `web/app/icons.ts` (the page's icons) | [Tabler Icons](https://tabler.io/icons) 3.49.0 (`@tabler/icons`, npm), outline: the inner markup of the SVGs the page uses, copied by `tools/icons.ts`, the license in the file's header | MIT |
 
 ## Techniques from papers and other projects (ideas, no code)
 
@@ -33,6 +34,9 @@ Reimplemented from the description, nothing copied; credited all the same.
 | Package | Version | License | Use |
 |---|---|---|---|
 | @xterm/xterm | 6.0.0 | MIT | the page's serial terminal (`web/app/`); served from `node_modules` (only `lib/xterm.mjs` and `css/xterm.css`), not vendored |
+| svelte | 5.57.2 | MIT | the page's components (`web/app/*.svelte`, `*.svelte.ts`): the compiler in `tools/svelte.ts`, its client runtime served from `node_modules` (copied to `vendor/` in the static copy, with its license) |
+| esm-env | 1.2.2 | MIT | imported by Svelte's runtime (the same) |
+| clsx | 2.1.1 | MIT | imported by Svelte's runtime (the same) |
 
 ## Rust dependencies of the tailnet client (`net/ts`, T1, T4, T5)
 

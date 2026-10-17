@@ -15,6 +15,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { openSnapshot, SnapshotWriter } from '../web/snapshot-file.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { answerAsks } from './page-ask.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const buildroot = existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES));
@@ -46,13 +47,13 @@ const stateOf = (page: Page) => page.evaluate(() => document.body.dataset.state!
 /** Waits for `running` (the page may pass through other states first), failing with the page's message otherwise. */
 async function running(page: Page, ms = BOOT_MS) {
   await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: ms, polling: 100 });
-  const [state, message] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')!.textContent]);
+  const [state, message] = await page.evaluate(() => [document.body.dataset.state, (document.getElementById('message-text')?.textContent ?? '')]);
   assert.equal(state, 'running', `${message}; the terminal shows: ${await terminal(page)}`);
 }
 /** Waits until the page has started loading a snapshot (the boot card's title), so a following `running` is the restored machine's. */
 const loadingSnapshot = (page: Page) => page.waitForFunction(() => document.getElementById('boot-title')!.textContent!.startsWith('Loading '), null, { timeout: 30_000, polling: 20 });
 const message = (page: Page) => page.locator('#message-text').textContent();
-const status = (page: Page) => page.evaluate(() => document.getElementById('status')!.textContent!);
+const status = (page: Page) => page.evaluate(() => (document.getElementById('status')?.textContent ?? ''));
 
 /** The canvas's pixels (the guest's scanout) and whether any is not black: the screen was drawn. */
 const screenOf = (page: Page) => page.evaluate(() => {
@@ -75,8 +76,8 @@ async function save(page: Page, name: string) {
   ]);
   const path = join(dir, name);
   await download.saveAs(path);
-  await page.waitForFunction(() => /^Saved the snapshot /.test(document.getElementById('message-text')!.textContent!), null, { timeout: 60_000 });
-  const info = JSON.parse(await page.evaluate(() => document.getElementById('message')!.dataset.snapshot!)) as { bytes: number; pausedMs: number };
+  await page.waitForFunction(() => /^Saved the snapshot /.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 60_000 });
+  const info = JSON.parse(await page.evaluate(() => document.getElementById('message')?.dataset.snapshot!)) as { bytes: number; pausedMs: number };
   assert.equal(info.bytes, readFileSync(path).length, 'the page counted the bytes the file has');
   return { path, filename: download.suggestedFilename(), ...info };
 }
@@ -121,7 +122,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // the download path
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('dialog', (d) => void d.accept());
+  await answerAsks(page);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`);
   await running(page);
   assert.equal(await page.locator('#save-snapshot').isEnabled(), true);
@@ -157,7 +158,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
     (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('picked.webpcsnap', { create: true });
   });
   await page.locator('#save-snapshot').click();
-  await page.waitForFunction(() => /^Saved the snapshot picked\.webpcsnap/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 60_000 });
+  await page.waitForFunction(() => /^Saved the snapshot picked\.webpcsnap/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 60_000 });
   const picked = await page.evaluate(async () => {
     const f = await (await (await navigator.storage.getDirectory()).getFileHandle('picked.webpcsnap')).getFile();
     return { size: f.size, magic: new TextDecoder().decode(await f.slice(0, 8).arrayBuffer()) };
@@ -175,7 +176,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   const errors2: string[] = [];
   const dialogs: string[] = [];
   p2.on('pageerror', (e) => errors2.push(String(e)));
-  p2.on('dialog', (d) => { dialogs.push(`${d.type()}: ${d.message()}`); void d.accept(); });
+  await answerAsks(p2, (q) => { dialogs.push(`${q.kind}: ${q.text}`); });
   // What the page sends to the guest's serial port beyond plain keys: escape sequences (a terminal's replies to queries).
   await p2.addInitScript(() => {
     const send = MessagePort.prototype.postMessage;
@@ -194,10 +195,10 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   await loadingSnapshot(p2);
   await running(p2);
   console.log(`# snapshot load (buildroot): ${((performance.now() - t0) / 1000).toFixed(2)} s from the choice to running`);
-  assert.match(dialogs.at(-1)!, /^confirm: Load the snapshot first\.webpcsnap\? It holds Buildroot \(test guest\) as it was on .* \(\d.* (KB|MB), 2 vCPUs\)\..*replaced by the snapshot's changes to the disk\.$/);
+  assert.match(dialogs.at(-1)!, /^confirm: Load the snapshot first\.webpcsnap\? It holds Buildroot \(test guest\) as it was on .* \(\d.* (KiB|MiB), 2 vCPUs\)\..*replaced by the snapshot's changes to the disk\.$/);
   // The terminal shows the saved output's tail, and the status the snapshot's vCPUs (the page asked for 1).
   await shows(p2, /saved-state/);
-  await p2.waitForFunction(() => /^2 vCPUs/.test(document.getElementById('status')!.textContent!), null, { timeout: 10_000 });
+  await p2.waitForFunction(() => /^2 vCPUs/.test((document.getElementById('status')?.textContent ?? '')), null, { timeout: 10_000 });
   assert.equal(await p2.locator('#boot').isHidden(), true);
   // The machine is where it was: its variable, its tmpfs file, and a shell that answers.
   await onSerial(p2, 'echo var=[$SNAPVAR]; cat /dev/snapfile; echo af""ter-$((6*7))\n');
@@ -239,7 +240,7 @@ test('the page saves a snapshot of a running machine and a fresh profile loads i
   const cut = join(dir, 'cut.webpcsnap');
   writeFileSync(cut, bytes.subarray(0, Math.floor(bytes.length * 0.6)));
   await p2.setInputFiles('#load-snapshot-input', cut);
-  await p2.waitForFunction(() => document.body.dataset.state === 'failed' && /incomplete/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 30_000, polling: 50 });
+  await p2.waitForFunction(() => document.body.dataset.state === 'failed' && /incomplete/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000, polling: 50 });
   assert.match((await message(p2))!, /^The snapshot couldn't be loaded: This snapshot is incomplete.*Nothing was changed.*Start boots Buildroot \(test guest\) normally/s);
   assert.deepEqual(await opfs(p2), untouched, 'the disk is untouched');
   await p2.locator('#message-actions button', { hasText: 'Start' }).click();
@@ -265,7 +266,7 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('dialog', (d) => void d.accept());
+  await answerAsks(page);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=2&view=terminal`);
   await running(page);
   const suspendFile = async () => (await opfs(page))['webpc-buildroot']?.suspend;
@@ -319,8 +320,10 @@ test('Suspend keeps the machine in the browser: opening the page again resumes i
   assert.equal(await suspendFile(), undefined);
   assert.equal(await susvar(), '');
   await suspend();
+  await page.locator('#machines-open').click(); // Reset disk: this page's machine's Disks tab
   await page.locator('#reset-disk').click();
   await page.waitForFunction(() => document.body.dataset.state === 'booting', null, { timeout: 30_000, polling: 20 });
+  await page.locator('[data-action=back]').click();
   await running(page);
   assert.equal(await suspendFile(), undefined);
   assert.equal(await susvar(), '');

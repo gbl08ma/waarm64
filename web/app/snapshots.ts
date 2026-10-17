@@ -4,7 +4,7 @@
 // snapshot, takes its blocks and is attached; the old one stays as it was), reusing an earlier fork of the same
 // snapshot that hasn't moved since; or, when the user asks, **replace** (the attached overlay takes the blocks). A
 // disk written in place keeps only at its pinned generation; otherwise a file with its whole disk forks it into an
-// overlay, and one without is refused (§4.4). Nothing here asks the user; the page and the modal confirm first.
+// overlay, and one without is refused (§4.4). Nothing here asks the user; the page and the Machines page confirm first.
 import { opfsDir, overlayMeta } from '../overlay.ts';
 import { openSnapshot } from '../snapshot-file.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';

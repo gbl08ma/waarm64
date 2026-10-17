@@ -2,7 +2,7 @@
 // job (`diskRef`), the overlays as named variants of a base (new, rename, switch, delete, refreshed from their meta
 // after a machine stops), changes loaded into a new overlay, a file imported into the browser as a stored disk, an
 // overlay merged into its stored disk. Records go through web/app/store.ts (a record after its bytes, deleted before
-// them); bytes are touched in workers (sync access handles). Nothing here asks the user: the modal confirms first.
+// them); bytes are touched in workers (sync access handles). Nothing here asks the user: the Machines page confirms first.
 import { overlayBytes, overlayMeta, removeOverlay } from '../overlay.ts';
 import type { DiskJob, DiskJobResult } from './disk-worker.ts';
 import { runImport } from './import.ts';
@@ -96,7 +96,7 @@ export async function refreshStored(store: Store, id: string) {
   if (meta.generation !== d.generation) await store.put('disks', { ...d, generation: meta.generation });
 }
 
-/** Loads a changes file (Save disk's "changes only") into a new overlay of `d`, named after the file. */
+/** Loads a changes file (Export's "changes only") into a new overlay of `d`, named after the file. */
 export async function loadChangesInto(store: Store, d: DiskRecord, file: File, progress: (phase: string, fraction: number) => void, source?: DiskRef['source']) {
   const id = newId();
   return store.writing(async () => {

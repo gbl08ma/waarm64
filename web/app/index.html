@@ -7,94 +7,84 @@
 <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
 <script type="importmap">{"imports":{"@xterm/xterm":"../../node_modules/@xterm/xterm/lib/xterm.mjs","svelte":"../../node_modules/svelte/src/index-client.js","svelte/internal/client":"../../node_modules/svelte/src/internal/client/index.js","svelte/internal/disclose-version":"../../node_modules/svelte/src/internal/disclose-version.js","#client/constants":"../../node_modules/svelte/src/internal/client/constants.js","esm-env":"../../node_modules/esm-env/index.js","esm-env/browser":"../../node_modules/esm-env/true.js","esm-env/development":"../../node_modules/esm-env/false.js","esm-env/node":"../../node_modules/esm-env/false.js","clsx":"../../node_modules/clsx/dist/clsx.mjs"}}</script>
 <style>
+  /* The page's look (docs/frontend.md): a desktop application's, dark. Components (web/app/*.svelte) style what's theirs. */
   :root {
     color-scheme: dark;
-    --bg: #0b0d10; --panel: #15181d; --line: #262b33; --text: #d7dce3; --dim: #8a93a0;
-    --ok: #4cc38a; --busy: #e0b341; --bad: #e5484d; --off: #6b7280; --accent: #5b9dff;
+    --bg: #0b0d10; --panel: #15181d; --bar: #1a1e24; --line: #262b33; --text: #d7dce3; --dim: #8a93a0;
+    --hover: #262c34; --pressed: #2c3a50; --ok: #4cc38a; --busy: #e0b341; --bad: #e5484d; --off: #6b7280; --accent: #5b9dff;
     font: 14px/1.4 system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body { display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
-  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
-  #machine { color: var(--dim); }
-  #state { display: inline-flex; align-items: center; gap: 6px; }
+  [hidden] { display: none !important; }
+  button { font: inherit; color: var(--text); background: transparent; border: 0; padding: 4px 12px; cursor: pointer; }
+  button:hover { background: var(--hover); }
+  button:disabled { opacity: .45; cursor: default; background: transparent; }
+  select, input:not([type=checkbox]):not([type=range]) { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+  /* The toolbar: tool buttons (an icon, a label on the main ones) in groups. */
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px 8px; background: var(--bar); border-bottom: 1px solid var(--line); user-select: none; }
+  .toolbar h1 { margin: 0 8px 0 4px; font-size: 14px; font-weight: 600; color: var(--dim); letter-spacing: .02em; }
+  .toolbar .sep { width: 1px; height: 22px; margin: 0 6px; background: var(--line); }
+  .tool { display: inline-flex; align-items: center; gap: 6px; height: 32px; min-width: 32px; padding: 0 6px; border: 1px solid transparent; border-radius: 4px; color: var(--text); background: transparent; cursor: pointer; list-style: none; }
+  .tool.labelled { padding: 0 10px 0 7px; }
+  .tool:hover { background: var(--hover); }
+  .tool[aria-pressed=true], details.menu[open] > .tool { background: var(--pressed); border-color: #3a4d6a; }
+  .tool:disabled, .tool[aria-disabled=true] { opacity: .4; cursor: default; background: transparent; }
+  .tool .label { font-size: 13px; }
+  .tool::-webkit-details-marker { display: none; }
+  #machine { margin: 0 6px; font-weight: 600; font-size: 13px; max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #state { display: inline-flex; flex: none; align-items: center; gap: 6px; color: var(--text); }
   #state::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--busy); }
   #state[data-state=running]::before { background: var(--ok); }
-  #state[data-state=off]::before { background: var(--off); }
+  #state[data-state=off]::before, #state[data-state=idle]::before { background: var(--off); }
   #state[data-state=crashed]::before, #state[data-state=failed]::before { background: var(--bad); }
-  #state[data-state=idle]::before { background: var(--off); }
-  .spacer { flex: 1; }
-  .views { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
-  button { font: inherit; color: var(--text); background: transparent; border: 0; padding: 4px 12px; cursor: pointer; }
-  button:hover { background: #1e232a; }
-  button:disabled { opacity: .45; cursor: default; background: transparent; }
-  .views button[aria-pressed=true] { background: #253044; color: #fff; }
-  #restart, #reset-disk, #open-disk, #load-changes { border: 1px solid var(--line); border-radius: 6px; }
-  #message { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; padding: 10px 16px; background: #2a1215; color: #ffb4b6; border-bottom: 1px solid #5c1d22; }
-  #message[data-kind=warn] { background: #2a2312; color: #f3d98b; border-color: #5c4b1d; }
-  #message[hidden] { display: none; }
-  #message-text { flex: 1 1 480px; margin: 0; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; max-height: 30vh; overflow: auto; }
-  #message-text::first-line { font-weight: 600; }
-  #message-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-  #message-actions button { border: 1px solid currentColor; border-radius: 6px; color: inherit; }
-  main { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px; }
-  #screen-view { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; }
-  #screen-frame { position: relative; display: flex; }
-  #screen { background: #000; outline: none; box-shadow: 0 0 0 1px var(--line); touch-action: none; }
-  #screen:focus { box-shadow: 0 0 0 2px var(--accent); }
-  #screen-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: #000c; color: var(--text); font-size: 12px; pointer-events: none; }
-  #screen:focus + #screen-hint, body:not([data-state=running]):not([data-state=booting]) #screen-hint { display: none; }
-  #boot { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; background: #000; color: var(--dim); pointer-events: none; }
-  #boot[hidden] { display: none; }
-  #boot-title { color: var(--text); font-size: 15px; }
-  #boot progress { width: min(320px, 80%); height: 6px; accent-color: var(--accent); }
-  #boot-serial { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; pointer-events: auto; }
-  #boot-serial[hidden] { display: none; }
-  #boot-line { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: ui-monospace, monospace; font-size: 12px; }
-  #terminal-view { min-height: 0; display: flex; justify-content: center; align-items: flex-start; overflow: auto; }
-  #terminal { padding: 8px; background: #0b0d10; border: 1px solid var(--line); border-radius: 4px; }
-  #terminal:focus-within { border-color: var(--accent); }
-  main:fullscreen { background: var(--bg); }
+  .views { display: inline-flex; gap: 2px; }
+
+  /* Toolbar menus (web/app/Menu.svelte): a list of commands, or a panel of controls. */
   .menu { position: relative; }
-  .menu summary { list-style: none; cursor: pointer; padding: 4px 12px; border: 1px solid var(--line); border-radius: 6px; }
-  .menu summary::-webkit-details-marker { display: none; }
-  .menu summary::after { content: ' ▾'; color: var(--dim); }
-  .menu[open] summary, .menu summary:hover { background: #1e232a; }
-  .menu .items { position: absolute; right: 0; top: calc(100% + 4px); z-index: 1; display: flex; flex-direction: column; min-width: 150px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px #0008; }
-  .menu .items button { text-align: left; border-radius: 4px; }
-  .menu .items .hint { margin: 6px 8px 4px; max-width: 260px; color: var(--dim); font-size: 12px; }
-  .menu .items .label { padding: 6px 8px 2px; color: var(--dim); font-size: 12px; }
+  .menu .items { position: absolute; right: 0; top: calc(100% + 4px); z-index: 2; display: flex; flex-direction: column; min-width: 180px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px #000a; }
+  .menu .items > button, .menu .items .fkeys button { display: flex; justify-content: space-between; gap: 12px; text-align: left; border-radius: 4px; padding: 5px 10px; white-space: nowrap; }
+  .menu .items .dim { color: var(--dim); font-size: 12px; }
+  .menu .items hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+  .menu .items .hint { margin: 4px 8px; max-width: 280px; color: var(--dim); font-size: 12px; }
+  .menu .items .label { padding: 6px 10px 2px; color: var(--dim); font-size: 12px; }
   .menu .items .fkeys { display: grid; grid-template-columns: repeat(4, 1fr); }
-  .menu .items .fkeys button { text-align: center; padding-left: 4px; padding-right: 4px; }
-  #network summary::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--off); }
-  #network[data-phase=connecting] summary::before, #network[data-phase=login] summary::before { background: var(--busy); }
-  #network[data-phase=connected] summary::before { background: var(--ok); }
-  #network[data-phase=error] summary::before { background: var(--bad); }
-  #network .panel { width: 320px; gap: 8px; padding: 10px; }
+  .menu .items .fkeys button { justify-content: center; padding-left: 4px; padding-right: 4px; }
+  .menu .items.panel { width: 260px; gap: 8px; padding: 10px; }
+  .menu .items.panel label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
+  .menu .items.panel label.row { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
+  .menu .items.panel button { border: 1px solid var(--line); border-radius: 6px; text-align: center; }
+  .menu .items.panel .hint { margin: 0; }
+  .menu .tag { font-size: 11px; color: var(--accent); }
+  #sound-menu[data-waiting] > .tool { border-color: var(--accent); }
+  #network .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--off); }
+  #network[data-phase=connecting] .dot, #network[data-phase=login] .dot { background: var(--busy); }
+  #network[data-phase=connected] .dot { background: var(--ok); }
+  #network[data-phase=error] .dot { background: var(--bad); }
+  #network .items.panel { width: 320px; }
   #network .panel p { margin: 0; }
-  #network [hidden] { display: none !important; }
   #net-status { font-weight: 600; }
-  #net-hint { color: var(--dim); font-size: 12px; }
   #net-error, #net-menu-error { color: #ffb4b6; }
   #net-login { display: inline-block; padding: 4px 12px; border: 1px solid var(--accent); border-radius: 6px; color: var(--accent); text-decoration: none; text-align: center; }
-  #network .panel button { border: 1px solid var(--line); border-radius: 6px; text-align: center; }
-  #network .panel label, #net-wizard label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
-  #network .panel input, #net-wizard input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
   .net-note { color: var(--dim); font-size: 12px; margin: 0; }
   .net-note a { color: var(--accent); }
   .net-row { display: flex; gap: 8px; }
-  /* The Network wizard (docs/frontend.md "Network"): what to connect to, then its settings. */
-  #net-wizard { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
-  #machines-dialog { width: min(980px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
-  #machines-dialog::backdrop { background: rgb(0 0 0 / 0.55); }
-  #machines-dialog button, #machines-dialog input, #machines-dialog select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; }
-  #net-wizard::backdrop { background: rgb(0 0 0 / 0.55); }
-  #net-wizard [hidden] { display: none !important; }
+  #net-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* Dialogs: the Network wizard, Add a disk, the page's questions. */
+  dialog { color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px #000a; }
+  dialog::backdrop { background: rgb(0 0 0 / 0.55); }
+  #net-wizard { width: min(480px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; }
+  #net-wizard label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
   #net-form { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
   #net-form h2 { margin: 0; font-size: 16px; }
   .net-step { display: flex; flex-direction: column; gap: 10px; }
+  .choice { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; text-align: left; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .choice:hover, .choice:focus-visible { border-color: var(--accent); background: var(--bg); }
+  .choice span { color: var(--dim); font-size: 12px; }
   .net-choice { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; text-align: left; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
   .net-choice:hover, .net-choice:focus-visible { border-color: var(--accent); }
   .net-choice span { color: var(--dim); font-size: 12px; }
@@ -107,143 +97,46 @@
   .net-buttons .grow { flex: 1; }
   #net-wizard button:not(.net-choice) { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
   #net-wizard #net-connect { border-color: var(--accent); }
-  #machine-menu .panel { width: 240px; gap: 8px; padding: 10px; }
-  #machine-menu .panel label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
-  #machine-menu .panel button { border: 1px solid var(--line); border-radius: 6px; text-align: center; }
-  #machine-menu .panel .hint { margin: 0; }
-  #sound-menu .panel { width: 220px; gap: 8px; padding: 10px; }
-  #sound-menu .panel label { display: flex; flex-direction: column; gap: 2px; color: var(--dim); font-size: 12px; }
-  #sound-menu .panel label.row { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
-  #sound-menu .panel .hint { margin: 0; }
-  #sound-menu[data-waiting] summary { border-color: var(--accent); }
-  #net-exit { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
-  #net-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-  #snapshot-menu .panel { width: 220px; gap: 4px; }
-  #snapshot-menu .panel button { text-align: left; }
-  #snapshot-menu[data-disabled] summary { opacity: 0.4; pointer-events: none; }
-  #save .panel { width: 280px; gap: 4px; }
-  #save .panel button { text-align: left; }
-  #save-compress-label { display: flex; align-items: center; gap: 6px; margin: 4px 8px 0; font-size: 12px; }
-  #save-hint { margin: 4px 8px; color: var(--dim); font-size: 12px; }
-  #fullscreen { border: 1px solid var(--line); border-radius: 6px; }
+
+  /* The message bar. */
+  #message { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 16px; padding: 10px 16px; background: #2a1215; color: #ffb4b6; border-bottom: 1px solid #5c1d22; }
+  #message[data-kind=warn] { background: #2a2312; color: #f3d98b; border-color: #5c4b1d; }
+  #message-text { flex: 1 1 480px; margin: 0; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px; max-height: 30vh; overflow: auto; }
+  #message-text::first-line { font-weight: 600; }
+  #message-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  #message-actions button { border: 1px solid currentColor; border-radius: 6px; color: inherit; }
+  #message .close { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; margin-left: auto; border-radius: 4px; color: inherit; }
+
+  /* The machine: its screen, its serial terminal, or both. */
+  main { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px; }
+  #screen-view { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #screen-frame { position: relative; display: flex; }
+  #screen { background: #000; outline: none; box-shadow: 0 0 0 1px var(--line); touch-action: none; }
+  #screen:focus { box-shadow: 0 0 0 2px var(--accent); }
+  #screen-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: #000c; color: var(--text); font-size: 12px; pointer-events: none; }
+  #screen:focus + #screen-hint, body:not([data-state=running]):not([data-state=booting]) #screen-hint { display: none; }
+  #boot { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; background: #000; color: var(--dim); pointer-events: none; }
+  #boot-title { color: var(--text); font-size: 15px; }
+  #boot progress { width: min(320px, 80%); height: 6px; accent-color: var(--accent); }
+  #boot-serial { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; pointer-events: auto; }
+  #boot-line { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: ui-monospace, monospace; font-size: 12px; }
+  #terminal-view { min-height: 0; display: flex; justify-content: center; align-items: flex-start; overflow: auto; }
+  #terminal { padding: 8px; background: #0b0d10; border: 1px solid var(--line); border-radius: 4px; }
+  #terminal:focus-within { border-color: var(--accent); }
+  main:fullscreen { background: var(--bg); }
   body[data-view=screen] #terminal-view, body[data-view=terminal] #screen-view { display: none; }
   body[data-view=terminal] #terminal-view { flex: 1; }
   body[data-view=screen] main { padding: 0; }
   body[data-view=screen] #screen-view { background: #000; }
   body[data-view=screen] #screen { box-shadow: none; }
   body[data-view=both] main { flex-direction: row; }
-  footer { padding: 6px 16px; border-top: 1px solid var(--line); background: var(--panel); color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; min-height: 29px; }
+  /* The Machines page takes the machine's place; the machine runs on behind it. */
+  body[data-page=machines] main { display: none; }
+  /* The status bar: the power state first, then the machine's numbers. */
+  footer { display: flex; align-items: center; gap: 16px; padding: 5px 16px; border-top: 1px solid var(--line); background: var(--bar); color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; min-height: 29px; }
+  footer #state { padding-right: 16px; border-right: 1px solid var(--line); }
+  #status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @media (max-width: 1100px) { body[data-view=both] main { flex-direction: column; } }
 </style>
-<header>
-  <h1>webpc</h1>
-  <span id="machine"></span>
-  <button id="machines-open" title="The machines kept in this browser: their disks, overlays and snapshots">Machines…</button>
-  <span id="state" data-state="loading">Loading</span>
-  <span class="spacer"></span>
-  <span class="views" role="group" aria-label="View">
-    <button data-view-button="screen">Screen</button><button data-view-button="terminal">Serial terminal</button><button data-view-button="both">Both</button>
-  </span>
-  <details class="menu" id="machine-menu"><summary title="The number of vCPUs, the size of the RAM and the graphics: applied by a restart">Machine</summary><div class="items panel">
-    <label>Processors<select id="machine-cpus"></select></label>
-    <label>Memory<select id="machine-ram"></select></label>
-    <label id="machine-gpu-label" hidden title="3D gives the guest OpenGL ES through the browser's WebGL2 (virgl); 2D is a plain framebuffer">Graphics<select id="machine-gpu"><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
-    <button id="machine-apply">Apply and restart</button>
-    <p class="hint">Kept in this browser. A suspended machine resumes with the size it had; Boot instead starts it from its disk with this one.</p>
-  </div></details>
-  <details class="menu" id="network" data-phase="off" hidden><summary title="The machine's network: a tailnet, or tailcat">Network</summary><div class="items panel">
-    <p id="net-status"></p>
-    <a id="net-login" target="_blank" rel="noopener" hidden>Log in…</a>
-    <label id="net-exit-label" hidden>Internet through<select id="net-exit"></select></label>
-    <div id="net-served" hidden>
-      <label>This machine's tailcat address<input id="net-served-addr" type="password" readonly spellcheck="false"></label>
-      <div class="net-row"><button id="net-served-copy">Copy</button><button id="net-served-show">Show</button></div>
-      <p class="net-note">On another computer: <code>tailcat ssh &lt;address&gt;</code> logs in to the guest's sshd, <code>tailcat &lt;address&gt; &lt;port&gt;</code> reaches any port it listens on. Anyone with the address gets in.</p>
-    </div>
-    <p id="net-menu-error" class="net-note" hidden></p>
-    <div id="net-actions"><button id="net-setup">Connect…</button><button id="net-disconnect" hidden>Disconnect</button><button id="net-logout" title="Remove this machine from the tailnet and forget its keys" hidden>Log out</button></div>
-    <p id="net-hint" class="net-note"></p>
-  </div></details>
-  <dialog id="machines-dialog" aria-label="Machines"></dialog>
-  <dialog id="net-wizard" aria-labelledby="net-title">
-    <form id="net-form">
-      <h2 id="net-title">Network</h2>
-      <section id="net-step-kind" class="net-step">
-        <p class="net-note">How should this machine reach a network? Its network card is always there: connecting doesn't restart it.</p>
-        <button type="button" class="net-choice" id="net-pick-tailnet"><b>A tailnet</b><span>Tailscale, or your Headscale: the machine joins as a device of its own, reaches the other devices by name, and the internet through an exit node.</span></button>
-        <button type="button" class="net-choice" id="net-pick-tailcat"><b>tailcat (no account)</b><span>A computer of yours shares its network with the machine, and other computers can reach the machine (ssh, any port) through an address of its own.</span></button>
-      </section>
-      <section id="net-step-tailnet" class="net-step" hidden>
-        <label>Control server<input id="net-control" placeholder="Tailscale (default), or a Headscale's URL" autocomplete="off" spellcheck="false"></label>
-        <label>Hostname<input id="net-hostname" placeholder="webpc" autocomplete="off" spellcheck="false"></label>
-        <label>Auth key (optional, never saved)<input id="net-authkey" type="password" autocomplete="off" spellcheck="false"></label>
-        <label class="net-check"><input id="net-reveal" type="checkbox"> Show the auth key</label>
-        <p class="net-note">Without an auth key you log in, in a new tab, and the machine stays on the tailnet over reloads. With one there's no login, the key isn't kept and the node is ephemeral. A Headscale must answer <code>/key</code> with CORS headers.</p>
-      </section>
-      <section id="net-step-tailcat" class="net-step" hidden>
-        <label class="net-check"><input id="net-tc-exit" type="checkbox"> Go online through a computer of mine</label>
-        <div id="net-tc-exit-fields" class="net-sub">
-          <label>Its tailcat address (never saved)<input id="net-tailcat" type="password" placeholder="tc…" autocomplete="off" spellcheck="false"></label>
-          <p class="net-note">On that computer run <code>tailcat serve exit-node</code> (<a href="https://github.com/tailscale/tailcat" target="_blank" rel="noopener">tailcat</a>) and paste the address it prints: the machine reaches what that computer reaches, its LAN and the internet. Keep the address to yourself: it lets anyone in.</p>
-        </div>
-        <label class="net-check"><input id="net-tc-serve" type="checkbox"> Let tailcat clients in to this machine</label>
-        <div id="net-tc-serve-fields" class="net-sub">
-          <p class="net-note">The machine gets a tailcat address of its own, kept in this browser. With it another computer runs <code>tailcat ssh &lt;address&gt;</code> to log in to the guest's sshd, or <code>tailcat &lt;address&gt; &lt;port&gt;</code> for any port the guest listens on.</p>
-          <details id="net-tc-advanced"><summary>Advanced</summary>
-            <label>Relay for clients<input id="net-tc-relay" placeholder="tailcat's public relays (the nearest)" autocomplete="off" spellcheck="false"></label>
-            <p class="net-note">Your own <a href="https://github.com/tailscale/tailscale/tree/main/cmd/derper" target="_blank" rel="noopener">derper</a>'s host or host:port: faster than tailcat's public relays, which are rate-limited. Used when the machine doesn't go online through a computer of yours (that computer's relay serves then).</p>
-            <div class="net-row"><button type="button" id="net-tc-forget">New address</button></div>
-            <p class="net-note">Forgets the machine's address: whoever has it can't come in any more.</p>
-          </details>
-        </div>
-      </section>
-      <p id="net-error" class="net-note" hidden></p>
-      <div class="net-buttons"><button type="button" id="net-back" hidden>Back</button><span class="grow"></span><button type="button" id="net-cancel">Cancel</button><button id="net-connect" type="submit" hidden>Connect</button></div>
-    </form>
-  </dialog>
-  <details class="menu" id="screen-menu" hidden><summary title="The size of the machine's screen">Screen</summary><div class="items panel">
-    <label>Size<select id="screen-size"><option value="fit">Fit the window</option><option value="1024x768">1024×768</option><option value="1280x800">1280×800</option><option value="1920x1080">1920×1080</option></select></label>
-    <label title="The guest draws in device pixels instead of CSS pixels: sharper on a HiDPI screen, with smaller text unless the desktop scales (its EDID carries the screen's physical size)"><input id="screen-hidpi" type="checkbox"> HiDPI</label>
-    <p class="hint">A text console (fbcon) keeps the size it started with: a new size takes effect at the next boot (Restart), and the console is centred until then. A desktop takes it when it starts; whether it follows a change is up to its compositor (sway doesn't).</p>
-  </div></details>
-  <details class="menu" id="sound-menu"><summary id="sound-summary" title="The machine's sound: on or muted, its volume, and its microphone">Sound</summary><div class="items panel">
-    <label class="row"><input id="sound-on" type="checkbox" checked> Sound on</label>
-    <label>Volume<input id="sound-volume" type="range" min="0" max="100" step="1" value="100"></label>
-    <label class="row" title="When the machine records, the page asks for the microphone (the browser asks you the first time); off, the machine records silence"><input id="mic-on" type="checkbox" checked> Microphone</label>
-    <label class="row" title="The microphone as it comes: no echo cancellation, noise suppression or gain control (for music; for a call, leave it off)"><input id="mic-raw" type="checkbox"> Raw microphone</label>
-    <p class="hint" id="sound-hint">Kept in this browser. The browser plays sound once the page has had a click or a key.</p>
-    <p class="hint" id="mic-hint" hidden></p>
-  </div></details>
-  <details class="menu" id="keys"><summary title="Key combinations the browser keeps for itself, sent to the screen's keyboard">Keys</summary><div class="items">
-    <button data-chord="ControlLeft AltLeft Delete">Ctrl+Alt+Del</button>
-    <div class="label">Ctrl+Alt+</div>
-    <div class="fkeys" id="fkeys"></div>
-  </div></details>
-  <button id="fullscreen" title="Full screen: browser shortcuts (Ctrl+W, Ctrl+T) and Esc go to the machine; hold Esc to leave">Full screen</button>
-  <details class="menu" id="save" hidden><summary title="Take your disk away: the machine stops while the file is written">Save disk</summary><div class="items panel">
-    <button data-save="changes" title="A small qcow2 holding what the machine wrote, with the image you booted as its backing file (kept beside it)">Changes only (qcow2)</button>
-    <button data-save="qcow2" title="The whole disk as a qcow2 (empty space left out)">Whole disk (qcow2)</button>
-    <button data-save="raw" title="The whole disk as a raw image">Whole disk (raw)</button>
-    <label id="save-compress-label" title="Compressed clusters (deflate), as qemu-img convert -c writes them: the file is about half the size and takes longer to write"><input id="save-compress" type="checkbox" checked> Compress the qcow2</label>
-    <p id="save-hint">The machine stops while the file is written, as if its plug were pulled: shut it down first (<code>poweroff</code>) for a clean disk.</p>
-  </div></details>
-  <button id="save-snapshot" title="Save the running machine as it is, with its disk's changes, to a file: it pauses for a moment, then runs on" disabled>Save snapshot</button>
-  <details class="menu" id="snapshot-menu" hidden><summary title="Save the running machine as it is: it pauses for a moment, then runs on">Save snapshot</summary><div class="items panel">
-    <button data-snapshot="keep" title="Kept with the machine, under a name: restore it from Machines">Keep in this browser…</button>
-    <button data-snapshot="file" title="The machine as a file, with its disks' changes: load it here or in another browser with Load snapshot">Save to a file…</button>
-  </div></details>
-  <button id="suspend" title="Stop the machine and keep its memory in this browser: the next start, or opening this page again, resumes it where it was" disabled hidden>Suspend</button>
-  <button id="load-snapshot" title="Replace the machine by a saved snapshot (also: choose or drop the snapshot file with Open disk…)">Load snapshot…</button><input type="file" id="load-snapshot-input" hidden>
-  <button id="open-disk" title="Boot a disk image of your own: a qcow2 or raw file (or drop one on the page)">Open disk…</button><input type="file" id="open-disk-input" hidden>
-  <button id="load-changes" title="Put the changes of a saved changes file onto this disk (the disk it was made over must be the one on the page)" hidden>Load changes…</button><input type="file" id="load-changes-input" hidden>
-  <button id="reset-disk" title="Delete what the machine wrote to its disk and boot from the image again" hidden>Reset disk</button>
-  <button id="restart">Restart</button>
-</header>
-<div id="message" role="alert" hidden><pre id="message-text"></pre><div id="message-actions"></div></div>
-<main>
-  <div id="screen-view"><div id="screen-frame"><canvas id="screen" tabindex="0" aria-label="Machine screen"></canvas><div id="screen-hint">Click to type</div><div id="boot"><div id="boot-title"></div><progress id="boot-progress"></progress><div id="boot-line"></div><div id="boot-serial" hidden><span>The boot menus, and a first boot's questions, are on the serial console.</span><button id="boot-serial-show">Show it</button></div></div></div></div>
-  <div id="terminal-view"><div id="terminal"></div></div>
-</main>
-<footer id="status"></footer>
-<script type="module" src="./main.ts" onerror="document.getElementById('message-text').textContent = 'The page\'s scripts didn\'t load (is xterm.js installed in node_modules?).\nRun `npm start` in the repository: it installs what the page needs, then serves it.'; document.getElementById('message').hidden = false; document.getElementById('state').dataset.state = 'failed'; document.getElementById('state').textContent = 'Couldn\'t start'"></script>
+<script type="module" src="./main.ts" onerror="document.body.innerHTML = '<header class=toolbar><h1>webpc</h1></header><div id=message role=alert><pre id=message-text></pre></div><main></main><footer><span id=state data-state=failed>Couldn\'t start</span></footer>'; document.getElementById('message-text').textContent = 'The page\'s scripts didn\'t load (is xterm.js installed in node_modules?).\nRun `npm start` in the repository: it installs what the page needs, then serves it.'"></script>
 </html>

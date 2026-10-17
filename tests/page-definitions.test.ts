@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { answerAsks } from './page-ask.ts';
 
 let base: string;
 let close: () => void;
@@ -66,12 +67,12 @@ test('a definition exported from one profile and imported into another: the same
   assert.deepEqual(def.disks.map((d: { kind: string }) => d.kind), ['url', 'file', 'blank', 'ramdisk']);
   assert.equal(readFileSync(defFile, 'utf8').includes('handle'), false, 'no handle in the file');
 
-  // Profile B: imported through the modal; the same shape.
+  // Profile B: imported through the Machines page; the same shape.
   const b = await profile();
   const pb = await b.newPage();
   const dialogs: string[] = [];
   const errors: string[] = [];
-  pb.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
+  await answerAsks(pb, (q) => { dialogs.push(q.text); });
   pb.on('pageerror', (e) => errors.push(String(e)));
   await pb.goto(`${base}/web/app/`);
   await pb.click('#machines-open');
@@ -93,7 +94,7 @@ test('a definition exported from one profile and imported into another: the same
   // Opened: its file disk is to be picked. The fixture's bytes under another date: the hash says it's the same file.
   await pb.locator('.machines .pick', { hasText: 'Portable' }).click();
   await pb.locator('.machines [data-action=open]').click();
-  await pb.waitForFunction(() => document.body.dataset.state === 'idle' && /data\.raw needs your permission \(or picking again\)/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 30_000 });
+  await pb.waitForFunction(() => document.body.dataset.state === 'idle' && /data\.raw needs your permission \(or picking again\)/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000 });
   const [chooser] = await Promise.all([pb.waitForEvent('filechooser'), pb.locator('#message-actions button', { hasText: 'Pick and start' }).click()]);
   await chooser.setFiles(FIXTURE);
   await pb.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });

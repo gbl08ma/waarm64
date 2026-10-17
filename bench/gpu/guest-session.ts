@@ -9,6 +9,7 @@ import { startServer } from '../../tools/serve.ts';
 import type { VideoStats } from '../../web/virgl-video.ts';
 import { SYSCALLS } from './arm64-syscalls.ts';
 import type { Timeline } from '../../web/profiler.ts';
+import { answerAsks } from '../../tests/page-ask.ts';
 
 const SETTINGS_KEY = 'webpc.settings';
 /** The guest's desktop user: images/arch/desktop.sh's `arch` (password the same); `alarm` for an Arch Linux ARM disk. */
@@ -90,7 +91,7 @@ export async function openSession(o: SessionOptions) {
   const page: Page = await (await browser.newContext({ viewport: { width: 1400, height: 1300 } })).newPage();
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; });
   await page.addInitScript(([key, screen]) => localStorage.setItem(key, JSON.stringify({ screen })), [SETTINGS_KEY, o.screen ?? '1376x762']);
-  page.on('dialog', (d) => void d.accept());
+  await answerAsks(page);
   page.on('pageerror', (e) => console.log('pageerror', String(e)));
   /** The renderer's complaints (`virgl: …` warnings from the GPU worker), counted by message. */
   const warnings = new Map<string, number>();

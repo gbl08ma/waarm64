@@ -48,6 +48,14 @@ test('compileModule compiles a Svelte component and renames its specifiers', () 
   assert.match(js, /from 'svelte\/internal\/client'/);
 });
 
+test('compileModule compiles a module with runes (.svelte.ts): types stripped, its state Svelte\'s', () => {
+  const { js, deps } = compileModule("import type { T } from './t.ts';\nimport { g } from './g.ts';\nexport const s = $state({ n: 1 as number, t: undefined as T | undefined });\nexport const h = () => g(s.n);", 'web/app/x.svelte.ts');
+  assert.deepEqual(deps, ['./g.ts']);
+  assert.match(js, /from '\.\/g\.js'/);
+  assert.match(js, /from 'svelte\/internal\/client'/);
+  assert.doesNotMatch(js, /\$state|as number/);
+});
+
 test('the static copy names no .ts module, and its Svelte runtime is complete', { skip: skipCopy }, () => {
   const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]);
   const files = walk(join(out, 'web'));
@@ -76,7 +84,7 @@ test('the static copy opens idle and boots Buildroot in Chromium', { skip }, asy
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/`);
-  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 10_000 });
+  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 10_000 });
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000, polling: 250 });
   assert.deepEqual(errors, []);

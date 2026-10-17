@@ -80,7 +80,7 @@ steps were run by hand. **Worth a look in the dev VM** (does the case reproduce 
    and state only) against one that forks; a stored disk's import (Debian); a merge; a kept snapshot's size and save
    time against a downloaded one's from before this work; the ramdisk's fio against one buffer (§4.3: kept if within
    noise).
-6. **What needs the user:** a pass over the modal by hand; deploying the page (only when asked) (the decisions are settled, below).
+6. **What needs the user:** a pass over the Machines page by hand; deploying the page (only when asked) (the decisions are settled, below).
 
 ## The dev VM's pass so far
 
@@ -120,6 +120,17 @@ steps were run by hand. **Worth a look in the dev VM** (does the case reproduce 
 ## Decisions the cloud session left open: settled (2026-10-17)
 
 The user took the three recommendations: Save snapshot on a stored machine is a two-choice menu in the header (built:
-`#snapshot-menu`, Keep in this browser… or Save to a file…); a 3D machine on a browser without WebGL2 stays another
+`#snapshot-menu`, Keep in this browser… or Save to a file…; since replaced, below); a 3D machine on a browser without WebGL2 stays another
 shape (its 3D snapshots orphaned there); the transient machines' overlay names stay. Recorded in docs/plans/machines.md
 §11.
+
+## The page around the machines (2026-10-17, decisions 14 to 18 of docs/plans/machines.md §1)
+
+The user reworked the page after L5, in the dev VM: the whole page is Svelte (`web/app/App.svelte` and the components
+under it; `main.ts` the controller behind `ui.svelte.ts`), a desktop toolbar of Tabler's icons, the page's own
+dialogs (`ask.svelte.ts`; tests answer them with `tests/page-ask.ts`), a message bar that closes (notices clear after
+30 s), the power state first in the status bar, Power off. The Machines modal became the Machines page (tabs
+Settings, Disks, Network, Snapshots; Add a disk is a wizard; a disk's Export and Import changes; no Reset for a stored
+machine); the toolbar's Snapshot keeps one in one click (renamed on the Snapshots tab), Load snapshot lists the five
+latest. docs/frontend.md "The page's code" to "The Machines page" says what each part does.
+

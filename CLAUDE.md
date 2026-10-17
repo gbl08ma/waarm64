@@ -72,7 +72,7 @@ Playwright's Chromium and sets `NODE_USE_ENV_PROXY=1`. There `systemd-run` doesn
 scripts/ci.sh                  # what every change runs (~6 min): fmt, clippy, cargo test, TestFloat, wasm build, tsc, Node + Chromium tests, image tests, the long multi-vCPU runs
 scripts/ci-net.sh              # the network tests on Debian (~4 min): also when a change touches the network (docs/testing.md)
 scripts/ci-debian.sh           # Debian on the page (~3.5 min): also for the page, firmware, devices, disks, snapshots, display, guest-visible changes, track ends (docs/testing.md)
-scripts/ci-machines.sh         # machines as the unit on Debian (~3.5 min): also for stored machines, their disks (stored, blank, ramdisk, overlays), their snapshots, the Machines modal, track ends
+scripts/ci-machines.sh         # machines as the unit on Debian (~3.5 min): also for stored machines, their disks (stored, blank, ramdisk, overlays), their snapshots, the Machines page, track ends
 scripts/ci-audio.sh            # the realtime sound tests on the page (~1 min, alone): also when a change touches sound (docs/testing.md)
 scripts/ci-deqp.sh             # dEQP's pass lists on the page (~6 min): also when a change touches 3D (renderer, translator, caps, GPU worker), graphics track ends; needs images/deqp/build.sh
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
@@ -112,7 +112,7 @@ node bench/spike/memory/run-all.ts   # M0.5 memory suite
 
 The full benchmark list is in [docs/benchmarking.md](docs/benchmarking.md). **`scripts/ci.sh` must
 pass before any piece of work is considered done** (and `scripts/ci-debian.sh` when it touches the page, the firmware, the devices, disks, snapshots or
-the display, for guest-visible changes and at the end of a milestone or a track; `scripts/ci-machines.sh` when it touches stored machines, their disks or snapshots, or the Machines modal; `scripts/ci-net.sh`
+the display, for guest-visible changes and at the end of a milestone or a track; `scripts/ci-machines.sh` when it touches stored machines, their disks or snapshots, or the Machines page; `scripts/ci-net.sh`
 when it touches the network; `scripts/ci-audio.sh` when it touches sound; `scripts/ci-deqp.sh` when it touches 3D). **Exception:** a change that only edits docs (`.md` files or code comments)
 needs no CI run.
 

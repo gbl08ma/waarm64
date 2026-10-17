@@ -3,7 +3,7 @@
 # a stored machine with four disks (blank, ramdisk, read-only), a disk stored in the browser (import,
 # overlay variants, merge, in place) and kept snapshots (forks, the ramdisk, Suspend on pins, orphaned
 # ones). Run it, besides scripts/ci.sh, when a change touches stored machines, their disks (stored,
-# blank, ramdisk, overlays, serials), snapshots of them or the Machines modal (web/app/store.ts,
+# blank, ramdisk, overlays, serials), snapshots of them or the Machines page (web/app/store.ts,
 # machines.ts, disks.ts, snapshots.ts, web/overlay.ts, web/stored.ts, web/ramdisk.ts, web/snapshot.ts,
 # the worker's device list); and at the end of a milestone or a track. ~3.5 min: three Debian boots at
 # a time (WEBPC_DEBIAN_SLOTS, tests/debian-lock.ts; nothing else runs beside them here), so the stored

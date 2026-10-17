@@ -6,7 +6,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compile } from 'svelte/compiler';
+import { stripTypeScriptTypes } from 'node:module';
+import { compile, compileModule } from 'svelte/compiler';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -57,4 +58,9 @@ export const importMap = (prefix: string) => Object.fromEntries(Object.entries(R
 export function compileSvelte(source: string, filename: string): string {
   const out = compile(source, { filename, generate: 'client', runes: true, dev: false, css: 'injected', discloseVersion: false });
   return out.js.code;
+}
+
+/** A module with runes (`x.svelte.ts`: the page's shared state), its types stripped and compiled for the browser. */
+export function compileRunes(source: string, filename: string): string {
+  return compileModule(stripTypeScriptTypes(source, { mode: 'strip' }), { filename, generate: 'client', dev: false }).js.code;
 }

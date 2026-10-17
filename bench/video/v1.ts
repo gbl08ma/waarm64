@@ -40,7 +40,7 @@ async function saveSnapshot() {
   const download = page.waitForEvent('download', { timeout: 600_000 }).catch(() => null);
   await page.locator('#save-snapshot').click();
   await page.waitForFunction((b) => { const t = document.getElementById('message-text')?.textContent ?? ''; return t !== b && /^Saved the snapshot|no file was saved/.test(t); }, before, { timeout: 600_000, polling: 250 });
-  const message = await page.evaluate(() => document.getElementById('message-text')!.textContent!);
+  const message = await page.evaluate(() => (document.getElementById('message-text')?.textContent ?? ''));
   let bytes: number | undefined;
   if (message.startsWith('Saved')) {
     const d = await download;

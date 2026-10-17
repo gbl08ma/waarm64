@@ -35,6 +35,7 @@ import { PAGE_QUERY } from './page-query.ts';
 import { peaks } from './audio-tap.ts';
 import { sndDisk, toneWav } from './snd-disk.ts';
 import { GAP_FRAMES } from '../web/audio-ring.ts';
+import { answerAsks } from './page-ask.ts';
 
 // The page's `running` state comes from the serial console's `ready` marker (web/app/worker.ts).
 // Debian's is agetty's prompt: it must be found wherever a drain puts it, also with a kernel line
@@ -92,10 +93,10 @@ const BOOT_MS = 240_000;
 async function running(page: Page, from?: string, ms = BOOT_MS) {
   await page.waitForFunction((from) => document.body.dataset.state !== from && ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), from, { timeout: ms, polling: 250 })
     .catch(async (e) => {
-      const [state, status] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('status')!.textContent]);
+      const [state, status] = await page.evaluate(() => [document.body.dataset.state, (document.getElementById('status')?.textContent ?? '')]);
       throw new Error(`${e}; the page is ${state} (${status}); the terminal shows: ${await terminal(page)}`);
     });
-  const [state, message] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')!.textContent]);
+  const [state, message] = await page.evaluate(() => [document.body.dataset.state, (document.getElementById('message-text')?.textContent ?? '')]);
   assert.equal(state, 'running', message ?? '');
 }
 
@@ -183,8 +184,8 @@ async function save(page: Page, name: string) {
   ]);
   const path = join(dir, name);
   await download.saveAs(path);
-  await page.waitForFunction(() => /^Saved the snapshot /.test(document.getElementById('message-text')!.textContent!), null, { timeout: 60_000 });
-  const info = JSON.parse(await page.evaluate(() => document.getElementById('message')!.dataset.snapshot!)) as { bytes: number; pausedMs: number };
+  await page.waitForFunction(() => /^Saved the snapshot /.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 60_000 });
+  const info = JSON.parse(await page.evaluate(() => document.getElementById('message')?.dataset.snapshot!)) as { bytes: number; pausedMs: number };
   assert.equal(info.bytes, readFileSync(path).length, 'the page counted the bytes the file has');
   return { path, ...info };
 }
@@ -229,7 +230,7 @@ for (let run = 1; run <= RUNS; run++) {
     const errors: string[] = [];
     const dialogs: string[] = [];
     page.on('pageerror', (e) => errors.push(String(e)));
-    page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
+    await answerAsks(page, (q) => { dialogs.push(q.text); });
     const t0 = performance.now();
     const at = () => `${((performance.now() - t0) / 1000).toFixed(1)} s`;
     await page.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
@@ -366,7 +367,7 @@ for (let run = 1; run <= RUNS; run++) {
     const p2 = await fresh.newPage();
     const errors2: string[] = [];
     p2.on('pageerror', (e) => errors2.push(String(e)));
-    p2.on('dialog', (d) => void d.accept());
+    await answerAsks(p2);
     await p2.goto(`${base}/web/app/?${PAGE_QUERY}${query}`);
     const t1 = performance.now();
     await p2.setInputFiles('#load-snapshot-input', saved.path);

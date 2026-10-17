@@ -89,10 +89,10 @@ Decisions (the user, 2026-09-28):
   clearly what's missing), builds the wasm core if stale, downloads Debian and extracts its kernel
   and initrd without host tools beyond Node, serves on localhost and prints the URL (since phase B loop 3 it links the disk and builds the UEFI firmware with Podman instead of extracting a kernel). Done in M8
   loop 5 ([docs/frontend.md](docs/frontend.md) "`npm start`").
-- **Frontend stack:** start with plain TypeScript and the DOM (as the rest of `web/`); Chromium
-  only. **Not a hard rule:** Svelte is pre-approved if a framework would make a specific part
-  easier. It needs compiling, so it would come with a compile step in `tools/serve.ts` (as type
-  stripping is) rather than a separate build.
+- **Frontend stack:** Svelte 5 for the page (since 2026-10-17, the user's call: the Machines modal first, then the
+  whole page), the rest of `web/` plain TypeScript; Chromium only. Svelte is compiled by `tools/serve.ts` and
+  `tools/dist.ts` (as type stripping is), not a separate build. The page looks like a desktop application (a
+  toolbar of Tabler's icons, its own dialogs: docs/frontend.md "The toolbar").
 - **Public hosting:** M8 started without it (others clone the repo); since 2026-10-17 `npm run dist` makes a static
   copy and the user deploys it at `https://vm.tny.im` (Cloudflare Pages; docs/frontend.md "A static copy"). **No guest
   network in the first phase.**

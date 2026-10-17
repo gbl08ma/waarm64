@@ -9,14 +9,17 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 
 | File | What |
 |---|---|
-| `web/app/index.html` | the page: header (machine, power state, views, Restart), the screen, the terminal, the status line; styles inline; an import map for `@xterm/xterm` |
-| `web/app/main.ts` | DOM code only: views, the canvas's scaling, xterm.js, power state, the status line; starts and stops machine workers |
+| `web/app/index.html` | the page's stylesheet, the import map (`@xterm/xterm`, Svelte's runtime) and the module; the markup is the components' |
+| `web/app/App.svelte`, `Toolbar.svelte`, `Menu.svelte`, `Icon.svelte`, `Sound.svelte`, `Network.svelte`, `Ask.svelte` | the page's components (below, "The page's code"): the toolbar and its menus, the message bar, the screen and the terminal, the status line, the questions |
+| `web/app/ui.svelte.ts`, `web/app/ask.svelte.ts`, `web/app/settings.ts` | the page's state (`ui`) and actions (`page`), the questions (`ask`), what's remembered per browser |
+| `web/app/icons.ts`, `tools/icons.ts` | the icons (Tabler's, below, "Icons") and the script that copies them |
+| `web/app/main.ts` | the controller: runs the machine (starts and stops machine workers, the canvas's scaling, xterm.js), writes `ui`, provides `page` |
 | `web/app/worker.ts` | the machine worker: boots a machine with `bootVm` and drives it with `runAsync` |
 | `web/app/protocol.ts` | the messages between the two (types only) |
-| `web/app/index.html`'s Save snapshot and Load snapshot…, `main.ts`'s `saveSnapshot` and `loadSnapshot`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
+| the toolbar's Snapshot and Load snapshot, `main.ts`'s `saveSnapshot` and `loadSnapshot`, `worker.ts`'s `saveSnapshot` and its start from a snapshot | snapshots on the page (below, "Snapshots") |
 | `web/app/shape.ts`, `web/app/store.ts` | machines as the unit (below, "Machines in the browser"): the records and their shape; IndexedDB and OPFS, the sweep, the change notices between tabs |
-| `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts` | what the Machines modal does: machines and attachments; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
-| `web/app/Machines.svelte`, `web/app/Snapshots.svelte` | the Machines modal (Svelte, compiled by `tools/svelte.ts` when served and in the static copy) |
+| `web/app/machines.ts`, `web/app/disks.ts`, `web/app/urlcheck.ts` | what the Machines page does: machines and attachments; disks, overlays as variants, stored disks (import, merge), exports; a disk URL's check |
+| `web/app/MachinesPage.svelte`, `Disks.svelte`, `AddDisk.svelte`, `Snapshots.svelte` | the Machines page (below, "The Machines page"): its tabs, the Add a disk wizard |
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
@@ -28,7 +31,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/bootfs.ts`, `web/ext4.ts` | partition tables, a read-only ext2/3/4 reader, a distribution's kernel and initrd (below, "The disk reader") |
 
 Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot|snd` (the
-default is `debian`), `?ncpus=N`, `?ram=MiB` (both over the Machine menu's choice), `?view=screen|terminal|both` (over the remembered view),
+default is `debian`), `?ncpus=N`, `?ram=MiB` (both over the toolbar's Machine menu's choice), `?view=screen|terminal|both` (over the remembered view),
 `?params=…` (extra kernel parameters for a direct-boot machine, placed before a `--`: e.g.
 `init=/nonexistent` to make Buildroot panic, as a test does; Debian's bootloader owns its command
 line: edit it in GRUB), `?credential=name:value` (repeatable: a systemd credential over fw_cfg for a
@@ -46,8 +49,8 @@ for A/B measurements; docs/jit.md "Sharing").
 - **`uefi`**, the page's machine (M8 decision 1, since 2026-10-17): EDK2 and **no disk of its own**. The page
   opens idle, says how to bring a disk ("Open a disk image…", with an **Open disk…** button) and starts nothing until
   one is opened (below, "Your own disk": the picker, a drop, `?disk=<url>`); Start without one says the same. The
-  header shows "AArch64 machine · no disk", then the disk's file name; Save disk, Reset disk, Load changes and Suspend
-  appear with a disk. 2 GiB, a 1024×768 screen on virtio-gpu, the same devices and network credential as `debian`;
+  toolbar shows "AArch64 machine · no disk", then the machine made for the disk (named after its file); Suspend
+  appears with a disk. 2 GiB, a 1024×768 screen on virtio-gpu, the same devices and network credential as `debian`;
   `ready` is a getty's login prompt. The page names no distribution. A preloaded image with a snapshot, loaded with
   the page, is later work (PLAN.md, M8 decision 1).
 - **`debian`**, the tests' and benchmarks' guest (`?machine=debian`; the page's own machine until 2026-10-17;
@@ -100,25 +103,106 @@ docs/plans/machines.md is the plan (M8 phase D's start); this is what exists.
 - **Opening one:** `?m=<id>` opens a stored machine on the page (its record and its disks'; a missing one is a
   `failed` page that says so). A writable attachment without an overlay gets an empty one ("Changes") at the
   start; each start's disks go to the worker resolved (`StartDisk`: a URL, a `File` from the remembered handle, a
-  blank or ramdisk size, a stored disk's directory). After it stops the page reads each overlay's (and in-place
+  blank or ramdisk size, a stored disk's directory). **Every start reads the record again** (`reloadStored`: the
+  Machines page edits it while the machine is off, and this tab hears no notice of its own writes), with the size and
+  display it now has; closing the Machines page does too, for the toolbar. After it stops the page reads each overlay's (and in-place
   disk's) generation and size from its files into the records. Without `?m=` the machine is transient, made from
   the query as before (`?machine=`, `?disk=`, `?disk2=`): its overlays keep their old single names.
 - **Disks:** a URL (checked when added: `urlcheck.ts`, what fails and what the server needs; a URL disk is slow and
-  the modal says so), a file (its `FileSystemFileHandle` kept in the record), a file **stored in the browser**
+  the Machines page says so), a file (its `FileSystemFileHandle` kept in the record), a file **stored in the browser**
   (converted into the block store, `web/stored.ts`; the confirmation says what it takes and that it duplicates the
   file), **blank** (zeros, always writable through its overlay) or a **ramdisk** (`web/ramdisk.ts`: empty at every
   boot, the guest's reboot too; its memory counts in the page's memory check). The ramdisk can't be in a snapshot
   or a suspended machine yet (refused with a message: L4).
 - **Overlays are the base disk's**, named variants any machine attaching it can choose (`disks.ts`): new empty,
-  rename, switch, delete (refused while a machine has it open: its Web Lock), save (changes only, or the whole
-  disk), Load changes into a new one. A stored disk can take one **in place** (merge: the disk's other overlays are
-  deleted, the modal lists them first) and can be **written in place** (no overlay; its own generation moves).
+  rename, switch, delete (refused while a machine has it open: its Web Lock), export (changes only, or the whole
+  disk), Import changes… into a new one. A stored disk can take one **in place** (merge: the disk's other overlays are
+  deleted, the confirmation lists them first) and can be **written in place** (no overlay; its own generation moves).
 - **Definitions** (`web/app/definitions.ts`): Export the definition writes `<name>.webpc-machine.json` (`webpc-machine`,
   version 1: the settings, and per attachment the disk's kind, name, size, identity, URL, hash where known, read-only,
   in place, serial; no handles, overlays, snapshots or contents). Import a definition… makes a new machine (the name
   made unique, the same shape): a disk the browser has by identity is attached again, URL, blank and ramdisk disks
   come back, and file disks (and stored disks the browser doesn't have, as files) are picked at its first start:
   taken when the name, size and date match, or when the hash does (the definition's), else asked about.
+
+## The page's code
+
+Svelte 5 (runes), compiled when served and in the static copy (`tools/svelte.ts`: `.svelte` components, and
+`.svelte.ts` modules with runes, their types stripped first); no build step. `main.ts` mounts `App.svelte` on the
+body first, then finds the canvas and the terminal's element in it and runs the machine as before. **What the page
+shows is `ui`** (`ui.svelte.ts`, one `$state` object: the state and its words, the message and its actions, the view,
+the boot card, the status line, the Machines page's tab and choice, a transient machine's size, which menus apply), and
+main.ts writes it instead of the DOM; **what the components do is `page`** (`ui.svelte.ts`'s `Page`: restart, power
+off, suspend, take, load and restore snapshots, save disks, import changes, open machines, save settings…), which
+main.ts fills in before the first start. Records the components read come from the store directly (its `onChange`;
+`ui.records` moves on every change, for the toolbar's snapshot list). Ids the tests and tools use stay (`#state`,
+`#message[data-snapshot]`, `#status[data-status]`, `#restart`, `#save-snapshot`, `#suspend`, the menus' `details`,
+the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`). **Sizes are in binary units**
+everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes users enter are (a disk in MiB, RAM).
+
+## The toolbar
+
+A desktop application's toolbar (`Toolbar.svelte`): tool buttons with icons and tooltips, in groups split by
+separators; the main gates also have their names. Left to right: **Machines** (the Machines page), the machine's name,
+**Start/Restart/Retry** and **Power off** (a hard stop, asked first; only while it runs), **Suspend**,
+**Snapshot** (one click: a stored machine's is kept in the browser at once, named by the time, renamed later on the
+Snapshots tab, the panic button; a transient machine's is saved to a file), **Load snapshot** (a menu: the machine's
+five latest kept snapshots, orphaned ones disabled; All snapshots… (the Snapshots tab); From a file…), the views
+(Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **Full screen**,
+**Sound**, **Network**, and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
+a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item,
+before the machine's numbers. Menus (`Menu.svelte`) keep the `<details>`/`<summary>` shape, close on a click
+elsewhere and open under their right edge (a page's Export menus under their left).
+
+### Icons
+
+Tabler Icons 3.49.0 (MIT, THIRD_PARTY.md), outline, drawn by `Icon.svelte` in a 24×24 `currentColor` SVG. Only the
+ones the page uses are in the repository: `web/app/icons.ts`, their inner markup with the license, written by
+`tools/icons.ts` from the npm package (`npm pack @tabler/icons@3.49.0`, extracted; the script's header says how).
+A new icon is a name added to the script's list and the script run again; icons aren't drawn by hand.
+
+## Dialogs and the message bar
+
+**Questions** are the page's own dialogs, not the browser's `confirm`, `alert` and `prompt`: `ask.confirm`,
+`ask.alert` and `ask.prompt` (`ask.svelte.ts`) queue a question and resolve when it's answered; `Ask.svelte` shows the
+first in a modal `<dialog id="ask">` (a title, the text, OK and Cancel with the action's own words; one that loses
+data has its OK drawn as a warning; Esc is Cancel). Clicking OK is a user activation, so a file picker or a permission
+request after it still works. Tests answer them by clicking (`tests/page-ask.ts` `answerAsks`).
+
+**The message bar** (under the toolbar) says what stops a machine (below, "Errors") and what happened: it has a close
+button, and a notice or error that leaves the machine as it was (a snapshot kept or saved, or not; a disk saved or not
+from another machine; changes loaded into a machine that's off) clears itself after 30 s (`notify`). A problem that
+keeps the machine from running (it failed, it waits for a disk) stays until it's closed or solved.
+
+## The Machines page
+
+docs/plans/machines.md §7. It takes the machine's place on the page (the machine runs on behind it; `#machines` in the
+address opens it, so a reload keeps it): **Back to the machine** (or a view button) returns. The machines on the left
+(new, **from a disk image…** (what Open disk… and a drop do), import a definition) and the chosen one on the right:
+Open on this page (for the page's own machine, **Start** while it's off, "Running on this page" while it runs),
+Duplicate, Export the definition, Delete; then tabs:
+- **Settings:** name, vCPUs, RAM (512 MiB to 2.5 GiB, `machine.ts` `RAM_CHOICES`: more leaves no room for the 1 GiB
+  heap reserve in wasm32's 4 GiB, so the machine runs on a growable memory, ~6–7% slower on Linux arm64; a machine
+  or definition with more is shown as it is), display. Save; on the machine running on this page it reads **Save and restart**
+  (asked first). A change of shape asks first when it orphans snapshots.
+- **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
+  disk its overlays (switch, New empty, Rename, Delete, Merge into the disk), **Export** (a menu: changes only, the
+  whole disk as qcow2 or raw, compressed or not; a machine on this page running from it stops while the file is
+  written and starts again after) and **Import changes…** (a changes file becomes a new overlay, which the disk switches
+  to). There is no Reset for a stored machine: New empty is it, and keeps the old overlay. **Add a disk…** opens a
+  wizard (`AddDisk.svelte`): the source first (**a disk already in this browser**, a file read where it is, a file
+  copied into the browser, a URL, blank, a ramdisk), each explained, then its details and Read-only. A disk already
+  in this browser is one another machine has or one detached (Detach keeps the disk and its overlays, and says so):
+  listed with its overlays and the machines that have it, attached again as it was, or, when no machine has it,
+  deleted with its overlays (`Store.deleteDisk`: the space comes back). A file or URL added again (or opened, or
+  dropped) is the disk the browser has for it, by identity (`machines.ts` `knownDisk`: a file's name, size and date,
+  a URL's path, size and validator), so its overlays come back with it.
+- **Network:** the machine's network adapters (one card for now: add or remove it); where more adapters will go.
+- **Snapshots:** the kept ones (below, "A stored machine's snapshots").
+
+A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
+disk's Export, Import changes…, **Reset disk…**) and a Snapshots tab (restore from a file, save to a file). The
+storage's estimate is at the bottom.
 
 ## The worker protocol
 
@@ -197,7 +281,7 @@ prompt comes at ~29 s (page load to `running`: 28.6, 29.1, 28.9, 29.0 s; loop 3:
 
 ## Errors
 
-What stops a machine is said in a bar under the header: what happened, why, and what to do, with
+What stops a machine is said in the message bar under the toolbar: what happened, why, and what to do, with
 buttons for the actions that apply. Checked on the page before a worker starts:
 
 - **No cross-origin isolation** (`crossOriginIsolated` false: served without COOP/COEP, or from
@@ -222,14 +306,14 @@ From the machine worker, as `problem`:
 | `missing-core` | the wasm answers 404 (or the server doesn't answer) | Retry (the message says `npm start` builds it) |
 | `missing-image` | the kernel, initrd or disk (a `HEAD`) answers 404 | Retry (the message names the file and the machine's `prepare` command) |
 | `disk-in-use` | the overlay's files are locked (`NoModificationAllowedError`): another tab runs the machine | Retry, once that tab is closed |
-| `disk-mismatch` | the overlay's `base` names another image | Reset disk… |
+| `disk-mismatch` | the overlay's `base` names another image | Reset disk… (a transient machine); Disks… (a stored one: its Disks tab, where New empty starts over) |
 | `memory` | reserving the guest's RAM throws a `RangeError` | Retry |
 | `panic` | the guest's `Kernel panic - not syncing` line | Show serial log, Copy serial log, Save serial log |
 | `snapshot` | a snapshot was refused (`SnapshotError`: another machine, another disk, damaged or truncated, devices this page can't make; below, "Snapshots") | Start, Load snapshot… |
 | `emulator` | anything else (an exception, an unimplemented exit) | the same three |
 
-Retry and Restart start a new machine worker. The failed states (`failed`) make the header's
-button read Retry. **The serial log** is kept by the page (the last 1–2 MB of the serial console's
+Retry and Restart start a new machine worker. The failed states (`failed`) make the toolbar's
+Start button read Retry. **The serial log** is kept by the page (the last 1–2 MB of the serial console's
 output, beyond xterm.js's 5,000 lines of scrollback) for Copy (the clipboard) and Save (a
 `webpc-<machine>-serial-<time>.log` download); Show serial log switches the Screen view to Both.
 
@@ -238,21 +322,22 @@ output, beyond xterm.js's 5,000 lines of scrollback) for Copy (the clipboard) an
 The running machine, RAM and the disk's changes and all, in a file; and back (the format and the
 machinery: [platform.md](platform.md) "Snapshots", [plans/snapshots.md](plans/snapshots.md)).
 
-**Save snapshot** (the header, enabled while the state is `running` or `booting`): the picker first
+**Snapshot** (the toolbar, enabled while the state is `running` or `booting`; a transient machine's goes to a file, a
+stored machine's is kept: below, "A stored machine's snapshots"): the picker first
 (`showSaveFilePicker`, which needs the click's user activation; suggested name
-`<machine>-<yyyy-mm-dd-hhmm>.webpcsnap`), else a Blob download, as Save disk does. No confirmation:
+`<machine>-<yyyy-mm-dd-hhmm>.webpcsnap`), else a Blob download, as a disk's Export does. No confirmation:
 the machine isn't stopped. The worker pauses it (`vm.pause()`), writes the file with
 `writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
-("Writing the snapshot 40%"); afterwards a note under the header says the file, its size and how
+("Writing the snapshot 40%"); afterwards a notice in the message bar says the file, its size and how
 long the machine was paused (the numbers are also in `#message`'s `data-snapshot`, JSON, for
 tools), and the machine runs as before. Only the writing is between pause and resume: the picked
 file's stream is opened before and closed (flushed) after, and nothing is hashed. One save at a
-time: while it runs Restart, Reset disk and Save snapshot are disabled, and Save disk, Open disk,
-Load changes and Load snapshot say to wait. The run loop is not disturbed by the pause
+time: while it runs Restart, Power off, Suspend, Snapshot and Load snapshot are disabled, and a disk's Export, Open
+disk and Import changes say to wait. The run loop is not disturbed by the pause
 (`runAsync` keeps returning `BUDGET`), the status timer and the flash keeper only read.
 
-**Load snapshot…** (a button with a file input), and a snapshot file chosen with Open disk… or
-dropped on the page, told from a disk image by its first 8 bytes (`WEBPCSNP`). The page reads the
+**Load snapshot** › From a file… (the toolbar's menu; also the Snapshots tab's Restore from a file…), and a snapshot
+file chosen with Open disk… or dropped on the page, told from a disk image by its first 8 bytes (`WEBPCSNP`). The page reads the
 header (`openSnapshot` without a codec) before it asks anything, and refuses at once, with the
 machine running on: a file that isn't a snapshot or whose header is damaged, a snapshot of another
 machine (`?machine=` differs), and one taken on another disk by name (the header's `disk`, for a
@@ -303,14 +388,14 @@ and offers Reset disk.
 
 ### A stored machine's snapshots
 
-docs/plans/machines.md §5. **Save snapshot** on a stored machine is a menu (`#snapshot-menu`; a transient machine's is
-the one button): **Keep in this browser…** asks for a name and **keeps** it, **Save to a file…** is the transient
-machine's save (asking first, when a disk is written in place, whether the whole disk goes in). Keeping: the
-worker writes the file to OPFS `machines/<id>/snapshots/<id>` (`start`'s `snapshot.keep`), then the page writes its
-record (its pins, the shape) inside `Store.writing`. Kept snapshots are listed in the Machines modal, newest first:
-**Restore** (on the page's machine), **Download** (the file as kept), **Delete**; **Import a file…** copies a file
-into them (one of another shape is kept, orphaned), **Apply a file…** restores one at once, and **Save a snapshot to a
-file** writes one out (with the whole of a disk written in place, if the user says so, §4.4).
+docs/plans/machines.md §5. The toolbar's **Snapshot** on a stored machine **keeps** one at once (no question: it's
+the panic button), named by the date and time; the Snapshots tab renames it. Keeping: the worker writes the file to
+OPFS `machines/<id>/snapshots/<id>` (`start`'s `snapshot.keep`), then the page writes its record (its pins, the
+shape) inside `Store.writing`. The toolbar's **Load snapshot** lists the five latest (orphaned ones disabled). The
+Machines page's Snapshots tab lists them all, newest first: **Restore** (on the page's machine), **Rename**,
+**Download** (the file as kept), **Delete**; **Import a file…** copies a file into them (one of another shape is kept,
+orphaned), **Restore from a file…** restores one at once, and **Save a snapshot to a file** writes one out (asking
+first, when a disk is written in place, whether the whole disk goes in, §4.4).
 - **Orphaned:** a kept snapshot whose shape hash isn't the machine's now (its RAM, vCPUs, display, disks…). It is
   struck through, with what differs (`shapeDiff`: "memory: 1024 MiB then, 2048 MiB now"), and offers **Make a machine
   like it** (`machineLike`: the settings and disks from the shape, the disks the browser has attached again by
@@ -329,7 +414,7 @@ file** writes one out (with the whole of a disk written in place, if the user sa
   (its new chunks are handed to the device: `BlkSpec.ramInit`). The page passes the worker the plan
   (`start.plan`); transient machines (the tests') have none, and a restore replaces their overlays as before.
 
-**Suspend** (the header, for a machine with an overlay; enabled while `running` or `booting`): the
+**Suspend** (the toolbar, for a machine with an overlay; enabled while `running` or `booting`): the
 machine stops and its memory stays in this browser; opening the page again, or Start, resumes it
 where it was. Nothing is asked: nothing is lost. The worker pauses the VM, writes its snapshot
 **without the disk's blocks** (`writeSnapshot`'s `suspend`: they are in the overlay already) to
@@ -571,26 +656,28 @@ The dev server serves exactly two files from `node_modules`, `@xterm/xterm/lib/x
 
 ## Views, settings and the disk
 
-Screen (the default, decision 2; edge to edge between the header and the status line, no padding,
+Screen (the default, decision 2; edge to edge between the toolbar and the status bar, no padding,
 black around the canvas), Serial terminal, or Both (side by side; stacked below 1100 px).
 The view chosen last is remembered per browser (`localStorage` `webpc.settings`, JSON; read and
 written in try/catch, so a browser that refuses storage just doesn't remember); `?view=` overrides
-it without being saved. The **Machine** menu sets the vCPU count (1, 2, 3, 4, 6, 8) and the RAM
+it without being saved. A stored machine's size is its Settings tab (Save and restart while it runs); a transient
+machine's (a test's `?machine=`) is the toolbar's **Machine** menu, which sets the vCPU count (1, 2, 3, 4, 6, 8) and the RAM
 (512 MiB to 2.5 GiB: the wasm memory is the RAM plus the 1 GiB heap reserve and must fit 4 GiB) and
 applies them with a confirmed restart; both are remembered per browser too (`ncpus`, `ramMiB`),
 with `?ncpus=` and `?ram=` over them. Defaults: `min(4, cores − 2)` vCPUs and the machine's RAM
 (1 GiB). The page's memory check (`hostMemoryGiB`) warns in the confirmation when the device
 reports less than the choice needs. A suspended machine resumes with its own size.
 
-Restart asks for a confirmation while the machine is booting or running (it's a power cut); after
+Restart and Power off ask for a confirmation while the machine is booting or running (they're a power cut); after
 a power off the button reads Start. One restart or disk reset at a time (`exclusively` in
-main.ts): Restart and Reset disk are disabled from the click until the new machine's worker is
+main.ts): Restart, Power off and Reset disk are disabled from the click until the new machine's worker is
 started, so a second click can't start a machine beside the one being started (the first would
 keep the overlay, and the page would lose track of it). The disk overlay persists across reloads and restarts; OPFS
 belongs to the browser profile, so Playwright's temporary profiles start empty and tests don't see
 each other's disks.
 
-**Reset disk** (M8 decision 4; shown for machines with an overlay) asks for a confirmation that
+**Reset disk** (M8 decision 4; a transient machine's, on the Machines page's Disks tab: a stored machine has New empty
+instead, which keeps the old overlay) asks for a confirmation that
 says what goes (the overlay's size, from `overlayBytes`), stops the machine (its device worker
 releases the overlay's sync access handles), deletes the overlay (`removeOverlay` in
 web/overlay.ts: under the overlay's Web Lock, `removeEntry(name, {recursive: true})` on the OPFS
@@ -623,8 +710,8 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
 
 ## Your own disk
 
-A `firmware` machine (the page's own `uefi`, which has nothing else to boot, and `debian`) boots a disk of the user's own (M8 phase B loop 4): the header's
-**Open disk…** (a file picker), a file dropped on the page, or `?disk=<url>` (served with HTTP
+A `firmware` machine (the page's own `uefi`, which has nothing else to boot, and `debian`) boots a disk of the user's own (M8 phase B loop 4): **Open disk…** (the
+message's button while no disk is open, and the Machines page's From a disk image…: a file picker), a file dropped on the page, or `?disk=<url>` (served with HTTP
 range support, like the machine's own). The machine restarts on it (confirmed if it runs); raw or
 qcow2 is told by the file's magic (an ISO is raw: EDK2 boots its El Torito or hybrid partition table's EFI entry; the user
 booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file is a changes file: it is loaded, below, not booted).
@@ -641,7 +728,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   session: backlog). **Reset disk** resets the chosen disk's overlay.
 - The disk is identified by name, size and modification time, not by content (a hash of a
   multi-GB file would block the boot): two different files with all three equal share an overlay.
-- **Saving the disk** (loop 5): the header's **Save disk** menu (machines with an overlay): *Changes
+- **Saving the disk** (loop 5): a disk's **Export** menu on the Machines page's Disks tab: *Changes
   only*, a qcow2 holding the blocks the machine wrote with the image as its backing file;
   *Whole disk* as qcow2 (zero clusters left out) or raw; the qcow2s are compressed unless the
   menu's **Compress the qcow2** is unticked (remembered in the page's settings). The file goes where the user picks
@@ -697,7 +784,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
   a file with only it is refused like any qcow2 that isn't ours. The whole
   disk is scanned through the overlay over the base (the cost is reading the base: a 3 GiB Debian
   disk is the long case). Names: `<disk>-changes.qcow2`, `<disk>.qcow2`, `<disk>.img`.
-- **Loading changes** (loop 6): the header's **Load changes…** (or a changes file chosen with Open
+- **Loading changes** (loop 6): a disk's **Import changes…** on the Disks tab (or a changes file chosen with Open
   disk or dropped: the first 64 KiB's header, `changesHeader` in web/qcow2.ts, tells it from a
   disk: a backing file) puts a changes file onto **the disk on the page** (the machine's own or the
   chosen one). `loadChanges` (web/changes.ts, in `web/app/import-worker.ts`, page side
@@ -727,7 +814,7 @@ booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file
 
 ## Network
 
-The header's **Network** menu (machines with a `network` entry in machine.ts: Debian) shows the
+The toolbar's **Network** menu (machines with a `network` entry in machine.ts: Debian) shows the
 machine's connection and what can be done with it; its **Connect…** (or, while connected,
 **Change…**) opens the **Network wizard**, a dialog: first the choice, **A tailnet** (a Tailscale
 network, docs/plans/networking.md; the backend is web/tailscale.ts, the client in its own worker) or

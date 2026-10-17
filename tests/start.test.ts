@@ -188,7 +188,7 @@ test('npm start on a fresh copy of the repository: install, build, serve; the pa
       const t0 = performance.now();
       const page = await browser.newPage();
       await page.goto(url);
-      await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 30_000, polling: 100 });
+      await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 30_000, polling: 100 });
       mkdirSync(join(d, 'target/images/debian'), { recursive: true });
       symlinkSync(join(ROOT, DEBIAN_DISK), join(d, DEBIAN_DISK));
       await page.goto(`${url}?disk=/${DEBIAN_DISK}`);

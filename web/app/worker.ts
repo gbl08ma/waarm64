@@ -19,6 +19,7 @@ import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } fro
 import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { CPU_FEATURES, slots, type CpuFeature, type DeviceKind } from './shape.ts';
 import type { MachineName } from './machine.ts';
+import { bytesText } from './bytes.ts';
 
 const post = (m: FromWorker, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
 const state = (s: PowerState, message?: string, problem?: Problem) => post({ type: 'state', state: s, message, problem });
@@ -195,7 +196,7 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: 
   // A stored machine's snapshot is checked by its shape (docs/plans/machines.md §5.1): the page checked it first and
   // offers to make a machine like it; here it is refused before anything is touched.
   if (m.about && typeof h.shapeHash === 'string' && h.shapeHash !== m.about.shapeHash) {
-    throw failure('snapshot', `${what}: it is a snapshot of a machine with other settings or disks than ${m.about.name} has now.\nIts machine can be made again from it in Machines… (Make a machine like it).`);
+    throw failure('snapshot', `${what}: it is a snapshot of a machine with other settings or disks than ${m.about.name} has now.\nIts machine can be made again from it on the Machines page (Make a machine like it).`);
   }
   if (h.machine !== m.machine) {
     const other = typeof h.label === 'string' ? h.label : String(h.machine);
@@ -583,7 +584,7 @@ async function suspend() {
     // From here the machine must not run: the file is only good for the disk as it is now.
     isSuspended = true;
     await shutdown(v, machine);
-    state('suspended', `Suspended: the machine's memory is kept in this browser (${(bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0)} MB). Start resumes it where it was; Boot instead starts it from its disk, as after a power cut.`);
+    state('suspended', `Suspended: the machine's memory is kept in this browser (${bytesText(bytes)}). Start resumes it where it was; Boot instead starts it from its disk, as after a power cut.`);
   } catch (err) {
     if (paused && !isSuspended) v.resume();
     fail(`The machine couldn't be suspended: ${String((err as Error).message ?? err)}`);

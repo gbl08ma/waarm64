@@ -142,6 +142,14 @@ export type MachineName = keyof typeof MACHINES;
 export const defaultCpus = (cores: number) => Math.max(1, Math.min(4, cores - 2));
 
 /**
+ * The RAM the page offers, MiB: up to what leaves room in wasm32's 4 GiB for the core's 1 GiB heap reserve beside the
+ * scratch page and fw_cfg's files (web/vm.ts `HEAP_RESERVE`). More still boots, on a growable memory, which costs
+ * ~6–7% on Linux arm64 (bench/boot/REPORT.md "M8: a fixed-size memory").
+ */
+export const MAX_RAM_MIB = 2560;
+/** The sizes the page offers (a transient machine's Machine menu, a stored one's Settings). */
+export const RAM_CHOICES = [512, 1024, 1536, 2048, MAX_RAM_MIB];
+/**
  * The host memory a machine needs, GiB: its RAM, ~1 GiB for the browser and the first vCPU's
  * worker, ~0.3 GiB per vCPU (bench/boot/REPORT.md "M8 loop 0": 2.3 GiB of RSS on 1 vCPU, 3.1 on
  * 4, with 1 GiB of guest RAM). Chromium has no catchable out-of-memory error (its renderer is

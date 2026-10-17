@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { chromium, type Page } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
 import { unattendedQuery } from '../../tests/debian-unattended.ts';
+import { answerAsks } from '../../tests/page-ask.ts';
 
 const server = await startServer();
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -22,10 +23,10 @@ const chosen = process.argv.includes('--chosen');
 if (chosen) {
   const file = join(mkdtempSync(join(tmpdir(), 'draw-')), 'mydisk.qcow2');
   symlinkSync(new URL('../../target/images/debian/disk.qcow2', import.meta.url).pathname, file);
-  page.on('dialog', (d) => void d.accept());
+  await answerAsks(page);
   const from = await page.evaluate(() => document.body.dataset.state!);
   await page.setInputFiles('#open-disk-input', file);
-  await page.waitForFunction(() => document.getElementById('machine')!.textContent!.includes('mydisk.qcow2'), null, { timeout: 10_000 });
+  await page.waitForFunction(() => (document.getElementById('machine')?.textContent ?? '').includes('mydisk.qcow2'), null, { timeout: 10_000 });
   await page.waitForFunction((from) => document.body.dataset.state !== from, from, { timeout: 30_000, polling: 100 });
 }
 await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 240_000, polling: 250 });

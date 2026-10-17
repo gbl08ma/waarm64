@@ -21,6 +21,7 @@ import { startServer } from '../tools/serve.ts';
 import { unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { answerAsks } from './page-ask.ts';
 
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
@@ -68,10 +69,10 @@ async function onSerial(page: Page, text: string) {
 async function running(page: Page) {
   await page.waitForFunction(() => ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), null, { timeout: BOOT_MS, polling: 250 })
     .catch(async (e) => {
-      const [state, status, message, net] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('status')!.textContent, document.getElementById('message-text')!.textContent, document.getElementById('net-status')!.textContent]);
+      const [state, status, message, net] = await page.evaluate(() => [document.body.dataset.state, (document.getElementById('status')?.textContent ?? ''), (document.getElementById('message-text')?.textContent ?? ''), document.getElementById('net-status')!.textContent]);
       throw new Error(`${e}; the page is ${state} (${status}; ${message}; network: ${net}); the terminal shows: ${await terminal(page)}`);
     });
-  const [state, message] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')!.textContent]);
+  const [state, message] = await page.evaluate(() => [document.body.dataset.state, (document.getElementById('message-text')?.textContent ?? '')]);
   assert.equal(state, 'running', message ?? '');
 }
 const phase = (page: Page) => page.evaluate(() => document.getElementById('network')!.dataset.phase);
@@ -116,7 +117,7 @@ test('the Network wizard and menu: a tailnet and tailcat, form errors, connectin
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   const dialogs: string[] = [];
-  page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); });
+  await answerAsks(page, (q) => { dialogs.push(q.text); });
   try {
     await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=both&${unattendedQuery()}`);
     assert.equal(await visible(page, '#network'), true, 'Debian can have a card');

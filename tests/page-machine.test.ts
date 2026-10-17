@@ -8,6 +8,7 @@ import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
 import { withDebianLock } from './debian-lock.ts';
+import { answerAsks } from './page-ask.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = !(existsSync(new URL('buildroot/rootfs.ext4', IMAGES)) && existsSync(new URL('linux/Image', IMAGES))) && 'SKIPPED: run images/build.sh';
@@ -23,8 +24,8 @@ before(async () => {
 });
 after(async () => { await browser?.close(); close?.(); });
 
-const status = (page: Page) => page.evaluate(() => document.getElementById('status')!.textContent!);
-const statusShows = (page: Page, re: RegExp) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')!.textContent ?? ''), re.source, { timeout: 120_000, polling: 200 })
+const status = (page: Page) => page.evaluate(() => (document.getElementById('status')?.textContent ?? ''));
+const statusShows = (page: Page, re: RegExp) => page.waitForFunction((src) => new RegExp(src).test(document.getElementById('status')?.textContent ?? ''), re.source, { timeout: 120_000, polling: 200 })
   .catch(async (e) => { throw new Error(`${e}; the status shows: ${await status(page)}`); });
 
 test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and is remembered', { skip }, async () => {
@@ -32,7 +33,7 @@ test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('dialog', (d) => void d.accept());
+  await answerAsks(page);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1`);
   await statusShows(page, /1 vCPU\b.*256 MiB/);
 
@@ -64,7 +65,7 @@ test('the Machine menu chooses 3D or 2D graphics, remembered, with the query ove
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('dialog', (d) => void d.accept());
+  await answerAsks(page);
   const graphics = (want: string) => page.waitForFunction((g) => document.body.dataset.graphics === g, want, { timeout: 60_000, polling: 100 });
   await page.goto(`${base}/web/app/?machine=debian`);
   await graphics('3d');

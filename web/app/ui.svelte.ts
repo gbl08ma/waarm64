@@ -1,0 +1,94 @@
+// The page's state as its components show it (docs/frontend.md "The page's code"): web/app/main.ts runs the machine and
+// writes here; App.svelte and the components under it read it, and call `page`'s actions, which main.ts provides.
+import type { ExportMode } from './export.ts';
+import type { PowerState } from './protocol.ts';
+import type { DiskRecord, MachineRecord, Shape } from './shape.ts';
+
+export type View = 'screen' | 'terminal' | 'both';
+/** The machine's power state, plus the page's own `idle`: no machine yet (waiting for a disk, or for "Start anyway"). */
+export type PageState = PowerState | 'idle';
+export type Action = { label: string; run: (button: HTMLButtonElement) => void };
+export type MachinesTab = 'settings' | 'disks' | 'network' | 'snapshots';
+
+export const ui = $state({
+  /** What the toolbar calls the machine. */
+  title: '',
+  state: 'loading' as PageState,
+  /** The state's words (a phase or a progress while loading or saving). */
+  stateText: 'Loading',
+  /** The message bar: a problem or a note, and what can be done about it. */
+  message: '',
+  messageKind: 'warn' as 'error' | 'warn',
+  actions: [] as Action[],
+  /** The last snapshot written (its bytes, pause and id), for tools: `#message[data-snapshot]`. */
+  snapshotResult: '',
+  view: 'screen' as View,
+  /** The Machines page instead of the machine (`#machines` in the address). */
+  machinesOpen: false,
+  machinesTab: 'settings' as MachinesTab,
+  /** The machine chosen on the Machines page (undefined: the page's own, or none). */
+  machinesSelected: undefined as string | undefined,
+  /** A stop, start or snapshot in progress: the actions that would overlap it wait. */
+  busy: false,
+  /** The stored machine on this page (its id), or undefined for a transient one (a test's `?machine=`). */
+  current: undefined as string | undefined,
+  /** A transient machine with a disk of its own: shown on the Machines page as "this page's machine". */
+  transient: undefined as { label: string; disk: string } | undefined,
+  /** The machine boots through UEFI and can take a disk file (Open disk…, a dropped file). */
+  firmware: false,
+  /** The boot disk keeps its changes in this browser: Suspend, the disk's actions. */
+  hasOverlay: false,
+  /** The machine has a virtio-gpu (the Screen menu, the Graphics choice). */
+  hasGpu: false,
+  /** The machine has a network card (the Network menu). */
+  hasNetwork: false,
+  /** The page can't run here (no cross-origin isolation): no Start. */
+  cantRun: false,
+  /** Bumped when the network's state changes (the Network menu redraws). */
+  net: 0,
+  boot: { shown: true, done: false, title: '', progress: undefined as number | undefined, line: '', serial: false },
+  status: { text: '', data: '' },
+  /** A transient machine's size, chosen in the toolbar's Machine menu (a stored machine's is in its Settings). */
+  size: { ncpus: 1, ramMiB: 1024, gpu: '3d' as '3d' | '2d', cpuChoices: [] as number[], ramChoices: [] as number[], gpuLock: '' },
+  /** Bumped when the store's records change (the toolbar's snapshot list rereads). */
+  records: 0,
+});
+
+/** What the components ask of the page (web/app/main.ts fills it in before the first start). */
+export type Page = {
+  restart(): void;
+  suspend(): void;
+  /** Take snapshot: kept in the browser (a stored machine) or to a file. */
+  takeSnapshot(): void;
+  /** Save a snapshot of the running machine to a file (`whole`: disks written in place go in whole). */
+  saveSnapshotFile(whole: boolean): void;
+  restoreKept(id: string): void;
+  loadSnapshot(file: File): void;
+  /** A disk image, snapshot or changes file chosen or dropped on the page. */
+  openDiskFile(file: File, handle?: FileSystemFileHandle): void;
+  /** Opens stored machine `id` on this page. */
+  openMachine(id: string): void;
+  powerOff(): Promise<void>;
+  /** The toolbar's Power off: asks, then stops the machine like pulling the plug. */
+  powerOffAsked(): void;
+  /** Saves a disk to a file: the page's own (transient machine), or a stored disk with one of its overlays. */
+  saveDisk(mode: ExportMode, compress: boolean, target?: { disk: DiskRecord; overlay?: string }): void;
+  /** Loads a changes file: onto the page's disk, or into a new overlay of a stored machine's attachment. */
+  importChanges(file: File, target?: { machine: MachineRecord; attachment: string }): void;
+  resetDisk(): void;
+  /** A stored machine's settings saved (a running machine restarts with them). */
+  saveSettings(m: MachineRecord): Promise<void>;
+  /** A transient machine's size from the Machine menu. */
+  applySize(ncpus: number, ramMiB: number, gpu: '3d' | '2d'): void;
+  shapeNow(m: MachineRecord): Promise<{ shape: Shape; hash: string }>;
+  setView(v: View): void;
+  showLog(): void;
+  fullscreen(): void;
+  chord(keys: string[]): void;
+  screenSize(): void;
+  openMachines(tab?: MachinesTab, id?: string): void;
+  closeMachines(): void;
+  /** Closes the message bar. */
+  dismiss(): void;
+};
+export const page = {} as Page;

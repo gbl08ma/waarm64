@@ -22,7 +22,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
 import { APP, ROOT, startServer } from './serve.ts';
 import { FIRMWARE, main as prepare, Stop, WASM } from './start.ts';
-import { compileSvelte, RUNTIME_LICENSES, runtimeFiles } from './svelte.ts';
+import { compileRunes, compileSvelte, RUNTIME_LICENSES, runtimeFiles } from './svelte.ts';
 
 export const OUT = join(ROOT, 'target/dist');
 
@@ -42,7 +42,7 @@ const COMPONENT = /(['"])(\.{1,2}\/[\w./-]*?)\.svelte(?=['"])/g;
  * components' `.svelte.js`; and the modules it names.
  */
 export function compileModule(source: string, path = 'module.ts') {
-  const js = path.endsWith('.svelte') ? compileSvelte(source, path) : stripTypeScriptTypes(source, { mode: 'strip' });
+  const js = path.endsWith('.svelte') ? compileSvelte(source, path) : path.endsWith('.svelte.ts') ? compileRunes(source, path) : stripTypeScriptTypes(source, { mode: 'strip' });
   const deps = [...[...js.matchAll(SPECIFIER)].map((m) => `${m[2]}.ts`), ...[...js.matchAll(COMPONENT)].map((m) => `${m[2]}.svelte`)];
   return { js: js.replace(SPECIFIER, '$1$2.js').replace(COMPONENT, '$1$2.svelte.js'), deps };
 }

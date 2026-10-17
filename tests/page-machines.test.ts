@@ -12,6 +12,7 @@ import { startServer } from '../tools/serve.ts';
 import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { answerAsks } from './page-ask.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -40,7 +41,7 @@ const shows = (page: Page, re: RegExp, ms = 60_000) =>
 async function running(page: Page, from?: string, ms = BOOT_MS) {
   await page.waitForFunction((from) => document.body.dataset.state !== from && ['running', 'failed', 'crashed', 'idle', 'off'].includes(document.body.dataset.state!), from, { timeout: ms, polling: 250 })
     .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => document.body.dataset.state)}; the terminal shows: ${await terminal(page)}`); });
-  const [state, message] = await page.evaluate(() => [document.body.dataset.state, document.getElementById('message-text')!.textContent]);
+  const [state, message] = await page.evaluate(() => [document.body.dataset.state, (document.getElementById('message-text')?.textContent ?? '')]);
   assert.equal(state, 'running', message ?? '');
 }
 
@@ -101,7 +102,7 @@ test('a machine with four disks: Debian from a URL, a blank disk formatted and k
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('dialog', (d) => void d.accept());
+  await answerAsks(page);
   await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`); // the page's origin, waiting for a disk
   const firmware = readFileSync(FIRMWARE);
   const image = readFileSync(IMAGE);

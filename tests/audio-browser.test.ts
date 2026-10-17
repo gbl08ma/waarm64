@@ -25,6 +25,7 @@ import { startServer } from '../tools/serve.ts';
 import { GAP_FRAMES, LATENCY, QUANTA, READ, UNDERRUNS, WRITE } from '../web/audio-ring.ts';
 import { peaks } from './audio-tap.ts';
 import { fnv1a } from '../web/snd.ts';
+import { answerAsks } from './page-ask.ts';
 
 const IMAGES = new URL('../target/images/', import.meta.url);
 const skip = process.env.WEBPC_AUDIO_TESTS !== '1' ? 'SKIPPED: scripts/ci-audio.sh runs it (WEBPC_AUDIO_TESTS=1)'
@@ -176,7 +177,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     await page.waitForTimeout(2000);
     const before = (await header(page))[READ];
     // Watched from before the click: the guest's power-off replaces the page's message.
-    const saved = page.waitForFunction(() => /^Saved the snapshot /.test(document.getElementById('message-text')!.textContent!), null, { timeout: 60_000, polling: 20 })
+    const saved = page.waitForFunction(() => /^Saved the snapshot /.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 60_000, polling: 20 })
       .catch(async (e) => { throw new Error(`${e}; the page says: ${await page.locator('#message-text').textContent()}`); });
     const [download] = await Promise.all([page.waitForEvent('download', { timeout: 60_000 }), page.locator('#save-snapshot').click()]);
     const path = join(dir, 'snd.webpcsnap');
@@ -197,7 +198,7 @@ test('a snapshot saved while the tone plays (12 s, saved 2 s in) loads in a fres
     p2.on('pageerror', (e) => errors2.push(String(e)));
     const logs2: string[] = [];
     p2.on('console', (m) => logs2.push(m.text()));
-    p2.on('dialog', (d) => void d.accept());
+    await answerAsks(p2);
     await p2.goto(`${base}/web/app/?machine=snd&view=terminal&params=snd_seconds=60&snd=stats`);
     await p2.mouse.click(5, 5);
     await until(p2, /snd: hw params/);

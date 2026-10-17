@@ -10,6 +10,7 @@ import { startServer } from '../tools/serve.ts';
 import { credentialsQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { answerAsks } from './page-ask.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
@@ -33,7 +34,7 @@ const shows = (page: Page, re: RegExp, ms = 60_000) =>
   page.waitForFunction((src) => new RegExp(src).test(document.querySelector('.xterm-rows')?.textContent ?? ''), re.source, { timeout: ms, polling: 100 })
     .catch(async (e) => { throw new Error(`${e}; the terminal shows: ${await terminal(page)}`); });
 const stateIs = (page: Page, ...states: string[]) => page.waitForFunction((s) => s.includes(document.body.dataset.state!), states, { timeout: BOOT_MS, polling: 200 })
-  .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('message-text')!.textContent}`)}`); });
+  .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.state}: ${(document.getElementById('message-text')?.textContent ?? '')}`)}`); });
 async function type(page: Page, text: string) {
   await page.locator('.xterm').click();
   await page.keyboard.type(text, { delay: 5 });
@@ -66,7 +67,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   const dialogs: string[] = [];
   let keepAs = '';
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('dialog', (d) => { dialogs.push(d.message()); void (d.type() === 'prompt' ? d.accept(keepAs) : d.accept()); });
+  await answerAsks(page, (q) => { dialogs.push(q.text); return q.kind === 'prompt' ? keepAs : true; });
   await page.goto(`${base}/web/app/?${PAGE_QUERY}view=terminal`);
   const id = await record<string>(page, `async (store) => {
     const { newId } = await import('/web/app/shape.ts');
@@ -90,12 +91,17 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   const ramdisk = '/dev/vdb';
   await ok(page, `mkfs.ext4 -q ${ramdisk} && mkdir -p /mnt/r && mount ${ramdisk} /mnt/r`);
 
-  /** Keeps a snapshot named `name` (Save snapshot's prompt), waiting for the page to say so. */
+  /** Keeps a snapshot (the toolbar's Snapshot: named by the time), waits for the page to say so, then renames it `name` on the Machines page. */
   const keep = async (name: string) => {
+    const before = await page.locator('#message').getAttribute('data-snapshot');
+    await page.locator('#save-snapshot').click();
+    await page.waitForFunction((b) => document.getElementById('message')?.dataset.snapshot !== (b ?? undefined) && (document.getElementById('message-text')?.textContent ?? '').startsWith('Kept the snapshot '), before, { timeout: 120_000 });
     keepAs = name;
-    await page.locator('#snapshot-menu summary').click();
-    await page.locator('[data-snapshot=keep]').click();
-    await page.waitForFunction((n) => document.getElementById('message-text')!.textContent!.startsWith(`Kept the snapshot ${n}`), name, { timeout: 120_000 });
+    await page.locator('#machines-open').click();
+    await page.locator('.machines [data-tab=snapshots]').click();
+    await page.locator('.machines [data-snapshot]').first().getByRole('button', { name: 'Rename' }).click();
+    await page.locator('.machines [data-snapshot]', { hasText: name }).waitFor({ timeout: 10_000 });
+    await page.locator('[data-action=back]').click();
   };
   await ok(page, 'echo a > /root/f && echo r-one > /mnt/r/x && sync');
   await keep('one');
@@ -113,6 +119,7 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   /** Restores kept snapshot `name` from the modal; waits for the machine to run from it. */
   const restore = async (name: string) => {
     await page.click('#machines-open');
+    await page.locator('.machines [data-tab=snapshots]').click();
     await page.locator('.machines [data-snapshot]', { hasText: name }).getByRole('button', { name: 'Restore' }).click();
     await page.waitForFunction(() => document.body.dataset.state !== 'running', null, { timeout: 30_000, polling: 50 })
       .catch((e) => { throw new Error(`${e}; the last dialog: ${dialogs.at(-1)}`); });
@@ -157,11 +164,14 @@ test('kept snapshots: an older one restored forks the newer state, the ramdisk c
   await stateIs(page, 'booting', 'running');
   assert.match(await page.locator('#message-text').textContent() ?? '', /couldn't be resumed .*disk has changed/);
 
-  // A RAM change (the machine off) orphans every snapshot; the modal deletes them in one action.
+  // A RAM change orphans every snapshot (it asks first; the machine restarts with it); the Machines page deletes them in one action.
   await page.locator('#machines-open').click();
   const m = page.locator('.machines section.machine[data-selected]');
+  await m.locator('[data-tab=settings]').click();
   await m.locator('[data-field=ram]').selectOption('2048');
-  await m.locator('[data-action=save]').click(); // asks to power it off, then whether to orphan the snapshots
+  await m.locator('[data-action=save]').click(); // asks whether to orphan the snapshots, then to restart
+  await page.waitForFunction(() => document.body.dataset.state === 'loading' || document.body.dataset.state === 'booting', null, { timeout: 30_000, polling: 50 });
+  await m.locator('[data-tab=snapshots]').click();
   await page.locator('.machines .orphan').first().waitFor();
   assert.equal(await page.locator('.machines .orphan').count(), 3);
   assert.match(await page.locator('.machines .orphan').first().textContent() ?? '', /memory: 1024 MiB then, 2048 MiB now/);

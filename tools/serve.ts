@@ -1,6 +1,6 @@
 // Dev/test server: serves the repo root on 127.0.0.1 with cross-origin
 // isolation headers (needed for SharedArrayBuffer and fine-grained timers).
-// .ts files are served as JavaScript with types stripped, .svelte files compiled (tools/svelte.ts). Other files honor a
+// .ts files are served as JavaScript with types stripped, .svelte files and .svelte.ts modules compiled (tools/svelte.ts). Other files honor a
 // single `Range: bytes=` request (206 / 416), which the virtio-blk HTTP backend uses.
 // `/` redirects to the page (web/app/), a directory serves its index.html, and
 // nothing under node_modules is served except the files the page imports (`ALLOWED`, and Svelte's runtime).
@@ -10,7 +10,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prepareTailnetClient } from './tailscale.ts';
-import { compileSvelte, runtimeFiles } from './svelte.ts';
+import { compileRunes, compileSvelte, runtimeFiles } from './svelte.ts';
 
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -56,7 +56,8 @@ export function startServer(port = 0, host = '127.0.0.1', root = ROOT): Promise<
     const type = { 'Content-Type': TYPES[ext] ?? 'application/octet-stream' };
     try {
       if (ext === '.ts') {
-        res.writeHead(200, type).end(stripTypeScriptTypes((await readFile(path)).toString(), { mode: 'strip' }));
+        const source = (await readFile(path)).toString();
+        res.writeHead(200, type).end(path.endsWith('.svelte.ts') ? compileRunes(source, path) : stripTypeScriptTypes(source, { mode: 'strip' }));
         return;
       }
       if (ext === '.svelte') {

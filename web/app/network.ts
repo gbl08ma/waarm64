@@ -1,6 +1,6 @@
 // The page's network (docs/frontend.md "Network"): a machine with a network card (always there)
 // (virtio-net on the Ethernet gateway, web/gateway.ts) whose IP packets go to a Tailscale
-// client (web/tailscale.ts), which the user connects and logs in from the header's Network
+// client (web/tailscale.ts), which the user connects and logs in from the toolbar's Network
 // menu, or to tailcat (web/tailcat.ts, the Rust tailnet client): through a tailcat server, letting
 // tailcat clients in, or both. DOM-free, so it's tested in Node (tests/network.test.ts).
 //

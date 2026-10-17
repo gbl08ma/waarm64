@@ -12,6 +12,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { PAGE_QUERY } from './page-query.ts';
+import { answerAsks } from './page-ask.ts';
 
 const IMAGE = new URL('../target/images/buildroot/rootfs.ext4', import.meta.url);
 const KERNEL = new URL('../target/images/linux/Image', import.meta.url);
@@ -36,11 +37,13 @@ test('the page saves the disk of a running machine: whole disk as raw and as qco
   const page = await context.newPage();
   await page.addInitScript(() => { (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = undefined; }); // the download path
   const dialogs: string[] = [];
-  page.on('dialog', (d) => { dialogs.push(d.message()); void d.accept(); }); // "Stop the machine to save its disk?"
+  await answerAsks(page, (q) => { dialogs.push(q.text); }); // "Stop the machine to save its disk?"
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   await page.goto(`${base}/web/app/?${PAGE_QUERY}machine=buildroot&ncpus=1&view=terminal`);
   await page.waitForFunction(() => document.body.dataset.state === 'running', null, { timeout: 60_000 });
+  // The disk's actions are on the Machines page: this page's machine, its Disks tab.
+  await page.locator('#machines-open').click();
 
   const save = async (mode: string, name: string) => {
     const [download] = await Promise.all([

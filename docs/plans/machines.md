@@ -43,6 +43,23 @@ the embedding API, none of which it conflicts with (§10).
     the stored disk (§4.4).
 13. **No compatibility** with today's overlays, Suspend files or snapshot files: nobody uses the deployed page yet.
 
+The page around them (the user, 2026-10-17, after L5):
+
+14. **Disks and snapshots are managed only on the Machines page** (and the dialogs it opens). The toolbar keeps quick
+    actions: **Snapshot** (one click, kept in the browser under the time: a panic button; renamed later), **Load
+    snapshot** (a menu: the latest five, a file, all of them), Start/Restart, **Power off**, Suspend.
+15. **The Machines page is a page, not a modal** (no dialogs over dialogs): it takes the machine's place; a machine's
+    **Settings**, **Disks**, **Network** (its adapters: one card now, several later) and **Snapshots** are tabs.
+16. **Add a disk is a wizard:** the kind of source first, each explained, then its details.
+17. **Load changes is a disk's Import changes** (into a new overlay, which the disk switches to), beside its Export.
+    A stored machine has no Reset disk (New empty is it, and keeps the old overlay); only a transient machine's
+    Disks tab has one. **Open disk… is the Machines page's** (From a disk image…), with the drop and the first-run
+    message's button. The toolbar's **Machine** menu is only a transient machine's (a stored one's size is Settings).
+18. **The page is Svelte throughout**, with a desktop application's look: a toolbar of icons (Tabler's, MIT) with
+    tooltips, names on the main gates; the page's own dialogs instead of the browser's confirm, alert and prompt; a
+    message bar that closes, and clears itself after 30 s for a notice that leaves the machine as it was; the power
+    state first in the status bar.
+
 ## 2. The model
 
 | Thing | What it holds | Where |
@@ -231,18 +248,22 @@ own.
 - **Export a machine** (later): a bundle with the definition, its overlays (as changes files), its kept snapshots and,
   optionally, its stored disks.
 
-## 7. The modal
+## 7. The Machines page
 
-Svelte, compiled by `tools/serve.ts` and `tools/dist.ts` as type stripping is (no build step). One dialog, **Machines**:
-- **The list:** each machine's name, size, disks and state (running, suspended, off); new, duplicate, delete, import
-  a definition.
-- **A machine:** settings (name, vCPUs, RAM, display), **Disks** (add from a source, reorder, read-only, detach; per
-  read-write disk its overlays: new empty, rename, switch, delete, export), **Snapshots** (kept ones with orphaned
-  marked, restore, download, delete, delete orphaned, import a file), export the definition. What needs the machine
-  off says so and offers to power it off (as Save disk does today).
+Svelte, compiled by `tools/serve.ts` and `tools/dist.ts` as type stripping is (no build step); decisions 14 to 18.
+It takes the machine's place on the page (which runs on behind it; `#machines` in the address); docs/frontend.md "The
+Machines page" says what each part does:
+- **The list:** each machine's name, disks and state; new, from a disk image, import a definition. A transient machine
+  (a test's) is listed as this page's.
+- **A machine:** open on this page, duplicate, export the definition, delete; tabs **Settings** (name, vCPUs, RAM,
+  display; Save and restart on the running machine), **Disks** (Add a disk… (the wizard: a disk already in this
+  browser, attached again or deleted, or a new one; a file or URL the browser knows is that disk again), reorder,
+  read-only, write in place, detach (the disk and its overlays stay); per read-write disk its overlays: switch, new empty, rename, delete, merge, Export, Import
+  changes…), **Network** (the adapters), **Snapshots** (kept ones with orphaned marked: restore, rename, download,
+  delete, delete orphaned, make a machine like it; import a file, restore from a file, save to a file). What needs the
+  machine off says so and offers to power it off; an export from the running machine stops it and starts it again.
 - **Storage:** the estimate, the biggest items, the persistence state.
-- The header's buttons shrink to the running machine's actions (Start, Restart, Suspend, Save snapshot, Save disk),
-  which act on the selected machine.
+- The toolbar keeps the running machine's quick actions (decision 14).
 
 ## 8. What changes outside the page
 

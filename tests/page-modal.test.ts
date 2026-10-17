@@ -1,4 +1,4 @@
-// The Machines modal (web/app/Machines.svelte, docs/plans/machines.md §7) and the URL check (web/app/urlcheck.ts) in
+// The Machines page (web/app/MachinesPage.svelte, docs/plans/machines.md §7) and the URL check (web/app/urlcheck.ts) in
 // Chromium, without a guest: a machine made, set and given disks from several sources through the modal's controls,
 // kept across a reload, opened on the page; a URL refused with the reason when its server lacks CORS or ranges.
 import assert from 'node:assert/strict';
@@ -6,6 +6,7 @@ import { createServer, type Server } from 'node:http';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
+import { answerAsks } from './page-ask.ts';
 
 let browser: Browser;
 let base: string;
@@ -59,6 +60,16 @@ test('the URL check: what a disk server needs, said when it lacks it', async () 
 });
 
 const modal = (page: Page) => page.locator('.machines');
+/** Add a disk…: the wizard's source, then its fields; Add. `again`: the wizard is open still (a refused add), its fields filled anew. */
+async function addDisk(page: Page, source: string, fields: Record<string, string>, again = false) {
+  if (!again) {
+    await page.locator('#add-disk').waitFor({ state: 'detached' }); // the last add's wizard closes after its disk shows
+    await page.locator('[data-action=add-disk-open]').click();
+    await page.locator(`#add-disk [data-source=${source}]`).click();
+  }
+  for (const [k, v] of Object.entries(fields)) await page.locator(`#add-disk [data-field=${k}]`).fill(v);
+  await page.locator('#add-disk [data-action=add-disk]').click();
+}
 /** Waits for the machine's `n`-th disk in the modal; on a timeout, says the modal's error. */
 const disk = (page: Page, n: number) => page.locator('.machines section.machine [data-attachment]').nth(n).waitFor({ timeout: 30_000 })
   .catch(async (e) => { throw new Error(`${e}; the modal says: ${await page.locator('.machines').textContent()}`); });
@@ -68,7 +79,7 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   const page = await context.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(String(e)));
-  page.on('dialog', (d) => void d.accept());
+  await answerAsks(page);
   await page.goto(`${base}/web/app/`);
   await page.click('#machines-open');
   await modal(page).locator('[data-action=new-machine]').click();
@@ -81,21 +92,21 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await m.locator('[data-field=display]').selectOption('2d');
   await m.locator('[data-action=save]').click();
   await modal(page).locator('.pick', { hasText: 'Workbench' }).waitFor();
-  // A URL disk (checked), a blank one, a ramdisk; a URL whose server lacks CORS is refused with the reason.
-  await m.locator('[data-field=url]').fill(`${otherBase}/plain/disk.img`);
-  await m.locator('[data-action=add-disk]').click();
-  await modal(page).locator('.error', { hasText: 'CORS' }).waitFor();
-  await m.locator('[data-field=url]').fill(`${base}/tests/qcow2/deflate.qcow2`);
-  await m.locator('[data-action=add-disk]').click();
+  // A URL disk (checked), a blank one, a ramdisk; a URL whose server lacks CORS is refused with the reason (the wizard stays open).
+  await m.locator('[data-tab=disks]').click();
+  await addDisk(page, 'url', { url: `${otherBase}/plain/disk.img` });
+  await page.locator('#add-disk .error', { hasText: 'CORS' }).waitFor();
+  await addDisk(page, 'url', { url: `${base}/tests/qcow2/deflate.qcow2` }, true);
   await disk(page, 0);
-  await m.locator('[data-field=source]').selectOption('blank');
-  await m.locator('[data-field=size]').fill('64');
-  await m.locator('[data-action=add-disk]').click();
+  await addDisk(page, 'blank', { size: '64' });
   await disk(page, 1);
-  await m.locator('[data-field=source]').selectOption('ramdisk');
-  await m.locator('[data-field=size]').fill('32');
-  await m.locator('[data-action=add-disk]').click();
+  await addDisk(page, 'ramdisk', { size: '32' });
   await disk(page, 2);
+  // A disk with an overlay (New empty) has an Export menu: its choices are there (the menu's open state starts unset).
+  await m.locator('[data-attachment]').nth(1).getByRole('button', { name: 'New empty' }).click();
+  await m.locator('[data-attachment]').nth(1).locator('[id^=export-] summary').click();
+  await m.locator('[data-attachment]').nth(1).locator('[data-save=qcow2]').waitFor();
+  await m.locator('[data-attachment]').nth(1).locator('[id^=export-] summary').click();
 
   const record = () => page.evaluate(async (id) => {
     const { Store } = await import('/web/app/store.ts' as string);
@@ -130,13 +141,130 @@ test('the modal makes a machine, sets it, gives it disks from several sources, k
   await m.locator('[data-attachment]').nth(2).getByRole('button', { name: 'Detach' }).click();
   await page.waitForFunction(() => document.querySelectorAll('.machines [data-attachment]').length === 2);
 
-  // Kept across a reload, and opened on the page: the header names it.
+  // Kept across a reload (the Machines page stays open: `#machines`), and opened on the page: the toolbar names it.
   await page.reload();
-  await page.click('#machines-open');
+  await modal(page).waitFor();
   await modal(page).locator('.pick', { hasText: 'Workbench' }).click();
   await m.locator('[data-action=open]').click();
   await page.waitForURL(new RegExp(`[?&]m=${id}`));
-  await page.waitForFunction(() => document.getElementById('machine')!.textContent === 'Workbench');
+  await page.waitForFunction(() => (document.getElementById('machine')?.textContent ?? '') === 'Workbench');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('a machine edited on the Machines page while it is off on this page starts as it is now', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page);
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await modal(page).locator('[data-action=new-machine]').click();
+  const m = modal(page).locator('section.machine[data-selected]');
+  await m.locator('[data-action=open]').click();
+  // On the page with no disks: it waits, and the Machines page offers Start (not a disabled "on this page").
+  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /has no disks yet/.test((document.getElementById('message-text')?.textContent ?? '')), null, { timeout: 10_000 });
+  await page.click('#machines-open');
+  await m.locator('[data-tab=disks]').click();
+  await addDisk(page, 'blank', { size: '64' });
+  await disk(page, 0);
+  assert.equal(await m.locator('[data-action=start]').isEnabled(), true);
+  await m.locator('[data-action=start]').click();
+  // It starts with the disk added since it was opened (the firmware loads and boots; a stale record would wait again).
+  await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
+  assert.doesNotMatch(await page.locator('#message-text').textContent() ?? '', /has no disks yet/);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('a detached disk keeps its overlays: attached again from the browser\'s disks, the same URL is the same disk, deleted when no machine has it', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  const asked: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page, (q) => { asked.push(q.text); });
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await modal(page).locator('[data-action=new-machine]').click();
+  const m = modal(page).locator('section.machine[data-selected]');
+  await m.locator('[data-tab=disks]').click();
+  const url = `${base}/tests/qcow2/deflate.qcow2`;
+  await addDisk(page, 'url', { url });
+  await disk(page, 0);
+  await m.locator('[data-attachment]').first().getByRole('button', { name: 'New empty' }).click(); // the prompt's default: "Fresh start"
+  await m.locator('[data-field=overlay] option', { hasText: 'Fresh start' }).waitFor({ state: 'attached' });
+  const diskId = await page.evaluate(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const d = (await store.all('disks'))[0];
+    store.close();
+    return d.id as string;
+  });
+  // Detached: the message says where it goes and how it comes back.
+  await m.locator('[data-attachment]').first().getByRole('button', { name: 'Detach' }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.machines [data-attachment]').length === 0);
+  assert.match(asked.at(-1)!, /stays in this browser with its 1 overlay .*A disk already in this browser attaches it again/);
+  // Attached again from the browser's disks: the same disk, its overlay there.
+  await page.locator('[data-action=add-disk-open]').click();
+  await page.locator('#add-disk [data-source=known]').click();
+  await page.locator(`#add-disk [data-disk="${diskId}"]`, { hasText: '1 overlay' }).locator('[data-action=attach-known]').click();
+  await disk(page, 0);
+  await m.locator('[data-field=overlay] option', { hasText: 'Fresh start' }).waitFor({ state: 'attached' });
+  // The same URL added again is that disk: refused here, where it's attached already.
+  await addDisk(page, 'url', { url });
+  await page.locator('#add-disk .error', { hasText: 'attached to this machine already' }).waitFor();
+  await page.keyboard.press('Escape');
+  // Detached and deleted from the browser's disks: its record and its overlay go.
+  await m.locator('[data-attachment]').first().getByRole('button', { name: 'Detach' }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.machines [data-attachment]').length === 0);
+  await page.locator('[data-action=add-disk-open]').click();
+  await page.locator('#add-disk [data-source=known]').click();
+  await page.locator(`#add-disk [data-disk="${diskId}"] [data-action=delete-known]`).click();
+  await page.waitForFunction(async () => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const [disks, overlays] = [await store.all('disks'), await store.all('overlays')];
+    store.close();
+    return disks.length === 0 && overlays.length === 0;
+  }, null, { timeout: 10_000 });
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('a disk\'s read-only box on a running machine: powered off after asking, then saved', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const errors: string[] = [];
+  const asked: string[] = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await answerAsks(page, (q) => { asked.push(q.text); });
+  await page.goto(`${base}/web/app/`);
+  await page.click('#machines-open');
+  await modal(page).locator('[data-action=new-machine]').click();
+  const m = modal(page).locator('section.machine[data-selected]');
+  const id = await m.getAttribute('data-selected');
+  await m.locator('[data-tab=disks]').click();
+  await addDisk(page, 'url', { url: `${base}/tests/qcow2/deflate.qcow2` });
+  await disk(page, 0);
+  await m.locator('[data-action=open]').click();
+  // Running (its Web Lock held): the box asks to power it off, then takes its value from the click.
+  await page.waitForFunction(() => ['loading', 'booting', 'running'].includes(document.body.dataset.state!), null, { timeout: 30_000 });
+  await page.click('#machines-open');
+  await m.locator('[data-tab=disks]').click();
+  await page.waitForFunction(() => /running/.test(document.querySelector('.machines .head .meta')?.textContent ?? ''), null, { timeout: 10_000 });
+  await m.locator('[data-attachment]').first().getByRole('checkbox', { name: 'read-only' }).check();
+  await page.waitForFunction(async (id) => {
+    const { Store } = await import('/web/app/store.ts' as string);
+    const store = await Store.open();
+    const rec = await store.get('machines', id);
+    store.close();
+    return rec.attachments[0].readOnly === true;
+  }, id, { timeout: 10_000 });
+  assert.match(asked.at(-1)!, /^Power .* off\?/);
+  assert.equal(await page.locator('.machines .error').count(), 0, 'no error');
+  await page.waitForFunction(() => document.body.dataset.state === 'off', null, { timeout: 10_000 });
   assert.deepEqual(errors, []);
   await context.close();
 });
