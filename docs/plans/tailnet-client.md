@@ -4,8 +4,8 @@
 done** (2026-10-16): the module and tailcat in Node, measured; tailcat on the page, Debian through
 it; the VM as a tailcat server, and the page's Network wizard; the Tailscale control session, the
 kept node handed over both ways with the Go client, the data plane; and the switch: **the Rust
-client is the page's Tailscale client** (§7). Left: removing the Go client from the page, on the
-user's OK after their manual test (Go stays for development and CI), and the loose ends in [backlog.md](../backlog.md) "Network". It continues
+client is the page's Tailscale client** (§7). The Go client has left the page (`net/tailscale`
+stays as the hand-over test's fixture). Left: the loose ends in [backlog.md](../backlog.md) "Network". It continues
 [networking.md](networking.md) (its §5, "Later: tailscale-rs"), which holds the decisions that
 stay: frames at the device, the Ethernet gateway (§3), the IP-packet port, the guest as the node.
 What exists: `net/ts/` (the module), `web/ts-client.ts` and `web/ts-wasi.ts` (its I/O),
@@ -238,7 +238,7 @@ oracle.
 - **Registration:** with an auth key; or interactive (the `AuthURL` to the page, then the
   follow-up long-poll); node key expiry and re-registration; logout (registration with an
   expiry in the past); ephemeral nodes.
-- **The kept node (inherited from the Go client).** Today `web/tailscale-worker.ts` gives the Go
+- **The kept node (inherited from the Go client).** Before T6, `web/tailscale-worker.ts` gave the Go
   client Tailscale's own `ipn.StateStore`: IndexedDB database `webpc-tailscale`, object store
   `state`, keys `<profile>/<StateKey>` (one profile per control server, `web/tailscale.ts`'s
   `persist`), values the hex of the bytes Go wrote. What a node needs from it: the **machine
@@ -440,12 +440,20 @@ not by WireGuard (scalar ChaCha20-Poly1305 in wasm runs at hundreds of MB/s). *M
   each alternating; [bench/net/REPORT.md](../../bench/net/REPORT.md) "T6"): Rust 492 KB Brotli
   (Go 4.5 MB), loaded in 6 ms (34), `Running` after 1.7 s (2.1: headscale's first map), RTT 0.49 ms
   (0.63), 138 Mbit/s each way (62) at 3.1 core-ms of the worker per Mbit (7.9), the worker's memory
-  2.1 MB (20 to 26). `DEFAULT_BACKEND` is `rust`; the Go client stays behind `?tsbackend=go`, and
-  `scripts/ci-net.sh` runs the guest's test on both. `npm start` now builds `target/net/ts.wasm`
+  2.1 MB (20 to 26). `DEFAULT_BACKEND` became `rust`, the Go client behind `?tsbackend=go`.
+  *The Go client left the page (2026-10-17)*, after the user's manual test (no release with both:
+  no other users yet): `?tsbackend=`, `web/tailscale-worker.ts`, its build in `npm start` and `npm
+  run serve`, the Go halves of the page tests, `bench/net/spike.ts` and `node.ts` (the N2 harness).
+  `net/tailscale` stays as a test fixture, built by `tools/tailscale.ts` in `scripts/ci-net.sh`:
+  `tests/ts-tailnet.test.ts` hands a kept node between it and the Rust client both ways (the store
+  format of nodes kept before T6). Go stays for that and the tailcat rig. The manual test found a
+  guest problem, not the client's: the Arch image's networkd didn't take the lease's search domain
+  (`UseDomains=` is off by default), so `.local` MagicDNS names went to mDNS and short names to
+  LLMNR; the Arch image and the page's Debian credential now set it, and the guest test pings by
+  the short name. `npm start` now builds `target/net/ts.wasm`
   (it never did: tailcat from a fresh `npm start` said the client wasn't built since T2), and the Go
-  client only where Go is installed, without a word otherwise. Removing the Go client from the page
-  follows the user's manual test and OK (2026-10-17: no release with both, there are no other users
-  yet); Go stays for development and CI (the tailcat rig, the hand-over test).
+  client only where Go is installed, without a word otherwise. The Go client left the page the next day
+  (below).
 
 ## 8. Risks and open questions
 

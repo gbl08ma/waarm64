@@ -1,7 +1,8 @@
 // The page's machines (docs/frontend.md), in one place: image URLs, the
-// command line, RAM, the screen and the devices. `debian` is the page's VM (M8
-// decision 1); `buildroot` is the small test guest, for the page's smoke test
-// (tests/browser.test.ts) and quick looks. URLs are relative to this module, so
+// command line, RAM, the screen and the devices. `uefi` is the page's machine:
+// the user brings the disk (PLAN.md, M8 decision 1); `debian` is the tests' and
+// benchmarks' guest on it; `buildroot` is the small test guest, for the page's
+// smoke test (tests/browser.test.ts) and quick looks. URLs are relative to this module, so
 // nothing here depends on the dev server's layout beyond where target/ is.
 
 export type Machine = {
@@ -68,21 +69,40 @@ export async function diskOverlay(d: { url: string } | { file: File }) {
 
 const images = (path: string) => new URL(`../../target/images/${path}`, import.meta.url).href;
 
+/**
+ * What a firmware machine with a card gives the guest: a systemd credential with a .network file for networkd (DHCP from
+ * the gateway, v4 and v6: its lease is the tailnet addresses; resolved does MagicDNS). Not `ip=dhcp`: an initramfs that
+ * reads it waits for a lease before it boots, and a machine that isn't connected yet has none. UseDomains: the lease's
+ * search domain (MagicDNS's) for resolved; networkd's default leaves it out (Arch's does).
+ */
+const NETWORKD = { credentials: [{ name: 'network.network.card', data: '[Match]\nName=e*\n[Network]\nDHCP=yes\n[DHCPv4]\nUseDomains=yes\n[DHCPv6]\nUseDomains=yes\n' }] };
+
 export const MACHINES = {
-  // Debian's published image, unmodified: EDK2 boots its shim and GRUB (docs/plans/uefi.md, docs/images.md "Debian for interaction").
+  // The page's machine (docs/frontend.md): EDK2 and no disk of its own. It waits for the user's disk (Open disk, a drop,
+  // `?disk=<url>`), whose loader it boots; a guest without systemd-networkd configures its card itself.
+  uefi: {
+    label: 'AArch64 machine',
+    prepare: '`npm start` (it builds the firmware)',
+    kernel: images('edk2/QEMU_EFI.fd'),
+    firmware: true,
+    cmdline: '',
+    network: NETWORKD,
+    ramMiB: 2048,
+    framebuffer: { width: 1024, height: 768 },
+    display: 'gpu',
+    ready: /(?:^|\n)\S+ login: /, // agetty's prompt
+  },
+  // The tests' and benchmarks' guest (`?machine=debian`, tests/debian-unattended.ts): Debian's published image, unmodified: EDK2 boots its shim and GRUB (docs/plans/uefi.md, docs/images.md "Debian for interaction").
   // No first-boot answers are passed: its first boot asks on the serial console, as on a regular machine.
   debian: {
     label: 'Debian 13',
-    prepare: '`npm start` (it downloads Debian and builds the firmware)',
+    prepare: '`images/build.sh debian edk2`',
     kernel: images('edk2/QEMU_EFI.fd'),
     firmware: true,
     disk: images('debian/disk.qcow2'),
     overlay: 'webpc-debian',
     cmdline: '',
-    // A systemd credential gives networkd a .network file for the card (DHCP from the gateway, v4 and v6: its
-    // lease is the tailnet addresses; resolved does MagicDNS). Not `ip=dhcp`: Debian's initramfs reads
-    // that too and waits for a lease before it boots, and a machine that isn't connected yet has none.
-    network: { credentials: [{ name: 'network.network.card', data: '[Match]\nName=e*\n[Network]\nDHCP=yes\n' }] },
+    network: NETWORKD,
     ramMiB: 1024,
     framebuffer: { width: 1024, height: 768 },
     display: 'gpu',

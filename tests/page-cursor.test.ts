@@ -13,7 +13,7 @@ import { PAGE_QUERY } from './page-query.ts';
 
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
+const skip = (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 
 let browser: Browser;
 let base: string;

@@ -1,5 +1,5 @@
 // The Go client (target/net/tailscale.wasm) in a Node worker thread, for tests/net/go-client.ts:
-// what web/tailscale-worker.ts does in a page, with the store handed in whole and its writes
+// what the page's Go worker did before T6 (git history: web/tailscale-worker.ts), with the store handed in whole and its writes
 // posted back.
 import { parentPort, workerData } from 'node:worker_threads';
 

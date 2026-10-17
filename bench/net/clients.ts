@@ -1,11 +1,12 @@
-// T6 (docs/plans/tailnet-client.md §6): the two Tailscale clients side by side in Chromium, no
-// guest, against the test tailnet (tests/net/tailnet.sh) and its local DERP. Alternating Go and
-// Rust, a fresh browser context each run, the page of tests/tailscale-browser.test.ts
+// T6 (docs/plans/tailnet-client.md §6): the page's Tailscale client in Chromium, no guest, against
+// the test tailnet (tests/net/tailnet.sh) and its local DERP. (T6 ran it against the Go client too,
+// alternating, before the Go client left the page: bench/net/REPORT.md.) A fresh browser context
+// each run, the page of tests/tailscale-browser.test.ts
 // (tests/browser/tailscale.html): the module's load time, time to `Running`, UDP echo RTT (one at a
 // time) and throughput (1,228-byte echoes, 32 in flight, each way), the worker's memory
 // (`performance.measureUserAgentSpecificMemory`, eager) and the worker thread's CPU over the
 // throughput run (from /proc: the renderer's `DedicatedWorker` threads, so this must be the only
-// Chromium running). The modules' sizes raw, gzip and Brotli.
+// Chromium running). The module's size raw, gzip and Brotli.
 // Usage: node bench/net/clients.ts [runs per client] [echoes] (WEBPC_TS_JSON=<file> writes the numbers)
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createSocket } from 'node:dgram';
@@ -18,7 +19,7 @@ const ROOT = new URL('../..', import.meta.url).pathname;
 const runs = Number(process.argv[2] ?? 5);
 const n = Number(process.argv[3] ?? 20000);
 const script = process.env.WEBPC_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
-const modules: Record<string, string> = { go: `${ROOT}target/net/tailscale.wasm`, rust: `${ROOT}target/net/ts.wasm` };
+const modules: Record<string, string> = { rust: `${ROOT}target/net/ts.wasm` };
 
 const size = Object.fromEntries(Object.entries(modules).map(([k, f]) => {
   const b = readFileSync(f);
@@ -65,13 +66,13 @@ const workerBytes = async (page: Page) => {
 const results: Record<string, unknown>[] = [];
 try {
   for (let r = 0; r < runs; r++) {
-    for (const backend of r % 2 ? ['rust', 'go'] : ['go', 'rust']) {
+    for (const backend of ['rust']) {
       const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
       const page = await ctx.newPage();
       page.on('pageerror', (e) => console.log(`# page error: ${e}`));
       try {
         const key = execFileSync(script, ['key'], { encoding: 'utf8' }).trim();
-        await page.goto(`${base}/tests/browser/tailscale.html?${new URLSearchParams({ tsbackend: backend, control: env.WEBPC_TS_CONTROL, peer: env.WEBPC_TS_PEER_IP, port: String(echo.address().port), authkey: key, hostname: `${backend}-bench-${r}` })}`);
+        await page.goto(`${base}/tests/browser/tailscale.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, peer: env.WEBPC_TS_PEER_IP, port: String(echo.address().port), authkey: key, hostname: `${backend}-bench-${r}` })}`);
         await page.waitForFunction('window.harness?.tailscale().state === "Running" && window.harness.tailscale().lease', null, { timeout: 60_000, polling: 50 });
         const s = await page.evaluate('window.harness.tailscale()') as { timings: { loadMs: number; runningMs: number } };
         const memRunning = await workerBytes(page);

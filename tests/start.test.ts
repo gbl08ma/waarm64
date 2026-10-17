@@ -1,9 +1,9 @@
 // `npm start` (tools/start.js, tools/start.ts, tools/debian.ts; M8 loop 5): its
 // checks, and a run on a copy of the repository as a fresh clone has it (tracked and
 // untracked files, nothing ignored: no node_modules, no target/), up to the page
-// booting Debian in Chromium (the firmware's output). The copy gets the core and the firmware built here unless
-// WEBPC_START_COLD=1 (then it builds its own, the firmware with Podman: minutes); Debian comes from this
-// checkout's download cache (WEBPC_DL), so nothing is downloaded.
+// waiting for a disk, then booting this checkout's Debian given as one, in Chromium (the firmware's output). The copy
+// gets the core, the tailnet client and the firmware built here unless WEBPC_START_COLD=1 (then it builds its own, the
+// firmware with Podman: minutes). tools/debian.ts's download is tested here too (the tests' Debian).
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -12,9 +12,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { chromium } from 'playwright-core';
-import { PIN, download, downloads } from '../tools/debian.ts';
+import { download, downloads } from '../tools/debian.ts';
 import { ROOT, startServer } from '../tools/serve.ts';
 import { FIRMWARE, WASM, firmwareStale, npmStale, podmanProblem, wasmInputs } from '../tools/start.ts';
+import { tsInputs } from '../tools/tailscale.ts';
 import { withDebianLock } from './debian-lock.ts';
 
 const tmp = (what: string) => mkdtempSync(join(tmpdir(), `webpc-${what}-`));
@@ -72,7 +73,7 @@ test('the firmware: built when missing or stale, and Podman, which builds it, sa
     rmSync(d, { recursive: true });
   }
   const none = podmanProblem({ PATH: '' });
-  assert.match(none!, /^Podman isn't installed\. The page boots Debian through UEFI firmware \(EDK2\), which `npm start` builds in a rootless Podman container[^]*Install Podman[^]*then run `npm start` again\.$/);
+  assert.match(none!, /^Podman isn't installed\. The page boots disks through UEFI firmware \(EDK2\), which `npm start` builds in a rootless Podman container[^]*Install Podman[^]*then run `npm start` again\.$/);
 });
 
 test('the download: streamed to a .part file, checked against the pin, then kept and checked again', async () => {
@@ -120,12 +121,14 @@ test('the prerequisites: Node 26 and rustup, each said with how to get it', () =
   }
 });
 
-// The run as a user makes it, up to the machine's first output on the serial console (~5 s alone with npm's cache warm), gated like Debian's other page tests.
+// The run as a user makes it: the page waits for a disk; then, given this checkout's Debian as one (`?disk=`), up to the
+// machine's first output on the serial console (~5 s alone with npm's cache warm), gated like Debian's other page tests.
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
-const cached = existsSync(join(downloads(), PIN.file));
+const DEBIAN_DISK = 'target/images/debian/disk.qcow2';
+const cached = existsSync(join(ROOT, DEBIAN_DISK));
 const cold = process.env.WEBPC_START_COLD === '1';
-test('npm start on a fresh copy of the repository: install, build, prepare Debian, serve; the page boots it', {
-  skip: !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : !cached ? 'SKIPPED: no Debian download (run images/build.sh debian)'
+test('npm start on a fresh copy of the repository: install, build, serve; the page waits for a disk, then boots one', {
+  skip: !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : !cached ? 'SKIPPED: no Debian image to boot (run images/build.sh debian)'
     : !cold && firmwareStale() && 'SKIPPED: no UEFI firmware (run images/build.sh edk2), or WEBPC_START_COLD=1 to build it in the copy',
   timeout: cold ? 30 * 60_000 : 15 * 60_000, // with the wait for the other Debian page tests' boots (tests/debian-lock.ts)
 }, async () => {
@@ -142,12 +145,16 @@ test('npm start on a fresh copy of the repository: install, build, prepare Debia
     mkdirSync(dirname(wasm), { recursive: true });
     copyFileSync(WASM, wasm);
     writeFileSync(wasm + '.inputs', wasmInputs(d) + '\n');
+    // The tailnet client too (target/net/ts.wasm, the Network menu's): cold builds it.
+    mkdirSync(join(d, 'target/net'), { recursive: true });
+    copyFileSync(join(ROOT, 'target/net/ts.wasm'), join(d, 'target/net/ts.wasm'));
+    writeFileSync(join(d, 'target/net/ts.wasm.inputs'), tsInputs(d) + '\n');
   }
   if (!cold) { // the firmware comes from this checkout too (its inputs are the same files); cold builds it with Podman
     mkdirSync(join(d, 'target/images/edk2'), { recursive: true });
     for (const f of ['QEMU_EFI.fd', 'LICENSES.txt', '.inputs']) copyFileSync(join(ROOT, 'target/images/edk2', f), join(d, 'target/images/edk2', f));
   }
-  const env = { ...process.env, PORT: '0', WEBPC_DL: downloads(), WEBPC_TAILSCALE: '0' }; // (no Go build in the copy: tests/tailscale-build.test.ts has it)
+  const env = { ...process.env, PORT: '0', WEBPC_DL: downloads() };
   const start = performance.now();
   let served = 0;
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'tools/start.js'], { cwd: d, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -166,18 +173,25 @@ test('npm start on a fresh copy of the repository: install, build, prepare Debia
     });
     assert.match(out, /Installing the npm packages \(node_modules is missing\): npm ci/);
     assert.match(out, cold ? /Building the emulator core/ : /^(?![^]*emulator core)/);
-    assert.match(out, /Debian 13 ready, in \d/); // the disk alone: the page boots it unmodified, so no kernel or initrd is taken out
+    assert.match(out, cold ? /Building the tailnet client/ : /^(?![^]*Building the tailnet client)/);
+    assert.ok(existsSync(join(d, 'target/net/ts.wasm')), 'npm start leaves the Network menu its client');
+    assert.doesNotMatch(out, /debian/i, 'npm start prepares no disk image');
     assert.match(out, cold ? /Building the UEFI firmware/ : /^(?![^]*Building the UEFI firmware)/);
-    assert.ok(existsSync(join(d, 'target/images/debian/disk.qcow2')) && !existsSync(join(d, 'target/images/debian/Image')));
+    assert.ok(!existsSync(join(d, 'target/images/debian')));
     assert.ok(existsSync(join(d, FIRMWARE)) && existsSync(join(d, 'target/images/edk2/LICENSES.txt')));
     // The copy's firmware is this checkout's (current: images/SHA256SUMS) unless built cold, and
     // tests/page-debian.test.ts boots Debian to a login three times; so here the page only has to
-    // start the copy's machine: its module graph, core and images load and the firmware (or whatever is further by then) writes to the serial console.
+    // wait for a disk, then start the copy's machine on one: its module graph, core and firmware load and the firmware (or
+    // whatever is further by then) writes to the serial console. The disk is this checkout's Debian, linked into the copy.
     // Only the page takes the Debian lock: the install and the build before it boot nothing.
     await withDebianLock(async () => {
       const t0 = performance.now();
       const page = await browser.newPage();
       await page.goto(url);
+      await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 30_000, polling: 100 });
+      mkdirSync(join(d, 'target/images/debian'), { recursive: true });
+      symlinkSync(join(ROOT, DEBIAN_DISK), join(d, DEBIAN_DISK));
+      await page.goto(`${url}?disk=/${DEBIAN_DISK}`);
       await page.waitForFunction(() => (document.querySelector('.xterm-rows')?.textContent ?? '').trim() !== '' || ['failed', 'crashed', 'off'].includes(document.body.dataset.state!), null, { timeout: 120_000, polling: 250 })
         .catch(async (e) => { throw new Error(`${e}; the page is ${await page.evaluate(() => `${document.body.dataset.state}: ${document.getElementById('message-text')?.textContent}; ${document.querySelector('.xterm-rows')?.textContent}`)}`); });
       const state = await page.evaluate(() => document.body.dataset.state);

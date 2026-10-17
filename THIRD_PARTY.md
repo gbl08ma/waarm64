@@ -51,8 +51,8 @@ normalizer, MIT or Apache-2.0 and Unicode-3.0), `serde_with` (MIT or Apache-2.0)
 
 ## Go dependencies of the Tailscale backend (`net/tailscale`, N2)
 
-Built to `target/net/tailscale.wasm` by `net/tailscale/build.sh`, loaded only when the user connects
-to a tailnet. Modules linked into the wasm (`go list -deps`, checked 2026-09-29; `go.mod` pins the
+Built to `target/net/tailscale.wasm` by `net/tailscale/build.sh`. No longer the page's client (since
+2026-10-17 that's `net/ts`): a test fixture, not distributed. Modules linked into the wasm (`go list -deps`, checked 2026-09-29; `go.mod` pins the
 versions), all permissive: `tailscale.com` v1.102.5 (BSD-3-Clause); `github.com/tailscale/wireguard-go`
 (MIT); `gvisor.dev/gvisor` (Apache-2.0); `github.com/coder/websocket` (ISC);
 `github.com/klauspost/compress` (BSD-3-Clause, Apache-2.0 and MIT parts); `github.com/gaissmai/bart`

@@ -1,7 +1,8 @@
 # Networking: the Tailscale wasm spike (N2)
 
-> A dated journal (docs/plans/networking.md §7 N2). What exists now is in `net/tailscale/`,
-> `bench/net/` and the plan.
+> A dated journal (docs/plans/networking.md §7 N2). What exists now is in `net/ts/` (the page's
+> client since T6), `bench/net/` and the plans. The Go client's N2 harness (`bench/net/spike.ts`,
+> `node.ts`) left with the Go client (2026-10-17; git history has it).
 
 **Setup (2026-09-29).** Cloud session container (x86_64 Firecracker, 4 vCPUs, Node 26.10.0; not the
 M4 VM, so the numbers don't compare with other reports). `tailscale.com` v1.102.5 built with Go
@@ -189,18 +190,14 @@ same ratio.
 
 ## Reproduce
 ```sh
-net/tailscale/build.sh                       # target/net/tailscale.wasm, needs Go (go.mod pins the toolchain)
-tests/net/tailnet.sh up                      # headscale + a peer in rootless Podman; prints the environment
-eval "$(tests/net/tailnet.sh env | sed 's/^/export /')"
-WEBPC_TS_AUTHKEY=$(tests/net/tailnet.sh key) node bench/net/spike.ts $WEBPC_TS_CONTROL $WEBPC_TS_PEER_IP 5
-tests/net/tailnet.sh down
 # T1: a tailcat exit node on derper, both on this machine
 net/ts/build.sh
 tests/net/tailcat.sh up && eval "$(tests/net/tailcat.sh env)"
 sudo ip -6 addr add fd00:7e57::1/128 dev eth0 nodad    # only where the machine has no non-link-local IPv6
 WEBPC_TS_JSON=… NODE_EXTRA_CA_CERTS=$WEBPC_TAILCAT_CA node bench/net/tailcat.ts $WEBPC_TAILCAT_ADDR 5
 tests/net/tailcat.sh down
-# T6: both Tailscale clients in Chromium (brings the Podman tailnet up and down itself; the only Chromium running)
-net/tailscale/build.sh && net/ts/build.sh
+# T6: the Tailscale client in Chromium (brings the Podman tailnet up and down itself; the only Chromium running;
+# the Go column came from the same harness before the Go client left the page: git show 762cadc:bench/net/clients.ts)
+net/ts/build.sh
 WEBPC_TS_JSON=bench/net/results/t6/clients-m4.json node bench/net/clients.ts 5 20000
 ```

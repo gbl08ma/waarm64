@@ -3,7 +3,7 @@
 <link rel="icon" href="data:,">
 <script type="module">
   // A Tailscale backend in Chromium with no guest (tests/tailscale-browser.test.ts): starts
-  // web/tailscale.ts (`?tsbackend=go|rust`) against `?control=` (an auth key, `?persist=` to keep the
+  // web/tailscale.ts against `?control=` (an auth key, `?persist=` to keep the
   // node) and plays the guest on the gateway's side of its IP port: UDP echoes to `?peer=`'s `?port=`
   // (the peer's userspace tailscaled hands its ports to its machine's localhost, where the test's
   // echo server is), counting what comes back.

@@ -27,7 +27,7 @@ const version = browser.version();
 async function run(): Promise<Record<string, number>> {
   const context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
   const page = await context.newPage();
-  await page.goto(`${base}/web/app/?ncpus=2&view=both&${args.query}`);
+  await page.goto(`${base}/web/app/?machine=debian&ncpus=2&view=both&${args.query}`);
   const t0 = Date.now(), marks: Record<string, number> = {};
   let text = '';
   while (Date.now() - t0 < LIMIT_MS && !('ready' in marks)) {

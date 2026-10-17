@@ -6,8 +6,7 @@
 // systemd-networkd, pings the peer, resolves it through MagicDNS, and the peer connects to a
 // server in the guest. Realtime, so not exact: one boot, ~2 min alone.
 // Opt-in: WEBPC_TAILNET=1 (needs Podman, target/net/ts.wasm (net/ts/build.sh) and the Debian image,
-// `npm start` or tools/debian.ts). WEBPC_TS_BACKEND=go runs the same test on the Go client
-// (net/tailscale, target/net/tailscale.wasm, built here if Go is there).
+// `npm start` or tools/debian.ts).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -18,14 +17,12 @@ import { withDebianLock } from './debian-lock.ts';
 import { loginRoot, run as runIn } from './serial-console.ts';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const BACKEND = process.env.WEBPC_TS_BACKEND === 'go' ? 'go' : 'rust';
-const WASM = `${ROOT}target/net/${BACKEND === 'rust' ? 'ts' : 'tailscale'}.wasm`;
+const WASM = `${ROOT}target/net/ts.wasm`;
 const has = (cmd: string) => spawnSync(cmd, ['--version'], { stdio: 'ignore' }).status === 0;
 const skip = process.env.WEBPC_TAILNET !== '1' ? 'SKIPPED: set WEBPC_TAILNET=1'
-  : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run npm start (or images/build.sh debian edk2)'
+  : !existsSync(`${ROOT}target/images/debian/disk.qcow2`) || !existsSync(`${ROOT}target/images/edk2/QEMU_EFI.fd`) ? 'SKIPPED: run images/build.sh debian edk2'
   : !has('podman') ? 'SKIPPED: no podman'
-  : BACKEND === 'rust' && !existsSync(WASM) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
-  : !existsSync(WASM) && !has('go') ? 'SKIPPED: no target/net/tailscale.wasm and no Go to build it'
+  : !existsSync(WASM) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
   : undefined;
 
 // WEBPC_TAILNET_SCRIPT: another implementation of up|key|env|down (for a machine without Podman); `podman` must then still answer the peer's `tailscale` calls.
@@ -40,7 +37,6 @@ let base: string;
 let closeServer: () => void;
 before(async () => {
   if (skip) return;
-  if (!existsSync(WASM)) execFileSync(`${ROOT}net/tailscale/build.sh`, [], { stdio: 'inherit' }); // (the Go one: ts.wasm is checked above)
   env = Object.fromEntries(execFileSync(script, ['up'], { encoding: 'utf8', timeout: 240_000 }).trim().split('\n').map((l) => l.split(/=(.*)/s).slice(0, 2) as [string, string]));
   authKey = execFileSync(script, ['key'], { encoding: 'utf8' }).trim();
   const server = await startServer();
@@ -69,7 +65,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
     try {
       await page.goto(`${base}/tests/browser/core.html`); // any page of the origin: a fresh overlay
       await page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY);
-      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest', overlay: OVERLAY, tsbackend: BACKEND })}`);
+      await page.goto(`${base}/tests/browser/tailnet.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, authkey: authKey, hostname: 'guest', overlay: OVERLAY })}`);
 
       // The client comes up first: the guest's address is what it reports.
       await page.waitForFunction(() => (window as never as { harness: { tailscale(): { state: string } } }).harness.tailscale().state === 'Running', null, { timeout: 120_000, polling: 250 })
@@ -77,7 +73,7 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       await page.waitForFunction((ip) => (window as never as { harness: { tailscale(): { netmap?: { peers: { addresses: string[] }[] } } } }).harness.tailscale().netmap?.peers.some((p) => p.addresses.some((a) => a.replace(/\/\d+$/, '') === ip)), env.WEBPC_TS_PEER_IP, { timeout: 30_000, polling: 250 });
       const ts = await harness<{ netmap: { addresses: string[]; peers: { name: string; addresses: string[] }[]; dns: string[]; domains: string[]; mtu: number }; timings: { loadMs: number; runningMs: number } }>(page, 'tailscale()');
       const self = ts.netmap.addresses.find((a) => !a.includes(':'))!.replace(/\/\d+$/, '');
-      console.log(`# Tailscale (${BACKEND}) in Chromium: module loaded in ${ts.timings.loadMs.toFixed(0)} ms, Running after ${ts.timings.runningMs.toFixed(0)} ms; the guest is ${self}, dns ${ts.netmap.dns}, domains ${ts.netmap.domains}, mtu ${ts.netmap.mtu}`);
+      console.log(`# Tailscale in Chromium: module loaded in ${ts.timings.loadMs.toFixed(0)} ms, Running after ${ts.timings.runningMs.toFixed(0)} ms; the guest is ${self}, dns ${ts.netmap.dns}, domains ${ts.netmap.domains}, mtu ${ts.netmap.mtu}`);
       assert.ok(ts.netmap.dns.includes('100.100.100.100'), 'MagicDNS is on');
       const self6 = ts.netmap.addresses.find((a) => a.includes(':'))?.replace(/\/\d+$/, '');
       assert.ok(self6 && env.WEBPC_TS_PEER_IP6, `the tailnet has IPv6 addresses (${self6}, the peer's ${env.WEBPC_TS_PEER_IP6})`);
@@ -118,12 +114,16 @@ test('the guest gets a DHCP lease from the tailnet, reaches a peer by address an
       assert.match(ping6, /3 packets transmitted, 3 received, 0% packet loss/, ping6);
 
       const name = env.WEBPC_TS_PEER_NAME.replace(/\.$/, '');
+      console.log(`# the guest's resolver: ${(await run('resolvectl status 2>&1 | grep -v "^ *$" | head -40')).replace(/\n/g, ' | ')}`);
       const resolved = await run(`getent hosts ${name}`);
       assert.ok(resolved.includes(env.WEBPC_TS_PEER_IP), `MagicDNS: ${name} resolves to the peer (${resolved})`);
       // (No AAAA check: the client's MagicDNS answers AAAA for peers only when the control server sends the
       // `magicdns-aaaa` node attribute, which this headscale doesn't. IPv6 reaches peers by address.)
       const short = await run('getent hosts peer');
       assert.ok(short.includes(env.WEBPC_TS_PEER_IP), `the search domain: "peer" resolves (${short})`);
+      // What a user types: ping by the short name (the resolver's search domain, then whichever family it picks).
+      const pingName = await run('ping -c 3 -W 5 peer', 90_000);
+      assert.match(pingName, /3 packets transmitted, 3 received, 0% packet loss/, `ping peer: ${pingName}; resolv.conf: ${await run('cat /etc/resolv.conf; resolvectl status 2>&1 | head -30')}`);
 
       // The peer connects to a server in the guest (through the tailnet, to the guest's own address).
       await run('mkdir -p /tmp/www && echo hello-from-the-guest > /tmp/www/index.html && (cd /tmp/www && nohup python3 -m http.server 8080 --bind 0.0.0.0 > /tmp/http.log 2>&1 &)');

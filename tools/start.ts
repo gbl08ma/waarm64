@@ -1,7 +1,7 @@
 // `npm start` (M8 loop 5; docs/frontend.md "npm start"), after tools/start.js
-// checked Node's version: rustup, the npm packages, the wasm core, Debian, the
+// checked Node's version: rustup, the npm packages, the wasm core, the tailnet client, the
 // UEFI firmware (EDK2, built in Podman: images/build.sh edk2), then the server on 127.0.0.1 and the URL. Each step is skipped when its output is
-// current, so a second start takes about a second (SHA512-free: Debian's stamp).
+// current, so a second start takes about a second. No disk image: the page waits for the user's (docs/frontend.md).
 //   npm start [-- --host <addr>] [-- --port <n>] [-- --prepare-only]
 // PORT sets the port too (default 8080); WEBPC_DL the download cache.
 import { spawnSync } from 'node:child_process';
@@ -10,8 +10,7 @@ import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync,
 import { homedir } from 'node:os';
 import { delimiter, join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
-import { prepareDebian } from './debian.ts';
-import { prepareTailnetClient, prepareTailscale } from './tailscale.ts';
+import { prepareTailnetClient } from './tailscale.ts';
 import { APP, ROOT, startServer } from './serve.ts';
 
 export const WASM = join(ROOT, 'target/wasm32-unknown-unknown/release/webpc_core.wasm');
@@ -54,7 +53,7 @@ export const wasmCurrent = (root = ROOT) => {
   try { return existsSync(wasm) && readFileSync(wasm + '.inputs', 'utf8').trim() === wasmInputs(root); } catch { return false; }
 };
 
-/** The firmware the page's Debian boots through (docs/plans/uefi.md). */
+/** The firmware the page's machine boots the user's disk through (docs/plans/uefi.md). */
 export const FIRMWARE = 'target/images/edk2/QEMU_EFI.fd';
 
 /** Why the firmware has to be built (missing, or images/build.sh's inputs changed), or undefined if it is current. */
@@ -67,7 +66,7 @@ export function firmwareStale(root = ROOT): string | undefined {
 /** What to do when building the firmware isn't possible here (no rootless Podman), or undefined if it is. */
 export function podmanProblem(env: NodeJS.ProcessEnv = process.env) {
   if (spawnSync('podman', ['--version'], { stdio: 'ignore', env }).status === 0) return undefined;
-  return "Podman isn't installed. The page boots Debian through UEFI firmware (EDK2), which `npm start` builds in a rootless Podman container (~1 min, once).\n" +
+  return "Podman isn't installed. The page boots disks through UEFI firmware (EDK2), which `npm start` builds in a rootless Podman container (~1 min, once).\n" +
     'Install Podman (https://podman.io/docs/installation; e.g. `sudo apt install podman`, `sudo dnf install podman`, `sudo zypper in podman`, `brew install podman`), then run `npm start` again.';
 }
 
@@ -124,9 +123,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (firmware) { const p = podmanProblem(env); if (p) stop(`${firmware[0].toUpperCase()}${firmware.slice(1)}. ${p}`); }
   installPackages();
   buildCore(env);
-  prepareTailnetClient(); // the Network menu's clients, never fatal (tools/tailscale.ts): the Rust one (tailcat, Tailscale)
-  prepareTailscale(); // and the Go one (`?tsbackend=go`), when Go is there
-  await prepareDebian().catch((e: Error) => stop(e.message));
+  prepareTailnetClient(); // the Network menu's client (tailcat, Tailscale), never fatal (tools/tailscale.ts)
   if (firmware) {
     console.log(`Building the UEFI firmware (${firmware}; EDK2 in a Podman container: ~1 min, the first time it also pulls the build image)…`);
     if (!run('bash', ['images/build.sh', 'edk2'], env) || firmwareStale()) stop("The UEFI firmware didn't build (the errors are above).");
@@ -137,7 +134,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const port = Number(values.port);
   const server = await startServer(port, values.host).catch((e: NodeJS.ErrnoException) => stop(e.code === 'EADDRINUSE'
-    ? `Port ${port} is in use (another \`npm start\` or \`npm run serve\`?). Stop that one, or pick another port: PORT=${port + 1} npm start\n(The page's disk is saved per address: on another port, Debian starts from a fresh disk.)`
+    ? `Port ${port} is in use (another \`npm start\` or \`npm run serve\`?). Stop that one, or pick another port: PORT=${port + 1} npm start\n(What the page keeps, a disk's changes among them, is per address: another port starts without them.)`
     : `Couldn't listen on ${values.host}:${port}: ${e.message}`));
   const addr = server.address() as { port: number };
   const shown = values.host === '0.0.0.0' || values.host === '::' ? '127.0.0.1' : values.host.includes(':') ? `[${values.host}]` : values.host;

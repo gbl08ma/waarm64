@@ -386,15 +386,18 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     if (!text) return;
     post({ type: 'serial', data: text });
     serialTail = (serialTail + text).slice(-TAIL);
-    tail = (tail + text).slice(-256);
+    // The panic is looked for in the new text with the end of the old (a line split between drains), before that end is
+    // cut to 256 characters: a loaded host drains the panic line and its whole stack trace at once, and a cut first lost it.
+    const seen = tail + text;
+    tail = seen.slice(-256);
     if (!running && ready(text)) {
       running = true;
       state('running');
     }
-    const at = tail.indexOf(PANIC);
+    const at = seen.indexOf(PANIC);
     // The guest hangs (or resets, with panic=N: the page keeps the crash on show rather than restarting).
-    if (!panicked && at >= 0 && tail.indexOf('\n', at) >= 0) {
-      panicked = `The guest's kernel panicked: ${tail.slice(at).split('\n')[0].trim()}\nThe serial log shows what led to it; Restart boots the machine again.`;
+    if (!panicked && at >= 0 && seen.indexOf('\n', at) >= 0) {
+      panicked = `The guest's kernel panicked: ${seen.slice(at).split('\n')[0].trim()}\nThe serial log shows what led to it; Restart boots the machine again.`;
       state('crashed', panicked, 'panic');
     }
   };

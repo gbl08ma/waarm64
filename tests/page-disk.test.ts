@@ -13,20 +13,20 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { unattendedQuery } from './debian-unattended.ts';
+import { credentialsQuery, unattendedQuery } from './debian-unattended.ts';
 import { withDebianLock } from './debian-lock.ts';
 import { PAGE_QUERY } from './page-query.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) && 'SKIPPED: run images/build.sh debian edk2';
 const BOOT_MS = 240_000;
 
 let browser: Browser;
@@ -96,11 +96,17 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
     await running(page, from);
   };
 
-  // The serial terminal only (the keys test's GRUB menu is on it). The file is chosen at once: the default machine's firmware
-  // hasn't printed anything by then, and the restart clears the terminal.
-  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=terminal&display=simple&${unattendedQuery()}`);
+  // The page's own machine (no `machine=`) has no disk: it starts nothing, says how to bring one, and names no distribution.
+  // The serial terminal only (the keys test's GRUB menu is on it); Debian's credentials, for its unattended first boot.
+  await page.goto(`${base}/web/app/?${PAGE_QUERY}ncpus=2&view=terminal&display=simple&${credentialsQuery()}`);
+  await page.waitForFunction(() => document.body.dataset.state === 'idle' && /Open a disk image/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 10_000 });
+  assert.equal(await page.locator('#machine').textContent(), 'AArch64 machine · no disk');
+  assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /debian/i);
+  assert.equal(await page.locator('#save').isVisible(), false, 'no disk, nothing to save');
+  await page.locator('#restart').click(); // Start: still waiting for a disk
+  assert.equal(await page.evaluate(() => document.body.dataset.state), 'idle');
   await pick();
-  assert.equal(await page.locator('#machine').textContent(), 'Debian 13 · mydisk.qcow2');
+  assert.equal(await page.locator('#machine').textContent(), 'AArch64 machine · mydisk.qcow2');
   await page.locator('.xterm').click();
   // GRUB's menu: two arrows down to "UEFI Firmware Settings" (its asterisk marks the entry), Enter.
   await showsRows(page, /Advanced options for Debian/);
@@ -157,7 +163,7 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   // The page's disk takes DISCARD: Debian's ext4 trims its free space (what the guest frees leaves the overlay).
   await onSerial(page, 'fstrim -v / && echo tr""immed\n');
   await shows(page, /\/: [^/]*\(\d+ bytes\) trimmed\s*trimmed/);
-  // Its overlay is its own: the default Debian's (`webpc-debian`) wasn't touched by a disk written meanwhile.
+  // Its overlay is its own, keyed by the file.
   const names = await overlays(page);
   assert.ok(names.some((n) => /^webpc-disk-[0-9a-f]{16}$/.test(n)), `OPFS has ${names}`);
   await page.waitForFunction(async () => {
@@ -215,6 +221,30 @@ test("a disk chosen on the page boots through UEFI (the serial terminal's keys t
   await shows(page, /root@\S+:~# /);
   await onSerial(page, 'cat /root/own-mark\n');
   await shows(page, /cat \/root\/own-mark\s*webpc-own-42/);
+
+  // Saving over the running disk: the suggested name is never the disk's own, and a dialog that emptied it (Chromium
+  // truncates the file it hands over; here the symlink is pointed elsewhere, which changes the file the same way for the
+  // page's File, and the image stays whole) is caught before anything is written or the machine is stopped.
+  const stand = join(dir, 'other.bin');
+  writeFileSync(stand, 'x');
+  await page.exposeFunction('webpcEmptyTheDisk', () => { unlinkSync(file); symlinkSync(stand, file); });
+  await page.evaluate(() => {
+    (window as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async (o: { suggestedName: string }) => {
+      (window as unknown as { suggested: string }).suggested = o.suggestedName;
+      await (window as unknown as { webpcEmptyTheDisk(): Promise<void> }).webpcEmptyTheDisk();
+      return { name: 'mydisk.qcow2', createWritable: () => { throw new Error('wrote to the emptied disk'); } };
+    };
+  });
+  try {
+    await page.locator('#save summary').click();
+    await page.locator('[data-save=qcow2]').click();
+    await page.waitForFunction(() => /was the disk this machine runs from/.test(document.getElementById('message-text')!.textContent!), null, { timeout: 30_000 });
+    assert.equal(await page.evaluate(() => (window as unknown as { suggested: string }).suggested), 'mydisk-saved.qcow2');
+    assert.equal(await page.evaluate(() => document.body.dataset.state), 'running', 'the machine wasn\'t stopped for it');
+  } finally {
+    unlinkSync(file);
+    symlinkSync(new URL(IMAGE).pathname, file);
+  }
   assert.deepEqual(errors, []);
   await context.close();
 

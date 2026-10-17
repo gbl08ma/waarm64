@@ -58,7 +58,7 @@ test('the Machine menu sets the vCPUs and the RAM, applies them by a restart and
 // machine only starts (the choice shows in `data-graphics` before the guest boots). In scripts/ci-debian.sh.
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const skipDebian = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)'
-  : !(existsSync(new URL('debian/disk.qcow2', IMAGES)) && existsSync(new URL('edk2/QEMU_EFI.fd', IMAGES))) && 'SKIPPED: run npm start (or images/build.sh debian edk2)';
+  : !(existsSync(new URL('debian/disk.qcow2', IMAGES)) && existsSync(new URL('edk2/QEMU_EFI.fd', IMAGES))) && 'SKIPPED: run images/build.sh debian edk2';
 test('the Machine menu chooses 3D or 2D graphics, remembered, with the query over it', { skip: skipDebian }, () => withDebianLock(async () => {
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -66,7 +66,7 @@ test('the Machine menu chooses 3D or 2D graphics, remembered, with the query ove
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('dialog', (d) => void d.accept());
   const graphics = (want: string) => page.waitForFunction((g) => document.body.dataset.graphics === g, want, { timeout: 60_000, polling: 100 });
-  await page.goto(`${base}/web/app/`);
+  await page.goto(`${base}/web/app/?machine=debian`);
   await graphics('3d');
   assert.equal(await page.locator('#machine-gpu').inputValue(), '3d');
   assert.equal(await page.locator('#machine-gpu-label').isVisible(), false); // in the closed menu
@@ -77,7 +77,7 @@ test('the Machine menu chooses 3D or 2D graphics, remembered, with the query ove
   await page.reload();
   await graphics('2d');
   assert.equal(await page.locator('#machine-gpu').inputValue(), '2d');
-  await page.goto(`${base}/web/app/?gpu=virgl`);
+  await page.goto(`${base}/web/app/?machine=debian&gpu=virgl`);
   await graphics('3d');
   assert.equal(await page.locator('#machine-gpu').isDisabled(), true);
   assert.deepEqual(errors, []);

@@ -1,9 +1,7 @@
-// The Rust Tailscale backend's worker (docs/plans/tailnet-client.md §5): the tailnet client (net/ts,
-// target/net/ts.wasm) logged in to a control server, its packets on the gateway's IP port. It speaks
-// the Go client's worker protocol (web/tailscale.ts `ToTailscale`, `FromTailscale`; the Go one is
-// web/tailscale-worker.ts), so the page and the gateway don't know which client runs. With
-// `persist`, the node is kept in the Go client's store as it is (web/tailscale-state.ts): either
-// client comes back as the same node.
+// The Tailscale backend's worker (docs/plans/tailnet-client.md §5): the tailnet client (net/ts,
+// target/net/ts.wasm) logged in to a control server, its packets on the gateway's IP port
+// (web/tailscale.ts `ToTailscale`, `FromTailscale`). With `persist`, the node is kept in the Go
+// client's store format (web/tailscale-state.ts), so a node the Go client made before is the same node.
 import { TsClient, TsModule } from './ts-client.ts';
 import { leaseFrom, type FromTailscale, type ToTailscale } from './tailscale.ts';
 import { openState } from './tailscale-state.ts';

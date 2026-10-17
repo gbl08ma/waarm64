@@ -29,7 +29,8 @@ test adapter, or anything on the page behind a `MessagePort`).
   `tailscale-rs` interesting later (§5). *Proposed 2026-10-16:* our own client, a Rust wasm module
   built from tailscale-rs's sans-I/O crates, speaking tailcat first and then Tailscale, to replace
   the Go client ([tailnet-client.md](tailnet-client.md)). *Done 2026-10-16 (T6):* the Rust client is
-  the page's Tailscale client; the Go one stays behind `?tsbackend=go` until the user removes it.
+  the page's Tailscale client, and the Go one left the page (2026-10-17; `net/tailscale` stays as a
+  test fixture: tailnet-client.md T6).
 - WebRTC peer-to-peer networks (M8's original idea) stay an experimental backend behind the same
   interface (§6).
 
@@ -228,7 +229,7 @@ Each step comes with tests at the cheapest layer that catches it (`docs/testing.
   `tests/net-tailnet.test.ts`: the guest gets a lease with its tailnet address, pings the peer,
   resolves it through MagicDNS, and the peer reaches a server in the guest (`tailscale nc`; the
   Debian image has no sshd, so no `ssh` variant). `web/tailscale.ts` + `web/tailscale-worker.ts`
-  hold the client in its own worker. **Requirement found: the control server must answer
+  held the client in its own worker (since T6 `web/tailnet-worker.ts`, the Rust client). **Requirement found: the control server must answer
   `GET /key` with CORS headers** (headscale sends none: the test tailnet's Caddy adds it;
   Tailscale's own control server sends it). Module load ~240 ms, node Running ~2.5 s after start.
 - **N5 — Product surface (done).** The Network menu (connect with a control server, hostname and

@@ -13,6 +13,7 @@ BIN=$ROOT/target/net/tailnet-bin
 PORT=${TAILNET_PORT:-8443}
 INNER=${TAILNET_INNER_PORT:-18080}
 V4=${HEADSCALE_V4:-100.90.0.0/16}
+DOMAIN=${HEADSCALE_DOMAIN:-tail.test} # MagicDNS's domain
 SOCK=/tmp/ts.sock
 
 build() {
@@ -90,7 +91,7 @@ policy:
   path: $DIR/config/policy.json
 dns:
   magic_dns: true
-  base_domain: tail.test
+  base_domain: $DOMAIN
   override_local_dns: false
   nameservers:
     global: []

@@ -45,7 +45,7 @@ export type TailcatConfig = {
 /** A Tailscale node (docs/plans/tailnet-client.md §5): its control server and the kept node's store. */
 export type TailnetConfig = {
   control: { url: string; authKey?: string; hostname?: string; ephemeral?: boolean };
-  /** The node's store as the Go client keeps it (web/tailscale-worker.ts): `<StateKey>` → hex of the bytes. */
+  /** The node's store as the Go client keeps it (web/tailscale-state.ts): `<StateKey>` → hex of the bytes. */
   state?: Record<string, string>;
   /** A peer's stable ID to send the guest's internet traffic through ('' for none). */
   exitNode?: string;

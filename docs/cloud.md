@@ -18,7 +18,7 @@ with a per-environment egress policy (Network access in the environment's settin
 | Local assumption | In the cloud | Handling |
 |---|---|---|
 | Node >= 26 (`engines`) | Node 22 preinstalled | `cloud-setup.sh` unpacks Node 26 to `/opt/node26` and prepends it to `PATH` |
-| Node `fetch` reaches the internet directly | it bypasses `HTTPS_PROXY` and gets a 403 | `NODE_USE_ENV_PROXY=1` (set by the script); needed by `tools/debian.ts` and so `npm start` |
+| Node `fetch` reaches the internet directly | it bypasses `HTTPS_PROXY` and gets a 403 | `NODE_USE_ENV_PROXY=1` (set by the script); needed by `tools/debian.ts` (`images/build.sh debian`, the tests' Debian) |
 | `/usr/bin/chromium` (153) | none; Playwright's Chromium is in `/opt/pw-browsers` (141 at the time of writing) | `CHROMIUM` points at it (the tests and `bench/run.ts` already honor it) |
 | `dtc` from zypper (1.7.2) | apt has 1.7.0, which prints strings as `"a\0b"` instead of `"a", "b"`, failing `dtb_round_trips_through_dtc` | the script builds dtc v1.7.2 into `/opt/dtc` |
 | qemu-user, qemu-img, fonts | absent | apt (`qemu-user`, `qemu-utils`, `fonts-dejavu-core`) |

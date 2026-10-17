@@ -19,7 +19,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
-| `tools/debian.ts` | Debian's download and preparation, for `npm start` and `images/build.sh debian` |
+| `tools/debian.ts` | Debian's download and preparation (the tests' guest), for `images/build.sh debian` |
 | `web/bootfs.ts`, `web/ext4.ts` | partition tables, a read-only ext2/3/4 reader, a distribution's kernel and initrd (below, "The disk reader") |
 
 Query parameters (development and tests; no settings UI yet): `?machine=debian|buildroot|snd` (the
@@ -38,7 +38,15 @@ for A/B measurements; docs/jit.md "Sharing").
 
 ## The machines
 
-- **`debian`**, the page's VM (M8 decision 1): Debian's published nocloud qcow2, **unmodified,
+- **`uefi`**, the page's machine (M8 decision 1, since 2026-10-17): EDK2 and **no disk of its own**. The page
+  opens idle, says how to bring a disk ("Open a disk image…", with an **Open disk…** button) and starts nothing until
+  one is opened (below, "Your own disk": the picker, a drop, `?disk=<url>`); Start without one says the same. The
+  header shows "AArch64 machine · no disk", then the disk's file name; Save disk, Reset disk, Load changes and Suspend
+  appear with a disk. 2 GiB, a 1024×768 screen on virtio-gpu, the same devices and network credential as `debian`;
+  `ready` is a getty's login prompt. The page names no distribution. A preloaded image with a snapshot, loaded with
+  the page, is later work (PLAN.md, M8 decision 1).
+- **`debian`**, the tests' and benchmarks' guest (`?machine=debian`; the page's own machine until 2026-10-17;
+  `tests/debian-unattended.ts` `unattendedQuery()` asks for it): Debian's published nocloud qcow2, **unmodified,
   booted through UEFI** (M8 phase B: EDK2's `QEMU_EFI.fd` as the machine's `firmware`, then shim
   and GRUB from the disk: docs/plans/uefi.md; below, "Debian through UEFI"), under the JIT,
   realtime, a worker per vCPU; 1 GiB; a 1024×768 framebuffer; rng, the disk (virtio-blk over HTTP
@@ -514,7 +522,7 @@ files), the page says so and offers the reset again.
 
 ## Debian through UEFI
 
-The page boots Debian's published image unmodified (M8 phase B loop 3; [plans/uefi.md](plans/uefi.md)):
+`?machine=debian` boots Debian's published image unmodified (M8 phase B loop 3; [plans/uefi.md](plans/uefi.md)):
 the machine's `kernel` is `target/images/edk2/QEMU_EFI.fd` (with `LICENSES.txt` beside it, served
 with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` passes
 `BootOptions.firmware` (the flash bank and the fw_cfg files). What that changes for a user:
@@ -537,10 +545,11 @@ with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` p
 
 ## Your own disk
 
-A `firmware` machine (Debian) boots a disk of the user's own (M8 phase B loop 4): the header's
+A `firmware` machine (the page's own `uefi`, which has nothing else to boot, and `debian`) boots a disk of the user's own (M8 phase B loop 4): the header's
 **Open disk…** (a file picker), a file dropped on the page, or `?disk=<url>` (served with HTTP
 range support, like the machine's own). The machine restarts on it (confirmed if it runs); raw or
-qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file: it is loaded, below, not booted).
+qcow2 is told by the file's magic (an ISO is raw: EDK2 boots its El Torito or hybrid partition table's EFI entry; the user
+booted an arch.bens.haus installer ISO, 2026-10-17) (a qcow2 with a backing file is a changes file: it is loaded, below, not booted).
 - The `File` goes to the machine worker in `start.disk`, then, structured-cloned inside the
   device spec (`{type: 'blk', file}`), to the device worker, which reads slices with
   `FileReaderSync` (web/devices.ts `blobSource`); its capacity is the qcow2 header's virtual size or
@@ -560,7 +569,12 @@ qcow2 is told by the file's magic (a qcow2 with a backing file is a changes file
   menu's **Compress the qcow2** is unticked (remembered in the page's settings). The file goes where the user picks
   (`showSaveFilePicker`, called first: it needs the click's activation; a worker streams into the
   handle's writable) or, without a picker, is downloaded (the worker posts 1 MiB chunks, the page
-  collects a Blob). **The machine stops while it's written** (confirmed; the overlay's OPFS handles
+  collects a Blob). **Never over the running disk:** a save dialog empties the file it hands over
+  (Chromium creates or truncates it when the user confirms, before the page writes anything), so
+  the suggested name is never a chosen disk's own (`<disk>-saved.qcow2` then), and right after the
+  dialog the page reads a byte of the chosen disk's `File`: if that fails, the dialog was given the
+  disk itself, and the page says so and writes nothing (a user lost a disk that way, 2026-10-17).
+  **The machine stops while it's written** (confirmed; the overlay's OPFS handles
   and Web Lock belong to the writer, `web/app/export-worker.ts`, which also does the base image's
   synchronous reads): like pulling the plug, so the menu says to `poweroff` first; a machine that
   was running starts again after. The page: `web/app/export.ts`; the format:
@@ -671,10 +685,9 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
   when the login completes. An admin-approval wait is shown as such. With an auth key there's no
   login; the key is never saved and its node is ephemeral (the control server drops it once it's
   been away).
-- **Two clients, one node** (docs/plans/tailnet-client.md): our Rust one (`net/ts`, `web/tailnet-worker.ts`,
-  the default since T6) or Tailscale's Go client built to wasm (`web/tailscale-worker.ts`);
-  `startTailscale`'s `backend` picks it, and the page's `?tsbackend=go|rust` overrides the default.
-  `npm start` and `npm run serve` build the Rust one; the Go one only where Go is installed.
+- **The client** is our tailnet client (`net/ts`, `web/tailnet-worker.ts`; docs/plans/tailnet-client.md),
+  the page's since T6 (until then Tailscale's Go client built to wasm). It keeps the node in the Go
+  client's store format, so a node kept before T6 is still the same node.
   Both speak the same worker messages and keep the node in the same store, so switching is invisible.
 - **The node is kept:** a login's node (its keys, a secret) lives in this origin's IndexedDB
   (`webpc-tailscale`, one profile per control server, in the Go client's own format: `web/tailscale-state.ts`), so a reload is the same node with the same
@@ -714,25 +727,23 @@ to come (a custom relay is the first, under tailcat's **Advanced**).
     the clients. The status says **Letting tailcat clients in** (or adds it to the exit node's).
 - **Exit node:** when the tailnet has peers that advertise one (and an admin approved their
   `0.0.0.0/0` routes) the menu shows **Internet through** with them and "Nothing: directly". Picking one
-  calls the client's `setExitNode(id)` (`ipn.Prefs.ExitNodeID` through `lb.EditPrefs`; the id is the
-  peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the
+  calls the client's `setExitNode(id)` (the id is the peer's stable ID, `netmap.peers[].id`), the netmap reports the one in use (`netmap.exitNode`) and the
   status line says "internet through <name>". The choice is remembered (`exitNode`) and given to the
-  client at the next Connect (`Start`'s prefs would otherwise reset it). The guest's address, router and
+  client at the next Connect. The guest's address, router and
   DHCP lease don't change: its default route is the gateway, which hands every packet to the client,
   and the client's routing decides between the tailnet and the exit node. **DNS follows the exit
-  node**: MagicDNS (100.100.100.100, which the lease gives first) asks the exit node's DoH service
-  (its peerapi) for names it doesn't know, and the tailnet's own nameservers are reached through
-  the exit node. That needed three things in the Go client, each found by the test: the client's
-  prefs start from `ipn.NewPrefs()` (a bare `Prefs` has `CorpDNS` off, so the tailnet's DNS
-  settings were ignored), the `peerapiclient` feature is built in (without it the DoH request is
-  refused), and the client's own connections are dialed in its netstack
-  (`dialer.NetstackDialTCP/UDP`, a browser has no OS network) with
-  `CheckLocalTransportEndpoints`, so the replies to them, addressed to the node's IP, which is the
-  guest's too, go to the netstack and everything else to the guest.
+  node**: MagicDNS (100.100.100.100, which the lease gives first) answers the tailnet's names and
+  sends the rest as plain DNS through the exit node, to the tailnet's resolvers or 1.1.1.1
+  (docs/plans/tailnet-client.md T5; the Go client used the exit node's DoH service instead).
+  **The guest must take the lease's search domain** (MagicDNS's, e.g. `tail1234.ts.net`): with
+  systemd-networkd that's `UseDomains=yes` under `[DHCPv4]` and `[DHCPv6]`, which the page's Debian
+  credential and the Arch image set. networkd leaves it out by default, and without it resolved
+  sends short names only to LLMNR and a `.local` MagicDNS domain only to mDNS ("Temporary failure in
+  name resolution").
 - Settings (`webpc.settings` `net`): `kind` (`tailscale` or `tailcat`), `controlURL`, `hostname`, `autoconnect`,
   `keyed`, `exitNode`, `tailcatExit`, `tailcatServe`, `tailcatRelay`. The state dot: grey off, amber connecting or waiting for the user, green connected, red
   an error (the client's, e.g. the control server didn't answer).
-- **The client is built by the servers:** `npm run serve` and `npm start` run `tools/tailscale.ts` first: it builds `net/tailscale` with `net/tailscale/build.sh` into `target/net/tailscale.wasm` (and `wasm_exec.js`) when they're missing or a hash of `net/tailscale`'s files (stamp `tailscale.wasm.inputs`) changed, ~30 s to ~1 min the first time (Go downloads its toolchain and modules). It never stops the server: without Go, or if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `WEBPC_TAILSCALE=0` skips it. `scripts/ci-net.sh` runs it as a step so the Network menu's and the tailnet's tests find the client.
+- **The client is built by the servers:** `npm run serve` and `npm start` call `tools/tailscale.ts`'s `prepareTailnetClient` first: it builds `net/ts` with `net/ts/build.sh` into `target/net/ts.wasm` when it's missing or a hash of `net/ts` and `Cargo.lock` (stamp `ts.wasm.inputs`) changed (cargo only, as the core). It never stops the server: if the build fails, it says so and the page runs; Connect then says the client isn't built (checked before the machine restarts). `scripts/ci-net.sh` runs `tools/tailscale.ts` as a step (it also builds the Go client, the hand-over test's fixture).
 - **The control server must answer `GET /key` with CORS headers** (docs/plans/networking.md N4):
   Tailscale's does; a Headscale needs its reverse proxy to add `Access-Control-Allow-Origin`.
 - Tests: tests/network.test.ts (the controller and its parsers with a fake client),
@@ -848,9 +859,8 @@ each step skipped when its output is current:
    in 10 ms when installed; needs rustup ≥ 1.28), then `scripts/build-wasm.sh`. A checkout that
    touches files without changing them rebuilds nothing, which cargo's mtime fingerprints alone
    wouldn't give (a real rebuild is LTO with one codegen unit: minutes).
-5. **Debian** (`tools/debian.ts`, below): skipped when `target/images/debian/.prepared` names the
-   pinned image and the disk exists (the page boots it unmodified: no kernel or initrd is taken
-   out, and an older pair is deleted).
+5. **The tailnet client** (`tools/tailscale.ts` `prepareTailnetClient`: `net/ts/build.sh`, cargo only), when
+   its stamp differs; never fatal (the Network menu then says it isn't built).
 5b. **The UEFI firmware** (`images/build.sh edk2`: EDK2 in a rootless Podman container, ~1 min the
    first time, which also pulls the build image and clones EDK2; the user's answer "for now"):
    skipped when `images/build.sh --check edk2` says it's current. Without Podman the start
@@ -860,15 +870,15 @@ each step skipped when its output is current:
    another interface, with a warning that a remote browser over plain HTTP gets no cross-origin
    isolation, so forwarding the port is the way), then the URL and the `ssh -L` line. A port in
    use stops it with a message rather than moving to another port: **OPFS is per origin, so the
-   saved disk belongs to the port** (another port boots a fresh disk). `--prepare-only` does
-   steps 1–5b and exits.
+   saved disks' changes belong to the port**. `--prepare-only` does steps 1–5b and exits.
+   **No disk image:** the page waits for the user's (above, "The machines"); `npm start` downloaded
+   Debian until 2026-10-17, when the page stopped starting it.
 
 What stops it is said in one message with what to do, and it exits 1. Time on the dev VM (M8 loop
 5, bench/boot/REPORT.md): nothing to do, ~0.1 s to the URL (0.2 s through npm); a fresh clone
-with the download cached, 1.2 s plus the core's build (10–11 s cold; the toolchain's install,
-722 MB, 6 s on this network); the download itself, 7.8 s.
+1.2 s plus the core's build (10–11 s cold; the toolchain's install, 722 MB, 6 s on this network).
 
-**Debian's preparation** (`tools/debian.ts`, run by `npm start` and `images/build.sh debian`: it links
+**Debian's preparation** (the tests' guest; `tools/debian.ts`, run by `images/build.sh debian`: it links
 the disk and takes nothing out of it; the pin is `images/debian.json`): the qcow2 from the download cache (`WEBPC_DL`, default
 `target/images/dl`), or downloaded there with progress (a line rewritten on a terminal, every 10%
 otherwise) through a `.part` file, and checked against the pinned SHA512 either way (~1 s); the

@@ -1,8 +1,8 @@
 // The kept Tailscale node's state (docs/plans/networking.md §4, docs/plans/tailnet-client.md §5): the
 // Go client's `ipn.StateStore` in this origin's IndexedDB, database `webpc-tailscale`, object store
-// `state`, keys `<profile>/<StateKey>`, values the hex of the bytes the client wrote. Both clients
-// (web/tailscale-worker.ts, Go; web/tailnet-worker.ts, Rust) use it as it is, so a node made by
-// one is the same node in the other. A client reads it whole at start and writes it through.
+// `state`, keys `<profile>/<StateKey>`, values the hex of the bytes the client wrote. The Rust client
+// (web/tailnet-worker.ts) uses it as it is, so a node the Go client made (the page's client until
+// T6) is still the same node; tests/ts-tailnet.test.ts checks both ways. A client reads it whole at start and writes it through.
 
 const DB = 'webpc-tailscale';
 const STORE = 'state';

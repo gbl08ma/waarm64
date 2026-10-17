@@ -19,12 +19,12 @@ import { openSnapshot, SnapshotError, type SnapshotHeader } from '../snapshot-fi
 import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, type DiskChoice, type Machine, type MachineName } from './machine.ts';
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
-import { createNetwork, DEFAULT_SETTINGS, forgetTailcatIdentity, hasTailcatIdentity, tailscaleBuilt, tailcatBuilt, tsBackend, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, type NetworkSettings } from './network.ts';
+import { createNetwork, DEFAULT_SETTINGS, forgetTailcatIdentity, hasTailcatIdentity, tailscaleBuilt, tailcatBuilt, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, type NetworkSettings } from './network.ts';
 import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
-const machine = (params.get('machine') ?? 'debian') as MachineName;
+const machine = (params.get('machine') ?? 'uefi') as MachineName;
 if (!(machine in MACHINES)) throw new Error(`no machine ${machine}`);
 const spec: Machine = MACHINES[machine];
 // `?credential=name:value` (repeatable): a systemd credential for a firmware machine, for development and tests.
@@ -37,6 +37,10 @@ let chosen: DiskChoice | undefined;
 const overlayName = () => chosen?.overlay ?? spec.overlay;
 /** What the disk is called on the page. */
 const diskName = () => (chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
+/** A machine that boots the user's disk and has none yet (the page's own, until a disk is opened): it waits. */
+const needsDisk = () => !!spec.firmware && !spec.disk && !chosen;
+/** What the header calls the machine: its name and the disk's. */
+const machineTitle = () => `${spec.label} · ${diskName() ?? (needsDisk() ? 'no disk' : '')}`.replace(/ · $/, '');
 
 // Settings remembered per browser (the view, the network, whether saved disks are compressed, the sound's volume). Storage can be off or throw: then nothing is remembered.
 type Settings = { ncpus?: number; ramMiB?: number; view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean; gpu?: '3d' | '2d'; muted?: boolean; volume?: number; mic?: boolean; micRaw?: boolean };
@@ -496,16 +500,25 @@ function busy() {
 }
 
 /** Stops the machine and starts a new one (which resumes a suspended machine, unless `resume` is false). */
-const restart = (resume = true) => exclusively(async () => {
+const restart = (resume = true) => (needsDisk() ? Promise.resolve(waitForDisk()) : exclusively(async () => {
   await stop();
   term.reset();
   start(undefined, resume);
-});
+}));
 
 restartBtn.onclick = () => {
   if ((state === 'running' || state === 'booting') && !confirm('Restart the machine? Like pulling the plug: unsaved work in the guest is lost.')) return;
   void restart();
 };
+
+/** The disk's actions (Save disk, Reset disk, Load changes, Suspend): only with a disk the page keeps changes to. */
+function syncDiskButtons() {
+  resetDiskBtn.hidden = $('save').hidden = $('load-changes').hidden = suspendBtn.hidden = !overlayName();
+}
+/** No disk yet: say how to bring one, and start nothing. */
+function waitForDisk() {
+  setState('idle', 'Open a disk image to start the machine: an arm64 Linux image that boots through UEFI, as qcow2, raw or an installer or live ISO (Open disk…, or drop the file on the page). What the machine writes to it is kept in this browser, per file.', [{ label: 'Open disk…', run: () => openDiskInput.click() }], 'warn');
+}
 
 // The disk reset (M8 decision 4): stop the machine (its overlay's files are locked while it runs), delete the overlay, start again.
 async function resetDiskAsked() {
@@ -528,7 +541,6 @@ async function resetDiskAsked() {
     start();
   });
 }
-resetDiskBtn.hidden = !spec.overlay;
 $('open-disk').hidden = !spec.firmware;
 resetDiskBtn.onclick = () => void resetDiskAsked();
 
@@ -538,18 +550,17 @@ const openDiskInput = $<HTMLInputElement>('open-disk-input');
 async function chooseDisk(choice: { file: File } | { url: string }) {
   if ('file' in choice && (await isSnapshot(choice.file))) return loadSnapshot(choice.file); // a snapshot isn't a disk to boot: it replaces the machine
   if (busy()) return;
-  if ('file' in choice && spec.overlay) {
-    if (await changesHeader(choice.file)) { // a changes file isn't a disk to boot: it goes onto the disk on the page
-      await loadChanges(choice.file);
-      return;
-    }
+  if ('file' in choice && (await changesHeader(choice.file))) { // a changes file isn't a disk to boot: it goes onto the disk on the page
+    if (!overlayName()) return void alert(`${choice.file.name} holds changes to a disk: open that disk first (Open disk…), then load them.`);
+    await loadChanges(choice.file);
+    return;
   }
   if (!spec.firmware) return; // only a machine that boots through UEFI takes a disk of its own (the test guests' kernels are their own)
   const next: DiskChoice = { ...choice, overlay: await diskOverlay(choice) };
   if ((state === 'running' || state === 'booting') && !confirm(`Boot ${next.file?.name ?? next.url}? The machine restarts, like pulling the plug: unsaved work in the guest is lost. Its changes to the current disk are kept.`)) return;
   chosen = next;
-  $('machine').textContent = `${spec.label} · ${diskName()}`;
-  resetDiskBtn.hidden = false;
+  $('machine').textContent = machineTitle();
+  syncDiskButtons();
   await restart();
 }
 // Changes in (loop 6): a changes file (Save disk's "Changes only") replaces what the machine has written to the disk on the page,
@@ -583,7 +594,6 @@ async function loadChanges(file: File) {
 }
 const loadChangesInput = $<HTMLInputElement>('load-changes-input');
 $<HTMLButtonElement>('load-changes').onclick = () => loadChangesInput.click();
-$('load-changes').hidden = !spec.overlay;
 loadChangesInput.onchange = () => {
   const file = loadChangesInput.files?.[0];
   loadChangesInput.value = '';
@@ -607,7 +617,10 @@ async function saveDisk(mode: ExportMode) {
   if (!overlay || busy()) return;
   const how = SAVES[mode];
   const stem = baseName().replace(/\.(qcow2|img|raw)$/i, '');
-  const suggestedName = `${stem}${how.suffix}`;
+  // Never the running disk's own name: a save dialog empties the file it's given at once (Chromium creates or
+  // truncates it before the page writes a byte), and accepting the suggestion beside the disk would destroy it.
+  const named = `${stem}${how.suffix}`;
+  const suggestedName = named.toLowerCase() === diskName()?.toLowerCase() ? `${stem}-saved${how.suffix}` : named;
   // The picker first: it needs the click's user activation, which the stop below would let expire.
   let handle: FileSystemFileHandle | undefined;
   const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
@@ -618,6 +631,12 @@ async function saveDisk(mode: ExportMode) {
       if ((e as DOMException).name === 'AbortError') return; // cancelled
       handle = undefined; // the download below
     }
+  }
+  // A file chosen as the disk is read in place: if the dialog's file was that one, it's gone already (its File no longer
+  // reads); say so and write nothing, before the machine is stopped.
+  if (handle && chosen?.file && !(await chosen.file.slice(0, 1).arrayBuffer().then(() => true, () => false))) {
+    setState(state, `${handle.name} was the disk this machine runs from: the save dialog emptied it, so nothing was saved. The machine can't read its disk any more. Save to a different file next time.`, [], 'error');
+    return;
   }
   const running = state === 'running' || state === 'booting';
   if (running && !confirm('Stop the machine to save its disk? It is stopped like pulling the plug: unsaved work in the guest is lost (shut it down first with poweroff for a clean disk). It starts again afterwards.')) return;
@@ -650,7 +669,6 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-save]')) {
     void saveDisk(b.dataset.save as ExportMode);
   };
 }
-$('save').hidden = !spec.overlay;
 
 
 // Snapshots (docs/frontend.md "Snapshots"): the running machine, RAM and disk changes and all, in a file, and back.
@@ -712,7 +730,6 @@ saveSnapshotBtn.onclick = () => void saveSnapshot();
 
 // Suspend (docs/frontend.md "Suspend"): the machine stops with its memory kept beside its disk in this
 // browser; the next start (this page opened again, Start) resumes it. Nothing is asked: nothing is lost.
-suspendBtn.hidden = !spec.overlay;
 suspendBtn.onclick = () => {
   const r = run;
   if (!r || saving || switching || !(state === 'running' || state === 'booting')) return;
@@ -983,7 +1000,7 @@ netEl.form.onsubmit = (e) => {
   formError();
   const authKey = netEl.key.value.trim();
   void (async () => {
-    if (!(await tailscaleBuilt())) return formError(`The Tailscale client isn't built on this server. Start the page with \`npm run serve\` or \`npm start\` (they build it), or run ${tsBackend() === 'go' ? 'net/tailscale/build.sh (Go is needed)' : 'net/ts/build.sh'}.`);
+    if (!(await tailscaleBuilt())) return formError("The Tailscale client isn't built on this server. Start the page with `npm run serve` or `npm start` (they build it), or run net/ts/build.sh.");
     remember({ net: { ...netSettings(), kind: 'tailscale', controlURL: netEl.control.value.trim(), hostname: netEl.hostname.value.trim(), autoconnect: !authKey, keyed: !!authKey } });
     netEl.key.value = '';
     connectWith({ controlURL: url.url, hostname: host.hostname, authKey: authKey || undefined, exitNode: netSettings().exitNode });
@@ -1047,7 +1064,8 @@ function showStatus(s: Status) {
   ].filter(Boolean).join(' · ');
 }
 
-$('machine').textContent = spec.label;
+$('machine').textContent = machineTitle();
+syncDiskButtons();
 // The view: the query's, else the one chosen last in this browser, else the screen (M8 decision 2).
 const isView = (v: unknown): v is View => v === 'screen' || v === 'terminal' || v === 'both';
 const asked = params.get('view');
@@ -1133,6 +1151,7 @@ function boot() {
     restartBtn.hidden = resetDiskBtn.hidden = true;
     return;
   }
+  if (needsDisk()) return waitForDisk();
   // Chromium kills a renderer that runs out of memory without an error to catch (PLAN.md §4): judge up front.
   const need = hostMemoryGiB(ramMiB, ncpus);
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
@@ -1150,6 +1169,7 @@ const diskParam = params.get('disk');
 if (diskParam && spec.firmware) {
   const url = new URL(diskParam, location.href).href;
   chosen = { url, overlay: await diskOverlay({ url }) };
-  $('machine').textContent = `${spec.label} · ${diskName()}`;
+  $('machine').textContent = machineTitle();
+  syncDiskButtons();
 }
 boot();

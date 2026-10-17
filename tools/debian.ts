@@ -1,4 +1,4 @@
-// Prepares the page's Debian (M8 loop 5, docs/images.md): downloads the pinned
+// Prepares the tests' Debian (`?machine=debian`; M8 loop 5, docs/images.md): downloads the pinned
 // nocloud qcow2 (images/debian.json) into the download cache if it isn't there,
 // checks its SHA512, and links it as target/images/debian/disk.qcow2 (the disk
 // as published: a hard link to the download when it can be, else a copy). The

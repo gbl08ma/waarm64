@@ -24,11 +24,11 @@ import { PAGE_QUERY } from './page-query.ts';
 
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const WASM = new URL('../target/net/tailscale.wasm', import.meta.url);
+const WASM = new URL('../target/net/ts.wasm', import.meta.url);
 const skip = process.env.WEBPC_NET_TESTS !== '1' ? 'SKIPPED: scripts/ci-net.sh runs it (WEBPC_NET_TESTS=1)'
   : !(process.env.WEBPC_DISTROS ?? '').split(',').includes('debian') ? 'SKIPPED: set WEBPC_DISTROS=debian'
-  : !existsSync(IMAGE) || !existsSync(FIRMWARE) ? 'SKIPPED: run npm start (or images/build.sh debian edk2)'
-  : !existsSync(WASM) ? 'SKIPPED: build the Tailscale client (net/tailscale/build.sh; needs Go)'
+  : !existsSync(IMAGE) || !existsSync(FIRMWARE) ? 'SKIPPED: run images/build.sh debian edk2'
+  : !existsSync(WASM) ? 'SKIPPED: build the tailnet client (net/ts/build.sh)'
   : undefined;
 const TAILCAT = new URL('../tests/net/tailcat.sh', import.meta.url).pathname;
 const tailcatOn = !skip && process.env.WEBPC_TAILCAT === '1' && existsSync(new URL('../target/net/ts.wasm', import.meta.url));

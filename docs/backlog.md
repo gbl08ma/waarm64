@@ -573,11 +573,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   supported; the first packet to a fresh peer after the tailnet comes up waits ~4.5 s for a WireGuard retry
   (later ones 55 ms; the Go client's "5 s first ping" too); headscale answers the first map ~2 s after registration
   for both clients (not ours to fix).
-- **Removing the Go Tailscale client from the page** (tailnet-client.md T6): waits only for the user's OK after
-  their manual test (2026-10-17: no users besides the user, so no release with both). Goes: `?tsbackend=`,
-  `web/tailscale-worker.ts`, the page's Go module and `wasm_exec.js`, its build in `npm start`/`npm run serve`.
-  Go stays for development and CI where it implements or verifies the Rust client: the tailcat rig, and the
-  hand-over test (`tests/net/go-client.ts`, which needs `net/tailscale` built as a test fixture).
 
 ## Tests and tools
 

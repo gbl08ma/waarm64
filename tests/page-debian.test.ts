@@ -53,7 +53,7 @@ test("the page's ready marker: Debian's login prompt in any chunk, not a service
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
 const FIRMWARE = new URL('../target/images/edk2/QEMU_EFI.fd', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) ? 'SKIPPED: run npm start (or images/build.sh debian edk2)' : !existsSync(new URL('../target/images/linux-snd/snd-rec', import.meta.url)) && 'SKIPPED: run images/build.sh linux-snd (its snd-play and snd-rec)';
+const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : (!existsSync(IMAGE) || !existsSync(FIRMWARE)) ? 'SKIPPED: run images/build.sh debian edk2' : !existsSync(new URL('../target/images/linux-snd/snd-rec', import.meta.url)) && 'SKIPPED: run images/build.sh linux-snd (its snd-play and snd-rec)';
 const RUNS = Number(process.env.WEBPC_PAGE_RUNS ?? 1);
 /** The second disk (served from the repo): snd-play and a tone (tests/snd-disk.ts). */
 const SND_DISK = `target/tests/snd-${process.pid}.tar`;

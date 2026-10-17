@@ -99,7 +99,7 @@ guest kernel"), while the port's `linux` 7.2.9.arch1 has `DEBUG_PREEMPT` off and
   LoadFile2) and `initramfs-linux.img`, so **`pacman -Syu` in the guest updates the kernel that boots**; then the ext4
   root (type GUID Linux root aarch64). Fixed PARTUUIDs; command line `root=PARTUUID=… rw console=tty0 console=ttyAMA0`.
 - Settings: logins `root`/`root` and `arch`/`arch` (in `wheel`, which sudo allows); hostname `archlinux`;
-  `LANG=C.UTF-8`; UTC; systemd-networkd (DHCP on `en*` and `eth*`), -resolved (the stub as `/etc/resolv.conf`) and
+  `LANG=C.UTF-8`; UTC; systemd-networkd (DHCP on `en*` and `eth*`, with `UseDomains=yes`: MagicDNS's search domain), -resolved (the stub as `/etc/resolv.conf`) and
   -timesyncd; `/etc/machine-id` empty, as ALARM's was (a transient id each boot, no first-boot presets).
 - Checked on QEMU through our EDK2: `node tools/uefi-oracle.ts $PWD/target/arch/arch-uefi.qcow2` (absolute path)
   reaches `login:` in ~23 s with no failed unit (the tool reports FAIL, since it expects a passwordless root).
@@ -210,5 +210,5 @@ futexes, fork/exec. Not part of `images/build.sh` or CI; built on demand.
   blk backend) rather than converted.
 - Debian isn't built but prepared, so its `.inputs` key covers `images/debian.json` and
   `build_debian`; `SHA256SUMS` lists the disk.
-  `npm start` keeps its own stamp (`target/images/debian/.prepared`: the pin), since it can't run
-  `build.sh` (bash 4 syntax; macOS has bash 3.2).
+  `tools/debian.ts` keeps its own stamp (`target/images/debian/.prepared`: the pin), from when `npm start` ran it
+  (until 2026-10-17), which can't run `build.sh` (bash 4 syntax; macOS has bash 3.2).

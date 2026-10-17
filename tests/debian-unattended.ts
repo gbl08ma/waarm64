@@ -13,4 +13,10 @@ export const UNATTENDED: Credential[] = [
 ];
 
 /** The same as the page's `?credential=` parameters. */
-export const unattendedQuery = () => UNATTENDED.map((c) => `credential=${encodeURIComponent(`${c.name}:${c.data}`)}`).join('&');
+export const credentialsQuery = () => UNATTENDED.map((c) => `credential=${encodeURIComponent(`${c.name}:${c.data}`)}`).join('&');
+
+/**
+ * The tests' Debian on the page (`?machine=debian`: the page's own machine has no disk and waits for one), unattended. A
+ * query that names another machine before it keeps that one (the page reads the first `machine`).
+ */
+export const unattendedQuery = () => `machine=debian&${credentialsQuery()}`;

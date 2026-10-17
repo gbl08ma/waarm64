@@ -44,7 +44,7 @@
 #   Built natively in Alpine's arm64 container, as alpine-user.
 # debian: the official debian-13-nocloud-arm64 qcow2 as published (disk.qcow2),
 #   with the kernel (Image) and initrd (initrd.img) taken out of its /boot by
-#   tools/debian.ts (Node, on the host: it's what `npm start` runs too; the pin
+#   tools/debian.ts (Node, on the host: the tests' Debian; the pin
 #   is images/debian.json).
 # kvm-unit-tests: the arm64 tests (*.flat) and their unittests.cfg, built with
 #   Debian's gcc-aarch64-linux-gnu.

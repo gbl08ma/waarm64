@@ -24,6 +24,7 @@ CADDY_IMAGE=${CADDY_IMAGE:-docker.io/library/caddy:2.10}
 PORT=${TAILNET_PORT:-8443} # what clients use (TLS, the proxy)
 INNER=${TAILNET_INNER_PORT:-18080} # headscale's own, plain HTTP
 V4=${HEADSCALE_V4:-100.90.0.0/16}
+DOMAIN=${HEADSCALE_DOMAIN:-tail.test} # MagicDNS's domain
 HS=webpc-headscale
 PEER=webpc-peer
 PROXY=webpc-proxy
@@ -89,7 +90,7 @@ policy:
   path: /etc/headscale/policy.json
 dns:
   magic_dns: true
-  base_domain: tail.test
+  base_domain: $DOMAIN
   override_local_dns: false
   nameservers:
     global: []

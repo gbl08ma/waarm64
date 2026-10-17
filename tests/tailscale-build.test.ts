@@ -1,4 +1,4 @@
-// tools/tailscale.ts: when the Tailscale client is (re)built for `npm run serve` and `npm start`,
+// tools/tailscale.ts: when the Go Tailscale client (the hand-over test's fixture) is (re)built,
 // with a fake tree, a fake `go` and a fake build script, so nothing is compiled.
 import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
@@ -65,7 +65,7 @@ test('without Go (quietly), with WEBPC_TAILSCALE=0, or without the sources: skip
   try {
     const said: string[] = [];
     assert.equal(prepareTailscale(t.root, t.noGo, (s) => said.push(s)), 'skipped');
-    assert.equal(said.length, 0, `nothing said without Go: only ?tsbackend=go needs this client (${said})`);
+    assert.equal(said.length, 0, `nothing said without Go: only the hand-over test needs this client (${said})`);
     assert.equal(existsSync(join(t.root, 'target/net/tailscale.wasm')), false);
     said.length = 0;
     assert.equal(prepareTailscale(t.root, { ...t.env, WEBPC_TAILSCALE: '0' }, (s) => said.push(s)), 'skipped');

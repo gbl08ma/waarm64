@@ -71,9 +71,13 @@ embedding API are scheduled by what that page needs, not as ends in themselves. 
 `M8-KICKOFF.md`.
 
 Decisions (the user, 2026-09-28):
-- **One VM per page, Debian 13 first**, hardcoded at the start (the nocloud image: root without a
-  password), under the JIT, realtime, parallel SMP. Image choice, extra disks and settings come
-  later in M8 or after it.
+- **One VM per page**, under the JIT, realtime, parallel SMP. Debian 13 was the page's hardcoded
+  machine at first; **since 2026-10-17 (the user, thinking of an early release) the page starts no
+  disk image**: its machine is EDK2 with no disk, waiting for the user's (Open disk, a drop,
+  `?disk=`), and the page names no distribution. Debian stays the tests' and benchmarks' guest
+  (`?machine=debian`); `npm start` no longer downloads it (`images/build.sh debian` does). A
+  preloaded image with a snapshot that loads with the page comes later, likely from our Arch
+  Linux desktop guest.
 - **The framebuffer is the default view**: the guest's fbcon on the canvas (Debian's kernel has
   `simplefb` and `fbcon` built in), with keyboard and mouse through virtio-input. **A serial
   terminal on xterm.js** (`@xterm/xterm`, MIT: approved as the first runtime dependency, with its
@@ -148,9 +152,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     crates, tailcat first: [docs/plans/tailnet-client.md](docs/plans/tailnet-client.md); T1 to T3
     done: tailcat on the page, the VM as a tailcat server; T4 and T5, the Tailscale control session
     and data plane; T6, the switch, 2026-10-16) is the page's Tailscale client: 0.49 MB Brotli to
-    Go's 4.5, 2.2 times the throughput at 2.5 times less CPU per Mbit. The Go one stays behind
-    `?tsbackend=go`; it leaves the page on the user's OK after
-    their manual test; Go stays for development and CI.
+    Go's 4.5, 2.2 times the throughput at 2.5 times less CPU per Mbit. The Go one left the page
+    (2026-10-17); `net/tailscale` stays as a test fixture, and Go for development and CI.
   - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): **virtio-gpu 2D is done (G0 and
     G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
     first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device
@@ -223,7 +226,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     4.9 → 20 MiB/s). The rest was dropped by measurement: Debian's boot from a chosen qcow2 spends 3.9% in file reads and
     6% in all requests (no cache, copy, limit or inflate work clears the 5% bar), `flush()` costs ~10 µs, and the screen
     stays within 22–33 ms of a flush under a continuous disk read, so no blk worker. Numbers: `bench/io/REPORT.md`.
-- **D. Choosing and shaping machines:** a catalog of hosted images (Debian, Alpine, …) on top of
+- **D. Choosing and shaping machines:** a preloaded image and snapshot loaded with the page (likely the Arch desktop
+  guest, decision 1), a catalog of hosted images on top of
   phase B's disk in, extra disks, RAM and vCPU settings (default vCPUs from
   `navigator.hardwareConcurrency` minus the device worker and the page, with the P/E-core
   caveat); and **the stable

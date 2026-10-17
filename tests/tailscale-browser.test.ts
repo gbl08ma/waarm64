@@ -1,12 +1,11 @@
-// The Tailscale backends (web/tailscale.ts) in headless Chromium with no guest
-// (docs/plans/tailnet-client.md T5, T6): the Go client (net/tailscale) and the Rust one (net/ts), in
-// turn, each in its worker against the test tailnet (tests/net/tailnet.sh): they reach `Running`,
-// lease the gateway an address and carry UDP to the peer and back (numbers for both, side by side);
-// a kept node comes back after a reload as the same node, also in the other client (the store in
-// IndexedDB); logging out forgets it. The guest's side is tests/net-tailnet.test.ts's
-// (WEBPC_TS_BACKEND=rust there).
+// The Tailscale backend (web/tailscale.ts) in headless Chromium with no guest
+// (docs/plans/tailnet-client.md T5, T6): the tailnet client (net/ts) in its worker against the test
+// tailnet (tests/net/tailnet.sh): it reaches `Running`, leases the gateway an address and carries UDP
+// to the peer and back (its numbers); a kept node comes back after reloads as the same node (the
+// store in IndexedDB); logging out forgets it. The guest's side is tests/net-tailnet.test.ts's; the
+// hand-over of a node the Go client kept, tests/ts-tailnet.test.ts's.
 // Opt-in: WEBPC_TAILNET=1 (Podman, or WEBPC_TAILNET_SCRIPT=tests/net/tailnet-native.sh;
-// target/net/tailscale.wasm and target/net/ts.wasm).
+// target/net/ts.wasm).
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createSocket } from 'node:dgram';
@@ -18,7 +17,6 @@ import { startServer } from '../tools/serve.ts';
 const ROOT = new URL('..', import.meta.url).pathname;
 const script = process.env.WEBPC_TAILNET_SCRIPT ?? `${ROOT}tests/net/tailnet.sh`;
 const skip = process.env.WEBPC_TAILNET !== '1' ? 'SKIPPED: set WEBPC_TAILNET=1'
-  : !existsSync(`${ROOT}target/net/tailscale.wasm`) ? 'SKIPPED: no target/net/tailscale.wasm (net/tailscale/build.sh)'
   : !existsSync(`${ROOT}target/net/ts.wasm`) ? 'SKIPPED: no target/net/ts.wasm (net/ts/build.sh)'
   : undefined;
 
@@ -48,51 +46,49 @@ after(async () => {
 type State = { state: string; netmap?: { addresses: string[] }; timings: { loadMs?: number; runningMs?: number }; lease?: { address: number[]; address6?: number[]; mtu: number } };
 const state = (page: Page) => page.evaluate('window.harness.tailscale()') as Promise<State>;
 
-/** Opens the page for `backend` and waits for `Running` with a lease. */
-async function open(page: Page, backend: string, o: { authkey?: string; persist?: string; hostname: string }) {
-  await page.goto(`${base}/tests/browser/tailscale.html?${new URLSearchParams({ tsbackend: backend, control: env.WEBPC_TS_CONTROL, peer: env.WEBPC_TS_PEER_IP, port: String(echo.address().port), authkey: o.authkey ?? '', persist: o.persist ?? '', hostname: o.hostname })}`);
+/** Opens the page and waits for `Running` with a lease. */
+async function open(page: Page, o: { authkey?: string; persist?: string; hostname: string }) {
+  await page.goto(`${base}/tests/browser/tailscale.html?${new URLSearchParams({ control: env.WEBPC_TS_CONTROL, peer: env.WEBPC_TS_PEER_IP, port: String(echo.address().port), authkey: o.authkey ?? '', persist: o.persist ?? '', hostname: o.hostname })}`);
   await page.waitForFunction('window.harness?.tailscale().state === "Running" && window.harness.tailscale().lease', null, { timeout: 60_000, polling: 100 })
-    .catch(async (e) => { throw new Error(`${backend}: ${e}; ${JSON.stringify(await state(page))}; events ${JSON.stringify(await page.evaluate('window.harness?.events()'))}`); });
+    .catch(async (e) => { throw new Error(`${e}; ${JSON.stringify(await state(page))}; events ${JSON.stringify(await page.evaluate('window.harness?.events()'))}`); });
   return state(page);
 }
 
-for (const backend of ['go', 'rust']) {
-  test(`the ${backend} client in the page: Running, a lease, UDP to the peer and back`, { skip, timeout: 180_000 }, async () => {
-    const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // the tailnet's test CA
-    const page = await ctx.newPage();
-    page.on('pageerror', (e) => console.log(`# page error: ${e}`));
-    page.on('console', (m) => { if (/rror|panic/.test(m.text())) console.log(`# page: ${m.text().slice(0, 300)}`); });
-    try {
-      const key = execFileSync(script, ['key'], { encoding: 'utf8' }).trim();
-      const s = await open(page, backend, { authkey: key, hostname: `${backend}-page` });
-      assert.equal(s.lease!.address.join('.'), s.netmap!.addresses.find((a) => !a.includes(':'))!.replace(/\/\d+$/, ''));
-      assert.equal(s.lease!.mtu, 1280);
-      // The first echoes also wait out the WireGuard handshake.
-      const first = await page.evaluate('window.harness.echoes(20, 32, 1)') as { back: number; ms: number };
-      assert.ok(first.back >= 15, `small echoes came back (${first.back} of 20)`);
-      const small = await page.evaluate('window.harness.echoes(200, 32, 1)') as { back: number; ms: number };
-      const big = await page.evaluate('window.harness.echoes(2000, 1200, 32)') as { back: number; ms: number };
-      console.log(`# ${backend} in Chromium ${browser.version()}: module loaded in ${s.timings.loadMs?.toFixed(0)} ms, Running after ${s.timings.runningMs?.toFixed(0)} ms; RTT ${(small.ms / small.back).toFixed(2)} ms (200 echoes, one at a time); 2000 echoes of 1228 B: ${big.back} back in ${big.ms.toFixed(0)} ms = ${(big.back * 1228 * 8 / big.ms / 1000).toFixed(1)} Mbit/s each way`);
-      assert.ok(big.back >= 1900, `the large echoes came back (${big.back} of 2000)`);
-    } finally {
-      await ctx.close();
-    }
-  });
-}
+test('the client in the page: Running, a lease, UDP to the peer and back', { skip, timeout: 180_000 }, async () => {
+  const ctx = await browser.newContext({ ignoreHTTPSErrors: true }); // the tailnet's test CA
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.log(`# page error: ${e}`));
+  page.on('console', (m) => { if (/rror|panic/.test(m.text())) console.log(`# page: ${m.text().slice(0, 300)}`); });
+  try {
+    const key = execFileSync(script, ['key'], { encoding: 'utf8' }).trim();
+    const s = await open(page, { authkey: key, hostname: 'page' });
+    assert.equal(s.lease!.address.join('.'), s.netmap!.addresses.find((a) => !a.includes(':'))!.replace(/\/\d+$/, ''));
+    assert.equal(s.lease!.mtu, 1280);
+    // The first echoes also wait out the WireGuard handshake.
+    const first = await page.evaluate('window.harness.echoes(20, 32, 1)') as { back: number; ms: number };
+    assert.ok(first.back >= 15, `small echoes came back (${first.back} of 20)`);
+    const small = await page.evaluate('window.harness.echoes(200, 32, 1)') as { back: number; ms: number };
+    const big = await page.evaluate('window.harness.echoes(2000, 1200, 32)') as { back: number; ms: number };
+    console.log(`# the client in Chromium ${browser.version()}: module loaded in ${s.timings.loadMs?.toFixed(0)} ms, Running after ${s.timings.runningMs?.toFixed(0)} ms; RTT ${(small.ms / small.back).toFixed(2)} ms (200 echoes, one at a time); 2000 echoes of 1228 B: ${big.back} back in ${big.ms.toFixed(0)} ms = ${(big.back * 1228 * 8 / big.ms / 1000).toFixed(1)} Mbit/s each way`);
+    assert.ok(big.back >= 1900, `the large echoes came back (${big.back} of 2000)`);
+  } finally {
+    await ctx.close();
+  }
+});
 
-test('a kept node comes back after a reload as the same node, in either client, until it logs out', { skip, timeout: 240_000 }, async () => {
+test('a kept node comes back after a reload as the same node, until it logs out', { skip, timeout: 240_000 }, async () => {
   const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.log(`# page error: ${e}`));
   try {
     const persist = env.WEBPC_TS_CONTROL;
     const key = execFileSync(script, ['key', 'lasting'], { encoding: 'utf8' }).trim();
-    const one = await open(page, 'rust', { authkey: key, persist, hostname: 'kept' });
+    const one = await open(page, { authkey: key, persist, hostname: 'kept' });
     const addr = one.netmap!.addresses.join(' ');
     // No auth key from here: only the kept node can log in.
-    for (const backend of ['rust', 'go', 'rust']) {
-      const again = await open(page, backend, { persist, hostname: 'kept' });
-      assert.equal(again.netmap!.addresses.join(' '), addr, `${backend}: the same node after a reload`);
+    for (let k = 0; k < 2; k++) {
+      const again = await open(page, { persist, hostname: 'kept' });
+      assert.equal(again.netmap!.addresses.join(' '), addr, `the same node after reload ${k + 1}`);
     }
     const stored = await page.evaluate('window.harness.stored()') as string[];
     assert.ok(stored.includes(`${persist}/_machinekey`), `the store: ${stored}`);
