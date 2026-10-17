@@ -36,9 +36,12 @@ The L2 commit also carries L3's groundwork (the compile step, the `svelte` depen
   anyone relies on in-place disks for speed. (The cloud's boot times vary; one run is no measurement.)
 - An earlier run of these tests timed out at a boot because other work ran beside it (unit tests, a Chromium test):
   run Debian page tests alone here, as `scripts/ci-debian.sh` does.
-- `scripts/ci.sh`'s gates, run as their own commands at L0 (see below why): fmt, clippy, testfloat, the tailnet
-  client, tsc, tsan pass; `npm test` 415 pass, 5 fail: the WebGL2 virgl and H.264 tests, which fail in cloud
-  sessions as expected (software GL, no H.264 in Playwright's Chromium). The final run is in "At the exit" below.
+- `scripts/ci.sh`'s gates, run as their own commands (it stops at `cargo test`, below): at L0 fmt, clippy,
+  testfloat, the tailnet client, tsc, tsan passed; at the exit (no Rust changed since L0) fmt, clippy and tsc pass,
+  and `npm test` has 428 pass, 5 fail, 165 skipped. The five are the WebGL2 virgl and H.264 tests, which fail in
+  cloud sessions as expected (software GL, no H.264 in Playwright's Chromium); the skips are images the cloud can't
+  build and the Debian tests, run separately above. `cargo test` stops at its first failing target (the library's),
+  so the native integration targets after it didn't run here.
 
 **A pre-existing failure, not this work's:** `cargo test`'s `fp::tests::inline_fma_is_correctly_rounded` fails on
 x86_64 (`0x7dffffffffaace66 * 0x41dfffffff54c27a + 0xffeffffffeff90e2`: the inline FMA gives `0x7feffffffffffffd`,
