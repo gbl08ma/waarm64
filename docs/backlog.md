@@ -471,11 +471,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     (tools/svelte.ts, tests/dist.test.ts) but not their types.
   - The machine list doesn't show a suspended machine as suspended (it reads "off").
   - **Open disk… keeps no handle:** the first-run message's button and the Machines page's From a disk image… are a
-    plain `<input type=file>` (main.ts
-    `openDiskInput`), so the machine it makes has a file disk without a handle, and after a reload its suspended copy
-    resumes only once the file is picked again ("Pick and start", checked by name, size and date). A drop and the Add
-    disk wizard (`showOpenFilePicker`) keep one, and a reload resumes after one click ("Allow and start"); the
-    button could use the picker too.
+    plain `<input type=file>` (main.ts `openDiskInput`), so the machine they make has a file disk without a handle,
+    and after a reload its suspended copy resumes only once the file is picked again ("Pick and start", checked by
+    name, size and date). A drop and the Add disk wizard (`showOpenFilePicker`) keep one, and a reload resumes after
+    one click ("Allow and start"); both buttons could use the picker too.
   - **A second tab of a running machine** (the page opens the last machine by default) starts a worker, waits out the
     overlay's lock (10 s, `OVERLAY_WAIT_MS`) and fails with `disk-in-use`, naming the disk. Checking the machine's
     lock first (`isRunning`) would say at once that it runs in another tab, without a worker.
