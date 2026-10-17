@@ -1,7 +1,7 @@
 // Snapshots of a machine kept in the browser (docs/plans/machines.md §5), on Debian, through the page and its modal:
 // three kept; an older one restored forks the newer state into an overlay of its own (nothing lost), the ramdisk comes
 // back with the snapshot; Suspend resumes while its pins match and boots instead once the disk moved on; a change of
-// RAM orphans the snapshots, and one action deletes them. Opt-in with WEBPC_DISTROS=debian (scripts/ci-debian.sh).
+// RAM orphans the snapshots, and one action deletes them. Opt-in with WEBPC_DISTROS=debian (scripts/ci-machines.sh).
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { after, before, test } from 'node:test';
@@ -13,7 +13,7 @@ import { PAGE_QUERY } from './page-query.ts';
 
 const debian = (process.env.WEBPC_DISTROS ?? '').split(',').includes('debian');
 const IMAGE = new URL('../target/images/debian/disk.qcow2', import.meta.url);
-const skip = !debian ? 'SKIPPED: scripts/ci-debian.sh runs it (WEBPC_DISTROS=debian)' : !existsSync(IMAGE) && 'SKIPPED: run images/build.sh debian edk2';
+const skip = !debian ? 'SKIPPED: scripts/ci-machines.sh runs it (WEBPC_DISTROS=debian)' : !existsSync(IMAGE) && 'SKIPPED: run images/build.sh debian edk2';
 const BOOT_MS = 420_000;
 
 let browser: Browser;

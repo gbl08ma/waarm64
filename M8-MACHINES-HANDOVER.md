@@ -110,6 +110,10 @@ steps were run by hand. **Worth a look in the dev VM** (does the case reproduce 
 - `scripts/ci-net.sh` passes (439 s; the internet opt-ins skipped). So step 1 is done, and step 2's Buildroot tests
   (`browser`, `page-save`, `page-snapshot`, `page-machine`, `dist`, `start`) pass inside `scripts/ci.sh`; step 4:
   `tests/steps.txt` didn't move.
+- **CI split (the user's call):** the machines tests left `scripts/ci-debian.sh` for `scripts/ci-machines.sh` (three
+  slots; the stored disk's steps in their own file, `tests/page-stored.test.ts`): ci-debian 455 → 210 s, ci-machines
+  212 s, both passing. Snapshots shared within a run were measured out first: no two Debian tests boot the same
+  machine, and most boots are what their test checks (docs/testing.md).
 - Step 3 dropped by the user: no installer flow tested, at least not with Alpine (the test is removed; the ready
   marker's fix for busybox's getty stays). Next: step 5 (the exit's numbers).
 
