@@ -584,18 +584,20 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   const bytes = () => new Uint8Array(memory.buffer);
   const specs = await Promise.all((o.devices ?? []).map(async (d) => {
     if (d.type !== 'blk' || d.size !== undefined) return d;
+    if (d.source) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : 'blank disk'} needs a size`);
+    if (!d.url && !d.file) throw new Error('a disk with no image (url, file or source)');
     // The capacity: a qcow2 header's virtual size, or the file size.
     if (d.file) {
       const head = new Uint8Array(await d.file.slice(0, 32).arrayBuffer());
       return { ...d, size: isQcow2(head) ? qcow2Size(head) : d.file.size };
     }
-    if (d.url.startsWith('file:')) {
-      const f = await fileSource(d.url);
+    if (d.url!.startsWith('file:')) {
+      const f = await fileSource(d.url!);
       const head = f.read(0, 32)!;
       f.close?.();
       return { ...d, size: isQcow2(head) ? qcow2Size(head) : f.size };
     }
-    const r = await fetch(d.url, { headers: { Range: 'bytes=0-31' } });
+    const r = await fetch(d.url!, { headers: { Range: 'bytes=0-31' } });
     if (r.status !== 206) throw new Error(`${d.url}: ${r.status}`);
     const head = new Uint8Array(await r.arrayBuffer());
     return { ...d, size: isQcow2(head) ? qcow2Size(head) : Number(r.headers.get('content-range')?.split('/')[1]) };

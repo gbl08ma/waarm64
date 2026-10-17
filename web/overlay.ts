@@ -261,6 +261,16 @@ export function memFile(): SyncFile & { bytes: () => Uint8Array } {
   };
 }
 
+/**
+ * The OPFS directory at `path` (`/`-separated: `overlays/<id>`, or a single name), made with its
+ * parents when `create`; a missing one throws NotFoundError.
+ */
+export async function opfsDir(path: string, create = false): Promise<FileSystemDirectoryHandle> {
+  let d = await navigator.storage.getDirectory();
+  for (const p of path.split('/').filter(Boolean)) d = await d.getDirectoryHandle(p, { create });
+  return d;
+}
+
 /** Node has no OPFS: there an overlay lives in memory for the process's life (tests), by name. */
 const inMemory = new Map<string, { data: SyncFile; map: SyncFile; base: string }>();
 
@@ -314,7 +324,7 @@ export async function openOverlay(name: string, want: string, waitMs = OVERLAY_W
       inMemory.set(name, o);
       return { data: o.data, map: o.map, close: done };
     }
-    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name, { create: true });
+    const dir = await opfsDir(name, true);
     const open = async (f: string) => {
       const h = await (await dir.getFileHandle(f, { create: true })).createSyncAccessHandle();
       handles.push(h);
@@ -353,7 +363,8 @@ export async function removeOverlay(name: string) {
       inMemorySuspend.delete(name);
       return;
     }
-    await (await navigator.storage.getDirectory()).removeEntry(name, { recursive: true });
+    const parts = name.split('/');
+    await (await opfsDir(parts.slice(0, -1).join('/'))).removeEntry(parts.at(-1)!, { recursive: true });
   } catch (e) {
     if ((e as DOMException).name !== 'NotFoundError') throw e;
   } finally {
@@ -381,7 +392,7 @@ export async function suspendWriter(name: string): Promise<{ write(bytes: Uint8A
     inMemorySuspend.delete(name);
     return { write: (b) => { parts.push(b.slice()); }, close: () => { inMemorySuspend.set(name, parts); }, abort: async () => { inMemorySuspend.delete(name); } };
   }
-  const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name, { create: true });
+  const dir = await opfsDir(name, true);
   const h = await (await dir.getFileHandle(SUSPEND, { create: true })).createSyncAccessHandle();
   h.truncate(0);
   let at = 0;
@@ -408,7 +419,7 @@ export async function suspended(name: string): Promise<Blob | undefined> {
     return parts && new Blob(parts as BlobPart[]);
   }
   try {
-    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
+    const dir = await opfsDir(name);
     const file = await (await dir.getFileHandle(SUSPEND)).getFile();
     return file.size ? file : undefined;
   } catch (e) {
@@ -421,7 +432,7 @@ export async function suspended(name: string): Promise<Blob | undefined> {
 export async function dropSuspend(name: string) {
   if (typeof navigator.storage === 'undefined') return void inMemorySuspend.delete(name);
   try {
-    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
+    const dir = await opfsDir(name);
     await dir.removeEntry(SUSPEND);
   } catch (e) {
     if ((e as DOMException).name !== 'NotFoundError') throw e;
@@ -432,7 +443,7 @@ export async function dropSuspend(name: string) {
 export async function overlayBytes(name: string) {
   let dir: FileSystemDirectoryHandle;
   try {
-    dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
+    dir = await opfsDir(name);
   } catch {
     return 0;
   }
@@ -453,7 +464,7 @@ const inMemoryFlash = new Map<string, Uint8Array>();
 export async function loadFlash(name: string): Promise<Uint8Array | undefined> {
   if (typeof navigator.storage === 'undefined') return inMemoryFlash.get(name);
   try {
-    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
+    const dir = await opfsDir(name);
     const bytes = new Uint8Array(await (await (await dir.getFileHandle('flash')).getFile()).arrayBuffer());
     return bytes.length ? bytes : undefined;
   } catch (e) {
@@ -468,7 +479,7 @@ export async function saveFlash(name: string, bytes: Uint8Array) {
     inMemoryFlash.set(name, bytes.slice());
     return;
   }
-  const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle(name, { create: true });
+  const dir = await opfsDir(name, true);
   const h = await (await dir.getFileHandle('flash', { create: true })).createSyncAccessHandle();
   try {
     h.truncate(0);

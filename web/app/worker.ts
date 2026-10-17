@@ -16,7 +16,8 @@ import { readSnapshot, writeSnapshot } from '../snapshot.ts';
 import type { DeviceSpec } from '../devices.ts';
 import { startSampler, startTimeline, type Timeline } from '../profiler.ts';
 import { credentialFiles, MACHINES, readyWatcher, withParams, type Machine } from './machine.ts';
-import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
+import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
+import { CPU_FEATURES, slots, type CpuFeature, type DeviceKind } from './shape.ts';
 import type { MachineName } from './machine.ts';
 
 const post = (m: FromWorker, transfer: Transferable[] = []) => self.postMessage(m, { transfer });
@@ -29,8 +30,8 @@ let booting: Promise<Vm> | undefined;
 let stopping = false;
 /** The machine this worker was started for. */
 let current: Machine | undefined;
-/** The OPFS overlay of the disk it boots: the machine's, or the chosen disk's. */
-let overlayName: string | undefined;
+/** The OPFS directory of the machine's variable store and suspended copy (the start message's `home`). */
+let home: string | undefined;
 
 self.onmessage = (e: MessageEvent<ToWorker>) => {
   const m = e.data;
@@ -97,9 +98,9 @@ const same = (a: Uint8Array, b?: Uint8Array) => !!b && a.length === b.length && 
 /** Saves the flash bank if it changed since the last save (a save in flight finishes first). */
 function keepFlash(v: Vm, machine: Machine) {
   const flash = v.flash();
-  if (!flash || !overlayName || same(flash, savedFlash)) return saving;
+  if (!flash || !home || same(flash, savedFlash)) return saving;
   savedFlash = flash;
-  return (saving = saving.then(() => saveFlash(overlayName!, flash)).catch(() => { savedFlash = undefined; })); // retried at the next change or tick
+  return (saving = saving.then(() => saveFlash(home!, flash)).catch(() => { savedFlash = undefined; })); // retried at the next change or tick
 }
 
 /** Stops `v` and keeps its variable store (firmware machines); once per machine. */
@@ -115,7 +116,7 @@ const failure = (problem: Problem, message: string) => Object.assign(new Error(m
 /** What this machine is, for a snapshot's header (docs/frontend.md "Snapshots"). */
 /** The RAM of the machine being started, MiB (the page's choice, or a snapshot's). */
 let ramMiB = 0;
-let session: { name: MachineName; ncpus: number; disk: string | null; kinds: DeviceKind[]; cpu: CpuFeature[] } | undefined;
+let session: { name: MachineName; ncpus: number; disk: string | null; kinds: DeviceKind[]; cpu: CpuFeature[]; ramdisk: boolean } | undefined;
 /** The core, compiled once: `bootVm` and the snapshot codec both take the module. */
 let core: WebAssembly.Module | undefined;
 let codecP: ReturnType<typeof lzCodec> | undefined;
@@ -129,34 +130,38 @@ let isSuspended = false;
 /** `bootVm` has the snapshot: the disk's overlay may be replaced. */
 let restoring = false;
 
-/** The devices of a machine in slot order: the kinds a snapshot's header lists, so a restore makes the same. */
-type DeviceKind = 'rng' | 'blk' | 'blk-ro' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd';
-const KINDS: DeviceKind[] = ['rng', 'blk', 'blk-ro', 'keyboard', 'tablet', 'net', 'gpu', 'snd'];
-/** The vCPUs' optional features a machine may have (`BootOptions.rng`, `e0pd`): all, unless the page says otherwise. */
-type CpuFeature = 'rng' | 'e0pd';
-const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd'];
 type StartMessage = Extract<ToWorker, { type: 'start' }>;
+/** A transport of the machine: its kind, and the disk it is for a `blk`. */
+type Slot = { kind: DeviceKind; disk?: StartDisk };
 
-/** The device of `kind` for this start, or what the page's options lack to make it. */
-function device(kind: DeviceKind, m: StartMessage, machine: Machine, diskUrl: string): DeviceSpec | string {
-  switch (kind) {
+/** The machine's transports in slot order (web/app/shape.ts `slots`): the kinds a snapshot's header lists, so a restore makes the same. */
+const layout = (m: StartMessage, machine: Machine): Slot[] =>
+  slots({ network: !!(m.ip && machine.network), display: usesGpu(m, machine) ? '2d' : 'none', attachments: m.disks }).map((s) => ({ kind: s.kind, disk: s.attachment === undefined ? undefined : m.disks[s.attachment] }));
+
+/** A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back). */
+function blkSpec(d: StartDisk): DeviceSpec {
+  const s = d.source;
+  const source = 'url' in s ? { url: new URL(s.url, self.location.href).href } : 'file' in s ? { file: s.file } : 'blank' in s ? { source: 'zero' as const, size: s.blank } : { source: 'ram' as const, size: s.ramdisk };
+  return { type: 'blk', ...source, overlay: 'ramdisk' in s ? undefined : d.overlay, identity: d.identity, serial: d.serial, discard: true };
+}
+
+/** The device in `slot` for this start. */
+function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
+  switch (slot.kind) {
     case 'rng': return { type: 'rng' };
-    case 'blk': return { type: 'blk', url: diskUrl, file: m.disk?.file, overlay: overlayName, discard: true }; // what the guest trims leaves the overlay
-    case 'blk-ro': return m.disk2 ? { type: 'blk', url: new URL(m.disk2, self.location.href).href } : 'a second disk (?disk2=<url>), and this page was opened without one'; // no overlay: read-only
+    case 'blk': return blkSpec(slot.disk!);
     case 'keyboard': return { type: 'input', kind: 'keyboard', port: m.keyboard };
     case 'tablet': return { type: 'input', kind: 'tablet', port: m.tablet };
     case 'gpu': {
       const tuning = gpuTuning();
       return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, probe: m.avProbe, keepConsole: true, ...tuning, virgl: tuning.virgl || !!m.renderer, renderer: m.renderer, caps: m.caps };
     }
-    case 'net': return m.ip && machine.network ? { type: 'net', adapter: { ip: m.ip } } : 'a network card, and this machine has no network port';
+    case 'net': return { type: 'net', adapter: { ip: m.ip! } };
     // Without the page's ring (a page that passed none), the sink plays on its own clock.
     case 'snd': return { type: 'snd', ring: m.sound?.ring, mic: m.sound?.mic, port: m.sound?.port, ...sndTuning() };
   }
 }
 
-/** The kinds a normal start makes, as the page's options say. */
-const normalKinds = (m: StartMessage, machine: Machine): DeviceKind[] => ['rng', ...(machine.disk || m.disk ? ['blk' as const] : []), ...(m.disk2 ? ['blk-ro' as const] : []), 'keyboard', 'tablet', ...(m.ip && machine.network ? ['net' as const] : []), ...(usesGpu(m, machine) ? ['gpu' as const] : []), 'snd'];
 /**
  * The sound's tuning, for measurements (docs/audio.md "Measurements"): the page's `?snd=timer` completes played messages
  * on a timer instead of the worklet's notify, `stats` posts their timing once a second (kept in `window.__sndStats`).
@@ -185,23 +190,23 @@ const usesGpu = (m: StartMessage, machine: Machine) => machine.display === 'gpu'
  * `snapshot` problem, with a message for the user) a snapshot of another machine, and one whose
  * devices can't be made here.
  */
-function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, diskUrl: string, name: string) {
+function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, name: string) {
   const what = `${name} can't be loaded`;
   if (h.machine !== m.machine) {
     const other = typeof h.label === 'string' ? h.label : String(h.machine);
     throw failure('snapshot', `${what}: it is a snapshot of ${other} (?machine=${String(h.machine)}), and this page runs ${machine.label} (?machine=${m.machine}).\nOpen the page for that machine to load it. Start boots ${machine.label} normally.`);
   }
   const kinds = h.devices;
-  if (!Array.isArray(kinds) || !kinds.length || !kinds.every((k): k is DeviceKind => KINDS.includes(k as DeviceKind))) {
+  const here = layout(m, machine);
+  if (!Array.isArray(kinds) || !kinds.length || !kinds.every((k) => typeof k === 'string')) {
     throw failure('snapshot', `${what}: its list of devices isn't one this page knows (another version made it?).\nStart boots ${machine.label} normally.`);
+  }
+  if (kinds.join() !== here.map((s) => s.kind).join()) {
+    throw failure('snapshot', `${what}: its machine had other devices (${kinds.join(', ')}; here: ${here.map((s) => s.kind).join(', ')}).\nOpen this page as that machine was started (the same disks, with its network), or Start ${machine.label} normally.`);
   }
   const ncpus = h.ncpus;
   if (typeof ncpus !== 'number' || !Number.isInteger(ncpus) || ncpus < 1 || ncpus > 64) throw failure('snapshot', `${what}: its processor count isn't readable.\nStart boots ${machine.label} normally.`);
-  const specs = kinds.map((k) => {
-    const d = device(k, m, machine, diskUrl);
-    if (typeof d === 'string') throw failure('snapshot', `${what}: its machine had ${d}.\nOpen this page as that machine was started (the same ?disk2=…, with its network), or Start ${machine.label} normally.`);
-    return d;
-  });
+  const specs = here.map((s) => device(s, m, machine));
   const ram = Number(h.ramSize) / 2 ** 20;
   if (!Number.isInteger(ram) || ram < 64 || ram > 3072) throw failure('snapshot', `${what}: its memory size isn't readable.\nStart boots ${machine.label} normally.`);
   // A snapshot from before the header said (ABI 34 and older) had none of them.
@@ -209,7 +214,7 @@ function fromHeader(h: SnapshotHeader, m: StartMessage, machine: Machine, diskUr
   if (!Array.isArray(cpu) || !cpu.every((f): f is CpuFeature => CPU_FEATURES.includes(f as CpuFeature))) {
     throw failure('snapshot', `${what}: its processor's features aren't ones this page knows (another version made it?).\nStart boots ${machine.label} normally.`);
   }
-  return { specs, kinds, ncpus, ramMiB: ram, cpu };
+  return { specs, ncpus, ramMiB: ram, cpu };
 }
 
 const CORE = new URL('../../target/wasm32-unknown-unknown/release/webpc_core.wasm', import.meta.url).href;
@@ -301,29 +306,29 @@ function explain(err: unknown, machine: Machine): [Problem, string] {
 
 async function start(m: StartMessage, note?: string): Promise<void> {
   const machine: Machine = current = MACHINES[m.machine];
-  overlayName = m.disk?.overlay ?? machine.overlay;
+  home = m.home;
   state('loading');
   // A suspended machine kept beside the disk (docs/frontend.md "Suspend") is resumed, unless the
   // page says boot; either way it is dropped before a machine runs on the disk, which is what
   // keeps a suspended machine and its disk together.
   let resume: Blob | undefined;
-  if (overlayName && !m.snapshot) {
-    if (m.resume === false) await dropSuspend(overlayName).catch(() => {});
-    else resume = await suspended(overlayName).catch(() => undefined);
+  if (home && !m.snapshot) {
+    if (m.resume === false) await dropSuspend(home).catch(() => {});
+    else resume = await suspended(home).catch(() => undefined);
   }
   const snapshot: Blob | undefined = m.snapshot ?? resume;
   const snapshotName = m.snapshot?.name ?? 'The suspended machine';
   /** A suspended machine that can't be resumed is dropped, and the machine boots. */
   const bootInstead = async (err: unknown) => {
-    if (overlayName) await dropSuspend(overlayName).catch(() => {});
+    if (home) await dropSuspend(home).catch(() => {});
     restoring = false;
     return start({ ...m, resume: false }, `The suspended machine couldn't be resumed (${String((err as Error).message ?? err).split('\n')[0]}), so it was dropped and the machine boots from its disk.`);
   };
   // The disk is read by ranges as the guest needs it (not downloaded): check it's there.
   // A snapshot has the variable store in its RAM (the restore writes it beside the overlay) and needs no kernel.
-  const flash = !snapshot && machine.firmware && overlayName ? loadFlash(overlayName).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
-  const diskUrl = m.disk?.url ?? machine.disk ?? '';
-  const disk = m.disk?.file || !diskUrl ? Promise.resolve() : fetch(diskUrl, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(diskUrl, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`); });
+  const flash = !snapshot && machine.firmware && home ? loadFlash(home).then((f) => (f?.length === FLASH_SIZE ? f : undefined), () => undefined) : undefined;
+  const urls = m.disks.flatMap((d) => ('url' in d.source ? [new URL(d.source.url, self.location.href).href] : []));
+  const disk = Promise.all(urls.map((url) => fetch(url, { method: 'HEAD' }).then((r) => { if (!r.ok) throw missing(url, machine, `answered HTTP ${r.status}${r.status === 404 ? ' (not found)' : ''}`); })));
   const [wasm, kernel = new Uint8Array(0), initrd] = await download([CORE, ...(snapshot ? [] : [machine.kernel, ...(machine.initrd ? [machine.initrd] : [])])], machine);
   await disk;
   if (stopping) return;
@@ -335,7 +340,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   if (stopping) return;
   let ncpus = m.ncpus;
   ramMiB = m.ramMiB;
-  let kinds = normalKinds(m, machine);
+  const kinds = layout(m, machine).map((s) => s.kind);
   let cpu = CPU_FEATURES.filter((f) => m.cpu?.[f] ?? true);
   let restore: Restore | undefined;
   if (snapshot) {
@@ -345,8 +350,8 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     try {
       const lz = await codec();
       const { header } = await openSnapshot(snapshot, { codecs: [lz] });
-      const h = fromHeader(header, m, machine, diskUrl, snapshotName);
-      ({ kinds, ncpus, ramMiB, cpu } = h);
+      const h = fromHeader(header, m, machine, snapshotName);
+      ({ ncpus, ramMiB, cpu } = h);
       restore = (await readSnapshot(snapshot, lz, lz.snapshotVersion, { devices: h.specs, resume: !!resume })).restore;
       serialTail = typeof header.serial === 'string' ? header.serial : '';
     } catch (err) {
@@ -357,8 +362,8 @@ async function start(m: StartMessage, note?: string): Promise<void> {
     if (stopping) return;
     restoring = !resume;
   }
-  const devices = kinds.map((k) => device(k, m, machine, diskUrl) as DeviceSpec);
-  session = { name: m.machine, ncpus, disk: m.disk ? (m.disk.file?.name ?? new URL(m.disk.url!, self.location.href).pathname.split('/').pop() ?? 'disk') : null, kinds, cpu };
+  const devices = layout(m, machine).map((s) => device(s, m, machine));
+  session = { name: m.machine, ncpus, disk: m.disks[0]?.name ?? null, kinds, cpu, ramdisk: m.disks.some((d) => 'ramdisk' in d.source) };
   booting = bootVm(core, {
     ramSize: ramMiB * 2 ** 20, kernel, initrd, cmdline: machine.firmware ? '' : withParams(machine.cmdline, m.params ?? ''), firmware, jit: 1, ncpus, parallel: true, realtime: true, compileWorker: new URLSearchParams(self.location.search).get('jit') !== 'nocw' && !spiderMonkey, vcpuYieldMs: new URLSearchParams(self.location.search).has('vyield') ? Number(new URLSearchParams(self.location.search).get('vyield')) : undefined, rng: cpu.includes('rng'), e0pd: cpu.includes('e0pd'),
     framebuffer: kinds.includes('gpu') ? undefined : machine.framebuffer, serialIn: m.serial, restore, devices,
@@ -372,7 +377,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   }
   if (stopping) return; // `stop` closes it
   // The resumed machine is about to write its disk: its suspended copy is void from here.
-  if (resume) await dropSuspend(overlayName!);
+  if (resume) await dropSuspend(home!);
   if (restore) await keepFlash(vm, machine); // the restore deleted the copy beside the overlay: the bank the machine has goes back
   if (vm.framebuffer && m.screen) showFramebuffer(m.screen, vm.memory, vm.framebuffer, () => post({ type: 'screen' })); // on this worker's animation frames
   const t0 = performance.now();
@@ -458,6 +463,7 @@ async function saveSnapshot(handle?: FileSystemFileHandle) {
   const s = session;
   if (!v || !s || stopping || closed) return fail("The machine isn't running, so there is nothing to save.");
   if (snapshotting) return fail('A snapshot is already being saved.');
+  if (s.ramdisk) return fail("A machine with a ramdisk can't be saved in a snapshot yet: the ramdisk's contents aren't in the file.");
   snapshotting = true;
   let out: FileSystemWritableFileStream | undefined;
   let paused = false;
@@ -512,8 +518,9 @@ async function suspend() {
   const s = session;
   const machine = current;
   if (!v || !s || !machine || stopping || closed) return fail("The machine isn't running, so there is nothing to suspend.");
-  if (!overlayName) return fail('This machine has no disk of its own to keep a suspended copy beside.');
+  if (!home) return fail('This machine has no disk of its own to keep a suspended copy beside.');
   if (snapshotting) return fail('A snapshot is being saved: suspend once it is done.');
+  if (s.ramdisk) return fail("A machine with a ramdisk can't be suspended yet: the ramdisk's contents would be lost.");
   snapshotting = true;
   let paused = false;
   try {
@@ -523,7 +530,7 @@ async function suspend() {
     paused = true;
     const cut = serialTail.length >= TAIL ? serialTail.indexOf('\n') + 1 : 0;
     const meta = { machine: s.name, label: machine.label, ncpus: s.ncpus, disk: s.disk, devices: s.kinds, cpu: s.cpu, serial: serialTail.slice(cut) };
-    const out = await suspendWriter(overlayName);
+    const out = await suspendWriter(home);
     let bytes = 0;
     try {
       let posted = 0;

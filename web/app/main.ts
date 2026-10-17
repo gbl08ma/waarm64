@@ -20,11 +20,18 @@ import { defaultCpus, diskOverlay, hostMemoryGiB, MACHINES, type DiskChoice, typ
 import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
 import { createNetwork, DEFAULT_SETTINGS, forgetTailcatIdentity, hasTailcatIdentity, tailscaleBuilt, tailcatBuilt, parseControlURL, parseHostname, parseRelay, parseTailcatAddr, type NetworkSettings } from './network.ts';
-import type { FromWorker, PowerState, Problem, Status, ToWorker } from './protocol.ts';
+import type { FromWorker, PowerState, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
+import { canonical, newId, serialOf, type DiskRecord, type MachineRecord } from './shape.ts';
+import { overlayDir, machineDir, Store } from './store.ts';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
-const machine = (params.get('machine') ?? 'uefi') as MachineName;
+// A machine kept in this browser (docs/plans/machines.md), by id: `?m=<id>`. It is the page's machine (`uefi`) with its own
+// vCPUs, RAM, display and disks. Without one the machine is transient, made from the query (the tests' `?machine=`).
+const store = await Store.open();
+let storedError = '';
+const stored = params.get('m') ? await loadStored(params.get('m')!).catch((e) => { storedError = String((e as Error).message ?? e); return undefined; }) : undefined;
+const machine = stored ? 'uefi' : (params.get('machine') ?? 'uefi') as MachineName;
 if (!(machine in MACHINES)) throw new Error(`no machine ${machine}`);
 const spec: Machine = MACHINES[machine];
 // `?credential=name:value` (repeatable): a systemd credential for a firmware machine, for development and tests.
@@ -38,9 +45,69 @@ const overlayName = () => chosen?.overlay ?? spec.overlay;
 /** What the disk is called on the page. */
 const diskName = () => (chosen ? (chosen.file?.name ?? new URL(chosen.url!, location.href).pathname.split('/').pop() ?? 'disk') : undefined);
 /** A machine that boots the user's disk and has none yet (the page's own, until a disk is opened): it waits. */
-const needsDisk = () => !!spec.firmware && !spec.disk && !chosen;
+const needsDisk = () => !!spec.firmware && !spec.disk && !chosen && !stored?.record.attachments.length;
 /** What the header calls the machine: its name and the disk's. */
-const machineTitle = () => `${spec.label} · ${diskName() ?? (needsDisk() ? 'no disk' : '')}`.replace(/ · $/, '');
+const machineTitle = () => (stored ? stored.record.name : `${spec.label} · ${diskName() ?? (needsDisk() ? 'no disk' : '')}`.replace(/ · $/, ''));
+
+/** A stored machine and its disks' records; refused (an error the page shows) when one of them is missing. */
+async function loadStored(id: string) {
+  const record = await store.get('machines', id);
+  if (!record) throw new Error(`there is no machine ${id} in this browser`);
+  const disks = new Map<string, DiskRecord>();
+  for (const a of record.attachments) {
+    const d = await store.get('disks', a.disk);
+    if (!d) throw new Error(`machine ${record.name} has a disk that isn't in this browser (${a.disk})`);
+    disks.set(d.id, d);
+  }
+  return { record, disks };
+}
+
+/**
+ * Gives each writable attachment of the stored machine an overlay, if it has none yet (an empty one, "Changes"), and keeps
+ * the machine's record. A ramdisk has none (its writes stay in memory).
+ */
+async function ensureOverlays(s: { record: MachineRecord; disks: Map<string, DiskRecord> }) {
+  let changed = false;
+  for (const a of s.record.attachments) {
+    const d = s.disks.get(a.disk)!;
+    if (a.readOnly || d.kind === 'ramdisk' || a.overlay) continue;
+    const now = Date.now();
+    a.overlay = newId();
+    await store.put('overlays', { id: a.overlay, name: 'Changes', disk: d.id, identity: d.identity, generation: 0, bytes: 0, created: now, modified: now });
+    changed = true;
+  }
+  if (changed) await store.put('machines', s.record);
+}
+
+/**
+ * The disks of the machine to start, in slot order, and the OPFS directory of its own files (the variable store, a
+ * suspended copy). A transient machine's: its image or the chosen disk, its overlay as home, and `?disk2=` read-only.
+ */
+async function startDisks(): Promise<{ disks: StartDisk[]; home?: string }> {
+  if (stored) {
+    await ensureOverlays(stored);
+    const disks = await Promise.all(stored.record.attachments.map(async (a): Promise<StartDisk> => {
+      const d = stored.disks.get(a.disk)!;
+      const base = { name: d.name, serial: serialOf(a.id), identity: canonical(d.identity), overlay: a.readOnly || !a.overlay ? undefined : overlayDir(a.overlay) };
+      switch (d.kind) {
+        case 'url': return { ...base, source: { url: d.url! } };
+        case 'file': return { ...base, source: { file: await d.handle!.getFile() } };
+        case 'blank': return { ...base, source: { blank: d.size } };
+        case 'ramdisk': return { ...base, overlay: undefined, source: { ramdisk: d.size } };
+        case 'stored': throw new Error(`${d.name} is stored in the browser, which this page can't attach yet`);
+      }
+    }));
+    return { disks, home: machineDir(stored.record.id) };
+  }
+  const disks: StartDisk[] = [];
+  const own: { url?: string; file?: File; overlay?: string } | undefined = chosen ?? (spec.disk ? { url: spec.disk, overlay: spec.overlay } : undefined);
+  if (own) disks.push({ name: baseName(), source: own.file ? { file: own.file } : { url: own.url! }, overlay: own.overlay });
+  const disk2 = params.get('disk2');
+  if (disk2) disks.push({ name: new URL(disk2, location.href).pathname.split('/').pop() ?? 'disk2', source: { url: disk2 } });
+  return { disks, home: own?.overlay };
+}
+/** The ramdisks' size, MiB: host memory the machine may take beside its RAM. */
+const ramdiskMiB = () => (stored ? stored.record.attachments.reduce((n, a) => n + (stored.disks.get(a.disk)!.kind === 'ramdisk' ? stored.disks.get(a.disk)!.size / 2 ** 20 : 0), 0) : 0);
 
 // Settings remembered per browser (the view, the network, whether saved disks are compressed, the sound's volume). Storage can be off or throw: then nothing is remembered.
 type Settings = { ncpus?: number; ramMiB?: number; view?: View; net?: NetworkSettings; compress?: boolean; screen?: string; hidpi?: boolean; gpu?: '3d' | '2d'; muted?: boolean; volume?: number; mic?: boolean; micRaw?: boolean };
@@ -61,8 +128,8 @@ const remember = (s: Settings) => {
 // The machine's size (the Machine menu): the query's, else the one chosen last in this browser, else the defaults.
 const CPU_CHOICES = [1, 2, 3, 4, 6, 8];
 const RAM_CHOICES = [512, 1024, 1536, 2048, 2560];
-let ncpus = Number(params.get('ncpus')) || (CPU_CHOICES.includes(settings().ncpus!) ? settings().ncpus! : 0) || defaultCpus(navigator.hardwareConcurrency || 4);
-let ramMiB = Number(params.get('ram')) || (RAM_CHOICES.includes(settings().ramMiB!) ? settings().ramMiB! : 0) || spec.ramMiB;
+let ncpus = Number(params.get('ncpus')) || stored?.record.ncpus || (CPU_CHOICES.includes(settings().ncpus!) ? settings().ncpus! : 0) || defaultCpus(navigator.hardwareConcurrency || 4);
+let ramMiB = Number(params.get('ram')) || stored?.record.ramMiB || (RAM_CHOICES.includes(settings().ramMiB!) ? settings().ramMiB! : 0) || spec.ramMiB;
 
 let canvas = $<HTMLCanvasElement>('screen');
 const screenBox = $('screen-view');
@@ -216,7 +283,7 @@ const flashed = (t: number) => ((window as unknown as { __flashes?: number[] }).
  */
 const gpuKnobs = (params.get('gpu') ?? '').split(',');
 const gpuAsked = gpuKnobs.includes('2d') || gpuKnobs.includes('virgl-null') ? '2d' : gpuKnobs.includes('virgl') ? '3d' : undefined;
-const wants3d = () => hasGpu && (gpuAsked ?? settings().gpu ?? '3d') === '3d';
+const wants3d = () => hasGpu && (gpuAsked ?? stored?.record.display ?? settings().gpu ?? '3d') === '3d';
 let want3d = wants3d();
 let no3d: string | undefined;
 const hasWebgl2 = () => { try { return !!new OffscreenCanvas(1, 1).getContext('webgl2'); } catch { return false; } };
@@ -421,11 +488,20 @@ function start(snapshot?: File, resume = true) {
     snapshotJob?.error(`the machine's worker failed: ${e.message}`);
     setState('crashed', `The machine's worker failed: ${e.message}`, ACTIONS.emulator);
   };
-  const begin = (three?: { renderer: MessagePort; caps: Uint8Array }) => {
+  const begin = async (three?: { renderer: MessagePort; caps: Uint8Array }) => {
+    if (run !== r) return;
+    let disks: StartDisk[];
+    let home: string | undefined;
+    try {
+      ({ disks, home } = await startDisks());
+    } catch (e) {
+      if (run === r) setState('failed', `The machine's disks couldn't be opened: ${String((e as Error).message ?? e)}`, [retry]);
+      return;
+    }
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disk: chosen, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, disk2: params.get('disk2') ?? undefined, ip, sound, snapshot, resume, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, ip, sound, snapshot, resume, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -438,7 +514,7 @@ function start(snapshot?: File, resume = true) {
       const m = e.data;
       if (m.type === 'ready') {
         console.info(`webpc: 3D on ${m.renderer}`);
-        begin({ renderer: channel.port2, caps: m.caps });
+        void begin({ renderer: channel.port2, caps: m.caps });
       } else if (m.type === 'failed') {
         // The canvas is the GPU worker's now: a fresh start, without 3D.
         no3d = m.reason;
@@ -457,7 +533,7 @@ function start(snapshot?: File, resume = true) {
       if (run !== r) return;
       setState('crashed', `The GPU worker failed: ${e.message}`, ACTIONS.emulator);
     };
-  } else begin();
+  } else void begin();
   if (ip) autoconnect();
   renderNetwork();
 }
@@ -1151,9 +1227,10 @@ function boot() {
     restartBtn.hidden = resetDiskBtn.hidden = true;
     return;
   }
+  if (storedError) return setState('failed', `This machine can't be opened: ${storedError}.`);
   if (needsDisk()) return waitForDisk();
   // Chromium kills a renderer that runs out of memory without an error to catch (PLAN.md §4): judge up front.
-  const need = hostMemoryGiB(ramMiB, ncpus);
+  const need = hostMemoryGiB(ramMiB + ramdiskMiB(), ncpus);
   const has = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   if (has !== undefined && has < need) {
     const fewer = Math.floor((has - hostMemoryGiB(ramMiB, 0)) / (hostMemoryGiB(0, 1) - hostMemoryGiB(0, 0)) + 1e-9);

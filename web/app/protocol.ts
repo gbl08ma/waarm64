@@ -3,7 +3,7 @@
 import type { VcpuLiveness } from '../liveness.ts';
 import type { Timeline } from '../profiler.ts';
 import type { Vm } from '../vm.ts';
-import type { Credential, DiskChoice, MachineName } from './machine.ts';
+import type { Credential, MachineName } from './machine.ts';
 
 /**
  * loading: fetching the core and the images; booting: the VM runs, its `ready` output not seen
@@ -70,14 +70,14 @@ export type ToWorker =
      * ones boot Debian unattended). The release page passes none.
      */
     credentials?: Credential[];
+    /** The machine's disks in slot order (docs/plans/machines.md §4.1: at most `MAX_DISKS`), resolved by the page. */
+    disks: StartDisk[];
     /**
-     * The root disk to boot instead of the machine's own (the page's picker, a dropped file or
-     * `?disk=<url>`): a `File` goes to the device worker as is, read in slices. Its `overlay` is the
-     * OPFS directory for what the machine writes and for the variable store.
+     * The OPFS directory of the machine's own files: the firmware's variable store (`flash`) and a suspended machine
+     * (`suspend`). A stored machine's `machines/<id>`; a transient one's is its first writable disk's overlay. None:
+     * neither is kept.
      */
-    disk?: DiskChoice;
-    /** A second, read-only virtio-blk (the page's `?disk2=<url>`, for tests: /dev/vdb), served over HTTP ranges like the root. */
-    disk2?: string;
+    home?: string;
     /**
      * The gateway's end of the machine's IP port (web/gateway.ts `portBackend`): the machine gets a
      * network card (virtio-net) and its `network` command line. The page keeps the other end and
@@ -114,6 +114,24 @@ export type ToWorker =
   | { type: 'profile'; on: boolean }
   /** Benchmarks: start or stop the vCPU timeline (web/profiler.ts `startTimeline`); a stop is answered by `timeline`. */
   | { type: 'timeline'; on: boolean };
+
+/**
+ * A disk of the machine being started (docs/plans/machines.md §4.2): where its bytes come from (a URL read by
+ * ranges, a `File` read in slices in the device worker, a blank disk of `blank` bytes reading as zeros, a ramdisk
+ * of `ramdisk` bytes, empty at every start), and the OPFS overlay its writes go to. Without an overlay a disk is
+ * read-only, unless it is a ramdisk.
+ */
+export type StartDisk = {
+  /** Its name in messages (a file's, a URL's last part). */
+  name: string;
+  source: { url: string } | { file: File } | { blank: number } | { ramdisk: number };
+  /** The OPFS directory of its changes (web/overlay.ts). */
+  overlay?: string;
+  /** What the overlay belongs to (default: the source's, web/devices.ts `diskIdentity`). */
+  identity?: string;
+  /** What the guest's GET_ID gets (default `webpc-blk`). */
+  serial?: string;
+};
 
 /** Worker → page. */
 export type FromWorker =

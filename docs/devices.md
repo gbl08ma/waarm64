@@ -80,8 +80,17 @@ the PL011, [platform.md](platform.md) "PL011"). virtio-rng:
 mode (and natively in realtime mode: std has no CSPRNG).
 
 ### blk (ID 2)
-- Features `SEG_MAX` = 126, `RO` (or `FLUSH` with an overlay); one queue of 128. `IN`, `GET_ID`,
-  `OUT` and `FLUSH` with an overlay (`IOERR` without), the rest `UNSUPP`.
+- Features `SEG_MAX` = 126, `RO` (or `FLUSH` when writable: an overlay, or a ramdisk); one queue of 128. `IN`, `GET_ID`,
+  `OUT` and `FLUSH` when writable (`IOERR` without), the rest `UNSUPP`. `GET_ID` answers the spec's `serial` (a
+  machine's attachment: `webpc-<attachment id>`, so `/dev/disk/by-id/virtio-…` survives a reorder;
+  docs/plans/machines.md §4.1), else `webpc-blk` (the tests' guests).
+- **Sources** (`BlkSpec`): an image by `url` (HTTP ranges, or `file:` in Node) or `file` (a `File`), or
+  `source` with a `size`: `zero`, a **blank disk** reading as zeros (writable through its overlay, as any image),
+  or `ram`, a **ramdisk** (`web/ramdisk.ts`): writable in itself, with `DISCARD` and `WRITE_ZEROES`, its bytes in
+  1 MiB chunks of shared memory made on a chunk's first write and dropped when a discard or a zeroing covers the
+  whole chunk (a missing chunk reads as zeros), so an empty ramdisk costs nothing and `fstrim` gives the memory
+  back. It is the device worker's, so every start, the guest's reboot too, finds it empty
+  (`tests/ramdisk.test.ts`; on the page `tests/page-machines.test.ts`).
 - **`DISCARD` and `WRITE_ZEROES`** with an overlay and the spec's `discard` (the page's machines;
   the tests' guests and the native twin are without it, as their step counts are): the config
   space goes on to 60 bytes, one segment of at most 2 GiB per request, `discard_sector_alignment`

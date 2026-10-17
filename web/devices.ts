@@ -10,7 +10,8 @@ import { canvasPresenter, pagePresenter, type DisplayFromPage } from './gpu-pres
 import { portHost } from './virgl-host.ts';
 import { loopback, portAdapter, type NetAdapter } from './net.ts';
 import { IoStats } from './iostats.ts';
-import { openOverlay, overlay, type OverlayFiles } from './overlay.ts';
+import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './overlay.ts';
+import { ramDisk } from './ramdisk.ts';
 import { openDisk, type Disk } from './qcow2.ts';
 import { checksumSink, micSource, patternSource, ringSink, sndBackend, type SndWake } from './snd.ts';
 
@@ -25,17 +26,25 @@ import { checksumSink, micSource, patternSource, ringSink, sndBackend, type SndW
  * `url`, read with `FileReaderSync` (workers only); the overlay then belongs to the file's name,
  * size and modification time (`diskIdentity`). With `discard` (and an overlay) the disk takes
  * DISCARD and WRITE_ZEROES: what the guest trims leaves the overlay (the page's machines; the
- * tests' guests are without it, as their step counts are).
+ * tests' guests are without it, as their step counts are). `source` is a disk with no image (docs/plans/machines.md
+ * §4.2, `size` given): `zero`, a blank disk that reads as zeros (writable through its overlay), or `ram`, a ramdisk
+ * (web/ramdisk.ts: writable in itself, empty at every start, with DISCARD). `serial` is what GET_ID answers (default
+ * `webpc-blk`); `identity` replaces `diskIdentity`'s for the overlay's check (a machine's disk record says it).
  */
 export type DeviceSpec =
   | { type: 'console' }
   | { type: 'rng' }
-  | { type: 'blk'; url: string; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean }
+  | BlkSpec
   | NetSpec
   | P9Spec
   | InputSpec
   | GpuSpec
   | SndSpec;
+
+export type BlkSpec = { type: 'blk'; url?: string; source?: 'zero' | 'ram'; size?: number; overlay?: string; file?: Blob; discard?: boolean; stats?: boolean; serial?: string; identity?: string };
+
+/** Whether a disk takes the guest's writes: through an overlay, or a ramdisk. */
+export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
 
 /**
  * virtio-net (web/net.ts): Ethernet frames to and from an adapter: the
@@ -132,7 +141,7 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
       // max_discard_sectors (u32 at 36), max_discard_seg, discard_sector_alignment (the overlay's
       // 4 KiB blocks: Linux's discard granularity), max_write_zeroes_sectors, max_write_zeroes_seg,
       // write_zeroes_may_unmap (u8 at 56).
-      const discard = !!d.overlay && !!d.discard;
+      const discard = (!!d.overlay && !!d.discard) || d.source === 'ram';
       const config = new Uint8Array(discard ? 60 : 16);
       const v = new DataView(config.buffer);
       v.setBigUint64(0, BigInt(Math.floor((d.size ?? 0) / 512)), true);
@@ -145,7 +154,7 @@ export function deviceEntry(d: DeviceSpec): { entry: bigint[]; config: Uint8Arra
         v.setUint32(52, 1, true);
         v.setUint8(56, 1);
       }
-      return { entry: [2n, 1n << 2n | (d.overlay ? 1n << 9n : 1n << 5n) | (discard ? 1n << 13n | 1n << 14n : 0n), 1n, 128n, BigInt(config.length)], config };
+      return { entry: [2n, 1n << 2n | (writable(d) ? 1n << 9n : 1n << 5n) | (discard ? 1n << 13n | 1n << 14n : 0n), 1n, 128n, BigInt(config.length)], config };
     }
     case 'net': {
       // Features MAC (5) and STATUS (16); config: mac, status = LINK_UP. receiveq, transmitq.
@@ -508,9 +517,16 @@ export function blobSource(file: Blob): Source {
   };
 }
 
-/** What an overlay over `d`'s image belongs to (web/overlay.ts `openOverlay`): the URL's path, or a chosen file's name, size and modification time; and the virtual size. */
-export const diskIdentity = (d: { url: string; file?: Blob }, size: number) =>
-  JSON.stringify(d.file ? { file: (d.file as File).name, bytes: d.file.size, modified: (d.file as File).lastModified, size } : { path: new URL(d.url, 'http://x').pathname, size });
+/**
+ * What an overlay over `d`'s image belongs to (web/overlay.ts `openOverlay`): the spec's `identity` where the page gave
+ * one (a machine's disk record), else the URL's path, or a chosen file's name, size and modification time, or the
+ * source (a blank disk); and the virtual size.
+ */
+export const diskIdentity = (d: { url?: string; file?: Blob; source?: string; identity?: string }, size: number) =>
+  d.identity ?? JSON.stringify(d.file ? { file: (d.file as File).name, bytes: d.file.size, modified: (d.file as File).lastModified, size } : d.url ? { path: new URL(d.url, 'http://x').pathname, size } : { source: d.source, size });
+
+/** A blank disk's bytes: zeros. */
+export const zeroSource = (size: number): Source => ({ size, read: (off, len) => (off >= 0 && off + len <= size ? new Uint8Array(len) : undefined) });
 
 /** An image in a local file (`file:` URLs, Node only: its boots and the JIT's). */
 export async function fileSource(url: string): Promise<Source> {
@@ -532,14 +548,21 @@ export async function fileSource(url: string): Promise<Source> {
  * writable through an overlay on OPFS; with `discard`, DISCARD and WRITE_ZEROES
  * reach the overlay (`deviceEntry` offers them).
  */
-export function blk(ctx: Ctx, src: Source, files?: OverlayFiles, discard = false, st?: IoStats): Backend {
-  if (st) {
-    const read = src.read;
-    src = { ...src, read: (off, len) => st.time('base.read', len, () => read(off, len)) };
-    if (files) files = { ...files, data: st.file('data', files.data), map: st.file('map', files.map) };
+export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'webpc-blk'): Backend {
+  let rw: WritableDisk | undefined;
+  let base: Disk;
+  if ('write' in src) {
+    base = rw = src; // a disk that takes writes in itself (a ramdisk)
+  } else {
+    if (st) {
+      const read = src.read;
+      src = { ...src, read: (off, len) => st.time('base.read', len, () => read(off, len)) };
+      if (files) files = { ...files, data: st.file('data', files.data), map: st.file('map', files.map) };
+    }
+    const s = src;
+    base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : s.read(off, len)), s.size);
+    rw = files && overlay(base, files.data, files.map);
   }
-  const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size);
-  const rw = files && overlay(base, files.data, files.map);
   const disk: Disk = rw ?? base;
   const backend: Backend = {
     async request(r) {
@@ -559,7 +582,7 @@ export function blk(ctx: Ctx, src: Source, files?: OverlayFiles, discard = false
         [status, n] = bytes ? [S_OK, room] : [S_IOERR, 0];
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_GET_ID) {
         const id = new Uint8Array(20);
-        id.set(new TextEncoder().encode('webpc-blk'));
+        id.set(new TextEncoder().encode(serial).subarray(0, 20));
         scatter(ram, data, id.subarray(0, room));
         [status, n] = [S_OK, Math.min(room, 20)];
       } else if (h.byteLength === 16 && h.getUint32(0, true) === T_OUT) {
@@ -600,7 +623,7 @@ export function blk(ctx: Ctx, src: Source, files?: OverlayFiles, discard = false
       return out;
     }),
     close() {
-      src.close?.();
+      if (!('write' in src)) src.close?.();
       files?.close();
     },
   };
@@ -656,7 +679,7 @@ export class Devices {
   private ioStats: Record<number, IoStats> = {};
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, ramSize, signal, specs, deterministic, wakes, state }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | undefined)[], out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, ramSize, signal, specs, deterministic, wakes, state }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal, this.wakes] = [memory, shared, signal, wakes ?? []];
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = {
@@ -672,7 +695,7 @@ export class Devices {
         case 'rng': return rng(ctx, deterministic);
         case 'blk': {
           const st = d.stats ? (this.ioStats[i] = new IoStats()) : undefined;
-          return blk(ctx, sources[i]!, overlays[i], d.discard, st);
+          return blk(ctx, sources[i]!, overlays[i], d.discard || d.source === 'ram', st, d.serial);
         }
         case 'net': return net(ctx, d);
         case '9p': return p9(ctx, d.files ?? {}, deterministic);
@@ -721,7 +744,16 @@ export class Devices {
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */
   static async open(init: DevicesInit, out: (device: number, text: string) => void) {
     const overlays = await Promise.all(init.specs.map((d) => (d.type === 'blk' && d.overlay ? openOverlay(d.overlay, diskIdentity(d, d.size ?? 0)) : undefined)));
-    const sources = await Promise.all(init.specs.map((d) => (d.type !== 'blk' ? undefined : d.file ? blobSource(d.file) : d.url.startsWith('file:') ? fileSource(d.url) : httpSource(d.url))));
+    const sources = await Promise.all(init.specs.map((d) => {
+      if (d.type !== 'blk') return undefined;
+      if (d.source) {
+        if (!d.size) throw new Error(`a ${d.source === 'ram' ? 'ramdisk' : 'blank disk'} needs a size`);
+        return d.source === 'ram' ? ramDisk(d.size) : zeroSource(d.size);
+      }
+      if (d.file) return blobSource(d.file);
+      if (!d.url) throw new Error('a disk with no image (url, file or source)');
+      return d.url.startsWith('file:') ? fileSource(d.url) : httpSource(d.url);
+    }));
     return new Devices(init, overlays, sources, out);
   }
 
