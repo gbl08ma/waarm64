@@ -107,7 +107,10 @@ steps were run by hand. **Worth a look in the dev VM** (does the case reproduce 
   (`tools/start.ts` now imports it after).
 - `scripts/ci-audio.sh` passes (44 s) once its waits allow `window.__audio` not set yet (the page's module awaits the
   store first: a race, as `browser.test.ts`'s view was).
-- Still to run: `ci-net.sh`, then the rest of the list above.
+- `scripts/ci-net.sh` passes (439 s; the internet opt-ins skipped). So step 1 is done, and step 2's Buildroot tests
+  (`browser`, `page-save`, `page-snapshot`, `page-machine`, `dist`, `start`) pass inside `scripts/ci.sh`; step 4:
+  `tests/steps.txt` didn't move.
+- Next: step 3 (the installer flow), step 5 (the exit's numbers).
 
 ## Decisions the cloud session left open: settled (2026-10-17)
 
