@@ -231,11 +231,15 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     4.9 → 20 MiB/s). The rest was dropped by measurement: Debian's boot from a chosen qcow2 spends 3.9% in file reads and
     6% in all requests (no cache, copy, limit or inflate work clears the 5% bar), `flush()` costs ~10 µs, and the screen
     stays within 22–33 ms of a flush under a continuous disk read, so no blk worker. Numbers: `bench/io/REPORT.md`.
-- **D. Choosing and shaping machines:** a preloaded image and snapshot loaded with the page (likely the Arch desktop
-  guest, decision 1), a catalog of hosted images on top of
-  phase B's disk in, extra disks, RAM and vCPU settings (default vCPUs from
-  `navigator.hardwareConcurrency` minus the device worker and the page, with the P/E-core
-  caveat); and **the stable
+- **D. Choosing and shaping machines:** **starts with machines as the unit (proposed 2026-10-17,
+  [docs/plans/machines.md](docs/plans/machines.md))**: named machines stored in the browser (vCPUs, RAM, any number of
+  disks, read-only or read-write), managed in a modal (Svelte); overlays per base disk as named variants; disk sources
+  from a URL, a file (remembered), a copy in OPFS, blank, or a ramdisk that survives the guest's reboot; several
+  snapshots per machine kept in OPFS or downloaded, checked against the machine's shape (orphaned when the machine
+  changes) and restored without destroying a disk's state (an overlay that moved on is forked, detected by a
+  generation counter, not a hash); machine definitions exported and imported. Then a preloaded image and snapshot
+  loaded with the page (likely the Arch desktop guest, decision 1: a built-in machine, after remote disks' content
+  identity), a catalog of hosted images (machine definitions) on top of phase B's disk in, and **the stable
   embedding API**, extracted from what the page ended up using (VM config to DTB and devices,
   CPU feature switches, devices, snapshots, network backends), with its docs.
 - Compiling off the vCPU thread, if a GUI guest's latency asks for it.

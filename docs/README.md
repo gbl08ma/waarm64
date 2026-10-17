@@ -30,4 +30,5 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [plans/usb.md](plans/usb.md) | USB devices from the user's computer through WebUSB: an xHCI in the core, a passthrough backend, what WebUSB can't attach (proposed, not scheduled) |
 | [plans/uefi.md](plans/uefi.md) | booting unmodified images through EDK2: loop 0's oracle findings, DT vs ACPI, the design (M8 phase B) |
 | [plans/remote-disks.md](plans/remote-disks.md) | disks from a remote server: today's HTTP reader, where to host an image (Cloudflare R2 and Pages), a chunked format, caching, concurrency (proposed) |
+| [plans/machines.md](plans/machines.md) | machines as the unit (M8 phase D's start): stored machines, many disks and their sources (blank, ramdisk, a copy in OPFS), overlays as named variants per base, snapshots per machine checked by its shape, the modal (proposed) |
 | [plans/snapshots.md](plans/snapshots.md) | saving and resuming a machine as a file, and Suspend (M8 phase C lane, done) |
