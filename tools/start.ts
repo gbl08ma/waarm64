@@ -75,7 +75,7 @@ const has = (cmd: string, args: string[], env = process.env) => spawnSync(cmd, a
 
 const isExecutable = (p: string) => { try { accessSync(p, constants.X_OK); return statSync(p).isFile(); } catch { return false; } };
 
-class Stop extends Error {}
+export class Stop extends Error {}
 const stop = (msg: string): never => { throw new Stop(msg); };
 
 /** rustup on PATH, or in ~/.cargo/bin (installed, but this shell hasn't read ~/.cargo/env yet): the environment to run cargo with. */

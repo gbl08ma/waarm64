@@ -93,6 +93,7 @@ node tools/uefi-oracle.ts debian alpine alpine-grub          # unmodified images
 scripts/testfloat.sh           # FP core vs TestFloat 3e (in ci.sh)
 tests/qcow2/make.sh            # regenerate the qcow2 fixtures with qemu-img
 npm start                      # what a user runs: checks, npm ci, wasm core, the tailnet client, the UEFI firmware (images/build.sh edk2, Podman), then serves; the page waits for the user's disk (docs/frontend.md)
+npm run dist                   # the page as static files for any web server -> target/dist/ (no guest images; docs/frontend.md "A static copy")
 npm run serve                  # dev server with COOP/COEP on :8080 (PORT overrides); builds the tailnet client first if missing or stale (net/ts)
 net/tailscale/build.sh         # the Go Tailscale client, the hand-over test's fixture -> target/net/tailscale.wasm (tools/tailscale.ts does it when needed)
 net/ts/build.sh                # the Rust tailnet client (tailcat, and Tailscale: the page's default) -> target/net/ts.wasm (wasm32-wasip1; docs/plans/tailnet-client.md)

@@ -27,10 +27,15 @@ const TYPES: Record<string, string> = {
 export const APP = '/web/app/';
 
 /** The only files served from node_modules: what the page imports (xterm.js). */
-const ALLOWED = new Set(['node_modules/@xterm/xterm/lib/xterm.mjs', 'node_modules/@xterm/xterm/css/xterm.css'].map((p) => join(ROOT, p)));
+const ALLOWED = ['node_modules/@xterm/xterm/lib/xterm.mjs', 'node_modules/@xterm/xterm/css/xterm.css'];
 
-/** Listens on `host` (loopback by default: the page is for this machine; docs/frontend.md "npm start"). Rejects on a listen error (e.g. EADDRINUSE). */
-export function startServer(port = 0, host = '127.0.0.1'): Promise<Server> {
+/**
+ * Listens on `host` (loopback by default: the page is for this machine; docs/frontend.md "npm start"). Rejects on a listen error (e.g. EADDRINUSE).
+ * `root` is the directory served: the repository, or a static copy (tools/dist.ts), which has no .ts files to strip.
+ */
+export function startServer(port = 0, host = '127.0.0.1', root = ROOT): Promise<Server> {
+  if (!root.endsWith(sep)) root += sep;
+  const allowed = new Set(ALLOWED.map((p) => join(root, p)));
   const server = createServer(async (req, res) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
@@ -40,8 +45,8 @@ export function startServer(port = 0, host = '127.0.0.1'): Promise<Server> {
       res.writeHead(302, { Location: APP }).end();
       return;
     }
-    const path = normalize(join(ROOT, url.endsWith('/') ? url + 'index.html' : url));
-    if (!path.startsWith(ROOT) || (path.split(sep).includes('node_modules') && !ALLOWED.has(path))) {
+    const path = normalize(join(root, url.endsWith('/') ? url + 'index.html' : url));
+    if (!path.startsWith(root) || (path.split(sep).includes('node_modules') && !allowed.has(path))) {
       res.writeHead(403).end();
       return;
     }

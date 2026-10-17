@@ -18,6 +18,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
 | `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
+| `tools/dist.ts` | `npm run dist`: the page as a static copy (below, "A static copy") |
 | `tools/tailscale.ts` | builds the Tailscale client when missing or stale, for `npm run serve`, `npm start` and `scripts/ci-net.sh` ("Network") |
 | `tools/debian.ts` | Debian's download and preparation (the tests' guest), for `images/build.sh debian` |
 | `web/bootfs.ts`, `web/ext4.ts` | partition tables, a read-only ext2/3/4 reader, a distribution's kernel and initrd (below, "The disk reader") |
@@ -891,6 +892,31 @@ disk is hard-linked from the cache (a copy, reflinked where it can be, if the ca
 filesystem). The output is byte for byte what `images/SHA256SUMS` lists (`images/build.sh debian`
 checks it). The kernel and initrd aren't extracted any more (the direct boot was dropped); the
 disk reader below (`web/bootfs.ts`, `web/ext4.ts`) has no consumer but its tests.
+
+## A static copy
+
+`npm run dist` (`tools/dist.ts`) writes the page as plain files to `target/dist/` (`--out <dir>`), to copy to
+any web server: no Node behind it. It first does `npm start --prepare-only`'s steps (`--no-prepare` skips them and
+stops if a binary is missing), then writes, in the repository's layout (so the modules' relative URLs,
+`../../target/…`, hold unchanged):
+
+- `web/app/index.html` and the modules the page reaches from `main.ts`, found by following their `.ts`
+  specifiers and URLs (imports, workers, the worklet: `new URL('./x.ts', import.meta.url)`); each with its types
+  stripped (`stripTypeScriptTypes`, as `tools/serve.ts` does) and its `.ts` specifiers renamed `.js`, since a
+  static server sends `.ts` as something else (`video/mp2t`). Nothing is bundled or minified.
+- `vendor/xterm/` (xterm.js's `xterm.mjs`, its CSS and license; the import map is rewritten to point there),
+- the binaries: the core (`webpc_core.wasm`), the tailnet client (`target/net/ts.wasm`), EDK2 (`QEMU_EFI.fd`,
+  `LICENSES.txt`). **No guest images** (10.6 MiB in all): the user opens a disk, or passes `?disk=<url>` (a
+  server that answers range requests and, cross-origin, sends CORS and CORP headers).
+- `index.html` (a redirect to `web/app/`), `_headers` (Netlify, Cloudflare Pages) and `.htaccess` (Apache) with
+  the two headers, `.nojekyll`, and a marker file: the script only empties a directory that has it.
+
+**The host must send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`**
+with every file (shared memory needs cross-origin isolation), answer range requests, and serve over HTTPS (or
+localhost). GitHub Pages can't set headers. `npm run dist -- --serve` previews the copy with `tools/serve.ts`
+(`startServer`'s `root`), which gives the headers and ranges and nothing else. OPFS is per origin, so a disk's
+saved changes stay with the site they were made on. `tests/dist.test.ts` serves a copy so and boots Buildroot from
+it (its images linked in).
 
 ## The disk reader
 

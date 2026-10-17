@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --disable-warning=ExperimentalWarning --test 'tests/**/*.test.ts'",
     "serve": "node --disable-warning=ExperimentalWarning tools/serve.ts",
+    "dist": "node --disable-warning=ExperimentalWarning tools/dist.ts",
     "bench": "node --disable-warning=ExperimentalWarning bench/run.ts"
   },
   "devDependencies": {
