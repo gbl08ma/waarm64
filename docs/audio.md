@@ -29,7 +29,8 @@ the guest images in [images.md](images.md), the tests in [testing.md](testing.md
   ALSA (and PipeWire's ACP, the card's hardware volume) sees as the card's, and they are the Sound menu's volume and
   Sound on, both ways. **The guest is followed** (the user's choice): WirePlumber gives every new output its
   `device.routes.default-sink-volume`, 0.064 (shown as 40%), whatever the hardware is at, so a fresh disk starts at
-  40% and the slider shows it; raised once, WirePlumber keeps the level on that disk. The page doesn't override the
+  40% and the slider shows it; raised once, WirePlumber keeps the level on that disk. Before it, a guest with
+  alsa-utils sets the card at boot (`alsa-restore`; with no saved state `alsactl init`'s -20 dB, 46% on the slider). The page doesn't override the
   guest's setting, and doesn't keep the guest's changes (the next machine starts at what the user chose). The slider's
   gain is its cube, as PipeWire's and PulseAudio's sliders, so the two show the same percentage. The test guests'
   machines have no controls (QEMU's device, the oracle, has none).
@@ -192,6 +193,11 @@ The dev VM unless noted, headless Chromium 153. JSON in `bench/audio/results/`; 
   144,000 frames in 3,020 ms, 497 Hz on both channels. The desktop guest's `pw-record` (`bench/audio/mic-desktop.ts`,
   `results/s4/`): 491-493 Hz, peak 16,079 of 32,767. Chromium resamples the microphone to a capture context at the
   stream's rate; a worklet with no outputs is processed because it has an input.
+- **The controls on the desktop guest** (`bench/audio/mixer-desktop.ts`, `results/ctls/desktop.json`; Arch's 7.2.9,
+  PipeWire 1.6.9, WirePlumber 0.5.18): the card has `Master Playback Volume` (0-400, -100 dB to 0) and `Switch`; at boot
+  `alsactl init` put it at -20 dB (320, the slider at 46% from 100%), then WirePlumber's new sink at `wpctl get-volume`
+  0.40 (305, -23.75 dB) and the slider at 40; `wpctl set-volume … 0.7` moved the slider to 70 (363), `set-mute` unchecked
+  Sound on; the slider at 25 gave 0.25 in `wpctl` (256, -36 dB) and Sound on unchecked `[MUTED]`, each within 2 s.
 
 ## Tests
 
