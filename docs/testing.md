@@ -11,11 +11,10 @@ only edits docs: `.md` files or code comments):
   `display`; `network`, `gateway`, `net`, `devices`), and the sound device's (`snd`, the snd guest likewise).
 - **`scripts/ci-debian.sh`** boots Debian on the page: `page-debian`, `page-disk`, `page-machine`'s graphics test,
   `start`'s run, and machines as the unit (`page-machines`: four disks; a stored disk in two steps; the installer flow
-  with Alpine's ISO, `page-snapshots`: kept snapshots, forks, Suspend on pins, orphaned ones), ~4 min before the
-  machines tests, which add about as many boots again (their times measured in the dev VM: the handover's list)
-  ("Debian boots" below). Two run at a time
+  with Alpine's ISO, `page-snapshots`: kept snapshots, forks, Suspend on pins, orphaned ones), ~7 min in the dev VM
+  (6 min 46 s on 2026-10-17; ~4 min before the machines tests) ("Debian boots" below). Two run at a time
   (`WEBPC_DEBIAN_SLOTS=2` in `tests/debian-lock.ts`: nothing else runs beside them there), so
-  `page-debian`'s ~4 min is its wall time. It must pass too when a change touches the
+  `page-debian`'s ~6 min (with the machines tests waiting on its slots) is about its wall time. It must pass too when a change touches the
   page, the firmware or UEFI, the devices, disks or overlays, snapshots or the display (virtio-gpu
   and its presenter, the page's screen: its size, the keys and the pointer on it, the guest's
   cursor; EDID); for guest-visible changes; and at the end of a milestone or a track.

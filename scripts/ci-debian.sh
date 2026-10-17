@@ -3,7 +3,7 @@
 # scripts/ci.sh, when a change touches the page, the firmware or UEFI, the devices, disks or
 # overlays, snapshots or the display (virtio-gpu and its presenter, the page's screen, the keys
 # and the pointer on it, the guest's cursor, EDID); for guest-visible changes; and at the end of
-# a milestone or a track. ~4 min: two Debian boots at a time (WEBPC_DEBIAN_SLOTS, tests/debian-lock.ts;
+# a milestone or a track. ~7 min: two Debian boots at a time (WEBPC_DEBIAN_SLOTS, tests/debian-lock.ts;
 # nothing else runs beside them here), so the longest file, page-debian's, is the wall time. The network
 # tests on Debian are scripts/ci-net.sh's. Needs the Debian image, the firmware and the wasm core
 # (scripts/ci.sh builds it), and linux-snd's snd-play (page-debian plays sound through it).

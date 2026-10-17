@@ -102,7 +102,10 @@ steps were run by hand. **Worth a look in the dev VM** (does the case reproduce 
     module awaits the store before setting it).
 - **Decided by the user:** snapshot files saved before this work are refused on the page (their `devices` list has
   `blk` second; the disks now come last), with "its machine had other devices". No compatibility with them.
-- Still to run: `scripts/ci-debian.sh`, `ci-audio.sh`, `ci-net.sh`, then the rest of the list above.
+- `scripts/ci-debian.sh`: everything passed (6 min 46 s, budgeted in docs/testing.md) but `start`, fixed and rerun alone: `npm start` on a fresh
+  clone imported `tools/serve.ts`, which imports the Svelte compiler, before its `npm ci` installed it
+  (`tools/start.ts` now imports it after).
+- Still to run: `ci-audio.sh`, `ci-net.sh`, then the rest of the list above.
 
 ## Decisions the cloud session left open: settled (2026-10-17)
 

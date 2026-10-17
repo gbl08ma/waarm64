@@ -10,8 +10,11 @@ import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync,
 import { homedir } from 'node:os';
 import { delimiter, join, relative } from 'node:path';
 import { parseArgs } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { prepareTailnetClient } from './tailscale.ts';
-import { APP, ROOT, startServer } from './serve.ts';
+
+// serve.ts is imported once `npm ci` ran: it compiles the page's components with Svelte, a package it installs.
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 export const WASM = join(ROOT, 'target/wasm32-unknown-unknown/release/webpc_core.wasm');
 const WASM_STAMP = WASM + '.inputs';
@@ -132,6 +135,7 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(`Ready in ${((performance.now() - t0) / 1000).toFixed(1)} s (not serving: --prepare-only).`);
     return;
   }
+  const { APP, startServer } = await import('./serve.ts');
   const port = Number(values.port);
   const server = await startServer(port, values.host).catch((e: NodeJS.ErrnoException) => stop(e.code === 'EADDRINUSE'
     ? `Port ${port} is in use (another \`npm start\` or \`npm run serve\`?). Stop that one, or pick another port: PORT=${port + 1} npm start\n(What the page keeps, a disk's changes among them, is per address: another port starts without them.)`
