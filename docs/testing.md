@@ -413,7 +413,10 @@ SoftFloat instead, and real hardware checks its rules.
   for the FMAs, and a quiet-NaN addend with ∞ × 0 is Invalid); FPNeg on NaNs (FNMUL, the negated FMA
   operands); saturating integer conversions; FMAXNM's quiet NaNs. Options: `-level 1|2`, `-every k`
   (a sample of a level; 3-operand types default to every 64th of level 1's 6.1M), `-n`, `-part k/n`,
-  form-name prefixes.
+  form-name prefixes. A type small enough for one chunk (the one-operand floats and the integer
+  types: 372–768 cases at level 1) runs again until each form has run ~64k times: on 4 parallel
+  vCPUs the JIT installs a compiled block only once the compile worker is done, and a form's
+  12k checks finished interpreted (planted bugs in the fixed-point conversions went unseen).
 - **Real hardware first:** `fptest.tar` (the programs and `run.sh`) passes on the oracle VM, and
   natively in the dev VM (also the M4): ~300M checks, 0 failures, in ~20 s. A rule wrong in the
   harness fails there.

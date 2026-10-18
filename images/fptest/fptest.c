@@ -728,11 +728,16 @@ int main(int argc, char **argv) {
             for (int f = 0; f < nforms; f++) {
                 const Form *fm = &forms[f];
                 if (!ty->takes(fm) || !wanted(f, fm->name)) continue;
-                for (int rm = 0; rm < 4; rm++)
-                    for (int b = 0; b < 8; b++) {
-                        Cfg c = {rm, b & 1, (b >> 1) & 1, (b >> 2) & 1};
-                        for (int i = 0; i < ncs; i++) check(fm, cs, ncs, i, &c, &fails[f]);
-                    }
+                // A small type's cases again, so each form runs ~64k times: an
+                // emulator's JIT compiles its loop only after it has run a while
+                // (a parallel vCPU interprets until the compile worker is done).
+                int reps = eof && cases == (u64)ncs ? (int)(65536 / (32 * (long)ncs + 1)) + 1 : 1;
+                for (int rep = 0; rep < reps; rep++)
+                    for (int rm = 0; rm < 4; rm++)
+                        for (int b = 0; b < 8; b++) {
+                            Cfg c = {rm, b & 1, (b >> 1) & 1, (b >> 2) & 1};
+                            for (int i = 0; i < ncs; i++) check(fm, cs, ncs, i, &c, &fails[f]);
+                        }
             }
         }
         // Stopped early (-n), testfloat_gen dies of SIGPIPE: that's fine.
