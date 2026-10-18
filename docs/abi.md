@@ -340,7 +340,9 @@ is the machine it was (the tests' step counts don't move).
   +8 (a 16-bit big-endian write; it rewinds the offset), no DMA (+0x10 reads as 0 and ignores
   writes; `ID` says so). Items: signature (0x0000, `QEMU`), ID (0x0001, 1: the traditional
   interface), the file directory (0x0019: a big-endian count, then per file size, select, a
-  reserved u16 and a 56-byte name), and the host's files at 0x0020 upwards in its order. The
+  reserved u16 and a 56-byte name), and the host's files at 0x0020 upwards in its order, then the core's SMBIOS tables
+  (`etc/smbios/smbios-anchor` and `etc/smbios/smbios-tables`, `core/src/smbios.rs`) unless the host
+  passed a file under `etc/smbios/`. The
   host's buffer is a sequence of records: a 56-byte NUL-padded name, a u32 LE size, the bytes
   (`vm_new` refuses a malformed one). Writes to the data register are ignored. The DMA interface
   (only ramfb would need it, and ramfb isn't wanted: plans/uefi.md "Graphics in the firmware") would be a

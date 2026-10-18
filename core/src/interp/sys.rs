@@ -26,7 +26,7 @@ const fn sr(op0: u32, op1: u32, crn: u32, crm: u32, op2: u32) -> u32 {
 
 // Identification. Everything here describes exactly what the core implements.
 /// Implementer 0 (reserved for software use), architecture 0xf (see the ID registers).
-const MIDR: u64 = 0x000f_0000;
+pub(crate) const MIDR: u64 = 0x000f_0000;
 /// EL0 and EL1 AArch64 only; FP and AdvSIMD 0 (present, no FP16); GIC 0 (no
 /// system register interface; 1 with `FEATURE_GICV3`, `pfr0`). CSV2 and CSV3:
 /// the interpreter and JIT don't speculate, and saying so spares the guest

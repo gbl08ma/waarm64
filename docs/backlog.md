@@ -283,7 +283,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   cause, a failed chunk allocation should complete the request with an I/O error and say so on the page.
 - **The firmware configuration** (loop 2): fw_cfg has no DMA interface (nothing needs it: the firmware's
   screen is the virtio-gpu's, and ramfb would leave a stale framebuffer beside `virtio_gpu` on virtio-mmio,
-  plans/uefi.md "Graphics in the firmware"), no SMBIOS or other standard items; the
+  plans/uefi.md "Graphics in the firmware"), no standard items beside SMBIOS (platform.md); the
   flash bank's array-mode reads go through `vm::Io` one instruction at a time (fine for a store
   read a few times a boot: measure if a guest reads it in a loop); no lock state (every block
   unlocked). Between EDK2's boot manager and GRUB's menu Debian retires 5.4G steps in ~3 s in
@@ -503,8 +503,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `login: ` at a line's start). A guest that prints after its prompt, logs in automatically or
   has no serial getty would need its own; a guest-side signal (a byte on a port the page owns, a
   systemd unit writing to a device) would be exact. Revisit with image selection (phase D).
-- **After phase B (the page's UEFI path):** EDK2's setup screen says `0 MB RAM` (no SMBIOS;
-  cosmetic); a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
+- **After phase B (the page's UEFI path):** EDK2's setup screen said `0 MB RAM` before SMBIOS (types 17 and 19,
+  platform.md; not re-checked, cosmetic); a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
   EDK2's terminal driver (frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
   boot; loading a changes file also resets the variable store (the file doesn't carry it).
 - **The Keyboard Lock** in full screen is checked by hand only: headless Playwright's keys

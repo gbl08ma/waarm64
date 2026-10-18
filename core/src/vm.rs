@@ -710,7 +710,9 @@ impl Vm {
                 virtio: devices.iter().map(|&e| Transport::new(e)).collect(),
                 rtc: cfg.has_rtc().then(|| Pl031::new(cfg.rtc)),
                 flash: cfg.firmware().then(|| Flash::new(cfg.flash_size)),
-                fw_cfg: cfg.firmware().then(|| FwCfg::new(vec![]).unwrap()),
+                fw_cfg: cfg
+                    .firmware()
+                    .then(|| FwCfg::new(crate::smbios::with(&cfg, vec![])).unwrap()),
                 start: vec![None; n],
             }),
             shared,

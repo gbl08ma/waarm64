@@ -395,7 +395,7 @@ interrupt never fires (MR and IMSC are storage only: no RTC alarm). Linux's `rtc
 into Debian's kernel; our Buildroot and Alpine kernels have no RTC class) sets the system clock
 from it at boot (`hctosys`).
 
-## The firmware configuration's devices (`core/src/flash.rs`, `core/src/fw_cfg.rs`)
+## The firmware configuration's devices (`core/src/flash.rs`, `core/src/fw_cfg.rs`, `core/src/smbios.rs`)
 
 - **The flash bank** (`0x0400_0000`, `VmConfig.flash_size`): EDK2's variable store, three
   256 KiB areas. An MMIO device behaving as QEMU `virt`'s `pflash_cfi01` bank 1 (bank width
@@ -409,6 +409,14 @@ from it at boot (`hctosys`).
   `/sys/firmware/qemu_fw_cfg`, and systemd imports `opt/io.systemd.credentials/*` as
   credentials (the tests boot Debian unattended that way; the page passes none). With fw_cfg
   there and no ACPI tables in it, EDK2 passes our DT on to Linux.
+- **SMBIOS** over fw_cfg, as QEMU serves it: an SMBIOS 3.0 entry point (`etc/smbios/smbios-anchor`)
+  and the structures (`etc/smbios/smbios-tables`), which EDK2's SmbiosPlatformDxe installs and
+  passes to Linux (`/sys/class/dmi/id`, `dmidecode`, `hostnamectl`). Built by the core from the
+  configuration, so a deterministic run repeats: the firmware (type 0: EDK II, UEFI, a virtual
+  machine), the system and chassis (`webpc`, family `Virtual Machine`, no serial numbers, a null
+  UUID: systemd takes no machine ID from it), one processor with every vCPU as a core (ARMv8, its
+  ID MIDR_EL1), RAM as one memory device and where it's mapped, and a clean boot (type 32). The page's Debian test reads
+  them back.
 
 ## PSCI (over HVC, in the core)
 

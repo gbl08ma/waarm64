@@ -23,6 +23,7 @@ pub mod mmu;
 pub mod pl011;
 pub mod pl031;
 pub mod rng;
+pub mod smbios;
 pub mod snapshot;
 pub mod virtio;
 pub mod vm;
@@ -360,7 +361,10 @@ pub unsafe extern "C" fn vm_new(
         // SAFETY: guaranteed by the caller.
         n => unsafe { core::slice::from_raw_parts(cfg.fw_cfg as usize as *const u8, n as usize) },
     };
-    let Some(fw_cfg) = fw_cfg::FwCfg::parse(buf).and_then(fw_cfg::FwCfg::new) else {
+    let Some(fw_cfg) = fw_cfg::FwCfg::parse(buf)
+        .map(|f| smbios::with(&cfg, f))
+        .and_then(fw_cfg::FwCfg::new)
+    else {
         return core::ptr::null_mut();
     };
     // SAFETY: guaranteed by the caller, alignment checked above.

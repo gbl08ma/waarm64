@@ -275,6 +275,9 @@ for (let run = 1; run <= RUNS; run++) {
     // What the firmware gave Linux, and a credential read back from fw_cfg (the login above relied on them: a shifted directory can't pass).
     await onSerial(page, 'clear; echo ==be""gin; cat /sys/class/rtc/rtc0/name; cat /proc/fb; ls -1 /sys/firmware; nproc; cat /sys/firmware/qemu_fw_cfg/by_name/opt/io.systemd.credentials/firstboot.timezone/raw; echo; readlink /etc/localtime; echo ==e""nd\n');
     await shows(page, /==begin\s*rtc-efi[^]*?0 virtio_gpudrmfb[^]*?efi[^]*?qemu_fw_cfg\s*2\s*Etc\/UTC\s*\S*zoneinfo\/Etc\/UTC\s*==end/);
+    // The SMBIOS tables over fw_cfg (core/src/smbios.rs), through EDK2's SMBIOS 3.0 entry point to Linux's DMI.
+    await onSerial(page, 'clear; cd /sys/class/dmi/id; echo ==dm""i $(cat sys_vendor product_name product_family chassis_vendor bios_vendor bios_version); cd\n');
+    await shows(page, /==dmi webpc webpc Virtual Machine webpc EDK II ArmVirtQemuKernel/);
     // Nothing speculates, and the core's SMCCC answers say so (docs/cpu.md): Spectre-v4 is not affected. (Spectre-v2 still
     // reads "Mitigation: CSV2, but not BHB": BHB is only cleared by CSV2_3, backlog "Spectre-BHB".)
     await onSerial(page, 'clear; echo ==ss""b $(cat /sys/devices/system/cpu/vulnerabilities/spec_store_bypass)\n');
