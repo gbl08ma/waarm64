@@ -125,6 +125,8 @@ const MEMORY: Record<string, [number, number]> = {
   'compare and swap': [0x3fa07c00, 0x08a07c00], // CAS, CASB, CASH
   'load exclusive': [0x3fff7c00, 0x085f7c00],
   'store exclusive': [0x3fe07c00, 0x08007c00],
+  'load exclusive pair': [0xbfff0000, 0x887f0000], // LDXP, LDAXP (inline since M8)
+  'store exclusive pair': [0xbfe00000, 0x88200000], // STXP, STLXP
   // SIMD&FP (M6 loop 2): V set; the V registers are random too.
   'SIMD&FP load/store, unsigned offset': [0x3f000000, 0x3d000000],
   'SIMD&FP load/store, unscaled, pre/post-index, register offset': [0x3f000000, 0x3c000000],
@@ -342,16 +344,19 @@ for (const [name, [mask, bits], mem] of [
       fp[1] = (rand32() % 4 === 0 ? 0n : 16n) | (rand32() % 4 === 0 ? 1n << 27n : 0n);
       // The exclusive monitor (272: address, size, value), mostly armed for
       // this word's address, size and the value in memory, so STXR stores.
-      if (name.endsWith('exclusive')) {
+      // The base half the time aligned to the access (else the helper's).
+      if (name.includes('exclusive')) {
         const mon = new BigUint64Array(a.buffer, a.byteOffset + 272, 4);
-        const w = words[k], size = 1 << (w >>> 30);
-        const addr = rand32() % 4 === 0 ? value(true, data) : a[(w >>> 5) & 31];
+        const w = words[k], rn = (w >>> 5) & 31;
+        const size = name.endsWith('pair') ? 8 << ((w >>> 30) & 1) : 1 << (w >>> 30);
+        if (rand32() % 2 === 0) a[rn] &= ~BigInt(size - 1);
+        const addr = rand32() % 4 === 0 ? value(true, data) : a[rn];
         let v = 0n;
         for (let i = size - 1; i >= 0; i--) v = (v << 8n) | BigInt(addr + BigInt(i) < BigInt(a8.length) ? a8[Number(addr) + i] : 0);
         mon[0] = addr;
         mon[1] = BigInt(rand32() % 4 === 0 ? [0, 1, 2, 4, 8, 16][rand32() % 6] : size);
-        mon[2] = rand32() % 4 === 0 ? rand64() : v;
-        mon[3] = rand32() % 2 === 0 ? rand64() : 0n;
+        mon[2] = rand32() % 4 === 0 ? rand64() : v & M64;
+        mon[3] = size === 16 && rand32() % 4 !== 0 ? v >> 64n : rand32() % 2 === 0 ? rand64() : 0n;
       }
       // The JIT's vCPU starts from exactly the interpreter's state.
       new Uint8Array(b.buffer, b.byteOffset, CPU_BYTES).set(new Uint8Array(a.buffer, a.byteOffset, CPU_BYTES));
@@ -580,16 +585,16 @@ test('JIT vs interpreter: FP edge cases', () => {
 
 // Sequences (step 6). Words that read or write NZCV outside the ALU: MRS
 // NZCV (inline since M6 loop 1: it reads lazy flags made current) and MSR
-// NZCV (a helper that ends the block); words that force helper calls: an
-// exclusive pair load, LDSMAX, FCVTZS (helpers that write X registers); an
-// exclusive load (inline since M6 loop 7) and FMOV between X and D registers
-// (since loop 4); loads whose address misses come from the register values.
+// NZCV (a helper that ends the block); words that force helper calls:
+// LDSMAX, FCVTZS (helpers that write X registers); an exclusive load (inline
+// since M6 loop 7), an exclusive pair load (since M8) and FMOV between X and D
+// registers (since loop 4); loads whose address misses come from the register values.
 const HELPERS = [
   (d: number, _n: number) => 0xd53b4200 | d, // mrs xd, nzcv
   (d: number, _n: number) => 0xd51b4200 | d, // msr nzcv, xd
   (d: number, _n: number) => 0xd51b4220 | d, // msr daif, xd (doesn't end a block since M6 loop 7)
   (d: number, n: number) => 0xc85f7c00 | (n << 5) | d, // ldxr xd, [xn] (inline since M6 loop 7)
-  (d: number, n: number) => 0xc87f0000 | (((d + 1) & 31) << 10) | (n << 5) | d, // ldxp xd, xd+1, [xn]
+  (d: number, n: number) => 0xc87f0000 | (((d + 1) & 31) << 10) | (n << 5) | d, // ldxp xd, xd+1, [xn] (inline since M8)
   (d: number, n: number) => 0xf8204000 | (n << 16) | (n << 5) | d, // ldsmax xn, xd, [xn]
   (d: number, n: number) => 0x9e660000 | (n << 5) | d, // fmov xd, dn (inline since M6 loop 4)
   (d: number, n: number) => 0x9e670000 | (n << 5) | d, // fmov dd, xn (likewise)

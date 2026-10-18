@@ -998,9 +998,9 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         LDR_lit_gen | LDRSW_lit | PRFM_lit | PRFM_imm | PRFM_unscaled_imm | STRx_LDRx_imm_2
         | STURx_LDURx | STRx_reg | LDRx_reg | STRx_LDRx_imm_1 | STP_LDP_gen | STNP_LDNP_gen
         | LDAR | STLR | DC_ZVA | STTRB | LDTRB | LDTRSB | STTRH | LDTRH | LDTRSH | STTR | LDTR
-        | LDTRSW | LDXR | LDAXR | STXR | STLXR | CAS | CASB | CASH | LDADDB | LDCLRB | LDEORB
-        | LDSETB | SWPB | LDADDH | LDCLRH | LDEORH | LDSETH | SWPH | LDADD | LDCLR | LDEOR
-        | LDSET | SWP | CASP => {
+        | LDTRSW | LDXR | LDAXR | STXR | STLXR | LDXP | LDAXP | STXP | STLXP | CAS | CASB
+        | CASH | LDADDB | LDCLRB | LDEORB | LDSETB | SWPB | LDADDH | LDCLRH | LDEORH | LDSETH
+        | SWPH | LDADD | LDCLR | LDEOR | LDSET | SWP | CASP => {
             return ldst(c, cx, i, op, k);
         }
         LDR_lit_fpsimd | STP_LDP_fpsimd | STNP_LDNP_fpsimd | STR_imm_fpsimd_2
@@ -1371,12 +1371,21 @@ const HOST: u32 = 6;
 /// An i64 the access's fast path keeps across a nested `if` (exclusives).
 const VALUE: u32 = 5;
 
-/// Loads, stores and pairs, acquire/release, exclusives of one register and
-/// LSE atomics with CASP, whose handlers can't fail for other reasons than the
-/// access itself. Exclusive pairs, LSE min/max, unprivileged and FP accesses
-/// stay helper calls (FP ones: [`ldst_fp`]).
+/// Loads, stores and pairs, acquire/release, exclusives (of one register and
+/// pairs) and LSE atomics with CASP, whose handlers can't fail for other
+/// reasons than the access itself. LSE min/max and FP accesses stay helper
+/// calls (FP ones: [`ldst_fp`]).
 fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     use Op::*;
+    const MON: u32 = offset_of!(Cpu, monitor) as u32;
+    const VAL: u32 = offset_of!(Cpu, monitor.val) as u32;
+    const MON_SIZE: u32 = offset_of!(Cpu, monitor.size) as u32;
+    // Pushes whether the monitor is armed for ADDR and `len` bytes (an i32).
+    let armed = |c: &mut Func, len: u32| {
+        c.local_get(VCPU).i64_load(MON).local_get(ADDR).op(EQ + WC);
+        c.local_get(VCPU).i64_load(MON_SIZE).i64_const(len as i64);
+        c.op(EQ + WC).op(AND);
+    };
     let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
     let here = 4 * k as i64;
     let (size, opc) = (bits(i, 31, 30), bits(i, 23, 22));
@@ -1576,9 +1585,6 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
             let written = xmask(if load { rt } else { rs });
             access(c, cx, i, here, len, !load, &[guard], written, |c, off| {
-                const MON: u32 = offset_of!(Cpu, monitor) as u32;
-                const VAL: u32 = offset_of!(Cpu, monitor.val) as u32;
-                const MON_SIZE: u32 = offset_of!(Cpu, monitor.size) as u32;
                 if load {
                     c.local_get(HOST)
                         .atomic(ATOMIC_LOAD[size as usize], size, off)
@@ -1594,9 +1600,8 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     // VALUE = the status: 0 stored, 1 not.
                     get(c, true, rt);
                     c.local_set(VALUE);
-                    c.local_get(VCPU).i64_load(MON).local_get(ADDR).op(EQ + WC);
-                    c.local_get(VCPU).i64_load(MON_SIZE).i64_const(len as i64);
-                    c.op(EQ + WC).op(AND).if_t(I64);
+                    armed(c, len);
+                    c.if_t(I64);
                     c.local_get(HOST)
                         .local_get(VCPU)
                         .i64_load(VAL)
@@ -1689,8 +1694,7 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_get(BASE).local_set(ADDR);
             let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
             let written = xmask(rs) | xmask(rs + 1);
-            let locks = cx.pair_locks;
-            let parallel = cx.parallel;
+            let pcx = *cx;
             access(c, cx, i, here, len, true, &[guard], written, |c, off| {
                 if !x {
                     // VALUE = the old pair.
@@ -1718,30 +1722,10 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     get(c, true, r);
                     c.op(DROP);
                 }
-                if parallel {
-                    // TLBE = the lock's offset from `locks`.
-                    c.local_get(HOST);
-                    if off != 0 {
-                        c.i32_const(off as i32).op(ADD);
-                    }
-                    c.i32_const(4).op(SHR_U);
-                    c.i32_const(PAIR_LOCKS as i32 - 1).op(AND);
-                    c.i32_const(PAIR_LOCK_SIZE.trailing_zeros() as i32)
-                        .op(SHL)
-                        .local_set(TLBE);
-                    c.loop_().local_get(TLBE).i32_const(1);
-                    c.atomic(RMW_XCHG, 2, locks).hint(false).br_if(0).end();
-                }
+                pair_lock(c, &pcx, off);
                 // VALUE:BASE = the old pair.
                 c.block().loop_();
-                c.local_get(HOST)
-                    .atomic(ATOMIC_LOAD[3], 3, off)
-                    .local_set(VALUE);
-                c.local_get(HOST)
-                    .atomic(ATOMIC_LOAD[3], 3, off + 8)
-                    .local_set(BASE);
-                c.local_get(HOST).atomic(ATOMIC_LOAD[3], 3, off);
-                c.local_get(VALUE).op(NE + WC).hint(false).br_if(0);
+                read_pair(c, off);
                 c.local_get(VALUE);
                 get(c, true, rs);
                 c.op(NE + WC).local_get(BASE);
@@ -1755,15 +1739,119 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 get(c, true, rt + 1);
                 c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off + 8).op(DROP);
                 c.end().end();
-                if parallel {
-                    c.local_get(TLBE).i32_const(0);
-                    c.atomic(I32_ATOMIC_STORE, 2, locks);
-                }
+                pair_unlock(c, &pcx);
                 set(c, true, rs, |c| {
                     c.local_get(VALUE);
                 });
                 set(c, true, rs + 1, |c| {
                     c.local_get(BASE);
+                });
+            });
+        }
+        // Exclusive pairs (M8), as the interpreter's. The W pair is an 8-byte
+        // exclusive of Wt:Wt2 (Wt the low half). The X pair: LDXP reads the
+        // 16 bytes as CASP does and arms the monitor with them; STXP, if it's
+        // armed for this address and 16 bytes, is CASP of the monitor's pair
+        // against Xt:Xt2 (both under the pair lock in parallel SMP). Rs = 0
+        // if stored, else 1; the monitor is disarmed either way.
+        LDXP | LDAXP | STXP | STLXP => {
+            let (x, rs, rt2) = (bit(i, 30), bits(i, 20, 16), bits(i, 14, 10));
+            let len = if x { 16 } else { 8 };
+            let load = matches!(op, LDXP | LDAXP);
+            base(c);
+            c.local_get(BASE).local_set(ADDR);
+            let guard = if rn == 31 { Guard::Sp } else { Guard::Aligned };
+            let written = if load {
+                xmask(rt) | xmask(rt2)
+            } else {
+                xmask(rs)
+            };
+            let pcx = *cx;
+            access(c, cx, i, here, len, !load, &[guard], written, |c, off| {
+                // VALUE:BASE differs from the monitor's pair (an i32).
+                let differs = |c: &mut Func| {
+                    c.local_get(VALUE).local_get(VCPU).i64_load(VAL).op(NE + WC);
+                    c.local_get(BASE).local_get(VCPU).i64_load(VAL + 8);
+                    c.op(NE + WC).op(OR);
+                };
+                if load {
+                    // VALUE:BASE = the pair (W: VALUE the 8 bytes, BASE 0).
+                    if x {
+                        pair_lock(c, &pcx, off);
+                        c.loop_();
+                        read_pair(c, off);
+                        c.end();
+                        pair_unlock(c, &pcx);
+                    } else {
+                        c.local_get(HOST)
+                            .atomic(ATOMIC_LOAD[3], 3, off)
+                            .local_set(VALUE);
+                        c.i64_const(0).local_set(BASE);
+                    }
+                    c.local_get(VCPU).local_get(ADDR).i64_store(MON);
+                    c.local_get(VCPU).i64_const(len as i64).i64_store(MON_SIZE);
+                    c.local_get(VCPU).local_get(VALUE).i64_store(VAL);
+                    c.local_get(VCPU).local_get(BASE).i64_store(VAL + 8);
+                    set(c, true, rt, |c| {
+                        c.local_get(VALUE);
+                        if !x {
+                            c.i64_const(u32::MAX as i64).i64_and();
+                        }
+                    });
+                    set(c, true, rt2, |c| {
+                        c.local_get(if x { BASE } else { VALUE });
+                        if !x {
+                            c.i64_const(32).op(SHR_U + W);
+                        }
+                    });
+                    return;
+                }
+                // The operands' locals, loaded before the branches.
+                for r in [rt, rt2] {
+                    get(c, true, r);
+                    c.op(DROP);
+                }
+                // VALUE = the status.
+                if x {
+                    armed(c, len);
+                    c.if_t(I64);
+                    pair_lock(c, &pcx, off);
+                    c.block().loop_();
+                    read_pair(c, off);
+                    differs(c);
+                    c.br_if(1);
+                    c.local_get(HOST).local_get(VALUE);
+                    get(c, true, rt);
+                    c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off);
+                    c.local_get(VALUE).op(NE + WC).hint(false).br_if(0);
+                    c.local_get(HOST).local_get(BASE);
+                    get(c, true, rt2);
+                    c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off + 8).op(DROP);
+                    c.end().end();
+                    pair_unlock(c, &pcx);
+                    differs(c);
+                    c.i64_extend_i32_u();
+                } else {
+                    get(c, true, rt);
+                    c.i64_const(u32::MAX as i64).i64_and();
+                    get(c, true, rt2);
+                    c.i64_const(32).op(SHL + W).op(OR + W).local_set(VALUE);
+                    armed(c, len);
+                    c.if_t(I64);
+                    c.local_get(HOST)
+                        .local_get(VCPU)
+                        .i64_load(VAL)
+                        .local_get(VALUE);
+                    c.atomic(RMW_CMPXCHG + RMW_SIZE[3], 3, off);
+                    c.local_get(VCPU)
+                        .i64_load(VAL)
+                        .op(NE + WC)
+                        .i64_extend_i32_u();
+                }
+                c.else_().i64_const(1).end().local_set(VALUE);
+                c.local_get(VCPU).i64_const(0).i64_store(MON_SIZE);
+                set(c, true, rs, |c| {
+                    c.local_get(VALUE);
                 });
             });
         }
@@ -1788,6 +1876,50 @@ fn ldst(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         _ => return false,
     }
     true
+}
+
+/// Takes the pair lock of the 16 bytes at HOST + `off` in parallel SMP (with
+/// vCPUs sharing a thread no other pair op runs meanwhile); TLBE = its offset
+/// from the locks ([`crate::mem::Mem::pair_locks`]).
+fn pair_lock(c: &mut Func, cx: &Ctx, off: u32) {
+    if !cx.parallel {
+        return;
+    }
+    c.local_get(HOST);
+    if off != 0 {
+        c.i32_const(off as i32).op(ADD);
+    }
+    c.i32_const(4).op(SHR_U);
+    c.i32_const(PAIR_LOCKS as i32 - 1).op(AND);
+    c.i32_const(PAIR_LOCK_SIZE.trailing_zeros() as i32)
+        .op(SHL)
+        .local_set(TLBE);
+    c.loop_().local_get(TLBE).i32_const(1);
+    c.atomic(RMW_XCHG, 2, cx.pair_locks)
+        .hint(false)
+        .br_if(0)
+        .end();
+}
+
+/// Releases [`pair_lock`]'s lock.
+fn pair_unlock(c: &mut Func, cx: &Ctx) {
+    if cx.parallel {
+        c.local_get(TLBE).i32_const(0);
+        c.atomic(I32_ATOMIC_STORE, 2, cx.pair_locks);
+    }
+}
+
+/// VALUE:BASE = the 16 bytes at HOST + `off`, inside a `loop` that starts over
+/// while the low half changed across the read of the high one (`Mem::pair_op`'s read).
+fn read_pair(c: &mut Func, off: u32) {
+    c.local_get(HOST)
+        .atomic(ATOMIC_LOAD[3], 3, off)
+        .local_set(VALUE);
+    c.local_get(HOST)
+        .atomic(ATOMIC_LOAD[3], 3, off + 8)
+        .local_set(BASE);
+    c.local_get(HOST).atomic(ATOMIC_LOAD[3], 3, off);
+    c.local_get(VALUE).op(NE + WC).hint(false).br_if(0);
 }
 
 /// Before a block's first inline SIMD&FP instruction (the `k`-th, `i`):
@@ -3250,6 +3382,30 @@ mod tests {
     }
 
     #[test]
+    fn exclusive_pairs_inline() {
+        let xchg = [0xfe, RMW_XCHG, 2, 0x80, 2];
+        let cmpxchg = [0xfe, RMW_CMPXCHG + RMW_SIZE[3], 3];
+        let par = Ctx {
+            parallel: true,
+            ..FLAT
+        };
+        // ldxp x0, x1, [x2]; stxp w3, x0, x1, [x2]: under the lock in parallel
+        // SMP only, the store a cmpxchg of each half.
+        for w in [0xc87f0440, 0xc8230440] {
+            assert!(!emit(w, 0).unwrap().windows(5).any(|b| b == xchg));
+            assert!(emit_in(w, 0, &par).unwrap().windows(5).any(|b| b == xchg));
+        }
+        let b = emit(0xc8230440, 0).unwrap();
+        assert_eq!(b.windows(3).filter(|w| *w == cmpxchg).count(), 2);
+        // ldaxp w0, w1, [x2]; stlxp w3, w0, w1, [x2]: one 8-byte access, no lock.
+        for w in [0x887f8440, 0x88238440] {
+            assert!(!emit_in(w, 0, &par).unwrap().windows(5).any(|b| b == xchg));
+        }
+        let b = emit(0x88238440, 0).unwrap();
+        assert_eq!(b.windows(3).filter(|w| *w == cmpxchg).count(), 1);
+    }
+
+    #[test]
     fn opaque_self_zero_in_parallel() {
         let par = Ctx {
             parallel: true,
@@ -3654,6 +3810,6 @@ mod tests {
         assert!(emit(0xc85f7c20, 0).is_some()); // ldxr x0, [x1] (M6 loop 7)
         assert!(emit(0xf8200020, 0).is_some()); // ldadd x0, x0, [x1]
         assert_eq!(emit(0xf8204020, 0), None); // ldsmax x0, x0, [x1]: a helper
-        assert_eq!(emit(0xc87f0020, 0), None); // ldxp x0, x0, [x1]: likewise
+        assert!(emit(0xc87f0020, 0).is_some()); // ldxp x0, x0, [x1] (M8)
     }
 }

@@ -184,7 +184,7 @@ The table is `core/src/interp/sys.rs`.
   through pair ops. **Why not the alternatives:** stopping the world per pair op
   costs up to a chunk of every other vCPU each time, at SLUB's one CASP per ~10K instructions; a
   lock taken by every 64-bit atomic too would tax every LDXR/LDADD/CAS and still not cover plain
-  stores. The JIT runs CASP inline with the same lock and CASes ([jit.md](jit.md) "Atomics").
+  stores. The JIT runs CASP and LDXP/STXP inline with the same lock and CASes ([jit.md](jit.md) "Atomics").
   `tests/baremetal/pairs.c` checks it (CASP and LDXP/STXP against each other and against
   plain stores; passes on QEMU TCG and on the M4 under hvf).
 - `Mem::rmw` is a generic CAS loop (the JIT does the LSE operations as single `atomic.rmw` ops).

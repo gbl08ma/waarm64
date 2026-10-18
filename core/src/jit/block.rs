@@ -1236,12 +1236,12 @@ mod tests {
 
     #[test]
     fn a_helper_writes_back_and_forgets() {
-        // add x1, x2, #3; ldxp x1, x0, [x2] (a helper); add x3, x1, #1: x1 is
+        // add x1, x2, #3; ldsmax x0, x1, [x2] (a helper); add x3, x1, #1: x1 is
         // written back before the call and loaded again after it.
         let b = Block {
             key: 0x4000_0200,
             va: 0x4000_0200,
-            words: vec![ADD, 0xc87f0041, 0x91000423],
+            words: vec![ADD, 0xf8204041, 0x91000423],
         };
         let Emitted { bytes, inl, .. } = build(b);
         assert_eq!(inl, [2]);
@@ -1312,9 +1312,9 @@ mod tests {
 
     #[test]
     fn flags_are_stored_before_helpers_and_on_failure_returns() {
-        // cmp x1, x2; ldxp x1, x0, [x2] (a helper): NZCV stored before the call;
+        // cmp x1, x2; ldsmax x0, x1, [x2] (a helper): NZCV stored before the call;
         // the helper may write it, so nothing is left to store at the end.
-        let (bytes, counts) = one(&[0xeb02003f, 0xc87f0041]);
+        let (bytes, counts) = one(&[0xeb02003f, 0xf8204041]);
         assert_eq!(nzcv_stores(&bytes), 1);
         let at = bytes.windows(3).position(|w| w == [0x37, 3, 0x88]).unwrap();
         assert!(bytes[at..].windows(2).any(|w| w == [0x10, 0])); // the call comes after

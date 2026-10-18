@@ -420,7 +420,13 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   CASP inline too: the W pair as one 64-bit `cmpxchg`, the X pair as `Mem::cas_pair`'s protocol
   ([cpu.md](cpu.md) "Memory accesses and atomics"), its pair lock taken with an
   `i32.atomic.rmw.xchg` at the lock's address (`Ctx::pair_locks`, boxed so it never moves) in
-  parallel SMP only: with vCPUs sharing a thread no other pair op runs meanwhile.
+  parallel SMP only: with vCPUs sharing a thread no other pair op runs meanwhile. The exclusive
+  pairs likewise (M8): of two W registers an 8-byte exclusive; LDXP of two X registers reads the
+  16 bytes as CASP does and arms the monitor with both halves, and STXP is CASP of the monitor's
+  pair. That took the atomics stress's LL/SC `stack` (LDXP/STLXP, 4 parallel vCPUs, 10⁶
+  iterations a thread; Node, ad hoc) from 5.6 to 3.8 s. CASP's gain on Alpine's boot is bounded by
+  the helper's cost (SLUB's `cmpxchg128`, ~300K calls, ~30 ms of a ~10 s boot): under the noise,
+  not measured.
   Barriers: with vCPUs sharing a thread (one vCPU, or round-robin SMP) they order nothing and
   emit nothing; in parallel SMP every DMB (and SSBB/PSSBB) is an `atomic.fence`, which V8 lowers
   to `dmb ish` on arm64 in both tiers (checked with `--print-wasm-code`), and DSB is the helper's
@@ -648,7 +654,7 @@ interpreter's; the helper runs the instruction otherwise.
 ## What still runs through helpers
 
 On Alpine's paths (~2.5M helper-retired steps a boot): unmasking MSRs (DAIFClr, an MSR DAIF that
-unmasks), the regime, FP-control, SPSel and NZCV MSRs, ISB, exclusive pairs, LSE min/max,
+unmasks), the regime, FP-control, SPSel and NZCV MSRs, ISB, LSE min/max,
 the load/store fallbacks (TLB misses, MMIO); in OpenSSL's GCM path scalar `SHL`. `jit_helper_report`
 has the live histogram. None was worth a loop by itself at M6.5's end. Of the integer NEON (after
 the image decoders' profile, 2026-10-18), what's left as helpers: SUQADD/USQADD on 64-bit lanes,

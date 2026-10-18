@@ -216,7 +216,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s
   sampling. Measure with V8's own counters before trusting the median.
 - **The core's own memory is growable**: stage 2 of "The core's heap in a fixed memory" (Platform and devices).
-- Helpers still on real paths: unmasking MSRs, ISB, CASP, exclusive pairs, LSE min/max. None worth a
+- Helpers still on real paths: unmasking MSRs, ISB, LSE min/max. None worth a
   loop alone. (The NEON ones, structures and CRC32 are inline since 2026-10-18: the item at this section's top.)
 - MSR left as helpers that end a block: DAIFClr, the regime, FP-control, SPSel and NZCV writes
   (Alpine: 0.66M MSR (register) and 0.15M MSR (immediate) helper calls). The differential test
@@ -439,10 +439,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   chunk in parallel mode cut the average from 100 to 65 µs and polling before sleeping to 55 µs,
   before the ASID filter made both moot; ending a target's chunk from outside would need a memory
   check in the JIT's hot path.
-- **Pair atomics:** CASP is inline (docs/jit.md "Atomics"); its gain on Alpine's boot (it was the
-  5th most called helper even on one vCPU: SLUB's `cmpxchg128`, ~300K per boot, ~30 ms) and on the
-  LSE stack stress (2.65 s against 0.4 s on the M4) is unmeasured, since the cloud session that
-  inlined it has no Alpine image. LDXP/STXP of two X registers still run through the helper.
 - **WFE sleeping:** WFE yields (120K per vCPU in 7 s of churn on 4 vCPUs, ~0.1 s); sleep on the
   event word only if a workload shows yields costing.
 - **Parallel `make`** as a scaling workload (the image has no toolchain yet).
