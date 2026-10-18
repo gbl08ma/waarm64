@@ -608,6 +608,11 @@ page writes the context's output latency into the ring's header, and the guest g
   screen has an accent ring; an unfocused one shows "Click to type" over it. The terminal's frame
   takes the accent while xterm.js has the focus (its cursor is filled then, too). Tab moves
   between them.
+- **Before the guest's keyboard driver** (the firmware, the boot loader, an initramfs: the worker's `keyboard
+  {live}` is false), the screen's keys go to the built-in USB keyboard on a machine with the USB controller
+  (every key, down and up, held modifiers; docs/usb.md "The keyboard"), else to the serial console as a terminal
+  sends them (`terminalBytes`: keys with a terminal encoding only). Once the driver is live they are
+  virtio-input's, and the USB keyboard is unplugged.
 - **No stuck keys:** `attachInput` tracks what the guest believes is held and releases it (keys,
   then mouse buttons) when the screen loses the focus, the window loses it, or the page is
   hidden; a keyup for a key the guest doesn't hold is dropped. A pointer press captures the

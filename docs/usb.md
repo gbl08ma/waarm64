@@ -510,6 +510,59 @@ WebHID's are.
   hidden, it checks that the encoding has the original's report sizes.
 - `tests/usb-webhid.test.ts` runs the device against a fake HIDDevice.
 
+## The keyboard
+
+A machine with the controller has a **built-in USB keyboard** on its last connector (`KEYBOARD_CONNECTOR`, 3; the
+USB tab lists only 1–3 for remembered devices and says what 4 is). It is the firmware's and the boot loader's
+keyboard: EDK2 has no virtio-input driver, so before this the screen's keys went to the serial console as a
+terminal sends them (`terminalBytes`), which left out every key without a terminal encoding, key-ups and modifiers
+by themselves.
+
+- **The device** (`web/usb-keyboard.ts`, `{api: 'virtual', kind: 'keyboard'}`): a full-speed HID boot keyboard on
+  `VirtualDevice`, pid.codes' test IDs (1209:0001).
+  - Interface class 3, subclass 1, protocol 1, with HID 1.11's boot report descriptor (63 bytes).
+  - Interrupt IN 0x81 carries 8-byte reports: the modifier bits (0xE0–0xE7 as bits 0–7), a reserved byte, and up
+    to six usages, or ErrorRollOver (1) in all six while more are held.
+  - The LEDs come by SET_REPORT(output). GET_REPORT, GET/SET_IDLE and GET/SET_PROTOCOL are answered; the two
+    protocols share the layout.
+  - Every change of the held keys is a report, sent in order (a press and its release both reach the host), to the
+    IN TD the host keeps queued. Up to 32 wait while none is queued. While unconfigured, the state is only kept.
+  - The idle rate is kept, but no report is repeated: EDK2 and Linux repeat keys themselves.
+- **Its keys** are the page's `KeyboardEvent.code`s, mapped to HID usages as web/input.ts maps them for
+  virtio-input (a US layout: a key is where it is on the keyboard, whatever the host's layout prints on it). They
+  go to the device worker as `usb-key` messages on the controller's port (no answer; `code` '' releases them all,
+  when the screen loses the focus).
+- **The firmware side** (`images/edk2/WebpcXhciDxe`, a driver of ours): it finds the DT's `generic-xhci` nodes
+  through FdtClient and registers each as a non-discoverable xHCI, with coherent DMA and its MMIO window.
+  NonDiscoverablePciDeviceDxe (added to the build by `images/edk2/usb-xhci.patch`) gives it a PCI I/O protocol, and
+  EDK2's XhciDxe, UsbBusDxe and UsbKbDxe drive it as a PCI controller. The boot manager's ConIn already lists "any
+  USB keyboard", and its ConnectAll reaches it: the UEFI shell, the boot manager's menus and GRUB read it beside the
+  serial console. The drivers are dispatched on every machine (the firmware's step counts moved once for them:
+  `edk2-shell`, `edk2-shell-again`).
+- **On the page** (web/app/main.ts):
+  - The keyboard is plugged in when the machine runs and its guest has no driver on the virtio keyboard (the
+    worker's `keyboard {live}`). It is unplugged once that driver is live, so Linux doesn't get every key twice,
+    and plugged in again if the driver goes away. A guest reboot is a new machine on the page, so the keyboard is
+    there again at power-on.
+  - While it is plugged in, the screen's keys go to it (`attachInput`'s `text.usb`), the toolbar's chords too. Else
+    they go to virtio-input, or, on a machine without the controller, to the serial console as before.
+  - Snapshot and Suspend unplug it with the other devices, without asking about it, and plug it back after. That
+    happens only while the guest's virtio keyboard isn't live: a snapshot of a running Linux has it unplugged
+    anyway.
+  - It isn't counted or listed among the USB menu's devices. The USB tab says it is connector 4's.
+  - Linux sees it too until it is unplugged: a USB keyboard that comes and goes during the boot.
+- **Tests:**
+  - `tests/usb-keyboard.test.ts` (Node): the descriptors, reports, rollover, modifiers, LEDs, idle and protocol,
+    and the `usb-key` path through the glue.
+  - `tests/page-usb-keyboard.test.ts` (Chromium, Debian, ci-debian):
+    1. GRUB's countdown is stopped by `c` on the screen.
+    2. A command typed at `grub>` runs.
+    3. `keystatus --shift` sees a Shift held through Enter. No terminal sends a modifier by itself, so this is the
+       USB path, not the serial one.
+    4. After the boot the guest no longer lists the keyboard, and the screen's keys reach tty1 once each.
+  - In Node, the UEFI shell takes Esc and typed commands from the keyboard alone
+    (`bench/results/local/fw-kbd.ts`, ad hoc).
+
 ## The page
 
 Files: `web/app/usb-ports.ts` (DOM-free: identities, lock names, connectors, matching, the messages' words, the

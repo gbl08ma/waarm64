@@ -2,7 +2,8 @@
 
 **Status:** proposed 2026-10-15; WebHID added 2026-10-18. **U0–U4 built 2026-10-18** (how it works now:
 [docs/usb.md](../usb.md)); **U5 closed 2026-10-18** with the user's devices ("U5 findings"; the rest of its list,
-untried, is in backlog.md "USB"), and U6 waits for the user's OK.
+untried, is in backlog.md "USB"). **U6's keyboard built 2026-10-18** (the user's OK; isochronous transfers skipped):
+the firmware's USB keyboard, docs/usb.md "The keyboard".
 It answers the question "could
 the user attach any USB device plugged into their computer to the guest, through WebUSB?". **Yes, for most devices
 that matter here.** The guest gets an emulated xHCI controller, and each attached device is passed through to
@@ -461,6 +462,9 @@ restores onto a machine whether or not a device is plugged in. Devices are the m
   What fails becomes a backlog line or a fix. **Closed 2026-10-18** with the devices the user has: an RTL-SDR, an
   FTDI adapter and a wired Xbox controller ("U5 findings"); the rest is in backlog.md "USB".
 - **U6 (optional, its own OK):** isochronous transfers, and the USB keyboard for EDK2 (§4, "Virtual devices").
+  **The keyboard was built 2026-10-18** (the user's OK): a HID boot keyboard of ours on the last connector, EDK2's
+  USB stack on the DT's xHCI through a driver of ours, the page routing the screen's keys to it until the guest's
+  virtio keyboard is live (docs/usb.md "The keyboard"). Isochronous transfers were skipped.
 
 ## U0 findings (2026-10-18)
 

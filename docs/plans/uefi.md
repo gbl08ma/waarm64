@@ -246,7 +246,8 @@ What it found, beyond what frontend.md "Debian through UEFI" says:
 - **Menus:** waiting for the loader's timeout is fine for now. The serial console with input is
   the way into the firmware and bootloader (EFI setup, boot entries, editing the command line);
   loop 3 checks those keys end to end (arrows, F-keys, Ctrl-X through xterm.js to EDK2's
-  terminal driver and GRUB).
+  terminal driver and GRUB). Since 2026-10-18 a machine with the USB controller also has a real keyboard there:
+  the page's built-in USB keyboard on EDK2's USB stack (docs/usb.md "The keyboard").
 - **Debian's first boot runs as on a regular machine** in the release build: no credentials over
   fw_cfg or anything else outside CI and the tests (which keep using them, to boot unattended).
   Consequence for loop 3: with a DT and no `console=`, `/dev/console` is the serial port, so

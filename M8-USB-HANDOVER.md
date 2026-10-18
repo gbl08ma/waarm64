@@ -26,11 +26,12 @@ carries the work between sessions.
   at 3 Mbaud, a wired Xbox controller through `xpad`, on the Mac mini through Chrome for Testing
   (docs/testing.md "USB: real devices on the Mac").
 
-## Next
+- **U6, the firmware's keyboard** (the user's OK, 2026-10-18; isochronous transfers skipped): a HID boot keyboard
+  of ours (`web/usb-keyboard.ts`) on the last connector, fed by the page's keys (`usb-key`); EDK2's USB stack on
+  the DT's xHCI through `images/edk2/WebpcXhciDxe` (ours) and NonDiscoverablePciDeviceDxe; the page plugs it in
+  until the guest's virtio keyboard is live (docs/usb.md "The keyboard"). The firmware changed, so `edk2-shell`
+  and `edk2-shell-again` moved once. `tests/page-usb-keyboard.test.ts` (ci-debian) drives GRUB with it.
 
-- **U6** needs the user's OK, asked 2026-10-18: the recommendation is the emulated USB keyboard for EDK2 (an
-  emulated boot keyboard on the xHCI fed by the page's keys, a DXE driver registering the DT's xHCI as a
-  non-discoverable device, EDK2's own XhciDxe/UsbKbDxe; it retires backlog.md "A real keyboard driver in
-  EDK2"), and isochronous transfers left in the backlog (WebUSB protects the classes that use them most).
+## Next
 - U5's untried devices and the open questions it left are in backlog.md "USB".
 - Loose ends are in docs/backlog.md "USB".

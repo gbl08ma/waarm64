@@ -416,7 +416,9 @@ output, GRUB's menu and "Loading Linux…", then fbcon on `virtio_gpu`; the logi
   `keyboard {live}` to the page) the screen's keys are sent to the serial console as a terminal sends them
   (`terminalBytes` in web/input.ts); the serial terminal still takes its own keys when it is focused.
   `tests/page-debian.test.ts` presses `c` on the screen during GRUB's countdown. A real EDK2 keyboard
-  driver would be cleaner (backlog).
+  driver would be cleaner (backlog). **Since 2026-10-18 a machine with the USB controller has one:** the page's
+  built-in USB keyboard, driven by EDK2's UsbKbDxe on the machine's xHCI, takes the screen's keys until the guest's
+  virtio keyboard is live (docs/usb.md "The keyboard"). Machines without the controller keep the serial path.
 
 ## 13. G1 loop 5: resize (2026-10-02)
 
