@@ -74,6 +74,12 @@ page. The ring and record layouts are in [abi.md](abi.md) "Device backends".
 
 ## Devices
 
+### USB (an xHCI, not virtio)
+An xHCI in the core (`core/src/xhci.rs`) with its devices in the device worker behind `web/usb.ts`, on the
+same doorbell as the virtio backends, through a shared block of its own (`vm_xhci`) with request and
+completion rings as `DevShared`'s. Gadget Zero is its virtual test device, with a native twin; WebUSB and
+WebHID devices are the page's. All of it is in [usb.md](usb.md).
+
 ### console and rng
 virtio-console: TX to the host, receive buffers held (no host input path: console input goes to
 the PL011, [platform.md](platform.md) "PL011"). virtio-rng:

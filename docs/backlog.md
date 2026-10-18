@@ -677,6 +677,13 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   WebUSB loses the device and the backend reports it gone. Measure which hosts do that (U3, U5).
 - **The WebUSB fixtures are transcribed** (`tests/usb/webusb-fixtures.ts`). Replace them with real
   `lsusb -v` and raw dumps of the user's devices in U5, which also checks the speed heuristic.
+- **The controller's IMOD doesn't moderate:** the register is kept and interrupts aren't delayed. The
+  completion latency (`xhci::LATENCY_NS`) does what the guest needed (docs/usb.md "Latency"); real
+  moderation would need a deadline in the run loops.
+- **Stop Endpoint's window in realtime mode:** a backend that gathers a TD's OUT data, or scatters its IN
+  data, just after the guest stopped the endpoint touches a buffer the guest may have back. The glue drops
+  a TD whose cancel is in the same batch, and deterministic mode can't hit it.
+- **Isochronous TDs** are parsed and posted (one packet per TD), but no device takes them (U6).
 
 ## Tests and tools
 

@@ -1,4 +1,4 @@
-# Host ABI (version 31)
+# Host ABI (version 38)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -61,7 +61,8 @@ Design notes for an ABI change go in this file before the code.
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
   1056; `Cpu` is 1072 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
-  flash bank's bytes, null without one; ABI 29).
+  flash bank's bytes, null without one; ABI 29), `vm_xhci(vm)` (the xHCI's shared block, null without one;
+  ABI 38, "USB" below).
 - `vm_snapshot_size(vm)`, `vm_snapshot_save(vm, ptr, len)`, `vm_snapshot_restore(vm, ptr, len)`,
   `snapshot_version()` (ABI 30): a VM's state without its RAM, out and into a new VM ("M8 phase
   C: snapshots", below).
@@ -95,6 +96,7 @@ Design notes for an ABI change go in this file before the code.
 | `fw_cfg`, `fw_cfg_len` | address and length of fw_cfg's files, copied by `vm_new` (firmware only; 0: none) (29) |
 | `mem_pages` | the memory's size in 64 KiB pages when the host made it fixed (above, "A fixed-size memory"): JIT modules import it with exact limits; 0: growable; over 65536 is refused (32) |
 | `rng_seed` (4 words) | FEAT_RNG's 256-bit ChaCha20 key in realtime mode, from the host's CSPRNG; deterministic mode ignores it and uses zeros (35) |
+| `xhci` | an xHCI ([usb.md](usb.md)): its USB 2 ports \| USB 3 ports << 8, `0x404` (4 and 4, the only counts built; `vm_new` refuses others) or 0, none (38) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`,
 and bits 1 and 2 unless told `rng: false`, `e0pd: false` (the bare-metal tests are); the ABI's 0 means none.
@@ -164,6 +166,26 @@ Layouts in `core/src/virtio.rs` and `web/devices.ts`; the behavior is in [device
   count << 16; then (offset from the start of guest RAM, length) per buffer, readable first.
   Offsets are RAM-relative so the words stay u32 natively; the host adds its RAM base.
 - **Completion record:** `w0` as posted, then bytes written.
+
+### USB (ABI 38)
+
+Layouts in `core/src/xhci.rs` and `web/usb.ts`; the behavior is in [usb.md](usb.md).
+- `vm_xhci(vm) -> *const XhciShared`: events u32 at 0 (`EV_REQUEST` 1; the host takes them with a swap),
+  a pad word, the request ring at 8 and the completion ring at 16400: `WordRing`s of 4096 words, as
+  `DevShared`'s. A doorbell or command that posted records exits `DEVICE` with slot 32.
+- **Request record:** `w0` = tag (24 bits, from 1; 0 for the non-transfer kinds) | the connector's
+  generation (its detaches, mod 256) << 24; `w1` = connector | DCI << 8 | kind << 16; `w2` = the words
+  that follow. Kinds: 0 transfer (segment count | xHCI endpoint type << 16 | has-setup << 24, length,
+  the setup packet's two words for a control transfer, then (RAM offset, length) per segment; immediate
+  data is (0, length | 1 << 31) and two words of bytes), 1 reset, 2 cancel (count, tags), 3 configured
+  (count, then (DCI | type << 8 | interval << 16, max packet) each), 4 clear-halt.
+- **Completion record**, three words, `w1 & 0xff` the kind: 0 done (`w0` as posted, `w1` = xHCI
+  completion code << 8, `w2` = bytes transferred), 1 attach (`w0` = connector, `w1` = speed ID << 8: 1
+  full, 2 low, 3 high, 4 super), 2 detach (`w0` = connector). The core keeps at most 1024 TDs in flight,
+  so the ring never fills.
+- **Snapshots:** a machine with a device on a port refuses (`vm_snapshot_size` returns `u64::MAX`); the
+  configuration words gain `xhci` only when it is set, so other machines' states (and `snapshot::VERSION`)
+  are as they were.
 
 ## JIT host interface
 
@@ -480,4 +502,5 @@ implemented by this step).
 | 34 | `vm_set_chunk` (the PC sampler's chunk in parallel mode; M8 graphics G4) |
 | 35 | FEAT_RNG and FEAT_E0PD: `VmConfig.features` bits 1 and 2, `VmConfig.rng_seed`; a snapshot of a VM with FEAT_RNG keeps each vCPU's stream position |
 | 36 | `env.jit_compile`: the JIT's modules compiled in a worker of their own before the vCPUs install them |
+| 38 | USB: `VmConfig.xhci`, `vm_xhci` (above, "USB"); the `DEVICE` exit's slot 32 for the xHCI |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

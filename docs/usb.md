@@ -1,9 +1,264 @@
 # USB
 
 USB devices from the user's computer reach the guest through an emulated xHCI. The plan, and the reasons
-behind it, are in [plans/usb.md](plans/usb.md). The device interface every backend implements is
-`UsbDevice` in `web/usb-device.ts`. This page covers the two backends for real devices. The controller,
-the glue and the virtual devices get their own sections from the lanes that build them.
+behind it, are in [plans/usb.md](plans/usb.md). The controller is the core's (`core/src/xhci.rs`). Its
+devices are backends in the device worker, behind the glue in `web/usb.ts`. The device interface every
+backend implements is `UsbDevice` in `web/usb-device.ts`, and the page's messages about the root
+connectors are defined there too.
+
+## The controller (`core/src/xhci.rs`)
+
+**Where:** a DT node `usb@c000000`, `compatible = "generic-xhci"`: 64 KiB at `0x0c00_0000` (QEMU `virt`'s
+platform-bus window), INTID 80 (SPI 48, the first after the virtio window) level-high, `dma-coherent`.
+Linux's `xhci-plat-hcd` binds it. The controller exists only when `VmConfig.xhci` is set (ABI 38). The
+value is the USB 2 ports | the USB 3 ports << 8, and only `xhci::CONFIG` (4 and 4) is built, so every
+other machine's DT, guests and step counts stay as they were. It sits under `Vm::plat`, as the virtio
+transports do.
+
+**What the guest sees:**
+- An xHCI 1.0 controller (HCIVERSION 0x100):
+  - 32 slots, one interrupter, 8 root ports
+  - 32-byte contexts and 64-bit addressing
+  - an event ring segment table of up to 16 entries
+  - no scratchpad buffers, streams, LPM, port power control, MSI or debug capability
+- Two Supported Protocol capabilities: USB 2.0 on ports 1–4 and USB 3.0 on ports 5–8. Connector *c*
+  (0–3, the contract's number) is port *c* + 1 and port *c* + 5. A device goes on one of them by its
+  speed: `super` on the USB 3 port, anything else on the USB 2 port. One device per connector.
+- Registers, as the specification has them:
+  - capability, operational (USBCMD with HCRST, R/S and INTE; USBSTS; CRCR with its stop and abort;
+    DCBAAP; CONFIG)
+  - the port registers
+  - runtime (MFINDEX; IMAN, IMOD, ERSTSZ, ERSTBA, ERDP)
+  - the doorbells
+
+  64-bit registers are written low half first, as Linux does (the high half's write takes the pair).
+  Reads of 1, 2, 4 and 8 bytes work; writes of 4 and 8. Other sizes and unaligned accesses are external
+  aborts.
+- **MFINDEX** counts 125 µs microframes of machine time: the clock in realtime mode, the counter in
+  deterministic mode.
+- **IMOD** is a register, and interrupts aren't moderated.
+- **The interrupter** sets IMAN.IP (with EHB) when an event that interrupts is written. The line is
+  IP && IE && USBCMD.INTE. When the guest moves ERDP and clears EHB with events still unread, IP is set
+  again. Events that don't fit the ring wait inside the controller and are written as ERDP moves, so
+  none is lost. Events don't go into the ring while the controller is halted.
+- **Commands:** Enable and Disable Slot, Address Device (with BSR), Configure Endpoint (with Deconfigure,
+  drop and add flags), Evaluate Context (the slot's exit latency and interrupter, EP0's packet size),
+  Reset Endpoint (a halted endpoint is stopped), Stop Endpoint, Set TR Dequeue Pointer, Reset Device
+  and No-Op. Anything else is a TRB Error. Wrong states give Context State Error (Linux reads the output
+  context to recover). Slots and endpoints that aren't enabled give Slot or Endpoint Not Enabled. The
+  controller keeps the output device context current: slot state and address, each endpoint's state,
+  and its dequeue pointer when it stops or halts.
+- **Transfer rings:**
+  - TRB types: Normal, Setup/Data/Status (a control transfer runs from its Setup TRB to its Status TRB),
+    Isoch, Link (Toggle Cycle), Event Data and No-Op. A TD is its TRBs up to the one without Chain.
+  - A TRB whose cycle bit isn't the ring's yet ends the walk until the next doorbell. Linux writes a TD's
+    first TRB last.
+  - Immediate data (IDT) goes into the request record.
+  - Anything wrong is a TRB Error event, and the endpoint halts: a TRB out of RAM, a type that doesn't
+    belong (a Setup TRB on a bulk ring), a TD over 1024 TRBs, a buffer outside RAM, immediate data on
+    an IN TRB. A zero-length TRB may point anywhere (Linux's zero-length packet points at 0).
+  - A TD of No-Ops and Event Data completes in the core.
+  - A TD's dequeue position is its first TRB, past the Link TRBs before it. Linux finds the new dequeue
+    state after a halt by walking from it.
+- **Completions to events:**
+  - A TD's bytes fill its data TRBs in order.
+  - The TRB where the data ran out gets the Short Packet event, with the residual, when it has ISP or
+    IOC. Without either, the TD's last IOC TRB reports it. The data TRBs after it are skipped.
+  - A control transfer's Status stage reports Success after a short Data stage.
+  - IOC TRBs get Success.
+  - An error (Stall, Babble, USB Transaction Error) is reported on the TRB where the data stopped: the
+    Data stage of a control transfer, or the Status stage when there is none. The endpoint halts with
+    its dequeue pointer on that TD. The TDs after it leave the backend (a cancel record) and are posted
+    again once the guest has moved the dequeue pointer and rung the doorbell.
+  - Event Data TRBs report their parameter, with the bytes since the last one.
+  - BEI suppresses the interrupt.
+- **Stop Endpoint:**
+  1. What the backend finished is taken first, so no completed TD is cancelled.
+  2. The oldest TD still in flight gets a Stopped event on its first TRB.
+  3. The TDs in flight leave the backend (a cancel record). Their late completions find no TD and are
+     dropped.
+  4. The dequeue pointer goes back to the oldest of them.
+
+  The guest moves the dequeue pointer past what it cancelled. Its next doorbell posts the rest again,
+  with new tags.
+- **Root ports:**
+  - A USB 3 port goes straight to U0, enabled, on connect.
+  - A USB 2 port connects in Polling and is enabled (U0) by the driver's port reset.
+  - Resets complete at once with PRC (WRC too for a warm reset).
+  - **The first reset after an attach stays in the core:** the device was just opened. Every later one
+    is a `reset` record to the backend.
+  - Suspend is a port state only: U3. Resume (U0 from U3, or USB 2's Resume then U0) completes at once
+    with PLC. The device never suspends.
+  - Every change bit that goes to 1 (CSC, PEC, WRC, PRC, PLC…) raises a Port Status Change event and
+    USBSTS.PCD. Changes that come while the controller is halted are reported when it runs.
+  - HCRST keeps the devices: their ports connect again, without counting as a new attach.
+- **Hot-plug:** an attach or detach from the host is a connect status change. On a detach, the TDs in
+  flight on the port complete with USB Transaction Error, its records leave the outbox, and the
+  connector's generation moves on (`Records` below). TDs rung afterwards fail at once until the guest
+  disables the slot.
+
+### Latency
+
+A TD's events are written no sooner than `xhci::LATENCY_NS` (125 µs, a microframe) after the doorbell
+that posted it. When every vCPU is idle (round-robin's `idle`, a parallel vCPU going to WFI), they are
+written at once. The run loops look at the controller's next due time between chunks. In parallel SMP
+it is `Shared::xhci_due`, so no lock is taken until something is due. A snapshot takes them at once.
+
+Without it, a device that answers before the guest's CPU has moved on keeps the CPU in its interrupt
+handler for good. usbtest's unlink tests resubmit a URB from its completion. Against an instant Gadget
+Zero, process context never ran again, and the test's `msleep` never returned: 80,000 completions in a
+minute, natively. With the latency the guest pays nothing when it waits (idle time is skipped in
+deterministic mode), and testusb's run takes ~140M steps.
+
+### Snapshots
+
+`Xhci::save` keeps the registers, the ports' registers, each slot and endpoint's state with its rings'
+positions, the event ring's producer and segment table, and the events waiting for room. It needs the
+ports empty and nothing in flight. A machine with a device plugged in can't be saved:
+`vm_snapshot_size` returns `u64::MAX` and `vm.snapshot()` says to detach it. The detach completes
+in-flight TDs with errors, so the state is consistent without waiting on the guest (plans/usb.md §4a).
+A restored controller has empty ports, and its connectors' generations start again at 0, as the new
+glue's do. The machine's configuration words gain `xhci` only when it is set, so the snapshots of
+machines without one keep their format.
+
+## The backend protocol (`vm_xhci`)
+
+The shared block (`xhci::XhciShared`) holds:
+- `events` at 0: `EV_REQUEST` when the core posted records
+- a request ring at 8 and a completion ring at 16400: `virtio::WordRing`s of 4096 words, SPSC, with the
+  layout of virtio's (docs/abi.md "USB")
+
+A doorbell or command that posts records ends the run with a `DEVICE` exit whose slot is 32
+(`xhci::EXIT_SLOT`). `Devices.serve` takes the xHCI's records on the same doorbell as the virtio
+devices, and completions come back through `SIGNAL_DEVICE` and are drained at the next chunk boundary.
+In deterministic mode the device worker answers before it acks the doorbell, so completions land at a
+fixed step.
+
+**Records** (core → host):
+- `w0` = tag | generation << 24. The tag numbers TDs from 1, and is 0 for the other kinds. The
+  generation is the connector's detach count, mod 256.
+- `w1` = connector | DCI << 8 | kind << 16
+- `w2` = the number of words that follow
+
+The kinds are:
+- **transfer** (0):
+  - segment count | xHCI endpoint type << 16 | has-setup << 24
+  - the length
+  - the setup packet's 8 bytes (two words), for a control transfer
+  - per segment, (RAM offset, length). Immediate data is (0, length | `SEG_IMMEDIATE`) and two words of
+    bytes.
+
+  The direction is the setup's for a control transfer, the DCI's otherwise (odd is IN). Linux's
+  zero-length packet after an OUT is a transfer of its own, of length 0.
+- **reset** (1): a port reset after the attach's first.
+- **cancel** (2): a count, then the tags the guest stopped. They are not completed, and their late
+  completions are dropped.
+- **configured** (3): a count, then (DCI | type << 8 | interval << 16, max packet) per enabled
+  endpoint, after Configure Endpoint.
+- **clear-halt** (4): Reset Endpoint of DCI.
+
+**Completions** (host → core): three words, `w1 & 0xff` the kind.
+- done (0): `w0` as posted, `w1` = code << 8 (an xHCI completion code), `w2` = the bytes transferred.
+  Success short of the TD's length becomes Short Packet. Unknown codes become Transaction Error.
+- attach (1): `w0` = connector, `w1` = speed << 8 (1 full, 2 low, 3 high, 4 super)
+- detach (2): `w0` = connector
+
+The core keeps at most 1024 TDs posted and not completed, so the completion ring never fills. Records
+that don't fit the request ring wait in order, and are posted after the next completions.
+
+**The glue** (`web/usb.ts` `Usb`, in `Devices`; natively `core/tests/common/usb.rs`):
+- It reads a poll's records all at once. A transfer whose cancel is in the same batch never reaches its
+  device: in realtime mode the guest may already have its buffer back.
+- For a transfer, it gathers the OUT data, calls `UsbDevice.submit`, scatters IN data, and posts the
+  completion. A device's `done` for a cancelled tag, or for a connector whose device has changed, is
+  dropped. The other kinds go to `reset`, `cancel`, `configured` and `clearHalt`.
+- **Opening devices:**
+  - `virtual` devices are made here: Gadget Zero, from its options in `UsbVirtual`.
+  - `usb` and `hid` identities go to the opener registered for their API (`registerUsbOpener`). The
+    device worker registers WebUSB's and WebHID's when it has `navigator.usb` and `navigator.hid`.
+  - An opener gets `{connector, gone}`. `gone()` detaches the connector (`usb-state` detached,
+    `unplugged`).
+  - Real devices are refused in deterministic mode.
+- **The page's messages** come on the port in `BootOptions.usb.port`, whenever they come, before the
+  guest's driver runs too:
+  - `usb-attach` gets one `usb-state`: attached (with the speed) or error.
+  - `usb-detach` gets one detached.
+  - Devices plugged in at start (`usb.attach`) get none.
+
+  Without a port, `bootVm` makes a channel and the VM's `usb.attach`/`usb.detach` resolve with the
+  answer. `usb.events` plugs and unplugs at step counts for `runToPowerOff`, exactly there in
+  deterministic mode: the run stops at the step, and the plug is in the ring before the vCPU runs on.
+
+## Virtual devices
+
+**`VirtualDevice`** (`web/usb-virtual.ts`) is chapter 9 from descriptors:
+- It answers the standard requests from the descriptors it is given: device, configurations, strings
+  (string 0 is US English), the device qualifier, other-speed configurations, BOS, and class
+  descriptors through `extra`.
+- It keeps the configuration, each interface's alternate setting, endpoint halts and remote wakeup.
+- A TD to an endpoint the active configuration doesn't have is a transaction error. A TD to a halted
+  one stalls.
+- Class and vendor requests go to the subclass's `control`, and the other endpoints' TDs to its
+  `transfer`.
+- Default-pipe requests stay in order, also behind an asynchronous answer.
+
+The WebHID device is built on it.
+
+**Gadget Zero** (`web/usb-gadget-zero.ts`, 0525:a4a0) is what Linux's `usbtest` and `testusb` test the
+controller with. It behaves as Linux's `g_zero` (f_sourcesink and f_loopback), from their behavior.
+- **Configuration 3, source/sink** (the first, which Linux chooses):
+  - bulk IN 0x81 sends the pattern
+  - bulk OUT 0x01 checks it; a wrong byte halts the endpoint
+  - vendor requests 0x5b (write up to 4 KiB) and 0x5c (read it back), with wValue and wIndex 0
+- **Configuration 2, loopback:** what OUT TDs take comes back to IN TDs, one each, in order, up to 32
+  buffers. Then OUT waits, as a device NAKs. An IN with nothing to give waits for the next OUT.
+- **The pattern** is 0 (zeros, `g_zero`'s default) or 1 (byte *i* of a TD is (*i* mod max packet)
+  mod 63, usbtest's `pattern=1`).
+- **Speeds:** high (512-byte bulk packets, a device qualifier, full-speed other-speed configurations),
+  super (1024 bytes with companions, `bcdUSB` 3.20, a BOS with the USB 2.0 extension and the SuperSpeed
+  capability) or full (64 bytes).
+- No isochronous alternate setting (U6), and no interrupt endpoints (f_sourcesink has none now).
+
+Its native twin is in `core/tests/common/usb.rs`, so native boots give the guest the same bytes.
+
+## The usb guest
+
+`images/build.sh linux-usb` builds Linux with `xhci-plat-hcd` and `usbtest`, a static init
+(`images/usb/init.c`) and the kernel's own `testusb` (docs/images.md).
+- **`usb-hubs`:** no device. The guest shows the two root hubs: usb1 at 480 Mb/s and usb2 at 5000 Mb/s,
+  four ports each.
+- **`usb`:** a high-speed Gadget Zero on connector 0 and a super-speed one on connector 1, both
+  `pattern=1`. It runs `testusb -a -c 10 -s 1024 -v 512 -g 16`:
+  1. A clean pass: 23 tests per device, the isochronous, interrupt and performance ones skipped by
+     usbtest.
+  2. Passes again until the host unplugs connector 0 at step 80M. That lands in pass 2, whose remaining
+     tests fail with ENODEV.
+  3. The host plugs it in again at step 100M, and the guest enumerates it again.
+  4. A clean pass, then it powers off.
+
+  It runs in every runner with exact steps (tests/steps.txt):
+  - `core/tests/usb_guest.rs`, natively (in `scripts/ci.sh`)
+  - `tests/boot-node-suite.ts`, in Node, interpreter and JIT
+  - `tests/browser.test.ts`, in Chromium, interpreter and JIT
+- **Parallel SMP**, natively and in Node: two vCPUs, one clean pass, three runs each.
+
+The unit tests (`core/src/xhci/tests.rs`) drive the controller as Linux does, on hand-built rings, and
+check:
+- bring-up and the protocol capabilities
+- attach, reset, suspend and resume, detach
+- enumeration with BSR and a short control read
+- bulk TDs across a Link TRB, immediate data, a short bulk IN
+- a stall through Reset Endpoint and Set TR Dequeue
+- Stop Endpoint with TDs in flight, an unplug in flight
+- TRB errors, a full event ring, Deconfigure, HCRST
+- the latency
+- snapshots
+
+`tests/usb-glue.test.ts` checks Gadget Zero and the glue on the core's ring layout, and
+`tests/usb.test.ts` checks the virtual device base. A short-packet bug planted in the controller (the
+Short Packet event reported as Success) fails two unit tests and testusb's first pass.
+
+## The WebUSB passthrough (`web/webusb.ts`)
 
 ## The WebUSB passthrough (`web/webusb.ts`)
 
@@ -66,7 +321,7 @@ follows it does the work.
 **Transfers:**
 - Each bulk or interrupt TD is one `transferIn` or `transferOut`.
 - A length-0 OUT TD is an empty `transferOut`. Linux queues URB_ZERO_PACKET's zero-length packet as a TD
-  of its own, and `zeroPacket` (a separate empty transfer after the data) is honoured too.
+  of its own.
 - WebUSB calls start in submit order. Device-wide changes (configuration, alternate settings, clearing
   a halt, reset, close) wait for the calls before them to finish, and later calls wait for them.
   Transfers on different endpoints run side by side.
