@@ -200,11 +200,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   one sample each near the end; `go-cap-nudge*` in `bench/mem/results/summary.json`): the wasm code
   mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s
   sampling. Measure with V8's own counters before trusting the median.
-- **The core's own memory is growable** ([abi.md](abi.md) "A fixed-size memory"): exact limits
-  there need an allocator of our own over a region the host gives the core. The core's code is 8 to
-  19% of the userspace benchmark's hot phases (`bench/boot/REPORT.md` "M8: the core's share of the
-  userspace profile"), so a few percent of a phase at most, and only where wasm bounds checks are
-  explicit (Linux arm64). Not worth the allocator now.
+- **The core's own memory is growable**: stage 2 of "The core's heap in a fixed memory" (Platform and devices).
 - Helpers still on real paths: unmasking MSRs, ISB, CASP, exclusive pairs, LSE min/max,
   LD2–LD4/ST2–ST4, LD1R, scalar `SHL`, CRC32, saturating add and subtract
   on 32- and 64-bit vector lanes, the 8-bit PMULL/PMUL (unused by guests measured). None worth a
@@ -245,18 +241,36 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## Platform and devices
 
-- **More guest RAM** (the user, 2026-10-17). The page offers up to 2.5 GiB (`web/app/machine.ts` `RAM_CHOICES`):
-  more leaves no room for `bootVm`'s flat 1 GiB heap reserve in wasm32's 4 GiB, so the machine runs on a growable
-  memory, −6–7% on Linux arm64 (bench/boot/REPORT.md "M8: a fixed-size memory"; nothing on macOS or x86_64).
-  - **3 GiB at full speed:** size the reserve as what's left under 4 GiB (with a floor, e.g. 256 MiB) instead of a
-    flat 1 GiB: a 3 GiB machine keeps a fixed-size memory with ~1 GiB of heap. The heap peaked at ~27 MB in the
-    userspace benchmark and ~150 MB under a heavy 4-vCPU load (docs/jit.md "Memory"); running out traps the machine,
-    so measure a heavy run at the floor first, then offer 3 GiB.
-  - **Past ~3.5 GiB: spill memories as NUMA nodes** (docs/architecture.md "Guest memory: layout A", PLAN.md §4
-    "Guest RAM ceiling"): extra wasm32 memories the guest sees as CPU-less NUMA nodes, memory 0 keeping its fast path
-    (TLB tag bits 3–11 are reserved for the memory index). Open: whether distro kernels enable `CONFIG_NUMA`, tiering
-    to DT-described CPU-less nodes, NUMA balancing off. A second memory for all of RAM measured +12–40% (M0.5's
-    layout B), which is why it's only for the pages past memory 0.
+- **The core's heap in a fixed memory** (the user, 2026-10-17; [abi.md](abi.md) "A fixed-size memory"). One linear
+  memory (wasm32, 4 GiB at most) holds the core's static data, stack and heap, the scratch page, RAM and fw_cfg's
+  files. A memory at its final size is 6–7% faster on Linux arm64 than a growable one (V8 loads the size once per
+  function instead of after every call; nothing on macOS or x86_64: bench/boot/REPORT.md "M8: a fixed-size memory").
+  Today `bootVm` adds a flat 1 GiB `HEAP_RESERVE`, so the page offers up to 2.5 GiB (`web/app/machine.ts`
+  `RAM_CHOICES`) and anything larger silently runs on a growable memory; and only JIT modules import exact limits,
+  the core module still declares 18–65536 pages. The target, in two stages:
+  - **The rule:** the heap gets what's left of 4 GiB after the scratch page, RAM and fw_cfg's files, capped at
+    1 GiB and never under a floor. A RAM size that leaves less than the floor isn't offered, rather than falling back
+    to a growable memory (`fixedMemory: false` stays for A/B runs). Running out of the heap traps the machine, so the
+    floor is a hard limit, not a tuning knob.
+  - **Stage 1 (actionable): size the reserve by the rule** in `bootVm`, and set the page's largest RAM choice to
+    what the floor leaves (3 GiB leaves ~1 GiB of heap; up to ~3.75 GiB with a 256 MiB floor). The floor comes from a measurement: the heap peaked
+    at ~27 MB in the userspace benchmark, and ~150 MB was seen under a heavy 4-vCPU load (docs/jit.md "Memory"), but
+    that run predates the shared 160 MiB code cache and had no byte budget. So first measure the heap's peak under a
+    heavy 4-vCPU load on today's cache (a Go build loop, Firefox in the guest), pick the floor with margin (e.g.
+    256 MiB), and only then offer the larger RAM choices. Update abi.md, frontend.md "Settings" and `MAX_RAM_MIB`
+    with it.
+  - **Stage 2 (parked): exact limits for the core module too.** The host creates the memory at its final size
+    before instantiating the core, and the heap becomes an allocator of our own over the region the rule gives it
+    (the reserve block's trick in `heap_reserve` no longer applies). Stage 1 already fixes that region's size, so
+    nothing in it is wasted. Worth a few percent of a phase at most, and only where bounds checks are explicit
+    (Linux arm64): the core's code is 8 to 19% of the userspace benchmark's hot phases (`bench/boot/REPORT.md`
+    "M8: the core's share of the userspace profile"). Take it up when a real workload's core share is well above
+    that.
+- **More guest RAM than memory 0 holds** (~3.75 GiB with a 256 MiB heap floor, above): **spill memories as NUMA
+  nodes** (docs/architecture.md "Guest memory: layout A", PLAN.md §4 "Guest RAM ceiling"): extra wasm32 memories the guest sees as CPU-less NUMA nodes, memory 0 keeping its fast path
+  (TLB tag bits 3–11 are reserved for the memory index). Open: whether distro kernels enable `CONFIG_NUMA`, tiering
+  to DT-described CPU-less nodes, NUMA balancing off. A second memory for all of RAM measured +12–40% (M0.5's
+  layout B), which is why it's only for the pages past memory 0.
 - **A full 8 GB ramdisk locked the machine up** (the user, 2026-10-17, by hand on the page: an ext4-formatted 8 GB
   ramdisk filled to the brim; the machine stopped responding once it was full, with nothing in the console or on the
   page). Not known whether it's the guest or us. First lead: `web/ramdisk.ts` makes a 1 MiB `SharedArrayBuffer` per

@@ -41,7 +41,8 @@ Design notes for an ABI change go in this file before the code.
   region the host gives it. Running out of the reserve traps (the core's allocations fail); the
   heap measured ~27 MB through the userspace benchmark and ~150 MB under a heavy 4-vCPU load
   ([jit.md](jit.md) "Memory"). `fixedMemory: false`, or a RAM size that leaves no room for the
-  reserve in 4 GiB, keeps the growable memory (0 in `mem_pages`).
+  reserve in 4 GiB, keeps the growable memory (0 in `mem_pages`). Sizing the reserve to what's left of 4 GiB, and
+  exact limits for the core module: [backlog.md](backlog.md) "The core's heap in a fixed memory".
 
 ## Whole-VM exports
 
