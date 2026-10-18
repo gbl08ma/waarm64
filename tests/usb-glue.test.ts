@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { UsbDevice, UsbFromWorker, UsbResult } from '../web/usb-device.ts';
 import { GadgetZero } from '../web/usb-gadget-zero.ts';
-import { Usb } from '../web/usb.ts';
+import { Usb, registerUsbOpener } from '../web/usb.ts';
 
 let tag = 0;
 const control = (d: UsbDevice, requestType: number, request: number, value: number, index: number, length: number, data?: Uint8Array) =>
@@ -105,4 +105,80 @@ test('the glue turns request records into TDs and results into completion record
   assert.ok(kicks >= 4);
   usb.close();
   channel.port2.close();
+});
+
+/** A glue on its own shared block, with helpers to post records and read completions. */
+function rig(deterministic = true) {
+  const memory = new WebAssembly.Memory({ initial: 2, maximum: 2, shared: true });
+  const u32 = new Uint32Array(memory.buffer);
+  const usb = new Usb({ memory, shared: 0, ram: 65536, ramSize: 65536, deterministic, kick: () => {} });
+  const CPL = (8 + 8 + 4 * 4096) / 4;
+  const completions = () => {
+    const out: number[][] = [];
+    for (let t = u32[CPL + 1]; t !== u32[CPL]; t += 3) out.push([0, 1, 2].map((k) => u32[CPL + 2 + ((t + k) % 4096)]));
+    u32[CPL + 1] = u32[CPL];
+    return out;
+  };
+  const post = (words: number[]) => {
+    for (const w of words) {
+      u32[2 + 2 + (u32[2] % 4096)] = w;
+      u32[2]++;
+    }
+  };
+  return { u32, usb, completions, post, CPL };
+}
+
+test('a device that throws fails its TD, not the device worker', async () => {
+  registerUsbOpener('usb', async () => ({
+    speed: 'high',
+    submit() { throw new TypeError('a bug'); },
+    cancel() { throw new Error('another'); },
+    reset() {},
+    detach() {},
+  }));
+  const { usb, completions, post } = rig(false);
+  const errors: unknown[] = [];
+  const err = console.error;
+  console.error = (...a: unknown[]) => errors.push(a);
+  try {
+    assert.equal((await usb.attach(0, { api: 'usb', vendorId: 1, productId: 2 })).state, 'attached');
+    completions();
+    // A control transfer without its setup stage (a guest's), then a cancel: both throw in the device.
+    post([5, 0 | 1 << 8, 4, 0 | 4 << 16, 0, 0, 0]);
+    post([0, 0 | 1 << 8 | 2 << 16, 2, 1, 6]);
+    usb.poll();
+    assert.deepEqual(completions(), [[5, 4 << 8, 0]], 'a transaction error');
+    assert.equal(errors.length, 1);
+  } finally {
+    console.error = err;
+  }
+  usb.close();
+});
+
+test('completions wait in the glue while the core\'s ring is full', async () => {
+  const { u32, usb, completions, post, CPL } = rig();
+  await usb.attach(0, { api: 'virtual', kind: 'gadget-zero' });
+  completions();
+  // The core hasn't taken anything: 4095 words in the ring, no room for a record.
+  u32[CPL] = (u32[CPL + 1] + 4095) >>> 0;
+  post([7, 0 | 1 << 8, 6, 1 | 4 << 16 | 1 << 24, 18, 0x0100_0680, 18 << 16, 0x100, 18]);
+  usb.poll();
+  assert.equal((u32[CPL] - u32[CPL + 1]) >>> 0, 4095, 'nothing written');
+  u32[CPL + 1] = u32[CPL]; // the core took them
+  usb.poll();
+  assert.deepEqual(completions(), [[7, 1 << 8, 18]]);
+  usb.close();
+});
+
+test('a tag given again after its cancel in the same batch is the new TD\'s', async () => {
+  const { usb, completions, post } = rig();
+  await usb.attach(0, { api: 'virtual', kind: 'gadget-zero' });
+  completions();
+  const get = (tag: number) => [tag, 0 | 1 << 8, 6, 1 | 4 << 16 | 1 << 24, 18, 0x0100_0680, 18 << 16, 0x100, 18];
+  post(get(9));
+  post([0, 0 | 1 << 8 | 2 << 16, 2, 1, 9]);
+  post(get(9));
+  usb.poll();
+  assert.deepEqual(completions(), [[9, 1 << 8, 18]], 'the first one never reached the device; the second did');
+  usb.close();
 });

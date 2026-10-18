@@ -921,19 +921,19 @@ impl Vm {
     /// due between two of them was neither pending nor a future deadline, so
     /// the host slept with no deadline for good (found in M6.5 loop 5).
     fn idle(&mut self) -> Option<u32> {
-        // Nothing runs: the xHCI's completions needn't wait (`xhci::LATENCY_NS`).
+        // Nothing runs: the xHCI's completions needn't wait (`xhci::LATENCY_NS`). Then as any
+        // idle machine: their interrupt makes a vCPU ready, or nothing does (an endpoint that
+        // walks on without one).
         if self
             .plat
             .get_mut()
             .xhci
             .as_ref()
             .is_some_and(|x| x.due() != u64::MAX)
+            && let Some(v) = self.xhci_tick(true)
         {
-            if let Some(v) = self.xhci_tick(true) {
-                self.exit.value = v;
-                return Some(exit::DEVICE);
-            }
-            return None;
+            self.exit.value = v;
+            return Some(exit::DEVICE);
         }
         let now = self.now();
         self.lines_at(now);

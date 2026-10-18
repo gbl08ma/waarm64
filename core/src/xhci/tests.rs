@@ -3,52 +3,52 @@
 
 use super::*;
 
-const DCBAA: u64 = RAM_BASE + 0x1000;
-const CMD: u64 = RAM_BASE + 0x2000;
-const ERST_TBL: u64 = RAM_BASE + 0x3000;
-const EVT: u64 = RAM_BASE + 0x4000;
-const EVT_TRBS: u32 = 16;
-const OUT_CTX: u64 = RAM_BASE + 0x6000;
-const IN_CTX: u64 = RAM_BASE + 0x8000;
-const EP0_RING: u64 = RAM_BASE + 0xa000;
-const BULK_IN: u64 = RAM_BASE + 0xb000;
-const BULK_OUT: u64 = RAM_BASE + 0xc000;
-const BUF: u64 = RAM_BASE + 0x10000;
-const CMD_TRBS: u64 = 16;
+pub(super) const DCBAA: u64 = RAM_BASE + 0x1000;
+pub(super) const CMD: u64 = RAM_BASE + 0x2000;
+pub(super) const ERST_TBL: u64 = RAM_BASE + 0x3000;
+pub(super) const EVT: u64 = RAM_BASE + 0x4000;
+pub(super) const EVT_TRBS: u32 = 16;
+pub(super) const OUT_CTX: u64 = RAM_BASE + 0x6000;
+pub(super) const IN_CTX: u64 = RAM_BASE + 0x8000;
+pub(super) const EP0_RING: u64 = RAM_BASE + 0xa000;
+pub(super) const BULK_IN: u64 = RAM_BASE + 0xb000;
+pub(super) const BULK_OUT: u64 = RAM_BASE + 0xc000;
+pub(super) const BUF: u64 = RAM_BASE + 0x10000;
+pub(super) const CMD_TRBS: u64 = 16;
 
-const OP: u64 = CAPLENGTH;
-const USBCMD: u64 = OP;
-const USBSTS: u64 = OP + 4;
-const PORTSC: u64 = PORT_REGS;
+pub(super) const OP: u64 = CAPLENGTH;
+pub(super) const USBCMD: u64 = OP;
+pub(super) const USBSTS: u64 = OP + 4;
+pub(super) const PORTSC: u64 = PORT_REGS;
 
 /// A parsed request record.
 #[derive(Debug)]
-struct Req {
-    tag: u32,
-    g: u32,
-    conn: u32,
-    dci: u32,
-    kind: u32,
-    words: Vec<u32>,
+pub(super) struct Req {
+    pub(super) tag: u32,
+    pub(super) g: u32,
+    pub(super) conn: u32,
+    pub(super) dci: u32,
+    pub(super) kind: u32,
+    pub(super) words: Vec<u32>,
 }
 
-struct T {
-    _ram: Vec<u128>,
-    mem: Mem,
-    x: Xhci,
-    sh: Box<XhciShared>,
+pub(super) struct T {
+    pub(super) _ram: Vec<u128>,
+    pub(super) mem: Mem,
+    pub(super) x: Xhci,
+    pub(super) sh: Box<XhciShared>,
     /// The command ring's enqueue (TRB index) and cycle.
-    cmd: (u64, bool),
+    pub(super) cmd: (u64, bool),
     /// The event ring's dequeue (TRB index) and cycle.
-    evt: (u32, bool),
+    pub(super) evt: (u32, bool),
     /// Each transfer ring's enqueue (address) and cycle, by ring base.
-    rings: HashMap<u64, (u64, bool)>,
+    pub(super) rings: HashMap<u64, (u64, bool)>,
     /// The machine's time for the controller (ns).
-    ns: u64,
+    pub(super) ns: u64,
 }
 
 impl T {
-    fn new() -> T {
+    pub(super) fn new() -> T {
         let mut ram = vec![0u128; (1 << 20) / 16];
         // SAFETY: ram is 16-byte aligned, 1 MiB, and lives as long as mem.
         let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 1 << 20) }.at(RAM_BASE);
@@ -68,34 +68,34 @@ impl T {
         t
     }
 
-    fn rd(&mut self, off: u64) -> u32 {
+    pub(super) fn rd(&mut self, off: u64) -> u32 {
         self.x.read(off, 4, 0).unwrap() as u32
     }
 
-    fn wr(&mut self, off: u64, v: u32) -> u32 {
+    pub(super) fn wr(&mut self, off: u64, v: u32) -> u32 {
         self.x
             .write(off, 4, v as u64, &self.mem, &self.sh, self.ns)
             .unwrap()
     }
 
-    fn wr64(&mut self, off: u64, v: u64) {
+    pub(super) fn wr64(&mut self, off: u64, v: u64) {
         self.wr(off, v as u32);
         self.wr(off + 4, (v >> 32) as u32);
     }
 
-    fn put(&self, at: u64, words: &[u32]) {
+    pub(super) fn put(&self, at: u64, words: &[u32]) {
         for (k, &w) in words.iter().enumerate() {
             self.mem.write(at + 4 * k as u64, 4, w as u64).unwrap();
         }
     }
 
-    fn get(&self, at: u64) -> u32 {
+    pub(super) fn get(&self, at: u64) -> u32 {
         self.mem.read(at, 4).unwrap() as u32
     }
 
     /// Linux's bring-up: reset, slots, DCBAA, command ring (with a Link TRB back to its start),
     /// one event ring segment, the interrupter, run.
-    fn up(&mut self) {
+    pub(super) fn up(&mut self) {
         self.wr(USBCMD, CMD_HCRST);
         assert_eq!(self.rd(USBSTS) & STS_HCH, STS_HCH);
         self.wr(OP + 0x38, 8);
@@ -115,7 +115,7 @@ impl T {
     }
 
     /// The events written since the last call, then ERDP past them (EHB cleared), as Linux's handler.
-    fn events(&mut self) -> Vec<[u32; 4]> {
+    pub(super) fn events(&mut self) -> Vec<[u32; 4]> {
         let mut out = vec![];
         loop {
             let at = EVT + 16 * self.evt.0 as u64;
@@ -146,7 +146,7 @@ impl T {
     }
 
     /// Runs a command; its completion event's code and slot.
-    fn command(&mut self, trb: [u32; 4]) -> (u32, u32) {
+    pub(super) fn command(&mut self, trb: [u32; 4]) -> (u32, u32) {
         let at = CMD + 16 * self.cmd.0;
         self.put(
             at,
@@ -175,12 +175,12 @@ impl T {
         (c[2] >> 24, c[3] >> 24)
     }
 
-    fn cpl(&mut self, w: [u32; 3]) {
+    pub(super) fn cpl(&mut self, w: [u32; 3]) {
         assert!(self.sh.cpl.push(&w));
         self.x.complete(&self.mem, &self.sh, self.ns);
     }
 
-    fn requests(&mut self) -> Vec<Req> {
+    pub(super) fn requests(&mut self) -> Vec<Req> {
         let mut out = vec![];
         self.sh.events.swap(0, Ordering::AcqRel);
         while let Some([w0, w1, n]) = self.sh.req.pop::<3>() {
@@ -197,12 +197,12 @@ impl T {
         out
     }
 
-    fn done(&mut self, r: &Req, cc: u32, actual: u32) {
+    pub(super) fn done(&mut self, r: &Req, cc: u32, actual: u32) {
         self.cpl([r.tag | r.g << 24, CPL_DONE | cc << 8, actual]);
     }
 
     /// Queues a TRB on a transfer ring (16 TRBs, the last a Link back with Toggle Cycle).
-    fn trb(&mut self, ring: u64, w: [u32; 4]) -> u64 {
+    pub(super) fn trb(&mut self, ring: u64, w: [u32; 4]) -> u64 {
         let (at, cycle) = *self.rings.get(&ring).unwrap_or(&(ring, true));
         self.put(at, &[w[0], w[1], w[2], w[3] & !1 | cycle as u32]);
         let (mut next, mut c) = (at + 16, cycle);
@@ -217,12 +217,12 @@ impl T {
         at
     }
 
-    fn attach(&mut self, c: u32, speed: u32) {
+    pub(super) fn attach(&mut self, c: u32, speed: u32) {
         self.cpl([c, CPL_ATTACH | speed << 8, 0]);
     }
 
     /// Enable Slot and Address Device for the device on root port `port` (EP0 on EP0_RING).
-    fn address(&mut self, port: u32, bsr: bool) -> u32 {
+    pub(super) fn address(&mut self, port: u32, bsr: bool) -> u32 {
         let (cc, slot) = self.command([0, 0, 0, T_ENABLE_SLOT << 10]);
         assert_eq!((cc, slot), (CC_SUCCESS, 1));
         self.put(DCBAA + 8, &[OUT_CTX as u32, 0]);
@@ -247,7 +247,7 @@ impl T {
     }
 
     /// GET_DESCRIPTOR(DEVICE) for `len` bytes on EP0: setup, IN data with ISP, status with IOC.
-    fn get_descriptor(&mut self, len: u32) -> (u64, u64) {
+    pub(super) fn get_descriptor(&mut self, len: u32) -> (u64, u64) {
         let setup = 0x80 | 6 << 8 | 0x0100 << 16;
         self.trb(
             EP0_RING,
@@ -263,7 +263,7 @@ impl T {
     }
 
     /// Configure Endpoint: bulk OUT 1 (DCI 2) and bulk IN 1 (DCI 3), 512 bytes.
-    fn configure(&mut self) {
+    pub(super) fn configure(&mut self) {
         self.put(IN_CTX, &[0, 1 | 1 << 2 | 1 << 3, 0, 0, 0, 0, 0, 0]);
         self.put(IN_CTX + 32, &[3 << 27, 1 << 16, 0, 0]);
         self.put(
@@ -298,27 +298,27 @@ impl T {
         );
     }
 
-    fn ep_state(&self, dci: u64) -> u32 {
+    pub(super) fn ep_state(&self, dci: u64) -> u32 {
         self.get(OUT_CTX + 32 * dci) & 7
     }
 
-    fn ep_deq(&self, dci: u64) -> u64 {
+    pub(super) fn ep_deq(&self, dci: u64) -> u64 {
         self.get(OUT_CTX + 32 * dci + 8) as u64 | (self.get(OUT_CTX + 32 * dci + 12) as u64) << 32
     }
 }
 
-fn ptr(e: &[u32; 4]) -> u64 {
+pub(super) fn ptr(e: &[u32; 4]) -> u64 {
     e[0] as u64 | (e[1] as u64) << 32
 }
 
 /// A Transfer Event's (TRB, code, residual, DCI).
-fn transfer(e: &[u32; 4]) -> (u64, u32, u32, u32) {
+pub(super) fn transfer(e: &[u32; 4]) -> (u64, u32, u32, u32) {
     assert_eq!(ty(e), T_TRANSFER_EVENT, "{e:x?}");
     (ptr(e), e[2] >> 24, e[2] & 0xff_ffff, e[3] >> 16 & 0x1f)
 }
 
 #[test]
-fn capabilities_and_protocols() {
+pub(super) fn capabilities_and_protocols() {
     let mut t = T::new();
     assert_eq!(t.rd(0), 0x0100_0040);
     assert_eq!(t.x.read(2, 2, 0), Some(0x0100), "HCIVERSION by itself");
@@ -345,7 +345,7 @@ fn capabilities_and_protocols() {
 }
 
 #[test]
-fn usb2_attach_reset_and_hot_unplug() {
+pub(super) fn usb2_attach_reset_and_hot_unplug() {
     let mut t = T::new();
     t.attach(0, SPEED_HIGH);
     let ev = t.events();
@@ -383,7 +383,7 @@ fn usb2_attach_reset_and_hot_unplug() {
 }
 
 #[test]
-fn usb3_attach_is_enabled_at_once() {
+pub(super) fn usb3_attach_is_enabled_at_once() {
     let mut t = T::new();
     t.attach(1, SPEED_SUPER);
     let ev = t.events();
@@ -405,7 +405,7 @@ fn usb3_attach_is_enabled_at_once() {
 }
 
 #[test]
-fn ports_change_while_halted_report_at_run() {
+pub(super) fn ports_change_while_halted_report_at_run() {
     let mut t = T::new();
     t.wr(USBCMD, 0);
     t.attach(2, SPEED_FULL);
@@ -416,7 +416,7 @@ fn ports_change_while_halted_report_at_run() {
 }
 
 #[test]
-fn enumeration_control_transfers_and_a_short_read() {
+pub(super) fn enumeration_control_transfers_and_a_short_read() {
     let mut t = T::new();
     t.attach(0, SPEED_HIGH);
     t.wr(PORTSC, P_PP | P_CSC | P_PR);
@@ -470,7 +470,7 @@ fn enumeration_control_transfers_and_a_short_read() {
 }
 
 /// A configured device on connector 0 (high speed), with its EP0 ring at EP0_RING.
-fn configured() -> T {
+pub(super) fn configured() -> T {
     let mut t = T::new();
     t.attach(0, SPEED_HIGH);
     t.wr(PORTSC, P_PP | P_CSC | P_PR);
@@ -487,7 +487,7 @@ fn configured() -> T {
 }
 
 #[test]
-fn bulk_tds_across_a_link_trb() {
+pub(super) fn bulk_tds_across_a_link_trb() {
     let mut t = configured();
     // 7 one-TRB TDs, then a TD of three chained TRBs whose second follows the Link TRB at slot 15.
     for k in 0..7u32 {
@@ -516,22 +516,23 @@ fn bulk_tds_across_a_link_trb() {
     assert_eq!(a, BULK_OUT + 14 * 16);
     let b = t.trb(BULK_OUT, [BUF as u32 + 100, 0, 200, T_NORMAL << 10 | C_CH]);
     assert_eq!(b, BULK_OUT, "past the Link TRB, with the cycle toggled");
-    let c = t.trb(
+    let c = t.trb(BULK_OUT, [BUF as u32 + 300, 0, 8, T_NORMAL << 10 | C_IOC]);
+    // And a TD of one TRB of immediate data.
+    let d = t.trb(
         BULK_OUT,
         [0x0403_0201, 0x0807_0605, 8, T_NORMAL << 10 | C_IOC | C_IDT],
     );
     t.wr(DBOFF + 4, 2);
     let r = t.requests();
-    assert_eq!(r.len(), 1);
+    assert_eq!(r.len(), 2);
     assert_eq!(r[0].words[..2], [3 | 2 << 16, 308]);
     let base = (BUF - RAM_BASE) as u32;
+    assert_eq!(r[0].words[2..], [base, 100, base + 100, 200, base + 300, 8]);
     assert_eq!(
-        r[0].words[2..],
+        r[1].words,
         [
-            base,
-            100,
-            base + 100,
-            200,
+            1 | 2 << 16,
+            8,
             0,
             8 | SEG_IMMEDIATE,
             0x0403_0201,
@@ -539,12 +540,14 @@ fn bulk_tds_across_a_link_trb() {
         ]
     );
     t.done(&r[0], CC_SUCCESS, 308);
+    t.done(&r[1], CC_SUCCESS, 8);
     let ev = t.events();
-    assert_eq!(ev.len(), 1);
+    assert_eq!(ev.len(), 2);
     assert_eq!(transfer(&ev[0]), (c, CC_SUCCESS, 0, 2));
+    assert_eq!(transfer(&ev[1]), (d, CC_SUCCESS, 0, 2));
     // A TD whose first TRB the guest hasn't given yet (its cycle is the old one) waits.
     t.put(
-        BULK_OUT + 32,
+        BULK_OUT + 48,
         &[BUF as u32, 0, 1, T_NORMAL << 10 | C_IOC | 1],
     );
     t.wr(DBOFF + 4, 2);
@@ -552,7 +555,7 @@ fn bulk_tds_across_a_link_trb() {
 }
 
 #[test]
-fn a_short_bulk_in_reports_on_its_trb() {
+pub(super) fn a_short_bulk_in_reports_on_its_trb() {
     let mut t = configured();
     let a = t.trb(BULK_IN, [BUF as u32, 0, 512, T_NORMAL << 10 | C_CH | C_ISP]);
     t.trb(
@@ -572,7 +575,7 @@ fn a_short_bulk_in_reports_on_its_trb() {
 }
 
 #[test]
-fn a_stall_halts_until_reset_endpoint_and_a_new_dequeue() {
+pub(super) fn a_stall_halts_until_reset_endpoint_and_a_new_dequeue() {
     let mut t = configured();
     let a = t.trb(
         BULK_IN,
@@ -629,7 +632,7 @@ fn a_stall_halts_until_reset_endpoint_and_a_new_dequeue() {
 }
 
 #[test]
-fn stop_endpoint_cancels_what_is_in_flight() {
+pub(super) fn stop_endpoint_cancels_what_is_in_flight() {
     let mut t = configured();
     let a = t.trb(
         BULK_IN,
@@ -683,7 +686,7 @@ fn stop_endpoint_cancels_what_is_in_flight() {
 }
 
 #[test]
-fn an_unplug_fails_what_is_in_flight() {
+pub(super) fn an_unplug_fails_what_is_in_flight() {
     let mut t = configured();
     let a = t.trb(
         BULK_IN,
@@ -737,7 +740,7 @@ fn an_unplug_fails_what_is_in_flight() {
 }
 
 #[test]
-fn bad_trbs_are_trb_errors() {
+pub(super) fn bad_trbs_are_trb_errors() {
     let mut t = configured();
     // A TRB pointing outside RAM (the buffer), and a Setup TRB on a bulk ring.
     t.trb(BULK_OUT, [0x1000, 0, 512, T_NORMAL << 10 | C_IOC]);
@@ -766,7 +769,7 @@ fn bad_trbs_are_trb_errors() {
 }
 
 #[test]
-fn a_full_event_ring_keeps_its_events() {
+pub(super) fn a_full_event_ring_keeps_its_events() {
     let mut t = T::new();
     // 20 No-Op commands without reading the events: 15 fit (one slot stays free), the rest wait.
     for k in 0..20 {
@@ -784,14 +787,15 @@ fn a_full_event_ring_keeps_its_events() {
             t.wr(DBOFF, 0);
         }
     }
-    assert_eq!(t.x.pending.len(), 5);
+    // The command ring waited for room: one event waits, the last commands not run yet.
+    assert_eq!(t.x.pending.len(), 1);
     assert_eq!(t.events().len(), 15);
     assert_eq!(t.events().len(), 5, "written once ERDP moved");
     assert!(t.events().is_empty());
 }
 
 #[test]
-fn deconfigure_and_drop_cancel() {
+pub(super) fn deconfigure_and_drop_cancel() {
     let mut t = configured();
     t.trb(
         BULK_IN,
@@ -814,7 +818,7 @@ fn deconfigure_and_drop_cancel() {
 }
 
 #[test]
-fn hcrst_cancels_and_keeps_the_devices() {
+pub(super) fn hcrst_cancels_and_keeps_the_devices() {
     let mut t = configured();
     t.trb(
         BULK_IN,
@@ -832,7 +836,7 @@ fn hcrst_cancels_and_keeps_the_devices() {
 }
 
 #[test]
-fn snapshots_round_trip_with_empty_ports() {
+pub(super) fn snapshots_round_trip_with_empty_ports() {
     let mut t = configured();
     assert!(!t.x.saveable(), "a device is attached");
     t.cpl([0, CPL_DETACH, 0]);
@@ -855,7 +859,7 @@ fn snapshots_round_trip_with_empty_ports() {
 }
 
 #[test]
-fn records_wait_for_room_in_the_request_ring() {
+pub(super) fn records_wait_for_room_in_the_request_ring() {
     let mut t = configured();
     // Fill the request ring with the host not reading: TDs wait in order and post after it reads.
     let n = 2000;
@@ -879,7 +883,7 @@ fn records_wait_for_room_in_the_request_ring() {
 }
 
 #[test]
-fn completions_wait_for_their_latency() {
+pub(super) fn completions_wait_for_their_latency() {
     let mut t = configured();
     t.x.latency = LATENCY_NS;
     t.ns = 1_000_000;
@@ -924,7 +928,7 @@ fn completions_wait_for_their_latency() {
 }
 
 #[test]
-fn a_halted_td_after_a_link_trb_is_where_its_first_trb_is() {
+pub(super) fn a_halted_td_after_a_link_trb_is_where_its_first_trb_is() {
     // Linux finds the new dequeue state by walking from the controller's (usbtest 10 found it):
     // that must be the TD's first TRB, past the Link TRB before it, with its cycle.
     let mut t = configured();

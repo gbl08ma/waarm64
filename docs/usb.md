@@ -40,11 +40,15 @@ transports do.
 - **The interrupter** sets IMAN.IP (with EHB) when an event that interrupts is written. The line is
   IP && IE && USBCMD.INTE. When the guest moves ERDP and clears EHB with events still unread, IP is set
   again. Events that don't fit the ring wait inside the controller and are written as ERDP moves, so
-  none is lost. Events don't go into the ring while the controller is halted.
+  none is lost. Events don't go into the ring while the controller is halted. Meanwhile the command
+  ring waits (it goes on when the guest makes room, or starts the event ring or the controller), and
+  so does an endpoint's walk once 256 events wait. Past 4096 waiting events (`xhci::MAX_PENDING`: a
+  guest that never reads them) the controller sets USBSTS.HSE and drops them.
 - **Commands:** Enable and Disable Slot, Address Device (with BSR), Configure Endpoint (with Deconfigure,
   drop and add flags), Evaluate Context (the slot's exit latency and interrupter, EP0's packet size),
   Reset Endpoint (a halted endpoint is stopped), Stop Endpoint, Set TR Dequeue Pointer, Reset Device
-  and No-Op. Anything else is a TRB Error. Wrong states give Context State Error (Linux reads the output
+  and No-Op. Anything else is a TRB Error. Configure Endpoint takes its change whole or not at all
+  (a context it can't take is a Parameter Error before any endpoint changes). Wrong states give Context State Error (Linux reads the output
   context to recover). Slots and endpoints that aren't enabled give Slot or Endpoint Not Enabled. The
   controller keeps the output device context current: slot state and address, each endpoint's state,
   and its dequeue pointer when it stops or halts.
@@ -53,9 +57,15 @@ transports do.
     Isoch, Link (Toggle Cycle), Event Data and No-Op. A TD is its TRBs up to the one without Chain.
   - A TRB whose cycle bit isn't the ring's yet ends the walk until the next doorbell. Linux writes a TD's
     first TRB last.
-  - Immediate data (IDT) goes into the request record.
+  - Immediate data (IDT) goes into the request record. It is a TD of one TRB, OUT, at most 8 bytes;
+    anything else with IDT is a TRB Error.
+  - A walk reads at most 256 TDs (`WALK_TDS`) and the endpoint goes on at the next chunk boundary: a
+    ring of No-Ops linked to itself is a TD for ever. So does one that found 1024 TDs in flight
+    (`MAX_TDS`), once some leave.
+  - A control TD's Data and Status stages follow its Setup stage; without one it is a TRB Error (a
+    device never gets a control transfer without a setup packet).
   - Anything wrong is a TRB Error event, and the endpoint halts: a TRB out of RAM, a type that doesn't
-    belong (a Setup TRB on a bulk ring), a TD over 1024 TRBs, a buffer outside RAM, immediate data on
+    belong (a Setup TRB on a bulk ring), a TD of 1024 TRBs or more, a record too big for the request ring, a buffer outside RAM, immediate data on
     an IN TRB. A zero-length TRB may point anywhere (Linux's zero-length packet points at 0).
   - A TD of No-Ops and Event Data completes in the core.
   - A TD's dequeue position is its first TRB, past the Link TRBs before it. Linux finds the new dequeue
@@ -70,10 +80,14 @@ transports do.
     Data stage of a control transfer, or the Status stage when there is none. The endpoint halts with
     its dequeue pointer on that TD. The TDs after it leave the backend (a cancel record) and are posted
     again once the guest has moved the dequeue pointer and rung the doorbell.
+  - On an isochronous endpoint an error is reported and the endpoint goes on: isochronous transfers
+    don't halt.
   - Event Data TRBs report their parameter, with the bytes since the last one.
   - BEI suppresses the interrupt.
 - **Stop Endpoint:**
-  1. What the backend finished is taken first, so no completed TD is cancelled.
+  1. What the backend finished is taken first, so no completed TD is cancelled. If that halted the
+     endpoint (a stall that waited for its latency), the command is a Context State Error and the
+     endpoint stays halted, as Linux's Reset Endpoint expects.
   2. The oldest TD still in flight gets a Stopped event on its first TRB.
   3. The TDs in flight leave the backend (a cancel record). Their late completions find no TD and are
      dropped.
@@ -100,8 +114,10 @@ transports do.
 ### Latency
 
 A TD's events are written no sooner than `xhci::LATENCY_NS` (125 µs, a microframe) after the doorbell
-that posted it. When every vCPU is idle (round-robin's `idle`, a parallel vCPU going to WFI), they are
-written at once. The run loops look at the controller's next due time between chunks. In parallel SMP
+that posted it. When every vCPU is idle (round-robin's `idle`), they are written at once. A parallel
+vCPU going to WFI doesn't force them (another vCPU may be the one an interrupt storm keeps busy): its
+IDLE exit's time is the earlier of its timer and the controller's due time, and its next run takes
+them. The run loops look at the controller's next due time between chunks. In parallel SMP
 it is `Shared::xhci_due`, so no lock is taken until something is due. A snapshot takes them at once.
 
 Without it, a device that answers before the guest's CPU has moved on keeps the CPU in its interrupt
@@ -113,7 +129,8 @@ deterministic mode), and testusb's run takes ~140M steps.
 ### Snapshots
 
 `Xhci::save` keeps the registers, the ports' registers, each slot and endpoint's state with its rings'
-positions, the event ring's producer and segment table, and the events waiting for room. It needs the
+positions, the event ring's producer and segment table, the events waiting for room, and the low halves of
+ERSTBA and ERDP written without their high ones yet. It needs the
 ports empty and nothing in flight. A machine with a device plugged in can't be saved:
 `vm_snapshot_size` returns `u64::MAX` and `vm.snapshot()` says to detach it. The detach completes
 in-flight TDs with errors, so the state is consistent without waiting on the guest (plans/usb.md §4a).
@@ -163,12 +180,18 @@ The kinds are:
 - attach (1): `w0` = connector, `w1` = speed << 8 (1 full, 2 low, 3 high, 4 super)
 - detach (2): `w0` = connector
 
-The core keeps at most 1024 TDs posted and not completed, so the completion ring never fills. Records
+The core keeps at most 1024 TDs posted and not completed, so the completion ring fills only with
+completions of TDs it stopped (those wait in the glue). Tags in flight are never given again. Records
 that don't fit the request ring wait in order, and are posted after the next completions.
 
 **The glue** (`web/usb.ts` `Usb`, in `Devices`; natively `core/tests/common/usb.rs`):
-- It reads a poll's records all at once. A transfer whose cancel is in the same batch never reaches its
-  device: in realtime mode the guest may already have its buffer back.
+- It reads a poll's records all at once. A transfer whose cancel comes later in the same batch never
+  reaches its device: in realtime mode the guest may already have its buffer back. (Scanned from the
+  end: a tag given again after its cancel is the new TD's.)
+- A device that throws fails its TD with a transaction error (or loses that call: a reset, a cancel),
+  and the device worker, with its disks and network, goes on.
+- Completion records that find the core's ring full wait in the glue, in order, for the next poll (a
+  backend may complete TDs the core already stopped and gave their room to new ones).
 - For a transfer, it gathers the OUT data, calls `UsbDevice.submit`, scatters IN data, and posts the
   completion. A device's `done` for a cancelled tag, or for a connector whose device has changed, is
   dropped. The other kinds go to `reset`, `cancel`, `configured` and `clearHalt`.

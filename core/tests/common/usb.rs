@@ -477,13 +477,21 @@ impl UsbHost {
             let w: Vec<u32> = (0..n).map(|_| s.req.pop::<1>().unwrap()[0]).collect();
             records.push((w0, w1, w));
         }
-        // A TD cancelled before it was read never reaches its device (web/usb.ts `poll`).
-        let cancelled: Vec<u32> = records
-            .iter()
-            .filter(|r| r.1 >> 16 == REQ_CANCEL)
-            .flat_map(|r| r.2[1..1 + r.2[0] as usize].to_vec())
-            .collect();
-        for (w0, w1, w) in records {
+        // A TD cancelled before it was read never reaches its device (web/usb.ts `poll`); from the
+        // end, so that a tag given again after its cancel is the new TD's.
+        let mut skip = vec![false; records.len()];
+        let mut cancelled: Vec<u32> = vec![];
+        for (i, r) in records.iter().enumerate().rev() {
+            if r.1 >> 16 == REQ_CANCEL {
+                cancelled.extend(&r.2[1..1 + r.2[0] as usize]);
+            } else if r.1 >> 16 == REQ_TRANSFER
+                && let Some(k) = cancelled.iter().position(|&t| t == r.0 & 0xff_ffff)
+            {
+                cancelled.swap_remove(k);
+                skip[i] = true;
+            }
+        }
+        for (i, (w0, w1, w)) in records.into_iter().enumerate() {
             let (c, dci, kind) = ((w1 & 0xff) as usize, (w1 >> 8 & 0xff) as u8, w1 >> 16);
             let g = (w0 >> 24) as u8;
             if c >= CONNECTORS || self.devs[c].is_none() || g != self.gens[c] {
@@ -495,9 +503,7 @@ impl UsbHost {
                 dci >> 1 | (dci & 1) << 7
             };
             match kind {
-                REQ_TRANSFER if !cancelled.contains(&(w0 & 0xff_ffff)) => {
-                    self.transfer(vm, c, g, w0 & 0xff_ffff, ep, &w)
-                }
+                REQ_TRANSFER if !skip[i] => self.transfer(vm, c, g, w0 & 0xff_ffff, ep, &w),
                 REQ_TRANSFER => {}
                 REQ_RESET => self.devs[c].as_mut().unwrap().reset(),
                 REQ_CANCEL => {

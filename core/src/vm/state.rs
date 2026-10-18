@@ -95,15 +95,22 @@ impl Vm {
             // The interrupts of what completed, for vCPUs that idle.
             self.refresh_all();
         }
+        // A device on the xHCI can't be in a snapshot: the host detaches it first (docs/usb.md).
+        // Asked first: such a device may hold a TD for good, and never be quiet.
+        if self
+            .plat
+            .get_mut()
+            .xhci
+            .as_ref()
+            .is_some_and(|x| !x.saveable())
+        {
+            return u64::MAX;
+        }
         if !self.quiet() {
             return 0;
         }
         let p = self.plat.get_mut();
         if !p.virtio.iter_mut().all(|t| t.repostable(&self.mem)) {
-            return u64::MAX;
-        }
-        // A device on the xHCI can't be in a snapshot: the host detaches it first (docs/usb.md).
-        if p.xhci.as_ref().is_some_and(|x| !x.saveable()) {
             return u64::MAX;
         }
         self.state().len() as u64

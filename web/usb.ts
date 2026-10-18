@@ -74,6 +74,8 @@ export class Usb {
   /** Detaches each connector has had (mod 256): the core's records carry its count, and stale ones are dropped. */
   private gens = Array(CONNECTORS).fill(0);
   private inflight = new Map<number, InFlight>();
+  /** Completion records that found the core's ring full, oldest first. */
+  private waiting: [number, number, number][] = [];
   /** Attaches waiting for an opener, by connector. */
   private opening = new Map<number, Promise<void>>();
   private closed = false;
@@ -188,24 +190,48 @@ export class Usb {
       tail >>>= 0;
     }
     Atomics.store(u32, ring + 1, tail);
+    this.flushCompletions();
     // A TD cancelled before it was read never reaches its device: the guest may have its buffer back already.
+    // From the end, so that a tag given again after its cancel (in the same batch) is the new TD's.
+    const skip = new Set<number>();
     const cancelled = new Set<number>();
-    for (const r of records) if (r.w1 >>> 16 === REQ_CANCEL) r.words.slice(1, 1 + r.words[0]).forEach((t) => cancelled.add(t));
-    for (const { w0, w1, words } of records) {
+    for (let i = records.length - 1; i >= 0; i--) {
+      const r = records[i];
+      if (r.w1 >>> 16 === REQ_CANCEL) r.words.slice(1, 1 + r.words[0]).forEach((t) => cancelled.add(t));
+      else if (r.w1 >>> 16 === REQ_TRANSFER && cancelled.delete(r.w0 & 0xff_ffff)) skip.add(i);
+    }
+    for (const [i, { w0, w1, words }] of records.entries()) {
       const [connector, dci, kind] = [w1 & 0xff, w1 >>> 8 & 0xff, w1 >>> 16];
       const gen = w0 >>> 24;
       const p = this.plugged[connector];
       if (!p || gen !== this.gens[connector]) continue; // for a device that's gone
       const ep = dci === 1 ? 0 : dci >> 1 | (dci & 1) << 7;
+      // A device that throws fails its TD (or loses the call), not the device worker with its disks and network.
+      const guarded = (what: string, f: () => void) => {
+        try {
+          f();
+        } catch (e) {
+          console.error(`webpc: USB device on connector ${connector}: ${what} threw`, e);
+        }
+      };
       switch (kind) {
-        case REQ_TRANSFER:
-          if (!cancelled.has(w0 & 0xff_ffff)) this.transfer(p, connector, gen, w0 & 0xff_ffff, ep, words);
+        case REQ_TRANSFER: {
+          const tag = w0 & 0xff_ffff;
+          if (skip.has(i)) break;
+          try {
+            this.transfer(p, connector, gen, tag, ep, words);
+          } catch (e) {
+            console.error(`webpc: USB device on connector ${connector}: a transfer threw`, e);
+            if (this.inflight.has(tag)) this.done(tag, { code: 'error', actual: 0 });
+            else this.completion([tag | gen << 24, CPL_DONE | CODES.error << 8, 0]);
+          }
           break;
-        case REQ_RESET: p.dev.reset(); break;
+        }
+        case REQ_RESET: guarded('reset', () => p.dev.reset()); break;
         case REQ_CANCEL: {
           const tags = words.slice(1, 1 + words[0]).filter((t) => this.inflight.has(t));
           for (const t of tags) this.inflight.delete(t);
-          if (tags.length) p.dev.cancel(ep, tags);
+          if (tags.length) guarded('cancel', () => p.dev.cancel(ep, tags));
           break;
         }
         case REQ_CONFIGURED: {
@@ -214,10 +240,10 @@ export class Usb {
             const d = a & 0xff;
             return { ep: d >> 1 | (d & 1) << 7, type: TYPES[a >>> 8 & 7] as 'bulk' | 'interrupt' | 'isoch', maxPacket: b & 0x7ff, interval: a >>> 16 & 0xff };
           });
-          p.dev.configured?.(eps);
+          guarded('configured', () => p.dev.configured?.(eps));
           break;
         }
-        case REQ_CLEAR_HALT: p.dev.clearHalt?.(ep); break;
+        case REQ_CLEAR_HALT: guarded('clearHalt', () => p.dev.clearHalt?.(ep)); break;
       }
     }
   }
@@ -288,13 +314,29 @@ export class Usb {
 
   /** A record for the core's completion ring (it is sized for every TD in flight), then the signal. */
   private completion(w: [number, number, number]) {
+    this.waiting.push(w);
+    this.flushCompletions();
+  }
+
+  /**
+   * Moves waiting completion records into the core's ring as far as it has room, in order. The core
+   * keeps it big enough for its TDs in flight, but a backend may still complete TDs the core has
+   * already stopped (and given their room to new ones): those wait here for the next poll.
+   */
+  private flushCompletions() {
+    if (!this.waiting.length) return;
     const u32 = this.u32();
     const ring = (this.init.shared + CPL) / 4;
-    const head = u32[ring];
-    if (RING_WORDS - ((head - Atomics.load(u32, ring + 1)) >>> 0) < 3) throw new Error('the xHCI completion ring is full');
-    for (let i = 0; i < 3; i++) u32[ring + 2 + ((head + i) % RING_WORDS)] = w[i] >>> 0;
-    Atomics.store(u32, ring, (head + 3) >>> 0);
-    this.init.kick();
+    let moved = false;
+    while (this.waiting.length) {
+      const head = u32[ring];
+      if (RING_WORDS - ((head - Atomics.load(u32, ring + 1)) >>> 0) < 3) break;
+      const w = this.waiting.shift()!;
+      for (let i = 0; i < 3; i++) u32[ring + 2 + ((head + i) % RING_WORDS)] = w[i] >>> 0;
+      Atomics.store(u32, ring, (head + 3) >>> 0);
+      moved = true;
+    }
+    if (moved) this.init.kick();
   }
 
   /** Waits for attaches whose device is still opening. */

@@ -340,15 +340,16 @@ impl Vm {
                 self.refresh(&mut pl);
                 own.ppi = ppi;
             }
-            // The xHCI's completions once their latency passed, or at once when this vCPU idles.
+            // The xHCI's completions once their latency passed. An idle vCPU waits for that too
+            // (below): another one may be what keeps the machine busy.
             let due = self.shared.xhci_due.load(Ordering::Relaxed);
-            if due != u64::MAX && (own.wfi || self.ns() >= due) {
+            if due != u64::MAX && self.ns() >= due {
                 let ns = self.ns();
                 let mut pl = self.plat_of(c);
                 let (Some(x), Some(xs)) = (&mut pl.xhci, &self.shared.xhci) else {
                     unreachable!("a due time without an xHCI")
                 };
-                let ev = x.tick(ns, own.wfi, &self.mem, xs);
+                let ev = x.tick(ns, false, &self.mem, xs);
                 self.refresh(&mut pl);
                 drop(pl);
                 if ev != 0 {
@@ -369,6 +370,11 @@ impl Vm {
                 own.exit.value = deadline(&v.cpu, now).map_or(u64::MAX, |t| {
                     ((t - now) as u128 * 1_000_000_000).div_ceil(frq) as u64
                 });
+                // Woken for the xHCI's next completions too.
+                let due = self.shared.xhci_due.load(Ordering::Relaxed);
+                if due != u64::MAX {
+                    own.exit.value = own.exit.value.min(due.saturating_sub(self.ns()));
+                }
                 own.exit.wake = wake as u64;
                 bump(&sh.counters.par[PAR_IDLES]);
                 return exit::IDLE;

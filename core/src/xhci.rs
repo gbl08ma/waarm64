@@ -53,6 +53,12 @@ pub const CONFIG: u64 = CONNECTORS as u64 | (CONNECTORS as u64) << 8;
 const MAX_TDS: usize = 1024;
 /// TRBs one TD may have (links included).
 const MAX_TD_TRBS: usize = 1024;
+/// TDs one walk reads before the endpoint waits for the next chunk boundary: a ring of No-Ops
+/// linked to itself is a TD for ever.
+const WALK_TDS: usize = 256;
+/// Events kept for the event ring at most; past it the controller reports a host system error
+/// (USBSTS.HSE) and drops them. Commands and walks wait for room long before.
+pub const MAX_PENDING: usize = 4096;
 /// The least time between posting a TD and its events, unless the vCPUs are idle (then at once).
 /// A device that answers before the guest's CPU has moved on would keep it in its interrupt
 /// handler for good: a URB resubmitted from its completion (usbtest's unlink tests) starves
@@ -140,6 +146,7 @@ const CMD_HCRST: u32 = 2;
 const CMD_INTE: u32 = 4;
 const CMD_MASK: u32 = 0x3f0f; // R/S, HCRST, INTE, HSEE, LHCRST, CSS, CRS, EWE, EU3S, CME…
 const STS_HCH: u32 = 1;
+const STS_HSE: u32 = 1 << 2;
 const STS_EINT: u32 = 1 << 3;
 const STS_PCD: u32 = 1 << 4;
 
@@ -326,6 +333,10 @@ pub struct Xhci {
     due: u64,
     /// `LATENCY_NS`, or another (the unit tests' 0).
     pub latency: u64,
+    /// An endpoint waits to walk on (`Ep::more`): the next boundary should `tick`.
+    more: bool,
+    /// The command ring waits for room in the event ring.
+    cmd_wait: bool,
 }
 
 impl Default for Xhci {
@@ -393,6 +404,8 @@ impl Xhci {
             force: false,
             due: u64::MAX,
             latency: LATENCY_NS,
+            more: false,
+            cmd_wait: false,
         }
     }
 
@@ -478,7 +491,7 @@ impl Xhci {
         let i = self
             .erst
             .iter()
-            .position(|&(b, n)| p >= b && p < b + 16 * n as u64);
+            .position(|&(b, n)| p >= b && p < b.wrapping_add(16 * n as u64));
         i.unwrap_or(0) as u32 & 7
     }
 
@@ -561,6 +574,7 @@ impl Xhci {
             0x1034 => {
                 self.erstba = self.lo[0] as u64 | (v as u64) << 32;
                 self.init_event_ring(mem);
+                self.resume_commands(mem, sh);
             }
             0x1038 => {
                 self.lo[1] = v & !0xf;
@@ -571,6 +585,7 @@ impl Xhci {
             0x103c => {
                 self.erdp = self.lo[1] as u64 | (v as u64) << 32;
                 self.dequeued(mem);
+                self.resume_commands(mem, sh);
             }
             DBOFF.. if off < DBOFF + 4 * (MAX_SLOTS as u64 + 1) && self.running() => {
                 match ((off - DBOFF) / 4) as usize {
@@ -600,6 +615,7 @@ impl Xhci {
                     }
                 }
                 self.write_events(mem);
+                self.resume_commands(mem, sh);
             }
         } else {
             self.usbsts |= STS_HCH;
@@ -731,7 +747,7 @@ impl Xhci {
         let n = (self.erstsz as usize).min(16);
         self.erst.clear();
         for k in 0..n {
-            let e = self.erstba + 16 * k as u64;
+            let e = self.erstba.wrapping_add(16 * k as u64);
             match (mem.read(e, 8), mem.read(e + 8, 4)) {
                 (Ok(b), Ok(sz)) if sz as u32 & 0xffff >= 16 => {
                     self.erst.push((b & !0x3f, sz as u32 & 0xffff))
@@ -745,7 +761,7 @@ impl Xhci {
 
     fn enq_addr(&self) -> u64 {
         let (s, i, _) = self.enq;
-        self.erst[s].0 + 16 * i as u64
+        self.erst[s].0.wrapping_add(16 * i as u64)
     }
 
     fn ring_full(&self) -> bool {
@@ -753,10 +769,14 @@ impl Xhci {
         if i == self.erst[s].1 {
             (s, i) = ((s + 1) % self.erst.len(), 0);
         }
-        self.erst[s].0 + 16 * i as u64 == self.erdp & !0xf
+        self.erst[s].0.wrapping_add(16 * i as u64) == self.erdp & !0xf
     }
 
     fn event(&mut self, trb: [u32; 4], interrupt: bool) {
+        if self.pending.len() >= MAX_PENDING {
+            self.usbsts |= STS_HSE;
+            return;
+        }
         self.pending.push_back((trb, interrupt));
     }
 
@@ -875,9 +895,23 @@ impl Xhci {
                 ],
                 true,
             );
-            self.crcr.at += 16;
+            self.crcr.at = self.crcr.at.wrapping_add(16);
+            self.write_events(mem);
+            if !self.pending.is_empty() {
+                // No room for its completion: the ring goes on when the guest makes room.
+                self.cmd_wait = true;
+                break;
+            }
         }
         self.write_events(mem);
+    }
+
+    /// Commands that waited for room in the event ring run on, if there is room now.
+    fn resume_commands(&mut self, mem: &Mem, sh: &XhciShared) {
+        if self.cmd_wait && self.crr && self.running() && self.pending.is_empty() {
+            self.cmd_wait = false;
+            self.commands(mem, sh);
+        }
     }
 
     /// One command: its completion code and the slot its event names.
@@ -946,10 +980,7 @@ impl Xhci {
                         self.record(slot, dci, REQ_CLEAR_HALT, 0, vec![]);
                         CC_SUCCESS
                     }
-                    T_STOP_EP if ep.state == EP_RUNNING => {
-                        self.stop(slot, dci, mem);
-                        CC_SUCCESS
-                    }
+                    T_STOP_EP if ep.state == EP_RUNNING => self.stop(slot, dci, mem),
                     T_SET_DEQ if ep.state == EP_STOPPED => {
                         let to = Pos {
                             at: param & !0xf,
@@ -1044,7 +1075,10 @@ impl Xhci {
         if !(1..=PORTS).contains(&port) {
             return Some(CC_PARAMETER);
         }
-        let ctx = mem.read(self.dcbaap + 8 * slot as u64, 8).ok()? & !0x3f;
+        let ctx = mem
+            .read(self.dcbaap.wrapping_add(8 * slot as u64), 8)
+            .ok()?
+            & !0x3f;
         mem.host(ctx, 32 * 32, Access::Write).ok()?;
         let p = &self.ports[port - 1];
         if !p.attached || p.portsc & P_PED == 0 {
@@ -1092,6 +1126,12 @@ impl Xhci {
         } else {
             let ic = Xhci::input(param, mem)?;
             let (drop, add) = (ic[0][0], ic[0][1]);
+            // All or nothing: a context it can't take leaves every endpoint as it was.
+            let bad =
+                |d: usize| add & 1 << d != 0 && matches!(ic[d + 1][1] >> 3 & 7, 0 | EP_CONTROL);
+            if (2..32).any(bad) {
+                return Some(CC_PARAMETER);
+            }
             for d in 2..32 {
                 if (drop | add) & 1 << d != 0 {
                     self.disable_ep(slot, d);
@@ -1104,9 +1144,6 @@ impl Xhci {
                 }
                 let mut e = ic[d + 1];
                 let t = e[1] >> 3 & 7;
-                if t == 0 || t == EP_CONTROL {
-                    return Some(CC_PARAMETER);
-                }
                 e[0] = e[0] & !7 | EP_RUNNING;
                 Xhci::write_ctx(mem, ctx + 32 * d as u64, &e);
                 let deq = Pos {
@@ -1178,11 +1215,15 @@ impl Xhci {
     /// Stop Endpoint: the TDs in flight leave the backend (a cancel record), the oldest gets a
     /// Stopped event, and the dequeue pointer goes back to it, so that the guest's next doorbell
     /// (after it moved the dequeue pointer past what it cancelled) posts the rest again.
-    fn stop(&mut self, slot: usize, dci: usize, mem: &Mem) {
+    fn stop(&mut self, slot: usize, dci: usize, mem: &Mem) -> u32 {
         // What the device finished counts as finished, latency or not.
         self.force = true;
         self.settle(slot, dci, mem);
         self.force = false;
+        if self.slots[slot].eps[dci].state == EP_HALTED {
+            // It halted on what it finished: halted, as Linux's Reset Endpoint expects.
+            return CC_CONTEXT_STATE;
+        }
         if let Some(td) = self.slots[slot].eps[dci].inflight.front() {
             let first = td.trbs.iter().find(|t| t.kind != T_LINK).copied();
             if let Some(t) = first {
@@ -1192,6 +1233,7 @@ impl Xhci {
         }
         self.cancel_all(slot, dci, mem);
         self.set_ep_state(slot, dci, EP_STOPPED, mem);
+        CC_SUCCESS
     }
 
     /// Takes every TD of an endpoint out of flight without events: the dequeue pointer goes
@@ -1319,20 +1361,22 @@ impl Xhci {
 
     /// Reads the TDs the guest made available on a running endpoint and posts them.
     fn walk(&mut self, slot: usize, dci: usize, mem: &Mem) {
-        loop {
+        for n in 0.. {
             let ep = &self.slots[slot].eps[dci];
             if ep.state != EP_RUNNING {
                 return;
             }
-            if self.tags.len() >= MAX_TDS {
+            // Room in flight, a bound per walk and room for the events: else on at the next boundary.
+            if self.tags.len() >= MAX_TDS || n >= WALK_TDS || self.pending.len() >= WALK_TDS {
                 self.slots[slot].eps[dci].more = true;
+                self.more = true;
                 return;
             }
             let control = ep.ty == EP_CONTROL;
             let start = ep.walk;
-            let (trbs, first, next) = match read_td(mem, start, control) {
+            let (trbs, first, next, bad) = match read_td(mem, start, control) {
                 Ok(None) => return,
-                Ok(Some(td)) => td,
+                Ok(Some((trbs, first, next))) => (trbs, first, next, false),
                 Err(at) => (
                     vec![Trb {
                         at,
@@ -1343,10 +1387,14 @@ impl Xhci {
                     }],
                     start,
                     start,
+                    true,
                 ),
             };
-            let bad = next == start;
-            let tag = self.next_tag;
+            // The next tag no TD in flight has (a long-held IN TD keeps its own for good).
+            let mut tag = self.next_tag;
+            while self.tags.contains_key(&tag) {
+                tag = if tag + 1 >= 1 << 24 { 1 } else { tag + 1 };
+            }
             self.next_tag = if tag + 1 >= 1 << 24 { 1 } else { tag + 1 };
             let mut td = Td {
                 tag,
@@ -1363,7 +1411,10 @@ impl Xhci {
                 td.done = Some((CC_SUCCESS, 0)); // No-Ops and Event Data only
             } else if self.device_of(slot).is_none() {
                 td.done = Some((CC_TRANSACTION, 0)); // nothing answers on that port
-            } else if let Some(words) = self.request(slot, dci, &td, mem) {
+            } else if let Some(words) = self
+                .request(slot, dci, &td, mem)
+                .filter(|w| w.len() + 3 <= crate::virtio::RING_WORDS)
+            {
                 (td.posted, td.at) = (true, self.now);
                 self.record(slot, dci, REQ_TRANSFER, tag, words);
             } else {
@@ -1394,6 +1445,10 @@ impl Xhci {
                 setup = Some(t.param);
             }
         }
+        if dci == 1 && setup.is_none() {
+            return None; // a control transfer without its setup stage
+        }
+        let data = td.trbs.iter().filter(|t| t.data()).count();
         let into = match setup {
             Some(s) => s & 0x80 != 0,
             None => dci & 1 == 1,
@@ -1404,7 +1459,8 @@ impl Xhci {
         let (mut n, mut total) = (0u32, 0u32);
         for t in td.trbs.iter().filter(|t| t.data()) {
             if t.ctl & C_IDT != 0 {
-                if into || t.len > 8 {
+                // Immediate data is a TD of one TRB (xHCI 1.2 §4.11.2.2's rule for Normal TRBs).
+                if into || t.len > 8 || data > 1 {
                     return None;
                 }
                 w.extend([
@@ -1451,7 +1507,8 @@ impl Xhci {
             let td = ep.inflight.pop_front().unwrap();
             self.tags.remove(&td.tag);
             let err = self.events_of(slot, dci, &td, cc, actual);
-            if err {
+            let isoch = matches!(self.slots[slot].eps[dci].ty, 1 | 5);
+            if err && !isoch {
                 // Halted on the TD: the TDs after it leave the backend, and the guest resets the
                 // endpoint and moves the dequeue pointer (or rings again to retry it).
                 self.cancel_all(slot, dci, mem);
@@ -1567,7 +1624,24 @@ impl Xhci {
 
     /// The earliest time (ns) a completed TD waits for its latency; u64::MAX if none waits.
     pub fn due(&self) -> u64 {
-        self.due
+        if self.more { 0 } else { self.due }
+    }
+
+    /// Walks on the endpoints that stopped for room (`Ep::more`).
+    fn rewalk(&mut self, mem: &Mem) {
+        if !core::mem::take(&mut self.more) {
+            return;
+        }
+        for s in 1..=MAX_SLOTS {
+            if !self.slots[s].enabled {
+                continue;
+            }
+            for d in 1..32 {
+                if core::mem::take(&mut self.slots[s].eps[d].more) {
+                    self.walk(s, d, mem);
+                }
+            }
+        }
     }
 
     /// Gives the completed TDs their events once their latency passed, or all of them with
@@ -1592,6 +1666,7 @@ impl Xhci {
             }
         }
         self.force = false;
+        self.rewalk(mem);
         self.write_events(mem);
         self.flush(sh)
     }
@@ -1602,16 +1677,7 @@ impl Xhci {
         self.now = ns;
         self.drain(mem, sh);
         // Endpoints that stopped walking for room walk again.
-        for s in 1..=MAX_SLOTS {
-            if !self.slots[s].enabled {
-                continue;
-            }
-            for d in 1..32 {
-                if core::mem::take(&mut self.slots[s].eps[d].more) {
-                    self.walk(s, d, mem);
-                }
-            }
-        }
+        self.rewalk(mem);
         self.write_events(mem);
         self.flush(sh)
     }
@@ -1730,7 +1796,7 @@ fn read_td(mem: &Mem, start: Pos, control: bool) -> Result<Option<ReadTd>, u64> 
     let mut links = 0;
     let mut stage = 0; // control: 0 setup, 1 data, 2 status seen
     loop {
-        if trbs.len() + links > MAX_TD_TRBS {
+        if trbs.len() + links >= MAX_TD_TRBS {
             return Err(p.at);
         }
         let t = read_trb(mem, p.at).map_err(|_| p.at)?;
@@ -1763,8 +1829,13 @@ fn read_td(mem: &Mem, start: Pos, control: bool) -> Result<Option<ReadTd>, u64> 
             T_NORMAL => !control || stage == 1,
             T_ISOCH => !control && trbs.is_empty(),
             T_SETUP => control && trbs.is_empty(),
-            T_DATA => control && stage == 0 && !trbs.is_empty(),
-            T_STATUS => control && stage < 2 && !trbs.is_empty(),
+            // A Data or Status stage belongs after a Setup stage.
+            T_DATA => {
+                control && stage == 0 && trbs.first().is_some_and(|t: &Trb| t.kind == T_SETUP)
+            }
+            T_STATUS => {
+                control && stage < 2 && trbs.first().is_some_and(|t: &Trb| t.kind == T_SETUP)
+            }
             T_EVENT_DATA | T_NOOP => true,
             _ => false,
         };
@@ -1781,7 +1852,7 @@ fn read_td(mem: &Mem, start: Pos, control: bool) -> Result<Option<ReadTd>, u64> 
             first = p;
         }
         trbs.push(trb);
-        p.at += 16;
+        p.at = p.at.wrapping_add(16);
         let chained = t[3] & C_CH != 0;
         let more = if control && trbs[0].kind == T_SETUP {
             // A control transfer runs to its status stage (and what the status stage chains).
@@ -1861,6 +1932,9 @@ impl Xhci {
             w.bool(*irq);
         }
         w.u32(self.next_tag);
+        w.u32(self.lo[0]);
+        w.u32(self.lo[1]);
+        w.bool(self.cmd_wait);
     }
 
     /// Restores what [`Xhci::save`] wrote into a new controller (its ports empty).
@@ -1936,9 +2010,15 @@ impl Xhci {
         if !(1..1 << 24).contains(&self.next_tag) {
             return Err(CORRUPT);
         }
+        // The low halves of ERSTBA and ERDP written and not yet their high ones.
+        self.lo[0] = r.u32()? & !0x3f;
+        self.lo[1] = r.u32()? & !0xf;
+        self.cmd_wait = r.bool()?;
         Ok(())
     }
 }
 
+#[cfg(test)]
+mod review;
 #[cfg(test)]
 mod tests;
