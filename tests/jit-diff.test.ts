@@ -422,6 +422,8 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['fmadd d0 (0 × ∞)', 0x1f420c20, [0n, 0n, f64bits(Infinity), f64bits(1)]],
   // Singles: the double sum exact on a midpoint (the FP guest's 1 × 0.999 + 0.5), zero and denormal factors.
   ['fmadd s0 (exact midpoint)', 0x1f020c20, [0n, f32bits(1), f32bits(0.999), f32bits(0.5)]],
+  // The double sum just above a midpoint (by 2^-48): not one, so RN32 of it is right.
+  ['fmadd s0 (next to a midpoint)', 0x1f020c20, [0n, f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18) + 2 ** -48), f32bits(1 + 2 ** -23)]],
   ['fmadd s0 (tiny addend)', 0x1f020c20, [0n, f32bits(1 + 2 ** -12), f32bits(1 + 2 ** -12), f32bits(2 ** -60)]],
   ['fmadd s0 (zero factor)', 0x1f020c20, [0n, 1n << 31n, f32bits(0.999), f32bits(0.5)]],
   ['fmadd s0 (denormal factor)', 0x1f020c20, [0n, 1n, f32bits(2 ** 100), f32bits(1)]],
@@ -449,6 +451,7 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['fcvtzu w0, s1 (2^32)', 0x1e390020, [0n, 0x4f800000n]],
   // The same midpoint case in every lane of a vector FMLA (the values replicated).
   ['v fmla v0.4s, v1.4s, v2.4s', 0x4e22cc20, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
+  ['v fmla v0.2s, v1.2s, v2.2s', 0x0e22cc20, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
   ['v fmla v0.4s, v1.4s, v2.s[1]', 0x4fa21020, [f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -18), f32bits(2 ** -24 * (1 - 2 ** -18))]],
   // (1 + 2^-12)^2 = 1 + 2^-11 + 2^-24, a midpoint, exactly; a tiny addend decides it (TwoSum's error).
   ['v fmla v0.4s, v1.4s, v2.4s (tiny addend)', 0x4e22cc20, [f32bits(2 ** -60), f32bits(1 + 2 ** -12), f32bits(1 + 2 ** -12)]],

@@ -824,3 +824,32 @@ scalar FADD/FSUB/FMUL/FNMUL/FDIV fast path takes ±0 operands and exact zero res
 one does ([docs/jit.md](../../docs/jit.md) "Zero operands"). The FP guest's last helper, `FADD`
 (0.05M per window, its sums starting at 0), is gone: 100% of its steps retire inline. Its speed is
 within noise: 710.5, 711.8, 711.7 against 711.2, 702.1, 704.9 MIPS.
+
+## M8: the single FMA's midpoint test
+
+2026-10-18, the dev VM, Chromium 153.0.8010.52, one session, the builds alternated in place of the
+served core (every JSON's `commit` reads `d0b9957`, dirty); raw data `results/m8-fp-mid/` (and
+`../boot/results/m8-fp-mid/`). The single FMA forms (FMADD & co. with sz = 0, FMLA/FMLS vector and
+by element) rounded every double sum to odd (TwoSum, then ±1 on the bits) before the demote. Now
+the demote takes the plain RNE double sum, which is correct unless that sum is a single's midpoint
+(its low 29 bits `1 << 28`); only then, in a branch, the sums are rounded to odd as before
+([docs/jit.md](../../docs/jit.md) "Floating point", FMA). `jit_fp_mips`, eight placements,
+medians of the runs (IQR ≤ 30):
+
+| build | FP guest (MIPS) | helper calls per window |
+|---|---|---|
+| base (every sum rounded to odd) | 718.8, 713.1, 712.1 | none |
+| midpoints to the helper (first try) | 719.7, 713.9 (base in that session: 718.3, 711.1) | `FMLA` by element 0.17M |
+| no midpoint test (wrong: the ceiling) | 849.8, 851.0, 849.4 | none |
+| **midpoints rounded to odd in a branch (kept)** | **866.7, 854.4, 851.7** (+20%) | none |
+
+The first try sent midpoint lanes to the helper: the FP guest's matrix multiply (short decimal
+significands) puts exact sums on single midpoints 0.17M times a window, and those helper calls
+cost the whole gain. With the branch the build is at the ceiling. A cloud session's ceiling on a
+Xeon (`M8-FP-HANDOVER.md`) was +29%.
+
+`gl_llvmpipe_jit` (single FMLA heavy), A/B alternating: 318.7, 313.6, 309.4 → 303.7, 306.4,
+298.1 ms a frame (−3%, under the noise bar but every pair agrees; the same 484.20M steps a
+frame). Checked by the single model in `core/src/fp/tests.rs` (rewritten to the new algorithm,
+4M cases, 19% of them midpoints by construction) and jit-diff's FP edge cases (two new: FMLA 2S,
+a sum just above a midpoint); planted bugs (midpoints not fixed, scalar and vector) failed both.

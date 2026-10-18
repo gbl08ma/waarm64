@@ -146,6 +146,13 @@ const F_ADD: u8 = 0xa0;
 const F_SUB: u8 = 0xa1;
 const F_MUL: u8 = 0xa2;
 
+/// A double's bits below a single's last place, and their value on a
+/// single's midpoint. Single FMA: RN32(RN64(a·b + c)), the product exact,
+/// rounds twice but correctly unless the double sum is a single midpoint
+/// (docs/jit.md "Floating point"); there the sum is rounded to odd instead.
+const MID_MASK: i64 = (1 << 29) - 1;
+const MID: i64 = 1 << 28;
+
 /// TwoSum of f64 locals `u` and `w` (Knuth): s = RN(u + w) into local `s`,
 /// and pushes the error, u + w - s exactly: (u - (s - bb)) + (w - bb), bb = s - u.
 fn two_sum(c: &mut Func, u: u32, w: u32, s: u32, bb: u32) {
@@ -340,10 +347,17 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 for (l, d) in [(x, fa), (y, fb), (a, fc)] {
                     c.local_get(l).op(0xbe).op(0xbb).local_set(d); // f32 → f64
                 }
-                c.local_get(fa).local_get(fb).op(F_MUL).local_set(fa);
+                // s = RN(p + c) (into fb), p = a·b (into fa); on a single
+                // midpoint (its low 29 bits 1 << 28), s rounded to odd.
+                c.local_get(fa).local_get(fb).op(F_MUL).local_tee(fa);
+                c.local_get(fc).op(F_ADD).local_tee(fb);
+                c.op(0xbd).i64_const(MID_MASK).op(AND + W); // i64.reinterpret
+                c.i64_const(MID).op(0x51).hint(false).if_(); // i64.eq
                 two_sum(c, fa, fc, fb, g);
                 to_odd(c, fb, g, super::tmp(true, 0));
-                c.op(0xbf).op(0xb6).op(0xbc).local_set(r); // f32.demote, reinterpret
+                c.op(0xbf).local_set(fb); // f64.reinterpret
+                c.end();
+                c.local_get(fb).op(0xb6).op(0xbc).local_set(r); // f32.demote, reinterpret
             }
             c.local_get(FPOK);
             for l in [x, y, a] {
@@ -478,6 +492,7 @@ mod op {
     pub const F64X2_NEG: u32 = 0xed;
     pub const F64X2_NE: u32 = 0x48;
     pub const F64X2_GT: u32 = 0x4a;
+    pub const ANY_TRUE: u32 = 0x53;
     pub const F64X2_ABS: u32 = 0xec;
     /// f32x4 add, sub, mul, div; f64x2 likewise.
     pub const F32X4: [u32; 4] = [0xe4, 0xe5, 0xe6, 0xe7];
@@ -807,63 +822,82 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         }
         // Fused, single precision (docs/jit.md "Floating point"): each half
         // through f64x2, the product exact, its sum with the addend rounded to
-        // odd (TwoSum, as the scalar form), then demoted: correct, 53 ≥ 24 + 2.
+        // nearest, then demoted: correct off the singles' midpoints; with a sum
+        // on one, the sums rounded to odd (TwoSum, as the scalar form).
         FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 => {
             fpa_guard(c);
             let neg = matches!(op, FMLS_vec_2 | FMLS_elt_4);
             let halves: &[bool] = if q { &[false, true] } else { &[false] };
             let (add, sub) = (op::F64X2[0], op::F64X2[1]);
             let (p, a) = (VTMP, tr);
-            for (&hi, &t) in halves.iter().zip(&[ta, tb]) {
-                // p = promote(half of Vn (negated for FMLS)) × promote(half of
-                // the factor), a = promote(half of Vd).
-                for step in 0..3 {
-                    match step {
-                        0 => vreg(c, rn),
-                        1 => factor(c),
-                        _ => vreg(c, rd),
+            // The sums of each half into ta and tb: RN, or (`odd`) rounded to odd.
+            let sums = |c: &mut Func, odd: bool| {
+                for (&hi, &t) in halves.iter().zip(&[ta, tb]) {
+                    // p = promote(half of Vn (negated for FMLS)) × promote(half of
+                    // the factor), a = promote(half of Vd).
+                    for step in 0..3 {
+                        match step {
+                            0 => vreg(c, rn),
+                            1 => factor(c),
+                            _ => vreg(c, rd),
+                        }
+                        if step == 0 && neg {
+                            c.simd(op::F32X4_NEG);
+                        }
+                        if hi {
+                            c.local_tee(tt).local_get(tt);
+                            c.shuffle(core::array::from_fn(|b| 8 + b as u8 % 8));
+                        }
+                        c.simd(op::PROMOTE);
+                        match step {
+                            1 => c.simd(op::F64X2[2]).local_set(p),
+                            2 => c.local_set(a),
+                            _ => c,
+                        };
                     }
-                    if step == 0 && neg {
-                        c.simd(op::F32X4_NEG);
+                    c.local_get(p).local_get(a).simd(add);
+                    if !odd {
+                        c.local_set(t);
+                        continue;
                     }
-                    if hi {
-                        c.local_tee(tt).local_get(tt);
-                        c.shuffle(core::array::from_fn(|b| 8 + b as u8 % 8));
-                    }
-                    c.simd(op::PROMOTE);
-                    match step {
-                        1 => c.simd(op::F64X2[2]).local_set(p),
-                        2 => c.local_set(a),
-                        _ => c,
-                    };
+                    // TwoSum: s = p + a (into t), bb = s - p (in tt), the error
+                    // (into a) = (p - (s - bb)) + (a - bb).
+                    c.local_tee(t);
+                    c.local_get(p).simd(sub).local_set(tt);
+                    c.local_get(p)
+                        .local_get(t)
+                        .local_get(tt)
+                        .simd(sub)
+                        .simd(sub);
+                    c.local_get(a)
+                        .local_get(tt)
+                        .simd(sub)
+                        .simd(add)
+                        .local_set(a);
+                    // t rounded to odd: + (((s ^ e) >> 63) | 1) where inexact and s even.
+                    c.local_get(t);
+                    c.local_get(t).local_get(a).simd(op::XOR);
+                    c.i32_const(63).simd(op::I64X2_SHR_S);
+                    c.v128_const(splat(true, 1)).simd(op::OR);
+                    c.local_get(a).v128_const(0).simd(op::F64X2_NE);
+                    c.local_get(t).v128_const(splat(true, 1)).simd(op::AND);
+                    c.v128_const(0)
+                        .simd(op::I64X2_EQ)
+                        .simd(op::AND)
+                        .simd(op::AND);
+                    c.simd(op::I64X2_ADD).local_set(t);
                 }
-                // TwoSum: s = p + a (into t), bb = s - p (in tt), the error
-                // (into a) = (p - (s - bb)) + (a - bb).
-                c.local_get(p).local_get(a).simd(add).local_tee(t);
-                c.local_get(p).simd(sub).local_set(tt);
-                c.local_get(p)
-                    .local_get(t)
-                    .local_get(tt)
-                    .simd(sub)
-                    .simd(sub);
-                c.local_get(a)
-                    .local_get(tt)
-                    .simd(sub)
-                    .simd(add)
-                    .local_set(a);
-                // t rounded to odd: + (((s ^ e) >> 63) | 1) where inexact and s even.
-                c.local_get(t);
-                c.local_get(t).local_get(a).simd(op::XOR);
-                c.i32_const(63).simd(op::I64X2_SHR_S);
-                c.v128_const(splat(true, 1)).simd(op::OR);
-                c.local_get(a).v128_const(0).simd(op::F64X2_NE);
-                c.local_get(t).v128_const(splat(true, 1)).simd(op::AND);
-                c.v128_const(0)
-                    .simd(op::I64X2_EQ)
-                    .simd(op::AND)
-                    .simd(op::AND);
-                c.simd(op::I64X2_ADD).local_set(t);
-            }
+            };
+            sums(c, false);
+            // A sum on a single midpoint (the sums' low words side by side, their
+            // low 29 bits 1 << 28): every sum again, rounded to odd.
+            c.local_get(ta).local_get(if q { tb } else { ta });
+            c.shuffle(core::array::from_fn(|b| (b as u8 / 4) * 8 + b as u8 % 4));
+            c.v128_const(splat(false, MID_MASK as u64)).simd(op::AND);
+            c.v128_const(splat(false, MID as u64)).simd(op::I32X4_EQ);
+            c.simd(op::ANY_TRUE).hint(false).if_();
+            sums(c, true);
+            c.end();
             // r = the demoted halves side by side.
             c.local_get(ta).simd(op::DEMOTE);
             if q {

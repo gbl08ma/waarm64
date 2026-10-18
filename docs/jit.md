@@ -482,12 +482,20 @@ interpreter's; the helper runs the instruction otherwise.
   forms test every lane.
 - **FMA** (FMADD/FMSUB/FNMADD/FNMSUB, FMLA/FMLS vector and by element, single and double),
   in RNE f64 operations only (wasm has no deterministic FMA; relaxed-simd's `madd` may not fuse):
-  the exact product, its sum with the addend rounded to odd, then one final rounding.
-  - *Single:* the product of two singles is exact in double, and RN32 of the double sum rounded
-    to odd is the correctly rounded FMA (53 ≥ 24 + 2 bits). The sum's error comes from TwoSum
-    (Knuth: six ops), and rounding to odd is integer arithmetic on the RNE sum: if the error is
-    nonzero and the sum's last bit is even, its bits step ±1 toward the error (+ when the signs
-    agree), so the result is the odd neighbour.
+  the exact product, its sum with the addend, then one final rounding.
+  - *Single:* the product of two singles is exact in double, so the double sum is the exact sum
+    rounded once (RN64), and its demote rounds a second time (RN32). Two roundings to nearest give
+    the correctly rounded result unless the first lands exactly on a midpoint of the narrower
+    format (a single's midpoint is a double, so RN64 is monotonic around it: an exact sum below a
+    midpoint can only round to it, not past it). A double in the singles' normal range is on a
+    midpoint when its low 29 bits are `1 << 28` (one `and` and a compare; the vector form shuffles
+    the f64x2 sums' low words into an i32x4). Then, in a branch hinted unlikely, the sum is rounded
+    to odd and RN32 of that is correct (53 ≥ 24 + 2 bits): TwoSum's error (Knuth: six ops) and, if
+    it's nonzero and the sum's last bit even, its bits stepped ±1 toward the error (+ when the
+    signs agree); the vector form redoes every lane's sum that way. On random data one sum in
+    2^29 takes the branch, but exact sums of short significands land on midpoints often (the FP
+    guest's matrix multiply: as helper calls instead of the branch, they cost all of the gain over
+    rounding every sum to odd; bench/interp/REPORT.md "M8: the single FMA's midpoint test").
   - *Double:* Boldo and Melquiond's emulated FMA ("Emulation of FMA and correctly rounded sums:
     proved algorithms using rounding to odd", IEEE TC 2008; glibc's soft `fma` does the same with
     a rounding-mode switch): Veltkamp's split and Dekker's product give p + pl = a·b exactly,
@@ -501,14 +509,19 @@ interpreter's; the helper runs the instruction otherwise.
     splits, so the low halves are recomputed from the operands); the scalar form uses eight f64
     scratch locals (`FT`).
   - *Guard:* FPOK, operands normal or zero, a fast result (vector single: also an exact zero from a
-    zero product and addend). No midpoint or binade cases fall back.
+    zero product and addend). No midpoint or binade cases fall back. The single midpoint test
+    holds above the smallest normal binade, where the singles' last place is the double's bit 29;
+    below it (a sum rounding up to the smallest normal) the result's exponent sends it to the
+    helper.
   - *Tested* by models of both algorithms against the software FMA (`core/src/fp/tests.rs`, 4M
-    cases each, midpoints by construction) and the differential test's FP edge cases (midpoints,
+    cases each, midpoints by construction; the single model also counts its midpoint branches)
+    and the differential test's FP edge cases (midpoints,
     the product bound, an error under 2^-1074 deciding a midpoint, zero, denormal and 0 × ∞
     operands, split overflow); planted bugs in each step fail them.
 - **Conversions:** SCVTF/UCVTF inline (RNE, can't overflow), including the forms with the integer
   in a SIMD&FP register and the vector forms; FCVTZS/FCVTZU inline for in-range non-NaN operands;
-  FCVT single↔double with normal operands and a fast result.
+  vector FCVTL/FCVTN single↔double with normal operands and a fast result (scalar FCVT is a helper
+  call).
 - **Zero operands** (FADD/FSUB/FMUL/FDIV scalar and vector, FNMUL, the FMA forms): operands
   (lanes) may also be ±0 where the zero case is exact too. A zero sum or difference of
   normal-or-zero operands is always exact (a nonzero exact sum rounds to a nonzero result), so a
@@ -529,13 +542,14 @@ interpreter's; the helper runs the instruction otherwise.
   to nearest even in integer arithmetic under FPOK, for zero lanes and lanes from 2^-14 up whose
   result is finite (no Underflow, Overflow or IDC). Without an all-ones half exponent in or out,
   FPCR.AHP's format reads and writes the same bits, so AHP isn't checked.
-- FABS, FNEG, FMOV, FCSEL are bit operations without flags: inline without the guard.
+- FABS, FNEG and FMOV are bit operations without flags: inline without the guard (`emit/simd.rs` has
+  FMOV). FCSEL is a helper call.
 
 ## What still runs through helpers
 
 On Alpine's paths (~2.5M helper-retired steps a boot): unmasking MSRs (DAIFClr, an MSR DAIF that
 unmasks), the regime, FP-control, SPSel and NZCV MSRs, ISB, exclusive pairs, LSE min/max,
-LD2–LD4/ST2–ST4, the load/store fallbacks (TLB misses, MMIO), CRC32, f64 FMA, the 8-bit PMULL;
+LD2–LD4/ST2–ST4, the load/store fallbacks (TLB misses, MMIO), CRC32, the 8-bit PMULL;
 in OpenSSL's GCM path scalar `SHL`. `jit_helper_report` has the
 live histogram. None was worth a loop by itself at M6.5's end.
 

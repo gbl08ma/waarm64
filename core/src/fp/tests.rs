@@ -352,25 +352,27 @@ fn inline_fma_is_correctly_rounded() {
 }
 
 /// The JIT's inline single FMA: the product exact in double, the sum rounded
-/// to odd in double, then to single (correct: 53 ≥ 24 + 2 bits).
-fn fma32_inline(c: u32, a: u32, b: u32) -> Option<u32> {
+/// to nearest in double, then to single: correct unless the double sum is a
+/// single midpoint (its low 29 bits 1 << 28), where the sum is rounded to odd
+/// instead (correct: 53 ≥ 24 + 2 bits). Also says whether it was a midpoint.
+fn fma32_inline(c: u32, a: u32, b: u32) -> Option<(u32, bool)> {
     let e = |x: u32| (x >> 23) & 0xff;
     let noz = |x: u32| (e(x).wrapping_sub(1) < 0xfe) | (x << 1 == 0);
     let ok = noz(a) & noz(b) & noz(c);
     let f = |x: u32| f32::from_bits(x) as f64;
     let (p, c) = (f(a) * f(b), f(c));
-    let s = p + c;
-    let bb = s - p;
-    let err = (p - (s - bb)) + (c - bb);
-    let sb = s.to_bits();
-    let fix = (err.abs() > 0.0) & (sb & 1 == 0);
-    let v = f64::from_bits(if fix {
-        sb.wrapping_add((((sb ^ err.to_bits()) as i64 >> 63) | 1) as u64)
-    } else {
-        sb
-    });
-    let z = (v as f32).to_bits();
-    (ok & (e(z).wrapping_sub(2) < 0xfd)).then_some(z)
+    let mut s = p + c;
+    let mid = s.to_bits() & ((1 << 29) - 1) == 1 << 28;
+    if mid {
+        let bb = s - p;
+        let err = (p - (s - bb)) + (c - bb);
+        let sb = s.to_bits();
+        if (err.abs() > 0.0) & (sb & 1 == 0) {
+            s = f64::from_bits(sb.wrapping_add((((sb ^ err.to_bits()) as i64 >> 63) | 1) as u64));
+        }
+    }
+    let z = (s as f32).to_bits();
+    (ok & (e(z).wrapping_sub(2) < 0xfd)).then_some((z, mid))
 }
 
 #[test]
@@ -382,7 +384,7 @@ fn inline_fma32_is_correctly_rounded() {
         x ^= x << 17;
         x
     };
-    let (mut fast, mut n) = (0, 0);
+    let (mut fast, mut n, mut mid) = (0, 0, 0);
     for _ in 0..4_000_000 {
         let r = next();
         let few = |r: u64| (r as u32) & 0x7f_ffff & !((1 << (r % 23)) - 1);
@@ -404,22 +406,25 @@ fn inline_fma32_is_correctly_rounded() {
                 a = (1.0 + 2f32.powi(-18)).to_bits() ^ (r1 as u32 & 1 << 31);
                 c = (1.0 + 2f32.powi(-23)).to_bits() ^ (r1 as u32 & 1 << 31);
                 let b = (2f32.powi(-24) * (1.0 - 2f32.powi(-18))).to_bits();
-                check32(&mut n, &mut fast, c, a, b);
+                check32(&mut n, &mut fast, &mut mid, c, a, b);
                 continue;
             }
             2 => c &= 1 << 31,
             _ => {}
         }
-        check32(&mut n, &mut fast, c, a, b);
+        check32(&mut n, &mut fast, &mut mid, c, a, b);
     }
     assert!(fast > n / 3, "{fast} of {n} on the fast path");
+    // The midpoints by construction reach the round to odd (and, it dropped, fail).
+    assert!(mid > n / 100, "{mid} of {n} on a midpoint");
 }
 
 /// Compares the inline single FMA with the interpreter's where it applies.
-fn check32(n: &mut u32, fast: &mut u32, c: u32, a: u32, b: u32) {
+fn check32(n: &mut u32, fast: &mut u32, mid: &mut u32, c: u32, a: u32, b: u32) {
     *n += 1;
-    if let Some(z) = fma32_inline(c, a, b) {
+    if let Some((z, m)) = fma32_inline(c, a, b) {
         *fast += 1;
+        *mid += m as u32;
         let (c, a, b) = (c as u64, a as u64, b as u64);
         assert_eq!(
             z as u64,

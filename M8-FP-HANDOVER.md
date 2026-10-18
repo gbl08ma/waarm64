@@ -27,7 +27,11 @@ FP/integer gap is about the same as in the dev VM. The checks cost more once FMA
 
 ## The plan, ranked by gain against effort
 
-1. **Single FMA: a midpoint test instead of round to odd** (ceiling +29%, small). The single forms
+1. **Done in the dev VM, 2026-10-18 (awaiting the user's OK):** `jit_fp_mips` 714 → 857 MIPS
+   (+20%, at the ceiling there), `gl_llvmpipe_jit` −3% a frame; bench/interp/REPORT.md "M8: the
+   single FMA's midpoint test". Sending midpoints to the helper as planned below gained nothing (the FP
+   guest's exact sums land on midpoints 0.17M times a window); they're rounded to odd in a branch.
+   The plan as written: **Single FMA: a midpoint test instead of round to odd** (ceiling +29%, small). The single forms
    (vector FMLA/FMLS and by element, scalar FMADD & co. with sz = 0) form the exact product in f64,
    then run TwoSum (6 ops) and the integer round to odd (~8) so the demote rounds once. Instead, take
    the plain RNE f64 sum and send the instruction to the helper when its low 29 bits are exactly
@@ -36,7 +40,11 @@ FP/integer gap is about the same as in the dev VM. The checks cost more once FMA
    `and` + `eq` per lane, folded into the lane mask. Check it with the `core/src/fp/tests.rs` models
    (rewrite the single model to the new algorithm), jit-diff's midpoint cases, a planted bug (drop the
    midpoint test: they must fail). Gates: `jit_fp_mips`, `gl_llvmpipe_jit` (single-FMLA heavy).
-2. **FP instructions that are still helpers** (not measured, small to medium each): scalar
+2. **FP instructions that are still helpers: all of them get fast paths** (the user, 2026-10-18:
+   benchmarks can't represent every workload, so every FP instruction cheap enough gets an inline
+   fast path, counted or not; what stays a helper on purpose is written down in docs/jit.md with
+   why). After this list, the decoder's other FP and vector FP ops the same way. The original note
+   (not measured, small to medium each): scalar
    FCMP/FCMPE, FCCMP, FCSEL, scalar FCVT (single↔double), FMAX/FMIN/FMAXNM/FMINNM (scalar and
    vector), the scalar FRINT* (only the vector FRINTs are inline). The FP guest never runs them, but
    compiled code branches on FCMP constantly. **Count first:** `jit_helper_report` on the desktop
@@ -65,9 +73,7 @@ Not FP MIPS levers: the interpreter's FP (cold code only), advertising FP16/FHM/
 
 ## Docs to fix along the way
 
-docs/jit.md claims FCSEL (the "FABS, FNEG, FMOV, FCSEL" line) and scalar FCVT ("Conversions") are
-inline; neither is in `emit/float.rs`. Its "What still runs through helpers" still names "f64 FMA",
-which has been inline since 2026-10-14.
+Fixed with item 1: docs/jit.md no longer calls FCSEL and scalar FCVT inline, nor f64 FMA a helper.
 
 ## Rules that apply
 
