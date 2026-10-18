@@ -7,7 +7,7 @@
 // opening (`resumeMerge`), before anything reads it. Workers only in a browser (sync access handles).
 import type { Source } from './devices.ts';
 import { openOverlay, overlay, overlayMeta, readMeta, removeOverlay, writeMeta, type OverlayFiles, type SyncFile } from './overlay.ts';
-import { openDisk, type Disk } from './qcow2.ts';
+import { openDisk, type Disk, type Inflater } from './qcow2.ts';
 
 const BLOCK = 4096;
 /** A map entry for a block that reads as zeros without a slot (web/overlay.ts). */
@@ -61,10 +61,10 @@ export async function openStoredForWriting(path: string, identity: string, size:
 /**
  * Copies image `src` (qcow2 or raw: its virtual bytes, compressed clusters inflated) into the empty block store
  * `files`, leaving zero blocks out. `progress` gets the bytes done of the virtual size. Returns the size and the
- * blocks written.
+ * blocks written. `inflater` unpacks compressed clusters (web/inflate-pool.ts in the disk worker).
  */
-export async function importImage(src: Source, files: OverlayFiles, progress: (done: number, total: number) => void = () => {}) {
-  const image = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size);
+export async function importImage(src: Source, files: OverlayFiles, progress: (done: number, total: number) => void = () => {}, inflater?: Inflater) {
+  const image = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size, inflater);
   const store = overlay(zeroDisk(image.size), files.data, files.map, files.meta);
   const CHUNK = 1 << 20;
   let blocks = 0;

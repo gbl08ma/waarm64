@@ -10,6 +10,23 @@
 /** Reads exactly `len` bytes of the image file at `off`, or undefined (error, past the end). */
 export type ReadAt = (off: number, len: number) => Uint8Array | undefined;
 
+/**
+ * Inflates compressed clusters, each to exactly `size` bytes (undefined where one doesn't unpack), in
+ * the order given. `openDisk` hands it every cluster a request needs at once: `inflateEach` on the
+ * reading thread, or web/inflate-pool.ts on other threads too.
+ */
+export type Inflater = (inputs: Uint8Array[], size: number) => Promise<(Uint8Array | undefined)[]>;
+
+/**
+ * The clusters one after another on this thread: streams side by side on one thread don't run any
+ * faster (deflate's, 64 or 512 at once, were slower than one at a time: docs/frontend.md "Your own disk").
+ */
+export const inflateEach: Inflater = async (inputs, size) => {
+  const out: (Uint8Array | undefined)[] = [];
+  for (const input of inputs) out.push(await inflate(input, size));
+  return out;
+};
+
 export type Disk = {
   /** Virtual size in bytes. */
   size: number;
@@ -34,8 +51,11 @@ export const isQcow2 = (head: Uint8Array) => head.length >= 4 && new DataView(he
 /** The virtual size from a qcow2 header (its first 32 bytes). */
 export const qcow2Size = (head: Uint8Array) => Number(new DataView(head.buffer, head.byteOffset).getBigUint64(24));
 
-/** Opens an image of `fileSize` bytes: qcow2 by its magic, raw otherwise. Throws on what qcow2 we don't support. */
-export function openDisk(readAt: ReadAt, fileSize: number): Disk {
+/**
+ * Opens an image of `fileSize` bytes: qcow2 by its magic, raw otherwise. Throws on what qcow2 we don't support.
+ * `inflater` unpacks a request's compressed clusters.
+ */
+export function openDisk(readAt: ReadAt, fileSize: number, inflater: Inflater = inflateEach): Disk {
   const head = fileSize >= HEADER ? readAt(0, HEADER) : undefined;
   if (!head || !isQcow2(head)) {
     return { size: fileSize, format: 'raw', read: async (off, len) => (off + len <= fileSize ? readAt(off, len) : undefined) };
@@ -88,18 +108,6 @@ export function openDisk(readAt: ReadAt, fileSize: number): Disk {
     return [off, Math.min(sectors * 512 - (off & 511), fileSize - off)];
   };
   const recent = new Map<bigint, Uint8Array>();
-  const compressed = async (e: bigint, from: ReadAt) => {
-    let data = recent.get(e);
-    if (!data) {
-      const [off, len] = extent(e);
-      const input = len > 0 ? from(off, len) : undefined;
-      data = input && (await inflate(input, cs));
-      if (!data) return undefined;
-      recent.set(e, data);
-      if (recent.size > 16) recent.delete(recent.keys().next().value!);
-    }
-    return data;
-  };
 
   /**
    * A reader of the file for one request: the host ranges it needs (`ranges`: [start, end)) that
@@ -133,6 +141,7 @@ export function openDisk(readAt: ReadAt, fileSize: number): Disk {
     // The request's clusters: what each needs from the file, then the reads, then the bytes.
     const pieces: { k: number; o: number; n: number; e: bigint }[] = [];
     const ranges: [number, number][] = [];
+    const clusters = new Map<bigint, Uint8Array>(); // the compressed ones, inflated (from `recent`, or below)
     const wanted = new Set<bigint>();
     for (let k = 0; k < len;) {
       const pos = off + k;
@@ -144,7 +153,9 @@ export function openDisk(readAt: ReadAt, fileSize: number): Disk {
       const e = t.getBigUint64((c % l2Entries) * 8);
       if (e & COMPRESSED) {
         const [at, bytes] = extent(e);
-        if (!recent.has(e) && !wanted.has(e) && bytes > 0) { wanted.add(e); ranges.push([at, at + bytes]); }
+        const kept = recent.get(e);
+        if (kept) clusters.set(e, kept);
+        else if (!wanted.has(e) && bytes > 0) { wanted.add(e); ranges.push([at, at + bytes]); }
         pieces.push({ k, o, n, e });
       } else if (!(version === 3 && e & ZERO) && (e & OFFSET_MASK) !== 0n) {
         ranges.push([Number(e & OFFSET_MASK) + o, Number(e & OFFSET_MASK) + o + n]);
@@ -153,8 +164,26 @@ export function openDisk(readAt: ReadAt, fileSize: number): Disk {
       k += n;
     }
     const from = merged(ranges);
+    // The compressed clusters all at once, not one after another (a 1 MiB read of 64 KiB clusters is 16).
+    if (wanted.size) {
+      const packed = [...wanted];
+      const inputs: Uint8Array[] = [];
+      for (const e of packed) {
+        const input = from(...extent(e));
+        if (!input) return undefined;
+        inputs.push(input);
+      }
+      const unpacked = await inflater(inputs, cs);
+      for (const [i, e] of packed.entries()) {
+        const data = unpacked[i];
+        if (!data) return undefined;
+        clusters.set(e, data);
+        recent.set(e, data);
+        if (recent.size > 16) recent.delete(recent.keys().next().value!);
+      }
+    }
     for (const { k, o, n, e } of pieces) {
-      const data = e & COMPRESSED ? (await compressed(e, from))?.subarray(o, o + n) : from(Number(e & OFFSET_MASK) + o, n);
+      const data = e & COMPRESSED ? clusters.get(e)?.subarray(o, o + n) : from(Number(e & OFFSET_MASK) + o, n);
       if (!data) return undefined;
       out.set(data, k);
     }
@@ -182,7 +211,7 @@ async function compressedCluster(readAt: ReadAt, fileSize: number, e: bigint, cl
  * write: the write that ends the stream then delivers before the junk arrives
  * (~3 ms a 64 KiB cluster instead of ~0.4: Firefox only).
  */
-async function inflate(input: Uint8Array, size: number) {
+export async function inflate(input: Uint8Array, size: number) {
   const cut = Math.max(0, input.length - 512);
   return await inflateParts([input], size)
     ?? (input.length > 1 ? inflateParts([input.subarray(0, cut), ...Array.from({ length: input.length - cut }, (_, i) => input.subarray(cut + i, cut + i + 1))], size) : undefined);

@@ -17,6 +17,7 @@ import { IoStats } from './iostats.ts';
 import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './overlay.ts';
 import { ramDisk } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
+import { inflatePool } from './inflate-pool.ts';
 import { openDisk, type Disk } from './qcow2.ts';
 import { Usb, type UsbAttach } from './usb.ts';
 import { checksumSink, micSource, patternSource, ringSink, sndBackend, type SndMixer, type SndWake } from './snd.ts';
@@ -596,13 +597,15 @@ export async function fileSource(url: string): Promise<Source> {
 
 /**
  * virtio-blk over a `Source` (HTTP ranges, or a file in Node). Only qcow2's
- * compressed clusters are asynchronous (DecompressionStream). Read-only, or
+ * compressed clusters are asynchronous (DecompressionStream; a request's together,
+ * on web/inflate-pool.ts's workers too where there are workers). Read-only, or
  * writable through an overlay on OPFS; with `discard`, DISCARD and WRITE_ZEROES
  * reach the overlay (`deviceEntry` offers them).
  */
 export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, discard = false, st?: IoStats, serial = 'webpc-blk'): Backend {
   let rw: WritableDisk | undefined;
   let base: Disk;
+  let pool: ReturnType<typeof inflatePool> | undefined;
   if ('write' in src) {
     base = rw = src; // a disk that takes writes in itself (a ramdisk)
   } else {
@@ -612,7 +615,8 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
       if (files) files = { ...files, data: st.file('data', files.data), map: st.file('map', files.map) };
     }
     const s = src;
-    base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : s.read(off, len)), s.size);
+    pool = typeof Worker === 'function' ? inflatePool() : undefined; // Node has none
+    base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : s.read(off, len)), s.size, pool);
     rw = files && overlay(base, files.data, files.map, files.meta);
   }
   const disk: Disk = rw ?? base;
@@ -682,6 +686,7 @@ export function blk(ctx: Ctx, src: Source | WritableDisk, files?: OverlayFiles, 
     close() {
       if (!('write' in src)) src.close?.();
       files?.close();
+      pool?.close();
     },
   };
   if (st) {
