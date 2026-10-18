@@ -1492,6 +1492,10 @@ function offer(id: string, text: string, label: string, f: () => Promise<void>) 
   syncUsb();
 }
 
+/** An attach's error for the message bar: a `UsbError` with problems names the device itself. */
+const attachFailed = (name: string, err: unknown, again = '') =>
+  err instanceof UsbError && err.words.length ? err.message : `${name} couldn't be attached${again}: ${String((err as Error).message ?? err)}`;
+
 /** Attaches entry `e` on its connector; a device another machine holds is offered to be detached there first (`quiet`: skipped, with a note). */
 async function attachEntry(e: UsbEntry, o: { quiet?: boolean } = {}) {
   const p = run?.usb;
@@ -1609,7 +1613,7 @@ async function connected(api: Api, device: HostDevice) {
   const e = entryOf(usbEntries(), identity);
   if (e) {
     if (run?.usb?.connectorOf(e.id) !== -1) return;
-    if (e.atStart && !run.usb.connectors[e.connector]) return void attachEntry(e, { quiet: true }).catch((err) => notify(`${name} couldn't be attached: ${String((err as Error).message ?? err)}`, 'error'));
+    if (e.atStart && !run.usb.connectors[e.connector]) return void attachEntry(e, { quiet: true }).catch((err) => notify(attachFailed(name, err), 'error'));
     return offer(`seen-${identityKey(identity)}`, `${name} was plugged in.`, 'Attach', () => attachEntry(e));
   }
   const back = lastGone && Date.now() - lastGone.at < REENUMERATION_MS ? lastGone : undefined;
@@ -1641,7 +1645,7 @@ async function plugBack(r: Run, was: Unplugged | undefined) {
   for (const c of was ?? []) {
     if (run !== r || !usbRunning()) return;
     if (isKeyboard(c)) { await syncKeyboard(r); continue; }
-    await r.usb!.attach(c.connector, c.device, c.entry).catch((err) => notify(`${deviceName(c.device)} couldn't be attached again: ${String((err as Error).message ?? err)}`, 'error'));
+    await r.usb!.attach(c.connector, c.device, c.entry).catch((err) => notify(attachFailed(deviceName(c.device), err, ' again'), 'error'));
   }
 }
 

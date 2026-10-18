@@ -4,6 +4,7 @@ import type { ExportMode } from './export.ts';
 import type { PowerState } from './protocol.ts';
 import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
 import type { EntryView } from './usb-live.ts';
+import type { ProblemWords } from './usb-ports.ts';
 
 export type View = 'screen' | 'terminal' | 'both';
 /** The machine's power state, plus the page's own `idle`: no machine yet (waiting for a disk, or for "Start anyway"). */
@@ -64,7 +65,7 @@ export const ui = $state({
     running: false,
     entries: [] as EntryView[],
     /** `problems`: what of an attached device the guest doesn't get, in words (web/app/usb-ports.ts `problemText`). */
-    connectors: [] as ({ name: string; state: string; entry?: string; virtual?: boolean; builtin?: boolean; problems?: string[] } | null)[],
+    connectors: [] as ({ name: string; state: string; entry?: string; virtual?: boolean; builtin?: boolean; problems?: ProblemWords[] } | null)[],
     offers: [] as { id: string; text: string; label: string }[],
     zero: false,
     open: 0,

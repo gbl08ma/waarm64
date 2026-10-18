@@ -7,7 +7,7 @@
 import type { UsbFromWorker, UsbIdentity, UsbProblem, UsbSpeed, UsbToWorker, UsbVirtual } from '../usb-device.ts';
 import { USB_CONNECTORS, type UsbEntry } from './shape.ts';
 import type { Note, Store } from './store.ts';
-import { deviceName, identityAt, identityKey, matchDevices, problemText, usbLock, type SeenDevice } from './usb-ports.ts';
+import { deviceName, identityAt, identityKey, matchDevices, problemText, usbLock, type ProblemWords, type SeenDevice } from './usb-ports.ts';
 
 /** A `USBDevice` or a `HIDDevice`, as far as the page uses one (lib.dom has neither). */
 export type HostDevice = SeenDevice & { forget?(): Promise<void>; collections?: unknown[] };
@@ -179,12 +179,19 @@ export class UsbLocks {
 /** A connector of the running machine. */
 export type Connector = { device: UsbIdentity | UsbVirtual; name: string; entry?: string; state: 'attaching' | 'attached' | 'detaching'; speed?: UsbSpeed; problems?: UsbProblem[] };
 
-/** Why an attach failed, in words (the device worker's message and its problems'). */
+/**
+ * Why an attach failed: `message` in plain text (a line, then each problem's `text`), or, where the device worker
+ * said which problems, `lead` and their `words` for the page to show with their remedies folded (UsbProblems.svelte).
+ */
 export class UsbError extends Error {
   readonly problems: UsbProblem[];
-  constructor(message: string, problems: UsbProblem[] = []) {
-    super(message);
+  readonly lead: string;
+  readonly words: ProblemWords[];
+  constructor(lead: string, problems: UsbProblem[] = [], words: ProblemWords[] = []) {
+    super([lead, ...words.map((w) => w.text)].join('\n'));
+    this.lead = lead;
     this.problems = problems;
+    this.words = words;
   }
 }
 
@@ -218,7 +225,7 @@ export class UsbPorts {
       if (m.state === 'error') {
         const d = c && 'vendorId' in c.device ? c.device : undefined;
         const words = d ? (m.detail ?? []).map((x) => problemText(x, d)) : [];
-        p?.reject(new UsbError([m.message, ...words].join('\n'), m.detail));
+        p?.reject(new UsbError(words.length ? `${c!.name} couldn't be attached.` : m.message, m.detail, words));
         if (!p && c) this.onGone(m.connector, c, m.message);
       } else {
         p?.resolve();

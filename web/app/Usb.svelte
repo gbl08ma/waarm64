@@ -7,6 +7,7 @@
 <script lang="ts">
   import AddUsb from './AddUsb.svelte';
   import Icon from './Icon.svelte';
+  import UsbProblems from './UsbProblems.svelte';
   import { ask } from './ask.svelte.ts';
   import { KEYBOARD_CONNECTOR, USER_CONNECTORS, type MachineRecord } from './shape.ts';
   import { deviceName, hasTwins, idsText } from './usb-ports.ts';
@@ -60,7 +61,7 @@
           <strong>{deviceName(e)}</strong>
           <span class="meta">{e.api === 'hid' ? 'HID' : 'USB'} {idsText(e)}{e.serialNumber ? ` · serial ${e.serialNumber}` : e.index ? ` · the ${e.index + 1}${['st', 'nd', 'rd'][e.index] ?? 'th'} of its kind` : ''} · <span data-usb-state>{stateText(v)}</span></span>
           {#if c?.entry === e.id && c.problems?.length}
-            <ul class="problems" data-usb-problems={e.id}>{#each c.problems as p, i (i)}<li>{p}</li>{/each}</ul>
+            <div class="problems" data-usb-problems={e.id}><UsbProblems words={c.problems} /></div>
           {/if}
         </div>
         <label class="field" title="The root connector it goes on (the guest's port path: its names under /dev/serial/by-path stay the same)">Connector
@@ -103,7 +104,7 @@
   .meta { color: var(--dim); font-size: 12px; }
   li[data-state=attached] [data-usb-state] { color: #8fd18f; }
   li[data-state=held] [data-usb-state], li[data-state=ungranted] [data-usb-state] { color: #ffb36b; }
-  .problems { margin: 4px 0 0; padding-left: 18px; color: #ffb36b; font-size: 12px; }
+  .problems { margin-top: 4px; color: #ffb36b; font-size: 12px; }
   .field { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
   .check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; }

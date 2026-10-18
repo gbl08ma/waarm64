@@ -7,12 +7,13 @@
 <script lang="ts">
   import AddUsb from './AddUsb.svelte';
   import Menu from './Menu.svelte';
-  import { deviceName } from './usb-ports.ts';
+  import UsbProblems from './UsbProblems.svelte';
+  import { deviceName, errorView, type ErrorView } from './usb-ports.ts';
   import { page, ui } from './ui.svelte.ts';
 
   let open = $state(false);
   let adding = $state(false);
-  let error = $state('');
+  let error = $state<ErrorView>();
   let lastOpen = 0;
   $effect(() => {
     const n = ui.usb.open;
@@ -23,11 +24,11 @@
   const zeroOn = $derived(ui.usb.connectors.some((c) => c?.virtual && !c.builtin));
 
   async function run(f: () => Promise<unknown>) {
-    error = '';
+    error = undefined;
     try {
       await f();
     } catch (e) {
-      error = String((e as Error).message ?? e);
+      error = errorView(e);
     }
   }
   const toggle = (id: string, on: boolean) => run(() => (on ? page.usbAttach(id) : page.usbDetach(id)));
@@ -50,7 +51,7 @@
       <span class="dim">{c?.entry === v.entry.id && c.state !== 'attached' ? `${c.state}…` : on ? `connector ${v.entry.connector + 1}` : v.state === 'held' ? `in ${v.holder ?? 'another machine'}` : v.state === 'plugged' ? '' : v.state === 'ungranted' ? 'no permission' : 'not plugged in'}</span>
     </label>
     {#if on && c?.entry === v.entry.id && c.problems?.length}
-      <p class="warn" data-usb-problems={v.entry.id} title={c.problems.join('\n\n')}>Part of it doesn't reach the guest: hover here, or see All USB settings…</p>
+      <p class="warn" data-usb-problems={v.entry.id} title={c.problems.map((w) => w.text).join('\n\n')}>Part of it doesn't reach the guest: hover here, or see All USB settings…</p>
     {/if}
   {:else}
     <p class="hint">No devices remembered yet.</p>
@@ -58,7 +59,7 @@
   {#if ui.usb.zero}
     <label class="device" data-usb-zero><input type="checkbox" checked={zeroOn} disabled={!ui.usb.running} onchange={() => run(() => page.usbZero())}><span class="name">Gadget Zero</span><span class="dim">test device</span></label>
   {/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error}<div class="error" role="alert">{error.text}{#if error.words}<UsbProblems words={error.words} />{/if}</div>{/if}
   <div class="row">
     <button id="usb-add" onclick={() => { open = false; adding = true; }}>Add a device…</button>
     {#if ui.current}<button onclick={() => { open = false; page.openMachines('usb', ui.current); }}>All USB settings…</button>{/if}
@@ -76,6 +77,6 @@
   .row { display: flex; gap: 6px; flex-wrap: wrap; }
   .count { min-width: 14px; padding: 0 4px; border-radius: 7px; background: #3b6db3; color: #fff; font-size: 10px; line-height: 14px; text-align: center; }
   .warn { color: #ffb36b; font-size: 12px; margin: -4px 0 0 24px; max-width: 360px; }
-  .error { color: #ff8f8f; white-space: pre-wrap; margin: 0; max-width: 360px; }
+  .error { display: flex; flex-direction: column; gap: 6px; color: #ff8f8f; white-space: pre-wrap; margin: 0; max-width: 360px; }
   .primary { background: #24406b; border-color: #3b6db3; color: #fff; }
 </style>

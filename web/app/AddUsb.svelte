@@ -6,8 +6,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Icon from './Icon.svelte';
+  import UsbProblems from './UsbProblems.svelte';
   import type { IconName } from './icons.ts';
   import { hasApi, type Api } from './usb-live.ts';
+  import { errorView, type ErrorView } from './usb-ports.ts';
   import { page } from './ui.svelte.ts';
 
   type Props = {
@@ -24,18 +26,18 @@
   ];
 
   let dialog: HTMLDialogElement;
-  let error = $state('');
+  let error = $state<ErrorView>();
   let busy = $state(false);
   onMount(() => dialog.showModal());
 
   async function choose(api: Api) {
-    error = '';
+    error = undefined;
     busy = true;
     try {
       const names = await page.usbAdd(machine, api);
       if (names.length) dialog.close();
     } catch (e) {
-      error = String((e as Error).message ?? e);
+      error = errorView(e);
     } finally {
       busy = false;
     }
@@ -53,7 +55,7 @@
         </button>
       {/each}
     </div>
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if error}<div class="error" role="alert">{error.text}{#if error.words}<UsbProblems words={error.words} />{/if}</div>{/if}
     <div class="buttons"><span class="grow"></span><button type="button" onclick={() => dialog.close()}>Cancel</button></div>
   </div>
 </dialog>
@@ -65,7 +67,7 @@
   .choices { display: flex; flex-direction: column; gap: 8px; }
   .choice b { display: flex; align-items: center; gap: 8px; }
   .note { margin: 0; color: var(--dim); font-size: 13px; }
-  .error { color: #ff8f8f; white-space: pre-wrap; margin: 0; }
+  .error { display: flex; flex-direction: column; gap: 6px; color: #ff8f8f; white-space: pre-wrap; margin: 0; }
   .buttons { display: flex; gap: 8px; }
   .grow { flex: 1; }
   .buttons button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; background: var(--bg); }

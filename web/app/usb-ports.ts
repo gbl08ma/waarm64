@@ -129,36 +129,96 @@ const udevRule = (d: { api: 'usb' | 'hid'; vendorId: number; productId: number }
   ? `KERNEL=="hidraw*", ATTRS{idVendor}=="${hex4(d.vendorId)}", ATTRS{idProduct}=="${hex4(d.productId)}", TAG+="uaccess"`
   : `SUBSYSTEM=="usb", ATTRS{idVendor}=="${hex4(d.vendorId)}", ATTRS{idProduct}=="${hex4(d.productId)}", TAG+="uaccess"`;
 
+/** A step of a remedy: what to do, then a command or a line to copy (`code`), or a page to open (`link`). */
+export type FixStep = { text: string; code?: string; link?: string };
+/**
+ * A problem in words: `text` first, short and plain; `fix`, the host OS's remedy, which the page shows folded (a
+ * title, numbered steps, a note: UsbProblems.svelte); `said`, the browser's own message, folded with it.
+ */
+export type ProblemWords = { text: string; fix?: { title: string; steps: FixStep[]; note?: FixStep }; said?: string };
+
+/** The words as plain text: `text` alone, or (`all`) everything in them. */
+export function wordsText(w: ProblemWords, all = false): string {
+  if (!all) return w.text;
+  const f = w.fix;
+  const step = (s: FixStep) => [s.text, s.code, s.link].filter(Boolean).join(' ');
+  const fix = f ? [`${f.title}:`, ...f.steps.map((s, i) => `${i + 1}. ${step(s)}`), ...(f.note ? [step(f.note)] : [])] : [];
+  return [w.text, ...fix, ...(w.said ? [`The browser said: ${w.said}`] : [])].join('\n');
+}
+
+/** Zadig's steps for the WinUSB driver on an interface (Windows: a browser uses a device only through WinUSB). */
+const zadig = (iface?: number): FixStep[] => [
+  { text: `Install the WinUSB driver for it with Zadig: Options, List All Devices, pick the device${iface === undefined ? '' : `'s interface ${iface}`}, WinUSB, Replace Driver.`, link: 'https://zadig.akeo.ie' },
+  { text: 'Unplug the device, plug it in again, then attach it.' },
+];
+
 /**
  * A problem the device worker reported, in words for the user, with the host OS's remedy where there is one
  * (docs/usb.md "What the browser allows": the host's drivers come first, and the page can't change that).
  */
-export function problemText(p: UsbProblem, d: { api: 'usb' | 'hid'; vendorId: number; productId: number }, os: HostOs = hostOs()): string {
+export function problemText(p: UsbProblem, d: { api: 'usb' | 'hid'; vendorId: number; productId: number }, os: HostOs = hostOs()): ProblemWords {
   switch (p.kind) {
     case 'protected-interface':
-      return `Interface ${p.interface} is a ${className(p.class)} interface, which the browser keeps from pages: the guest doesn't see it.${protectedRoute(p.class)}`;
+      return { text: `Interface ${p.interface} is a ${className(p.class)} interface, which the browser keeps from pages: the guest doesn't see it.${protectedRoute(p.class)}` };
     case 'claim-failed': {
-      const why = `Interface ${p.interface} couldn't be claimed (${p.message}): a driver on this computer holds it.`;
+      const text = `Something on this computer is already using it (interface ${p.interface}), so the browser can't pass it to the machine.`;
+      const said = p.message;
+      const name = `1-2:1.${p.interface}`;
       switch (os) {
-        case 'linux': return `${why} On Linux, unbind the kernel's driver (cdc_acm, ftdi_sio, cp210x, ch341, usblp…): \`lsusb -t\` shows the interface's driver, \`ls /sys/bus/usb/drivers/<driver>/\` its name (such as 1-2:1.${p.interface}), and \`echo -n 1-2:1.${p.interface} | sudo tee /sys/bus/usb/drivers/<driver>/unbind\` lets it go until the device is plugged in again; \`blacklist <driver>\` in /etc/modprobe.d/ keeps it off for good (for every device it serves). Then attach the device again.`;
-        case 'mac': return `${why} macOS's own drivers keep CDC serial devices and serial adapters, and a page can't take them: quit any app that uses the device; if it is macOS's driver, the device can't reach the guest from this computer.`;
-        case 'windows': return `${why} On Windows a browser can use a device only with the WinUSB driver: install it with Zadig (https://zadig.akeo.ie: Options, List All Devices, the device's interface ${p.interface}, WinUSB, Replace Driver), then unplug it and plug it in again. Windows' own programs then no longer see that interface.`;
-        default: return `${why} Close what uses it on this computer, then attach it again.`;
+        case 'linux': return {
+          text, said, fix: {
+            title: 'How to free it on Linux',
+            steps: [
+              { text: 'Find the kernel driver that holds it (such as cdc_acm, ftdi_sio, cp210x, ch341 or usblp):', code: 'lsusb -t' },
+              { text: `Find the interface's name under that driver (such as ${name}):`, code: 'ls /sys/bus/usb/drivers/<driver>/' },
+              { text: 'Unbind it; it stays free until the device is plugged in again:', code: `echo -n ${name} | sudo tee /sys/bus/usb/drivers/<driver>/unbind` },
+              { text: 'Attach the device again.' },
+            ],
+            note: { text: 'To keep the driver off for good (for every device it serves), add this line to a file in /etc/modprobe.d/:', code: 'blacklist <driver>' },
+          },
+        };
+        case 'mac': return {
+          text, said, fix: {
+            title: 'What to do on macOS',
+            steps: [{ text: 'Quit any app that uses the device, then attach it again.' }],
+            note: { text: "macOS's own drivers keep serial devices (CDC serial, serial adapters), and a page can't take them: if one of those holds it, the device can't reach the machine from this computer." },
+          },
+        };
+        case 'windows': return { text, said, fix: { title: 'How to free it on Windows', steps: zadig(p.interface), note: { text: "Windows' own programs then no longer see that interface." } } };
+        default: return { text: `${text} Close what uses it on this computer, then attach it again.`, said };
       }
     }
     case 'protected-collection': {
       const what = HID_USAGES[`${p.usagePage}:${p.usage}`] ?? `collection ${hex4(p.usagePage)}:${hex4(p.usage)}`;
-      return p.kept
-        ? `The device's ${what} part is kept from pages by the browser, all but its feature reports (its settings, which tools such as VIA use): the guest gets only those. The machine has the page's keyboard and mouse already.`
-        : `The device's ${what} part is kept from pages by the browser: the guest doesn't get it. The machine has the page's keyboard and mouse already.`;
+      return {
+        text: p.kept
+          ? `The device's ${what} part is kept from pages by the browser, all but its feature reports (its settings, which tools such as VIA use): the guest gets only those. The machine has the page's keyboard and mouse already.`
+          : `The device's ${what} part is kept from pages by the browser: the guest doesn't get it. The machine has the page's keyboard and mouse already.`,
+      };
     }
     case 'no-collections':
-      return 'Everything this HID device offers is kept from pages by the browser (a keyboard\'s keys, a mouse\'s pointer, a security key): nothing is left for the guest. The machine has the page\'s keyboard and mouse already.';
+      return { text: 'Everything this HID device offers is kept from pages by the browser (a keyboard\'s keys, a mouse\'s pointer, a security key): nothing is left for the guest. The machine has the page\'s keyboard and mouse already.' };
     case 'open-failed': {
-      const why = `The browser couldn't open the device (${p.message}).`;
-      if (os === 'linux') return `${why} On Linux your user needs read and write access to its ${d.api === 'hid' ? '/dev/hidraw node' : 'node under /dev/bus/usb'}: add the udev rule \`${udevRule(d)}\` to /etc/udev/rules.d/70-webpc.rules, run \`sudo udevadm control --reload\`, then unplug the device and plug it in again.`;
-      if (os === 'windows' && d.api === 'usb') return `${why} On Windows a browser can open a USB device only with the WinUSB driver: install it with Zadig (https://zadig.akeo.ie), then unplug it and plug it in again.`;
-      return `${why} Another program may have it open: close it, then attach the device again.`;
+      const said = p.message;
+      if (os === 'linux') return {
+        text: "The browser couldn't open it: your user probably has no permission to use it.", said, fix: {
+          title: 'How to give your user access on Linux',
+          steps: [
+            { text: 'Add this udev rule to /etc/udev/rules.d/70-webpc.rules:', code: udevRule(d) },
+            { text: 'Reload the rules:', code: 'sudo udevadm control --reload' },
+            { text: 'Unplug the device, plug it in again, then attach it.' },
+          ],
+        },
+      };
+      if (os === 'windows' && d.api === 'usb') return { text: "The browser couldn't open it: on Windows it needs the WinUSB driver.", said, fix: { title: 'How to install it', steps: zadig() } };
+      return { text: "The browser couldn't open it: another program may have it open. Close that program, then attach the device again.", said };
     }
   }
+}
+
+/** An error as the page shows it: a line, and the problems' words when it is an attach's that has them (a `UsbError`). */
+export type ErrorView = { text: string; words?: ProblemWords[] };
+export function errorView(e: unknown): ErrorView {
+  const u = e as { lead?: string; words?: ProblemWords[]; message?: string } | undefined;
+  return u?.words?.length ? { text: u.lead ?? '', words: u.words } : { text: String(u?.message ?? e) };
 }

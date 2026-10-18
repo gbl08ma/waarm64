@@ -670,7 +670,7 @@ by themselves.
 Files: `web/app/usb-ports.ts` (DOM-free: identities, lock names, connectors, matching, the messages' words, the
 definition entries), `web/app/usb-live.ts` (the browser's devices and grants, the device locks, the running machine's
 ports), `Usb.svelte` (the Machines page's USB tab), `AddUsb.svelte` (the Add a device wizard), `UsbMenu.svelte` (the
-toolbar's USB menu), and the USB block of `web/app/main.ts`.
+toolbar's USB menu), `UsbProblems.svelte` (a device's problems, with their remedies folded), and the USB block of `web/app/main.ts`.
 
 ### The controller and the shape
 
@@ -741,8 +741,12 @@ They work while the machine runs on this page, from the USB tab or the toolbar's
 - **What's left out:** an attach that worked can still leave part of the device out. Its `usb-state` lists those
   `problems`: a protected or host-held interface, or a HID collection the browser keeps. The USB tab shows them in
   words under the entry (`data-usb-problems`). The menu gives a line under the device, and its tooltip has the
-  words.
-- **Errors:** an attach refused by the device worker is shown with its `UsbProblem`s in words (`problemText`):
+  short words.
+- **Errors:** an attach refused by the device worker is shown with its `UsbProblem`s in words (`problemText`). Each
+  problem is a short plain sentence (`text`); the host OS's remedy (`fix`: numbered steps, the commands to copy in
+  their own boxes) and the browser's own message (`said`) sit folded under it in a `<details>` (`UsbProblems.svelte`,
+  in the menu, the Add a device wizard and the Machines page). The message bar, which shows plain text, gets the
+  short sentences only. The words are text, never Markdown:
   - a protected interface class, with where such a device goes instead;
   - an interface a host driver holds, with the remedy for Linux (unbinding `cdc_acm` and the like), macOS and
     Windows (WinUSB through Zadig);

@@ -5,12 +5,12 @@
 // entries' identities, a settings save that doesn't drop them. The shape's hash is pinned in tests/store.test.ts.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { UsbFromWorker, UsbToWorker } from '../web/usb-device.ts';
+import type { UsbFromWorker, UsbProblem, UsbToWorker } from '../web/usb-device.ts';
 import { exportDefinition, importDefinition, parseDefinition } from '../web/app/definitions.ts';
 import { createMachine, duplicateMachine, updateMachine } from '../web/app/machines.ts';
 import { memoryFiles, memoryRecords, Store } from '../web/app/store.ts';
 import type { UsbEntry } from '../web/app/shape.ts';
-import { deviceName, freeConnector, hasTwins, identityAt, identityKey, matchDevices, newEntry, problemText, usbLock, validDefinitionUsb } from '../web/app/usb-ports.ts';
+import { deviceName, errorView, freeConnector, hasTwins, identityAt, identityKey, matchDevices, newEntry, problemText, usbLock, validDefinitionUsb, wordsText, type HostOs } from '../web/app/usb-ports.ts';
 import { filterFor, UsbError, UsbLocks, UsbPorts } from '../web/app/usb-live.ts';
 
 const entry = (over: Partial<UsbEntry>): UsbEntry => ({ id: 'e00000000001', api: 'usb', vendorId: 0x2e8a, productId: 0x000a, connector: 0, atStart: true, ...over });
@@ -50,17 +50,31 @@ test("the browser's devices matched to entries: by serial number, and identical 
 
 test("the messages for what the device worker can't do, with each OS's remedy", () => {
   const d = { api: 'usb' as const, vendorId: 0x2e8a, productId: 0xa };
-  assert.match(problemText({ kind: 'protected-interface', interface: 2, class: 3 }, d, 'linux'), /Interface 2 is a HID interface.*HID device instead/);
-  assert.match(problemText({ kind: 'protected-interface', interface: 0, class: 8 }, d, 'linux'), /mass storage.*Disks/);
+  const words = (p: UsbProblem, dev: typeof d | { api: 'hid'; vendorId: number; productId: number } = d, os?: HostOs) => wordsText(problemText(p, dev, os), true);
+  assert.match(words({ kind: 'protected-interface', interface: 2, class: 3 }, d, 'linux'), /Interface 2 is a HID interface.*HID device instead/);
+  assert.match(words({ kind: 'protected-interface', interface: 0, class: 8 }, d, 'linux'), /mass storage.*Disks/);
   const claim = { kind: 'claim-failed' as const, interface: 1, message: 'Unable to claim interface.' };
-  assert.match(problemText(claim, d, 'linux'), /cdc_acm.*unbind/);
-  assert.match(problemText(claim, d, 'windows'), /WinUSB.*Zadig/);
-  assert.match(problemText(claim, d, 'mac'), /macOS/);
-  assert.match(problemText({ kind: 'no-collections' }, { ...d, api: 'hid' }), /kept from pages/);
-  assert.match(problemText({ kind: 'protected-collection', usagePage: 1, usage: 6, kept: true }, { ...d, api: 'hid' }), /keyboard part.*all but its feature reports/);
-  assert.match(problemText({ kind: 'protected-collection', usagePage: 1, usage: 2, kept: false }, { ...d, api: 'hid' }), /mouse part.*doesn't get it/);
-  assert.match(problemText({ kind: 'open-failed', message: 'Failed to open the device.' }, { ...d, api: 'hid' }, 'linux'), /hidraw.*KERNEL=="hidraw\*", ATTRS\{idVendor\}=="2e8a", ATTRS\{idProduct\}=="000a", TAG\+="uaccess"/);
-  assert.match(problemText({ kind: 'open-failed', message: 'Access denied.' }, d, 'linux'), /\/dev\/bus\/usb.*SUBSYSTEM=="usb"/);
+  // The short text says what happened, plainly; the remedy and the browser's message are folded under it.
+  const linux = problemText(claim, d, 'linux');
+  assert.match(linux.text, /already using it \(interface 1\)/);
+  assert.doesNotMatch(linux.text, /[`<]|sudo|cdc_acm/, 'no commands in the short text');
+  assert.equal(linux.said, 'Unable to claim interface.');
+  assert.deepEqual(linux.fix?.steps.map((s) => s.code).filter(Boolean), ['lsusb -t', 'ls /sys/bus/usb/drivers/<driver>/', 'echo -n 1-2:1.1 | sudo tee /sys/bus/usb/drivers/<driver>/unbind']);
+  assert.equal(linux.fix?.note?.code, 'blacklist <driver>');
+  assert.match(wordsText(linux, true), /cdc_acm.*\n.*unbind/s);
+  assert.equal(wordsText(linux), linux.text);
+  assert.match(words(claim, d, 'windows'), /WinUSB.*Zadig.*zadig\.akeo\.ie/);
+  assert.match(words(claim, d, 'mac'), /macOS/);
+  assert.match(words({ kind: 'no-collections' }, { ...d, api: 'hid' }), /kept from pages/);
+  assert.match(words({ kind: 'protected-collection', usagePage: 1, usage: 6, kept: true }, { ...d, api: 'hid' }), /keyboard part.*all but its feature reports/);
+  assert.match(words({ kind: 'protected-collection', usagePage: 1, usage: 2, kept: false }, { ...d, api: 'hid' }), /mouse part.*doesn't get it/);
+  assert.match(words({ kind: 'open-failed', message: 'Failed to open the device.' }, { ...d, api: 'hid' }, 'linux'), /permission.*KERNEL=="hidraw\*", ATTRS\{idVendor\}=="2e8a", ATTRS\{idProduct\}=="000a", TAG\+="uaccess"/s);
+  assert.match(words({ kind: 'open-failed', message: 'Access denied.' }, d, 'linux'), /SUBSYSTEM=="usb".*Access denied/s);
+  // No problem's words carry Markdown: the page shows them as text.
+  for (const os of ['linux', 'mac', 'windows', 'chromeos', 'other'] as const) {
+    for (const p of [claim, { kind: 'open-failed' as const, message: 'x' }]) assert.doesNotMatch(words(p, d, os), /`/);
+  }
+  assert.deepEqual(errorView(new Error('plain')), { text: 'plain' });
 });
 
 /** A fake device worker on the other end of `port`: attaches what it is asked (refusing the vendor 0xdead), detaches. */
@@ -111,7 +125,8 @@ test('the ports: attach, refuse, detach all and attach again, a device unplugged
     // A refusal says why, with the remedy, and frees the connector and the lock.
     const bad = { api: 'usb' as const, vendorId: 0xdead, productId: 1 };
     const err = await ports.attach(2, bad).catch((e: unknown) => e);
-    assert.ok(err instanceof UsbError && /Couldn't attach it\.\nInterface 0 couldn't be claimed \(busy\)/.test(err.message), String(err));
+    assert.ok(err instanceof UsbError && /couldn't be attached\.\nSomething on this computer is already using it \(interface 0\)/.test(err.message), String(err));
+    assert.deepEqual(errorView(err), { text: err.lead, words: err.words }, 'the page shows the words, with their remedies');
     assert.equal(ports.connectors[2], undefined);
     assert.equal(await locksA.take(usbLock(bad)), true);
     locksA.drop(usbLock(bad));

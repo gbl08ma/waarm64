@@ -11,6 +11,7 @@
   import Menu from './Menu.svelte';
   import Snapshots from './Snapshots.svelte';
   import Usb from './Usb.svelte';
+  import UsbProblems from './UsbProblems.svelte';
   import { ask } from './ask.svelte.ts';
   import type { Store, OverlayRecord } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
@@ -18,6 +19,7 @@
   import { exportDefinition, importDefinition, parseDefinition } from './definitions.ts';
   import { remember, settings } from './settings.ts';
   import { page, ui, type MachinesTab } from './ui.svelte.ts';
+  import { errorView, type ErrorView } from './usb-ports.ts';
   import { MAX_RAM_MIB, RAM_CHOICES } from './machine.ts';
 
   let { store }: { store: Store } = $props();
@@ -28,6 +30,8 @@
   let running = $state<Set<string>>(new Set());
   let draft = $state<MachineRecord | undefined>();
   let error = $state('');
+  /** A USB attach's problems, shown under `error` while it is theirs (`text`). */
+  let usbError = $state<ErrorView>();
   let busy = $state('');
   let storage = $state<Awaited<ReturnType<typeof storageReport>> | undefined>();
   /** The page's own machine (transient) is chosen: `ui.machinesSelected` is `page`. */
@@ -58,7 +62,8 @@
     try {
       await f();
     } catch (e) {
-      error = String((e as Error).message ?? e);
+      usbError = errorView(e);
+      error = usbError.text;
     } finally {
       busy = '';
       await reread();
@@ -145,7 +150,7 @@
     <h2>Machines</h2>
     {#if busy}<span class="busy">{busy}…</span>{/if}
   </div>
-  {#if error}<p class="error" role="alert">{error}<button class="dismiss" aria-label="Close" onclick={() => (error = '')}><Icon name="x" size={14} /></button></p>{/if}
+  {#if error}<div class="error" role="alert"><div class="text">{error}{#if usbError?.words && usbError.text === error}<UsbProblems words={usbError.words} />{/if}</div><button class="dismiss" aria-label="Close" onclick={() => (error = '')}><Icon name="x" size={14} /></button></div>{/if}
   <div class="panes">
     <nav>
       <ul>
@@ -292,6 +297,7 @@
   h3 { margin: 0; font-size: 16px; font-weight: 600; }
   .busy { color: var(--busy); font-size: 13px; }
   .error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 8px 12px; color: #ffb4b6; background: #2a1215; border-bottom: 1px solid #5c1d22; white-space: pre-wrap; }
+  .error .text { display: flex; flex-direction: column; gap: 6px; }
   .error .dismiss { margin-left: auto; padding: 2px; color: inherit; }
   .panes { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 260px) 1fr; }
   nav { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: auto; padding: 8px; border-right: 1px solid var(--line); background: var(--panel); }
