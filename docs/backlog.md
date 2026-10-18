@@ -604,8 +604,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   are the page tests' own timings, two or three runs each (`bench/boot/REPORT.md` "M8 phase C
   exit").
 - **Save snapshot's pause is the file's write** (1.4 s for Debian's 175 MB through the picked
-  file's stream): writing to memory first and to the file after the resume would shorten it to
-  the compression's ~0.5 s, for the file's size in memory.
+  file's stream; dropped, 2026-10-18, the user): holding the compressed file in memory and writing
+  it after the resume would cut the pause to the compression's ~0.5 s, but the file is the guest's
+  used RAM plus the disk's changes, so the page would briefly need up to a second copy of the
+  guest's RAM, enough to crash it with a big guest on a small host.
 - **Snapshots between core versions:** a state of another `snapshot::VERSION` is refused; a
   migration path (or a reader per old version) would keep users' files alive across a format
   change. Prebuilt snapshots shipped with the repository (a Debian that resumes in seconds for a
