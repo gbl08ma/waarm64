@@ -281,6 +281,27 @@ check:
 `tests/usb.test.ts` checks the virtual device base. A short-packet bug planted in the controller (the
 Short Packet event reported as Success) fails two unit tests and testusb's first pass.
 
+## The usbhost guest
+
+`images/build.sh linux-usbhost` is the usb guest for real devices: the same kernel with `cdc_acm`, `usbhid`,
+`hid-generic` and `hidraw` (`images/usbhost/linux.fragment`), and an init (`images/usbhost/init.c`, which includes
+`images/usb/init.c` unchanged) whose `usb_mode=` picks the run. It is an image of its own so that `linux-usb`, its
+runs and their steps stay as they are. `tests/usb-guest.test.ts` boots it in Chromium, realtime and under the JIT
+(`tests/browser/boot-worker.ts` `?usbhost=`), with a host device on connector 0. It runs in `scripts/ci-usb.sh`'s
+set, on the dev VM's rigs, and writes each run's console to `target/tests/usb-guest-<mode>.log`.
+
+| Mode | Device | What passes |
+|---|---|---|
+| `testusb` | the dummy_hcd Gadget Zero (`webpc-zero`) through the WebUSB passthrough | `testusb -a -c 10 -s 1024 -v 512 -g 16` with `usbtest.pattern=1` (configfs's source/sink default): all 23 tests |
+| `acm` | the ACM gadget (`webpc-acm`) through the WebUSB passthrough, the guest's `cdc_acm` on it | three rounds of open `/dev/ttyACM0`, write 300 bytes, read the gadget tty's echo, close. Each close cancels `cdc_acm`'s reads, so the next round's reads are served by the cancelled ones' transfers (the carry-over) |
+| `hid` | a uhid device (`vendor-ids`) through WebHID | the report descriptor the guest got parses to what the page can use of Chromium's parse; three input reports from the rig arrive in order; an output report (`write`) and a feature report (`HIDIOCSFEATURE`) reach the rig; `HIDIOCGFEATURE` gets the rig's |
+
+What the runs found:
+- **Chromium refuses SET_FEATURE(ENDPOINT_HALT)**, and GET_STATUS and CLEAR_FEATURE on endpoint 0. The
+  passthrough answers them itself (the table above).
+- **The guest's port reset reaches the device** through `reset()`. On a gadget, that is a disconnect: its
+  tty hangs up, and the test's echo opens it again.
+
 ## The WebUSB passthrough (`web/webusb.ts`)
 
 `openWebUsb(device, {gone, os})` takes any object with WebUSB's `USBDevice` methods (`WebUsbDeviceLike`)
@@ -329,10 +350,11 @@ problems.
 | GET_DESCRIPTOR device, configuration (filtered), BOS, cached strings | from the cache. A string not in the cache (a Microsoft OS string, an index only a class descriptor names) and other types pass through |
 | SET_CONFIGURATION *n* | the active one: alternate settings back to 0. Another: release, `selectConfiguration`, claim again. *0*: release everything (GET_CONFIGURATION then answers 0) |
 | SET_INTERFACE | `selectAlternateInterface`. An interface we don't hold, or an alternate it doesn't have, stalls |
-| CLEAR_FEATURE(ENDPOINT_HALT) | `clearHalt`, and a stall carried over on that endpoint is spent |
-| SET_FEATURE(ENDPOINT_HALT) | passed through (usbtest's halt test). Whether Chromium allows it is unchecked |
+| CLEAR_FEATURE(ENDPOINT_HALT) | our halt cleared, then `clearHalt` (which resets the device's data toggle), and a stall carried over on that endpoint is spent. On endpoint 0, success locally |
+| SET_FEATURE(ENDPOINT_HALT) | ours: Chromium refuses it (a standard OUT request; usbtest's halt test got a transaction error). The endpoint's TDs stall here and GET_STATUS says halted, until CLEAR_FEATURE |
 | other SET/CLEAR_FEATURE, SET_SEL, SET_ISOCH_DELAY | success, locally |
-| GET_STATUS, GET_INTERFACE, SYNCH_FRAME | pass through. GET_INTERFACE on an interface we don't hold stalls |
+| GET_STATUS | an endpoint we halted, or endpoint 0 (WebUSB reaches only a claimed interface's endpoints), locally; the rest pass through |
+| GET_INTERFACE, SYNCH_FRAME | pass through. GET_INTERFACE on an interface we don't hold stalls |
 
 Class and vendor requests go to `controlTransferIn` or `controlTransferOut`, with the recipient taken
 from `bmRequestType`. A request whose recipient is an interface we don't hold stalls without reaching

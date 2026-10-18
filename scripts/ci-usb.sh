@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
 skipped() { printf '\nCI-USB skipped: %s\n' "$*"; exit 0; }
 
-TESTS=(tests/usb-e2e-webusb.test.ts tests/usb-e2e-hid.test.ts)
+TESTS=(tests/usb-e2e-webusb.test.ts tests/usb-e2e-hid.test.ts tests/usb-guest.test.ts)
 GADGETS=(zero acm)
 
 why=$(tests/usb/gadget.sh check 2>&1) || skipped "${why//$'\n'/; }"
@@ -24,5 +24,5 @@ trap 'tests/usb/gadget.sh down "${GADGETS[@]}" || true' EXIT
 
 export WEBPC_USB_TESTS=1
 step 'USB tests'
-node --disable-warning=ExperimentalWarning --test "${TESTS[@]}"
+node --disable-warning=ExperimentalWarning --test --test-concurrency=1 "${TESTS[@]}" # one at a time: they share the gadgets and uhid devices
 printf '\nCI-USB OK (%d s)\n' "$SECONDS"

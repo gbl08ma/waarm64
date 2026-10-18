@@ -666,8 +666,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **WebHID devices whose drivers patch the original descriptor** by its bytes or size (`report_fixup`) see
   our encoding instead. A table of known original descriptors keyed by vendor and product could serve
   them their real bytes when its parse matches WebHID's (plans/usb.md §8). Found per device in U5.
-- **WebUSB SET_FEATURE(ENDPOINT_HALT)** is passed through for usbtest's halt test. Whether Chromium
-  refuses it as a standard OUT request is unchecked: the dummy_hcd `testusb -a` run will tell.
+- **WebUSB's halts are emulated:** SET_FEATURE(ENDPOINT_HALT) never reaches the device (Chromium refuses
+  it), so a device-side function that tests its own halt (rare outside usbtest) sees none. Only the
+  guest's view is a halted endpoint (docs/usb.md "The WebUSB passthrough").
+- **WebHID `receiveFeatureReport`'s framing** (the ID byte first with IDs) was recorded on Linux. Check it
+  on macOS and Windows in U5.
 - **WebUSB reset** re-claims what it can after `device.reset()`. On hosts where the reset re-enumerates,
   WebUSB loses the device and the backend reports it gone. Measure which hosts do that (U3, U5).
 - **The WebUSB fixtures are transcribed** (`tests/usb/webusb-fixtures.ts`). Replace them with real
