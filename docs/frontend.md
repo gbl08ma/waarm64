@@ -140,6 +140,13 @@ main.ts fills in before the first start. Records the components read come from t
 the hidden file inputs `#open-disk-input`, `#load-snapshot-input`, `#load-changes-input`). **Sizes are in binary units**
 everywhere on the page (KiB, MiB, GiB: `bytes.ts` `bytesText`), as the sizes users enter are (a disk in MiB, RAM).
 
+**Types:** `tsc` doesn't read the components; `npm run svelte-check` (a step of `scripts/ci.sh`, ~10 s) checks them
+with `tsconfig.svelte.json` (`web/app`, ESM resolution: svelte-check made the shared config's `nodenext` node10). It
+runs on TypeScript 6, in its own package `tools/svelte-check` (a `file:` dev dependency, its packages in its own
+`node_modules`): svelte-check needs the compiler API TypeScript 7 doesn't have, and a peer can't nest under the root's
+TypeScript 7. A `$derived` that only reads a value to depend on it writes `(void tick, value())`: TypeScript rejects
+an unused left side of a comma.
+
 ## The toolbar
 
 A desktop application's toolbar (`Toolbar.svelte`): tool buttons with icons and tooltips, in groups split by

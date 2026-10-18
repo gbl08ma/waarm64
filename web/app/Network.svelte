@@ -16,9 +16,9 @@
   // The menu redraws when the client says something changed (`ui.net`), and when the settings do (`saved`).
   let saved = $state(0);
   const keep = (s: Partial<NetworkSettings>) => { remember({ net: { ...netSettings(), ...s } }); saved++; };
-  const v = $derived((ui.net, network.view()));
-  const s = $derived((saved, ui.net, netSettings()));
-  const active = $derived((ui.net, saved, network.active()));
+  const v = $derived((void ui.net, network.view()));
+  const s = $derived((void saved, void ui.net, netSettings()));
+  const active = $derived((void ui.net, void saved, network.active()));
 
   let open = $state(false);
   let menuError = $state('');

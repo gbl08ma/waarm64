@@ -147,7 +147,8 @@
             error = '';
           }
         } else {
-          d = await createDisk(store, { kind: source!, size: sizeMiB * 2 ** 20 });
+          if (source !== 'blank' && source !== 'ramdisk') return;
+          d = await createDisk(store, { kind: source, size: sizeMiB * 2 ** 20 });
         }
         await attach(store, m, d, { readOnly: source === 'blank' || source === 'ramdisk' ? false : readOnly });
         ok = true;

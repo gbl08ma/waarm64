@@ -349,5 +349,4 @@ sections above, or settled what they left open:
   transient machines' overlays keep their single names; snapshot files from before the new device order are
   refused (no mapping of the old order); no installer flow is tested (L1's), at least not with Alpine's ISOs, which
   lack the UEFI bootloader's packages (`grub-efi`, `dosfstools`) and would need the network or a package disk.
-- **Not built** (backlog "Machines as the unit, loose ends"): the quota message, a stored disk's background hash,
-  `svelte-check`.
+- **Not built** (backlog "Machines as the unit, loose ends"): the quota message, a stored disk's background hash.

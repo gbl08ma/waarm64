@@ -473,8 +473,6 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     put `{ h: await (await navigator.storage.getDirectory()).getFileHandle('d', { create: true }) }` into an object
     store, then get it. Check
     Chrome stable; if it reproduces there, report it upstream and keep handles out of IndexedDB off the record.
-  - `svelte-check` (another dependency) isn't used: tsc doesn't read the components; their compile is checked
-    (tools/svelte.ts, tests/dist.test.ts) but not their types.
   - The machine list doesn't show a suspended machine as suspended (it reads "off").
   - **Open disk… keeps no handle:** the first-run message's button and the Machines page's From a disk image… are a
     plain `<input type=file>` (main.ts `openDiskInput`), so the machine they make has a file disk without a handle,

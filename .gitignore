@@ -2,3 +2,4 @@
 /node_modules
 /bench/results/local
 /.claude/worktrees
+/tools/svelte-check/node_modules

@@ -20,8 +20,8 @@
   $effect(() => { audio.onChange = () => tick++; });
   // The guest's own changes: shown, not kept (the next machine starts at what the user chose).
   $effect(() => { audio.onMixer = (level, muted) => { [volume, on] = [Math.round(100 * level), !muted]; }; });
-  const waiting = $derived((tick, audio.waiting()));
-  const micState = $derived((tick, audio.micState));
+  const waiting = $derived((void tick, audio.waiting()));
+  const micState = $derived((void tick, audio.micState));
   const summary = $derived(waiting ? 'Sound: click to hear' : `${on ? 'Sound' : 'Sound (muted)'}${micState === 'on' ? ' · mic' : ''}`);
 
   $effect(() => { audio.setVolume(volume / 100, !on); });

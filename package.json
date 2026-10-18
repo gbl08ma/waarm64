@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning tools/start.js",
     "typecheck": "tsc --noEmit",
+    "svelte-check": "tools/svelte-check/node_modules/.bin/svelte-check --tsconfig ./tsconfig.svelte.json --fail-on-warnings --output human",
     "test": "node --disable-warning=ExperimentalWarning --test 'tests/**/*.test.ts'",
     "serve": "node --disable-warning=ExperimentalWarning tools/serve.ts",
     "dist": "node --disable-warning=ExperimentalWarning tools/dist.ts",
@@ -17,7 +18,8 @@
   "devDependencies": {
     "@types/node": "^26.6.2",
     "playwright-core": "^1.55.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "webpc-svelte-check": "file:tools/svelte-check"
   },
   "dependencies": {
     "@xterm/xterm": "^6.0.0",
