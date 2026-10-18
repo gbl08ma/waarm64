@@ -189,9 +189,10 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   The same shader's guest loads spend ~11% on the TLB's tag load (a translation memo in locals lost: [jit.md](jit.md)
   "Tried and not kept").
 - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a
-  third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread. **Compiling off the vCPU
-  thread** was measured and not built ([jit.md](jit.md) "Tried and not kept"); revisit with a GUI
-  guest (latency).
+  third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread (measured before the compile
+  worker). With a worker per vCPU, V8 compiles off the vCPU's thread: the JIT's compile worker
+  ([jit.md](jit.md) "Sharing"), built for the install stalls a GUI guest showed; the vCPU still
+  instantiates each module. Without the worker (round-robin, Node's runs, `?jit=nocw`) it compiles too.
 - **The transfer cache's costs in kernel-heavy phases** ([jit.md](jit.md) "Linking"): a miss costs
   a call to the shared miss function, a TLBI by VA a 16 KiB scan (the boot ~1% slower with it).
 - **The shared cache's leftovers** ([jit.md](jit.md) "Sharing"):
