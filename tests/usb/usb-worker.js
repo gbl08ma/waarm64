@@ -11,7 +11,7 @@ async function zero(dev) {
     const desc = await dev.controlTransferIn({ requestType: 'standard', recipient: 'device', request: 6, value: 0x0100, index: 0 }, 18);
     // source/sink: bulk IN sources (i % 63) (pattern 1), bulk OUT sinks.
     const inp = await dev.transferIn(1, 512);
-    const out = await dev.transferOut(2, new Uint8Array(512));
+    const out = await dev.transferOut(2, Uint8Array.from({ length: 512 }, (_, i) => i % 63)); // the sink checks pattern 1 too
     const vin = await dev.controlTransferIn({ requestType: 'vendor', recipient: 'device', request: 0x5c, value: 0, index: 0 }, 8);
     await dev.releaseInterface(0);
     // loopback: what goes out comes back.
@@ -21,6 +21,7 @@ async function zero(dev) {
     await dev.transferOut(2, msg);
     const back = await dev.transferIn(1, 512);
     await dev.releaseInterface(0);
+    await dev.selectConfiguration(1); // as the next test expects to find it
     return {
       configurations: dev.configurations.map((c) => c.configurationValue),
       descriptor: { status: desc.status, hex: hex(desc.data) },
