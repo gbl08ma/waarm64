@@ -11,7 +11,8 @@
 #   tests/usb/gadget.sh check          exit 0 when the rig can come up here, else print why and exit 1
 #
 # Gadgets (vendor 0x0525, NetChip, as Linux's own gadgets):
-#   zero      0525:a4a0 Gadget Zero as g_zero: configuration 1 source/sink, configuration 2 loopback; serial "webpc-zero"
+#   zero      0525:a4a0 Gadget Zero as g_zero: configuration 1 source/sink (pattern 1: i % 63), configuration 2
+#             loopback; serial "webpc-zero"
 #   zero-a, zero-b   two Gadget Zeros without a serial number, identical but for bcdDevice (the getDevices() order check)
 #   acm       0525:a4a7 a CDC ACM serial port as g_serial's ACM mode; serial "webpc-acm"
 #
@@ -68,13 +69,15 @@ install() {
   modinfo -n dummy_hcd > /dev/null 2>&1 || build_dummy
   local tmp
   tmp=$(mktemp -d)
-  # Device nodes for the user (an ssh session has no seat, so uaccess doesn't apply): our gadgets' usbfs nodes,
+  # Device nodes for the user (an ssh session has no seat, so uaccess doesn't apply): our gadgets' usbfs nodes, the
+  # ACM gadget's device-side tty (/dev/ttyGS*: the far end of the guest's serial port),
   # /dev/uhid, and the hidraw nodes of uhid's devices (tests/usb/uhid.ts).
   cat > "$tmp/rules" << 'EOF'
 # webpc's USB test rig (tests/usb/gadget.sh, tests/usb/uhid.ts)
 SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="0525", MODE="0666"
 KERNEL=="uhid", MODE="0666"
 SUBSYSTEM=="hidraw", DEVPATH=="/devices/virtual/misc/uhid/*", MODE="0666"
+SUBSYSTEM=="tty", KERNEL=="ttyGS*", MODE="0666"
 EOF
   # The host's class drivers would hold the gadgets' interfaces (WebUSB doesn't detach them, docs/plans/usb.md §2).
   printf '%s\n' '# webpc USB test rig: keep the gadgets free for WebUSB and QEMU (tests/usb/gadget.sh)' \
@@ -93,6 +96,9 @@ EOF
   sudo install -D -m 644 "$tmp/policy" "$POLICY"
   rm -r "$tmp"
   sudo udevadm control --reload
+  # Nodes that exist already take the rule now (a "change" doesn't reapply MODE to them; an "add" does).
+  sudo udevadm trigger --action=add --sysname-match='ttyGS*' --sysname-match=uhid --subsystem-match=hidraw
+  sudo udevadm settle
   echo "installed: dummy_hcd for $KVER, $RULES, $MODPROBE, $POLICY"
 }
 
@@ -137,6 +143,8 @@ make_gadget() {
         zero-b) w "$g/bcdDevice" 0x0102 ;;
       esac
       sudo mkdir "$g/functions/SourceSink.0" "$g/functions/Loopback.0"
+      # Bulk IN sources (i % 63) per packet, as usbtest.pattern=1 checks (the linux-usb guest's runs).
+      w "$g/functions/SourceSink.0/pattern" 1
       sudo mkdir -p "$g/configs/c.1/strings/0x409" "$g/configs/c.2/strings/0x409"
       w "$g/configs/c.1/strings/0x409/configuration" 'source/sink'
       w "$g/configs/c.2/strings/0x409/configuration" loopback
