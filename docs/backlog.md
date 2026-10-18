@@ -99,7 +99,7 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   precision FCVTL/FCVTN, FP compares, FRINTI, FMLA/FADD with zero lanes); with those inline the
   frame is 15.6× faster in Chromium on 1 vCPU (6,936 → 445 ms) and 18.6× on 4 (1,859 → 100 ms:
   10 frames a second), ~17× and ~14× native (`gl_llvmpipe_jit`, `bench/boot/REPORT.md` "M8:
-  llvmpipe"); with the V registers in locals 323 and 71 ms. Left: the lane checks (below), and sway
+  llvmpipe"); with the V registers in locals 323 and 71 ms. Left: the FP checks (below), and sway
   itself on the page again (the user's manual check). Not on graphics' path any more: 3D goes through
   virgl (plans/graphics.md §1); llvmpipe stays what guests without 3D fall back to.
 - **Per-module eviction, coldest first,** instead of whole-cache flushes ([jit.md](jit.md)
@@ -166,14 +166,23 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   more than one block (measured, ~1% at most): [jit.md](jit.md) "Tried and not kept". Not levers in
   that profile: TLB misses (~1% of a phase), the remaining helpers, the core's compiler (under 1%
   outside the boot).
-- **The vector FP fast paths' lane checks** (llvmpipe's shaders; `bench/boot/REPORT.md` "M8:
-  vector registers in locals"): with the V registers in locals, each inline vector FP
-  instruction's cost is mostly its check that every lane is on the fast path, reduced to an i32
-  per instruction (`all_true`: `uminv`, a move to a general register, a compare before the `if`;
-  ~18% of the hot shader's samples land on the move). Ideas: one check for a run of FP
-  instructions, its fallback re-running the run from saved inputs; cheaper masks (float compares
-  on `|x|` instead of exponent arithmetic). The same shader's guest loads spend ~11% on the TLB's
-  tag load (a translation memo in locals lost: [jit.md](jit.md) "Tried and not kept").
+- **The FP fast paths' remaining checks** (2026-10-18: `bench/interp/REPORT.md` "M8: every FP instruction
+  inline, and results, not operands"). Operand tests now run only under FZ, as a cheap denormal test; what's left
+  is the result test, the zero clauses and, per instruction, the `all_true` reduction and the `if`. With every check
+  forced true (wrong) the FP guest runs at ~1,755 MIPS against 1,238, and llvmpipe at 237 ms a frame against 276.
+  Ideas, by gain against work:
+  - **One check for a run** of FP instructions: AND the masks along the run, reduce and branch once, and on failure
+    restore the run's V registers from saved copies and replay it through the helpers. Runs end at memory,
+    integer and flag-setting instructions. Saves the reductions and branches, not the masks; needs v128 locals for
+    the copies.
+  - **Double FMA through a host fused op**: only relaxed-simd's `f64x2.relaxed_madd`, which may not fuse on every
+    host and tier; it needs a probe and a guarantee that Liftoff and TurboFan agree. The FP guest spent ~10% on the
+    double emulation in a cloud measurement; leave it unless a double-heavy workload needs it.
+  - **Scalar FP without the v128 round trip** (a scalar shadow local per V register, for chains like n-body and
+    Horner): V8 lowers `extract_lane` to one instruction and `v128.const 0` + `replace_lane` to about two on arm64,
+    so the gain looks small against the register cache's complexity; a ceiling test first.
+  The same shader's guest loads spend ~11% on the TLB's tag load (a translation memo in locals lost: [jit.md](jit.md)
+  "Tried and not kept").
 - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a
   third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread. **Compiling off the vCPU
   thread** was measured and not built ([jit.md](jit.md) "Tried and not kept"); revisit with a GUI
