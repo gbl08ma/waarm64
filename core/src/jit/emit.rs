@@ -3341,9 +3341,23 @@ mod tests {
         ));
         // dup v0.16b, w1: i8x16.splat of the 32-bit register.
         assert!(has(&emit(0x4e010c20, 0).unwrap(), &[0xfd, 0x0f]));
-        // mul v0.16b (no i8x16.mul) and pmul: helper calls, nothing emitted.
-        assert_eq!(emit(0x4e229c20, 0), None);
-        assert_eq!(emit(0x6e229c20, 0), None);
+        // mul v0.16b (no i8x16.mul): the 16-bit products' even bytes
+        // (i16x8.extmul_low_i8x16_u, …, i8x16.shuffle 0, 2, 4 …).
+        let b = emit(0x4e229c20, 0).unwrap();
+        assert!(has(&b, &[0xfd, 0x9e, 1]));
+        assert!(has(&b, &[0xfd, 0x0d, 0, 2, 4, 6]));
+        // pmul v0.16b: shifted partial products (i8x16.shl).
+        assert!(has(&emit(0x6e229c20, 0).unwrap(), &[0xfd, 0x6b]));
+        // ld2 {v0.4s, v1.4s}, [x1]: two v128.loads, then shuffles of lanes 0, 2,
+        // 4, 6 (bytes 0–3, 8–11 …) and 1, 3, 5, 7.
+        let b = emit_flushed(0x4c408820);
+        assert!(has(&b, &[0xfd, 0x0d, 0, 1, 2, 3, 8, 9, 10, 11]));
+        assert!(has(&b, &[0xfd, 0x0d, 4, 5, 6, 7, 12, 13, 14, 15]));
+        // crc32cb w0, w1, w2: one table lookup, at CRC-32C's table.
+        let b = emit(0x1ac25020, 0).unwrap();
+        let mut load = vec![0x28, 2];
+        crate::jit::wasm::uleb(&mut load, CRC_TABLES[1].as_ptr() as usize as u32 as u64);
+        assert!(has(&b, &load));
     }
 
     #[test]
