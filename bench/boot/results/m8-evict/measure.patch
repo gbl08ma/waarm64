@@ -1,0 +1,472 @@
+diff --git a/bench/gpu/guest-session.ts b/bench/gpu/guest-session.ts
+index edb16e6..3b3a3f4 100644
+--- a/bench/gpu/guest-session.ts
++++ b/bench/gpu/guest-session.ts
+@@ -2,7 +2,7 @@
+ // bench/gpu/firefox-load.ts share. Headless Chromium, the page with `?displaystats`, a disk opened from a file, root
+ // on the serial terminal, keys typed on the screen, and `load()`: a phase measured over N s on both sides (the guest's
+ // /proc/stat and per-thread CPU, the display's and the renderer's stats, the emulator's counters).
+-import { writeFileSync } from 'node:fs';
++import { appendFileSync, writeFileSync } from 'node:fs';
+ import { relative, resolve } from 'node:path';
+ import { chromiumEnv } from '../../tools/nosme.ts';
+ import { chromium, type Page } from 'playwright-core';
+@@ -104,6 +104,7 @@ export async function openSession(o: SessionOptions) {
+     const t = m.text();
+     if (t.startsWith('virgl-debug ')) return void debugLines.push(t.slice(12));
+     if (t.startsWith('webpc-slow ')) return void slow.push(t.slice(11));
++    if (t.startsWith('webpc-evict ')) return void appendFileSync(`${o.out}/evict.txt`, t.slice(12) + '\n'); // EVICT-MEASURE
+     if (t.startsWith('virgl')) warnings.set(t.slice(0, 200), (warnings.get(t.slice(0, 200)) ?? 0) + 1);
+   });
+   const t0 = performance.now();
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 75fc4a2..f27d3cb 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -171,6 +171,10 @@ pub struct Region {
+     /// that call. When X30 holds it, the return is an edge to the member
+     /// there instead of an indirect branch.
+     pub returns: Vec<(u64, u64)>,
++    /// EVICT-MEASURE (diagnostic, not for commit): the prologue stores the
++    /// table's tick (hot word `.1 / 4`) at hot-word offset `.0`, its slot's
++    /// last-entered time.
++    pub mark: Option<(u32, u32)>,
+ }
+ 
+ impl From<Block> for Region {
+@@ -179,6 +183,7 @@ impl From<Block> for Region {
+             blocks: vec![b],
+             tier: None,
+             returns: vec![],
++            mark: None,
+         }
+     }
+ }
+@@ -189,6 +194,7 @@ impl Region {
+             blocks,
+             tier: None,
+             returns: vec![],
++            mark: None,
+         }
+     }
+ 
+@@ -418,6 +424,7 @@ pub fn forward(
+         blocks: w.post,
+         tier: None,
+         returns: w.returns,
++        mark: None,
+     }
+ }
+ 
+@@ -767,6 +774,12 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+     let mut bad = false;
+     let mut inl = 0;
+     c.local_get(0).i64_load(emit::PC).local_set(1);
++    if let Some((at, tick)) = r.mark {
++        // EVICT-MEASURE: hot[at / 4] = hot[tick / 4].
++        c.local_get(0).i32_load(emit::HOT_PTR);
++        c.local_get(0).i32_load(emit::HOT_PTR).i32_load(tick);
++        c.memarg(0x36, 2, at); // i32.store
++    }
+     if let (Some(word), Some(hot)) = (r.tier, e.hot) {
+         emit::tier_up(&mut c, word, r.blocks[0].key, e.bt, hot);
+     }
+@@ -1712,6 +1725,7 @@ mod tests {
+                 .into(),
+             tier: None,
+             returns: vec![],
++            mark: None,
+         };
+         // 0x7000 at PA 0x3000, 0x8000 at PA 0x9000, and back in the head's page.
+         let r = mmu([0x3000, 0x9000, 0x3100]);
+@@ -1797,6 +1811,7 @@ mod tests {
+             }],
+             tier: Some(0x2000),
+             returns: vec![],
++            mark: None,
+         };
+         let e = module(
+             &[r],
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index fe73e1d..902399b 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -368,6 +368,7 @@ pub struct Cache {
+     /// EL1's follows), once a table has installed it: the same in every
+     /// table, as is every slot's.
+     xmiss: Option<u32>,
++    ev: Evict,
+ }
+ 
+ /// A module installed since the last flush.
+@@ -393,6 +394,37 @@ struct Seen {
+     all: bool,
+     /// The entries of `Cache::ival_log` it has seen (an absolute index).
+     ival: u64,
++    /// EVICT-MEASURE: the table's hot words (its slots' last-entered ticks
++    /// from `capacity` on, its tick at `2 * capacity`).
++    hot: usize,
++}
++
++/// EVICT-MEASURE (diagnostic, not for commit): a module of this epoch.
++struct EvMod {
++    slot: u32,
++    n: u32,
++    bytes: u64,
++    /// Its install's tick (100 ms).
++    born: u32,
++    /// The modules it imports from; negative (`!id`): the target hadn't been
++    /// entered for `COLD_AT_COMPILE` ticks when this one was compiled.
++    imports: Vec<i64>,
++}
++
++#[derive(Default)]
++struct Evict {
++    mods: Vec<EvMod>,
++    /// By slot: its module + 1.
++    owner: Vec<u32>,
++    last: u32,
++    dump: String,
++}
++
++/// EVICT-MEASURE: 15 s, the soft-fault design's "cold at compile time".
++const COLD_AT_COMPILE: u32 = 150;
++
++fn ev_tick() -> u32 {
++    (now_ns() / 100_000_000) as u32
+ }
+ 
+ /// A loop region compiled for a head compiled alone: its table index, the
+@@ -435,9 +467,111 @@ impl Cache {
+             ready: Arc::new(AtomicU32::new(0)),
+             tables: Vec::new(),
+             xmiss: None,
++            ev: Evict {
++                owner: vec![0; cfg.capacity as usize],
++                ..Evict::default()
++            },
+         }
+     }
+ 
++    /// EVICT-MEASURE: the tick slot `s` was last entered in any table (0: never).
++    fn ev_last(&self, s: u32) -> u32 {
++        let cap = self.cfg.capacity as usize;
++        self.tables
++            .iter()
++            .filter(|t| t.hot != 0)
++            // SAFETY: diagnostic: a table's hot words live as long as its
++            // `Jit` (the VM's), and a racy u32 read is only stale.
++            .map(|t| unsafe {
++                core::ptr::read_volatile((t.hot as *const u32).add(cap + s as usize))
++            })
++            .max()
++            .unwrap_or(0)
++    }
++
++    /// EVICT-MEASURE: a module's last entry (any of its slots) or its install.
++    fn ev_used(&self, m: &EvMod) -> u32 {
++        (m.slot..m.slot + m.n)
++            .map(|s| self.ev_last(s))
++            .max()
++            .unwrap_or(0)
++            .max(m.born)
++    }
++
++    /// EVICT-MEASURE: what coldest-first eviction could free now: for each
++    /// threshold, the bytes of modules not entered for it, and of those whose
++    /// importers (transitively) are all cold too, with every import and with
++    /// imports of targets cold at compile time not counted (jump-cache links
++    /// instead). `raw` also lists every module.
++    fn ev_report(&mut self, why: &str, raw: bool) {
++        use core::fmt::Write;
++        let now = ev_tick();
++        let used: Vec<u32> = self.ev.mods.iter().map(|m| self.ev_used(m)).collect();
++        let n = self.ev.mods.len();
++        let total: u64 = self.ev.mods.iter().map(|m| m.bytes).sum();
++        let mut importers: Vec<Vec<(usize, bool)>> = vec![Vec::new(); n];
++        for (i, m) in self.ev.mods.iter().enumerate() {
++            for &t in &m.imports {
++                let (t, cold) = if t < 0 {
++                    (!t as usize, true)
++                } else {
++                    (t as usize, false)
++                };
++                importers[t].push((i, cold));
++            }
++        }
++        let mut line = format!(
++            "E {why} t={} live={} mods={n} total={total}",
++            now, self.live_bytes
++        );
++        for secs in [5u32, 15, 30, 60, 120] {
++            let cold: Vec<bool> = used
++                .iter()
++                .map(|&u| now.saturating_sub(u) >= secs * 10)
++                .collect();
++            let mut free = [vec![false; n], vec![false; n]];
++            for rule in 0..2 {
++                for i in (0..n).rev() {
++                    free[rule][i] = cold[i]
++                        && importers[i]
++                            .iter()
++                            .all(|&(j, c)| (rule == 1 && c) || free[rule][j]);
++                }
++            }
++            let sum = |f: &dyn Fn(usize) -> bool| -> u64 {
++                (0..n)
++                    .filter(|&i| f(i))
++                    .map(|i| self.ev.mods[i].bytes)
++                    .sum()
++            };
++            let _ = write!(
++                line,
++                " c{secs}={}/{}/{}",
++                sum(&|i| cold[i]),
++                sum(&|i| free[0][i]),
++                sum(&|i| free[1][i])
++            );
++        }
++        line.push('\n');
++        self.ev.dump.push_str(&line);
++        if raw {
++            for (i, m) in self.ev.mods.iter().enumerate() {
++                let imports: Vec<String> = m.imports.iter().map(|t| t.to_string()).collect();
++                let _ = writeln!(
++                    self.ev.dump,
++                    "M {i} {} {} {} {} {}",
++                    m.bytes,
++                    m.born,
++                    used[i],
++                    m.n,
++                    imports.join(",")
++                );
++            }
++            self.ev.dump.push_str("M end\n");
++        }
++        self.ev.last = now;
++    }
++
+     /// `n` consecutive slots for a module; flushes the cache first if they
+     /// don't fit (counted in `s`).
+     fn alloc(&mut self, n: u32, s: &mut Stats) -> u32 {
+@@ -451,6 +585,7 @@ impl Cache {
+     /// Drops every block (their slots are reused; the modules are left to the
+     /// GC) and the pending batch.
+     pub fn flush(&mut self, s: &mut Stats) {
++        self.ev_drop("flush");
+         self.drop_all();
+         s.flushes += 1;
+         if self.cfg.threshold_max > self.cfg.threshold {
+@@ -475,6 +610,15 @@ impl Cache {
+         self.threshold = self.floor.checked_shl(shift).unwrap_or(max).min(max);
+     }
+ 
++    /// EVICT-MEASURE: the report of an epoch that ends (`why`), and a new one.
++    fn ev_drop(&mut self, why: &str) {
++        if !self.ev.mods.is_empty() {
++            self.ev_report(why, why == "flush");
++            self.ev.mods.clear();
++            self.ev.owner.fill(0);
++        }
++    }
++
+     fn drop_all(&mut self) {
+         self.drops.fetch_add(1, Ordering::Relaxed);
+         self.map.clear();
+@@ -511,6 +655,7 @@ impl Cache {
+         let end = self.ival_base + self.ival_log.len() as u64;
+         self.ivals.store(end, Ordering::Relaxed);
+         if pa == u64::MAX {
++            self.ev_drop("iallu");
+             self.drop_all();
+         } else if let Some(mut keys) = self.pages.remove(&(pa >> 12)) {
+             // With the blocks that chain to them, transitively: their code
+@@ -809,6 +954,10 @@ impl Cache {
+                 tiers.push(w);
+             }
+         }
++        let cap = self.cfg.capacity;
++        for (k, r) in regions.iter_mut().enumerate() {
++            r.mark = Some((4 * (cap + slot + k as u32), 8 * cap));
++        }
+         let map = &self.map;
+         let compiled = |k| map.get(&k).filter(|i| i.idx != 0).map(|i| (i.idx, i.len));
+         let block::Emitted {
+@@ -850,7 +999,9 @@ impl Cache {
+         s.cond_computed += counts.cond_computed;
+         s.cond_memory += counts.cond_memory;
+         (s.modules, s.blocks, s.bytes) = (s.modules + 1, s.blocks + n as u64, s.bytes + len);
++        let mut ev_links: Vec<u64> = Vec::new();
+         for (k, ((r, inl), links)) in regions.iter().zip(inl).zip(links).enumerate() {
++            let links_copy = links.clone();
+             let size: u32 = r.blocks.iter().map(|b| b.words.len() as u32).sum();
+             let s = &mut t.stats;
+             (s.inline, s.helpers) = (s.inline + inl as u64, s.helpers + (size - inl) as u64);
+@@ -885,6 +1036,43 @@ impl Cache {
+                     }
+                 }
+             }
++            ev_links.extend(links_copy);
++        }
++        // EVICT-MEASURE: the module, its imports and their state now.
++        let id = self.ev.mods.len() as u32;
++        let now = ev_tick();
++        let mut imports: Vec<i64> = Vec::new();
++        for k in ev_links {
++            let Some(i) = self.map.get(&k).filter(|i| i.idx != 0) else {
++                continue;
++            };
++            let s = i.idx - xmiss;
++            let Some(&o) = self.ev.owner.get(s as usize).filter(|&&o| o != 0) else {
++                continue;
++            };
++            let o = o - 1;
++            if o == id || imports.iter().any(|&t| t == o as i64 || t == !(o as i64)) {
++                continue;
++            }
++            let u = self.ev_used(&self.ev.mods[o as usize]);
++            imports.push(if now.saturating_sub(u) >= COLD_AT_COMPILE {
++                !(o as i64)
++            } else {
++                o as i64
++            });
++        }
++        for s in slot..slot + n {
++            self.ev.owner[s as usize] = id + 1;
++        }
++        self.ev.mods.push(EvMod {
++            slot,
++            n,
++            bytes: len,
++            born: now,
++            imports,
++        });
++        if now.saturating_sub(self.ev.last) >= 100 {
++            self.ev_report("tick", false);
+         }
+         Some(idx)
+     }
+@@ -939,6 +1127,8 @@ pub struct Table {
+     /// the last report of them ([`Table::helper_report`]).
+     helper_ops: Vec<u64>,
+     report: String,
++    /// EVICT-MEASURE: the cache's report lines, taken for `helper_report`.
++    pub ev_extra: String,
+     /// Steps dispatched so far (the batch timeout's clock), and the cache's
+     /// pending batch and this clock when this table first saw it pending.
+     clock: u64,
+@@ -959,7 +1149,7 @@ impl Table {
+             ival: c.ival_base + c.ival_log.len() as u64,
+             ..Seen::default()
+         });
+-        Table {
++        let t = Table {
+             id: c.tables.len() - 1,
+             cfg: c.cfg,
+             jc: vec![JC_EMPTY; JC]
+@@ -968,7 +1158,8 @@ impl Table {
+                 .ok()
+                 .expect("JC entries"),
+             jc_used: Vec::new(),
+-            hot: vec![0; c.cfg.capacity as usize].into_boxed_slice(),
++            // EVICT-MEASURE: the slots' last-entered ticks after the hot words, then the tick.
++            hot: vec![0; 2 * c.cfg.capacity as usize + 1].into_boxed_slice(),
+             epoch: c.epoch,
+             installed: 0,
+             drops: 0,
+@@ -982,12 +1173,15 @@ impl Table {
+             waiting: 0,
+             helper_ops: vec![0; crate::decode::Op::ALL.len()],
+             report: String::new(),
++            ev_extra: String::new(),
+             clock: 0,
+             since: (u64::MAX, 0),
+             stats: Stats::default(),
+             dec: interp::block::Cache::new(c.cfg.decoded as usize),
+             ivals: c.ival_base + c.ival_log.len() as u64,
+-        }
++        };
++        c.tables[t.id].hot = t.hot.as_ptr() as usize;
++        t
+     }
+ 
+     /// The transfer cache's miss functions, in slots 0 and 1 (once per table;
+@@ -1220,6 +1414,7 @@ impl Table {
+             .collect();
+         ops.sort_by_key(|a| core::cmp::Reverse(a.0));
+         self.report = ops.iter().map(|(n, op)| format!("{op:?} {n}\n")).collect();
++        self.report.push_str(&core::mem::take(&mut self.ev_extra));
+         self.report.push('\0');
+         self.report.as_ptr()
+     }
+@@ -1356,6 +1551,13 @@ impl Jit {
+         self.install();
+     }
+ 
++    /// EVICT-MEASURE: moves the cache's report lines to this table's next
++    /// `helper_report`.
++    pub fn ev_take(&mut self) {
++        let d = core::mem::take(&mut self.cache.lock().ev.dump);
++        self.table.ev_extra.push_str(&d);
++    }
++
+     /// [`Cache::invalidate`].
+     pub fn invalidate(&mut self, pa: u64) {
+         self.cache.lock().invalidate(pa, &mut self.table.stats);
+@@ -1455,6 +1657,9 @@ pub unsafe fn steps(v: *mut Vcpu, mem: &Mem, n: u64) -> (u64, Option<Exit>) {
+     // SAFETY: guaranteed by the caller.
+     let vr = unsafe { &mut *v };
+     let jit = vr.jit.cache.as_deref_mut().expect("a JIT vCPU");
++    // EVICT-MEASURE: the table's tick, which its blocks' prologues store.
++    let cap = jit.table.cfg.capacity as usize;
++    jit.table.hot[2 * cap] = ev_tick();
+     (vr.jit.jc, vr.jit.hot) = jit.table.ptrs();
+     let mut done = 0;
+     while done < n {
+diff --git a/core/src/lib.rs b/core/src/lib.rs
+index 6f5b051..d5db122 100644
+--- a/core/src/lib.rs
++++ b/core/src/lib.rs
+@@ -310,7 +310,10 @@ pub unsafe extern "C" fn jit_helper_report(v: *mut mmu::Vcpu) -> *const u8 {
+         .jit
+         .cache
+         .as_deref_mut()
+-        .map_or(core::ptr::null(), |j| j.table.helper_report())
++        .map_or(core::ptr::null(), |j| {
++            j.ev_take(); // EVICT-MEASURE
++            j.table.helper_report()
++        })
+ }
+ 
+ // The whole-VM ABI (docs/abi.md). Every `vm` argument
+diff --git a/web/vcpu-worker.ts b/web/vcpu-worker.ts
+index b6652df..ceb3dbd 100644
+--- a/web/vcpu-worker.ts
++++ b/web/vcpu-worker.ts
+@@ -47,6 +47,8 @@ type Ex = {
+   vm_run_cpu(vm: number, cpu: number, budget: bigint): number;
+   vm_exit_cpu(vm: number, cpu: number): number;
+   vm_cpu_signal(vm: number, i: number): number;
++  vm_cpu(vm: number, i: number): number;
++  jit_helper_report(v: number): number;
+ };
+ 
+ /** Steps per `vm_run_cpu` call: it returns early on anything the worker handles. */
+@@ -97,7 +99,17 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
+     if (w.async) await w.value;
+     yielded = performance.now();
+   };
++  // EVICT-MEASURE (diagnostic, not for commit): the JIT cache's eviction report lines (`E …`, `M …`), every 5 s.
++  let evictAt = performance.now();
++  const evict = () => {
++    const p = ex.jit_helper_report(ex.vm_cpu(j.vm, j.cpu));
++    if (!p) return;
++    const b = new Uint8Array(mem.buffer, p);
++    const t = new TextDecoder().decode(b.slice(0, b.indexOf(0)));
++    for (const l of t.split('\n')) if (l.startsWith('E ') || l.startsWith('M ')) console.debug(`webpc-evict ${Date.now()} ${l}`);
++  };
+   for (;;) {
++    if (performance.now() - evictAt > 5000) { evictAt = performance.now(); evict(); }
+     live?.enter();
+     const kind = ex.vm_run_cpu(j.vm, j.cpu, BUDGET);
+     live?.leave();
