@@ -1,41 +1,36 @@
 # M8 USB: handover
 
 The plan is [docs/plans/usb.md](docs/plans/usb.md); the user started it on 2026-10-18 ("drive it at least
-through U4"; U5 needs their hardware, U6 their OK). This file carries the work between sessions.
+through U4"; U5 needs their hardware, U6 their OK). How it works now is [docs/usb.md](docs/usb.md). This file
+carries the work between sessions.
 
-## Lanes (2026-10-18)
+## State (2026-10-18)
 
-The work runs in four lanes, each on its own branch off `worktree-usb`, merged back there:
+**U0–U4 are done**, and U5 has begun with the user's devices.
 
-| Lane | Steps | Owns |
-|---|---|---|
-| gates | U0 | the host test devices (dummy_hcd gadgets, the uhid rig), Chromium's WebUSB and WebHID in workers, the guest kernels' `xhci-plat-hcd`, the QEMU oracle, `bench/usb/REPORT.md` |
-| xhci | U1, U2 | `core/src/xhci.rs`, the DT node, `VmConfig.xhci`, the ABI, snapshots, `web/usb.ts` (the glue), Gadget Zero and its native twin, the guest's `testusb` |
-| backends | U3, U3h | `web/webusb.ts` (passthrough), `web/webhid.ts` and the report-descriptor encoder, their Node tests |
-| page | U4 | `usb` in the record and the shape, remembered devices, the USB tab, the wizard, the toolbar menu, the device locks, Snapshot and Suspend emptying the ports |
+- **U0, the gates:** plans/usb.md "U0 findings". The dev VM's host rigs (dummy_hcd gadgets, uhid) are
+  `tests/usb/gadget.sh`; Chromium's managed policy grants the test origins; the QEMU oracle is
+  `tests/usb/oracle.sh`; the WebUSB sizing is `bench/usb/REPORT.md`.
+- **U1 and U2, the controller and Gadget Zero:** `core/src/xhci.rs` (DT node at `0x0c00_0000`, INTID 80, off unless
+  `VmConfig.xhci`; ABI 38), the glue `web/usb.ts`, Gadget Zero with its native twin. The `usb-hubs` and `usb`
+  guests (`images/build.sh linux-usb`) take exact steps in every runner, hot-plug included. A read-only review's
+  eleven guest-triggerable findings are fixed, each with a test (`core/src/xhci/review.rs`).
+- **U3 and U3h, the backends:** the WebUSB passthrough (`web/webusb.ts`) and the WebHID device
+  (`web/webhid.ts`, `web/hid-descriptor.ts`), round-tripped against Chromium's recorded parses. Through the rigs
+  (`scripts/ci-usb.sh`, image `linux-usbhost`): the guest's `testusb -a` on the dummy_hcd Gadget Zero, `cdc_acm`
+  on the ACM gadget, a uhid device through WebHID.
+- **U4, the page:** `usb` in the record and the shape (off machines keep their hash), remembered devices, the USB
+  tab, the wizard, the toolbar menu, device locks, Snapshot and Suspend emptying the ports, the problems with
+  their remedies.
+- **U5 so far:** plans/usb.md "U5 findings": a NESDR (RTL-SDR) at its full 4.8 and 6.4 MB/s, an FT232R echoing
+  at 3 Mbaud, a wired Xbox controller through `xpad`, on the Mac mini through Chrome for Testing
+  (docs/testing.md "USB: real devices on the Mac").
 
-The contract between them is `web/usb-device.ts`: the `UsbDevice` interface every device implements,
-and the page ↔ device worker messages. Change it in one lane only with the others told.
+## Next
 
-## State
-
-**xhci lane (U1, U2): done** on `usb-xhci-lane` ([docs/usb.md](docs/usb.md) "The controller", "The backend
-protocol", "Virtual devices", "The usb guest"):
-- The controller: `core/src/xhci.rs`, the `generic-xhci` DT node at `0x0c00_0000` (INTID 80), `VmConfig.xhci`
-  and `vm_xhci` (ABI 38). It is off by default, so no other guest's steps move. TD completions come at least
-  125 µs after the doorbell unless the machine idles (`xhci::LATENCY_NS`: without it, usbtest's unlink test
-  starved process context). Snapshots need its ports empty.
-- The protocol and the glue: `web/usb.ts`, with the opener registry (`registerUsbOpener`). The device worker
-  registers WebUSB's and WebHID's openers. bootVm's `usb: {port?, attach?, events?}` turns it on. Gadget Zero
-  (`web/usb-gadget-zero.ts`) is built on `web/usb-virtual.ts`, with its native twin in
-  `core/tests/common/usb.rs`.
-- The test kernel is `images/build.sh linux-usb` (it boots on QEMU's `qemu-xhci` too). Its two runs, with
-  steps in tests/steps.txt:
-  - `usb-hubs` (23,701,201)
-  - `usb` (143,567,602): `testusb -a` against a high-speed and a super-speed Gadget Zero, unplugged at 80M
-    and replugged at 100M
-  
-  Both run natively, in Node and in Chromium (interpreter and JIT). Parallel SMP runs a clean pass, natively
-  and in Node. A planted short-packet bug was caught by testusb and the unit tests.
-- Left: IMOD moderation, isochronous devices (U6), the realtime Stop Endpoint window (docs/backlog.md "USB").
-  The QEMU oracle comparison of event order is the gates lane's.
+- **U5, the rest of its list** (plans/usb.md §6), with the user's hardware: an Android phone, a CDC-ACM board with
+  the host driver unbound, `dfu-util`, a sigrok analyser's re-enumeration, WebHID game pads (a DualSense, a
+  Switch Pro), a Stream Deck, VIA. Also from the backends lane: whether `device.reset()` loses a real device,
+  `receiveFeatureReport`'s framing on macOS and Windows, HID drivers that patch descriptors by their bytes.
+- **U6** needs the user's OK: isochronous transfers, the USB keyboard for EDK2.
+- Loose ends are in docs/backlog.md "USB".
