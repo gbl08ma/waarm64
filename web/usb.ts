@@ -12,6 +12,7 @@
 
 import type { UsbDevice, UsbFromWorker, UsbIdentity, UsbOpener, UsbProblem, UsbResult, UsbSpeed, UsbToWorker, UsbTransfer, UsbVirtual } from './usb-device.ts';
 import { GadgetZero } from './usb-gadget-zero.ts';
+import { UsbKeyboard } from './usb-keyboard.ts';
 
 // xhci::XhciShared (core/src/xhci.rs): events, then two virtio::WordRings of 4096 words.
 const RING_WORDS = 4096;
@@ -44,6 +45,7 @@ export function registerUsbOpener(api: 'usb' | 'hid', open: UsbOpener) {
 /** A virtual device of ours by its description (`UsbVirtual`). */
 export function virtualDevice(d: UsbVirtual): UsbDevice {
   if (d.kind === 'gadget-zero') return new GadgetZero({ speed: d.speed, pattern: d.pattern, serial: d.serial });
+  if (d.kind === 'keyboard') return new UsbKeyboard();
   throw new Error(`no virtual USB device ${(d as { kind: string }).kind}`);
 }
 
@@ -98,6 +100,13 @@ export class Usb {
   private message(m: UsbToWorker) {
     if (m?.type === 'usb-attach') void this.attach(m.connector, m.device);
     else if (m?.type === 'usb-detach') this.detach(m.connector, 'page');
+    else if (m?.type === 'usb-key') {
+      const dev = this.plugged[m.connector]?.dev;
+      if (dev instanceof UsbKeyboard) {
+        if (m.code) dev.key(m.code, m.down);
+        else dev.releaseAll();
+      }
+    }
   }
 
   /**

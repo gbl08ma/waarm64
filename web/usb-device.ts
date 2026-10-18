@@ -89,12 +89,17 @@ export type UsbOpener = (identity: UsbIdentity, ctx: UsbOpenerContext) => Promis
  * (default high), its source's and sink's data pattern (0 zeros, the default as Linux's g_zero; 1 the mod-63 bytes,
  * usbtest's `pattern=1`) and its serial number.
  */
-export type UsbVirtual = { api: 'virtual'; kind: 'gadget-zero'; speed?: UsbSpeed; pattern?: 0 | 1; serial?: string };
+export type UsbVirtual =
+  | { api: 'virtual'; kind: 'gadget-zero'; speed?: UsbSpeed; pattern?: 0 | 1; serial?: string }
+  /** The built-in boot keyboard (web/usb-keyboard.ts), fed by `usb-key` messages: the firmware's keyboard. */
+  | { api: 'virtual'; kind: 'keyboard' };
 
 /** Root connectors are numbered 0–3; each has a USB 2 and a USB 3 port behind it (docs/plans/usb.md §4). */
 export type UsbToWorker =
   | { type: 'usb-attach'; connector: number; device: UsbIdentity | UsbVirtual }
-  | { type: 'usb-detach'; connector: number };
+  | { type: 'usb-detach'; connector: number }
+  /** A key of the page's (`KeyboardEvent.code`) for the device on `connector` (the built-in keyboard); no answer. `code` '' releases every key. */
+  | { type: 'usb-key'; connector: number; code: string; down: boolean };
 
 export type UsbFromWorker =
   | { type: 'usb-state'; connector: number; state: 'attached'; device: UsbIdentity | UsbVirtual; speed: UsbSpeed; problems?: UsbProblem[] }
