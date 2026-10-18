@@ -1,7 +1,8 @@
 # USB devices through WebUSB and WebHID
 
 **Status:** proposed 2026-10-15; WebHID added 2026-10-18. **U0–U4 built 2026-10-18** (how it works now:
-[docs/usb.md](../usb.md)); U5 has begun with the user's devices ("U5 findings"), and U6 waits for the user's OK.
+[docs/usb.md](../usb.md)); **U5 closed 2026-10-18** with the user's devices ("U5 findings"; the rest of its list,
+untried, is in backlog.md "USB"), and U6 waits for the user's OK.
 It answers the question "could
 the user attach any USB device plugged into their computer to the guest, through WebUSB?". **Yes, for most devices
 that matter here.** The guest gets an emulated xHCI controller, and each attached device is passed through to
@@ -457,7 +458,8 @@ restores onto a machine whether or not a device is plugged in. Devices are the m
     and Bluetooth), a Switch Pro controller (hid-nintendo), a Stream Deck, a keyboard's VIA configuration, a UPS
     (`upower` or NUT)
 
-  What fails becomes a backlog line or a fix.
+  What fails becomes a backlog line or a fix. **Closed 2026-10-18** with the devices the user has: an RTL-SDR, an
+  FTDI adapter and a wired Xbox controller ("U5 findings"); the rest is in backlog.md "USB".
 - **U6 (optional, its own OK):** isochronous transfers, and the USB keyboard for EDK2 (§4, "Virtual devices").
 
 ## U0 findings (2026-10-18)

@@ -665,16 +665,25 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 - **WebHID devices whose drivers patch the original descriptor** by its bytes or size (`report_fixup`) see
   our encoding instead. A table of known original descriptors keyed by vendor and product could serve
-  them their real bytes when its parse matches WebHID's (plans/usb.md §8). Found per device in U5.
+  them their real bytes when its parse matches WebHID's (plans/usb.md §8). No such device has been tried yet.
 - **WebUSB's halts are emulated:** SET_FEATURE(ENDPOINT_HALT) never reaches the device (Chromium refuses
   it), so a device-side function that tests its own halt (rare outside usbtest) sees none. Only the
   guest's view is a halted endpoint (docs/usb.md "The WebUSB passthrough").
 - **WebHID `receiveFeatureReport`'s framing** (the ID byte first with IDs) was recorded on Linux. Check it
-  on macOS and Windows in U5.
+  on macOS and Windows when a WebHID device is at hand there.
 - **WebUSB reset** re-claims what it can after `device.reset()`. On hosts where the reset re-enumerates,
-  WebUSB loses the device and the backend reports it gone. Measure which hosts do that (U3, U5).
-- **The WebUSB fixtures are transcribed** (`tests/usb/webusb-fixtures.ts`). Replace them with real
-  `lsusb -v` and raw dumps of the user's devices in U5, which also checks the speed heuristic.
+  WebUSB loses the device and the backend reports it gone. On Linux the interfaces are released before the
+  reset and claimed again after (a reset with them claimed leaves Chromium's claims stale: docs/usb.md);
+  which hosts re-enumerate on a reset isn't measured.
+- **Most WebUSB fixtures are still transcribed** (`tests/usb/webusb-fixtures.ts`): the FT232R, the NESDR and
+  a wired Xbox controller are recorded from real devices (U5); the CP2102, the Pico, the Android composite,
+  DAPLink, FX3 and USBasp are written from documentation. Replace each when such a device is at hand.
+- **U5's list beyond the devices at hand is untested** (closed 2026-10-18 with an RTL-SDR, an FT232R and a
+  wired Xbox controller, plans/usb.md "U5 findings"): an Android phone (adb, fastboot after a reboot, the
+  re-enumeration's new permission), a CDC-ACM board with the host's driver unbound, `dfu-util`, a sigrok
+  analyser's firmware upload, and through WebHID a DualSense or DualShock 4 (USB and Bluetooth), a Switch
+  Pro controller, a Stream Deck, a keyboard's VIA configuration and a UPS. Only the in-VM rigs cover the
+  WebHID path end to end so far.
 - **The controller's IMOD doesn't moderate:** the register is kept and interrupts aren't delayed. The
   completion latency (`xhci::LATENCY_NS`) does what the guest needed (docs/usb.md "Latency"); real
   moderation would need a deadline in the run loops.

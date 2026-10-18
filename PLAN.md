@@ -215,7 +215,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     layouts; USB devices from the user's computer through WebUSB and WebHID (an xHCI, a
     passthrough backend and an emulated HID device: [docs/plans/usb.md](docs/plans/usb.md)): **U0–U4 done
     (2026-10-18)**, the controller off unless a machine has it (new machines do), its tests' rigs in
-    `scripts/ci-usb.sh`; U5 has begun with the user's devices (an RTL-SDR at its full rate, an FT232R, a wired Xbox
+    `scripts/ci-usb.sh`; U5 closed with the user's devices (an RTL-SDR at its full rate, an FT232R, a wired Xbox
     controller), U6 (isochronous, EDK2's keyboard) waits for the user's OK. `M8-USB-HANDOVER.md`.
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save
     snapshot writes the running machine to a file the user keeps (Debian: 175 MB, the machine
