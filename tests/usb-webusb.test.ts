@@ -422,3 +422,27 @@ test('strings outside the cache pass through (a Microsoft OS string, an index on
   assert.equal(dev.log.at(-1), 'get 3:238:0');
   void str;
 });
+
+test('SET_FEATURE(ENDPOINT_HALT) is ours (WebUSB refuses it): TDs stall and GET_STATUS says halted until CLEAR_FEATURE; endpoint 0 is answered here', async () => {
+  const { dev, p } = await open(fx('FTDI'));
+  const mark = dev.log.length;
+  assert.equal((await control(p, { requestType: 2, request: 3, value: 0, index: 0x81, length: 0 })).code, 'success');
+  assert.equal(submit(p, { ep: 0x81, type: 'bulk', length: 64 }).results[0].code, 'stall');
+  same(bytes(await control(p, { requestType: 0x82, request: 0, value: 0, index: 0x81, length: 2 })), Uint8Array.of(1, 0), 'halted status');
+  same(bytes(await control(p, { requestType: 0x82, request: 0, value: 0, index: 0, length: 2 })), Uint8Array.of(0, 0), 'endpoint 0 status');
+  assert.equal((await control(p, { requestType: 2, request: 1, value: 0, index: 0, length: 0 })).code, 'success', 'CLEAR_FEATURE(HALT) on endpoint 0');
+  assert.deepEqual(dev.log.slice(mark), [], 'none of it reached WebUSB');
+  assert.equal(dev.controlOuts.length, 0);
+  await control(p, { requestType: 2, request: 1, value: 0, index: 0x81, length: 0 });
+  assert.deepEqual(dev.log.slice(mark), ['clearHalt in 1']);
+  const a = submit(p, { ep: 0x81, type: 'bulk', length: 64 });
+  await settle();
+  assert.equal(dev.pending(1), 1, 'to the device again');
+  dev.answer(1, { data: new Uint8Array(3) });
+  await settle();
+  assert.equal(a.results[0].code, 'short');
+  // GET_STATUS of an endpoint that isn't halted here is the device's.
+  dev.controlIn = async () => ({ status: 'ok', data: new DataView(new Uint8Array(2).buffer) });
+  await control(p, { requestType: 0x82, request: 0, value: 0, index: 0x02, length: 2 });
+  assert.equal(dev.log.at(-1), 'controlIn standard/endpoint 0 0 2 2');
+});

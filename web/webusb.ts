@@ -344,6 +344,12 @@ export class WebUsbPassthrough implements UsbDevice {
   strings = new Map<string, Uint8Array>();
   /** Interfaces of the active configuration we hold, and their current alternate settings. */
   claimed = new Set<number>();
+  /**
+   * Endpoints the guest halted with SET_FEATURE(ENDPOINT_HALT). WebUSB refuses that request (a standard
+   * OUT), so the halt is ours: TDs to the endpoint stall here and GET_STATUS says halted, until the
+   * guest's CLEAR_FEATURE (which also clears the device's side, resetting its data toggle).
+   */
+  halted = new Set<number>();
   alternates = new Map<number, number>();
   /** The configuration the guest set (0 after SET_CONFIGURATION 0, when we released everything). */
   guestConfig = 0;
@@ -486,6 +492,12 @@ export class WebUsbPassthrough implements UsbDevice {
       const o = this.outOrder(t.ep);
       o.add(td);
       o.finish(td, { code: 'error', actual: 0 });
+      return;
+    }
+    if (this.halted.has(t.ep)) {
+      const o = t.ep & 0x80 ? this.inEp(t.ep).order : this.outOrder(t.ep);
+      o.add(td);
+      o.finish(td, { code: 'stall', actual: 0 });
       return;
     }
     if (t.ep & 0x80) {
@@ -633,6 +645,7 @@ export class WebUsbPassthrough implements UsbDevice {
 
   private dropAll() {
     this.gen++;
+    this.halted.clear();
     this.ins.clear();
     this.outs.clear();
     this.ctrl = new Order();
@@ -704,6 +717,8 @@ export class WebUsbPassthrough implements UsbDevice {
       case REQ_CLEAR_FEATURE:
         if (recipient === 2 && s.value === FEATURE_ENDPOINT_HALT) {
           const ep = s.index & 0xff;
+          if ((ep & 0x7f) === 0) return ok(); // the default pipe never halts (and isn't WebUSB's to clear)
+          this.halted.delete(ep);
           // The guest knows the endpoint stalled: a stall carried over from a cancelled TD is spent.
           const e = this.ins.get(ep);
           if (e) e.carry = e.carry.filter((c) => c.code !== 'stall');
@@ -714,12 +729,15 @@ export class WebUsbPassthrough implements UsbDevice {
         }
         return ok();
       case REQ_SET_FEATURE:
-        // ENDPOINT_HALT is tried through (usbtest's halt test); the rest (remote wakeup, U1/U2, LTM) is the controller's to hide.
-        return recipient === 2 && s.value === FEATURE_ENDPOINT_HALT ? null : ok();
+        // ENDPOINT_HALT is ours (see `halted`); the rest (remote wakeup, U1/U2, LTM) is the controller's to hide.
+        if (recipient === 2 && s.value === FEATURE_ENDPOINT_HALT && (s.index & 0x7f) !== 0) this.halted.add(s.index & 0xff);
+        return ok();
       case REQ_SET_SEL:
       case REQ_SET_ISOCH_DELAY:
         return ok();
       case REQ_GET_STATUS:
+        // An endpoint's: halted by us, or endpoint 0 (WebUSB names only a claimed interface's endpoints); the rest pass through.
+        if (recipient === 2 && ((s.index & 0x7f) === 0 || this.halted.has(s.index & 0xff))) return reply(Uint8Array.of(this.halted.has(s.index & 0xff) ? 1 : 0, 0));
         return null;
       default:
         void t;
@@ -735,6 +753,7 @@ export class WebUsbPassthrough implements UsbDevice {
       return { code: 'success', actual: 0 };
     }
     if (!this.configs.some((c) => c.value === value)) return { code: 'stall', actual: 0 };
+    this.halted.clear();
     this.ins.clear();
     this.outs.clear();
     if (this.dev.configuration?.configurationValue !== value) {
@@ -755,6 +774,7 @@ export class WebUsbPassthrough implements UsbDevice {
     const alts = act?.interfaces.get(n) ?? [];
     if (!alts.some((a) => a.alternate === alt)) return { code: 'stall', actual: 0 };
     for (const a of alts) for (const e of a.endpoints) {
+      this.halted.delete(e.address);
       if (e.address & 0x80) this.ins.delete(e.address);
       else this.outs.delete(e.address);
     }
