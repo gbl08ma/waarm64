@@ -1,10 +1,20 @@
-# USB devices through WebUSB (a plan; not scheduled)
+# USB devices through WebUSB and WebHID (a plan; not scheduled)
 
-**Status:** proposed 2026-10-15. Nothing here is built. It answers the question "could the user attach any USB
-device plugged into their computer to the guest, through WebUSB?". **Yes, for most devices that matter here.**
-The guest gets an emulated xHCI controller, and each attached device is passed through to Chromium's WebUSB. The
-limits come from WebUSB, not from the machine (§2). Starting it needs the user's OK: it adds a guest-visible
-controller, an ABI change and a new kind of device backend. The order is in §6.
+**Status:** proposed 2026-10-15; WebHID added 2026-10-18. Nothing here is built. It answers the question "could
+the user attach any USB device plugged into their computer to the guest, through WebUSB?". **Yes, for most devices
+that matter here.** The guest gets an emulated xHCI controller, and each attached device is passed through to
+Chromium's WebUSB. The limits come from WebUSB, not from the machine (§2).
+
+WebUSB refuses HID interfaces, so game pads, joysticks, wheels, macro pads, Stream Decks, UPSes and the vendor
+collections of keyboards and mice are out of its reach. **WebHID reaches them, and it belongs in the same plan:** it
+needs the same controller, the same backend protocol, the same hot-plug and the same page menu. Only the device
+end differs. A WebHID device is not passed through: the device worker serves the guest an emulated USB HID device,
+built from what WebHID tells it, and moves reports between the two (§2a, §4 "The WebHID backend"). That backend is
+smaller than the WebUSB passthrough, because it is a virtual device like Gadget Zero, and it needs nothing from
+the host OS's drivers. It works for Bluetooth HID devices too, since WebHID doesn't care about the bus.
+
+Starting it needs the user's OK: it adds a guest-visible controller, an ABI change and two new kinds of device
+backend. The order is in §6.
 
 ## 1. What the machine has today, and what USB needs from it
 
@@ -95,6 +105,43 @@ Chromium:
 So the honest answer to "arbitrary": any device whose interfaces are not in a protected class and that the host OS
 lets go of. In practice that is the developer and maker hardware that people would otherwise need a native VM for.
 
+## 2a. What WebHID allows
+
+From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-checks them on the pinned Chromium:
+
+- **What the page gets is a HID device, not a USB device.** `HIDDevice` has the vendor and product IDs, the
+  product name, and `collections`: the report descriptor **already parsed** into collections, reports and report
+  items (usage page and usages, size and count, logical and physical ranges, units, the Input/Output/Feature flags).
+  The raw report descriptor, the USB descriptors, the serial number, the bus and the polling interval are not
+  exposed. Reports go out through `sendReport` and `sendFeatureReport`, come in through the `inputreport` event, and
+  feature reports are read with `receiveFeatureReport`.
+- **So the device can't be passed through; it is rebuilt.** The guest gets a USB device whose descriptors the
+  backend writes: its vendor and product IDs, one HID interface (class 0x03, no boot subclass), an interrupt IN
+  endpoint and an interrupt OUT one when the device has output reports, and a report descriptor encoded back from
+  `collections`. The items carry almost everything the original had. What's lost is its exact bytes: push and pop,
+  delimiters and the order of global items don't survive, but they don't change what a report means. Linux drivers
+  that bind by vendor and product (hid-playstation, hid-nintendo, hid-logitech-hidpp, hid-steam…) parse reports by
+  ID and offset, so they work when the layout is the same. The few that patch the original descriptor by its size
+  or bytes in `report_fixup` will see a descriptor they don't recognise; those are listed in U5.
+- **Protected usages are hidden.** Chromium keeps from pages the collections a page could use to read keystrokes or
+  steer the pointer: the Keyboard usage page, the Generic Desktop keyboard, keypad, mouse and pointer collections
+  (their feature reports stay open, which is how keyboard configuration tools such as VIA work), and the system
+  control usages. FIDO security keys (usage page 0xF1D0) are on the blocklist. The rebuilt descriptor simply leaves
+  out what WebHID doesn't show, so a composite device (a keyboard with a vendor configuration collection) becomes a
+  guest device with only the vendor part. Keyboards and mice themselves stay the page's virtio-input.
+- **The host keeps its driver.** WebHID opens the host's HID node (`hidraw` on Linux, IOHIDManager on macOS, the
+  HID class driver on Windows) alongside the host's own use of the device; nothing has to be unbound. On Linux the
+  user needs read and write permission on `/dev/hidraw*`, which a udev rule gives (U4 says so when it is missing).
+  The host still sees a game pad's input too, which matters only if something on the host listens.
+- **Where it runs:** the spec exposes `navigator.hid` in dedicated workers, with `requestDevice` Window-only, as
+  WebUSB. U0 checks whether the pinned Chromium ships the worker side. If not, the page owns the `HIDDevice` and
+  forwards reports over a `MessagePort`; reports are small and few, so the extra hop costs little here.
+- **Identity:** permission persists per origin. With no serial number, two identical game pads are told apart by
+  `getDevices()` order, as with WebUSB.
+- **What WebHID can't reach:** HID devices whose only collections are protected (plain keyboards and mice), and
+  game pads that aren't HID on the host. Wired Xbox controllers are vendor-class USB (xpad, XInput); they are a
+  WebUSB device where the host driver lets go, and the Gamepad API route of §7 otherwise.
+
 ## 3. Alternatives considered
 
 - **USB/IP** (the guest's `vhci-hcd` plus `usbip attach` to a server of ours in the device worker): no core work,
@@ -162,7 +209,7 @@ lets go of. In practice that is the developer and maker hardware that people wou
   cancelled TDs get their Stopped events. The endpoint's epoch moves so that late completions for them are dropped,
   as the reset epochs drop stale virtio completions. A `cancel` record tells the backend.
 - **Deterministic mode:** virtual devices complete like any backend, so `testusb` runs take exact steps. WebUSB
-  passthrough is refused in deterministic mode (a real device isn't deterministic).
+  passthrough and WebHID devices are refused in deterministic mode (a real device isn't deterministic).
 
 ### The WebUSB passthrough backend (device worker)
 
@@ -218,6 +265,43 @@ lets go of. In practice that is the developer and maker hardware that people wou
   ([video.md](video.md) §9). The guest sees an unplug, so after the snapshot the device can be attached again. A
   later step could save the machine with the port empty and re-offer the device at resume.
 
+### The WebHID backend (an emulated HID device, device worker)
+
+- **At attach:** open the `HIDDevice`, and build the guest's descriptors from it:
+  - The device descriptor: its vendor and product IDs, `bcdUSB` 2.00, a product string from `productName`, no
+    serial number (a fixed one per port, so the guest's udev names stay stable).
+  - One configuration with one interface, class 0x03, subclass and protocol 0, and the HID class descriptor.
+  - The interrupt IN endpoint's `wMaxPacketSize` is the largest input report (plus its report ID byte), up to 1024;
+    the device is high speed when that exceeds 64 and full speed otherwise. `bInterval` is 1 ms: WebHID doesn't say
+    how often the real device reports, and the reports arrive when they arrive anyway. An interrupt OUT endpoint is
+    added when the device has output reports.
+  - The report descriptor, encoded from `collections`: each collection's items in order, report IDs where the
+    device uses them, globals emitted only when they change. A round trip in Node checks it: encode, parse with our
+    parser and with a recorded copy of Chromium's parse, compare.
+- **Requests:** GET_DESCRIPTOR (device, configuration, string, HID and report) is answered from what was built.
+  HID class requests:
+
+  | Request | What the backend does |
+  |---|---|
+  | GET_REPORT (input) | the last input report with that ID, or zeros of its length before the first one |
+  | GET_REPORT (feature) | `receiveFeatureReport` |
+  | SET_REPORT (output) | `sendReport` |
+  | SET_REPORT (feature) | `sendFeatureReport` |
+  | SET_IDLE, GET_IDLE, SET_PROTOCOL, GET_PROTOCOL | answered locally (no boot protocol is offered) |
+
+  The standard requests are the core's and the backend's alone, as with any virtual device.
+- **Transfers:** each `inputreport` event becomes one completion of the oldest queued IN TD on the interrupt
+  endpoint, with the report ID byte in front when the device uses IDs. Reports that arrive with no TD queued wait
+  in a short queue (the guest's usbhid always keeps one URB queued, so it stays empty in practice), and the oldest
+  is dropped past a few dozen, as a real device would have overwritten them. An OUT TD is one `sendReport`, its
+  first byte the report ID when the device uses IDs. A rejected `sendReport` is a Stall.
+- **Cancel** is trivial here: nothing is in flight in the browser for an IN TD, so a cancelled TD is just removed.
+- **Detach:** WebHID's `disconnect` event or the page's Detach clears the port's connect status and closes the
+  device. A Bluetooth game pad that sleeps and wakes comes back through `connect` and is re-attached on the same
+  port.
+- **Snapshots:** refused while a WebHID device is attached, as for passthrough. The emulated device's state (idle
+  rate, the last reports) is small, so a later step could save it and re-open the `HIDDevice` at resume.
+
 ### Virtual devices
 
 - **Gadget Zero** (`0525:a4a0`: source/sink and loopback configurations, as Linux's `g_zero`), in TypeScript with a
@@ -248,17 +332,27 @@ lets go of. In practice that is the developer and maker hardware that people wou
 - **Oracle:** QEMU (`qemu-xhci` on PCI with `usb-host` on the same dummy gadget, and with its emulated
   `usb-kbd`/`usb-storage`) in the dev VM. The same `testusb` results and the guest's `xhci-hcd` tracepoints are
   compared on behavior: event order, completion codes, residuals.
+- **WebHID, end to end, in the dev VM:** the VM's kernel makes the test device again, this time through `uhid`
+  (`/dev/uhid`): a small rig of ours creates HID devices from recorded report descriptors (a DualSense, a Stream
+  Deck, a vendor collection with feature reports, a device with report IDs and one without), and Chromium sees each
+  as a `hidraw` device. Permission comes through the `WebHidAllowDevicesForUrls` policy or the DevTools prompt
+  handling, as for WebUSB. The guest's view is checked against the rig: `/sys/.../report_descriptor` parses to the
+  same items, `hid-tools`' `hid-recorder` sees the input reports the rig sends, and output and feature reports
+  written in the guest arrive at the rig. In `scripts/ci-debian.sh`'s set when `/dev/uhid` is usable.
 - **Real devices, by the user** (the dev VM has none): a checklist in U5.
 
 ## 6. Steps, when scheduled
 
 - **U0: gates and measurements** (no core code):
-  1. `navigator.usb` in a dedicated worker on the pinned Chromium, and `getDevices()` there after the page's grant.
+  1. `navigator.usb` and `navigator.hid` in a dedicated worker on the pinned Chromium, and `getDevices()` there
+     after the page's grant.
   2. The dummy_hcd gadget visible to the Playwright Chromium, with permission granted without a prompt.
   3. One WebUSB transfer's round trip and bulk throughput from a worker (to size what a guest can expect).
   4. Which guest kernels have `xhci-plat-hcd`: Debian (expected, for the DWC3), the Arch desktop image,
      Alpine's `virt` kernel (unknown), and Buildroot (ours to add).
   5. The QEMU oracle on the same gadget.
+  6. A `uhid` device visible to the Playwright Chromium's WebHID, with permission granted without a prompt, and
+     which collections Chromium hides on the recorded descriptors.
 - **U1: the controller.** `core/src/xhci.rs`, the DT node, `VmConfig.xhci`, the ABI bump, snapshot state, and unit
   tests. Buildroot binds `xhci-plat-hcd` and shows two empty root hubs, in every runner.
 - **U2: the backend protocol and Gadget Zero.** `web/usb.ts`, its twin, and `testusb -a` passing with exact steps,
@@ -267,12 +361,17 @@ lets go of. In practice that is the developer and maker hardware that people wou
   - The backend of §4, run against the dummy_hcd gadget end to end: the same `testusb -a`, now through Chromium.
   - The CDC gadget with the guest's `cdc_acm`: open, echo, close and reopen, which exercises the carry-over.
   - The speed heuristic and the descriptor filter on recorded descriptors of real devices.
+- **U3h: the WebHID backend.** It needs U2 only, so it can come before U3 or beside it.
+  - The report-descriptor encoder and its round trip in Node.
+  - The backend of §4 against the `uhid` rig end to end.
 - **U4: the page.** A USB menu:
-  - "Attach a device…" (`requestDevice`, no filter).
+  - "Attach a device…" (WebUSB's `requestDevice`, no filter) and "Attach a HID device…" (WebHID's, with an empty
+    filter list, which lists every device it may show).
   - The attached devices with Detach.
   - Granted devices offered again at the next start.
   - The "a device just appeared" offer for re-enumeration.
-  - Clear messages for a protected or host-held interface.
+  - Clear messages for a protected or host-held interface, and for a HID device whose every collection is hidden
+    or whose `hidraw` node the user can't open.
   - Snapshots refused while a device is attached.
 
   Document it in [frontend.md](../frontend.md) and a new `docs/usb.md` (or a section of devices.md).
@@ -283,6 +382,9 @@ lets go of. In practice that is the developer and maker hardware that people wou
   - `dfu-util`
   - an RTL-SDR (`rtl_test`: about 4.8 MB/s of bulk IN without drops, a useful throughput target)
   - a sigrok logic analyser (firmware upload, then re-enumeration)
+  - through WebHID: a DualSense or DualShock 4 (hid-playstation: buttons, sticks, rumble, the light bar, over USB
+    and Bluetooth), a Switch Pro controller (hid-nintendo), a Stream Deck, a keyboard's VIA configuration, a UPS
+    (`upower` or NUT)
 
   What fails becomes a backlog line or a fix.
 - **U6 (optional, its own OK):** isochronous transfers, and the USB keyboard for EDK2 (§4, "Virtual devices").
@@ -292,7 +394,8 @@ lets go of. In practice that is the developer and maker hardware that people wou
 | Device | Route |
 |---|---|
 | Keyboards, mice, tablets | already the page's input, as virtio-input |
-| Game pads, other HID | WebHID → an emulated USB HID device or virtio-input. WebHID gives parsed collections, not the raw report descriptor, so this is a reconstruction (backlog-sized, separate) |
+| Game pads, other HID | WebHID → an emulated USB HID device (§2a, §4 "The WebHID backend") |
+| Game pads that aren't HID on the host (wired Xbox controllers under XInput or xpad) | the Gamepad API → an emulated USB HID game pad with a fixed descriptor of ours (its standard mapping; no rumble beyond `vibrationActuator`). Small, on the same controller; its own step after U4 if wanted |
 | Flash drives, disks | the disk path the page has (Open disk, a second disk); a raw USB disk is out of reach in a browser |
 | Webcams, microphones, headsets | `getUserMedia` (the page already records through virtio-snd: [audio.md](../audio.md)); a camera would be an emulated UVC device or a virtio-video, a plan of its own |
 | Serial adapters held by the host's driver | WebSerial → a virtio-console port (the multiport work in [agent.md](agent.md)) |
@@ -309,6 +412,9 @@ lets go of. In practice that is the developer and maker hardware that people wou
   moment. The guest may time out first, and some tools retry, others don't. Measured in U5.
 - **Carry-over correctness** for drivers that read an endpoint, cancel, and then expect the *next* data to be fresh
   (rare; a protocol with sequence numbers would notice). Watched in U5.
+- **Rebuilt report descriptors** that a guest driver doesn't accept, because it patches the original by its bytes
+  or checks its length. Found per device in U5; a table of known originals keyed by vendor and product could serve
+  those few devices their real descriptor when its parse matches WebHID's.
 - **Guest kernels without `xhci-plat-hcd`** (possibly Alpine's `virt`) get nothing. That would be a reason to ask
   the distribution, or to recommend `linux-lts` there.
 - **Parallel SMP:** the controller sits under `Vm::plat` like the transports. A busy device's completions take the

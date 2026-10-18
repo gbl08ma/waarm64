@@ -212,8 +212,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     §10). **HEVC dropped (the user, 2026-10-15):** H.264, VP9 and AV1 cover what the web serves, Chromium on Linux has
     no HEVC decoder of its own, and VA-API's parameters would need every slice header rewritten (backlog.md).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
-    layouts; USB devices from the user's computer through WebUSB (an xHCI and a
-    passthrough backend: [docs/plans/usb.md](docs/plans/usb.md), proposed, not scheduled).
+    layouts; USB devices from the user's computer through WebUSB and WebHID (an xHCI, a
+    passthrough backend and an emulated HID device: [docs/plans/usb.md](docs/plans/usb.md), proposed, not scheduled).
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save
     snapshot writes the running machine to a file the user keeps (Debian: 175 MB, the machine
     paused 1.4 s) and Load snapshot resumes it, in a fresh profile too, in 2.1 s instead of a 55 s
