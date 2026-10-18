@@ -23,6 +23,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
+| `web/app/connections.ts`, `web/app/locks.ts` | the browser's network connections (docs/plans/network-adapters.md §2: stored and ephemeral, their state keys, the migration of the single connection kept before; not on the page yet); the locks of what one running machine has at a time (USB devices, connections) |
 | `web/app/usb-ports.ts`, `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte`, `UsbProblems.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
 | `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
@@ -88,7 +89,7 @@ dev server (decision 7).
 ## Machines in the browser
 
 docs/plans/machines.md is the plan (M8 phase D's start); this is what exists.
-- **Records** (`web/app/store.ts`): IndexedDB `webpc` has `machines`, `disks`, `overlays` and `snapshots`, keyed by
+- **Records** (`web/app/store.ts`): IndexedDB `webpc` has `machines`, `disks`, `overlays`, `snapshots` and `connections` (version 2; the network's, below), keyed by
   a 12-hex-digit id; their bytes are in OPFS: `overlays/<id>/` (`data`, `map`, `meta`, `base`), `disks/<id>/` (a
   stored disk, the same block store), `machines/<id>/` (`flash`, the firmware's variable store: the machine's,
   so an install's boot entries stay with it; `suspend`; `snapshots/<id>`). A record is written after its bytes and

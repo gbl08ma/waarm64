@@ -6,7 +6,8 @@
 // The words and the matching are web/app/usb-ports.ts's; web/app/main.ts drives these for the page's machine.
 import type { UsbFromWorker, UsbIdentity, UsbProblem, UsbSpeed, UsbToWorker, UsbVirtual } from '../usb-device.ts';
 import { USB_CONNECTORS, type UsbEntry } from './shape.ts';
-import type { Note, Store } from './store.ts';
+import { heldLocks, Locks } from './locks.ts';
+import type { Store } from './store.ts';
 import { deviceName, identityAt, identityKey, matchDevices, problemText, usbLock, type ProblemWords, type SeenDevice } from './usb-ports.ts';
 
 /** A `USBDevice` or a `HIDDevice`, as far as the page uses one (lib.dom has neither). */
@@ -82,13 +83,6 @@ export async function findDevices(entries: UsbEntry[]): Promise<Map<string, Host
   return out;
 }
 
-/** The locks held now by anyone (every tab of this origin). */
-async function heldLocks(): Promise<Set<string>> {
-  if (!globalThis.navigator?.locks) return new Set();
-  const q = await navigator.locks.query();
-  return new Set((q.held ?? []).map((l) => l.name!).filter(Boolean));
-}
-
 /** Each entry's state; `attached`: the entries this page's machine has on a port now (its ids). */
 export async function entryStates(entries: UsbEntry[], attached: Set<string>, locks: UsbLocks): Promise<EntryView[]> {
   const found = await findDevices(entries);
@@ -102,77 +96,11 @@ export async function entryStates(entries: UsbEntry[], attached: Set<string>, lo
   }));
 }
 
-/**
- * The device locks of this page (docs/usb.md "The page": one machine at a time per device). A lock is held while its
- * device is attached here. Another tab asks who holds one (`usb-who`, answered `usb-held` with the machine's name) and
- * asks the holder to detach it (`usb-release`), over the store's channel.
- */
-export class UsbLocks {
-  private held = new Map<string, () => void>();
-  private store: Store;
-  private me: () => string;
-  private release: (lock: string) => void;
-  private answers = new Map<string, (name: string) => void>();
-  private off: () => void;
-
+/** The device locks of this page (docs/usb.md "The page": one machine at a time per device), held while a device is attached here. */
+export class UsbLocks extends Locks {
   /** `me`: the name of this page's machine; `release`: detaches the device whose lock another tab asks for. */
   constructor(store: Store, me: () => string, release: (lock: string) => void) {
-    [this.store, this.me, this.release] = [store, me, release];
-    this.off = store.onNote((n: Note) => {
-      const lock = String(n.lock ?? '');
-      if (n.topic === 'usb-who' && this.held.has(lock)) store.tell({ topic: 'usb-held', lock, name: this.me() });
-      else if (n.topic === 'usb-held') this.answers.get(lock)?.(String(n.name));
-      else if (n.topic === 'usb-release' && this.held.has(lock)) this.release(lock);
-    });
-  }
-
-  mine(lock: string) { return this.held.has(lock); }
-
-  /** Takes `lock` if no one holds it: false if another machine does. */
-  async take(lock: string): Promise<boolean> {
-    if (this.held.has(lock)) return true;
-    if (!globalThis.navigator?.locks) return true;
-    let release!: () => void;
-    const kept = new Promise<void>((resolve) => { release = resolve; });
-    const got = await new Promise<boolean>((resolve) => {
-      void navigator.locks.request(lock, { ifAvailable: true }, (l) => {
-        resolve(!!l);
-        return l ? kept : undefined;
-      });
-    });
-    if (got) this.held.set(lock, release);
-    return got;
-  }
-
-  drop(lock: string) {
-    this.held.get(lock)?.();
-    this.held.delete(lock);
-  }
-  dropAll() { for (const l of [...this.held.keys()]) this.drop(l); }
-
-  /** The name of the machine that holds `lock` in another tab (undefined if none answers in time). */
-  holder(lock: string, ms = 400): Promise<string | undefined> {
-    return new Promise((resolve) => {
-      const t = setTimeout(() => { this.answers.delete(lock); resolve(undefined); }, ms);
-      this.answers.set(lock, (name) => { clearTimeout(t); this.answers.delete(lock); resolve(name); });
-      this.store.tell({ topic: 'usb-who', lock });
-    });
-  }
-
-  /** Asks the tab that holds `lock` to detach its device, then takes the lock (false if it isn't let go within `ms`). */
-  async takeFrom(lock: string, ms = 8000): Promise<boolean> {
-    this.store.tell({ topic: 'usb-release', lock });
-    const until = Date.now() + ms;
-    while (Date.now() < until) {
-      if (await this.take(lock)) return true;
-      await new Promise((r) => setTimeout(r, 200));
-    }
-    return false;
-  }
-
-  close() {
-    this.dropAll();
-    this.off();
+    super(store, 'usb', me, release);
   }
 }
 

@@ -37,3 +37,32 @@ export async function openState(profile: string) {
   };
 }
 
+/**
+ * The profiles (`<profile>` prefixes) among a store's keys that hold a node: those with a `_current-profile`. State keys
+ * have no `/`, so a key's profile is everything before its last one (a control server's URL, or a connection's id).
+ */
+export function profilesOf(keys: string[]): string[] {
+  return [...new Set(keys.filter((k) => k.endsWith('/_current-profile')).map((k) => k.slice(0, k.lastIndexOf('/'))))];
+}
+
+/** The profiles kept in this origin's IndexedDB that hold a node (docs/plans/network-adapters.md §2.2). */
+export async function keptProfiles(): Promise<string[]> {
+  if (typeof indexedDB === 'undefined') return [];
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const r = indexedDB.open(DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+    r.onsuccess = () => resolve(r.result);
+    r.onerror = () => reject(r.error);
+  });
+  try {
+    return profilesOf((await idb(db.transaction(STORE, 'readonly').objectStore(STORE).getAllKeys())).map(String));
+  } finally {
+    db.close();
+  }
+}
+
+/** Forgets every entry of `profile` (a deleted connection's node). */
+export async function forgetProfile(profile: string) {
+  if (typeof indexedDB === 'undefined') return;
+  await (await openState(profile)).clear();
+}

@@ -13,8 +13,9 @@ export type TailcatConfig = {
   /** The `tc…` address the server printed: a secret (it lets anyone who has it in). Empty: serve only. */
   addr: string;
   /** Let tailcat clients in to the guest; `relay`, when there's no `addr`: one's own derper (`host[:port]`), or empty
-   * for tailcat's public relays (the nearest region). The machine's address is kept (`webpc-tailcat` in IndexedDB). */
-  serve?: { relay: string };
+   * for tailcat's public relays (the nearest region). The machine's address is kept (`webpc-tailcat` in IndexedDB, under
+   * `identityKey`: default `served`), or, given `identity`, is that one's (an ephemeral connection's, kept nowhere). */
+  serve?: TailcatServe;
   /** The DERP map for an address that names only a region (default: tailcat's public map). */
   derpMapURL?: string;
   /** Where target/net/ts.wasm is served from (default: this checkout's target/net). */
@@ -23,9 +24,11 @@ export type TailcatConfig = {
   ip?: MessagePort;
 };
 
+export type TailcatServe = { relay: string; identityKey?: string; identity?: TailcatIdentity };
+
 /** Messages to the worker. */
 export type ToTailcat =
-  | { type: 'start'; wasm: string; addr: string; serve?: { relay: string }; derpMapURL?: string; ip: MessagePort }
+  | { type: 'start'; wasm: string; addr: string; serve?: TailcatServe; derpMapURL?: string; ip: MessagePort }
   | { type: 'attach'; ip: MessagePort }
   | { type: 'detach' };
 
@@ -79,20 +82,26 @@ function idb<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T
 
 const hex32 = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('');
 
-/** The kept identity, made the first time. */
-export async function tailcatIdentity(): Promise<TailcatIdentity> {
-  const kept = await idb<TailcatIdentity | undefined>('readonly', (s) => s.get('served'));
+/** A new identity (an ephemeral connection's lives in memory: docs/plans/network-adapters.md §2.1). */
+export const newTailcatIdentity = (): TailcatIdentity => ({ key: hex32(), psk: hex32() });
+
+/**
+ * The identity kept under `key`, made the first time. `served` is the one the page kept before connections
+ * (docs/plans/network-adapters.md §2.2); a connection's is under its own key.
+ */
+export async function tailcatIdentity(key = 'served'): Promise<TailcatIdentity> {
+  const kept = await idb<TailcatIdentity | undefined>('readonly', (s) => s.get(key));
   if (kept) return kept;
-  const made = { key: hex32(), psk: hex32() };
-  await idb('readwrite', (s) => s.put(made, 'served'));
+  const made = newTailcatIdentity();
+  await idb('readwrite', (s) => s.put(made, key));
   return made;
 }
 
-/** Whether there's a kept identity (an address to forget). */
-export const hasTailcatIdentity = () => idb<number>('readonly', (s) => s.count('served')).then((n) => n > 0, () => false);
+/** Whether there's a kept identity under `key` (an address to forget). */
+export const hasTailcatIdentity = (key = 'served') => idb<number>('readonly', (s) => s.count(key)).then((n) => n > 0, () => false);
 
-/** Forgets the identity: the next serve has a new address, and the old one stops working. */
-export const forgetTailcatIdentity = () => idb('readwrite', (s) => s.delete('served')).then(() => {});
+/** Forgets the identity under `key`: the next serve has a new address, and the old one stops working. */
+export const forgetTailcatIdentity = (key = 'served') => idb('readwrite', (s) => s.delete(key)).then(() => {});
 
 /** The region of a DERP map with the fastest `/derp/probe` (what tailcat's own server picks by), or 0 if none answers. */
 export async function nearestRegion(derpMapURL: string, timeoutMs = 3000): Promise<number> {

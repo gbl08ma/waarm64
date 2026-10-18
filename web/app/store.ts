@@ -1,11 +1,13 @@
-// The browser's machines, disks, overlays and snapshots (docs/plans/machines.md §2): records in
-// IndexedDB (database `webpc`, a store per kind, keyed by `id`), bytes in OPFS (`overlays/<id>/`,
+// The browser's machines, disks, overlays, snapshots and network connections (docs/plans/machines.md §2,
+// docs/plans/network-adapters.md §2): records in IndexedDB (database `webpc`, a store per kind, keyed by `id`), bytes
+// in OPFS (`overlays/<id>/`,
 // `disks/<id>/`, `machines/<id>/` with its `flash`, `suspend` and `snapshots/<id>`). **A record is
 // written after its bytes and deleted before them**, so a crash leaves files without a record,
 // never a record without its files; `sweep` removes those at the start. Writers that make bytes
 // before their record do it inside `writing`, which the sweep waits out (a Web Lock, shared by
 // every tab). Other tabs hear of every change through a BroadcastChannel (`onChange`): their
 // views reread. DOM-free: Node's tests run it over memory (`memoryRecords`, `memoryFiles`).
+import type { Connection } from './connections.ts';
 import { isId, type DiskIdentity, type DiskRecord, type MachineRecord, type Shape } from './shape.ts';
 
 /**
@@ -50,9 +52,9 @@ export type SnapshotRecord = {
   urls?: Record<number, string>;
 };
 
-export type Kinds = { machines: MachineRecord; disks: DiskRecord; overlays: OverlayRecord; snapshots: SnapshotRecord };
+export type Kinds = { machines: MachineRecord; disks: DiskRecord; overlays: OverlayRecord; snapshots: SnapshotRecord; connections: Connection };
 export type Kind = keyof Kinds;
-const KINDS: Kind[] = ['machines', 'disks', 'overlays', 'snapshots'];
+const KINDS: Kind[] = ['machines', 'disks', 'overlays', 'snapshots', 'connections'];
 
 /** Where records live: IndexedDB in a browser, a Map in Node. Values are copied in and out (structured clone). */
 export type Records = {
@@ -76,7 +78,7 @@ export type Files = {
 export type Change = { kind: Kind; id: string; deleted?: boolean };
 /**
  * Anything else tabs tell each other on the store's channel (`tell`, `onNote`): a `topic` and its data. The USB
- * devices' locks ask there who holds a device, and ask the holder to let it go (web/app/usb-live.ts).
+ * devices' and the network connections' locks ask there who holds one, and ask the holder to let it go (web/app/locks.ts).
  */
 export type Note = { topic: string; [k: string]: unknown };
 
@@ -264,12 +266,13 @@ const sharedMemory = { records: memoryRecords(), files: memoryFiles() };
 const DB = 'webpc';
 const idb = <T>(req: IDBRequest<T>) => new Promise<T>((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
 
-/** Records in IndexedDB `webpc`: an object store per kind, keyed by `id`. */
+/** Records in IndexedDB `webpc`: an object store per kind, keyed by `id` (version 2 added `connections`). */
 export async function idbRecords(name = DB): Promise<Records> {
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const r = indexedDB.open(name, 1);
+    const r = indexedDB.open(name, 2);
     r.onupgradeneeded = () => { for (const k of KINDS) if (!r.result.objectStoreNames.contains(k)) r.result.createObjectStore(k, { keyPath: 'id' }); };
-    r.onsuccess = () => resolve(r.result);
+    // A tab of a newer page upgrading the database: this one lets go (its page is out of date; a reload has the new one).
+    r.onsuccess = () => { r.result.onversionchange = () => r.result.close(); resolve(r.result); };
     r.onerror = () => reject(r.error);
   });
   const store = (kind: Kind, mode: IDBTransactionMode) => db.transaction(kind, mode, { durability: 'strict' }).objectStore(kind);

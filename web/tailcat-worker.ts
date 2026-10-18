@@ -53,7 +53,7 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
     exit = !!m.addr;
     const config: TailcatConfig = { addr: m.addr, derpMapURL: m.derpMapURL };
     if (m.serve) {
-      const id = await tailcatIdentity();
+      const id = m.serve.identity ?? await tailcatIdentity(m.serve.identityKey);
       const region = m.addr || m.serve.relay ? 0 : await nearestRegion(m.derpMapURL ?? 'https://tailcat.dev/derpmap.json').catch(() => 0);
       Object.assign(config, { key: id.key, serve: { psk: id.psk, relay: m.addr ? '' : m.serve.relay, region } });
     }
