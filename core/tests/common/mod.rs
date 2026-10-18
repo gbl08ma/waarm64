@@ -957,7 +957,7 @@ pub fn boot(b: &Boot) -> Run {
     let mut vm = Vm::with_devices(mem, cfg, &entries);
     if let Some(f) = firmware {
         // As `vm_new` does with the host's buffer.
-        let files = FwCfg::parse(&fw_cfg_buffer(f.fw_cfg)).unwrap();
+        let files = webpc_core::smbios::with(&cfg, FwCfg::parse(&fw_cfg_buffer(f.fw_cfg)).unwrap());
         let p = vm.plat.get_mut();
         p.fw_cfg = Some(FwCfg::new(files).unwrap());
         if let Some(saved) = f.flash {

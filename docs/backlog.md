@@ -503,8 +503,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `login: ` at a line's start). A guest that prints after its prompt, logs in automatically or
   has no serial getty would need its own; a guest-side signal (a byte on a port the page owns, a
   systemd unit writing to a device) would be exact. Revisit with image selection (phase D).
-- **After phase B (the page's UEFI path):** EDK2's setup screen said `0 MB RAM` before SMBIOS (types 17 and 19,
-  platform.md; not re-checked, cosmetic); a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
+- **After phase B (the page's UEFI path):** a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
   EDK2's terminal driver (frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
   boot; loading a changes file also resets the variable store (the file doesn't carry it).
 - **The Keyboard Lock** in full screen is checked by hand only: headless Playwright's keys
