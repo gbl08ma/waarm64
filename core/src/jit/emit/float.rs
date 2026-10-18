@@ -692,6 +692,9 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // The fixed-point forms (fbits = 64 - scale) then × 2^-fbits, exact
         // (never below 2^-64).
         SCVTF_float_int | UCVTF_float_int | SCVTF_float_fix | UCVTF_float_fix => {
+            if matches!(op, SCVTF_float_fix | UCVTF_float_fix) && !bit(i, 31) && !bit(i, 15) {
+                return false; // 32 bits, scale < 32: UNDEFINED
+            }
             fpa_guard(c);
             let wide = bit(i, 31);
             let unsigned = matches!(op, UCVTF_float_int | UCVTF_float_fix);
@@ -740,6 +743,9 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         | FCVTPS_float | FCVTPU_float | FCVTZS_float_int | FCVTZU_float_int | FCVTZS_float_fix
         | FCVTZU_float_fix | FCVTNS_2 | FCVTNU_2 | FCVTMS_2 | FCVTMU_2 | FCVTAS_2 | FCVTAU_2
         | FCVTPS_2 | FCVTPU_2 | FCVTZS_int_2 | FCVTZU_int_2 => {
+            if matches!(op, FCVTZS_float_fix | FCVTZU_float_fix) && !bit(i, 31) && !bit(i, 15) {
+                return false; // 32 bits, scale < 32: UNDEFINED
+            }
             fpa_guard(c);
             let gpr = !simd;
             let (wide, unsigned) = if gpr {
