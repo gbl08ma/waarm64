@@ -21,7 +21,7 @@ export async function needsOff(id: string, what: string) {
 }
 
 /** A new machine (no disks yet), named by default. */
-export async function createMachine(store: Store, o: Partial<Pick<MachineRecord, 'name' | 'ncpus' | 'ramMiB' | 'display' | 'network'>> = {}) {
+export async function createMachine(store: Store, o: Partial<Pick<MachineRecord, 'name' | 'ncpus' | 'ramMiB' | 'display' | 'network' | 'usb'>> = {}) {
   const taken = (await store.all('machines')).map((m) => m.name);
   const now = Date.now();
   const m: MachineRecord = {
@@ -31,6 +31,7 @@ export async function createMachine(store: Store, o: Partial<Pick<MachineRecord,
     ramMiB: o.ramMiB ?? 2048,
     display: o.display ?? '3d',
     network: o.network ?? true,
+    usb: o.usb ?? true,
     attachments: [],
     created: now,
     modified: now,
@@ -45,7 +46,7 @@ export async function duplicateMachine(store: Store, id: string) {
   if (!m) throw new Error('that machine is gone');
   const taken = (await store.all('machines')).map((x) => x.name);
   const now = Date.now();
-  const copy: MachineRecord = { ...m, id: newId(), name: uniqueName(`${m.name} (copy)`, taken), attachments: m.attachments.map((a) => ({ ...a, id: newId() })), created: now, modified: now };
+  const copy: MachineRecord = { ...m, id: newId(), name: uniqueName(`${m.name} (copy)`, taken), attachments: m.attachments.map((a) => ({ ...a, id: newId() })), ...(m.usbDevices ? { usbDevices: m.usbDevices.map((u) => ({ ...u, id: newId() })) } : {}), created: now, modified: now };
   await store.put('machines', copy);
   return copy;
 }
@@ -56,12 +57,14 @@ export async function deleteMachine(store: Store, id: string) {
   await store.deleteMachine(id);
 }
 
-/** Saves the machine's settings (name, vCPUs, RAM, display, network): the guest sees them, so it must be off. */
+/** Saves the machine's settings (name, vCPUs, RAM, display, network, the USB controller): the guest sees them, so it must be off. */
 export async function updateMachine(store: Store, m: MachineRecord) {
   const was = await store.get('machines', m.id);
   if (!was) throw new Error('that machine is gone');
-  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.display, x.network]);
+  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.display, x.network, !!x.usb]);
   if (shape(was) !== shape(m)) await needsOff(m.id, 'Changing its processors, memory or devices');
+  // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
+  m.usbDevices = was.usbDevices;
   if (m.name !== was.name) m.name = uniqueName(m.name.trim() || was.name, (await store.all('machines')).filter((x) => x.id !== m.id).map((x) => x.name));
   m.modified = Date.now();
   await store.put('machines', m);

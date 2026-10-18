@@ -74,6 +74,11 @@ export type Files = {
 
 /** A change, as other tabs hear it. */
 export type Change = { kind: Kind; id: string; deleted?: boolean };
+/**
+ * Anything else tabs tell each other on the store's channel (`tell`, `onNote`): a `topic` and its data. The USB
+ * devices' locks ask there who holds a device, and ask the holder to let it go (web/app/usb-live.ts).
+ */
+export type Note = { topic: string; [k: string]: unknown };
 
 export const overlayDir = (id: string) => `overlays/${id}`;
 export const diskDir = (id: string) => `disks/${id}`;
@@ -89,6 +94,7 @@ const CHANNEL = 'webpc-store';
 export class Store {
   private channel?: BroadcastChannel;
   private listeners = new Set<(c: Change) => void>();
+  private notes = new Set<(n: Note) => void>();
   readonly records: Records;
   readonly files: Files;
 
@@ -96,7 +102,10 @@ export class Store {
     [this.records, this.files] = [records, files];
     if (opts.channel !== false && typeof BroadcastChannel !== 'undefined') {
       this.channel = new BroadcastChannel(opts.channel ?? CHANNEL);
-      this.channel.onmessage = (e: MessageEvent<Change>) => { for (const f of this.listeners) f(e.data); };
+      this.channel.onmessage = (e: MessageEvent<Change | Note>) => {
+        if ('topic' in e.data) for (const f of this.notes) f(e.data);
+        else for (const f of this.listeners) f(e.data);
+      };
     }
   }
 
@@ -112,9 +121,20 @@ export class Store {
     return () => { this.listeners.delete(f); };
   }
 
+  /** Calls `f` with every note another tab sends (`tell`); returns the unsubscribe. */
+  onNote(f: (n: Note) => void) {
+    this.notes.add(f);
+    return () => { this.notes.delete(f); };
+  }
+  /** Sends a note to the other tabs (not to this Store's own listeners). */
+  tell(n: Note) {
+    this.channel?.postMessage(n);
+  }
+
   close() {
     this.channel?.close();
     this.listeners.clear();
+    this.notes.clear();
   }
 
   private said(c: Change) {

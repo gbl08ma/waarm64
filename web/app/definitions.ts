@@ -4,7 +4,10 @@
 // overlays, snapshots or file contents ("export a machine", the bundle, is later and named apart). An import makes a
 // new machine (its name made unique): URL, blank and ramdisk disks come back as they were (a disk this browser has, by
 // identity, is attached again); file disks, and stored disks this browser doesn't have, are files to pick at its first
-// start, checked by name, size and date, then by hash where the definition has one.
+// start, checked by name, size and date, then by hash where the definition has one. A machine with a USB controller says
+// so (`machine.usb`), and its remembered USB devices go as identities (`usbDevices`): no grant travels, so on another
+// browser the first start offers one click each (docs/plans/usb.md §4a). Both are left out when there's nothing to say.
+import { fromDefinition, toDefinition, validDefinitionUsb, type DefinitionUsb } from './usb-ports.ts';
 import { canonical, MAX_DISKS, newId, uniqueName, type Attachment, type DiskIdentity, type DiskKind, type DiskRecord, type Display, type MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';
 
@@ -15,8 +18,9 @@ export type DefinitionDisk = { kind: DiskKind; name: string; size: number; ident
 export type Definition = {
   type: typeof DEFINITION_TYPE;
   version: number;
-  machine: { name: string; ncpus: number; ramMiB: number; display: Display; network: boolean };
+  machine: { name: string; ncpus: number; ramMiB: number; display: Display; network: boolean; usb?: boolean };
   disks: DefinitionDisk[];
+  usbDevices?: DefinitionUsb[];
 };
 
 /** Machine `id`'s definition. */
@@ -29,7 +33,8 @@ export async function exportDefinition(store: Store, id: string): Promise<Defini
     if (!d) throw new Error(`${m.name} has a disk that isn't in this browser`);
     disks.push({ kind: d.kind, name: d.name, size: d.size, identity: d.identity, ...(d.url ? { url: d.url } : {}), ...(d.sha256 ? { sha256: d.sha256 } : {}), readOnly: a.readOnly, ...(a.inPlace ? { inPlace: true } : {}), serial: a.id });
   }
-  return { type: DEFINITION_TYPE, version: DEFINITION_VERSION, machine: { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, display: m.display, network: m.network }, disks };
+  const usb = m.usbDevices?.length ? { usbDevices: toDefinition(m.usbDevices) } : {};
+  return { type: DEFINITION_TYPE, version: DEFINITION_VERSION, machine: { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, display: m.display, network: m.network, ...(m.usb ? { usb: true } : {}) }, disks, ...usb };
 }
 
 /** Parses a definition file's text; throws a message for the user when it isn't one this page reads. */
@@ -43,7 +48,7 @@ export function parseDefinition(text: string): Definition {
   if (d?.type !== DEFINITION_TYPE) throw new Error("this file isn't a machine definition");
   if (d.version !== DEFINITION_VERSION) throw new Error(`this definition is version ${d.version}; this page reads version ${DEFINITION_VERSION}`);
   const m = d.machine;
-  const ok = m && typeof m.name === 'string' && Number.isInteger(m.ncpus) && m.ncpus >= 1 && m.ncpus <= 64 && Number.isInteger(m.ramMiB) && m.ramMiB >= 64 && (m.display === '2d' || m.display === '3d') && typeof m.network === 'boolean'
+  const ok = m && typeof m.name === 'string' && Number.isInteger(m.ncpus) && m.ncpus >= 1 && m.ncpus <= 64 && Number.isInteger(m.ramMiB) && m.ramMiB >= 64 && (m.display === '2d' || m.display === '3d') && typeof m.network === 'boolean' && (m.usb === undefined || typeof m.usb === 'boolean') && (d.usbDevices === undefined || validDefinitionUsb(d.usbDevices))
     && Array.isArray(d.disks) && d.disks.length <= MAX_DISKS && d.disks.every((x) => ['url', 'file', 'stored', 'blank', 'ramdisk'].includes(x?.kind) && Number.isSafeInteger(x.size) && x.size > 0 && typeof x.name === 'string' && x.identity?.kind && typeof x.serial === 'string' && /^[0-9a-f]{12}$/.test(x.serial));
   if (!ok) throw new Error('this machine definition is damaged (a field is missing or out of range)');
   return d;
@@ -86,6 +91,8 @@ export async function importDefinition(store: Store, def: Definition): Promise<{
     ramMiB: def.machine.ramMiB,
     display: def.machine.display,
     network: def.machine.network,
+    usb: def.machine.usb ?? false,
+    ...(def.usbDevices?.length ? { usbDevices: fromDefinition(def.usbDevices) } : {}),
     attachments,
     created: now,
     modified: now,

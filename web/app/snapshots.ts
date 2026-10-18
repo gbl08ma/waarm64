@@ -136,6 +136,7 @@ export async function machineLike(store: Store, snap: { id: string; machine: str
     ramMiB: snap.shape.ramMiB,
     display: snap.shape.display === '3d' ? '3d' : '2d',
     network: snap.shape.devices.includes('net'),
+    usb: snap.shape.usb === true,
     attachments,
     created: now,
     modified: now,

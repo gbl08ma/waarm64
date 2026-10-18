@@ -87,6 +87,13 @@ export type ToWorker =
      */
     ip?: MessagePort;
     /**
+     * The machine has a USB controller (an xHCI, docs/plans/usb.md §4a): this port carries the page's `usb-attach` and
+     * `usb-detach` to the device worker and its `usb-state` back (web/usb-device.ts `UsbToWorker`, `UsbFromWorker`). The
+     * page attaches its devices once the machine runs (at a start, a resume and a restore alike: a snapshot's ports are
+     * empty). None: no controller (a stored machine's `usb`, a transient one's `?usb=1`).
+     */
+    usb?: MessagePort;
+    /**
      * Start from this snapshot file (the page's Load snapshot) instead of booting: the machine, its
      * devices and its vCPU count are the header's (below, docs/frontend.md "Snapshots"), the disk's
      * overlay is replaced by the file's blocks. `ncpus` and `ramMiB` are then ignored.

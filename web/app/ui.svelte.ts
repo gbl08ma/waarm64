@@ -2,13 +2,14 @@
 // writes here; App.svelte and the components under it read it, and call `page`'s actions, which main.ts provides.
 import type { ExportMode } from './export.ts';
 import type { PowerState } from './protocol.ts';
-import type { DiskRecord, MachineRecord, Shape } from './shape.ts';
+import type { DiskRecord, MachineRecord, Shape, UsbEntry } from './shape.ts';
+import type { EntryView } from './usb-live.ts';
 
 export type View = 'screen' | 'terminal' | 'both';
 /** The machine's power state, plus the page's own `idle`: no machine yet (waiting for a disk, or for "Start anyway"). */
 export type PageState = PowerState | 'idle';
 export type Action = { label: string; run: (button: HTMLButtonElement) => void };
-export type MachinesTab = 'settings' | 'disks' | 'network' | 'snapshots';
+export type MachinesTab = 'settings' | 'disks' | 'network' | 'usb' | 'snapshots';
 
 export const ui = $state({
   /** What the toolbar calls the machine. */
@@ -52,6 +53,22 @@ export const ui = $state({
   size: { ncpus: 1, ramMiB: 1024, gpu: '3d' as '3d' | '2d', cpuChoices: [] as number[], ramChoices: [] as number[], gpuLock: '' },
   /** Bumped when the store's records change (the toolbar's snapshot list rereads). */
   records: 0,
+  /**
+   * The page's machine's USB (docs/usb.md "The page"): `on` when it has a controller (the toolbar's USB menu);
+   * its remembered devices and their states, what is on each connector while it runs, the offers the menu makes (a
+   * device that just appeared, a grant to give), `zero` with `?usbzero=1` (Gadget Zero in the menu, for tests), and
+   * `open`, bumped to open the menu (something to do there). `tick` is bumped whenever any of it changes.
+   */
+  usb: {
+    on: false,
+    running: false,
+    entries: [] as EntryView[],
+    connectors: [] as ({ name: string; state: string; entry?: string; virtual?: boolean } | null)[],
+    offers: [] as { id: string; text: string; label: string }[],
+    zero: false,
+    open: 0,
+    tick: 0,
+  },
 });
 
 /** What the components ask of the page (web/app/main.ts fills it in before the first start). */
@@ -90,5 +107,21 @@ export type Page = {
   closeMachines(): void;
   /** Closes the message bar. */
   dismiss(): void;
+  /**
+   * USB (docs/usb.md "The page"). `machine`: a stored machine's id, or undefined for the page's own. Add opens the
+   * browser's chooser (from a click) and remembers what is picked (attached at once when the machine runs here).
+   */
+  usbAdd(machine: string | undefined, api: 'usb' | 'hid'): Promise<string[]>;
+  usbAttach(entry: string): Promise<void>;
+  usbDetach(entry: string): Promise<void>;
+  usbEdit(machine: string | undefined, entry: string, change: Partial<Pick<UsbEntry, 'connector' | 'atStart'>>): Promise<void>;
+  usbForget(machine: string | undefined, entry: string): Promise<void>;
+  /** Gives the browser's grant for an entry that has none here (a definition's, made on another browser). */
+  usbAllow(machine: string | undefined, entry: string): Promise<void>;
+  usbOffer(id: string, take: boolean): void;
+  /** The states of a machine's remembered devices now. */
+  usbStates(m: MachineRecord): Promise<EntryView[]>;
+  /** `?usbzero=1`: attaches Gadget Zero on a free connector, or detaches it. */
+  usbZero(): Promise<void>;
 };
 export const page = {} as Page;

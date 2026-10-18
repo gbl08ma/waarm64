@@ -10,6 +10,7 @@
   import Icon from './Icon.svelte';
   import Menu from './Menu.svelte';
   import Snapshots from './Snapshots.svelte';
+  import Usb from './Usb.svelte';
   import { ask } from './ask.svelte.ts';
   import type { Store, OverlayRecord } from './store.ts';
   import type { DiskRecord, MachineRecord } from './shape.ts';
@@ -48,7 +49,7 @@
   }
   // Read now, again when a record changes (in any tab), and when the machine on this page starts or stops (its "running").
   $effect(() => store.onChange(() => void reread()));
-  $effect(() => { void ui.state; void reread(); });
+  $effect(() => { void ui.state; void ui.records; void reread(); });
 
   /** Runs an action, showing what it's doing and any error; rereads after. */
   async function act(what: string, f: () => Promise<unknown>) {
@@ -82,7 +83,7 @@
 
   // Settings.
   let dirty = $state(false);
-  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || a.ncpus !== b.ncpus || a.display !== b.display || a.network !== b.network;
+  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || a.ncpus !== b.ncpus || a.display !== b.display || a.network !== b.network || !!a.usb !== !!b.usb;
   async function saveSettings() {
     const m = plain(draft!);
     await act('Saving', async () => {
@@ -125,6 +126,13 @@
   let pageExportOpen = $state(false);
   const savePage = (mode: 'changes' | 'qcow2' | 'raw') => { pageExportOpen = false; page.saveDisk(mode, mode !== 'raw' && compress); };
 </script>
+
+{#snippet usbSwitch()}
+  {#if draft}
+    <label class="check" title="An xHCI with four connectors (USB 2 and USB 3 each) for the machine's USB devices: the guest sees it, so turning it on or off changes the machine's shape"><input type="checkbox" bind:checked={draft.usb} data-field="usb"> USB controller</label>
+    {#if !!draft.usb !== !!machines.find((x) => x.id === draft?.id)?.usb}<p class="note warn" data-usb-orphans>Turning the USB controller {draft.usb ? 'on' : 'off'} changes the machine's shape: the snapshots taken before are orphaned (they stay, marked, until deleted), as a RAM change does.</p>{/if}
+  {/if}
+{/snippet}
 
 {#snippet saveRow()}
   <div class="row"><button class="primary" onclick={saveSettings} data-action="save" disabled={!dirty}>{restartsToSave ? 'Save and restart' : 'Save'}</button>
@@ -219,6 +227,7 @@
           <button role="tab" aria-selected={ui.machinesTab === 'settings'} onclick={() => tab('settings')} data-tab="settings"><Icon name="settings" size={16} />Settings</button>
           <button role="tab" aria-selected={ui.machinesTab === 'disks'} onclick={() => tab('disks')} data-tab="disks"><Icon name="database" size={16} />Disks ({m.attachments.length})</button>
           <button role="tab" aria-selected={ui.machinesTab === 'network'} onclick={() => tab('network')} data-tab="network"><Icon name="network" size={16} />Network</button>
+          <button role="tab" aria-selected={ui.machinesTab === 'usb'} onclick={() => tab('usb')} data-tab="usb"><Icon name="usb" size={16} />USB{m.usbDevices?.length ? ` (${m.usbDevices.length})` : ''}</button>
           <button role="tab" aria-selected={ui.machinesTab === 'snapshots'} onclick={() => tab('snapshots')} data-tab="snapshots"><Icon name="camera" size={16} />Snapshots</button>
         </div>
         <div class="tab">
@@ -228,8 +237,9 @@
               <label>vCPUs <select bind:value={draft.ncpus} data-field="ncpus">{#each CPU_CHOICES as n}<option value={n}>{n}</option>{/each}</select></label>
               <label>RAM <select bind:value={draft.ramMiB} data-field="ram">{#each [...new Set([...RAM_CHOICES, draft.ramMiB])].sort((a, b) => a - b) as n}<option value={n}>{n} MiB{n > MAX_RAM_MIB ? ' (past the heap reserve: slower on Linux arm64)' : ''}</option>{/each}</select></label>
               <label>Display <select bind:value={draft.display} data-field="display"><option value="3d">3D (WebGL2)</option><option value="2d">2D</option></select></label>
+              {@render usbSwitch()}
               {@render saveRow()}
-              <p class="note">vCPUs, RAM, the display and the network adapters make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted).</p>
+              <p class="note">vCPUs, RAM, the display, the network adapters and the USB controller make the machine's shape: changing one orphans the snapshots taken before (they stay, marked, until deleted).</p>
             </div>
           {:else if ui.machinesTab === 'network'}
             <div class="network">
@@ -248,6 +258,12 @@
               {@render saveRow()}
               <p class="note">One card for now. Adding or removing one changes the machine's shape: snapshots taken before are orphaned.</p>
             </div>
+          {:else if ui.machinesTab === 'usb'}
+            <div class="settings usb-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>
+              {@render usbSwitch()}
+              {#if dirty}{@render saveRow()}{/if}
+            </div>
+            <Usb machine={machines.find((x) => x.id === m.id) ?? m} running={isOn(m.id)} {act} />
           {:else if ui.machinesTab === 'disks'}
             <Disks {store} machine={m} {disks} {overlays} running={isOn(m.id)} {act} {offFirst} />
           {:else}
@@ -303,6 +319,9 @@
   .primary { background: #24406b; border-color: #3b6db3 !important; color: #fff; }
   .primary:disabled { background: transparent; color: var(--text); }
   .note, .hint { color: var(--dim); font-size: 12px; margin: 0; }
+  .note.warn { color: #ffb36b; }
+  .settings .check, .settings .warn { grid-column: 1 / -1; }
+  .usb-switch { margin-bottom: 12px; }
   .disk { display: flex; flex-direction: column; gap: 8px; }
   .network { display: flex; flex-direction: column; gap: 12px; max-width: 720px; }
   .adapters { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
