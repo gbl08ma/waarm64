@@ -155,7 +155,9 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     tailcat server, the Tailscale control session and data plane) is the page's Tailscale client:
     0.49 MB Brotli to Go's 4.5, 2.2 times the throughput at 2.5 times less CPU per Mbit. The Go one
     left the page (2026-10-17); `net/tailscale` stays as a test fixture, and Go for development and
-    CI. Its loose ends: [docs/backlog.md](docs/backlog.md) "Network".
+    CI. Its loose ends: [docs/backlog.md](docs/backlog.md) "Network". Proposed (2026-10-18):
+    peer-to-peer rooms over WebRTC, with DERP as the fallback
+    ([docs/plans/networking-p2p.md](docs/plans/networking-p2p.md)).
   - Graphics ([docs/plans/graphics.md](docs/plans/graphics.md)): **virtio-gpu 2D is done (G0 and
     G1, 2026-10-02).** The page's Debian draws through virtio-gpu from the firmware's menu on (the
     first pixel 7.5 s after the load instead of 19 s), at the page's size (CSS pixels, or device

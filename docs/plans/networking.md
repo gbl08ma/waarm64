@@ -32,7 +32,7 @@ test adapter, or anything on the page behind a `MessagePort`).
   the page's Tailscale client, and the Go one left the page (2026-10-17; `net/tailscale` stays as a
   test fixture).
 - WebRTC peer-to-peer networks (M8's original idea) stay an experimental backend behind the same
-  interface (§6).
+  interface (§6; *proposed 2026-10-18:* rooms, [networking-p2p.md](networking-p2p.md)).
 
 ## 2. What exists elsewhere (findings, 2026-09-27)
 
@@ -230,7 +230,9 @@ backends can coexist and be compared.
 
 ## 6. WebRTC peer-to-peer networks (experimental)
 
-M8's original idea: VMs in different browsers on one virtual LAN over WebRTC data channels
+*Superseded 2026-10-18 by [networking-p2p.md](networking-p2p.md)* (rooms: layer 3 with addresses
+from keys, WireGuard over data channels, DERP for signalling and fallback, a Nostr directory). The
+original sketch: M8's original idea: VMs in different browsers on one virtual LAN over WebRTC data channels
 (unordered, unreliable channels match Ethernet's semantics). It's layer 2, so it sits directly on
 the frame interface: a switch (learning MAC table, broadcast to all peers) with no gateway,
 though one VM or a gateway instance can offer DHCP to the rest. It needs a signaling server, and
