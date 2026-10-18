@@ -59,12 +59,6 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
 
 ## JIT
 
-- **The integer NEON forms' gain, unmeasured** (2026-10-18, a cloud session: profile only). The image decoders' NEON
-  (libjpeg-turbo, libwebp, dav1d, Skia's downscaler in Firefox: SMLAL by element, the saturating and rounding narrows,
-  SQDMULH, LD1R, LD2–LD4/ST2–ST4, CRC32) was 9% of Firefox's guest instructions as helper calls in a JPEG page;
-  [jit.md](jit.md) "NEON lane by lane" and "Structures" now compile it. Wanted from the dev VM: `alpine_user_jit` and
-  `boot_alpine_jit` A/B against the previous `main`, and the images Firefox and Chromium decode on the page's Debian in
-  `bench/imgdecode/`'s window (its README).
 - **Indirect transfers into a browser's code** (2026-10-16; `bench/boot/REPORT.md` "M8: where a busy vCPU's time goes
   in Firefox"). In Firefox's pages session 26% of a busy vCPU's time stalls at a guest function's first instruction,
   83% of it after a `return_call_indirect` (the code footprint defeats the branch predictor; direct and imported tail

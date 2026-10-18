@@ -1,0 +1,399 @@
+{
+ "schema": 1,
+ "page": "bench/boot/index.html",
+ "date": "2026-10-18T16:43:08.734Z",
+ "commit": "9edb021ccd37",
+ "dirty": false,
+ "config": "default",
+ "jsFlags": "--expose-gc",
+ "chromiumArgs": "",
+ "quick": false,
+ "host": {
+  "platform": "linux",
+  "arch": "arm64",
+  "cpu": "unknown",
+  "cores": 8,
+  "memGiB": 14
+ },
+ "browser": {
+  "version": "153.0.8010.52",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "results": [
+  {
+   "name": "alpine_user_jit_compress",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "jit": 1,
+    "steps": 10619044672,
+    "counters": {
+     "steps": 10619044672,
+     "irqs": 169765,
+     "exceptions": {
+      "0x0": 4,
+      "0x15": 136731,
+      "0x20": 13276,
+      "0x24": 73839,
+      "0x25": 3544
+     },
+     "tlbMisses": 10230987,
+     "tlbWalks": 10125012,
+     "tlbFlushes": 71767,
+     "jit": {
+      "blocks": 27593,
+      "modules": 939,
+      "bytes": 35297244,
+      "compileNs": 236132352,
+      "steps": 10578104274,
+      "dispatches": 6375958,
+      "invalidations": 118,
+      "flushes": 0,
+      "inline": 350728,
+      "helpers": 141,
+      "inlineSteps": 10564412908,
+      "flagsStored": 39735,
+      "flagsElided": 1778,
+      "condDirect": 22823,
+      "condComputed": 163,
+      "condMemory": 1738,
+      "regionBlocks": 66957,
+      "backEdges": 1299,
+      "tierUps": 673,
+      "stale": 0,
+      "decSteps": 38103611,
+      "decoded": 157961,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    2527.510000001639,
+    2511.915000002831,
+    2488.980000000447
+   ],
+   "median": 2511.915000002831,
+   "iqr": 19.265000000596046,
+   "n": 3
+  },
+  {
+   "name": "alpine_user_jit_lua",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "jit": 1,
+    "steps": 10619044672,
+    "counters": {
+     "steps": 10619044672,
+     "irqs": 169765,
+     "exceptions": {
+      "0x0": 4,
+      "0x15": 136731,
+      "0x20": 13276,
+      "0x24": 73839,
+      "0x25": 3544
+     },
+     "tlbMisses": 10230987,
+     "tlbWalks": 10125012,
+     "tlbFlushes": 71767,
+     "jit": {
+      "blocks": 27593,
+      "modules": 939,
+      "bytes": 35297244,
+      "compileNs": 236132352,
+      "steps": 10578104274,
+      "dispatches": 6375958,
+      "invalidations": 118,
+      "flushes": 0,
+      "inline": 350728,
+      "helpers": 141,
+      "inlineSteps": 10564412908,
+      "flagsStored": 39735,
+      "flagsElided": 1778,
+      "condDirect": 22823,
+      "condComputed": 163,
+      "condMemory": 1738,
+      "regionBlocks": 66957,
+      "backEdges": 1299,
+      "tierUps": 673,
+      "stale": 0,
+      "decSteps": 38103611,
+      "decoded": 157961,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    3242.199999999255,
+    3267.679999999702,
+    3215.245000001043
+   ],
+   "median": 3242.199999999255,
+   "iqr": 26.217499999329448,
+   "n": 3
+  },
+  {
+   "name": "alpine_user_jit_churn",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "jit": 1,
+    "steps": 10619044672,
+    "counters": {
+     "steps": 10619044672,
+     "irqs": 169765,
+     "exceptions": {
+      "0x0": 4,
+      "0x15": 136731,
+      "0x20": 13276,
+      "0x24": 73839,
+      "0x25": 3544
+     },
+     "tlbMisses": 10230987,
+     "tlbWalks": 10125012,
+     "tlbFlushes": 71767,
+     "jit": {
+      "blocks": 27593,
+      "modules": 939,
+      "bytes": 35297244,
+      "compileNs": 236132352,
+      "steps": 10578104274,
+      "dispatches": 6375958,
+      "invalidations": 118,
+      "flushes": 0,
+      "inline": 350728,
+      "helpers": 141,
+      "inlineSteps": 10564412908,
+      "flagsStored": 39735,
+      "flagsElided": 1778,
+      "condDirect": 22823,
+      "condComputed": 163,
+      "condMemory": 1738,
+      "regionBlocks": 66957,
+      "backEdges": 1299,
+      "tierUps": 673,
+      "stale": 0,
+      "decSteps": 38103611,
+      "decoded": 157961,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    1758.309999998659,
+    1875.839999999851,
+    1735.8500000014901
+   ],
+   "median": 1758.309999998659,
+   "iqr": 69.99499999918044,
+   "n": 3
+  },
+  {
+   "name": "alpine_user_jit_sqlite",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "jit": 1,
+    "steps": 10619044672,
+    "counters": {
+     "steps": 10619044672,
+     "irqs": 169765,
+     "exceptions": {
+      "0x0": 4,
+      "0x15": 136731,
+      "0x20": 13276,
+      "0x24": 73839,
+      "0x25": 3544
+     },
+     "tlbMisses": 10230987,
+     "tlbWalks": 10125012,
+     "tlbFlushes": 71767,
+     "jit": {
+      "blocks": 27593,
+      "modules": 939,
+      "bytes": 35297244,
+      "compileNs": 236132352,
+      "steps": 10578104274,
+      "dispatches": 6375958,
+      "invalidations": 118,
+      "flushes": 0,
+      "inline": 350728,
+      "helpers": 141,
+      "inlineSteps": 10564412908,
+      "flagsStored": 39735,
+      "flagsElided": 1778,
+      "condDirect": 22823,
+      "condComputed": 163,
+      "condMemory": 1738,
+      "regionBlocks": 66957,
+      "backEdges": 1299,
+      "tierUps": 673,
+      "stale": 0,
+      "decSteps": 38103611,
+      "decoded": 157961,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    2444.710000000894,
+    2441.835000000894,
+    2411.0699999965727
+   ],
+   "median": 2441.835000000894,
+   "iqr": 16.82000000216067,
+   "n": 3
+  },
+  {
+   "name": "alpine_user_jit_total",
+   "unit": "ms",
+   "params": {
+    "distro": "alpine",
+    "disk": "rootfs-user.ext4",
+    "cmdline": "console=ttyAMA0 root=/dev/vda rootfstype=ext4 modules=ext4 ro",
+    "ramMiB": 1024,
+    "jit": 1,
+    "steps": 10619044672,
+    "counters": {
+     "steps": 10619044672,
+     "irqs": 169765,
+     "exceptions": {
+      "0x0": 4,
+      "0x15": 136731,
+      "0x20": 13276,
+      "0x24": 73839,
+      "0x25": 3544
+     },
+     "tlbMisses": 10230987,
+     "tlbWalks": 10125012,
+     "tlbFlushes": 71767,
+     "jit": {
+      "blocks": 27593,
+      "modules": 939,
+      "bytes": 35297244,
+      "compileNs": 236132352,
+      "steps": 10578104274,
+      "dispatches": 6375958,
+      "invalidations": 118,
+      "flushes": 0,
+      "inline": 350728,
+      "helpers": 141,
+      "inlineSteps": 10564412908,
+      "flagsStored": 39735,
+      "flagsElided": 1778,
+      "condDirect": 22823,
+      "condComputed": 163,
+      "condMemory": 1738,
+      "regionBlocks": 66957,
+      "backEdges": 1299,
+      "tierUps": 673,
+      "stale": 0,
+      "decSteps": 38103611,
+      "decoded": 157961,
+      "decClears": 4,
+      "workerInstalls": 0,
+      "overdue": 0,
+      "parks": 0,
+      "parkExits": 0
+     },
+     "par": {
+      "dsbWaits": 0,
+      "dsbWaitNs": 0,
+      "tlbiIs": 0,
+      "ic": 0,
+      "drains": 0,
+      "idles": 0,
+      "lockContended": 0,
+      "lockWaitNs": 0,
+      "wfes": 0,
+      "outNs": 0
+     }
+    }
+   },
+   "samples": [
+    17757.655000001192,
+    17798.170000001788,
+    17474.55999999866
+   ],
+   "median": 17757.655000001192,
+   "iqr": 161.80500000156462,
+   "n": 3
+  }
+ ]
+}

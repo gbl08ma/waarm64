@@ -13,9 +13,11 @@ SIMD128", "NEON lane by lane", "Structures"; branch `claude/project-thread-fcaq7
 the guest's Firefox and Chromium (counts only, no timings in the cloud) had decoders' NEON as helper calls, 9% of
 Firefox's guest instructions on a JPEG page (SMLAL by element in Skia's downscaler above all). Now the allocated
 integer NEON is inline except SUQADD/USQADD on 64-bit lanes, URECPE/URSQRTE and the unadvertised dot products and
-RDM. The cloud's `scripts/ci.sh` passed without the image-based tests. **For the dev VM:** `scripts/ci.sh` with all
-images (the exact-step boots and Alpine), then the measurements in docs/backlog.md "JIT" (the item at its top); the
-image workload and its scripts are `bench/imgdecode/` (README.md).
+RDM. Measured on the dev VM (`bench/boot/REPORT.md` "M8: the integer NEON inline", data in
+`bench/boot/results/m8-neon/`): `scripts/ci.sh` passed with all images; the guest's browsers decode images 1.4-4.3×
+faster (2.48× geometric mean over Chromium and Firefox, JPEG, PNG, WebP, AVIF; `bench/imgdecode/`), helper calls
+1-12% → 0.1-0.4% of their instructions; the gates even (boot within 0.7%, userspace −2.0%). What still runs through
+helpers there is load/store slow paths, YIELD and system instructions (docs/jit.md "What still runs through helpers").
 
 **Before that (2026-10-16): guest calls as host calls, measured and not kept** (`bench/boot/REPORT.md` "M8: guest
 calls as host calls", data and the patch in `bench/boot/results/m8-calls/`; docs/jit.md "Tried and not kept"). The

@@ -1914,3 +1914,46 @@ The JSONs (`results/m8-tlbblock/`) all say `35de718`, dirty: the cores were swap
 The boot is within 0.4%; the userspace benchmark is within 1% on the median of rounds (16,765 against 16,926), with
 B's last two rounds 1.8% slower: under the noise threshold, and a fix for corruption is kept whatever it costs at this
 size. The scan a TLBI by VA adds runs only while the TLB holds pages of blocks in that VA half.
+
+## M8: the integer NEON inline (2026-10-18)
+
+The integer NEON forms, the structure loads and stores and CRC32 that a cloud session compiled inline (docs/jit.md
+"NEON lane by lane", "Structures"; the PR `claude/project-thread-fcaq73`, measured here as `bafe081` against its base
+`1f5e8c4`). The dev VM, Chromium 153.0.8010.52; the cores swapped in by file (the JSONs say `9edb021` or `bafe081`,
+A and B in each name), alternating ABBAABBA. Data in `results/m8-neon/`.
+
+**The guest's browsers decoding images** (`bench/imgdecode/`: Chromium 153 and Firefox 140.16 ESR on the page's
+Debian, 4 vCPUs, 3 GiB; `WARM=15 WINDOW=60`; four sessions A1 B1 B2 A2). Images a second between the first and last
+rounds that end in the 60 s window, and the helper calls in it as a share of the guest's instructions:
+
+| case | A (rounds 1 · 2) | B | B/A | helpers A | helpers B |
+|---|---|---|---|---|---|
+| Chromium JPEG | 2.77 · 2.84 | 7.18 · 7.64 | 2.64× | 7.22 · 7.39% | 0.19 · 0.17% |
+| Chromium PNG | 5.51 · 5.38 | 7.78 · 7.50 | 1.40× | 1.09 · 1.16% | 0.34 · 0.37% |
+| Chromium WebP | 2.46 · 2.49 | 6.04 · 5.94 | 2.43× | 3.72 · 3.83% | 0.10 · 0.10% |
+| Chromium AVIF | 1.61 · 1.74 | 3.37 · 3.30 | 1.99× | 4.96 · 4.80% | 0.10 · 0.15% |
+| Firefox JPEG | 2.14 · 2.18 | 9.25 · 9.25 | 4.29× | 12.13 · 12.23% | 0.31 · 0.32% |
+| Firefox PNG | 3.26 · 3.34 | 8.76 · 8.74 | 2.65× | 3.86 · 3.81% | 0.14 · 0.14% |
+| Firefox WebP | 1.82 · 1.87 | 5.16 · 5.26 | 2.82× | 7.10 · 7.25% | 0.30 · 0.29% |
+| Firefox AVIF | 0.98 · 0.99 | 2.21 · 2.61 | 2.45× | 6.18 · 6.36% | 0.24 · 0.21% |
+
+2.48× in the geometric mean. A's top helpers were the forms now inline (SMLAL by element 442M calls in Firefox's
+JPEG minute, SMULL/SMLSL by element, RSHRN, SQXTUN, SQDMULH, LD1R, CRC32 73-78M in Chromium's PNG); B's are the
+load/store slow paths, YIELD and the system instructions. Firefox's `libz.so` took 28% fewer PC samples per PNG
+(~4,100 → ~2,960), while its share of the samples rose 18% → 35% as the rest sped up more; it made no CRC32 calls on
+either side. Chromium's zlib is inside its binary (no symbols), so only its whole case (1.40×) says anything.
+
+The first sessions (30 s windows) counted the images decoded, which a round of 24 makes move by 25-33% of the count:
+the page now timestamps each round and `profile.ts` reports the rate (README).
+
+**The gates** (four rounds a side, at a host load average under 3; two earlier sets ran beside another session's CI
+and were dropped):
+
+| median ms, per round | A (`1f5e8c4`) | B |
+|---|---|---|
+| `alpine_jit_total` | 7,954 · 8,085 · 8,082 · 7,928 | 8,099 · 8,105 · 8,043 · 7,995 |
+| `alpine_user_jit_total` | 17,758 · 17,755 · 17,371 · 17,732 | 17,369 · 17,733 · 17,392 · 17,347 |
+
+The boot is within 0.7% (noise; its CRC32C helper calls, 49,008 a boot, are gone). The userspace benchmark is 2.0%
+faster on the median of rounds, every phase −1.0 to −2.3% (compress −1.9%, Lua −1.0%, churn −2.3%, SQLite −1.0%):
+under the noise threshold, and the same direction in each.

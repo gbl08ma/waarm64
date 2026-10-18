@@ -468,7 +468,9 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   (LD1–LD4/ST1–ST4) are a lane op per register; LD1R–LD4R are `v128.loadN_splat`. **CRC32/CRC32C**
   are a table lookup per byte; the two 1 KiB tables are statics in the core, their address the
   load's offset (the JIT's modules share the core's memory). Our encoder emits the SIMD128; the
-  core itself is built without `simd128` ([backlog.md](backlog.md)).
+  core itself is built without `simd128` ([backlog.md](backlog.md)). With these and the lane-by-lane
+  forms, the guest's browsers decode images 1.4-4.3× faster (`bench/boot/REPORT.md` "M8: the integer
+  NEON inline").
 - **Crypto** (`emit/crypto.rs`): AESE+AESMC and AESD+AESIMC on the same register fused into one
   round; SubBytes by **nested inversion** over GF(2⁴) (Hamburg's formulas, our implementation;
   tables from `crypto::nested` at compile time; 30% faster than the S-box as 16 slice swizzles);

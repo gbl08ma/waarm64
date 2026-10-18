@@ -9,7 +9,8 @@ by element) was Firefox's hottest function in every format.
 - `loop.html?fmt=jpg|pjpg|png|webp|avif`: decodes 24 photo-like 1024×683 images, shows them at 256×171
   for two frames, drops them and repeats with fresh URLs (new decodes). It logs `DECODED <n> <ms>` (the
   page's clock) on the console and puts `n` in the title.
-- `gen.py <dir>`: makes the images with Pillow (a dev tool, not a repo dependency): baseline and
+- `gen.py <dir>`: makes the images with Pillow (a dev tool, not a repo dependency; on the dev VM pip's Pillow 13 in
+  a venv, which reads and writes AVIF, with the venv's `bin` first in `PATH` for `disk.sh`): baseline and
   progressive JPEG, PNG, lossy WebP, 8-bit 4:2:0 AVIF.
 - `disk.sh`: the two disks. One is `target/images/debian-browsers/disk.qcow2`, the page's Debian with
   both browsers (needs `node tools/debian.ts` and `images/build.sh edk2` first, ~10 min). The other is
