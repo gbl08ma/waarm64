@@ -56,7 +56,7 @@ export const wasmCurrent = (root = ROOT) => {
   try { return existsSync(wasm) && readFileSync(wasm + '.inputs', 'utf8').trim() === wasmInputs(root); } catch { return false; }
 };
 
-/** The firmware the page's machine boots the user's disk through (docs/plans/uefi.md). */
+/** The firmware the page's machine boots the user's disk through (docs/firmware.md). */
 export const FIRMWARE = 'target/images/edk2/QEMU_EFI.fd';
 
 /** Why the firmware has to be built (missing, or images/build.sh's inputs changed), or undefined if it is current. */

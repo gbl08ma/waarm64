@@ -1339,7 +1339,7 @@ Rejected; docs/jit.md "Tried and not kept".
 ## M8: the firmware on the screen (2026-10-14)
 
 `images/edk2/virtio-gpu-console.patch` makes the virtio-gpu's GOP a console, so the firmware's logo, its boot
-timeout's progress bar and its text show on the page's screen (docs/plans/uefi.md "Graphics in the firmware").
+timeout's progress bar and its text show on the page's screen (docs/firmware.md "Our patches").
 Measured with `bench/boot/firmware-ab.ts` (new): the page's Debian, 2 vCPUs, seconds from the page's load to
 BdsDxe loading the boot option, the EFI stub, and the first boot's question; a and b alternate; Chromium
 153.0.8010.52 headless, the dev VM (linux-arm64, 8 vCPUs), Node 26.7.0.

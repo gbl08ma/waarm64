@@ -121,8 +121,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
 - **B. Your own disk: boot an unmodified image, take the disk back** (done 2026-10-01; the
   user, 2026-09-30: before snapshots, the basic loop has to be right: load a disk into the VM,
   boot it, work, shut down, take the modified disk away). Images in scope: **Debian and Alpine
-  only** (Alpine's UEFI cloud images). Loops 0–6; the design and what each loop found are in
-  [docs/plans/uefi.md](docs/plans/uefi.md), the page in [docs/frontend.md](docs/frontend.md)
+  only** (Alpine's UEFI cloud images). Loops 0–6; the firmware and what it needs is in
+  [docs/firmware.md](docs/firmware.md), the page in [docs/frontend.md](docs/frontend.md)
   "Your own disk", numbers in `bench/boot/REPORT.md` "M8 phase B loop 3". What binds:
   - **Boot it unmodified through UEFI** (the user, 2026-09-30): **EDK2's ArmVirtQemuKernel**
     (BSD-2-Clause-Patent, `images/build.sh edk2` in Podman, reproducible) is entered like a kernel

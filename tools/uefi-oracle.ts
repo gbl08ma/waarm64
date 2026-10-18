@@ -1,4 +1,4 @@
-// The UEFI oracle (M8 phase B, docs/plans/uefi.md): boots an unmodified disk
+// The UEFI oracle (M8 phase B, docs/firmware.md): boots an unmodified disk
 // image through our EDK2 build (images/build.sh edk2) on qemu-system-aarch64,
 // set up like our machine: ArmVirtQemuKernel entered like a kernel with the DT
 // in x0 (QEMU's virt DT without PCIe and the platform bus), a variable store in

@@ -315,8 +315,8 @@ own TLBI IS broadcasts before anything after its DSB runs.
 
 ## M8 phase B: the firmware configuration (design note for ABI 29)
 
-Written before the code ([plans/uefi.md](plans/uefi.md) "The design for loops 2–3"), and it
-describes what was built (loop 2). The page's machine boots EDK2's ArmVirtQemuKernel (`images/build.sh edk2`) the way it boots a kernel today;
+Written before the code (M8 phase B), and it describes what was built (loop 2; the firmware
+itself: [firmware.md](firmware.md)). The page's machine boots EDK2's ArmVirtQemuKernel (`images/build.sh edk2`) the way it boots a kernel today;
 EDK2 then boots the disk's own loader. With `firmware` = 0 nothing below exists and every guest
 is the machine it was (the tests' step counts don't move).
 
@@ -367,7 +367,7 @@ is the machine it was (the tests' step counts don't move).
   passed a file under `etc/smbios/`. The
   host's buffer is a sequence of records: a 56-byte NUL-padded name, a u32 LE size, the bytes
   (`vm_new` refuses a malformed one). Writes to the data register are ignored. The DMA interface
-  (only ramfb would need it, and ramfb isn't wanted: plans/uefi.md "Graphics in the firmware") would be a
+  (only ramfb would need it, and ramfb isn't wanted: firmware.md "Our patches") would be a
   later, appended change.
 - **The PL031 in deterministic mode** (firmware only): its time is `rtc` plus virtual time
   (the counter over CNTFRQ), so firmware boots keep one step count. Hosts pass a fixed `rtc`

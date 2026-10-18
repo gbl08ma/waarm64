@@ -297,7 +297,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   cause, a failed chunk allocation should complete the request with an I/O error and say so on the page.
 - **The firmware configuration** (loop 2): fw_cfg has no DMA interface (nothing needs it: the firmware's
   screen is the virtio-gpu's, and ramfb would leave a stale framebuffer beside `virtio_gpu` on virtio-mmio,
-  plans/uefi.md "Graphics in the firmware"), no standard items beside SMBIOS (platform.md); the
+  firmware.md "Our patches"), no standard items beside SMBIOS (platform.md); the
   flash bank's array-mode reads go through `vm::Io` one instruction at a time (fine for a store
   read a few times a boot: measure if a guest reads it in a loop); no lock state (every block
   unlocked). Between EDK2's boot manager and GRUB's menu Debian retires 5.4G steps in ~3 s in
@@ -306,20 +306,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   loop 3"); nothing to make idle.
 - **The screen is dark from the EFI stub until `virtio_gpu` loads** (~20 s of the page's Debian boot, after the
   root mounts; the serial terminal has the kernel's output). The firmware's GOP is `Blt`-only, so Linux has no
-  `efifb`, and ramfb would stay beside `virtio_gpu` on virtio-mmio (plans/uefi.md "Graphics in the firmware").
+  `efifb`, and ramfb would stay beside `virtio_gpu` on virtio-mmio (firmware.md "Our patches").
   Ways out, none tried: virtio-gpu on a PCI transport (the driver then removes the firmware's framebuffer; ACPI's
   item below wants virtio-pci too), the page drawing the serial terminal's tail on the canvas while no scanout is
   set, or a guest whose initramfs carries `virtio_gpu` (the guest's choice, not ours).
 - **EDK2's terminal modes** (loop 3): `images/build.sh edk2` patches TerminalDxe to offer only the
   80×25 text mode, because GRUB takes the largest (240×56) and asks the terminal to resize with
   `CSI 8;r;c t`, which xterm.js doesn't do: the menu was lost on the page's 80-column terminal.
-  A virtio-gpu machine's GOP is a console too (in ConOut beside the serial port, plans/uefi.md "Graphics in the
-  firmware"), and its GRUB draws on the screen (`gfxterm`), so the patch matters only where the
+  A virtio-gpu machine's GOP is a console too (in ConOut beside the serial port, firmware.md "Our
+  patches"), and its GRUB draws on the screen (`gfxterm`), so the patch matters only where the
   firmware has no display: `?display=simple` and the simple-framebuffer machines, whose GRUB menu is still on the
   serial terminal. **Remove it when no machine boots through UEFI without a virtio-gpu** (not re-checked: what
   ConSplitter offers the serial terminal next to a GOP without the patch).
 - **ACPI** (only if an ACPI-only guest comes into scope: Windows, an enterprise distro that won't
-  boot from a DT). The DT stays the machine's description (plans/uefi.md "DT or ACPI"); the path
+  boot from a DT). The DT stays the machine's description (firmware.md "DT or ACPI"); the path
   that keeps AML out of the core is EDK2's DynamicTablesPkg building the tables from our DT, plus
   AML for the virtio-mmio transports (its parser doesn't cover them) or a move to virtio-pci; the
   screen then needs a firmware GOP.
@@ -384,7 +384,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the microphone's recording out of its time. Worth a look if sound ever stutters for users under load: the
   uncounted buffer may be a real gap in what the ring counts (a vCPU starved through the restore), not just the test's.
 - **virtio-gpu's flush pacing slows a guest that waits for every flush** to 60 flushes a second. Our EDK2 no
-  longer is one (it coalesces its flushes a frame at a time: plans/uefi.md "Graphics in the firmware"), so
+  longer is one (it coalesces its flushes a frame at a time: firmware.md "Our patches"), so
   another firmware or OS driver would be the case. The host can't tell such a guest from one that floods:
   fences don't (EDK2 fences none of its flushes, Linux none on our device: it fences a primary plane's flush
   only for blob resources, which we don't offer).
@@ -525,7 +525,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   has no serial getty would need its own; a guest-side signal (a byte on a port the page owns, a
   systemd unit writing to a device) would be exact. Revisit with image selection (phase D).
 - **After phase B (the page's UEFI path):** a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
-  EDK2's terminal driver (frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
+  EDK2's terminal driver, and a fast run of arrow keys can lose bytes (the PL011's FIFO against a guest that polls;
+  frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
   boot; loading a changes file also resets the variable store (the file doesn't carry it).
 - **The Keyboard Lock** in full screen is checked by hand only: headless Playwright's keys
   bypass the browser's shortcuts, so no test sees Ctrl+W reach the guest.

@@ -1,4 +1,4 @@
-// Alpine's UEFI cloud images through our EDK2 (M8 phase B, docs/plans/uefi.md): the firmware
+// Alpine's UEFI cloud images through our EDK2 (M8 phase B, docs/firmware.md): the firmware
 // configuration boots them (Limine, GRUB) to a root login on the serial console, which runs a
 // command and powers off, as tools/uefi-oracle.ts does on QEMU. A NoCloud seed disk (web/fat.ts)
 // unlocks root. The page's shape: 2 vCPU workers, realtime, the JIT, a framebuffer, a writable

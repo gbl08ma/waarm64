@@ -23,7 +23,7 @@ backend. The order is in §6.
 
 - **No bus that enumerates.** Everything is described by the DT: virtio-mmio transports, the PL011, the PL031,
   fw_cfg and the flash bank ([platform.md](../platform.md) "Memory map"). There is no PCI host bridge
-  ([uefi.md](uefi.md) "DT or ACPI"). [audio.md](../audio.md) already notes that USB audio is out for this reason.
+  ([firmware.md](../firmware.md) "DT or ACPI"). [audio.md](../audio.md) already notes that USB audio is out for this reason.
 - **No virtio transport for USB.** Upstream Linux has no virtio-usb driver; the proposals were never merged. The guest's
   stock USB stack only binds to a real host-controller interface: xHCI, EHCI, OHCI or UHCI, or the platform glue of a
   SoC.
@@ -155,7 +155,7 @@ From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-check
   quirkier interface. xHCI covers every speed with one controller and is what Linux, EDK2 and every current OS
   expect. Rejected.
 - **xHCI behind PCI** (as QEMU's `qemu-xhci`): it needs an ECAM host bridge, config space, BARs and interrupt
-  routing in the core first. That bridge is worth having only for its own reasons ([uefi.md](uefi.md) "DT or ACPI"
+  routing in the core first. That bridge is worth having only for its own reasons ([firmware.md](../firmware.md) "DT or ACPI"
   lists them). The controller's register block is written bus-agnostic, so a later PCI wrapper reuses it.
 - **A virtual-HCI driver of ours in the guest:** this needs a module per guest kernel, so it is not unmodified
   images. Rejected.

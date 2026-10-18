@@ -58,7 +58,7 @@
 #   signal, tags) built from the kernel tree with Buildroot's toolchain, as
 #   rootfs.ext4; it boots linux/Image-defconfig and runs /ltp.sh.
 # edk2: EDK2's ArmVirtQemuKernel firmware (QEMU_EFI.fd, RELEASE), the UEFI that
-#   boots unmodified disk images (M8 phase B, docs/plans/uefi.md): an arm64 Image
+#   boots unmodified disk images (M8 phase B, docs/firmware.md): an arm64 Image
 #   entered like a kernel with the DT in x0, without the network stack (no PXE or
 #   HTTP boot). Built natively in Debian's arm64
 #   container (apt from snapshot.debian.org, as images/Containerfile). Also
@@ -585,7 +585,7 @@ build_edk2() {
   mkdir -p "$b" "$dst"
   tar -C "$src" --exclude=.git -cf - . | tar -C "$b" -xf -
   cp images/edk2/startup.nsh "$b/"
-  # The firmware on the screen (docs/plans/uefi.md "Graphics in the firmware"): the boot manager connects a
+  # The firmware on the screen (docs/firmware.md "Our patches"): the boot manager connects a
   # virtio-gpu on virtio-mmio before the console, as it does PCI displays, so its GOP joins ConOut and shows
   # the logo and the firmware's text (virtio-gpu-console); the boot progress bar draws in one Blt a second,
   # not one per block (boot-logo-progress); and the GOP flushes what its Blts wrote once a frame, not after each
@@ -593,8 +593,8 @@ build_edk2() {
   for p in images/edk2/*.patch; do git apply --directory="$b" "$p"; done
   # The serial console offers text modes up to 240x56 and GRUB takes the largest, asking the terminal
   # to resize itself (xterm's CSI 8;r;c t). The page's terminal is 80 columns, where the menu is lost:
-  # offer the 80x25 mode alone (docs/plans/uefi.md "The serial console's size").
-  # REMOVE this patch if the UEFI ever gets graphical modes (a GOP): GRUB then draws on the screen.
+  # offer the 80x25 mode alone (docs/firmware.md "Our patches"). When it can go: docs/backlog.md
+  # "EDK2's terminal modes" (a virtio-gpu machine's GRUB draws on the screen already).
   sed -i -E '/^  \{ (80, +50|100, 31|128, 40|160, 42|240, 56) \}/d' "$b/MdeModulePkg/Universal/Console/TerminalDxe/Terminal.c"
   [ "$(grep -c -E '^  \{ [0-9]+, +[0-9]+ \}' "$b/MdeModulePkg/Universal/Console/TerminalDxe/Terminal.c")" = 1 ] || { echo "edk2: the terminal's mode table changed" >&2; exit 1; }
   podman run --rm -v "$root:$root:z" -w "$root/$b" -e SOURCE_DATE_EPOCH "$EDK2_CONTAINER" bash -ec '
