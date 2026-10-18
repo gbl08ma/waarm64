@@ -117,7 +117,8 @@ mode (and natively in realtime mode: std has no CSPRNG).
   clusters are inflated as one batch (an `Inflater`): where the thread can start workers (the device worker, the
   disk-in and disk-out workers) it shares the batch with up to four of `web/inflate-pool.ts`'s
   (`inflate-worker.ts`; started by the first request with two or more, each share one message; a single cluster
-  stays on the reading thread), otherwise one after another in place (Node). Read-only
+  stays on the reading thread), otherwise one after another in place (Node): 1 MiB reads 25% faster, an import 7%
+  and an export 11%, a boot no different (bench/io/REPORT.md "The inflate pool"). Read-only
   (refcounts never read). **Refused at open:** encryption, backing files (a changes file is read by `readChanges`, docs/frontend.md "Your own disk"), external data files,
   extended L2, zstd, unknown incompatible features. Capacity is the virtual size. Debian's
   published image is 95% compressed clusters, which is why deflate is supported rather than

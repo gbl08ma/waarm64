@@ -1,0 +1,149 @@
+{
+ "note": "bench/io/inflate-page.ts: Debian disk.qcow2 on the page (?machine=debian, HTTP) to its login prompt, imported as a stored disk, exported whole (qcow2, uncompressed, to OPFS); pool size 0/1/2/4 alternating, 4 rounds; Chromium 153.0.8010.52, dev VM (8 vCPUs)",
+ "runs": [
+  {
+   "label": "pool0-r1",
+   "state": "running",
+   "boot_ms": 34692,
+   "ncpus": 8,
+   "import_ms": 13631.920000001788,
+   "export_ms": 8220.344999998808,
+   "errors": []
+  },
+  {
+   "label": "pool1-r1",
+   "state": "running",
+   "boot_ms": 34828,
+   "ncpus": 8,
+   "import_ms": 13102.22500000149,
+   "export_ms": 7705.015000000596,
+   "errors": []
+  },
+  {
+   "label": "pool2-r1",
+   "state": "running",
+   "boot_ms": 35031,
+   "ncpus": 8,
+   "import_ms": 12808,
+   "export_ms": 7607.644999999553,
+   "errors": []
+  },
+  {
+   "label": "pool4-r1",
+   "state": "running",
+   "boot_ms": 34731,
+   "ncpus": 8,
+   "import_ms": 12752.184999998659,
+   "export_ms": 7436.470000002533,
+   "errors": []
+  },
+  {
+   "label": "pool0-r2",
+   "state": "running",
+   "boot_ms": 35114,
+   "ncpus": 8,
+   "import_ms": 13859.629999998957,
+   "export_ms": 8429.660000000149,
+   "errors": []
+  },
+  {
+   "label": "pool1-r2",
+   "state": "running",
+   "boot_ms": 34915,
+   "ncpus": 8,
+   "import_ms": 12894.195000000298,
+   "export_ms": 7825.760000001639,
+   "errors": []
+  },
+  {
+   "label": "pool2-r2",
+   "state": "running",
+   "boot_ms": 35440,
+   "ncpus": 8,
+   "import_ms": 12868.935000002384,
+   "export_ms": 7565.039999999106,
+   "errors": []
+  },
+  {
+   "label": "pool4-r2",
+   "state": "running",
+   "boot_ms": 34998,
+   "ncpus": 8,
+   "import_ms": 12764.169999998063,
+   "export_ms": 7427.059999998659,
+   "errors": []
+  },
+  {
+   "label": "pool0-r3",
+   "state": "running",
+   "boot_ms": 35022,
+   "ncpus": 8,
+   "import_ms": 13676.344999998808,
+   "export_ms": 8405.184999998659,
+   "errors": []
+  },
+  {
+   "label": "pool1-r3",
+   "state": "running",
+   "boot_ms": 35073,
+   "ncpus": 8,
+   "import_ms": 13186.779999997467,
+   "export_ms": 7763.75,
+   "errors": []
+  },
+  {
+   "label": "pool2-r3",
+   "state": "running",
+   "boot_ms": 35119,
+   "ncpus": 8,
+   "import_ms": 12887.519999999553,
+   "export_ms": 7634.625,
+   "errors": []
+  },
+  {
+   "label": "pool4-r3",
+   "state": "running",
+   "boot_ms": 35073,
+   "ncpus": 8,
+   "import_ms": 12823.52499999851,
+   "export_ms": 7518.594999998808,
+   "errors": []
+  },
+  {
+   "label": "pool0-r4",
+   "state": "running",
+   "boot_ms": 35025,
+   "ncpus": 8,
+   "import_ms": 13924.474999997765,
+   "export_ms": 8424.175000000745,
+   "errors": []
+  },
+  {
+   "label": "pool1-r4",
+   "state": "running",
+   "boot_ms": 35051,
+   "ncpus": 8,
+   "import_ms": 13126.920000001788,
+   "export_ms": 7757.634999997914,
+   "errors": []
+  },
+  {
+   "label": "pool2-r4",
+   "state": "running",
+   "boot_ms": 34954,
+   "ncpus": 8,
+   "import_ms": 12875.960000000894,
+   "export_ms": 7581.510000001639,
+   "errors": []
+  },
+  {
+   "label": "pool4-r4",
+   "state": "running",
+   "boot_ms": 35081,
+   "ncpus": 8,
+   "import_ms": 12741.245000001043,
+   "export_ms": 7528.579999998212,
+   "errors": []
+  }
+ ]
+}

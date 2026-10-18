@@ -107,3 +107,39 @@ Under a continuous disk read the worst flush-to-draw is 22–33 ms, against 89�
 yielded to the event loop every ~2 ms) and 1.2–5.6 s of device-worker lag with the storm. The blk worker would buy
 nothing visible: **loop 5 dropped.** Caveat: the HTTP source here is localhost; a slow network's synchronous XHRs would still
 hold the device worker for their length (a request is one XHR), which is the HTTP source's matter, not this track's.
+
+## The inflate pool (2026-10-18): a request's compressed clusters on workers too
+
+`web/inflate-pool.ts` (docs/devices.md "qcow2") splits a request's compressed clusters between the reading thread
+and up to four workers. Measured on the dev VM (Chromium 153.0.8010.52, 8 cores) by setting its default size to 0 (no
+workers: one cluster after another on the reading thread, as before), 1, 2 and 4 (the default here: cores − 1, at
+most 4), alternating.
+
+**bench/io's reads over a qcow2** (`--only io_reads`, a suite entry for the read jobs alone; the disk is
+`target/bench/io-usr.qcow2`: 256 MiB of a tar of `/usr` through `qemu-img convert -c`, 64 KiB clusters, 103 MiB;
+two rounds of 5 boots; `results/chromium-linux-arm64-dev-vm-inflate-pool-io.json`). Medians, both rounds:
+
+| workers | sequential 1 MiB | sequential 128 KiB | random 4 KiB |
+|---|---|---|---|
+| 0 | 180 / 177 MiB/s (5.5 ms) | 89 / 90 MiB/s | 1131 / 1142 IOPS |
+| 1 | 211 / 210 MiB/s | 91 / 91 MiB/s | 1147 / 1147 IOPS |
+| 2 | 220 / 219 MiB/s | 91 / 90 MiB/s | 1140 / 1140 IOPS |
+| 4 | **225 / 224 MiB/s** (4.4 ms) | 91 / 91 MiB/s | 1148 / 1146 IOPS |
+
+A 1 MiB read (16 clusters) gains 25%; 128 KiB (2 clusters) and 4 KiB (one, kept on the reading thread) don't move.
+
+**The page** (`node bench/io/inflate-page.ts <label>`: Debian's published qcow2 on the page with `?machine=debian`,
+4 vCPUs, to its login prompt; then imported as a stored disk; then exported whole, qcow2 uncompressed, into OPFS;
+4 rounds; `results/chromium-linux-arm64-dev-vm-inflate-pool-page.json`). Medians, the spread under 0.5 s:
+
+| workers | boot to login | import | export |
+|---|---|---|---|
+| 0 | 35.0 s | 13.8 s | 8.4 s |
+| 1 | 35.0 s | 13.1 s | 7.8 s |
+| 2 | 35.0 s | 12.9 s | 7.6 s |
+| 4 | 35.0 s | 12.8 s | 7.45 s |
+
+The boot doesn't move with the pool at any size: inflating is ~1.6% of it (above) and the guest's reads are mostly
+one or two clusters. Four workers beside four vCPUs cost the boot nothing, so the device worker keeps its pool. The
+import gains 7% and the export 11%: their time is mostly the HTTP or file reads and the block store's writes. Shipped
+with the default size (cores − 1, at most 4).

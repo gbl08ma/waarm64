@@ -1,0 +1,1709 @@
+{
+ "note": "bench/io io_reads over target/bench/io-usr.qcow2 (256 MiB of /usr through qemu-img convert -c, 64 KiB clusters, 103 MiB), web/inflate-pool.ts default n set to 0/1/2/4, alternating, two rounds",
+ "runs": {
+  "pool0-round1": {
+   "schema": 1,
+   "page": "bench/io/index.html",
+   "date": "2026-10-18T19:26:01.996Z",
+   "commit": "c9f0af93f042",
+   "dirty": true,
+   "config": "default",
+   "jsFlags": "--expose-gc",
+   "chromiumArgs": "",
+   "quick": false,
+   "host": {
+    "platform": "linux",
+    "arch": "arm64",
+    "cpu": "unknown",
+    "cores": 8,
+    "memGiB": 14
+   },
+   "browser": {
+    "version": "153.0.8010.52",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+   },
+   "results": [
+    {
+     "name": "io_qcow2_randread4k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4507,
+      4542,
+      4530,
+      4509,
+      4522
+     ],
+     "median": 4522,
+     "iqr": 21,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1126.957681,
+      1135.666667,
+      1132.622459,
+      1127.290903,
+      1130.666667
+     ],
+     "median": 1130.666667,
+     "iqr": 5.331555999999864,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      844.742741573,
+      838.9850730850001,
+      841.160491909,
+      844.904669228,
+      842.8092169810001
+     ],
+     "median": 842.8092169810001,
+     "iqr": 3.58224966399996,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      91318,
+      92470,
+      90977,
+      91361,
+      91958
+     ],
+     "median": 91361,
+     "iqr": 640,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      713.428857,
+      722.425858,
+      710.763079,
+      713.762079,
+      718.427191
+     ],
+     "median": 713.762079,
+     "iqr": 4.998334,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1364.526864082,
+      1347.573881919,
+      1369.862953586,
+      1364.094199813,
+      1355.2324304269998
+     ],
+     "median": 1364.094199813,
+     "iqr": 9.294433655000148,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      185964,
+      184258,
+      181870,
+      184756,
+      185220
+     ],
+     "median": 184756,
+     "iqr": 962,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      181.606131,
+      179.94002,
+      177.607464,
+      180.426099,
+      180.879414
+     ],
+     "median": 180.426099,
+     "iqr": 0.939393999999993,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      5463.571669725,
+      5514.311792593,
+      5586.969949343,
+      5500.161594096,
+      5485.722016575
+     ],
+     "median": 5500.161594096,
+     "iqr": 28.58977601799961,
+     "n": 5
+    }
+   ]
+  },
+  "pool1-round1": {
+   "schema": 1,
+   "page": "bench/io/index.html",
+   "date": "2026-10-18T19:26:59.277Z",
+   "commit": "c9f0af93f042",
+   "dirty": true,
+   "config": "default",
+   "jsFlags": "--expose-gc",
+   "chromiumArgs": "",
+   "quick": false,
+   "host": {
+    "platform": "linux",
+    "arch": "arm64",
+    "cpu": "unknown",
+    "cores": 8,
+    "memGiB": 14
+   },
+   "browser": {
+    "version": "153.0.8010.52",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+   },
+   "results": [
+    {
+     "name": "io_qcow2_randread4k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4545,
+      4602,
+      4542,
+      4587,
+      4602
+     ],
+     "median": 4587,
+     "iqr": 57,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1136.287904,
+      1150.616461,
+      1135.666667,
+      1146.951016,
+      1150.666667
+     ],
+     "median": 1146.951016,
+     "iqr": 14.328557000000046,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      837.673154252,
+      826.955330437,
+      838.25955973,
+      830.096144102,
+      827.442173812
+     ],
+     "median": 830.096144102,
+     "iqr": 10.230980440000053,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      93835,
+      93195,
+      91788,
+      93835,
+      93024
+     ],
+     "median": 93195,
+     "iqr": 811,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      733.08897,
+      728.090636,
+      717.094302,
+      733.08897,
+      726.757747
+     ],
+     "median": 728.090636,
+     "iqr": 6.331223000000023,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1327.0079031819998,
+      1336.489263158,
+      1357.140126394,
+      1327.941405455,
+      1338.94643558
+     ],
+     "median": 1336.489263158,
+     "iqr": 11.005030125000076,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      217015,
+      216458,
+      213603,
+      216602,
+      216386
+     ],
+     "median": 216458,
+     "iqr": 216,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      211.929357,
+      211.38482,
+      208.597134,
+      211.52565,
+      211.314476
+     ],
+     "median": 211.38482,
+     "iqr": 0.21117399999999975,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4675.434289308,
+      4686.912025197,
+      4750.806696486,
+      4682.462740157,
+      4689.147640945
+     ],
+     "median": 4686.912025197,
+     "iqr": 6.68490078800005,
+     "n": 5
+    }
+   ]
+  },
+  "pool2-round1": {
+   "schema": 1,
+   "page": "bench/io/index.html",
+   "date": "2026-10-18T19:27:56.720Z",
+   "commit": "c9f0af93f042",
+   "dirty": true,
+   "config": "default",
+   "jsFlags": "--expose-gc",
+   "chromiumArgs": "",
+   "quick": false,
+   "host": {
+    "platform": "linux",
+    "arch": "arm64",
+    "cpu": "unknown",
+    "cores": 8,
+    "memGiB": 14
+   },
+   "browser": {
+    "version": "153.0.8010.52",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+   },
+   "results": [
+    {
+     "name": "io_qcow2_randread4k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4533,
+      4582,
+      4582,
+      4557,
+      4558
+     ],
+     "median": 4558,
+     "iqr": 25,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1133.333333,
+      1145.666667,
+      1145.618127,
+      1139.286904,
+      1139.620127
+     ],
+     "median": 1139.620127,
+     "iqr": 6.331222999999909,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      840.446964706,
+      831.167324993,
+      831.352404887,
+      836.2079198600001,
+      835.685820468
+     ],
+     "median": 835.685820468,
+     "iqr": 4.855514973000027,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      93152,
+      94432,
+      91702,
+      93280,
+      92726
+     ],
+     "median": 93152,
+     "iqr": 554,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      727.757414,
+      737.754082,
+      716.427857,
+      728.757081,
+      724.425192
+     ],
+     "median": 727.757414,
+     "iqr": 4.331888999999933,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1337.340124542,
+      1318.9028943090002,
+      1359.116986047,
+      1335.012257888,
+      1343.847191352
+     ],
+     "median": 1337.340124542,
+     "iqr": 8.83493346399996,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      227100,
+      226684,
+      225204,
+      225661,
+      225736
+     ],
+     "median": 225736,
+     "iqr": 1023,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      221.778222,
+      221.371505,
+      219.926691,
+      220.372836,
+      220.44622
+     ],
+     "median": 220.44622,
+     "iqr": 0.9986690000000067,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4464.376447447,
+      4472.641227067999,
+      4502.561818182,
+      4492.423734139,
+      4492.09955287
+     ],
+     "median": 4492.09955287,
+     "iqr": 19.78250707100051,
+     "n": 5
+    }
+   ]
+  },
+  "pool4-round1": {
+   "schema": 1,
+   "page": "bench/io/index.html",
+   "date": "2026-10-18T19:28:53.778Z",
+   "commit": "c9f0af93f042",
+   "dirty": true,
+   "config": "default",
+   "jsFlags": "--expose-gc",
+   "chromiumArgs": "",
+   "quick": false,
+   "host": {
+    "platform": "linux",
+    "arch": "arm64",
+    "cpu": "unknown",
+    "cores": 8,
+    "memGiB": 14
+   },
+   "browser": {
+    "version": "153.0.8010.52",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+   },
+   "results": [
+    {
+     "name": "io_qcow2_randread4k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4525,
+      4609,
+      4600,
+      4565,
+      4591
+     ],
+     "median": 4591,
+     "iqr": 35,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1131.28957,
+      1152.333333,
+      1150,
+      1141.286238,
+      1147.950683
+     ],
+     "median": 1147.950683,
+     "iqr": 8.713762000000088,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      841.469954639,
+      826.1775227080001,
+      828.190284058,
+      834.290578686,
+      829.4874751809999
+     ],
+     "median": 829.4874751809999,
+     "iqr": 6.100294628000029,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      92811,
+      93610,
+      93079,
+      94005,
+      92897
+     ],
+     "median": 93079,
+     "iqr": 713,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      725.091636,
+      731.333333,
+      727.181879,
+      734.421859,
+      725.758081
+     ],
+     "median": 727.181879,
+     "iqr": 5.575252000000091,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1342.344742647,
+      1331.5416299,
+      1338.314180486,
+      1324.944733212,
+      1341.043254362
+     ],
+     "median": 1338.314180486,
+     "iqr": 9.501624461999882,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      229223,
+      230434,
+      231192,
+      230468,
+      229299
+     ],
+     "median": 230434,
+     "iqr": 1169,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      223.850766,
+      225.033289,
+      225.774226,
+      225.066489,
+      223.925358
+     ],
+     "median": 225.033289,
+     "iqr": 1.1411310000000014,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4420.397285714001,
+      4397.739857988,
+      4382.748365782,
+      4397.039196455,
+      4420.405928571
+     ],
+     "median": 4397.739857988,
+     "iqr": 23.358089259000735,
+     "n": 5
+    }
+   ]
+  },
+  "pool0-round2": {
+   "schema": 1,
+   "page": "bench/io/index.html",
+   "date": "2026-10-18T19:29:50.847Z",
+   "commit": "c9f0af93f042",
+   "dirty": true,
+   "config": "default",
+   "jsFlags": "--expose-gc",
+   "chromiumArgs": "",
+   "quick": false,
+   "host": {
+    "platform": "linux",
+    "arch": "arm64",
+    "cpu": "unknown",
+    "cores": 8,
+    "memGiB": 14
+   },
+   "browser": {
+    "version": "153.0.8010.52",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+   },
+   "results": [
+    {
+     "name": "io_qcow2_randread4k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4517,
+      4595,
+      4533,
+      4590,
+      4567
+     ],
+     "median": 4567,
+     "iqr": 57,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1129.290237,
+      1148.95035,
+      1133.288904,
+      1147.666667,
+      1141.952682
+     ],
+     "median": 1141.952682,
+     "iqr": 14.377762999999959,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      843.10310298,
+      828.55012442,
+      839.9557588939999,
+      829.728255591,
+      833.749677269
+     ],
+     "median": 833.749677269,
+     "iqr": 10.227503302999935,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      92598,
+      92555,
+      92641,
+      92769,
+      92214
+     ],
+     "median": 92598,
+     "iqr": 86,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      723.425525,
+      723.092303,
+      723.758747,
+      724.758414,
+      720.426524
+     ],
+     "median": 723.425525,
+     "iqr": 0.6664439999999558,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1345.723519116,
+      1346.5154654379999,
+      1344.995211786,
+      1343.0469002300001,
+      1351.619633673
+     ],
+     "median": 1345.723519116,
+     "iqr": 1.5202536519998375,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      182771,
+      179080,
+      179080,
+      181885,
+      181468
+     ],
+     "median": 181468,
+     "iqr": 2805,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      178.488178,
+      174.883411,
+      174.883411,
+      177.622842,
+      177.21519
+     ],
+     "median": 177.21519,
+     "iqr": 2.739430999999996,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      5560.399313433,
+      5675.103512381001,
+      5674.7203047620005,
+      5587.825614953,
+      5601.341022556
+     ],
+     "median": 5601.341022556,
+     "iqr": 86.89468980900074,
+     "n": 5
+    }
+   ]
+  },
+  "pool1-round2": {
+   "schema": 1,
+   "page": "bench/io/index.html",
+   "date": "2026-10-18T19:30:47.916Z",
+   "commit": "c9f0af93f042",
+   "dirty": true,
+   "config": "default",
+   "jsFlags": "--expose-gc",
+   "chromiumArgs": "",
+   "quick": false,
+   "host": {
+    "platform": "linux",
+    "arch": "arm64",
+    "cpu": "unknown",
+    "cores": 8,
+    "memGiB": 14
+   },
+   "browser": {
+    "version": "153.0.8010.52",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+   },
+   "results": [
+    {
+     "name": "io_qcow2_randread4k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4541,
+      4602,
+      4592,
+      4587,
+      4579
+     ],
+     "median": 4587,
+     "iqr": 13,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1135.288237,
+      1150.616461,
+      1148,
+      1146.951016,
+      1144.951683
+     ],
+     "median": 1146.951016,
+     "iqr": 3.0483169999999973,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      838.715862636,
+      827.501071532,
+      829.425774681,
+      830.005169088,
+      831.454733411
+     ],
+     "median": 830.005169088,
+     "iqr": 2.0289587299999994,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      94005,
+      92854,
+      93098,
+      92951,
+      92811
+     ],
+     "median": 92951,
+     "iqr": 244,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      734.421859,
+      725.424858,
+      727.333333,
+      726.182545,
+      725.091636
+     ],
+     "median": 726.182545,
+     "iqr": 1.9084750000000668,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1324.966475499,
+      1342.411016996,
+      1338.57295692,
+      1340.1255559630001,
+      1342.201007353
+     ],
+     "median": 1340.1255559630001,
+     "iqr": 3.6280504329999985,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      215309,
+      215309,
+      215507,
+      215650,
+      215309
+     ],
+     "median": 215309,
+     "iqr": 198,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      210.263246,
+      210.263246,
+      210.45621,
+      210.596468,
+      210.263246
+     ],
+     "median": 210.263246,
+     "iqr": 0.19296399999998926,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4709.9536988909995,
+      4711.23014897,
+      4707.576177215,
+      4704.364962025,
+      4712.581730586
+     ],
+     "median": 4709.9536988909995,
+     "iqr": 3.6539717550003843,
+     "n": 5
+    }
+   ]
+  },
+  "pool2-round2": {
+   "schema": 1,
+   "page": "bench/io/index.html",
+   "date": "2026-10-18T19:31:45.379Z",
+   "commit": "c9f0af93f042",
+   "dirty": true,
+   "config": "default",
+   "jsFlags": "--expose-gc",
+   "chromiumArgs": "",
+   "quick": false,
+   "host": {
+    "platform": "linux",
+    "arch": "arm64",
+    "cpu": "unknown",
+    "cores": 8,
+    "memGiB": 14
+   },
+   "browser": {
+    "version": "153.0.8010.52",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+   },
+   "results": [
+    {
+     "name": "io_qcow2_randread4k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4531,
+      4598,
+      4483,
+      4561,
+      4587
+     ],
+     "median": 4561,
+     "iqr": 56,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1132.955681,
+      1149.616794,
+      1120.95968,
+      1140.286571,
+      1146.951016
+     ],
+     "median": 1140.286571,
+     "iqr": 13.995335000000068,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      840.741589706,
+      828.386713043,
+      846.061184304,
+      835.421040327,
+      830.212253341
+     ],
+     "median": 835.421040327,
+     "iqr": 10.529336365000063,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      92897,
+      92854,
+      88162,
+      92043,
+      92342
+     ],
+     "median": 92342,
+     "iqr": 811,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      725.758081,
+      725.424858,
+      688.77041,
+      719.093635,
+      721.426191
+     ],
+     "median": 721.426191,
+     "iqr": 6.331223000000023,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1340.8227878789999,
+      1341.919007809,
+      1411.2901403,
+      1353.641868397,
+      1349.5641200920002
+     ],
+     "median": 1349.5641200920002,
+     "iqr": 11.722860588000003,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      226002,
+      220622,
+      207802,
+      224181,
+      224788
+     ],
+     "median": 224181,
+     "iqr": 4166,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      220.705726,
+      215.451215,
+      202.932356,
+      218.927024,
+      219.52032
+     ],
+     "median": 218.927024,
+     "iqr": 4.0691050000000075,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4483.351770739,
+      4593.595301391,
+      4878.070243021,
+      4521.055829528,
+      4509.047235205
+     ],
+     "median": 4521.055829528,
+     "iqr": 84.54806618600014,
+     "n": 5
+    }
+   ]
+  },
+  "pool4-round2": {
+   "schema": 1,
+   "page": "bench/io/index.html",
+   "date": "2026-10-18T19:32:42.486Z",
+   "commit": "c9f0af93f042",
+   "dirty": true,
+   "config": "default",
+   "jsFlags": "--expose-gc",
+   "chromiumArgs": "",
+   "quick": false,
+   "host": {
+    "platform": "linux",
+    "arch": "arm64",
+    "cpu": "unknown",
+    "cores": 8,
+    "memGiB": 14
+   },
+   "browser": {
+    "version": "153.0.8010.52",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+   },
+   "results": [
+    {
+     "name": "io_qcow2_randread4k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4557,
+      4603,
+      4563,
+      4583,
+      4613
+     ],
+     "median": 4583,
+     "iqr": 40,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1139.286904,
+      1150.949683,
+      1140.953016,
+      1145.95135,
+      1153.282239
+     ],
+     "median": 1145.95135,
+     "iqr": 9.996667000000116,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_randread4k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      835.653470605,
+      827.583444123,
+      835.0260467290001,
+      829.621229427,
+      825.924613695
+     ],
+     "median": 829.621229427,
+     "iqr": 7.442602606000037,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      93249,
+      92811,
+      93280,
+      92885,
+      93152
+     ],
+     "median": 93152,
+     "iqr": 364,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      728.514324,
+      725.091636,
+      728.757081,
+      725.666667,
+      727.757414
+     ],
+     "median": 727.757414,
+     "iqr": 2.8476570000000265,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread128k_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      1336.03093187,
+      1342.566580882,
+      1335.3374375859999,
+      1341.716350942,
+      1337.67842033
+     ],
+     "median": 1337.67842033,
+     "iqr": 5.685419072000059,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_bw",
+     "unit": "KiB/s",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      229752,
+      231005,
+      229146,
+      228464,
+      229905
+     ],
+     "median": 229752,
+     "iqr": 759,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_iops",
+     "unit": "IOPS",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      224.36751,
+      225.59147,
+      223.776224,
+      223.110223,
+      224.516989
+     ],
+     "median": 224.36751,
+     "iqr": 0.7407649999999819,
+     "n": 5
+    },
+    {
+     "name": "io_qcow2_seqread1M_lat",
+     "unit": "us",
+     "params": {
+      "disk": "qcow2",
+      "size": "256 MiB",
+      "overlay": "fresh OPFS",
+      "realtime": true,
+      "kernel": "Buildroot Image"
+     },
+     "samples": [
+      4410.992854599,
+      4386.750322009,
+      4423.3242380950005,
+      4435.525301493,
+      4407.977827893
+     ],
+     "median": 4410.992854599,
+     "iqr": 15.346410202000698,
+     "n": 5
+    }
+   ]
+  }
+ }
+}

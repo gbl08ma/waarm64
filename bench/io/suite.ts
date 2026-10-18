@@ -55,15 +55,16 @@ const JOBS: [string, 'read' | 'write'][] = [
   ['heldseqread1M', 'read'], ['heldrandread4k', 'read'],
 ];
 
-export function samples(runs: Run[], kind: string): Sample[] {
+export function samples(runs: Run[], kind: string, jobs = JOBS): Sample[] {
   const params = { disk: kind, size: '256 MiB', overlay: 'fresh OPFS', realtime: true, kernel: 'Buildroot Image' };
   const out: Sample[] = [];
-  for (const [name, dir] of JOBS) {
+  for (const [name, dir] of jobs) {
     const js = runs.map((r) => fioJson(r, name)[dir]);
     out.push({ name: `io_${kind}_${name}_bw`, unit: 'KiB/s', params, samples: js.map((j) => j.bw) });
     out.push({ name: `io_${kind}_${name}_iops`, unit: 'IOPS', params, samples: js.map((j) => j.iops) });
     out.push({ name: `io_${kind}_${name}_lat`, unit: 'us', params, samples: js.map((j) => j.clat_ns.mean / 1000) });
   }
+  if (jobs !== JOBS) return out;
   out.push({ name: `io_${kind}_dd_read`, unit: 'MiB/s', params: { ...params, bs: '1M', bytes: 128 << 20 }, samples: runs.map((r) => 128 / (between(r, 'dd') / 1000)) });
   out.push({ name: `io_${kind}_dd_write_fsync`, unit: 'MiB/s', params: { ...params, bs: '1M', bytes: 16 << 20 }, samples: runs.map((r) => 16 / (between(r, 'ddsync') / 1000)) });
   return out;
@@ -72,6 +73,14 @@ export function samples(runs: Run[], kind: string): Sample[] {
 async function io(o: Options & { file: File }): Promise<Sample[]> {
   const runs = await ioRun(o.file, 'raw', o.quick ? 1 : 5, o.log, { runtime: o.quick ? 1 : undefined });
   return samples(runs, 'raw');
+}
+
+/** The base reads alone, of a raw file or a qcow2 (by the chosen file's name): the qcow2 inflate's A/B (bench/io/REPORT.md). */
+async function ioReads(o: Options & { file: File }): Promise<Sample[]> {
+  const kind = /\.qcow2$/.test(o.file.name) ? 'qcow2' : 'raw';
+  const reads = JOBS.filter(([name]) => !/write|held/.test(name));
+  const runs = await ioRun(o.file, kind, o.quick ? 1 : 5, o.log, { runtime: o.quick ? 1 : undefined, only: reads.map(([name]) => name).join(' ') });
+  return samples(runs, kind, reads);
 }
 
 /** Per-stage time of each workload alone (one boot each; the held reads' boots include their writes, subtract the `seqwrite1M` one). */
@@ -87,5 +96,5 @@ async function ioStats(o: Options & { file: File }): Promise<Sample[]> {
   return out;
 }
 
-export const suite = { io, io_stats: ioStats };
+export const suite = { io, io_reads: ioReads, io_stats: ioStats };
 export const runAll = io;
