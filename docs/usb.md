@@ -325,7 +325,9 @@ calls `gone` on WebUSB's `disconnect` event.
    guest addresses requests by them. Linux logs a notice for the gap and binds the rest.
 6. The speed is inferred from the descriptors:
    - **super:** a SuperSpeed endpoint companion, or `bMaxPacketSize0` = 9
-   - **high:** a 512-byte bulk endpoint, or an interrupt or isochronous endpoint over 64 bytes
+   - **high:** what only high speed allows: a 512-byte bulk endpoint, an interrupt endpoint over 64 bytes, an
+     isochronous one over 1023 (a wired Xbox controller's full-speed audio interface has 228-byte ones), or
+     high-bandwidth bits (11–12 of `wMaxPacketSize`)
    - **low:** an 8-byte endpoint 0 with only interrupt endpoints of at most 8 bytes, and no bulk or
      isochronous ones
    - **full:** anything else

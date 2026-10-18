@@ -221,7 +221,8 @@ From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-check
      served descriptors.
   4. Infer the speed:
      - SuperSpeed endpoint companions or `bMaxPacketSize0` = 9 → SuperSpeed on a USB 3 port.
-     - Otherwise a bulk `wMaxPacketSize` of 512, or an interrupt or isochronous endpoint over 64 → high speed.
+     - Otherwise a bulk `wMaxPacketSize` of 512, an interrupt endpoint over 64, an isochronous one over 1023, or
+      high-bandwidth bits (11–12) → high speed (full speed allows isochronous packets up to 1023 bytes).
      - Otherwise an 8-byte endpoint 0 with ≤ 8-byte interrupt endpoints → low speed.
      - Otherwise full speed.
      U3 checks the heuristic on real devices. The guest's xhci-hcd validates packet sizes against the speed, so a
@@ -499,8 +500,9 @@ The rigs and how to bring them up are in [testing.md](../testing.md) "USB: the d
   Zero, one boot per test): every testusb test passes or is skipped by usbtest for this device except **test 24**
   (unlink from queues of writes). It hangs every time on QEMU. With 32-deep queues the guest's xhci-hcd logged
   events for TRBs outside any TD first, so this is QEMU's `qemu-xhci`/`usb-host`, not the gadget. Ours: the xhci
-  lane's `testusb -a` passes on our virtual Gadget Zero (all tests, 24 among them). Ours on the dummy_hcd gadget, through WebUSB,
-  isn't run yet (the backends lane's guest tests in `ci-usb.sh`).
+  lane's `testusb -a` passes on our virtual Gadget Zero (all tests, 24 among them), and through WebUSB on the
+  dummy_hcd gadget (`tests/usb-guest.test.ts` in `ci-usb.sh`) once the passthrough answers halts itself (§2's list
+  of refused requests gains SET_FEATURE(ENDPOINT_HALT), and GET_STATUS and CLEAR_FEATURE on endpoint 0).
 - **WebHID's parse** of the uhid rig's six descriptors is recorded in `tests/usb/hid-fixtures/`. What the backend
   needs to know:
   - Reports within a collection don't come in descriptor order (a vendor collection's input reports came as 2, 6,
@@ -523,6 +525,41 @@ The rigs and how to bring them up are in [testing.md](../testing.md) "USB: the d
 tests is the managed policy only. The rig tests go in `scripts/ci-usb.sh` (§5), not `ci-debian.sh`. The
 `getDevices()` index of serial-less twins is per session (§2, §4a; docs/usb.md). Alpine `linux-virt`'s missing
 `xhci-plat-hcd` is confirmed (§8).
+
+## U5 findings: real devices (2026-10-18)
+
+The user's devices on the Mac mini (macOS 26.6.2), Chrome for Testing 153.0.8010.12 headless on the Mac, driven
+over the DevTools protocol from the dev VM, which served the page through an SSH tunnel (the recipe is in
+[testing.md](../testing.md) "USB: real devices on the Mac"). The guest is Debian 13 (6.12.107+deb13-arm64) on a
+stored machine with the controller on and both devices remembered, attached at start.
+
+- **Permission on macOS:** Chrome for Testing reads its policies from the `com.google.ChromeForTesting` domain
+  (`/Library/Managed Preferences/com.google.ChromeForTesting.plist`), not from its bundle identifier
+  (`com.google.chrome.for.testing`), and only after `cfprefsd` is restarted.
+- **A Nooelec NESDR SMArt v5** (RTL2832U, `0bda:2838`, vendor class, high speed):
+  - the speed heuristic says high, right; both interfaces claim (macOS has no driver for it);
+  - Debian's `dvb_usb_rtl28xxu` and `rtl2832_sdr` initialise it whole (the tuner over I²C tunnelled in control
+    transfers; a DVB adapter, `swradio0` and the IR receiver);
+  - bulk IN through `/dev/swradio0`, 10 URBs of 64 KiB queued: **4.80 MB/s at 2.4 MS/s** (the plan's `rtl_test`
+    target) and **6.40 MB/s at 3.2 MS/s** (the chip's highest rate), exactly the device's rate, with no loss. The
+    guest resubmits each URB 0.3–0.5 ms after its completion. A stream's start costs ~1.6 s (the tuner's setup in
+    many small control transfers);
+  - unplugged and plugged back while the guest ran: the guest saw the disconnect, and the page's attach-at-start
+    entry put it back on the same connector (`1-1`), where the driver initialised again.
+- **An FTDI FT232R** (`0403:6001`, full speed): macOS's `AppleUSBFTDI` (DriverKit) holds its interface, yet Chrome's
+  `claimInterface` succeeds and takes it over: on macOS this adapter needs no remedy. The heuristic says full speed,
+  right. Debian's `ftdi_sio` attaches `/dev/ttyUSB0`; with TX wired to RX, random data comes back whole at 115200,
+  1M and 3M baud (the chip's highest), at 96–97% of the line rate.
+- **A PowerA wired Xbox Series X controller** (`20d6:2001`, full speed, class `ff/47/d0`: Xbox One's GIP, not HID,
+  so WebUSB's and not WebHID's): both interfaces claim on macOS. Its audio interface's alternate setting has
+  228-byte isochronous endpoints, which **the speed heuristic took for high speed**; full speed allows isochronous
+  packets up to 1023 bytes, so only larger ones, or high-bandwidth bits, now mean high speed (§4; the device is a
+  recorded fixture in `tests/usb/webusb-fixtures.ts`, with the NESDR and the FT232R). Debian's `xpad` binds it
+  (`js0`), and every button, both sticks, both triggers and the pad reach the guest's event device. A GIP controller
+  sends nothing until the host's init packet, so the interrupt OUT works too.
+- **Chrome for Testing on macOS** listed none of the policy's devices in a profile it had used before (the page
+  never calls `forget()` but from Forget), and all of them in a fresh one. So the recipe starts each session with a
+  fresh profile.
 
 ## 7. What WebUSB can't attach, and where it should go instead
 

@@ -162,16 +162,20 @@ export function filterConfig(raw: Uint8Array, drop: ReadonlySet<number>): Uint8A
 
 /**
  * The speed a device runs at, from its descriptors (docs/plans/usb.md §4): SuperSpeed companions or
- * a 512-byte endpoint 0 → super; a 512-byte bulk endpoint, or an interrupt or isochronous one over
- * 64 → high; an 8-byte endpoint 0 with no bulk or isochronous endpoints and interrupt ones of at most
- * 8 bytes → low; otherwise full.
+ * a 512-byte endpoint 0 → super; what only high speed allows → high: a 512-byte bulk endpoint, an
+ * interrupt one over 64 bytes, an isochronous one over 1023 (full speed allows isochronous packets up
+ * to 1023 bytes: a wired Xbox controller's audio interface has 228-byte ones), or high-bandwidth
+ * transactions (bits 11–12 of wMaxPacketSize); an 8-byte endpoint 0 with no bulk or isochronous
+ * endpoints and interrupt ones of at most 8 bytes → low; otherwise full.
  */
 export function inferSpeed(device: Uint8Array, configs: ConfigInfo[]): UsbSpeed {
   const eps = configs.flatMap((c) => [...c.interfaces.values()].flat().flatMap((a) => a.endpoints));
   if (device[7] === 9 || eps.some((e) => e.companion)) return 'super';
   const size = (e: EpInfo) => e.maxPacket & 0x7ff;
   const type = (e: EpInfo) => e.attributes & 3;
-  if (eps.some((e) => (type(e) === 2 && size(e) === 512) || ((type(e) === 3 || type(e) === 1) && size(e) > 64))) return 'high';
+  const highOnly = (e: EpInfo) => (type(e) === 2 && size(e) === 512) || (type(e) === 3 && size(e) > 64) || (type(e) === 1 && size(e) > 1023)
+    || ((type(e) === 1 || type(e) === 3) && (e.maxPacket & 0x1800) !== 0);
+  if (eps.some(highOnly)) return 'high';
   if (device[7] === 8 && eps.every((e) => type(e) === 3 && size(e) <= 8)) return 'low';
   return 'full';
 }

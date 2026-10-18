@@ -227,7 +227,7 @@ test('OUT TDs complete in submit order whatever order WebUSB resolves them in', 
 
 test('bulk IN: data, short, stall, babble, a lost device', async () => {
   let gone = 0;
-  const dev = new FakeUsb(fx('Realtek'));
+  const dev = new FakeUsb(fx('Nooelec'));
   const p = await openWebUsb(dev, { gone: () => gone++ });
   const a = submit(p, { ep: 0x81, type: 'bulk', length: 512 });
   const b = submit(p, { ep: 0x81, type: 'bulk', length: 512 });

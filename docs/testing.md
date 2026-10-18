@@ -545,6 +545,31 @@ Lima's `vz` passes no host USB devices through, so the test devices come from th
 - **Sizing:** `node bench/usb/run.ts` (WebUSB's cost per transfer and bulk throughput from a worker, with a native
   usbfs baseline; plans/usb.md "U0 findings").
 
+## USB: real devices on the Mac
+
+The dev VM sees no real USB devices, but the Mac mini that hosts it does. A by-hand check (not a test in any
+`ci-*.sh`; plans/usb.md "U5 findings") runs the page in a headless Chrome on the Mac, driven from the VM:
+
+- **The browser:** Playwright's Chrome for Testing, already on the Mac (`~/Library/Caches/ms-playwright/chromium-*`),
+  started over SSH with `--headless=new --remote-debugging-port=9223 --user-data-dir=/tmp/webpc-cft`. It listens on
+  the Mac's `127.0.0.1:9223` (with `--remote-debugging-address=127.0.0.1` it took `[::1]`). Start each session
+  with a fresh profile (`rm -rf /tmp/webpc-cft` first): a reused one listed none of the policy's devices.
+- **The tunnels:** from the VM, `ssh -N -R 8193:127.0.0.1:8193 -L 9300:127.0.0.1:9223 macmini.lan`, with
+  `PORT=8193 node tools/serve.ts` in the VM. The page is then the Mac's `http://127.0.0.1:8193`, and the VM drives
+  the browser with `chromium.connectOverCDP('http://127.0.0.1:9300')`. Lima forwards the VM's own listening ports to
+  the Mac's loopback too, so don't forward a port to the Mac that the VM also listens on.
+- **Permission** is a managed policy again, which needs the user's `sudo` on the Mac: a plist with
+  `WebUsbAllowDevicesForUrls` (the devices' vendor and product IDs, for `http://127.0.0.1:8193`) in
+  `/Library/Managed Preferences/com.google.ChromeForTesting.plist`, then `sudo killall cfprefsd`. Chrome for
+  Testing reads that domain, not its bundle identifier's (`com.google.chrome.for.testing`); `chrome://policy`
+  renders blank to `innerText` in headless Chrome, so check with Playwright's `getByText`, or just with
+  `navigator.usb.getDevices()`. Remove the plist afterwards.
+- **The guest:** a stored Debian machine written into the store from the page (as `tests/page-usb-guest.test.ts`
+  does), with the devices in `usbDevices` and *attach at start*, since the chooser can't be answered. Commands go
+  through the page's terminal; it holds only what is on screen, so long output is better written to a file in the
+  guest and read back in short pieces. Interactive bash drops the rest of a command line when a child dies of
+  SIGINT, so stop a timed run with `timeout` (SIGTERM) or a count, not `timeout -s INT`.
+
 ## Planned layers
 
 - **In-guest suites** not yet run: more LTP areas (need `mkfs` tools and a scratch disk), the
