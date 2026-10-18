@@ -667,9 +667,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - LTP: only the syscalls subset; the loop-device tests (`getdents01`, `rename01`) and other areas
   need `mkfs` tools, a scratch disk and more RAM. kselftests: not `fp` (minutes of stress) nor the
   generic suites.
-- **The overlay's hand-over test** (`tests/browser.test.ts`) failed once under `scripts/ci.sh`'s load (2026-10-10:
-  `waited: false`, the second opener didn't see the holder's wait), passed alone and on CI's rerun: a timing margin
-  to widen if it recurs.
+- **`tests/pause.test.ts` hung once under `scripts/ci.sh`** (2026-10-18, its file cancelled after 1,337 s: "Promise
+  resolution is still pending but the event loop has already resolved", so a pause or an end that nothing will
+  resolve, with no timer left), passed alone and 9 times in 3 copies at once. Which of its tests is unknown (a
+  cancelled file prints none); its tests now have a 2-minute deadline, so the next one says.
+- **`clockOffset`'s test** (`tests/threads.test.ts`) failed once under `scripts/ci.sh`'s load (2026-10-18: off by
+  0.23 ms against its 0.2 ms bound; its delays are spin loops), passed alone 5 times: a margin to widen if it recurs.
 - `coremark_vm_jit`: pass a fixed iteration count through init's arguments so a run can't fall
   under CoreMark's 10 s rule.
 - The PC-sampling profiler samples once per chunk (32K steps).

@@ -91,7 +91,11 @@ const poweredOff = (r: Run) => {
 };
 const booted = /smp: Brought up 1 node, 4 CPUs[^]*webpc: test ok/;
 
-test('parallel: Buildroot on 4 vCPUs (JIT) boots through 20+ pauses (every 30 ms of running, and at console markers)', { skip }, async () => {
+// Each test well under a minute alone: a deadline names the one that hangs (one hung once under
+// scripts/ci.sh with nothing left to wake it, and its cancelled file said nothing: docs/backlog.md).
+const TIMEOUT = 120_000;
+
+test('parallel: Buildroot on 4 vCPUs (JIT) boots through 20+ pauses (every 30 ms of running, and at console markers)', { skip, timeout: TIMEOUT }, async () => {
   for (let i = 0; i < RUNS; i++) {
     const latencies: number[] = [];
     let pauses = 0;
@@ -117,7 +121,7 @@ test('parallel: Buildroot on 4 vCPUs (JIT) boots through 20+ pauses (every 30 ms
   }
 });
 
-test('parallel: a pause returns only once the backends are done with every request (slowed backends, 4 vCPUs, JIT)', { skip }, async () => {
+test('parallel: a pause returns only once the backends are done with every request (slowed backends, 4 vCPUs, JIT)', { skip, timeout: TIMEOUT }, async () => {
   // The backends run on this thread in Node: slow every doorbell service down by 10 ms, so a ring made
   // just before a vCPU parks is still being served when the vCPUs are all out.
   const poll = Devices.prototype.poll;
@@ -150,7 +154,7 @@ test('parallel: a pause returns only once the backends are done with every reque
   }
 });
 
-test('parallel: a pause while every vCPU is idle, then input wakes the guest (4 vCPUs, JIT)', { skip }, async () => {
+test('parallel: a pause while every vCPU is idle, then input wakes the guest (4 vCPUs, JIT)', { skip, timeout: TIMEOUT }, async () => {
   for (let i = 0; i < RUNS; i++) {
     const vm = await bootVm(WASM, parallel(4, true));
     let out = '';
@@ -202,7 +206,7 @@ test('parallel: a pause while every vCPU is idle, then input wakes the guest (4 
   }
 });
 
-test('parallel: a pause requested as the guest powers off never hangs and the end is reported (2 vCPUs, JIT)', { skip }, async () => {
+test('parallel: a pause requested as the guest powers off never hangs and the end is reported (2 vCPUs, JIT)', { skip, timeout: TIMEOUT }, async () => {
   const outcomes: string[] = [];
   for (let i = 0; i < Math.max(RUNS, 4); i++) {
     const delay = [0, 0, 2, 5, 10][i % 5];
@@ -228,7 +232,7 @@ test('parallel: a pause requested as the guest powers off never hangs and the en
   console.log(`# pause at the power-off: ${outcomes.join(', ')}`);
 });
 
-test('parallel: close() while paused, and while a pause is pending, ends the workers and frees the VM (4 vCPUs, JIT)', { skip }, async () => {
+test('parallel: close() while paused, and while a pause is pending, ends the workers and frees the VM (4 vCPUs, JIT)', { skip, timeout: TIMEOUT }, async () => {
   setFlagsFromString('--expose-gc');
   const gc = runInNewContext('gc') as () => void;
   // Each case in a function of its own: a closure that outlived it would keep the VM reachable.
@@ -263,7 +267,7 @@ test('parallel: close() while paused, and while a pause is pending, ends the wor
 });
 
 for (const [name, n] of [['buildroot', 1], ['buildroot-4cpu', 4]] as const) {
-  test(`round-robin: pausing between runs leaves ${name}'s step count exact (JIT, ${n} vCPU${n > 1 ? 's' : ''})`, { skip }, async () => {
+  test(`round-robin: pausing between runs leaves ${name}'s step count exact (JIT, ${n} vCPU${n > 1 ? 's' : ''})`, { skip, timeout: TIMEOUT }, async () => {
     let pauses = 0;
     const r = await drive(buildroot({ ncpus: n }), undefined, async (vm) => {
       assert.ok(await vm.pause());

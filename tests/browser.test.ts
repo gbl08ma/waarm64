@@ -302,7 +302,10 @@ test("the overlay's hand-over: a second opener waits for the holder to close it,
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
-    return { opened: opened.type, second: second.type, waited: second.at >= closed.at, terminated: terminated.filter((t) => t.type !== 'opened').map((t) => t.message), busy: busy.message };
+    // It waited: it opened only once the first had held it for the 300 ms (not "after `closed`": the lock goes
+    // inside close(), before the closer reads its clock, so the second can stamp an earlier time).
+    void closed;
+    return { opened: opened.type, second: second.type, waited: second.at - opened.at >= 250, terminated: terminated.filter((t) => t.type !== 'opened').map((t) => t.message), busy: busy.message };
   });
   assert.deepEqual(r, { opened: 'opened', second: 'opened', waited: true, terminated: [], busy: 'Error: overlay webpc-test-handover is in use: another machine held it for 0.3 s' });
   await page.close();
