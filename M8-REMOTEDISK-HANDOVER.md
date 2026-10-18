@@ -25,6 +25,20 @@ its method and why it changed little); `web/devices.ts` (`httpSource`, `blk`), `
    waits (bench/io's screen-latency check under a continuous read is the model).
 4. Write `bench/remote-disk/REPORT.md` with the JSON behind it, then pick R1's design from the numbers.
 
+## Measure the inflate pool (a cloud session, 2026-10-18: built, not timed)
+
+A request's compressed qcow2 clusters are now inflated as one batch, shared between the reading thread and up to
+four workers (`web/inflate-pool.ts`, docs/devices.md "qcow2"); before, one after another on the reading thread.
+Unmeasured (cloud CPU isn't for timing). On the dev VM, A/B against its parent commit, alternating:
+- bench/io's sequential 1 MiB and 128 KiB reads and random 4 KiB reads, over a qcow2 of compressed clusters
+  (`qemu-img convert -c`, 64 KiB clusters as Debian's published image) in place of the raw file;
+- a Debian boot from its published (95% compressed) image on the page, and a stored disk's import of it
+  (`importImage` in the disk worker) and a whole-disk export (the export worker), the last two with
+  `?machine=debian` and the Machines page;
+- the pool's size: 4 against 2 and 1 while vCPUs run (the device worker's pool shares the cores with them).
+If a pool doesn't pay where the vCPUs run, give `blk` none (`openDisk`'s default inflates in place) and keep it in
+the disk workers. Also run `scripts/ci-debian.sh` and `scripts/ci-machines.sh` (the cloud can't build EDK2).
+
 ## Rules that bite here
 
 - Don't add dependencies (no bundler, no zstd library) without asking; Node's and the browser's APIs first.

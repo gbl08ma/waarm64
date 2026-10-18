@@ -333,7 +333,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   capacity change and net link state don't yet.
 - virtio-blk over HTTP: synchronous XHRs, no cache or concurrency (a request's qcow2 clusters are
   read in merged ranges, nothing is merged across requests); batch, cache or go async when an I/O
-  benchmark says so: for remote servers, [plans/remote-disks.md](plans/remote-disks.md). qcow2's compressed clusters are inflated one at a time on the reading thread.
+  benchmark says so: for remote servers, [plans/remote-disks.md](plans/remote-disks.md). qcow2's compressed clusters are inflated a request at a time, shared with a pool of workers (docs/devices.md "qcow2"); the pool's gain and size are unmeasured (`M8-REMOTEDISK-HANDOVER.md`).
 - **A public demo that resumes instead of booting** (the user's, 2026-10-17; with remote disks above and PLAN.md
   phase D's preloaded image and snapshot): the deployed page opens a hosted image by resuming a snapshot taken just
   before a first-boot script, which then gives this copy its own identity and per-machine setup. Every visitor resumes

@@ -2,8 +2,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { constants, inflateRawSync } from 'node:zlib';
-import { test } from 'node:test';
-import { openDisk } from '../web/qcow2.ts';
+import { after, before, test } from 'node:test';
+import { chromium, type Browser } from 'playwright-core';
+import { startServer } from '../tools/serve.ts';
+import { inflateEach, openDisk, type Inflater } from '../web/qcow2.ts';
 
 const file = (name: string) => readFileSync(new URL(`./qcow2/${name}`, import.meta.url));
 const open = (name: string) => {
@@ -94,4 +96,62 @@ test('deflate.qcow2 reads as data.raw where the stream drops the output of a wri
   } finally {
     globalThis.DecompressionStream = real;
   }
+});
+
+// A request's compressed clusters go to the inflater together, once (web/inflate-pool.ts spreads
+// them over threads), and one that doesn't unpack fails the request.
+test('deflate.qcow2: a request inflates its compressed clusters in one batch', async () => {
+  const b = file('deflate.qcow2');
+  const batches: number[] = [];
+  let spoil = false; // the inflater loses the last cluster of a batch
+  const inflater: Inflater = async (inputs, size) => {
+    batches.push(inputs.length);
+    const out = await inflateEach(inputs, size);
+    if (spoil) out[out.length - 1] = undefined;
+    return out;
+  };
+  const d = openDisk((off, len) => (off + len <= b.length ? new Uint8Array(b.buffer, b.byteOffset + off, len) : undefined), b.length, inflater);
+  const all = await d.read(0, data.length);
+  assert.ok(all && Buffer.compare(all, data) === 0, 'deflate.qcow2 read in one request differs from data.raw');
+  assert.deepEqual(batches, [16]); // clusters 24-39, the compressible text
+  // Cached: the last 16 aren't inflated again.
+  const again = await d.read(24 * 4096, 16 * 4096);
+  assert.ok(again && Buffer.compare(again, data.subarray(24 * 4096, 40 * 4096)) === 0);
+  assert.deepEqual(batches, [16]);
+  spoil = true;
+  const fresh = openDisk((off, len) => new Uint8Array(b.buffer, b.byteOffset + off, len), b.length, inflater);
+  assert.equal(await fresh.read(0, data.length), undefined);
+});
+
+let browser: Browser | undefined;
+let base = '';
+let close = () => {};
+before(async () => {
+  const server = await startServer();
+  close = () => server.close();
+  base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/usr/bin/chromium' });
+});
+after(async () => { await browser?.close(); close(); });
+
+test('deflate.qcow2 through the inflate pool in Chromium: workers take shares, and a closed pool inflates on its own thread', async () => {
+  const page = await browser!.newPage();
+  await page.goto(`${base}/tests/browser/core.html`);
+  const r = await page.evaluate(async () => {
+    const { openDisk } = await import('/web/qcow2.ts' as string);
+    const { inflatePool } = await import('/web/inflate-pool.ts' as string);
+    const bytes = async (u: string) => new Uint8Array(await (await fetch(u)).arrayBuffer());
+    const [img, raw] = [await bytes('/tests/qcow2/deflate.qcow2'), await bytes('/tests/qcow2/data.raw')];
+    const same = (a?: Uint8Array) => !!a && a.length === raw.length && a.every((x, k) => x === raw[k]);
+    const at = (off: number, len: number) => (off + len <= img.length ? img.subarray(off, off + len) : undefined);
+    const pool = inflatePool(3);
+    const pooled = same(await openDisk(at, img.length, pool).read(0, raw.length));
+    const sent = pool.sent;
+    pool.close();
+    const closed = same(await openDisk(at, img.length, pool).read(0, raw.length));
+    return { pooled, sent, closed, after: pool.sent };
+  });
+  await page.close();
+  // 16 clusters over this thread and three workers: 4 each.
+  assert.deepEqual(r, { pooled: true, sent: 12, closed: true, after: 12 });
 });

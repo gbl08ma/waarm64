@@ -8,6 +8,7 @@ import { diskIdentity } from '../devices.ts';
 import { openOverlay, overlay } from '../overlay.ts';
 import { openDisk } from '../qcow2.ts';
 import { changedClusters, nonZeroClusters, rawChunks, writeQcow2, type DataCluster, type Sink } from '../qcow2-write.ts';
+import { inflatePool } from '../inflate-pool.ts';
 import { deflatePool } from './deflate-pool.ts';
 import type { ExportRequest, ExportResult } from './export.ts';
 import { openSource } from './sources.ts';
@@ -24,9 +25,10 @@ self.onmessage = (e: MessageEvent<ExportRequest>) => {
 async function exportDisk(r: ExportRequest) {
   const d = r.disk;
   const src = await openSource(d.source);
-  const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size);
+  const inflater = inflatePool(); // a qcow2 base's compressed clusters
+  const base = openDisk((off, len) => (len === 0 ? new Uint8Array(0) : src.read(off, len)), src.size, inflater);
   // Waits for the machine's worker to let go of the overlay. A disk without one is exported as it is (a stored disk).
-  const files = d.overlay ? await openOverlay(d.overlay, d.identity ?? diskIdentity({ ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) }, base.size)).catch((e) => { src.close?.(); throw e; }) : undefined;
+  const files = d.overlay ? await openOverlay(d.overlay, d.identity ?? diskIdentity({ ...('url' in d.source ? { url: d.source.url } : 'file' in d.source ? { file: d.source.file } : {}) }, base.size)).catch((e) => { src.close?.(); inflater.close(); throw e; }) : undefined;
   let out: FileSystemWritableFileStream | undefined;
   try {
     const disk = files ? overlay(base, files.data, files.map) : undefined;
@@ -76,6 +78,7 @@ async function exportDisk(r: ExportRequest) {
     await out?.abort().catch(() => {});
     files?.close();
     src.close?.();
+    inflater.close();
   }
 }
 

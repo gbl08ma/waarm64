@@ -113,7 +113,11 @@ mode (and natively in realtime mode: std has no CSPRNG).
   per-request XHR dominates random reads (fio 4 KiB random reads ~1,800 IOPS on the M4).
 - **qcow2** v2/v3 (`web/qcow2.ts`, `core/tests/common/qcow2.rs`, detected by the magic): L1/L2,
   unallocated and zero-flag clusters as zeros, compressed clusters as raw deflate
-  (`DecompressionStream('deflate-raw')`; `miniz_oxide` natively, a dev-dependency). Read-only
+  (`DecompressionStream('deflate-raw')`; `miniz_oxide` natively, a dev-dependency). A request's compressed
+  clusters are inflated as one batch (an `Inflater`): where the thread can start workers (the device worker, the
+  disk-in and disk-out workers) it shares the batch with up to four of `web/inflate-pool.ts`'s
+  (`inflate-worker.ts`; started by the first request with two or more, each share one message; a single cluster
+  stays on the reading thread), otherwise one after another in place (Node). Read-only
   (refcounts never read). **Refused at open:** encryption, backing files (a changes file is read by `readChanges`, docs/frontend.md "Your own disk"), external data files,
   extended L2, zstd, unknown incompatible features. Capacity is the virtual size. Debian's
   published image is 95% compressed clusters, which is why deflate is supported rather than

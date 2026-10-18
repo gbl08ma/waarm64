@@ -2,6 +2,7 @@
 // overlay merged into its stored disk. A worker for the sync access handles and the synchronous reads of a `File`
 // (web/stored.ts); the page (web/app/disks.ts) runs one per job.
 import { blobSource } from '../devices.ts';
+import { inflatePool } from '../inflate-pool.ts';
 import { importImage, mergeOverlay, openStoredForWriting, storedEstimate } from '../stored.ts';
 
 export type DiskJob =
@@ -23,11 +24,13 @@ self.onmessage = async (e: MessageEvent<DiskJob>) => {
       post({ type: 'done', ...storedEstimate(blobSource(j.file)) });
     } else if (j.type === 'import') {
       const files = await openStoredForWriting(j.path, j.identity, 0);
+      const pool = inflatePool();
       try {
-        const r = await importImage(blobSource(j.file), files, (done, total) => post({ type: 'progress', done, total }));
+        const r = await importImage(blobSource(j.file), files, (done, total) => post({ type: 'progress', done, total }), pool);
         post({ type: 'done', size: r.size, format: r.format, blocks: r.blocks });
       } finally {
         files.close();
+        pool.close();
       }
     } else {
       post({ type: 'done', blocks: await mergeOverlay(j.disk, j.overlay, j.identity, j.size) });
