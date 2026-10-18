@@ -3,7 +3,8 @@
 // Tailscale backend's IP port) boots it as tests/net-tailnet.test.ts wants it, without the card's
 // credential (the test sets up systemd-networkd and systemd-resolved itself); `page` boots it
 // exactly as the page does with a network card (web/app/machine.ts `network`) on the synchronous
-// echo backend, for tests/net-guest.test.ts.
+// echo backend, for tests/net-guest.test.ts; with `adapters` (and `page`), that many cards, each on its own gateway and
+// echo lease (docs/plans/network-adapters.md §4).
 import { bootVm, Exit } from '../../web/vm.ts';
 import { credentialFiles, MACHINES } from '../../web/app/machine.ts';
 import { UNATTENDED } from '../debian-unattended.ts';
@@ -14,7 +15,7 @@ const get = async (url: string) => {
   return new Uint8Array(await r.arrayBuffer());
 };
 
-self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; page?: boolean; serial: MessagePort; overlay?: string }>) => {
+self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; page?: boolean; adapters?: number; serial: MessagePort; overlay?: string }>) => {
   try {
     const m = MACHINES.debian;
     const [wasm, kernel] = await Promise.all([
@@ -23,7 +24,12 @@ self.onmessage = async (e: MessageEvent<{ ip?: MessagePort; page?: boolean; seri
     const vm = await bootVm(wasm, {
       ramSize: m.ramMiB * 2 ** 20, kernel, cmdline: '', jit: 1, ncpus: 2, parallel: true, realtime: true, serialIn: e.data.serial,
       firmware: { fwCfg: credentialFiles([...UNATTENDED, ...(e.data.page ? m.network.credentials : [])]) },
-      devices: [{ type: 'rng' }, { type: 'blk', url: m.disk, overlay: e.data.overlay }, { type: 'net', adapter: e.data.ip ? { ip: e.data.ip } : 'echo' }],
+      devices: [
+        { type: 'rng' }, { type: 'blk', url: m.disk, overlay: e.data.overlay },
+        ...(e.data.adapters
+          ? Array.from({ length: e.data.adapters }, (_, n) => ({ type: 'net' as const, mac: `52:54:00:12:34:${(0x56 + n).toString(16)}`, gateway: n, adapter: 'echo' as const }))
+          : [{ type: 'net' as const, adapter: e.data.ip ? { ip: e.data.ip } : 'echo' as const }]),
+      ],
     });
     for (;;) {
       const r = await vm.runAsync(1e9);

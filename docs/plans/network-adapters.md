@@ -1,4 +1,4 @@
-# Several network adapters, and connections kept by the browser (proposed, 2026-10-18)
+# Several network adapters, and connections kept by the browser (2026-10-18; L0 and L1 done)
 
 A machine today has one network card or none (`network: boolean` in its shape, web/app/shape.ts), and the page has one
 connection: one set of settings per browser (`webpc.settings` `net`, web/app/network.ts), one kept Tailscale node per
@@ -140,8 +140,8 @@ the port back.
 - **The device list:** one `{type: 'net', mac, adapter: {ip}}` per adapter (devices.md "net" already takes `mac`). With
   4 adapters, 16 disks and the other six transports, a machine uses 26 of the core's 32. No core change and no ABI
   change.
-- **Each adapter's gateway has its own addresses:** MAC `02:77:65:62:70:6<n>`, IPv4 `169.254.0.<n+1>` and the IPv6
-  link-local from that MAC (web/gateway.ts `GatewayOptions` already takes `mac` and `ip`). tailcat's IPv4 lease is
+- **Each adapter's gateway has its own addresses:** MAC `02:77:65:62:70:63` plus `n`, IPv4 `169.254.0.<n+1>` and the
+  IPv6 link-local from that MAC (web/gateway.ts `gatewayOf`; adapter 0's are the one card's). tailcat's IPv4 lease is
   `192.0.0.<n+2>`. It is local, because the client translates it to the tunnel's IPv6, and 192.0.0.2 through
   192.0.0.5 stay inside the /29 it comes from. A tailnet's addresses are distinct already.
 - **Default routes:** the page knows every adapter's state and picks the **primary**: the first adapter, in order,
@@ -166,8 +166,8 @@ the port back.
   the machine's current attachments, and the restored guest renews its leases.
 - **A machine's definition** exports its adapters (MACs) and not its connections, which hold secrets. An imported
   machine's adapters come detached.
-- **Duplicate** copies the adapters with new MACs and no connections: one connection can't be attached to two
-  machines that run together.
+- **Duplicate** copies the adapters with their MACs (no two machines share a link, so MACs never meet) and no
+  connections: one connection can't be attached to two machines that run together.
 
 ## 6. What changes
 
@@ -193,9 +193,10 @@ the port back.
 One slice, one commit, a short report each. `scripts/ci.sh` runs at each loop, `scripts/ci-machines.sh` from L1, and
 `scripts/ci-net.sh` at L2 and L4.
 
-- **L0, the model:** connection records, the migration (planted: a kept node's prefix rewritten, so the node logs in
+- **L0, the model (done):** connection records, the migration (planted: a kept node's prefix rewritten, so the node logs in
   again), locks and their notes between two tabs, and the in-memory store. DOM-free and unit-tested. No UI.
-- **L1, several adapters:** the shape (old hashes unchanged; planted: a MAC left out of the hash), slots, a port per
+- **L1, several adapters (done; the page's first adapter is the toolbar's Network menu's, the others have no
+  connection until L3):** the shape (old hashes unchanged; planted: a MAC left out of the hash), slots, a port per
   adapter, and the gateway's addresses per adapter. Test: Debian with three adapters on the echo backend, each
   pinging through its own gateway.
 - **L2, routes:** the primary, the routes-only leases and the takeover. Tests:

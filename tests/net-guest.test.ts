@@ -4,7 +4,8 @@
 // address). Nobody sets the guest up: systemd-networkd takes a .network file from a credential on the
 // command line and takes the gateway's lease, and the guest pings an address that
 // exists nowhere and its router. It also checks that the units the card needs don't make the
-// boot wait for a network that isn't coming (a login prompt inside the boot's usual time).
+// boot wait for a network that isn't coming (a login prompt inside the boot's usual time), and that three cards each
+// get their own lease and router (docs/plans/network-adapters.md §4).
 // Realtime, one Debian boot, ~2 min alone. Opt-in with WEBPC_DISTROS=debian, like Debian's
 // other Chromium tests.
 import assert from 'node:assert/strict';
@@ -83,6 +84,44 @@ test('the page\'s Debian with a card takes the gateway\'s lease by itself and pi
       assert.match(await run(page, 'resolvectl dns 2>&1 | cat'), /fd00:5eb0::53/, 'the DHCPv6 and RA resolver');
       const dns = await run(page, 'resolvectl status 2>&1 | head -20');
       console.log(`# resolved: ${dns.trim().replace(/\n/g, ' | ')}`);
+    } finally {
+      await removeOverlay();
+      await page.context().close();
+    }
+  });
+});
+
+// Several adapters (docs/plans/network-adapters.md §4, L1): each card has its own gateway (MAC and address) and its own
+// echo lease, and the guest reaches each gateway through its own interface.
+test('three adapters, each on its own gateway and lease', { skip, timeout: 600_000 }, async () => {
+  await withDebianLock(async () => {
+    const page = await (await browser.newContext()).newPage();
+    const removeOverlay = () => page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
+    try {
+      await page.goto(`${base}/tests/browser/core.html`);
+      await removeOverlay();
+      await page.goto(`${base}/tests/browser/netguest.html?overlay=${OVERLAY}&adapters=3`);
+      await loginRoot(page);
+      const addrs = () => run(page, "ip -4 -o addr show scope global | awk '{print $2, $4}' | sort").then((s) => [...s.matchAll(/^(e\S+) (198\.18\.0\.\d+)\/\d+$/gm)].map((x) => `${x[1]} ${x[2]}`));
+      let got = await addrs();
+      for (let k = 0; k < 40 && got.length < 3; k++) {
+        await page.waitForTimeout(1000);
+        got = await addrs();
+      }
+      const links = await run(page, 'ip -br link');
+      assert.equal(got.length, 3, `three leases: ${got.join(', ')}\n${links}`);
+      // In slot order: the first card is the first interface, with the first lease.
+      const byLease = new Map(got.map((g) => [g.split(' ')[1], g.split(' ')[0]]));
+      assert.deepEqual([...byLease.keys()].sort(), ['198.18.0.15', '198.18.0.16', '198.18.0.17']);
+      for (const [n, mac] of ['56', '57', '58'].entries()) {
+        const dev = byLease.get(`198.18.0.${15 + n}`)!;
+        assert.match(await run(page, `cat /sys/class/net/${dev}/address`), new RegExp(`52:54:00:12:34:${mac}`), `${dev} is card ${n + 1}`);
+        const routes = await run(page, `ip -4 route show dev ${dev}`);
+        assert.match(routes, new RegExp(`default via 169\\.254\\.0\\.${n + 1}`), `${dev}: its own router: ${routes}`);
+        const router = await run(page, `ping -c 1 -W 5 -I ${dev} 169.254.0.${n + 1}`); // that card's gateway
+        assert.match(router, /1 packets transmitted, 1 received/, `${dev}: ${router}`);
+        assert.match(await run(page, `ip neigh show 169.254.0.${n + 1} dev ${dev}`), new RegExp(`02:77:65:62:70:${(0x63 + n).toString(16)}`), `${dev}: its gateway's own MAC`);
+      }
     } finally {
       await removeOverlay();
       await page.context().close();

@@ -5,6 +5,10 @@
 
 /** The most disks a machine has (docs/plans/machines.md §4.1: room left of the core's 32 transports for devices to come). */
 export const MAX_DISKS = 16;
+/** The most network adapters a machine has (docs/plans/network-adapters.md §1.1). */
+export const MAX_ADAPTERS = 4;
+/** The MAC a machine's card had before adapters (and a new machine's first adapter has): such a machine's shape is as it was. */
+export const DEFAULT_MAC = '52:54:00:12:34:56';
 /** The shape's format: a new one orphans every snapshot made under the old (none is expected soon). */
 export const SHAPE_VERSION = 1;
 
@@ -62,8 +66,13 @@ export type MachineRecord = {
   ncpus: number;
   ramMiB: number;
   display: Display;
-  /** A network card (virtio-net) from the start: the page gives it to its Tailscale client. Several adapters are later. */
-  network: boolean;
+  /**
+   * The network adapters (virtio-net), in slot order (docs/plans/network-adapters.md). Absent on machines made before
+   * adapters: their `network` says whether they have one, at `DEFAULT_MAC` (`adaptersOf`).
+   */
+  adapters?: Adapter[];
+  /** Before adapters: a network card from the start. Read only through `adaptersOf`. */
+  network?: boolean;
   /**
    * A USB controller (an xHCI: 4 USB 2 and 4 USB 3 root ports behind 4 connectors, docs/usb.md "The page"). Absent on
    * machines made before it existed: off, and their shape (and its hash) as it was. New machines have it.
@@ -76,6 +85,29 @@ export type MachineRecord = {
   created: number;
   modified: number;
 };
+
+/**
+ * A network adapter: its MAC (in the shape: the guest sees it) and the connection it is attached to (an id in the
+ * browser's connections, web/app/connections.ts; none: a card with no cable). The connection isn't in the shape.
+ */
+export type Adapter = { id: string; mac: string; connection?: string };
+
+/** A machine's adapters: its own, or, made before adapters, the card it had. */
+export function adaptersOf(m: Pick<MachineRecord, 'adapters' | 'network'>): Adapter[] {
+  return m.adapters ?? (m.network ? [{ id: 'f00000000000', mac: DEFAULT_MAC }] : []);
+}
+
+/** A new adapter's MAC: QEMU's locally administered prefix and three random bytes, not one of `taken` (nor the default). */
+export function newMac(taken: Iterable<string> = [], random: () => number = Math.random): string {
+  const used = new Set([...taken, DEFAULT_MAC].map((x) => x.toLowerCase()));
+  for (;;) {
+    const mac = ['52', '54', '00', ...Array.from({ length: 3 }, () => Math.floor(random() * 256).toString(16).padStart(2, '0'))].join(':');
+    if (!used.has(mac)) return mac;
+  }
+}
+
+/** Whether `s` is a MAC as the page writes them (six lowercase hex pairs) and a unicast one. */
+export const isMac = (s: string) => /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/.test(s) && (parseInt(s.slice(0, 2), 16) & 1) === 0;
 
 /**
  * A USB device a machine remembers (docs/usb.md "The page"): who it is (WebUSB's or WebHID's grant persists per origin,
@@ -110,12 +142,13 @@ export const CPU_FEATURES: CpuFeature[] = ['rng', 'e0pd'];
 /**
  * The machine's transports in slot order: the other devices first, in a fixed order, then the disks
  * (machines.md §4.1), so that a device kind added later is appended after them only on machines
- * that have it. `attachment` is the disk's index in the machine's list.
+ * that have it. The network adapters are where the one card was (network-adapters.md §4). `attachment` is the disk's
+ * index in the machine's list, `adapter` the adapter's.
  */
-export function slots(m: { network: boolean; display?: Display | 'none'; attachments: unknown[] }): { kind: DeviceKind; attachment?: number }[] {
+export function slots(m: { nets: number; display?: Display | 'none'; attachments: unknown[] }): { kind: DeviceKind; attachment?: number; adapter?: number }[] {
   return [
     { kind: 'rng' }, { kind: 'keyboard' }, { kind: 'tablet' },
-    ...(m.network ? [{ kind: 'net' as const }] : []),
+    ...Array.from({ length: m.nets }, (_, i) => ({ kind: 'net' as const, adapter: i })),
     ...(m.display === 'none' ? [] : [{ kind: 'gpu' as const }]),
     { kind: 'snd' },
     ...m.attachments.map((_, i) => ({ kind: 'blk' as const, attachment: i })),
@@ -139,6 +172,8 @@ export type Shape = {
   disks: ShapeDisk[];
   /** The USB controller: only when there is one (left out otherwise, so shapes made before it hash as they did). */
   usb?: true;
+  /** The adapters' MACs, in order: left out for none, or one at `DEFAULT_MAC` (so shapes made before adapters hash as they did). */
+  macs?: string[];
 };
 
 /**
@@ -149,7 +184,8 @@ export type Shape = {
  */
 export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | undefined, opts: { cpu?: CpuFeature[]; display?: Display | 'none' } = {}): Shape {
   const display = opts.display ?? m.display;
-  const list = slots({ ...m, display });
+  const macs = adaptersOf(m).map((a) => a.mac.toLowerCase());
+  const list = slots({ nets: macs.length, display, attachments: m.attachments });
   return {
     version: SHAPE_VERSION,
     ncpus: m.ncpus,
@@ -165,8 +201,12 @@ export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | un
       return [{ slot, size: d.size, readOnly: a.readOnly, serial: serialOf(a.id), identity: d.identity }];
     }),
     ...(m.usb ? { usb: true as const } : {}),
+    ...(macs.length > 1 || (macs.length === 1 && macs[0] !== DEFAULT_MAC) ? { macs } : {}),
   };
 }
+
+/** A shape's adapters' MACs (`macs`, or the one card before adapters). */
+export const macsOf = (s: Shape) => s.macs ?? (s.devices.includes('net') ? [DEFAULT_MAC] : []);
 
 /** `v` as JSON with every object's keys sorted and undefined members left out: the same value, the same text. */
 export function canonical(v: unknown): string {
@@ -192,7 +232,9 @@ export function shapeDiff(was: Shape, now: Shape): string[] {
   if (was.ramMiB !== now.ramMiB) out.push(`memory: ${was.ramMiB} MiB then, ${now.ramMiB} MiB now`);
   if (was.display !== now.display) out.push(`display: ${was.display} then, ${now.display} now`);
   if (canonical(was.cpu) !== canonical(now.cpu)) out.push(`processor features: ${was.cpu.join(', ') || 'none'} then, ${now.cpu.join(', ') || 'none'} now`);
-  if (was.devices.includes('net') !== now.devices.includes('net')) out.push(was.devices.includes('net') ? 'it had a network card' : 'it had no network card');
+  const [macsWas, macsNow] = [macsOf(was), macsOf(now)];
+  if (macsWas.length !== macsNow.length) out.push(`network adapters: ${macsWas.length} then, ${macsNow.length} now`);
+  else for (let i = 0; i < macsWas.length; i++) if (macsWas[i] !== macsNow[i]) out.push(`network adapter ${i + 1}: MAC ${macsWas[i]} then, ${macsNow[i]} now`);
   if (!!was.usb !== !!now.usb) out.push(was.usb ? 'it had a USB controller' : 'it had no USB controller');
   if (was.disks.length !== now.disks.length) out.push(`disks: ${was.disks.length} then, ${now.disks.length} now`);
   for (let i = 0; i < Math.min(was.disks.length, now.disks.length); i++) {

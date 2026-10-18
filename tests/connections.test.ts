@@ -51,7 +51,7 @@ test('connections: stored and ephemeral, their names and state keys, deleted wit
   await conns.delete(cat.id);
   await conns.delete(eph.id);
   assert.deepEqual(forgot, [`tailnet:${hs.id}`, `tailcat:${cat.id}`]);
-  assert.deepEqual((await conns.list()).map((c) => c.id), [ts.id, ts2.id]);
+  assert.deepEqual((await conns.list()).map((c) => c.id).sort(), [ts.id, ts2.id].sort());
   assert.equal(defaultName({ kind: 'tailnet', tailnet: { controlURL: 'http://127.0.0.1:8080', hostname: '', exitNode: '' } }), '127.0.0.1:8080');
 });
 

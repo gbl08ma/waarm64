@@ -14,8 +14,8 @@
   import UsbProblems from './UsbProblems.svelte';
   import { ask } from './ask.svelte.ts';
   import type { Store, OverlayRecord } from './store.ts';
-  import type { DiskRecord, MachineRecord } from './shape.ts';
-  import { askPersist, bytesText, createMachine, deleteMachine, duplicateMachine, isRunning, storageReport, updateMachine } from './machines.ts';
+  import { adaptersOf, MAX_ADAPTERS, type DiskRecord, type MachineRecord } from './shape.ts';
+  import { askPersist, bytesText, createMachine, deleteMachine, duplicateMachine, isRunning, storageReport, updateMachine, withAdapter, withoutAdapter } from './machines.ts';
   import { exportDefinition, importDefinition, parseDefinition } from './definitions.ts';
   import { remember, settings } from './settings.ts';
   import { page, ui, type MachinesTab } from './ui.svelte.ts';
@@ -88,7 +88,7 @@
 
   // Settings.
   let dirty = $state(false);
-  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || a.ncpus !== b.ncpus || a.display !== b.display || a.network !== b.network || !!a.usb !== !!b.usb;
+  const shapeChanged = (a: MachineRecord, b: MachineRecord) => a.ramMiB !== b.ramMiB || a.ncpus !== b.ncpus || a.display !== b.display || adaptersOf(a).map((x) => x.mac).join() !== adaptersOf(b).map((x) => x.mac).join() || !!a.usb !== !!b.usb;
   async function saveSettings() {
     const m = plain(draft!);
     await act('Saving', async () => {
@@ -249,19 +249,19 @@
           {:else if ui.machinesTab === 'network'}
             <div class="network">
               <ul class="adapters">
-                {#if draft.network}
-                  <li data-adapter="0">
+                {#each adaptersOf(draft) as a, i (a.id)}
+                  <li data-adapter={i}>
                     <Icon name="network" size={18} />
-                    <div class="what"><strong>Network card</strong><span class="meta">virtio-net, eth0 in the guest: connected through the toolbar's Network menu (a tailnet, or tailcat) while the machine runs</span></div>
-                    <button onclick={() => { draft!.network = false; dirty = true; }} title="Take the card out (the machine restarts without it)"><Icon name="trash" size={16} />Remove</button>
+                    <div class="what"><strong>Adapter {i + 1}</strong><span class="meta">virtio-net, MAC {a.mac}{i === 0 ? ': connected through the toolbar\'s Network menu (a tailnet, or tailcat) while the machine runs' : ': no connection yet (attaching one comes later)'}</span></div>
+                    <button onclick={() => { draft = withoutAdapter(draft!, a.id); dirty = true; }} title="Take the adapter out (the machine restarts without it)" data-action="remove-adapter"><Icon name="trash" size={16} />Remove</button>
                   </li>
                 {:else}
                   <li class="none">No network adapters: the machine is offline.</li>
-                {/if}
+                {/each}
               </ul>
-              {#if !draft.network}<div class="row"><button onclick={() => { draft!.network = true; dirty = true; }} data-action="add-adapter"><Icon name="plus" size={16} />Add a network card</button></div>{/if}
+              {#if adaptersOf(draft).length < MAX_ADAPTERS}<div class="row"><button onclick={() => { draft = withAdapter(draft!); dirty = true; }} data-action="add-adapter"><Icon name="plus" size={16} />Add a network adapter</button></div>{/if}
               {@render saveRow()}
-              <p class="note">One card for now. Adding or removing one changes the machine's shape: snapshots taken before are orphaned.</p>
+              <p class="note">Up to {MAX_ADAPTERS}, each with its own MAC (eth0, eth1… in the guest, in this order). Adding or removing one changes the machine's shape: snapshots taken before are orphaned.</p>
             </div>
           {:else if ui.machinesTab === 'usb'}
             <div class="settings usb-switch" oninput={() => (dirty = true)} onchange={() => (dirty = true)}>

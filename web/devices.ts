@@ -4,7 +4,7 @@
 // device protocol. `Devices` works on the shared memory from any thread: in the
 // device worker (web/device-worker.ts) or inline on the vCPU thread.
 import { p9, type P9Files } from './9p.ts';
-import { echoBackend, gateway, portBackend } from './gateway.ts';
+import { echoBackend, echoLease, gateway, gatewayOf, portBackend } from './gateway.ts';
 import { gpuBackend, type GpuOptions } from './gpu.ts';
 import { canvasPresenter, pagePresenter, type DisplayFromPage, type Screen2d } from './gpu-present.ts';
 import { portHost } from './virgl-host.ts';
@@ -61,9 +61,10 @@ export const writable = (d: BlkSpec) => !!d.overlay || d.source === 'ram';
  * MessagePort, or the Ethernet gateway (web/gateway.ts) in front of an IP
  * backend: `'echo'` (a synchronous test backend) or `{ip: port}` (a layer-3
  * backend, such as Tailscale, behind a MessagePort). `mac` defaults to
- * 52:54:00:12:34:56; the link is always up.
+ * 52:54:00:12:34:56; the link is always up. `gateway`: the machine's adapter this is (0 by default), whose gateway has
+ * its own MAC and address (web/gateway.ts `gatewayOf`), and whose echo backend leases its own addresses (`echoLease`).
  */
-export type NetSpec = { type: 'net'; mac?: string; adapter: 'loopback' | 'echo' | MessagePort | { ip: MessagePort } };
+export type NetSpec = { type: 'net'; mac?: string; gateway?: number; adapter: 'loopback' | 'echo' | MessagePort | { ip: MessagePort } };
 /** virtio-9p (web/9p.ts): an in-memory tree, mounted by the guest by `tag`, starting with `files` (path → contents). */
 export type P9Spec = { type: '9p'; tag: string; files?: P9Files };
 /**
@@ -398,9 +399,9 @@ export function net(ctx: Ctx, d: NetSpec): Backend {
   const a = d.adapter;
   const adapter: NetAdapter =
     a === 'loopback' ? loopback(receiveFrame)
-    : a === 'echo' ? gateway(receiveFrame, echoBackend())
+    : a === 'echo' ? gateway(receiveFrame, echoBackend(echoLease(d.gateway ?? 0)), gatewayOf(d.gateway ?? 0))
     : a instanceof MessagePort ? portAdapter(a, receiveFrame)
-    : gateway(receiveFrame, portBackend(a.ip), { advertiseMs: 60_000 });
+    : gateway(receiveFrame, portBackend(a.ip), { advertiseMs: 60_000, ...gatewayOf(d.gateway ?? 0) });
   return {
     request(r) {
       if (r.queue === 0) {

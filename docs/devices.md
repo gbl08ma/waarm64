@@ -218,7 +218,9 @@ mode (and natively in realtime mode: std has no CSPRNG).
   lease 198.18.0.15 and `fd00:5eb0::f`, MTU 1280; answers ICMPv6 echo too), `{adapter: {ip: port}}` a backend behind a `MessagePort` (an
   ArrayBuffer is one packet; `{type: 'lease', lease}` from the backend sets the lease: the
   Tailscale worker, N4). What the guest sees: a LAN with one router at 169.254.0.1
-  (`02:77:65:62:70:63`). **Proxy ARP** answers every request except for the guest's own address
+  (`02:77:65:62:70:63`); a machine's adapter `n` (`NetSpec.gateway`) has its own, 169.254.0.<n+1> at
+  `02:77:65:62:70:63` plus `n` (`gatewayOf`), and its echo backend leases 198.18.0.<15+n> (`echoLease`), so a guest
+  with several cards tells them apart (docs/plans/network-adapters.md §4). **Proxy ARP** answers every request except for the guest's own address
   (probes from 0.0.0.0 ignored), so no address range is assumed. **DHCP** (DISCOVER/REQUEST
   only) hands out the backend's address with mask 255.255.255.255 (a zero mask makes current systemd-networkd drop the lease: "DHCP error: no netmask"; the routes are option 121's), router = the gateway,
   the backend's DNS, first search domain, MTU (option 26), broadcast and classless routes

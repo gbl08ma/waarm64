@@ -208,7 +208,11 @@ Duplicate, Export the definition, Delete; then tabs:
   deleted with its overlays (`Store.deleteDisk`: the space comes back). A file or URL added again (or opened, or
   dropped) is the disk the browser has for it, by identity (`machines.ts` `knownDisk`: a file's name, size and date,
   a URL's path, size and validator), so its overlays come back with it.
-- **Network:** the machine's network adapters (one card for now: add or remove it); where more adapters will go.
+- **Network:** the machine's network adapters (docs/plans/network-adapters.md): up to four, each with its MAC (a new
+  machine's first is `52:54:00:12:34:56`, as the one card was; the others random), added and removed with the machine
+  off. The first is the toolbar's Network menu's; the others have no connection yet (connections per adapter come with
+  the plan's L3). A machine made before adapters keeps its card (`network`), read as one adapter at that MAC, so its
+  shape and snapshots stay as they were; definitions carry the MACs (`machine.macs`) and no connections.
 - **USB** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
   with their state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
   connector, attach at start, Attach and Detach (while the machine runs on this page), Allow…, Forget. **Add a

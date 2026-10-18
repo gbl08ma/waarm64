@@ -46,6 +46,13 @@ export const GATEWAY_IP = [169, 254, 0, 1];
 /** The gateway's IPv6 link-local address: the guest's default router. */
 export const GATEWAY_IP6 = linkLocal(GATEWAY_MAC);
 
+/**
+ * The gateway of a machine's adapter `n` (docs/plans/network-adapters.md §4): its own MAC and IPv4 address, so the
+ * guest tells its adapters' routers apart (the IPv6 one is the MAC's link-local). Adapter 0's are `GATEWAY_MAC` and
+ * `GATEWAY_IP`, as the one card's were.
+ */
+export const gatewayOf = (n: number): { mac: number[]; ip: number[] } => ({ mac: [...GATEWAY_MAC.slice(0, 5), GATEWAY_MAC[5] + n], ip: [169, 254, 0, 1 + n] });
+
 const BCAST = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
 const eq = (a: ArrayLike<number>, at: number, b: ArrayLike<number>) => Array.from(b).every((v, k) => a[at + k] === v);
 const isZero = (a: Uint8Array, at: number, n: number) => a.subarray(at, at + n).every((v) => v === 0);
@@ -417,6 +424,14 @@ export const ECHO_LEASE: Lease = {
   dns6: [[0xfd, 0, 0x5e, 0xb0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x53]],
   domains: ['test.webpc'],
 };
+
+/** `echoBackend`'s lease for adapter `n`: `ECHO_LEASE` with the guest's addresses moved up by `n`, so a machine's adapters have their own. */
+export function echoLease(n: number): Lease {
+  if (!n) return ECHO_LEASE;
+  const address6 = [...ECHO_LEASE.address6!];
+  address6[15] += n;
+  return { ...ECHO_LEASE, address: [198, 18, 0, 15 + n], address6 };
+}
 
 /** A synchronous test backend: answers ICMP and ICMPv6 echo requests to any address, and drops everything else. */
 export function echoBackend(lease: Lease = ECHO_LEASE) {

@@ -81,11 +81,12 @@ export type ToWorker =
      */
     home?: string;
     /**
-     * The gateway's end of the machine's IP port (web/gateway.ts `portBackend`): the machine gets a
-     * network card (virtio-net) and its `network` command line. The page keeps the other end and
-     * gives it to a Tailscale client (web/app/network.ts). Only for a machine with `network`.
+     * The machine's network adapters in order (docs/plans/network-adapters.md): each a virtio-net with its MAC on its
+     * own gateway, whose end of the adapter's IP port is `ip` (web/gateway.ts `portBackend`). The page keeps the other
+     * end and gives it to a client (web/app/network.ts). The machine gets its `network` credentials when it has any.
+     * Only for a machine with `network`.
      */
-    ip?: MessagePort;
+    nets?: { mac: string; ip: MessagePort }[];
     /**
      * The machine has a USB controller (an xHCI, docs/usb.md "The page"): this port carries the page's `usb-attach` and
      * `usb-detach` to the device worker and its `usb-state` back (web/usb-device.ts `UsbToWorker`, `UsbFromWorker`). The

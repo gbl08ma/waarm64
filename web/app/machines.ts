@@ -3,7 +3,7 @@
 // (the page that runs it, in any tab), and edits that need it off are refused while it's held. Nothing here asks the
 // user; the Machines page confirms first.
 import { defaultCpus } from './machine.ts';
-import { canonical, generateName, MAX_DISKS, newId, uniqueName, type Attachment, type DiskIdentity, type DiskRecord, type MachineRecord } from './shape.ts';
+import { adaptersOf, canonical, DEFAULT_MAC, generateName, MAX_ADAPTERS, MAX_DISKS, newId, newMac, uniqueName, type Attachment, type DiskIdentity, type DiskRecord, type MachineRecord } from './shape.ts';
 import { machineDir, type Store } from './store.ts';
 
 /** The lock a page holds while it runs machine `id`. */
@@ -30,7 +30,7 @@ export async function createMachine(store: Store, o: Partial<Pick<MachineRecord,
     ncpus: o.ncpus ?? defaultCpus(globalThis.navigator?.hardwareConcurrency || 4),
     ramMiB: o.ramMiB ?? 2048,
     display: o.display ?? '3d',
-    network: o.network ?? true,
+    adapters: (o.network ?? true) ? [{ id: newId(), mac: DEFAULT_MAC }] : [],
     usb: o.usb ?? true,
     attachments: [],
     created: now,
@@ -46,9 +46,21 @@ export async function duplicateMachine(store: Store, id: string) {
   if (!m) throw new Error('that machine is gone');
   const taken = (await store.all('machines')).map((x) => x.name);
   const now = Date.now();
-  const copy: MachineRecord = { ...m, id: newId(), name: uniqueName(`${m.name} (copy)`, taken), attachments: m.attachments.map((a) => ({ ...a, id: newId() })), ...(m.usbDevices ? { usbDevices: m.usbDevices.map((u) => ({ ...u, id: newId() })) } : {}), created: now, modified: now };
+  const copy: MachineRecord = { ...m, id: newId(), name: uniqueName(`${m.name} (copy)`, taken), attachments: m.attachments.map((a) => ({ ...a, id: newId() })), adapters: adaptersOf(m).map((a) => ({ id: newId(), mac: a.mac })), network: undefined, ...(m.usbDevices ? { usbDevices: m.usbDevices.map((u) => ({ ...u, id: newId() })) } : {}), created: now, modified: now };
   await store.put('machines', copy);
   return copy;
+}
+
+/** `m` with one more network adapter (a new MAC, no connection), or as it is at `MAX_ADAPTERS`. The machine must be off to save it. */
+export function withAdapter(m: MachineRecord): MachineRecord {
+  const have = adaptersOf(m);
+  if (have.length >= MAX_ADAPTERS) return m;
+  return { ...m, network: undefined, adapters: [...have, { id: newId(), mac: have.length ? newMac(have.map((a) => a.mac)) : DEFAULT_MAC }] };
+}
+
+/** `m` without adapter `id`. */
+export function withoutAdapter(m: MachineRecord, id: string): MachineRecord {
+  return { ...m, network: undefined, adapters: adaptersOf(m).filter((a) => a.id !== id) };
 }
 
 /** Deletes machine `id` (its variable store, suspended copy and snapshots); its disks and their overlays stay. */
@@ -61,7 +73,7 @@ export async function deleteMachine(store: Store, id: string) {
 export async function updateMachine(store: Store, m: MachineRecord) {
   const was = await store.get('machines', m.id);
   if (!was) throw new Error('that machine is gone');
-  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.display, x.network, !!x.usb]);
+  const shape = (x: MachineRecord) => JSON.stringify([x.ncpus, x.ramMiB, x.display, adaptersOf(x).map((a) => a.mac), !!x.usb]);
   if (shape(was) !== shape(m)) await needsOff(m.id, 'Changing its processors, memory or devices');
   // The remembered USB devices are the USB tab's (web/app/usb-ports.ts), edited while the machine runs: a settings draft doesn't carry them.
   m.usbDevices = was.usbDevices;

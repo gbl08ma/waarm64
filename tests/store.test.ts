@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { chromium, type Browser } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
-import { canonical, generateName, MAX_DISKS, newId, serialOf, shapeDiff, shapeHash, shapeOf, slots, uniqueName, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
+import { canonical, DEFAULT_MAC, generateName, isMac, MAX_ADAPTERS, MAX_DISKS, newId, newMac, serialOf, shapeDiff, shapeHash, shapeOf, slots, uniqueName, type DiskRecord, type MachineRecord } from '../web/app/shape.ts';
 import { memoryFiles, memoryRecords, Store, type SnapshotRecord } from '../web/app/store.ts';
 
 const disk = (id: string, over: Partial<DiskRecord> = {}): DiskRecord => ({ id, kind: 'url', name: 'disk.qcow2', size: 8 * 2 ** 30, url: 'https://example.org/images/disk.qcow2', identity: { kind: 'url', path: '/images/disk.qcow2', bytes: 400e6 }, created: 0, ...over });
@@ -69,7 +69,39 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   assert.deepEqual(shapeDiff(s, shapeOf(machine({ ramMiB: 2048 }), (id) => DISKS.get(id))), ['memory: 1024 MiB then, 2048 MiB now']);
   assert.deepEqual(shapeDiff(s, s), []);
   assert.throws(() => shapeOf(m, () => undefined), /isn't in this browser/);
-  assert.equal(slots({ network: false, display: 'none', attachments: new Array(MAX_DISKS) }).length, 4 + MAX_DISKS);
+  assert.equal(slots({ nets: 0, display: 'none', attachments: new Array(MAX_DISKS) }).length, 4 + MAX_DISKS);
+});
+
+test('network adapters in the shape: one at the default MAC is the card machines had before; more, or another MAC, move it', async () => {
+  const of = (over: Partial<MachineRecord>) => shapeOf(machine(over), (id) => DISKS.get(id));
+  const card = of({});
+  const h = await shapeHash(card);
+  // Machines made before adapters (`network`) and after (`adapters`) are the same machine to their snapshots.
+  assert.equal(await shapeHash(of({ network: undefined, adapters: [{ id: 'f00000000001', mac: DEFAULT_MAC, connection: 'c00000000001' }] })), h, 'one adapter at the default MAC, attached or not');
+  assert.equal(await shapeHash(of({ network: false })), await shapeHash(of({ network: undefined, adapters: [] })), 'no card, no adapters');
+  assert.equal('macs' in card, false);
+  const mac2 = '52:54:00:ab:cd:ef';
+  const two = of({ network: undefined, adapters: [{ id: 'f00000000001', mac: DEFAULT_MAC }, { id: 'f00000000002', mac: mac2 }] });
+  assert.deepEqual(two.devices, ['rng', 'keyboard', 'tablet', 'net', 'net', 'gpu', 'snd', 'blk', 'blk'], 'the adapters where the card was, in order');
+  assert.deepEqual(two.macs, [DEFAULT_MAC, mac2]);
+  assert.deepEqual(two.disks.map((d) => d.slot), [7, 8]);
+  assert.deepEqual(shapeDiff(card, two), ['network adapters: 1 then, 2 now']);
+  // Planted: a MAC left out of the hash would restore a snapshot onto adapters the guest doesn't know.
+  const other = of({ network: undefined, adapters: [{ id: 'f00000000001', mac: mac2 }] });
+  assert.notEqual(await shapeHash(other), h, 'another MAC');
+  assert.deepEqual(shapeDiff(card, other), [`network adapter 1: MAC ${DEFAULT_MAC} then, ${mac2} now`]);
+  const swapped = of({ network: undefined, adapters: [{ id: 'f00000000002', mac: mac2 }, { id: 'f00000000001', mac: DEFAULT_MAC }] });
+  assert.notEqual(await shapeHash(swapped), await shapeHash(two), 'their order');
+  assert.ok(shapeDiff(two, swapped).length > 0);
+  // New MACs: QEMU's prefix, unicast and locally administered, none taken.
+  const macs = new Set<string>([DEFAULT_MAC]);
+  for (let i = 0; i < 50; i++) {
+    const m = newMac(macs);
+    assert.ok(isMac(m) && m.startsWith('52:54:00:') && !macs.has(m), m);
+    macs.add(m);
+  }
+  assert.equal(isMac('53:54:00:12:34:56'), false, 'multicast');
+  assert.equal(MAX_ADAPTERS, 4);
 });
 
 test('ids, generated names and unique names', () => {
@@ -197,4 +229,37 @@ test("the sweep waits for a writer between its bytes and its record (another tab
   await writer;
   assert.deepEqual(await swept, []);
   assert.deepEqual(files.paths(), ['overlays/c00000000002/data']);
+});
+
+test('network adapters on the Machines page: added up to the limit, removed; copies and definitions carry the MACs, no connections', async () => {
+  const { createMachine, duplicateMachine, withAdapter, withoutAdapter } = await import('../web/app/machines.ts');
+  const { exportDefinition, importDefinition, parseDefinition } = await import('../web/app/definitions.ts');
+  const { adaptersOf } = await import('../web/app/shape.ts');
+  const store = new Store(memoryRecords(), memoryFiles(), { channel: false });
+  const m = await createMachine(store, { name: 'Net' });
+  assert.deepEqual(adaptersOf(m).map((a) => a.mac), [DEFAULT_MAC], 'a new machine has one adapter, as machines had their card');
+  assert.deepEqual(adaptersOf(await createMachine(store, { network: false })), []);
+  let x = m;
+  for (let i = 0; i < 6; i++) x = withAdapter(x);
+  assert.equal(adaptersOf(x).length, MAX_ADAPTERS);
+  assert.equal(new Set(adaptersOf(x).map((a) => a.mac)).size, MAX_ADAPTERS, 'each its own MAC');
+  x = withoutAdapter(x, adaptersOf(x)[1].id);
+  assert.equal(adaptersOf(x).length, MAX_ADAPTERS - 1);
+  x.adapters![0].connection = 'c00000000001';
+  await store.put('machines', x);
+  const copy = await duplicateMachine(store, x.id);
+  assert.deepEqual(adaptersOf(copy).map((a) => a.mac), adaptersOf(x).map((a) => a.mac));
+  assert.ok(adaptersOf(copy).every((a) => !a.connection), 'a copy has no connections (one machine at a time has one)');
+  const def = await exportDefinition(store, x.id);
+  assert.deepEqual(def.machine.macs, adaptersOf(x).map((a) => a.mac));
+  assert.equal(JSON.stringify(def).includes('c00000000001'), false, 'no connection travels');
+  const back = await importDefinition(store, parseDefinition(JSON.stringify(def)));
+  assert.deepEqual(adaptersOf(back.machine).map((a) => [a.mac, a.connection]), adaptersOf(x).map((a) => [a.mac, undefined]));
+  // One adapter at the default MAC is written as definitions were before adapters, and such a definition reads back as it.
+  const plain = await exportDefinition(store, (await createMachine(store, { name: 'Plain' })).id);
+  assert.deepEqual([plain.machine.network, 'macs' in plain.machine], [true, false]);
+  assert.deepEqual(adaptersOf((await importDefinition(store, plain)).machine).map((a) => a.mac), [DEFAULT_MAC]);
+  for (const macs of [[], ['53:54:00:00:00:01'], ['nope'], new Array(MAX_ADAPTERS + 1).fill(DEFAULT_MAC)]) {
+    assert.throws(() => parseDefinition(JSON.stringify({ ...def, machine: { ...def.machine, macs } })), /damaged/, JSON.stringify(macs));
+  }
 });

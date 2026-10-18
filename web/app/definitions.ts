@@ -7,8 +7,9 @@
 // start, checked by name, size and date, then by hash where the definition has one. A machine with a USB controller says
 // so (`machine.usb`), and its remembered USB devices go as identities (`usbDevices`): no grant travels, so on another
 // browser the first start offers one click each (docs/usb.md "The page"). Both are left out when there's nothing to say.
+// The network adapters go as their MACs (`machine.macs`, left out for one at the default), without their connections.
 import { fromDefinition, toDefinition, validDefinitionUsb, type DefinitionUsb } from './usb-ports.ts';
-import { canonical, MAX_DISKS, newId, uniqueName, type Attachment, type DiskIdentity, type DiskKind, type DiskRecord, type Display, type MachineRecord } from './shape.ts';
+import { adaptersOf, canonical, DEFAULT_MAC, isMac, MAX_ADAPTERS, MAX_DISKS, newId, uniqueName, type Attachment, type DiskIdentity, type DiskKind, type DiskRecord, type Display, type MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';
 
 export const DEFINITION_TYPE = 'webpc-machine';
@@ -18,7 +19,8 @@ export type DefinitionDisk = { kind: DiskKind; name: string; size: number; ident
 export type Definition = {
   type: typeof DEFINITION_TYPE;
   version: number;
-  machine: { name: string; ncpus: number; ramMiB: number; display: Display; network: boolean; usb?: boolean };
+  /** `network`: whether it has an adapter; `macs`: the adapters' MACs, left out for none or one at the default (as before adapters). */
+  machine: { name: string; ncpus: number; ramMiB: number; display: Display; network: boolean; macs?: string[]; usb?: boolean };
   disks: DefinitionDisk[];
   usbDevices?: DefinitionUsb[];
 };
@@ -34,7 +36,8 @@ export async function exportDefinition(store: Store, id: string): Promise<Defini
     disks.push({ kind: d.kind, name: d.name, size: d.size, identity: d.identity, ...(d.url ? { url: d.url } : {}), ...(d.sha256 ? { sha256: d.sha256 } : {}), readOnly: a.readOnly, ...(a.inPlace ? { inPlace: true } : {}), serial: a.id });
   }
   const usb = m.usbDevices?.length ? { usbDevices: toDefinition(m.usbDevices) } : {};
-  return { type: DEFINITION_TYPE, version: DEFINITION_VERSION, machine: { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, display: m.display, network: m.network, ...(m.usb ? { usb: true } : {}) }, disks, ...usb };
+  const macs = adaptersOf(m).map((a) => a.mac);
+  return { type: DEFINITION_TYPE, version: DEFINITION_VERSION, machine: { name: m.name, ncpus: m.ncpus, ramMiB: m.ramMiB, display: m.display, network: macs.length > 0, ...(macs.length > 1 || (macs.length === 1 && macs[0] !== DEFAULT_MAC) ? { macs } : {}), ...(m.usb ? { usb: true } : {}) }, disks, ...usb };
 }
 
 /** Parses a definition file's text; throws a message for the user when it isn't one this page reads. */
@@ -48,7 +51,7 @@ export function parseDefinition(text: string): Definition {
   if (d?.type !== DEFINITION_TYPE) throw new Error("this file isn't a machine definition");
   if (d.version !== DEFINITION_VERSION) throw new Error(`this definition is version ${d.version}; this page reads version ${DEFINITION_VERSION}`);
   const m = d.machine;
-  const ok = m && typeof m.name === 'string' && Number.isInteger(m.ncpus) && m.ncpus >= 1 && m.ncpus <= 64 && Number.isInteger(m.ramMiB) && m.ramMiB >= 64 && (m.display === '2d' || m.display === '3d') && typeof m.network === 'boolean' && (m.usb === undefined || typeof m.usb === 'boolean') && (d.usbDevices === undefined || validDefinitionUsb(d.usbDevices))
+  const ok = m && typeof m.name === 'string' && Number.isInteger(m.ncpus) && m.ncpus >= 1 && m.ncpus <= 64 && Number.isInteger(m.ramMiB) && m.ramMiB >= 64 && (m.display === '2d' || m.display === '3d') && typeof m.network === 'boolean' && (m.macs === undefined || (Array.isArray(m.macs) && m.macs.length >= 1 && m.macs.length <= MAX_ADAPTERS && m.macs.every((x) => typeof x === 'string' && isMac(x)) && m.network)) && (m.usb === undefined || typeof m.usb === 'boolean') && (d.usbDevices === undefined || validDefinitionUsb(d.usbDevices))
     && Array.isArray(d.disks) && d.disks.length <= MAX_DISKS && d.disks.every((x) => ['url', 'file', 'stored', 'blank', 'ramdisk'].includes(x?.kind) && Number.isSafeInteger(x.size) && x.size > 0 && typeof x.name === 'string' && x.identity?.kind && typeof x.serial === 'string' && /^[0-9a-f]{12}$/.test(x.serial));
   if (!ok) throw new Error('this machine definition is damaged (a field is missing or out of range)');
   return d;
@@ -90,7 +93,8 @@ export async function importDefinition(store: Store, def: Definition): Promise<{
     ncpus: def.machine.ncpus,
     ramMiB: def.machine.ramMiB,
     display: def.machine.display,
-    network: def.machine.network,
+    // The adapters come without connections: those hold secrets, and are this browser's (network-adapters.md §5).
+    adapters: (def.machine.macs ?? (def.machine.network ? [DEFAULT_MAC] : [])).map((mac) => ({ id: newId(), mac })),
     usb: def.machine.usb ?? false,
     ...(def.usbDevices?.length ? { usbDevices: fromDefinition(def.usbDevices) } : {}),
     attachments,

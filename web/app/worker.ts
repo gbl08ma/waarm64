@@ -132,12 +132,12 @@ let isSuspended = false;
 let restoring = false;
 
 type StartMessage = Extract<ToWorker, { type: 'start' }>;
-/** A transport of the machine: its kind, and the disk it is for a `blk`. */
-type Slot = { kind: DeviceKind; disk?: StartDisk };
+/** A transport of the machine: its kind, and the disk it is for a `blk`, the adapter for a `net`. */
+type Slot = { kind: DeviceKind; disk?: StartDisk; adapter?: number };
 
 /** The machine's transports in slot order (web/app/shape.ts `slots`): the kinds a snapshot's header lists, so a restore makes the same. */
 const layout = (m: StartMessage, machine: Machine): Slot[] =>
-  slots({ network: !!(m.ip && machine.network), display: usesGpu(m, machine) ? '2d' : 'none', attachments: m.disks }).map((s) => ({ kind: s.kind, disk: s.attachment === undefined ? undefined : m.disks[s.attachment] }));
+  slots({ nets: machine.network ? (m.nets?.length ?? 0) : 0, display: usesGpu(m, machine) ? '2d' : 'none', attachments: m.disks }).map((s) => ({ kind: s.kind, disk: s.attachment === undefined ? undefined : m.disks[s.attachment], adapter: s.adapter }));
 
 /** A disk's device: its source, and its overlay (what the guest trims leaves it; a ramdisk gives the memory back). */
 function blkSpec(d: StartDisk): DeviceSpec {
@@ -157,7 +157,10 @@ function device(slot: Slot, m: StartMessage, machine: Machine): DeviceSpec {
       const tuning = gpuTuning();
       return { type: 'gpu', width: m.size?.width ?? machine.framebuffer.width, height: m.size?.height ?? machine.framebuffer.height, canvas: m.renderer ? undefined : m.screen, port: m.display, stats: m.displayStats, probe: m.avProbe, keepConsole: true, ...tuning, virgl: tuning.virgl || !!m.renderer, renderer: m.renderer, caps: m.caps };
     }
-    case 'net': return { type: 'net', adapter: { ip: m.ip! } };
+    case 'net': {
+      const n = m.nets![slot.adapter!];
+      return { type: 'net', mac: n.mac, gateway: slot.adapter, adapter: { ip: n.ip } };
+    }
     // Without the page's ring (a page that passed none), the sink plays on its own clock.
     // With the page's sound, its volume and mute are the device's controls (the guest's Master).
     case 'snd': return { type: 'snd', ring: m.sound?.ring, mic: m.sound?.mic, port: m.sound?.port, mixer: m.sound && { level: m.sound.level, muted: m.sound.muted }, ...sndTuning() };
@@ -341,7 +344,7 @@ async function start(m: StartMessage, note?: string): Promise<void> {
   if (stopping) return;
   core = await WebAssembly.compile(wasm);
   // The firmware configuration: what the machine's own credentials and the page's (development, tests) say, and the saved variable store.
-  const credentials = [...(m.ip && machine.network ? machine.network.credentials : []), ...(m.credentials ?? [])];
+  const credentials = [...(m.nets?.length && machine.network ? machine.network.credentials : []), ...(m.credentials ?? [])];
   savedFlash = await flash;
   const firmware = machine.firmware ? { flash: savedFlash, fwCfg: credentialFiles(credentials) } : undefined;
   if (stopping) return;

@@ -26,7 +26,7 @@ import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
 import { createNetwork, DEFAULT_SETTINGS, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
-import { CPU_FEATURES, KEYBOARD_CONNECTOR, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
+import { adaptersOf, CPU_FEATURES, DEFAULT_MAC, KEYBOARD_CONNECTOR, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
 import { deviceName, entryOf, identityKey, identityOf as usbIdentity, newEntry, problemText, usbLock } from './usb-ports.ts';
 import { browserApi, entryStates, filterFor, findDevices, granted, identityOfDevice, isGranted, requestDevices, ungranted, UsbError, UsbLocks, UsbPorts, type Api, type HostDevice } from './usb-live.ts';
 import type { UsbIdentity, UsbVirtual } from '../usb-device.ts';
@@ -244,6 +244,8 @@ let ramMiB = Number(params.get('ram')) || stored?.record.ramMiB || (RAM_CHOICES.
 // The page's components (web/app/App.svelte), drawn now: the canvas and the terminal below are theirs. The network and the
 // sound are made first (their menus show them).
 const network = createNetwork(() => { ui.net++; });
+/** The page's ends of the running machine's adapters that have no connection (all but the first, until L3). */
+const unplugged: MessagePort[] = [];
 const audio = new PageAudio();
 ui.current = stored?.record.id;
 ui.firmware = !!spec.firmware;
@@ -513,8 +515,18 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     ui.boot.shown = false;
   };
   const worker = new Worker(new URL(`./worker.ts${location.search}`, import.meta.url), { type: 'module' });
-  // A machine that can have a network card has one from the start (it can't be added later without a restart): its end of the IP port.
-  const ip = spec.network ? network.port() : undefined;
+  // A machine's network adapters are there from the start (one can't be added later without a restart): their ends of
+  // the IP ports. The first is the page's network's (web/app/network.ts); the others have no connection yet, so the page
+  // keeps their other ends unused (docs/plans/network-adapters.md: connections per adapter are its L3).
+  const macs = !spec.network ? [] : stored ? adaptersOf(stored.record).map((a) => a.mac) : [DEFAULT_MAC];
+  for (const p of unplugged.splice(0)) p.close();
+  const nets = macs.map((mac, i) => {
+    if (i === 0) return { mac, ip: network.port() };
+    const c = new MessageChannel();
+    unplugged.push(c.port1);
+    return { mac, ip: c.port2 };
+  });
+  ui.hasNetwork = nets.length > 0;
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
   const sound = audio.attach();
   // A machine with a USB controller: the port its devices are attached over (docs/usb.md "The page").
@@ -624,7 +636,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, ip, usb: usb?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : []), ...(usb ? [usb.port2] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, nets, usb: usb?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...nets.map((n) => n.ip), ...(usb ? [usb.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -657,7 +669,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       setState('crashed', `The GPU worker failed: ${e.message}`, ACTIONS.emulator);
     };
   } else void begin();
-  if (ip) autoconnect();
+  if (nets.length) autoconnect();
   ui.net++;
 }
 
