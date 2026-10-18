@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8"><title>0</title>
+<body style="margin:0"><div id="d"></div>
+<script>
+// Decodes ?fmt= images forever: each round a fresh URL (a new decode), shown for a frame, then dropped.
+const fmt = new URLSearchParams(location.search).get('fmt') || 'jpg';
+const d = document.getElementById('d');
+let n = 0, round = 0;
+async function go() {
+  for (;;) {
+    round++;
+    const imgs = [];
+    for (let i = 0; i < 24; i++) {
+      const im = new Image();
+      im.style.cssText = 'width:256px;height:171px';
+      im.src = (fmt === "pjpg" ? `${i}p.jpg` : `${i}.${fmt}`) + `?r=${round}`;
+      d.appendChild(im);
+      imgs.push(im.decode().then(() => n++, () => {}));
+    }
+    await Promise.all(imgs);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    d.textContent = '';
+    document.title = String(n);
+    console.log(`DECODED ${n}`);
+  }
+}
+go();
+</script>

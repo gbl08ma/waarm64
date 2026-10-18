@@ -35,6 +35,10 @@ rebuilding in between), `--probe '<sh>'` runs one guest command and prints the t
 page's renderer during run N (`node bench/apps/perf.ts script.txt --map /tmp/perf-<pid>.map`: by category, with
 V8's map resolving what perf leaves `[unknown]`).
 
+**Image decoding in the guest's browsers** (`bench/imgdecode/`, its README): Chromium and Firefox ESR on the page's
+Debian decode images in a loop, per format; `node bench/imgdecode/profile.ts` counts the images decoded, samples guest
+PCs and logs helper calls in a window.
+
 - Boot benchmarks time cold (a fresh `WebAssembly.compile` per boot) and warm boots, to the
   guest's markers and power-off, and **force a GC before each boot** ([v8.md](v8.md) "Module
   reuse"). They set `idleLimitMs`, so a lost wake-up throws instead of hanging.

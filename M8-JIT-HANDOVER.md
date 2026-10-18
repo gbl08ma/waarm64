@@ -14,7 +14,8 @@ the guest's Firefox and Chromium (counts only, no timings in the cloud) had deco
 Firefox's guest instructions on a JPEG page (SMLAL by element in Skia's downscaler above all). Now the allocated
 integer NEON is inline except SUQADD/USQADD on 64-bit lanes, URECPE/URSQRTE and the unadvertised dot products and
 RDM. The cloud's `scripts/ci.sh` passed without the image-based tests. **For the dev VM:** `scripts/ci.sh` with all
-images (the exact-step boots and Alpine), then the measurements in docs/backlog.md "JIT" (the item at its top).
+images (the exact-step boots and Alpine), then the measurements in docs/backlog.md "JIT" (the item at its top); the
+image workload and its scripts are `bench/imgdecode/` (README.md).
 
 **Before that (2026-10-16): guest calls as host calls, measured and not kept** (`bench/boot/REPORT.md` "M8: guest
 calls as host calls", data and the patch in `bench/boot/results/m8-calls/`; docs/jit.md "Tried and not kept"). The

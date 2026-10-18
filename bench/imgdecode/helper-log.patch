@@ -1,0 +1,30 @@
+diff --git a/web/vcpu-worker.ts b/web/vcpu-worker.ts
+index b6652df..9ccb049 100644
+--- a/web/vcpu-worker.ts
++++ b/web/vcpu-worker.ts
+@@ -47,6 +47,8 @@ type Ex = {
+   vm_run_cpu(vm: number, cpu: number, budget: bigint): number;
+   vm_exit_cpu(vm: number, cpu: number): number;
+   vm_cpu_signal(vm: number, i: number): number;
++  vm_cpu(vm: number, i: number): number;
++  jit_helper_report(v: number): number;
+ };
+ 
+ /** Steps per `vm_run_cpu` call: it returns early on anything the worker handles. */
+@@ -97,7 +99,16 @@ async function runCpu(j: VcpuJob, exports: WebAssembly.Exports): Promise<VcpuEnd
+     if (w.async) await w.value;
+     yielded = performance.now();
+   };
++  let lastReport = performance.now(); // LOCAL PROFILING HACK (bench/imgdecode)
++  const report = () => {
++    const p = ex.jit_helper_report(ex.vm_cpu(j.vm, j.cpu));
++    if (!p) return;
++    const b = new Uint8Array(mem.buffer, p, 65536);
++    const t = new TextDecoder().decode(b.slice(0, b.indexOf(0)));
++    console.log(`HELPERS cpu=${j.cpu} t=${Date.now()} ${t.trim().split('\n').join(',')}`);
++  };
+   for (;;) {
++    if (performance.now() - lastReport > 5000) { lastReport = performance.now(); report(); }
+     live?.enter();
+     const kind = ex.vm_run_cpu(j.vm, j.cpu, BUDGET);
+     live?.leave();
