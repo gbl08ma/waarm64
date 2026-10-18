@@ -1,5 +1,5 @@
 {
-  "comment": "Alpine's published UEFI cloud images (M8 phase B, docs/plans/uefi.md), pinned by SHA512: the images tools/uefi-oracle.ts boots. Their root is locked; a NoCloud seed disk (CIDATA) unlocks it.",
+  "comment": "Alpine's published UEFI cloud images (M8 phase B, docs/firmware.md), pinned by SHA512: the images tools/uefi-oracle.ts boots. Their root is locked; a NoCloud seed disk (CIDATA) unlocks it.",
   "images": {
     "alpine": {
       "loader": "Limine",

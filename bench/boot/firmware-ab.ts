@@ -1,4 +1,4 @@
-// Two firmware builds on the page's Debian, alternating (docs/plans/uefi.md "Graphics in the firmware"): seconds
+// Two firmware builds on the page's Debian, alternating (docs/firmware.md "Our patches"): seconds
 // from the page's load to BdsDxe loading the boot option, the EFI stub, and the first boot's question (or a login
 // prompt), read from the serial terminal every 100 ms. Each round copies the build over
 // target/images/edk2/QEMU_EFI.fd; the second is left in place.

@@ -1,6 +1,6 @@
 // A small FAT12 filesystem image with files in its root directory (M8 phase B):
 // the NoCloud seed disk (label CIDATA, `meta-data` and `user-data`) that
-// unlocks Alpine's UEFI cloud images (docs/plans/uefi.md). Long names get VFAT
+// unlocks Alpine's UEFI cloud images (docs/firmware.md). Long names get VFAT
 // entries, as mkfs.fat and mcopy write them. No partition table: Linux and
 // EDK2 read a FAT on the whole disk. Timestamps are 2026-09-01 00:00, so the
 // bytes depend only on the files.

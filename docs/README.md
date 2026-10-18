@@ -22,6 +22,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [testing.md](testing.md) | the test layers and which runner covers what, step counts, the golden corpus and oracles, JIT tests and stress policy, litmus and atomics stress, the decoder sweep |
 | [benchmarking.md](benchmarking.md) | the harness, every benchmark, the rules, current numbers, profiling |
 | [images.md](images.md) | guest images: how they're built, what each is for, gotchas |
+| [firmware.md](firmware.md) | booting unmodified images through UEFI: which EDK2 and what it needs of the machine, our patches, Linux under it, DT vs ACPI, the guests (credentials, seed disks), gotchas |
 | [cloud.md](cloud.md) | Claude Code cloud sessions: what differs from the dev VM (x86_64, Node, Chromium, dtc, images) and the setup script |
 | [backlog.md](backlog.md) | open loose ends by area (PLAN.md's M9) |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
@@ -30,7 +31,6 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [plans/video.md](plans/video.md) | hardware video decoding (done): VA-API over virgl decoded by WebCodecs (why not V4L2), H.264, VP9 and AV1, each loop's record |
 | [plans/agent.md](plans/agent.md) | a guest agent (clipboard, time after a resume, a ready signal, X11 resize): the stock agents first, then a tools disk (not scheduled) |
 | [plans/usb.md](plans/usb.md) | USB devices from the user's computer through WebUSB and WebHID: an xHCI in the core, a passthrough backend, an emulated HID device built from WebHID, what neither can attach (proposed, not scheduled) |
-| [plans/uefi.md](plans/uefi.md) | booting unmodified images through EDK2: loop 0's oracle findings, DT vs ACPI, the design (M8 phase B) |
 | [plans/remote-disks.md](plans/remote-disks.md) | disks from a remote server: today's HTTP reader, where to host an image (Cloudflare R2 and Pages), a chunked format, caching, concurrency (proposed) |
 | [plans/machines.md](plans/machines.md) | machines as the unit (M8 phase D's start): stored machines, up to 16 disks and their sources (blank, ramdisk, a copy in OPFS that can be merged into or written in place), overlays as named variants per base, snapshots per machine checked by its shape, the Machines page (confirmed; M8 phase D) |
 | [plans/snapshots.md](plans/snapshots.md) | saving and resuming a machine as a file, and Suspend (M8 phase C lane, done) |
