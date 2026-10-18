@@ -105,3 +105,9 @@ hardware. It takes no lock and is no entry.
   - the USB tab and the wizard, twins, and an entry held by another tab's machine;
   - a definition on a second profile: no permission, Allow, Forget revoking;
   - an old machine's controller off, and turning it on, which warns and orphans its snapshot.
+- `tests/page-usb-guest.test.ts` (Debian, `scripts/ci-machines.sh`) covers a stored machine with the controller:
+  - Gadget Zero attached from the menu (`?usbzero=1`), and the guest enumerating it;
+  - a kept snapshot that asks first, empties the ports and attaches the device again;
+  - a detach.
+
+  It is skipped until the xHCI's glue (`web/usb.ts`) is in.
