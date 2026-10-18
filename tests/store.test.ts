@@ -33,12 +33,25 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   const reordered = reverse(s) as typeof s;
   assert.notEqual(JSON.stringify(reordered), JSON.stringify(s));
   assert.equal(await shapeHash(reordered), h);
+  // A USB controller turned off (or never there: every machine made before USB) leaves the shape and its hash as they
+  // were; remembered USB devices are hot-plugged, not in the shape (docs/plans/usb.md §4a).
+  const usbDevices = [{ id: 'e00000000001', api: 'usb' as const, vendorId: 0x1d50, productId: 0x6018, serialNumber: 'A1', connector: 0, atStart: true }];
+  for (const [what, x] of [['usb off', machine({ usb: false })], ['remembered devices', machine({ usbDevices })], ['both', machine({ usb: false, usbDevices })]] as const) {
+    assert.equal(await shapeHash(shapeOf(x, (id) => DISKS.get(id))), h, what);
+    assert.equal('usb' in shapeOf(x, (id) => DISKS.get(id)), false, `${what}: no usb key`);
+  }
+  const withUsb = shapeOf(machine({ usb: true, usbDevices }), (id) => DISKS.get(id));
+  assert.equal(withUsb.usb, true);
+  assert.equal(await shapeHash(withUsb), await shapeHash(shapeOf(machine({ usb: true }), (id) => DISKS.get(id))), 'devices aren\'t in the shape');
+  assert.deepEqual(shapeDiff(s, withUsb), ['it had no USB controller']);
+  assert.deepEqual(shapeDiff(withUsb, s), ['it had a USB controller']);
   // What the guest sees does.
   const moved: [string, MachineRecord, Map<string, DiskRecord>?][] = [
     ['RAM', machine({ ramMiB: 2048 }), undefined],
     ['vCPUs', machine({ ncpus: 4 }), undefined],
     ['display', machine({ display: '2d' }), undefined],
     ['network', machine({ network: false }), undefined],
+    ['USB controller', machine({ usb: true }), undefined],
     ['read-only', machine({ attachments: [{ ...m.attachments[0], readOnly: true }, m.attachments[1]] }), undefined],
     ['order', machine({ attachments: [m.attachments[1], m.attachments[0]] }), undefined],
     ['detached', machine({ attachments: [m.attachments[0]] }), undefined],

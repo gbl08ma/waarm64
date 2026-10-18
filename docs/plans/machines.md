@@ -64,7 +64,7 @@ The page around them (the user, 2026-10-17, after L5):
 
 | Thing | What it holds | Where |
 |---|---|---|
-| **Machine** | id, name, vCPUs, RAM MiB, display (2D/3D), the attachments in slot order, the selected overlay per read-write attachment | IndexedDB `machines` |
+| **Machine** | id, name, vCPUs, RAM MiB, display (2D/3D), the network card, the USB controller (`usb`), the attachments in slot order, the selected overlay per read-write attachment, the remembered USB devices (`usbDevices`: [usb.md](../usb.md) "The page") | IndexedDB `machines` |
 | **Disk** (a base) | id, kind (`url`, `file`, `stored`, `blank`, `ramdisk`), size, the identity (§3.1), the kind's data: a URL; a `FileSystemFileHandle` (IndexedDB can hold one, JSON can't); a stored file's OPFS path | IndexedDB `disks` |
 | **Attachment** | the disk, read-only or read-write, the virtio serial (`GET_ID`, from the attachment's id) | in the machine |
 | **Overlay** | id, name, the base's id and identity, generation (§3.3), created, modified, bytes; today's `data` and `map` | OPFS `overlays/<id>/`, its record in IndexedDB `overlays` |
@@ -202,7 +202,8 @@ This replaces Suspend's discipline of dropping the copy before any machine runs 
 
 - **The shape** is a canonical JSON of what the guest sees: vCPUs, RAM, the display (2D or 3D: different devices),
   the transports in slot order, each disk's size, read-only or not, serial and base identity, the CPU features
-  (`cpu`), whether there's a network card. Its SHA-256 is the **shape hash**; the header carries the whole shape, so a
+  (`cpu`), whether there's a network card, and `usb: true` when there's a USB controller (left out when there isn't, so
+  machines made before it keep their hash). Its SHA-256 is the **shape hash**; the header carries the whole shape, so a
   snapshot file can make its machine (§5.2).
 - **The pins:** for each read-write disk, the overlay's id and generation.
 - **Orphaned:** a stored snapshot whose shape hash differs from its machine's current one (the user changed RAM,
@@ -315,7 +316,7 @@ the page, disks or snapshots (all of them from L1).
 - **The embedding API**'s VM configuration starts from the machine definition and its shape.
 - **Network adapters** join the machine and the shape (several: a later milestone); today's single card is one
   attachment of a kind `net`.
-- **USB** ([usb.md](usb.md) §4a, proposed): the xHCI joins the shape as a flag that is left out when it is off, so
+- **USB** ([usb.md](usb.md) §4a; the page's side is built: [../usb.md](../usb.md) "The page"): the xHCI joins the shape as a flag that is left out when it is off, so
   existing hashes don't move. Devices are hot-plugged, so they are not part of the shape. They are the machine's
   remembered devices, attached at start or by hand, and emptied from the ports before a snapshot.
 

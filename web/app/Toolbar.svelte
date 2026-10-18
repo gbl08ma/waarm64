@@ -7,6 +7,7 @@
   import Menu from './Menu.svelte';
   import Network from './Network.svelte';
   import Sound from './Sound.svelte';
+  import UsbMenu from './UsbMenu.svelte';
   import type { PageAudio } from '../audio.ts';
   import type { Network as Net } from './network.ts';
   import type { Store, SnapshotRecord } from './store.ts';
@@ -120,6 +121,7 @@
   <span class="sep"></span>
   <Sound {audio} />
   {#if ui.hasNetwork}<Network {network} />{/if}
+  {#if ui.usb.on}<UsbMenu />{/if}
   {#if !ui.current}
     <Menu id="machine-menu" icon="cpu" title="The number of vCPUs, the size of the RAM and the graphics: applied by a restart" bind:open={sizeOpen} panel>
       <label>Processors<select id="machine-cpus" bind:value={ncpus}>{#each ui.size.cpuChoices as n (n)}<option value={n}>{n} vCPU{n > 1 ? 's' : ''}</option>{/each}</select></label>

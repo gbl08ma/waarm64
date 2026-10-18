@@ -64,11 +64,39 @@ export type MachineRecord = {
   display: Display;
   /** A network card (virtio-net) from the start: the page gives it to its Tailscale client. Several adapters are later. */
   network: boolean;
+  /**
+   * A USB controller (an xHCI: 4 USB 2 and 4 USB 3 root ports behind 4 connectors, docs/plans/usb.md §4a). Absent on
+   * machines made before it existed: off, and their shape (and its hash) as it was. New machines have it.
+   */
+  usb?: boolean;
+  /** The USB devices the machine remembers (hot-plugged: not in the shape). */
+  usbDevices?: UsbEntry[];
   /** In slot order (the guest's vda, vdb…). */
   attachments: Attachment[];
   created: number;
   modified: number;
 };
+
+/**
+ * A USB device a machine remembers (docs/plans/usb.md §4a): who it is (WebUSB's or WebHID's grant persists per origin,
+ * so the page finds it again by this), the connector it goes on (fixed, so the guest's by-path names stay), and whether
+ * it is attached when the machine starts (and when it is plugged in while the machine runs). `index`: among identical
+ * devices without a serial number, which one in `getDevices()` order.
+ */
+export type UsbEntry = {
+  id: string;
+  api: 'usb' | 'hid';
+  vendorId: number;
+  productId: number;
+  serialNumber?: string;
+  productName?: string;
+  index?: number;
+  /** 0–3. */
+  connector: number;
+  atStart: boolean;
+};
+/** The root connectors a machine's controller has (each a USB 2 and a USB 3 port). */
+export const USB_CONNECTORS = 4;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
 export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'blk';
@@ -106,6 +134,8 @@ export type Shape = {
   cpu: CpuFeature[];
   devices: DeviceKind[];
   disks: ShapeDisk[];
+  /** The USB controller: only when there is one (left out otherwise, so shapes made before it hash as they did). */
+  usb?: true;
 };
 
 /**
@@ -131,6 +161,7 @@ export function shapeOf(m: MachineRecord, disks: (id: string) => DiskRecord | un
       if (!d) throw new Error(`machine ${m.name} has a disk that isn't in this browser (${a.disk})`);
       return [{ slot, size: d.size, readOnly: a.readOnly, serial: serialOf(a.id), identity: d.identity }];
     }),
+    ...(m.usb ? { usb: true as const } : {}),
   };
 }
 
@@ -159,6 +190,7 @@ export function shapeDiff(was: Shape, now: Shape): string[] {
   if (was.display !== now.display) out.push(`display: ${was.display} then, ${now.display} now`);
   if (canonical(was.cpu) !== canonical(now.cpu)) out.push(`processor features: ${was.cpu.join(', ') || 'none'} then, ${now.cpu.join(', ') || 'none'} now`);
   if (was.devices.includes('net') !== now.devices.includes('net')) out.push(was.devices.includes('net') ? 'it had a network card' : 'it had no network card');
+  if (!!was.usb !== !!now.usb) out.push(was.usb ? 'it had a USB controller' : 'it had no USB controller');
   if (was.disks.length !== now.disks.length) out.push(`disks: ${was.disks.length} then, ${now.disks.length} now`);
   for (let i = 0; i < Math.min(was.disks.length, now.disks.length); i++) {
     const [a, b] = [was.disks[i], now.disks[i]];

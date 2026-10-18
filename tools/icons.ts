@@ -8,9 +8,9 @@ import { join } from 'node:path';
 export const VERSION = '3.49.0';
 const ICONS = [
   'arrow-down', 'arrow-left', 'arrow-up', 'aspect-ratio', 'bolt', 'camera', 'chevron-down', 'copy', 'cpu', 'database',
-  'database-import', 'device-desktop', 'download', 'file', 'file-export', 'file-import', 'file-plus', 'git-merge', 'history',
-  'keyboard', 'layout-columns', 'maximize', 'microphone', 'network', 'pencil', 'player-pause', 'player-play', 'player-stop', 'plus',
-  'refresh', 'server-2', 'settings', 'square-dashed', 'terminal-2', 'trash', 'upload', 'volume', 'volume-off', 'world-www', 'x', 'zzz',
+  'database-import', 'device-desktop', 'device-gamepad-2', 'download', 'file', 'file-export', 'file-import', 'file-plus', 'git-merge', 'history',
+  'keyboard', 'layout-columns', 'maximize', 'microphone', 'network', 'pencil', 'player-pause', 'player-play', 'player-stop', 'plug', 'plug-connected', 'plus',
+  'refresh', 'server-2', 'settings', 'square-dashed', 'terminal-2', 'trash', 'upload', 'usb', 'volume', 'volume-off', 'world-www', 'x', 'zzz',
 ];
 
 const dir = process.argv[2];

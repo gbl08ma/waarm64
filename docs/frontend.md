@@ -23,6 +23,7 @@ serves (and builds the Tailscale client, below, "Network"). Chromium only.
 | `web/app/disk-worker.ts`, `web/app/sources.ts`, `web/stored.ts`, `web/ramdisk.ts` | the stored disks' jobs, a disk's bytes in a worker, the block store over nothing, the ramdisk |
 | `web/app/machine.ts` | the machines, in one place: image URLs (the firmware, for UEFI machines), command line, the credentials a card adds, RAM, screen size, the `ready` marker, the default vCPU count |
 | `web/audio.ts`, `web/audio-worklet.ts`, `web/audio-ring.ts` | the page's sound: the AudioContext, the worklet that plays the device worker's sound ring, the volume (below, "Sound") |
+| `web/app/usb-ports.ts`, `web/app/usb-live.ts`, `Usb.svelte`, `AddUsb.svelte`, `UsbMenu.svelte` | a machine's USB devices: remembered entries, their grants and locks, the running machine's ports, the USB tab, the Add a device wizard, the toolbar's USB menu ([usb.md](usb.md) "The page") |
 | `web/app/network.ts` | the Network menu's logic, DOM-free: settings parsers, the view of the client's state, the machine's IP port across restarts and disconnects (below, "Network") |
 | `tools/start.js`, `tools/start.ts` | `npm start` (below) |
 | `tools/dist.ts` | `npm run dist`: the page as a static copy (below, "A static copy") |
@@ -42,7 +43,8 @@ test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloa
 (the sound device's completion timing once a second in `window.__audio.stats`, and the timer instead of the
 worklet's notify; any `?snd=` also exposes `window.__audio`, the serial log and the status, for tests and
 `bench/audio/snd-page.ts`), `?jit=nocw` (the JIT without its compile worker: each vCPU compiles what it installs,
-for A/B measurements; docs/jit.md "Sharing").
+for A/B measurements; docs/jit.md "Sharing"), `?usb=1` (a transient machine with a USB controller; a stored machine's is
+its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](usb.md) "Gadget Zero on the page").
 
 ## The machines
 
@@ -156,7 +158,8 @@ separators; the main gates also have their names. Left to right: **Machines** (t
 Snapshots tab, the panic button; a transient machine's is saved to a file), **Load snapshot** (a menu: the machine's
 five latest kept snapshots, orphaned ones disabled; All snapshots… (the Snapshots tab); From a file…), the views
 (Screen, Serial terminal, Both), **Screen** (size and HiDPI, virtio-gpu machines), **Keys**, **Full screen**,
-**Sound**, **Network**, and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
+**Sound**, **Network**, **USB** (a machine with a USB controller: its remembered devices with attach toggles, the
+offers of a device that just appeared or has no permission here yet, Add a device…; [usb.md](usb.md) "The page"), and for a transient machine (a test's `?machine=`) the **Machine** menu (vCPUs, RAM, graphics);
 a stored machine's are its Settings. The power state (Booting, Running, Powered off…) is the status bar's first item,
 before the machine's numbers. Menus (`Menu.svelte`) keep the `<details>`/`<summary>` shape, close on a click
 elsewhere and open under their right edge (a page's Export menus under their left).
@@ -191,7 +194,7 @@ Duplicate, Export the definition, Delete; then tabs:
 - **Settings:** name, vCPUs, RAM (512 MiB to 2.5 GiB, `machine.ts` `RAM_CHOICES`: more leaves no room for the 1 GiB
   heap reserve in wasm32's 4 GiB, so the machine runs on a growable memory, ~6–7% slower on Linux arm64; a machine
   or definition with more is shown as it is), display. Save; on the machine running on this page it reads **Save and restart**
-  (asked first). A change of shape asks first when it orphans snapshots.
+  (asked first), and the USB controller. A change of shape asks first when it orphans snapshots.
 - **Disks** (`Disks.svelte`): the attachments in slot order (read-only, write in place, up, down, Detach); per writable
   disk its overlays (switch, New empty, Rename, Delete, Merge into the disk), **Export** (a menu: changes only, the
   whole disk as qcow2 or raw, compressed or not; a machine on this page running from it stops while the file is
@@ -205,6 +208,11 @@ Duplicate, Export the definition, Delete; then tabs:
   dropped) is the disk the browser has for it, by identity (`machines.ts` `knownDisk`: a file's name, size and date,
   a URL's path, size and validator), so its overlays come back with it.
 - **Network:** the machine's network adapters (one card for now: add or remove it); where more adapters will go.
+- **USB** (`Usb.svelte`): the USB controller's switch (also on Settings: it is in the shape), the remembered devices
+  with their state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
+  connector, attach at start, Attach and Detach (while the machine runs on this page), Allow…, Forget. **Add a
+  device…** opens a wizard (`AddUsb.svelte`): the kind first, a USB device (WebUSB) or a HID device (WebHID), each
+  explained, then the browser's chooser. [usb.md](usb.md) "The page".
 - **Snapshots:** the kept ones (below, "A stored machine's snapshots").
 
 A transient machine (a test's `?machine=`, or `?disk=`) is listed first as this page's machine, with a Disks tab (its
