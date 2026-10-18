@@ -495,6 +495,23 @@ interpreter's; the helper runs the instruction otherwise.
   no case the denormal test was needed for, it's kept as the argument's precondition). Until
   2026-10-18 every operand was tested normal or zero, half the FP guest's time with everything else
   inline (bench/interp/REPORT.md "M8: results, not operands").
+- **What the checks cost:** on the M4 these paths are bound by the SIMD pipes, which scalar FP
+  shares: every lane op counts, a `movi` that V8 rematerializes a constant with and a move between
+  a general and a SIMD register included, while the branches, the general-register compares and a
+  reduction's branch cost next to nothing (one check for a whole run of FP instructions saved no
+  time: "Tried and not kept"). So the checks are written for fewer lane ops
+  (bench/interp/REPORT.md "M8: the FP fast paths' SIMD ops"):
+  - the exponent range test is the bits shifted left once (the sign gone) less the range's start,
+    unsigned below its length: three ops a lane (doubles: the sign flip of the signed compare folded
+    into the subtraction's constant), where shift, mask, subtract and compare took four (five);
+  - scalar arithmetic (FADD … FSQRT) reads its operands as floats (`f64x2.extract_lane 0`: one op,
+    where the bits through a general register took two) and their bits again only in branches: the
+    zero clause's operand test when the result is zero, FZ's test;
+  - by element, FMLA's factor is the element in every lane, so both halves' products take one
+    promoted copy;
+  - without FZ, the lane tests' FZ branch passes the mask through (VTMP) instead of clearing no lanes
+    with an `andnot` of a zero;
+  - the single FMA's midpoint test is the sums' low words shifted left by 3 against the sign bit.
 - **FMA** (FMADD/FMSUB/FNMADD/FNMSUB, FMLA/FMLS vector and by element, single and double),
   in RNE f64 operations only (wasm has no deterministic FMA; relaxed-simd's `madd` may not fuse):
   the exact product, its sum with the addend, then one final rounding.
@@ -617,6 +634,21 @@ live histogram. None was worth a loop by itself at M6.5's end.
 ## Tried and not kept
 
 Findings worth not re-discovering (numbers in `bench/interp/REPORT.md`):
+- **One check for a run of FP instructions** (M8, `bench/interp/REPORT.md` "M8: the FP fast paths'
+  SIMD ops"): the inline SIMD&FP instructions between two that can't join (memory, branches,
+  helpers, X registers or NZCV; integer instructions that touch no V register stayed inside the
+  run) ANDed their conditions into an i32 and their lane masks into a v128, reduced and branched
+  on once at the run's end, where a failure restored the V registers the run wrote (saved on
+  their first write while dirty) and ran the members again, through the helpers or as they're
+  emitted outside a run. Correct (the differential test and planted bugs), and the JIT's code
+  much smaller (TurboFan's for the FP guest's n-body loop 36 → 24 KB), but the FP guest and
+  `gl_llvmpipe_jit` ran no faster (1244 → 1228 MIPS with the second form; frames 278–288 ms →
+  280–290): the
+  reductions and branches it saves cost next to nothing (above). Folding the single FMA's
+  midpoint test into the run's check (its 1% of FMLAs sent to the members' second emission)
+  saved nothing either. The patch is in `bench/interp/results/m8-fp-runs/`.
+- **The FP lane constants from memory** (the `Vcpu`'s, as the AES code's) instead of the
+  `v128.const` V8 rematerializes with `movi`: the FP guest 1420 → 1420 MIPS.
 - **TLB entry layouts:** an i32 addend, and split tag/addend arrays (12 bytes an entry): neither
   paid on Alpine's boot trace (the split's index arithmetic costs more than its density saves).
   The 16-byte entry stays.

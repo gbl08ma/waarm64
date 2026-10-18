@@ -905,3 +905,51 @@ zero product and addend: four zero tests) became "the double sum is zero" (the p
 double, and a nonzero exact sum can't round to zero there: two ops a half and a shuffle). The FP guest
 1107.4, 1110.8, 1111.1 → **1242.6, 1234.8, 1237.4** MIPS (+12%), `gl_llvmpipe_jit` 281.6, 290.0,
 284.4 → **275.5, 275.3, 276.0** ms a frame (−3%).
+
+## M8: the FP fast paths' SIMD ops
+
+2026-10-18, the dev VM, Chromium 153.0.8010.52; builds alternated in place of the served core, three
+pairs a step; raw data `results/m8-fp-ops/` (and `../boot/results/m8-fp-ops/`); the run experiment's
+in `results/m8-fp-runs/` with its patch.
+
+**One check for a run first** (the backlog's lead idea, [docs/jit.md](../../docs/jit.md) "Tried and
+not kept"): the inline SIMD&FP instructions up to one that can't join (memory, branches, helpers, X
+registers, NZCV; integer instructions between them stay in the run) ANDed their conditions into one
+i32 and their lane masks into one v128, reduced and branched once; a failure restored the V registers
+the run wrote and ran its members again. Through the helpers (`fp2-*`): 1270.3, 1273.3, 1274.9 →
+1283.5, 1271.2, 1278.2 MIPS. With the members emitted again as outside a run, so that the single FMA's
+midpoint test could join the run's check too (`fp3-*`): 1249.4, 1244.2, 1239.7 → 1228.3, 1229.6,
+1226.2; `gl_llvmpipe_jit` 278.3, 288.1, 284.3 → 280.6, 280.0, 290.3 ms a frame
+(`../boot/results/m8-fp-runs/`). TurboFan's code for the n-body loop shrank from 36 to 24 KB, yet
+nothing ran faster.
+
+**Why: the SIMD pipes.** Ceiling builds, each wrong on purpose, in Node (a local runner of the FP
+guest under the JIT, 3·10⁹ steps after a warm-up, alternated; directional, no JSON): the build 1232,
+1275, 1269 MIPS; runs 1294, 1283, 1271; no FZ branches 1263, 1314, 1305; no midpoint test (TurboFan
+drops what it computes) 1392, 1372, 1368; no checks at all (with runs) 1704, 1687, 1792. The midpoint
+test's branch and reduction were what the run removed; its four lane ops were the 8%. In TurboFan's
+code a vector single FMLA by element was ~37 SIMD-pipe ops for ~15 of FMA arithmetic (`movi`
+constants and the reductions' `umaxp`/`fmov` among them), while its branches and general-register
+compares cost next to nothing: on the M4 these paths are bound by the SIMD pipes, which scalar FP
+shares (a scalar FSUB was eight such ops: `umov` and `fmov` for each operand, the op, `fmov` of the
+result for its check, `movi` and `ins` to write it back). So, op by op:
+
+| step | before (MIPS) | after (MIPS) |
+|---|---|---|
+| range tests on the bits shifted left once (three lane ops, doubles' sign flip folded; midpoint test shifted by 3) (`shl-*`) | 1245.9, 1232.1, 1226.4 | 1256.1, 1269.0, 1261.4 |
+| by element, FMLA's factor promoted once; without FZ the lane tests' FZ branch passes the mask through (`simd2-*`) | 1264.2, 1266.2, 1262.7 | 1312.6, 1309.8, 1303.1 |
+| scalar FADD … FSQRT read operands with `f64x2.extract_lane 0`, their bits only in branches (`scal-*`) | 1318.8, 1314.3, 1299.6 | 1396.4, 1386.7, 1385.3 |
+| **all, against the commit before** (`fin-*`) | 1244.2, 1224.6, 1244.6 | **1404.5, 1400.6, 1405.2** (+13%) |
+
+`gl_llvmpipe_jit` with all of it: 278.2, 279.3, 279.1 → 275.1, 281.9, 284.0 ms a frame (noise; the
+same 484.2M steps a frame). Its shaders run under FZ, where the operand tests remain: without them
+(wrong, `glfz-*`) 279.8, 277.1 → 258.1, 257.6 ms. Not kept: the lane constants loaded from the `Vcpu`
+instead of rematerialized with `movi` (`kst-*`: 1424.8, 1419.7, 1370.5 → 1445.3, 1407.2, 1420.3).
+
+Along the way the run's re-emission (a plain `if` arm, where wasm checks the stack's height) found
+the scalar double FMA leaving Veltkamp's `h` on the stack (twice an instruction): harmless where a
+`return` or `br` followed, now set instead of teed. Correctness: the differential test, the FP suite
+in the guest (`scripts/ci-fp.sh`), and planted bugs (each range test's bound one exponent long,
+vector single and double, scalar; the scalar zero clause always true; its FZ test reading Vn twice;
+the FZ arm dropping the operand test; the by-element product from a stale local), each failing
+2–6 of the differential test's FP and NEON tests.

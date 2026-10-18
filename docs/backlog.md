@@ -166,21 +166,26 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   more than one block (measured, ~1% at most): [jit.md](jit.md) "Tried and not kept". Not levers in
   that profile: TLB misses (~1% of a phase), the remaining helpers, the core's compiler (under 1%
   outside the boot).
-- **The FP fast paths' remaining checks** (2026-10-18: `bench/interp/REPORT.md` "M8: every FP instruction
-  inline, and results, not operands"). Operand tests now run only under FZ, as a cheap denormal test; what's left
-  is the result test, the zero clauses and, per instruction, the `all_true` reduction and the `if`. With every check
-  forced true (wrong) the FP guest runs at ~1,755 MIPS against 1,238, and llvmpipe at 237 ms a frame against 276.
-  Ideas, by gain against work:
-  - **One check for a run** of FP instructions: AND the masks along the run, reduce and branch once, and on failure
-    restore the run's V registers from saved copies and replay it through the helpers. Runs end at memory,
-    integer and flag-setting instructions. Saves the reductions and branches, not the masks; needs v128 locals for
-    the copies.
+- **The FP fast paths' lane ops** (2026-10-18: `bench/interp/REPORT.md` "M8: the FP fast paths' SIMD ops"). On
+  the M4 the paths are bound by the SIMD pipes, not by their branches or reductions ([jit.md](jit.md) "What the
+  checks cost"; one check for a run of instructions saved nothing: "Tried and not kept"). With every check forced
+  true (wrong) the FP guest ran 33% faster in Node, and llvmpipe 8% faster a frame without its FZ operand tests.
+  By gain against work:
+  - **Scalar FP in f64 and f32 locals** (a scalar shadow per V register): a scalar FADD is still five lane ops for
+    one (two lane extracts, the result's move to a general register for its check, `movi` and `ins` to write it
+    back zero-extended); n-body and Horner (~40% of the FP guest) could keep their values in float locals and
+    build the v128 only for a vector reader, the flush being stores (no lane op). Needs locals past 128: two-byte
+    indices (the TLB memo's patch has them, [jit.md](jit.md) "Tried and not kept").
+  - **FZ's operand tests** (llvmpipe's 8%): about five lane ops an operand (the `movi`s included); for singles, an
+    unsigned min of every operand's `(x << 1) - 1` before one compare saves about a third.
+  - **The single FMA's midpoint test** (8% of the FP guest with everything it computes): folded into the result's
+    mask and reduction, with the round-to-odd redo in the failure arm before the helper; saves a reduction (two
+    lane ops), not the test.
+  - **Vector FMUL's zero clause** in a branch on a zero result lane, as the scalar form's: about two lane ops a
+    product (the FP guest has none to measure it on; llvmpipe's shaders do).
   - **Double FMA through a host fused op**: only relaxed-simd's `f64x2.relaxed_madd`, which may not fuse on every
     host and tier; it needs a probe and a guarantee that Liftoff and TurboFan agree. The FP guest spent ~10% on the
     double emulation in a cloud measurement; leave it unless a double-heavy workload needs it.
-  - **Scalar FP without the v128 round trip** (a scalar shadow local per V register, for chains like n-body and
-    Horner): V8 lowers `extract_lane` to one instruction and `v128.const 0` + `replace_lane` to about two on arm64,
-    so the gain looks small against the register cache's complexity; a ceiling test first.
   The same shader's guest loads spend ~11% on the TLB's tag load (a translation memo in locals lost: [jit.md](jit.md)
   "Tried and not kept").
 - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a

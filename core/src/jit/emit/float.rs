@@ -130,25 +130,24 @@ impl F {
 }
 
 /// Pushes an i32: the float bits in local `l` have their exponent field in
-/// `lo..max` (normal: 1..all ones; a fast result: 2..all ones).
+/// `lo..max` (normal: 1..all ones; a fast result: 2..all ones): the bits
+/// shifted left once (the sign gone, the exponent on top) less `lo`'s,
+/// unsigned below the range's length.
 fn exp_in(c: &mut Func, f: F, l: u32, lo: i64) {
     let (sh, ones) = f.exp();
-    let w = if f.d { W } else { 0 };
+    let sh = sh + 1;
     c.local_get(l);
     if f.d {
-        c.i64_const(sh).op(SHR_U + w).i64_const(ones).op(AND + w);
-        c.i64_const(lo)
-            .op(SUB + w)
-            .i64_const(ones - lo)
+        c.i64_const(1).op(0x86); // i64.shl
+        c.i64_const(lo << sh)
+            .op(SUB + W)
+            .i64_const((ones - lo) << sh)
             .op(LT_U + WC);
     } else {
-        c.i32_const(sh as i32)
-            .op(SHR_U)
-            .i32_const(ones as i32)
-            .op(AND);
-        c.i32_const(lo as i32)
+        c.i32_const(1).op(0x74); // i32.shl
+        c.i32_const((lo << sh) as i32)
             .op(SUB)
-            .i32_const((ones - lo) as i32)
+            .i32_const(((ones - lo) << sh) as i32)
             .op(LT_U);
     }
 }
@@ -239,14 +238,19 @@ fn under_fz(c: &mut Func, test: impl FnOnce(&mut Func)) {
 
 /// [`under_fz`] for lane masks: clears the lanes of the mask `test` pushes
 /// (the lanes FZ would flush: [`denormal_lanes`]) in the one on the stack,
-/// none without FZ, so one reduction tests both.
+/// none without FZ, so one reduction tests both. The mask goes through VTMP,
+/// so without FZ it costs no lane op (an `andnot` of a zero did: SIMD ops
+/// are what the FP paths are bound by, bench/interp/REPORT.md "M8: the FP
+/// fast paths' SIMD ops").
 fn under_fz_bad(c: &mut Func, test: impl FnOnce(&mut Func)) {
+    c.local_set(VTMP);
     c.local_get(FZOK).if_t(super::V128);
-    c.v128_const(0);
+    c.local_get(VTMP);
     c.else_();
+    c.local_get(VTMP);
     test(c);
-    c.end();
     c.simd(op::ANDNOT);
+    c.end();
 }
 
 /// Replaces the v128 on the stack with a lane mask: all ones where the lane is
@@ -710,15 +714,15 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         }
         FADD_float | FSUB_float | FMUL_float | FDIV_float | FNMUL_float | FSQRT_float => {
             fpa_guard(c);
-            f.load(c, rn);
-            c.local_tee(x);
-            f.to_float(c);
+            // The operands as floats; their bits (x, y) are read again only
+            // where a test needs them, in branches: lane ops are what these
+            // paths are bound by (bench/interp/REPORT.md "M8: the FP fast
+            // paths' SIMD ops").
+            c.vlanef(rn, f.esize());
             if op == FSQRT_float {
                 c.op(f.sqrt());
             } else {
-                f.load(c, rm);
-                c.local_tee(y);
-                f.to_float(c);
+                c.vlanef(rm, f.esize());
                 let k = match op {
                     FADD_float => 0,
                     FSUB_float => 1,
@@ -735,31 +739,42 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             // FPOK, then FSQRT: a fast result (√ of a negative is a NaN); the
             // rest: a fast result or an exact zero: a zero sum is always exact
             // (a nonzero exact sum rounds to a nonzero result), a zero product
-            // or quotient only with a zero operand (the dividend). A zero
-            // divisor needs no test: x / 0 is infinite and 0 / 0 a NaN.
+            // or quotient only with a zero operand (the dividend), tested
+            // when the result is zero. A zero divisor needs no test: x / 0 is
+            // infinite and 0 / 0 a NaN.
+            // Pushes an i32 (a test of the operands' bits, `x` and `y`: just
+            // Vn's, `one`), the bits loaded first.
+            let bits = |c: &mut Func, one: bool, test: &dyn Fn(&mut Func, &[u32])| {
+                let ops = [(x, rn), (y, rm)];
+                let ops = &ops[..if one { 1 } else { 2 }];
+                for &(l, n) in ops {
+                    f.load(c, n);
+                    c.local_set(l);
+                }
+                test(c, &[x, y][..ops.len()]);
+            };
             c.local_get(FPOK);
-            if op == FSQRT_float {
-                exp_in(c, f, r, 2);
-            } else {
-                exp_in(c, f, r, 2);
+            exp_in(c, f, r, 2);
+            if op != FSQRT_float {
                 is_zero(c, f, r);
-                match op {
-                    FADD_float | FSUB_float => {}
-                    FDIV_float => {
-                        is_zero(c, f, x);
-                        c.op(AND);
-                    }
-                    _ => {
-                        is_zero(c, f, x);
-                        is_zero(c, f, y);
-                        c.op(0x72).op(AND); // i32.or
-                    }
+                if !matches!(op, FADD_float | FSUB_float) {
+                    c.hint(false).if_t(super::I32);
+                    bits(c, op == FDIV_float, &|c, ls| {
+                        for (k, &l) in ls.iter().enumerate() {
+                            is_zero(c, f, l);
+                            if k > 0 {
+                                c.op(0x72); // i32.or
+                            }
+                        }
+                    });
+                    c.else_().i32_const(0).end();
                 }
                 c.op(0x72); // i32.or
             }
             c.op(AND);
-            let ops: &[u32] = if op == FSQRT_float { &[x] } else { &[x, y] };
-            under_fz(c, |c| no_denormal(c, f, ops));
+            under_fz(c, |c| {
+                bits(c, op == FSQRT_float, &|c, ls| no_denormal(c, f, ls));
+            });
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         // FMA: the exact product, its sum with the addend rounded to odd, then
@@ -794,7 +809,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 // Veltkamp: g = (2^27 + 1)·v, h = g - (g - v), l = v - h.
                 for (v, h, l) in [(fa, ah, al), (fb, bh, bl)] {
                     c.f64_const(134217729.0).local_get(v).op(F_MUL).local_tee(g);
-                    c.local_get(g).local_get(v).op(F_SUB).op(F_SUB).local_tee(h);
+                    c.local_get(g).local_get(v).op(F_SUB).op(F_SUB).local_set(h);
                     c.local_get(v).local_get(h).op(F_SUB).local_set(l);
                 }
                 // p = a·b (into fa), pl = ((ah·bh - p) + ah·bl + al·bh) + al·bl (into fb).
@@ -1387,22 +1402,23 @@ fn splat(d: bool, x: u64) -> u128 {
 }
 
 /// Replaces the v128 on the stack with a lane mask: all ones where the lane's
-/// exponent field is in `lo`..all ones (1: normal; 2: a fast result).
+/// exponent field is in `lo`..all ones (1: normal; 2: a fast result), as
+/// [`exp_in`]: three ops a lane.
 fn lanes_in(c: &mut Func, d: bool, lo: u64) {
     if d {
-        c.i32_const(52).simd(op::I64X2_SHR_U);
-        c.v128_const(splat(true, 0x7ff)).simd(op::AND);
-        c.v128_const(splat(true, lo)).simd(op::I64X2_SUB);
-        // Unsigned `< 0x7ff - lo`, as signed with the sign bits flipped.
+        // Unsigned `<`, as signed with the sign bits flipped: the flip folded
+        // into the subtraction's constant (`lo << 53` has no sign bit).
         let s = 1u64 << 63;
-        c.v128_const(splat(true, s)).simd(op::XOR);
-        c.v128_const(splat(true, (0x7ff - lo) ^ s))
+        c.i32_const(1).simd(op::I64X2_SHL);
+        c.v128_const(splat(true, (lo << 53) ^ s))
+            .simd(op::I64X2_SUB);
+        c.v128_const(splat(true, ((0x7ff - lo) << 53) ^ s))
             .simd(op::I64X2_LT_S);
     } else {
-        c.i32_const(23).simd(op::I32X4_SHR_U);
-        c.v128_const(splat(false, 0xff)).simd(op::AND);
-        c.v128_const(splat(false, lo)).simd(op::I32X4_SUB);
-        c.v128_const(splat(false, 0xff - lo)).simd(op::I32X4_LT_U);
+        c.i32_const(1).simd(op::I32X4_SHL);
+        c.v128_const(splat(false, lo << 24)).simd(op::I32X4_SUB);
+        c.v128_const(splat(false, (0xff - lo) << 24))
+            .simd(op::I32X4_LT_U);
     }
 }
 
@@ -1970,10 +1986,20 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             let (p, a) = (VTMP, tr);
             // The sums of each half into ta and tb: RN, or (`odd`) rounded to odd.
             let sums = |c: &mut Func, odd: bool| {
+                // By element, both halves of the factor are the element: promoted
+                // once, into tb until the second half's sum.
+                if by_element {
+                    factor(c);
+                    c.simd(op::PROMOTE).local_set(tb);
+                }
                 for (&hi, &t) in halves.iter().zip(&[ta, tb]) {
                     // p = promote(half of Vn (negated for FMLS)) × promote(half of
                     // the factor), a = promote(half of Vd).
                     for step in 0..3 {
+                        if step == 1 && by_element {
+                            c.local_get(tb).simd(op::F64X2[2]).local_set(p);
+                            continue;
+                        }
                         match step {
                             0 => vreg(c, rn),
                             1 => factor(c),
@@ -2031,8 +2057,10 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             // low 29 bits 1 << 28): every sum again, rounded to odd.
             c.local_get(ta).local_get(if q { tb } else { ta });
             c.shuffle(core::array::from_fn(|b| (b as u8 / 4) * 8 + b as u8 % 4));
-            c.v128_const(splat(false, MID_MASK as u64)).simd(op::AND);
-            c.v128_const(splat(false, MID as u64)).simd(op::I32X4_EQ);
+            // Low 29 bits 1 << 28: shifted left by 3, the sign bit alone.
+            c.i32_const(3).simd(op::I32X4_SHL);
+            c.v128_const(splat(false, (MID as u64) << 3))
+                .simd(op::I32X4_EQ);
             c.simd(op::ANY_TRUE).hint(false).if_();
             sums(c, true);
             c.end();

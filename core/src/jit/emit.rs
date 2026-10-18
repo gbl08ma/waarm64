@@ -339,6 +339,27 @@ impl Func {
         }
     }
 
+    /// Pushes Vn's low 32 or 64 bits (`esize`) as an f32 or f64: lane 0
+    /// extracted as a float (one lane op on arm64, where its bits through an
+    /// integer took two), or loaded if Vn has no local.
+    pub fn vlanef(&mut self, n: u32, esize: u32) {
+        let b = 32 + n;
+        if self.plain & 1 << b != 0 {
+            self.reused |= self.read & 1 << b;
+            self.read |= 1 << b;
+            self.c.local_get(VCPU);
+            if esize == 64 {
+                self.c.memarg(0x2b, 3, V + 16 * n); // f64.load
+            } else {
+                self.c.memarg(0x2a, 2, V + 16 * n); // f32.load
+            }
+        } else {
+            self.reg(b);
+            // f64x2/f32x4.extract_lane 0
+            self.c.simd_lane(if esize == 64 { 0x21 } else { 0x1f }, 0);
+        }
+    }
+
     /// Pops a v128 into Vn.
     pub fn vset(&mut self, n: u32) {
         self.set_reg(32 + n);

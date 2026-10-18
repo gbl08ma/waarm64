@@ -1,0 +1,737 @@
+diff --git a/core/src/jit/block.rs b/core/src/jit/block.rs
+index 75fc4a2..8681b18 100644
+--- a/core/src/jit/block.rs
++++ b/core/src/jit/block.rs
+@@ -628,7 +628,7 @@ pub fn module(
+         // whose flags are dead at entry, and what lazy flags the edges carry.
+         let n = r.blocks.len();
+         let mem = vec![In::Mem; n];
+-        let first = emit_region(&env, r, 0, &vec![emit::Regs::default(); n], &mem);
++        let first = emit_region(&env, r, 0, &vec![emit::Regs::default(); n], &mem, RUNS);
+         let plain = if r.looped() {
+             0
+         } else {
+@@ -648,24 +648,26 @@ pub fn module(
+         let (mut entry, mut flags) = settle(&first);
+         if n > 1 {
+             for _ in 0..4 {
+-                let next = settle(&emit_region(&env, r, plain, &entry, &flags));
++                let next = settle(&emit_region(&env, r, plain, &entry, &flags, RUNS));
+                 if next == (entry.clone(), flags.clone()) {
+                     break;
+                 }
+                 (entry, flags) = next;
+             }
+         }
+-        let mut x = emit_region(&env, r, plain, &entry, &flags);
++        let mut x = emit_region(&env, r, plain, &entry, &flags, RUNS);
++        let mut fin = flags;
+         if x.bad {
+             // The lazy states didn't settle: flags in memory on every edge.
+             let dead = |j: usize| if first.dead[j] { In::Dead } else { In::Mem };
+-            x = emit_region(
+-                &env,
+-                r,
+-                plain,
+-                &entry,
+-                &(0..n).map(dead).collect::<Vec<_>>(),
+-            );
++            fin = (0..n).map(dead).collect::<Vec<_>>();
++            x = emit_region(&env, r, plain, &entry, &fin, RUNS);
++            assert!(!x.bad);
++        }
++        // The runs' locals took it past what a function's one-byte local
++        // indices name: without runs, it fits.
++        if x.c.c.used_locals() + 3 > 128 {
++            x = emit_region(&env, r, plain, &entry, &fin, false);
+             assert!(!x.bad);
+         }
+         let (mut c, n) = (x.c, x.inl);
+@@ -739,6 +741,10 @@ impl In {
+     }
+ }
+ 
++/// Whether blocks take their SIMD&FP instructions' checks once a run
++/// (`emit::Run`); a switch for measuring.
++const RUNS: bool = true;
++
+ /// One emission of a region: the function, its inline instruction count,
+ /// each member's merged incoming register and flag states, whether each
+ /// member's flags are dead at its entry, and whether an edge carried lazy
+@@ -756,11 +762,19 @@ struct Emission {
+ /// One emission of region `r` with the registers in `plain` read without a
+ /// local, each member starting in its `entry` register state and `fin` flag
+ /// state.
+-fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]) -> Emission {
++fn emit_region(
++    e: &Env,
++    r: &Region,
++    plain: u64,
++    entry: &[emit::Regs],
++    fin: &[In],
++    runs: bool,
++) -> Emission {
+     let n = r.blocks.len();
+     let head = r.blocks[0].va;
+     let mut c = emit::Func::default();
+     c.plain = plain;
++    c.runs = runs;
+     let mut into = vec![emit::Regs::default(); n];
+     let mut flags = vec![In::Unset; n];
+     let mut dead = vec![false; n];
+@@ -820,6 +834,9 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+                 continue;
+             }
+             let op = decode(w);
++            if end(w) != End::No {
++                c.close_run(&e.cx);
++            }
+             // NZCV is stored before the block's branch (see `commit_flags`),
+             // unless a successor is a member and none that is needs it: the
+             // exits then store it on their own paths (`sync_flags` below), so
+@@ -841,7 +858,11 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             }
+             c.next = b.words.get(k + 1).copied().unwrap_or(0);
+             c.prev = if k > 0 { b.words[k - 1] } else { 0 };
+-            last = emit::inline(&mut c, w, op, k, &e.cx);
++            last = if c.runs {
++                emit::inline_run(&mut c, w, op, k, &e.cx)
++            } else {
++                emit::inline(&mut c, w, op, k, &e.cx)
++            };
+             skip = core::mem::take(&mut c.fused);
+             if last {
+                 inl += 1;
+@@ -858,6 +879,7 @@ fn emit_region(e: &Env, r: &Region, plain: u64, entry: &[emit::Regs], fin: &[In]
+             c.end();
+             c.forget(!0);
+         }
++        c.close_run(&e.cx);
+         if last && !c.defer_pc {
+             emit::set_pc(&mut c, 4 * len as i64);
+         }
+@@ -1088,6 +1110,23 @@ mod tests {
+         unsafe { Mem::new(core::ptr::dangling_mut::<u128>().cast(), 0) }
+     }
+ 
++    #[test]
++    fn dump_tmp() {
++        let Ok(spec) = std::env::var("DUMP_WORDS") else {
++            return;
++        };
++        let words: Vec<u32> = spec
++            .split(',')
++            .map(|w| u32::from_str_radix(w, 16).unwrap())
++            .collect();
++        let b = Block {
++            key: 0x4000_0200,
++            va: 0x4000_0200,
++            words,
++        };
++        std::fs::write(std::env::var("DUMP_OUT").unwrap(), build(b).bytes).unwrap();
++    }
++
+     #[test]
+     fn end_rules() {
+         for (w, e) in [
+diff --git a/core/src/jit/emit.rs b/core/src/jit/emit.rs
+index 9d8c913..3f8f0b0 100644
+--- a/core/src/jit/emit.rs
++++ b/core/src/jit/emit.rs
+@@ -65,6 +65,13 @@ pub const FPOK: u32 = 123;
+ pub const FZOK: u32 = 118;
+ /// f64 scratch locals (the double FMA's exact product and sums).
+ pub const FT: [u32; 8] = [97, 98, 99, 113, 114, 115, 116, 117];
++/// A run's saved V registers (v128) and its checks so far (i32; [`Run`]):
++/// past 127, so a function that would need more than 128 locals with them is
++/// emitted again without runs ([`Func::runs`]).
++const RUN_SLOTS: [u32; 8] = [128, 129, 130, 131, 132, 133, 134, 135];
++const RUNOK: u32 = 136;
++/// A run's vector members' lane masks so far, ANDed (v128; [`Func::run_lanes`]).
++const RUNV: u32 = 137;
+ /// The V registers' v128 locals, in order of first use: 49..=79, then 96
+ /// (between the register locals and SHA's, and after SHA's).
+ const VREGS: core::ops::RangeInclusive<u32> = 49..=79;
+@@ -133,6 +140,45 @@ fn flag_locals(sf: bool) -> (u32, u32, u32) {
+     if sf { (10, 11, 12) } else { (13, 14, 15) }
+ }
+ 
++/// A run of SIMD&FP instructions whose checks are taken together, once
++/// before the first instruction that can't join it (docs/jit.md "Floating
++/// point"): its members (inline SIMD&FP instructions that read and write only
++/// V registers, the instructions in `Func::members`) AND their fast paths'
++/// conditions into `RUNOK` and write their results unconditionally; the
++/// integer instructions between them (that touch no V register, no helper and
++/// nothing a member's helper changes) commute with them. If a check failed,
++/// the V registers the run wrote get their values from before it back and
++/// the helper runs every member again, in order.
++#[derive(Clone, Copy, Debug, Default)]
++pub struct Run {
++    /// The V registers members wrote ([`vbit`]).
++    written: u64,
++    /// The registers saved in [`RUN_SLOTS`] (dirty when first written: the
++    /// `Cpu` doesn't hold their value from before the run), in slot order.
++    saved: [u8; RUN_SLOTS.len()],
++    nsaved: usize,
++    /// A member deferred its check (`RUNOK` is set), or its lane masks
++    /// (`RUNV` is).
++    checked: bool,
++    vchecked: bool,
++}
++
++/// What [`Func::snapshot`] keeps to undo an instruction's emission.
++#[derive(Clone, Copy)]
++pub struct Snapshot {
++    mark: (usize, usize, usize),
++    regs: Regs,
++    flags: Flags,
++    counts: Counts,
++    touched: Option<bool>,
++    fp_ok: bool,
++    fpa_ok: bool,
++    read: u64,
++    reused: u64,
++    run: Option<Run>,
++    members: usize,
++}
++
+ /// Static counts over the emitted code (`jit::Stats`, ABI 13): lazy flag
+ /// setters whose NZCV was stored somewhere or never; conditions (B.cond,
+ /// CSEL & co, CCMP, ADC's carry) computed directly from a lazy setter's
+@@ -206,6 +252,20 @@ pub struct Func {
+     pub prev: u32,
+     pub next: u32,
+     pub fused: bool,
++    /// Whether this emission forms runs ([`Run`]), the open run, its members
++    /// (word, index in the block) and, for the instruction being emitted:
++    /// whether it was a SIMD&FP one (`simd`), and whether it did what a run's
++    /// member can't (`taint_x`: read or wrote an X register or NZCV, called
++    /// a helper) or what an instruction between members can't (`taint_v`:
++    /// touched a V register, called a helper, returned, read FPSR); `no_run`
++    /// keeps it from opening a run.
++    pub runs: bool,
++    pub run: Option<Run>,
++    pub members: Vec<(u32, usize)>,
++    pub simd: bool,
++    pub taint_x: bool,
++    pub taint_v: bool,
++    pub no_run: bool,
+ }
+ 
+ impl Deref for Func {
+@@ -231,12 +291,19 @@ impl Func {
+                 || i == TAKEN
+                 || i == FPOK
+                 || i == FZOK
++                || i == RUNOK
+                 || crypto::I32_LOCALS.contains(&i)
+             {
+                 I32
+             } else if FT.contains(&i) {
+                 F64
+-            } else if i == VTMP || VT.contains(&i) || VREGS.contains(&i) || i == VREG_LAST {
++            } else if i == VTMP
++                || VT.contains(&i)
++                || VREGS.contains(&i)
++                || i == VREG_LAST
++                || RUN_SLOTS.contains(&i)
++                || i == RUNV
++            {
+                 V128
+             } else {
+                 I64
+@@ -298,6 +365,7 @@ impl Func {
+     /// Pushes register `n` (31 is SP) as an i64; from 32, V register n − 32
+     /// as a v128.
+     fn reg(&mut self, n: u32) {
++        self.taint(n);
+         self.reused |= self.read & 1 << n;
+         self.read |= 1 << n;
+         if self.plain & 1 << n != 0 {
+@@ -323,6 +391,7 @@ impl Func {
+     pub fn vlane(&mut self, n: u32, esize: u32, lane: u32) {
+         let b = 32 + n;
+         if self.plain & 1 << b != 0 {
++            self.taint_v = true;
+             self.reused |= self.read & 1 << b;
+             self.read |= 1 << b;
+             let off = V + 16 * n + esize / 8 * lane;
+@@ -355,13 +424,175 @@ impl Func {
+ 
+     /// Pops an i64 into register `n` (31 is SP; from 32, a v128 into a V register).
+     fn set_reg(&mut self, n: u32) {
++        self.taint(n);
+         self.reused |= 1 << n;
+         let l = self.local(n);
++        // A run's first write of a dirty V register saves it first.
++        if let Some(r) = &mut self.run
++            && n >= 32
++            && r.written & 1 << n == 0
++        {
++            r.written |= 1 << n;
++            if self.regs.dirty & 1 << n != 0 {
++                if r.nsaved == RUN_SLOTS.len() {
++                    // No slot left: the run ends before this instruction.
++                    self.taint_x = true;
++                } else {
++                    self.c.local_get(l).local_set(RUN_SLOTS[r.nsaved]);
++                    r.saved[r.nsaved] = n as u8;
++                    r.nsaved += 1;
++                }
++            }
++        }
+         self.c.local_set(l);
+         self.regs.valid |= 1 << n;
+         self.regs.dirty |= 1 << n;
+     }
+ 
++    /// Notes an access to register `n` for a run ([`Func::taint_x`]).
++    fn taint(&mut self, n: u32) {
++        if n < 32 {
++            self.taint_x = true;
++        } else {
++            self.taint_v = true;
++        }
++    }
++
++    /// What [`Func::restore`] needs to undo what's emitted after it.
++    pub fn snapshot(&self) -> Snapshot {
++        Snapshot {
++            mark: self.c.mark(),
++            regs: self.regs,
++            flags: self.flags,
++            counts: self.counts,
++            touched: self.touched,
++            fp_ok: self.fp_ok,
++            fpa_ok: self.fpa_ok,
++            read: self.read,
++            reused: self.reused,
++            run: self.run,
++            members: self.members.len(),
++        }
++    }
++
++    pub fn restore(&mut self, s: Snapshot) {
++        self.c.rewind(s.mark);
++        (self.regs, self.flags, self.counts, self.touched) = (s.regs, s.flags, s.counts, s.touched);
++        (self.fp_ok, self.fpa_ok, self.read, self.reused) = (s.fp_ok, s.fpa_ok, s.read, s.reused);
++        self.run = s.run;
++        self.members.truncate(s.members);
++    }
++
++    /// Opens a run if this emission forms them and none is open (after the
++    /// block's FP guards: [`fp_guard`]).
++    fn open_run(&mut self) {
++        if self.runs && !self.no_run && self.run.is_none() {
++            self.run = Some(Run::default());
++        }
++    }
++
++    /// For a member's fast path whose condition (an i32) is on the stack and
++    /// which writes the registers in `written`: true if it's deferred to the
++    /// run's end (ANDed into `RUNOK`), the fast path to be emitted
++    /// unconditionally; false (nothing emitted) if the instruction takes its
++    /// own branch.
++    pub fn defer(&mut self, written: u64) -> bool {
++        if self.run.is_none() || written as u32 != 0 || written.count_ones() != 1 {
++            return false;
++        }
++        self.run_and()
++    }
++
++    /// In a run, ANDs the i32 on the stack (a member's fast path is right)
++    /// into `RUNOK`; false (nothing emitted) outside one.
++    pub fn run_and(&mut self) -> bool {
++        let Some(r) = &mut self.run else {
++            return false;
++        };
++        if r.checked {
++            self.c.local_get(RUNOK).op(AND);
++        }
++        r.checked = true;
++        self.c.local_set(RUNOK);
++        true
++    }
++
++    /// In a run, ANDs the lane mask on the stack (all ones where a vector
++    /// member's lanes pass its check) into `RUNV`, reduced once at the run's
++    /// end, and pushes 1 (true) in its place; false (nothing emitted)
++    /// outside a run, where the caller reduces it.
++    pub fn run_lanes(&mut self) -> bool {
++        if !self.run_mask() {
++            return false;
++        }
++        self.c.i32_const(1);
++        true
++    }
++
++    /// [`Func::run_lanes`] without the 1.
++    pub fn run_mask(&mut self) -> bool {
++        let Some(r) = &mut self.run else {
++            return false;
++        };
++        if r.vchecked {
++            self.c.local_get(RUNV).simd(0x4e); // v128.and
++        }
++        r.vchecked = true;
++        self.c.local_set(RUNV);
++        true
++    }
++
++    /// Ends the open run, if any: if a member's check failed, the V
++    /// registers it wrote get their values from before it back (from the
++    /// slots, or the `Cpu` for those that were clean) and the members run
++    /// again as they would outside a run (each behind its own check, the
++    /// helper running it if that fails). A member's helper always retires
++    /// (it raised no exception past the block's FPEN check, and FPCR has no
++    /// trap enables), so the instructions between them, already run, needn't
++    /// be undone.
++    pub fn close_run(&mut self, cx: &Ctx) {
++        let Some(r) = self.run.take() else {
++            return;
++        };
++        let members = core::mem::take(&mut self.members);
++        match (r.checked, r.vchecked) {
++            (false, false) => return,
++            (true, false) => {
++                self.c.local_get(RUNOK);
++            }
++            (false, true) => {
++                self.c.local_get(RUNV).simd(0xa3); // i32x4.all_true
++            }
++            (true, true) => {
++                self.c.local_get(RUNV).simd(0xa3).local_get(RUNOK).op(AND);
++            }
++        }
++        let fast = self.regs;
++        self.c.op(EQZ).hint(false).if_();
++        let mut back = fast;
++        back.valid &= !r.written;
++        back.dirty &= !r.written;
++        for (k, &n) in r.saved[..r.nsaved].iter().enumerate() {
++            let l = self.local[1][n as usize % 32];
++            self.c.local_get(RUN_SLOTS[k]).local_set(l);
++            back.valid |= 1 << n;
++            back.dirty |= 1 << n;
++        }
++        self.regs = back;
++        // No run, nor a fused pair (members aren't), in the members' second emission.
++        let saved = (self.runs, self.prev, self.next, self.flags);
++        (self.runs, self.prev, self.next) = (false, 0, 0);
++        for &(w, k) in &members {
++            let done = inline(self, w, crate::decode::decode(w), k, cx);
++            assert!(done, "a run's member {w:#010x} inline again");
++        }
++        // Its helpers leave NZCV as it was: the flags are the fast path's.
++        (self.runs, self.prev, self.next, self.flags) = saved;
++        self.conform(fast);
++        self.regs = fast;
++        self.c.end();
++    }
++
+     /// Writes the dirty registers back to the `Cpu`.
+     pub fn flush(&mut self) {
+         let mut d = self.regs.dirty;
+@@ -382,6 +613,7 @@ impl Func {
+ 
+     /// A new flag setter replaces the current one.
+     fn set_flags(&mut self, kind: Kind, sf: bool) {
++        self.taint_x = true;
+         self.touched.get_or_insert(false);
+         self.retire_flags();
+         self.flags = Flags::Lazy {
+@@ -394,6 +626,7 @@ impl Func {
+ 
+     /// Counts the lazy setter's fate as it goes.
+     fn retire_flags(&mut self) {
++        self.taint_x = true;
+         if let Flags::Lazy { stored, .. } = self.flags {
+             if stored {
+                 self.counts.flags_stored += 1;
+@@ -407,6 +640,7 @@ impl Func {
+     /// Stores lazy flags to the `Cpu` on a path that returns (a load/store's
+     /// failure path), leaving them lazy for the other one.
+     pub fn store_flags(&mut self) {
++        self.taint_x = true;
+         self.touched.get_or_insert(true);
+         if let Flags::Lazy { kind, sf, .. } = self.flags {
+             self.c.local_get(VCPU);
+@@ -424,6 +658,7 @@ impl Func {
+     /// branch's `select` of the next PC ran 35% slower under TurboFan
+     /// (`bench/interp/REPORT.md` "M5 step 6").
+     pub fn commit_flags(&mut self) {
++        self.taint_x = true;
+         self.touched.get_or_insert(true);
+         if let Flags::Lazy { current: false, .. } = self.flags {
+             self.store_flags();
+@@ -443,6 +678,7 @@ impl Func {
+     /// Returns the chain's retired count with `k` more of this block's
+     /// instructions retired (the registers and flags already in the `Cpu`).
+     pub fn ret(&mut self, k: u32) {
++        (self.taint_x, self.taint_v) = (true, true);
+         self.c.local_get(ACC);
+         if k != 0 {
+             self.c.i32_const(k as i32).op(0x6a); // i32.add
+@@ -997,6 +1233,10 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+         _ => {
+             let snap = (c.c.mark(), c.flags, c.touched, c.fp_ok, c.fpa_ok, c.regs);
+             fp_guard(c, cx, i, k);
++            // The guard's helper path comes before any member.
++            (c.taint_x, c.taint_v) = (false, false);
++            c.simd = true;
++            c.open_run();
+             if !(cx.crypto && crypto::inline(c, i, op))
+                 && !simd::inline(c, i, op)
+                 && !float::inline(c, cx, i, op, k)
+@@ -1013,6 +1253,37 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
+     true
+ }
+ 
++/// [`inline`] where runs form ([`Run`]): instruction `i` joins the open run
++/// if it's a member (a SIMD&FP instruction that touched no X register, NZCV
++/// nor a helper of its own) or may come between members; otherwise its
++/// emission is undone, the run closed and the instruction emitted again,
++/// opening a run of its own if it's a member.
++pub fn inline_run(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
++    loop {
++        let s = c.snapshot();
++        (c.simd, c.taint_x, c.taint_v) = (false, false, false);
++        let done = inline(c, i, op, k, cx);
++        let fits = if c.simd {
++            !c.taint_x && !c.fused
++        } else {
++            !c.taint_v
++        };
++        if c.run.is_none() || done && fits {
++            if done && c.simd && c.run.is_some() {
++                c.members.push((i, k));
++            }
++            c.no_run = false;
++            return done;
++        }
++        c.restore(s);
++        if c.run.is_some() {
++            c.close_run(cx);
++        } else {
++            c.no_run = true;
++        }
++    }
++}
++
+ /// How a block's inline loads and stores reach guest RAM, and the helper that
+ /// re-executes an instruction whose fast path doesn't apply.
+ #[derive(Clone, Copy, Debug)]
+@@ -2258,6 +2529,7 @@ fn fallback_with(
+     post: impl FnOnce(&mut Func),
+ ) {
+     let fast = c.regs;
++    (c.taint_x, c.taint_v) = (true, true);
+     c.else_();
+     c.regs = before;
+     c.flush();
+@@ -2280,6 +2552,8 @@ fn fallback_with(
+ /// 1); false for the rest (timers, `ISR_EL1`, traps: helper calls).
+ fn mrs(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
+     use crate::interp::sys::{Plain, plain};
++    // FPSR, say, which a run's members may set yet ([`Run`]).
++    c.taint_v = true;
+     let (rt, key) = (bits(i, 4, 0), bits(i, 20, 5));
+     let Some(p) = plain(key, cx.el1) else {
+         return false;
+@@ -2557,6 +2831,7 @@ fn cond(c: &mut Func, cond: u32) {
+         c.i32_const(1);
+         return;
+     }
++    c.taint_x = true;
+     c.touched.get_or_insert(true);
+     match c.flags {
+         Flags::Mem => {
+diff --git a/core/src/jit/emit/float.rs b/core/src/jit/emit/float.rs
+index 4aaca43..b64f33a 100644
+--- a/core/src/jit/emit/float.rs
++++ b/core/src/jit/emit/float.rs
+@@ -19,6 +19,9 @@ use crate::interp::{bit, bits};
+ 
+ /// FPSR.IXC.
+ const IXC: i64 = 16;
++const EXP_NOFZ: bool = false;
++const EXP_NOMID: bool = false;
++const EXP_NOCHECK: bool = false;
+ 
+ /// Before a block's first FP instruction on a fast path: FPOK = FPCR.RMode is
+ /// round to nearest even and FPSR.IXC is set, and FZOK = FPCR.FZ is clear.
+@@ -163,6 +166,16 @@ fn put(c: &mut Func, f: F, rd: u32, r: u32) {
+ /// `if cond { fast } else { the helper runs instruction i }`, with `cond` an
+ /// i32 already on the stack.
+ fn guarded(c: &mut Func, cx: &Ctx, i: u32, k: usize, written: u64, fast: impl FnOnce(&mut Func)) {
++    if EXP_NOCHECK {
++        c.op(0x1a);
++        fast(c);
++        return;
++    }
++    // In a run, the run's end takes the check.
++    if c.defer(written) {
++        fast(c);
++        return;
++    }
+     c.hint(true).if_();
+     let before: Regs = c.regs;
+     fast(c);
+@@ -229,6 +242,9 @@ fn scalar_plain(c: &mut Func, f: F, l: u32, nan: bool, quiet: bool) {
+ /// what the instruction read before it (a register's first read in a branch
+ /// would leave its local unset on the other path).
+ fn under_fz(c: &mut Func, test: impl FnOnce(&mut Func)) {
++    if EXP_NOFZ {
++        return;
++    }
+     c.local_get(FZOK).if_t(super::I32);
+     c.i32_const(1);
+     c.else_();
+@@ -241,6 +257,9 @@ fn under_fz(c: &mut Func, test: impl FnOnce(&mut Func)) {
+ /// (the lanes FZ would flush: [`denormal_lanes`]) in the one on the stack,
+ /// none without FZ, so one reduction tests both.
+ fn under_fz_bad(c: &mut Func, test: impl FnOnce(&mut Func)) {
++    if EXP_NOFZ {
++        return;
++    }
+     c.local_get(FZOK).if_t(super::V128);
+     c.v128_const(0);
+     c.else_();
+@@ -794,7 +813,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+                 // Veltkamp: g = (2^27 + 1)·v, h = g - (g - v), l = v - h.
+                 for (v, h, l) in [(fa, ah, al), (fb, bh, bl)] {
+                     c.f64_const(134217729.0).local_get(v).op(F_MUL).local_tee(g);
+-                    c.local_get(g).local_get(v).op(F_SUB).op(F_SUB).local_tee(h);
++                    c.local_get(g).local_get(v).op(F_SUB).op(F_SUB).local_set(h);
+                     c.local_get(v).local_get(h).op(F_SUB).local_set(l);
+                 }
+                 // p = a·b (into fa), pl = ((ah·bh - p) + ah·bl + al·bh) + al·bl (into fb).
+@@ -827,11 +846,22 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+                 c.local_get(fa).local_get(fb).op(F_MUL).local_tee(fa);
+                 c.local_get(fc).op(F_ADD).local_tee(fb);
+                 c.op(0xbd).i64_const(MID_MASK).op(AND + W); // i64.reinterpret
+-                c.i64_const(MID).op(0x51).hint(false).if_(); // i64.eq
+-                two_sum(c, fa, fc, fb, g);
+-                to_odd(c, fb, g, super::tmp(true, 0));
+-                c.op(0xbf).local_set(fb); // f64.reinterpret
+-                c.end();
++                c.i64_const(MID).op(0x51); // i64.eq
++                if EXP_NOMID {
++                    c.op(0x1a).i32_const(0);
++                }
++                // In a run, a midpoint sends the run to its members' second
++                // emission (this branch); rare except on short significands.
++                if c.run.is_some() {
++                    c.op(EQZ);
++                    c.run_and();
++                } else {
++                    c.hint(false).if_();
++                    two_sum(c, fa, fc, fb, g);
++                    to_odd(c, fb, g, super::tmp(true, 0));
++                    c.op(0xbf).local_set(fb); // f64.reinterpret
++                    c.end();
++                }
+                 c.local_get(fb).op(0xb6).op(0xbc).local_set(r); // f32.demote, reinterpret
+             }
+             // FPOK and a fast result; doubles: also no denormal factor (the
+@@ -1326,6 +1356,7 @@ mod op {
+     pub const OR: u32 = 0x50;
+     pub const XOR: u32 = 0x51;
+     pub const ANDNOT: u32 = 0x4f;
++    pub const NOT: u32 = 0x4d;
+     pub const I32X4_ALL_TRUE: u32 = 0xa3;
+     pub const I64X2_ALL_TRUE: u32 = 0xc3;
+     pub const I32X4_SHR_U: u32 = 0xad;
+@@ -1672,6 +1703,14 @@ fn every_lane(c: &mut Func, d: bool, q: bool, masks: usize) {
+         }
+         None => {}
+     }
++    if EXP_NOCHECK {
++        c.op(0x1a).i32_const(1);
++        return;
++    }
++    // In a run, its end reduces every member's masks at once.
++    if c.run_lanes() {
++        return;
++    }
+     c.simd(if d {
+         op::I64X2_ALL_TRUE
+     } else {
+@@ -2033,9 +2072,19 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+             c.shuffle(core::array::from_fn(|b| (b as u8 / 4) * 8 + b as u8 % 4));
+             c.v128_const(splat(false, MID_MASK as u64)).simd(op::AND);
+             c.v128_const(splat(false, MID as u64)).simd(op::I32X4_EQ);
+-            c.simd(op::ANY_TRUE).hint(false).if_();
+-            sums(c, true);
+-            c.end();
++            // In a run, as the scalar form's.
++            if c.run.is_some() {
++                c.simd(op::NOT);
++                c.run_mask();
++            } else {
++                c.simd(op::ANY_TRUE);
++                if EXP_NOMID {
++                    c.op(0x1a).i32_const(0);
++                }
++                c.hint(false).if_();
++                sums(c, true);
++                c.end();
++            }
+             // r = the demoted halves side by side (FRSQRTS: halved first, exactly).
+             for (t, on) in [(ta, true), (tb, q)] {
+                 if !on {
+diff --git a/core/src/jit/wasm.rs b/core/src/jit/wasm.rs
+index ee40810..e280d48 100644
+--- a/core/src/jit/wasm.rs
++++ b/core/src/jit/wasm.rs
+@@ -151,7 +151,7 @@ impl Code {
+         self
+     }
+     fn local(&mut self, op: u8, i: u32) -> &mut Self {
+-        assert!(i < 128);
++        assert!(i < 256);
+         self.b.push(op);
+         self.locals.push(self.b.len());
+         self.b.push(i as u8);
+@@ -177,12 +177,21 @@ impl Code {
+     /// type, and the other locals are grouped by type in order (every
+     /// declared local costs Liftoff a zero-initialization per call). Returns
+     /// the declarations.
++    /// How many distinct locals (parameters included) the code uses.
++    pub fn used_locals(&self) -> usize {
++        let mut used = [false; 256];
++        for &p in &self.locals {
++            used[self.b[p] as usize] = true;
++        }
++        used.iter().filter(|&&u| u).count()
++    }
++
+     pub fn compact_locals(&mut self, params: &[u32], ty: impl Fn(u32) -> u8) -> Vec<(u32, u8)> {
+-        let mut used = [false; 128];
++        let mut used = [false; 256];
+         for &p in &self.locals {
+             used[self.b[p] as usize] = true;
+         }
+-        let mut map = [0u8; 128];
++        let mut map = [0u8; 256];
+         for (k, &p) in params.iter().enumerate() {
+             used[p as usize] = false;
+             map[p as usize] = k as u8;
+@@ -191,7 +200,7 @@ impl Code {
+         let mut next = params.len() as u32;
+         for t in [I64, I32, F64, V128] {
+             let n = next;
+-            for i in 0..128 {
++            for i in 0..256 {
+                 if used[i as usize] && ty(i) == t {
+                     map[i as usize] = next as u8;
+                     next += 1;
+@@ -201,6 +210,8 @@ impl Code {
+                 decls.push((next - n, t));
+             }
+         }
++        // Each index is one byte (LEB128 below 128).
++        assert!(next <= 128, "{next} locals");
+         for &p in &self.locals {
+             self.b[p] = map[self.b[p] as usize];
+         }
