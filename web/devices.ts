@@ -18,6 +18,7 @@ import { openOverlay, overlay, type OverlayFiles, type WritableDisk } from './ov
 import { ramDisk } from './ramdisk.ts';
 import { openStored, openStoredForWriting } from './stored.ts';
 import { openDisk, type Disk } from './qcow2.ts';
+import { Usb, type UsbAttach } from './usb.ts';
 import { checksumSink, micSource, patternSource, ringSink, sndBackend, type SndMixer, type SndWake } from './snd.ts';
 
 /**
@@ -720,6 +721,8 @@ export type DevicesInit = {
   wakes?: number[];
   /** A VM restored from a snapshot: each backend's saved state (`Devices.save`), null where it had none. */
   state?: unknown[];
+  /** The xHCI (docs/usb.md): `vm_xhci`'s address, the page's port for the contract's messages, devices to plug in at start. */
+  xhci?: { shared: number; port?: MessagePort; attach?: UsbAttach[] };
 };
 
 export class Devices {
@@ -729,13 +732,15 @@ export class Devices {
   private wakes: number[];
   private backends: Backend[];
   private epochs: number[];
+  /** The xHCI's devices (web/usb.ts). */
+  readonly usb?: Usb;
   /** Set by `close`: `serve` returns. */
   private closed = false;
   /** The timers of the blk devices with `stats` (web/iostats.ts), by device. */
   private ioStats: Record<number, IoStats> = {};
   private served?: Int32Array;
   /** `out` receives what a console device's guest side wrote. */
-  private constructor({ memory, shared, ram, ramSize, signal, specs, deterministic, wakes, state }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
+  private constructor({ memory, shared, ram, ramSize, signal, specs, deterministic, wakes, state, xhci }: DevicesInit, overlays: (OverlayFiles | undefined)[], sources: (Source | WritableDisk | undefined)[], out: (device: number, text: string) => void) {
     [this.memory, this.shared, this.signal, this.wakes] = [memory, shared, signal, wakes ?? []];
     this.backends = specs.map((d, i) => {
       const ctx: Ctx = {
@@ -781,6 +786,7 @@ export class Devices {
       }
     });
     this.epochs = specs.map(() => 0);
+    if (xhci) this.usb = new Usb({ memory, shared: xhci.shared, ram, ramSize, deterministic, kick: () => this.kick(), port: xhci.port, attach: xhci.attach });
     if (state) {
       if (state.length !== specs.length) throw new Error('the snapshot is of a machine with other devices');
       // The devices are as the snapshot left them (their epoch is not a reset), with the backends' state.
@@ -831,6 +837,7 @@ export class Devices {
   /** Releases the backends' files (an overlay's handles lock them). */
   close() {
     for (const b of this.backends) b.close?.();
+    this.usb?.close();
     // End `serve`: its pending Atomics.waitAsync would otherwise keep the VM's memory alive for
     // good (Node's parallel runs, where the backends share the VM's thread: ~10 MB a boot).
     this.closed = true;
@@ -875,6 +882,7 @@ export class Devices {
       }
       b.polled?.();
     }
+    this.usb?.poll();
   }
 
   private untaken(i: number) {

@@ -117,4 +117,11 @@
 		interrupts = <0x00 0x11 0x04>;
 		dma-coherent;
 	};
+
+	usb@c000000 {
+		compatible = "generic-xhci";
+		reg = <0x00 0xc000000 0x00 0x10000>;
+		interrupts = <0x00 0x30 0x04>;
+		dma-coherent;
+	};
 };

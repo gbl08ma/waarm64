@@ -7,8 +7,16 @@
 // `close` releases the backends' files (OPFS locks), answers `closed` and ends
 // the worker.
 import { Devices, type DevicesInit } from './devices.ts';
+import { registerUsbOpener } from './usb.ts';
+import { webHidOpener, type WebHidLike } from './webhid.ts';
+import { webUsbOpener, type WebUsbLike } from './webusb.ts';
 
 type Init = DevicesInit & { bell: number };
+
+// The xHCI's real devices (docs/usb.md): WebUSB's and WebHID's, where this worker has them (the page grants them).
+const nav = self.navigator as Navigator & { usb?: WebUsbLike; hid?: WebHidLike };
+if (nav.usb) registerUsbOpener('usb', webUsbOpener(nav.usb));
+if (nav.hid) registerUsbOpener('hid', webHidOpener(nav.hid));
 
 let devices: Devices | undefined;
 

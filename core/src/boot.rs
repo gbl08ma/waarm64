@@ -41,7 +41,8 @@ pub fn framebuffer(cfg: &VmConfig) -> Option<(u64, u64)> {
 /// `initrd` is (start, end) in guest PA; `fb` a framebuffer as (PA, width, height);
 /// `ncpus` the vCPUs; `rtc` whether there's the PL031; `flash` the flash
 /// bank's size in the firmware configuration (docs/abi.md "M8 phase B"), which
-/// also adds fw_cfg and ends `/memory` below the framebuffer and the DTB space.
+/// also adds fw_cfg and ends `/memory` below the framebuffer and the DTB space;
+/// `xhci` the `generic-xhci` node (docs/usb.md).
 #[allow(clippy::too_many_arguments)]
 pub fn dtb(
     ram_size: u64,
@@ -52,6 +53,7 @@ pub fn dtb(
     ncpus: usize,
     rtc: bool,
     flash: Option<u64>,
+    xhci: bool,
 ) -> Vec<u8> {
     let mut f = Fdt::default();
     f.begin("");
@@ -214,6 +216,16 @@ pub fn dtb(
         f.end();
     }
 
+    if xhci {
+        let pa = crate::xhci::BASE;
+        f.begin(&format!("usb@{pa:x}"));
+        f.strs("compatible", &["generic-xhci"]);
+        f.cells64("reg", &[pa, crate::xhci::SIZE]);
+        f.cells("interrupts", &[0, crate::xhci::IRQ as u32 - 32, 4]);
+        f.flag("dma-coherent");
+        f.end();
+    }
+
     f.end();
     f.finish()
 }
@@ -255,6 +267,7 @@ impl Vm {
             ncpus,
             self.cfg.has_rtc(),
             self.cfg.firmware().then_some(self.cfg.flash_size),
+            self.cfg.xhci != 0,
         );
         if blob.len() as u64 > DTB_SPACE {
             return Err("DTB too large");
@@ -340,7 +353,7 @@ mod tests {
     }
 
     /// Our DTB, decompiled by `dtc`, must match the reviewed sources
-    /// tests/dtb/webpc.dts (two vCPUs, the RTC; a round trip through the reference
+    /// tests/dtb/webpc.dts (two vCPUs, the RTC, the xHCI; a round trip through the reference
     /// tool) and webpc-firmware.dts (the firmware configuration: one vCPU, the
     /// flash bank, fw_cfg). Set UPDATE_DTS=1 to rewrite them after an intended change.
     #[test]
@@ -365,6 +378,7 @@ mod tests {
                 ncpus,
                 true,
                 flash,
+                ncpus == 2, // the xHCI in webpc.dts
             );
             let dir =
                 std::env::temp_dir().join(format!("webpc-dtb-{}-{ncpus}", std::process::id()));
