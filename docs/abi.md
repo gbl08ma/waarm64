@@ -152,7 +152,7 @@ TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one
 
 Layouts in `core/src/virtio.rs` and `web/devices.ts`; the behavior is in [devices.md](devices.md).
 - `DeviceEntry` = 5 u64s: device ID, offered features (the transport masks the reserved bits
-  24–40 and adds `VERSION_1` and `INDIRECT_DESC`), queue count (≤ 8), QueueNumMax (power of 2,
+  24–40 and adds `VERSION_1`, `INDIRECT_DESC` and `EVENT_IDX`), queue count (≤ 8), QueueNumMax (power of 2,
   ≤ 1024), config length (≤ 256). Every chain that can be in flight must fit the completion ring
   (queues × size × 2 ≤ 4096 words).
 - `vm_device(vm, i) -> *const DevShared`: events u32 at 0 (`EV_REQUEST` 1, `EV_CONFIG` 2,

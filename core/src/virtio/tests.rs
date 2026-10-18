@@ -127,7 +127,11 @@ fn registers() {
         [0x000, 0x004, 0x008, 0x00c].map(|o| t.rd(o)),
         [0x7472_6976, 2, 4, VENDOR as u64]
     );
-    assert_eq!(t.rd(0x010), 1 << 3 | 1 << 28, "and INDIRECT_DESC");
+    assert_eq!(
+        t.rd(0x010),
+        1 << 3 | 1 << 28 | 1 << 29,
+        "and INDIRECT_DESC, EVENT_IDX"
+    );
     t.wr(0x014, 1);
     assert_eq!(t.rd(0x010), 1, "VERSION_1, not the host's transport bit");
     t.wr(0x014, 0);
@@ -246,6 +250,83 @@ fn no_interrupt_flag() {
     t.complete(0, 4);
     assert_eq!(t.used(0), (1, 0, 4));
     assert!(!t.t.irq());
+}
+
+#[test]
+fn used_event_decides_the_interrupt() {
+    let mut t = T::new();
+    t.up(F_VERSION_1 | F_EVENT_IDX);
+    let used_event = AVAIL + 4 + 2 * QSIZE;
+    // The flag means nothing under EVENT_IDX.
+    t.mem().write(AVAIL, 2, AVAIL_NO_INTERRUPT).unwrap();
+    for h in 0..4 {
+        t.desc(DESC, h, BUF + 16 * h, 4, D_WRITE, 0);
+    }
+    t.offer(&[0, 1, 2, 3]);
+    t.complete(0, 4);
+    assert!(t.t.irq(), "used_event 0: the first entry");
+    t.wr(0x064, 1);
+    t.complete(1, 4);
+    assert!(!t.t.irq(), "used_event 0 is behind");
+    t.mem().write(used_event, 2, 2).unwrap();
+    // Two in one drain, the second at used_event.
+    assert!(t.sh.cpl.push(&[2, 4]));
+    t.complete(3, 4);
+    assert_eq!(t.used(3), (4, 3, 4));
+    assert!(t.t.irq(), "entry 2 written");
+}
+
+#[test]
+fn used_event_wraps() {
+    let mut t = T::new();
+    t.up(F_VERSION_1 | F_EVENT_IDX);
+    t.desc(DESC, 0, BUF, 4, D_WRITE, 0);
+    let used_event = AVAIL + 4 + 2 * QSIZE;
+    let mut irqs = 0;
+    // Around the 16-bit index, with used_event two entries apart.
+    for n in 0u32..0x10010 {
+        if n % 2 == 0 {
+            t.mem()
+                .write(used_event, 2, (n + 1) as u64 & 0xffff)
+                .unwrap();
+        }
+        t.offer(&[0]);
+        t.sh.req.pop_request().unwrap();
+        t.complete(0, 4);
+        irqs += t.t.irq() as u32;
+        t.wr(0x064, 1);
+    }
+    assert_eq!(irqs, 0x10010 / 2);
+}
+
+#[test]
+fn avail_event_follows_the_device() {
+    let mut t = T::new();
+    t.up(F_VERSION_1 | F_EVENT_IDX);
+    let avail_event = USED + 4 + 8 * QSIZE;
+    t.desc(DESC, 0, BUF, 4, D_WRITE, 0);
+    t.desc(DESC, 1, BUF + 16, 4, D_WRITE, 0);
+    t.offer(&[0, 1]);
+    assert_eq!(t.mem().read(avail_event, 2).unwrap(), 2);
+    assert_eq!(t.sh.req.pop_request().unwrap().w0, 0);
+    assert_eq!(t.sh.req.pop_request().unwrap().w0, 1);
+    t.complete(0, 4);
+    t.complete(1, 4);
+    t.offer(&[0]);
+    assert_eq!(t.mem().read(avail_event, 2).unwrap(), 3);
+}
+
+#[test]
+fn without_event_idx_neither_event_is_used() {
+    let mut t = T::new();
+    t.up(F_VERSION_1);
+    let (used_event, avail_event) = (AVAIL + 4 + 2 * QSIZE, USED + 4 + 8 * QSIZE);
+    t.mem().write(used_event, 2, 5).unwrap();
+    t.desc(DESC, 0, BUF, 4, D_WRITE, 0);
+    t.offer(&[0]);
+    assert_eq!(t.mem().read(avail_event, 2).unwrap(), 0);
+    t.complete(0, 4);
+    assert!(t.t.irq());
 }
 
 #[test]

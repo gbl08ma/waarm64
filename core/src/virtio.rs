@@ -20,7 +20,7 @@
 //! then the number of bytes written. `epoch` counts device resets (mod 256), so
 //! records from before a reset are skipped by the backend and dropped here.
 
-use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU8, AtomicU32, Ordering, fence};
 use std::collections::VecDeque;
 
 use crate::mem::{Access, Mem};
@@ -50,6 +50,7 @@ const NEEDS_RESET: u32 = 0x40;
 
 // Feature bits: the transport's own, and the reserved range 24–40 hosts can't offer.
 const F_INDIRECT_DESC: u64 = 1 << 28;
+const F_EVENT_IDX: u64 = 1 << 29;
 const F_VERSION_1: u64 = 1 << 32;
 const F_TRANSPORT: u64 = ((1 << 41) - 1) & !((1 << 24) - 1);
 
@@ -73,7 +74,7 @@ const VENDOR: u32 = 0x4350_4257; // "WBPC"
 pub struct DeviceEntry {
     /// virtio device ID (§5): 3 console, 4 entropy, 2 block, …
     pub device_id: u64,
-    /// Device feature bits offered; the transport adds VERSION_1 and INDIRECT_DESC.
+    /// Device feature bits offered; the transport adds VERSION_1, INDIRECT_DESC and EVENT_IDX.
     pub features: u64,
     pub queues: u64,
     /// QueueNumMax, a power of 2.
@@ -368,7 +369,7 @@ impl Transport {
     }
 
     fn offered(&self) -> u64 {
-        self.entry.features & !F_TRANSPORT | F_VERSION_1 | F_INDIRECT_DESC
+        self.entry.features & !F_TRANSPORT | F_VERSION_1 | F_INDIRECT_DESC | F_EVENT_IDX
     }
 
     fn queue(&mut self) -> Option<&mut Queue> {
@@ -570,37 +571,53 @@ impl Transport {
 
     fn post(&mut self, i: usize, mem: &Mem, sh: &DevShared) -> Result<bool, Bad> {
         let indirect = self.driver_features & F_INDIRECT_DESC != 0;
+        let event_idx = self.driver_features & F_EVENT_IDX != 0;
         let w_epoch = (self.epoch & 0xff) << 24 | (i as u32) << 16;
         let q = &mut self.queues[i];
-        let avail = mem.read(q.driver + 2, 2)? as u16;
-        if avail.wrapping_sub(q.last_avail) as u64 > q.size {
-            return Err(Bad);
-        }
+        let mut avail = mem.read(q.driver + 2, 2)? as u16;
         let mut posted = false;
-        while q.last_avail != avail {
-            if q.inflight.len() as u64 == q.size {
-                return Err(Bad); // more chains than the queue holds
+        loop {
+            if avail.wrapping_sub(q.last_avail) as u64 > q.size {
+                return Err(Bad);
             }
-            let slot = q.last_avail as u64 % q.size;
-            let head = mem.read(q.driver + 4 + 2 * slot, 2)?;
-            let out = &mut self.scratch;
-            out.clear();
-            out.extend([w_epoch | head as u32, 0]);
-            let (nr, nw) = walk_chain(mem, q.desc, q.size, head, indirect, out)?;
-            out[1] = nr | nw << 16;
-            if !sh.req.push(out) {
-                self.backlog = true;
-                break;
+            while q.last_avail != avail {
+                if q.inflight.len() as u64 == q.size {
+                    return Err(Bad); // more chains than the queue holds
+                }
+                let slot = q.last_avail as u64 % q.size;
+                let head = mem.read(q.driver + 4 + 2 * slot, 2)?;
+                let out = &mut self.scratch;
+                out.clear();
+                out.extend([w_epoch | head as u32, 0]);
+                let (nr, nw) = walk_chain(mem, q.desc, q.size, head, indirect, out)?;
+                out[1] = nr | nw << 16;
+                if !sh.req.push(out) {
+                    // Retried after completions, which needs no notify.
+                    self.backlog = true;
+                    return Ok(posted);
+                }
+                q.last_avail = q.last_avail.wrapping_add(1);
+                q.inflight.push_back(head as u16);
+                posted = true;
             }
-            q.last_avail = q.last_avail.wrapping_add(1);
-            q.inflight.push_back(head as u16);
-            posted = true;
+            if !event_idx {
+                return Ok(posted);
+            }
+            // avail_event (§2.7.10): the driver notifies when it makes the buffer at
+            // `last_avail` available. Written, then the index read again: a buffer made
+            // available in between came without a notify.
+            mem.write(q.device + 4 + 8 * q.size, 2, q.last_avail as u64)?;
+            fence(Ordering::SeqCst);
+            avail = mem.read(q.driver + 2, 2)? as u16;
+            if avail == q.last_avail {
+                return Ok(posted);
+            }
         }
-        Ok(posted)
     }
 
     /// Moves the backend's completions into the used rings, raising
-    /// InterruptStatus unless the driver suppressed it, then retries chains
+    /// InterruptStatus unless the driver suppressed it (with the flag, or
+    /// with `used_event` under EVENT_IDX), then retries chains
     /// that didn't fit the request ring. Returns events for the host.
     pub fn complete(&mut self, mem: &Mem, sh: &DevShared) -> u32 {
         let g = sh.config_gen.load(Ordering::SeqCst);
@@ -608,6 +625,8 @@ impl Transport {
             self.config_seen = g;
             self.isr |= INT_CONFIG;
         }
+        let event_idx = self.driver_features & F_EVENT_IDX != 0;
+        let old: [u16; MAX_QUEUES] = core::array::from_fn(|i| self.queues[i].used);
         while let Some([w0, len]) = sh.cpl.pop::<2>() {
             let (head, i) = ((w0 & 0xffff) as u64, (w0 >> 16 & 0xff) as usize);
             if w0 >> 24 != self.epoch & 0xff
@@ -631,9 +650,25 @@ impl Transport {
             let ok = mem.write(e, 4, head).is_ok()
                 && mem.write(e + 4, 4, len as u64).is_ok()
                 && mem.write(q.device + 2, 2, q.used as u64).is_ok();
+            if event_idx {
+                continue;
+            }
             let flags = mem.read(q.driver, 2).unwrap_or(0);
             if ok && flags & AVAIL_NO_INTERRUPT == 0 {
                 self.isr |= INT_VRING;
+            }
+        }
+        let moved = |(q, &old): (&Queue, &u16)| q.used != old;
+        if event_idx && self.queues.iter().zip(&old).any(moved) {
+            // used_event (§2.7.10): the driver wants an interrupt once the used index passes
+            // it, so one is raised if this drain moved the index past it. The used index is
+            // written before used_event is read, as the driver orders the reverse.
+            fence(Ordering::SeqCst);
+            for (q, &old) in self.queues.iter().zip(&old).filter(|&p| moved(p)) {
+                let event = mem.read(q.driver + 4 + 2 * q.size, 2).unwrap_or(0) as u16;
+                if q.used.wrapping_sub(event).wrapping_sub(1) < q.used.wrapping_sub(old) {
+                    self.isr |= INT_VRING;
+                }
             }
         }
         if !core::mem::take(&mut self.backlog) {

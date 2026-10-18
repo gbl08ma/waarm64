@@ -315,8 +315,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `hvc0` getty is output only. Console input goes to the PL011 (M8); a `MessagePort` in the
   console's spec, as virtio-input has, is the shape if `hvc0` is ever wanted (it would skip the
   PL011's trap per byte).
-- virtio: `EVENT_IDX` not offered (do it when an I/O benchmark shows notify exits or interrupts
-  matter); the host can change config space under a running driver since ABI 31
+- virtio: the host can change config space under a running driver since ABI 31
   (`Devices.changeConfig`, docs/abi.md), but only virtio-gpu's display events use it: console resize,
   capacity change and net link state don't yet.
 - virtio-blk over HTTP: synchronous XHRs, no cache or concurrency (a request's qcow2 clusters are
