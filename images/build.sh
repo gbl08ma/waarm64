@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, debian, ltp, litmus, edk2, alpine-uefi (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, debian, ltp, litmus, fptest, edk2, alpine-uefi (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
 # buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Bootlin's
@@ -94,6 +94,12 @@ KERNEL_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 bc=1.08.2-r1 flex=2.
 LITMUS_TOOLS="ocaml=4.14.4-r0 dune=3.22.2-r1 ocaml-menhir=20220210-r6 ocaml-menhir-dev=20220210-r6 ocaml-zarith=1.14-r1 ocaml-findlib=1.9.6-r8 gmp-dev=6.3.0-r4 busybox-static=1.37.0-r31 gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 tar=1.35-r5"
 HERDTOOLS_TAG=7.58
 HERDTOOLS_COMMIT=1ca343e16a2038e406d1ac674e7e3a1b722b36c7
+# fptest: Berkeley SoftFloat and TestFloat 3e (the commits scripts/testfloat.sh pins).
+FPTEST_SOFTFLOAT=a0c6494cdc11865811dec815d5c0049fba9d82a8
+FPTEST_SOFTFLOAT_SHA256=1f719bcc8878be9627f6cfc44a0d6dbddf32bacc70ac81193bcbf2c62f97cbe9
+FPTEST_TESTFLOAT=a9c849f1b0eb0264b626d9686ffae167d996e3be
+FPTEST_TESTFLOAT_SHA256=54852fd1d11f0109011e54d69952cda097d3c49709ce46e4800353a6e8c764c3
+FPTEST_TOOLS="gcc=15.2.0-r5 musl-dev=1.2.6-r2 make=4.4.1-r4 python3=3.14.8-r0 busybox-static=1.37.0-r31 tar=1.35-r5"
 EDK2_TAG=edk2-stable202608
 EDK2_COMMIT=2970e5699ba6267f3384ffab20f96647578aebc8
 EDK2_CONTAINER=docker.io/library/debian@sha256:1808211ab6f37c6fc6a75368651697536f7bf47993f2797befa8908b1254979d # trixie, arm64
@@ -105,7 +111,7 @@ export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd debian ltp litmus edk2 alpine-uefi)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd debian ltp litmus fptest edk2 alpine-uefi)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -455,6 +461,44 @@ build_litmus() {
   ' - "$LITMUS_TOOLS" "$ht" "$out" "$dst" "$LINUX"
 }
 
+# The FP suite (images/fptest/): SoftFloat (ARM's NaN rules) and testfloat_gen
+# from the pinned sources, fptest.c and its form tables (forms.py), all static,
+# natively in Alpine's arm64 container; an initramfs (BusyBox, the init, the
+# suite; booted with linux/Image, webpc.fptest=<options>) and fptest.tar (the
+# same programs and run.sh, for the oracle VM).
+build_fptest() {
+  local dst=$out/fptest b=$out/build/fptest
+  rm -rf "$dst" "$b"
+  mkdir -p "$dst" "$b" "$out/dl"
+  for p in "softfloat $FPTEST_SOFTFLOAT $FPTEST_SOFTFLOAT_SHA256" "testfloat $FPTEST_TESTFLOAT $FPTEST_TESTFLOAT_SHA256"; do
+    set -- $p
+    local tar=$out/dl/berkeley-$1-3-$2.tar.gz
+    [ -f "$tar" ] || curl -fsSL -o "$tar" "https://github.com/ucb-bar/berkeley-$1-3/archive/$2.tar.gz"
+    echo "$3  $tar" | sha256sum -c --quiet
+    mkdir "$b/$1" && tar xzf "$tar" -C "$b/$1" --strip-components=1
+  done
+  linux_src
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache $1
+    b=$2 dst=$3 src=$4/build/linux-$5 cfg=Linux-ARM-VFPv2-GCC
+    make -s -C "$b/softfloat/build/$cfg" -j"$(nproc)"
+    make -s -C "$b/testfloat/build/$cfg" -j"$(nproc)" SOFTFLOAT_DIR=../../../softfloat LINK="gcc -static -s -o \$@" testfloat_gen
+    python3 images/fptest/forms.py "$b"
+    gcc -static -s -O2 -std=gnu11 -Wall -Werror -I"$b" -I"$b/softfloat/source/include" -o "$b/fptest" images/fptest/fptest.c "$b/softfloat/build/$cfg/softfloat.a"
+    mkdir -p "$b/r/fptest"
+    cp "$b/fptest" "$b/testfloat/build/$cfg/testfloat_gen" images/fptest/run.sh "$b/r/fptest/"
+    find "$b/r" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+    tar -C "$b/r" --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" -cf "$dst/fptest.tar" fptest
+    gcc -O2 -o "$b/gen_init_cpio" "$src/usr/gen_init_cpio.c"
+    { printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\n"
+      printf "nod /dev/null 0666 0 0 c 1 3\n"
+      for d in proc tmp bin sbin usr usr/bin usr/sbin fptest; do printf "dir /%s 0755 0 0\n" $d; done
+      printf "file /bin/busybox /bin/busybox.static 0755 0 0\nfile /init %s 0755 0 0\n" images/fptest/init
+      for f in fptest testfloat_gen; do printf "file /fptest/%s %s 0755 0 0\n" $f "$b/r/fptest/$f"; done; } > "$b/cpio.list"
+    "$b/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$b/cpio.list" > "$dst/initramfs.cpio"
+  ' - "$FPTEST_TOOLS" "$root/$b" "$root/$dst" "$root/$out" "$LINUX"
+}
+
 build_debian() {
   rm -rf "$out/debian"
   WEBPC_DL=$root/$out/dl node --disable-warning=ExperimentalWarning tools/debian.ts
@@ -556,10 +600,11 @@ inputs() {
   [ "$1" = linux-gpu ] && files+=(images/linux.fragment $(find images/gpu -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = linux-snd ] && files+=(images/linux.fragment $(find images/snd -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
+  [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; } |
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; } |
     sha256sum | cut -c1-16
 }
 
@@ -578,6 +623,7 @@ outputs() {
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
     ltp) echo ltp/rootfs.ext4 ;;
     litmus) echo litmus/initramfs.cpio litmus/litmus.tar ;;
+    fptest) echo fptest/initramfs.cpio fptest/fptest.tar ;;
     edk2) echo edk2/QEMU_EFI.fd edk2/LICENSES.txt edk2/shell.img ;;
     alpine-uefi) echo alpine-uefi/alpine.qcow2 alpine-uefi/alpine-grub.qcow2 ;;
   esac
@@ -631,10 +677,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() alpine= user= gl= virgl= crypto= gpu= snd= litmus= kernel= debian= edk2= alpine_uefi=
+  rest=() alpine= user= gl= virgl= crypto= gpu= snd= litmus= fptest= kernel= debian= edk2= alpine_uefi=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
+    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -656,6 +702,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   if [ -n "$gpu" ]; then build linux-gpu; fi
   if [ -n "$snd" ]; then build linux-snd; fi
   if [ -n "$litmus" ]; then build litmus; fi
+  if [ -n "$fptest" ]; then build fptest; fi
   if [ -n "$edk2" ]; then build edk2; fi
   exit 0
 fi
