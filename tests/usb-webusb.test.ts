@@ -197,6 +197,11 @@ test('bulk OUT: the gathered data, a separate empty transfer for URB_ZERO_PACKET
   await settle();
   assert.deepEqual(dev.outs.map((o) => [o.ep, o.data.length]), [[2, 128], [2, 0]]);
   assert.deepEqual(a.results, [{ code: 'success', actual: 128 }]);
+  // Linux queues URB_ZERO_PACKET's ZLP as a TD of its own: a length-0 OUT TD is an empty transferOut.
+  const z = submit(p, { ep: 0x02, type: 'bulk', length: 0 });
+  await settle();
+  assert.deepEqual(dev.outs.at(-1)!.data.length, 0);
+  assert.deepEqual(z.results, [{ code: 'success', actual: 0 }]);
   dev.outScript = async () => ({ status: 'stall', bytesWritten: 0 });
   const b = submit(p, { ep: 0x02, type: 'bulk', data: new Uint8Array(3), length: 3 });
   await settle();
