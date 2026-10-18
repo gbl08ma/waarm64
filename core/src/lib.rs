@@ -32,7 +32,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 38;
+pub const ABI_VERSION: u32 = 39;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -346,6 +346,9 @@ pub unsafe extern "C" fn vm_new(
         || !cfg.valid_firmware()
         || cfg.mem_pages > 65536
         || !cfg.valid_xhci()
+        || !cfg.valid_spill()
+        // Natively the spill memories are pointers only a Rust caller has.
+        || (cfg!(not(target_arch = "wasm32")) && cfg.spill[0] != 0)
         || (cfg.fb_width | cfg.fb_height != 0 && boot::framebuffer(&cfg).is_none())
     {
         return core::ptr::null_mut();
@@ -370,7 +373,21 @@ pub unsafe extern "C" fn vm_new(
         return core::ptr::null_mut();
     };
     // SAFETY: guaranteed by the caller, alignment checked above.
-    let mem = unsafe { mem::Mem::new(ram, ram_size) };
+    let spill: Vec<_> = cfg
+        .spill_layout()
+        .into_iter()
+        .map(|(phys, size)| mem::Spill {
+            phys,
+            size,
+            base: core::ptr::null_mut(),
+        })
+        .collect();
+    // SAFETY: the host made memory k + 1 `spill[k].size` bytes (ABI 39).
+    let mem = unsafe {
+        mem::Mem::new(ram, ram_size)
+            .at(vm::RAM_BASE)
+            .with_spill(&spill)
+    };
     let mut vm = vm::Vm::with_devices(mem, cfg, devices);
     if cfg.firmware() {
         vm.plat.get_mut().fw_cfg = Some(fw_cfg);

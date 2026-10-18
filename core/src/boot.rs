@@ -42,10 +42,12 @@ pub fn framebuffer(cfg: &VmConfig) -> Option<(u64, u64)> {
 /// `ncpus` the vCPUs; `rtc` whether there's the PL031; `flash` the flash
 /// bank's size in the firmware configuration (docs/abi.md "M8 phase B"), which
 /// also adds fw_cfg and ends `/memory` below the framebuffer and the DTB space;
-/// `xhci` the `generic-xhci` node (docs/usb.md).
+/// `xhci` the `generic-xhci` node (docs/usb.md); `spill` the spill memories
+/// as (PA, size), each a CPU-less NUMA node (docs/plans/spill-memories.md).
 #[allow(clippy::too_many_arguments)]
 pub fn dtb(
     ram_size: u64,
+    spill: &[(u64, u64)],
     cmdline: &str,
     initrd: Option<(u64, u64)>,
     virtio: usize,
@@ -95,10 +97,35 @@ pub fn dtb(
         (Some(_), Some((pa, _, _))) => pa - RAM_BASE,
         (Some(_), None) => ram_size - DTB_SPACE,
     };
+    // With spill memories, memory 0 is NUMA node 0 (with every vCPU) and
+    // memory k node k; EDK2 takes the first `/memory` as its own and adds
+    // the others as system memory.
+    let numa = !spill.is_empty();
     f.begin(&format!("memory@{RAM_BASE:x}"));
     f.strs("device_type", &["memory"]);
     f.cells64("reg", &[RAM_BASE, memory]);
+    if numa {
+        f.cells("numa-node-id", &[0]);
+    }
     f.end();
+    for (k, &(pa, size)) in spill.iter().enumerate() {
+        f.begin(&format!("memory@{pa:x}"));
+        f.strs("device_type", &["memory"]);
+        f.cells64("reg", &[pa, size]);
+        f.cells("numa-node-id", &[k as u32 + 1]);
+        f.end();
+    }
+    if numa {
+        // 10 to itself, 20 (the default remote distance) between nodes.
+        let n = spill.len() as u32 + 1;
+        let matrix: Vec<u32> = (0..n)
+            .flat_map(|a| (0..n).flat_map(move |b| [a, b, if a == b { 10 } else { 20 }]))
+            .collect();
+        f.begin("distance-map");
+        f.strs("compatible", &["numa-distance-map-v1"]);
+        f.cells("distance-matrix", &matrix);
+        f.end();
+    }
 
     // The framebuffer's region, out of the kernel's linear map (the driver maps it).
     if let Some((pa, w, h)) = fb
@@ -126,6 +153,9 @@ pub fn dtb(
         f.strs("compatible", &["arm,armv8"]);
         f.cells("reg", &[aff]);
         f.strs("enable-method", &["psci"]);
+        if numa {
+            f.cells("numa-node-id", &[0]);
+        }
         f.end();
     }
     f.end();
@@ -258,8 +288,10 @@ impl Vm {
         }
         let fb = fb.map(|(pa, _)| (pa, self.cfg.fb_width, self.cfg.fb_height));
         let ncpus = self.cfg.ncpus.max(1) as usize;
+        let spill: Vec<_> = self.mem.spill().iter().map(|s| (s.phys, s.size)).collect();
         let blob = dtb(
             ram,
+            &spill,
             cmdline,
             initrd,
             self.plat.get_mut().virtio.len(),
@@ -355,9 +387,18 @@ mod tests {
     /// Our DTB, decompiled by `dtc`, must match the reviewed sources
     /// tests/dtb/webpc.dts (two vCPUs, the RTC, the xHCI; a round trip through the reference
     /// tool) and webpc-firmware.dts (the firmware configuration: one vCPU, the
-    /// flash bank, fw_cfg). Set UPDATE_DTS=1 to rewrite them after an intended change.
+    /// flash bank, fw_cfg) and webpc-numa.dts (the firmware configuration with two
+    /// spill memories, docs/plans/spill-memories.md). Set UPDATE_DTS=1 to rewrite
+    /// them after an intended change.
     #[test]
     fn dtb_round_trips_through_dtc() {
+        let spill = VmConfig {
+            ram_size: 256 << 20,
+            spill: [1 << 30, 1 << 32, 0, 0, 0, 0, 0, 0],
+            ..VmConfig::default()
+        }
+        .spill_layout();
+        assert_eq!(spill, [(0x8000_0000, 1 << 30), (0x1_0000_0000, 1 << 32)]);
         let cases = [
             (
                 "webpc.dts",
@@ -365,12 +406,15 @@ mod tests {
                 "console=ttyAMA0 earlycon",
                 Some((0x4800_0000, 0x4810_0000)),
                 None,
+                &[][..],
             ),
-            ("webpc-firmware.dts", 1, "", None, Some(1 << 20)),
+            ("webpc-firmware.dts", 1, "", None, Some(1 << 20), &[][..]),
+            ("webpc-numa.dts", 2, "", None, Some(1 << 20), &spill[..]),
         ];
-        for (name, ncpus, cmdline, initrd, flash) in cases {
+        for (name, ncpus, cmdline, initrd, flash, spill) in cases {
             let blob = dtb(
                 256 << 20,
+                spill,
                 cmdline,
                 initrd,
                 2,
@@ -378,7 +422,7 @@ mod tests {
                 ncpus,
                 true,
                 flash,
-                ncpus == 2, // the xHCI in webpc.dts
+                ncpus == 2 && spill.is_empty(), // the xHCI in webpc.dts
             );
             let dir =
                 std::env::temp_dir().join(format!("webpc-dtb-{}-{ncpus}", std::process::id()));

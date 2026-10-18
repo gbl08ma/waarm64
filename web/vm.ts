@@ -16,8 +16,9 @@ import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
 import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
+import { spillImports } from './spill.ts';
 
-export const ABI = 38;
+export const ABI = 39;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -69,13 +70,14 @@ export type Restore = { core: Uint8Array; host: VmState['host']; fill(ram: Uint8
  * The core's imports: the shared memory, the host clock for realtime mode,
  * `jit_install` and `jit_compile` (core/src/jit). The JIT works once `jit.bind` has the core's
  * instance; until then `jit_install` fails and the core only interprets. `compile`: this vCPU's
- * port to the compile worker (web/jit-compile-worker.ts; parallel SMP).
+ * port to the compile worker (web/jit-compile-worker.ts; parallel SMP). `ram`: the spill memories'
+ * accessor over `spill`, memory 1 first (web/spill.ts).
  */
-export function coreImports(memory: WebAssembly.Memory, clock = performance.timeOrigin, stall: Stall[] = [], compile?: MessagePort) {
+export function coreImports(memory: WebAssembly.Memory, clock = performance.timeOrigin, stall: Stall[] = [], compile?: MessagePort, spill: WebAssembly.Memory[] = []) {
   const jit = jitHost(memory, compile);
   const hooks = stall.map((s) => stallHook(memory, s));
   const wrap = <F extends (...a: never[]) => unknown>(where: Stall['on'], f: F) => hooks.reduce((g, h) => h(where, g), f);
-  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile }, jit };
+  return { env: { memory, now_ms: wrap('clock', () => clock + performance.now()), jit_install: wrap('install', jit.install), jit_compile: jit.compile }, ram: spillImports(spill), jit };
 }
 
 /**
@@ -642,8 +644,9 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
   const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n);
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 24).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
-    fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n]); // and the xHCI's 4 + 4 ports (ABI 38)
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 32).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
+    fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n, // and the xHCI's 4 + 4 ports (ABI 38)
+    ...new BigUint64Array(8)]); // no spill memories (ABI 39)
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);

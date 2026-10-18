@@ -56,8 +56,11 @@ in a memory, or tiering by the guest: docs/backlog.md "More guest RAM than memor
   vCPU, device, compile and GPU workers; the virtio and xHCI records carry the memory; every backend uses a view per
   memory. Tests: the JIT and interpreter on spill pages in Node (`tests/jit.test.ts`-style), a Chromium boot with
   spill RAM.
-- **S2, the page:** RAM choices past memory 0 (a stored machine's Settings, the transient Machine menu), the host
-  memory check, docs/frontend.md.
+- **S2, the page** (the user, 2026-10-18): **one RAM value**, as today (a drop-down or slider), with a warning
+  when it is past what memory 0 holds (the rest goes to NUMA nodes, slower to reach); the split is automatic
+  (memory 0 as large as it goes, then spill memories of up to 4 GiB). An **advanced section, hidden by default**,
+  lets a user set the split: memory 0's size, how many spill memories and each one's size. Also the host memory
+  check and docs/frontend.md.
 - **S3, snapshots:** spill RAM in the snapshot file (web/snapshot-file.ts), a round trip in the page tests.
 - **S4, on the dev VM** (a handover): Debian with spill RAM: the nodes (`numactl -H`), `numa_balancing` read as 0
   and the credential listed, where the kernel puts hot pages (`numastat` during a desktop workload), and what spill

@@ -14,6 +14,10 @@ pub const TABLES: &str = "etc/smbios/smbios-tables";
 /// What the tables call the machine and its maker.
 const VENDOR: &str = "webpc";
 
+/// Type 11's string with spill memories: `systemd-sysctl` reads the
+/// credential `sysctl.extra` (systemd 252+).
+pub const NUMA_CREDENTIAL: &str = "io.systemd.credential:sysctl.extra=kernel.numa_balancing=0";
+
 /// fw_cfg's files for `cfg`: the 3.0 entry point (its table address left 0,
 /// as QEMU's) and the structures, ending with type 127.
 pub fn files(cfg: &VmConfig) -> Vec<(String, Vec<u8>)> {
@@ -84,16 +88,25 @@ fn tables(cfg: &VmConfig) -> Vec<u8> {
         b.extend(ncpus.to_le_bytes());
     }
     structure(&mut t, 4, 0x0400, &b, &["CPU 0", VENDOR, "AArch64"]);
+    // Type 11, OEM strings: with spill memories (NUMA nodes), a systemd
+    // credential that turns NUMA balancing off (its scanner's faults are guest
+    // code; docs/plans/spill-memories.md). systemd imports SMBIOS credentials
+    // in a VM, which type 0's "a virtual machine" bit tells it.
+    let spill = cfg.spill_layout();
+    if !spill.is_empty() {
+        structure(&mut t, 11, 0x0b00, &[1], &[NUMA_CREDENTIAL]);
+    }
     // Type 16, the memory array: system memory without error correction, one device.
-    let kib = cfg.ram_size >> 10;
+    let total = cfg.ram_size + spill.iter().map(|s| s.1).sum::<u64>();
+    let kib = total >> 10;
     let mut b = vec![1, 3, 3];
     b.extend((kib.min(0x8000_0000) as u32).to_le_bytes());
     b.extend(0xfffeu16.to_le_bytes());
     b.extend(1u16.to_le_bytes());
-    b.extend(if kib >= 0x8000_0000 { cfg.ram_size } else { 0 }.to_le_bytes());
+    b.extend(if kib >= 0x8000_0000 { total } else { 0 }.to_le_bytes());
     structure(&mut t, 16, 0x1000, &b, &[]);
     // Type 17, the device: all of RAM, of unknown width and speed.
-    let mib = cfg.ram_size >> 20;
+    let mib = total >> 20;
     let mut b = Vec::new();
     b.extend(0x1000u16.to_le_bytes());
     b.extend([0xfe, 0xff, 0xff, 0xff, 0xff, 0xff]); // no error info, widths unknown
@@ -104,17 +117,23 @@ fn tables(cfg: &VmConfig) -> Vec<u8> {
     b.extend(if mib >= 0x7fff { mib as u32 } else { 0 }.to_le_bytes());
     b.extend([0; 8]); // configured speed, voltages unknown
     structure(&mut t, 17, 0x1100, &b, &["DIMM 0", VENDOR]);
-    // Type 19, where the array sits in the physical address space.
-    let (start, end) = (RAM_BASE >> 10, ((RAM_BASE + cfg.ram_size) >> 10) - 1);
-    let big = end >= 0xffff_ffff;
-    let mut b = Vec::new();
-    b.extend(if big { u32::MAX } else { start as u32 }.to_le_bytes());
-    b.extend(if big { u32::MAX } else { end as u32 }.to_le_bytes());
-    b.extend(0x1000u16.to_le_bytes());
-    b.push(1);
-    b.extend(if big { RAM_BASE } else { 0 }.to_le_bytes());
-    b.extend(if big { RAM_BASE + cfg.ram_size - 1 } else { 0 }.to_le_bytes());
-    structure(&mut t, 19, 0x1300, &b, &[]);
+    // Type 19, where the array sits in the physical address space: one per memory.
+    for (k, (pa, size)) in [(RAM_BASE, cfg.ram_size)]
+        .into_iter()
+        .chain(spill)
+        .enumerate()
+    {
+        let (start, end) = (pa >> 10, ((pa + size) >> 10) - 1);
+        let big = end >= 0xffff_ffff;
+        let mut b = Vec::new();
+        b.extend(if big { u32::MAX } else { start as u32 }.to_le_bytes());
+        b.extend(if big { u32::MAX } else { end as u32 }.to_le_bytes());
+        b.extend(0x1000u16.to_le_bytes());
+        b.push(1);
+        b.extend(if big { pa } else { 0 }.to_le_bytes());
+        b.extend(if big { pa + size - 1 } else { 0 }.to_le_bytes());
+        structure(&mut t, 19, 0x1300 + k as u16, &b, &[]);
+    }
     // Type 32, boot: no errors.
     structure(&mut t, 32, 0x2000, &[0; 7], &[]);
     structure(&mut t, 127, 0x7f00, &[], &[]);
@@ -198,6 +217,30 @@ mod tests {
             (kib(4), kib(8)),
             (RAM_BASE >> 10, ((RAM_BASE + (2 << 30)) >> 10) - 1)
         );
+    }
+
+    #[test]
+    fn spill_memories_add_the_credential_and_their_ranges() {
+        let cfg = VmConfig {
+            ram_size: 2 << 30,
+            spill: [4 << 30, 0, 0, 0, 0, 0, 0, 0],
+            ..VmConfig::default()
+        };
+        let t = &files(&cfg)[1].1;
+        let w = walk(t);
+        let types: Vec<_> = w.iter().map(|x| x.0).collect();
+        assert_eq!(types, [0, 1, 3, 4, 11, 16, 17, 19, 19, 32, 127]);
+        assert_eq!(
+            (w[4].1, &w[4].2[..]),
+            (5, &[NUMA_CREDENTIAL.to_string()][..])
+        );
+        assert_eq!(t[w[4].3 + 4], 1); // one string
+        let d = w[6].3;
+        assert_eq!(u16::from_le_bytes([t[d + 0xc], t[d + 0xd]]), 6 << 10);
+        // The spill memory at 4 GiB (past memory 0's end at 3 GiB, the next GiB boundary).
+        let m = w[8].3;
+        let kib = |o: usize| u32::from_le_bytes(t[m + o..m + o + 4].try_into().unwrap());
+        assert_eq!((kib(4), kib(8)), (4 << 20, (8 << 20) - 1));
     }
 
     #[test]

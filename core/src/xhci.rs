@@ -1475,7 +1475,10 @@ impl Xhci {
                 let off = if t.len == 0 {
                     0
                 } else {
-                    mem.host(t.param, t.len as u64, access).ok()?;
+                    // Memory 0 only until the records name a memory (spill-memories.md S1).
+                    if mem.host(t.param, t.len as u64, access).ok()?.mem() != 0 {
+                        return None;
+                    }
                     t.param.wrapping_sub(RAM_BASE) as u32
                 };
                 w.extend([off, t.len]);

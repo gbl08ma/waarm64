@@ -380,6 +380,7 @@ fn seg(vm: &Vm, (off, len): (u32, u32)) -> &'static mut [u8] {
     let p = vm
         .mem
         .host(RAM_BASE + off as u64, len as u64, Access::Write)
+        .map(|h| vm.mem.native_ptr(h))
         .unwrap();
     // SAFETY: the core checked the buffer is guest RAM, which outlives the
     // run; a guest may overlap buffers, but only bytes move through them.
@@ -659,7 +660,11 @@ impl Backends {
                             0
                         } else {
                             let room: usize = r.write.iter().map(|s| s.1 as usize).sum();
-                            let p = vm.mem.host(RAM_BASE, self.ram_size, Access::Read).unwrap();
+                            let p = vm
+                                .mem
+                                .host(RAM_BASE, self.ram_size, Access::Read)
+                                .map(|h| vm.mem.native_ptr(h))
+                                .unwrap();
                             // SAFETY: host() checked the range is guest RAM, which outlives the run.
                             let ram =
                                 unsafe { std::slice::from_raw_parts(p, self.ram_size as usize) };
@@ -1013,7 +1018,11 @@ pub fn boot(b: &Boot) -> Run {
         backends.usb = Some(host);
     }
     let load = |vm: &Vm, pa: u64, b: &[u8]| {
-        let p = vm.mem.host(pa, b.len() as u64, Access::Write).unwrap();
+        let p = vm
+            .mem
+            .host(pa, b.len() as u64, Access::Write)
+            .map(|h| vm.mem.native_ptr(h))
+            .unwrap();
         // SAFETY: host() checked the range is guest RAM.
         unsafe { std::ptr::copy_nonoverlapping(b.as_ptr(), p, b.len()) };
     };
@@ -1157,7 +1166,11 @@ pub fn boot(b: &Boot) -> Run {
     };
     let secs = t.elapsed().as_secs_f64();
     let fb = webpc_core::boot::framebuffer(&cfg).map_or(vec![], |(pa, len)| {
-        let p = vm.mem.host(pa, len, Access::Read).unwrap();
+        let p = vm
+            .mem
+            .host(pa, len, Access::Read)
+            .map(|h| vm.mem.native_ptr(h))
+            .unwrap();
         // SAFETY: host() checked the range is guest RAM.
         unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec()
     });

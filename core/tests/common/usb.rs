@@ -615,6 +615,7 @@ fn read(vm: &Vm, off: u32, len: u32) -> Vec<u8> {
     let p = vm
         .mem
         .host(pa, len as u64, webpc_core::mem::Access::Read)
+        .map(|h| vm.mem.native_ptr(h))
         .unwrap();
     // SAFETY: host() checked the range is guest RAM.
     unsafe { std::slice::from_raw_parts(p, len as usize) }.to_vec()
@@ -625,6 +626,7 @@ fn write(vm: &Vm, off: u32, b: &[u8]) {
     let p = vm
         .mem
         .host(pa, b.len() as u64, webpc_core::mem::Access::Write)
+        .map(|h| vm.mem.native_ptr(h))
         .unwrap();
     // SAFETY: host() checked the range is guest RAM.
     unsafe { std::ptr::copy_nonoverlapping(b.as_ptr(), p, b.len()) };

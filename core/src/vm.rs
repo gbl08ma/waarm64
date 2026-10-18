@@ -128,9 +128,44 @@ pub struct VmConfig {
     /// An xHCI (ABI 38, docs/usb.md): its USB 2 ports | USB 3 ports << 8,
     /// `xhci::CONFIG` (4 and 4) or 0, none.
     pub xhci: u64,
+    /// The spill memories' sizes in bytes, memory 1 first (ABI 39,
+    /// docs/plans/spill-memories.md): RAM past memory 0, each in its own
+    /// memory and a CPU-less NUMA node to the guest; the first 0 ends the
+    /// list. Each a multiple of 64 KiB, at most 4 GiB; placed by [`VmConfig::spill_layout`].
+    pub spill: [u64; crate::mem::MAX_SPILL],
 }
 
 impl VmConfig {
+    /// The spill memories as (guest PA, size): each starts at the 1 GiB
+    /// boundary past the RAM before it, a hole between them, so no guest
+    /// buffer is ever contiguous across two memories.
+    pub fn spill_layout(&self) -> Vec<(u64, u64)> {
+        let mut end = RAM_BASE + self.ram_size;
+        self.spill
+            .iter()
+            .take_while(|&&n| n != 0)
+            .map(|&n| {
+                let pa = ((end >> 30) + 1) << 30;
+                end = pa + n;
+                (pa, n)
+            })
+            .collect()
+    }
+
+    /// Spill sizes in 64 KiB pages of at most 4 GiB, none after the first 0,
+    /// and all of RAM within the PA size.
+    pub fn valid_spill(&self) -> bool {
+        let n = self.spill.iter().take_while(|&&n| n != 0).count();
+        self.spill[n..].iter().all(|&s| s == 0)
+            && self.spill[..n]
+                .iter()
+                .all(|&s| s.is_multiple_of(1 << 16) && s <= 1 << 32)
+            && self
+                .spill_layout()
+                .last()
+                .is_none_or(|&(pa, n)| pa + n <= 1 << crate::mmu::PA_BITS)
+    }
+
     /// Whether the VM has the PL031 RTC: in realtime mode when the host
     /// passed its clock, and always in the firmware configuration.
     pub fn has_rtc(&self) -> bool {
@@ -189,6 +224,7 @@ impl Default for VmConfig {
             mem_pages: 0,
             rng_seed: [0; 4],
             xhci: 0,
+            spill: [0; crate::mem::MAX_SPILL],
         }
     }
 }
@@ -722,7 +758,20 @@ impl Vm {
             sched,
             cur: 0,
             quantum: if n > 1 { QUANTUM } else { u64::MAX },
-            mem: mem.at(RAM_BASE),
+            mem: {
+                let mem = mem.at(RAM_BASE);
+                let want = cfg.spill_layout();
+                assert!(
+                    mem.spill().len() == want.len()
+                        && mem
+                            .spill()
+                            .iter()
+                            .zip(&want)
+                            .all(|(s, w)| (s.phys, s.size) == *w),
+                    "the spill memories don't match the configuration"
+                );
+                mem
+            },
             plat: Lock::new(Platform {
                 gic: Box::new(Gicv3::new(n)),
                 uart: Pl011::default(),
@@ -1598,7 +1647,7 @@ impl Bus for Io<'_> {
         va: u64,
         len: u64,
         access: Access,
-    ) -> Result<*mut u8, Fault> {
+    ) -> Result<crate::mem::Host, Fault> {
         self.mmu.host_aligned(c, va, len, access)
     }
 
