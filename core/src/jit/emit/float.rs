@@ -1,8 +1,8 @@
 //! Scalar floating point on the fast paths docs/jit.md "Floating point"
 //! describes (M6 loop 5): under the block's FP guard (FPCR.RMode round to
-//! nearest even, FPSR.IXC set already: [`fpa_guard`]), with normal operands
-//! and a result that is normal and above the smallest normal binade, the host's
-//! IEEE operation gives the interpreter's result and leaves FPSR as it is.
+//! nearest even, FPCR.FZ clear, FPSR.IXC set already: [`fpa_guard`]), with a
+//! result that is normal and above the smallest normal binade, the host's IEEE
+//! operation gives the interpreter's result and leaves FPSR as it is.
 //! Anything else runs the helper. FABS and FNEG are bit operations, inline
 //! always. Operands are the V registers' low 32 or 64 bits ([`Func::vlane`]),
 //! results go back zero-extended. Callers run [`super::fp_guard`] first.
@@ -10,7 +10,7 @@
 use core::mem::offset_of;
 
 use super::{
-    AND, Ctx, EQZ, FPOK, Func, Kind, LT_U, NZCV, Regs, SHR_U, SUB, VCPU, W, WC, XOR, cond,
+    AND, Ctx, EQZ, FPOK, FZOK, Func, Kind, LT_U, NZCV, Regs, SHR_U, SUB, VCPU, W, WC, XOR, cond,
     fallback, fallback_with, flag_locals, get, set, vbit, xmask,
 };
 use crate::cpu::Cpu;
@@ -21,14 +21,25 @@ use crate::interp::{bit, bits};
 const IXC: i64 = 16;
 
 /// Before a block's first FP instruction on a fast path: FPOK = FPCR.RMode is
-/// round to nearest even and FPSR.IXC is set. Both hold for the rest of the
-/// block (an MSR, which ends it, is the only thing that changes them).
+/// round to nearest even and FPSR.IXC is set, and FZOK = FPCR.FZ is clear.
+/// They hold for the rest of the block (an MSR, which ends it, is the only
+/// thing that changes them). Without FZ, the host's IEEE operations take
+/// denormal operands as ARM does (exactly, and with no IDC), and a NaN or
+/// infinite operand makes the result a NaN or infinite, which the result
+/// checks reject: the fast paths test results, and operands only under FZ
+/// ([`under_fz`]; docs/jit.md "Floating point"). Emitted outside any branch.
 pub(super) fn fpa_guard(c: &mut Func) {
     if c.fpa_ok {
         return;
     }
     c.fpa_ok = true;
     let (fpcr, fpsr) = (offset_of!(Cpu, fpcr) as u32, offset_of!(Cpu, fpsr) as u32);
+    c.local_get(VCPU)
+        .i64_load(fpcr)
+        .i64_const(1 << 24)
+        .i64_and()
+        .op(EQZ + WC)
+        .local_set(FZOK);
     c.local_get(VCPU)
         .i64_load(fpcr)
         .i64_const(3 << 22)
@@ -176,15 +187,16 @@ fn guarded_with(
     fallback_with(c, cx, i, 4 * k as i64, before, written, pre, post);
 }
 
-/// Pushes an i32: the float bits in local `l` are zero, normal or infinite
-/// (`nan`: or a NaN; `quiet`: or a quiet NaN): none of them denormal, which
-/// FZ would flush (raising IDC).
+/// Pushes an i32: the float bits in local `l` aren't a NaN (`nan`: or are a
+/// quiet one, when `quiet`), nor, under FZ ([`under_fz`]), a denormal (FZ
+/// would flush it, raising IDC).
 fn scalar_plain(c: &mut Func, f: F, l: u32, nan: bool, quiet: bool) {
+    fpa_guard(c);
     let (w, wc) = if f.d { (W, WC) } else { (0, 0) };
-    let (sign, min, inf, qbit) = if f.d {
-        (1u64 << 63, 1u64 << 52, 0x7ffu64 << 52, 1u64 << 51)
+    let (sign, inf, qbit, emask) = if f.d {
+        (1u64 << 63, 0x7ffu64 << 52, 1u64 << 51, 0x7ffu64 << 52)
     } else {
-        (1 << 31, 1 << 23, 0xff << 23, 1 << 22)
+        (1 << 31, 0xff << 23, 1 << 22, 0xff << 23)
     };
     let k = |c: &mut Func, v: u64| {
         if f.d {
@@ -193,29 +205,54 @@ fn scalar_plain(c: &mut Func, f: F, l: u32, nan: bool, quiet: bool) {
             c.i32_const(v as i32);
         }
     };
-    // mag - 1 ≥ min - 1, unsigned: zero (wrapping) or from the smallest normal up.
+    // |x| ≤ ∞: no NaN.
     c.local_get(l);
     k(c, !sign);
-    c.op(AND + w).local_tee(f.tmp(2));
-    k(c, 1);
-    c.op(SUB + w);
-    k(c, min - 1);
-    c.op(0x4f + wc); // ge_u
-    if !nan {
-        // mag ≤ inf: no NaN.
-        c.local_get(f.tmp(2));
-        k(c, inf);
-        c.op(0x4d + wc).op(AND); // le_u
-    } else if quiet {
-        // No signaling NaN: mag ≤ inf, or the quiet bit set.
-        c.local_get(f.tmp(2));
-        k(c, inf);
-        c.op(0x4d + wc); // le_u
+    c.op(AND + w);
+    k(c, inf);
+    c.op(0x4d + wc); // le_u
+    if nan && quiet {
+        // Or the quiet bit set.
         c.local_get(l);
         k(c, qbit);
         c.op(AND + w).op(EQZ + wc).op(EQZ);
-        c.op(0x72).op(AND); // i32.or
+        c.op(0x72); // i32.or
+    } else if nan {
+        c.op(0x1a).i32_const(1); // drop: any NaN
     }
+    under_fz(c, |c| {
+        // A nonzero exponent, or ±0.
+        c.local_get(l);
+        k(c, emask);
+        c.op(AND + w).op(EQZ + wc).op(EQZ);
+        is_zero(c, f, l);
+        c.op(0x72); // i32.or
+    });
+}
+
+/// ANDs the operand test `test` pushes (an i32: no operand FZ would flush)
+/// into the i32 on the stack, run only when FPCR.FZ is set (FZOK clear; a
+/// branch the block takes the same way every time). `test` may only read
+/// what the instruction read before it (a register's first read in a branch
+/// would leave its local unset on the other path).
+fn under_fz(c: &mut Func, test: impl FnOnce(&mut Func)) {
+    c.local_get(FZOK).if_t(super::I32);
+    c.i32_const(1);
+    c.else_();
+    test(c);
+    c.end();
+    c.op(AND);
+}
+
+/// [`under_fz`] for lane masks: ANDs the v128 mask `test` pushes into the
+/// one on the stack (all ones without FZ), so one reduction tests both.
+fn under_fz_lanes(c: &mut Func, test: impl FnOnce(&mut Func)) {
+    c.local_get(FZOK).if_t(super::V128);
+    c.v128_const(u128::MAX);
+    c.else_();
+    test(c);
+    c.end();
+    c.simd(op::AND);
 }
 
 /// Pushes an i32: the float bits in local `l` are ±0.
@@ -665,29 +702,15 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }
             f.to_int(c);
             c.local_set(r);
-            // FPOK, then FSQRT: a normal positive operand and a fast result;
-            // the rest: normal or zero operands, and a fast result or an exact
-            // zero: a zero sum is always exact (a nonzero exact sum rounds to
-            // a nonzero result), a zero product or quotient only with a zero
-            // operand (the dividend). A zero divisor needs no test: x / 0 is
-            // infinite and 0 / 0 a NaN, which the result check rejects.
+            // FPOK, then FSQRT: a fast result (√ of a negative is a NaN); the
+            // rest: a fast result or an exact zero: a zero sum is always exact
+            // (a nonzero exact sum rounds to a nonzero result), a zero product
+            // or quotient only with a zero operand (the dividend). A zero
+            // divisor needs no test: x / 0 is infinite and 0 / 0 a NaN.
             c.local_get(FPOK);
             if op == FSQRT_float {
-                exp_in(c, f, x, 1);
-                c.op(AND);
-                // The sign bit clear.
-                c.local_get(x);
-                if f.d {
-                    c.i64_const(0).op(0x59).op(AND); // i64.ge_s
-                } else {
-                    c.i32_const(0).op(0x4e).op(AND); // i32.ge_s
-                }
                 exp_in(c, f, r, 2);
             } else {
-                scalar_normal_or_zero(c, f, x);
-                c.op(AND);
-                scalar_normal_or_zero(c, f, y);
-                c.op(AND);
                 exp_in(c, f, r, 2);
                 is_zero(c, f, r);
                 match op {
@@ -705,6 +728,13 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.op(0x72); // i32.or
             }
             c.op(AND);
+            under_fz(c, |c| {
+                scalar_normal_or_zero(c, f, x);
+                if op != FSQRT_float {
+                    scalar_normal_or_zero(c, f, y);
+                    c.op(AND);
+                }
+            });
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         // FMA: the exact product, its sum with the addend rounded to odd, then
@@ -714,7 +744,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // Melquiond's emulated FMA, p + pl = a·b exactly (Veltkamp's split,
         // Dekker's product), th + tl = c + p exactly, z = RN(th + RO(tl + pl)):
         // exact while the product's error is (a zero factor or a product from
-        // 2^-900 up). Operands normal or zero; an overflow anywhere makes z
+        // 2^-900 up), with no denormal factor. An overflow anywhere makes z
         // infinite or a NaN, which the result check sends to the helper.
         FMADD_float | FMSUB_float | FNMADD_float | FNMSUB_float => {
             fpa_guard(c);
@@ -779,21 +809,37 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.end();
                 c.local_get(fb).op(0xb6).op(0xbc).local_set(r); // f32.demote, reinterpret
             }
+            // FPOK and a fast result; doubles: also no denormal factor (the
+            // emulation's exactness is argued for normal ones; a NaN or infinite
+            // one makes z a NaN or infinite; any addend: TwoSum is exact) and the
+            // product from 2^-900 (biased exponents ea + eb ≥ 1146), or a zero
+            // factor: with e' = e - 1, (e'a | e'b) ≥ 0 and e'a + e'b ≥ 1144.
             c.local_get(FPOK);
-            for l in [x, y, a] {
-                scalar_normal_or_zero(c, f, l);
-                c.op(AND);
-            }
-            if f.d {
-                // The product from 2^-900 (biased exponents ea + eb ≥ 1146) or a zero factor.
+            // Under FZ, no operand it would flush (a zero factor's partner too;
+            // before the factors' test, which reuses `a`).
+            under_fz(c, |c| {
+                scalar_normal_or_zero(c, f, a);
                 for l in [x, y] {
+                    scalar_normal_or_zero(c, f, l);
+                    c.op(AND);
+                }
+            });
+            if f.d {
+                let e1 = |c: &mut Func, l: u32| {
                     c.local_get(l)
                         .i64_const(1)
                         .op(0x86)
                         .i64_const(53)
                         .op(SHR_U + W); // i64.shl
-                }
-                c.op(0x7c).i64_const(1146).op(0x5a); // i64.add, i64.ge_u
+                    c.i64_const(1).op(SUB + W);
+                };
+                e1(c, x);
+                c.local_tee(a);
+                e1(c, y);
+                c.op(0x7c).i64_const(1144).op(0x59); // i64.add, i64.ge_s
+                c.local_get(a);
+                e1(c, y);
+                c.op(0x84).i64_const(0).op(0x59).op(AND); // i64.or, i64.ge_s
                 for l in [x, y] {
                     c.local_get(l).i64_const(1).op(0x86).op(EQZ + WC).op(0x72); // i64.shl, i32.or
                 }
@@ -909,15 +955,15 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 }
             }
             c.local_set(v);
+            // FPOK, and it fits: lo ≤ v < hi, integers exact in a double (a NaN
+            // or an infinity doesn't; a denormal rounds as ARM's does without FZ).
             c.local_get(FPOK);
-            scalar_normal_or_zero(c, f, x);
-            c.op(AND);
-            // It fits: lo ≤ v < hi, integers exact in a double.
             let w = if wide { 64 } else { 32 };
             let hi = 2f64.powi(if unsigned { w } else { w - 1 });
             let lo = if unsigned { 0.0 } else { -hi };
             c.local_get(v).f64_const(lo).op(0x66).op(AND); // f64.ge
             c.local_get(v).f64_const(hi).op(0x63).op(AND); // f64.lt
+            under_fz(c, |c| scalar_normal_or_zero(c, f, x));
             // i32/i64.trunc_sat_f64_s/u: 0xfc 2, 3, 6, 7.
             let sat = (wide as u8) * 4 + 2 + unsigned as u8;
             let out = |c: &mut Func| {
@@ -932,7 +978,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }
         }
         // AdvSIMD scalar compares (all ones or zero in Vd): as the vector ones,
-        // no NaN or denormal operand, no rounding, so no FPOK.
+        // no NaN operand under FZOK, no rounding, so no FPOK.
         FCMEQ_reg_2 | FCMGE_reg_2 | FCMGT_reg_2 | FACGE_2 | FACGT_2 | FCMEQ_zero_2
         | FCMGE_zero_2 | FCMGT_zero_2 | FCMLE_2 | FCMLT_2 => {
             let zero = !matches!(
@@ -980,9 +1026,9 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         }
         // FCVTXN (scalar): double to single rounded to odd, from the RNE
         // demote: inexact, it steps toward zero when it rounded away, then
-        // takes the odd bit. FPOK (Inexact is set already), a normal or zero
-        // operand, an RNE result from the second binade up and finite (no
-        // Overflow or Underflow either way).
+        // takes the odd bit. FPOK (Inexact is set already), and an RNE result
+        // from the second binade up and finite (no Overflow or Underflow either
+        // way), or a zero operand.
         FCVTXN_1 if f.d => {
             fpa_guard(c);
             let (xd, r32) = (super::tmp(true, 0), super::tmp(false, 3));
@@ -991,9 +1037,8 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             to_odd_single(c, xd, r32);
             is_zero(c, f, xd);
             c.op(0x72); // i32.or: a zero converts exactly
-            c.local_get(FPOK);
-            scalar_normal_or_zero(c, f, xd);
-            c.op(AND).op(AND);
+            c.local_get(FPOK).op(AND);
+            under_fz(c, |c| scalar_normal_or_zero(c, f, xd));
             guarded(c, cx, i, k, vbit(rd), |c| put(c, F { d: false }, rd, r32));
         }
         // FRECPX: bits (the sign, the exponent inverted, or the largest finite
@@ -1159,9 +1204,9 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             );
             c.retire_flags();
         }
-        // FCVT between single and double: widening is exact (no FPOK) for a
-        // zero, normal or infinite operand; narrowing rounds (FPOK): a normal
-        // or zero operand, a fast result or a zero. Half precision: helper.
+        // FCVT between single and double: widening is exact (no FPOK) for an
+        // operand that isn't a NaN, under FZOK; narrowing rounds (FPOK): a fast
+        // result, or a zero from a zero. Half precision: `fcvt_half`.
         FCVT_float => {
             let t = match bits(i, 16, 15) {
                 0 => F { d: false },
@@ -1187,17 +1232,16 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 scalar_plain(c, f, x, false, false);
             } else {
                 c.local_get(FPOK);
-                scalar_normal_or_zero(c, f, x);
-                c.op(AND);
                 exp_in(c, t, r, 2);
                 is_zero(c, f, x);
                 c.op(0x72).op(AND); // i32.or
+                under_fz(c, |c| scalar_normal_or_zero(c, f, x));
             }
             guarded(c, cx, i, k, vbit(rd), |c| put(c, t, rd, r));
         }
-        // FMAX/FMIN, FMAXNM/FMINNM (the same without a NaN): no flags with
-        // zero, normal or infinite operands; wasm's max and min order -0
-        // below +0 as ARM does.
+        // FMAX/FMIN, FMAXNM/FMINNM (the same without a NaN): no flags with no
+        // NaN operand under FZOK; wasm's max and min order -0 below +0 as ARM
+        // does.
         FMAX_float | FMIN_float | FMAXNM_float | FMINNM_float => {
             f.load(c, rn);
             c.local_set(x);
@@ -1218,7 +1262,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         }
         // FRINTN/M/P/Z, FRINTA (ties away: trunc(x), ± 1 when |x - trunc(x)|
         // ≥ 0.5, both exact), FRINTI/X in the FPCR's mode (nearest even under
-        // FPOK; FRINTX's Inexact is set already): no NaN or denormal operand.
+        // FPOK; FRINTX's Inexact is set already): no NaN operand, under FZOK.
         FRINTN_float | FRINTM_float | FRINTP_float | FRINTZ_float | FRINTA_float | FRINTI_float
         | FRINTX_float => {
             let fpcr_mode = matches!(op, FRINTI_float | FRINTX_float);
@@ -1386,9 +1430,11 @@ fn normal_or_zero(c: &mut Func, d: bool) {
     c.simd(op::OR);
 }
 
-/// Replaces the v128 on the stack with a lane mask: all ones where the lane is
-/// zero, normal or infinite (no NaN, no denormal: what FZ would flush).
+/// Replaces the v128 on the stack with a lane mask: all ones where the lane
+/// isn't a NaN, nor, under FZ, a denormal (FZ would flush it, raising IDC):
+/// without FZ `x == x`, under it zero, normal or infinite. Scratch: VT[3].
 fn plain_lanes(c: &mut Func, d: bool) {
+    fpa_guard(c);
     let tt = VT[3];
     let (sign, min, inf) = if d {
         (1u64 << 63, 1u64 << 52, 0x7ffu64 << 52)
@@ -1400,13 +1446,22 @@ fn plain_lanes(c: &mut Func, d: bool) {
     } else {
         (op::I32X4_EQ, op::I32X4_GE_S, op::I32X4_LE_S)
     };
-    c.v128_const(splat(d, !sign)).simd(op::AND).local_tee(tt);
+    c.local_set(tt);
+    c.local_get(FZOK).if_t(super::V128);
+    c.local_get(tt).local_get(tt);
+    c.simd(op::CMP[d as usize][0]); // x == x
+    c.else_();
+    c.local_get(tt)
+        .v128_const(splat(d, !sign))
+        .simd(op::AND)
+        .local_tee(tt);
     c.v128_const(splat(d, min)).simd(ge);
     c.local_get(tt)
         .v128_const(splat(d, inf))
         .simd(le)
         .simd(op::AND);
     c.local_get(tt).v128_const(0).simd(eq).simd(op::OR);
+    c.end();
 }
 
 /// An FMA form's first factor negated (FMLS, FRECPS, FRSQRTS), the addend's
@@ -1477,10 +1532,10 @@ fn vscaled(c: &mut Func, d: bool, rn: u32, scale: Option<u128>) {
 type Shape = (bool, bool, u32);
 
 /// FADD, FSUB (`kk` 1), FMUL (2), FDIV (3) on the lanes `a` and `b` push
-/// (FABD: `abs` of the difference; FMULX: FMUL, its ∞ × 0 never meets the
-/// rule): the host's lane operation, normal or zero operands (a normal
-/// divisor), and a fast result or an exact zero: a zero sum is always exact,
-/// a zero product or quotient when an operand is zero.
+/// (FABD: `abs` of the difference; FMULX: FMUL, its ∞ × 0 is a NaN here, which
+/// the check rejects): the host's lane operation under FPOK (any operand: see
+/// [`fpa_guard`]), and a fast result or an exact zero: a zero sum is always
+/// exact, a zero product or quotient when an operand is zero.
 #[allow(clippy::too_many_arguments)]
 fn arith(
     c: &mut Func,
@@ -1502,35 +1557,37 @@ fn arith(
         c.simd(op::ABS[d as usize]);
     }
     c.local_set(tr);
-    a(c);
-    normal_or_zero(c, d);
-    b(c);
-    if kk == 3 {
-        lanes_in(c, d, 1);
-    } else {
-        normal_or_zero(c, d);
-    }
+    // A fast result, or a zero one that's exact: any sum's; a product's with a
+    // zero factor, a quotient's with a zero dividend (0 × ∞ and 0 / 0 are NaNs).
     c.local_get(tr);
     lanes_in(c, d, 2);
-    if kk < 2 {
-        c.local_get(tr);
-    } else {
-        a(c);
-    }
+    c.local_get(tr);
     zero_lanes(c, d);
-    if kk == 2 {
-        b(c);
+    if kk >= 2 {
+        a(c);
         zero_lanes(c, d);
-        c.simd(op::OR);
+        if kk == 2 {
+            b(c);
+            zero_lanes(c, d);
+            c.simd(op::OR);
+        }
+        c.simd(op::AND);
     }
     c.simd(op::OR);
-    all_lanes(c, d, q, 3);
+    under_fz_lanes(c, |c| {
+        a(c);
+        normal_or_zero(c, d);
+        b(c);
+        normal_or_zero(c, d);
+        c.simd(op::AND);
+    });
+    all_lanes(c, d, q, 1);
     guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
 }
 
 /// FMAX/FMIN, FMAXNM/FMINNM (the same without NaNs) on the lanes `a` and `b`
-/// push: wasm's lane min and max with zero, normal or infinite lanes (-0
-/// below +0, as ARM); no flags, no FPOK.
+/// push: wasm's lane min and max with no NaN lanes, under FZOK (-0 below +0,
+/// as ARM); no flags, no FPOK.
 #[allow(clippy::too_many_arguments)]
 fn minmax(
     c: &mut Func,
@@ -1709,10 +1766,7 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         }
     };
     match op {
-        // FADD, FSUB (a = 1), FMUL, FDIV, and FMUL by element: the host's
-        // lane operation, normal or zero operands (a normal divisor), and a
-        // fast result or an exact zero: a zero sum is always exact, a zero
-        // product or quotient when an operand is zero.
+        // FADD, FSUB, FMUL, FDIV, FMUL by element, FABD, FMULX: `arith`.
         FADD_2 | FSUB_2 | FMUL_vec_2 | FDIV_2 | FMUL_elt_4 | FMUL_elt_2 | FMULX_vec_4
         | FMULX_vec_2 | FMULX_elt_4 | FMULX_elt_2 | FABD_4 | FABD_2 => {
             let kk = match op {
@@ -1882,21 +1936,21 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.v128_const(splat(true, 0.5f64.to_bits())).simd(mul); // exact, or a denormal the check rejects
             }
             c.local_set(tr);
-            // Normal or zero operands, a product from 2^-900 (biased ea + eb
-            // ≥ 1146) or a zero factor, a fast result.
-            vreg(c, rn);
-            normal_or_zero(c, true);
-            factor(c);
-            normal_or_zero(c, true);
-            acc(c);
-            normal_or_zero(c, true);
-            for v in [&va as &dyn Fn(&mut Func), &factor] {
+            // As the scalar form: no denormal factor, a product from 2^-900, or
+            // a zero factor (e' = e - 1: (e'a | e'b) ≥ 0, e'a + e'b ≥ 1144); a
+            // fast result.
+            for (v, t) in [(&va as &dyn Fn(&mut Func), ta), (&factor, tb)] {
                 v(c);
                 c.i32_const(1).simd(op::I64X2_SHL);
                 c.i32_const(53).simd(op::I64X2_SHR_U);
+                c.v128_const(splat(true, 1))
+                    .simd(op::I64X2_SUB)
+                    .local_set(t);
             }
-            c.simd(op::I64X2_ADD);
-            c.v128_const(splat(true, 1146)).simd(op::I64X2_GE_S);
+            c.local_get(ta).local_get(tb).simd(op::I64X2_ADD);
+            c.v128_const(splat(true, 1144)).simd(op::I64X2_GE_S);
+            c.local_get(ta).local_get(tb).simd(op::OR);
+            c.v128_const(0).simd(op::I64X2_GE_S).simd(op::AND);
             vreg(c, rn);
             zero_lanes(c, true);
             factor(c);
@@ -1904,7 +1958,16 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.simd(op::OR).simd(op::OR);
             c.local_get(tr);
             lanes_in(c, true, 2);
-            all_lanes(c, true, q, 5);
+            under_fz_lanes(c, |c| {
+                vreg(c, rn);
+                normal_or_zero(c, true);
+                factor(c);
+                normal_or_zero(c, true);
+                acc(c);
+                normal_or_zero(c, true);
+                c.simd(op::AND).simd(op::AND);
+            });
+            all_lanes(c, true, q, 2);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // Fused, single precision (docs/jit.md "Floating point"): each half
@@ -2005,16 +2068,13 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 if b < 8 { b as u8 } else { 8 + b as u8 }
             }));
             c.local_set(tr);
-            // Normal or zero operands; a fast result, or an exact zero (a zero
-            // product and addend).
-            vreg(c, rn);
-            normal_or_zero(c, false);
-            factor(c);
-            normal_or_zero(c, false);
-            acc(c);
-            normal_or_zero(c, false);
+            // A fast result, or an exact zero: a zero one from a zero product
+            // and addend (a tiny sum demotes to a zero too, with Underflow; and
+            // 0 × ∞ is a NaN).
             c.local_get(tr);
             lanes_in(c, false, 2);
+            c.local_get(tr);
+            zero_lanes(c, false);
             vreg(c, rn);
             zero_lanes(c, false);
             factor(c);
@@ -2022,8 +2082,17 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.simd(op::OR);
             acc(c);
             zero_lanes(c, false);
-            c.simd(op::AND).simd(op::OR);
-            all_lanes(c, false, q, 4);
+            c.simd(op::AND).simd(op::AND).simd(op::OR);
+            under_fz_lanes(c, |c| {
+                vreg(c, rn);
+                normal_or_zero(c, false);
+                factor(c);
+                normal_or_zero(c, false);
+                acc(c);
+                normal_or_zero(c, false);
+                c.simd(op::AND).simd(op::AND);
+            });
+            all_lanes(c, false, q, 1);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // SCVTF/UCVTF: wasm's converts round to nearest even (FPOK); 64-bit
@@ -2056,8 +2125,8 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // FCVT{N,M,A,P,Z}{S,U}: each lane rounded in the instruction's mode
-        // (ties away as FRINTA), then normal or zero lanes whose rounded value
-        // fits (FPOK: Inexact is set already) go through the saturating
+        // (ties away as FRINTA), then lanes whose rounded value fits (FPOK:
+        // Inexact is set already; a NaN or ∞ doesn't) go through the saturating
         // truncation; 64-bit lanes one at a time (no i64x2 truncation).
         FCVTNS_4 | FCVTNU_4 | FCVTMS_4 | FCVTMU_4 | FCVTAS_4 | FCVTAU_4 | FCVTPS_4 | FCVTPU_4
         | FCVTZS_int_4 | FCVTZU_int_4 | FCVTZS_fix_2 | FCVTZU_fix_2 | FCVTZS_fix_1
@@ -2088,8 +2157,6 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.local_get(ta).simd(op::TRUNC_SAT_F32X4[u as usize]);
             }
             c.local_set(tr);
-            vreg(c, rn);
-            normal_or_zero(c, d);
             let hi = 2f64.powi(if d { 64 } else { 32 } - !u as i32);
             let lo = if u { 0.0 } else { -hi };
             for (bound, cmp) in [(lo, 4), (hi, 1)] {
@@ -2101,12 +2168,14 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 }
                 c.simd(op::CMP[d as usize][cmp]); // ge, lt
             }
-            all_lanes(c, d, q, 3);
+            under_fz_lanes(c, |c| {
+                vreg(c, rn);
+                normal_or_zero(c, d);
+            });
+            all_lanes(c, d, q, 2);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
-        // FMAX/FMIN, FMAXNM/FMINNM (the same without NaNs): wasm's lane min and
-        // max with zero, normal or infinite lanes (-0 below +0, as ARM); no
-        // flags, no FPOK.
+        // FMAX/FMIN, FMAXNM/FMINNM: `minmax`.
         FMAX_2 | FMIN_2 | FMAXNM_2 | FMINNM_2 => {
             let max = matches!(op, FMAX_2 | FMAXNM_2);
             minmax(c, cx, i, k, (d, q, rd), max, &|c| vreg(c, rn), &|c| {
@@ -2145,9 +2214,11 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.local_get(tr).local_get(r32);
                 c.simd_lane(0x1c, lane + 2 * q as u8).local_set(tr); // i32x4.replace_lane
             }
-            vreg(c, rn);
-            normal_or_zero(c, true);
-            c.simd(op::I64X2_ALL_TRUE).op(AND);
+            under_fz(c, |c| {
+                vreg(c, rn);
+                normal_or_zero(c, true);
+                every_lane(c, true, true, 1);
+            });
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, true, tr));
         }
         // FRECPE, FRSQRTE: `estimate` lane by lane; no flags, no FPOK.

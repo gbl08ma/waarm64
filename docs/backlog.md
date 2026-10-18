@@ -667,7 +667,12 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - LTP: only the syscalls subset; the loop-device tests (`getdents01`, `rename01`) and other areas
   need `mkfs` tools, a scratch disk and more RAM. kselftests: not `fp` (minutes of stress) nor the
   generic suites.
-- **`tests/pause.test.ts` hung once under `scripts/ci.sh`** (2026-10-18, its file cancelled after 1,337 s: "Promise
+- **The FP fast paths under FZ** cost llvmpipe ~1.5% a frame since their operand tests moved into a branch on
+  FPCR.FZ (bench/interp/REPORT.md "M8: every FP instruction inline, and results, not operands"): a block could
+  take FZ's branch once, at its first FP instruction, and its instructions then emit the FZ or the no-FZ tests
+  in two copies of the block's FP code, or the JIT could compile a block for the FZ it last ran with (FPCR in
+  the block's key, as the EL is).
+- **`tests/pause.test.ts` hung twice under `scripts/ci.sh`** (2026-10-18, its file cancelled after 1,337 and 1,351 s: "Promise
   resolution is still pending but the event loop has already resolved", so a pause or an end that nothing will
   resolve, with no timer left), passed alone and 9 times in 3 copies at once. Which of its tests is unknown (a
   cancelled file prints none); its tests now have a 2-minute deadline, so the next one says.

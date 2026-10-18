@@ -853,3 +853,38 @@ Xeon (`M8-FP-HANDOVER.md`) was +29%.
 frame). Checked by the single model in `core/src/fp/tests.rs` (rewritten to the new algorithm,
 4M cases, 19% of them midpoints by construction) and jit-diff's FP edge cases (two new: FMLA 2S,
 a sum just above a midpoint); planted bugs (midpoints not fixed, scalar and vector) failed both.
+
+## M8: every FP instruction inline, and results, not operands
+
+2026-10-18, the dev VM, Chromium 153.0.8010.52; builds alternated in place of the served core;
+raw data `results/m8-fp-checks/` (and `../boot/results/m8-fp-checks/`).
+
+**Every FP instruction we advertise got a fast path** (the FP handover's item 2: FCMP/FCCMP/FCSEL,
+the conversions in every rounding, half, fixed point, FMAX & co., FRINT*, FABD, FMULX, FRECPS/FRSQRTS,
+FRECPE/FRSQRTE, FRECPX, the pairwise and across-lanes ops, the AdvSIMD scalar forms; [docs/jit.md]
+(../../docs/jit.md) "Floating point"), checked by the FP suite in the guest (docs/testing.md). The
+FP guest runs none of them: 865.3, 864.7, 853.5 MIPS before, 866.7, 863.0, 851.2 after (`item1-*`,
+`item2-*`), as expected.
+
+**Then the checks.** With every fast path's guard forced true (wrong: `ceiling-*`) the FP guest ran
+at 1,764, 1,742, 1,759 MIPS, 2.04× the build: its checks were half its time. Most were operand tests
+(normal or zero), there for FZ alone: without FZ the host's IEEE operations take denormal operands
+as ARM does (exactly, and IDC is FZ's flush), and a NaN or infinite operand makes a NaN or infinite
+result, which the result check rejects. So the operand tests now run only under FZ, in a branch on
+the block's FZ bit (`under_fz`); the double FMA keeps its factor test (folded into the product
+bound), the zero-result clauses gained `result == 0` (0 × ∞ is a NaN), and the tests that don't
+round test for NaNs (and for denormals under FZ the same way).
+
+| build | FP guest (MIPS) | `gl_llvmpipe_jit` (ms a frame) |
+|---|---|---|
+| before | 839.4, 841.9, 844.4 | 293.1, 293.6, 296.3 |
+| operand tests dropped, FZ required in the block guard | 1162.5, 1152.1, 1151.9 | **4814.0, 4782.0, 5004.4** (`gl-fz-required-*`; before, that session: 303.2, 295.7, 299.3) |
+| **operand tests under FZ only (kept)** | **1093.8, 1104.8, 1094.1** (+30%) | **297.2, 299.4, 299.8** (+1.5%, every pair) |
+
+The first try required FZ clear for every fast path, and llvmpipe's frames took 16× longer: its
+shaders run with FPCR.FZ set, so everything went to the helpers (the FP suite passed it: it checks
+results, not speed). Under FZ the kept build costs llvmpipe ~1.5% (a branch per instruction, the
+zero clause's extra test), the same 484.20M steps a frame. Correctness: the FP suite (both FZ
+settings with FPSR.IXC set), jit-diff, the corpus; planted bugs (no `result == 0` in FMUL's and
+FMLA's zero clause; the double FMA's bound past its limit; FZ's factor test left out, which the
+suite caught as an IDC lost under FZ) each failed.

@@ -467,19 +467,33 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
 Scalar and vector FP are inline only where the result and the flags are exactly the
 interpreter's; the helper runs the instruction otherwise.
 - **Block guard `FPOK`:** before a block's first inline FP arithmetic (after the FPEN check), one
-  test: FPCR.RMode is round-to-nearest-even **and FPSR.IXC is already set**. Both hold for the rest
-  of the block (FPCR/FPSR change only through MSR, which ends a block, and helpers only OR flags
-  in). If it fails, the block's FP arithmetic runs through helpers, which set IXC on the first
-  inexact result, so the next run is fast.
-- **Why IXC set is enough:** with normal inputs and a result that's normal and above the smallest
-  normal binade, the only exception add, subtract, multiply, divide, square root (of a positive),
-  conversion or FMA can raise is Inexact; so FPSR doesn't change when IXC is set, and the fast path
-  needn't know whether the result was exact. FZ and DN only act on denormals and NaNs, which it
-  never meets; AHP only concerns half precision, which it doesn't do.
-- **Per instruction:** integer tests on the exponent fields decide normality; the host's IEEE
-  operation in RNE gives the ARM result; the result's exponent is checked (above 1, below all
-  ones), and a failure sends the instruction to the helper with the operands untouched. Vector
-  forms test every lane.
+  test: FPCR.RMode is round-to-nearest-even **and FPSR.IXC is already set**; and `FZOK`: FPCR.FZ is
+  clear. They hold for the rest of the block (FPCR/FPSR change only through MSR, which ends a
+  block, and helpers only OR flags in). If FPOK fails, the block's FP arithmetic runs through
+  helpers, which set IXC on the first inexact result, so the next run is fast.
+- **Why results, not operands:** without FZ, the host's IEEE operations take denormal operands as
+  ARM does (exactly, with no IDC: IDC is FZ's flush), and a NaN or infinite operand makes a NaN or
+  infinite result. So with a result that's normal and above the smallest normal binade, the only
+  exception add, subtract, multiply, divide, square root, conversion or FMA can raise is Inexact,
+  whatever the operands; FPSR doesn't change when IXC is set, and the fast path needn't know whether
+  the result was exact. A zero result is taken only where it's exact (below). DN only acts on NaNs,
+  which a fast result never is; AHP only concerns half precision's all-ones exponent, which the
+  half forms exclude.
+- **Under FZ** (llvmpipe's shaders run with it: requiring FZ clear made a frame 16× slower), a
+  denormal operand would be flushed (IDC): the operands are tested too, normal or zero, in a branch
+  on `FZOK` (`under_fz`) that a block takes the same way every time; without FZ it costs the
+  branch. The tests that don't round (compares, min/max, FRINT, FCVT widening) test operands for
+  NaNs, and for denormals under FZ the same way. A test in that branch reads only what the
+  instruction read before it (a register's first read inside a branch would leave its local unset
+  on the other path).
+- **Per instruction:** the host's IEEE operation in RNE gives the ARM result; the result's exponent
+  is checked (above 1, below all ones; integer conversions: the rounded value in range), and a
+  failure sends the instruction to the helper with the operands untouched. Vector forms test every
+  lane. Only the double FMA tests its factors without FZ (no denormal one, and the product from
+  2^-900: its emulation's exactness is argued there; a search of 2M denormal-times-large cases found
+  no case the denormal test was needed for, it's kept as the argument's precondition). Until
+  2026-10-18 every operand was tested normal or zero, half the FP guest's time with everything else
+  inline (bench/interp/REPORT.md "M8: results, not operands").
 - **FMA** (FMADD/FMSUB/FNMADD/FNMSUB, FMLA/FMLS vector and by element, single and double),
   in RNE f64 operations only (wasm has no deterministic FMA; relaxed-simd's `madd` may not fuse):
   the exact product, its sum with the addend, then one final rounding.
@@ -508,8 +522,8 @@ interpreter's; the helper runs the instruction otherwise.
     negative on x86-64) gave the largest finite double. The vector form is the same on f64x2 (its five v128 scratch locals don't hold both
     splits, so the low halves are recomputed from the operands); the scalar form uses eight f64
     scratch locals (`FT`).
-  - *Guard:* FPOK, operands normal or zero, a fast result (vector single: also an exact zero from a
-    zero product and addend). No midpoint or binade cases fall back. The single midpoint test
+  - *Guard:* FPOK, a fast result (vector single: also an exact zero from a zero product and
+    addend); doubles: the factors' test above. No midpoint or binade cases fall back. The single midpoint test
     holds above the smallest normal binade, where the singles' last place is the double's bit 29;
     below it (a sum rounding up to the smallest normal) the result's exponent sends it to the
     helper.
@@ -530,14 +544,12 @@ interpreter's; the helper runs the instruction otherwise.
   FCVT single↔double, scalar and vector (FCVTL/FCVTN): widening is exact without FPOK for a zero,
   normal or infinite operand; narrowing takes FPOK, a normal or zero operand and a fast result or a
   zero.
-- **Zero operands** (FADD/FSUB/FMUL/FDIV scalar and vector, FNMUL, the FMA forms): operands
-  (lanes) may also be ±0 where the zero case is exact too. A zero sum or difference of
-  normal-or-zero operands is always exact (a nonzero exact sum rounds to a nonzero result), so a
-  zero result is accepted; a zero product or quotient only with a zero operand (the dividend). A
-  zero divisor never passes: the vector form wants a normal divisor, and the scalar form's result
-  check rejects x / 0 (infinite) and 0 / 0 (a NaN). Vector single FMLA's zero result only with a
-  zero product and a zero addend (a cancellation, or an underflow, goes to the helper); the other
-  FMA forms take no zero result. llvmpipe's shaders multiply and add zero lanes all the time; with
+- **Zero results** (FADD/FSUB/FMUL/FDIV scalar and vector, FNMUL, the FMA forms): taken where
+  they're exact. A zero sum or difference is always exact (a nonzero exact sum rounds to a nonzero
+  result); a zero product or quotient only with a zero operand (the dividend), and only when the
+  result is zero (0 × ∞ and 0 / 0 are NaNs). x / 0 is infinite. Vector single FMLA's zero result
+  only with a zero product and a zero addend (a tiny sum demotes to a zero with Underflow); the
+  other FMA forms take no zero result. llvmpipe's shaders multiply and add zero lanes all the time; with
   the normal-only rule its FMLAs and FADDs were helper calls, as the FP guest's sums started at 0
   were.
 - **Compares** (FCMEQ/FCMGE/FCMGT, FACGE/FACGT, the compares against zero) and **FRINTN/M/P/Z**:

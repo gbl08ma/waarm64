@@ -61,6 +61,8 @@ pub const VTMP: u32 = 124;
 pub const VT: [u32; 4] = [119, 120, 121, 122];
 /// The block's FP guard (i32; `float::fpa_guard`, M6 loop 5).
 pub const FPOK: u32 = 123;
+/// FPCR.FZ is clear (i32; `float::fpa_guard`).
+pub const FZOK: u32 = 118;
 /// f64 scratch locals (the double FMA's exact product and sums).
 pub const FT: [u32; 8] = [97, 98, 99, 113, 114, 115, 116, 117];
 /// The V registers' v128 locals, in order of first use: 49..=79, then 96
@@ -228,6 +230,7 @@ impl Func {
                 || (13..=16).contains(&i)
                 || i == TAKEN
                 || i == FPOK
+                || i == FZOK
                 || crypto::I32_LOCALS.contains(&i)
             {
                 I32
