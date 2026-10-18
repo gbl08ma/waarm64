@@ -66,7 +66,7 @@ test('keys become boot reports: modifiers as bits, six keys, rollover, one repor
   assert.equal(poll(d).r, undefined);
   assert.equal(d.key('BrowserBack', true), false);
   d.releaseAll();
-  assert.equal(bytes(d.report()).every((b) => b === 0), true);
+  assert.ok(d.report().every((b) => b === 0));
   // Every modifier's bit, every mapped key's usage within the descriptor's range.
   assert.deepEqual([...MODIFIERS.values()], [1, 2, 4, 8, 16, 32, 64, 128]);
   assert.ok([...USAGES.values()].every((u) => u >= 4 && u <= 0x65));
