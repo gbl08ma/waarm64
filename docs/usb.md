@@ -260,8 +260,6 @@ Short Packet event reported as Success) fails two unit tests and testusb's first
 
 ## The WebUSB passthrough (`web/webusb.ts`)
 
-## The WebUSB passthrough (`web/webusb.ts`)
-
 `openWebUsb(device, {gone, os})` takes any object with WebUSB's `USBDevice` methods (`WebUsbDeviceLike`)
 and returns a `UsbDevice`. The device worker's opener, `webUsbOpener(navigator.usb)`, finds the granted
 device with `getDevices()` and opens it. It matches on vendor, product and serial number; among
