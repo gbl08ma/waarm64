@@ -1,7 +1,7 @@
 // USB on the page with a guest, without host devices (docs/usb.md "The page"): a stored Debian machine with the USB
 // controller, Gadget Zero attached from the toolbar's USB menu (`?usbzero=1`) and seen by the guest, a kept snapshot
 // that asks first, empties the ports and attaches it again (the guest sees it unplugged and back), and a detach.
-// Opt-in with WEBPC_DISTROS=debian (scripts/ci-machines.sh). Needs the xHCI's glue (web/usb.ts): skipped before it.
+// Opt-in with WEBPC_DISTROS=debian (scripts/ci-machines.sh); ~50 s.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';

@@ -295,4 +295,4 @@ hardware. It takes no lock and is no entry.
   - a kept snapshot that asks first, empties the ports and attaches the device again;
   - a detach.
 
-  It is skipped until the xHCI's glue (`web/usb.ts`) is in.
+  Planted: Snapshot not emptying the ports first (the core refuses the save; caught).
