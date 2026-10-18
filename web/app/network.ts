@@ -82,7 +82,19 @@ export type NetworkView = {
   exitNodes: { id: string; name: string; online: boolean; use: boolean }[];
   /** The machine's own tailcat address, when it lets tailcat clients in. */
   served?: string;
+  /** Connected, and it reaches the internet (a tailnet's exit node in use, tailcat through a server): it can be the guest's default way out. */
+  internet?: boolean;
 };
+
+/**
+ * Which of a machine's adapters is the guest's default way out (docs/plans/network-adapters.md §4): the first, in
+ * order, that is connected and reaches the internet; without one, the first connected (so a machine with one adapter
+ * keeps its default route, as it always had); -1 when none is connected.
+ */
+export function primaryOf(views: Pick<NetworkView, 'phase' | 'internet'>[]): number {
+  const net = views.findIndex((v) => v.phase === 'connected' && v.internet);
+  return net >= 0 ? net : views.findIndex((v) => v.phase === 'connected');
+}
 
 /** What a `Tailscale` client reports, as far as the view needs it. */
 export type ClientReport = { state: string; netmap?: NetMap; loginURL?: string; error?: string; tailcat?: boolean };
@@ -104,9 +116,9 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
   if (c.netmap?.via === 'tailcat' || c.tailcat) {
     if (c.state === 'Running' && c.netmap) {
       const served = c.netmap.serving ? { served: c.netmap.serving } : {};
-      if (c.netmap.tailcatExit === false) return { phase: 'connected', exitNodes: [], text: 'Letting tailcat clients in', ...served };
+      if (c.netmap.tailcatExit === false) return { phase: 'connected', exitNodes: [], text: 'Letting tailcat clients in', internet: false, ...served };
       const address = c.netmap.addresses.find((a) => !a.includes(':'))?.replace(/\/\d+$/, '');
-      return { phase: 'connected', address, exitNodes: [], text: `Connected through the tailcat server${address ? ` (${address})` : ''}${c.netmap.serving ? ', letting tailcat clients in' : ''}`, ...served };
+      return { phase: 'connected', address, exitNodes: [], internet: true, text: `Connected through the tailcat server${address ? ` (${address})` : ''}${c.netmap.serving ? ', letting tailcat clients in' : ''}`, ...served };
     }
     const doing: Record<string, string> = { FetchingMap: 'Looking up the relay…', Meowing: 'Waiting for the tailcat server…', Handshaking: 'Opening the tunnel…' };
     return { phase: 'connecting', text: doing[c.state] ?? (c.state === '' ? 'Loading the client…' : 'Connecting to the relay…'), exitNodes: [] };
@@ -117,7 +129,7 @@ export function viewOf(c: ClientReport | undefined): NetworkView {
       const peers = c.netmap?.peers.length ?? 0;
       const exitNodes = (c.netmap?.peers ?? []).filter((p) => p.exitNodeOption || p.id === c.netmap?.exitNode).map((p) => ({ id: p.id, name: p.name.replace(/\.$/, ''), online: p.online !== false, use: p.id === c.netmap?.exitNode }));
       const via = exitNodes.find((e) => e.use);
-      return { phase: 'connected', address, exitNodes, text: `Connected${c.netmap?.name ? ` as ${c.netmap.name.replace(/\.$/, '')}` : ''}${address ? ` (${address})` : ''}, ${peers} peer${peers === 1 ? '' : 's'}${via ? `, internet through ${via.name}` : ''}` };
+      return { phase: 'connected', address, exitNodes, internet: !!via, text: `Connected${c.netmap?.name ? ` as ${c.netmap.name.replace(/\.$/, '')}` : ''}${address ? ` (${address})` : ''}, ${peers} peer${peers === 1 ? '' : 's'}${via ? `, internet through ${via.name}` : ''}` };
     }
     case 'NeedsLogin':
       return loginURL ? { phase: 'login', text: 'Log in to connect', loginURL, exitNodes: [] } : { phase: 'connecting', text: 'Contacting the control server…', exitNodes: [] };
@@ -147,6 +159,8 @@ export type Network = {
   view(): NetworkView;
   /** Whether a client runs. */
   active(): boolean;
+  /** Whether this adapter is the guest's default way out (`primaryOf`), kept across clients; true until told otherwise. */
+  setPrimary(primary: boolean): void;
 };
 
 export function createNetwork(
@@ -159,6 +173,7 @@ export function createNetwork(
   let client: Tailscale | undefined;
   let error: string | undefined;
   let tailcat = false;
+  let primary = true;
 
   const report = (): ClientReport | undefined => (client ? { state: client.state(), netmap: client.netmap(), loginURL: client.loginURL(), error, tailcat } : undefined);
 
@@ -199,6 +214,7 @@ export function createNetwork(
         ? startCat({ addr: c.tailcat ?? '', serve: c.tailcatServe, ip }, onEvent)
         : start({ controlURL: c.controlURL, authKey: c.authKey || undefined, hostname: c.hostname, exitNode: c.exitNode || undefined, ip, persist: c.authKey ? undefined : c.controlURL }, onEvent);
       client = t;
+      if (!primary) t.setPrimary(false);
       t.running.catch((e) => { error = String(e?.message ?? e); onChange(); });
       onChange();
     },
@@ -213,5 +229,10 @@ export function createNetwork(
     },
     view: () => viewOf(report()),
     active: () => !!client,
+    setPrimary(p) {
+      if (p === primary) return;
+      primary = p;
+      client?.setPrimary(p);
+    },
   };
 }

@@ -26,7 +26,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [cloud.md](cloud.md) | Claude Code cloud sessions: what differs from the dev VM (x86_64, Node, Chromium, dtc, images) and the setup script |
 | [backlog.md](backlog.md) | open loose ends by area (PLAN.md's M9) |
 | [plans/networking.md](plans/networking.md) | exploration for M8's networking (not scheduled) |
-| [plans/network-adapters.md](plans/network-adapters.md) | several network adapters per machine, connections kept by the browser (tailnets, tailcat, ephemeral ones), routes over several adapters (L0 and L1 done: the connections' model, adapters in the shape) |
+| [plans/network-adapters.md](plans/network-adapters.md) | several network adapters per machine, connections kept by the browser (tailnets, tailcat, ephemeral ones), routes over several adapters (L0–L2 done: the connections' model, adapters in the shape, routes) |
 | [plans/networking-p2p.md](plans/networking-p2p.md) | peer-to-peer rooms over WebRTC: addresses that are keys, WireGuard over data channels, DERP for signalling and fallback, a Nostr directory, names that are keys (proposed, not scheduled) |
 | [plans/graphics.md](plans/graphics.md) | the display and 3D: virtio-gpu 2D (G0, G1), virgl's guest side measured (G2), the virgl renderer on WebGL2 (G3), Firefox, GTK4 and dEQP passing (G4): what each loop found, the numbers; G5 proposed |
 | [plans/video.md](plans/video.md) | hardware video decoding (done): VA-API over virgl decoded by WebCodecs (why not V4L2), H.264, VP9 and AV1, each loop's record |

@@ -129,6 +129,55 @@ test('three adapters, each on its own gateway and lease', { skip, timeout: 600_0
   });
 });
 
+// Routes over several adapters (docs/plans/network-adapters.md §4, L2): the primary's gateway is the default router; the
+// other's gives only its network's routes (option 121 without a default, a router advertisement with lifetime 0 and a
+// Route Information option). Made the other the primary, IPv6 moves at once and IPv4 at the next renewal (a
+// two-minute lease, so within a minute; the times are printed, not judged here: a cloud machine's aren't numbers).
+test('two adapters: the default route through the primary only, the other for its network; it moves when the primary does', { skip, timeout: 600_000 }, async () => {
+  await withDebianLock(async () => {
+    const page = await (await browser.newContext()).newPage();
+    const removeOverlay = () => page.evaluate(async (n) => (await navigator.storage.getDirectory()).removeEntry(n, { recursive: true }).catch(() => {}), OVERLAY).catch(() => {});
+    try {
+      await page.goto(`${base}/tests/browser/core.html`);
+      await removeOverlay();
+      await page.goto(`${base}/tests/browser/netguest.html?overlay=${OVERLAY}&ports=2`);
+      await page.evaluate(() => (window as never as { harness: { primary(k: number): void } }).harness.primary(0));
+      await loginRoot(page);
+      const until = async (what: string, cmd: string, ok: (s: string) => boolean, ms: number) => {
+        const t0 = Date.now();
+        let out = await run(page, cmd);
+        while (!ok(out) && Date.now() - t0 < ms) {
+          await page.waitForTimeout(1000);
+          out = await run(page, cmd);
+        }
+        assert.ok(ok(out), `${what} after ${ms / 1000} s:\n${out}`);
+        return (Date.now() - t0) / 1000;
+      };
+      const devOf = async (addr: string) => /^(\S+) /m.exec(await run(page, `ip -4 -o addr show to ${addr} | awk '{print $2, $4}'`))?.[1] ?? '';
+      await until('two leases', "ip -4 -o addr show scope global", (s) => /198\.18\.0\.15\//.test(s) && /198\.18\.0\.16\//.test(s), 60_000);
+      const [a, b] = [await devOf('198.18.0.15'), await devOf('198.18.0.16')];
+      assert.ok(a && b && a !== b, `${a} ${b}`);
+      const v4 = () => run(page, 'ip -4 route');
+      const v6 = () => run(page, 'ip -6 route');
+      const r4 = await v4();
+      assert.match(r4, new RegExp(`default via 169\\.254\\.0\\.1 dev ${a}`), r4);
+      assert.doesNotMatch(r4, /default via 169\.254\.0\.2/, r4);
+      assert.match(r4, new RegExp(`100\\.64\\.0\\.0/10 via 169\\.254\\.0\\.2 dev ${b}`), r4);
+      await until("IPv6: the primary's default, the other's /48", 'ip -6 route', (s) => new RegExp(`default (nhid \\d+ )?via fe80::77:65ff:fe62:7063 dev ${a}`).test(s) && new RegExp(`fd7a:115c:a1e0::/48 (nhid \\d+ )?via fe80::77:65ff:fe62:7064 dev ${b}`).test(s), 60_000);
+      assert.doesNotMatch(await v6(), /default .*fe62:7064/, 'no IPv6 default through the other');
+      // The other becomes the primary (the first lost its way out).
+      await page.evaluate(() => (window as never as { harness: { primary(k: number): void } }).harness.primary(1));
+      const t6 = await until('IPv6 default moved', 'ip -6 route', (s) => new RegExp(`default (nhid \\d+ )?via fe80::77:65ff:fe62:7064 dev ${b}`).test(s) && !/default .*fe62:7063/.test(s), 60_000);
+      const t4 = await until('IPv4 default moved', 'ip -4 route', (s) => new RegExp(`default via 169\\.254\\.0\\.2 dev ${b}`).test(s) && !/default via 169\.254\.0\.1 /.test(s), 150_000);
+      console.log(`# the default route moved: IPv6 in ${t6.toFixed(0)} s, IPv4 in ${t4.toFixed(0)} s (at the lease's renewal)`);
+      assert.match(await v4(), new RegExp(`100\\.64\\.0\\.0/10 via 169\\.254\\.0\\.1 dev ${a}`), 'the first now gives its network only');
+    } finally {
+      await removeOverlay();
+      await page.context().close();
+    }
+  });
+});
+
 // The page's card is there from the boot, and the client connects later (the Network menu): the
 // gateway has no lease until then. How long the guest takes to notice one that arrives late is
 // networkd's DHCP retry schedule; the test reports it and bounds it.

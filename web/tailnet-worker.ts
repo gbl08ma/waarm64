@@ -6,13 +6,16 @@ import { batchSender, packetsOf } from './net.ts';
 import { TsClient, TsModule } from './ts-client.ts';
 import { leaseFrom, type FromTailscale, type ToTailscale } from './tailscale.ts';
 import { openState } from './tailscale-state.ts';
-import type { Lease } from './gateway.ts';
+import { routedLease, TAILNET_ROUTES, type Lease } from './gateway.ts';
 
 const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessage(m, transfer);
 
 let ip: MessagePort | undefined;
 let send: ((packet: Uint8Array) => void) | undefined;
 let lease: Lease | null = null;
+/** This adapter is the guest's default way out (docs/plans/network-adapters.md §4): otherwise its lease carries only the network's routes. */
+let primary = true;
+const offered = () => routedLease(lease, primary, TAILNET_ROUTES);
 let client: TsClient | undefined;
 let state: Awaited<ReturnType<typeof openState>> | undefined;
 
@@ -24,12 +27,16 @@ function attach(port: MessagePort) {
     const packets = packetsOf(ev.data);
     if (packets) client?.guest(...packets);
   };
-  port.postMessage({ type: 'lease', lease });
+  port.postMessage({ type: 'lease', lease: offered() });
 }
 
 self.onmessage = async (e: MessageEvent<ToTailscale>) => {
   const m = e.data;
   if (m.type === 'attach') return attach(m.ip);
+  if (m.type === 'primary') {
+    primary = m.primary;
+    return ip?.postMessage({ type: 'lease', lease: offered() });
+  }
   if (m.type === 'detach') {
     lease = null;
     ip?.postMessage({ type: 'lease', lease: null });
@@ -69,7 +76,7 @@ self.onmessage = async (e: MessageEvent<ToTailscale>) => {
           case 'loggedout': return void (state?.clear() ?? Promise.resolve()).then(() => post({ type: 'loggedout' }));
           case 'netmap':
             lease = leaseFrom(ev.netmap);
-            ip?.postMessage({ type: 'lease', lease });
+            ip?.postMessage({ type: 'lease', lease: offered() });
             return post({ type: 'netmap', netmap: ev.netmap });
           case 'state':
             if (ev.state === 'Failed') return post({ type: 'error', error: ev.error ?? 'the client failed' });

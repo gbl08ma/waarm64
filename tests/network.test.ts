@@ -3,7 +3,7 @@
 // connects, the machine restarts and the client disconnects.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createNetwork, parseControlURL, parseHostname, viewOf } from '../web/app/network.ts';
+import { createNetwork, parseControlURL, parseHostname, primaryOf, viewOf } from '../web/app/network.ts';
 import type { FromTailscale, NetMap, Tailscale, TailscaleConfig } from '../web/tailscale.ts';
 
 const netmap = (over: Partial<NetMap> = {}): NetMap => ({ name: 'guest.tail.test.', addresses: ['100.90.0.2/32', 'fd7a:115c:a1e0::2/128'], peers: [{ id: 'nPEER', name: 'peer', addresses: ['100.90.0.3/32'], exitNodeOption: false }], mtu: 1280, dns: ['100.100.100.100'], domains: ['tail.test'], exitNode: '', ...over });
@@ -64,6 +64,7 @@ function fake() {
     log.push(`start ${config.controlURL} ${config.hostname} ${config.authKey ?? '-'} ${config.persist ?? '-'}`);
     return {
       state: () => state, netmap: () => nm, loginURL: () => url, running: new Promise<NetMap>(() => {}), timings: () => ({}),
+      setPrimary: (p) => { log.push(`primary:${p}`); },
       attach: (ip) => { held = ip; attached.push(ip); log.push('attach'); },
       detach: async () => { log.push('detach'); const h = held; held = undefined; return h; },
       setExitNode: async (id) => { log.push(`exit ${id || '-'}`); if (id === 'bad') throw new Error('nope'); },
@@ -178,7 +179,7 @@ test('a tailcat connection: the address goes to the tailcat client, not the Tail
     cats.push({ addr: config.addr, emit: onEvent, setState(s, n) { state = s; nm = n; onEvent({ type: 'state', state: s }); } });
     return {
       state: () => state, netmap: () => nm, loginURL: () => undefined, running: new Promise<NetMap>(() => {}), timings: () => ({}),
-      attach: (ip) => { held = ip; }, detach: async () => { const h = held; held = undefined; return h; },
+      setPrimary: () => {}, attach: (ip) => { held = ip; }, detach: async () => { const h = held; held = undefined; return h; },
       setExitNode: async () => { throw new Error('no'); }, logout: async () => {}, close: () => {},
     };
   };
@@ -194,7 +195,7 @@ test('a tailcat connection: the address goes to the tailcat client, not the Tail
   assert.deepEqual(nm.addresses, ['192.0.0.2/32', 'fd7a:115c:a1e0:102:304:506:708:90a/128']);
   assert.deepEqual(nm.dns, ['1.1.1.1', '2606:4700:4700::1111']);
   cats[0].setState('Running', nm);
-  assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], text: 'Connected through the tailcat server (192.0.0.2)' });
+  assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], internet: true, text: 'Connected through the tailcat server (192.0.0.2)' });
   cats[0].emit({ type: 'error', error: 'the tailcat server didn\'t answer' });
   assert.equal(net.view().phase, 'error');
   await net.disconnect();
@@ -216,7 +217,7 @@ test('a served machine (tailcat T3): serving alone or beside a tailcat server; t
     cats.push({ config: { addr: config.addr, serve: config.serve }, setState(s, n) { state = s; nm = n; onEvent({ type: 'state', state: s }); } });
     return {
       state: () => state, netmap: () => nm, loginURL: () => undefined, running: new Promise<NetMap>(() => {}), timings: () => ({}),
-      attach: (ip) => { held = ip; }, detach: async () => { const h = held; held = undefined; return h; },
+      setPrimary: () => {}, attach: (ip) => { held = ip; }, detach: async () => { const h = held; held = undefined; return h; },
       setExitNode: async () => { throw new Error('no'); }, logout: async () => {}, close: () => {},
     };
   };
@@ -228,14 +229,14 @@ test('a served machine (tailcat T3): serving alone or beside a tailcat server; t
   assert.deepEqual(ts.log, []);
   assert.deepEqual(cats[0].config, { addr: '', serve: { relay: '127.0.0.1:8443' } });
   cats[0].setState('Running', netmapOf(lease, 'tcSERVED', false));
-  assert.deepEqual(net.view(), { phase: 'connected', exitNodes: [], text: 'Letting tailcat clients in', served: 'tcSERVED' });
+  assert.deepEqual(net.view(), { phase: 'connected', exitNodes: [], text: 'Letting tailcat clients in', internet: false, served: 'tcSERVED' });
   await net.disconnect();
   assert.equal(net.view().served, undefined);
   // Beside a tailcat server: both said.
   net.connect({ controlURL: '', hostname: '', tailcat: 'tcEXIT', tailcatServe: { relay: '' } });
   assert.deepEqual(cats[1].config, { addr: 'tcEXIT', serve: { relay: '' } });
   cats[1].setState('Running', netmapOf(lease, 'tcSERVED'));
-  assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], text: 'Connected through the tailcat server (192.0.0.2), letting tailcat clients in', served: 'tcSERVED' });
+  assert.deepEqual(net.view(), { phase: 'connected', address: '192.0.0.2', exitNodes: [], internet: true, text: 'Connected through the tailcat server (192.0.0.2), letting tailcat clients in', served: 'tcSERVED' });
 });
 
 test('relays: a host or host:port, nothing that looks like a URL', async () => {
@@ -245,4 +246,29 @@ test('relays: a host or host:port, nothing that looks like a URL', async () => {
   assert.deepEqual(parseRelay('127.0.0.1:8443'), { relay: '127.0.0.1:8443' });
   assert.deepEqual(parseRelay('[fd00::1]:8443'), { relay: '[fd00::1]:8443' });
   for (const bad of ['https://derp.example.com', 'derp.example.com/derp', 'a b', 'host:port']) assert.ok('error' in parseRelay(bad), bad);
+});
+
+test("the guest's default way out: the first adapter that reaches the internet, else the first connected; the client is told, now and at its next start", async () => {
+  const c = (phase: 'off' | 'connected' | 'connecting', internet?: boolean) => ({ phase, internet });
+  assert.equal(primaryOf([]), -1);
+  assert.equal(primaryOf([c('off'), c('connecting')]), -1);
+  assert.equal(primaryOf([c('connected', false)]), 0, 'one adapter keeps its default route, internet or not');
+  assert.equal(primaryOf([c('connected', false), c('connected', true)]), 1, 'a tailnet without an exit node, then tailcat through a server');
+  assert.equal(primaryOf([c('connected', true), c('connected', true)]), 0, 'both reach it: the first in order');
+  assert.equal(primaryOf([c('connecting', true), c('connected', false)]), 1);
+  assert.equal(viewOf({ state: 'Running', netmap: netmap() }).internet, false, 'a tailnet without an exit node');
+  assert.equal(viewOf({ state: 'Running', netmap: netmap({ exitNode: 'nPEER', peers: [{ id: 'nPEER', name: 'peer', addresses: ['100.90.0.3/32'], exitNodeOption: true }] }) }).internet, true);
+  const told: boolean[] = [];
+  const fake = (): Tailscale => ({
+    state: () => '', netmap: () => undefined, loginURL: () => undefined, running: new Promise(() => {}), timings: () => ({}),
+    setPrimary: (p) => { told.push(p); }, attach: () => {}, detach: async () => undefined, setExitNode: async () => {}, logout: async () => {}, close: () => {},
+  });
+  const net = createNetwork(() => {}, fake, fake);
+  net.port();
+  net.setPrimary(false);
+  net.connect({ controlURL: 'https://controlplane.tailscale.com', hostname: 'webpc' });
+  assert.deepEqual(told, [false], 'a client started on a secondary adapter is told at once');
+  net.setPrimary(false);
+  net.setPrimary(true);
+  assert.deepEqual(told, [false, true], 'and on every change, once');
 });

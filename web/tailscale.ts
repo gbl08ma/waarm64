@@ -49,6 +49,8 @@ export type ToTailscale =
   | { type: 'start'; wasm: string; controlURL: string; authKey?: string; hostname?: string; exitNode?: string; ip: MessagePort; persist?: string }
   /** A new gateway port (the machine restarted): the client's packets and the lease go to it. */
   | { type: 'attach'; ip: MessagePort }
+  /** Whether this adapter is the guest's default way out, or offers only its network's routes (docs/plans/network-adapters.md §4). */
+  | { type: 'primary'; primary: boolean }
   /** Withdraw the lease and hand the gateway's port back (`detached`). */
   | { type: 'detach' }
   /** Use the peer with this stable ID as the exit node ('': none); answered by `exitnode`. */
@@ -114,6 +116,8 @@ export type Tailscale = {
   timings(): { loadMs?: number; runningMs?: number };
   /** Hands the client a new gateway port (the machine restarted). */
   attach(ip: MessagePort): void;
+  /** Makes the adapter the guest's default way out (the default), or only the way to its own network's addresses. */
+  setPrimary(primary: boolean): void;
   /** Withdraws the lease and takes the gateway's port back, for the next client (or machine); undefined if the worker doesn't answer. */
   detach(): Promise<MessagePort | undefined>;
   /** Sends the internet traffic through the peer with this stable ID (a netmap peer with `exitNodeOption`), or with '' stops; rejects with the client's reason. */
@@ -166,6 +170,7 @@ export function startTailscale(config: TailscaleConfig, onEvent: (m: FromTailsca
   return {
     ip: own?.port2, state: () => state, netmap: () => netmap, loginURL: () => loginURL, running, timings: () => timings,
     attach: (ip) => worker.postMessage({ type: 'attach', ip } satisfies ToTailscale, [ip]),
+    setPrimary: (primary) => worker.postMessage({ type: 'primary', primary } satisfies ToTailscale),
     detach: () => new Promise((resolve) => {
       const t = setTimeout(() => resolve(undefined), 3000);
       detached = (ip) => { clearTimeout(t); resolve(ip); };

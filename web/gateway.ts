@@ -18,7 +18,24 @@ import { ALL_DHCP_AGENTS, ALL_NODES, domainList, icmp6, linkLocal, multicastMac,
  * What a backend gives the guest. `address` is the guest's own IPv4 address on the network;
  * `address6` (16 bytes) its IPv6 one, if the network has one, with the IPv6 resolvers in `dns6`.
  */
-export type Lease = { address: number[]; address6?: number[]; mtu: number; dns: number[][]; dns6?: number[][]; domains: string[] };
+export type Lease = { address: number[]; address6?: number[]; mtu: number; dns: number[][]; dns6?: number[][]; domains: string[]; routes?: Routes };
+
+/** A prefix: its address (4 or 16 bytes) and length. */
+export type Prefix = [number[], number];
+/**
+ * The networks behind a gateway that isn't the guest's way to everything else (docs/plans/network-adapters.md §4): the
+ * lease's `routes`. Without them the gateway is the default router (IPv4 and IPv6); with them, it is the router for
+ * these prefixes only (option 121's routes and no option 3; a router advertisement with lifetime 0 and a Route
+ * Information option per IPv6 prefix), so another adapter's gateway can be the default.
+ */
+export type Routes = { v4: Prefix[]; v6: Prefix[] };
+
+/** A tailnet's own addresses (Tailscale's CGNAT range, MagicDNS's 100.100.100.100 in it, and its ULA /48); tailcat's tunnel addresses are in the /48 too. */
+export const TAILNET_ROUTES: Routes = { v4: [[[100, 64, 0, 0], 10]], v6: [[[0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 48]] };
+export const TAILCAT_ROUTES: Routes = { v4: [], v6: TAILNET_ROUTES.v6 };
+
+/** `lease` for the adapter that is the guest's default way out (`primary`), or only for `routes`; null stays null. */
+export const routedLease = (lease: Lease | null, primary: boolean, routes: Routes): Lease | null => (!lease ? null : primary ? { ...lease, routes: undefined } : { ...lease, routes });
 
 /** A layer-3 backend: IP packets out through `send`, in through the `deliver` it was made with. */
 export type IpBackend = { lease(): Lease | null; send(packet: Uint8Array): void; close?(): void };
@@ -197,7 +214,8 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     if (!on && !advertised) return;
     advertised = on;
     const dns = lease?.dns6 ?? [];
-    receive(eth(multicastMac(ALL_NODES), mac, 0x86dd, routerAdvert(gw6, { mac, lifetime: on ? 1800 : 0, mtu: lease?.mtu ?? 1280, dns: on ? dns : [], dnsLifetime: 1800 })));
+    const routes = on ? lease!.routes?.v6 : undefined;
+    receive(eth(multicastMac(ALL_NODES), mac, 0x86dd, routerAdvert(gw6, { mac, lifetime: on && !routes ? 1800 : 0, mtu: lease?.mtu ?? 1280, dns: on ? dns : [], dnsLifetime: 1800, routes })));
   }
   const timer = opts.advertiseMs ? setInterval(advertise, opts.advertiseMs) : undefined;
 
@@ -221,15 +239,16 @@ export function gateway(receive: (frame: Uint8Array) => void, makeBackend: (deli
     if (reply !== NAK && lease) {
       const u32 = (n: number) => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
       opt.push(51, 4, ...u32(leaseSeconds), 58, 4, ...u32(leaseSeconds >> 1), 59, 4, ...u32((leaseSeconds * 7) >> 3));
-      opt.push(1, 4, ...mask, 3, 4, ...gw);
+      opt.push(1, 4, ...mask, ...(lease.routes ? [] : [3, 4, ...gw]));
       if (lease.dns.length) opt.push(6, lease.dns.length * 4, ...lease.dns.flat());
       const domain = lease.domains[0]?.replace(/\.$/, '');
       if (domain) opt.push(15, domain.length, ...new TextEncoder().encode(domain));
       opt.push(26, 2, lease.mtu >> 8, lease.mtu & 255);
       opt.push(28, 4, ...(mask.every((v) => v === 255) ? [255, 255, 255, 255] : lease.address.map((v, k) => v | (~mask[k] & 255)))); // a /32 has no subnet broadcast
       // Classless routes: the gateway on-link, everything else through it (a client that
-      // understands option 121 ignores option 3).
-      opt.push(121, 14, 32, ...gw, 0, 0, 0, 0, 0, ...gw);
+      // understands option 121 ignores option 3), or only the lease's routes (no default: another adapter's).
+      const routes = (lease.routes?.v4 ?? [[[0, 0, 0, 0], 0]]).flatMap(([a, len]) => [len, ...a.slice(0, Math.ceil(len / 8)), ...gw]);
+      opt.push(121, 9 + routes.length, 32, ...gw, 0, 0, 0, 0, ...routes);
     }
     opt.push(255);
     const m = new Uint8Array(240 + opt.length);

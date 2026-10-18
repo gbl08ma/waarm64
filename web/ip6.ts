@@ -62,7 +62,8 @@ export function udp6(src: ArrayLike<number>, dst: ArrayLike<number>, sport: numb
   return ip6(src, dst, 17, u);
 }
 
-export type RouterAdvert = { mac: number[]; lifetime: number; mtu: number; dns: number[][]; dnsLifetime: number };
+/** `routes`: Route Information options (RFC 4191), each with `dnsLifetime` as its lifetime. */
+export type RouterAdvert = { mac: number[]; lifetime: number; mtu: number; dns: number[][]; dnsLifetime: number; routes?: [number[], number][] };
 
 /**
  * A router advertisement: managed (the address comes from DHCPv6) and other-config flags, a
@@ -72,7 +73,10 @@ export type RouterAdvert = { mac: number[]; lifetime: number; mtu: number; dns: 
  */
 export function routerAdvert(src: number[], a: RouterAdvert) {
   const rdnss = a.dns.length ? [25, 1 + 2 * a.dns.length, 0, 0, a.dnsLifetime >>> 24, (a.dnsLifetime >>> 16) & 255, (a.dnsLifetime >>> 8) & 255, a.dnsLifetime & 255, ...a.dns.flat()] : [];
-  const body = [1, 1, ...a.mac, 5, 1, 0, 0, a.mtu >>> 24, (a.mtu >>> 16) & 255, (a.mtu >>> 8) & 255, a.mtu & 255, ...rdnss];
+  const lt = [a.dnsLifetime >>> 24, (a.dnsLifetime >>> 16) & 255, (a.dnsLifetime >>> 8) & 255, a.dnsLifetime & 255];
+  // Route Information: type 24, length 3 (the whole prefix), its length, medium preference, the lifetime, the prefix.
+  const rio = (a.routes ?? []).flatMap(([p, len]) => [24, 3, len, 0, ...lt, ...p]);
+  const body = [1, 1, ...a.mac, 5, 1, 0, 0, a.mtu >>> 24, (a.mtu >>> 16) & 255, (a.mtu >>> 8) & 255, a.mtu & 255, ...rdnss, ...rio];
   // hop limit 64, flags M|O, router lifetime, reachable time and retransmit timer unspecified
   return icmp6(src, ALL_NODES, 134, 0, [64, 0xc0, a.lifetime >> 8, a.lifetime & 255], [0, 0, 0, 0, 0, 0, 0, 0, ...body], 255);
 }

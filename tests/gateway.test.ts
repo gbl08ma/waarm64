@@ -2,7 +2,7 @@
 // with a synchronous IP backend, and the same through the device worker's `echo` adapter.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ECHO_LEASE, GATEWAY_IP, GATEWAY_IP6, GATEWAY_MAC, echoBackend, gateway, type IpBackend, type Lease } from '../web/gateway.ts';
+import { ECHO_LEASE, GATEWAY_IP, GATEWAY_IP6, GATEWAY_MAC, TAILNET_ROUTES, echoBackend, gateway, routedLease, type IpBackend, type Lease } from '../web/gateway.ts';
 import { ALL_DHCP_AGENTS, ALL_NODES, ALL_ROUTERS, icmp6, ip6, multicastMac, sum6, udp6 } from '../web/ip6.ts';
 import { checksum } from '../web/net.ts';
 
@@ -267,6 +267,30 @@ test('advertisements follow the lease: none without an IPv6 address, one when it
   assert.equal(be16(v6(out[1]).body, 6), 0, 'the router goes away');
   setLease(null);
   assert.equal(out.length, 2, 'once is enough');
+});
+
+test("an adapter that isn't the default way out: its network's routes only, over DHCP and in the advertisements", () => {
+  const routed = routedLease(ECHO_LEASE, false, TAILNET_ROUTES)!;
+  assert.equal(routedLease(ECHO_LEASE, true, TAILNET_ROUTES)!.routes, undefined, 'the primary: the default router');
+  assert.equal(routedLease(null, false, TAILNET_ROUTES), null);
+  const { g, out, setLease } = rig(routed);
+  g.send(dhcpMsg(3, [50, 4, ...ECHO_LEASE.address, 54, 4, ...GATEWAY_IP]));
+  const o = dhcpReply(out.pop()!).opts;
+  assert.equal(o.has(3), false, 'no router option: it would be a default route to a client without option 121');
+  assert.equal(hex(o.get(121)!), hex([32, ...GATEWAY_IP, 0, 0, 0, 0, 10, 100, 64, ...GATEWAY_IP]), 'the gateway on-link, 100.64.0.0/10 through it, no default');
+  g.send(rs());
+  const r = v6(out.pop()!);
+  assert.equal(be16(r.body, 6), 0, 'not a default router');
+  const opts: [number, Uint8Array][] = [];
+  for (let k = 16; k < r.body.length; k += r.body[k + 1] * 8) opts.push([r.body[k], r.body.subarray(k, k + r.body[k + 1] * 8)]);
+  const rio = opts.find(([t]) => t === 24)?.[1];
+  assert.ok(rio, `a route information option: ${opts.map(([t]) => t)}`);
+  assert.deepEqual([rio[1], rio[2], rio[3] & 0x18, Buffer.from(rio.subarray(4, 8)).readUInt32BE(0)], [3, 48, 0, 1800], 'length, the /48, medium preference, a lifetime');
+  assert.equal(hex(rio.subarray(8, 24)), 'fd7a115ca1e000000000000000000000');
+  assert.ok(opts.some(([t]) => t === 25), 'its resolvers still');
+  // Made the primary (the other adapter lost its exit node): advertised at once as the default router.
+  setLease(ECHO_LEASE);
+  assert.equal(be16(v6(out.pop()!).body, 6), 1800);
 });
 
 test('neighbor discovery: the gateway answers for its own link-local address only; probes are ignored', () => {

@@ -220,7 +220,12 @@ mode (and natively in realtime mode: std has no CSPRNG).
   Tailscale worker, N4). What the guest sees: a LAN with one router at 169.254.0.1
   (`02:77:65:62:70:63`); a machine's adapter `n` (`NetSpec.gateway`) has its own, 169.254.0.<n+1> at
   `02:77:65:62:70:63` plus `n` (`gatewayOf`), and its echo backend leases 198.18.0.<15+n> (`echoLease`), so a guest
-  with several cards tells them apart (docs/plans/network-adapters.md §4). **Proxy ARP** answers every request except for the guest's own address
+  with several cards tells them apart (docs/plans/network-adapters.md §4). A lease with `routes` (`Routes`: the
+  client's `setPrimary(false)`, `routedLease`) makes the gateway the router for those prefixes only: option 121 without
+  a default and no option 3, a router advertisement with lifetime 0 and a Route Information option per IPv6 prefix
+  (systemd-networkd installs them); the adapter the page picks as the primary (`primaryOf`: the first that reaches the
+  internet, else the first connected) gives the default route. A machine with several adapters has a two-minute lease
+  (`leaseSeconds`), so IPv4's default follows the primary at the next renewal; IPv6's moves with the advertisement. **Proxy ARP** answers every request except for the guest's own address
   (probes from 0.0.0.0 ignored), so no address range is assumed. **DHCP** (DISCOVER/REQUEST
   only) hands out the backend's address with mask 255.255.255.255 (a zero mask makes current systemd-networkd drop the lease: "DHCP error: no netmask"; the routes are option 121's), router = the gateway,
   the backend's DNS, first search domain, MTU (option 26), broadcast and classless routes

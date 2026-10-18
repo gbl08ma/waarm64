@@ -9,13 +9,16 @@ import { batchSender, packetsOf } from './net.ts';
 import { TsClient, TsModule, type TailcatConfig } from './ts-client.ts';
 import type { FromTailscale } from './tailscale.ts';
 import { nearestRegion, netmapOf, tailcatIdentity, type ToTailcat } from './tailcat.ts';
-import type { Lease } from './gateway.ts';
+import { routedLease, TAILCAT_ROUTES, type Lease } from './gateway.ts';
 
 const post = (m: FromTailscale, transfer: Transferable[] = []) => self.postMessage(m, transfer);
 
 let ip: MessagePort | undefined;
 let send: ((packet: Uint8Array) => void) | undefined;
 let lease: Lease | null = null;
+/** This adapter is the guest's default way out (docs/plans/network-adapters.md §4): otherwise its lease carries only the network's routes. */
+let primary = true;
+const offered = () => routedLease(lease, primary, TAILCAT_ROUTES);
 let client: TsClient | undefined;
 let serving: string | undefined;
 let exit = true;
@@ -28,12 +31,16 @@ function attach(port: MessagePort) {
     const packets = packetsOf(ev.data);
     if (packets) client?.guest(...packets);
   };
-  port.postMessage({ type: 'lease', lease });
+  port.postMessage({ type: 'lease', lease: offered() });
 }
 
 self.onmessage = async (e: MessageEvent<ToTailcat>) => {
   const m = e.data;
   if (m.type === 'attach') return attach(m.ip);
+  if (m.type === 'primary') {
+    primary = m.primary;
+    return ip?.postMessage({ type: 'lease', lease: offered() });
+  }
   if (m.type === 'detach') {
     lease = null;
     ip?.postMessage({ type: 'lease', lease: null });
@@ -70,7 +77,7 @@ self.onmessage = async (e: MessageEvent<ToTailcat>) => {
         }
         if (ev.type === 'lease') {
           lease = ev.lease;
-          ip?.postMessage({ type: 'lease', lease });
+          ip?.postMessage({ type: 'lease', lease: offered() });
           post({ type: 'netmap', netmap: netmapOf(lease, serving, exit) });
           return;
         }

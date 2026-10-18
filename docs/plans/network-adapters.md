@@ -1,4 +1,4 @@
-# Several network adapters, and connections kept by the browser (2026-10-18; L0 and L1 done)
+# Several network adapters, and connections kept by the browser (2026-10-18; L0, L1 and L2 done)
 
 A machine today has one network card or none (`network: boolean` in its shape, web/app/shape.ts), and the page has one
 connection: one set of settings per browser (`webpc.settings` `net`, web/app/network.ts), one kept Tailscale node per
@@ -199,7 +199,8 @@ One slice, one commit, a short report each. `scripts/ci.sh` runs at each loop, `
   connection until L3):** the shape (old hashes unchanged; planted: a MAC left out of the hash), slots, a port per
   adapter, and the gateway's addresses per adapter. Test: Debian with three adapters on the echo backend, each
   pinging through its own gateway.
-- **L2, routes:** the primary, the routes-only leases and the takeover. Tests:
+- **L2, routes (done but the headscale test, which needs L3's page; the takeover's time is the dev VM's to measure:
+  the cloud's first run took 37 s for IPv4 with a two-minute lease, IPv6 at once):** the primary, the routes-only leases and the takeover. Tests:
   - two echo backends where only one reaches "the internet": the guest's default route goes through it;
   - the primary dropped: the default route moves, and the time that takes is measured;
   - with headscale: a tailnet without an exit node next to tailcat through a server, where the guest reaches the
