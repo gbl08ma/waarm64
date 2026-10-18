@@ -1,0 +1,78 @@
+summaries (MiB; cold / freeable / freeable with the cold-target rule, as % of live):
+tick  t=0s live 0.0 mods 1  5s 0%/0%/0%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+iallu t=8s live 2.7 mods 113  5s 83%/5%/5%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+iallu t=8s live 0.5 mods 27  5s 0%/0%/0%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+iallu t=8s live 2.4 mods 40  5s 0%/0%/0%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+iallu t=8s live 0.1 mods 1  5s 0%/0%/0%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+iallu t=8s live 0.1 mods 1  5s 0%/0%/0%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+iallu t=8s live 0.1 mods 2  5s 0%/0%/0%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+iallu t=8s live 0.1 mods 7  5s 0%/0%/0%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=18s live 38.7 mods 620  5s 79%/1%/1%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=28s live 60.9 mods 992  5s 92%/1%/1%  15s 50%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=38s live 68.4 mods 1248  5s 92%/1%/1%  15s 82%/1%/1%  30s 1%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=49s live 75.0 mods 1396  5s 98%/3%/3%  15s 84%/1%/1%  30s 56%/1%/1%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=59s live 77.1 mods 1443  5s 99%/4%/4%  15s 95%/3%/3%  30s 79%/1%/1%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=70s live 83.8 mods 1686  5s 100%/9%/9%  15s 91%/3%/4%  30s 82%/3%/3%  60s 12%/0%/0%  120s 0%/0%/0%
+tick  t=80s live 86.0 mods 1768  5s 98%/7%/9%  15s 97%/6%/9%  30s 87%/3%/3%  60s 50%/0%/0%  120s 0%/0%/0%
+tick  t=90s live 112.9 mods 2524  5s 90%/4%/8%  15s 75%/3%/7%  30s 71%/3%/5%  60s 54%/1%/1%  120s 0%/0%/0%
+tick  t=100s live 126.8 mods 3025  5s 95%/4%/7%  15s 80%/4%/7%  30s 66%/3%/6%  60s 54%/2%/2%  120s 0%/0%/0%
+tick  t=110s live 141.6 mods 3692  5s 94%/5%/8%  15s 85%/3%/7%  30s 61%/2%/6%  60s 53%/2%/2%  120s 0%/0%/0%
+tick  t=120s live 150.8 mods 4098  5s 97%/5%/8%  15s 88%/4%/7%  30s 75%/3%/6%  60s 53%/2%/4%  120s 0%/0%/0%
+flush t=126s live 160.0 mods 4400  5s 95%/5%/8%  15s 89%/4%/8%  30s 75%/3%/6%  60s 52%/2%/5%  120s 0%/0%/0%
+tick  t=136s live 64.8 mods 1031  5s 60%/0%/0%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=146s live 87.3 mods 1658  5s 93%/2%/2%  15s 45%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=156s live 101.8 mods 2197  5s 95%/2%/2%  15s 80%/1%/2%  30s 1%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=166s live 108.7 mods 2425  5s 98%/3%/4%  15s 90%/2%/2%  30s 63%/1%/1%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=176s live 109.8 mods 2472  5s 100%/6%/6%  15s 98%/3%/4%  30s 80%/2%/2%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=186s live 117.8 mods 3046  5s 95%/3%/6%  15s 93%/3%/6%  30s 87%/2%/3%  60s 8%/0%/0%  120s 0%/0%/0%
+tick  t=196s live 126.2 mods 3523  5s 98%/6%/8%  15s 88%/3%/6%  30s 86%/3%/5%  60s 54%/1%/1%  120s 0%/0%/0%
+tick  t=206s live 132.6 mods 3905  5s 98%/6%/9%  15s 93%/5%/8%  30s 83%/2%/5%  60s 67%/1%/2%  120s 0%/0%/0%
+tick  t=217s live 140.6 mods 4172  5s 98%/6%/10%  15s 93%/5%/9%  30s 84%/4%/7%  60s 73%/1%/3%  120s 0%/0%/0%
+tick  t=227s live 143.3 mods 4235  5s 100%/6%/10%  15s 96%/6%/9%  30s 88%/4%/8%  60s 76%/2%/5%  120s 0%/0%/0%
+tick  t=237s live 143.8 mods 4255  5s 100%/6%/10%  15s 99%/6%/10%  30s 93%/5%/9%  60s 76%/2%/5%  120s 0%/0%/0%
+tick  t=247s live 148.8 mods 4462  5s 98%/5%/10%  15s 96%/5%/10%  30s 95%/5%/9%  60s 80%/3%/7%  120s 12%/0%/0%
+tick  t=257s live 156.5 mods 4712  5s 98%/5%/10%  15s 93%/4%/9%  30s 92%/4%/9%  60s 81%/3%/7%  120s 45%/0%/1%
+flush t=264s live 160.1 mods 4826  5s 98%/5%/10%  15s 94%/5%/10%  30s 90%/4%/9%  60s 82%/3%/8%  120s 54%/1%/1%
+tick  t=274s live 45.5 mods 544  5s 62%/0%/0%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=284s live 71.2 mods 1172  5s 86%/1%/1%  15s 39%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=294s live 84.4 mods 1663  5s 95%/2%/2%  15s 73%/1%/1%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=304s live 90.0 mods 1942  5s 99%/4%/5%  15s 89%/2%/2%  30s 51%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=314s live 98.9 mods 2478  5s 95%/5%/5%  15s 90%/3%/4%  30s 72%/1%/2%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=324s live 108.5 mods 2975  5s 95%/6%/7%  15s 87%/4%/5%  30s 78%/2%/3%  60s 1%/0%/0%  120s 0%/0%/0%
+tick  t=334s live 116.2 mods 3288  5s 98%/6%/8%  15s 89%/5%/6%  30s 77%/2%/4%  60s 39%/0%/0%  120s 0%/0%/0%
+tick  t=345s live 127.0 mods 3651  5s 96%/6%/7%  15s 89%/5%/7%  30s 78%/3%/5%  60s 56%/1%/1%  120s 0%/0%/0%
+tick  t=355s live 135.0 mods 3879  5s 97%/5%/7%  15s 90%/5%/7%  30s 81%/4%/6%  60s 63%/1%/2%  120s 0%/0%/0%
+tick  t=365s live 140.9 mods 4061  5s 99%/5%/8%  15s 93%/4%/7%  30s 83%/4%/6%  60s 64%/1%/3%  120s 0%/0%/0%
+tick  t=375s live 145.6 mods 4168  5s 99%/5%/7%  15s 96%/5%/7%  30s 87%/4%/7%  60s 68%/2%/4%  120s 0%/0%/0%
+tick  t=387s live 146.4 mods 4182  5s 100%/5%/7%  15s 99%/5%/7%  30s 94%/4%/7%  60s 76%/3%/6%  120s 10%/0%/0%
+tick  t=397s live 151.0 mods 4387  5s 97%/4%/7%  15s 97%/4%/7%  30s 95%/4%/7%  60s 79%/3%/6%  120s 38%/0%/0%
+tick  t=407s live 159.3 mods 4667  5s 98%/5%/8%  15s 92%/4%/7%  30s 92%/3%/7%  60s 80%/3%/6%  120s 48%/0%/1%
+flush t=409s live 160.0 mods 4686  5s 98%/5%/8%  15s 92%/4%/7%  30s 91%/3%/7%  60s 81%/3%/6%  120s 50%/0%/1%
+tick  t=419s live 36.0 mods 778  5s 55%/0%/0%  15s 0%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=429s live 60.4 mods 1293  5s 80%/1%/1%  15s 33%/0%/0%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=439s live 63.4 mods 1504  5s 99%/5%/5%  15s 76%/1%/1%  30s 0%/0%/0%  60s 0%/0%/0%  120s 0%/0%/0%
+tick  t=449s live 64.7 mods 1553  5s 99%/6%/6%  15s 97%/5%/5%  30s 59%/1%/1%  60s 0%/0%/0%  120s 0%/0%/0%
+
+flush 1 at 126 s: 4400 modules, 160.0 MiB, 33405 imports (4761 of targets cold at compile time)
+  imports across generations: 41% of them with eighths, 21% with quarters
+  cold   5 s:  151.7 MiB (95%), freeable    8.0 (5%), with the rule   12.8 (8%), imports within eighths 88%, quarters 77%
+  cold  15 s:  142.1 MiB (89%), freeable    7.1 (4%), with the rule   12.0 (8%), imports within eighths 88%, quarters 76%
+  cold  30 s:  120.3 MiB (75%), freeable    4.7 (3%), with the rule    9.4 (6%), imports within eighths 75%, quarters 75%
+  cold  60 s:   83.4 MiB (52%), freeable    3.2 (2%), with the rule    7.5 (5%), imports within eighths 50%, quarters 50%
+  cold 120 s:    0.0 MiB (0%), freeable    0.0 (0%), with the rule    0.0 (0%), imports within eighths 0%, quarters 0%
+
+flush 2 at 264 s: 4826 modules, 160.1 MiB, 35830 imports (10128 of targets cold at compile time)
+  imports across generations: 50% of them with eighths, 38% with quarters
+  cold   5 s:  157.3 MiB (98%), freeable    8.4 (5%), with the rule   16.3 (10%), imports within eighths 89%, quarters 78%
+  cold  15 s:  150.6 MiB (94%), freeable    7.4 (5%), with the rule   15.6 (10%), imports within eighths 89%, quarters 77%
+  cold  30 s:  143.8 MiB (90%), freeable    5.8 (4%), with the rule   14.3 (9%), imports within eighths 88%, quarters 76%
+  cold  60 s:  132.1 MiB (82%), freeable    4.8 (3%), with the rule   12.6 (8%), imports within eighths 77%, quarters 76%
+  cold 120 s:   86.1 MiB (54%), freeable    1.0 (1%), with the rule    2.0 (1%), imports within eighths 50%, quarters 50%
+
+flush 3 at 409 s: 4686 modules, 160.0 MiB, 33736 imports (12425 of targets cold at compile time)
+  imports across generations: 56% of them with eighths, 44% with quarters
+  cold   5 s:  157.4 MiB (98%), freeable    7.7 (5%), with the rule   12.9 (8%), imports within eighths 89%, quarters 77%
+  cold  15 s:  147.9 MiB (92%), freeable    5.8 (4%), with the rule   11.3 (7%), imports within eighths 88%, quarters 76%
+  cold  30 s:  145.9 MiB (91%), freeable    5.4 (3%), with the rule   10.9 (7%), imports within eighths 88%, quarters 76%
+  cold  60 s:  129.2 MiB (81%), freeable    4.3 (3%), with the rule    9.6 (6%), imports within eighths 76%, quarters 75%
+  cold 120 s:   79.5 MiB (50%), freeable    0.8 (0%), with the rule    1.7 (1%), imports within eighths 39%, quarters 26%

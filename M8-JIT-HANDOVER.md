@@ -25,10 +25,18 @@ the problem: ~78% of the cache cold for 15 s at its flushes, 3% freeable with ev
 modules pin nearly everything, transitively. Two ways out to measure: the cold-target rule (it freed nearly all of the
 idle machine's cold code, nothing of the boot's) and imports only within a generation (76-78% freeable, but half the
 imports become jump-cache tails).
-**Step 1, on the dev VM** (`bench/boot/results/m8-evict/` README): `measure.patch` and `evict.ts` on the Firefox
-pages session (two sessions) and the `go build` loop: how much is freeable at the flushes under each rule; and
-`cost.patch`'s A/B (imports only within an eighth of the budget, no eviction) for what generations cost in busy MIPS.
-Then report to the user and build what that picks, behind a `Config` switch.
+**Step 1, measured on the dev VM (2026-10-18; `bench/boot/results/m8-evict/` README "On the dev VM", data in
+`devvm/`):** at Firefox's flushes (two sessions, three each) ~90% of the cache is cold for 30 s; freeable with every
+import pinning 3-4%, with the cold-target rule 6-9% (the `go build` loop: 7% and 17%, one flush, at its boot); with
+imports only within an eighth of the budget 88-90%, a quarter 75-78%. Only generations pass the gate. Their cost
+(`cost.patch`, no eviction): Firefox's busy MIPS 139 · 136 → 137 · 135 (noise), the gates within 0.1% (boot) and −0.9%
+(userspace). **Step 2, next: build it behind a `Config` switch** (off = today's flush): modules import only blocks of
+their own generation (`cost.patch`'s rule, an eighth of `max_bytes` by install order), the use signal and soft faults
+from the proposal, coldest-first eviction of sets closed under same-generation importers down to 6/8 of the budget,
+a flush when not enough is cold; slots reused from a free list, `env.jit_release(slot, n)` to the host (backlog: what
+the `fifo-evict-attempt` branch had worth keeping). Then A/B against the flush on the Firefox session (stalls at the
+flushes, busy MIPS) and the `go build` loop, and the gates. A responsiveness measure at the flushes (the user hears and
+sees them) would make the case better than busy MIPS.
 
 **Before that (2026-10-18, a cloud session): the integer NEON, structures and CRC32 compiled** (docs/jit.md "NEON →
 SIMD128", "NEON lane by lane", "Structures"; branch `claude/project-thread-fcaq73`). A profile of image decoding in

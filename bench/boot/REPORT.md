@@ -1957,3 +1957,15 @@ and were dropped):
 The boot is within 0.7% (noise; its CRC32C helper calls, 49,008 a boot, are gone). The userspace benchmark is 2.0%
 faster on the median of rounds, every phase −1.0 to −2.3% (compress −1.9%, Lua −1.0%, churn −2.3%, SQLite −1.0%):
 under the noise threshold, and the same direction in each.
+
+## M8: what per-module eviction could free (2026-10-18)
+
+Before building eviction (docs/backlog.md "Per-module eviction, coldest first"): how much of a full cache is cold and
+imported by nothing warm, since a module's memory goes only with all its importers. The dev VM, Chromium
+153.0.8010.52, the core at `0778386`; the method, the tables and the data in `results/m8-evict/` (README "On the dev
+VM"). At Firefox's flushes (the pages session, two sessions, three flushes each, 160 MiB) ~90% of the cache hadn't
+been entered for 30 s, but only 3-4% was freeable with every import pinning and 6-9% if imports of targets cold at
+compile time didn't pin; with imports only within an eighth of the budget by install order, 88-90% (the 4-vCPU
+`go build` loop: 7%, 17%, 90%). That restriction alone (`cost.patch`, no eviction), A/B alternating: Firefox's busy
+MIPS 139 · 136 → 137 · 135, `smp_alpine_jit` +0.1%, `smp_user_jit_4` −0.9%: noise. Eviction is built on generations
+next.

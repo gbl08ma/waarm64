@@ -73,3 +73,51 @@ has to carry it, or the two-epoch design.
 Not measured here, on purpose: which modules a real use signal would see as cold (the design's signal is coarser than
 these exact entry times, and errs toward "used"); tier-up redirects (a head's hot word naming its region) aren't
 pins, since eviction would reset the word.
+
+## On the dev VM (2026-10-18): only generations free enough, and they cost nothing measurable
+
+`devvm/`: the raw lines gzipped (`gunzip -c devvm/firefox-s1.evict.txt.gz > /tmp/e.txt` before `evict.ts`) and
+`evict.ts`'s output for each run. Chromium 153.0.8010.52, the core at `0778386` with `measure.patch`.
+
+**Firefox's pages session** (Arch Linux ARM's disk, `WEBPC_GUEST_USER=alarm`; two sessions, 3 flushes each in ~460 s,
+every one at the full 160 MiB, ~4,400-4,900 modules, ~34,000 imports). Shares of the cache at each flush, threshold
+30 s (sessions 1 · 2):
+
+| | flush 1 | flush 2 | flush 3 |
+|---|---|---|---|
+| cold | 75 · 75% | 91 · 90% | 91 · 91% |
+| freeable, every import pinning | 3 · 3% | 4 · 4% | 3 · 3% |
+| freeable, the cold-target rule | 6 · 6% | 7 · 9% | 8 · 7% |
+| freeable, imports only within eighths | 68 · 75% | 88 · 88% | 88 · 88% |
+| freeable, imports only within quarters | 75 · 75% | 76 · 76% | 76 · 76% |
+
+At 5 or 15 s the same within a few points (cold 88-99%, freeable 3-5%, the rule 7-10%, eighths 88-89%). 41-56% of
+the imports cross an eighth, 21-45% a quarter; 14-37% of the imports were of targets cold at compile time.
+
+**The 4-vCPU `go build` loop** (`bench/stress` on Debian, 600 s, `gobuild.log`): one flush, during its boot
+(t = 142 s), none in the build loop at 160 MiB. There at 30 s: cold 95%, freeable 7%, the rule 17%, eighths 90%,
+quarters 78%.
+
+**The gate** (a third of the budget freeable at 30 s): every import pinning fails everywhere (3-7%), the cold-target
+rule too (6-17%); only generations pass (eighths 68-90%, quarters 75-78%).
+
+**What generations cost** (`cost.patch`, `GEN_EIGHTHS = 1`, no eviction; `devvm/cost/`; `tests/jit.test.ts`, the
+differential test and lockstep passed with it, 104/104). Firefox's pages session, alternating ABAB:
+
+| | busy MIPS | flushes | modules | stalls ≥ 20 ms |
+|---|---|---|---|---|
+| A (baseline) | 139 · 136 | 3 · 3 | 15,239 · 14,979 | 1 · 9 |
+| B (imports within eighths) | 137 · 135 | 2 · 3 | 14,532 · 15,119 | 4 · 1 |
+
+−1.1%, within the sessions' noise. The gates, three rounds alternating (median ms per round):
+
+| | A | B | B/A |
+|---|---|---|---|
+| `smp_alpine_jit_n4_total` | 9,324 · 9,370 · 9,330 | 9,336 · 9,326 · 9,352 | +0.1% |
+| `smp_alpine_jit_n1_total` | 9,490 · 9,502 · 9,483 | 9,492 · 9,504 · 9,513 | +0.1% |
+| `smp_user_jit_n4_total` | 19,022 · 18,574 · 18,854 | 18,690 · 18,619 · 18,945 | −0.9% |
+
+Userspace phases ±2% in both directions (compress −1.8%, Lua +1.9%, churn −1.9%, SQLite −1.7%): noise. Neither gate
+flushes; the Alpine userspace run compiles ~38 MiB, nearly two 20 MiB eighths, so links do cross generations
+there (how many wasn't counted). **The jump-cache tails that generations add cost nothing this workload or the gates can see**: build
+coldest-first eviction with modules importing only within their generation.
