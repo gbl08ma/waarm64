@@ -898,3 +898,10 @@ the NaN-only tests' FZ path likewise. `gl_llvmpipe_jit` 299.3, 300.4, 301.6 → 
 283.3** ms a frame (−6%; 4% under the build before any of this), the FP guest 1100.9, 1100.0,
 1080.4 → 1120.0, 1110.5, 1110.5 MIPS (noise: it runs without FZ). A planted "no denormals" in both
 tests failed 89 forms of the FP suite, all under FZ.
+
+**Then the zero tests** (`*zeros-*`): a zero lane is a float compare with zero (one op, where the
+integer mask and compare took two), and vector single FMLA's exact-zero clause (a zero result from a
+zero product and addend: four zero tests) became "the double sum is zero" (the product is exact in a
+double, and a nonzero exact sum can't round to zero there: two ops a half and a shuffle). The FP guest
+1107.4, 1110.8, 1111.1 → **1242.6, 1234.8, 1237.4** MIPS (+12%), `gl_llvmpipe_jit` 281.6, 290.0,
+284.4 → **275.5, 275.3, 276.0** ms a frame (−3%).

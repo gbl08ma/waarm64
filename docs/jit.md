@@ -549,8 +549,9 @@ interpreter's; the helper runs the instruction otherwise.
   they're exact. A zero sum or difference is always exact (a nonzero exact sum rounds to a nonzero
   result); a zero product or quotient only with a zero operand (the dividend), and only when the
   result is zero (0 × ∞ and 0 / 0 are NaNs). x / 0 is infinite. Vector single FMLA's zero result
-  only with a zero product and a zero addend (a tiny sum demotes to a zero with Underflow); the
-  other FMA forms take no zero result. llvmpipe's shaders multiply and add zero lanes all the time; with
+  only when its double sum is zero (the product is exact in a double, and a nonzero exact sum can't
+  round to zero there; a tiny one demotes to a zero with Underflow); the other FMA forms take no
+  zero result. A zero lane is a float compare with zero (a NaN isn't one). llvmpipe's shaders multiply and add zero lanes all the time; with
   the normal-only rule its FMLAs and FADDs were helper calls, as the FP guest's sums started at 0
   were.
 - **Compares** (FCMEQ/FCMGE/FCMGT, FACGE/FACGT, the compares against zero) and **FRINTN/M/P/Z**:

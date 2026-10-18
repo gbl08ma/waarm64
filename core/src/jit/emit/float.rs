@@ -1431,11 +1431,10 @@ fn vput(c: &mut Func, rd: u32, q: bool, l: u32) {
     c.vset(rd);
 }
 
-/// Replaces the v128 on the stack with a lane mask: all ones where the lane is ±0.
+/// Replaces the v128 on the stack with a lane mask: all ones where the lane is
+/// ±0 (a float compare with zero: a NaN isn't).
 fn zero_lanes(c: &mut Func, d: bool) {
-    let sign = if d { 1u64 << 63 } else { 1 << 31 };
-    c.v128_const(splat(d, !sign)).simd(op::AND).v128_const(0);
-    c.simd(if d { op::I64X2_EQ } else { op::I32X4_EQ });
+    c.v128_const(0).simd(op::CMP[d as usize][0]);
 }
 
 /// Replaces the v128 on the stack with a lane mask: all ones where the lane
@@ -2056,21 +2055,18 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 if b < 8 { b as u8 } else { 8 + b as u8 }
             }));
             c.local_set(tr);
-            // A fast result, or an exact zero: a zero one from a zero product
-            // and addend (a tiny sum demotes to a zero too, with Underflow; and
-            // 0 × ∞ is a NaN).
+            // A fast result, or an exact zero: a double sum that's zero (the
+            // product is exact in a double, and a nonzero exact sum can't round
+            // to zero there; a tiny one demotes to a zero with Underflow, and
+            // 0 × ∞ is a NaN). The sums' lanes, as singles: their low words.
             c.local_get(tr);
             lanes_in(c, false, 2);
-            c.local_get(tr);
-            zero_lanes(c, false);
-            vreg(c, rn);
-            zero_lanes(c, false);
-            factor(c);
-            zero_lanes(c, false);
+            for t in [ta, if q { tb } else { ta }] {
+                c.local_get(t);
+                zero_lanes(c, true);
+            }
+            c.shuffle(core::array::from_fn(|b| (b as u8 / 4) * 8 + b as u8 % 4));
             c.simd(op::OR);
-            acc(c);
-            zero_lanes(c, false);
-            c.simd(op::AND).simd(op::AND).simd(op::OR);
             under_fz_bad(c, |c| {
                 vreg(c, rn);
                 denormal_lanes(c, false);
