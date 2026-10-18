@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the guest images in rootless Podman, never on the host (docs/images.md).
-#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, debian, ltp, litmus, fptest, edk2, alpine-uefi (default: all)
+#   images/build.sh [name...]      names: buildroot, linux, kvm-unit-tests, alpine, alpine-user, alpine-gl, alpine-virgl, linux-crypto, linux-gpu, linux-snd, linux-usb, linux-usbhost, debian, ltp, litmus, fptest, edk2, alpine-uefi (default: all)
 #   images/build.sh --check name   exit 0 if target/images/<name> is current, else say how to rebuild
 #   images/build.sh --inputs name  print the key of name's inputs (what --check compares with <name>/.inputs)
 # buildroot: Buildroot's BusyBox root filesystem (rootfs.ext4), with Bootlin's
@@ -36,6 +36,9 @@
 #   initramfs with their static init.
 # linux-usb: the USB test kernel (images/usb/): the same, with the kernel's testusb
 #   (tools/usb/testusb.c) beside the init, for the xHCI and Gadget Zero (docs/usb.md).
+# linux-usbhost: linux-usb's kernel with cdc_acm, usbhid and hidraw (images/usbhost/), and an init
+#   whose usb_mode= runs testusb, an ACM echo or the hidraw checks: the guest-level tests through
+#   WebUSB and WebHID (scripts/ci-usb.sh).
 # litmus: herdtools7's litmus7 tests for the memory model (M7, images/litmus/):
 #   diyone7 makes each test in images/litmus/tests.txt, herd7's aarch64.cat
 #   lists its allowed final states (allowed.txt), litmus7 turns it into a
@@ -113,7 +116,7 @@ export SOURCE_DATE_EPOCH=1788220800 # 2026-09-01T00:00:00Z
 cd "$(dirname "$0")/.."
 root=$PWD
 out=target/images
-NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb debian ltp litmus fptest edk2 alpine-uefi)
+NAMES=(buildroot linux kvm-unit-tests alpine alpine-user alpine-gl alpine-virgl linux-crypto linux-gpu linux-snd linux-usb linux-usbhost debian ltp litmus fptest edk2 alpine-uefi)
 
 # Buildroot (pinned by tag and checked against the commit) into $1 with the defconfig $2.
 buildroot() {
@@ -437,6 +440,31 @@ build_linux-usb() {
   ' - "$KERNEL_TOOLS" "$out" "$LINUX" "$dst"
 }
 
+build_linux-usbhost() {
+  local dst=$out/linux-usbhost
+  rm -rf "$dst" # the kernel tree in build/linux-usbhost stays: make rebuilds what the config changed
+  mkdir -p "$dst"
+  linux_src
+  podman run --rm -v "$root:$root:z" -w "$root" -e SOURCE_DATE_EPOCH -e root="$root" "$USERLAND_CONTAINER" sh -euc '
+    apk add -q --no-cache $1
+    src=$root/$2/build/linux-$3 obj=$root/$2/build/linux-usbhost dst=$root/$4
+    mkdir -p "$obj"
+    cat images/linux.fragment images/usb/linux.fragment images/usbhost/linux.fragment > "$obj/allconfig"
+    k="make -s -C $src O=$obj ARCH=arm64 KBUILD_BUILD_TIMESTAMP=@$SOURCE_DATE_EPOCH KBUILD_BUILD_USER=webpc KBUILD_BUILD_HOST=webpc KBUILD_BUILD_VERSION=1"
+    $k KCONFIG_ALLCONFIG="$obj/allconfig" allnoconfig
+    missing=$(grep "^CONFIG_" "$obj/allconfig" | grep -vxFf "$obj/.config" || true)
+    [ -z "$missing" ] || { echo "linux-usbhost: not applied:" >&2; echo "$missing" >&2; exit 1; }
+    $k -j"$(nproc)" Image
+    gcc -static -Os -o "$obj/webpc-init" images/usbhost/init.c
+    gcc -static -Os -o "$obj/testusb" "$src/tools/usb/testusb.c" -lpthread # the kernel'"'"'s own (GPL): built and run, not copied
+    gcc -O2 -o "$obj/gen_init_cpio" "$src/usr/gen_init_cpio.c"
+    printf "dir /dev 0755 0 0\nnod /dev/console 0600 0 0 c 5 1\ndir /proc 0755 0 0\ndir /sys 0755 0 0\nfile /init %s 0755 0 0\nfile /testusb %s 0755 0 0\n" "$obj/webpc-init" "$obj/testusb" > "$obj/cpio.list"
+    "$obj/gen_init_cpio" -t "$SOURCE_DATE_EPOCH" "$obj/cpio.list" > "$dst/initramfs.cpio"
+    cp "$obj/arch/arm64/boot/Image" "$dst/Image"
+    cp "$obj/.config" "$dst/config"
+  ' - "$KERNEL_TOOLS" "$out" "$LINUX" "$dst"
+}
+
 build_litmus() {
   local dst=$out/litmus ht=$out/dl/herdtools7-$HERDTOOLS_TAG
   rm -rf "$dst" "$out/build/litmus"
@@ -627,12 +655,13 @@ inputs() {
   [ "$1" = linux-gpu ] && files+=(images/linux.fragment $(find images/gpu -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = linux-snd ] && files+=(images/linux.fragment $(find images/snd -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = linux-usb ] && files+=(images/linux.fragment $(find images/usb -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
+  [ "$1" = linux-usbhost ] && files+=(images/linux.fragment $(find images/usb images/usbhost -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
   [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
   [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
-  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; } |
+  { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; } |
     sha256sum | cut -c1-16
 }
 
@@ -648,6 +677,7 @@ outputs() {
     linux-gpu) echo linux-gpu/Image linux-gpu/initramfs.cpio ;;
     linux-snd) echo linux-snd/Image linux-snd/initramfs.cpio linux-snd/snd-play linux-snd/snd-rec ;;
     linux-usb) echo linux-usb/Image linux-usb/initramfs.cpio ;;
+    linux-usbhost) echo linux-usbhost/Image linux-usbhost/initramfs.cpio ;;
     debian) echo debian/disk.qcow2 ;;
     kvm-unit-tests) echo kvm-unit-tests/*.flat ;; # run from $out
     ltp) echo ltp/rootfs.ext4 ;;
@@ -706,10 +736,10 @@ build() {
 }
 
 if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
-  rest=() alpine= user= gl= virgl= crypto= gpu= snd= usb= litmus= fptest= kernel= debian= edk2= alpine_uefi=
+  rest=() alpine= user= gl= virgl= crypto= gpu= snd= usb= usbhost= litmus= fptest= kernel= debian= edk2= alpine_uefi=
   for name in "${@:-${NAMES[@]}}"; do
     [[ " ${NAMES[*]} " == *" $name "* ]] || { echo "unknown image $name" >&2; exit 1; }
-    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
+    if [ "$name" = alpine ]; then alpine=1; elif [ "$name" = alpine-user ]; then user=1; elif [ "$name" = alpine-gl ]; then gl=1; elif [ "$name" = alpine-virgl ]; then virgl=1; elif [ "$name" = linux-crypto ]; then crypto=1; elif [ "$name" = linux-gpu ]; then gpu=1; elif [ "$name" = linux-snd ]; then snd=1; elif [ "$name" = linux-usb ]; then usb=1; elif [ "$name" = linux-usbhost ]; then usbhost=1; elif [ "$name" = litmus ]; then litmus=1; elif [ "$name" = fptest ]; then fptest=1; elif [ "$name" = linux ]; then kernel=1; elif [ "$name" = debian ]; then debian=1; elif [ "$name" = edk2 ]; then edk2=1; elif [ "$name" = alpine-uefi ]; then alpine_uefi=1; else rest+=("$name"); fi
   done
   if [ ${#rest[@]} -gt 0 ]; then
     tag=webpc-images:$(sha256sum images/Containerfile | cut -c1-12)
@@ -731,6 +761,7 @@ if [ -z "${WEBPC_IN_CONTAINER:-}" ]; then
   if [ -n "$gpu" ]; then build linux-gpu; fi
   if [ -n "$snd" ]; then build linux-snd; fi
   if [ -n "$usb" ]; then build linux-usb; fi
+  if [ -n "$usbhost" ]; then build linux-usbhost; fi
   if [ -n "$litmus" ]; then build litmus; fi
   if [ -n "$fptest" ]; then build fptest; fi
   if [ -n "$edk2" ]; then build edk2; fi

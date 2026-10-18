@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import {
-  encodeReportDescriptor, hidItem, normalizeCollections, parseReportDescriptor, reportSizes, usesReportIds,
+  encodeReportDescriptor, hidItem, normalizeCollections, parseReportDescriptor, reportSizes, usesReportIds, visibleCollections,
   type HidCollectionInfo, type HidCollectionLike, type HidReportInfo,
 } from '../web/hid-descriptor.ts';
 
@@ -15,15 +15,19 @@ const col = (usagePage: number, usage: number, type: number, o: Partial<HidColle
 const rep = (reportId: number, ...items: Partial<Parameters<typeof hidItem>[0]>[]): HidReportInfo => ({ reportId, items: items.map(hidItem) });
 const u = (page: number, id: number) => ((page << 16) | id) >>> 0;
 
-/** A game pad with report IDs: sticks in a physical child, buttons by range, padding, a hat with a null state and units, rumble out, a vendor feature. */
+/**
+ * A game pad with report IDs, in Chromium's shape (a collection lists its children's items too): buttons by
+ * range and padding, then the sticks in a physical child, then a hat with a null state and units after the
+ * child; rumble out, vendor features.
+ */
+const sticks = { usages: [u(1, 0x30), u(1, 0x31), u(1, 0x32), u(1, 0x35)], logicalMaximum: 255, reportSize: 8, reportCount: 4 };
 const gamepad: HidCollectionInfo[] = [
   col(0x01, 0x05, 0x01, {
-    children: [col(0x01, 0x01, 0x00, {
-      inputReports: [rep(1, { usages: [u(1, 0x30), u(1, 0x31), u(1, 0x32), u(1, 0x35)], logicalMaximum: 255, reportSize: 8, reportCount: 4 })],
-    })],
+    children: [col(0x01, 0x01, 0x00, { inputReports: [rep(1, sticks)] })],
     inputReports: [rep(1,
       { isRange: true, usageMinimum: u(9, 1), usageMaximum: u(9, 14), logicalMaximum: 1, reportSize: 1, reportCount: 14 },
       { isConstant: true, isArray: true, reportSize: 2, reportCount: 1, logicalMaximum: 1 },
+      sticks,
       { usages: [u(1, 0x39)], logicalMaximum: 7, physicalMaximum: 315, unitSystem: 'english-rotation', unitFactorLengthExponent: 1,
         hasNull: true, reportSize: 4, reportCount: 1 },
       { isConstant: true, isArray: true, reportSize: 4, reportCount: 1, logicalMaximum: 1 },
@@ -42,6 +46,8 @@ const via: HidCollectionInfo[] = [
   }),
 ];
 
+const deep = { usages: [u(0xff00, 4)], logicalMaximum: 255, reportSize: 8, reportCount: 7 };
+const mid = { usages: [u(0xff00, 6)], logicalMaximum: 255, reportSize: 8, reportCount: 2 };
 /** The odd corners: signed and wide values, unit exponents, flags, mixed-page usages, two top-level collections. */
 const corners: HidCollectionInfo[] = [
   col(0x0c, 0x01, 0x01, {
@@ -55,8 +61,11 @@ const corners: HidCollectionInfo[] = [
     featureReports: [rep(4, { usages: [u(0xffa0, 7)], logicalMaximum: 255, reportSize: 8, reportCount: 3, isBufferedBytes: true })],
   }),
   col(0xff00, 0x01, 0x01, {
-    children: [col(0xff00, 0x02, 0x02, { children: [col(0xff00, 0x03, 0x02, { inputReports: [rep(6, { usages: [u(0xff00, 4)], logicalMaximum: 255, reportSize: 8, reportCount: 7 })] })] })],
-    inputReports: [rep(6, { usages: [u(0xff00, 5)], logicalMaximum: 255, reportSize: 8, reportCount: 1 })],
+    children: [col(0xff00, 0x02, 0x02, {
+      children: [col(0xff00, 0x03, 0x02, { inputReports: [rep(6, deep)] })],
+      inputReports: [rep(6, mid, deep)],
+    })],
+    inputReports: [rep(6, mid, deep, { usages: [u(0xff00, 5)], logicalMaximum: 255, reportSize: 8, reportCount: 1 })],
   }),
 ];
 
@@ -64,8 +73,6 @@ for (const [name, cs] of [['game pad', gamepad], ['VIA', via], ['corners', corne
   test(`encode, then parse: the ${name} collections come back as they were`, () => {
     const bytes = encodeReportDescriptor(cs);
     assert.deepEqual(parseReportDescriptor(bytes), cs);
-    // Parent items first gives the same parse (the order between a collection's items and its children's isn't in WebHID's form).
-    assert.deepEqual(parseReportDescriptor(encodeReportDescriptor(cs, { childrenFirst: false })), cs);
   });
 }
 
@@ -92,8 +99,8 @@ test('the HID spec\'s mouse (HID 1.11 Appendix E.10) parses into WebHID\'s shape
   const raw = Buffer.from('05010902a1010901a1000509190129031500250195037501810295017505810105010930093115812' + '57f750895028106c0c0', 'hex');
   const [mouse] = parseReportDescriptor(raw);
   assert.deepEqual([mouse.usagePage, mouse.usage, mouse.type], [1, 2, 1]);
-  assert.equal(mouse.inputReports.length, 0, 'the items are the pointer\'s, its innermost collection');
   const [ptr] = mouse.children;
+  assert.deepEqual(mouse.inputReports, ptr.inputReports, 'the pointer\'s items are the mouse\'s too');
   assert.deepEqual([ptr.usagePage, ptr.usage, ptr.type], [1, 1, 0]);
   const [btn, pad, xy] = ptr.inputReports[0].items;
   assert.deepEqual([btn.isRange, btn.usageMinimum, btn.usageMaximum, btn.reportSize, btn.reportCount, btn.isArray], [true, u(9, 1), u(9, 3), 1, 3, false]);
@@ -139,11 +146,34 @@ const byId = (cs: HidCollectionInfo[]): HidCollectionInfo[] => cs.map((c) => ({
   outputReports: [...c.outputReports].sort((a, b) => a.reportId - b.reportId),
   featureReports: [...c.featureReports].sort((a, b) => a.reportId - b.reportId),
 }));
-test('recorded Chromium parses: ours of the raw descriptor matches, and ours of our encoding of Chromium\'s matches Chromium\'s', { skip: recorded.length === 0 && 'no recorded parses (tests/usb/hid-fixtures/)' }, () => {
+/**
+ * What Chromium 153 hid of the recorded keyboard composite (tests/usb/hid-fixtures/keyboard.json): a protected
+ * top-level collection's input and output reports (keyboard, keypad, mouse, pointer) from the top level only,
+ * the System Control collection whole.
+ */
+function asChromiumShows(cs: HidCollectionInfo[]): HidCollectionInfo[] {
+  return cs.filter((c) => !(c.usagePage === 1 && c.usage === 0x80)).map((c) =>
+    c.usagePage === 1 && [1, 2, 6, 7].includes(c.usage) ? { ...c, inputReports: [], outputReports: [] } : c);
+}
+test('recorded Chromium parses: ours of the raw descriptor matches, and what the guest gets parses back to what the page can use', { skip: recorded.length === 0 && 'no recorded parses (tests/usb/hid-fixtures/)' }, () => {
+  assert.equal(recorded.length, 6);
   for (const f of recorded) {
     const j = JSON.parse(readFileSync(new URL(f, FIXTURES), 'utf8')) as { descriptor: string; collections: HidCollectionLike[] };
     const chromium = byId(normalizeCollections(j.collections));
-    if (j.descriptor) assert.deepEqual(byId(parseReportDescriptor(Buffer.from(j.descriptor, 'hex'))), chromium, `${f}: our parse of the raw descriptor`);
-    assert.deepEqual(byId(parseReportDescriptor(encodeReportDescriptor(chromium))), chromium, `${f}: the round trip`);
+    assert.deepEqual(byId(asChromiumShows(parseReportDescriptor(Buffer.from(j.descriptor, 'hex')))), chromium, `${f}: our parse of the raw descriptor`);
+    const visible = visibleCollections(chromium);
+    assert.deepEqual(byId(parseReportDescriptor(encodeReportDescriptor(visible))), visible, `${f}: the round trip`);
+    if (f !== 'keyboard.json') {
+      assert.deepEqual(visible, chromium, `${f}: everything visible`);
+      // Without protected collections, the guest's descriptor is the original but for its bytes: the same report sizes.
+      assert.deepEqual(reportSizes(parseReportDescriptor(encodeReportDescriptor(visible))), reportSizes(parseReportDescriptor(Buffer.from(j.descriptor, 'hex'))));
+    }
   }
 });
+
+test('the keyboard composite: the keyboard keeps its feature report, the mouse goes, consumer and vendor stay', () => {
+  const j = JSON.parse(readFileSync(new URL('keyboard.json', FIXTURES), 'utf8')) as { collections: HidCollectionLike[] };
+  const visible = visibleCollections(normalizeCollections(j.collections));
+  assert.deepEqual(visible.map((c) => [c.usagePage, c.usage]), [[1, 6], [0x0c, 1], [0xff60, 0x61]]);
+  assert.deepEqual([visible[0].inputReports.length, visible[0].outputReports.length, visible[0].featureReports.length], [0, 0, 1]);
+}, );

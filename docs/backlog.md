@@ -663,16 +663,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## USB ([plans/usb.md](plans/usb.md), [usb.md](usb.md))
 
-- **WebHID: how a report's items interleave between a collection and its children** is not in WebHID's
-  form, so the encoder writes children first (docs/usb.md "The WebHID device"). Report sizes and
-  offset-reading drivers don't care; hid-input's generic mapping of such a device could. Check the
-  choice against the recorded Chromium parses, and against U5's devices. A table of known original
-  descriptors keyed by vendor and product could serve those devices their real bytes (plans/usb.md §8).
-- **WebHID `receiveFeatureReport` framing**: whether Chromium's buffer starts with the report ID differs
-  by host. The device guesses from the length. Check it on the uhid rig (Linux) and on the user's
-  macOS and Windows.
-- **WebUSB SET_FEATURE(ENDPOINT_HALT)** is passed through for usbtest's halt test. Whether Chromium
-  refuses it as a standard OUT request is unchecked: the dummy_hcd `testusb -a` run will tell.
+- **WebHID devices whose drivers patch the original descriptor** by its bytes or size (`report_fixup`) see
+  our encoding instead. A table of known original descriptors keyed by vendor and product could serve
+  them their real bytes when its parse matches WebHID's (plans/usb.md §8). Found per device in U5.
+- **WebUSB's halts are emulated:** SET_FEATURE(ENDPOINT_HALT) never reaches the device (Chromium refuses
+  it), so a device-side function that tests its own halt (rare outside usbtest) sees none. Only the
+  guest's view is a halted endpoint (docs/usb.md "The WebUSB passthrough").
+- **WebHID `receiveFeatureReport`'s framing** (the ID byte first with IDs) was recorded on Linux. Check it
+  on macOS and Windows in U5.
 - **WebUSB reset** re-claims what it can after `device.reset()`. On hosts where the reset re-enumerates,
   WebUSB loses the device and the backend reports it gone. Measure which hosts do that (U3, U5).
 - **The WebUSB fixtures are transcribed** (`tests/usb/webusb-fixtures.ts`). Replace them with real

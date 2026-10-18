@@ -53,11 +53,15 @@
   <ul class="entries">
     {#each views as v (v.entry.id)}
       {@const e = v.entry}
+      {@const c = here && v.state === 'attached' ? ui.usb.connectors[e.connector] : null}
       <li data-usb-entry={e.id} data-state={v.state}>
         <Icon name={e.api === 'hid' ? 'device-gamepad-2' : 'usb'} size={18} />
         <div class="what">
           <strong>{deviceName(e)}</strong>
           <span class="meta">{e.api === 'hid' ? 'HID' : 'USB'} {idsText(e)}{e.serialNumber ? ` · serial ${e.serialNumber}` : e.index ? ` · the ${e.index + 1}${['st', 'nd', 'rd'][e.index] ?? 'th'} of its kind` : ''} · <span data-usb-state>{stateText(v)}</span></span>
+          {#if c?.entry === e.id && c.problems?.length}
+            <ul class="problems" data-usb-problems={e.id}>{#each c.problems as p, i (i)}<li>{p}</li>{/each}</ul>
+          {/if}
         </div>
         <label class="field" title="The root connector it goes on (the guest's port path: its names under /dev/serial/by-path stay the same)">Connector
           <select value={e.connector} disabled={here && v.state === 'attached'} onchange={(ev) => act('Saving', () => page.usbEdit(machine.id, e.id, { connector: Number((ev.currentTarget as HTMLSelectElement).value) }))} data-field="connector">
@@ -95,6 +99,7 @@
   .meta { color: var(--dim); font-size: 12px; }
   li[data-state=attached] [data-usb-state] { color: #8fd18f; }
   li[data-state=held] [data-usb-state], li[data-state=ungranted] [data-usb-state] { color: #ffb36b; }
+  .problems { margin: 4px 0 0; padding-left: 18px; color: #ffb36b; font-size: 12px; }
   .field { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
   .check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; }

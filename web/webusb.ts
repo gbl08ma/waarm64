@@ -69,12 +69,6 @@ export const DT_SSP_ISOC_EP_COMPANION = 0x31;
 /** WebUSB's protected interface classes (docs/plans/usb.md §2). */
 export const PROTECTED_CLASSES: ReadonlySet<number> = new Set([0x01, 0x03, 0x08, 0x09, 0x0b, 0x0e, 0x10, 0xe0]);
 
-const CLASS_NAMES: Record<number, string> = {
-  0x01: 'audio', 0x02: 'CDC', 0x03: 'HID', 0x06: 'still image', 0x07: 'printer', 0x08: 'mass storage', 0x09: 'hub',
-  0x0a: 'CDC data', 0x0b: 'smart card', 0x0e: 'video', 0x10: 'audio/video', 0xe0: 'wireless controller',
-  0xfe: 'application-specific', 0xff: 'vendor-specific',
-};
-export const className = (c: number) => CLASS_NAMES[c] ?? `class 0x${c.toString(16).padStart(2, '0')}`;
 
 /** One descriptor of a configuration's chain. */
 export type Desc = { type: number; bytes: Uint8Array };
@@ -182,47 +176,6 @@ export function inferSpeed(device: Uint8Array, configs: ConfigInfo[]): UsbSpeed 
   return 'full';
 }
 
-/** The kernel driver that most likely holds an interface on a Linux host, for the remedy text. */
-export function likelyDriver(vendorId: number, cls: number): string | null {
-  if (cls === 0x02 || cls === 0x0a) return 'cdc_acm';
-  if (cls === 0x07) return 'usblp';
-  if (cls === 0x06) return null;
-  const byVendor: Record<number, string> = { 0x0403: 'ftdi_sio', 0x10c4: 'cp210x', 0x1a86: 'ch341', 0x067b: 'pl2303', 0x0bda: 'dvb_usb_rtl28xxu' };
-  return byVendor[vendorId] ?? null;
-}
-
-export type HostOs = 'linux' | 'mac' | 'windows' | 'chromeos' | 'other';
-
-export function hostOs(ua: string = typeof navigator === 'undefined' ? '' : navigator.userAgent): HostOs {
-  if (/CrOS/.test(ua)) return 'chromeos';
-  if (/Windows/.test(ua)) return 'windows';
-  if (/Mac OS X|Macintosh/.test(ua)) return 'mac';
-  if (/Linux|X11/.test(ua)) return 'linux';
-  return 'other';
-}
-
-/** What the page shows for an interface the host's OS wouldn't let go of (docs/plans/usb.md §2). */
-export function claimRemedy(os: HostOs, vendorId: number, iface: number, cls: number): string {
-  const what = `Interface ${iface} (${className(cls)}) is held by the host`;
-  switch (os) {
-    case 'linux': {
-      const drv = likelyDriver(vendorId, cls);
-      const unbind = drv
-        ? `unbind ${drv} from it (echo <bus>-<port>:1.${iface} | sudo tee /sys/bus/usb/drivers/${drv}/unbind) or blacklist the module`
-        : 'unbind the kernel driver that holds it (see /sys/bus/usb/devices/*/driver)';
-      return `${what}: ${unbind}, and make sure your user can write the device's /dev/bus/usb node (a udev rule).`;
-    }
-    case 'mac':
-      return `${what}: macOS's own driver has it (serial and CDC devices usually); WebUSB can't take an interface macOS has claimed.`;
-    case 'windows':
-      return `${what}: Windows needs the WinUSB driver bound to it, which Zadig can do.`;
-    case 'chromeos':
-      return `${what}: ChromeOS's driver has it.`;
-    default:
-      return `${what}: another driver has claimed it.`;
-  }
-}
-
 // ---- The backend ---------------------------------------------------------------------------------
 
 const RT_IN = 0x80;
@@ -290,8 +243,6 @@ class InEndpoint {
 export type WebUsbOptions = {
   /** Called once when the device turns out to be gone (a transfer's NotFoundError, a failed reset). */
   gone?: () => void;
-  /** The host's OS, for the remedy texts (from the user agent by default). */
-  os?: HostOs;
 };
 
 /** An open failed, or left nothing the guest could use; `problems` says why, for the page. */
@@ -344,10 +295,15 @@ export class WebUsbPassthrough implements UsbDevice {
   strings = new Map<string, Uint8Array>();
   /** Interfaces of the active configuration we hold, and their current alternate settings. */
   claimed = new Set<number>();
+  /**
+   * Endpoints the guest halted with SET_FEATURE(ENDPOINT_HALT). WebUSB refuses that request (a standard
+   * OUT), so the halt is ours: TDs to the endpoint stall here and GET_STATUS says halted, until the
+   * guest's CLEAR_FEATURE (which also clears the device's side, resetting its data toggle).
+   */
+  halted = new Set<number>();
   alternates = new Map<number, number>();
   /** The configuration the guest set (0 after SET_CONFIGURATION 0, when we released everything). */
   guestConfig = 0;
-  private os: HostOs;
   private ins = new Map<number, InEndpoint>();
   private outs = new Map<number, Order>();
   private ctrl = new Order();
@@ -363,7 +319,6 @@ export class WebUsbPassthrough implements UsbDevice {
   constructor(dev: WebUsbDeviceLike, opts: WebUsbOptions = {}) {
     this.dev = dev;
     this.opts = opts;
-    this.os = opts.os ?? hostOs();
   }
 
   // -- Attach --
@@ -447,9 +402,10 @@ export class WebUsbPassthrough implements UsbDevice {
           if (!was) await this.dev.claimInterface(n);
           this.claimed.add(n);
           this.alternates.set(n, 0);
-        } catch {
+        } catch (e) {
           failed.add(n);
-          this.problems.push({ kind: 'claim-failed', interface: n, message: claimRemedy(this.os, this.dev.vendorId, n, alts[0].cls) });
+          // The browser's words; the remedy for the host's OS is the page's (web/app/usb-ports.ts `problemText`).
+          this.problems.push({ kind: 'claim-failed', interface: n, message: (e as Error).message ?? String(e) });
         }
       }
     }
@@ -460,15 +416,6 @@ export class WebUsbPassthrough implements UsbDevice {
       return filterConfig(raw, drop);
     });
     this.guestConfig = act?.value ?? 0;
-  }
-
-  /** The page's notes for an attached device: one line per problem. */
-  notes(): string[] {
-    return this.problems.map((p) =>
-      p.kind === 'protected-interface' ? `Interface ${p.interface} (${className(p.class)}) is hidden from the guest: WebUSB doesn't allow its class.`
-      : p.kind === 'claim-failed' ? p.message
-      : p.kind === 'open-failed' ? p.message
-      : 'no collections');
   }
 
   // -- Transfers --
@@ -486,6 +433,12 @@ export class WebUsbPassthrough implements UsbDevice {
       const o = this.outOrder(t.ep);
       o.add(td);
       o.finish(td, { code: 'error', actual: 0 });
+      return;
+    }
+    if (this.halted.has(t.ep)) {
+      const o = t.ep & 0x80 ? this.inEp(t.ep).order : this.outOrder(t.ep);
+      o.add(td);
+      o.finish(td, { code: 'stall', actual: 0 });
       return;
     }
     if (t.ep & 0x80) {
@@ -633,6 +586,7 @@ export class WebUsbPassthrough implements UsbDevice {
 
   private dropAll() {
     this.gen++;
+    this.halted.clear();
     this.ins.clear();
     this.outs.clear();
     this.ctrl = new Order();
@@ -704,6 +658,8 @@ export class WebUsbPassthrough implements UsbDevice {
       case REQ_CLEAR_FEATURE:
         if (recipient === 2 && s.value === FEATURE_ENDPOINT_HALT) {
           const ep = s.index & 0xff;
+          if ((ep & 0x7f) === 0) return ok(); // the default pipe never halts (and isn't WebUSB's to clear)
+          this.halted.delete(ep);
           // The guest knows the endpoint stalled: a stall carried over from a cancelled TD is spent.
           const e = this.ins.get(ep);
           if (e) e.carry = e.carry.filter((c) => c.code !== 'stall');
@@ -714,12 +670,15 @@ export class WebUsbPassthrough implements UsbDevice {
         }
         return ok();
       case REQ_SET_FEATURE:
-        // ENDPOINT_HALT is tried through (usbtest's halt test); the rest (remote wakeup, U1/U2, LTM) is the controller's to hide.
-        return recipient === 2 && s.value === FEATURE_ENDPOINT_HALT ? null : ok();
+        // ENDPOINT_HALT is ours (see `halted`); the rest (remote wakeup, U1/U2, LTM) is the controller's to hide.
+        if (recipient === 2 && s.value === FEATURE_ENDPOINT_HALT && (s.index & 0x7f) !== 0) this.halted.add(s.index & 0xff);
+        return ok();
       case REQ_SET_SEL:
       case REQ_SET_ISOCH_DELAY:
         return ok();
       case REQ_GET_STATUS:
+        // An endpoint's: halted by us, or endpoint 0 (WebUSB names only a claimed interface's endpoints); the rest pass through.
+        if (recipient === 2 && ((s.index & 0x7f) === 0 || this.halted.has(s.index & 0xff))) return reply(Uint8Array.of(this.halted.has(s.index & 0xff) ? 1 : 0, 0));
         return null;
       default:
         void t;
@@ -735,6 +694,7 @@ export class WebUsbPassthrough implements UsbDevice {
       return { code: 'success', actual: 0 };
     }
     if (!this.configs.some((c) => c.value === value)) return { code: 'stall', actual: 0 };
+    this.halted.clear();
     this.ins.clear();
     this.outs.clear();
     if (this.dev.configuration?.configurationValue !== value) {
@@ -755,6 +715,7 @@ export class WebUsbPassthrough implements UsbDevice {
     const alts = act?.interfaces.get(n) ?? [];
     if (!alts.some((a) => a.alternate === alt)) return { code: 'stall', actual: 0 };
     for (const a of alts) for (const e of a.endpoints) {
+      this.halted.delete(e.address);
       if (e.address & 0x80) this.ins.delete(e.address);
       else this.outs.delete(e.address);
     }
@@ -776,7 +737,7 @@ export function pickDevice<D extends { vendorId: number; productId: number; seri
  * The device worker's opener for `api: 'usb'` identities: finds the granted device, opens it, and
  * calls `gone` when WebUSB reports it disconnected (or a transfer finds it gone).
  */
-export function webUsbOpener(usb: WebUsbLike, os?: HostOs) {
+export function webUsbOpener(usb: WebUsbLike) {
   return async (id: UsbIdentity, ctx: { gone?: () => void } = {}): Promise<WebUsbPassthrough> => {
     const dev = pickDevice(await usb.getDevices(), id);
     if (!dev) throw new UsbOpenError('the device is not plugged in, or this page has no permission for it', [{ kind: 'open-failed', message: 'not found' }]);
@@ -790,7 +751,7 @@ export function webUsbOpener(usb: WebUsbLike, os?: HostOs) {
     const gone = () => { if (!fired) { fired = true; usb.removeEventListener('disconnect', onDisconnect); ctx.gone?.(); } };
     usb.addEventListener('disconnect', onDisconnect);
     try {
-      p = await openWebUsb(dev, { gone, os });
+      p = await openWebUsb(dev, { gone });
     } catch (e) {
       usb.removeEventListener('disconnect', onDisconnect);
       throw e;

@@ -35,7 +35,8 @@ class FakeHid implements WebHidDeviceLike {
   listeners = new Set<(e: WebHidInputReport) => void>();
   sent: [string, number, number[]][] = [];
   sendFails = false;
-  feature: (id: number) => Uint8Array = (id) => Uint8Array.from({ length: 15 }, (_, i) => id + i);
+  /** As Chromium: led by the report ID when the device uses IDs. */
+  feature: (id: number) => Uint8Array = (id) => Uint8Array.from({ length: 16 }, (_, i) => (i === 0 ? id : 100 + i));
   log: string[] = [];
   constructor(collections: HidCollectionInfo[]) { this.collections = collections; }
   async open() { this.opened = true; this.log.push('open'); }
@@ -145,7 +146,7 @@ test('an OUT TD is one sendReport (ID from its first byte); a rejected one stall
   assert.deepEqual(v.fake.sent, [['output', 0, [1, 2, 3]]]);
 });
 
-test('HID class requests: GET_REPORT input, feature (both framings), SET_REPORT, idle and protocol', async () => {
+test('HID class requests: GET_REPORT input and feature, SET_REPORT, idle and protocol', async () => {
   const { fake, d } = await configured(pad);
   const cls = (request: number, value: number, length: number, dir = 0xa1): Setup => ({ requestType: dir, request, value, index: 0, length });
   assert.deepEqual(data(await control(d, cls(1, 0x0101, 64))), [1, 0, 0, 0, 0, 0, 0, 0], 'zeros before the first report');
@@ -153,10 +154,8 @@ test('HID class requests: GET_REPORT input, feature (both framings), SET_REPORT,
   assert.deepEqual(data(await control(d, cls(1, 0x0101, 64))), [1, 9, 8, 7, 6, 5, 4, 3]);
   assert.equal((await control(d, cls(1, 0x0102, 64))).code, 'stall', 'no input report 2');
   const f = await control(d, cls(1, 0x0312, 16));
-  assert.deepEqual(data(f).slice(0, 3), [0x12, 0x12, 0x13], 'the ID put in front');
+  assert.deepEqual(data(f).slice(0, 2), [0x12, 101], 'led by its ID, as Chromium gives it');
   assert.equal(f.actual, 16);
-  fake.feature = (id) => Uint8Array.from({ length: 16 }, (_, i) => (i === 0 ? id : 100 + i));
-  assert.deepEqual(data(await control(d, cls(1, 0x0312, 16))).slice(0, 2), [0x12, 101], 'already led by its ID');
   assert.equal((await control(d, cls(9, 0x0205, 3, 0x21), Uint8Array.of(5, 1, 2))).code, 'success');
   assert.equal((await control(d, cls(9, 0x0312, 3, 0x21), Uint8Array.of(0x12, 3, 4))).code, 'success');
   assert.deepEqual(fake.sent, [['output', 5, [1, 2]], ['feature', 0x12, [3, 4]]]);
@@ -201,4 +200,26 @@ test('a device whose collections WebHID hides fails to open; the opener finds by
   for (const l of [...listeners]) l({ device: devs[1] });
   assert.equal(gone, 1);
   await assert.rejects(webHidOpener(hid)({ api: 'hid', vendorId: 1, productId: 1 }), UsbOpenError);
+});
+
+test('a protected collection\'s input and output reports are left out; a device with nothing else fails to open', async () => {
+  const kb = (usage: number, o: Partial<HidCollectionInfo>) => col(1, usage, o);
+  const leds = { reportId: 1, items: [bytesItem(u(8, 1), 1)] };
+  // As Chromium shows a keyboard composite: the keyboard's top level without input and output, its feature kept; a mouse
+  // whose pointer child still lists report 4.
+  const cs = [
+    kb(6, { featureReports: [{ reportId: 2, items: [bytesItem(u(0xff00, 9), 4)] }], children: [col(8, 0, { type: 2, outputReports: [leds] })] }),
+    kb(2, { children: [col(1, 1, { type: 0, inputReports: [{ reportId: 4, items: [bytesItem(u(1, 0x30), 3)] }] })] }),
+    col(0xff60, 0x61, { inputReports: [{ reportId: 5, items: [bytesItem(u(0xff60, 0x62), 32)] }] }),
+  ];
+  const d = await openWebHid(new FakeHid(cs));
+  const got = parseReportDescriptor(d.layout.report);
+  assert.deepEqual(got.map((c) => [c.usagePage, c.usage, c.children.length]), [[1, 6, 0], [0xff60, 0x61, 0]]);
+  assert.deepEqual([...d.layout.sizes.output.keys()], [], 'no LED output report, so no OUT endpoint');
+  assert.equal(d.layout.outMax, 0);
+  assert.deepEqual(d.problems, [
+    { kind: 'protected-collection', usagePage: 1, usage: 6, kept: true },
+    { kind: 'protected-collection', usagePage: 1, usage: 2, kept: false },
+  ], 'what the guest doesn\'t get, for the page');
+  await assert.rejects(openWebHid(new FakeHid([cs[1]])), (e) => e instanceof UsbOpenError && e.problems[0].kind === 'no-collections');
 });

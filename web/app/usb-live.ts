@@ -177,7 +177,7 @@ export class UsbLocks {
 }
 
 /** A connector of the running machine. */
-export type Connector = { device: UsbIdentity | UsbVirtual; name: string; entry?: string; state: 'attaching' | 'attached' | 'detaching'; speed?: UsbSpeed; notes?: string[] };
+export type Connector = { device: UsbIdentity | UsbVirtual; name: string; entry?: string; state: 'attaching' | 'attached' | 'detaching'; speed?: UsbSpeed; problems?: UsbProblem[] };
 
 /** Why an attach failed, in words (the device worker's message and its problems'). */
 export class UsbError extends Error {
@@ -211,7 +211,7 @@ export class UsbPorts {
     const p = this.pending.get(m.connector);
     if (p) { clearTimeout(p.timer); this.pending.delete(m.connector); }
     if (m.state === 'attached') {
-      if (c) Object.assign(c, { state: 'attached', speed: m.speed, notes: m.notes });
+      if (c) Object.assign(c, { state: 'attached', speed: m.speed, problems: m.problems });
       p?.resolve();
     } else {
       this.free(m.connector);

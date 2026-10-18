@@ -281,6 +281,27 @@ check:
 `tests/usb.test.ts` checks the virtual device base. A short-packet bug planted in the controller (the
 Short Packet event reported as Success) fails two unit tests and testusb's first pass.
 
+## The usbhost guest
+
+`images/build.sh linux-usbhost` is the usb guest for real devices: the same kernel with `cdc_acm`, `usbhid`,
+`hid-generic` and `hidraw` (`images/usbhost/linux.fragment`), and an init (`images/usbhost/init.c`, which includes
+`images/usb/init.c` unchanged) whose `usb_mode=` picks the run. It is an image of its own so that `linux-usb`, its
+runs and their steps stay as they are. `tests/usb-guest.test.ts` boots it in Chromium, realtime and under the JIT
+(`tests/browser/boot-worker.ts` `?usbhost=`), with a host device on connector 0. It runs in `scripts/ci-usb.sh`'s
+set, on the dev VM's rigs, and writes each run's console to `target/tests/usb-guest-<mode>.log`.
+
+| Mode | Device | What passes |
+|---|---|---|
+| `testusb` | the dummy_hcd Gadget Zero (`webpc-zero`) through the WebUSB passthrough | `testusb -a -c 10 -s 1024 -v 512 -g 16` with `usbtest.pattern=1` (configfs's source/sink default): all 23 tests |
+| `acm` | the ACM gadget (`webpc-acm`) through the WebUSB passthrough, the guest's `cdc_acm` on it | three rounds of open `/dev/ttyACM0`, write 300 bytes, read the gadget tty's echo, close. Each close cancels `cdc_acm`'s reads, so the next round's reads are served by the cancelled ones' transfers (the carry-over) |
+| `hid` | a uhid device (`vendor-ids`) through WebHID | the report descriptor the guest got parses to what the page can use of Chromium's parse; three input reports from the rig arrive in order; an output report (`write`) and a feature report (`HIDIOCSFEATURE`) reach the rig; `HIDIOCGFEATURE` gets the rig's |
+
+What the runs found:
+- **Chromium refuses SET_FEATURE(ENDPOINT_HALT)**, and GET_STATUS and CLEAR_FEATURE on endpoint 0. The
+  passthrough answers them itself (the table above).
+- **The guest's port reset reaches the device** through `reset()`. On a gadget, that is a disconnect: its
+  tty hangs up, and the test's echo opens it again.
+
 ## The WebUSB passthrough (`web/webusb.ts`)
 
 `openWebUsb(device, {gone, os})` takes any object with WebUSB's `USBDevice` methods (`WebUsbDeviceLike`)
@@ -312,15 +333,14 @@ calls `gone` on WebUSB's `disconnect` event.
    A BOS that only declares SuperSpeed *capability* doesn't make a device super. An Android phone at
    high speed has one.
 
-**Problems** are reported in `problems` (`UsbProblem`), and `notes()` turns them into the page's lines:
+**Problems:** what the guest doesn't get is in `problems` (`UsbProblem`). The glue sends it with the
+attach's `usb-state` (`problems`), and the page puts it in words with the host OS's remedy (`problemText`,
+"Attach and detach" below):
 - `protected-interface`: a protected interface.
-- `claim-failed`: an interface the host's OS holds. The message names the remedy for the host's OS
-  (from the user agent). On Linux it names the driver that most likely holds the interface (`cdc_acm`,
-  `usblp`, `ftdi_sio`, `cp210x`, `ch341`, `pl2303`, `dvb_usb_rtl28xxu`) and how to unbind it. On
-  Windows it names WinUSB and Zadig.
+- `claim-failed`: an interface the host's OS holds, with the browser's message.
 
-A device left with no interface it can use fails to open with a `UsbOpenError`, which carries the
-problems.
+A device left with no interface it can use fails to open with a `UsbOpenError`. Its problems go in the
+error's `detail`.
 
 **Standard requests:** these are answered or interpreted by the backend. The rest pass through.
 
@@ -329,10 +349,11 @@ problems.
 | GET_DESCRIPTOR device, configuration (filtered), BOS, cached strings | from the cache. A string not in the cache (a Microsoft OS string, an index only a class descriptor names) and other types pass through |
 | SET_CONFIGURATION *n* | the active one: alternate settings back to 0. Another: release, `selectConfiguration`, claim again. *0*: release everything (GET_CONFIGURATION then answers 0) |
 | SET_INTERFACE | `selectAlternateInterface`. An interface we don't hold, or an alternate it doesn't have, stalls |
-| CLEAR_FEATURE(ENDPOINT_HALT) | `clearHalt`, and a stall carried over on that endpoint is spent |
-| SET_FEATURE(ENDPOINT_HALT) | passed through (usbtest's halt test). Whether Chromium allows it is unchecked |
+| CLEAR_FEATURE(ENDPOINT_HALT) | our halt cleared, then `clearHalt` (which resets the device's data toggle), and a stall carried over on that endpoint is spent. On endpoint 0, success locally |
+| SET_FEATURE(ENDPOINT_HALT) | ours: Chromium refuses it (a standard OUT request; usbtest's halt test got a transaction error). The endpoint's TDs stall here and GET_STATUS says halted, until CLEAR_FEATURE |
 | other SET/CLEAR_FEATURE, SET_SEL, SET_ISOCH_DELAY | success, locally |
-| GET_STATUS, GET_INTERFACE, SYNCH_FRAME | pass through. GET_INTERFACE on an interface we don't hold stalls |
+| GET_STATUS | an endpoint we halted, or endpoint 0 (WebUSB reaches only a claimed interface's endpoints), locally; the rest pass through |
+| GET_INTERFACE, SYNCH_FRAME | pass through. GET_INTERFACE on an interface we don't hold stalls |
 
 Class and vendor requests go to `controlTransferIn` or `controlTransferOut`, with the recipient taken
 from `bmRequestType`. A request whose recipient is an interface we don't hold stalls without reaching
@@ -395,8 +416,16 @@ U5 replaces them with the user's dumps.
 
 The device worker's opener, `webHidOpener(navigator.hid)`, finds the device by vendor and product, with
 `index` among identical ones, since WebHID gives no serial number. It gives the guest the serial
-`webpc-hid-<connector>`, and calls `gone` on WebHID's `disconnect`. A device whose every collection
-WebHID hides fails with `no-collections`.
+`webpc-hid-<connector>`, and calls `gone` on WebHID's `disconnect`.
+
+**Only what the page can use** reaches the guest (`visibleCollections`). Chromium hides a protected
+top-level collection's input and output reports (a keyboard's, a mouse's) at the top level, but its
+children still list them. They never arrive, and `sendReport` refuses them (NotAllowedError, on the
+recorded keyboard composite). So a child keeps only the reports its top-level collection lists, and a
+collection left with no reports goes. A keyboard keeps its feature report, which is how VIA-style tools
+work, and a mouse disappears. Each collection cut down that way is a `protected-collection` problem in the
+attach's `usb-state`, which says whether any of its reports were kept. A device left with nothing fails with
+`no-collections`.
 
 **The descriptors** (`hidLayout`):
 - The device's vendor and product IDs, `bcdUSB` 2.00, `bcdDevice` 1.00.
@@ -411,10 +440,19 @@ WebHID hides fails with `no-collections`.
 - The report descriptor (GET_DESCRIPTOR 0x22) and the HID descriptor (0x21) go to an interface
   recipient.
 
+**Chromium's shape** (from the recorded parses in `tests/usb/hid-fixtures/`):
+- A main item belongs to its collection *and to every collection around it*. A top-level collection
+  therefore lists each of its reports whole, in descriptor order, and a child lists the run of those
+  items that lies inside it.
+- Reports within a collection come in Chromium's own order, which is stable but not the descriptor's.
+- Usages are extended (page << 16 | ID).
+
 **Encoding the report descriptor:** `encodeReportDescriptor(collections)` writes each collection as its
-usage page (when it changes), its usage, and a Collection item of its type. Then come its children and
-its reports. For each report, the encoder writes its Report ID (when it changes) and its items. Each item
-gets:
+usage page (when it changes), its usage, and a Collection item of its type. Then it walks the
+collection's reports. Each child's run is found in the parent's lists, the parent's items before that run
+are written, then the child, and the rest after. This puts every Collection and End Collection back where
+they were, so the layout of a report is the original's. For each run of items, the encoder writes its
+Report ID (when it changes) and its items. Each item gets:
 - The globals that changed. Logical and physical values use the shortest *signed* encoding, so 255 is
   `26 ff 00` and no parser can read it as -1. A maximum WebHID reads as negative over a non-negative
   minimum gets 4 bytes. The unit exponent is a nibble, and the unit is rebuilt from `unitSystem` and
@@ -424,7 +462,8 @@ gets:
 - The main item, with all nine flag bits. Buffered bytes makes it a 2-byte item.
 
 **Parsing:** `parseReportDescriptor(bytes)` reads a descriptor into the same shape, grouped the way
-Chromium groups it. Each main item goes to its innermost collection, in a report per type and report ID.
+Chromium groups it. Each main item goes to its collection and to every collection around it, in a report
+per type and report ID.
 Usages resolve against the usage page in force at the main item. Push and pop are kept. A logical or
 physical maximum is signed when its minimum is negative, and unsigned otherwise, read as int32 as
 WebHID's are.
@@ -432,19 +471,14 @@ WebHID's are.
 **What doesn't come back** from WebHID's form:
 - the original bytes: the order of global items, push and pop, delimiters
 - string indices, since WebHID resolves no strings
-- how one report ID's items were interleaved between a collection and its children
-
-WebHID lists a collection's own items apart from its children's. The encoder writes children first
-(`childrenFirst`), which is what descriptors that mix the two (an Xbox controller over Bluetooth) mostly
-do. A report's size, and so every driver that reads reports by offset (hid-playstation, hid-nintendo,
-hid-steam), is the same either way. Only hid-input's generic mapping of such a descriptor could differ.
+- the order of reports within a collection, which doesn't matter because reports are keyed by ID
 
 **Requests and reports:**
 - **GET_REPORT, input:** the last input report with that ID, or zeros of its size before the first one.
   An ID the device doesn't have stalls.
-- **GET_REPORT, feature:** `receiveFeatureReport`. A buffer one byte longer than the report and led by
-  its ID is passed as it is. Any other buffer gets the ID put in front, since Chromium's framing differs
-  by host.
+- **GET_REPORT, feature:** `receiveFeatureReport`'s buffer, as it is. Chromium leads it with the report
+  ID when the device uses IDs, and gives no prefix without them (report ID 0). That is the framing the
+  guest expects. `inputreport` data has no ID byte, and the device adds one.
 - **SET_REPORT, output and feature:** `sendReport` and `sendFeatureReport`, with the ID byte taken from
   the front when the device uses IDs. A rejected promise stalls.
 - **SET_IDLE, GET_IDLE, SET_PROTOCOL and GET_PROTOCOL** are answered locally. GET_PROTOCOL says report
@@ -460,9 +494,11 @@ hid-steam), is the same either way. Only hid-input's generic mapping of such a d
   and a nested physical collection, VIA's raw HID, and the odd corners: signed and wide values, units,
   flags, mixed-page usages, nested children); the exact bytes of the encoding; the HID spec's mouse
   (Appendix E.10); push and pop.
-- When `tests/usb/hid-fixtures/*.json` exist (recorded Chromium parses with their raw descriptors,
-  from the gates lane), the same file also checks parse(raw) ≈ Chromium's parse and encode(Chromium's)
-  → parse ≈ Chromium's.
+- The six recorded Chromium parses in `tests/usb/hid-fixtures/` (a DualSense, a Stream Deck shape,
+  vendor collections with and without IDs, a game pad, a keyboard composite), compared without regard to
+  report order. The same file checks that our parse of each raw descriptor, with Chromium's hiding
+  applied, is Chromium's. It checks that encoding what is visible parses back to it. And where nothing is
+  hidden, it checks that the encoding has the original's report sizes.
 - `tests/usb-webhid.test.ts` runs the device against a fake HIDDevice.
 
 ## The page
@@ -538,11 +574,15 @@ They work while the machine runs on this page, from the USB tab or the toolbar's
 - **Re-enumeration:** when an attached device is unplugged, the menu offers **Pick it…**. That opens the chooser in
   case the device came back as another one, such as a bootloader, because a device without a grant raises no
   `connect`. For 60 s after the unplug, a new granted device is offered on the same connector, as its own entry.
+- **What's left out:** an attach that worked can still leave part of the device out. Its `usb-state` lists those
+  `problems`: a protected or host-held interface, or a HID collection the browser keeps. The USB tab shows them in
+  words under the entry (`data-usb-problems`). The menu gives a line under the device, and its tooltip has the
+  words.
 - **Errors:** an attach refused by the device worker is shown with its `UsbProblem`s in words (`problemText`):
   - a protected interface class, with where such a device goes instead;
   - an interface a host driver holds, with the remedy for Linux (unbinding `cdc_acm` and the like), macOS and
     Windows (WinUSB through Zadig);
-  - a HID device whose every collection is hidden;
+  - a HID device whose every collection is hidden, or one collection that is (a keyboard's, a mouse's);
   - a device that can't be opened: on Linux the `hidraw` or `/dev/bus/usb` udev rule; on Windows WinUSB.
 
 ### Snapshot and Suspend

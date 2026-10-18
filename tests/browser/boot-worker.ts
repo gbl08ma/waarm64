@@ -15,12 +15,16 @@
 // sink played, the control requests) is `snd` in the result.
 // `?usb=hubs` boots the USB test kernel (images/build.sh linux-usb) on the xHCI with nothing plugged in;
 // `?usb=test` with two Gadget Zeros, one unplugged and plugged in again at fixed steps (tests/usb/guest.ts).
+// `?usbhost=<json>` boots the USB test kernel for real devices (images/build.sh linux-usbhost) with `cmdline`
+// added to its command line and `device` (a WebUSB or WebHID identity) attached to connector 0 once it has
+// booted; its `usb-state` is `usb` in the result (tests/usb-guest.test.ts; realtime: add `&realtime`).
 // `?input` runs the console input test (web/vm.ts `CONSOLE_INPUT`): a shell
 // instead of /test.sh, given the input at its step.
 // `?snapshots=<steps>,…`: the VM is saved to a snapshot file, closed, and a new one started from the
 // file at each of those steps (web/snapshot.ts `runThroughSnapshots`); `files` in the result has them.
 import { runThroughSnapshots } from '../../web/snapshot.ts';
 import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, DISTROS, GUEST_CMDLINE, guestDevices, runToPowerOff, testDevices } from '../../web/vm.ts';
+import type { UsbIdentity } from '../../web/usb-device.ts';
 import { USB_CMDLINE, USB_HUBS_CMDLINE, USB_INITRD, USB_KERNEL, usbGuest } from '../usb/options.ts';
 
 const get = async (path: string) => {
@@ -38,7 +42,9 @@ try {
   const gpu = params.get('gpu');
   const snd = params.has('snd');
   const usb = params.get('usb');
-  const img = usb !== null ? { kernel: USB_KERNEL, initrd: USB_INITRD, disk: '', cmdline: usb === 'hubs' ? USB_HUBS_CMDLINE : USB_CMDLINE }
+  const usbhost = params.has('usbhost') ? JSON.parse(params.get('usbhost')!) as { device: UsbIdentity; cmdline: string } : undefined;
+  const img = usbhost ? { kernel: 'linux-usbhost/Image', initrd: 'linux-usbhost/initramfs.cpio', disk: '', cmdline: `console=ttyAMA0 panic=-1 ${usbhost.cmdline}` }
+    : usb !== null ? { kernel: USB_KERNEL, initrd: USB_INITRD, disk: '', cmdline: usb === 'hubs' ? USB_HUBS_CMDLINE : USB_CMDLINE }
     : gpu !== null ? { kernel: 'linux-gpu/Image', initrd: 'linux-gpu/initramfs.cpio', disk: '', cmdline: 'console=ttyAMA0 panic=-1' }
     : snd ? { kernel: 'linux-snd/Image', initrd: 'linux-snd/initramfs.cpio', disk: '', cmdline: 'console=ttyAMA0 panic=-1' }
     : distro ? DISTROS[distro]
@@ -51,9 +57,9 @@ try {
   ]);
   const disk = new URL(`/target/images/${img.disk}`, location.href).href;
   const test = params.has('devices') || distro === 'alpine'; // Alpine checks linux-virt's modules for them
-  const devices = usb !== null ? [] : gpu !== null ? [{ type: 'gpu' as const, width: 640, height: 480, trace: true, resize: { after: Number(gpu), width: 800, height: 600 } }] : snd ? [{ type: 'snd' as const }] : litmus !== null ? [] : test ? testDevices(disk, ports.keyboard, ports.tablet) : guestDevices(disk, params.get('overlay') ?? undefined);
+  const devices = usb !== null || usbhost ? [] : gpu !== null ? [{ type: 'gpu' as const, width: 640, height: 480, trace: true, resize: { after: Number(gpu), width: 800, height: 600 } }] : snd ? [{ type: 'snd' as const }] : litmus !== null ? [] : test ? testDevices(disk, ports.keyboard, ports.tablet) : guestDevices(disk, params.get('overlay') ?? undefined);
   const framebuffer = test ? { width: 640, height: 480 } : undefined;
-  const opts = { ramSize: distro ? 1 << 30 : 256 << 20, kernel, initrd, cmdline: img.cmdline, devices, realtime: params.has('realtime'), framebuffer, jit: Number(params.get('jit') ?? 0) as 0 | 1 | 2 | 3, ncpus: Number(params.get('ncpus') ?? 1), parallel: params.has('parallel'), idleLimitMs: params.has('parallel') ? 60_000 : undefined, usb: usb === null ? undefined : usb === 'hubs' ? {} : usbGuest() };
+  const opts = { ramSize: distro ? 1 << 30 : 256 << 20, kernel, initrd, cmdline: img.cmdline, devices, realtime: params.has('realtime'), framebuffer, jit: Number(params.get('jit') ?? 0) as 0 | 1 | 2 | 3, ncpus: Number(params.get('ncpus') ?? 1), parallel: params.has('parallel'), idleLimitMs: params.has('parallel') ? 60_000 : undefined, usb: usbhost ? {} : usb === null ? undefined : usb === 'hubs' ? {} : usbGuest() };
   // Parallel: once the shell's prompt is up. The vCPUs' summed steps say nothing about how far the
   // boot is (a vCPU spinning while the other is descheduled counts too): sent at step 30M, the
   // input once reached the tty before init, and the shell lost the start of its first line.
@@ -67,8 +73,10 @@ try {
     const r = await runThroughSnapshots(wasm, opts, at, input ? 200e6 : 1e12, input);
     self.postMessage({ kind: r.kind, x0: r.x[0] === undefined ? undefined : `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc, files: r.files });
   } else {
+  let usbState: unknown;
   const r = await runToPowerOff(wasm, opts, input ? 200e6 : 1e12, (vm) => {
     if (vm.framebuffer) self.postMessage({ memory: vm.memory, framebuffer: vm.framebuffer });
+    if (usbhost) void vm.usb!.attach(0, usbhost.device).then((m) => { usbState = m; }, (e) => { usbState = { error: String(e) }; });
     if (!pauses) return;
     void (async () => {
       while (!pauser.done) {
@@ -87,7 +95,7 @@ try {
     })().catch((e) => { pauser.bad ||= String(e); });
   }, input);
   pauser.done = true;
-  self.postMessage({ pause: pauser, pc: r.pc, kind: r.kind, x0: r.x[0] === undefined ? undefined : `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc, gpu: r.gpu, snd: r.snd });
+  self.postMessage({ pause: pauser, pc: r.pc, kind: r.kind, x0: r.x[0] === undefined ? undefined : `0x${r.x[0].toString(16)}`, steps: r.steps, ms: r.ms, console: r.console, hvc: r.hvc, gpu: r.gpu, snd: r.snd, usb: usbState });
   }
 } catch (e) {
   self.postMessage({ error: String(e) });
