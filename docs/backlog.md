@@ -290,10 +290,31 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     "M8: the core's share of the userspace profile"). Take it up when a real workload's core share is well above
     that.
 - **More guest RAM than memory 0 holds** (~3.75 GiB with a 256 MiB heap floor, above): **spill memories as NUMA
-  nodes** (docs/architecture.md "Guest memory: layout A", PLAN.md §4 "Guest RAM ceiling"): extra wasm32 memories the guest sees as CPU-less NUMA nodes, memory 0 keeping its fast path
-  (TLB tag bits 3–11 are reserved for the memory index). Open: whether distro kernels enable `CONFIG_NUMA`, tiering
-  to DT-described CPU-less nodes, NUMA balancing off. A second memory for all of RAM measured +12–40% (M0.5's
-  layout B), which is why it's only for the pages past memory 0.
+  nodes** (docs/architecture.md "Guest memory: layout A", PLAN.md §4 "Guest RAM ceiling"): extra wasm32 memories the
+  guest sees as CPU-less NUMA nodes, memory 0 keeping its fast path (TLB tag bits 3–11 are reserved for the memory
+  index). The kernels in scope build with `CONFIG_NUMA` (the user checked, 2026-10-18). A second memory for all of
+  RAM measured +12–40% (M0.5's layout B), which is why it's only for the pages past memory 0.
+  - **Why NUMA and not swap in a memory** (discussed 2026-10-18): what costs most here is guest code. A spill page is
+    reached by the same load or store as any other, so NUMA runs no extra guest code; its cost is ours, per access (the
+    slow path, or an inline second path for memory-1 pages). Swap runs the guest kernel's fault, swap-cache, block
+    and reclaim paths (and TLB shootdowns) for every page that moves, ~10k+ instructions each way natively, all of it
+    JIT-ed here: it only pays for pages that stay cold almost forever. A synchronous swap device served by the core
+    would cut the I/O's latency, not that guest code.
+  - **Marking node 1 slower doesn't help by itself:** memory tiers come from ACPI's HMAT (or dax/kmem, CXL), with no
+    DT binding; the DT `distance-map` only sets fallback order and scheduler hints. Even in a lower tier, demotion
+    (`/sys/kernel/mm/numa/demotion_enabled`) and promotion (`kernel.numa_balancing=2`) are off by default and run as
+    guest code (page migration, a 4 KiB copy through our slow path). An alternative to compare if spill pages turn out
+    hot: **tier on the host, invisibly** (the guest sees one flat RAM, we swap hot memory-1 pages with cold memory-0
+    ones and drop their TLB entries; costs a per-page physical-to-host table for `Mem` and DMA, a way to find cold
+    memory-0 pages, and a stop of every vCPU per move in parallel SMP).
+  - **NUMA balancing must be off** (its scanner makes every task's pages inaccessible and faults them back: guest
+    code, on node-0 pages too). Distro kernels usually turn it on by themselves with more than one node
+    (`CONFIG_NUMA_BALANCING_DEFAULT_ENABLED`), and under UEFI the command line is the guest's GRUB's. Plan: **systemd
+    credentials in SMBIOS type 11** (OEM strings, `core/src/smbios.rs`): `io.systemd.credential:sysctl.extra=
+    kernel.numa_balancing=0`, read by `systemd-sysctl` (systemd 252+: Debian 12 and 13, Arch). systemd imports SMBIOS
+    credentials only in a VM; our type 0 already sets the "virtual machine" bit its detection checks. Alpine
+    (OpenRC) ignores it. First check, on the dev VM: Debian with a second node reads 0 from
+    `/proc/sys/kernel/numa_balancing`, and `systemd-creds --system list` shows the credential.
 - **A full 8 GB ramdisk locked the machine up** (the user, 2026-10-17, by hand on the page: an ext4-formatted 8 GB
   ramdisk filled to the brim; the machine stopped responding once it was full, with nothing in the console or on the
   page). Not known whether it's the guest or us. First lead: `web/ramdisk.ts` makes a 1 MiB `SharedArrayBuffer` per
@@ -479,6 +500,14 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   'moz-firefox', executablePath: '/usr/bin/firefox' })` (WebDriver BiDi, zypper's Firefox) with
   `firefoxUserPrefs: { 'memory.phc.enabled': false }` (PHC's stack walks hit the VM's
   SME-without-SVE in libgcc's unwinder: SIGILL) and `env: chromiumEnv()`.
+- **A ramdisk as swap, set up for the user** (the user's idea, 2026-10-18): an option on a ramdisk in the Machines
+  screen's disks menu that formats it as swap and turns it on in the guest, with nothing to do inside. The host can
+  write the swap header itself (`mkswap`'s format: a fixed page with `SWAPSPACE2`, a label and the size) and hand the
+  guest an `fstab.extra` systemd credential through SMBIOS type 11 (`LABEL=<label> none swap sw,nofail 0 0`, read
+  by `systemd-fstab-generator`, systemd 254+: Debian 13, not 12), the same pipe as NUMA balancing's sysctl above.
+  The ramdisk is lazily backed, so swap costs host memory only as the guest fills it, and `swapon --discard` (in the
+  fstab line's options) gives it back. Not a replacement for spill memories (swap runs guest code for every page;
+  "More guest RAM than memory 0 holds"), but useful where a user wants the kernel's LRU to decide.
 - **Machines as the unit, loose ends** (docs/plans/machines.md §11):
   - **The exit's numbers weren't taken** (the user's call, 2026-10-18: low relevance for now, and they'd go stale
     beside unrelated optimizations). In Chromium 153, `bench/boot/REPORT.md` with JSON: a restore whose pins match
