@@ -57,7 +57,7 @@ and the exact-step boots.
 |---|---|---|
 | Unit tests | `cargo test` (native) | decoder, ALU/flags, bitfields, FP core, crypto KATs, MMU walker, GIC, virtio rings, run loop, DTB, the JIT's structure (block formation, liveness, encoder bytes) |
 | TestFloat | `scripts/testfloat.sh` | `fp.rs` against TestFloat 3e, every op and FZ/DN combination (51.2M cases) |
-| FP suite ([below](#the-fp-suite-imagesbuildsh-fptest)) | `scripts/ci-fp.sh` (`tests/fptest.test.ts`, `WEBPC_FPTEST=1`; not in `scripts/ci.sh`) | TestFloat 3e's level-1 cases through all 300 scalar, vector, by-element and general-register FP forms in a Linux guest under the JIT (4 parallel vCPUs), every FPCR rounding mode × FZ × DN, FPSR.IXC clear and set, against SoftFloat with ARM's rules; ~200M checks, ~2 min |
+| FP suite ([below](#the-fp-suite-imagesbuildsh-fptest)) | `scripts/ci-fp.sh` (`tests/fptest.test.ts`, `WEBPC_FPTEST=1`; not in `scripts/ci.sh`) | TestFloat 3e's level-1 cases through all 482 scalar, vector, by-element, pairwise and general-register FP forms in a Linux guest under the JIT (4 parallel vCPUs), every FPCR rounding mode × FZ × DN, FPSR.IXC clear and set, against SoftFloat with ARM's rules; ~300M checks, ~1.5 min |
 | Golden corpus | `core/tests/corpus.rs` (native interpreter); `tests/corpus-wasm.test.ts` (wasm: interpreter, JIT forced, JIT stress, block interpreter) | ~50,000 instruction tests with results from the M4 |
 | Block interpreter ([cpu.md](cpu.md) "The block interpreter") | `interp::block::tests` (`cargo test`); `core/tests/boot.rs` `linux_boots_through_the_block_interpreter`, `core/tests/distros.rs` `alpine_boots_through_the_block_interpreter` (native: there the dispatcher runs everything in it); `WEBPC_NATIVE_JIT=1` runs every native guest test through it; every JIT run's cold code | random blocks of the classes it has handlers for (and some it runs generically) from random states against `interp::steps`: steps, exit, registers, RAM; Buildroot on 1 and 4 vCPUs and Alpine with `tests/steps.txt`'s counts, Buildroot on 4 parallel vCPUs |
 | JIT differential | `tests/jit-diff.test.ts` | JIT vs interpreter on random words per inlined class, from 8 random states each, plus multi-instruction sequences and region shapes (branches, loops) |
@@ -415,19 +415,23 @@ SoftFloat instead, and real hardware checks its rules.
   (a sample of a level; 3-operand types default to every 64th of level 1's 6.1M), `-n`, `-part k/n`,
   form-name prefixes.
 - **Real hardware first:** `fptest.tar` (the programs and `run.sh`) passes on the oracle VM, and
-  natively in the dev VM (also the M4): ~200M checks, 0 failures, in 15 s. A rule wrong in the
+  natively in the dev VM (also the M4): ~300M checks, 0 failures, in ~20 s. A rule wrong in the
   harness fails there.
 - **In the guest:** `initramfs.cpio` (BusyBox, `images/fptest/init`: a part of the forms on each
   CPU) boots on `linux/Image`; `tests/fptest.test.ts` runs it on 4 parallel vCPUs under the JIT
-  (~130 s; `WEBPC_FPTEST_INTERP=1` adds the interpreter, `WEBPC_FPTEST_ARGS` passes options,
+  (~90 s; `WEBPC_FPTEST_INTERP=1` adds the interpreter, `WEBPC_FPTEST_ARGS` passes options,
   `WEBPC_FPTEST_CPUS` the vCPUs). The harness's loops get compiled, so its instructions run the
   inline code; each one follows `MSR FPCR/FPSR`, which ends a block, so it starts a block (the FP
   guard reads the FPSR it just set).
 - **Planted** (2026-10-18): the single FMA's midpoint branch skipped, scalar FRINTA's tie test
   made strict, FCMP's lt and gt swapped: each failed its forms (44–1.3M failures), nothing else.
-- Not covered yet: FABD, FMULX, FRECPE/FRSQRTE/FRECPS/FRSQRTS/FRECPX, the pairwise and
-  across-lanes FP ops, the fixed-point conversions, FP16 arithmetic (not advertised). SoftFloat has
-  none of them but FABD's and the pairwise ones' parts; they get models as they get fast paths.
+- Also FABD, FMULX (∞ × 0 is ±2), FRECPS/FRSQRTS (FPNeg on the first operand, fused; FRSQRTS's
+  (3 − ab)/2 as 1.5 + (a/2)·b, so it can't overflow where the halved result doesn't), FRECPX,
+  FRECPE/FRSQRTE (the ARM ARM's RecipEstimate and RecipSqrtEstimate, without FEAT_RPRES), the
+  pairwise ops (FADDP, FMAXP … on Vm:Vn, and the scalar pairs) and across-lanes ones (FMAXV …,
+  reduced pairwise as ARM does), and the fixed-point conversions (fbits 1, 16, 32 and 64): 482
+  forms. Models planted wrong (the estimate's rounding, FRSQRTS's 1.5, the reduction's order) fail
+  on the M4. Not covered: FP16 arithmetic (not advertised).
 
 ## The stress test (`bench/stress/`)
 

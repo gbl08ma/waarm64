@@ -129,6 +129,13 @@ enum Kind {
     K_CSEL, // FCSEL with cond EQ
     K_VCMP, // a vector compare's all-ones lane
     K_RINT, K_CVT, K_TOINT, K_FROMINT,
+    K_ABD,    // FABD: |n - m|, NaNs too
+    K_MULX,   // FMULX: ∞ × 0 is ±2
+    K_RECPS,  // FRECPS: 2 - n·m fused (∞ × 0: 2)
+    K_RSQRTS, // FRSQRTS: (3 - n·m) / 2 fused (∞ × 0: 1.5)
+    K_RECPX,  // FRECPX: the exponent inverted
+    K_RECPE,  // FRECPE: the 8-bit reciprocal estimate
+    K_RSQRTE, // FRSQRTE: the 8-bit reciprocal square root estimate
 };
 
 // What one lane of a form gives: its parameters.
@@ -140,6 +147,7 @@ typedef struct {
     bool exact;       // K_RINT: FRINTX
     bool sgn;         // K_TOINT/K_FROMINT: signed
     int width;        // K_TOINT/K_FROMINT: the integer's bits
+    int fbits;        // K_TOINT/K_FROMINT: fixed point, the fraction's bits
 } Op;
 
 static uint_fast8_t mode_of(const Op *o, const Cfg *c) {
@@ -173,6 +181,38 @@ static bool lt(Fmt t, u64 a, u64 b) {
 static bool eq(Fmt t, u64 a, u64 b) {
     return t.bytes == 4 ? f32_eq(f32(a), f32(b)) : f64_eq(f64(a), f64(b));
 }
+
+static u64 two(Fmt t, bool neg) { return (neg ? sign(t) : 0) | ((1ull << (t.e - 1)) << t.f); }
+static u64 inf(Fmt t, bool neg) { return (neg ? sign(t) : 0) | ((1ull << t.e) - 1) << t.f; }
+static u64 fmul(Fmt t, u64 a, u64 b) { return t.bytes == 4 ? f32_mul(f32(a), f32(b)).v : f64_mul(f64(a), f64(b)).v; }
+static u64 fused(Fmt t, u64 n, u64 m, u64 a) {
+    return t.bytes == 4 ? f32_mulAdd(f32(n), f32(m), f32(a)).v : f64_mulAdd(f64(n), f64(m), f64(a)).v;
+}
+// A float constant of format t from a double's bits (exact ones only).
+static u64 kf(Fmt t, double v) {
+    u64 b;
+    memcpy(&b, &v, 8);
+    if (t.bytes == 8) return b;
+    float f = (float)v;
+    u32 w;
+    memcpy(&w, &f, 4);
+    return w;
+}
+
+// RecipEstimate and RecipSqrtEstimate (the ARM ARM's, without FEAT_RPRES).
+static u32 recip_estimate(u32 a) {
+    a = a * 2 + 1;
+    u32 b = (1u << 19) / a;
+    return (b + 1) / 2;
+}
+static u32 rsqrt_estimate(u32 a) {
+    if (a < 256) a = a * 2 + 1;
+    else a = ((a >> 1) << 1), a = (a + 1) * 2;
+    u64 b = 512;
+    while ((u64)a * (b + 1) * (b + 1) < (1ull << 28)) b++;
+    return (u32)((b + 1) / 2);
+}
+static long floordiv2(long x) { return x >= 0 ? x / 2 : -((-x + 1) / 2); }
 
 // The lane's result (of the output format `to`) and flags: n, m, a are the
 // operands (a: the addend), in format `t` (an integer for K_FROMINT).
@@ -250,6 +290,105 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
             }
         return v ? mask(t.bytes) : 0;
     }
+    case K_ABD: {
+        u64 x[2] = {flush_in(t, n, c, fl), flush_in(t, m, c, fl)};
+        if (!nans(t, x, 2, c, &r, fl)) {
+            r = arith2(K_SUB, t, x[0], x[1]);
+            *fl |= sf_flags();
+            r = finish(t, r, c, fl);
+        }
+        return r & ~sign(t); // FPAbs, NaNs too
+    }
+    case K_MULX: case K_RECPS: case K_RSQRTS: {
+        if (o->k != K_MULX) n ^= sign(t); // FPNeg(op1) first
+        u64 x[2] = {flush_in(t, n, c, fl), flush_in(t, m, c, fl)};
+        if (nans(t, x, 2, c, &r, fl)) return r;
+        bool sg = ((x[0] ^ x[1]) & sign(t)) != 0;
+        bool iz = (is_inf(t, x[0]) && is_zero(t, x[1])) || (is_zero(t, x[0]) && is_inf(t, x[1]));
+        if (iz) return o->k == K_MULX ? two(t, sg) : o->k == K_RECPS ? two(t, false) : kf(t, 1.5);
+        if (o->k == K_MULX) {
+            r = fmul(t, x[0], x[1]);
+        } else if (is_inf(t, x[0]) || is_inf(t, x[1])) {
+            return inf(t, sg);
+        } else if (o->k == K_RECPS) {
+            r = fused(t, x[0], x[1], kf(t, 2.0));
+        } else {
+            // (3 + n·m) / 2 rounded once: 1.5 + (n/2)·m, halving whichever
+            // factor stays normal (exact); with both tiny, the product
+            // doesn't matter to the halving.
+            if (expo(t, x[0]) > 1) r = fused(t, x[0] - (1ull << t.f), x[1], kf(t, 1.5));
+            else if (expo(t, x[1]) > 1) r = fused(t, x[0], x[1] - (1ull << t.f), kf(t, 1.5));
+            else {
+                r = fused(t, x[0], x[1], kf(t, 3.0));
+                r -= 1ull << t.f;
+            }
+        }
+        *fl |= sf_flags();
+        return finish(t, r, c, fl);
+    }
+    case K_RECPX: {
+        u64 x = flush_in(t, n, c, fl);
+        if (nans(t, &x, 1, c, &r, fl)) return r;
+        u64 e = expo(t, x), ones = (1ull << t.e) - 1;
+        return (x & sign(t)) | (e == 0 ? ones - 1 : (~e & ones)) << t.f;
+    }
+    case K_RECPE: case K_RSQRTE: {
+        u64 x = flush_in(t, n, c, fl);
+        if (nans(t, &x, 1, c, &r, fl)) return r;
+        bool neg = (x & sign(t)) != 0;
+        int F = t.f;
+        if (o->k == K_RECPE) {
+            if (is_inf(t, x)) return x & sign(t);
+            if (is_zero(t, x)) {
+                *fl |= DZC;
+                return inf(t, neg);
+            }
+            // |x| < 2^-128 (single), 2^-1024 (double): the estimate overflows.
+            u64 tiny = t.bytes == 4 ? 0x00200000ull : 0x0004000000000000ull;
+            if ((x & ~sign(t)) < tiny) {
+                bool to_inf = c->rm == 0 ? true : c->rm == 1 ? !neg : c->rm == 2 ? neg : false;
+                *fl |= OFC | IXC;
+                return to_inf ? inf(t, neg) : (inf(t, neg) - 1);
+            }
+            // FZ: a result in the denormal range flushes (|x| ≥ 2^126, 2^1022).
+            if (c->fz && expo(t, x) >= (u64)(t.bytes == 4 ? 253 : 2045)) {
+                *fl |= UFC;
+                return x & sign(t);
+            }
+            u64 fr = frac(t, x);
+            long e = (long)expo(t, x);
+            if (e == 0) {
+                if (!(fr >> (F - 1) & 1)) e = -1, fr = (fr << 2) & ((1ull << F) - 1);
+                else fr = (fr << 1) & ((1ull << F) - 1);
+            }
+            u32 scaled = (u32)(0x100 | (fr >> (F - 8)));
+            long re = (t.bytes == 4 ? 253 : 2045) - e;
+            u64 est = recip_estimate(scaled) & 0xff;
+            fr = est << (F - 8);
+            if (re == 0) fr = (1ull << (F - 1)) | (fr >> 1);
+            else if (re == -1) fr = (1ull << (F - 2)) | (fr >> 2), re = 0;
+            return (x & sign(t)) | ((u64)re & ((1ull << t.e) - 1)) << F | fr;
+        }
+        if (is_zero(t, x)) {
+            *fl |= DZC;
+            return inf(t, neg);
+        }
+        if (neg) {
+            *fl |= IOC;
+            return default_nan(t);
+        }
+        if (is_inf(t, x)) return 0;
+        u64 fr = frac(t, x);
+        long e = (long)expo(t, x);
+        if (e == 0) {
+            while (!(fr >> (F - 1) & 1)) fr = (fr << 1) & ((1ull << F) - 1), e--;
+            fr = (fr << 1) & ((1ull << F) - 1);
+        }
+        u32 scaled = (e & 1) == 0 ? (u32)(0x100 | (fr >> (F - 8))) : (u32)(0x80 | (fr >> (F - 7)));
+        long re = floordiv2((t.bytes == 4 ? 380 : 3068) - e);
+        u64 est = rsqrt_estimate(scaled) & 0xff;
+        return ((u64)re & ((1ull << t.e) - 1)) << F | est << (F - 8);
+    }
     case K_CSEL: return 0; // the caller picks
     case K_RINT: {
         u64 x = flush_in(t, n, c, fl);
@@ -280,6 +419,9 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
     case K_TOINT: {
         u64 x = flush_in(t, n, c, fl);
         uint_fast8_t md = mode_of(o, c);
+        // Fixed point: x · 2^fbits, exact (or an overflow, which saturates as out of range).
+        if (o->fbits && !is_nan(t, x)) x = fmul(t, x, ((u64)(((1ull << (t.e - 1)) - 1) + o->fbits)) << t.f);
+        softfloat_exceptionFlags = 0;
         int w = o->width;
         if (t.bytes == 4) {
             float32_t v = f32(x);
@@ -308,6 +450,8 @@ static u64 model(const Op *o, Fmt t, Fmt to, u64 n, u64 m, u64 a, const Cfg *c, 
             r = o->sgn ? (w == 32 ? i32_to_f64((int32_t)n).v : i64_to_f64((int64_t)n).v)
                        : (w == 32 ? ui32_to_f64((u32)n).v : ui64_to_f64(n).v);
         *fl |= sf_flags();
+        // Fixed point: / 2^fbits, exact.
+        if (o->fbits && !is_zero(to, r)) r -= (u64)o->fbits << to.f;
         return r;
     }
     }
@@ -359,6 +503,9 @@ enum Shape {
     NZ,   // the result in NZCV
     HI,   // FCVTL2: Vn's upper lanes in
     NHI,  // FCVTN2/FCVTXN2: Vd's upper lanes out, its lower half kept
+    PAIR, // pairwise: Vm:Vn's adjacent lanes, Vn's pairs to the low lanes
+    SPAIR, // scalar pairwise: Vn's two lanes to Vd's low element
+    RED,  // across lanes: Vn's four lanes reduced pairwise, to Vd's low element
 };
 
 typedef struct {
@@ -414,6 +561,38 @@ static void check(const Form *f, const Case *cs, int ncs, int i, const Cfg *c, u
     u64 mt = mask(f->t.bytes);
     u64 melt = cs[(i + f->elt) % ncs].v[1] & mt;
     u32 wfl = 0;
+    if (f->shape == PAIR || f->shape == SPAIR || f->shape == RED) {
+        // The operand lanes: cases i.. in Vn (and Vm for PAIR); concat = Vm:Vn's lanes.
+        int in_lanes = f->shape == SPAIR ? 2 : f->shape == RED ? 4 : lanes;
+        u64 cat[8];
+        for (int j = 0; j < in_lanes; j++) {
+            const Case *k = &cs[(i + j) % ncs];
+            u64 n = (f->shape == SPAIR ? k->v[0] : k->v[0]) & mt, m = k->v[1] & mt;
+            if (f->shape == SPAIR) n = (j == 0 ? cs[i % ncs].v[0] : cs[i % ncs].v[1]) & mt;
+            lane_set(in.q1, f->t.bytes, j, n);
+            cat[j] = n;
+            if (f->shape == PAIR) lane_set(in.q2, f->t.bytes, j, m), cat[in_lanes + j] = m;
+        }
+        u32 fl;
+        if (f->shape == PAIR) {
+            for (int e = 0; e < lanes; e++) {
+                lane_set(want.q0, f->to.bytes, e, model(&f->op, f->t, f->to, cat[2 * e], cat[2 * e + 1], 0, c, &fl));
+                wfl |= fl;
+            }
+        } else if (f->shape == SPAIR) {
+            lane_set(want.q0, f->to.bytes, 0, model(&f->op, f->t, f->to, cat[0], cat[1], 0, c, &fl));
+            wfl |= fl;
+        } else {
+            u64 lo = model(&f->op, f->t, f->to, cat[0], cat[1], 0, c, &fl);
+            wfl |= fl;
+            u64 hi = model(&f->op, f->t, f->to, cat[2], cat[3], 0, c, &fl);
+            wfl |= fl;
+            lane_set(want.q0, f->to.bytes, 0, model(&f->op, f->t, f->to, lo, hi, 0, c, &fl));
+            wfl |= fl;
+        }
+        lanes = in_lanes;
+        goto run;
+    }
     for (int j = 0; j < lanes; j++) {
         const Case *k = &cs[(i + j) % ncs];
         u64 n = k->v[0] & mt, m = f->zero ? 0 : k->v[1] & mt, a = k->v[2] & mt;
@@ -450,6 +629,7 @@ static void check(const Form *f, const Case *cs, int ncs, int i, const Cfg *c, u
         default: lane_set(want.q0, f->to.bytes, j, r);
         }
     }
+run:;
     u64 fpcr = (u64)c->rm << 22 | (u64)c->fz << 24 | (u64)c->dn << 25;
     u64 fpsr = c->ixc ? IXC : 0, wfpsr = fpsr | wfl;
     Out got;
@@ -480,7 +660,8 @@ typedef struct {
 
 static bool is_fp(const Form *f, int bytes, int ops) {
     enum Kind k = f->op.k;
-    int n = k == K_FMA ? 3 : (k == K_SQRT || k == K_RINT || k == K_CVT || k == K_TOINT) ? 1
+    int n = k == K_FMA ? 3
+            : (k == K_SQRT || k == K_RINT || k == K_CVT || k == K_TOINT || k == K_RECPX || k == K_RECPE || k == K_RSQRTE) ? 1
             : f->zero ? 1 : 2;
     return k != K_FROMINT && f->t.bytes == bytes && n == ops;
 }
