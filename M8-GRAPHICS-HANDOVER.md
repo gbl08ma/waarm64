@@ -6,11 +6,13 @@ docs/frontend.md "A 3D machine"; docs/testing.md (`scripts/ci-deqp.sh`).
 
 ## G5, proposed
 
-1. **Snapshots while 3D is in use** (G4's decision 4 left it to G5). Today `Gpu.save()` marks a machine whose 3D is
-   in use unsaveable and `vm.snapshot` refuses it; unused contexts are saved and remade. The renderer's state lives
-   in WebGL, so either the device's side keeps what a context created (objects, resource contents read back) and a
-   load rebuilds a fresh renderer from it, or the commands since each context's creation are kept and replayed.
-   Design against what Firefox and sway hold (their resource counts and sizes), measure the save's size and time.
+1. **Snapshots while 3D is in use: built, the dev VM's checks left** (graphics.md §22; started in a cloud session at
+   the user's word, 2026-10-18). The renderer's state is saved as data and its contents read back, carried in the
+   snapshot file's BLOB frames, and loaded into a fresh renderer; refused only while a video decodes; the page warns
+   from 64 MiB. Tested on traces in Chromium (exact frames), every format, the GPU worker's port. **Left:** on the dev
+   VM, a snapshot of the desktop guest with sway, Firefox and GTK4 running (`bench/gpu/guest-session.ts`), loaded in a
+   fresh profile and used on; their resource counts, the 3D state's size, the file's and the pause (the Mac's GPU too);
+   a page test of it if it is cheap enough; and `scripts/ci-deqp.sh` (the DEPTH32F_STENCIL8 upload moved into `drawZs`).
 2. **dEQP on a real GPU:** the whole lists, or the pass lists, on the Mac host's GPU (ANGLE on Metal) through
    `bench/gpu/sway-mac.sh`'s route (`SCRIPT=`): every G4 run was on SwiftShader. Whatever differs is what users hit.
 3. **The guest-side leftovers**, each measured first (docs/backlog.md): GtkGLArea's graphics offload (caps without

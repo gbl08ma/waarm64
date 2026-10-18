@@ -1,12 +1,13 @@
 // A VM to a snapshot file and back (docs/plans/snapshots.md): web/vm.ts has the machine's state
 // (`snapshot()`, `BootOptions.restore`), web/snapshot-file.ts the container, web/lz.ts its codec.
 // The file: the header (what the machine is, and the writable disks it pins), CORE (the core's
-// state), DEVS (the host's: backend state and pending input, JSON), RAM, then DISK: the blocks the
+// state), DEVS (the host's: backend state and pending input, JSON), BLOB (the binary parts of DEVS:
+// the display's 3D contents, each Uint8Array of the state a blob DEVS names), RAM, then DISK: the blocks the
 // disks' overlays hold (a snapshot is only valid with the disk as it was: the guest's page cache
 // and filesystem state are in RAM). Round-robin VMs are saved between runs; a parallel one is
 // paused first (`pause()`), and runs on afterwards. A restore replaces the overlays with the
 // file's blocks before the new VM's backends open them.
-import { applyRam, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type Sink, type SnapshotHeader } from './snapshot-file.ts';
+import { applyRam, BLOB_CHUNKS, corrupt, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter, truncated, type Codec, type Sink, type SnapshotHeader } from './snapshot-file.ts';
 import { diskIdentity, type BlkSpec, type DeviceSpec } from './devices.ts';
 import { ramDisk } from './ramdisk.ts';
 import { lzCodec } from './lz.ts';
@@ -54,9 +55,13 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
   const pinned: SnapshotDisk[] = all.map((d) => ({ slot: d.slot, identity: d.identity, size: d.size, blocks: carried(d) ? d.blocks.length : 0, sha256: opts.sha256?.(d.slot), overlay: d.overlay, generation: d.generation, ...(d.ram ? { ram: true } : {}) }));
   const disks = all.filter(carried);
   const header: SnapshotHeader = { ...meta, format: 1, coreVersion: state.version, abi: ABI, created: new Date().toISOString(), ramSize: vm.ramSize, disks: pinned, ...(opts.suspend ? { suspend: true } : {}) };
-  const w = new SnapshotWriter(sink, header, { codec, concurrency: 1 });
+  // The state's Uint8Arrays go in BLOB frames; DEVS names each by its number and length.
+  const blobs: Uint8Array[] = [];
+  const devs = JSON.stringify(state.host, (_k, v: unknown) => (v instanceof Uint8Array ? { $blob: blobs.push(v) - 1, length: v.length } : v));
+  const w = new SnapshotWriter(sink, header, { codec, concurrency: 1, blobs: blobs.length > 0 });
   await w.bytes('CORE', state.core);
-  await w.bytes('DEVS', new TextEncoder().encode(JSON.stringify(state.host)));
+  await w.bytes('DEVS', new TextEncoder().encode(devs));
+  for (const [n, b] of blobs.entries()) await w.blob(n, b);
   const ram = await w.ram(new Uint8Array(vm.memory.buffer, vm.ram, vm.ramSize), opts.progress);
   for (const d of disks) {
     await w.disk((async function* () {
@@ -68,7 +73,7 @@ export async function writeSnapshot(vm: Vm, sink: Sink, meta: SnapshotMeta, code
     })());
   }
   const end = await w.end();
-  return { ...end, pages: ram.pages, state: state.core.length, diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned };
+  return { ...end, pages: ram.pages, state: state.core.length, blobBytes: blobs.reduce((n, b) => n + b.length, 0), diskBlocks: disks.reduce((n, d) => n + d.blocks.length, 0), pins: pinned };
 }
 
 /**
@@ -146,11 +151,27 @@ export async function readSnapshot(
   };
   if (!parts.CORE.length || !parts.DEVS.length) throw next.done ? truncated() : corrupt("the machine's state is missing");
   let host: VmState['host'];
+  // The blobs DEVS names (`writeSnapshot`), made at their lengths and filled from the BLOB frames that follow.
+  const blobs: Uint8Array[] = [];
   try {
-    host = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(join(parts.DEVS)));
+    host = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(join(parts.DEVS)), (_k, v: unknown) => {
+      if (!v || typeof v !== 'object' || !('$blob' in v)) return v;
+      const { $blob: n, length } = v as { $blob: unknown; length: unknown };
+      if (!Number.isInteger(n) || !Number.isSafeInteger(length) || (n as number) < 0 || (length as number) < 0 || (length as number) > 2 ** 32 || blobs[n as number]) throw corrupt("the devices' state is not readable");
+      return (blobs[n as number] = new Uint8Array(length as number));
+    });
   } catch {
     throw corrupt("the devices' state is not readable");
   }
+  const filled = blobs.map(() => 0);
+  for (; !next.done && next.value.tag === 'BLOB'; next = await frames.next()) {
+    const { index, data } = next.value;
+    const n = Math.floor(index / BLOB_CHUNKS), at = (index % BLOB_CHUNKS) * 2 ** 20;
+    if (!blobs[n] || at + data.length > blobs[n].length) throw corrupt("the devices' state doesn't fit its parts");
+    blobs[n].set(data, at);
+    filled[n] += data.length;
+  }
+  if (filled.some((n, k) => n !== blobs[k]?.length)) throw corrupt("the devices' state is missing parts");
   if (!Array.isArray(host?.devices) || !Array.isArray(host.input) || host.input.some((b) => !Number.isInteger(b) || b < 0 || b > 255)) throw corrupt("the devices' state is not readable");
   const restore: Restore = {
     core: join(parts.CORE),

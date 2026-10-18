@@ -348,7 +348,10 @@ machinery: [platform.md](platform.md) "Snapshots", [plans/snapshots.md](plans/sn
 stored machine's is kept: below, "A stored machine's snapshots"): the picker first
 (`showSaveFilePicker`, which needs the click's user activation; suggested name
 `<machine>-<yyyy-mm-dd-hhmm>.webpcsnap`), else a Blob download, as a disk's Export does. No confirmation:
-the machine isn't stopped. The worker pauses it (`vm.pause()`), writes the file with
+the machine isn't stopped. One exception, asked before the picker (its OK is the click the picker needs): a machine
+whose 3D state would add 64 MiB or more (the GPU worker's count of its resources' bytes, before compression:
+`VirglRenderer.snapshotBytes`) says how much, and that the machine pauses while it is read (graphics.md §22); the
+same for a stored machine's kept snapshot. The worker pauses it (`vm.pause()`), writes the file with
 `writeSnapshot` and resumes, also on an error. The state line shows the phase and a fraction
 ("Writing the snapshot 40%"); afterwards a notice in the message bar says the file, its size and how
 long the machine was paused (the numbers are also in `#message`'s `data-snapshot`, JSON, for

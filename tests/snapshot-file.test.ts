@@ -8,6 +8,8 @@ import { crc32 as zlibCrc32 } from 'node:zlib';
 import { test } from 'node:test';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
+import { readSnapshot, writeSnapshot } from '../web/snapshot.ts';
+import type { Vm } from '../web/vm.ts';
 import {
   applyRam, crc32, deflateCodec, diskBlocks, openSnapshot, SnapshotError, SnapshotWriter,
   type Codec, type SnapshotHeader,
@@ -239,7 +241,7 @@ test('refusals: not a snapshot, a newer format, truncated, corrupt', async () =>
   await refused(openSnapshot(whole(new TextEncoder().encode('SQLite format 3\0 and a long tail of text'))), 'not-snapshot');
   await refused(openSnapshot(whole(new Uint8Array(0))), 'not-snapshot');
   await refused(openSnapshot(whole(file.slice(0, 5))), 'not-snapshot');
-  const newer = file.slice(); dv(newer).setUint32(8, 2, true);
+  const newer = file.slice(); dv(newer).setUint32(8, 3, true);
   await refused(openSnapshot(whole(newer)), 'newer-format', /newer version/);
   const old = file.slice(); dv(old).setUint32(8, 0, true);
   await refused(openSnapshot(whole(old)), 'corrupt');
@@ -406,4 +408,47 @@ test('the reader lets go of the chunks of the stream as it consumes them', async
     checked = true;
   }
   assert.ok(checked && frames === 24);
+});
+
+test('a state\'s Uint8Arrays (the display\'s 3D contents) travel as BLOB frames, in a version 2 file; a version 1 file has none', async () => {
+  const big = random(3 * MiB + 5, 2), small = random(10, 3);
+  const vmWith = (devices: unknown[]) => ({
+    snapshot: async () => ({ version: 7, core: random(100, 1), host: { devices, input: [1, 2] } }),
+    disks: async () => [], diskBlocks: async () => new Uint8Array(0),
+    ramSize: 65536, memory: { buffer: new ArrayBuffer(65536) }, ram: 0,
+  }) as unknown as Vm;
+  const save = async (devices: unknown[]) => {
+    const parts: Uint8Array[] = [];
+    const out = await writeSnapshot(vmWith(devices), (b) => { parts.push(b.slice()); }, { machine: 'test' }, deflateCodec);
+    return { file: concat(parts), out };
+  };
+  const { file, out } = await save([{ gpu: { levels: [{ data: big }, { data: small }, { data: new Uint8Array(0) }] } }, null]);
+  assert.equal(out.blobBytes, big.length + small.length);
+  assert.equal(new DataView(file.buffer).getUint32(8, true), 2);
+  const blobs = (await readAll(whole(file))).frames.filter((f) => f.tag === 'BLOB');
+  assert.deepEqual(blobs.map((f) => f.index), [0, 1, 2, 3, 2 ** 24], 'blob 0 in four chunks, blob 1 in one, the empty blob 2 in none');
+  const { restore } = await readSnapshot(whole(file), deflateCodec, 7);
+  const back = restore.host.devices as [{ gpu: { levels: { data: Uint8Array }[] } }, null];
+  sameBytes(back[0].gpu.levels[0].data, big, 'blob 0');
+  sameBytes(back[0].gpu.levels[1].data, small, 'blob 1');
+  assert.equal(back[0].gpu.levels[2].data.length, 0);
+  assert.deepEqual([back[1], restore.host.input], [null, [1, 2]]);
+  // Without Uint8Arrays: version 1, which every reader takes.
+  assert.equal(new DataView((await save([{ a: 1 }])).file.buffer).getUint32(8, true), 1);
+  // BLOB frames in a version 1 file: refused.
+  const v1 = file.slice(); new DataView(v1.buffer).setUint32(8, 1, true);
+  await refused(readAll(whole(v1)), 'corrupt');
+  // DEVS naming a blob longer, or shorter, than its frames: refused.
+  const made = async (length: number, bytes: number) => {
+    const parts: Uint8Array[] = [];
+    const w = new SnapshotWriter((b) => { parts.push(b.slice()); }, { ...HEADER, coreVersion: 7, ramSize: 65536, disks: [] }, { blobs: true });
+    await w.bytes('CORE', random(10, 1));
+    await w.bytes('DEVS', new TextEncoder().encode(JSON.stringify({ devices: [{ d: { $blob: 0, length } }], input: [] })));
+    await w.blob(0, random(bytes, 5));
+    await w.end();
+    return concat(parts);
+  };
+  await readSnapshot(whole(await made(20, 20)), deflateCodec, 7);
+  await refused(readSnapshot(whole(await made(30, 20)), deflateCodec, 7), 'corrupt', /missing parts/);
+  await refused(readSnapshot(whole(await made(10, 20)), deflateCodec, 7), 'corrupt', /doesn't fit/);
 });

@@ -43,6 +43,8 @@ type Res = ResourceDesc & {
   msResolved?: Res;
   /** A format WebGL can't render to (so no framebuffer reads it): its uploaded texels by level, for copies from it. */
   texels?: Map<number, Uint8Array>;
+  /** A compressed format (nothing reads it back): its uploaded blocks by level, every layer, for a snapshot. */
+  blocks?: Map<number, Uint8Array>;
   /** Contexts holding it (unref'd by the guest while attached somewhere: the GL objects live until the last goes). */
   refs: Set<number>;
   dead?: boolean;
@@ -61,7 +63,7 @@ type VertexElements = { offset: number; divisor: number; vb: number; format: num
 type SamplerView = { res: number; format: number; target: number; first: number; last: number; firstLevel: number; lastLevel: number; swizzle: number[] };
 type SamplerState = { wrap: number[]; minImg: number; minMip: number; magImg: number; compare: boolean; compareFunc: number; maxAniso: number; lodBias: number; minLod: number; maxLod: number; sampler?: WebGLSampler };
 type Surface = { res: number; format: number; level: number; firstLayer: number; lastLayer: number };
-type Query = { type: number; index: number; res: number; offset: number; q?: WebGLQuery; target?: number; pending?: boolean; result: number };
+type Query = { type: number; index: number; res: number; offset: number; q?: WebGLQuery; target?: number; pending?: boolean; result: number; /** Begun and not ended. */ active?: boolean };
 /** A stream output target: a buffer's range, and the bytes written into it since it was last bound without append. */
 type SoTarget = { res: number; offset: number; size: number; filled: number };
 type SoOutput = NonNullable<Shader['so']>['outputs'][number];
@@ -102,6 +104,28 @@ type Sub = {
   longShader: Map<number, { handle: number; shader: Shader }>;
 };
 type Ctx = { id: number; subs: Map<number, Sub>; sub: Sub; attached: Set<number>; video?: VideoContext };
+
+/** A resource's level in a snapshot: bytes as an upload takes them (every layer), or every depth (floats) then every stencil byte (`zs`). */
+export type SavedLevel = { level: number; how: 'bytes' | 'zs'; data: Uint8Array };
+/** A resource in a snapshot; `lost`: what of its contents couldn't be read back (they load as zeros). */
+export type SavedResource = { desc: ResourceDesc; backing: Backing | null; levels: SavedLevel[]; lost?: string };
+type SavedObject = { handle: number; kind: Obj['kind']; v: unknown };
+/** A sub-context in a snapshot: its objects, and its bound state naming them by their place in `objects` (null: none). */
+type SavedSub = {
+  id: number; objects: SavedObject[];
+  shaders: { vs: number | null; fs: number | null }; blend: number | null; dsa: number | null; rs: number | null; ve: number | null;
+  vbs: Sub['vbs']; ib: Sub['ib']; consts: Record<Stage, number[]>;
+  ubos: Record<Stage, [number, { res: number; offset: number; length: number }][]>;
+  views: Record<Stage, (number | null)[]>; samplers: Record<Stage, (number | null)[]>;
+  fb: { cbufs: (number | null)[]; zs: number | null };
+  viewport: Sub['viewport']; scissor: Sub['scissor']; stencilRef: [number, number]; blendColor: number[]; stipple: number[]; sampleMask: number;
+  so: { targets: (number | null)[]; seen: string[] };
+  longShader: [number, { handle: number; shader: number }][];
+};
+/** A context in a snapshot: its sub-contexts, the current one, the resources attached. */
+export type SavedContext = { id: number; sub: number; attached: number[]; subs: SavedSub[] };
+/** What `VirglRenderer.save` gives and `load` takes: JSON, but for the contents (`SavedLevel.data`). */
+export type RendererSnapshot = { version: 1; resources: SavedResource[]; contexts: SavedContext[] };
 
 type Program = { prog: WebGLProgram; layout: ProgramLayout; loc: Map<string, WebGLUniformLocation | null> };
 
@@ -522,6 +546,7 @@ export class VirglRenderer {
           for (let y = 0; y < rows; y++) out.set(layer.subarray(y * stride, y * stride + rowBytes), y * rowBytes);
           layer = out;
         }
+        this.keepBlocks(r, level, box, box.z + z, layer);
         if (t === E.TEXTURE_2D) gl.compressedTexSubImage2D(t, level, box.x, box.y, box.w, box.h, f.internal, layer);
         else if (t === E.TEXTURE_CUBE_MAP) gl.compressedTexSubImage2D(E.TEXTURE_CUBE_MAP_POSITIVE_X + box.z + z, level, box.x, box.y, box.w, box.h, f.internal, layer);
         else gl.compressedTexSubImage3D(t, level, box.x, box.y, box.z + z, box.w, box.h, 1, f.internal, layer);
@@ -552,7 +577,7 @@ export class VirglRenderer {
    * Reads a resource's box back, laid out with `stride`/`layerStride` (0: packed), for the guest. Null if the format
    * can't be read back (the guest isn't told it can: `supported_readback_formats`).
    */
-  private readback(r: Res, level: number, box: Box, stride: number, layerStride: number): Uint8Array | null {
+  private readback(r: Res, level: number, box: Box, stride: number, layerStride: number, reader = r.fmt && readbackOf(r.fmt, this.colorBufferFloat)): Uint8Array | null {
     const gl = this.gl;
     this.stats.readbacks++;
     if (r.target === PIPE_BUFFER) {
@@ -567,7 +592,6 @@ export class VirglRenderer {
     layerStride ||= stride * box.h;
     const out = new Uint8Array(boxBytes(f, box.w, box.h, box.d, stride, layerStride));
     this.stats.readbackBytes += rowBytes * box.h * box.d;
-    const reader = readbackOf(f, this.colorBufferFloat);
     if (!reader) return null;
     const tmp = new Uint8Array(box.w * box.h * reader.bytes);
     for (let z = 0; z < box.d; z++) {
@@ -1045,6 +1069,19 @@ export class VirglRenderer {
     return { w: Math.max(1, r.width >> level), h: Math.max(1, r.height >> level), d: r.target === 3 ? Math.max(1, r.depth >> level) : Math.max(1, r.arraySize) };
   }
 
+  /** Copies a compressed upload's layer (rows of blocks, packed) into the texture's copy of the level (`Res.blocks`). */
+  private keepBlocks(r: Res, level: number, box: Box, layer: number, data: Uint8Array) {
+    const f = r.fmt!, b = f.block, { w, h, d } = this.levelSize(r, level);
+    const bw = Math.ceil(w / b), bh = Math.ceil(h / b), row = Math.ceil(box.w / b) * f.bpp, x0 = Math.floor(box.x / b), y0 = Math.floor(box.y / b);
+    r.blocks ??= new Map();
+    let lv = r.blocks.get(level);
+    if (!lv) r.blocks.set(level, (lv = new Uint8Array(bw * bh * d * f.bpp)));
+    for (let y = 0; y < Math.ceil(box.h / b); y++) {
+      const at = ((layer * bh + y0 + y) * bw + x0) * f.bpp;
+      if (at + row <= lv.length && (y + 1) * row <= data.length) lv.set(data.subarray(y * row, (y + 1) * row), at);
+    }
+  }
+
   /** Copies an upload into the texture's CPU copy of the level (`Res.texels`). */
   private keepTexels(r: Res, level: number, box: Box, data: Uint8Array, stride: number, layerStride: number) {
     const bpp = r.fmt!.bpp, { w, h, d } = this.levelSize(r, level);
@@ -1266,6 +1303,23 @@ export class VirglRenderer {
    * specification, depth32f_stencil8). Texels are 8 bytes: the depth's float, then the stencil in the low byte.
    */
   private drawZ32S8(r: Res, level: number, box: Box, data: Uint8Array, stride: number, layerStride: number) {
+    const dv = new DataView(data.buffer, data.byteOffset, data.length);
+    this.drawZs(r, level, box, (z, depth, sten) => {
+      for (let y = 0; y < box.h; y++) for (let x = 0; x < box.w; x++) {
+        const o = z * layerStride + y * stride + x * 8;
+        if (o + 8 > data.length) continue;
+        depth[y * box.w + x] = dv.getFloat32(o, true);
+        sten[y * box.w + x] = data[o + 4];
+      }
+    });
+  }
+
+  /**
+   * Depths and stencil bytes drawn into a depth, stencil or depth-stencil resource's box (a texture's level and layers,
+   * or a renderbuffer, multisampled too: every sample takes the value): `fill` gives layer `z`'s, a texel a value in
+   * rows of `box.w`. Without `depth` (or `stencil`), that part is left as it is.
+   */
+  private drawZs(r: Res, level: number, box: Box, fill: (z: number, depth: Float32Array, sten: Uint8Array) => void, parts = { depth: true, stencil: true }) {
     const gl = this.gl;
     if (!this.zsProg) {
       const prog = this.link(`#version 300 es
@@ -1286,6 +1340,9 @@ void main() {
       this.zsProg = { prog, loc };
       this.zsTex = [gl.createTexture()!, gl.createTexture()!];
     }
+    const kind = r.fmt?.kind;
+    const point = kind === 'depth' ? E.DEPTH_ATTACHMENT : kind === 'stencil' ? E.STENCIL_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
+    const writeDepth = parts.depth && kind !== 'stencil', writeStencil = parts.stencil && kind !== 'depth';
     const { prog, loc } = this.zsProg;
     const [dt, st] = this.zsTex!;
     const n = box.w * box.h;
@@ -1306,21 +1363,19 @@ void main() {
     }
     gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, this.fbo);
     for (let k = 0; k < this.colorAttachments; k++) this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0 + k, undefined, 0, 0);
+    this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
     gl.drawBuffers([E.NONE]);
     for (const e of [E.BLEND, E.CULL_FACE, E.SCISSOR_TEST, E.POLYGON_OFFSET_FILL, E.RASTERIZER_DISCARD, E.SAMPLE_COVERAGE, E.SAMPLE_ALPHA_TO_COVERAGE]) gl.disable(e);
     gl.viewport(box.x, box.y, box.w, box.h);
     gl.enable(E.DEPTH_TEST);
     gl.depthFunc(E.ALWAYS);
-    gl.enable(E.STENCIL_TEST);
+    if (writeStencil) gl.enable(E.STENCIL_TEST);
+    else gl.disable(E.STENCIL_TEST);
     gl.stencilOpSeparate(E.FRONT_AND_BACK, E.REPLACE, E.REPLACE, E.REPLACE);
     for (let z = 0; z < Math.max(1, box.d); z++) {
-      const dv = new DataView(data.buffer, data.byteOffset, data.length);
-      for (let y = 0; y < box.h; y++) for (let x = 0; x < box.w; x++) {
-        const o = z * layerStride + y * stride + x * 8;
-        if (o + 8 > data.length) continue;
-        depth[y * box.w + x] = dv.getFloat32(o, true);
-        sten[y * box.w + x] = data[o + 4];
-      }
+      depth.fill(0);
+      sten.fill(0);
+      fill(z, depth, sten);
       gl.activeTexture(E.TEXTURE0);
       gl.bindTexture(E.TEXTURE_2D, dt);
       gl.texImage2D(E.TEXTURE_2D, 0, GL.R32F, box.w, box.h, 0, GL.RED, E.FLOAT, depth);
@@ -1330,22 +1385,22 @@ void main() {
       gl.activeTexture(E.TEXTURE0);
       gl.bindSampler(0, null);
       gl.bindSampler(1, null);
-      this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, r, level, box.z + z);
+      this.attachTo(E.DRAW_FRAMEBUFFER, point, r, level, box.z + z);
       // The depth, and the stencil cleared to 0; then each stencil bit where the byte has it.
-      gl.depthMask(true);
+      gl.depthMask(writeDepth);
       gl.stencilFuncSeparate(E.FRONT_AND_BACK, E.ALWAYS, 0, 0xff);
       gl.stencilMaskSeparate(E.FRONT_AND_BACK, 0xff);
       gl.uniform1ui(loc.get('u_bit')!, 0);
       gl.drawArrays(E.TRIANGLES, 0, 3);
       gl.depthMask(false);
-      for (let b = 0; b < 8; b++) {
+      if (writeStencil) for (let b = 0; b < 8; b++) {
         gl.stencilFuncSeparate(E.FRONT_AND_BACK, E.ALWAYS, 0xff, 0xff);
         gl.stencilMaskSeparate(E.FRONT_AND_BACK, 1 << b);
         gl.uniform1ui(loc.get('u_bit')!, 1 << b);
         gl.drawArrays(E.TRIANGLES, 0, 3);
       }
     }
-    this.attachTo(E.DRAW_FRAMEBUFFER, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
+    this.attachTo(E.DRAW_FRAMEBUFFER, point, undefined, 0, 0);
     gl.depthMask(true);
     this.fbCache.clear();
   }
@@ -2061,6 +2116,7 @@ void main() {
     this.debug?.(`begin query ${h}: type ${q?.type} index ${q?.index}`);
     if (!q) return;
     const gl = this.gl;
+    q.active = true;
     // Occlusion counters and predicates: WebGL2 has only "any samples passed" (a counter reads 0 or 1).
     if (q.type === Q_OCCLUSION_COUNTER || q.type === Q_OCCLUSION_PREDICATE || q.type === Q_OCCLUSION_CONSERVATIVE) {
       q.q ??= gl.createQuery()!;
@@ -2079,6 +2135,7 @@ void main() {
     this.debug?.(`end query ${h}: type ${q?.type} result ${q?.result}`);
     if (!q) return;
     const gl = this.gl;
+    q.active = false;
     this.counting.delete(q);
     if (q.q) {
       gl.endQuery(q.target ?? E.ANY_SAMPLES_PASSED);
@@ -2142,6 +2199,443 @@ void main() {
     return { tex: r.tex, fmt: r.fmt, width: r.width, height: r.height };
   }
 
+  // --- snapshots -------------------------------------------------------------------------------------------------
+
+  /**
+   * Why the renderer's state can't be saved now, or undefined: a context with video codecs or buffers (WebCodecs'
+   * decoders keep their reference pictures to themselves).
+   */
+  snapshotRefusal(): string | undefined {
+    for (const c of this.contexts.values()) {
+      if (c.video && (c.video.codecs.size || c.video.buffers.size)) return 'a video is being decoded through the GPU: close the video player first';
+    }
+    return undefined;
+  }
+
+  /**
+   * What the guest made, for a snapshot (docs/plans/graphics.md §22): every resource (its description, backing, and
+   * contents read back level by level) and every context (its sub-contexts' objects and bound state, as data). The
+   * GL objects are made again from it by `load` in a fresh renderer. Call it with the calls before it run and the
+   * queries settled (the GPU worker's `save`); `snapshotRefusal` first.
+   */
+  save(): RendererSnapshot {
+    const resources = [...this.resources.values()].map((r) => this.saveResource(r));
+    const contexts = [...this.contexts.values()].map((c) => ({ id: c.id, sub: c.sub.id, attached: [...c.attached], subs: [...c.subs.values()].map((s) => this.saveSub(c, s)) }));
+    this.resetAfterSnapshot();
+    return { version: 1, resources, contexts };
+  }
+
+  /** A snapshot's state into this renderer: what it had is gone (a virtio reset), then the resources and contexts are made again. */
+  load(s: RendererSnapshot) {
+    if (s?.version !== 1 || !Array.isArray(s.resources) || !Array.isArray(s.contexts)) throw new Error('the 3D state is not one this page reads');
+    this.reset();
+    for (const sr of s.resources) {
+      this.createResource(sr.desc);
+      const r = this.resources.get(sr.desc.id);
+      if (!r) continue;
+      if (sr.backing) this.attachBacking(r.id, sr.backing);
+      for (const l of sr.levels) this.loadLevel(r, l);
+    }
+    for (const sc of s.contexts) {
+      this.createContext(sc.id);
+      const c = this.contexts.get(sc.id)!;
+      c.subs.clear();
+      for (const ss of sc.subs) c.subs.set(ss.id, this.loadSub(ss, c));
+      c.sub = c.subs.get(sc.sub) ?? c.subs.get(0) ?? this.newSub(0);
+      if (!c.subs.has(c.sub.id)) c.subs.set(c.sub.id, c.sub);
+      for (const id of sc.attached) this.attach(c.id, id);
+    }
+    this.resetAfterSnapshot();
+  }
+
+  /** The bytes a snapshot of `desc` holds (before compression): a buffer's, each level's texels or blocks, 5 a depth-stencil texel. */
+  static snapshotBytes(desc: Pick<ResourceDesc, 'target' | 'format' | 'width' | 'height' | 'depth' | 'arraySize' | 'lastLevel' | 'bind'>) {
+    if (desc.target === PIPE_BUFFER) return desc.bind & BIND_STAGING ? 0 : desc.width;
+    const f = FORMATS.get(desc.format);
+    if (!f) return 0;
+    const zs = f.kind === 'depth' || f.kind === 'depthstencil' || f.kind === 'stencil';
+    let n = 0;
+    for (let level = 0; level <= desc.lastLevel; level++) {
+      const w = Math.max(1, desc.width >> level), h = desc.target === PIPE_TEXTURE_1D || desc.target === PIPE_TEXTURE_1D_ARRAY ? 1 : Math.max(1, desc.height >> level);
+      const d = desc.target === PIPE_TEXTURE_3D ? Math.max(1, desc.depth >> level) : Math.max(1, desc.arraySize);
+      n += zs ? w * h * d * ((f.kind === 'stencil' ? 0 : 4) + (f.kind === 'depth' ? 0 : 1)) : Math.ceil(w / f.block) * Math.ceil(h / f.block) * d * f.bpp;
+    }
+    return n;
+  }
+
+  /** The bytes a snapshot of every resource holds (`snapshotBytes` of each). */
+  snapshotBytes() {
+    let n = 0;
+    for (const r of this.resources.values()) n += VirglRenderer.snapshotBytes(r);
+    return n;
+  }
+
+  private saveResource(r: Res): SavedResource {
+    const desc: ResourceDesc = { id: r.id, target: r.target, format: r.format, bind: r.bind, width: r.width, height: r.height, depth: r.depth, arraySize: r.arraySize, lastLevel: r.lastLevel, samples: r.samples, flags: r.flags };
+    const out: SavedResource = { desc, backing: r.backing?.map((b) => ({ ...b })) ?? null, levels: [] };
+    if (r.target === PIPE_BUFFER) {
+      if (r.shadow) out.levels.push({ level: 0, how: 'bytes', data: r.shadow.slice() });
+      return out;
+    }
+    if (!r.fmt || (!r.tex && !r.rb)) return out;
+    for (let level = 0; level <= (r.rb ? 0 : r.lastLevel); level++) {
+      const l = this.saveLevel(r, level);
+      if (typeof l === 'string') {
+        out.lost = l;
+        this.error(`snapshot: resource ${r.id} (${r.fmt.name}) level ${level}: ${l}`);
+      } else if (l) out.levels.push(l);
+    }
+    return out;
+  }
+
+  /** A level's contents (every layer), what's lost instead, or null where there's nothing to keep (blocks never uploaded). */
+  private saveLevel(r: Res, level: number): SavedLevel | string | null {
+    const f = r.fmt!, { w, h, d } = this.levelSize(r, level);
+    if (f.kind === 'depth' || f.kind === 'depthstencil' || f.kind === 'stencil') return this.readZs(r, level, w, h, d);
+    if (f.block > 1) {
+      const b = r.blocks?.get(level);
+      return b ? { level, how: 'bytes', data: b.slice() } : null;
+    }
+    if (!f.write) {
+      const t = r.texels?.get(level);
+      return t ? { level, how: 'bytes', data: t.slice() } : null;
+    }
+    let src = r, temp: WebGLTexture | undefined;
+    if (r.rb) {
+      // Multisampled: its samples resolved into a texture of its format (what a load gives every sample back).
+      if (f.kind === 'uint' || f.kind === 'sint') return 'a multisampled integer format isn\'t kept';
+      temp = this.tempTexture(f, w, h);
+      this.blitLayer(r, 0, 0, this.asTexture(r, temp), E.COLOR_ATTACHMENT0, E.COLOR_BUFFER_BIT, w, h);
+      src = this.asTexture(r, temp);
+    }
+    const data = this.readback(src, level, { x: 0, y: 0, z: 0, w, h, d }, 0, 0, readbackOf(f, this.colorBufferFloat) ?? snapshotReader(f, this.colorBufferFloat));
+    if (temp) this.gl.deleteTexture(temp);
+    return data ? { level, how: 'bytes', data } : `${f.name} can't be read back`;
+  }
+
+  private loadLevel(r: Res, l: SavedLevel) {
+    const f = r.fmt;
+    if (r.target === PIPE_BUFFER) return this.upload(r, 0, { x: 0, y: 0, z: 0, w: Math.min(l.data.length, r.width), h: 1, d: 1 }, l.data, 0, 0);
+    if (!f || l.level > r.lastLevel) return;
+    const { w, h, d } = this.levelSize(r, l.level);
+    if (l.how === 'zs') {
+      const n = w * h, hasD = f.kind !== 'stencil', hasS = f.kind !== 'depth';
+      if (l.data.length < (hasD ? 4 * n * d : 0) + (hasS ? n * d : 0)) return this.error(`snapshot: resource ${r.id} level ${l.level} is short`);
+      const depths = hasD ? new Float32Array(l.data.slice(0, 4 * n * d).buffer) : null;
+      // A 16-bit depth goes a quarter step up: a GL that truncates its conversion (SwiftShader's) keeps the value.
+      if (depths && f.internal === GL.DEPTH_COMPONENT16) for (let k = 0; k < depths.length; k++) depths[k] = Math.min(1, (Math.round(depths[k] * 65535) + 0.25) / 65535);
+      const stens = hasS ? l.data.subarray(hasD ? 4 * n * d : 0) : null;
+      return this.drawZs(r, l.level, { x: 0, y: 0, z: 0, w, h, d }, (z, depth, sten) => {
+        if (depths) depth.set(depths.subarray(z * n, (z + 1) * n));
+        if (stens) sten.set(stens.subarray(z * n, (z + 1) * n));
+      });
+    }
+    if (r.rb) {
+      // Multisampled: the resolved texels up as a texture, drawn into every sample.
+      const temp = this.tempTexture(f, w, h);
+      this.upload(this.asTexture(r, temp), 0, { x: 0, y: 0, z: 0, w, h, d: 1 }, l.data, 0, 0);
+      this.drawTexture(temp, r, w, h);
+      this.gl.deleteTexture(temp);
+      return;
+    }
+    // A 1D array's layers are its box's rows (`upload`).
+    const box = r.target === PIPE_TEXTURE_1D_ARRAY ? { x: 0, y: 0, z: 0, w, h: d, d: 1 } : { x: 0, y: 0, z: 0, w, h, d };
+    this.upload(r, l.level, box, l.data, 0, 0);
+  }
+
+  /** A 2D texture of `f`, `w`×`h`, one level. */
+  private tempTexture(f: Format, w: number, h: number) {
+    const gl = this.gl, t = gl.createTexture()!;
+    gl.bindTexture(E.TEXTURE_2D, t);
+    gl.texStorage2D(E.TEXTURE_2D, 1, f.internal, w, h);
+    return t;
+  }
+
+  /** `r` as if it were the 2D texture `tex` (or the renderbuffer `rb`) of its format, with no samples: what readback, upload and attachTo take. */
+  private asTexture(r: Res, tex: WebGLTexture | undefined, rb?: WebGLRenderbuffer): Res {
+    return { ...r, target: PIPE_TEXTURE_2D, samples: 0, lastLevel: 0, depth: 1, arraySize: 1, rb, tex, glTarget: tex ? E.TEXTURE_2D : undefined, texels: undefined, blocks: undefined, refs: new Set() };
+  }
+
+  /** The snapshot's framebuffers (read, draw), kept apart from the draws' (their attachments are cached: `fbCache`). */
+  private snapFbos?: [WebGLFramebuffer, WebGLFramebuffer];
+  private nearest?: WebGLSampler;
+
+  /** Binds the snapshot's framebuffers with nothing attached. */
+  private snapFramebuffers() {
+    const gl = this.gl;
+    this.snapFbos ??= [gl.createFramebuffer()!, gl.createFramebuffer()!];
+    const [read, draw] = this.snapFbos;
+    gl.bindFramebuffer(E.READ_FRAMEBUFFER, read);
+    gl.bindFramebuffer(E.DRAW_FRAMEBUFFER, draw);
+    for (const t of [E.READ_FRAMEBUFFER, E.DRAW_FRAMEBUFFER]) {
+      this.attachTo(t, E.COLOR_ATTACHMENT0, undefined, 0, 0);
+      this.attachTo(t, E.DEPTH_STENCIL_ATTACHMENT, undefined, 0, 0);
+    }
+  }
+
+  /** Copies `src`'s level and layer to `dst`'s level 0 through attachment `point` (resolving samples), `w`×`h`. */
+  private blitLayer(src: Res, level: number, layer: number, dst: Res, point: number, mask: number, w: number, h: number) {
+    const gl = this.gl;
+    this.snapFramebuffers();
+    this.attachTo(E.READ_FRAMEBUFFER, point, src, level, layer);
+    this.attachTo(E.DRAW_FRAMEBUFFER, point, dst, 0, 0);
+    const color = point === E.COLOR_ATTACHMENT0;
+    gl.readBuffer(color ? E.COLOR_ATTACHMENT0 : E.NONE);
+    gl.drawBuffers([color ? E.COLOR_ATTACHMENT0 : E.NONE]);
+    gl.disable(E.SCISSOR_TEST);
+    gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, mask, E.NEAREST);
+    this.attachTo(E.READ_FRAMEBUFFER, point, undefined, 0, 0);
+    this.attachTo(E.DRAW_FRAMEBUFFER, point, undefined, 0, 0);
+    gl.readBuffer(E.COLOR_ATTACHMENT0);
+  }
+
+  private snapProgs: Partial<Record<'depth' | 'mark' | 'copy', { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> }>> = {};
+
+  /** One of the snapshot's programs: a triangle over the viewport and `fs`, its uniforms' locations. */
+  private snapProgram(name: 'depth' | 'mark' | 'copy') {
+    const got = this.snapProgs[name];
+    if (got) return got;
+    const fs = {
+      // A depth texture's values as their float bits.
+      depth: 'uniform highp sampler2D u_t;\nout highp uvec4 o;\nvoid main() { o = uvec4(floatBitsToUint(texelFetch(u_t, ivec2(gl_FragCoord.xy), 0).r)); }',
+      // A constant (a stencil bit's weight, added up by blending).
+      mark: 'uniform highp float u_v;\nout highp vec4 o;\nvoid main() { o = vec4(u_v); }',
+      // A texture's texels as they are.
+      copy: 'uniform highp sampler2D u_t;\nout highp vec4 o;\nvoid main() { o = texelFetch(u_t, ivec2(gl_FragCoord.xy), 0); }',
+    }[name];
+    const prog = this.link('#version 300 es\nvoid main() { vec2 p = vec2(gl_VertexID & 1, gl_VertexID >> 1); gl_Position = vec4(p * 4.0 - 1.0, 0.0, 1.0); }', `#version 300 es\nprecision highp float;\n${fs}`);
+    if (!prog) throw new Error(`the snapshot's ${name} program doesn't compile`);
+    const loc = new Map<string, WebGLUniformLocation | null>();
+    for (const n of ['u_t', 'u_v']) loc.set(n, this.gl.getUniformLocation(prog, n));
+    return (this.snapProgs[name] = { prog, loc });
+  }
+
+  /** State for the snapshot's draws: nothing tested or blended, the whole `w`×`h`. */
+  private snapDrawState(w: number, h: number) {
+    const gl = this.gl;
+    for (const e of [E.BLEND, E.CULL_FACE, E.SCISSOR_TEST, E.POLYGON_OFFSET_FILL, E.RASTERIZER_DISCARD, E.SAMPLE_COVERAGE, E.SAMPLE_ALPHA_TO_COVERAGE, E.DEPTH_TEST, E.STENCIL_TEST]) gl.disable(e);
+    gl.colorMask(true, true, true, true);
+    gl.depthMask(false);
+    gl.stencilMask(0);
+    gl.viewport(0, 0, w, h);
+    gl.bindVertexArray(null);
+  }
+
+  /** Binds `tex` on unit 0 with nearest filtering (a depth texture sampled with a linear filter is incomplete). */
+  private bindNearest(tex: WebGLTexture) {
+    const gl = this.gl;
+    if (!this.nearest) {
+      this.nearest = gl.createSampler()!;
+      gl.samplerParameteri(this.nearest, E.TEXTURE_MIN_FILTER, E.NEAREST);
+      gl.samplerParameteri(this.nearest, E.TEXTURE_MAG_FILTER, E.NEAREST);
+    }
+    gl.activeTexture(E.TEXTURE0);
+    gl.bindTexture(E.TEXTURE_2D, tex);
+    gl.bindSampler(0, this.nearest);
+  }
+
+  /** Draws `tex`'s texels into `r` (a multisampled renderbuffer: every sample takes its pixel's value). */
+  private drawTexture(tex: WebGLTexture, r: Res, w: number, h: number) {
+    const gl = this.gl, p = this.snapProgram('copy');
+    this.snapFramebuffers();
+    this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, r, 0, 0);
+    gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+    this.snapDrawState(w, h);
+    gl.useProgram(p.prog);
+    gl.uniform1i(p.loc.get('u_t')!, 0);
+    this.bindNearest(tex);
+    gl.drawArrays(E.TRIANGLES, 0, 3);
+    this.attachTo(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, undefined, 0, 0);
+  }
+
+  /**
+   * A depth, stencil or depth-stencil level read back (WebGL2 reads none with readPixels): each layer is copied to a
+   * 2D texture of its format (a renderbuffer for stencil only; the copy resolves samples); its depths are drawn as
+   * float bits into an R32UI texture and read, and its stencil a bit at a time: where a stencil test of the bit passes,
+   * the bit's weight is added into an RGBA8 texture. The level: every depth (floats), then every stencil byte.
+   */
+  private readZs(r: Res, level: number, w: number, h: number, d: number): SavedLevel {
+    const gl = this.gl, f = r.fmt!;
+    const n = w * h, hasD = f.kind !== 'stencil', hasS = f.kind !== 'depth';
+    const out = new Uint8Array((hasD ? 4 * n * d : 0) + (hasS ? n * d : 0));
+    const point = f.kind === 'depth' ? E.DEPTH_ATTACHMENT : f.kind === 'stencil' ? E.STENCIL_ATTACHMENT : E.DEPTH_STENCIL_ATTACHMENT;
+    const mask = (hasD ? E.DEPTH_BUFFER_BIT : 0) | (hasS ? E.STENCIL_BUFFER_BIT : 0);
+    gl.bindBuffer(E.PIXEL_PACK_BUFFER, null);
+    for (let z = 0; z < d; z++) {
+      // The layer, alone and single-sampled.
+      let copy: Res;
+      if (f.kind === 'stencil') {
+        const rb = gl.createRenderbuffer()!;
+        gl.bindRenderbuffer(E.RENDERBUFFER, rb);
+        gl.renderbufferStorage(E.RENDERBUFFER, f.internal, w, h);
+        copy = this.asTexture(r, undefined, rb);
+      } else copy = this.asTexture(r, this.tempTexture(f, w, h));
+      this.blitLayer(r, level, z, copy, point, mask, w, h);
+      if (hasD) {
+        const target = gl.createTexture()!;
+        gl.bindTexture(E.TEXTURE_2D, target);
+        gl.texStorage2D(E.TEXTURE_2D, 1, GL.R32UI, w, h);
+        this.snapFramebuffers();
+        gl.framebufferTexture2D(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, E.TEXTURE_2D, target, 0);
+        gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+        this.snapDrawState(w, h);
+        const p = this.snapProgram('depth');
+        gl.useProgram(p.prog);
+        gl.uniform1i(p.loc.get('u_t')!, 0);
+        this.bindNearest(copy.tex!);
+        gl.drawArrays(E.TRIANGLES, 0, 3);
+        gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.snapFbos![1]);
+        gl.readBuffer(E.COLOR_ATTACHMENT0);
+        const px = new Uint32Array(n * 4);
+        gl.readPixels(0, 0, w, h, E.RGBA_INTEGER, E.UNSIGNED_INT, px);
+        const bits = new Uint32Array(out.buffer, 4 * n * z, n);
+        for (let k = 0; k < n; k++) bits[k] = px[4 * k];
+        gl.deleteTexture(target);
+      }
+      if (hasS) {
+        const target = gl.createTexture()!;
+        gl.bindTexture(E.TEXTURE_2D, target);
+        gl.texStorage2D(E.TEXTURE_2D, 1, E.RGBA8, w, h);
+        this.snapFramebuffers();
+        gl.framebufferTexture2D(E.DRAW_FRAMEBUFFER, E.COLOR_ATTACHMENT0, E.TEXTURE_2D, target, 0);
+        this.attachTo(E.DRAW_FRAMEBUFFER, point, copy, 0, 0);
+        gl.drawBuffers([E.COLOR_ATTACHMENT0]);
+        this.snapDrawState(w, h);
+        gl.clearBufferfv(E.COLOR, 0, [0, 0, 0, 0]);
+        gl.enable(E.BLEND);
+        gl.blendEquation(E.FUNC_ADD);
+        gl.blendFunc(E.ONE, E.ONE);
+        gl.enable(E.STENCIL_TEST);
+        gl.stencilOp(E.KEEP, E.KEEP, E.KEEP);
+        const p = this.snapProgram('mark');
+        gl.useProgram(p.prog);
+        for (let b = 0; b < 8; b++) {
+          gl.stencilFunc(E.EQUAL, 1 << b, 1 << b);
+          gl.uniform1f(p.loc.get('u_v')!, (1 << b) / 255);
+          gl.drawArrays(E.TRIANGLES, 0, 3);
+        }
+        gl.bindFramebuffer(E.READ_FRAMEBUFFER, this.snapFbos![1]);
+        gl.readBuffer(E.COLOR_ATTACHMENT0);
+        const px = new Uint8Array(n * 4);
+        gl.readPixels(0, 0, w, h, E.RGBA, E.UNSIGNED_BYTE, px);
+        const at = (hasD ? 4 * n * d : 0) + n * z;
+        for (let k = 0; k < n; k++) out[at + k] = px[4 * k];
+        this.attachTo(E.DRAW_FRAMEBUFFER, point, undefined, 0, 0);
+        gl.deleteTexture(target);
+      }
+      if (copy.rb) gl.deleteRenderbuffer(copy.rb);
+      if (copy.tex) gl.deleteTexture(copy.tex);
+    }
+    return { level, how: 'zs', data: out };
+  }
+
+  /** The GL state the snapshot's passes changed, back to what the draws expect of it. */
+  private resetAfterSnapshot() {
+    const gl = this.gl;
+    gl.bindFramebuffer(E.FRAMEBUFFER, null);
+    gl.disable(E.BLEND);
+    gl.disable(E.STENCIL_TEST);
+    gl.colorMask(true, true, true, true);
+    gl.depthMask(true);
+    gl.stencilMask(0xff);
+    gl.activeTexture(E.TEXTURE0);
+    gl.bindSampler(0, null);
+    this.fbCache.clear();
+  }
+
+  /** A sub-context as data: its objects (their values; bound state names them by their place in the list). */
+  private saveSub(c: Ctx, s: Sub): SavedSub {
+    const objects: SavedObject[] = [];
+    const index = new Map<unknown, number>();
+    const add = (handle: number, o: Obj) => {
+      const at = index.get(o.v);
+      if (at !== undefined) return at;
+      index.set(o.v, objects.length);
+      objects.push({ handle, kind: o.kind, v: this.saveValue(o, c) });
+      return objects.length - 1;
+    };
+    for (const [h, o] of s.objects) add(h, o);
+    // A bound value no handle names any more (its object deleted or made again): kept unnamed.
+    const ref = <K extends Obj['kind']>(kind: K, v: Extract<Obj, { kind: K }>['v'] | undefined) => (v ? add(0, { kind, v } as Obj) : null);
+    return {
+      id: s.id, objects,
+      shaders: { vs: ref('shader', s.shaders.vs), fs: ref('shader', s.shaders.fs) },
+      blend: ref('blend', s.blend), dsa: ref('dsa', s.dsa), rs: ref('rs', s.rs), ve: ref('ve', s.ve),
+      vbs: s.vbs.map((b) => ({ ...b })), ib: s.ib && { ...s.ib },
+      consts: { vs: [...s.consts.vs], fs: [...s.consts.fs] },
+      ubos: { vs: [...s.ubos.vs].map(([k, u]) => [k, { ...u }]), fs: [...s.ubos.fs].map(([k, u]) => [k, { ...u }]) },
+      views: { vs: Array.from(s.views.vs, (v) => ref('view', v)), fs: Array.from(s.views.fs, (v) => ref('view', v)) },
+      samplers: { vs: Array.from(s.samplers.vs, (v) => ref('sampler', v)), fs: Array.from(s.samplers.fs, (v) => ref('sampler', v)) },
+      fb: { cbufs: Array.from(s.fb.cbufs, (v) => ref('surface', v)), zs: ref('surface', s.fb.zs) },
+      viewport: structuredClone(s.viewport), scissor: { ...s.scissor }, stencilRef: [...s.stencilRef], blendColor: [...s.blendColor],
+      stipple: [...s.stipple], sampleMask: s.sampleMask,
+      so: { targets: Array.from(s.so.targets, (v) => ref('so', v)), seen: [...s.so.seen] },
+      longShader: [...s.longShader].map(([type, l]) => [type, { handle: l.handle, shader: ref('shader', l.shader)! }]),
+    };
+  }
+
+  /** An object's value as data (no GL objects). */
+  private saveValue(o: Obj, c: Ctx): unknown {
+    switch (o.kind) {
+      case 'shader': return { type: o.v.type, text: o.v.text, expected: o.v.expected, so: o.v.so, done: o.v.tgsi !== undefined || o.v.error !== undefined };
+      case 'sampler': { const { sampler, ...v } = o.v; void sampler; return structuredClone(v); }
+      case 'query': return { type: o.v.type, index: o.v.index, res: o.v.res, offset: o.v.offset, result: o.v.result, active: !!o.v.active, counting: this.counting.get(o.v) === c.id };
+      default: return structuredClone(o.v);
+    }
+  }
+
+  private loadSub(ss: SavedSub, c: Ctx): Sub {
+    const s = this.newSub(ss.id);
+    const values: Obj[] = ss.objects.map((so) => this.loadValue(so, c));
+    ss.objects.forEach((so, k) => { if (so.handle) s.objects.set(so.handle, values[k]); });
+    const v = <K extends Obj['kind']>(k: number | null, kind: K) => {
+      const o = k === null ? undefined : values[k];
+      return o?.kind === kind ? (o.v as Extract<Obj, { kind: K }>['v']) : undefined;
+    };
+    s.shaders = { vs: v(ss.shaders.vs, 'shader'), fs: v(ss.shaders.fs, 'shader') };
+    [s.blend, s.dsa, s.rs, s.ve] = [v(ss.blend, 'blend'), v(ss.dsa, 'dsa'), v(ss.rs, 'rs'), v(ss.ve, 've')];
+    s.vbs = ss.vbs;
+    s.ib = ss.ib;
+    s.consts = { vs: Uint32Array.from(ss.consts.vs), fs: Uint32Array.from(ss.consts.fs) };
+    s.ubos = { vs: new Map(ss.ubos.vs), fs: new Map(ss.ubos.fs) };
+    s.views = { vs: ss.views.vs.map((k) => v(k, 'view')), fs: ss.views.fs.map((k) => v(k, 'view')) };
+    s.samplers = { vs: ss.samplers.vs.map((k) => v(k, 'sampler')), fs: ss.samplers.fs.map((k) => v(k, 'sampler')) };
+    s.fb = { cbufs: ss.fb.cbufs.map((k) => v(k, 'surface')), zs: v(ss.fb.zs, 'surface') };
+    s.viewport = ss.viewport;
+    s.scissor = ss.scissor;
+    s.stencilRef = ss.stencilRef;
+    s.blendColor = ss.blendColor;
+    s.stipple = Uint32Array.from(ss.stipple);
+    s.sampleMask = ss.sampleMask;
+    s.so = { targets: ss.so.targets.map((k) => v(k, 'so')), seen: new Set(ss.so.seen) };
+    s.longShader = new Map(ss.longShader.map(([type, l]) => [type, { handle: l.handle, shader: v(l.shader, 'shader')! }]));
+    return s;
+  }
+
+  private loadValue(so: SavedObject, c: Ctx): Obj {
+    const v = so.v as Record<string, unknown>;
+    switch (so.kind) {
+      case 'shader': {
+        const sh: Shader = { serial: ++this.serial, type: v.type as number, text: v.text as string, expected: v.expected as number, so: v.so as Shader['so'] };
+        if (v.done) this.finishShader(sh);
+        return { kind: 'shader', v: sh };
+      }
+      case 'query': {
+        const q: Query = { type: v.type as number, index: v.index as number, res: v.res as number, offset: v.offset as number, result: v.result as number };
+        if (v.counting) this.counting.set(q, c.id);
+        if (v.active && (q.type === Q_OCCLUSION_COUNTER || q.type === Q_OCCLUSION_PREDICATE || q.type === Q_OCCLUSION_CONSERVATIVE)) {
+          // Begun again: what it counts from here on (its count before the snapshot is a draw's "any samples passed").
+          q.q = this.gl.createQuery()!;
+          q.target = q.type === Q_OCCLUSION_CONSERVATIVE ? E.ANY_SAMPLES_PASSED_CONSERVATIVE : E.ANY_SAMPLES_PASSED;
+          this.gl.beginQuery(q.target, q.q);
+        }
+        q.active = !!v.active;
+        return { kind: 'query', v: q };
+      }
+      default: return { kind: so.kind, v: structuredClone(so.v) } as Obj;
+    }
+  }
+
   /** Reads a 2D resource's RGBA as stored (rows top first), for tests and screenshots. */
   readResource(id: number): Uint8Array | null {
     const r = this.resources.get(id);
@@ -2195,6 +2689,33 @@ export function readbackOf(f: Format, floats: boolean): { format: number; type: 
         if (f.type === E.FLOAT) dv.setFloat32((x * comps + k) * 4, fv[x * 4 + k], true);
         else dv.setUint16((x * comps + k) * 2, toHalf(fv[x * 4 + k]), true);
       }
+    } };
+  }
+  return null;
+}
+
+/**
+ * How a snapshot reads the formats `readbackOf` doesn't (the guest isn't told it can read them back; a snapshot must
+ * keep them all the same): A4B4G4R4 as RGBA8 packed again into 4 bits a channel, R11G11B10_FLOAT as floats packed
+ * into 11, 11 and 10-bit floats (both exact for the values the formats hold).
+ */
+function snapshotReader(f: Format, floats: boolean): ReturnType<typeof readbackOf> {
+  if (f.type === GL.UNSIGNED_SHORT_4_4_4_4 && f.kind === 'unorm') {
+    return { format: E.RGBA, type: E.UNSIGNED_BYTE, bytes: 4, pack: (s, d, w) => {
+      const four = (x: number) => Math.round((x * 15) / 255);
+      for (let x = 0; x < w; x++) {
+        const v = (four(s[4 * x]) << 12) | (four(s[4 * x + 1]) << 8) | (four(s[4 * x + 2]) << 4) | four(s[4 * x + 3]);
+        d[2 * x] = v & 0xff;
+        d[2 * x + 1] = v >> 8;
+      }
+    } };
+  }
+  if (f.type === GL.UNSIGNED_INT_10F_11F_11F_REV && floats) {
+    return { format: E.RGBA, type: E.FLOAT, bytes: 16, pack: (s, d, w) => {
+      const fv = new Float32Array(s.buffer, s.byteOffset, w * 4), dv = new DataView(d.buffer, d.byteOffset, d.length);
+      // A half's sign dropped and its mantissa cut to 6 (or 5) bits: the unsigned small floats.
+      const small = (v: number, shift: number) => (toHalf(v) & 0x7fff) >> shift;
+      for (let x = 0; x < w; x++) dv.setUint32(4 * x, (small(fv[4 * x], 4) | small(fv[4 * x + 1], 4) << 11 | small(fv[4 * x + 2], 5) << 22) >>> 0, true);
     } };
   }
   return null;
