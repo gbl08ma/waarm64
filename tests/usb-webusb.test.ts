@@ -191,11 +191,11 @@ test('GET_STATUS and class and vendor requests pass through with their recipient
   assert.equal((await control(p, { requestType: 0xc0, request: 1, value: 0, index: 0, length: 4 })).code, 'stall');
 });
 
-test('bulk OUT: the gathered data, a separate empty transfer for URB_ZERO_PACKET, results to codes', async () => {
+test('bulk OUT: the gathered data, an empty transfer for a zero-length TD, results to codes', async () => {
   const { dev, p } = await open(fx('FTDI'));
-  const a = submit(p, { ep: 0x02, type: 'bulk', data: Uint8Array.from({ length: 128 }, (_, i) => i), length: 128, zeroPacket: true });
+  const a = submit(p, { ep: 0x02, type: 'bulk', data: Uint8Array.from({ length: 128 }, (_, i) => i), length: 128 });
   await settle();
-  assert.deepEqual(dev.outs.map((o) => [o.ep, o.data.length]), [[2, 128], [2, 0]]);
+  assert.deepEqual(dev.outs.map((o) => [o.ep, o.data.length]), [[2, 128]]);
   assert.deepEqual(a.results, [{ code: 'success', actual: 128 }]);
   // Linux queues URB_ZERO_PACKET's ZLP as a TD of its own: a length-0 OUT TD is an empty transferOut.
   const z = submit(p, { ep: 0x02, type: 'bulk', length: 0 });

@@ -567,17 +567,13 @@ export class WebUsbPassthrough implements UsbDevice {
     const n = t.ep & 0x0f;
     const data = t.data ?? new Uint8Array(0);
     const gen = this.gen;
+    // Linux's zero-length packet (URB_ZERO_PACKET) is a TD of its own: an empty transferOut here.
     const first = this.issue(() => this.dev.transferOut(n, data as Uint8Array<ArrayBuffer>));
-    const zlp = t.zeroPacket ? this.issue(() => this.dev.transferOut(n, new Uint8Array(0))) : null;
     (async () => {
       let r: UsbResult;
       try {
         const a = await first;
         r = { code: statusCode(a.status), actual: a.bytesWritten };
-        if (zlp) {
-          const z = await zlp;
-          if (z.status !== 'ok' && r.code === 'success') r = { code: statusCode(z.status), actual: r.actual };
-        }
       } catch (err) {
         this.lost(err);
         r = { code: 'error', actual: 0 };
