@@ -165,7 +165,7 @@ From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-check
   a free SPI. INTIDs 80–95 are free after the virtio window; the GIC has SPIs up to INTID 95 (`gicv3::NIRQ`).
   The DT node is `generic-xhci` with `dma-coherent` and a level-high interrupt. It is off by default:
   `VmConfig.xhci` (number of USB 2 and USB 3 root ports), so the tests' guests and their step counts don't move.
-  The page's machines turn it on.
+  A machine has it when its definition says so (§4a).
 - **Interface subset** (xHCI 1.2, written from Intel's public specification):
   - Root ports: 4 USB 2 and 4 USB 3, each in its own Supported Protocol extended capability.
   - 32-byte contexts, 64-bit addressing (RAM ends above 4 GiB), no scratchpad buffers.
@@ -260,10 +260,9 @@ From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-check
 - **Reset** from the guest after the first one: `device.reset()`. On some hosts this re-enumerates the device and
   WebUSB loses it; the backend then reports a detach, and the `connect` path re-attaches it when its identity is
   unchanged. U3 measures this.
-- **Snapshots:** the controller's state is in the core's snapshot. A machine with a passthrough device attached is
-  **refused a snapshot**, with a message to detach it first, as a machine with a live video codec is
-  ([video.md](video.md) §9). The guest sees an unplug, so after the snapshot the device can be attached again. A
-  later step could save the machine with the port empty and re-offer the device at resume.
+- **Snapshots:** the controller's state is in the core's snapshot. A passthrough device can't be in it: a machine
+  is snapshotted only with its ports empty, as a machine with a live video codec can't be snapshotted mid-stream
+  ([video.md](video.md) §9). §4a says how the page gets there without just refusing.
 
 ### The WebHID backend (an emulated HID device, device worker)
 
@@ -299,8 +298,9 @@ From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-check
 - **Detach:** WebHID's `disconnect` event or the page's Detach clears the port's connect status and closes the
   device. A Bluetooth game pad that sleeps and wakes comes back through `connect` and is re-attached on the same
   port.
-- **Snapshots:** refused while a WebHID device is attached, as for passthrough. The emulated device's state (idle
-  rate, the last reports) is small, so a later step could save it and re-open the `HIDDevice` at resume.
+- **Snapshots:** as for passthrough, the ports are emptied first (§4a). The emulated device's state (idle rate,
+  the last reports) is small, so a later step could save it and re-open the `HIDDevice` at resume, keeping a game
+  pad across Suspend without the guest seeing an unplug.
 
 ### Virtual devices
 
@@ -310,6 +310,71 @@ From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-check
 - Later, for their own reasons and not part of this plan: a USB keyboard and tablet would give EDK2 a keyboard on
   the screen. EDK2's `XhciDxe` takes a non-discoverable xHCI registered by a small DT-reading driver, which would
   close backlog "A real keyboard driver in EDK2". A USB mass-storage disk is another candidate.
+
+## 4a. Machines ([machines.md](machines.md))
+
+The split follows what the guest sees. The **controller** is part of the machine's shape, like the network card,
+because the guest sees a DT node. **Devices** are not part of the shape, because they are hot-plugged: a snapshot
+restores onto a machine whether or not a device is plugged in. Devices are the machine's **remembered devices**.
+
+- **The controller in the record and the shape.** `MachineRecord.usb: boolean`, beside `network`. The shape gains
+  `usb: true` only when it is on, and the key is left out when it is off, so the canonical JSON and the shape hash of
+  every existing machine stay as they are and no snapshot is orphaned by the upgrade. The ports (4 USB 2, 4 USB 3)
+  are fixed, so the flag is all the shape needs; if they become a setting, their counts join the shape then.
+  - New machines get it on.
+  - Existing machines keep it off until the user turns it on in Settings. Settings says that this orphans the
+    machine's snapshots, as a RAM change does.
+  - The xHCI is not a virtio transport, so `slots()` and the room kept for 16 disks don't change.
+  - Transient machines (the tests') take `?usb=1`; without it their guests and step counts stay as they are.
+- **Remembered devices** are a list in the machine record. Each entry has:
+  - an id;
+  - the API (`usb` or `hid`);
+  - the vendor and product IDs, the serial number where there is one, and the product name;
+  - the root port it goes on;
+  - *attach at start*.
+
+  The port is fixed per entry, so the guest's `/dev/serial/by-path` names and udev rules stay stable from one boot
+  to the next. A device that both APIs reach (HID beside CDC on one board) is two entries and two guest devices.
+  Identical devices without serials are matched in `getDevices()` order, and the USB tab says so.
+- **Permission is easier than for files.** WebUSB and WebHID grants persist per origin, so at start the page finds
+  remembered devices with `getDevices()`, with no click, unlike a file handle (machines.md §3.2). Forgetting an entry
+  that no other machine remembers calls `device.forget()`, which revokes the grant.
+- **One machine at a time per device.** A Web Lock named after the device's identity is held while it is attached.
+  WebUSB's interface claims are exclusive anyway. Two tabs could both open a WebHID device and both read its input,
+  so the lock makes the rule explicit. Attaching a device that another machine holds says which machine has it and
+  offers Detach there, through the store's `BroadcastChannel`.
+- **Attach and detach work while the machine runs.** Unlike disks (machines.md §4.1), that is what hot-plug is for.
+  Editing the remembered list doesn't need the machine off either. *Attach at start* attaches at power-on: EDK2
+  doesn't drive the xHCI, and Linux enumerates the device as it boots.
+- **A device that isn't plugged in** is skipped at start without an error. The USB tab shows each entry's state:
+  attached, plugged in, not plugged in, or held by another machine. When the device appears later (`connect`), an
+  entry with *attach at start* attaches then.
+- **Snapshots and Suspend empty the ports first.** The toolbar's Snapshot is meant to be a one-click panic button
+  (machines.md decision 14), so it doesn't simply refuse. With devices attached it asks once to detach them, naming
+  them, because the guest sees an unplug and anything mid-transfer breaks (an `adb push`, a firmware flash). Then it
+  detaches them, saves, and attaches them again. The controller completes the in-flight TDs with errors at the
+  detach, so its saved state is consistent without waiting on the guest. A restored snapshot has empty ports. After
+  the restore, the machine's *attach at start* entries are hot-plugged as they would be at a start. The shape isn't
+  involved, so nothing is orphaned.
+- **Definitions** (machines.md §6) carry `usb` and the remembered entries' identities. No grant travels with them:
+  on another browser or computer, the first start lists the entries that have no grant and offers one click each
+  (`requestDevice` filtered on vendor, product and serial). That is the same flow as re-picking a file. An entry the
+  user skips stays in the list as not granted.
+- **Re-enumeration** (DFU, fastboot, firmware loaders: §2) adds the new identity as an entry of its own, on the same
+  port, so the second flash needs no click at all.
+- **The Machines page:**
+  - A **USB** tab beside Disks and Network. It holds the controller switch (also in Settings, where the shape's
+    settings are), the remembered devices with their state, and Attach, Detach, attach at start and Forget.
+  - **Add a device…** is a wizard, as Add a disk is (machines.md decision 16). It asks for the kind first, each
+    explained: a USB device (WebUSB: developer and maker hardware, phones, serial adapters) or a HID device
+    (WebHID: game pads, macro pads, a keyboard's configuration interface). Then it opens the browser's chooser.
+  - The toolbar gets a USB quick menu for the running machine: its remembered devices with attach toggles, Add a
+    device…, and the "a device just appeared" offer.
+- **What changes:**
+  - `web/app/shape.ts`: `usb` in the record and the shape, and its line in `shapeDiff`.
+  - `web/app/store.ts`: the record's fields.
+  - `web/app/definitions.ts`: export and import.
+  - A `Usb.svelte` tab, the toolbar menu, and the device locks.
 
 ## 5. Testing
 
@@ -354,7 +419,8 @@ From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-check
   6. A `uhid` device visible to the Playwright Chromium's WebHID, with permission granted without a prompt, and
      which collections Chromium hides on the recorded descriptors.
 - **U1: the controller.** `core/src/xhci.rs`, the DT node, `VmConfig.xhci`, the ABI bump, snapshot state, and unit
-  tests. Buildroot binds `xhci-plat-hcd` and shows two empty root hubs, in every runner.
+  tests. `usb` in the machine record and the shape, left out when off, with a test that an existing machine's shape
+  hash doesn't move. Buildroot binds `xhci-plat-hcd` and shows two empty root hubs, in every runner.
 - **U2: the backend protocol and Gadget Zero.** `web/usb.ts`, its twin, and `testusb -a` passing with exact steps,
   hot-plug included. Plant a bug in the controller and check that `testusb` catches it.
 - **U3: WebUSB passthrough.**
@@ -364,15 +430,17 @@ From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-check
 - **U3h: the WebHID backend.** It needs U2 only, so it can come before U3 or beside it.
   - The report-descriptor encoder and its round trip in Node.
   - The backend of §4 against the `uhid` rig end to end.
-- **U4: the page.** A USB menu:
-  - "Attach a device…" (WebUSB's `requestDevice`, no filter) and "Attach a HID device…" (WebHID's, with an empty
-    filter list, which lists every device it may show).
-  - The attached devices with Detach.
-  - Granted devices offered again at the next start.
-  - The "a device just appeared" offer for re-enumeration.
+- **U4: the page,** as §4a has it:
+  - The USB tab and the Add a device… wizard: WebUSB's `requestDevice` with no filter, or WebHID's with an empty
+    filter list, which lists every device it may show.
+  - Remembered devices, attach at start and the device locks.
+  - The toolbar's menu, and the "a device just appeared" offer.
+  - Snapshot and Suspend emptying the ports and re-attaching after.
+  - Definitions with their entries, granted again on another profile.
   - Clear messages for a protected or host-held interface, and for a HID device whose every collection is hidden
     or whose `hidraw` node the user can't open.
-  - Snapshots refused while a device is attached.
+
+  The page tests go in `scripts/ci-machines.sh`'s set.
 
   Document it in [frontend.md](../frontend.md) and a new `docs/usb.md` (or a section of devices.md).
 - **U5: breadth, with the user's hardware:**

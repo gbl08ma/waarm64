@@ -315,6 +315,9 @@ the page, disks or snapshots (all of them from L1).
 - **The embedding API**'s VM configuration starts from the machine definition and its shape.
 - **Network adapters** join the machine and the shape (several: a later milestone); today's single card is one
   attachment of a kind `net`.
+- **USB** ([usb.md](usb.md) §4a, proposed): the xHCI joins the shape as a flag that is left out when it is off, so
+  existing hashes don't move. Devices are hot-plugged, so they are not part of the shape. They are the machine's
+  remembered devices, attached at start or by hand, and emptied from the ports before a snapshot.
 
 ## 11. Record: the cloud session (2026-10-17)
 
