@@ -63,7 +63,21 @@ const attached = (r: Result) => {
   return r.usb as Extract<UsbFromWorker, { state: 'attached' }>;
 };
 
-test('testusb -a against the dummy_hcd Gadget Zero, through the WebUSB passthrough', { skip: gadgetSkip, timeout: 5 * 60_000 }, async () => {
+test('testusb -a against the dummy_hcd Gadget Zero, through the WebUSB passthrough (left in its other configuration first)', { skip: gadgetSkip, timeout: 5 * 60_000 }, async () => {
+  // A real device can be in any configuration when it is attached: leave Gadget Zero in configuration 2 (loopback),
+  // so the guest's reset and SET_CONFIGURATION 1 switch it.
+  const other = await rig!.browser.newPage();
+  await other.goto(`${rig!.base}/tests/browser/core.html`);
+  const left = await other.evaluate(async () => {
+    const d = (await (navigator as any).usb.getDevices()).find((x: any) => x.serialNumber === 'webpc-zero');
+    await d.open();
+    await d.selectConfiguration(2);
+    const v = d.configuration?.configurationValue;
+    await d.close();
+    return v;
+  });
+  await other.close();
+  assert.equal(left, 2);
   const r = await boot({ api: 'usb', vendorId: 0x0525, productId: 0xa4a0, serialNumber: 'webpc-zero' }, 'usb_mode=testusb usbtest.pattern=1 usb_devices=1 usb_args=-a,-c,10,-s,1024,-v,512,-g,16');
   assert.equal(attached(r).speed, 'high');
   assert.match(r.console, /^usb: gadget 1-1: Gadget Zero, 480 Mb\/s, configuration \d, interface driver usbtest$/m, r.console);

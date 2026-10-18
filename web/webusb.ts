@@ -565,13 +565,18 @@ export class WebUsbPassthrough implements UsbDevice {
     if (this.dead) return;
     this.dropAll();
     this.serial(async () => {
+      // The interfaces go first, and are claimed again after. A reset with them claimed leaves Chromium's claims
+      // stale on Linux: it still says claimed, but releasing them fails, and so does claiming them in another
+      // configuration (a guest's SET_CONFIGURATION after the reset), so the guest's first transfer found no endpoint.
+      for (const n of this.claimed) await this.dev.releaseInterface(n).catch(() => {});
+      this.claimed.clear();
       try {
         await this.dev.reset();
       } catch (err) {
         this.lost(err, true);
         return;
       }
-      // After a reset the device is unconfigured to its own mind; ours is as it was (WebUSB re-applies it).
+      // The host keeps the device's configuration across the reset; the guest's SET_CONFIGURATION, if any, follows.
       await this.claimActive().catch(() => {});
     });
   }
@@ -596,8 +601,13 @@ export class WebUsbPassthrough implements UsbDevice {
     this.ctrl = new Order();
   }
 
+  /**
+   * A call failed: the device is gone when WebUSB says it was disconnected (a NotFoundError that says so; WebUSB also
+   * throws NotFoundError for an endpoint that isn't in a claimed interface, which is the transfer's error only).
+   */
   private lost(err: unknown, always = false) {
-    if ((always || (err as Error)?.name === 'NotFoundError') && !this.goneCalled) {
+    const e = err as Error | undefined;
+    if ((always || (e?.name === 'NotFoundError' && /disconnected/i.test(e.message ?? ''))) && !this.goneCalled) {
       this.goneCalled = true;
       this.opts.gone?.();
     }

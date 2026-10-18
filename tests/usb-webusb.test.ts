@@ -148,6 +148,41 @@ test('SET_CONFIGURATION: the same one re-claims nothing, another selects and re-
   assert.equal((await set(7)).code, 'stall');
 });
 
+test('a device left in its second configuration, reset by the guest, then SET_CONFIGURATION 1: the interfaces claimed afresh, transfers reach it', async () => {
+  let gone = 0;
+  const dev = new FakeUsb(twoConfigs, { config: 2 });
+  const p = await openWebUsb(dev, { gone: () => gone++ });
+  assert.deepEqual([...dev.claimedSet].sort(), [0, 1], "configuration 2's interfaces");
+  // The guest's port reset after the attach's first one, then its enumeration.
+  p.reset();
+  await settle();
+  const at = dev.log.lastIndexOf('reset');
+  assert.deepEqual(dev.log.slice(at - 2, at + 3), ['release 0', 'release 1', 'reset', 'claim 0', 'claim 1'], 'released before the reset, claimed again after');
+  assert.equal(dev.stale.size, 0, 'no claim left stale by the reset');
+  assert.equal((await control(p, { requestType: 0, request: 9, value: 1, index: 0, length: 0 })).code, 'success');
+  assert.equal(dev.cfgValue, 1);
+  assert.deepEqual([...dev.claimedSet], [0]);
+  assert.equal((await control(p, { requestType: 1, request: 11, value: 0, index: 0, length: 0 })).code, 'success');
+  assert.equal((await control(p, { requestType: 2, request: 1, value: 0, index: 0x81, length: 0 })).code, 'success');
+  const a = submit(p, { ep: 0x81, type: 'bulk', length: 512 });
+  await settle();
+  assert.equal(dev.pending(1), 1, 'the bulk IN reached the device');
+  dev.answer(1, { data: new Uint8Array(512) });
+  await settle();
+  assert.deepEqual(a.results.map((r) => r.code), ['success']);
+  assert.equal(gone, 0);
+});
+
+test("a transfer to an endpoint WebUSB doesn't know fails, and the device isn't taken for gone (only a disconnect is)", async () => {
+  let gone = 0;
+  const dev = new FakeUsb(fx('FTDI'));
+  const p = await openWebUsb(dev, { gone: () => gone++ });
+  const a = submit(p, { ep: 0x83, type: 'bulk', length: 64 });
+  await settle();
+  assert.deepEqual(a.results, [{ code: 'error', actual: 0 }]);
+  assert.equal(gone, 0);
+});
+
 test('SET_INTERFACE, CLEAR_FEATURE(HALT) and the requests answered locally', async () => {
   const { dev, p } = await open(twoConfigs);
   const mark = dev.log.length;

@@ -292,7 +292,7 @@ set, on the dev VM's rigs, and writes each run's console to `target/tests/usb-gu
 
 | Mode | Device | What passes |
 |---|---|---|
-| `testusb` | the dummy_hcd Gadget Zero (`webpc-zero`) through the WebUSB passthrough | `testusb -a -c 10 -s 1024 -v 512 -g 16` with `usbtest.pattern=1` (configfs's source/sink default): all 23 tests |
+| `testusb` | the dummy_hcd Gadget Zero (`webpc-zero`) through the WebUSB passthrough, left in configuration 2 (loopback) first, as a real device may be | `testusb -a -c 10 -s 1024 -v 512 -g 16` with `usbtest.pattern=1` (configfs's source/sink default): all 23 tests, after the guest's reset and SET_CONFIGURATION 1 switched it |
 | `acm` | the ACM gadget (`webpc-acm`) through the WebUSB passthrough, the guest's `cdc_acm` on it | three rounds of open `/dev/ttyACM0`, write 300 bytes, read the gadget tty's echo, close. Each close cancels `cdc_acm`'s reads, so the next round's reads are served by the cancelled ones' transfers (the carry-over) |
 | `hid` | a uhid device (`vendor-ids`) through WebHID | the report descriptor the guest got parses to what the page can use of Chromium's parse; three input reports from the rig arrive in order; an output report (`write`) and a feature report (`HIDIOCSFEATURE`) reach the rig; `HIDIOCGFEATURE` gets the rig's |
 
@@ -301,6 +301,12 @@ What the runs found:
   passthrough answers them itself (the table above).
 - **The guest's port reset reaches the device** through `reset()`. On a gadget, that is a disconnect: its
   tty hangs up, and the test's echo opens it again.
+- **A reset with interfaces claimed leaves Chromium's claims stale** (on Linux). Chromium still says the
+  interfaces are claimed, but releasing them fails, and so does claiming them in another configuration. A
+  device left in configuration 2 lost the guest at its first transfer, after the guest's reset and its
+  SET_CONFIGURATION 1. The passthrough now releases the interfaces before `reset()`.
+- **WebUSB throws NotFoundError for an endpoint outside a claimed interface** as well as for a disconnect. Only
+  the disconnect ("The device was disconnected.") means the device is gone.
 
 ## The WebUSB passthrough (`web/webusb.ts`)
 
@@ -391,8 +397,9 @@ transfer pending until detach. Configure Endpoint (`configured`), SET_CONFIGURAT
 that interface's endpoints), reset and detach discard an endpoint's state, so their late results are
 ignored.
 
-**Reset** (after the attach's first) drops every endpoint's state, calls `device.reset()`, and claims
-again whatever the reset released. A reset that fails, which on some hosts means WebUSB lost the device
+**Reset** (after the attach's first) drops every endpoint's state, releases the interfaces, calls
+`device.reset()`, and claims them again (see "The usbhost guest" for why the release comes first). The
+host keeps the device's configuration across the reset. A reset that fails, which on some hosts means WebUSB lost the device
 when it re-enumerated, calls `gone`. **Detach** completes nothing more, then releases the interfaces and
 closes the device.
 
