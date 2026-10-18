@@ -92,13 +92,13 @@ impl F {
         }
     }
     /// Pushes an i32: the floats in integer locals `x` and `y` compare
-    /// `k`: 0 equal, 1 less, 2 greater.
+    /// `k`: 0 equal, 1 less, 2 greater, 3 less or equal, 4 greater or equal.
     fn compare(self, c: &mut Func, x: u32, y: u32, k: u8) {
         c.local_get(x);
         self.to_float(c);
         c.local_get(y);
         self.to_float(c);
-        c.op(if self.d { 0x61 } else { 0x5b } + [0, 2, 3][k as usize]);
+        c.op(if self.d { 0x61 } else { 0x5b } + [0, 2, 3, 4, 5][k as usize]);
     }
     /// Pushes an i32: either float in integer locals `x` and `y` is a NaN.
     fn unordered(self, c: &mut Func, x: u32, y: u32) {
@@ -283,6 +283,186 @@ fn to_odd(c: &mut Func, s: u32, e: u32, sb: u32) {
     c.op(0x1b).op(0x7c); // select, i64.add
 }
 
+/// A rounding to integral: FPCR's (nearest even, under FPOK), toward -∞, +∞
+/// or zero, or to nearest with ties away (FRINTA, FCVTA*).
+#[derive(Clone, Copy, PartialEq)]
+enum Round {
+    Nearest,
+    Floor,
+    Ceil,
+    Trunc,
+    Away,
+}
+
+/// Pushes the float in integer local `x` (format `f`) rounded to integral by
+/// `mode`, as an `f`. Ties away (no wasm op): t = trunc(x), and t + copysign(1,
+/// x) where |x - t| ≥ 0.5 (both exact: for singles in f64), else t (keeping
+/// -0); for an infinity the difference is a NaN and t stays.
+fn round(c: &mut Func, f: F, x: u32, mode: Round) {
+    let promote = |c: &mut Func| {
+        c.local_get(x);
+        f.to_float(c);
+        if !f.d {
+            c.op(0xbb); // f64.promote_f32
+        }
+    };
+    if mode != Round::Away {
+        c.local_get(x);
+        f.to_float(c);
+        c.op(f.round(match mode {
+            Round::Floor => 1,
+            Round::Ceil => 2,
+            Round::Trunc => 3,
+            _ => 0,
+        }));
+        return;
+    }
+    let t = super::FT[0];
+    promote(c);
+    c.op(0x9d).local_tee(t); // f64.trunc
+    c.f64_const(1.0);
+    promote(c);
+    c.op(0xa6).op(0xa0); // f64.copysign, f64.add
+    c.local_get(t);
+    promote(c);
+    c.local_get(t).op(0xa1).op(0x99); // f64.sub, f64.abs
+    c.f64_const(0.5).op(0x66); // f64.ge
+    c.select();
+    if !f.d {
+        c.op(0xb6); // f32.demote_f64 (exact: an integer below 2^25)
+    }
+}
+
+/// FCVTXN's rounding: the double in i64 local `x` to a single rounded to
+/// odd, into i32 local `r`; pushes an i32, the RNE demote's exponent from
+/// the second binade up and finite (then neither rounding over- or
+/// underflows). Inexact (the demote's double isn't x), it steps the bits
+/// toward zero where the demote went away from it, then sets the odd bit.
+fn to_odd_single(c: &mut Func, x: u32, r: u32) {
+    let rne = super::tmp(false, 2);
+    c.local_get(x).op(0xbf).op(0xb6).op(0xbc).local_set(rne); // f64.reinterpret, f32.demote, i32.reinterpret
+    // (rne - away) | 1, or rne where exact.
+    c.local_get(rne);
+    c.local_get(rne).op(0xbe).op(0xbb).op(0x99); // |promote(rne)|
+    c.local_get(x).op(0xbf).op(0x99).op(0x64); // > |x|: f64.gt
+    c.op(SUB).i32_const(1).op(0x72); // i32.or
+    c.local_get(rne);
+    c.local_get(rne).op(0xbe).op(0xbb);
+    c.local_get(x).op(0xbf).op(0x62); // f64.ne: inexact
+    c.select().local_set(r);
+    exp_in(c, F { d: false }, rne, 2);
+}
+
+/// FCVT to or from half precision (scalar). Half to single or double is exact
+/// without flags but for an all-ones exponent (infinities and NaNs; FZ
+/// doesn't apply to half, and without that exponent FPCR.AHP's format reads
+/// the same): the magnitude shifted into a single's fields is the value ×
+/// 2^-112, denormals too. Single or double to half rounds to nearest even in
+/// integer arithmetic, straight from the operand's fraction (no double
+/// rounding), under FPOK, for a zero or an operand from the half's smallest
+/// normal binade up whose result is finite (no Underflow, Overflow or IDC).
+fn fcvt_half(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
+    let (rd, rn) = (bits(i, 4, 0), bits(i, 9, 5));
+    let to = match bits(i, 16, 15) {
+        0 => Some(F { d: false }),
+        1 => Some(F { d: true }),
+        3 => None,
+        _ => return false,
+    };
+    let from = match bits(i, 23, 22) {
+        0 => Some(F { d: false }),
+        1 => Some(F { d: true }),
+        3 => None,
+        _ => return false,
+    };
+    match (from, to) {
+        (None, Some(t)) => {
+            let (h, r32) = (super::tmp(false, 0), super::tmp(false, 3));
+            c.vlane(rn, 32, 0);
+            c.i32_const(0xffff).op(AND).local_tee(h);
+            c.i32_const(0x7fff).op(AND).i32_const(13).op(0x74); // i32.shl
+            c.op(0xbe).f32_const(f32::from_bits(0x7780_0000)).op(0x94); // × 2^112
+            c.op(0xbc).local_get(h).i32_const(0x8000).op(AND);
+            c.i32_const(16).op(0x74).op(0x72).local_set(r32); // sign: i32.shl, i32.or
+            c.local_get(h)
+                .i32_const(0x7c00)
+                .op(AND)
+                .i32_const(0x7c00)
+                .op(0x47); // i32.ne
+            if t.d {
+                let r64 = super::tmp(true, 3);
+                guarded(c, cx, i, k, vbit(rd), |c| {
+                    c.local_get(r32).op(0xbe).op(0xbb).op(0xbd).local_set(r64);
+                    put(c, t, rd, r64);
+                });
+            } else {
+                guarded(c, cx, i, k, vbit(rd), |c| put(c, t, rd, r32));
+            }
+        }
+        (Some(f), None) => {
+            fpa_guard(c);
+            // a = |x|; h = (a + half - 1 + (a >> s & 1)) >> s, rebiased (s: the
+            // fraction bits the half drops); r = (a == 0 ? 0 : h) | sign.
+            let (s, bias, min) = if f.d {
+                (42, (1023 - 15) << 10, (1023 - 14) << 52)
+            } else {
+                (13, (127 - 15) << 10, (127 - 14) << 23)
+            };
+            let (w, wc) = if f.d { (W, WC) } else { (0, 0) };
+            let (a, hh, r32) = (f.tmp(0), f.tmp(1), super::tmp(false, 3));
+            let kk = |c: &mut Func, v: i64| {
+                if f.d {
+                    c.i64_const(v);
+                } else {
+                    c.i32_const(v as i32);
+                }
+            };
+            f.load(c, rn);
+            kk(c, if f.d { i64::MAX } else { 0x7fff_ffff });
+            c.op(AND + w).local_tee(a);
+            kk(c, (1 << (s - 1)) - 1);
+            c.op(0x6a + if f.d { 0x12 } else { 0 }); // add
+            c.local_get(a);
+            kk(c, s);
+            c.op(SHR_U + w);
+            kk(c, 1);
+            c.op(AND + w).op(0x6a + if f.d { 0x12 } else { 0 });
+            kk(c, s);
+            c.op(SHR_U + w);
+            kk(c, bias);
+            c.op(SUB + w).local_set(hh);
+            // r = (a == 0 ? 0 : h) | sign, as an i32.
+            let wrap = |c: &mut Func| {
+                if f.d {
+                    c.op(0xa7); // i32.wrap_i64
+                }
+            };
+            c.i32_const(0);
+            c.local_get(hh);
+            wrap(c);
+            c.local_get(a).op(EQZ + wc);
+            c.select();
+            f.load(c, rn);
+            kk(c, if f.d { 48 } else { 16 });
+            c.op(SHR_U + w);
+            wrap(c);
+            c.i32_const(0x8000).op(AND).op(0x72).local_set(r32); // i32.or
+            // valid: FPOK, and a == 0 or (a from the smallest normal half up and h < 0x7c00).
+            c.local_get(FPOK);
+            c.local_get(a);
+            kk(c, min);
+            c.op(0x4f + wc); // ge_u (a's sign is clear)
+            c.local_get(hh);
+            kk(c, 0x7c00);
+            c.op(LT_U + wc).op(AND);
+            c.local_get(a).op(EQZ + wc).op(0x72).op(AND); // i32.or
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, F { d: false }, rd, r32));
+        }
+        _ => return false,
+    }
+    true
+}
+
 /// Emits scalar FP instruction `i` inline if it's one this covers; false
 /// (and nothing emitted) otherwise.
 pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
@@ -293,9 +473,38 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         bits(i, 20, 16),
         bits(i, 14, 10),
     );
-    let f = match bits(i, 23, 22) {
-        0 => F { d: false },
-        1 => F { d: true },
+    if op == FCVT_float && (bits(i, 23, 22) == 3 || bits(i, 16, 15) == 3) {
+        return fcvt_half(c, cx, i, k);
+    }
+    // The AdvSIMD scalar forms take their size from bit 22 (23 is the opcode's).
+    let simd = matches!(
+        op,
+        FCMEQ_reg_2
+            | FCMGE_reg_2
+            | FCMGT_reg_2
+            | FACGE_2
+            | FACGT_2
+            | FCMEQ_zero_2
+            | FCMGE_zero_2
+            | FCMGT_zero_2
+            | FCMLE_2
+            | FCMLT_2
+            | FCVTNS_2
+            | FCVTNU_2
+            | FCVTMS_2
+            | FCVTMU_2
+            | FCVTAS_2
+            | FCVTAU_2
+            | FCVTPS_2
+            | FCVTPU_2
+            | FCVTZS_int_2
+            | FCVTZU_int_2
+            | FCVTXN_1
+    );
+    let f = match (simd, bits(i, 23, 22)) {
+        (true, _) => F { d: bit(i, 22) },
+        (_, 0) => F { d: false },
+        (_, 1) => F { d: true },
         _ => return false, // half precision: FEAT_FP16 isn't advertised
     };
     let (x, y, a, r) = (f.tmp(0), f.tmp(1), f.tmp(2), f.tmp(3));
@@ -509,52 +718,135 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_get(FPOK);
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
-        // FCVTZS/FCVTZU to a general register (toward zero whatever FPCR
-        // says): a normal operand whose integer part fits; the saturating
-        // truncation never traps, and the check decides whether it's used.
-        FCVTZS_float_int | FCVTZU_float_int => {
+        // FCVT{N,M,A,P,Z}{S,U} to a general register or (the AdvSIMD scalar
+        // forms) to Vd, as wide as the float: the operand rounded in the
+        // instruction's mode (FRINTA's sum for ties away), then a normal or
+        // zero operand whose rounded value fits (FPOK: Inexact is set
+        // already); the saturating truncation never traps, and the check
+        // decides whether it's used.
+        FCVTNS_float | FCVTNU_float | FCVTMS_float | FCVTMU_float | FCVTAS_float | FCVTAU_float
+        | FCVTPS_float | FCVTPU_float | FCVTZS_float_int | FCVTZU_float_int | FCVTNS_2
+        | FCVTNU_2 | FCVTMS_2 | FCVTMU_2 | FCVTAS_2 | FCVTAU_2 | FCVTPS_2 | FCVTPU_2
+        | FCVTZS_int_2 | FCVTZU_int_2 => {
             fpa_guard(c);
-            let (wide, unsigned) = (bit(i, 31), op == FCVTZU_float_int);
+            let gpr = !simd;
+            let (wide, unsigned) = if gpr {
+                (
+                    bit(i, 31),
+                    matches!(
+                        op,
+                        FCVTNU_float
+                            | FCVTMU_float
+                            | FCVTAU_float
+                            | FCVTPU_float
+                            | FCVTZU_float_int
+                    ),
+                )
+            } else {
+                (f.d, bit(i, 29))
+            };
+            let mode = match op {
+                FCVTNS_float | FCVTNU_float | FCVTNS_2 | FCVTNU_2 => Round::Nearest,
+                FCVTMS_float | FCVTMU_float | FCVTMS_2 | FCVTMU_2 => Round::Floor,
+                FCVTPS_float | FCVTPU_float | FCVTPS_2 | FCVTPU_2 => Round::Ceil,
+                FCVTAS_float | FCVTAU_float | FCVTAS_2 | FCVTAU_2 => Round::Away,
+                _ => Round::Trunc,
+            };
             f.load(c, rn);
             c.local_set(x);
+            // The rounded value, as a float, into scratch FT[1] (f64; singles promoted, exactly).
+            let v = super::FT[1];
+            round(c, f, x, mode);
+            if !f.d {
+                c.op(0xbb); // f64.promote_f32
+            }
+            c.local_set(v);
             c.local_get(FPOK);
-            exp_in(c, f, x, 1);
+            scalar_normal_or_zero(c, f, x);
             c.op(AND);
-            // The integer part fits: lo ≤ x (or lo < x) and x < hi, the bounds
-            // exact in the operand's format. Signed: -2^(w-1) ≤ x, except a
-            // double to 32 bits, where -2^31 - 1 < x is exact; unsigned: -1 < x.
+            // It fits: lo ≤ v < hi, integers exact in a double.
             let w = if wide { 64 } else { 32 };
             let hi = 2f64.powi(if unsigned { w } else { w - 1 });
-            let (lo, inclusive) = match (unsigned, f.d && !wide) {
-                (true, _) => (-1.0, false),
-                (false, true) => (-2147483649.0, false),
-                (false, false) => (-hi, true),
+            let lo = if unsigned { 0.0 } else { -hi };
+            c.local_get(v).f64_const(lo).op(0x66).op(AND); // f64.ge
+            c.local_get(v).f64_const(hi).op(0x63).op(AND); // f64.lt
+            // i32/i64.trunc_sat_f64_s/u: 0xfc 2, 3, 6, 7.
+            let sat = (wide as u8) * 4 + 2 + unsigned as u8;
+            let out = |c: &mut Func| {
+                c.local_get(v).op(0xfc).op(sat);
             };
-            // f32/f64 ge, gt, lt.
-            let (ge, gt, lt) = if f.d {
-                (0x66, 0x64, 0x63)
+            if gpr {
+                guarded(c, cx, i, k, xmask(rd), |c| set(c, wide, rd, out));
             } else {
-                (0x60, 0x5e, 0x5d)
-            };
-            for (bound, cmp) in [(lo, if inclusive { ge } else { gt }), (hi, lt)] {
-                c.local_get(x);
-                f.to_float(c);
-                if f.d {
-                    c.f64_const(bound);
-                } else {
-                    c.f32_const(bound as f32);
-                }
-                c.op(cmp).op(AND);
-            }
-            // i32/i64.trunc_sat_f32/f64_s/u: 0xfc 0..7.
-            let sat = (wide as u8) * 4 + (f.d as u8) * 2 + unsigned as u8;
-            guarded(c, cx, i, k, xmask(rd), |c| {
-                set(c, wide, rd, |c| {
-                    c.local_get(x);
-                    f.to_float(c);
-                    c.op(0xfc).op(sat);
+                guarded(c, cx, i, k, vbit(rd), |c| {
+                    c.vset_scalar(rd, f.esize(), out);
                 });
-            });
+            }
+        }
+        // AdvSIMD scalar compares (all ones or zero in Vd): as the vector ones,
+        // no NaN or denormal operand, no rounding, so no FPOK.
+        FCMEQ_reg_2 | FCMGE_reg_2 | FCMGT_reg_2 | FACGE_2 | FACGT_2 | FCMEQ_zero_2
+        | FCMGE_zero_2 | FCMGT_zero_2 | FCMLE_2 | FCMLT_2 => {
+            let zero = !matches!(
+                op,
+                FCMEQ_reg_2 | FCMGE_reg_2 | FCMGT_reg_2 | FACGE_2 | FACGT_2
+            );
+            let abs = matches!(op, FACGE_2 | FACGT_2);
+            let sign = if f.d { 1u64 << 63 } else { 1 << 31 };
+            for (l, n) in [(x, rn), (y, rm)] {
+                if l == y && zero {
+                    f.zero(c);
+                } else {
+                    f.load(c, n);
+                    if abs {
+                        if f.d {
+                            c.i64_const(!sign as i64).op(AND + W);
+                        } else {
+                            c.i32_const(!(sign as u32) as i32).op(AND);
+                        }
+                    }
+                }
+                c.local_set(l);
+            }
+            // eq 0, lt 1, gt 2, le 3, ge 4.
+            let k_cmp = match op {
+                FCMEQ_reg_2 | FCMEQ_zero_2 => 0,
+                FCMLT_2 => 1,
+                FCMGT_reg_2 | FACGT_2 | FCMGT_zero_2 => 2,
+                FCMLE_2 => 3,
+                _ => 4,
+            };
+            if f.d {
+                c.i64_const(-1).i64_const(0);
+            } else {
+                c.i32_const(-1).i32_const(0);
+            }
+            f.compare(c, x, y, k_cmp);
+            c.select().local_set(r);
+            scalar_plain(c, f, x, false, false);
+            if !zero {
+                scalar_plain(c, f, y, false, false);
+                c.op(AND);
+            }
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
+        }
+        // FCVTXN (scalar): double to single rounded to odd, from the RNE
+        // demote: inexact, it steps toward zero when it rounded away, then
+        // takes the odd bit. FPOK (Inexact is set already), a normal or zero
+        // operand, an RNE result from the second binade up and finite (no
+        // Overflow or Underflow either way).
+        FCVTXN_1 if f.d => {
+            fpa_guard(c);
+            let (xd, r32) = (super::tmp(true, 0), super::tmp(false, 3));
+            f.load(c, rn);
+            c.local_set(xd);
+            to_odd_single(c, xd, r32);
+            is_zero(c, f, xd);
+            c.op(0x72); // i32.or: a zero converts exactly
+            c.local_get(FPOK);
+            scalar_normal_or_zero(c, f, xd);
+            c.op(AND).op(AND);
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, F { d: false }, rd, r32));
         }
         // FCSEL: bits, no flags.
         FCSEL_float => {
@@ -729,43 +1021,19 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 fpa_guard(c);
             }
             f.load(c, rn);
-            c.local_tee(x);
-            f.to_float(c);
-            if op == FRINTA_float {
-                // t + copysign(1, x) where |x - t| ≥ 0.5, else t (keeps -0).
-                let t = super::FT[0];
-                c.op(f.round(3));
-                if !f.d {
-                    c.op(0xbb); // f64.promote_f32 (exact; the scratch is f64)
-                }
-                c.local_tee(t);
-                c.f64_const(1.0);
-                c.local_get(x);
-                f.to_float(c);
-                if !f.d {
-                    c.op(0xbb);
-                }
-                c.op(0xa6).op(0xa0); // f64.copysign, f64.add
-                c.local_get(t);
-                c.local_get(x);
-                f.to_float(c);
-                if !f.d {
-                    c.op(0xbb);
-                }
-                c.local_get(t).op(0xa1).op(0x99); // f64.sub, f64.abs
-                c.f64_const(0.5).op(0x66); // f64.ge
-                c.select();
-                if !f.d {
-                    c.op(0xb6); // f32.demote_f64 (exact: an integer below 2^25)
-                }
-            } else {
-                c.op(f.round(match op {
-                    FRINTM_float => 1,
-                    FRINTP_float => 2,
-                    FRINTZ_float => 3,
-                    _ => 0,
-                }));
-            }
+            c.local_set(x);
+            round(
+                c,
+                f,
+                x,
+                match op {
+                    FRINTA_float => Round::Away,
+                    FRINTM_float => Round::Floor,
+                    FRINTP_float => Round::Ceil,
+                    FRINTZ_float => Round::Trunc,
+                    _ => Round::Nearest,
+                },
+            );
             f.to_int(c);
             c.local_set(r);
             scalar_plain(c, f, x, false, false);
@@ -810,9 +1078,6 @@ mod op {
     pub const F32X4: [u32; 4] = [0xe4, 0xe5, 0xe6, 0xe7];
     pub const F64X2: [u32; 4] = [0xf0, 0xf1, 0xf2, 0xf3];
     pub const F32X4_NEG: u32 = 0xe1;
-    pub const F32X4_GT: u32 = 0x44;
-    pub const F32X4_LT: u32 = 0x43;
-    pub const F32X4_GE: u32 = 0x46;
     pub const F32X4_SPLAT: u32 = 0x13;
     pub const TRUNC_SAT_F32X4: [u32; 2] = [0xf8, 0xf9];
     pub const CONVERT_I32X4: [u32; 2] = [0xfa, 0xfb];
@@ -837,6 +1102,9 @@ mod op {
     ];
     /// abs: f32x4, f64x2.
     pub const ABS: [u32; 2] = [0xe0, 0xec];
+    /// min, max: f32x4, f64x2.
+    pub const MINMAX: [[u32; 2]; 2] = [[0xe8, 0xe9], [0xf4, 0xf5]];
+    pub const F64X2_SPLAT: u32 = 0x14;
     /// nearest, floor, ceil, trunc: f32x4, f64x2.
     pub const ROUND: [[u32; 4]; 2] = [[0x6a, 0x68, 0x67, 0x69], [0x94, 0x75, 0x74, 0x7a]];
 }
@@ -925,6 +1193,54 @@ fn plain_lanes(c: &mut Func, d: bool) {
     c.local_get(tt).v128_const(0).simd(eq).simd(op::OR);
 }
 
+/// Pushes Vn's lanes (doubles if `d`, else singles) rounded to integral by
+/// `mode`, ties away as the scalar [`round`]: t = trunc(x), and t ± 1 (x's
+/// sign) where |x - t| ≥ 0.5. Scratch: VT[0] and VT[3].
+fn vround(c: &mut Func, d: bool, rn: u32, mode: Round) {
+    let r = |k: usize| op::ROUND[d as usize][k];
+    if mode != Round::Away {
+        vreg(c, rn);
+        c.simd(r(match mode {
+            Round::Floor => 1,
+            Round::Ceil => 2,
+            Round::Trunc => 3,
+            _ => 0,
+        }));
+        return;
+    }
+    let (t, tt) = (VT[0], VT[3]);
+    let (one, sign) = if d {
+        (1f64.to_bits(), 1u64 << 63)
+    } else {
+        (1f32.to_bits() as u64, 1 << 31)
+    };
+    let (add, sub) = if d {
+        (op::F64X2[0], op::F64X2[1])
+    } else {
+        (op::F32X4[0], op::F32X4[1])
+    };
+    vreg(c, rn);
+    c.simd(r(3)).local_set(t);
+    // t + copysign(1, x)
+    vreg(c, rn);
+    c.v128_const(splat(d, one)).v128_const(splat(d, sign));
+    c.simd(op::BITSELECT).local_get(t).simd(add);
+    c.local_get(t);
+    // |x - t| ≥ 0.5
+    vreg(c, rn);
+    c.local_get(t)
+        .simd(sub)
+        .simd(op::ABS[d as usize])
+        .local_set(tt);
+    c.local_get(tt);
+    if d {
+        c.f64_const(0.5).simd(op::F64X2_SPLAT);
+    } else {
+        c.f32_const(0.5).simd(op::F32X4_SPLAT);
+    }
+    c.simd(op::CMP[d as usize][4]).simd(op::BITSELECT);
+}
+
 /// ANDs lane masks into one i32 with FPOK: every lane of the masks all ones
 /// (with Q = 0, lanes 2 and 3 of 32-bit masks don't count).
 fn all_lanes(c: &mut Func, d: bool, q: bool, masks: usize) {
@@ -953,7 +1269,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     use Op::*;
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
     let (q, d) = (bit(i, 30), bit(i, 22));
-    if bit(i, 28) || (d && !q && !matches!(op, FCVTL | FCVTN)) {
+    if bit(i, 28) || (d && !q && !matches!(op, FCVTL | FCVTN | FCVTXN_2)) {
         return false; // scalar forms; a vector of doubles needs Q
     }
     let [ta, tb, tr, tt] = VT;
@@ -1242,37 +1558,124 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             all_lanes(c, false, q, 4);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
-        // SCVTF/UCVTF, 32-bit lanes: wasm's converts round to nearest even.
-        SCVTF_int_4 | UCVTF_int_4 if !d => {
+        // SCVTF/UCVTF: wasm's converts round to nearest even (FPOK); 64-bit
+        // lanes one at a time (no i64x2 convert).
+        SCVTF_int_4 | UCVTF_int_4 => {
             fpa_guard(c);
-            vreg(c, rn);
-            c.simd(op::CONVERT_I32X4[(op == UCVTF_int_4) as usize])
-                .local_set(tr);
+            let u = op == UCVTF_int_4;
+            if d {
+                c.v128_const(0);
+                for lane in 0..2 {
+                    vreg(c, rn);
+                    c.simd_lane(0x1d, lane); // i64x2.extract_lane
+                    c.op(0xb9 + u as u8); // f64.convert_i64_s/u
+                    c.simd_lane(0x22, lane); // f64x2.replace_lane
+                }
+            } else {
+                vreg(c, rn);
+                c.simd(op::CONVERT_I32X4[u as usize]);
+            }
+            c.local_set(tr);
             c.local_get(FPOK);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
-        // FCVTZS/FCVTZU, 32-bit lanes: normal and in range, then truncated.
-        FCVTZS_int_4 | FCVTZU_int_4 if !d => {
+        // FCVT{N,M,A,P,Z}{S,U}: each lane rounded in the instruction's mode
+        // (ties away as FRINTA), then normal or zero lanes whose rounded value
+        // fits (FPOK: Inexact is set already) go through the saturating
+        // truncation; 64-bit lanes one at a time (no i64x2 truncation).
+        FCVTNS_4 | FCVTNU_4 | FCVTMS_4 | FCVTMU_4 | FCVTAS_4 | FCVTAU_4 | FCVTPS_4 | FCVTPU_4
+        | FCVTZS_int_4 | FCVTZU_int_4 => {
             fpa_guard(c);
-            let u = op == FCVTZU_int_4;
-            vreg(c, rn);
-            c.simd(op::TRUNC_SAT_F32X4[u as usize]).local_set(tr);
-            vreg(c, rn);
-            lanes_in(c, false, 1);
-            let (lo, lo_cmp) = if u {
-                (-1.0f32, op::F32X4_GT)
-            } else {
-                (-2147483648.0, op::F32X4_GE)
+            let u = bit(i, 29);
+            let mode = match op {
+                FCVTNS_4 | FCVTNU_4 => Round::Nearest,
+                FCVTMS_4 | FCVTMU_4 => Round::Floor,
+                FCVTPS_4 | FCVTPU_4 => Round::Ceil,
+                FCVTAS_4 | FCVTAU_4 => Round::Away,
+                _ => Round::Trunc,
             };
-            let hi = if u { 4294967296.0f32 } else { 2147483648.0 };
-            for (bound, cmp) in [(lo, lo_cmp), (hi, op::F32X4_LT)] {
-                vreg(c, rn);
-                c.f32_const(bound).simd(op::F32X4_SPLAT).simd(cmp);
+            vround(c, d, rn, mode);
+            c.local_set(ta);
+            if d {
+                c.v128_const(0);
+                for lane in 0..2 {
+                    c.local_get(ta).simd_lane(0x21, lane); // f64x2.extract_lane
+                    c.op(0xfc).op(6 + u as u8); // i64.trunc_sat_f64_s/u
+                    c.simd_lane(0x1e, lane); // i64x2.replace_lane
+                }
+            } else {
+                c.local_get(ta).simd(op::TRUNC_SAT_F32X4[u as usize]);
             }
-            all_lanes(c, false, q, 3);
+            c.local_set(tr);
+            vreg(c, rn);
+            normal_or_zero(c, d);
+            let hi = 2f64.powi(if d { 64 } else { 32 } - !u as i32);
+            let lo = if u { 0.0 } else { -hi };
+            for (bound, cmp) in [(lo, 4), (hi, 1)] {
+                c.local_get(ta);
+                if d {
+                    c.f64_const(bound).simd(op::F64X2_SPLAT);
+                } else {
+                    c.f32_const(bound as f32).simd(op::F32X4_SPLAT);
+                }
+                c.simd(op::CMP[d as usize][cmp]); // ge, lt
+            }
+            all_lanes(c, d, q, 3);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
-        // FABS, FNEG: bit operations, no flags.
+        // FMAX/FMIN, FMAXNM/FMINNM (the same without NaNs): wasm's lane min and
+        // max with zero, normal or infinite lanes (-0 below +0, as ARM); no
+        // flags, no FPOK.
+        FMAX_2 | FMIN_2 | FMAXNM_2 | FMINNM_2 => {
+            let max = matches!(op, FMAX_2 | FMAXNM_2);
+            vreg(c, rn);
+            vreg(c, rm);
+            c.simd(op::MINMAX[d as usize][max as usize]).local_set(tr);
+            vreg(c, rn);
+            plain_lanes(c, d);
+            vreg(c, rm);
+            plain_lanes(c, d);
+            every_lane(c, d, q, 2);
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
+        }
+        // FRINTA: ties away as the scalar form (`round`), lane by lane; no NaN
+        // or denormal lanes, no flags.
+        FRINTA_2 => {
+            vround(c, d, rn, Round::Away);
+            c.local_set(tr);
+            vreg(c, rn);
+            plain_lanes(c, d);
+            every_lane(c, d, q, 1);
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
+        }
+        // FCVTXN(2): each double to a single rounded to odd as the scalar form
+        // (`to_odd_single`), into Vd's low half (top cleared) or, FCVTXN2, its
+        // top half (the low half kept).
+        FCVTXN_2 if d => {
+            fpa_guard(c);
+            let (xd, r32) = (super::tmp(true, 0), super::tmp(false, 3));
+            if q {
+                vreg(c, rd);
+            } else {
+                c.v128_const(0);
+            }
+            c.local_set(tr);
+            c.local_get(FPOK);
+            for lane in 0..2u8 {
+                vreg(c, rn);
+                c.simd_lane(0x1d, lane).local_set(xd); // i64x2.extract_lane
+                to_odd_single(c, xd, r32);
+                is_zero(c, F { d: true }, xd);
+                c.op(0x72).op(AND); // i32.or, and
+                c.local_get(tr).local_get(r32);
+                c.simd_lane(0x1c, lane + 2 * q as u8).local_set(tr); // i32x4.replace_lane
+            }
+            vreg(c, rn);
+            normal_or_zero(c, true);
+            c.simd(op::I64X2_ALL_TRUE).op(AND);
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, true, tr));
+        }
+        // FABS, FNEG: bit operations, no flags.        // FABS, FNEG: bit operations, no flags.
         FABS_2 | FNEG_2 => {
             let sign = splat(d, if d { 1 << 63 } else { 1 << 31 });
             vreg(c, rn);

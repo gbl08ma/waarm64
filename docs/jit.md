@@ -519,7 +519,14 @@ interpreter's; the helper runs the instruction otherwise.
     the product bound, an error under 2^-1074 deciding a midpoint, zero, denormal and 0 × ∞
     operands, split overflow); planted bugs in each step fail them.
 - **Conversions:** SCVTF/UCVTF inline (RNE, can't overflow), including the forms with the integer
-  in a SIMD&FP register and the vector forms; FCVTZS/FCVTZU inline for in-range non-NaN operands;
+  in a SIMD&FP register and the vector forms (2D lane by lane: no i64x2 convert);
+  FCVT{N,M,A,P,Z}{S,U} to W, X and V registers, scalar and vector: the operand rounded in the
+  instruction's mode first (FCVTA*'s ties away as FRINTA's sum), then a normal or zero operand whose
+  rounded value fits, under FPOK (Inexact), into the saturating truncation (2D lane by lane);
+  FCVTXN rounds to odd from the RNE demote (inexact, it steps toward zero where the demote went away
+  from the operand, then sets the odd bit), with an RNE result from the second binade up and finite;
+  FCVT to and from half (scalar), as the vector half forms below, single or double straight to half
+  in integer arithmetic (no double rounding);
   FCVT single↔double, scalar and vector (FCVTL/FCVTN): widening is exact without FPOK for a zero,
   normal or infinite operand; narrowing takes FPOK, a normal or zero operand and a fast result or a
   zero.
@@ -536,8 +543,10 @@ interpreter's; the helper runs the instruction otherwise.
 - **Compares** (FCMEQ/FCMGE/FCMGT, FACGE/FACGT, the compares against zero) and **FRINTN/M/P/Z**:
   no rounding and no flags while no lane is a NaN or a denormal (FZ would flush it, raising IDC),
   so no FPOK; FRINTI/FRINTX round in FPCR's mode (nearest even under FPOK; FRINTX's Inexact is set
-  already). Scalar FRINTA (ties away, no wasm op) is `trunc(x)` stepped ±1 when `|x - trunc(x)| ≥
-  0.5` (both exact; a select keeps -0), in f64 for singles; vector FRINTA is a helper call.
+  already). FRINTA (ties away, no wasm op) is `trunc(x)` stepped ±1 when `|x - trunc(x)| ≥ 0.5`
+  (both exact; a select keeps -0): scalar in f64 for singles (`round`), vector in its lanes
+  (`vround`). The AdvSIMD scalar compares (FCMEQ … FACGT, the compares with zero) are the vector
+  rule on one value.
 - **Scalar compares and selects:** FCSEL is bits (no guard). FCMP/FCMPE raise nothing without a
   denormal operand (FZ), a NaN for FCMPE or a signaling NaN for FCMP, so no FPOK, and **their NZCV
   stays lazy:** an ordered result's flags are a 32-bit SUBS of (gt, lt) (1 − 0: 0010, 0 − 0: 0110,
@@ -545,8 +554,8 @@ interpreter's; the helper runs the instruction otherwise.
   the direct conditions. Their helper path turns the helper's NZCV back into those operands
   (`fallback_with`'s hook). FCCMP/FCCMPE store NZCV (an immediate like 0100 has no SUBS form); their
   helper path stores the lazy flags first, as the helper reads them.
-- **FMAX/FMIN/FMAXNM/FMINNM** (scalar): wasm's `max`/`min` with zero, normal or infinite operands
-  (no NaN: then FMAXNM is FMAX), which order -0 below +0 as ARM does; no flags, no FPOK.
+- **FMAX/FMIN/FMAXNM/FMINNM** (scalar and vector): wasm's `max`/`min` with zero, normal or infinite
+  operands (no NaN: then FMAXNM is FMAX), which order -0 below +0 as ARM does; no flags, no FPOK.
 - **Half precision** (FCVTL/FCVTN with sz = 0, llvmpipe's 16-bit colour paths): FCVTL is exact
   without flags but for NaNs (FZ doesn't apply to half): the magnitude shifted into a single's
   fields is the value × 2^-112, denormals too, so an `f32x4.mul` by 2^112 converts it. FCVTN rounds

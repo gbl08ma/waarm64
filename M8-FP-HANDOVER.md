@@ -45,15 +45,15 @@ FP/integer gap is about the same as in the dev VM. The checks cost more once FMA
    fast path, counted or not; what stays a helper on purpose is written down in docs/jit.md with
    why). After this list, the decoder's other FP and vector FP ops the same way. **Every new fast
    path runs the FP suite** (`scripts/ci-fp.sh`, docs/testing.md "The FP suite": TestFloat through
-   all 300 forms in the guest under the JIT, its rules checked on the M4; the user asked for it,
+   all 482 forms in the guest under the JIT, its rules checked on the M4; the user asked for it,
    2026-10-18, outside `scripts/ci.sh`); a form it doesn't have yet gets a model in
    `images/fptest/fptest.c` and a row in `forms.py` first, passing natively on the M4.
-   **Done (2026-10-18):** FCSEL, FCMP/FCMPE (NZCV lazy), FCCMP/FCCMPE, scalar FCVT single↔double,
-   scalar FMAX/FMIN/FMAXNM/FMINNM, scalar FRINTN/A/P/M/Z/I/X. **Left:** vector FMAX/FMIN/FMAXNM/FMINNM
-   and FRINTA, FABD, FMULX, FADDP and the other pairwise and across-lanes FP ops, FRECPE/FRSQRTE/
-   FRECPS/FRSQRTS/FRECPX, FCVTN/A/P/M{S,U} (only FCVTZ* is inline), the fixed-point conversions,
-   FCVTXN, the half conversions' scalar forms; each needs its fptest model first where the suite
-   lacks one (docs/testing.md lists them). The original note (not measured, small to medium each): scalar
+   **Done (2026-10-18):** FCSEL, FCMP/FCMPE (NZCV lazy), FCCMP/FCCMPE, FCVT single↔double and to and
+   from half, FMAX/FMIN/FMAXNM/FMINNM and FRINTN/A/P/M/Z/I/X (scalar and vector), FCVT{N,M,A,P,Z}{S,U}
+   to W, X and V (scalar and vector, 2D too), SCVTF/UCVTF 2D, FCVTXN(2), the AdvSIMD scalar compares.
+   **Left:** FABD, FMULX, FADDP and the other pairwise and across-lanes FP ops, FRECPE/FRSQRTE/
+   FRECPS/FRSQRTS/FRECPX, the fixed-point conversions (FCVTZ*/SCVTF/UCVTF with fbits); each needs
+   the suite models them all (2026-10-18, checked on the M4). The original note (not measured, small to medium each): scalar
    FCMP/FCMPE, FCCMP, FCSEL, scalar FCVT (single↔double), FMAX/FMIN/FMAXNM/FMINNM (scalar and
    vector), the scalar FRINT* (only the vector FRINTs are inline). The FP guest never runs them, but
    compiled code branches on FCMP constantly. **Count first:** `jit_helper_report` on the desktop
