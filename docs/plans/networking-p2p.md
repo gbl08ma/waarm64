@@ -43,7 +43,7 @@ key) and the Ethernet gateway ([devices.md](../devices.md) "net").
 - **No room owner, no membership list.** Anyone who knows a room's ID can join. A room is as private
   as its ID is hard to guess: `gabriel-lan` is effectively public, and the page says so.
 - Dependencies: the Nostr side needs BIP-340 Schnorr signatures on secp256k1 (RustCrypto's `k256`,
-  MIT/Apache-2.0); **a new crate, so it waits for the user's OK** and gets a THIRD_PARTY.md row.
+  MIT/Apache-2.0; **OK'd by the user, 2026-10-18**), with a THIRD_PARTY.md row when it lands.
   Everything else is already in `net/ts` (`ts_tunnel`, BLAKE2s, ChaCha20-Poly1305, NaCl boxes).
 
 ## 2. A room
@@ -150,7 +150,9 @@ client was built.
 - **R3 — Scale and the real world.** A thousand synthetic members on the test relay: join time,
   lookup time, the worker's memory. By hand: public Nostr relays and the public tailcat relays
   carrying a room (their limits; whether their operators allow this use), two browsers on different
-  networks (the dev VM and a phone, say), how often ICE fails. The defaults (relays, STUN servers)
+  networks (the dev VM and a phone, say), how often ICE fails. The public tailcat relays are the
+  first choice for DERP (the user, 2026-10-18: try them); they're rate-limited, best-effort and
+  revocable (tailnet.md "tailcat"), so R3 finds out whether rooms fit their limits. The defaults (relays, STUN servers)
   come out of this.
 - **R4 — The internet beside a room.** A room and a tailcat exit node at once, as the tailcat server
   and client already share a module: the room's /48 goes to the room, the rest (and NAT46's IPv4) to
@@ -177,8 +179,6 @@ client was built.
 
 ## 9. Open questions
 
-- May the public tailcat relays carry rooms? They're rate-limited, best-effort and revocable
-  (tailnet.md "tailcat"), and rooms are a different use from tailcat's.
 - Which public Nostr relays by default, and whether they keep up with a busy room.
 - The names' suffix: `p2p.alt` is a placeholder until R1.
 - Whether incoming connections should default on in a room whose ID is long and secret.
