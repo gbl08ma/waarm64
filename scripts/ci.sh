@@ -42,6 +42,7 @@ native() {
   if [ -f target/images/edk2/shell.img ]; then image_test 'firmware (EDK2)' edk2 firmware; else step 'firmware (EDK2)'; printf '\n**************** SKIPPED: no edk2/shell.img: run images/build.sh edk2 ****************\n'; fi
   image_test 'gpu guest' linux-gpu gpu_guest
   image_test 'snd guest' linux-snd snd_guest
+  image_test 'usb guest' linux-usb usb_guest
   if [[ ",$WEBPC_DISTROS," == *",alpine,"* ]]; then image_test "alpine boot" alpine distros alpine; else step "alpine boot: SKIPPED (not in WEBPC_DISTROS)"; fi
 }
 # The native guest-image tests (~130 s) run beside the JS tests, which spend much of their time

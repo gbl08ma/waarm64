@@ -26,6 +26,7 @@ import { test as nodeTest } from 'node:test';
 import { setFlagsFromString } from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { checkSndGuest } from './snd/guest.ts';
+import { USB_CMDLINE, USB_HUBS_CMDLINE, USB_INITRD, USB_KERNEL, checkUsbGuest, checkUsbHubs, usbGuest } from './usb/guest.ts';
 import { STEPS } from './steps.ts';
 import { CONSOLE_INPUT, CONSOLE_INPUT_STEP, CONSOLE_INPUT_WANT, DISTROS, Exit, GUEST_CMDLINE, PSCI_SYSTEM_OFF, bootVm, guestDevices, runToPowerOff, testDevices, type BootOptions, type ConsoleInput } from '../web/vm.ts';
 
@@ -413,6 +414,24 @@ guest('snd test kernel', () => ({
   poweredOff(r);
   checkSndGuest(r.console, r.snd);
 }, { skip: !has('linux-snd/Image') && 'SKIPPED: run images/build.sh linux-snd', stress: STRESS, steps: STEPS.snd, max: 5e9 });
+
+// The USB test kernel (images/build.sh linux-usb, images/usb/init.c; docs/usb.md) on the xHCI: the two empty root
+// hubs; then the kernel's testusb against two Gadget Zeros (web/usb-gadget-zero.ts), one of them unplugged mid-pass
+// and plugged in again at fixed steps, in the native twin's steps (core/tests/usb_guest.rs). In parallel SMP without the
+// hot-plug (its steps aren't exact): one clean pass, each run.
+const usbSkip = !has(USB_KERNEL) && 'SKIPPED: run images/build.sh linux-usb';
+guest('usb test kernel: root hubs', () => ({ ramSize: 256 << 20, kernel: image(USB_KERNEL), initrd: image(USB_INITRD), cmdline: USB_HUBS_CMDLINE, usb: {} }), (r) => {
+  poweredOff(r);
+  checkUsbHubs(r.console.replaceAll('\r\n', '\n'));
+}, { skip: usbSkip, stress: STRESS, steps: STEPS['usb-hubs'], max: 5e9 });
+guest('usb test kernel: testusb against Gadget Zero, hot-plugged', () => ({ ramSize: 256 << 20, kernel: image(USB_KERNEL), initrd: image(USB_INITRD), cmdline: USB_CMDLINE, usb: usbGuest() }), (r) => {
+  poweredOff(r);
+  checkUsbGuest(r.console);
+}, { skip: usbSkip, stress: STRESS, steps: STEPS.usb, max: 5e9 });
+test('parallel: usb test kernel, testusb against Gadget Zero on 2 vCPUs (JIT)', { skip: usbSkip }, () => parallel({ ramSize: 256 << 20, kernel: image(USB_KERNEL), initrd: image(USB_INITRD), cmdline: USB_CMDLINE.replace('usb_unplug=1', 'usb_unplug=0'), usb: usbGuest(false), ncpus: 2 }, 1, (r) => {
+  poweredOff(r);
+  checkUsbGuest(r.console, false);
+}));
 
 // The firmware configuration (M8 phase B): EDK2 boots the UEFI Shell from the test disk
 // (images/build.sh edk2: shell.img), whose startup.nsh prints a variable, sets it in the
