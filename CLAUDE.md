@@ -53,8 +53,8 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
 - **USB rigs** (docs/testing.md "USB"): the VM runs `kernel-default` (7.2.9) with `kernel-default-devel`, so
   `tests/usb/gadget.sh install` can build `dummy_hcd` out of tree (openSUSE doesn't ship it; the source comes from
   kernel.org's stable tree for the running version) into `/lib/modules/<kver>/updates/`. Run it again after a
-  kernel update. It also installs `/etc/udev/rules.d/70-webpc-usb.rules` (the 0525 gadgets' usbfs nodes, `/dev/uhid`
-  and uhid's `hidraw` nodes open to the user), `/etc/modprobe.d/50-webpc-usb.conf` (blocks `usbtest` and `cdc_acm`
+  kernel update. It also installs `/etc/udev/rules.d/70-webpc-usb.rules` (the 0525 gadgets' usbfs nodes, `/dev/uhid`,
+  uhid's `hidraw` nodes and the ACM gadget's `/dev/ttyGS*` open to the user), `/etc/modprobe.d/50-webpc-usb.conf` (blocks `usbtest` and `cdc_acm`
   on the host, so the gadgets stay free) and Chromium's managed policy
   `/etc/chromium/policies/managed/webpc-usb.json` (WebUSB grants the 0525 gadgets, and WebHID every HID device, to
   `http://127.0.0.1:8190`–`8197`). `qemu-hw-usb-host` (QEMU's `usb-host`, for `tests/usb/oracle.sh`): installing
