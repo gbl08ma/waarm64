@@ -26,7 +26,7 @@ import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
 import { createNetwork, DEFAULT_SETTINGS, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
-import { CPU_FEATURES, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
+import { CPU_FEATURES, KEYBOARD_CONNECTOR, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
 import { deviceName, entryOf, identityKey, identityOf as usbIdentity, newEntry, problemText, usbLock } from './usb-ports.ts';
 import { browserApi, entryStates, filterFor, findDevices, granted, identityOfDevice, isGranted, requestDevices, ungranted, UsbError, UsbLocks, UsbPorts, type Api, type HostDevice } from './usb-live.ts';
 import type { UsbIdentity, UsbVirtual } from '../usb-device.ts';
@@ -519,7 +519,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const sound = audio.attach();
   // A machine with a USB controller: the port its devices are attached over (docs/usb.md "The page").
   const usb = usbOn() ? new MessageChannel() : undefined;
-  const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true) }), serial: serial.port1, display: display.port1, usb: usb && usbPorts(usb.port1) };
+  const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true), usb: keyboardKey }), serial: serial.port1, display: display.port1, usb: usb && usbPorts(usb.port1) };
   run = r;
   keyboardLive = false;
   last = undefined;
@@ -566,6 +566,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
       addLog(m.data);
     } else if (m.type === 'keyboard') {
       keyboardLive = m.live;
+      void syncKeyboard(r);
     } else if (m.type === 'status') {
       showStatus(m.status);
       if (benchHooks) (window as unknown as { __status?: Status }).__status = m.status;
@@ -1445,7 +1446,7 @@ function syncUsb() {
     const c = run?.usb?.connectors[i];
     const d = c?.device;
     const problems = c?.problems?.length && d && d.api !== 'virtual' ? c.problems.map((p) => problemText(p, d)) : undefined;
-    return c ? { name: c.name, state: c.state, entry: c.entry, virtual: c.device.api === 'virtual', problems } : null;
+    return c ? { name: c.name, state: c.state, entry: c.entry, virtual: c.device.api === 'virtual', builtin: isKeyboard(c), problems } : null;
   });
   ui.usb.offers = [...offers.values()].map(({ id, text, label }) => ({ id, text, label }));
   ui.usb.tick++;
@@ -1520,8 +1521,36 @@ async function letGo(lock: string) {
 }
 
 const pageMachine = () => stored?.record.id;
+// The built-in keyboard (docs/usb.md "The keyboard"): a HID boot keyboard on the last connector, plugged in while the
+// guest has no driver on its virtio keyboard (the firmware, the boot loader, an initramfs), so the screen's keys reach
+// them as a keyboard's (every key, held modifiers); unplugged once that driver is live, so the guest's own kernel
+// doesn't get every key twice.
+const KEYBOARD = { api: 'virtual', kind: 'keyboard' } as const;
+const isKeyboard = (c?: { device: UsbIdentity | UsbVirtual }) => c?.device.api === 'virtual' && c.device.kind === 'keyboard';
+/** The screen's key for the built-in keyboard: false when it isn't plugged in (the serial console takes it then). */
+function keyboardKey(code: string, down: boolean): boolean {
+  const p = run?.usb;
+  const c = p?.connectors[KEYBOARD_CONNECTOR];
+  if (!p || !isKeyboard(c) || c!.state !== 'attached') return false;
+  p.key(KEYBOARD_CONNECTOR, code, down);
+  return true;
+}
+/** Plugs the built-in keyboard in or out, as the guest's virtio keyboard is live or not. */
+let keyboardSync: Promise<void> = Promise.resolve();
+function syncKeyboard(r: Run) {
+  keyboardSync = keyboardSync.then(async () => {
+    const p = r.usb;
+    if (!p || run !== r || !usbRunning()) return;
+    const c = p.connectors[KEYBOARD_CONNECTOR];
+    if (keyboardLive && isKeyboard(c)) await p.detach(KEYBOARD_CONNECTOR).catch(() => {});
+    else if (!keyboardLive && !c) await p.attach(KEYBOARD_CONNECTOR, KEYBOARD).catch((err) => notify(`The built-in keyboard couldn't be plugged in: ${String((err as Error).message ?? err)}`, 'error'));
+  });
+  return keyboardSync;
+}
+
 /** At a start, a resume or a restore: the entries attached at start that are plugged in go on; those without a grant here are offered one. */
 async function attachAtStart(r: Run) {
+  await syncKeyboard(r);
   const entries = usbEntries();
   const found = await findDevices(entries);
   for (const e of entries) {
@@ -1597,8 +1626,9 @@ type Unplugged = { connector: number; device: UsbIdentity | UsbVirtual; entry?: 
  * and detaches them. Returns what was attached (to attach again after), or undefined when the user says no.
  */
 async function emptyPorts(r: Run, what: string): Promise<Unplugged | undefined> {
-  const on = r.usb?.attached() ?? [];
-  if (!on.length) return [];
+  // The built-in keyboard goes out and back in without a question (the firmware's keyboard; Linux has its own).
+  const on = (r.usb?.attached() ?? []).filter((c) => !isKeyboard(c));
+  if (!on.length) return r.usb ? r.usb.detachAll() : [];
   const names = on.map((c) => c.name);
   const one = names.length === 1;
   const list = one ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
@@ -1610,6 +1640,7 @@ async function emptyPorts(r: Run, what: string): Promise<Unplugged | undefined> 
 async function plugBack(r: Run, was: Unplugged | undefined) {
   for (const c of was ?? []) {
     if (run !== r || !usbRunning()) return;
+    if (isKeyboard(c)) { await syncKeyboard(r); continue; }
     await r.usb!.attach(c.connector, c.device, c.entry).catch((err) => notify(`${deviceName(c.device)} couldn't be attached again: ${String((err as Error).message ?? err)}`, 'error'));
   }
 }
@@ -1666,9 +1697,9 @@ const usbPage = {
   usbZero: async () => {
     const p = run?.usb;
     if (!p || !usbRunning()) throw new Error("The machine isn't running with a USB controller.");
-    const at = p.connectors.findIndex((c) => c?.device.api === 'virtual');
+    const at = p.connectors.findIndex((c) => c?.device.api === 'virtual' && c.device.kind === 'gadget-zero');
     if (at >= 0) return p.detach(at);
-    const free = p.connectors.findIndex((c) => !c);
+    const free = p.connectors.findIndex((c, i) => !c && i !== KEYBOARD_CONNECTOR);
     if (free < 0) throw new Error('Every connector is in use.');
     await p.attach(free, { api: 'virtual', kind: 'gadget-zero' });
   },

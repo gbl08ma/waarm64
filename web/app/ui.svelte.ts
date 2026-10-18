@@ -64,7 +64,7 @@ export const ui = $state({
     running: false,
     entries: [] as EntryView[],
     /** `problems`: what of an attached device the guest doesn't get, in words (web/app/usb-ports.ts `problemText`). */
-    connectors: [] as ({ name: string; state: string; entry?: string; virtual?: boolean; problems?: string[] } | null)[],
+    connectors: [] as ({ name: string; state: string; entry?: string; virtual?: boolean; builtin?: boolean; problems?: string[] } | null)[],
     offers: [] as { id: string; text: string; label: string }[],
     zero: false,
     open: 0,

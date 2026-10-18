@@ -8,7 +8,7 @@
   import AddUsb from './AddUsb.svelte';
   import Icon from './Icon.svelte';
   import { ask } from './ask.svelte.ts';
-  import { USB_CONNECTORS, type MachineRecord } from './shape.ts';
+  import { KEYBOARD_CONNECTOR, USER_CONNECTORS, type MachineRecord } from './shape.ts';
   import { deviceName, hasTwins, idsText } from './usb-ports.ts';
   import type { EntryView } from './usb-live.ts';
   import { page, ui } from './ui.svelte.ts';
@@ -65,7 +65,7 @@
         </div>
         <label class="field" title="The root connector it goes on (the guest's port path: its names under /dev/serial/by-path stay the same)">Connector
           <select value={e.connector} disabled={here && v.state === 'attached'} onchange={(ev) => act('Saving', () => page.usbEdit(machine.id, e.id, { connector: Number((ev.currentTarget as HTMLSelectElement).value) }))} data-field="connector">
-            {#each Array.from({ length: USB_CONNECTORS }, (_, i) => i) as c (c)}<option value={c}>{c + 1}</option>{/each}
+            {#each Array.from({ length: USER_CONNECTORS }, (_, i) => i) as c (c)}<option value={c}>{c + 1}</option>{/each}
           </select></label>
         <label class="check" title="Attached when the machine starts, and when it is plugged in while the machine runs"><input type="checkbox" checked={e.atStart} onchange={(ev) => act('Saving', () => page.usbEdit(machine.id, e.id, { atStart: (ev.currentTarget as HTMLInputElement).checked }))} data-field="at-start"> At start</label>
         {#if v.state === 'ungranted'}
@@ -82,6 +82,10 @@
       <li class="none">No USB devices remembered.</li>
     {/each}
   </ul>
+  {#if machine.usb}
+    {@const k = here ? ui.usb.connectors[KEYBOARD_CONNECTOR] : null}
+    <p class="note" data-usb-builtin data-state={k?.builtin ? k.state : 'detached'}>Connector {KEYBOARD_CONNECTOR + 1} is the built-in keyboard's: the screen's keys reach the firmware and the boot loader through it, until the guest's own keyboard driver takes over (then it is unplugged{here ? (k?.builtin ? ', now it is plugged in' : ', as now') : ''}).</p>
+  {/if}
   <div class="row"><button onclick={() => (adding = true)} data-action="add-usb" disabled={!machine.usb}><Icon name="plus" size={16} />Add a device…</button></div>
   {#if hasTwins(machine.usbDevices ?? [])}
     <p class="note" data-usb-twins>Identical devices without a serial number are told apart by the order the browser lists them in (usually the order they were plugged in): plug them in the same order, or the guest sees them swapped.</p>

@@ -18,8 +18,9 @@
     const n = ui.usb.open;
     if (n !== lastOpen) { lastOpen = n; if (ui.usb.offers.length) open = true; }
   });
-  const attached = $derived(ui.usb.connectors.filter(Boolean).length);
-  const zeroOn = $derived(ui.usb.connectors.some((c) => c?.virtual));
+  // The built-in keyboard is the machine's own, not a device of the user's: not counted, not listed.
+  const attached = $derived(ui.usb.connectors.filter((c) => c && !c.builtin).length);
+  const zeroOn = $derived(ui.usb.connectors.some((c) => c?.virtual && !c.builtin));
 
   async function run(f: () => Promise<unknown>) {
     error = '';

@@ -5,7 +5,7 @@
 // Node's tests use it. The live side (the browser's devices, the locks, the running machine's ports) is
 // web/app/usb-live.ts.
 import type { UsbIdentity, UsbProblem, UsbVirtual } from '../usb-device.ts';
-import { newId, USB_CONNECTORS, type UsbEntry } from './shape.ts';
+import { newId, USB_CONNECTORS, USER_CONNECTORS, type UsbEntry } from './shape.ts';
 
 /** What WebUSB and WebHID tell of a device, as far as an entry needs it (a `USBDevice` and a `HIDDevice` both fit). */
 export type SeenDevice = { vendorId: number; productId: number; serialNumber?: string | null; productName?: string | null };
@@ -27,7 +27,7 @@ export const usbLock = (i: Pick<UsbIdentity, 'api' | 'vendorId' | 'productId' | 
 
 /** A device's name on the page: its product name, or its IDs. */
 export function deviceName(d: { api?: string; kind?: string; vendorId?: number; productId?: number; productName?: string | null }): string {
-  if (d.api === 'virtual') return d.kind === 'gadget-zero' ? 'Gadget Zero (test device)' : 'a test device';
+  if (d.api === 'virtual') return d.kind === 'gadget-zero' ? 'Gadget Zero (test device)' : d.kind === 'keyboard' ? 'Built-in keyboard' : 'a test device';
   return d.productName?.trim() || `${d.api === 'hid' ? 'HID' : 'USB'} device ${hex4(d.vendorId ?? 0)}:${hex4(d.productId ?? 0)}`;
 }
 export const virtualName = (v: UsbVirtual) => deviceName(v);
@@ -40,7 +40,8 @@ export const idsText = (d: { vendorId: number; productId: number }) => `${hex4(d
  * on one connector are fine: only one is attached at a time).
  */
 export function freeConnector(entries: Pick<UsbEntry, 'connector'>[]): number {
-  const uses = Array.from({ length: USB_CONNECTORS }, (_, c) => entries.filter((e) => e.connector === c).length);
+  // The built-in keyboard's connector is left out (shape.ts `KEYBOARD_CONNECTOR`).
+  const uses = Array.from({ length: USER_CONNECTORS }, (_, c) => entries.filter((e) => e.connector === c).length);
   return uses.indexOf(Math.min(...uses));
 }
 

@@ -268,6 +268,11 @@ export class UsbPorts {
     await this.request(connector, { type: 'usb-attach', connector, device }, ms);
   }
 
+  /** A key of the page's for the built-in keyboard on `connector` (`code` '': release them all); no answer. */
+  key(connector: number, code: string, down: boolean) {
+    this.port.postMessage({ type: 'usb-key', connector, code, down } satisfies UsbToWorker);
+  }
+
   /** Detaches what is on `connector` (the guest sees an unplug); resolves once the worker says it's off. */
   async detach(connector: number, ms = 10_000): Promise<void> {
     const c = this.connectors[connector];

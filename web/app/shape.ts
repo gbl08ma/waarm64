@@ -97,6 +97,9 @@ export type UsbEntry = {
 };
 /** The root connectors a machine's controller has (each a USB 2 and a USB 3 port). */
 export const USB_CONNECTORS = 4;
+/** The last is the built-in keyboard's (web/usb-keyboard.ts, docs/usb.md "The keyboard"); the others are the remembered devices'. */
+export const KEYBOARD_CONNECTOR = USB_CONNECTORS - 1;
+export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
 export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'blk';
