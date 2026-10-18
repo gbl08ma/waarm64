@@ -231,7 +231,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     4.9 → 20 MiB/s). The rest was dropped by measurement: Debian's boot from a chosen qcow2 spends 3.9% in file reads and
     6% in all requests (no cache, copy, limit or inflate work clears the 5% bar), `flush()` costs ~10 µs, and the screen
     stays within 22–33 ms of a flush under a continuous disk read, so no blk worker. Numbers: `bench/io/REPORT.md`.
-- **D. Choosing and shaping machines:** **starts with machines as the unit (confirmed 2026-10-17, `M8-MACHINES-KICKOFF.md`, a cloud session first;
+- **D. Choosing and shaping machines:** **starts with machines as the unit (confirmed 2026-10-17, a cloud session first; done;
   [docs/plans/machines.md](docs/plans/machines.md))**: named machines stored in the browser (vCPUs, RAM, any number of
   disks, up to 16, read-only or read-write), managed in a modal (Svelte); overlays per base disk as named variants;
   disk sources from a URL, a file (remembered), a copy in OPFS (which can take an overlay in place or be written in
@@ -239,7 +239,7 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
   snapshots per machine kept in OPFS or downloaded, checked against the machine's shape (orphaned when the machine
   changes) and restored without destroying a disk's state (an overlay that moved on is forked, detected by a
   generation counter, not a hash); machine definitions exported and imported. **Built and tested in a cloud session
-  (2026-10-17, loops L0–L5, machines.md §11); the dev VM's pass is `M8-MACHINES-HANDOVER.md`.** Then a preloaded image and snapshot
+  (2026-10-17, loops L0–L5, machines.md §11), passed in the dev VM (every CI suite) and by the user by hand.** Then a preloaded image and snapshot
   loaded with the page (likely the Arch desktop guest, decision 1: a built-in machine, after remote disks' content
   identity), a catalog of hosted images (machine definitions) on top of phase B's disk in, and **the stable
   embedding API**, extracted from what the page ended up using (VM config to DTB and devices,

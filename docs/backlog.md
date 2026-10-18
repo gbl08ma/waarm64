@@ -462,6 +462,16 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   `firefoxUserPrefs: { 'memory.phc.enabled': false }` (PHC's stack walks hit the VM's
   SME-without-SVE in libgcc's unwinder: SIGILL) and `env: chromiumEnv()`.
 - **Machines as the unit, loose ends** (docs/plans/machines.md §11):
+  - **The exit's numbers weren't taken** (the user's call, 2026-10-18: low relevance for now, and they'd go stale
+    beside unrelated optimizations). In Chromium 153, `bench/boot/REPORT.md` with JSON: a restore whose pins match
+    (RAM and state only) against one that forks; a stored disk's import (Debian; the cloud: ~94–140 s, 1,043 MB); a
+    merge; a kept snapshot's size and save time against a downloaded one's; the ramdisk's fio against one buffer
+    (machines.md §4.3: kept if within noise). The cloud's boots written in place (221 s) and on a merged disk (290 s)
+    were slower than its overlay boots (115–156 s), one run each on shared hardware; the user's boots of stored and
+    merged disks by hand showed nothing like it. If anyone relies on in-place disks for speed, time those boots too.
+  - **Suspend once failed with "the browser's storage is full"** (a short write in `fileWriter`, web/overlay.ts),
+    in the dev VM's first run of tests/page-snapshots.test.ts (~550 MB in OPFS of a ~3.7 GB quota), not reproduced in
+    the runs since: if it comes back, log `navigator.storage.estimate()` at the failure.
   - A full quota still reaches the guest as `IOERR` (and an import or a kept snapshot fails with "is it full?"): the
     page should say so where it happens, with the storage view's numbers.
   - A stored disk's SHA-256 isn't computed in the background (§3.1), and a definition carries a file's hash only

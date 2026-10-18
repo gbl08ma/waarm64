@@ -1,4 +1,4 @@
-# Machines, disks and snapshots (M8 phase D, its start; confirmed 2026-10-17, `M8-MACHINES-KICKOFF.md`)
+# Machines, disks and snapshots (M8 phase D, its start; confirmed 2026-10-17; done)
 
 The page today runs one machine whose disk is a session's choice: a `DiskChoice` (`{url?, file?, overlay}`), one
 overlay per disk (named by a hash of its identity, `diskOverlay` in web/app/machine.ts), the EFI variable store and the
@@ -319,7 +319,10 @@ the page, disks or snapshots (all of them from L1).
 ## 11. Record: the cloud session (2026-10-17)
 
 Built in a Claude Code cloud session (x86_64, 4 vCPUs, Playwright's Chromium 141), loops L0–L5 in order, each pushed;
-the dev VM's pass (full CI, Chromium 153, the numbers) is `M8-MACHINES-HANDOVER.md`. Where the build differs from the
+then the dev VM's pass (every CI suite in Chromium 153, `tests/steps.txt` unmoved; what it fixed was what the cloud
+couldn't run: a transient snapshot naming its own image as the disk, header menus past the window, `npm start`
+importing the Svelte compiler before `npm ci`, and two tests' waits for hooks the page now sets after the store opens)
+and the user's pass by hand. The exit's numbers weren't taken (backlog "Machines as the unit, loose ends"). Where the build differs from the
 sections above, or settled what they left open:
 - **The slots** (§4.1) are the other devices first in a fixed order (rng, keyboard, tablet, net, gpu, snd), then the
   disks; the tests' transient machines take the same order (their guests find their root by UUID or by `vda`, the
