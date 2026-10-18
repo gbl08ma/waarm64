@@ -128,6 +128,20 @@ function rig(deterministic = true) {
   return { u32, usb, completions, post, CPL };
 }
 
+test('an attach reports what of the device the guest doesn\'t get, and a failed one why', async () => {
+  const problems = [{ kind: 'protected-interface' as const, interface: 3, class: 3 }];
+  registerUsbOpener('usb', async (id) => {
+    if (id.vendorId === 9) throw Object.assign(new Error('no interface left'), { problems: [{ kind: 'claim-failed', interface: 0, message: 'Unable to claim interface.' }] });
+    return { speed: 'full', problems, submit() {}, cancel() {}, reset() {}, detach() {} };
+  });
+  const { usb } = rig(false);
+  const m = await usb.attach(0, { api: 'usb', vendorId: 1, productId: 2 });
+  assert.deepEqual(m.state === 'attached' && m.problems, problems);
+  const f = await usb.attach(1, { api: 'usb', vendorId: 9, productId: 2 });
+  assert.deepEqual(f.state === 'error' && f.detail, [{ kind: 'claim-failed', interface: 0, message: 'Unable to claim interface.' }]);
+  usb.close();
+});
+
 test('a device that throws fails its TD, not the device worker', async () => {
   registerUsbOpener('usb', async () => ({
     speed: 'high',

@@ -34,7 +34,7 @@ const same = (a: Uint8Array, b: Uint8Array, what: string) => assert.ok(Buffer.co
 
 async function open(f: Fixture, o: ConstructorParameters<typeof FakeUsb>[1] = {}) {
   const dev = new FakeUsb(f, o);
-  const p = await openWebUsb(dev, { os: 'linux' });
+  const p = await openWebUsb(dev, {});
   return { dev, p };
 }
 
@@ -100,17 +100,17 @@ test('an interface the host holds is reported with the remedy and hidden; a devi
   assert.deepEqual([...p.claimed], [2]);
   const failed = p.problems.filter((x) => x.kind === 'claim-failed');
   assert.equal(failed.length, 2);
-  assert.match((failed[0] as { message: string }).message, /cdc_acm/);
+  assert.match((failed[0] as { message: string }).message, /Unable to claim interface/, "the browser's words (the page adds the remedy)");
   const cfg = bytes(await control(p, getDesc(2, 0, 4096)));
   assert.deepEqual([...parseConfig(cfg).interfaces.keys()], [2]);
   assert.ok(!splitDescriptors(cfg).some((d) => d.type === 0x0b), 'the IAD went with CDC');
   await assert.rejects(open(fx('FTDI'), { hostHeld: [0] }), (e) => {
     assert.ok(e instanceof UsbOpenError);
-    assert.match((e.problems[0] as { message: string }).message, /ftdi_sio/);
+    assert.deepEqual(e.problems, [{ kind: 'claim-failed', interface: 0, message: 'Unable to claim interface.' }]);
     return true;
   });
   const dev = new FakeUsb(fx('FTDI'), { hostHeld: [0] });
-  await assert.rejects(openWebUsb(dev, { os: 'windows' }), (e) => /Zadig/.test((e as UsbOpenError).problems.map((x) => (x as { message: string }).message).join()));
+  await assert.rejects(openWebUsb(dev), UsbOpenError);
   assert.ok(dev.log.includes('close'), 'closed again');
 });
 
@@ -228,7 +228,7 @@ test('OUT TDs complete in submit order whatever order WebUSB resolves them in', 
 test('bulk IN: data, short, stall, babble, a lost device', async () => {
   let gone = 0;
   const dev = new FakeUsb(fx('Realtek'));
-  const p = await openWebUsb(dev, { os: 'linux', gone: () => gone++ });
+  const p = await openWebUsb(dev, { gone: () => gone++ });
   const a = submit(p, { ep: 0x81, type: 'bulk', length: 512 });
   const b = submit(p, { ep: 0x81, type: 'bulk', length: 512 });
   const c = submit(p, { ep: 0x81, type: 'bulk', length: 4 });
@@ -373,7 +373,7 @@ test('detach: no completion after it, the interfaces released and the device clo
 test('reset: device.reset(), outstanding TDs dropped; a reset that loses the device reports it gone', async () => {
   let gone = 0;
   const dev = new FakeUsb(fx('Silicon Labs'));
-  const p = await openWebUsb(dev, { os: 'linux', gone: () => gone++ });
+  const p = await openWebUsb(dev, { gone: () => gone++ });
   const a = submit(p, { ep: 0x81, type: 'bulk', length: 64 });
   await settle();
   p.reset();
@@ -404,7 +404,7 @@ test('the opener finds the device by vendor, product and serial, or by index amo
     removeEventListener: (_: 'disconnect', l: (e: { device: WebUsbDeviceLike }) => void) => listeners.delete(l),
   };
   let gone = 0;
-  const p = await webUsbOpener(usb, 'linux')({ ...id, index: 1 }, { gone: () => gone++ });
+  const p = await webUsbOpener(usb)({ ...id, index: 1 }, { gone: () => gone++ });
   assert.equal(p.dev, devs[2]);
   for (const l of [...listeners]) l({ device: devs[1] });
   assert.equal(gone, 0);

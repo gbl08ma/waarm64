@@ -217,5 +217,9 @@ test('a protected collection\'s input and output reports are left out; a device 
   assert.deepEqual(got.map((c) => [c.usagePage, c.usage, c.children.length]), [[1, 6, 0], [0xff60, 0x61, 0]]);
   assert.deepEqual([...d.layout.sizes.output.keys()], [], 'no LED output report, so no OUT endpoint');
   assert.equal(d.layout.outMax, 0);
+  assert.deepEqual(d.problems, [
+    { kind: 'protected-collection', usagePage: 1, usage: 6, kept: true },
+    { kind: 'protected-collection', usagePage: 1, usage: 2, kept: false },
+  ], 'what the guest doesn\'t get, for the page');
   await assert.rejects(openWebHid(new FakeHid([cs[1]])), (e) => e instanceof UsbOpenError && e.problems[0].kind === 'no-collections');
 });

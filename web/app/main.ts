@@ -27,7 +27,7 @@ import { runImport } from './import.ts';
 import { createNetwork, DEFAULT_SETTINGS, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
 import { CPU_FEATURES, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
-import { deviceName, entryOf, identityKey, identityOf as usbIdentity, newEntry, usbLock } from './usb-ports.ts';
+import { deviceName, entryOf, identityKey, identityOf as usbIdentity, newEntry, problemText, usbLock } from './usb-ports.ts';
 import { browserApi, entryStates, filterFor, findDevices, granted, identityOfDevice, isGranted, requestDevices, ungranted, UsbError, UsbLocks, UsbPorts, type Api, type HostDevice } from './usb-live.ts';
 import type { UsbIdentity, UsbVirtual } from '../usb-device.ts';
 import { currentShape, planRestore } from './snapshots.ts';
@@ -1443,7 +1443,9 @@ function syncUsb() {
   ui.usb.running = usbRunning();
   ui.usb.connectors = Array.from({ length: USB_CONNECTORS }, (_, i) => {
     const c = run?.usb?.connectors[i];
-    return c ? { name: c.name, state: c.state, entry: c.entry, virtual: c.device.api === 'virtual' } : null;
+    const d = c?.device;
+    const problems = c?.problems?.length && d && d.api !== 'virtual' ? c.problems.map((p) => problemText(p, d)) : undefined;
+    return c ? { name: c.name, state: c.state, entry: c.entry, virtual: c.device.api === 'virtual', problems } : null;
   });
   ui.usb.offers = [...offers.values()].map(({ id, text, label }) => ({ id, text, label }));
   ui.usb.tick++;

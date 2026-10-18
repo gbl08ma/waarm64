@@ -57,6 +57,8 @@ test("the messages for what the device worker can't do, with each OS's remedy", 
   assert.match(problemText(claim, d, 'windows'), /WinUSB.*Zadig/);
   assert.match(problemText(claim, d, 'mac'), /macOS/);
   assert.match(problemText({ kind: 'no-collections' }, { ...d, api: 'hid' }), /kept from pages/);
+  assert.match(problemText({ kind: 'protected-collection', usagePage: 1, usage: 6, kept: true }, { ...d, api: 'hid' }), /keyboard part.*all but its feature reports/);
+  assert.match(problemText({ kind: 'protected-collection', usagePage: 1, usage: 2, kept: false }, { ...d, api: 'hid' }), /mouse part.*doesn't get it/);
   assert.match(problemText({ kind: 'open-failed', message: 'Failed to open the device.' }, { ...d, api: 'hid' }, 'linux'), /hidraw.*KERNEL=="hidraw\*", ATTRS\{idVendor\}=="2e8a", ATTRS\{idProduct\}=="000a", TAG\+="uaccess"/);
   assert.match(problemText({ kind: 'open-failed', message: 'Access denied.' }, d, 'linux'), /\/dev\/bus\/usb.*SUBSYSTEM=="usb"/);
 });
@@ -69,7 +71,8 @@ function fakeWorker(port: MessagePort, seen: UsbToWorker[]) {
     const say = (s: UsbFromWorker) => port.postMessage(s);
     if (m.type === 'usb-attach') {
       if ('vendorId' in m.device && m.device.vendorId === 0xdead) say({ type: 'usb-state', connector: m.connector, state: 'error', message: "Couldn't attach it.", detail: [{ kind: 'claim-failed', interface: 0, message: 'busy' }] });
-      else say({ type: 'usb-state', connector: m.connector, state: 'attached', device: m.device, speed: 'high' });
+      // A Pico's HID interface is left out (WebUSB refuses the class): the attach says so.
+      else say({ type: 'usb-state', connector: m.connector, state: 'attached', device: m.device, speed: 'high', ...('vendorId' in m.device && m.device.vendorId === 0x2e8a ? { problems: [{ kind: 'protected-interface', interface: 2, class: 3 }] } : {}) });
     } else say({ type: 'usb-state', connector: m.connector, state: 'detached', reason: 'page' });
   };
 }
@@ -90,6 +93,7 @@ test('the ports: attach, refuse, detach all and attach again, a device unplugged
     const pico = { api: 'usb' as const, vendorId: 0x2e8a, productId: 0xa, serialNumber: 'E1', productName: 'Pico' };
     await ports.attach(1, pico, 'e1');
     assert.equal(ports.connectors[1]?.state, 'attached');
+    assert.deepEqual(ports.connectors[1]?.problems, [{ kind: 'protected-interface', interface: 2, class: 3 }], 'what was left out, for the page');
     assert.deepEqual([...ports.attachedEntries()], ['e1']);
     await assert.rejects(ports.attach(1, { api: 'virtual', kind: 'gadget-zero' }), /Connector 2 has Pico/);
     // Another tab can't have it; it learns who has it, and asks for it.

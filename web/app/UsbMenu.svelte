@@ -48,6 +48,9 @@
       <span class="name">{deviceName(v.entry)}</span>
       <span class="dim">{c?.entry === v.entry.id && c.state !== 'attached' ? `${c.state}…` : on ? `connector ${v.entry.connector + 1}` : v.state === 'held' ? `in ${v.holder ?? 'another machine'}` : v.state === 'plugged' ? '' : v.state === 'ungranted' ? 'no permission' : 'not plugged in'}</span>
     </label>
+    {#if on && c?.entry === v.entry.id && c.problems?.length}
+      <p class="warn" data-usb-problems={v.entry.id} title={c.problems.join('\n\n')}>Part of it doesn't reach the guest: hover here, or see All USB settings…</p>
+    {/if}
   {:else}
     <p class="hint">No devices remembered yet.</p>
   {/each}
@@ -71,6 +74,7 @@
   .dim { color: var(--dim); font-size: 12px; }
   .row { display: flex; gap: 6px; flex-wrap: wrap; }
   .count { min-width: 14px; padding: 0 4px; border-radius: 7px; background: #3b6db3; color: #fff; font-size: 10px; line-height: 14px; text-align: center; }
+  .warn { color: #ffb36b; font-size: 12px; margin: -4px 0 0 24px; max-width: 360px; }
   .error { color: #ff8f8f; white-space: pre-wrap; margin: 0; max-width: 360px; }
   .primary { background: #24406b; border-color: #3b6db3; color: #fff; }
 </style>

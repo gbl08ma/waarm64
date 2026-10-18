@@ -109,6 +109,9 @@ export function hostOs(nav: { userAgent?: string; userAgentData?: { platform?: s
 const CLASSES: Record<number, string> = { 0x01: 'audio', 0x02: 'communications (CDC)', 0x03: 'HID', 0x06: 'still image', 0x07: 'printer', 0x08: 'mass storage', 0x09: 'hub', 0x0a: 'CDC data', 0x0b: 'smart card', 0x0e: 'video', 0x10: 'audio/video', 0xe0: 'wireless controller (Bluetooth)', 0xfe: 'DFU', 0xff: 'vendor-specific' };
 const className = (c: number) => CLASSES[c] ?? `class 0x${c.toString(16).padStart(2, '0')}`;
 
+/** The HID top-level collections the browser protects, as the messages name them (usage page:usage). */
+const HID_USAGES: Record<string, string> = { '1:1': 'pointer', '1:2': 'mouse', '1:6': 'keyboard', '1:7': 'keypad', '1:128': 'system control' };
+
 /** Where to go instead for what WebUSB keeps from pages, by class (docs/plans/usb.md §7). */
 function protectedRoute(c: number): string {
   switch (c) {
@@ -141,6 +144,12 @@ export function problemText(p: UsbProblem, d: { api: 'usb' | 'hid'; vendorId: nu
         case 'windows': return `${why} On Windows a browser can use a device only with the WinUSB driver: install it with Zadig (https://zadig.akeo.ie: Options, List All Devices, the device's interface ${p.interface}, WinUSB, Replace Driver), then unplug it and plug it in again. Windows' own programs then no longer see that interface.`;
         default: return `${why} Close what uses it on this computer, then attach it again.`;
       }
+    }
+    case 'protected-collection': {
+      const what = HID_USAGES[`${p.usagePage}:${p.usage}`] ?? `collection ${hex4(p.usagePage)}:${hex4(p.usage)}`;
+      return p.kept
+        ? `The device's ${what} part is kept from pages by the browser, all but its feature reports (its settings, which tools such as VIA use): the guest gets only those. The machine has the page's keyboard and mouse already.`
+        : `The device's ${what} part is kept from pages by the browser: the guest doesn't get it. The machine has the page's keyboard and mouse already.`;
     }
     case 'no-collections':
       return 'Everything this HID device offers is kept from pages by the browser (a keyboard\'s keys, a mouse\'s pointer, a security key): nothing is left for the guest. The machine has the page\'s keyboard and mouse already.';

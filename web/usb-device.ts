@@ -60,6 +60,8 @@ export interface UsbDevice {
   clearHalt?(ep: number): void;
   /** Unplugged: no `done` after this; release what the device holds. */
   detach(): void;
+  /** What of the host's device the guest doesn't get (an interface WebUSB refuses or the host holds, a HID collection WebHID hides): `usb-state`'s `problems`. */
+  readonly problems?: UsbProblem[];
 }
 
 /** What a page attaches, by its identity (WebUSB's and WebHID's grants persist per origin). */
@@ -95,13 +97,19 @@ export type UsbToWorker =
   | { type: 'usb-detach'; connector: number };
 
 export type UsbFromWorker =
-  | { type: 'usb-state'; connector: number; state: 'attached'; device: UsbIdentity | UsbVirtual; speed: UsbSpeed; notes?: string[] }
+  | { type: 'usb-state'; connector: number; state: 'attached'; device: UsbIdentity | UsbVirtual; speed: UsbSpeed; problems?: UsbProblem[] }
   | { type: 'usb-state'; connector: number; state: 'detached'; reason?: 'unplugged' | 'guest' | 'page' }
   | { type: 'usb-state'; connector: number; state: 'error'; message: string; detail?: UsbProblem[] };
 
-/** Why part of a device can't reach the guest, for the page's messages (docs/plans/usb.md U4). */
+/**
+ * Why part of a device can't reach the guest, for the page's messages (docs/plans/usb.md U4): on a successful attach
+ * (`usb-state` attached, `problems`: what was left out) or a failed one (`error`, `detail`). `claim-failed`'s message is
+ * the browser's; the remedies are the page's (web/app/usb-ports.ts `problemText`).
+ */
 export type UsbProblem =
   | { kind: 'protected-interface'; interface: number; class: number }
   | { kind: 'claim-failed'; interface: number; message: string }
+  /** A HID top-level collection WebHID keeps the input and output reports of (a keyboard's, a mouse's): `kept` says whether its feature reports are left. */
+  | { kind: 'protected-collection'; usagePage: number; usage: number; kept: boolean }
   | { kind: 'no-collections' }
   | { kind: 'open-failed'; message: string };

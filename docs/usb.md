@@ -333,15 +333,14 @@ calls `gone` on WebUSB's `disconnect` event.
    A BOS that only declares SuperSpeed *capability* doesn't make a device super. An Android phone at
    high speed has one.
 
-**Problems** are reported in `problems` (`UsbProblem`), and `notes()` turns them into the page's lines:
+**Problems:** what the guest doesn't get is in `problems` (`UsbProblem`). The glue sends it with the
+attach's `usb-state` (`problems`), and the page puts it in words with the host OS's remedy (`problemText`,
+"Attach and detach" below):
 - `protected-interface`: a protected interface.
-- `claim-failed`: an interface the host's OS holds. The message names the remedy for the host's OS
-  (from the user agent). On Linux it names the driver that most likely holds the interface (`cdc_acm`,
-  `usblp`, `ftdi_sio`, `cp210x`, `ch341`, `pl2303`, `dvb_usb_rtl28xxu`) and how to unbind it. On
-  Windows it names WinUSB and Zadig.
+- `claim-failed`: an interface the host's OS holds, with the browser's message.
 
-A device left with no interface it can use fails to open with a `UsbOpenError`, which carries the
-problems.
+A device left with no interface it can use fails to open with a `UsbOpenError`. Its problems go in the
+error's `detail`.
 
 **Standard requests:** these are answered or interpreted by the backend. The rest pass through.
 
@@ -424,7 +423,9 @@ top-level collection's input and output reports (a keyboard's, a mouse's) at the
 children still list them. They never arrive, and `sendReport` refuses them (NotAllowedError, on the
 recorded keyboard composite). So a child keeps only the reports its top-level collection lists, and a
 collection left with no reports goes. A keyboard keeps its feature report, which is how VIA-style tools
-work, and a mouse disappears. A device left with nothing fails with `no-collections`.
+work, and a mouse disappears. Each collection cut down that way is a `protected-collection` problem in the
+attach's `usb-state`, which says whether any of its reports were kept. A device left with nothing fails with
+`no-collections`.
 
 **The descriptors** (`hidLayout`):
 - The device's vendor and product IDs, `bcdUSB` 2.00, `bcdDevice` 1.00.
@@ -569,11 +570,15 @@ They work while the machine runs on this page, from the USB tab or the toolbar's
 - **Re-enumeration:** when an attached device is unplugged, the menu offers **Pick it…**. That opens the chooser in
   case the device came back as another one, such as a bootloader, because a device without a grant raises no
   `connect`. For 60 s after the unplug, a new granted device is offered on the same connector, as its own entry.
+- **What's left out:** an attach that worked can still leave part of the device out. Its `usb-state` lists those
+  `problems`: a protected or host-held interface, or a HID collection the browser keeps. The USB tab shows them in
+  words under the entry (`data-usb-problems`). The menu gives a line under the device, and its tooltip has the
+  words.
 - **Errors:** an attach refused by the device worker is shown with its `UsbProblem`s in words (`problemText`):
   - a protected interface class, with where such a device goes instead;
   - an interface a host driver holds, with the remedy for Linux (unbinding `cdc_acm` and the like), macOS and
     Windows (WinUSB through Zadig);
-  - a HID device whose every collection is hidden;
+  - a HID device whose every collection is hidden, or one collection that is (a keyboard's, a mouse's);
   - a device that can't be opened: on Linux the `hidraw` or `/dev/bus/usb` udev rule; on Windows WinUSB.
 
 ### Snapshot and Suspend

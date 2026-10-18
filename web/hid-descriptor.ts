@@ -363,3 +363,21 @@ export function visibleCollections(collections: readonly HidCollectionInfo[]): H
   };
   return collections.map((c) => prune(c, new Set(reportLists(c).keys()))).filter(has);
 }
+
+/** The reports a collection and its children list, by kind and ID. */
+function allReports(c: HidCollectionInfo, into = new Set<string>()): Set<string> {
+  for (const k of reportLists(c).keys()) into.add(k);
+  for (const ch of c.children) allReports(ch, into);
+  return into;
+}
+
+/**
+ * The top-level collections `visibleCollections` cut down: those whose children list reports the top level doesn't
+ * (Chromium's mark of a protected collection), and whether any of their reports are left (a keyboard's feature report).
+ */
+export function protectedCollections(collections: readonly HidCollectionInfo[]): { usagePage: number; usage: number; kept: boolean }[] {
+  return collections.flatMap((c) => {
+    const top = new Set(reportLists(c).keys());
+    return [...allReports(c)].some((k) => !top.has(k)) ? [{ usagePage: c.usagePage, usage: c.usage, kept: top.size > 0 }] : [];
+  });
+}
