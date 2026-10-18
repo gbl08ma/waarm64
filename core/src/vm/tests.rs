@@ -1022,3 +1022,61 @@ fn id_aa64mmfr2_says_e0pd_with_the_feature() {
         assert_eq!(t.cpu().x[2], e0pd << 60);
     }
 }
+
+/// Loads, stores, exclusives, an LSE atomic, DC ZVA and instruction fetch on a
+/// spill memory (docs/plans/spill-memories.md), with the MMU off, in the
+/// interpreter and in the block interpreter (the JIT's dispatcher).
+#[test]
+fn spill_memory_end_to_end() {
+    const SPILL: u64 = 0x8000_0000; // the GiB boundary past 1 MiB of RAM
+    let prog: [u32; 7] = [
+        0xf900_0001, // str x1, [x0]
+        0xf940_0002, // ldr x2, [x0]
+        0xc85f_7c03, // ldxr x3, [x0]
+        0xc804_7c01, // stxr w4, x1, [x0]
+        0xf821_0008, // ldadd x1, x8, [x0]
+        0xd50b_7427, // dc zva, x7
+        0xd61f_00a0, // br x5
+    ];
+    for jit in [0, 4] {
+        let cfg = VmConfig {
+            ram_size: 1 << 20,
+            jit,
+            spill: [1 << 16, 0, 0, 0, 0, 0, 0, 0],
+            ..VmConfig::default()
+        };
+        assert_eq!(cfg.spill_layout(), [(SPILL, 1 << 16)]);
+        let mut ram = vec![0u128; 1 << 16];
+        let mut spill = vec![0u128; 1 << 12];
+        let regions = [crate::mem::Spill {
+            phys: SPILL,
+            size: 1 << 16,
+            base: spill.as_mut_ptr() as *mut u8,
+        }];
+        // SAFETY: both buffers are 16-byte aligned, as long as their sizes, and outlive the Vm.
+        let mem = unsafe { Mem::new(ram.as_mut_ptr() as *mut u8, 1 << 20).with_spill(&regions) };
+        let mut vm = Vm::new(mem, cfg);
+        for (k, w) in prog.iter().enumerate() {
+            vm.mem.write(RAM_BASE + 4 * k as u64, 4, *w as u64).unwrap();
+        }
+        vm.mem.write(SPILL + 0x100, 4, 0x9100_04c6).unwrap(); // add x6, x6, #1
+        vm.mem.write(SPILL + 0x104, 4, B_SELF as u64).unwrap();
+        for k in 0..8 {
+            vm.mem.write(SPILL + 0x40 + 8 * k, 8, !0).unwrap();
+        }
+        let c = &mut vm.vcpus[0].cpu;
+        (c.x[0], c.x[1], c.x[5], c.x[7]) = (SPILL + 8, 0x1234, SPILL + 0x100, SPILL + 0x40);
+        assert_eq!(vm.run(20), exit::BUDGET);
+        let c = &vm.vcpus[0].cpu;
+        assert_eq!(c.pc, SPILL + 0x104, "jit {jit}");
+        assert_eq!(
+            (c.x[2], c.x[3], c.x[4], c.x[6], c.x[8]),
+            (0x1234, 0x1234, 0, 1, 0x1234)
+        );
+        assert_eq!(vm.mem.read(SPILL + 8, 8), Ok(0x2468));
+        assert_eq!(spill[0] >> 64, 0x2468); // the bytes are in the spill memory's buffer
+        for k in 0..8 {
+            assert_eq!(vm.mem.read(SPILL + 0x40 + 8 * k, 8), Ok(0));
+        }
+    }
+}

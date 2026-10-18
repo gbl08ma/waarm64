@@ -500,11 +500,11 @@ fn transfer_cache_entries_die_with_their_generation() {
     // holds only global entries; EL0's dies once an nG one was filled there.
     t.xc_fill(0x1000, 3, 7, 4);
     t.xc_fill(0x2000, 2, 7, 4);
-    t.fill(Use::Exec as usize, 0x2000, 0, true, 3);
-    t.fill(3 + Use::Read as usize, 0x5000, 0, true, 3);
+    t.fill(Use::Exec as usize, 0x2000, Host(0x2000), true, 3);
+    t.fill(3 + Use::Read as usize, 0x5000, Host(0x5000), true, 3);
     t.flush_ng();
     assert!(live(t, 0x1000, 3) && !live(t, 0x2000, 2));
-    t.fill(3 + Use::Exec as usize, 0x1000, 0, true, 3);
+    t.fill(3 + Use::Exec as usize, 0x1000, Host(0x1000), true, 3);
     t.flush_ng();
     assert!(!live(t, 0x1000, 3));
     // Blocks dropped: all of it.
@@ -568,4 +568,51 @@ fn e0pd_faults_el0_accesses_to_its_half() {
             assert!(m.read_el(&c, va + 8, 8, 1).is_ok(), "EL1 reads {va:#x}");
         }
     }
+}
+
+#[test]
+fn spill_memory_pages() {
+    // Memory 0 at PA 0, a spill memory at 16 MiB.
+    let mut p = Pt {
+        r: TestRam::with_spill(RAM, &[(0x100_0000, 0x10_0000)]),
+        next: ROOT1 + 0x1000,
+    };
+    p.map(0x1000, 3, 0x100_2000 | PAGE);
+    p.map(0x2000, 3, 0x9000 | PAGE);
+    p.map(0x3000, 3, 0x100_5000 | PAGE);
+    let c = cpu();
+    let mut v = Vcpu::new(c.clone());
+    let mut b = Mmu::new(&p.r.mem, Some(&mut v.tlb));
+    b.write(&c, 0x1008, 8, 0x1122_3344_5566_7788).unwrap();
+    assert_eq!(p.r.mem.read(0x100_2008, 8), Ok(0x1122_3344_5566_7788));
+    // The entry names memory 1 and misses the inline compare (the fast path
+    // never sees it), but the miss path takes it without walking again.
+    assert_eq!(b.fast(&c, 0x1008, 8, Use::Write), None);
+    assert_eq!(b.fast(&c, 0x1008, 8, Use::Read), None);
+    let walks = b.tlb.as_ref().unwrap().stats.walks;
+    assert_eq!(b.read(&c, 0x1008, 8), Ok(0x1122_3344_5566_7788));
+    assert_eq!(b.read(&c, 0x100c, 4), Ok(0x1122_3344));
+    assert_eq!(b.read(&c, 0x1008, 1), Ok(0x88));
+    assert_eq!(b.tlb.as_ref().unwrap().stats.walks, walks + 1); // the read array's first fill
+    let e = b.tlb.as_ref().unwrap().e[1].0[3 + Use::Read as usize];
+    assert_eq!(e.tag & 0xfff, 0xfff ^ 1 << 3);
+    // Page-crossing accesses between memory 0 and the spill memory, both ways.
+    b.write(&c, 0x1ffc, 8, 0x8877_6655_4433_2211).unwrap();
+    assert_eq!(p.r.mem.read(0x100_2ffc, 4), Ok(0x4433_2211));
+    assert_eq!(p.r.mem.read(0x9000, 4), Ok(0x8877_6655));
+    b.write(&c, 0x2ffe, 4, 0xaabb_ccdd).unwrap();
+    assert_eq!(b.read(&c, 0x2ffe, 4), Ok(0xaabb_ccdd));
+    assert_eq!(p.r.mem.read(0x100_5000, 2), Ok(0xaabb));
+    // Atomics, pairs and instruction fetch.
+    assert_eq!(b.cas(&c, 0x1010, 8, 0, 7), Ok(0));
+    assert_eq!(b.rmw(&c, 0x1010, 8, |x| x + 1), Ok(7));
+    assert_eq!(b.read_atomic(&c, 0x1010, 8), Ok(8));
+    assert_eq!(b.cas_pair(&c, 0x1020, [0, 0], [3, 4]), Ok([0, 0]));
+    assert_eq!(b.read_pair(&c, 0x1020), Ok([3, 4]));
+    assert_eq!(b.fetch(&c, 0x1020), Ok(3));
+    assert_eq!(b.maint(&c, 0x1024, false), Ok(0x100_2024));
+    // A TLBI drops the spill entry like any other: remapped, the next access walks.
+    p.r.mem.write(0x100_0000 + 0x2000 + 0x30, 8, 0x55).unwrap();
+    b.flush_va(0x1000);
+    assert_eq!(b.read(&c, 0x1030, 8), Ok(0x55));
 }

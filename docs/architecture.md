@@ -45,12 +45,13 @@ wasm64 core was free there), B +31–40%, D +26–32%.
 - The guest physical address map is independent of placement, because the TLB translates.
 - **Every guest RAM access in generated code goes through one lowering function**, so a later
   layout change stays inside the emitter and the core allocator.
-- **TLB tag bits 3–11 are reserved for a memory index**: "A + spill memories" (extra wasm32
-  memories as CPU-less NUMA nodes, described in the DTB with `numa-node-id` and a
-  `distance-map`, with the same fast path as A for memory-0 pages) can be added without changing
-  A's code. Open questions then: whether distro kernels enable `CONFIG_NUMA`, whether tiering/
-  demotion applies to DT-described CPU-less nodes; NUMA balancing must be off (its hinting faults
-  are expensive under emulation).
+- **Spill memories** ("A + spill memories", [plans/spill-memories.md](plans/spill-memories.md), under way): RAM
+  past memory 0 in more wasm32 memories, each a CPU-less NUMA node in the DT. TLB tag bits 11:3 hold the memory
+  index (inverted, all ones for memory 0), so every inline compare misses on a spill page and memory 0's code is
+  unchanged; the interpreter's miss path does the access through `ram.*` imports from a host-made module
+  (`web/spill.ts`), and the JIT's miss re-runs the instruction there. A core host address (`mem::Host`) names its
+  memory in its top byte. NUMA balancing must be off (its hinting faults are expensive under emulation): an SMBIOS
+  systemd credential does it.
 - Re-measure the gaps on new Chromium releases.
 
 ## Design principles

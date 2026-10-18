@@ -11,7 +11,7 @@ test('core instantiates on shared imported memory and uses atomics', () => {
   const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
   assert.ok(mem.buffer instanceof SharedArrayBuffer);
   const ex = new WebAssembly.Instance(mod, coreImports(mem)).exports as Record<string, (...a: number[]) => number | bigint>;
-  assert.equal(ex.abi_version(), 38);
+  assert.equal(ex.abi_version(), 39);
   // Scratch space past the core's own data and stack.
   const scratch = mem.grow(1) * 65536;
   const words = new BigUint64Array(mem.buffer, scratch, 3);
@@ -150,3 +150,47 @@ test('whole VM boots a bare-metal test through the vm_* exports (ABI 8)', () => 
   // The vCPU worker reports the stack.
   assert.match(String(e.stack), /core panic: .*vm_run_cpu in round-robin mode/s);
 });
+
+// Spill memories (ABI 39, docs/plans/spill-memories.md): RAM past memory 0 in another memory, which
+// the core reaches through web/spill.ts. The program in memory 0 stores, loads, takes an exclusive
+// pair, an LSE add and a DC ZVA in the spill memory, then branches to code there; under the
+// interpreter, the block interpreter and JIT-stress (whose inline accesses miss on spill pages).
+for (const jit of [0, 4, 2]) {
+  test(`a spill memory's RAM end to end (jit ${jit})`, () => {
+    const mem = new WebAssembly.Memory({ initial: 32, maximum: 65536, shared: true });
+    const spill = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+    const imports = coreImports(mem, undefined, undefined, undefined, [spill]);
+    const instance = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(WASM)), imports);
+    imports.jit.bind(instance);
+    const ex = instance.exports as Record<string, (...a: (number | bigint)[]) => number>;
+    const RAM = 1 << 20;
+    const SPILL = 0x8000_0000n; // the GiB boundary past memory 0's RAM
+    const ram = mem.grow(RAM / 65536) * 65536;
+    const prog = [0xf9000001, 0xf9400002, 0xc85f7c03, 0xc8047c01, 0xf8210008, 0xd50b7427, 0xd61f00a0];
+    new Uint32Array(mem.buffer, ram, prog.length).set(prog);
+    const s32 = new Uint32Array(spill.buffer);
+    s32.set([0x910004c6, 0x14000000], 0x100 / 4); // add x6, x6, #1; b .
+    new BigUint64Array(spill.buffer, 0x40, 8).fill(~0n);
+    const cfg = mem.grow(1) * 65536;
+    const words = new BigUint64Array(mem.buffer, cfg, 32);
+    words.set([BigInt(RAM), 1n, 0n, 0n, 0n, 0n, 0n, 0n, BigInt(jit)]);
+    words[24] = 65537n;
+    assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a spill size of part of a page is rejected');
+    words[24] = 0n;
+    words[25] = 65536n;
+    assert.equal(ex.vm_new(ram, BigInt(RAM), cfg), 0, 'a spill size after a 0 is rejected');
+    words[24] = 65536n;
+    words[25] = 0n;
+    const vm = ex.vm_new(ram, BigInt(RAM), cfg);
+    assert.notEqual(vm, 0);
+    const x = new BigUint64Array(mem.buffer, ex.vm_cpu(vm, 0), 32);
+    [x[0], x[1], x[5], x[7]] = [SPILL + 8n, 0x1234n, SPILL + 0x100n, SPILL + 0x40n];
+    assert.equal(ex.vm_run(vm, 20n), 0);
+    const pc = new BigUint64Array(mem.buffer, ex.vm_cpu(vm, 0) + 256, 1)[0];
+    assert.equal(pc, SPILL + 0x104n);
+    assert.deepEqual([x[2], x[3], x[4], x[6], x[8]], [0x1234n, 0x1234n, 0n, 1n, 0x1234n]);
+    assert.equal(new BigUint64Array(spill.buffer, 8, 1)[0], 0x2468n);
+    assert.ok(new BigUint64Array(spill.buffer, 0x40, 8).every((v) => v === 0n), 'DC ZVA zeroed the block');
+    ex.vm_free(vm);
+  });
+}

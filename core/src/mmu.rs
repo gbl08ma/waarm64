@@ -14,8 +14,10 @@
 //! the page's VA with bits 11:0 all ones; the lookup compares it with
 //! `(va + size - 1) | 0xfff`, so an access that crosses into the next page misses,
 //! and an all-zero entry never matches. Bits 11:3 of the tag are the memory index
-//! (`bench/spike/memory/REPORT.md` §4), stored inverted: all ones is memory 0, the
-//! only one so far. `host = va + addend`.
+//! (`bench/spike/memory/REPORT.md` §4), stored inverted: all ones is memory 0.
+//! `host = va + addend`, a [`Host`] (a spill memory's index in its top byte).
+//! Every inline compare expects memory 0's all ones, so a spill memory's entry
+//! misses there; [`Mmu::miss`] recognises it (docs/plans/spill-memories.md).
 //!
 //! Entries carry no ASID: the arrays only ever hold global entries and the
 //! current ASID's non-global (nG) ones. An ASID change or `TLBI ASIDE1` drops
@@ -43,7 +45,7 @@
 // flush by VA (most of Linux's: the user pages it unmaps) drops the page's.
 
 use crate::cpu::{Cpu, sctlr};
-use crate::mem::{self, Access, Fault, FaultKind, Mem};
+use crate::mem::{Access, Fault, FaultKind, Host, Mem};
 
 pub const TLB_ENTRIES: usize = 4096;
 /// Entries an index holds, one per array: six used, a power of two for the
@@ -221,12 +223,12 @@ impl Tlb {
 
     /// Caches `va`'s page in `array`; `level` is the walk's leaf level (below
     /// 3: a page of a block).
-    fn fill(&mut self, array: usize, va: u64, addend: u64, ng: bool, level: u8) {
+    fn fill(&mut self, array: usize, va: u64, host: Host, ng: bool, level: u8) {
         let s = index(va) * TLB_SLOTS + array;
         self.drop_slot(s);
         self.e[index(va)].0[array] = Entry {
-            tag: va | 0xfff,
-            addend,
+            tag: (va | 0xfff) ^ (host.mem() as u64) << 3,
+            addend: host.0.wrapping_sub(va & !0xfff),
         };
         if level < 3 {
             let k = block_class(va, level);
@@ -512,16 +514,10 @@ pub trait Bus {
     /// `DC IVAC`, read otherwise), and faults like a data access with CM set.
     /// Returns the PA (for `IC IVAU`, which invalidates JIT blocks).
     fn maint(&mut self, c: &Cpu, va: u64, write: bool) -> Result<u64, Fault>;
-    /// Host pointer for an access by the atomics, which must be aligned to `len`.
-    fn host_aligned(
-        &mut self,
-        c: &Cpu,
-        va: u64,
-        len: u64,
-        access: Access,
-    ) -> Result<*mut u8, Fault>;
+    /// Host address for an access by the atomics, which must be aligned to `len`.
+    fn host_aligned(&mut self, c: &Cpu, va: u64, len: u64, access: Access) -> Result<Host, Fault>;
     /// The host pointer for `size` bytes at `va` with the current EL's `u`
-    /// permission if it's at hand (the TLB's entry, or RAM with the MMU off),
+    /// permission if it's at hand in memory 0 (the TLB's entry, or RAM with the MMU off),
     /// without a walk or a fault: the block interpreter's fast path, which
     /// takes `read_el`/`write_el` when this has nothing.
     #[inline(always)]
@@ -547,14 +543,14 @@ pub trait Bus {
     fn read_atomic(&mut self, c: &Cpu, va: u64, size: u32) -> Result<u64, Fault> {
         let p = self.host_aligned(c, va, size as u64, Access::Read)?;
         // SAFETY: aligned RAM (host_aligned).
-        Ok(unsafe { mem::load_atomic(p, size) })
+        Ok(unsafe { self.mem().load_atomic(p, size) })
     }
 
     /// Aligned single-copy-atomic write (release stores).
     fn write_atomic(&mut self, c: &Cpu, va: u64, size: u32, val: u64) -> Result<(), Fault> {
         let p = self.host_aligned(c, va, size as u64, Access::Write)?;
         // SAFETY: as in read_atomic.
-        unsafe { mem::store_atomic(p, size, val) };
+        unsafe { self.mem().store_atomic(p, size, val) };
         Ok(())
     }
 
@@ -563,7 +559,7 @@ pub trait Bus {
     fn cas(&mut self, c: &Cpu, va: u64, size: u32, expected: u64, new: u64) -> Result<u64, Fault> {
         let p = self.host_aligned(c, va, size as u64, Access::Write)?;
         // SAFETY: as in read_atomic.
-        Ok(unsafe { mem::cas(p, size, expected, new) })
+        Ok(unsafe { self.mem().cas(p, size, expected, new) })
     }
 
     /// Atomic read-modify-write (LSE LDADD & co, SWP). Returns the old value.
@@ -573,9 +569,10 @@ pub trait Bus {
         let p = self.host_aligned(c, va, size as u64, Access::Write)?;
         // SAFETY: as in read_atomic.
         unsafe {
-            let mut old = mem::load_atomic(p, size);
+            let m = self.mem();
+            let mut old = m.load_atomic(p, size);
             loop {
-                let seen = mem::cas(p, size, old, op(old));
+                let seen = m.cas(p, size, old, op(old));
                 if seen == old {
                     return Ok(old);
                 }
@@ -645,17 +642,11 @@ impl Bus for Flat<'_> {
 
     #[inline(always)]
     fn fast(&mut self, _: &Cpu, va: u64, size: u32, _: Use) -> Option<*mut u8> {
-        self.0.host(va, size as u64, Access::Read).ok()
+        self.0.host0(va, size as u64)
     }
 
     #[inline(always)]
-    fn host_aligned(
-        &mut self,
-        _: &Cpu,
-        va: u64,
-        len: u64,
-        access: Access,
-    ) -> Result<*mut u8, Fault> {
+    fn host_aligned(&mut self, _: &Cpu, va: u64, len: u64, access: Access) -> Result<Host, Fault> {
         if !va.is_multiple_of(len) {
             return Err(misaligned(va, access));
         }
@@ -663,9 +654,9 @@ impl Bus for Flat<'_> {
     }
 }
 
-/// One host pointer, or two for a page-crossing access (the second with the
+/// One host address, or two for a page-crossing access (the second with the
 /// number of bytes that go to the first).
-type Span = (*mut u8, Option<(*mut u8, u64)>);
+type Span = (Host, Option<(Host, u64)>);
 
 /// Stage 1 translation through the vCPU's TLB. Without a TLB (unit tests)
 /// every access walks. With the MMU off but `SCTLR_EL1.A` on, VA = PA.
@@ -679,7 +670,7 @@ impl<'a> Mmu<'a> {
         Mmu { mem, tlb }
     }
 
-    /// Host pointer for `len` bytes at `va`, which must not cross a page.
+    /// Host address for `len` bytes at `va`, which must not cross a page.
     #[inline(always)]
     fn host(
         &mut self,
@@ -689,7 +680,7 @@ impl<'a> Mmu<'a> {
         access: Access,
         u: Use,
         el: u64,
-    ) -> Result<*mut u8, Fault> {
+    ) -> Result<Host, Fault> {
         if c.sctlr_el1 & sctlr::M == 0 {
             // ponytail: no address size fault for VAs past PA_BITS with the MMU
             // off; they aren't RAM, so they fault as external aborts instead.
@@ -698,16 +689,16 @@ impl<'a> Mmu<'a> {
         if let Some(t) = &self.tlb {
             let e = t.e[index(va)].0[3 * el as usize + u as usize];
             if e.tag == va.wrapping_add(len - 1) | 0xfff {
-                return Ok(va.wrapping_add(e.addend) as usize as *mut u8);
+                return Ok(Host(va.wrapping_add(e.addend)));
             }
         }
         self.miss(c, va, len, access, u, el)
     }
 
-    /// The host pointer of the instruction at `pc` (aligned), through the
+    /// The host address of the instruction at `pc` (aligned), through the
     /// instruction TLB; the JIT keys blocks by its PA (`Mem::pa`).
     #[inline(always)]
-    pub fn fetch_ptr(&mut self, c: &Cpu, pc: u64) -> Result<*mut u8, Fault> {
+    pub fn fetch_ptr(&mut self, c: &Cpu, pc: u64) -> Result<Host, Fault> {
         self.host(c, pc, 4, Access::Read, Use::Exec, c.el())
     }
 
@@ -721,13 +712,19 @@ impl<'a> Mmu<'a> {
         access: Access,
         u: Use,
         el: u64,
-    ) -> Result<*mut u8, Fault> {
+    ) -> Result<Host, Fault> {
         let fault = |kind| Fault {
             addr: va,
             access,
             kind,
         };
         if let Some(t) = &mut self.tlb {
+            // A spill memory's entry: only the memory index differs.
+            let e = t.e[index(va)].0[3 * el as usize + u as usize];
+            if (e.tag ^ (va.wrapping_add(len - 1) | 0xfff)) & !0xff8 == 0 && e.tag & 0xff8 != 0xff8
+            {
+                return Ok(Host(va.wrapping_add(e.addend)));
+            }
             t.stats.misses += 1;
         }
         if el == 0 && e0pd(c, va) {
@@ -771,8 +768,7 @@ impl<'a> Mmu<'a> {
         if let Some(t) = &mut self.tlb
             && let Ok(page) = self.mem.host(w.pa & !0xfff, 0x1000, access)
         {
-            let addend = (page as usize as u64).wrapping_sub(va & !0xfff);
-            t.fill(3 * el as usize + u as usize, va, addend, w.ng, w.level);
+            t.fill(3 * el as usize + u as usize, va, page, w.ng, w.level);
         }
         Ok(p)
     }
@@ -818,15 +814,15 @@ impl Bus for Mmu<'_> {
     fn read_el(&mut self, c: &Cpu, va: u64, size: u32, el: u64) -> Result<u64, Fault> {
         Ok(match self.span(c, va, size, Access::Read, Use::Read, el)? {
             // SAFETY: host() checked the bytes are RAM.
-            (p, None) => unsafe { mem::load(p, size) },
+            (p, None) => unsafe { self.mem.load(p, size) },
             (p1, Some((p2, first))) => (0..size as u64).fold(0, |v, k| {
                 let b = if k < first {
-                    p1.wrapping_add(k as usize)
+                    p1.plus(k)
                 } else {
-                    p2.wrapping_add((k - first) as usize)
+                    p2.plus(k - first)
                 };
                 // SAFETY: the first `first` bytes are at p1, the rest at p2, all RAM.
-                v | unsafe { mem::load(b, 1) } << (8 * k)
+                v | unsafe { self.mem.load(b, 1) } << (8 * k)
             }),
         })
     }
@@ -834,16 +830,16 @@ impl Bus for Mmu<'_> {
     fn write_el(&mut self, c: &Cpu, va: u64, size: u32, val: u64, el: u64) -> Result<(), Fault> {
         match self.span(c, va, size, Access::Write, Use::Write, el)? {
             // SAFETY: host() checked the bytes are RAM.
-            (p, None) => unsafe { mem::store(p, size, val) },
+            (p, None) => unsafe { self.mem.store(p, size, val) },
             (p1, Some((p2, first))) => {
                 for k in 0..size as u64 {
                     let b = if k < first {
-                        p1.wrapping_add(k as usize)
+                        p1.plus(k)
                     } else {
-                        p2.wrapping_add((k - first) as usize)
+                        p2.plus(k - first)
                     };
                     // SAFETY: as in read_el.
-                    unsafe { mem::store(b, 1, val >> (8 * k)) };
+                    unsafe { self.mem.store(b, 1, val >> (8 * k)) };
                 }
             }
         }
@@ -853,7 +849,7 @@ impl Bus for Mmu<'_> {
     fn fetch(&mut self, c: &Cpu, pc: u64) -> Result<u32, Fault> {
         let p = self.fetch_ptr(c, pc)?;
         // SAFETY: host() checked 4 bytes of RAM.
-        Ok(unsafe { mem::load(p, 4) } as u32)
+        Ok(unsafe { self.mem.load(p, 4) } as u32)
     }
 
     #[inline(always)]
@@ -873,13 +869,7 @@ impl Bus for Mmu<'_> {
         Ok(self.mem.pa(p))
     }
 
-    fn host_aligned(
-        &mut self,
-        c: &Cpu,
-        va: u64,
-        len: u64,
-        access: Access,
-    ) -> Result<*mut u8, Fault> {
+    fn host_aligned(&mut self, c: &Cpu, va: u64, len: u64, access: Access) -> Result<Host, Fault> {
         if !va.is_multiple_of(len) {
             return Err(misaligned(va, access));
         }

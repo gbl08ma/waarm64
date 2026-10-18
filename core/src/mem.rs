@@ -4,7 +4,11 @@
 //! pointer in its TLB. The access primitives here work on host pointers.
 //!
 //! RAM is one block at guest physical `phys..phys + size`, which on wasm32 sits
-//! in the shared linear memory after the core state (layout A).
+//! in the shared linear memory after the core state (layout A), and optionally
+//! **spill memories** past it (docs/plans/spill-memories.md): more RAM, each in
+//! its own memory, which the core reaches through an accessor ([`Spill`]). A
+//! host address ([`Host`]) names its memory in its top byte: 0 is a plain
+//! pointer into memory 0, the only kind the fast paths ever hold.
 
 use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 
@@ -55,6 +59,57 @@ impl FaultKind {
     }
 }
 
+/// A host address: the memory's index in bits 63:56 (0: memory 0, where the
+/// rest is a pointer), the offset in that memory below.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Host(pub u64);
+
+/// Where a [`Host`] keeps its memory's index.
+pub const MEM_SHIFT: u32 = 56;
+
+/// The most spill memories a [`Mem`] takes (memories 1 to 8).
+pub const MAX_SPILL: usize = 8;
+
+impl Host {
+    #[inline(always)]
+    pub fn ptr(p: *mut u8) -> Self {
+        Host(p as usize as u64)
+    }
+
+    /// The memory's index: 0 for memory 0.
+    #[inline(always)]
+    pub fn mem(self) -> usize {
+        (self.0 >> MEM_SHIFT) as usize
+    }
+
+    /// The offset in a spill memory.
+    #[inline(always)]
+    pub fn off(self) -> u64 {
+        self.0 & ((1 << MEM_SHIFT) - 1)
+    }
+
+    /// The pointer, if it's in memory 0.
+    #[inline(always)]
+    pub fn as_ptr(self) -> Option<*mut u8> {
+        (self.mem() == 0).then_some(self.0 as usize as *mut u8)
+    }
+
+    #[inline(always)]
+    pub fn plus(self, n: u64) -> Self {
+        Host(self.0.wrapping_add(n))
+    }
+}
+
+/// A spill memory: guest RAM at `phys..phys + size` in memory `index + 1`.
+#[derive(Clone, Copy, Debug)]
+pub struct Spill {
+    pub phys: u64,
+    pub size: u64,
+    /// Natively, its bytes (16-byte aligned; on wasm the core can't address
+    /// another memory, and the `ram` imports reach it: null).
+    pub base: *mut u8,
+}
+
 /// Guest RAM, shared by all vCPUs.
 pub struct Mem {
     base: *mut u8,
@@ -62,6 +117,8 @@ pub struct Mem {
     /// Guest physical address of the first RAM byte: 0 for user-mode hosts,
     /// 0x4000_0000 for a VM (the `virt` memory map, docs/platform.md).
     phys: u64,
+    /// Memories 1 and up, in order, at increasing guest PAs past memory 0's.
+    spill: Vec<Spill>,
     /// Serializes the 128-bit atomics (CASP, LDXP/STXP of two X registers)
     /// on the same 16 bytes: wasm has no 128-bit compare-and-swap. Hashed by
     /// address, a cache line each, so per-CPU pairs don't contend. Boxed: JIT
@@ -96,6 +153,7 @@ impl Mem {
             base,
             size,
             phys: 0,
+            spill: Vec::new(),
             pair_locks: Box::new([const { PairLock(AtomicU32::new(0)) }; PAIR_LOCKS]),
         }
     }
@@ -105,8 +163,32 @@ impl Mem {
         Mem { phys, ..self }
     }
 
+    /// Adds spill memories (memories 1 and up), each past the RAM before it.
+    ///
+    /// # Safety
+    /// Natively, each `base..base + size` is as for [`Mem::new`]; on wasm,
+    /// memory `k + 1` holds `spill[k].size` bytes for the life of the `Mem`.
+    pub unsafe fn with_spill(self, spill: &[Spill]) -> Self {
+        assert!(spill.len() <= MAX_SPILL, "too many spill memories");
+        let mut end = self.phys + self.size;
+        for s in spill {
+            assert!(s.phys >= end && s.size <= 1 << 32, "spill memory {s:?}");
+            end = s.phys + s.size;
+        }
+        Mem {
+            spill: spill.to_vec(),
+            ..self
+        }
+    }
+
+    /// Memory 0's RAM size.
     pub fn size(&self) -> u64 {
         self.size
+    }
+
+    /// The spill memories, memory 1 first.
+    pub fn spill(&self) -> &[Spill] {
+        &self.spill
     }
 
     /// The host address of the pair locks: the one for the 16 bytes at host
@@ -121,50 +203,164 @@ impl Mem {
         (self.base, self.phys)
     }
 
-    /// Guest physical address to host pointer for `len` bytes of RAM.
-    #[inline]
-    pub fn host(&self, pa: u64, len: u64, access: Access) -> Result<*mut u8, Fault> {
+    /// Memory 0's host pointer for `len` bytes at `pa`, if they're there.
+    #[inline(always)]
+    pub fn host0(&self, pa: u64, len: u64) -> Option<*mut u8> {
         let off = pa.wrapping_sub(self.phys);
         match off.checked_add(len) {
             // SAFETY: off + len <= size, so the result is inside the RAM block.
-            Some(end) if end <= self.size => Ok(unsafe { self.base.add(off as usize) }),
-            _ => Err(Fault {
-                addr: pa,
-                access,
-                kind: FaultKind::Bus,
-            }),
+            Some(end) if end <= self.size => Some(unsafe { self.base.add(off as usize) }),
+            _ => None,
         }
     }
 
-    /// The guest physical address of `p`, a pointer into the RAM ([`Mem::host`]'s inverse).
+    /// Guest physical address to host address for `len` bytes of RAM, which
+    /// lie in one memory.
     #[inline]
-    pub fn pa(&self, p: *const u8) -> u64 {
-        (p as usize - self.base as usize) as u64 + self.phys
+    pub fn host(&self, pa: u64, len: u64, access: Access) -> Result<Host, Fault> {
+        match self.host0(pa, len) {
+            Some(p) => Ok(Host::ptr(p)),
+            None => self.host_spill(pa, len, access),
+        }
+    }
+
+    #[inline(never)]
+    fn host_spill(&self, pa: u64, len: u64, access: Access) -> Result<Host, Fault> {
+        for (k, s) in self.spill.iter().enumerate() {
+            let off = pa.wrapping_sub(s.phys);
+            if off.checked_add(len).is_some_and(|end| end <= s.size) {
+                return Ok(Host(((k as u64 + 1) << MEM_SHIFT) | off));
+            }
+        }
+        Err(Fault {
+            addr: pa,
+            access,
+            kind: FaultKind::Bus,
+        })
+    }
+
+    /// The guest physical address of `h`, a host address in the RAM ([`Mem::host`]'s inverse).
+    #[inline]
+    pub fn pa(&self, h: Host) -> u64 {
+        match h.mem() {
+            0 => (h.0 as usize - self.base as usize) as u64 + self.phys,
+            m => self.spill[m - 1].phys + h.off(),
+        }
     }
 
     /// Physical little-endian read of 1, 2, 4 or 8 bytes (loaders, table walks, tests).
     pub fn read(&self, pa: u64, size: u32) -> Result<u64, Fault> {
-        let p = self.host(pa, size as u64, Access::Read)?;
-        // SAFETY: host() checked that `size` bytes at p are guest RAM.
-        Ok(unsafe { load(p, size) })
+        let h = self.host(pa, size as u64, Access::Read)?;
+        // SAFETY: host() checked that `size` bytes at h are guest RAM.
+        Ok(unsafe { self.load(h, size) })
     }
 
     /// Physical little-endian write of the low 1, 2, 4 or 8 bytes of `val`.
     pub fn write(&self, pa: u64, size: u32, val: u64) -> Result<(), Fault> {
-        let p = self.host(pa, size as u64, Access::Write)?;
+        let h = self.host(pa, size as u64, Access::Write)?;
         // SAFETY: as in read.
-        unsafe { store(p, size, val) };
+        unsafe { self.store(h, size, val) };
         Ok(())
     }
 
-    /// LDXP of two X registers: the 16 aligned bytes at `p`, atomic with
+    /// [`load`] at a host address of any memory.
+    ///
+    /// # Safety
+    /// `h..h + size` is guest RAM ([`Mem::host`]).
+    #[inline(always)]
+    pub(crate) unsafe fn load(&self, h: Host, size: u32) -> u64 {
+        match h.as_ptr() {
+            // SAFETY: guaranteed by the caller.
+            Some(p) => unsafe { load(p, size) },
+            None => self.spill_load(h, size),
+        }
+    }
+
+    /// [`store`] at a host address of any memory.
+    ///
+    /// # Safety
+    /// As for [`Mem::load`].
+    #[inline(always)]
+    pub(crate) unsafe fn store(&self, h: Host, size: u32, val: u64) {
+        match h.as_ptr() {
+            // SAFETY: guaranteed by the caller.
+            Some(p) => unsafe { store(p, size, val) },
+            None => self.spill_store(h, size, val),
+        }
+    }
+
+    /// [`load_atomic`] at a host address of any memory.
+    ///
+    /// # Safety
+    /// As for [`Mem::load`], and `h` is aligned to `size`.
+    #[inline(always)]
+    pub(crate) unsafe fn load_atomic(&self, h: Host, size: u32) -> u64 {
+        match h.as_ptr() {
+            // SAFETY: guaranteed by the caller.
+            Some(p) => unsafe { load_atomic(p, size) },
+            None => self.acc_load(h, size),
+        }
+    }
+
+    /// [`store_atomic`] at a host address of any memory.
+    ///
+    /// # Safety
+    /// As for [`Mem::load_atomic`].
+    #[inline(always)]
+    pub(crate) unsafe fn store_atomic(&self, h: Host, size: u32, val: u64) {
+        match h.as_ptr() {
+            // SAFETY: guaranteed by the caller.
+            Some(p) => unsafe { store_atomic(p, size, val) },
+            None => self.acc_store(h, size, val),
+        }
+    }
+
+    /// [`cas`] at a host address of any memory.
+    ///
+    /// # Safety
+    /// As for [`Mem::load_atomic`].
+    #[inline(always)]
+    pub(crate) unsafe fn cas(&self, h: Host, size: u32, expected: u64, new: u64) -> u64 {
+        match h.as_ptr() {
+            // SAFETY: guaranteed by the caller.
+            Some(p) => unsafe { cas(p, size, expected, new) },
+            None => self.acc_cas(h, size, expected, new),
+        }
+    }
+
+    /// A spill memory's load, in naturally aligned pieces as [`load`]'s.
+    #[inline(never)]
+    fn spill_load(&self, h: Host, size: u32) -> u64 {
+        let (mut v, mut k) = (0, 0);
+        while k < size {
+            let q = h.plus(k as u64);
+            let n = piece_at(q.off(), size - k);
+            v |= self.acc_load(q, n) << (8 * k);
+            k += n;
+        }
+        v
+    }
+
+    /// A spill memory's store, in naturally aligned pieces.
+    #[inline(never)]
+    fn spill_store(&self, h: Host, size: u32, val: u64) {
+        let mut k = 0;
+        while k < size {
+            let q = h.plus(k as u64);
+            let n = piece_at(q.off(), size - k);
+            self.acc_store(q, n, val >> (8 * k));
+            k += n;
+        }
+    }
+
+    /// LDXP of two X registers: the 16 aligned bytes at `h`, atomic with
     /// respect to [`Mem::cas_pair`].
     ///
     /// # Safety
-    /// `p` points at 16 bytes of this RAM, 16-byte aligned.
-    pub(crate) unsafe fn read_pair(&self, p: *mut u8) -> [u64; 2] {
+    /// `h` is 16 bytes of this RAM, 16-byte aligned.
+    pub(crate) unsafe fn read_pair(&self, h: Host) -> [u64; 2] {
         // SAFETY: guaranteed by the caller.
-        unsafe { self.pair_op(p, |_| None) }
+        unsafe { self.pair_op(h, |_| None) }
     }
 
     /// CASP and STXP of two X registers: compare-and-swap of the 16 aligned
@@ -173,14 +369,9 @@ impl Mem {
     ///
     /// # Safety
     /// As for [`Mem::read_pair`].
-    pub(crate) unsafe fn cas_pair(
-        &self,
-        p: *mut u8,
-        expected: [u64; 2],
-        new: [u64; 2],
-    ) -> [u64; 2] {
+    pub(crate) unsafe fn cas_pair(&self, h: Host, expected: [u64; 2], new: [u64; 2]) -> [u64; 2] {
         // SAFETY: guaranteed by the caller.
-        unsafe { self.pair_op(p, |old| (old == expected).then_some(new)) }
+        unsafe { self.pair_op(h, |old| (old == expected).then_some(new)) }
     }
 
     /// Reads the pair at `p` and writes what `f` returns for it, if anything,
@@ -188,17 +379,18 @@ impl Mem {
     ///
     /// # Safety
     /// As for [`Mem::read_pair`].
-    unsafe fn pair_op(&self, p: *mut u8, f: impl Fn([u64; 2]) -> Option<[u64; 2]>) -> [u64; 2] {
-        let hi = p.wrapping_add(8);
-        let lock = &self.pair_locks[(p as usize >> 4) % PAIR_LOCKS].0;
+    unsafe fn pair_op(&self, p: Host, f: impl Fn([u64; 2]) -> Option<[u64; 2]>) -> [u64; 2] {
+        let hi = p.plus(8);
+        // The JIT's inline CASP hashes memory-0 pointers the same way.
+        let lock = &self.pair_locks[(p.0 as usize >> 4) % PAIR_LOCKS].0;
         while lock.swap(1, Ordering::Acquire) != 0 {
             core::hint::spin_loop();
         }
         // SAFETY (the loads and CASes): guaranteed by the caller.
         let old = loop {
-            let old = unsafe { [load_atomic(p, 8), load_atomic(hi, 8)] };
+            let old = unsafe { [self.load_atomic(p, 8), self.load_atomic(hi, 8)] };
             // lo unchanged across the read of hi: the pair held `old` then.
-            if unsafe { load_atomic(p, 8) } != old[0] {
+            if unsafe { self.load_atomic(p, 8) } != old[0] {
                 continue;
             }
             let Some(new) = f(old) else { break old };
@@ -206,10 +398,10 @@ impl Mem {
             // CAS against what was read: a store to lo since then fails the
             // first before anything is written (again); a store to hi since
             // then is ordered after this pair op, and kept.
-            if unsafe { cas(p, 8, old[0], new[0]) } != old[0] {
+            if unsafe { self.cas(p, 8, old[0], new[0]) } != old[0] {
                 continue;
             }
-            unsafe { cas(hi, 8, old[1], new[1]) };
+            unsafe { self.cas(hi, 8, old[1], new[1]) };
             break old;
         };
         lock.store(0, Ordering::Release);
@@ -290,7 +482,81 @@ unsafe fn store_split(p: *mut u8, size: u32, val: u64) {
 /// The largest naturally aligned access at `p` of at most `left` bytes.
 #[inline]
 fn piece(p: *const u8, left: u32) -> u32 {
-    1 << (p as usize).trailing_zeros().min(left.ilog2())
+    piece_at(p as usize as u64, left)
+}
+
+/// [`piece`] at an offset (a spill memory's: memories start aligned).
+#[inline]
+fn piece_at(off: u64, left: u32) -> u32 {
+    1 << off.trailing_zeros().min(left.ilog2())
+}
+
+// The spill accessor: aligned single-copy-atomic accesses by (memory, offset).
+// Natively each spill memory is a pointer; on wasm a module the host makes
+// imports the spill memories and exports these (web/spill.ts).
+#[cfg(target_arch = "wasm32")]
+mod acc {
+    #[link(wasm_import_module = "ram")]
+    unsafe extern "C" {
+        pub fn load(m: u32, off: u32, size: u32) -> u64;
+        pub fn store(m: u32, off: u32, size: u32, val: u64);
+        pub fn cas(m: u32, off: u32, size: u32, expected: u64, new: u64) -> u64;
+    }
+}
+
+impl Mem {
+    #[cfg(target_arch = "wasm32")]
+    fn acc_load(&self, h: Host, size: u32) -> u64 {
+        // SAFETY: the import traps out of bounds; `h` is aligned (the callers').
+        unsafe { acc::load(h.mem() as u32, h.off() as u32, size) }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn acc_store(&self, h: Host, size: u32, val: u64) {
+        // SAFETY: as in acc_load.
+        unsafe { acc::store(h.mem() as u32, h.off() as u32, size, val) }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn acc_cas(&self, h: Host, size: u32, expected: u64, new: u64) -> u64 {
+        // SAFETY: as in acc_load.
+        unsafe { acc::cas(h.mem() as u32, h.off() as u32, size, expected, new) }
+    }
+
+    /// Natively, any host address's pointer (the native runners' backends).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn native_ptr(&self, h: Host) -> *mut u8 {
+        match h.as_ptr() {
+            Some(p) => p,
+            None => self.spill[h.mem() - 1].base.wrapping_add(h.off() as usize),
+        }
+    }
+
+    /// Natively, a spill address's pointer.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn acc_ptr(&self, h: Host, size: u32) -> *mut u8 {
+        let s = &self.spill[h.mem() - 1];
+        assert!(h.off() + size as u64 <= s.size && h.off().is_multiple_of(size as u64));
+        s.base.wrapping_add(h.off() as usize)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn acc_load(&self, h: Host, size: u32) -> u64 {
+        // SAFETY: acc_ptr checked the bounds and alignment (with_spill's contract).
+        unsafe { load_atomic(self.acc_ptr(h, size), size) }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn acc_store(&self, h: Host, size: u32, val: u64) {
+        // SAFETY: as in acc_load.
+        unsafe { store_atomic(self.acc_ptr(h, size), size, val) }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn acc_cas(&self, h: Host, size: u32, expected: u64, new: u64) -> u64 {
+        // SAFETY: as in acc_load.
+        unsafe { cas(self.acc_ptr(h, size), size, expected, new) }
+    }
 }
 
 /// Relaxed atomic load, zero-extended.
@@ -404,16 +670,93 @@ pub(crate) mod tests {
     /// Owns zeroed, 16-byte-aligned RAM for native tests.
     pub struct TestRam {
         _buf: Vec<u128>,
+        _spill: Vec<Vec<u128>>,
         pub mem: Mem,
     }
 
     impl TestRam {
         pub fn new(size: usize) -> Self {
-            let mut buf = vec![0u128; size.div_ceil(16)];
-            // SAFETY: buf is 16-byte aligned, `size` bytes long, and lives as long as mem.
-            let mem = unsafe { Mem::new(buf.as_mut_ptr() as *mut u8, size as u64) };
-            TestRam { _buf: buf, mem }
+            Self::with_spill(size, &[])
         }
+
+        /// Memory 0 of `size` bytes at PA 0 and a spill memory per `(phys, size)`.
+        pub fn with_spill(size: usize, spill: &[(u64, usize)]) -> Self {
+            let mut buf = vec![0u128; size.div_ceil(16)];
+            let mut bufs: Vec<Vec<u128>> = spill
+                .iter()
+                .map(|&(_, n)| vec![0u128; n.div_ceil(16)])
+                .collect();
+            let regions: Vec<Spill> = spill
+                .iter()
+                .zip(&mut bufs)
+                .map(|(&(phys, size), b)| Spill {
+                    phys,
+                    size: size as u64,
+                    base: b.as_mut_ptr() as *mut u8,
+                })
+                .collect();
+            // SAFETY: every buffer is 16-byte aligned, as long as its size, and
+            // lives as long as mem (moving a Vec doesn't move its heap buffer).
+            let mem =
+                unsafe { Mem::new(buf.as_mut_ptr() as *mut u8, size as u64).with_spill(&regions) };
+            TestRam {
+                _buf: buf,
+                _spill: bufs,
+                mem,
+            }
+        }
+    }
+
+    #[test]
+    fn spill_memories() {
+        let r = TestRam::with_spill(0x1000, &[(0x4000, 0x1000), (0x8000, 0x2000)]);
+        let m = &r.mem;
+        // Each memory's addresses, and back.
+        let h = m.host(0x4010, 8, Access::Read).unwrap();
+        assert_eq!((h.mem(), h.off()), (1, 0x10));
+        assert_eq!(m.pa(h), 0x4010);
+        let h = m.host(0x9ff8, 8, Access::Read).unwrap();
+        assert_eq!((h.mem(), h.off(), m.pa(h)), (2, 0x1ff8, 0x9ff8));
+        assert_eq!(m.host(0x10, 8, Access::Read).unwrap().mem(), 0);
+        assert_eq!(m.host0(0x4010, 8), None);
+        // Holes, ends and accesses across a memory's end fault.
+        for (pa, len) in [
+            (0x1000, 1),
+            (0x4ffc, 8),
+            (0x5000, 1),
+            (0x3fff, 2),
+            (0xa000, 1),
+        ] {
+            assert_eq!(
+                m.read(pa, len).map_err(|f| f.kind),
+                Err(FaultKind::Bus),
+                "{pa:#x}"
+            );
+        }
+        // Unaligned, every size, against bytes (pieces through the accessor).
+        for size in [2, 4, 8] {
+            for off in 0x8100..0x8110 {
+                let v = 0x0102_0304_0506_0708u64.wrapping_mul(off + size as u64);
+                m.write(off, size, v).unwrap();
+                let want = v & (u64::MAX >> (64 - 8 * size));
+                assert_eq!(m.read(off, size).unwrap(), want, "{size} at {off:#x}");
+                for k in 0..size as u64 {
+                    assert_eq!(m.read(off + k, 1).unwrap(), want >> (8 * k) & 0xff);
+                }
+            }
+        }
+        // Atomics and pairs.
+        let h = m.host(0x4020, 16, Access::Write).unwrap();
+        // SAFETY: 16 aligned bytes of spill RAM.
+        unsafe {
+            m.store_atomic(h, 8, 5);
+            assert_eq!(m.cas(h, 8, 4, 9), 5);
+            assert_eq!(m.cas(h, 8, 5, 9), 5);
+            assert_eq!(m.load_atomic(h, 8), 9);
+            assert_eq!(m.cas_pair(h, [9, 0], [1, 2]), [9, 0]);
+            assert_eq!(m.read_pair(h), [1, 2]);
+        }
+        assert_eq!(m.read(0x4028, 8), Ok(2));
     }
 
     #[test]

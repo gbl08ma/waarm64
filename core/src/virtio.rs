@@ -301,7 +301,10 @@ pub fn walk_chain(
         if count > size {
             return Err(Bad);
         }
-        mem.host(addr, len, Access::Read)?;
+        // Memory 0 only until the records name a memory (spill-memories.md S1).
+        if mem.host(addr, len, Access::Read)?.mem() != 0 {
+            return Err(Bad);
+        }
         if flags & D_WRITE != 0 {
             nw += 1;
         } else if nw > 0 {

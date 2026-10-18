@@ -13,8 +13,11 @@ Design notes for an ABI change go in this file before the code.
   shared memory holds the core's static data, stack (1 MiB, `__stack_pointer`), heap, and guest
   RAM, which the host places after the heap ([architecture.md](architecture.md)).
 - Imports: `env.memory`, `env.now_ms() -> f64` (the realtime clock), `env.jit_compile(…)`, `env.jit_install(ptr, len,
-  slot) -> i32` (below). `web/vm.ts` `coreImports(memory)` returns `{env, jit}`; after
-  instantiating, the host calls `jit.bind(instance)`.
+  slot) -> i32` (below), and `ram.load(m, off, size) -> i64`, `ram.store(m, off, size, val)`, `ram.cas(m, off,
+  size, expected, new) -> i64` (ABI 39): aligned single-copy-atomic accesses to spill memory `m` (1 and up), from a
+  module `web/spill.ts` makes over the spill memories (traps with none; [plans/spill-memories.md](plans/spill-memories.md)).
+  `web/vm.ts` `coreImports(memory, …, spill)` returns `{env, ram, jit}`; after instantiating, the host calls
+  `jit.bind(instance)`.
 - **More instances on the same memory** (one per worker, ABI 20): the core exports
   `__stack_pointer`, `__tls_size`, `__tls_align`, `__wasm_init_tls` and `thread_alloc(size,
   align) -> ptr`. Another instance needs its own stack and TLS block, allocated through an instance
@@ -97,6 +100,7 @@ Design notes for an ABI change go in this file before the code.
 | `mem_pages` | the memory's size in 64 KiB pages when the host made it fixed (above, "A fixed-size memory"): JIT modules import it with exact limits; 0: growable; over 65536 is refused (32) |
 | `rng_seed` (4 words) | FEAT_RNG's 256-bit ChaCha20 key in realtime mode, from the host's CSPRNG; deterministic mode ignores it and uses zeros (35) |
 | `xhci` | an xHCI ([usb.md](usb.md)): its USB 2 ports \| USB 3 ports << 8, `0x404` (4 and 4, the only counts built; `vm_new` refuses others) or 0, none (38) |
+| `spill` (8 words) | the spill memories' sizes, memory 1 first, the first 0 ending the list: multiples of 64 KiB, at most 4 GiB each; the core places each at the 1 GiB boundary past the RAM before it (`VmConfig::spill_layout`), a NUMA node in the DT, and reaches it through the `ram` imports ([plans/spill-memories.md](plans/spill-memories.md)). Natively `vm_new` refuses them (a Rust runner passes its own `Mem`) (39) |
 
 `bootVm` (`web/vm.ts`) and the native runners set `features` bit 0 unless told `crypto: false`,
 and bits 1 and 2 unless told `rng: false`, `e0pd: false` (the bare-metal tests are); the ABI's 0 means none.
@@ -503,4 +507,5 @@ implemented by this step).
 | 35 | FEAT_RNG and FEAT_E0PD: `VmConfig.features` bits 1 and 2, `VmConfig.rng_seed`; a snapshot of a VM with FEAT_RNG keeps each vCPU's stream position |
 | 36 | `env.jit_compile`: the JIT's modules compiled in a worker of their own before the vCPUs install them |
 | 38 | USB: `VmConfig.xhci`, `vm_xhci` (above, "USB"); the `DEVICE` exit's slot 32 for the xHCI |
+| 39 | spill memories: `VmConfig.spill`, the `ram` imports; until S1 of the plan, devices take buffers in memory 0 only |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |
