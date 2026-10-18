@@ -75,6 +75,10 @@ const CLASSES: Record<string, [number, number]> = {
   'FP data processing, 1 source': [0xff207c00, 0x1e204000],
   'FP data processing, 2 sources': [0xff200c00, 0x1e200800],
   'FP data processing, 3 sources': [0xff000000, 0x1f000000],
+  // FCMP/FCMPE, FCCMP/FCCMPE, FCSEL (M8): NZCV lazy, stored, read.
+  'FP compare': [0xff20fc07, 0x1e202000],
+  'FP conditional compare': [0xff200c00, 0x1e200400],
+  'FP conditional select': [0xff200c00, 0x1e200c00],
   // Vector FP (M6 loop 6).
   'AdvSIMD FP three same': [0x9f20c400, 0x0e20c400],
   'AdvSIMD FP by element': [0x9f800400, 0x0f800000],
@@ -428,6 +432,35 @@ const FP_EDGES: [string, number, bigint[]][] = [
   ['fmadd s0 (zero factor)', 0x1f020c20, [0n, 1n << 31n, f32bits(0.999), f32bits(0.5)]],
   ['fmadd s0 (denormal factor)', 0x1f020c20, [0n, 1n, f32bits(2 ** 100), f32bits(1)]],
   ['fmadd s0 (zero addend)', 0x1f020c20, [0n, f32bits(1 + 2 ** -23), f32bits(1 + 2 ** -23), 0n]],
+  // FCMP/FCMPE (M8): the result, read by the B.cond … CSET a sequence ends with elsewhere; here NZCV.
+  ['fcmp s1, s2 (lt)', 0x1e222020, [0n, f32bits(1), f32bits(2)]],
+  ['fcmp s1, s2 (-0 = 0)', 0x1e222020, [0n, 1n << 31n, 0n]],
+  ['fcmp d1, d2 (gt)', 0x1e622020, [0n, f64bits(Infinity), f64bits(1e300)]],
+  ['fcmp d1, #0 (quiet NaN)', 0x1e602028, [0n, 0x7ff8_0000_0000_0001n]],
+  ['fcmp s1, s2 (signaling NaN)', 0x1e222020, [0n, f32bits(1), 0x7f80_0001n]],
+  ['fcmpe s1, s2 (quiet NaN)', 0x1e222030, [0n, 0x7fc0_0000n, f32bits(1)]],
+  ['fcmp d1, d2 (denormal)', 0x1e622020, [0n, 1n, 0n]],
+  ['fcmp d1, d2 (quiet NaN, quiet bit 51)', 0x1e622020, [0n, 0xfff8_0000_0000_0000n, f64bits(1)]],
+  ['fccmp s1, s2, #4, eq', 0x1e220424, [0n, f32bits(1), f32bits(2)]],
+  ['fccmpe d1, d2, #0, ne (NaN)', 0x1e621430, [0n, f64bits(NaN), f64bits(2)]],
+  ['fcsel d0, d1, d2, mi', 0x1e624c20, [0n, f64bits(1), f64bits(2)]],
+  // FCVT single ↔ double, FMAX/FMIN's zeros, FRINTA's ties and signed zeros.
+  ['fcvt d0, s1', 0x1e22c020, [0n, f32bits(-1.5e-30)]],
+  ['fcvt s0, d1 (rounds)', 0x1e624020, [0n, f64bits(1 + 2 ** -24 + 2 ** -40)]],
+  ['fcvt s0, d1 (tiny)', 0x1e624020, [0n, f64bits(2 ** -130)]],
+  ['fcvt s0, d1 (overflows)', 0x1e624020, [0n, f64bits(2 ** 129)]],
+  ['fcvt s0, d1 (-0)', 0x1e624020, [0n, 1n << 63n]],
+  ['fmax s0, s1, s2 (-0, +0)', 0x1e224820, [0n, 1n << 31n, 0n]],
+  ['fmin d0, d1, d2 (+0, -0)', 0x1e625820, [0n, 0n, 1n << 63n]],
+  ['fmaxnm d0, d1, d2 (NaN)', 0x1e626820, [0n, f64bits(NaN), f64bits(1)]],
+  ['frinta s0, s1 (-0.5)', 0x1e264020, [0n, f32bits(-0.5)]],
+  ['frinta s0, s1 (-0.3)', 0x1e264020, [0n, f32bits(-0.3)]],
+  ['frinta d0, d1 (2.5)', 0x1e664020, [0n, f64bits(2.5)]],
+  ['frinta d0, d1 (0.49999999999999994)', 0x1e664020, [0n, f64bits(0.49999999999999994)]],
+  ['frinta s0, s1 (2^23 + 1)', 0x1e264020, [0n, f32bits(2 ** 23 + 1)]],
+  ['frinta d0, d1 (-∞)', 0x1e664020, [0n, f64bits(-Infinity)]],
+  ['frintx d0, d1 (1.5)', 0x1e674020, [0n, f64bits(1.5)]],
+  ['frintm s0, s1 (-0)', 0x1e254020, [0n, 1n << 31n]],
   // Zero operands of FADD/FSUB/FMUL/FNMUL/FDIV: an exact zero result keeps its IEEE sign; a zero divisor and a
   // product underflowing to zero go to the helper.
   ['fadd d0 (0 + x)', 0x1e622820, [0n, 0n, f64bits(1.5)]],
@@ -526,7 +559,7 @@ const VHELPERS = [
   (d: number, n: number) => 0x6e218800 | (n << 5) | d, // frinta vd.4s, vn.4s
   (d: number, n: number) => 0x6ea24c00 | (n << 16) | (d << 5) | d, // uqshl vd.4s, vd.4s, vn.4s
 ];
-const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions'].map((n) => CLASSES[n]);
+const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);
 const ALU = ['add/sub, immediate', 'add/sub, shifted and extended register', 'add/sub with carry', 'logical, immediate', 'logical, shifted register', 'bitfield, 64-bit', 'bitfield, 32-bit', 'variable shifts', 'conditional select', 'conditional compare', 'multiply-add', 'data processing, register'].map((n) => CLASSES[n]);
 const LAST = ['conditional branch', 'compare and branch', 'test and branch', 'branch to register'].map((n) => CLASSES[n]);

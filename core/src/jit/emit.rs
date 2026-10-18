@@ -2235,16 +2235,34 @@ fn guard(c: &mut Func, g: Guard, len: u32) {
 /// destinations) and any the fast arm loaded are reloaded, so both arms leave
 /// the fast arm's register state. Closes the `if`.
 fn fallback(c: &mut Func, cx: &Ctx, i: u32, here: i64, before: Regs, written: u64) {
+    fallback_with(c, cx, i, here, before, written, |_| {}, |_| {});
+}
+
+/// [`fallback`], with `pre` emitted before the helper call and `post` after
+/// it returns (the instruction done): for helpers that read or write NZCV.
+#[allow(clippy::too_many_arguments)]
+fn fallback_with(
+    c: &mut Func,
+    cx: &Ctx,
+    i: u32,
+    here: i64,
+    before: Regs,
+    written: u64,
+    pre: impl FnOnce(&mut Func),
+    post: impl FnOnce(&mut Func),
+) {
     let fast = c.regs;
     c.else_();
     c.regs = before;
     c.flush();
+    pre(c);
     c.local_get(VCPU).i32_const(i as i32);
     pc_plus(c, here);
     c.call(cx.helper).hint(false).if_();
     c.store_flags();
     c.ret((here / 4) as u32);
     c.end();
+    post(c);
     c.forget(written);
     c.reload(fast.valid);
     // Clean here, maybe dirty there: the merge is dirty (a clean write-back is harmless).

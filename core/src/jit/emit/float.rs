@@ -10,8 +10,8 @@
 use core::mem::offset_of;
 
 use super::{
-    AND, Ctx, EQZ, FPOK, Func, LT_U, Regs, SHR_U, SUB, VCPU, W, WC, XOR, fallback, get, set, vbit,
-    xmask,
+    AND, Ctx, EQZ, FPOK, Func, Kind, LT_U, NZCV, Regs, SHR_U, SUB, VCPU, W, WC, XOR, cond,
+    fallback, fallback_with, flag_locals, get, set, vbit, xmask,
 };
 use crate::cpu::Cpu;
 use crate::decode::Op;
@@ -68,7 +68,7 @@ impl F {
     fn to_int(self, c: &mut Func) {
         c.op(if self.d { 0xbd } else { 0xbc });
     }
-    /// The float opcode of `op`: 0 add, 1 sub, 2 mul, 3 div; sqrt, neg.
+    /// The float opcode of `op`: 0 add, 1 sub, 2 mul, 3 div, 4 min, 5 max; sqrt, neg.
     fn arith(self, k: u8) -> u8 {
         if self.d { 0xa0 + k } else { 0x92 + k }
     }
@@ -77,6 +77,40 @@ impl F {
     }
     fn neg(self) -> u8 {
         if self.d { 0x9a } else { 0x8c }
+    }
+    /// nearest, floor, ceil, trunc.
+    fn round(self, k: u8) -> u8 {
+        let b = if self.d { 0x9e } else { 0x90 };
+        [b, b - 2, b - 3, b - 1][k as usize]
+    }
+    /// Pushes this format's +0 as an integer.
+    fn zero(self, c: &mut Func) {
+        if self.d {
+            c.i64_const(0);
+        } else {
+            c.i32_const(0);
+        }
+    }
+    /// Pushes an i32: the floats in integer locals `x` and `y` compare
+    /// `k`: 0 equal, 1 less, 2 greater.
+    fn compare(self, c: &mut Func, x: u32, y: u32, k: u8) {
+        c.local_get(x);
+        self.to_float(c);
+        c.local_get(y);
+        self.to_float(c);
+        c.op(if self.d { 0x61 } else { 0x5b } + [0, 2, 3][k as usize]);
+    }
+    /// Pushes an i32: either float in integer locals `x` and `y` is a NaN.
+    fn unordered(self, c: &mut Func, x: u32, y: u32) {
+        let ne = if self.d { 0x62 } else { 0x5c };
+        for l in [x, y] {
+            c.local_get(l);
+            self.to_float(c);
+            c.local_get(l);
+            self.to_float(c);
+            c.op(ne);
+        }
+        c.op(0x72); // i32.or
     }
     /// Scratch local `k` of this format's integer width.
     fn tmp(self, k: u32) -> u32 {
@@ -122,6 +156,66 @@ fn guarded(c: &mut Func, cx: &Ctx, i: u32, k: usize, written: u64, fast: impl Fn
     let before: Regs = c.regs;
     fast(c);
     fallback(c, cx, i, 4 * k as i64, before, written);
+}
+
+/// [`guarded`] with hooks around the helper call ([`super::fallback_with`]).
+#[allow(clippy::too_many_arguments)]
+fn guarded_with(
+    c: &mut Func,
+    cx: &Ctx,
+    i: u32,
+    k: usize,
+    written: u64,
+    fast: impl FnOnce(&mut Func),
+    pre: impl FnOnce(&mut Func),
+    post: impl FnOnce(&mut Func),
+) {
+    c.hint(true).if_();
+    let before: Regs = c.regs;
+    fast(c);
+    fallback_with(c, cx, i, 4 * k as i64, before, written, pre, post);
+}
+
+/// Pushes an i32: the float bits in local `l` are zero, normal or infinite
+/// (`nan`: or a NaN; `quiet`: or a quiet NaN): none of them denormal, which
+/// FZ would flush (raising IDC).
+fn scalar_plain(c: &mut Func, f: F, l: u32, nan: bool, quiet: bool) {
+    let (w, wc) = if f.d { (W, WC) } else { (0, 0) };
+    let (sign, min, inf, qbit) = if f.d {
+        (1u64 << 63, 1u64 << 52, 0x7ffu64 << 52, 1u64 << 51)
+    } else {
+        (1 << 31, 1 << 23, 0xff << 23, 1 << 22)
+    };
+    let k = |c: &mut Func, v: u64| {
+        if f.d {
+            c.i64_const(v as i64);
+        } else {
+            c.i32_const(v as i32);
+        }
+    };
+    // mag - 1 ≥ min - 1, unsigned: zero (wrapping) or from the smallest normal up.
+    c.local_get(l);
+    k(c, !sign);
+    c.op(AND + w).local_tee(f.tmp(2));
+    k(c, 1);
+    c.op(SUB + w);
+    k(c, min - 1);
+    c.op(0x4f + wc); // ge_u
+    if !nan {
+        // mag ≤ inf: no NaN.
+        c.local_get(f.tmp(2));
+        k(c, inf);
+        c.op(0x4d + wc).op(AND); // le_u
+    } else if quiet {
+        // No signaling NaN: mag ≤ inf, or the quiet bit set.
+        c.local_get(f.tmp(2));
+        k(c, inf);
+        c.op(0x4d + wc); // le_u
+        c.local_get(l);
+        k(c, qbit);
+        c.op(AND + w).op(EQZ + wc).op(EQZ);
+        c.op(0x72).op(AND); // i32.or
+    }
 }
 
 /// Pushes an i32: the float bits in local `l` are ±0.
@@ -461,6 +555,224 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                     c.op(0xfc).op(sat);
                 });
             });
+        }
+        // FCSEL: bits, no flags.
+        FCSEL_float => {
+            f.load(c, rn);
+            f.load(c, rm);
+            cond(c, bits(i, 15, 12));
+            c.select().local_set(r);
+            put(c, f, rd, r);
+        }
+        // FCMP/FCMPE (with Vm or zero): no flags without a denormal operand
+        // (FZ would flush it, raising IDC), a NaN for FCMPE or a signaling
+        // one for FCMP (Invalid). NZCV stays lazy: an ordered result's is a
+        // 32-bit SUBS of (gt, lt) (1 - 0: 0010, 0 - 0: 0110, 0 - 1: 1000), an
+        // unordered one's (0011) SUBS of (i32::MIN, 1).
+        FCMP_float | FCMPE_float => {
+            let (e, zero) = (op == FCMPE_float, bit(i, 3));
+            f.load(c, rn);
+            c.local_set(x);
+            if zero {
+                f.zero(c);
+            } else {
+                f.load(c, rm);
+            }
+            c.local_set(y);
+            scalar_plain(c, f, x, !e, true);
+            if !zero {
+                scalar_plain(c, f, y, !e, true);
+                c.op(AND);
+            }
+            let (fx, fy, _) = flag_locals(false);
+            guarded_with(
+                c,
+                cx,
+                i,
+                k,
+                0,
+                |c| {
+                    c.i32_const(i32::MIN);
+                    f.compare(c, x, y, 2);
+                    f.unordered(c, x, y);
+                    c.select().local_set(fx);
+                    c.i32_const(1);
+                    f.compare(c, x, y, 1);
+                    f.unordered(c, x, y);
+                    c.select().local_set(fy);
+                },
+                |_| {},
+                |c| {
+                    // The helper's NZCV as the same operands: V ? (MIN, 1) : (!N & !Z, N).
+                    let t = super::tmp(false, 0);
+                    c.local_get(VCPU).i32_load(NZCV).local_set(t);
+                    c.i32_const(i32::MIN);
+                    c.local_get(t)
+                        .i32_const(0xc000_0000u32 as i32)
+                        .op(AND)
+                        .op(EQZ);
+                    c.local_get(t).i32_const(1 << 28).op(AND);
+                    c.select().local_set(fx);
+                    c.i32_const(1);
+                    c.local_get(t).i32_const(31).op(SHR_U);
+                    c.local_get(t).i32_const(1 << 28).op(AND);
+                    c.select().local_set(fy);
+                },
+            );
+            c.set_flags(Kind::Sub, false);
+        }
+        // FCCMP/FCCMPE: NZCV = cond ? the compare's : nzcv (3:0), stored (an
+        // immediate like 0100 has no lazy form); FCMP's operand rules (on both
+        // paths: simpler, and rare otherwise). The helper reads NZCV, so its
+        // path stores lazy flags first.
+        FCCMP_float | FCCMPE_float => {
+            let e = op == FCCMPE_float;
+            f.load(c, rn);
+            c.local_set(x);
+            f.load(c, rm);
+            c.local_set(y);
+            scalar_plain(c, f, x, !e, true);
+            scalar_plain(c, f, y, !e, true);
+            c.op(AND);
+            guarded_with(
+                c,
+                cx,
+                i,
+                k,
+                0,
+                |c| {
+                    c.local_get(VCPU);
+                    // un ? 0011 : eq ? 0110 : lt ? 1000 : 0010.
+                    c.i32_const(0x3 << 28);
+                    c.i32_const(0x6 << 28);
+                    c.i32_const(i32::MIN); // 1000
+                    c.i32_const(0x2 << 28);
+                    f.compare(c, x, y, 1);
+                    c.select();
+                    f.compare(c, x, y, 0);
+                    c.select();
+                    f.unordered(c, x, y);
+                    c.select();
+                    c.i32_const((bits(i, 3, 0) << 28) as i32);
+                    cond(c, bits(i, 15, 12));
+                    c.select().i64_extend_i32_u().i64_store(NZCV);
+                },
+                |c| c.store_flags(),
+                |_| {},
+            );
+            c.retire_flags();
+        }
+        // FCVT between single and double: widening is exact (no FPOK) for a
+        // zero, normal or infinite operand; narrowing rounds (FPOK): a normal
+        // or zero operand, a fast result or a zero. Half precision: helper.
+        FCVT_float => {
+            let t = match bits(i, 16, 15) {
+                0 => F { d: false },
+                1 => F { d: true },
+                _ => return false,
+            };
+            if t.d == f.d {
+                return false;
+            }
+            f.load(c, rn);
+            c.local_tee(x);
+            f.to_float(c);
+            if t.d {
+                c.op(0xbb); // f64.promote_f32
+            } else {
+                fpa_guard(c);
+                c.op(0xb6); // f32.demote_f64
+            }
+            t.to_int(c);
+            let r = t.tmp(3);
+            c.local_set(r);
+            if t.d {
+                scalar_plain(c, f, x, false, false);
+            } else {
+                c.local_get(FPOK);
+                scalar_normal_or_zero(c, f, x);
+                c.op(AND);
+                exp_in(c, t, r, 2);
+                is_zero(c, f, x);
+                c.op(0x72).op(AND); // i32.or
+            }
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, t, rd, r));
+        }
+        // FMAX/FMIN, FMAXNM/FMINNM (the same without a NaN): no flags with
+        // zero, normal or infinite operands; wasm's max and min order -0
+        // below +0 as ARM does.
+        FMAX_float | FMIN_float | FMAXNM_float | FMINNM_float => {
+            f.load(c, rn);
+            c.local_set(x);
+            f.load(c, rm);
+            c.local_set(y);
+            c.local_get(x);
+            f.to_float(c);
+            c.local_get(y);
+            f.to_float(c);
+            let max = matches!(op, FMAX_float | FMAXNM_float);
+            c.op(f.arith(if max { 5 } else { 4 }));
+            f.to_int(c);
+            c.local_set(r);
+            scalar_plain(c, f, x, false, false);
+            scalar_plain(c, f, y, false, false);
+            c.op(AND);
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
+        }
+        // FRINTN/M/P/Z, FRINTA (ties away: trunc(x), ± 1 when |x - trunc(x)|
+        // ≥ 0.5, both exact), FRINTI/X in the FPCR's mode (nearest even under
+        // FPOK; FRINTX's Inexact is set already): no NaN or denormal operand.
+        FRINTN_float | FRINTM_float | FRINTP_float | FRINTZ_float | FRINTA_float | FRINTI_float
+        | FRINTX_float => {
+            let fpcr_mode = matches!(op, FRINTI_float | FRINTX_float);
+            if fpcr_mode {
+                fpa_guard(c);
+            }
+            f.load(c, rn);
+            c.local_tee(x);
+            f.to_float(c);
+            if op == FRINTA_float {
+                // t + copysign(1, x) where |x - t| ≥ 0.5, else t (keeps -0).
+                let t = super::FT[0];
+                c.op(f.round(3));
+                if !f.d {
+                    c.op(0xbb); // f64.promote_f32 (exact; the scratch is f64)
+                }
+                c.local_tee(t);
+                c.f64_const(1.0);
+                c.local_get(x);
+                f.to_float(c);
+                if !f.d {
+                    c.op(0xbb);
+                }
+                c.op(0xa6).op(0xa0); // f64.copysign, f64.add
+                c.local_get(t);
+                c.local_get(x);
+                f.to_float(c);
+                if !f.d {
+                    c.op(0xbb);
+                }
+                c.local_get(t).op(0xa1).op(0x99); // f64.sub, f64.abs
+                c.f64_const(0.5).op(0x66); // f64.ge
+                c.select();
+                if !f.d {
+                    c.op(0xb6); // f32.demote_f64 (exact: an integer below 2^25)
+                }
+            } else {
+                c.op(f.round(match op {
+                    FRINTM_float => 1,
+                    FRINTP_float => 2,
+                    FRINTZ_float => 3,
+                    _ => 0,
+                }));
+            }
+            f.to_int(c);
+            c.local_set(r);
+            scalar_plain(c, f, x, false, false);
+            if fpcr_mode {
+                c.local_get(FPOK).op(AND);
+            }
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         _ => return false,
     }

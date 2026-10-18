@@ -520,8 +520,9 @@ interpreter's; the helper runs the instruction otherwise.
     operands, split overflow); planted bugs in each step fail them.
 - **Conversions:** SCVTF/UCVTF inline (RNE, can't overflow), including the forms with the integer
   in a SIMD&FP register and the vector forms; FCVTZS/FCVTZU inline for in-range non-NaN operands;
-  vector FCVTL/FCVTN single↔double with normal operands and a fast result (scalar FCVT is a helper
-  call).
+  FCVT single↔double, scalar and vector (FCVTL/FCVTN): widening is exact without FPOK for a zero,
+  normal or infinite operand; narrowing takes FPOK, a normal or zero operand and a fast result or a
+  zero.
 - **Zero operands** (FADD/FSUB/FMUL/FDIV scalar and vector, FNMUL, the FMA forms): operands
   (lanes) may also be ±0 where the zero case is exact too. A zero sum or difference of
   normal-or-zero operands is always exact (a nonzero exact sum rounds to a nonzero result), so a
@@ -535,7 +536,17 @@ interpreter's; the helper runs the instruction otherwise.
 - **Compares** (FCMEQ/FCMGE/FCMGT, FACGE/FACGT, the compares against zero) and **FRINTN/M/P/Z**:
   no rounding and no flags while no lane is a NaN or a denormal (FZ would flush it, raising IDC),
   so no FPOK; FRINTI/FRINTX round in FPCR's mode (nearest even under FPOK; FRINTX's Inexact is set
-  already). FRINTA (ties away) has no wasm op.
+  already). Scalar FRINTA (ties away, no wasm op) is `trunc(x)` stepped ±1 when `|x - trunc(x)| ≥
+  0.5` (both exact; a select keeps -0), in f64 for singles; vector FRINTA is a helper call.
+- **Scalar compares and selects:** FCSEL is bits (no guard). FCMP/FCMPE raise nothing without a
+  denormal operand (FZ), a NaN for FCMPE or a signaling NaN for FCMP, so no FPOK, and **their NZCV
+  stays lazy:** an ordered result's flags are a 32-bit SUBS of (gt, lt) (1 − 0: 0010, 0 − 0: 0110,
+  0 − 1: 1000), an unordered one's (0011) SUBS of (i32::MIN, 1), so B.cond and CSEL after them use
+  the direct conditions. Their helper path turns the helper's NZCV back into those operands
+  (`fallback_with`'s hook). FCCMP/FCCMPE store NZCV (an immediate like 0100 has no SUBS form); their
+  helper path stores the lazy flags first, as the helper reads them.
+- **FMAX/FMIN/FMAXNM/FMINNM** (scalar): wasm's `max`/`min` with zero, normal or infinite operands
+  (no NaN: then FMAXNM is FMAX), which order -0 below +0 as ARM does; no flags, no FPOK.
 - **Half precision** (FCVTL/FCVTN with sz = 0, llvmpipe's 16-bit colour paths): FCVTL is exact
   without flags but for NaNs (FZ doesn't apply to half): the magnitude shifted into a single's
   fields is the value × 2^-112, denormals too, so an `f32x4.mul` by 2^112 converts it. FCVTN rounds
@@ -543,7 +554,10 @@ interpreter's; the helper runs the instruction otherwise.
   result is finite (no Underflow, Overflow or IDC). Without an all-ones half exponent in or out,
   FPCR.AHP's format reads and writes the same bits, so AHP isn't checked.
 - FABS, FNEG and FMOV are bit operations without flags: inline without the guard (`emit/simd.rs` has
-  FMOV). FCSEL is a helper call.
+  FMOV).
+- **The FP suite** (docs/testing.md "The FP suite", `scripts/ci-fp.sh`) runs TestFloat's cases
+  through every form above (and the helpers') in a Linux guest under the JIT, with FPSR.IXC set and
+  clear, against SoftFloat with ARM's rules, which the M4 passes; a new fast path runs it.
 
 ## What still runs through helpers
 
