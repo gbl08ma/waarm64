@@ -1,5 +1,5 @@
 <!--
-  Add a USB device (docs/plans/usb.md §4a, docs/usb.md "The page"): a wizard, as Add a disk is. The kind first, each
+  Add a USB device (docs/usb.md "The page"): a wizard, as Add a disk is. The kind first, each
   explained (WebUSB or WebHID: what each reaches), then the browser's chooser, which lists every device it may show.
   What is picked is remembered by the machine, and attached at once when it runs on this page.
 -->

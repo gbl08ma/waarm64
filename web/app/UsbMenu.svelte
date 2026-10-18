@@ -1,5 +1,5 @@
 <!--
-  The toolbar's USB menu (docs/plans/usb.md §4a, docs/usb.md "The page"): the running machine's remembered devices with
+  The toolbar's USB menu (docs/usb.md "The page"): the running machine's remembered devices with
   attach toggles, the offers (a device that just appeared, one that left and may come back as another, a permission to
   give), Add a device…, and the Machines page's USB tab. With `?usbzero=1`, Gadget Zero (the controller's test device).
   It opens by itself when there is something to do (`ui.usb.open`).

@@ -1,4 +1,4 @@
-// The WebUSB passthrough (docs/plans/usb.md §4 "The WebUSB passthrough backend", docs/usb.md): a
+// The WebUSB passthrough (docs/usb.md "The WebUSB passthrough"): a
 // device the browser opened, served to the guest as itself. Its raw descriptors are read once at
 // attach and answered from a cache, with the interfaces WebUSB can't claim filtered out of the
 // configuration descriptors; the standard OUT requests WebUSB refuses are interpreted
@@ -66,7 +66,7 @@ export const DT_BOS = 0x0f;
 export const DT_SS_EP_COMPANION = 0x30;
 export const DT_SSP_ISOC_EP_COMPANION = 0x31;
 
-/** WebUSB's protected interface classes (docs/plans/usb.md §2). */
+/** WebUSB's protected interface classes (docs/usb.md "What the browser allows"). */
 export const PROTECTED_CLASSES: ReadonlySet<number> = new Set([0x01, 0x03, 0x08, 0x09, 0x0b, 0x0e, 0x10, 0xe0]);
 
 
@@ -161,7 +161,7 @@ export function filterConfig(raw: Uint8Array, drop: ReadonlySet<number>): Uint8A
 }
 
 /**
- * The speed a device runs at, from its descriptors (docs/plans/usb.md §4): SuperSpeed companions or
+ * The speed a device runs at, from its descriptors (docs/usb.md): SuperSpeed companions or
  * a 512-byte endpoint 0 → super; what only high speed allows → high: a 512-byte bulk endpoint, an
  * interrupt one over 64 bytes, an isochronous one over 1023 (full speed allows isochronous packets up
  * to 1023 bytes: a wired Xbox controller's audio interface has 228-byte ones), or high-bandwidth
@@ -231,7 +231,7 @@ type Chunk = { data: Uint8Array; code: UsbCode };
  * and what arrived for no TD (a cancelled TD's transfer) carried over. Each arriving result goes to
  * the oldest waiting TD, or to the carry-over when none waits; a TD is served from the carry-over
  * first. A new transfer is issued only when there are fewer in flight than TDs waiting, so a
- * cancelled TD's transfer serves the next TD's bytes (docs/plans/usb.md §4, "IN data outlives a
+ * cancelled TD's transfer serves the next TD's bytes (docs/usb.md, "IN data outlives a
  * cancel"): nothing is lost or reordered.
  */
 class InEndpoint {
@@ -264,7 +264,7 @@ const GET = (type: number, index: number, lang: number, length: number): [WebUsb
 ];
 
 /**
- * Opens `dev` for the guest (docs/plans/usb.md §4 "At attach"): opens it, selects its first
+ * Opens `dev` for the guest (docs/usb.md "The WebUSB passthrough"): opens it, selects its first
  * configuration if it has none, reads its raw descriptors, claims what it can and infers the speed.
  * Throws a `UsbOpenError` when the device can't be opened or no interface is left for the guest.
  */
@@ -433,7 +433,7 @@ export class WebUsbPassthrough implements UsbDevice {
       return;
     }
     if (t.type === 'isoch') {
-      // U6: isochronous transfers aren't passed through yet.
+      // Isochronous transfers aren't passed through (docs/backlog.md "USB").
       const o = this.outOrder(t.ep);
       o.add(td);
       o.finish(td, { code: 'error', actual: 0 });
@@ -642,7 +642,7 @@ export class WebUsbPassthrough implements UsbDevice {
     }
   }
 
-  /** The standard requests the backend answers or interprets itself (docs/plans/usb.md §4's table); null passes it through. */
+  /** The standard requests the backend answers or interprets itself (docs/usb.md "The WebUSB passthrough"'s table); null passes it through. */
   private standard(s: Setup, t: UsbTransfer): Promise<UsbResult> | null {
     if (((s.requestType >> 5) & 3) !== 0) return null;
     const recipient = s.requestType & 0x1f;

@@ -1,4 +1,4 @@
-// The WebHID device (web/webhid.ts, docs/plans/usb.md §4 "The WebHID backend") against a fake
+// The WebHID device (web/webhid.ts, docs/usb.md "The WebHID device") against a fake
 // HIDDevice: the descriptors built from its collections, the HID class requests, input reports to
 // IN TDs, OUT TDs to sendReport, cancel, detach and the opener.
 import assert from 'node:assert/strict';

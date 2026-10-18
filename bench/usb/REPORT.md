@@ -1,6 +1,6 @@
 # USB: what WebUSB costs a transfer (U0)
 
-> A dated journal (docs/plans/usb.md §6 U0, "U0 findings"). What exists now is in `bench/usb/` and [docs/usb.md](../../docs/usb.md).
+> A dated journal (U0 of the USB work; [docs/usb.md](../../docs/usb.md) "Findings"). What exists now is in `bench/usb/` and [docs/usb.md](../../docs/usb.md).
 
 **Setup (2026-10-18).** The dev VM: openSUSE Tumbleweed aarch64 under Lima `vz` on the M4 Mac mini, kernel
 7.2.9-1-default, 8 vCPUs. Chromium 153.0.8010.52, headless through Playwright. The device is

@@ -1,5 +1,5 @@
 <!--
-  A machine's USB devices on the Machines page (docs/plans/usb.md §4a, docs/usb.md "The page"): the devices it remembers,
+  A machine's USB devices on the Machines page (docs/usb.md "The page"): the devices it remembers,
   each with its state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
   its connector and whether it is attached at start; Attach and Detach while it runs on this page, Allow, Forget. Add a
   device… opens the wizard (AddUsb.svelte). The controller's switch is the Machines page's (it is in the shape).

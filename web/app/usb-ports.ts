@@ -1,4 +1,4 @@
-// A machine's remembered USB devices (docs/plans/usb.md §4a, docs/usb.md "The page"), the part without a browser: an
+// A machine's remembered USB devices (docs/usb.md "The page"), the part without a browser: an
 // entry's identity and the Web Lock named after it, which connector a new entry takes, how the browser's granted
 // devices are matched to entries (identical devices without a serial number by their order in `getDevices()`), the
 // entries a definition carries, and the page's words for what the device worker reports (`UsbProblem`). DOM-free:
@@ -113,7 +113,7 @@ const className = (c: number) => CLASSES[c] ?? `class 0x${c.toString(16).padStar
 /** The HID top-level collections the browser protects, as the messages name them (usage page:usage). */
 const HID_USAGES: Record<string, string> = { '1:1': 'pointer', '1:2': 'mouse', '1:6': 'keyboard', '1:7': 'keypad', '1:128': 'system control' };
 
-/** Where to go instead for what WebUSB keeps from pages, by class (docs/plans/usb.md §7). */
+/** Where to go instead for what WebUSB keeps from pages, by class (docs/usb.md "What WebUSB can't attach, and where it goes instead"). */
 function protectedRoute(c: number): string {
   switch (c) {
     case 0x03: return ' Its HID part can come in as a HID device instead (Add a device…, then a HID device), unless it is a keyboard or a mouse: the machine has the page\'s.';
@@ -131,7 +131,7 @@ const udevRule = (d: { api: 'usb' | 'hid'; vendorId: number; productId: number }
 
 /**
  * A problem the device worker reported, in words for the user, with the host OS's remedy where there is one
- * (docs/plans/usb.md §2: the host's drivers come first, and the page can't change that).
+ * (docs/usb.md "What the browser allows": the host's drivers come first, and the page can't change that).
  */
 export function problemText(p: UsbProblem, d: { api: 'usb' | 'hid'; vendorId: number; productId: number }, os: HostOs = hostOs()): string {
   switch (p.kind) {

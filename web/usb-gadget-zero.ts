@@ -10,7 +10,7 @@
 //   for each OUT TD, up to 32 buffers (then OUT waits, as a device NAKs); an IN with nothing to
 //   give waits for the next OUT.
 // The pattern is per packet, as usbtest checks it: byte i of a TD is 0 (pattern 0) or (i % maxpacket) % 63
-// (pattern 1). No isochronous alternate setting (U6) and no interrupt endpoints (f_sourcesink has none now).
+// (pattern 1). No isochronous alternate setting and no interrupt endpoints (f_sourcesink has none now).
 
 import type { UsbResult, UsbSpeed, UsbTransfer } from './usb-device.ts';
 import { VirtualDevice, type ControlAnswer } from './usb-virtual.ts';

@@ -1,4 +1,4 @@
-// The WebUSB passthrough (web/webusb.ts, docs/plans/usb.md §4) against a scripted fake USBDevice:
+// The WebUSB passthrough (web/webusb.ts, docs/usb.md) against a scripted fake USBDevice:
 // the descriptor filter and the speed heuristic on transcribed descriptors of real device types,
 // the standard requests it interprets, the transfer mapping, and the IN carry-over after a cancel.
 import assert from 'node:assert/strict';

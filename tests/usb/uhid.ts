@@ -1,4 +1,4 @@
-// HID test devices through the kernel's uhid (/dev/uhid; docs/plans/usb.md §5): each UhidDevice is one HID device
+// HID test devices through the kernel's uhid (/dev/uhid; docs/testing.md "USB: the dev VM's host rigs"): each UhidDevice is one HID device
 // made from a report descriptor, seen by the host as a hidraw node and by Chromium's WebHID as a HID device. It
 // sends input reports and answers GET_REPORT and SET_REPORT; output reports and feature writes are recorded.
 // Needs read and write on /dev/uhid (tests/usb/gadget.sh install's udev rule).

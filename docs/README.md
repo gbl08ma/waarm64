@@ -14,7 +14,7 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [frontend.md](frontend.md) | the page (`web/app/`): its machines, the worker protocol, the screen, the serial terminal (xterm.js); `npm start`; `npm run dist` and the deployment at vm.tny.im; the disk reader (partitions, ext4) |
 | [devices.md](devices.md) | virtio transports and queues, the device worker, blk/qcow2/overlay, net, 9p, input, framebuffer |
 | [tailnet.md](tailnet.md) | the network backends: our tailnet client (`net/ts`, Rust wasm on tailscale-rs's crates, sans I/O) for tailcat (online through a computer of yours, the VM as a tailcat server) and Tailscale (control session, the kept node, filter, exit nodes, MagicDNS), its numbers and findings |
-| [usb.md](usb.md) | USB devices: the WebUSB passthrough (descriptor filter, speed, standard requests, IN carry-over) and the WebHID device (report descriptors from WebHID's collections) |
+| [usb.md](usb.md) | USB devices from the user's computer: what WebUSB and WebHID allow, the xHCI and its backend protocol, the WebUSB passthrough, the WebHID device, virtual devices (Gadget Zero, the firmware's keyboard), the page's USB tab, what the measurements and real devices showed |
 | [audio.md](audio.md) | sound: virtio-snd to an AudioWorklet over a shared ring, the microphone, the guests' drivers (Arch's DKMS module), the Linux driver behavior the pacing depends on, measurements |
 | [abi.md](abi.md) | the host ABI (version 28): exports, `VmConfig`, exits, counters, device layouts, the JIT host interface, version history |
 | [jit.md](jit.md) | the JIT: dispatch, blocks, regions, linking, invalidation, emission, FP fast paths, what's still helpers, what was tried and dropped |
@@ -30,7 +30,6 @@ commit messages and the reports, unless they record a finding worth not re-disco
 | [plans/graphics.md](plans/graphics.md) | the display and 3D: virtio-gpu 2D (G0, G1), virgl's guest side measured (G2), the virgl renderer on WebGL2 (G3), Firefox, GTK4 and dEQP passing (G4): what each loop found, the numbers; G5 proposed |
 | [plans/video.md](plans/video.md) | hardware video decoding (done): VA-API over virgl decoded by WebCodecs (why not V4L2), H.264, VP9 and AV1, each loop's record |
 | [plans/agent.md](plans/agent.md) | a guest agent (clipboard, time after a resume, a ready signal, X11 resize): the stock agents first, then a tools disk (not scheduled) |
-| [plans/usb.md](plans/usb.md) | USB devices from the user's computer through WebUSB and WebHID: an xHCI in the core, a passthrough backend, an emulated HID device built from WebHID, what neither can attach (proposed, not scheduled) |
 | [plans/remote-disks.md](plans/remote-disks.md) | disks from a remote server: today's HTTP reader, where to host an image (Cloudflare R2 and Pages), a chunked format, caching, concurrency (proposed) |
 | [plans/machines.md](plans/machines.md) | machines as the unit (M8 phase D's start): stored machines, up to 16 disks and their sources (blank, ramdisk, a copy in OPFS that can be merged into or written in place), overlays as named variants per base, snapshots per machine checked by its shape, the Machines page (confirmed; M8 phase D) |
 | [plans/snapshots.md](plans/snapshots.md) | saving and resuming a machine as a file, and Suspend (M8 phase C lane, done) |

@@ -1,4 +1,4 @@
-// The WebHID device (docs/plans/usb.md §4 "The WebHID backend", docs/usb.md): an emulated USB HID
+// The WebHID device (docs/usb.md "The WebHID device"): an emulated USB HID
 // device built from what WebHID tells about a HIDDevice, its report descriptor encoded back from
 // `collections` (web/hid-descriptor.ts). It is a virtual device (web/usb-virtual.ts answers chapter
 // 9); this file adds the HID class requests and moves reports between the guest and the HIDDevice.
@@ -57,7 +57,7 @@ export type HidLayout = {
 };
 
 /**
- * The descriptors of the emulated device (docs/plans/usb.md §4): the vendor and product IDs, USB
+ * The descriptors of the emulated device (docs/usb.md): the vendor and product IDs, USB
  * 2.00, one HID interface (class 3, no boot subclass), an interrupt IN endpoint sized by the largest
  * input report and its ID byte (at most 1024; high speed past 64), bInterval 1 ms, and an
  * interrupt OUT endpoint when the device has output reports.

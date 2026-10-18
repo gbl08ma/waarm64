@@ -507,7 +507,7 @@ through the same status message.
 ## USB: the dev VM's host rigs
 
 Lima's `vz` passes no host USB devices through, so the test devices come from the VM's own kernel
-([plans/usb.md](plans/usb.md) §5 and "U0 findings"). All of this is dev-VM-only: a cloud container can't load modules.
+([usb.md](usb.md) "Findings"). All of this is dev-VM-only: a cloud container can't load modules.
 
 - **Setup, once per machine** (and after a kernel update): `tests/usb/gadget.sh install` (passwordless sudo). It
   builds `dummy_hcd` for the running kernel and installs it with a udev rule, a modprobe blocklist (`usbtest` and
@@ -543,12 +543,12 @@ Lima's `vz` passes no host USB devices through, so the test devices come from th
   (32-deep queues), the guest's xhci-hcd logged events for TRBs that weren't part of any TD. That is a QEMU
   `qemu-xhci`/`usb-host` behavior, not ours, so compare 24 against the native runs instead.
 - **Sizing:** `node bench/usb/run.ts` (WebUSB's cost per transfer and bulk throughput from a worker, with a native
-  usbfs baseline; plans/usb.md "U0 findings").
+  usbfs baseline; usb.md "Findings", `bench/usb/REPORT.md`).
 
 ## USB: real devices on the Mac
 
 The dev VM sees no real USB devices, but the Mac mini that hosts it does. A by-hand check (not a test in any
-`ci-*.sh`; plans/usb.md "U5 findings") runs the page in a headless Chrome on the Mac, driven from the VM:
+`ci-*.sh`; usb.md "Findings") runs the page in a headless Chrome on the Mac, driven from the VM:
 
 - **The browser:** Playwright's Chrome for Testing, already on the Mac (`~/Library/Caches/ms-playwright/chromium-*`),
   started over SSH with `--headless=new --remote-debugging-port=9223 --user-data-dir=/tmp/webpc-cft`. It listens on

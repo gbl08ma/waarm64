@@ -663,11 +663,11 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     in a container image would remove Go from development and CI; the user kept Go (2026-10-17), so not before the
     Go client's store format stops mattering.
 
-## USB ([plans/usb.md](plans/usb.md), [usb.md](usb.md))
+## USB ([usb.md](usb.md))
 
 - **WebHID devices whose drivers patch the original descriptor** by its bytes or size (`report_fixup`) see
   our encoding instead. A table of known original descriptors keyed by vendor and product could serve
-  them their real bytes when its parse matches WebHID's (plans/usb.md §8). No such device has been tried yet.
+  them their real bytes when its parse matches WebHID's. No such device has been tried yet.
 - **WebUSB's halts are emulated:** SET_FEATURE(ENDPOINT_HALT) never reaches the device (Chromium refuses
   it), so a device-side function that tests its own halt (rare outside usbtest) sees none. Only the
   guest's view is a halted endpoint (docs/usb.md "The WebUSB passthrough").
@@ -678,10 +678,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   reset and claimed again after (a reset with them claimed leaves Chromium's claims stale: docs/usb.md);
   which hosts re-enumerate on a reset isn't measured.
 - **Most WebUSB fixtures are still transcribed** (`tests/usb/webusb-fixtures.ts`): the FT232R, the NESDR and
-  a wired Xbox controller are recorded from real devices (U5); the CP2102, the Pico, the Android composite,
+  a wired Xbox controller are recorded from real devices; the CP2102, the Pico, the Android composite,
   DAPLink, FX3 and USBasp are written from documentation. Replace each when such a device is at hand.
-- **U5's list beyond the devices at hand is untested** (closed 2026-10-18 with an RTL-SDR, an FT232R and a
-  wired Xbox controller, plans/usb.md "U5 findings"): an Android phone (adb, fastboot after a reboot, the
+- **Device types untried on real hardware** (the real-device check, 2026-10-18, had an RTL-SDR, an FT232R and a
+  wired Xbox controller, usb.md "Findings"): an Android phone (adb, fastboot after a reboot, the
   re-enumeration's new permission), a CDC-ACM board with the host's driver unbound, `dfu-util`, a sigrok
   analyser's firmware upload, and through WebHID a DualSense or DualShock 4 (USB and Bluetooth), a Switch
   Pro controller, a Stream Deck, a keyboard's VIA configuration and a UPS. Only the in-VM rigs cover the
@@ -692,7 +692,22 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - **Stop Endpoint's window in realtime mode:** a backend that gathers a TD's OUT data, or scatters its IN
   data, just after the guest stopped the endpoint touches a buffer the guest may have back. The glue drops
   a TD whose cancel is in the same batch, and deterministic mode can't hit it.
-- **Isochronous TDs** are parsed and posted (one packet per TD), but no device takes them (U6).
+- **Isochronous transfers aren't implemented** (left out, the user, 2026-10-18): the controller parses isochronous TDs
+  and posts them one packet per TD, but no device takes them. Building them means scheduling by frame, per-packet
+  results in the completion, WebUSB's `isochronousTransferIn/Out`, and an isochronous alternate setting on Gadget
+  Zero to test with (dummy_hcd has none). Few devices would gain: WebUSB protects audio and video, so it is
+  vendor-class devices only (a wired Xbox controller's headset jack, some cameras).
+- **Game pads that aren't HID and that the host holds** (a wired Xbox controller where the host's driver keeps it):
+  the Gamepad API could feed an emulated USB HID game pad with a fixed descriptor of ours (its standard mapping,
+  rumble through `vibrationActuator`), on the same controller. Not built; where WebUSB gets the device, `xpad`
+  already works (docs/usb.md "Findings").
+- **Serial adapters the host's driver holds** (Linux's `ftdi_sio`, `cp210x`, `cdc_acm` without a udev rule): WebSerial
+  could feed a virtio-console port instead of the passthrough (the multiport console, plans/agent.md). Not built.
+- **A WebHID device across Suspend:** Snapshot and Suspend unplug every device first. The emulated HID device's
+  state is small (idle rate, last reports), so it could be saved and its `HIDDevice` opened again at resume, keeping
+  a game pad plugged in as far as the guest knows.
+- **Carry-over and sequence numbers:** a cancelled IN's data goes to the next read on that endpoint, which a
+  protocol that cancels, then expects only fresh data with sequence numbers, would notice. None seen yet.
 
 ## Tests and tools
 

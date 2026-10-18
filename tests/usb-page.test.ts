@@ -1,4 +1,4 @@
-// A machine's USB on the page, without a browser (docs/plans/usb.md §4a, docs/usb.md "The page"): web/app/usb-ports.ts
+// A machine's USB on the page, without a browser (docs/usb.md "The page"): web/app/usb-ports.ts
 // (identities, the lock names, connectors, matching the browser's devices to entries, the messages' words),
 // web/app/usb-live.ts's ports against a fake device worker on a MessageChannel and its locks between two "tabs" (two
 // Stores on one BroadcastChannel), and the record: new machines with the controller on, definitions carrying it and the

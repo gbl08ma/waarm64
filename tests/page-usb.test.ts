@@ -1,4 +1,4 @@
-// A machine's USB devices on the Machines page, in Chromium without a guest or host devices (docs/plans/usb.md §4a,
+// A machine's USB devices on the Machines page, in Chromium without a guest or host devices (docs/usb.md "The page",
 // docs/usb.md "The page"): WebUSB and WebHID are stood in for by a fake (`navigator.usb`, `navigator.hid` with plugged-in
 // devices and grants kept per profile), so the flows are the page's own: the controller on for a new machine, off and
 // warned about for an existing one; the Add a device wizard remembering what the chooser gives (identical serial-less

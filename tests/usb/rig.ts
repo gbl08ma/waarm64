@@ -2,7 +2,7 @@
 // here, and a headless Chromium on a page whose origin Chromium's managed policy grants the rigs' devices to
 // (tests/usb/gadget.sh install: every 0525 gadget for WebUSB, every HID device for WebHID, on 127.0.0.1:8190-8197).
 // Permission comes from the policy alone: the DevTools protocol's DeviceAccess prompt events don't fire for WebUSB
-// or WebHID on the pinned Chromium, so a test can't answer a chooser (docs/plans/usb.md "U0 findings").
+// or WebHID on the pinned Chromium, so a test can't answer a chooser (docs/usb.md "Findings").
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import type { Server } from 'node:http';

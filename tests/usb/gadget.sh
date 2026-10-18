@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The host-side USB test devices of docs/plans/usb.md §5: configfs gadgets on dummy_hcd, in the dev VM's own kernel,
+# The host-side USB test devices of docs/testing.md "USB: the dev VM's host rigs": configfs gadgets on dummy_hcd, in the dev VM's own kernel,
 # seen by its Chromium as real USB devices (WebUSB) and by QEMU's usb-host. Needs passwordless sudo.
 #
 #   tests/usb/gadget.sh install        once per machine (and after a kernel update): builds dummy_hcd for the running
@@ -79,7 +79,7 @@ KERNEL=="uhid", MODE="0666"
 SUBSYSTEM=="hidraw", DEVPATH=="/devices/virtual/misc/uhid/*", MODE="0666"
 SUBSYSTEM=="tty", KERNEL=="ttyGS*", MODE="0666"
 EOF
-  # The host's class drivers would hold the gadgets' interfaces (WebUSB doesn't detach them, docs/plans/usb.md §2).
+  # The host's class drivers would hold the gadgets' interfaces (WebUSB doesn't detach them, docs/usb.md "What the browser allows").
   printf '%s\n' '# webpc USB test rig: keep the gadgets free for WebUSB and QEMU (tests/usb/gadget.sh)' \
     'blacklist usbtest' 'blacklist cdc_acm' > "$tmp/modprobe"
   local urls

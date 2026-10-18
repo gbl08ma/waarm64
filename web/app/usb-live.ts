@@ -1,4 +1,4 @@
-// The live side of a machine's USB devices on the page (docs/plans/usb.md §4a, docs/usb.md "The page"): the browser's
+// The live side of a machine's USB devices on the page (docs/usb.md "The page"): the browser's
 // granted devices (WebUSB's `navigator.usb`, WebHID's `navigator.hid`), the grants this browser has seen (a grant
 // can't be told from a device that isn't plugged in, so the page keeps the list), the device locks (a Web Lock per
 // identity, held while a machine has the device; who holds one and "let it go" go over the store's channel), and the
@@ -103,7 +103,7 @@ export async function entryStates(entries: UsbEntry[], attached: Set<string>, lo
 }
 
 /**
- * The device locks of this page (docs/plans/usb.md §4a: one machine at a time per device). A lock is held while its
+ * The device locks of this page (docs/usb.md "The page": one machine at a time per device). A lock is held while its
  * device is attached here. Another tab asks who holds one (`usb-who`, answered `usb-held` with the machine's name) and
  * asks the holder to detach it (`usb-release`), over the store's channel.
  */
@@ -287,7 +287,7 @@ export class UsbPorts {
     }
   }
 
-  /** Detaches everything (Snapshot, Suspend: docs/plans/usb.md §4a); returns what was attached, to attach it again. */
+  /** Detaches everything (Snapshot, Suspend: docs/usb.md "The page"); returns what was attached, to attach it again. */
   async detachAll(): Promise<{ connector: number; device: UsbIdentity | UsbVirtual; entry?: string }[]> {
     const was = this.attached().filter((c) => c.state === 'attached').map((c) => ({ connector: c.connector, device: c.device, entry: c.entry }));
     await Promise.all(this.connectors.map((c, i) => (c ? this.detach(i).catch(() => {}) : undefined)));

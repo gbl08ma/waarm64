@@ -1,7 +1,7 @@
 // Raw USB descriptors of real device types, for the WebUSB passthrough's tests (web/webusb.ts).
 //
 // `source` says where each one comes from. RECORDED: read from the user's devices through WebUSB
-// (docs/plans/usb.md "U5 findings"). TRANSCRIBED: written from the device's public documentation and
+// (docs/usb.md "Findings"). TRANSCRIBED: written from the device's public documentation and
 // its well-known `lsusb -v` layout (field values as such dumps show them; serial numbers and a few
 // endpoint numbers are illustrative), until a real dump replaces it.
 
@@ -78,7 +78,7 @@ const ssCap = (): Part => [10, 0x10, 0x03, 0x00, ...u16(0x000e), 0x01, 0x0a, ...
 
 export const fixtures: Fixture[] = [
   {
-    // FTDI FT232R (0403:6001), the user's, read through WebUSB on macOS (docs/plans/usb.md "U5 findings"): one vendor
+    // FTDI FT232R (0403:6001), the user's, read through WebUSB on macOS (docs/usb.md "Findings"): one vendor
     // interface, two 64-byte bulk endpoints, an 8-byte EP0, full speed. Its strings as macOS reported them.
     name: 'FTDI FT232R',
     source: 'recorded',

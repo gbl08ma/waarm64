@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The QEMU oracle for the xHCI (docs/plans/usb.md §5, docs/testing.md "USB"): the linux-usb guest
+# The QEMU oracle for the xHCI (docs/testing.md "USB: the dev VM's host rigs"): the linux-usb guest
 # (images/build.sh linux-usb: xhci-pci, usbtest, testusb) on qemu-system-aarch64 -M virt (TCG) with QEMU's
 # qemu-xhci, and the dev VM's dummy_hcd Gadget Zero passed in through usb-host. The guest runs the same init and
 # testusb as on our xHCI, so the two compare on behavior: testusb's results, the guest's kernel log, and (with

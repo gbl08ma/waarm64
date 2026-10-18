@@ -1,4 +1,4 @@
-// HID report descriptors (HID 1.11 §6.2.2) to and from WebHID's parsed form (docs/plans/usb.md §4
+// HID report descriptors (HID 1.11 §6.2.2) to and from WebHID's parsed form (docs/usb.md
 // "The WebHID backend", docs/usb.md). WebHID gives a page `HIDDevice.collections`, the descriptor
 // already parsed; the emulated device needs bytes again. `encodeReportDescriptor` writes them:
 // each collection with its usage, its reports' items with the globals that changed and the locals

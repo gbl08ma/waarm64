@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The USB tests that need the dev VM's host rigs (docs/testing.md "USB", docs/plans/usb.md §5): WebUSB against
+# The USB tests that need the dev VM's host rigs (docs/testing.md "USB", docs/testing.md "USB: the dev VM's host rigs"): WebUSB against
 # dummy_hcd gadgets and WebHID against uhid devices, in the pinned Chromium, and the guest through them. Run it,
 # besides scripts/ci.sh, when a change touches USB: the xHCI, its glue, the WebUSB and WebHID backends, the USB tab.
 # Alone, in the background, as the other ci-*.sh. When a rig can't come up (no passwordless sudo, no kernel build

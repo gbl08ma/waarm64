@@ -1,10 +1,116 @@
 # USB
 
-USB devices from the user's computer reach the guest through an emulated xHCI. The plan, and the reasons
-behind it, are in [plans/usb.md](plans/usb.md). The controller is the core's (`core/src/xhci.rs`). Its
-devices are backends in the device worker, behind the glue in `web/usb.ts`. The device interface every
-backend implements is `UsbDevice` in `web/usb-device.ts`, and the page's messages about the root
-connectors are defined there too.
+USB devices from the user's computer reach the guest through an emulated xHCI. The controller is the core's
+(`core/src/xhci.rs`). Its devices are backends in the device worker, behind the glue in `web/usb.ts`: a WebUSB
+passthrough, an emulated HID device rebuilt from what WebHID gives, and virtual devices of ours (Gadget Zero for
+the tests, the built-in keyboard). The device interface every backend implements is `UsbDevice` in
+`web/usb-device.ts`, and the page's messages about the root connectors are defined there too. Built 2026-10-18
+(the plan, U0–U6, is in git history: `docs/plans/usb.md`); loose ends are in [backlog.md](backlog.md) "USB".
+
+## What the browser allows
+
+**WebUSB** (WICG spec, Chromium 153):
+- **Protected interface classes can't be claimed:** audio (0x01), HID (0x03), mass storage (0x08), hub (0x09), smart
+  card (0x0B), video (0x0E), audio/video (0x10), wireless controller (0xE0: Bluetooth dongles); Chromium's blocklist
+  adds devices such as security keys. The class is per interface, so vendor-specific (0xFF), CDC (0x02/0x0A),
+  printer (0x07), still image/MTP (0x06), DFU (0xFE) and test-and-measurement interfaces are open: phones (adb,
+  fastboot), boards and debug probes (CDC-ACM, DFU, CMSIS-DAP v2, ST-Link, J-Link), serial adapters (FTDI, CP210x,
+  CH34x), logic analysers and SDRs, printers, FPGA boards, libusb devices in general. A composite device that is
+  partly protected is served with those interfaces left out ("The WebUSB passthrough").
+- **The host's drivers come first.** On Linux Chromium doesn't detach a kernel driver (`AutomaticUsbDetach` is off):
+  an interface `cdc_acm`, `ftdi_sio`, `cp210x` or `usblp` holds fails to claim until it is unbound or a udev rule
+  keeps the driver off, and without permission on `/dev/bus/usb` no device is listed at all. On Windows a device
+  needs WinUSB (Zadig). On macOS Chrome took the FT232R from Apple's `AppleUSBFTDI` without help ("Findings").
+  The page says which interface failed, with the remedy for the user's OS.
+- **Standard OUT requests are refused** on endpoint 0 (SET_ADDRESS, SET_CONFIGURATION, SET_INTERFACE,
+  SET/CLEAR_FEATURE, SET_SEL, SET_ISOCH_DELAY), and so are SET_FEATURE(ENDPOINT_HALT) and GET_STATUS and
+  CLEAR_FEATURE on endpoint 0. `selectConfiguration`, `selectAlternateInterface` and `clearHalt` replace some; the
+  passthrough interprets the rest itself.
+- **No single transfer can be cancelled** (only in bulk, by `close`, `reset` or a configuration change), so a
+  cancelled IN's data is carried over to the next read. **The device's speed isn't exposed**, so it is inferred from
+  the descriptors. **No bulk streams, LPM, suspend or remote wakeup.** **Isochronous transfers exist**, but the
+  classes that use them most are protected; they aren't implemented (the user, 2026-10-18).
+- **A device that re-enumerates as something else** (DFU detach, a firmware loader, adb ↔ fastboot) is a new device
+  without permission: the page offers it from `connect`, and the grant persists per origin after that.
+- **Workers:** `navigator.usb` exists in dedicated workers (`requestDevice` is Window-only), so the page asks and the
+  device worker opens the device by its identity. `getDevices()` order, which tells identical serial-less devices
+  apart, holds within a browser session only. Only Chromium has WebUSB; it works under COOP/COEP (an embedding
+  iframe needs `allow="usb"`).
+
+**WebHID:**
+- **A HID device, not a USB one:** `HIDDevice` has the vendor and product IDs, the product name and `collections`, the
+  report descriptor already parsed; the raw descriptor, the USB descriptors, the serial number and the polling
+  interval aren't exposed. So the device is rebuilt, not passed through ("The WebHID device"). Drivers that read
+  reports by ID and offset work; the few that patch the original descriptor by its bytes (`report_fixup`) see ours.
+- **Protected usages are hidden:** the Keyboard page, Generic Desktop keyboard, keypad, mouse and pointer
+  collections (their feature reports stay open: VIA works) and System Control; FIDO keys are blocklisted. A
+  keyboard's vendor collection reaches the guest without its keyboard. Keyboards and mice themselves stay virtio-input.
+- **The host keeps its driver** (hidraw, IOHIDManager, the Windows HID driver): nothing is unbound, and on Linux the
+  user needs access to `/dev/hidraw*`. `navigator.hid` works in dedicated workers too.
+- **Out of its reach:** devices whose only collections are protected, and game pads that aren't HID on the host
+  (wired Xbox controllers are vendor-class: WebUSB's, and `xpad` drives them: "Findings").
+
+## Why an xHCI, and on the DT
+
+- **xHCI** covers every speed with one controller, and is what Linux and EDK2 expect. EHCI with companion OHCI/UHCI
+  controllers needs two controllers, has no USB 3 and an older, quirkier interface.
+- **On the DT, not PCI:** Linux's `xhci-plat-hcd` binds `generic-xhci` with one MMIO window and one interrupt, and
+  distribution kernels for arm64 boards build it (Alpine's `linux-virt` doesn't: "Findings"). PCI would need an ECAM
+  host bridge first, worth having only for its own reasons ([firmware.md](firmware.md) "DT or ACPI"); the register
+  block is bus-agnostic, so a PCI wrapper could reuse it. EDK2 takes it as a non-discoverable device ("The keyboard").
+- **Not USB/IP:** every guest would need `vhci-hcd`, the tool and a command run inside it, and a TCP endpoint the
+  Ethernet gateway doesn't have. **Not a virtual-HCI driver of ours:** a module per guest kernel, so not unmodified
+  images. Upstream Linux has no virtio-usb.
+
+## What WebUSB can't attach, and where it goes instead
+
+| Device | Route |
+|---|---|
+| Keyboards, mice, tablets | the page's input, as virtio-input (and the built-in USB keyboard in the firmware) |
+| Game pads and other HID | WebHID → the emulated HID device |
+| Game pads that aren't HID and that the host holds | the Gamepad API → an emulated USB HID game pad with a fixed descriptor of ours (not built: backlog) |
+| Flash drives, disks | the page's disks; a raw USB disk is out of reach in a browser |
+| Webcams, microphones, headsets | `getUserMedia` (the page already records through virtio-snd); a camera would be an emulated UVC device or virtio-video |
+| Serial adapters the host's driver holds | WebSerial → a virtio-console port (not built: backlog) |
+| Bluetooth adapters | none (Web Bluetooth is GATT-level only) |
+
+## Findings
+
+**Before building (2026-10-18; Chromium 153.0.8010.52, kernel 7.2.9, QEMU 11.1.2).** The rigs are in
+[testing.md](testing.md) "USB: the dev VM's host rigs".
+- **Permission without a prompt** comes only from Chromium's managed policy (exact origins). DevTools'
+  `DeviceAccess.deviceRequestPrompted` never fires for WebUSB or WebHID, and headless `requestDevice` just waits.
+- **WebUSB's cost** (Gadget Zero on dummy_hcd, from a worker; a sizing, `bench/usb/REPORT.md`): ~0.13 ms per
+  transfer over usbfs's 0.20 ms (dummy_hcd's own floor), so a driver that waits on each transfer gets ~3,000 a
+  second; 1 MiB bulk transfers ~180 MB/s. More transfers in flight were slower on dummy_hcd (cause not separated).
+  usbfs caps buffered transfers at 16 MiB (`usbcore.usbfs_memory_mb`) for every device Chromium has open.
+- **Guest kernels:** Debian 13 has `xhci-plat-hcd` as a module (autoloaded) and the rest as modules; Arch builds it
+  in; **Alpine's `linux-virt` lacks it** (only `xhci-pci`), so Alpine needs `linux-lts` or `linux-stable` for USB.
+- **The QEMU oracle** (`tests/usb/oracle.sh`: `qemu-xhci` with `usb-host` on the dummy_hcd Gadget Zero): every
+  testusb test passes or is skipped except 24 (unlink from queues), which hangs on QEMU every time, with events for
+  TRBs outside any TD. Ours passes 24, natively and through WebUSB.
+- **WebHID's parse** (`tests/usb/hid-fixtures/`): Chromium lists each item in its collection and every collection
+  around it, reports not in descriptor order (stable from run to run), usages 32-bit. On a keyboard composite the
+  Keyboard collection keeps only its feature report, System Control goes, Mouse stays empty though its Pointer child
+  lists its input report (which never arrives). `inputreport` data has no ID byte, `receiveFeatureReport`'s starts
+  with the ID when the device uses IDs (recorded on Linux).
+
+**Real devices (2026-10-18; the user's, on the Mac mini, macOS 26.6.2, Chrome for Testing 153 driven from the dev
+VM; the recipe is in [testing.md](testing.md) "USB: real devices on the Mac"; guest Debian 13):**
+- **A Nooelec NESDR SMArt v5** (RTL2832U, high speed): `dvb_usb_rtl28xxu` and `rtl2832_sdr` initialise it whole;
+  bulk IN through `/dev/swradio0` at **4.80 MB/s at 2.4 MS/s and 6.40 MB/s at 3.2 MS/s** (the chip's highest), the
+  device's whole rate, with no loss; a stream's start costs ~1.6 s (the tuner's setup in many control transfers).
+  Unplugged and plugged back while the guest ran, it came back on the same connector.
+- **An FTDI FT232R** (full speed): Chrome claims it although macOS's `AppleUSBFTDI` holds it; `ftdi_sio` attaches,
+  and with TX wired to RX data comes back whole at 115200, 1M and 3M baud, at 96–97% of the line rate.
+- **A PowerA wired Xbox Series X controller** (`20d6:2001`, full speed, GIP): its audio interface's 228-byte
+  isochronous endpoints made the speed heuristic say high speed (fixed: only what full speed can't do counts).
+  `xpad` binds it, every input reaches the guest, and its init packet proves interrupt OUT.
+- **Chrome for Testing on macOS** reads its policies from `com.google.ChromeForTesting`, not its bundle ID, and
+  listed none of the policy's devices in a reused profile.
+- **A reset with interfaces claimed** leaves Chromium's claims stale on Linux (reported claimed; release and claim
+  fail until close), and WebUSB's `NotFoundError` also means "not a claimed endpoint": the passthrough releases
+  before `device.reset()` and takes only "The device was disconnected." as an unplug.
 
 ## The controller (`core/src/xhci.rs`)
 
@@ -133,7 +239,7 @@ positions, the event ring's producer and segment table, the events waiting for r
 ERSTBA and ERDP written without their high ones yet. It needs the
 ports empty and nothing in flight. A machine with a device plugged in can't be saved:
 `vm_snapshot_size` returns `u64::MAX` and `vm.snapshot()` says to detach it. The detach completes
-in-flight TDs with errors, so the state is consistent without waiting on the guest (plans/usb.md §4a).
+in-flight TDs with errors, so the state is consistent without waiting on the guest ("The page", "Snapshot and Suspend").
 A restored controller has empty ports, and its connectors' generations start again at 0, as the new
 glue's do. The machine's configuration words gain `xhci` only when it is set, so the snapshots of
 machines without one keep their format.
@@ -240,7 +346,7 @@ controller with. It behaves as Linux's `g_zero` (f_sourcesink and f_loopback), f
 - **Speeds:** high (512-byte bulk packets, a device qualifier, full-speed other-speed configurations),
   super (1024 bytes with companions, `bcdUSB` 3.20, a BOS with the USB 2.0 extension and the SuperSpeed
   capability) or full (64 bytes).
-- No isochronous alternate setting (U6), and no interrupt endpoints (f_sourcesink has none now).
+- No isochronous alternate setting, and no interrupt endpoints (f_sourcesink has none now).
 
 Its native twin is in `core/tests/common/usb.rs`, so native boots give the guest the same bytes.
 
@@ -323,7 +429,7 @@ calls `gone` on WebUSB's `disconnect` event.
    string index the descriptors reference, in every language.
 3. If the device has no configuration, its first one is selected.
 4. Every interface of the active configuration that isn't protected is claimed. An interface is
-   protected when any of its alternate settings has a class WebUSB refuses (plans/usb.md §2).
+   protected when any of its alternate settings has a class WebUSB refuses ("What the browser allows").
 5. The configuration descriptors the guest gets leave out the protected interfaces, and the ones that
    failed to claim. A dropped interface takes with it its descriptors up to the next interface or
    IAD. `bNumInterfaces` and `wTotalLength` are rewritten. An IAD shrinks to the interfaces left in
@@ -379,7 +485,7 @@ follows it does the work.
 - Results map to codes: `ok` is `success`, or `short` when fewer bytes than asked; `stall` is `stall`;
   `babble` is `babble` (with its data); a rejected promise is `error`. A `NotFoundError` also calls
   `gone`.
-- Isochronous TDs complete with `error` until U6.
+- Isochronous TDs complete with `error` (isochronous transfers aren't implemented: backlog.md "USB").
 
 **IN data outlives a cancel.** Each IN endpoint is a stream:
 - WebUSB transfers in flight, in order.
@@ -406,16 +512,12 @@ closes the device.
 **Tests:** `tests/usb-webusb.test.ts` runs the backend against a scripted fake (`tests/usb/fake-webusb.ts`).
 The fake answers GET_DESCRIPTOR from raw descriptors, refuses protected classes as Chromium does, refuses
 interfaces a "host driver" holds, and leaves each IN pending until the test answers it. The descriptors in
-`tests/usb/webusb-fixtures.ts` are **transcribed** from public documentation and `lsusb -v` layouts, not
-recorded:
-- an FTDI FT232R, a CP2102, an RTL2832U
-- a Pico with CDC and its reset interface, with a BOS
-- an Android phone in MTP and adb
-- a DAPLink with mass storage, CDC, HID and vendor interfaces
-- an FX3 at SuperSpeed
-- a low-speed USBasp
-
-U5 replaces them with the user's dumps.
+`tests/usb/webusb-fixtures.ts`:
+- **recorded** from the user's devices through WebUSB: an FTDI FT232R, a Nooelec NESDR (RTL2832U) and a PowerA
+  wired Xbox controller;
+- **transcribed** from public documentation and `lsusb -v` layouts: a CP2102, a Pico with CDC and its reset
+  interface (with a BOS), an Android phone in MTP and adb, a DAPLink with mass storage, CDC, HID and vendor
+  interfaces, an FX3 at SuperSpeed and a low-speed USBasp. A real dump replaces one when such a device is at hand.
 
 ## The WebHID device (`web/webhid.ts`, `web/hid-descriptor.ts`)
 
@@ -590,7 +692,7 @@ Each entry is an identity, not a device. The browser's grant persists per origin
 device again with `getDevices()` and needs no click.
 - **Identical devices without a serial number** are told apart by `index`, their position among their twins in
   `getDevices()` order (`matchDevices`, `identityAt`). **That order holds only within a browser session.** It is
-  the same on every call, and the same in the page and in a worker (U0 measured it on Chromium 153 with two
+  the same on every call, and the same in the page and in a worker (measured on Chromium 153 with two
   serial-less Gadget Zeros). A restarted browser can list the twins the other way round, so after a restart an
   entry's twin may be the other device, on the entry's connector. That is harmless for truly identical devices,
   but not for two boards flashed differently. The USB tab says so when a machine has such twins. WebHID

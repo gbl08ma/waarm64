@@ -1,5 +1,5 @@
-// The uhid rig's HID devices (tests/usb/uhid.ts, docs/plans/usb.md §5 and U0): report descriptors that cover what
-// the WebHID backend's encoder must round-trip (docs/plans/usb.md §4 "The WebHID backend"). Chromium's parse of
+// The uhid rig's HID devices (tests/usb/uhid.ts, docs/testing.md "USB: the dev VM's host rigs"): report descriptors that cover what
+// the WebHID backend's encoder must round-trip (docs/usb.md "The WebHID device"). Chromium's parse of
 // each is recorded in tests/usb/hid-fixtures/<id>.json by tests/usb/hid-record.ts.
 //
 // Only `dualsense` stands for a real device, and it is transcribed, not dumped: written from public dumps of the

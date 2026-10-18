@@ -1,4 +1,4 @@
-// U0's WebUSB sizing (docs/plans/usb.md §6, bench/usb/REPORT.md): Chromium's WebUSB in a dedicated worker against
+// WebUSB's sizing (docs/usb.md "Findings", bench/usb/REPORT.md): Chromium's WebUSB in a dedicated worker against
 // the dummy_hcd Gadget Zero (tests/usb/gadget.sh up zero zero-a zero-b). A sizing of what a guest can expect, not a
 // benchmark: the dev VM's other work shares the CPU.
 //

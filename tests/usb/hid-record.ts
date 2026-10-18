@@ -1,6 +1,6 @@
 // Records Chromium's parse of the uhid rig's report descriptors (tests/usb/hid-descriptors.ts) into
 // tests/usb/hid-fixtures/<id>.json ({ descriptor: hex, collections: HIDDevice.collections as JSON, ... }) and the raw
-// descriptor beside it as <id>.rdesc. The WebHID backend's encoder round-trips against these (docs/plans/usb.md U3h).
+// descriptor beside it as <id>.rdesc. The WebHID backend's encoder round-trips against these (docs/usb.md "The WebHID device").
 // Re-record when the pinned Chromium moves: node tests/usb/hid-record.ts (needs the uhid rig: tests/usb/gadget.sh install).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { DESCRIPTORS } from './hid-descriptors.ts';

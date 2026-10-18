@@ -1133,7 +1133,7 @@ async function keepSnapshot(name: string) {
 async function suspend() {
   const r = run;
   if (!r || saving || switching || !(state === 'running' || state === 'booting')) return;
-  // Its devices are unplugged first; the next start attaches the ones attached at start (docs/plans/usb.md §4a).
+  // Its devices are unplugged first; the next start attaches the ones attached at start (docs/usb.md "The page").
   const unplugged = await emptyPorts(r, 'Suspending');
   if (!unplugged || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
   saving = true;
@@ -1400,7 +1400,7 @@ if (location.hash === '#machines') openMachines();
 for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => audio.gesture(), { capture: true });
 if (params.has('snd')) (window as unknown as { __audio?: PageAudio }).__audio = audio; // tests and measurements (?snd=stats)
 
-// USB (docs/plans/usb.md §4a, docs/usb.md "The page"; the USB tab is web/app/Usb.svelte, the menu UsbMenu.svelte): a
+// USB (docs/usb.md "The page"; the USB tab is web/app/Usb.svelte, the menu UsbMenu.svelte): a
 // machine with a controller (a stored one's `usb`, a transient one's `?usb=1`) attaches its remembered devices when it
 // runs, by their identities: the device worker opens them (web/usb-device.ts). A device is one machine's at a time (its
 // Web Lock, web/app/usb-live.ts); Snapshot and Suspend empty the ports first.
@@ -1595,7 +1595,7 @@ async function rememberAndAttach(api: Api, device: HostDevice, o: { connector?: 
 
 // A device plugged in with a grant (WebUSB and WebHID say so only for those): an entry attached at start goes on; a
 // remembered one not attached at start, or one this machine doesn't remember, is offered; one right after an attached
-// device left takes that one's connector (re-enumeration: docs/plans/usb.md §2).
+// device left takes that one's connector (re-enumeration: docs/usb.md "What the browser allows").
 for (const api of ['usb', 'hid'] as const) {
   browserApi(api)?.addEventListener('connect', (ev) => void connected(api, ev.device));
   browserApi(api)?.addEventListener('disconnect', () => syncUsb());
@@ -1622,7 +1622,7 @@ async function connected(api: Api, device: HostDevice) {
 
 type Unplugged = { connector: number; device: UsbIdentity | UsbVirtual; entry?: string }[];
 /**
- * Snapshot and Suspend need the ports empty (docs/plans/usb.md §4a): with devices attached it asks once, naming them,
+ * Snapshot and Suspend need the ports empty (docs/usb.md "The page"): with devices attached it asks once, naming them,
  * and detaches them. Returns what was attached (to attach again after), or undefined when the user says no.
  */
 async function emptyPorts(r: Run, what: string): Promise<Unplugged | undefined> {

@@ -213,12 +213,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     no HEVC decoder of its own, and VA-API's parameters would need every slice header rewritten (backlog.md).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts; USB devices from the user's computer through WebUSB and WebHID (an xHCI, a
-    passthrough backend and an emulated HID device: [docs/plans/usb.md](docs/plans/usb.md)): **U0–U4 done
-    (2026-10-18)**, the controller off unless a machine has it (new machines do), its tests' rigs in
-    `scripts/ci-usb.sh`; U5 closed with the user's devices (an RTL-SDR at its full rate, an FT232R, a wired Xbox
-    controller); U6's keyboard done (a built-in USB keyboard of ours on EDK2's USB stack, so the firmware and GRUB
-    get real keys on a machine with the controller), U6's isochronous transfers skipped (the user: WebUSB protects
-    the classes that use them). `M8-USB-HANDOVER.md`.
+    passthrough backend and an emulated HID device: [docs/usb.md](docs/usb.md)): **done (2026-10-18)**, the
+    controller off unless a machine has it (new machines do), its tests' rigs in `scripts/ci-usb.sh`; checked on
+    the user's devices (an RTL-SDR at its full rate, an FT232R, a wired Xbox controller); a built-in USB keyboard of
+    ours on EDK2's USB stack gives the firmware and GRUB real keys on a machine with the controller. Isochronous
+    transfers left out (the user: WebUSB protects the classes that use them); loose ends in backlog.md "USB".
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save
     snapshot writes the running machine to a file the user keeps (Debian: 175 MB, the machine
     paused 1.4 s) and Load snapshot resumes it, in a fresh profile too, in 2.1 s instead of a 55 s
