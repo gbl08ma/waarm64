@@ -230,7 +230,7 @@ type Backend = {
    * as JSON, and the same given to a new backend. The core posts held requests to a restored VM's
    * backends again, so one that only holds buffers has neither.
    */
-  save?(): unknown; restore?(state: unknown): void;
+  save?(): unknown | Promise<unknown>; restore?(state: unknown): void;
   /** A writable disk's changes, for a snapshot: the blocks (4 KiB) its overlay holds, and their bytes. */
   written?(): { blocks: number[]; generation?: number }; blocks?(blocks: number[]): Uint8Array;
 };
@@ -725,6 +725,18 @@ export type DevicesInit = {
   xhci?: { shared: number; port?: MessagePort; attach?: UsbAttach[] };
 };
 
+/** The buffers of the Uint8Arrays in a saved state (`Devices.save`), to transfer it to another thread. */
+export function stateBuffers(state: unknown): ArrayBuffer[] {
+  const out = new Set<ArrayBuffer>();
+  const walk = (v: unknown) => {
+    if (v instanceof Uint8Array) { if (v.buffer instanceof ArrayBuffer) out.add(v.buffer); }
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+  };
+  walk(state);
+  return [...out];
+}
+
 export class Devices {
   private memory: WebAssembly.Memory;
   private shared: number[];
@@ -806,9 +818,12 @@ export class Devices {
     return this.backends[i].blocks!(blocks);
   }
 
-  /** Each backend's state for a snapshot (null: none), with the devices quiet (`poll` resolved). */
-  save(): unknown[] {
-    return this.backends.map((b) => b.save?.() ?? null);
+  /**
+   * Each backend's state for a snapshot (null: none), with the devices quiet (`poll` resolved): JSON, but for
+   * Uint8Arrays (the display's 3D contents), which web/snapshot.ts writes as frames of their own.
+   */
+  save(): Promise<unknown[]> {
+    return Promise.all(this.backends.map((b) => b.save?.() ?? null));
   }
 
   /** Builds the backends, opening any overlays first (OPFS handles are created asynchronously). */

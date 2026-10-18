@@ -397,13 +397,18 @@ mode (and natively in realtime mode: std has no CSPRNG).
   transfers only dumb buffers, so `UPDATE_CURSOR` on a 3D resource reads its pixels back from the renderer
   (`VirglHost.read`, after the commands before it; QEMU's `virgl_renderer_get_cursor_data`) and shows them, unless
   another update came meanwhile.
-- **Snapshots** (the G3 kickoff's decision 3: a machine with 3D that isn't using it saves): contexts that never
-  submitted (a process holding the render node open: Alpine's initramfs keeps one) are saved and made again in the
-  renderer on restore; a context that submitted, or a 3D resource, has objects outside guest RAM, so `save()` marks
-  the machine `unsaveable` and `vm.snapshot` refuses with the reason until they're gone. The caps the guest read are
-  saved; a restore in a browser that can't back them (`capsBacked`) keeps them for the guest and turns 3D off (new
-  contexts refused) rather than refusing the machine. The restore tells the host what the scanout shows (the GPU
-  worker draws the screen on a 3D machine).
+- **Snapshots** ([plans/graphics.md](plans/graphics.md) §22): with 3D in use (a context that submitted, or a 3D
+  resource), `save()` (async) asks the host (`VirglHost.save`: the GPU worker, after every call before it and once its
+  queries have their results) for the renderer's state: every resource's description, backing and contents read back,
+  and every context's sub-contexts, their objects and bound state as data (`VirglRenderer.save`). The device adds its
+  3D tables (the resources' gallium fields, the contexts' attachments, the contexts that submitted). The contents are
+  Uint8Arrays in the state, which the snapshot file carries as BLOB frames. A restore sends the state to the new host
+  (`load`), which makes everything again in a fresh renderer. Refused (`unsaveable`, and `vm.snapshot` refuses with
+  the reason) only while a context has video codecs or buffers (WebCodecs keeps its reference pictures), or a host
+  without `save`. Contexts that never submitted are made again; on the null renderer only the tables are kept. The
+  caps the guest read are saved; a restore in a browser that can't back them (`capsBacked`) keeps them for the guest
+  and turns 3D off (new contexts refused, a saved 3D state not loaded) rather than refusing the machine. The restore
+  tells the host what the scanout shows (the GPU worker draws the screen on a 3D machine).
 - **Video** ([plans/video.md](plans/video.md); on with 3D, `?gpu=novideo` off): the caps' `video_caps` list the decoders
   the browser's `VideoDecoder` takes (H.264 Constrained Baseline, Main and High, VP9 profile 0, AV1 Main 8-bit; `web/virgl-video.ts`
   `probeVideo`, in the GPU worker before it answers, which also notes which are in hardware), so the guest's Mesa offers

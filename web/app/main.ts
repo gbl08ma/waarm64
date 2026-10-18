@@ -649,6 +649,9 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         start(snapshot, resume, plan);
       } else if (m.type === 'lost') {
         setState('crashed', 'The browser lost the WebGL context the screen was drawn with.', ACTIONS.emulator);
+      } else if (m.type === 'snapshotBytes') {
+        bytesAsked.get(m.id)?.(m.bytes);
+        bytesAsked.delete(m.id);
       } else if (m.type === 'render-stats') ((window as unknown as { __renderStats?: unknown[] }).__renderStats ??= []).push(m);
       else if (m.type === 'flash') flashed(m.t);
     };
@@ -1026,6 +1029,29 @@ let snapshotJob: { progress(phase: string, fraction: number): void; chunk(data: 
 const SNAPSHOT_SUFFIX = '.webpcsnap';
 const mb = bytesText;
 
+/** Past this, a snapshot says how much the 3D state adds to it and asks first (docs/plans/graphics.md §22). */
+const GRAPHICS_WARN = 64 << 20;
+const bytesAsked = new Map<number, (bytes: number) => void>();
+let bytesAskId = 0;
+
+/** The bytes a snapshot would hold for the 3D resources, before compression (the GPU worker's count; 0 without 3D, or without an answer). */
+function graphicsBytes(r: Run) {
+  const gpu = r.gpu;
+  if (!gpu) return Promise.resolve(0);
+  const id = ++bytesAskId;
+  return new Promise<number>((resolve) => {
+    const t = setTimeout(() => { bytesAsked.delete(id); resolve(0); }, 1000);
+    bytesAsked.set(id, (bytes) => { clearTimeout(t); resolve(bytes); });
+    gpu.postMessage({ type: 'snapshotBytes', id } satisfies ToGpuWorker);
+  });
+}
+
+/** Whether to take the snapshot: yes, unless the 3D state is large and the user says no. */
+async function graphicsOk(r: Run) {
+  const bytes = await graphicsBytes(r);
+  return bytes < GRAPHICS_WARN || ask.confirm(`The machine is using 3D: its graphics memory (textures and buffers) adds up to ${mb(bytes)} to the snapshot before compression, and the machine pauses while it is read. Take the snapshot anyway?`, { title: 'A large snapshot', ok: 'Take it' });
+}
+
 /**
  * Saves a snapshot of the running machine: to a file (the picker, or a download), or, for a stored machine by default,
  * kept in the browser under a name (docs/plans/machines.md §5.2). `whole`: a disk written in place goes into the file
@@ -1040,7 +1066,9 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
   const suggestedName = `${stored ? stored.record.name.replace(/[^\w.-]+/g, '-') : machine}-${stamp}${SNAPSHOT_SUFFIX}`;
   // A stored machine's is kept at once, named by the time (Snapshot is the toolbar's panic button: renamed later, on the Machines page).
   if (stored && !o.toFile) return keepSnapshot(d.toLocaleString());
-  // The picker first, as a disk's Export does: it needs the click's user activation. The machine isn't stopped, so nothing is asked.
+  // A large 3D state is asked about first (its OK is a click: the picker after it has its user activation).
+  if (!(await graphicsOk(r)) || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
+  // The picker next, as a disk's Export does: it needs the click's user activation. The machine isn't stopped, so nothing is asked.
   let handle: FileSystemFileHandle | undefined;
   const picker = (window as unknown as { showSaveFilePicker?: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
   if (picker) {
@@ -1094,6 +1122,7 @@ async function keepSnapshot(name: string) {
   const r = run;
   const s = stored;
   if (!r || !s || saving || switching || !(state === 'running' || state === 'booting')) return;
+  if (!(await graphicsOk(r)) || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
   const unplugged = await emptyPorts(r, 'Taking a snapshot');
   if (!unplugged || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
   saving = true;

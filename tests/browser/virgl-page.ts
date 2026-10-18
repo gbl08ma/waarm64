@@ -28,8 +28,9 @@ export function compileCorpus(corpus: string) {
   return { programs, failures, ms: performance.now() - t0, renderer: gl.getParameter(gl.RENDERER) as string };
 }
 
-import { VirglRenderer } from '../../web/virgl-renderer.ts';
-import { CallQueue, localHost, runCall, type HostCall } from '../../web/virgl-host.ts';
+import { VirglRenderer, type RendererSnapshot, type ResourceDesc, type SavedLevel } from '../../web/virgl-renderer.ts';
+import { FORMATS } from '../../web/virgl-formats.ts';
+import { CallQueue, localHost, portHost, runCall, type HostCall } from '../../web/virgl-host.ts';
 import { replay, replayAsync } from '../../web/virgl-replay.ts';
 import { Gpu } from '../../web/gpu.ts';
 import { canvasPresenter } from '../../web/gpu-present.ts';
@@ -183,6 +184,174 @@ export function replayTrace(trace: Uint8Array, read?: number) {
   const pixels = read ? r.readResource(read) : null;
   const fmt = read ? r.resources.get(read)?.format : undefined;
   return { stats: r.stats, log, ms, scanout, read, fmt, width: read ? r.resources.get(read)?.width : 0, height: read ? r.resources.get(read)?.height : 0, replies: [...new Set(res.replies)], pixels: pixels ? Array.from(pixels) : null, renderer: gl.getParameter(gl.RENDERER) as string, glError: gl.getError() };
+}
+
+/**
+ * `replayTrace` with snapshots: after each submit numbered in `at`, the renderer's state is saved (`save`), carried
+ * as a snapshot file carries it (JSON, its Uint8Arrays apart: web/snapshot.ts), and loaded into a fresh renderer on a
+ * new WebGL2 context, which goes on with the trace. Each save is also saved again from the renderer it loaded into,
+ * at once: the resources whose contents differ (what a load or a save loses) are listed.
+ */
+export function replaySaved64(trace: string, read: number, at: number[]) {
+  const log: string[] = [];
+  const saves: { bytes: number; resources: number; lost: string[]; differ: string[] }[] = [];
+  let ram!: () => Uint8Array;
+  let r!: VirglRenderer;
+  const fresh = () => new VirglRenderer(new OffscreenCanvas(16, 16).getContext('webgl2')!, { ram, log: (m) => log.push(m) });
+  let submits = 0, errors = 0;
+  const carry = (s: RendererSnapshot) => {
+    const blobs: Uint8Array[] = [];
+    const json = JSON.stringify(s, (_k, v: unknown) => (v instanceof Uint8Array ? { $blob: blobs.push(v.slice()) - 1 } : v));
+    return JSON.parse(json, (_k, v: unknown) => (v && typeof v === 'object' && '$blob' in v ? blobs[(v as { $blob: number }).$blob] : v)) as RendererSnapshot;
+  };
+  const res = replay(fromBase64(trace), (ramOf) => {
+    ram = ramOf;
+    r = fresh();
+    return {
+      call(c) {
+        runCall(c, r);
+        if (c.t !== 'submit' || !at.includes(++submits)) return;
+        const saved = r.save();
+        errors += r.stats.errors;
+        const next = fresh();
+        next.load(carry(saved));
+        const again = next.save();
+        const differ: string[] = [];
+        for (const [k, a] of saved.resources.entries()) {
+          const b = again.resources[k];
+          const same = a.levels.length === b?.levels.length && a.levels.every((l, j) => l.data.length === b.levels[j].data.length && l.data.every((x, i) => x === b.levels[j].data[i]));
+          if (!same) differ.push(`${a.desc.id} (format ${a.desc.format}, target ${a.desc.target}, ${a.desc.width}x${a.desc.height}, samples ${a.desc.samples})`);
+        }
+        saves.push({ bytes: saved.resources.reduce((n, x) => n + x.levels.reduce((m, l) => m + l.data.length, 0), 0), resources: saved.resources.length, lost: saved.resources.filter((x) => x.lost).map((x) => `${x.desc.id}: ${x.lost}`), differ });
+        (r.gl.getExtension('WEBGL_lose_context') as { loseContext(): void } | null)?.loseContext();
+        r = next;
+      },
+      fence: () => undefined,
+    };
+  }, { lastSubmit: true });
+  r.gl.finish();
+  const scanout = res.gpu.state().scanout;
+  if (read === -1) read = scanout?.id ?? 0;
+  const pixels = read ? r.readResource(read) : null;
+  return { errors: errors + r.stats.errors, log, saves, submits, glError: r.gl.getError(), width: read ? r.resources.get(read)?.width : 0, height: read ? r.resources.get(read)?.height : 0, pixels64: pixels ? toBase64(pixels) : null };
+}
+
+/**
+ * Every format this WebGL2 has, as each kind of resource (2D with two levels, a cube, a 2D array, a 3D texture, and
+ * 4 samples where it renders), given contents through a snapshot's load (`VirglRenderer.load`) and saved back: the
+ * resources whose saved contents differ from what was loaded, and those whose contents are lost. The contents are
+ * values each format holds exactly (depths on the format's grid, finite floats).
+ */
+export function snapshotFormats() {
+  const gl = new OffscreenCanvas(16, 16).getContext('webgl2')!;
+  const log: string[] = [];
+  const r = new VirglRenderer(gl, { ram: () => new Uint8Array(0), log: (m) => log.push(m) });
+  const has = (names?: string[]) => !names || names.some((n) => gl.getSupportedExtensions()!.includes(n));
+  let seed = 1;
+  const rand = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 8) & 0xff;
+  const differ: string[] = [], lost: string[] = [];
+  let checked = 0, id = 1;
+  for (const f of FORMATS.values()) {
+    if (!has(f.needs)) continue;
+    const zs = f.kind === 'depth' || f.kind === 'depthstencil' || f.kind === 'stencil';
+    const renders = !!f.write && has(f.renderNeeds);
+    const kinds: [string, Partial<ResourceDesc>][] = [['2d', { target: 2, lastLevel: 1 }]];
+    if (!zs && f.block === 1) kinds.push(['cube', { target: 4, arraySize: 6 }], ['array', { target: 7, arraySize: 3 }], ['3d', { target: 3, depth: 2 }]);
+    if (zs) kinds.push(['array', { target: 7, arraySize: 2 }]);
+    if (f.kind === 'stencil') kinds.splice(0, kinds.length, ['2d', { target: 2 }]);
+    if ((renders || zs) && f.block === 1 && f.kind !== 'uint' && f.kind !== 'sint') kinds.push(['4 samples', { target: 2, samples: 4 }]);
+    for (const [what, k] of kinds) {
+      const desc: ResourceDesc = { id: id++, target: 2, format: f.id, bind: 0, width: 8, height: 8, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0, ...k };
+      const levels: SavedLevel[] = [];
+      for (let level = 0; level <= desc.lastLevel; level++) {
+        const w = Math.max(1, desc.width >> level), h = Math.max(1, desc.height >> level), d = desc.target === 3 ? Math.max(1, desc.depth >> level) : desc.arraySize;
+        const n = w * h * d;
+        if (zs) {
+          const hasD = f.kind !== 'stencil', hasS = f.kind !== 'depth';
+          const data = new Uint8Array((hasD ? 4 * n : 0) + (hasS ? n : 0));
+          const grid = f.id === 16 ? 65535 : f.id === 18 || f.id === 126 ? 0 : 16777215;
+          if (hasD) new Float32Array(data.buffer, 0, n).forEach((_, i, a) => { a[i] = grid ? ((rand() << 8 | rand()) % (grid + 1)) / grid : rand() / 255; });
+          if (hasS) for (let i = 0; i < n; i++) data[(hasD ? 4 * n : 0) + i] = rand();
+          levels.push({ level, how: 'zs' as const, data });
+          continue;
+        }
+        const bytes = Math.ceil(w / f.block) * Math.ceil(h / f.block) * d * f.bpp;
+        const data = new Uint8Array(bytes).map(rand);
+        if (f.kind === 'float') {
+          // Finite values: a half's or a float's exponent kept below all ones (no NaN to canonicalize).
+          const size = f.type === 0x140b ? 2 : 4;
+          for (let i = size - 1; i < data.length; i += size) data[i] &= 0x3f;
+          if (f.type === 0x8c3b || f.type === 0x8c3e) data.fill(0x10);
+        }
+        if (f.kind === 'snorm') for (let i = 0; i < data.length; i++) if (data[i] === 0x80) data[i] = 0x81;
+        levels.push({ level, how: 'bytes' as const, data });
+      }
+      const name = `${f.name} ${what}`;
+      r.load({ version: 1, resources: [{ desc, backing: null, levels }], contexts: [] });
+      const saved = r.save().resources[0];
+      checked++;
+      if (saved.lost) { lost.push(`${name}: ${saved.lost}`); continue; }
+      // A unorm depth is compared on its grid: the float a GL samples may be an ulp off the one written.
+      const grid = f.kind === 'depth' || f.kind === 'depthstencil' ? (f.id === 16 ? 65535 : f.id === 18 || f.id === 126 ? 0 : 16777215) : 0;
+      if (grid) for (const l of [...levels, ...saved.levels]) {
+        const n = l.data.length / (f.kind === 'depth' ? 4 : 5);
+        new Float32Array(l.data.buffer, l.data.byteOffset, n).forEach((v, i, a) => { a[i] = Math.round(v * grid); });
+      }
+      const same = saved.levels.length === levels.length && saved.levels.every((l, j) => l.how === levels[j].how && l.data.length === levels[j].data.length && l.data.every((x, i) => x === levels[j].data[i]));
+      if (!same) {
+        const l = saved.levels.findIndex((l, j) => l.data.some((x, i) => x !== levels[j]?.data[i]));
+        const i = l >= 0 ? saved.levels[l].data.findIndex((x, i) => x !== levels[l].data[i]) : -1;
+        differ.push(`${name}: level ${l} byte ${i}: ${l >= 0 ? `${levels[l].data[i]} saved as ${saved.levels[l].data[i]}` : `${saved.levels.length} levels`}`);
+      }
+    }
+  }
+  return { checked, differ, lost, log: log.filter((m) => !m.startsWith('snapshot:')), glError: gl.getError() };
+}
+
+/**
+ * A snapshot through the page's GPU worker (web/gpu-worker.ts) and its port (`portHost`), as a machine takes one: a
+ * context with a sub-context's object, a texture and a buffer given bytes by transfers; saved (the contents cross
+ * the port), loaded into a second GPU worker, and read back there. Returns what was read, and the saved shape.
+ */
+export async function workerSnapshot() {
+  const start = async () => {
+    const w = new Worker(new URL('../../web/gpu-worker.ts', import.meta.url), { type: 'module' });
+    const canvas = new OffscreenCanvas(64, 64), ch = new MessageChannel();
+    const ready = new Promise<{ type: string }>((resolve) => { w.onmessage = (e) => resolve(e.data); });
+    w.postMessage({ type: 'init', canvas, port: ch.port1 }, [canvas, ch.port1]);
+    const m = await ready;
+    if (m.type !== 'ready') throw new Error(`the GPU worker: ${JSON.stringify(m)}`);
+    const ram = new Uint8Array(new SharedArrayBuffer(4096));
+    const host = portHost(ch.port2);
+    host.call({ t: 'ram', buffer: ram.buffer, offset: 0, length: ram.length });
+    return { w, host, ram };
+  };
+  const a = await start();
+  const tex = { id: 5, target: 2, format: 67, bind: 0x8, width: 4, height: 4, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 };
+  const buf = { id: 6, target: 0, format: 64, bind: 0x10, width: 64, height: 1, depth: 1, arraySize: 1, lastLevel: 0, samples: 0, flags: 0 };
+  for (let k = 0; k < 128; k++) a.ram[k] = (k * 37 + 11) & 0xff;
+  a.host.call({ t: 'ctx', id: 1, create: true });
+  for (const desc of [tex, buf]) {
+    a.host.call({ t: 'res', desc });
+    a.host.call({ t: 'ctxres', ctx: 1, res: desc.id, attach: true });
+  }
+  a.host.call({ t: 'backing', id: 5, backing: [{ off: 0, len: 64 }] });
+  a.host.call({ t: 'backing', id: 6, backing: [{ off: 64, len: 64 }] });
+  a.host.call({ t: 'transfer', ctx: 1, res: 5, level: 0, box: { x: 0, y: 0, z: 0, w: 4, h: 4, d: 1 }, offset: 0, stride: 16, layerStride: 0, toHost: true });
+  a.host.call({ t: 'transfer', ctx: 1, res: 6, level: 0, box: { x: 0, y: 0, z: 0, w: 64, h: 1, d: 1 }, offset: 0, stride: 0, layerStride: 0, toHost: true });
+  // A blend state (CREATE_OBJECT, handle 3) bound (BIND_OBJECT).
+  a.host.call({ t: 'submit', ctx: 1, words: new Uint32Array([1 | 1 << 8 | 11 << 16, 3, 0, 0, 0x1f << 27, 0, 0, 0, 0, 0, 0, 0, 2 | 1 << 8 | 1 << 16, 3]) });
+  const saved = await a.host.save!();
+  if (!('state' in saved)) throw new Error(`refused: ${saved.refused}`);
+  const s = saved.state;
+  const shape = { resources: s.resources.map((r) => [r.desc.id, r.levels.map((l) => l.data.length), r.backing]), objects: s.contexts.map((c) => c.subs.map((x) => [x.objects.map((o) => o.kind), x.blend])) };
+  a.w.terminate();
+  const b = await start();
+  b.host.call({ t: 'load', state: s });
+  const read = [await b.host.read!(5), await b.host.read!(6)].map((x) => (x ? Array.from(x) : null));
+  const again = await b.host.save!();
+  b.w.terminate();
+  return { read, want: [Array.from(a.ram.subarray(0, 64)), Array.from(a.ram.subarray(64, 128))], shape, again: 'state' in again ? again.state.contexts.length : again.refused };
 }
 
 /**

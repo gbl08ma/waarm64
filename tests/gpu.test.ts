@@ -334,7 +334,7 @@ test('gpu: a display change raises the event, the guest clears it', async () => 
   assert.equal(calls.length, 2, 'once');
 });
 
-test('gpu: state saved and restored re-reads the pixels from the backing', () => {
+test('gpu: state saved and restored re-reads the pixels from the backing', async () => {
   const a = rig();
   a.ok(cmd(T.CREATE, 1, B8G8R8X8, 8, 8));
   a.ok(a.attach(1, 0x2000, 8 * 8 * 4, 100));
@@ -344,7 +344,7 @@ test('gpu: state saved and restored re-reads the pixels from the backing', () =>
   a.ok(cmd(T.CREATE, 2, B8G8R8A8, 64, 64));
   a.ok(cmd(T.CREATE, 3, R8G8B8A8, 2, 2)); // no backing
   a.gpu.cursor(cmd(T.UPDATE_CURSOR, 0, 5, 6, 0, 2, 1, 2, 0));
-  const saved = JSON.parse(JSON.stringify(a.gpu.save()));
+  const saved = JSON.parse(JSON.stringify(await a.gpu.save()));
   assert.ok(saved.screen && saved.cursor);
   const b = rig();
   b.ram.set(a.ram);
@@ -361,7 +361,7 @@ test('gpu: state saved and restored re-reads the pixels from the backing', () =>
   con.ok(cmd(T.CREATE, 1, B8G8R8X8, 1024, 768));
   con.ok(cmd(T.SCANOUT, 0, 0, 1024, 768, 0, 1));
   const bigger = rig({ width: 1600, height: 900, keepConsole: true });
-  bigger.gpu.restore(JSON.parse(JSON.stringify(con.gpu.save())));
+  bigger.gpu.restore(JSON.parse(JSON.stringify(await con.gpu.save())));
   bigger.gpu.setSize(1600, 900);
   const e = bigger.run(cmd(T.EDID, 0, 0)).r.subarray(24 + 8, 24 + 8 + 128);
   assert.deepEqual([e[56] | (e[58] >> 4) << 8, e[59] | (e[61] >> 4) << 8], [1600, 900], 'the preferred mode is the page\'s');
@@ -647,7 +647,7 @@ test('virgl: caps encode and decode back', async () => {
   assert.equal(Buffer.compare(encodeCaps(decodeCaps(blob)), blob), 0);
 });
 
-test('virgl: contexts, 3D resources, transfers and submits on the null renderer', () => {
+test('virgl: contexts, 3D resources, transfers and submits on the null renderer', async () => {
   const r = rig({ virgl: true });
   assert.equal(r.run(ctxCmd(0, V.CTX_CREATE, 4, 0)).type, ERR_CTX, 'context 0 is the 2D one');
   r.ok(ctxCmd(1, V.CTX_CREATE, 4, 0));
@@ -688,7 +688,14 @@ test('virgl: contexts, 3D resources, transfers and submits on the null renderer'
   r.ok(cmd(T.SCANOUT, 0, 0, 64, 32, 0, 1));
   assert.deepEqual(px(r, 1, 5, 5), [0, 0, 0, 255]);
   assert.equal(r.run(cmd(T.SCANOUT, 0, 0, 1, 1, 0, 2)).type, ERR_PARAM, 'a buffer is never shown');
-  assert.match((r.gpu.save() as { unsaveable?: string }).unsaveable ?? '', /3D/, 'the snapshot refuses it (web/vm.ts)');
+  // Saved on the null renderer (nothing is in a renderer): the 3D tables, the contexts and what they attached.
+  const saved = JSON.parse(JSON.stringify(await r.gpu.save())) as { unsaveable?: string; three: [number, unknown][]; attached: [number, number[]][]; used: number[] };
+  assert.equal(saved.unsaveable, undefined);
+  assert.deepEqual([saved.three.map(([id]) => id), saved.used], [[1, 2], [1]]);
+  const back = rig({ virgl: true });
+  back.gpu.restore(saved);
+  assert.deepEqual(back.gpu.state().resources, r.gpu.state().resources);
+  assert.deepEqual(px(back, 1, 5, 5), [0, 0, 0, 255], 'the scanout is black again');
   // Unref leaves the context; destroy and reset forget it.
   r.ok(cmd(T.UNREF, 2, 0));
   r.ok(ctxCmd(1, V.CTX_DESTROY));

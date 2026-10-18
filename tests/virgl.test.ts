@@ -13,7 +13,7 @@ import { decodeCaps, virglCaps } from '../web/virgl.ts';
 import { capsBacked, capsFromGl } from '../web/virgl-caps.ts';
 import { FORMATS } from '../web/virgl-formats.ts';
 import { FenceGate, localHost, type HostCall, type VirglHost } from '../web/virgl-host.ts';
-import { VirglRenderer, readbackOf, toHalf } from '../web/virgl-renderer.ts';
+import { VirglRenderer, readbackOf, toHalf, type RendererSnapshot } from '../web/virgl-renderer.ts';
 import { replay } from '../web/virgl-replay.ts';
 import { generate, parseTgsi, TgsiError, type ProgramKey } from '../web/virgl-tgsi.ts';
 import { encodeRecord, encodeTrace, readTrace } from '../web/virgl-trace.ts';
@@ -642,7 +642,7 @@ test('virgl renderer: half floats round to nearest even', () => {
   assert.deepEqual([1, -2, 0.5, 65504, 1e-8, Infinity, 1 + 2 ** -11, 1 + 3 * 2 ** -11].map(toHalf), [0x3c00, 0xc000, 0x3800, 0x7bff, 0, 0x7c00, 0x3c00, 0x3c02]);
 });
 
-test('virgl snapshots: contexts that never submitted are saved and made again; caps this browser can\'t back turn 3D off', () => {
+test('virgl snapshots: contexts that never submitted are made again; one in use loads the renderer\'s state; caps this browser can\'t back turn 3D off', async () => {
   const ram = new Uint8Array(1 << 16);
   const make = (caps?: Uint8Array) => {
     const calls: HostCall[] = [];
@@ -665,7 +665,7 @@ test('virgl snapshots: contexts that never submitted are saved and made again; c
   // The console on the screen: a 2D resource on the scanout (RESOURCE_CREATE_2D, SET_SCANOUT).
   assert.equal(type(a.g.control(ctxCmd(0x101, 0, 1, 1, 64, 32), 64)), 0x1100);
   assert.equal(type(a.g.control(ctxCmd(0x103, 0, 0, 0, 64, 32, 0, 1), 64)), 0x1100);
-  const saved = JSON.parse(JSON.stringify(a.g.save())) as { unsaveable?: string };
+  const saved = JSON.parse(JSON.stringify(await a.g.save())) as { unsaveable?: string };
   assert.equal(saved.unsaveable, undefined, 'a context alone (a process that opened the render node) doesn\'t stop a snapshot');
   // Restored where the same caps are backed: the context is made again in the renderer.
   const b = make(capsA);
@@ -681,11 +681,20 @@ test('virgl snapshots: contexts that never submitted are saved and made again; c
   assert.deepEqual([...c.g.caps], [...capsA]);
   assert.equal(c.calls.filter((x) => x.t === 'ctx').length, 0, 'no context is made');
   assert.equal(type(c.g.control(ctxCmd(0x200, 8, 0, 0), 64)), 0x1200);
-  // A context that submitted has objects in the renderer: not saved, until it's gone.
+  // A context that submitted has objects in the renderer: saved from the host's state, or refused by a host that can't.
   assert.equal(type(a.g.control(ctxCmd(0x207, 7, 4, 0, 0), 64)), 0x1100);
-  assert.match((a.g.save() as { unsaveable?: string }).unsaveable ?? '', /3D/);
+  assert.match((await a.g.save() as { unsaveable?: string }).unsaveable ?? '', /3D/);
+  const state: RendererSnapshot = { version: 1, resources: [], contexts: [{ id: 7, sub: 0, attached: [], subs: [] }] };
+  a.g.host = { call: () => undefined, fence: () => undefined, save: async () => ({ state }) };
+  const inUse = await a.g.save() as unknown as { unsaveable?: string; renderer?: RendererSnapshot; used: number[] };
+  assert.deepEqual([inUse.unsaveable, inUse.renderer, inUse.used], [undefined, state, [7]]);
+  const d = make(capsA);
+  d.g.restore(inUse);
+  assert.deepEqual(d.calls.filter((x) => x.t === 'ctx' || x.t === 'load'), [{ t: 'load', state }], 'the renderer makes the contexts');
+  a.g.host = { call: () => undefined, fence: () => undefined, save: async () => ({ refused: 'a video is being decoded' }) };
+  assert.equal((await a.g.save() as { unsaveable?: string }).unsaveable, 'a video is being decoded');
   a.g.control(ctxCmd(0x201, 7), 64);
-  assert.equal((a.g.save() as { unsaveable?: string }).unsaveable, undefined);
+  assert.equal((await a.g.save() as { unsaveable?: string }).unsaveable, undefined);
 });
 
 test('virgl cursor: a 3D resource\'s image is read back from the renderer, in its format, and a later update wins', async () => {

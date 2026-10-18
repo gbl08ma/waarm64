@@ -5,16 +5,18 @@
 // (web/virgl-screen.ts), and answers fences once everything before them has run. With video, what follows a
 // picture waits until the picture is decoded (web/virgl-host.ts `CallQueue`).
 import { capsFromGl, withVideo } from './virgl-caps.ts';
-import { CallQueue, clock, FenceGate, runCall, type WorkerCall } from './virgl-host.ts';
+import { CallQueue, clock, FenceGate, runCall, saveRenderer, snapshotBuffers, type WorkerCall } from './virgl-host.ts';
 import { VirglRenderer } from './virgl-renderer.ts';
 import { flashProbe, Screen } from './virgl-screen.ts';
 import { probeVideo, webCodecsDecoder, type VideoStats } from './virgl-video.ts';
 
 /** Page → GPU worker. */
-export type ToGpuWorker = { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean; /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */ probe?: boolean; /** Advertise the browser's video decoders and decode with them (docs/plans/video.md; the page's default, `?gpu=novideo` turns it off). */ video?: boolean; /** `?gpu=swvideo`: every codec decoded in software, H.264 offered (experiments on a host with hardware decoders). */ softwareVideo?: boolean };
+export type ToGpuWorker = { type: 'snapshotBytes'; id: number } | { type: 'init'; canvas: OffscreenCanvas; port: MessagePort; stats?: boolean; debug?: boolean; /** `?avprobe`: `flash` when a present turns the screen's centre bright (bench/audio/avsync.ts). */ probe?: boolean; /** Advertise the browser's video decoders and decode with them (docs/plans/video.md; the page's default, `?gpu=novideo` turns it off). */ video?: boolean; /** `?gpu=swvideo`: every codec decoded in software, H.264 offered (experiments on a host with hardware decoders). */ softwareVideo?: boolean };
 /** GPU worker → page. */
 export type FromGpuWorker =
   | { type: 'ready'; caps: Uint8Array; renderer: string }
+  /** The bytes a snapshot would hold for the 3D resources, before compression (`VirglRenderer.snapshotBytes`): Save snapshot warns past a size. */
+  | { type: 'snapshotBytes'; id: number; bytes: number }
   | { type: 'failed'; reason: string }
   | { type: 'lost' }
   /** With `probe`: a present turned the screen's centre bright, at `t` (ms since the epoch). */
@@ -23,8 +25,13 @@ export type FromGpuWorker =
   | { type: 'render-stats'; submits: number; draws: number; commands: number; busyMs: number; submitMs: number; presents: number; drawMs: number; programs: number; errors: number; uploadBytes: number; readbacks: number; readbackBytes: number; fences: number; fenceMs: number; fenceMaxMs: number; compileMs: number; /** The renderer's video totals since it started (web/virgl-video.ts `VideoStats`), how many calls ran ahead of ones waiting for pictures, and the longest wait (ms) in the second (`latencyMaxMs` too is the second's). */ video: VideoStats & { ahead: number; maxWaitMs: number } };
 
 let ram: Uint8Array = new Uint8Array(0);
+let snapshotBytes = () => 0;
 
 self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
+  if (e.data?.type === 'snapshotBytes') {
+    (self as unknown as Worker).postMessage({ type: 'snapshotBytes', id: e.data.id, bytes: snapshotBytes() } satisfies FromGpuWorker);
+    return;
+  }
   if (e.data?.type !== 'init') return;
   const { canvas, port, stats, debug, probe, video, softwareVideo } = e.data;
   const post = (m: FromGpuWorker) => (self as unknown as Worker).postMessage(m);
@@ -47,6 +54,7 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     video: decoders && { decoders: webCodecsDecoder, hardware: decoders.hardware },
   });
   const screen = new Screen(gl, renderer);
+  snapshotBytes = () => renderer.snapshotBytes();
   if (probe) screen.probe = flashProbe((t) => post({ type: 'flash', t }));
   let busyMs = 0, submitMs = 0, queries = 0;
   // How long fences took to reach this worker (its event loop's backlog): count, total and longest ms a second.
@@ -76,6 +84,23 @@ self.onmessage = async (e: MessageEvent<ToGpuWorker>) => {
     if (c.t === 'read') {
       const bytes = renderer.readResource(c.res);
       port.postMessage({ t: 'read', id: c.id, bytes }, bytes ? [bytes.buffer] : []);
+      return;
+    }
+    if (c.t === 'save') {
+      // A snapshot: once the queries ended so far have their results (they are written to the guest's memory).
+      const settled = renderer.queriesSettled();
+      const answer = () => {
+        renderer.pollQueries();
+        if (!settled()) return void setTimeout(answer, 4);
+        let a;
+        try {
+          a = saveRenderer(renderer);
+        } catch (err) {
+          a = { refused: `the 3D state couldn't be read: ${err instanceof Error ? err.message : err}` };
+        }
+        port.postMessage({ t: 'saved', id: c.id, ...a }, 'state' in a ? snapshotBuffers(a.state) : []);
+      };
+      answer();
       return;
     }
     if (c.t === 'ram') {

@@ -4,7 +4,7 @@
 // that owns the screen's canvas — or, in tests, a renderer in the same thread. Calls are ordered and answer nothing;
 // `fence` resolves once everything before it has run (the device holds a fenced command's reply until then, so the
 // guest sees its uploads read and its read-backs written).
-import type { Backing, Box, ResourceDesc } from './virgl-renderer.ts';
+import type { Backing, Box, RendererSnapshot, ResourceDesc } from './virgl-renderer.ts';
 import type { VirglRenderer } from './virgl-renderer.ts';
 import type { Screen } from './virgl-screen.ts';
 import { walk } from './virgl.ts';
@@ -27,7 +27,12 @@ export type HostCall =
   | { t: 'scanout'; pixels?: Uint8Array; swizzle?: number[]; res?: number; width: number; height: number; rect: Rect }
   /** The scanout's rectangle changed (scanout coordinates): show it. */
   | { t: 'damage'; rect: Rect }
-  | { t: 'reset' };
+  | { t: 'reset' }
+  /** A snapshot's 3D state (`VirglRenderer.save`) in place of what the renderer has (a restore). */
+  | { t: 'load'; state: RendererSnapshot };
+
+/** What a host's `save` answers: the renderer's state, or why it can't be saved now. */
+export type HostSave = { state: RendererSnapshot } | { refused: string };
 
 export interface VirglHost {
   call(c: HostCall): void;
@@ -35,6 +40,19 @@ export interface VirglHost {
   fence(): Promise<void> | undefined;
   /** A resource's bytes as the guest would store them (`VirglRenderer.readResource`), once every call before it has run. */
   read?(res: number): Promise<Uint8Array | null>;
+  /** The renderer's state for a snapshot, once every call before it has run and its queries have their results. */
+  save?(): Promise<HostSave>;
+}
+
+/** The renderer's answer to a snapshot (the queries settled first: `pollQueries`). */
+export function saveRenderer(r: VirglRenderer): HostSave {
+  const refused = r.snapshotRefusal();
+  return refused ? { refused } : { state: r.save() };
+}
+
+/** The contents' buffers in a renderer's state (to transfer it across a port). */
+export function snapshotBuffers(s: RendererSnapshot): ArrayBuffer[] {
+  return s.resources.flatMap((r) => r.levels.map((l) => l.data.buffer as ArrayBuffer));
 }
 
 /** Runs a host call on a renderer and a screen (the GPU worker's loop, or a test's in-thread host). */
@@ -53,6 +71,7 @@ export function runCall(c: HostCall, r: VirglRenderer, screen?: Screen) {
       screen?.scanout({ width: 0, height: 0, rect: { x: 0, y: 0, w: 0, h: 0 } });
       return r.reset();
     }
+    case 'load': return r.load(c.state);
     case 'ram': return;
   }
 }
@@ -79,7 +98,7 @@ export class FenceGate<F> {
 }
 
 /** What the GPU worker takes from the device worker's port: the calls, fences and reads (`portHost`). */
-export type WorkerCall = HostCall | { t: 'fence'; id: number; at: number } | { t: 'read'; id: number; res: number };
+export type WorkerCall = HostCall | { t: 'fence'; id: number; at: number } | { t: 'read'; id: number; res: number } | { t: 'save'; id: number };
 
 /**
  * Whether a submit only decodes: video commands (CCMD 53–61: codecs, buffers, a picture's BEGIN/DECODE/END_FRAME)
@@ -223,11 +242,15 @@ export class CallQueue<M extends WorkerCall> {
           if (waits || p.res(m.res)) return ran;
           go = true;
           break;
+        case 'save':
+          if (waits) return ran;
+          go = true;
+          break;
         case 'fence': case 'scanout': case 'damage':
           // After every earlier call (a fence says they've all run; the screen shows what they drew), in order.
           go = !waits;
           break;
-        default: // reset, ram
+        default: // reset, load, ram
           if (waits) return ran;
           go = true;
       }
@@ -247,7 +270,7 @@ export class CallQueue<M extends WorkerCall> {
 
 /** A host in this thread: calls run at once. */
 export function localHost(r: VirglRenderer, screen?: Screen): VirglHost {
-  return { call: (c) => void runCall(c, r, screen), fence: () => undefined, read: (res) => Promise.resolve(r.readResource(res)) };
+  return { call: (c) => void runCall(c, r, screen), fence: () => undefined, read: (res) => Promise.resolve(r.readResource(res)), save: () => Promise.resolve(saveRenderer(r)) };
 }
 
 /** How long the device worker took to see the GPU worker's `fenced` answers (bench/gpu's stats): their count, total and longest ms. */
@@ -260,10 +283,18 @@ export function portHost(port: MessagePort): VirglHost {
   let next = 1;
   const waiting = new Map<number, () => void>();
   const reads = new Map<number, (bytes: Uint8Array | null) => void>();
-  port.onmessage = (e: MessageEvent<{ t: 'fenced'; id: number; at: number } | { t: 'read'; id: number; bytes: Uint8Array | null }>) => {
+  const saves = new Map<number, (s: HostSave) => void>();
+  port.onmessage = (e: MessageEvent<{ t: 'fenced'; id: number; at: number } | { t: 'read'; id: number; bytes: Uint8Array | null } | ({ t: 'saved'; id: number } & HostSave)>) => {
     if (e.data?.t === 'read') {
       reads.get(e.data.id)?.(e.data.bytes);
       reads.delete(e.data.id);
+      return;
+    }
+    if (e.data?.t === 'saved') {
+      const { id, t, ...answer } = e.data;
+      void t;
+      saves.get(id)?.(answer);
+      saves.delete(id);
       return;
     }
     if (e.data?.t !== 'fenced') return;
@@ -281,6 +312,7 @@ export function portHost(port: MessagePort): VirglHost {
   return {
     call(c) {
       if (c.t === 'submit') port.postMessage(c, [c.words.buffer]);
+      else if (c.t === 'load') port.postMessage(c, snapshotBuffers(c.state));
       else port.postMessage(c);
     },
     fence() {
@@ -292,6 +324,11 @@ export function portHost(port: MessagePort): VirglHost {
       const id = next++;
       port.postMessage({ t: 'read', id, res });
       return new Promise((resolve) => reads.set(id, resolve));
+    },
+    save() {
+      const id = next++;
+      port.postMessage({ t: 'save', id });
+      return new Promise((resolve) => saves.set(id, resolve));
     },
   };
 }

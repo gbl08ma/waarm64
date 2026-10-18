@@ -167,6 +167,42 @@ test('virgl on WebGL2: sway draws its desktop (foot, a command\'s output) as rec
   assert.ok(c.max <= 8 && c.off < 0.001, JSON.stringify(c));
 });
 
+type Saved = { errors: number; log: string[]; saves: { bytes: number; resources: number; lost: string[]; differ: string[] }[]; submits: number; glError: number; width: number; height: number; pixels64: string | null };
+async function replaySaved(trace: Uint8Array, read: number, at: number[]) {
+  const r = await page.evaluate(([t, n, a]) => (window as unknown as { virgl: { replaySaved64(t: string, n: number, a: number[]): Saved } }).virgl.replaySaved64(t, n, a), [Buffer.from(trace).toString('base64'), read, at] as const);
+  return { ...r, pixels: r.pixels64 ? new Uint8Array(Buffer.from(r.pixels64, 'base64')) : null };
+}
+
+for (const [name, file, read, at] of [['glcomp', 'glcomp-128x96.vglt', 3, [1, 3, 5]], ['sway', 'sway-640.vglt.gz', -1, [2, 10, 40, 100]]] as const) {
+  test(`virgl snapshots on WebGL2: ${name} saved mid-trace and loaded into fresh renderers draws what it drew without, and saves again the same`, { timeout: 120_000 }, async () => {
+    const plain = await replayOn(fixture(file), read);
+    const r = await replaySaved(fixture(file), read, [...at]);
+    console.log(`# ${name}: ${r.submits} submits, saves at ${at.join(', ')}: ${r.saves.map((s) => `${s.resources} resources, ${(s.bytes / 1024).toFixed(0)} KiB`).join('; ')}`);
+    assert.equal(r.saves.length, at.length, `the trace has ${r.submits} submits`);
+    assert.deepEqual(r.log, []);
+    assert.equal(r.errors, 0);
+    assert.equal(r.glError, 0);
+    for (const s of r.saves) assert.deepEqual([s.lost, s.differ], [[], []]);
+    assert.deepEqual([r.width, r.height], [plain.width, plain.height]);
+    assert.ok(r.pixels && plain.pixels && Buffer.compare(r.pixels, plain.pixels) === 0, 'the same pixels as the replay without snapshots');
+  });
+}
+
+test('virgl snapshots on WebGL2: every format\'s contents, as each kind of resource, are saved as they were loaded', { timeout: 120_000 }, async () => {
+  const r = await page.evaluate(() => (window as unknown as { virgl: { snapshotFormats(): { checked: number; differ: string[]; lost: string[]; log: string[]; glError: number } } }).virgl.snapshotFormats());
+  console.log(`# ${r.checked} resources; lost: ${r.lost.join('; ') || 'none'}`);
+  assert.deepEqual(r.differ, []);
+  assert.deepEqual(r.log, []);
+  assert.equal(r.glError, 0);
+});
+
+test('virgl snapshots through the GPU worker: saved across its port, loaded into another, read back there', { timeout: 60_000 }, async () => {
+  const r = await page.evaluate(() => (window as unknown as { virgl: { workerSnapshot(): Promise<{ read: (number[] | null)[]; want: number[][]; shape: unknown; again: unknown }> } }).virgl.workerSnapshot());
+  assert.deepEqual(r.shape, { resources: [[5, [64], [{ off: 0, len: 64 }]], [6, [64], [{ off: 64, len: 64 }]]], objects: [[[['blend'], 0]]] });
+  assert.deepEqual(r.read, r.want);
+  assert.equal(r.again, 1);
+});
+
 test('virgl on WebGL2: a 2D scanout is drawn from the guest\'s bytes through its format\'s swizzle', async () => {
   // The guest's bytes of a pixel whose R, G, B are 30, 60, 90, in each of the eight formats' memory orders.
   const cases: [number, number[]][] = [[1, [90, 60, 30, 0]], [2, [90, 60, 30, 0]], [3, [0, 30, 60, 90]], [4, [0, 30, 60, 90]], [67, [30, 60, 90, 0]], [68, [0, 90, 60, 30]], [121, [0, 90, 60, 30]], [134, [30, 60, 90, 0]]];

@@ -17,6 +17,7 @@ import { VirglStats, virglCaps, walk } from './virgl.ts';
 import { FORMATS as VIRGL_FORMATS, boxBytes } from './virgl-formats.ts';
 import { encodeRecord } from './virgl-trace.ts';
 import type { VirglHost } from './virgl-host.ts';
+import type { RendererSnapshot } from './virgl-renderer.ts';
 import { capsBacked } from './virgl-caps.ts';
 
 const RAM_BASE = 0x4000_0000;
@@ -843,20 +844,34 @@ export class Gpu {
     else this.hooks.cursor?.(null, 0, 0, 0, 0);
   }
 
-  /** A snapshot's state, JSON: `state` plus the cursor's image. Host pixels come back from the backing at `restore`. */
-  save() {
-    // `unsaveable`: virgl's objects live in the renderer, outside guest RAM, so a machine using 3D isn't saved (the
-    // kickoff's choice): a 3D resource or a context that has submitted work. Contexts that never did are ids, saved
-    // and made again; the caps the guest was given are kept, for a restore to check (the kickoff's decision 3). (The
-    // kickoff's choice; the snapshot refuses it, web/vm.ts). A test's state read takes the rest all the same.
-    const unsaveable = this.used.size > 0 || [...this.resources.values()].some((r) => r.three) ? 'the machine is using 3D (virgl): close its GL programs and video players first' : undefined;
-    const three = this.o.virgl ? { contexts: [...this.contexts.keys()], caps: toBase64(this.caps), ...(this.off3d ? { off3d: this.off3d } : {}) } : {};
+  /**
+   * A snapshot's state: `state` plus the cursor's image, JSON but for the 3D contents (Uint8Arrays: web/snapshot.ts
+   * writes them as frames of their own). Host pixels come back from the backing at `restore`. With 3D in use, the
+   * renderer's state comes from the host (`VirglRenderer.save`: objects as data, contents read back; graphics.md
+   * §22), with the 3D resources and the contexts' attachments here; the caps the guest was given are kept, for a
+   * restore to check. `unsaveable` where the host refuses (a video decoding) or can't save; the snapshot refuses it
+   * (web/vm.ts), and a test's state read takes the rest all the same.
+   */
+  async save() {
+    const inUse = this.used.size > 0 || [...this.resources.values()].some((r) => r.three);
+    let renderer: RendererSnapshot | undefined, unsaveable: string | undefined;
+    if (inUse && this.host && !this.off3d) {
+      const got = this.host.save ? await this.host.save() : { refused: 'the machine is using 3D (virgl), and this renderer can\'t be saved' };
+      if ('refused' in got) unsaveable = got.refused;
+      else renderer = got.state;
+    }
+    const three = this.o.virgl ? {
+      contexts: [...this.contexts.keys()], caps: toBase64(this.caps), ...(this.off3d ? { off3d: this.off3d } : {}),
+      attached: [...this.contexts].map(([id, set]) => [id, [...set]]), used: [...this.used],
+      three: [...this.resources.values()].filter((r) => r.three).map((r) => [r.id, r.three]),
+      ...(renderer ? { renderer } : {}),
+    } : {};
     return { ...this.state(), cursorImage: this.cursorImage ? toBase64(this.cursorImage) : null, shown: this.shown, ...three, ...(unsaveable ? { unsaveable } : {}) };
   }
 
   /** `save`'s state back: the tables, then every resource with a backing read again from the (restored) RAM, and the scanout drawn. */
   restore(state: unknown) {
-    const t = state as ReturnType<Gpu['save']> & { contexts?: number[]; caps?: string; off3d?: string };
+    const t = state as Awaited<ReturnType<Gpu['save']>> & { contexts?: number[]; caps?: string; off3d?: string; attached?: [number, number[]][]; used?: number[]; three?: [number, NonNullable<Resource['three']>][]; renderer?: RendererSnapshot };
     if (!Array.isArray(t?.resources) || !(t.width > 0) || !(t.height > 0)) throw new Error('the snapshot has no state for the display device');
     this.resources.clear();
     this.total = 0;
@@ -866,8 +881,16 @@ export class Gpu {
     this.floor = { width: 0, height: 0 };
     this.bounce = false;
     this.trace = t.trace ?? [];
+    const three = new Map(t.three ?? []);
     for (const r of t.resources) {
-      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: this.pixels(r.width * r.height * 4), backing: r.backing?.map(([off, len]) => ({ off, len })) ?? null, raw: this.raw };
+      const backing = r.backing?.map(([off, len]) => ({ off, len })) ?? null;
+      const t3 = three.get(r.id);
+      if (t3) {
+        // A virgl resource: its contents are the renderer's (`renderer` below).
+        this.resources.set(r.id, { id: r.id, format: r.format, width: r.width, height: r.height, pixels: new Uint8Array(0), backing, three: t3 });
+        continue;
+      }
+      const res: Resource = { id: r.id, format: r.format, width: r.width, height: r.height, pixels: this.pixels(r.width * r.height * 4), backing, raw: this.raw };
       this.total += res.pixels.length;
       this.resources.set(res.id, res);
       if (res.backing) this.transfer(res, { x: 0, y: 0, w: res.width, h: res.height }, 0);
@@ -891,11 +914,17 @@ export class Gpu {
       }
     }
     if (this.off3d) console.warn(`virtio-gpu: 3D is off: ${this.off3d}`);
-    for (const id of t.contexts ?? []) {
-      this.contexts.set(id, new Set());
-      if (!this.off3d) this.host?.call({ t: 'ctx', id, create: true });
+    const attached = new Map(t.attached ?? []);
+    for (const id of t.contexts ?? []) this.contexts.set(id, new Set(attached.get(id) ?? []));
+    for (const id of t.used ?? []) this.used.add(id);
+    if (t.renderer && this.host && !this.off3d) this.host.call({ t: 'load', state: t.renderer });
+    else {
+      if (t.renderer) console.warn(`virtio-gpu: the machine's 3D state isn't restored (${this.off3d ?? 'no renderer'}): its GL programs will fail`);
+      if (!this.off3d) for (const id of t.contexts ?? []) this.host?.call({ t: 'ctx', id, create: true });
     }
     const s = this.scanout;
+    const sr = s && this.resources.get(s.id);
+    if (sr?.three && !this.host) sr.pixels = new Uint8Array(sr.width * sr.height * 4); // the null renderer's black
     if (s) makeOpaque(this.resources.get(s.id)!);
     const shown = s && this.resources.get(s.id);
     this.shown = shown ? { width: shown.width, height: shown.height } : t.shown?.width > 0 && t.shown.height > 0 ? { width: t.shown.width, height: t.shown.height } : { width: 0, height: 0 };

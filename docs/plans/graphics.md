@@ -1289,3 +1289,50 @@ changing:**
   present stalls (300–450 ms, above), when the commands behind it would wait for the same worker anyway. Answering
   unfenced replies at once (QEMU's way) would win nothing on a real GPU. The display stats now count it
   (`fences.behindMs`, `fullMs`, `heldMax`).
+
+## 22. G5: snapshots while 3D is in use (2026-10-18, built; measuring on real guests is next)
+
+Started in a cloud session at the user's word ahead of a G5 kickoff (`M8-GRAPHICS-HANDOVER.md` item 1). The device
+used to refuse a snapshot as soon as a context had submitted; now a machine using 3D saves, unless a video plays.
+
+**The design: state as data, contents read back.** Not a replay of the commands since each context was made: that
+grows without bound (Firefox makes 10–25 resources a second, §21), where the state is bounded by what the guest holds.
+- **Objects** are already decoded data in the renderer (`Sub`: shaders as TGSI text, blend, rasterizer and DSA states,
+  vertex elements, sampler views and states, surfaces, queries, stream-output targets; the bound state, constants,
+  uniform buffers, vertex and index buffers, viewport, scissor). `VirglRenderer.save` writes each sub-context's
+  objects as a list and its bound state as places in it (a value bound but no longer named by a handle is kept
+  unnamed); `load` makes the values again, shaders re-parsed with new serials (programs are compiled at the draws that
+  need them), GL objects (samplers, the VAO, transform feedback, queries) made on demand as always. An occlusion
+  query begun and not ended is begun again (its "any samples passed" before the snapshot is lost); queries ended are
+  settled first (the GPU worker polls them before it answers), their results already in the guest's memory.
+- **Contents**, a resource's level at a time (`SavedLevel`, every layer): a buffer's CPU copy (`shadow`, nothing to
+  read); a color texture through `readback` (with two formats the guest isn't offered read-back of: A4B4G4R4 as
+  RGBA8, R11G11B10_FLOAT as floats, `snapshotReader`); a format WebGL can't render to, its uploaded texels (`texels`);
+  a compressed one, its uploaded blocks (`blocks`, kept since G5: nothing reads compressed texels back); a multisampled
+  color renderbuffer, resolved into a texture (a load draws it into every sample). Depth and stencil can't be read
+  with `readPixels`: each layer is blitted to a 2D texture of its format (resolving samples), its depths drawn as
+  float bits into R32UI, its stencil a bit a pass (a stencil test per bit adding the bit's weight into RGBA8); a load
+  draws them back with the DEPTH32F_STENCIL8 upload's program, generalized (`drawZs`). A 16-bit depth is written a
+  quarter step up: SwiftShader truncates the float. Lost (logged, `SavedResource.lost`): multisampled integer color.
+- **Carried**: the GPU worker answers `save` with the state, transferring the contents' buffers; the device worker
+  adds its tables (`Gpu.save`, async) and the state goes to the snapshot as JSON with Uint8Arrays, which
+  `writeSnapshot` writes as BLOB frames (format version 2, plans/snapshots.md "The file"); a restore hands the state
+  to the new GPU worker (`load`) before it shows the scanout.
+- **Refused** only while a context has video codecs or buffers (`snapshotRefusal`): WebCodecs keeps its reference
+  pictures, so a decode can't go on from a snapshot. "Close the video player first".
+- **The size, before saving**: every 3D resource's bytes follow from its description (`VirglRenderer.snapshotBytes`:
+  a buffer's width; each level's texels or blocks; 5 bytes a depth-stencil texel). The page asks the GPU worker and,
+  from 64 MiB, says how much the 3D state adds and asks first (docs/frontend.md "Snapshots").
+
+**Tests** (cloud, Chromium 141's SwiftShader): `tests/virgl-browser.test.ts` replays glcomp's and sway's traces with
+the renderer saved and loaded into a fresh one on a new WebGL2 context at several submits (3 and 4 times), and the
+final frame is the same bytes as without; each save, saved again from the renderer it loaded into, is the same
+bytes. Every format as each kind of resource (2D with two levels, cube, 2D array, 3D, 4 samples; 353 resources)
+loads and saves back exactly. A snapshot through the GPU worker's port into a second worker. Planted bugs (a load
+that skips the texture uploads; one that drops the bound blend state; a stencil bit not read) fail them.
+`tests/snapshot-file.test.ts`: BLOB frames round trip and their refusals. Sizes in the traces: glcomp 1.1 MiB
+(4 resources), sway at 640×480 3.4 MiB (7).
+
+**Not done here (the dev VM's):** a snapshot of a real guest using 3D on the page (sway, Firefox, GTK4 on the desktop
+guest), loaded in a fresh profile, and what they hold: resource counts, the 3D state's size, the file's, the pause.
+`scripts/ci-deqp.sh` (G5 changed the DEPTH32F_STENCIL8 upload's code: `drawZs`).

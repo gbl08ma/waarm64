@@ -184,7 +184,9 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     mustpass lists pass with no failure** (17,027 and 44,398 pass, the rest not supported, on SwiftShader), with a pass
     list as a test of its own (`scripts/ci-deqp.sh`); the menu has a 2D/3D choice. **Next: G5, proposed in
     `M8-GRAPHICS-HANDOVER.md`** (snapshots while 3D is in use, dEQP on a real GPU, the guest-side leftovers; the
-    user's kickoff to come).
+    user's kickoff to come). Snapshots while 3D is in use were built ahead of it (2026-10-18, graphics.md §22: the
+    renderer's state as data, its contents read back, BLOB frames in the file; refused only while a video decodes);
+    the real guests' checks are the dev VM's.
   - Audio ([docs/audio.md](docs/audio.md)): **done (2026-10-12).** virtio-snd to an AudioWorklet over a shared ring the
     device worker writes, the guest's period clock paced by the worklet's consumption (the browser's output latency
     as ALSA's delay); the page's microphone opened on the guest's demand (`getUserMedia`, the browser's processing on,

@@ -6,7 +6,7 @@
 // backend throws, word 1 becomes -1 so the vCPU fails instead of waiting.
 // `close` releases the backends' files (OPFS locks), answers `closed` and ends
 // the worker.
-import { Devices, type DevicesInit } from './devices.ts';
+import { Devices, stateBuffers, type DevicesInit } from './devices.ts';
 import { registerUsbOpener } from './usb.ts';
 import { webHidOpener, type WebHidLike } from './webhid.ts';
 import { webUsbOpener, type WebUsbLike } from './webusb.ts';
@@ -25,11 +25,10 @@ self.onmessage = (e: MessageEvent) => {
   else if (e.data.type === 'flush') self.postMessage({ type: 'flushed' }); // after every earlier message
   else if (e.data.type === 'save') {
     // The backends' state for a snapshot (the owner has the devices quiet).
-    try {
-      self.postMessage({ type: 'saved', state: devices!.save() });
-    } catch (err) {
-      self.postMessage({ type: 'saved', error: String(err instanceof Error ? err.message : err) });
-    }
+    devices!.save().then(
+      (state) => self.postMessage({ type: 'saved', state }, stateBuffers(state)),
+      (err) => self.postMessage({ type: 'saved', error: String(err instanceof Error ? err.message : err) }),
+    );
   }
   else if (e.data.type === 'written' || e.data.type === 'blocks') {
     // A disk's changes for a snapshot: the blocks its overlay holds, then their bytes in batches.

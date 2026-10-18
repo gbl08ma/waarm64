@@ -4,7 +4,7 @@
 // nothing of the core: CORE is opaque bytes, DEVS is JSON the caller makes, RAM and DISK are cut
 // here.
 //
-//   File  = "WEBPCSNP"  u32 version (1)  u32 headerLen  header (JSON)  u32 crc32(header)  Frame*  END
+//   File  = "WEBPCSNP"  u32 version (1, or 2 with BLOB frames)  u32 headerLen  header (JSON)  u32 crc32(header)  Frame*  END
 //   Frame = u32 tag  u32 codec  u64 index  u32 rawLen  u32 storedLen  u32 crc  u32 reserved (0), then
 //           the stored bytes. Little-endian. The CRC covers the first 24 header bytes (tag to
 //           storedLen: so a flipped index or length is caught) and then the stored bytes. END's
@@ -13,7 +13,8 @@
 // Tags: CORE and DEVS (chunked in 1 MiB frames, joined in index order), "RAM " (guest RAM in 1 MiB
 // chunks: a 32-byte bitmap of the present 4 KiB pages, then those pages; a zero page is absent, a
 // chunk without pages has no frame), DISK (a run of 1 to 256 consecutive overlay blocks, index =
-// the first block), "END ". Codec 0 is stored, 1 is deflate-raw; each frame is compressed alone, and
+// the first block), BLOB (binary parts of DEVS: blob n's 1 MiB chunk k, index = n × 2^24 + k; a
+// file with them is version 2, which an older reader refuses as newer), "END ". Codec 0 is stored, 1 is deflate-raw; each frame is compressed alone, and
 // stored when compressing doesn't shrink it. Codecs plug in by id.
 
 /** What the file says about itself; `machine` and the rest are the caller's (opaque here). */
@@ -24,7 +25,9 @@ export type Sink = (bytes: Uint8Array) => void | Promise<void>;
 export type Codec = { id: number; compress(raw: Uint8Array): Promise<Uint8Array>; decompress(stored: Uint8Array, rawLen: number): Promise<Uint8Array> };
 
 const MAGIC = new TextEncoder().encode('WEBPCSNP');
-const VERSION = 1;
+const VERSION = 2;
+/** A BLOB frame's index: the blob times this, plus the chunk. */
+export const BLOB_CHUNKS = 2 ** 24;
 const FRAME_HEADER = 32;
 const MAX_HEADER = 1 << 20;
 const CHUNK = 1 << 20; // raw bytes of a CORE or DEVS frame, and of the guest RAM in a RAM frame
@@ -32,7 +35,7 @@ const PAGE = 4096;
 const BITMAP = 32;
 const MAX_RAW = CHUNK + BITMAP;
 const MAX_RUN = 256; // blocks in a DISK frame
-const TAGS = new Set(['CORE', 'DEVS', 'RAM ', 'DISK', 'END ']);
+const TAGS = new Set(['CORE', 'DEVS', 'BLOB', 'RAM ', 'DISK', 'END ']);
 
 /**
  * Why a snapshot was refused: `not-snapshot`, `newer-format`, `truncated` or `corrupt` (the file),
@@ -188,8 +191,11 @@ export class SnapshotWriter {
   #hasFailed = false;
   #index = new Map<string, number>();
 
-  /** `concurrency` frames may be compressed at once (default 4), each at most 1 MiB; they are written in order. */
-  constructor(sink: Sink, header: SnapshotHeader, opts: { codec?: Codec; concurrency?: number } = {}) {
+  /**
+   * `concurrency` frames may be compressed at once (default 4), each at most 1 MiB; they are written in order. `blobs`:
+   * the file will have BLOB frames (version 2; without, version 1, which every reader takes).
+   */
+  constructor(sink: Sink, header: SnapshotHeader, opts: { codec?: Codec; concurrency?: number; blobs?: boolean } = {}) {
     this.#sink = sink;
     this.#codec = opts.codec ?? deflateCodec;
     this.#concurrency = Math.max(1, Math.floor(opts.concurrency ?? 4));
@@ -197,7 +203,7 @@ export class SnapshotWriter {
     const out = new Uint8Array(8 + 4 + 4 + json.length + 4);
     const v = new DataView(out.buffer);
     out.set(MAGIC, 0);
-    v.setUint32(8, VERSION, true);
+    v.setUint32(8, opts.blobs ? 2 : 1, true);
     v.setUint32(12, json.length, true);
     out.set(json, 16);
     v.setUint32(16 + json.length, crc32(json), true);
@@ -245,6 +251,12 @@ export class SnapshotWriter {
       // A copy: the caller may reuse the buffer (or it may be shared memory, which streams refuse).
       await this.#frame(tag, index, data.slice(off, Math.min(off + CHUNK, data.length)));
     }
+  }
+
+  /** Blob `n` (after DEVS, before RAM), in frames of at most 1 MiB; an empty blob has none. */
+  async blob(n: number, data: Uint8Array): Promise<void> {
+    if (!Number.isInteger(n) || n < 0 || n >= 2 ** 29 || data.length > BLOB_CHUNKS * CHUNK) throw new RangeError('a blob out of range');
+    for (let k = 0; k * CHUNK < data.length; k++) await this.#frame('BLOB', n * BLOB_CHUNKS + k, data.slice(k * CHUNK, Math.min((k + 1) * CHUNK, data.length)));
   }
 
   /**
@@ -429,7 +441,7 @@ export async function openSnapshot(
     if (version > VERSION) {
       throw new SnapshotError('newer-format', `This snapshot was made by a newer version of this page (snapshot format ${version}; this one reads format ${VERSION}). Reload the page to get the latest version, or open the snapshot in the page that made it.`);
     }
-    if (version < VERSION) throw corrupt('its format number is not valid');
+    if (version < 1) throw corrupt('its format number is not valid');
     const headerLen = fv.getUint32(4, true);
     if (headerLen > MAX_HEADER) throw corrupt('its header is too long');
     const json = await input.take(headerLen);
@@ -458,7 +470,7 @@ export async function openSnapshot(
           const rawLen = v.getUint32(16, true);
           const storedLen = v.getUint32(20, true);
           const crc = v.getUint32(24, true);
-          if (!TAGS.has(tag)) throw corrupt('a part of it has an unknown kind');
+          if (!TAGS.has(tag) || (tag === 'BLOB' && version < 2)) throw corrupt('a part of it has an unknown kind');
           if (v.getUint32(28, true) !== 0 || hi >= 2 ** 21) throw corrupt('a frame header has impossible fields');
           if (tag === 'END ') {
             if (rawLen !== 0 || storedLen !== 0 || crc !== 0 || codec !== 0) throw corrupt('its end marker is malformed');
@@ -470,7 +482,7 @@ export async function openSnapshot(
           if (codec === 0 ? storedLen !== rawLen : !codecs.has(codec)) {
             throw corrupt(codec === 0 ? 'a frame has an impossible size' : `a frame is compressed with codec ${codec}, which this page can't read; open it in the page that made it`);
           }
-          if (tag === 'CORE' || tag === 'DEVS' ? rawLen > CHUNK : tag === 'DISK' ? rawLen % PAGE !== 0 || rawLen > MAX_RUN * PAGE : false) {
+          if (tag === 'CORE' || tag === 'DEVS' || tag === 'BLOB' ? rawLen > CHUNK : tag === 'DISK' ? rawLen % PAGE !== 0 || rawLen > MAX_RUN * PAGE : false) {
             throw corrupt('a frame has an impossible size');
           }
           const headBytes = h.slice(0, 24); // `h` is a view of the input's buffer, which the next take may reuse
