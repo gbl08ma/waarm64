@@ -888,3 +888,13 @@ zero clause's extra test), the same 484.20M steps a frame. Correctness: the FP s
 settings with FPSR.IXC set), jit-diff, the corpus; planted bugs (no `result == 0` in FMUL's and
 FMLA's zero clause; the double FMA's bound past its limit; FZ's factor test left out, which the
 suite caught as an IDC lost under FZ) each failed.
+
+**Then the FZ path's tests themselves** (same day; `*denormal-*`): llvmpipe with no checks at all ran
+at 240.8, 235.2, 235.9 ms a frame (`gl-ceiling-*`), 21% under the build's 302.9, 299.5, 300.5. Under
+FZ the only operand case left is a denormal (a NaN or ∞ fails the result test), so the normal-or-zero
+masks (nine ops a lane) became a denormal test, |x| - 1 below the smallest normal's - 1 unsigned
+(three ops; doubles four), ORed across operands and cleared from the result mask with one `andnot`;
+the NaN-only tests' FZ path likewise. `gl_llvmpipe_jit` 299.3, 300.4, 301.6 → **282.8, 282.7,
+283.3** ms a frame (−6%; 4% under the build before any of this), the FP guest 1100.9, 1100.0,
+1080.4 → 1120.0, 1110.5, 1110.5 MIPS (noise: it runs without FZ). A planted "no denormals" in both
+tests failed 89 forms of the FP suite, all under FZ.

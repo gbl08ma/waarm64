@@ -193,10 +193,10 @@ fn guarded_with(
 fn scalar_plain(c: &mut Func, f: F, l: u32, nan: bool, quiet: bool) {
     fpa_guard(c);
     let (w, wc) = if f.d { (W, WC) } else { (0, 0) };
-    let (sign, inf, qbit, emask) = if f.d {
-        (1u64 << 63, 0x7ffu64 << 52, 1u64 << 51, 0x7ffu64 << 52)
+    let (sign, inf, qbit) = if f.d {
+        (1u64 << 63, 0x7ffu64 << 52, 1u64 << 51)
     } else {
-        (1 << 31, 0xff << 23, 1 << 22, 0xff << 23)
+        (1 << 31, 0xff << 23, 1 << 22)
     };
     let k = |c: &mut Func, v: u64| {
         if f.d {
@@ -220,14 +220,7 @@ fn scalar_plain(c: &mut Func, f: F, l: u32, nan: bool, quiet: bool) {
     } else if nan {
         c.op(0x1a).i32_const(1); // drop: any NaN
     }
-    under_fz(c, |c| {
-        // A nonzero exponent, or ±0.
-        c.local_get(l);
-        k(c, emask);
-        c.op(AND + w).op(EQZ + wc).op(EQZ);
-        is_zero(c, f, l);
-        c.op(0x72); // i32.or
-    });
+    under_fz(c, |c| no_denormal(c, f, &[l]));
 }
 
 /// ANDs the operand test `test` pushes (an i32: no operand FZ would flush)
@@ -244,15 +237,59 @@ fn under_fz(c: &mut Func, test: impl FnOnce(&mut Func)) {
     c.op(AND);
 }
 
-/// [`under_fz`] for lane masks: ANDs the v128 mask `test` pushes into the
-/// one on the stack (all ones without FZ), so one reduction tests both.
-fn under_fz_lanes(c: &mut Func, test: impl FnOnce(&mut Func)) {
+/// [`under_fz`] for lane masks: clears the lanes of the mask `test` pushes
+/// (the lanes FZ would flush: [`denormal_lanes`]) in the one on the stack,
+/// none without FZ, so one reduction tests both.
+fn under_fz_bad(c: &mut Func, test: impl FnOnce(&mut Func)) {
     c.local_get(FZOK).if_t(super::V128);
-    c.v128_const(u128::MAX);
+    c.v128_const(0);
     c.else_();
     test(c);
     c.end();
-    c.simd(op::AND);
+    c.simd(op::ANDNOT);
+}
+
+/// Replaces the v128 on the stack with a lane mask: all ones where the lane is
+/// a denormal: |x| - 1, as an integer, below the smallest normal's - 1,
+/// unsigned (doubles: signed, with the sign bits flipped).
+fn denormal_lanes(c: &mut Func, d: bool) {
+    if d {
+        let s = 1u64 << 63;
+        c.v128_const(splat(true, !s)).simd(op::AND);
+        c.v128_const(splat(true, 1)).simd(op::I64X2_SUB);
+        c.v128_const(splat(true, s)).simd(op::XOR);
+        c.v128_const(splat(true, ((1u64 << 52) - 1) ^ s))
+            .simd(op::I64X2_LT_S);
+    } else {
+        c.v128_const(splat(false, 0x7fff_ffff)).simd(op::AND);
+        c.v128_const(splat(false, 1)).simd(op::I32X4_SUB);
+        c.v128_const(splat(false, (1 << 23) - 1))
+            .simd(op::I32X4_LT_U);
+    }
+}
+
+/// Pushes an i32: the float bits in local `l` are a denormal (as
+/// [`denormal_lanes`]).
+fn scalar_denormal(c: &mut Func, f: F, l: u32) {
+    c.local_get(l);
+    if f.d {
+        c.i64_const(i64::MAX).op(AND + W).i64_const(1).op(SUB + W);
+        c.i64_const((1 << 52) - 1).op(LT_U + WC);
+    } else {
+        c.i32_const(i32::MAX).op(AND).i32_const(1).op(SUB);
+        c.i32_const((1 << 23) - 1).op(LT_U);
+    }
+}
+
+/// Pushes an i32: none of the float bits in locals `ls` are a denormal.
+fn no_denormal(c: &mut Func, f: F, ls: &[u32]) {
+    for (k, &l) in ls.iter().enumerate() {
+        scalar_denormal(c, f, l);
+        if k > 0 {
+            c.op(0x72); // i32.or
+        }
+    }
+    c.op(EQZ);
 }
 
 /// Pushes an i32: the float bits in local `l` are ±0.
@@ -263,13 +300,6 @@ fn is_zero(c: &mut Func, f: F, l: u32) {
     } else {
         c.i32_const(1).op(0x74).op(EQZ); // i32.shl
     }
-}
-
-/// Pushes an i32: the float bits in local `l` are a normal number or ±0.
-fn scalar_normal_or_zero(c: &mut Func, f: F, l: u32) {
-    exp_in(c, f, l, 1);
-    is_zero(c, f, l);
-    c.op(0x72); // i32.or
 }
 
 /// f64 add, sub, mul.
@@ -728,13 +758,8 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 c.op(0x72); // i32.or
             }
             c.op(AND);
-            under_fz(c, |c| {
-                scalar_normal_or_zero(c, f, x);
-                if op != FSQRT_float {
-                    scalar_normal_or_zero(c, f, y);
-                    c.op(AND);
-                }
-            });
+            let ops: &[u32] = if op == FSQRT_float { &[x] } else { &[x, y] };
+            under_fz(c, |c| no_denormal(c, f, ops));
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         // FMA: the exact product, its sum with the addend rounded to odd, then
@@ -817,13 +842,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.local_get(FPOK);
             // Under FZ, no operand it would flush (a zero factor's partner too;
             // before the factors' test, which reuses `a`).
-            under_fz(c, |c| {
-                scalar_normal_or_zero(c, f, a);
-                for l in [x, y] {
-                    scalar_normal_or_zero(c, f, l);
-                    c.op(AND);
-                }
-            });
+            under_fz(c, |c| no_denormal(c, f, &[a, x, y]));
             if f.d {
                 let e1 = |c: &mut Func, l: u32| {
                     c.local_get(l)
@@ -963,7 +982,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             let lo = if unsigned { 0.0 } else { -hi };
             c.local_get(v).f64_const(lo).op(0x66).op(AND); // f64.ge
             c.local_get(v).f64_const(hi).op(0x63).op(AND); // f64.lt
-            under_fz(c, |c| scalar_normal_or_zero(c, f, x));
+            under_fz(c, |c| no_denormal(c, f, &[x]));
             // i32/i64.trunc_sat_f64_s/u: 0xfc 2, 3, 6, 7.
             let sat = (wide as u8) * 4 + 2 + unsigned as u8;
             let out = |c: &mut Func| {
@@ -1038,7 +1057,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             is_zero(c, f, xd);
             c.op(0x72); // i32.or: a zero converts exactly
             c.local_get(FPOK).op(AND);
-            under_fz(c, |c| scalar_normal_or_zero(c, f, xd));
+            under_fz(c, |c| no_denormal(c, f, &[xd]));
             guarded(c, cx, i, k, vbit(rd), |c| put(c, F { d: false }, rd, r32));
         }
         // FRECPX: bits (the sign, the exponent inverted, or the largest finite
@@ -1235,7 +1254,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 exp_in(c, t, r, 2);
                 is_zero(c, f, x);
                 c.op(0x72).op(AND); // i32.or
-                under_fz(c, |c| scalar_normal_or_zero(c, f, x));
+                under_fz(c, |c| no_denormal(c, f, &[x]));
             }
             guarded(c, cx, i, k, vbit(rd), |c| put(c, t, rd, r));
         }
@@ -1306,6 +1325,7 @@ mod op {
     pub const AND: u32 = 0x4e;
     pub const OR: u32 = 0x50;
     pub const XOR: u32 = 0x51;
+    pub const ANDNOT: u32 = 0x4f;
     pub const I32X4_ALL_TRUE: u32 = 0xa3;
     pub const I64X2_ALL_TRUE: u32 = 0xc3;
     pub const I32X4_SHR_U: u32 = 0xad;
@@ -1338,8 +1358,6 @@ mod op {
     pub const I32X4_NE: u32 = 0x38;
     pub const I32X4_LT_S: u32 = 0x39;
     pub const I32X4_GE_S: u32 = 0x3f;
-    pub const I32X4_LE_S: u32 = 0x3d;
-    pub const I64X2_LE_S: u32 = 0xda;
     pub const I64X2_GE_S: u32 = 0xdb;
     /// i32x4.extend_low/high_i16x8_u.
     pub const EXTEND_U16: [u32; 2] = [0xa9, 0xaa];
@@ -1420,48 +1438,18 @@ fn zero_lanes(c: &mut Func, d: bool) {
     c.simd(if d { op::I64X2_EQ } else { op::I32X4_EQ });
 }
 
-/// Replaces the v128 on the stack with a lane mask: all ones where the lane is
-/// normal or ±0.
-fn normal_or_zero(c: &mut Func, d: bool) {
-    c.local_tee(VT[3]);
-    lanes_in(c, d, 1);
-    c.local_get(VT[3]);
-    zero_lanes(c, d);
-    c.simd(op::OR);
-}
-
 /// Replaces the v128 on the stack with a lane mask: all ones where the lane
-/// isn't a NaN, nor, under FZ, a denormal (FZ would flush it, raising IDC):
-/// without FZ `x == x`, under it zero, normal or infinite. Scratch: VT[3].
+/// isn't a NaN, nor, under FZ, a denormal (FZ would flush it, raising IDC).
+/// Scratch: VT[3].
 fn plain_lanes(c: &mut Func, d: bool) {
     fpa_guard(c);
     let tt = VT[3];
-    let (sign, min, inf) = if d {
-        (1u64 << 63, 1u64 << 52, 0x7ffu64 << 52)
-    } else {
-        (1 << 31, 1 << 23, 0xff << 23)
-    };
-    let (eq, ge, le) = if d {
-        (op::I64X2_EQ, op::I64X2_GE_S, op::I64X2_LE_S)
-    } else {
-        (op::I32X4_EQ, op::I32X4_GE_S, op::I32X4_LE_S)
-    };
-    c.local_set(tt);
-    c.local_get(FZOK).if_t(super::V128);
-    c.local_get(tt).local_get(tt);
+    c.local_tee(tt).local_get(tt);
     c.simd(op::CMP[d as usize][0]); // x == x
-    c.else_();
-    c.local_get(tt)
-        .v128_const(splat(d, !sign))
-        .simd(op::AND)
-        .local_tee(tt);
-    c.v128_const(splat(d, min)).simd(ge);
-    c.local_get(tt)
-        .v128_const(splat(d, inf))
-        .simd(le)
-        .simd(op::AND);
-    c.local_get(tt).v128_const(0).simd(eq).simd(op::OR);
-    c.end();
+    under_fz_bad(c, |c| {
+        c.local_get(tt);
+        denormal_lanes(c, d);
+    });
 }
 
 /// An FMA form's first factor negated (FMLS, FRECPS, FRSQRTS), the addend's
@@ -1574,12 +1562,12 @@ fn arith(
         c.simd(op::AND);
     }
     c.simd(op::OR);
-    under_fz_lanes(c, |c| {
+    under_fz_bad(c, |c| {
         a(c);
-        normal_or_zero(c, d);
+        denormal_lanes(c, d);
         b(c);
-        normal_or_zero(c, d);
-        c.simd(op::AND);
+        denormal_lanes(c, d);
+        c.simd(op::OR);
     });
     all_lanes(c, d, q, 1);
     guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
@@ -1958,14 +1946,14 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.simd(op::OR).simd(op::OR);
             c.local_get(tr);
             lanes_in(c, true, 2);
-            under_fz_lanes(c, |c| {
+            under_fz_bad(c, |c| {
                 vreg(c, rn);
-                normal_or_zero(c, true);
+                denormal_lanes(c, true);
                 factor(c);
-                normal_or_zero(c, true);
+                denormal_lanes(c, true);
                 acc(c);
-                normal_or_zero(c, true);
-                c.simd(op::AND).simd(op::AND);
+                denormal_lanes(c, true);
+                c.simd(op::OR).simd(op::OR);
             });
             all_lanes(c, true, q, 2);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
@@ -2083,14 +2071,14 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             acc(c);
             zero_lanes(c, false);
             c.simd(op::AND).simd(op::AND).simd(op::OR);
-            under_fz_lanes(c, |c| {
+            under_fz_bad(c, |c| {
                 vreg(c, rn);
-                normal_or_zero(c, false);
+                denormal_lanes(c, false);
                 factor(c);
-                normal_or_zero(c, false);
+                denormal_lanes(c, false);
                 acc(c);
-                normal_or_zero(c, false);
-                c.simd(op::AND).simd(op::AND);
+                denormal_lanes(c, false);
+                c.simd(op::OR).simd(op::OR);
             });
             all_lanes(c, false, q, 1);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
@@ -2168,9 +2156,9 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 }
                 c.simd(op::CMP[d as usize][cmp]); // ge, lt
             }
-            under_fz_lanes(c, |c| {
+            under_fz_bad(c, |c| {
                 vreg(c, rn);
-                normal_or_zero(c, d);
+                denormal_lanes(c, d);
             });
             all_lanes(c, d, q, 2);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
@@ -2216,8 +2204,8 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }
             under_fz(c, |c| {
                 vreg(c, rn);
-                normal_or_zero(c, true);
-                every_lane(c, true, true, 1);
+                denormal_lanes(c, true);
+                c.simd(op::ANY_TRUE).op(EQZ);
             });
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, true, tr));
         }

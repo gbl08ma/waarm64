@@ -63,7 +63,8 @@ FP/integer gap is about the same as in the dev VM. The checks cost more once FMA
    way integer compares do; FCSEL is bit work. Consider an FCMP/FCSEL/FCVT kernel in
    `bench/interp/guest-fp.c` so the benchmark sees them.
 3. **Done in part (2026-10-18): the operand tests run only under FZ** (`jit_fp_mips` 842 → 1,098
-   MIPS, +30%; llvmpipe +1.5% a frame under FZ; bench/interp/REPORT.md "M8: every FP instruction
+   MIPS, +30%; llvmpipe, under FZ, then −6% a frame with a cheaper denormal test: 4% under where it
+   started; bench/interp/REPORT.md "M8: every FP instruction
    inline, and results, not operands"). The ceiling with no checks at all was 1,755 MIPS on the M4:
    what's left is the result tests, the zero clauses, the per-instruction reduction and branch. The
    "known-good values" idea below is mostly moot now (it skipped operand tests). The original note:

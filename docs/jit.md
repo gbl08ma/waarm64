@@ -480,9 +480,10 @@ interpreter's; the helper runs the instruction otherwise.
   which a fast result never is; AHP only concerns half precision's all-ones exponent, which the
   half forms exclude.
 - **Under FZ** (llvmpipe's shaders run with it: requiring FZ clear made a frame 16× slower), a
-  denormal operand would be flushed (IDC): the operands are tested too, normal or zero, in a branch
-  on `FZOK` (`under_fz`) that a block takes the same way every time; without FZ it costs the
-  branch. The tests that don't round (compares, min/max, FRINT, FCVT widening) test operands for
+  denormal operand would be flushed (IDC): the operands are tested for denormals too (|x| - 1 below
+  the smallest normal's - 1, unsigned: three ops a lane; a NaN or ∞ fails the result test), in a
+  branch on `FZOK` (`under_fz`, `under_fz_bad`) that a block takes the same way every time; without
+  FZ it costs the branch. The tests that don't round (compares, min/max, FRINT, FCVT widening) test operands for
   NaNs, and for denormals under FZ the same way. A test in that branch reads only what the
   instruction read before it (a register's first read inside a branch would leave its local unset
   on the other path).
