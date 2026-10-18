@@ -333,6 +333,120 @@ fn round(c: &mut Func, f: F, x: u32, mode: Round) {
     }
 }
 
+/// FRECPE (`rsqrt` false) or FRSQRTE of the float bits in local `x` (format
+/// `f`) into local `r` (of `f`'s width), pushing an i32: the operand is one the
+/// estimate takes without flags. FRECPE: a normal operand below the FZ range
+/// (|x| < 2^126, 2^1022), so the result is normal; FRSQRTE: a positive normal
+/// one. Then the ARM ARM's estimates (without FEAT_RPRES), in i32 arithmetic:
+/// FRECPE's b = 2^19 / (2a + 1) for the 9-bit a = 1:fraction<F-1:F-8>, and
+/// exponent 2·bias - 1 - e; FRSQRTE's least b ≥ 512 with a·(b + 1)² ≥ 2^28,
+/// which is ceil(√(2^28 / a)) - 1 (the root of a non-square, at least ~2^-22
+/// from an integer: f64's √ decides it), its a 2·(a & !1) + 2 or 2a + 1 by the
+/// exponent's parity, and exponent (3·bias - 1 - e) / 2. The 8-bit estimate
+/// (b + 1) / 2 is the fraction's top. Scratch: i32 `tmp(false, 1..=3)` (`x`
+/// may be a single's `tmp(false, 0)`, `r` its `tmp(false, 3)`), FT[0].
+fn estimate(c: &mut Func, f: F, x: u32, r: u32, rsqrt: bool) {
+    let (sh, ones) = f.exp();
+    let (e, s8, v) = (
+        super::tmp(false, 1),
+        super::tmp(false, 2),
+        super::tmp(false, 3),
+    );
+    let w = if f.d { W } else { 0 };
+    // Pushes (x >> k) as an i32.
+    let field = |c: &mut Func, k: i64| {
+        c.local_get(x);
+        if f.d {
+            c.i64_const(k).op(SHR_U + W).op(0xa7); // i32.wrap_i64
+        } else {
+            c.i32_const(k as i32).op(SHR_U);
+        }
+    };
+    field(c, sh);
+    c.i32_const(ones as i32).op(AND).local_set(e);
+    if !rsqrt {
+        field(c, sh - 8);
+        c.i32_const(0xff).op(AND).i32_const(0x100).op(0x72); // i32.or
+        c.i32_const(1).op(0x74).i32_const(1).op(0x72).local_set(s8); // 2a + 1
+        c.i32_const(1 << 19).local_get(s8).op(0x6e); // i32.div_u (a ≥ 513)
+    } else {
+        // Odd exponent: 2a + 1 for a = 01:fraction<F-1:F-7>; even: 2·(a & !1) + 2 for 1:fraction<F-1:F-8>.
+        field(c, sh - 7);
+        c.i32_const(0x7f).op(AND).i32_const(0x80).op(0x72);
+        c.i32_const(1).op(0x74).i32_const(1).op(0x72);
+        field(c, sh - 8);
+        c.i32_const(0xfe).op(AND).i32_const(0x100).op(0x72);
+        c.i32_const(1).op(0x72).i32_const(1).op(0x74);
+        c.local_get(e).i32_const(1).op(AND);
+        c.select();
+        // b = max(512, ceil(√(2^28 / a)) - 1)
+        c.op(0xb8); // f64.convert_i32_u
+        c.local_set(super::FT[0]);
+        c.f64_const(268435456.0).local_get(super::FT[0]).op(0xa3); // f64.div
+        c.op(0x9f).op(0x9b).f64_const(1.0).op(F_SUB); // f64.sqrt, f64.ceil
+        c.f64_const(512.0).op(0xa5); // f64.max
+        c.op(0xfc).op(3); // i32.trunc_sat_f64_u
+    }
+    // The estimate: ((b + 1) >> 1) & 0xff, into s8.
+    c.i32_const(1).op(0x6a).i32_const(1).op(SHR_U);
+    c.i32_const(0xff).op(AND).local_set(s8);
+    // The exponent, into v.
+    let bias = (ones >> 1) as i32;
+    if rsqrt {
+        c.i32_const(3 * bias - 1)
+            .local_get(e)
+            .op(SUB)
+            .i32_const(1)
+            .op(SHR_U);
+    } else {
+        c.i32_const(2 * bias - 1).local_get(e).op(SUB);
+    }
+    c.local_set(v);
+    // r = sign (FRECPE) | v << F | s8 << (F - 8), in f's width.
+    let widen = |c: &mut Func, l: u32, k: i64| {
+        c.local_get(l);
+        if f.d {
+            c.op(0xad).i64_const(k).op(0x86); // i64.extend_i32_u, i64.shl
+        } else {
+            c.i32_const(k as i32).op(0x74);
+        }
+    };
+    widen(c, v, sh);
+    widen(c, s8, sh - 8);
+    let or = 0x72 + if f.d { 0x12 } else { 0 };
+    c.op(or);
+    if !rsqrt {
+        c.local_get(x);
+        if f.d {
+            c.i64_const(i64::MIN);
+        } else {
+            c.i32_const(i32::MIN);
+        }
+        c.op(AND + w).op(or);
+    }
+    c.local_set(r);
+    // The operand check.
+    if rsqrt {
+        // Positive normal: x - min_normal < (all-ones exponent - 1) << F, unsigned.
+        c.local_get(x);
+        if f.d {
+            c.i64_const(1 << 52)
+                .op(SUB + W)
+                .i64_const(0x7fe << 52)
+                .op(LT_U + WC);
+        } else {
+            c.i32_const(1 << 23).op(SUB).i32_const(0xfe << 23).op(LT_U);
+        }
+    } else {
+        // 1 ≤ e < 2·bias - 1 (2^126 and up is FZ's flush range).
+        c.local_get(e)
+            .i32_const(1)
+            .op(SUB)
+            .i32_const(2 * bias - 2)
+            .op(LT_U);
+    }
+}
+
 /// FCVTXN's rounding: the double in i64 local `x` to a single rounded to
 /// odd, into i32 local `r`; pushes an i32, the RNE demote's exponent from
 /// the second binade up and finite (then neither rounding over- or
@@ -501,6 +615,8 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             | FCVTZU_int_2
             | FCVTXN_1
             | FRECPX_2
+            | FRECPE_2
+            | FRSQRTE_2
     );
     let f = match (simd, bits(i, 23, 22)) {
         (true, _) => F { d: bit(i, 22) },
@@ -928,6 +1044,13 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             }
             exp_in(c, f, x, 1);
             c.op(0x72); // i32.or
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
+        }
+        // FRECPE, FRSQRTE (scalar): `estimate`; no flags, no FPOK.
+        FRECPE_2 | FRSQRTE_2 => {
+            f.load(c, rn);
+            c.local_set(x);
+            estimate(c, f, x, r, op == FRSQRTE_2);
             guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         // FCSEL: bits, no flags.
@@ -2026,6 +2149,29 @@ fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             normal_or_zero(c, true);
             c.simd(op::I64X2_ALL_TRUE).op(AND);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, true, tr));
+        }
+        // FRECPE, FRSQRTE: `estimate` lane by lane; no flags, no FPOK.
+        FRECPE_4 | FRSQRTE_4 => {
+            let f = F { d };
+            let (x, r) = (f.tmp(0), f.tmp(3));
+            let n = if d {
+                2
+            } else if q {
+                4
+            } else {
+                2
+            };
+            c.v128_const(0).local_set(tr);
+            c.i32_const(1);
+            for lane in 0..n {
+                vreg(c, rn);
+                c.simd_lane(if d { 0x1d } else { 0x1b }, lane).local_set(x); // extract_lane
+                estimate(c, f, x, r, op == FRSQRTE_4);
+                c.op(AND);
+                c.local_get(tr).local_get(r);
+                c.simd_lane(if d { 0x1e } else { 0x1c }, lane).local_set(tr); // replace_lane
+            }
+            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
         }
         // FABS, FNEG: bit operations, no flags.        // FABS, FNEG: bit operations, no flags.
         FABS_2 | FNEG_2 => {

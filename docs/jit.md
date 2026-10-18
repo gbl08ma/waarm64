@@ -570,11 +570,16 @@ interpreter's; the helper runs the instruction otherwise.
   pairs, the fixed-point conversions) run the vector rules on lane 0 alone (`Func::vsc`: the lane
   checks ignore the other lanes, and the write clears them); the scalar compares and conversions
   are the scalar path's (their size is bit 22).
-- **Still helper calls on purpose:** FRECPE/FRSQRTE (the ARM ARM's integer estimates: a division
-  and a search per lane; the FP suite models them, so they can come inline), FP16 arithmetic (not
-  advertised), and every fast path's fallback: NaN and denormal operands, FPCR.RMode other than
-  nearest even or FPSR.IXC clear where a result may be inexact, results in the smallest normal
-  binade or beyond.
+- **FRECPE/FRSQRTE** (scalar and vector, lane by lane): the ARM ARM's integer estimates (without
+  FEAT_RPRES) for the operands that raise nothing: FRECPE's normal ones below FZ's flush range
+  (2^126, 2^1022), whose results are normal; FRSQRTE's positive normal ones. FRECPE's b = 2^19 /
+  (2a + 1) is an `i32.div_u`; FRSQRTE's search (the least b ≥ 512 with a·(b + 1)² ≥ 2^28) is
+  ceil(√(2^28 / a)) - 1 in f64: 2^28 / a is never a square, and its root is at least ~2^-22 from
+  an integer, far above f64's error.
+- **Still helper calls on purpose:** FP16 arithmetic (not advertised), and every fast path's
+  fallback: NaN and denormal operands, FPCR.RMode other than nearest even or FPSR.IXC clear where
+  a result may be inexact, results in the smallest normal binade or beyond, the encodings that are
+  UNDEFINED.
 - **Half precision** (FCVTL/FCVTN with sz = 0, llvmpipe's 16-bit colour paths): FCVTL is exact
   without flags but for NaNs (FZ doesn't apply to half): the magnitude shifted into a single's
   fields is the value × 2^-112, denormals too, so an `f32x4.mul` by 2^112 converts it. FCVTN rounds
