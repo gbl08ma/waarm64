@@ -1,6 +1,8 @@
-# USB devices through WebUSB and WebHID (a plan; not scheduled)
+# USB devices through WebUSB and WebHID
 
-**Status:** proposed 2026-10-15; WebHID added 2026-10-18. Nothing here is built. It answers the question "could
+**Status:** proposed 2026-10-15; WebHID added 2026-10-18. **U0–U4 built 2026-10-18** (how it works now:
+[docs/usb.md](../usb.md)); U5 has begun with the user's devices ("U5 findings"), and U6 waits for the user's OK.
+It answers the question "could
 the user attach any USB device plugged into their computer to the guest, through WebUSB?". **Yes, for most devices
 that matter here.** The guest gets an emulated xHCI controller, and each attached device is passed through to
 Chromium's WebUSB. The limits come from WebUSB, not from the machine (§2).
