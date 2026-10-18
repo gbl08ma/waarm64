@@ -75,6 +75,41 @@ test adapter, or anything on the page behind a `MessagePort`).
   client connects to, no account. The basis of [tailnet.md](../tailnet.md) "tailcat".
 - **Direct Sockets API** (Chromium): raw TCP/UDP, but only for Isolated Web Apps. Not a page
   feature; noted, not planned.
+- **[Rings](https://github.com/RingsNetwork/rings)** (checked 2026-10-18 at v0.33.0, `cf6c0ed`, as
+  a backend for decentralized LANs over WebRTC; **rejected**). A Chord DHT whose nodes, browser tabs
+  included, are addressed by a DID (20 bytes from a wallet-style key: secp256k1, P-256, ed25519)
+  and talk over WebRTC data channels, joined through a seed node's HTTP JSON-RPC (`node.rings.rs`),
+  STUN only. Why not:
+  - **AGPL-3.0-only** (relicensed from GPL-3.0 on 2026-09-09), so not a dependency of this MIT
+    project; at most a behavioral reference, like QEMU.
+  - **Pre-1.0 with an unversioned wire protocol**: 0.22 to 0.33 in five weeks, each "cutover" a
+    network-wide upgrade. The npm package's `latest` is still 0.2.1 (2023).
+  - **Every message is a signed, admitted transaction**, built for an open overlay, not packets: two
+    secp256k1 ECDSA signatures (origin and hop, re-checked at every hop), a persisted replay record
+    on both ends under one global lock (its own measurement: ~50/s with the native flushed store;
+    IndexedDB in a browser), a per-(origin, destination, class) quota of **8 messages/s** (burst 32)
+    by default, credit counted in frames (16 per lane per round trip). Its own throughput target
+    (#843) is 1 MB/s per link.
+  - **Measured** (its relay example built natively on a cloud session's x86_64, two nodes on
+    loopback, in-memory replay store, one ad-hoc run each): with default quotas a UDP tunnel echoed
+    1% of 1,000 packets/s and a TCP tunnel stalled after 750 KB and reset. With the quota lifted
+    (`ProcessorBuilder::origin_quota`): TCP **124 Mbit/s** (30 KB messages), but 1,200-byte
+    datagrams top out at **~1,060 packets/s (10 Mbit/s) each way**, the rest dropped; echo RTT 3.7 ms.
+    A guest's packets are one message each (batching them reintroduces head-of-line blocking on its
+    ordered, reliable channels); our tailnet client does 138 Mbit/s through DERP
+    ([tailnet.md](../tailnet.md) "Numbers"). A browser node would be slower still (one thread,
+    IndexedDB per message; not measured).
+  - **No IP layer to reuse**: `crates/gateway` is native-only (it refuses to build for wasm) and
+    terminates IPv4/TCP flows in smoltcp toward onion exits; nothing assigns addresses. Payloads are
+    readable by every hop without its E2E mode (ElGamal on secp256k1, 2.3× expansion, a signed
+    message per 464 bytes). Membership is only a `network_id` in the signatures: no allowlist, Sybil
+    resistance a stated non-goal, and a node picks its own ring position (its DID).
+  - Size: rings.rs's page wasm (node and UI) is 13.0 MB, 3.2 MB Brotli (ours: 0.49 MB). A node keeps up
+    to 328 connections (160 fingers); the public overlay's size isn't published.
+
+  What carries over to §6: the DID-to-address idea is what tailcat already does (an address from the
+  node key, accepted only from that key), and a signed DHT record per name is how rings publishes
+  its online nodes (`online_nodes`).
 
 ## 3. The Ethernet gateway (backend-independent)
 
@@ -200,7 +235,8 @@ M8's original idea: VMs in different browsers on one virtual LAN over WebRTC dat
 the frame interface: a switch (learning MAC table, broadcast to all peers) with no gateway,
 though one VM or a gateway instance can offer DHCP to the rest. It needs a signaling server, and
 TURN when peers can't connect directly. No commitment: explore after the Tailscale backend, and
-drop it if it doesn't pan out.
+drop it if it doesn't pan out. Rings, a ready-made decentralized overlay, was checked for this and
+rejected (§2).
 
 ## 7. Steps
 
