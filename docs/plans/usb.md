@@ -26,7 +26,7 @@ backend. The order is in §6.
   SoC.
 - **xHCI does not need PCI.** Linux's `xhci-plat-hcd` binds a DT node `compatible = "generic-xhci"` with one MMIO
   window and one interrupt. The same driver serves the DWC3 and other SoC xHCIs, so distro kernels that support
-  arm64 boards build it (U0 checks which of our guests do: §6).
+  arm64 boards build it (which of our guests do: "U0 findings").
 - **The shape fits the existing device split** ([devices.md](../devices.md)). The core owns the register file and the
   guest-memory data structures. The device worker owns the backend. Rings carry requests and completions between
   them:
@@ -95,10 +95,10 @@ Chromium:
   appears for an already-granted vendor:product:serial.
 - **Where it runs:** `navigator.usb` exists in dedicated workers (`WorkerNavigator.usb`), and `requestDevice` is
   Window-only. The page asks, then sends the worker {vendorId, productId, serialNumber}. The device worker finds the
-  same device with `getDevices()` and opens it there, next to the other backends. U0 checks this. If it fails, the
-  page owns the `USBDevice` and the backend talks to it over a `MessagePort`, at the cost of one more hop per
-  transfer. Two identical devices without serial numbers are told apart by the order `getDevices()` lists them in,
-  and U0 checks that order is stable.
+  same device with `getDevices()` and opens it there, next to the other backends. U0 confirmed that this works on
+  Chromium 153. Two identical devices without serial numbers are told apart by the order `getDevices()` lists them
+  in. U0 found that order stable within a browser session only: a restarted browser can swap the twins
+  ("U0 findings").
 - **Only Chromium has WebUSB.** That is the target anyway (the project's rule: other browsers' gaps don't block).
   WebUSB works under COOP/COEP, and an embedding iframe needs `allow="usb"`.
 
@@ -124,9 +124,9 @@ From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-check
   ID and offset, so they work when the layout is the same. The few that patch the original descriptor by its size
   or bytes in `report_fixup` will see a descriptor they don't recognise; those are listed in U5.
 - **Protected usages are hidden.** Chromium keeps from pages the collections a page could use to read keystrokes or
-  steer the pointer: the Keyboard usage page, the Generic Desktop keyboard, keypad, mouse and pointer collections
-  (their feature reports stay open, which is how keyboard configuration tools such as VIA work), and the system
-  control usages. FIDO security keys (usage page 0xF1D0) are on the blocklist. The rebuilt descriptor simply leaves
+  steer the pointer: the Keyboard usage page, the Generic Desktop keyboard, keypad and mouse collections (their
+  feature reports stay open, which is how keyboard configuration tools such as VIA work), and the system control
+  usages. U0 measured what this does to a keyboard composite and to a game pad's Pointer collection ("U0 findings"). FIDO security keys (usage page 0xF1D0) are on the blocklist. The rebuilt descriptor simply leaves
   out what WebHID doesn't show, so a composite device (a keyboard with a vendor configuration collection) becomes a
   guest device with only the vendor part. Keyboards and mice themselves stay the page's virtio-input.
 - **The host keeps its driver.** WebHID opens the host's HID node (`hidraw` on Linux, IOHIDManager on macOS, the
@@ -134,8 +134,8 @@ From the WebHID spec (WICG) and Chromium's source, as of 2026-10-18. U0 re-check
   user needs read and write permission on `/dev/hidraw*`, which a udev rule gives (U4 says so when it is missing).
   The host still sees a game pad's input too, which matters only if something on the host listens.
 - **Where it runs:** the spec exposes `navigator.hid` in dedicated workers, with `requestDevice` Window-only, as
-  WebUSB. U0 checks whether the pinned Chromium ships the worker side. If not, the page owns the `HIDDevice` and
-  forwards reports over a `MessagePort`; reports are small and few, so the extra hop costs little here.
+  WebUSB. U0 confirmed that the pinned Chromium ships the worker side: `getDevices()`, `open`, input reports,
+  `sendReport` and the feature reports all work in a dedicated worker.
 - **Identity:** permission persists per origin. With no serial number, two identical game pads are told apart by
   `getDevices()` order, as with WebUSB.
 - **What WebHID can't reach:** HID devices whose only collections are protected (plain keyboards and mice), and
@@ -386,24 +386,24 @@ restores onto a machine whether or not a device is plugged in. Devices are the m
 - **Real WebUSB, end to end, in the dev VM:** Lima's `vz` passes no host USB devices through, so the test device
   comes from the VM's own kernel. `dummy_hcd` plus a configfs gadget (`f_sourcesink` and `f_loopback`: Gadget Zero
   for real; `f_acm` for a CDC device) appears to Chromium as a USB device. Setup:
-  - `usbtest` is blocklisted on the host side so the gadget stays free.
-  - A udev rule opens it to the user.
-  - Permission comes without a prompt, through the `WebUsbAllowDevicesForUrls` policy or the DevTools protocol's
-    `DeviceAccess` prompt handling; U0 picks one.
+  - `usbtest` and `cdc_acm` are blocklisted on the host side so the gadgets stay free.
+  - A udev rule opens them to the user.
+  - Permission comes without a prompt, through the `WebUsbAllowDevicesForUrls` policy (U0: the DevTools
+    protocol's prompt handling doesn't work for WebUSB).
 
   The guest then runs the same `testusb -a` through the real Chromium and usbfs stack. It goes in
-  `scripts/ci-debian.sh`'s set when the gadget is present, and is skipped otherwise. Cloud containers can't load
-  modules.
-- **Oracle:** QEMU (`qemu-xhci` on PCI with `usb-host` on the same dummy gadget, and with its emulated
-  `usb-kbd`/`usb-storage`) in the dev VM. The same `testusb` results and the guest's `xhci-hcd` tracepoints are
-  compared on behavior: event order, completion codes, residuals.
+  `scripts/ci-usb.sh`, the script for tests that need the dev VM's host rigs, never in `ci.sh` or `ci-debian.sh`.
+  Without the rigs it is skipped. Cloud containers can't load modules.
+- **Oracle:** QEMU (`qemu-xhci` on PCI with `usb-host` on the same dummy gadget) in the dev VM,
+  `tests/usb/oracle.sh`. The same `testusb` results and QEMU's `usb_xhci_*` trace events are compared on
+  behavior: event order, completion codes, residuals. The linux-usb guest has no tracepoints of its own.
 - **WebHID, end to end, in the dev VM:** the VM's kernel makes the test device again, this time through `uhid`
   (`/dev/uhid`): a small rig of ours creates HID devices from recorded report descriptors (a DualSense, a Stream
   Deck, a vendor collection with feature reports, a device with report IDs and one without), and Chromium sees each
-  as a `hidraw` device. Permission comes through the `WebHidAllowDevicesForUrls` policy or the DevTools prompt
-  handling, as for WebUSB. The guest's view is checked against the rig: `/sys/.../report_descriptor` parses to the
-  same items, `hid-tools`' `hid-recorder` sees the input reports the rig sends, and output and feature reports
-  written in the guest arrive at the rig. In `scripts/ci-debian.sh`'s set when `/dev/uhid` is usable.
+  as a `hidraw` device. Permission comes through the `WebHidAllowAllDevicesForUrls` policy, as for WebUSB. The
+  guest's view is checked against the rig: `/sys/.../report_descriptor` parses to the same items, `hid-tools`'
+  `hid-recorder` sees the input reports the rig sends, and output and feature reports written in the guest arrive
+  at the rig. In `scripts/ci-usb.sh`, skipped when `/dev/uhid` isn't usable.
 - **Real devices, by the user** (the dev VM has none): a checklist in U5.
 
 ## 6. Steps, when scheduled
@@ -457,6 +457,73 @@ restores onto a machine whether or not a device is plugged in. Devices are the m
   What fails becomes a backlog line or a fix.
 - **U6 (optional, its own OK):** isochronous transfers, and the USB keyboard for EDK2 (§4, "Virtual devices").
 
+## U0 findings (2026-10-18)
+
+Measured on the dev VM: Chromium 153.0.8010.52 headless through Playwright, kernel 7.2.9-1-default, QEMU 11.1.2.
+The rigs and how to bring them up are in [testing.md](../testing.md) "USB: the dev VM's host rigs".
+
+- **Workers:** `navigator.usb` and `navigator.hid` exist in a dedicated worker. `getDevices()` there lists the
+  granted devices, and opening a device, transfers, input reports, `sendReport` and the feature reports all work
+  in the worker. The device worker owns its devices, as §2 and §2a planned. No `MessagePort` fallback is needed.
+- **Permission without a prompt:** only the managed policy works. `/etc/chromium/policies/managed/` is read by the
+  pinned Chromium, also when Playwright launches it. `WebUsbAllowDevicesForUrls` grants the 0525 gadgets and
+  `WebHidAllowAllDevicesForUrls` grants every HID device, both for exact origins only (`http://127.0.0.1:8190`–`8197`;
+  another port gets nothing). The DevTools protocol's `DeviceAccess.deviceRequestPrompted` never fires for WebUSB
+  or WebHID. `requestDevice` in headless Chromium just waits, even with a user gesture, so no test can drive the
+  chooser. Tests of the page's own Allow flow keep faking the API (`tests/page-usb.test.ts`).
+- **`getDevices()` order** is the same on every call within a browser session, in the page and in a worker alike.
+  Across browser launches, two serial-less Gadget Zeros came back in either order (6 launches, 3 of each). Matching
+  identical devices by index therefore holds within a session only; docs/usb.md says what that means for
+  remembered devices.
+- **WebUSB's cost per transfer** (Gadget Zero on dummy_hcd at high speed, from a worker; a sizing with other
+  work on the VM, not a benchmark): a control or bulk transfer takes 0.335 ms (median, p99 0.36–1.2), against
+  0.20 ms through usbfs natively, so **WebUSB adds ~0.13 ms per transfer**. The 0.20 ms floor is dummy_hcd's own
+  timer. An echo (OUT, then IN) takes 0.665 ms against 0.405. A guest driver that waits on each transfer gets about
+  3,000 a second. Bulk transfers of 1 MiB move ~180 MB/s (70–80% of native), so throughput is no limit for a
+  high-speed device. On dummy_hcd more transfers in flight were slower (64 KiB: 112 MB/s at one, 37 at eight); it
+  isn't known whether that is dummy_hcd or Chromium. usbfs caps buffered transfers at 16 MiB
+  (`usbcore.usbfs_memory_mb`), shared by every device Chromium has open: sixteen 1 MiB transfers in flight failed.
+  The numbers and JSON are in `bench/usb/` (`results/2026-10-18-sizing.json`).
+- **Guest kernels** (`xhci-plat-hcd`, then `usbtest`, `cdc_acm`, `usbhid`, `hid-generic`, `uhid`):
+
+  | Guest | `xhci-plat-hcd` | the rest |
+  |---|---|---|
+  | Debian 13 (6.12.107+deb13-arm64) | module, autoloaded by its `of:…Cgeneric-xhci` alias | all modules; `hidraw` built in |
+  | Arch desktop (7.2.9-arch1-1) | **built in** (with usbcore, xhci-hcd, hid, hid-generic, usbhid) | `usbtest`, `cdc_acm`, `uhid`, `hid-playstation` modules |
+  | Alpine `linux-virt` (6.18.52, our alpine images) | **missing** (only `xhci-pci`) | `usbhid`, `hid-generic`, `uhid` modules; no `usbtest`, no `cdc_acm` |
+  | Alpine `linux-lts`, `linux-stable` | module (pkgs.alpinelinux.org) | `usbtest`, `cdc_acm` in lts's config |
+  | our Buildroot kernel (`linux`) | none (`CONFIG_USB_SUPPORT` off) | the `linux-usb` guest has what the tests need |
+
+  So Alpine on `linux-virt` sees no controller; §8's remedy is `linux-lts`.
+- **The QEMU oracle** (`tests/usb/oracle.sh`: linux-usb on `qemu-xhci` with `usb-host` on the dummy_hcd Gadget
+  Zero, one boot per test): every testusb test passes or is skipped by usbtest for this device except **test 24**
+  (unlink from queues of writes). It hangs every time on QEMU. With 32-deep queues the guest's xhci-hcd logged
+  events for TRBs outside any TD first, so this is QEMU's `qemu-xhci`/`usb-host`, not the gadget. Ours: the xhci
+  lane's `testusb -a` passes on our virtual Gadget Zero (all tests, 24 among them). Ours on the dummy_hcd gadget, through WebUSB,
+  isn't run yet (the backends lane's guest tests in `ci-usb.sh`).
+- **WebHID's parse** of the uhid rig's six descriptors is recorded in `tests/usb/hid-fixtures/`. What the backend
+  needs to know:
+  - Reports within a collection don't come in descriptor order (a vendor collection's input reports came as 2, 6,
+    1). The order is the same from run to run. Usages are 32-bit (page << 16 | usage), and constant padding items
+    are listed.
+  - **Protected collections**, on a keyboard composite: the Keyboard collection stays, with only its feature
+    report (no input, no LED output). System Control goes entirely. The Mouse collection stays as an empty
+    application collection, though its Pointer child still lists its input report. At runtime the keyboard's and
+    mouse's input reports never arrive, and `sendReport` to the LED report is a `NotAllowedError`. Consumer Control
+    and vendor collections work. A game pad's Pointer physical collection isn't protected.
+  - **Framing:** an `inputreport` event's data has no report ID byte (`reportId` carries it), but
+    `receiveFeatureReport`'s data starts with the ID when the device uses IDs. Without IDs the ID is 0 and nothing
+    is prefixed. On Linux the host's hidraw sees a 0 byte in front of a no-ID device's output and feature writes.
+  - The transcribed DualSense descriptor is accepted by the host's own `hid-playstation`, which reads its feature
+    reports and sends 64-byte output reports through it. That checks the sizes against a real driver.
+- **Host rigs:** openSUSE doesn't ship `dummy_hcd`. `tests/usb/gadget.sh install` builds it from kernel.org's source
+  for the running kernel. Installing `qemu-hw-usb-host` for the oracle moved QEMU to 11.1.2.
+
+**What changed in the plan:** the device worker owns WebUSB and WebHID devices, with no fallback. Permission in
+tests is the managed policy only. The rig tests go in `scripts/ci-usb.sh` (§5), not `ci-debian.sh`. The
+`getDevices()` index of serial-less twins is per session (§2, §4a; docs/usb.md). Alpine `linux-virt`'s missing
+`xhci-plat-hcd` is confirmed (§8).
+
 ## 7. What WebUSB can't attach, and where it should go instead
 
 | Device | Route |
@@ -483,7 +550,7 @@ restores onto a machine whether or not a device is plugged in. Devices are the m
 - **Rebuilt report descriptors** that a guest driver doesn't accept, because it patches the original by its bytes
   or checks its length. Found per device in U5; a table of known originals keyed by vendor and product could serve
   those few devices their real descriptor when its parse matches WebHID's.
-- **Guest kernels without `xhci-plat-hcd`** (possibly Alpine's `virt`) get nothing. That would be a reason to ask
-  the distribution, or to recommend `linux-lts` there.
+- **Guest kernels without `xhci-plat-hcd`** get nothing. Alpine's `linux-virt` is one (U0); `linux-lts` and
+  `linux-stable` have it. That is a reason to ask the distribution, and to recommend `linux-lts` there meanwhile.
 - **Parallel SMP:** the controller sits under `Vm::plat` like the transports. A busy device's completions take the
   lock at chunk boundaries as virtio's do, so no new design is needed. Check it under the stress runs.
