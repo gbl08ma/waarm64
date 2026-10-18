@@ -8,6 +8,7 @@ pub mod gpu;
 pub mod p9;
 pub mod qcow2;
 pub mod snd;
+pub mod usb;
 
 use qcow2::Disk;
 use std::collections::{HashMap, VecDeque};
@@ -457,6 +458,8 @@ struct Backends {
     /// The epoch each device last saw: a change is a virtio reset.
     epochs: Vec<u32>,
     ram_size: u64,
+    /// The xHCI's devices (`Boot::usb`).
+    usb: Option<usb::UsbHost>,
 }
 
 impl Backends {
@@ -491,6 +494,7 @@ impl Backends {
                 .collect(),
             epochs: vec![0; devs.len()],
             ram_size,
+            usb: None,
         }
     }
 
@@ -538,6 +542,9 @@ impl Backends {
 
     /// Takes every device's events and requests (a DEVICE exit).
     fn poll(&mut self, vm: &Vm) {
+        if let Some(u) = &mut self.usb {
+            u.poll(vm);
+        }
         let sh = &vm.shared;
         for (i, d) in sh.devices.iter().enumerate() {
             let events = d.events.swap(0, Ordering::AcqRel);
@@ -847,6 +854,17 @@ pub struct Boot<'a> {
     /// (`interp::block`); 0, the interpreter alone. `WEBPC_NATIVE_JIT` sets
     /// the default (0).
     pub jit: u64,
+    /// An xHCI (`VmConfig.xhci`) with Gadget Zeros: plugged in at start (connector, options), and
+    /// plugged (Some) or unplugged (None) at step counts (deterministic round-robin only), as
+    /// web/vm.ts `BootOptions.usb` does.
+    pub usb: Option<UsbBoot<'a>>,
+}
+
+/// `Boot::usb`.
+#[derive(Clone, Copy, Default)]
+pub struct UsbBoot<'a> {
+    pub attach: &'a [(usize, usb::GzOptions)],
+    pub events: &'a [(u64, usize, Option<usb::GzOptions>)],
 }
 
 /// The firmware configuration's host side: the flash bank's size and saved
@@ -901,6 +919,7 @@ impl<'a> Boot<'a> {
             snapshots: &[],
             flush_only: false,
             jit: std::env::var("WEBPC_NATIVE_JIT").map_or(0, |v| v.parse().unwrap()),
+            usb: None,
         }
     }
 }
@@ -924,7 +943,13 @@ pub fn boot(b: &Boot) -> Run {
         snapshots,
         flush_only,
         jit,
+        usb,
     } = b;
+    assert!(
+        usb.is_none_or(|u| u.events.is_empty()) || !(parallel || realtime),
+        "USB events at a step: deterministic round-robin only"
+    );
+    let mut usb_events = usb.map_or(&[][..], |u| u.events).iter().copied().peekable();
     assert!(
         input.is_none() || !parallel,
         "input at a step: round-robin only"
@@ -951,6 +976,11 @@ pub fn boot(b: &Boot) -> Run {
         flash_size: firmware.as_ref().map_or(0, |f| f.flash_size),
         rtc: firmware.as_ref().map_or(0, |f| f.rtc),
         jit,
+        xhci: if usb.is_some() {
+            webpc_core::xhci::CONFIG
+        } else {
+            0
+        },
         ..VmConfig::default()
     };
     assert!(cfg.valid_firmware());
@@ -975,6 +1005,13 @@ pub fn boot(b: &Boot) -> Run {
         }
     }
     let mut backends = Backends::new(devices, ram_size);
+    if let Some(u) = usb {
+        let mut host = usb::UsbHost::default();
+        for &(c, o) in u.attach {
+            host.attach(&vm, c, o);
+        }
+        backends.usb = Some(host);
+    }
     let load = |vm: &Vm, pa: u64, b: &[u8]| {
         let p = vm.mem.host(pa, b.len() as u64, Access::Write).unwrap();
         // SAFETY: host() checked the range is guest RAM.
@@ -1037,6 +1074,21 @@ pub fn boot(b: &Boot) -> Run {
             let budget = match input {
                 Some((at, _)) if steps < at => (at - steps).min(100_000_000),
                 _ => 100_000_000,
+            };
+            // USB plugs at their steps (web/vm.ts `runToPowerOff`), exactly there.
+            while let Some(&(at, c, o)) = usb_events.peek()
+                && steps >= at
+            {
+                usb_events.next();
+                let host = backends.usb.as_mut().unwrap();
+                match o {
+                    Some(o) => host.attach(&vm, c, o),
+                    None => host.detach(&vm, c),
+                }
+            }
+            let budget = match usb_events.peek() {
+                Some(&(at, _, _)) => budget.min(at - steps),
+                None => budget,
             };
             // A budget that ends only for a snapshot isn't a boundary of the
             // unbroken run: the input's next bytes aren't pumped there.

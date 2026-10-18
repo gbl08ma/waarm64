@@ -26,7 +26,10 @@ import { runExport, type ExportMode } from './export.ts';
 import { runImport } from './import.ts';
 import { createNetwork, DEFAULT_SETTINGS, parseControlURL, parseHostname, type NetworkSettings } from './network.ts';
 import type { FromWorker, Problem, StartDisk, Status, ToWorker } from './protocol.ts';
-import { CPU_FEATURES, newId, serialOf, shapeDiff, type DiskRecord, type MachineRecord, type Shape } from './shape.ts';
+import { CPU_FEATURES, newId, serialOf, shapeDiff, USB_CONNECTORS, type DiskRecord, type MachineRecord, type Shape, type UsbEntry } from './shape.ts';
+import { deviceName, entryOf, identityKey, identityOf as usbIdentity, newEntry, usbLock } from './usb-ports.ts';
+import { browserApi, entryStates, filterFor, findDevices, granted, identityOfDevice, isGranted, requestDevices, ungranted, UsbError, UsbLocks, UsbPorts, type Api, type HostDevice } from './usb-live.ts';
+import type { UsbIdentity, UsbVirtual } from '../usb-device.ts';
 import { currentShape, planRestore } from './snapshots.ts';
 import { hashFile } from './definitions.ts';
 import type { DiskPlan, SnapshotDisk } from '../snapshot.ts';
@@ -358,7 +361,7 @@ function scheduleSize(now = false) {
 ui.hasGpu = hasGpu;
 
 // One machine at a time; a restart stops it and starts a new worker (fresh memory, fresh ports, a fresh canvas).
-type Run = { worker: Worker; input: Input; serial: MessagePort; display: MessagePort; gpu?: Worker };
+type Run = { worker: Worker; input: Input; serial: MessagePort; display: MessagePort; gpu?: Worker; usb?: UsbPorts; usbStarted?: boolean };
 
 /**
  * Benchmarks' hooks (`?displaystats`, bench/gpu/sway-load.ts): the last status in `window.__status`, and
@@ -432,6 +435,7 @@ function setState(s: PageState, message?: string, actions: Action[] = [], kind: 
   showMessage(message ?? note, actions, message ? kind : 'warn');
   ui.boot.shown = (s === 'loading' || s === 'booting') && !ui.boot.done;
   ui.boot.serial = !!spec.firmware && s === 'booting';
+  ui.usb.running = !!run?.usb && (s === 'running' || s === 'booting');
   syncButtons();
 }
 /** What happened, said while the machine stays as it is (a snapshot saved, or not): the message bar clears itself after 30 s. */
@@ -513,7 +517,9 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
   const ip = spec.network ? network.port() : undefined;
   const [kbd, tablet, serial] = [new MessageChannel(), new MessageChannel(), new MessageChannel()];
   const sound = audio.attach();
-  const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true) }), serial: serial.port1, display: display.port1 };
+  // A machine with a USB controller: the port its devices are attached over (docs/usb.md "The page").
+  const usb = usbOn() ? new MessageChannel() : undefined;
+  const r: Run = { worker, input: attachInput(canvas, kbd.port1, tablet.port1, { live: () => keyboardLive, send: (d) => term.input(d, true) }), serial: serial.port1, display: display.port1, usb: usb && usbPorts(usb.port1) };
   run = r;
   keyboardLive = false;
   last = undefined;
@@ -543,7 +549,10 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
         scheduleSize(true); // a restored machine starts at the size it was saved with
       }
       if (m.state === 'rebooting') void restart();
+      // Its devices go on once the machine runs: at a boot, a resume and a restore alike (a snapshot's ports are empty).
+      if ((m.state === 'booting' || m.state === 'running') && r.usb && !r.usbStarted) { r.usbStarted = true; void attachAtStart(r); }
       if (m.state === 'off' || m.state === 'crashed' || m.state === 'suspended' || m.state === 'failed') {
+        r.usb?.close();
         dropLock();
         void refreshRecords();
       }
@@ -614,7 +623,7 @@ function start(snapshot?: File, resume = true, plan?: DiskPlan[]) {
     if (run !== r) return;
     const s = three ? undefined : screen;
     if (hasGpu) document.body.dataset.graphics = three ? '3d' : '2d'; // for tests
-    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, ip, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : [])]);
+    worker.postMessage({ type: 'start', machine, ncpus, ramMiB, disks, home, keyboard: kbd.port2, tablet: tablet.port2, serial: serial.port2, screen: s, display: display.port2, size: hasGpu ? size : undefined, simple: params.get('display') === 'simple' || undefined, displayStats: params.has('displaystats') || undefined, avProbe: params.has('avprobe') || undefined, cpu: { rng: params.get('rng') !== '0', e0pd: params.get('e0pd') !== '0' }, params: params.get('params') ?? undefined, credentials, ip, usb: usb?.port2, sound, snapshot, resume, about, plan, ...three } satisfies ToWorker, [kbd.port2, tablet.port2, serial.port2, display.port2, sound.port, ...(s ? [s] : []), ...(three ? [three.renderer] : []), ...(ip ? [ip] : []), ...(usb ? [usb.port2] : [])]);
   };
   if (want3d && !no3d) {
     // The GPU worker gets the canvas and says what it backs; the machine starts with those caps.
@@ -670,6 +679,7 @@ async function stop() {
   if (!r) return;
   r.input.detach();
   audio.detach();
+  r.usb?.close();
   await new Promise<void>((resolve) => {
     const t = setTimeout(resolve, 3000);
     r.worker.onmessage = (e: MessageEvent<FromWorker>) => { if (e.data.type === 'stopped') { clearTimeout(t); resolve(); } };
@@ -721,6 +731,7 @@ async function reloadStored() {
   no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
   syncMachineMenu();
   syncDiskButtons();
+  syncUsb();
   return true;
 }
 
@@ -831,6 +842,7 @@ async function switchMachine(id: string) {
     ui.current = id;
     syncDiskButtons();
     syncMachineMenu();
+    syncUsb();
     term.reset();
     if (needsDisk()) waitForDisk();
     else start();
@@ -1039,6 +1051,9 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
     }
   }
   if (run !== r || saving || switching || !(state === 'running' || state === 'booting')) return; // the machine moved on while the picker was open
+  const unplugged = await emptyPorts(r, 'Taking a snapshot');
+  if (!unplugged) return;
+  if (run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
   saving = true;
   syncButtons();
   const parts: Blob[] = [];
@@ -1069,6 +1084,7 @@ async function saveSnapshot(o: { toFile?: boolean; whole?: boolean } = {}) {
     saving = false;
     snapshotJob = undefined;
     syncButtons();
+    void plugBack(r, unplugged);
   }
 }
 
@@ -1077,6 +1093,8 @@ async function keepSnapshot(name: string) {
   const r = run;
   const s = stored;
   if (!r || !s || saving || switching || !(state === 'running' || state === 'booting')) return;
+  const unplugged = await emptyPorts(r, 'Taking a snapshot');
+  if (!unplugged || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
   saving = true;
   syncButtons();
   const id = newId();
@@ -1105,14 +1123,18 @@ async function keepSnapshot(name: string) {
     saving = false;
     snapshotJob = undefined;
     syncButtons();
+    void plugBack(r, unplugged);
   }
 }
 
 // Suspend (docs/frontend.md "Suspend"): the machine stops with its memory kept beside its disk in this
 // browser; the next start (this page opened again, Start) resumes it. Nothing is asked: nothing is lost.
-function suspend() {
+async function suspend() {
   const r = run;
   if (!r || saving || switching || !(state === 'running' || state === 'booting')) return;
+  // Its devices are unplugged first; the next start attaches the ones attached at start (docs/plans/usb.md §4a).
+  const unplugged = await emptyPorts(r, 'Suspending');
+  if (!unplugged || run !== r || saving || switching || !(state === 'running' || state === 'booting')) return;
   saving = true;
   syncButtons();
   snapshotJob = {
@@ -1125,6 +1147,7 @@ function suspend() {
       snapshotJob = undefined;
       if (run === r) { setState(state); notify(`${message}\nThe machine runs on.`, 'error'); }
       syncButtons();
+      void plugBack(r, unplugged);
     },
   };
   r.worker.postMessage({ type: 'suspend' } satisfies ToWorker);
@@ -1343,6 +1366,7 @@ async function saveSettings(m: MachineRecord) {
   await exclusively(async () => {
     await stop();
     s.record = await updateMachine(store, m);
+    syncUsb();
     [ncpus, ramMiB] = [s.record.ncpus, s.record.ramMiB];
     want3d = wants3d();
     no3d = want3d && !webgl2 ? 'this browser has no WebGL2' : undefined;
@@ -1375,10 +1399,284 @@ if (location.hash === '#machines') openMachines();
 for (const ev of ['pointerdown', 'keydown']) document.addEventListener(ev, () => audio.gesture(), { capture: true });
 if (params.has('snd')) (window as unknown as { __audio?: PageAudio }).__audio = audio; // tests and measurements (?snd=stats)
 
+// USB (docs/plans/usb.md §4a, docs/usb.md "The page"; the USB tab is web/app/Usb.svelte, the menu UsbMenu.svelte): a
+// machine with a controller (a stored one's `usb`, a transient one's `?usb=1`) attaches its remembered devices when it
+// runs, by their identities: the device worker opens them (web/usb-device.ts). A device is one machine's at a time (its
+// Web Lock, web/app/usb-live.ts); Snapshot and Suspend empty the ports first.
+const usbOn = () => (stored ? !!stored.record.usb : params.get('usb') === '1');
+/** A transient machine's remembered devices: this page's only, for its session. */
+let transientUsb: UsbEntry[] = [];
+const usbEntries = (): UsbEntry[] => (stored ? stored.record.usbDevices ?? [] : transientUsb);
+/** Changes machine `id`'s remembered devices (undefined: the page's transient machine's), in the store and here. */
+let usbEdits: Promise<unknown> = Promise.resolve();
+function editUsbEntries(id: string | undefined, f: (e: UsbEntry[]) => UsbEntry[]): Promise<void> {
+  // One at a time: each reads the record the one before wrote.
+  const next = usbEdits.then(() => editUsbEntriesNow(id, f));
+  usbEdits = next.catch(() => {});
+  return next;
+}
+async function editUsbEntriesNow(id: string | undefined, f: (e: UsbEntry[]) => UsbEntry[]) {
+  if (!id) {
+    transientUsb = f(transientUsb);
+  } else {
+    const m = await store.get('machines', id);
+    if (!m) throw new Error('that machine is gone');
+    m.usbDevices = f(m.usbDevices ?? []);
+    if (!m.usbDevices.length) delete m.usbDevices;
+    await store.put('machines', m);
+    if (stored?.record.id === id) stored.record.usbDevices = m.usbDevices;
+    ui.records++; // this tab's own writes aren't announced to it
+  }
+  syncUsb();
+}
+const isCurrent = (id: string | undefined) => (stored ? stored.record.id === id : id === undefined);
+const usbRunning = () => !!run?.usb && (state === 'running' || state === 'booting');
+const usbLocks = new UsbLocks(store, () => machineTitle(), (lock) => void letGo(lock));
+const stoppedText = "The machine isn't running on this page: its devices are attached when it runs.";
+
+/** The page's machine's USB as the menu and the tab show it (`ui.usb`), read again now. */
+let usbReading: Promise<void> | undefined;
+let usbAgain = false;
+function syncUsb() {
+  ui.usb.on = usbOn();
+  ui.usb.zero = params.get('usbzero') === '1';
+  ui.usb.running = usbRunning();
+  ui.usb.connectors = Array.from({ length: USB_CONNECTORS }, (_, i) => {
+    const c = run?.usb?.connectors[i];
+    return c ? { name: c.name, state: c.state, entry: c.entry, virtual: c.device.api === 'virtual' } : null;
+  });
+  ui.usb.offers = [...offers.values()].map(({ id, text, label }) => ({ id, text, label }));
+  ui.usb.tick++;
+  if (usbReading) { usbAgain = true; return; }
+  usbReading = (async () => {
+    try {
+      ui.usb.entries = await entryStates(usbEntries(), run?.usb?.attachedEntries() ?? new Set(), usbLocks);
+      ui.usb.tick++;
+    } finally {
+      usbReading = undefined;
+      if (usbAgain) { usbAgain = false; syncUsb(); }
+    }
+  })();
+}
+function usbPorts(port: MessagePort) {
+  const p = new UsbPorts(port, usbLocks);
+  p.onChange = syncUsb;
+  p.onGone = (connector, was, reason) => {
+    if (reason === 'unplugged' && was.device.api !== 'virtual') {
+      // It may come back as another device (a bootloader, after a firmware upload): the offer to attach that one there.
+      const api = was.device.api;
+      const entry = usbEntries().find((e) => e.id === was.entry);
+      const gone = { connector, api, atStart: entry?.atStart ?? false, name: was.name, at: Date.now() };
+      lastGone = gone;
+      offer(`gone-${connector}`, `${was.name} was unplugged from connector ${connector + 1}. If it came back as another device (a bootloader, after a firmware upload), pick that one to attach it there.`, 'Pick it…', async () => {
+        for (const d of await requestDevices(api)) await rememberAndAttach(api, d, { connector, atStart: gone.atStart });
+      });
+    } else if (reason && reason !== 'unplugged' && reason !== 'guest' && reason !== 'page') {
+      notify(`${was.name} was detached: ${reason}`, 'error');
+    }
+  };
+  return p;
+}
+/** The last device that was unplugged while attached (re-enumeration: the next new device takes its connector). */
+let lastGone: { connector: number; api: Api; atStart: boolean; name: string; at: number } | undefined;
+const REENUMERATION_MS = 60_000;
+
+/** The offers in the USB menu, by id: a device that just appeared, one that left, a grant to give. */
+const offers = new Map<string, { id: string; text: string; label: string; run: () => Promise<void> }>();
+function offer(id: string, text: string, label: string, f: () => Promise<void>) {
+  offers.set(id, { id, text, label, run: f });
+  ui.usb.open++;
+  syncUsb();
+}
+
+/** Attaches entry `e` on its connector; a device another machine holds is offered to be detached there first (`quiet`: skipped, with a note). */
+async function attachEntry(e: UsbEntry, o: { quiet?: boolean } = {}) {
+  const p = run?.usb;
+  if (!p || !usbRunning()) throw new Error(stoppedText);
+  if (p.connectorOf(e.id) >= 0) return;
+  const name = deviceName(e);
+  try {
+    await p.attach(e.connector, usbIdentity(e), e.id);
+  } catch (err) {
+    if (!(err instanceof UsbError) || err.message !== 'held') throw err;
+    const who = await usbLocks.holder(usbLock(e));
+    const where = who ? `${who}, in another tab` : 'another machine (in another tab)';
+    if (o.quiet) return void notify(`${name} is attached to ${where}: it was left there.`);
+    if (!(await ask.confirm(`${name} is attached to ${where}. Detach it there and attach it here? That machine sees it unplugged: whatever it was doing with it breaks.`, { title: 'The device is in use', ok: 'Detach it there' }))) return;
+    if (!(await usbLocks.takeFrom(usbLock(e)))) throw new Error(`${where} didn't let ${name} go.`);
+    await p.attach(e.connector, usbIdentity(e), e.id);
+  }
+}
+/** Another tab wants the device of `lock`: it is detached here. */
+async function letGo(lock: string) {
+  const p = run?.usb;
+  const at = p?.connectors.findIndex((c) => c && c.device.api !== 'virtual' && usbLock(c.device) === lock) ?? -1;
+  if (!p || at < 0) return usbLocks.drop(lock);
+  const name = p.connectors[at]!.name;
+  await p.detach(at).catch(() => {});
+  notify(`${name} was detached: another machine took it.`);
+}
+
+const pageMachine = () => stored?.record.id;
+/** At a start, a resume or a restore: the entries attached at start that are plugged in go on; those without a grant here are offered one. */
+async function attachAtStart(r: Run) {
+  const entries = usbEntries();
+  const found = await findDevices(entries);
+  for (const e of entries) {
+    if (run !== r) return;
+    if (!found.has(e.id)) {
+      if (!isGranted(identityKey(e))) offer(`allow-${e.id}`, `${deviceName(e)} has no permission in this browser yet (the machine was made in another).`, 'Allow…', () => allowEntry(pageMachine(), e.id));
+      continue; // not plugged in: skipped without a word
+    }
+    if (!e.atStart) continue;
+    await attachEntry(e, { quiet: true }).catch((err) => notify(`${deviceName(e)} couldn't be attached: ${String((err as Error).message ?? err)}`, 'error'));
+  }
+  syncUsb();
+}
+
+/** The remembered devices of machine `machine` (undefined: the page's transient one). */
+const entriesOf = async (machine: string | undefined) => (machine ? (await store.get('machines', machine))?.usbDevices ?? [] : transientUsb);
+
+/** The browser's grant for entry `id` of machine `machine`, from a click: its chooser, filtered on the entry's device. */
+async function allowEntry(machine: string | undefined, id: string) {
+  const e = (await entriesOf(machine)).find((x) => x.id === id);
+  if (!e) return;
+  const devices = await requestDevices(e.api, [filterFor(e)]);
+  if (!devices.length) return;
+  granted(identityKey(e));
+  offers.delete(`allow-${e.id}`);
+  if (isCurrent(machine) && usbRunning() && e.atStart) await attachEntry(e);
+  syncUsb();
+}
+
+/** Remembers `device` (just picked or plugged in) on the page's machine, unless it is already, and attaches it while the machine runs. */
+async function rememberAndAttach(api: Api, device: HostDevice, o: { connector?: number; atStart?: boolean } = {}) {
+  const identity = await identityOfDevice(api, device);
+  granted(identityKey(identity));
+  let e = entryOf(usbEntries(), identity);
+  if (!e) {
+    const added = newEntry(identity, usbEntries(), o);
+    await editUsbEntries(pageMachine(), (list) => [...list, added]);
+    e = added;
+  }
+  if (usbRunning()) await attachEntry(e);
+}
+
+// A device plugged in with a grant (WebUSB and WebHID say so only for those): an entry attached at start goes on; a
+// remembered one not attached at start, or one this machine doesn't remember, is offered; one right after an attached
+// device left takes that one's connector (re-enumeration: docs/plans/usb.md §2).
+for (const api of ['usb', 'hid'] as const) {
+  browserApi(api)?.addEventListener('connect', (ev) => void connected(api, ev.device));
+  browserApi(api)?.addEventListener('disconnect', () => syncUsb());
+}
+async function connected(api: Api, device: HostDevice) {
+  syncUsb();
+  if (!usbRunning()) return;
+  const identity = await identityOfDevice(api, device);
+  granted(identityKey(identity));
+  const name = deviceName(identity);
+  const e = entryOf(usbEntries(), identity);
+  if (e) {
+    if (run?.usb?.connectorOf(e.id) !== -1) return;
+    if (e.atStart && !run.usb.connectors[e.connector]) return void attachEntry(e, { quiet: true }).catch((err) => notify(`${name} couldn't be attached: ${String((err as Error).message ?? err)}`, 'error'));
+    return offer(`seen-${identityKey(identity)}`, `${name} was plugged in.`, 'Attach', () => attachEntry(e));
+  }
+  const back = lastGone && Date.now() - lastGone.at < REENUMERATION_MS ? lastGone : undefined;
+  if (back) {
+    offers.delete(`gone-${back.connector}`);
+    return offer(`seen-${identityKey(identity)}`, `${name} just appeared, where ${back.name} was (connector ${back.connector + 1}).`, 'Attach it there', () => rememberAndAttach(api, device, { connector: back.connector, atStart: back.atStart }));
+  }
+  offer(`seen-${identityKey(identity)}`, `${name} was plugged in.`, 'Attach and remember', () => rememberAndAttach(api, device));
+}
+
+type Unplugged = { connector: number; device: UsbIdentity | UsbVirtual; entry?: string }[];
+/**
+ * Snapshot and Suspend need the ports empty (docs/plans/usb.md §4a): with devices attached it asks once, naming them,
+ * and detaches them. Returns what was attached (to attach again after), or undefined when the user says no.
+ */
+async function emptyPorts(r: Run, what: string): Promise<Unplugged | undefined> {
+  const on = r.usb?.attached() ?? [];
+  if (!on.length) return [];
+  const names = on.map((c) => c.name);
+  const one = names.length === 1;
+  const list = one ? names[0] : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  const after = what === 'Suspending' ? 'The ones attached at start are attached again when it resumes.' : 'They are attached again once it is saved.';
+  if (!(await ask.confirm(`${what} needs the USB ports empty: ${list} ${one ? 'is' : 'are'} detached first, and the guest sees ${one ? 'it' : 'them'} unplugged: anything in progress with ${one ? 'it' : 'them'} (a copy, a firmware flash) breaks. ${after}`, { title: 'Detach the USB devices?', ok: 'Detach and go on' }))) return undefined;
+  return r.usb!.detachAll();
+}
+/** Attaches again what `emptyPorts` detached (the machine runs on after a snapshot). */
+async function plugBack(r: Run, was: Unplugged | undefined) {
+  for (const c of was ?? []) {
+    if (run !== r || !usbRunning()) return;
+    await r.usb!.attach(c.connector, c.device, c.entry).catch((err) => notify(`${deviceName(c.device)} couldn't be attached again: ${String((err as Error).message ?? err)}`, 'error'));
+  }
+}
+
+const usbPage = {
+  usbAdd: async (machine: string | undefined, api: Api) => {
+    const names: string[] = [];
+    for (const d of await requestDevices(api)) {
+      const identity = await identityOfDevice(api, d);
+      granted(identityKey(identity));
+      names.push(deviceName(identity));
+      const have = await entriesOf(machine);
+      if (entryOf(have, identity)) continue;
+      const e = newEntry(identity, have);
+      await editUsbEntries(machine, (list) => [...list, e]);
+      if (isCurrent(machine) && usbRunning()) await attachEntry(e);
+    }
+    return names;
+  },
+  usbAttach: async (id: string) => {
+    const e = usbEntries().find((x) => x.id === id);
+    if (e) await attachEntry(e);
+  },
+  usbDetach: async (id: string) => {
+    const at = run?.usb?.connectorOf(id) ?? -1;
+    if (at >= 0) await run!.usb!.detach(at);
+  },
+  usbEdit: async (machine: string | undefined, id: string, change: Partial<Pick<UsbEntry, 'connector' | 'atStart'>>) => {
+    if (change.connector !== undefined && isCurrent(machine) && (run?.usb?.connectorOf(id) ?? -1) >= 0) throw new Error('Detach it first: it is on its connector now.');
+    await editUsbEntries(machine, (list) => list.map((e) => (e.id === id ? { ...e, ...change } : e)));
+  },
+  usbForget: async (machine: string | undefined, id: string) => {
+    const e = (await entriesOf(machine)).find((x) => x.id === id);
+    if (!e) return;
+    if (isCurrent(machine)) await usbPage.usbDetach(id);
+    await editUsbEntries(machine, (list) => list.filter((x) => x.id !== id));
+    // No other machine remembers it: the browser's grant goes too.
+    const key = identityKey(e);
+    const others = [...(await store.all('machines')).flatMap((m) => m.usbDevices ?? []), ...transientUsb];
+    if (others.some((x) => identityKey(x) === key)) return;
+    const d = (await findDevices([e])).get(e.id);
+    await d?.forget?.().catch(() => {});
+    ungranted(key);
+    syncUsb();
+  },
+  usbAllow: allowEntry,
+  usbOffer: (id: string, take: boolean) => {
+    const o = offers.get(id);
+    offers.delete(id);
+    syncUsb();
+    if (take && o) void o.run().catch((err) => notify(String((err as Error).message ?? err), 'error')).finally(syncUsb);
+  },
+  usbStates: async (m: MachineRecord) => entryStates(m.usbDevices ?? [], isCurrent(m.id) ? run?.usb?.attachedEntries() ?? new Set<string>() : new Set<string>(), usbLocks),
+  usbZero: async () => {
+    const p = run?.usb;
+    if (!p || !usbRunning()) throw new Error("The machine isn't running with a USB controller.");
+    const at = p.connectors.findIndex((c) => c?.device.api === 'virtual');
+    if (at >= 0) return p.detach(at);
+    const free = p.connectors.findIndex((c) => !c);
+    if (free < 0) throw new Error('Every connector is in use.');
+    await p.attach(free, { api: 'virtual', kind: 'gadget-zero' });
+  },
+};
+syncUsb();
+
 // What the components ask of the page (web/app/ui.svelte.ts `Page`).
 Object.assign(page, {
   restart: () => void restartAsked(),
-  suspend,
+  suspend: () => void suspend(),
   takeSnapshot: () => void saveSnapshot(),
   saveSnapshotFile: (whole: boolean) => void saveSnapshot({ toFile: true, whole }),
   restoreKept: (id: string) => void restoreKept(id),
@@ -1405,6 +1703,7 @@ Object.assign(page, {
   openMachines,
   closeMachines,
   dismiss: () => { clearTimeout(messageTimer); note = ''; showMessage('', [], 'warn'); },
+  ...usbPage,
 } satisfies typeof page);
 
 // Before starting: what the page can tell won't work.

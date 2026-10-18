@@ -44,6 +44,7 @@ use crate::mmu::{Bus, Mmu, Vcpu, walk};
 use crate::pl011::{Pl011, Rings};
 use crate::pl031::Pl031;
 use crate::virtio::{self, DevShared, DeviceEntry, Transport};
+use crate::xhci::{self, Xhci, XhciShared};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 
 mod parallel;
@@ -124,6 +125,9 @@ pub struct VmConfig {
     /// CSPRNG in realtime mode; deterministic mode ignores it and uses zeros
     /// (`rng`), so a run repeats exactly.
     pub rng_seed: [u64; 4],
+    /// An xHCI (ABI 38, docs/usb.md): its USB 2 ports | USB 3 ports << 8,
+    /// `xhci::CONFIG` (4 and 4) or 0, none.
+    pub xhci: u64,
 }
 
 impl VmConfig {
@@ -146,6 +150,11 @@ impl VmConfig {
             1 => crate::flash::Flash::valid_size(self.flash_size) && self.rtc != 0,
             _ => false,
         }
+    }
+
+    /// Whether `vm_new` accepts `xhci`: none, or the 4 + 4 ports built.
+    pub fn valid_xhci(&self) -> bool {
+        self.xhci == 0 || self.xhci == xhci::CONFIG
     }
 
     /// Whether `vm_new` accepts the GIC and CPU fields.
@@ -179,6 +188,7 @@ impl Default for VmConfig {
             fw_cfg_len: 0,
             mem_pages: 0,
             rng_seed: [0; 4],
+            xhci: 0,
         }
     }
 }
@@ -312,6 +322,11 @@ pub struct Shared {
     pub cpus: Vec<CpuShared>,
     /// One per virtio transport.
     pub devices: Vec<DevShared>,
+    /// The xHCI's (`VmConfig.xhci`).
+    pub xhci: Option<XhciShared>,
+    /// When (ns) the xHCI next has completions to give (`Xhci::due`; u64::MAX: none), for the
+    /// vCPUs' run loops to look at without the platform lock.
+    pub xhci_due: AtomicU64,
 }
 
 /// A vCPU's words other threads read or write.
@@ -362,6 +377,8 @@ pub struct Platform {
     /// The firmware configuration's variable store and fw_cfg.
     pub flash: Option<Flash>,
     pub fw_cfg: Option<FwCfg>,
+    /// The xHCI (`VmConfig.xhci`).
+    pub xhci: Option<Xhci>,
     /// Parallel mode: PSCI CPU_ON requests (entry, context) that their
     /// target's thread carries out.
     start: Vec<Option<(u64, u64)>>,
@@ -691,6 +708,8 @@ impl Vm {
         let shared = Arc::new(Shared {
             cpus: (0..n).map(|i| CpuShared::new(i == 0)).collect(),
             devices: devices.iter().map(|_| DevShared::default()).collect(),
+            xhci: (cfg.xhci != 0).then(XhciShared::default),
+            xhci_due: AtomicU64::new(u64::MAX),
             ..Shared::default()
         });
         if parallel {
@@ -713,6 +732,7 @@ impl Vm {
                 fw_cfg: cfg
                     .firmware()
                     .then(|| FwCfg::new(crate::smbios::with(&cfg, vec![])).unwrap()),
+                xhci: (cfg.xhci != 0).then(Xhci::new),
                 start: vec![None; n],
             }),
             shared,
@@ -738,6 +758,28 @@ impl Vm {
     /// Whether the vCPUs run in parallel (`VmConfig.smp`).
     pub fn parallel(&self) -> bool {
         self.cfg.smp == 1
+    }
+
+    /// The machine's time in ns: the clock in realtime mode, the counter's in deterministic mode.
+    pub(crate) fn ns(&self) -> u64 {
+        if self.realtime() {
+            return self.clock.ns();
+        }
+        (self.now() as u128 * 1_000_000_000 / self.cfg.cntfrq as u128) as u64
+    }
+
+    /// Gives the xHCI's completed TDs their events once their latency passed (or, `force`, at
+    /// once); the `DEVICE` exit's value if that posted records.
+    fn xhci_tick(&mut self, force: bool) -> Option<u64> {
+        let ns = self.ns();
+        let (Some(x), Some(sh)) = (&mut self.plat.get_mut().xhci, &self.shared.xhci) else {
+            return None;
+        };
+        if x.due() == u64::MAX || !force && x.due() > ns {
+            return None;
+        }
+        let ev = x.tick(ns, force, &self.mem, sh);
+        (ev != 0).then_some(xhci::EXIT_SLOT | (ev as u64) << 8)
     }
 
     /// Whether vCPU `c` is on (PSCI).
@@ -788,6 +830,10 @@ impl Vm {
                 if self.complete() {
                     break exit::DEVICE;
                 }
+            }
+            if let Some(v) = self.xhci_tick(false) {
+                self.exit.value = v;
+                break exit::DEVICE;
             }
             let left = budget.saturating_sub(self.steps - start);
             if left == 0 {
@@ -875,6 +921,20 @@ impl Vm {
     /// due between two of them was neither pending nor a future deadline, so
     /// the host slept with no deadline for good (found in M6.5 loop 5).
     fn idle(&mut self) -> Option<u32> {
+        // Nothing runs: the xHCI's completions needn't wait (`xhci::LATENCY_NS`). Then as any
+        // idle machine: their interrupt makes a vCPU ready, or nothing does (an endpoint that
+        // walks on without one).
+        if self
+            .plat
+            .get_mut()
+            .xhci
+            .as_ref()
+            .is_some_and(|x| x.due() != u64::MAX)
+            && let Some(v) = self.xhci_tick(true)
+        {
+            self.exit.value = v;
+            return Some(exit::DEVICE);
+        }
         let now = self.now();
         self.lines_at(now);
         for c in 0..self.vcpus.len() {
@@ -940,7 +1000,8 @@ impl Vm {
     /// Drains every backend's completions; true if that posted new requests
     /// (chains that hadn't fit before), with `exit.value` set.
     fn complete(&mut self) -> bool {
-        let r = complete(&mut self.plat.get_mut().virtio, &self.mem, &self.shared);
+        let ns = self.ns();
+        let r = complete(self.plat.get_mut(), &self.mem, &self.shared, ns);
         if let Some(v) = r {
             self.exit.value = v;
         }
@@ -1270,17 +1331,27 @@ fn spis(p: &mut Platform, shared: &Shared) {
     for (i, t) in p.virtio.iter().enumerate() {
         p.gic.set_level(0, virtio::IRQ_BASE + i, t.irq());
     }
+    if let Some(x) = &p.xhci {
+        p.gic.set_level(0, xhci::IRQ, x.irq());
+        shared.xhci_due.store(x.due(), Ordering::Relaxed);
+    }
 }
 
 /// Drains every backend's completions; the `DEVICE` exit's value if that
 /// posted new requests (chains that hadn't fit before).
-fn complete(virtio: &mut [Transport], mem: &Mem, shared: &Shared) -> Option<u64> {
+fn complete(p: &mut Platform, mem: &Mem, shared: &Shared, ns: u64) -> Option<u64> {
     let mut first = None;
-    for (i, (t, sh)) in virtio.iter_mut().zip(&shared.devices).enumerate() {
+    for (i, (t, sh)) in p.virtio.iter_mut().zip(&shared.devices).enumerate() {
         let ev = t.complete(mem, sh);
         if ev != 0 {
             sh.events.fetch_or(ev, Ordering::AcqRel);
             first.get_or_insert((i as u64) | (ev as u64) << 8);
+        }
+    }
+    if let (Some(x), Some(sh)) = (&mut p.xhci, &shared.xhci) {
+        let ev = x.complete(mem, sh, ns);
+        if ev != 0 {
+            first.get_or_insert(xhci::EXIT_SLOT | (ev as u64) << 8);
         }
     }
     first
@@ -1345,6 +1416,7 @@ fn io(
         console: &shared.console,
         virtio: &mut p.virtio,
         devices: &shared.devices,
+        xhci: p.xhci.as_mut().zip(shared.xhci.as_ref()),
         tx_full: false,
         device: None,
     };
@@ -1381,6 +1453,7 @@ struct Io<'a> {
     console: &'a Rings,
     virtio: &'a mut [Transport],
     devices: &'a [DevShared],
+    xhci: Option<(&'a mut Xhci, &'a XhciShared)>,
     /// A PL011 DR write found the TX ring full.
     tx_full: bool,
     /// A virtio register write with events for the host: the `DEVICE` exit's value.
@@ -1422,6 +1495,10 @@ impl Io<'_> {
                     .get_mut(i)?
                     .read(off, size, self.devices.get(i)?);
             }
+            xhci::BASE..XHCI_END => {
+                let ns = self.time.ns();
+                return self.xhci.as_mut()?.0.read(pa - xhci::BASE, size, ns);
+            }
             _ => None,
         }
         .map(u64::from)
@@ -1454,6 +1531,15 @@ impl Io<'_> {
                 }
                 Some(())
             }
+            xhci::BASE..XHCI_END => {
+                let (x, sh) = self.xhci.as_mut()?;
+                let ns = self.time.ns();
+                let ev = x.write(pa - xhci::BASE, size, v, self.mmu.mem, sh, ns)?;
+                if ev != 0 {
+                    self.device = Some(xhci::EXIT_SLOT | (ev as u64) << 8);
+                }
+                Some(())
+            }
             _ => None,
         }
     }
@@ -1461,6 +1547,7 @@ impl Io<'_> {
 
 const FLASH_END: u64 = FLASH + crate::flash::MAX_SIZE;
 const FW_CFG_END: u64 = FW_CFG + crate::fw_cfg::SIZE;
+const XHCI_END: u64 = xhci::BASE + xhci::SIZE;
 const VIRTIO_END: u64 = virtio::MMIO_BASE + virtio::MAX_DEVICES as u64 * virtio::MMIO_STRIDE;
 
 /// Transport slot and register offset of a PA in the virtio-mmio window.

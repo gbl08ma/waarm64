@@ -29,3 +29,7 @@ gpu 36429976
 # The snd test kernel (audio S1; images/snd/init.c): ALSA on a virtio-snd, a waveform through the deterministic sink,
 # then (audio S4) a recording from the deterministic source.
 snd 36454408
+# The USB test kernel (images/usb/init.c; docs/usb.md) on the xHCI: the two empty root hubs; then testusb against two
+# Gadget Zeros (high and super speed), the high-speed one unplugged at step 80M and plugged in again at 100M.
+usb-hubs 23701201
+usb 143567602

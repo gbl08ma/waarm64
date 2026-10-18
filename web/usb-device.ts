@@ -16,7 +16,8 @@ export type UsbCode = 'success' | 'short' | 'stall' | 'babble' | 'error';
  * One transfer descriptor (TD). `ep` is the endpoint address: 0 for the default control pipe,
  * `n | 0x80` for IN endpoint n, `n` for OUT endpoint n. A control transfer has its `setup`, and its
  * direction is the setup's (bit 7 of `requestType`). OUT data (a control OUT's data stage, a bulk or
- * interrupt OUT) comes gathered in `data`; an IN can take up to `length` bytes.
+ * interrupt OUT) comes gathered in `data`; an IN can take up to `length` bytes. Linux's zero-length packet
+ * after an OUT (URB_ZERO_PACKET) is a TD of its own, of length 0: an empty `transferOut`.
  */
 export type UsbTransfer = {
   tag: number;
@@ -25,8 +26,6 @@ export type UsbTransfer = {
   setup?: Setup;
   data?: Uint8Array;
   length: number;
-  /** An OUT TD ended by the zero-length TRB Linux adds for URB_ZERO_PACKET: send an empty packet after the data. */
-  zeroPacket?: boolean;
   /** Isochronous: each packet's length (U6). */
   packets?: number[];
 };
@@ -74,8 +73,21 @@ export type UsbIdentity = {
   index?: number;
 };
 
-/** A virtual device of ours, by kind (Gadget Zero is the controller's test device). */
-export type UsbVirtual = { api: 'virtual'; kind: 'gadget-zero' };
+/**
+ * What the glue (web/usb.ts) gives an opener: `gone` detaches the device's connector when the host's device
+ * vanished (the page gets `usb-state` detached, reason 'unplugged'); `connector` is the root connector it goes on.
+ */
+export type UsbOpenerContext = { gone?: () => void; connector?: number };
+
+/** Opens a granted device for the guest (web/usb.ts `registerUsbOpener`: WebUSB's for 'usb', WebHID's for 'hid'). */
+export type UsbOpener = (identity: UsbIdentity, ctx: UsbOpenerContext) => Promise<UsbDevice>;
+
+/**
+ * A virtual device of ours, by kind (Gadget Zero is the controller's test device, web/usb-gadget-zero.ts): its speed
+ * (default high), its source's and sink's data pattern (0 zeros, the default as Linux's g_zero; 1 the mod-63 bytes,
+ * usbtest's `pattern=1`) and its serial number.
+ */
+export type UsbVirtual = { api: 'virtual'; kind: 'gadget-zero'; speed?: UsbSpeed; pattern?: 0 | 1; serial?: string };
 
 /** Root connectors are numbered 0–3; each has a USB 2 and a USB 3 port behind it (docs/plans/usb.md §4). */
 export type UsbToWorker =

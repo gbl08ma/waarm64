@@ -8,6 +8,8 @@
 // its own worker (web/vcpu-worker.ts) and this thread coordinates them.
 import type { GpuState } from './gpu.ts';
 import type { SndState } from './snd.ts';
+import type { UsbFromWorker, UsbIdentity, UsbToWorker, UsbVirtual } from './usb-device.ts';
+import type { UsbAttach } from './usb.ts';
 import { Devices, EV_CONFIG, deviceEntry, diskIdentity, fileSource, ring, specPorts, type DeviceSpec, type DevicesInit } from './devices.ts';
 import { isQcow2, qcow2Size } from './qcow2.ts';
 import { newLiveness, readLiveness, type VcpuLiveness } from './liveness.ts';
@@ -15,7 +17,7 @@ import { SnapshotError } from './snapshot-file.ts';
 import type { VcpuClock, VcpuEnd, VcpuJob } from './vcpu-worker.ts';
 import type { CompileInit, CompileJob, CompiledJob } from './jit-compile-worker.ts';
 
-export const ABI = 37;
+export const ABI = 38;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -37,6 +39,7 @@ type Exports = {
   vm_signal(vm: number): number;
   vm_set_chunk(vm: number, steps: bigint): void;
   vm_device(vm: number, i: number): number;
+  vm_xhci(vm: number): number;
   vm_framebuffer(vm: number): bigint;
   vm_flash(vm: number): number;
   panic_message(): number;
@@ -134,7 +137,7 @@ export async function clockOffset(ask: () => Promise<number>, rounds = 16) {
  * but JS sees an i32, negative past 2 GiB of memory (a guest with 2 GiB of
  * RAM puts the core's later allocations there, M8 loop 0).
  */
-const POINTERS = ['thread_alloc', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_counters', 'jit_helper_report', 'panic_message'];
+const POINTERS = ['thread_alloc', 'vm_new', 'vm_flash', 'vm_cpu', 'vm_exit', 'vm_exit_cpu', 'vm_console', 'vm_signal', 'vm_cpu_signal', 'vm_device', 'vm_xhci', 'vm_counters', 'jit_helper_report', 'panic_message'];
 
 /** `exports` with the address-returning functions ({@link POINTERS}) made unsigned. */
 export function unsigned(exports: WebAssembly.Exports): WebAssembly.Exports {
@@ -460,7 +463,20 @@ export type BootOptions = {
    * must describe the machine the snapshot was taken on, or `bootVm` throws a `SnapshotError`.
    */
   restore?: Restore;
+  /**
+   * An xHCI with 4 root connectors (`VmConfig.xhci`, ABI 38; docs/usb.md): `port` carries the
+   * contract's messages (web/usb-device.ts `UsbToWorker`/`UsbFromWorker`: `usb-attach`, `usb-detach`,
+   * one `usb-state` back for each) to the device worker, which takes them whenever they come, before
+   * the guest's driver runs too (the port just shows a device). Without `port`, the VM's `usb` has
+   * `attach`/`detach` that do the same. `attach`: devices plugged in before the guest runs. `events`:
+   * plugs and unplugs at step counts, for `runToPowerOff` (exactly there in deterministic mode): `device`
+   * to attach, none to detach. A machine without `usb` has no controller (its guests' steps are as they were).
+   */
+  usb?: { port?: MessagePort; attach?: UsbAttach[]; events?: UsbEvent[] };
 };
+
+/** A plug (with `device`) or an unplug of `connector` at `step` (`BootOptions.usb.events`). */
+export type UsbEvent = { step: number; connector: number; device?: UsbIdentity | UsbVirtual };
 
 export type Firmware = { flash?: Uint8Array; flashSize?: number; fwCfg?: { name: string; data: string | Uint8Array }[] };
 
@@ -626,8 +642,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   // getRandomValues doesn't take a view of shared memory: a seed of its own, copied in.
   const seed = deterministic ? new BigUint64Array(4) : crypto.getRandomValues(new BigUint64Array(4));
   const features = (o.crypto === false ? 0n : 1n) | (o.rng === false ? 0n : 2n) | (o.e0pd === false ? 0n : 4n);
-  new BigUint64Array(memory.buffer, scratch + S_CFG, 23).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
-    fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed]);
+  new BigUint64Array(memory.buffer, scratch + S_CFG, 24).set([BigInt(o.ramSize), deterministic ? 1n : 0n, 0n, 0n, BigInt(scratch + S_DEVICES), BigInt(specs.length), BigInt(fb.width), BigInt(fb.height), BigInt(o.jit ?? 0), features, BigInt(ncpus), 0n, parallel ? 1n : 0n, rtc,
+    fw ? 1n : 0n, fw ? BigInt(fw.flashSize ?? FLASH_SIZE) : 0n, BigInt(fwCfgAt), BigInt(fwCfg?.length ?? 0), fixed ? BigInt(pages) : 0n, ...seed, o.usb ? 0x404n : 0n]); // and the xHCI's 4 + 4 ports (ABI 38)
   new BigUint64Array(memory.buffer, scratch + S_DEVICES, 5 * specs.length).set(specs.flatMap((d) => deviceEntry(d).entry));
   const cmd = new TextEncoder().encode(o.cmdline);
   bytes().set(cmd, scratch + S_CMDLINE);
@@ -674,7 +690,11 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   }
   const signal = ex.vm_signal(vm);
   const wakes = Array.from({ length: ncpus }, (_, i) => ex.vm_cpu_signal(vm, i));
-  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, signal, specs, deterministic, wakes, state: o.restore?.host.devices }, scratch + S_BELL, parallel);
+  // The xHCI's messages: the caller's port, or a channel of our own behind `usb.attach`/`usb.detach`.
+  const usbChannel = o.usb && !o.usb.port ? new MessageChannel() : undefined;
+  const xhci = o.usb ? { shared: ex.vm_xhci(vm), port: o.usb.port ?? usbChannel!.port1, attach: o.usb.attach } : undefined;
+  const devices = await deviceHost({ memory, shared, ram, ramSize: o.ramSize, signal, specs, deterministic, wakes, state: o.restore?.host.devices, xhci }, scratch + S_BELL, parallel);
+  const usb = usbChannel && usbHost(usbChannel.port2);
   // The restore posted the chains the old backends held to the request rings: the new ones take them.
   if (o.restore) await devices.quiesce();
   /** Sets signal-word bits, then bumps and notifies every vCPU's wake word (docs/abi.md). */
@@ -755,6 +775,8 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   let seenHead = 0;
   return {
     memory,
+    /** The xHCI's connectors when `BootOptions.usb` has no port of the caller's: attach or detach, resolving with the device worker's `usb-state`. */
+    usb,
     /** Bytes of guest RAM (at `ram`). */
     ramSize: o.ramSize,
     /**
@@ -766,7 +788,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
       for (let tries = 0; tries < 1000; tries++) {
         // Takes the completions the backends left, as the run loop would at its next boundary.
         const n = ex.vm_snapshot_size(vm);
-        if (n === 0xffff_ffff_ffff_ffffn) throw new Error("the machine can't be saved now: the guest changed buffers it had given to a device");
+        if (n === 0xffff_ffff_ffff_ffffn) throw new Error(o.usb ? "the machine can't be saved now: a USB device is plugged in (detach it first), or the guest changed buffers it had given to a device" : "the machine can't be saved now: the guest changed buffers it had given to a device");
         if (n === 0n) {
           // A device has something for its backend (chains that hadn't fit, an event): serve it.
           await devices.quiesce();
@@ -944,6 +966,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
     /** Stops the vCPUs and releases the backends; resolves once their files are closed. */
     close: () => {
       par?.close();
+      usbChannel?.port2.close();
       return devices.close();
     },
     /** Per-vCPU liveness (parallel mode; empty otherwise): time inside the current chunk, the longest chunk and host-side handling so far. */
@@ -1173,8 +1196,17 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
   let console = '';
   let steps = 0;
   const t0 = performance.now();
+  const usbEvents = [...(o.usb?.events ?? [])].sort((a, b) => a.step - b.step);
   for (;;) {
-    const r = await vm.runAsync(input?.step !== undefined && steps < input.step ? Math.min(100_000_000, input.step - steps) : 100_000_000);
+    // USB plugs at their steps: the run stops there, and the device worker has the plug before it runs on.
+    while (usbEvents.length && steps >= usbEvents[0].step) {
+      const e = usbEvents.shift()!;
+      if (!vm.usb) throw new Error("usb.events with a port of the caller's");
+      const m = await (e.device ? vm.usb.attach(e.connector, e.device) : vm.usb.detach(e.connector));
+      if (m.state === 'error') throw new Error(`USB connector ${e.connector}: ${m.message}`);
+    }
+    const until = Math.min(input?.step !== undefined && steps < input.step ? input.step : Infinity, usbEvents[0]?.step ?? Infinity);
+    const r = await vm.runAsync(Math.min(100_000_000, until - steps));
     steps += r.steps;
     console += vm.drain();
     const idle = r.kind === Exit.IDLE; // deterministic, with no deadline: waiting for input or for nothing
@@ -1197,6 +1229,23 @@ export async function runToPowerOff(wasm: BufferSource | WebAssembly.Module, o: 
     vm.close();
     return { ...r, kind: r.kind === Exit.DEVICE ? Exit.BUDGET : r.kind, steps, console, hvc: vm.hvc(), ms, pc: vm.pc(), flash: vm.flash(), gpu, snd, stats: vm.stats() };
   }
+}
+
+/** `attach` and `detach` over the xHCI's port, each resolving with its `usb-state` (one per request, in order). */
+function usbHost(port: MessagePort) {
+  const waiting: { connector: number; resolve: (m: UsbFromWorker) => void }[] = [];
+  port.onmessage = (e: MessageEvent<UsbFromWorker>) => {
+    const i = waiting.findIndex((w) => w.connector === e.data.connector);
+    if (i >= 0) waiting.splice(i, 1)[0].resolve(e.data);
+  };
+  const ask = (m: UsbToWorker) => new Promise<UsbFromWorker>((resolve) => {
+    waiting.push({ connector: m.connector, resolve });
+    port.postMessage(m);
+  });
+  return {
+    attach: (connector: number, device: UsbIdentity | UsbVirtual) => ask({ type: 'usb-attach', connector, device }),
+    detach: (connector: number) => ask({ type: 'usb-detach', connector }),
+  };
 }
 
 /** `ring` with a wait that yields instead of blocking: resolves once the backends took everything up to this ring. */
@@ -1235,7 +1284,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       output: () => text, flush: async () => { if (failed) throw failed; }, close: async () => (d.close(), d.stats()),
     };
   }
-  if (!inWorker || init.specs.length === 0) {
+  if (!inWorker || (init.specs.length === 0 && !init.xhci)) {
     // blk over HTTP needs a worker (Node has no XHR; a page can't make binary sync XHRs); Node reads `file:` images.
     const d = await Devices.open(init, out);
     // Requests complete asynchronously (disk reads return promises), so `run`
@@ -1283,7 +1332,7 @@ async function deviceHost(init: DevicesInit, bellAddr: number, parallel: boolean
       else if (e.data.type === 'closed') closed(e.data.stats);
     };
   });
-  worker.postMessage({ type: 'init', ...init, bell: bellAddr }, specPorts(init.specs));
+  worker.postMessage({ type: 'init', ...init, bell: bellAddr }, [...specPorts(init.specs), ...(init.xhci?.port ? [init.xhci.port] : [])]);
   await ready; // before anything blocks on it
   const bell = new Int32Array(init.memory.buffer, bellAddr, 2);
   return {

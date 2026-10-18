@@ -10,6 +10,7 @@ import { after, before, test } from 'node:test';
 import { chromium, type Browser, type BrowserContext } from 'playwright-core';
 import { startServer } from '../tools/serve.ts';
 import { checkSndGuest } from './snd/guest.ts';
+import { checkUsbGuest, checkUsbHubs } from './usb/guest.ts';
 import { STEPS } from './steps.ts';
 import type { SndState } from '../web/snd.ts';
 import { CONSOLE_INPUT_WANT } from '../web/vm.ts';
@@ -39,7 +40,7 @@ async function result(path: string, global: string) {
 }
 
 test('core wasm runs in a cross-origin isolated worker', async () => {
-  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 37, counter: 2 });
+  assert.deepEqual(await result('/tests/browser/core.html', 'result'), { crossOriginIsolated: true, abi: 38, counter: 2 });
 });
 
 test('three core instances run guests concurrently on one memory in workers (M7)', async () => {
@@ -249,6 +250,23 @@ for (const jit of [0, 1]) test(`the gpu guest draws, sends damage, sets a cursor
   assert.equal(r.steps, STEPS.gpu);
   assert.deepEqual([r.gpu?.width, r.gpu?.screen, r.gpu?.cursor.hash], [800, want.screen, want.cursor]);
   assert.deepEqual(r.gpu?.trace, [want.trace1, want.trace2, want.trace3]);
+});
+
+// The USB test kernel on the xHCI, its devices in the device worker (docs/usb.md): the root hubs, then testusb against
+// two Gadget Zeros with a hot unplug and replug at fixed steps, in the native twin's and Node's steps
+// (core/tests/usb_guest.rs, tests/boot-node-suite.ts).
+const USB_IMAGE = new URL('../target/images/linux-usb/Image', import.meta.url);
+for (const jit of [0, 1]) test(`the usb guest sees the root hubs and passes testusb against Gadget Zero, hot-plugged${jit ? ', JIT' : ''}`, { skip: !existsSync(USB_IMAGE) && 'SKIPPED: run images/build.sh linux-usb' }, async () => {
+  const hubs = await bootPage(`usb=hubs&jit=${jit}`, 5);
+  assert.equal(hubs.error, undefined);
+  checkUsbHubs(hubs.console);
+  assert.equal(hubs.steps, STEPS['usb-hubs']);
+  const r = await bootPage(`usb=test&jit=${jit}`, 10);
+  assert.equal(r.error, undefined);
+  console.log(`# chromium usb guest${jit ? ' (JIT)' : ''}: ${r.steps} steps in ${(r.ms / 1000).toFixed(1)} s`);
+  assert.deepEqual([r.kind, r.x0], [1, '0x84000008'], r.console);
+  checkUsbGuest(r.console);
+  assert.equal(r.steps, STEPS.usb);
 });
 
 // The snd test kernel on a virtio-snd served by the device worker (audio S1): the same steps, console, sink hash and

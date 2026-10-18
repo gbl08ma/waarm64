@@ -19,4 +19,23 @@ and the page ↔ device worker messages. Change it in one lane only with the oth
 
 ## State
 
-Nothing built yet.
+**xhci lane (U1, U2): done** on `usb-xhci-lane` ([docs/usb.md](docs/usb.md) "The controller", "The backend
+protocol", "Virtual devices", "The usb guest"):
+- The controller: `core/src/xhci.rs`, the `generic-xhci` DT node at `0x0c00_0000` (INTID 80), `VmConfig.xhci`
+  and `vm_xhci` (ABI 38). It is off by default, so no other guest's steps move. TD completions come at least
+  125 µs after the doorbell unless the machine idles (`xhci::LATENCY_NS`: without it, usbtest's unlink test
+  starved process context). Snapshots need its ports empty.
+- The protocol and the glue: `web/usb.ts`, with the opener registry (`registerUsbOpener`). The device worker
+  registers WebUSB's and WebHID's openers. bootVm's `usb: {port?, attach?, events?}` turns it on. Gadget Zero
+  (`web/usb-gadget-zero.ts`) is built on `web/usb-virtual.ts`, with its native twin in
+  `core/tests/common/usb.rs`.
+- The test kernel is `images/build.sh linux-usb` (it boots on QEMU's `qemu-xhci` too). Its two runs, with
+  steps in tests/steps.txt:
+  - `usb-hubs` (23,701,201)
+  - `usb` (143,567,602): `testusb -a` against a high-speed and a super-speed Gadget Zero, unplugged at 80M
+    and replugged at 100M
+  
+  Both run natively, in Node and in Chromium (interpreter and JIT). Parallel SMP runs a clean pass, natively
+  and in Node. A planted short-packet bug was caught by testusb and the unit tests.
+- Left: IMOD moderation, isochronous devices (U6), the realtime Stop Endpoint window (docs/backlog.md "USB").
+  The QEMU oracle comparison of event order is the gates lane's.
