@@ -8,7 +8,15 @@ docs/backlog.md "Interpreter" and "JIT". The previous handovers of this track (t
 arenas, 2026-10-09; V8's GC stalls, 2026-10-15; where a busy vCPU's time goes, 2026-10-15) are in git history;
 their lessons are below.
 
-**Done last (2026-10-16): guest calls as host calls, measured and not kept** (`bench/boot/REPORT.md` "M8: guest
+**Done last (2026-10-18, a cloud session): the integer NEON, structures and CRC32 compiled** (docs/jit.md "NEON →
+SIMD128", "NEON lane by lane", "Structures"; branch `claude/project-thread-fcaq73`). A profile of image decoding in
+the guest's Firefox and Chromium (counts only, no timings in the cloud) had decoders' NEON as helper calls, 9% of
+Firefox's guest instructions on a JPEG page (SMLAL by element in Skia's downscaler above all). Now the allocated
+integer NEON is inline except SUQADD/USQADD on 64-bit lanes, URECPE/URSQRTE and the unadvertised dot products and
+RDM. The cloud's `scripts/ci.sh` passed without the image-based tests. **For the dev VM:** `scripts/ci.sh` with all
+images (the exact-step boots and Alpine), then the measurements in docs/backlog.md "JIT" (the item at its top).
+
+**Before that (2026-10-16): guest calls as host calls, measured and not kept** (`bench/boot/REPORT.md` "M8: guest
 calls as host calls", data and the patch in `bench/boot/results/m8-calls/`; docs/jit.md "Tried and not kept"). The
 user moved "Indirect transfers into a browser's code" ahead of "fewer, larger modules" (module installs are cheap
 now). A profile at HEAD put returns at 42.5% of the kernel's entry stalls; BL/BLR as wasm `call`, `ret` as wasm
