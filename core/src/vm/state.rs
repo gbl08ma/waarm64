@@ -52,6 +52,10 @@ impl Vm {
             c.firmware,
             c.flash_size,
         ];
+        // Only on a machine with an xHCI: the others' states (and their snapshots) are as they were.
+        if c.xhci != 0 {
+            w.push(c.xhci);
+        }
         let virtio = &self.plat.get_mut().virtio;
         w.push(virtio.len() as u64);
         for t in virtio {
@@ -79,9 +83,14 @@ impl Vm {
             .signal
             .fetch_and(!SIGNAL_DEVICE, Ordering::AcqRel);
         let parallel = self.parallel();
+        let ns = self.ns();
         let p = self.plat.get_mut();
         // New requests it posted (chains that hadn't fit) leave the device not quiet.
-        complete(&mut p.virtio, &self.mem, &self.shared);
+        complete(p, &self.mem, &self.shared, ns);
+        // The xHCI's completions don't wait for their latency: nothing runs.
+        if let (Some(x), Some(sh)) = (&mut p.xhci, &self.shared.xhci) {
+            x.tick(ns, true, &self.mem, sh);
+        }
         if parallel {
             // The interrupts of what completed, for vCPUs that idle.
             self.refresh_all();
@@ -91,6 +100,10 @@ impl Vm {
         }
         let p = self.plat.get_mut();
         if !p.virtio.iter_mut().all(|t| t.repostable(&self.mem)) {
+            return u64::MAX;
+        }
+        // A device on the xHCI can't be in a snapshot: the host detaches it first (docs/usb.md).
+        if p.xhci.as_ref().is_some_and(|x| !x.saveable()) {
             return u64::MAX;
         }
         self.state().len() as u64
@@ -103,6 +116,10 @@ impl Vm {
             .iter()
             .zip(&self.shared.devices)
             .all(|(t, sh)| t.quiet(sh))
+            && match (&p.xhci, &self.shared.xhci) {
+                (Some(x), Some(sh)) => x.quiet(sh),
+                _ => true,
+            }
     }
 
     /// The VM's state, or `None` while a device isn't quiet
@@ -175,6 +192,9 @@ impl Vm {
         }
         for (t, sh) in p.virtio.iter().zip(&self.shared.devices) {
             t.save(&mut w, sh);
+        }
+        if let Some(x) = &p.xhci {
+            x.save(&mut w);
         }
         w.0
     }
@@ -261,6 +281,9 @@ impl Vm {
         }
         for (t, sh) in p.virtio.iter_mut().zip(&self.shared.devices) {
             t.restore(&mut r, &self.mem, sh)?;
+        }
+        if let Some(x) = &mut p.xhci {
+            x.restore(&mut r)?;
         }
         r.end()?;
         // Each vCPU's place in its run loop.

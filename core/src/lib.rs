@@ -27,11 +27,12 @@ pub mod smbios;
 pub mod snapshot;
 pub mod virtio;
 pub mod vm;
+pub mod xhci;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 37;
+pub const ABI_VERSION: u32 = 38;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -344,6 +345,7 @@ pub unsafe extern "C" fn vm_new(
         || !cfg.valid_smp()
         || !cfg.valid_firmware()
         || cfg.mem_pages > 65536
+        || !cfg.valid_xhci()
         || (cfg.fb_width | cfg.fb_height != 0 && boot::framebuffer(&cfg).is_none())
     {
         return core::ptr::null_mut();
@@ -568,6 +570,22 @@ pub unsafe extern "C" fn vm_device(vm: *const vm::Vm, i: u32) -> *const virtio::
         .devices
         .get(i as usize)
         .map_or(core::ptr::null(), |d| d)
+}
+
+/// The xHCI's shared block (`xhci::XhciShared`: events, request and
+/// completion rings; ABI 38), usable from any thread; null without one
+/// (`VmConfig.xhci` 0).
+///
+/// # Safety
+/// See the note above [`vm_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_xhci(vm: *const vm::Vm) -> *const xhci::XhciShared {
+    // SAFETY: guaranteed by the caller.
+    unsafe { &*vm }
+        .shared
+        .xhci
+        .as_ref()
+        .map_or(core::ptr::null(), |x| x)
 }
 
 /// The framebuffer's guest PA (`boot::framebuffer`: x8r8g8b8, `fb_width` ×

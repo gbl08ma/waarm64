@@ -300,8 +300,9 @@ impl Vm {
                     & SIGNAL_DEVICE
                     != 0
             {
+                let ns = self.ns();
                 let mut pl = self.plat_of(c);
-                let r = complete(&mut pl.virtio, &self.mem, &self.shared);
+                let r = complete(&mut pl, &self.mem, &self.shared, ns);
                 self.refresh(&mut pl);
                 drop(pl);
                 if let Some(value) = r {
@@ -338,6 +339,22 @@ impl Vm {
                 pl.gic.set_level(c, IRQ_PTIMER, ppi.1);
                 self.refresh(&mut pl);
                 own.ppi = ppi;
+            }
+            // The xHCI's completions once their latency passed, or at once when this vCPU idles.
+            let due = self.shared.xhci_due.load(Ordering::Relaxed);
+            if due != u64::MAX && (own.wfi || self.ns() >= due) {
+                let ns = self.ns();
+                let mut pl = self.plat_of(c);
+                let (Some(x), Some(xs)) = (&mut pl.xhci, &self.shared.xhci) else {
+                    unreachable!("a due time without an xHCI")
+                };
+                let ev = x.tick(ns, own.wfi, &self.mem, xs);
+                self.refresh(&mut pl);
+                drop(pl);
+                if ev != 0 {
+                    own.exit.value = xhci::EXIT_SLOT | (ev as u64) << 8;
+                    return exit::DEVICE;
+                }
             }
             let irq = p.irq.load(Ordering::SeqCst);
             if own.wfi {
