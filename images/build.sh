@@ -585,6 +585,10 @@ build_edk2() {
   mkdir -p "$b" "$dst"
   tar -C "$src" --exclude=.git -cf - . | tar -C "$b" -xf -
   cp images/edk2/startup.nsh "$b/"
+  # webpc's own driver (images/edk2/WebpcXhciDxe, MIT): the DT's generic-xhci as a non-discoverable xHCI, so the
+  # firmware's USB stack drives the machine's controller and the page's built-in keyboard (docs/usb.md "The keyboard").
+  # usb-xhci.patch adds it and NonDiscoverablePciDeviceDxe to ArmVirtQemuKernel's build.
+  cp -r images/edk2/WebpcXhciDxe "$b/ArmVirtPkg/"
   # The firmware on the screen (docs/plans/uefi.md "Graphics in the firmware"): the boot manager connects a
   # virtio-gpu on virtio-mmio before the console, as it does PCI displays, so its GOP joins ConOut and shows
   # the logo and the firmware's text (virtio-gpu-console); the boot progress bar draws in one Blt a second,
@@ -624,6 +628,7 @@ build_edk2() {
   # The binary goes to users, so its licenses go with it: EDK2's, and those of the
   # submodules linked in (OpenSSL in Hash2DxeCrypto, libfdt).
   { echo "QEMU_EFI.fd: EDK2 $EDK2_TAG ($EDK2_COMMIT), ArmVirtPkg/ArmVirtQemuKernel.dsc, built by webpc's images/build.sh edk2."
+    echo "It also holds WebpcXhciDxe, webpc's own driver (MIT, as the rest of webpc: images/edk2/WebpcXhciDxe in its sources)."
     for f in License.txt CryptoPkg/Library/OpensslLib/openssl/LICENSE.txt MdePkg/Library/BaseFdtLib/libfdt/BSD-2-Clause; do
       printf '\n==== %s ====\n\n' "$f"; cat "$src/$f"
     done; } > "$dst/LICENSES.txt"
@@ -658,7 +663,7 @@ inputs() {
   [ "$1" = linux-usbhost ] && files+=(images/linux.fragment $(find images/usb images/usbhost -type f | sort)) && pins='^(KERNEL_TOOLS|USERLAND_CONTAINER)'
   [ "$1" = litmus ] && files+=($(find images/litmus -type f | sort)) && pins='^(LITMUS_TOOLS|HERDTOOLS|USERLAND_CONTAINER|LINUX)'
   [ "$1" = fptest ] && files+=($(find images/fptest -type f | sort)) && pins='^(FPTEST_|USERLAND_CONTAINER|LINUX)'
-  [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch) && pins='^EDK2_'
+  [ "$1" = edk2 ] && files+=(images/edk2/startup.nsh images/edk2/*.patch $(find images/edk2/WebpcXhciDxe -type f | sort)) && pins='^EDK2_'
   [ "$1" = alpine-uefi ] && files+=(images/alpine-uefi.json) && pins='^$'
   [ "$1" = ltp ] && files+=(images/buildroot.defconfig $(find images/overlay images/ltp -type f | sort))
   { cat "${files[@]}"; grep -E '^(BUILDROOT|LINUX|KUT|export SOURCE)' images/build.sh; grep -E "$pins" images/build.sh; declare -f "build_$1"; if [[ $1 == buildroot || $1 == ltp ]]; then declare -f buildroot; fi; if [[ $1 == linux || $1 == ltp || $1 == linux-crypto || $1 == linux-gpu || $1 == linux-snd || $1 == linux-usb || $1 == linux-usbhost || $1 == fptest ]]; then declare -f linux_src; fi; if [[ $1 == alpine* ]]; then declare -f alpine_release; fi; } |
