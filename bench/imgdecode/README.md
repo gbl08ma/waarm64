@@ -7,8 +7,8 @@ Firefox's guest instructions on a JPEG page, and Skia's downscaler (`convolve_ho
 by element) was Firefox's hottest function in every format.
 
 - `loop.html?fmt=jpg|pjpg|png|webp|avif`: decodes 24 photo-like 1024×683 images, shows them at 256×171
-  for two frames, drops them and repeats with fresh URLs (new decodes). It logs `DECODED <n>` on the
-  console and puts `n` in the title.
+  for two frames, drops them and repeats with fresh URLs (new decodes). It logs `DECODED <n> <ms>` (the
+  page's clock) on the console and puts `n` in the title.
 - `gen.py <dir>`: makes the images with Pillow (a dev tool, not a repo dependency): baseline and
   progressive JPEG, PNG, lossy WebP, 8-bit 4:2:0 AVIF.
 - `disk.sh`: the two disks. One is `target/images/debian-browsers/disk.qcow2`, the page's Debian with
@@ -26,5 +26,7 @@ by element) was Firefox's hottest function in every format.
   copied into `<bin dir>`. debuginfod.debian.net has them for Firefox's libxul, libjpeg, dav1d and libc,
   not for Chromium's binary.
 
-For an A/B, the images decoded in the window are the measure. Run both sides in one session,
+For an A/B, the rate is the measure (`rate` in the JSON): images a second between the first and the last round
+that end in the window. The count alone moves by a round of 24 images, 25-33% of a 30 s window's count; use
+`WINDOW=60` (6-10 rounds) for a rate good to about 1%, and `WARM=15` is enough after the three rounds. Run both sides in one session,
 alternating, on the dev VM, with the PC sampler on for both (it runs during the window).

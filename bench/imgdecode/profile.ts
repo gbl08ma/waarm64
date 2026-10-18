@@ -1,7 +1,8 @@
 // Image decoding in the guest's Chromium and Firefox (README.md). For each browser and format, the browser loops
 // over loop.html?fmt=<f> (on the second disk, /dev/vdb), then the guest PC sampler runs for WINDOW s, with the
 // vCPUs' helper histograms (helper-log.patch, applied locally) logged around it, and the images decoded in the
-// window counted. usage: timeout 3000 node bench/imgdecode/profile.ts [browser:fmt ...]
+// window counted; the rate is images a second between the first and last rounds that end in the window (the page
+// timestamps each round), since a count moves only by a round of 24. usage: timeout 3000 node bench/imgdecode/profile.ts [browser:fmt ...]
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 import { startServer } from '../../tools/serve.ts';
@@ -72,6 +73,7 @@ for (const c of cases) {
   console.log(`# ${c}: ${rounds} rounds done, warming ${WARM} s more`);
   await page.waitForTimeout(WARM * 1000);
   const decodedBefore = await run(`grep -o 'DECODED [0-9]*' /tmp/b.log | tail -1`);
+  const linesBefore = Number((await run(`grep -c DECODED /tmp/b.log`)).trim()) || 0;
   const cpuBefore = await run(`for p in $(ps -eo pid,args --no-headers | grep -Ei 'chrom|firefox' | grep -v grep | awk '{print $1}'); do echo $p $(awk '{print $14+$15}' /proc/$p/stat 2>/dev/null); done | tr '\\n' ';'`);
   const stepsBefore = await page.evaluate(() => (window as unknown as { __status?: { stats: { steps: number } } }).__status?.stats.steps ?? 0);
   const hBefore = helpers.length;
@@ -84,6 +86,10 @@ for (const c of cases) {
   const samples = await page.evaluate(() => (window as unknown as Hooks).__profile!);
   const cpuAfter = await run(`for p in $(ps -eo pid,args --no-headers | grep -Ei 'chrom|firefox' | grep -v grep | awk '{print $1}'); do echo $p $(awk '{print $14+$15}' /proc/$p/stat 2>/dev/null); done | tr '\\n' ';'`);
   const decodedAfter = await run(`grep -o 'DECODED [0-9]*' /tmp/b.log | tail -1; grep -v DECODED /tmp/b.log | tail -5 | cut -c1-150`);
+  // Rounds that ended in the window, [images, page ms], and the rate between the first and the last.
+  const ends = (await run(`grep -o 'DECODED [0-9]* [0-9]*' /tmp/b.log | tail -n +${linesBefore + 1}`)).trim().split(/\r?\n/)
+    .map((l) => l.trim().split(' ').slice(1).map(Number)).filter((f) => f.length === 2);
+  const rate = ends.length >= 2 ? (ends.at(-1)![0] - ends[0][0]) / ((ends.at(-1)![1] - ends[0][1]) / 1000) : NaN;
   await page.waitForTimeout(6000); // one more helper report per vCPU after the window
   // Helper calls during the window: per vCPU, the last report before it and the first after it.
   const delta: Record<string, number> = {};
@@ -117,9 +123,10 @@ for (const c of cases) {
   const ksyms = await run(`echo '${kpcs.map(([pc, n]) => `${pc.padStart(16, '0')} ${n}`).join(' ')}' | tr ' ' '\\n' | paste -d' ' - - | LC_ALL=C sort > /tmp/kp; LC_ALL=C sort -m /tmp/ks <(sed 's/ / =/' /tmp/kp) | awk '$2 !~ /^=/ {s=$2; next} {sub(/^=/, "", $2); c[s] += $2} END {for (k in c) print c[k], k}' | sort -rn | head -40 | tr '\\n' ';'`, 120_000);
   const attrib = [...Object.entries(lib).sort((a, b) => b[1] - a[1]).map(([k, n]) => `LIB ${n} ${k}`), ...Object.entries(hot).sort((a, b) => b[1] - a[1]).map(([k, n]) => `PC ${n} ${k}`)].join('\n');
   await run(`pkill -9 -x chromium; pkill -9 -f firefox-esr; sleep 2; pkill -9 -f firefox; sleep 1; ps -e | grep -ci -E 'chrom|firefox|content'`);
-  const res = { case: c, total, kernel, user: total - kernel, helpers: Object.entries(delta).sort((a, b) => b[1] - a[1]), procs, busy, pid, steps, attrib, ksyms, samples, maps, decodedBefore, decodedAfter };
+  const res = { case: c, total, kernel, user: total - kernel, helpers: Object.entries(delta).sort((a, b) => b[1] - a[1]), procs, busy, pid, steps, attrib, ksyms, samples, maps, decodedBefore, decodedAfter, ends, rate };
   writeFileSync(`${OUT}/${c.replace(':', '-')}.json`, JSON.stringify(res, null, 1));
   console.log(`# ${c}: decoded ${decodedBefore.trim()} -> ${decodedAfter.trim().split('\n')[0]}`);
+  console.log(`# ${c}: rate ${rate.toFixed(2)} images/s over ${ends.length - 1} rounds`);
   console.log(`# ${c}: process CPU ticks in the window: ${busy.slice(0, 5).map(([p, t]) => `${p}:${t}`).join(' ')}`);
   console.log(`# ${c}: ${total} samples, kernel ${(100 * kernel / total).toFixed(1)}%; top helpers: ${res.helpers.slice(0, 12).map(([o, n]) => `${o} ${n}`).join(', ')}`);
   console.log(attrib.split('\n').filter((l) => l.startsWith('LIB')).slice(0, 10).join('\n'));
