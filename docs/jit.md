@@ -445,16 +445,36 @@ guest's invalidations (~700) and the tier-up's superseded heads (~1% of regions)
   (one shuffle of Vn:Vm built from the interpreter's lane formula), TBL/TBX (as `i8x16.swizzle`,
   never `relaxed_swizzle`, whose out-of-range lanes aren't deterministic), SQADD/UQADD/SQSUB/UQSUB
   on 8- and 16-bit lanes as `add_sat`/`sub_sat` (FPSR.QC from a compare against the wrapping
-  result; 32- and 64-bit lanes have no wasm op and stay helpers) and their scalar forms at every
-  size in i64 arithmetic. Our encoder emits the
-  SIMD128; the core itself is built without `simd128` ([backlog.md](backlog.md)).
+  result) and their scalar forms at every size in i64 arithmetic. Also as SIMD128: MUL/MLA/MLS
+  and the long multiplies by element (Vm's lane splat by a shuffle, then the vector form, `extmul`
+  for the long ones), SQDMULH/SQRDMULH (`q15mulr_sat_s` for SQRDMULH on halfwords, else the exact
+  product at twice the width; only MIN × MIN saturates), the halving adds and subtracts, SABD/UABD
+  and SABA/UABA, the pairwise forms, ADDHN/SUBHN/RADDHN/RSUBHN, SABDL/SABAL, the rounding shifts
+  and the narrowing shifts (rounding as `(x >> s) + (x >> (s − 1) & 1)`, no overflow), the
+  saturating narrows and SQXTN/SQXTUN (wasm's `narrow` after a `min_u` for unsigned sources; QC
+  where the narrowed lane widened isn't the source), SQSHL/UQSHL/SQSHLU by immediate on bytes and
+  halfwords (at twice the width, then narrowed), SQABS/SQNEG, SHLL, RBIT (a nibble swizzle), 8-bit
+  MUL and PMUL/PMULL on bytes (eight shifted partial products).
+- **NEON lane by lane** (`emit/simd_lane.rs`): what wasm has no lane op for, in i64 arithmetic per
+  lane after the interpreter's i128 formulas: the saturating adds and subtracts on 32- and 64-bit
+  lanes, SSHL/USHL/SRSHL/URSHL/SQSHL/UQSHL/SQRSHL/UQRSHL by register, the saturating shifts by
+  immediate on 32- and 64-bit lanes, the narrows from 64-bit lanes, SQDMULL/SQDMLAL/SQDMLSL (vector,
+  scalar and by element), CLS/CLZ, SUQADD/USQADD (not 64-bit), SQABS/SQNEG, and the scalar forms
+  (64-bit ADD/SUB, compares and CMTST, ABS/NEG, shifts, SQDMULH/SQRDMULH, ADDP). Saturation ORs into
+  an i32 local, and FPSR.QC is set once per instruction.
+- **Structures** (`emit.rs`): LD2–LD4/ST2–ST4 (multiple structures) are one access through
+  [`access`]'s fast path, with the registers de-interleaved from (or interleaved into) 16-byte
+  chunks by shuffles (`gather`: one per pair of sources, plus one to merge); the one-lane forms
+  (LD1–LD4/ST1–ST4) are a lane op per register; LD1R–LD4R are `v128.loadN_splat`. **CRC32/CRC32C**
+  are a table lookup per byte; the two 1 KiB tables are statics in the core, their address the
+  load's offset (the JIT's modules share the core's memory). Our encoder emits the SIMD128; the
+  core itself is built without `simd128` ([backlog.md](backlog.md)).
 - **Crypto** (`emit/crypto.rs`): AESE+AESMC and AESD+AESIMC on the same register fused into one
   round; SubBytes by **nested inversion** over GF(2⁴) (Hamburg's formulas, our implementation;
   tables from `crypto::nested` at compile time; 30% faster than the S-box as 16 slice swizzles);
   `PMULL.1Q` as Karatsuba over three 32×32 `i64.mul`s with holes (4.5% faster than four
   products); SHA1C/P/M and SHA256H/H2 as scalar rounds on renamed i32 locals, the schedule
-  updates as SIMD128, and `mov S, A; sha256h A, E, W; sha256h2 E, S, W` computed once. The 8-bit
-  PMULL/PMUL stay helpers (no guest measured uses them).
+  updates as SIMD128, and `mov S, A; sha256h A, E, W; sha256h2 E, S, W` computed once.
 - **Vector constants** live in `Vcpu::consts` and are loaded from fixed offsets (V8 materialized
   each `v128.const` from 16 bytes of immediates at every use).
 - **Branch hints** (`wasm::Code::hint`, the `metadata.code.branch_hint` section): every `if`/
@@ -627,9 +647,11 @@ interpreter's; the helper runs the instruction otherwise.
 
 On Alpine's paths (~2.5M helper-retired steps a boot): unmasking MSRs (DAIFClr, an MSR DAIF that
 unmasks), the regime, FP-control, SPSel and NZCV MSRs, ISB, exclusive pairs, LSE min/max,
-LD2–LD4/ST2–ST4, the load/store fallbacks (TLB misses, MMIO), CRC32, the 8-bit PMULL;
-in OpenSSL's GCM path scalar `SHL`. `jit_helper_report` has the
-live histogram. None was worth a loop by itself at M6.5's end.
+the load/store fallbacks (TLB misses, MMIO); in OpenSSL's GCM path scalar `SHL`. `jit_helper_report`
+has the live histogram. None was worth a loop by itself at M6.5's end. Of the integer NEON (after
+the image decoders' profile, 2026-10-18), what's left as helpers: SUQADD/USQADD on 64-bit lanes,
+URECPE/URSQRTE, the dot products and SQRDMLAH/SQRDMLSH (not advertised), and the FP forms the FP
+fast paths send there (`WEBPC_JIT_DIFF_HELPERS=1` on the differential test lists them per class).
 
 ## Tried and not kept
 

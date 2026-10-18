@@ -27,6 +27,7 @@ mod float;
 
 pub use crypto::{CONSTS, Consts};
 mod simd;
+mod simd_lane;
 
 use core::mem::offset_of;
 use core::ops::{Deref, DerefMut};
@@ -1005,9 +1006,17 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
         LDR_lit_fpsimd | STP_LDP_fpsimd | STNP_LDNP_fpsimd | STR_imm_fpsimd_2
         | LDR_imm_fpsimd_2 | STUR_fpsimd | LDUR_fpsimd | STR_imm_fpsimd_1 | LDR_imm_fpsimd_1
         | STR_reg_fpsimd | LDR_reg_fpsimd => return ldst_fp(c, cx, i, op, k),
-        LDx_mult_1 | LDx_mult_2 | STx_mult_1 | STx_mult_2 => return ld1_st1(c, cx, i, k),
-        LD1_sngl_1 | LD1_sngl_2 | ST1_sngl_1 | ST1_sngl_2 => return ld1_st1_lane(c, cx, i, k),
+        LDx_mult_1 | LDx_mult_2 | STx_mult_1 | STx_mult_2 => {
+            return ld1_st1(c, cx, i, k) || ldn_stn(c, cx, i, k);
+        }
+        LD1_sngl_1 | LD1_sngl_2 | ST1_sngl_1 | ST1_sngl_2 | LD2_sngl_1 | LD2_sngl_2
+        | ST2_sngl_1 | ST2_sngl_2 | LD3_sngl_1 | LD3_sngl_2 | ST3_sngl_1 | ST3_sngl_2
+        | LD4_sngl_1 | LD4_sngl_2 | ST4_sngl_1 | ST4_sngl_2 => return ld1_st1_lane(c, cx, i, k),
+        LD1R_1 | LD1R_2 | LD2R_1 | LD2R_2 | LD3R_1 | LD3R_2 | LD4R_1 | LD4R_2 => {
+            return ldnr(c, cx, i, k);
+        }
         // The shift amount is Rm modulo the width, as wasm shifts take it.
+        CRC32 | CRC32C => return crc32(c, i, op == CRC32),
         LSLV | LSRV | ASRV | RORV => set(c, sf, rd, |c| {
             get(c, sf, rn);
             get(c, sf, rm);
@@ -1020,6 +1029,7 @@ pub fn inline(c: &mut Func, i: u32, op: Op, k: usize, cx: &Ctx) -> bool {
             fp_guard(c, cx, i, k);
             if !(cx.crypto && crypto::inline(c, i, op))
                 && !simd::inline(c, i, op)
+                && !simd_lane::inline(c, i, op)
                 && !float::inline(c, cx, i, op, k)
                 && !float::vector(c, cx, i, op, k)
             {
@@ -1959,7 +1969,7 @@ fn vload(c: &mut Func, t: u32, off: u32, len: u32) {
 /// LD1/ST1 (multiple structures) of one to four registers (M6 loop 7): one
 /// contiguous access of 8 or 16 bytes per register (the element size doesn't
 /// matter, little-endian), through the fast path of [`access`], after the
-/// block's [`fp_guard`]. LD2–LD4 and ST2–ST4 interleave and stay helper calls.
+/// block's [`fp_guard`]. LD2–LD4 and ST2–ST4 are [`ldn_stn`].
 fn ld1_st1(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
     let n = match bits(i, 15, 12) {
         0b0111 => 1,
@@ -2012,8 +2022,8 @@ fn ld1_st1(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
     true
 }
 
-/// LD1/ST1 (single structure): one lane of Vt, the other lanes kept
-/// (`interp::ldst_fp::single_structure`).
+/// LD1–LD4/ST1–ST4 (single structure): one lane of each of one to four
+/// registers, the other lanes kept (`interp::ldst_fp::single_structure`).
 fn ld1_st1_lane(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
     let (q, load, s, size) = (bit(i, 30), bit(i, 22), bit(i, 12), bits(i, 11, 10));
     let q_s = (q as u32) << 1 | s as u32;
@@ -2024,9 +2034,8 @@ fn ld1_st1_lane(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
         2 if size == 1 && !s => (8, q as u32),
         _ => return false,
     };
-    if bit(i, 21) || bit(i, 13) {
-        return false; // LD2/LD4, LD3 and the replicating forms
-    }
+    // LD1–LD4: one to four consecutive elements, one per register.
+    let n = ((bit(i, 13) as u32) << 1 | bit(i, 21) as u32) + 1;
     let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
     let wb = bit(i, 23);
     let lg = len.trailing_zeros() as usize;
@@ -2034,13 +2043,16 @@ fn ld1_st1_lane(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
     fp_guard(c, cx, i, k);
     get_sp(c, true, rn);
     c.local_tee(BASE).local_set(ADDR);
-    let written = if wb { 1 << rn } else { 0 } | if load { vbit(rt) } else { 0 };
+    let mut written = if wb { 1 << rn } else { 0 };
+    if load {
+        written |= (0..n).map(|r| vbit((rt + r) % 32)).fold(0, |a, b| a | b);
+    }
     access(
         c,
         cx,
         i,
         4 * k as i64,
-        len,
+        n * len,
         !load,
         &[Guard::sp(rn)],
         written,
@@ -2049,24 +2061,197 @@ fn ld1_st1_lane(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
             // the extract_lane_u forms.
             const REPLACE: [u32; 4] = [0x17, 0x1a, 0x1c, 0x1e];
             const EXTRACT: [u32; 4] = [0x16, 0x19, 0x1b, 0x1d];
-            if load {
-                c.vget(rt);
-                c.local_get(HOST);
-                if lg == 3 {
-                    c.i64_load(off);
+            for r in 0..n {
+                let (t, off) = ((rt + r) % 32, off + r * len);
+                if load {
+                    c.vget(t);
+                    c.local_get(HOST);
+                    if lg == 3 {
+                        c.i64_load(off);
+                    } else {
+                        c.memarg(LOAD32_U[lg], 0, off);
+                    }
+                    c.simd_lane(REPLACE[lg], index);
+                    c.vset(t);
                 } else {
-                    c.memarg(LOAD32_U[lg], 0, off);
+                    c.local_get(HOST);
+                    c.vget(t);
+                    c.simd_lane(EXTRACT[lg], index);
+                    c.memarg(if lg == 3 { STORE[3] } else { STORE32[lg] }, 0, off);
                 }
-                c.simd_lane(REPLACE[lg], index);
-                c.vset(rt);
-            } else {
-                c.local_get(HOST);
-                c.vget(rt);
-                c.simd_lane(EXTRACT[lg], index);
-                c.memarg(if lg == 3 { STORE[3] } else { STORE32[lg] }, 0, off);
             }
             if wb && rm == 31 {
-                writeback(c, rn, len as i64);
+                writeback(c, rn, (n * len) as i64);
+            } else if wb {
+                set_sp(c, true, rn, |c| {
+                    c.local_get(BASE);
+                    get(c, true, rm);
+                    c.i64_add();
+                });
+            }
+        },
+    );
+    true
+}
+
+/// LD2–LD4/ST2–ST4 (multiple structures): `n` registers interleaved element
+/// by element in `n × len` contiguous bytes (`interp::ldst_fp::multiple`). One
+/// access; the bytes move between memory and the registers through shuffles
+/// ([`gather`]), the memory side in 16-byte chunks held in `VT`.
+fn ldn_stn(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
+    let n = match bits(i, 15, 12) {
+        0b0000 => 4,
+        0b0100 => 3,
+        0b1000 => 2,
+        _ => return false,
+    };
+    let (q, size) = (bit(i, 30), bits(i, 11, 10));
+    if size == 3 && !q {
+        return false;
+    }
+    let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let (load, wb) = (bit(i, 22), bit(i, 23));
+    let (len, eb) = (if q { 16 } else { 8 }, 1u32 << size);
+    let total = n * len;
+    fp_guard(c, cx, i, k);
+    get_sp(c, true, rn);
+    c.local_tee(BASE).local_set(ADDR);
+    let mut written = if wb { 1 << rn } else { 0 };
+    if load {
+        written |= (0..n).map(|r| vbit((rt + r) % 32)).fold(0, |a, b| a | b);
+    }
+    // Byte `j` of register `r` is memory byte `at(r, j)`.
+    let at = move |r: u32, j: u32| (j / eb * n + r) * eb + j % eb;
+    access(
+        c,
+        cx,
+        i,
+        4 * k as i64,
+        total,
+        !load,
+        &[Guard::sp(rn)],
+        written,
+        |c, off| {
+            let chunks = total.div_ceil(16);
+            if load {
+                for m in 0..chunks {
+                    let op = if 16 * m + 8 == total {
+                        V128_LOAD64_ZERO
+                    } else {
+                        V128_LOAD
+                    };
+                    c.local_get(HOST).simd_mem(op, 0, off + 16 * m);
+                    c.local_set(VT[m as usize]);
+                }
+                for r in 0..n {
+                    let src: [u32; 16] = std::array::from_fn(|j| at(r, j as u32 % len));
+                    gather(c, &src, |c, m| {
+                        c.local_get(VT[m as usize]);
+                    });
+                    if !q {
+                        c.i64_const(0).simd_lane(0x1e, 1);
+                    }
+                    c.vset((rt + r) % 32);
+                }
+            } else {
+                for m in 0..chunks {
+                    // Memory byte `a` is byte `a / eb / n × eb + a % eb` of
+                    // register `a / eb % n`.
+                    let src: [u32; 16] = std::array::from_fn(|j| {
+                        let a = (16 * m + j as u32).min(total - 1);
+                        (a / eb % n) * 16 + a / eb / n * eb + a % eb
+                    });
+                    c.local_get(HOST);
+                    gather(c, &src, |c, r| {
+                        c.vget((rt + r) % 32);
+                    });
+                    if 16 * m + 8 == total {
+                        c.simd_lane(0x1d, 0).memarg(STORE[3], 0, off + 16 * m);
+                    } else {
+                        c.simd_mem(V128_STORE, 0, off + 16 * m);
+                    }
+                }
+            }
+            if wb && rm == 31 {
+                writeback(c, rn, total as i64);
+            } else if wb {
+                set_sp(c, true, rn, |c| {
+                    c.local_get(BASE);
+                    get(c, true, rm);
+                    c.i64_add();
+                });
+            }
+        },
+    );
+    true
+}
+
+/// Pushes a v128 whose byte `j` is byte `src[j] % 16` of source `src[j] / 16`
+/// (up to four sources, pushed by `push`): one shuffle when the bytes come
+/// from at most two sources of the same pair, else one per pair and a third
+/// to merge them.
+fn gather(c: &mut Func, src: &[u32; 16], push: impl Fn(&mut Func, u32)) {
+    let used = src.iter().fold(0u32, |a, &s| a | 1 << (s / 16));
+    let pair = |c: &mut Func, p: u32| {
+        // Sources 2p and 2p + 1; bytes from the other pair don't matter.
+        push(c, 2 * p);
+        push(c, 2 * p + 1);
+        c.shuffle(std::array::from_fn(|j| {
+            let s = src[j];
+            if s / 32 == p { (s % 32) as u8 } else { 0 }
+        }));
+    };
+    if used & 0b1100 == 0 {
+        pair(c, 0);
+    } else if used & 0b0011 == 0 {
+        pair(c, 1);
+    } else {
+        pair(c, 0);
+        pair(c, 1);
+        c.shuffle(std::array::from_fn(|j| {
+            (j as u32 + 16 * (src[j] / 32)) as u8
+        }));
+    }
+}
+
+/// LD1R–LD4R: one element per register, replicated to its lanes
+/// (`interp::ldst_fp::single_structure`), through the `v128.loadN_splat` ops.
+fn ldnr(c: &mut Func, cx: &Ctx, i: u32, k: usize) -> bool {
+    if !bit(i, 22) || bit(i, 12) {
+        return false;
+    }
+    let n = ((bit(i, 13) as u32) << 1 | bit(i, 21) as u32) + 1;
+    let (q, size) = (bit(i, 30), bits(i, 11, 10));
+    let (rt, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let wb = bit(i, 23);
+    let eb = 1u32 << size;
+    fp_guard(c, cx, i, k);
+    get_sp(c, true, rn);
+    c.local_tee(BASE).local_set(ADDR);
+    let mut written = if wb { 1 << rn } else { 0 };
+    written |= (0..n).map(|r| vbit((rt + r) % 32)).fold(0, |a, b| a | b);
+    access(
+        c,
+        cx,
+        i,
+        4 * k as i64,
+        n * eb,
+        false,
+        &[Guard::sp(rn)],
+        written,
+        |c, off| {
+            // v128.load8_splat … v128.load64_splat.
+            const SPLAT: [u8; 4] = [7, 8, 9, 10];
+            for r in 0..n {
+                c.local_get(HOST)
+                    .simd_mem(SPLAT[size as usize], 0, off + r * eb);
+                if !q {
+                    c.i64_const(0).simd_lane(0x1e, 1);
+                }
+                c.vset((rt + r) % 32);
+            }
+            if wb && rm == 31 {
+                writeback(c, rn, (n * eb) as i64);
             } else if wb {
                 set_sp(c, true, rn, |c| {
                     c.local_get(BASE);
@@ -2435,6 +2620,75 @@ const LE_S: u8 = 0x4c;
 const LE_U: u8 = 0x4d;
 const GE_S: u8 = 0x4e;
 const GE_U: u8 = 0x4f;
+
+/// CRC-32 (reflected, 0xedb88320) and CRC-32C (0x82f63b78) byte tables, the
+/// JIT's [`crc32`] reads them in the core's memory (`interp`'s CRC32 is bitwise).
+static CRC_TABLES: [[u32; 256]; 2] = [crc_table(0xedb8_8320), crc_table(0x82f6_3b78)];
+
+const fn crc_table(poly: u32) -> [u32; 256] {
+    let mut t = [0; 256];
+    let mut n = 0;
+    while n < 256 {
+        let mut x = n as u32;
+        let mut k = 0;
+        while k < 8 {
+            x = (x >> 1) ^ (poly & (x & 1).wrapping_neg());
+            k += 1;
+        }
+        t[n] = x;
+        n += 1;
+    }
+    t
+}
+
+/// CRC32B/H/W/X, CRC32CB/H/W/X: a table lookup per byte of Rm, the table's
+/// address as the load's offset (the JIT's modules share the core's memory).
+fn crc32(c: &mut Func, i: u32, ieee: bool) -> bool {
+    let (rd, rn, rm, sz) = (
+        bits(i, 4, 0),
+        bits(i, 9, 5),
+        bits(i, 20, 16),
+        bits(i, 11, 10),
+    );
+    if bit(i, 31) != (sz == 3) {
+        return false;
+    }
+    let table = CRC_TABLES[!ieee as usize].as_ptr() as usize as u32;
+    const ACC: u32 = 6;
+    const DATA: [u32; 2] = [7, 8];
+    get(c, false, rn);
+    c.local_set(ACC);
+    if sz == 3 {
+        get(c, true, rm);
+        c.local_tee(2).i32_wrap_i64().local_set(DATA[0]);
+        c.local_get(2)
+            .i64_const(32)
+            .op(SHR_U + W)
+            .i32_wrap_i64()
+            .local_set(DATA[1]);
+    } else {
+        get(c, false, rm);
+        c.local_set(DATA[0]);
+    }
+    for b in 0..1u32 << sz {
+        // acc = table[(acc ^ byte) & 0xff] ^ acc >> 8
+        c.local_get(DATA[b as usize / 4]);
+        if b % 4 != 0 {
+            c.i32_const(8 * (b % 4) as i32).op(SHR_U);
+        }
+        c.local_get(ACC).op(XOR).i32_const(0xff).op(AND);
+        c.i32_const(2).op(SHL).i32_load(table);
+        c.local_get(ACC)
+            .i32_const(8)
+            .op(SHR_U)
+            .op(XOR)
+            .local_set(ACC);
+    }
+    set(c, false, rd, |c| {
+        c.local_get(ACC);
+    });
+    true
+}
 
 /// A binary or unary arithmetic op at the operation size.
 fn arith(c: &mut Func, sf: bool, op32: u8) {

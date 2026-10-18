@@ -8,7 +8,7 @@
 
 use core::mem::offset_of;
 
-use super::{Func, VCPU, VTMP, get, set};
+use super::{Func, VCPU, VT, VTMP, get, set};
 use crate::cpu::Cpu;
 use crate::decode::Op;
 use crate::interp::simd::{adv_simd_expand_imm, vfp_expand_imm};
@@ -59,6 +59,11 @@ const EXTMUL: [[[u32; 3]; 2]; 2] = [
 ];
 // extadd_pairwise, by source lane size (8, 16): [signed, unsigned].
 const EXTADD_PAIRWISE: [[u32; 2]; 2] = [[0x7c, 0x7d], [0x7e, 0x7f]];
+// Saturating narrows, by destination lane size (8, 16): [signed, unsigned] (from signed lanes).
+const NARROW: [[u32; 2]; 2] = [[0x65, 0x66], [0x85, 0x86]];
+const Q15MULR_SAT: u32 = 0x82;
+const AVGR_U: [u32; 2] = [0x7b, 0x9b];
+const SHUFFLE_EVEN: [u8; 16] = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30];
 /// FPSR.QC.
 const QC: i64 = 1 << 27;
 
@@ -70,7 +75,19 @@ pub(super) fn inline(c: &mut Func, i: u32, op: Op) -> bool {
         ADD_vector | SUB_2 | AND_asimd | BIC_asimd_reg | ORR_asimd_reg | ORN_asimd | EOR_asimd
         | BSL | BIT | BIF | CMEQ_reg_2 | CMTST_2 | CMGT_reg_2 | CMHI_2 | CMGE_reg_2 | CMHS_2
         | MUL_vec | MLA_vec | MLS_vec | SMAX | SMIN | UMAX | UMIN | SQADD_2 | UQADD_2 | SQSUB_2
-        | UQSUB_2 => three_same(c, i),
+        | UQSUB_2 | PMUL => three_same(c, i),
+        SHADD | UHADD | SRHADD | URHADD | SHSUB | UHSUB | SABD | UABD | SABA | UABA | SMAXP
+        | UMAXP | SMINP | UMINP | ADDP_vec | SQDMULH_vec_2 | SQRDMULH_vec_2 => three_same2(c, i),
+        MUL_elt | MLA_elt | MLS_elt | SMULL_elt | UMULL_elt | SMLAL_elt | UMLAL_elt | SMLSL_elt
+        | UMLSL_elt | SQDMULH_elt_2 | SQRDMULH_elt_2 => by_element(c, i),
+        ADDHN | SUBHN | RADDHN | RSUBHN | SABAL | UABAL | SABDL | UABDL | PMULL => {
+            three_diff2(c, i)
+        }
+        SRSHR_2 | URSHR_2 | SRSRA_2 | URSRA_2 | RSHRN | SQSHRN_2 | SQRSHRN_2 | SQSHRUN_2
+        | SQRSHRUN_2 | UQSHRN_2 | UQRSHRN_2 | SQSHL_imm_2 | UQSHL_imm_2 | SQSHLU_2 => {
+            shift_imm2(c, i)
+        }
+        SQXTN_2 | SQXTUN_2 | SQABS_2 | SQNEG_2 | SHLL | RBIT_asimd => two_misc2(c, i, op),
         SQADD_1 | UQADD_1 | SQSUB_1 | UQSUB_1 => sat_scalar(c, i),
         SSHR_2 | USHR_2 | SSRA_2 | USRA_2 | SHL_2 | SLI_2 | SRI_2 | SSHLL | USHLL | SHRN => {
             shift_imm(c, i)
@@ -144,7 +161,8 @@ fn three_same(c: &mut Func, i: u32) -> bool {
     }
     let ok = match opc {
         0b10000 | 0b10001 | 0b00110 | 0b00111 => q128,
-        0b10010 | 0b10011 => size != 3 && size != 0 && !(opc == 0b10011 && u), // MLA/MLS/MUL; not PMUL, no i8x16.mul
+        0b10010 => size != 3,
+        0b10011 => size != 3 && !(u && size != 0), // MUL; PMUL (U) on bytes only
         0b01100 | 0b01101 => size != 3,
         0b00001 | 0b00101 => size < 2 && q128, // no saturating 32/64-bit lanes in wasm
         _ => false,
@@ -200,11 +218,12 @@ fn three_same(c: &mut Func, i: u32) -> bool {
                 ops(c, &[rn, rm], &[cmp]);
             }
         }
-        0b10011 => ops(c, &[rn, rm], &[MUL[size]]),
+        0b10011 if u => pmul(c, rn, rm),
+        0b10011 => mul(c, size, rn, rm),
         // MLA, MLS (U): d ± n * m.
         0b10010 => {
             vreg(c, rd);
-            ops(c, &[rn, rm], &[MUL[size]]);
+            mul(c, size, rn, rm);
             c.simd(if u { SUB[size] } else { ADD[size] });
         }
         _ => {
@@ -217,6 +236,507 @@ fn three_same(c: &mut Func, i: u32) -> bool {
             ops(c, &[rn, rm], &[t[size]]);
         }
     });
+    true
+}
+
+/// Pushes Vn × Vm on `8 << size`-bit lanes: wasm has no i8x16.mul, so bytes
+/// multiply as 16-bit lanes and keep their low bytes.
+fn mul(c: &mut Func, size: usize, rn: u32, rm: u32) {
+    if size > 0 {
+        ops(c, &[rn, rm], &[MUL[size]]);
+        return;
+    }
+    ops(c, &[rn, rm], &[EXTMUL[1][0][0]]);
+    ops(c, &[rn, rm], &[EXTMUL[1][1][0]]);
+    c.shuffle(SHUFFLE_EVEN);
+}
+
+/// Pushes PMUL Vn, Vm: the carry-less products of the bytes, one bit of Vm's at a time.
+fn pmul(c: &mut Func, rn: u32, rm: u32) {
+    c.v128_const(0);
+    for k in 0..8 {
+        let bit = lanes_of(1 << k, 8);
+        vreg(c, rn);
+        c.i32_const(k).simd(SHL[0]);
+        vreg(c, rm);
+        c.v128_const(bit).simd(AND).v128_const(0).simd(NE[0]);
+        c.simd(AND).simd(XOR);
+    }
+}
+
+/// Pushes the byte indices of lanes `src(e)` (of `eb` bytes) for each result lane.
+fn gather(eb: u32, src: impl Fn(u32) -> u32) -> [u8; 16] {
+    core::array::from_fn(|b| {
+        let b = b as u32;
+        (src(b / eb) * eb + b % eb) as u8
+    })
+}
+
+/// Vd = the lanes in `VT[0]` (2 × `8 << size` bits) saturated to half their
+/// size into Vd's low half, the top cleared, or (`q`) into its top half:
+/// signed or unsigned (`dst_u`) results from signed lanes, or unsigned ones
+/// from unsigned lanes (`src_u`). FPSR.QC set if a lane saturated.
+fn sat_narrow(c: &mut Func, rd: u32, q: bool, size: usize, src_u: bool, dst_u: bool) {
+    let w = size + 1;
+    let max = (1u64 << (8 << size)) - 1;
+    // Unsigned lanes become small signed ones first: the narrows read signed lanes.
+    c.local_get(VT[0]);
+    if src_u {
+        c.v128_const(lanes_of(max, 8 << w)).simd(MIN_U[w]);
+    }
+    c.local_tee(VT[1]).local_get(VT[1]);
+    c.simd(NARROW[size][dst_u as usize]).local_set(VT[1]);
+    // Saturated if the narrowed lane, widened, isn't the original.
+    c.local_get(VT[1]).simd(EXTEND[dst_u as usize][0][size]);
+    c.local_get(VT[0]).simd(NE[w]).simd(ANY_TRUE);
+    or_qc(c);
+    put(c, rd, true, |c| {
+        c.local_get(VT[1]);
+        if q {
+            vreg(c, rd);
+            c.shuffle(core::array::from_fn(|b| {
+                if b < 8 { 16 + b as u8 } else { b as u8 - 8 }
+            }));
+        } else {
+            c.v128_const(0);
+            c.shuffle(core::array::from_fn(|b| if b < 8 { b as u8 } else { 16 }));
+        }
+    });
+}
+
+/// FPSR.QC |= the i32 on the stack.
+fn or_qc(c: &mut Func) {
+    c.if_();
+    let fpsr = offset_of!(Cpu, fpsr) as u32;
+    c.local_get(VCPU).local_get(VCPU).i64_load(fpsr);
+    c.i64_const(QC).op(0x84).i64_store(fpsr); // i64.or
+    c.end();
+}
+
+/// Pushes (x >> s) + (x >> (s − 1) & 1) on `8 << size`-bit lanes of VT[0]
+/// (s in 1..=esize): the rounded shift, without the overflow of adding first.
+/// Arithmetic, or logical (`u`); a shift by the lane width is 0, or the sign.
+fn shr_round(c: &mut Func, size: usize, s: u32, u: bool, round: bool) {
+    let esize = 8 << size;
+    if u && s == esize {
+        c.v128_const(0);
+    } else {
+        c.local_get(VT[0]).i32_const(s.min(esize - 1) as i32);
+        c.simd(if u { SHR_U[size] } else { SHR_S[size] });
+    }
+    if round {
+        c.local_get(VT[0]).i32_const(s as i32 - 1);
+        c.simd(if u { SHR_U[size] } else { SHR_S[size] });
+        c.v128_const(lanes_of(1, esize)).simd(AND).simd(ADD[size]);
+    }
+}
+
+/// The rest of three same, vector: halving adds and subtracts, absolute
+/// differences, pairwise operations, SQDMULH/SQRDMULH.
+fn three_same2(c: &mut Func, i: u32) -> bool {
+    let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let (q, u, size, opc) = (
+        bit(i, 30),
+        bit(i, 29),
+        bits(i, 23, 22) as usize,
+        bits(i, 15, 11),
+    );
+    if bit(i, 28) {
+        return false;
+    }
+    let ok = match opc {
+        0b10110 => size == 1 || size == 2,
+        0b10111 => !(size == 3 && !q),
+        _ => size != 3,
+    };
+    if !ok {
+        return false;
+    }
+    let (eb, shr) = (1u32 << size, if u { SHR_U[size] } else { SHR_S[size] });
+    match opc {
+        0b10110 => {
+            vreg(c, rn);
+            c.local_set(VT[2]);
+            vreg(c, rm);
+            c.local_set(VT[3]);
+            doubling_high(c, rd, q, size, u);
+            return true;
+        }
+        0b10100 | 0b10101 | 0b10111 => {
+            // Pairwise: lanes 2e and 2e + 1 of Vm:Vn (of their low halves for 64-bit vectors).
+            let n = if q { 16 } else { 8 } / eb;
+            let at = |j: u32| if j < n { j } else { 16 / eb + j - n };
+            let f = match (opc, u) {
+                (0b10111, _) => ADD[size],
+                (0b10100, false) => MAX_S[size],
+                (0b10100, true) => MAX_U[size],
+                (_, false) => MIN_S[size],
+                (_, true) => MIN_U[size],
+            };
+            put(c, rd, q, |c| {
+                for odd in 0..2 {
+                    vreg(c, rn);
+                    vreg(c, rm);
+                    c.shuffle(gather(eb, |e| at((2 * e + odd) % (2 * n))));
+                }
+                c.simd(f);
+            });
+            return true;
+        }
+        _ => {}
+    }
+    put(c, rd, q, |c| match opc {
+        // SHADD/UHADD: (x & y) + ((x ^ y) >> 1).
+        0b00000 => {
+            ops(c, &[rn, rm], &[AND]);
+            ops(c, &[rn, rm], &[XOR]);
+            c.i32_const(1).simd(shr).simd(ADD[size]);
+        }
+        // URHADD on bytes and halfwords is avgr_u; otherwise (x | y) − ((x ^ y) >> 1).
+        0b00010 if u && size < 2 => ops(c, &[rn, rm], &[AVGR_U[size]]),
+        0b00010 => {
+            ops(c, &[rn, rm], &[OR]);
+            ops(c, &[rn, rm], &[XOR]);
+            c.i32_const(1).simd(shr).simd(SUB[size]);
+        }
+        // SHSUB/UHSUB: (x >> 1) − (y >> 1) − (~x & y & 1).
+        0b00100 => {
+            vreg(c, rn);
+            c.i32_const(1).simd(shr);
+            vreg(c, rm);
+            c.i32_const(1).simd(shr).simd(SUB[size]);
+            vreg(c, rm);
+            vreg(c, rn);
+            c.simd(ANDNOT).v128_const(lanes_of(1, 8 << size)).simd(AND);
+            c.simd(SUB[size]);
+        }
+        // SABD/UABD: max − min; SABA/UABA add it to Vd.
+        _ => {
+            if opc == 0b01111 {
+                vreg(c, rd);
+            }
+            let (max, min) = if u { (MAX_U, MIN_U) } else { (MAX_S, MIN_S) };
+            ops(c, &[rn, rm], &[max[size]]);
+            ops(c, &[rn, rm], &[min[size]]);
+            c.simd(SUB[size]);
+            if opc == 0b01111 {
+                c.simd(ADD[size]);
+            }
+        }
+    });
+    true
+}
+
+/// SQDMULH / SQRDMULH (`round`) of VT[2] and VT[3] into Vd (16- or 32-bit
+/// lanes): the high half of the doubled product. Only MIN × MIN saturates.
+fn doubling_high(c: &mut Func, rd: u32, q: bool, size: usize, round: bool) {
+    let (a, b) = (VT[2], VT[3]);
+    let esize = 8u32 << size;
+    let min = lanes_of(1 << (esize - 1), esize);
+    // The saturating lanes, in VT[0].
+    c.local_get(a).v128_const(min).simd(EQ[size]);
+    c.local_get(b).v128_const(min).simd(EQ[size]).simd(AND);
+    if !q {
+        c.i64_const(0).simd_lane(REPLACE[3], 1);
+    }
+    c.local_tee(VT[0]).simd(ANY_TRUE);
+    or_qc(c);
+    put(c, rd, q, |c| {
+        if size == 1 && round {
+            // Exactly q15mulr_sat_s.
+            c.local_get(a).local_get(b).simd(Q15MULR_SAT);
+            return;
+        }
+        // The exact products, (p + round) >> (esize − 1), their low halves.
+        for ext in &EXTMUL[0] {
+            c.local_get(a).local_get(b).simd(ext[size]);
+            if round {
+                c.v128_const(lanes_of(1 << (esize - 2), 2 * esize))
+                    .simd(ADD[size + 1]);
+            }
+            c.i32_const(esize as i32 - 1).simd(SHR_S[size + 1]);
+        }
+        c.shuffle(gather(1 << size, |e| 2 * e)).local_set(VTMP);
+        // MIN × MIN: MAX.
+        c.v128_const(lanes_of((1 << (esize - 1)) - 1, esize));
+        c.local_get(VTMP).local_get(VT[0]).simd(BITSELECT);
+    });
+}
+
+/// MUL, MLA, MLS, the long multiplies and SQDMULH/SQRDMULH by element, vector
+/// (`interp::simd_int::by_element`): Vm's lane in every lane, then the vector form.
+fn by_element(c: &mut Func, i: u32) -> bool {
+    let (rd, rn) = (bits(i, 4, 0), bits(i, 9, 5));
+    let (q, u, size) = (bit(i, 30), bit(i, 29), bits(i, 23, 22) as usize);
+    if bit(i, 28) {
+        return false;
+    }
+    let (l, m, h) = (bit(i, 21) as u32, bit(i, 20) as u32, bit(i, 11) as u32);
+    let (index, rm) = match size {
+        1 => (h << 2 | l << 1 | m, bits(i, 19, 16)),
+        2 => (h << 1 | l, bits(i, 20, 16)),
+        _ => return false,
+    };
+    let eb = 1u32 << size;
+    // Vm's lane `index` in every lane, in VT[3].
+    vreg(c, rm);
+    vreg(c, rm);
+    c.shuffle(gather(eb, |_| index));
+    c.local_set(VT[3]);
+    match (bits(i, 15, 12), u) {
+        (0b1000, false) | (0b0000, true) | (0b0100, true) => {
+            // MUL, MLA, MLS: d ± n × m.
+            let opc = bits(i, 15, 12);
+            put(c, rd, q, |c| {
+                if opc != 0b1000 {
+                    vreg(c, rd);
+                }
+                vreg(c, rn);
+                c.local_get(VT[3]).simd(MUL[size]);
+                match opc {
+                    0b0000 => c.simd(ADD[size]),
+                    0b0100 => c.simd(SUB[size]),
+                    _ => c,
+                };
+            });
+        }
+        (0b1100 | 0b1101, _) => {
+            vreg(c, rn);
+            c.local_set(VT[2]);
+            doubling_high(c, rd, q, size, bits(i, 15, 12) == 0b1101);
+        }
+        (opc @ (0b0010 | 0b0110 | 0b1010), u) => {
+            // SMLAL/UMLAL, SMLSL/UMLSL, SMULL/UMULL: from Vn's low (high, Q) half.
+            put(c, rd, true, |c| {
+                if opc != 0b1010 {
+                    vreg(c, rd);
+                }
+                vreg(c, rn);
+                c.local_get(VT[3])
+                    .simd(EXTMUL[u as usize][q as usize][size]);
+                match opc {
+                    0b0010 => c.simd(ADD[size + 1]),
+                    0b0110 => c.simd(SUB[size + 1]),
+                    _ => c,
+                };
+            });
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// The narrowing high-half forms (ADDHN, SUBHN, RADDHN, RSUBHN), the absolute
+/// differences long (SABDL/UABDL, SABAL/UABAL) and PMULL on bytes, vector.
+fn three_diff2(c: &mut Func, i: u32) -> bool {
+    let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
+    let (q, u, size, opc) = (
+        bit(i, 30),
+        bit(i, 29),
+        bits(i, 23, 22) as usize,
+        bits(i, 15, 12),
+    );
+    if bit(i, 28) || size == 3 {
+        return false;
+    }
+    let (esize, w) = (8u32 << size, size + 1);
+    match opc {
+        0b0100 | 0b0110 => {
+            // The high half of each wide sum or difference, rounded (U).
+            narrow(c, rd, q, size, |c| {
+                ops(c, &[rn, rm], &[if opc == 0b0100 { ADD[w] } else { SUB[w] }]);
+                if u {
+                    c.v128_const(lanes_of(1 << (esize - 1), 2 * esize))
+                        .simd(ADD[w]);
+                }
+                c.i32_const(esize as i32).simd(SHR_U[w]);
+            });
+        }
+        0b0101 | 0b0111 => put(c, rd, true, |c| {
+            if opc == 0b0101 {
+                vreg(c, rd);
+            }
+            widen(c, rn, size, q, u);
+            widen(c, rm, size, q, u);
+            c.simd(SUB[w]).simd(ABS[w]);
+            if opc == 0b0101 {
+                c.simd(ADD[w]);
+            }
+        }),
+        0b1110 if size == 0 && !u => put(c, rd, true, |c| {
+            // PMULL.8H: 16-bit lanes of the zero-extended bytes, one bit of Vm's at a time.
+            c.v128_const(0);
+            for k in 0..8 {
+                widen(c, rn, 0, q, true);
+                c.i32_const(k).simd(SHL[1]);
+                widen(c, rm, 0, q, true);
+                c.v128_const(lanes_of(1 << k, 16))
+                    .simd(AND)
+                    .v128_const(0)
+                    .simd(NE[1]);
+                c.simd(AND).simd(XOR);
+            }
+        }),
+        _ => return false,
+    }
+    true
+}
+
+/// Rounding shifts right (SRSHR/URSHR, SRSRA/URSRA), the narrowing shifts
+/// from 16- and 32-bit lanes (RSHRN and the saturating ones) and the
+/// saturating shifts left on bytes and halfwords, vector.
+fn shift_imm2(c: &mut Func, i: u32) -> bool {
+    let (rd, rn) = (bits(i, 4, 0), bits(i, 9, 5));
+    let (q, u, immh, opc) = (bit(i, 30), bit(i, 29), bits(i, 22, 19), bits(i, 15, 11));
+    let immhb = bits(i, 22, 16);
+    if bit(i, 28) || immh == 0 {
+        return false;
+    }
+    let size = (31 - immh.leading_zeros()) as usize;
+    let esize = 8u32 << size;
+    match opc {
+        0b00100 | 0b00110 => {
+            if size == 3 && !q {
+                return false;
+            }
+            let s = 2 * esize - immhb;
+            vreg(c, rn);
+            c.local_set(VT[0]);
+            put(c, rd, q, |c| {
+                if opc == 0b00110 {
+                    vreg(c, rd);
+                }
+                shr_round(c, size, s, u, true);
+                if opc == 0b00110 {
+                    c.simd(ADD[size]);
+                }
+            });
+        }
+        0b10000..=0b10011 => {
+            // From 2 × esize lanes by s = 2 × esize − immhb (1..=esize).
+            if immh & 8 != 0 || size == 2 {
+                return false; // reserved, or from 64-bit lanes (simd_lane)
+            }
+            let w = size + 1;
+            let s = 2 * esize - immhb;
+            let round = opc & 1 == 1;
+            let (src_u, dst_u) = match (opc & !1, u) {
+                (0b10000, false) => (true, true),
+                (0b10000, true) => (false, true),
+                (_, u) => (u, u),
+            };
+            vreg(c, rn);
+            c.local_set(VT[0]);
+            if opc & !1 == 0b10000 && !u {
+                // RSHRN (SHRN is in shift_imm): truncated.
+                narrow(c, rd, q, size, |c| shr_round(c, w, s, true, round));
+                return true;
+            }
+            shr_round(c, w, s, src_u, round);
+            c.local_set(VT[0]);
+            sat_narrow(c, rd, q, size, src_u, dst_u);
+        }
+        0b01100 | 0b01110 => {
+            // SQSHLU (U), SQSHL/UQSHL (U): bytes and halfwords, shifted at twice the
+            // width (exact), then narrowed with saturation.
+            if size > 1 || (opc == 0b01100 && !u) {
+                return false; // 32- and 64-bit lanes: simd_lane
+            }
+            let left = (immhb - esize) as i32;
+            let (src_u, dst_u) = (opc == 0b01110 && u, opc == 0b01100 || u);
+            for high in 0..2 {
+                vreg(c, rn);
+                c.simd(EXTEND[src_u as usize][high][size]);
+                c.i32_const(left).simd(SHL[size + 1]);
+                c.local_set(VT[high]);
+            }
+            // Unsigned lanes become small signed ones first.
+            if src_u {
+                let max = lanes_of((1 << esize) - 1, 2 * esize);
+                for k in 0..2 {
+                    c.local_get(VT[k])
+                        .v128_const(max)
+                        .simd(MIN_U[size + 1])
+                        .local_set(VT[2 + k]);
+                }
+            } else {
+                for k in 0..2 {
+                    c.local_get(VT[k]).local_set(VT[2 + k]);
+                }
+            }
+            c.local_get(VT[2])
+                .local_get(VT[3])
+                .simd(NARROW[size][dst_u as usize]);
+            c.local_set(VTMP);
+            // Q = 0: the low half's lanes only.
+            for high in 0..1 + q as usize {
+                c.local_get(VTMP).simd(EXTEND[dst_u as usize][high][size]);
+                c.local_get(VT[high]).simd(NE[size + 1]).simd(ANY_TRUE);
+                if high == 1 {
+                    c.op(0x72); // i32.or
+                }
+            }
+            or_qc(c);
+            put(c, rd, q, |c| {
+                c.local_get(VTMP);
+            });
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// SQXTN/SQXTUN (vector, to bytes and halfwords), SQABS/SQNEG, SHLL, RBIT.
+fn two_misc2(c: &mut Func, i: u32, op: Op) -> bool {
+    use Op::*;
+    let (rd, rn) = (bits(i, 4, 0), bits(i, 9, 5));
+    let (q, u, size) = (bit(i, 30), bit(i, 29), bits(i, 23, 22) as usize);
+    if bit(i, 28) {
+        return false;
+    }
+    let esize = 8u32 << size;
+    match op {
+        SQXTN_2 | SQXTUN_2 if size < 2 => {
+            vreg(c, rn);
+            c.local_set(VT[0]);
+            sat_narrow(c, rd, q, size, u && op == SQXTN_2, u);
+        }
+        SQABS_2 | SQNEG_2 if !(size == 3 && !q) => {
+            // abs or neg, MAX where the lane is MIN.
+            let min = lanes_of(1 << (esize - 1), esize);
+            vreg(c, rn);
+            c.v128_const(min).simd(EQ[size]).local_tee(VT[0]);
+            if !q {
+                c.i64_const(0).simd_lane(REPLACE[3], 1);
+            }
+            c.simd(ANY_TRUE);
+            or_qc(c);
+            put(c, rd, q, |c| {
+                c.v128_const(lanes_of((1 << (esize - 1)) - 1, esize));
+                vreg(c, rn);
+                c.simd(if op == SQABS_2 { ABS[size] } else { NEG[size] });
+                c.local_get(VT[0]).simd(BITSELECT);
+            });
+        }
+        SHLL if size != 3 => put(c, rd, true, |c| {
+            widen(c, rn, size, q, true);
+            c.i32_const(esize as i32).simd(SHL[size + 1]);
+        }),
+        RBIT_asimd if size == 1 => put(c, rd, q, |c| {
+            // Each nibble reversed through a table, the nibbles swapped.
+            let rev4: [u8; 16] = core::array::from_fn(|n| (n as u8).reverse_bits() >> 4);
+            let table = u128::from_le_bytes(rev4);
+            c.v128_const(table);
+            vreg(c, rn);
+            c.v128_const(lanes_of(15, 8)).simd(AND).simd(SWIZZLE);
+            c.i32_const(4).simd(SHL[0]);
+            c.v128_const(table);
+            vreg(c, rn);
+            c.i32_const(4).simd(SHR_U[0]).simd(SWIZZLE);
+            c.simd(OR);
+        }),
+        _ => return false,
+    }
     true
 }
 

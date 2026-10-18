@@ -28,6 +28,7 @@ type Exports = {
   jit_new(threshold: number, batch: number, capacity: number, check: number, regionAfter: number): number;
   jit_run_exit(v: number, mem: number, n: bigint, exit: number): bigint;
   jit_stats(v: number): number;
+  jit_helper_report(v: number): number;
   jit_flush(v: number): void;
 };
 
@@ -70,6 +71,14 @@ const CLASSES: Record<string, [number, number]> = {
   'AdvSIMD across lanes': [0x9f3e0c00, 0x0e300800],
   'AdvSIMD table lookup': [0xbfe08c00, 0x0e000000],
   'AdvSIMD permute (UZP, TRN, ZIP)': [0xbf208c00, 0x0e000800],
+  'AdvSIMD vector x indexed element': [0x9f000400, 0x0f000000], // integer and FP
+  'AdvSIMD scalar three same': [0xdf200400, 0x5e200400],
+  'AdvSIMD scalar three different': [0xdf200c00, 0x5e200000],
+  'AdvSIMD scalar two-register miscellaneous': [0xdf3e0c00, 0x5e200800],
+  'AdvSIMD scalar pairwise': [0xdf3e0c00, 0x5e300800],
+  'AdvSIMD scalar shift by immediate': [0xdf800400, 0x5f000400],
+  'AdvSIMD scalar x indexed element': [0xdf000400, 0x5f000000],
+  'CRC32, CRC32C': [0x7fe0e000, 0x1ac04000],
   'FP and general register moves, conversions': [0x7f20fc00, 0x1e200000],
   // Scalar FP (M6 loop 5): special values in the V registers, FPCR and FPSR.IXC random.
   'FP data processing, 1 source': [0xff207c00, 0x1e204000],
@@ -171,6 +180,23 @@ function fpPlain(d: boolean): bigint {
   return s | (e << fb) | f;
 }
 
+/** The classes whose V registers sometimes hold integer lanes of edge values (`intLanes`). */
+const INT_LANES = /^AdvSIMD (?!FP|scalar FP|FCVT)|^AdvSIMD load|^CRC32/;
+
+/** 64 bits of `esize`-bit lanes: the signed and unsigned limits and their neighbours, small
+ * values of either sign (shift counts), a lane with one bit set, or random bits. */
+function intLanes(esize: bigint): bigint {
+  const m = (1n << esize) - 1n, min = 1n << (esize - 1n);
+  let v = 0n;
+  for (let e = 0n; e < 64n; e += esize) {
+    const r = rand32() % 12;
+    const small = BigInt(rand32() % (Number(esize) + 4));
+    const x = [0n, 1n, m, min, min - 1n, min + 1n, m - 1n, small, -small, 1n << BigInt(rand32() % Number(esize)), rand64(), rand64()][r];
+    v |= (x & m) << e;
+  }
+  return v;
+}
+
 /** Two thirds of the words get a random bit window cleared or set: zero and all-ones immediates, XZR/SP. */
 function field(w: number) {
   const r = rand32() % 3, lo = rand32() % 27, len = 1 + (rand32() % 12);
@@ -224,6 +250,16 @@ function setup(code: number) {
     const st = new BigUint64Array(memory.buffer, ex.jit_stats(jit), 18);
     return `${st[8]} compiled inline, ${st[9]} as helper calls, ${st[16]} blocks in ${st[0]} regions, ${st[17]} back-edges`;
   };
+  /** WEBPC_JIT_DIFF_HELPERS=1: the helper calls by instruction since the last call, most first. */
+  let lastHelpers = new Map<string, number>();
+  const helpers = () => {
+    const p = ex.jit_helper_report(jit), m8 = new Uint8Array(memory.buffer);
+    const text = new TextDecoder().decode(m8.subarray(p, m8.indexOf(0, p)));
+    const now = new Map(text.split('\n').filter(Boolean).map((l) => l.split(' ')).map(([o, n]) => [o, Number(n)] as [string, number]));
+    const d = [...now].map(([o, n]) => [o, n - (lastHelpers.get(o) ?? 0)] as [string, number]).filter(([, n]) => n > 0);
+    lastHelpers = now;
+    return d.sort((x, y) => y[1] - x[1]).slice(0, 24).map(([o, n]) => `${o} ${n}`).join(', ');
+  };
   /** Whether `w` is allocated and implemented: one interpreter step on it, in
    * the gap, with every register outside RAM (so it writes no RAM), the
    * interpreter's `Cpu` restored after (a literal load still writes its
@@ -241,7 +277,7 @@ function setup(code: number) {
     const kind = new BigUint64Array(memory.buffer, ei, 2)[0];
     return kind !== 1n && kind !== 2n;
   };
-  return { ex, jit, a8, ca32, cb32, cpus, run, counts, allocated, data: DATA };
+  return { ex, jit, a8, ca32, cb32, cpus, run, counts, helpers, allocated, data: DATA };
 }
 
 for (const [name, [mask, bits], mem] of [
@@ -249,8 +285,14 @@ for (const [name, [mask, bits], mem] of [
   ...Object.entries(MEMORY).map(([n, c]) => [n, c, true] as const),
 ]) test(`JIT vs interpreter: ${name}`, () => {
   // Each word with a brk after it.
-  const { ex, jit, a8, ca32, cb32, cpus, run, counts, data } = setup(8 * WORDS);
-  const words = Array.from({ length: WORDS }, () => ((field(rand32()) & ~mask) | bits) >>> 0);
+  const { ex, jit, a8, ca32, cb32, cpus, run, counts, helpers, allocated, data } = setup(8 * WORDS);
+  const word = () => ((field(rand32()) & ~mask) | bits) >>> 0;
+  // With the helper report, allocated words only (the unallocated ones' helper calls hide the rest).
+  const words = Array.from({ length: WORDS }, () => {
+    let w = word();
+    for (let t = 0; process.env.WEBPC_JIT_DIFF_HELPERS && !allocated(w) && t < 64; t++) w = word();
+    return w;
+  });
   words.forEach((w, k) => {
     ca32.set([w, BRK], 2 * k);
     cb32.set([w, BRK], 2 * k);
@@ -275,11 +317,15 @@ for (const [name, [mask, bits], mem] of [
       // Half the words: every register as FP lanes of one size, mostly
       // plain values (a vector instruction's fast path needs all its lanes on it).
       const va = new BigUint64Array(a.buffer, a.byteOffset + 304, 64);
-      const mode = rand32() % 4;
+      // Integer classes, a third of the time: every register as integer lanes of one size, edge values
+      // (the saturating, rounding and doubling forms' limits, small shift counts) mixed with random ones.
+      const mode = INT_LANES.test(name) && rand32() % 3 === 0 ? 4 : rand32() % 4;
+      const esize = 8n << BigInt(rand32() % 4);
       for (let r = 0; r < 64; r++) {
         const k = rand32() % 4;
         const lane = (d: boolean) => (rand32() % 8 === 0 ? fpValue(d) : fpPlain(d));
         va[r] = mode === 0 ? lane(true) : mode === 1 ? lane(false) | lane(false) << 32n
+          : mode === 4 ? intLanes(esize)
           : k === 0 ? EDGES[rand32() % EDGES.length] : k === 1 ? fpValue(true) : k === 2 ? fpValue(false) | fpValue(false) << 32n : rand64();
       }
       if (CRYPTO.has(name)) {
@@ -317,6 +363,7 @@ for (const [name, [mask, bits], mem] of [
     }
   }
   console.log(`${name}: ${WORDS} words, ${counts()}`);
+  if (process.env.WEBPC_JIT_DIFF_HELPERS) console.log(`  helper calls: ${helpers()}`);
   assert.deepEqual(failures.slice(0, 20), [], `${failures.length} of ${WORDS} words differ`);
 });
 
@@ -553,11 +600,11 @@ const HELPERS = [
 // each, and dropped after the ones that write V (V registers in locals).
 const VHELPERS = [
   (d: number, n: number) => 0x4e60fc00 | (n << 16) | (n << 5) | d, // frecps vd.2d, vn.2d, vn.2d
-  (d: number, n: number) => 0x4c408800 | (n << 5) | d, // ld2 {vd.4s, vd+1.4s}, [xn]
-  (d: number, n: number) => 0x4c008800 | (n << 5) | d, // st2 {vd.4s, vd+1.4s}, [xn]
+  (d: number, n: number) => 0x4ea1c800 | (n << 5) | d, // urecpe vd.4s, vn.4s
+  (d: number, n: number) => 0x6ee1f800 | (n << 5) | d, // fsqrt vd.2d, vn.2d
   (d: number, n: number) => 0x1e664000 | (n << 5) | d, // frinta dd, dn
   (d: number, n: number) => 0x6e218800 | (n << 5) | d, // frinta vd.4s, vn.4s
-  (d: number, n: number) => 0x6ea24c00 | (n << 16) | (d << 5) | d, // uqshl vd.4s, vd.4s, vn.4s
+  (d: number, n: number) => 0x7ee03800 | (n << 5) | d, // usqadd dd, dn
 ];
 const NEON = ['AdvSIMD three same', 'AdvSIMD shift by immediate, modified immediate', 'AdvSIMD two-register miscellaneous', 'AdvSIMD copy (DUP, INS, UMOV, SMOV)', 'AdvSIMD permute (UZP, TRN, ZIP)', 'AdvSIMD three different', 'AdvSIMD FP three same', 'AdvSIMD FP by element', 'AdvSIMD FCVTL, FCVTN', 'FP data processing, 1 source', 'FP data processing, 2 sources', 'FP data processing, 3 sources', 'FP and general register moves, conversions', 'FP compare', 'FP conditional compare', 'FP conditional select', 'conditional select', 'conditional compare'].map((n) => CLASSES[n]);
 const VMEM = ['SIMD&FP load/store, unsigned offset', 'SIMD&FP load/store pair', 'AdvSIMD load/store multiple structures', 'AdvSIMD load/store single structure'].map((n) => MEMORY[n]);

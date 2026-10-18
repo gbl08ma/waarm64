@@ -289,8 +289,12 @@ start one target must get ALREADY_ON or ON_PENDING).
   It caught all three rustc/LLVM `simd128` miscompiles. The V registers live in locals: only
   sequences (and regions) see a dirty one not written back before a helper or one not dropped
   after it, so "NEON, FP and V helpers" mixes inline NEON, FP and V loads and stores with
-  helper-only words on the same V registers (FRECPS on doubles, LD2/ST2, scalar and vector
-  FRINTA, UQSHL), from whole registers of FP lanes. On the flat bus a load's slow path never
+  helper-only words on the same V registers (FRECPS on doubles, URECPE, FSQRT, scalar and vector
+  FRINTA, USQADD on a D register), from whole registers of FP lanes. The integer NEON classes
+  get registers of integer lanes of one size with edge values (the saturating, rounding and
+  doubling limits) a third of the time. `WEBPC_JIT_DIFF_HELPERS=1` prints each class's helper
+  calls by instruction, from allocated words only (unallocated ones go to the helper too and hide
+  the rest): what's still missing from the JIT. On the flat bus a load's slow path never
   returns normally (outside RAM is an abort), so a load that keeps its V destination's stale
   local after the helper shows only under the MMU: the Alpine userspace boot caught it, lockstep
   and Buildroot didn't.
