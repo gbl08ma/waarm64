@@ -1,0 +1,68 @@
+diff --git a/core/src/jit/mod.rs b/core/src/jit/mod.rs
+index fe73e1d..605981b 100644
+--- a/core/src/jit/mod.rs
++++ b/core/src/jit/mod.rs
+@@ -368,8 +368,17 @@ pub struct Cache {
+     /// EL1's follows), once a table has installed it: the same in every
+     /// table, as is every slot's.
+     xmiss: Option<u32>,
++    /// EVICT-COST (an experiment, not for commit): each slot's generation + 1
++    /// (0: none), and the bytes installed this epoch. A module imports only
++    /// blocks of its own generation (`GEN_EIGHTHS` of the budget's bytes by
++    /// install order); older ones it reaches through the jump cache.
++    gen_of: Vec<u32>,
++    gen_bytes: u64,
+ }
+ 
++/// EVICT-COST: a generation's size in eighths of `Config::max_bytes`.
++const GEN_EIGHTHS: u64 = 1;
++
+ /// A module installed since the last flush.
+ struct Logged {
+     slot: u32,
+@@ -435,6 +444,8 @@ impl Cache {
+             ready: Arc::new(AtomicU32::new(0)),
+             tables: Vec::new(),
+             xmiss: None,
++            gen_of: vec![0; cfg.capacity as usize],
++            gen_bytes: 0,
+         }
+     }
+ 
+@@ -487,6 +498,8 @@ impl Cache {
+         self.batch += 1;
+         self.next = MISS_SLOTS;
+         self.live_bytes = 0;
++        self.gen_of.fill(0);
++        self.gen_bytes = 0;
+         self.retune();
+         self.epoch += 1;
+         self.log.clear();
+@@ -810,7 +823,15 @@ impl Cache {
+             }
+         }
+         let map = &self.map;
+-        let compiled = |k| map.get(&k).filter(|i| i.idx != 0).map(|i| (i.idx, i.len));
++        // EVICT-COST: imports only of this generation's blocks.
++        let size = (self.cfg.max_bytes / 8).saturating_mul(GEN_EIGHTHS).max(1);
++        let cur = (self.gen_bytes / size) as u32 + 1;
++        let gen_of = &self.gen_of;
++        let compiled = |k| {
++            map.get(&k)
++                .filter(|i| i.idx != 0 && gen_of.get((i.idx - xmiss) as usize) == Some(&cur))
++                .map(|i| (i.idx, i.len))
++        };
+         let block::Emitted {
+             bytes,
+             inl,
+@@ -841,6 +862,10 @@ impl Cache {
+             tiers,
+         });
+         let idx = xmiss + slot;
++        for s in slot..slot + n {
++            self.gen_of[s as usize] = cur;
++        }
++        self.gen_bytes += len;
+         self.live_bytes += len;
+         self.retune();
+         let s = &mut t.stats;

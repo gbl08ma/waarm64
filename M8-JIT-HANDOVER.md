@@ -8,7 +8,29 @@ docs/backlog.md "Interpreter" and "JIT". The previous handovers of this track (t
 arenas, 2026-10-09; V8's GC stalls, 2026-10-15; where a busy vCPU's time goes, 2026-10-15) are in git history;
 their lessons are below.
 
-**Done last (2026-10-18, a cloud session): the integer NEON, structures and CRC32 compiled** (docs/jit.md "NEON →
+**Next (2026-10-18, the user's call): per-module eviction, measured first, then built.** The user finds budget flushes
+the main cause of stutters with heavy guest software (a browser's video, music and WebGL stutter at each, sometimes two
+flushes in a row), and wants them gone at minimal steady-state cost, with a bigger or growing budget only as a last
+resort. A cloud session's research (the project's `jit-eviction/proposal.md`) found what decides any design: a
+module reaches compiled successors as imports, an import keeps its target's instance alive, and imports point from
+newer modules to older ones, so a module's memory goes only with every module importing it, transitively (FIFO by
+install order cascaded into the hottest, oldest code for this reason: docs/backlog.md). The proposal: evict
+coldest-first in importer-closed sets, the use signal a byte store per dispatch plus soft faults (clearing a
+cold-looking module's jump-cache and transfer-cache entries, so a use comes back to the dispatcher), in batches down
+to 6/8 of the budget, a flush when not enough is cold; optionally link a target that is cold at compile time through
+the jump cache instead of importing it. Rebindable links (`return_call_ref` through a cell) were judged slower than
+imports (V8's code: ~8 loads against 3). The fallback is two live epochs (a flush that keeps running the old code).
+A first look in the cloud (Debian's boot at a 24 MiB budget, `bench/boot/results/m8-evict/` README) already showed
+the problem: ~78% of the cache cold for 15 s at its flushes, 3% freeable with every import pinning; a few recent
+modules pin nearly everything, transitively. Two ways out to measure: the cold-target rule (it freed nearly all of the
+idle machine's cold code, nothing of the boot's) and imports only within a generation (76-78% freeable, but half the
+imports become jump-cache tails).
+**Step 1, on the dev VM** (`bench/boot/results/m8-evict/` README): `measure.patch` and `evict.ts` on the Firefox
+pages session (two sessions) and the `go build` loop: how much is freeable at the flushes under each rule; and
+`cost.patch`'s A/B (imports only within an eighth of the budget, no eviction) for what generations cost in busy MIPS.
+Then report to the user and build what that picks, behind a `Config` switch.
+
+**Before that (2026-10-18, a cloud session): the integer NEON, structures and CRC32 compiled** (docs/jit.md "NEON →
 SIMD128", "NEON lane by lane", "Structures"; branch `claude/project-thread-fcaq73`). A profile of image decoding in
 the guest's Firefox and Chromium (counts only, no timings in the cloud) had decoders' NEON as helper calls, 9% of
 Firefox's guest instructions on a JPEG page (SMLAL by element in Skia's downscaler above all). Now the allocated
@@ -63,7 +85,7 @@ latency during a page load) if a lever's case rests on it.
    and only then try tier-ups that wait for company. The pages session records no host memory yet (`results.json`'s
    `info` is the guest's `free`): first sample the renderer's `VmRSS` (`/proc/<pid>/status`, the Chromium process
    with `--type=renderer`) through the session, next to `jit.modules`.
-3. Later: per-module eviction.
+3. Per-module eviction: now first, above ("Next").
 
 ## How to measure (`tools/`: `bench/boot/results/m8-warm/tools/`)
 
