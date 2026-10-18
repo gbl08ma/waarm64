@@ -51,9 +51,9 @@ FP/integer gap is about the same as in the dev VM. The checks cost more once FMA
    **Done (2026-10-18):** FCSEL, FCMP/FCMPE (NZCV lazy), FCCMP/FCCMPE, FCVT single↔double and to and
    from half, FMAX/FMIN/FMAXNM/FMINNM and FRINTN/A/P/M/Z/I/X (scalar and vector), FCVT{N,M,A,P,Z}{S,U}
    to W, X and V (scalar and vector, 2D too), SCVTF/UCVTF 2D, FCVTXN(2), the AdvSIMD scalar compares.
-   **Left:** FABD, FMULX, FADDP and the other pairwise and across-lanes FP ops, FRECPE/FRSQRTE/
-   FRECPS/FRSQRTS/FRECPX, the fixed-point conversions (FCVTZ*/SCVTF/UCVTF with fbits); each needs
-   the suite models them all (2026-10-18, checked on the M4). The original note (not measured, small to medium each): scalar
+   Then FABD, FMULX, FRECPS/FRSQRTS, FRECPX, the pairwise and across-lanes ops, the fixed-point
+   conversions and the AdvSIMD scalar forms (lane 0 of the vector rules). **Left:** FRECPE/FRSQRTE
+   (the suite models them; an integer estimate per lane). The original note (not measured, small to medium each): scalar
    FCMP/FCMPE, FCCMP, FCSEL, scalar FCVT (single↔double), FMAX/FMIN/FMAXNM/FMINNM (scalar and
    vector), the scalar FRINT* (only the vector FRINTs are inline). The FP guest never runs them, but
    compiled code branches on FCMP constantly. **Count first:** `jit_helper_report` on the desktop

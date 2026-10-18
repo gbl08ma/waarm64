@@ -195,6 +195,9 @@ pub struct Func {
     /// The block computed its FP guard already (`float::fpa_guard`); false at
     /// each block's start.
     pub fpa_ok: bool,
+    /// `float::vector` is emitting an AdvSIMD scalar form (`Some(d)`: of
+    /// doubles if `d`): lane 0 counts, and the rest of Vd is cleared.
+    pub vsc: Option<bool>,
     /// The block's previous and next words (0 past its ends), and whether the
     /// instruction just emitted consumed the next one too: a fused AES round
     /// and mix, or SHA256H and SHA256H2 (M6.5, `crypto`).

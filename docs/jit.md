@@ -556,6 +556,25 @@ interpreter's; the helper runs the instruction otherwise.
   helper path stores the lazy flags first, as the helper reads them.
 - **FMAX/FMIN/FMAXNM/FMINNM** (scalar and vector): wasm's `max`/`min` with zero, normal or infinite
   operands (no NaN: then FMAXNM is FMAX), which order -0 below +0 as ARM does; no flags, no FPOK.
+  The pairwise forms (FADDP, FMAXP … on Vm:Vn, and the scalar pairs) shuffle the even and the odd
+  lanes side by side and take the lane rules; FMAXV/FMINV/FMAXNMV/FMINNMV reduce lanes 0 and 1
+  against 2 and 3, then the two (without NaNs the order doesn't matter).
+- **FABD** is FSUB's rule with the difference's sign cleared; **FMULX** is FMUL's (its ∞ × 0 never
+  meets the rule: no infinite operand). **FRECPS/FRSQRTS** are the FMA forms with the first factor
+  negated and 2 (3) as the addend in every lane; FRSQRTS halves the sum before the demote (single)
+  or after it (double), exactly or into a denormal the result check rejects. **FRECPX** is bits
+  (no NaN or denormal operand). **Fixed point** (FCVTZS/FCVTZU, SCVTF/UCVTF with fbits, to and
+  from W, X and V): × 2^fbits before the conversion (exact, or an infinity the range check
+  rejects), × 2^-fbits after it (exact: never below 2^-64).
+- **The AdvSIMD scalar forms** (FABD, FMULX, FRECPS/FRSQRTS, FMLA/FMLS/FMUL/FMULX by element, the
+  pairs, the fixed-point conversions) run the vector rules on lane 0 alone (`Func::vsc`: the lane
+  checks ignore the other lanes, and the write clears them); the scalar compares and conversions
+  are the scalar path's (their size is bit 22).
+- **Still helper calls on purpose:** FRECPE/FRSQRTE (the ARM ARM's integer estimates: a division
+  and a search per lane; the FP suite models them, so they can come inline), FP16 arithmetic (not
+  advertised), and every fast path's fallback: NaN and denormal operands, FPCR.RMode other than
+  nearest even or FPSR.IXC clear where a result may be inexact, results in the smallest normal
+  binade or beyond.
 - **Half precision** (FCVTL/FCVTN with sz = 0, llvmpipe's 16-bit colour paths): FCVTL is exact
   without flags but for NaNs (FZ doesn't apply to half): the magnitude shifted into a single's
   fields is the value × 2^-112, denormals too, so an `f32x4.mul` by 2^112 converts it. FCVTN rounds

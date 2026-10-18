@@ -500,6 +500,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             | FCVTZS_int_2
             | FCVTZU_int_2
             | FCVTXN_1
+            | FRECPX_2
     );
     let f = match (simd, bits(i, 23, 22)) {
         (true, _) => F { d: bit(i, 22) },
@@ -688,10 +689,13 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         }
         // SCVTF/UCVTF from a general register: wasm's converts round to nearest
         // even, and an integer's float is never infinite or denormal.
-        SCVTF_float_int | UCVTF_float_int => {
+        // The fixed-point forms (fbits = 64 - scale) then × 2^-fbits, exact
+        // (never below 2^-64).
+        SCVTF_float_int | UCVTF_float_int | SCVTF_float_fix | UCVTF_float_fix => {
             fpa_guard(c);
             let wide = bit(i, 31);
-            let unsigned = op == UCVTF_float_int;
+            let unsigned = matches!(op, UCVTF_float_int | UCVTF_float_fix);
+            let fix = matches!(op, SCVTF_float_fix | UCVTF_float_fix);
             // f32.convert_i32_s 0xb2 … f64.convert_i64_u 0xba.
             let conv = match (f.d, wide) {
                 (false, false) => 0xb2,
@@ -701,6 +705,14 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             } + unsigned as u8;
             get(c, wide, rn);
             c.op(conv);
+            if fix {
+                let p = 2f64.powi(bits(i, 15, 10) as i32 - 64);
+                if f.d {
+                    c.f64_const(p).op(F_MUL);
+                } else {
+                    c.f32_const(p as f32).op(0x94); // f32.mul
+                }
+            }
             f.to_int(c);
             c.local_set(r);
             c.local_get(FPOK);
@@ -725,9 +737,9 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // already); the saturating truncation never traps, and the check
         // decides whether it's used.
         FCVTNS_float | FCVTNU_float | FCVTMS_float | FCVTMU_float | FCVTAS_float | FCVTAU_float
-        | FCVTPS_float | FCVTPU_float | FCVTZS_float_int | FCVTZU_float_int | FCVTNS_2
-        | FCVTNU_2 | FCVTMS_2 | FCVTMU_2 | FCVTAS_2 | FCVTAU_2 | FCVTPS_2 | FCVTPU_2
-        | FCVTZS_int_2 | FCVTZU_int_2 => {
+        | FCVTPS_float | FCVTPU_float | FCVTZS_float_int | FCVTZU_float_int | FCVTZS_float_fix
+        | FCVTZU_float_fix | FCVTNS_2 | FCVTNU_2 | FCVTMS_2 | FCVTMU_2 | FCVTAS_2 | FCVTAU_2
+        | FCVTPS_2 | FCVTPU_2 | FCVTZS_int_2 | FCVTZU_int_2 => {
             fpa_guard(c);
             let gpr = !simd;
             let (wide, unsigned) = if gpr {
@@ -740,6 +752,7 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                             | FCVTAU_float
                             | FCVTPU_float
                             | FCVTZU_float_int
+                            | FCVTZU_float_fix
                     ),
                 )
             } else {
@@ -754,11 +767,24 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             };
             f.load(c, rn);
             c.local_set(x);
-            // The rounded value, as a float, into scratch FT[1] (f64; singles promoted, exactly).
+            // The rounded value, as a float, into scratch FT[1] (f64; singles
+            // promoted, exactly). Fixed point (fbits = 64 - scale): × 2^fbits
+            // in f64 first (exact, or an infinity the range check rejects).
             let v = super::FT[1];
-            round(c, f, x, mode);
-            if !f.d {
-                c.op(0xbb); // f64.promote_f32
+            if matches!(op, FCVTZS_float_fix | FCVTZU_float_fix) {
+                c.local_get(x);
+                f.to_float(c);
+                if !f.d {
+                    c.op(0xbb); // f64.promote_f32
+                }
+                c.f64_const(2f64.powi(64 - bits(i, 15, 10) as i32))
+                    .op(F_MUL)
+                    .op(0x9d); // f64.trunc
+            } else {
+                round(c, f, x, mode);
+                if !f.d {
+                    c.op(0xbb); // f64.promote_f32
+                }
             }
             c.local_set(v);
             c.local_get(FPOK);
@@ -847,6 +873,56 @@ pub(super) fn inline(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             scalar_normal_or_zero(c, f, xd);
             c.op(AND).op(AND);
             guarded(c, cx, i, k, vbit(rd), |c| put(c, F { d: false }, rd, r32));
+        }
+        // FRECPX: bits (the sign, the exponent inverted, or the largest finite
+        // one for a zero exponent; no fraction), with no flags but for a NaN
+        // (Invalid when signaling, its propagation) or a denormal (FZ's IDC).
+        FRECPX_2 => {
+            let (sh, ones) = f.exp();
+            let w = if f.d { W } else { 0 };
+            let kk = |c: &mut Func, v: i64| {
+                if f.d {
+                    c.i64_const(v);
+                } else {
+                    c.i32_const(v as i32);
+                }
+            };
+            f.load(c, rn);
+            c.local_tee(x);
+            kk(c, sh);
+            c.op(SHR_U + w);
+            kk(c, ones);
+            c.op(AND + w).local_set(y); // the exponent
+            kk(c, ones - 1);
+            c.local_get(y);
+            kk(c, ones);
+            c.op(XOR + w); // ~e & ones
+            c.local_get(y);
+            if f.d {
+                c.op(EQZ + WC);
+            } else {
+                c.op(EQZ);
+            }
+            c.select();
+            kk(c, sh);
+            c.op(0x74 + if f.d { 0x12 } else { 0 }); // shl
+            c.local_get(x);
+            kk(c, if f.d { i64::MIN } else { i32::MIN as i64 });
+            c.op(AND + w)
+                .op(0x72 + if f.d { 0x12 } else { 0 })
+                .local_set(r); // or
+            // A zero fraction, or an exponent neither zero nor all ones.
+            c.local_get(x);
+            kk(c, (1 << sh) - 1);
+            c.op(AND + w);
+            if f.d {
+                c.op(EQZ + WC);
+            } else {
+                c.op(EQZ);
+            }
+            exp_in(c, f, x, 1);
+            c.op(0x72); // i32.or
+            guarded(c, cx, i, k, vbit(rd), |c| put(c, f, rd, r));
         }
         // FCSEL: bits, no flags.
         FCSEL_float => {
@@ -1144,11 +1220,22 @@ fn vreg(c: &mut Func, n: u32) {
     c.vget(n);
 }
 
-/// Vd = the v128 in local `l`, its top half cleared unless `q`.
+/// Vd = the v128 in local `l`, its top half cleared unless `q` (an AdvSIMD
+/// scalar form: all but its low element).
 fn vput(c: &mut Func, rd: u32, q: bool, l: u32) {
     c.local_get(l);
-    if !q {
-        c.i64_const(0).simd_lane(0x1e, 1); // i64x2.replace_lane 1
+    match c.vsc {
+        Some(false) => {
+            c.v128_const(0xffff_ffff).simd(op::AND);
+        }
+        // i64x2.replace_lane 1
+        Some(true) => {
+            c.i64_const(0).simd_lane(0x1e, 1);
+        }
+        None if !q => {
+            c.i64_const(0).simd_lane(0x1e, 1);
+        }
+        None => {}
     }
     c.vset(rd);
 }
@@ -1193,13 +1280,158 @@ fn plain_lanes(c: &mut Func, d: bool) {
     c.local_get(tt).v128_const(0).simd(eq).simd(op::OR);
 }
 
-/// Pushes Vn's lanes (doubles if `d`, else singles) rounded to integral by
+/// An FMA form's first factor negated (FMLS, FRECPS, FRSQRTS), the addend's
+/// pusher (Vd, or FRECPS's 2 and FRSQRTS's 3 in every lane) and whether the
+/// sum is halved (FRSQRTS: (3 - n·m) / 2, rounded once). Their ∞ × 0 cases
+/// never meet the fast path (no infinite operand).
+fn fma_kind(op: Op, d: bool, rd: u32) -> (bool, impl Fn(&mut Func), bool) {
+    use Op::*;
+    let step = match op {
+        FRECPS_4 | FRECPS_2 => Some(2.0),
+        FRSQRTS_4 | FRSQRTS_2 => Some(3.0),
+        _ => None,
+    };
+    let neg = step.is_some() || matches!(op, FMLS_vec_2 | FMLS_elt_4 | FMLS_elt_2);
+    let acc = move |c: &mut Func| match step {
+        Some(v) if d => {
+            c.v128_const(splat(true, f64::to_bits(v)));
+        }
+        Some(v) => {
+            c.v128_const(splat(false, (v as f32).to_bits() as u64));
+        }
+        None => vreg(c, rd),
+    };
+    (neg, acc, step == Some(3.0))
+}
+
+/// The fixed-point forms' scale (`sign` 1: 2^fbits, to integer; -1:
+/// 2^-fbits, from integer) in every lane, as a v128 constant: Some(None) for
+/// the integer forms, None for an encoding that isn't ours (16-bit lanes).
+/// fbits = 2 × the lane's bits - immh:immb.
+fn fixed(op: Op, i: u32, d: bool, sign: i32) -> Option<Option<u128>> {
+    use Op::*;
+    if !matches!(
+        op,
+        FCVTZS_fix_2
+            | FCVTZU_fix_2
+            | FCVTZS_fix_1
+            | FCVTZU_fix_1
+            | SCVTF_fix_2
+            | UCVTF_fix_2
+            | SCVTF_fix_1
+            | UCVTF_fix_1
+    ) {
+        return Some(None);
+    }
+    if !d && !bit(i, 21) {
+        return None; // immh 001x: half precision
+    }
+    let fbits = if d { 128 } else { 64 } - bits(i, 22, 16) as i32;
+    let p = 2f64.powi(sign * fbits);
+    Some(Some(if d {
+        splat(true, p.to_bits())
+    } else {
+        splat(false, (p as f32).to_bits() as u64)
+    }))
+}
+
+/// Pushes Vn, its lanes × `scale` (the fixed-point forms) if there's one.
+fn vscaled(c: &mut Func, d: bool, rn: u32, scale: Option<u128>) {
+    vreg(c, rn);
+    if let Some(m) = scale {
+        c.v128_const(m)
+            .simd(if d { op::F64X2[2] } else { op::F32X4[2] });
+    }
+}
+
+/// A vector form's lanes (doubles if `d`), Q, and Vd.
+type Shape = (bool, bool, u32);
+
+/// FADD, FSUB (`kk` 1), FMUL (2), FDIV (3) on the lanes `a` and `b` push
+/// (FABD: `abs` of the difference; FMULX: FMUL, its ∞ × 0 never meets the
+/// rule): the host's lane operation, normal or zero operands (a normal
+/// divisor), and a fast result or an exact zero: a zero sum is always exact,
+/// a zero product or quotient when an operand is zero.
+#[allow(clippy::too_many_arguments)]
+fn arith(
+    c: &mut Func,
+    cx: &Ctx,
+    i: u32,
+    k: usize,
+    (d, q, rd): Shape,
+    kk: usize,
+    abs: bool,
+    a: &dyn Fn(&mut Func),
+    b: &dyn Fn(&mut Func),
+) {
+    let tr = VT[2];
+    fpa_guard(c);
+    a(c);
+    b(c);
+    c.simd(if d { op::F64X2[kk] } else { op::F32X4[kk] });
+    if abs {
+        c.simd(op::ABS[d as usize]);
+    }
+    c.local_set(tr);
+    a(c);
+    normal_or_zero(c, d);
+    b(c);
+    if kk == 3 {
+        lanes_in(c, d, 1);
+    } else {
+        normal_or_zero(c, d);
+    }
+    c.local_get(tr);
+    lanes_in(c, d, 2);
+    if kk < 2 {
+        c.local_get(tr);
+    } else {
+        a(c);
+    }
+    zero_lanes(c, d);
+    if kk == 2 {
+        b(c);
+        zero_lanes(c, d);
+        c.simd(op::OR);
+    }
+    c.simd(op::OR);
+    all_lanes(c, d, q, 3);
+    guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
+}
+
+/// FMAX/FMIN, FMAXNM/FMINNM (the same without NaNs) on the lanes `a` and `b`
+/// push: wasm's lane min and max with zero, normal or infinite lanes (-0
+/// below +0, as ARM); no flags, no FPOK.
+#[allow(clippy::too_many_arguments)]
+fn minmax(
+    c: &mut Func,
+    cx: &Ctx,
+    i: u32,
+    k: usize,
+    (d, q, rd): Shape,
+    max: bool,
+    a: &dyn Fn(&mut Func),
+    b: &dyn Fn(&mut Func),
+) {
+    let tr = VT[2];
+    a(c);
+    b(c);
+    c.simd(op::MINMAX[d as usize][max as usize]).local_set(tr);
+    a(c);
+    plain_lanes(c, d);
+    b(c);
+    plain_lanes(c, d);
+    every_lane(c, d, q, 2);
+    guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
+}
+
+/// Pushes the lanes `src` pushes (doubles if `d`, else singles) rounded to integral by
 /// `mode`, ties away as the scalar [`round`]: t = trunc(x), and t ± 1 (x's
 /// sign) where |x - t| ≥ 0.5. Scratch: VT[0] and VT[3].
-fn vround(c: &mut Func, d: bool, rn: u32, mode: Round) {
+fn vround(c: &mut Func, d: bool, src: &dyn Fn(&mut Func), mode: Round) {
     let r = |k: usize| op::ROUND[d as usize][k];
     if mode != Round::Away {
-        vreg(c, rn);
+        src(c);
         c.simd(r(match mode {
             Round::Floor => 1,
             Round::Ceil => 2,
@@ -1219,15 +1451,15 @@ fn vround(c: &mut Func, d: bool, rn: u32, mode: Round) {
     } else {
         (op::F32X4[0], op::F32X4[1])
     };
-    vreg(c, rn);
+    src(c);
     c.simd(r(3)).local_set(t);
     // t + copysign(1, x)
-    vreg(c, rn);
+    src(c);
     c.v128_const(splat(d, one)).v128_const(splat(d, sign));
     c.simd(op::BITSELECT).local_get(t).simd(add);
     c.local_get(t);
     // |x - t| ≥ 0.5
-    vreg(c, rn);
+    src(c);
     c.local_get(t)
         .simd(sub)
         .simd(op::ABS[d as usize])
@@ -1242,7 +1474,8 @@ fn vround(c: &mut Func, d: bool, rn: u32, mode: Round) {
 }
 
 /// ANDs lane masks into one i32 with FPOK: every lane of the masks all ones
-/// (with Q = 0, lanes 2 and 3 of 32-bit masks don't count).
+/// (with Q = 0, lanes 2 and 3 of 32-bit masks don't count; an AdvSIMD scalar
+/// form's, only lane 0).
 fn all_lanes(c: &mut Func, d: bool, q: bool, masks: usize) {
     every_lane(c, d, q, masks);
     c.local_get(FPOK).op(AND);
@@ -1253,8 +1486,18 @@ fn every_lane(c: &mut Func, d: bool, q: bool, masks: usize) {
     for _ in 1..masks {
         c.simd(op::AND);
     }
-    if !q && !d {
-        c.v128_const(u128::MAX << 64).simd(op::OR);
+    // An AdvSIMD scalar form: lane 0 alone.
+    match c.vsc {
+        Some(true) => {
+            c.v128_const(u128::MAX << 64).simd(op::OR);
+        }
+        Some(false) => {
+            c.v128_const(u128::MAX << 32).simd(op::OR);
+        }
+        None if !q && !d => {
+            c.v128_const(u128::MAX << 64).simd(op::OR);
+        }
+        None => {}
     }
     c.simd(if d {
         op::I64X2_ALL_TRUE
@@ -1264,17 +1507,62 @@ fn every_lane(c: &mut Func, d: bool, q: bool, masks: usize) {
 }
 
 /// Emits vector FP instruction `i` inline if it's one this covers; false
-/// (and nothing emitted) otherwise.
+/// (and nothing emitted) otherwise. The AdvSIMD scalar forms listed here run
+/// the vector rules on lane 0 alone (`Func::vsc`).
 pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
     use Op::*;
+    if bit(i, 28) {
+        if !matches!(
+            op,
+            FMLA_elt_2
+                | FMLS_elt_2
+                | FMUL_elt_2
+                | FMULX_elt_2
+                | FABD_2
+                | FMULX_vec_2
+                | FRECPS_2
+                | FRSQRTS_2
+                | FADDP_pair_2
+                | FMAXP_pair_2
+                | FMINP_pair_2
+                | FMAXNMP_pair_2
+                | FMINNMP_pair_2
+                | FCVTZS_fix_1
+                | FCVTZU_fix_1
+                | SCVTF_fix_1
+                | UCVTF_fix_1
+        ) {
+            return false;
+        }
+        // The fixed-point forms' size is immh's top bit (22 too); their 16-bit form isn't ours.
+        c.vsc = Some(bit(i, 22));
+    }
+    let done = lanes(c, cx, i, op, k);
+    c.vsc = None;
+    done
+}
+
+fn lanes(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
+    use Op::*;
     let (rd, rn, rm) = (bits(i, 4, 0), bits(i, 9, 5), bits(i, 20, 16));
-    let (q, d) = (bit(i, 30), bit(i, 22));
-    if bit(i, 28) || (d && !q && !matches!(op, FCVTL | FCVTN | FCVTXN_2)) {
-        return false; // scalar forms; a vector of doubles needs Q
+    let sc = c.vsc.is_some();
+    let (q, d) = (bit(i, 30) && !sc, bit(i, 22));
+    if d && !q && !sc && !matches!(op, FCVTL | FCVTN | FCVTXN_2) {
+        return false; // a vector of doubles needs Q
     }
     let [ta, tb, tr, tt] = VT;
     // The multiplier: Vm, or (by element) its lane `index` in every lane.
-    let by_element = matches!(op, FMLA_elt_4 | FMLS_elt_4 | FMUL_elt_4);
+    let by_element = matches!(
+        op,
+        FMLA_elt_4
+            | FMLS_elt_4
+            | FMUL_elt_4
+            | FMULX_elt_4
+            | FMLA_elt_2
+            | FMLS_elt_2
+            | FMUL_elt_2
+            | FMULX_elt_2
+    );
     let index = if d {
         bit(i, 11) as u8
     } else {
@@ -1296,53 +1584,91 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // lane operation, normal or zero operands (a normal divisor), and a
         // fast result or an exact zero: a zero sum is always exact, a zero
         // product or quotient when an operand is zero.
-        FADD_2 | FSUB_2 | FMUL_vec_2 | FDIV_2 | FMUL_elt_4 => {
-            if op == FMUL_elt_4 && bit(i, 29) {
-                return false; // FMULX
-            }
-            fpa_guard(c);
+        FADD_2 | FSUB_2 | FMUL_vec_2 | FDIV_2 | FMUL_elt_4 | FMUL_elt_2 | FMULX_vec_4
+        | FMULX_vec_2 | FMULX_elt_4 | FMULX_elt_2 | FABD_4 | FABD_2 => {
             let kk = match op {
                 FADD_2 => 0,
-                FSUB_2 => 1,
+                FSUB_2 | FABD_4 | FABD_2 => 1,
                 FDIV_2 => 3,
                 _ => 2,
             };
+            let abs = matches!(op, FABD_4 | FABD_2);
+            arith(c, cx, i, k, (d, q, rd), kk, abs, &|c| vreg(c, rn), &factor);
+        }
+        // Pairwise (Vm:Vn's adjacent lanes; the scalar forms Vn's two): the even
+        // lanes and the odd ones side by side, then the lane rules.
+        FADDP_vec_2 | FMAXP_vec_2 | FMINP_vec_2 | FMAXNMP_vec_2 | FMINNMP_vec_2 | FADDP_pair_2
+        | FMAXP_pair_2 | FMINP_pair_2 | FMAXNMP_pair_2 | FMINNMP_pair_2 => {
+            let (lb, n) = if d {
+                (8u8, 2u8)
+            } else {
+                (4, if q { 4 } else { 2 })
+            };
+            // Lane j of the pairs' first (`odd` 0) or second operands: lane 2j + odd of Vm:Vn.
+            let pick = |odd: u8| -> [u8; 16] {
+                core::array::from_fn(|b| {
+                    let (j, byte) = (b as u8 / lb, b as u8 % lb);
+                    let e = if sc { odd } else { 2 * (j % n) + odd };
+                    // Vn's lanes, then Vm's (16 bytes on).
+                    let lane = if e < n { e } else { e - n + 16 / lb };
+                    lane * lb + byte
+                })
+            };
+            for (odd, t) in [(0, ta), (1, tb)] {
+                vreg(c, rn);
+                vreg(c, if sc { rn } else { rm });
+                c.shuffle(pick(odd));
+                c.local_set(t);
+            }
+            let pa = &|c: &mut Func| {
+                c.local_get(ta);
+            };
+            let pb = &|c: &mut Func| {
+                c.local_get(tb);
+            };
+            match op {
+                FADDP_vec_2 | FADDP_pair_2 => arith(c, cx, i, k, (d, q, rd), 0, false, pa, pb),
+                _ => {
+                    let max = matches!(
+                        op,
+                        FMAXP_vec_2 | FMAXNMP_vec_2 | FMAXP_pair_2 | FMAXNMP_pair_2
+                    );
+                    minmax(c, cx, i, k, (d, q, rd), max, pa, pb);
+                }
+            }
+        }
+        // FMAXV/FMINV, FMAXNMV/FMINNMV (four singles): lanes 0 and 1 against
+        // 2 and 3, then the two (the order doesn't matter without NaNs).
+        FMAXV_2 | FMINV_2 | FMAXNMV_2 | FMINNMV_2 if q && !d => {
+            let mm = op::MINMAX[0][matches!(op, FMAXV_2 | FMAXNMV_2) as usize];
             vreg(c, rn);
-            factor(c);
-            c.simd(if d { op::F64X2[kk] } else { op::F32X4[kk] })
+            vreg(c, rn);
+            vreg(c, rn);
+            c.shuffle(core::array::from_fn(|b| 8 + b as u8 % 8));
+            c.simd(mm).local_tee(tr).local_get(tr).local_get(tr);
+            c.shuffle(core::array::from_fn(|b| 4 + b as u8 % 4));
+            c.simd(mm)
+                .v128_const(0xffff_ffff)
+                .simd(op::AND)
                 .local_set(tr);
             vreg(c, rn);
-            normal_or_zero(c, d);
-            factor(c);
-            if kk == 3 {
-                lanes_in(c, d, 1);
-            } else {
-                normal_or_zero(c, d);
-            }
-            c.local_get(tr);
-            lanes_in(c, d, 2);
-            if kk < 2 {
+            plain_lanes(c, false);
+            every_lane(c, false, true, 1);
+            guarded(c, cx, i, k, vbit(rd), |c| {
                 c.local_get(tr);
-            } else {
-                vreg(c, rn);
-            }
-            zero_lanes(c, d);
-            if kk == 2 {
-                factor(c);
-                zero_lanes(c, d);
-                c.simd(op::OR);
-            }
-            c.simd(op::OR);
-            all_lanes(c, d, q, 3);
-            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
+                c.vset(rd);
+            });
         }
         // Fused, double precision: the scalar double FMA's algorithm on f64x2
         // (Veltkamp, Dekker, TwoSum, round to odd, docs/jit.md "Floating
         // point"), its guard lane by lane. Five v128 scratch locals: the low
         // halves of the splits are recomputed from the operands.
-        FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 if d => {
+        FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 | FMLA_elt_2 | FMLS_elt_2 | FRECPS_4
+        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2
+            if d =>
+        {
             fpa_guard(c);
-            let neg = matches!(op, FMLS_vec_2 | FMLS_elt_4);
+            let (neg, acc, half) = fma_kind(op, d, rd);
             let (p, ah, bh, pl) = (ta, tb, tt, VTMP);
             let (add, sub, mul) = (op::F64X2[0], op::F64X2[1], op::F64X2[2]);
             let va = |c: &mut Func| {
@@ -1383,11 +1709,11 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.simd(mul).simd(add).local_set(pl);
             // TwoSum(c, p): th (into ah), tl (into tr); bb in bh.
             let (th, tl, bb) = (ah, tr, bh);
-            vreg(c, rd);
+            acc(c);
             c.local_get(p).simd(add).local_tee(th);
-            vreg(c, rd);
+            acc(c);
             c.simd(sub).local_set(bb);
-            vreg(c, rd);
+            acc(c);
             c.local_get(th).local_get(bb).simd(sub).simd(sub);
             c.local_get(p)
                 .local_get(bb)
@@ -1422,14 +1748,18 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 .simd(op::AND)
                 .simd(op::AND);
             c.simd(op::I64X2_ADD);
-            c.local_get(th).simd(add).local_set(tr); // z = th + v
+            c.local_get(th).simd(add); // z = th + v
+            if half {
+                c.v128_const(splat(true, 0.5f64.to_bits())).simd(mul); // exact, or a denormal the check rejects
+            }
+            c.local_set(tr);
             // Normal or zero operands, a product from 2^-900 (biased ea + eb
             // ≥ 1146) or a zero factor, a fast result.
             vreg(c, rn);
             normal_or_zero(c, true);
             factor(c);
             normal_or_zero(c, true);
-            vreg(c, rd);
+            acc(c);
             normal_or_zero(c, true);
             for v in [&va as &dyn Fn(&mut Func), &factor] {
                 v(c);
@@ -1452,9 +1782,10 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // through f64x2, the product exact, its sum with the addend rounded to
         // nearest, then demoted: correct off the singles' midpoints; with a sum
         // on one, the sums rounded to odd (TwoSum, as the scalar form).
-        FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 => {
+        FMLA_vec_2 | FMLS_vec_2 | FMLA_elt_4 | FMLS_elt_4 | FMLA_elt_2 | FMLS_elt_2 | FRECPS_4
+        | FRECPS_2 | FRSQRTS_4 | FRSQRTS_2 => {
             fpa_guard(c);
-            let neg = matches!(op, FMLS_vec_2 | FMLS_elt_4);
+            let (neg, acc, half) = fma_kind(op, d, rd);
             let halves: &[bool] = if q { &[false, true] } else { &[false] };
             let (add, sub) = (op::F64X2[0], op::F64X2[1]);
             let (p, a) = (VTMP, tr);
@@ -1467,7 +1798,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                         match step {
                             0 => vreg(c, rn),
                             1 => factor(c),
-                            _ => vreg(c, rd),
+                            _ => acc(c),
                         }
                         if step == 0 && neg {
                             c.simd(op::F32X4_NEG);
@@ -1526,11 +1857,19 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             c.simd(op::ANY_TRUE).hint(false).if_();
             sums(c, true);
             c.end();
-            // r = the demoted halves side by side.
-            c.local_get(ta).simd(op::DEMOTE);
-            if q {
-                c.local_get(tb).simd(op::DEMOTE);
-            } else {
+            // r = the demoted halves side by side (FRSQRTS: halved first, exactly).
+            for (t, on) in [(ta, true), (tb, q)] {
+                if !on {
+                    continue;
+                }
+                c.local_get(t);
+                if half {
+                    c.v128_const(splat(true, 0.5f64.to_bits()))
+                        .simd(op::F64X2[2]);
+                }
+                c.simd(op::DEMOTE);
+            }
+            if !q {
                 c.v128_const(0);
             }
             c.shuffle(core::array::from_fn(|b| {
@@ -1543,7 +1882,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             normal_or_zero(c, false);
             factor(c);
             normal_or_zero(c, false);
-            vreg(c, rd);
+            acc(c);
             normal_or_zero(c, false);
             c.local_get(tr);
             lanes_in(c, false, 2);
@@ -1552,7 +1891,7 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
             factor(c);
             zero_lanes(c, false);
             c.simd(op::OR);
-            vreg(c, rd);
+            acc(c);
             zero_lanes(c, false);
             c.simd(op::AND).simd(op::OR);
             all_lanes(c, false, q, 4);
@@ -1560,9 +1899,12 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         }
         // SCVTF/UCVTF: wasm's converts round to nearest even (FPOK); 64-bit
         // lanes one at a time (no i64x2 convert).
-        SCVTF_int_4 | UCVTF_int_4 => {
+        SCVTF_int_4 | UCVTF_int_4 | SCVTF_fix_2 | UCVTF_fix_2 | SCVTF_fix_1 | UCVTF_fix_1 => {
+            let Some(scale) = fixed(op, i, d, -1) else {
+                return false;
+            };
             fpa_guard(c);
-            let u = op == UCVTF_int_4;
+            let u = bit(i, 29);
             if d {
                 c.v128_const(0);
                 for lane in 0..2 {
@@ -1575,6 +1917,11 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 vreg(c, rn);
                 c.simd(op::CONVERT_I32X4[u as usize]);
             }
+            // Fixed point: × 2^-fbits, exact (never below 2^-64).
+            if let Some(m) = scale {
+                c.v128_const(m)
+                    .simd(if d { op::F64X2[2] } else { op::F32X4[2] });
+            }
             c.local_set(tr);
             c.local_get(FPOK);
             guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
@@ -1584,7 +1931,11 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // fits (FPOK: Inexact is set already) go through the saturating
         // truncation; 64-bit lanes one at a time (no i64x2 truncation).
         FCVTNS_4 | FCVTNU_4 | FCVTMS_4 | FCVTMU_4 | FCVTAS_4 | FCVTAU_4 | FCVTPS_4 | FCVTPU_4
-        | FCVTZS_int_4 | FCVTZU_int_4 => {
+        | FCVTZS_int_4 | FCVTZU_int_4 | FCVTZS_fix_2 | FCVTZU_fix_2 | FCVTZS_fix_1
+        | FCVTZU_fix_1 => {
+            let Some(scale) = fixed(op, i, d, 1) else {
+                return false;
+            };
             fpa_guard(c);
             let u = bit(i, 29);
             let mode = match op {
@@ -1594,7 +1945,8 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
                 FCVTAS_4 | FCVTAU_4 => Round::Away,
                 _ => Round::Trunc,
             };
-            vround(c, d, rn, mode);
+            // Fixed point: × 2^fbits first (exact, or an infinity the range check rejects).
+            vround(c, d, &|c| vscaled(c, d, rn, scale), mode);
             c.local_set(ta);
             if d {
                 c.v128_const(0);
@@ -1628,20 +1980,14 @@ pub(super) fn vector(c: &mut Func, cx: &Ctx, i: u32, op: Op, k: usize) -> bool {
         // flags, no FPOK.
         FMAX_2 | FMIN_2 | FMAXNM_2 | FMINNM_2 => {
             let max = matches!(op, FMAX_2 | FMAXNM_2);
-            vreg(c, rn);
-            vreg(c, rm);
-            c.simd(op::MINMAX[d as usize][max as usize]).local_set(tr);
-            vreg(c, rn);
-            plain_lanes(c, d);
-            vreg(c, rm);
-            plain_lanes(c, d);
-            every_lane(c, d, q, 2);
-            guarded(c, cx, i, k, vbit(rd), |c| vput(c, rd, q, tr));
+            minmax(c, cx, i, k, (d, q, rd), max, &|c| vreg(c, rn), &|c| {
+                vreg(c, rm)
+            });
         }
         // FRINTA: ties away as the scalar form (`round`), lane by lane; no NaN
         // or denormal lanes, no flags.
         FRINTA_2 => {
-            vround(c, d, rn, Round::Away);
+            vround(c, d, &|c| vreg(c, rn), Round::Away);
             c.local_set(tr);
             vreg(c, rn);
             plain_lanes(c, d);
