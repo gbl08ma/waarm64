@@ -21,7 +21,7 @@ test('WebUSB in a worker: Gadget Zero and the ACM gadget, granted by policy', { 
   assert.deepEqual(r.zero.configurations, [1, 2], 'source/sink and loopback');
   assert.equal(r.zero.descriptor.status, 'ok');
   assert.match(r.zero.descriptor.hex, /^12010002000000402505a0a4/, 'device descriptor: USB 2.0, 64-byte endpoint 0, 0525:a4a0');
-  assert.deepEqual(r.zero.bulkIn, { status: 'ok', length: 512, nonzero: false });
+  assert.deepEqual(r.zero.bulkIn, { status: 'ok', length: 512, pattern: true });
   assert.deepEqual(r.zero.bulkOut, { status: 'ok', bytesWritten: 512 });
   assert.equal(r.zero.vendorIn.status, 'ok');
   assert.deepEqual(r.zero.loopback, { status: 'ok', same: true });

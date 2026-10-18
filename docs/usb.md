@@ -491,7 +491,11 @@ serial number and product name where the browser gives them, `index`, the connec
 Each entry is an identity, not a device. The browser's grant persists per origin, so at a start the page finds the
 device again with `getDevices()` and needs no click.
 - **Identical devices without a serial number** are told apart by `index`, their position among their twins in
-  `getDevices()` order (`matchDevices`, `identityAt`). The USB tab says so when a machine has such twins. WebHID
+  `getDevices()` order (`matchDevices`, `identityAt`). **That order holds only within a browser session.** It is
+  the same on every call, and the same in the page and in a worker (U0 measured it on Chromium 153 with two
+  serial-less Gadget Zeros). A restarted browser can list the twins the other way round, so after a restart an
+  entry's twin may be the other device, on the entry's connector. That is harmless for truly identical devices,
+  but not for two boards flashed differently. The USB tab says so when a machine has such twins. WebHID
   never gives a serial number, and it lists a device with several HID interfaces as several `HIDDevice`s. Each of
   those becomes its own entry, with its own index.
 - **Grants:** WebUSB and WebHID list only devices that are both granted and plugged in, so a missing grant looks the
@@ -572,3 +576,6 @@ hardware. It takes no lock and is no entry.
   - a detach.
 
   Planted: Snapshot not emptying the ports first (the core refuses the save; caught).
+- Real WebUSB and WebHID in the pinned Chromium run on the dev VM's host rigs: dummy_hcd gadgets and uhid devices,
+  with permission from Chromium's managed policy. They run in `scripts/ci-usb.sh`, not in `ci.sh`. The rigs, the
+  recorded HID fixtures and the QEMU oracle are in [testing.md](testing.md) "USB: the dev VM's host rigs".

@@ -50,6 +50,15 @@ macOS 26), not on the x86_64 desktop (which the user needs for other work).
   Mesa-demo (`eglinfo`, `es2_info`) and Mesa-libGLESv2-devel, Mesa-libEGL-devel, Mesa-KHR-devel (glcomp builds natively); glmark2, xvfb-run (glmark2-es2 on virpipe under Xvfb), meson, ninja, libepoxy-devel, libdrm-devel, libgbm-devel (a debug virglrenderer for the oracle, graphics.md §19), sway and foot; qemu-ui-opengl is installed but QEMU's
   `virtio-gpu-gl` can't run (no DRM render node in the VM: graphics.md §18).
   Add what's missing with `sudo zypper in`, and note it here.
+- **USB rigs** (docs/testing.md "USB"): the VM runs `kernel-default` (7.2.9) with `kernel-default-devel`, so
+  `tests/usb/gadget.sh install` can build `dummy_hcd` out of tree (openSUSE doesn't ship it; the source comes from
+  kernel.org's stable tree for the running version) into `/lib/modules/<kver>/updates/`. Run it again after a
+  kernel update. It also installs `/etc/udev/rules.d/70-webpc-usb.rules` (the 0525 gadgets' usbfs nodes, `/dev/uhid`
+  and uhid's `hidraw` nodes open to the user), `/etc/modprobe.d/50-webpc-usb.conf` (blocks `usbtest` and `cdc_acm`
+  on the host, so the gadgets stay free) and Chromium's managed policy
+  `/etc/chromium/policies/managed/webpc-usb.json` (WebUSB grants the 0525 gadgets, and WebHID every HID device, to
+  `http://127.0.0.1:8190`–`8197`). `qemu-hw-usb-host` (QEMU's `usb-host`, for `tests/usb/oracle.sh`): installing
+  it moved QEMU from 11.1.1 to 11.1.2 on 2026-10-18, while `qemu-linux-user` (the corpus oracle) and `qemu-img` stay at 11.1.1.
 - **Go** (from zypper; `net/tailscale/go.mod` pins the toolchain) builds the Go Tailscale client, `net/tailscale/build.sh` (no longer the page's: a test fixture, tests/ts-tailnet.test.ts's hand-over), and the tailcat rig. The networking tests' headscale and peer run in rootless Podman: `tests/net/tailnet.sh up|down`. Never Docker in scripts or CI.
 - Deploying the page (only when the user asks): wrangler in `~/.local/bin`, the Cloudflare token in
   `~/.config/cloudflare/webpc.env` (never print it); docs/frontend.md "Deployed at vm.tny.im".
@@ -75,6 +84,7 @@ scripts/ci-debian.sh           # Debian on the page (~3.5 min): also for the pag
 scripts/ci-machines.sh         # machines as the unit on Debian (~3.5 min): also for stored machines, their disks (stored, blank, ramdisk, overlays), their snapshots, the Machines page, track ends
 scripts/ci-audio.sh            # the realtime sound tests on the page (~1 min, alone): also when a change touches sound (docs/testing.md)
 scripts/ci-deqp.sh             # dEQP's pass lists on the page (~6 min): also when a change touches 3D (renderer, translator, caps, GPU worker), graphics track ends; needs images/deqp/build.sh
+scripts/ci-usb.sh              # USB through the dev VM's host rigs (dummy_hcd gadgets, uhid; alone): also when a change touches USB; "skipped: <why>" without the rigs (docs/testing.md "USB")
 scripts/ci-fp.sh               # the FP suite in the guest (~3 min): TestFloat through every FP form under the JIT; also when a change touches floating point (the JIT's FP, the FP core); needs images/build.sh linux fptest
 scripts/build-wasm.sh          # wasm core -> target/wasm32-unknown-unknown/release/webpc_core.wasm
 cargo test                     # native core tests
@@ -94,6 +104,10 @@ WEBPC_PARALLEL_RUNS=20 cargo test --release --test baremetal baremetal_parallel 
 (cd core && cargo fuzz run virtqueue)                           # libFuzzer on the virtio transport
 tests/baremetal/build.sh && tests/baremetal/oracle.sh [--hvf]  # rebuild the bare-metal tests, run them on QEMU (TCG or hvf)
 node tools/uefi-oracle.ts debian alpine alpine-grub          # unmodified images through our EDK2 (images/build.sh edk2) on QEMU
+tests/usb/gadget.sh up|down|status [zero acm zero-a zero-b]   # the dummy_hcd gadgets (once: tests/usb/gadget.sh install)
+tests/usb/oracle.sh [--trace] [--tests 1,2]                  # the linux-usb guest's testusb on QEMU's qemu-xhci + usb-host on Gadget Zero
+node tests/usb/hid-record.ts   # re-record Chromium's parse of the uhid rig's devices (tests/usb/hid-fixtures/) when Chromium moves
+node bench/usb/run.ts 5        # WebUSB's per-transfer cost and bulk throughput from a worker, against Gadget Zero (bench/usb/)
 scripts/testfloat.sh           # FP core vs TestFloat 3e (in ci.sh)
 tests/qcow2/make.sh            # regenerate the qcow2 fixtures with qemu-img
 npm start                      # what a user runs: checks, npm ci, wasm core, the tailnet client, the UEFI firmware (images/build.sh edk2, Podman), then serves; the page waits for the user's disk (docs/frontend.md)
@@ -114,7 +128,7 @@ node bench/spike/memory/run-all.ts   # M0.5 memory suite
 The full benchmark list is in [docs/benchmarking.md](docs/benchmarking.md). **`scripts/ci.sh` must
 pass before any piece of work is considered done** (and `scripts/ci-debian.sh` when it touches the page, the firmware, the devices, disks, snapshots or
 the display, for guest-visible changes and at the end of a milestone or a track; `scripts/ci-machines.sh` when it touches stored machines, their disks or snapshots, or the Machines page; `scripts/ci-net.sh`
-when it touches the network; `scripts/ci-audio.sh` when it touches sound; `scripts/ci-deqp.sh` when it touches 3D; `scripts/ci-fp.sh` when it touches floating point). **Exception:** a change that only edits docs (`.md` files or code comments)
+when it touches the network; `scripts/ci-audio.sh` when it touches sound; `scripts/ci-deqp.sh` when it touches 3D; `scripts/ci-fp.sh` when it touches floating point; `scripts/ci-usb.sh` when it touches USB). **Exception:** a change that only edits docs (`.md` files or code comments)
 needs no CI run.
 
 ## Conventions
@@ -197,7 +211,7 @@ their code.**
   the native interpreter run doesn't test). Iterate on the Buildroot guest and Alpine under the
   JIT; Debian boots only through UEFI in Chromium (the page tests, ~1 min under the JIT), never natively, in Node or directly.
 - Multi-hour JIT-stress runs aren't routine: short stress variants catch what they catch.
-- **`scripts/ci.sh`, `scripts/ci-debian.sh`, `scripts/ci-machines.sh`, `scripts/ci-audio.sh`, `scripts/ci-deqp.sh` and `scripts/ci-fp.sh` run alone, one at a time, in the background** (each is at or over the
+- **`scripts/ci.sh`, `scripts/ci-debian.sh`, `scripts/ci-machines.sh`, `scripts/ci-audio.sh`, `scripts/ci-deqp.sh`, `scripts/ci-fp.sh` and `scripts/ci-usb.sh` run alone, one at a time, in the background** (each is at or over the
   Bash tool's cap): start it, wait for its notification, and run no other Chromium, QEMU or benchmark work beside it (a contended run was cancelled by a
   timeout; a timing-sensitive unit test failed only under its load). `cargo fmt --all` first: it is CI's first step.
 - `tsc` covers `bench/`, the git-ignored files under `bench/results/local/` too; `tests/browser.test.ts` pins the

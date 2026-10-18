@@ -40,6 +40,12 @@ only edits docs: `.md` files or code comments):
   virgl renderer, the TGSI translator, the caps, the GPU worker, virtio-gpu's 3D commands), and at the end of a
   graphics track. It needs `images/deqp/build.sh`'s disk and guest (on demand, ~15 min once). The lists are
   dEQP's every 50th case plus groups that caught regressions the subset didn't (graphics.md §21).
+- **`scripts/ci-usb.sh`** runs the USB tests that need the dev VM's host rigs ([below](#usb-the-dev-vms-host-rigs)):
+  WebUSB against dummy_hcd gadgets and WebHID against uhid devices in the pinned Chromium, and the guest through
+  them. It must pass too when a change touches USB (the xHCI, its glue, the WebUSB and WebHID backends, the USB tab).
+  These tests never go in `ci.sh` or `ci-debian.sh`, so cloud sessions and machines without the rigs aren't blocked.
+  Without a rig it exits 0 with `CI-USB skipped: <why>`, and each test file skips by itself without
+  `WEBPC_USB_TESTS=1` or its rig. Tests are added to its `TESTS` list.
 
 Until 2026-10-08 `ci.sh` held the Debian boots and the long multi-vCPU runs had a script of
 their own: `ci.sh` took 765 s, of which the Debian queue was ~460. Without the Debian boots it
@@ -496,6 +502,47 @@ into a SharedArrayBuffer block (`Vm.liveness()`). The longest chunk is bounded b
 a host import inside it. Blind spots: while the page's main thread or the machine worker is
 frozen, the guest console can't be read (it goes through them); the vCPU counters are read
 through the same status message.
+
+## USB: the dev VM's host rigs
+
+Lima's `vz` passes no host USB devices through, so the test devices come from the VM's own kernel
+([plans/usb.md](plans/usb.md) §5 and "U0 findings"). All of this is dev-VM-only: a cloud container can't load modules.
+
+- **Setup, once per machine** (and after a kernel update): `tests/usb/gadget.sh install` (passwordless sudo). It
+  builds `dummy_hcd` for the running kernel and installs it with a udev rule, a modprobe blocklist (`usbtest` and
+  `cdc_acm` stay off the host's side of the gadgets) and Chromium's managed policy (CLAUDE.md "Development
+  environment"). `tests/usb/gadget.sh check` says what's missing.
+- **The gadgets** (`tests/usb/gadget.sh up|down|status [name...]`): configfs gadgets on `dummy_hcd`'s four UDCs,
+  at high speed. `zero` is Gadget Zero (`0525:a4a0`, serial `webpc-zero`), with configuration 1 source/sink
+  (pattern 1: `i % 63`) and configuration 2 loopback. `zero-a` and `zero-b` are two without a serial, which differ
+  only in bcdDevice (1.01 and 1.02). `acm` is a CDC ACM port (`0525:a4a7`, serial `webpc-acm`). `ci-usb.sh`
+  brings up `zero` and `acm` and takes them down after.
+- **The uhid rig** (`tests/usb/uhid.ts`) needs no command: a test makes its devices with
+  `new UhidDevice(descriptor)`, and they go away with the process. The descriptors are in
+  `tests/usb/hid-descriptors.ts`. `node tests/usb/uhid.ts [id...]` keeps some up by hand and prints what the host
+  sends them. Its `keyboard` device is also a keyboard and mouse to the VM's own input: send it only empty reports.
+- **Permission** comes from the policy alone. It grants the 0525 gadgets (WebUSB) and every HID device (WebHID) to
+  `http://127.0.0.1:8190`–`8197`, exact origins only, so a test serves its page on one of those ports
+  (`tests/usb/rig.ts` `PORTS`). On Chromium 153 the DevTools protocol's `DeviceAccess` prompt events never fire for
+  WebUSB or WebHID: `requestDevice` in headless Chromium waits forever, and no test can answer a chooser.
+- **Tests:** `tests/usb-e2e-webusb.test.ts` (Gadget Zero's control, bulk and loopback transfers and the ACM
+  gadget's interfaces, from a worker) and `tests/usb-e2e-hid.test.ts` (Chromium's parse against
+  `tests/usb/hid-fixtures/`, and reports both ways, protected collections included), both in `scripts/ci-usb.sh`.
+- **The fixtures** `tests/usb/hid-fixtures/<id>.json` hold Chromium's parse (`HIDDevice.collections` as JSON) of
+  each uhid device, with the raw descriptor as `descriptor` (hex) and in `<id>.rdesc`. The WebHID device's encoder
+  round-trips against them. `node tests/usb/hid-record.ts` records them again when the pinned Chromium moves, and
+  `usb-e2e-hid` fails until then.
+- **The QEMU oracle** (`tests/usb/oracle.sh`): the linux-usb guest on `qemu-system-aarch64 -M virt` (TCG) with
+  `qemu-xhci`, and Gadget Zero passed in with `usb-host`. It runs each of testusb's tests in a boot of its own
+  (~1 s each), with the usb guest's arguments on ours, and prints ok, the errno, or hung. `--trace` adds QEMU's
+  `usb_xhci_*` trace events beside each console log, with the doorbells, transfers and queued events and their
+  completion codes, to compare our controller's behavior with. **Finding (2026-10-18, QEMU 11.1.2):** 0–23 and
+  25–29 pass or are skipped by usbtest for this device (15, 16, 22 and 23 need isochronous endpoints, 25–28
+  interrupt ones). Test 24 (unlink from queues of writes) hangs every time on QEMU. In the run with `-c 10` alone
+  (32-deep queues), the guest's xhci-hcd logged events for TRBs that weren't part of any TD. That is a QEMU
+  `qemu-xhci`/`usb-host` behavior, not ours, so compare 24 against the native runs instead.
+- **Sizing:** `node bench/usb/run.ts` (WebUSB's cost per transfer and bulk throughput from a worker, with a native
+  usbfs baseline; plans/usb.md "U0 findings").
 
 ## Planned layers
 
