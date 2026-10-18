@@ -223,10 +223,8 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   mapping jumps by ~6 GB in under 20 s while compile volume is unchanged. Not seen with 8 s
   sampling. Measure with V8's own counters before trusting the median.
 - **The core's own memory is growable**: stage 2 of "The core's heap in a fixed memory" (Platform and devices).
-- Helpers still on real paths: unmasking MSRs, ISB, CASP, exclusive pairs, LSE min/max,
-  LD2–LD4/ST2–ST4, LD1R, scalar `SHL`, CRC32, saturating add and subtract
-  on 32- and 64-bit vector lanes, the 8-bit PMULL/PMUL (unused by guests measured). None worth a
-  loop alone.
+- Helpers still on real paths: unmasking MSRs, ISB, CASP, exclusive pairs, LSE min/max. None worth a
+  loop alone. (The NEON ones, structures and CRC32 are inline since 2026-10-18: the item at this section's top.)
 - MSR left as helpers that end a block: DAIFClr, the regime, FP-control, SPSel and NZCV writes
   (Alpine: 0.66M MSR (register) and 0.15M MSR (immediate) helper calls). The differential test
   can't see an unmasking write done inline (no IRQs in its harness): only a distro boot's steps
