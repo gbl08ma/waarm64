@@ -7,7 +7,7 @@
 
 import type { Setup, UsbIdentity, UsbResult, UsbTransfer } from './usb-device.ts';
 import { VirtualDevice, type ControlAnswer } from './usb-virtual.ts';
-import { encodeReportDescriptor, normalizeCollections, reportSizes, usesReportIds, type HidCollectionInfo, type HidCollectionLike, type ReportKind } from './hid-descriptor.ts';
+import { encodeReportDescriptor, normalizeCollections, reportSizes, usesReportIds, visibleCollections, type HidCollectionInfo, type HidCollectionLike, type ReportKind } from './hid-descriptor.ts';
 import { UsbOpenError, pickDevice } from './webusb.ts';
 
 export type WebHidInputReport = { reportId: number; data: DataView };
@@ -144,7 +144,8 @@ export class WebHidDevice extends VirtualDevice {
       case GET_REPORT: {
         if (!kind) return undefined;
         if (kind === 'feature') {
-          return this.dev.receiveFeatureReport(id).then((dv) => this.featureIn(id, bytesOf(dv)), () => undefined);
+          // Chromium's buffer already starts with the report ID when the device uses IDs (and has none otherwise): as the guest wants it.
+          return this.dev.receiveFeatureReport(id).then((dv) => bytesOf(dv), () => undefined);
         }
         const size = this.layout.sizes[kind].get(id);
         if (size === undefined) return undefined;
@@ -163,18 +164,6 @@ export class WebHidDevice extends VirtualDevice {
       case GET_PROTOCOL: return Uint8Array.of(1); // the report protocol: no boot protocol is offered
       default: return undefined;
     }
-  }
-
-  /**
-   * A feature report from receiveFeatureReport, framed for the guest. Chromium's data starts with
-   * the report ID on some hosts and not on others: a buffer one byte longer than the report, led by
-   * its ID, already has it.
-   */
-  private featureIn(id: number, b: Uint8Array): Uint8Array {
-    if (!this.layout.ids) return b;
-    const size = this.layout.sizes.feature.get(id);
-    if (b[0] === id && (size === undefined || b.length === size + 1)) return b;
-    return this.framed(id, b);
   }
 
   protected override transfer(t: UsbTransfer, done: (r: UsbResult) => void): void {
@@ -225,7 +214,8 @@ function fit(r: Uint8Array, length: number): UsbResult {
 
 /** Opens `dev` (if it isn't) and builds the guest's device; a device whose every collection WebHID hides has nothing to build from. */
 export async function openWebHid(dev: WebHidDeviceLike, opts: WebHidOptions = {}): Promise<WebHidDevice> {
-  const collections = normalizeCollections(dev.collections);
+  // Only what the page can use: a protected collection's input and output reports never arrive and can't be sent.
+  const collections = visibleCollections(normalizeCollections(dev.collections));
   if (collections.length === 0) throw new UsbOpenError('WebHID shows none of this device\'s collections', [{ kind: 'no-collections' }]);
   try {
     if (!dev.opened) await dev.open();

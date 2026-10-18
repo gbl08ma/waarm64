@@ -3,16 +3,16 @@
 // already parsed; the emulated device needs bytes again. `encodeReportDescriptor` writes them:
 // each collection with its usage, its reports' items with the globals that changed and the locals
 // they carry, report IDs where the device uses them. `parseReportDescriptor` reads a descriptor into
-// the same shape the way Chromium does (an item belongs to its innermost collection, grouped into
-// reports by type and ID), so a round trip can be checked and a raw descriptor compared with
-// Chromium's parse.
+// the same shape the way Chromium does, so a round trip can be checked and a raw descriptor compared
+// with Chromium's parse (tests/usb/hid-fixtures/, recorded on Chromium 153).
 //
-// What the parsed form doesn't keep, the encoder can't restore: push and pop, delimiters, the
-// original order of global items, string indices (WebHID resolves no strings), and, where one report
-// ID's items are split between a collection and its children, how they interleaved (WebHID lists a
-// collection's own items apart from its children's). The encoder puts children first by default
-// (`childrenFirst`), which is what the descriptors that mix the two mostly do; a report's size is the
-// same either way.
+// Chromium's shape: a main item belongs to its collection and to every collection around it, so a
+// top-level collection lists each of its reports whole, in descriptor order, and a child lists the
+// run of those items that lies inside it. The encoder places each child's run inside the parent's
+// lists to put the child's Collection and End Collection back where they were. Reports within a
+// collection come in Chromium's own order, not the descriptor's; it doesn't matter (they're keyed by
+// ID). What the parsed form doesn't keep can't come back: push and pop, delimiters, the original
+// order of global items, string indices (WebHID resolves no strings).
 
 export type HidUnitSystem = 'none' | 'si-linear' | 'si-rotation' | 'english-linear' | 'english-rotation' | 'vendor-defined' | 'reserved';
 
@@ -142,11 +142,8 @@ const initialGlobals = (): Globals => ({
   usagePage: -1, logicalMinimum: 0, logicalMaximum: 0, physicalMinimum: 0, physicalMaximum: 0, unitExponent: 0, unit: 0, reportSize: 0, reportId: 0, reportCount: 0,
 });
 
-export type EncodeOptions = { childrenFirst?: boolean };
-
 /** A report descriptor whose parse is `collections` (see the header for what can't come back). */
-export function encodeReportDescriptor(collections: readonly HidCollectionInfo[], opts: EncodeOptions = {}): Uint8Array {
-  const childrenFirst = opts.childrenFirst ?? true;
+export function encodeReportDescriptor(collections: readonly HidCollectionInfo[]): Uint8Array {
   const w = new Writer();
   // The usage page starts unset (-1), so the first usage always sets it; the rest start at the parser's zeros.
   const g = initialGlobals();
@@ -195,26 +192,54 @@ export function encodeReportDescriptor(collections: readonly HidCollectionInfo[]
       | (it.hasPreferredState ? 0 : 0x20) | (it.hasNull ? 0x40 : 0) | (it.isVolatile ? 0x80 : 0) | (it.isBufferedBytes ? 0x100 : 0);
     w.item(MAIN, MAIN_TAG[kind], flags > 0xff ? [flags & 0xff, flags >> 8] : [flags]);
   };
-  const emitReports = (c: HidCollectionInfo) => {
-    for (const [kind, list] of [['input', c.inputReports], ['output', c.outputReports], ['feature', c.featureReports]] as const) {
-      for (const r of list) {
-        if (r.items.length === 0) continue;
-        setUnsigned('reportId', G_REPORT_ID, r.reportId);
-        for (const it of r.items) emitItem(kind, it);
-      }
-    }
+  /** Items [from, to) of one of a collection's reports. */
+  const emitRun = (l: ReportList, from: number, to: number) => {
+    if (from >= to) return;
+    setUnsigned('reportId', G_REPORT_ID, l.id);
+    for (let i = from; i < to; i++) emitItem(l.kind, l.items[i]);
   };
   const emitCollection = (c: HidCollectionInfo) => {
     page(c.usagePage);
     w.unsigned(LOCAL, L_USAGE, c.usage);
     w.item(MAIN, T_COLLECTION, [c.type & 0xff]);
-    if (!childrenFirst) emitReports(c);
-    for (const ch of c.children) emitCollection(ch);
-    if (childrenFirst) emitReports(c);
+    const mine = reportLists(c);
+    const at = new Map<string, number>([...mine.keys()].map((k) => [k, 0]));
+    for (const ch of c.children) {
+      // Where the child's run of each report lies in ours: our items before it go before the child.
+      const runs: [ReportList, number, number][] = [];
+      for (const [k, cl] of reportLists(ch)) {
+        const l = mine.get(k);
+        const i = l ? findRun(l.items, cl.items, at.get(k)!) : -1;
+        if (l && i >= 0) runs.push([l, i, cl.items.length]);
+      }
+      for (const [l, i] of runs) emitRun(l, at.get(l.key)!, i);
+      emitCollection(ch);
+      for (const [l, i, n] of runs) at.set(l.key, i + n);
+    }
+    for (const [k, l] of mine) emitRun(l, at.get(k)!, l.items.length);
     w.item(MAIN, T_END_COLLECTION, []);
   };
   for (const c of collections) emitCollection(c);
   return Uint8Array.from(w.out);
+}
+
+type ReportList = { key: string; kind: ReportKind; id: number; items: HidReportItem[] };
+
+/** A collection's reports by kind and ID. */
+function reportLists(c: HidCollectionInfo): Map<string, ReportList> {
+  const m = new Map<string, ReportList>();
+  for (const [kind, list] of [['input', c.inputReports], ['output', c.outputReports], ['feature', c.featureReports]] as const) {
+    for (const r of list) if (r.items.length) m.set(`${kind}:${r.reportId}`, { key: `${kind}:${r.reportId}`, kind, id: r.reportId, items: r.items });
+  }
+  return m;
+}
+
+/** Where `run` lies in `items` at or after `from`, or -1. */
+function findRun(items: HidReportItem[], run: HidReportItem[], from: number): number {
+  const keys = items.map((x) => JSON.stringify(x));
+  const want = run.map((x) => JSON.stringify(x));
+  for (let i = from; i + want.length <= keys.length; i++) if (want.every((k, j) => keys[i + j] === k)) return i;
+  return -1;
 }
 
 /** Parses a report descriptor into WebHID's shape, the way Chromium groups it (see the header). */
@@ -271,8 +296,7 @@ export function parseReportDescriptor(b: Uint8Array): HidCollectionInfo[] {
       } else if (tag === T_END_COLLECTION) {
         stack.pop();
       } else if (tag === T_INPUT || tag === T_OUTPUT || tag === T_FEATURE) {
-        const c = stack[stack.length - 1];
-        if (c) {
+        if (stack.length) {
           // Logical and physical maxima are signed when their minimum is negative, unsigned otherwise (read as int32, as WebHID's are).
           const lmax = g.logicalMinimum < 0 ? g.lmax[1] : g.lmax[0];
           const pmax = g.physicalMinimum < 0 ? g.pmax[1] : g.pmax[0];
@@ -289,10 +313,12 @@ export function parseReportDescriptor(b: Uint8Array): HidCollectionInfo[] {
             logicalMinimum: g.logicalMinimum, logicalMaximum: lmax, physicalMinimum: g.physicalMinimum, physicalMaximum: pmax,
           });
           FACTORS.forEach((f, k) => { item[f] = nibble((g.unit >>> (4 * (k + 1))) & 0xf); });
-          const list = tag === T_INPUT ? c.inputReports : tag === T_OUTPUT ? c.outputReports : c.featureReports;
-          let r = list.find((x) => x.reportId === g.reportId);
-          if (!r) { r = { reportId: g.reportId, items: [] }; list.push(r); }
-          r.items.push(item);
+          for (const c of stack) {
+            const list = tag === T_INPUT ? c.inputReports : tag === T_OUTPUT ? c.outputReports : c.featureReports;
+            let r = list.find((x) => x.reportId === g.reportId);
+            if (!r) { r = { reportId: g.reportId, items: [] }; list.push(r); }
+            r.items.push(item);
+          }
         }
       }
       local = { usages: [], min: null, max: null };
@@ -301,16 +327,12 @@ export function parseReportDescriptor(b: Uint8Array): HidCollectionInfo[] {
   return top;
 }
 
-/** Every report's size in bytes (without the ID byte), by kind and report ID, summed over the collections that carry it. */
+/** Every report's size in bytes (without the ID byte), by kind and report ID (a top-level collection lists its reports whole). */
 export function reportSizes(collections: readonly HidCollectionInfo[]): Record<ReportKind, Map<number, number>> {
   const bits: Record<ReportKind, Map<number, number>> = { input: new Map(), output: new Map(), feature: new Map() };
-  const walk = (c: HidCollectionInfo) => {
-    for (const [kind, list] of [['input', c.inputReports], ['output', c.outputReports], ['feature', c.featureReports]] as const) {
-      for (const r of list) bits[kind].set(r.reportId, (bits[kind].get(r.reportId) ?? 0) + r.items.reduce((n, i) => n + i.reportSize * i.reportCount, 0));
-    }
-    c.children.forEach(walk);
-  };
-  collections.forEach(walk);
+  for (const c of collections) {
+    for (const l of reportLists(c).values()) bits[l.kind].set(l.id, (bits[l.kind].get(l.id) ?? 0) + l.items.reduce((n, i) => n + i.reportSize * i.reportCount, 0));
+  }
   for (const m of Object.values(bits)) for (const [id, n] of m) m.set(id, Math.ceil(n / 8));
   return bits;
 }
@@ -319,4 +341,25 @@ export function reportSizes(collections: readonly HidCollectionInfo[]): Record<R
 export function usesReportIds(collections: readonly HidCollectionInfo[]): boolean {
   const s = reportSizes(collections);
   return Object.values(s).some((m) => [...m.keys()].some((id) => id !== 0));
+}
+
+/**
+ * What the guest may see of WebHID's collections: the reports the page can use. Chromium hides a
+ * protected top-level collection's input and output reports (a keyboard's, a mouse's) from the
+ * top level but leaves them listed in its children, though they never arrive and sending them is
+ * refused; so a child keeps only the reports its top-level collection lists, and a collection left
+ * with no report at all is left out (docs/usb.md "The WebHID device").
+ */
+export function visibleCollections(collections: readonly HidCollectionInfo[]): HidCollectionInfo[] {
+  const has = (c: HidCollectionInfo): boolean =>
+    c.inputReports.length + c.outputReports.length + c.featureReports.length > 0 || c.children.some(has);
+  const prune = (c: HidCollectionInfo, keep: Set<string>): HidCollectionInfo => {
+    const f = (kind: ReportKind, rs: HidReportInfo[]) => rs.filter((r) => r.items.length && keep.has(`${kind}:${r.reportId}`));
+    return {
+      ...c,
+      inputReports: f('input', c.inputReports), outputReports: f('output', c.outputReports), featureReports: f('feature', c.featureReports),
+      children: c.children.map((ch) => prune(ch, keep)).filter(has),
+    };
+  };
+  return collections.map((c) => prune(c, new Set(reportLists(c).keys()))).filter(has);
 }

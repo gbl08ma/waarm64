@@ -395,8 +395,14 @@ U5 replaces them with the user's dumps.
 
 The device worker's opener, `webHidOpener(navigator.hid)`, finds the device by vendor and product, with
 `index` among identical ones, since WebHID gives no serial number. It gives the guest the serial
-`webpc-hid-<connector>`, and calls `gone` on WebHID's `disconnect`. A device whose every collection
-WebHID hides fails with `no-collections`.
+`webpc-hid-<connector>`, and calls `gone` on WebHID's `disconnect`.
+
+**Only what the page can use** reaches the guest (`visibleCollections`). Chromium hides a protected
+top-level collection's input and output reports (a keyboard's, a mouse's) at the top level, but its
+children still list them. They never arrive, and `sendReport` refuses them (NotAllowedError, on the
+recorded keyboard composite). So a child keeps only the reports its top-level collection lists, and a
+collection left with no reports goes. A keyboard keeps its feature report, which is how VIA-style tools
+work, and a mouse disappears. A device left with nothing fails with `no-collections`.
 
 **The descriptors** (`hidLayout`):
 - The device's vendor and product IDs, `bcdUSB` 2.00, `bcdDevice` 1.00.
@@ -411,10 +417,19 @@ WebHID hides fails with `no-collections`.
 - The report descriptor (GET_DESCRIPTOR 0x22) and the HID descriptor (0x21) go to an interface
   recipient.
 
+**Chromium's shape** (from the recorded parses in `tests/usb/hid-fixtures/`):
+- A main item belongs to its collection *and to every collection around it*. A top-level collection
+  therefore lists each of its reports whole, in descriptor order, and a child lists the run of those
+  items that lies inside it.
+- Reports within a collection come in Chromium's own order, which is stable but not the descriptor's.
+- Usages are extended (page << 16 | ID).
+
 **Encoding the report descriptor:** `encodeReportDescriptor(collections)` writes each collection as its
-usage page (when it changes), its usage, and a Collection item of its type. Then come its children and
-its reports. For each report, the encoder writes its Report ID (when it changes) and its items. Each item
-gets:
+usage page (when it changes), its usage, and a Collection item of its type. Then it walks the
+collection's reports. Each child's run is found in the parent's lists, the parent's items before that run
+are written, then the child, and the rest after. This puts every Collection and End Collection back where
+they were, so the layout of a report is the original's. For each run of items, the encoder writes its
+Report ID (when it changes) and its items. Each item gets:
 - The globals that changed. Logical and physical values use the shortest *signed* encoding, so 255 is
   `26 ff 00` and no parser can read it as -1. A maximum WebHID reads as negative over a non-negative
   minimum gets 4 bytes. The unit exponent is a nibble, and the unit is rebuilt from `unitSystem` and
@@ -424,7 +439,8 @@ gets:
 - The main item, with all nine flag bits. Buffered bytes makes it a 2-byte item.
 
 **Parsing:** `parseReportDescriptor(bytes)` reads a descriptor into the same shape, grouped the way
-Chromium groups it. Each main item goes to its innermost collection, in a report per type and report ID.
+Chromium groups it. Each main item goes to its collection and to every collection around it, in a report
+per type and report ID.
 Usages resolve against the usage page in force at the main item. Push and pop are kept. A logical or
 physical maximum is signed when its minimum is negative, and unsigned otherwise, read as int32 as
 WebHID's are.
@@ -432,19 +448,14 @@ WebHID's are.
 **What doesn't come back** from WebHID's form:
 - the original bytes: the order of global items, push and pop, delimiters
 - string indices, since WebHID resolves no strings
-- how one report ID's items were interleaved between a collection and its children
-
-WebHID lists a collection's own items apart from its children's. The encoder writes children first
-(`childrenFirst`), which is what descriptors that mix the two (an Xbox controller over Bluetooth) mostly
-do. A report's size, and so every driver that reads reports by offset (hid-playstation, hid-nintendo,
-hid-steam), is the same either way. Only hid-input's generic mapping of such a descriptor could differ.
+- the order of reports within a collection, which doesn't matter because reports are keyed by ID
 
 **Requests and reports:**
 - **GET_REPORT, input:** the last input report with that ID, or zeros of its size before the first one.
   An ID the device doesn't have stalls.
-- **GET_REPORT, feature:** `receiveFeatureReport`. A buffer one byte longer than the report and led by
-  its ID is passed as it is. Any other buffer gets the ID put in front, since Chromium's framing differs
-  by host.
+- **GET_REPORT, feature:** `receiveFeatureReport`'s buffer, as it is. Chromium leads it with the report
+  ID when the device uses IDs, and gives no prefix without them (report ID 0). That is the framing the
+  guest expects. `inputreport` data has no ID byte, and the device adds one.
 - **SET_REPORT, output and feature:** `sendReport` and `sendFeatureReport`, with the ID byte taken from
   the front when the device uses IDs. A rejected promise stalls.
 - **SET_IDLE, GET_IDLE, SET_PROTOCOL and GET_PROTOCOL** are answered locally. GET_PROTOCOL says report
@@ -460,9 +471,11 @@ hid-steam), is the same either way. Only hid-input's generic mapping of such a d
   and a nested physical collection, VIA's raw HID, and the odd corners: signed and wide values, units,
   flags, mixed-page usages, nested children); the exact bytes of the encoding; the HID spec's mouse
   (Appendix E.10); push and pop.
-- When `tests/usb/hid-fixtures/*.json` exist (recorded Chromium parses with their raw descriptors,
-  from the gates lane), the same file also checks parse(raw) ≈ Chromium's parse and encode(Chromium's)
-  → parse ≈ Chromium's.
+- The six recorded Chromium parses in `tests/usb/hid-fixtures/` (a DualSense, a Stream Deck shape,
+  vendor collections with and without IDs, a game pad, a keyboard composite), compared without regard to
+  report order. The same file checks that our parse of each raw descriptor, with Chromium's hiding
+  applied, is Chromium's. It checks that encoding what is visible parses back to it. And where nothing is
+  hidden, it checks that the encoding has the original's report sizes.
 - `tests/usb-webhid.test.ts` runs the device against a fake HIDDevice.
 
 ## The page

@@ -663,14 +663,9 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 
 ## USB ([plans/usb.md](plans/usb.md), [usb.md](usb.md))
 
-- **WebHID: how a report's items interleave between a collection and its children** is not in WebHID's
-  form, so the encoder writes children first (docs/usb.md "The WebHID device"). Report sizes and
-  offset-reading drivers don't care; hid-input's generic mapping of such a device could. Check the
-  choice against the recorded Chromium parses, and against U5's devices. A table of known original
-  descriptors keyed by vendor and product could serve those devices their real bytes (plans/usb.md §8).
-- **WebHID `receiveFeatureReport` framing**: whether Chromium's buffer starts with the report ID differs
-  by host. The device guesses from the length. Check it on the uhid rig (Linux) and on the user's
-  macOS and Windows.
+- **WebHID devices whose drivers patch the original descriptor** by its bytes or size (`report_fixup`) see
+  our encoding instead. A table of known original descriptors keyed by vendor and product could serve
+  them their real bytes when its parse matches WebHID's (plans/usb.md §8). Found per device in U5.
 - **WebUSB SET_FEATURE(ENDPOINT_HALT)** is passed through for usbtest's halt test. Whether Chromium
   refuses it as a standard OUT request is unchecked: the dummy_hcd `testusb -a` run will tell.
 - **WebUSB reset** re-claims what it can after `device.reset()`. On hosts where the reset re-enumerates,
