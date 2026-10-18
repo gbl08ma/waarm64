@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebHID rig</title>
+<script type="module">
+  // tests/usb-hid.test.ts and tests/usb/hid-record.ts drive this: each call starts a fresh dedicated worker
+  // (hid-worker.js); `onOpened` fires when the worker has the device open, so the rig can send input reports.
+  window.inWorker = (msg) => new Promise((resolve, reject) => {
+    const w = new Worker('hid-worker.js');
+    w.onmessage = (e) => {
+      if (e.data.type === 'opened') return void window.onOpened?.();
+      w.terminate();
+      e.data.type === 'error' ? reject(new Error(e.data.message)) : resolve(e.data);
+    };
+    w.onerror = (e) => { w.terminate(); reject(new Error(e.message)); };
+    w.postMessage(msg);
+  });
+  window.onPage = async () => (await navigator.hid.getDevices()).map((d) => `${d.vendorId.toString(16)}:${d.productId.toString(16)} ${d.collections.length}`);
+</script>

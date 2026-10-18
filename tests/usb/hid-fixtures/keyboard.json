@@ -1,0 +1,288 @@
+{
+ "id": "keyboard",
+ "name": "webpc keyboard composite",
+ "vendorId": 4617,
+ "productId": 4,
+ "note": "ours: keyboard (LEDs, a vendor feature report), consumer, system control, mouse and a vendor collection, with report IDs",
+ "chromium": "153.0.8010.52",
+ "visible": true,
+ "descriptor": "05010906a1018501050719e029e71500250175019508810295017508810195057501050819012905910295017503910195067508150026ff00050719002aff00810085060600ff090195087508b102c0050c0901a1018502150026ff0319002aff03751095018100c005010980a1018503198129831500250175019503810295058101c005010902a10185040901a100050919012903150025019503750181029501750581010501093009311581257f750895028106c0c00660ff0961a10185050962150026ff00952075088102096395209102c0",
+ "collections": [
+  {
+   "children": [],
+   "featureReports": [
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 8,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4278190081
+       ],
+       "wrap": false
+      }
+     ],
+     "reportId": 6
+    }
+   ],
+   "inputReports": [],
+   "outputReports": [],
+   "type": 1,
+   "usage": 6,
+   "usagePage": 1
+  },
+  {
+   "children": [],
+   "featureReports": [],
+   "inputReports": [
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": true,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": true,
+       "isVolatile": false,
+       "logicalMaximum": 1023,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 1,
+       "reportSize": 16,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usageMaximum": 787455,
+       "usageMinimum": 786432,
+       "wrap": false
+      }
+     ],
+     "reportId": 2
+    }
+   ],
+   "outputReports": [],
+   "type": 1,
+   "usage": 1,
+   "usagePage": 12
+  },
+  {
+   "children": [
+    {
+     "children": [],
+     "featureReports": [],
+     "inputReports": [
+      {
+       "items": [
+        {
+         "hasNull": false,
+         "hasPreferredState": true,
+         "isAbsolute": true,
+         "isArray": false,
+         "isBufferedBytes": false,
+         "isConstant": false,
+         "isLinear": true,
+         "isRange": true,
+         "isVolatile": false,
+         "logicalMaximum": 1,
+         "logicalMinimum": 0,
+         "physicalMaximum": 0,
+         "physicalMinimum": 0,
+         "reportCount": 3,
+         "reportSize": 1,
+         "unitExponent": 0,
+         "unitFactorCurrentExponent": 0,
+         "unitFactorLengthExponent": 0,
+         "unitFactorLuminousIntensityExponent": 0,
+         "unitFactorMassExponent": 0,
+         "unitFactorTemperatureExponent": 0,
+         "unitFactorTimeExponent": 0,
+         "unitSystem": "none",
+         "usageMaximum": 589827,
+         "usageMinimum": 589825,
+         "wrap": false
+        },
+        {
+         "hasNull": false,
+         "hasPreferredState": true,
+         "isAbsolute": true,
+         "isArray": true,
+         "isBufferedBytes": false,
+         "isConstant": true,
+         "isLinear": true,
+         "isRange": false,
+         "isVolatile": false,
+         "logicalMaximum": 1,
+         "logicalMinimum": 0,
+         "physicalMaximum": 0,
+         "physicalMinimum": 0,
+         "reportCount": 1,
+         "reportSize": 5,
+         "unitExponent": 0,
+         "unitFactorCurrentExponent": 0,
+         "unitFactorLengthExponent": 0,
+         "unitFactorLuminousIntensityExponent": 0,
+         "unitFactorMassExponent": 0,
+         "unitFactorTemperatureExponent": 0,
+         "unitFactorTimeExponent": 0,
+         "unitSystem": "none",
+         "usages": [],
+         "wrap": false
+        },
+        {
+         "hasNull": false,
+         "hasPreferredState": true,
+         "isAbsolute": false,
+         "isArray": false,
+         "isBufferedBytes": false,
+         "isConstant": false,
+         "isLinear": true,
+         "isRange": false,
+         "isVolatile": false,
+         "logicalMaximum": 127,
+         "logicalMinimum": -127,
+         "physicalMaximum": 0,
+         "physicalMinimum": 0,
+         "reportCount": 2,
+         "reportSize": 8,
+         "unitExponent": 0,
+         "unitFactorCurrentExponent": 0,
+         "unitFactorLengthExponent": 0,
+         "unitFactorLuminousIntensityExponent": 0,
+         "unitFactorMassExponent": 0,
+         "unitFactorTemperatureExponent": 0,
+         "unitFactorTimeExponent": 0,
+         "unitSystem": "none",
+         "usages": [
+          65584,
+          65585
+         ],
+         "wrap": false
+        }
+       ],
+       "reportId": 4
+      }
+     ],
+     "outputReports": [],
+     "type": 0,
+     "usage": 1,
+     "usagePage": 1
+    }
+   ],
+   "featureReports": [],
+   "inputReports": [],
+   "outputReports": [],
+   "type": 1,
+   "usage": 2,
+   "usagePage": 1
+  },
+  {
+   "children": [],
+   "featureReports": [],
+   "inputReports": [
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 32,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4284481634
+       ],
+       "wrap": false
+      }
+     ],
+     "reportId": 5
+    }
+   ],
+   "outputReports": [
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 32,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4284481635
+       ],
+       "wrap": false
+      }
+     ],
+     "reportId": 5
+    }
+   ],
+   "type": 1,
+   "usage": 97,
+   "usagePage": 65376
+  }
+ ]
+}

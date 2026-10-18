@@ -1,0 +1,222 @@
+{
+ "id": "streamdeck",
+ "name": "webpc Stream Deck-like",
+ "vendorId": 4057,
+ "productId": 128,
+ "note": "ours, shaped like an Elgato Stream Deck MK.2: keys in, images out, commands as feature reports",
+ "chromium": "153.0.8010.52",
+ "visible": true,
+ "descriptor": "050c0901a10185010600ff0901150026ff0075089503810205091901290f2501950f810285020600ff090226ff0096ff03910285030903951fb10285050905b10285060906b102c0",
+ "collections": [
+  {
+   "children": [],
+   "featureReports": [
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 31,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4278190086
+       ],
+       "wrap": false
+      }
+     ],
+     "reportId": 6
+    },
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 31,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4278190085
+       ],
+       "wrap": false
+      }
+     ],
+     "reportId": 5
+    },
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 31,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4278190083
+       ],
+       "wrap": false
+      }
+     ],
+     "reportId": 3
+    }
+   ],
+   "inputReports": [
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 3,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4278190081
+       ],
+       "wrap": false
+      },
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": true,
+       "isVolatile": false,
+       "logicalMaximum": 1,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 15,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usageMaximum": 589839,
+       "usageMinimum": 589825,
+       "wrap": false
+      }
+     ],
+     "reportId": 1
+    }
+   ],
+   "outputReports": [
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 1023,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4278190082
+       ],
+       "wrap": false
+      }
+     ],
+     "reportId": 2
+    }
+   ],
+   "type": 1,
+   "usage": 1,
+   "usagePage": 12
+  }
+ ]
+}
