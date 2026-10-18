@@ -1,5 +1,5 @@
 <!--
-  A machine's USB devices on the Machines page (docs/plans/usb.md §4a, docs/usb.md "The page"): the devices it remembers,
+  A machine's USB devices on the Machines page (docs/usb.md "The page"): the devices it remembers,
   each with its state (attached, plugged in, not plugged in, held by another machine, no permission in this browser),
   its connector and whether it is attached at start; Attach and Detach while it runs on this page, Allow, Forget. Add a
   device… opens the wizard (AddUsb.svelte). The controller's switch is the Machines page's (it is in the shape).
@@ -8,7 +8,7 @@
   import AddUsb from './AddUsb.svelte';
   import Icon from './Icon.svelte';
   import { ask } from './ask.svelte.ts';
-  import { USB_CONNECTORS, type MachineRecord } from './shape.ts';
+  import { KEYBOARD_CONNECTOR, USER_CONNECTORS, type MachineRecord } from './shape.ts';
   import { deviceName, hasTwins, idsText } from './usb-ports.ts';
   import type { EntryView } from './usb-live.ts';
   import { page, ui } from './ui.svelte.ts';
@@ -53,15 +53,19 @@
   <ul class="entries">
     {#each views as v (v.entry.id)}
       {@const e = v.entry}
+      {@const c = here && v.state === 'attached' ? ui.usb.connectors[e.connector] : null}
       <li data-usb-entry={e.id} data-state={v.state}>
         <Icon name={e.api === 'hid' ? 'device-gamepad-2' : 'usb'} size={18} />
         <div class="what">
           <strong>{deviceName(e)}</strong>
           <span class="meta">{e.api === 'hid' ? 'HID' : 'USB'} {idsText(e)}{e.serialNumber ? ` · serial ${e.serialNumber}` : e.index ? ` · the ${e.index + 1}${['st', 'nd', 'rd'][e.index] ?? 'th'} of its kind` : ''} · <span data-usb-state>{stateText(v)}</span></span>
+          {#if c?.entry === e.id && c.problems?.length}
+            <ul class="problems" data-usb-problems={e.id}>{#each c.problems as p, i (i)}<li>{p}</li>{/each}</ul>
+          {/if}
         </div>
         <label class="field" title="The root connector it goes on (the guest's port path: its names under /dev/serial/by-path stay the same)">Connector
           <select value={e.connector} disabled={here && v.state === 'attached'} onchange={(ev) => act('Saving', () => page.usbEdit(machine.id, e.id, { connector: Number((ev.currentTarget as HTMLSelectElement).value) }))} data-field="connector">
-            {#each Array.from({ length: USB_CONNECTORS }, (_, i) => i) as c (c)}<option value={c}>{c + 1}</option>{/each}
+            {#each Array.from({ length: USER_CONNECTORS }, (_, i) => i) as c (c)}<option value={c}>{c + 1}</option>{/each}
           </select></label>
         <label class="check" title="Attached when the machine starts, and when it is plugged in while the machine runs"><input type="checkbox" checked={e.atStart} onchange={(ev) => act('Saving', () => page.usbEdit(machine.id, e.id, { atStart: (ev.currentTarget as HTMLInputElement).checked }))} data-field="at-start"> At start</label>
         {#if v.state === 'ungranted'}
@@ -78,6 +82,10 @@
       <li class="none">No USB devices remembered.</li>
     {/each}
   </ul>
+  {#if machine.usb}
+    {@const k = here ? ui.usb.connectors[KEYBOARD_CONNECTOR] : null}
+    <p class="note" data-usb-builtin data-state={k?.builtin ? k.state : 'detached'}>Connector {KEYBOARD_CONNECTOR + 1} is the built-in keyboard's: the screen's keys reach the firmware and the boot loader through it, until the guest's own keyboard driver takes over (then it is unplugged{here ? (k?.builtin ? ', now it is plugged in' : ', as now') : ''}).</p>
+  {/if}
   <div class="row"><button onclick={() => (adding = true)} data-action="add-usb" disabled={!machine.usb}><Icon name="plus" size={16} />Add a device…</button></div>
   {#if hasTwins(machine.usbDevices ?? [])}
     <p class="note" data-usb-twins>Identical devices without a serial number are told apart by the order the browser lists them in (usually the order they were plugged in): plug them in the same order, or the guest sees them swapped.</p>
@@ -95,6 +103,7 @@
   .meta { color: var(--dim); font-size: 12px; }
   li[data-state=attached] [data-usb-state] { color: #8fd18f; }
   li[data-state=held] [data-usb-state], li[data-state=ungranted] [data-usb-state] { color: #ffb36b; }
+  .problems { margin: 4px 0 0; padding-left: 18px; color: #ffb36b; font-size: 12px; }
   .field { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
   .check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   .row { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -62,7 +62,12 @@ export function terminalBytes(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey
   return e.altKey ? `\x1b${c}` : c;
 }
 
-export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: MessagePort, text?: { live: () => boolean; send: (bytes: string) => void }): Input {
+/**
+ * `text`: what takes the keys while the guest has no driver on its keyboard (`live` false): `usb`, the built-in USB
+ * keyboard (web/usb-keyboard.ts: every key, down and up, by `KeyboardEvent.code`; '' releases them all), when it says
+ * it took the key; else `send`, the serial console, as a terminal sends them (`terminalBytes`).
+ */
+export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: MessagePort, text?: { live: () => boolean; send: (bytes: string) => void; usb?: (code: string, down: boolean) => boolean }): Input {
   const keys = new Set<number>(); // held, as the guest sees it
   const buttons = new Set<number>();
   const on = <T extends EventTarget, E extends Event>(target: T, type: string, f: (e: E) => void) => {
@@ -75,8 +80,13 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     keyboard?.postMessage([[EV_KEY, code, value], [EV_SYN, 0, 0]]);
   };
   const key = (down: number) => (e: KeyboardEvent) => {
-    // No guest driver for the keyboard yet (the firmware, GRUB, the initramfs have none): the keys go to the serial console as a terminal sends them.
+    // No guest driver for the keyboard yet (the firmware, GRUB, the initramfs have none): the keys go to the built-in USB
+    // keyboard if the machine has one, else to the serial console as a terminal sends them.
     if (text && !text.live()) {
+      if (text.usb?.(e.code, !!down)) {
+        e.preventDefault();
+        return;
+      }
       const bytes = terminalBytes(e);
       if (bytes !== null) {
         e.preventDefault();
@@ -104,6 +114,7 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
     tablet.postMessage([...abs(e), [EV_KEY, b, down], [EV_SYN, 0, 0]]);
   };
   const releaseAll = () => {
+    text?.usb?.('', false);
     for (const code of [...keys].reverse()) sendKey(code, 0);
     if (buttons.size) tablet?.postMessage([...[...buttons].map((b) => [EV_KEY, b, 0]), [EV_SYN, 0, 0]]);
     buttons.clear();
@@ -133,6 +144,10 @@ export function attachInput(el: HTMLElement, keyboard?: MessagePort, tablet?: Me
       off.forEach((f) => f());
     },
     chord(...codes: string[]) {
+      if (text && !text.live() && text.usb && codes.every((c) => text.usb!(c, true))) {
+        for (const c of [...codes].reverse()) text.usb(c, false);
+        return;
+      }
       const cs = codes.map((c) => {
         const k = KEYS.get(c);
         if (k === undefined) throw new Error(`no key ${c}`);

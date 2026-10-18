@@ -58,7 +58,7 @@ its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](us
 - **`debian`**, the tests' and benchmarks' guest (`?machine=debian`; the page's own machine until 2026-10-17;
   `tests/debian-unattended.ts` `unattendedQuery()` asks for it): Debian's published nocloud qcow2, **unmodified,
   booted through UEFI** (M8 phase B: EDK2's `QEMU_EFI.fd` as the machine's `firmware`, then shim
-  and GRUB from the disk: docs/plans/uefi.md; below, "Debian through UEFI"), under the JIT,
+  and GRUB from the disk: docs/firmware.md; below, "Debian through UEFI"), under the JIT,
   realtime, a worker per vCPU; 1 GiB; a 1024×768 framebuffer; rng, the disk (virtio-blk over HTTP
   ranges, writable through the OPFS overlay `webpc-debian`), keyboard, tablet, the display, a sound card
   (virtio-snd, below "Sound"; every page machine has one). No virtio-console
@@ -479,7 +479,7 @@ worker kept both.
 
 **Debian's screen is a virtio-gpu** (`MACHINES.debian.display = 'gpu'`; docs/devices.md "virtio-gpu"): the
 guest sets its own mode and the firmware has a graphics output, so EDK2's logo, boot progress bar and screens
-(the GOP is a console beside the serial port: docs/plans/uefi.md "Graphics in the firmware"), GRUB's menu
+(the GOP is a console beside the serial port: docs/firmware.md "Our patches"), GRUB's menu
 and "Loading Linux…" appear on the screen, then the console (fbcon on `virtio_gpu`, which loads from the
 root filesystem a few seconds into the boot) takes it. **The device worker draws it**: the page's canvas
 goes machine worker → device worker, whose backend puts each flush's damaged rectangle on it
@@ -608,6 +608,11 @@ page writes the context's output latency into the ring's header, and the guest g
   screen has an accent ring; an unfocused one shows "Click to type" over it. The terminal's frame
   takes the accent while xterm.js has the focus (its cursor is filled then, too). Tab moves
   between them.
+- **Before the guest's keyboard driver** (the firmware, the boot loader, an initramfs: the worker's `keyboard
+  {live}` is false), the screen's keys go to the built-in USB keyboard on a machine with the USB controller
+  (every key, down and up, held modifiers; docs/usb.md "The keyboard"), else to the serial console as a terminal
+  sends them (`terminalBytes`: keys with a terminal encoding only). Once the driver is live they are
+  virtio-input's, and the USB keyboard is unplugged.
 - **No stuck keys:** `attachInput` tracks what the guest believes is held and releases it (keys,
   then mouse buttons) when the screen loses the focus, the window loses it, or the page is
   hidden; a keyup for a key the guest doesn't hold is dropped. A pointer press captures the
@@ -711,7 +716,7 @@ files), the page says so and offers the reset again.
 
 ## Debian through UEFI
 
-`?machine=debian` boots Debian's published image unmodified (M8 phase B loop 3; [plans/uefi.md](plans/uefi.md)):
+`?machine=debian` boots Debian's published image unmodified (M8 phase B loop 3; [firmware.md](firmware.md)):
 the machine's `kernel` is `target/images/edk2/QEMU_EFI.fd` (with `LICENSES.txt` beside it, served
 with it), `firmware: true`, no initrd and no command line; `web/app/worker.ts` passes
 `BootOptions.firmware` (the flash bank and the fw_cfg files). What that changes for a user:

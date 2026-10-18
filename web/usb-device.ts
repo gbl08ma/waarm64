@@ -1,4 +1,4 @@
-// What a USB device is to the xHCI's glue (docs/plans/usb.md §4): the interface every device
+// What a USB device is to the xHCI's glue (docs/usb.md): the interface every device
 // backend implements (Gadget Zero, a WebUSB passthrough, a WebHID device), and the messages the
 // page and the device worker exchange about the controller's ports. The controller is the
 // core's; the glue (web/usb.ts) turns its request records into `submit` calls and their results
@@ -26,7 +26,7 @@ export type UsbTransfer = {
   setup?: Setup;
   data?: Uint8Array;
   length: number;
-  /** Isochronous: each packet's length (U6). */
+  /** Isochronous: each packet's length (no device takes isochronous TDs yet: docs/backlog.md "USB"). */
   packets?: number[];
 };
 
@@ -39,7 +39,7 @@ export type UsbEndpoint = { ep: number; type: 'bulk' | 'interrupt' | 'isoch'; ma
 /**
  * A device on a root port. The standard requests on the default pipe are the device's (SET_ADDRESS
  * excepted: the controller's Address Device), as on hardware: a virtual device answers them from
- * its descriptors, a passthrough interprets them (docs/plans/usb.md §4).
+ * its descriptors, a passthrough interprets them (docs/usb.md).
  */
 export interface UsbDevice {
   /** The speed it attaches at: `super` goes on the connector's USB 3 port, anything else on its USB 2 port. */
@@ -60,6 +60,8 @@ export interface UsbDevice {
   clearHalt?(ep: number): void;
   /** Unplugged: no `done` after this; release what the device holds. */
   detach(): void;
+  /** What of the host's device the guest doesn't get (an interface WebUSB refuses or the host holds, a HID collection WebHID hides): `usb-state`'s `problems`. */
+  readonly problems?: UsbProblem[];
 }
 
 /** What a page attaches, by its identity (WebUSB's and WebHID's grants persist per origin). */
@@ -87,21 +89,32 @@ export type UsbOpener = (identity: UsbIdentity, ctx: UsbOpenerContext) => Promis
  * (default high), its source's and sink's data pattern (0 zeros, the default as Linux's g_zero; 1 the mod-63 bytes,
  * usbtest's `pattern=1`) and its serial number.
  */
-export type UsbVirtual = { api: 'virtual'; kind: 'gadget-zero'; speed?: UsbSpeed; pattern?: 0 | 1; serial?: string };
+export type UsbVirtual =
+  | { api: 'virtual'; kind: 'gadget-zero'; speed?: UsbSpeed; pattern?: 0 | 1; serial?: string }
+  /** The built-in boot keyboard (web/usb-keyboard.ts), fed by `usb-key` messages: the firmware's keyboard. */
+  | { api: 'virtual'; kind: 'keyboard' };
 
-/** Root connectors are numbered 0–3; each has a USB 2 and a USB 3 port behind it (docs/plans/usb.md §4). */
+/** Root connectors are numbered 0–3; each has a USB 2 and a USB 3 port behind it (docs/usb.md). */
 export type UsbToWorker =
   | { type: 'usb-attach'; connector: number; device: UsbIdentity | UsbVirtual }
-  | { type: 'usb-detach'; connector: number };
+  | { type: 'usb-detach'; connector: number }
+  /** A key of the page's (`KeyboardEvent.code`) for the device on `connector` (the built-in keyboard); no answer. `code` '' releases every key. */
+  | { type: 'usb-key'; connector: number; code: string; down: boolean };
 
 export type UsbFromWorker =
-  | { type: 'usb-state'; connector: number; state: 'attached'; device: UsbIdentity | UsbVirtual; speed: UsbSpeed; notes?: string[] }
+  | { type: 'usb-state'; connector: number; state: 'attached'; device: UsbIdentity | UsbVirtual; speed: UsbSpeed; problems?: UsbProblem[] }
   | { type: 'usb-state'; connector: number; state: 'detached'; reason?: 'unplugged' | 'guest' | 'page' }
   | { type: 'usb-state'; connector: number; state: 'error'; message: string; detail?: UsbProblem[] };
 
-/** Why part of a device can't reach the guest, for the page's messages (docs/plans/usb.md U4). */
+/**
+ * Why part of a device can't reach the guest, for the page's messages (docs/usb.md "The page"): on a successful attach
+ * (`usb-state` attached, `problems`: what was left out) or a failed one (`error`, `detail`). `claim-failed`'s message is
+ * the browser's; the remedies are the page's (web/app/usb-ports.ts `problemText`).
+ */
 export type UsbProblem =
   | { kind: 'protected-interface'; interface: number; class: number }
   | { kind: 'claim-failed'; interface: number; message: string }
+  /** A HID top-level collection WebHID keeps the input and output reports of (a keyboard's, a mouse's): `kept` says whether its feature reports are left. */
+  | { kind: 'protected-collection'; usagePage: number; usage: number; kept: boolean }
   | { kind: 'no-collections' }
   | { kind: 'open-failed'; message: string };

@@ -1,0 +1,126 @@
+{
+ "id": "vendor-noid",
+ "name": "webpc vendor HID without report IDs",
+ "vendorId": 4617,
+ "productId": 1,
+ "note": "ours: a QMK/VIA-style raw HID collection, no report IDs",
+ "chromium": "153.0.8010.52",
+ "visible": true,
+ "descriptor": "0660ff0961a1010962150026ff0095207508810209639520910209649520b102c0",
+ "collections": [
+  {
+   "children": [],
+   "featureReports": [
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 32,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4284481636
+       ],
+       "wrap": false
+      }
+     ],
+     "reportId": 0
+    }
+   ],
+   "inputReports": [
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 32,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4284481634
+       ],
+       "wrap": false
+      }
+     ],
+     "reportId": 0
+    }
+   ],
+   "outputReports": [
+    {
+     "items": [
+      {
+       "hasNull": false,
+       "hasPreferredState": true,
+       "isAbsolute": true,
+       "isArray": false,
+       "isBufferedBytes": false,
+       "isConstant": false,
+       "isLinear": true,
+       "isRange": false,
+       "isVolatile": false,
+       "logicalMaximum": 255,
+       "logicalMinimum": 0,
+       "physicalMaximum": 0,
+       "physicalMinimum": 0,
+       "reportCount": 32,
+       "reportSize": 8,
+       "unitExponent": 0,
+       "unitFactorCurrentExponent": 0,
+       "unitFactorLengthExponent": 0,
+       "unitFactorLuminousIntensityExponent": 0,
+       "unitFactorMassExponent": 0,
+       "unitFactorTemperatureExponent": 0,
+       "unitFactorTimeExponent": 0,
+       "unitSystem": "none",
+       "usages": [
+        4284481635
+       ],
+       "wrap": false
+      }
+     ],
+     "reportId": 0
+    }
+   ],
+   "type": 1,
+   "usage": 97,
+   "usagePage": 65376
+  }
+ ]
+}

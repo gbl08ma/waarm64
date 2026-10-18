@@ -1,13 +1,13 @@
-// The WebHID device (docs/plans/usb.md §4 "The WebHID backend", docs/usb.md): an emulated USB HID
+// The WebHID device (docs/usb.md "The WebHID device"): an emulated USB HID
 // device built from what WebHID tells about a HIDDevice, its report descriptor encoded back from
 // `collections` (web/hid-descriptor.ts). It is a virtual device (web/usb-virtual.ts answers chapter
 // 9); this file adds the HID class requests and moves reports between the guest and the HIDDevice.
 // The WebHID surface is typed locally so Node's tests can pass a fake (and a MessagePort proxy
 // from the page could stand in).
 
-import type { Setup, UsbIdentity, UsbResult, UsbTransfer } from './usb-device.ts';
+import type { Setup, UsbIdentity, UsbProblem, UsbResult, UsbTransfer } from './usb-device.ts';
 import { VirtualDevice, type ControlAnswer } from './usb-virtual.ts';
-import { encodeReportDescriptor, normalizeCollections, reportSizes, usesReportIds, type HidCollectionInfo, type HidCollectionLike, type ReportKind } from './hid-descriptor.ts';
+import { encodeReportDescriptor, normalizeCollections, protectedCollections, reportSizes, usesReportIds, visibleCollections, type HidCollectionInfo, type HidCollectionLike, type ReportKind } from './hid-descriptor.ts';
 import { UsbOpenError, pickDevice } from './webusb.ts';
 
 export type WebHidInputReport = { reportId: number; data: DataView };
@@ -57,7 +57,7 @@ export type HidLayout = {
 };
 
 /**
- * The descriptors of the emulated device (docs/plans/usb.md §4): the vendor and product IDs, USB
+ * The descriptors of the emulated device (docs/usb.md): the vendor and product IDs, USB
  * 2.00, one HID interface (class 3, no boot subclass), an interrupt IN endpoint sized by the largest
  * input report and its ID byte (at most 1024; high speed past 64), bInterval 1 ms, and an
  * interrupt OUT endpoint when the device has output reports.
@@ -93,6 +93,8 @@ export type WebHidOptions = {
 export class WebHidDevice extends VirtualDevice {
   readonly dev: WebHidDeviceLike;
   readonly layout: HidLayout;
+  /** The collections WebHID keeps (part of) from the page, which the guest doesn't get either. */
+  problems: UsbProblem[] = [];
   private tds: InTd[] = [];
   private reports: Uint8Array[] = [];
   private last = new Map<string, Uint8Array>();
@@ -144,7 +146,8 @@ export class WebHidDevice extends VirtualDevice {
       case GET_REPORT: {
         if (!kind) return undefined;
         if (kind === 'feature') {
-          return this.dev.receiveFeatureReport(id).then((dv) => this.featureIn(id, bytesOf(dv)), () => undefined);
+          // Chromium's buffer already starts with the report ID when the device uses IDs (and has none otherwise): as the guest wants it.
+          return this.dev.receiveFeatureReport(id).then((dv) => bytesOf(dv), () => undefined);
         }
         const size = this.layout.sizes[kind].get(id);
         if (size === undefined) return undefined;
@@ -163,18 +166,6 @@ export class WebHidDevice extends VirtualDevice {
       case GET_PROTOCOL: return Uint8Array.of(1); // the report protocol: no boot protocol is offered
       default: return undefined;
     }
-  }
-
-  /**
-   * A feature report from receiveFeatureReport, framed for the guest. Chromium's data starts with
-   * the report ID on some hosts and not on others: a buffer one byte longer than the report, led by
-   * its ID, already has it.
-   */
-  private featureIn(id: number, b: Uint8Array): Uint8Array {
-    if (!this.layout.ids) return b;
-    const size = this.layout.sizes.feature.get(id);
-    if (b[0] === id && (size === undefined || b.length === size + 1)) return b;
-    return this.framed(id, b);
   }
 
   protected override transfer(t: UsbTransfer, done: (r: UsbResult) => void): void {
@@ -225,7 +216,9 @@ function fit(r: Uint8Array, length: number): UsbResult {
 
 /** Opens `dev` (if it isn't) and builds the guest's device; a device whose every collection WebHID hides has nothing to build from. */
 export async function openWebHid(dev: WebHidDeviceLike, opts: WebHidOptions = {}): Promise<WebHidDevice> {
-  const collections = normalizeCollections(dev.collections);
+  // Only what the page can use: a protected collection's input and output reports never arrive and can't be sent.
+  const all = normalizeCollections(dev.collections);
+  const collections = visibleCollections(all);
   if (collections.length === 0) throw new UsbOpenError('WebHID shows none of this device\'s collections', [{ kind: 'no-collections' }]);
   try {
     if (!dev.opened) await dev.open();
@@ -233,7 +226,9 @@ export async function openWebHid(dev: WebHidDeviceLike, opts: WebHidOptions = {}
     const message = (e as Error).message;
     throw new UsbOpenError(`could not open the device: ${message}`, [{ kind: 'open-failed', message }]);
   }
-  return new WebHidDevice(dev, hidLayout(dev.vendorId, dev.productId, collections), opts);
+  const d = new WebHidDevice(dev, hidLayout(dev.vendorId, dev.productId, collections), opts);
+  d.problems = protectedCollections(all).map((c): UsbProblem => ({ kind: 'protected-collection', ...c }));
+  return d;
 }
 
 /**

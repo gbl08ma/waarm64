@@ -189,9 +189,10 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   The same shader's guest loads spend ~11% on the TLB's tag load (a translation memo in locals lost: [jit.md](jit.md)
   "Tried and not kept").
 - **Cold, kernel-heavy phases** (boot, process churn, shutdown: 10 of the userspace run's 22 s) are a
-  third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread. **Compiling off the vCPU
-  thread** was measured and not built ([jit.md](jit.md) "Tried and not kept"); revisit with a GUI
-  guest (latency).
+  third Liftoff code and 11 to 18% V8's compiles on the vCPU's thread (measured before the compile
+  worker). With a worker per vCPU, V8 compiles off the vCPU's thread: the JIT's compile worker
+  ([jit.md](jit.md) "Sharing"), built for the install stalls a GUI guest showed; the vCPU still
+  instantiates each module. Without the worker (round-robin, Node's runs, `?jit=nocw`) it compiles too.
 - **The transfer cache's costs in kernel-heavy phases** ([jit.md](jit.md) "Linking"): a miss costs
   a call to the shared miss function, a TLBI by VA a 16 KiB scan (the boot ~1% slower with it).
 - **The shared cache's leftovers** ([jit.md](jit.md) "Sharing"):
@@ -295,7 +296,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   cause, a failed chunk allocation should complete the request with an I/O error and say so on the page.
 - **The firmware configuration** (loop 2): fw_cfg has no DMA interface (nothing needs it: the firmware's
   screen is the virtio-gpu's, and ramfb would leave a stale framebuffer beside `virtio_gpu` on virtio-mmio,
-  plans/uefi.md "Graphics in the firmware"), no standard items beside SMBIOS (platform.md); the
+  firmware.md "Our patches"), no standard items beside SMBIOS (platform.md); the
   flash bank's array-mode reads go through `vm::Io` one instruction at a time (fine for a store
   read a few times a boot: measure if a guest reads it in a loop); no lock state (every block
   unlocked). Between EDK2's boot manager and GRUB's menu Debian retires 5.4G steps in ~3 s in
@@ -304,20 +305,20 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   loop 3"); nothing to make idle.
 - **The screen is dark from the EFI stub until `virtio_gpu` loads** (~20 s of the page's Debian boot, after the
   root mounts; the serial terminal has the kernel's output). The firmware's GOP is `Blt`-only, so Linux has no
-  `efifb`, and ramfb would stay beside `virtio_gpu` on virtio-mmio (plans/uefi.md "Graphics in the firmware").
+  `efifb`, and ramfb would stay beside `virtio_gpu` on virtio-mmio (firmware.md "Our patches").
   Ways out, none tried: virtio-gpu on a PCI transport (the driver then removes the firmware's framebuffer; ACPI's
   item below wants virtio-pci too), the page drawing the serial terminal's tail on the canvas while no scanout is
   set, or a guest whose initramfs carries `virtio_gpu` (the guest's choice, not ours).
 - **EDK2's terminal modes** (loop 3): `images/build.sh edk2` patches TerminalDxe to offer only the
   80×25 text mode, because GRUB takes the largest (240×56) and asks the terminal to resize with
   `CSI 8;r;c t`, which xterm.js doesn't do: the menu was lost on the page's 80-column terminal.
-  A virtio-gpu machine's GOP is a console too (in ConOut beside the serial port, plans/uefi.md "Graphics in the
-  firmware"), and its GRUB draws on the screen (`gfxterm`), so the patch matters only where the
+  A virtio-gpu machine's GOP is a console too (in ConOut beside the serial port, firmware.md "Our
+  patches"), and its GRUB draws on the screen (`gfxterm`), so the patch matters only where the
   firmware has no display: `?display=simple` and the simple-framebuffer machines, whose GRUB menu is still on the
   serial terminal. **Remove it when no machine boots through UEFI without a virtio-gpu** (not re-checked: what
   ConSplitter offers the serial terminal next to a GOP without the patch).
 - **ACPI** (only if an ACPI-only guest comes into scope: Windows, an enterprise distro that won't
-  boot from a DT). The DT stays the machine's description (plans/uefi.md "DT or ACPI"); the path
+  boot from a DT). The DT stays the machine's description (firmware.md "DT or ACPI"); the path
   that keeps AML out of the core is EDK2's DynamicTablesPkg building the tables from our DT, plus
   AML for the virtio-mmio transports (its parser doesn't cover them) or a move to virtio-pci; the
   screen then needs a firmware GOP.
@@ -359,7 +360,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
 - Input: US PC layout only, no pointer lock (relative mouse), no multitouch; events injected in
   deterministic mode land when they land. Past 1024 queued events the oldest are dropped, so
   anything that types a long string (a test agent, a paste into the screen) must pace itself.
-- **A real keyboard driver in EDK2** (instead of the screen's keys going to the serial console): EDK2 has no virtio-input driver (`OvmfPkg` has none; ArmVirt's keyboard is the PL011 console), so on a virtio-gpu machine GRUB's menu, which takes the GOP, would otherwise ignore keys typed on the screen. Today the page works around it: until the guest's virtio-input keyboard has its DRIVER_OK (`Vm.deviceStatus` → `keyboard {live}`), `attachInput`'s `text` option sends the screen's keys to the serial console as a terminal would (`terminalBytes` in web/input.ts; `tests/page-grub-screen.test.ts`; graphics.md §12). The limits: only keys that have a terminal encoding reach the firmware (no key-up, no modifiers alone), and the page must know when the guest takes over. A DXE driver for virtio-input (or USB-HID over a virtio-mmio-less path) in `images/build.sh edk2` would give the firmware the keyboard directly and let that special case go; it needs a driver written for the mmio transport (none to port from OvmfPkg) and an EDK2 rebuild.
+- **The firmware's keyboard on machines without the USB controller:** a machine with the controller has one since 2026-10-18 (the built-in USB keyboard on EDK2's USB stack, docs/usb.md "The keyboard"). One without it still gets the screen's keys on the serial console as a terminal sends them (`terminalBytes`: no key-up, no modifiers by themselves) until its virtio keyboard is live. A virtio-input DXE driver for the mmio transport (none to port from OvmfPkg) would cover those too; worth it only if machines without the controller stay common (new ones have it). The other way out removes the serial path instead: every page machine gets the controller (older ones at their next start, which orphans their snapshots once, so ask first) and the tests' transient guests take it by default (guest-visible: the user's OK); then `terminalBytes` and `attachInput`'s serial `text` path can go. Kept for now (2026-10-18) so machines from before USB don't lose their firmware keyboard.
 - **Guests that composite with llvmpipe show stale frames on virtio-gpu** (graphics.md §16; devices.md): the
   rasterizer threads draw after the transfer. `WLR_RENDERER=pixman` in the guest avoids it. A display mode that
   samples the scanout's memory at each refresh and holds a flipped buffer until it is stable would hide it for
@@ -382,7 +383,7 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   the microphone's recording out of its time. Worth a look if sound ever stutters for users under load: the
   uncounted buffer may be a real gap in what the ring counts (a vCPU starved through the restore), not just the test's.
 - **virtio-gpu's flush pacing slows a guest that waits for every flush** to 60 flushes a second. Our EDK2 no
-  longer is one (it coalesces its flushes a frame at a time: plans/uefi.md "Graphics in the firmware"), so
+  longer is one (it coalesces its flushes a frame at a time: firmware.md "Our patches"), so
   another firmware or OS driver would be the case. The host can't tell such a guest from one that floods:
   fences don't (EDK2 fences none of its flushes, Linux none on our device: it fences a primary plane's flush
   only for blob resources, which we don't offer).
@@ -523,7 +524,8 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   has no serial getty would need its own; a guest-side signal (a byte on a port the page owns, a
   systemd unit writing to a device) would be exact. Revisit with image selection (phase D).
 - **After phase B (the page's UEFI path):** a lone Esc takes ~2 s on the serial terminal and PageUp/PageDown aren't decoded by
-  EDK2's terminal driver (frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
+  EDK2's terminal driver, and a fast run of arrow keys can lose bytes (the PL011's FIFO against a guest that polls;
+  frontend.md "The serial terminal"); Debian's GRUB waits 5 s on every
   boot; loading a changes file also resets the variable store (the file doesn't carry it).
 - **The Keyboard Lock** in full screen is checked by hand only: headless Playwright's keys
   bypass the browser's shortcuts, so no test sees Ctrl+W reach the guest.
@@ -600,8 +602,10 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
   are the page tests' own timings, two or three runs each (`bench/boot/REPORT.md` "M8 phase C
   exit").
 - **Save snapshot's pause is the file's write** (1.4 s for Debian's 175 MB through the picked
-  file's stream): writing to memory first and to the file after the resume would shorten it to
-  the compression's ~0.5 s, for the file's size in memory.
+  file's stream; dropped, 2026-10-18, the user): holding the compressed file in memory and writing
+  it after the resume would cut the pause to the compression's ~0.5 s, but the file is the guest's
+  used RAM plus the disk's changes, so the page would briefly need up to a second copy of the
+  guest's RAM, enough to crash it with a big guest on a small host.
 - **Snapshots between core versions:** a state of another `snapshot::VERSION` is refused; a
   migration path (or a reader per old version) would keep users' files alive across a format
   change. Prebuilt snapshots shipped with the repository (a Debian that resumes in seconds for a
@@ -659,29 +663,51 @@ it (the JIT's SIMD comes from our encoder; the interpreter is as fast without it
     in a container image would remove Go from development and CI; the user kept Go (2026-10-17), so not before the
     Go client's store format stops mattering.
 
-## USB ([plans/usb.md](plans/usb.md), [usb.md](usb.md))
+## USB ([usb.md](usb.md))
 
-- **WebHID: how a report's items interleave between a collection and its children** is not in WebHID's
-  form, so the encoder writes children first (docs/usb.md "The WebHID device"). Report sizes and
-  offset-reading drivers don't care; hid-input's generic mapping of such a device could. Check the
-  choice against the recorded Chromium parses, and against U5's devices. A table of known original
-  descriptors keyed by vendor and product could serve those devices their real bytes (plans/usb.md §8).
-- **WebHID `receiveFeatureReport` framing**: whether Chromium's buffer starts with the report ID differs
-  by host. The device guesses from the length. Check it on the uhid rig (Linux) and on the user's
-  macOS and Windows.
-- **WebUSB SET_FEATURE(ENDPOINT_HALT)** is passed through for usbtest's halt test. Whether Chromium
-  refuses it as a standard OUT request is unchecked: the dummy_hcd `testusb -a` run will tell.
+- **WebHID devices whose drivers patch the original descriptor** by its bytes or size (`report_fixup`) see
+  our encoding instead. A table of known original descriptors keyed by vendor and product could serve
+  them their real bytes when its parse matches WebHID's. No such device has been tried yet.
+- **WebUSB's halts are emulated:** SET_FEATURE(ENDPOINT_HALT) never reaches the device (Chromium refuses
+  it), so a device-side function that tests its own halt (rare outside usbtest) sees none. Only the
+  guest's view is a halted endpoint (docs/usb.md "The WebUSB passthrough").
+- **WebHID `receiveFeatureReport`'s framing** (the ID byte first with IDs) was recorded on Linux. Check it
+  on macOS and Windows when a WebHID device is at hand there.
 - **WebUSB reset** re-claims what it can after `device.reset()`. On hosts where the reset re-enumerates,
-  WebUSB loses the device and the backend reports it gone. Measure which hosts do that (U3, U5).
-- **The WebUSB fixtures are transcribed** (`tests/usb/webusb-fixtures.ts`). Replace them with real
-  `lsusb -v` and raw dumps of the user's devices in U5, which also checks the speed heuristic.
+  WebUSB loses the device and the backend reports it gone. On Linux the interfaces are released before the
+  reset and claimed again after (a reset with them claimed leaves Chromium's claims stale: docs/usb.md);
+  which hosts re-enumerate on a reset isn't measured.
+- **Most WebUSB fixtures are still transcribed** (`tests/usb/webusb-fixtures.ts`): the FT232R, the NESDR and
+  a wired Xbox controller are recorded from real devices; the CP2102, the Pico, the Android composite,
+  DAPLink, FX3 and USBasp are written from documentation. Replace each when such a device is at hand.
+- **Device types untried on real hardware** (the real-device check, 2026-10-18, had an RTL-SDR, an FT232R and a
+  wired Xbox controller, usb.md "Findings"): an Android phone (adb, fastboot after a reboot, the
+  re-enumeration's new permission), a CDC-ACM board with the host's driver unbound, `dfu-util`, a sigrok
+  analyser's firmware upload, and through WebHID a DualSense or DualShock 4 (USB and Bluetooth), a Switch
+  Pro controller, a Stream Deck, a keyboard's VIA configuration and a UPS. Only the in-VM rigs cover the
+  WebHID path end to end so far.
 - **The controller's IMOD doesn't moderate:** the register is kept and interrupts aren't delayed. The
   completion latency (`xhci::LATENCY_NS`) does what the guest needed (docs/usb.md "Latency"); real
   moderation would need a deadline in the run loops.
 - **Stop Endpoint's window in realtime mode:** a backend that gathers a TD's OUT data, or scatters its IN
   data, just after the guest stopped the endpoint touches a buffer the guest may have back. The glue drops
   a TD whose cancel is in the same batch, and deterministic mode can't hit it.
-- **Isochronous TDs** are parsed and posted (one packet per TD), but no device takes them (U6).
+- **Isochronous transfers aren't implemented** (left out, the user, 2026-10-18): the controller parses isochronous TDs
+  and posts them one packet per TD, but no device takes them. Building them means scheduling by frame, per-packet
+  results in the completion, WebUSB's `isochronousTransferIn/Out`, and an isochronous alternate setting on Gadget
+  Zero to test with (dummy_hcd has none). Few devices would gain: WebUSB protects audio and video, so it is
+  vendor-class devices only (a wired Xbox controller's headset jack, some cameras).
+- **Game pads that aren't HID and that the host holds** (a wired Xbox controller where the host's driver keeps it):
+  the Gamepad API could feed an emulated USB HID game pad with a fixed descriptor of ours (its standard mapping,
+  rumble through `vibrationActuator`), on the same controller. Not built; where WebUSB gets the device, `xpad`
+  already works (docs/usb.md "Findings").
+- **Serial adapters the host's driver holds** (Linux's `ftdi_sio`, `cp210x`, `cdc_acm` without a udev rule): WebSerial
+  could feed a virtio-console port instead of the passthrough (the multiport console, plans/agent.md). Not built.
+- **A WebHID device across Suspend:** Snapshot and Suspend unplug every device first. The emulated HID device's
+  state is small (idle rate, last reports), so it could be saved and its `HIDDevice` opened again at resume, keeping
+  a game pad plugged in as far as the guest knows.
+- **Carry-over and sequence numbers:** a cancelled IN's data goes to the next read on that endpoint, which a
+  protocol that cancels, then expects only fresh data with sequence numbers, would notice. None seen yet.
 
 ## Tests and tools
 

@@ -15,5 +15,5 @@ step() { printf '\n== %s (at %d s)\n' "$*" "$SECONDS"; }
 for name in debian edk2 linux-snd; do images/build.sh --check "$name" > /dev/null || { echo "ci-debian: the $name image is missing or stale (images/build.sh $name)"; exit 1; }; done
 export WEBPC_DISTROS=debian WEBPC_DEBIAN_SLOTS=${WEBPC_DEBIAN_SLOTS-2}
 step 'Debian on the page'
-node --disable-warning=ExperimentalWarning --test tests/page-debian.test.ts tests/page-disk.test.ts tests/start.test.ts tests/page-machine.test.ts
+node --disable-warning=ExperimentalWarning --test tests/page-debian.test.ts tests/page-disk.test.ts tests/start.test.ts tests/page-machine.test.ts tests/page-usb-keyboard.test.ts
 printf '\nCI-DEBIAN OK (%d s)\n' "$SECONDS"

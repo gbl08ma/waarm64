@@ -1,0 +1,29 @@
+--- a/ArmVirtPkg/ArmVirtQemuFvMain.fdf.inc
++++ b/ArmVirtPkg/ArmVirtQemuFvMain.fdf.inc
+@@ -179,6 +179,8 @@
+   INF MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
+   INF MdeModulePkg/Bus/Usb/UsbKbDxe/UsbKbDxe.inf
+   INF MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
++  INF MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
++  INF ArmVirtPkg/WebpcXhciDxe/WebpcXhciDxe.inf
+ 
+   #
+   # Hash2 Protocol producer
+--- a/ArmVirtPkg/ArmVirtQemuKernel.dsc
++++ b/ArmVirtPkg/ArmVirtQemuKernel.dsc
+@@ -367,6 +367,15 @@
+   !include OvmfPkg/Include/Dsc/UsbComponents.dsc.inc
+ 
+   #
++  # webpc: the DT's generic-xhci controller, as a non-discoverable PCI device for XhciDxe
++  #
++  MdeModulePkg/Bus/Pci/NonDiscoverablePciDeviceDxe/NonDiscoverablePciDeviceDxe.inf
++  ArmVirtPkg/WebpcXhciDxe/WebpcXhciDxe.inf {
++    <LibraryClasses>
++      NonDiscoverableDeviceRegistrationLib|MdeModulePkg/Library/NonDiscoverableDeviceRegistrationLib/NonDiscoverableDeviceRegistrationLib.inf
++  }
++
++  #
+   # Hash2 Protocol Support
+   #
+   SecurityPkg/Hash2DxeCrypto/Hash2DxeCrypto.inf

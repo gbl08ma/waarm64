@@ -1,9 +1,9 @@
 // Raw USB descriptors of real device types, for the WebUSB passthrough's tests (web/webusb.ts).
 //
-// TRANSCRIBED, not recorded: each is written from the device's public documentation and its
-// well-known `lsusb -v` layout (field values as such dumps show them; serial numbers and a few
-// endpoint numbers are illustrative). U5 replaces them with the user's real dumps
-// (docs/plans/usb.md §6); `source` says which each one is.
+// `source` says where each one comes from. RECORDED: read from the user's devices through WebUSB
+// (docs/usb.md "Findings"). TRANSCRIBED: written from the device's public documentation and
+// its well-known `lsusb -v` layout (field values as such dumps show them; serial numbers and a few
+// endpoint numbers are illustrative), until a real dump replaces it.
 
 export type Fixture = {
   name: string;
@@ -18,6 +18,8 @@ export type Fixture = {
 };
 
 const u16 = (v: number) => [v & 0xff, v >> 8];
+/** Recorded bytes, as hex. */
+const hex = (s: string) => Uint8Array.from(s.match(/../g)!, (b) => parseInt(b, 16));
 
 export function device(o: {
   bcdUSB: number; cls?: number; sub?: number; proto?: number; mps0: number; vid: number; pid: number; bcdDevice: number;
@@ -76,11 +78,12 @@ const ssCap = (): Part => [10, 0x10, 0x03, 0x00, ...u16(0x000e), 0x01, 0x0a, ...
 
 export const fixtures: Fixture[] = [
   {
-    // FTDI FT232R (DS_FT232R; lsusb -v of 0403:6001): one vendor interface, two 64-byte bulk endpoints, an 8-byte EP0.
+    // FTDI FT232R (0403:6001), the user's, read through WebUSB on macOS (docs/usb.md "Findings"): one vendor
+    // interface, two 64-byte bulk endpoints, an 8-byte EP0, full speed. Its strings as macOS reported them.
     name: 'FTDI FT232R',
-    source: 'transcribed',
-    device: device({ bcdUSB: 0x0200, mps0: 8, vid: 0x0403, pid: 0x6001, bcdDevice: 0x0600, iManufacturer: 1, iProduct: 2, iSerial: 3 }),
-    configs: [config(1, 0xa0, 45, iface(0, 0, 2, 0xff, 0xff, 0xff, 2), bulk(0x81, 64), bulk(0x02, 64))],
+    source: 'recorded',
+    device: hex('120100020000000803040160000601020301'),
+    configs: [hex('09022000010100a02d0904000002ffffff020705810240000007050202400000')],
     strings: strings(['FTDI', 'FT232R USB UART', 'A50285BI']),
     expect: { speed: 'full', protected: [], kept: [0] },
   },
@@ -94,13 +97,25 @@ export const fixtures: Fixture[] = [
     expect: { speed: 'full', protected: [], kept: [0] },
   },
   {
-    // Realtek RTL2832U DVB-T stick as an RTL-SDR (lsusb -v of 0bda:2838): a 512-byte bulk IN, a second interface without endpoints.
-    name: 'Realtek RTL2832U',
-    source: 'transcribed',
-    device: device({ bcdUSB: 0x0200, mps0: 64, vid: 0x0bda, pid: 0x2838, bcdDevice: 0x0100, iManufacturer: 1, iProduct: 2, iSerial: 3 }),
-    configs: [config(1, 0x80, 250, iface(0, 0, 1, 0xff, 0xff, 0xff, 2), bulk(0x81, 512), iface(1, 0, 0, 0xff, 0xff, 0xff, 2))],
-    strings: strings(['Realtek', 'RTL2838UHIDIR', '00000001']),
+    // A Nooelec NESDR SMArt v5 (RTL2832U, 0bda:2838), the user's, read through WebUSB on macOS: a 512-byte bulk IN,
+    // a second interface without endpoints, high speed.
+    name: 'Nooelec NESDR SMArt v5 (RTL2832U)',
+    source: 'recorded',
+    device: hex('1201000200000040da0b3828000101020301'),
+    configs: [hex('0902220002010480fa0904000001ffffff05070581020002000904010000ffffff05')],
+    strings: strings(['Nooelec', 'NESDR SMArt v5', '00000001', 'USB2.0-Bulk&Iso', 'Bulk-In, Interface']),
     expect: { speed: 'high', protected: [], kept: [0, 1] },
+  },
+  {
+    // A PowerA wired Xbox Series X controller (20d6:2001), the user's, read through WebUSB on macOS: Xbox One's GIP
+    // (class ff/47/d0) on interrupt endpoints of 64 bytes, and an audio interface whose alternate setting has 228-byte
+    // isochronous endpoints, at full speed (full speed allows isochronous packets up to 1023 bytes).
+    name: 'PowerA Xbox Series X wired controller',
+    source: 'recorded',
+    device: hex('12010002ff47d040d6200120010101020301'),
+    configs: [hex('09024000020100a0fa0904000002ff47d00007050103400004070581034000040904010000ff47d0000904010102ff47d00007050801e4000107058701400001')],
+    strings: strings(['BDA', 'Xbox Series X En Wired Controller Black Inline', '000001017ECFF361']),
+    expect: { speed: 'full', protected: [], kept: [0, 1] },
   },
   {
     // Raspberry Pi Pico running pico-sdk's stdio_usb (2e8a:000a): CDC-ACM under an IAD, the vendor reset interface, and a BOS

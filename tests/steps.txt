@@ -22,8 +22,9 @@ buildroot-2cpu 41934492
 buildroot-4cpu 44715479
 litmus-4cpu 875688062
 console-input 36432057
-edk2-shell 542584775
-edk2-shell-again 539959512
+# edk2-shell: the firmware has the USB stack's way to the DT's xHCI (WebpcXhciDxe, NonDiscoverablePciDeviceDxe), dispatched on every machine.
+edk2-shell 544172544
+edk2-shell-again 541487630
 # The gpu test kernel (M8 graphics G1; images/gpu/init.c): KMS on a virtio-gpu, a display event, a new mode.
 gpu 36429976
 # The snd test kernel (audio S1; images/snd/init.c): ALSA on a virtio-snd, a waveform through the deterministic sink,

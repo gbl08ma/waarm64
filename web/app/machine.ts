@@ -12,7 +12,7 @@ export type Machine = {
   prepare: string;
   /**
    * The kernel to boot directly, or (with `firmware`) the firmware image: EDK2's QEMU_EFI.fd, loaded
-   * as a kernel is, which boots the disk's own loader (docs/plans/uefi.md).
+   * as a kernel is, which boots the disk's own loader (docs/firmware.md).
    */
   kernel: string;
   initrd?: string;
@@ -93,7 +93,7 @@ export const MACHINES = {
     display: 'gpu',
     ready: /(?:^|\n)\r*\S+ login: /, // agetty's prompt; busybox's getty (Alpine) puts a \r before it
   },
-  // The tests' and benchmarks' guest (`?machine=debian`, tests/debian-unattended.ts): Debian's published image, unmodified: EDK2 boots its shim and GRUB (docs/plans/uefi.md, docs/images.md "Debian for interaction").
+  // The tests' and benchmarks' guest (`?machine=debian`, tests/debian-unattended.ts): Debian's published image, unmodified: EDK2 boots its shim and GRUB (docs/firmware.md, docs/images.md "Debian for interaction").
   // No first-boot answers are passed: its first boot asks on the serial console, as on a regular machine.
   debian: {
     label: 'Debian 13',

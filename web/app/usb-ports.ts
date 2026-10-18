@@ -1,11 +1,11 @@
-// A machine's remembered USB devices (docs/plans/usb.md §4a, docs/usb.md "The page"), the part without a browser: an
+// A machine's remembered USB devices (docs/usb.md "The page"), the part without a browser: an
 // entry's identity and the Web Lock named after it, which connector a new entry takes, how the browser's granted
 // devices are matched to entries (identical devices without a serial number by their order in `getDevices()`), the
 // entries a definition carries, and the page's words for what the device worker reports (`UsbProblem`). DOM-free:
 // Node's tests use it. The live side (the browser's devices, the locks, the running machine's ports) is
 // web/app/usb-live.ts.
 import type { UsbIdentity, UsbProblem, UsbVirtual } from '../usb-device.ts';
-import { newId, USB_CONNECTORS, type UsbEntry } from './shape.ts';
+import { newId, USB_CONNECTORS, USER_CONNECTORS, type UsbEntry } from './shape.ts';
 
 /** What WebUSB and WebHID tell of a device, as far as an entry needs it (a `USBDevice` and a `HIDDevice` both fit). */
 export type SeenDevice = { vendorId: number; productId: number; serialNumber?: string | null; productName?: string | null };
@@ -27,7 +27,7 @@ export const usbLock = (i: Pick<UsbIdentity, 'api' | 'vendorId' | 'productId' | 
 
 /** A device's name on the page: its product name, or its IDs. */
 export function deviceName(d: { api?: string; kind?: string; vendorId?: number; productId?: number; productName?: string | null }): string {
-  if (d.api === 'virtual') return d.kind === 'gadget-zero' ? 'Gadget Zero (test device)' : 'a test device';
+  if (d.api === 'virtual') return d.kind === 'gadget-zero' ? 'Gadget Zero (test device)' : d.kind === 'keyboard' ? 'Built-in keyboard' : 'a test device';
   return d.productName?.trim() || `${d.api === 'hid' ? 'HID' : 'USB'} device ${hex4(d.vendorId ?? 0)}:${hex4(d.productId ?? 0)}`;
 }
 export const virtualName = (v: UsbVirtual) => deviceName(v);
@@ -40,7 +40,8 @@ export const idsText = (d: { vendorId: number; productId: number }) => `${hex4(d
  * on one connector are fine: only one is attached at a time).
  */
 export function freeConnector(entries: Pick<UsbEntry, 'connector'>[]): number {
-  const uses = Array.from({ length: USB_CONNECTORS }, (_, c) => entries.filter((e) => e.connector === c).length);
+  // The built-in keyboard's connector is left out (shape.ts `KEYBOARD_CONNECTOR`).
+  const uses = Array.from({ length: USER_CONNECTORS }, (_, c) => entries.filter((e) => e.connector === c).length);
   return uses.indexOf(Math.min(...uses));
 }
 
@@ -109,7 +110,10 @@ export function hostOs(nav: { userAgent?: string; userAgentData?: { platform?: s
 const CLASSES: Record<number, string> = { 0x01: 'audio', 0x02: 'communications (CDC)', 0x03: 'HID', 0x06: 'still image', 0x07: 'printer', 0x08: 'mass storage', 0x09: 'hub', 0x0a: 'CDC data', 0x0b: 'smart card', 0x0e: 'video', 0x10: 'audio/video', 0xe0: 'wireless controller (Bluetooth)', 0xfe: 'DFU', 0xff: 'vendor-specific' };
 const className = (c: number) => CLASSES[c] ?? `class 0x${c.toString(16).padStart(2, '0')}`;
 
-/** Where to go instead for what WebUSB keeps from pages, by class (docs/plans/usb.md §7). */
+/** The HID top-level collections the browser protects, as the messages name them (usage page:usage). */
+const HID_USAGES: Record<string, string> = { '1:1': 'pointer', '1:2': 'mouse', '1:6': 'keyboard', '1:7': 'keypad', '1:128': 'system control' };
+
+/** Where to go instead for what WebUSB keeps from pages, by class (docs/usb.md "What WebUSB can't attach, and where it goes instead"). */
 function protectedRoute(c: number): string {
   switch (c) {
     case 0x03: return ' Its HID part can come in as a HID device instead (Add a device…, then a HID device), unless it is a keyboard or a mouse: the machine has the page\'s.';
@@ -127,7 +131,7 @@ const udevRule = (d: { api: 'usb' | 'hid'; vendorId: number; productId: number }
 
 /**
  * A problem the device worker reported, in words for the user, with the host OS's remedy where there is one
- * (docs/plans/usb.md §2: the host's drivers come first, and the page can't change that).
+ * (docs/usb.md "What the browser allows": the host's drivers come first, and the page can't change that).
  */
 export function problemText(p: UsbProblem, d: { api: 'usb' | 'hid'; vendorId: number; productId: number }, os: HostOs = hostOs()): string {
   switch (p.kind) {
@@ -141,6 +145,12 @@ export function problemText(p: UsbProblem, d: { api: 'usb' | 'hid'; vendorId: nu
         case 'windows': return `${why} On Windows a browser can use a device only with the WinUSB driver: install it with Zadig (https://zadig.akeo.ie: Options, List All Devices, the device's interface ${p.interface}, WinUSB, Replace Driver), then unplug it and plug it in again. Windows' own programs then no longer see that interface.`;
         default: return `${why} Close what uses it on this computer, then attach it again.`;
       }
+    }
+    case 'protected-collection': {
+      const what = HID_USAGES[`${p.usagePage}:${p.usage}`] ?? `collection ${hex4(p.usagePage)}:${hex4(p.usage)}`;
+      return p.kept
+        ? `The device's ${what} part is kept from pages by the browser, all but its feature reports (its settings, which tools such as VIA use): the guest gets only those. The machine has the page's keyboard and mouse already.`
+        : `The device's ${what} part is kept from pages by the browser: the guest doesn't get it. The machine has the page's keyboard and mouse already.`;
     }
     case 'no-collections':
       return 'Everything this HID device offers is kept from pages by the browser (a keyboard\'s keys, a mouse\'s pointer, a security key): nothing is left for the guest. The machine has the page\'s keyboard and mouse already.';

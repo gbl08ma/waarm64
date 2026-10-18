@@ -1,4 +1,4 @@
-// A machine's USB devices on the Machines page, in Chromium without a guest or host devices (docs/plans/usb.md §4a,
+// A machine's USB devices on the Machines page, in Chromium without a guest or host devices (docs/usb.md "The page",
 // docs/usb.md "The page"): WebUSB and WebHID are stood in for by a fake (`navigator.usb`, `navigator.hid` with plugged-in
 // devices and grants kept per profile), so the flows are the page's own: the controller on for a new machine, off and
 // warned about for an existing one; the Add a device wizard remembering what the chooser gives (identical serial-less
@@ -115,10 +115,12 @@ test('the USB tab: the controller, Add a device, twins, a device held elsewhere;
   ]);
   await page.locator('.machines [data-usb-twins]').waitFor();
   assert.match(await page.textContent('.machines [data-usb-entry]:nth-child(3) .meta') ?? '', /the 2nd of its kind/);
-  // Connector and attach at start are kept.
-  await page.selectOption('.machines [data-usb-entry]:nth-child(3) [data-field=connector]', { value: '3' });
+  // Connectors 1-3 are the user's (4 is the built-in keyboard's, the tab says so). Connector and attach at start are kept.
+  assert.deepEqual(await page.$$eval('.machines [data-usb-entry]:nth-child(3) [data-field=connector] option', (o) => o.map((e) => e.textContent)), ['1', '2', '3']);
+  assert.match(await page.textContent('.machines [data-usb-builtin]') ?? '', /keyboard/);
+  await page.selectOption('.machines [data-usb-entry]:nth-child(3) [data-field=connector]', { value: '0' });
   await page.uncheck('.machines [data-usb-entry]:nth-child(3) [data-field=at-start]');
-  await page.waitForFunction(() => (document.querySelector('.machines [data-usb-entry]:nth-child(3) [data-field=connector]') as HTMLSelectElement).value === '3', null, { polling: 100 });
+  await page.waitForFunction(() => (document.querySelector('.machines [data-usb-entry]:nth-child(3) [data-field=connector]') as HTMLSelectElement).value === '0', null, { polling: 100 });
 
   // Another tab's machine holds the Pico: the tab says which.
   const other = await a.newPage();
@@ -148,7 +150,7 @@ test('the USB tab: the controller, Add a device, twins, a device held elsewhere;
   await a.close();
   const parsed = JSON.parse(def);
   assert.equal(parsed.machine.usb, true);
-  assert.deepEqual(parsed.usbDevices.map((e: { productName: string; connector: number; atStart: boolean; index?: number }) => [e.productName, e.connector, e.atStart, e.index ?? 0]), [['Pico', 0, true, 0], ['DualSense Wireless Controller', 1, true, 0], ['DualSense Wireless Controller', 3, false, 1]]);
+  assert.deepEqual(parsed.usbDevices.map((e: { productName: string; connector: number; atStart: boolean; index?: number }) => [e.productName, e.connector, e.atStart, e.index ?? 0]), [['Pico', 0, true, 0], ['DualSense Wireless Controller', 1, true, 0], ['DualSense Wireless Controller', 0, false, 1]]);
 
   // Another profile: imported, its entries have no grant until Allow (the chooser, filtered on the device).
   const b = await profile();

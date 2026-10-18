@@ -65,7 +65,7 @@ export type MachineRecord = {
   /** A network card (virtio-net) from the start: the page gives it to its Tailscale client. Several adapters are later. */
   network: boolean;
   /**
-   * A USB controller (an xHCI: 4 USB 2 and 4 USB 3 root ports behind 4 connectors, docs/plans/usb.md §4a). Absent on
+   * A USB controller (an xHCI: 4 USB 2 and 4 USB 3 root ports behind 4 connectors, docs/usb.md "The page"). Absent on
    * machines made before it existed: off, and their shape (and its hash) as it was. New machines have it.
    */
   usb?: boolean;
@@ -78,7 +78,7 @@ export type MachineRecord = {
 };
 
 /**
- * A USB device a machine remembers (docs/plans/usb.md §4a): who it is (WebUSB's or WebHID's grant persists per origin,
+ * A USB device a machine remembers (docs/usb.md "The page"): who it is (WebUSB's or WebHID's grant persists per origin,
  * so the page finds it again by this), the connector it goes on (fixed, so the guest's by-path names stay), and whether
  * it is attached when the machine starts (and when it is plugged in while the machine runs). `index`: among identical
  * devices without a serial number, which one in `getDevices()` order.
@@ -97,6 +97,9 @@ export type UsbEntry = {
 };
 /** The root connectors a machine's controller has (each a USB 2 and a USB 3 port). */
 export const USB_CONNECTORS = 4;
+/** The last is the built-in keyboard's (web/usb-keyboard.ts, docs/usb.md "The keyboard"); the others are the remembered devices'. */
+export const KEYBOARD_CONNECTOR = USB_CONNECTORS - 1;
+export const USER_CONNECTORS = KEYBOARD_CONNECTOR;
 
 /** The device kinds a machine's transports have, in slot order (`slots`). */
 export type DeviceKind = 'rng' | 'keyboard' | 'tablet' | 'net' | 'gpu' | 'snd' | 'blk';

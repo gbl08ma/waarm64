@@ -2,7 +2,7 @@
 // it unattended through UEFI: no first-boot questions (timezone, locale), and root without a password
 // on the serial console and on tty1. The page passes none of them (docs/frontend.md): a user
 // answers the first boot's questions, as on a regular machine. A test that relies on them reads
-// one back, so a shifted fw_cfg directory can't pass unnoticed (docs/plans/uefi.md).
+// one back, so a shifted fw_cfg directory can't pass unnoticed (docs/firmware.md).
 import type { Credential } from '../web/app/machine.ts';
 
 export const UNATTENDED: Credential[] = [

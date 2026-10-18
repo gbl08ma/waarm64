@@ -34,7 +34,7 @@ test("the shape: the other devices first, then the disks; its hash is stable and
   assert.notEqual(JSON.stringify(reordered), JSON.stringify(s));
   assert.equal(await shapeHash(reordered), h);
   // A USB controller turned off (or never there: every machine made before USB) leaves the shape and its hash as they
-  // were; remembered USB devices are hot-plugged, not in the shape (docs/plans/usb.md §4a).
+  // were; remembered USB devices are hot-plugged, not in the shape (docs/usb.md "The page").
   const usbDevices = [{ id: 'e00000000001', api: 'usb' as const, vendorId: 0x1d50, productId: 0x6018, serialNumber: 'A1', connector: 0, atStart: true }];
   for (const [what, x] of [['usb off', machine({ usb: false })], ['remembered devices', machine({ usbDevices })], ['both', machine({ usb: false, usbDevices })]] as const) {
     assert.equal(await shapeHash(shapeOf(x, (id) => DISKS.get(id))), h, what);

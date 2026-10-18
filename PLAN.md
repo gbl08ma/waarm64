@@ -121,8 +121,8 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
 - **B. Your own disk: boot an unmodified image, take the disk back** (done 2026-10-01; the
   user, 2026-09-30: before snapshots, the basic loop has to be right: load a disk into the VM,
   boot it, work, shut down, take the modified disk away). Images in scope: **Debian and Alpine
-  only** (Alpine's UEFI cloud images). Loops 0–6; the design and what each loop found are in
-  [docs/plans/uefi.md](docs/plans/uefi.md), the page in [docs/frontend.md](docs/frontend.md)
+  only** (Alpine's UEFI cloud images). Loops 0–6; the firmware and what it needs is in
+  [docs/firmware.md](docs/firmware.md), the page in [docs/frontend.md](docs/frontend.md)
   "Your own disk", numbers in `bench/boot/REPORT.md` "M8 phase B loop 3". What binds:
   - **Boot it unmodified through UEFI** (the user, 2026-09-30): **EDK2's ArmVirtQemuKernel**
     (BSD-2-Clause-Patent, `images/build.sh edk2` in Podman, reproducible) is entered like a kernel
@@ -213,7 +213,11 @@ Phases (A first; after A, the tracks in C can run in parallel, one agent each):
     no HEVC decoder of its own, and VA-API's parameters would need every slice header rewritten (backlog.md).
   - Host integration: clipboard, dropping files into the guest (9p), pointer lock, keyboard
     layouts; USB devices from the user's computer through WebUSB and WebHID (an xHCI, a
-    passthrough backend and an emulated HID device: [docs/plans/usb.md](docs/plans/usb.md), proposed, not scheduled).
+    passthrough backend and an emulated HID device: [docs/usb.md](docs/usb.md)): **done (2026-10-18)**, the
+    controller off unless a machine has it (new machines do), its tests' rigs in `scripts/ci-usb.sh`; checked on
+    the user's devices (an RTL-SDR at its full rate, an FT232R, a wired Xbox controller); a built-in USB keyboard of
+    ours on EDK2's USB stack gives the firmware and GRUB real keys on a machine with the controller. Isochronous
+    transfers left out (the user: WebUSB protects the classes that use them); loose ends in backlog.md "USB".
   - Snapshots ([docs/plans/snapshots.md](docs/plans/snapshots.md)): **done (2026-10-01).** Save
     snapshot writes the running machine to a file the user keeps (Debian: 175 MB, the machine
     paused 1.4 s) and Load snapshot resumes it, in a fresh profile too, in 2.1 s instead of a 55 s

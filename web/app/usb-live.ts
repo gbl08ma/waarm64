@@ -1,4 +1,4 @@
-// The live side of a machine's USB devices on the page (docs/plans/usb.md §4a, docs/usb.md "The page"): the browser's
+// The live side of a machine's USB devices on the page (docs/usb.md "The page"): the browser's
 // granted devices (WebUSB's `navigator.usb`, WebHID's `navigator.hid`), the grants this browser has seen (a grant
 // can't be told from a device that isn't plugged in, so the page keeps the list), the device locks (a Web Lock per
 // identity, held while a machine has the device; who holds one and "let it go" go over the store's channel), and the
@@ -103,7 +103,7 @@ export async function entryStates(entries: UsbEntry[], attached: Set<string>, lo
 }
 
 /**
- * The device locks of this page (docs/plans/usb.md §4a: one machine at a time per device). A lock is held while its
+ * The device locks of this page (docs/usb.md "The page": one machine at a time per device). A lock is held while its
  * device is attached here. Another tab asks who holds one (`usb-who`, answered `usb-held` with the machine's name) and
  * asks the holder to detach it (`usb-release`), over the store's channel.
  */
@@ -177,7 +177,7 @@ export class UsbLocks {
 }
 
 /** A connector of the running machine. */
-export type Connector = { device: UsbIdentity | UsbVirtual; name: string; entry?: string; state: 'attaching' | 'attached' | 'detaching'; speed?: UsbSpeed; notes?: string[] };
+export type Connector = { device: UsbIdentity | UsbVirtual; name: string; entry?: string; state: 'attaching' | 'attached' | 'detaching'; speed?: UsbSpeed; problems?: UsbProblem[] };
 
 /** Why an attach failed, in words (the device worker's message and its problems'). */
 export class UsbError extends Error {
@@ -211,7 +211,7 @@ export class UsbPorts {
     const p = this.pending.get(m.connector);
     if (p) { clearTimeout(p.timer); this.pending.delete(m.connector); }
     if (m.state === 'attached') {
-      if (c) Object.assign(c, { state: 'attached', speed: m.speed, notes: m.notes });
+      if (c) Object.assign(c, { state: 'attached', speed: m.speed, problems: m.problems });
       p?.resolve();
     } else {
       this.free(m.connector);
@@ -268,6 +268,11 @@ export class UsbPorts {
     await this.request(connector, { type: 'usb-attach', connector, device }, ms);
   }
 
+  /** A key of the page's for the built-in keyboard on `connector` (`code` '': release them all); no answer. */
+  key(connector: number, code: string, down: boolean) {
+    this.port.postMessage({ type: 'usb-key', connector, code, down } satisfies UsbToWorker);
+  }
+
   /** Detaches what is on `connector` (the guest sees an unplug); resolves once the worker says it's off. */
   async detach(connector: number, ms = 10_000): Promise<void> {
     const c = this.connectors[connector];
@@ -282,7 +287,7 @@ export class UsbPorts {
     }
   }
 
-  /** Detaches everything (Snapshot, Suspend: docs/plans/usb.md §4a); returns what was attached, to attach it again. */
+  /** Detaches everything (Snapshot, Suspend: docs/usb.md "The page"); returns what was attached, to attach it again. */
   async detachAll(): Promise<{ connector: number; device: UsbIdentity | UsbVirtual; entry?: string }[]> {
     const was = this.attached().filter((c) => c.state === 'attached').map((c) => ({ connector: c.connector, device: c.device, entry: c.entry }));
     await Promise.all(this.connectors.map((c, i) => (c ? this.detach(i).catch(() => {}) : undefined)));

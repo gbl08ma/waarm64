@@ -6,7 +6,7 @@
 // identity, is attached again); file disks, and stored disks this browser doesn't have, are files to pick at its first
 // start, checked by name, size and date, then by hash where the definition has one. A machine with a USB controller says
 // so (`machine.usb`), and its remembered USB devices go as identities (`usbDevices`): no grant travels, so on another
-// browser the first start offers one click each (docs/plans/usb.md §4a). Both are left out when there's nothing to say.
+// browser the first start offers one click each (docs/usb.md "The page"). Both are left out when there's nothing to say.
 import { fromDefinition, toDefinition, validDefinitionUsb, type DefinitionUsb } from './usb-ports.ts';
 import { canonical, MAX_DISKS, newId, uniqueName, type Attachment, type DiskIdentity, type DiskKind, type DiskRecord, type Display, type MachineRecord } from './shape.ts';
 import type { Store } from './store.ts';
