@@ -20,7 +20,7 @@ import { spillImports } from './spill.ts';
 import { HEAP_FLOOR, MAX_SPILL, MAX_SPILL_BYTES } from './ram.ts';
 export { HEAP_FLOOR, MAX_MEMORY0_RAM, MAX_SPILL, MAX_SPILL_BYTES, splitError, splitRam } from './ram.ts';
 
-export const ABI = 41;
+export const ABI = 42;
 const RAM_BASE = 0x4000_0000;
 const RING = 4096;
 
@@ -387,7 +387,13 @@ export const Counter = {
   JIT_PARKS: 106, JIT_PARK_EXITS: 107,
   // ABI 41: flushes that replayed the hot set, regions compiled again for them, those modules' wasm bytes.
   JIT_REPLAYS: 108, JIT_REPLAYED: 109, JIT_REPLAYED_BYTES: 110,
-  LEN: 111,
+  // ABI 42: at those flushes the regions marked and the slots kept, flushes made plain (the replay filled most of the
+  // epoch), the modules and bytes let go of; the cache's lock taken, and for the replay; the replay's modules emitted
+  // by a vCPU and by the compile worker, discarded at the commit (epoch, page, import), and the slots left empty.
+  JIT_MARKED: 111, JIT_KEPT: 112, JIT_FUTILE: 113, JIT_RELEASED_MODULES: 114, JIT_RELEASED_BYTES: 115,
+  JIT_LOCKS: 116, JIT_REPLAY_LOCKS: 117, JIT_EMITS_INLINE: 118, JIT_EMITS_WORKER: 119,
+  JIT_DISCARD_EPOCH: 120, JIT_DISCARD_PAGE: 121, JIT_DISCARD_IMPORT: 122, JIT_WASTED: 123,
+  LEN: 124,
 } as const;
 
 /**
@@ -436,6 +442,8 @@ export type BootOptions = {
    * On unless false.
    */
   compileWorker?: boolean;
+  /** With the JIT's replay (`jit` 5, 6) and a compile worker, the worker also emits the replay's modules (ABI 42); false: the vCPUs do. */
+  jitEmitter?: boolean;
   /**
    * Parallel mode: each vCPU worker returns to its event loop this often, in ms (web/vcpu-worker.ts `yieldMs`;
    * default {@link VCPU_YIELD_MS}, 0: never).
@@ -784,7 +792,7 @@ export async function bootVm(wasm: BufferSource | WebAssembly.Module, o: BootOpt
   /** Counter `i` summed over the vCPUs' blocks (round-robin counts everything in block 0). */
   const counter = (i: number) => blocks.reduce((sum, b) => sum + Number(Atomics.load(new BigUint64Array(memory.buffer, b, Counter.LEN), i)), 0);
   const fbPa = Number(ex.vm_framebuffer(vm));
-  const par = parallel ? coordinator({ module, memory, spill, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS }) : undefined;
+  const par = parallel ? coordinator({ module, memory, spill, instance, vm, ncpus, bell: scratch + S_BELL, ctl: scratch + S_CTL, pause: scratch + S_PAUSE, parked: scratch + S_PARKED, start: scratch + S_START, raise, clearStop: () => void Atomics.and(new Int32Array(memory.buffer), signal / 4, ~STOP), quiesce: () => devices.quiesce(), stall: [o.stall ?? []].flat().map((x) => ({ ...x, addr: ram + x.addr - RAM_BASE })), compileWorker: (o.jit ?? 0) !== 0 && o.compileWorker !== false, jitEmitter: o.jitEmitter !== false, yieldMs: o.vcpuYieldMs ?? VCPU_YIELD_MS }) : undefined;
   const RING_HALF = RING / 2;
   const txUsed = () => {
     const u32 = new Uint32Array(memory.buffer);
@@ -1039,6 +1047,10 @@ function stats(n: (i: number) => number) {
       decSteps: n(Counter.DEC_STEPS), decoded: n(Counter.DEC_BLOCKS), decClears: n(Counter.DEC_CLEARS),
       workerInstalls: n(Counter.JIT_WORKER_INSTALLS), overdue: n(Counter.JIT_OVERDUE), parks: n(Counter.JIT_PARKS), parkExits: n(Counter.JIT_PARK_EXITS),
       replays: n(Counter.JIT_REPLAYS), replayed: n(Counter.JIT_REPLAYED), replayedBytes: n(Counter.JIT_REPLAYED_BYTES),
+      marked: n(Counter.JIT_MARKED), kept: n(Counter.JIT_KEPT), futile: n(Counter.JIT_FUTILE),
+      releasedModules: n(Counter.JIT_RELEASED_MODULES), releasedBytes: n(Counter.JIT_RELEASED_BYTES),
+      locks: n(Counter.JIT_LOCKS), replayLocks: n(Counter.JIT_REPLAY_LOCKS), emitsInline: n(Counter.JIT_EMITS_INLINE), emitsWorker: n(Counter.JIT_EMITS_WORKER),
+      discardEpoch: n(Counter.JIT_DISCARD_EPOCH), discardPage: n(Counter.JIT_DISCARD_PAGE), discardImport: n(Counter.JIT_DISCARD_IMPORT), wasted: n(Counter.JIT_WASTED),
     },
     par: {
       dsbWaits: n(Counter.PAR_DSB_WAITS), dsbWaitNs: n(Counter.PAR_DSB_WAIT_NS), tlbiIs: n(Counter.PAR_TLBI_IS), ic: n(Counter.PAR_IC),
@@ -1057,7 +1069,7 @@ const SIGNAL_RX = 2;
  * ends the run: the others are stopped (STOP stays set; it isn't cleared,
  * docs/abi.md).
  */
-function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; spill: WebAssembly.Memory[]; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; yieldMs: number }) {
+function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory; spill: WebAssembly.Memory[]; instance: WebAssembly.Instance; vm: number; ncpus: number; bell: number; ctl: number; pause: number; parked: number; start: number; raise: (bits: number) => void; clearStop: () => void; quiesce: () => Promise<void>; stall: Stall[]; compileWorker: boolean; jitEmitter: boolean; yieldMs: number }) {
   type Handle = { post(m: VcpuJob | VcpuClock | CompileInit, transfer?: Transferable[]): void; terminate(): void };
   let workers: Promise<Handle>[] | undefined;
   let end: { kind: number; value: bigint; x: bigint[] } | undefined;
@@ -1154,7 +1166,10 @@ function coordinator(c: { module: WebAssembly.Module; memory: WebAssembly.Memory
     if (channels.length) {
       compiler = spawn(new URL('./jit-compile-worker.ts', import.meta.url));
       const ports = channels.map((ch) => ch.port2);
-      void compiler.then((h) => h.post({ memory: c.memory, ports }, ports));
+      // With the JIT's replay it also emits the replay's modules (ABI 42), on a core instance of its own.
+      const emits = c.jitEmitter && (unsigned(c.instance.exports).vm_jit_active as (vm: number) => number)(c.vm) !== 0;
+      const emit = emits ? { module: c.module, block: threadAlloc(c.instance.exports), vm: c.vm, spill: c.spill } : undefined;
+      void compiler.then((h) => h.post({ memory: c.memory, ports, emit } satisfies CompileInit, ports));
     }
     return Array.from({ length: c.ncpus }, async (_, cpu) => {
       const h = await spawn();

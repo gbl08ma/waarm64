@@ -110,19 +110,13 @@ this list rather than leaving TODOs in code** (the code marks a few with `ponyta
   `?jit=replay`, off by default; per-module eviction is in "Tried and not kept"). At a flush in steady playback it
   removes the interpreted slow phase (Firefox's WebGL: worst second 18 frames against 8, no seconds below 99%
   compiled), but in Firefox's page loads it compiled 25% more wasm and brought a third flush, and the mark per
-  dispatch costs `smp_user_jit_4` 2%. Before turning it on:
-  - **Replay less:** only the regions marked since the probe, not the whole closure up to half the budget (the
-    closure must stay carried, being linked, but needn't be compiled again: what isn't replayed is dropped at the
-    release and counted again if it's hot). Measure the pages session's flushes and bytes.
-  - **Emit outside the cache's lock:** the replay's modules (and any batch) are formed and emitted while every
-    other table waits at its misses; plan under the lock, emit outside, log under it again. The carry's remaining
-    dip (~5 s at ~0.3 s of emitting a second) is that, and it would let the replay emit 512-region modules (the
-    backlog's "Fewer, larger modules"). Then **the replay's emission in the compile worker**, given a core instance
-    of its own (the user's choice, 2026-10-19; the order and design are in M8-JIT-HANDOVER.md "Next").
-  - **The mark's cost** (a store per dispatch into `Table::used`): marking only while a probe runs (from 7/8 on)
-    would leave the steady state as it was.
-  - **`overdue` with carry** (68 in one pages session against 0): tables waiting a second for the worker during the
-    replay; the pacing against the worker (`REPLAY_AHEAD`) counts modules, not bytes.
+  dispatch cost `smp_user_jit_4` 2%. The round after (2026-10-19, built in a cloud session and counted there:
+  jit.md "Counted in the cloud") replays only what was marked, marks only while a probe runs, emits the replay
+  outside the cache's lock (a snapshot and a commit) and in the compile worker, 512-region modules. Before turning
+  it on: **the dev VM's timing of that round** (M8-JIT-HANDOVER.md "Next": the WebGL steady run, the pages
+  session's flushes and bytes, the gates for the mark, `go build`, ci-debian), and then the default-on call.
+  - **`overdue` with carry** (68 in one pages session against 0, before the round): in the cloud counts, after the
+    round's fix that numbers the replay's modules in log order, 0; check the pages session.
   - **The guard against futile carries** counts the replay's bytes against the epoch's: with the replay capped at
     half the budget, a heavy session's next flush is a classic one (in the pages session every second flush). A
     smaller replay (above) leaves it for what it's for, a hot set as large as the cache.

@@ -17,89 +17,41 @@ WebGL it removes the interpreted slow phase (worst second 18 frames against 8); 
 25% more wasm and brought a third flush; the gates are even except `smp_user_jit_4` +2%. **Off by default**: not a
 clear win in both workloads.
 
-**Next (the user's choice, 2026-10-19, in this order; the backlog's "Carrying the hot set across a flush, by
-default"):** built in a cloud session, which also measures everything that isn't time (below, "The split of
-measurement"); the dev VM measures what is.
+**The round after (the user's choice, 2026-10-19), built in a cloud session and counted there**
+(`claude/jit-hot-set-relocation-lsq6jq`; docs/jit.md "Replay after a flush" and "Counted in the cloud"). All of it
+is still behind `?jit=replay`, ABI 42:
+1. **Replay less:** the queue is only the marked regions; the closure stays carried, not compiled again.
+2. **Emit outside the cache's lock:** `Cache::take` (slots, a held place in the log, the module number, the epoch,
+   the pinned `ival_log` position, the imports looked up), `Job::make` without the lock, `Cache::commit`
+   discarding the whole module when the epoch moved, an IC named one of its pages, or an import moved. Tables
+   install up to the first held place, so in slot order.
+3. **The replay's emission in the compile worker:** `Emitter` (`vm_jit_emit`, `vm_jit_active`), a core instance
+   in the worker, 512-region modules, one at a time once everything handed over is compiled, compiled with
+   `WebAssembly.compile`. Without a worker the vCPUs emit (`?jit=nocw`, round-robin, Node); `?emitter=0` keeps the
+   worker but has the vCPUs emit (the old pacing, outside the lock now), for the A/B.
+4. **The mark only while a probe runs** (the probe also starts at 7/8 of the epoch's slots).
+- Counters 111-123 (marked, kept, futile, released modules and bytes, locks, replay locks, emits inline and in the
+  worker, discards by rule, wasted slots); `bench/boot/results/m8-replay/counts.ts` and `cloud/` (Debian at a
+  24 MiB budget: the default, main's carry, this carry with the worker and with the vCPUs emitting).
+- **What the counts found and fixed:** the replay's module numbers must follow the log (the host drops a worker's
+  module once a later number is installed: tables waited out every replay module, 150-1,600 overdue a session);
+  a link to a region of the same module isn't an import (every replay module was discarded); a table's overdue
+  clock restarts when it installs something (a stream of modules isn't overdue). After them: overdue 0, parks as
+  the default's, 0 discards, ~20 worker modules a carry, 29-47 modules alive once the carried slots go.
 
-**Why emitting blocks the vCPUs today** (read at 9058822): the compile worker (`web/jit-compile-worker.ts`) only runs
-V8's `new WebAssembly.Module(bytes)` and posts the module; it has no core instance. Everything before that runs on
-the vCPU that missed, under the cache's one `Mutex` (`Jit::miss`, core/src/jit/mod.rs ~1901): `emit_if_due` →
-`replay()`/`rebuild()` or `plan()` forms the regions from guest code, and `Cache::install` allocates slots, writes the
-tier words, resolves imports against `map`, runs the codegen (`block::module`) and calls `env.jit_compile`. Every
-vCPU takes that lock at each jump-cache miss, `sync` and tier-up, so while one emits the others queue. A replayed
-region costs ~20 µs to emit (the unpaced replay: ~58,000 regions in ~1.2 s, `bench/boot/REPORT.md`), so a paced
-64-region module holds the lock ~1.3 ms of every 4 ms (`REPLAY_BATCH`, `REPLAY_GAP_NS`): the carry's remaining ~5 s
-dip and the pages session's 20-57 ms stalls. Nothing makes this fundamental: emission needs only guest memory
-(`Mem`), a snapshot of `map`, `cfg`/`features`/`xmiss` and the slots; it reads no TLB or other per-vCPU state (the
-`&mut Table` in `install` is used for stats and the one-time `miss_functions`). It sits at the miss because it did in
-M5; the compile worker (ABI 36) came later, for V8's GC stalls only.
-
-1. **Replay less**: only what was marked, not the closure up to half the budget. It's cheap, independent, and the
-   only one of these that answers the pages session's extra 25% of wasm and its third flush.
-2. **Emit outside the cache's lock** (snapshot and commit). Under the lock: take the batch, allocate its slots,
-   record `epoch`, the `ival_log` position and the imports chosen. Unlocked: form the regions and emit. Relock and
-   commit: discard the module if `epoch` moved (a flush, `IC IALLU`); drop regions whose pages are in `ival_log`
-   since the snapshot (self-modifying code) or whose imported keys no longer map to the same index. Wasted slots are
-   harmless. The other vCPUs then stop queuing behind an emit. With the lock no longer the limit, the replay can make
-   512-region modules ("Fewer, larger modules").
-3. **Move the replay's emission to the compile worker**: give the worker a core instance on the shared memory, the
-   vCPU workers' pattern (`web/vm.ts` `threadAlloc`, `instantiateThread`; plus `spill` and a counters slot), and a
-   new core export for its emit loop (an ABI bump, docs/abi.md first). It runs steps 2's snapshot and commit from the
-   worker. Then it can also compile its own bytes, without `jit_compile`'s copy. This takes the emitting vCPU's
-   remaining ~0.3 s a second (~7% of 4 vCPUs) off the vCPUs. The estimate, not yet measured: the steady WebGL run's
-   worst second near the 31-34 frame baseline, against the carry's 18 today.
-   - **Determinism:** with no emitter (round-robin, Node's deterministic runs, `?jit=nocw`), emission stays inline,
-     as `jit_compile` returning 0 does today. So `tests/steps.txt` and the exact-step boots don't move.
-   - **Tests:** test the asynchronous path natively with a Rust thread under the parallel runner and
-     `scripts/tsan.sh`. Plant bugs for the commit's three discard rules: epoch moved, page invalidated, import
-     remapped.
-   - **Normal (non-replay) compiles** move to the worker only if the pages session then shows their emitting in
-     stalls. The diag build put them at ~80 ms of emitting a second right after a first flush, much less in steady
-     state. The protocol would be the same.
-4. **The mark's cost**: mark only while a probe runs (the 2% on `smp_user_jit_4`).
-5. Then default on, if the gates and Firefox's busy MIPS stay within noise.
-
-**The split of measurement.** A cloud container's CPU is shared, so its times aren't comparable (MIPS, seconds,
-frames, stall lengths). Counts don't depend on that, and they validate and tune the design. **The cloud measures
-counts, per step of the round, and adjusts the design and its knobs on them before handing over.**
-- **Workload.** What the cloud can run:
-  - Debian on the page, with the budget cut (e.g. 24 MiB, a local edit as the first cloud round did) so a boot and
-    a userspace load flush several times.
-  - Buildroot's JIT-replay tests (a 16 KiB cache).
-  - Round-robin runs in Node, where the counts are exact and repeatable. With the emitter on they're not: run
-    several and report the spread.
-
-  It can't build the desktop guests (Arch Linux ARM, Firefox): those runs are the dev VM's.
-- **Per flush:**
-  - flushes and their kinds (carry or plain, from the guard)
-  - regions marked, carried and replayed
-  - `replayedBytes`
-  - modules and wasm bytes alive before and after (both halves while the carry lives, then after the release)
-  - modules emitted per round and their sizes (regions per module, which step 2's 512-region modules change)
-  - the compiled share of steps in fixed windows **of guest steps** after the flush (e.g. each 50M steps for the
-    next 1G), in place of the dev VM's seconds
-  - steps until the next flush
-- **Per session:**
-  - flushes and wasm bytes
-  - modules in all
-  - the replay's `overdue` and parked counts, rough (they depend on timing)
-- **For steps 2 and 3:**
-  - lock acquisitions and regions emitted per acquisition
-  - emits done inline against in the worker
-  - commits discarded per rule (epoch, page invalidated, import remapped) and the slots they wasted
-- Put these counts in `results.json`'s `jit` (new counters are an ABI change, in the round's ABI bump) and a
-  steps-based report next to `flushes.ts`.
-- Compare A/B against the default and the current carry. Commit the JSON as the dev VM would, marked as from the
-  cloud.
-
-**What the dev VM measures after the cloud hands over** (time only, and the workloads the cloud can't run):
-- The steady WebGL run with `diag.patch`, and Firefox's pages session (below): the default against the carry, two
-  each, alternating. Read the slow phase in seconds, the frames, MIPS and stall lengths (≥ 20 ms), and check the
-  cloud's counts hold on the desktop guest.
-- The gates (`tools/tpw.sh`) and the 4-vCPU `go build` loop. Step 4 (the mark's cost) is a time question; the
-  cloud can build it, but only the dev VM can judge it.
-- `scripts/ci-debian.sh` whole, and the long or image-bound tests the cloud can't run.
-- The decision to turn it on by default (step 5).
+**Next, on the dev VM (time only, and the workloads the cloud can't run):**
+- The steady WebGL run with `diag.patch` and Firefox's pages session: the default against the carry, two each,
+  alternating; and once the carry with `?emitter=0` (the vCPUs emitting outside the lock) to split steps 2 and 3.
+  Read the slow phase, the frames, MIPS, stalls ≥ 20 ms, and the new counters (results.json's `jit`;
+  `flushes.ts` prints them). **`diag.patch` needs updating first:** it patched `emit_if_due` and calls `carry`
+  directly, but marks now exist only during a probe, so a forced carry without one is a classic flush: start a
+  probe (`self.probe()`) a few seconds before each forced flush.
+- The gates (`tools/tpw.sh`), for step 4: `smp_user_jit_4` was +2% with the mark at every dispatch.
+- The 4-vCPU `go build` loop; `scripts/ci-debian.sh`; the JIT-replay Buildroot tests and `scripts/tsan.sh` with
+  images (the cloud ran the lib's emitter test only).
+- Knobs to try if the worker's modules show as stalls: `REPLAY_MODULE` (512); the worker emits one module at a
+  time, so a smaller module bounds how long a vCPU's own module waits behind it.
+- Then the default-on decision (step 5): the gates and Firefox's busy MIPS within noise.
 
 Older items of the user's queue stay in the backlog: "Indirect transfers into a browser's code" and "Fewer, larger
 modules for a browser" (first: the renderer's RSS through the pages session).

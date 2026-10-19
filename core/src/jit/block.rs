@@ -253,7 +253,7 @@ fn succ(key: u64, off: i64) -> u64 {
 }
 
 /// The keys of a block's static successors (the taken side first).
-fn succs(key: u64, words: &[u32]) -> Vec<u64> {
+pub(crate) fn succs(key: u64, words: &[u32]) -> Vec<u64> {
     match next(words) {
         Next::None => vec![],
         Next::One(o) => vec![succ(key, o)],
