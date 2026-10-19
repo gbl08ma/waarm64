@@ -360,24 +360,28 @@ With `Config::replay` (`VmConfig.jit` 5, the page's `?jit=replay`; **off by defa
 doesn't drop the code in use: the regions entered near the flush keep running from their slots while the
 next epoch fills the other half of the slots, and they are compiled again into it a module at a time; once
 that's done the old slots go. So the code in use is never interpreted again after a flush, and nothing waits
-for its compile. Off by default because in Firefox's page loads it compiles a quarter more wasm and brought a
-third flush, and the mark per dispatch costs the userspace benchmark 2% (below, "Measured").
+for its compile. Off by default: its first form compiled a quarter more wasm in Firefox's page loads and brought
+a third flush, and its mark per dispatch cost the userspace benchmark 2% (below, "Measured"); the round after
+(replay only what was marked, mark only during the probe, emit outside the lock and in the compile worker) is
+counted, not yet timed (below, "Counted in the cloud").
 
-- **The use signal:** the dispatcher stores the cache's sweep number into its table's word for each
-  slot it enters (`Table::used`, a relaxed store per dispatch; one word per slot per table, read by
-  the cache at a flush). A sweep starts at each epoch and at the probe, so "entered since" is a
-  comparison. The marks live in each table's `Seen` and survive `drop_all` (which rebuilds the rest
+- **The use signal:** while a probe runs, the dispatcher stores the probe's sweep number into its
+  table's word for each slot it enters (`Table::used`, a relaxed store per dispatch; one word per slot
+  per table, read by the cache at a flush); outside a probe it stores nothing (`Replay::mark` is 0, read
+  at each `steps`). A sweep starts at each epoch and at the probe, so "entered since" is a comparison. The marks live in each table's `Seen` and survive `drop_all` (which rebuilds the rest
   of `Seen`: what lost `measure.patch`'s marks).
-- **The probe:** at `PROBE_AT` (7) eighths of the budget the cache starts a sweep and clears every
+- **The probe:** at `PROBE_AT` (7) eighths of the budget, or of this epoch's slots (`Cache::probe_due`),
+  the cache starts a sweep and clears every
   table's jump cache and its vCPUs' transfer caches, so a region still in use that is reached through
   them is entered from the dispatcher again within the window and marked. Code reached only through
   direct links (imports, a module's own calls) never comes back to the dispatcher.
-- **The hot set** (`Cache::hot_set`, at a flush from `alloc`): the regions entered since the probe
-  (since the epoch began, without one), the regions they link to directly, transitively (each
-  region's recipe keeps its `links`), and a tier-up's loop region with its head; not a region whose key
-  was invalidated or compiled again since. The closure stays compiled; the replay's queue is the closure in
-  slot order (a region's direct links compiled again before it), a tier-up's loop region in place of its head
-  compiled alone, capped at `REPLAY_MAX` (4) eighths of the budget and of the slots.
+- **The hot set** (`Cache::hot_set`, at a flush from `alloc`): the regions entered since the probe (none
+  without one: the flush is a classic one), the regions they link to directly, transitively (each region's
+  recipe keeps its `links`), and a tier-up's loop region with its head; not a region whose key was invalidated
+  or compiled again since. The closure stays compiled (carried); the replay's queue is only the marked regions,
+  in slot order, a tier-up's loop region in place of its head compiled alone, capped at `REPLAY_MAX` (4) eighths
+  of the budget and of the slots. A region of the closure that wasn't marked goes at the release; if it's still
+  in use it's counted and compiled again from zero.
 - **Carrying** (`Cache::carry`): the slots are two halves of `Config::capacity` (262,144 each), and each such
   flush moves the next epoch to the other half. The map keeps only the closure's keys (their linkers, pages and
   spans with them, so an `IC` drops a carried region as any other); the tier-ups are forgotten (a redirect into
@@ -386,16 +390,32 @@ third flush, and the mark per dispatch costs the userspace benchmark 2% (below, 
   that missed an epoch has none. New code is compiled at the threshold's floor as it was (no doubling: the code
   in use isn't counted again), and never imports a carried region (`Cache::old`; a jump-cache tail instead),
   since an import would keep its module alive past the release.
-- **The replay** (`Cache::replay`, from `emit_if_due` at the dispatcher's misses): `Cache::rebuild` forms each
-  region again from its recipe (its blocks' key and VA, how it was formed, its links: `Recipe`, in its module's
-  `Logged`, ~100 bytes of the core's heap a region) from the code as it is now, with `block::forward` or
-  `block::region` taking exactly the recipe's blocks, so it gets the same members, predicted returns and tier
-  word; a head with no words any more is left out, and so is one compiled again meanwhile. Paced: with a compile
-  worker, a module of `REPLAY_BATCH` (64) regions at most every `REPLAY_GAP_NS` (4 ms), while the worker has
-  fewer than `REPLAY_AHEAD` (4) left to compile, since the cache's lock is held while a module is emitted and
-  every table needs it at its misses. A replayed region's `Info::prev` is the carried one, which a table that
-  hasn't installed the new module runs meanwhile.
-- **The release** (`Cache::uncarry`): once the queue is empty and every table has installed the replay's
+- **The replay, outside the lock** (a snapshot and a commit): `Cache::take`, under the lock, takes the next
+  regions of the queue (a head compiled again already, waiting in the batch or dropped is left out; the heads
+  taken are marked queued, so no batch takes them meanwhile), their slots, a held place in the log, the next
+  module number (the numbers follow the log: the host drops a worker's module once a later one is installed),
+  the epoch, the `ival_log` position (pinned: the log keeps its entries until the commit) and the imports its
+  regions may use (each recipe's `exits`, the static successors outside it, and `links`, looked up now). Without
+  the lock, `Job::make` forms each region again from its recipe (its blocks' key and VA, how it was formed, its
+  links: `Recipe`, in its module's `Logged`, ~100 bytes of the core's heap a region) from the code as it is now,
+  with `block::forward` or `block::region` taking exactly the recipe's blocks, so it gets the same members,
+  predicted returns and tier word, and emits the module against the snapshot's imports. `Cache::commit`, under
+  the lock again, logs it in its held place, unless the epoch moved (a flush, `IC IALLU`), an IC since the
+  snapshot named a page of one of its regions, or a block it imports (a link that isn't one of its own heads) is
+  no longer at the same index: then the whole module goes (its regions call each other), its place in the log is
+  left empty (a table skips it) and its number is compiled as nothing; its slots stay unused. A table takes the
+  log only up to the first held place, so modules install in slot order. A replayed region's `Info::prev` is the
+  carried one, which a table that hasn't installed the new module runs meanwhile.
+- **Who emits it:** in parallel SMP with a compile worker, the worker (`Emitter`, the exports `vm_jit_emit` and
+  `vm_jit_active`, ABI 42; web/jit-compile-worker.ts): on a core instance of its own on the shared memory it
+  waits on `Replay::active` (1 while the queue has regions; the core notifies it at a carry), emits modules of
+  `REPLAY_MODULE` (512) regions, one at a time and only once every module handed over so far is compiled, and
+  compiles each with `WebAssembly.compile` (off its thread, so the vCPUs' modules go on meanwhile); from its first
+  call the vCPUs leave the replay to it. Without one (round-robin, Node's deterministic runs, `?jit=nocw`, or
+  `?emitter=0` on the page), the vCPU that misses emits it (`Cache::replay_due`, `Jit::replay`): unpaced without a
+  worker, else a module of `REPLAY_BATCH` (64) regions at most every `REPLAY_GAP_NS` (4 ms) while the worker has
+  fewer than `REPLAY_AHEAD` (4) left to compile. Normal compiles stay on the vCPUs.
+- **The release** (`Cache::uncarry`): once the queue is empty, no module is out being emitted, and every table has installed the replay's
   modules (or `OVERDUE_NS` after), the carried regions still in the map are dropped (with what links to them) and
   the old half's slots are released: each table, at its dispatcher, has the host null them
   (`env.jit_release`, [abi.md](abi.md)), forgets its carried range and clears its jump cache (and, by `drops`,
@@ -405,12 +425,20 @@ third flush, and the mark per dispatch costs the userspace benchmark 2% (below, 
 - **Not again when futile:** if the replay's own modules were more than half of what filled the epoch (a hot set
   about as large as the cache), the next flush for room is a classic one (which doubles the floor), not another
   carry.
-- **Counters:** `jit::Stats::replays` (carried flushes), `replayed`, `replayed_bytes` (counter words 108-110).
+- **Counters:** `jit::Stats::replays` (carried flushes), `replayed`, `replayed_bytes` (counter words 108-110);
+  ABI 42 (words 111-123): `marked` and `kept` at the carries, `futile` (flushes the guard made classic),
+  `released_modules` and `released_bytes` (what was let go of: alive is `modules`/`bytes` less these), `locks`
+  and `replay_locks` (the cache's lock taken, and for the replay's snapshots and commits), `emits_inline` and
+  `emits_worker`, `discard_epoch`, `discard_page`, `discard_import`, `wasted` (slots reserved and left empty).
+  The emitter's own counts go to the cache's `owed`, which the next table to catch up adds to its `Stats`.
 - **Tests:** JIT-replay ([testing.md](testing.md): a 16 KiB cache, so the boots carry dozens of times), the unit
   tests in `jit/mod.rs` (a recipe forms its region again, in memory 0 and in a spill memory; the hot set; a
   carried epoch runs until it's released; a new region never imports a carried one; no carry after a replay-filled
-  epoch). Planted: carried imports, no `prev`, the release keeping the jump cache (also the boots) or the carried
-  range, the tiers kept, the linkers not closed, the carried keys not dropped, no guard.
+  epoch; a replay module emitted outside the lock commits unless the cache moved; the emitter on a thread of its
+  own beside a table that misses, compiles, invalidates and flushes, also under ThreadSanitizer). Planted: carried
+  imports, no `prev`, the release keeping the jump cache (also the boots) or the carried range, the tiers kept,
+  the linkers not closed, the carried keys not dropped, no guard; each of the commit's three discards, and the
+  module's own heads taken for imports (every replay module discarded).
 
 ### Measured (2026-10-19, `bench/boot/REPORT.md` "M8: carrying the hot set across a flush")
 
@@ -441,9 +469,32 @@ epoch), and its first and third interpreted less after them (67-80 and 29-50 M s
 `smp_alpine_jit` even (−0.4, +0.9, −0.2% at 1, 2, 4 vCPUs), `smp_user_jit_4` +2.0% (three rounds, each slower: the
 mark per dispatch).
 
-**To turn it on by default** (the backlog's "Carrying the hot set"): fewer bytes replayed in page loads (only what
-was marked, not its closure's whole cap: the closure can stay carried without being compiled again), the mark's
-cost, and the replay's emitting outside the cache's lock.
+### Counted in the cloud (2026-10-19, `bench/boot/results/m8-replay/cloud/`)
+
+Counts, not times (a cloud session's CPU is shared: 4 cores for 4 vCPUs here). Debian on the page, 4 vCPUs, the
+budget cut to 24 MiB (a local edit of `MAX_BYTES`), its boot and a userspace load (`counts.ts`: find, gzip, apt,
+perl, ls), one session each: the default, main's carry (the core before this round), this round's carry with the
+worker emitting, and with the vCPUs emitting (`?emitter=0`).
+
+| | default | main's carry | carry (worker) | carry (vCPUs) |
+|---|---|---|---|---|
+| flushes: carried, classic (futile among them) | 0, 3 | 2, 2 (not counted) | 3, 1 (1) | 3, 1 (1) |
+| regions replayed a carry (MiB) | — | 9.4k, 11.0k (12.5) | 9.3k-10.6k (11.8-12.6) | 9.3k-10.6k (11.8-12.5) |
+| replay modules a carry | — | 64 regions each | 19-21 (≤512 regions) | 145-166 (64) |
+| modules alive once the carried slots go | (after a classic flush: 1-18) | not counted | 29-47 (12.0-14.2 MiB) | 154-175 (12.4-13.1 MiB) |
+| discards, overdue | —, 0 | —, 0 | 0, 0 | 0, 0 |
+| guest steps a flush to the next (G) | 8.7, 67.1 | 5.5, 7.4, 23.9 | 4.5, 5.8, 66.2 | 4.7, 5.9, 66.1 |
+
+At this budget the cap binds: the marked regions alone fill half the budget, so replaying only them changes
+little here (the pages session is where the closure's extra came from). The second carry is always made classic
+by the guard (the replay filled half of a 24 MiB epoch). The compiled share per 200 M guest steps after any
+flush dips to 0.87-0.98 and is back within 2 points of before in 0.2-0.8 G steps, alike in all four: at this
+grain (the page's counters once a second) a carry's shallower dip doesn't show. Before the fix that numbers the
+replay's modules in log order, tables waited out the host's drop of modules (150-1,600 compiled overdue on
+vCPUs a session).
+
+**To turn it on by default** (the backlog's "Carrying the hot set"): the dev VM's timing of this round (the
+WebGL steady run, Firefox's pages session, the gates, the `go build` loop, ci-debian), and the default-on call.
 
 ## Invalidation and the stale-code checker
 

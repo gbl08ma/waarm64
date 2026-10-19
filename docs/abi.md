@@ -1,4 +1,4 @@
-# Host ABI (version 41)
+# Host ABI (version 42)
 
 The contract between the Rust core (`core/src/lib.rs` exports) and its hosts (`web/vm.ts`, the
 native runners in `core/tests/common`, the benchmarks). Exports are `#[unsafe(no_mangle)] extern
@@ -63,6 +63,11 @@ Design notes for an ABI change go in this file before the code.
   `vm_set_chunk(vm, steps)` (ABI 34, any thread): the steps between two publications of a vCPU's PC in its counters,
   32768 by default (0 restores it); the guest PC sampler (web/profiler.ts) shortens it while it runs, so a sample is
   at most that many instructions old instead of naming the exit that ended a long chunk. Round-robin is unaffected.
+- `vm_jit_emit(vm) -> u32` (parallel with the JIT's replay, ABI 42): emits the replay's next module on the calling
+  thread, the compile worker's core instance ("Many core instances on one memory"), and hands it to that
+  instance's `env.jit_compile`; the vCPUs leave the replay to it from the first call. 0: nothing to emit now, wait
+  until the u32 at `vm_jit_active(vm)` is 1 (the core notifies it); null there: no emitter (round-robin, or no
+  replay). [jit.md](jit.md) "Replay after a flush".
 - `vm_cpu(vm, i) -> *mut Cpu`, vCPU *i* (null past the last; registers at fixed offsets: X0–X30, SP, PC at 256, …, `features` at
   1056; `Cpu` is 1072 bytes, 16-byte aligned), `vm_console`, `vm_signal`, `vm_counters(vm, i)`,
   `vm_device(vm, i)`, `vm_framebuffer(vm)` (the framebuffer's PA, 0 if none), `vm_flash(vm)` (the
@@ -154,6 +159,7 @@ vCPU's own counts in its block; hosts sum them (`stats()`). Word 70 (PC) is per 
 | 104–105 | the compile worker (36, `env.jit_compile` above): modules a table installed once the worker had compiled them; ones it compiled itself after waiting a second for the worker |
 | 106–107 | (37) times the host didn't have the worker's compiled module yet when a table went to install it; runs that ended early (`BUDGET`) for it to arrive |
 | 108–110 | replay (41, [jit.md](jit.md) "Replay after a flush"): flushes that kept a hot set to compile again, the regions compiled again, those modules' wasm bytes |
+| 111–123 | the carry and the replay's emission (42): regions marked and slots kept at the carries, flushes the futile guard made classic, modules and wasm bytes let go of (alive: 72 and 73 less these); the cache's lock taken, and for the replay's snapshots and commits; replay modules emitted by a vCPU and by the compile worker; discarded at the commit as the epoch moved, a page was invalidated, an import moved; slots reserved and left empty |
 
 TLB hits stay uncounted: counting them in the fast path wasn't clearly free (one boot run +12%).
 
@@ -523,4 +529,5 @@ implemented by this step).
 | 39 | spill memories: `VmConfig.spill`, the `ram` imports; until S1 of the plan, devices take buffers in memory 0 only |
 | 40 | device records name the memory: virtio segments are (offset, length, memory), the xHCI's length word carries it in bits 27:24 |
 | 41 | `VmConfig.jit` 5 and 6: the JIT carrying its hot set across a flush and compiling it again, and that in a small cache (the tests); counters 108–110; `env.jit_release` |
+| 42 | `vm_jit_emit`, `vm_jit_active`: the replay's modules emitted by the compile worker's own core instance; counters 111–123 |
 | 37 | `env.jit_install` takes the module's number: the vCPU instantiates the compile worker's compiled module, posted to it, instead of compiling the bytes again (−2: not arrived yet); counters 106–107 |

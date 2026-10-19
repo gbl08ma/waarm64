@@ -45,7 +45,8 @@ test's `--disk2` gives it the Go toolchain image, docs/images.md "Stress workloa
 worklet's notify; any `?snd=` also exposes `window.__audio`, the serial log and the status, for tests and
 `bench/audio/snd-page.ts`), `?jit=nocw` (the JIT without its compile worker: each vCPU compiles what it installs,
 for A/B measurements; docs/jit.md "Sharing"), `?jit=replay` (the JIT carrying the regions in use across a flush for room
-and compiling them again meanwhile: docs/jit.md "Replay after a flush"), `?usb=1` (a transient machine with a USB controller; a stored machine's is
+and compiling them again meanwhile: docs/jit.md "Replay after a flush"; with it `?emitter=0` has the vCPUs emit the
+replay instead of the compile worker, for A/B measurements), `?usb=1` (a transient machine with a USB controller; a stored machine's is
 its record's), `?usbzero=1` (Gadget Zero in the USB menu, for tests: [usb.md](usb.md) "Gadget Zero on the page").
 
 ## The machines

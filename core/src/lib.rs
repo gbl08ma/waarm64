@@ -32,7 +32,7 @@ pub mod xhci;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 /// Bumped when the host/core ABI changes.
-pub const ABI_VERSION: u32 = 41;
+pub const ABI_VERSION: u32 = 42;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn abi_version() -> u32 {
@@ -493,6 +493,35 @@ pub unsafe extern "C" fn vm_run(vm: *mut vm::Vm, budget: u64) -> u32 {
 pub unsafe extern "C" fn vm_run_cpu(vm: *const vm::Vm, cpu: u32, budget: u64) -> u32 {
     // SAFETY: guaranteed by the caller.
     unsafe { (*vm).run_cpu(cpu as usize, budget) }
+}
+
+/// Emits the JIT's next replay module on the calling thread (ABI 42: the
+/// compile worker's core instance, off the vCPUs, which leave the replay to
+/// it from the first call; docs/jit.md "Replay after a flush"). Whether
+/// there may be more: 0 means wait until [`vm_jit_active`]'s word is 1.
+///
+/// # Safety
+/// `vm` comes from [`vm_new`] and isn't freed meanwhile.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_jit_emit(vm: *const vm::Vm) -> u32 {
+    // SAFETY: guaranteed by the caller.
+    let vm = unsafe { &*vm };
+    vm.emitter.as_ref().is_some_and(|e| e.lock().emit(&vm.mem)) as u32
+}
+
+/// The u32 that's 1 while the JIT's replay has regions to emit, else 0
+/// (ABI 42); null if the VM has no emitter (parallel SMP with the JIT's
+/// replay).
+///
+/// # Safety
+/// `vm` comes from [`vm_new`] and isn't freed meanwhile.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vm_jit_active(vm: *const vm::Vm) -> *const u32 {
+    // SAFETY: guaranteed by the caller.
+    let vm = unsafe { &*vm };
+    vm.emitter
+        .as_ref()
+        .map_or(core::ptr::null(), |e| e.lock().active().cast())
 }
 
 /// The last run's `vm::ExitInfo`: kind, steps, value, x0–x3, cpu, wake (u64

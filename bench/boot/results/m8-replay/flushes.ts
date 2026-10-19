@@ -42,7 +42,10 @@ for (const dir of process.argv.slice(2).filter((a) => a !== '--json')) {
     flushes.push({ atS: Math.round((ft - t0) / 1000), n: d, baseShare: +base.toFixed(3), baseMips: Math.round(baseMips), slowS: slow, slow2S: slow2, minShare: +Math.min(...after.slice(0, Math.max(1, slow2)).map((x) => x.share).filter((x) => !isNaN(x))).toFixed(3), mipsSlow: Math.round(after.slice(0, Math.max(1, slow)).reduce((a, x) => a + x.mips, 0) / Math.max(1, slow)), excessInterpM: Math.round(excess / 1e6), interp10M: Math.round(after.slice(0, 10).reduce((a, x) => a + x.interp, 0) / 1e6), interp60M: Math.round(after.reduce((a, x) => a + x.interp, 0) / 1e6), mips10: Math.round(after.slice(0, 10).reduce((a, x) => a + x.mips, 0) / 10), replayed60s: rp, fps10, frames: near });
   }
   const jit = res.jit ?? {};
-  const counts = { flushes: jit.flushes, modules: jit.modules, bytes: jit.bytes, replays: jit.replays, replayed: jit.replayed, replayedBytes: jit.replayedBytes, overdue: jit.overdue, workerInstalls: jit.workerInstalls };
+  const counts = { flushes: jit.flushes, modules: jit.modules, bytes: jit.bytes, replays: jit.replays, replayed: jit.replayed, replayedBytes: jit.replayedBytes, overdue: jit.overdue, workerInstalls: jit.workerInstalls,
+    // ABI 42: what the carry kept and let go of, and how the replay was emitted.
+    futile: jit.futile, marked: jit.marked, kept: jit.kept, aliveModules: jit.releasedModules === undefined ? undefined : jit.modules - jit.releasedModules,
+    emitsInline: jit.emitsInline, emitsWorker: jit.emitsWorker, discards: jit.discardEpoch === undefined ? undefined : jit.discardEpoch + jit.discardPage + jit.discardImport, wasted: jit.wasted };
   out[dir] = { seconds: Math.round((time(n - 1) - t0) / 1000), flushes, jit: counts };
   if (!json) {
     console.log(`${dir}: ${JSON.stringify(counts)}`);

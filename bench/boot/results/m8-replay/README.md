@@ -20,5 +20,11 @@ flush". The dev VM, Chromium 153.0.8010.52, Arch Linux ARM's desktop disk (`targ
   three rounds; `summary.txt` the medians by round.
 - `go/`: the 4-vCPU `go build` loop of `bench/stress` (`--seconds 420 --no-load --disk2 …goroot.ext4`), the default
   and the carry, one each (the stress tool's log and samples).
+- `cloud/` (**from a cloud session**, 2026-10-19: counts only, no times): Debian on the page at a 24 MiB budget
+  (`MAX_BYTES`, a local edit), 4 vCPUs, its boot and `counts.ts`'s userspace load, one session each: `default`,
+  `main-carry` (the core before the round that replays only what was marked and emits outside the lock),
+  `carry` (that round, the compile worker emitting) and `carry-vcpu` (`?emitter=0`). `<name>.json.gz`: the page's
+  counters once a second; `report.json`: `counts.ts report --json` of them (docs/jit.md "Counted in the cloud").
+- `counts.ts`: that session and its per-flush report (usage in its header).
 - `flushes.ts`, `steady.ts`: the analyses (usage in their headers); `diag.patch`: the diagnostic build, against the
   commit that adds this directory (apply, `scripts/build-wasm.sh`, measure, then restore the source and rebuild).
